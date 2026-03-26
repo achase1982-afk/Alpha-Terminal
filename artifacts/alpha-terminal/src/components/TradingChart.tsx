@@ -30,7 +30,7 @@ export function TradingChart({ data, isLoading, tokenExpired }: TradingChartProp
       layout: {
         background: { type: ColorType.Solid, color: 'transparent' },
         textColor: '#8B949E',
-        fontFamily: "'JetBrains Mono', monospace",
+        fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif",
         fontSize: 11,
       },
       grid: {
