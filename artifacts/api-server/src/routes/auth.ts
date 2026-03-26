@@ -84,6 +84,11 @@ router.post("/callback", async (req, res) => {
   }
 });
 
+// Expose the registered redirect URI so the frontend always uses the exact same value
+router.get("/redirect-uri", (_req, res) => {
+  res.json({ redirectUri: process.env.SCHWAB_REDIRECT_URI || "" });
+});
+
 router.post("/refresh", async (req, res) => {
   const parsed = RefreshTokenBody.safeParse(req.body);
   if (!parsed.success) {
