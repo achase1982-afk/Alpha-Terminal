@@ -69,7 +69,7 @@ export const useTerminalStore = create<TerminalState>()(
       })),
 
       // AI
-      aiModel: 'gemini-2.5-flash',
+      aiModel: 'gemini-2.5-pro',
       setAiModel: (aiModel) => set({ aiModel }),
       aiTemp: 0.7,
       setAiTemp: (aiTemp) => set({ aiTemp }),
