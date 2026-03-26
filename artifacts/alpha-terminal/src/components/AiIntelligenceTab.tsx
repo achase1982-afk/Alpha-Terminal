@@ -2,15 +2,13 @@ import { useState, useRef, useEffect } from "react";
 import { useTerminalStore } from "@/lib/store";
 import {
   useGetQuote, useGetPriceHistory, useGetOptionChain,
-  useRunTechnicalAnalysis, useGetAvailableModels
+  useRunTechnicalAnalysis,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Slider } from "@/components/ui/slider";
 import {
-  BrainCircuit, Activity, BarChart2, Send, Trash2,
-  TerminalSquare, User, Newspaper, ChevronDown, ChevronUp,
+  Activity, BarChart2, Send, Trash2,
+  TerminalSquare, User, Newspaper,
   Zap, Target, TrendingUp
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -46,7 +44,7 @@ function MarkdownResult({ content }: { content: string }) {
 export function AiIntelligenceTab() {
   const {
     symbol, accessToken,
-    aiModel, setAiModel, aiTemp, setAiTemp,
+    aiModel, aiTemp,
     chatHistory, addChatMessage, clearChat,
     analysisResult, setAnalysisResult,
     strategistResult, setStrategistResult,
@@ -55,16 +53,12 @@ export function AiIntelligenceTab() {
 
   const [customPrompt, setCustomPrompt] = useState("");
   const [chatInput, setChatInput] = useState("");
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [isBriefing, setIsBriefing] = useState(false);
   const [isStrategizing, setIsStrategizing] = useState(false);
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [activeResult, setActiveResult] = useState<"analysis" | "strategist" | "briefing" | null>(null);
   const [chainEnabled, setChainEnabled] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-
-  const { data: modelsData } = useGetAvailableModels();
-  const availableModels = modelsData?.models ?? ["gemini-2.5-flash", "gemini-2.5-pro"];
 
   const { data: quote } = useGetQuote(
     { symbol, accessToken: accessToken || "" },
@@ -207,44 +201,6 @@ export function AiIntelligenceTab() {
 
   return (
     <div className="flex flex-col gap-4 max-w-5xl mx-auto pb-6">
-
-      {/* ── SETTINGS ROW ── */}
-      <div className="bg-card border border-card-border rounded-xl overflow-hidden">
-        <button
-          onClick={() => setSettingsOpen(s => !s)}
-          className="w-full flex items-center justify-between px-4 py-3 text-xs font-mono text-muted-foreground hover:text-foreground hover:bg-secondary/30 transition-colors"
-        >
-          <span className="flex items-center gap-2">
-            <BrainCircuit className="w-3.5 h-3.5 text-primary" />
-            AI ENGINE — {aiModel.toUpperCase()} | TEMP {aiTemp.toFixed(1)}
-          </span>
-          {settingsOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-        </button>
-        {settingsOpen && (
-          <div className="px-4 pb-4 border-t border-card-border bg-[#0D1117] grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3">
-            <div className="space-y-2">
-              <span className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">Model</span>
-              <Select value={aiModel} onValueChange={setAiModel}>
-                <SelectTrigger className="font-mono text-xs bg-card border-card-border h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-card border-card-border font-mono text-xs">
-                  {availableModels.map(m => (
-                    <SelectItem key={m} value={m}>{m.toUpperCase()}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <span className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">Temperature</span>
-                <span className="font-mono text-[10px] text-primary">{aiTemp.toFixed(1)}</span>
-              </div>
-              <Slider value={[aiTemp]} onValueChange={v => setAiTemp(v[0])} max={2} step={0.1} className="py-1" />
-            </div>
-          </div>
-        )}
-      </div>
 
       {/* ── DAILY MARKET BRIEFING ── */}
       <div className="bg-card border border-card-border rounded-xl overflow-hidden">

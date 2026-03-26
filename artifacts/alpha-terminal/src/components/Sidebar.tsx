@@ -3,8 +3,11 @@ import { AuthPanel } from "./AuthPanel";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Terminal, SlidersHorizontal, X, LayoutDashboard, ListOrdered, Gauge } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Slider } from "@/components/ui/slider";
+import { Terminal, SlidersHorizontal, X, LayoutDashboard, ListOrdered, Gauge, BrainCircuit } from "lucide-react";
 import { useState } from "react";
+import { useGetAvailableModels } from "@workspace/api-client-react";
 
 const OVERLAY_LABELS: Record<string, string> = {
   sma20: "SMA 20",
@@ -24,7 +27,11 @@ export function Sidebar({ onClose }: SidebarProps) {
     macroSymbols, setMacroSymbols,
     tickerTapeSymbols, setTickerTapeSymbols,
     tapeSpeed, setTapeSpeed,
+    aiModel, setAiModel, aiTemp, setAiTemp,
   } = useTerminalStore();
+
+  const { data: modelsData } = useGetAvailableModels();
+  const availableModels = modelsData?.models ?? ["gemini-2.5-flash", "gemini-2.5-pro"];
 
   const [macroInputs, setMacroInputs] = useState<string[]>(macroSymbols);
   const [tapeInput, setTapeInput] = useState(tickerTapeSymbols.join(", "));
@@ -167,6 +174,45 @@ export function Sidebar({ onClose }: SidebarProps) {
           >
             {settingsSaved ? "✓ SAVED" : "APPLY SETTINGS"}
           </Button>
+        </div>
+
+        {/* AI CONFIGURATION */}
+        <div className="space-y-3 pt-1 border-t border-card-border">
+          <Label className="font-mono text-[10px] sm:text-xs text-muted-foreground flex items-center gap-2 pt-3">
+            <BrainCircuit className="w-3 h-3 text-primary" /> AI CONFIGURATION
+          </Label>
+
+          <div className="space-y-1.5">
+            <span className="font-mono text-[9px] text-muted-foreground/70 uppercase tracking-wider">Model</span>
+            <Select value={aiModel} onValueChange={setAiModel}>
+              <SelectTrigger className="font-mono text-[10px] bg-card border-card-border h-8 focus:ring-primary/50">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="bg-card border-card-border font-mono text-[10px]">
+                {availableModels.map(m => (
+                  <SelectItem key={m} value={m} className="text-[10px]">{m.toUpperCase()}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-[9px] text-muted-foreground/70 uppercase tracking-wider">Temperature</span>
+              <span className="font-mono text-[10px] text-primary tabular-nums">{aiTemp.toFixed(1)}</span>
+            </div>
+            <Slider
+              value={[aiTemp]}
+              onValueChange={v => setAiTemp(v[0])}
+              max={2}
+              step={0.1}
+              className="py-1"
+            />
+            <div className="flex justify-between">
+              <span className="font-mono text-[9px] text-muted-foreground/40">Precise</span>
+              <span className="font-mono text-[9px] text-muted-foreground/40">Creative</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
