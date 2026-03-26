@@ -5,6 +5,8 @@ import { TradingChart } from "@/components/TradingChart";
 import { OptionsTab } from "@/components/OptionsTab";
 import { AiIntelligenceTab } from "@/components/AiIntelligenceTab";
 import { MacroBar } from "@/components/MacroBar";
+import { TickerTape } from "@/components/TickerTape";
+import { TickerSearch } from "@/components/TickerSearch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useTerminalStore } from "@/lib/store";
 import { useGetPriceHistory } from "@workspace/api-client-react";
@@ -53,7 +55,7 @@ export default function TerminalPage() {
         <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-primary/5 blur-[120px] rounded-full pointer-events-none" />
 
         {/* Mobile top bar */}
-        <div className="flex items-center lg:hidden h-14 px-4 border-b border-card-border bg-card z-10 shrink-0">
+        <div className="flex items-center lg:hidden h-12 px-4 border-b border-card-border bg-card z-10 shrink-0">
           <button
             onClick={() => setSidebarOpen(true)}
             className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-card-border transition-colors mr-3"
@@ -62,17 +64,25 @@ export default function TerminalPage() {
             <Menu className="w-5 h-5" />
           </button>
           <div className="flex flex-col leading-none">
-            <span className="font-sans font-black text-lg tracking-wider text-foreground">ALPHA</span>
-            <span className="font-sans font-semibold text-[11px] tracking-[0.25em] text-primary">TERMINAL</span>
+            <span className="font-sans font-black text-base tracking-wider text-foreground">ALPHA</span>
+            <span className="font-sans font-semibold text-[10px] tracking-[0.25em] text-primary">TERMINAL</span>
           </div>
-          <span className="ml-auto font-mono text-xs text-muted-foreground uppercase">{symbol}</span>
+          <span className="ml-auto font-mono text-xs text-primary font-bold">{symbol}</span>
         </div>
 
-        {/* Macro Cards — replace ticker tape */}
+        {/* ─── Top strip: Ticker tape scrolling marquee ─── */}
+        <TickerTape />
+
+        {/* ─── Macro Cards ─── */}
         <MacroBar />
+
+        {/* ─── Metrics row ─── */}
         <MetricsBar />
 
-        <div className="flex-1 overflow-auto p-3 sm:p-4 lg:p-6 z-10">
+        {/* ─── Prominent search bar ─── */}
+        <TickerSearch />
+
+        <div className="flex-1 overflow-auto p-3 sm:p-4 lg:p-5 z-10">
           <Tabs defaultValue="chart" className="flex flex-col h-full">
             <div className="overflow-x-auto shrink-0 mb-4">
               <TabsList className="bg-card border border-card-border p-1 inline-flex min-w-max">

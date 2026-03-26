@@ -9,6 +9,33 @@ const router: IRouter = Router();
 
 const SCHWAB_API_BASE = "https://api.schwabapi.com/marketdata/v1";
 
+// Maps user-friendly symbol names → Schwab API format
+const INDEX_SYMBOL_MAP: Record<string, string> = {
+  "VIX":  "$VIX.X",
+  "SPX":  "$SPX.X",
+  "NDX":  "$NDX.X",
+  "RUT":  "$RUT.X",
+  "DJI":  "$DJI.X",
+  "DJIA": "$DJI.X",
+  "COMP": "$COMP.X",
+  "DXY":  "$DXY.X",
+  "TNX":  "$TNX.X",
+  "TYX":  "$TYX.X",
+  "VXN":  "$VXN.X",
+  "OEX":  "$OEX.X",
+  "MNX":  "$MNX.X",
+  "XSP":  "$XSP.X",
+};
+
+function formatSchwabSymbol(symbol: string): string {
+  const upper = symbol.toUpperCase().trim();
+  return INDEX_SYMBOL_MAP[upper] ?? upper;
+}
+
+function isFutures(symbol: string): boolean {
+  return symbol.trim().startsWith("/");
+}
+
 const PERIOD_MAP: Record<string, { periodType: string; period: number; frequencyType: string; frequency: number }> = {
   "1D":  { periodType: "day",   period: 1,  frequencyType: "minute",  frequency: 5 },
   "5D":  { periodType: "day",   period: 5,  frequencyType: "minute",  frequency: 15 },
@@ -28,33 +55,44 @@ router.get("/quote", async (req, res) => {
     return res.status(400).json({ symbol: "", error: "symbol and accessToken are required" });
   }
 
+  const displaySymbol = symbol.toUpperCase().trim();
+
+  // Futures are not supported via this endpoint — fail gracefully
+  if (isFutures(displaySymbol)) {
+    const data = GetQuoteResponse.parse({ symbol: displaySymbol, error: "futures_not_supported" });
+    return res.json(data);
+  }
+
+  const apiSymbol = formatSchwabSymbol(displaySymbol);
+
   try {
-    const response = await fetch(`${SCHWAB_API_BASE}/quotes?symbols=${symbol.toUpperCase()}&fields=quote,fundamental`, {
+    const response = await fetch(`${SCHWAB_API_BASE}/quotes?symbols=${encodeURIComponent(apiSymbol)}&fields=quote,fundamental`, {
       headers: { "Authorization": `Bearer ${accessToken}` },
     });
 
     if (response.status === 401) {
-      const data = GetQuoteResponse.parse({ symbol: symbol.toUpperCase(), error: "unauthorized" });
+      const data = GetQuoteResponse.parse({ symbol: displaySymbol, error: "unauthorized" });
       return res.json(data);
     }
 
     if (!response.ok) {
-      const data = GetQuoteResponse.parse({ symbol: symbol.toUpperCase(), error: `api_error_${response.status}` });
+      const data = GetQuoteResponse.parse({ symbol: displaySymbol, error: `api_error_${response.status}` });
       return res.json(data);
     }
 
     const json = await response.json() as Record<string, unknown>;
-    const entry = json[symbol.toUpperCase()] as Record<string, unknown> | undefined;
+    // Schwab returns data keyed by the formatted symbol (e.g. "$VIX.X")
+    const entry = (json[apiSymbol] ?? json[displaySymbol]) as Record<string, unknown> | undefined;
     const quote = entry?.["quote"] as Record<string, unknown> | undefined;
     const fundamental = entry?.["fundamental"] as Record<string, unknown> | undefined;
 
     if (!quote) {
-      const data = GetQuoteResponse.parse({ symbol: symbol.toUpperCase(), error: "no_data" });
+      const data = GetQuoteResponse.parse({ symbol: displaySymbol, error: "no_data" });
       return res.json(data);
     }
 
     const data = GetQuoteResponse.parse({
-      symbol: symbol.toUpperCase(),
+      symbol: displaySymbol,
       last: (quote["lastPrice"] as number) ?? undefined,
       bid: (quote["bidPrice"] as number) ?? undefined,
       ask: (quote["askPrice"] as number) ?? undefined,
@@ -71,7 +109,7 @@ router.get("/quote", async (req, res) => {
     res.json(data);
   } catch (err) {
     req.log.error({ err }, "Quote fetch error");
-    const data = GetQuoteResponse.parse({ symbol: symbol.toUpperCase(), error: "internal_error" });
+    const data = GetQuoteResponse.parse({ symbol: displaySymbol, error: "internal_error" });
     res.json(data);
   }
 });
@@ -85,11 +123,19 @@ router.get("/history", async (req, res) => {
     return res.json({ symbol: "", candles: [], error: "symbol and accessToken are required" });
   }
 
+  const displaySymbol = symbol.toUpperCase().trim();
+
+  // Futures are not supported via this endpoint — fail gracefully
+  if (isFutures(displaySymbol)) {
+    return res.json({ symbol: displaySymbol, candles: [], error: "futures_not_supported" });
+  }
+
+  const apiSymbol = formatSchwabSymbol(displaySymbol);
   const periodConfig = PERIOD_MAP[timeframe] ?? PERIOD_MAP["3M"];
 
   try {
     const params = new URLSearchParams({
-      symbol: symbol.toUpperCase(),
+      symbol: apiSymbol,
       periodType: periodConfig.periodType,
       period: String(periodConfig.period),
       frequencyType: periodConfig.frequencyType,
@@ -102,11 +148,11 @@ router.get("/history", async (req, res) => {
     });
 
     if (response.status === 401) {
-      return res.json({ symbol: symbol.toUpperCase(), candles: [], error: "unauthorized" });
+      return res.json({ symbol: displaySymbol, candles: [], error: "unauthorized" });
     }
 
     if (!response.ok) {
-      return res.json({ symbol: symbol.toUpperCase(), candles: [], error: `api_error_${response.status}` });
+      return res.json({ symbol: displaySymbol, candles: [], error: `api_error_${response.status}` });
     }
 
     const json = await response.json() as { candles?: Array<Record<string, unknown>> };
@@ -121,11 +167,11 @@ router.get("/history", async (req, res) => {
       volume: c["volume"] as number,
     }));
 
-    const data = GetPriceHistoryResponse.parse({ symbol: symbol.toUpperCase(), candles });
+    const data = GetPriceHistoryResponse.parse({ symbol: displaySymbol, candles });
     res.json(data);
   } catch (err) {
     req.log.error({ err }, "Price history fetch error");
-    res.json({ symbol: symbol.toUpperCase(), candles: [], error: "internal_error" });
+    res.json({ symbol: displaySymbol, candles: [], error: "internal_error" });
   }
 });
 
@@ -139,9 +185,17 @@ router.get("/options", async (req, res) => {
     return res.json({ symbol: "", calls: [], puts: [], error: "symbol and accessToken are required" });
   }
 
+  const displaySymbol = symbol.toUpperCase().trim();
+
+  if (isFutures(displaySymbol)) {
+    return res.json({ symbol: displaySymbol, calls: [], puts: [], error: "futures_not_supported" });
+  }
+
+  const apiSymbol = formatSchwabSymbol(displaySymbol);
+
   try {
     const params = new URLSearchParams({
-      symbol: symbol.toUpperCase(),
+      symbol: apiSymbol,
       contractType,
       daysToExpiration: String(daysToExpiration),
       range: "NTM",
@@ -152,11 +206,11 @@ router.get("/options", async (req, res) => {
     });
 
     if (response.status === 401) {
-      return res.json({ symbol: symbol.toUpperCase(), calls: [], puts: [], error: "unauthorized" });
+      return res.json({ symbol: displaySymbol, calls: [], puts: [], error: "unauthorized" });
     }
 
     if (!response.ok) {
-      return res.json({ symbol: symbol.toUpperCase(), calls: [], puts: [], error: `api_error_${response.status}` });
+      return res.json({ symbol: displaySymbol, calls: [], puts: [], error: `api_error_${response.status}` });
     }
 
     const json = await response.json() as Record<string, unknown>;
@@ -204,11 +258,11 @@ router.get("/options", async (req, res) => {
     const calls = parseContracts(callMap);
     const puts = parseContracts(putMap);
 
-    const data = GetOptionChainResponse.parse({ symbol: symbol.toUpperCase(), underlyingPrice, calls, puts });
+    const data = GetOptionChainResponse.parse({ symbol: displaySymbol, underlyingPrice, calls, puts });
     res.json(data);
   } catch (err) {
     req.log.error({ err }, "Options chain fetch error");
-    res.json({ symbol: symbol.toUpperCase(), calls: [], puts: [], error: "internal_error" });
+    res.json({ symbol: displaySymbol, calls: [], puts: [], error: "internal_error" });
   }
 });
 

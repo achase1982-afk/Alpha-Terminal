@@ -35,9 +35,13 @@ interface TerminalState {
   aiTemp: number;
   setAiTemp: (t: number) => void;
   
-  // Ticker Tape
+  // Ticker Tape (scrolling marquee)
   tickerTapeSymbols: string[];
   setTickerTapeSymbols: (symbols: string[]) => void;
+
+  // Macro Cards (user-configurable)
+  macroSymbols: string[];
+  setMacroSymbols: (symbols: string[]) => void;
 
   // AI Results (shared across tabs)
   analysisResult: string | null;
@@ -87,8 +91,12 @@ export const useTerminalStore = create<TerminalState>()(
       setAiTemp: (aiTemp) => set({ aiTemp }),
 
       // Ticker Tape
-      tickerTapeSymbols: ['SPY', 'QQQ', 'IWM', 'DIA', 'VIX'],
+      tickerTapeSymbols: ['SPY', 'QQQ', 'IWM', 'DIA', 'VIX', 'TSLA', 'NVDA', 'AAPL', 'META', 'MSFT', 'AMZN', 'GOOGL'],
       setTickerTapeSymbols: (tickerTapeSymbols) => set({ tickerTapeSymbols }),
+
+      // Macro Cards
+      macroSymbols: ['SPY', 'QQQ', 'IWM', 'VIX'],
+      setMacroSymbols: (macroSymbols) => set({ macroSymbols }),
 
       // AI Results
       analysisResult: null,
