@@ -1,0 +1,625 @@
+# “””
+main.py – AI-Powered Trading Terminal
+
+A professional-grade Streamlit dashboard integrating:
+
+- Schwab API for real-time market data and options chains
+- Google Gemini AI for technical analysis and pattern recognition
+- Plotly for interactive candlestick charting
+
+Run:  streamlit run main.py
+“””
+
+import os
+import time
+import streamlit as st
+import pandas as pd
+
+# Local modules
+
+from styles import inject_css
+from schwab_auth import (
+credentials_configured,
+get_auth_url,
+extract_code_from_url,
+exchange_code_for_tokens,
+get_valid_access_token,
+)
+from schwab_data import (
+get_quote,
+get_price_history,
+get_option_chain,
+parse_option_chain,
+PERIOD_MAP,
+)
+from chart_builder import build_candlestick_chart
+from ai_engine import (
+get_available_models,
+run_technical_analysis,
+run_options_analysis,
+run_custom_query,
+_format_quote_for_prompt,
+_format_candles_for_prompt,
+)
+
+# =========================================================================
+
+# PAGE CONFIG (must be the very first Streamlit call)
+
+# =========================================================================
+
+st.set_page_config(
+page_title=“AI Trading Terminal”,
+page_icon=””,
+layout=“wide”,
+initial_sidebar_state=“expanded”,
+)
+inject_css()
+
+# =========================================================================
+
+# SESSION STATE INITIALIZATION
+
+# =========================================================================
+
+DEFAULTS = {
+“schwab_tokens”: None,
+“current_symbol”: “AAPL”,
+“timeframe”: “3M”,
+“quote_data”: None,
+“candles_df”: None,
+“chain_data”: None,
+“ai_response”: “”,
+“ai_history”: [],
+“gemini_model”: “gemini-2.0-flash”,
+“gemini_temp”: 0.3,
+}
+for key, val in DEFAULTS.items():
+if key not in st.session_state:
+st.session_state[key] = val
+
+# =========================================================================
+
+# SIDEBAR
+
+# =========================================================================
+
+with st.sidebar:
+# – Logo / branding
+st.markdown(
+‘<div class="terminal-header">’
+‘ALPHA TERMINAL’
+‘<span>AI-Powered Market Intelligence</span>’
+‘</div>’,
+unsafe_allow_html=True,
+)
+
+```
+# -- Connection status
+token = get_valid_access_token()
+if token:
+    st.markdown(
+        '<div class="status-connected">'
+        '<span class="pulse">&#9679;</span> SCHWAB CONNECTED'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+else:
+    st.markdown(
+        '<div class="status-disconnected">'
+        '&#9679; SCHWAB DISCONNECTED'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+gemini_ok = bool(os.environ.get("GEMINI_API_KEY"))
+if gemini_ok:
+    st.markdown(
+        '<div class="status-connected">'
+        '<span class="pulse">&#9679;</span> GEMINI AI READY'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+else:
+    st.markdown(
+        '<div class="status-disconnected">'
+        '&#9679; GEMINI NOT CONFIGURED'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+st.divider()
+
+# ---- Ticker & Timeframe ----
+st.markdown("### INSTRUMENT")
+col_sym, col_btn = st.columns([3, 1])
+with col_sym:
+    symbol_input = st.text_input(
+        "Ticker",
+        value=st.session_state["current_symbol"],
+        label_visibility="collapsed",
+        placeholder="AAPL",
+    )
+with col_btn:
+    load_pressed = st.button("GO", use_container_width=True)
+
+timeframe = st.select_slider(
+    "Timeframe",
+    options=list(PERIOD_MAP.keys()),
+    value=st.session_state["timeframe"],
+)
+st.session_state["timeframe"] = timeframe
+
+st.divider()
+
+# ---- Chart Options ----
+st.markdown("### CHART OVERLAYS")
+show_sma = st.checkbox("SMA (20 / 50)", value=True)
+show_bb = st.checkbox("Bollinger Bands", value=False)
+show_rsi = st.checkbox("RSI (14)", value=False)
+show_volume = st.checkbox("Volume", value=True)
+
+st.divider()
+
+# ---- AI Configuration ----
+st.markdown("### AI ENGINE")
+gemini_model = st.selectbox(
+    "Model",
+    options=get_available_models(),
+    index=0,
+)
+st.session_state["gemini_model"] = gemini_model
+
+gemini_temp = st.slider(
+    "Temperature",
+    min_value=0.0,
+    max_value=1.0,
+    value=st.session_state["gemini_temp"],
+    step=0.05,
+    help="Lower = more precise & deterministic. Higher = more creative.",
+)
+st.session_state["gemini_temp"] = gemini_temp
+
+st.divider()
+
+# ---- Auth Section ----
+with st.expander("SCHWAB AUTHENTICATION", expanded=not bool(token)):
+    if not credentials_configured():
+        st.warning(
+            "Set SCHWAB_APP_KEY, SCHWAB_APP_SECRET, and "
+            "SCHWAB_REDIRECT_URI in Replit Secrets."
+        )
+    else:
+        if not token:
+            st.markdown("**Step 1:** Click below to open the Schwab login page.")
+            auth_url = get_auth_url()
+            st.markdown(f"[Open Schwab Login]({auth_url})")
+            st.markdown("**Step 2:** After login, paste the full redirect URL here:")
+            redirect_input = st.text_input(
+                "Redirect URL",
+                placeholder="https://127.0.0.1?code=...",
+                label_visibility="collapsed",
+            )
+            if st.button("Authenticate"):
+                code = extract_code_from_url(redirect_input)
+                if code:
+                    tokens = exchange_code_for_tokens(code)
+                    if tokens:
+                        st.session_state["schwab_tokens"] = tokens
+                        st.success("Authenticated successfully!")
+                        st.rerun()
+                    else:
+                        st.error("Token exchange failed. Check your credentials.")
+                else:
+                    st.error("Could not extract auth code from the URL.")
+        else:
+            st.success("Authenticated. Token will auto-refresh.")
+            if st.button("Logout"):
+                st.session_state["schwab_tokens"] = None
+                st.rerun()
+```
+
+# =========================================================================
+
+# DATA LOADING
+
+# =========================================================================
+
+def load_market_data(symbol: str, tf: str):
+“”“Fetch quote + candles and store in session state.”””
+access_token = get_valid_access_token()
+if not access_token:
+st.session_state[“quote_data”] = None
+st.session_state[“candles_df”] = None
+return
+
+```
+with st.spinner(f"Loading {symbol.upper()}..."):
+    st.session_state["quote_data"] = get_quote(symbol, access_token)
+    st.session_state["candles_df"] = get_price_history(symbol, access_token, tf)
+    st.session_state["current_symbol"] = symbol.upper()
+```
+
+# Trigger data load on button press or symbol change
+
+if load_pressed or (symbol_input.upper() != st.session_state[“current_symbol”]):
+load_market_data(symbol_input, timeframe)
+
+# =========================================================================
+
+# MAIN CONTENT AREA
+
+# =========================================================================
+
+quote = st.session_state.get(“quote_data”)
+candles = st.session_state.get(“candles_df”)
+symbol = st.session_state[“current_symbol”]
+
+# – Auth guard
+
+if not get_valid_access_token():
+st.markdown(”—”)
+st.markdown(
+“””
+<div style="text-align:center; padding:80px 20px;">
+<div style="font-family:'JetBrains Mono',monospace; font-size:3rem;
+color:#00D4AA; font-weight:700; margin-bottom:12px;">
+ALPHA TERMINAL
+</div>
+<div style="font-family:'Space Grotesk',sans-serif; font-size:1.1rem;
+color:#8B949E; max-width:520px; margin:0 auto 32px;">
+AI-powered market intelligence. Connect your Schwab account
+to begin, or configure your API keys in Replit Secrets.
+</div>
+<div style="font-family:'JetBrains Mono',monospace; font-size:0.75rem;
+color:#6E7681; margin-top:40px;">
+REQUIRED SECRETS:<br>
+SCHWAB_APP_KEY · SCHWAB_APP_SECRET ·
+SCHWAB_REDIRECT_URI · GEMINI_API_KEY
+</div>
+</div>
+“””,
+unsafe_allow_html=True,
+)
+st.stop()
+
+# =========================================================================
+
+# TOP BAR – Key Metrics
+
+# =========================================================================
+
+if quote and “_error” not in quote:
+m1, m2, m3, m4, m5, m6 = st.columns(6)
+
+```
+change = quote.get("change") or 0
+change_pct = quote.get("change_pct") or 0
+
+m1.metric(
+    label=quote.get("symbol", symbol),
+    value=f"${quote['last']:.2f}" if quote.get("last") else "N/A",
+    delta=f"{change:+.2f} ({change_pct:+.2f}%)" if change else None,
+)
+m2.metric("BID / ASK",
+          f"${quote.get('bid', 0):.2f} / ${quote.get('ask', 0):.2f}")
+m3.metric("VOLUME",
+          f"{quote.get('volume', 0):,.0f}" if quote.get("volume") else "N/A")
+m4.metric("DAY RANGE",
+          f"${quote.get('low', 0):.2f} - ${quote.get('high', 0):.2f}")
+m5.metric("52W RANGE",
+          f"${quote.get('52w_low', 0):.2f} - ${quote.get('52w_high', 0):.2f}")
+m6.metric("P/E",
+          f"{quote.get('pe_ratio', 'N/A')}")
+
+st.markdown("")  # spacer
+```
+
+elif quote and “_error” in quote:
+if quote[”_error”] == “unauthorized”:
+st.error(“Session expired. Please re-authenticate via the sidebar.”)
+else:
+st.error(f”Data error: {quote.get(’_msg’, ‘Unknown error’)}”)
+else:
+st.info(f”Enter a ticker symbol and press GO to load data.”)
+
+# =========================================================================
+
+# HELPER – simple markdown-to-HTML (avoids injection, keeps formatting)
+
+# =========================================================================
+
+def _markdown_to_html(text: str) -> str:
+“””
+Minimal markdown-to-HTML conversion for the AI response box.
+Handles headers, bold, code, and line breaks.
+“””
+import re
+text = text.replace(”&”, “&”).replace(”<”, “<”).replace(”>”, “>”)
+text = re.sub(r’^### (.+)$’, r’<h3>\1</h3>’, text, flags=re.MULTILINE)
+text = re.sub(r’^## (.+)$’, r’<h2>\1</h2>’, text, flags=re.MULTILINE)
+text = re.sub(r’^# (.+)$’, r’<h1>\1</h1>’, text, flags=re.MULTILINE)
+text = re.sub(r’**(.+?)**’, r’<strong>\1</strong>’, text)
+text = re.sub(r’`(.+?)`’, r’<code>\1</code>’, text)
+text = text.replace(”\n”, “<br>”)
+return text
+
+# =========================================================================
+
+# TABBED CONTENT
+
+# =========================================================================
+
+tab_chart, tab_options, tab_ai, tab_chat = st.tabs([
+“CHART”,
+“OPTIONS”,
+“AI ANALYSIS”,
+“AI CHAT”,
+])
+
+# –– TAB: CHART ––
+
+with tab_chart:
+fig = build_candlestick_chart(
+df=candles,
+symbol=symbol,
+show_volume=show_volume,
+show_sma=show_sma,
+show_bb=show_bb,
+show_rsi=show_rsi,
+height=620,
+)
+st.plotly_chart(fig, use_container_width=True, config={
+“displayModeBar”: True,
+“modeBarButtonsToRemove”: [“lasso2d”, “select2d”],
+“displaylogo”: False,
+})
+
+```
+# Quick stats below chart
+if candles is not None and not candles.empty:
+    sc1, sc2, sc3, sc4 = st.columns(4)
+    sc1.metric("Period High", f"${candles['High'].max():.2f}")
+    sc2.metric("Period Low", f"${candles['Low'].min():.2f}")
+    sc3.metric("Avg Volume", f"{int(candles['Volume'].mean()):,}")
+    last_close = candles["Close"].iloc[-1]
+    first_close = candles["Close"].iloc[0]
+    period_return = ((last_close - first_close) / first_close) * 100
+    sc4.metric("Period Return", f"{period_return:+.2f}%")
+```
+
+# –– TAB: OPTIONS ––
+
+with tab_options:
+oc1, oc2 = st.columns([1, 1])
+with oc1:
+contract_type = st.selectbox(“Contract Type”, [“ALL”, “CALL”, “PUT”])
+with oc2:
+dte = st.number_input(“Max DTE”, min_value=1, max_value=365, value=30, step=7)
+
+```
+if st.button("Load Option Chain", use_container_width=True):
+    access_token = get_valid_access_token()
+    if access_token:
+        with st.spinner("Fetching options data..."):
+            chain = get_option_chain(
+                symbol, access_token,
+                contract_type=contract_type,
+                days_to_expiration=dte,
+            )
+            if chain and "_error" not in chain:
+                st.session_state["chain_data"] = chain
+            elif chain and chain.get("_error") == "unauthorized":
+                st.error("Session expired. Re-authenticate in the sidebar.")
+            else:
+                st.warning("No option chain data returned.")
+    else:
+        st.error("Not authenticated. Connect Schwab in the sidebar.")
+
+chain = st.session_state.get("chain_data")
+if chain and "_error" not in (chain or {}):
+    underlying_price = chain.get("underlyingPrice", "N/A")
+    st.markdown(f"**Underlying:** ${underlying_price}")
+
+    calls_tab, puts_tab = st.tabs(["CALLS", "PUTS"])
+    with calls_tab:
+        calls_df = parse_option_chain(chain, side="call")
+        if not calls_df.empty:
+            # Highlight high Vol/OI
+            st.dataframe(
+                calls_df.style.format({
+                    "strike": "${:.1f}",
+                    "bid": "${:.2f}",
+                    "ask": "${:.2f}",
+                    "last": "${:.2f}",
+                    "iv": "{:.1f}%",
+                    "delta": "{:.3f}",
+                    "gamma": "{:.4f}",
+                    "theta": "{:.4f}",
+                    "vega": "{:.4f}",
+                }),
+                use_container_width=True,
+                height=400,
+            )
+        else:
+            st.info("No call data for this configuration.")
+
+    with puts_tab:
+        puts_df = parse_option_chain(chain, side="put")
+        if not puts_df.empty:
+            st.dataframe(
+                puts_df.style.format({
+                    "strike": "${:.1f}",
+                    "bid": "${:.2f}",
+                    "ask": "${:.2f}",
+                    "last": "${:.2f}",
+                    "iv": "{:.1f}%",
+                    "delta": "{:.3f}",
+                    "gamma": "{:.4f}",
+                    "theta": "{:.4f}",
+                    "vega": "{:.4f}",
+                }),
+                use_container_width=True,
+                height=400,
+            )
+        else:
+            st.info("No put data for this configuration.")
+else:
+    st.info("Click **Load Option Chain** to fetch data.")
+```
+
+# –– TAB: AI ANALYSIS ––
+
+with tab_ai:
+st.markdown(”#### AI Technical Analysis”)
+st.markdown(
+f”<span style='color:#8B949E;font-size:0.8rem;'>”
+f”Model: {st.session_state[‘gemini_model’]}  |  “
+f”Temp: {st.session_state[‘gemini_temp’]}  |  “
+f”Symbol: {symbol}</span>”,
+unsafe_allow_html=True,
+)
+
+```
+custom_prompt = st.text_input(
+    "Additional context for the AI (optional)",
+    placeholder="e.g., Focus on earnings setup, I'm looking at a bull put spread...",
+)
+
+ac1, ac2 = st.columns(2)
+with ac1:
+    run_ta = st.button("Run Technical Analysis", use_container_width=True)
+with ac2:
+    run_opts = st.button(
+        "Run Options Analysis",
+        use_container_width=True,
+        disabled=not st.session_state.get("chain_data"),
+    )
+
+if run_ta:
+    if not quote:
+        st.warning("Load market data first (enter a ticker and press GO).")
+    elif not os.environ.get("GEMINI_API_KEY"):
+        st.error("Add GEMINI_API_KEY to your Replit Secrets.")
+    else:
+        with st.spinner("Gemini is analyzing the data..."):
+            response = run_technical_analysis(
+                quote=quote,
+                candles_df=candles,
+                model_name=st.session_state["gemini_model"],
+                temperature=st.session_state["gemini_temp"],
+                custom_prompt=custom_prompt,
+            )
+            st.session_state["ai_response"] = response
+
+if run_opts:
+    chain = st.session_state.get("chain_data")
+    if not chain:
+        st.warning("Load the option chain first (Options tab).")
+    elif not os.environ.get("GEMINI_API_KEY"):
+        st.error("Add GEMINI_API_KEY to your Replit Secrets.")
+    else:
+        with st.spinner("Gemini is analyzing options flow..."):
+            response = run_options_analysis(
+                quote=quote,
+                chain_data=chain,
+                model_name=st.session_state["gemini_model"],
+                temperature=st.session_state["gemini_temp"],
+                custom_prompt=custom_prompt,
+            )
+            st.session_state["ai_response"] = response
+
+# Display AI response
+if st.session_state.get("ai_response"):
+    st.markdown(
+        f'<div class="ai-response-box">{_markdown_to_html(st.session_state["ai_response"])}</div>',
+        unsafe_allow_html=True,
+    )
+```
+
+# –– TAB: AI CHAT ––
+
+with tab_chat:
+st.markdown(”#### Ask the AI Analyst”)
+st.markdown(
+“<span style='color:#8B949E;font-size:0.8rem;'>”
+“Free-form Q&A with market data context attached automatically.”
+“</span>”,
+unsafe_allow_html=True,
+)
+
+```
+# Chat history display
+for msg in st.session_state.get("ai_history", []):
+    role_color = "#00D4AA" if msg["role"] == "assistant" else "#58A6FF"
+    role_label = "AI ANALYST" if msg["role"] == "assistant" else "YOU"
+    st.markdown(
+        f'<div style="margin:8px 0;padding:12px 16px;background:#161B22;'
+        f'border-radius:8px;border-left:3px solid {role_color};">'
+        f'<span style="color:{role_color};font-family:JetBrains Mono,monospace;'
+        f'font-size:0.7rem;font-weight:600;">{role_label}</span><br>'
+        f'<span style="color:#C9D1D9;">{msg["content"]}</span></div>',
+        unsafe_allow_html=True,
+    )
+
+# Input
+user_question = st.text_area(
+    "Your question",
+    placeholder="What's the risk/reward on a bull put spread at the 200 strike?",
+    label_visibility="collapsed",
+    height=80,
+)
+
+if st.button("Send to AI", use_container_width=True):
+    if not user_question.strip():
+        st.warning("Type a question first.")
+    elif not os.environ.get("GEMINI_API_KEY"):
+        st.error("Add GEMINI_API_KEY to your Replit Secrets.")
+    else:
+        # Build context from available data
+        context_parts = []
+        if quote:
+            context_parts.append(_format_quote_for_prompt(quote))
+        if candles is not None and not candles.empty:
+            context_parts.append(_format_candles_for_prompt(candles))
+        context = "\n\n".join(context_parts) if context_parts else "No market data loaded."
+
+        st.session_state["ai_history"].append({
+            "role": "user",
+            "content": user_question,
+        })
+
+        with st.spinner("Thinking..."):
+            response = run_custom_query(
+                market_context=context,
+                user_question=user_question,
+                model_name=st.session_state["gemini_model"],
+                temperature=st.session_state["gemini_temp"],
+            )
+            st.session_state["ai_history"].append({
+                "role": "assistant",
+                "content": response,
+            })
+            st.rerun()
+
+if st.session_state.get("ai_history"):
+    if st.button("Clear Chat", type="secondary"):
+        st.session_state["ai_history"] = []
+        st.rerun()
+```
+
+# =========================================================================
+
+# FOOTER
+
+# =========================================================================
+
+st.markdown(”—”)
+st.markdown(
+“<div style='text-align:center;color:#6E7681;font-size:0.7rem;"
+"font-family:JetBrains Mono,monospace;padding:8px 0;'>”
+“ALPHA TERMINAL v1.0 · Schwab API + Gemini AI · “
+“Not financial advice · For educational use only”
+“</div>”,
+unsafe_allow_html=True,
+)
