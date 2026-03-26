@@ -18,6 +18,9 @@
       /* All numeric readouts: thin (300) for a sleek TOS look */
       .font-mono {
         font-weight: 300 !important;
+        /* Disable slashed zeros — monospace fonts (Consolas, Cascadia) enable them by default */
+        font-variant-numeric: normal !important;
+        font-feature-settings: 'zero' 0 !important;
       }
       /* Macro card ticker labels stay bold — intentional hierarchy */
       .macro-symbol-label {
