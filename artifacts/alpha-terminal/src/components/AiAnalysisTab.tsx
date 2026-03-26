@@ -48,7 +48,7 @@ export function AiAnalysisTab() {
   const isPending = taMutation.isPending || oaMutation.isPending;
 
   return (
-    <div className="flex flex-col h-full gap-6 max-w-5xl mx-auto">
+    <div className="flex flex-col gap-6 max-w-5xl mx-auto pb-6">
       
       <div className="flex flex-wrap gap-4 items-start bg-card p-6 rounded-xl border border-card-border relative overflow-hidden">
         <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none">
@@ -94,16 +94,16 @@ export function AiAnalysisTab() {
         </div>
       </div>
 
-      <div className="flex-1 terminal-panel p-6 overflow-y-auto bg-[#0D1117]">
+      <div className="terminal-panel p-6 bg-[#0D1117] min-h-[300px]">
         {isPending && (
-          <div className="flex flex-col items-center justify-center h-full space-y-6 opacity-70">
+          <div className="flex flex-col items-center justify-center py-20 space-y-6 opacity-70">
             <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
             <p className="font-mono text-primary animate-pulse tracking-widest text-sm">PROCESSING NEURAL ANALYSIS...</p>
           </div>
         )}
 
         {!isPending && !response && (
-          <div className="flex flex-col items-center justify-center h-full text-muted-foreground font-mono opacity-50">
+          <div className="flex flex-col items-center justify-center py-20 text-muted-foreground font-mono opacity-50">
             <Cpu className="w-16 h-16 mb-4" />
             <p>AWAITING INSTRUCTIONS</p>
           </div>

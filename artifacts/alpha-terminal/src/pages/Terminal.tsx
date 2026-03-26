@@ -110,7 +110,7 @@ export default function TerminalPage() {
               <TabsContent value="analysis" className="h-full m-0 overflow-auto focus-visible:outline-none">
                 <AiAnalysisTab />
               </TabsContent>
-              <TabsContent value="chat" className="h-full m-0 overflow-auto focus-visible:outline-none">
+              <TabsContent value="chat" className="h-full m-0 overflow-hidden focus-visible:outline-none">
                 <AiChatTab />
               </TabsContent>
             </div>
