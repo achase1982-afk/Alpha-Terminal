@@ -69,12 +69,17 @@ export function MetricsBar() {
 
   const priceColor = isDown ? DOWN_COLOR : isUp ? UP_COLOR : FLAT_COLOR;
 
-  // ThinkorSwim format: "$582.56  -5.26  (-0.89%)"
+  // ThinkorSwim format: "$582.56  -$5.26  (-0.89%)"
   const lastStr = quote.last != null ? `$${fmtPrice(quote.last)}` : "—";
 
-  // Dollar change — show sign explicitly; "—" when no data yet
+  // Dollar change — dollar sign always present, sign prefix explicit
+  // Positive: "+$5.26"  Negative: "-$5.26"  Flat: "$0.00"  No data: "—"
   const changeStr = rawChange !== null
-    ? (isUp ? `+${fmtPrice(rawChange)}` : isFlat ? "0.00" : fmtPrice(rawChange))
+    ? isUp
+      ? `+$${fmtPrice(rawChange)}`
+      : isFlat
+        ? "$0.00"
+        : `-$${fmtPrice(Math.abs(rawChange))}`
     : "—";
 
   // Percent change — always use the raw value's sign; "—" when no data
