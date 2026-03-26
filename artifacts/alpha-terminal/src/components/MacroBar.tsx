@@ -8,14 +8,11 @@ const INDEX_SYMS   = new Set(["VIX", "SPX", "NDX", "RUT", "DJI", "COMP", "DXY", 
 const UP_COLOR   = "#00E676";
 const DOWN_COLOR = "#FF1744";
 const FLAT_COLOR = "#6B7280";
-
-// Institutional blue — must match --primary in index.css
 const ACTIVE_GLOW = "rgba(0, 166, 255, 0.15)";
 
 function formatPct(pct: number | null | undefined, isUp: boolean): string {
   if (pct == null) return "—%";
-  const sign = isUp ? "+" : "";
-  return `${sign}${pct.toFixed(2)}%`;
+  return `${isUp ? "+" : ""}${pct.toFixed(2)}%`;
 }
 
 function MacroCard({ symbol }: { symbol: string }) {
@@ -25,7 +22,6 @@ function MacroCard({ symbol }: { symbol: string }) {
   const isActive = activeSymbol === symbol;
   const change   = data?.change ?? null;
 
-  // Strict three-way: up / down / flat
   const isUp   = change !== null && change > 0;
   const isDown = change !== null && change < 0;
   const isFlat = !isUp && !isDown;
@@ -33,7 +29,6 @@ function MacroCard({ symbol }: { symbol: string }) {
   const isFear  = FEAR_SYMBOLS.has(symbol.toUpperCase());
   const isIndex = INDEX_SYMS.has(symbol.toUpperCase());
 
-  // Fear symbols invert color semantics (VIX up = danger = red)
   let priceColor: string;
   if (isFlat || change === null) {
     priceColor = FLAT_COLOR;
@@ -44,16 +39,16 @@ function MacroCard({ symbol }: { symbol: string }) {
   }
 
   const ChgIcon = isUp
-    ? <TrendingUp  className="w-2.5 h-2.5 shrink-0" />
+    ? <TrendingUp  className="w-3 h-3 shrink-0" />
     : isDown
-      ? <TrendingDown className="w-2.5 h-2.5 shrink-0" />
-      : <Minus className="w-2.5 h-2.5 shrink-0" />;
+      ? <TrendingDown className="w-3 h-3 shrink-0" />
+      : <Minus className="w-3 h-3 shrink-0" />;
 
   return (
     <button
       onClick={() => setSymbol(symbol)}
       className={`
-        flex-1 flex flex-col items-center justify-center gap-0.5 py-2 px-1 rounded-lg border min-w-0
+        flex-1 flex flex-col items-center justify-center gap-1 py-2.5 px-2 rounded-lg border min-w-0
         transition-all duration-200 group cursor-pointer
         ${isActive
           ? "border-primary/60 bg-primary/10"
@@ -61,37 +56,41 @@ function MacroCard({ symbol }: { symbol: string }) {
       `}
       style={isActive ? { boxShadow: `0 0 12px ${ACTIVE_GLOW}` } : undefined}
     >
-      {/* Symbol label */}
-      <span className={`
-        font-mono text-[9px] sm:text-[10px] font-bold tracking-widest truncate w-full text-center transition-colors
-        ${isActive ? "text-primary" : "text-gray-400 group-hover:text-gray-200"}
-      `}>
+      {/* Symbol — 1.1rem, 700, white; blue when active */}
+      <span
+        style={{
+          fontSize: '1.1rem',
+          fontWeight: 700,
+          color: isActive ? 'var(--color-primary, #00A6FF)' : '#FFFFFF',
+          letterSpacing: '0.04em',
+          lineHeight: 1,
+        }}
+        className="truncate w-full text-center transition-colors"
+      >
         {symbol}
       </span>
 
       {!accessToken || (isLoading && !data) ? (
-        <span className="font-mono text-sm font-bold text-gray-700">—</span>
+        <span style={{ color: '#374151', fontSize: '0.85rem', fontWeight: 400 }}>—</span>
       ) : (
         <>
-          {/* Last price */}
+          {/* Price — mono, normal weight */}
           <span
-            className="font-mono text-sm sm:text-base font-black tabular-nums"
-            style={{ color: priceColor }}
+            className="font-mono tabular-nums"
+            style={{ color: priceColor, fontSize: '0.9rem', fontWeight: 500 }}
           >
             {data?.last != null
               ? (isIndex ? data.last.toFixed(2) : `$${data.last.toFixed(2)}`)
               : "—"}
           </span>
 
-          {/* Change % row */}
+          {/* Change % — mono, normal weight (400) for clean contrast */}
           <span
-            className="font-mono text-[9px] sm:text-[10px] flex items-center gap-0.5 tabular-nums"
-            style={{ color: priceColor }}
+            className="font-mono tabular-nums flex items-center gap-0.5"
+            style={{ color: priceColor, fontSize: '0.72rem', fontWeight: 400 }}
           >
             {ChgIcon}
-            {data?.changePct != null
-              ? formatPct(data.changePct, isUp)
-              : "—%"}
+            {data?.changePct != null ? formatPct(data.changePct, isUp) : "—%"}
           </span>
         </>
       )}
@@ -102,7 +101,7 @@ function MacroCard({ symbol }: { symbol: string }) {
 export function MacroBar() {
   const { macroSymbols } = useTerminalStore();
   return (
-    <div className="flex items-stretch gap-1.5 sm:gap-2 px-3 py-2 border-b border-card-border bg-[#0D1117]/90 shrink-0">
+    <div className="flex items-stretch gap-2 px-3 py-2 border-b border-card-border bg-[#0D1117]/90 shrink-0">
       {macroSymbols.slice(0, 6).map(sym => (
         <MacroCard key={sym} symbol={sym} />
       ))}

@@ -7,7 +7,7 @@ const UP_COLOR   = "#00E676";
 const DOWN_COLOR = "#FF1744";
 const FLAT_COLOR = "#9CA3AF";
 
-// Shared label style: small, muted, uppercase, tight tracking
+// Small muted uppercase label used above every metric
 const LABEL_CLS = "text-[9px] sm:text-[10px] text-gray-500 font-normal tracking-wider uppercase leading-none";
 
 function fmtPrice(n: number | null, digits = 2): string {
@@ -29,7 +29,7 @@ export function MetricsBar() {
   if (!accessToken) {
     return (
       <div className="w-full border-b border-card-border flex items-center justify-center px-4 py-3 shrink-0" style={{ background: "#060A10" }}>
-        <p className="text-muted-foreground font-mono text-[11px] sm:text-sm animate-pulse text-center tracking-wider">
+        <p className="text-muted-foreground text-xs sm:text-sm animate-pulse text-center tracking-wider font-mono">
           CONNECT SCHWAB TO VIEW MARKET DATA
         </p>
       </div>
@@ -40,7 +40,7 @@ export function MetricsBar() {
     return (
       <div className="w-full border-b border-card-border flex items-center justify-center gap-2 px-4 py-3 shrink-0" style={{ background: "#060A10" }}>
         <RefreshCw className="w-3.5 h-3.5 text-yellow-500/80 animate-spin" />
-        <p className="text-yellow-500/80 font-mono text-[11px] sm:text-sm tracking-wider">
+        <p className="text-yellow-500/80 text-xs sm:text-sm font-mono tracking-wider">
           SESSION EXPIRED — REFRESHING TOKEN...
         </p>
       </div>
@@ -62,7 +62,7 @@ export function MetricsBar() {
 
   if (!quote) return null;
 
-  // Strict null-aware directional logic — null ≠ zero
+  // Strict null-aware directional logic
   const rawChange = quote.change;
   const rawPct    = quote.changePct;
 
@@ -72,19 +72,14 @@ export function MetricsBar() {
 
   const priceColor = isDown ? DOWN_COLOR : isUp ? UP_COLOR : FLAT_COLOR;
 
-  // ThinkorSwim format: "$582.56  -$5.26  (-0.89%)"
   const lastStr = quote.last != null ? `$${fmtPrice(quote.last)}` : "—";
 
-  // Dollar change: "+$5.26" / "-$5.26" / "$0.00" / "—"
   const changeStr = rawChange !== null
-    ? isUp
-      ? `+$${fmtPrice(rawChange)}`
-      : isFlat
-        ? "$0.00"
-        : `-$${fmtPrice(Math.abs(rawChange))}`
+    ? isUp   ? `+$${fmtPrice(rawChange)}`
+    : isFlat ? "$0.00"
+    :          `-$${fmtPrice(Math.abs(rawChange))}`
     : "—";
 
-  // Pct: "(+0.45%)" / "(-0.89%)" / "(—%)"
   const changePctStr = rawPct !== null
     ? `(${isUp ? "+" : ""}${fmtPrice(rawPct)}%)`
     : "(—%)";
@@ -97,19 +92,26 @@ export function MetricsBar() {
       {/* Ticker + company name */}
       <div className="flex flex-col shrink-0 gap-0.5">
         <span className={LABEL_CLS}>Ticker</span>
-        <span className="text-base sm:text-xl font-bold text-white leading-tight tracking-normal">
+        <span className="font-bold text-white leading-tight" style={{ fontSize: '1.1rem' }}>
           {quote.symbol}
         </span>
-        {quote.description && (
-          <span className="text-[9px] sm:text-[10px] text-gray-500 font-normal leading-none truncate max-w-[120px] sm:max-w-[180px]">
+        {/* Company name: 0.8rem, #9CA3AF, weight 400 */}
+        {quote.description ? (
+          <span
+            className="leading-tight truncate max-w-[130px] sm:max-w-[200px]"
+            style={{ fontSize: '0.8rem', color: '#9CA3AF', fontWeight: 400 }}
+          >
             {quote.description}
           </span>
+        ) : (
+          /* Placeholder keeps layout stable while data loads */
+          <span style={{ fontSize: '0.8rem', color: 'transparent', fontWeight: 400 }}>·</span>
         )}
       </div>
 
-      <div className="w-px h-8 bg-gray-800 shrink-0" />
+      <div className="w-px h-10 bg-gray-800 shrink-0" />
 
-      {/* LAST PRICE — full string on all screen sizes */}
+      {/* LAST PRICE */}
       <div className="flex flex-col shrink-0 gap-0.5">
         <div className="flex items-center gap-1.5">
           <span className={LABEL_CLS}>Last Price</span>
@@ -124,55 +126,55 @@ export function MetricsBar() {
                 </span>
           }
         </div>
-        {/* Price: font-weight 600 | Change+Pct: font-weight 400 */}
+        {/* Price: 600 weight | Change+Pct: 400 weight — all same priceColor */}
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0" style={{ color: priceColor }}>
-          <span className="text-xl sm:text-2xl font-mono font-semibold leading-tight tabular-nums">
+          <span className="font-mono tabular-nums leading-tight" style={{ fontSize: '1.4rem', fontWeight: 600 }}>
             {lastStr}
           </span>
-          <span className="font-mono font-normal text-sm tabular-nums">
-            {changeStr} <span className="opacity-80">{changePctStr}</span>
+          <span className="font-mono tabular-nums" style={{ fontSize: '0.85rem', fontWeight: 400 }}>
+            {changeStr}&nbsp;<span style={{ opacity: 0.8 }}>{changePctStr}</span>
           </span>
         </div>
       </div>
 
-      <div className="w-px h-8 bg-gray-800 shrink-0" />
+      <div className="w-px h-10 bg-gray-800 shrink-0" />
 
       {/* BID / ASK */}
       <div className="flex flex-col shrink-0 gap-0.5">
         <span className={LABEL_CLS}>Bid / Ask</span>
-        <span className="text-sm sm:text-base font-mono font-normal text-gray-200 leading-tight tabular-nums">
+        <span className="font-mono tabular-nums text-gray-200" style={{ fontSize: '0.9rem', fontWeight: 400 }}>
           ${fmtPrice(quote.bid)}&nbsp;<span className="text-gray-600">/</span>&nbsp;${fmtPrice(quote.ask)}
         </span>
       </div>
 
-      <div className="w-px h-8 bg-gray-800 shrink-0 hidden sm:block" />
+      <div className="w-px h-10 bg-gray-800 shrink-0 hidden sm:block" />
 
       {/* VOLUME */}
       <div className="hidden sm:flex flex-col shrink-0 gap-0.5">
         <span className={LABEL_CLS}>Volume</span>
-        <span className="text-sm sm:text-base font-mono font-normal text-gray-200 leading-tight tabular-nums">
+        <span className="font-mono tabular-nums text-gray-200" style={{ fontSize: '0.9rem', fontWeight: 400 }}>
           {fmtVol(quote.volume)}
         </span>
       </div>
 
-      <div className="w-px h-8 bg-gray-800 shrink-0 hidden md:block" />
+      <div className="w-px h-10 bg-gray-800 shrink-0 hidden md:block" />
 
       {/* DAY RANGE */}
       <div className="hidden md:flex flex-col shrink-0 gap-0.5">
         <span className={LABEL_CLS}>Day Range</span>
-        <span className="text-sm sm:text-base font-mono font-normal leading-tight tabular-nums">
+        <span className="font-mono tabular-nums" style={{ fontSize: '0.9rem', fontWeight: 400 }}>
           <span style={{ color: DOWN_COLOR }}>${fmtPrice(quote.low)}</span>
           <span className="text-gray-600 mx-1">—</span>
           <span style={{ color: UP_COLOR }}>${fmtPrice(quote.high)}</span>
         </span>
       </div>
 
-      <div className="w-px h-8 bg-gray-800 shrink-0 hidden lg:block" />
+      <div className="w-px h-10 bg-gray-800 shrink-0 hidden lg:block" />
 
       {/* 52W RANGE */}
       <div className="hidden lg:flex flex-col shrink-0 gap-0.5">
         <span className={LABEL_CLS}>52W Range</span>
-        <span className="text-sm sm:text-base font-mono font-normal text-gray-500 leading-tight tabular-nums">
+        <span className="font-mono tabular-nums text-gray-500" style={{ fontSize: '0.9rem', fontWeight: 400 }}>
           {quote.fiftyTwoWeekLow != null
             ? `$${fmtPrice(quote.fiftyTwoWeekLow)} — $${fmtPrice(quote.fiftyTwoWeekHigh)}`
             : "—"}
