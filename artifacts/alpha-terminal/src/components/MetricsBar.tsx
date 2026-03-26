@@ -1,6 +1,6 @@
 import { useGetQuote } from "@workspace/api-client-react";
 import { useTerminalStore } from "@/lib/store";
-import { TrendingUp, TrendingDown } from "lucide-react";
+import { TrendingUp, TrendingDown, RefreshCw } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export function MetricsBar() {
@@ -15,6 +15,18 @@ export function MetricsBar() {
       <div className="w-full bg-card border-b border-card-border flex items-center justify-center px-4 py-3 shrink-0">
         <p className="text-muted-foreground font-mono text-[10px] sm:text-sm animate-pulse text-center">
           CONNECT SCHWAB TO VIEW MARKET DATA
+        </p>
+      </div>
+    );
+  }
+
+  // Token exists but is expired
+  if (quote?.error === "unauthorized") {
+    return (
+      <div className="w-full bg-card border-b border-card-border flex items-center justify-center gap-2 px-4 py-3 shrink-0">
+        <RefreshCw className="w-3.5 h-3.5 text-yellow-500/80 animate-spin" />
+        <p className="text-yellow-500/80 font-mono text-[10px] sm:text-sm">
+          SESSION EXPIRED — REFRESHING TOKEN...
         </p>
       </div>
     );

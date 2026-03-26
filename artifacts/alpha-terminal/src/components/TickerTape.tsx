@@ -31,13 +31,15 @@ function TickerItem({ symbol, accessToken }: { symbol: string; accessToken: stri
     );
   }
 
+  const priceColor = isPositive ? "text-primary" : "text-destructive";
+
   return (
     <span className="inline-flex items-center gap-2 px-5 font-mono text-[11px] whitespace-nowrap">
       <span className="text-muted-foreground tracking-wider">{symbol}</span>
-      <span className="text-foreground font-bold tabular-nums">
+      <span className={`font-bold tabular-nums ${priceColor}`}>
         {data.last != null ? `$${data.last.toFixed(2)}` : "--"}
       </span>
-      <span className={`flex items-center gap-0.5 tabular-nums ${isPositive ? "text-primary" : "text-destructive"}`}>
+      <span className={`flex items-center gap-0.5 tabular-nums ${priceColor}`}>
         {isPositive
           ? <TrendingUp className="w-2.5 h-2.5" />
           : <TrendingDown className="w-2.5 h-2.5" />}

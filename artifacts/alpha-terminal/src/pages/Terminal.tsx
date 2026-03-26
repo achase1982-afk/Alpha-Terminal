@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Sidebar } from "@/components/Sidebar";
 import { MetricsBar } from "@/components/MetricsBar";
 import { TradingChart } from "@/components/TradingChart";
@@ -9,16 +9,25 @@ import { TickerTape } from "@/components/TickerTape";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useTerminalStore } from "@/lib/store";
 import { useGetPriceHistory } from "@workspace/api-client-react";
+import { useAutoRefreshToken } from "@/hooks/useAutoRefreshToken";
 import { LineChart, BarChart2, SquareTerminal, BrainCircuit, Menu } from "lucide-react";
 
 export default function TerminalPage() {
   const { symbol, accessToken, timeframe } = useTerminalStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { refresh } = useAutoRefreshToken();
 
-  const { data: historyData } = useGetPriceHistory(
+  const { data: historyData, isLoading: historyLoading } = useGetPriceHistory(
     { symbol, accessToken: accessToken || '', timeframe },
     { query: { enabled: !!accessToken && !!symbol } }
   );
+
+  // Auto-refresh when market data comes back with expired-token error
+  useEffect(() => {
+    if (historyData?.error === "unauthorized") {
+      refresh();
+    }
+  }, [historyData?.error, refresh]);
 
   return (
     <div className="flex h-screen w-full bg-background overflow-hidden selection:bg-primary/30 selection:text-white">
@@ -109,7 +118,11 @@ export default function TerminalPage() {
 
             <div className="flex-1 min-h-0">
               <TabsContent value="chart" className="h-full m-0 focus-visible:outline-none data-[state=active]:flex flex-col">
-                <TradingChart data={historyData?.candles || []} />
+                <TradingChart
+                  data={historyData?.candles || []}
+                  isLoading={historyLoading}
+                  tokenExpired={historyData?.error === "unauthorized"}
+                />
               </TabsContent>
               <TabsContent value="options" className="h-full m-0 overflow-auto focus-visible:outline-none">
                 <OptionsTab />
