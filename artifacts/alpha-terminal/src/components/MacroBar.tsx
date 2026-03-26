@@ -9,6 +9,9 @@ const UP_COLOR   = "#00E676";
 const DOWN_COLOR = "#FF1744";
 const FLAT_COLOR = "#6B7280";
 
+// Institutional blue — must match --primary in index.css
+const ACTIVE_GLOW = "rgba(0, 166, 255, 0.15)";
+
 function formatPct(pct: number | null | undefined, isUp: boolean): string {
   if (pct == null) return "—%";
   const sign = isUp ? "+" : "";
@@ -53,17 +56,21 @@ function MacroCard({ symbol }: { symbol: string }) {
         flex-1 flex flex-col items-center justify-center gap-0.5 py-2 px-1 rounded-lg border min-w-0
         transition-all duration-200 group cursor-pointer
         ${isActive
-          ? "border-primary/60 bg-primary/10 shadow-[0_0_12px_rgba(0,212,170,0.15)]"
+          ? "border-primary/60 bg-primary/10"
           : "border-card-border bg-card hover:border-primary/30 hover:bg-primary/5"}
       `}
+      style={isActive ? { boxShadow: `0 0 12px ${ACTIVE_GLOW}` } : undefined}
     >
-      <span className={`font-mono text-[9px] sm:text-[10px] font-bold tracking-widest truncate w-full text-center transition-colors
-        ${isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground"}`}>
+      {/* Symbol label */}
+      <span className={`
+        font-mono text-[9px] sm:text-[10px] font-bold tracking-widest truncate w-full text-center transition-colors
+        ${isActive ? "text-primary" : "text-gray-400 group-hover:text-gray-200"}
+      `}>
         {symbol}
       </span>
 
       {!accessToken || (isLoading && !data) ? (
-        <span className="font-mono text-sm font-bold text-muted-foreground/40">—</span>
+        <span className="font-mono text-sm font-bold text-gray-700">—</span>
       ) : (
         <>
           {/* Last price */}

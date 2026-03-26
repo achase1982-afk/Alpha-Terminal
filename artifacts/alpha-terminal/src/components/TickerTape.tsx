@@ -9,10 +9,10 @@ function TapeItem({ symbol }: { symbol: string }) {
   const { setSymbol } = useTerminalStore();
   const { data }      = useQuote(symbol);
 
-  // Strict: dollar change < 0 → red, > 0 → green
-  const netChange = data?.change ?? 0;
-  const isUp      = netChange > 0;
-  const isDown    = netChange < 0;
+  // Strict null-aware direction
+  const rawChange = data?.change ?? null;
+  const isUp      = rawChange !== null && rawChange > 0;
+  const isDown    = rawChange !== null && rawChange < 0;
   const color     = isDown ? DOWN_COLOR : isUp ? UP_COLOR : FLAT_COLOR;
   const arrow     = isDown ? "▼" : isUp ? "▲" : "—";
   const pct       = data?.changePct != null ? Math.abs(data.changePct).toFixed(2) + "%" : null;
@@ -24,7 +24,8 @@ function TapeItem({ symbol }: { symbol: string }) {
         hover:brightness-125 transition-all duration-150 group"
       style={{ fontSize: "13px" }}
     >
-      <span className="font-mono font-semibold tracking-wider text-gray-400 group-hover:text-white transition-colors">
+      {/* Symbol — lighter gray for clear readability */}
+      <span className="font-mono font-semibold tracking-wider text-gray-300 group-hover:text-white transition-colors">
         {symbol}
       </span>
 

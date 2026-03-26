@@ -7,6 +7,9 @@ const UP_COLOR   = "#00E676";
 const DOWN_COLOR = "#FF1744";
 const FLAT_COLOR = "#9CA3AF";
 
+// Label style applied to every "TICKER", "LAST PRICE" etc. header
+const LABEL_CLS = "text-[9px] sm:text-[10px] text-gray-400 font-mono font-semibold tracking-wider uppercase";
+
 function fmtPrice(n: number | null, digits = 2): string {
   if (n == null || isNaN(n)) return "—";
   return n.toFixed(digits);
@@ -26,7 +29,7 @@ export function MetricsBar() {
   if (!accessToken) {
     return (
       <div className="w-full border-b border-card-border flex items-center justify-center px-4 py-3 shrink-0" style={{ background: "#060A10" }}>
-        <p className="text-muted-foreground font-mono text-[10px] sm:text-sm animate-pulse text-center">
+        <p className="text-muted-foreground font-mono text-[11px] sm:text-sm animate-pulse text-center tracking-wider">
           CONNECT SCHWAB TO VIEW MARKET DATA
         </p>
       </div>
@@ -37,7 +40,7 @@ export function MetricsBar() {
     return (
       <div className="w-full border-b border-card-border flex items-center justify-center gap-2 px-4 py-3 shrink-0" style={{ background: "#060A10" }}>
         <RefreshCw className="w-3.5 h-3.5 text-yellow-500/80 animate-spin" />
-        <p className="text-yellow-500/80 font-mono text-[10px] sm:text-sm">
+        <p className="text-yellow-500/80 font-mono text-[11px] sm:text-sm tracking-wider">
           SESSION EXPIRED — REFRESHING TOKEN...
         </p>
       </div>
@@ -59,9 +62,9 @@ export function MetricsBar() {
 
   if (!quote) return null;
 
-  // Use explicit null check so we can distinguish "no data yet" from "genuinely flat"
-  const rawChange = quote.change;     // null = not yet available
-  const rawPct    = quote.changePct;  // null = not yet available
+  // Strict null-aware directional logic — null ≠ zero
+  const rawChange = quote.change;
+  const rawPct    = quote.changePct;
 
   const isUp   = rawChange !== null && rawChange > 0;
   const isDown = rawChange !== null && rawChange < 0;
@@ -72,8 +75,7 @@ export function MetricsBar() {
   // ThinkorSwim format: "$582.56  -$5.26  (-0.89%)"
   const lastStr = quote.last != null ? `$${fmtPrice(quote.last)}` : "—";
 
-  // Dollar change — dollar sign always present, sign prefix explicit
-  // Positive: "+$5.26"  Negative: "-$5.26"  Flat: "$0.00"  No data: "—"
+  // Dollar change: "+$5.26" / "-$5.26" / "$0.00" / "—"
   const changeStr = rawChange !== null
     ? isUp
       ? `+$${fmtPrice(rawChange)}`
@@ -82,7 +84,7 @@ export function MetricsBar() {
         : `-$${fmtPrice(Math.abs(rawChange))}`
     : "—";
 
-  // Percent change — always use the raw value's sign; "—" when no data
+  // Pct: "(+0.45%)" / "(-0.89%)" / "(—%)"
   const changePctStr = rawPct !== null
     ? `(${isUp ? "+" : ""}${fmtPrice(rawPct)}%)`
     : "(—%)";
@@ -92,21 +94,22 @@ export function MetricsBar() {
       className="w-full border-b border-card-border flex items-center px-4 sm:px-6 gap-4 sm:gap-6 lg:gap-8 overflow-x-auto shrink-0 py-2 sm:h-16"
       style={{ background: "#0A0F16" }}
     >
-      {/* Symbol */}
+      {/* Ticker symbol */}
       <div className="flex flex-col shrink-0">
-        <span className="text-[8px] sm:text-[10px] text-gray-500 font-mono font-semibold tracking-widest">TICKER</span>
-        <span className="text-base sm:text-xl font-black text-white leading-tight tracking-wide">{quote.symbol}</span>
+        <span className={LABEL_CLS}>Ticker</span>
+        <span className="text-base sm:text-xl font-black text-white leading-tight tracking-wide font-sans">
+          {quote.symbol}
+        </span>
       </div>
 
       <div className="w-px h-8 bg-gray-800 shrink-0" />
 
-      {/* ThinkorSwim-style: $582.56  -5.26  (-0.89%) — all one color */}
+      {/* LAST PRICE — always shows full string on every screen size */}
       <div className="flex flex-col shrink-0">
         <div className="flex items-center gap-1.5">
-          <span className="text-[8px] sm:text-[10px] text-gray-500 font-mono font-semibold tracking-widest">LAST PRICE</span>
-          {/* Live indicator */}
+          <span className={LABEL_CLS}>Last Price</span>
           {source === "stream"
-            ? <span title="Live stream" className="flex items-center gap-0.5 text-[7px] font-mono text-emerald-500 leading-none">
+            ? <span title="Live stream" className="flex items-center gap-0.5 text-[7px] font-mono text-emerald-400 leading-none font-semibold">
                 <Wifi className="w-2.5 h-2.5" />LIVE
               </span>
             : streamConnected
@@ -116,16 +119,14 @@ export function MetricsBar() {
                 </span>
           }
         </div>
-        <div className="flex items-baseline gap-2" style={{ color: priceColor }}>
-          <span className="text-lg sm:text-2xl font-mono font-black leading-tight tabular-nums">
+        {/* flex-wrap: price stays on its own line; change + pct wrap below on very narrow screens */}
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0" style={{ color: priceColor }}>
+          <span className="text-xl sm:text-2xl font-mono font-black leading-tight tabular-nums">
             {lastStr}
           </span>
-          <span className="hidden sm:flex items-center gap-1 font-mono font-bold text-sm tabular-nums">
+          <span className="font-mono font-bold text-sm tabular-nums flex items-center gap-1">
             {changeStr}
             <span className="text-xs opacity-90">{changePctStr}</span>
-          </span>
-          <span className="sm:hidden font-mono font-bold text-xs tabular-nums opacity-90">
-            {changePctStr}
           </span>
         </div>
       </div>
@@ -134,9 +135,9 @@ export function MetricsBar() {
 
       {/* BID / ASK */}
       <div className="flex flex-col shrink-0">
-        <span className="text-[8px] sm:text-[10px] text-gray-500 font-mono font-semibold tracking-widest">BID / ASK</span>
+        <span className={LABEL_CLS}>Bid / Ask</span>
         <span className="text-sm sm:text-base font-mono font-semibold text-gray-200 leading-tight tabular-nums">
-          ${fmtPrice(quote.bid)} / ${fmtPrice(quote.ask)}
+          ${fmtPrice(quote.bid)}&nbsp;<span className="text-gray-600">/</span>&nbsp;${fmtPrice(quote.ask)}
         </span>
       </div>
 
@@ -144,7 +145,7 @@ export function MetricsBar() {
 
       {/* VOLUME */}
       <div className="hidden sm:flex flex-col shrink-0">
-        <span className="text-[8px] sm:text-[10px] text-gray-500 font-mono font-semibold tracking-widest">VOLUME</span>
+        <span className={LABEL_CLS}>Volume</span>
         <span className="text-sm sm:text-base font-mono font-semibold text-gray-200 leading-tight tabular-nums">
           {fmtVol(quote.volume)}
         </span>
@@ -154,8 +155,8 @@ export function MetricsBar() {
 
       {/* DAY RANGE */}
       <div className="hidden md:flex flex-col shrink-0">
-        <span className="text-[8px] sm:text-[10px] text-gray-500 font-mono font-semibold tracking-widest">DAY RANGE</span>
-        <span className="text-sm sm:text-base font-mono font-semibold text-gray-200 leading-tight tabular-nums">
+        <span className={LABEL_CLS}>Day Range</span>
+        <span className="text-sm sm:text-base font-mono font-semibold leading-tight tabular-nums">
           <span style={{ color: DOWN_COLOR }}>${fmtPrice(quote.low)}</span>
           <span className="text-gray-600 mx-1">—</span>
           <span style={{ color: UP_COLOR }}>${fmtPrice(quote.high)}</span>
@@ -164,9 +165,9 @@ export function MetricsBar() {
 
       <div className="w-px h-8 bg-gray-800 shrink-0 hidden lg:block" />
 
-      {/* 52W RANGE — populated from REST fallback (streamer doesn't carry these) */}
+      {/* 52W RANGE */}
       <div className="hidden lg:flex flex-col shrink-0">
-        <span className="text-[8px] sm:text-[10px] text-gray-500 font-mono font-semibold tracking-widest">52W RANGE</span>
+        <span className={LABEL_CLS}>52W Range</span>
         <span className="text-sm sm:text-base font-mono font-semibold text-gray-500 leading-tight tabular-nums">
           {quote.fiftyTwoWeekLow != null
             ? `$${fmtPrice(quote.fiftyTwoWeekLow)} — $${fmtPrice(quote.fiftyTwoWeekHigh)}`
