@@ -97,8 +97,6 @@ router.get("/quote", async (req, res) => {
       (quote?.["companyName"] as string | undefined) ||
       undefined;
 
-    console.log(`[DESC] ${displaySymbol} | reference.description=${reference?.["description"]} | entry.description=${entry?.["description"]} | quote.description=${quote?.["description"]} | entryKeys=${entry ? Object.keys(entry).join(",") : "null"} | referenceKeys=${reference ? Object.keys(reference).join(",") : "null"} | resolved="${description ?? "NONE"}"`);
-
     if (!quote) {
       const data = GetQuoteResponse.parse({ symbol: displaySymbol, error: "no_data" });
       return res.json(data);

@@ -19,7 +19,8 @@
       .font-mono {
         font-weight: 300 !important;
         font-variant-numeric: tabular-nums !important;
-        font-feature-settings: normal !important;
+        /* 'tnum' keeps column alignment; 'zero' 0 explicitly kills the slashed zero glyph */
+        font-feature-settings: 'tnum' 1, 'zero' 0 !important;
       }
       /* Macro card ticker labels stay bold — intentional hierarchy */
       .macro-symbol-label {
