@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useQuote }         from "@/hooks/useQuote";
 import { RefreshCw, Wifi, WifiOff } from "lucide-react";
@@ -6,6 +7,29 @@ import { Skeleton } from "@/components/ui/skeleton";
 const UP_COLOR   = "#00E676";
 const DOWN_COLOR = "#FF1744";
 const FLAT_COLOR = "#9CA3AF";
+
+function useTickColor(symbol: string, currentPrice: number | null) {
+  const prevRef = useRef<{ symbol: string; price: number | null; tickColor: string }>({
+    symbol: "",
+    price: null,
+    tickColor: FLAT_COLOR,
+  });
+
+  if (symbol !== prevRef.current.symbol) {
+    prevRef.current = { symbol, price: null, tickColor: FLAT_COLOR };
+  }
+
+  if (currentPrice != null && prevRef.current.price != null) {
+    if (currentPrice > prevRef.current.price) {
+      prevRef.current.tickColor = UP_COLOR;
+    } else if (currentPrice < prevRef.current.price) {
+      prevRef.current.tickColor = DOWN_COLOR;
+    }
+  }
+
+  prevRef.current.price = currentPrice;
+  return prevRef.current.tickColor;
+}
 
 // Small muted uppercase label used above every metric
 const LABEL_CLS = "text-[9px] sm:text-[10px] text-gray-500 font-normal tracking-wider uppercase leading-none";
@@ -25,6 +49,7 @@ function fmtVol(n: number | null): string {
 export function MetricsBar() {
   const { symbol, accessToken, streamConnected } = useTerminalStore();
   const { data: quote, isLoading, source } = useQuote(symbol);
+  const tickColor = useTickColor(symbol, quote?.last ?? null);
 
   if (!accessToken) {
     return (
@@ -122,11 +147,11 @@ export function MetricsBar() {
           }
         </div>
         {/* All price data: font-weight 300 — thin and crisp, native system mono like TOS */}
-        <div className="flex flex-col" style={{ color: priceColor }}>
-          <span className="tabular-nums leading-tight" style={{ fontSize: '1.4rem', fontWeight: 300 }}>
+        <div className="flex flex-col">
+          <span className="tabular-nums leading-tight" style={{ fontSize: '1.4rem', fontWeight: 300, color: tickColor }}>
             {lastStr}
           </span>
-          <span className="tabular-nums leading-tight" style={{ fontSize: '0.8rem', fontWeight: 300 }}>
+          <span className="tabular-nums leading-tight" style={{ fontSize: '0.8rem', fontWeight: 300, color: priceColor }}>
             {changeStr}&nbsp;<span style={{ opacity: 0.8 }}>{changePctStr}</span>
           </span>
         </div>
