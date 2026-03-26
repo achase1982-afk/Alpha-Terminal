@@ -6,8 +6,6 @@ import { Label } from "@/components/ui/label";
 import { Terminal, SlidersHorizontal, X, LayoutDashboard, ListOrdered, Gauge } from "lucide-react";
 import { useState } from "react";
 
-const TIMEFRAMES = ["1D", "5D", "1M", "3M", "6M", "1Y", "2Y", "5Y"];
-
 const OVERLAY_LABELS: Record<string, string> = {
   sma20: "SMA 20",
   sma50: "SMA 50",
@@ -22,7 +20,6 @@ interface SidebarProps {
 
 export function Sidebar({ onClose }: SidebarProps) {
   const {
-    timeframe, setTimeframe,
     overlays, toggleOverlay,
     macroSymbols, setMacroSymbols,
     tickerTapeSymbols, setTickerTapeSymbols,
@@ -80,29 +77,6 @@ export function Sidebar({ onClose }: SidebarProps) {
       <div className="p-3 sm:p-4 space-y-5 sm:space-y-6 flex-1">
         {/* AUTH */}
         <AuthPanel />
-
-        {/* TIMEFRAME */}
-        <div className="space-y-3 pt-1">
-          <Label className="font-mono text-[10px] sm:text-xs text-muted-foreground flex items-center gap-2">
-            <SlidersHorizontal className="w-3 h-3" /> TIMEFRAME
-          </Label>
-          <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
-            {TIMEFRAMES.map(tf => (
-              <button
-                key={tf}
-                onClick={() => setTimeframe(tf)}
-                className={`
-                  h-8 rounded font-mono text-[10px] sm:text-xs font-semibold transition-all duration-200
-                  ${timeframe === tf
-                    ? "bg-primary/20 text-primary border border-primary/50"
-                    : "bg-card text-muted-foreground border border-card-border hover:bg-card-border hover:text-foreground"}
-                `}
-              >
-                {tf}
-              </button>
-            ))}
-          </div>
-        </div>
 
         {/* CHART OVERLAYS */}
         <div className="space-y-2 pt-1">

@@ -31,8 +31,10 @@ interface TerminalState {
   symbol: string;
   setSymbol: (s: string) => void;
   
-  timeframe: string;
-  setTimeframe: (t: string) => void;
+  chartPeriod: string;
+  setChartPeriod: (p: string) => void;
+  chartInterval: string;
+  setChartInterval: (i: string) => void;
   
   overlays: {
     sma20: boolean;
@@ -92,8 +94,20 @@ export const useTerminalStore = create<TerminalState>()(
       symbol: 'AAPL',
       setSymbol: (symbol) => set({ symbol: symbol.toUpperCase() }),
       
-      timeframe: '3M',
-      setTimeframe: (timeframe) => set({ timeframe }),
+      chartPeriod: '3M',
+      setChartPeriod: (chartPeriod) => {
+        const intraday = chartPeriod === '1D' || chartPeriod === '5D';
+        set((state) => {
+          const currentIsIntraday = state.chartPeriod === '1D' || state.chartPeriod === '5D';
+          const needsReset = intraday !== currentIsIntraday;
+          return {
+            chartPeriod,
+            ...(needsReset ? { chartInterval: intraday ? '5m' : 'daily' } : {}),
+          };
+        });
+      },
+      chartInterval: 'daily',
+      setChartInterval: (chartInterval) => set({ chartInterval }),
       
       overlays: {
         sma20: true,

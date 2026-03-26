@@ -36,16 +36,6 @@ function isFutures(symbol: string): boolean {
   return symbol.trim().startsWith("/");
 }
 
-const PERIOD_MAP: Record<string, { periodType: string; period: number; frequencyType: string; frequency: number }> = {
-  "1D":  { periodType: "day",   period: 1,  frequencyType: "minute",  frequency: 5 },
-  "5D":  { periodType: "day",   period: 5,  frequencyType: "minute",  frequency: 15 },
-  "1M":  { periodType: "month", period: 1,  frequencyType: "daily",   frequency: 1 },
-  "3M":  { periodType: "month", period: 3,  frequencyType: "daily",   frequency: 1 },
-  "6M":  { periodType: "month", period: 6,  frequencyType: "daily",   frequency: 1 },
-  "1Y":  { periodType: "year",  period: 1,  frequencyType: "weekly",  frequency: 1 },
-  "2Y":  { periodType: "year",  period: 2,  frequencyType: "weekly",  frequency: 1 },
-  "5Y":  { periodType: "year",  period: 5,  frequencyType: "monthly", frequency: 1 },
-};
 
 router.get("/quote", async (req, res) => {
   const symbol = req.query["symbol"] as string;
@@ -203,10 +193,27 @@ router.get("/quote", async (req, res) => {
   }
 });
 
+const VALID_PERIOD_TYPES = ["day", "month", "year"] as const;
+const VALID_PERIODS: Record<string, number[]> = {
+  day: [1, 2, 3, 4, 5, 10],
+  month: [1, 2, 3, 6],
+  year: [1, 2, 3, 5, 10, 15, 20],
+};
+const VALID_FREQUENCY_TYPES = ["minute", "daily", "weekly", "monthly"] as const;
+const VALID_FREQUENCIES: Record<string, number[]> = {
+  minute: [1, 5, 10, 15, 30],
+  daily: [1],
+  weekly: [1],
+  monthly: [1],
+};
+
 router.get("/history", async (req, res) => {
   const symbol = req.query["symbol"] as string;
   const accessToken = req.query["accessToken"] as string;
-  const timeframe = (req.query["timeframe"] as string) ?? "3M";
+  let periodType = (req.query["periodType"] as string) ?? "month";
+  let period = parseInt((req.query["period"] as string) ?? "3", 10);
+  let frequencyType = (req.query["frequencyType"] as string) ?? "daily";
+  let frequency = parseInt((req.query["frequency"] as string) ?? "1", 10);
 
   if (!symbol || !accessToken) {
     return res.json({ symbol: "", candles: [], error: "symbol and accessToken are required" });
@@ -214,21 +221,24 @@ router.get("/history", async (req, res) => {
 
   const displaySymbol = symbol.toUpperCase().trim();
 
-  // Futures are not supported via this endpoint — fail gracefully
   if (isFutures(displaySymbol)) {
     return res.json({ symbol: displaySymbol, candles: [], error: "futures_not_supported" });
   }
 
+  if (!(VALID_PERIOD_TYPES as readonly string[]).includes(periodType)) periodType = "month";
+  if (!VALID_PERIODS[periodType]?.includes(period)) period = VALID_PERIODS[periodType]?.[0] ?? 1;
+  if (!(VALID_FREQUENCY_TYPES as readonly string[]).includes(frequencyType)) frequencyType = "daily";
+  if (!VALID_FREQUENCIES[frequencyType]?.includes(frequency)) frequency = VALID_FREQUENCIES[frequencyType]?.[0] ?? 1;
+
   const apiSymbol = formatSchwabSymbol(displaySymbol);
-  const periodConfig = PERIOD_MAP[timeframe] ?? PERIOD_MAP["3M"];
 
   try {
     const params = new URLSearchParams({
       symbol: apiSymbol,
-      periodType: periodConfig.periodType,
-      period: String(periodConfig.period),
-      frequencyType: periodConfig.frequencyType,
-      frequency: String(periodConfig.frequency),
+      periodType,
+      period: String(period),
+      frequencyType,
+      frequency: String(frequency),
       needExtendedHoursData: "false",
     });
 

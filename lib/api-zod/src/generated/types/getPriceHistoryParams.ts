@@ -9,5 +9,8 @@
 export type GetPriceHistoryParams = {
   symbol: string;
   accessToken: string;
-  timeframe?: string;
+  periodType?: string;
+  period?: number;
+  frequencyType?: string;
+  frequency?: number;
 };

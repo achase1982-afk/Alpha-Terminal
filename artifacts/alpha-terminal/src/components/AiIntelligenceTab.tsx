@@ -45,7 +45,7 @@ function MarkdownResult({ content }: { content: string }) {
 
 export function AiIntelligenceTab() {
   const {
-    symbol, accessToken, timeframe,
+    symbol, accessToken,
     aiModel, setAiModel, aiTemp, setAiTemp,
     chatHistory, addChatMessage, clearChat,
     analysisResult, setAnalysisResult,
@@ -71,7 +71,7 @@ export function AiIntelligenceTab() {
     { query: { enabled: !!accessToken } }
   );
   const { data: history } = useGetPriceHistory(
-    { symbol, accessToken: accessToken || "", timeframe },
+    { symbol, accessToken: accessToken || "", periodType: "month", period: 3, frequencyType: "daily", frequency: 1 },
     { query: { enabled: !!accessToken } }
   );
   const { data: chain, isLoading: chainLoading } = useGetOptionChain(

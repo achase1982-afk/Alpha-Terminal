@@ -42,6 +42,7 @@ export interface ErrorResponse {
 
 export interface QuoteResponse {
   symbol: string;
+  description?: string;
   last?: number;
   bid?: number;
   ask?: number;
@@ -135,7 +136,10 @@ export type GetQuoteParams = {
 export type GetPriceHistoryParams = {
   symbol: string;
   accessToken: string;
-  timeframe?: string;
+  periodType?: string;
+  period?: number;
+  frequencyType?: string;
+  frequency?: number;
 };
 
 export type GetOptionChainParams = {

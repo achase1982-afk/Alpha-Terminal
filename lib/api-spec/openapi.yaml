@@ -145,12 +145,30 @@ paths:
           required: true
           schema:
             type: string
-        - name: timeframe
+        - name: periodType
           in: query
           required: false
           schema:
             type: string
-            default: "3M"
+            default: "month"
+        - name: period
+          in: query
+          required: false
+          schema:
+            type: number
+            default: 3
+        - name: frequencyType
+          in: query
+          required: false
+          schema:
+            type: string
+            default: "daily"
+        - name: frequency
+          in: query
+          required: false
+          schema:
+            type: number
+            default: 1
       responses:
         "200":
           description: Candle data

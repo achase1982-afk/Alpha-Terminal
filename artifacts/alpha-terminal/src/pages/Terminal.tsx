@@ -11,20 +11,29 @@ import { TickerSearch } from "@/components/TickerSearch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useTerminalStore } from "@/lib/store";
 import { useGetPriceHistory } from "@workspace/api-client-react";
+import { ChartControls, chartParamsFromStore, isIntradayInterval } from "@/components/ChartControls";
 import { useAutoRefreshToken } from "@/hooks/useAutoRefreshToken";
 import { useStreamingQuotes } from "@/hooks/useStreamingQuotes";
 import { LineChart, BarChart2, BrainCircuit, Menu, Radar, Wifi, WifiOff } from "lucide-react";
 
 export default function TerminalPage() {
-  const { symbol, accessToken, timeframe, streamConnected } = useTerminalStore();
+  const { symbol, accessToken, chartPeriod, chartInterval, streamConnected } = useTerminalStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { refresh } = useAutoRefreshToken();
 
   // ── Start and maintain the Schwab WebSocket stream ──────────────────────
   useStreamingQuotes();
 
+  const chartParams = chartParamsFromStore(chartPeriod, chartInterval);
   const { data: historyData, isLoading: historyLoading } = useGetPriceHistory(
-    { symbol, accessToken: accessToken || "", timeframe },
+    {
+      symbol,
+      accessToken: accessToken || "",
+      periodType: chartParams.periodType,
+      period: chartParams.period,
+      frequencyType: chartParams.frequencyType,
+      frequency: chartParams.frequency,
+    },
     { query: { enabled: !!accessToken && !!symbol } }
   );
 
@@ -133,10 +142,12 @@ export default function TerminalPage() {
 
             <div className="flex-1 min-h-0">
               <TabsContent value="chart" className="h-full m-0 focus-visible:outline-none data-[state=active]:flex flex-col">
+                <ChartControls />
                 <TradingChart
                   data={historyData?.candles || []}
                   isLoading={historyLoading}
                   tokenExpired={historyData?.error === "unauthorized"}
+                  intraday={isIntradayInterval(chartInterval)}
                 />
               </TabsContent>
               <TabsContent value="options" className="h-full m-0 overflow-auto focus-visible:outline-none">

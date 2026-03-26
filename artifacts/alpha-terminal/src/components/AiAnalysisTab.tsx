@@ -7,13 +7,13 @@ import { Cpu, Zap, Activity, BarChart2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
 export function AiAnalysisTab() {
-  const { symbol, accessToken, timeframe, aiModel, aiTemp } = useTerminalStore();
+  const { symbol, accessToken, aiModel, aiTemp } = useTerminalStore();
   const [customPrompt, setCustomPrompt] = useState("");
   const [response, setResponse] = useState<string | null>(null);
 
   // Data fetching
   const { data: quote } = useGetQuote({ symbol, accessToken: accessToken || '' }, { query: { enabled: !!accessToken } });
-  const { data: history } = useGetPriceHistory({ symbol, accessToken: accessToken || '', timeframe }, { query: { enabled: !!accessToken } });
+  const { data: history } = useGetPriceHistory({ symbol, accessToken: accessToken || '', periodType: "month", period: 3, frequencyType: "daily", frequency: 1 }, { query: { enabled: !!accessToken } });
   // We don't auto-fetch options here to save API calls, relying on what's cached or requiring options tab to be loaded first
   // For a robust app, we might trigger a fetch. Here we just try to get from cache
   const { data: chain } = useGetOptionChain({ symbol, accessToken: accessToken || '', contractType: "ALL", daysToExpiration: 30 }, { query: { enabled: false } });

@@ -13,7 +13,7 @@ import ReactMarkdown from "react-markdown";
 const API_BASE = "/api";
 
 export function OptionsTab() {
-  const { symbol, accessToken, timeframe, aiModel, aiTemp, strategistResult, setStrategistResult } = useTerminalStore();
+  const { symbol, accessToken, aiModel, aiTemp, strategistResult, setStrategistResult } = useTerminalStore();
   const [contractType, setContractType] = useState("ALL");
   const [dte, setDte] = useState("30");
   const [enabled, setEnabled] = useState(false);
@@ -31,7 +31,7 @@ export function OptionsTab() {
   );
 
   const { data: history } = useGetPriceHistory(
-    { symbol, accessToken: accessToken || "", timeframe },
+    { symbol, accessToken: accessToken || "", periodType: "month", period: 3, frequencyType: "daily", frequency: 1 },
     { query: { enabled: !!accessToken } }
   );
 

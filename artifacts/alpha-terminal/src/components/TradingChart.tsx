@@ -16,9 +16,10 @@ interface TradingChartProps {
   data: Candle[];
   isLoading?: boolean;
   tokenExpired?: boolean;
+  intraday?: boolean;
 }
 
-export function TradingChart({ data, isLoading, tokenExpired }: TradingChartProps) {
+export function TradingChart({ data, isLoading, tokenExpired, intraday }: TradingChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const { overlays } = useTerminalStore();
@@ -47,7 +48,8 @@ export function TradingChart({ data, isLoading, tokenExpired }: TradingChartProp
       },
       timeScale: {
         borderColor: '#21262D',
-        timeVisible: true,
+        timeVisible: !!intraday,
+        secondsVisible: false,
         fixLeftEdge: true,
         fixRightEdge: true,
       },
@@ -130,7 +132,7 @@ export function TradingChart({ data, isLoading, tokenExpired }: TradingChartProp
     return () => {
       chart.remove();
     };
-  }, [data, overlays]);
+  }, [data, overlays, intraday]);
 
   return (
     <div className="w-full h-full min-h-[300px] relative rounded-xl border border-card-border bg-[#0D1117] overflow-hidden shadow-inner">

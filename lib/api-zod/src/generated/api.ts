@@ -87,12 +87,22 @@ export const GetQuoteResponse = zod.object({
 /**
  * @summary Get price history (candles)
  */
-export const getPriceHistoryQueryTimeframeDefault = `3M`;
+export const getPriceHistoryQueryPeriodTypeDefault = `month`;
+export const getPriceHistoryQueryPeriodDefault = 3;
+export const getPriceHistoryQueryFrequencyTypeDefault = `daily`;
+export const getPriceHistoryQueryFrequencyDefault = 1;
 
 export const GetPriceHistoryQueryParams = zod.object({
   symbol: zod.coerce.string(),
   accessToken: zod.coerce.string(),
-  timeframe: zod.coerce.string().default(getPriceHistoryQueryTimeframeDefault),
+  periodType: zod.coerce
+    .string()
+    .default(getPriceHistoryQueryPeriodTypeDefault),
+  period: zod.coerce.number().default(getPriceHistoryQueryPeriodDefault),
+  frequencyType: zod.coerce
+    .string()
+    .default(getPriceHistoryQueryFrequencyTypeDefault),
+  frequency: zod.coerce.number().default(getPriceHistoryQueryFrequencyDefault),
 });
 
 export const GetPriceHistoryResponse = zod.object({
@@ -173,6 +183,7 @@ export const GetOptionChainResponse = zod.object({
 export const RunTechnicalAnalysisBody = zod.object({
   quote: zod.object({
     symbol: zod.string(),
+    description: zod.string().optional(),
     last: zod.number().optional(),
     bid: zod.number().optional(),
     ask: zod.number().optional(),
@@ -212,6 +223,7 @@ export const RunTechnicalAnalysisResponse = zod.object({
 export const RunOptionsAnalysisBody = zod.object({
   quote: zod.object({
     symbol: zod.string(),
+    description: zod.string().optional(),
     last: zod.number().optional(),
     bid: zod.number().optional(),
     ask: zod.number().optional(),
