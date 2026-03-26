@@ -171,6 +171,111 @@ Be specific with strikes, expirations, and premium estimates. Use markdown forma
   }
 });
 
+// ── LIVE MARKET PULSE: Symbol definitions ─────────────────────────────────────
+
+const SCHWAB_API_BASE_PULSE = "https://api.schwabapi.com/marketdata/v1";
+
+interface PulseSymbol {
+  display: string;
+  api: string;
+  category: "equity" | "vol" | "breadth" | "futures" | "currency" | "commodity";
+  description: string;
+}
+
+const PULSE_SYMBOLS: PulseSymbol[] = [
+  { display: "SPY",   api: "SPY",    category: "equity",    description: "S&P 500 ETF — broad market barometer" },
+  { display: "QQQ",   api: "QQQ",    category: "equity",    description: "Nasdaq-100 ETF — tech/growth leadership" },
+  { display: "IWM",   api: "IWM",    category: "equity",    description: "Russell 2000 ETF — small-cap risk appetite" },
+  { display: "$VIX",  api: "$VIX",   category: "vol",       description: "CBOE VIX — S&P implied vol (30-day), fear gauge" },
+  { display: "$VVIX", api: "$VVIX",  category: "vol",       description: "VVIX — vol-of-vol, tail risk premium indicator" },
+  { display: "$CPC",  api: "$CPC",   category: "vol",       description: "CBOE Put/Call Ratio — >1.0 fear, <0.7 complacency" },
+  { display: "$TICK", api: "$TICK",  category: "breadth",   description: "NYSE TICK — stocks upticking minus downticking (intraday flow)" },
+  { display: "$ADD",  api: "$ADD",   category: "breadth",   description: "NYSE A/D Line — advancers minus decliners (breadth)" },
+  { display: "$TRIN", api: "$TRIN",  category: "breadth",   description: "TRIN/Arms Index — <1.0 bullish, >1.0 bearish distribution" },
+  { display: "$DXY",  api: "$DXY",   category: "currency",  description: "US Dollar Index — dollar vs. major FX basket" },
+  { display: "/ES",   api: "/ES",    category: "futures",   description: "E-mini S&P 500 Futures" },
+  { display: "/NQ",   api: "/NQ",    category: "futures",   description: "E-mini Nasdaq-100 Futures" },
+  { display: "/GC",   api: "/GC",    category: "commodity", description: "Gold Futures — safe-haven / real rates proxy" },
+  { display: "/CL",   api: "/CL",    category: "commodity", description: "Crude Oil Futures — energy / risk appetite signal" },
+];
+
+async function fetchMacroPulseData(
+  accessToken: string
+): Promise<Map<string, Record<string, unknown>>> {
+  const symbolsParam = PULSE_SYMBOLS.map(s => encodeURIComponent(s.api)).join(",");
+  const url = `${SCHWAB_API_BASE_PULSE}/quotes?symbols=${symbolsParam}&fields=quote,fundamental,reference`;
+
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Schwab batch quote error: ${response.status} ${response.statusText}`);
+  }
+
+  const json = await response.json() as Record<string, unknown>;
+  const result = new Map<string, Record<string, unknown>>();
+
+  for (const sym of PULSE_SYMBOLS) {
+    const entry = json[sym.api] as Record<string, unknown> | undefined;
+    const q = entry?.["quote"] as Record<string, unknown> | undefined;
+    if (q) {
+      result.set(sym.display, { ...q, _display: sym.display });
+    }
+  }
+
+  return result;
+}
+
+function formatPulseSymbol(sym: PulseSymbol, data: Record<string, unknown> | undefined): string {
+  if (!data) return `${sym.display}: NO DATA AVAILABLE`;
+
+  const n = (k: string): string => {
+    const v = data[k];
+    if (typeof v === "number" && isFinite(v)) return String(v);
+    return "N/A";
+  };
+
+  const last    = n("lastPrice") !== "N/A" ? n("lastPrice") : n("mark") !== "N/A" ? n("mark") : n("close");
+  const chg     = n("netChange") !== "N/A" ? n("netChange") : n("markChange");
+  const chgPct  = n("netPercentChange") !== "N/A" ? n("netPercentChange") : n("markPercentChange");
+  const hi      = n("highPrice") !== "N/A" ? n("highPrice") : n("high");
+  const lo      = n("lowPrice")  !== "N/A" ? n("lowPrice")  : n("low");
+  const vol     = n("totalVolume") !== "N/A" ? n("totalVolume") : n("volume");
+
+  const dir = chg !== "N/A" ? (Number(chg) > 0 ? "▲" : Number(chg) < 0 ? "▼" : "─") : "";
+
+  let parts = [`Last: ${last}`];
+  if (chg !== "N/A" && chgPct !== "N/A") {
+    parts.push(`${dir} ${chg} (${Number(chgPct).toFixed(2)}%)`);
+  }
+  if (hi !== "N/A" && lo !== "N/A") parts.push(`Range: ${lo}–${hi}`);
+  if (vol !== "N/A" && (sym.category === "equity" || sym.category === "futures" || sym.category === "commodity")) {
+    parts.push(`Vol: ${Number(vol).toLocaleString()}`);
+  }
+
+  return `${sym.display} [${sym.description}]\n  ${parts.join(" | ")}`;
+}
+
+function buildPulseDataBlock(dataMap: Map<string, Record<string, unknown>>): string {
+  const section = (cat: PulseSymbol["category"], header: string): string => {
+    const syms = PULSE_SYMBOLS.filter(s => s.category === cat);
+    const lines = syms.map(s => formatPulseSymbol(s, dataMap.get(s.display)));
+    return `### ${header}\n${lines.join("\n")}`;
+  };
+
+  return [
+    section("equity",    "── EQUITY INDICES ──"),
+    section("vol",       "── VOLATILITY STRUCTURE ──"),
+    section("breadth",   "── MARKET BREADTH (NYSE INTERNALS) ──"),
+    section("currency",  "── MACRO / CURRENCIES ──"),
+    section("futures",   "── EQUITY FUTURES ──"),
+    section("commodity", "── COMMODITIES ──"),
+  ].join("\n\n");
+}
+
+// ── MARKET SESSION DETECTION ─────────────────────────────────────────────────
+
 function getMarketSession(): { session: string; timeET: string; sessionGuidance: string } {
   const now = new Date();
   const formatter = new Intl.DateTimeFormat("en-US", {
@@ -212,54 +317,83 @@ function getMarketSession(): { session: string; timeET: string; sessionGuidance:
 }
 
 router.post("/market-briefing", async (req, res) => {
-  const { spyQuote, qqqQuote, iwmQuote, vixQuote, model, temperature } = req.body as {
-    spyQuote?: Record<string, unknown>;
-    qqqQuote?: Record<string, unknown>;
-    iwmQuote?: Record<string, unknown>;
-    vixQuote?: Record<string, unknown>;
+  const { accessToken, model, temperature } = req.body as {
+    accessToken?: string;
     model?: string;
     temperature?: number;
   };
 
+  if (!accessToken) {
+    return res.json({ response: "**Error:** Schwab access token required for Live Market Pulse.", error: "no_token" });
+  }
+
   const { session, timeET, sessionGuidance } = getMarketSession();
 
-  const prompt = `You are a senior quant trader and market strategist at a top-tier hedge fund. Based on the following LIVE market data, deliver a sharp "Live Market Pulse" assessment.
+  let dataBlock: string;
+  try {
+    const dataMap = await fetchMacroPulseData(accessToken);
+    dataBlock = buildPulseDataBlock(dataMap);
+  } catch (fetchErr: unknown) {
+    const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+    req.log.error({ err: fetchErr }, "Macro pulse data fetch error");
+    return res.json({ response: `**Data Fetch Failed:** ${msg}`, error: msg });
+  }
 
-CURRENT TIME: ${timeET}
-CURRENT SESSION: ${session}
-SESSION CONTEXT: ${sessionGuidance}
+  const sessionLabel = session === "Regular Trading Hours" ? "Intraday"
+    : session === "Pre-Market" ? "Open Prep"
+    : session === "After-Hours" ? "After-Hours"
+    : "Session";
 
-LIVE MARKET DATA:
-${spyQuote ? `SPY (S&P 500 ETF):\n${formatQuote(spyQuote)}` : "SPY: N/A"}
+  const prompt = `You are an elite Macro Prop Desk Analyst at a top-tier systematic hedge fund. Your job is to synthesize live multi-asset data into a precise, actionable market pulse used by senior traders. You think like a quant and write like a seasoned desk strategist.
 
-${qqqQuote ? `QQQ (Nasdaq-100 ETF):\n${formatQuote(qqqQuote)}` : "QQQ: N/A"}
+═══════════════════════════════════════════════════════
+LIVE MARKET PULSE — ${timeET} | SESSION: ${session}
+═══════════════════════════════════════════════════════
 
-${iwmQuote ? `IWM (Russell 2000 ETF):\n${formatQuote(iwmQuote)}` : "IWM: N/A"}
+SESSION DIRECTIVE: ${sessionGuidance}
 
-${vixQuote ? `VIX (Volatility Index):\n${formatQuote(vixQuote)}` : "VIX: N/A"}
+═══════════════════════════════════════════════════════
+LIVE MULTI-ASSET DATA FEED
+═══════════════════════════════════════════════════════
 
----
-Provide your Live Market Pulse using EXACTLY this format — adapt the tone and focus to the current session:
+${dataBlock}
+
+═══════════════════════════════════════════════════════
+ANALYTICAL FRAMEWORK — synthesize ALL data streams:
+
+VOLATILITY STRUCTURE: Is VIX expanding or compressing? Is VVIX elevated (tail risk)? Does the Put/Call Ratio confirm institutional hedging or complacency?
+
+MARKET BREADTH (NYSE INTERNALS): Is $TICK printing consistently above/below zero? Is the A/D Line ($ADD) confirming or diverging from price? Is $TRIN below 1.0 (bullish distribution) or above 1.0 (bearish volume flow)?
+
+INTER-MARKET / MACRO: Is the dollar ($DXY) strengthening (headwind for risk assets) or weakening? Is Gold (/GC) bid (risk-off) or offered (risk-on)? Is Crude (/CL) signaling demand expansion or contraction?
+
+EQUITY FUTURES vs CASH: Are /ES and /NQ leading or lagging the cash ETFs? Any premium/discount in futures suggesting directional intent?
+
+CROSS-ASSET CONFIRMATION: Do all data streams CONFIRM the same narrative? Or are there DIVERGENCES that signal a trap or reversal risk?
+═══════════════════════════════════════════════════════
+
+Deliver your Live Market Pulse using EXACTLY this structure:
 
 ## ⚡ Live Market Pulse — ${session}
-One-sentence verdict on the CURRENT macro environment with conviction.
+**One sentence. Maximum conviction. Current macro verdict.**
 
-## 🎯 Market Posture
-**[BULLISH / BEARISH / NEUTRAL / CAUTIOUS]** — Explain the stance in 1–2 sentences based on the live data.
+## 🎯 Macro Posture
+**[RISK-ON / RISK-OFF / NEUTRAL / DETERIORATING / RECOVERING]** — 2 sentences explaining the regime using the specific data provided.
 
-## 📊 What The Data Is Saying
-- SPY / S&P 500: [price action, momentum, key level]
-- QQQ / Nasdaq: [relative strength or weakness vs SPY]
-- IWM / Small Caps: [risk appetite signal]
-- VIX: [fear/complacency read and what it implies]
+## 📊 Multi-Asset Synthesis
+- **Equity Internals (SPY/QQQ/IWM):** [Leadership, divergences, relative strength]
+- **Volatility Regime (VIX/VVIX/CPC):** [Vol structure — expanding, compressing, complacent, or fearful]
+- **Breadth (TICK/ADD/TRIN):** [Is breadth confirming price action or diverging — institutional flow read]
+- **Macro/FX/Commodities (DXY/Gold/Crude):** [Risk-on or risk-off signals from inter-market]
+- **Futures (/ES//NQ):** [Pre-cash session bias or after-hours directional intent]
 
-## 🎲 Key Risk Right Now
-The single most important risk facing traders in this session. Be specific and data-driven.
+## 🔥 Primary Risk Vector
+The single highest-conviction risk right now. Name the specific data point driving it. One focused paragraph.
 
-## 💡 ${session === "Regular Trading Hours" ? "Intraday" : session === "Pre-Market" ? "Open Prep" : "Session"} Trading Bias
-A concrete, actionable bias. Include a specific level or setup. (e.g., "Fade strength toward SPY $X resistance, target $Y, stop $Z").
+## 💡 ${sessionLabel} Trading Bias
+Specific and actionable. Preferred setup, key levels, directional lean. Mention the specific instrument and price level. (e.g., "Lean long /ES above [level] with hard stop at [level]; avoid chasing QQQ without breadth confirmation from $ADD > +500.")
 
-Keep it under 350 words. Be precise, professional, and immediately actionable. Use markdown.`;
+Keep the entire output under 450 words. Be technically precise, data-driven, and immediately actionable. No filler. Use markdown.`;
 
   try {
     const response = await callGemini(prompt, model ?? "gemini-2.5-pro", temperature ?? 0.2);

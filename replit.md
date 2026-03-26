@@ -10,7 +10,8 @@ Key features implemented:
 - **MacroBar**: Fixed sticky bar with clickable SPY/QQQ/IWM/VIX cards; clicking sets active symbol
 - **Sidebar**: Compact pill overlays, clean timeframe grid, Schwab auth panel
 - **Tabs**: CHART | OPTIONS | AI INTELLIGENCE (merged from separate AI + Chat tabs)
-- **AI Intelligence Tab**: Daily Market Briefing, Deep Analysis (TA + Options Strategist), prompt chips, streaming chat
+- **AI Intelligence Tab**: Deep Analysis (TA + Options Strategist), prompt chips, streaming chat
+- **Live Market Pulse**: Sidebar button → modal; backend fetches 14-symbol batch (SPY/QQQ/IWM/$VIX/$VVIX/$CPC/$TICK/$ADD/$TRIN/$DXY//ES//NQ//GC//CL) in single Schwab call; institutional-grade session-aware Gemini prompt
 - **Market Scanner**: AI Discovery + Manual Filter modes; configurable scan universe (S&P 100, Nasdaq 100, High Beta, Custom), max results (1-20), sortable results table with ticker/strategy/confidence/thesis columns
 - **Options Tab**: Chain table with Options Strategist results panel above (collapsible)
 - **Backend AI routes**: `/api/ai/market-briefing`, `/api/ai/options-strategist`, `/api/ai/chat`, `/api/ai/analyze`

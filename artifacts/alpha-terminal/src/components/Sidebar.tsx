@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Slider } from "@/components/ui/slider";
 import { Terminal, SlidersHorizontal, X, LayoutDashboard, ListOrdered, Gauge, BrainCircuit, Zap } from "lucide-react";
 import { useState } from "react";
-import { useGetAvailableModels, useGetQuote } from "@workspace/api-client-react";
+import { useGetAvailableModels } from "@workspace/api-client-react";
 
 const API_BASE = "/api";
 
@@ -46,12 +46,6 @@ export function Sidebar({ onClose }: SidebarProps) {
   const [pulseLoading, setPulseLoading] = useState(false);
   const [pulseResult, setPulseResult] = useState<string | null>(null);
 
-  // Macro quotes for Live Market Pulse
-  const { data: spyQ } = useGetQuote({ symbol: "SPY", accessToken: accessToken || "" }, { query: { enabled: !!accessToken } });
-  const { data: qqqQ } = useGetQuote({ symbol: "QQQ", accessToken: accessToken || "" }, { query: { enabled: !!accessToken } });
-  const { data: iwmQ } = useGetQuote({ symbol: "IWM", accessToken: accessToken || "" }, { query: { enabled: !!accessToken } });
-  const { data: vixQ } = useGetQuote({ symbol: "VIX", accessToken: accessToken || "" }, { query: { enabled: !!accessToken } });
-
   const handleGeneratePulse = async () => {
     setPulseResult(null);
     setPulseOpen(true);
@@ -61,10 +55,7 @@ export function Sidebar({ onClose }: SidebarProps) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          spyQuote: spyQ,
-          qqqQuote: qqqQ,
-          iwmQuote: iwmQ,
-          vixQuote: vixQ,
+          accessToken,
           model: aiModel,
           temperature: 0.2,
         }),
