@@ -2,14 +2,17 @@
  * useStreamingQuotes — connects to the API server's SSE endpoint and feeds
  * live quote data into the Zustand store's streamPrices map.
  *
- * This hook lives at the app root (Terminal.tsx) so that a single
- * EventSource is shared across all components.  Components read from
- * streamPrices directly and only re-render when their specific symbol
- * changes — the chart, options tab, and AI tab are never touched.
+ * Lives at the app root (Terminal.tsx) — one EventSource per session.
+ * Components use useQuote() which reads streamPrices directly and only
+ * re-renders when their specific symbol changes.
  *
- * EventSource reconnects automatically on network drop (browser built-in).
- * We call POST /api/stream/start to (re)initialise the server-side WS
- * whenever the access token changes.
+ * IMPORTANT: streamConnected is set to TRUE only when a real Schwab tick
+ * arrives (event: quote), NOT when the SSE HTTP connection opens.
+ * The SSE always connects instantly to our own server — that says nothing
+ * about whether Schwab's WS is alive and producing data.
+ *
+ * EventSource auto-reconnects on drop; POST /api/stream/start restarts
+ * the server-side Schwab WS whenever the access token changes.
  */
 
 import { useEffect, useRef } from "react";
@@ -28,29 +31,30 @@ export function useStreamingQuotes() {
     setStreamConnected,
   } = useTerminalStore();
 
-  const esRef       = useRef<EventSource | null>(null);
-  const tokenRef    = useRef<string | null>(null);
+  const esRef    = useRef<EventSource | null>(null);
+  const tokenRef = useRef<string | null>(null);
 
-  // ── Derive the full symbol list to subscribe ──────────────────────────────
-  function allSymbols(active: string, tape: string[], macro: string[]): string[] {
-    return [...new Set([active, ...tape, ...macro].map(s => s.toUpperCase()))];
+  // ── Full symbol list: active + tape + macro cards ─────────────────────────
+  function allSymbols(): string[] {
+    return [...new Set(
+      [symbol, ...tickerTapeSymbols, ...macroSymbols].map(s => s.toUpperCase())
+    )];
   }
 
-  // ── Start / restart the server-side Schwab Streamer WS ───────────────────
+  // ── Tell the server to (re)start its Schwab WS with this token ────────────
   async function startServerStream(token: string) {
-    const symbols = allSymbols(symbol, tickerTapeSymbols, macroSymbols);
     try {
       await fetch(`${API_BASE}/stream/start`, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ accessToken: token, symbols }),
+        body:    JSON.stringify({ accessToken: token, symbols: allSymbols() }),
       });
     } catch (err) {
       console.warn("[streaming] startServerStream failed:", err);
     }
   }
 
-  // ── Inform server of additional symbols added later ───────────────────────
+  // ── Tell the server about additional symbols (non-blocking) ───────────────
   async function addServerSymbols(symbols: string[]) {
     try {
       await fetch(`${API_BASE}/stream/symbols`, {
@@ -59,16 +63,14 @@ export function useStreamingQuotes() {
         body:    JSON.stringify({ symbols }),
       });
     } catch {
-      // non-critical
+      // best-effort
     }
   }
 
-  // ── Open (or re-open) the SSE connection ──────────────────────────────────
+  // ── Open (or reopen) the SSE connection ──────────────────────────────────
   function openEventSource() {
-    if (esRef.current) {
-      esRef.current.close();
-      esRef.current = null;
-    }
+    esRef.current?.close();
+    esRef.current = null;
 
     const es = new EventSource(`${API_BASE}/stream/quotes`);
     esRef.current = es;
@@ -77,32 +79,38 @@ export function useStreamingQuotes() {
       try {
         const q = JSON.parse((e as MessageEvent).data) as LiveQuote;
         setStreamQuote(q);
+        // Only mark stream as connected once REAL Schwab data lands.
+        // This is the gate that prevents REST from being disabled prematurely.
+        setStreamConnected(true);
       } catch {
-        // malformed — ignore
+        // malformed frame — ignore
       }
     });
 
+    // Heartbeat = SSE pipeline is alive, but Schwab WS may still be logging in.
+    // Do NOT set streamConnected here — REST must stay active until quotes flow.
     es.addEventListener("heartbeat", () => {
-      setStreamConnected(true);
+      // intentionally no-op for connection state
     });
 
-    es.onopen  = () => setStreamConnected(true);
+    // onopen fires immediately when the HTTP stream to our API server opens.
+    // This does NOT mean Schwab WS is connected — do NOT gate REST on this.
+    es.onopen = () => {
+      // intentionally no-op
+    };
+
     es.onerror = () => {
+      // SSE dropped — clear live flag so REST resumes for all symbols
       setStreamConnected(false);
-      // EventSource auto-reconnects; we don't need manual retry here
     };
   }
 
-  // ── Effect: start server stream when token arrives / changes ─────────────
+  // ── Effect: token change → restart server WS + SSE ───────────────────────
   useEffect(() => {
     if (!accessToken) {
-      // Token gone — close SSE but leave server stream running
-      // (it will stop itself once no clients remain for >60s)
       setStreamConnected(false);
-      if (esRef.current) {
-        esRef.current.close();
-        esRef.current = null;
-      }
+      esRef.current?.close();
+      esRef.current = null;
       tokenRef.current = null;
       return;
     }
@@ -110,25 +118,19 @@ export function useStreamingQuotes() {
     const isNewToken = accessToken !== tokenRef.current;
     tokenRef.current = accessToken;
 
-    // Always open/re-open the SSE connection on token change
     openEventSource();
 
     if (isNewToken) {
       void startServerStream(accessToken);
     }
-
-    return () => {
-      // cleanup handled by the token-change branch above
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessToken]);
 
-  // ── Effect: subscribe server to newly added symbols ───────────────────────
+  // ── Effect: new symbols added → push them to the server subscription ──────
   useEffect(() => {
     if (!accessToken) return;
-    const extras = allSymbols(symbol, tickerTapeSymbols, macroSymbols);
-    void addServerSymbols(extras);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    void addServerSymbols(allSymbols());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol, tickerTapeSymbols.join(","), macroSymbols.join(",")]);
 
   // ── Cleanup on unmount ────────────────────────────────────────────────────

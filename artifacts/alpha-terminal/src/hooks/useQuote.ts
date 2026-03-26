@@ -1,18 +1,20 @@
 /**
  * useQuote — unified quote data hook.
  *
- * Priority:
- *  1. Stream price from Zustand (sub-second latency, no extra fetch)
- *  2. REST GET /api/market/quote fallback (30-second poll cadence)
+ * Priority (per symbol, independently):
+ *  1. Stream price from Zustand when THAT SYMBOL has fresh data (< 60s old)
+ *  2. REST GET /api/market/quote fallback — always runs until stream data arrives
  *
- * Components use this instead of useGetQuote directly so they
- * transparently upgrade to streaming when the WS connection is live.
+ * Critical design: REST is gated on per-symbol stream freshness, NOT on the
+ * global streamConnected flag.  streamConnected only going true when actual
+ * Schwab ticks land — but REST must stay alive until the first real tick
+ * for each symbol arrives so there are never unexplained dashes.
  */
 
 import { useTerminalStore, type LiveQuote } from "@/lib/store";
 import { useGetQuote }                      from "@workspace/api-client-react";
 
-interface QuoteData {
+export interface QuoteData {
   symbol:           string;
   last:             number | null;
   bid:              number | null;
@@ -41,32 +43,43 @@ function fromLive(q: LiveQuote): QuoteData {
     high:             q.high,
     low:              q.low,
     close:            q.close,
-    fiftyTwoWeekHigh: null,
+    fiftyTwoWeekHigh: null,  // streamer doesn't carry fundamental data
     fiftyTwoWeekLow:  null,
     peRatio:          null,
   };
 }
 
-export function useQuote(symbol: string) {
-  const { accessToken, streamPrices, streamConnected } = useTerminalStore();
+// How old stream data can be before we fall back to REST (60 seconds)
+const STREAM_STALE_MS = 60_000;
 
-  // REST fallback — poll every 30s; disabled when streaming is active
-  const restEnabled = !!accessToken && !!symbol && !streamConnected;
+export function useQuote(symbol: string) {
+  const { accessToken, streamPrices } = useTerminalStore();
+
+  const symUpper    = symbol.toUpperCase();
+  const streamQuote = streamPrices[symUpper];
+
+  // This symbol has fresh live data if and only if a tick arrived recently
+  const hasLiveData = !!streamQuote && (Date.now() - streamQuote.ts) < STREAM_STALE_MS;
+
+  // REST runs when:
+  //  - There is a valid access token
+  //  - We don't already have fresh stream data for this specific symbol
+  //  - Polls every 10 seconds as a catch-up / first-load mechanism
+  const restEnabled = !!accessToken && !!symbol && !hasLiveData;
+
   const { data: restData, isLoading, error } = useGetQuote(
     { symbol, accessToken: accessToken || "" },
     {
       query: {
-        enabled:       restEnabled,
-        refetchInterval: 30_000,
-        staleTime:     20_000,
+        enabled:         restEnabled,
+        refetchInterval: 10_000,   // 10s poll — fast enough while waiting for stream
+        staleTime:       8_000,
       },
     }
   );
 
-  const streamQuote = streamPrices[symbol.toUpperCase()];
-
-  // Stream data wins if available and recent (< 60s old)
-  if (streamQuote && Date.now() - streamQuote.ts < 60_000) {
+  // ── Stream wins when fresh ──────────────────────────────────────────────────
+  if (hasLiveData) {
     return {
       data:      fromLive(streamQuote),
       isLoading: false,
@@ -75,22 +88,22 @@ export function useQuote(symbol: string) {
     };
   }
 
-  // REST fallback
+  // ── REST fallback ───────────────────────────────────────────────────────────
   const data: QuoteData | null = restData
     ? {
         symbol:           restData.symbol,
-        last:             restData.last      ?? null,
-        bid:              restData.bid       ?? null,
-        ask:              restData.ask       ?? null,
-        change:           restData.change    ?? null,
-        changePct:        restData.changePct ?? null,
-        volume:           restData.volume    ?? null,
-        high:             restData.high      ?? null,
-        low:              restData.low       ?? null,
+        last:             restData.last           ?? null,
+        bid:              restData.bid            ?? null,
+        ask:              restData.ask            ?? null,
+        change:           restData.change         ?? null,
+        changePct:        restData.changePct      ?? null,
+        volume:           restData.volume         ?? null,
+        high:             restData.high           ?? null,
+        low:              restData.low            ?? null,
         close:            null,
         fiftyTwoWeekHigh: restData.fiftyTwoWeekHigh ?? null,
         fiftyTwoWeekLow:  restData.fiftyTwoWeekLow  ?? null,
-        peRatio:          restData.peRatio           ?? null,
+        peRatio:          restData.peRatio          ?? null,
         error:            restData.error,
       }
     : null;
