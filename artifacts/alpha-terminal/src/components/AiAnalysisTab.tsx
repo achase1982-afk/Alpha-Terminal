@@ -3,7 +3,7 @@ import { useTerminalStore } from "@/lib/store";
 import { useGetQuote, useGetPriceHistory, useGetOptionChain, useRunTechnicalAnalysis, useRunOptionsAnalysis } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Cpu, Zap, Activity } from "lucide-react";
+import { Cpu, Zap, Activity, BarChart2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
 export function AiAnalysisTab() {
@@ -87,7 +87,7 @@ export function AiAnalysisTab() {
               variant="outline"
               className="flex-1 font-mono border-primary/50 text-primary hover:bg-primary/10"
             >
-              <Layers className="w-4 h-4 mr-2" />
+              <BarChart2 className="w-4 h-4 mr-2" />
               RUN OPTIONS ANALYSIS
             </Button>
           </div>

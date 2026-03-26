@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Terminal, Search, Settings2, SlidersHorizontal, Layers, X } from "lucide-react";
+import { Terminal, Search, Settings2, SlidersHorizontal, X } from "lucide-react";
 import { useState } from "react";
 
 const TIMEFRAMES = ["1D", "5D", "1M", "3M", "6M", "1Y", "2Y", "5Y"];
@@ -109,7 +109,7 @@ export function Sidebar({ onClose }: SidebarProps) {
         {/* CHART OVERLAYS */}
         <div className="space-y-3 pt-1 bg-card p-3 sm:p-4 rounded-xl border border-card-border">
           <Label className="font-mono text-[10px] sm:text-xs text-muted-foreground flex items-center gap-2 pb-2 border-b border-card-border">
-            <Layers className="w-3 h-3" /> OVERLAYS
+            <SlidersHorizontal className="w-3 h-3" /> OVERLAYS
           </Label>
           <div className="space-y-3 sm:space-y-4 pt-1">
             {Object.entries(overlays).map(([key, value]) => (

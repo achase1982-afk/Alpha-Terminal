@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { DownloadCloud } from "lucide-react";
+import { DownloadCloud, Table2 } from "lucide-react";
 
 export function OptionsTab() {
   const { symbol, accessToken } = useTerminalStore();
@@ -89,7 +89,7 @@ export function OptionsTab() {
 
         {!isLoading && !error && !data && (
           <div className="p-20 flex flex-col items-center justify-center text-muted-foreground font-mono h-full">
-            <Layers className="w-12 h-12 mb-4 opacity-20" />
+            <Table2 className="w-12 h-12 mb-4 opacity-20" />
             CLICK "LOAD CHAIN" TO FETCH OPTIONS DATA.
           </div>
         )}
