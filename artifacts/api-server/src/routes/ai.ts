@@ -355,7 +355,7 @@ interface ScannerAiResult {
 }
 
 router.post("/market-scanner", async (req, res) => {
-  const { symbols, accessToken, mode, filters, model, temperature } = req.body as {
+  const { symbols, accessToken, mode, filters, model, temperature, maxResults } = req.body as {
     symbols: string[];
     accessToken: string;
     mode: "ai" | "manual";
@@ -368,14 +368,16 @@ router.post("/market-scanner", async (req, res) => {
     };
     model?: string;
     temperature?: number;
+    maxResults?: number;
   };
+
+  const resultCount = Math.min(Math.max(maxResults ?? 10, 1), 20);
 
   if (!symbols?.length || !accessToken) {
     return res.status(400).json({ error: "symbols and accessToken are required" });
   }
 
-  // Batch fetch all quotes in a single Schwab API call
-  const symbolList = symbols.slice(0, 50).join(",");
+  const symbolList = symbols.join(",");
   let quotes: ScannerQuote[] = [];
 
   try {
@@ -447,10 +449,10 @@ REAL-TIME MARKET DATA (sorted by momentum):
 Symbol | Last Price | Day Change | Volume  | Day Range
 ${tableRows}
 
-YOUR TASK: Analyze this data and identify the TOP 3 highest-probability trading setups right now.
+YOUR TASK: Analyze this data and identify the TOP ${resultCount} highest-probability trading setups right now.
 
 STRICT RULES:
-1. Return EXACTLY 3 setups — no more, no less
+1. Return EXACTLY ${resultCount} setups — no more, no less
 2. Each setup must have a clear DIRECTION: BULLISH, BEARISH, or NEUTRAL
 3. NEUTRAL = low volatility, range-bound, ideal for Iron Condor/Butterfly/Strangle
 4. Confidence must be: HIGH (strong multi-factor confluence), MILD (moderate signals), or LOW (speculative)

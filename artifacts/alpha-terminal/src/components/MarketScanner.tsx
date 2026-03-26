@@ -3,26 +3,61 @@ import { useTerminalStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
-import { Zap, SlidersHorizontal, TrendingUp, TrendingDown, Minus, AlertTriangle } from "lucide-react";
+import { Zap, SlidersHorizontal, TrendingUp, TrendingDown, Minus, ChevronUp, ChevronDown, AlertTriangle, Search } from "lucide-react";
 
 const API_BASE = "/api";
 
-// Top 50 most liquid US equity symbols
-const SCANNER_SYMBOLS = [
-  "AAPL","MSFT","NVDA","AMZN","META","GOOGL","TSLA","AMD","AVGO","NFLX",
-  "ORCL","CRM","INTC","QCOM","MU","SMCI","NOW","PLTR","COIN","MSTR",
-  "JPM","BAC","GS","MS","WFC","C","V","MA","PYPL","SQ",
-  "UNH","LLY","JNJ","PFE","ABBV","CVX","XOM","OXY","SLB","HAL",
-  "COST","WMT","TGT","HD","LOW","DIS","T","VZ","SPOT","UBER",
-];
+const UNIVERSES: Record<string, { label: string; symbols: string[] }> = {
+  sp100: {
+    label: "S&P 500 Top 100",
+    symbols: [
+      "AAPL","MSFT","NVDA","AMZN","META","GOOGL","GOOG","BRK.B","LLY","AVGO",
+      "JPM","TSLA","UNH","XOM","V","MA","PG","COST","JNJ","HD",
+      "ABBV","WMT","NFLX","BAC","CRM","ORCL","CVX","MRK","AMD","KO",
+      "PEP","LIN","TMO","ACN","CSCO","MCD","ADBE","WFC","ABT","IBM",
+      "GE","DHR","PM","ISRG","CAT","INTU","QCOM","VZ","TXN","CMCSA",
+      "NOW","AMGN","PFE","AXP","GS","BKNG","SPGI","MS","LOW","NEE",
+      "T","BLK","RTX","UNP","DE","AMAT","SYK","VRTX","MDLZ","SCHW",
+      "ETN","LRCX","CB","PGR","C","REGN","BSX","ADI","MU","PANW",
+      "FI","KLAC","SO","MMC","SBUX","DUK","SNPS","TMUS","CL","CDNS",
+      "HCA","CME","TGT","WM","ICE","MCO","PYPL","ZTS","PH","SLB",
+    ],
+  },
+  ndx100: {
+    label: "Nasdaq 100",
+    symbols: [
+      "AAPL","MSFT","NVDA","AMZN","META","GOOGL","GOOG","AVGO","TSLA","COST",
+      "NFLX","AMD","ADBE","QCOM","PEP","LIN","CSCO","INTU","TXN","CMCSA",
+      "AMGN","ISRG","BKNG","AMAT","VRTX","LRCX","PANW","ADI","MU","KLAC",
+      "SNPS","CDNS","REGN","MELI","PYPL","MDLZ","MAR","FTNT","ORLY","CHTR",
+      "CTAS","MNST","DASH","ABNB","KDP","PCAR","MRVL","AEP","NXPI","KHC",
+      "DXCM","ODFL","CPRT","FANG","PAYX","EXC","ROST","FAST","IDXX","CTSH",
+      "GEHC","VRSK","AZN","CCEP","CSGP","EA","BKR","GFS","ON","BIIB",
+      "TTD","XEL","TEAM","ANSS","ZS","CDW","ILMN","MDB","DDOG","WBD",
+      "SMCI","COIN","ARM","CEG","CRWD","MSTR","APP","PLTR","HOOD","WDAY",
+      "SPLK","PDD","RIVN","LCID","ENPH","SEDG","FSLR","MRNA","ZM","ROKU",
+    ],
+  },
+  highbeta: {
+    label: "High Volatility / Beta",
+    symbols: [
+      "TSLA","NVDA","AMD","SMCI","COIN","MSTR","PLTR","RIVN","LCID","NIO",
+      "SOFI","HOOD","RBLX","SNAP","SQ","SHOP","ROKU","ENPH","SEDG","FSLR",
+      "MRNA","BNTX","ARKK","UPST","AFRM","DKNG","PENN","CRWD","NET","DDOG",
+      "SNOW","U","ABNB","DASH","MELI","SE","GRAB","BABA","JD","PDD",
+      "RIOT","MARA","CLSK","HUT","GME","AMC","BBBY","CVNA","LAZR","IONQ",
+      "RGTI","QBTS","SOUN","JOBY","ACHR","LUNR","RKLB","SPCE","PLUG","FCEL",
+    ],
+  },
+};
 
-type Direction = "BULLISH" | "BEARISH" | "NEUTRAL";
-type Confidence = "HIGH" | "MILD" | "LOW";
+type SortKey = "symbol" | "direction" | "confidence" | "changePct";
+type SortDir = "asc" | "desc";
 
 interface ScannerSetup {
   symbol: string;
-  direction: Direction;
-  confidence: Confidence;
+  direction: "BULLISH" | "BEARISH" | "NEUTRAL";
+  confidence: "HIGH" | "MILD" | "LOW";
   strategy: string;
   price: number;
   changePct: number;
@@ -40,162 +75,111 @@ interface ScannerQuote {
   low: number;
 }
 
-// ── Color utilities ────────────────────────────────────────────────────────────
-function directionStyle(dir: Direction) {
-  if (dir === "BULLISH")  return { color: "#00E676", label: "BULLISH",  icon: <TrendingUp  className="w-3.5 h-3.5" /> };
-  if (dir === "BEARISH")  return { color: "#FF1744", label: "BEARISH",  icon: <TrendingDown className="w-3.5 h-3.5" /> };
-  return                         { color: "#00BFFF", label: "NEUTRAL",  icon: <Minus        className="w-3.5 h-3.5" /> };
+function dirColor(dir: string) {
+  if (dir === "BULLISH") return "#00E676";
+  if (dir === "BEARISH") return "#FF1744";
+  return "#00BFFF";
 }
 
-function confidenceStyle(conf: Confidence) {
-  if (conf === "HIGH")  return { color: "#FFD700", bg: "rgba(255,215,0,0.08)",  border: "rgba(255,215,0,0.3)",  label: "HIGH CONFIDENCE" };
-  if (conf === "MILD")  return { color: "#00BFFF", bg: "rgba(0,191,255,0.08)", border: "rgba(0,191,255,0.3)",  label: "MILD CONFIDENCE" };
-  return                       { color: "#9CA3AF", bg: "rgba(156,163,175,0.06)", border: "rgba(156,163,175,0.2)", label: "LOW CONFIDENCE"  };
+function dirIcon(dir: string) {
+  if (dir === "BULLISH") return <TrendingUp className="w-3 h-3" />;
+  if (dir === "BEARISH") return <TrendingDown className="w-3 h-3" />;
+  return <Minus className="w-3 h-3" />;
 }
 
-// ── Setup card ─────────────────────────────────────────────────────────────────
-function SetupCard({ setup, rank }: { setup: ScannerSetup; rank: number }) {
-  const { setSymbol } = useTerminalStore();
-  const dir = directionStyle(setup.direction);
-  const conf = confidenceStyle(setup.confidence);
+const CONF_ORDER: Record<string, number> = { HIGH: 3, MILD: 2, LOW: 1 };
 
+function confBadge(conf: string) {
+  const c = conf === "HIGH" ? "#FFD700" : conf === "MILD" ? "#00BFFF" : "#6B7280";
   return (
-    <div
-      className="rounded-xl border overflow-hidden transition-all duration-200 hover:scale-[1.01]"
-      style={{ borderColor: conf.border, background: conf.bg }}
-    >
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b"
-        style={{ borderColor: conf.border }}>
-        <div className="flex items-center gap-3">
-          <span className="font-mono text-[10px] text-gray-500 font-bold">#{rank}</span>
-          <button
-            onClick={() => setSymbol(setup.symbol)}
-            className="font-mono font-black text-xl tracking-widest transition-opacity hover:opacity-70"
-            style={{ color: dir.color }}
-          >
-            {setup.symbol}
-          </button>
-          <div className="flex items-center gap-1.5 font-mono text-xs font-bold"
-            style={{ color: dir.color }}>
-            {dir.icon}
-            {dir.label}
-          </div>
-        </div>
-
-        <div className="flex flex-col items-end gap-0.5">
-          <span className="font-mono text-[9px] font-bold px-2 py-0.5 rounded-full"
-            style={{ color: conf.color, background: conf.bg, border: `1px solid ${conf.border}` }}>
-            {conf.label}
-          </span>
-          <span className="font-mono text-xs font-bold"
-            style={{ color: setup.changePct >= 0 ? "#00E676" : "#FF1744" }}>
-            {setup.changePct >= 0 ? "+" : ""}{setup.changePct.toFixed(2)}%
-          </span>
-        </div>
-      </div>
-
-      {/* Body */}
-      <div className="px-4 py-3 space-y-2">
-        <div className="flex items-center gap-2">
-          <span className="font-mono text-[10px] text-gray-500 uppercase tracking-widest shrink-0">Strategy</span>
-          <span className="font-mono text-xs font-bold" style={{ color: conf.color }}>
-            {setup.strategy}
-          </span>
-          {setup.price > 0 && (
-            <span className="ml-auto font-mono text-xs text-gray-300 font-semibold">
-              ${setup.price.toFixed(2)}
-            </span>
-          )}
-        </div>
-
-        <div className="font-sans text-xs text-gray-300 leading-relaxed border-l-2 pl-3"
-          style={{ borderColor: conf.border }}>
-          {setup.rationale}
-        </div>
-
-        {setup.riskNote && (
-          <div className="flex items-start gap-1.5 text-[10px] font-mono text-yellow-600/80">
-            <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
-            {setup.riskNote}
-          </div>
-        )}
-
-        <button
-          onClick={() => setSymbol(setup.symbol)}
-          className="w-full mt-1 py-1.5 rounded font-mono text-[10px] font-bold border transition-all hover:opacity-80"
-          style={{ color: dir.color, borderColor: dir.color, background: `${dir.color}10` }}
-        >
-          → LOAD {setup.symbol} INTO DASHBOARD
-        </button>
-      </div>
-    </div>
+    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+      style={{ color: c, background: `${c}15`, border: `1px solid ${c}40` }}>
+      {conf}
+    </span>
   );
 }
 
-// ── Manual result row ──────────────────────────────────────────────────────────
-function ManualRow({ q }: { q: ScannerQuote }) {
-  const { setSymbol } = useTerminalStore();
-  const isUp = q.changePct >= 0;
-  const color = isUp ? "#00E676" : "#FF1744";
-
+function SortHeader({ label, sortKey, currentKey, currentDir, onSort }: {
+  label: string; sortKey: SortKey; currentKey: SortKey; currentDir: SortDir;
+  onSort: (k: SortKey) => void;
+}) {
+  const active = currentKey === sortKey;
   return (
-    <button
-      onClick={() => setSymbol(q.symbol)}
-      className="w-full flex items-center gap-3 px-3 py-2 rounded-lg border border-card-border bg-card
-        hover:border-primary/40 hover:bg-primary/5 transition-all text-left group"
-    >
-      <span className="font-mono font-black text-sm w-16 shrink-0" style={{ color }}>
-        {q.symbol}
-      </span>
-      <span className="font-mono text-sm font-bold text-gray-200 tabular-nums w-20 shrink-0">
-        ${q.last.toFixed(2)}
-      </span>
-      <span className="font-mono text-xs font-bold tabular-nums w-16 shrink-0" style={{ color }}>
-        {isUp ? "▲" : "▼"} {Math.abs(q.changePct).toFixed(2)}%
-      </span>
-      <span className="font-mono text-[10px] text-gray-500 tabular-nums">
-        Vol {(q.volume / 1e6).toFixed(1)}M
-      </span>
-      <span className="ml-auto font-mono text-[10px] text-gray-600 group-hover:text-primary transition-colors">
-        LOAD →
-      </span>
+    <button onClick={() => onSort(sortKey)}
+      className="flex items-center gap-1 text-[10px] uppercase tracking-wider font-bold transition-colors hover:text-white"
+      style={{ color: active ? "#00BFFF" : "#6B7280" }}>
+      {label}
+      {active && (currentDir === "asc" ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
     </button>
   );
 }
 
-// ── Main Component ─────────────────────────────────────────────────────────────
 export function MarketScanner() {
-  const { accessToken, aiModel, aiTemp } = useTerminalStore();
+  const { accessToken, aiModel, aiTemp, setSymbol } = useTerminalStore();
 
   const [mode, setMode] = useState<"ai" | "manual">("ai");
+  const [universe, setUniverse] = useState("sp100");
+  const [customTickers, setCustomTickers] = useState("");
+  const [maxResults, setMaxResults] = useState(10);
   const [isScanning, setIsScanning] = useState(false);
   const [aiSetups, setAiSetups] = useState<ScannerSetup[]>([]);
   const [marketSummary, setMarketSummary] = useState("");
   const [rawError, setRawError] = useState<string | null>(null);
   const [manualQuotes, setManualQuotes] = useState<ScannerQuote[]>([]);
+  const [scanCount, setScanCount] = useState<number | null>(null);
 
-  // Manual filter state
+  const [sortKey, setSortKey] = useState<SortKey>("confidence");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+
   const [minChangePct, setMinChangePct] = useState(0);
   const [maxChangePct, setMaxChangePct] = useState(15);
-  const [minVolume, setMinVolume] = useState(1);       // in millions
+  const [minVolume, setMinVolume] = useState(1);
   const [minPrice, setMinPrice] = useState(5);
   const [maxPrice, setMaxPrice] = useState(1000);
 
+  const getSymbols = (): string[] => {
+    if (universe === "custom") {
+      return customTickers.split(/[,\s]+/).map(s => s.trim().toUpperCase()).filter(Boolean);
+    }
+    return UNIVERSES[universe]?.symbols ?? [];
+  };
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir(d => d === "asc" ? "desc" : "asc");
+    } else {
+      setSortKey(key);
+      setSortDir("desc");
+    }
+  };
+
+  const sortedSetups = [...aiSetups].sort((a, b) => {
+    let cmp = 0;
+    if (sortKey === "symbol") cmp = a.symbol.localeCompare(b.symbol);
+    else if (sortKey === "direction") cmp = a.direction.localeCompare(b.direction);
+    else if (sortKey === "confidence") cmp = (CONF_ORDER[a.confidence] ?? 0) - (CONF_ORDER[b.confidence] ?? 0);
+    else if (sortKey === "changePct") cmp = a.changePct - b.changePct;
+    return sortDir === "desc" ? -cmp : cmp;
+  });
+
   const handleScan = async () => {
     if (!accessToken) return;
+    const syms = getSymbols();
+    if (!syms.length) { setRawError("No symbols to scan. Add tickers to your Custom Watchlist."); return; }
+
     setIsScanning(true);
     setRawError(null);
     setAiSetups([]);
     setManualQuotes([]);
     setMarketSummary("");
+    setScanCount(syms.length);
 
     try {
       const payload =
         mode === "ai"
-          ? { symbols: SCANNER_SYMBOLS, accessToken, mode: "ai", model: aiModel, temperature: aiTemp }
+          ? { symbols: syms, accessToken, mode: "ai", model: aiModel, temperature: aiTemp, maxResults }
           : {
-              symbols: SCANNER_SYMBOLS, accessToken, mode: "manual",
+              symbols: syms, accessToken, mode: "manual",
               filters: { minChangePct, maxChangePct, minVolume, minPrice, maxPrice },
             };
 
@@ -230,17 +214,17 @@ export function MarketScanner() {
   };
 
   const hasResults = mode === "ai" ? aiSetups.length > 0 : manualQuotes.length > 0;
+  const currentSyms = getSymbols();
 
   return (
     <div className="flex flex-col gap-4 max-w-4xl mx-auto pb-6">
-      {/* ── Mode Selector ── */}
       <div className="bg-card border border-card-border rounded-xl overflow-hidden">
         <div className="flex border-b border-card-border">
           {(["ai", "manual"] as const).map(m => (
             <button
               key={m}
               onClick={() => setMode(m)}
-              className={`flex-1 py-3 font-mono text-xs font-bold uppercase tracking-widest transition-all ${
+              className={`flex-1 py-3 text-xs font-bold uppercase tracking-widest transition-all ${
                 mode === m
                   ? "bg-primary/15 text-primary border-b-2 border-primary"
                   : "text-muted-foreground hover:text-foreground hover:bg-secondary/20"
@@ -259,32 +243,87 @@ export function MarketScanner() {
           ))}
         </div>
 
-        {/* ── Manual Filters ── */}
+        <div className="p-4 bg-[#0D1117] space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold flex items-center gap-1.5">
+                <Search className="w-3 h-3" /> Scan Universe
+              </Label>
+              <select
+                value={universe}
+                onChange={e => setUniverse(e.target.value)}
+                className="w-full h-8 rounded-md border border-card-border bg-card text-foreground text-xs px-2 focus:outline-none focus:ring-1 focus:ring-primary/50"
+              >
+                {Object.entries(UNIVERSES).map(([k, v]) => (
+                  <option key={k} value={k}>{v.label} ({v.symbols.length})</option>
+                ))}
+                <option value="custom">Custom Watchlist</option>
+              </select>
+            </div>
+
+            {mode === "ai" && (
+              <div className="space-y-1.5">
+                <Label className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold">
+                  Max Results
+                </Label>
+                <input
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={maxResults}
+                  onChange={e => setMaxResults(Math.min(20, Math.max(1, Number(e.target.value) || 1)))}
+                  className="w-full h-8 rounded-md border border-card-border bg-card text-foreground text-xs px-2 tabular-nums focus:outline-none focus:ring-1 focus:ring-primary/50"
+                />
+              </div>
+            )}
+          </div>
+
+          {universe === "custom" && (
+            <div className="space-y-1.5">
+              <Label className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold">
+                Custom Watchlist (comma-separated)
+              </Label>
+              <textarea
+                value={customTickers}
+                onChange={e => setCustomTickers(e.target.value.toUpperCase())}
+                placeholder="AAPL, MSFT, NVDA, TSLA, AMD..."
+                rows={2}
+                className="w-full rounded-md border border-card-border bg-card text-foreground text-xs px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-primary/50 uppercase"
+              />
+            </div>
+          )}
+
+          <div className="text-[10px] text-muted-foreground">
+            Scanning <span className="text-primary font-bold">{currentSyms.length} tickers</span>
+            {mode === "ai" && <> — AI will return up to <span className="font-bold" style={{ color: "#FFD700" }}>{maxResults} setups</span></>}
+          </div>
+        </div>
+
         {mode === "manual" && (
-          <div className="p-4 bg-[#0D1117] grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="p-4 bg-[#0D1117] border-t border-card-border grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <div className="flex justify-between font-mono text-[10px] text-muted-foreground uppercase">
+              <div className="flex justify-between text-[10px] text-muted-foreground uppercase">
                 <span>Min Change %</span>
                 <span style={{ color: "#00E676" }}>{minChangePct >= 0 ? "+" : ""}{minChangePct}%</span>
               </div>
               <Slider value={[minChangePct]} onValueChange={v => setMinChangePct(v[0])} min={-15} max={15} step={0.5} />
             </div>
             <div className="space-y-2">
-              <div className="flex justify-between font-mono text-[10px] text-muted-foreground uppercase">
+              <div className="flex justify-between text-[10px] text-muted-foreground uppercase">
                 <span>Max Change %</span>
                 <span style={{ color: "#00E676" }}>+{maxChangePct}%</span>
               </div>
               <Slider value={[maxChangePct]} onValueChange={v => setMaxChangePct(v[0])} min={0} max={30} step={0.5} />
             </div>
             <div className="space-y-2">
-              <div className="flex justify-between font-mono text-[10px] text-muted-foreground uppercase">
+              <div className="flex justify-between text-[10px] text-muted-foreground uppercase">
                 <span>Min Volume</span>
                 <span style={{ color: "#00BFFF" }}>{minVolume}M+</span>
               </div>
               <Slider value={[minVolume]} onValueChange={v => setMinVolume(v[0])} min={0} max={100} step={1} />
             </div>
             <div className="space-y-2">
-              <div className="flex justify-between font-mono text-[10px] text-muted-foreground uppercase">
+              <div className="flex justify-between text-[10px] text-muted-foreground uppercase">
                 <span>Price Range</span>
                 <span style={{ color: "#00BFFF" }}>${minPrice} – ${maxPrice}</span>
               </div>
@@ -296,20 +335,11 @@ export function MarketScanner() {
           </div>
         )}
 
-        {/* ── AI Mode description ── */}
-        {mode === "ai" && !hasResults && !isScanning && (
-          <div className="p-4 bg-[#0D1117] text-center font-mono text-[10px] text-muted-foreground leading-relaxed">
-            Batch-fetches L1 quotes for <span className="text-primary font-bold">{SCANNER_SYMBOLS.length} top active stocks</span>, then passes the data to Gemini to identify the{" "}
-            <span style={{ color: "#FFD700" }} className="font-bold">TOP 3 highest-probability setups</span> — each with direction, confidence, strategy, and rationale.
-          </div>
-        )}
-
-        {/* ── Scan Button ── */}
         <div className="px-4 pb-4 pt-3 bg-[#0D1117] border-t border-card-border">
           <Button
             onClick={handleScan}
-            disabled={!accessToken || isScanning}
-            className="w-full font-mono text-xs font-bold h-10"
+            disabled={!accessToken || isScanning || currentSyms.length === 0}
+            className="w-full text-xs font-bold h-10"
             style={
               !isScanning
                 ? { background: "linear-gradient(135deg, #00E676 0%, #00BCD4 100%)", color: "#000" }
@@ -323,19 +353,20 @@ export function MarketScanner() {
               </span>
             ) : (
               <span className="flex items-center gap-2">
-                {mode === "ai" ? <><Zap className="w-4 h-4" /> SCAN {SCANNER_SYMBOLS.length} STOCKS WITH AI</> : <><SlidersHorizontal className="w-4 h-4" /> APPLY FILTERS & SCAN</>}
+                {mode === "ai"
+                  ? <><Zap className="w-4 h-4" /> SCAN {currentSyms.length} STOCKS WITH AI</>
+                  : <><SlidersHorizontal className="w-4 h-4" /> APPLY FILTERS & SCAN</>}
               </span>
             )}
           </Button>
           {!accessToken && (
-            <p className="text-[10px] font-mono text-destructive mt-2 text-center">
+            <p className="text-[10px] text-destructive mt-2 text-center">
               Connect Schwab to enable the Market Scanner
             </p>
           )}
         </div>
       </div>
 
-      {/* ── Loading ── */}
       {isScanning && (
         <div className="flex flex-col items-center justify-center py-16 gap-4 bg-card rounded-xl border border-card-border">
           <div className="relative w-16 h-16">
@@ -343,60 +374,140 @@ export function MarketScanner() {
             <div className="absolute inset-0 border-4 border-t-primary border-r-transparent border-b-transparent border-l-transparent rounded-full animate-spin" />
           </div>
           <div className="text-center space-y-1">
-            <p className="font-mono text-sm text-primary animate-pulse font-bold">
-              {mode === "ai" ? "SCANNING 50 STOCKS..." : "APPLYING FILTERS..."}
+            <p className="text-sm text-primary animate-pulse font-bold">
+              SCANNING {scanCount ?? currentSyms.length} TICKERS...
             </p>
-            <p className="font-mono text-[10px] text-muted-foreground">
+            <p className="text-[10px] text-muted-foreground">
               {mode === "ai" ? "Fetching L1 quotes → AI analysis → ranking setups" : "Fetching market data..."}
             </p>
           </div>
         </div>
       )}
 
-      {/* ── Error ── */}
       {rawError && !isScanning && (
         <div className="bg-destructive/10 border border-destructive/30 rounded-xl p-4">
-          <p className="font-mono text-xs text-destructive font-bold mb-2">SCAN ERROR</p>
-          <p className="font-mono text-[10px] text-destructive/80">{rawError}</p>
+          <p className="text-xs text-destructive font-bold mb-2">SCAN ERROR</p>
+          <p className="text-[10px] text-destructive/80">{rawError}</p>
         </div>
       )}
 
-      {/* ── AI Results ── */}
       {mode === "ai" && !isScanning && aiSetups.length > 0 && (
-        <div className="space-y-4">
+        <div className="space-y-3">
           {marketSummary && (
-            <div className="px-4 py-3 rounded-xl border font-sans text-sm text-gray-300 leading-relaxed"
+            <div className="px-4 py-3 rounded-xl border text-sm text-gray-300 leading-relaxed"
               style={{ background: "rgba(0,191,255,0.05)", borderColor: "rgba(0,191,255,0.2)" }}>
-              <span className="font-mono text-[9px] font-bold" style={{ color: "#00BFFF" }}>MARKET REGIME  </span>
+              <span className="text-[9px] font-bold" style={{ color: "#00BFFF" }}>MARKET REGIME  </span>
               {marketSummary}
             </div>
           )}
-          {aiSetups.map((setup, i) => (
-            <SetupCard key={setup.symbol} setup={setup} rank={i + 1} />
-          ))}
-          <p className="font-mono text-[9px] text-muted-foreground/50 text-center">
+
+          <div className="rounded-xl border border-card-border overflow-hidden bg-card">
+            <table className="w-full text-left" style={{ borderCollapse: "collapse" }}>
+              <thead>
+                <tr className="border-b border-card-border" style={{ background: "#0D1117" }}>
+                  <th className="px-3 py-2.5">
+                    <SortHeader label="Ticker" sortKey="symbol" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} />
+                  </th>
+                  <th className="px-3 py-2.5">
+                    <SortHeader label="Strategy" sortKey="direction" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} />
+                  </th>
+                  <th className="px-3 py-2.5">
+                    <SortHeader label="Confidence" sortKey="confidence" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} />
+                  </th>
+                  <th className="px-3 py-2.5">
+                    <SortHeader label="Chg %" sortKey="changePct" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} />
+                  </th>
+                  <th className="px-3 py-2.5 hidden md:table-cell">
+                    <span className="text-[10px] uppercase tracking-wider font-bold text-gray-500">AI Thesis</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedSetups.map((s, i) => {
+                  const dc = dirColor(s.direction);
+                  return (
+                    <tr key={s.symbol} className="border-b border-card-border/50 hover:bg-primary/5 transition-colors"
+                      style={i % 2 === 0 ? { background: "rgba(13,17,23,0.4)" } : undefined}>
+                      <td className="px-3 py-2.5">
+                        <button onClick={() => setSymbol(s.symbol)}
+                          className="font-bold text-sm tracking-wider hover:opacity-70 transition-opacity"
+                          style={{ color: dc }}>
+                          {s.symbol}
+                        </button>
+                        <div className="text-[10px] text-gray-500">${s.price.toFixed(2)}</div>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <div className="flex items-center gap-1.5 text-xs font-bold" style={{ color: dc }}>
+                          {dirIcon(s.direction)}
+                          {s.direction}
+                        </div>
+                        <div className="text-[10px] text-gray-400 mt-0.5 max-w-[140px] truncate" title={s.strategy}>
+                          {s.strategy}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2.5">{confBadge(s.confidence)}</td>
+                      <td className="px-3 py-2.5">
+                        <span className="text-xs font-bold tabular-nums"
+                          style={{ color: s.changePct >= 0 ? "#00E676" : "#FF1744" }}>
+                          {s.changePct >= 0 ? "+" : ""}{s.changePct.toFixed(2)}%
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5 hidden md:table-cell">
+                        <p className="text-[11px] text-gray-300 leading-snug max-w-xs">
+                          {s.rationale}
+                        </p>
+                        {s.riskNote && (
+                          <p className="text-[9px] text-yellow-600/70 mt-1 flex items-center gap-1">
+                            <AlertTriangle className="w-2.5 h-2.5 shrink-0" />
+                            {s.riskNote}
+                          </p>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <p className="text-[9px] text-muted-foreground/50 text-center">
             AI-generated. Not financial advice. Always verify independently.
           </p>
         </div>
       )}
 
-      {/* ── Manual Results ── */}
       {mode === "manual" && !isScanning && manualQuotes.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center justify-between px-1">
-            <Label className="font-mono text-[10px] text-muted-foreground uppercase">
+            <Label className="text-[10px] text-muted-foreground uppercase">
               {manualQuotes.length} STOCKS MATCHED — CLICK TO LOAD
             </Label>
-            <span className="font-mono text-[9px] text-muted-foreground">Sorted by | Δ% |</span>
+            <span className="text-[9px] text-muted-foreground">Sorted by | Change % |</span>
           </div>
           <div className="space-y-1.5">
-            {manualQuotes.map(q => <ManualRow key={q.symbol} q={q} />)}
+            {manualQuotes.map(q => {
+              const isUp = q.changePct >= 0;
+              const color = isUp ? "#00E676" : "#FF1744";
+              return (
+                <button key={q.symbol} onClick={() => setSymbol(q.symbol)}
+                  className="w-full flex items-center gap-3 px-3 py-2 rounded-lg border border-card-border bg-card
+                    hover:border-primary/40 hover:bg-primary/5 transition-all text-left group">
+                  <span className="font-bold text-sm w-16 shrink-0" style={{ color }}>{q.symbol}</span>
+                  <span className="text-sm font-bold text-gray-200 tabular-nums w-20 shrink-0">${q.last.toFixed(2)}</span>
+                  <span className="text-xs font-bold tabular-nums w-16 shrink-0" style={{ color }}>
+                    {isUp ? "▲" : "▼"} {Math.abs(q.changePct).toFixed(2)}%
+                  </span>
+                  <span className="text-[10px] text-gray-500 tabular-nums">Vol {(q.volume / 1e6).toFixed(1)}M</span>
+                  <span className="ml-auto text-[10px] text-gray-600 group-hover:text-primary transition-colors">LOAD →</span>
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
 
-      {mode === "manual" && !isScanning && manualQuotes.length === 0 && hasResults === false && !rawError && (
-        <div className="py-16 text-center font-mono text-xs text-muted-foreground/40 bg-card border border-card-border rounded-xl">
+      {mode === "manual" && !isScanning && manualQuotes.length === 0 && !hasResults && !rawError && (
+        <div className="py-16 text-center text-xs text-muted-foreground/40 bg-card border border-card-border rounded-xl">
           No stocks matched your filters. Try widening the ranges.
         </div>
       )}

@@ -11,6 +11,7 @@ Key features implemented:
 - **Sidebar**: Compact pill overlays, clean timeframe grid, Schwab auth panel
 - **Tabs**: CHART | OPTIONS | AI INTELLIGENCE (merged from separate AI + Chat tabs)
 - **AI Intelligence Tab**: Daily Market Briefing, Deep Analysis (TA + Options Strategist), prompt chips, streaming chat
+- **Market Scanner**: AI Discovery + Manual Filter modes; configurable scan universe (S&P 100, Nasdaq 100, High Beta, Custom), max results (1-20), sortable results table with ticker/strategy/confidence/thesis columns
 - **Options Tab**: Chain table with Options Strategist results panel above (collapsible)
 - **Backend AI routes**: `/api/ai/market-briefing`, `/api/ai/options-strategist`, `/api/ai/chat`, `/api/ai/analyze`
 - **Zustand store**: `analysisResult`, `strategistResult`, `briefingResult` shared state
@@ -33,7 +34,7 @@ Key features implemented:
   - Writes each `event: quote` into Zustand `streamPrices` map
   - Sets `streamConnected` true on heartbeat / open, false on error
 - `artifacts/alpha-terminal/src/hooks/useQuote.ts` — unified quote hook
-  - Returns stream data (< 60s old) when available; falls back to REST poll every 30s
+  - Returns stream data (< 60s old) when available; falls back to REST poll every 1s (3s on 429 rate limit)
   - All price components use this instead of `useGetQuote` directly
 - `streamPrices: Record<string, LiveQuote>` in Zustand store (non-persisted)
   - `partialize` excludes it from localStorage persistence
@@ -56,6 +57,8 @@ MetricsBar / MacroCard / TapeItem  ← ONLY these re-render on each tick
 - Gemini models: only `gemini-2.5-flash` and `gemini-2.5-pro` work
 - `lightweight-charts` v5: `chart.addSeries(CandlestickSeries, opts)` pattern
 - Direct `fetch("/api/ai/...")` used for new AI routes (not orval-generated hooks)
+- **Tick Direction Coloring**: `useTickColor` hook (`src/hooks/useTickColor.ts`) — tracks previous price per symbol; Last Price number colored by immediate momentum (green uptick / red downtick), daily change line colored by net change
+- **Ticker Tape**: JS `requestAnimationFrame` animation (not CSS keyframes) for flash-free scrolling; speed controlled via `tapeSpeed` store value + sidebar slider
 - VIX MacroCard inverts color (rising = red/fear, falling = green/calm)
 - 52W High/Low and P/E are REST-only fields (Schwab Streamer doesn't carry fundamental data)
 
