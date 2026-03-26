@@ -1,22 +1,26 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Alpha Terminal API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Schwab OAuth authentication
+  - name: market
+    description: Market data from Schwab
+  - name: ai
+    description: AI analysis via Gemini
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +28,243 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /auth/url:
+    get:
+      operationId: getAuthUrl
+      tags: [auth]
+      summary: Get Schwab OAuth URL
+      responses:
+        "200":
+          description: Auth URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthUrlResponse"
+
+  /auth/callback:
+    post:
+      operationId: exchangeCode
+      tags: [auth]
+      summary: Exchange auth code for tokens
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExchangeCodeRequest"
+      responses:
+        "200":
+          description: Token exchange result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/refresh:
+    post:
+      operationId: refreshToken
+      tags: [auth]
+      summary: Refresh access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshTokenRequest"
+      responses:
+        "200":
+          description: Refreshed tokens
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/status:
+    get:
+      operationId: getAuthStatus
+      tags: [auth]
+      summary: Check if credentials are configured
+      responses:
+        "200":
+          description: Auth status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthStatusResponse"
+
+  /market/quote:
+    get:
+      operationId: getQuote
+      tags: [market]
+      summary: Get real-time quote for a symbol
+      parameters:
+        - name: symbol
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: accessToken
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Quote data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuoteResponse"
+
+  /market/history:
+    get:
+      operationId: getPriceHistory
+      tags: [market]
+      summary: Get price history (candles)
+      parameters:
+        - name: symbol
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: accessToken
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: timeframe
+          in: query
+          required: false
+          schema:
+            type: string
+            default: "3M"
+      responses:
+        "200":
+          description: Candle data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PriceHistoryResponse"
+
+  /market/options:
+    get:
+      operationId: getOptionChain
+      tags: [market]
+      summary: Get option chain for a symbol
+      parameters:
+        - name: symbol
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: accessToken
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: contractType
+          in: query
+          required: false
+          schema:
+            type: string
+            default: "ALL"
+        - name: daysToExpiration
+          in: query
+          required: false
+          schema:
+            type: number
+            default: 30
+      responses:
+        "200":
+          description: Option chain data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OptionChainResponse"
+
+  /ai/technical-analysis:
+    post:
+      operationId: runTechnicalAnalysis
+      tags: [ai]
+      summary: Run AI technical analysis
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TechnicalAnalysisRequest"
+      responses:
+        "200":
+          description: AI analysis result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiAnalysisResponse"
+
+  /ai/options-analysis:
+    post:
+      operationId: runOptionsAnalysis
+      tags: [ai]
+      summary: Run AI options analysis
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OptionsAnalysisRequest"
+      responses:
+        "200":
+          description: AI options analysis result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiAnalysisResponse"
+
+  /ai/chat:
+    post:
+      operationId: runChatQuery
+      tags: [ai]
+      summary: Run free-form AI chat with market context
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatRequest"
+      responses:
+        "200":
+          description: AI chat response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiAnalysisResponse"
+
+  /ai/models:
+    get:
+      operationId: getAvailableModels
+      tags: [ai]
+      summary: Get available Gemini models
+      responses:
+        "200":
+          description: List of models
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelsResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +275,266 @@ components:
       required:
         - status
 
+    AuthUrlResponse:
+      type: object
+      properties:
+        url:
+          type: string
+        configured:
+          type: boolean
+      required:
+        - url
+        - configured
+
+    ExchangeCodeRequest:
+      type: object
+      properties:
+        code:
+          type: string
+        redirectUri:
+          type: string
+      required:
+        - code
+        - redirectUri
+
+    RefreshTokenRequest:
+      type: object
+      properties:
+        refreshToken:
+          type: string
+      required:
+        - refreshToken
+
+    TokenResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        expiresIn:
+          type: number
+        tokenType:
+          type: string
+      required:
+        - accessToken
+        - refreshToken
+        - expiresIn
+        - tokenType
+
+    AuthStatusResponse:
+      type: object
+      properties:
+        configured:
+          type: boolean
+        geminiConfigured:
+          type: boolean
+      required:
+        - configured
+        - geminiConfigured
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+      required:
+        - error
+        - message
+
+    QuoteResponse:
+      type: object
+      properties:
+        symbol:
+          type: string
+        last:
+          type: number
+        bid:
+          type: number
+        ask:
+          type: number
+        change:
+          type: number
+        changePct:
+          type: number
+        volume:
+          type: number
+        high:
+          type: number
+        low:
+          type: number
+        fiftyTwoWeekHigh:
+          type: number
+        fiftyTwoWeekLow:
+          type: number
+        peRatio:
+          type: number
+        error:
+          type: string
+      required:
+        - symbol
+
+    Candle:
+      type: object
+      properties:
+        datetime:
+          type: string
+        open:
+          type: number
+        high:
+          type: number
+        low:
+          type: number
+        close:
+          type: number
+        volume:
+          type: number
+      required:
+        - datetime
+        - open
+        - high
+        - low
+        - close
+        - volume
+
+    PriceHistoryResponse:
+      type: object
+      properties:
+        symbol:
+          type: string
+        candles:
+          type: array
+          items:
+            $ref: "#/components/schemas/Candle"
+        error:
+          type: string
+      required:
+        - symbol
+        - candles
+
+    OptionContract:
+      type: object
+      properties:
+        strike:
+          type: number
+        expiration:
+          type: string
+        bid:
+          type: number
+        ask:
+          type: number
+        last:
+          type: number
+        volume:
+          type: number
+        openInterest:
+          type: number
+        iv:
+          type: number
+        delta:
+          type: number
+        gamma:
+          type: number
+        theta:
+          type: number
+        vega:
+          type: number
+        dte:
+          type: number
+      required:
+        - strike
+        - expiration
+
+    OptionChainResponse:
+      type: object
+      properties:
+        symbol:
+          type: string
+        underlyingPrice:
+          type: number
+        calls:
+          type: array
+          items:
+            $ref: "#/components/schemas/OptionContract"
+        puts:
+          type: array
+          items:
+            $ref: "#/components/schemas/OptionContract"
+        error:
+          type: string
+      required:
+        - symbol
+        - calls
+        - puts
+
+    TechnicalAnalysisRequest:
+      type: object
+      properties:
+        quote:
+          $ref: "#/components/schemas/QuoteResponse"
+        candles:
+          type: array
+          items:
+            $ref: "#/components/schemas/Candle"
+        model:
+          type: string
+        temperature:
+          type: number
+        customPrompt:
+          type: string
+      required:
+        - quote
+        - candles
+
+    OptionsAnalysisRequest:
+      type: object
+      properties:
+        quote:
+          $ref: "#/components/schemas/QuoteResponse"
+        chain:
+          $ref: "#/components/schemas/OptionChainResponse"
+        model:
+          type: string
+        temperature:
+          type: number
+        customPrompt:
+          type: string
+      required:
+        - quote
+        - chain
+
+    ChatRequest:
+      type: object
+      properties:
+        question:
+          type: string
+        marketContext:
+          type: string
+        model:
+          type: string
+        temperature:
+          type: number
+      required:
+        - question
+
+    AiAnalysisResponse:
+      type: object
+      properties:
+        response:
+          type: string
+        error:
+          type: string
+      required:
+        - response
+
+    ModelsResponse:
+      type: object
+      properties:
+        models:
+          type: array
+          items:
+            type: string
+      required:
+        - models

@@ -1,0 +1,15 @@
+packages:
+  "lightweight-charts": "High-performance financial charts for trading dashboard"
+  "zustand": "Global state management for terminal settings and auth tokens"
+  "react-markdown": "Render markdown responses from AI analysis"
+  "date-fns": "Date formatting and manipulation for chart data"
+  "@workspace/api-client-react": "Generated React Query hooks for API access"
+  "clsx": "Utility for constructing className strings conditionally"
+  "tailwind-merge": "Utility for merging tailwind classes"
+
+images: []
+
+notes:
+  - "The app requires Schwab API credentials and Gemini API keys configured on the backend."
+  - "Assumes standard shadcn/ui components are available in src/components/ui/"
+  - "The frontend relies strictly on the provided OpenAPI schemas for data structure."
