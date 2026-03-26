@@ -76,19 +76,27 @@ let loginAcked       = false;
 
 // ─── Symbol formatting (mirrors market.ts) ────────────────────────────────────
 const INDEX_MAP: Record<string, string> = {
-  VIX: "$VIX.X", SPX: "$SPX.X", NDX: "$NDX.X", RUT: "$RUT.X",
-  DJI: "$DJI.X", DJIA: "$DJI.X", COMP: "$COMP.X",
-  DXY: "$DXY.X", TNX: "$TNX.X", TYX: "$TYX.X",
-  VXN: "$VXN.X", OEX: "$OEX.X", MNX: "$MNX.X", XSP: "$XSP.X",
+  VIX: "$VIX.X", "$VIX": "$VIX.X",
+  SPX: "$SPX.X", "$SPX": "$SPX.X",
+  NDX: "$NDX.X", "$NDX": "$NDX.X",
+  RUT: "$RUT.X", "$RUT": "$RUT.X",
+  DJI: "$DJI.X", "$DJI": "$DJI.X", DJIA: "$DJI.X",
+  COMP: "$COMP.X", "$COMP": "$COMP.X",
+  DXY: "$DXY.X", "$DXY": "$DXY.X",
+  TNX: "$TNX.X", "$TNX": "$TNX.X",
+  TYX: "$TYX.X", "$TYX": "$TYX.X",
+  VXN: "$VXN.X", "$VXN": "$VXN.X",
+  OEX: "$OEX.X", "$OEX": "$OEX.X",
+  MNX: "$MNX.X", "$MNX": "$MNX.X",
+  XSP: "$XSP.X", "$XSP": "$XSP.X",
 };
 function toSchwabKey(sym: string): string {
   return INDEX_MAP[sym.toUpperCase()] ?? sym.toUpperCase();
 }
+const reverseKeyMap = new Map<string, string>();
+
 function fromSchwabKey(key: string): string {
-  for (const [friendly, mapped] of Object.entries(INDEX_MAP)) {
-    if (mapped === key) return friendly;
-  }
-  return key;
+  return reverseKeyMap.get(key) ?? key;
 }
 
 // ─── SSE helpers ─────────────────────────────────────────────────────────────
@@ -157,6 +165,12 @@ function sendLogin(info: StreamerInfo, token: string) {
 // ─── Subscribe to symbols ────────────────────────────────────────────────────
 function sendSubscribe(symbols: string[]) {
   if (!streamerInfo || !loginAcked || !symbols.length) return;
+  for (const sym of symbols) {
+    const schwabKey = toSchwabKey(sym);
+    if (!reverseKeyMap.has(schwabKey)) {
+      reverseKeyMap.set(schwabKey, sym.toUpperCase());
+    }
+  }
   const keys = symbols.map(toSchwabKey).join(",");
   wsSend({
     requests: [{

@@ -60,6 +60,7 @@ MetricsBar / MacroCard / TapeItem  ← ONLY these re-render on each tick
 - **Tick Direction Coloring**: `useTickColor` hook (`src/hooks/useTickColor.ts`) — tracks previous price per symbol; Last Price number colored by immediate momentum (green uptick / red downtick), daily change line colored by net change
 - **Ticker Tape**: JS `requestAnimationFrame` animation (not CSS keyframes) for flash-free scrolling; speed controlled via `tapeSpeed` store value + sidebar slider
 - **Chart Controls**: Dual Period/Interval `<select>` dropdowns above chart (ThinkorSwim-style); Period options: 1 Day, 5 Day, 1 Month, 3 Month, 1 Year; Interval dynamically switches between intraday (1/5/15/30 Min) and daily (Daily/Weekly) based on period; maps to Schwab `periodType/period/frequencyType/frequency` params; server validates all params against whitelists
+- **Indices & Futures Support**: Symbols like `$SPX`, `$VIX`, `/ES`, `/NQ` work across all endpoints (quote, history, options, streaming); `INDEX_SYMBOL_MAP` handles both friendly (SPX) and `$`-prefixed ($SPX) forms → `$SPX.X` Schwab format; URL encoding handled via `encodeURIComponent` and `URLSearchParams`; `reverseKeyMap` in streamer maps Schwab keys back to user-facing symbols
 - VIX MacroCard inverts color (rising = red/fear, falling = green/calm)
 - 52W High/Low and P/E are REST-only fields (Schwab Streamer doesn't carry fundamental data)
 

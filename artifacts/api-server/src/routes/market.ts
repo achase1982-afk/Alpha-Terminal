@@ -9,27 +9,44 @@ const router: IRouter = Router();
 
 const SCHWAB_API_BASE = "https://api.schwabapi.com/marketdata/v1";
 
-// Maps user-friendly symbol names → Schwab API format
 const INDEX_SYMBOL_MAP: Record<string, string> = {
-  "VIX":  "$VIX.X",
-  "SPX":  "$SPX.X",
-  "NDX":  "$NDX.X",
-  "RUT":  "$RUT.X",
-  "DJI":  "$DJI.X",
-  "DJIA": "$DJI.X",
-  "COMP": "$COMP.X",
-  "DXY":  "$DXY.X",
-  "TNX":  "$TNX.X",
-  "TYX":  "$TYX.X",
-  "VXN":  "$VXN.X",
-  "OEX":  "$OEX.X",
-  "MNX":  "$MNX.X",
-  "XSP":  "$XSP.X",
+  "VIX":   "$VIX.X",
+  "$VIX":  "$VIX.X",
+  "SPX":   "$SPX.X",
+  "$SPX":  "$SPX.X",
+  "NDX":   "$NDX.X",
+  "$NDX":  "$NDX.X",
+  "RUT":   "$RUT.X",
+  "$RUT":  "$RUT.X",
+  "DJI":   "$DJI.X",
+  "$DJI":  "$DJI.X",
+  "DJIA":  "$DJI.X",
+  "COMP":  "$COMP.X",
+  "$COMP": "$COMP.X",
+  "DXY":   "$DXY.X",
+  "$DXY":  "$DXY.X",
+  "TNX":   "$TNX.X",
+  "$TNX":  "$TNX.X",
+  "TYX":   "$TYX.X",
+  "$TYX":  "$TYX.X",
+  "VXN":   "$VXN.X",
+  "$VXN":  "$VXN.X",
+  "OEX":   "$OEX.X",
+  "$OEX":  "$OEX.X",
+  "MNX":   "$MNX.X",
+  "$MNX":  "$MNX.X",
+  "XSP":   "$XSP.X",
+  "$XSP":  "$XSP.X",
 };
 
 function formatSchwabSymbol(symbol: string): string {
   const upper = symbol.toUpperCase().trim();
   return INDEX_SYMBOL_MAP[upper] ?? upper;
+}
+
+function isIndex(symbol: string): boolean {
+  const upper = symbol.toUpperCase().trim();
+  return upper in INDEX_SYMBOL_MAP || upper.startsWith("$");
 }
 
 function isFutures(symbol: string): boolean {
@@ -46,13 +63,6 @@ router.get("/quote", async (req, res) => {
   }
 
   const displaySymbol = symbol.toUpperCase().trim();
-
-  // Futures are not supported via this endpoint — fail gracefully
-  if (isFutures(displaySymbol)) {
-    const data = GetQuoteResponse.parse({ symbol: displaySymbol, error: "futures_not_supported" });
-    return res.json(data);
-  }
-
   const apiSymbol = formatSchwabSymbol(displaySymbol);
 
   try {
@@ -77,8 +87,7 @@ router.get("/quote", async (req, res) => {
     }
 
     const json = await response.json() as Record<string, unknown>;
-    // Schwab returns data keyed by the formatted symbol (e.g. "$VIX.X")
-    const entry = (json[apiSymbol] ?? json[displaySymbol]) as Record<string, unknown> | undefined;
+    const entry = (json[apiSymbol] ?? json[displaySymbol] ?? Object.values(json)[0]) as Record<string, unknown> | undefined;
     const quote = entry?.["quote"] as Record<string, unknown> | undefined;
     const fundamental = entry?.["fundamental"] as Record<string, unknown> | undefined;
     const reference = entry?.["reference"] as Record<string, unknown> | undefined;
@@ -221,10 +230,6 @@ router.get("/history", async (req, res) => {
 
   const displaySymbol = symbol.toUpperCase().trim();
 
-  if (isFutures(displaySymbol)) {
-    return res.json({ symbol: displaySymbol, candles: [], error: "futures_not_supported" });
-  }
-
   if (!(VALID_PERIOD_TYPES as readonly string[]).includes(periodType)) periodType = "month";
   if (!VALID_PERIODS[periodType]?.includes(period)) period = VALID_PERIODS[periodType]?.[0] ?? 1;
   if (!(VALID_FREQUENCY_TYPES as readonly string[]).includes(frequencyType)) frequencyType = "daily";
@@ -285,11 +290,6 @@ router.get("/options", async (req, res) => {
   }
 
   const displaySymbol = symbol.toUpperCase().trim();
-
-  if (isFutures(displaySymbol)) {
-    return res.json({ symbol: displaySymbol, calls: [], puts: [], error: "futures_not_supported" });
-  }
-
   const apiSymbol = formatSchwabSymbol(displaySymbol);
 
   try {

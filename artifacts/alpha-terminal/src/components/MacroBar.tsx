@@ -3,8 +3,8 @@ import { useQuote }         from "@/hooks/useQuote";
 import { useTickColor }     from "@/hooks/useTickColor";
 import { TrendingUp, TrendingDown, Minus } from "lucide-react";
 
-const FEAR_SYMBOLS = new Set(["VIX", "VXN"]);
-const INDEX_SYMS   = new Set(["VIX", "SPX", "NDX", "RUT", "DJI", "COMP", "DXY", "TNX"]);
+const FEAR_SYMBOLS = new Set(["VIX", "$VIX", "VXN", "$VXN"]);
+const INDEX_SYMS   = new Set(["VIX", "$VIX", "SPX", "$SPX", "NDX", "$NDX", "RUT", "$RUT", "DJI", "$DJI", "COMP", "$COMP", "DXY", "$DXY", "TNX", "$TNX"]);
 
 const UP_COLOR   = "#00E676";
 const DOWN_COLOR = "#FF1744";
@@ -28,8 +28,9 @@ function MacroCard({ symbol }: { symbol: string }) {
   const isDown = change !== null && change < 0;
   const isFlat = !isUp && !isDown;
 
-  const isFear  = FEAR_SYMBOLS.has(symbol.toUpperCase());
-  const isIndex = INDEX_SYMS.has(symbol.toUpperCase());
+  const upper   = symbol.toUpperCase();
+  const isFear  = FEAR_SYMBOLS.has(upper);
+  const isIndex = INDEX_SYMS.has(upper) || upper.startsWith("/") || upper.startsWith("$");
 
   let changeColor: string;
   if (isFlat || change === null) {

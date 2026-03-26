@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { Search } from "lucide-react";
 
-const QUICK_SYMBOLS = ["SPY", "QQQ", "IWM", "AAPL", "TSLA", "NVDA", "META", "MSFT", "SPX", "VIX", "NDX", "GLD"];
+const QUICK_SYMBOLS = ["SPY", "QQQ", "IWM", "AAPL", "TSLA", "NVDA", "META", "MSFT", "SPX", "VIX", "NDX", "GLD", "/ES", "/NQ"];
 
 export function TickerSearch() {
   const { symbol, setSymbol } = useTerminalStore();
