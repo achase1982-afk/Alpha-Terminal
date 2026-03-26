@@ -171,6 +171,46 @@ Be specific with strikes, expirations, and premium estimates. Use markdown forma
   }
 });
 
+function getMarketSession(): { session: string; timeET: string; sessionGuidance: string } {
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: false,
+    weekday: "long",
+  });
+  const parts = formatter.formatToParts(now);
+  const hour = parseInt(parts.find(p => p.type === "hour")?.value ?? "0");
+  const minute = parseInt(parts.find(p => p.type === "minute")?.value ?? "0");
+  const weekday = parts.find(p => p.type === "weekday")?.value ?? "Monday";
+  const timeET = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")} ET`;
+  const isWeekend = weekday === "Saturday" || weekday === "Sunday";
+  const mins = hour * 60 + minute;
+
+  let session: string;
+  let sessionGuidance: string;
+
+  if (isWeekend) {
+    session = `Weekend (${weekday})`;
+    sessionGuidance = "Markets are closed. Analyze the data as end-of-week positioning and provide a weekend outlook focused on what to watch for Monday's open. Discuss potential gap risk and key levels to monitor.";
+  } else if (mins >= 240 && mins < 570) {
+    session = "Pre-Market";
+    sessionGuidance = "It is pre-market (4:00–9:30 AM ET). Focus on overnight futures, gap expectations, key pre-market movers, and how the data sets up for the opening bell. Traders need actionable prep for the open.";
+  } else if (mins >= 570 && mins < 960) {
+    session = "Regular Trading Hours";
+    sessionGuidance = "Regular market hours are active (9:30 AM–4:00 PM ET). Provide a live intraday pulse — what is the market doing RIGHT NOW, momentum direction, key intraday levels, and whether to be aggressive or defensive into the close.";
+  } else if (mins >= 960 && mins < 1200) {
+    session = "After-Hours";
+    sessionGuidance = "After-hours session (4:00–8:00 PM ET). Summarize how the regular session closed, key after-hours movers, and what the data implies for tomorrow's open. Help the trader plan overnight positioning.";
+  } else {
+    session = "Overnight";
+    sessionGuidance = "Overnight session (8:00 PM–4:00 AM ET). Minimal liquidity. Focus on futures direction, overnight risk factors, and what to watch when pre-market opens. Be brief and focused on risk management.";
+  }
+
+  return { session, timeET, sessionGuidance };
+}
+
 router.post("/market-briefing", async (req, res) => {
   const { spyQuote, qqqQuote, iwmQuote, vixQuote, model, temperature } = req.body as {
     spyQuote?: Record<string, unknown>;
@@ -181,9 +221,15 @@ router.post("/market-briefing", async (req, res) => {
     temperature?: number;
   };
 
-  const prompt = `You are a senior market strategist at a top-tier hedge fund. Based on the following real-time market data, deliver a concise Pre-Market Overview assessing the current market posture.
+  const { session, timeET, sessionGuidance } = getMarketSession();
 
-REAL-TIME MARKET DATA:
+  const prompt = `You are a senior quant trader and market strategist at a top-tier hedge fund. Based on the following LIVE market data, deliver a sharp "Live Market Pulse" assessment.
+
+CURRENT TIME: ${timeET}
+CURRENT SESSION: ${session}
+SESSION CONTEXT: ${sessionGuidance}
+
+LIVE MARKET DATA:
 ${spyQuote ? `SPY (S&P 500 ETF):\n${formatQuote(spyQuote)}` : "SPY: N/A"}
 
 ${qqqQuote ? `QQQ (Nasdaq-100 ETF):\n${formatQuote(qqqQuote)}` : "QQQ: N/A"}
@@ -193,35 +239,35 @@ ${iwmQuote ? `IWM (Russell 2000 ETF):\n${formatQuote(iwmQuote)}` : "IWM: N/A"}
 ${vixQuote ? `VIX (Volatility Index):\n${formatQuote(vixQuote)}` : "VIX: N/A"}
 
 ---
-Provide a structured briefing using EXACTLY this format:
+Provide your Live Market Pulse using EXACTLY this format — adapt the tone and focus to the current session:
+
+## ⚡ Live Market Pulse — ${session}
+One-sentence verdict on the CURRENT macro environment with conviction.
 
 ## 🎯 Market Posture
-State the overall market stance: **[BULLISH / BEARISH / NEUTRAL]** — one bold conviction sentence.
+**[BULLISH / BEARISH / NEUTRAL / CAUTIOUS]** — Explain the stance in 1–2 sentences based on the live data.
 
-## 📊 Key Observations
-- Observation 1 (breadth, momentum, or macro signal)
-- Observation 2 (relative strength/weakness across indices)
-- Observation 3 (volatility regime or risk-off/risk-on signal)
+## 📊 What The Data Is Saying
+- SPY / S&P 500: [price action, momentum, key level]
+- QQQ / Nasdaq: [relative strength or weakness vs SPY]
+- IWM / Small Caps: [risk appetite signal]
+- VIX: [fear/complacency read and what it implies]
 
-## ⚡ Sector Focus
-Which indices are leading and which are lagging. Note any divergence between SPY/QQQ/IWM.
+## 🎲 Key Risk Right Now
+The single most important risk facing traders in this session. Be specific and data-driven.
 
-## 🎲 Risk Factors
-- Risk 1 (intraday risk)
-- Risk 2 (structural risk)
+## 💡 ${session === "Regular Trading Hours" ? "Intraday" : session === "Pre-Market" ? "Open Prep" : "Session"} Trading Bias
+A concrete, actionable bias. Include a specific level or setup. (e.g., "Fade strength toward SPY $X resistance, target $Y, stop $Z").
 
-## 💡 Trading Bias
-A concrete, actionable bias for the session. Be specific (e.g., "Favor long setups on pullbacks to SPY $X, avoid chasing").
-
-Keep it under 300 words. Be sharp, data-driven, and professional. Use markdown.`;
+Keep it under 350 words. Be precise, professional, and immediately actionable. Use markdown.`;
 
   try {
     const response = await callGemini(prompt, model ?? "gemini-2.5-pro", temperature ?? 0.2);
     res.json({ response });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    req.log.error({ err }, "Market briefing error");
-    res.json({ response: `**Briefing failed:** ${msg}`, error: msg });
+    req.log.error({ err }, "Market pulse error");
+    res.json({ response: `**Live Market Pulse failed:** ${msg}`, error: msg });
   }
 });
 

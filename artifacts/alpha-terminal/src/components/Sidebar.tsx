@@ -1,13 +1,16 @@
 import { useTerminalStore } from "@/lib/store";
 import { AuthPanel } from "./AuthPanel";
+import { MarketPulseModal } from "./MarketPulseModal";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
-import { Terminal, SlidersHorizontal, X, LayoutDashboard, ListOrdered, Gauge, BrainCircuit } from "lucide-react";
+import { Terminal, SlidersHorizontal, X, LayoutDashboard, ListOrdered, Gauge, BrainCircuit, Zap } from "lucide-react";
 import { useState } from "react";
-import { useGetAvailableModels } from "@workspace/api-client-react";
+import { useGetAvailableModels, useGetQuote } from "@workspace/api-client-react";
+
+const API_BASE = "/api";
 
 const OVERLAY_LABELS: Record<string, string> = {
   sma20: "SMA 20",
@@ -28,6 +31,7 @@ export function Sidebar({ onClose }: SidebarProps) {
     tickerTapeSymbols, setTickerTapeSymbols,
     tapeSpeed, setTapeSpeed,
     aiModel, setAiModel, aiTemp, setAiTemp,
+    accessToken,
   } = useTerminalStore();
 
   const { data: modelsData } = useGetAvailableModels();
@@ -36,6 +40,43 @@ export function Sidebar({ onClose }: SidebarProps) {
   const [macroInputs, setMacroInputs] = useState<string[]>(macroSymbols);
   const [tapeInput, setTapeInput] = useState(tickerTapeSymbols.join(", "));
   const [settingsSaved, setSettingsSaved] = useState(false);
+
+  // Live Market Pulse state
+  const [pulseOpen, setPulseOpen] = useState(false);
+  const [pulseLoading, setPulseLoading] = useState(false);
+  const [pulseResult, setPulseResult] = useState<string | null>(null);
+
+  // Macro quotes for Live Market Pulse
+  const { data: spyQ } = useGetQuote({ symbol: "SPY", accessToken: accessToken || "" }, { query: { enabled: !!accessToken } });
+  const { data: qqqQ } = useGetQuote({ symbol: "QQQ", accessToken: accessToken || "" }, { query: { enabled: !!accessToken } });
+  const { data: iwmQ } = useGetQuote({ symbol: "IWM", accessToken: accessToken || "" }, { query: { enabled: !!accessToken } });
+  const { data: vixQ } = useGetQuote({ symbol: "VIX", accessToken: accessToken || "" }, { query: { enabled: !!accessToken } });
+
+  const handleGeneratePulse = async () => {
+    setPulseResult(null);
+    setPulseOpen(true);
+    setPulseLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/ai/market-briefing`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          spyQuote: spyQ,
+          qqqQuote: qqqQ,
+          iwmQuote: iwmQ,
+          vixQuote: vixQ,
+          model: aiModel,
+          temperature: 0.2,
+        }),
+      });
+      const data = await res.json() as { response?: string };
+      setPulseResult(data.response ?? "No response received.");
+    } catch (err) {
+      setPulseResult(`**Error:** ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setPulseLoading(false);
+    }
+  };
 
   const handleMacroChange = (idx: number, val: string) => {
     const updated = [...macroInputs];
@@ -84,6 +125,32 @@ export function Sidebar({ onClose }: SidebarProps) {
       <div className="p-3 sm:p-4 space-y-5 sm:space-y-6 flex-1">
         {/* AUTH */}
         <AuthPanel />
+
+        {/* LIVE MARKET PULSE */}
+        <div className="pt-1">
+          <Button
+            onClick={handleGeneratePulse}
+            disabled={!accessToken || pulseLoading}
+            className="w-full font-mono text-xs h-9 bg-primary/15 text-primary border border-primary/40 hover:bg-primary/25 hover:border-primary/60 transition-all tracking-wider"
+          >
+            {pulseLoading ? (
+              <>
+                <span className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin mr-2 shrink-0" />
+                SCANNING MARKET...
+              </>
+            ) : (
+              <>
+                <Zap className="w-3.5 h-3.5 mr-2 shrink-0" />
+                GENERATE LIVE MARKET PULSE
+              </>
+            )}
+          </Button>
+          {!accessToken && (
+            <p className="font-mono text-[9px] text-muted-foreground/50 text-center mt-1.5">
+              Connect Schwab to enable
+            </p>
+          )}
+        </div>
 
         {/* CHART OVERLAYS */}
         <div className="space-y-2 pt-1">
@@ -215,6 +282,13 @@ export function Sidebar({ onClose }: SidebarProps) {
           </div>
         </div>
       </div>
+
+      <MarketPulseModal
+        isOpen={pulseOpen}
+        isLoading={pulseLoading}
+        result={pulseResult}
+        onClose={() => setPulseOpen(false)}
+      />
     </div>
   );
 }

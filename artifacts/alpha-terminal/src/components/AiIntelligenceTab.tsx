@@ -8,8 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Activity, BarChart2, Send, Trash2,
-  TerminalSquare, User, Newspaper,
-  Zap, Target, TrendingUp
+  TerminalSquare, User,
+  Target, TrendingUp
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
@@ -48,15 +48,13 @@ export function AiIntelligenceTab() {
     chatHistory, addChatMessage, clearChat,
     analysisResult, setAnalysisResult,
     strategistResult, setStrategistResult,
-    briefingResult, setBriefingResult,
   } = useTerminalStore();
 
   const [customPrompt, setCustomPrompt] = useState("");
   const [chatInput, setChatInput] = useState("");
-  const [isBriefing, setIsBriefing] = useState(false);
   const [isStrategizing, setIsStrategizing] = useState(false);
   const [isChatLoading, setIsChatLoading] = useState(false);
-  const [activeResult, setActiveResult] = useState<"analysis" | "strategist" | "briefing" | null>(null);
+  const [activeResult, setActiveResult] = useState<"analysis" | "strategist" | null>(null);
   const [chainEnabled, setChainEnabled] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -73,11 +71,6 @@ export function AiIntelligenceTab() {
     { query: { enabled: !!accessToken && chainEnabled } }
   );
 
-  // Macro quotes for briefing
-  const { data: spyQ } = useGetQuote({ symbol: "SPY", accessToken: accessToken || "" }, { query: { enabled: !!accessToken } });
-  const { data: qqqQ } = useGetQuote({ symbol: "QQQ", accessToken: accessToken || "" }, { query: { enabled: !!accessToken } });
-  const { data: iwmQ } = useGetQuote({ symbol: "IWM", accessToken: accessToken || "" }, { query: { enabled: !!accessToken } });
-  const { data: vixQ } = useGetQuote({ symbol: "VIX", accessToken: accessToken || "" }, { query: { enabled: !!accessToken } });
 
   const taMutation = useRunTechnicalAnalysis();
 
@@ -128,31 +121,6 @@ export function AiIntelligenceTab() {
     }
   };
 
-  const handleBriefing = async () => {
-    setBriefingResult(null);
-    setActiveResult("briefing");
-    setIsBriefing(true);
-    try {
-      const res = await fetch(`${API_BASE}/ai/market-briefing`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          spyQuote: spyQ,
-          qqqQuote: qqqQ,
-          iwmQuote: iwmQ,
-          vixQuote: vixQ,
-          model: aiModel,
-          temperature: 0.2,
-        }),
-      });
-      const data = await res.json() as { response?: string };
-      setBriefingResult(data.response ?? "No response received.");
-    } catch (err) {
-      setBriefingResult(`**Error:** ${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      setIsBriefing(false);
-    }
-  };
 
   const handleChipClick = (chip: string) => {
     setChatInput(chip);
@@ -192,49 +160,14 @@ export function AiIntelligenceTab() {
   };
 
   const isPendingAnalysis = taMutation.isPending;
-  const isPendingAny = isPendingAnalysis || isStrategizing || isBriefing;
+  const isPendingAny = isPendingAnalysis || isStrategizing;
 
   const currentResult = activeResult === "analysis" ? analysisResult
     : activeResult === "strategist" ? strategistResult
-    : activeResult === "briefing" ? briefingResult
     : null;
 
   return (
     <div className="flex flex-col gap-4 max-w-5xl mx-auto pb-6">
-
-      {/* ── DAILY MARKET BRIEFING ── */}
-      <div className="bg-card border border-card-border rounded-xl overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-card-border">
-          <div className="flex items-center gap-2">
-            <Newspaper className="w-4 h-4 text-primary" />
-            <span className="font-mono text-xs font-bold text-foreground">DAILY MARKET BRIEFING</span>
-          </div>
-          <Button
-            onClick={handleBriefing}
-            disabled={!accessToken || isBriefing}
-            size="sm"
-            className="font-mono text-[10px] h-7 px-3 bg-primary/20 text-primary border border-primary/40 hover:bg-primary/30"
-          >
-            {isBriefing ? (
-              <><span className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin mr-1.5" />GENERATING...</>
-            ) : (
-              <><Zap className="w-3 h-3 mr-1.5" />GENERATE PRE-MARKET OVERVIEW</>
-            )}
-          </Button>
-        </div>
-        {activeResult === "briefing" && (
-          <div className="p-4 bg-[#0D1117]">
-            {isBriefing ? (
-              <div className="flex items-center gap-3 py-6 justify-center">
-                <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                <span className="font-mono text-xs text-primary animate-pulse">SCANNING MARKET CONDITIONS...</span>
-              </div>
-            ) : briefingResult ? (
-              <MarkdownResult content={briefingResult} />
-            ) : null}
-          </div>
-        )}
-      </div>
 
       {/* ── DEEP ANALYSIS ── */}
       <div className="bg-card border border-card-border rounded-xl overflow-hidden">
