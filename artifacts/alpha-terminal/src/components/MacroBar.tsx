@@ -1,26 +1,50 @@
 import { useTerminalStore } from "@/lib/store";
 import { useQuote }         from "@/hooks/useQuote";
-import { TrendingUp, TrendingDown } from "lucide-react";
+import { TrendingUp, TrendingDown, Minus } from "lucide-react";
 
-// Fear symbols: rising = bad = red (inverse color logic)
 const FEAR_SYMBOLS = new Set(["VIX", "VXN"]);
 const INDEX_SYMS   = new Set(["VIX", "SPX", "NDX", "RUT", "DJI", "COMP", "DXY", "TNX"]);
+
+const UP_COLOR   = "#00E676";
+const DOWN_COLOR = "#FF1744";
+const FLAT_COLOR = "#6B7280";
+
+function formatPct(pct: number | null | undefined, isUp: boolean): string {
+  if (pct == null) return "—%";
+  const sign = isUp ? "+" : "";
+  return `${sign}${pct.toFixed(2)}%`;
+}
 
 function MacroCard({ symbol }: { symbol: string }) {
   const { accessToken, symbol: activeSymbol, setSymbol } = useTerminalStore();
   const { data, isLoading } = useQuote(symbol);
 
-  const isActive   = activeSymbol === symbol;
-  const change     = data?.change ?? 0;
-  const isPositive = change > 0;
-  const isNeg      = change < 0;
-  const isFear     = FEAR_SYMBOLS.has(symbol.toUpperCase());
-  const isIndex    = INDEX_SYMS.has(symbol.toUpperCase());
+  const isActive = activeSymbol === symbol;
+  const change   = data?.change ?? null;
 
-  // Fear symbols invert: rising VIX = red, falling = green
-  const colorClass = isFear
-    ? (isPositive ? "text-destructive" : isNeg ? "text-primary" : "text-muted-foreground")
-    : (isPositive ? "text-primary"     : isNeg ? "text-destructive" : "text-muted-foreground");
+  // Strict three-way: up / down / flat
+  const isUp   = change !== null && change > 0;
+  const isDown = change !== null && change < 0;
+  const isFlat = !isUp && !isDown;
+
+  const isFear  = FEAR_SYMBOLS.has(symbol.toUpperCase());
+  const isIndex = INDEX_SYMS.has(symbol.toUpperCase());
+
+  // Fear symbols invert color semantics (VIX up = danger = red)
+  let priceColor: string;
+  if (isFlat || change === null) {
+    priceColor = FLAT_COLOR;
+  } else if (isFear) {
+    priceColor = isUp ? DOWN_COLOR : UP_COLOR;
+  } else {
+    priceColor = isUp ? UP_COLOR : DOWN_COLOR;
+  }
+
+  const ChgIcon = isUp
+    ? <TrendingUp  className="w-2.5 h-2.5 shrink-0" />
+    : isDown
+      ? <TrendingDown className="w-2.5 h-2.5 shrink-0" />
+      : <Minus className="w-2.5 h-2.5 shrink-0" />;
 
   return (
     <button
@@ -42,18 +66,25 @@ function MacroCard({ symbol }: { symbol: string }) {
         <span className="font-mono text-sm font-bold text-muted-foreground/40">—</span>
       ) : (
         <>
-          <span className={`font-mono text-sm sm:text-base font-black tabular-nums ${colorClass}`}>
+          {/* Last price */}
+          <span
+            className="font-mono text-sm sm:text-base font-black tabular-nums"
+            style={{ color: priceColor }}
+          >
             {data?.last != null
               ? (isIndex ? data.last.toFixed(2) : `$${data.last.toFixed(2)}`)
               : "—"}
           </span>
-          <span className={`font-mono text-[9px] sm:text-[10px] flex items-center gap-0.5 tabular-nums ${colorClass}`}>
-            {isPositive
-              ? <TrendingUp  className="w-2.5 h-2.5 shrink-0" />
-              : <TrendingDown className="w-2.5 h-2.5 shrink-0" />}
+
+          {/* Change % row */}
+          <span
+            className="font-mono text-[9px] sm:text-[10px] flex items-center gap-0.5 tabular-nums"
+            style={{ color: priceColor }}
+          >
+            {ChgIcon}
             {data?.changePct != null
-              ? `${isPositive ? "+" : ""}${data.changePct.toFixed(2)}%`
-              : "—"}
+              ? formatPct(data.changePct, isUp)
+              : "—%"}
           </span>
         </>
       )}

@@ -59,16 +59,27 @@ export function MetricsBar() {
 
   if (!quote) return null;
 
-  // Strict directional logic: < 0 → red, > 0 → green, 0 → gray
-  const netChange   = quote.change ?? 0;
-  const isUp        = netChange > 0;
-  const isDown      = netChange < 0;
-  const priceColor  = isDown ? DOWN_COLOR : isUp ? UP_COLOR : FLAT_COLOR;
+  // Use explicit null check so we can distinguish "no data yet" from "genuinely flat"
+  const rawChange = quote.change;     // null = not yet available
+  const rawPct    = quote.changePct;  // null = not yet available
 
-  const lastStr      = quote.last  != null ? `$${fmtPrice(quote.last)}`                         : "—";
-  const changeStr    = netChange   !== 0   ? `${isUp ? "+" : ""}${fmtPrice(netChange)}`         : "0.00";
-  const changePctStr = quote.changePct != null
-    ? `(${isUp ? "+" : ""}${fmtPrice(quote.changePct)}%)`
+  const isUp   = rawChange !== null && rawChange > 0;
+  const isDown = rawChange !== null && rawChange < 0;
+  const isFlat = rawChange !== null && rawChange === 0;
+
+  const priceColor = isDown ? DOWN_COLOR : isUp ? UP_COLOR : FLAT_COLOR;
+
+  // ThinkorSwim format: "$582.56  -5.26  (-0.89%)"
+  const lastStr = quote.last != null ? `$${fmtPrice(quote.last)}` : "—";
+
+  // Dollar change — show sign explicitly; "—" when no data yet
+  const changeStr = rawChange !== null
+    ? (isUp ? `+${fmtPrice(rawChange)}` : isFlat ? "0.00" : fmtPrice(rawChange))
+    : "—";
+
+  // Percent change — always use the raw value's sign; "—" when no data
+  const changePctStr = rawPct !== null
+    ? `(${isUp ? "+" : ""}${fmtPrice(rawPct)}%)`
     : "(—%)";
 
   return (

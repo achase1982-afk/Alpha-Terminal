@@ -91,47 +91,89 @@ router.get("/quote", async (req, res) => {
       return res.json(data);
     }
 
-    // Robust field extraction — Schwab uses different field names depending on
-    // instrument type (equity, ETF, index) and session (regular vs extended hours).
+    // ── DEBUG: log every key Schwab actually returned ──────────────────────
+    // This surfaces the real field names so we can extend the mapping below.
+    req.log.info({ symbol: displaySymbol, quoteKeys: Object.keys(quote) }, "Schwab raw quote keys");
+
+    // ── Robust number extractor ───────────────────────────────────────────────
+    // Returns the first key whose value is a finite, non-NaN number.
+    // Handles null, undefined, string "NaN", and zero correctly.
     function pickNum(...keys: string[]): number | undefined {
       for (const k of keys) {
         const v = quote[k];
-        if (typeof v === "number" && !isNaN(v)) return v;
+        if (typeof v === "number" && isFinite(v) && !isNaN(v)) return v;
       }
       return undefined;
     }
 
-    // Last price: prefer lastPrice, fall back to mark (bid/ask midpoint) or closePrice
-    const last = pickNum("lastPrice", "mark", "closePrice", "regularMarketLastPrice");
+    // ── Last / mark price ─────────────────────────────────────────────────────
+    const last = pickNum(
+      "lastPrice",
+      "last",
+      "mark",
+      "markPrice",
+      "regularMarketLastPrice",
+    );
 
-    // Net change: try regular-session and extended-hours variants
-    const change = pickNum(
+    // ── Previous close — used as fallback anchor for computed change ──────────
+    const prevClose = pickNum(
+      "closePrice",           // standard REST field
+      "close",
+      "previousClose",
+      "regularMarketPreviousClose",
+    );
+
+    // ── Net dollar change ─────────────────────────────────────────────────────
+    // Schwab field names vary by asset type and session:
+    //   Regular hours:  netChange, regularMarketNetChange
+    //   Extended hours: extendedChange, markChange, postMarketChange
+    let change = pickNum(
       "netChange",
       "regularMarketNetChange",
+      "markChange",
       "extendedChange",
+      "postMarketChange",
+      "preMarketChange",
     );
 
-    // Percent change: try regular-session and extended-hours variants
-    const changePct = pickNum(
+    // Computed fallback: last − previous_close (always available)
+    if (change === undefined && last !== undefined && prevClose !== undefined && prevClose !== 0) {
+      change = parseFloat((last - prevClose).toFixed(4));
+    }
+
+    // ── Percent change ────────────────────────────────────────────────────────
+    let changePct = pickNum(
       "netPercentChangeInDouble",
       "regularMarketPercentChangeInDouble",
+      "markPercentChange",
       "extendedPercentChange",
+      "postMarketPercentChange",
+      "preMarketPercentChange",
     );
 
-    req.log.info({ symbol: displaySymbol, last, change, changePct }, "Quote parsed");
+    // Computed fallback: (change / prevClose) × 100
+    if (changePct === undefined && change !== undefined && prevClose !== undefined && prevClose !== 0) {
+      changePct = parseFloat(((change / prevClose) * 100).toFixed(4));
+    }
+
+    req.log.info(
+      { symbol: displaySymbol, last, prevClose, change, changePct },
+      "Quote parsed"
+    );
 
     const data = GetQuoteResponse.parse({
       symbol: displaySymbol,
       last,
-      bid:  pickNum("bidPrice", "bid"),
-      ask:  pickNum("askPrice", "ask"),
+      bid:   pickNum("bidPrice", "bid"),
+      ask:   pickNum("askPrice", "ask"),
       change,
       changePct,
       volume: pickNum("totalVolume", "volume"),
-      high:   pickNum("highPrice", "regularMarketHigh"),
-      low:    pickNum("lowPrice",  "regularMarketLow"),
-      fiftyTwoWeekHigh: pickNum("52WkHigh", "fiftyTwoWeekHigh"),
-      fiftyTwoWeekLow:  pickNum("52WkLow",  "fiftyTwoWeekLow"),
+      high:   pickNum("highPrice",  "dayHigh",  "regularMarketHigh"),
+      low:    pickNum("lowPrice",   "dayLow",   "regularMarketLow"),
+      // Schwab uses both "52WeekHigh" and "highPrice52Week" depending on endpoint version
+      fiftyTwoWeekHigh: pickNum("52WeekHigh", "highPrice52Week", "52WkHigh", "fiftyTwoWeekHigh"),
+      fiftyTwoWeekLow:  pickNum("52WeekLow",  "lowPrice52Week",  "52WkLow",  "fiftyTwoWeekLow"),
       peRatio: (fundamental?.["peRatio"] as number) ?? undefined,
     });
 
