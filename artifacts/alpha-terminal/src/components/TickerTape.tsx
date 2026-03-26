@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useQuote } from "@/hooks/useQuote";
+import { useTickColor } from "@/hooks/useTickColor";
 
 const UP_COLOR   = "#00E676";
 const DOWN_COLOR = "#FF1744";
@@ -9,11 +10,12 @@ const FLAT_COLOR = "#6B7280";
 const TapeItem = memo(function TapeItem({ symbol }: { symbol: string }) {
   const setSymbol = useTerminalStore(s => s.setSymbol);
   const { data }  = useQuote(symbol);
+  const tickColor = useTickColor(symbol, data?.last ?? null);
 
   const rawChange = data?.change ?? null;
   const isUp      = rawChange !== null && rawChange > 0;
   const isDown    = rawChange !== null && rawChange < 0;
-  const color     = isDown ? DOWN_COLOR : isUp ? UP_COLOR : FLAT_COLOR;
+  const changeColor = isDown ? DOWN_COLOR : isUp ? UP_COLOR : FLAT_COLOR;
   const arrow     = isDown ? "▼" : isUp ? "▲" : "—";
   const pct       = data?.changePct != null ? Math.abs(data.changePct).toFixed(2) + "%" : null;
 
@@ -30,10 +32,10 @@ const TapeItem = memo(function TapeItem({ symbol }: { symbol: string }) {
 
       {data?.last != null ? (
         <>
-          <span className="font-bold tabular-nums" style={{ color }}>
+          <span className="font-bold tabular-nums" style={{ color: tickColor }}>
             {data.last.toFixed(2)}
           </span>
-          <span className="font-bold tabular-nums" style={{ color }}>
+          <span className="font-bold tabular-nums" style={{ color: changeColor }}>
             {arrow} {pct ?? "—"}
           </span>
         </>
@@ -46,24 +48,19 @@ const TapeItem = memo(function TapeItem({ symbol }: { symbol: string }) {
   );
 });
 
-// Drives scrolling via requestAnimationFrame — no CSS keyframe reset = no flash ever.
 function TapeTrack({ symbols }: { symbols: string[] }) {
   const trackRef  = useRef<HTMLDivElement>(null);
-  const posRef    = useRef(0);          // current scroll offset in px
-  const rafRef    = useRef<number>(0);  // animation frame handle
-  const pausedRef = useRef(false);      // hover pause
+  const posRef    = useRef(0);
+  const rafRef    = useRef<number>(0);
+  const pausedRef = useRef(false);
 
-  // Read speed live from store via ref so the RAF loop sees changes instantly
-  // without needing to restart.
   const tapeSpeed = useTerminalStore(s => s.tapeSpeed);
   const speedRef  = useRef(tapeSpeed);
   useEffect(() => { speedRef.current = tapeSpeed; }, [tapeSpeed]);
 
-  // Three copies for seamless wrap — same symbol list repeated 3x.
   const items = [...symbols, ...symbols, ...symbols];
 
   useEffect(() => {
-    // Reset position whenever the symbol list changes (track DOM rebuilt).
     posRef.current = 0;
 
     const track = trackRef.current;
@@ -71,16 +68,12 @@ function TapeTrack({ symbols }: { symbols: string[] }) {
 
     const tick = () => {
       if (!pausedRef.current) {
-        // singleWidth = width of one copy of the symbol list.
         const singleWidth = track.scrollWidth / 3;
 
         if (singleWidth > 0) {
-          // Pixels per frame based on desired seconds-per-pass at ~60fps.
           const pxPerFrame = singleWidth / (speedRef.current * 60);
           posRef.current  += pxPerFrame;
 
-          // When we've scrolled exactly one copy's width, silently wrap.
-          // The visual looks identical at this point — no flash.
           if (posRef.current >= singleWidth) {
             posRef.current -= singleWidth;
           }

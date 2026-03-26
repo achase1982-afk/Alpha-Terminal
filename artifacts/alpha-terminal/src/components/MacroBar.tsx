@@ -1,5 +1,6 @@
 import { useTerminalStore } from "@/lib/store";
 import { useQuote }         from "@/hooks/useQuote";
+import { useTickColor }     from "@/hooks/useTickColor";
 import { TrendingUp, TrendingDown, Minus } from "lucide-react";
 
 const FEAR_SYMBOLS = new Set(["VIX", "VXN"]);
@@ -18,6 +19,7 @@ function formatPct(pct: number | null | undefined, isUp: boolean): string {
 function MacroCard({ symbol }: { symbol: string }) {
   const { accessToken, symbol: activeSymbol, setSymbol } = useTerminalStore();
   const { data, isLoading } = useQuote(symbol);
+  const tickColor = useTickColor(symbol, data?.last ?? null);
 
   const isActive = activeSymbol === symbol;
   const change   = data?.change ?? null;
@@ -29,13 +31,13 @@ function MacroCard({ symbol }: { symbol: string }) {
   const isFear  = FEAR_SYMBOLS.has(symbol.toUpperCase());
   const isIndex = INDEX_SYMS.has(symbol.toUpperCase());
 
-  let priceColor: string;
+  let changeColor: string;
   if (isFlat || change === null) {
-    priceColor = FLAT_COLOR;
+    changeColor = FLAT_COLOR;
   } else if (isFear) {
-    priceColor = isUp ? DOWN_COLOR : UP_COLOR;
+    changeColor = isUp ? DOWN_COLOR : UP_COLOR;
   } else {
-    priceColor = isUp ? UP_COLOR : DOWN_COLOR;
+    changeColor = isUp ? UP_COLOR : DOWN_COLOR;
   }
 
   const ChgIcon = isUp
@@ -56,7 +58,6 @@ function MacroCard({ symbol }: { symbol: string }) {
       `}
       style={isActive ? { boxShadow: `0 0 12px ${ACTIVE_GLOW}` } : undefined}
     >
-      {/* Symbol — 1.1rem, 700, white; blue when active */}
       <span
         style={{
           fontSize: '1.1rem',
@@ -74,20 +75,18 @@ function MacroCard({ symbol }: { symbol: string }) {
         <span style={{ color: '#374151', fontSize: '0.85rem', fontWeight: 400 }}>—</span>
       ) : (
         <>
-          {/* Price — mono, weight 300, TOS thin */}
           <span
-            className="font-mono tabular-nums"
-            style={{ color: priceColor, fontSize: '0.9rem', fontWeight: 300 }}
+            className="tabular-nums"
+            style={{ color: tickColor, fontSize: '0.9rem', fontWeight: 300 }}
           >
             {data?.last != null
               ? (isIndex ? data.last.toFixed(2) : `$${data.last.toFixed(2)}`)
               : "—"}
           </span>
 
-          {/* Change % — mono, weight 300, TOS thin */}
           <span
-            className="font-mono tabular-nums flex items-center gap-0.5"
-            style={{ color: priceColor, fontSize: '0.72rem', fontWeight: 300 }}
+            className="tabular-nums flex items-center gap-0.5"
+            style={{ color: changeColor, fontSize: '0.72rem', fontWeight: 300 }}
           >
             {ChgIcon}
             {data?.changePct != null ? formatPct(data.changePct, isUp) : "—%"}
