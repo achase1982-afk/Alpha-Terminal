@@ -15,12 +15,11 @@
       .font-mono, code, pre {
         font-family: ui-monospace, 'SF Mono', Menlo, Consolas, 'Cascadia Code', 'Liberation Mono', monospace !important;
       }
-      /* All numeric readouts: thin (300) for a sleek TOS look */
+      /* All numeric readouts: thin (300), tabular-aligned, NO slashed zeros */
       .font-mono {
         font-weight: 300 !important;
-        /* Disable slashed zeros — monospace fonts (Consolas, Cascadia) enable them by default */
-        font-variant-numeric: normal !important;
-        font-feature-settings: 'zero' 0 !important;
+        font-variant-numeric: tabular-nums !important;
+        font-feature-settings: normal !important;
       }
       /* Macro card ticker labels stay bold — intentional hierarchy */
       .macro-symbol-label {

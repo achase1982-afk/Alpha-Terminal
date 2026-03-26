@@ -87,21 +87,17 @@ router.get("/quote", async (req, res) => {
     const fundamental = entry?.["fundamental"] as Record<string, unknown> | undefined;
     const reference = entry?.["reference"] as Record<string, unknown> | undefined;
 
-    // Company name — Schwab nests it at payload[symbol].reference.description for equities
-    // Log both candidate paths so we can see exactly what Schwab returns
-    req.log.info({
-      symbol: displaySymbol,
-      entryDescription: entry?.["description"],
-      referenceDescription: reference?.["description"],
-      referenceKeys: reference ? Object.keys(reference) : null,
-      entryKeys: entry ? Object.keys(entry) : null,
-    }, "Schwab description lookup");
-
+    // Company name — robust multi-key extraction with stdout diagnostic
     const description =
       (reference?.["description"] as string | undefined) ||
       (entry?.["description"] as string | undefined) ||
       (quote?.["description"] as string | undefined) ||
+      (reference?.["companyName"] as string | undefined) ||
+      (entry?.["companyName"] as string | undefined) ||
+      (quote?.["companyName"] as string | undefined) ||
       undefined;
+
+    console.log(`[DESC] ${displaySymbol} | reference.description=${reference?.["description"]} | entry.description=${entry?.["description"]} | quote.description=${quote?.["description"]} | entryKeys=${entry ? Object.keys(entry).join(",") : "null"} | referenceKeys=${reference ? Object.keys(reference).join(",") : "null"} | resolved="${description ?? "NONE"}"`);
 
     if (!quote) {
       const data = GetQuoteResponse.parse({ symbol: displaySymbol, error: "no_data" });
