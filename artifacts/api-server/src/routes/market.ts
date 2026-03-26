@@ -66,7 +66,7 @@ router.get("/quote", async (req, res) => {
   const apiSymbol = formatSchwabSymbol(displaySymbol);
 
   try {
-    const response = await fetch(`${SCHWAB_API_BASE}/quotes?symbols=${encodeURIComponent(apiSymbol)}&fields=quote,fundamental`, {
+    const response = await fetch(`${SCHWAB_API_BASE}/quotes?symbols=${encodeURIComponent(apiSymbol)}&fields=quote,fundamental,reference`, {
       headers: { "Authorization": `Bearer ${accessToken}` },
     });
 
