@@ -35,6 +35,10 @@ interface TerminalState {
   aiTemp: number;
   setAiTemp: (t: number) => void;
   
+  // Ticker Tape
+  tickerTapeSymbols: string[];
+  setTickerTapeSymbols: (symbols: string[]) => void;
+
   // AI Chat
   chatHistory: ChatMessage[];
   addChatMessage: (msg: ChatMessage) => void;
@@ -73,6 +77,10 @@ export const useTerminalStore = create<TerminalState>()(
       setAiModel: (aiModel) => set({ aiModel }),
       aiTemp: 0.7,
       setAiTemp: (aiTemp) => set({ aiTemp }),
+
+      // Ticker Tape
+      tickerTapeSymbols: ['SPY', 'QQQ', 'IWM', 'DIA', 'VIX'],
+      setTickerTapeSymbols: (tickerTapeSymbols) => set({ tickerTapeSymbols }),
 
       // Chat
       chatHistory: [],

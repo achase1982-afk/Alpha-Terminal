@@ -5,10 +5,11 @@ import { TradingChart } from "@/components/TradingChart";
 import { OptionsTab } from "@/components/OptionsTab";
 import { AiAnalysisTab } from "@/components/AiAnalysisTab";
 import { AiChatTab } from "@/components/AiChatTab";
+import { TickerTape } from "@/components/TickerTape";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useTerminalStore } from "@/lib/store";
 import { useGetPriceHistory } from "@workspace/api-client-react";
-import { LineChart, BarChart2, SquareTerminal, BrainCircuit, Menu, X } from "lucide-react";
+import { LineChart, BarChart2, SquareTerminal, BrainCircuit, Menu } from "lucide-react";
 
 export default function TerminalPage() {
   const { symbol, accessToken, timeframe } = useTerminalStore();
@@ -53,12 +54,18 @@ export default function TerminalPage() {
           >
             <Menu className="w-5 h-5" />
           </button>
-          <span className="font-sans font-bold text-base tracking-wider">
-            ALPHA<span className="text-primary">TERM</span>
-          </span>
+          <div className="flex flex-col leading-none">
+            <span className="font-sans font-black text-lg tracking-wider text-foreground">
+              ALPHA
+            </span>
+            <span className="font-sans font-semibold text-[11px] tracking-[0.25em] text-primary">
+              TERMINAL
+            </span>
+          </div>
           <span className="ml-auto font-mono text-xs text-muted-foreground uppercase">{symbol}</span>
         </div>
 
+        <TickerTape />
         <MetricsBar />
 
         <div className="flex-1 overflow-auto p-3 sm:p-4 lg:p-6 z-10">
