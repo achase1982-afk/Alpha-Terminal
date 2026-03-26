@@ -76,19 +76,19 @@ let loginAcked       = false;
 
 // ─── Symbol formatting (mirrors market.ts) ────────────────────────────────────
 const INDEX_MAP: Record<string, string> = {
-  VIX: "$VIX.X", "$VIX": "$VIX.X",
-  SPX: "$SPX.X", "$SPX": "$SPX.X",
-  NDX: "$NDX.X", "$NDX": "$NDX.X",
-  RUT: "$RUT.X", "$RUT": "$RUT.X",
-  DJI: "$DJI.X", "$DJI": "$DJI.X", DJIA: "$DJI.X",
-  COMP: "$COMP.X", "$COMP": "$COMP.X",
-  DXY: "$DXY.X", "$DXY": "$DXY.X",
-  TNX: "$TNX.X", "$TNX": "$TNX.X",
-  TYX: "$TYX.X", "$TYX": "$TYX.X",
-  VXN: "$VXN.X", "$VXN": "$VXN.X",
-  OEX: "$OEX.X", "$OEX": "$OEX.X",
-  MNX: "$MNX.X", "$MNX": "$MNX.X",
-  XSP: "$XSP.X", "$XSP": "$XSP.X",
+  VIX: "$VIX", "$VIX": "$VIX",
+  SPX: "$SPX", "$SPX": "$SPX",
+  NDX: "$NDX", "$NDX": "$NDX",
+  RUT: "$RUT", "$RUT": "$RUT",
+  DJI: "$DJI", "$DJI": "$DJI", DJIA: "$DJI",
+  COMP: "$COMP", "$COMP": "$COMP",
+  DXY: "$DXY", "$DXY": "$DXY",
+  TNX: "$TNX", "$TNX": "$TNX",
+  TYX: "$TYX", "$TYX": "$TYX",
+  VXN: "$VXN", "$VXN": "$VXN",
+  OEX: "$OEX", "$OEX": "$OEX",
+  MNX: "$MNX", "$MNX": "$MNX",
+  XSP: "$XSP", "$XSP": "$XSP",
 };
 function toSchwabKey(sym: string): string {
   return INDEX_MAP[sym.toUpperCase()] ?? sym.toUpperCase();

@@ -10,37 +10,40 @@ const router: IRouter = Router();
 const SCHWAB_API_BASE = "https://api.schwabapi.com/marketdata/v1";
 
 const INDEX_SYMBOL_MAP: Record<string, string> = {
-  "VIX":   "$VIX.X",
-  "$VIX":  "$VIX.X",
-  "SPX":   "$SPX.X",
-  "$SPX":  "$SPX.X",
-  "NDX":   "$NDX.X",
-  "$NDX":  "$NDX.X",
-  "RUT":   "$RUT.X",
-  "$RUT":  "$RUT.X",
-  "DJI":   "$DJI.X",
-  "$DJI":  "$DJI.X",
-  "DJIA":  "$DJI.X",
-  "COMP":  "$COMP.X",
-  "$COMP": "$COMP.X",
-  "DXY":   "$DXY.X",
-  "$DXY":  "$DXY.X",
-  "TNX":   "$TNX.X",
-  "$TNX":  "$TNX.X",
-  "TYX":   "$TYX.X",
-  "$TYX":  "$TYX.X",
-  "VXN":   "$VXN.X",
-  "$VXN":  "$VXN.X",
-  "OEX":   "$OEX.X",
-  "$OEX":  "$OEX.X",
-  "MNX":   "$MNX.X",
-  "$MNX":  "$MNX.X",
-  "XSP":   "$XSP.X",
-  "$XSP":  "$XSP.X",
+  "VIX":   "$VIX",
+  "$VIX":  "$VIX",
+  "SPX":   "$SPX",
+  "$SPX":  "$SPX",
+  "NDX":   "$NDX",
+  "$NDX":  "$NDX",
+  "RUT":   "$RUT",
+  "$RUT":  "$RUT",
+  "DJI":   "$DJI",
+  "$DJI":  "$DJI",
+  "DJIA":  "$DJI",
+  "COMP":  "$COMP",
+  "$COMP": "$COMP",
+  "DXY":   "$DXY",
+  "$DXY":  "$DXY",
+  "TNX":   "$TNX",
+  "$TNX":  "$TNX",
+  "TYX":   "$TYX",
+  "$TYX":  "$TYX",
+  "VXN":   "$VXN",
+  "$VXN":  "$VXN",
+  "OEX":   "$OEX",
+  "$OEX":  "$OEX",
+  "MNX":   "$MNX",
+  "$MNX":  "$MNX",
+  "XSP":   "$XSP",
+  "$XSP":  "$XSP",
 };
 
 function formatSchwabSymbol(symbol: string): string {
-  const upper = symbol.toUpperCase().trim();
+  let upper = symbol.toUpperCase().trim();
+  if (upper.endsWith(".X") && upper.startsWith("$")) {
+    upper = upper.slice(0, -2);
+  }
   return INDEX_SYMBOL_MAP[upper] ?? upper;
 }
 
@@ -87,7 +90,13 @@ router.get("/quote", async (req, res) => {
     }
 
     const json = await response.json() as Record<string, unknown>;
+    const responseKeys = Object.keys(json);
     const entry = (json[apiSymbol] ?? json[displaySymbol] ?? Object.values(json)[0]) as Record<string, unknown> | undefined;
+
+    if (!entry) {
+      req.log.warn({ symbol: displaySymbol, apiSymbol, responseKeys }, "No entry found in Schwab response");
+    }
+
     const quote = entry?.["quote"] as Record<string, unknown> | undefined;
     const fundamental = entry?.["fundamental"] as Record<string, unknown> | undefined;
     const reference = entry?.["reference"] as Record<string, unknown> | undefined;
@@ -159,6 +168,7 @@ router.get("/quote", async (req, res) => {
 
     // ── Percent change ────────────────────────────────────────────────────────
     let changePct = pickNum(
+      "netPercentChange",
       "netPercentChangeInDouble",
       "regularMarketPercentChangeInDouble",
       "markPercentChange",
