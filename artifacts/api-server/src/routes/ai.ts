@@ -199,10 +199,36 @@ const PULSE_SYMBOLS: PulseSymbol[] = [
   { display: "/CL",   api: "/CL",    category: "commodity", description: "Crude Oil Futures — energy / risk appetite signal" },
 ];
 
+// Maps user-facing symbols to Schwab API format (adds $ prefix for known indices)
+const INDEX_TO_SCHWAB: Record<string, string> = {
+  "VIX": "$VIX", "VVIX": "$VVIX", "SPX": "$SPX", "NDX": "$NDX",
+  "RUT": "$RUT", "DJI": "$DJI", "DJIA": "$DJI", "COMP": "$COMP",
+  "DXY": "$DXY", "TNX": "$TNX", "TYX": "$TYX", "VXN": "$VXN",
+  "TICK": "$TICK", "ADD": "$ADD", "TRIN": "$TRIN", "CPC": "$CPC",
+  "OEX": "$OEX", "MNX": "$MNX", "XSP": "$XSP",
+};
+
+function symbolToSchwabApi(userSymbol: string): string {
+  const upper = userSymbol.toUpperCase().trim().replace(/\.X$/, "");
+  return INDEX_TO_SCHWAB[upper] ?? upper;
+}
+
 async function fetchMacroPulseData(
-  accessToken: string
-): Promise<Map<string, Record<string, unknown>>> {
-  const symbolsParam = PULSE_SYMBOLS.map(s => encodeURIComponent(s.api)).join(",");
+  accessToken: string,
+  userSymbols?: string[]
+): Promise<{ displayToApi: Map<string, string>; dataMap: Map<string, Record<string, unknown>> }> {
+  let pairs: Array<{ display: string; api: string }>;
+
+  if (userSymbols && userSymbols.length > 0) {
+    pairs = userSymbols.map(s => ({
+      display: s.toUpperCase().trim(),
+      api: symbolToSchwabApi(s),
+    }));
+  } else {
+    pairs = PULSE_SYMBOLS.map(s => ({ display: s.display, api: s.api }));
+  }
+
+  const symbolsParam = pairs.map(p => encodeURIComponent(p.api)).join(",");
   const url = `${SCHWAB_API_BASE_PULSE}/quotes?symbols=${symbolsParam}&fields=quote,fundamental,reference`;
 
   const response = await fetch(url, {
@@ -214,17 +240,18 @@ async function fetchMacroPulseData(
   }
 
   const json = await response.json() as Record<string, unknown>;
-  const result = new Map<string, Record<string, unknown>>();
+  const displayToApi = new Map<string, string>(pairs.map(p => [p.display, p.api]));
+  const dataMap = new Map<string, Record<string, unknown>>();
 
-  for (const sym of PULSE_SYMBOLS) {
-    const entry = json[sym.api] as Record<string, unknown> | undefined;
+  for (const pair of pairs) {
+    const entry = (json[pair.api] ?? json[pair.display]) as Record<string, unknown> | undefined;
     const q = entry?.["quote"] as Record<string, unknown> | undefined;
     if (q) {
-      result.set(sym.display, { ...q, _display: sym.display });
+      dataMap.set(pair.display, { ...q });
     }
   }
 
-  return result;
+  return { displayToApi, dataMap };
 }
 
 function formatPulseSymbol(sym: PulseSymbol, data: Record<string, unknown> | undefined): string {
@@ -257,7 +284,45 @@ function formatPulseSymbol(sym: PulseSymbol, data: Record<string, unknown> | und
   return `${sym.display} [${sym.description}]\n  ${parts.join(" | ")}`;
 }
 
-function buildPulseDataBlock(dataMap: Map<string, Record<string, unknown>>): string {
+function extractQuoteFields(data: Record<string, unknown>): {
+  last: string; chg: string; chgPct: string; hi: string; lo: string; vol: string;
+} {
+  const n = (k: string): string => {
+    const v = data[k];
+    return typeof v === "number" && isFinite(v) ? String(v) : "N/A";
+  };
+  return {
+    last:   [n("lastPrice"), n("mark"), n("close")].find(v => v !== "N/A") ?? "N/A",
+    chg:    [n("netChange"), n("markChange")].find(v => v !== "N/A") ?? "N/A",
+    chgPct: [n("netPercentChange"), n("markPercentChange")].find(v => v !== "N/A") ?? "N/A",
+    hi:     [n("highPrice"), n("high")].find(v => v !== "N/A") ?? "N/A",
+    lo:     [n("lowPrice"), n("low")].find(v => v !== "N/A") ?? "N/A",
+    vol:    [n("totalVolume"), n("volume")].find(v => v !== "N/A") ?? "N/A",
+  };
+}
+
+function buildPulseDataBlock(
+  dataMap: Map<string, Record<string, unknown>>,
+  userSymbols?: string[]
+): string {
+  // Dynamic path: user-specified symbols, flat list (no category grouping)
+  if (userSymbols && userSymbols.length > 0) {
+    const lines = userSymbols.map(sym => {
+      const display = sym.toUpperCase().trim();
+      const data = dataMap.get(display);
+      if (!data) return `${display}: NO DATA AVAILABLE`;
+      const { last, chg, chgPct, hi, lo, vol } = extractQuoteFields(data);
+      const dir = chg !== "N/A" ? (Number(chg) > 0 ? "▲" : Number(chg) < 0 ? "▼" : "─") : "";
+      const parts = [`Last: ${last}`];
+      if (chg !== "N/A") parts.push(`${dir}${chg} (${Number(chgPct).toFixed(2)}%)`);
+      if (hi !== "N/A" && lo !== "N/A") parts.push(`Range: ${lo}–${hi}`);
+      if (vol !== "N/A") parts.push(`Vol: ${Number(vol).toLocaleString()}`);
+      return `${display}: ${parts.join(" | ")}`;
+    });
+    return `### LIVE MULTI-ASSET DATA (${userSymbols.length} instruments)\n${lines.join("\n")}`;
+  }
+
+  // Default categorized path (using predefined PULSE_SYMBOLS with descriptions)
   const section = (cat: PulseSymbol["category"], header: string): string => {
     const syms = PULSE_SYMBOLS.filter(s => s.category === cat);
     const lines = syms.map(s => formatPulseSymbol(s, dataMap.get(s.display)));
@@ -317,8 +382,9 @@ function getMarketSession(): { session: string; timeET: string; sessionGuidance:
 }
 
 router.post("/market-briefing", async (req, res) => {
-  const { accessToken, model, temperature } = req.body as {
+  const { accessToken, symbols, model, temperature } = req.body as {
     accessToken?: string;
+    symbols?: string[];
     model?: string;
     temperature?: number;
   };
@@ -331,8 +397,8 @@ router.post("/market-briefing", async (req, res) => {
 
   let dataBlock: string;
   try {
-    const dataMap = await fetchMacroPulseData(accessToken);
-    dataBlock = buildPulseDataBlock(dataMap);
+    const { dataMap } = await fetchMacroPulseData(accessToken, symbols);
+    dataBlock = buildPulseDataBlock(dataMap, symbols && symbols.length > 0 ? symbols : undefined);
   } catch (fetchErr: unknown) {
     const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
     req.log.error({ err: fetchErr }, "Macro pulse data fetch error");
@@ -344,10 +410,15 @@ router.post("/market-briefing", async (req, res) => {
     : session === "After-Hours" ? "After-Hours"
     : "Session";
 
+  const symbolList = symbols && symbols.length > 0
+    ? symbols.map(s => s.toUpperCase().trim()).join(", ")
+    : PULSE_SYMBOLS.map(s => s.display).join(", ");
+
   const prompt = `You are an elite Macro Prop Desk Analyst at a top-tier systematic hedge fund. Your job is to synthesize live multi-asset data into a precise, actionable market pulse used by senior traders. You think like a quant and write like a seasoned desk strategist.
 
 ═══════════════════════════════════════════════════════
 LIVE MARKET PULSE — ${timeET} | SESSION: ${session}
+INSTRUMENTS SCANNED: ${symbolList}
 ═══════════════════════════════════════════════════════
 
 SESSION DIRECTIVE: ${sessionGuidance}
@@ -359,41 +430,41 @@ LIVE MULTI-ASSET DATA FEED
 ${dataBlock}
 
 ═══════════════════════════════════════════════════════
-ANALYTICAL FRAMEWORK — synthesize ALL data streams:
+ANALYTICAL FRAMEWORK — synthesize ONLY the data streams you have:
 
-VOLATILITY STRUCTURE: Is VIX expanding or compressing? Is VVIX elevated (tail risk)? Does the Put/Call Ratio confirm institutional hedging or complacency?
+For any VOLATILITY instruments (VIX, VVIX, Put/Call ratios): assess whether vol is expanding or compressing, and whether institutional hedging or complacency dominates.
 
-MARKET BREADTH (NYSE INTERNALS): Is $TICK printing consistently above/below zero? Is the A/D Line ($ADD) confirming or diverging from price? Is $TRIN below 1.0 (bullish distribution) or above 1.0 (bearish volume flow)?
+For any BREADTH indicators (TICK, ADD/Advance-Decline, TRIN/Arms): determine if breadth is confirming or diverging from price. TRIN < 1.0 = bullish volume distribution; > 1.0 = bearish. Consistent positive TICK = institutional buying pressure.
 
-INTER-MARKET / MACRO: Is the dollar ($DXY) strengthening (headwind for risk assets) or weakening? Is Gold (/GC) bid (risk-off) or offered (risk-on)? Is Crude (/CL) signaling demand expansion or contraction?
+For any MACRO/FX/COMMODITY instruments (DXY, Gold, Crude, rates): determine whether the inter-market configuration is risk-on or risk-off. Dollar strength = headwind for equities; Gold bid = safe-haven demand; Crude bid = risk appetite.
 
-EQUITY FUTURES vs CASH: Are /ES and /NQ leading or lagging the cash ETFs? Any premium/discount in futures suggesting directional intent?
+For any EQUITY FUTURES (ES, NQ, etc.): assess whether futures are leading or lagging cash, and what any premium/discount implies for directional intent.
 
-CROSS-ASSET CONFIRMATION: Do all data streams CONFIRM the same narrative? Or are there DIVERGENCES that signal a trap or reversal risk?
+For any EQUITY ETFs (SPY, QQQ, IWM, etc.): assess breadth, leadership rotation, and key technical levels.
+
+CROSS-ASSET: Do all data streams CONFIRM the same narrative? Or are there DIVERGENCES that signal a trap or reversal risk?
+
+IMPORTANT: Only comment on instruments you have data for. Skip any category where no data was provided.
 ═══════════════════════════════════════════════════════
 
 Deliver your Live Market Pulse using EXACTLY this structure:
 
 ## ⚡ Live Market Pulse — ${session}
-**One sentence. Maximum conviction. Current macro verdict.**
+**One sentence. Maximum conviction. Current macro verdict based on the data above.**
 
 ## 🎯 Macro Posture
-**[RISK-ON / RISK-OFF / NEUTRAL / DETERIORATING / RECOVERING]** — 2 sentences explaining the regime using the specific data provided.
+**[RISK-ON / RISK-OFF / NEUTRAL / DETERIORATING / RECOVERING]** — 2 sentences explaining the regime using only the data provided above.
 
 ## 📊 Multi-Asset Synthesis
-- **Equity Internals (SPY/QQQ/IWM):** [Leadership, divergences, relative strength]
-- **Volatility Regime (VIX/VVIX/CPC):** [Vol structure — expanding, compressing, complacent, or fearful]
-- **Breadth (TICK/ADD/TRIN):** [Is breadth confirming price action or diverging — institutional flow read]
-- **Macro/FX/Commodities (DXY/Gold/Crude):** [Risk-on or risk-off signals from inter-market]
-- **Futures (/ES//NQ):** [Pre-cash session bias or after-hours directional intent]
+Write one bullet per major data category you have data for (e.g., Equities, Volatility, Breadth, FX/Macro, Futures, Commodities). Be specific with the actual values — don't generalize. Skip categories with no data.
 
 ## 🔥 Primary Risk Vector
-The single highest-conviction risk right now. Name the specific data point driving it. One focused paragraph.
+The single highest-conviction risk right now. Name the specific instrument and value driving it. One focused paragraph.
 
 ## 💡 ${sessionLabel} Trading Bias
-Specific and actionable. Preferred setup, key levels, directional lean. Mention the specific instrument and price level. (e.g., "Lean long /ES above [level] with hard stop at [level]; avoid chasing QQQ without breadth confirmation from $ADD > +500.")
+Specific and actionable. Include the instrument, direction, key level, and trigger. (e.g., "Lean long /ES above [level] with hard stop at [level]; avoid chasing QQQ without breadth confirmation from $ADD > +500.")
 
-Keep the entire output under 450 words. Be technically precise, data-driven, and immediately actionable. No filler. Use markdown.`;
+Keep the entire output under 500 words. Be technically precise, data-driven, and immediately actionable. No filler. Use markdown.`;
 
   try {
     const response = await callGemini(prompt, model ?? "gemini-2.5-pro", temperature ?? 0.2);

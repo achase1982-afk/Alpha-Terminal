@@ -1,6 +1,7 @@
 import { useTerminalStore } from "@/lib/store";
 import { AuthPanel } from "./AuthPanel";
-import { MarketPulseModal } from "./MarketPulseModal";
+import { MarketPulseModal, DEFAULT_PULSE_SYMBOLS } from "./MarketPulseModal";
+import { useLocalStorage } from "@/lib/useLocalStorage";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -41,6 +42,12 @@ export function Sidebar({ onClose }: SidebarProps) {
   const [tapeInput, setTapeInput] = useState(tickerTapeSymbols.join(", "));
   const [settingsSaved, setSettingsSaved] = useState(false);
 
+  // Live Market Pulse — persisted indicator list
+  const [pulseSymbols, setPulseSymbols] = useLocalStorage<string[]>(
+    "alpha-pulse-symbols",
+    DEFAULT_PULSE_SYMBOLS
+  );
+
   // Live Market Pulse state
   const [pulseOpen, setPulseOpen] = useState(false);
   const [pulseLoading, setPulseLoading] = useState(false);
@@ -56,6 +63,7 @@ export function Sidebar({ onClose }: SidebarProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           accessToken,
+          symbols: pulseSymbols,
           model: aiModel,
           temperature: 0.2,
         }),
@@ -278,6 +286,8 @@ export function Sidebar({ onClose }: SidebarProps) {
         isOpen={pulseOpen}
         isLoading={pulseLoading}
         result={pulseResult}
+        symbols={pulseSymbols}
+        onSymbolsChange={setPulseSymbols}
         onClose={() => setPulseOpen(false)}
       />
     </div>
