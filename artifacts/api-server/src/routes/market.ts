@@ -75,6 +75,12 @@ router.get("/quote", async (req, res) => {
       return res.json(data);
     }
 
+    if (response.status === 429) {
+      req.log.warn({ symbol: displaySymbol }, "Schwab 429 rate limit hit — backing off");
+      const data = GetQuoteResponse.parse({ symbol: displaySymbol, error: "rate_limited" });
+      return res.status(200).json(data);
+    }
+
     if (!response.ok) {
       const data = GetQuoteResponse.parse({ symbol: displaySymbol, error: `api_error_${response.status}` });
       return res.json(data);

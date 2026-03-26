@@ -66,7 +66,7 @@ export function useQuote(symbol: string) {
   // REST runs when:
   //  - There is a valid access token
   //  - We don't already have fresh stream data for this specific symbol
-  //  - Polls every 10 seconds as a catch-up / first-load mechanism
+  //  - Polls every 1 second (backs off to 3s on Schwab 429 rate limit)
   const restEnabled = !!accessToken && !!symbol && !hasLiveData;
 
   const { data: restData, isLoading, error } = useGetQuote(
@@ -74,8 +74,12 @@ export function useQuote(symbol: string) {
     {
       query: {
         enabled:         restEnabled,
-        refetchInterval: 10_000,   // 10s poll — fast enough while waiting for stream
-        staleTime:       8_000,
+        refetchInterval: (query) => {
+          const err = query.state.data?.error;
+          if (err === "rate_limited") return 3_000;
+          return 1_000;
+        },
+        staleTime:       500,
       },
     }
   );
