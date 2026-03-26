@@ -52,6 +52,8 @@ interface TerminalState {
   // Ticker Tape (scrolling marquee)
   tickerTapeSymbols: string[];
   setTickerTapeSymbols: (symbols: string[]) => void;
+  tapeSpeed: number;
+  setTapeSpeed: (speed: number) => void;
 
   // Macro Cards (user-configurable)
   macroSymbols: string[];
@@ -113,6 +115,8 @@ export const useTerminalStore = create<TerminalState>()(
       // Ticker Tape
       tickerTapeSymbols: ['SPY', 'QQQ', 'IWM', 'DIA', 'VIX', 'TSLA', 'NVDA', 'AAPL', 'META', 'MSFT', 'AMZN', 'GOOGL'],
       setTickerTapeSymbols: (tickerTapeSymbols) => set({ tickerTapeSymbols }),
+      tapeSpeed: 25,
+      setTapeSpeed: (tapeSpeed) => set({ tapeSpeed }),
 
       // Macro Cards
       macroSymbols: ['SPY', 'QQQ', 'IWM', 'VIX'],

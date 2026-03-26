@@ -9,7 +9,6 @@ function TapeItem({ symbol }: { symbol: string }) {
   const { setSymbol } = useTerminalStore();
   const { data }      = useQuote(symbol);
 
-  // Strict null-aware direction
   const rawChange = data?.change ?? null;
   const isUp      = rawChange !== null && rawChange > 0;
   const isDown    = rawChange !== null && rawChange < 0;
@@ -24,7 +23,6 @@ function TapeItem({ symbol }: { symbol: string }) {
         hover:brightness-125 transition-all duration-150 group"
       style={{ fontSize: "13px" }}
     >
-      {/* Symbol — lighter gray for clear readability */}
       <span className="font-mono font-semibold tracking-wider text-gray-300 group-hover:text-white transition-colors">
         {symbol}
       </span>
@@ -48,10 +46,9 @@ function TapeItem({ symbol }: { symbol: string }) {
 }
 
 export function TickerTape() {
-  const { tickerTapeSymbols } = useTerminalStore();
+  const { tickerTapeSymbols, tapeSpeed } = useTerminalStore();
   if (!tickerTapeSymbols.length) return null;
 
-  // Triple for seamless infinite CSS loop
   const items = [...tickerTapeSymbols, ...tickerTapeSymbols, ...tickerTapeSymbols];
 
   return (
@@ -65,8 +62,11 @@ export function TickerTape() {
         style={{ background: "linear-gradient(to left, #060A10, transparent)" }} />
 
       <div
-        className="flex items-center"
-        style={{ width: "max-content", animation: "ticker-scroll 55s linear infinite" }}
+        className="flex items-center ticker-scroll"
+        style={{
+          width: "max-content",
+          animationDuration: `${tapeSpeed}s`,
+        }}
       >
         {items.map((sym, i) => (
           <TapeItem key={`${sym}-${i}`} symbol={sym} />

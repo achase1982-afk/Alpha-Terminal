@@ -3,7 +3,7 @@ import { AuthPanel } from "./AuthPanel";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Terminal, SlidersHorizontal, X, LayoutDashboard, ListOrdered } from "lucide-react";
+import { Terminal, SlidersHorizontal, X, LayoutDashboard, ListOrdered, Gauge } from "lucide-react";
 import { useState } from "react";
 
 const TIMEFRAMES = ["1D", "5D", "1M", "3M", "6M", "1Y", "2Y", "5Y"];
@@ -26,6 +26,7 @@ export function Sidebar({ onClose }: SidebarProps) {
     overlays, toggleOverlay,
     macroSymbols, setMacroSymbols,
     tickerTapeSymbols, setTickerTapeSymbols,
+    tapeSpeed, setTapeSpeed,
   } = useTerminalStore();
 
   const [macroInputs, setMacroInputs] = useState<string[]>(macroSymbols);
@@ -162,6 +163,24 @@ export function Sidebar({ onClose }: SidebarProps) {
             className="font-mono uppercase text-xs h-8 bg-card border-card-border focus-visible:ring-primary/50 text-foreground"
             autoCorrect="off"
           />
+
+          <Label className="font-mono text-[10px] sm:text-xs text-muted-foreground flex items-center gap-2 mt-2">
+            <Gauge className="w-3 h-3" /> SCROLL SPEED
+          </Label>
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] text-muted-foreground/60">Fast</span>
+            <input
+              type="range"
+              min={5}
+              max={60}
+              step={1}
+              value={tapeSpeed}
+              onChange={e => setTapeSpeed(Number(e.target.value))}
+              className="flex-1 h-1.5 accent-primary cursor-pointer"
+            />
+            <span className="text-[9px] text-muted-foreground/60">Slow</span>
+            <span className="font-mono text-[10px] text-primary w-6 text-right">{tapeSpeed}s</span>
+          </div>
 
           <Button
             onClick={handleSaveSettings}
