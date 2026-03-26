@@ -13,9 +13,9 @@ import {
 const router: IRouter = Router();
 
 const AVAILABLE_MODELS = [
+  "gemini-2.5-flash",
+  "gemini-2.5-pro",
   "gemini-2.0-flash",
-  "gemini-1.5-pro",
-  "gemini-1.5-flash",
 ];
 
 function getClient(): GoogleGenerativeAI | null {
@@ -26,7 +26,7 @@ function getClient(): GoogleGenerativeAI | null {
 
 async function callGemini(
   prompt: string,
-  modelName: string = "gemini-2.0-flash",
+  modelName: string = "gemini-2.5-flash",
   temperature: number = 0.3
 ): Promise<string> {
   const client = getClient();
@@ -112,11 +112,12 @@ Please provide:
 Be specific, data-driven, and concise. Use markdown formatting.`;
 
   try {
-    const response = await callGemini(prompt, model ?? "gemini-2.0-flash", temperature ?? 0.3);
+    const response = await callGemini(prompt, model ?? "gemini-2.5-flash", temperature ?? 0.3);
     res.json(RunTechnicalAnalysisResponse.parse({ response }));
-  } catch (err) {
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
     req.log.error({ err }, "Technical analysis error");
-    res.json(RunTechnicalAnalysisResponse.parse({ response: "Error running analysis. Please try again.", error: String(err) }));
+    res.json(RunTechnicalAnalysisResponse.parse({ response: `**Analysis failed:** ${msg}`, error: msg }));
   }
 });
 
@@ -147,11 +148,12 @@ Please provide:
 Be specific with strikes, expirations, and premium estimates. Use markdown formatting.`;
 
   try {
-    const response = await callGemini(prompt, model ?? "gemini-2.0-flash", temperature ?? 0.3);
+    const response = await callGemini(prompt, model ?? "gemini-2.5-flash", temperature ?? 0.3);
     res.json(RunOptionsAnalysisResponse.parse({ response }));
-  } catch (err) {
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
     req.log.error({ err }, "Options analysis error");
-    res.json(RunOptionsAnalysisResponse.parse({ response: "Error running analysis. Please try again.", error: String(err) }));
+    res.json(RunOptionsAnalysisResponse.parse({ response: `**Analysis failed:** ${msg}`, error: msg }));
   }
 });
 
@@ -172,11 +174,12 @@ USER QUESTION: ${question}
 Provide a concise, expert answer. Be specific and data-driven when market data is available. Use markdown formatting where helpful.`;
 
   try {
-    const response = await callGemini(prompt, model ?? "gemini-2.0-flash", temperature ?? 0.3);
+    const response = await callGemini(prompt, model ?? "gemini-2.5-flash", temperature ?? 0.3);
     res.json(RunChatQueryResponse.parse({ response }));
-  } catch (err) {
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
     req.log.error({ err }, "Chat query error");
-    res.json(RunChatQueryResponse.parse({ response: "Error processing your question. Please try again.", error: String(err) }));
+    res.json(RunChatQueryResponse.parse({ response: `**Query failed:** ${msg}`, error: msg }));
   }
 });
 
