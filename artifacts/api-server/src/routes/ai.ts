@@ -15,7 +15,6 @@ const router: IRouter = Router();
 const AVAILABLE_MODELS = [
   "gemini-2.5-flash",
   "gemini-2.5-pro",
-  "gemini-2.0-flash",
 ];
 
 function getClient(): GoogleGenerativeAI | null {

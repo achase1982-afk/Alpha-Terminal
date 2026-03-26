@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Terminal, Search, Settings2, SlidersHorizontal, X } from "lucide-react";
 import { useState } from "react";
+import { useGetAvailableModels } from "@workspace/api-client-react";
 
 const TIMEFRAMES = ["1D", "5D", "1M", "3M", "6M", "1Y", "2Y", "5Y"];
 
@@ -25,6 +26,8 @@ export function Sidebar({ onClose }: SidebarProps) {
   } = useTerminalStore();
 
   const [inputVal, setInputVal] = useState(symbol);
+  const { data: modelsData } = useGetAvailableModels();
+  const availableModels = modelsData?.models ?? ["gemini-2.5-flash", "gemini-2.5-pro"];
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -141,9 +144,9 @@ export function Sidebar({ onClose }: SidebarProps) {
                   <SelectValue placeholder="Select model..." />
                 </SelectTrigger>
                 <SelectContent className="bg-card border-card-border font-mono text-xs">
-                  <SelectItem value="gemini-2.0-flash">GEMINI-2.0-FLASH</SelectItem>
-                  <SelectItem value="gemini-1.5-pro">GEMINI-1.5-PRO</SelectItem>
-                  <SelectItem value="gemini-1.5-flash">GEMINI-1.5-FLASH</SelectItem>
+                  {availableModels.map(m => (
+                    <SelectItem key={m} value={m}>{m.toUpperCase()}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
