@@ -128,19 +128,4 @@
     animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   }
 
-  .ticker-scroll {
-    animation: ticker-scroll 35s linear infinite;
-    will-change: transform;
-    transform: translateZ(0);
-    backface-visibility: hidden;
-  }
-
-  .ticker-scroll:hover {
-    animation-play-state: paused;
-  }
-}
-
-@keyframes ticker-scroll {
-  0%   { transform: translateX(0); }
-  100% { transform: translateX(calc(-100% / 3)); }
 }
