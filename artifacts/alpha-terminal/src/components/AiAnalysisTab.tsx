@@ -72,22 +72,22 @@ export function AiAnalysisTab() {
             className="font-mono text-sm bg-background border-card-border focus-visible:ring-primary/50 min-h-[80px]"
           />
 
-          <div className="flex gap-4">
+          <div className="flex flex-col sm:flex-row gap-3">
             <Button 
               onClick={handleRunTA} 
               disabled={isPending || !accessToken}
-              className="flex-1 font-mono bg-primary text-primary-foreground hover:bg-primary/90 shadow-[0_0_15px_rgba(0,212,170,0.2)]"
+              className="flex-1 font-mono text-xs sm:text-sm bg-primary text-primary-foreground hover:bg-primary/90 shadow-[0_0_15px_rgba(0,212,170,0.2)]"
             >
-              <Activity className="w-4 h-4 mr-2" />
+              <Activity className="w-4 h-4 mr-2 shrink-0" />
               RUN TECHNICAL ANALYSIS
             </Button>
             <Button 
               onClick={handleRunOptions} 
               disabled={isPending || !accessToken || !chain}
               variant="outline"
-              className="flex-1 font-mono border-primary/50 text-primary hover:bg-primary/10"
+              className="flex-1 font-mono text-xs sm:text-sm border-primary/50 text-primary hover:bg-primary/10"
             >
-              <BarChart2 className="w-4 h-4 mr-2" />
+              <BarChart2 className="w-4 h-4 mr-2 shrink-0" />
               RUN OPTIONS ANALYSIS
             </Button>
           </div>
