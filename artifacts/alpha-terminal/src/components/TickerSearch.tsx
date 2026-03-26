@@ -1,11 +1,9 @@
 import { useState } from "react";
 import { useTerminalStore } from "@/lib/store";
-import { Search } from "lucide-react";
-
-const QUICK_SYMBOLS = ["SPY", "QQQ", "IWM", "AAPL", "TSLA", "NVDA", "META", "MSFT", "SPX", "VIX", "NDX", "GLD", "/ES", "/NQ"];
+import { Search, Clock } from "lucide-react";
 
 export function TickerSearch() {
-  const { symbol, setSymbol } = useTerminalStore();
+  const { symbol, setSymbol, recentSymbols } = useTerminalStore();
   const [inputVal, setInputVal] = useState("");
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -33,21 +31,28 @@ export function TickerSearch() {
 
       <div className="h-4 w-px bg-card-border hidden sm:block" />
 
-      {/* Quick picks */}
-      <div className="flex items-center gap-1.5 flex-wrap flex-1">
-        {QUICK_SYMBOLS.map(sym => (
-          <button
-            key={sym}
-            onClick={() => handleQuickSelect(sym)}
-            className={`font-mono text-[9px] sm:text-[10px] px-2 py-0.5 rounded border transition-all duration-150
-              ${symbol === sym
-                ? "bg-primary/20 text-primary border-primary/50"
-                : "bg-transparent text-muted-foreground border-card-border hover:border-primary/40 hover:text-foreground"
-              }`}
-          >
-            {sym}
-          </button>
-        ))}
+      {/* Recent symbols */}
+      <div className="flex items-center gap-1.5 flex-wrap flex-1 min-w-0">
+        {recentSymbols.length === 0 ? (
+          <span className="flex items-center gap-1 font-mono text-[9px] text-muted-foreground/50 italic">
+            <Clock className="w-2.5 h-2.5" />
+            Search a ticker to build history
+          </span>
+        ) : (
+          recentSymbols.map(sym => (
+            <button
+              key={sym}
+              onClick={() => handleQuickSelect(sym)}
+              className={`font-mono text-[9px] sm:text-[10px] px-2 py-0.5 rounded border transition-all duration-150
+                ${symbol === sym
+                  ? "bg-primary/20 text-primary border-primary/50"
+                  : "bg-transparent text-muted-foreground border-card-border hover:border-primary/40 hover:text-foreground"
+                }`}
+            >
+              {sym}
+            </button>
+          ))
+        )}
       </div>
 
       {/* Custom search */}

@@ -30,6 +30,8 @@ interface TerminalState {
   // Market Configuration
   symbol: string;
   setSymbol: (s: string) => void;
+  recentSymbols: string[];
+  addRecentSymbol: (s: string) => void;
   
   chartPeriod: string;
   setChartPeriod: (p: string) => void;
@@ -92,7 +94,20 @@ export const useTerminalStore = create<TerminalState>()(
 
       // Market
       symbol: 'AAPL',
-      setSymbol: (symbol) => set({ symbol: symbol.toUpperCase() }),
+      recentSymbols: ['AAPL'],
+      setSymbol: (symbol) => {
+        const upper = symbol.toUpperCase();
+        set((state) => ({
+          symbol: upper,
+          recentSymbols: [upper, ...state.recentSymbols.filter(s => s !== upper)].slice(0, 14),
+        }));
+      },
+      addRecentSymbol: (symbol) => {
+        const upper = symbol.toUpperCase();
+        set((state) => ({
+          recentSymbols: [upper, ...state.recentSymbols.filter(s => s !== upper)].slice(0, 14),
+        }));
+      },
       
       chartPeriod: '3M',
       setChartPeriod: (chartPeriod) => {
@@ -159,7 +174,16 @@ export const useTerminalStore = create<TerminalState>()(
     }),
     {
       name: 'alpha-terminal-storage',
-      // Exclude volatile streaming state from localStorage
+      version: 2,
+      migrate: (persistedState: unknown, version: number) => {
+        const s = persistedState as Record<string, unknown>;
+        if (version < 2) {
+          const sym = (s['symbol'] as string | undefined) ?? 'AAPL';
+          const existing = (s['recentSymbols'] as string[] | undefined) ?? [];
+          s['recentSymbols'] = [sym, ...existing.filter(r => r !== sym)].slice(0, 14);
+        }
+        return s;
+      },
       partialize: (state) => {
         const { streamPrices, streamConnected, ...persisted } = state;
         return persisted;
