@@ -19,8 +19,16 @@
         font-family: 'Inter', 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
       }
       /* Preserve mono font for numbers and code blocks */
-      .font-mono, code, pre, [class*="tabular-nums"] {
+      .font-mono, code, pre {
         font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace !important;
+      }
+      /* Force all price/number data to weight 400 — thin and crisp */
+      .font-mono {
+        font-weight: 400 !important;
+      }
+      /* Explicitly restore bold only where intentional (macro card ticker labels) */
+      .macro-symbol-label {
+        font-weight: 700 !important;
       }
     </style>
   </head>

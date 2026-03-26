@@ -65,7 +65,7 @@ function MacroCard({ symbol }: { symbol: string }) {
           letterSpacing: '0.04em',
           lineHeight: 1,
         }}
-        className="truncate w-full text-center transition-colors"
+        className="macro-symbol-label truncate w-full text-center transition-colors"
       >
         {symbol}
       </span>
@@ -74,10 +74,10 @@ function MacroCard({ symbol }: { symbol: string }) {
         <span style={{ color: '#374151', fontSize: '0.85rem', fontWeight: 400 }}>—</span>
       ) : (
         <>
-          {/* Price — mono, normal weight */}
+          {/* Price — mono, weight 400, thin and crisp */}
           <span
             className="font-mono tabular-nums"
-            style={{ color: priceColor, fontSize: '0.9rem', fontWeight: 500 }}
+            style={{ color: priceColor, fontSize: '0.9rem', fontWeight: 400 }}
           >
             {data?.last != null
               ? (isIndex ? data.last.toFixed(2) : `$${data.last.toFixed(2)}`)

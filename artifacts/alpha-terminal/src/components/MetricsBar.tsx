@@ -95,18 +95,13 @@ export function MetricsBar() {
         <span className="font-bold text-white leading-tight" style={{ fontSize: '1.1rem' }}>
           {quote.symbol}
         </span>
-        {/* Company name: 0.8rem, #9CA3AF, weight 400 */}
-        {quote.description ? (
-          <span
-            className="leading-tight truncate max-w-[130px] sm:max-w-[200px]"
-            style={{ fontSize: '0.8rem', color: '#9CA3AF', fontWeight: 400 }}
-          >
-            {quote.description}
-          </span>
-        ) : (
-          /* Placeholder keeps layout stable while data loads */
-          <span style={{ fontSize: '0.8rem', color: 'transparent', fontWeight: 400 }}>·</span>
-        )}
+        {/* Company name: 0.8rem, #9CA3AF, weight 400 — always rendered */}
+        <span
+          className="leading-tight truncate max-w-[130px] sm:max-w-[200px]"
+          style={{ fontSize: '0.8rem', color: '#9CA3AF', fontWeight: 400, lineHeight: 1.3 }}
+        >
+          {quote.description || "Name Unavailable"}
+        </span>
       </div>
 
       <div className="w-px h-10 bg-gray-800 shrink-0" />
@@ -126,9 +121,9 @@ export function MetricsBar() {
                 </span>
           }
         </div>
-        {/* Price: 600 weight | Change+Pct: 400 weight — all same priceColor */}
+        {/* All price data: font-weight 400 — thin and crisp like TOS */}
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0" style={{ color: priceColor }}>
-          <span className="font-mono tabular-nums leading-tight" style={{ fontSize: '1.4rem', fontWeight: 600 }}>
+          <span className="font-mono tabular-nums leading-tight" style={{ fontSize: '1.4rem', fontWeight: 400 }}>
             {lastStr}
           </span>
           <span className="font-mono tabular-nums" style={{ fontSize: '0.85rem', fontWeight: 400 }}>
