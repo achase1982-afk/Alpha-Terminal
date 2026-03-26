@@ -54,10 +54,10 @@ export function AiChatTab() {
   };
 
   return (
-    <div className="flex flex-col h-full max-w-4xl mx-auto terminal-panel bg-[#0D1117]">
+    <div className="flex flex-col h-full max-w-4xl mx-auto terminal-panel bg-[#0D1117] min-h-[400px]">
       
       {/* CHAT HEADER */}
-      <div className="flex items-center justify-between p-4 border-b border-card-border bg-card">
+      <div className="flex items-center justify-between p-3 sm:p-4 border-b border-card-border bg-card">
         <div className="flex items-center gap-2 text-primary font-mono font-bold text-sm">
           <TerminalSquare className="w-5 h-5" />
           AI TRADING ASSISTANT

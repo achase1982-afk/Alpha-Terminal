@@ -68,7 +68,7 @@ export function OptionsTab() {
         </Button>
       </div>
 
-      <div className="flex-1 overflow-auto terminal-panel p-0">
+      <div className="flex-1 overflow-auto terminal-panel p-0 overflow-x-auto">
         {isLoading && (
           <div className="p-6 space-y-4">
             <Skeleton className="h-8 w-full bg-card-border" />
