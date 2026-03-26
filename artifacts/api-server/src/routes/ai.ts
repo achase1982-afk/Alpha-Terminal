@@ -326,4 +326,173 @@ Provide a concise, expert answer. Be specific and data-driven when market data i
   }
 });
 
+const SCHWAB_API_BASE_AI = "https://api.schwabapi.com/marketdata/v1";
+
+interface ScannerQuote {
+  symbol: string;
+  last: number;
+  change: number;
+  changePct: number;
+  volume: number;
+  high: number;
+  low: number;
+}
+
+interface ScannerSetup {
+  symbol: string;
+  direction: "BULLISH" | "BEARISH" | "NEUTRAL";
+  confidence: "HIGH" | "MILD" | "LOW";
+  strategy: string;
+  price: number;
+  changePct: number;
+  rationale: string;
+  riskNote: string;
+}
+
+interface ScannerAiResult {
+  setups: ScannerSetup[];
+  marketSummary: string;
+}
+
+router.post("/market-scanner", async (req, res) => {
+  const { symbols, accessToken, mode, filters, model, temperature } = req.body as {
+    symbols: string[];
+    accessToken: string;
+    mode: "ai" | "manual";
+    filters?: {
+      minChangePct?: number;
+      maxChangePct?: number;
+      minVolume?: number;
+      minPrice?: number;
+      maxPrice?: number;
+    };
+    model?: string;
+    temperature?: number;
+  };
+
+  if (!symbols?.length || !accessToken) {
+    return res.status(400).json({ error: "symbols and accessToken are required" });
+  }
+
+  // Batch fetch all quotes in a single Schwab API call
+  const symbolList = symbols.slice(0, 50).join(",");
+  let quotes: ScannerQuote[] = [];
+
+  try {
+    const schwabRes = await fetch(
+      `${SCHWAB_API_BASE_AI}/quotes?symbols=${encodeURIComponent(symbolList)}&fields=quote`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+
+    if (schwabRes.status === 401) {
+      return res.json({ error: "unauthorized", quotes: [] });
+    }
+
+    if (schwabRes.ok) {
+      const json = await schwabRes.json() as Record<string, unknown>;
+      quotes = symbols
+        .map(sym => {
+          const entry = json[sym] as Record<string, unknown> | undefined;
+          const q = entry?.["quote"] as Record<string, unknown> | undefined;
+          if (!q) return null;
+          return {
+            symbol: sym,
+            last: (q["lastPrice"] as number) ?? 0,
+            change: (q["netChange"] as number) ?? 0,
+            changePct: (q["netPercentChangeInDouble"] as number) ?? 0,
+            volume: (q["totalVolume"] as number) ?? 0,
+            high: (q["highPrice"] as number) ?? 0,
+            low: (q["lowPrice"] as number) ?? 0,
+          };
+        })
+        .filter((q): q is ScannerQuote => q !== null && q.last > 0);
+    }
+  } catch (err) {
+    req.log.error({ err }, "Market scanner Schwab fetch error");
+    return res.json({ error: "schwab_fetch_failed", quotes: [] });
+  }
+
+  if (mode === "manual") {
+    const {
+      minChangePct = -100, maxChangePct = 100,
+      minVolume = 0, minPrice = 0, maxPrice = 999999,
+    } = filters ?? {};
+
+    const filtered = quotes.filter(q =>
+      q.changePct >= minChangePct &&
+      q.changePct <= maxChangePct &&
+      q.volume >= minVolume * 1_000_000 &&
+      q.last >= minPrice &&
+      q.last <= maxPrice
+    ).sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct));
+
+    return res.json({ mode: "manual", quotes: filtered });
+  }
+
+  // AI mode
+  if (!quotes.length) {
+    return res.json({ mode: "ai", error: "no_data", response: "No quote data available to analyze.", setups: [] });
+  }
+
+  // Sort by absolute change % to surface the most interesting movers
+  const sortedQuotes = [...quotes].sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct)).slice(0, 30);
+
+  const tableRows = sortedQuotes.map(q =>
+    `${q.symbol.padEnd(6)} | $${q.last.toFixed(2).padStart(9)} | ${q.changePct >= 0 ? "+" : ""}${q.changePct.toFixed(2)}% | Vol: ${(q.volume / 1e6).toFixed(1)}M | Range: ${q.low.toFixed(2)}-${q.high.toFixed(2)}`
+  ).join("\n");
+
+  const prompt = `You are an elite quantitative trader with 20+ years of systematic trading experience. You have been given real-time L1 market data for ${sortedQuotes.length} actively traded stocks.
+
+REAL-TIME MARKET DATA (sorted by momentum):
+Symbol | Last Price | Day Change | Volume  | Day Range
+${tableRows}
+
+YOUR TASK: Analyze this data and identify the TOP 3 highest-probability trading setups right now.
+
+STRICT RULES:
+1. Return EXACTLY 3 setups — no more, no less
+2. Each setup must have a clear DIRECTION: BULLISH, BEARISH, or NEUTRAL
+3. NEUTRAL = low volatility, range-bound, ideal for Iron Condor/Butterfly/Strangle
+4. Confidence must be: HIGH (strong multi-factor confluence), MILD (moderate signals), or LOW (speculative)
+5. Only choose HIGH confidence when multiple technical factors align
+6. Your response must be valid JSON only — no markdown, no commentary before or after
+
+Return this exact JSON structure:
+{
+  "setups": [
+    {
+      "symbol": "TICKER",
+      "direction": "BULLISH",
+      "confidence": "HIGH",
+      "strategy": "Bull Call Spread / Long Calls / Short Puts",
+      "price": 123.45,
+      "changePct": 2.34,
+      "rationale": "One precise sentence: specific technical reason this setup has edge (momentum, volume spike, breakout, etc.)",
+      "riskNote": "One brief risk: what could invalidate this setup."
+    }
+  ],
+  "marketSummary": "One sentence: overall market regime (risk-on/risk-off, trending/ranging, sector rotation)."
+}`;
+
+  try {
+    const raw = await callGemini(prompt, model ?? "gemini-2.5-pro", temperature ?? 0.1);
+
+    // Try to parse JSON — strip any markdown fences Gemini may wrap around it
+    const cleaned = raw.replace(/^```(?:json)?\s*/im, "").replace(/```\s*$/im, "").trim();
+    let parsed: ScannerAiResult | null = null;
+    try {
+      parsed = JSON.parse(cleaned) as ScannerAiResult;
+    } catch {
+      // If JSON parsing fails, return raw response
+      return res.json({ mode: "ai", rawResponse: raw, setups: [], quotes });
+    }
+
+    return res.json({ mode: "ai", setups: parsed.setups ?? [], marketSummary: parsed.marketSummary ?? "", quotes });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    req.log.error({ err }, "Market scanner AI error");
+    return res.json({ mode: "ai", error: msg, setups: [], quotes });
+  }
+});
+
 export default router;

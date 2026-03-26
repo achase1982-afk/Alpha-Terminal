@@ -4,6 +4,7 @@ import { MetricsBar } from "@/components/MetricsBar";
 import { TradingChart } from "@/components/TradingChart";
 import { OptionsTab } from "@/components/OptionsTab";
 import { AiIntelligenceTab } from "@/components/AiIntelligenceTab";
+import { MarketScanner } from "@/components/MarketScanner";
 import { MacroBar } from "@/components/MacroBar";
 import { TickerTape } from "@/components/TickerTape";
 import { TickerSearch } from "@/components/TickerSearch";
@@ -11,7 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useTerminalStore } from "@/lib/store";
 import { useGetPriceHistory } from "@workspace/api-client-react";
 import { useAutoRefreshToken } from "@/hooks/useAutoRefreshToken";
-import { LineChart, BarChart2, BrainCircuit, Menu } from "lucide-react";
+import { LineChart, BarChart2, BrainCircuit, Menu, Radar } from "lucide-react";
 
 export default function TerminalPage() {
   const { symbol, accessToken, timeframe } = useTerminalStore();
@@ -108,6 +109,14 @@ export default function TerminalPage() {
                   <span className="hidden sm:inline">AI INTELLIGENCE</span>
                   <span className="sm:hidden">AI</span>
                 </TabsTrigger>
+                <TabsTrigger
+                  value="scanner"
+                  className="font-mono text-[10px] sm:text-xs uppercase data-[state=active]:bg-primary/20 data-[state=active]:text-primary gap-1.5 px-3"
+                >
+                  <Radar className="w-3.5 h-3.5 shrink-0" />
+                  <span className="hidden sm:inline">MARKET SCANNER</span>
+                  <span className="sm:hidden">SCAN</span>
+                </TabsTrigger>
               </TabsList>
             </div>
 
@@ -124,6 +133,9 @@ export default function TerminalPage() {
               </TabsContent>
               <TabsContent value="ai" className="h-full m-0 overflow-auto focus-visible:outline-none">
                 <AiIntelligenceTab />
+              </TabsContent>
+              <TabsContent value="scanner" className="h-full m-0 overflow-auto focus-visible:outline-none">
+                <MarketScanner />
               </TabsContent>
             </div>
           </Tabs>
