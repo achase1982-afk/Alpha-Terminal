@@ -1,6 +1,20 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
+export interface LiveQuote {
+  symbol:     string;
+  last:       number | null;
+  bid:        number | null;
+  ask:        number | null;
+  change:     number | null;
+  changePct:  number | null;
+  volume:     number | null;
+  high:       number | null;
+  low:        number | null;
+  close:      number | null;
+  ts:         number;
+}
+
 interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
@@ -55,6 +69,12 @@ interface TerminalState {
   chatHistory: ChatMessage[];
   addChatMessage: (msg: ChatMessage) => void;
   clearChat: () => void;
+
+  // ── Streaming (NOT persisted) ─────────────────────────────────────────────
+  streamPrices: Record<string, LiveQuote>;
+  streamConnected: boolean;
+  setStreamQuote: (q: LiveQuote) => void;
+  setStreamConnected: (v: boolean) => void;
 }
 
 export const useTerminalStore = create<TerminalState>()(
@@ -110,9 +130,22 @@ export const useTerminalStore = create<TerminalState>()(
       chatHistory: [],
       addChatMessage: (msg) => set((state) => ({ chatHistory: [...state.chatHistory, msg] })),
       clearChat: () => set({ chatHistory: [] }),
+
+      // Streaming prices — volatile, never persisted
+      streamPrices: {},
+      streamConnected: false,
+      setStreamQuote: (q) => set((state) => ({
+        streamPrices: { ...state.streamPrices, [q.symbol]: q },
+      })),
+      setStreamConnected: (v) => set({ streamConnected: v }),
     }),
     {
       name: 'alpha-terminal-storage',
+      // Exclude volatile streaming state from localStorage
+      partialize: (state) => {
+        const { streamPrices, streamConnected, ...persisted } = state;
+        return persisted;
+      },
     }
   )
 );

@@ -12,12 +12,16 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useTerminalStore } from "@/lib/store";
 import { useGetPriceHistory } from "@workspace/api-client-react";
 import { useAutoRefreshToken } from "@/hooks/useAutoRefreshToken";
-import { LineChart, BarChart2, BrainCircuit, Menu, Radar } from "lucide-react";
+import { useStreamingQuotes } from "@/hooks/useStreamingQuotes";
+import { LineChart, BarChart2, BrainCircuit, Menu, Radar, Wifi, WifiOff } from "lucide-react";
 
 export default function TerminalPage() {
-  const { symbol, accessToken, timeframe } = useTerminalStore();
+  const { symbol, accessToken, timeframe, streamConnected } = useTerminalStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { refresh } = useAutoRefreshToken();
+
+  // ── Start and maintain the Schwab WebSocket stream ──────────────────────
+  useStreamingQuotes();
 
   const { data: historyData, isLoading: historyLoading } = useGetPriceHistory(
     { symbol, accessToken: accessToken || "", timeframe },
@@ -68,7 +72,14 @@ export default function TerminalPage() {
             <span className="font-sans font-black text-base tracking-wider text-foreground">ALPHA</span>
             <span className="font-sans font-semibold text-[10px] tracking-[0.25em] text-primary">TERMINAL</span>
           </div>
-          <span className="ml-auto font-mono text-xs text-primary font-bold">{symbol}</span>
+          <div className="ml-auto flex items-center gap-2">
+            <span className="font-mono text-xs text-primary font-bold">{symbol}</span>
+            {accessToken && (
+              streamConnected
+                ? <span className="flex items-center gap-0.5 font-mono text-[9px] text-emerald-500"><Wifi className="w-3 h-3" />LIVE</span>
+                : <span className="flex items-center gap-0.5 font-mono text-[9px] text-gray-600"><WifiOff className="w-3 h-3" />POLL</span>
+            )}
+          </div>
         </div>
 
         {/* ─── Top strip: Ticker tape scrolling marquee ─── */}

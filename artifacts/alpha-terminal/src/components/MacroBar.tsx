@@ -1,28 +1,26 @@
-import { useGetQuote } from "@workspace/api-client-react";
 import { useTerminalStore } from "@/lib/store";
+import { useQuote }         from "@/hooks/useQuote";
 import { TrendingUp, TrendingDown } from "lucide-react";
 
-// Symbols that use inverted color logic (rising = fear = red)
+// Fear symbols: rising = bad = red (inverse color logic)
 const FEAR_SYMBOLS = new Set(["VIX", "VXN"]);
+const INDEX_SYMS   = new Set(["VIX", "SPX", "NDX", "RUT", "DJI", "COMP", "DXY", "TNX"]);
 
 function MacroCard({ symbol }: { symbol: string }) {
   const { accessToken, symbol: activeSymbol, setSymbol } = useTerminalStore();
-  const { data, isLoading } = useGetQuote(
-    { symbol, accessToken: accessToken || "" },
-    { query: { enabled: !!accessToken, refetchInterval: 15000, staleTime: 10000 } }
-  );
+  const { data, isLoading } = useQuote(symbol);
 
-  const isActive = activeSymbol === symbol;
-  const change = data?.change ?? 0;
-  const isPositive = change >= 0;
-  const isFear = FEAR_SYMBOLS.has(symbol.toUpperCase());
+  const isActive   = activeSymbol === symbol;
+  const change     = data?.change ?? 0;
+  const isPositive = change > 0;
+  const isNeg      = change < 0;
+  const isFear     = FEAR_SYMBOLS.has(symbol.toUpperCase());
+  const isIndex    = INDEX_SYMS.has(symbol.toUpperCase());
 
-  // For fear symbols: up = red, down = green
-  const changeColor = isFear
-    ? (isPositive ? "text-destructive" : "text-primary")
-    : (isPositive ? "text-primary" : "text-destructive");
-
-  const isIndex = symbol === "VIX" || symbol === "SPX" || symbol === "NDX" || symbol === "RUT" || symbol === "DJI";
+  // Fear symbols invert: rising VIX = red, falling = green
+  const colorClass = isFear
+    ? (isPositive ? "text-destructive" : isNeg ? "text-primary" : "text-muted-foreground")
+    : (isPositive ? "text-primary"     : isNeg ? "text-destructive" : "text-muted-foreground");
 
   return (
     <button
@@ -44,15 +42,14 @@ function MacroCard({ symbol }: { symbol: string }) {
         <span className="font-mono text-sm font-bold text-muted-foreground/40">—</span>
       ) : (
         <>
-          <span className={`font-mono text-sm sm:text-base font-black tabular-nums
-            ${isFear ? "text-foreground" : (isPositive ? "text-primary" : "text-destructive")}`}>
+          <span className={`font-mono text-sm sm:text-base font-black tabular-nums ${colorClass}`}>
             {data?.last != null
               ? (isIndex ? data.last.toFixed(2) : `$${data.last.toFixed(2)}`)
               : "—"}
           </span>
-          <span className={`font-mono text-[9px] sm:text-[10px] flex items-center gap-0.5 tabular-nums ${changeColor}`}>
+          <span className={`font-mono text-[9px] sm:text-[10px] flex items-center gap-0.5 tabular-nums ${colorClass}`}>
             {isPositive
-              ? <TrendingUp className="w-2.5 h-2.5 shrink-0" />
+              ? <TrendingUp  className="w-2.5 h-2.5 shrink-0" />
               : <TrendingDown className="w-2.5 h-2.5 shrink-0" />}
             {data?.changePct != null
               ? `${isPositive ? "+" : ""}${data.changePct.toFixed(2)}%`
@@ -66,7 +63,6 @@ function MacroCard({ symbol }: { symbol: string }) {
 
 export function MacroBar() {
   const { macroSymbols } = useTerminalStore();
-
   return (
     <div className="flex items-stretch gap-1.5 sm:gap-2 px-3 py-2 border-b border-card-border bg-[#0D1117]/90 shrink-0">
       {macroSymbols.slice(0, 6).map(sym => (

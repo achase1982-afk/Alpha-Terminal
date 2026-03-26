@@ -16,11 +16,48 @@ Key features implemented:
 - **Zustand store**: `analysisResult`, `strategistResult`, `briefingResult` shared state
 - **useAutoRefreshToken**: 25-min auto-refresh; detects expired tokens in API responses
 
+### Real-Time Streaming Architecture (Schwab Streamer WebSocket)
+- `artifacts/api-server/src/lib/schwabStreamer.ts` — singleton WS client to Schwab Streamer
+  - Calls `/trader/v1/userPreference` to get streamer info, then opens `wss://` connection
+  - Sends LOGIN, then subscribes to `LEVELONE_EQUITIES` (fields 0,1,2,3,8,12,13,15,20,38,29)
+  - Broadcasts live ticks to all SSE clients; maintains in-memory quote cache
+  - Exponential backoff reconnect (1s → 2s → 4s … capped at 30s)
+- `artifacts/api-server/src/routes/stream.ts` — SSE + control endpoints
+  - `POST /api/stream/start` — start/restart WS with new token + symbol list
+  - `POST /api/stream/symbols` — add symbols to existing subscription
+  - `GET  /api/stream/quotes` — SSE endpoint; sends `event: quote` + `event: heartbeat`
+  - `GET  /api/stream/snapshot` — JSON snapshot of current cache
+  - `GET  /api/stream/status` — connection health
+- `artifacts/alpha-terminal/src/hooks/useStreamingQuotes.ts` — app-root SSE consumer
+  - Opens `EventSource("/api/stream/quotes")` on token arrival
+  - Writes each `event: quote` into Zustand `streamPrices` map
+  - Sets `streamConnected` true on heartbeat / open, false on error
+- `artifacts/alpha-terminal/src/hooks/useQuote.ts` — unified quote hook
+  - Returns stream data (< 60s old) when available; falls back to REST poll every 30s
+  - All price components use this instead of `useGetQuote` directly
+- `streamPrices: Record<string, LiveQuote>` in Zustand store (non-persisted)
+  - `partialize` excludes it from localStorage persistence
+  - Per-symbol Zustand selectors mean only the changed symbol's card re-renders
+
+### Quote Data Flow
+```
+Schwab LEVELONE_EQUITIES WS
+        ↓  ticks (< 1s)
+schwabStreamer.ts (server cache + broadcast)
+        ↓  SSE text/event-stream
+useStreamingQuotes.ts (EventSource)
+        ↓  setStreamQuote()
+Zustand streamPrices map
+        ↓  useQuote(sym) selector
+MetricsBar / MacroCard / TapeItem  ← ONLY these re-render on each tick
+```
+
 ### Known constraints
 - Gemini models: only `gemini-2.5-flash` and `gemini-2.5-pro` work
 - `lightweight-charts` v5: `chart.addSeries(CandlestickSeries, opts)` pattern
 - Direct `fetch("/api/ai/...")` used for new AI routes (not orval-generated hooks)
 - VIX MacroCard inverts color (rising = red/fear, falling = green/calm)
+- 52W High/Low and P/E are REST-only fields (Schwab Streamer doesn't carry fundamental data)
 
 ## Stack
 

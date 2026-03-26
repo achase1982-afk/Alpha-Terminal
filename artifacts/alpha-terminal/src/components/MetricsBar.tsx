@@ -1,19 +1,18 @@
-import { useGetQuote } from "@workspace/api-client-react";
 import { useTerminalStore } from "@/lib/store";
-import { RefreshCw } from "lucide-react";
+import { useQuote }         from "@/hooks/useQuote";
+import { RefreshCw, Wifi, WifiOff } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 
-// High-contrast ThinkorSwim-inspired colors
-const UP_COLOR   = "#00E676";  // vibrant green
-const DOWN_COLOR = "#FF1744";  // vibrant red
-const FLAT_COLOR = "#9CA3AF";  // neutral gray
+const UP_COLOR   = "#00E676";
+const DOWN_COLOR = "#FF1744";
+const FLAT_COLOR = "#9CA3AF";
 
-function fmtPrice(n: number | undefined, digits = 2): string {
+function fmtPrice(n: number | null, digits = 2): string {
   if (n == null || isNaN(n)) return "—";
   return n.toFixed(digits);
 }
 
-function fmtVol(n: number | undefined): string {
+function fmtVol(n: number | null): string {
   if (n == null || isNaN(n)) return "—";
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
   if (n >= 1_000)     return `${(n / 1_000).toFixed(1)}K`;
@@ -21,15 +20,12 @@ function fmtVol(n: number | undefined): string {
 }
 
 export function MetricsBar() {
-  const { symbol, accessToken } = useTerminalStore();
-  const { data: quote, isLoading, error } = useGetQuote(
-    { symbol, accessToken: accessToken || "" },
-    { query: { enabled: !!accessToken && !!symbol, refetchInterval: 8000, staleTime: 5000 } }
-  );
+  const { symbol, accessToken, streamConnected } = useTerminalStore();
+  const { data: quote, isLoading, source } = useQuote(symbol);
 
   if (!accessToken) {
     return (
-      <div className="w-full bg-card border-b border-card-border flex items-center justify-center px-4 py-3 shrink-0">
+      <div className="w-full border-b border-card-border flex items-center justify-center px-4 py-3 shrink-0" style={{ background: "#060A10" }}>
         <p className="text-muted-foreground font-mono text-[10px] sm:text-sm animate-pulse text-center">
           CONNECT SCHWAB TO VIEW MARKET DATA
         </p>
@@ -39,7 +35,7 @@ export function MetricsBar() {
 
   if (quote?.error === "unauthorized") {
     return (
-      <div className="w-full bg-card border-b border-card-border flex items-center justify-center gap-2 px-4 py-3 shrink-0">
+      <div className="w-full border-b border-card-border flex items-center justify-center gap-2 px-4 py-3 shrink-0" style={{ background: "#060A10" }}>
         <RefreshCw className="w-3.5 h-3.5 text-yellow-500/80 animate-spin" />
         <p className="text-yellow-500/80 font-mono text-[10px] sm:text-sm">
           SESSION EXPIRED — REFRESHING TOKEN...
@@ -50,7 +46,7 @@ export function MetricsBar() {
 
   if (isLoading && !quote) {
     return (
-      <div className="w-full bg-card border-b border-card-border flex items-center px-4 sm:px-6 gap-6 overflow-x-auto py-3 shrink-0">
+      <div className="w-full border-b border-card-border flex items-center px-4 sm:px-6 gap-6 overflow-x-auto py-3 shrink-0" style={{ background: "#060A10" }}>
         {[1, 2, 3, 4, 5].map(i => (
           <div key={i} className="flex flex-col gap-1.5 shrink-0">
             <Skeleton className="h-2.5 w-14 bg-card-border" />
@@ -61,27 +57,16 @@ export function MetricsBar() {
     );
   }
 
-  if (error || !quote) {
-    return (
-      <div className="w-full bg-card border-b border-card-border flex items-center px-4 sm:px-6 py-3 shrink-0">
-        <p className="text-destructive font-mono text-[10px] sm:text-sm">
-          ERROR FETCHING {symbol}
-        </p>
-      </div>
-    );
-  }
+  if (!quote) return null;
 
-  // Strict directional logic per task spec
-  const netChange = quote.change ?? 0;
-  const isUp   = netChange > 0;
-  const isDown = netChange < 0;
-  const priceColor = isDown ? DOWN_COLOR : isUp ? UP_COLOR : FLAT_COLOR;
+  // Strict directional logic: < 0 → red, > 0 → green, 0 → gray
+  const netChange   = quote.change ?? 0;
+  const isUp        = netChange > 0;
+  const isDown      = netChange < 0;
+  const priceColor  = isDown ? DOWN_COLOR : isUp ? UP_COLOR : FLAT_COLOR;
 
-  // ThinkorSwim-style: "$582.56  -5.26  (-0.89%)"
-  const lastStr    = quote.last != null ? `$${fmtPrice(quote.last)}` : "—";
-  const changeStr  = netChange !== 0
-    ? `${isUp ? "+" : ""}${fmtPrice(netChange)}`
-    : "0.00";
+  const lastStr      = quote.last  != null ? `$${fmtPrice(quote.last)}`                         : "—";
+  const changeStr    = netChange   !== 0   ? `${isUp ? "+" : ""}${fmtPrice(netChange)}`         : "0.00";
   const changePctStr = quote.changePct != null
     ? `(${isUp ? "+" : ""}${fmtPrice(quote.changePct)}%)`
     : "(—%)";
@@ -99,20 +84,30 @@ export function MetricsBar() {
 
       <div className="w-px h-8 bg-gray-800 shrink-0" />
 
-      {/* ── ThinkorSwim-style price block ── */}
+      {/* ThinkorSwim-style: $582.56  -5.26  (-0.89%) — all one color */}
       <div className="flex flex-col shrink-0">
-        <span className="text-[8px] sm:text-[10px] text-gray-500 font-mono font-semibold tracking-widest">LAST PRICE</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[8px] sm:text-[10px] text-gray-500 font-mono font-semibold tracking-widest">LAST PRICE</span>
+          {/* Live indicator */}
+          {source === "stream"
+            ? <span title="Live stream" className="flex items-center gap-0.5 text-[7px] font-mono text-emerald-500 leading-none">
+                <Wifi className="w-2.5 h-2.5" />LIVE
+              </span>
+            : streamConnected
+              ? null
+              : <span title="REST poll" className="flex items-center gap-0.5 text-[7px] font-mono text-gray-600 leading-none">
+                  <WifiOff className="w-2.5 h-2.5" />POLL
+                </span>
+          }
+        </div>
         <div className="flex items-baseline gap-2" style={{ color: priceColor }}>
-          {/* Large last price */}
           <span className="text-lg sm:text-2xl font-mono font-black leading-tight tabular-nums">
             {lastStr}
           </span>
-          {/* Dollar change + pct in same color — hidden on very small screens */}
           <span className="hidden sm:flex items-center gap-1 font-mono font-bold text-sm tabular-nums">
             {changeStr}
             <span className="text-xs opacity-90">{changePctStr}</span>
           </span>
-          {/* Mobile: just pct */}
           <span className="sm:hidden font-mono font-bold text-xs tabular-nums opacity-90">
             {changePctStr}
           </span>
@@ -153,25 +148,15 @@ export function MetricsBar() {
 
       <div className="w-px h-8 bg-gray-800 shrink-0 hidden lg:block" />
 
-      {/* 52W RANGE */}
+      {/* 52W RANGE — populated from REST fallback (streamer doesn't carry these) */}
       <div className="hidden lg:flex flex-col shrink-0">
         <span className="text-[8px] sm:text-[10px] text-gray-500 font-mono font-semibold tracking-widest">52W RANGE</span>
         <span className="text-sm sm:text-base font-mono font-semibold text-gray-500 leading-tight tabular-nums">
-          ${fmtPrice(quote.fiftyTwoWeekLow)} — ${fmtPrice(quote.fiftyTwoWeekHigh)}
+          {quote.fiftyTwoWeekLow != null
+            ? `$${fmtPrice(quote.fiftyTwoWeekLow)} — $${fmtPrice(quote.fiftyTwoWeekHigh)}`
+            : "—"}
         </span>
       </div>
-
-      <div className="w-px h-8 bg-gray-800 shrink-0 hidden xl:block" />
-
-      {/* P/E RATIO — only if available */}
-      {quote.peRatio != null && (
-        <div className="hidden xl:flex flex-col shrink-0">
-          <span className="text-[8px] sm:text-[10px] text-gray-500 font-mono font-semibold tracking-widest">P/E</span>
-          <span className="text-sm sm:text-base font-mono font-semibold text-gray-200 leading-tight tabular-nums">
-            {fmtPrice(quote.peRatio, 1)}
-          </span>
-        </div>
-      )}
     </div>
   );
 }
