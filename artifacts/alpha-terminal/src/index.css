@@ -131,6 +131,8 @@
   .ticker-scroll {
     animation: ticker-scroll 35s linear infinite;
     will-change: transform;
+    transform: translateZ(0);
+    backface-visibility: hidden;
   }
 
   .ticker-scroll:hover {
