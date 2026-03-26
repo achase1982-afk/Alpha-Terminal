@@ -121,12 +121,12 @@ export function MetricsBar() {
                 </span>
           }
         </div>
-        {/* All price data: font-weight 400 — thin and crisp like TOS */}
+        {/* All price data: font-weight 300 — thin and crisp, native system mono like TOS */}
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0" style={{ color: priceColor }}>
-          <span className="font-mono tabular-nums leading-tight" style={{ fontSize: '1.4rem', fontWeight: 400 }}>
+          <span className="font-mono tabular-nums leading-tight" style={{ fontSize: '1.4rem', fontWeight: 300 }}>
             {lastStr}
           </span>
-          <span className="font-mono tabular-nums" style={{ fontSize: '0.85rem', fontWeight: 400 }}>
+          <span className="font-mono tabular-nums" style={{ fontSize: '0.85rem', fontWeight: 300 }}>
             {changeStr}&nbsp;<span style={{ opacity: 0.8 }}>{changePctStr}</span>
           </span>
         </div>

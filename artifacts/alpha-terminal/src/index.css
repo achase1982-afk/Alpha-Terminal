@@ -1,4 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
 @import "tw-animate-css";
 @plugin "@tailwindcss/typography";
@@ -36,8 +35,8 @@
   --color-destructive-foreground: hsl(var(--destructive-foreground));
 
   /* Inter is forced via index.html <style> block — this is the Tailwind variable */
-  --font-sans: 'Inter', 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, 'Cascadia Code', 'Liberation Mono', monospace;
 
   --radius-sm: 0.25rem;
   --radius-md: 0.5rem;

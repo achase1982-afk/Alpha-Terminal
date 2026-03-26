@@ -74,20 +74,20 @@ function MacroCard({ symbol }: { symbol: string }) {
         <span style={{ color: '#374151', fontSize: '0.85rem', fontWeight: 400 }}>—</span>
       ) : (
         <>
-          {/* Price — mono, weight 400, thin and crisp */}
+          {/* Price — mono, weight 300, TOS thin */}
           <span
             className="font-mono tabular-nums"
-            style={{ color: priceColor, fontSize: '0.9rem', fontWeight: 400 }}
+            style={{ color: priceColor, fontSize: '0.9rem', fontWeight: 300 }}
           >
             {data?.last != null
               ? (isIndex ? data.last.toFixed(2) : `$${data.last.toFixed(2)}`)
               : "—"}
           </span>
 
-          {/* Change % — mono, normal weight (400) for clean contrast */}
+          {/* Change % — mono, weight 300, TOS thin */}
           <span
             className="font-mono tabular-nums flex items-center gap-0.5"
-            style={{ color: priceColor, fontSize: '0.72rem', fontWeight: 400 }}
+            style={{ color: priceColor, fontSize: '0.72rem', fontWeight: 300 }}
           >
             {ChgIcon}
             {data?.changePct != null ? formatPct(data.changePct, isUp) : "—%"}

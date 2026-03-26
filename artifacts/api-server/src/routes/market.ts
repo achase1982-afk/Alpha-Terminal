@@ -87,11 +87,11 @@ router.get("/quote", async (req, res) => {
     const fundamental = entry?.["fundamental"] as Record<string, unknown> | undefined;
     const reference = entry?.["reference"] as Record<string, unknown> | undefined;
 
-    // Company name — Schwab puts it in entry.reference.description for equities
-    // Try multiple paths for robustness across asset types
+    // Company name — Schwab returns it at payload[symbol].description (top-level entry)
+    // Try top-level first, then reference sub-object, then quote sub-object
     const description =
-      (reference?.["description"] as string | undefined) ||
       (entry?.["description"] as string | undefined) ||
+      (reference?.["description"] as string | undefined) ||
       (quote?.["description"] as string | undefined) ||
       undefined;
 
