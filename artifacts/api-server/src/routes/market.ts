@@ -91,18 +91,47 @@ router.get("/quote", async (req, res) => {
       return res.json(data);
     }
 
+    // Robust field extraction — Schwab uses different field names depending on
+    // instrument type (equity, ETF, index) and session (regular vs extended hours).
+    function pickNum(...keys: string[]): number | undefined {
+      for (const k of keys) {
+        const v = quote[k];
+        if (typeof v === "number" && !isNaN(v)) return v;
+      }
+      return undefined;
+    }
+
+    // Last price: prefer lastPrice, fall back to mark (bid/ask midpoint) or closePrice
+    const last = pickNum("lastPrice", "mark", "closePrice", "regularMarketLastPrice");
+
+    // Net change: try regular-session and extended-hours variants
+    const change = pickNum(
+      "netChange",
+      "regularMarketNetChange",
+      "extendedChange",
+    );
+
+    // Percent change: try regular-session and extended-hours variants
+    const changePct = pickNum(
+      "netPercentChangeInDouble",
+      "regularMarketPercentChangeInDouble",
+      "extendedPercentChange",
+    );
+
+    req.log.info({ symbol: displaySymbol, last, change, changePct }, "Quote parsed");
+
     const data = GetQuoteResponse.parse({
       symbol: displaySymbol,
-      last: (quote["lastPrice"] as number) ?? undefined,
-      bid: (quote["bidPrice"] as number) ?? undefined,
-      ask: (quote["askPrice"] as number) ?? undefined,
-      change: (quote["netChange"] as number) ?? undefined,
-      changePct: (quote["netPercentChangeInDouble"] as number) ?? undefined,
-      volume: (quote["totalVolume"] as number) ?? undefined,
-      high: (quote["highPrice"] as number) ?? undefined,
-      low: (quote["lowPrice"] as number) ?? undefined,
-      fiftyTwoWeekHigh: (quote["52WkHigh"] as number) ?? undefined,
-      fiftyTwoWeekLow: (quote["52WkLow"] as number) ?? undefined,
+      last,
+      bid:  pickNum("bidPrice", "bid"),
+      ask:  pickNum("askPrice", "ask"),
+      change,
+      changePct,
+      volume: pickNum("totalVolume", "volume"),
+      high:   pickNum("highPrice", "regularMarketHigh"),
+      low:    pickNum("lowPrice",  "regularMarketLow"),
+      fiftyTwoWeekHigh: pickNum("52WkHigh", "fiftyTwoWeekHigh"),
+      fiftyTwoWeekLow:  pickNum("52WkLow",  "fiftyTwoWeekLow"),
       peRatio: (fundamental?.["peRatio"] as number) ?? undefined,
     });
 
