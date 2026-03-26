@@ -4,6 +4,24 @@
 
 pnpm workspace monorepo using TypeScript. Each package manages its own dependencies.
 
+## Alpha Terminal — Trading Command Center v2
+
+Key features implemented:
+- **MacroBar**: Fixed sticky bar with clickable SPY/QQQ/IWM/VIX cards; clicking sets active symbol
+- **Sidebar**: Compact pill overlays, clean timeframe grid, Schwab auth panel
+- **Tabs**: CHART | OPTIONS | AI INTELLIGENCE (merged from separate AI + Chat tabs)
+- **AI Intelligence Tab**: Daily Market Briefing, Deep Analysis (TA + Options Strategist), prompt chips, streaming chat
+- **Options Tab**: Chain table with Options Strategist results panel above (collapsible)
+- **Backend AI routes**: `/api/ai/market-briefing`, `/api/ai/options-strategist`, `/api/ai/chat`, `/api/ai/analyze`
+- **Zustand store**: `analysisResult`, `strategistResult`, `briefingResult` shared state
+- **useAutoRefreshToken**: 25-min auto-refresh; detects expired tokens in API responses
+
+### Known constraints
+- Gemini models: only `gemini-2.5-flash` and `gemini-2.5-pro` work
+- `lightweight-charts` v5: `chart.addSeries(CandlestickSeries, opts)` pattern
+- Direct `fetch("/api/ai/...")` used for new AI routes (not orval-generated hooks)
+- VIX MacroCard inverts color (rising = red/fear, falling = green/calm)
+
 ## Stack
 
 - **Monorepo tool**: pnpm workspaces

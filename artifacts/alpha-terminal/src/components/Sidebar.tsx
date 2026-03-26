@@ -3,14 +3,18 @@ import { AuthPanel } from "./AuthPanel";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Slider } from "@/components/ui/slider";
-import { Switch } from "@/components/ui/switch";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Terminal, Search, Settings2, SlidersHorizontal, X } from "lucide-react";
+import { Terminal, Search, SlidersHorizontal, X } from "lucide-react";
 import { useState } from "react";
-import { useGetAvailableModels } from "@workspace/api-client-react";
 
 const TIMEFRAMES = ["1D", "5D", "1M", "3M", "6M", "1Y", "2Y", "5Y"];
+
+const OVERLAY_LABELS: Record<string, string> = {
+  sma20: "SMA 20",
+  sma50: "SMA 50",
+  bb: "BB",
+  rsi: "RSI",
+  volume: "VOL",
+};
 
 interface SidebarProps {
   onClose?: () => void;
@@ -21,13 +25,9 @@ export function Sidebar({ onClose }: SidebarProps) {
     symbol, setSymbol,
     timeframe, setTimeframe,
     overlays, toggleOverlay,
-    aiModel, setAiModel,
-    aiTemp, setAiTemp
   } = useTerminalStore();
 
   const [inputVal, setInputVal] = useState(symbol);
-  const { data: modelsData } = useGetAvailableModels();
-  const availableModels = modelsData?.models ?? ["gemini-2.5-flash", "gemini-2.5-pro"];
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,12 +45,11 @@ export function Sidebar({ onClose }: SidebarProps) {
           <Terminal className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
         </div>
         <div className="flex-1 min-w-0">
-          <h1 className="font-sans font-bold text-base sm:text-lg tracking-wider text-foreground truncate">
+          <h1 className="font-sans font-black text-base sm:text-lg tracking-wider text-foreground">
             ALPHA<span className="text-primary">TERM</span>
           </h1>
-          <p className="text-[9px] sm:text-[10px] font-mono text-muted-foreground uppercase tracking-widest">System v1.0.4</p>
+          <p className="text-[9px] sm:text-[10px] font-mono text-muted-foreground uppercase tracking-widest">Command Center v2</p>
         </div>
-        {/* Close button — mobile only */}
         {onClose && (
           <button
             onClick={onClose}
@@ -71,7 +70,7 @@ export function Sidebar({ onClose }: SidebarProps) {
           <div className="flex gap-2">
             <Input
               value={inputVal}
-              onChange={(e) => setInputVal(e.target.value.toUpperCase())}
+              onChange={e => setInputVal(e.target.value.toUpperCase())}
               className="font-mono uppercase text-base sm:text-lg h-11 sm:h-12 bg-card border-card-border focus-visible:ring-primary/50 text-foreground"
               placeholder="AAPL"
               autoCapitalize="characters"
@@ -92,15 +91,15 @@ export function Sidebar({ onClose }: SidebarProps) {
             <SlidersHorizontal className="w-3 h-3" /> TIMEFRAME
           </Label>
           <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
-            {TIMEFRAMES.map((tf) => (
+            {TIMEFRAMES.map(tf => (
               <button
                 key={tf}
                 onClick={() => setTimeframe(tf)}
                 className={`
                   h-8 rounded font-mono text-[10px] sm:text-xs font-semibold transition-all duration-200
                   ${timeframe === tf
-                    ? 'bg-primary/20 text-primary border border-primary/50'
-                    : 'bg-card text-muted-foreground border border-card-border hover:bg-card-border hover:text-foreground'}
+                    ? "bg-primary/20 text-primary border border-primary/50"
+                    : "bg-card text-muted-foreground border border-card-border hover:bg-card-border hover:text-foreground"}
                 `}
               >
                 {tf}
@@ -109,61 +108,26 @@ export function Sidebar({ onClose }: SidebarProps) {
           </div>
         </div>
 
-        {/* CHART OVERLAYS */}
-        <div className="space-y-3 pt-1 bg-card p-3 sm:p-4 rounded-xl border border-card-border">
-          <Label className="font-mono text-[10px] sm:text-xs text-muted-foreground flex items-center gap-2 pb-2 border-b border-card-border">
+        {/* CHART OVERLAYS — compact pills */}
+        <div className="space-y-2 pt-1">
+          <Label className="font-mono text-[10px] sm:text-xs text-muted-foreground flex items-center gap-2">
             <SlidersHorizontal className="w-3 h-3" /> OVERLAYS
           </Label>
-          <div className="space-y-3 sm:space-y-4 pt-1">
-            {Object.entries(overlays).map(([key, value]) => (
-              <div key={key} className="flex items-center justify-between">
-                <Label htmlFor={`overlay-${key}`} className="font-mono text-[10px] sm:text-xs uppercase cursor-pointer">
-                  {key === 'bb' ? 'BOLLINGER BANDS' : key.replace(/([A-Z])/g, ' $1').trim()}
-                </Label>
-                <Switch
-                  id={`overlay-${key}`}
-                  checked={value}
-                  onCheckedChange={() => toggleOverlay(key as keyof typeof overlays)}
-                  className="data-[state=checked]:bg-primary scale-90 sm:scale-100"
-                />
-              </div>
+          <div className="flex flex-wrap gap-2">
+            {(Object.entries(overlays) as [keyof typeof overlays, boolean][]).map(([key, active]) => (
+              <button
+                key={key}
+                onClick={() => toggleOverlay(key)}
+                className={`
+                  px-3 py-1.5 rounded-full font-mono text-[10px] font-semibold border transition-all duration-200
+                  ${active
+                    ? "bg-primary/20 text-primary border-primary/50"
+                    : "bg-card text-muted-foreground border-card-border hover:border-primary/30 hover:text-foreground"}
+                `}
+              >
+                {OVERLAY_LABELS[key] ?? key.toUpperCase()}
+              </button>
             ))}
-          </div>
-        </div>
-
-        {/* AI CONFIG */}
-        <div className="space-y-3 sm:space-y-4 pt-1">
-          <Label className="font-mono text-[10px] sm:text-xs text-muted-foreground flex items-center gap-2">
-            <Settings2 className="w-3 h-3" /> AI COGNITION ENGINE
-          </Label>
-          <div className="space-y-3 sm:space-y-4">
-            <div className="space-y-2">
-              <Label className="text-[9px] sm:text-[10px] uppercase text-muted-foreground font-mono">Model Selection</Label>
-              <Select value={aiModel} onValueChange={setAiModel}>
-                <SelectTrigger className="font-mono text-[10px] sm:text-xs bg-card border-card-border h-9 sm:h-10">
-                  <SelectValue placeholder="Select model..." />
-                </SelectTrigger>
-                <SelectContent className="bg-card border-card-border font-mono text-xs">
-                  {availableModels.map(m => (
-                    <SelectItem key={m} value={m}>{m.toUpperCase()}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2 sm:space-y-3 pt-1">
-              <div className="flex justify-between items-center">
-                <Label className="text-[9px] sm:text-[10px] uppercase text-muted-foreground font-mono">Temperature</Label>
-                <span className="font-mono text-[10px] sm:text-[11px] text-primary">{aiTemp.toFixed(2)}</span>
-              </div>
-              <Slider
-                value={[aiTemp]}
-                onValueChange={(v) => setAiTemp(v[0])}
-                max={2}
-                step={0.1}
-                className="py-2"
-              />
-            </div>
           </div>
         </div>
       </div>

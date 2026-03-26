@@ -79,6 +79,21 @@ function formatOptions(chain: Record<string, unknown>): string {
   return `OPTION CHAIN - Underlying: $${underlyingPrice}\n${formatContracts(calls, "CALLS")}\n\n${formatContracts(puts, "PUTS")}`;
 }
 
+function formatOptionsDetailed(chain: Record<string, unknown>): string {
+  const calls = chain["calls"] as Array<Record<string, unknown>> ?? [];
+  const puts = chain["puts"] as Array<Record<string, unknown>> ?? [];
+  const underlyingPrice = chain["underlyingPrice"];
+
+  const formatContracts = (contracts: Array<Record<string, unknown>>, type: string): string => {
+    const near = contracts.slice(0, 20);
+    return `${type} OPTIONS (nearest 20 strikes):\n` + near.map(
+      (c) => `  Strike $${c["strike"]} | Exp: ${c["expiration"]} | DTE: ${c["dte"]} | Bid: $${c["bid"]} | Ask: $${c["ask"]} | Last: $${c["last"]} | IV: ${c["iv"]}% | Delta: ${c["delta"]} | Gamma: ${c["gamma"]} | Theta: ${c["theta"]} | Vega: ${c["vega"]} | Vol: ${c["volume"]} | OI: ${c["openInterest"]}`
+    ).join("\n");
+  };
+
+  return `FULL OPTION CHAIN — Underlying Price: $${underlyingPrice}\n\n${formatContracts(calls, "CALL")}\n\n${formatContracts(puts, "PUT")}`;
+}
+
 router.get("/models", (_req, res) => {
   const data = GetAvailableModelsResponse.parse({ models: AVAILABLE_MODELS });
   res.json(data);
@@ -153,6 +168,135 @@ Be specific with strikes, expirations, and premium estimates. Use markdown forma
     const msg = err instanceof Error ? err.message : String(err);
     req.log.error({ err }, "Options analysis error");
     res.json(RunOptionsAnalysisResponse.parse({ response: `**Analysis failed:** ${msg}`, error: msg }));
+  }
+});
+
+router.post("/market-briefing", async (req, res) => {
+  const { spyQuote, qqqQuote, iwmQuote, vixQuote, model, temperature } = req.body as {
+    spyQuote?: Record<string, unknown>;
+    qqqQuote?: Record<string, unknown>;
+    iwmQuote?: Record<string, unknown>;
+    vixQuote?: Record<string, unknown>;
+    model?: string;
+    temperature?: number;
+  };
+
+  const prompt = `You are a senior market strategist at a top-tier hedge fund. Based on the following real-time market data, deliver a concise Pre-Market Overview assessing the current market posture.
+
+REAL-TIME MARKET DATA:
+${spyQuote ? `SPY (S&P 500 ETF):\n${formatQuote(spyQuote)}` : "SPY: N/A"}
+
+${qqqQuote ? `QQQ (Nasdaq-100 ETF):\n${formatQuote(qqqQuote)}` : "QQQ: N/A"}
+
+${iwmQuote ? `IWM (Russell 2000 ETF):\n${formatQuote(iwmQuote)}` : "IWM: N/A"}
+
+${vixQuote ? `VIX (Volatility Index):\n${formatQuote(vixQuote)}` : "VIX: N/A"}
+
+---
+Provide a structured briefing using EXACTLY this format:
+
+## 🎯 Market Posture
+State the overall market stance: **[BULLISH / BEARISH / NEUTRAL]** — one bold conviction sentence.
+
+## 📊 Key Observations
+- Observation 1 (breadth, momentum, or macro signal)
+- Observation 2 (relative strength/weakness across indices)
+- Observation 3 (volatility regime or risk-off/risk-on signal)
+
+## ⚡ Sector Focus
+Which indices are leading and which are lagging. Note any divergence between SPY/QQQ/IWM.
+
+## 🎲 Risk Factors
+- Risk 1 (intraday risk)
+- Risk 2 (structural risk)
+
+## 💡 Trading Bias
+A concrete, actionable bias for the session. Be specific (e.g., "Favor long setups on pullbacks to SPY $X, avoid chasing").
+
+Keep it under 300 words. Be sharp, data-driven, and professional. Use markdown.`;
+
+  try {
+    const response = await callGemini(prompt, model ?? "gemini-2.5-pro", temperature ?? 0.2);
+    res.json({ response });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    req.log.error({ err }, "Market briefing error");
+    res.json({ response: `**Briefing failed:** ${msg}`, error: msg });
+  }
+});
+
+router.post("/options-strategist", async (req, res) => {
+  const { quote, candles, chain, model, temperature } = req.body as {
+    quote?: Record<string, unknown>;
+    candles?: Array<Record<string, unknown>>;
+    chain?: Record<string, unknown>;
+    model?: string;
+    temperature?: number;
+  };
+
+  if (!quote || !chain) {
+    return res.json({ response: "Error: Missing quote or options chain data.", error: "missing_data" });
+  }
+
+  // Compute SMA-20 and SMA-50 from candle data
+  let sma20 = "N/A", sma50 = "N/A";
+  if (candles && candles.length >= 20) {
+    const closes = candles.map(c => Number(c["close"])).filter(v => !isNaN(v));
+    if (closes.length >= 20) {
+      sma20 = (closes.slice(-20).reduce((a, b) => a + b, 0) / 20).toFixed(2);
+    }
+    if (closes.length >= 50) {
+      sma50 = (closes.slice(-50).reduce((a, b) => a + b, 0) / 50).toFixed(2);
+    }
+  }
+
+  const prompt = `You are a Master Derivatives Strategist with 20+ years of options trading experience. Your analysis must be precise, actionable, and risk-calibrated.
+
+UNDERLYING MARKET DATA:
+${formatQuote(quote)}
+Technical Levels: SMA-20 = $${sma20} | SMA-50 = $${sma50}
+
+${formatOptionsDetailed(chain)}
+
+---
+TASK: Generate high-confidence options trade recommendations for 3 timeframes. For each, identify the OPTIMAL structure (Iron Condor, Bull Call Spread, Bear Put Spread, Straddle, Strangle, Butterfly, Cash-Secured Put, Covered Call, or Calendar Spread).
+
+Use EXACTLY this format for each trade:
+
+### ⏱️ 0DTE — [STRUCTURE NAME]
+**Direction:** 🟢 Bullish / 🔴 Bearish / ⚪ Neutral
+**Confidence:** 🔥 HIGH / 🟡 MILD / 🔵 LOW
+**Legs:** Buy [Strike] Call/Put, Sell [Strike] Call/Put (expiring [date])
+**Entry:** Estimated debit/credit of ~$X.XX per contract
+**Max Risk:** $XXX | **Max Reward:** $XXX | **R/R Ratio:** X:1
+**Rationale:** One precise sentence on why this structure fits current price action, IV, and positioning.
+**Exit Rules:** Profit target at X% gain; stop loss at Y% loss or [trigger condition].
+
+---
+
+### ⏱️ 7DTE — [STRUCTURE NAME]
+[same format]
+
+---
+
+### ⏱️ 30DTE — [STRUCTURE NAME]
+[same format]
+
+---
+
+## ⚠️ Key Risk Factors
+- **Risk 1:** (e.g., IV crush post-catalyst, pin risk near expiration)
+- **Risk 2:** (e.g., gap risk, liquidity at specific strikes)
+
+Use only strikes that exist in the provided chain data. Be precise with numbers. Use markdown with green indicators (🟢) for bullish/calls and red (🔴) for bearish/puts.`;
+
+  try {
+    const response = await callGemini(prompt, model ?? "gemini-2.5-pro", temperature ?? 0.2);
+    res.json({ response });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    req.log.error({ err }, "Options strategist error");
+    res.json({ response: `**Strategist failed:** ${msg}`, error: msg });
   }
 });
 

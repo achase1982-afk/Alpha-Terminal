@@ -39,6 +39,14 @@ interface TerminalState {
   tickerTapeSymbols: string[];
   setTickerTapeSymbols: (symbols: string[]) => void;
 
+  // AI Results (shared across tabs)
+  analysisResult: string | null;
+  setAnalysisResult: (r: string | null) => void;
+  strategistResult: string | null;
+  setStrategistResult: (r: string | null) => void;
+  briefingResult: string | null;
+  setBriefingResult: (r: string | null) => void;
+
   // AI Chat
   chatHistory: ChatMessage[];
   addChatMessage: (msg: ChatMessage) => void;
@@ -81,6 +89,14 @@ export const useTerminalStore = create<TerminalState>()(
       // Ticker Tape
       tickerTapeSymbols: ['SPY', 'QQQ', 'IWM', 'DIA', 'VIX'],
       setTickerTapeSymbols: (tickerTapeSymbols) => set({ tickerTapeSymbols }),
+
+      // AI Results
+      analysisResult: null,
+      setAnalysisResult: (analysisResult) => set({ analysisResult }),
+      strategistResult: null,
+      setStrategistResult: (strategistResult) => set({ strategistResult }),
+      briefingResult: null,
+      setBriefingResult: (briefingResult) => set({ briefingResult }),
 
       // Chat
       chatHistory: [],

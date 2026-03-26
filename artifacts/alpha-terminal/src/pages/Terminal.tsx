@@ -3,14 +3,13 @@ import { Sidebar } from "@/components/Sidebar";
 import { MetricsBar } from "@/components/MetricsBar";
 import { TradingChart } from "@/components/TradingChart";
 import { OptionsTab } from "@/components/OptionsTab";
-import { AiAnalysisTab } from "@/components/AiAnalysisTab";
-import { AiChatTab } from "@/components/AiChatTab";
-import { TickerTape } from "@/components/TickerTape";
+import { AiIntelligenceTab } from "@/components/AiIntelligenceTab";
+import { MacroBar } from "@/components/MacroBar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useTerminalStore } from "@/lib/store";
 import { useGetPriceHistory } from "@workspace/api-client-react";
 import { useAutoRefreshToken } from "@/hooks/useAutoRefreshToken";
-import { LineChart, BarChart2, SquareTerminal, BrainCircuit, Menu } from "lucide-react";
+import { LineChart, BarChart2, BrainCircuit, Menu } from "lucide-react";
 
 export default function TerminalPage() {
   const { symbol, accessToken, timeframe } = useTerminalStore();
@@ -18,11 +17,10 @@ export default function TerminalPage() {
   const { refresh } = useAutoRefreshToken();
 
   const { data: historyData, isLoading: historyLoading } = useGetPriceHistory(
-    { symbol, accessToken: accessToken || '', timeframe },
+    { symbol, accessToken: accessToken || "", timeframe },
     { query: { enabled: !!accessToken && !!symbol } }
   );
 
-  // Auto-refresh when market data comes back with expired-token error
   useEffect(() => {
     if (historyData?.error === "unauthorized") {
       refresh();
@@ -40,11 +38,11 @@ export default function TerminalPage() {
         />
       )}
 
-      {/* Sidebar — drawer on mobile, static on desktop */}
+      {/* Sidebar */}
       <div className={`
         fixed lg:static top-0 left-0 h-full z-40
         transition-transform duration-300 ease-in-out
-        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+        ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
       `}>
         <Sidebar onClose={() => setSidebarOpen(false)} />
       </div>
@@ -64,54 +62,41 @@ export default function TerminalPage() {
             <Menu className="w-5 h-5" />
           </button>
           <div className="flex flex-col leading-none">
-            <span className="font-sans font-black text-lg tracking-wider text-foreground">
-              ALPHA
-            </span>
-            <span className="font-sans font-semibold text-[11px] tracking-[0.25em] text-primary">
-              TERMINAL
-            </span>
+            <span className="font-sans font-black text-lg tracking-wider text-foreground">ALPHA</span>
+            <span className="font-sans font-semibold text-[11px] tracking-[0.25em] text-primary">TERMINAL</span>
           </div>
           <span className="ml-auto font-mono text-xs text-muted-foreground uppercase">{symbol}</span>
         </div>
 
-        <TickerTape />
+        {/* Macro Cards — replace ticker tape */}
+        <MacroBar />
         <MetricsBar />
 
         <div className="flex-1 overflow-auto p-3 sm:p-4 lg:p-6 z-10">
           <Tabs defaultValue="chart" className="flex flex-col h-full">
-            {/* Tabs list — scrollable on very small screens */}
             <div className="overflow-x-auto shrink-0 mb-4">
               <TabsList className="bg-card border border-card-border p-1 inline-flex min-w-max">
                 <TabsTrigger
                   value="chart"
-                  className="font-mono text-[10px] sm:text-xs uppercase data-[state=active]:bg-primary/20 data-[state=active]:text-primary gap-1 sm:gap-2 px-2 sm:px-3"
+                  className="font-mono text-[10px] sm:text-xs uppercase data-[state=active]:bg-primary/20 data-[state=active]:text-primary gap-1.5 px-3"
                 >
                   <LineChart className="w-3.5 h-3.5 shrink-0" />
-                  <span className="hidden xs:inline">CHART</span>
-                  <span className="xs:hidden">CHART</span>
+                  CHART
                 </TabsTrigger>
                 <TabsTrigger
                   value="options"
-                  className="font-mono text-[10px] sm:text-xs uppercase data-[state=active]:bg-primary/20 data-[state=active]:text-primary gap-1 sm:gap-2 px-2 sm:px-3"
+                  className="font-mono text-[10px] sm:text-xs uppercase data-[state=active]:bg-primary/20 data-[state=active]:text-primary gap-1.5 px-3"
                 >
                   <BarChart2 className="w-3.5 h-3.5 shrink-0" />
-                  <span>OPTIONS</span>
+                  OPTIONS
                 </TabsTrigger>
                 <TabsTrigger
-                  value="analysis"
-                  className="font-mono text-[10px] sm:text-xs uppercase data-[state=active]:bg-primary/20 data-[state=active]:text-primary gap-1 sm:gap-2 px-2 sm:px-3"
+                  value="ai"
+                  className="font-mono text-[10px] sm:text-xs uppercase data-[state=active]:bg-primary/20 data-[state=active]:text-primary gap-1.5 px-3"
                 >
                   <BrainCircuit className="w-3.5 h-3.5 shrink-0" />
-                  <span className="hidden sm:inline">AI ANALYSIS</span>
+                  <span className="hidden sm:inline">AI INTELLIGENCE</span>
                   <span className="sm:hidden">AI</span>
-                </TabsTrigger>
-                <TabsTrigger
-                  value="chat"
-                  className="font-mono text-[10px] sm:text-xs uppercase data-[state=active]:bg-primary/20 data-[state=active]:text-primary gap-1 sm:gap-2 px-2 sm:px-3"
-                >
-                  <SquareTerminal className="w-3.5 h-3.5 shrink-0" />
-                  <span className="hidden sm:inline">AI CHAT</span>
-                  <span className="sm:hidden">CHAT</span>
                 </TabsTrigger>
               </TabsList>
             </div>
@@ -127,11 +112,8 @@ export default function TerminalPage() {
               <TabsContent value="options" className="h-full m-0 overflow-auto focus-visible:outline-none">
                 <OptionsTab />
               </TabsContent>
-              <TabsContent value="analysis" className="h-full m-0 overflow-auto focus-visible:outline-none">
-                <AiAnalysisTab />
-              </TabsContent>
-              <TabsContent value="chat" className="h-full m-0 overflow-hidden focus-visible:outline-none">
-                <AiChatTab />
+              <TabsContent value="ai" className="h-full m-0 overflow-auto focus-visible:outline-none">
+                <AiIntelligenceTab />
               </TabsContent>
             </div>
           </Tabs>
