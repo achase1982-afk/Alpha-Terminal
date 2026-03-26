@@ -349,6 +349,8 @@ components:
       properties:
         symbol:
           type: string
+        description:
+          type: string
         last:
           type: number
         bid:

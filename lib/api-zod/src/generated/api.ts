@@ -69,6 +69,7 @@ export const GetQuoteQueryParams = zod.object({
 
 export const GetQuoteResponse = zod.object({
   symbol: zod.string(),
+  description: zod.string().optional(),
   last: zod.number().optional(),
   bid: zod.number().optional(),
   ask: zod.number().optional(),

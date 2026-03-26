@@ -85,6 +85,15 @@ router.get("/quote", async (req, res) => {
     const entry = (json[apiSymbol] ?? json[displaySymbol]) as Record<string, unknown> | undefined;
     const quote = entry?.["quote"] as Record<string, unknown> | undefined;
     const fundamental = entry?.["fundamental"] as Record<string, unknown> | undefined;
+    const reference = entry?.["reference"] as Record<string, unknown> | undefined;
+
+    // Company name — Schwab puts it in entry.reference.description for equities
+    // Try multiple paths for robustness across asset types
+    const description =
+      (reference?.["description"] as string | undefined) ||
+      (entry?.["description"] as string | undefined) ||
+      (quote?.["description"] as string | undefined) ||
+      undefined;
 
     if (!quote) {
       const data = GetQuoteResponse.parse({ symbol: displaySymbol, error: "no_data" });
@@ -163,6 +172,7 @@ router.get("/quote", async (req, res) => {
 
     const data = GetQuoteResponse.parse({
       symbol: displaySymbol,
+      description,
       last,
       bid:   pickNum("bidPrice", "bid"),
       ask:   pickNum("askPrice", "ask"),

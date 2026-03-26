@@ -8,6 +8,7 @@
 
 export interface QuoteResponse {
   symbol: string;
+  description?: string;
   last?: number;
   bid?: number;
   ask?: number;

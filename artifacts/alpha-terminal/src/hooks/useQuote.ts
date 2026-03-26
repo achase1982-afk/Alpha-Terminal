@@ -16,6 +16,7 @@ import { useGetQuote }                      from "@workspace/api-client-react";
 
 export interface QuoteData {
   symbol:           string;
+  description:      string | null;   // company name, e.g. "Apple Inc"
   last:             number | null;
   bid:              number | null;
   ask:              number | null;
@@ -34,6 +35,7 @@ export interface QuoteData {
 function fromLive(q: LiveQuote): QuoteData {
   return {
     symbol:           q.symbol,
+    description:      null,   // streamer doesn't carry reference data
     last:             q.last,
     bid:              q.bid,
     ask:              q.ask,
@@ -43,7 +45,7 @@ function fromLive(q: LiveQuote): QuoteData {
     high:             q.high,
     low:              q.low,
     close:            q.close,
-    fiftyTwoWeekHigh: null,  // streamer doesn't carry fundamental data
+    fiftyTwoWeekHigh: null,
     fiftyTwoWeekLow:  null,
     peRatio:          null,
   };
@@ -92,18 +94,19 @@ export function useQuote(symbol: string) {
   const data: QuoteData | null = restData
     ? {
         symbol:           restData.symbol,
-        last:             restData.last           ?? null,
-        bid:              restData.bid            ?? null,
-        ask:              restData.ask            ?? null,
-        change:           restData.change         ?? null,
-        changePct:        restData.changePct      ?? null,
-        volume:           restData.volume         ?? null,
-        high:             restData.high           ?? null,
-        low:              restData.low            ?? null,
+        description:      restData.description      ?? null,
+        last:             restData.last              ?? null,
+        bid:              restData.bid               ?? null,
+        ask:              restData.ask               ?? null,
+        change:           restData.change            ?? null,
+        changePct:        restData.changePct         ?? null,
+        volume:           restData.volume            ?? null,
+        high:             restData.high              ?? null,
+        low:              restData.low               ?? null,
         close:            null,
-        fiftyTwoWeekHigh: restData.fiftyTwoWeekHigh ?? null,
-        fiftyTwoWeekLow:  restData.fiftyTwoWeekLow  ?? null,
-        peRatio:          restData.peRatio          ?? null,
+        fiftyTwoWeekHigh: restData.fiftyTwoWeekHigh  ?? null,
+        fiftyTwoWeekLow:  restData.fiftyTwoWeekLow   ?? null,
+        peRatio:          restData.peRatio           ?? null,
         error:            restData.error,
       }
     : null;

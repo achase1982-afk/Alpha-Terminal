@@ -7,8 +7,8 @@ const UP_COLOR   = "#00E676";
 const DOWN_COLOR = "#FF1744";
 const FLAT_COLOR = "#9CA3AF";
 
-// Label style applied to every "TICKER", "LAST PRICE" etc. header
-const LABEL_CLS = "text-[9px] sm:text-[10px] text-gray-400 font-mono font-semibold tracking-wider uppercase";
+// Shared label style: small, muted, uppercase, tight tracking
+const LABEL_CLS = "text-[9px] sm:text-[10px] text-gray-500 font-normal tracking-wider uppercase leading-none";
 
 function fmtPrice(n: number | null, digits = 2): string {
   if (n == null || isNaN(n)) return "—";
@@ -94,18 +94,23 @@ export function MetricsBar() {
       className="w-full border-b border-card-border flex items-center px-4 sm:px-6 gap-4 sm:gap-6 lg:gap-8 overflow-x-auto shrink-0 py-2 sm:h-16"
       style={{ background: "#0A0F16" }}
     >
-      {/* Ticker symbol */}
-      <div className="flex flex-col shrink-0">
+      {/* Ticker + company name */}
+      <div className="flex flex-col shrink-0 gap-0.5">
         <span className={LABEL_CLS}>Ticker</span>
-        <span className="text-base sm:text-xl font-black text-white leading-tight tracking-wide font-sans">
+        <span className="text-base sm:text-xl font-bold text-white leading-tight tracking-normal">
           {quote.symbol}
         </span>
+        {quote.description && (
+          <span className="text-[9px] sm:text-[10px] text-gray-500 font-normal leading-none truncate max-w-[120px] sm:max-w-[180px]">
+            {quote.description}
+          </span>
+        )}
       </div>
 
       <div className="w-px h-8 bg-gray-800 shrink-0" />
 
-      {/* LAST PRICE — always shows full string on every screen size */}
-      <div className="flex flex-col shrink-0">
+      {/* LAST PRICE — full string on all screen sizes */}
+      <div className="flex flex-col shrink-0 gap-0.5">
         <div className="flex items-center gap-1.5">
           <span className={LABEL_CLS}>Last Price</span>
           {source === "stream"
@@ -119,14 +124,13 @@ export function MetricsBar() {
                 </span>
           }
         </div>
-        {/* flex-wrap: price stays on its own line; change + pct wrap below on very narrow screens */}
+        {/* Price: font-weight 600 | Change+Pct: font-weight 400 */}
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0" style={{ color: priceColor }}>
-          <span className="text-xl sm:text-2xl font-mono font-black leading-tight tabular-nums">
+          <span className="text-xl sm:text-2xl font-mono font-semibold leading-tight tabular-nums">
             {lastStr}
           </span>
-          <span className="font-mono font-bold text-sm tabular-nums flex items-center gap-1">
-            {changeStr}
-            <span className="text-xs opacity-90">{changePctStr}</span>
+          <span className="font-mono font-normal text-sm tabular-nums">
+            {changeStr} <span className="opacity-80">{changePctStr}</span>
           </span>
         </div>
       </div>
@@ -134,9 +138,9 @@ export function MetricsBar() {
       <div className="w-px h-8 bg-gray-800 shrink-0" />
 
       {/* BID / ASK */}
-      <div className="flex flex-col shrink-0">
+      <div className="flex flex-col shrink-0 gap-0.5">
         <span className={LABEL_CLS}>Bid / Ask</span>
-        <span className="text-sm sm:text-base font-mono font-semibold text-gray-200 leading-tight tabular-nums">
+        <span className="text-sm sm:text-base font-mono font-normal text-gray-200 leading-tight tabular-nums">
           ${fmtPrice(quote.bid)}&nbsp;<span className="text-gray-600">/</span>&nbsp;${fmtPrice(quote.ask)}
         </span>
       </div>
@@ -144,9 +148,9 @@ export function MetricsBar() {
       <div className="w-px h-8 bg-gray-800 shrink-0 hidden sm:block" />
 
       {/* VOLUME */}
-      <div className="hidden sm:flex flex-col shrink-0">
+      <div className="hidden sm:flex flex-col shrink-0 gap-0.5">
         <span className={LABEL_CLS}>Volume</span>
-        <span className="text-sm sm:text-base font-mono font-semibold text-gray-200 leading-tight tabular-nums">
+        <span className="text-sm sm:text-base font-mono font-normal text-gray-200 leading-tight tabular-nums">
           {fmtVol(quote.volume)}
         </span>
       </div>
@@ -154,9 +158,9 @@ export function MetricsBar() {
       <div className="w-px h-8 bg-gray-800 shrink-0 hidden md:block" />
 
       {/* DAY RANGE */}
-      <div className="hidden md:flex flex-col shrink-0">
+      <div className="hidden md:flex flex-col shrink-0 gap-0.5">
         <span className={LABEL_CLS}>Day Range</span>
-        <span className="text-sm sm:text-base font-mono font-semibold leading-tight tabular-nums">
+        <span className="text-sm sm:text-base font-mono font-normal leading-tight tabular-nums">
           <span style={{ color: DOWN_COLOR }}>${fmtPrice(quote.low)}</span>
           <span className="text-gray-600 mx-1">—</span>
           <span style={{ color: UP_COLOR }}>${fmtPrice(quote.high)}</span>
@@ -166,9 +170,9 @@ export function MetricsBar() {
       <div className="w-px h-8 bg-gray-800 shrink-0 hidden lg:block" />
 
       {/* 52W RANGE */}
-      <div className="hidden lg:flex flex-col shrink-0">
+      <div className="hidden lg:flex flex-col shrink-0 gap-0.5">
         <span className={LABEL_CLS}>52W Range</span>
-        <span className="text-sm sm:text-base font-mono font-semibold text-gray-500 leading-tight tabular-nums">
+        <span className="text-sm sm:text-base font-mono font-normal text-gray-500 leading-tight tabular-nums">
           {quote.fiftyTwoWeekLow != null
             ? `$${fmtPrice(quote.fiftyTwoWeekLow)} — $${fmtPrice(quote.fiftyTwoWeekHigh)}`
             : "—"}
