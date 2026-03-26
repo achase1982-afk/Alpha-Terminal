@@ -11,16 +11,15 @@
       *, *::before, *::after {
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif !important;
       }
-      /* Native monospace for all price/number data */
-      .font-mono, code, pre {
-        font-family: ui-monospace, 'SF Mono', Menlo, Consolas, 'Cascadia Code', 'Liberation Mono', monospace !important;
-      }
-      /* All numeric readouts: thin (300), tabular-aligned, NO slashed zeros */
+      /* Price/data numbers: use system sans-serif — monospace fonts have unfixable slashed zeros */
       .font-mono {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif !important;
         font-weight: 300 !important;
         font-variant-numeric: tabular-nums !important;
-        /* 'tnum' keeps column alignment; 'zero' 0 explicitly kills the slashed zero glyph */
-        font-feature-settings: 'tnum' 1, 'zero' 0 !important;
+      }
+      /* Actual code blocks keep monospace */
+      code, pre {
+        font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace !important;
       }
       /* Macro card ticker labels stay bold — intentional hierarchy */
       .macro-symbol-label {
