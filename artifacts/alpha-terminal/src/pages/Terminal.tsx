@@ -16,7 +16,7 @@ import { useAutoRefreshToken } from "@/hooks/useAutoRefreshToken";
 import { useStreamingQuotes } from "@/hooks/useStreamingQuotes";
 import { useViewportShell } from "@/hooks/useViewportShell";
 import { AiChatOverlay } from "@/components/AiChatOverlay";
-import { CompanyTearSheet } from "@/components/CompanyTearSheet";
+import { InstitutionalTearSheet } from "@/views/InstitutionalTearSheet";
 import { LineChart, BarChart2, BrainCircuit, Menu, Radar, Wifi, WifiOff } from "lucide-react";
 
 export default function TerminalPage() {
@@ -195,7 +195,7 @@ export default function TerminalPage() {
       </div>
 
       <AiChatOverlay isOpen={chatOpen} onClose={() => setChatOpen(false)} />
-      <CompanyTearSheet isOpen={tearSheetOpen} onClose={() => setTearSheetOpen(false)} />
+      <InstitutionalTearSheet isOpen={tearSheetOpen} onClose={() => setTearSheetOpen(false)} />
     </div>
   );
 }

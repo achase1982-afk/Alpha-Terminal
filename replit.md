@@ -13,7 +13,13 @@ Key features implemented:
 - **Tabs**: CHART | OPTIONS | AI INTELLIGENCE | SCAN
 - **AI Intelligence Tab**: Deep Analysis (TA + Options Strategist) — chat removed, lives in overlay now
 - **AI Chat Overlay**: Full-screen iMessage-style chat accessible from sidebar "AI CHAT ASSISTANT" button; AbortController lifecycle; sticky bottom input with safe-area-inset
-- **Company Tear Sheet**: Clickable active ticker badge → full-screen overlay with Schwab fundamentals (Market Cap, Shares Out, P/E, EPS, Beta, Div Yield), AI-generated Sympathy & Competitors, placeholder sections for Headlines and Institutional Flow; backend routes `/api/market/fundamentals` and `/api/ai/sympathy-plays`
+- **Institutional Tear Sheet** (`src/views/InstitutionalTearSheet.tsx`): Replaced old CompanyTearSheet. Full-screen overlay triggered by clicking ticker in MetricsBar. Features:
+  - **HeroHeader**: Live price from `useQuote()` (stream-first, REST fallback), day change ± with color-coded pill (green/red/gray), bid/ask/volume row
+  - **TradingMetricsGrid**: 8-card grid — Market Cap, Shares Out, P/E, EPS, Beta, Div Yield, P/B, Day Range — from `/api/market/fundamentals`
+  - **52-Week Range Bar**: Gradient bar with draggable-style current-price dot
+  - **InstitutionalOwnershipCard**: 13F table in skeleton/"Data pending" state — skeleton rows + explanation footer; ready to wire when a 13F data endpoint is built
+  - `useTearSheet(symbol)` hook merges live quote data + fundamentals into a unified `TearSheetData` interface; null-safe mapping throughout
+  - All text uses `tabular-nums`; scrollbar-hide CSS utility added to `index.css`
 - **Live Market Pulse**: Sidebar button → modal; backend fetches 14-symbol batch (SPY/QQQ/IWM/$VIX/$VVIX/$CPC/$TICK/$ADD/$TRIN/$DXY//ES//NQ//GC//CL) in single Schwab call; institutional-grade session-aware Gemini prompt
 - **Market Scanner**: AI Discovery + Manual Filter modes; configurable scan universe (S&P 100, Nasdaq 100, High Beta, Custom), max results (1-20), sortable results table with ticker/strategy/confidence/thesis columns
 - **Options Tab**: Chain table with Options Strategist results panel above (collapsible)
