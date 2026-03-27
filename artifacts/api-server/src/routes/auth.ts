@@ -142,7 +142,9 @@ router.get("/callback", async (req, res) => {
       ts: Date.now(),
     });
 
-    req.log.info("GET /callback — token exchange succeeded, sending success page");
+    req.log.info("GET /callback — token exchange succeeded, redirecting to app");
+
+    const appOrigin = redirectUri.replace(/\/api\/auth\/callback\/?$/, "") || "/";
 
     res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
       <style>*{margin:0;padding:0;box-sizing:border-box}body{background:#0A0F16;color:#fff;font-family:-apple-system,system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px;text-align:center}</style>
@@ -151,11 +153,11 @@ router.get("/callback", async (req, res) => {
           <div style="width:60px;height:60px;border-radius:50%;background:#0090FF22;margin:0 auto 16px;display:flex;align-items:center;justify-content:center">
             <svg width="28" height="28" fill="none" stroke="#0090FF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>
           </div>
-          <h2 style="color:#0090FF;font-size:20px;margin:0 0 8px">Connected to Schwab!</h2>
-          <p style="color:#ccc;font-size:14px;line-height:1.5;margin:0 0 20px">Your session is ready.</p>
-          <p style="color:#999;font-size:13px;line-height:1.5;margin:0 0 24px">Go back to the Alpha Terminal app in Replit to start trading. Your tokens have been saved and will be loaded automatically.</p>
-          <p style="color:#555;font-size:11px">You can close this tab now.</p>
+          <h2 style="color:#0090FF;font-size:20px;margin:0 0 8px">Connected!</h2>
+          <p style="color:#ccc;font-size:14px;line-height:1.5;margin:0 0 12px">Redirecting to Alpha Terminal...</p>
+          <p style="color:#555;font-size:11px">If you are not redirected, <a href="${escapeHtml(appOrigin)}" style="color:#0090FF">tap here</a>.</p>
         </div>
+        <script>setTimeout(function(){window.location.replace("${appOrigin}");},1500);</script>
       </body></html>`);
   } catch (err) {
     req.log.error({ err }, "GET /callback network error");
