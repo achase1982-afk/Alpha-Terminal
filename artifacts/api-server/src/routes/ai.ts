@@ -1,8 +1,7 @@
 import { Router, type IRouter } from "express";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { streamText, stepCountIs } from "ai";
+import { streamText } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { z } from "zod";
 import {
   RunTechnicalAnalysisBody,
   RunTechnicalAnalysisResponse,
@@ -617,92 +616,6 @@ ${marketContext ? `CURRENT MARKET CONTEXT:\n${marketContext}` : "No market data 
         role: m.role as "user" | "assistant",
         content: m.content,
       })),
-      stopWhen: stepCountIs(3),
-      tools: {
-        getMacroMarketSummary: {
-          description:
-            "Fetches the current daily performance of major market indices (S&P 500 / SPY, Nasdaq / QQQ, Dow Jones / DIA).",
-          parameters: z.object({}),
-          execute: async () => {
-            const symbols = ["SPY", "QQQ", "DIA"];
-
-            async function fetchChart(
-              symbol: string
-            ): Promise<{ changePercent: number }> {
-              const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1d`;
-              const res = await fetch(url, {
-                headers: {
-                  "User-Agent":
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                },
-              });
-              if (!res.ok)
-                throw new Error(`${symbol}: HTTP ${res.status}`);
-              const json = (await res.json()) as {
-                chart: {
-                  result: Array<{
-                    meta: {
-                      regularMarketPrice?: number;
-                      chartPreviousClose?: number;
-                      previousClose?: number;
-                    };
-                  }>;
-                };
-              };
-              const meta = json.chart?.result?.[0]?.meta;
-              if (!meta) throw new Error(`${symbol}: no chart data`);
-              const current = meta.regularMarketPrice ?? 0;
-              const prevClose =
-                meta.chartPreviousClose ?? meta.previousClose ?? 0;
-              if (!current || !prevClose)
-                throw new Error(`${symbol}: missing price fields`);
-              const changePercent =
-                ((current - prevClose) / prevClose) * 100;
-              return {
-                changePercent: Math.round(changePercent * 100) / 100,
-              };
-            }
-
-            try {
-              const results = await Promise.allSettled(
-                symbols.map((s) => fetchChart(s))
-              );
-              const out: Record<
-                string,
-                { changePercent: number; source: string }
-              > = {};
-              const now = new Date();
-              const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-
-              symbols.forEach((sym, i) => {
-                const r = results[i];
-                if (r.status === "fulfilled") {
-                  out[sym] = { ...r.value, source: "yahoo_v8_chart" };
-                } else {
-                  req.log.warn(
-                    { symbol: sym, err: r.reason },
-                    "Chart fetch failed, using mock"
-                  );
-                  out[sym] = {
-                    changePercent: 0,
-                    source: `mock_fallback_${dateStr}`,
-                  };
-                }
-              });
-              return out;
-            } catch (error) {
-              req.log.error({ err: error }, "Macro tool failed completely");
-              return {
-                error:
-                  "Yahoo Finance v8 chart endpoint unreachable. All data feeds failed.",
-                SPY: { changePercent: 0, source: "mock_fallback" },
-                QQQ: { changePercent: 0, source: "mock_fallback" },
-                DIA: { changePercent: 0, source: "mock_fallback" },
-              };
-            }
-          },
-        },
-      },
     });
 
     res.setHeader("Content-Type", "text/plain; charset=utf-8");
