@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Sidebar } from "@/components/Sidebar";
 import { MetricsBar } from "@/components/MetricsBar";
 import { TradingChart } from "@/components/TradingChart";
@@ -26,6 +26,7 @@ export default function TerminalPage() {
   const [historyTimedOut, setHistoryTimedOut] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
   const { refresh } = useAutoRefreshToken();
 
   const handleScroll = useCallback(() => {
@@ -33,6 +34,22 @@ export default function TerminalPage() {
     if (!el) return;
     const y = el.scrollTop;
     setIsScrolled(prev => (prev ? y > 30 : y > 60));
+  }, []);
+
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const sync = () => {
+      if (headerRef.current) {
+        headerRef.current.style.top = `${vv.offsetTop}px`;
+      }
+    };
+    vv.addEventListener("scroll", sync);
+    vv.addEventListener("resize", sync);
+    return () => {
+      vv.removeEventListener("scroll", sync);
+      vv.removeEventListener("resize", sync);
+    };
   }, []);
 
   // ── Start and maintain the Schwab WebSocket stream ──────────────────────
@@ -85,15 +102,15 @@ export default function TerminalPage() {
         <Sidebar onClose={() => setSidebarOpen(false)} onOpenChat={() => setChatOpen(true)} />
       </div>
 
-      {/* Main content — four corners lock */}
-      <main className="flex-1 flex flex-col h-full bg-background relative min-w-0 overflow-hidden">
+      {/* Main content */}
+      <main className="flex-1 flex flex-col h-full bg-background relative min-w-0" style={{ overflow: "clip" }}>
         {/* Ambient glow — clipped inside its own overflow-hidden layer */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-primary/5 blur-[120px] rounded-full" />
         </div>
 
-        {/* ─── Fixed header: pinned to top, never moves ─── */}
-        <div className="fixed top-0 left-0 right-0 lg:left-72 xl:left-80 z-[9999] bg-background">
+        {/* ─── Fixed top on mobile, in-flow on desktop ─── */}
+        <div ref={headerRef} className="fixed top-[env(safe-area-inset-top)] inset-x-0 lg:relative lg:top-auto z-50 bg-background">
           {/* Mobile top bar */}
           <div className="flex items-center lg:hidden h-12 px-4 border-b border-card-border bg-card">
             <button
@@ -121,8 +138,8 @@ export default function TerminalPage() {
           <TickerTape />
         </div>
 
-        {/* ─── Scrollable content: offset below fixed header ─── */}
-        <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto z-10 pt-20 lg:pt-8">
+        {/* ─── Scrollable content: offset for fixed header on mobile ─── */}
+        <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-auto z-10 pt-20 lg:pt-0">
           <div className="max-w-7xl mx-auto w-full">
           {/* ─── Macro Cards ─── */}
           <MacroBar />
