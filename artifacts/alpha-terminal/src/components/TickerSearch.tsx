@@ -1,12 +1,8 @@
 import { useState } from "react";
 import { useTerminalStore } from "@/lib/store";
-import { Search, Clock, ChevronRight } from "lucide-react";
+import { Search, Clock } from "lucide-react";
 
-interface TickerSearchProps {
-  onOpenTearSheet?: () => void;
-}
-
-export function TickerSearch({ onOpenTearSheet }: TickerSearchProps) {
+export function TickerSearch() {
   const { symbol, setSymbol, recentSymbols } = useTerminalStore();
   const [inputVal, setInputVal] = useState("");
 
@@ -25,23 +21,6 @@ export function TickerSearch({ onOpenTearSheet }: TickerSearchProps) {
 
   return (
     <div className="px-3 sm:px-4 py-2 border-b border-card-border bg-[#0D1117]/95 shrink-0 flex flex-col sm:flex-row items-start sm:items-center gap-2">
-      {/* Active symbol badge */}
-      <button
-        onClick={onOpenTearSheet}
-        className="flex items-center gap-1.5 shrink-0 group cursor-pointer"
-        title="View company profile"
-        aria-label={`View company profile for ${symbol}`}
-      >
-        <span className="font-mono text-[9px] text-muted-foreground uppercase tracking-widest hidden sm:block">ACTIVE</span>
-        <span className="font-mono font-black text-primary text-sm tracking-widest border border-primary/40 bg-primary/10 px-2 py-0.5 rounded
-          group-hover:bg-primary/20 group-hover:border-primary/60 transition-all">
-          {symbol}
-        </span>
-        <ChevronRight className="w-3 h-3 text-primary/50 group-hover:text-primary transition-colors hidden sm:block" />
-      </button>
-
-      <div className="h-4 w-px bg-card-border hidden sm:block" />
-
       {/* Recent symbols */}
       <div className="flex items-center gap-1.5 flex-wrap flex-1 min-w-0">
         {recentSymbols.length === 0 ? (

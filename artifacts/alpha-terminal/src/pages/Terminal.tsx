@@ -130,7 +130,7 @@ export default function TerminalPage() {
           <MetricsBar compact={isScrolled} onOpenTearSheet={() => setTearSheetOpen(true)} />
 
           {/* ─── Prominent search bar ─── */}
-          <TickerSearch onOpenTearSheet={() => setTearSheetOpen(true)} />
+          <TickerSearch />
 
           <div className="p-3 sm:p-4 lg:p-5" style={{ minHeight: "calc(100dvh - 80px)" }}>
             <Tabs defaultValue="chart" className="flex flex-col">
