@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
-import { Terminal, SlidersHorizontal, X, LayoutDashboard, ListOrdered, Gauge, BrainCircuit, Zap } from "lucide-react";
+import { Terminal, SlidersHorizontal, X, LayoutDashboard, ListOrdered, Gauge, BrainCircuit, Zap, MessageCircle } from "lucide-react";
 import { useState } from "react";
 import { useGetAvailableModels } from "@workspace/api-client-react";
 
@@ -23,9 +23,10 @@ const OVERLAY_LABELS: Record<string, string> = {
 
 interface SidebarProps {
   onClose?: () => void;
+  onOpenChat?: () => void;
 }
 
-export function Sidebar({ onClose }: SidebarProps) {
+export function Sidebar({ onClose, onOpenChat }: SidebarProps) {
   const {
     overlays, toggleOverlay,
     macroSymbols, setMacroSymbols,
@@ -149,6 +150,14 @@ export function Sidebar({ onClose }: SidebarProps) {
               Connect Schwab to enable
             </p>
           )}
+
+          <Button
+            onClick={() => { onOpenChat?.(); onClose?.(); }}
+            className="w-full font-mono text-xs h-9 bg-[#1C2333] text-foreground border border-card-border hover:bg-primary/15 hover:border-primary/40 hover:text-primary transition-all tracking-wider mt-2"
+          >
+            <MessageCircle className="w-3.5 h-3.5 mr-2 shrink-0" />
+            AI CHAT ASSISTANT
+          </Button>
         </div>
 
         {/* CHART OVERLAYS */}

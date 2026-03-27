@@ -14,11 +14,13 @@ import { useGetPriceHistory } from "@workspace/api-client-react";
 import { ChartControls, chartParamsFromStore, isIntradayInterval } from "@/components/ChartControls";
 import { useAutoRefreshToken } from "@/hooks/useAutoRefreshToken";
 import { useStreamingQuotes } from "@/hooks/useStreamingQuotes";
+import { AiChatOverlay } from "@/components/AiChatOverlay";
 import { LineChart, BarChart2, BrainCircuit, Menu, Radar, Wifi, WifiOff } from "lucide-react";
 
 export default function TerminalPage() {
   const { symbol, accessToken, chartPeriod, chartInterval, streamConnected } = useTerminalStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const [historyTimedOut, setHistoryTimedOut] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -78,7 +80,7 @@ export default function TerminalPage() {
         transition-transform duration-300 ease-in-out
         ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
       `}>
-        <Sidebar onClose={() => setSidebarOpen(false)} />
+        <Sidebar onClose={() => setSidebarOpen(false)} onOpenChat={() => setChatOpen(true)} />
       </div>
 
       {/* Main content */}
@@ -189,6 +191,8 @@ export default function TerminalPage() {
           </div>
         </div>
       </main>
+
+      <AiChatOverlay isOpen={chatOpen} onClose={() => setChatOpen(false)} />
     </div>
   );
 }

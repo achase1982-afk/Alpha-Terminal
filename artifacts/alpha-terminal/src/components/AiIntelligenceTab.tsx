@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState } from "react";
 import { useTerminalStore } from "@/lib/store";
 import {
   useGetQuote, useGetPriceHistory, useGetOptionChain,
@@ -7,23 +7,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Activity, BarChart2, Send, Trash2,
-  TerminalSquare, User,
-  Target, TrendingUp
+  Activity, BarChart2,
+  Target,
 } from "lucide-react";
+
 import ReactMarkdown from "react-markdown";
 
 const API_BASE = "/api";
-
-function getChipsForSymbol(symbol: string): string[] {
-  return [
-    `Analyze the recent price action on ${symbol}`,
-    `What are the key technical levels for ${symbol}?`,
-    `Generate a high-confidence options strategy for ${symbol}`,
-    `What's the sentiment and risk profile for ${symbol}?`,
-    `Identify potential catalysts for ${symbol} this week`,
-  ];
-}
 
 function MarkdownResult({ content }: { content: string }) {
   return (
@@ -45,18 +35,14 @@ export function AiIntelligenceTab() {
   const {
     symbol, accessToken,
     aiModel, aiTemp,
-    chatHistory, addChatMessage, clearChat,
     analysisResult, setAnalysisResult,
     strategistResult, setStrategistResult,
   } = useTerminalStore();
 
   const [customPrompt, setCustomPrompt] = useState("");
-  const [chatInput, setChatInput] = useState("");
   const [isStrategizing, setIsStrategizing] = useState(false);
-  const [isChatLoading, setIsChatLoading] = useState(false);
   const [activeResult, setActiveResult] = useState<"analysis" | "strategist" | null>(null);
   const [chainEnabled, setChainEnabled] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
 
   const { data: quote } = useGetQuote(
     { symbol, accessToken: accessToken || "" },
@@ -74,11 +60,6 @@ export function AiIntelligenceTab() {
 
   const taMutation = useRunTechnicalAnalysis();
 
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [chatHistory, activeResult]);
 
   const handleRunTA = () => {
     if (!quote || !history?.candles) return;
@@ -126,43 +107,6 @@ export function AiIntelligenceTab() {
     }
   };
 
-
-  const handleChipClick = (chip: string) => {
-    setChatInput(chip);
-  };
-
-  const handleSend = () => {
-    if (!chatInput.trim() || !accessToken) return;
-    const userMessage = chatInput.trim();
-    setChatInput("");
-    addChatMessage({ role: "user", content: userMessage });
-
-    const marketContext = quote
-      ? `CURRENT MARKET CONTEXT for ${symbol}:\nLast: $${quote.last}\nChange: ${quote.changePct}%\nVol: ${quote.volume}\nRange: ${quote.low}-${quote.high}`
-      : `No live market context available for ${symbol}.`;
-
-    setIsChatLoading(true);
-    fetch(`${API_BASE}/ai/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question: userMessage, marketContext, model: aiModel, temperature: aiTemp }),
-    })
-      .then(r => r.json())
-      .then((data: { response?: string }) => {
-        addChatMessage({ role: "assistant", content: data.response ?? "No response." });
-      })
-      .catch(err => {
-        addChatMessage({ role: "assistant", content: `**ERROR:** ${err.message}` });
-      })
-      .finally(() => setIsChatLoading(false));
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
 
   const isPendingAnalysis = taMutation.isPending;
   const isPendingAny = isPendingAnalysis || isStrategizing;
@@ -228,109 +172,6 @@ export function AiIntelligenceTab() {
         )}
       </div>
 
-      {/* ── AI CHAT ── */}
-      <div className="bg-card border border-card-border rounded-xl overflow-hidden flex flex-col min-h-[420px]">
-        {/* Chat header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-card-border bg-[#0D1117]">
-          <div className="flex items-center gap-2 text-primary font-mono font-bold text-xs">
-            <TerminalSquare className="w-4 h-4" />
-            AI TRADING ASSISTANT — {symbol}
-          </div>
-          <Button
-            variant="ghost" size="sm"
-            onClick={clearChat}
-            className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 font-mono text-[10px] h-7"
-          >
-            <Trash2 className="w-3 h-3 mr-1.5" /> CLEAR
-          </Button>
-        </div>
-
-        {/* Chat history */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
-          {chatHistory.length === 0 && (
-            <div className="py-8 flex flex-col items-center justify-center text-muted-foreground opacity-40 font-mono text-xs text-center">
-              <TerminalSquare className="w-8 h-8 mb-3" />
-              READY — ASK ANYTHING ABOUT {symbol}
-            </div>
-          )}
-          {chatHistory.map((msg, i) => (
-            <div key={i} className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}>
-              <div className={`flex items-center gap-1.5 mb-1 px-1 font-mono text-[9px] uppercase tracking-wider
-                ${msg.role === "user" ? "text-[#58A6FF]" : "text-primary"}`}>
-                {msg.role === "user" ? <User className="w-2.5 h-2.5" /> : <TerminalSquare className="w-2.5 h-2.5" />}
-                {msg.role === "user" ? "YOU" : "AI ANALYST"}
-              </div>
-              <div className={`max-w-[90%] rounded-xl p-3 shadow-sm
-                ${msg.role === "user"
-                  ? "bg-[#1F6FEB]/10 border border-[#1F6FEB]/30 text-gray-200"
-                  : "bg-primary/5 border border-primary/20 text-gray-300"}`}
-              >
-                <div className="prose prose-invert prose-sm max-w-none prose-p:leading-relaxed prose-pre:text-xs
-                  prose-code:text-primary prose-a:text-primary">
-                  <ReactMarkdown>{msg.content}</ReactMarkdown>
-                </div>
-              </div>
-            </div>
-          ))}
-          {/* Typing indicator */}
-          {isChatLoading && (
-            <div className="flex flex-col items-start">
-              <div className="flex items-center gap-1.5 mb-1 px-1 font-mono text-[9px] uppercase tracking-wider text-primary">
-                <TerminalSquare className="w-2.5 h-2.5" /> AI ANALYST
-              </div>
-              <div className="rounded-xl p-3 bg-primary/5 border border-primary/20 flex items-center gap-2">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
-                </span>
-                <span className="font-mono text-[10px] text-primary animate-pulse">PROCESSING...</span>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Prompt chips */}
-        <div className="px-4 pb-2 flex flex-wrap gap-1.5">
-          {getChipsForSymbol(symbol).map(chip => (
-            <button
-              key={chip}
-              onClick={() => handleChipClick(chip)}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary/10 border border-primary/20
-                text-primary font-mono text-[9px] hover:bg-primary/20 transition-colors"
-            >
-              <TrendingUp className="w-2.5 h-2.5" />
-              {chip}
-            </button>
-          ))}
-        </div>
-
-        {/* Chat input */}
-        <div className="p-4 border-t border-card-border bg-[#0D1117]">
-          <div className="relative">
-            <Textarea
-              value={chatInput}
-              onChange={e => setChatInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={`Ask about ${symbol} technicals, options, risk... (Enter to send)`}
-              className="min-h-[72px] pr-12 bg-background border-card-border font-mono text-xs resize-none focus-visible:ring-primary/50"
-            />
-            <Button
-              onClick={handleSend}
-              disabled={!chatInput.trim() || !accessToken}
-              size="icon"
-              className="absolute bottom-2 right-2 h-8 w-8 bg-primary hover:bg-primary/80 text-background rounded-full"
-            >
-              <Send className="w-3.5 h-3.5" />
-            </Button>
-          </div>
-          {!accessToken && (
-            <p className="text-[10px] text-destructive font-mono mt-1.5 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-destructive inline-block" />
-              Connect Schwab to enable AI Intelligence
-            </p>
-          )}
-        </div>
-      </div>
     </div>
   );
 }
