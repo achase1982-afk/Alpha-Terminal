@@ -95,11 +95,12 @@
     width: 100%;
     margin: 0;
     padding: 0;
+    touch-action: manipulation;
   }
 
   #root {
-    position: fixed;
-    inset: 0;
+    height: 100%;
+    width: 100%;
     overflow: hidden;
     padding-top: env(safe-area-inset-top);
     padding-bottom: env(safe-area-inset-bottom);
