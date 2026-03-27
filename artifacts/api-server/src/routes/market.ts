@@ -9,6 +9,19 @@ const router: IRouter = Router();
 
 const SCHWAB_API_BASE = "https://api.schwabapi.com/marketdata/v1";
 
+function stripNulls<T>(obj: T): T {
+  if (obj === null) return undefined as unknown as T;
+  if (Array.isArray(obj)) return obj.map(stripNulls) as unknown as T;
+  if (typeof obj === "object" && obj !== null) {
+    const result: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+      result[k] = v === null ? undefined : stripNulls(v);
+    }
+    return result as T;
+  }
+  return obj;
+}
+
 const INDEX_SYMBOL_MAP: Record<string, string> = {
   "VIX":   "$VIX",
   "$VIX":  "$VIX",
@@ -187,7 +200,7 @@ router.get("/quote", async (req, res) => {
       "Quote parsed"
     );
 
-    const data = GetQuoteResponse.parse({
+    const data = GetQuoteResponse.parse(stripNulls({
       symbol: displaySymbol,
       description,
       last,
@@ -198,11 +211,10 @@ router.get("/quote", async (req, res) => {
       volume: pickNum("totalVolume", "volume"),
       high:   pickNum("highPrice",  "dayHigh",  "regularMarketHigh"),
       low:    pickNum("lowPrice",   "dayLow",   "regularMarketLow"),
-      // Schwab uses both "52WeekHigh" and "highPrice52Week" depending on endpoint version
       fiftyTwoWeekHigh: pickNum("52WeekHigh", "highPrice52Week", "52WkHigh", "fiftyTwoWeekHigh"),
       fiftyTwoWeekLow:  pickNum("52WeekLow",  "lowPrice52Week",  "52WkLow",  "fiftyTwoWeekLow"),
       peRatio: (fundamental?.["peRatio"] as number) ?? undefined,
-    });
+    }));
 
     res.json(data);
   } catch (err) {
@@ -281,7 +293,7 @@ router.get("/history", async (req, res) => {
       volume: c["volume"] as number,
     }));
 
-    const data = GetPriceHistoryResponse.parse({ symbol: displaySymbol, candles });
+    const data = GetPriceHistoryResponse.parse(stripNulls({ symbol: displaySymbol, candles }));
     res.json(data);
   } catch (err) {
     req.log.error({ err }, "Price history fetch error");
@@ -367,7 +379,7 @@ router.get("/options", async (req, res) => {
     const calls = parseContracts(callMap);
     const puts = parseContracts(putMap);
 
-    const data = GetOptionChainResponse.parse({ symbol: displaySymbol, underlyingPrice, calls, puts });
+    const data = GetOptionChainResponse.parse(stripNulls({ symbol: displaySymbol, underlyingPrice, calls, puts }));
     res.json(data);
   } catch (err) {
     req.log.error({ err }, "Options chain fetch error");

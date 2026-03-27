@@ -15,6 +15,19 @@ import ReactMarkdown from "react-markdown";
 
 const API_BASE = "/api";
 
+function stripNulls(obj: unknown): unknown {
+  if (obj === null || obj === undefined) return undefined;
+  if (Array.isArray(obj)) return obj.map(stripNulls);
+  if (typeof obj === "object") {
+    const result: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+      if (v !== null && v !== undefined) result[k] = stripNulls(v);
+    }
+    return result;
+  }
+  return obj;
+}
+
 function MarkdownResult({ content }: { content: string }) {
   return (
     <div className="prose prose-invert prose-primary max-w-none font-sans text-gray-300
@@ -65,9 +78,14 @@ export function AiIntelligenceTab() {
     if (!quote || !history?.candles) return;
     setAnalysisResult(null);
     setActiveResult("analysis");
+    const cleanQuote = stripNulls(quote) as typeof quote;
+    const cleanCandles = (stripNulls(history.candles) ?? []) as typeof history.candles;
     taMutation.mutate(
-      { data: { quote, candles: history.candles, model: aiModel, temperature: aiTemp, customPrompt } },
-      { onSuccess: (data) => setAnalysisResult(data.response) }
+      { data: { quote: cleanQuote, candles: cleanCandles, model: aiModel, temperature: aiTemp, customPrompt } },
+      {
+        onSuccess: (data) => setAnalysisResult(data.response),
+        onError: (err) => setAnalysisResult(`**Analysis failed:** ${err instanceof Error ? err.message : String(err)}`),
+      }
     );
   };
 
@@ -90,16 +108,20 @@ export function AiIntelligenceTab() {
       const res = await fetch(`${API_BASE}/ai/options-strategist`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        body: JSON.stringify(stripNulls({
           quote,
           candles: history?.candles ?? [],
           chain: chainData,
           model: aiModel,
           temperature: aiTemp,
-        }),
+        })),
       });
-      const data = await res.json() as { response?: string };
-      setStrategistResult(data.response ?? "No response received.");
+      const data = await res.json() as { response?: string; error?: string };
+      if (!res.ok) {
+        setStrategistResult(`**Error:** ${data.error || data.response || `HTTP ${res.status}`}`);
+      } else {
+        setStrategistResult(data.response ?? "No response received.");
+      }
     } catch (err) {
       setStrategistResult(`**Error:** ${err instanceof Error ? err.message : String(err)}`);
     } finally {

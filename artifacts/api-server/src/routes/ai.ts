@@ -17,6 +17,19 @@ const AVAILABLE_MODELS = [
   "gemini-2.5-flash",
 ];
 
+function stripNulls<T>(obj: T): T {
+  if (obj === null) return undefined as unknown as T;
+  if (Array.isArray(obj)) return obj.map(stripNulls) as unknown as T;
+  if (typeof obj === "object" && obj !== null) {
+    const result: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+      result[k] = v === null ? undefined : stripNulls(v);
+    }
+    return result as T;
+  }
+  return obj;
+}
+
 function getClient(): GoogleGenerativeAI | null {
   const key = process.env.GEMINI_API_KEY;
   if (!key) return null;
@@ -130,7 +143,7 @@ router.get("/models", (_req, res) => {
 });
 
 router.post("/technical-analysis", async (req, res) => {
-  const parsed = RunTechnicalAnalysisBody.safeParse(req.body);
+  const parsed = RunTechnicalAnalysisBody.safeParse(stripNulls(req.body));
   if (!parsed.success) {
     return res.json(RunTechnicalAnalysisResponse.parse({ response: "Error: Invalid request body.", error: "validation_error" }));
   }
@@ -166,7 +179,7 @@ Be specific, data-driven, and concise. Use markdown formatting.`;
 });
 
 router.post("/options-analysis", async (req, res) => {
-  const parsed = RunOptionsAnalysisBody.safeParse(req.body);
+  const parsed = RunOptionsAnalysisBody.safeParse(stripNulls(req.body));
   if (!parsed.success) {
     return res.json(RunOptionsAnalysisResponse.parse({ response: "Error: Invalid request body.", error: "validation_error" }));
   }

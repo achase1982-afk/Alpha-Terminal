@@ -125,7 +125,12 @@ router.get("/callback", async (req, res) => {
 
     if (!response.ok) {
       req.log.error({ status: response.status, body: responseText }, "Native callback: token exchange failed");
-      return res.redirect(`${origin}/oauth-success?status=error&message=${encodeURIComponent("Token exchange failed. Please try again.")}`);
+      const failMsg = encodeURIComponent("Token exchange failed. Please try again.");
+      const failMobile = /Android|iPhone|iPad|iPod|webOS|Mobile/i.test(req.headers["user-agent"] || "");
+      if (failMobile) {
+        return res.redirect(`${origin}/?schwab=error&message=${failMsg}`);
+      }
+      return res.redirect(`${origin}/oauth-success?status=error&message=${failMsg}`);
     }
 
     req.log.info({ status: response.status }, "Native callback: token exchange succeeded");
@@ -146,10 +151,21 @@ router.get("/callback", async (req, res) => {
       createdAt: Date.now(),
     });
 
-    res.redirect(`${origin}/oauth-success?status=success&flowId=${flowId}`);
+    const isMobileUA = /Android|iPhone|iPad|iPod|webOS|Mobile/i.test(req.headers["user-agent"] || "");
+    if (isMobileUA) {
+      res.redirect(`${origin}/?schwab=connected&flowId=${flowId}`);
+    } else {
+      res.redirect(`${origin}/oauth-success?status=success&flowId=${flowId}`);
+    }
   } catch (err) {
     req.log.error({ err }, "Native callback: network error");
-    res.redirect(`${origin}/oauth-success?status=error&message=${encodeURIComponent("Network error reaching Schwab API.")}`);
+    const errMobile = /Android|iPhone|iPad|iPod|webOS|Mobile/i.test(req.headers["user-agent"] || "");
+    const errMsg = encodeURIComponent("Network error reaching Schwab API.");
+    if (errMobile) {
+      res.redirect(`${origin}/?schwab=error&message=${errMsg}`);
+    } else {
+      res.redirect(`${origin}/oauth-success?status=error&message=${errMsg}`);
+    }
   }
 });
 

@@ -5,6 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ChevronRight, KeyRound, ExternalLink, RefreshCw, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 
+function isMobile(): boolean {
+  return /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+    || (navigator.maxTouchPoints > 0 && window.innerWidth < 768);
+}
+
 export function AuthPanel() {
   const { accessToken, setTokens, clearTokens } = useTerminalStore();
   const [redirectUrl, setRedirectUrl] = useState("");
@@ -39,6 +44,37 @@ export function AuthPanel() {
       })
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const status = params.get("schwab");
+    const flowId = params.get("flowId") || params.get("session");
+
+    if (status === "connected" && flowId) {
+      setConnecting(true);
+      fetch(`/api/auth/flow-tokens/${flowId}`, {
+        headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" },
+      })
+        .then(r => {
+          if (!r.ok) throw new Error("Session expired");
+          return r.json();
+        })
+        .then(data => {
+          if (data.accessToken && data.refreshToken) {
+            setTokens(data.accessToken, data.refreshToken);
+            setIsOpen(false);
+          }
+        })
+        .catch(() => setErrorMsg("Session expired. Please try connecting again."))
+        .finally(() => setConnecting(false));
+
+      window.history.replaceState({}, "", window.location.pathname);
+    } else if (status === "error") {
+      const msg = params.get("message");
+      if (msg) setErrorMsg(msg);
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, [setTokens]);
 
   const stopPolling = useCallback(() => {
     if (pollRef.current) {
@@ -84,7 +120,7 @@ export function AuthPanel() {
     return () => stopPolling();
   }, [stopPolling]);
 
-  const handlePopupConnect = async () => {
+  const handleConnect = async () => {
     if (!authUrlData?.configured) return;
     setErrorMsg("");
     setConnecting(true);
@@ -108,6 +144,11 @@ export function AuthPanel() {
         return;
       }
 
+      if (isMobile()) {
+        window.location.href = urlData.url;
+        return;
+      }
+
       const w = 600;
       const h = 700;
       const left = window.screenX + (window.outerWidth - w) / 2;
@@ -117,6 +158,11 @@ export function AuthPanel() {
         "schwab_login",
         `width=${w},height=${h},left=${left},top=${top},menubar=no,toolbar=no,status=no`
       );
+
+      if (!popupRef.current || popupRef.current.closed) {
+        window.location.href = urlData.url;
+        return;
+      }
 
       let pollCount = 0;
       pollRef.current = setInterval(async () => {
@@ -239,7 +285,7 @@ export function AuthPanel() {
           ) : isNativeCallback ? (
             <div className="space-y-3">
               <p className="text-[10px] text-muted-foreground font-mono leading-relaxed bg-card p-2 rounded border border-card-border">
-                Click below to securely log in with your Schwab account. A popup will open — once you authorize, the connection happens automatically.
+                Click below to securely log in with your Schwab account. {isMobile() ? "You'll be redirected back after authorizing." : "A popup will open — once you authorize, the connection happens automatically."}
               </p>
               {errorMsg && (
                 <div className="flex items-start gap-2 text-destructive bg-destructive/10 p-3 rounded-md border border-destructive/20">
@@ -248,7 +294,7 @@ export function AuthPanel() {
                 </div>
               )}
               <Button
-                onClick={handlePopupConnect}
+                onClick={handleConnect}
                 disabled={authLoading || !authUrlData?.configured || connecting}
                 className="w-full font-mono bg-primary/10 text-primary border border-primary/50 hover:bg-primary/20 text-xs gap-2"
               >
@@ -262,7 +308,7 @@ export function AuthPanel() {
                   <>CONNECT TO SCHWAB <ExternalLink className="w-3.5 h-3.5" /></>
                 )}
               </Button>
-              {connecting && (
+              {connecting && !isMobile() && (
                 <p className="text-[10px] text-muted-foreground font-mono text-center">
                   Complete login in the popup window...
                 </p>
