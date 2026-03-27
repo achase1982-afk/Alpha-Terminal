@@ -9,13 +9,25 @@ export function AuthPanel() {
   const [isOpen, setIsOpen] = useState(false);
   const [waitingForCallback, setWaitingForCallback] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const { data: authUrlData } = useGetAuthUrl();
+  const needsAuth = !accessToken && isOpen;
+
+  const { data: authUrlData, refetch: refetchAuthUrl, isFetching: isUrlFetching } = useGetAuthUrl({
+    query: { enabled: needsAuth },
+  });
+
+  const authUrl = authUrlData?.url || "";
+  const canLogin = !!authUrl && !isUrlFetching;
 
   const stopPolling = useCallback(() => {
     if (pollRef.current) {
       clearInterval(pollRef.current);
       pollRef.current = null;
+    }
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
     }
     setWaitingForCallback(false);
   }, []);
@@ -38,11 +50,30 @@ export function AuthPanel() {
     };
 
     pollRef.current = setInterval(poll, 2000);
-    setTimeout(() => { if (pollRef.current) stopPolling(); }, 5 * 60 * 1000);
+    timeoutRef.current = setTimeout(() => stopPolling(), 5 * 60 * 1000);
   }, [setTokens, stopPolling]);
 
-  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
-  useEffect(() => { if (accessToken) stopPolling(); }, [accessToken, stopPolling]);
+  const handleLoginClick = useCallback(async () => {
+    let url = authUrl;
+    if (!url) {
+      const result = await refetchAuthUrl();
+      url = result.data?.url || "";
+    }
+    if (!url) return;
+    window.open(url, "_blank", "noopener,noreferrer");
+    startPolling();
+  }, [authUrl, refetchAuthUrl, startPolling]);
+
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (accessToken) stopPolling();
+  }, [accessToken, stopPolling]);
 
   return (
     <div className="bg-card border border-card-border rounded-xl overflow-hidden shadow-sm">
@@ -101,10 +132,16 @@ export function AuthPanel() {
                       <p>Complete the sign-in on the Schwab page. Once done, this will update automatically.</p>
                     </div>
                   </div>
-                  <Button asChild className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-mono text-xs h-10">
-                    <a href={authUrlData?.url || "#"} target="_blank" rel="noreferrer" onClick={startPolling}>
-                      RETRY SCHWAB LOGIN <ExternalLink className="ml-2 w-3.5 h-3.5" />
-                    </a>
+                  <Button
+                    onClick={handleLoginClick}
+                    disabled={isUrlFetching}
+                    className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-mono text-xs h-10"
+                  >
+                    {isUrlFetching ? (
+                      <><Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />LOADING...</>
+                    ) : (
+                      <>RETRY SCHWAB LOGIN <ExternalLink className="ml-2 w-3.5 h-3.5" /></>
+                    )}
                   </Button>
                   <button onClick={stopPolling} className="text-[9px] text-muted-foreground/50 font-mono hover:text-muted-foreground transition-colors w-full text-center">
                     CANCEL
@@ -118,10 +155,16 @@ export function AuthPanel() {
                       Sign in with your Schwab brokerage account. A new page will open — after you sign in, this screen will update automatically.
                     </p>
                   </div>
-                  <Button asChild className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-mono text-xs h-10">
-                    <a href={authUrlData?.url || "#"} target="_blank" rel="noreferrer" onClick={startPolling}>
-                      SIGN IN WITH SCHWAB <ExternalLink className="ml-2 w-3.5 h-3.5" />
-                    </a>
+                  <Button
+                    onClick={handleLoginClick}
+                    disabled={isUrlFetching}
+                    className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-mono text-xs h-10"
+                  >
+                    {isUrlFetching ? (
+                      <><Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />LOADING...</>
+                    ) : (
+                      <>SIGN IN WITH SCHWAB <ExternalLink className="ml-2 w-3.5 h-3.5" /></>
+                    )}
                   </Button>
                 </>
               )}

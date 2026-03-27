@@ -9,7 +9,7 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 Key features implemented:
 - **MacroBar**: Fixed sticky bar with clickable SPY/QQQ/IWM/VIX cards; clicking sets active symbol
 - **Sidebar**: Compact pill overlays, clean timeframe grid, Schwab auth panel
-- **Schwab OAuth**: Auto-redirect flow — callback URL points to `/api/auth/callback` (GET handler exchanges code, stores tokens in localStorage via inline HTML, redirects to `/`); CSRF protection via `state` param; manual URL paste fallback hidden under "ADVANCED" toggle; `SCHWAB_REDIRECT_URI` must match what's registered on Schwab Developer Portal
+- **Schwab OAuth**: Popup+polling flow — `AuthPanel` button calls `window.open(authUrl)` (no anchor tags); GET `/api/auth/callback` exchanges code, stores tokens server-side in `pendingTokens` Map, returns success HTML page; frontend polls `GET /api/auth/pending-session` every 2s until tokens arrive; auth URL only fetched when panel is open and user is disconnected; CSRF via `state` param; `SCHWAB_REDIRECT_URI` must match Schwab Developer Portal
 - **Tabs**: CHART | OPTIONS | AI INTELLIGENCE | SCAN
 - **AI Intelligence Tab**: Deep Analysis (TA + Options Strategist) — chat removed, lives in overlay now
 - **AI Chat Overlay**: Full-screen iMessage-style chat accessible from sidebar "AI CHAT ASSISTANT" button; AbortController lifecycle; sticky bottom input with safe-area-inset
