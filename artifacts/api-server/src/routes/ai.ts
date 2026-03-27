@@ -605,13 +605,21 @@ router.post("/chat", async (req, res) => {
 
     const google = createGoogleGenerativeAI({ apiKey });
 
-    const systemPrompt = `You are a savage, highly precise financial AI. Never give generic textbook answers. If a tool fails, tell the user exactly what data feed broke. Speak like a Wall Street analyst.
+    const systemPrompt = `You are a direct-answer search engine optimized for stocks and finance. Answer any question the user asks. Prioritize stocks, markets, economics, and company data, but answer non-financial questions too.
 
-${marketContext ? `CURRENT MARKET CONTEXT:\n${marketContext}` : "No market data currently loaded."}`;
+Rules:
+- Facts and data only. No opinions, no speculation, no filler.
+- Numbers first. Lead with the data point, then one line of context if needed.
+- No greetings, no sign-offs, no "sure" or "great question."
+- Use bullet points or short lines. Never write paragraphs.
+- If you don't have real-time data, say so in one line and give the last known figure.
+
+${marketContext ? `LIVE DATA:\n${marketContext}` : ""}`;
 
     const result = streamText({
       model: google("gemini-2.5-flash"),
       system: systemPrompt,
+      temperature: 0,
       messages: messages.map(m => ({
         role: m.role as "user" | "assistant",
         content: m.content,

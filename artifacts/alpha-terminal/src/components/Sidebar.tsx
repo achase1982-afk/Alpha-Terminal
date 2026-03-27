@@ -156,7 +156,7 @@ export function Sidebar({ onClose, onOpenChat }: SidebarProps) {
             className="w-full font-mono text-xs h-9 bg-[#1C2333] text-foreground border border-card-border hover:bg-primary/15 hover:border-primary/40 hover:text-primary transition-all tracking-wider mt-2"
           >
             <MessageCircle className="w-3.5 h-3.5 mr-2 shrink-0" />
-            AI CHAT ASSISTANT
+            AI SEARCH
           </Button>
         </div>
 
