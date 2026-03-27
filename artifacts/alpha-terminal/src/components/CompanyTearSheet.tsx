@@ -142,7 +142,7 @@ export function CompanyTearSheet({ isOpen, onClose }: CompanyTearSheetProps) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col" style={{ background: "#0A0F16" }}>
+    <div className="fixed inset-0 z-[100] flex flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]" style={{ background: "#0A0F16" }}>
       <div className="flex items-center justify-between px-4 h-12 border-b border-card-border bg-[#0D1117] shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           <Building2 className="w-4 h-4 text-primary shrink-0" />
