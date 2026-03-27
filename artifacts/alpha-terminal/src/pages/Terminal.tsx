@@ -165,29 +165,26 @@ export default function TerminalPage() {
                 </TabsList>
               </div>
 
-              {/* Chart tab — fixed responsive height so it fills well on any screen */}
-              <div className="h-[420px] sm:h-[500px] md:h-[580px] lg:h-[calc(100dvh-300px)]">
-                <TabsContent value="chart" className="h-full m-0 focus-visible:outline-none data-[state=active]:flex flex-col">
-                  <ChartControls />
-                  <TradingChart
-                    data={historyData?.candles || []}
-                    isLoading={historyLoading}
-                    error={historyData?.error}
-                    timedOut={historyTimedOut}
-                    tokenExpired={historyData?.error === "unauthorized"}
-                    intraday={isIntradayInterval(chartInterval)}
-                  />
-                </TabsContent>
-                <TabsContent value="options" className="h-full m-0 overflow-auto focus-visible:outline-none">
-                  <OptionsTab />
-                </TabsContent>
-                <TabsContent value="ai" className="h-full m-0 overflow-auto focus-visible:outline-none">
-                  <AiIntelligenceTab />
-                </TabsContent>
-                <TabsContent value="scanner" className="h-full m-0 overflow-auto focus-visible:outline-none">
-                  <MarketScanner />
-                </TabsContent>
-              </div>
+              <TabsContent value="chart" className="h-[420px] sm:h-[500px] md:h-[580px] lg:h-[calc(100dvh-300px)] m-0 focus-visible:outline-none data-[state=active]:flex flex-col">
+                <ChartControls />
+                <TradingChart
+                  data={historyData?.candles || []}
+                  isLoading={historyLoading}
+                  error={historyData?.error}
+                  timedOut={historyTimedOut}
+                  tokenExpired={historyData?.error === "unauthorized"}
+                  intraday={isIntradayInterval(chartInterval)}
+                />
+              </TabsContent>
+              <TabsContent value="options" className="m-0 focus-visible:outline-none">
+                <OptionsTab />
+              </TabsContent>
+              <TabsContent value="ai" className="m-0 focus-visible:outline-none">
+                <AiIntelligenceTab />
+              </TabsContent>
+              <TabsContent value="scanner" className="m-0 focus-visible:outline-none">
+                <MarketScanner />
+              </TabsContent>
             </Tabs>
           </div>
         </div>
