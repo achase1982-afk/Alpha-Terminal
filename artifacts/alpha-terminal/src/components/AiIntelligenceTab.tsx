@@ -91,16 +91,21 @@ export function AiIntelligenceTab() {
   };
 
   const handleRunStrategist = async () => {
-    if (!quote) return;
+    if (!quote || !accessToken) return;
     setStrategistResult(null);
     setActiveResult("strategist");
     setChainEnabled(true);
-
-    // Wait for chain if not loaded
-    const chainData = chain ?? null;
-
     setIsStrategizing(true);
+
     try {
+      let chainData = chain ?? null;
+      if (!chainData) {
+        const chainRes = await fetch(
+          `${API_BASE}/market/options?symbol=${encodeURIComponent(symbol)}&accessToken=${encodeURIComponent(accessToken)}&contractType=ALL&daysToExpiration=30`
+        );
+        chainData = await chainRes.json();
+      }
+
       const res = await fetch(`${API_BASE}/ai/options-strategist`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
