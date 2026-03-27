@@ -793,13 +793,12 @@ router.post("/sympathy-plays", async (req, res) => {
     return res.status(400).json({ error: "symbol is required" });
   }
 
-  const prompt = `List 3-5 highly correlated sympathy stocks and main competitors for ${symbol.toUpperCase()}. For each, provide the ticker and a 1-sentence reason why it moves with or competes against ${symbol.toUpperCase()}.
+  const prompt = `Provide a dense, highly professional fundamental briefing for ${symbol.toUpperCase()}. Format with 3 short bullet points:
+1) Core Business Model.
+2) Current Bull/Bear Narrative.
+3) Top 3 Competitors/Sympathy Plays.
 
-Format your response as a markdown list like:
-- **TICKER** — Reason why
-- **TICKER** — Reason why
-
-Be concise and institutional-grade. Focus on actual market correlations, sector peers, and supply-chain links.`;
+Use markdown bullet points. Be concise and institutional-grade.`;
 
   try {
     const response = await callGemini(prompt, model, temperature);
