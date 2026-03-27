@@ -13,7 +13,11 @@ export function AuthPanel() {
   const [registeredRedirectUri, setRegisteredRedirectUri] = useState("https://127.0.0.1/");
 
   const { data: authUrlData } = useGetAuthUrl();
-  const exchangeMutation = useExchangeCode();
+  const exchangeMutation = useExchangeCode({
+    request: {
+      headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" },
+    },
+  });
 
   // Fetch the exact redirect URI registered with Schwab from the backend
   useEffect(() => {
