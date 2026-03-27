@@ -142,21 +142,10 @@ router.get("/callback", async (req, res) => {
       ts: Date.now(),
     });
 
-    req.log.info("GET /callback — token exchange succeeded, tokens stored server-side");
+    req.log.info("GET /callback — token exchange succeeded, redirecting back to app");
 
-    res.send(`
-      <!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-      <body style="background:#0A0F16;color:#fff;font-family:-apple-system,system-ui,sans-serif;padding:40px 20px;text-align:center">
-        <div style="margin:0 auto;max-width:360px">
-          <div style="width:60px;height:60px;border-radius:50%;background:#0090FF22;margin:0 auto 16px;display:flex;align-items:center;justify-content:center">
-            <svg width="28" height="28" fill="none" stroke="#0090FF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>
-          </div>
-          <h2 style="color:#0090FF;font-size:20px;margin:0 0 8px">Connected to Schwab!</h2>
-          <p style="color:#ccc;font-size:14px;line-height:1.5;margin:0 0 24px">Your session is ready. Close this tab and return to the Alpha Terminal app.</p>
-          <p style="color:#666;font-size:12px">The app will pick up your session automatically.</p>
-        </div>
-      </body></html>
-    `);
+    const frontendOrigin = `https://${process.env.REPLIT_DEV_DOMAIN || req.get("host") || "localhost"}`;
+    res.redirect(`${frontendOrigin}/?schwab=connected`);
   } catch (err) {
     req.log.error({ err }, "GET /callback network error");
     res.status(500).send(errorPage("Connection Error", "Could not reach Schwab API. Please try again."));
