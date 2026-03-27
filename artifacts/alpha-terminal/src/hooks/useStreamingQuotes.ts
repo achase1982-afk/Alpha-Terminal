@@ -133,6 +133,24 @@ export function useStreamingQuotes() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol, tickerTapeSymbols.join(","), macroSymbols.join(",")]);
 
+  // ── Visibility change: pause SSE when tab is hidden, resume when visible ──
+  useEffect(() => {
+    function handleVisibility() {
+      if (!accessToken) return;
+      if (document.hidden) {
+        esRef.current?.close();
+        esRef.current = null;
+        setStreamConnected(false);
+      } else if (!esRef.current) {
+        openEventSource();
+        void startServerStream(accessToken);
+      }
+    }
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accessToken]);
+
   // ── Cleanup on unmount ────────────────────────────────────────────────────
   useEffect(() => {
     return () => {

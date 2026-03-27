@@ -40,7 +40,10 @@ export function TradingChart({ data, isLoading, error, timedOut, tokenExpired, i
   useEffect(() => {
     if (!chartContainerRef.current || !data || data.length === 0) return;
 
-    const chart = createChart(chartContainerRef.current, {
+    const container = chartContainerRef.current;
+    let removed = false;
+
+    const chart = createChart(container, {
       layout: {
         background: { type: ColorType.Solid, color: 'transparent' },
         textColor: '#8B949E',
@@ -141,9 +144,12 @@ export function TradingChart({ data, isLoading, error, timedOut, tokenExpired, i
     }
 
     chart.timeScale().fitContent();
+    chartRef.current = chart;
 
     return () => {
-      chart.remove();
+      removed = true;
+      chartRef.current = null;
+      try { chart.remove(); } catch { /* already disposed */ }
     };
   }, [data, overlays, intraday]);
 

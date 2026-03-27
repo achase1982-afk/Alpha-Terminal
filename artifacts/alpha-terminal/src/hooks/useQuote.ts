@@ -77,7 +77,6 @@ export function useQuote(symbol: string) {
         refetchInterval: (query) => {
           const err = query.state.data?.error;
           if (err === "rate_limited") return 3_000;
-          // Stop retrying on permanent errors — symbol doesn't exist or API can't serve it
           if (
             err === "no_data" ||
             err === "internal_error" ||
@@ -86,6 +85,7 @@ export function useQuote(symbol: string) {
           ) return false;
           return 1_000;
         },
+        refetchIntervalInBackground: false,
         staleTime:       500,
       },
     }
