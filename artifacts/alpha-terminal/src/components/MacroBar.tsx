@@ -101,7 +101,7 @@ function MacroCard({ symbol }: { symbol: string }) {
 export function MacroBar() {
   const { macroSymbols } = useTerminalStore();
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-2 px-3 py-2 border-b border-card-border bg-[#0D1117]/90 shrink-0">
+    <div className="grid grid-cols-4 gap-1.5 px-2 py-2 border-b border-card-border bg-[#0D1117]/90 shrink-0">
       {macroSymbols.slice(0, 4).map(sym => (
         <MacroCard key={sym} symbol={sym} />
       ))}
