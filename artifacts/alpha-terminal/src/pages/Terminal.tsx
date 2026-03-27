@@ -108,75 +108,79 @@ export default function TerminalPage() {
           <TickerTape />
         </div>
 
-        {/* ─── Macro Cards ─── */}
-        <MacroBar />
+        {/* ─── Scrollable content: everything below the sticky strip ─── */}
+        <div className="flex-1 overflow-auto z-10">
+          {/* ─── Macro Cards ─── */}
+          <MacroBar />
 
-        {/* ─── Metrics row ─── */}
-        <MetricsBar />
+          {/* ─── Metrics row ─── */}
+          <MetricsBar />
 
-        {/* ─── Prominent search bar ─── */}
-        <TickerSearch />
+          {/* ─── Prominent search bar ─── */}
+          <TickerSearch />
 
-        <div className="flex-1 overflow-auto p-3 sm:p-4 lg:p-5 z-10">
-          <Tabs defaultValue="chart" className="flex flex-col h-full">
-            <div className="overflow-x-auto shrink-0 mb-4">
-              <TabsList className="bg-card border border-card-border p-1 inline-flex min-w-max">
-                <TabsTrigger
-                  value="chart"
-                  className="font-mono text-[10px] sm:text-xs uppercase data-[state=active]:bg-primary/20 data-[state=active]:text-primary gap-1.5 px-3"
-                >
-                  <LineChart className="w-3.5 h-3.5 shrink-0" />
-                  CHART
-                </TabsTrigger>
-                <TabsTrigger
-                  value="options"
-                  className="font-mono text-[10px] sm:text-xs uppercase data-[state=active]:bg-primary/20 data-[state=active]:text-primary gap-1.5 px-3"
-                >
-                  <BarChart2 className="w-3.5 h-3.5 shrink-0" />
-                  OPTIONS
-                </TabsTrigger>
-                <TabsTrigger
-                  value="ai"
-                  className="font-mono text-[10px] sm:text-xs uppercase data-[state=active]:bg-primary/20 data-[state=active]:text-primary gap-1.5 px-3"
-                >
-                  <BrainCircuit className="w-3.5 h-3.5 shrink-0" />
-                  <span className="hidden sm:inline">AI INTELLIGENCE</span>
-                  <span className="sm:hidden">AI</span>
-                </TabsTrigger>
-                <TabsTrigger
-                  value="scanner"
-                  className="font-mono text-[10px] sm:text-xs uppercase data-[state=active]:bg-primary/20 data-[state=active]:text-primary gap-1.5 px-3"
-                >
-                  <Radar className="w-3.5 h-3.5 shrink-0" />
-                  <span className="hidden sm:inline">MARKET SCANNER</span>
-                  <span className="sm:hidden">SCAN</span>
-                </TabsTrigger>
-              </TabsList>
-            </div>
+          <div className="p-3 sm:p-4 lg:p-5">
+            <Tabs defaultValue="chart" className="flex flex-col">
+              <div className="overflow-x-auto shrink-0 mb-4">
+                <TabsList className="bg-card border border-card-border p-1 inline-flex min-w-max">
+                  <TabsTrigger
+                    value="chart"
+                    className="font-mono text-[10px] sm:text-xs uppercase data-[state=active]:bg-primary/20 data-[state=active]:text-primary gap-1.5 px-3"
+                  >
+                    <LineChart className="w-3.5 h-3.5 shrink-0" />
+                    CHART
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="options"
+                    className="font-mono text-[10px] sm:text-xs uppercase data-[state=active]:bg-primary/20 data-[state=active]:text-primary gap-1.5 px-3"
+                  >
+                    <BarChart2 className="w-3.5 h-3.5 shrink-0" />
+                    OPTIONS
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="ai"
+                    className="font-mono text-[10px] sm:text-xs uppercase data-[state=active]:bg-primary/20 data-[state=active]:text-primary gap-1.5 px-3"
+                  >
+                    <BrainCircuit className="w-3.5 h-3.5 shrink-0" />
+                    <span className="hidden sm:inline">AI INTELLIGENCE</span>
+                    <span className="sm:hidden">AI</span>
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="scanner"
+                    className="font-mono text-[10px] sm:text-xs uppercase data-[state=active]:bg-primary/20 data-[state=active]:text-primary gap-1.5 px-3"
+                  >
+                    <Radar className="w-3.5 h-3.5 shrink-0" />
+                    <span className="hidden sm:inline">MARKET SCANNER</span>
+                    <span className="sm:hidden">SCAN</span>
+                  </TabsTrigger>
+                </TabsList>
+              </div>
 
-            <div className="flex-1 min-h-0">
-              <TabsContent value="chart" className="h-full m-0 focus-visible:outline-none data-[state=active]:flex flex-col">
-                <ChartControls />
-                <TradingChart
-                  data={historyData?.candles || []}
-                  isLoading={historyLoading}
-                  error={historyData?.error}
-                  timedOut={historyTimedOut}
-                  tokenExpired={historyData?.error === "unauthorized"}
-                  intraday={isIntradayInterval(chartInterval)}
-                />
-              </TabsContent>
-              <TabsContent value="options" className="h-full m-0 overflow-auto focus-visible:outline-none">
-                <OptionsTab />
-              </TabsContent>
-              <TabsContent value="ai" className="h-full m-0 overflow-auto focus-visible:outline-none">
-                <AiIntelligenceTab />
-              </TabsContent>
-              <TabsContent value="scanner" className="h-full m-0 overflow-auto focus-visible:outline-none">
-                <MarketScanner />
-              </TabsContent>
-            </div>
-          </Tabs>
+              {/* Chart tab — fixed responsive height so it fills well on any screen */}
+              <div className="h-[420px] sm:h-[500px] md:h-[580px] lg:h-[calc(100dvh-300px)]">
+                <TabsContent value="chart" className="h-full m-0 focus-visible:outline-none data-[state=active]:flex flex-col">
+                  <ChartControls />
+                  <TradingChart
+                    data={historyData?.candles || []}
+                    isLoading={historyLoading}
+                    error={historyData?.error}
+                    timedOut={historyTimedOut}
+                    tokenExpired={historyData?.error === "unauthorized"}
+                    intraday={isIntradayInterval(chartInterval)}
+                  />
+                </TabsContent>
+                <TabsContent value="options" className="h-full m-0 overflow-auto focus-visible:outline-none">
+                  <OptionsTab />
+                </TabsContent>
+                <TabsContent value="ai" className="h-full m-0 overflow-auto focus-visible:outline-none">
+                  <AiIntelligenceTab />
+                </TabsContent>
+                <TabsContent value="scanner" className="h-full m-0 overflow-auto focus-visible:outline-none">
+                  <MarketScanner />
+                </TabsContent>
+              </div>
+            </Tabs>
+          </div>
         </div>
       </main>
     </div>
