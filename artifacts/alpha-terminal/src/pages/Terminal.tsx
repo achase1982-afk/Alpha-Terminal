@@ -93,7 +93,7 @@ export default function TerminalPage() {
         </div>
 
         {/* ─── Fixed header: pinned to top, never moves ─── */}
-        <div className="fixed top-0 left-0 right-0 lg:left-72 xl:left-80 z-50 bg-background">
+        <div className="fixed top-0 left-0 right-0 lg:left-72 xl:left-80 z-[9999] bg-background">
           {/* Mobile top bar */}
           <div className="flex items-center lg:hidden h-12 px-4 border-b border-card-border bg-card">
             <button
