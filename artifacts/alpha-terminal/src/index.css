@@ -83,31 +83,57 @@
     @apply border-border;
   }
 
+  :root {
+    --vvh: 100%;
+    --vvw: 100%;
+    --vv-top: 0px;
+    --vv-left: 0px;
+  }
+
   html, body {
-    position: fixed;
-    top: 0;
-    left: 0;
     width: 100%;
     height: 100%;
+    margin: 0;
     overflow: hidden;
     overscroll-behavior: none;
-    margin: 0;
-    padding: 0;
   }
 
   body {
     @apply bg-background text-foreground;
+    position: fixed;
+    inset: 0;
     font-size: 14px;
     line-height: 1.5;
     letter-spacing: -0.01em;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    touch-action: manipulation;
   }
 
   #root {
+    position: relative;
+    width: 100%;
+    height: 100%;
+  }
+
+  .app-shell {
     position: fixed;
-    inset: 0;
+    top: 0;
+    left: 0;
+    width: var(--vvw);
+    height: var(--vvh);
+    transform: translate3d(var(--vv-left), var(--vv-top), 0);
     overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .app-content {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
   }
 
   input, textarea, select {

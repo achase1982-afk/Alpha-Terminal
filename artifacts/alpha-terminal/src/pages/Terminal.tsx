@@ -14,6 +14,7 @@ import { useGetPriceHistory } from "@workspace/api-client-react";
 import { ChartControls, chartParamsFromStore, isIntradayInterval } from "@/components/ChartControls";
 import { useAutoRefreshToken } from "@/hooks/useAutoRefreshToken";
 import { useStreamingQuotes } from "@/hooks/useStreamingQuotes";
+import { useViewportShell } from "@/hooks/useViewportShell";
 import { AiChatOverlay } from "@/components/AiChatOverlay";
 import { CompanyTearSheet } from "@/components/CompanyTearSheet";
 import { LineChart, BarChart2, BrainCircuit, Menu, Radar, Wifi, WifiOff } from "lucide-react";
@@ -27,6 +28,7 @@ export default function TerminalPage() {
   const [isScrolled, setIsScrolled] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { refresh } = useAutoRefreshToken();
+  useViewportShell();
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -66,9 +68,9 @@ export default function TerminalPage() {
   }, [symbol, accessToken]);
 
   return (
-    <div className="flex h-full w-full bg-background overflow-hidden selection:bg-primary/30 selection:text-white">
+    <div className="app-shell bg-background selection:bg-primary/30 selection:text-white">
+      <div className="flex flex-row flex-1 min-h-0 w-full">
 
-      {/* Mobile overlay backdrop */}
       {sidebarOpen && (
         <div
           className="fixed inset-0 bg-black/60 z-30 lg:hidden"
@@ -76,17 +78,15 @@ export default function TerminalPage() {
         />
       )}
 
-      {/* Sidebar */}
       <div className={`
-        fixed lg:static top-0 left-0 h-full z-40
+        fixed lg:relative top-0 left-0 h-full z-40 shrink-0
         transition-transform duration-300 ease-in-out
         ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
       `}>
         <Sidebar onClose={() => setSidebarOpen(false)} onOpenChat={() => setChatOpen(true)} />
       </div>
 
-      {/* Main content */}
-      <main className="flex-1 flex flex-col h-full bg-background relative min-w-0" style={{ overflow: "clip" }}>
+      <main className="flex-1 flex flex-col min-h-0 bg-background relative min-w-0" style={{ overflow: "clip" }}>
         {/* Ambient glow — clipped inside its own overflow-hidden layer */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-primary/5 blur-[120px] rounded-full" />
@@ -121,8 +121,7 @@ export default function TerminalPage() {
           <TickerTape />
         </div>
 
-        {/* ─── Scrollable content: everything below the sticky strip ─── */}
-        <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-auto z-10">
+        <div ref={scrollRef} onScroll={handleScroll} className="app-content z-10">
           {/* ─── Macro Cards ─── */}
           <MacroBar />
 
@@ -132,7 +131,7 @@ export default function TerminalPage() {
           {/* ─── Prominent search bar ─── */}
           <TickerSearch />
 
-          <div className="p-3 sm:p-4 lg:p-5" style={{ minHeight: "calc(100dvh - 80px)" }}>
+          <div className="p-3 sm:p-4 lg:p-5" style={{ minHeight: "calc(var(--vvh, 100%) - 80px)" }}>
             <Tabs defaultValue="chart" className="flex flex-col">
               <div className="overflow-x-auto shrink-0 mb-4 sticky top-[36px] z-30 bg-background py-1 -mx-3 px-3 sm:-mx-4 sm:px-4 lg:-mx-5 lg:px-5">
                 <TabsList className="bg-card border border-card-border p-1 inline-flex min-w-max">
@@ -169,7 +168,7 @@ export default function TerminalPage() {
                 </TabsList>
               </div>
 
-              <TabsContent value="chart" className="h-[420px] sm:h-[500px] md:h-[580px] lg:h-[calc(100dvh-300px)] m-0 focus-visible:outline-none data-[state=active]:flex flex-col">
+              <TabsContent value="chart" className="h-[420px] sm:h-[500px] md:h-[580px] lg:h-[calc(var(--vvh,100vh)-300px)] m-0 focus-visible:outline-none data-[state=active]:flex flex-col">
                 <ChartControls />
                 <TradingChart
                   data={historyData?.candles || []}
@@ -193,6 +192,7 @@ export default function TerminalPage() {
           </div>
         </div>
       </main>
+      </div>
 
       <AiChatOverlay isOpen={chatOpen} onClose={() => setChatOpen(false)} />
       <CompanyTearSheet isOpen={tearSheetOpen} onClose={() => setTearSheetOpen(false)} />
