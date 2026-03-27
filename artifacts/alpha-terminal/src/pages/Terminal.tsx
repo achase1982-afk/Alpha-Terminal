@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Sidebar } from "@/components/Sidebar";
 import { MetricsBar } from "@/components/MetricsBar";
 import { TradingChart } from "@/components/TradingChart";
@@ -20,7 +20,16 @@ export default function TerminalPage() {
   const { symbol, accessToken, chartPeriod, chartInterval, streamConnected } = useTerminalStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [historyTimedOut, setHistoryTimedOut] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const { refresh } = useAutoRefreshToken();
+
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const y = el.scrollTop;
+    setIsScrolled(prev => (prev ? y > 30 : y > 60));
+  }, []);
 
   // ── Start and maintain the Schwab WebSocket stream ──────────────────────
   useStreamingQuotes();
@@ -109,12 +118,12 @@ export default function TerminalPage() {
         </div>
 
         {/* ─── Scrollable content: everything below the sticky strip ─── */}
-        <div className="flex-1 overflow-auto z-10">
+        <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-auto z-10">
           {/* ─── Macro Cards ─── */}
           <MacroBar />
 
-          {/* ─── Metrics row ─── */}
-          <MetricsBar />
+          {/* ─── Metrics row (sticky + collapsible) ─── */}
+          <MetricsBar compact={isScrolled} />
 
           {/* ─── Prominent search bar ─── */}
           <TickerSearch />

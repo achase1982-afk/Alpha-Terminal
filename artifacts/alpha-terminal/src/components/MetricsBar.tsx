@@ -8,7 +8,6 @@ const UP_COLOR   = "#00E676";
 const DOWN_COLOR = "#FF1744";
 const FLAT_COLOR = "#9CA3AF";
 
-// Small muted uppercase label used above every metric
 const LABEL_CLS = "text-[9px] sm:text-[10px] text-gray-500 font-normal tracking-wider uppercase leading-none";
 
 function fmtPrice(n: number | null, digits = 2): string {
@@ -23,14 +22,20 @@ function fmtVol(n: number | null): string {
   return n.toLocaleString();
 }
 
-export function MetricsBar() {
+interface MetricsBarProps {
+  compact?: boolean;
+}
+
+export function MetricsBar({ compact = false }: MetricsBarProps) {
   const { symbol, accessToken, streamConnected } = useTerminalStore();
   const { data: quote, isLoading, source } = useQuote(symbol);
   const tickColor = useTickColor(symbol, quote?.last ?? null);
 
+  const stickyBase = "sticky top-0 z-40 w-full border-b border-card-border shrink-0 transition-all duration-300 ease-in-out";
+
   if (!accessToken) {
     return (
-      <div className="w-full border-b border-card-border flex items-center justify-center px-4 py-3 shrink-0" style={{ background: "#060A10" }}>
+      <div className={`${stickyBase} flex items-center justify-center px-4 py-3`} style={{ background: "#060A10" }}>
         <p className="text-muted-foreground text-xs sm:text-sm animate-pulse text-center tracking-wider font-mono">
           CONNECT SCHWAB TO VIEW MARKET DATA
         </p>
@@ -40,7 +45,7 @@ export function MetricsBar() {
 
   if (quote?.error === "unauthorized") {
     return (
-      <div className="w-full border-b border-card-border flex items-center justify-center gap-2 px-4 py-3 shrink-0" style={{ background: "#060A10" }}>
+      <div className={`${stickyBase} flex items-center justify-center gap-2 px-4 py-3`} style={{ background: "#060A10" }}>
         <RefreshCw className="w-3.5 h-3.5 text-yellow-500/80 animate-spin" />
         <p className="text-yellow-500/80 text-xs sm:text-sm font-mono tracking-wider">
           SESSION EXPIRED — REFRESHING TOKEN...
@@ -51,7 +56,7 @@ export function MetricsBar() {
 
   if (isLoading && !quote) {
     return (
-      <div className="w-full border-b border-card-border flex items-center px-4 sm:px-6 gap-6 overflow-x-auto py-3 shrink-0" style={{ background: "#060A10" }}>
+      <div className={`${stickyBase} flex items-center px-4 sm:px-6 gap-6 overflow-x-auto py-3`} style={{ background: "#060A10" }}>
         {[1, 2, 3, 4, 5].map(i => (
           <div key={i} className="flex flex-col gap-1.5 shrink-0">
             <Skeleton className="h-2.5 w-14 bg-card-border" />
@@ -62,7 +67,6 @@ export function MetricsBar() {
     );
   }
 
-  // Permanent API error — symbol doesn't exist or isn't supported
   const quoteErr = quote?.error;
   const isNotFound =
     quoteErr === "no_data" ||
@@ -72,7 +76,7 @@ export function MetricsBar() {
 
   if (isNotFound) {
     return (
-      <div className="w-full border-b border-card-border flex items-center gap-2.5 px-4 sm:px-6 py-3 shrink-0" style={{ background: "#060A10" }}>
+      <div className={`${stickyBase} flex items-center gap-2.5 px-4 sm:px-6 py-3`} style={{ background: "#060A10" }}>
         <SearchX className="w-3.5 h-3.5 text-red-500/70 shrink-0" />
         <span className="font-mono text-xs text-red-500/70 tracking-wider">
           {symbol} — SYMBOL NOT FOUND OR UNSUPPORTED BY API
@@ -86,7 +90,6 @@ export function MetricsBar() {
 
   if (!quote) return null;
 
-  // Strict null-aware directional logic
   const rawChange = quote.change;
   const rawPct    = quote.changePct;
 
@@ -108,18 +111,49 @@ export function MetricsBar() {
     ? `(${isUp ? "+" : ""}${fmtPrice(rawPct)}%)`
     : "(—%)";
 
+  if (compact) {
+    return (
+      <div
+        className={`${stickyBase} flex items-center px-3 sm:px-4 gap-3 sm:gap-4 overflow-x-auto`}
+        style={{ background: "#0A0F16", height: 36 }}
+      >
+        <span className="font-bold text-white text-sm tracking-wide shrink-0">
+          {quote.symbol}
+        </span>
+
+        <span className="tabular-nums shrink-0" style={{ fontSize: '0.95rem', fontWeight: 300, color: tickColor }}>
+          {lastStr}
+        </span>
+
+        <span className="tabular-nums shrink-0" style={{ fontSize: '0.75rem', fontWeight: 300, color: priceColor }}>
+          {changeStr}&nbsp;{changePctStr}
+        </span>
+
+        <span className="text-gray-600 shrink-0">|</span>
+
+        <span className="tabular-nums text-gray-300 shrink-0" style={{ fontSize: '0.75rem', fontWeight: 400 }}>
+          ${fmtPrice(quote.bid)}<span className="text-gray-600 mx-0.5">/</span>${fmtPrice(quote.ask)}
+        </span>
+
+        {source === "stream" && (
+          <span className="flex items-center gap-0.5 text-[7px] font-mono text-emerald-400 leading-none font-semibold shrink-0 ml-auto">
+            <Wifi className="w-2.5 h-2.5" />LIVE
+          </span>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div
-      className="w-full border-b border-card-border flex items-center px-4 sm:px-6 gap-4 sm:gap-6 lg:gap-8 overflow-x-auto shrink-0 py-2 sm:h-16"
+      className={`${stickyBase} flex items-center px-4 sm:px-6 gap-4 sm:gap-6 lg:gap-8 overflow-x-auto py-2 sm:h-16`}
       style={{ background: "#0A0F16" }}
     >
-      {/* Ticker + company name */}
       <div className="flex flex-col shrink-0 gap-0.5">
         <span className={LABEL_CLS}>Ticker</span>
         <span className="font-bold text-white leading-tight" style={{ fontSize: '1.1rem' }}>
           {quote.symbol}
         </span>
-        {/* Company name: 0.8rem, #9CA3AF, weight 400 — always rendered */}
         <span
           className="leading-tight truncate max-w-[130px] sm:max-w-[200px]"
           style={{ fontSize: '0.8rem', color: '#9CA3AF', fontWeight: 400, lineHeight: 1.3 }}
@@ -130,7 +164,6 @@ export function MetricsBar() {
 
       <div className="w-px h-10 bg-gray-800 shrink-0" />
 
-      {/* LAST PRICE */}
       <div className="flex flex-col shrink-0 gap-0.5">
         <div className="flex items-center gap-1.5">
           <span className={LABEL_CLS}>Last Price</span>
@@ -145,7 +178,6 @@ export function MetricsBar() {
                 </span>
           }
         </div>
-        {/* All price data: font-weight 300 — thin and crisp, native system mono like TOS */}
         <div className="flex flex-col">
           <span className="tabular-nums leading-tight" style={{ fontSize: '1.4rem', fontWeight: 300, color: tickColor }}>
             {lastStr}
@@ -158,7 +190,6 @@ export function MetricsBar() {
 
       <div className="w-px h-10 bg-gray-800 shrink-0" />
 
-      {/* BID / ASK */}
       <div className="flex flex-col shrink-0 gap-0.5">
         <span className={LABEL_CLS}>Bid / Ask</span>
         <span className="font-mono tabular-nums text-gray-200" style={{ fontSize: '0.9rem', fontWeight: 400 }}>
@@ -168,7 +199,6 @@ export function MetricsBar() {
 
       <div className="w-px h-10 bg-gray-800 shrink-0 hidden sm:block" />
 
-      {/* VOLUME */}
       <div className="hidden sm:flex flex-col shrink-0 gap-0.5">
         <span className={LABEL_CLS}>Volume</span>
         <span className="font-mono tabular-nums text-gray-200" style={{ fontSize: '0.9rem', fontWeight: 400 }}>
@@ -178,7 +208,6 @@ export function MetricsBar() {
 
       <div className="w-px h-10 bg-gray-800 shrink-0 hidden md:block" />
 
-      {/* DAY RANGE */}
       <div className="hidden md:flex flex-col shrink-0 gap-0.5">
         <span className={LABEL_CLS}>Day Range</span>
         <span className="font-mono tabular-nums" style={{ fontSize: '0.9rem', fontWeight: 400 }}>
@@ -190,7 +219,6 @@ export function MetricsBar() {
 
       <div className="w-px h-10 bg-gray-800 shrink-0 hidden lg:block" />
 
-      {/* 52W RANGE */}
       <div className="hidden lg:flex flex-col shrink-0 gap-0.5">
         <span className={LABEL_CLS}>52W Range</span>
         <span className="font-mono tabular-nums text-gray-500" style={{ fontSize: '0.9rem', fontWeight: 400 }}>
