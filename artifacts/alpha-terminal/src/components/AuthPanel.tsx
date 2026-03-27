@@ -1,9 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useGetAuthUrl, useExchangeCode } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ChevronRight, KeyRound, ExternalLink, RefreshCw, CheckCircle2, AlertCircle } from "lucide-react";
+import { ChevronRight, KeyRound, ExternalLink, RefreshCw, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 
 export function AuthPanel() {
   const { accessToken, setTokens, clearTokens } = useTerminalStore();
@@ -11,12 +11,13 @@ export function AuthPanel() {
   const [isOpen, setIsOpen] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [showManual, setShowManual] = useState(false);
-  const [registeredRedirectUri, setRegisteredRedirectUri] = useState("https://127.0.0.1/");
+  const [waitingForCallback, setWaitingForCallback] = useState(false);
+  const [registeredRedirectUri, setRegisteredRedirectUri] = useState("");
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const { data: authUrlData } = useGetAuthUrl();
   const exchangeMutation = useExchangeCode();
 
-  // Fetch the exact redirect URI registered with Schwab from the backend
   useEffect(() => {
     fetch("/api/auth/redirect-uri")
       .then(r => {
@@ -29,6 +30,51 @@ export function AuthPanel() {
       })
       .catch(() => {});
   }, []);
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+    setWaitingForCallback(false);
+  }, []);
+
+  const startPolling = useCallback(() => {
+    stopPolling();
+    setWaitingForCallback(true);
+
+    const poll = async () => {
+      try {
+        const res = await fetch("/api/auth/pending-session");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.found && data.accessToken) {
+          setTokens(data.accessToken, data.refreshToken || "");
+          stopPolling();
+          setIsOpen(false);
+        }
+      } catch {}
+    };
+
+    pollRef.current = setInterval(poll, 2000);
+    setTimeout(() => {
+      if (pollRef.current) stopPolling();
+    }, 5 * 60 * 1000);
+  }, [setTokens, stopPolling]);
+
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (accessToken) stopPolling();
+  }, [accessToken, stopPolling]);
+
+  const handleSignIn = () => {
+    startPolling();
+  };
 
   const handleExchange = () => {
     if (!redirectUrl.trim()) return;
@@ -56,6 +102,7 @@ export function AuthPanel() {
           setRedirectUrl("");
           setIsOpen(false);
           setErrorMsg("");
+          stopPolling();
         },
         onError: (err: any) => {
           const hasHttpStatus = typeof err?.status === "number" && err.status > 0;
@@ -118,20 +165,49 @@ export function AuthPanel() {
             </div>
           ) : (
             <div className="space-y-3">
-              <div className="flex items-start gap-2 rounded-lg bg-primary/5 border border-primary/20 p-2.5">
-                <KeyRound className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-                <p className="text-[10px] text-gray-300 leading-snug">
-                  Tap below to sign in with your Schwab brokerage account. You'll be redirected back automatically after login.
-                </p>
-              </div>
-              <Button
-                asChild
-                className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-mono text-xs h-10"
-              >
-                <a href={authUrlData?.url || "#"} target="_blank" rel="noreferrer">
-                  SIGN IN WITH SCHWAB <ExternalLink className="ml-2 w-3.5 h-3.5" />
-                </a>
-              </Button>
+              {waitingForCallback ? (
+                <>
+                  <div className="flex items-start gap-2.5 rounded-lg bg-amber-500/5 border border-amber-500/20 p-3">
+                    <Loader2 className="w-4 h-4 text-amber-400 shrink-0 mt-0.5 animate-spin" />
+                    <div className="text-[10px] text-gray-300 leading-snug space-y-1.5">
+                      <p className="text-amber-400 font-semibold text-[11px]">Waiting for Schwab login...</p>
+                      <p>Complete the sign-in on the Schwab page that opened. Once you're done, this screen will update automatically.</p>
+                      <p className="text-muted-foreground">If the Schwab tab closed or nothing happened, tap the button below to try again.</p>
+                    </div>
+                  </div>
+                  <Button
+                    asChild
+                    className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-mono text-xs h-10"
+                  >
+                    <a href={authUrlData?.url || "#"} target="_blank" rel="noreferrer" onClick={handleSignIn}>
+                      RETRY SCHWAB LOGIN <ExternalLink className="ml-2 w-3.5 h-3.5" />
+                    </a>
+                  </Button>
+                  <button
+                    onClick={stopPolling}
+                    className="text-[9px] text-muted-foreground/50 font-mono hover:text-muted-foreground transition-colors w-full text-center"
+                  >
+                    CANCEL
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-start gap-2 rounded-lg bg-primary/5 border border-primary/20 p-2.5">
+                    <KeyRound className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                    <p className="text-[10px] text-gray-300 leading-snug">
+                      Sign in with your Schwab brokerage account. A new page will open — after you complete login there, this screen will update automatically.
+                    </p>
+                  </div>
+                  <Button
+                    asChild
+                    className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-mono text-xs h-10"
+                  >
+                    <a href={authUrlData?.url || "#"} target="_blank" rel="noreferrer" onClick={handleSignIn}>
+                      SIGN IN WITH SCHWAB <ExternalLink className="ml-2 w-3.5 h-3.5" />
+                    </a>
+                  </Button>
+                </>
+              )}
 
               <div className="border-t border-card-border pt-3">
                 <button

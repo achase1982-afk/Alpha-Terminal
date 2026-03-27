@@ -15,12 +15,17 @@ const SCHWAB_AUTH_BASE = "https://api.schwabapi.com/v1/oauth/authorize";
 const SCHWAB_TOKEN_URL = "https://api.schwabapi.com/v1/oauth/token";
 
 const pendingStates = new Map<string, number>();
+const pendingTokens = new Map<string, { accessToken: string; refreshToken: string; ts: number }>();
 const STATE_TTL_MS = 10 * 60 * 1000;
+const TOKEN_TTL_MS = 5 * 60 * 1000;
 
-function cleanExpiredStates() {
+function cleanExpired() {
   const now = Date.now();
   for (const [key, ts] of pendingStates) {
     if (now - ts > STATE_TTL_MS) pendingStates.delete(key);
+  }
+  for (const [key, val] of pendingTokens) {
+    if (now - val.ts > TOKEN_TTL_MS) pendingTokens.delete(key);
   }
 }
 
@@ -40,7 +45,7 @@ router.get("/url", (_req, res) => {
     return res.json(GetAuthUrlResponse.parse({ url: "", configured: false }));
   }
 
-  cleanExpiredStates();
+  cleanExpired();
   const state = crypto.randomBytes(24).toString("hex");
   pendingStates.set(state, Date.now());
 
@@ -55,7 +60,6 @@ router.get("/url", (_req, res) => {
   res.json(GetAuthUrlResponse.parse({ url, configured: true }));
 });
 
-/** Expose the exact redirect URI from env so the frontend always uses the right one */
 router.get("/redirect-uri", (_req, res) => {
   res.json({ redirectUri: process.env.SCHWAB_REDIRECT_URI || "" });
 });
@@ -64,10 +68,11 @@ router.get("/callback", async (req, res) => {
   const code = req.query["code"] as string | undefined;
   const state = req.query["state"] as string | undefined;
   const errorPage = (title: string, msg: string) => `
-    <html><body style="background:#0A0F16;color:#fff;font-family:monospace;padding:40px;text-align:center">
-      <h2 style="color:#FF1744">${escapeHtml(title)}</h2>
-      <p>${escapeHtml(msg)}</p>
-      <p style="margin-top:20px"><a href="/" style="color:#0090FF">Return to Alpha Terminal</a></p>
+    <!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+    <body style="background:#0A0F16;color:#fff;font-family:-apple-system,system-ui,sans-serif;padding:40px 20px;text-align:center">
+      <h2 style="color:#FF1744;font-size:18px">${escapeHtml(title)}</h2>
+      <p style="color:#ccc;font-size:14px;line-height:1.5">${escapeHtml(msg)}</p>
+      <p style="margin-top:30px;font-size:13px;color:#666">Close this tab and return to Alpha Terminal to try again.</p>
     </body></html>`;
 
   if (!code) {
@@ -131,32 +136,44 @@ router.get("/callback", async (req, res) => {
       return res.status(502).send(errorPage("Invalid Token", "Schwab did not return a valid access token. Please try again."));
     }
 
-    req.log.info("GET /callback — token exchange succeeded, redirecting to app");
+    pendingTokens.set("latest", {
+      accessToken,
+      refreshToken: typeof refreshToken === "string" ? refreshToken : "",
+      ts: Date.now(),
+    });
 
-    const safeAccessToken = JSON.stringify(accessToken);
-    const safeRefreshToken = JSON.stringify(typeof refreshToken === "string" ? refreshToken : "");
+    req.log.info("GET /callback — token exchange succeeded, tokens stored server-side");
 
     res.send(`
-      <html><body style="background:#0A0F16;color:#fff;font-family:monospace;padding:40px;text-align:center">
-        <h2 style="color:#0090FF">Connected to Schwab!</h2>
-        <p>Storing session and redirecting...</p>
-        <script>
-          try {
-            var storeKey = 'alpha-terminal-storage';
-            var raw = localStorage.getItem(storeKey);
-            var store = raw ? JSON.parse(raw) : { state: {}, version: 2 };
-            store.state.accessToken = ${safeAccessToken};
-            store.state.refreshToken = ${safeRefreshToken};
-            localStorage.setItem(storeKey, JSON.stringify(store));
-          } catch(e) { console.error('Failed to store tokens', e); }
-          window.location.href = '/';
-        </script>
+      <!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+      <body style="background:#0A0F16;color:#fff;font-family:-apple-system,system-ui,sans-serif;padding:40px 20px;text-align:center">
+        <div style="margin:0 auto;max-width:360px">
+          <div style="width:60px;height:60px;border-radius:50%;background:#0090FF22;margin:0 auto 16px;display:flex;align-items:center;justify-content:center">
+            <svg width="28" height="28" fill="none" stroke="#0090FF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>
+          </div>
+          <h2 style="color:#0090FF;font-size:20px;margin:0 0 8px">Connected to Schwab!</h2>
+          <p style="color:#ccc;font-size:14px;line-height:1.5;margin:0 0 24px">Your session is ready. Close this tab and return to the Alpha Terminal app.</p>
+          <p style="color:#666;font-size:12px">The app will pick up your session automatically.</p>
+        </div>
       </body></html>
     `);
   } catch (err) {
     req.log.error({ err }, "GET /callback network error");
     res.status(500).send(errorPage("Connection Error", "Could not reach Schwab API. Please try again."));
   }
+});
+
+router.get("/pending-session", (_req, res) => {
+  const pending = pendingTokens.get("latest");
+  if (!pending || Date.now() - pending.ts > TOKEN_TTL_MS) {
+    return res.json({ found: false });
+  }
+  pendingTokens.delete("latest");
+  res.json({
+    found: true,
+    accessToken: pending.accessToken,
+    refreshToken: pending.refreshToken,
+  });
 });
 
 router.post("/callback", async (req, res) => {
@@ -168,14 +185,12 @@ router.post("/callback", async (req, res) => {
   const { code } = parsed.data;
   const appKey = process.env.SCHWAB_APP_KEY;
   const appSecret = process.env.SCHWAB_APP_SECRET;
-  // Always use the env-registered redirect URI — never trust the client-supplied value
   const redirectUri = process.env.SCHWAB_REDIRECT_URI;
 
   if (!appKey || !appSecret || !redirectUri) {
     return res.status(400).json({ error: "not_configured", message: "Schwab credentials not configured in environment" });
   }
 
-  // Build x-www-form-urlencoded body per Schwab docs
   const body = new URLSearchParams();
   body.set("grant_type", "authorization_code");
   body.set("code", code);
@@ -203,7 +218,6 @@ router.post("/callback", async (req, res) => {
         { status: response.status, body: responseText, redirect_uri: redirectUri },
         "Token exchange failed"
       );
-      // Surface the Schwab error message directly to help debug
       let detail = responseText;
       try {
         const parsed = JSON.parse(responseText);
