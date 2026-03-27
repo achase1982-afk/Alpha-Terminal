@@ -1,18 +1,86 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useTerminalStore } from "@/lib/store";
-import { useGetAuthUrl } from "@workspace/api-client-react";
+import { useGetAuthUrl, useExchangeCode } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
-import { ChevronRight, KeyRound, ExternalLink, CheckCircle2, Loader2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { ChevronRight, KeyRound, ExternalLink, RefreshCw, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 
 export function AuthPanel() {
-  const { accessToken, clearTokens } = useTerminalStore();
+  const { accessToken, setTokens, clearTokens } = useTerminalStore();
+  const [redirectUrl, setRedirectUrl] = useState("");
   const [isOpen, setIsOpen] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
+  const [registeredRedirectUri, setRegisteredRedirectUri] = useState("https://127.0.0.1/");
+  const [isNativeCallback, setIsNativeCallback] = useState(false);
 
   const { data: authUrlData, isLoading: authLoading } = useGetAuthUrl();
+  const exchangeMutation = useExchangeCode({
+    request: {
+      headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" },
+    },
+  });
+
+  useEffect(() => {
+    fetch("/api/auth/redirect-uri")
+      .then(r => {
+        const ct = r.headers.get("content-type") || "";
+        if (!ct.includes("application/json")) throw new Error("non-json");
+        return r.json();
+      })
+      .then(data => {
+        if (data.redirectUri) {
+          setRegisteredRedirectUri(data.redirectUri);
+          setIsNativeCallback(data.redirectUri.includes("/api/auth/callback"));
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const handleConnect = () => {
     if (!authUrlData?.url) return;
-    window.location.href = authUrlData.url;
+    if (isNativeCallback) {
+      window.location.href = authUrlData.url;
+    }
+  };
+
+  const handleManualExchange = () => {
+    if (!redirectUrl.trim()) return;
+    setErrorMsg("");
+
+    let code: string | null = null;
+    try {
+      const url = new URL(redirectUrl.trim());
+      code = url.searchParams.get("code");
+    } catch {
+      setErrorMsg("Invalid URL. Paste the full redirect URL starting with https://");
+      return;
+    }
+
+    if (!code) {
+      setErrorMsg("No 'code' parameter found in the URL.");
+      return;
+    }
+
+    exchangeMutation.mutate(
+      { data: { code, redirectUri: registeredRedirectUri } },
+      {
+        onSuccess: (data) => {
+          setTokens(data.accessToken, data.refreshToken);
+          setRedirectUrl("");
+          setIsOpen(false);
+          setErrorMsg("");
+        },
+        onError: (err: any) => {
+          const hasHttpStatus = typeof err?.status === "number" && err.status > 0;
+          if (!hasHttpStatus) {
+            setErrorMsg("API server is not reachable. Make sure the API Server workflow is running, then try again.");
+          } else {
+            const detail = err?.data?.message ?? err?.message ?? "Unknown error";
+            setErrorMsg(`Auth failed: ${detail}. The code may have expired — generate a new one.`);
+          }
+        }
+      }
+    );
   };
 
   return (
@@ -61,12 +129,11 @@ export function AuthPanel() {
                 DISCONNECT SESSION
               </Button>
             </div>
-          ) : (
+          ) : isNativeCallback ? (
             <div className="space-y-3">
               <p className="text-[10px] text-muted-foreground font-mono leading-relaxed bg-card p-2 rounded border border-card-border">
                 Click below to securely log in with your Schwab account. You'll be redirected back automatically after authorizing.
               </p>
-
               <Button
                 onClick={handleConnect}
                 disabled={authLoading || !authUrlData?.url || !authUrlData?.configured}
@@ -78,6 +145,54 @@ export function AuthPanel() {
                   "SCHWAB NOT CONFIGURED"
                 ) : (
                   <>CONNECT TO SCHWAB <ExternalLink className="w-3.5 h-3.5" /></>
+                )}
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-wider">Step 1 — Authorize with Schwab</p>
+                <Button
+                  asChild
+                  className="w-full bg-primary/10 text-primary border border-primary/50 hover:bg-primary/20 font-mono text-xs"
+                >
+                  <a href={authUrlData?.url || "#"} target="_blank" rel="noreferrer">
+                    OPEN SCHWAB LOGIN <ExternalLink className="ml-2 w-3.5 h-3.5" />
+                  </a>
+                </Button>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-wider">
+                  Step 2 — Paste the full redirect URL
+                </p>
+                <p className="text-[10px] text-muted-foreground font-mono leading-relaxed bg-card p-2 rounded border border-card-border">
+                  After login, your browser redirects to a page starting with <span className="text-primary">{registeredRedirectUri}</span> — copy that full URL from your browser's address bar and paste it below.
+                </p>
+                <Input
+                  placeholder={`${registeredRedirectUri}?code=...`}
+                  className="font-mono text-[10px] bg-background border-card-border focus-visible:ring-primary/50 h-9"
+                  value={redirectUrl}
+                  onChange={(e) => { setRedirectUrl(e.target.value); setErrorMsg(""); }}
+                />
+              </div>
+
+              {errorMsg && (
+                <div className="flex items-start gap-2 text-destructive bg-destructive/10 p-3 rounded-md border border-destructive/20">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <p className="font-mono text-[10px] leading-relaxed">{errorMsg}</p>
+                </div>
+              )}
+
+              <Button
+                onClick={handleManualExchange}
+                disabled={!redirectUrl.trim() || exchangeMutation.isPending}
+                className="w-full font-mono bg-foreground text-background hover:bg-foreground/90 text-xs"
+              >
+                {exchangeMutation.isPending ? (
+                  <><RefreshCw className="w-4 h-4 mr-2 animate-spin" /> EXCHANGING...</>
+                ) : (
+                  "CONNECT TO SCHWAB"
                 )}
               </Button>
             </div>
