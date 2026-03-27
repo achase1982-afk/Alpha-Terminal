@@ -35,6 +35,7 @@ export default function TerminalPage() {
     setIsScrolled(prev => (prev ? y > 30 : y > 60));
   }, []);
 
+  // ── Start and maintain the Schwab WebSocket stream ──────────────────────
   useStreamingQuotes();
 
   const chartParams = chartParamsFromStore(chartPeriod, chartInterval);
@@ -65,7 +66,7 @@ export default function TerminalPage() {
   }, [symbol, accessToken]);
 
   return (
-    <div className="flex h-[100dvh] w-full bg-background overflow-hidden selection:bg-primary/30 selection:text-white">
+    <div className="flex h-full w-full bg-background overflow-hidden selection:bg-primary/30 selection:text-white">
 
       {/* Mobile overlay backdrop */}
       {sidebarOpen && (
@@ -85,14 +86,14 @@ export default function TerminalPage() {
       </div>
 
       {/* Main content */}
-      <main className="flex-1 flex flex-col bg-background relative min-w-0 overflow-hidden">
-        {/* Ambient glow */}
+      <main className="flex-1 flex flex-col h-full bg-background relative min-w-0" style={{ overflow: "clip" }}>
+        {/* Ambient glow — clipped inside its own overflow-hidden layer */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-primary/5 blur-[120px] rounded-full" />
         </div>
 
-        {/* ─── Header: Mobile bar + Ticker tape (flex-shrink-0, never scrolls) ─── */}
-        <div className="shrink-0 z-50 bg-background relative">
+        {/* ─── Sticky top: Mobile header + Ticker tape ─── */}
+        <div className="sticky top-0 z-50 shrink-0 bg-background">
           {/* Mobile top bar */}
           <div className="flex items-center lg:hidden h-12 px-4 border-b border-card-border bg-card">
             <button
@@ -116,15 +117,19 @@ export default function TerminalPage() {
             </div>
           </div>
 
+          {/* ─── Ticker tape scrolling marquee ─── */}
           <TickerTape />
         </div>
 
-        {/* ─── Scrollable content area (flex-1, only this scrolls) ─── */}
-        <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto overscroll-y-none z-10 relative">
+        {/* ─── Scrollable content: everything below the sticky strip ─── */}
+        <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-auto z-10">
+          {/* ─── Macro Cards ─── */}
           <MacroBar />
 
+          {/* ─── Metrics row (sticky + collapsible) ─── */}
           <MetricsBar compact={isScrolled} onOpenTearSheet={() => setTearSheetOpen(true)} />
 
+          {/* ─── Prominent search bar ─── */}
           <TickerSearch />
 
           <div className="p-3 sm:p-4 lg:p-5" style={{ minHeight: "calc(100dvh - 80px)" }}>

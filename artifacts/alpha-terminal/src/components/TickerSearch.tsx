@@ -52,7 +52,6 @@ export function TickerSearch() {
           <input
             value={inputVal}
             onChange={e => setInputVal(e.target.value.toUpperCase())}
-            onFocus={() => setTimeout(() => window.scrollTo(0, 0), 50)}
             placeholder="SEARCH..."
             className="w-32 sm:w-36 h-7 pl-7 pr-2 rounded border border-card-border bg-card font-mono text-[10px] text-foreground
               placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50 focus:bg-primary/5 transition-colors uppercase"

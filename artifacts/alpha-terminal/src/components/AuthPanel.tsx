@@ -1,14 +1,9 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useGetAuthUrl, useExchangeCode } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ChevronRight, KeyRound, ExternalLink, RefreshCw, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
-
-function isMobile(): boolean {
-  return /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
-    || (navigator.maxTouchPoints > 0 && window.innerWidth < 768);
-}
+import { ChevronRight, KeyRound, ExternalLink, RefreshCw, CheckCircle2, AlertCircle } from "lucide-react";
 
 export function AuthPanel() {
   const { accessToken, setTokens, clearTokens } = useTerminalStore();
@@ -16,19 +11,11 @@ export function AuthPanel() {
   const [isOpen, setIsOpen] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [registeredRedirectUri, setRegisteredRedirectUri] = useState("https://127.0.0.1/");
-  const [isNativeCallback, setIsNativeCallback] = useState(false);
-  const [connecting, setConnecting] = useState(false);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const flowIdRef = useRef<string | null>(null);
-  const popupRef = useRef<Window | null>(null);
 
-  const { data: authUrlData, isLoading: authLoading } = useGetAuthUrl();
-  const exchangeMutation = useExchangeCode({
-    request: {
-      headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" },
-    },
-  });
+  const { data: authUrlData } = useGetAuthUrl();
+  const exchangeMutation = useExchangeCode();
 
+  // Fetch the exact redirect URI registered with Schwab from the backend
   useEffect(() => {
     fetch("/api/auth/redirect-uri")
       .then(r => {
@@ -37,166 +24,12 @@ export function AuthPanel() {
         return r.json();
       })
       .then(data => {
-        if (data.redirectUri) {
-          setRegisteredRedirectUri(data.redirectUri);
-          setIsNativeCallback(data.redirectUri.includes("/api/auth/callback"));
-        }
+        if (data.redirectUri) setRegisteredRedirectUri(data.redirectUri);
       })
       .catch(() => {});
   }, []);
 
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const status = params.get("schwab");
-    const flowId = params.get("flowId") || params.get("session");
-
-    if (status === "connected" && flowId) {
-      setConnecting(true);
-      fetch(`/api/auth/flow-tokens/${flowId}`, {
-        headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" },
-      })
-        .then(r => {
-          if (!r.ok) throw new Error("Session expired");
-          return r.json();
-        })
-        .then(data => {
-          if (data.accessToken && data.refreshToken) {
-            setTokens(data.accessToken, data.refreshToken);
-            setIsOpen(false);
-          }
-        })
-        .catch(() => setErrorMsg("Session expired. Please try connecting again."))
-        .finally(() => setConnecting(false));
-
-      window.history.replaceState({}, "", window.location.pathname);
-    } else if (status === "error") {
-      const msg = params.get("message");
-      if (msg) setErrorMsg(msg);
-      window.history.replaceState({}, "", window.location.pathname);
-    }
-  }, [setTokens]);
-
-  const stopPolling = useCallback(() => {
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
-    }
-    flowIdRef.current = null;
-    setConnecting(false);
-  }, []);
-
-  const consumeFlow = useCallback(async (flowId: string) => {
-    try {
-      const resp = await fetch(`/api/auth/flow-tokens/${flowId}`, {
-        headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" },
-      });
-      if (!resp.ok) return;
-      const data = await resp.json();
-      if (data.accessToken && data.refreshToken) {
-        setTokens(data.accessToken, data.refreshToken);
-        setIsOpen(false);
-      }
-    } catch {
-    } finally {
-      stopPolling();
-    }
-  }, [setTokens, stopPolling]);
-
-  useEffect(() => {
-    const handler = (e: MessageEvent) => {
-      if (e.origin !== window.location.origin) return;
-      if (e.data?.type === "schwab-oauth-success" && e.data.flowId) {
-        consumeFlow(e.data.flowId);
-      } else if (e.data?.type === "schwab-oauth-error") {
-        setErrorMsg(e.data.message || "Authentication failed.");
-        stopPolling();
-      }
-    };
-    window.addEventListener("message", handler);
-    return () => window.removeEventListener("message", handler);
-  }, [consumeFlow, stopPolling]);
-
-  useEffect(() => {
-    return () => stopPolling();
-  }, [stopPolling]);
-
-  const handleConnect = async () => {
-    if (!authUrlData?.configured) return;
-    setErrorMsg("");
-    setConnecting(true);
-
-    try {
-      const initResp = await fetch("/api/auth/init-flow", { method: "POST" });
-      const initData = await initResp.json();
-      if (!initData.flowId) {
-        setErrorMsg("Could not initialize auth flow.");
-        setConnecting(false);
-        return;
-      }
-      const flowId = initData.flowId as string;
-      flowIdRef.current = flowId;
-
-      const urlResp = await fetch(`/api/auth/url?state=${flowId}`);
-      const urlData = await urlResp.json();
-      if (!urlData.url) {
-        setErrorMsg("Could not generate auth URL.");
-        setConnecting(false);
-        return;
-      }
-
-      if (isMobile()) {
-        window.location.href = urlData.url;
-        return;
-      }
-
-      const w = 600;
-      const h = 700;
-      const left = window.screenX + (window.outerWidth - w) / 2;
-      const top = window.screenY + (window.outerHeight - h) / 2;
-      popupRef.current = window.open(
-        urlData.url,
-        "schwab_login",
-        `width=${w},height=${h},left=${left},top=${top},menubar=no,toolbar=no,status=no`
-      );
-
-      if (!popupRef.current || popupRef.current.closed) {
-        window.location.href = urlData.url;
-        return;
-      }
-
-      let pollCount = 0;
-      pollRef.current = setInterval(async () => {
-        pollCount++;
-
-        if (popupRef.current?.closed && pollCount > 3) {
-          stopPolling();
-          return;
-        }
-
-        if (pollCount > 90) {
-          setErrorMsg("Authorization timed out. Please try again.");
-          stopPolling();
-          return;
-        }
-
-        try {
-          const r = await fetch(`/api/auth/flow-status?flowId=${flowId}`, {
-            headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" },
-          });
-          const result = await r.json();
-          if (result.connected) {
-            await consumeFlow(flowId);
-          }
-        } catch {
-        }
-      }, 2000);
-    } catch {
-      setErrorMsg("Network error. Check your connection and try again.");
-      setConnecting(false);
-    }
-  };
-
-  const handleManualExchange = () => {
+  const handleExchange = () => {
     if (!redirectUrl.trim()) return;
     setErrorMsg("");
 
@@ -282,40 +115,9 @@ export function AuthPanel() {
                 DISCONNECT SESSION
               </Button>
             </div>
-          ) : isNativeCallback ? (
-            <div className="space-y-3">
-              <p className="text-[10px] text-muted-foreground font-mono leading-relaxed bg-card p-2 rounded border border-card-border">
-                Click below to securely log in with your Schwab account. {isMobile() ? "You'll be redirected back after authorizing." : "A popup will open — once you authorize, the connection happens automatically."}
-              </p>
-              {errorMsg && (
-                <div className="flex items-start gap-2 text-destructive bg-destructive/10 p-3 rounded-md border border-destructive/20">
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <p className="font-mono text-[10px] leading-relaxed">{errorMsg}</p>
-                </div>
-              )}
-              <Button
-                onClick={handleConnect}
-                disabled={authLoading || !authUrlData?.configured || connecting}
-                className="w-full font-mono bg-primary/10 text-primary border border-primary/50 hover:bg-primary/20 text-xs gap-2"
-              >
-                {connecting ? (
-                  <><Loader2 className="w-4 h-4 animate-spin" /> WAITING FOR AUTHORIZATION...</>
-                ) : authLoading ? (
-                  <><Loader2 className="w-4 h-4 animate-spin" /> LOADING...</>
-                ) : !authUrlData?.configured ? (
-                  "SCHWAB NOT CONFIGURED"
-                ) : (
-                  <>CONNECT TO SCHWAB <ExternalLink className="w-3.5 h-3.5" /></>
-                )}
-              </Button>
-              {connecting && !isMobile() && (
-                <p className="text-[10px] text-muted-foreground font-mono text-center">
-                  Complete login in the popup window...
-                </p>
-              )}
-            </div>
           ) : (
             <div className="space-y-4">
+              {/* Step 1 */}
               <div className="space-y-2">
                 <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-wider">Step 1 — Authorize with Schwab</p>
                 <Button
@@ -328,6 +130,7 @@ export function AuthPanel() {
                 </Button>
               </div>
 
+              {/* Step 2 */}
               <div className="space-y-2">
                 <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-wider">
                   Step 2 — Paste the full redirect URL
@@ -343,6 +146,7 @@ export function AuthPanel() {
                 />
               </div>
 
+              {/* Error */}
               {errorMsg && (
                 <div className="flex items-start gap-2 text-destructive bg-destructive/10 p-3 rounded-md border border-destructive/20">
                   <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
@@ -351,7 +155,7 @@ export function AuthPanel() {
               )}
 
               <Button
-                onClick={handleManualExchange}
+                onClick={handleExchange}
                 disabled={!redirectUrl.trim() || exchangeMutation.isPending}
                 className="w-full font-mono bg-foreground text-background hover:bg-foreground/90 text-xs"
               >

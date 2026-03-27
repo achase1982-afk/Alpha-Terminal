@@ -13,8 +13,4 @@ router.use("/market", marketRouter);
 router.use("/ai", aiRouter);
 router.use("/stream", streamRouter);
 
-router.use((req, res) => {
-  res.status(404).json({ error: "API route not found: " + req.method + " " + req.path });
-});
-
 export default router;

@@ -91,7 +91,6 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     overflow: hidden;
-    overscroll-behavior: none;
     height: 100%;
     width: 100%;
     margin: 0;
@@ -99,11 +98,9 @@
   }
 
   #root {
-    height: 100dvh;
-    width: 100%;
+    position: fixed;
+    inset: 0;
     overflow: hidden;
-    display: flex;
-    flex-direction: column;
   }
   
   ::-webkit-scrollbar { width: 6px; height: 6px; }

@@ -8,7 +8,7 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 
 Key features implemented:
 - **MacroBar**: Fixed sticky bar with clickable SPY/QQQ/IWM/VIX cards; clicking sets active symbol
-- **Sidebar**: Compact pill overlays, clean timeframe grid, Schwab auth panel (popup OAuth + manual paste fallback)
+- **Sidebar**: Compact pill overlays, clean timeframe grid, Schwab auth panel
 - **Tabs**: CHART | OPTIONS | AI INTELLIGENCE | SCAN
 - **AI Intelligence Tab**: Deep Analysis (TA + Options Strategist) — chat removed, lives in overlay now
 - **AI Chat Overlay**: Full-screen iMessage-style chat accessible from sidebar "AI CHAT ASSISTANT" button; AbortController lifecycle; sticky bottom input with safe-area-inset
@@ -55,25 +55,6 @@ Zustand streamPrices map
         ↓  useQuote(sym) selector
 MetricsBar / MacroCard / TapeItem  ← ONLY these re-render on each tick
 ```
-
-### OAuth Flow Architecture (Grok-Standard Seamless Flow)
-- **Desktop: Popup-based flow** (when `SCHWAB_REDIRECT_URI` points to `/api/auth/callback`):
-  - `POST /api/auth/init-flow` — server mints cryptographic flowId, stores in `pendingFlows`
-  - `GET /api/auth/url?state=<flowId>` — builds Schwab auth URL with `state` param
-  - AuthPanel opens popup via `window.open`, starts 2s polling on `/api/auth/flow-status`
-  - Schwab callback exchanges code, stores tokens in `flowStore` keyed by flowId, redirects to `/oauth-success`
-  - `OauthSuccess.tsx` page posts `window.opener.postMessage` for instant notification, then closes
-  - Polling on `/api/auth/flow-status?flowId=X` serves as fallback if postMessage is blocked
-  - `GET /api/auth/flow-tokens/:flowId` returns and deletes tokens (one-time use, 2 min TTL)
-  - Polling stops if: popup closed + 3 cycles, or 90 cycles (3 min timeout)
-- **Mobile: Direct navigation flow** — `isMobile()` UA detection in AuthPanel; uses `window.location.href` instead of popup; server detects mobile UA in `/callback` and redirects to `/?schwab=connected&flowId=X` (or `/?schwab=error&message=X`); AuthPanel reads query params on mount, consumes flow tokens, clears URL
-- **Manual paste fallback** (when `SCHWAB_REDIRECT_URI` is `https://127.0.0.1/`):
-  - Two-step: open Schwab login in new tab, paste redirect URL back, `POST /api/auth/callback` exchanges code
-
-### Null-Stripping (Schwab API Safety)
-- `stripNulls()` utility in `market.ts` and `ai.ts` converts `null` → `undefined` recursively before Zod `.parse()` calls
-- Prevents Zod validation failures when Schwab returns `null` for optional numeric/string fields (Zod `.optional()` accepts `undefined` but rejects `null`)
-- Frontend also strips nulls in `AiIntelligenceTab.tsx` before sending payloads to AI endpoints (guards against stale cached data)
 
 ### Known constraints
 - Gemini models: only `gemini-2.5-flash` and `gemini-2.5-pro` work
