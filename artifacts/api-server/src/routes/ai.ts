@@ -1,7 +1,8 @@
 import { Router, type IRouter } from "express";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { streamText } from "ai";
+import { streamText, stepCountIs } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { z } from "zod";
 import {
   RunTechnicalAnalysisBody,
   RunTechnicalAnalysisResponse,
@@ -616,6 +617,61 @@ ${marketContext ? `CURRENT MARKET CONTEXT:\n${marketContext}` : "No market data 
         role: m.role as "user" | "assistant",
         content: m.content,
       })),
+      stopWhen: stepCountIs(3),
+      tools: {
+        getMacroMarketSummary: {
+          description:
+            "Fetches the current daily performance of major market indices (S&P 500 / SPY, Nasdaq / QQQ, Dow Jones / DIA).",
+          parameters: z.object({}),
+          execute: async () => {
+            try {
+              const response = await fetch(
+                "https://query1.finance.yahoo.com/v7/finance/quote?symbols=SPY,QQQ,DIA",
+                {
+                  headers: {
+                    "User-Agent":
+                      "Mozilla/5.0 (compatible; AI-Market-Terminal/1.0)",
+                  },
+                }
+              );
+              if (!response.ok) throw new Error("Yahoo API unavailable");
+              const data = (await response.json()) as {
+                quoteResponse: {
+                  result: Array<{
+                    symbol: string;
+                    regularMarketChangePercent?: number;
+                  }>;
+                };
+              };
+              const quotes = data.quoteResponse.result;
+
+              return {
+                SPY: {
+                  changePercent:
+                    quotes.find((q) => q.symbol === "SPY")
+                      ?.regularMarketChangePercent || 0,
+                },
+                QQQ: {
+                  changePercent:
+                    quotes.find((q) => q.symbol === "QQQ")
+                      ?.regularMarketChangePercent || 0,
+                },
+                DIA: {
+                  changePercent:
+                    quotes.find((q) => q.symbol === "DIA")
+                      ?.regularMarketChangePercent || 0,
+                },
+              };
+            } catch (error) {
+              req.log.error({ err: error }, "Macro tool failed");
+              return {
+                error:
+                  "Unable to retrieve live macro data, use general knowledge.",
+              };
+            }
+          },
+        },
+      },
     });
 
     res.setHeader("Content-Type", "text/plain; charset=utf-8");
