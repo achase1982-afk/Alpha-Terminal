@@ -84,7 +84,16 @@ export function AiIntelligenceTab() {
         const chainRes = await fetch(
           `${API_BASE}/market/options?symbol=${encodeURIComponent(symbol)}&accessToken=${encodeURIComponent(accessToken)}&contractType=ALL&daysToExpiration=30`
         );
+        if (!chainRes.ok) {
+          const errText = await chainRes.text().catch(() => "Unknown error");
+          setStrategistResult(`**Error fetching options chain:** ${errText}`);
+          return;
+        }
         chainData = await chainRes.json();
+        if (chainData?.error && chainData.error !== "unauthorized") {
+          setStrategistResult(`**Options chain error:** ${chainData.error}${chainData.message ? ` — ${chainData.message}` : ""}`);
+          return;
+        }
       }
 
       const res = await fetch(`${API_BASE}/ai/options-strategist`, {
@@ -98,6 +107,11 @@ export function AiIntelligenceTab() {
           temperature: aiTemp,
         }),
       });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "Unknown error");
+        setStrategistResult(`**Strategist error:** ${errText}`);
+        return;
+      }
       const data = await res.json() as { response?: string };
       setStrategistResult(data.response ?? "No response received.");
     } catch (err) {

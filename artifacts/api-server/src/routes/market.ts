@@ -319,7 +319,9 @@ router.get("/options", async (req, res) => {
     }
 
     if (!response.ok) {
-      return res.json({ symbol: displaySymbol, calls: [], puts: [], error: `api_error_${response.status}` });
+      const errBody = await response.text().catch(() => "");
+      req.log.error({ status: response.status, body: errBody, symbol: apiSymbol }, "Options chain API error");
+      return res.json({ symbol: displaySymbol, calls: [], puts: [], error: `api_error_${response.status}`, message: errBody });
     }
 
     const json = await response.json() as Record<string, unknown>;
