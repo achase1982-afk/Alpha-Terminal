@@ -19,7 +19,7 @@ import { CompanyTearSheet } from "@/components/CompanyTearSheet";
 import { LineChart, BarChart2, BrainCircuit, Menu, Radar, Wifi, WifiOff } from "lucide-react";
 
 export default function TerminalPage() {
-  const { symbol, accessToken, chartPeriod, chartInterval, streamConnected, setTokens } = useTerminalStore();
+  const { symbol, accessToken, chartPeriod, chartInterval, streamConnected } = useTerminalStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [tearSheetOpen, setTearSheetOpen] = useState(false);
@@ -27,32 +27,6 @@ export default function TerminalPage() {
   const [isScrolled, setIsScrolled] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { refresh } = useAutoRefreshToken();
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const schwabStatus = params.get("schwab");
-    const sessionId = params.get("session");
-
-    if (schwabStatus === "connected" && sessionId) {
-      fetch(`/api/auth/session/${sessionId}`, {
-        headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" },
-      })
-        .then(r => {
-          if (!r.ok) throw new Error("Session expired");
-          return r.json();
-        })
-        .then(data => {
-          if (data.accessToken && data.refreshToken) {
-            setTokens(data.accessToken, data.refreshToken);
-          }
-        })
-        .catch(() => {});
-
-      window.history.replaceState({}, "", window.location.pathname);
-    } else if (schwabStatus === "error") {
-      window.history.replaceState({}, "", window.location.pathname);
-    }
-  }, [setTokens]);
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;

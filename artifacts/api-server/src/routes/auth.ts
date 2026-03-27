@@ -14,7 +14,7 @@ const router: IRouter = Router();
 const SCHWAB_AUTH_BASE = "https://api.schwabapi.com/v1/oauth/authorize";
 const SCHWAB_TOKEN_URL = "https://api.schwabapi.com/v1/oauth/token";
 
-interface PendingSession {
+interface StoredFlow {
   accessToken: string;
   refreshToken: string;
   expiresIn: number;
@@ -22,12 +22,20 @@ interface PendingSession {
   createdAt: number;
 }
 
-const pendingSessions = new Map<string, PendingSession>();
+interface PendingFlow {
+  createdAt: number;
+}
+
+const flowStore = new Map<string, StoredFlow>();
+const pendingFlows = new Map<string, PendingFlow>();
 
 setInterval(() => {
   const now = Date.now();
-  for (const [id, session] of pendingSessions) {
-    if (now - session.createdAt > 120_000) pendingSessions.delete(id);
+  for (const [id, flow] of flowStore) {
+    if (now - flow.createdAt > 120_000) flowStore.delete(id);
+  }
+  for (const [id, flow] of pendingFlows) {
+    if (now - flow.createdAt > 300_000) pendingFlows.delete(id);
   }
 }, 30_000);
 
@@ -41,6 +49,12 @@ function getFrontendOrigin(): string {
   return "";
 }
 
+router.post("/init-flow", (_req, res) => {
+  const flowId = crypto.randomBytes(32).toString("hex");
+  pendingFlows.set(flowId, { createdAt: Date.now() });
+  res.json({ flowId });
+});
+
 router.get("/url", (req, res) => {
   const appKey = process.env.SCHWAB_APP_KEY;
   const redirectUri = process.env.SCHWAB_REDIRECT_URI;
@@ -49,11 +63,17 @@ router.get("/url", (req, res) => {
     return res.json(GetAuthUrlResponse.parse({ url: "", configured: false }));
   }
 
+  const state = (req.query.state as string) || "";
+
   const params = new URLSearchParams({
     response_type: "code",
     client_id: appKey,
     redirect_uri: redirectUri,
   });
+
+  if (state) {
+    params.set("state", state);
+  }
 
   const url = `${SCHWAB_AUTH_BASE}?${params.toString()}`;
   res.json(GetAuthUrlResponse.parse({ url, configured: true }));
@@ -65,6 +85,7 @@ router.get("/redirect-uri", (_req, res) => {
 
 router.get("/callback", async (req, res) => {
   const code = req.query.code as string | undefined;
+  const state = req.query.state as string | undefined;
 
   if (!code) {
     return res.status(400).json({ error: "missing_code", message: "No authorization code provided" });
@@ -88,6 +109,8 @@ router.get("/callback", async (req, res) => {
     "Native callback: attempting Schwab token exchange"
   );
 
+  const origin = getFrontendOrigin();
+
   try {
     const response = await fetch(SCHWAB_TOKEN_URL, {
       method: "POST",
@@ -102,15 +125,20 @@ router.get("/callback", async (req, res) => {
 
     if (!response.ok) {
       req.log.error({ status: response.status, body: responseText }, "Native callback: token exchange failed");
-      const origin = getFrontendOrigin();
-      return res.redirect(`${origin}/?schwab=error&message=${encodeURIComponent("Token exchange failed. Please try again.")}`);
+      return res.redirect(`${origin}/oauth-success?status=error&message=${encodeURIComponent("Token exchange failed. Please try again.")}`);
     }
 
     req.log.info({ status: response.status }, "Native callback: token exchange succeeded");
     const tokenData = JSON.parse(responseText) as Record<string, unknown>;
 
-    const sessionId = crypto.randomBytes(32).toString("hex");
-    pendingSessions.set(sessionId, {
+    let flowId: string;
+    if (state && pendingFlows.has(state)) {
+      flowId = state;
+      pendingFlows.delete(state);
+    } else {
+      flowId = crypto.randomBytes(32).toString("hex");
+    }
+    flowStore.set(flowId, {
       accessToken: tokenData["access_token"] as string,
       refreshToken: tokenData["refresh_token"] as string,
       expiresIn: tokenData["expires_in"] as number,
@@ -118,28 +146,41 @@ router.get("/callback", async (req, res) => {
       createdAt: Date.now(),
     });
 
-    const origin = getFrontendOrigin();
-    res.redirect(`${origin}/?schwab=connected&session=${sessionId}`);
+    res.redirect(`${origin}/oauth-success?status=success&flowId=${flowId}`);
   } catch (err) {
     req.log.error({ err }, "Native callback: network error");
-    const origin = getFrontendOrigin();
-    res.redirect(`${origin}/?schwab=error&message=${encodeURIComponent("Network error reaching Schwab API.")}`);
+    res.redirect(`${origin}/oauth-success?status=error&message=${encodeURIComponent("Network error reaching Schwab API.")}`);
   }
 });
 
-router.get("/session/:id", (req, res) => {
-  const session = pendingSessions.get(req.params.id);
-  if (!session) {
-    return res.status(404).json({ error: "session_not_found", message: "Session expired or already consumed" });
+router.get("/flow-status", (req, res) => {
+  const flowId = req.query.flowId as string | undefined;
+
+  if (!flowId) {
+    return res.json({ connected: false });
   }
 
-  pendingSessions.delete(req.params.id);
+  const flow = flowStore.get(flowId);
+  if (!flow) {
+    return res.json({ connected: false });
+  }
+
+  return res.json({ connected: true });
+});
+
+router.get("/flow-tokens/:flowId", (req, res) => {
+  const flow = flowStore.get(req.params.flowId);
+  if (!flow) {
+    return res.status(404).json({ error: "flow_not_found", message: "Flow expired or already consumed" });
+  }
+
+  flowStore.delete(req.params.flowId);
 
   res.json({
-    accessToken: session.accessToken,
-    refreshToken: session.refreshToken,
-    expiresIn: session.expiresIn,
-    tokenType: session.tokenType,
+    accessToken: flow.accessToken,
+    refreshToken: flow.refreshToken,
+    expiresIn: flow.expiresIn,
+    tokenType: flow.tokenType,
   });
 });
 
