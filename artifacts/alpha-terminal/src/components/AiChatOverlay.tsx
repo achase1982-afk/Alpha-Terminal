@@ -85,9 +85,13 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
         signal: controller.signal,
       });
 
-      if (!res.ok) {
-        const errText = await res.text().catch(() => "Unknown error");
-        setMessages(prev => [...prev, { id: assistantId, role: "assistant", content: `**Error:** ${errText}` }]);
+      const contentType = res.headers.get("content-type") || "";
+
+      if (!res.ok || contentType.includes("text/html")) {
+        const label = !res.ok
+          ? `Server returned ${res.status}`
+          : "Received unexpected HTML response — the API server may be restarting";
+        setMessages(prev => [...prev, { id: assistantId, role: "assistant", content: `**Error:** ${label}. Please try again in a moment.` }]);
         setIsStreaming(false);
         return;
       }
@@ -104,17 +108,30 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
 
       setMessages(prev => [...prev, { id: assistantId, role: "assistant", content: "" }]);
 
+      let htmlDetected = false;
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         accumulated += decoder.decode(value, { stream: true });
+
+        if (!htmlDetected && accumulated.length < 200 && /^\s*<!DOCTYPE|^\s*<html/i.test(accumulated)) {
+          htmlDetected = true;
+          reader.cancel();
+          break;
+        }
+
         const current = accumulated;
         setMessages(prev =>
           prev.map(m => (m.id === assistantId ? { ...m, content: current } : m))
         );
       }
 
-      if (!accumulated.trim()) {
+      if (htmlDetected) {
+        setMessages(prev =>
+          prev.map(m => (m.id === assistantId ? { ...m, content: "**Error:** The API server may be restarting. Please try again in a moment." } : m))
+        );
+      } else if (!accumulated.trim()) {
         setMessages(prev =>
           prev.map(m => (m.id === assistantId ? { ...m, content: "*(No response generated)*" } : m))
         );
