@@ -83,7 +83,13 @@
     @apply border-border;
   }
 
-  html, body {
+  html {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
+  body {
     @apply bg-background text-foreground;
     font-size: 14px;
     line-height: 1.5;
@@ -91,20 +97,16 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     overflow: hidden;
-    height: 100dvh;
+    height: 100%;
     width: 100%;
     margin: 0;
     padding: 0;
     overscroll-behavior: none;
-    -webkit-overflow-scrolling: touch;
   }
 
   #root {
     position: fixed;
-    top: env(safe-area-inset-top, 0px);
-    left: 0;
-    right: 0;
-    bottom: 0;
+    inset: 0;
     overflow: hidden;
   }
   
