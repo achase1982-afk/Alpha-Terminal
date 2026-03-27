@@ -53,7 +53,7 @@ export default function TerminalPage() {
   }, [symbol, accessToken]);
 
   return (
-    <div className="flex h-screen w-full bg-background overflow-hidden selection:bg-primary/30 selection:text-white">
+    <div className="flex h-full w-full bg-background overflow-hidden selection:bg-primary/30 selection:text-white">
 
       {/* Mobile overlay backdrop */}
       {sidebarOpen && (
