@@ -18,7 +18,11 @@ export function AuthPanel() {
   // Fetch the exact redirect URI registered with Schwab from the backend
   useEffect(() => {
     fetch("/api/auth/redirect-uri")
-      .then(r => r.json())
+      .then(r => {
+        const ct = r.headers.get("content-type") || "";
+        if (!ct.includes("application/json")) throw new Error("non-json");
+        return r.json();
+      })
       .then(data => {
         if (data.redirectUri) setRegisteredRedirectUri(data.redirectUri);
       })
@@ -52,8 +56,23 @@ export function AuthPanel() {
           setIsOpen(false);
           setErrorMsg("");
         },
-        onError: (err) => {
-          setErrorMsg(`Auth failed: ${err.message}. The code may have expired — generate a new one.`);
+        onError: (err: any) => {
+          const raw = err?.data ?? err?.rawBody ?? err?.message ?? "";
+          const rawStr = typeof raw === "string" ? raw : JSON.stringify(raw);
+          const isUnreachable =
+            rawStr.includes("<!DOCTYPE") ||
+            rawStr.includes("<html") ||
+            rawStr.includes("Run this app") ||
+            rawStr.includes("ECONNREFUSED") ||
+            rawStr.includes("Failed to fetch") ||
+            rawStr.includes("NetworkError") ||
+            rawStr.includes("fetch failed");
+          if (isUnreachable) {
+            setErrorMsg("API server is not reachable. Make sure the API Server workflow is running, then try again.");
+          } else {
+            const detail = err?.data?.message ?? err?.message ?? "Unknown error";
+            setErrorMsg(`Auth failed: ${detail}. The code may have expired — generate a new one.`);
+          }
         }
       }
     );
