@@ -15,12 +15,14 @@ import { ChartControls, chartParamsFromStore, isIntradayInterval } from "@/compo
 import { useAutoRefreshToken } from "@/hooks/useAutoRefreshToken";
 import { useStreamingQuotes } from "@/hooks/useStreamingQuotes";
 import { AiChatOverlay } from "@/components/AiChatOverlay";
+import { CompanyTearSheet } from "@/components/CompanyTearSheet";
 import { LineChart, BarChart2, BrainCircuit, Menu, Radar, Wifi, WifiOff } from "lucide-react";
 
 export default function TerminalPage() {
   const { symbol, accessToken, chartPeriod, chartInterval, streamConnected } = useTerminalStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [tearSheetOpen, setTearSheetOpen] = useState(false);
   const [historyTimedOut, setHistoryTimedOut] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -128,7 +130,7 @@ export default function TerminalPage() {
           <MetricsBar compact={isScrolled} />
 
           {/* ─── Prominent search bar ─── */}
-          <TickerSearch />
+          <TickerSearch onOpenTearSheet={() => setTearSheetOpen(true)} />
 
           <div className="p-3 sm:p-4 lg:p-5" style={{ minHeight: "calc(100dvh - 80px)" }}>
             <Tabs defaultValue="chart" className="flex flex-col">
@@ -193,6 +195,7 @@ export default function TerminalPage() {
       </main>
 
       <AiChatOverlay isOpen={chatOpen} onClose={() => setChatOpen(false)} />
+      <CompanyTearSheet isOpen={tearSheetOpen} onClose={() => setTearSheetOpen(false)} />
     </div>
   );
 }

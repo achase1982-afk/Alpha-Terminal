@@ -375,4 +375,58 @@ router.get("/options", async (req, res) => {
   }
 });
 
+router.get("/fundamentals", async (req, res) => {
+  const symbol = req.query["symbol"] as string;
+  const accessToken = req.query["accessToken"] as string;
+
+  if (!symbol || !accessToken) {
+    return res.status(400).json({ symbol: "", error: "symbol and accessToken are required" });
+  }
+
+  const displaySymbol = symbol.toUpperCase().trim();
+  const apiSymbol = formatSchwabSymbol(displaySymbol);
+
+  try {
+    const response = await fetch(
+      `${SCHWAB_API_BASE}/instruments?symbol=${encodeURIComponent(apiSymbol)}&projection=fundamental`,
+      { headers: { "Authorization": `Bearer ${accessToken}` } }
+    );
+
+    if (response.status === 401) {
+      return res.json({ symbol: displaySymbol, error: "unauthorized" });
+    }
+    if (!response.ok) {
+      return res.json({ symbol: displaySymbol, error: `api_error_${response.status}` });
+    }
+
+    const json = await response.json() as Record<string, unknown>;
+    const instruments = (json["instruments"] ?? []) as Array<Record<string, unknown>>;
+    const entry = instruments[0] ?? {};
+
+    const fundamental = (entry["fundamental"] ?? {}) as Record<string, unknown>;
+
+    res.json({
+      symbol: displaySymbol,
+      description: (entry["description"] as string) ?? null,
+      exchange: (entry["exchange"] as string) ?? null,
+      assetType: (entry["assetType"] as string) ?? null,
+      marketCap: (fundamental["marketCap"] as number) ?? null,
+      sharesOutstanding: (fundamental["sharesOutstanding"] as number) ?? null,
+      peRatio: (fundamental["peRatio"] as number) ?? null,
+      pbRatio: (fundamental["pbRatio"] as number) ?? null,
+      dividendYield: (fundamental["divYield"] as number) ?? null,
+      dividendAmount: (fundamental["divAmount"] as number) ?? null,
+      eps: (fundamental["epsTTM"] as number) ?? null,
+      beta: (fundamental["beta"] as number) ?? null,
+      high52: (fundamental["high52"] as number) ?? null,
+      low52: (fundamental["low52"] as number) ?? null,
+      sector: null,
+      industry: null,
+    });
+  } catch (err) {
+    req.log.error({ err }, "Fundamentals fetch error");
+    res.json({ symbol: displaySymbol, error: "internal_error" });
+  }
+});
+
 export default router;

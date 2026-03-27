@@ -12,6 +12,7 @@ Key features implemented:
 - **Tabs**: CHART | OPTIONS | AI INTELLIGENCE | SCAN
 - **AI Intelligence Tab**: Deep Analysis (TA + Options Strategist) — chat removed, lives in overlay now
 - **AI Chat Overlay**: Full-screen iMessage-style chat accessible from sidebar "AI CHAT ASSISTANT" button; AbortController lifecycle; sticky bottom input with safe-area-inset
+- **Company Tear Sheet**: Clickable active ticker badge → full-screen overlay with Schwab fundamentals (Market Cap, Shares Out, P/E, EPS, Beta, Div Yield), AI-generated Sympathy & Competitors, placeholder sections for Headlines and Institutional Flow; backend routes `/api/market/fundamentals` and `/api/ai/sympathy-plays`
 - **Live Market Pulse**: Sidebar button → modal; backend fetches 14-symbol batch (SPY/QQQ/IWM/$VIX/$VVIX/$CPC/$TICK/$ADD/$TRIN/$DXY//ES//NQ//GC//CL) in single Schwab call; institutional-grade session-aware Gemini prompt
 - **Market Scanner**: AI Discovery + Manual Filter modes; configurable scan universe (S&P 100, Nasdaq 100, High Beta, Custom), max results (1-20), sortable results table with ticker/strategy/confidence/thesis columns
 - **Options Tab**: Chain table with Options Strategist results panel above (collapsible)
