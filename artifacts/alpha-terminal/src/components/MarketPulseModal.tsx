@@ -107,8 +107,6 @@ export function MarketPulseModal({
     onSymbolsChange([...DEFAULT_PULSE_SYMBOLS]);
   };
 
-  const loadingSymbolPreview = symbols.slice(0, 6).join(" · ") + (symbols.length > 6 ? ` · +${symbols.length - 6} more` : "");
-
   if (!isOpen) return null;
 
   return createPortal(
@@ -257,14 +255,9 @@ export function MarketPulseModal({
                     <div className="w-14 h-14 border-4 border-primary/20 rounded-full" />
                     <div className="absolute inset-0 w-14 h-14 border-4 border-primary border-t-transparent rounded-full animate-spin" />
                   </div>
-                  <div className="text-center space-y-1.5 max-w-sm">
-                    <p className="font-mono text-sm text-primary animate-pulse tracking-widest">
-                      SCANNING MACRO CONDITIONS...
-                    </p>
-                    <p className="font-mono text-[10px] text-muted-foreground leading-relaxed">
-                      {loadingSymbolPreview}
-                    </p>
-                  </div>
+                  <p className="font-mono text-sm text-primary animate-pulse tracking-widest">
+                    SCANNING MACRO CONDITIONS...
+                  </p>
                 </div>
               ) : result ? (
                 <MarkdownResult content={result} />
