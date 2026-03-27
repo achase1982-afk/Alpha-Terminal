@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Sidebar } from "@/components/Sidebar";
 import { MetricsBar } from "@/components/MetricsBar";
 import { TradingChart } from "@/components/TradingChart";
@@ -26,6 +26,7 @@ export default function TerminalPage() {
   const [historyTimedOut, setHistoryTimedOut] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
   const { refresh } = useAutoRefreshToken();
 
   const handleScroll = useCallback(() => {
@@ -33,6 +34,22 @@ export default function TerminalPage() {
     if (!el) return;
     const y = el.scrollTop;
     setIsScrolled(prev => (prev ? y > 30 : y > 60));
+  }, []);
+
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const sync = () => {
+      if (headerRef.current) {
+        headerRef.current.style.top = `${vv.offsetTop}px`;
+      }
+    };
+    vv.addEventListener("scroll", sync);
+    vv.addEventListener("resize", sync);
+    return () => {
+      vv.removeEventListener("scroll", sync);
+      vv.removeEventListener("resize", sync);
+    };
   }, []);
 
   // ── Start and maintain the Schwab WebSocket stream ──────────────────────
@@ -93,7 +110,7 @@ export default function TerminalPage() {
         </div>
 
         {/* ─── Fixed top on mobile, in-flow on desktop ─── */}
-        <div className="fixed top-0 inset-x-0 lg:relative lg:inset-auto z-50 bg-background">
+        <div ref={headerRef} className="fixed top-0 inset-x-0 lg:relative lg:inset-auto z-50 bg-background">
           {/* Mobile top bar */}
           <div className="flex items-center lg:hidden h-12 px-4 border-b border-card-border bg-card">
             <button
