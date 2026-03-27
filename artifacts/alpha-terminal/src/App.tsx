@@ -24,16 +24,32 @@ function PendingSessionLoader() {
   useEffect(() => {
     if (accessToken) return;
 
-    (async () => {
+    let cancelled = false;
+
+    const checkPending = async () => {
       try {
         const res = await fetch("/api/auth/pending-session");
-        if (!res.ok) return;
+        if (!res.ok || cancelled) return;
         const data = await res.json();
         if (data.found && data.accessToken) {
           setTokens(data.accessToken, data.refreshToken || "");
         }
       } catch {}
-    })();
+    };
+
+    checkPending();
+
+    const handleVisibility = () => {
+      if (!document.hidden && !cancelled) {
+        checkPending();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
   }, [accessToken, setTokens]);
 
   return null;
