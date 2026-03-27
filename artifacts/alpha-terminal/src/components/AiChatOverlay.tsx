@@ -272,6 +272,10 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
             onKeyDown={handleKeyDown}
             placeholder={`Message about ${symbol}...`}
             rows={1}
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck={false}
+            name="ai-chat-input"
             className="flex-1 min-h-[40px] max-h-[120px] px-3.5 py-2.5 rounded-2xl bg-[#161B22] border border-card-border
               text-sm text-foreground placeholder:text-muted-foreground/50 resize-none
               focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30 transition-colors"
