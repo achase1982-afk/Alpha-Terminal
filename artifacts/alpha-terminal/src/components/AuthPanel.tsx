@@ -1,15 +1,13 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useGetAuthUrl } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { ChevronRight, KeyRound, ExternalLink, CheckCircle2, Loader2 } from "lucide-react";
 
 export function AuthPanel() {
-  const { accessToken, setTokens, clearTokens } = useTerminalStore();
+  const { accessToken, clearTokens } = useTerminalStore();
   const [isOpen, setIsOpen] = useState(false);
-  const [waitingForCallback, setWaitingForCallback] = useState(false);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isNavigating, setIsNavigating] = useState(false);
 
   const needsAuth = !accessToken && isOpen;
 
@@ -18,62 +16,22 @@ export function AuthPanel() {
   });
 
   const authUrl = authUrlData?.url || "";
-  const canLogin = !!authUrl && !isUrlFetching;
-
-  const stopPolling = useCallback(() => {
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
-    }
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
-    }
-    setWaitingForCallback(false);
-  }, []);
-
-  const startPolling = useCallback(() => {
-    stopPolling();
-    setWaitingForCallback(true);
-
-    const poll = async () => {
-      try {
-        const res = await fetch("/api/auth/pending-session");
-        if (!res.ok) return;
-        const data = await res.json();
-        if (data.found && data.accessToken) {
-          setTokens(data.accessToken, data.refreshToken || "");
-          stopPolling();
-          setIsOpen(false);
-        }
-      } catch {}
-    };
-
-    pollRef.current = setInterval(poll, 2000);
-    timeoutRef.current = setTimeout(() => stopPolling(), 5 * 60 * 1000);
-  }, [setTokens, stopPolling]);
 
   const handleLoginClick = useCallback(async () => {
+    setIsNavigating(true);
     let url = authUrl;
     if (!url) {
       const result = await refetchAuthUrl();
       url = result.data?.url || "";
     }
-    if (!url) return;
-    window.open(url, "_blank", "noopener,noreferrer");
-    startPolling();
-  }, [authUrl, refetchAuthUrl, startPolling]);
+    if (!url) {
+      setIsNavigating(false);
+      return;
+    }
+    window.location.href = url;
+  }, [authUrl, refetchAuthUrl]);
 
-  useEffect(() => {
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (accessToken) stopPolling();
-  }, [accessToken, stopPolling]);
+  const isLoading = isUrlFetching || isNavigating;
 
   return (
     <div className="bg-card border border-card-border rounded-xl overflow-hidden shadow-sm">
@@ -123,51 +81,23 @@ export function AuthPanel() {
             </div>
           ) : (
             <div className="space-y-3">
-              {waitingForCallback ? (
-                <>
-                  <div className="flex items-start gap-2.5 rounded-lg bg-amber-500/5 border border-amber-500/20 p-3">
-                    <Loader2 className="w-4 h-4 text-amber-400 shrink-0 mt-0.5 animate-spin" />
-                    <div className="text-[10px] text-gray-300 leading-snug space-y-1.5">
-                      <p className="text-amber-400 font-semibold text-[11px]">Waiting for Schwab login...</p>
-                      <p>Complete the sign-in on the Schwab page. Once done, this will update automatically.</p>
-                    </div>
-                  </div>
-                  <Button
-                    onClick={handleLoginClick}
-                    disabled={isUrlFetching}
-                    className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-mono text-xs h-10"
-                  >
-                    {isUrlFetching ? (
-                      <><Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />LOADING...</>
-                    ) : (
-                      <>RETRY SCHWAB LOGIN <ExternalLink className="ml-2 w-3.5 h-3.5" /></>
-                    )}
-                  </Button>
-                  <button onClick={stopPolling} className="text-[9px] text-muted-foreground/50 font-mono hover:text-muted-foreground transition-colors w-full text-center">
-                    CANCEL
-                  </button>
-                </>
-              ) : (
-                <>
-                  <div className="flex items-start gap-2 rounded-lg bg-primary/5 border border-primary/20 p-2.5">
-                    <KeyRound className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-                    <p className="text-[10px] text-gray-300 leading-snug">
-                      Sign in with your Schwab brokerage account. A new page will open — after you sign in, this screen will update automatically.
-                    </p>
-                  </div>
-                  <Button
-                    onClick={handleLoginClick}
-                    disabled={isUrlFetching}
-                    className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-mono text-xs h-10"
-                  >
-                    {isUrlFetching ? (
-                      <><Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />LOADING...</>
-                    ) : (
-                      <>SIGN IN WITH SCHWAB <ExternalLink className="ml-2 w-3.5 h-3.5" /></>
-                    )}
-                  </Button>
-                </>
-              )}
+              <div className="flex items-start gap-2 rounded-lg bg-primary/5 border border-primary/20 p-2.5">
+                <KeyRound className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                <p className="text-[10px] text-gray-300 leading-snug">
+                  Sign in with your Schwab brokerage account. You'll be redirected to Schwab and then brought right back here.
+                </p>
+              </div>
+              <Button
+                onClick={handleLoginClick}
+                disabled={isLoading}
+                className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-mono text-xs h-10"
+              >
+                {isLoading ? (
+                  <><Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />REDIRECTING...</>
+                ) : (
+                  <>SIGN IN WITH SCHWAB <ExternalLink className="ml-2 w-3.5 h-3.5" /></>
+                )}
+              </Button>
             </div>
           )}
         </div>
