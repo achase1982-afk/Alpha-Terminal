@@ -19,6 +19,7 @@ import { LineChart, BarChart2, BrainCircuit, Menu, Radar, Wifi, WifiOff } from "
 export default function TerminalPage() {
   const { symbol, accessToken, chartPeriod, chartInterval, streamConnected } = useTerminalStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [historyTimedOut, setHistoryTimedOut] = useState(false);
   const { refresh } = useAutoRefreshToken();
 
   // ── Start and maintain the Schwab WebSocket stream ──────────────────────
@@ -42,6 +43,14 @@ export default function TerminalPage() {
       refresh();
     }
   }, [historyData?.error, refresh]);
+
+  // ── 5-second safety timeout: forces "not found" state if no data arrives ──
+  useEffect(() => {
+    setHistoryTimedOut(false);
+    if (!accessToken) return;
+    const timer = setTimeout(() => setHistoryTimedOut(true), 5_000);
+    return () => clearTimeout(timer);
+  }, [symbol, accessToken]);
 
   return (
     <div className="flex h-screen w-full bg-background overflow-hidden selection:bg-primary/30 selection:text-white">
@@ -146,6 +155,8 @@ export default function TerminalPage() {
                 <TradingChart
                   data={historyData?.candles || []}
                   isLoading={historyLoading}
+                  error={historyData?.error}
+                  timedOut={historyTimedOut}
                   tokenExpired={historyData?.error === "unauthorized"}
                   intraday={isIntradayInterval(chartInterval)}
                 />

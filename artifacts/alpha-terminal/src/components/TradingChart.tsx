@@ -15,11 +15,24 @@ import { calculateSMA, calculateBollingerBands } from '@/lib/chart-utils';
 interface TradingChartProps {
   data: Candle[];
   isLoading?: boolean;
+  error?: string;
+  timedOut?: boolean;
   tokenExpired?: boolean;
   intraday?: boolean;
 }
 
-export function TradingChart({ data, isLoading, tokenExpired, intraday }: TradingChartProps) {
+function isNotFoundError(error?: string): boolean {
+  if (!error) return false;
+  // Permanent API errors: 4xx from Schwab or empty data response
+  return (
+    error === "no_data" ||
+    error === "internal_error" ||
+    error.startsWith("api_error_4") ||
+    error.startsWith("api_error_5")
+  );
+}
+
+export function TradingChart({ data, isLoading, error, timedOut, tokenExpired, intraday }: TradingChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const { overlays } = useTerminalStore();
@@ -139,12 +152,17 @@ export function TradingChart({ data, isLoading, tokenExpired, intraday }: Tradin
       <div ref={chartContainerRef} className="absolute inset-0" />
       {(!data || data.length === 0) && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 font-mono text-xs sm:text-sm">
-          {isLoading ? (
+          {isLoading && !timedOut ? (
             <span className="text-muted-foreground animate-pulse">LOADING MARKET DATA...</span>
           ) : tokenExpired ? (
             <>
               <span className="text-yellow-500/80">SESSION EXPIRED — REFRESHING...</span>
               <span className="text-muted-foreground/50 text-[10px]">Open the sidebar to reconnect if this persists</span>
+            </>
+          ) : (isNotFoundError(error) || timedOut) ? (
+            <>
+              <span className="text-red-500/70 tracking-widest">SYMBOL NOT FOUND OR UNSUPPORTED BY API</span>
+              <span className="text-muted-foreground/50 text-[10px]">Try a valid equity ticker (e.g. AAPL, MSFT, SPY)</span>
             </>
           ) : (
             <span className="text-muted-foreground">AWAITING MARKET DATA...</span>

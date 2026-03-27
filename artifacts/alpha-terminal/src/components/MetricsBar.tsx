@@ -1,7 +1,7 @@
 import { useTerminalStore } from "@/lib/store";
 import { useQuote }         from "@/hooks/useQuote";
 import { useTickColor }     from "@/hooks/useTickColor";
-import { RefreshCw, Wifi, WifiOff } from "lucide-react";
+import { RefreshCw, Wifi, WifiOff, SearchX } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const UP_COLOR   = "#00E676";
@@ -58,6 +58,28 @@ export function MetricsBar() {
             <Skeleton className="h-6 w-28 bg-card-border" />
           </div>
         ))}
+      </div>
+    );
+  }
+
+  // Permanent API error — symbol doesn't exist or isn't supported
+  const quoteErr = quote?.error;
+  const isNotFound =
+    quoteErr === "no_data" ||
+    quoteErr === "internal_error" ||
+    quoteErr?.startsWith("api_error_4") ||
+    quoteErr?.startsWith("api_error_5");
+
+  if (isNotFound) {
+    return (
+      <div className="w-full border-b border-card-border flex items-center gap-2.5 px-4 sm:px-6 py-3 shrink-0" style={{ background: "#060A10" }}>
+        <SearchX className="w-3.5 h-3.5 text-red-500/70 shrink-0" />
+        <span className="font-mono text-xs text-red-500/70 tracking-wider">
+          {symbol} — SYMBOL NOT FOUND OR UNSUPPORTED BY API
+        </span>
+        <span className="font-mono text-[10px] text-muted-foreground/50 ml-1">
+          · LAST PRICE: —
+        </span>
       </div>
     );
   }
