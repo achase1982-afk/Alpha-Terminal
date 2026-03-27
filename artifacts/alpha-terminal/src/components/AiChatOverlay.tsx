@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useGetQuote } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
-import { X, Send, Search, Square } from "lucide-react";
+import { X, Send, Search, Square, RotateCw } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
 function getChipsForSymbol(symbol: string): string[] {
@@ -90,10 +90,12 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
       const contentType = res.headers.get("content-type") || "";
 
       if (!res.ok || contentType.includes("text/html")) {
+        const isRetryable = [404, 502, 503, 504].includes(res.status) || contentType.includes("text/html");
         const label = !res.ok
           ? `Server returned ${res.status}`
           : "Received unexpected HTML response — the API server may be restarting";
-        setMessages(prev => [...prev, { id: assistantId, role: "assistant", content: `**Error:** ${label}. Please try again in a moment.` }]);
+        setMessages(prev => [...prev, { id: assistantId, role: "assistant", content: `**Error:** ${label}. Please try again in a moment.`, retryable: isRetryable }]);
+        if (isRetryable) setLastFailedMessage(text.trim());
         setIsStreaming(false);
         return;
       }
@@ -131,16 +133,27 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
 
       if (htmlDetected) {
         setMessages(prev =>
-          prev.map(m => (m.id === assistantId ? { ...m, content: "**Error:** The API server may be restarting. Please try again in a moment." } : m))
+          prev.map(m => (m.id === assistantId ? { ...m, content: "**Error:** The API server may be restarting. Please try again in a moment.", retryable: true } : m))
         );
-      } else if (!accumulated.trim()) {
-        setMessages(prev =>
-          prev.map(m => (m.id === assistantId ? { ...m, content: "*(No response generated)*" } : m))
-        );
+        setLastFailedMessage(text.trim());
+      } else {
+        const trimmed = accumulated.trim();
+        if (!trimmed) {
+          setMessages(prev =>
+            prev.map(m => (m.id === assistantId ? { ...m, content: "*(No response generated)*" } : m))
+          );
+        } else {
+          setMessages(prev =>
+            prev.map(m => (m.id === assistantId ? { ...m, content: trimmed } : m))
+          );
+        }
       }
     } catch (err: unknown) {
       if ((err as Error).name === "AbortError") return;
-      setMessages(prev => [...prev, { id: assistantId, role: "assistant", content: `**Error:** ${(err as Error).message}` }]);
+      const errMsg = (err as Error).message || "Connection failed";
+      const isNetworkError = errMsg.includes("Failed to fetch") || errMsg.includes("NetworkError") || errMsg.includes("Load failed");
+      setMessages(prev => [...prev, { id: assistantId, role: "assistant", content: `**Error:** ${errMsg}`, retryable: isNetworkError }]);
+      if (isNetworkError) setLastFailedMessage(text.trim());
     } finally {
       abortRef.current = null;
       setIsStreaming(false);
@@ -155,7 +168,15 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
   const handleClear = useCallback(() => {
     handleStop();
     setMessages([]);
+    setLastFailedMessage(null);
   }, [handleStop]);
+
+  const handleRetry = useCallback(() => {
+    if (!lastFailedMessage || isStreaming) return;
+    setMessages(prev => prev.filter(m => !m.retryable));
+    setLastFailedMessage(null);
+    setTimeout(() => sendMessage(lastFailedMessage), 2000);
+  }, [lastFailedMessage, isStreaming, sendMessage]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -248,6 +269,15 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
                 prose-headings:text-foreground prose-li:text-gray-200 prose-strong:text-white`}>
                 <ReactMarkdown>{msg.content}</ReactMarkdown>
               </div>
+              {msg.retryable && !isStreaming && (
+                <button
+                  onClick={handleRetry}
+                  className="mt-2 flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 transition-colors"
+                >
+                  <RotateCw className="w-3 h-3" />
+                  Retry
+                </button>
+              )}
             </div>
           </div>
         ))}
