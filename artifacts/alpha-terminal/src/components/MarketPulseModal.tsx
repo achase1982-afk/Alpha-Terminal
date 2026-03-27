@@ -4,9 +4,13 @@ import ReactMarkdown from "react-markdown";
 import { X, Zap, Settings, ArrowLeft, Plus, RotateCcw } from "lucide-react";
 
 export const DEFAULT_PULSE_SYMBOLS = [
-  "SPY", "QQQ", "IWM", "VIX", "VVIX",
-  "$DXY", "$TICK", "$ADD", "$TRIN", "$CPC",
-  "/ES", "/NQ", "/GC", "/CL",
+  "$ADD", "$ADVN", "$DECN", "$TICK",
+  "$TRIN", "$VIX", "$VVIX", "$VIX9D",
+  "$VIX3M", "$SKEW", "$TYX", "$TNX", "HYG",
+  "LQD", "IEF", "/GC", "/ES", "/NQ", "/YM",
+  "/RTY", "/CL", "/BZ", "$NYICDX", "/ZQ",
+  "/ZB", "/ZT", "$ADSPD", "$UVOL", "$DVOL",
+  "$HYD",
 ];
 
 interface MarketPulseModalProps {
