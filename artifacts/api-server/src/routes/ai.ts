@@ -636,8 +636,25 @@ ${marketContext ? `LIVE SCHWAB DATA:\n${marketContext}` : ""}`;
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Connection", "keep-alive");
 
-    for await (const chunk of result.textStream) {
-      res.write(chunk);
+    // Heartbeat: send a newline every 5s while Gemini searches so the proxy
+    // doesn't cut the connection before the first real text chunk arrives.
+    let firstChunkSent = false;
+    const heartbeat = setInterval(() => {
+      if (!firstChunkSent && !res.writableEnded) {
+        res.write("\n");
+      }
+    }, 5000);
+
+    try {
+      for await (const chunk of result.textStream) {
+        if (!firstChunkSent) {
+          firstChunkSent = true;
+          clearInterval(heartbeat);
+        }
+        res.write(chunk);
+      }
+    } finally {
+      clearInterval(heartbeat);
     }
     res.end();
   } catch (error) {

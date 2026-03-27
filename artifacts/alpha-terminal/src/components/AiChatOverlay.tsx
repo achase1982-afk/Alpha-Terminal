@@ -19,6 +19,7 @@ interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
+  retryable?: boolean;
 }
 
 interface AiChatOverlayProps {
@@ -46,6 +47,7 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
+  const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
