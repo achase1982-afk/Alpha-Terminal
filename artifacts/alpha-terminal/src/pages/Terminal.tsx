@@ -128,7 +128,7 @@ export default function TerminalPage() {
           {/* ─── Prominent search bar ─── */}
           <TickerSearch />
 
-          <div className="p-3 sm:p-4 lg:p-5">
+          <div className="p-3 sm:p-4 lg:p-5" style={{ minHeight: "calc(100dvh - 80px)" }}>
             <Tabs defaultValue="chart" className="flex flex-col">
               <div className="overflow-x-auto shrink-0 mb-4">
                 <TabsList className="bg-card border border-card-border p-1 inline-flex min-w-max">
