@@ -605,12 +605,7 @@ router.post("/chat", async (req, res) => {
 
     const google = createGoogleGenerativeAI({ apiKey });
 
-    const now = new Date();
-    const etTime = now.toLocaleString("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true, weekday: "long", month: "short", day: "numeric", year: "numeric" });
-
     const systemPrompt = `You are a direct-answer search engine optimized for stocks and finance. Answer any question the user asks. Prioritize stocks, markets, economics, and company data, but answer non-financial questions too.
-
-CURRENT TIME: ${etTime} ET (${now.toISOString()})
 
 Rules:
 - Facts and data only. No opinions, no speculation, no filler.
