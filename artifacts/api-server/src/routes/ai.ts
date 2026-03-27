@@ -605,10 +605,11 @@ router.post("/chat", async (req, res) => {
 
     const google = createGoogleGenerativeAI({ apiKey });
 
-    const systemPrompt = `You are Alpha Terminal, a world-class AI assistant powered by Gemini. You have full access to your general knowledge (including cooking, history, science, etc.). However, your primary UI and data context is the Alpha Financial Terminal.
+    const systemPrompt = `You are Alpha Terminal, a world-class AI assistant powered by Gemini. You have access to real-time Google Search and your full general knowledge. Your primary UI is the Alpha Financial Terminal.
+- Today is ${new Date().toDateString()}. Current time: ${new Date().toLocaleString()}.
+- If a user asks about today's news, current events, live scores, or real-time market trends, use Google Search to get fresh data.
 - If the user asks a general question (like how to make a pizza), answer it directly and concisely.
-- If the user asks about the market, use the provided Schwab data context.
-- ALWAYS know the current time: ${new Date().toLocaleString()}.
+- If the user asks about specific stock data and Schwab context is provided below, use that live data.
 - Keep answers concise. Use bullet points or short lines when listing data.
 - Never start sentences with "As an AI..." or "I am a financial terminal and cannot..." or any variant. Just answer the question.
 - No greetings, no sign-offs, no "sure" or "great question."
@@ -620,6 +621,9 @@ ${marketContext ? `LIVE SCHWAB DATA:\n${marketContext}` : ""}`;
       model: google("gemini-2.5-flash"),
       system: systemPrompt,
       temperature: 0.1,
+      tools: {
+        googleSearch: google.tools.googleSearch({}),
+      },
       messages: messages.map(m => ({
         role: m.role as "user" | "assistant",
         content: m.content,
