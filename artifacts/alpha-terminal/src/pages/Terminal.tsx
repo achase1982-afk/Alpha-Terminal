@@ -92,8 +92,8 @@ export default function TerminalPage() {
           <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-primary/5 blur-[120px] rounded-full" />
         </div>
 
-        {/* ─── Top: Mobile header + Ticker tape ─── */}
-        <div className="shrink-0 z-50 bg-background">
+        {/* ─── Fixed top: Mobile header + Ticker tape ─── */}
+        <div className="fixed top-0 left-0 right-0 z-50 bg-background lg:relative">
           {/* Mobile top bar */}
           <div className="flex items-center lg:hidden h-12 px-4 border-b border-card-border bg-card">
             <button
@@ -121,7 +121,10 @@ export default function TerminalPage() {
           <TickerTape />
         </div>
 
-        {/* ─── Scrollable content: everything below the sticky strip ─── */}
+        {/* ─── Spacer for fixed header (mobile: 48px bar + 32px tape = 80px; desktop: 32px tape only) ─── */}
+        <div className="shrink-0 h-20 lg:h-0" />
+
+        {/* ─── Scrollable content: everything below the fixed header ─── */}
         <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-auto z-10">
           {/* ─── Macro Cards ─── */}
           <MacroBar />
