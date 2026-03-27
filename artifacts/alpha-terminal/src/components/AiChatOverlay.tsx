@@ -258,6 +258,7 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
                 <span className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: "150ms" }} />
                 <span className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: "300ms" }} />
               </span>
+              <span className="text-xs text-muted-foreground ml-1">Gemini is searching live data...</span>
             </div>
           </div>
         )}

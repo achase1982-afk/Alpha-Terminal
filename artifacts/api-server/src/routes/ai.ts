@@ -634,6 +634,7 @@ ${marketContext ? `LIVE SCHWAB DATA:\n${marketContext}` : ""}`;
     res.setHeader("Transfer-Encoding", "chunked");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Connection", "keep-alive");
 
     for await (const chunk of result.textStream) {
       res.write(chunk);
