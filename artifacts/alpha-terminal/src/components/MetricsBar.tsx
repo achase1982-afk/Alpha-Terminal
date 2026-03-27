@@ -24,9 +24,10 @@ function fmtVol(n: number | null): string {
 
 interface MetricsBarProps {
   compact?: boolean;
+  onOpenTearSheet?: () => void;
 }
 
-export function MetricsBar({ compact = false }: MetricsBarProps) {
+export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps) {
   const { symbol, accessToken, streamConnected } = useTerminalStore();
   const { data: quote, isLoading, source } = useQuote(symbol);
   const tickColor = useTickColor(symbol, quote?.last ?? null);
@@ -117,9 +118,9 @@ export function MetricsBar({ compact = false }: MetricsBarProps) {
         className={`${stickyBase} flex items-center px-3 sm:px-4 gap-3 sm:gap-4 overflow-x-auto`}
         style={{ background: "#0A0F16", height: 36 }}
       >
-        <span className="font-bold text-white text-sm tracking-wide shrink-0">
+        <button onClick={onOpenTearSheet} className="font-bold text-white text-sm tracking-wide shrink-0 hover:text-primary transition-colors cursor-pointer">
           {quote.symbol}
-        </span>
+        </button>
 
         <span className="tabular-nums shrink-0" style={{ fontSize: '0.95rem', fontWeight: 300, color: tickColor }}>
           {lastStr}
@@ -149,18 +150,18 @@ export function MetricsBar({ compact = false }: MetricsBarProps) {
       className={`${stickyBase} flex items-center px-4 sm:px-6 gap-4 sm:gap-6 lg:gap-8 overflow-x-auto py-2 sm:h-16`}
       style={{ background: "#0A0F16" }}
     >
-      <div className="flex flex-col shrink-0 gap-0.5">
+      <button onClick={onOpenTearSheet} className="flex flex-col shrink-0 gap-0.5 text-left cursor-pointer group" aria-label={`View company profile for ${quote.symbol}`}>
         <span className={LABEL_CLS}>Ticker</span>
-        <span className="font-bold text-white leading-tight" style={{ fontSize: '1.1rem' }}>
+        <span className="font-bold text-white leading-tight group-hover:text-primary transition-colors" style={{ fontSize: '1.1rem' }}>
           {quote.symbol}
         </span>
         <span
-          className="leading-tight truncate max-w-[130px] sm:max-w-[200px]"
+          className="leading-tight truncate max-w-[130px] sm:max-w-[200px] group-hover:text-gray-200 transition-colors"
           style={{ fontSize: '0.8rem', color: '#9CA3AF', fontWeight: 400, lineHeight: 1.3 }}
         >
           {quote.description || "Name Unavailable"}
         </span>
-      </div>
+      </button>
 
       <div className="w-px h-10 bg-gray-800 shrink-0" />
 

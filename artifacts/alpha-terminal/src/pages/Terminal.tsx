@@ -127,7 +127,7 @@ export default function TerminalPage() {
           <MacroBar />
 
           {/* ─── Metrics row (sticky + collapsible) ─── */}
-          <MetricsBar compact={isScrolled} />
+          <MetricsBar compact={isScrolled} onOpenTearSheet={() => setTearSheetOpen(true)} />
 
           {/* ─── Prominent search bar ─── */}
           <TickerSearch onOpenTearSheet={() => setTearSheetOpen(true)} />
