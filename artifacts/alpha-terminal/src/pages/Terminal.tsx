@@ -73,35 +73,40 @@ export default function TerminalPage() {
       </div>
 
       {/* Main content */}
-      <main className="flex-1 flex flex-col h-full overflow-hidden bg-background relative min-w-0">
-        {/* Ambient glow */}
-        <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-primary/5 blur-[120px] rounded-full pointer-events-none" />
-
-        {/* Mobile top bar */}
-        <div className="flex items-center lg:hidden h-12 px-4 border-b border-card-border bg-card z-10 shrink-0">
-          <button
-            onClick={() => setSidebarOpen(true)}
-            className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-card-border transition-colors mr-3"
-            aria-label="Open menu"
-          >
-            <Menu className="w-5 h-5" />
-          </button>
-          <div className="flex flex-col leading-none">
-            <span className="font-sans font-black text-base tracking-wider text-foreground">ALPHA</span>
-            <span className="font-sans font-semibold text-[10px] tracking-[0.25em] text-primary">TERMINAL</span>
-          </div>
-          <div className="ml-auto flex items-center gap-2">
-            <span className="font-mono text-xs text-primary font-bold">{symbol}</span>
-            {accessToken && (
-              streamConnected
-                ? <span className="flex items-center gap-0.5 font-mono text-[9px] text-emerald-500"><Wifi className="w-3 h-3" />LIVE</span>
-                : <span className="flex items-center gap-0.5 font-mono text-[9px] text-gray-600"><WifiOff className="w-3 h-3" />POLL</span>
-            )}
-          </div>
+      <main className="flex-1 flex flex-col h-full bg-background relative min-w-0" style={{ overflow: "clip" }}>
+        {/* Ambient glow — clipped inside its own overflow-hidden layer */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-primary/5 blur-[120px] rounded-full" />
         </div>
 
-        {/* ─── Top strip: Ticker tape scrolling marquee ─── */}
-        <TickerTape />
+        {/* ─── Sticky top: Mobile header + Ticker tape ─── */}
+        <div className="sticky top-0 z-50 shrink-0 bg-background">
+          {/* Mobile top bar */}
+          <div className="flex items-center lg:hidden h-12 px-4 border-b border-card-border bg-card">
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-card-border transition-colors mr-3"
+              aria-label="Open menu"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <div className="flex flex-col leading-none">
+              <span className="font-sans font-black text-base tracking-wider text-foreground">ALPHA</span>
+              <span className="font-sans font-semibold text-[10px] tracking-[0.25em] text-primary">TERMINAL</span>
+            </div>
+            <div className="ml-auto flex items-center gap-2">
+              <span className="font-mono text-xs text-primary font-bold">{symbol}</span>
+              {accessToken && (
+                streamConnected
+                  ? <span className="flex items-center gap-0.5 font-mono text-[9px] text-emerald-500"><Wifi className="w-3 h-3" />LIVE</span>
+                  : <span className="flex items-center gap-0.5 font-mono text-[9px] text-gray-600"><WifiOff className="w-3 h-3" />POLL</span>
+              )}
+            </div>
+          </div>
+
+          {/* ─── Ticker tape scrolling marquee ─── */}
+          <TickerTape />
+        </div>
 
         {/* ─── Macro Cards ─── */}
         <MacroBar />
