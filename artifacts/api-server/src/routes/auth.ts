@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import crypto from "node:crypto";
 import {
   GetAuthUrlResponse,
   ExchangeCodeBody,
@@ -13,7 +14,20 @@ const router: IRouter = Router();
 const SCHWAB_AUTH_BASE = "https://api.schwabapi.com/v1/oauth/authorize";
 const SCHWAB_TOKEN_URL = "https://api.schwabapi.com/v1/oauth/token";
 
-/** Build a Basic auth header from app key + secret */
+const pendingStates = new Map<string, number>();
+const STATE_TTL_MS = 10 * 60 * 1000;
+
+function cleanExpiredStates() {
+  const now = Date.now();
+  for (const [key, ts] of pendingStates) {
+    if (now - ts > STATE_TTL_MS) pendingStates.delete(key);
+  }
+}
+
+function escapeHtml(str: string): string {
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
 function basicAuth(appKey: string, appSecret: string): string {
   return "Basic " + Buffer.from(`${appKey}:${appSecret}`).toString("base64");
 }
@@ -26,10 +40,15 @@ router.get("/url", (_req, res) => {
     return res.json(GetAuthUrlResponse.parse({ url: "", configured: false }));
   }
 
+  cleanExpiredStates();
+  const state = crypto.randomBytes(24).toString("hex");
+  pendingStates.set(state, Date.now());
+
   const params = new URLSearchParams({
     response_type: "code",
     client_id: appKey,
     redirect_uri: redirectUri,
+    state,
   });
 
   const url = `${SCHWAB_AUTH_BASE}?${params.toString()}`;
@@ -39,6 +58,105 @@ router.get("/url", (_req, res) => {
 /** Expose the exact redirect URI from env so the frontend always uses the right one */
 router.get("/redirect-uri", (_req, res) => {
   res.json({ redirectUri: process.env.SCHWAB_REDIRECT_URI || "" });
+});
+
+router.get("/callback", async (req, res) => {
+  const code = req.query["code"] as string | undefined;
+  const state = req.query["state"] as string | undefined;
+  const errorPage = (title: string, msg: string) => `
+    <html><body style="background:#0A0F16;color:#fff;font-family:monospace;padding:40px;text-align:center">
+      <h2 style="color:#FF1744">${escapeHtml(title)}</h2>
+      <p>${escapeHtml(msg)}</p>
+      <p style="margin-top:20px"><a href="/" style="color:#0090FF">Return to Alpha Terminal</a></p>
+    </body></html>`;
+
+  if (!code) {
+    return res.status(400).send(errorPage("Missing Code", "No authorization code was received from Schwab."));
+  }
+
+  if (!state || !pendingStates.has(state)) {
+    req.log.warn({ state: state?.slice(0, 8) }, "GET /callback — invalid or missing state parameter");
+    return res.status(400).send(errorPage("Invalid Request", "OAuth state validation failed. Please try signing in again."));
+  }
+  pendingStates.delete(state);
+
+  const appKey = process.env.SCHWAB_APP_KEY;
+  const appSecret = process.env.SCHWAB_APP_SECRET;
+  const redirectUri = process.env.SCHWAB_REDIRECT_URI;
+
+  if (!appKey || !appSecret || !redirectUri) {
+    return res.status(400).send(errorPage("Not Configured", "Schwab credentials are not configured."));
+  }
+
+  const body = new URLSearchParams();
+  body.set("grant_type", "authorization_code");
+  body.set("code", code);
+  body.set("redirect_uri", redirectUri);
+
+  req.log.info(
+    { grant_type: "authorization_code", redirect_uri: redirectUri, code_length: code.length },
+    "GET /callback — exchanging code for tokens"
+  );
+
+  try {
+    const response = await fetch(SCHWAB_TOKEN_URL, {
+      method: "POST",
+      headers: {
+        "Authorization": basicAuth(appKey, appSecret),
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: body.toString(),
+    });
+
+    const responseText = await response.text();
+
+    if (!response.ok) {
+      req.log.error({ status: response.status, body: responseText }, "GET /callback token exchange failed");
+      return res.status(400).send(errorPage("Authentication Failed", "Schwab returned an error. The authorization code may have expired. Please try again."));
+    }
+
+    let tokenData: Record<string, unknown>;
+    try {
+      tokenData = JSON.parse(responseText);
+    } catch {
+      req.log.error({ body: responseText.slice(0, 200) }, "GET /callback — invalid JSON from Schwab");
+      return res.status(502).send(errorPage("Unexpected Response", "Received an invalid response from Schwab. Please try again."));
+    }
+
+    const accessToken = tokenData["access_token"];
+    const refreshToken = tokenData["refresh_token"];
+
+    if (typeof accessToken !== "string" || !accessToken) {
+      req.log.error({ keys: Object.keys(tokenData) }, "GET /callback — missing access_token");
+      return res.status(502).send(errorPage("Invalid Token", "Schwab did not return a valid access token. Please try again."));
+    }
+
+    req.log.info("GET /callback — token exchange succeeded, redirecting to app");
+
+    const safeAccessToken = JSON.stringify(accessToken);
+    const safeRefreshToken = JSON.stringify(typeof refreshToken === "string" ? refreshToken : "");
+
+    res.send(`
+      <html><body style="background:#0A0F16;color:#fff;font-family:monospace;padding:40px;text-align:center">
+        <h2 style="color:#0090FF">Connected to Schwab!</h2>
+        <p>Storing session and redirecting...</p>
+        <script>
+          try {
+            var storeKey = 'alpha-terminal-storage';
+            var raw = localStorage.getItem(storeKey);
+            var store = raw ? JSON.parse(raw) : { state: {}, version: 2 };
+            store.state.accessToken = ${safeAccessToken};
+            store.state.refreshToken = ${safeRefreshToken};
+            localStorage.setItem(storeKey, JSON.stringify(store));
+          } catch(e) { console.error('Failed to store tokens', e); }
+          window.location.href = '/';
+        </script>
+      </body></html>
+    `);
+  } catch (err) {
+    req.log.error({ err }, "GET /callback network error");
+    res.status(500).send(errorPage("Connection Error", "Could not reach Schwab API. Please try again."));
+  }
 });
 
 router.post("/callback", async (req, res) => {
