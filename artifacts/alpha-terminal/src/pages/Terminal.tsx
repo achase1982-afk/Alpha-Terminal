@@ -92,8 +92,8 @@ export default function TerminalPage() {
           <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-primary/5 blur-[120px] rounded-full" />
         </div>
 
-        {/* ─── Sticky top: Mobile header + Ticker tape ─── */}
-        <div className="sticky top-0 z-50 shrink-0 bg-background">
+        {/* ─── Top: Mobile header + Ticker tape ─── */}
+        <div className="shrink-0 z-50 bg-background">
           {/* Mobile top bar */}
           <div className="flex items-center lg:hidden h-12 px-4 border-b border-card-border bg-card">
             <button
