@@ -57,17 +57,8 @@ export function AuthPanel() {
           setErrorMsg("");
         },
         onError: (err: any) => {
-          const raw = err?.data ?? err?.rawBody ?? err?.message ?? "";
-          const rawStr = typeof raw === "string" ? raw : JSON.stringify(raw);
-          const isUnreachable =
-            rawStr.includes("<!DOCTYPE") ||
-            rawStr.includes("<html") ||
-            rawStr.includes("Run this app") ||
-            rawStr.includes("ECONNREFUSED") ||
-            rawStr.includes("Failed to fetch") ||
-            rawStr.includes("NetworkError") ||
-            rawStr.includes("fetch failed");
-          if (isUnreachable) {
+          const hasHttpStatus = typeof err?.status === "number" && err.status > 0;
+          if (!hasHttpStatus) {
             setErrorMsg("API server is not reachable. Make sure the API Server workflow is running, then try again.");
           } else {
             const detail = err?.data?.message ?? err?.message ?? "Unknown error";
