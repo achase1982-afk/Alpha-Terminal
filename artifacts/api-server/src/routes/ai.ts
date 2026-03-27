@@ -1,5 +1,7 @@
 import { Router, type IRouter } from "express";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { streamText } from "ai";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import {
   RunTechnicalAnalysisBody,
   RunTechnicalAnalysisResponse,
@@ -586,28 +588,50 @@ Use only strikes that exist in the provided chain data. Be precise with numbers.
 });
 
 router.post("/chat", async (req, res) => {
-  const parsed = RunChatQueryBody.safeParse(req.body);
-  if (!parsed.success) {
-    return res.json(RunChatQueryResponse.parse({ response: "Error: Invalid request body.", error: "validation_error" }));
-  }
-
-  const { question, marketContext, model, temperature } = parsed.data;
-
-  const prompt = `You are an expert financial analyst and trading assistant for Alpha Terminal.
-
-${marketContext ? `CURRENT MARKET CONTEXT:\n${marketContext}\n` : "No market data currently loaded."}
-
-USER QUESTION: ${question}
-
-Provide a concise, expert answer. Be specific and data-driven when market data is available. Use markdown formatting where helpful.`;
-
   try {
-    const response = await callGemini(prompt, model ?? "gemini-2.5-pro", temperature ?? 0.3);
-    res.json(RunChatQueryResponse.parse({ response }));
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    req.log.error({ err }, "Chat query error");
-    res.json(RunChatQueryResponse.parse({ response: `**Query failed:** ${msg}`, error: msg }));
+    const { messages, marketContext } = req.body as {
+      messages?: Array<{ role: string; content: string }>;
+      marketContext?: string;
+    };
+
+    if (!messages || !Array.isArray(messages) || messages.length === 0) {
+      return res.status(400).json({ error: "Messages array is required." });
+    }
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: "Gemini API key not configured." });
+    }
+
+    const google = createGoogleGenerativeAI({ apiKey });
+
+    const systemPrompt = `You are Alpha Terminal, an expert financial analyst and trading assistant. Be concise, analytical, and format numbers clearly. Use markdown formatting where helpful.
+
+${marketContext ? `CURRENT MARKET CONTEXT:\n${marketContext}` : "No market data currently loaded."}`;
+
+    const result = streamText({
+      model: google("gemini-2.5-flash"),
+      system: systemPrompt,
+      messages: messages.map(m => ({
+        role: m.role as "user" | "assistant",
+        content: m.content,
+      })),
+    });
+
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    res.setHeader("Transfer-Encoding", "chunked");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+
+    for await (const chunk of result.textStream) {
+      res.write(chunk);
+    }
+    res.end();
+  } catch (error) {
+    req.log.error({ err: error }, "Chat stream error");
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Internal Server Error" });
+    }
   }
 });
 

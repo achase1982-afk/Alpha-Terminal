@@ -2,10 +2,8 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useGetQuote } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
-import { X, Send, TerminalSquare, TrendingUp } from "lucide-react";
+import { X, Send, TerminalSquare, TrendingUp, Square } from "lucide-react";
 import ReactMarkdown from "react-markdown";
-
-const API_BASE = "/api";
 
 function getChipsForSymbol(symbol: string): string[] {
   return [
@@ -17,33 +15,46 @@ function getChipsForSymbol(symbol: string): string[] {
   ];
 }
 
+interface ChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+}
+
 interface AiChatOverlayProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
+let msgCounter = 0;
+function nextId(): string {
+  return `msg-${Date.now()}-${++msgCounter}`;
+}
+
 export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
-  const {
-    symbol, accessToken, aiModel, aiTemp,
-    chatHistory, addChatMessage, clearChat,
-  } = useTerminalStore();
+  const { symbol, accessToken } = useTerminalStore();
 
   const { data: quote } = useGetQuote(
     { symbol, accessToken: accessToken || "" },
-    { query: { enabled: !!accessToken } }
+    { query: { queryKey: ["quote", symbol, accessToken], enabled: !!accessToken } }
   );
 
-  const [chatInput, setChatInput] = useState("");
-  const [isChatLoading, setIsChatLoading] = useState(false);
+  const marketContext = quote
+    ? `CURRENT MARKET CONTEXT for ${symbol}:\nLast: $${quote.last}\nChange: ${quote.changePct}%\nVol: ${quote.volume}\nRange: ${quote.low}-${quote.high}`
+    : `No live market context available for ${symbol}.`;
+
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [input, setInput] = useState("");
+  const [isStreaming, setIsStreaming] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [chatHistory, isChatLoading]);
+  }, [messages, isStreaming]);
 
   useEffect(() => {
     if (isOpen && inputRef.current) {
@@ -51,55 +62,95 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
     }
   }, [isOpen]);
 
-  const cancelPending = useCallback(() => {
-    if (abortRef.current) {
-      abortRef.current.abort();
-      abortRef.current = null;
-    }
-    setIsChatLoading(false);
-  }, []);
+  const sendMessage = useCallback(async (text: string) => {
+    if (!text.trim() || isStreaming) return;
 
-  const handleSend = () => {
-    if (!chatInput.trim() || !accessToken || isChatLoading) return;
-    const userMessage = chatInput.trim();
-    setChatInput("");
+    const userMsg: ChatMessage = { id: nextId(), role: "user", content: text.trim() };
+    const assistantId = nextId();
 
-    addChatMessage({ role: "user", content: userMessage });
+    setMessages(prev => [...prev, userMsg]);
+    setInput("");
+    setIsStreaming(true);
 
-    const marketContext = quote
-      ? `CURRENT MARKET CONTEXT for ${symbol}:\nLast: $${quote.last}\nChange: ${quote.changePct}%\nVol: ${quote.volume}\nRange: ${quote.low}-${quote.high}`
-      : `No live market context available for ${symbol}.`;
+    const history = [...messages, userMsg].map(m => ({ role: m.role, content: m.content }));
 
     const controller = new AbortController();
     abortRef.current = controller;
-    setIsChatLoading(true);
-    fetch(`${API_BASE}/ai/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question: userMessage, marketContext, model: aiModel, temperature: aiTemp }),
-      signal: controller.signal,
-    })
-      .then(r => r.json())
-      .then((data: { response?: string }) => {
-        addChatMessage({ role: "assistant", content: data.response ?? "No response." });
-      })
-      .catch(err => {
-        if (err.name !== "AbortError") {
-          addChatMessage({ role: "assistant", content: `**ERROR:** ${err.message}` });
-        }
-      })
-      .finally(() => {
-        if (abortRef.current === controller) {
-          abortRef.current = null;
-          setIsChatLoading(false);
-        }
-      });
-  };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+    try {
+      const res = await fetch("/api/ai/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: history, marketContext }),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "Unknown error");
+        setMessages(prev => [...prev, { id: assistantId, role: "assistant", content: `**Error:** ${errText}` }]);
+        setIsStreaming(false);
+        return;
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) {
+        setMessages(prev => [...prev, { id: assistantId, role: "assistant", content: "**Error:** No response stream." }]);
+        setIsStreaming(false);
+        return;
+      }
+
+      const decoder = new TextDecoder();
+      let accumulated = "";
+
+      setMessages(prev => [...prev, { id: assistantId, role: "assistant", content: "" }]);
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        accumulated += decoder.decode(value, { stream: true });
+        const current = accumulated;
+        setMessages(prev =>
+          prev.map(m => (m.id === assistantId ? { ...m, content: current } : m))
+        );
+      }
+
+      if (!accumulated.trim()) {
+        setMessages(prev =>
+          prev.map(m => (m.id === assistantId ? { ...m, content: "*(No response generated)*" } : m))
+        );
+      }
+    } catch (err: unknown) {
+      if ((err as Error).name === "AbortError") return;
+      setMessages(prev => [...prev, { id: assistantId, role: "assistant", content: `**Error:** ${(err as Error).message}` }]);
+    } finally {
+      abortRef.current = null;
+      setIsStreaming(false);
+    }
+  }, [messages, marketContext, isStreaming]);
+
+  const handleStop = useCallback(() => {
+    abortRef.current?.abort();
+    setIsStreaming(false);
+  }, []);
+
+  const handleClear = useCallback(() => {
+    handleStop();
+    setMessages([]);
+  }, [handleStop]);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handleSend();
+      if (input.trim() && !isStreaming) {
+        sendMessage(input);
+      }
+    }
+  };
+
+  const handleFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (input.trim() && !isStreaming) {
+      sendMessage(input);
     }
   };
 
@@ -114,16 +165,16 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
           <span className="font-mono text-[10px] text-muted-foreground">— {symbol}</span>
         </div>
         <div className="flex items-center gap-2">
-          {chatHistory.length > 0 && (
+          {messages.length > 0 && (
             <button
-              onClick={() => { cancelPending(); clearChat(); }}
+              onClick={handleClear}
               className="font-mono text-[9px] text-muted-foreground hover:text-destructive transition-colors px-2 py-1"
             >
               CLEAR
             </button>
           )}
           <button
-            onClick={() => { cancelPending(); onClose(); }}
+            onClick={() => { handleStop(); onClose(); }}
             className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-card-border transition-colors"
             aria-label="Close chat"
           >
@@ -133,7 +184,7 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-4">
-        {chatHistory.length === 0 && (
+        {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-center px-6">
             <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mb-4">
               <TerminalSquare className="w-8 h-8 text-primary" />
@@ -146,7 +197,7 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
               {getChipsForSymbol(symbol).map(chip => (
                 <button
                   key={chip}
-                  onClick={() => { setChatInput(chip); inputRef.current?.focus(); }}
+                  onClick={() => { setInput(chip); inputRef.current?.focus(); }}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20
                     text-primary font-mono text-[10px] hover:bg-primary/20 transition-colors"
                 >
@@ -158,9 +209,9 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
           </div>
         )}
 
-        {chatHistory.map((msg, i) => (
+        {messages.map((msg) => (
           <div
-            key={i}
+            key={msg.id}
             className={`flex mb-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
           >
             <div
@@ -182,7 +233,7 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
           </div>
         ))}
 
-        {isChatLoading && (
+        {isStreaming && messages.length > 0 && messages[messages.length - 1].role === "user" && (
           <div className="flex justify-start mb-3">
             <div className="bg-[#1C2333] border border-card-border rounded-2xl rounded-bl-md px-4 py-3 flex items-center gap-2">
               <span className="flex gap-1">
@@ -196,11 +247,11 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
       </div>
 
       <div className="shrink-0 border-t border-card-border bg-[#0D1117] px-3 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
-        <div className="flex items-end gap-2">
+        <form onSubmit={handleFormSubmit} className="flex items-end gap-2">
           <textarea
             ref={inputRef}
-            value={chatInput}
-            onChange={e => setChatInput(e.target.value)}
+            value={input}
+            onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={`Message about ${symbol}...`}
             rows={1}
@@ -209,20 +260,26 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
               focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30 transition-colors"
             style={{ fieldSizing: "content" } as React.CSSProperties}
           />
-          <Button
-            onClick={handleSend}
-            disabled={!chatInput.trim() || !accessToken || isChatLoading}
-            size="icon"
-            className="h-10 w-10 rounded-full bg-primary hover:bg-primary/80 text-primary-foreground shrink-0 disabled:opacity-30"
-          >
-            <Send className="w-4 h-4" />
-          </Button>
-        </div>
-        {!accessToken && (
-          <p className="text-[10px] text-destructive font-mono mt-1.5 text-center">
-            Connect Schwab to enable AI chat
-          </p>
-        )}
+          {isStreaming ? (
+            <Button
+              type="button"
+              onClick={handleStop}
+              size="icon"
+              className="h-10 w-10 rounded-full bg-destructive hover:bg-destructive/80 text-destructive-foreground shrink-0"
+            >
+              <Square className="w-3.5 h-3.5 fill-current" />
+            </Button>
+          ) : (
+            <Button
+              type="submit"
+              disabled={!input.trim()}
+              size="icon"
+              className="h-10 w-10 rounded-full bg-primary hover:bg-primary/80 text-primary-foreground shrink-0 disabled:opacity-30"
+            >
+              <Send className="w-4 h-4" />
+            </Button>
+          )}
+        </form>
       </div>
     </div>
   );

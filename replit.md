@@ -12,7 +12,7 @@ Key features implemented:
 - **Schwab OAuth**: Popup+polling flow — `AuthPanel` button calls `window.open(authUrl)` (no anchor tags); GET `/api/auth/callback` exchanges code, stores tokens server-side in `pendingTokens` Map, returns success HTML page; frontend polls `GET /api/auth/pending-session` every 2s until tokens arrive; auth URL only fetched when panel is open and user is disconnected; CSRF via `state` param; `SCHWAB_REDIRECT_URI` must match Schwab Developer Portal
 - **Tabs**: CHART | OPTIONS | AI INTELLIGENCE | SCAN
 - **AI Intelligence Tab**: Deep Analysis (TA + Options Strategist) — chat removed, lives in overlay now
-- **AI Chat Overlay**: Full-screen iMessage-style chat accessible from sidebar "AI CHAT ASSISTANT" button; AbortController lifecycle; sticky bottom input with safe-area-inset
+- **AI Chat Overlay**: Full-screen iMessage-style chat accessible from sidebar "AI CHAT ASSISTANT" button; manual fetch streaming (plain text stream from backend `streamText().textStream`); AbortController lifecycle; sticky bottom input with safe-area-inset; no AI SDK client dependency — uses `useState` for messages and input management
 - **Institutional Tear Sheet** (`src/views/InstitutionalTearSheet.tsx`): Replaced old CompanyTearSheet. Full-screen overlay triggered by clicking ticker in MetricsBar. Features:
   - **HeroHeader**: Live price from `useQuote()` (stream-first, REST fallback), day change ± with color-coded pill (green/red/gray), bid/ask/volume row
   - **TradingMetricsGrid**: 8-card grid — Market Cap, Shares Out, P/E, EPS, Beta, Div Yield, P/B, Day Range — from `/api/market/fundamentals`
