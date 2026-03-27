@@ -13,4 +13,8 @@ router.use("/market", marketRouter);
 router.use("/ai", aiRouter);
 router.use("/stream", streamRouter);
 
+router.use((_req, res) => {
+  res.status(404).json({ error: "not_found", message: "API endpoint not found" });
+});
+
 export default router;
