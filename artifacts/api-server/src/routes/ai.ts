@@ -606,7 +606,7 @@ router.post("/chat", async (req, res) => {
 
     const google = createGoogleGenerativeAI({ apiKey });
 
-    const systemPrompt = `You are Alpha Terminal, an expert financial analyst and trading assistant. Be concise, analytical, and format numbers clearly. Use markdown formatting where helpful.
+    const systemPrompt = `You are a savage, highly precise financial AI. Never give generic textbook answers. If a tool fails, tell the user exactly what data feed broke. Speak like a Wall Street analyst.
 
 ${marketContext ? `CURRENT MARKET CONTEXT:\n${marketContext}` : "No market data currently loaded."}`;
 
@@ -624,49 +624,80 @@ ${marketContext ? `CURRENT MARKET CONTEXT:\n${marketContext}` : "No market data 
             "Fetches the current daily performance of major market indices (S&P 500 / SPY, Nasdaq / QQQ, Dow Jones / DIA).",
           parameters: z.object({}),
           execute: async () => {
-            try {
-              const response = await fetch(
-                "https://query1.finance.yahoo.com/v7/finance/quote?symbols=SPY,QQQ,DIA",
-                {
-                  headers: {
-                    "User-Agent":
-                      "Mozilla/5.0 (compatible; AI-Market-Terminal/1.0)",
-                  },
-                }
-              );
-              if (!response.ok) throw new Error("Yahoo API unavailable");
-              const data = (await response.json()) as {
-                quoteResponse: {
+            const symbols = ["SPY", "QQQ", "DIA"];
+
+            async function fetchChart(
+              symbol: string
+            ): Promise<{ changePercent: number }> {
+              const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1d`;
+              const res = await fetch(url, {
+                headers: {
+                  "User-Agent":
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                },
+              });
+              if (!res.ok)
+                throw new Error(`${symbol}: HTTP ${res.status}`);
+              const json = (await res.json()) as {
+                chart: {
                   result: Array<{
-                    symbol: string;
-                    regularMarketChangePercent?: number;
+                    meta: {
+                      regularMarketPrice?: number;
+                      chartPreviousClose?: number;
+                      previousClose?: number;
+                    };
                   }>;
                 };
               };
-              const quotes = data.quoteResponse.result;
-
+              const meta = json.chart?.result?.[0]?.meta;
+              if (!meta) throw new Error(`${symbol}: no chart data`);
+              const current = meta.regularMarketPrice ?? 0;
+              const prevClose =
+                meta.chartPreviousClose ?? meta.previousClose ?? 0;
+              if (!current || !prevClose)
+                throw new Error(`${symbol}: missing price fields`);
+              const changePercent =
+                ((current - prevClose) / prevClose) * 100;
               return {
-                SPY: {
-                  changePercent:
-                    quotes.find((q) => q.symbol === "SPY")
-                      ?.regularMarketChangePercent || 0,
-                },
-                QQQ: {
-                  changePercent:
-                    quotes.find((q) => q.symbol === "QQQ")
-                      ?.regularMarketChangePercent || 0,
-                },
-                DIA: {
-                  changePercent:
-                    quotes.find((q) => q.symbol === "DIA")
-                      ?.regularMarketChangePercent || 0,
-                },
+                changePercent: Math.round(changePercent * 100) / 100,
               };
+            }
+
+            try {
+              const results = await Promise.allSettled(
+                symbols.map((s) => fetchChart(s))
+              );
+              const out: Record<
+                string,
+                { changePercent: number; source: string }
+              > = {};
+              const now = new Date();
+              const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+
+              symbols.forEach((sym, i) => {
+                const r = results[i];
+                if (r.status === "fulfilled") {
+                  out[sym] = { ...r.value, source: "yahoo_v8_chart" };
+                } else {
+                  req.log.warn(
+                    { symbol: sym, err: r.reason },
+                    "Chart fetch failed, using mock"
+                  );
+                  out[sym] = {
+                    changePercent: 0,
+                    source: `mock_fallback_${dateStr}`,
+                  };
+                }
+              });
+              return out;
             } catch (error) {
-              req.log.error({ err: error }, "Macro tool failed");
+              req.log.error({ err: error }, "Macro tool failed completely");
               return {
                 error:
-                  "Unable to retrieve live macro data, use general knowledge.",
+                  "Yahoo Finance v8 chart endpoint unreachable. All data feeds failed.",
+                SPY: { changePercent: 0, source: "mock_fallback" },
+                QQQ: { changePercent: 0, source: "mock_fallback" },
+                DIA: { changePercent: 0, source: "mock_fallback" },
               };
             }
           },
