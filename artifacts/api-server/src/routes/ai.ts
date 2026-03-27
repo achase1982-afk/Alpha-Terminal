@@ -64,35 +64,65 @@ function formatCandles(candles: Array<Record<string, unknown>>): string {
   return `PRICE HISTORY (last ${recent.length} bars):\n` + lines.join("\n");
 }
 
+// ── Options chain data sanitization ──────────────────────────────────────────
+// Schwab uses sentinel values like -999 for missing IV on illiquid/expiring strikes.
+// Inverted bid/ask (bid > ask) also signals stale or broken quotes.
+// We sanitize before passing to AI so it never sees corrupted-looking numbers.
+function sanitizeContracts(
+  contracts: Array<Record<string, unknown>>
+): Array<Record<string, unknown>> {
+  return contracts
+    .filter((c) => {
+      const bid = Number(c["bid"]);
+      const ask = Number(c["ask"]);
+      // Drop contracts with a clearly inverted spread (bid > ask and both > 0)
+      if (!isNaN(bid) && !isNaN(ask) && bid > 0 && ask > 0 && bid > ask) return false;
+      return true;
+    })
+    .map((c) => {
+      const iv = Number(c["iv"]);
+      // Replace any negative IV sentinel (e.g. -999, -1) with null so formatters show N/A
+      return { ...c, iv: isNaN(iv) || iv < 0 ? null : iv };
+    });
+}
+
 function formatOptions(chain: Record<string, unknown>): string {
-  const calls = chain["calls"] as Array<Record<string, unknown>> ?? [];
-  const puts = chain["puts"] as Array<Record<string, unknown>> ?? [];
+  const rawCalls = chain["calls"] as Array<Record<string, unknown>> ?? [];
+  const rawPuts  = chain["puts"]  as Array<Record<string, unknown>> ?? [];
   const underlyingPrice = chain["underlyingPrice"];
 
   const formatContracts = (contracts: Array<Record<string, unknown>>, type: string): string => {
-    const near = contracts.slice(0, 10);
-    return `${type} (nearest 10):\n` + near.map(
-      (c) => `Strike: $${c["strike"]}, Exp: ${c["expiration"]}, Bid: ${c["bid"]}, Ask: ${c["ask"]}, IV: ${c["iv"]}%, Delta: ${c["delta"]}, OI: ${c["openInterest"]}`
+    const clean = sanitizeContracts(contracts).slice(0, 10);
+    return `${type} (nearest 10):\n` + clean.map(
+      (c) => {
+        const iv = c["iv"] != null ? `${c["iv"]}%` : "N/A";
+        return `Strike: $${c["strike"]}, Exp: ${c["expiration"]}, Bid: ${c["bid"]}, Ask: ${c["ask"]}, IV: ${iv}, Delta: ${c["delta"]}, OI: ${c["openInterest"]}`;
+      }
     ).join("\n");
   };
 
-  return `OPTION CHAIN - Underlying: $${underlyingPrice}\n${formatContracts(calls, "CALLS")}\n\n${formatContracts(puts, "PUTS")}`;
+  return `OPTION CHAIN - Underlying: $${underlyingPrice}\n${formatContracts(rawCalls, "CALLS")}\n\n${formatContracts(rawPuts, "PUTS")}`;
 }
 
 function formatOptionsDetailed(chain: Record<string, unknown>): string {
-  const calls = chain["calls"] as Array<Record<string, unknown>> ?? [];
-  const puts = chain["puts"] as Array<Record<string, unknown>> ?? [];
+  const rawCalls = chain["calls"] as Array<Record<string, unknown>> ?? [];
+  const rawPuts  = chain["puts"]  as Array<Record<string, unknown>> ?? [];
   const underlyingPrice = chain["underlyingPrice"];
 
   const formatContracts = (contracts: Array<Record<string, unknown>>, type: string): string => {
-    const near = contracts.slice(0, 20);
-    return `${type} OPTIONS (nearest 20 strikes):\n` + near.map(
-      (c) => `  Strike $${c["strike"]} | Exp: ${c["expiration"]} | DTE: ${c["dte"]} | Bid: $${c["bid"]} | Ask: $${c["ask"]} | Last: $${c["last"]} | IV: ${c["iv"]}% | Delta: ${c["delta"]} | Gamma: ${c["gamma"]} | Theta: ${c["theta"]} | Vega: ${c["vega"]} | Vol: ${c["volume"]} | OI: ${c["openInterest"]}`
+    const clean = sanitizeContracts(contracts).slice(0, 20);
+    return `${type} OPTIONS (nearest 20 strikes):\n` + clean.map(
+      (c) => {
+        const iv = c["iv"] != null ? `${c["iv"]}%` : "N/A";
+        return `  Strike $${c["strike"]} | Exp: ${c["expiration"]} | DTE: ${c["dte"]} | Bid: $${c["bid"]} | Ask: $${c["ask"]} | Last: $${c["last"]} | IV: ${iv} | Delta: ${c["delta"]} | Gamma: ${c["gamma"]} | Theta: ${c["theta"]} | Vega: ${c["vega"]} | Vol: ${c["volume"]} | OI: ${c["openInterest"]}`;
+      }
     ).join("\n");
   };
 
-  return `FULL OPTION CHAIN — Underlying Price: $${underlyingPrice}\n\n${formatContracts(calls, "CALL")}\n\n${formatContracts(puts, "PUT")}`;
+  return `FULL OPTION CHAIN — Underlying Price: $${underlyingPrice}\n\n${formatContracts(rawCalls, "CALL")}\n\n${formatContracts(rawPuts, "PUT")}`;
 }
+
+const OPTIONS_DATA_QUALITY_NOTE = `DATA QUALITY NOTE: This chain has been pre-sanitized. Strikes with inverted bid/ask spreads have been removed. Any IV shown as "N/A" indicates missing or invalid data — this is normal for deep OTM/ITM strikes, expiring contracts, and illiquid series. Do NOT interpret N/A IV values, wide bid/ask spreads, or zero-volume strikes as data corruption or system errors. They reflect standard market illiquidity and should be acknowledged as such, not flagged as risk factors.`;
 
 router.get("/models", (_req, res) => {
   const data = GetAvailableModelsResponse.parse({ models: AVAILABLE_MODELS });
@@ -144,6 +174,8 @@ router.post("/options-analysis", async (req, res) => {
   const { quote, chain, model, temperature, customPrompt } = parsed.data;
 
   const prompt = `You are an expert options trader and derivatives analyst. Analyze the following options chain data.
+
+${OPTIONS_DATA_QUALITY_NOTE}
 
 ${formatQuote(quote as Record<string, unknown>)}
 
@@ -502,6 +534,8 @@ router.post("/options-strategist", async (req, res) => {
   }
 
   const prompt = `You are a Master Derivatives Strategist with 20+ years of options trading experience. Your analysis must be precise, actionable, and risk-calibrated.
+
+${OPTIONS_DATA_QUALITY_NOTE}
 
 UNDERLYING MARKET DATA:
 ${formatQuote(quote)}
