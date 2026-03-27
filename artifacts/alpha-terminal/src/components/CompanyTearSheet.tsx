@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useTerminalStore } from "@/lib/store";
 import {
   X, Building2, TrendingUp, Newspaper, ShieldAlert,
   Loader2, Users, BarChart3, Landmark, DollarSign,
-  Activity, ChevronRight, Brain, Tag, AlertTriangle
+  Activity, ChevronRight
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
@@ -11,7 +11,6 @@ const API_BASE = "/api";
 
 interface FundamentalData {
   symbol: string;
-  companyName: string | null;
   description: string | null;
   exchange: string | null;
   assetType: string | null;
@@ -73,80 +72,56 @@ export function CompanyTearSheet({ isOpen, onClose }: CompanyTearSheetProps) {
 
   const [fundamentals, setFundamentals] = useState<FundamentalData | null>(null);
   const [fundLoading, setFundLoading] = useState(false);
-  const [aiResult, setAiResult] = useState<string | null>(null);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiTimedOut, setAiTimedOut] = useState(false);
-  const aiTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [sympathyResult, setSympathyResult] = useState<string | null>(null);
+  const [sympathyLoading, setSympathyLoading] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!accessToken || !symbol) return;
 
     setFundLoading(true);
-    setAiLoading(true);
-    setAiTimedOut(false);
+    setSympathyLoading(true);
     setFundamentals(null);
-    setAiResult(null);
+    setSympathyResult(null);
 
-    if (aiTimeoutRef.current) clearTimeout(aiTimeoutRef.current);
-    aiTimeoutRef.current = setTimeout(() => {
-      setAiLoading(prev => {
-        if (prev) setAiTimedOut(true);
-        return false;
+    try {
+      const res = await fetch(
+        `${API_BASE}/market/fundamentals?symbol=${encodeURIComponent(symbol)}&accessToken=${encodeURIComponent(accessToken)}`
+      );
+      const data = await res.json() as FundamentalData;
+      setFundamentals(data);
+    } catch {
+      setFundamentals({ symbol, description: null, exchange: null, assetType: null, marketCap: null, sharesOutstanding: null, peRatio: null, pbRatio: null, dividendYield: null, dividendAmount: null, eps: null, beta: null, high52: null, low52: null, sector: null, industry: null, error: "Failed to load" });
+    } finally {
+      setFundLoading(false);
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/ai/sympathy-plays`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbol, model: aiModel, temperature: 0.3 }),
       });
-    }, 10_000);
-
-    const fundPromise = fetch(
-      `${API_BASE}/market/fundamentals?symbol=${encodeURIComponent(symbol)}&accessToken=${encodeURIComponent(accessToken)}`
-    )
-      .then(res => res.json() as Promise<FundamentalData>)
-      .then(data => setFundamentals(data))
-      .catch(() => {
-        setFundamentals({
-          symbol, companyName: null, description: null, exchange: null, assetType: null,
-          marketCap: null, sharesOutstanding: null, peRatio: null, pbRatio: null,
-          dividendYield: null, dividendAmount: null, eps: null, beta: null,
-          high52: null, low52: null, sector: null, industry: null, error: "Failed to load"
-        });
-      })
-      .finally(() => setFundLoading(false));
-
-    const aiPromise = fetch(`${API_BASE}/ai/sympathy-plays`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ symbol, model: aiModel, temperature: 0.3 }),
-    })
-      .then(res => res.json() as Promise<{ response?: string }>)
-      .then(data => {
-        if (aiTimeoutRef.current) clearTimeout(aiTimeoutRef.current);
-        setAiResult(data.response ?? null);
-        setAiTimedOut(false);
-        setAiLoading(false);
-      })
-      .catch(() => {
-        if (aiTimeoutRef.current) clearTimeout(aiTimeoutRef.current);
-        setAiResult(null);
-        setAiTimedOut(true);
-        setAiLoading(false);
-      });
-
-    await Promise.allSettled([fundPromise, aiPromise]);
+      const data = await res.json() as { response?: string };
+      setSympathyResult(data.response ?? null);
+    } catch {
+      setSympathyResult("Unable to generate sympathy plays.");
+    } finally {
+      setSympathyLoading(false);
+    }
   }, [symbol, accessToken, aiModel]);
 
   useEffect(() => {
     if (isOpen) fetchData();
-    return () => {
-      if (aiTimeoutRef.current) clearTimeout(aiTimeoutRef.current);
-    };
   }, [isOpen, fetchData]);
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]" style={{ background: "#0A0F16" }}>
+    <div className="fixed inset-0 z-[100] flex flex-col" style={{ background: "#0A0F16" }}>
       <div className="flex items-center justify-between px-4 h-12 border-b border-card-border bg-[#0D1117] shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           <Building2 className="w-4 h-4 text-primary shrink-0" />
-          <span className="font-mono text-xs font-bold text-primary tracking-wider">
+          <span className="font-mono text-xs font-bold text-primary tracking-wider truncate">
             COMPANY PROFILE: {symbol}
           </span>
         </div>
@@ -171,51 +146,28 @@ export function CompanyTearSheet({ isOpen, onClose }: CompanyTearSheetProps) {
           </div>
         ) : fundamentals ? (
           <>
-            {/* ── Company Header ── */}
             <div className="bg-card border border-card-border rounded-xl overflow-hidden">
-              <div className="px-4 py-3 border-b border-card-border">
-                <div className="flex items-start gap-2">
-                  <Building2 className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-mono text-sm font-bold text-foreground tracking-wider">{symbol}</span>
-                      {fundamentals.exchange && (
-                        <span className="font-mono text-[9px] text-muted-foreground bg-card-border px-1.5 py-0.5 rounded">
-                          {fundamentals.exchange}
-                        </span>
-                      )}
-                      {fundamentals.assetType && (
-                        <span className="font-mono text-[9px] text-muted-foreground bg-card-border px-1.5 py-0.5 rounded">
-                          {fundamentals.assetType}
-                        </span>
-                      )}
-                    </div>
-                    {fundamentals.companyName && (
-                      <p className="text-sm text-gray-300 mt-1 leading-snug">{fundamentals.companyName}</p>
-                    )}
-                  </div>
-                </div>
+              <div className="px-4 py-3 border-b border-card-border flex items-center gap-2">
+                <Building2 className="w-4 h-4 text-primary" />
+                <span className="font-mono text-xs font-bold text-foreground tracking-wider">{symbol}</span>
+                {fundamentals.exchange && (
+                  <span className="font-mono text-[9px] text-muted-foreground bg-card-border px-1.5 py-0.5 rounded">
+                    {fundamentals.exchange}
+                  </span>
+                )}
+                {fundamentals.assetType && (
+                  <span className="font-mono text-[9px] text-muted-foreground bg-card-border px-1.5 py-0.5 rounded">
+                    {fundamentals.assetType}
+                  </span>
+                )}
               </div>
-
-              {/* ── Sector & Industry Badges ── */}
-              {(fundamentals.sector || fundamentals.industry) && (
-                <div className="px-4 py-2.5 border-b border-card-border flex items-center gap-2 flex-wrap bg-[#0D1117]">
-                  <Tag className="w-3 h-3 text-muted-foreground shrink-0" />
-                  {fundamentals.sector && (
-                    <span className="font-mono text-[10px] text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-full">
-                      {fundamentals.sector}
-                    </span>
-                  )}
-                  {fundamentals.industry && (
-                    <span className="font-mono text-[10px] text-gray-300 bg-white/5 border border-white/10 px-2 py-0.5 rounded-full">
-                      {fundamentals.industry}
-                    </span>
-                  )}
+              {fundamentals.description && (
+                <div className="px-4 py-3 bg-[#0D1117]">
+                  <p className="text-sm text-gray-300 leading-relaxed">{fundamentals.description}</p>
                 </div>
               )}
             </div>
 
-            {/* ── Fundamental Metrics Grid ── */}
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               <MetricCard
                 icon={<DollarSign className="w-3 h-3 text-primary" />}
@@ -249,7 +201,6 @@ export function CompanyTearSheet({ isOpen, onClose }: CompanyTearSheetProps) {
               />
             </div>
 
-            {/* ── 52-Week Range ── */}
             {(fundamentals.high52 != null || fundamentals.low52 != null) && (
               <div className="bg-card border border-card-border rounded-xl p-4">
                 <span className="font-mono text-[9px] text-muted-foreground uppercase tracking-wider">52-Week Range</span>
@@ -262,60 +213,33 @@ export function CompanyTearSheet({ isOpen, onClose }: CompanyTearSheetProps) {
                 </div>
               </div>
             )}
-
-            {/* ── Business Description ── */}
-            {fundamentals.description && (
-              <div className="bg-card border border-card-border rounded-xl overflow-hidden">
-                <div className="px-4 py-3 border-b border-card-border flex items-center gap-2">
-                  <Building2 className="w-4 h-4 text-primary" />
-                  <span className="font-mono text-xs font-bold text-foreground tracking-wider">BUSINESS DESCRIPTION</span>
-                </div>
-                <div className="px-4 py-3 bg-[#0D1117]">
-                  <p className="text-sm text-gray-300 leading-relaxed">{fundamentals.description}</p>
-                </div>
-              </div>
-            )}
           </>
         ) : null}
 
-        {/* ── AI Analyst Briefing ── */}
         <div className="bg-card border border-card-border rounded-xl overflow-hidden">
           <div className="px-4 py-3 border-b border-card-border flex items-center gap-2">
-            <Brain className="w-4 h-4 text-primary" />
-            <span className="font-mono text-xs font-bold text-foreground tracking-wider">AI ANALYST BRIEFING</span>
+            <TrendingUp className="w-4 h-4 text-primary" />
+            <span className="font-mono text-xs font-bold text-foreground tracking-wider">SYMPATHY & COMPETITORS</span>
           </div>
           <div className="p-4 bg-[#0D1117]">
-            {aiLoading && !aiTimedOut ? (
+            {sympathyLoading ? (
               <div className="flex items-center gap-3 py-6 justify-center">
                 <Loader2 className="w-5 h-5 text-primary animate-spin" />
                 <span className="font-mono text-[10px] text-primary animate-pulse tracking-widest">
-                  AI GENERATING BRIEFING...
+                  AI ANALYZING CORRELATIONS...
                 </span>
               </div>
-            ) : aiTimedOut ? (
-              <div className="flex items-center gap-3 py-6 justify-center">
-                <AlertTriangle className="w-4 h-4 text-muted-foreground" />
-                <span className="font-mono text-xs text-muted-foreground">
-                  Analysis unavailable at this time
-                </span>
-              </div>
-            ) : aiResult ? (
+            ) : sympathyResult ? (
               <div className="prose prose-invert prose-sm max-w-none prose-p:leading-relaxed prose-li:text-gray-300
                 prose-strong:text-primary prose-a:text-primary">
-                <ReactMarkdown>{aiResult}</ReactMarkdown>
+                <ReactMarkdown>{sympathyResult}</ReactMarkdown>
               </div>
             ) : (
-              <div className="flex items-center gap-3 py-6 justify-center">
-                <AlertTriangle className="w-4 h-4 text-muted-foreground" />
-                <span className="font-mono text-xs text-muted-foreground">
-                  Analysis unavailable at this time
-                </span>
-              </div>
+              <p className="font-mono text-xs text-muted-foreground text-center py-4">No data available</p>
             )}
           </div>
         </div>
 
-        {/* ── Recent Headlines (placeholder) ── */}
         <div className="bg-card border border-card-border rounded-xl overflow-hidden">
           <div className="px-4 py-3 border-b border-card-border flex items-center gap-2">
             <Newspaper className="w-4 h-4 text-primary" />
@@ -332,7 +256,6 @@ export function CompanyTearSheet({ isOpen, onClose }: CompanyTearSheetProps) {
           </div>
         </div>
 
-        {/* ── Institutional Flow (premium placeholder) ── */}
         <div className="bg-card border border-card-border rounded-xl overflow-hidden">
           <div className="px-4 py-3 border-b border-card-border flex items-center gap-2">
             <ShieldAlert className="w-4 h-4 text-amber-500/70" />

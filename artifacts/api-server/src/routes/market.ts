@@ -405,16 +405,9 @@ router.get("/fundamentals", async (req, res) => {
 
     const fundamental = (entry["fundamental"] ?? {}) as Record<string, unknown>;
 
-    const companyName =
-      (entry["description"] as string | undefined) ?? null;
-
-    const longDescription =
-      (fundamental["description"] as string | undefined) ?? null;
-
     res.json({
       symbol: displaySymbol,
-      companyName,
-      description: longDescription,
+      description: (entry["description"] as string) ?? null,
       exchange: (entry["exchange"] as string) ?? null,
       assetType: (entry["assetType"] as string) ?? null,
       marketCap: (fundamental["marketCap"] as number) ?? null,
@@ -427,8 +420,8 @@ router.get("/fundamentals", async (req, res) => {
       beta: (fundamental["beta"] as number) ?? null,
       high52: (fundamental["high52"] as number) ?? null,
       low52: (fundamental["low52"] as number) ?? null,
-      sector: (fundamental["sector"] as string | undefined) ?? null,
-      industry: (fundamental["industry"] as string | undefined) ?? null,
+      sector: null,
+      industry: null,
     });
   } catch (err) {
     req.log.error({ err }, "Fundamentals fetch error");
