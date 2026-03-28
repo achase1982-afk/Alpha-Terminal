@@ -224,10 +224,10 @@ export function MarketScanner() {
             <button
               key={m}
               onClick={() => setMode(m)}
-              className={`flex-1 py-3 text-xs font-bold uppercase tracking-widest transition-all ${
+              className={`flex-1 py-3 text-xs font-bold uppercase tracking-widest transition-all border-b-2 ${
                 mode === m
-                  ? "bg-primary/15 text-primary border-b-2 border-primary"
-                  : "text-muted-foreground hover:text-foreground hover:bg-secondary/20"
+                  ? "bg-[#18181B] text-white border-b-[#FFB800]"
+                  : "bg-transparent text-muted-foreground border-b-transparent hover:text-foreground hover:bg-secondary/20"
               }`}
             >
               {m === "ai" ? (
@@ -342,7 +342,7 @@ export function MarketScanner() {
             className="w-full text-xs font-bold h-10"
             style={
               !isScanning
-                ? { background: "linear-gradient(135deg, #00d166 0%, #ffb800 100%)", color: "#000" }
+                ? { background: "#18181B", color: "#FFB800", border: "1px solid #27272A" }
                 : {}
             }
           >

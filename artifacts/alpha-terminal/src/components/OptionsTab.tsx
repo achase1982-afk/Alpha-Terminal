@@ -95,7 +95,7 @@ export function OptionsTab() {
         <Button
           onClick={handleLoad}
           disabled={!accessToken}
-          className="font-mono text-xs h-9 bg-primary/20 text-primary hover:bg-primary/30 border border-primary/50"
+          className="font-mono text-xs h-9 bg-[#18181B] text-[#FFB800] hover:bg-[#27272A] border border-[#27272A]"
         >
           <DownloadCloud className="w-3.5 h-3.5 mr-2" />
           LOAD CHAIN
