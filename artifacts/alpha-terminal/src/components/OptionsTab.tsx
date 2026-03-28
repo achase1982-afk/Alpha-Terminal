@@ -71,13 +71,11 @@ function findATMIndex(strikes: number[], lastPrice: number): number {
 }
 
 function sliceAroundATM(rows: NormalizedRow[], atmIdx: number, count: number): NormalizedRow[] {
-  if (count <= 0 || rows.length === 0 || rows.length <= count) return rows;
-  const total = count % 2 !== 0 ? count + 1 : count;
-  const below = Math.floor(total / 2);
-  const above = total - below - 1;
-  let start = atmIdx - below;
-  let end = atmIdx + above + 1;
-  if (start < 0) { end = Math.min(rows.length, end + Math.abs(start)); start = 0; }
+  if (count <= 0 || rows.length === 0) return rows;
+  const half = Math.floor(count / 2);
+  let start = atmIdx - half;
+  let end = atmIdx + half + 1;
+  if (start < 0) { end = Math.min(rows.length, end - start); start = 0; }
   if (end > rows.length) { start = Math.max(0, start - (end - rows.length)); end = rows.length; }
   return rows.slice(start, end);
 }
@@ -545,8 +543,8 @@ export function OptionsTab() {
   }, [registerHeader, showCalls, showPuts]);
 
   return (
-    <div className="space-y-2 h-full flex flex-col">
-      <div className="flex items-center justify-between gap-2 bg-[#111111] px-3 py-1.5 rounded-lg border border-[#262626] shrink-0 flex-wrap">
+    <div className="h-full flex flex-col bg-black -mx-4 w-[calc(100%+2rem)]">
+      <div className="flex items-center justify-between gap-2 bg-[#111111] px-3 py-1.5 border-b border-[#262626] shrink-0 flex-wrap">
         <div className="flex items-center gap-1">
           <span className="font-mono text-[10px] text-zinc-500 uppercase">Strikes</span>
           {isCustomMode ? (
@@ -588,7 +586,7 @@ export function OptionsTab() {
 
       {data && <MetricsStrip />}
 
-      <div className="flex-1 overflow-y-auto terminal-panel p-0 min-h-0 relative overscroll-y-contain" style={{ WebkitOverflowScrolling: "touch" } as React.CSSProperties}>
+      <div className="flex-1 overflow-y-auto min-h-0 relative overscroll-y-contain bg-black" style={{ WebkitOverflowScrolling: "touch" } as React.CSSProperties}>
         {isLoading && !data && (
           <div className="p-4 space-y-1.5">
             {Array.from({ length: 12 }).map((_, i) => (
@@ -624,21 +622,21 @@ export function OptionsTab() {
 
         {data && groups.length > 0 && (
           <>
-            <div className="sticky top-0 z-20 bg-[#0a0a0a] font-mono" style={{ fontVariantNumeric: "tabular-nums" }}>
-              <div className="flex h-7 border-b border-[#1a1a1a]">
+            <div className="sticky top-0 z-20 bg-black font-mono" style={{ fontVariantNumeric: "tabular-nums" }}>
+              <div className="flex h-11 border-b border-[#1a1a1a]">
                 {showCalls && (
                   <div className="flex-1 flex items-center justify-center">
-                    <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-medium">Calls</span>
+                    <span className="text-[14px] font-extrabold uppercase tracking-[0.18em] text-white">Calls</span>
                   </div>
                 )}
                 <div className="flex-none flex items-center justify-center bg-black border-x border-[#262626]" style={{ width: STRIKE_W }}>
-                  <button onClick={() => setColumnsEditorOpen(true)} className="p-0.5 rounded text-zinc-500 hover:text-zinc-300 transition-colors" aria-label="Edit columns">
-                    <Settings className="w-3 h-3" />
+                  <button onClick={() => setColumnsEditorOpen(true)} className="w-14 h-11 flex items-center justify-center text-zinc-500 hover:text-zinc-300 transition-colors" aria-label="Edit columns">
+                    <Settings className="w-5 h-5" />
                   </button>
                 </div>
                 {showPuts && (
                   <div className="flex-1 flex items-center justify-center">
-                    <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-medium">Puts</span>
+                    <span className="text-[14px] font-extrabold uppercase tracking-[0.18em] text-white">Puts</span>
                   </div>
                 )}
               </div>
@@ -678,7 +676,7 @@ export function OptionsTab() {
                   <div key={group.expiration}>
                     <button
                       onClick={() => toggleExp(group.expiration)}
-                      className="w-full flex items-center justify-between px-3 py-2 bg-[#111111] border-b border-[#262626] hover:bg-[#1a1a1a] transition-colors sticky top-[52px] z-10"
+                      className="w-full flex items-center justify-between px-3 py-2 bg-[#111111] border-b border-[#262626] hover:bg-[#1a1a1a] transition-colors sticky top-[68px] z-10"
                     >
                       <span className="font-mono text-[11px] font-medium text-white tracking-wider">{group.label}</span>
                       <div className="flex items-center gap-3">

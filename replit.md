@@ -22,17 +22,19 @@ Key features implemented:
   - All text uses `tabular-nums`; scrollbar-hide CSS utility added to `index.css`
 - **Live Market Pulse**: Sidebar button → modal; backend fetches 14-symbol batch (SPY/QQQ/IWM/$VIX/$VVIX/$CPC/$TICK/$ADD/$TRIN/$DXY//ES//NQ//GC//CL) in single Schwab call; institutional-grade session-aware Gemini prompt
 - **Market Scanner**: AI Discovery + Manual Filter modes; configurable scan universe (S&P 100, Nasdaq 100, High Beta, Custom), max results (1-20), sortable results table with ticker/strategy/confidence/thesis columns
-- **Options Tab**: Institutional Straddle View (TOS-style) with auto-fetch, dynamic CSS grid, ATM math, ITM shading
-  - **Zustand options store** (`options-store.ts`): `contractType` ('ALL'|'CALL'|'PUT'), `strikeCount` (default 10), `maxDte`, `customStrikeInput` — persisted separately from main store to prevent cross-tab re-renders
-  - **Contract Type in Sidebar**: Moved from OptionsTab toolbar to global SETTINGS accordion; OptionsTab reads via Zustand selector
-  - **Auto-fetch**: No LOAD button — chain auto-fetches when `accessToken` + `symbol` are truthy; react-query handles cancellation on query-key changes (symbol/contractType/DTE)
-  - **Dynamic grid**: `contractType === 'ALL'` → `1fr 56px 1fr`, `'CALL'` → `1fr 56px`, `'PUT'` → `56px 1fr`; calls column mirrored (right-to-left toward strike spine)
-  - **ATM strike math**: `findATMIndex()` — min `|strike - lastPrice|`, tie-break picks lower strike; `sliceAroundATM()` centers window, coerces odd counts to even, edge-shifts to fill
-  - **ITM shading**: `bg-[#1e293b]` (TOS navy) — calls where `strike < underlying`, puts where `strike > underlying`; ATM row: dashed gold border + gold strike text
-  - **Strikes toolbar**: Dropdown `[6, 10, 20, Custom]` with debounced custom input (400ms); `strikeMode` derived from `strikeCount` via `useMemo`
-  - **Sticky headers**: `position: sticky; top: 0; z-index: 10` inside scrollable container
-  - **Loading overlay**: Subtle `bg-black/20` overlay during refetch (preserves existing table; no layout collapse)
-  - **Strategist race guard**: `strategistIdRef` monotonic counter prevents stale `finally` from clearing loading state; AbortController on strategist POST
+- **Options Tab**: Institutional TOS-style 3-panel options chain with edge-to-edge layout
+  - **Edge-to-edge layout**: `-mx-4 w-[calc(100%+2rem)] bg-black` breaks out of parent padding; no rounded corners or shadows
+  - **Global sticky header**: Single CALLS/gear/PUTS header + column labels rendered ONCE (not per-expiration); `sticky top-0 z-20 bg-black`; CALLS/PUTS use `text-[14px] font-extrabold tracking-[0.18em]`; gear icon is `w-5 h-5` in `w-14 h-11` tap target
+  - **Centralized scroll sync**: `useScrollSync` hook — `registerWing()` for body scroll containers, `registerHeader()` for overflow-hidden header label containers; single `isSyncing` + `requestAnimationFrame` broadcast system syncs all open expiration grids + header simultaneously
+  - **Headless OptionsGrid**: Body-only component; receives `registerWing` prop; registers left/right wing refs via useEffect; renders 3-panel body (calls/strike spine/puts) + per-grid ATM line overlay
+  - **3-panel zero-bleed architecture**: Left Wing (calls) | Fixed Strike Spine (`bg-black`, `STRIKE_W=56px`) | Right Wing (puts); wings use `overflow-x-auto overflow-y-hidden`; columns in identical left-to-right order on both sides (no flex-row-reverse)
+  - **ATM-centered slicing**: `sliceAroundATM()` uses `half=floor(count/2)`, symmetric window: `start=atmIdx-half`, `end=atmIdx+half+1`; for count=6 yields 3 below + ATM + 3 above = 7 items; edge-clamps when near array boundaries
+  - **Column registry**: `COLUMN_REGISTRY` (8 columns: bid, ask, last, vol, delta, gamma, theta, iv); `COL_W=60px` per column; `options-columns-store` (Zustand, persisted v2); default `['bid','ask','vol','delta']`; framer-motion drag-and-drop column editor modal
+  - **ITM shading**: `bg-[#1e293b]` — calls where `strike < underlying - EPS`, puts where `strike > underlying + EPS`; ATM: single continuous gold dashed `border-t` absolute div spanning full row width at z-30
+  - **Stacked sticky layers**: Global header at `top-0` (68px: h-11 + h-6), expiration accordion buttons at `top-[68px] z-10`
+  - **Typography**: Data cells `text-[13px] font-medium text-zinc-100`, secondary `text-[10px] text-zinc-500`, `tabular-nums` everywhere; no font-bold in grid data
+  - **Auto-fetch**: Chain auto-fetches when `accessToken` + `symbol` are truthy; react-query cancellation on query-key changes
+  - **Strategist race guard**: `strategistIdRef` monotonic counter; AbortController on strategist POST
 - **Backend AI routes**: `/api/ai/market-briefing`, `/api/ai/options-strategist`, `/api/ai/chat`, `/api/ai/analyze`, `/api/ai/strategy`
 - **Strict Data Grounding**: All AI prompts enforce `STRICT GROUNDING RULE` — Gemini is forbidden from using internal training knowledge for market trends, prices, or directional calls. Must cite only provided Context Data. Strategy endpoint aborts with "Incomplete real-time data. Strategy generation aborted." if data is missing or >5 minutes stale.
 - **Technical Analysis Library** (`api-server/src/lib/ta.ts`): Uses `technicalindicators` npm package. Computes RSI(14), EMA(50), EMA(200) from candle close prices. Includes `isDataStale()` freshness check and `formatTAContext()` for prompt injection.
