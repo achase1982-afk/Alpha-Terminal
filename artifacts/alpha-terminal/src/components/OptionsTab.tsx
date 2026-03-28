@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Table2, BarChart2, ChevronDown, ChevronUp } from "lucide-react";
+import { Table2, BarChart2, ChevronDown, ChevronUp, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
 const API_BASE = "/api";
@@ -141,12 +141,12 @@ export function OptionsTab() {
   const [isStrategizing, setIsStrategizing] = useState(false);
   const [strategistExpanded, setStrategistExpanded] = useState(false);
   const [expandedExps, setExpandedExps] = useState<Set<string>>(new Set());
-  const [forceCustom, setForceCustom] = useState(false);
+  const [isCustomMode, setIsCustomMode] = useState(() => ![6, 10, 20].includes(strikeCount));
+  const [localCustomValue, setLocalCustomValue] = useState(String(strikeCount));
   const strikeMode = useMemo(() => {
-    if (forceCustom) return "custom";
     if ([6, 10, 20].includes(strikeCount)) return String(strikeCount);
     return "custom";
-  }, [strikeCount, forceCustom]);
+  }, [strikeCount]);
   const strategistAbortRef = useRef<AbortController | null>(null);
   const strategistIdRef = useRef(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -201,22 +201,36 @@ export function OptionsTab() {
 
   const handleStrikeModeChange = useCallback((val: string) => {
     if (val === "custom") {
-      setForceCustom(true);
+      setLocalCustomValue(String(strikeCount));
+      setIsCustomMode(true);
       return;
     }
-    setForceCustom(false);
+    setIsCustomMode(false);
     const n = parseInt(val);
     if (!isNaN(n) && n > 0) setStrikeCount(n);
-  }, [setStrikeCount]);
+  }, [setStrikeCount, strikeCount]);
 
   const handleCustomStrikeChange = useCallback((raw: string) => {
+    setLocalCustomValue(raw);
     setCustomStrikeInput(raw);
     if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (raw === "") return;
     debounceRef.current = setTimeout(() => {
       const n = parseInt(raw);
       if (!isNaN(n) && n >= 2 && n <= 100) setStrikeCount(n);
     }, 400);
   }, [setCustomStrikeInput, setStrikeCount]);
+
+  const handleExitCustomMode = useCallback(() => {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+    setIsCustomMode(false);
+    if (![6, 10, 20].includes(strikeCount)) {
+      setStrikeCount(10);
+    }
+  }, [strikeCount, setStrikeCount]);
 
   const handleRunStrategist = async () => {
     if (!quote || !data) return;
@@ -275,30 +289,41 @@ export function OptionsTab() {
       <div className="flex items-center gap-2 bg-[#111111] px-3 py-1.5 rounded-lg border border-[#262626] shrink-0 flex-wrap">
         <div className="flex items-center gap-1">
           <span className="font-mono text-[10px] text-zinc-500 uppercase">Strikes</span>
-          <Select value={strikeMode} onValueChange={handleStrikeModeChange}>
-            <SelectTrigger className="w-[70px] font-mono text-[11px] bg-[#0c0c0c] border-[#262626] h-7 px-2">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="6">6</SelectItem>
-              <SelectItem value="10">10</SelectItem>
-              <SelectItem value="20">20</SelectItem>
-              <SelectItem value="custom">Custom</SelectItem>
-            </SelectContent>
-          </Select>
+          {isCustomMode ? (
+            <div className="flex items-center gap-1">
+              <Input
+                type="number"
+                min={2}
+                max={100}
+                autoFocus
+                value={localCustomValue}
+                onChange={e => handleCustomStrikeChange(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Escape') handleExitCustomMode(); }}
+                className="w-[70px] font-mono text-[11px] bg-[#0c0c0c] border-[#262626] h-7 px-2"
+                placeholder="10"
+              />
+              <button
+                onClick={handleExitCustomMode}
+                className="p-0.5 rounded text-zinc-500 hover:text-white hover:bg-[#262626] transition-colors"
+                aria-label="Exit custom mode"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : (
+            <Select value={strikeMode} onValueChange={handleStrikeModeChange}>
+              <SelectTrigger className="w-[70px] font-mono text-[11px] bg-[#0c0c0c] border-[#262626] h-7 px-2">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="6">6</SelectItem>
+                <SelectItem value="10">10</SelectItem>
+                <SelectItem value="20">20</SelectItem>
+                <SelectItem value="custom">Custom</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
         </div>
-
-        {strikeMode === "custom" && (
-          <Input
-            type="number"
-            min={2}
-            max={100}
-            value={customStrikeInput || String(strikeCount)}
-            onChange={e => handleCustomStrikeChange(e.target.value)}
-            className="w-14 font-mono text-[11px] bg-[#0c0c0c] border-[#262626] h-7 px-2"
-            placeholder="10"
-          />
-        )}
 
         {data && (
           <Button
@@ -322,6 +347,27 @@ export function OptionsTab() {
           </div>
         )}
       </div>
+
+      {data && (
+        <div className="flex items-center justify-between gap-x-6 bg-[#09090b] border-y border-[#262626] py-2 px-4 shrink-0" style={{ fontVariantNumeric: "tabular-nums" }}>
+          <div className="flex flex-col items-center">
+            <span className="font-mono text-[10px] text-zinc-500 uppercase tracking-wider">IV</span>
+            <span className="font-mono text-sm font-medium text-white">26.24%</span>
+          </div>
+          <div className="flex flex-col items-center">
+            <span className="font-mono text-[10px] text-zinc-500 uppercase tracking-wider">IV Rank</span>
+            <span className="font-mono text-sm font-medium text-white">30%</span>
+          </div>
+          <div className="flex flex-col items-center">
+            <span className="font-mono text-[10px] text-zinc-500 uppercase tracking-wider">Last</span>
+            <span className="font-mono text-sm font-medium text-white">{underlyingPrice != null ? underlyingPrice.toFixed(2) : "—"}</span>
+          </div>
+          <div className="flex flex-col items-center">
+            <span className="font-mono text-[10px] text-zinc-500 uppercase tracking-wider">Exp Move</span>
+            <span className="font-mono text-sm font-medium text-white">±$14.50</span>
+          </div>
+        </div>
+      )}
 
       {(strategistResult || isStrategizing) && (
         <div className="bg-card border border-card-border rounded-lg overflow-hidden shrink-0">
