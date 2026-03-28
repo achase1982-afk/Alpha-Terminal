@@ -1,4 +1,5 @@
 import { useTerminalStore } from "@/lib/store";
+import { useOptionsSettingsStore } from "@/lib/options-store";
 import { AuthPanel } from "./AuthPanel";
 import { MarketPulseModal, DEFAULT_PULSE_SYMBOLS } from "./MarketPulseModal";
 import { useLocalStorage } from "@/lib/useLocalStorage";
@@ -7,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
-import { Terminal, SlidersHorizontal, X, LayoutDashboard, ListOrdered, Gauge, BrainCircuit, Zap, MessageCircle, ChevronRight, Settings, Star, Trash2 } from "lucide-react";
+import { Terminal, SlidersHorizontal, X, LayoutDashboard, ListOrdered, Gauge, BrainCircuit, Zap, MessageCircle, ChevronRight, Settings, Star, Trash2, BarChart2 } from "lucide-react";
 import { useState } from "react";
 import { useGetAvailableModels } from "@workspace/api-client-react";
 
@@ -36,6 +37,8 @@ export function Sidebar({ onClose, onOpenChat }: SidebarProps) {
     accessToken,
     watchlist, removeFromWatchlist, setSymbol,
   } = useTerminalStore();
+
+  const { contractType, setContractType, maxDte, setMaxDte } = useOptionsSettingsStore();
 
   const { data: modelsData } = useGetAvailableModels();
   const availableModels = modelsData?.models ?? ["gemini-2.5-flash", "gemini-2.5-pro"];
@@ -237,6 +240,37 @@ export function Sidebar({ onClose, onOpenChat }: SidebarProps) {
                       {OVERLAY_LABELS[key] ?? key.toUpperCase()}
                     </button>
                   ))}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
+                  <BarChart2 className="w-3 h-3" /> Options Chain
+                </Label>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-[9px] text-muted-foreground/70 uppercase tracking-wider whitespace-nowrap">Type</span>
+                  <Select value={contractType} onValueChange={(v) => setContractType(v as 'ALL' | 'CALL' | 'PUT')}>
+                    <SelectTrigger className="font-mono text-[10px] bg-card border-card-border h-8 focus:ring-primary/50">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-card border-card-border font-mono text-[10px]">
+                      <SelectItem value="ALL" className="text-[10px]">ALL</SelectItem>
+                      <SelectItem value="CALL" className="text-[10px]">CALLS</SelectItem>
+                      <SelectItem value="PUT" className="text-[10px]">PUTS</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-[9px] text-muted-foreground/70 uppercase tracking-wider whitespace-nowrap">Max DTE</span>
+                  <Input
+                    type="number"
+                    value={maxDte}
+                    onChange={e => {
+                      const v = parseInt(e.target.value);
+                      if (!isNaN(v) && v > 0) setMaxDte(v);
+                    }}
+                    className="font-mono text-[10px] bg-card border-card-border h-8 w-20"
+                  />
                 </div>
               </div>
 

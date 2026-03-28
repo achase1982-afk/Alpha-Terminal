@@ -1,11 +1,12 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useTerminalStore } from "@/lib/store";
+import { useOptionsSettingsStore } from "@/lib/options-store";
 import { useGetQuote, useGetPriceHistory, useGetOptionChain } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { DownloadCloud, Table2, BarChart2, ChevronDown, ChevronUp } from "lucide-react";
+import { Table2, BarChart2, ChevronDown, ChevronUp } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
 const API_BASE = "/api";
@@ -26,17 +27,18 @@ interface Contract {
   dte?: number;
 }
 
-interface StraddleRow {
+interface NormalizedRow {
   strike: number;
-  call?: Contract;
-  put?: Contract;
+  call: Contract | null;
+  put: Contract | null;
+  isATM: boolean;
 }
 
 interface ExpirationGroup {
   expiration: string;
   dte: number;
   label: string;
-  rows: StraddleRow[];
+  rows: NormalizedRow[];
 }
 
 function formatExpLabel(expStr: string, dte?: number): string {
@@ -51,69 +53,99 @@ function formatExpLabel(expStr: string, dte?: number): string {
   }
 }
 
-function buildExpirationGroups(calls: Contract[], puts: Contract[]): ExpirationGroup[] {
+function findATMIndex(strikes: number[], lastPrice: number): number {
+  if (strikes.length === 0) return -1;
+  let best = 0;
+  let bestDiff = Math.abs(strikes[0] - lastPrice);
+  for (let i = 1; i < strikes.length; i++) {
+    const diff = Math.abs(strikes[i] - lastPrice);
+    if (diff < bestDiff || (diff === bestDiff && strikes[i] < strikes[best])) {
+      best = i;
+      bestDiff = diff;
+    }
+  }
+  return best;
+}
+
+function sliceAroundATM(rows: NormalizedRow[], atmIdx: number, count: number): NormalizedRow[] {
+  if (count <= 0 || rows.length === 0 || rows.length <= count) return rows;
+  const coerced = count % 2 !== 0 ? count + 1 : count;
+  const half = coerced / 2;
+  let start = Math.max(0, atmIdx - half);
+  let end = start + coerced;
+  if (end > rows.length) {
+    end = rows.length;
+    start = Math.max(0, end - coerced);
+  }
+  return rows.slice(start, end);
+}
+
+function buildExpirationGroups(
+  calls: Contract[],
+  puts: Contract[],
+  lastPrice: number | null,
+  strikeCount: number
+): ExpirationGroup[] {
   const expMap = new Map<string, { calls: Map<number, Contract>; puts: Map<number, Contract>; dte: number }>();
 
   for (const c of calls) {
-    const key = c.expiration;
-    if (!expMap.has(key)) expMap.set(key, { calls: new Map(), puts: new Map(), dte: c.dte ?? 0 });
-    expMap.get(key)!.calls.set(c.strike, c);
+    if (!expMap.has(c.expiration)) expMap.set(c.expiration, { calls: new Map(), puts: new Map(), dte: c.dte ?? 0 });
+    expMap.get(c.expiration)!.calls.set(c.strike, c);
   }
   for (const p of puts) {
-    const key = p.expiration;
-    if (!expMap.has(key)) expMap.set(key, { calls: new Map(), puts: new Map(), dte: p.dte ?? 0 });
-    expMap.get(key)!.puts.set(p.strike, p);
+    if (!expMap.has(p.expiration)) expMap.set(p.expiration, { calls: new Map(), puts: new Map(), dte: p.dte ?? 0 });
+    expMap.get(p.expiration)!.puts.set(p.strike, p);
   }
 
   const groups: ExpirationGroup[] = [];
   for (const [exp, { calls: callMap, puts: putMap, dte }] of expMap) {
-    const allStrikes = new Set([...callMap.keys(), ...putMap.keys()]);
-    const sorted = [...allStrikes].sort((a, b) => a - b);
-    const rows: StraddleRow[] = sorted.map(strike => ({
+    const allStrikes = [...new Set([...callMap.keys(), ...putMap.keys()])].sort((a, b) => a - b);
+    const atmIdx = lastPrice != null ? findATMIndex(allStrikes, lastPrice) : -1;
+
+    let normalizedRows: NormalizedRow[] = allStrikes.map((strike, i) => ({
       strike,
-      call: callMap.get(strike),
-      put: putMap.get(strike),
+      call: callMap.get(strike) ?? null,
+      put: putMap.get(strike) ?? null,
+      isATM: i === atmIdx,
     }));
-    groups.push({ expiration: exp, dte, label: formatExpLabel(exp, dte), rows });
+
+    if (strikeCount > 0 && lastPrice != null && normalizedRows.length > strikeCount) {
+      normalizedRows = sliceAroundATM(normalizedRows, atmIdx, strikeCount);
+    }
+
+    groups.push({ expiration: exp, dte, label: formatExpLabel(exp, dte), rows: normalizedRows });
   }
 
   groups.sort((a, b) => a.dte - b.dte);
   return groups;
 }
 
-function sliceAroundATM(rows: StraddleRow[], underlyingPrice: number | null, strikesCount: number | null): StraddleRow[] {
-  if (strikesCount == null || underlyingPrice == null || rows.length === 0) return rows;
-  const half = Math.floor(strikesCount / 2);
-  let atmIdx = 0;
-  let minDiff = Math.abs(rows[0].strike - underlyingPrice);
-  for (let i = 1; i < rows.length; i++) {
-    const diff = Math.abs(rows[i].strike - underlyingPrice);
-    if (diff < minDiff) { atmIdx = i; minDiff = diff; }
-  }
-  const start = Math.max(0, atmIdx - half);
-  const end = Math.min(rows.length, start + strikesCount);
-  const adjustedStart = Math.max(0, end - strikesCount);
-  return rows.slice(adjustedStart, end);
-}
-
-function CellVal({ val, decimals = 2 }: { val?: number; decimals?: number }) {
+function CellVal({ val, decimals = 2 }: { val?: number | null; decimals?: number }) {
   if (val == null || isNaN(val)) return <span className="text-zinc-600">—</span>;
   return <>{val.toFixed(decimals)}</>;
 }
 
 export function OptionsTab() {
   const { symbol, accessToken, aiModel, aiTemp, strategistResult, setStrategistResult } = useTerminalStore();
-  const [contractType, setContractType] = useState("ALL");
-  const [dte, setDte] = useState("30");
-  const [strikesLimit, setStrikesLimit] = useState("10");
-  const [enabled, setEnabled] = useState(false);
+  const { contractType, strikeCount, maxDte, customStrikeInput, setCustomStrikeInput } = useOptionsSettingsStore();
+  const setStrikeCount = useOptionsSettingsStore(s => s.setStrikeCount);
+
   const [isStrategizing, setIsStrategizing] = useState(false);
   const [strategistExpanded, setStrategistExpanded] = useState(false);
   const [expandedExps, setExpandedExps] = useState<Set<string>>(new Set());
+  const [forceCustom, setForceCustom] = useState(false);
+  const strikeMode = useMemo(() => {
+    if (forceCustom) return "custom";
+    if ([6, 10, 20].includes(strikeCount)) return String(strikeCount);
+    return "custom";
+  }, [strikeCount, forceCustom]);
+  const strategistAbortRef = useRef<AbortController | null>(null);
+  const strategistIdRef = useRef(0);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const { data, isLoading, error } = useGetOptionChain(
-    { symbol, accessToken: accessToken || "", contractType, daysToExpiration: parseInt(dte) || 30 },
-    { query: { enabled: !!accessToken && enabled && !!symbol } }
+  const { data, isLoading, error, isFetching } = useGetOptionChain(
+    { symbol, accessToken: accessToken || "", contractType, daysToExpiration: maxDte },
+    { query: { enabled: !!accessToken && !!symbol } }
   );
 
   const { data: quote } = useGetQuote(
@@ -126,21 +158,27 @@ export function OptionsTab() {
     { query: { enabled: !!accessToken } }
   );
 
-  const handleLoad = () => setEnabled(true);
-
   const underlyingPrice = (data as unknown as { underlyingPrice?: number })?.underlyingPrice ?? quote?.lastPrice ?? null;
-  const parsedStrikesLimit = strikesLimit === "ALL" ? null : parseInt(strikesLimit);
 
   const groups = useMemo(() => {
     if (!data) return [];
-    return buildExpirationGroups(data.calls as Contract[], data.puts as Contract[]);
-  }, [data]);
+    return buildExpirationGroups(
+      data.calls as Contract[],
+      data.puts as Contract[],
+      underlyingPrice,
+      strikeCount
+    );
+  }, [data, underlyingPrice, strikeCount]);
 
   useEffect(() => {
     if (groups.length > 0 && expandedExps.size === 0) {
       setExpandedExps(new Set([groups[0].expiration]));
     }
   }, [groups]);
+
+  useEffect(() => {
+    setExpandedExps(new Set());
+  }, [symbol]);
 
   const toggleExp = (exp: string) => {
     setExpandedExps(prev => {
@@ -151,8 +189,32 @@ export function OptionsTab() {
     });
   };
 
+  const handleStrikeModeChange = useCallback((val: string) => {
+    if (val === "custom") {
+      setForceCustom(true);
+      return;
+    }
+    setForceCustom(false);
+    const n = parseInt(val);
+    if (!isNaN(n) && n > 0) setStrikeCount(n);
+  }, [setStrikeCount]);
+
+  const handleCustomStrikeChange = useCallback((raw: string) => {
+    setCustomStrikeInput(raw);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      const n = parseInt(raw);
+      if (!isNaN(n) && n >= 2 && n <= 100) setStrikeCount(n);
+    }, 400);
+  }, [setCustomStrikeInput, setStrikeCount]);
+
   const handleRunStrategist = async () => {
     if (!quote || !data) return;
+    if (strategistAbortRef.current) strategistAbortRef.current.abort();
+    const controller = new AbortController();
+    strategistAbortRef.current = controller;
+    const requestId = ++strategistIdRef.current;
+
     setStrategistResult(null);
     setIsStrategizing(true);
     setStrategistExpanded(true);
@@ -167,64 +229,66 @@ export function OptionsTab() {
           model: aiModel,
           temperature: aiTemp,
         }),
+        signal: controller.signal,
       });
+      if (strategistIdRef.current !== requestId) return;
       const result = await res.json() as { response?: string };
       setStrategistResult(result.response ?? "No response received.");
     } catch (err) {
+      if ((err as Error).name === 'AbortError') return;
+      if (strategistIdRef.current !== requestId) return;
       setStrategistResult(`**Error:** ${err instanceof Error ? err.message : String(err)}`);
     } finally {
-      setIsStrategizing(false);
+      if (strategistIdRef.current === requestId) setIsStrategizing(false);
     }
   };
+
+  useEffect(() => {
+    return () => {
+      if (strategistAbortRef.current) strategistAbortRef.current.abort();
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
+
+  const gridCols = contractType === 'CALL'
+    ? "1fr 56px"
+    : contractType === 'PUT'
+      ? "56px 1fr"
+      : "1fr 56px 1fr";
+
+  const showCalls = contractType !== 'PUT';
+  const showPuts = contractType !== 'CALL';
 
   return (
     <div className="space-y-2 h-full flex flex-col">
 
-      <div className="flex items-center gap-2 bg-[#111111] px-3 py-2 rounded-lg border border-[#262626] shrink-0 flex-wrap">
-        <Select value={contractType} onValueChange={setContractType}>
-          <SelectTrigger className="w-20 font-mono text-[11px] bg-[#0c0c0c] border-[#262626] h-7 px-2">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="ALL">ALL</SelectItem>
-            <SelectItem value="CALL">CALL</SelectItem>
-            <SelectItem value="PUT">PUT</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <div className="flex items-center gap-1">
-          <span className="font-mono text-[10px] text-zinc-500 uppercase">DTE</span>
-          <Input
-            type="number"
-            value={dte}
-            onChange={e => setDte(e.target.value)}
-            className="w-14 font-mono text-[11px] bg-[#0c0c0c] border-[#262626] h-7 px-2"
-          />
-        </div>
-
+      <div className="flex items-center gap-2 bg-[#111111] px-3 py-1.5 rounded-lg border border-[#262626] shrink-0 flex-wrap">
         <div className="flex items-center gap-1">
           <span className="font-mono text-[10px] text-zinc-500 uppercase">Strikes</span>
-          <Select value={strikesLimit} onValueChange={setStrikesLimit}>
-            <SelectTrigger className="w-16 font-mono text-[11px] bg-[#0c0c0c] border-[#262626] h-7 px-2">
+          <Select value={strikeMode} onValueChange={handleStrikeModeChange}>
+            <SelectTrigger className="w-[70px] font-mono text-[11px] bg-[#0c0c0c] border-[#262626] h-7 px-2">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="6">6</SelectItem>
               <SelectItem value="10">10</SelectItem>
               <SelectItem value="20">20</SelectItem>
-              <SelectItem value="ALL">ALL</SelectItem>
+              <SelectItem value="custom">Custom</SelectItem>
             </SelectContent>
           </Select>
         </div>
 
-        <Button
-          onClick={handleLoad}
-          disabled={!accessToken}
-          className="font-mono text-[11px] h-7 px-3 bg-[#18181B] text-[#FFB800] hover:bg-[#27272A] border border-[#27272A]"
-        >
-          <DownloadCloud className="w-3 h-3 mr-1.5" />
-          LOAD
-        </Button>
+        {strikeMode === "custom" && (
+          <Input
+            type="number"
+            min={2}
+            max={100}
+            value={customStrikeInput || String(strikeCount)}
+            onChange={e => handleCustomStrikeChange(e.target.value)}
+            className="w-14 font-mono text-[11px] bg-[#0c0c0c] border-[#262626] h-7 px-2"
+            placeholder="10"
+          />
+        )}
 
         {data && (
           <Button
@@ -239,6 +303,13 @@ export function OptionsTab() {
               <><BarChart2 className="w-3 h-3 mr-1.5" />STRATEGIST</>
             )}
           </Button>
+        )}
+
+        {isFetching && data && (
+          <div className="ml-auto flex items-center gap-1.5">
+            <span className="w-2 h-2 border border-primary border-t-transparent rounded-full animate-spin" />
+            <span className="font-mono text-[10px] text-zinc-500">UPDATING</span>
+          </div>
         )}
       </div>
 
@@ -280,22 +351,37 @@ export function OptionsTab() {
         </div>
       )}
 
-      <div className="flex-1 overflow-auto terminal-panel p-0 min-h-0">
-        {isLoading && (
-          <div className="p-4 space-y-2">
-            {[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-8 w-full bg-card-border" />)}
+      <div className="flex-1 overflow-auto terminal-panel p-0 min-h-0 relative">
+        {isLoading && !data && (
+          <div className="p-4 space-y-1.5">
+            {Array.from({ length: 12 }).map((_, i) => (
+              <Skeleton key={i} className="h-6 w-full bg-[#1a1a1a]" />
+            ))}
           </div>
         )}
-        {error && (
+
+        {isFetching && data && (
+          <div className="absolute inset-0 bg-black/20 z-20 pointer-events-none" />
+        )}
+
+        {error && !data && (
           <div className="p-10 text-center text-destructive font-mono flex flex-col items-center">
             <span className="text-3xl mb-3">⚠</span>
             <span className="text-xs">FAILED TO LOAD OPTIONS DATA.</span>
           </div>
         )}
-        {!isLoading && !error && !data && (
+
+        {!isLoading && !error && !data && !accessToken && (
           <div className="p-16 flex flex-col items-center justify-center text-muted-foreground font-mono h-full">
             <Table2 className="w-8 h-8 mb-2 opacity-20" />
-            <span className="text-xs">CLICK "LOAD" TO FETCH OPTIONS DATA.</span>
+            <span className="text-xs">CONNECT SCHWAB TO VIEW OPTIONS CHAIN.</span>
+          </div>
+        )}
+
+        {!isLoading && !error && !data && accessToken && (
+          <div className="p-16 flex flex-col items-center justify-center text-muted-foreground font-mono h-full">
+            <Table2 className="w-8 h-8 mb-2 opacity-20" />
+            <span className="text-xs">LOADING OPTIONS CHAIN...</span>
           </div>
         )}
 
@@ -303,7 +389,6 @@ export function OptionsTab() {
           <div className="divide-y divide-[#262626]">
             {groups.map(group => {
               const isOpen = expandedExps.has(group.expiration);
-              const visibleRows = sliceAroundATM(group.rows, underlyingPrice, parsedStrikesLimit);
               return (
                 <div key={group.expiration}>
                   <button
@@ -312,11 +397,7 @@ export function OptionsTab() {
                   >
                     <span className="font-mono text-[11px] font-bold text-white tracking-wider">{group.label}</span>
                     <div className="flex items-center gap-3">
-                      <span className="font-mono text-[10px] text-zinc-500">
-                        {parsedStrikesLimit != null && group.rows.length > parsedStrikesLimit
-                          ? `${visibleRows.length}/${group.rows.length}`
-                          : group.rows.length} strikes
-                      </span>
+                      <span className="font-mono text-[10px] text-zinc-500">{group.rows.length} strikes</span>
                       {isOpen
                         ? <ChevronUp className="w-3 h-3 text-zinc-500" />
                         : <ChevronDown className="w-3 h-3 text-zinc-500" />}
@@ -324,29 +405,39 @@ export function OptionsTab() {
                   </button>
 
                   {isOpen && (
-                    <div>
+                    <div className="overflow-x-auto">
                       <div
-                        className="grid text-[10px] font-mono text-zinc-500 uppercase tracking-wider border-b border-[#262626] bg-[#0a0a0a]"
-                        style={{ gridTemplateColumns: "1fr 56px 1fr" }}
+                        className="grid text-[10px] font-mono text-zinc-500 uppercase tracking-wider border-b border-[#262626] bg-[#0a0a0a] sticky top-0 z-10"
+                        style={{ gridTemplateColumns: gridCols }}
                       >
-                        <div className="grid grid-cols-4 px-2 py-1 text-right gap-0.5">
-                          <span>Bid</span>
-                          <span>Ask</span>
-                          <span>Vol</span>
-                          <span>Delta</span>
-                        </div>
+                        {showCalls && (
+                          <div className="grid grid-cols-4 px-2 py-1 text-right gap-0.5">
+                            <span>Bid</span>
+                            <span>Ask</span>
+                            <span>Vol</span>
+                            <span>Delta</span>
+                          </div>
+                        )}
                         <div className="flex items-center justify-center bg-[#18181B] text-zinc-400 font-bold">
                           STRIKE
                         </div>
-                        <div className="grid grid-cols-4 px-2 py-1 text-left gap-0.5">
-                          <span>Bid</span>
-                          <span>Ask</span>
-                          <span>Vol</span>
-                          <span>Delta</span>
-                        </div>
+                        {showPuts && (
+                          <div className="grid grid-cols-4 px-2 py-1 text-left gap-0.5">
+                            <span>Bid</span>
+                            <span>Ask</span>
+                            <span>Vol</span>
+                            <span>Delta</span>
+                          </div>
+                        )}
                       </div>
 
-                      <StraddleBody rows={visibleRows} underlyingPrice={underlyingPrice} />
+                      <StraddleBody
+                        rows={group.rows}
+                        underlyingPrice={underlyingPrice}
+                        gridCols={gridCols}
+                        showCalls={showCalls}
+                        showPuts={showPuts}
+                      />
                     </div>
                   )}
                 </div>
@@ -366,55 +457,63 @@ export function OptionsTab() {
   );
 }
 
-function StraddleBody({ rows, underlyingPrice }: { rows: StraddleRow[]; underlyingPrice: number | null }) {
-  const atmIdx = useMemo(() => {
-    if (underlyingPrice == null || rows.length === 0) return -1;
-    let closest = 0;
-    let minDiff = Math.abs(rows[0].strike - underlyingPrice);
-    for (let i = 1; i < rows.length; i++) {
-      const diff = Math.abs(rows[i].strike - underlyingPrice);
-      if (diff < minDiff) { closest = i; minDiff = diff; }
-    }
-    return closest;
-  }, [rows, underlyingPrice]);
-
+function StraddleBody({
+  rows,
+  underlyingPrice,
+  gridCols,
+  showCalls,
+  showPuts,
+}: {
+  rows: NormalizedRow[];
+  underlyingPrice: number | null;
+  gridCols: string;
+  showCalls: boolean;
+  showPuts: boolean;
+}) {
   return (
     <div>
-      {rows.map((row, i) => {
-        const isATM = i === atmIdx;
+      {rows.map(row => {
         const callITM = underlyingPrice != null && row.strike < underlyingPrice;
         const putITM = underlyingPrice != null && row.strike > underlyingPrice;
 
         return (
           <div
             key={row.strike}
-            className={`grid font-mono text-[11px] transition-colors hover:bg-white/[0.03] ${isATM ? "border-b border-dashed border-[#FFB800]" : "border-b border-[#1a1a1a]"}`}
+            className={`grid font-mono text-[11px] transition-colors hover:bg-white/[0.03] ${
+              row.isATM
+                ? "border-b border-dashed border-[#FFB800]"
+                : "border-b border-[#1a1a1a]"
+            }`}
             style={{
-              gridTemplateColumns: "1fr 56px 1fr",
+              gridTemplateColumns: gridCols,
               fontVariantNumeric: "tabular-nums",
             }}
           >
-            <div
-              className={`grid grid-cols-4 px-2 py-1 text-right gap-0.5 items-center ${callITM ? "bg-[#1e293b]" : ""}`}
-            >
-              <span className="text-white"><CellVal val={row.call?.bid} /></span>
-              <span className="text-white"><CellVal val={row.call?.ask} /></span>
-              <span className="text-zinc-400">{row.call?.volume ?? <span className="text-zinc-600">—</span>}</span>
-              <span className="text-zinc-500"><CellVal val={row.call?.delta} decimals={3} /></span>
-            </div>
+            {showCalls && (
+              <div
+                className={`grid grid-cols-4 px-2 py-1 text-right gap-0.5 items-center ${callITM ? "bg-[#1e293b]" : ""}`}
+              >
+                <span className="text-white"><CellVal val={row.call?.bid} /></span>
+                <span className="text-white"><CellVal val={row.call?.ask} /></span>
+                <span className="text-zinc-400">{row.call?.volume ?? <span className="text-zinc-600">—</span>}</span>
+                <span className="text-zinc-500"><CellVal val={row.call?.delta} decimals={3} /></span>
+              </div>
+            )}
 
-            <div className={`flex items-center justify-center bg-[#18181B] text-[11px] font-bold ${isATM ? "text-[#FFB800]" : "text-zinc-300"}`}>
+            <div className={`flex items-center justify-center bg-[#18181B] text-[11px] font-bold ${row.isATM ? "text-[#FFB800]" : "text-zinc-300"}`}>
               {row.strike.toFixed(row.strike % 1 === 0 ? 0 : 2)}
             </div>
 
-            <div
-              className={`grid grid-cols-4 px-2 py-1 text-left gap-0.5 items-center ${putITM ? "bg-[#1e293b]" : ""}`}
-            >
-              <span className="text-white"><CellVal val={row.put?.bid} /></span>
-              <span className="text-white"><CellVal val={row.put?.ask} /></span>
-              <span className="text-zinc-400">{row.put?.volume ?? <span className="text-zinc-600">—</span>}</span>
-              <span className="text-zinc-500"><CellVal val={row.put?.delta} decimals={3} /></span>
-            </div>
+            {showPuts && (
+              <div
+                className={`grid grid-cols-4 px-2 py-1 text-left gap-0.5 items-center ${putITM ? "bg-[#1e293b]" : ""}`}
+              >
+                <span className="text-white"><CellVal val={row.put?.bid} /></span>
+                <span className="text-white"><CellVal val={row.put?.ask} /></span>
+                <span className="text-zinc-400">{row.put?.volume ?? <span className="text-zinc-600">—</span>}</span>
+                <span className="text-zinc-500"><CellVal val={row.put?.delta} decimals={3} /></span>
+              </div>
+            )}
           </div>
         );
       })}

@@ -1,0 +1,34 @@
+Role: Senior React FinTech Architect. 
+Objective: Overhaul the `<OptionsChain>` component into a production-grade Institutional Straddle View (ThinkorSwim style). Write robust, defensively coded React/TypeScript.
+
+Task 1: Global State & Setting Relocation (Zustand).
+- Create a dedicated Zustand slice (e.g., `useOptionsSettingsStore`) to handle global options settings. Do NOT mix this into unrelated stores to prevent app-wide re-renders.
+- State should include: `contractType` ('ALL' | 'CALLS' | 'PUTS') and `strikeCount` (default: 10).
+- Move the 'Contract Type' select dropdown from the Options Chain into the global 'SETTINGS' accordion card in the `<Sidebar>`. 
+- The `<OptionsChain>` must read `contractType` via a Zustand selector.
+
+Task 2: Auto-Fetch & Race Condition Prevention.
+- Remove the manual 'LOAD CHAIN' button.
+- Implement auto-fetch via `useEffect` dependent on `activeTicker` and `selectedExpiration`. 
+- CRITICAL: You MUST use an `AbortController` to cancel in-flight requests if the user rapidly switches tickers. 
+- While loading new data, do NOT unmount the table or show a centered spinner. Use a subtle loading overlay or skeleton rows to prevent layout collapse.
+
+Task 3: Data Normalization & Strike Math.
+- Normalize the raw API chain data into a unified row model: `{ strike: number, call: Option | null, put: Option | null, isATM: boolean }`.
+- Find the ATM strike by mapping the minimum `Math.abs(strike - lastPrice)`. On a tie, pick the lower strike.
+- Slice the sorted strikes array to show exactly `strikeCount` total rows centered on the ATM index. 
+- Edge Cases: If `strikeCount` is odd, coerce it to an even number. If near the edges of the chain, shift the window so it still shows the total requested rows without padding with empty/null rows.
+
+Task 4: Dynamic Grid Layout & Sticky Headers.
+- Use a unified CSS Grid for the straddle view. The layout MUST change dynamically based on `contractType`:
+   - 'ALL': `grid-cols-[1fr_auto_1fr]`
+   - 'CALLS': `grid-cols-[1fr_auto]`
+   - 'PUTS': `grid-cols-[auto_1fr]`
+- Use `position: sticky; top: 0; z-index: 10` for the header row inside the scrollable grid container. Do NOT use absolute/fixed positioning.
+- Column Mirroring (Institutional Standard): Calls data reads right-to-left toward the strike spine. Puts data reads left-to-right away from the strike spine.
+
+Task 5: ITM Shading & ATM Highlighting.
+- Highlight the ATM row across the entire grid (e.g., a subtle dashed yellow border or distinct background tint).
+- Apply ThinkorSwim-style ITM shading (a muted navy/slate blue like `bg-slate-800` or `bg-[#1e293b]`). 
+- Calls are ITM when strike < lastPrice. Puts are ITM when strike > lastPrice.
+- Add a 'Strikes' control toolbar above the grid: dropdown [6, 10, 20, Custom]. 'Custom' reveals a debounced number input.

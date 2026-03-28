@@ -22,7 +22,17 @@ Key features implemented:
   - All text uses `tabular-nums`; scrollbar-hide CSS utility added to `index.css`
 - **Live Market Pulse**: Sidebar button → modal; backend fetches 14-symbol batch (SPY/QQQ/IWM/$VIX/$VVIX/$CPC/$TICK/$ADD/$TRIN/$DXY//ES//NQ//GC//CL) in single Schwab call; institutional-grade session-aware Gemini prompt
 - **Market Scanner**: AI Discovery + Manual Filter modes; configurable scan universe (S&P 100, Nasdaq 100, High Beta, Custom), max results (1-20), sortable results table with ticker/strategy/confidence/thesis columns
-- **Options Tab**: Chain table with Options Strategist results panel above (collapsible)
+- **Options Tab**: Institutional Straddle View (TOS-style) with auto-fetch, dynamic CSS grid, ATM math, ITM shading
+  - **Zustand options store** (`options-store.ts`): `contractType` ('ALL'|'CALL'|'PUT'), `strikeCount` (default 10), `maxDte`, `customStrikeInput` — persisted separately from main store to prevent cross-tab re-renders
+  - **Contract Type in Sidebar**: Moved from OptionsTab toolbar to global SETTINGS accordion; OptionsTab reads via Zustand selector
+  - **Auto-fetch**: No LOAD button — chain auto-fetches when `accessToken` + `symbol` are truthy; react-query handles cancellation on query-key changes (symbol/contractType/DTE)
+  - **Dynamic grid**: `contractType === 'ALL'` → `1fr 56px 1fr`, `'CALL'` → `1fr 56px`, `'PUT'` → `56px 1fr`; calls column mirrored (right-to-left toward strike spine)
+  - **ATM strike math**: `findATMIndex()` — min `|strike - lastPrice|`, tie-break picks lower strike; `sliceAroundATM()` centers window, coerces odd counts to even, edge-shifts to fill
+  - **ITM shading**: `bg-[#1e293b]` (TOS navy) — calls where `strike < underlying`, puts where `strike > underlying`; ATM row: dashed gold border + gold strike text
+  - **Strikes toolbar**: Dropdown `[6, 10, 20, Custom]` with debounced custom input (400ms); `strikeMode` derived from `strikeCount` via `useMemo`
+  - **Sticky headers**: `position: sticky; top: 0; z-index: 10` inside scrollable container
+  - **Loading overlay**: Subtle `bg-black/20` overlay during refetch (preserves existing table; no layout collapse)
+  - **Strategist race guard**: `strategistIdRef` monotonic counter prevents stale `finally` from clearing loading state; AbortController on strategist POST
 - **Backend AI routes**: `/api/ai/market-briefing`, `/api/ai/options-strategist`, `/api/ai/chat`, `/api/ai/analyze`, `/api/ai/strategy`
 - **Strict Data Grounding**: All AI prompts enforce `STRICT GROUNDING RULE` — Gemini is forbidden from using internal training knowledge for market trends, prices, or directional calls. Must cite only provided Context Data. Strategy endpoint aborts with "Incomplete real-time data. Strategy generation aborted." if data is missing or >5 minutes stale.
 - **Technical Analysis Library** (`api-server/src/lib/ta.ts`): Uses `technicalindicators` npm package. Computes RSI(14), EMA(50), EMA(200) from candle close prices. Includes `isDataStale()` freshness check and `formatTAContext()` for prompt injection.
