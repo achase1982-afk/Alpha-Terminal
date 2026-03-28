@@ -1,0 +1,34 @@
+Role: Senior React/FinTech UI Architect.
+Objective: Perform a complete structural and visual overhaul of the Options Chain to achieve professional-grade density, symmetry, and "ThinkorSwim" physics.
+
+1. The "Zero-Bleed" 3-Panel Architecture (Layout)
+- Structure: Rebuild the Options Board into 3 distinct vertical containers: [Left Wing (Calls)] | [Fixed Strike Spine] | [Right Wing (Puts)].
+- Clipping: Both wings must have 'overflow-x-auto'. This ensures Call data physically cannot overlap the Strike spine or the Put side. 
+- Linear Alignment: Render columns in the EXACT SAME ORDER on both wings (e.g., [Bid/Ask Stack] -> [Vol/OI Stack] -> [Delta]). Remove all "mirrored" or "reverse" logic. Ensure that when I scroll horizontally, 'Delta' on the Call side and 'Delta' on the Put side are at the same horizontal coordinate.
+
+2. The Dual-Layer Header & Spine (Visual Anchor)
+- Header Row 1 (Top): A flex container with 'CALLS' (left), a centered 'Gear Icon' (⚙️), and 'PUTS' (right).
+- Header Row 2 (Bottom): Data labels for each column (Bid, Ask, Vol) and the word 'Strike' centered in the spine.
+- Alignment: The Gear Icon and the 'Strike' label MUST align perfectly with the width of the center Strike Spine (w-14).
+- Pinning: This entire 2-row header must be 'sticky top-0' and horizontally synchronized with the wings.
+
+3. "Crunchy" Typography & Stacking (Data Density)
+- Price Over Size Stacking: 
+    - Bid Column: Bid Price (Top) / Bid Size (Bottom).
+    - Ask Column: Ask Price (Top) / Ask Size (Bottom).
+    - Vol/OI Column: Volume (Top) / Open Interest (Bottom).
+    - Bid and Ask must be separate, clickable <button> elements.
+- Typography: Set primary values to text-[13px] and secondary values (Size/OI) to text-[10px]. 
+- Weight: Remove all 'font-bold'. Use 'font-normal' or 'font-medium'.
+- Digits: Use 'tabular-nums' for every numeric value to ensure vertical alignment.
+
+4. Physics & Synchronization (Performance)
+- Disable Snapping: Remove all 'scroll-snap' or 'snap-' classes. Apply 'scroll-snap-type: none !important'.
+- Horizontal Sync: Use React Refs and an 'isSyncing' guard to lock the horizontal scroll of the Left and Right wings. Moving one must move the other instantly.
+- Vertical Sync: All three panels (Calls, Spine, Puts) must scroll vertically in perfect unison.
+- Momentum: Enable '-webkit-overflow-scrolling: touch' and 'overscroll-behavior-x: contain' for native iPhone physics.
+
+5. Strike Spine Polish
+- Width: Narrow the center column to exactly w-14 (56px). 
+- Background: Use a solid bg-black to ensure it acts as a visual clipper.
+- ATM Line: Render the yellow dashed line as a single, continuous horizontal <div> that spans the entire row width (from Call wing through to Put wing) on the ATM row.
