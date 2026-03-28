@@ -135,6 +135,7 @@ export const GetOptionChainQueryParams = zod.object({
   daysToExpiration: zod.coerce
     .number()
     .default(getOptionChainQueryDaysToExpirationDefault),
+  strikeCount: zod.coerce.number().optional(),
 });
 
 export const GetOptionChainResponse = zod.object({

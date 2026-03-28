@@ -205,6 +205,12 @@ paths:
           schema:
             type: number
             default: 30
+        - name: strikeCount
+          in: query
+          required: false
+          schema:
+            type: number
+            description: Number of strikes above and below ATM to return from broker
       responses:
         "200":
           description: Option chain data

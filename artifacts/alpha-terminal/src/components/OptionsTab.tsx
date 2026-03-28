@@ -151,8 +151,10 @@ export function OptionsTab() {
   const strategistIdRef = useRef(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const brokerStrikeCount = Math.max(strikeCount, 20);
+
   const { data, isLoading, error, isFetching } = useGetOptionChain(
-    { symbol, accessToken: accessToken || "", contractType, daysToExpiration: maxDte },
+    { symbol, accessToken: accessToken || "", contractType, daysToExpiration: maxDte, strikeCount: brokerStrikeCount },
     { query: { enabled: !!accessToken && !!symbol } }
   );
 
@@ -166,7 +168,7 @@ export function OptionsTab() {
     { query: { enabled: !!accessToken } }
   );
 
-  const underlyingPrice = quote?.lastPrice ?? (data as unknown as { underlyingPrice?: number })?.underlyingPrice ?? null;
+  const underlyingPrice = quote?.last ?? (data as unknown as { underlyingPrice?: number })?.underlyingPrice ?? null;
 
   const groups = useMemo(() => {
     if (!data) return [];

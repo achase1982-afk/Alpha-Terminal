@@ -11,4 +11,8 @@ export type GetOptionChainParams = {
   accessToken: string;
   contractType?: string;
   daysToExpiration?: number;
+  /**
+   * Number of strikes above and below ATM to return from broker
+   */
+  strikeCount?: number;
 };

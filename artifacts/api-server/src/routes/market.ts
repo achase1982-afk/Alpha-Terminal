@@ -294,6 +294,7 @@ router.get("/options", async (req, res) => {
   const accessToken = req.query["accessToken"] as string;
   const contractType = (req.query["contractType"] as string) ?? "ALL";
   const daysToExpiration = Number(req.query["daysToExpiration"] ?? 30);
+  const strikeCount = req.query["strikeCount"] ? Number(req.query["strikeCount"]) : undefined;
 
   if (!symbol || !accessToken) {
     return res.json({ symbol: "", calls: [], puts: [], error: "symbol and accessToken are required" });
@@ -307,8 +308,12 @@ router.get("/options", async (req, res) => {
       symbol: apiSymbol,
       contractType,
       daysToExpiration: String(daysToExpiration),
-      range: "NTM",
+      range: "ALL",
     });
+
+    if (strikeCount && strikeCount > 0) {
+      params.set("strikeCount", String(strikeCount));
+    }
 
     const response = await fetch(`${SCHWAB_API_BASE}/chains?${params.toString()}`, {
       headers: { "Authorization": `Bearer ${accessToken}` },

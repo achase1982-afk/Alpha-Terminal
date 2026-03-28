@@ -1,0 +1,23 @@
+Role: Senior Full-Stack FinTech Engineer. 
+Objective: Fix a critical data bottleneck in the backend options route and rewrite the frontend ATM calculation to use price-distance math instead of array-index math.
+
+Task 1: Backend API Fix (Remove the 6-Strike Cap).
+- Locate the backend Express route or service file responsible for fetching the Options Chain data from Schwab.
+- Currently, this endpoint is hardcoded to return a maximum of 6 strikes per expiration, ignoring the frontend's request. 
+- Fix: Ensure the backend accepts the `strikes` query parameter (e.g., `?strikes=20`). Have the backend fetch the full chain from the broker, compute the true ATM strike using the current underlying price, and return the requested number of strikes. Alternatively, return the full chain and let the frontend slice it. Do NOT artificially cap the response to 6 rows.
+
+Task 2: Frontend Fetch Injection.
+- In the `<OptionsChain>` or API fetch hook, ensure the `strikeCount` state from the dropdown is actually passed to the backend API call as a query parameter (e.g., `/api/options?symbol=COST&strikes=${strikeCount}`).
+
+Task 3: True ATM Math (Frontend).
+- Locate the `useMemo` or function that calculates the ATM strike. Delete any logic using `Math.floor(length / 2)`.
+- Implement price-based math. You MUST use the `lastPrice` prop passed to the component.
+- Use this exact logic to find the ATM strike from the full array:
+  `const atmStrike = strikes.reduce((closest, current) => Math.abs(current.strike - lastPrice) < Math.abs(closest.strike - lastPrice) ? current : closest);`
+
+Task 4: Correct ITM Shading and Slicing.
+- Once the true `atmStrike` is identified, slice the displayed rows symmetrically around it based on the `strikeCount` dropdown.
+- Update the ITM (In-The-Money) highlighting boolean. 
+  - Call ITM: `row.strike < lastPrice`
+  - Put ITM: `row.strike > lastPrice`
+- Draw the dashed horizontal line exactly where the strike crosses the `lastPrice`, NOT just the middle of the array.
