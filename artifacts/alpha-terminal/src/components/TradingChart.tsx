@@ -43,12 +43,16 @@ export function TradingChart({ data, isLoading, error, timedOut, tokenExpired, i
     const container = chartContainerRef.current;
     let removed = false;
 
+    // DATA SOURCE: all candle data comes exclusively from our internal /api/market/history
+    // endpoint which proxies Schwab's pricehistory API. There is no TradingView data feed.
+    // attributionLogo: false removes the TradingView watermark/logo from the chart canvas.
     const chart = createChart(container, {
       layout: {
         background: { type: ColorType.Solid, color: 'transparent' },
         textColor: '#808080',
         fontFamily: "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
         fontSize: 11,
+        attributionLogo: false,
       },
       grid: {
         vertLines: { color: 'rgba(38, 38, 38, 0.5)' },
