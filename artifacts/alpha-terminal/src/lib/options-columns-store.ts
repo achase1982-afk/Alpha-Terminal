@@ -5,21 +5,24 @@ export interface ColumnDef {
   id: string;
   label: string;
   shortLabel: string;
-  stacked: boolean;
   topKey: string;
   bottomKey?: string;
   topLabel: string;
   bottomLabel?: string;
-  decimals: number;
+  topDecimals: number;
+  bottomDecimals?: number;
+  isPrice?: boolean;
 }
 
 export const COLUMN_REGISTRY: ColumnDef[] = [
-  { id: 'bidAsk', label: 'Bid / Ask', shortLabel: 'B/A', stacked: true, topKey: 'bid', bottomKey: 'ask', topLabel: 'Bid', bottomLabel: 'Ask', decimals: 2 },
-  { id: 'volOi', label: 'Vol / OI', shortLabel: 'V/OI', stacked: true, topKey: 'volume', bottomKey: 'openInterest', topLabel: 'Vol', bottomLabel: 'OI', decimals: 0 },
-  { id: 'delta', label: 'Delta', shortLabel: 'Δ', stacked: false, topKey: 'delta', topLabel: 'Delta', decimals: 3 },
-  { id: 'gamma', label: 'Gamma', shortLabel: 'Γ', stacked: false, topKey: 'gamma', topLabel: 'Gamma', decimals: 4 },
-  { id: 'theta', label: 'Theta', shortLabel: 'Θ', stacked: false, topKey: 'theta', topLabel: 'Theta', decimals: 3 },
-  { id: 'probOtm', label: 'Prob OTM', shortLabel: '%OTM', stacked: false, topKey: 'probOtm', topLabel: '%OTM', decimals: 1 },
+  { id: 'bid', label: 'Bid', shortLabel: 'BID', topKey: 'bid', bottomKey: 'bidSize', topLabel: 'Bid', bottomLabel: 'Size', topDecimals: 2, bottomDecimals: 0, isPrice: true },
+  { id: 'ask', label: 'Ask', shortLabel: 'ASK', topKey: 'ask', bottomKey: 'askSize', topLabel: 'Ask', bottomLabel: 'Size', topDecimals: 2, bottomDecimals: 0, isPrice: true },
+  { id: 'last', label: 'Last', shortLabel: 'LAST', topKey: 'last', topLabel: 'Last', topDecimals: 2 },
+  { id: 'vol', label: 'Volume', shortLabel: 'VOL', topKey: 'volume', bottomKey: 'openInterest', topLabel: 'Vol', bottomLabel: 'OI', topDecimals: 0, bottomDecimals: 0 },
+  { id: 'delta', label: 'Delta', shortLabel: 'Δ', topKey: 'delta', topLabel: 'Delta', topDecimals: 3 },
+  { id: 'gamma', label: 'Gamma', shortLabel: 'Γ', topKey: 'gamma', topLabel: 'Gamma', topDecimals: 4 },
+  { id: 'theta', label: 'Theta', shortLabel: 'Θ', topKey: 'theta', topLabel: 'Theta', topDecimals: 3 },
+  { id: 'iv', label: 'IV', shortLabel: 'IV', topKey: 'iv', topLabel: 'IV', topDecimals: 1 },
 ];
 
 interface OptionsColumnsState {
@@ -31,20 +34,30 @@ interface OptionsColumnsState {
 export const useOptionsColumnsStore = create<OptionsColumnsState>()(
   persist(
     (set) => ({
-      activeColumnIds: ['bidAsk', 'volOi', 'delta'],
+      activeColumnIds: ['bid', 'ask', 'vol', 'delta'],
       toggleColumn: (id) =>
         set((state) => {
+          const validIds = COLUMN_REGISTRY.map(c => c.id);
+          if (!validIds.includes(id)) return state;
           if (state.activeColumnIds.includes(id)) {
             if (state.activeColumnIds.length <= 1) return state;
             return { activeColumnIds: state.activeColumnIds.filter((c) => c !== id) };
           }
           return { activeColumnIds: [...state.activeColumnIds, id] };
         }),
-      reorderColumns: (ids) => set({ activeColumnIds: ids }),
+      reorderColumns: (ids) => {
+        const validIds = COLUMN_REGISTRY.map(c => c.id);
+        const cleaned = [...new Set(ids)].filter(id => validIds.includes(id));
+        if (cleaned.length === 0) return;
+        set({ activeColumnIds: cleaned });
+      },
     }),
     {
       name: 'alpha-options-columns',
-      version: 1,
+      version: 2,
+      migrate: () => ({
+        activeColumnIds: ['bid', 'ask', 'vol', 'delta'],
+      }),
     }
   )
 );

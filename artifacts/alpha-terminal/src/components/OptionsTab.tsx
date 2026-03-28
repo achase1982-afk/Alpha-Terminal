@@ -6,16 +6,18 @@ import { useGetQuote, useGetOptionChain } from "@workspace/api-client-react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Table2, ChevronDown, ChevronUp, X, Settings } from "lucide-react";
+import { Table2, ChevronDown, ChevronUp, X, Settings, GripVertical } from "lucide-react";
+import { Reorder } from "framer-motion";
 
 const EPS = 0.0001;
-const ROW_HEIGHT = "h-[52px]";
 
 interface Contract {
   strike: number;
   expiration: string;
   bid?: number;
   ask?: number;
+  bidSize?: number;
+  askSize?: number;
   last?: number;
   volume?: number;
   openInterest?: number;
@@ -25,7 +27,6 @@ interface Contract {
   theta?: number;
   vega?: number;
   dte?: number;
-  probOtm?: number;
 }
 
 interface NormalizedRow {
@@ -112,43 +113,46 @@ function getContractVal(contract: Contract | null, key: string): number | undefi
   return (contract as Record<string, unknown>)[key] as number | undefined;
 }
 
+function fmtNum(val: number | undefined, decimals: number): string {
+  if (val == null || isNaN(val)) return "—";
+  return decimals === 0 ? String(Math.round(val)) : val.toFixed(decimals);
+}
+
 function DataCell({ col, contract, align }: { col: ColumnDef; contract: Contract | null; align: "left" | "right" }) {
   const topVal = getContractVal(contract, col.topKey);
   const bottomVal = col.bottomKey ? getContractVal(contract, col.bottomKey) : undefined;
+  const topStr = fmtNum(topVal, col.topDecimals);
+  const botStr = col.bottomKey ? fmtNum(bottomVal, col.bottomDecimals ?? 0) : null;
   const textAlign = align === "right" ? "text-right" : "text-left";
 
-  if (col.stacked) {
-    const topStr = topVal != null && !isNaN(topVal) ? (col.decimals === 0 ? String(Math.round(topVal)) : topVal.toFixed(col.decimals)) : "—";
-    const botStr = bottomVal != null && !isNaN(bottomVal) ? (col.decimals === 0 ? String(Math.round(bottomVal)) : bottomVal.toFixed(col.decimals)) : "—";
+  const inner = (
+    <div className={`flex flex-col justify-center h-12 px-1.5 ${textAlign}`}>
+      <span className={`text-[15px] font-semibold leading-tight ${topStr === "—" ? "text-zinc-600" : "text-white"}`}>{topStr}</span>
+      {botStr != null && (
+        <span className={`text-[10px] leading-tight ${botStr === "—" ? "text-zinc-700" : "text-zinc-500"}`}>{botStr}</span>
+      )}
+    </div>
+  );
+
+  if (col.isPrice) {
     return (
-      <div className={`flex flex-col justify-center ${ROW_HEIGHT} px-2 ${textAlign}`} style={{ fontVariantNumeric: "tabular-nums" }}>
-        <span className={`text-[13px] font-medium leading-tight ${topStr === "—" ? "text-zinc-600" : "text-white"}`}>{topStr}</span>
-        <span className={`text-[11px] leading-tight ${botStr === "—" ? "text-zinc-600" : "text-zinc-500"}`}>{botStr}</span>
-      </div>
+      <button className="w-full hover:bg-white/[0.06] active:bg-white/[0.1] transition-colors cursor-pointer" style={{ fontVariantNumeric: "tabular-nums" }}>
+        {inner}
+      </button>
     );
   }
 
-  const valStr = topVal != null && !isNaN(topVal) ? topVal.toFixed(col.decimals) : "—";
-  return (
-    <div className={`flex items-center ${ROW_HEIGHT} px-2 ${textAlign}`} style={{ fontVariantNumeric: "tabular-nums" }}>
-      <span className={`text-[13px] font-medium w-full ${valStr === "—" ? "text-zinc-600" : "text-zinc-400"}`}>{valStr}</span>
-    </div>
-  );
+  return <div style={{ fontVariantNumeric: "tabular-nums" }}>{inner}</div>;
 }
 
 function HeaderCell({ col, align }: { col: ColumnDef; align: "left" | "right" }) {
   const textAlign = align === "right" ? "text-right" : "text-left";
-  if (col.stacked) {
-    return (
-      <div className={`flex flex-col justify-center px-2 py-1.5 ${textAlign}`}>
-        <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold leading-tight">{col.topLabel}</span>
-        <span className="text-[10px] text-zinc-600 uppercase tracking-wider leading-tight">{col.bottomLabel}</span>
-      </div>
-    );
-  }
   return (
-    <div className={`flex items-center px-2 py-1.5 ${textAlign}`}>
-      <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold w-full">{col.topLabel}</span>
+    <div className={`flex flex-col justify-center px-1.5 py-1 ${textAlign}`}>
+      <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold leading-tight">{col.topLabel}</span>
+      {col.bottomLabel && (
+        <span className="text-[10px] text-zinc-700 uppercase tracking-wider leading-tight">{col.bottomLabel}</span>
+      )}
     </div>
   );
 }
@@ -184,7 +188,17 @@ function MetricsStrip() {
 }
 
 function ColumnsEditorModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { activeColumnIds, toggleColumn } = useOptionsColumnsStore();
+  const { activeColumnIds, toggleColumn, reorderColumns } = useOptionsColumnsStore();
+  const [localOrder, setLocalOrder] = useState(activeColumnIds);
+
+  useEffect(() => {
+    if (open) setLocalOrder(activeColumnIds);
+  }, [open, activeColumnIds]);
+
+  const handleReorder = (newOrder: string[]) => {
+    setLocalOrder(newOrder);
+    reorderColumns(newOrder);
+  };
 
   if (!open) return null;
 
@@ -201,40 +215,53 @@ function ColumnsEditorModal({ open, onClose }: { open: boolean; onClose: () => v
             <X className="w-4 h-4" />
           </button>
         </div>
-        <div className="space-y-2">
-          {COLUMN_REGISTRY.map(col => {
-            const isActive = activeColumnIds.includes(col.id);
-            const isLast = isActive && activeColumnIds.length <= 1;
+
+        <Reorder.Group axis="y" values={localOrder} onReorder={handleReorder} className="space-y-1.5">
+          {localOrder.map(id => {
+            const col = COLUMN_REGISTRY.find(c => c.id === id);
+            if (!col) return null;
             return (
-              <button
-                key={col.id}
-                onClick={() => { if (!isLast) toggleColumn(col.id); }}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg border transition-colors ${
-                  isActive
-                    ? "bg-[#1a1a1a] border-[#FFB800]/30 text-white"
-                    : "bg-[#0c0c0c] border-[#262626] text-zinc-500 hover:text-zinc-300 hover:border-[#333]"
-                } ${isLast ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
-                disabled={isLast}
-              >
-                <div className="flex items-center gap-3">
-                  <span className="font-mono text-sm font-medium">{col.label}</span>
-                  {col.stacked && (
-                    <span className="font-mono text-[10px] text-zinc-600 uppercase">stacked</span>
-                  )}
+              <Reorder.Item key={id} value={id} className="cursor-grab active:cursor-grabbing">
+                <div className="flex items-center justify-between px-3 py-2 rounded-lg border bg-[#1a1a1a] border-[#FFB800]/30 text-white">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-sm font-medium">{col.label}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); toggleColumn(id); setLocalOrder(prev => prev.filter(x => x !== id)); }}
+                      className={`w-9 h-5 rounded-full flex items-center transition-colors bg-[#FFB800] justify-end ${activeColumnIds.length <= 1 ? "opacity-40" : ""}`}
+                      disabled={activeColumnIds.length <= 1}
+                    >
+                      <div className="w-4 h-4 rounded-full bg-white mx-0.5 shadow-sm" />
+                    </button>
+                    <GripVertical className="w-4 h-4 text-zinc-600" />
+                  </div>
                 </div>
-                <div className={`w-9 h-5 rounded-full flex items-center transition-colors ${isActive ? "bg-[#FFB800] justify-end" : "bg-[#262626] justify-start"}`}>
-                  <div className="w-4 h-4 rounded-full bg-white mx-0.5 shadow-sm" />
-                </div>
-              </button>
+              </Reorder.Item>
             );
           })}
+        </Reorder.Group>
+
+        <div className="mt-3 space-y-1.5">
+          {COLUMN_REGISTRY.filter(c => !localOrder.includes(c.id)).map(col => (
+            <button
+              key={col.id}
+              onClick={() => { toggleColumn(col.id); setLocalOrder(prev => [...prev, col.id]); }}
+              className="w-full flex items-center justify-between px-3 py-2 rounded-lg border bg-[#0c0c0c] border-[#262626] text-zinc-500 hover:text-zinc-300 hover:border-[#333] transition-colors"
+            >
+              <span className="font-mono text-sm font-medium">{col.label}</span>
+              <div className="w-9 h-5 rounded-full flex items-center transition-colors bg-[#262626] justify-start">
+                <div className="w-4 h-4 rounded-full bg-white mx-0.5 shadow-sm" />
+              </div>
+            </button>
+          ))}
         </div>
       </div>
     </div>
   );
 }
 
-function ThreePanelBody({
+function OptionsGrid({
   rows,
   underlyingPrice,
   columns,
@@ -261,94 +288,89 @@ function ThreePanelBody({
     return underlyingPrice > sortedRows[sortedRows.length - 1].strike + EPS;
   }, [underlyingPrice, sortedRows]);
 
-  const colWidth = 80;
-  const totalPanelWidth = columns.length * colWidth;
+  const colW = 72;
 
   return (
-    <div className="flex font-mono">
-      {showCalls && (
-        <div className="flex-1 overflow-x-auto overscroll-x-contain">
-          <div style={{ minWidth: totalPanelWidth }}>
-            <div className="flex flex-row-reverse bg-[#0a0a0a] border-b border-[#262626]">
+    <div className="font-mono" style={{ fontVariantNumeric: "tabular-nums" }}>
+      <div className="flex h-8 bg-[#0a0a0a] border-b border-[#262626]">
+        {showCalls && (
+          <div className="flex-1 overflow-x-auto overscroll-x-contain">
+            <div className="flex flex-row-reverse min-w-max h-full">
               {columns.map(col => (
-                <div key={col.id} style={{ width: colWidth }} className="shrink-0">
+                <div key={col.id} style={{ width: colW }} className="shrink-0">
                   <HeaderCell col={col} align="right" />
                 </div>
               ))}
             </div>
-            {sortedRows.map((row, idx) => {
-              const isATMBorder = idx === transitionIdx;
-              const isLastRowATM = transitionIdx === -1 && priceAboveAll && idx === sortedRows.length - 1;
-              const callITM = underlyingPrice != null && row.strike < underlyingPrice - EPS;
-              const borderClass = isATMBorder
-                ? "border-t border-dashed border-[#FFB800]"
-                : isLastRowATM ? "border-b border-dashed border-[#FFB800]" : "border-b border-[#1a1a1a]";
-              return (
-                <div key={row.strike} className={`flex flex-row-reverse transition-colors hover:bg-white/[0.03] ${borderClass} ${callITM ? "bg-[#1e293b]" : ""}`}>
-                  {columns.map(col => (
-                    <div key={col.id} style={{ width: colWidth }} className="shrink-0">
-                      <DataCell col={col} contract={row.call} align="right" />
-                    </div>
-                  ))}
-                </div>
-              );
-            })}
           </div>
-        </div>
-      )}
-
-      <div className="w-[72px] flex-none bg-[#09090b] z-10 border-x border-[#262626]">
-        <div className="flex items-center justify-center py-1.5 border-b border-[#262626] gap-1">
+        )}
+        <div className="w-20 flex-none bg-zinc-900 z-10 border-x border-[#262626] flex items-center justify-center gap-1">
           <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold">Strike</span>
           <button onClick={onOpenColumnsEditor} className="p-0.5 rounded text-zinc-600 hover:text-zinc-300 transition-colors" aria-label="Edit columns">
             <Settings className="w-3 h-3" />
           </button>
         </div>
-        {sortedRows.map((row, idx) => {
-          const isATMBorder = idx === transitionIdx;
-          const isLastRowATM = transitionIdx === -1 && priceAboveAll && idx === sortedRows.length - 1;
-          const isATMStrike = underlyingPrice != null && Math.abs(row.strike - underlyingPrice) <= EPS;
-          const borderClass = isATMBorder
-            ? "border-t border-dashed border-[#FFB800]"
-            : isLastRowATM ? "border-b border-dashed border-[#FFB800]" : "border-b border-[#1a1a1a]";
-          return (
-            <div key={row.strike} className={`flex items-center justify-center ${ROW_HEIGHT} text-sm font-bold ${isATMStrike ? "text-[#FFB800]" : "text-zinc-300"} ${borderClass}`}>
-              {row.strike.toFixed(row.strike % 1 === 0 ? 0 : 2)}
-            </div>
-          );
-        })}
-      </div>
-
-      {showPuts && (
-        <div className="flex-1 overflow-x-auto overscroll-x-contain">
-          <div style={{ minWidth: totalPanelWidth }}>
-            <div className="flex flex-row bg-[#0a0a0a] border-b border-[#262626]">
+        {showPuts && (
+          <div className="flex-1 overflow-x-auto overscroll-x-contain">
+            <div className="flex flex-row min-w-max h-full">
               {columns.map(col => (
-                <div key={col.id} style={{ width: colWidth }} className="shrink-0">
+                <div key={col.id} style={{ width: colW }} className="shrink-0">
                   <HeaderCell col={col} align="left" />
                 </div>
               ))}
             </div>
-            {sortedRows.map((row, idx) => {
-              const isATMBorder = idx === transitionIdx;
-              const isLastRowATM = transitionIdx === -1 && priceAboveAll && idx === sortedRows.length - 1;
-              const putITM = underlyingPrice != null && row.strike > underlyingPrice + EPS;
-              const borderClass = isATMBorder
-                ? "border-t border-dashed border-[#FFB800]"
-                : isLastRowATM ? "border-b border-dashed border-[#FFB800]" : "border-b border-[#1a1a1a]";
-              return (
-                <div key={row.strike} className={`flex flex-row transition-colors hover:bg-white/[0.03] ${borderClass} ${putITM ? "bg-[#1e293b]" : ""}`}>
+          </div>
+        )}
+      </div>
+
+      {sortedRows.map((row, idx) => {
+        const isATMBorder = idx === transitionIdx;
+        const isLastRowATM = transitionIdx === -1 && priceAboveAll && idx === sortedRows.length - 1;
+        const callITM = underlyingPrice != null && row.strike < underlyingPrice - EPS;
+        const putITM = underlyingPrice != null && row.strike > underlyingPrice + EPS;
+        const isATMStrike = underlyingPrice != null && Math.abs(row.strike - underlyingPrice) <= EPS;
+
+        return (
+          <div
+            key={row.strike}
+            className="flex h-12 relative border-b border-[#1a1a1a] hover:bg-white/[0.02] transition-colors"
+          >
+            {(isATMBorder || isLastRowATM) && (
+              <div
+                className={`absolute left-0 right-0 z-20 border-dashed border-[#FFB800] pointer-events-none ${isATMBorder ? "top-0 border-t" : "bottom-0 border-b"}`}
+              />
+            )}
+
+            {showCalls && (
+              <div className={`flex-1 overflow-x-auto overscroll-x-contain ${callITM ? "bg-[#1e293b]" : ""}`}>
+                <div className="flex flex-row-reverse min-w-max h-full">
                   {columns.map(col => (
-                    <div key={col.id} style={{ width: colWidth }} className="shrink-0">
+                    <div key={col.id} style={{ width: colW }} className="shrink-0">
+                      <DataCell col={col} contract={row.call} align="right" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className={`w-20 flex-none bg-zinc-900 z-10 border-x border-[#262626] flex items-center justify-center text-[15px] font-bold ${isATMStrike ? "text-[#FFB800]" : "text-zinc-300"}`}>
+              {row.strike.toFixed(row.strike % 1 === 0 ? 0 : 2)}
+            </div>
+
+            {showPuts && (
+              <div className={`flex-1 overflow-x-auto overscroll-x-contain ${putITM ? "bg-[#1e293b]" : ""}`}>
+                <div className="flex flex-row min-w-max h-full">
+                  {columns.map(col => (
+                    <div key={col.id} style={{ width: colW }} className="shrink-0">
                       <DataCell col={col} contract={row.put} align="left" />
                     </div>
                   ))}
                 </div>
-              );
-            })}
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        );
+      })}
     </div>
   );
 }
@@ -545,7 +567,7 @@ export function OptionsTab() {
                   </button>
 
                   {isOpen && (
-                    <ThreePanelBody
+                    <OptionsGrid
                       rows={group.rows}
                       underlyingPrice={underlyingPrice}
                       columns={activeColumns}
