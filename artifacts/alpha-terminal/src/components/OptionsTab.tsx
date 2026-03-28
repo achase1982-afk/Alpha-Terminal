@@ -145,17 +145,6 @@ function DataCell({ col, contract, align }: { col: ColumnDef; contract: Contract
   return <div style={{ fontVariantNumeric: "tabular-nums" }}>{inner}</div>;
 }
 
-function HeaderCell({ col, align }: { col: ColumnDef; align: "left" | "right" }) {
-  const textAlign = align === "right" ? "text-right" : "text-left";
-  return (
-    <div className={`flex flex-col justify-center px-1.5 py-1 ${textAlign}`}>
-      <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold leading-tight">{col.topLabel}</span>
-      {col.bottomLabel && (
-        <span className="text-[10px] text-zinc-700 uppercase tracking-wider leading-tight">{col.bottomLabel}</span>
-      )}
-    </div>
-  );
-}
 
 function MetricsStrip() {
   const mockIV = 26.2;
@@ -275,15 +264,13 @@ function useScrollSync() {
   const scrollXRef = useRef(0);
   const isSyncing = useRef(false);
   const wingsRef = useRef<Set<HTMLDivElement>>(new Set());
-  const headersRef = useRef<Set<HTMLDivElement>>(new Set());
 
   const broadcast = useCallback((sourceScrollLeft: number, source: HTMLDivElement) => {
     if (isSyncing.current) return;
     isSyncing.current = true;
     scrollXRef.current = sourceScrollLeft;
     requestAnimationFrame(() => {
-      const all = [...wingsRef.current, ...headersRef.current];
-      for (const t of all) {
+      for (const t of wingsRef.current) {
         if (t !== source) t.scrollLeft = sourceScrollLeft;
       }
       isSyncing.current = false;
@@ -301,14 +288,7 @@ function useScrollSync() {
     };
   }, [broadcast]);
 
-  const registerHeader = useCallback((el: HTMLDivElement | null) => {
-    if (!el) return;
-    headersRef.current.add(el);
-    el.scrollLeft = scrollXRef.current;
-    return () => { headersRef.current.delete(el); };
-  }, []);
-
-  return { registerWing, registerHeader };
+  return { registerWing };
 }
 
 function OptionsGrid({
@@ -343,9 +323,10 @@ function OptionsGrid({
 
   const wingWidth = columns.length * COL_W;
 
+  const SUB_HEADER_H = 24;
   const atmLineTop = useMemo(() => {
-    if (transitionIdx >= 0) return transitionIdx * ROW_H;
-    if (priceAboveAll && sortedRows.length > 0) return sortedRows.length * ROW_H;
+    if (transitionIdx >= 0) return SUB_HEADER_H + transitionIdx * ROW_H;
+    if (priceAboveAll && sortedRows.length > 0) return SUB_HEADER_H + sortedRows.length * ROW_H;
     return -1;
   }, [transitionIdx, priceAboveAll, sortedRows.length]);
 
@@ -374,6 +355,13 @@ function OptionsGrid({
           style={momentumStyle}
         >
           <div style={{ minWidth: wingWidth }}>
+            <div className="flex h-6 bg-black border-b border-[#262626]">
+              {columns.map(col => (
+                <div key={col.id} style={{ width: COL_W }} className="shrink-0 flex items-center px-1.5">
+                  <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium truncate">{col.topLabel}</span>
+                </div>
+              ))}
+            </div>
             {sortedRows.map((row) => {
               const callITM = underlyingPrice != null && row.strike < underlyingPrice - EPS;
               return (
@@ -392,6 +380,9 @@ function OptionsGrid({
       )}
 
       <div className="flex-none bg-black z-10 border-x border-[#262626]" style={{ width: STRIKE_W }}>
+        <div className="h-6 flex items-center justify-center border-b border-[#262626] text-[10px] text-zinc-500 uppercase tracking-wider font-medium">
+          Strike
+        </div>
         {sortedRows.map((row) => {
           const isATMStrike = underlyingPrice != null && Math.abs(row.strike - underlyingPrice) <= EPS;
           return (
@@ -413,6 +404,13 @@ function OptionsGrid({
           style={momentumStyle}
         >
           <div style={{ minWidth: wingWidth }}>
+            <div className="flex h-6 bg-black border-b border-[#262626]">
+              {columns.map(col => (
+                <div key={col.id} style={{ width: COL_W }} className="shrink-0 flex items-center px-1.5">
+                  <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium truncate">{col.topLabel}</span>
+                </div>
+              ))}
+            </div>
             {sortedRows.map((row) => {
               const putITM = underlyingPrice != null && row.strike > underlyingPrice + EPS;
               return (
@@ -523,24 +521,7 @@ export function OptionsTab() {
   const showCalls = contractType !== 'PUT';
   const showPuts = contractType !== 'CALL';
 
-  const { registerWing, registerHeader } = useScrollSync();
-  const headerLeftRef = useRef<HTMLDivElement>(null);
-  const headerRightRef = useRef<HTMLDivElement>(null);
-
-  const wingWidth = activeColumns.length * COL_W;
-
-  useEffect(() => {
-    const cleanups: (() => void)[] = [];
-    if (headerLeftRef.current) {
-      const c = registerHeader(headerLeftRef.current);
-      if (c) cleanups.push(c);
-    }
-    if (headerRightRef.current) {
-      const c = registerHeader(headerRightRef.current);
-      if (c) cleanups.push(c);
-    }
-    return () => cleanups.forEach(fn => fn());
-  }, [registerHeader, showCalls, showPuts]);
+  const { registerWing } = useScrollSync();
 
   return (
     <div className="h-full flex flex-col bg-black -mx-4 w-[calc(100%+2rem)]">
@@ -622,51 +603,22 @@ export function OptionsTab() {
 
         {data && groups.length > 0 && (
           <>
-            <div className="sticky top-0 z-20 bg-black font-mono" style={{ fontVariantNumeric: "tabular-nums" }}>
-              <div className="flex h-11 border-b border-[#1a1a1a]">
-                {showCalls && (
-                  <div className="flex-1 flex items-center justify-center">
-                    <span className="text-[14px] font-extrabold uppercase tracking-[0.18em] text-white">Calls</span>
-                  </div>
-                )}
-                <div className="flex-none flex items-center justify-center bg-black border-x border-[#262626]" style={{ width: STRIKE_W }}>
-                  <button onClick={() => setColumnsEditorOpen(true)} className="w-14 h-11 flex items-center justify-center text-zinc-500 hover:text-zinc-300 transition-colors" aria-label="Edit columns">
-                    <Settings className="w-5 h-5" />
-                  </button>
+            <div className="w-full flex items-center sticky top-0 z-30 bg-black border-b border-zinc-800 h-11 font-mono">
+              {showCalls && (
+                <div className="flex-1 text-center">
+                  <span className="text-[14px] font-extrabold uppercase text-white tracking-widest">Calls</span>
                 </div>
-                {showPuts && (
-                  <div className="flex-1 flex items-center justify-center">
-                    <span className="text-[14px] font-extrabold uppercase tracking-[0.18em] text-white">Puts</span>
-                  </div>
-                )}
+              )}
+              <div className="w-14 flex items-center justify-center bg-black border-x border-[#262626]">
+                <button onClick={() => setColumnsEditorOpen(true)} className="w-14 h-11 flex items-center justify-center text-zinc-500 hover:text-zinc-300 transition-colors" aria-label="Edit columns">
+                  <Settings className="w-5 h-5" />
+                </button>
               </div>
-              <div className="flex h-6 border-b border-[#262626]">
-                {showCalls && (
-                  <div ref={headerLeftRef} className="flex-1 overflow-hidden">
-                    <div className="flex" style={{ minWidth: wingWidth }}>
-                      {activeColumns.map(col => (
-                        <div key={col.id} style={{ width: COL_W }} className="shrink-0 flex items-center px-1.5">
-                          <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium truncate">{col.topLabel}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                <div className="flex-none flex items-center justify-center bg-black border-x border-[#262626] text-[10px] text-zinc-500 uppercase tracking-wider font-medium" style={{ width: STRIKE_W }}>
-                  Strike
+              {showPuts && (
+                <div className="flex-1 text-center">
+                  <span className="text-[14px] font-extrabold uppercase text-white tracking-widest">Puts</span>
                 </div>
-                {showPuts && (
-                  <div ref={headerRightRef} className="flex-1 overflow-hidden">
-                    <div className="flex" style={{ minWidth: wingWidth }}>
-                      {activeColumns.map(col => (
-                        <div key={col.id} style={{ width: COL_W }} className="shrink-0 flex items-center px-1.5">
-                          <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium truncate">{col.topLabel}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
+              )}
             </div>
 
             <div className="divide-y divide-[#262626]">
@@ -676,7 +628,7 @@ export function OptionsTab() {
                   <div key={group.expiration}>
                     <button
                       onClick={() => toggleExp(group.expiration)}
-                      className="w-full flex items-center justify-between px-3 py-2 bg-[#111111] border-b border-[#262626] hover:bg-[#1a1a1a] transition-colors sticky top-[68px] z-10"
+                      className="w-full flex items-center justify-between px-3 py-2 bg-[#111111] border-b border-[#262626] hover:bg-[#1a1a1a] transition-colors sticky top-[44px] z-10"
                     >
                       <span className="font-mono text-[11px] font-medium text-white tracking-wider">{group.label}</span>
                       <div className="flex items-center gap-3">
