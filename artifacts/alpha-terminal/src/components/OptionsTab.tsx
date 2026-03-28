@@ -278,7 +278,10 @@ function OptionsGrid({
   showPuts: boolean;
   onOpenColumnsEditor: () => void;
 }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const leftRef = useRef<HTMLDivElement>(null);
+  const rightRef = useRef<HTMLDivElement>(null);
+  const isSyncing = useRef(false);
+
   const sortedRows = useMemo(() => [...rows].sort((a, b) => a.strike - b.strike), [rows]);
 
   const transitionIdx = useMemo(() => {
@@ -292,25 +295,78 @@ function OptionsGrid({
   }, [underlyingPrice, sortedRows]);
 
   const wingWidth = columns.length * COL_W;
-  const callsWidth = showCalls ? wingWidth : 0;
-  const putsWidth = showPuts ? wingWidth : 0;
-  const totalContentWidth = callsWidth + STRIKE_W + putsWidth;
 
   useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const overflow = el.scrollWidth - el.clientWidth;
-    if (overflow > 0) {
-      el.scrollLeft = overflow / 2;
-    }
-  }, [columns.length, showCalls, showPuts]);
+    const left = leftRef.current;
+    const right = rightRef.current;
+    if (!left || !right) return;
+
+    const syncFrom = (source: HTMLDivElement, target: HTMLDivElement) => {
+      return () => {
+        if (isSyncing.current) return;
+        isSyncing.current = true;
+        requestAnimationFrame(() => {
+          target.scrollLeft = source.scrollLeft;
+          isSyncing.current = false;
+        });
+      };
+    };
+
+    const onLeftScroll = syncFrom(left, right);
+    const onRightScroll = syncFrom(right, left);
+
+    left.addEventListener("scroll", onLeftScroll, { passive: true });
+    right.addEventListener("scroll", onRightScroll, { passive: true });
+
+    return () => {
+      left.removeEventListener("scroll", onLeftScroll);
+      right.removeEventListener("scroll", onRightScroll);
+    };
+  }, [showCalls, showPuts]);
+
+  const momentumStyle = { WebkitOverflowScrolling: "touch" } as React.CSSProperties;
 
   return (
-    <div className="relative font-mono" style={{ fontVariantNumeric: "tabular-nums" }}>
-      <div
-        className="absolute left-1/2 -translate-x-1/2 top-0 bottom-0 z-10 bg-zinc-900 border-x border-[#262626]"
-        style={{ width: STRIKE_W }}
-      >
+    <div className="flex font-mono" style={{ fontVariantNumeric: "tabular-nums" }}>
+      {showCalls && (
+        <div
+          ref={leftRef}
+          className="flex-1 overflow-x-auto overflow-y-hidden overscroll-x-contain"
+          style={momentumStyle}
+        >
+          <div style={{ minWidth: wingWidth }}>
+            <div className="flex flex-row-reverse h-8 bg-[#0a0a0a] border-b border-[#262626]">
+              {columns.map(col => (
+                <div key={col.id} style={{ width: COL_W }} className="shrink-0">
+                  <HeaderCell col={col} align="right" />
+                </div>
+              ))}
+            </div>
+            {sortedRows.map((row, idx) => {
+              const isATMBorder = idx === transitionIdx;
+              const isLastRowATM = transitionIdx === -1 && priceAboveAll && idx === sortedRows.length - 1;
+              const callITM = underlyingPrice != null && row.strike < underlyingPrice - EPS;
+              return (
+                <div
+                  key={row.strike}
+                  className={`flex flex-row-reverse h-12 relative border-b border-[#1a1a1a] hover:bg-white/[0.02] transition-colors ${callITM ? "bg-[#1e293b]" : ""}`}
+                >
+                  {(isATMBorder || isLastRowATM) && (
+                    <div className={`absolute left-0 right-0 z-20 border-dashed border-[#FFB800] pointer-events-none ${isATMBorder ? "top-0 border-t" : "bottom-0 border-b"}`} />
+                  )}
+                  {columns.map(col => (
+                    <div key={col.id} style={{ width: COL_W }} className="shrink-0">
+                      <DataCell col={col} contract={row.call} align="right" />
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <div className="flex-none bg-zinc-900 z-10 border-x border-[#262626]" style={{ width: STRIKE_W }}>
         <div className="h-8 flex items-center justify-center gap-1 border-b border-[#262626]">
           <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold">Strike</span>
           <button onClick={onOpenColumnsEditor} className="p-0.5 rounded text-zinc-600 hover:text-zinc-300 transition-colors" aria-label="Edit columns">
@@ -335,75 +391,43 @@ function OptionsGrid({
         })}
       </div>
 
-      <div
-        ref={scrollRef}
-        className="overflow-x-auto overscroll-x-contain"
-        style={{ WebkitOverflowScrolling: "touch" } as React.CSSProperties}
-      >
-        <div style={{ width: Math.max(totalContentWidth, 0) }} className="min-w-full">
-          <div className="flex h-8 bg-[#0a0a0a] border-b border-[#262626]">
-            {showCalls && (
-              <div className="flex flex-row-reverse" style={{ width: callsWidth }}>
-                {columns.map(col => (
-                  <div key={col.id} style={{ width: COL_W }} className="shrink-0">
-                    <HeaderCell col={col} align="right" />
-                  </div>
-                ))}
-              </div>
-            )}
-            <div style={{ width: STRIKE_W }} className="shrink-0" />
-            {showPuts && (
-              <div className="flex flex-row" style={{ width: putsWidth }}>
-                {columns.map(col => (
-                  <div key={col.id} style={{ width: COL_W }} className="shrink-0">
-                    <HeaderCell col={col} align="left" />
-                  </div>
-                ))}
-              </div>
-            )}
+      {showPuts && (
+        <div
+          ref={rightRef}
+          className="flex-1 overflow-x-auto overflow-y-hidden overscroll-x-contain"
+          style={momentumStyle}
+        >
+          <div style={{ minWidth: wingWidth }}>
+            <div className="flex flex-row h-8 bg-[#0a0a0a] border-b border-[#262626]">
+              {columns.map(col => (
+                <div key={col.id} style={{ width: COL_W }} className="shrink-0">
+                  <HeaderCell col={col} align="left" />
+                </div>
+              ))}
+            </div>
+            {sortedRows.map((row, idx) => {
+              const isATMBorder = idx === transitionIdx;
+              const isLastRowATM = transitionIdx === -1 && priceAboveAll && idx === sortedRows.length - 1;
+              const putITM = underlyingPrice != null && row.strike > underlyingPrice + EPS;
+              return (
+                <div
+                  key={row.strike}
+                  className={`flex flex-row h-12 relative border-b border-[#1a1a1a] hover:bg-white/[0.02] transition-colors ${putITM ? "bg-[#1e293b]" : ""}`}
+                >
+                  {(isATMBorder || isLastRowATM) && (
+                    <div className={`absolute left-0 right-0 z-20 border-dashed border-[#FFB800] pointer-events-none ${isATMBorder ? "top-0 border-t" : "bottom-0 border-b"}`} />
+                  )}
+                  {columns.map(col => (
+                    <div key={col.id} style={{ width: COL_W }} className="shrink-0">
+                      <DataCell col={col} contract={row.put} align="left" />
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
           </div>
-
-          {sortedRows.map((row, idx) => {
-            const isATMBorder = idx === transitionIdx;
-            const isLastRowATM = transitionIdx === -1 && priceAboveAll && idx === sortedRows.length - 1;
-            const callITM = underlyingPrice != null && row.strike < underlyingPrice - EPS;
-            const putITM = underlyingPrice != null && row.strike > underlyingPrice + EPS;
-
-            return (
-              <div
-                key={row.strike}
-                className="flex h-12 relative border-b border-[#1a1a1a] hover:bg-white/[0.02] transition-colors"
-              >
-                {(isATMBorder || isLastRowATM) && (
-                  <div className={`absolute left-0 right-0 z-20 border-dashed border-[#FFB800] pointer-events-none ${isATMBorder ? "top-0 border-t" : "bottom-0 border-b"}`} />
-                )}
-
-                {showCalls && (
-                  <div className={`flex flex-row-reverse shrink-0 ${callITM ? "bg-[#1e293b]" : ""}`} style={{ width: callsWidth }}>
-                    {columns.map(col => (
-                      <div key={col.id} style={{ width: COL_W }} className="shrink-0">
-                        <DataCell col={col} contract={row.call} align="right" />
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <div style={{ width: STRIKE_W }} className="shrink-0" />
-
-                {showPuts && (
-                  <div className={`flex flex-row shrink-0 ${putITM ? "bg-[#1e293b]" : ""}`} style={{ width: putsWidth }}>
-                    {columns.map(col => (
-                      <div key={col.id} style={{ width: COL_W }} className="shrink-0">
-                        <DataCell col={col} contract={row.put} align="left" />
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -542,7 +566,7 @@ export function OptionsTab() {
 
       {data && <MetricsStrip />}
 
-      <div className="flex-1 overflow-y-auto terminal-panel p-0 min-h-0 relative">
+      <div className="flex-1 overflow-y-auto terminal-panel p-0 min-h-0 relative overscroll-y-contain" style={{ WebkitOverflowScrolling: "touch" } as React.CSSProperties}>
         {isLoading && !data && (
           <div className="p-4 space-y-1.5">
             {Array.from({ length: 12 }).map((_, i) => (
