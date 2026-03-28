@@ -10,8 +10,8 @@ import { Table2, ChevronDown, ChevronUp, X, Settings, GripVertical } from "lucid
 import { Reorder } from "framer-motion";
 
 const EPS = 0.0001;
-const COL_W = 72;
-const STRIKE_W = 80;
+const COL_W = 60;
+const STRIKE_W = 56;
 
 interface Contract {
   strike: number;
@@ -129,7 +129,7 @@ function DataCell({ col, contract, align }: { col: ColumnDef; contract: Contract
 
   const inner = (
     <div className={`flex flex-col justify-center h-12 px-1.5 ${textAlign}`}>
-      <span className={`text-[15px] font-semibold leading-tight ${topStr === "—" ? "text-zinc-600" : "text-white"}`}>{topStr}</span>
+      <span className={`text-[13px] font-medium leading-tight ${topStr === "—" ? "text-zinc-600" : "text-zinc-100"}`}>{topStr}</span>
       {botStr != null && (
         <span className={`text-[10px] leading-tight ${botStr === "—" ? "text-zinc-700" : "text-zinc-500"}`}>{botStr}</span>
       )}
@@ -366,11 +366,11 @@ function OptionsGrid({
         </div>
       )}
 
-      <div className="flex-none bg-zinc-900 z-10 border-x border-[#262626]" style={{ width: STRIKE_W }}>
-        <div className="h-8 flex items-center justify-center gap-1 border-b border-[#262626]">
-          <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold">Strike</span>
-          <button onClick={onOpenColumnsEditor} className="p-0.5 rounded text-zinc-600 hover:text-zinc-300 transition-colors" aria-label="Edit columns">
-            <Settings className="w-3 h-3" />
+      <div className="flex-none bg-black z-10 border-x border-[#262626]" style={{ width: STRIKE_W }}>
+        <div className="h-8 flex items-center justify-center border-b border-[#262626]">
+          <span className="text-[9px] text-zinc-500 uppercase tracking-wider font-medium">STK</span>
+          <button onClick={onOpenColumnsEditor} className="ml-0.5 p-0.5 rounded text-zinc-600 hover:text-zinc-300 transition-colors" aria-label="Edit columns">
+            <Settings className="w-2.5 h-2.5" />
           </button>
         </div>
         {sortedRows.map((row, idx) => {
@@ -380,7 +380,8 @@ function OptionsGrid({
           return (
             <div
               key={row.strike}
-              className={`h-12 flex items-center justify-center text-[15px] font-bold border-b border-[#1a1a1a] relative ${isATMStrike ? "text-[#FFB800]" : "text-zinc-300"}`}
+              className={`h-12 flex items-center justify-center text-[13px] font-medium border-b border-[#1a1a1a] relative ${isATMStrike ? "text-[#FFB800]" : "text-zinc-300"}`}
+              style={{ fontVariantNumeric: "tabular-nums" }}
             >
               {(isATMBorder || isLastRowATM) && (
                 <div className={`absolute left-0 right-0 z-20 border-dashed border-[#FFB800] pointer-events-none ${isATMBorder ? "top-0 border-t" : "bottom-0 border-b"}`} />
