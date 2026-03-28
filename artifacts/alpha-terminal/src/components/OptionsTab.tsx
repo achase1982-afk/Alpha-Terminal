@@ -273,26 +273,63 @@ function WingColumn({ col, contract }: { col: ColumnDef; contract: Contract | nu
   );
 }
 
+function useScrollSync() {
+  const scrollXRef = useRef(0);
+  const isSyncing = useRef(false);
+  const wingsRef = useRef<Set<HTMLDivElement>>(new Set());
+  const headersRef = useRef<Set<HTMLDivElement>>(new Set());
+
+  const broadcast = useCallback((sourceScrollLeft: number, source: HTMLDivElement) => {
+    if (isSyncing.current) return;
+    isSyncing.current = true;
+    scrollXRef.current = sourceScrollLeft;
+    requestAnimationFrame(() => {
+      const all = [...wingsRef.current, ...headersRef.current];
+      for (const t of all) {
+        if (t !== source) t.scrollLeft = sourceScrollLeft;
+      }
+      isSyncing.current = false;
+    });
+  }, []);
+
+  const registerWing = useCallback((el: HTMLDivElement) => {
+    wingsRef.current.add(el);
+    el.scrollLeft = scrollXRef.current;
+    const handler = () => broadcast(el.scrollLeft, el);
+    el.addEventListener("scroll", handler, { passive: true });
+    return () => {
+      wingsRef.current.delete(el);
+      el.removeEventListener("scroll", handler);
+    };
+  }, [broadcast]);
+
+  const registerHeader = useCallback((el: HTMLDivElement | null) => {
+    if (!el) return;
+    headersRef.current.add(el);
+    el.scrollLeft = scrollXRef.current;
+    return () => { headersRef.current.delete(el); };
+  }, []);
+
+  return { registerWing, registerHeader };
+}
+
 function OptionsGrid({
   rows,
   underlyingPrice,
   columns,
   showCalls,
   showPuts,
-  onOpenColumnsEditor,
+  registerWing,
 }: {
   rows: NormalizedRow[];
   underlyingPrice: number | null;
   columns: ColumnDef[];
   showCalls: boolean;
   showPuts: boolean;
-  onOpenColumnsEditor: () => void;
+  registerWing: (el: HTMLDivElement) => () => void;
 }) {
   const leftBodyRef = useRef<HTMLDivElement>(null);
   const rightBodyRef = useRef<HTMLDivElement>(null);
-  const leftHeaderRef = useRef<HTMLDivElement>(null);
-  const rightHeaderRef = useRef<HTMLDivElement>(null);
-  const isSyncing = useRef(false);
 
   const sortedRows = useMemo(() => [...rows].sort((a, b) => a.strike - b.strike), [rows]);
 
@@ -315,165 +352,85 @@ function OptionsGrid({
   }, [transitionIdx, priceAboveAll, sortedRows.length]);
 
   useEffect(() => {
-    const lb = leftBodyRef.current;
-    const rb = rightBodyRef.current;
-    const lh = leftHeaderRef.current;
-    const rh = rightHeaderRef.current;
-
-    const scrollables = [lb, rb].filter(Boolean) as HTMLDivElement[];
-    const allTargets = [lb, rb, lh, rh].filter(Boolean) as HTMLDivElement[];
-    if (scrollables.length === 0) return;
-
-    const syncFrom = (source: HTMLDivElement) => {
-      return () => {
-        if (isSyncing.current) return;
-        isSyncing.current = true;
-        requestAnimationFrame(() => {
-          const sl = source.scrollLeft;
-          for (const t of allTargets) {
-            if (t !== source) t.scrollLeft = sl;
-          }
-          isSyncing.current = false;
-        });
-      };
-    };
-
-    const handlers = scrollables.map(el => {
-      const handler = syncFrom(el);
-      el.addEventListener("scroll", handler, { passive: true });
-      return { el, handler };
-    });
-
-    return () => {
-      for (const { el, handler } of handlers) {
-        el.removeEventListener("scroll", handler);
-      }
-    };
-  }, [showCalls, showPuts]);
+    const cleanups: (() => void)[] = [];
+    if (leftBodyRef.current) cleanups.push(registerWing(leftBodyRef.current));
+    if (rightBodyRef.current) cleanups.push(registerWing(rightBodyRef.current));
+    return () => cleanups.forEach(fn => fn());
+  }, [registerWing, showCalls, showPuts]);
 
   const momentumStyle = { WebkitOverflowScrolling: "touch", scrollSnapType: "none" } as React.CSSProperties;
 
   return (
-    <div className="font-mono" style={{ fontVariantNumeric: "tabular-nums" }}>
-      <div className="sticky top-0 z-20 bg-[#0a0a0a]">
-        <div className="flex h-7 border-b border-[#1a1a1a]">
-          {showCalls && (
-            <div className="flex-1 flex items-center justify-center">
-              <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-medium">Calls</span>
-            </div>
-          )}
-          <div className="flex-none flex items-center justify-center bg-black border-x border-[#262626]" style={{ width: STRIKE_W }}>
-            <button onClick={onOpenColumnsEditor} className="p-0.5 rounded text-zinc-500 hover:text-zinc-300 transition-colors" aria-label="Edit columns">
-              <Settings className="w-3 h-3" />
-            </button>
-          </div>
-          {showPuts && (
-            <div className="flex-1 flex items-center justify-center">
-              <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-medium">Puts</span>
-            </div>
-          )}
-        </div>
+    <div className="relative flex font-mono" style={{ fontVariantNumeric: "tabular-nums" }}>
+      {atmLineTop >= 0 && (
+        <div
+          className="absolute left-0 right-0 z-30 border-t border-dashed border-[#FFB800] pointer-events-none"
+          style={{ top: atmLineTop }}
+        />
+      )}
 
-        <div className="flex h-6 border-b border-[#262626]">
-          {showCalls && (
-            <div ref={leftHeaderRef} className="flex-1 overflow-hidden">
-              <div className="flex" style={{ minWidth: wingWidth }}>
-                {columns.map(col => (
-                  <div key={col.id} style={{ width: COL_W }} className="shrink-0 flex items-center px-1.5">
-                    <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium truncate">{col.topLabel}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          <div className="flex-none flex items-center justify-center bg-black border-x border-[#262626] text-[10px] text-zinc-500 uppercase tracking-wider font-medium" style={{ width: STRIKE_W }}>
-            Strike
+      {showCalls && (
+        <div
+          ref={leftBodyRef}
+          className="flex-1 overflow-x-auto overflow-y-hidden overscroll-x-contain"
+          style={momentumStyle}
+        >
+          <div style={{ minWidth: wingWidth }}>
+            {sortedRows.map((row) => {
+              const callITM = underlyingPrice != null && row.strike < underlyingPrice - EPS;
+              return (
+                <div
+                  key={row.strike}
+                  className={`flex h-12 border-b border-[#1a1a1a] hover:bg-white/[0.02] transition-colors ${callITM ? "bg-[#1e293b]" : ""}`}
+                >
+                  {columns.map(col => (
+                    <WingColumn key={col.id} col={col} contract={row.call} />
+                  ))}
+                </div>
+              );
+            })}
           </div>
-          {showPuts && (
-            <div ref={rightHeaderRef} className="flex-1 overflow-hidden">
-              <div className="flex" style={{ minWidth: wingWidth }}>
-                {columns.map(col => (
-                  <div key={col.id} style={{ width: COL_W }} className="shrink-0 flex items-center px-1.5">
-                    <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium truncate">{col.topLabel}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
+      )}
+
+      <div className="flex-none bg-black z-10 border-x border-[#262626]" style={{ width: STRIKE_W }}>
+        {sortedRows.map((row) => {
+          const isATMStrike = underlyingPrice != null && Math.abs(row.strike - underlyingPrice) <= EPS;
+          return (
+            <div
+              key={row.strike}
+              className={`h-12 flex items-center justify-center text-[13px] font-medium border-b border-[#1a1a1a] ${isATMStrike ? "text-[#FFB800]" : "text-zinc-300"}`}
+              style={{ fontVariantNumeric: "tabular-nums" }}
+            >
+              {row.strike.toFixed(row.strike % 1 === 0 ? 0 : 2)}
+            </div>
+          );
+        })}
       </div>
 
-      <div className="relative flex">
-        {atmLineTop >= 0 && (
-          <div
-            className="absolute left-0 right-0 z-30 border-t border-dashed border-[#FFB800] pointer-events-none"
-            style={{ top: atmLineTop }}
-          />
-        )}
-
-        {showCalls && (
-          <div
-            ref={leftBodyRef}
-            className="flex-1 overflow-x-auto overflow-y-hidden overscroll-x-contain"
-            style={momentumStyle}
-          >
-            <div style={{ minWidth: wingWidth }}>
-              {sortedRows.map((row, idx) => {
-                const callITM = underlyingPrice != null && row.strike < underlyingPrice - EPS;
-                return (
-                  <div
-                    key={row.strike}
-                    className={`flex h-12 border-b border-[#1a1a1a] hover:bg-white/[0.02] transition-colors ${callITM ? "bg-[#1e293b]" : ""}`}
-                  >
-                    {columns.map(col => (
-                      <WingColumn key={col.id} col={col} contract={row.call} />
-                    ))}
-                  </div>
-                );
-              })}
-            </div>
+      {showPuts && (
+        <div
+          ref={rightBodyRef}
+          className="flex-1 overflow-x-auto overflow-y-hidden overscroll-x-contain"
+          style={momentumStyle}
+        >
+          <div style={{ minWidth: wingWidth }}>
+            {sortedRows.map((row) => {
+              const putITM = underlyingPrice != null && row.strike > underlyingPrice + EPS;
+              return (
+                <div
+                  key={row.strike}
+                  className={`flex h-12 border-b border-[#1a1a1a] hover:bg-white/[0.02] transition-colors ${putITM ? "bg-[#1e293b]" : ""}`}
+                >
+                  {columns.map(col => (
+                    <WingColumn key={col.id} col={col} contract={row.put} />
+                  ))}
+                </div>
+              );
+            })}
           </div>
-        )}
-
-        <div className="flex-none bg-black z-10 border-x border-[#262626]" style={{ width: STRIKE_W }}>
-          {sortedRows.map((row) => {
-            const isATMStrike = underlyingPrice != null && Math.abs(row.strike - underlyingPrice) <= EPS;
-            return (
-              <div
-                key={row.strike}
-                className={`h-12 flex items-center justify-center text-[13px] font-medium border-b border-[#1a1a1a] ${isATMStrike ? "text-[#FFB800]" : "text-zinc-300"}`}
-                style={{ fontVariantNumeric: "tabular-nums" }}
-              >
-                {row.strike.toFixed(row.strike % 1 === 0 ? 0 : 2)}
-              </div>
-            );
-          })}
         </div>
-
-        {showPuts && (
-          <div
-            ref={rightBodyRef}
-            className="flex-1 overflow-x-auto overflow-y-hidden overscroll-x-contain"
-            style={momentumStyle}
-          >
-            <div style={{ minWidth: wingWidth }}>
-              {sortedRows.map((row, idx) => {
-                const putITM = underlyingPrice != null && row.strike > underlyingPrice + EPS;
-                return (
-                  <div
-                    key={row.strike}
-                    className={`flex h-12 border-b border-[#1a1a1a] hover:bg-white/[0.02] transition-colors ${putITM ? "bg-[#1e293b]" : ""}`}
-                  >
-                    {columns.map(col => (
-                      <WingColumn key={col.id} col={col} contract={row.put} />
-                    ))}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </div>
+      )}
     </div>
   );
 }
@@ -568,6 +525,25 @@ export function OptionsTab() {
   const showCalls = contractType !== 'PUT';
   const showPuts = contractType !== 'CALL';
 
+  const { registerWing, registerHeader } = useScrollSync();
+  const headerLeftRef = useRef<HTMLDivElement>(null);
+  const headerRightRef = useRef<HTMLDivElement>(null);
+
+  const wingWidth = activeColumns.length * COL_W;
+
+  useEffect(() => {
+    const cleanups: (() => void)[] = [];
+    if (headerLeftRef.current) {
+      const c = registerHeader(headerLeftRef.current);
+      if (c) cleanups.push(c);
+    }
+    if (headerRightRef.current) {
+      const c = registerHeader(headerRightRef.current);
+      if (c) cleanups.push(c);
+    }
+    return () => cleanups.forEach(fn => fn());
+  }, [registerHeader, showCalls, showPuts]);
+
   return (
     <div className="space-y-2 h-full flex flex-col">
       <div className="flex items-center justify-between gap-2 bg-[#111111] px-3 py-1.5 rounded-lg border border-[#262626] shrink-0 flex-wrap">
@@ -622,7 +598,7 @@ export function OptionsTab() {
         )}
 
         {isFetching && data && (
-          <div className="absolute inset-0 bg-black/20 z-20 pointer-events-none" />
+          <div className="absolute inset-0 bg-black/20 z-40 pointer-events-none" />
         )}
 
         {error && !data && (
@@ -647,42 +623,91 @@ export function OptionsTab() {
         )}
 
         {data && groups.length > 0 && (
-          <div className="divide-y divide-[#262626]">
-            {groups.map(group => {
-              const isOpen = expandedExps.has(group.expiration);
-              return (
-                <div key={group.expiration}>
-                  <button
-                    onClick={() => toggleExp(group.expiration)}
-                    className="w-full flex items-center justify-between px-3 py-2 bg-[#111111] border-b border-[#262626] hover:bg-[#1a1a1a] transition-colors"
-                  >
-                    <span className="font-mono text-sm font-bold text-white tracking-wider">{group.label}</span>
-                    <div className="flex items-center gap-3">
-                      <div className="flex items-center gap-2 font-mono text-[10px]" style={{ fontVariantNumeric: "tabular-nums" }}>
-                        <span className="text-zinc-500">IV:</span>
-                        <span className="text-white">32%</span>
-                        <span className="text-zinc-600">|</span>
-                        <span className="text-zinc-500">±</span>
-                        <span className="text-white">$8.50</span>
-                      </div>
-                      {isOpen ? <ChevronUp className="w-3 h-3 text-zinc-500" /> : <ChevronDown className="w-3 h-3 text-zinc-500" />}
-                    </div>
+          <>
+            <div className="sticky top-0 z-20 bg-[#0a0a0a] font-mono" style={{ fontVariantNumeric: "tabular-nums" }}>
+              <div className="flex h-7 border-b border-[#1a1a1a]">
+                {showCalls && (
+                  <div className="flex-1 flex items-center justify-center">
+                    <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-medium">Calls</span>
+                  </div>
+                )}
+                <div className="flex-none flex items-center justify-center bg-black border-x border-[#262626]" style={{ width: STRIKE_W }}>
+                  <button onClick={() => setColumnsEditorOpen(true)} className="p-0.5 rounded text-zinc-500 hover:text-zinc-300 transition-colors" aria-label="Edit columns">
+                    <Settings className="w-3 h-3" />
                   </button>
-
-                  {isOpen && (
-                    <OptionsGrid
-                      rows={group.rows}
-                      underlyingPrice={underlyingPrice}
-                      columns={activeColumns}
-                      showCalls={showCalls}
-                      showPuts={showPuts}
-                      onOpenColumnsEditor={() => setColumnsEditorOpen(true)}
-                    />
-                  )}
                 </div>
-              );
+                {showPuts && (
+                  <div className="flex-1 flex items-center justify-center">
+                    <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-medium">Puts</span>
+                  </div>
+                )}
+              </div>
+              <div className="flex h-6 border-b border-[#262626]">
+                {showCalls && (
+                  <div ref={headerLeftRef} className="flex-1 overflow-hidden">
+                    <div className="flex" style={{ minWidth: wingWidth }}>
+                      {activeColumns.map(col => (
+                        <div key={col.id} style={{ width: COL_W }} className="shrink-0 flex items-center px-1.5">
+                          <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium truncate">{col.topLabel}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div className="flex-none flex items-center justify-center bg-black border-x border-[#262626] text-[10px] text-zinc-500 uppercase tracking-wider font-medium" style={{ width: STRIKE_W }}>
+                  Strike
+                </div>
+                {showPuts && (
+                  <div ref={headerRightRef} className="flex-1 overflow-hidden">
+                    <div className="flex" style={{ minWidth: wingWidth }}>
+                      {activeColumns.map(col => (
+                        <div key={col.id} style={{ width: COL_W }} className="shrink-0 flex items-center px-1.5">
+                          <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium truncate">{col.topLabel}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="divide-y divide-[#262626]">
+              {groups.map(group => {
+                const isOpen = expandedExps.has(group.expiration);
+                return (
+                  <div key={group.expiration}>
+                    <button
+                      onClick={() => toggleExp(group.expiration)}
+                      className="w-full flex items-center justify-between px-3 py-2 bg-[#111111] border-b border-[#262626] hover:bg-[#1a1a1a] transition-colors sticky top-[52px] z-10"
+                    >
+                      <span className="font-mono text-[11px] font-medium text-white tracking-wider">{group.label}</span>
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2 font-mono text-[10px]" style={{ fontVariantNumeric: "tabular-nums" }}>
+                          <span className="text-zinc-500">IV:</span>
+                          <span className="text-white">32%</span>
+                          <span className="text-zinc-600">|</span>
+                          <span className="text-zinc-500">±</span>
+                          <span className="text-white">$8.50</span>
+                        </div>
+                        {isOpen ? <ChevronUp className="w-3 h-3 text-zinc-500" /> : <ChevronDown className="w-3 h-3 text-zinc-500" />}
+                      </div>
+                    </button>
+
+                    {isOpen && (
+                      <OptionsGrid
+                        rows={group.rows}
+                        underlyingPrice={underlyingPrice}
+                        columns={activeColumns}
+                        showCalls={showCalls}
+                        showPuts={showPuts}
+                        registerWing={registerWing}
+                      />
+                    )}
+                  </div>
+                );
             })}
-          </div>
+            </div>
+          </>
         )}
 
         {data && groups.length === 0 && (
