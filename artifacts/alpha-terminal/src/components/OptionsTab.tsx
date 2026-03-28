@@ -69,14 +69,22 @@ function findATMIndex(strikes: number[], lastPrice: number): number {
 
 function sliceAroundATM(rows: NormalizedRow[], atmIdx: number, count: number): NormalizedRow[] {
   if (count <= 0 || rows.length === 0 || rows.length <= count) return rows;
-  const coerced = count % 2 !== 0 ? count + 1 : count;
-  const half = coerced / 2;
-  let start = Math.max(0, atmIdx - half);
-  let end = start + coerced;
-  if (end > rows.length) {
-    end = rows.length;
-    start = Math.max(0, end - coerced);
+  const total = count % 2 !== 0 ? count + 1 : count;
+  const below = Math.floor(total / 2);
+  const above = total - below - 1;
+
+  let start = atmIdx - below;
+  let end = atmIdx + above + 1;
+
+  if (start < 0) {
+    end = Math.min(rows.length, end + Math.abs(start));
+    start = 0;
   }
+  if (end > rows.length) {
+    start = Math.max(0, start - (end - rows.length));
+    end = rows.length;
+  }
+
   return rows.slice(start, end);
 }
 
@@ -109,7 +117,7 @@ function buildExpirationGroups(
       isATM: i === atmIdx,
     }));
 
-    if (strikeCount > 0 && lastPrice != null && normalizedRows.length > strikeCount) {
+    if (strikeCount > 0 && atmIdx >= 0 && normalizedRows.length > strikeCount) {
       normalizedRows = sliceAroundATM(normalizedRows, atmIdx, strikeCount);
     }
 
@@ -158,13 +166,13 @@ export function OptionsTab() {
     { query: { enabled: !!accessToken } }
   );
 
-  const underlyingPrice = (data as unknown as { underlyingPrice?: number })?.underlyingPrice ?? quote?.lastPrice ?? null;
+  const underlyingPrice = quote?.lastPrice ?? (data as unknown as { underlyingPrice?: number })?.underlyingPrice ?? null;
 
   const groups = useMemo(() => {
     if (!data) return [];
     return buildExpirationGroups(
-      data.calls as Contract[],
-      data.puts as Contract[],
+      (data.calls ?? []) as Contract[],
+      (data.puts ?? []) as Contract[],
       underlyingPrice,
       strikeCount
     );
