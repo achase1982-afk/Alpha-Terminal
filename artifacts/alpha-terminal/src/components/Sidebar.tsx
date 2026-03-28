@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
-import { Terminal, SlidersHorizontal, X, LayoutDashboard, ListOrdered, Gauge, BrainCircuit, Zap, MessageCircle, ChevronRight, Settings } from "lucide-react";
+import { Terminal, SlidersHorizontal, X, LayoutDashboard, ListOrdered, Gauge, BrainCircuit, Zap, MessageCircle, ChevronRight, Settings, Star, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useGetAvailableModels } from "@workspace/api-client-react";
 
@@ -34,6 +34,7 @@ export function Sidebar({ onClose, onOpenChat }: SidebarProps) {
     tapeSpeed, setTapeSpeed,
     aiModel, setAiModel, aiTemp, setAiTemp,
     accessToken,
+    watchlist, removeFromWatchlist, setSymbol,
   } = useTerminalStore();
 
   const { data: modelsData } = useGetAvailableModels();
@@ -43,6 +44,7 @@ export function Sidebar({ onClose, onOpenChat }: SidebarProps) {
   const [tapeInput, setTapeInput] = useState(tickerTapeSymbols.join(", "));
   const [settingsSaved, setSettingsSaved] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [watchlistOpen, setWatchlistOpen] = useState(true);
 
   const [pulseSymbols, setPulseSymbols] = useLocalStorage<string[]>(
     "alpha-pulse-symbols",
@@ -127,16 +129,16 @@ export function Sidebar({ onClose, onOpenChat }: SidebarProps) {
           <Button
             onClick={handleGeneratePulse}
             disabled={!accessToken || pulseLoading}
-            className="w-full font-mono text-xs h-9 bg-primary/15 text-primary border border-primary/40 hover:bg-primary/25 hover:border-primary/60 transition-all tracking-wider"
+            className="w-full font-mono text-xs h-9 bg-[#111111] text-[#FFB800] border border-[#262626] hover:bg-[#1a1a1a] hover:border-[#FFB800]/40 transition-all tracking-wider"
           >
             {pulseLoading ? (
               <>
-                <span className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin mr-2 shrink-0" />
+                <span className="w-3 h-3 border-2 border-[#FFB800] border-t-transparent rounded-full animate-spin mr-2 shrink-0" />
                 SCANNING MARKET...
               </>
             ) : (
               <>
-                <Zap className="w-3.5 h-3.5 mr-2 shrink-0" />
+                <Zap className="w-3.5 h-3.5 mr-2 shrink-0 text-[#FFB800]" />
                 GENERATE LIVE MARKET PULSE
               </>
             )}
@@ -154,6 +156,52 @@ export function Sidebar({ onClose, onOpenChat }: SidebarProps) {
             <MessageCircle className="w-3.5 h-3.5 mr-2 shrink-0" />
             AI SEARCH
           </Button>
+        </div>
+
+        <div className="bg-card border border-card-border rounded-xl overflow-hidden shadow-sm">
+          <button
+            onClick={() => setWatchlistOpen(!watchlistOpen)}
+            className="w-full flex items-center justify-between p-3 text-sm font-mono font-bold hover:bg-secondary/50 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <Star className="w-4 h-4 text-primary" />
+              <span className="text-foreground">WATCHLIST</span>
+            </div>
+            <ChevronRight className={`w-4 h-4 transition-transform duration-300 ${watchlistOpen ? 'rotate-90' : ''}`} />
+          </button>
+
+          {watchlistOpen && (
+            <div className="p-3 sm:p-4 border-t border-card-border bg-[#0c0c0c] animate-in fade-in slide-in-from-top-2">
+              {watchlist.length === 0 ? (
+                <p className="font-mono text-[10px] text-muted-foreground/60 text-center leading-relaxed py-2">
+                  No symbols watched. Click the '+' next to a searched ticker to add it.
+                </p>
+              ) : (
+                <div className="space-y-1">
+                  {watchlist.map(sym => (
+                    <div
+                      key={sym}
+                      className="flex items-center justify-between px-2 py-1.5 rounded-md hover:bg-[#1a1a1a] transition-colors group"
+                    >
+                      <button
+                        onClick={() => setSymbol(sym)}
+                        className="font-mono text-xs text-foreground hover:text-primary transition-colors tracking-wider"
+                      >
+                        {sym}
+                      </button>
+                      <button
+                        onClick={() => removeFromWatchlist(sym)}
+                        className="opacity-0 group-hover:opacity-100 p-1 rounded text-muted-foreground hover:text-destructive transition-all"
+                        aria-label={`Remove ${sym} from watchlist`}
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="bg-card border border-card-border rounded-xl overflow-hidden shadow-sm">
@@ -182,8 +230,8 @@ export function Sidebar({ onClose, onOpenChat }: SidebarProps) {
                       className={`
                         px-3 py-1.5 rounded-full font-mono text-[10px] font-semibold border transition-all duration-200
                         ${active
-                          ? "bg-primary/20 text-primary border-primary/50"
-                          : "bg-card text-muted-foreground border-card-border hover:border-primary/30 hover:text-foreground"}
+                          ? "bg-[#1a1a1a] text-[#FFB800] border-[#FFB800]"
+                          : "bg-[#1a1a1a] text-[#71717a] border-[#262626] hover:border-[#404040] hover:text-foreground"}
                       `}
                     >
                       {OVERLAY_LABELS[key] ?? key.toUpperCase()}

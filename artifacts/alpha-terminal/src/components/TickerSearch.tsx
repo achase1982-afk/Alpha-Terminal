@@ -3,7 +3,7 @@ import { useTerminalStore } from "@/lib/store";
 import { Search, Plus } from "lucide-react";
 
 export function TickerSearch() {
-  const { symbol, setSymbol, recentSymbols, addRecentSymbol } = useTerminalStore();
+  const { symbol, setSymbol, recentSymbols, addToWatchlist } = useTerminalStore();
   const [inputVal, setInputVal] = useState("");
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -21,7 +21,7 @@ export function TickerSearch() {
 
   const handleAddToWatchlist = () => {
     if (symbol) {
-      addRecentSymbol(symbol);
+      addToWatchlist(symbol);
     }
   };
 

@@ -97,7 +97,7 @@ export default function TerminalPage() {
           {/* Mobile top bar */}
           <div className="flex items-center lg:hidden h-12 px-4 border-b border-card-border bg-card">
             <button
-              onClick={() => setSidebarOpen(true)}
+              onClick={() => setSidebarOpen(prev => !prev)}
               className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-card-border transition-colors mr-3"
               aria-label="Open menu"
             >

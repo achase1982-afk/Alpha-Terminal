@@ -76,6 +76,11 @@ interface TerminalState {
   addChatMessage: (msg: ChatMessage) => void;
   clearChat: () => void;
 
+  // Watchlist
+  watchlist: string[];
+  addToWatchlist: (s: string) => void;
+  removeFromWatchlist: (s: string) => void;
+
   // ── Streaming (NOT persisted) ─────────────────────────────────────────────
   streamPrices: Record<string, LiveQuote>;
   streamConnected: boolean;
@@ -163,6 +168,21 @@ export const useTerminalStore = create<TerminalState>()(
       chatHistory: [],
       addChatMessage: (msg) => set((state) => ({ chatHistory: [...state.chatHistory, msg] })),
       clearChat: () => set({ chatHistory: [] }),
+
+      // Watchlist
+      watchlist: [],
+      addToWatchlist: (symbol) => {
+        const upper = symbol.toUpperCase();
+        set((state) => ({
+          watchlist: state.watchlist.includes(upper) ? state.watchlist : [...state.watchlist, upper],
+        }));
+      },
+      removeFromWatchlist: (symbol) => {
+        const upper = symbol.toUpperCase();
+        set((state) => ({
+          watchlist: state.watchlist.filter(s => s !== upper),
+        }));
+      },
 
       // Streaming prices — volatile, never persisted
       streamPrices: {},
