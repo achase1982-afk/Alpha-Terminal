@@ -2,196 +2,70 @@
 
 ## Overview
 
-pnpm workspace monorepo using TypeScript. Each package manages its own dependencies.
+This project is an Alpha Terminal — a trading command center designed to provide comprehensive tools for market analysis, options trading, and AI-driven insights. It leverages a pnpm workspace monorepo with TypeScript to manage various components, including a robust API server, shared libraries, and a sophisticated frontend. The core purpose is to deliver a high-performance, institutional-grade trading interface with a focus on real-time data, advanced analytics, and AI assistance, all within a Bloomberg/TOS-style aesthetic. Key capabilities include live market streaming, detailed institutional tear sheets, an interactive options chain, and AI-powered market analysis and strategy generation.
 
-## Alpha Terminal — Trading Command Center v2
+## User Preferences
 
-Key features implemented:
-- **MacroBar**: Fixed sticky bar with clickable SPY/QQQ/IWM/VIX cards; clicking sets active symbol
-- **Sidebar**: Collapsible SETTINGS accordion card (matches SCHWAB AUTH styling) containing grouped sections: [Chart Overlays], [Macro Tickers] (2×2 grid), [Marquee Setup], [AI Parameters], and APPLY SETTINGS button at bottom
-- **Schwab OAuth**: Popup+polling flow — `AuthPanel` button calls `window.open(authUrl)` (no anchor tags); GET `/api/auth/callback` exchanges code, stores tokens server-side in `pendingTokens` Map, returns success HTML page; frontend polls `GET /api/auth/pending-session` every 2s until tokens arrive; auth URL only fetched when panel is open and user is disconnected; CSRF via `state` param; `SCHWAB_REDIRECT_URI` must match Schwab Developer Portal
-- **Tabs**: CHART | OPTIONS | AI INTELLIGENCE | SCAN
-- **AI Intelligence Tab**: Deep Analysis (TA + Options Strategist) — chat removed, lives in overlay now
-- **AI Chat Overlay**: Full-screen iMessage-style chat accessible from sidebar "AI CHAT ASSISTANT" button; manual fetch streaming (plain text stream from backend `streamText().textStream`); AbortController lifecycle; sticky bottom input with safe-area-inset; no AI SDK client dependency — uses `useState` for messages and input management
-- **Institutional Tear Sheet** (`src/views/InstitutionalTearSheet.tsx`): Replaced old CompanyTearSheet. Full-screen overlay triggered by clicking ticker in MetricsBar. Features:
-  - **HeroHeader**: Live price from `useQuote()` (stream-first, REST fallback), day change ± with color-coded pill (green/red/gray), bid/ask/volume row
-  - **TradingMetricsGrid**: 8-card grid — Market Cap, Shares Out, P/E, EPS, Beta, Div Yield, P/B, Day Range — from `/api/market/fundamentals`
-  - **52-Week Range Bar**: Gradient bar with draggable-style current-price dot
-  - **InstitutionalOwnershipCard**: 13F table in skeleton/"Data pending" state — skeleton rows + explanation footer; ready to wire when a 13F data endpoint is built
-  - `useTearSheet(symbol)` hook merges live quote data + fundamentals into a unified `TearSheetData` interface; null-safe mapping throughout
-  - All text uses `tabular-nums`; scrollbar-hide CSS utility added to `index.css`
-- **Live Market Pulse**: Sidebar button → modal; backend fetches 14-symbol batch (SPY/QQQ/IWM/$VIX/$VVIX/$CPC/$TICK/$ADD/$TRIN/$DXY//ES//NQ//GC//CL) in single Schwab call; institutional-grade session-aware Gemini prompt
-- **Market Scanner**: AI Discovery + Manual Filter modes; configurable scan universe (S&P 100, Nasdaq 100, High Beta, Custom), max results (1-20), sortable results table with ticker/strategy/confidence/thesis columns
-- **Options Tab**: Institutional TOS-style 3-panel options chain with edge-to-edge layout
-  - **Edge-to-edge layout**: `-mx-4 w-[calc(100%+2rem)] bg-black` breaks out of parent padding; no rounded corners or shadows
-  - **Global sticky header**: Single CALLS/gear/PUTS header + column labels rendered ONCE (not per-expiration); `sticky top-0 z-20 bg-black`; CALLS/PUTS use `text-[14px] font-extrabold tracking-[0.18em]`; gear icon is `w-5 h-5` in `w-14 h-11` tap target
-  - **Centralized scroll sync**: `useScrollSync` hook — `registerWing()` for body scroll containers, `registerHeader()` for overflow-hidden header label containers; single `isSyncing` + `requestAnimationFrame` broadcast system syncs all open expiration grids + header simultaneously
-  - **Headless OptionsGrid**: Body-only component; receives `registerWing` prop; registers left/right wing refs via useEffect; renders 3-panel body (calls/strike spine/puts) + per-grid ATM line overlay
-  - **3-panel zero-bleed architecture**: Left Wing (calls) | Fixed Strike Spine (`bg-black`, `STRIKE_W=56px`) | Right Wing (puts); wings use `overflow-x-auto overflow-y-hidden`; columns in identical left-to-right order on both sides (no flex-row-reverse)
-  - **ATM-centered slicing**: `sliceAroundATM()` uses `half=floor(count/2)`, symmetric window: `start=atmIdx-half`, `end=atmIdx+half+1`; for count=6 yields 3 below + ATM + 3 above = 7 items; edge-clamps when near array boundaries
-  - **Column registry**: `COLUMN_REGISTRY` (8 columns: bid, ask, last, vol, delta, gamma, theta, iv); `COL_W=60px` per column; `options-columns-store` (Zustand, persisted v2); default `['bid','ask','vol','delta']`; framer-motion drag-and-drop column editor modal
-  - **ITM shading**: `bg-[#1e293b]` — calls where `strike < underlying - EPS`, puts where `strike > underlying + EPS`; ATM: single continuous gold dashed `border-t` absolute div spanning full row width at z-30
-  - **Stacked sticky layers**: Global header at `top-0` (68px: h-11 + h-6), expiration accordion buttons at `top-[68px] z-10`
-  - **Typography**: Data cells `text-[13px] font-medium text-zinc-100`, secondary `text-[10px] text-zinc-500`, `tabular-nums` everywhere; no font-bold in grid data
-  - **Auto-fetch**: Chain auto-fetches when `accessToken` + `symbol` are truthy; react-query cancellation on query-key changes
-  - **Strategist race guard**: `strategistIdRef` monotonic counter; AbortController on strategist POST
-- **Backend AI routes**: `/api/ai/market-briefing`, `/api/ai/options-strategist`, `/api/ai/chat`, `/api/ai/analyze`, `/api/ai/strategy`
-- **Strict Data Grounding**: All AI prompts enforce `STRICT GROUNDING RULE` — Gemini is forbidden from using internal training knowledge for market trends, prices, or directional calls. Must cite only provided Context Data. Strategy endpoint aborts with "Incomplete real-time data. Strategy generation aborted." if data is missing or >5 minutes stale.
-- **Technical Analysis Library** (`api-server/src/lib/ta.ts`): Uses `technicalindicators` npm package. Computes RSI(14), EMA(50), EMA(200) from candle close prices. Includes `isDataStale()` freshness check and `formatTAContext()` for prompt injection.
-- **Strategy Endpoint** (`POST /api/ai/strategy`): Fetches 30-day 1-minute candles from Schwab → computes TA indicators → validates data freshness → builds JSON context block → sends to Gemini with strict grounding. Returns response + computed indicators (rsi14, ema50, ema200, lastClose, dataPoints, latestTimestamp).
-- **Zustand store**: `analysisResult`, `strategistResult`, `briefingResult` shared state
-- **useAutoRefreshToken**: 25-min auto-refresh; detects expired tokens in API responses
+- **Communication style**: I prefer concise and direct communication.
+- **Coding style**: Maintain consistency with existing TypeScript and React patterns. Prioritize clear, readable code over overly clever solutions.
+- **Workflow**: I prefer an iterative development approach.
+- **Interaction**: Ask for confirmation before implementing significant architectural changes or refactoring large sections of code.
+- **Codebase changes**:
+    - Do not introduce any blue colors into the UI.
+    - Ensure all AI prompts enforce strict data grounding, forbidding the use of internal training knowledge for market trends or directional calls.
+    - All text using numerical data should employ `tabular-nums`.
+    - Prioritize stream-first data fetching with REST fallbacks.
 
-### Real-Time Streaming Architecture (Schwab Streamer WebSocket)
-- `artifacts/api-server/src/lib/schwabStreamer.ts` — singleton WS client to Schwab Streamer
-  - Calls `/trader/v1/userPreference` to get streamer info, then opens `wss://` connection
-  - Sends LOGIN, then subscribes to `LEVELONE_EQUITIES` (fields 0,1,2,3,8,12,13,15,20,38,29)
-  - Broadcasts live ticks to all SSE clients; maintains in-memory quote cache
-  - Exponential backoff reconnect (1s → 2s → 4s … capped at 30s)
-- `artifacts/api-server/src/routes/stream.ts` — SSE + control endpoints
-  - `POST /api/stream/start` — start/restart WS with new token + symbol list
-  - `POST /api/stream/symbols` — add symbols to existing subscription
-  - `GET  /api/stream/quotes` — SSE endpoint; sends `event: quote` + `event: heartbeat`
-  - `GET  /api/stream/snapshot` — JSON snapshot of current cache
-  - `GET  /api/stream/status` — connection health
-- `artifacts/alpha-terminal/src/hooks/useStreamingQuotes.ts` — app-root SSE consumer
-  - Opens `EventSource("/api/stream/quotes")` on token arrival
-  - Writes each `event: quote` into Zustand `streamPrices` map
-  - Sets `streamConnected` true on heartbeat / open, false on error
-- `artifacts/alpha-terminal/src/hooks/useQuote.ts` — unified quote hook
-  - Returns stream data (< 60s old) when available; falls back to REST poll every 1s (3s on 429 rate limit)
-  - All price components use this instead of `useGetQuote` directly
-- `streamPrices: Record<string, LiveQuote>` in Zustand store (non-persisted)
-  - `partialize` excludes it from localStorage persistence
-  - Per-symbol Zustand selectors mean only the changed symbol's card re-renders
+## System Architecture
 
-### Quote Data Flow
-```
-Schwab LEVELONE_EQUITIES WS
-        ↓  ticks (< 1s)
-schwabStreamer.ts (server cache + broadcast)
-        ↓  SSE text/event-stream
-useStreamingQuotes.ts (EventSource)
-        ↓  setStreamQuote()
-Zustand streamPrices map
-        ↓  useQuote(sym) selector
-MetricsBar / MacroCard / TapeItem  ← ONLY these re-render on each tick
-```
+The project is structured as a pnpm monorepo using TypeScript.
 
-### Color Palette (Bloomberg/TOS-style — Institutional Gold)
-- Background: `#0c0c0c`, Card: `#1a1a1a`, Border: `#262626`
-- Text: `#e4e4e7`, Muted: `#808080`
-- Primary (Institutional Gold): `#ffb800` — CSS var `--primary: 43 100% 50%`
-- Success: `#00d166`, Danger: `#f23645`
-- **ZERO BLUE** — All blue (#0064ff, #58A6FF, #D2A8FF, #00BFFF, #00A6FF, rgba(0,191,255,...)) fully purged
-- Font: Inter (from bunny.net), letter-spacing `-0.025em`, `tabular-nums`
-- Tables: zebra striping via `even:bg-[#141414] odd:bg-[#0c0c0c]` on `TableRow`
-- TradingChart: transparent bg, `#262626` grid/borders, `#ffb800` crosshair, `#00d166/#f23645` candles, SMA20=gold SMA50=white
-- APPLY SETTINGS button: `bg-[#0c0c0c] text-primary border-primary` (black bg, gold border+text)
+**UI/UX Decisions:**
+- **Color Palette**: Bloomberg/TOS-style with a focus on "Institutional Gold" (`#ffb800`). Backgrounds are dark (`#0c0c0c`), cards are `#1a1a1a`, and text is light (`#e4e4e7`). Absolutely no blue is permitted.
+- **Typography**: Inter font with `letter-spacing -0.025em` and `tabular-nums` for all numerical displays.
+- **Layout**: Edge-to-edge designs for components like the options chain to maximize screen real estate.
+- **Interactive Elements**: MacroBar for quick ticker switching, collapsible sidebar for settings, and full-screen overlays for detailed analysis (Institutional Tear Sheet, AI Chat).
+- **Theming**: TradingChart uses a transparent background, gold crosshair, and standard green/red candles. Volume is separated from the price Y-axis.
 
-### Known constraints
-- Gemini models: only `gemini-2.5-flash` and `gemini-2.5-pro` work
-- `lightweight-charts` v5: `chart.addSeries(CandlestickSeries, opts)` pattern
-- Direct `fetch("/api/ai/...")` used for new AI routes (not orval-generated hooks)
-- **Tick Direction Coloring**: `useTickColor` hook (`src/hooks/useTickColor.ts`) — tracks previous price per symbol; Last Price number colored by immediate momentum (green uptick / red downtick), daily change line colored by net change
-- **Ticker Tape**: JS `requestAnimationFrame` animation (not CSS keyframes) for flash-free scrolling; speed controlled via `tapeSpeed` store value + sidebar slider
-- **Chart Controls**: Horizontal timeframe pill bar [1D, 1W, 1M, 3M, YTD, 1Y, MAX] with gold underline on active pill; each pill sets both period+interval in store (1D→5m, 1W→15m, 1M/3M/YTD/1Y→daily, MAX→weekly); YTD calculates months dynamically from current date; maps to Schwab `periodType/period/frequencyType/frequency` params
-- **Chart Legend**: Semi-transparent floating overlay in bottom-left corner (bg `#111111`, border `#262626`) showing "Yellow: 50-day SMA | White: Trend | Dotted: Support/Resistance"
-- **Chart Volume Fix**: Volume HistogramSeries uses `priceScaleId: 'volume'` with `chart.priceScale('volume').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } })` — fully separated from price Y-axis
-- **Price Pulse Animation**: CSS keyframe flash on Last Price text — green glow for uptick, red glow for downtick, 600ms ease-out via `usePriceFlash` hook
-- **Company Name**: Full text wrapping (`whitespace-normal text-wrap`) — no truncation/ellipsis
-- **Search History**: "RECENTLY VIEWED" muted label above recent pills; `$` prefix stripped; gold circular `+` button calls `addRecentSymbol` for watchlist quick-save
-- **Indices & Futures Support**: Symbols like `$SPX`, `$VIX`, `/ES`, `/NQ` work across all endpoints (quote, history, options, streaming); `INDEX_SYMBOL_MAP` handles both friendly (SPX) and `$`-prefixed ($SPX) forms → `$SPX.X` Schwab format; URL encoding handled via `encodeURIComponent` and `URLSearchParams`; `reverseKeyMap` in streamer maps Schwab keys back to user-facing symbols
-- VIX MacroCard inverts color (rising = red/fear, falling = green/calm)
-- 52W High/Low and P/E are REST-only fields (Schwab Streamer doesn't carry fundamental data)
+**Technical Implementations & Feature Specifications:**
 
-## Stack
+- **Schwab OAuth**: Secure popup+polling flow for authentication with CSRF protection.
+- **AI Intelligence**: Features Deep Analysis (TA + Options Strategist) and an iMessage-style chat overlay. AI models (`gemini-2.5-flash`, `gemini-2.5-pro`) are used. Strict data grounding is enforced for all AI outputs.
+- **Institutional Tear Sheet**: Full-screen overlay providing live quotes, trading metrics grid, 52-week range bar, and a placeholder for 13F institutional ownership data.
+- **Live Market Pulse**: Modal displaying real-time data for 14 key symbols via a single Schwab API call and institutional-grade Gemini prompts.
+- **Market Scanner**: AI-driven discovery and manual filtering for stocks across configurable universes.
+- **Options Tab**: Institutional TOS-style options chain using a single CSS Grid with `subgrid` rows per expiration. Strike spine uses `position:sticky` with a `--strike-left` CSS custom property (set via ResizeObserver) to stay centered in the visible scroll area regardless of sidebar width. Each OptionsGrid is one `overflow-x-auto` container; cross-expiration horizontal scroll sync via `useScrollSync`. Auto-centers strike on mount by computing `idealScroll = callsWidth - strikeLeft`. Features customizable column display via drag-and-drop modal, per-cell ITM shading (`bg-[#1e293b]`), ATM dashed gold border via absolute overlay in subgrid row, and stacked sticky layers (global CALLS/gear/PUTS header → accordion buttons).
+- **Real-Time Streaming**: A singleton WebSocket client (`schwabStreamer.ts`) connects to Schwab Streamer for live LEVELONE_EQUITIES data, broadcasting ticks to SSE clients. An in-memory quote cache is maintained. `useStreamingQuotes.ts` consumes SSE, updating a Zustand `streamPrices` map. `useQuote.ts` unifies quote data, falling back to REST if stream data is stale.
+- **Technical Analysis**: Backend `ta.ts` uses `technicalindicators` for RSI, EMA calculations, and data freshness checks for prompt injection.
+- **State Management**: Zustand for shared state, with `analysisResult`, `strategistResult`, `briefingResult` for AI outputs and `streamPrices` for real-time quotes (non-persisted).
+- **Auto-Refresh**: `useAutoRefreshToken` for automatic token refresh every 25 minutes.
+- **Price Visualizations**: `useTickColor` for immediate momentum coloring, `usePriceFlash` for price pulse animations, and volume histogram separation on charts.
+- **Ticker Tape**: `requestAnimationFrame`-based animation for smooth, flash-free scrolling.
+- **Chart Controls**: Horizontal timeframe pill bar for dynamic period/interval selection for historical data.
+- **Indices & Futures Support**: Comprehensive support for symbols like `$SPX`, `$VIX`, `/ES`, `/NQ` across all data endpoints, including Schwab-specific formatting.
 
-- **Monorepo tool**: pnpm workspaces
-- **Node.js version**: 24
-- **Package manager**: pnpm
-- **TypeScript version**: 5.9
-- **API framework**: Express 5
-- **Database**: PostgreSQL + Drizzle ORM
-- **Validation**: Zod (`zod/v4`), `drizzle-zod`
-- **API codegen**: Orval (from OpenAPI spec)
-- **Build**: esbuild (CJS bundle)
+**System Design Choices:**
+- **Monorepo Structure**: Pnpm workspaces for managing multiple packages (`api-server`, `db`, `api-spec`, `api-client-react`, `api-zod`, `scripts`).
+- **TypeScript**: `composite: true` for all packages, enabling cross-package type-checking via project references.
+- **API Design**: Express 5 for the API server. Routes are modular, leveraging `@workspace/api-zod` for validation and `@workspace/db` for persistence.
+- **Database**: PostgreSQL with Drizzle ORM.
+- **API Codegen**: Orval generates React Query hooks (`api-client-react`) and Zod schemas (`api-zod`) from an OpenAPI specification (`api-spec`).
+- **Build System**: esbuild for production bundling of the API server.
 
-## Structure
+## External Dependencies
 
-```text
-artifacts-monorepo/
-├── artifacts/              # Deployable applications
-│   └── api-server/         # Express API server
-├── lib/                    # Shared libraries
-│   ├── api-spec/           # OpenAPI spec + Orval codegen config
-│   ├── api-client-react/   # Generated React Query hooks
-│   ├── api-zod/            # Generated Zod schemas from OpenAPI
-│   └── db/                 # Drizzle ORM schema + DB connection
-├── scripts/                # Utility scripts (single workspace package)
-│   └── src/                # Individual .ts scripts, run via `pnpm --filter @workspace/scripts run <script>`
-├── pnpm-workspace.yaml     # pnpm workspace (artifacts/*, lib/*, lib/integrations/*, scripts)
-├── tsconfig.base.json      # Shared TS options (composite, bundler resolution, es2022)
-├── tsconfig.json           # Root TS project references
-└── package.json            # Root package with hoisted devDeps
-```
-
-## TypeScript & Composite Projects
-
-Every package extends `tsconfig.base.json` which sets `composite: true`. The root `tsconfig.json` lists all packages as project references. This means:
-
-- **Always typecheck from the root** — run `pnpm run typecheck` (which runs `tsc --build --emitDeclarationOnly`). This builds the full dependency graph so that cross-package imports resolve correctly. Running `tsc` inside a single package will fail if its dependencies haven't been built yet.
-- **`emitDeclarationOnly`** — we only emit `.d.ts` files during typecheck; actual JS bundling is handled by esbuild/tsx/vite...etc, not `tsc`.
-- **Project references** — when package A depends on package B, A's `tsconfig.json` must list B in its `references` array. `tsc --build` uses this to determine build order and skip up-to-date packages.
-
-## Root Scripts
-
-- `pnpm run build` — runs `typecheck` first, then recursively runs `build` in all packages that define it
-- `pnpm run typecheck` — runs `tsc --build --emitDeclarationOnly` using project references
-
-## Packages
-
-### `artifacts/api-server` (`@workspace/api-server`)
-
-Express 5 API server. Routes live in `src/routes/` and use `@workspace/api-zod` for request and response validation and `@workspace/db` for persistence.
-
-- Entry: `src/index.ts` — reads `PORT`, starts Express
-- App setup: `src/app.ts` — mounts CORS, JSON/urlencoded parsing, routes at `/api`
-- Routes: `src/routes/index.ts` mounts sub-routers; `src/routes/health.ts` exposes `GET /health` (full path: `/api/health`)
-- Depends on: `@workspace/db`, `@workspace/api-zod`
-- `pnpm --filter @workspace/api-server run dev` — run the dev server
-- `pnpm --filter @workspace/api-server run build` — production esbuild bundle (`dist/index.cjs`)
-- Build bundles an allowlist of deps (express, cors, pg, drizzle-orm, zod, etc.) and externalizes the rest
-
-### `lib/db` (`@workspace/db`)
-
-Database layer using Drizzle ORM with PostgreSQL. Exports a Drizzle client instance and schema models.
-
-- `src/index.ts` — creates a `Pool` + Drizzle instance, exports schema
-- `src/schema/index.ts` — barrel re-export of all models
-- `src/schema/<modelname>.ts` — table definitions with `drizzle-zod` insert schemas (no models definitions exist right now)
-- `drizzle.config.ts` — Drizzle Kit config (requires `DATABASE_URL`, automatically provided by Replit)
-- Exports: `.` (pool, db, schema), `./schema` (schema only)
-
-Production migrations are handled by Replit when publishing. In development, we just use `pnpm --filter @workspace/db run push`, and we fallback to `pnpm --filter @workspace/db run push-force`.
-
-### `lib/api-spec` (`@workspace/api-spec`)
-
-Owns the OpenAPI 3.1 spec (`openapi.yaml`) and the Orval config (`orval.config.ts`). Running codegen produces output into two sibling packages:
-
-1. `lib/api-client-react/src/generated/` — React Query hooks + fetch client
-2. `lib/api-zod/src/generated/` — Zod schemas
-
-Run codegen: `pnpm --filter @workspace/api-spec run codegen`
-
-### `lib/api-zod` (`@workspace/api-zod`)
-
-Generated Zod schemas from the OpenAPI spec (e.g. `HealthCheckResponse`). Used by `api-server` for response validation.
-
-### `lib/api-client-react` (`@workspace/api-client-react`)
-
-Generated React Query hooks and fetch client from the OpenAPI spec (e.g. `useHealthCheck`, `healthCheck`).
-
-### `scripts` (`@workspace/scripts`)
-
-Utility scripts package. Each script is a `.ts` file in `src/` with a corresponding npm script in `package.json`. Run scripts via `pnpm --filter @workspace/scripts run <script>`. Scripts can import any workspace package (e.g., `@workspace/db`) by adding it as a dependency in `scripts/package.json`.
+- **Schwab Developer API**: Primary data source for market data, quotes, historical data, and streaming services (LEVELONE_EQUITIES WebSocket).
+- **Google Gemini API**: Used for AI intelligence features (`gemini-2.5-flash`, `gemini-2.5-pro`).
+- **PostgreSQL**: Relational database for persistence.
+- **Drizzle ORM**: TypeScript ORM for interacting with PostgreSQL.
+- **technicalindicators (npm package)**: Library for calculating technical analysis indicators.
+- **Zod**: Schema declaration and validation library.
+- **Orval**: OpenAPI spec code generator.
+- **React Query**: Data fetching and caching library for React.
+- **Zustand**: State management library.
+- **Lightweight Charts v5**: Charting library for displaying financial data.
+- **Express**: Web application framework for Node.js.
+- **CORS**: Middleware for enabling Cross-Origin Resource Sharing.
+- **pnpm**: Package manager for monorepos.
+- **esbuild**: Bundler for JavaScript and TypeScript.
+- **bunny.net**: Content Delivery Network (likely for font delivery, e.g., Inter).

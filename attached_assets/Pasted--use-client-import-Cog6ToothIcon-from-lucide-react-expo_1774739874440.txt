@@ -1,0 +1,105 @@
+'use client';
+
+import { Cog6ToothIcon } from 'lucide-react';
+
+export default function OptionsChain() {
+  const spotPrice = 1011.06;
+  const allStrikes = [960, 970, 980, 990, 1000, 1010, 1020, 1030, 1040, 1050, 1060, 1080, 1100];
+
+  const getCenteredStrikes = (strikes: number[], spot: number, count = 6) => {
+    const sorted = [...strikes].sort((a, b) => a - b);
+    const atmIndex = sorted.reduce((prev, curr, i) =>
+      Math.abs(curr - spot) < Math.abs(sorted[prev] - spot) ? i : prev, 0
+    );
+    const half = Math.floor(count / 2);
+    let start = Math.max(0, atmIndex - half);
+    let end = start + count;
+    if (end > sorted.length) {
+      end = sorted.length;
+      start = Math.max(0, end - count);
+    }
+    return sorted.slice(start, end);
+  };
+
+  const visibleStrikes = getCenteredStrikes(allStrikes, spotPrice);
+
+  return (
+    <>
+      {/* === TRUE FULL-BLEED ROOT – no box, touches every bezel === */}
+      <div className="w-screen -mx-4 bg-[#1C1C1E] min-h-screen">
+
+        {/* TASK 1: STATIC GLOBAL HEADER – permanently locked, never scrolls horizontally */}
+        <div className="w-full flex items-center sticky top-0 z-50 bg-[#1C1C1E] border-b border-zinc-800">
+          <div className="flex-1 text-center py-4">
+            <span className="text-[14px] font-extrabold uppercase text-white tracking-widest">CALLS</span>
+          </div>
+          <div className="w-14 flex items-center justify-center border-x border-zinc-700 py-3">
+            <button className="w-11 h-11 flex items-center justify-center rounded-xl hover:bg-zinc-800 active:scale-95 transition-all">
+              <Cog6ToothIcon className="w-8 h-8 text-white" />
+            </button>
+          </div>
+          <div className="flex-1 text-center py-4">
+            <span className="text-[14px] font-extrabold uppercase text-white tracking-widest">PUTS</span>
+          </div>
+        </div>
+
+        {/* Expiration + IV row (exactly like your first ToS video) – now fully visible */}
+        <div className="px-4 py-2 border-b border-zinc-800 flex items-center text-xs font-medium text-zinc-400 bg-[#1C1C1E]">
+          <div className="flex-1">
+            <span className="text-emerald-400">17 APR 26 (20)</span> <span className="text-white">100</span>
+          </div>
+          <div className="flex-1 text-center text-emerald-400">76.47% (+145.615)</div>
+          <div className="flex-1 text-right">IV 74.74% • 100% • HV 81%</div>
+        </div>
+
+        {/* TASK 2 + TASK 3: Scrollable wings + locked center strike spine */}
+        <div className="overflow-x-auto scrollbar-hide">
+          <div className="grid grid-cols-[1fr_1fr_68px_56px_1fr_1fr_68px] min-w-[760px] text-sm font-medium">
+
+            {/* Sub-headers – scroll in perfect sync with data */}
+            <div className="col-span-3 grid grid-cols-3 border-b border-zinc-700 text-xs font-medium text-zinc-400 py-2 bg-[#1C1C1E]">
+              <div className="px-3 text-left">Bid</div>
+              <div className="px-3 text-left">Ask</div>
+              <div className="px-3 text-right">Vol</div>
+            </div>
+
+            {/* Empty cell under gear */}
+            <div className="w-14 border-b border-zinc-700 bg-[#1C1C1E]" />
+
+            <div className="col-span-3 grid grid-cols-3 border-b border-zinc-700 text-xs font-medium text-zinc-400 py-2 bg-[#1C1C1E]">
+              <div className="px-3 text-right">Bid</div>
+              <div className="px-3 text-right">Ask</div>
+              <div className="px-3 text-right">Vol</div>
+            </div>
+
+            {/* Data rows */}
+            {visibleStrikes.map((strike) => {
+              const isATM = Math.abs(strike - spotPrice) < 3;
+              return (
+                <div
+                  key={strike}
+                  className={`grid grid-cols-subgrid col-span-7 border-b border-zinc-800 hover:bg-zinc-800/60 ${isATM ? 'bg-amber-400/10' : ''}`}
+                >
+                  {/* CALLS */}
+                  <div className="px-3 py-4 text-emerald-400 text-left">86.20</div>
+                  <div className="px-3 py-4 text-emerald-400 text-left">94.90</div>
+                  <div className="px-3 py-4 text-zinc-300 text-right">7</div>
+
+                  {/* TASK 3: STEEL-BEAM STRIKE SPINE – locked center */}
+                  <div className="w-14 bg-zinc-900 text-center font-semibold text-amber-300 border-x border-zinc-700 py-4 sticky left-[calc(50vw-28px)] z-40">
+                    {strike}
+                  </div>
+
+                  {/* PUTS */}
+                  <div className="px-3 py-4 text-red-400 text-right">35.90</div>
+                  <div className="px-3 py-4 text-red-400 text-right">40.00</div>
+                  <div className="px-3 py-4 text-zinc-300 text-right">3</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
