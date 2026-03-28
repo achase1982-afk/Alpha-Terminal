@@ -1,15 +1,13 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useOptionsSettingsStore } from "@/lib/options-store";
-import { useGetQuote, useGetPriceHistory, useGetOptionChain } from "@workspace/api-client-react";
-import { Button } from "@/components/ui/button";
+import { useGetQuote, useGetOptionChain } from "@workspace/api-client-react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Table2, BarChart2, ChevronDown, ChevronUp, X } from "lucide-react";
-import ReactMarkdown from "react-markdown";
+import { Table2, ChevronDown, ChevronUp, X } from "lucide-react";
 
-const API_BASE = "/api";
+const EPS = 0.0001;
 
 interface Contract {
   strike: number;
@@ -31,7 +29,6 @@ interface NormalizedRow {
   strike: number;
   call: Contract | null;
   put: Contract | null;
-  isATM: boolean;
 }
 
 interface ExpirationGroup {
@@ -110,11 +107,10 @@ function buildExpirationGroups(
     const allStrikes = [...new Set([...callMap.keys(), ...putMap.keys()])].sort((a, b) => a - b);
     const atmIdx = lastPrice != null ? findATMIndex(allStrikes, lastPrice) : -1;
 
-    let normalizedRows: NormalizedRow[] = allStrikes.map((strike, i) => ({
+    let normalizedRows: NormalizedRow[] = allStrikes.map((strike) => ({
       strike,
       call: callMap.get(strike) ?? null,
       put: putMap.get(strike) ?? null,
-      isATM: i === atmIdx,
     }));
 
     if (strikeCount > 0 && atmIdx >= 0 && normalizedRows.length > strikeCount) {
@@ -134,12 +130,10 @@ function CellVal({ val, decimals = 2 }: { val?: number | null; decimals?: number
 }
 
 export function OptionsTab() {
-  const { symbol, accessToken, aiModel, aiTemp, strategistResult, setStrategistResult } = useTerminalStore();
+  const { symbol, accessToken } = useTerminalStore();
   const { contractType, strikeCount, maxDte, customStrikeInput, setCustomStrikeInput } = useOptionsSettingsStore();
   const setStrikeCount = useOptionsSettingsStore(s => s.setStrikeCount);
 
-  const [isStrategizing, setIsStrategizing] = useState(false);
-  const [strategistExpanded, setStrategistExpanded] = useState(false);
   const [expandedExps, setExpandedExps] = useState<Set<string>>(new Set());
   const [isCustomMode, setIsCustomMode] = useState(() => ![6, 10, 20].includes(strikeCount));
   const [localCustomValue, setLocalCustomValue] = useState(String(strikeCount));
@@ -147,8 +141,6 @@ export function OptionsTab() {
     if ([6, 10, 20].includes(strikeCount)) return String(strikeCount);
     return "custom";
   }, [strikeCount]);
-  const strategistAbortRef = useRef<AbortController | null>(null);
-  const strategistIdRef = useRef(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const brokerStrikeCount = Math.max(strikeCount, 20);
@@ -160,11 +152,6 @@ export function OptionsTab() {
 
   const { data: quote } = useGetQuote(
     { symbol, accessToken: accessToken || "" },
-    { query: { enabled: !!accessToken } }
-  );
-
-  const { data: history } = useGetPriceHistory(
-    { symbol, accessToken: accessToken || "", periodType: "month", period: 3, frequencyType: "daily", frequency: 1 },
     { query: { enabled: !!accessToken } }
   );
 
@@ -232,44 +219,8 @@ export function OptionsTab() {
     }
   }, [strikeCount, setStrikeCount]);
 
-  const handleRunStrategist = async () => {
-    if (!quote || !data) return;
-    if (strategistAbortRef.current) strategistAbortRef.current.abort();
-    const controller = new AbortController();
-    strategistAbortRef.current = controller;
-    const requestId = ++strategistIdRef.current;
-
-    setStrategistResult(null);
-    setIsStrategizing(true);
-    setStrategistExpanded(true);
-    try {
-      const res = await fetch(`${API_BASE}/ai/options-strategist`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          quote,
-          candles: history?.candles ?? [],
-          chain: data,
-          model: aiModel,
-          temperature: aiTemp,
-        }),
-        signal: controller.signal,
-      });
-      if (strategistIdRef.current !== requestId) return;
-      const result = await res.json() as { response?: string };
-      setStrategistResult(result.response ?? "No response received.");
-    } catch (err) {
-      if ((err as Error).name === 'AbortError') return;
-      if (strategistIdRef.current !== requestId) return;
-      setStrategistResult(`**Error:** ${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      if (strategistIdRef.current === requestId) setIsStrategizing(false);
-    }
-  };
-
   useEffect(() => {
     return () => {
-      if (strategistAbortRef.current) strategistAbortRef.current.abort();
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, []);
@@ -286,7 +237,7 @@ export function OptionsTab() {
   return (
     <div className="space-y-2 h-full flex flex-col">
 
-      <div className="flex items-center gap-2 bg-[#111111] px-3 py-1.5 rounded-lg border border-[#262626] shrink-0 flex-wrap">
+      <div className="flex items-center justify-between gap-2 bg-[#111111] px-3 py-1.5 rounded-lg border border-[#262626] shrink-0 flex-wrap">
         <div className="flex items-center gap-1">
           <span className="font-mono text-[10px] text-zinc-500 uppercase">Strikes</span>
           {isCustomMode ? (
@@ -325,87 +276,23 @@ export function OptionsTab() {
           )}
         </div>
 
-        {data && (
-          <Button
-            onClick={handleRunStrategist}
-            disabled={isStrategizing || !accessToken}
-            variant="outline"
-            className="font-mono text-[11px] h-7 px-3 border-[#27272A] text-primary hover:bg-primary/10 ml-auto"
-          >
-            {isStrategizing ? (
-              <><span className="w-2.5 h-2.5 border-2 border-primary border-t-transparent rounded-full animate-spin mr-1.5" />ANALYZING</>
-            ) : (
-              <><BarChart2 className="w-3 h-3 mr-1.5" />STRATEGIST</>
-            )}
-          </Button>
-        )}
-
-        {isFetching && data && (
-          <div className="ml-auto flex items-center gap-1.5">
-            <span className="w-2 h-2 border border-primary border-t-transparent rounded-full animate-spin" />
-            <span className="font-mono text-[10px] text-zinc-500">UPDATING</span>
-          </div>
-        )}
-      </div>
-
-      {data && (
-        <div className="flex items-center justify-between gap-x-6 bg-[#09090b] border-y border-[#262626] py-2 px-4 shrink-0" style={{ fontVariantNumeric: "tabular-nums" }}>
-          <div className="flex flex-col items-center">
-            <span className="font-mono text-[10px] text-zinc-500 uppercase tracking-wider">IV</span>
-            <span className="font-mono text-sm font-medium text-white">26.24%</span>
-          </div>
-          <div className="flex flex-col items-center">
-            <span className="font-mono text-[10px] text-zinc-500 uppercase tracking-wider">IV Rank</span>
-            <span className="font-mono text-sm font-medium text-white">30%</span>
-          </div>
-          <div className="flex flex-col items-center">
-            <span className="font-mono text-[10px] text-zinc-500 uppercase tracking-wider">Last</span>
-            <span className="font-mono text-sm font-medium text-white">{underlyingPrice != null ? underlyingPrice.toFixed(2) : "—"}</span>
-          </div>
-          <div className="flex flex-col items-center">
-            <span className="font-mono text-[10px] text-zinc-500 uppercase tracking-wider">Exp Move</span>
-            <span className="font-mono text-sm font-medium text-white">±$14.50</span>
-          </div>
-        </div>
-      )}
-
-      {(strategistResult || isStrategizing) && (
-        <div className="bg-card border border-card-border rounded-lg overflow-hidden shrink-0">
-          <button
-            onClick={() => setStrategistExpanded(s => !s)}
-            className="w-full flex items-center justify-between px-3 py-2 border-b border-card-border hover:bg-secondary/20 transition-colors"
-          >
-            <div className="flex items-center gap-2">
-              <BarChart2 className="w-3 h-3 text-primary" />
-              <span className="font-mono text-[11px] font-bold text-foreground">STRATEGIST — {symbol}</span>
-              {isStrategizing && (
-                <span className="w-2 h-2 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-              )}
+        <div className="flex items-center gap-1">
+          {isFetching && data && (
+            <div className="flex items-center gap-1.5 mr-3">
+              <span className="w-2 h-2 border border-primary border-t-transparent rounded-full animate-spin" />
+              <span className="font-mono text-[10px] text-zinc-500">UPDATING</span>
             </div>
-            {strategistExpanded ? <ChevronUp className="w-3 h-3 text-zinc-500" /> : <ChevronDown className="w-3 h-3 text-zinc-500" />}
-          </button>
-          {strategistExpanded && (
-            <div className="p-4 bg-[#0c0c0c]">
-              {isStrategizing ? (
-                <div className="flex items-center justify-center gap-3 py-6">
-                  <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin" />
-                  <span className="font-mono text-xs text-primary animate-pulse tracking-widest">RUNNING DERIVATIVES STRATEGIST...</span>
-                </div>
-              ) : strategistResult ? (
-                <div className="prose prose-invert prose-primary max-w-none font-sans text-gray-300
-                  prose-headings:text-white prose-headings:font-bold prose-headings:tracking-wide prose-headings:mt-3 prose-headings:mb-1
-                  prose-h3:text-sm prose-h2:text-base
-                  prose-strong:text-white prose-strong:font-bold
-                  prose-li:my-0.5
-                  prose-code:text-primary prose-code:bg-primary/10 prose-code:px-1 prose-code:rounded prose-code:text-xs"
-                >
-                  <ReactMarkdown>{strategistResult}</ReactMarkdown>
-                </div>
-              ) : null}
+          )}
+          {data && (
+            <div className="flex items-center gap-2 font-mono text-[11px]" style={{ fontVariantNumeric: "tabular-nums" }}>
+              <span className="text-zinc-500">IV:</span>
+              <span className="text-white font-medium">26.24%</span>
+              <span className="text-zinc-600">|</span>
+              <span className="text-white font-medium">±$14.50</span>
             </div>
           )}
         </div>
-      )}
+      </div>
 
       <div className="flex-1 overflow-auto terminal-panel p-0 min-h-0 relative">
         {isLoading && !data && (
@@ -453,7 +340,13 @@ export function OptionsTab() {
                   >
                     <span className="font-mono text-[11px] font-bold text-white tracking-wider">{group.label}</span>
                     <div className="flex items-center gap-3">
-                      <span className="font-mono text-[10px] text-zinc-500">{group.rows.length} strikes</span>
+                      <div className="flex items-center gap-2 font-mono text-[10px]" style={{ fontVariantNumeric: "tabular-nums" }}>
+                        <span className="text-zinc-500">IV:</span>
+                        <span className="text-white">32%</span>
+                        <span className="text-zinc-600">|</span>
+                        <span className="text-zinc-500">±</span>
+                        <span className="text-white">$8.50</span>
+                      </div>
                       {isOpen
                         ? <ChevronUp className="w-3 h-3 text-zinc-500" />
                         : <ChevronDown className="w-3 h-3 text-zinc-500" />}
@@ -463,7 +356,22 @@ export function OptionsTab() {
                   {isOpen && (
                     <div className="overflow-x-auto">
                       <div
-                        className="grid text-[10px] font-mono text-zinc-500 uppercase tracking-wider border-b border-[#262626] bg-[#0a0a0a] sticky top-0 z-10"
+                        className="grid text-[10px] font-mono text-zinc-500 uppercase tracking-wider border-b border-[#262626] bg-[#0a0a0a] sticky top-0 z-10 py-1"
+                        style={{ gridTemplateColumns: gridCols }}
+                      >
+                        {showCalls && (
+                          <div className="px-2 text-left">CALLS</div>
+                        )}
+                        <div className="flex items-center justify-center text-zinc-400">
+                          STRIKE
+                        </div>
+                        {showPuts && (
+                          <div className="px-2 text-right">PUTS</div>
+                        )}
+                      </div>
+
+                      <div
+                        className="grid text-[10px] font-mono text-zinc-500 uppercase tracking-wider border-b border-[#262626] bg-[#0a0a0a] sticky top-[22px] z-10"
                         style={{ gridTemplateColumns: gridCols }}
                       >
                         {showCalls && (
@@ -475,7 +383,6 @@ export function OptionsTab() {
                           </div>
                         )}
                         <div className="flex items-center justify-center bg-[#18181B] text-zinc-400 font-bold">
-                          STRIKE
                         </div>
                         {showPuts && (
                           <div className="grid grid-cols-4 px-2 py-1 text-left gap-0.5">
@@ -526,19 +433,43 @@ function StraddleBody({
   showCalls: boolean;
   showPuts: boolean;
 }) {
+  const sortedRows = useMemo(
+    () => [...rows].sort((a, b) => a.strike - b.strike),
+    [rows]
+  );
+
+  const transitionIdx = useMemo(() => {
+    if (underlyingPrice == null) return -1;
+    return sortedRows.findIndex(r => r.strike > underlyingPrice + EPS);
+  }, [sortedRows, underlyingPrice]);
+
+  const priceAboveAll = useMemo(() => {
+    if (underlyingPrice == null || sortedRows.length === 0) return false;
+    const maxStrike = sortedRows[sortedRows.length - 1].strike;
+    return underlyingPrice > maxStrike + EPS;
+  }, [underlyingPrice, sortedRows]);
+
   return (
     <div>
-      {rows.map(row => {
-        const callITM = underlyingPrice != null && row.strike < underlyingPrice;
-        const putITM = underlyingPrice != null && row.strike > underlyingPrice;
+      {sortedRows.map((row, idx) => {
+        const isATMBorder = idx === transitionIdx;
+        const isLastRowATM = transitionIdx === -1 && priceAboveAll && idx === sortedRows.length - 1;
+
+        const callITM = underlyingPrice != null && row.strike < underlyingPrice - EPS;
+        const putITM = underlyingPrice != null && row.strike > underlyingPrice + EPS;
+
+        const isATMStrike = underlyingPrice != null &&
+          Math.abs(row.strike - underlyingPrice) <= EPS;
 
         return (
           <div
             key={row.strike}
             className={`grid font-mono text-[11px] transition-colors hover:bg-white/[0.03] ${
-              row.isATM
-                ? "border-b border-dashed border-[#FFB800]"
-                : "border-b border-[#1a1a1a]"
+              isATMBorder
+                ? "border-t border-dashed border-[#FFB800]"
+                : isLastRowATM
+                  ? "border-b border-dashed border-[#FFB800]"
+                  : "border-b border-[#1a1a1a]"
             }`}
             style={{
               gridTemplateColumns: gridCols,
@@ -556,7 +487,7 @@ function StraddleBody({
               </div>
             )}
 
-            <div className={`flex items-center justify-center bg-[#18181B] text-[11px] font-bold ${row.isATM ? "text-[#FFB800]" : "text-zinc-300"}`}>
+            <div className={`flex items-center justify-center bg-[#18181B] text-[11px] font-bold ${isATMStrike ? "text-[#FFB800]" : "text-zinc-300"}`}>
               {row.strike.toFixed(row.strike % 1 === 0 ? 0 : 2)}
             </div>
 

@@ -1,0 +1,26 @@
+Role: Senior React FinTech UI Architect. 
+Objective: Declutter the Options chain, consolidate toolbar metrics, add strict Grid Headers, and permanently fix the ATM dashed line rendering using precise boundary math.
+
+Task 1: UI Decluttering & Toolbar Consolidation.
+- Completely remove the 'STRATEGIST' accordion and button from the `<OptionsChain>` component. 
+- Remove the separate 4-column IV/VWAP data strip.
+- In the toolbar row containing the 'STRIKES' dropdown, use `flex justify-between` to add the Global metrics to the far right: `IV: 26.24% | ±$14.50`.
+
+Task 2: Expiration Accordion & Column Headers.
+- Inside the Expiration Accordion headers (e.g., '2 APR 26 (5 dte)'), remove the '6 strikes' text. Replace it with right-aligned mock metrics: `IV: 32% | ±$8.50`. Use muted labels and white tabular values.
+- CRITICAL: Directly below the Expiration Accordion, add a sticky header row for the data columns. 
+- Left side: 'CALLS' (text-xs, muted, text-left). Center: 'STRIKE' (text-xs, muted, text-center). Right side: 'PUTS' (text-xs, muted, text-right).
+
+Task 3: Bulletproof ATM Line & ITM Shading Math.
+- Do NOT use array index midpoint math (`length / 2`) to place the ATM line.
+- Ensure strikes are sorted ascending: `[...rows].sort((a, b) => Number(a.strike) - Number(b.strike))`.
+- Use a numeric epsilon (`const EPS = 0.0001;`) to handle floating-point price data.
+- Calculate the transition index ONCE before the map:
+  `const transitionIdx = sortedRows.findIndex(r => Number(r.strike) > lastPrice + EPS);`
+
+Task 4: CSS Grid Row Rendering Rules.
+- Apply the ITM shading (`bg-[#1e293b]`) strictly to the side containers, NOT the center strike cell.
+  - Call side (left) is shaded ONLY if `Number(row.strike) < lastPrice - EPS`.
+  - Put side (right) is shaded ONLY if `Number(row.strike) > lastPrice + EPS`.
+- Apply the dashed ATM line (`border-t border-dashed border-[#FFB800]`) directly to the outer row container `<div className="grid grid-cols-[1fr_auto_1fr] ...">` when the row index matches `transitionIdx`.
+- Edge Case: If `transitionIdx === -1` (the `lastPrice` is higher than all visible strikes), apply a `border-b` to the very last row in the array instead of a `border-t`.
