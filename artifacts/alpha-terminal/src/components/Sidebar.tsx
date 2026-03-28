@@ -99,7 +99,7 @@ export function Sidebar({ onClose, onOpenChat }: SidebarProps) {
   };
 
   return (
-    <div className="w-72 sm:w-80 h-full bg-[#0D1117] border-r border-card-border flex flex-col z-20 shadow-xl overflow-y-auto">
+    <div className="w-72 sm:w-80 h-full bg-[#0c0c0c] border-r border-card-border flex flex-col z-20 shadow-xl overflow-y-auto">
       {/* BRANDING */}
       <div className="p-4 sm:p-6 border-b border-card-border flex items-center gap-3">
         <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-primary/10 border border-primary/30 flex items-center justify-center flex-shrink-0">
@@ -153,7 +153,7 @@ export function Sidebar({ onClose, onOpenChat }: SidebarProps) {
 
           <Button
             onClick={() => { onOpenChat?.(); onClose?.(); }}
-            className="w-full font-mono text-xs h-9 bg-[#1C2333] text-foreground border border-card-border hover:bg-primary/15 hover:border-primary/40 hover:text-primary transition-all tracking-wider mt-2"
+            className="w-full font-mono text-xs h-9 bg-[#1a1a1a] text-foreground border border-card-border hover:bg-primary/15 hover:border-primary/40 hover:text-primary transition-all tracking-wider mt-2"
           >
             <MessageCircle className="w-3.5 h-3.5 mr-2 shrink-0" />
             AI SEARCH

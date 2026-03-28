@@ -76,9 +76,9 @@ interface ScannerQuote {
 }
 
 function dirColor(dir: string) {
-  if (dir === "BULLISH") return "#00E676";
-  if (dir === "BEARISH") return "#FF1744";
-  return "#00BFFF";
+  if (dir === "BULLISH") return "#00d166";
+  if (dir === "BEARISH") return "#f23645";
+  return "#0064ff";
 }
 
 function dirIcon(dir: string) {
@@ -90,7 +90,7 @@ function dirIcon(dir: string) {
 const CONF_ORDER: Record<string, number> = { HIGH: 3, MILD: 2, LOW: 1 };
 
 function confBadge(conf: string) {
-  const c = conf === "HIGH" ? "#FFD700" : conf === "MILD" ? "#00BFFF" : "#6B7280";
+  const c = conf === "HIGH" ? "#ffb800" : conf === "MILD" ? "#0064ff" : "#6B7280";
   return (
     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
       style={{ color: c, background: `${c}15`, border: `1px solid ${c}40` }}>
@@ -107,7 +107,7 @@ function SortHeader({ label, sortKey, currentKey, currentDir, onSort }: {
   return (
     <button onClick={() => onSort(sortKey)}
       className="flex items-center gap-1 text-[10px] uppercase tracking-wider font-bold transition-colors hover:text-white"
-      style={{ color: active ? "#00BFFF" : "#6B7280" }}>
+      style={{ color: active ? "#0064ff" : "#6B7280" }}>
       {label}
       {active && (currentDir === "asc" ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
     </button>
@@ -243,7 +243,7 @@ export function MarketScanner() {
           ))}
         </div>
 
-        <div className="p-4 bg-[#0D1117] space-y-4">
+        <div className="p-4 bg-[#0c0c0c] space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold flex items-center gap-1.5">
@@ -295,37 +295,37 @@ export function MarketScanner() {
 
           <div className="text-[10px] text-muted-foreground">
             Scanning <span className="text-primary font-bold">{currentSyms.length} tickers</span>
-            {mode === "ai" && <> — AI will return up to <span className="font-bold" style={{ color: "#FFD700" }}>{maxResults} setups</span></>}
+            {mode === "ai" && <> — AI will return up to <span className="font-bold" style={{ color: "#ffb800" }}>{maxResults} setups</span></>}
           </div>
         </div>
 
         {mode === "manual" && (
-          <div className="p-4 bg-[#0D1117] border-t border-card-border grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="p-4 bg-[#0c0c0c] border-t border-card-border grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <div className="flex justify-between text-[10px] text-muted-foreground uppercase">
                 <span>Min Change %</span>
-                <span style={{ color: "#00E676" }}>{minChangePct >= 0 ? "+" : ""}{minChangePct}%</span>
+                <span style={{ color: "#00d166" }}>{minChangePct >= 0 ? "+" : ""}{minChangePct}%</span>
               </div>
               <Slider value={[minChangePct]} onValueChange={v => setMinChangePct(v[0])} min={-15} max={15} step={0.5} />
             </div>
             <div className="space-y-2">
               <div className="flex justify-between text-[10px] text-muted-foreground uppercase">
                 <span>Max Change %</span>
-                <span style={{ color: "#00E676" }}>+{maxChangePct}%</span>
+                <span style={{ color: "#00d166" }}>+{maxChangePct}%</span>
               </div>
               <Slider value={[maxChangePct]} onValueChange={v => setMaxChangePct(v[0])} min={0} max={30} step={0.5} />
             </div>
             <div className="space-y-2">
               <div className="flex justify-between text-[10px] text-muted-foreground uppercase">
                 <span>Min Volume</span>
-                <span style={{ color: "#00BFFF" }}>{minVolume}M+</span>
+                <span style={{ color: "#0064ff" }}>{minVolume}M+</span>
               </div>
               <Slider value={[minVolume]} onValueChange={v => setMinVolume(v[0])} min={0} max={100} step={1} />
             </div>
             <div className="space-y-2">
               <div className="flex justify-between text-[10px] text-muted-foreground uppercase">
                 <span>Price Range</span>
-                <span style={{ color: "#00BFFF" }}>${minPrice} – ${maxPrice}</span>
+                <span style={{ color: "#0064ff" }}>${minPrice} – ${maxPrice}</span>
               </div>
               <div className="flex gap-3 items-center">
                 <Slider value={[minPrice]} onValueChange={v => setMinPrice(v[0])} min={0} max={500} step={5} className="flex-1" />
@@ -335,14 +335,14 @@ export function MarketScanner() {
           </div>
         )}
 
-        <div className="px-4 pb-4 pt-3 bg-[#0D1117] border-t border-card-border">
+        <div className="px-4 pb-4 pt-3 bg-[#0c0c0c] border-t border-card-border">
           <Button
             onClick={handleScan}
             disabled={!accessToken || isScanning || currentSyms.length === 0}
             className="w-full text-xs font-bold h-10"
             style={
               !isScanning
-                ? { background: "linear-gradient(135deg, #00E676 0%, #00BCD4 100%)", color: "#000" }
+                ? { background: "linear-gradient(135deg, #00d166 0%, #0064ff 100%)", color: "#000" }
                 : {}
             }
           >
@@ -396,7 +396,7 @@ export function MarketScanner() {
           {marketSummary && (
             <div className="px-4 py-3 rounded-xl border text-sm text-gray-300 leading-relaxed"
               style={{ background: "rgba(0,191,255,0.05)", borderColor: "rgba(0,191,255,0.2)" }}>
-              <span className="text-[9px] font-bold" style={{ color: "#00BFFF" }}>MARKET REGIME  </span>
+              <span className="text-[9px] font-bold" style={{ color: "#0064ff" }}>MARKET REGIME  </span>
               {marketSummary}
             </div>
           )}
@@ -404,7 +404,7 @@ export function MarketScanner() {
           <div className="rounded-xl border border-card-border overflow-hidden bg-card">
             <table className="w-full text-left" style={{ borderCollapse: "collapse" }}>
               <thead>
-                <tr className="border-b border-card-border" style={{ background: "#0D1117" }}>
+                <tr className="border-b border-card-border" style={{ background: "#0c0c0c" }}>
                   <th className="px-3 py-2.5">
                     <SortHeader label="Ticker" sortKey="symbol" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} />
                   </th>
@@ -448,7 +448,7 @@ export function MarketScanner() {
                       <td className="px-3 py-2.5">{confBadge(s.confidence)}</td>
                       <td className="px-3 py-2.5">
                         <span className="text-xs font-bold tabular-nums"
-                          style={{ color: s.changePct >= 0 ? "#00E676" : "#FF1744" }}>
+                          style={{ color: s.changePct >= 0 ? "#00d166" : "#f23645" }}>
                           {s.changePct >= 0 ? "+" : ""}{s.changePct.toFixed(2)}%
                         </span>
                       </td>
@@ -487,7 +487,7 @@ export function MarketScanner() {
           <div className="space-y-1.5">
             {manualQuotes.map(q => {
               const isUp = q.changePct >= 0;
-              const color = isUp ? "#00E676" : "#FF1744";
+              const color = isUp ? "#00d166" : "#f23645";
               return (
                 <button key={q.symbol} onClick={() => setSymbol(q.symbol)}
                   className="w-full flex items-center gap-3 px-3 py-2 rounded-lg border border-card-border bg-card

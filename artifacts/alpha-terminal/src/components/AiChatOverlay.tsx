@@ -197,8 +197,8 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col" style={{ background: "#0A0F16" }}>
-      <div className="flex items-center justify-between px-4 h-12 border-b border-card-border bg-[#0D1117] shrink-0">
+    <div className="fixed inset-0 z-[100] flex flex-col" style={{ background: "#0c0c0c" }}>
+      <div className="flex items-center justify-between px-4 h-12 border-b border-card-border bg-[#0c0c0c] shrink-0">
         <div className="flex items-center gap-2">
           <Search className="w-4 h-4 text-primary" />
           <span className="font-mono text-xs font-bold text-primary tracking-wider">SEARCH</span>
@@ -258,7 +258,7 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
               className={`max-w-[85%] px-3.5 py-2.5 shadow-sm ${
                 msg.role === "user"
                   ? "bg-primary text-primary-foreground rounded-2xl rounded-br-md"
-                  : "bg-[#1C2333] text-gray-200 rounded-2xl rounded-bl-md border border-card-border"
+                  : "bg-[#1a1a1a] text-gray-200 rounded-2xl rounded-bl-md border border-card-border"
               }`}
             >
               <div className={`prose prose-sm max-w-none ${
@@ -284,7 +284,7 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
 
         {isStreaming && messages.length > 0 && messages[messages.length - 1].role === "user" && (
           <div className="flex justify-start mb-3">
-            <div className="bg-[#1C2333] border border-card-border rounded-2xl rounded-bl-md px-4 py-3 flex items-center gap-2">
+            <div className="bg-[#1a1a1a] border border-card-border rounded-2xl rounded-bl-md px-4 py-3 flex items-center gap-2">
               <span className="flex gap-1">
                 <span className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: "0ms" }} />
                 <span className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: "150ms" }} />
@@ -296,7 +296,7 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
         )}
       </div>
 
-      <div className="shrink-0 border-t border-card-border bg-[#0D1117] px-3 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+      <div className="shrink-0 border-t border-card-border bg-[#0c0c0c] px-3 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
         <form onSubmit={handleFormSubmit} className="flex items-end gap-2">
           <textarea
             ref={inputRef}
@@ -309,7 +309,7 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
             autoCorrect="off"
             spellCheck={false}
             name="ai-chat-input"
-            className="flex-1 min-h-[40px] max-h-[120px] px-3.5 py-2.5 rounded-2xl bg-[#161B22] border border-card-border
+            className="flex-1 min-h-[40px] max-h-[120px] px-3.5 py-2.5 rounded-2xl bg-[#141414] border border-card-border
               text-sm text-foreground placeholder:text-muted-foreground/50 resize-none
               focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30 transition-colors"
             style={{ fieldSizing: "content" } as React.CSSProperties}

@@ -20,7 +20,7 @@ export function TickerSearch() {
   };
 
   return (
-    <div className="px-3 sm:px-4 py-2 border-b border-card-border bg-[#0D1117]/95 shrink-0 flex flex-col sm:flex-row items-start sm:items-center gap-2">
+    <div className="px-3 sm:px-4 py-2 border-b border-card-border bg-[#0c0c0c]/95 shrink-0 flex flex-col sm:flex-row items-start sm:items-center gap-2">
       {/* Recent symbols */}
       <div className="flex items-center gap-1.5 flex-wrap flex-1 min-w-0">
         {recentSymbols.length === 0 ? (

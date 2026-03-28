@@ -138,7 +138,7 @@ export function AiIntelligenceTab() {
           <Target className="w-4 h-4 text-primary" />
           <span className="font-mono text-xs font-bold text-foreground">DEEP ANALYSIS — {symbol}</span>
         </div>
-        <div className="p-4 space-y-3 bg-[#0D1117]">
+        <div className="p-4 space-y-3 bg-[#0c0c0c]">
           <Textarea
             placeholder="Add specific instructions (optional)... e.g. 'Focus on the MACD divergence and key gamma levels'"
             value={customPrompt}
@@ -171,7 +171,7 @@ export function AiIntelligenceTab() {
 
         {/* Analysis / Strategist Result */}
         {(activeResult === "analysis" || activeResult === "strategist") && (
-          <div className="border-t border-card-border p-4 bg-[#0D1117]">
+          <div className="border-t border-card-border p-4 bg-[#0c0c0c]">
             {isPendingAnalysis || isStrategizing ? (
               <div className="flex flex-col items-center justify-center py-10 gap-4">
                 <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />

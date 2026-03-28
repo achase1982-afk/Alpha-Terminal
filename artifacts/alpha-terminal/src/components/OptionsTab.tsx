@@ -134,7 +134,7 @@ export function OptionsTab() {
             {strategistExpanded ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground" /> : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />}
           </button>
           {strategistExpanded && (
-            <div className="p-4 bg-[#0D1117]">
+            <div className="p-4 bg-[#0c0c0c]">
               {isStrategizing ? (
                 <div className="flex items-center justify-center gap-3 py-8">
                   <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin" />

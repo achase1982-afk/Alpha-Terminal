@@ -3,8 +3,8 @@ import { useTerminalStore } from "@/lib/store";
 import { useQuote } from "@/hooks/useQuote";
 import { useTickColor } from "@/hooks/useTickColor";
 
-const UP_COLOR   = "#00E676";
-const DOWN_COLOR = "#FF1744";
+const UP_COLOR   = "#00d166";
+const DOWN_COLOR = "#f23645";
 const FLAT_COLOR = "#6B7280";
 
 const TapeItem = memo(function TapeItem({ symbol }: { symbol: string }) {
@@ -111,12 +111,12 @@ export function TickerTape() {
   return (
     <div
       className="border-b border-card-border overflow-hidden relative shrink-0 flex items-center"
-      style={{ height: "32px", background: "#060A10" }}
+      style={{ height: "32px", background: "#0c0c0c" }}
     >
       <div className="absolute left-0 top-0 bottom-0 w-16 z-10 pointer-events-none"
-        style={{ background: "linear-gradient(to right, #060A10, transparent)" }} />
+        style={{ background: "linear-gradient(to right, #0c0c0c, transparent)" }} />
       <div className="absolute right-0 top-0 bottom-0 w-16 z-10 pointer-events-none"
-        style={{ background: "linear-gradient(to left, #060A10, transparent)" }} />
+        style={{ background: "linear-gradient(to left, #0c0c0c, transparent)" }} />
 
       <TapeTrack symbols={tickerTapeSymbols} />
     </div>

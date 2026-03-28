@@ -57,7 +57,7 @@ function fmtNum(n: number | null, decimals = 2): string {
 
 function MetricCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
-    <div className="bg-[#0D1117] border border-card-border rounded-lg p-3 flex flex-col gap-1">
+    <div className="bg-[#0c0c0c] border border-card-border rounded-lg p-3 flex flex-col gap-1">
       <div className="flex items-center gap-1.5">
         {icon}
         <span className="font-mono text-[9px] text-muted-foreground uppercase tracking-wider">{label}</span>
@@ -117,8 +117,8 @@ export function CompanyTearSheet({ isOpen, onClose }: CompanyTearSheetProps) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col" style={{ background: "#0A0F16" }}>
-      <div className="flex items-center justify-between px-4 h-12 border-b border-card-border bg-[#0D1117] shrink-0">
+    <div className="fixed inset-0 z-[100] flex flex-col" style={{ background: "#0c0c0c" }}>
+      <div className="flex items-center justify-between px-4 h-12 border-b border-card-border bg-[#0c0c0c] shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           <Building2 className="w-4 h-4 text-primary shrink-0" />
           <span className="font-mono text-xs font-bold text-primary tracking-wider truncate">
@@ -162,7 +162,7 @@ export function CompanyTearSheet({ isOpen, onClose }: CompanyTearSheetProps) {
                 )}
               </div>
               {fundamentals.description && (
-                <div className="px-4 py-3 bg-[#0D1117]">
+                <div className="px-4 py-3 bg-[#0c0c0c]">
                   <p className="text-sm text-gray-300 leading-relaxed">{fundamentals.description}</p>
                 </div>
               )}
@@ -221,7 +221,7 @@ export function CompanyTearSheet({ isOpen, onClose }: CompanyTearSheetProps) {
             <TrendingUp className="w-4 h-4 text-primary" />
             <span className="font-mono text-xs font-bold text-foreground tracking-wider">SYMPATHY & COMPETITORS</span>
           </div>
-          <div className="p-4 bg-[#0D1117]">
+          <div className="p-4 bg-[#0c0c0c]">
             {sympathyLoading ? (
               <div className="flex items-center gap-3 py-6 justify-center">
                 <Loader2 className="w-5 h-5 text-primary animate-spin" />
@@ -245,7 +245,7 @@ export function CompanyTearSheet({ isOpen, onClose }: CompanyTearSheetProps) {
             <Newspaper className="w-4 h-4 text-primary" />
             <span className="font-mono text-xs font-bold text-foreground tracking-wider">RECENT HEADLINES</span>
           </div>
-          <div className="p-4 bg-[#0D1117] flex flex-col items-center justify-center py-8 gap-2">
+          <div className="p-4 bg-[#0c0c0c] flex flex-col items-center justify-center py-8 gap-2">
             <Newspaper className="w-6 h-6 text-muted-foreground/30" />
             <span className="font-mono text-[10px] text-muted-foreground/50 tracking-wider text-center">
               NEWS FEED INTEGRATION COMING SOON
@@ -264,7 +264,7 @@ export function CompanyTearSheet({ isOpen, onClose }: CompanyTearSheetProps) {
               PREMIUM
             </span>
           </div>
-          <div className="p-4 bg-[#0D1117] flex flex-col items-center justify-center py-8 gap-2">
+          <div className="p-4 bg-[#0c0c0c] flex flex-col items-center justify-center py-8 gap-2">
             <ShieldAlert className="w-6 h-6 text-amber-500/20" />
             <span className="font-mono text-[10px] text-amber-500/40 tracking-wider text-center">
               DATA FEED UNAVAILABLE OR RESTRICTED

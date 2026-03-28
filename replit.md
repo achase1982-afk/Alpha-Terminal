@@ -63,6 +63,15 @@ Zustand streamPrices map
 MetricsBar / MacroCard / TapeItem  ← ONLY these re-render on each tick
 ```
 
+### Color Palette (Bloomberg/TOS-style)
+- Background: `#0c0c0c`, Card: `#1a1a1a`, Border: `#262626`
+- Text: `#e4e4e7`, Muted: `#808080`
+- Primary (TOS Blue): `#0064ff`, Gold: `#ffb800`
+- Success: `#00d166`, Danger: `#f23645`
+- Font: Inter (from bunny.net), letter-spacing `-0.025em`, `tabular-nums`
+- Tables: zebra striping via `even:bg-[#141414] odd:bg-[#0c0c0c]` on `TableRow`
+- TradingChart: transparent bg, `#262626` grid/borders, `#0064ff` crosshair, `#00d166/#f23645` candles
+
 ### Known constraints
 - Gemini models: only `gemini-2.5-flash` and `gemini-2.5-pro` work
 - `lightweight-charts` v5: `chart.addSeries(CandlestickSeries, opts)` pattern

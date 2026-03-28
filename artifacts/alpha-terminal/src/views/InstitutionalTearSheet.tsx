@@ -202,7 +202,7 @@ function HeroHeader({ symbol, data }: { symbol: string; data: TearSheetData | nu
       <div className="absolute inset-0 pointer-events-none">
         <div
           className="absolute top-0 right-0 w-[400px] h-[400px] rounded-full blur-[160px] opacity-20"
-          style={{ background: isPositive ? "#00E676" : "#FF1744" }}
+          style={{ background: isPositive ? "#00d166" : "#f23645" }}
         />
       </div>
 
@@ -455,8 +455,8 @@ export function InstitutionalTearSheet({ isOpen, onClose }: InstitutionalTearShe
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col" style={{ background: "#060A10" }}>
-      <div className="flex items-center justify-between px-4 sm:px-5 h-12 border-b border-white/[0.06] bg-[#0A0F16] shrink-0">
+    <div className="fixed inset-0 z-[100] flex flex-col" style={{ background: "#0c0c0c" }}>
+      <div className="flex items-center justify-between px-4 sm:px-5 h-12 border-b border-white/[0.06] bg-[#0c0c0c] shrink-0">
         <div className="flex items-center gap-2.5 min-w-0">
           <Building2 className="w-4 h-4 text-primary shrink-0" />
           <span className="font-mono text-xs font-bold text-primary tracking-wider truncate">

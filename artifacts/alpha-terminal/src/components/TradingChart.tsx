@@ -46,24 +46,24 @@ export function TradingChart({ data, isLoading, error, timedOut, tokenExpired, i
     const chart = createChart(container, {
       layout: {
         background: { type: ColorType.Solid, color: 'transparent' },
-        textColor: '#8B949E',
-        fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif",
+        textColor: '#808080',
+        fontFamily: "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
         fontSize: 11,
       },
       grid: {
-        vertLines: { color: 'rgba(33, 38, 45, 0.5)' },
-        horzLines: { color: 'rgba(33, 38, 45, 0.5)' },
+        vertLines: { color: 'rgba(38, 38, 38, 0.5)' },
+        horzLines: { color: 'rgba(38, 38, 38, 0.5)' },
       },
       crosshair: {
         mode: 1,
-        vertLine: { color: '#00D4AA', width: 1, style: 3 },
-        horzLine: { color: '#00D4AA', width: 1, style: 3 },
+        vertLine: { color: '#0064ff', width: 1, style: 3 },
+        horzLine: { color: '#0064ff', width: 1, style: 3 },
       },
       rightPriceScale: {
-        borderColor: '#21262D',
+        borderColor: '#262626',
       },
       timeScale: {
-        borderColor: '#21262D',
+        borderColor: '#262626',
         timeVisible: !!intraday,
         secondsVisible: false,
         fixLeftEdge: true,
@@ -89,17 +89,17 @@ export function TradingChart({ data, isLoading, error, timedOut, tokenExpired, i
 
     // v5 API: chart.addSeries(SeriesType, options)
     const mainSeries = chart.addSeries(CandlestickSeries, {
-      upColor: '#00D4AA',
-      downColor: '#FF4D4D',
+      upColor: '#00d166',
+      downColor: '#f23645',
       borderVisible: false,
-      wickUpColor: '#00D4AA',
-      wickDownColor: '#FF4D4D',
+      wickUpColor: '#00d166',
+      wickDownColor: '#f23645',
     });
     mainSeries.setData(formattedData);
 
     if (overlays.volume) {
       const volumeSeries = chart.addSeries(HistogramSeries, {
-        color: '#26a69a',
+        color: '#00d166',
         priceFormat: { type: 'volume' },
         priceScaleId: '',
         scaleMargins: { top: 0.8, bottom: 0 },
@@ -154,7 +154,7 @@ export function TradingChart({ data, isLoading, error, timedOut, tokenExpired, i
   }, [data, overlays, intraday]);
 
   return (
-    <div className="w-full h-full min-h-[300px] relative rounded-xl border border-card-border bg-[#0D1117] overflow-hidden shadow-inner">
+    <div className="w-full h-full min-h-[300px] relative rounded-xl border border-card-border bg-[#0c0c0c] overflow-hidden shadow-inner">
       <div ref={chartContainerRef} className="absolute inset-0" />
       {(!data || data.length === 0) && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 font-mono text-xs sm:text-sm">

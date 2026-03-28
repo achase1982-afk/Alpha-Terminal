@@ -4,8 +4,8 @@ import { useTickColor }     from "@/hooks/useTickColor";
 import { RefreshCw, Wifi, WifiOff, SearchX } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 
-const UP_COLOR   = "#00E676";
-const DOWN_COLOR = "#FF1744";
+const UP_COLOR   = "#00d166";
+const DOWN_COLOR = "#f23645";
 const FLAT_COLOR = "#9CA3AF";
 
 const LABEL_CLS = "text-[9px] sm:text-[10px] text-gray-500 font-normal tracking-wider uppercase leading-none";
@@ -36,7 +36,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
 
   if (!accessToken) {
     return (
-      <div className={`${stickyBase} flex items-center justify-center px-4 py-3`} style={{ background: "#060A10" }}>
+      <div className={`${stickyBase} flex items-center justify-center px-4 py-3`} style={{ background: "#0c0c0c" }}>
         <p className="text-muted-foreground text-xs sm:text-sm animate-pulse text-center tracking-wider font-mono">
           CONNECT SCHWAB TO VIEW MARKET DATA
         </p>
@@ -46,7 +46,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
 
   if (quote?.error === "unauthorized") {
     return (
-      <div className={`${stickyBase} flex items-center justify-center gap-2 px-4 py-3`} style={{ background: "#060A10" }}>
+      <div className={`${stickyBase} flex items-center justify-center gap-2 px-4 py-3`} style={{ background: "#0c0c0c" }}>
         <RefreshCw className="w-3.5 h-3.5 text-yellow-500/80 animate-spin" />
         <p className="text-yellow-500/80 text-xs sm:text-sm font-mono tracking-wider">
           SESSION EXPIRED — REFRESHING TOKEN...
@@ -57,7 +57,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
 
   if (isLoading && !quote) {
     return (
-      <div className={`${stickyBase} flex items-center px-4 sm:px-6 gap-6 overflow-x-auto py-3`} style={{ background: "#060A10" }}>
+      <div className={`${stickyBase} flex items-center px-4 sm:px-6 gap-6 overflow-x-auto py-3`} style={{ background: "#0c0c0c" }}>
         {[1, 2, 3, 4, 5].map(i => (
           <div key={i} className="flex flex-col gap-1.5 shrink-0">
             <Skeleton className="h-2.5 w-14 bg-card-border" />
@@ -77,7 +77,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
 
   if (isNotFound) {
     return (
-      <div className={`${stickyBase} flex items-center gap-2.5 px-4 sm:px-6 py-3`} style={{ background: "#060A10" }}>
+      <div className={`${stickyBase} flex items-center gap-2.5 px-4 sm:px-6 py-3`} style={{ background: "#0c0c0c" }}>
         <SearchX className="w-3.5 h-3.5 text-red-500/70 shrink-0" />
         <span className="font-mono text-xs text-red-500/70 tracking-wider">
           {symbol} — SYMBOL NOT FOUND OR UNSUPPORTED BY API
@@ -116,7 +116,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
     return (
       <div
         className={`${stickyBase} flex items-center px-3 sm:px-4 gap-3 sm:gap-4 overflow-x-auto`}
-        style={{ background: "#0A0F16", height: 36 }}
+        style={{ background: "#0c0c0c", height: 36 }}
       >
         <button onClick={onOpenTearSheet} className="font-bold text-white text-sm tracking-wide shrink-0 hover:text-primary transition-colors cursor-pointer">
           {quote.symbol}
@@ -148,7 +148,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
   return (
     <div
       className={`${stickyBase} flex items-center px-4 sm:px-6 gap-4 sm:gap-6 lg:gap-8 overflow-x-auto py-2 sm:h-16`}
-      style={{ background: "#0A0F16" }}
+      style={{ background: "#0c0c0c" }}
     >
       <button onClick={onOpenTearSheet} className="flex flex-col shrink-0 gap-0.5 text-left cursor-pointer group" aria-label={`View company profile for ${quote.symbol}`}>
         <span className={LABEL_CLS}>Ticker</span>

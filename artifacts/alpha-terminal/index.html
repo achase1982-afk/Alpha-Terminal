@@ -6,22 +6,22 @@
     <title>Alpha Terminal</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 
-    <!-- Native system font stack — no external font requests, matches TOS crispness -->
+    <!-- Inter — Bloomberg-grade high-readability sans-serif -->
+    <link rel="preconnect" href="https://fonts.bunny.net" />
+    <link href="https://fonts.bunny.net/css?family=inter:300,400,500,600,700,800,900&display=swap" rel="stylesheet" />
+
     <style>
       *, *::before, *::after {
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif !important;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif !important;
       }
-      /* Price/data numbers: use system sans-serif — monospace fonts have unfixable slashed zeros */
       .font-mono {
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif !important;
-        font-weight: 300 !important;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif !important;
+        font-weight: 500 !important;
         font-variant-numeric: tabular-nums !important;
       }
-      /* Even code blocks use sans-serif — zero slashes nowhere */
       code, pre {
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif !important;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif !important;
       }
-      /* Macro card ticker labels stay bold — intentional hierarchy */
       .macro-symbol-label {
         font-weight: 700 !important;
       }

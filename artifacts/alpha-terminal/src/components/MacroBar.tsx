@@ -6,10 +6,10 @@ import { TrendingUp, TrendingDown, Minus } from "lucide-react";
 const FEAR_SYMBOLS = new Set(["VIX", "$VIX", "VXN", "$VXN"]);
 const INDEX_SYMS   = new Set(["VIX", "$VIX", "SPX", "$SPX", "NDX", "$NDX", "RUT", "$RUT", "DJI", "$DJI", "COMP", "$COMP", "DXY", "$DXY", "TNX", "$TNX"]);
 
-const UP_COLOR   = "#00E676";
-const DOWN_COLOR = "#FF1744";
+const UP_COLOR   = "#00d166";
+const DOWN_COLOR = "#f23645";
 const FLAT_COLOR = "#6B7280";
-const ACTIVE_GLOW = "rgba(0, 166, 255, 0.15)";
+const ACTIVE_GLOW = "rgba(0, 100, 255, 0.15)";
 
 function formatPct(pct: number | null | undefined, isUp: boolean): string {
   if (pct == null) return "—%";
@@ -101,7 +101,7 @@ function MacroCard({ symbol }: { symbol: string }) {
 export function MacroBar() {
   const { macroSymbols } = useTerminalStore();
   return (
-    <div className="flex items-stretch gap-2 px-3 py-2 border-b border-card-border bg-[#0D1117]/90 shrink-0">
+    <div className="flex items-stretch gap-2 px-3 py-2 border-b border-card-border bg-[#0c0c0c]/90 shrink-0">
       {macroSymbols.slice(0, 6).map(sym => (
         <MacroCard key={sym} symbol={sym} />
       ))}

@@ -128,7 +128,7 @@ export function MarketPulseModal({
       {/* Panel */}
       <div
         className="relative w-full max-w-2xl max-h-[88vh] flex flex-col rounded-2xl border border-primary/30 shadow-2xl shadow-primary/10"
-        style={{ background: "#0A0F16" }}
+        style={{ background: "#0c0c0c" }}
       >
         {/* ── HEADER ── */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-card-border shrink-0">

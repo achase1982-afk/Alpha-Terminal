@@ -1,7 +1,7 @@
 import { useRef } from "react";
 
-const UP_COLOR   = "#00E676";
-const DOWN_COLOR = "#FF1744";
+const UP_COLOR   = "#00d166";
+const DOWN_COLOR = "#f23645";
 const FLAT_COLOR = "#9CA3AF";
 
 export function useTickColor(symbol: string, currentPrice: number | null): string {
