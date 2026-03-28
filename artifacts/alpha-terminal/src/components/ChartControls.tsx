@@ -1,23 +1,13 @@
 import { useTerminalStore } from "@/lib/store";
 
-const PERIODS = [
-  { label: "1 Day", value: "1D" },
-  { label: "5 Day", value: "5D" },
-  { label: "1 Month", value: "1M" },
-  { label: "3 Month", value: "3M" },
-  { label: "1 Year", value: "1Y" },
-];
-
-const INTRADAY_INTERVALS = [
-  { label: "1 Min", value: "1m" },
-  { label: "5 Min", value: "5m" },
-  { label: "15 Min", value: "15m" },
-  { label: "30 Min", value: "30m" },
-];
-
-const DAILY_INTERVALS = [
-  { label: "Daily", value: "daily" },
-  { label: "Weekly", value: "weekly" },
+const TIMEFRAMES = [
+  { label: "1D", period: "1D", interval: "5m" },
+  { label: "1W", period: "5D", interval: "15m" },
+  { label: "1M", period: "1M", interval: "daily" },
+  { label: "3M", period: "3M", interval: "daily" },
+  { label: "YTD", period: "YTD", interval: "daily" },
+  { label: "1Y", period: "1Y", interval: "daily" },
+  { label: "MAX", period: "MAX", interval: "weekly" },
 ];
 
 export function chartParamsFromStore(period: string, interval: string) {
@@ -26,7 +16,9 @@ export function chartParamsFromStore(period: string, interval: string) {
     "5D": { periodType: "day", period: 5 },
     "1M": { periodType: "month", period: 1 },
     "3M": { periodType: "month", period: 3 },
+    "YTD": { periodType: "month", period: Math.max(1, new Date().getMonth() + 1) },
     "1Y": { periodType: "year", period: 1 },
+    "MAX": { periodType: "year", period: 20 },
   };
 
   const intervalMap: Record<string, { frequencyType: string; frequency: number }> = {
@@ -49,34 +41,38 @@ export function isIntradayInterval(interval: string) {
 
 export function ChartControls() {
   const { chartPeriod, setChartPeriod, chartInterval, setChartInterval } = useTerminalStore();
-  const isIntraday = chartPeriod === "1D" || chartPeriod === "5D";
-  const intervals = isIntraday ? INTRADAY_INTERVALS : DAILY_INTERVALS;
+
+  const activeTf = TIMEFRAMES.find(t => t.period === chartPeriod && t.interval === chartInterval)
+    ?? TIMEFRAMES.find(t => t.period === chartPeriod);
+
+  const handleSelect = (tf: typeof TIMEFRAMES[number]) => {
+    setChartPeriod(tf.period);
+    setChartInterval(tf.interval);
+  };
 
   return (
-    <div className="flex items-center gap-2 mb-2 shrink-0">
-      <label className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">Period</label>
-      <select
-        value={chartPeriod}
-        onChange={(e) => setChartPeriod(e.target.value)}
-        className="h-7 px-2 rounded bg-[#1a1a1a] border border-card-border text-foreground font-mono text-[11px] focus:outline-none focus:ring-1 focus:ring-primary/50 cursor-pointer appearance-none"
-        style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23808080'/%3E%3C/svg%3E\")", backgroundRepeat: "no-repeat", backgroundPosition: "right 6px center", paddingRight: "20px" }}
-      >
-        {PERIODS.map((p) => (
-          <option key={p.value} value={p.value}>{p.label}</option>
-        ))}
-      </select>
-
-      <label className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider ml-2">Interval</label>
-      <select
-        value={chartInterval}
-        onChange={(e) => setChartInterval(e.target.value)}
-        className="h-7 px-2 rounded bg-[#1a1a1a] border border-card-border text-foreground font-mono text-[11px] focus:outline-none focus:ring-1 focus:ring-primary/50 cursor-pointer appearance-none"
-        style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23808080'/%3E%3C/svg%3E\")", backgroundRepeat: "no-repeat", backgroundPosition: "right 6px center", paddingRight: "20px" }}
-      >
-        {intervals.map((i) => (
-          <option key={i.value} value={i.value}>{i.label}</option>
-        ))}
-      </select>
+    <div className="flex items-center gap-1 mb-2 shrink-0">
+      {TIMEFRAMES.map(tf => {
+        const isActive = activeTf?.label === tf.label;
+        return (
+          <button
+            key={tf.label}
+            onClick={() => handleSelect(tf)}
+            className={`
+              px-3 py-1.5 font-mono text-[10px] sm:text-[11px] font-semibold tracking-wider transition-all duration-150 relative
+              ${isActive
+                ? "text-primary"
+                : "text-muted-foreground hover:text-foreground"
+              }
+            `}
+          >
+            {tf.label}
+            {isActive && (
+              <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-4/5 h-[2px] bg-primary rounded-full" />
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 }

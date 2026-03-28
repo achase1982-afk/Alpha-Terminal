@@ -1,0 +1,29 @@
+Role: Lead FinTech UI/UX Engineer. 
+Objective: Execute a comprehensive UI/UX overhaul across the Sidebar, Navigation, Header, and Chart components to match institutional terminal standards.
+
+Task 1: Sidebar Settings Consolidation.
+- Locate the Sidebar. Remove all loose settings currently below the 'AI SEARCH' button (Overlays: SMA/BB/RSI/VOL, Macro Card Symbols, Scrolling Ticker Strip, Scroll Speed, Model dropdown, Temperature, and the 'APPLY SETTINGS' button).
+- Create a new, collapsible accordion card labeled 'SETTINGS' directly below 'AI SEARCH'. 
+- Style this 'SETTINGS' card to perfectly match the background, border, and padding of the 'SCHWAB AUTH' card above it.
+- Inside this new expanded card, neatly group the removed settings with muted sub-headers: [Chart Overlays], [Macro Tickers] (2x2 grid), [Marquee Setup], and [AI Parameters]. 
+- Place the 'APPLY SETTINGS' button at the very bottom inside this card.
+
+Task 2: Company Name Truncation Fix.
+- Locate the main Ticker Header where the company name (e.g., "MICRON TECHNOL...") is currently being truncated with an ellipsis.
+- Update the Tailwind classes to allow the text to wrap to a second line. Remove 'truncate' or 'whitespace-nowrap', and add 'whitespace-normal text-wrap leading-tight' so the full company name is always 100% visible beneath the main ticker symbol.
+
+Task 3: Watchlist & Search History Polish.
+- Above the scrollable row of recent search pills (MU, HYD, etc.), add a small, muted label: 'RECENTLY VIEWED' (text-xs, text-[#71717a], uppercase, tracking-widest, font-medium).
+- Strip any '$' symbols from these pills so they are uniform (e.g., '$HYD' becomes 'HYD').
+- Add a circular 'Bloomberg Gold' (#FFB800) '+' button next to the main search box (or at the end of the recents row) to act as a 'Save to Watchlist' quick-action.
+
+Task 4: Chart Controls & Legend.
+- Remove the 'Period' and 'Interval' dropdown menus. Replace them with a sleek horizontal row of clickable timeframe pills: [1D, 1W, 1M, 3M, YTD, 1Y, MAX]. The active pill must highlight with Gold (#FFB800) text or a bottom underline.
+- Add a floating, semi-transparent Legend overlay positioned absolutely in the bottom-left corner of the chart container. It should display: "Yellow: 50-day SMA | White: Trend | Dotted: Support/Resistance". Make it text-xs with a dark matte #111111 background and #262626 border.
+
+Task 5: Chart Volume Axis Fix (Critical).
+- In the Lightweight Charts configuration, the Volume data (e.g., 45.81M) is currently rendering on the main Price Y-axis, crushing the scale. 
+- Fix this by assigning the Volume series to its own price scale (e.g., `priceScaleId: ''`) and setting `scaleMargins: { top: 0.8, bottom: 0 }`. The volume bars must sit at the absolute bottom of the chart and not interfere with the stock price axis.
+
+Task 6: Price Pulse Animation.
+- Add a subtle CSS keyframe animation to the large 'LAST PRICE' text. When the price updates, it should briefly flash (green for up, red for down) to indicate live data flowing.

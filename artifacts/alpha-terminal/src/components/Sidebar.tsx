@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
-import { Terminal, SlidersHorizontal, X, LayoutDashboard, ListOrdered, Gauge, BrainCircuit, Zap, MessageCircle } from "lucide-react";
+import { Terminal, SlidersHorizontal, X, LayoutDashboard, ListOrdered, Gauge, BrainCircuit, Zap, MessageCircle, ChevronRight, Settings } from "lucide-react";
 import { useState } from "react";
 import { useGetAvailableModels } from "@workspace/api-client-react";
 
@@ -42,14 +42,13 @@ export function Sidebar({ onClose, onOpenChat }: SidebarProps) {
   const [macroInputs, setMacroInputs] = useState<string[]>(macroSymbols);
   const [tapeInput, setTapeInput] = useState(tickerTapeSymbols.join(", "));
   const [settingsSaved, setSettingsSaved] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
-  // Live Market Pulse — persisted indicator list
   const [pulseSymbols, setPulseSymbols] = useLocalStorage<string[]>(
     "alpha-pulse-symbols",
     DEFAULT_PULSE_SYMBOLS
   );
 
-  // Live Market Pulse state
   const [pulseOpen, setPulseOpen] = useState(false);
   const [pulseLoading, setPulseLoading] = useState(false);
   const [pulseResult, setPulseResult] = useState<string | null>(null);
@@ -100,7 +99,6 @@ export function Sidebar({ onClose, onOpenChat }: SidebarProps) {
 
   return (
     <div className="w-72 sm:w-80 h-full bg-[#0c0c0c] border-r border-card-border flex flex-col z-20 shadow-xl overflow-y-auto">
-      {/* BRANDING */}
       <div className="p-4 sm:p-6 border-b border-card-border flex items-center gap-3">
         <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-primary/10 border border-primary/30 flex items-center justify-center flex-shrink-0">
           <Terminal className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
@@ -122,11 +120,9 @@ export function Sidebar({ onClose, onOpenChat }: SidebarProps) {
         )}
       </div>
 
-      <div className="p-3 sm:p-4 space-y-5 sm:space-y-6 flex-1">
-        {/* AUTH */}
+      <div className="p-3 sm:p-4 space-y-3 sm:space-y-4 flex-1">
         <AuthPanel />
 
-        {/* LIVE MARKET PULSE */}
         <div className="pt-1">
           <Button
             onClick={handleGeneratePulse}
@@ -160,134 +156,141 @@ export function Sidebar({ onClose, onOpenChat }: SidebarProps) {
           </Button>
         </div>
 
-        {/* CHART OVERLAYS */}
-        <div className="space-y-2 pt-1">
-          <Label className="font-mono text-[10px] sm:text-xs text-muted-foreground flex items-center gap-2">
-            <SlidersHorizontal className="w-3 h-3" /> OVERLAYS
-          </Label>
-          <div className="flex flex-wrap gap-2">
-            {(Object.entries(overlays) as [keyof typeof overlays, boolean][]).map(([key, active]) => (
-              <button
-                key={key}
-                onClick={() => toggleOverlay(key)}
-                className={`
-                  px-3 py-1.5 rounded-full font-mono text-[10px] font-semibold border transition-all duration-200
-                  ${active
-                    ? "bg-primary/20 text-primary border-primary/50"
-                    : "bg-card text-muted-foreground border-card-border hover:border-primary/30 hover:text-foreground"}
-                `}
-              >
-                {OVERLAY_LABELS[key] ?? key.toUpperCase()}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* DASHBOARD SETTINGS */}
-        <div className="space-y-3 pt-1 border-t border-card-border">
-          <Label className="font-mono text-[10px] sm:text-xs text-muted-foreground flex items-center gap-2 pt-3">
-            <LayoutDashboard className="w-3 h-3" /> MACRO CARD SYMBOLS
-          </Label>
-          <p className="font-mono text-[9px] text-muted-foreground/60">
-            Set up to 4 custom cards (e.g. SPY, SPX, VIX, NDX)
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            {[0, 1, 2, 3].map(idx => (
-              <Input
-                key={idx}
-                value={macroInputs[idx] ?? ""}
-                onChange={e => handleMacroChange(idx, e.target.value)}
-                placeholder={["SPY", "QQQ", "IWM", "VIX"][idx]}
-                className="font-mono uppercase text-xs h-8 bg-card border-card-border focus-visible:ring-primary/50 text-foreground"
-                autoCapitalize="characters"
-                autoCorrect="off"
-                maxLength={8}
-              />
-            ))}
-          </div>
-
-          <Label className="font-mono text-[10px] sm:text-xs text-muted-foreground flex items-center gap-2 mt-2">
-            <ListOrdered className="w-3 h-3" /> SCROLLING TICKER STRIP
-          </Label>
-          <p className="font-mono text-[9px] text-muted-foreground/60">
-            Comma-separated symbols for the marquee
-          </p>
-          <Input
-            value={tapeInput}
-            onChange={e => setTapeInput(e.target.value.toUpperCase())}
-            placeholder="SPY, QQQ, AAPL, TSLA..."
-            className="font-mono uppercase text-xs h-8 bg-card border-card-border focus-visible:ring-primary/50 text-foreground"
-            autoCorrect="off"
-          />
-
-          <Label className="font-mono text-[10px] sm:text-xs text-muted-foreground flex items-center gap-2 mt-2">
-            <Gauge className="w-3 h-3" /> SCROLL SPEED
-          </Label>
-          <div className="flex items-center gap-2">
-            <span className="text-[9px] text-muted-foreground/60">Fast</span>
-            <input
-              type="range"
-              min={5}
-              max={60}
-              step={1}
-              value={tapeSpeed}
-              onChange={e => setTapeSpeed(Number(e.target.value))}
-              className="flex-1 h-1.5 accent-primary cursor-pointer"
-            />
-            <span className="text-[9px] text-muted-foreground/60">Slow</span>
-            <span className="font-mono text-[10px] text-primary w-6 text-right">{tapeSpeed}s</span>
-          </div>
-
-          <Button
-            onClick={handleSaveSettings}
-            size="sm"
-            className={`w-full font-mono text-xs h-8 transition-all border ${
-              settingsSaved
-                ? "bg-primary/10 text-primary border-primary/50"
-                : "bg-[#0c0c0c] text-primary border-primary hover:bg-primary/10"
-            }`}
+        <div className="bg-card border border-card-border rounded-xl overflow-hidden shadow-sm">
+          <button
+            onClick={() => setSettingsOpen(!settingsOpen)}
+            className="w-full flex items-center justify-between p-3 text-sm font-mono font-bold hover:bg-secondary/50 transition-colors"
           >
-            {settingsSaved ? "✓ SAVED" : "APPLY SETTINGS"}
-          </Button>
-        </div>
-
-        {/* AI CONFIGURATION */}
-        <div className="space-y-3 pt-1 border-t border-card-border">
-          <Label className="font-mono text-[10px] sm:text-xs text-muted-foreground flex items-center gap-2 pt-3">
-            <BrainCircuit className="w-3 h-3 text-primary" /> AI CONFIGURATION
-          </Label>
-
-          <div className="space-y-1.5">
-            <span className="font-mono text-[9px] text-muted-foreground/70 uppercase tracking-wider">Model</span>
-            <Select value={aiModel} onValueChange={setAiModel}>
-              <SelectTrigger className="font-mono text-[10px] bg-card border-card-border h-8 focus:ring-primary/50">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="bg-card border-card-border font-mono text-[10px]">
-                {availableModels.map(m => (
-                  <SelectItem key={m} value={m} className="text-[10px]">{m.toUpperCase()}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="font-mono text-[9px] text-muted-foreground/70 uppercase tracking-wider">Temperature</span>
-              <span className="font-mono text-[10px] text-primary tabular-nums">{aiTemp.toFixed(1)}</span>
+            <div className="flex items-center gap-2">
+              <Settings className="w-4 h-4 text-primary" />
+              <span className="text-foreground">SETTINGS</span>
             </div>
-            <Slider
-              value={[aiTemp]}
-              onValueChange={v => setAiTemp(v[0])}
-              max={2}
-              step={0.1}
-              className="py-1"
-            />
-            <div className="flex justify-between">
-              <span className="font-mono text-[9px] text-muted-foreground/40">Precise</span>
-              <span className="font-mono text-[9px] text-muted-foreground/40">Creative</span>
+            <ChevronRight className={`w-4 h-4 transition-transform duration-300 ${settingsOpen ? 'rotate-90' : ''}`} />
+          </button>
+
+          {settingsOpen && (
+            <div className="p-3 sm:p-4 border-t border-card-border bg-[#0c0c0c] space-y-4 animate-in fade-in slide-in-from-top-2">
+              <div className="space-y-2">
+                <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
+                  <SlidersHorizontal className="w-3 h-3" /> Chart Overlays
+                </Label>
+                <div className="flex flex-wrap gap-2">
+                  {(Object.entries(overlays) as [keyof typeof overlays, boolean][]).map(([key, active]) => (
+                    <button
+                      key={key}
+                      onClick={() => toggleOverlay(key)}
+                      className={`
+                        px-3 py-1.5 rounded-full font-mono text-[10px] font-semibold border transition-all duration-200
+                        ${active
+                          ? "bg-primary/20 text-primary border-primary/50"
+                          : "bg-card text-muted-foreground border-card-border hover:border-primary/30 hover:text-foreground"}
+                      `}
+                    >
+                      {OVERLAY_LABELS[key] ?? key.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
+                  <LayoutDashboard className="w-3 h-3" /> Macro Tickers
+                </Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[0, 1, 2, 3].map(idx => (
+                    <Input
+                      key={idx}
+                      value={macroInputs[idx] ?? ""}
+                      onChange={e => handleMacroChange(idx, e.target.value)}
+                      placeholder={["SPY", "QQQ", "IWM", "VIX"][idx]}
+                      className="font-mono uppercase text-xs h-8 bg-card border-card-border focus-visible:ring-primary/50 text-foreground"
+                      autoCapitalize="characters"
+                      autoCorrect="off"
+                      maxLength={8}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
+                  <ListOrdered className="w-3 h-3" /> Marquee Setup
+                </Label>
+                <Input
+                  value={tapeInput}
+                  onChange={e => setTapeInput(e.target.value.toUpperCase())}
+                  placeholder="SPY, QQQ, AAPL, TSLA..."
+                  className="font-mono uppercase text-xs h-8 bg-card border-card-border focus-visible:ring-primary/50 text-foreground"
+                  autoCorrect="off"
+                />
+                <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2 mt-1">
+                  <Gauge className="w-3 h-3" /> Scroll Speed
+                </Label>
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] text-muted-foreground/60">Fast</span>
+                  <input
+                    type="range"
+                    min={5}
+                    max={60}
+                    step={1}
+                    value={tapeSpeed}
+                    onChange={e => setTapeSpeed(Number(e.target.value))}
+                    className="flex-1 h-1.5 accent-primary cursor-pointer"
+                  />
+                  <span className="text-[9px] text-muted-foreground/60">Slow</span>
+                  <span className="font-mono text-[10px] text-primary w-6 text-right">{tapeSpeed}s</span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
+                  <BrainCircuit className="w-3 h-3" /> AI Parameters
+                </Label>
+                <div className="space-y-1.5">
+                  <span className="font-mono text-[9px] text-muted-foreground/70 uppercase tracking-wider">Model</span>
+                  <Select value={aiModel} onValueChange={setAiModel}>
+                    <SelectTrigger className="font-mono text-[10px] bg-card border-card-border h-8 focus:ring-primary/50">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-card border-card-border font-mono text-[10px]">
+                      {availableModels.map(m => (
+                        <SelectItem key={m} value={m} className="text-[10px]">{m.toUpperCase()}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-[9px] text-muted-foreground/70 uppercase tracking-wider">Temperature</span>
+                    <span className="font-mono text-[10px] text-primary tabular-nums">{aiTemp.toFixed(1)}</span>
+                  </div>
+                  <Slider
+                    value={[aiTemp]}
+                    onValueChange={v => setAiTemp(v[0])}
+                    max={2}
+                    step={0.1}
+                    className="py-1"
+                  />
+                  <div className="flex justify-between">
+                    <span className="font-mono text-[9px] text-muted-foreground/40">Precise</span>
+                    <span className="font-mono text-[9px] text-muted-foreground/40">Creative</span>
+                  </div>
+                </div>
+              </div>
+
+              <Button
+                onClick={handleSaveSettings}
+                size="sm"
+                className={`w-full font-mono text-xs h-8 transition-all border ${
+                  settingsSaved
+                    ? "bg-primary/10 text-primary border-primary/50"
+                    : "bg-[#0c0c0c] text-primary border-primary hover:bg-primary/10"
+                }`}
+              >
+                {settingsSaved ? "✓ SAVED" : "APPLY SETTINGS"}
+              </Button>
             </div>
-          </div>
+          )}
         </div>
       </div>
 

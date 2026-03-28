@@ -8,7 +8,7 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 
 Key features implemented:
 - **MacroBar**: Fixed sticky bar with clickable SPY/QQQ/IWM/VIX cards; clicking sets active symbol
-- **Sidebar**: Compact pill overlays, clean timeframe grid, Schwab auth panel
+- **Sidebar**: Collapsible SETTINGS accordion card (matches SCHWAB AUTH styling) containing grouped sections: [Chart Overlays], [Macro Tickers] (2×2 grid), [Marquee Setup], [AI Parameters], and APPLY SETTINGS button at bottom
 - **Schwab OAuth**: Popup+polling flow — `AuthPanel` button calls `window.open(authUrl)` (no anchor tags); GET `/api/auth/callback` exchanges code, stores tokens server-side in `pendingTokens` Map, returns success HTML page; frontend polls `GET /api/auth/pending-session` every 2s until tokens arrive; auth URL only fetched when panel is open and user is disconnected; CSRF via `state` param; `SCHWAB_REDIRECT_URI` must match Schwab Developer Portal
 - **Tabs**: CHART | OPTIONS | AI INTELLIGENCE | SCAN
 - **AI Intelligence Tab**: Deep Analysis (TA + Options Strategist) — chat removed, lives in overlay now
@@ -83,7 +83,12 @@ MetricsBar / MacroCard / TapeItem  ← ONLY these re-render on each tick
 - Direct `fetch("/api/ai/...")` used for new AI routes (not orval-generated hooks)
 - **Tick Direction Coloring**: `useTickColor` hook (`src/hooks/useTickColor.ts`) — tracks previous price per symbol; Last Price number colored by immediate momentum (green uptick / red downtick), daily change line colored by net change
 - **Ticker Tape**: JS `requestAnimationFrame` animation (not CSS keyframes) for flash-free scrolling; speed controlled via `tapeSpeed` store value + sidebar slider
-- **Chart Controls**: Dual Period/Interval `<select>` dropdowns above chart (ThinkorSwim-style); Period options: 1 Day, 5 Day, 1 Month, 3 Month, 1 Year; Interval dynamically switches between intraday (1/5/15/30 Min) and daily (Daily/Weekly) based on period; maps to Schwab `periodType/period/frequencyType/frequency` params; server validates all params against whitelists
+- **Chart Controls**: Horizontal timeframe pill bar [1D, 1W, 1M, 3M, YTD, 1Y, MAX] with gold underline on active pill; each pill sets both period+interval in store (1D→5m, 1W→15m, 1M/3M/YTD/1Y→daily, MAX→weekly); YTD calculates months dynamically from current date; maps to Schwab `periodType/period/frequencyType/frequency` params
+- **Chart Legend**: Semi-transparent floating overlay in bottom-left corner (bg `#111111`, border `#262626`) showing "Yellow: 50-day SMA | White: Trend | Dotted: Support/Resistance"
+- **Chart Volume Fix**: Volume HistogramSeries uses `priceScaleId: 'volume'` with `chart.priceScale('volume').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } })` — fully separated from price Y-axis
+- **Price Pulse Animation**: CSS keyframe flash on Last Price text — green glow for uptick, red glow for downtick, 600ms ease-out via `usePriceFlash` hook
+- **Company Name**: Full text wrapping (`whitespace-normal text-wrap`) — no truncation/ellipsis
+- **Search History**: "RECENTLY VIEWED" muted label above recent pills; `$` prefix stripped; gold circular `+` button calls `addRecentSymbol` for watchlist quick-save
 - **Indices & Futures Support**: Symbols like `$SPX`, `$VIX`, `/ES`, `/NQ` work across all endpoints (quote, history, options, streaming); `INDEX_SYMBOL_MAP` handles both friendly (SPX) and `$`-prefixed ($SPX) forms → `$SPX.X` Schwab format; URL encoding handled via `encodeURIComponent` and `URLSearchParams`; `reverseKeyMap` in streamer maps Schwab keys back to user-facing symbols
 - VIX MacroCard inverts color (rising = red/fear, falling = green/calm)
 - 52W High/Low and P/E are REST-only fields (Schwab Streamer doesn't carry fundamental data)

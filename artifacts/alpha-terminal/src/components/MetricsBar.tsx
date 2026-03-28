@@ -3,6 +3,7 @@ import { useQuote }         from "@/hooks/useQuote";
 import { useTickColor }     from "@/hooks/useTickColor";
 import { RefreshCw, Wifi, WifiOff, SearchX } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useRef, useEffect, useState } from "react";
 
 const UP_COLOR   = "#00d166";
 const DOWN_COLOR = "#f23645";
@@ -27,10 +28,30 @@ interface MetricsBarProps {
   onOpenTearSheet?: () => void;
 }
 
+function usePriceFlash(price: number | null, change: number | null): string {
+  const [flash, setFlash] = useState("");
+  const prevPrice = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (price == null || prevPrice.current == null || price === prevPrice.current) {
+      prevPrice.current = price;
+      return;
+    }
+    const cls = price > prevPrice.current ? "price-flash-up" : "price-flash-down";
+    prevPrice.current = price;
+    setFlash(cls);
+    const t = setTimeout(() => setFlash(""), 600);
+    return () => clearTimeout(t);
+  }, [price]);
+
+  return flash;
+}
+
 export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps) {
   const { symbol, accessToken, streamConnected } = useTerminalStore();
   const { data: quote, isLoading, source } = useQuote(symbol);
   const tickColor = useTickColor(symbol, quote?.last ?? null);
+  const flashClass = usePriceFlash(quote?.last ?? null, quote?.change ?? null);
 
   const stickyBase = "sticky top-0 z-40 w-full border-b border-card-border shrink-0 transition-all duration-300 ease-in-out";
 
@@ -156,7 +177,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
           {quote.symbol}
         </span>
         <span
-          className="leading-tight truncate max-w-[130px] sm:max-w-[200px] group-hover:text-gray-200 transition-colors"
+          className="leading-tight whitespace-normal text-wrap group-hover:text-gray-200 transition-colors max-w-[200px] sm:max-w-[280px]"
           style={{ fontSize: '0.8rem', color: '#9CA3AF', fontWeight: 400, lineHeight: 1.3 }}
         >
           {quote.description || "Name Unavailable"}
@@ -180,7 +201,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
           }
         </div>
         <div className="flex flex-col">
-          <span className="tabular-nums leading-tight" style={{ fontSize: '1.4rem', fontWeight: 300, color: tickColor }}>
+          <span className={`tabular-nums leading-tight ${flashClass}`} style={{ fontSize: '1.4rem', fontWeight: 300, color: tickColor }}>
             {lastStr}
           </span>
           <span className="tabular-nums leading-tight" style={{ fontSize: '0.8rem', fontWeight: 300, color: priceColor }}>

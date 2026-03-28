@@ -23,7 +23,6 @@ interface TradingChartProps {
 
 function isNotFoundError(error?: string): boolean {
   if (!error) return false;
-  // Permanent API errors: 4xx from Schwab or empty data response
   return (
     error === "no_data" ||
     error === "internal_error" ||
@@ -43,9 +42,6 @@ export function TradingChart({ data, isLoading, error, timedOut, tokenExpired, i
     const container = chartContainerRef.current;
     let removed = false;
 
-    // DATA SOURCE: all candle data comes exclusively from our internal /api/market/history
-    // endpoint which proxies Schwab's pricehistory API. There is no TradingView data feed.
-    // attributionLogo: false removes the TradingView watermark/logo from the chart canvas.
     const chart = createChart(container, {
       layout: {
         background: { type: ColorType.Solid, color: 'transparent' },
@@ -91,7 +87,6 @@ export function TradingChart({ data, isLoading, error, timedOut, tokenExpired, i
       close: c.close,
     }));
 
-    // v5 API: chart.addSeries(SeriesType, options)
     const mainSeries = chart.addSeries(CandlestickSeries, {
       upColor: '#00d166',
       downColor: '#f23645',
@@ -105,7 +100,9 @@ export function TradingChart({ data, isLoading, error, timedOut, tokenExpired, i
       const volumeSeries = chart.addSeries(HistogramSeries, {
         color: '#00d166',
         priceFormat: { type: 'volume' },
-        priceScaleId: '',
+        priceScaleId: 'volume',
+      });
+      chart.priceScale('volume').applyOptions({
         scaleMargins: { top: 0.8, bottom: 0 },
       });
       volumeSeries.setData(
@@ -160,6 +157,23 @@ export function TradingChart({ data, isLoading, error, timedOut, tokenExpired, i
   return (
     <div className="w-full h-full min-h-[300px] relative rounded-xl border border-card-border bg-[#0c0c0c] overflow-hidden shadow-inner">
       <div ref={chartContainerRef} className="absolute inset-0" />
+
+      {data && data.length > 0 && (
+        <div className="absolute bottom-3 left-3 z-10 pointer-events-none">
+          <div className="px-2.5 py-1.5 rounded-md text-[10px] font-mono leading-relaxed"
+            style={{ background: 'rgba(17, 17, 17, 0.85)', border: '1px solid #262626' }}>
+            <span style={{ color: '#ffb800' }}>Yellow</span>
+            <span className="text-muted-foreground">: 50-day SMA</span>
+            <span className="text-muted-foreground mx-1.5">|</span>
+            <span className="text-white">White</span>
+            <span className="text-muted-foreground">: Trend</span>
+            <span className="text-muted-foreground mx-1.5">|</span>
+            <span className="text-muted-foreground" style={{ borderBottom: '1px dotted #808080' }}>Dotted</span>
+            <span className="text-muted-foreground">: Support/Resistance</span>
+          </div>
+        </div>
+      )}
+
       {(!data || data.length === 0) && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 font-mono text-xs sm:text-sm">
           {isLoading && !timedOut ? (
