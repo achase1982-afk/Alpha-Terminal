@@ -1,7 +1,6 @@
-import { useState } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useGetQuote, useGetPriceHistory, useGetOptionChain } from "@workspace/api-client-react";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,6 +11,82 @@ import ReactMarkdown from "react-markdown";
 
 const API_BASE = "/api";
 
+interface Contract {
+  strike: number;
+  expiration: string;
+  bid?: number;
+  ask?: number;
+  last?: number;
+  volume?: number;
+  openInterest?: number;
+  iv?: number;
+  delta?: number;
+  gamma?: number;
+  theta?: number;
+  vega?: number;
+  dte?: number;
+}
+
+interface StraddleRow {
+  strike: number;
+  call?: Contract;
+  put?: Contract;
+}
+
+interface ExpirationGroup {
+  expiration: string;
+  dte: number;
+  label: string;
+  rows: StraddleRow[];
+}
+
+function formatExpLabel(expStr: string, dte?: number): string {
+  try {
+    const d = new Date(expStr);
+    const months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+    const label = `${d.getDate()} ${months[d.getMonth()]} ${String(d.getFullYear()).slice(2)}`;
+    const dteStr = dte != null ? ` (${Math.round(dte)} dte)` : "";
+    return `${label}${dteStr}`;
+  } catch {
+    return expStr;
+  }
+}
+
+function buildExpirationGroups(calls: Contract[], puts: Contract[]): ExpirationGroup[] {
+  const expMap = new Map<string, { calls: Map<number, Contract>; puts: Map<number, Contract>; dte: number }>();
+
+  for (const c of calls) {
+    const key = c.expiration;
+    if (!expMap.has(key)) expMap.set(key, { calls: new Map(), puts: new Map(), dte: c.dte ?? 0 });
+    expMap.get(key)!.calls.set(c.strike, c);
+  }
+  for (const p of puts) {
+    const key = p.expiration;
+    if (!expMap.has(key)) expMap.set(key, { calls: new Map(), puts: new Map(), dte: p.dte ?? 0 });
+    expMap.get(key)!.puts.set(p.strike, p);
+  }
+
+  const groups: ExpirationGroup[] = [];
+  for (const [exp, { calls: callMap, puts: putMap, dte }] of expMap) {
+    const allStrikes = new Set([...callMap.keys(), ...putMap.keys()]);
+    const sorted = [...allStrikes].sort((a, b) => a - b);
+    const rows: StraddleRow[] = sorted.map(strike => ({
+      strike,
+      call: callMap.get(strike),
+      put: putMap.get(strike),
+    }));
+    groups.push({ expiration: exp, dte, label: formatExpLabel(exp, dte), rows });
+  }
+
+  groups.sort((a, b) => a.dte - b.dte);
+  return groups;
+}
+
+function CellVal({ val, decimals = 2 }: { val?: number; decimals?: number }) {
+  if (val == null || isNaN(val)) return <span className="text-zinc-600">—</span>;
+  return <>{val.toFixed(decimals)}</>;
+}
+
 export function OptionsTab() {
   const { symbol, accessToken, aiModel, aiTemp, strategistResult, setStrategistResult } = useTerminalStore();
   const [contractType, setContractType] = useState("ALL");
@@ -19,6 +94,7 @@ export function OptionsTab() {
   const [enabled, setEnabled] = useState(false);
   const [isStrategizing, setIsStrategizing] = useState(false);
   const [strategistExpanded, setStrategistExpanded] = useState(true);
+  const [expandedExps, setExpandedExps] = useState<Set<string>>(new Set());
 
   const { data, isLoading, error } = useGetOptionChain(
     { symbol, accessToken: accessToken || "", contractType, daysToExpiration: parseInt(dte) || 30 },
@@ -36,6 +112,28 @@ export function OptionsTab() {
   );
 
   const handleLoad = () => setEnabled(true);
+
+  const underlyingPrice = (data as unknown as { underlyingPrice?: number })?.underlyingPrice ?? quote?.lastPrice ?? null;
+
+  const groups = useMemo(() => {
+    if (!data) return [];
+    return buildExpirationGroups(data.calls as Contract[], data.puts as Contract[]);
+  }, [data]);
+
+  useEffect(() => {
+    if (groups.length > 0 && expandedExps.size === 0) {
+      setExpandedExps(new Set([groups[0].expiration]));
+    }
+  }, [groups]);
+
+  const toggleExp = (exp: string) => {
+    setExpandedExps(prev => {
+      const next = new Set(prev);
+      if (next.has(exp)) next.delete(exp);
+      else next.add(exp);
+      return next;
+    });
+  };
 
   const handleRunStrategist = async () => {
     if (!quote || !data) return;
@@ -66,7 +164,6 @@ export function OptionsTab() {
   return (
     <div className="space-y-4 h-full flex flex-col">
 
-      {/* Toolbar */}
       <div className="flex flex-wrap gap-3 items-end bg-card p-4 rounded-xl border border-card-border shrink-0">
         <div className="space-y-1.5">
           <Label className="font-mono text-[10px] text-muted-foreground uppercase">Contract Type</Label>
@@ -117,7 +214,6 @@ export function OptionsTab() {
         )}
       </div>
 
-      {/* Strategist Results — above the table */}
       {(strategistResult || isStrategizing) && (
         <div className="bg-card border border-card-border rounded-xl overflow-hidden shrink-0">
           <button
@@ -156,8 +252,7 @@ export function OptionsTab() {
         </div>
       )}
 
-      {/* Options Table */}
-      <div className="flex-1 overflow-auto terminal-panel p-0 overflow-x-auto min-h-0">
+      <div className="flex-1 overflow-auto terminal-panel p-0 min-h-0">
         {isLoading && (
           <div className="p-6 space-y-3">
             {[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-10 w-full bg-card-border" />)}
@@ -175,58 +270,121 @@ export function OptionsTab() {
             <span className="text-sm">CLICK "LOAD CHAIN" TO FETCH OPTIONS DATA.</span>
           </div>
         )}
-        {data && (
-          <Table>
-            <TableHeader className="bg-background/50 sticky top-0 backdrop-blur z-10">
-              <TableRow className="border-card-border hover:bg-transparent">
-                <TableHead className="font-mono text-[10px] text-muted-foreground">TYPE</TableHead>
-                <TableHead className="font-mono text-[10px] text-muted-foreground">STRIKE</TableHead>
-                <TableHead className="font-mono text-[10px] text-muted-foreground text-right">LAST</TableHead>
-                <TableHead className="font-mono text-[10px] text-muted-foreground text-right">BID/ASK</TableHead>
-                <TableHead className="font-mono text-[10px] text-muted-foreground text-right">VOL</TableHead>
-                <TableHead className="font-mono text-[10px] text-muted-foreground text-right">OI</TableHead>
-                <TableHead className="font-mono text-[10px] text-muted-foreground text-right">IV%</TableHead>
-                <TableHead className="font-mono text-[10px] text-muted-foreground text-right hidden lg:table-cell">DELTA</TableHead>
-                <TableHead className="font-mono text-[10px] text-muted-foreground text-right hidden lg:table-cell">THETA</TableHead>
-                <TableHead className="font-mono text-[10px] text-muted-foreground text-right hidden xl:table-cell">GAMMA</TableHead>
-                <TableHead className="font-mono text-[10px] text-muted-foreground text-right hidden xl:table-cell">VEGA</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody className="font-mono text-xs">
-              {data.calls.map((c, i) => (
-                <TableRow key={`call-${i}`} className="border-card-border hover:bg-primary/5">
-                  <TableCell className="text-primary font-bold py-2">CALL</TableCell>
-                  <TableCell className="py-2">${c.strike.toFixed(2)}</TableCell>
-                  <TableCell className="text-right py-2">${c.last?.toFixed(2) || "—"}</TableCell>
-                  <TableCell className="text-right text-muted-foreground py-2">${c.bid?.toFixed(2)} / ${c.ask?.toFixed(2)}</TableCell>
-                  <TableCell className="text-right py-2">{c.volume || 0}</TableCell>
-                  <TableCell className="text-right py-2">{c.openInterest || 0}</TableCell>
-                  <TableCell className="text-right py-2">{(c.iv || 0).toFixed(1)}%</TableCell>
-                  <TableCell className="text-right hidden lg:table-cell py-2">{(c.delta || 0).toFixed(3)}</TableCell>
-                  <TableCell className="text-right hidden lg:table-cell py-2">{(c.theta || 0).toFixed(4)}</TableCell>
-                  <TableCell className="text-right hidden xl:table-cell py-2">{(c.gamma || 0).toFixed(4)}</TableCell>
-                  <TableCell className="text-right hidden xl:table-cell py-2">{(c.vega || 0).toFixed(4)}</TableCell>
-                </TableRow>
-              ))}
-              {data.puts.map((p, i) => (
-                <TableRow key={`put-${i}`} className="border-card-border hover:bg-destructive/5">
-                  <TableCell className="text-destructive font-bold py-2">PUT</TableCell>
-                  <TableCell className="py-2">${p.strike.toFixed(2)}</TableCell>
-                  <TableCell className="text-right py-2">${p.last?.toFixed(2) || "—"}</TableCell>
-                  <TableCell className="text-right text-muted-foreground py-2">${p.bid?.toFixed(2)} / ${p.ask?.toFixed(2)}</TableCell>
-                  <TableCell className="text-right py-2">{p.volume || 0}</TableCell>
-                  <TableCell className="text-right py-2">{p.openInterest || 0}</TableCell>
-                  <TableCell className="text-right py-2">{(p.iv || 0).toFixed(1)}%</TableCell>
-                  <TableCell className="text-right hidden lg:table-cell py-2">{(p.delta || 0).toFixed(3)}</TableCell>
-                  <TableCell className="text-right hidden lg:table-cell py-2">{(p.theta || 0).toFixed(4)}</TableCell>
-                  <TableCell className="text-right hidden xl:table-cell py-2">{(p.gamma || 0).toFixed(4)}</TableCell>
-                  <TableCell className="text-right hidden xl:table-cell py-2">{(p.vega || 0).toFixed(4)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+
+        {data && groups.length > 0 && (
+          <div className="divide-y divide-[#262626]">
+            {groups.map(group => {
+              const isOpen = expandedExps.has(group.expiration);
+              return (
+                <div key={group.expiration}>
+                  <button
+                    onClick={() => toggleExp(group.expiration)}
+                    className="w-full flex items-center justify-between px-4 py-2.5 bg-[#111111] border-b border-[#262626] hover:bg-[#1a1a1a] transition-colors"
+                  >
+                    <span className="font-mono text-xs font-bold text-white tracking-wider">{group.label}</span>
+                    <div className="flex items-center gap-3">
+                      <span className="font-mono text-[10px] text-zinc-500">{group.rows.length} strikes</span>
+                      {isOpen
+                        ? <ChevronUp className="w-3.5 h-3.5 text-zinc-500" />
+                        : <ChevronDown className="w-3.5 h-3.5 text-zinc-500" />}
+                    </div>
+                  </button>
+
+                  {isOpen && (
+                    <div>
+                      <div
+                        className="grid text-[10px] font-mono text-zinc-500 uppercase tracking-wider border-b border-[#262626] bg-[#0a0a0a]"
+                        style={{ gridTemplateColumns: "1fr 60px 1fr" }}
+                      >
+                        <div className="grid grid-cols-4 px-3 py-1.5 text-right gap-1">
+                          <span>Bid</span>
+                          <span>Ask</span>
+                          <span>Vol</span>
+                          <span>Delta</span>
+                        </div>
+                        <div className="flex items-center justify-center bg-[#18181B] text-zinc-400 font-bold">
+                          STRIKE
+                        </div>
+                        <div className="grid grid-cols-4 px-3 py-1.5 text-left gap-1">
+                          <span>Bid</span>
+                          <span>Ask</span>
+                          <span>Vol</span>
+                          <span>Delta</span>
+                        </div>
+                      </div>
+
+                      <StraddleBody rows={group.rows} underlyingPrice={underlyingPrice} />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {data && groups.length === 0 && (
+          <div className="p-20 flex flex-col items-center justify-center text-muted-foreground font-mono h-full">
+            <Table2 className="w-10 h-10 mb-3 opacity-20" />
+            <span className="text-sm">NO OPTIONS DATA AVAILABLE FOR THIS RANGE.</span>
+          </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function StraddleBody({ rows, underlyingPrice }: { rows: StraddleRow[]; underlyingPrice: number | null }) {
+  const atmIdx = useMemo(() => {
+    if (underlyingPrice == null || rows.length === 0) return -1;
+    let closest = 0;
+    let minDiff = Math.abs(rows[0].strike - underlyingPrice);
+    for (let i = 1; i < rows.length; i++) {
+      const diff = Math.abs(rows[i].strike - underlyingPrice);
+      if (diff < minDiff) { closest = i; minDiff = diff; }
+    }
+    return closest;
+  }, [rows, underlyingPrice]);
+
+  return (
+    <div>
+      {rows.map((row, i) => {
+        const isATM = i === atmIdx;
+        const callITM = underlyingPrice != null && row.strike < underlyingPrice;
+        const putITM = underlyingPrice != null && row.strike > underlyingPrice;
+
+        return (
+          <div
+            key={row.strike}
+            className={`grid font-mono text-xs transition-colors hover:bg-[#1a1a1a] ${isATM ? "border-b border-dashed border-[#FFB800]" : "border-b border-[#1a1a1a]"}`}
+            style={{
+              gridTemplateColumns: "1fr 60px 1fr",
+              fontVariantNumeric: "tabular-nums",
+            }}
+          >
+            <div
+              className={`grid grid-cols-4 px-3 py-1.5 text-right gap-1 items-center ${callITM ? "bg-zinc-900/60" : ""}`}
+            >
+              <span className="text-white"><CellVal val={row.call?.bid} /></span>
+              <span className="text-white"><CellVal val={row.call?.ask} /></span>
+              <span className="text-zinc-400">{row.call?.volume ?? <span className="text-zinc-600">—</span>}</span>
+              <span className="text-zinc-500"><CellVal val={row.call?.delta} decimals={3} /></span>
+            </div>
+
+            <div className={`flex items-center justify-center bg-[#18181B] text-sm font-bold ${isATM ? "text-[#FFB800]" : "text-zinc-300"}`}>
+              {row.strike.toFixed(row.strike % 1 === 0 ? 0 : 2)}
+            </div>
+
+            <div
+              className={`grid grid-cols-4 px-3 py-1.5 text-left gap-1 items-center ${putITM ? "bg-zinc-900/60" : ""}`}
+            >
+              <span className="text-white"><CellVal val={row.put?.bid} /></span>
+              <span className="text-white"><CellVal val={row.put?.ask} /></span>
+              <span className="text-zinc-400">{row.put?.volume ?? <span className="text-zinc-600">—</span>}</span>
+              <span className="text-zinc-500"><CellVal val={row.put?.delta} decimals={3} /></span>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
