@@ -78,7 +78,7 @@ interface ScannerQuote {
 function dirColor(dir: string) {
   if (dir === "BULLISH") return "#00d166";
   if (dir === "BEARISH") return "#f23645";
-  return "#0064ff";
+  return "#ffb800";
 }
 
 function dirIcon(dir: string) {
@@ -90,7 +90,7 @@ function dirIcon(dir: string) {
 const CONF_ORDER: Record<string, number> = { HIGH: 3, MILD: 2, LOW: 1 };
 
 function confBadge(conf: string) {
-  const c = conf === "HIGH" ? "#ffb800" : conf === "MILD" ? "#0064ff" : "#6B7280";
+  const c = conf === "HIGH" ? "#ffb800" : conf === "MILD" ? "#ffb800" : "#6B7280";
   return (
     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
       style={{ color: c, background: `${c}15`, border: `1px solid ${c}40` }}>
@@ -107,7 +107,7 @@ function SortHeader({ label, sortKey, currentKey, currentDir, onSort }: {
   return (
     <button onClick={() => onSort(sortKey)}
       className="flex items-center gap-1 text-[10px] uppercase tracking-wider font-bold transition-colors hover:text-white"
-      style={{ color: active ? "#0064ff" : "#6B7280" }}>
+      style={{ color: active ? "#ffb800" : "#6B7280" }}>
       {label}
       {active && (currentDir === "asc" ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
     </button>
@@ -318,14 +318,14 @@ export function MarketScanner() {
             <div className="space-y-2">
               <div className="flex justify-between text-[10px] text-muted-foreground uppercase">
                 <span>Min Volume</span>
-                <span style={{ color: "#0064ff" }}>{minVolume}M+</span>
+                <span style={{ color: "#ffb800" }}>{minVolume}M+</span>
               </div>
               <Slider value={[minVolume]} onValueChange={v => setMinVolume(v[0])} min={0} max={100} step={1} />
             </div>
             <div className="space-y-2">
               <div className="flex justify-between text-[10px] text-muted-foreground uppercase">
                 <span>Price Range</span>
-                <span style={{ color: "#0064ff" }}>${minPrice} – ${maxPrice}</span>
+                <span style={{ color: "#ffb800" }}>${minPrice} – ${maxPrice}</span>
               </div>
               <div className="flex gap-3 items-center">
                 <Slider value={[minPrice]} onValueChange={v => setMinPrice(v[0])} min={0} max={500} step={5} className="flex-1" />
@@ -342,7 +342,7 @@ export function MarketScanner() {
             className="w-full text-xs font-bold h-10"
             style={
               !isScanning
-                ? { background: "linear-gradient(135deg, #00d166 0%, #0064ff 100%)", color: "#000" }
+                ? { background: "linear-gradient(135deg, #00d166 0%, #ffb800 100%)", color: "#000" }
                 : {}
             }
           >
@@ -395,8 +395,8 @@ export function MarketScanner() {
         <div className="space-y-3">
           {marketSummary && (
             <div className="px-4 py-3 rounded-xl border text-sm text-gray-300 leading-relaxed"
-              style={{ background: "rgba(0,191,255,0.05)", borderColor: "rgba(0,191,255,0.2)" }}>
-              <span className="text-[9px] font-bold" style={{ color: "#0064ff" }}>MARKET REGIME  </span>
+              style={{ background: "rgba(255,184,0,0.05)", borderColor: "rgba(255,184,0,0.2)" }}>
+              <span className="text-[9px] font-bold" style={{ color: "#ffb800" }}>MARKET REGIME  </span>
               {marketSummary}
             </div>
           )}

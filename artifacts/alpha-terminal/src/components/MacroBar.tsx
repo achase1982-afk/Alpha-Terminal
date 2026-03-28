@@ -9,7 +9,7 @@ const INDEX_SYMS   = new Set(["VIX", "$VIX", "SPX", "$SPX", "NDX", "$NDX", "RUT"
 const UP_COLOR   = "#00d166";
 const DOWN_COLOR = "#f23645";
 const FLAT_COLOR = "#6B7280";
-const ACTIVE_GLOW = "rgba(0, 100, 255, 0.15)";
+const ACTIVE_GLOW = "rgba(255, 184, 0, 0.15)";
 
 function formatPct(pct: number | null | undefined, isUp: boolean): string {
   if (pct == null) return "—%";
@@ -63,7 +63,7 @@ function MacroCard({ symbol }: { symbol: string }) {
         style={{
           fontSize: '1.1rem',
           fontWeight: 700,
-          color: isActive ? 'var(--color-primary, #00A6FF)' : '#FFFFFF',
+          color: isActive ? 'var(--color-primary, #ffb800)' : '#FFFFFF',
           letterSpacing: '0.04em',
           lineHeight: 1,
         }}

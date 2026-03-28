@@ -66,14 +66,16 @@ Zustand streamPrices map
 MetricsBar / MacroCard / TapeItem  ← ONLY these re-render on each tick
 ```
 
-### Color Palette (Bloomberg/TOS-style)
+### Color Palette (Bloomberg/TOS-style — Institutional Gold)
 - Background: `#0c0c0c`, Card: `#1a1a1a`, Border: `#262626`
 - Text: `#e4e4e7`, Muted: `#808080`
-- Primary (TOS Blue): `#0064ff`, Gold: `#ffb800`
+- Primary (Institutional Gold): `#ffb800` — CSS var `--primary: 43 100% 50%`
 - Success: `#00d166`, Danger: `#f23645`
+- **ZERO BLUE** — All blue (#0064ff, #58A6FF, #D2A8FF, #00BFFF, #00A6FF, rgba(0,191,255,...)) fully purged
 - Font: Inter (from bunny.net), letter-spacing `-0.025em`, `tabular-nums`
 - Tables: zebra striping via `even:bg-[#141414] odd:bg-[#0c0c0c]` on `TableRow`
-- TradingChart: transparent bg, `#262626` grid/borders, `#0064ff` crosshair, `#00d166/#f23645` candles
+- TradingChart: transparent bg, `#262626` grid/borders, `#ffb800` crosshair, `#00d166/#f23645` candles, SMA20=gold SMA50=white
+- APPLY SETTINGS button: `bg-[#0c0c0c] text-primary border-primary` (black bg, gold border+text)
 
 ### Known constraints
 - Gemini models: only `gemini-2.5-flash` and `gemini-2.5-pro` work

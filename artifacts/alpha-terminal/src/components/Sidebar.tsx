@@ -241,10 +241,10 @@ export function Sidebar({ onClose, onOpenChat }: SidebarProps) {
           <Button
             onClick={handleSaveSettings}
             size="sm"
-            className={`w-full font-mono text-xs h-8 transition-all ${
+            className={`w-full font-mono text-xs h-8 transition-all border ${
               settingsSaved
-                ? "bg-primary/30 text-primary border border-primary/50"
-                : "bg-primary text-primary-foreground hover:bg-primary/80"
+                ? "bg-primary/10 text-primary border-primary/50"
+                : "bg-[#0c0c0c] text-primary border-primary hover:bg-primary/10"
             }`}
           >
             {settingsSaved ? "✓ SAVED" : "APPLY SETTINGS"}

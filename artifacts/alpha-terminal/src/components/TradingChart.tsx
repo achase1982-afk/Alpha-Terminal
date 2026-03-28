@@ -56,8 +56,8 @@ export function TradingChart({ data, isLoading, error, timedOut, tokenExpired, i
       },
       crosshair: {
         mode: 1,
-        vertLine: { color: '#0064ff', width: 1, style: 3 },
-        horzLine: { color: '#0064ff', width: 1, style: 3 },
+        vertLine: { color: '#ffb800', width: 1, style: 3 },
+        horzLine: { color: '#ffb800', width: 1, style: 3 },
       },
       rightPriceScale: {
         borderColor: '#262626',
@@ -117,7 +117,7 @@ export function TradingChart({ data, isLoading, error, timedOut, tokenExpired, i
       const sma20Data = calculateSMA(sortedData, 20)
         .filter(d => d.value !== null)
         .map(d => ({ time: (new Date(d.time).getTime() / 1000) as Time, value: d.value as number }));
-      const sma20Series = chart.addSeries(LineSeries, { color: '#58A6FF', lineWidth: 2 });
+      const sma20Series = chart.addSeries(LineSeries, { color: '#ffb800', lineWidth: 2 });
       sma20Series.setData(sma20Data);
     }
 
@@ -125,7 +125,7 @@ export function TradingChart({ data, isLoading, error, timedOut, tokenExpired, i
       const sma50Data = calculateSMA(sortedData, 50)
         .filter(d => d.value !== null)
         .map(d => ({ time: (new Date(d.time).getTime() / 1000) as Time, value: d.value as number }));
-      const sma50Series = chart.addSeries(LineSeries, { color: '#D2A8FF', lineWidth: 2 });
+      const sma50Series = chart.addSeries(LineSeries, { color: '#ffffff', lineWidth: 2 });
       sma50Series.setData(sma50Data);
     }
 
