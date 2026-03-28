@@ -3,7 +3,6 @@ import { useTerminalStore } from "@/lib/store";
 import { useGetQuote, useGetPriceHistory, useGetOptionChain } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DownloadCloud, Table2, BarChart2, ChevronDown, ChevronUp } from "lucide-react";
@@ -82,6 +81,21 @@ function buildExpirationGroups(calls: Contract[], puts: Contract[]): ExpirationG
   return groups;
 }
 
+function sliceAroundATM(rows: StraddleRow[], underlyingPrice: number | null, strikesCount: number | null): StraddleRow[] {
+  if (strikesCount == null || underlyingPrice == null || rows.length === 0) return rows;
+  const half = Math.floor(strikesCount / 2);
+  let atmIdx = 0;
+  let minDiff = Math.abs(rows[0].strike - underlyingPrice);
+  for (let i = 1; i < rows.length; i++) {
+    const diff = Math.abs(rows[i].strike - underlyingPrice);
+    if (diff < minDiff) { atmIdx = i; minDiff = diff; }
+  }
+  const start = Math.max(0, atmIdx - half);
+  const end = Math.min(rows.length, start + strikesCount);
+  const adjustedStart = Math.max(0, end - strikesCount);
+  return rows.slice(adjustedStart, end);
+}
+
 function CellVal({ val, decimals = 2 }: { val?: number; decimals?: number }) {
   if (val == null || isNaN(val)) return <span className="text-zinc-600">—</span>;
   return <>{val.toFixed(decimals)}</>;
@@ -91,9 +105,10 @@ export function OptionsTab() {
   const { symbol, accessToken, aiModel, aiTemp, strategistResult, setStrategistResult } = useTerminalStore();
   const [contractType, setContractType] = useState("ALL");
   const [dte, setDte] = useState("30");
+  const [strikesLimit, setStrikesLimit] = useState("10");
   const [enabled, setEnabled] = useState(false);
   const [isStrategizing, setIsStrategizing] = useState(false);
-  const [strategistExpanded, setStrategistExpanded] = useState(true);
+  const [strategistExpanded, setStrategistExpanded] = useState(false);
   const [expandedExps, setExpandedExps] = useState<Set<string>>(new Set());
 
   const { data, isLoading, error } = useGetOptionChain(
@@ -114,6 +129,7 @@ export function OptionsTab() {
   const handleLoad = () => setEnabled(true);
 
   const underlyingPrice = (data as unknown as { underlyingPrice?: number })?.underlyingPrice ?? quote?.lastPrice ?? null;
+  const parsedStrikesLimit = strikesLimit === "ALL" ? null : parseInt(strikesLimit);
 
   const groups = useMemo(() => {
     if (!data) return [];
@@ -162,40 +178,52 @@ export function OptionsTab() {
   };
 
   return (
-    <div className="space-y-4 h-full flex flex-col">
+    <div className="space-y-2 h-full flex flex-col">
 
-      <div className="flex flex-wrap gap-3 items-end bg-card p-4 rounded-xl border border-card-border shrink-0">
-        <div className="space-y-1.5">
-          <Label className="font-mono text-[10px] text-muted-foreground uppercase">Contract Type</Label>
-          <Select value={contractType} onValueChange={setContractType}>
-            <SelectTrigger className="w-28 font-mono text-xs bg-background border-card-border h-9">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">ALL</SelectItem>
-              <SelectItem value="CALL">CALL</SelectItem>
-              <SelectItem value="PUT">PUT</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+      <div className="flex items-center gap-2 bg-[#111111] px-3 py-2 rounded-lg border border-[#262626] shrink-0 flex-wrap">
+        <Select value={contractType} onValueChange={setContractType}>
+          <SelectTrigger className="w-20 font-mono text-[11px] bg-[#0c0c0c] border-[#262626] h-7 px-2">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">ALL</SelectItem>
+            <SelectItem value="CALL">CALL</SelectItem>
+            <SelectItem value="PUT">PUT</SelectItem>
+          </SelectContent>
+        </Select>
 
-        <div className="space-y-1.5">
-          <Label className="font-mono text-[10px] text-muted-foreground uppercase">Max DTE</Label>
+        <div className="flex items-center gap-1">
+          <span className="font-mono text-[10px] text-zinc-500 uppercase">DTE</span>
           <Input
             type="number"
             value={dte}
             onChange={e => setDte(e.target.value)}
-            className="w-20 font-mono text-xs bg-background border-card-border h-9"
+            className="w-14 font-mono text-[11px] bg-[#0c0c0c] border-[#262626] h-7 px-2"
           />
+        </div>
+
+        <div className="flex items-center gap-1">
+          <span className="font-mono text-[10px] text-zinc-500 uppercase">Strikes</span>
+          <Select value={strikesLimit} onValueChange={setStrikesLimit}>
+            <SelectTrigger className="w-16 font-mono text-[11px] bg-[#0c0c0c] border-[#262626] h-7 px-2">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="6">6</SelectItem>
+              <SelectItem value="10">10</SelectItem>
+              <SelectItem value="20">20</SelectItem>
+              <SelectItem value="ALL">ALL</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         <Button
           onClick={handleLoad}
           disabled={!accessToken}
-          className="font-mono text-xs h-9 bg-[#18181B] text-[#FFB800] hover:bg-[#27272A] border border-[#27272A]"
+          className="font-mono text-[11px] h-7 px-3 bg-[#18181B] text-[#FFB800] hover:bg-[#27272A] border border-[#27272A]"
         >
-          <DownloadCloud className="w-3.5 h-3.5 mr-2" />
-          LOAD CHAIN
+          <DownloadCloud className="w-3 h-3 mr-1.5" />
+          LOAD
         </Button>
 
         {data && (
@@ -203,37 +231,37 @@ export function OptionsTab() {
             onClick={handleRunStrategist}
             disabled={isStrategizing || !accessToken}
             variant="outline"
-            className="font-mono text-xs h-9 border-primary/40 text-primary hover:bg-primary/10 ml-auto"
+            className="font-mono text-[11px] h-7 px-3 border-[#27272A] text-primary hover:bg-primary/10 ml-auto"
           >
             {isStrategizing ? (
-              <><span className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin mr-2" />ANALYZING...</>
+              <><span className="w-2.5 h-2.5 border-2 border-primary border-t-transparent rounded-full animate-spin mr-1.5" />ANALYZING</>
             ) : (
-              <><BarChart2 className="w-3.5 h-3.5 mr-2" />RUN OPTIONS STRATEGIST</>
+              <><BarChart2 className="w-3 h-3 mr-1.5" />STRATEGIST</>
             )}
           </Button>
         )}
       </div>
 
       {(strategistResult || isStrategizing) && (
-        <div className="bg-card border border-card-border rounded-xl overflow-hidden shrink-0">
+        <div className="bg-card border border-card-border rounded-lg overflow-hidden shrink-0">
           <button
             onClick={() => setStrategistExpanded(s => !s)}
-            className="w-full flex items-center justify-between px-4 py-3 border-b border-card-border hover:bg-secondary/20 transition-colors"
+            className="w-full flex items-center justify-between px-3 py-2 border-b border-card-border hover:bg-secondary/20 transition-colors"
           >
             <div className="flex items-center gap-2">
-              <BarChart2 className="w-3.5 h-3.5 text-primary" />
-              <span className="font-mono text-xs font-bold text-foreground">OPTIONS STRATEGIST — {symbol}</span>
+              <BarChart2 className="w-3 h-3 text-primary" />
+              <span className="font-mono text-[11px] font-bold text-foreground">STRATEGIST — {symbol}</span>
               {isStrategizing && (
-                <span className="w-2.5 h-2.5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                <span className="w-2 h-2 border-2 border-primary border-t-transparent rounded-full animate-spin" />
               )}
             </div>
-            {strategistExpanded ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground" /> : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />}
+            {strategistExpanded ? <ChevronUp className="w-3 h-3 text-zinc-500" /> : <ChevronDown className="w-3 h-3 text-zinc-500" />}
           </button>
           {strategistExpanded && (
             <div className="p-4 bg-[#0c0c0c]">
               {isStrategizing ? (
-                <div className="flex items-center justify-center gap-3 py-8">
-                  <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+                <div className="flex items-center justify-center gap-3 py-6">
+                  <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin" />
                   <span className="font-mono text-xs text-primary animate-pulse tracking-widest">RUNNING DERIVATIVES STRATEGIST...</span>
                 </div>
               ) : strategistResult ? (
@@ -254,20 +282,20 @@ export function OptionsTab() {
 
       <div className="flex-1 overflow-auto terminal-panel p-0 min-h-0">
         {isLoading && (
-          <div className="p-6 space-y-3">
-            {[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-10 w-full bg-card-border" />)}
+          <div className="p-4 space-y-2">
+            {[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-8 w-full bg-card-border" />)}
           </div>
         )}
         {error && (
           <div className="p-10 text-center text-destructive font-mono flex flex-col items-center">
             <span className="text-3xl mb-3">⚠</span>
-            FAILED TO LOAD OPTIONS DATA.
+            <span className="text-xs">FAILED TO LOAD OPTIONS DATA.</span>
           </div>
         )}
         {!isLoading && !error && !data && (
-          <div className="p-20 flex flex-col items-center justify-center text-muted-foreground font-mono h-full">
-            <Table2 className="w-10 h-10 mb-3 opacity-20" />
-            <span className="text-sm">CLICK "LOAD CHAIN" TO FETCH OPTIONS DATA.</span>
+          <div className="p-16 flex flex-col items-center justify-center text-muted-foreground font-mono h-full">
+            <Table2 className="w-8 h-8 mb-2 opacity-20" />
+            <span className="text-xs">CLICK "LOAD" TO FETCH OPTIONS DATA.</span>
           </div>
         )}
 
@@ -275,18 +303,23 @@ export function OptionsTab() {
           <div className="divide-y divide-[#262626]">
             {groups.map(group => {
               const isOpen = expandedExps.has(group.expiration);
+              const visibleRows = sliceAroundATM(group.rows, underlyingPrice, parsedStrikesLimit);
               return (
                 <div key={group.expiration}>
                   <button
                     onClick={() => toggleExp(group.expiration)}
-                    className="w-full flex items-center justify-between px-4 py-2.5 bg-[#111111] border-b border-[#262626] hover:bg-[#1a1a1a] transition-colors"
+                    className="w-full flex items-center justify-between px-3 py-2 bg-[#111111] border-b border-[#262626] hover:bg-[#1a1a1a] transition-colors"
                   >
-                    <span className="font-mono text-xs font-bold text-white tracking-wider">{group.label}</span>
+                    <span className="font-mono text-[11px] font-bold text-white tracking-wider">{group.label}</span>
                     <div className="flex items-center gap-3">
-                      <span className="font-mono text-[10px] text-zinc-500">{group.rows.length} strikes</span>
+                      <span className="font-mono text-[10px] text-zinc-500">
+                        {parsedStrikesLimit != null && group.rows.length > parsedStrikesLimit
+                          ? `${visibleRows.length}/${group.rows.length}`
+                          : group.rows.length} strikes
+                      </span>
                       {isOpen
-                        ? <ChevronUp className="w-3.5 h-3.5 text-zinc-500" />
-                        : <ChevronDown className="w-3.5 h-3.5 text-zinc-500" />}
+                        ? <ChevronUp className="w-3 h-3 text-zinc-500" />
+                        : <ChevronDown className="w-3 h-3 text-zinc-500" />}
                     </div>
                   </button>
 
@@ -294,9 +327,9 @@ export function OptionsTab() {
                     <div>
                       <div
                         className="grid text-[10px] font-mono text-zinc-500 uppercase tracking-wider border-b border-[#262626] bg-[#0a0a0a]"
-                        style={{ gridTemplateColumns: "1fr 60px 1fr" }}
+                        style={{ gridTemplateColumns: "1fr 56px 1fr" }}
                       >
-                        <div className="grid grid-cols-4 px-3 py-1.5 text-right gap-1">
+                        <div className="grid grid-cols-4 px-2 py-1 text-right gap-0.5">
                           <span>Bid</span>
                           <span>Ask</span>
                           <span>Vol</span>
@@ -305,7 +338,7 @@ export function OptionsTab() {
                         <div className="flex items-center justify-center bg-[#18181B] text-zinc-400 font-bold">
                           STRIKE
                         </div>
-                        <div className="grid grid-cols-4 px-3 py-1.5 text-left gap-1">
+                        <div className="grid grid-cols-4 px-2 py-1 text-left gap-0.5">
                           <span>Bid</span>
                           <span>Ask</span>
                           <span>Vol</span>
@@ -313,7 +346,7 @@ export function OptionsTab() {
                         </div>
                       </div>
 
-                      <StraddleBody rows={group.rows} underlyingPrice={underlyingPrice} />
+                      <StraddleBody rows={visibleRows} underlyingPrice={underlyingPrice} />
                     </div>
                   )}
                 </div>
@@ -323,9 +356,9 @@ export function OptionsTab() {
         )}
 
         {data && groups.length === 0 && (
-          <div className="p-20 flex flex-col items-center justify-center text-muted-foreground font-mono h-full">
-            <Table2 className="w-10 h-10 mb-3 opacity-20" />
-            <span className="text-sm">NO OPTIONS DATA AVAILABLE FOR THIS RANGE.</span>
+          <div className="p-16 flex flex-col items-center justify-center text-muted-foreground font-mono h-full">
+            <Table2 className="w-8 h-8 mb-2 opacity-20" />
+            <span className="text-xs">NO OPTIONS DATA AVAILABLE FOR THIS RANGE.</span>
           </div>
         )}
       </div>
@@ -355,14 +388,14 @@ function StraddleBody({ rows, underlyingPrice }: { rows: StraddleRow[]; underlyi
         return (
           <div
             key={row.strike}
-            className={`grid font-mono text-xs transition-colors hover:bg-[#1a1a1a] ${isATM ? "border-b border-dashed border-[#FFB800]" : "border-b border-[#1a1a1a]"}`}
+            className={`grid font-mono text-[11px] transition-colors hover:bg-white/[0.03] ${isATM ? "border-b border-dashed border-[#FFB800]" : "border-b border-[#1a1a1a]"}`}
             style={{
-              gridTemplateColumns: "1fr 60px 1fr",
+              gridTemplateColumns: "1fr 56px 1fr",
               fontVariantNumeric: "tabular-nums",
             }}
           >
             <div
-              className={`grid grid-cols-4 px-3 py-1.5 text-right gap-1 items-center ${callITM ? "bg-zinc-900/60" : ""}`}
+              className={`grid grid-cols-4 px-2 py-1 text-right gap-0.5 items-center ${callITM ? "bg-[#1e293b]" : ""}`}
             >
               <span className="text-white"><CellVal val={row.call?.bid} /></span>
               <span className="text-white"><CellVal val={row.call?.ask} /></span>
@@ -370,12 +403,12 @@ function StraddleBody({ rows, underlyingPrice }: { rows: StraddleRow[]; underlyi
               <span className="text-zinc-500"><CellVal val={row.call?.delta} decimals={3} /></span>
             </div>
 
-            <div className={`flex items-center justify-center bg-[#18181B] text-sm font-bold ${isATM ? "text-[#FFB800]" : "text-zinc-300"}`}>
+            <div className={`flex items-center justify-center bg-[#18181B] text-[11px] font-bold ${isATM ? "text-[#FFB800]" : "text-zinc-300"}`}>
               {row.strike.toFixed(row.strike % 1 === 0 ? 0 : 2)}
             </div>
 
             <div
-              className={`grid grid-cols-4 px-3 py-1.5 text-left gap-1 items-center ${putITM ? "bg-zinc-900/60" : ""}`}
+              className={`grid grid-cols-4 px-2 py-1 text-left gap-0.5 items-center ${putITM ? "bg-[#1e293b]" : ""}`}
             >
               <span className="text-white"><CellVal val={row.put?.bid} /></span>
               <span className="text-white"><CellVal val={row.put?.ask} /></span>
