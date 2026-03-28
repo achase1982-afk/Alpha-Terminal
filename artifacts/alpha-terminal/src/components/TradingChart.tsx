@@ -101,6 +101,8 @@ export function TradingChart({ data, isLoading, error, timedOut, tokenExpired, i
         color: '#00d166',
         priceFormat: { type: 'volume' },
         priceScaleId: 'volume',
+        lastValueVisible: false,
+        priceLineVisible: false,
       });
       chart.priceScale('volume').applyOptions({
         scaleMargins: { top: 0.8, bottom: 0 },
@@ -118,7 +120,12 @@ export function TradingChart({ data, isLoading, error, timedOut, tokenExpired, i
       const sma20Data = calculateSMA(sortedData, 20)
         .filter(d => d.value !== null)
         .map(d => ({ time: (new Date(d.time).getTime() / 1000) as Time, value: d.value as number }));
-      const sma20Series = chart.addSeries(LineSeries, { color: '#ffb800', lineWidth: 2 });
+      const sma20Series = chart.addSeries(LineSeries, {
+        color: '#ffb800',
+        lineWidth: 2,
+        lastValueVisible: false,
+        priceLineVisible: false,
+      });
       sma20Series.setData(sma20Data);
     }
 
@@ -126,7 +133,12 @@ export function TradingChart({ data, isLoading, error, timedOut, tokenExpired, i
       const sma50Data = calculateSMA(sortedData, 50)
         .filter(d => d.value !== null)
         .map(d => ({ time: (new Date(d.time).getTime() / 1000) as Time, value: d.value as number }));
-      const sma50Series = chart.addSeries(LineSeries, { color: '#ffffff', lineWidth: 2 });
+      const sma50Series = chart.addSeries(LineSeries, {
+        color: '#ffffff',
+        lineWidth: 2,
+        lastValueVisible: false,
+        priceLineVisible: false,
+      });
       sma50Series.setData(sma50Data);
     }
 
@@ -138,9 +150,19 @@ export function TradingChart({ data, isLoading, error, timedOut, tokenExpired, i
       const lowerData = bb.lower
         .filter(d => d.value !== null)
         .map(d => ({ time: (new Date(d.time).getTime() / 1000) as Time, value: d.value as number }));
-      const bbUpper = chart.addSeries(LineSeries, { color: 'rgba(187, 134, 252, 0.5)', lineWidth: 1 });
+      const bbUpper = chart.addSeries(LineSeries, {
+        color: 'rgba(187, 134, 252, 0.5)',
+        lineWidth: 1,
+        lastValueVisible: false,
+        priceLineVisible: false,
+      });
       bbUpper.setData(upperData);
-      const bbLower = chart.addSeries(LineSeries, { color: 'rgba(187, 134, 252, 0.5)', lineWidth: 1 });
+      const bbLower = chart.addSeries(LineSeries, {
+        color: 'rgba(187, 134, 252, 0.5)',
+        lineWidth: 1,
+        lastValueVisible: false,
+        priceLineVisible: false,
+      });
       bbLower.setData(lowerData);
     }
 
@@ -154,23 +176,29 @@ export function TradingChart({ data, isLoading, error, timedOut, tokenExpired, i
     };
   }, [data, overlays, intraday]);
 
+  const legendItems: { color: string; label: string }[] = [];
+  if (overlays.sma20) legendItems.push({ color: '#ffb800', label: 'SMA 20' });
+  if (overlays.sma50) legendItems.push({ color: '#ffffff', label: 'SMA 50' });
+  if (overlays.bb) legendItems.push({ color: 'rgba(187, 134, 252, 0.7)', label: 'Bollinger Bands' });
+  if (overlays.volume) legendItems.push({ color: 'rgba(0, 212, 170, 0.5)', label: 'Volume' });
+
   return (
     <div className="w-full h-full min-h-[300px] relative rounded-xl border border-card-border bg-[#0c0c0c] overflow-hidden shadow-inner">
       <div ref={chartContainerRef} className="absolute inset-0" />
 
-      {data && data.length > 0 && (
-        <div className="absolute bottom-3 left-3 z-10 pointer-events-none">
-          <div className="px-2.5 py-1.5 rounded-md text-[10px] font-mono leading-relaxed"
-            style={{ background: 'rgba(17, 17, 17, 0.85)', border: '1px solid #262626' }}>
-            <span style={{ color: '#ffb800' }}>Yellow</span>
-            <span className="text-muted-foreground">: 50-day SMA</span>
-            <span className="text-muted-foreground mx-1.5">|</span>
-            <span className="text-white">White</span>
-            <span className="text-muted-foreground">: Trend</span>
-            <span className="text-muted-foreground mx-1.5">|</span>
-            <span className="text-muted-foreground" style={{ borderBottom: '1px dotted #808080' }}>Dotted</span>
-            <span className="text-muted-foreground">: Support/Resistance</span>
-          </div>
+      {data && data.length > 0 && legendItems.length > 0 && (
+        <div className="absolute top-2 left-3 z-10 pointer-events-none flex flex-col gap-0.5">
+          {legendItems.map(item => (
+            <div key={item.label} className="flex items-center gap-1.5">
+              <span
+                className="inline-block w-2.5 h-0.5 rounded-full shrink-0"
+                style={{ background: item.color }}
+              />
+              <span className="text-[10px] text-zinc-400 font-medium tracking-wide">
+                {item.label}
+              </span>
+            </div>
+          ))}
         </div>
       )}
 
