@@ -236,8 +236,14 @@ function ColumnsEditorModal({ open, onClose }: { open: boolean; onClose: () => v
             const col = COLUMN_REGISTRY.find(c => c.id === id);
             if (!col) return null;
             return (
-              <Reorder.Item key={id} value={id} className="cursor-grab active:cursor-grabbing">
-                <div className="flex items-center justify-between px-3 py-2 rounded-lg border border-[#FFB800]/30 text-white" style={{ backgroundColor: '#252528' }}>
+              <Reorder.Item
+                key={id}
+                value={id}
+                style={{ touchAction: "none" }}
+                whileDrag={{ scale: 1.03, boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}
+                className="cursor-grab active:cursor-grabbing"
+              >
+                <div className="flex items-center justify-between px-3 py-2.5 rounded-lg border border-[#FFB800]/30 text-white select-none" style={{ backgroundColor: '#252528' }}>
                   <span className="font-mono text-sm font-medium">{col.label}</span>
                   <div className="flex items-center gap-2">
                     <button
@@ -247,7 +253,7 @@ function ColumnsEditorModal({ open, onClose }: { open: boolean; onClose: () => v
                     >
                       <div className="w-4 h-4 rounded-full bg-white mx-0.5 shadow-sm" />
                     </button>
-                    <GripVertical className="w-4 h-4 text-zinc-600" />
+                    <GripVertical className="w-4 h-4 text-zinc-400" />
                   </div>
                 </div>
               </Reorder.Item>
