@@ -275,6 +275,39 @@ function ColumnsEditorModal({ open, onClose }: { open: boolean; onClose: () => v
   );
 }
 
+function MetricsStrip() {
+  const mockIV = 26.2;
+  const mockIVR = 68;
+  const mockMove = 14.50;
+  const mockERDays = 12;
+  const ivrColor = mockIVR > 50 ? "text-[#FFB800]" : "text-white";
+  const erColor = mockERDays < 14 ? "text-red-400" : "text-white";
+
+  return (
+    <div
+      className="flex justify-between items-center py-2.5 px-4 shrink-0 font-mono"
+      style={{ fontVariantNumeric: "tabular-nums", backgroundColor: BG, borderBottom: `1px solid ${BORDER}` }}
+    >
+      <div className="flex flex-col items-center">
+        <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">IV</span>
+        <span className="text-sm font-bold text-white">{mockIV}%</span>
+      </div>
+      <div className="flex flex-col items-center">
+        <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">IVR</span>
+        <span className={`text-sm font-bold ${ivrColor}`}>{mockIVR}</span>
+      </div>
+      <div className="flex flex-col items-center">
+        <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">MOVE</span>
+        <span className="text-sm font-bold text-white">±${mockMove.toFixed(2)}</span>
+      </div>
+      <div className="flex flex-col items-center">
+        <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">ER</span>
+        <span className={`text-sm font-bold ${erColor}`}>{mockERDays}d</span>
+      </div>
+    </div>
+  );
+}
+
 function useScrollSync() {
   const scrollXRef = useRef(0);
   const isSyncing = useRef(false);
@@ -539,7 +572,8 @@ export function OptionsTab() {
   const hasData = data && groups.length > 0;
 
   return (
-    <div className="h-full flex flex-col -mx-4 w-[calc(100%+2rem)]" style={{ backgroundColor: BG }}>
+    <div className="h-full flex flex-col" style={{ backgroundColor: BG }}>
+      <MetricsStrip />
       <div
         className="flex items-center justify-between gap-2 px-3 py-1.5 shrink-0 flex-wrap"
         style={{ backgroundColor: '#151517', borderBottom: `1px solid ${BORDER}` }}

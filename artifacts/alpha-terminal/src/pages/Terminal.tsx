@@ -179,8 +179,10 @@ export default function TerminalPage() {
                   intraday={isIntradayInterval(chartInterval)}
                 />
               </TabsContent>
-              <TabsContent value="options" className="m-0 focus-visible:outline-none h-[420px] sm:h-[500px] md:h-[580px] lg:h-[calc(var(--vvh,100vh)-300px)] overflow-hidden">
-                <OptionsTab />
+              <TabsContent value="options" className="m-0 focus-visible:outline-none">
+                <div className="-mx-3 sm:-mx-4 lg:-mx-5 -mb-3 sm:-mb-4 lg:-mb-5" style={{ height: "calc(var(--vvh,100vh) - 140px)" }}>
+                  <OptionsTab />
+                </div>
               </TabsContent>
               <TabsContent value="ai" className="m-0 focus-visible:outline-none">
                 <AiIntelligenceTab />
