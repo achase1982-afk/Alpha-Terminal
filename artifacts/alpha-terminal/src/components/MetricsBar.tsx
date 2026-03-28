@@ -177,8 +177,8 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
           {quote.symbol}
         </span>
         <span
-          className="leading-tight whitespace-normal text-wrap group-hover:text-gray-200 transition-colors max-w-[200px] sm:max-w-[280px]"
-          style={{ fontSize: '0.8rem', color: '#9CA3AF', fontWeight: 400, lineHeight: 1.3 }}
+          className="leading-tight whitespace-normal text-wrap group-hover:text-[#FFB800] transition-colors max-w-[200px] sm:max-w-[280px]"
+          style={{ fontSize: '0.8rem', color: '#FFB800', fontWeight: 400, lineHeight: 1.3 }}
         >
           {quote.description || "Name Unavailable"}
         </span>

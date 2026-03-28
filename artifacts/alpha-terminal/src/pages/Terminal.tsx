@@ -137,21 +137,21 @@ export default function TerminalPage() {
                 <TabsList className="bg-card border border-card-border p-1 inline-flex min-w-max">
                   <TabsTrigger
                     value="chart"
-                    className="font-mono text-[10px] sm:text-xs uppercase data-[state=active]:bg-[#27272A] data-[state=active]:text-white gap-1.5 px-3"
+                    className="font-mono text-[10px] sm:text-xs uppercase data-[state=active]:bg-[#27272A] data-[state=active]:text-white data-[state=active]:border data-[state=active]:border-[#FFB800] gap-1.5 px-3"
                   >
                     <LineChart className="w-3.5 h-3.5 shrink-0" />
                     CHART
                   </TabsTrigger>
                   <TabsTrigger
                     value="options"
-                    className="font-mono text-[10px] sm:text-xs uppercase data-[state=active]:bg-[#27272A] data-[state=active]:text-white gap-1.5 px-3"
+                    className="font-mono text-[10px] sm:text-xs uppercase data-[state=active]:bg-[#27272A] data-[state=active]:text-white data-[state=active]:border data-[state=active]:border-[#FFB800] gap-1.5 px-3"
                   >
                     <BarChart2 className="w-3.5 h-3.5 shrink-0" />
                     OPTIONS
                   </TabsTrigger>
                   <TabsTrigger
                     value="ai"
-                    className="font-mono text-[10px] sm:text-xs uppercase data-[state=active]:bg-[#27272A] data-[state=active]:text-white gap-1.5 px-3"
+                    className="font-mono text-[10px] sm:text-xs uppercase data-[state=active]:bg-[#27272A] data-[state=active]:text-white data-[state=active]:border data-[state=active]:border-[#FFB800] gap-1.5 px-3"
                   >
                     <BrainCircuit className="w-3.5 h-3.5 shrink-0" />
                     <span className="hidden sm:inline">AI INTELLIGENCE</span>
@@ -159,7 +159,7 @@ export default function TerminalPage() {
                   </TabsTrigger>
                   <TabsTrigger
                     value="scanner"
-                    className="font-mono text-[10px] sm:text-xs uppercase data-[state=active]:bg-[#27272A] data-[state=active]:text-white gap-1.5 px-3"
+                    className="font-mono text-[10px] sm:text-xs uppercase data-[state=active]:bg-[#27272A] data-[state=active]:text-white data-[state=active]:border data-[state=active]:border-[#FFB800] gap-1.5 px-3"
                   >
                     <Radar className="w-3.5 h-3.5 shrink-0" />
                     <span className="hidden sm:inline">MARKET SCANNER</span>
