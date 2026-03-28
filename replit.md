@@ -23,7 +23,10 @@ Key features implemented:
 - **Live Market Pulse**: Sidebar button → modal; backend fetches 14-symbol batch (SPY/QQQ/IWM/$VIX/$VVIX/$CPC/$TICK/$ADD/$TRIN/$DXY//ES//NQ//GC//CL) in single Schwab call; institutional-grade session-aware Gemini prompt
 - **Market Scanner**: AI Discovery + Manual Filter modes; configurable scan universe (S&P 100, Nasdaq 100, High Beta, Custom), max results (1-20), sortable results table with ticker/strategy/confidence/thesis columns
 - **Options Tab**: Chain table with Options Strategist results panel above (collapsible)
-- **Backend AI routes**: `/api/ai/market-briefing`, `/api/ai/options-strategist`, `/api/ai/chat`, `/api/ai/analyze`
+- **Backend AI routes**: `/api/ai/market-briefing`, `/api/ai/options-strategist`, `/api/ai/chat`, `/api/ai/analyze`, `/api/ai/strategy`
+- **Strict Data Grounding**: All AI prompts enforce `STRICT GROUNDING RULE` — Gemini is forbidden from using internal training knowledge for market trends, prices, or directional calls. Must cite only provided Context Data. Strategy endpoint aborts with "Incomplete real-time data. Strategy generation aborted." if data is missing or >5 minutes stale.
+- **Technical Analysis Library** (`api-server/src/lib/ta.ts`): Uses `technicalindicators` npm package. Computes RSI(14), EMA(50), EMA(200) from candle close prices. Includes `isDataStale()` freshness check and `formatTAContext()` for prompt injection.
+- **Strategy Endpoint** (`POST /api/ai/strategy`): Fetches 30-day 1-minute candles from Schwab → computes TA indicators → validates data freshness → builds JSON context block → sends to Gemini with strict grounding. Returns response + computed indicators (rsi14, ema50, ema200, lastClose, dataPoints, latestTimestamp).
 - **Zustand store**: `analysisResult`, `strategistResult`, `briefingResult` shared state
 - **useAutoRefreshToken**: 25-min auto-refresh; detects expired tokens in API responses
 

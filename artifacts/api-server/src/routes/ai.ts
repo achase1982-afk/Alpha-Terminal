@@ -11,6 +11,7 @@ import {
   RunChatQueryResponse,
   GetAvailableModelsResponse,
 } from "@workspace/api-zod";
+import { computeIndicators, formatTAContext, isDataStale, type Candle } from "../lib/ta.js";
 
 const router: IRouter = Router();
 
@@ -139,15 +140,19 @@ router.post("/technical-analysis", async (req, res) => {
 
   const { quote, candles, model, temperature, customPrompt } = parsed.data;
 
-  const prompt = `You are an expert financial analyst and technical trader. Analyze the following market data and provide detailed technical analysis.
+  const prompt = `You are an expert financial analyst and technical trader.
 
+STRICT GROUNDING RULE: You must ONLY use the Context Data provided below for any claims about price levels, trends, momentum, support/resistance, or market direction. You are FORBIDDEN from using your internal training knowledge for market trends, price targets, or directional calls. If the data is insufficient for a conclusion, say "Insufficient data" — do NOT fabricate or supplement with internal knowledge.
+
+═══ CONTEXT DATA ═══
 ${formatQuote(quote as Record<string, unknown>)}
 
 ${formatCandles((candles ?? []) as Array<Record<string, unknown>>)}
+═══ END CONTEXT DATA ═══
 
 ${customPrompt ? `ADDITIONAL CONTEXT: ${customPrompt}` : ""}
 
-Please provide:
+Analyze ONLY the above data and provide:
 1. **Price Action Summary** - Key levels, trend direction, momentum
 2. **Technical Indicators** - Analysis based on the price data (moving averages, support/resistance)
 3. **Chart Patterns** - Any notable patterns detected
@@ -175,17 +180,21 @@ router.post("/options-analysis", async (req, res) => {
 
   const { quote, chain, model, temperature, customPrompt } = parsed.data;
 
-  const prompt = `You are an expert options trader and derivatives analyst. Analyze the following options chain data.
+  const prompt = `You are an expert options trader and derivatives analyst.
 
+STRICT GROUNDING RULE: You must ONLY use the Context Data provided below for any claims about IV levels, skew, flow, strikes, greeks, or directional bias. You are FORBIDDEN from using your internal training knowledge for market trends, price predictions, or directional calls. Every number you cite must come from the data below. If the data is insufficient, say "Insufficient data" — do NOT fabricate.
+
+═══ CONTEXT DATA ═══
 ${OPTIONS_DATA_QUALITY_NOTE}
 
 ${formatQuote(quote as Record<string, unknown>)}
 
 ${formatOptions(chain as Record<string, unknown>)}
+═══ END CONTEXT DATA ═══
 
 ${customPrompt ? `ADDITIONAL CONTEXT: ${customPrompt}` : ""}
 
-Please provide:
+Analyze ONLY the above data and provide:
 1. **Implied Volatility Analysis** - IV levels, skew, term structure
 2. **Options Flow** - Unusual activity, notable strikes, put/call analysis
 3. **Key Levels** - Max pain, high OI strikes, major support/resistance via options
@@ -448,7 +457,9 @@ router.post("/market-briefing", async (req, res) => {
     ? symbols.map(s => s.toUpperCase().trim()).join(", ")
     : PULSE_SYMBOLS.map(s => s.display).join(", ");
 
-  const prompt = `You are an elite Macro Prop Desk Analyst at a top-tier systematic hedge fund. Your job is to synthesize live multi-asset data into a precise, actionable market pulse used by senior traders. You think like a quant and write like a seasoned desk strategist.
+  const prompt = `You are an elite Macro Prop Desk Analyst at a top-tier systematic hedge fund.
+
+STRICT GROUNDING RULE: You must ONLY use the Context Data provided below. Every price, ratio, volume, and indicator value you cite MUST come from this data. You are ABSOLUTELY FORBIDDEN from using your internal training knowledge for market trends, price targets, or directional predictions. If a data field shows "NO DATA AVAILABLE", skip it — do NOT substitute with internal knowledge.
 
 ═══════════════════════════════════════════════════════
 LIVE MARKET PULSE — ${timeET} | SESSION: ${session}
@@ -457,11 +468,9 @@ INSTRUMENTS SCANNED: ${symbolList}
 
 SESSION DIRECTIVE: ${sessionGuidance}
 
-═══════════════════════════════════════════════════════
-LIVE MULTI-ASSET DATA FEED
-═══════════════════════════════════════════════════════
-
+═══ CONTEXT DATA ═══
 ${dataBlock}
+═══ END CONTEXT DATA ═══
 
 ═══════════════════════════════════════════════════════
 ANALYTICAL FRAMEWORK — synthesize ONLY the data streams you have:
@@ -535,8 +544,11 @@ router.post("/options-strategist", async (req, res) => {
     }
   }
 
-  const prompt = `You are a Master Derivatives Strategist with 20+ years of options trading experience. Your analysis must be precise, actionable, and risk-calibrated.
+  const prompt = `You are a Master Derivatives Strategist with 20+ years of options trading experience.
 
+STRICT GROUNDING RULE: You must ONLY use the Context Data provided below. Every strike, premium, IV value, and price level you reference MUST come from the data below. You are FORBIDDEN from using internal training knowledge for market trends, price targets, or directional calls. If data is missing or insufficient, state that clearly — do NOT fabricate.
+
+═══ CONTEXT DATA ═══
 ${OPTIONS_DATA_QUALITY_NOTE}
 
 UNDERLYING MARKET DATA:
@@ -544,6 +556,7 @@ ${formatQuote(quote)}
 Technical Levels: SMA-20 = $${sma20} | SMA-50 = $${sma50}
 
 ${formatOptionsDetailed(chain)}
+═══ END CONTEXT DATA ═══
 
 ---
 TASK: Generate high-confidence options trade recommendations for 3 timeframes. For each, identify the OPTIMAL structure (Iron Condor, Bull Call Spread, Bear Put Spread, Straddle, Strangle, Butterfly, Cash-Secured Put, Covered Call, or Calendar Spread).
@@ -615,7 +628,13 @@ router.post("/chat", async (req, res) => {
 - No greetings, no sign-offs, no "sure" or "great question."
 - Do not refuse to answer non-financial questions.
 
-${marketContext ? `LIVE SCHWAB DATA:\n${marketContext}` : ""}`;
+STRICT DATA GROUNDING RULE FOR MARKET/TRADING QUESTIONS:
+- When answering questions about specific stock prices, trends, technical levels, or trading strategies, you must ONLY use the Context Data provided below.
+- You are FORBIDDEN from using your internal training knowledge to state current prices, recent price movements, support/resistance levels, or directional predictions for any specific security.
+- If no Schwab context data is provided and the user asks about a specific stock's current state, tell them to connect Schwab for live data or use Google Search for the latest.
+- For general financial education (e.g. "what is a put option"), internal knowledge is fine.
+
+${marketContext ? `═══ LIVE SCHWAB CONTEXT DATA ═══\n${marketContext}\n═══ END CONTEXT DATA ═══` : "No live Schwab data connected."}`;
 
     const result = streamText({
       model: google("gemini-2.5-flash"),
@@ -782,13 +801,17 @@ router.post("/market-scanner", async (req, res) => {
     `${q.symbol.padEnd(6)} | $${q.last.toFixed(2).padStart(9)} | ${q.changePct >= 0 ? "+" : ""}${q.changePct.toFixed(2)}% | Vol: ${(q.volume / 1e6).toFixed(1)}M | Range: ${q.low.toFixed(2)}-${q.high.toFixed(2)}`
   ).join("\n");
 
-  const prompt = `You are an elite quantitative trader with 20+ years of systematic trading experience. You have been given real-time L1 market data for ${sortedQuotes.length} actively traded stocks.
+  const prompt = `You are an elite quantitative trader with 20+ years of systematic trading experience.
 
-REAL-TIME MARKET DATA (sorted by momentum):
+STRICT GROUNDING RULE: You must ONLY use the Context Data provided below. Every price, volume, and change value you cite MUST come from this data. You are FORBIDDEN from using internal training knowledge for market trends, price targets, or directional predictions. If data is insufficient, say so — do NOT fabricate.
+
+═══ CONTEXT DATA ═══
+REAL-TIME MARKET DATA (sorted by momentum) — ${sortedQuotes.length} instruments:
 Symbol | Last Price | Day Change | Volume  | Day Range
 ${tableRows}
+═══ END CONTEXT DATA ═══
 
-YOUR TASK: Analyze this data and identify the TOP ${resultCount} highest-probability trading setups right now.
+YOUR TASK: Analyze ONLY the above data and identify the TOP ${resultCount} highest-probability trading setups right now.
 
 STRICT RULES:
 1. Return EXACTLY ${resultCount} setups — no more, no less
@@ -836,6 +859,154 @@ Return this exact JSON structure:
   }
 });
 
+// ── GROUNDED STRATEGY ENDPOINT ────────────────────────────────────────────────
+// Fetches 30-day 1-minute candles from Schwab, runs RSI(14)/EMA(50)/EMA(200),
+// builds a strict context block, and sends to Gemini with data-grounding enforced.
+
+const SCHWAB_API_BASE_STRATEGY = "https://api.schwabapi.com/marketdata/v1";
+
+router.post("/strategy", async (req, res) => {
+  const { symbol, accessToken, question, model, temperature } = req.body as {
+    symbol?: string;
+    accessToken?: string;
+    question?: string;
+    model?: string;
+    temperature?: number;
+  };
+
+  if (!symbol || !accessToken) {
+    return res.status(400).json({ error: "symbol and accessToken are required" });
+  }
+
+  if (!question) {
+    return res.status(400).json({ error: "question is required" });
+  }
+
+  const upperSymbol = symbol.toUpperCase().trim();
+  const apiSymbol = symbolToSchwabApi(upperSymbol);
+
+  // Step 1: Fetch 30 days of 1-minute candles from Schwab
+  let candles: Candle[] = [];
+  let fetchTimestamp: string | null = null;
+
+  try {
+    const params = new URLSearchParams({
+      symbol: apiSymbol,
+      periodType: "day",
+      period: "30",
+      frequencyType: "minute",
+      frequency: "1",
+      needExtendedHoursData: "false",
+    });
+
+    const schwabRes = await fetch(`${SCHWAB_API_BASE_STRATEGY}/pricehistory?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (schwabRes.status === 401) {
+      return res.json({ error: "unauthorized", response: "Schwab session expired. Please re-authenticate." });
+    }
+
+    if (!schwabRes.ok) {
+      return res.json({
+        error: "data_fetch_failed",
+        response: "**Incomplete real-time data. Strategy generation aborted.** Schwab API returned an error.",
+      });
+    }
+
+    const json = await schwabRes.json() as { candles?: Array<Record<string, unknown>> };
+    const rawCandles = json.candles ?? [];
+
+    candles = rawCandles.map(c => ({
+      datetime: new Date(c["datetime"] as number).toISOString(),
+      open: c["open"] as number,
+      high: c["high"] as number,
+      low: c["low"] as number,
+      close: c["close"] as number,
+      volume: c["volume"] as number,
+    }));
+
+    fetchTimestamp = new Date().toISOString();
+  } catch (err) {
+    req.log.error({ err }, "Strategy candle fetch error");
+    return res.json({
+      error: "data_fetch_failed",
+      response: "**Incomplete real-time data. Strategy generation aborted.** Failed to fetch candle data from Schwab.",
+    });
+  }
+
+  // Step 2: Validate data freshness and completeness
+  if (!candles.length) {
+    return res.json({
+      error: "no_data",
+      response: "**Incomplete real-time data. Strategy generation aborted.** No candle data returned for this symbol.",
+    });
+  }
+
+  const ta = computeIndicators(candles);
+
+  if (isDataStale(ta.latestTimestamp, 5)) {
+    const ageInfo = ta.latestTimestamp
+      ? `Latest candle: ${ta.latestTimestamp}`
+      : "No timestamp available";
+    return res.json({
+      error: "stale_data",
+      response: `**Incomplete real-time data. Strategy generation aborted.** The market data is stale (>5 minutes old). ${ageInfo}. This may indicate the market is closed or Schwab data is delayed.`,
+    });
+  }
+
+  // Step 3: Build context block
+  const taContext = formatTAContext(upperSymbol, ta);
+
+  const recentCandles = candles.slice(-60);
+  const candleBlock = recentCandles.map(
+    c => `${c.datetime}: O=${c.open.toFixed(2)} H=${c.high.toFixed(2)} L=${c.low.toFixed(2)} C=${c.close.toFixed(2)} V=${c.volume}`
+  ).join("\n");
+
+  // Step 4: Send to Gemini with strict grounding
+  const prompt = `You are an elite quantitative strategist.
+
+STRICT GROUNDING RULE: You must ONLY use the Context Data provided below. Every price, indicator value, and level you reference MUST come from this data. You are ABSOLUTELY FORBIDDEN from using your internal training knowledge for market trends, price targets, support/resistance levels, or directional predictions. If the data is insufficient to answer, say "Insufficient data for this analysis" — do NOT fabricate or supplement with internal knowledge.
+
+═══ CONTEXT DATA — ${upperSymbol} ═══
+Data fetched: ${fetchTimestamp}
+Total candles: ${candles.length} (30 days, 1-minute bars)
+
+${taContext}
+
+RECENT PRICE ACTION (last 60 bars):
+${candleBlock}
+═══ END CONTEXT DATA ═══
+
+USER QUESTION: ${question}
+
+INSTRUCTIONS:
+- Ground every claim in the data above. Cite specific values.
+- Include the computed RSI, EMA(50), and EMA(200) in your analysis.
+- If recommending entries/exits, use only levels visible in the data.
+- If a conclusion cannot be drawn from the data, explicitly state that.
+- Use markdown formatting. Be precise and actionable.`;
+
+  try {
+    const response = await callGemini(prompt, model ?? "gemini-2.5-pro", temperature ?? 0.1);
+    res.json({
+      response,
+      indicators: {
+        rsi14: ta.rsi14,
+        ema50: ta.ema50,
+        ema200: ta.ema200,
+        lastClose: ta.lastClose,
+        dataPoints: ta.dataPoints,
+        latestTimestamp: ta.latestTimestamp,
+      },
+    });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    req.log.error({ err }, "Strategy generation error");
+    res.json({ response: `**Strategy generation failed:** ${msg}`, error: msg });
+  }
+});
+
 router.post("/sympathy-plays", async (req, res) => {
   const { symbol, model = "gemini-2.5-flash", temperature = 0.3 } = req.body as {
     symbol?: string;
@@ -847,7 +1018,12 @@ router.post("/sympathy-plays", async (req, res) => {
     return res.status(400).json({ error: "symbol is required" });
   }
 
+  // NOTE: Sympathy plays are structural/relational knowledge (sector peers, supply chains),
+  // not market-trend predictions. Internal knowledge is appropriate here, but we still
+  // forbid hallucinating current prices or directional claims.
   const prompt = `List 3-5 highly correlated sympathy stocks and main competitors for ${symbol.toUpperCase()}. For each, provide the ticker and a 1-sentence reason why it moves with or competes against ${symbol.toUpperCase()}.
+
+GROUNDING RULE: You may use your knowledge of sector relationships, supply chains, and competitive dynamics. However, you are FORBIDDEN from stating current prices, recent price movements, or directional predictions for any ticker. Only describe WHY they are correlated — not what they are currently doing.
 
 Format your response as a markdown list like:
 - **TICKER** — Reason why
