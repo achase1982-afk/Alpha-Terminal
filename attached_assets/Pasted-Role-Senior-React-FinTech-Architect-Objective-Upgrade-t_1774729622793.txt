@@ -1,0 +1,29 @@
+Role: Senior React FinTech Architect. 
+Objective: Upgrade the Options Chain to a fully dynamic, horizontally scrollable 3-panel grid with double-stacked data cells and a customizable column editor.
+
+Task 1: Column State Management (Zustand).
+- Create a Zustand store `useOptionsColumnsStore`. 
+- Define a static registry of columns: `bidAsk` (double stack), `volOi` (double stack), `delta`, `gamma`, `theta`, `probOtm`.
+- State should hold an array of `activeColumnIds` (default: `['bidAsk', 'volOi', 'delta']`).
+- Add actions to `toggleColumn` and `reorderColumns`.
+
+Task 2: The Three-Panel Layout (Critical CSS).
+- DO NOT use HTML `<table>` or `position: sticky` for the center spine, as it fails on mobile browsers.
+- Wrap the grid body in a single vertical scroll container: `<div className="flex-1 overflow-y-auto">`
+- Inside, use a 3-panel flex layout:
+  1. Calls Panel (Left): `<div className="flex-1 overflow-x-auto overscroll-x-contain">`. Inside this, use `<div className="flex flex-row-reverse min-w-max">` so columns anchor right, toward the strike spine.
+  2. Center Spine: `<div className="w-[72px] flex-none bg-[#09090b] z-10 border-x border-[#262626]">`.
+  3. Puts Panel (Right): `<div className="flex-1 overflow-x-auto overscroll-x-contain">`. Inside this, use `<div className="flex flex-row min-w-max">` so columns anchor left.
+
+Task 3: Double-Stacked Data Cells.
+- Enforce a strict, fixed row height for every row (e.g., `h-[52px]`) to guarantee vertical alignment across all three panels.
+- Build a generic cell component for the data. Use `tabular-nums` so numbers don't jitter.
+- For Double-Stacked columns (e.g., Bid/Ask Size, Vol/OI):
+  - Top value: `text-[13px] font-medium text-white leading-tight`.
+  - Bottom value: `text-[11px] text-zinc-500 leading-tight`.
+- For single values (e.g., Delta): Render them centered vertically in the cell.
+
+Task 4: The Columns Editor Modal.
+- In the top header of the Center Spine (above the 'STRIKE' label), add a small, muted Gear icon (⚙).
+- Clicking the Gear opens a slide-up modal or dialog.
+- Inside the modal, list all available columns with a toggle switch or checkbox to add/remove them from the active view. Apply the changes to the Zustand store.

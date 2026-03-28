@@ -1,13 +1,15 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useOptionsSettingsStore } from "@/lib/options-store";
+import { useOptionsColumnsStore, COLUMN_REGISTRY, type ColumnDef } from "@/lib/options-columns-store";
 import { useGetQuote, useGetOptionChain } from "@workspace/api-client-react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Table2, ChevronDown, ChevronUp, X } from "lucide-react";
+import { Table2, ChevronDown, ChevronUp, X, Settings } from "lucide-react";
 
 const EPS = 0.0001;
+const ROW_HEIGHT = "h-[52px]";
 
 interface Contract {
   strike: number;
@@ -23,6 +25,7 @@ interface Contract {
   theta?: number;
   vega?: number;
   dte?: number;
+  probOtm?: number;
 }
 
 interface NormalizedRow {
@@ -69,30 +72,17 @@ function sliceAroundATM(rows: NormalizedRow[], atmIdx: number, count: number): N
   const total = count % 2 !== 0 ? count + 1 : count;
   const below = Math.floor(total / 2);
   const above = total - below - 1;
-
   let start = atmIdx - below;
   let end = atmIdx + above + 1;
-
-  if (start < 0) {
-    end = Math.min(rows.length, end + Math.abs(start));
-    start = 0;
-  }
-  if (end > rows.length) {
-    start = Math.max(0, start - (end - rows.length));
-    end = rows.length;
-  }
-
+  if (start < 0) { end = Math.min(rows.length, end + Math.abs(start)); start = 0; }
+  if (end > rows.length) { start = Math.max(0, start - (end - rows.length)); end = rows.length; }
   return rows.slice(start, end);
 }
 
 function buildExpirationGroups(
-  calls: Contract[],
-  puts: Contract[],
-  lastPrice: number | null,
-  strikeCount: number
+  calls: Contract[], puts: Contract[], lastPrice: number | null, strikeCount: number
 ): ExpirationGroup[] {
   const expMap = new Map<string, { calls: Map<number, Contract>; puts: Map<number, Contract>; dte: number }>();
-
   for (const c of calls) {
     if (!expMap.has(c.expiration)) expMap.set(c.expiration, { calls: new Map(), puts: new Map(), dte: c.dte ?? 0 });
     expMap.get(c.expiration)!.calls.set(c.strike, c);
@@ -101,32 +91,66 @@ function buildExpirationGroups(
     if (!expMap.has(p.expiration)) expMap.set(p.expiration, { calls: new Map(), puts: new Map(), dte: p.dte ?? 0 });
     expMap.get(p.expiration)!.puts.set(p.strike, p);
   }
-
   const groups: ExpirationGroup[] = [];
   for (const [exp, { calls: callMap, puts: putMap, dte }] of expMap) {
     const allStrikes = [...new Set([...callMap.keys(), ...putMap.keys()])].sort((a, b) => a - b);
     const atmIdx = lastPrice != null ? findATMIndex(allStrikes, lastPrice) : -1;
-
     let normalizedRows: NormalizedRow[] = allStrikes.map((strike) => ({
-      strike,
-      call: callMap.get(strike) ?? null,
-      put: putMap.get(strike) ?? null,
+      strike, call: callMap.get(strike) ?? null, put: putMap.get(strike) ?? null,
     }));
-
     if (strikeCount > 0 && atmIdx >= 0 && normalizedRows.length > strikeCount) {
       normalizedRows = sliceAroundATM(normalizedRows, atmIdx, strikeCount);
     }
-
     groups.push({ expiration: exp, dte, label: formatExpLabel(exp, dte), rows: normalizedRows });
   }
-
   groups.sort((a, b) => a.dte - b.dte);
   return groups;
 }
 
-function CellVal({ val, decimals = 2 }: { val?: number | null; decimals?: number }) {
-  if (val == null || isNaN(val)) return <span className="text-zinc-600">—</span>;
-  return <>{val.toFixed(decimals)}</>;
+function getContractVal(contract: Contract | null, key: string): number | undefined {
+  if (!contract) return undefined;
+  return (contract as Record<string, unknown>)[key] as number | undefined;
+}
+
+function DataCell({ col, contract, align }: { col: ColumnDef; contract: Contract | null; align: "left" | "right" }) {
+  const topVal = getContractVal(contract, col.topKey);
+  const bottomVal = col.bottomKey ? getContractVal(contract, col.bottomKey) : undefined;
+  const textAlign = align === "right" ? "text-right" : "text-left";
+
+  if (col.stacked) {
+    const topStr = topVal != null && !isNaN(topVal) ? (col.decimals === 0 ? String(Math.round(topVal)) : topVal.toFixed(col.decimals)) : "—";
+    const botStr = bottomVal != null && !isNaN(bottomVal) ? (col.decimals === 0 ? String(Math.round(bottomVal)) : bottomVal.toFixed(col.decimals)) : "—";
+    return (
+      <div className={`flex flex-col justify-center ${ROW_HEIGHT} px-2 ${textAlign}`} style={{ fontVariantNumeric: "tabular-nums" }}>
+        <span className={`text-[13px] font-medium leading-tight ${topStr === "—" ? "text-zinc-600" : "text-white"}`}>{topStr}</span>
+        <span className={`text-[11px] leading-tight ${botStr === "—" ? "text-zinc-600" : "text-zinc-500"}`}>{botStr}</span>
+      </div>
+    );
+  }
+
+  const valStr = topVal != null && !isNaN(topVal) ? topVal.toFixed(col.decimals) : "—";
+  return (
+    <div className={`flex items-center ${ROW_HEIGHT} px-2 ${textAlign}`} style={{ fontVariantNumeric: "tabular-nums" }}>
+      <span className={`text-[13px] font-medium w-full ${valStr === "—" ? "text-zinc-600" : "text-zinc-400"}`}>{valStr}</span>
+    </div>
+  );
+}
+
+function HeaderCell({ col, align }: { col: ColumnDef; align: "left" | "right" }) {
+  const textAlign = align === "right" ? "text-right" : "text-left";
+  if (col.stacked) {
+    return (
+      <div className={`flex flex-col justify-center px-2 py-1.5 ${textAlign}`}>
+        <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold leading-tight">{col.topLabel}</span>
+        <span className="text-[10px] text-zinc-600 uppercase tracking-wider leading-tight">{col.bottomLabel}</span>
+      </div>
+    );
+  }
+  return (
+    <div className={`flex items-center px-2 py-1.5 ${textAlign}`}>
+      <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold w-full">{col.topLabel}</span>
+    </div>
+  );
 }
 
 function MetricsStrip() {
@@ -134,7 +158,6 @@ function MetricsStrip() {
   const mockIVR = 68;
   const mockMove = 14.50;
   const mockERDays = 12;
-
   const ivrColor = mockIVR > 50 ? "text-[#FFB800]" : "text-white";
   const erColor = mockERDays < 14 ? "text-red-400" : "text-white";
 
@@ -160,10 +183,187 @@ function MetricsStrip() {
   );
 }
 
+function ColumnsEditorModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { activeColumnIds, toggleColumn } = useOptionsColumnsStore();
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/60" />
+      <div
+        className="relative bg-[#111111] border border-[#262626] rounded-t-xl sm:rounded-xl w-full sm:max-w-sm mx-auto p-4 z-10"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <span className="font-mono text-sm font-bold text-white tracking-wider">COLUMNS</span>
+          <button onClick={onClose} className="p-1 rounded text-zinc-500 hover:text-white hover:bg-[#262626] transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="space-y-2">
+          {COLUMN_REGISTRY.map(col => {
+            const isActive = activeColumnIds.includes(col.id);
+            const isLast = isActive && activeColumnIds.length <= 1;
+            return (
+              <button
+                key={col.id}
+                onClick={() => { if (!isLast) toggleColumn(col.id); }}
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg border transition-colors ${
+                  isActive
+                    ? "bg-[#1a1a1a] border-[#FFB800]/30 text-white"
+                    : "bg-[#0c0c0c] border-[#262626] text-zinc-500 hover:text-zinc-300 hover:border-[#333]"
+                } ${isLast ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
+                disabled={isLast}
+              >
+                <div className="flex items-center gap-3">
+                  <span className="font-mono text-sm font-medium">{col.label}</span>
+                  {col.stacked && (
+                    <span className="font-mono text-[10px] text-zinc-600 uppercase">stacked</span>
+                  )}
+                </div>
+                <div className={`w-9 h-5 rounded-full flex items-center transition-colors ${isActive ? "bg-[#FFB800] justify-end" : "bg-[#262626] justify-start"}`}>
+                  <div className="w-4 h-4 rounded-full bg-white mx-0.5 shadow-sm" />
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ThreePanelBody({
+  rows,
+  underlyingPrice,
+  columns,
+  showCalls,
+  showPuts,
+  onOpenColumnsEditor,
+}: {
+  rows: NormalizedRow[];
+  underlyingPrice: number | null;
+  columns: ColumnDef[];
+  showCalls: boolean;
+  showPuts: boolean;
+  onOpenColumnsEditor: () => void;
+}) {
+  const sortedRows = useMemo(() => [...rows].sort((a, b) => a.strike - b.strike), [rows]);
+
+  const transitionIdx = useMemo(() => {
+    if (underlyingPrice == null) return -1;
+    return sortedRows.findIndex(r => r.strike > underlyingPrice + EPS);
+  }, [sortedRows, underlyingPrice]);
+
+  const priceAboveAll = useMemo(() => {
+    if (underlyingPrice == null || sortedRows.length === 0) return false;
+    return underlyingPrice > sortedRows[sortedRows.length - 1].strike + EPS;
+  }, [underlyingPrice, sortedRows]);
+
+  const colWidth = 80;
+  const totalPanelWidth = columns.length * colWidth;
+
+  return (
+    <div className="flex font-mono">
+      {showCalls && (
+        <div className="flex-1 overflow-x-auto overscroll-x-contain">
+          <div style={{ minWidth: totalPanelWidth }}>
+            <div className="flex flex-row-reverse bg-[#0a0a0a] border-b border-[#262626]">
+              {columns.map(col => (
+                <div key={col.id} style={{ width: colWidth }} className="shrink-0">
+                  <HeaderCell col={col} align="right" />
+                </div>
+              ))}
+            </div>
+            {sortedRows.map((row, idx) => {
+              const isATMBorder = idx === transitionIdx;
+              const isLastRowATM = transitionIdx === -1 && priceAboveAll && idx === sortedRows.length - 1;
+              const callITM = underlyingPrice != null && row.strike < underlyingPrice - EPS;
+              const borderClass = isATMBorder
+                ? "border-t border-dashed border-[#FFB800]"
+                : isLastRowATM ? "border-b border-dashed border-[#FFB800]" : "border-b border-[#1a1a1a]";
+              return (
+                <div key={row.strike} className={`flex flex-row-reverse transition-colors hover:bg-white/[0.03] ${borderClass} ${callITM ? "bg-[#1e293b]" : ""}`}>
+                  {columns.map(col => (
+                    <div key={col.id} style={{ width: colWidth }} className="shrink-0">
+                      <DataCell col={col} contract={row.call} align="right" />
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <div className="w-[72px] flex-none bg-[#09090b] z-10 border-x border-[#262626]">
+        <div className="flex items-center justify-center py-1.5 border-b border-[#262626] gap-1">
+          <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold">Strike</span>
+          <button onClick={onOpenColumnsEditor} className="p-0.5 rounded text-zinc-600 hover:text-zinc-300 transition-colors" aria-label="Edit columns">
+            <Settings className="w-3 h-3" />
+          </button>
+        </div>
+        {sortedRows.map((row, idx) => {
+          const isATMBorder = idx === transitionIdx;
+          const isLastRowATM = transitionIdx === -1 && priceAboveAll && idx === sortedRows.length - 1;
+          const isATMStrike = underlyingPrice != null && Math.abs(row.strike - underlyingPrice) <= EPS;
+          const borderClass = isATMBorder
+            ? "border-t border-dashed border-[#FFB800]"
+            : isLastRowATM ? "border-b border-dashed border-[#FFB800]" : "border-b border-[#1a1a1a]";
+          return (
+            <div key={row.strike} className={`flex items-center justify-center ${ROW_HEIGHT} text-sm font-bold ${isATMStrike ? "text-[#FFB800]" : "text-zinc-300"} ${borderClass}`}>
+              {row.strike.toFixed(row.strike % 1 === 0 ? 0 : 2)}
+            </div>
+          );
+        })}
+      </div>
+
+      {showPuts && (
+        <div className="flex-1 overflow-x-auto overscroll-x-contain">
+          <div style={{ minWidth: totalPanelWidth }}>
+            <div className="flex flex-row bg-[#0a0a0a] border-b border-[#262626]">
+              {columns.map(col => (
+                <div key={col.id} style={{ width: colWidth }} className="shrink-0">
+                  <HeaderCell col={col} align="left" />
+                </div>
+              ))}
+            </div>
+            {sortedRows.map((row, idx) => {
+              const isATMBorder = idx === transitionIdx;
+              const isLastRowATM = transitionIdx === -1 && priceAboveAll && idx === sortedRows.length - 1;
+              const putITM = underlyingPrice != null && row.strike > underlyingPrice + EPS;
+              const borderClass = isATMBorder
+                ? "border-t border-dashed border-[#FFB800]"
+                : isLastRowATM ? "border-b border-dashed border-[#FFB800]" : "border-b border-[#1a1a1a]";
+              return (
+                <div key={row.strike} className={`flex flex-row transition-colors hover:bg-white/[0.03] ${borderClass} ${putITM ? "bg-[#1e293b]" : ""}`}>
+                  {columns.map(col => (
+                    <div key={col.id} style={{ width: colWidth }} className="shrink-0">
+                      <DataCell col={col} contract={row.put} align="left" />
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function OptionsTab() {
   const { symbol, accessToken } = useTerminalStore();
   const { contractType, strikeCount, maxDte, customStrikeInput, setCustomStrikeInput } = useOptionsSettingsStore();
   const setStrikeCount = useOptionsSettingsStore(s => s.setStrikeCount);
+  const { activeColumnIds } = useOptionsColumnsStore();
+  const [columnsEditorOpen, setColumnsEditorOpen] = useState(false);
+
+  const activeColumns = useMemo(
+    () => activeColumnIds.map(id => COLUMN_REGISTRY.find(c => c.id === id)).filter(Boolean) as ColumnDef[],
+    [activeColumnIds]
+  );
 
   const [expandedExps, setExpandedExps] = useState<Set<string>>(new Set());
   const [isCustomMode, setIsCustomMode] = useState(() => ![6, 10, 20].includes(strikeCount));
@@ -204,25 +404,18 @@ export function OptionsTab() {
     }
   }, [groups]);
 
-  useEffect(() => {
-    setExpandedExps(new Set());
-  }, [symbol]);
+  useEffect(() => { setExpandedExps(new Set()); }, [symbol]);
 
   const toggleExp = (exp: string) => {
     setExpandedExps(prev => {
       const next = new Set(prev);
-      if (next.has(exp)) next.delete(exp);
-      else next.add(exp);
+      if (next.has(exp)) next.delete(exp); else next.add(exp);
       return next;
     });
   };
 
   const handleStrikeModeChange = useCallback((val: string) => {
-    if (val === "custom") {
-      setLocalCustomValue(String(strikeCount));
-      setIsCustomMode(true);
-      return;
-    }
+    if (val === "custom") { setLocalCustomValue(String(strikeCount)); setIsCustomMode(true); return; }
     setIsCustomMode(false);
     const n = parseInt(val);
     if (!isNaN(n) && n > 0) setStrikeCount(n);
@@ -240,55 +433,32 @@ export function OptionsTab() {
   }, [setCustomStrikeInput, setStrikeCount]);
 
   const handleExitCustomMode = useCallback(() => {
-    if (debounceRef.current) {
-      clearTimeout(debounceRef.current);
-      debounceRef.current = null;
-    }
+    if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null; }
     setIsCustomMode(false);
-    if (![6, 10, 20].includes(strikeCount)) {
-      setStrikeCount(10);
-    }
+    if (![6, 10, 20].includes(strikeCount)) setStrikeCount(10);
   }, [strikeCount, setStrikeCount]);
 
-  useEffect(() => {
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-  }, []);
-
-  const gridCols = contractType === 'CALL'
-    ? "1fr 56px"
-    : contractType === 'PUT'
-      ? "56px 1fr"
-      : "1fr 56px 1fr";
+  useEffect(() => { return () => { if (debounceRef.current) clearTimeout(debounceRef.current); }; }, []);
 
   const showCalls = contractType !== 'PUT';
   const showPuts = contractType !== 'CALL';
 
   return (
     <div className="space-y-2 h-full flex flex-col">
-
       <div className="flex items-center justify-between gap-2 bg-[#111111] px-3 py-1.5 rounded-lg border border-[#262626] shrink-0 flex-wrap">
         <div className="flex items-center gap-1">
           <span className="font-mono text-[10px] text-zinc-500 uppercase">Strikes</span>
           {isCustomMode ? (
             <div className="flex items-center gap-1">
               <Input
-                type="number"
-                min={2}
-                max={100}
-                autoFocus
+                type="number" min={2} max={100} autoFocus
                 value={localCustomValue}
                 onChange={e => handleCustomStrikeChange(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Escape') handleExitCustomMode(); }}
                 className="w-[70px] font-mono text-[11px] bg-[#0c0c0c] border-[#262626] h-7 px-2"
                 placeholder="10"
               />
-              <button
-                onClick={handleExitCustomMode}
-                className="p-0.5 rounded text-zinc-500 hover:text-white hover:bg-[#262626] transition-colors"
-                aria-label="Exit custom mode"
-              >
+              <button onClick={handleExitCustomMode} className="p-0.5 rounded text-zinc-500 hover:text-white hover:bg-[#262626] transition-colors" aria-label="Exit custom mode">
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -317,7 +487,7 @@ export function OptionsTab() {
 
       {data && <MetricsStrip />}
 
-      <div className="flex-1 overflow-auto terminal-panel p-0 min-h-0 relative">
+      <div className="flex-1 overflow-y-auto terminal-panel p-0 min-h-0 relative">
         {isLoading && !data && (
           <div className="p-4 space-y-1.5">
             {Array.from({ length: 12 }).map((_, i) => (
@@ -370,61 +540,19 @@ export function OptionsTab() {
                         <span className="text-zinc-500">±</span>
                         <span className="text-white">$8.50</span>
                       </div>
-                      {isOpen
-                        ? <ChevronUp className="w-3 h-3 text-zinc-500" />
-                        : <ChevronDown className="w-3 h-3 text-zinc-500" />}
+                      {isOpen ? <ChevronUp className="w-3 h-3 text-zinc-500" /> : <ChevronDown className="w-3 h-3 text-zinc-500" />}
                     </div>
                   </button>
 
                   {isOpen && (
-                    <div className="overflow-x-auto">
-                      <div
-                        className="grid text-[10px] font-mono text-zinc-500 uppercase tracking-wider border-b border-[#262626] bg-[#0a0a0a] sticky top-0 z-10 py-1"
-                        style={{ gridTemplateColumns: gridCols }}
-                      >
-                        {showCalls && (
-                          <div className="px-2 text-left">CALLS</div>
-                        )}
-                        <div className="flex items-center justify-center text-zinc-400">
-                          STRIKE
-                        </div>
-                        {showPuts && (
-                          <div className="px-2 text-right">PUTS</div>
-                        )}
-                      </div>
-
-                      <div
-                        className="grid text-[10px] font-mono text-zinc-500 uppercase tracking-wider border-b border-[#262626] bg-[#0a0a0a] sticky top-[22px] z-10"
-                        style={{ gridTemplateColumns: gridCols }}
-                      >
-                        {showCalls && (
-                          <div className="grid grid-cols-4 px-2 py-1 text-right gap-0.5">
-                            <span>Bid</span>
-                            <span>Ask</span>
-                            <span>Vol</span>
-                            <span>Delta</span>
-                          </div>
-                        )}
-                        <div className="flex items-center justify-center bg-[#18181B] text-zinc-400 font-bold">
-                        </div>
-                        {showPuts && (
-                          <div className="grid grid-cols-4 px-2 py-1 text-left gap-0.5">
-                            <span>Bid</span>
-                            <span>Ask</span>
-                            <span>Vol</span>
-                            <span>Delta</span>
-                          </div>
-                        )}
-                      </div>
-
-                      <StraddleBody
-                        rows={group.rows}
-                        underlyingPrice={underlyingPrice}
-                        gridCols={gridCols}
-                        showCalls={showCalls}
-                        showPuts={showPuts}
-                      />
-                    </div>
+                    <ThreePanelBody
+                      rows={group.rows}
+                      underlyingPrice={underlyingPrice}
+                      columns={activeColumns}
+                      showCalls={showCalls}
+                      showPuts={showPuts}
+                      onOpenColumnsEditor={() => setColumnsEditorOpen(true)}
+                    />
                   )}
                 </div>
               );
@@ -439,94 +567,8 @@ export function OptionsTab() {
           </div>
         )}
       </div>
-    </div>
-  );
-}
 
-function StraddleBody({
-  rows,
-  underlyingPrice,
-  gridCols,
-  showCalls,
-  showPuts,
-}: {
-  rows: NormalizedRow[];
-  underlyingPrice: number | null;
-  gridCols: string;
-  showCalls: boolean;
-  showPuts: boolean;
-}) {
-  const sortedRows = useMemo(
-    () => [...rows].sort((a, b) => a.strike - b.strike),
-    [rows]
-  );
-
-  const transitionIdx = useMemo(() => {
-    if (underlyingPrice == null) return -1;
-    return sortedRows.findIndex(r => r.strike > underlyingPrice + EPS);
-  }, [sortedRows, underlyingPrice]);
-
-  const priceAboveAll = useMemo(() => {
-    if (underlyingPrice == null || sortedRows.length === 0) return false;
-    const maxStrike = sortedRows[sortedRows.length - 1].strike;
-    return underlyingPrice > maxStrike + EPS;
-  }, [underlyingPrice, sortedRows]);
-
-  return (
-    <div>
-      {sortedRows.map((row, idx) => {
-        const isATMBorder = idx === transitionIdx;
-        const isLastRowATM = transitionIdx === -1 && priceAboveAll && idx === sortedRows.length - 1;
-
-        const callITM = underlyingPrice != null && row.strike < underlyingPrice - EPS;
-        const putITM = underlyingPrice != null && row.strike > underlyingPrice + EPS;
-
-        const isATMStrike = underlyingPrice != null &&
-          Math.abs(row.strike - underlyingPrice) <= EPS;
-
-        return (
-          <div
-            key={row.strike}
-            className={`grid font-mono text-sm transition-colors hover:bg-white/[0.03] ${
-              isATMBorder
-                ? "border-t border-dashed border-[#FFB800]"
-                : isLastRowATM
-                  ? "border-b border-dashed border-[#FFB800]"
-                  : "border-b border-[#1a1a1a]"
-            }`}
-            style={{
-              gridTemplateColumns: gridCols,
-              fontVariantNumeric: "tabular-nums",
-            }}
-          >
-            {showCalls && (
-              <div
-                className={`grid grid-cols-4 px-2 py-1 text-right gap-0.5 items-center ${callITM ? "bg-[#1e293b]" : ""}`}
-              >
-                <span className="text-white"><CellVal val={row.call?.bid} /></span>
-                <span className="text-white"><CellVal val={row.call?.ask} /></span>
-                <span className="text-zinc-400">{row.call?.volume ?? <span className="text-zinc-600">—</span>}</span>
-                <span className="text-zinc-500"><CellVal val={row.call?.delta} decimals={3} /></span>
-              </div>
-            )}
-
-            <div className={`flex items-center justify-center bg-[#18181B] text-sm font-bold ${isATMStrike ? "text-[#FFB800]" : "text-zinc-300"}`}>
-              {row.strike.toFixed(row.strike % 1 === 0 ? 0 : 2)}
-            </div>
-
-            {showPuts && (
-              <div
-                className={`grid grid-cols-4 px-2 py-1 text-left gap-0.5 items-center ${putITM ? "bg-[#1e293b]" : ""}`}
-              >
-                <span className="text-white"><CellVal val={row.put?.bid} /></span>
-                <span className="text-white"><CellVal val={row.put?.ask} /></span>
-                <span className="text-zinc-400">{row.put?.volume ?? <span className="text-zinc-600">—</span>}</span>
-                <span className="text-zinc-500"><CellVal val={row.put?.delta} decimals={3} /></span>
-              </div>
-            )}
-          </div>
-        );
-      })}
+      <ColumnsEditorModal open={columnsEditorOpen} onClose={() => setColumnsEditorOpen(false)} />
     </div>
   );
 }
