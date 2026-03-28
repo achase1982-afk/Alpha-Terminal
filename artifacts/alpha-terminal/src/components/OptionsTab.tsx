@@ -10,8 +10,14 @@ import { Table2, ChevronDown, ChevronUp, X, Settings, GripVertical } from "lucid
 import { Reorder } from "framer-motion";
 
 const EPS = 0.0001;
-const COL_W = 60;
-const STRIKE_W = 56;
+const COL_W = 72;
+const STRIKE_W = 64;
+const ROW_H = 56;
+const HEADER_H = 44;
+const SUB_HEADER_H = 28;
+const STICKY_TOP = HEADER_H + SUB_HEADER_H;
+const BG = "#1C1C1E";
+const BORDER = "#2A2A2C";
 
 interface Contract {
   strike: number;
@@ -40,19 +46,32 @@ interface NormalizedRow {
 interface ExpirationGroup {
   expiration: string;
   dte: number;
-  label: string;
+  dateLabel: string;
   rows: NormalizedRow[];
+  totalStrikes: number;
+  isWeekly: boolean;
+  atmIV: number | null;
+  expectedMove: number | null;
 }
 
-function formatExpLabel(expStr: string, dte?: number): string {
+function formatExpDate(expStr: string): string {
   try {
-    const d = new Date(expStr);
-    const months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
-    const label = `${d.getDate()} ${months[d.getMonth()]} ${String(d.getFullYear()).slice(2)}`;
-    const dteStr = dte != null ? ` (${Math.round(dte)} dte)` : "";
-    return `${label}${dteStr}`;
+    const d = new Date(expStr + "T12:00:00");
+    const months = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
+    return `${d.getDate()} ${months[d.getMonth()]} ${String(d.getFullYear()).slice(2)}`;
   } catch {
     return expStr;
+  }
+}
+
+function isWeeklyExp(expStr: string): boolean {
+  try {
+    const d = new Date(expStr + "T12:00:00");
+    if (d.getDay() !== 5) return true;
+    const date = d.getDate();
+    return !(date >= 15 && date <= 21);
+  } catch {
+    return false;
   }
 }
 
@@ -95,14 +114,38 @@ function buildExpirationGroups(
   const groups: ExpirationGroup[] = [];
   for (const [exp, { calls: callMap, puts: putMap, dte }] of expMap) {
     const allStrikes = [...new Set([...callMap.keys(), ...putMap.keys()])].sort((a, b) => a - b);
+    const totalStrikes = allStrikes.length;
     const atmIdx = lastPrice != null ? findATMIndex(allStrikes, lastPrice) : -1;
     let normalizedRows: NormalizedRow[] = allStrikes.map((strike) => ({
       strike, call: callMap.get(strike) ?? null, put: putMap.get(strike) ?? null,
     }));
+
+    let atmIV: number | null = null;
+    let expectedMove: number | null = null;
+    if (atmIdx >= 0 && lastPrice != null) {
+      const atmRow = normalizedRows[atmIdx];
+      const callIV = atmRow?.call?.iv;
+      const putIV = atmRow?.put?.iv;
+      const ivValues = [callIV, putIV].filter((v): v is number => v != null && !isNaN(v));
+      if (ivValues.length > 0) {
+        atmIV = ivValues.reduce((a, b) => a + b, 0) / ivValues.length;
+        expectedMove = lastPrice * (atmIV / 100) * Math.sqrt(Math.max(dte, 1) / 365);
+      }
+    }
+
     if (strikeCount > 0 && atmIdx >= 0 && normalizedRows.length > strikeCount) {
       normalizedRows = sliceAroundATM(normalizedRows, atmIdx, strikeCount);
     }
-    groups.push({ expiration: exp, dte, label: formatExpLabel(exp, dte), rows: normalizedRows });
+    groups.push({
+      expiration: exp,
+      dte,
+      dateLabel: formatExpDate(exp),
+      rows: normalizedRows,
+      totalStrikes,
+      isWeekly: isWeeklyExp(exp),
+      atmIV,
+      expectedMove,
+    });
   }
   groups.sort((a, b) => a.dte - b.dte);
   return groups;
@@ -110,7 +153,7 @@ function buildExpirationGroups(
 
 function getContractVal(contract: Contract | null, key: string): number | undefined {
   if (!contract) return undefined;
-  return (contract as Record<string, unknown>)[key] as number | undefined;
+  return (contract as unknown as Record<string, unknown>)[key] as number | undefined;
 }
 
 function fmtNum(val: number | undefined, decimals: number): string {
@@ -118,62 +161,44 @@ function fmtNum(val: number | undefined, decimals: number): string {
   return decimals === 0 ? String(Math.round(val)) : val.toFixed(decimals);
 }
 
-function DataCell({ col, contract, align }: { col: ColumnDef; contract: Contract | null; align: "left" | "right" }) {
+const noScrollbar: React.CSSProperties = {
+  scrollbarWidth: "none",
+  msOverflowStyle: "none",
+  WebkitOverflowScrolling: "touch",
+  scrollSnapType: "none",
+};
+
+function DataCell({ col, contract }: { col: ColumnDef; contract: Contract | null }) {
   const topVal = getContractVal(contract, col.topKey);
   const bottomVal = col.bottomKey ? getContractVal(contract, col.bottomKey) : undefined;
   const topStr = fmtNum(topVal, col.topDecimals);
   const botStr = col.bottomKey ? fmtNum(bottomVal, col.bottomDecimals ?? 0) : null;
-  const textAlign = align === "right" ? "text-right" : "text-left";
 
   const inner = (
-    <div className={`flex flex-col justify-center h-12 px-1.5 ${textAlign}`}>
-      <span className={`text-[13px] font-medium leading-tight ${topStr === "—" ? "text-zinc-600" : "text-zinc-100"}`}>{topStr}</span>
+    <div className="flex flex-col justify-center px-2" style={{ height: ROW_H }}>
+      <span className={`text-[13px] font-medium leading-tight ${topStr === "—" ? "text-zinc-600" : "text-zinc-100"}`}>
+        {topStr}
+      </span>
       {botStr != null && (
-        <span className={`text-[10px] leading-tight ${botStr === "—" ? "text-zinc-700" : "text-zinc-500"}`}>{botStr}</span>
+        <span className={`text-[10px] leading-tight mt-0.5 ${botStr === "—" ? "text-zinc-700" : "text-zinc-500"}`}>
+          {col.bottomLabel ? `${col.bottomLabel}: ${botStr}` : botStr}
+        </span>
       )}
     </div>
   );
 
   if (col.isPrice) {
     return (
-      <button className="w-full hover:bg-white/[0.06] active:bg-white/[0.1] transition-colors cursor-pointer" style={{ fontVariantNumeric: "tabular-nums" }}>
+      <button
+        className="w-full text-left hover:bg-white/[0.04] active:bg-white/[0.08] transition-colors cursor-pointer"
+        style={{ fontVariantNumeric: "tabular-nums" }}
+      >
         {inner}
       </button>
     );
   }
 
   return <div style={{ fontVariantNumeric: "tabular-nums" }}>{inner}</div>;
-}
-
-
-function MetricsStrip() {
-  const mockIV = 26.2;
-  const mockIVR = 68;
-  const mockMove = 14.50;
-  const mockERDays = 12;
-  const ivrColor = mockIVR > 50 ? "text-[#FFB800]" : "text-white";
-  const erColor = mockERDays < 14 ? "text-red-400" : "text-white";
-
-  return (
-    <div className="flex justify-between items-center bg-[#09090b] py-2 px-3 border-y border-[#262626] shrink-0 font-mono" style={{ fontVariantNumeric: "tabular-nums" }}>
-      <div className="flex flex-col items-center">
-        <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">IV</span>
-        <span className="text-sm font-bold text-white">{mockIV}%</span>
-      </div>
-      <div className="flex flex-col items-center">
-        <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">IVR</span>
-        <span className={`text-sm font-bold ${ivrColor}`}>{mockIVR}</span>
-      </div>
-      <div className="flex flex-col items-center">
-        <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">MOVE</span>
-        <span className="text-sm font-bold text-white">±${mockMove.toFixed(2)}</span>
-      </div>
-      <div className="flex flex-col items-center">
-        <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">ER</span>
-        <span className={`text-sm font-bold ${erColor}`}>{mockERDays}d</span>
-      </div>
-    </div>
-  );
 }
 
 function ColumnsEditorModal({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -195,12 +220,13 @@ function ColumnsEditorModal({ open, onClose }: { open: boolean; onClose: () => v
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" onClick={onClose}>
       <div className="absolute inset-0 bg-black/60" />
       <div
-        className="relative bg-[#111111] border border-[#262626] rounded-t-xl sm:rounded-xl w-full sm:max-w-sm mx-auto p-4 z-10"
+        className="relative border rounded-t-xl sm:rounded-xl w-full sm:max-w-sm mx-auto p-4 z-10"
+        style={{ backgroundColor: BG, borderColor: BORDER }}
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-4">
           <span className="font-mono text-sm font-bold text-white tracking-wider">COLUMNS</span>
-          <button onClick={onClose} className="p-1 rounded text-zinc-500 hover:text-white hover:bg-[#262626] transition-colors">
+          <button onClick={onClose} className="p-1 rounded text-zinc-500 hover:text-white hover:bg-white/10 transition-colors">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -211,10 +237,8 @@ function ColumnsEditorModal({ open, onClose }: { open: boolean; onClose: () => v
             if (!col) return null;
             return (
               <Reorder.Item key={id} value={id} className="cursor-grab active:cursor-grabbing">
-                <div className="flex items-center justify-between px-3 py-2 rounded-lg border bg-[#1a1a1a] border-[#FFB800]/30 text-white">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-sm font-medium">{col.label}</span>
-                  </div>
+                <div className="flex items-center justify-between px-3 py-2 rounded-lg border border-[#FFB800]/30 text-white" style={{ backgroundColor: '#252528' }}>
+                  <span className="font-mono text-sm font-medium">{col.label}</span>
                   <div className="flex items-center gap-2">
                     <button
                       onClick={(e) => { e.stopPropagation(); toggleColumn(id); setLocalOrder(prev => prev.filter(x => x !== id)); }}
@@ -236,26 +260,17 @@ function ColumnsEditorModal({ open, onClose }: { open: boolean; onClose: () => v
             <button
               key={col.id}
               onClick={() => { toggleColumn(col.id); setLocalOrder(prev => [...prev, col.id]); }}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-lg border bg-[#0c0c0c] border-[#262626] text-zinc-500 hover:text-zinc-300 hover:border-[#333] transition-colors"
+              className="w-full flex items-center justify-between px-3 py-2 rounded-lg border text-zinc-500 hover:text-zinc-300 transition-colors"
+              style={{ backgroundColor: '#111113', borderColor: BORDER }}
             >
               <span className="font-mono text-sm font-medium">{col.label}</span>
-              <div className="w-9 h-5 rounded-full flex items-center transition-colors bg-[#262626] justify-start">
+              <div className="w-9 h-5 rounded-full flex items-center transition-colors justify-start" style={{ backgroundColor: BORDER }}>
                 <div className="w-4 h-4 rounded-full bg-white mx-0.5 shadow-sm" />
               </div>
             </button>
           ))}
         </div>
       </div>
-    </div>
-  );
-}
-
-const ROW_H = 48;
-
-function WingColumn({ col, contract }: { col: ColumnDef; contract: Contract | null }) {
-  return (
-    <div style={{ width: COL_W }} className="shrink-0">
-      <DataCell col={col} contract={contract} align="left" />
     </div>
   );
 }
@@ -323,10 +338,9 @@ function OptionsGrid({
 
   const wingWidth = columns.length * COL_W;
 
-  const SUB_HEADER_H = 24;
   const atmLineTop = useMemo(() => {
-    if (transitionIdx >= 0) return SUB_HEADER_H + transitionIdx * ROW_H;
-    if (priceAboveAll && sortedRows.length > 0) return SUB_HEADER_H + sortedRows.length * ROW_H;
+    if (transitionIdx >= 0) return transitionIdx * ROW_H;
+    if (priceAboveAll && sortedRows.length > 0) return sortedRows.length * ROW_H;
     return -1;
   }, [transitionIdx, priceAboveAll, sortedRows.length]);
 
@@ -337,14 +351,12 @@ function OptionsGrid({
     return () => cleanups.forEach(fn => fn());
   }, [registerWing, showCalls, showPuts]);
 
-  const momentumStyle = { WebkitOverflowScrolling: "touch", scrollSnapType: "none" } as React.CSSProperties;
-
   return (
     <div className="relative flex font-mono" style={{ fontVariantNumeric: "tabular-nums" }}>
       {atmLineTop >= 0 && (
         <div
-          className="absolute left-0 right-0 z-30 border-t border-dashed border-[#FFB800] pointer-events-none"
-          style={{ top: atmLineTop }}
+          className="absolute left-0 right-0 z-30 pointer-events-none"
+          style={{ top: atmLineTop, borderTop: "1.5px dashed #FFB800" }}
         />
       )}
 
@@ -352,25 +364,21 @@ function OptionsGrid({
         <div
           ref={leftBodyRef}
           className="flex-1 overflow-x-auto overflow-y-hidden overscroll-x-contain"
-          style={momentumStyle}
+          style={noScrollbar}
         >
           <div style={{ minWidth: wingWidth }}>
-            <div className="flex h-6 bg-black border-b border-[#262626]">
-              {columns.map(col => (
-                <div key={col.id} style={{ width: COL_W }} className="shrink-0 flex items-center px-1.5">
-                  <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium truncate">{col.topLabel}</span>
-                </div>
-              ))}
-            </div>
             {sortedRows.map((row) => {
               const callITM = underlyingPrice != null && row.strike < underlyingPrice - EPS;
               return (
                 <div
                   key={row.strike}
-                  className={`flex h-12 border-b border-[#1a1a1a] hover:bg-white/[0.02] transition-colors ${callITM ? "bg-[#1e293b]" : ""}`}
+                  className={`flex border-b hover:bg-white/[0.03] transition-colors ${callITM ? "bg-[#1e293b]/60" : ""}`}
+                  style={{ height: ROW_H, borderColor: BORDER }}
                 >
                   {columns.map(col => (
-                    <WingColumn key={col.id} col={col} contract={row.call} />
+                    <div key={col.id} style={{ width: COL_W }} className="shrink-0">
+                      <DataCell col={col} contract={row.call} />
+                    </div>
                   ))}
                 </div>
               );
@@ -379,19 +387,16 @@ function OptionsGrid({
         </div>
       )}
 
-      <div className="flex-none bg-black z-10 border-x border-[#262626]" style={{ width: STRIKE_W }}>
-        <div className="h-6 flex items-center justify-center border-b border-[#262626] text-[10px] text-zinc-500 uppercase tracking-wider font-medium">
-          Strike
-        </div>
+      <div className="flex-none z-10" style={{ width: STRIKE_W, backgroundColor: '#151517', borderLeft: `1px solid ${BORDER}`, borderRight: `1px solid ${BORDER}` }}>
         {sortedRows.map((row) => {
           const isATMStrike = underlyingPrice != null && Math.abs(row.strike - underlyingPrice) <= EPS;
           return (
             <div
               key={row.strike}
-              className={`h-12 flex items-center justify-center text-[13px] font-medium border-b border-[#1a1a1a] ${isATMStrike ? "text-[#FFB800]" : "text-zinc-300"}`}
-              style={{ fontVariantNumeric: "tabular-nums" }}
+              className={`flex items-center justify-center text-[13px] font-semibold border-b ${isATMStrike ? "text-[#FFB800]" : "text-zinc-300"}`}
+              style={{ height: ROW_H, fontVariantNumeric: "tabular-nums", borderColor: BORDER }}
             >
-              {row.strike.toFixed(row.strike % 1 === 0 ? 0 : 2)}
+              {row.strike % 1 === 0 ? row.strike : row.strike.toFixed(1)}
             </div>
           );
         })}
@@ -401,25 +406,21 @@ function OptionsGrid({
         <div
           ref={rightBodyRef}
           className="flex-1 overflow-x-auto overflow-y-hidden overscroll-x-contain"
-          style={momentumStyle}
+          style={noScrollbar}
         >
           <div style={{ minWidth: wingWidth }}>
-            <div className="flex h-6 bg-black border-b border-[#262626]">
-              {columns.map(col => (
-                <div key={col.id} style={{ width: COL_W }} className="shrink-0 flex items-center px-1.5">
-                  <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium truncate">{col.topLabel}</span>
-                </div>
-              ))}
-            </div>
             {sortedRows.map((row) => {
               const putITM = underlyingPrice != null && row.strike > underlyingPrice + EPS;
               return (
                 <div
                   key={row.strike}
-                  className={`flex h-12 border-b border-[#1a1a1a] hover:bg-white/[0.02] transition-colors ${putITM ? "bg-[#1e293b]" : ""}`}
+                  className={`flex border-b hover:bg-white/[0.03] transition-colors ${putITM ? "bg-[#1e293b]/60" : ""}`}
+                  style={{ height: ROW_H, borderColor: BORDER }}
                 >
                   {columns.map(col => (
-                    <WingColumn key={col.id} col={col} contract={row.put} />
+                    <div key={col.id} style={{ width: COL_W }} className="shrink-0">
+                      <DataCell col={col} contract={row.put} />
+                    </div>
                   ))}
                 </div>
               );
@@ -442,6 +443,8 @@ export function OptionsTab() {
     () => activeColumnIds.map(id => COLUMN_REGISTRY.find(c => c.id === id)).filter(Boolean) as ColumnDef[],
     [activeColumnIds]
   );
+
+  const wingWidth = activeColumns.length * COL_W;
 
   const [expandedExps, setExpandedExps] = useState<Set<string>>(new Set());
   const [isCustomMode, setIsCustomMode] = useState(() => ![6, 10, 20].includes(strikeCount));
@@ -518,128 +521,219 @@ export function OptionsTab() {
 
   useEffect(() => { return () => { if (debounceRef.current) clearTimeout(debounceRef.current); }; }, []);
 
-  const showCalls = contractType !== 'PUT';
-  const showPuts = contractType !== 'CALL';
+  const showCalls = contractType !== "PUT";
+  const showPuts = contractType !== "CALL";
 
   const { registerWing } = useScrollSync();
 
+  const subHeaderLeftRef = useRef<HTMLDivElement>(null);
+  const subHeaderRightRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const cleanups: (() => void)[] = [];
+    if (subHeaderLeftRef.current) cleanups.push(registerWing(subHeaderLeftRef.current));
+    if (subHeaderRightRef.current) cleanups.push(registerWing(subHeaderRightRef.current));
+    return () => cleanups.forEach(fn => fn());
+  }, [registerWing, showCalls, showPuts]);
+
+  const hasData = data && groups.length > 0;
+
   return (
-    <div className="h-full flex flex-col bg-black -mx-4 w-[calc(100%+2rem)]">
-      <div className="flex items-center justify-between gap-2 bg-[#111111] px-3 py-1.5 border-b border-[#262626] shrink-0 flex-wrap">
-        <div className="flex items-center gap-1">
-          <span className="font-mono text-[10px] text-zinc-500 uppercase">Strikes</span>
-          {isCustomMode ? (
-            <div className="flex items-center gap-1">
-              <Input
-                type="number" min={2} max={100} autoFocus
-                value={localCustomValue}
-                onChange={e => handleCustomStrikeChange(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Escape') handleExitCustomMode(); }}
-                className="w-[70px] font-mono text-[11px] bg-[#0c0c0c] border-[#262626] h-7 px-2"
-                placeholder="10"
-              />
-              <button onClick={handleExitCustomMode} className="p-0.5 rounded text-zinc-500 hover:text-white hover:bg-[#262626] transition-colors" aria-label="Exit custom mode">
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          ) : (
-            <Select value={strikeMode} onValueChange={handleStrikeModeChange}>
-              <SelectTrigger className="w-[70px] font-mono text-[11px] bg-[#0c0c0c] border-[#262626] h-7 px-2">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="6">6</SelectItem>
-                <SelectItem value="10">10</SelectItem>
-                <SelectItem value="20">20</SelectItem>
-                <SelectItem value="custom">Custom</SelectItem>
-              </SelectContent>
-            </Select>
-          )}
+    <div className="h-full flex flex-col -mx-4 w-[calc(100%+2rem)]" style={{ backgroundColor: BG }}>
+      <div
+        className="flex items-center justify-between gap-2 px-3 py-1.5 shrink-0 flex-wrap"
+        style={{ backgroundColor: '#151517', borderBottom: `1px solid ${BORDER}` }}
+      >
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1">
+            <span className="font-mono text-[10px] text-zinc-500 uppercase tracking-wider">Strikes</span>
+            {isCustomMode ? (
+              <div className="flex items-center gap-1">
+                <Input
+                  type="number" min={2} max={100} autoFocus
+                  value={localCustomValue}
+                  onChange={e => handleCustomStrikeChange(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Escape") handleExitCustomMode(); }}
+                  className="w-[70px] font-mono text-[11px] h-7 px-2"
+                  style={{ backgroundColor: '#111113', borderColor: BORDER }}
+                  placeholder="10"
+                />
+                <button onClick={handleExitCustomMode} className="p-0.5 rounded text-zinc-500 hover:text-white hover:bg-white/10 transition-colors" aria-label="Exit custom mode">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : (
+              <Select value={strikeMode} onValueChange={handleStrikeModeChange}>
+                <SelectTrigger className="w-[70px] font-mono text-[11px] h-7 px-2" style={{ backgroundColor: '#111113', borderColor: BORDER }}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="6">6</SelectItem>
+                  <SelectItem value="10">10</SelectItem>
+                  <SelectItem value="20">20</SelectItem>
+                  <SelectItem value="custom">Custom</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+          </div>
         </div>
 
         {isFetching && data && (
           <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 border border-primary border-t-transparent rounded-full animate-spin" />
+            <span className="w-2 h-2 border border-[#FFB800] border-t-transparent rounded-full animate-spin" />
             <span className="font-mono text-[10px] text-zinc-500">UPDATING</span>
           </div>
         )}
       </div>
 
-      {data && <MetricsStrip />}
-
-      <div className="flex-1 overflow-y-auto min-h-0 relative overscroll-y-contain bg-black" style={{ WebkitOverflowScrolling: "touch" } as React.CSSProperties}>
+      <div className="flex-1 overflow-y-auto min-h-0 relative overscroll-y-contain" style={{ WebkitOverflowScrolling: "touch", backgroundColor: BG } as React.CSSProperties}>
         {isLoading && !data && (
           <div className="p-4 space-y-1.5">
             {Array.from({ length: 12 }).map((_, i) => (
-              <Skeleton key={i} className="h-6 w-full bg-[#1a1a1a]" />
+              <Skeleton key={i} className="h-6 w-full" style={{ backgroundColor: '#252528' }} />
             ))}
           </div>
         )}
 
         {isFetching && data && (
-          <div className="absolute inset-0 bg-black/20 z-40 pointer-events-none" />
+          <div className="absolute inset-0 z-40 pointer-events-none" style={{ backgroundColor: 'rgba(28,28,30,0.3)' }} />
         )}
 
         {error && !data && (
-          <div className="p-10 text-center text-destructive font-mono flex flex-col items-center">
+          <div className="p-10 text-center text-red-400 font-mono flex flex-col items-center">
             <span className="text-3xl mb-3">⚠</span>
             <span className="text-xs">FAILED TO LOAD OPTIONS DATA.</span>
           </div>
         )}
 
         {!isLoading && !error && !data && !accessToken && (
-          <div className="p-16 flex flex-col items-center justify-center text-muted-foreground font-mono h-full">
+          <div className="p-16 flex flex-col items-center justify-center text-zinc-500 font-mono h-full">
             <Table2 className="w-8 h-8 mb-2 opacity-20" />
             <span className="text-xs">CONNECT SCHWAB TO VIEW OPTIONS CHAIN.</span>
           </div>
         )}
 
         {!isLoading && !error && !data && accessToken && (
-          <div className="p-16 flex flex-col items-center justify-center text-muted-foreground font-mono h-full">
+          <div className="p-16 flex flex-col items-center justify-center text-zinc-500 font-mono h-full">
             <Table2 className="w-8 h-8 mb-2 opacity-20" />
             <span className="text-xs">LOADING OPTIONS CHAIN...</span>
           </div>
         )}
 
-        {data && groups.length > 0 && (
+        {hasData && (
           <>
-            <div className="w-full flex items-center sticky top-0 z-30 bg-black border-b border-zinc-800 h-11 font-mono">
+            <div
+              className="w-full flex items-center sticky top-0 z-30 font-mono"
+              style={{ height: HEADER_H, backgroundColor: BG, borderBottom: `1px solid ${BORDER}` }}
+            >
               {showCalls && (
                 <div className="flex-1 text-center">
-                  <span className="text-[14px] font-extrabold uppercase text-white tracking-widest">Calls</span>
+                  <span className="text-[14px] font-extrabold uppercase text-white tracking-widest">CALLS</span>
                 </div>
               )}
-              <div className="w-14 flex items-center justify-center bg-black border-x border-[#262626]">
-                <button onClick={() => setColumnsEditorOpen(true)} className="w-14 h-11 flex items-center justify-center text-zinc-500 hover:text-zinc-300 transition-colors" aria-label="Edit columns">
-                  <Settings className="w-5 h-5" />
+              <div
+                className="flex items-center justify-center"
+                style={{ width: STRIKE_W, borderLeft: `1px solid ${BORDER}`, borderRight: `1px solid ${BORDER}` }}
+              >
+                <button
+                  onClick={() => setColumnsEditorOpen(true)}
+                  className="flex items-center justify-center text-white hover:text-[#FFB800] transition-colors"
+                  style={{ width: STRIKE_W, height: HEADER_H }}
+                  aria-label="Edit columns"
+                >
+                  <Settings className="w-7 h-7" />
                 </button>
               </div>
               {showPuts && (
                 <div className="flex-1 text-center">
-                  <span className="text-[14px] font-extrabold uppercase text-white tracking-widest">Puts</span>
+                  <span className="text-[14px] font-extrabold uppercase text-white tracking-widest">PUTS</span>
                 </div>
               )}
             </div>
 
-            <div className="divide-y divide-[#262626]">
+            <div
+              className="w-full flex items-center sticky z-20 font-mono"
+              style={{ top: HEADER_H, height: SUB_HEADER_H, backgroundColor: BG, borderBottom: `1px solid ${BORDER}` }}
+            >
+              {showCalls && (
+                <div
+                  ref={subHeaderLeftRef}
+                  className="flex-1 overflow-x-auto overflow-y-hidden"
+                  style={noScrollbar}
+                >
+                  <div className="flex items-center" style={{ minWidth: wingWidth, height: SUB_HEADER_H }}>
+                    {activeColumns.map(col => (
+                      <div key={col.id} style={{ width: COL_W }} className="shrink-0 flex items-center px-2">
+                        <span className="text-[11px] text-zinc-400 font-medium">{col.topLabel}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div
+                className="flex-none flex items-center justify-center"
+                style={{ width: STRIKE_W, borderLeft: `1px solid ${BORDER}`, borderRight: `1px solid ${BORDER}` }}
+              >
+                <span className="text-[11px] text-zinc-400 font-medium">Strike</span>
+              </div>
+              {showPuts && (
+                <div
+                  ref={subHeaderRightRef}
+                  className="flex-1 overflow-x-auto overflow-y-hidden"
+                  style={noScrollbar}
+                >
+                  <div className="flex items-center" style={{ minWidth: wingWidth, height: SUB_HEADER_H }}>
+                    {activeColumns.map(col => (
+                      <div key={col.id} style={{ width: COL_W }} className="shrink-0 flex items-center px-2">
+                        <span className="text-[11px] text-zinc-400 font-medium">{col.topLabel}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div>
               {groups.map(group => {
                 const isOpen = expandedExps.has(group.expiration);
                 return (
                   <div key={group.expiration}>
                     <button
                       onClick={() => toggleExp(group.expiration)}
-                      className="w-full flex items-center justify-between px-3 py-2 bg-[#111111] border-b border-[#262626] hover:bg-[#1a1a1a] transition-colors sticky top-[44px] z-10"
+                      className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-white/[0.03] transition-colors sticky z-10"
+                      style={{ top: STICKY_TOP, backgroundColor: BG, borderBottom: `1px solid ${BORDER}` }}
                     >
-                      <span className="font-mono text-[11px] font-medium text-white tracking-wider">{group.label}</span>
-                      <div className="flex items-center gap-3">
-                        <div className="flex items-center gap-2 font-mono text-[10px]" style={{ fontVariantNumeric: "tabular-nums" }}>
-                          <span className="text-zinc-500">IV:</span>
-                          <span className="text-white">32%</span>
-                          <span className="text-zinc-600">|</span>
-                          <span className="text-zinc-500">±</span>
-                          <span className="text-white">$8.50</span>
-                        </div>
-                        {isOpen ? <ChevronUp className="w-3 h-3 text-zinc-500" /> : <ChevronDown className="w-3 h-3 text-zinc-500" />}
+                      <div className="flex items-center gap-2 font-mono">
+                        {isOpen
+                          ? <ChevronDown className="w-4 h-4 text-zinc-400" />
+                          : <ChevronUp className="w-4 h-4 text-zinc-400 -rotate-90" />
+                        }
+                        <span className="text-[12px] font-medium text-white tracking-wide">
+                          {group.dateLabel}
+                        </span>
+                        <span className="text-[12px] text-zinc-400">
+                          ({Math.round(group.dte)})
+                        </span>
+                        <span className="text-[12px] text-white">
+                          {group.totalStrikes}
+                        </span>
+                        {group.isWeekly && (
+                          <span className="text-[12px] text-[#FFB800] font-medium">Weeklys</span>
+                        )}
+                      </div>
+                      <div className="font-mono text-[11px]" style={{ fontVariantNumeric: "tabular-nums" }}>
+                        {group.atmIV != null ? (
+                          <span className="text-zinc-300">
+                            {group.atmIV.toFixed(2)}%
+                            {group.expectedMove != null && (
+                              <span className="text-zinc-500 ml-1">
+                                (±{group.expectedMove.toFixed(3)})
+                              </span>
+                            )}
+                          </span>
+                        ) : (
+                          <span className="text-zinc-600">—</span>
+                        )}
                       </div>
                     </button>
 
@@ -655,13 +749,13 @@ export function OptionsTab() {
                     )}
                   </div>
                 );
-            })}
+              })}
             </div>
           </>
         )}
 
         {data && groups.length === 0 && (
-          <div className="p-16 flex flex-col items-center justify-center text-muted-foreground font-mono h-full">
+          <div className="p-16 flex flex-col items-center justify-center text-zinc-500 font-mono h-full">
             <Table2 className="w-8 h-8 mb-2 opacity-20" />
             <span className="text-xs">NO OPTIONS DATA AVAILABLE FOR THIS RANGE.</span>
           </div>
