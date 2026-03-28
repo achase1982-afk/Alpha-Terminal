@@ -61,7 +61,7 @@ export function ChartControls() {
             className={`
               px-3 py-1.5 font-mono text-[10px] sm:text-[11px] font-semibold tracking-wider transition-all duration-150 relative
               ${isActive
-                ? "text-primary"
+                ? "text-white"
                 : "text-muted-foreground hover:text-foreground"
               }
             `}

@@ -47,8 +47,8 @@ export function TickerSearch() {
                 onClick={() => handleQuickSelect(cleanSymbol(sym))}
                 className={`font-mono text-[9px] sm:text-[10px] px-2 py-0.5 rounded border transition-all duration-150
                   ${symbol === cleanSymbol(sym)
-                    ? "bg-primary/20 text-primary border-primary/50"
-                    : "bg-transparent text-muted-foreground border-card-border hover:border-primary/40 hover:text-foreground"
+                    ? "bg-[#27272A] text-white border-[#27272A]"
+                    : "bg-transparent text-muted-foreground border-card-border hover:border-[#404040] hover:text-foreground"
                   }`}
               >
                 {cleanSymbol(sym)}
@@ -74,14 +74,14 @@ export function TickerSearch() {
         </div>
         <button
           type="submit"
-          className="h-7 px-3 rounded bg-primary text-primary-foreground font-mono text-[10px] font-bold hover:bg-primary/80 transition-colors shrink-0"
+          className="h-7 px-3 rounded bg-[#18181B] border border-[#27272A] text-white font-mono text-[10px] font-bold hover:bg-[#27272A] transition-colors shrink-0"
         >
           GO
         </button>
         <button
           type="button"
           onClick={handleAddToWatchlist}
-          className="h-7 w-7 rounded-full bg-transparent border border-primary text-primary flex items-center justify-center hover:bg-primary/15 transition-colors shrink-0"
+          className="h-7 w-7 rounded-full bg-[#18181B] border border-[#27272A] text-white flex items-center justify-center hover:bg-[#27272A] transition-colors shrink-0"
           aria-label="Save to watchlist"
           title="Save to watchlist"
         >
