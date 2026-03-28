@@ -129,6 +129,37 @@ function CellVal({ val, decimals = 2 }: { val?: number | null; decimals?: number
   return <>{val.toFixed(decimals)}</>;
 }
 
+function MetricsStrip() {
+  const mockIV = 26.2;
+  const mockIVR = 68;
+  const mockMove = 14.50;
+  const mockERDays = 12;
+
+  const ivrColor = mockIVR > 50 ? "text-[#FFB800]" : "text-white";
+  const erColor = mockERDays < 14 ? "text-red-400" : "text-white";
+
+  return (
+    <div className="flex justify-between items-center bg-[#09090b] py-2 px-3 border-y border-[#262626] shrink-0 font-mono" style={{ fontVariantNumeric: "tabular-nums" }}>
+      <div className="flex flex-col items-center">
+        <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">IV</span>
+        <span className="text-sm font-bold text-white">{mockIV}%</span>
+      </div>
+      <div className="flex flex-col items-center">
+        <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">IVR</span>
+        <span className={`text-sm font-bold ${ivrColor}`}>{mockIVR}</span>
+      </div>
+      <div className="flex flex-col items-center">
+        <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">MOVE</span>
+        <span className="text-sm font-bold text-white">±${mockMove.toFixed(2)}</span>
+      </div>
+      <div className="flex flex-col items-center">
+        <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">ER</span>
+        <span className={`text-sm font-bold ${erColor}`}>{mockERDays}d</span>
+      </div>
+    </div>
+  );
+}
+
 export function OptionsTab() {
   const { symbol, accessToken } = useTerminalStore();
   const { contractType, strikeCount, maxDte, customStrikeInput, setCustomStrikeInput } = useOptionsSettingsStore();
@@ -276,23 +307,15 @@ export function OptionsTab() {
           )}
         </div>
 
-        <div className="flex items-center gap-1">
-          {isFetching && data && (
-            <div className="flex items-center gap-1.5 mr-3">
-              <span className="w-2 h-2 border border-primary border-t-transparent rounded-full animate-spin" />
-              <span className="font-mono text-[10px] text-zinc-500">UPDATING</span>
-            </div>
-          )}
-          {data && (
-            <div className="flex items-center gap-2 font-mono text-[11px]" style={{ fontVariantNumeric: "tabular-nums" }}>
-              <span className="text-zinc-500">IV:</span>
-              <span className="text-white font-medium">26.24%</span>
-              <span className="text-zinc-600">|</span>
-              <span className="text-white font-medium">±$14.50</span>
-            </div>
-          )}
-        </div>
+        {isFetching && data && (
+          <div className="flex items-center gap-1.5">
+            <span className="w-2 h-2 border border-primary border-t-transparent rounded-full animate-spin" />
+            <span className="font-mono text-[10px] text-zinc-500">UPDATING</span>
+          </div>
+        )}
       </div>
+
+      {data && <MetricsStrip />}
 
       <div className="flex-1 overflow-auto terminal-panel p-0 min-h-0 relative">
         {isLoading && !data && (
@@ -338,7 +361,7 @@ export function OptionsTab() {
                     onClick={() => toggleExp(group.expiration)}
                     className="w-full flex items-center justify-between px-3 py-2 bg-[#111111] border-b border-[#262626] hover:bg-[#1a1a1a] transition-colors"
                   >
-                    <span className="font-mono text-[11px] font-bold text-white tracking-wider">{group.label}</span>
+                    <span className="font-mono text-sm font-bold text-white tracking-wider">{group.label}</span>
                     <div className="flex items-center gap-3">
                       <div className="flex items-center gap-2 font-mono text-[10px]" style={{ fontVariantNumeric: "tabular-nums" }}>
                         <span className="text-zinc-500">IV:</span>
@@ -464,7 +487,7 @@ function StraddleBody({
         return (
           <div
             key={row.strike}
-            className={`grid font-mono text-[11px] transition-colors hover:bg-white/[0.03] ${
+            className={`grid font-mono text-sm transition-colors hover:bg-white/[0.03] ${
               isATMBorder
                 ? "border-t border-dashed border-[#FFB800]"
                 : isLastRowATM
@@ -487,7 +510,7 @@ function StraddleBody({
               </div>
             )}
 
-            <div className={`flex items-center justify-center bg-[#18181B] text-[11px] font-bold ${isATMStrike ? "text-[#FFB800]" : "text-zinc-300"}`}>
+            <div className={`flex items-center justify-center bg-[#18181B] text-sm font-bold ${isATMStrike ? "text-[#FFB800]" : "text-zinc-300"}`}>
               {row.strike.toFixed(row.strike % 1 === 0 ? 0 : 2)}
             </div>
 
