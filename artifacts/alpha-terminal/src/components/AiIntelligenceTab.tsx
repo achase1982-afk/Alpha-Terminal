@@ -6,19 +6,29 @@ import {
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Activity, BarChart2,
-  Target, DollarSign, Shield, TrendingUp, Scale,
+  Activity, BarChart2, Target, DollarSign, Shield, TrendingUp, Scale,
+  Zap, ChevronDown, AlertTriangle, Crosshair,
 } from "lucide-react";
-
 import ReactMarkdown from "react-markdown";
 
 const API_BASE = "/api";
 
 const THINKING_PHRASES = [
-  "Analyzing options chain...",
-  "Evaluating MACD divergence...",
-  "Calculating risk/reward...",
-  "Drafting strategy...",
+  "Initializing secure connection...",
+  "Processing market data feed...",
+  "Scanning options chain for anomalies...",
+  "Computing implied volatility surface...",
+  "Mapping gamma exposure by strike...",
+  "Evaluating put/call skew...",
+  "Assessing open interest distribution...",
+  "Calculating spread risk profiles...",
+  "Analyzing multi-leg structures...",
+  "Running Monte Carlo probability engine...",
+  "Identifying high-conviction setups...",
+  "Building final risk-reward models...",
+  "Optimizing position sizing...",
+  "Compiling strategy output...",
+  "Performing final quality check...",
 ];
 
 const AI_THINKING_STYLES = `
@@ -30,18 +40,25 @@ const AI_THINKING_STYLES = `
   0%, 100% { opacity: 0.4; }
   50% { opacity: 1; }
 }
+@keyframes ai-fade-swap {
+  0% { opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { opacity: 0; }
+}
 `;
 
 function AiThinking() {
   const [phraseIdx, setPhraseIdx] = useState(0);
 
   useEffect(() => {
-    const t = setInterval(() => setPhraseIdx(i => (i + 1) % THINKING_PHRASES.length), 3000);
-    return () => clearInterval(t);
-  }, []);
+    if (phraseIdx >= THINKING_PHRASES.length - 1) return;
+    const t = setTimeout(() => setPhraseIdx(i => i + 1), 3000);
+    return () => clearTimeout(t);
+  }, [phraseIdx]);
 
   return (
-    <div className="flex items-center gap-3 py-8 justify-center">
+    <div className="flex items-center gap-3 py-8 justify-center" style={{ minHeight: 72 }}>
       <style>{AI_THINKING_STYLES}</style>
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="shrink-0">
         <path
@@ -62,68 +79,153 @@ function AiThinking() {
           style={{ animation: "ai-sparkle 2.4s ease-in-out infinite 1.2s", transformOrigin: "center" }}
         />
       </svg>
-      <span
-        key={phraseIdx}
-        className="font-mono text-xs text-gray-400 tracking-wide"
-        style={{ animation: "ai-breathe 2.5s ease-in-out infinite" }}
-      >
-        {THINKING_PHRASES[phraseIdx]}
-      </span>
+      <div style={{ width: 300, height: 18, position: "relative" }}>
+        <span
+          key={phraseIdx}
+          className="font-mono text-xs text-gray-400 tracking-wide absolute inset-0 flex items-center"
+          style={{ animation: "ai-fade-swap 3s ease-in-out forwards, ai-breathe 3s ease-in-out infinite" }}
+        >
+          {THINKING_PHRASES[phraseIdx]}
+        </span>
+      </div>
     </div>
   );
 }
 
-interface MetricCard {
-  label: string;
-  value: string;
-  icon: React.ReactNode;
-  color: string;
+interface StrategyJSON {
+  strategyName: string;
+  targetEntryTrigger: string;
+  entryCostCredit: string;
+  maxRisk: string;
+  maxReward: string;
+  rrRatio: string;
+  pop: string;
+  breakevens: string;
+  positionSize: string;
+  exitRules: string;
+  rationale: string;
 }
 
-const METRIC_KEYS: { key: string; label: string; icon: React.ReactNode; color: string }[] = [
-  { key: "entry", label: "Entry", icon: <DollarSign className="w-3.5 h-3.5" />, color: "#FFB800" },
-  { key: "max risk", label: "Max Risk", icon: <Shield className="w-3.5 h-3.5" />, color: "#f23645" },
-  { key: "max reward", label: "Max Reward", icon: <TrendingUp className="w-3.5 h-3.5" />, color: "#00d166" },
-  { key: "r/r ratio", label: "R/R Ratio", icon: <Scale className="w-3.5 h-3.5" />, color: "#FF6B2B" },
-];
+function extractJSONArray(raw: string): { json: string; endIdx: number } | null {
+  const start = raw.indexOf("[");
+  if (start === -1) return null;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < raw.length; i++) {
+    const ch = raw[i];
+    if (escape) { escape = false; continue; }
+    if (ch === "\\") { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === "[") depth++;
+    if (ch === "]") { depth--; if (depth === 0) return { json: raw.slice(start, i + 1), endIdx: i + 1 }; }
+  }
+  return null;
+}
 
-function extractMetrics(md: string): { cards: MetricCard[]; cleaned: string } {
-  const cards: MetricCard[] = [];
-  let cleaned = md;
+function parseStrategistJSON(raw: string): { strategies: StrategyJSON[]; extraText: string } | null {
+  const extracted = extractJSONArray(raw);
+  if (!extracted) return null;
 
-  for (const mk of METRIC_KEYS) {
-    const re = new RegExp(
-      `\\*\\*${mk.key}:?\\*\\*:?\\s*([^|*\\n]+)`,
-      "i"
-    );
-    const m = cleaned.match(re);
-    if (m) {
-      cards.push({ label: mk.label, value: m[1].trim().replace(/\s*\|?\s*$/, ""), icon: mk.icon, color: mk.color });
-      cleaned = cleaned.replace(m[0], "");
-    }
+  try {
+    const parsed = JSON.parse(extracted.json);
+    if (!Array.isArray(parsed) || parsed.length === 0) return null;
+    if (!parsed[0].strategyName) return null;
+    const after = raw.slice(extracted.endIdx).trim();
+    return { strategies: parsed as StrategyJSON[], extraText: after };
+  } catch {
+    return null;
+  }
+}
+
+function StrategyCard({ s, idx }: { s: StrategyJSON; idx: number }) {
+  const metrics = [
+    { label: "Entry / Credit", value: s.entryCostCredit, icon: <DollarSign className="w-3.5 h-3.5" />, color: "#FFB800" },
+    { label: "Max Risk", value: s.maxRisk, icon: <Shield className="w-3.5 h-3.5" />, color: "#f23645" },
+    { label: "Max Reward", value: s.maxReward, icon: <TrendingUp className="w-3.5 h-3.5" />, color: "#00d166" },
+    { label: "R/R Ratio", value: s.rrRatio, icon: <Scale className="w-3.5 h-3.5" />, color: "#FF6B2B" },
+  ];
+
+  return (
+    <div className="rounded-xl border border-card-border overflow-hidden" style={{ background: "#111113" }}>
+      <div className="px-4 py-3 border-b border-card-border flex items-center gap-2" style={{ background: "#151517" }}>
+        <span className="font-mono text-xs font-bold text-primary">#{idx + 1}</span>
+        <span className="font-mono text-sm font-bold text-white">{s.strategyName}</span>
+      </div>
+
+      {s.targetEntryTrigger && (
+        <div className="mx-4 mt-3 rounded-lg px-3 py-2 border flex items-start gap-2" style={{ background: "rgba(0,180,150,0.08)", borderColor: "rgba(0,180,150,0.3)" }}>
+          <Crosshair className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: "#00b496" }} />
+          <span className="font-mono text-xs" style={{ color: "#00b496" }}>{s.targetEntryTrigger}</span>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-3 p-4">
+        {metrics.map(m => (
+          <div key={m.label} className="rounded-lg border border-card-border p-3 flex flex-col gap-1" style={{ background: "#0c0c0c" }}>
+            <div className="flex items-center gap-1.5">
+              <span style={{ color: m.color }}>{m.icon}</span>
+              <span className="font-mono text-[10px] uppercase tracking-wider text-gray-500">{m.label}</span>
+            </div>
+            <span className="font-mono text-sm font-bold text-white">{m.value}</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="px-4 pb-3 space-y-2">
+        {s.pop && (
+          <div className="flex items-center gap-2 text-xs font-mono text-gray-400">
+            <span className="text-gray-500 uppercase tracking-wider w-20 shrink-0">PoP</span>
+            <span className="text-white font-bold">{s.pop}</span>
+          </div>
+        )}
+        {s.breakevens && (
+          <div className="flex items-center gap-2 text-xs font-mono text-gray-400">
+            <span className="text-gray-500 uppercase tracking-wider w-20 shrink-0">Breakevens</span>
+            <span className="text-white">{s.breakevens}</span>
+          </div>
+        )}
+        {s.positionSize && (
+          <div className="flex items-center gap-2 text-xs font-mono text-gray-400">
+            <span className="text-gray-500 uppercase tracking-wider w-20 shrink-0">Size</span>
+            <span className="text-white">{s.positionSize}</span>
+          </div>
+        )}
+        {s.exitRules && (
+          <div className="flex items-start gap-2 text-xs font-mono text-gray-400 mt-1">
+            <span className="text-gray-500 uppercase tracking-wider w-20 shrink-0">Exit Rules</span>
+            <span className="text-white">{s.exitRules}</span>
+          </div>
+        )}
+      </div>
+
+      {s.rationale && (
+        <div className="px-4 py-3 border-t border-card-border text-xs text-gray-400 font-sans leading-relaxed">
+          {s.rationale}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StrategistResultView({ content }: { content: string }) {
+  const parsed = useMemo(() => parseStrategistJSON(content), [content]);
+
+  if (!parsed) {
+    return <MarkdownResult content={content} />;
   }
 
-  cleaned = cleaned.replace(/\|\s*\|/g, "").replace(/^\s*\|\s*$/gm, "").replace(/\n{3,}/g, "\n\n");
-  return { cards, cleaned };
-}
-
-function MetricCards({ cards }: { cards: MetricCard[] }) {
-  if (cards.length === 0) return null;
   return (
-    <div className="grid grid-cols-2 gap-3 my-4">
-      {cards.map(c => (
-        <div
-          key={c.label}
-          className="rounded-lg border border-card-border p-3 flex flex-col gap-1"
-          style={{ background: "#111113" }}
-        >
-          <div className="flex items-center gap-1.5">
-            <span style={{ color: c.color }}>{c.icon}</span>
-            <span className="font-mono text-[10px] uppercase tracking-wider text-gray-500">{c.label}</span>
-          </div>
-          <span className="font-mono text-sm font-bold text-white">{c.value}</span>
-        </div>
+    <div className="space-y-4">
+      {parsed.strategies.map((s, i) => (
+        <StrategyCard key={i} s={s} idx={i} />
       ))}
+      {parsed.extraText && (
+        <div className="border-t border-card-border pt-4">
+          <MarkdownResult content={parsed.extraText} />
+        </div>
+      )}
     </div>
   );
 }
@@ -144,37 +246,176 @@ function MarkdownResult({ content }: { content: string }) {
   );
 }
 
-function StrategistResult({ content }: { content: string }) {
-  const sections = useMemo(() => {
-    const blocks = content.split(/(?=(?:🎯|🟢|⚪|💰|🔵|🟡|🔴)\s*\d+DTE\b)/);
-    return blocks.map(block => {
-      const { cards, cleaned } = extractMetrics(block);
-      return { cards, cleaned };
-    });
-  }, [content]);
+function ToggleSwitch({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={() => !disabled && onChange(!checked)}
+      className="relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors duration-200"
+      style={{
+        background: checked ? "#FFB800" : "#2A2A2C",
+        opacity: disabled ? 0.4 : 1,
+        cursor: disabled ? "not-allowed" : "pointer",
+      }}
+    >
+      <span
+        className="inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-200"
+        style={{ transform: checked ? "translateX(16px) translateY(2px)" : "translateX(2px) translateY(2px)" }}
+      />
+    </button>
+  );
+}
+
+function SegmentControl({ value, options, onChange, disabled }: {
+  value: string; options: { label: string; value: string }[]; onChange: (v: string) => void; disabled?: boolean;
+}) {
+  return (
+    <div className="flex rounded-lg overflow-hidden border border-card-border">
+      {options.map(o => (
+        <button
+          key={o.value}
+          type="button"
+          onClick={() => !disabled && onChange(o.value)}
+          className="flex-1 font-mono text-[10px] py-1.5 px-2 transition-colors"
+          style={{
+            background: value === o.value ? "#FFB800" : "transparent",
+            color: value === o.value ? "#0c0c0c" : "#9ca3af",
+            cursor: disabled ? "not-allowed" : "pointer",
+          }}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function StrategySettings() {
+  const {
+    stratAutopilot, setStratAutopilot,
+    stratMaxRisk, setStratMaxRisk,
+    stratMinPoP, setStratMinPoP,
+    stratMinRR, setStratMinRR,
+    stratBias, setStratBias,
+    stratPremium, setStratPremium,
+    stratAvoidEarnings, setStratAvoidEarnings,
+  } = useTerminalStore();
+
+  const locked = stratAutopilot;
 
   return (
-    <div>
-      {sections.map((sec, i) => {
-        const legsMatch = sec.cleaned.match(/(.*?(?:Legs:.*?)(?:\n|$)(?:.*?(?:Buy|Sell).*?(?:\n|$))*)(.*)/s);
-        if (sec.cards.length > 0 && legsMatch) {
-          const beforeRationale = legsMatch[1];
-          const afterRationale = legsMatch[2];
-          return (
-            <div key={i}>
-              <MarkdownResult content={beforeRationale} />
-              <MetricCards cards={sec.cards} />
-              <MarkdownResult content={afterRationale} />
-            </div>
-          );
-        }
-        return (
-          <div key={i}>
-            {sec.cards.length > 0 && <MetricCards cards={sec.cards} />}
-            <MarkdownResult content={sec.cleaned} />
+    <div className="rounded-xl border border-card-border overflow-hidden" style={{ background: "#111113" }}>
+      <div className="px-4 py-2.5 border-b border-card-border flex items-center justify-between" style={{ background: "#151517" }}>
+        <span className="font-mono text-[11px] font-bold text-gray-400 uppercase tracking-wider">Strategy Settings</span>
+      </div>
+
+      <div className="p-4 space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Zap className="w-3.5 h-3.5 text-primary" />
+            <span className="font-mono text-xs text-white font-bold">AI Autopilot</span>
           </div>
-        );
-      })}
+          <ToggleSwitch checked={stratAutopilot} onChange={setStratAutopilot} />
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="font-mono text-[10px] text-gray-400 uppercase tracking-wider">Max Risk Per Trade</span>
+            <span className="font-mono text-xs text-white font-bold">${stratMaxRisk.toLocaleString()}</span>
+          </div>
+          <input
+            type="range"
+            min={50}
+            max={10000}
+            step={50}
+            value={stratMaxRisk}
+            onChange={e => setStratMaxRisk(Number(e.target.value))}
+            className="w-full h-1 rounded-full appearance-none cursor-pointer"
+            style={{ accentColor: "#FFB800", background: "#2A2A2C" }}
+          />
+          <div className="flex justify-between mt-0.5">
+            <span className="font-mono text-[9px] text-gray-600">$50</span>
+            <span className="font-mono text-[9px] text-gray-600">$10,000</span>
+          </div>
+        </div>
+
+        <div style={{ opacity: locked ? 0.35 : 1 }}>
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="font-mono text-[10px] text-gray-400 uppercase tracking-wider">Min Probability of Profit</span>
+            <span className="font-mono text-xs text-white font-bold">{stratMinPoP}%</span>
+          </div>
+          <input
+            type="range"
+            min={60}
+            max={95}
+            step={1}
+            value={stratMinPoP}
+            onChange={e => !locked && setStratMinPoP(Number(e.target.value))}
+            disabled={locked}
+            className="w-full h-1 rounded-full appearance-none"
+            style={{ accentColor: "#00d166", background: "#2A2A2C", cursor: locked ? "not-allowed" : "pointer" }}
+          />
+          <div className="flex justify-between mt-0.5">
+            <span className="font-mono text-[9px] text-gray-600">60%</span>
+            <span className="font-mono text-[9px] text-gray-600">95%</span>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between" style={{ opacity: locked ? 0.35 : 1 }}>
+          <span className="font-mono text-[10px] text-gray-400 uppercase tracking-wider">Min R/R Ratio</span>
+          <div className="relative">
+            <select
+              value={stratMinRR}
+              onChange={e => !locked && setStratMinRR(e.target.value)}
+              disabled={locked}
+              className="font-mono text-xs text-white bg-transparent border border-card-border rounded-md px-2 py-1 pr-6 appearance-none"
+              style={{ cursor: locked ? "not-allowed" : "pointer" }}
+            >
+              <option value="1:1">1:1</option>
+              <option value="1:2">1:2</option>
+              <option value="1:3">1:3</option>
+            </select>
+            <ChevronDown className="w-3 h-3 text-gray-500 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          </div>
+        </div>
+
+        <div style={{ opacity: locked ? 0.35 : 1 }}>
+          <span className="font-mono text-[10px] text-gray-400 uppercase tracking-wider block mb-1.5">Directional Bias</span>
+          <SegmentControl
+            value={stratBias}
+            options={[
+              { label: "Auto", value: "auto" },
+              { label: "Bull", value: "bullish" },
+              { label: "Bear", value: "bearish" },
+              { label: "Neutral", value: "neutral" },
+            ]}
+            onChange={v => setStratBias(v as typeof stratBias)}
+            disabled={locked}
+          />
+        </div>
+
+        <div style={{ opacity: locked ? 0.35 : 1 }}>
+          <span className="font-mono text-[10px] text-gray-400 uppercase tracking-wider block mb-1.5">Premium Type</span>
+          <SegmentControl
+            value={stratPremium}
+            options={[
+              { label: "Any", value: "any" },
+              { label: "Net Credit", value: "credit" },
+              { label: "Net Debit", value: "debit" },
+            ]}
+            onChange={v => setStratPremium(v as typeof stratPremium)}
+            disabled={locked}
+          />
+        </div>
+
+        <div className="flex items-center justify-between" style={{ opacity: locked ? 0.35 : 1 }}>
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-3.5 h-3.5 text-yellow-500" />
+            <span className="font-mono text-[10px] text-gray-400 uppercase tracking-wider">Avoid Earnings / Catalyst</span>
+          </div>
+          <ToggleSwitch checked={stratAvoidEarnings} onChange={setStratAvoidEarnings} disabled={locked} />
+        </div>
+      </div>
     </div>
   );
 }
@@ -239,6 +480,8 @@ export function AiIntelligenceTab() {
     aiModel, aiTemp,
     analysisResult, setAnalysisResult,
     strategistResult, setStrategistResult,
+    stratAutopilot, stratMaxRisk, stratMinPoP, stratMinRR,
+    stratBias, stratPremium, stratAvoidEarnings,
   } = useTerminalStore();
 
   const [customPrompt, setCustomPrompt] = useState("");
@@ -247,6 +490,7 @@ export function AiIntelligenceTab() {
   const [activeResult, setActiveResult] = useState<"analysis" | "strategist" | null>(null);
   const [chainEnabled, setChainEnabled] = useState(false);
   const [streamingText, setStreamingText] = useState("");
+  const [showSettings, setShowSettings] = useState(false);
 
   const { data: quote } = useGetQuote(
     { symbol, accessToken: accessToken || "" },
@@ -260,7 +504,6 @@ export function AiIntelligenceTab() {
     { symbol, accessToken: accessToken || "", contractType: "ALL", daysToExpiration: 45, strikeCount: 20 },
     { query: { enabled: !!accessToken && chainEnabled } }
   );
-
 
   const handleRunTA = useCallback(async () => {
     if (!quote || !history?.candles) return;
@@ -332,7 +575,22 @@ export function AiIntelligenceTab() {
       let accumulated = "";
       await consumeStream(
         `${API_BASE}/ai/options-strategist/stream`,
-        { quote, candles: history?.candles ?? [], chain: chainData, model: aiModel, temperature: aiTemp },
+        {
+          quote,
+          candles: history?.candles ?? [],
+          chain: chainData,
+          model: aiModel,
+          temperature: aiTemp,
+          settings: {
+            autopilot: stratAutopilot,
+            maxRisk: stratMaxRisk,
+            minPoP: stratMinPoP,
+            minRR: stratMinRR,
+            bias: stratBias,
+            premium: stratPremium,
+            avoidEarnings: stratAvoidEarnings,
+          },
+        },
         (chunk) => {
           accumulated += chunk;
           setStreamingText(accumulated);
@@ -353,7 +611,8 @@ export function AiIntelligenceTab() {
       setIsStrategizing(false);
       setIsStreaming(false);
     }
-  }, [quote, accessToken, chain, history, symbol, aiModel, aiTemp, setStrategistResult]);
+  }, [quote, accessToken, chain, history, symbol, aiModel, aiTemp, setStrategistResult,
+      stratAutopilot, stratMaxRisk, stratMinPoP, stratMinRR, stratBias, stratPremium, stratAvoidEarnings]);
 
 
   const isPendingAny = isStreaming || isStrategizing;
@@ -391,7 +650,24 @@ export function AiIntelligenceTab() {
         </Button>
       </div>
 
-      <div className="bg-card border border-card-border rounded-xl overflow-hidden mt-3">
+      <div className="mt-3">
+        <button
+          type="button"
+          onClick={() => setShowSettings(!showSettings)}
+          className="w-full flex items-center justify-between px-4 py-2 rounded-t-xl border border-card-border font-mono text-[11px] text-gray-400 uppercase tracking-wider hover:text-white transition-colors"
+          style={{ background: "#111113" }}
+        >
+          <span className="flex items-center gap-2">
+            <Zap className="w-3.5 h-3.5 text-primary" />
+            Strategy Settings
+            {stratAutopilot && <span className="text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ background: "rgba(255,184,0,0.15)", color: "#FFB800" }}>AUTOPILOT</span>}
+          </span>
+          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showSettings ? "rotate-180" : ""}`} />
+        </button>
+        {showSettings && <StrategySettings />}
+      </div>
+
+      <div className={`bg-card border border-card-border overflow-hidden ${showSettings ? "rounded-b-xl" : "rounded-xl mt-0 border-t-0"}`}>
         <div className="px-4 py-3 border-b border-card-border flex items-center gap-2">
           <Target className="w-4 h-4 text-primary" />
           <span className="font-mono text-xs font-bold text-foreground">DEEP ANALYSIS — {symbol}</span>
@@ -415,7 +691,7 @@ export function AiIntelligenceTab() {
               <AiThinking />
             ) : currentResult ? (
               activeResult === "strategist"
-                ? <StrategistResult content={currentResult} />
+                ? <StrategistResultView content={currentResult} />
                 : <MarkdownResult content={currentResult} />
             ) : null}
           </div>

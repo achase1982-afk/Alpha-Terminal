@@ -70,6 +70,21 @@ interface TerminalState {
   briefingResult: string | null;
   setBriefingResult: (r: string | null) => void;
 
+  stratAutopilot: boolean;
+  setStratAutopilot: (v: boolean) => void;
+  stratMaxRisk: number;
+  setStratMaxRisk: (v: number) => void;
+  stratMinPoP: number;
+  setStratMinPoP: (v: number) => void;
+  stratMinRR: string;
+  setStratMinRR: (v: string) => void;
+  stratBias: "auto" | "bullish" | "bearish" | "neutral";
+  setStratBias: (v: "auto" | "bullish" | "bearish" | "neutral") => void;
+  stratPremium: "any" | "credit" | "debit";
+  setStratPremium: (v: "any" | "credit" | "debit") => void;
+  stratAvoidEarnings: boolean;
+  setStratAvoidEarnings: (v: boolean) => void;
+
   chatHistory: ChatMessage[];
   addChatMessage: (msg: ChatMessage) => void;
   clearChat: () => void;
@@ -161,6 +176,21 @@ export const useTerminalStore = create<TerminalState>()(
       setStrategistResult: (strategistResult) => set({ strategistResult }),
       briefingResult: null,
       setBriefingResult: (briefingResult) => set({ briefingResult }),
+
+      stratAutopilot: true,
+      setStratAutopilot: (stratAutopilot) => set({ stratAutopilot }),
+      stratMaxRisk: 250,
+      setStratMaxRisk: (stratMaxRisk) => set({ stratMaxRisk }),
+      stratMinPoP: 70,
+      setStratMinPoP: (stratMinPoP) => set({ stratMinPoP }),
+      stratMinRR: "1:2",
+      setStratMinRR: (stratMinRR) => set({ stratMinRR }),
+      stratBias: "auto" as const,
+      setStratBias: (stratBias) => set({ stratBias }),
+      stratPremium: "any" as const,
+      setStratPremium: (stratPremium) => set({ stratPremium }),
+      stratAvoidEarnings: true,
+      setStratAvoidEarnings: (stratAvoidEarnings) => set({ stratAvoidEarnings }),
 
       chatHistory: [],
       addChatMessage: (msg) => set((state) => ({ chatHistory: [...state.chatHistory, msg] })),

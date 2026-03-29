@@ -598,13 +598,108 @@ Keep the entire output under 500 words. Be technically precise, data-driven, and
   }
 });
 
+interface StrategistSettings {
+  autopilot?: boolean;
+  maxRisk?: number;
+  minPoP?: number;
+  minRR?: string;
+  bias?: string;
+  premium?: string;
+  avoidEarnings?: boolean;
+}
+
+function buildStrategistPrompt(
+  quote: Record<string, unknown>,
+  chain: Record<string, unknown>,
+  sma20: string,
+  sma50: string,
+  maxRiskValue: number,
+  autopilot: boolean,
+  settings?: StrategistSettings,
+): string {
+  const minPoP = settings?.minPoP ?? 70;
+  const minRR = settings?.minRR ?? "1:2";
+  const bias = settings?.bias ?? "auto";
+  const premium = settings?.premium ?? "any";
+  const avoidEarnings = settings?.avoidEarnings ?? true;
+
+  const userConstraintBlock = autopilot
+    ? `- Autopilot = TRUE: Ignore user directional bias. Generate mathematically optimal trades based solely on quantitative edge, technical confluence, and statistical probability.
+- Max Risk Per Trade: NEVER exceed $${maxRiskValue}. Size every position to stay under this hard cap.`
+    : `- Autopilot = FALSE: Strictly filter strategies to match ALL of the following user constraints:
+  - Max Risk Per Trade: NEVER exceed $${maxRiskValue}. Size every position to stay under this hard cap.
+  - Minimum Probability of Profit (PoP): ${minPoP}%
+  - Minimum Risk/Reward Ratio: ${minRR}
+  - Directional Bias: ${bias === "auto" ? "Auto-Detect from data" : bias.charAt(0).toUpperCase() + bias.slice(1)}
+  - Premium Type: ${premium === "any" ? "Any (credit or debit)" : premium === "credit" ? "Net Credit only" : "Net Debit only"}`;
+
+  const earningsLine = avoidEarnings
+    ? `- Avoid Earnings / Catalyst: ON — explicitly flag and REJECT any strategy whose hold period overlaps a known earnings date or major macro catalyst.`
+    : `- Avoid Earnings / Catalyst: OFF — earnings overlap is acceptable.`;
+
+  return `You are a Tier-1 institutional quantitative options engine. Never use conversational filler or preambles. Output the top 3 optimal strategies based on a holistic synthesis of all provided market data.
+
+═══ CONTEXT DATA ═══
+${OPTIONS_DATA_QUALITY_NOTE}
+
+UNDERLYING MARKET DATA:
+${formatQuote(quote)}
+Technical Levels: SMA-20 = $${sma20} | SMA-50 = $${sma50}
+
+${formatOptionsDetailed(chain)}
+═══ END CONTEXT DATA ═══
+
+USER CONSTRAINTS (MANDATORY):
+${userConstraintBlock}
+${earningsLine}
+
+STRATEGY RULES:
+- Liquidity Gate: Only recommend options with sufficient open interest (>50 OI) and tight bid-ask spreads (spread < 15% of mid price).
+- Exits: Every strategy MUST include strict Exit Rules — a specific Profit Target percentage, Stop Loss percentage, and Time Exit rule.
+- Position Sizing: State the exact number of contracts to trade to stay under the Max Risk limit of $${maxRiskValue}.
+- Use only strikes that exist in the provided chain data. Be precise with numbers.
+
+OUTPUT FORMAT:
+You MUST output a JSON array of exactly 3 strategy objects, followed by a brief text rationale section.
+
+The JSON structure MUST be exactly:
+\`\`\`json
+[
+  {
+    "strategyName": "String (e.g., 7DTE Bull Call Spread)",
+    "targetEntryTrigger": "String (Precise price or technical trigger for entry, ONE line only)",
+    "entryCostCredit": "String (e.g., Net Debit $1.25 per spread)",
+    "maxRisk": "String (e.g., $250)",
+    "maxReward": "String (e.g., $500)",
+    "rrRatio": "String (e.g., 1:2)",
+    "pop": "String (e.g., 72%)",
+    "breakevens": "String (e.g., $248.25)",
+    "positionSize": "String (e.g., Buy 2 contracts)",
+    "exitRules": "String (Profit target at 50% max gain; stop loss at 100% of premium; close by 2 DTE)",
+    "rationale": "String (2-3 sentences max, strictly clinical analysis)"
+  }
+]
+\`\`\`
+
+Output ONLY the JSON array first (no markdown code fence, no backticks, just the raw [ ... ] array), then a brief "## Key Risk Factors" section in markdown after the JSON.`;
+}
+
 router.post("/options-strategist", async (req, res) => {
-  const { quote, candles, chain, model, temperature } = req.body as {
+  const { quote, candles, chain, model, temperature, settings } = req.body as {
     quote?: Record<string, unknown>;
     candles?: Array<Record<string, unknown>>;
     chain?: Record<string, unknown>;
     model?: string;
     temperature?: number;
+    settings?: {
+      autopilot?: boolean;
+      maxRisk?: number;
+      minPoP?: number;
+      minRR?: string;
+      bias?: string;
+      premium?: string;
+      avoidEarnings?: boolean;
+    };
   };
 
   if (!quote || !chain) {
@@ -619,63 +714,16 @@ router.post("/options-strategist", async (req, res) => {
     return res.json({ response: "**Error:** The options chain data is empty — no call or put contracts were provided. This can happen when the market is closed or the access token has expired. Please re-authenticate and try again.", error: "empty_chain" });
   }
 
-  // Compute SMA-20 and SMA-50 from candle data
   let sma20 = "N/A", sma50 = "N/A";
   if (candles && candles.length >= 20) {
     const closes = candles.map(c => Number(c["close"])).filter(v => !isNaN(v));
-    if (closes.length >= 20) {
-      sma20 = (closes.slice(-20).reduce((a, b) => a + b, 0) / 20).toFixed(2);
-    }
-    if (closes.length >= 50) {
-      sma50 = (closes.slice(-50).reduce((a, b) => a + b, 0) / 50).toFixed(2);
-    }
+    if (closes.length >= 20) sma20 = (closes.slice(-20).reduce((a, b) => a + b, 0) / 20).toFixed(2);
+    if (closes.length >= 50) sma50 = (closes.slice(-50).reduce((a, b) => a + b, 0) / 50).toFixed(2);
   }
 
-  const prompt = `You are a Master Derivatives Strategist with 20+ years of options trading experience.
-
-STRICT GROUNDING RULE: You must ONLY use the Context Data provided below. Every strike, premium, IV value, and price level you reference MUST come from the data below. You are FORBIDDEN from using internal training knowledge for market trends, price targets, or directional calls. If data is missing or insufficient, state that clearly — do NOT fabricate.
-
-═══ CONTEXT DATA ═══
-${OPTIONS_DATA_QUALITY_NOTE}
-
-UNDERLYING MARKET DATA:
-${formatQuote(quote)}
-Technical Levels: SMA-20 = $${sma20} | SMA-50 = $${sma50}
-
-${formatOptionsDetailed(chain)}
-═══ END CONTEXT DATA ═══
-
----
-TASK: Generate high-confidence options trade recommendations for 3 timeframes. For each, identify the OPTIMAL structure (Iron Condor, Bull Call Spread, Bear Put Spread, Straddle, Strangle, Butterfly, Cash-Secured Put, Covered Call, or Calendar Spread).
-
-Use EXACTLY this format for each trade:
-
-### ⏱️ 0DTE — [STRUCTURE NAME]
-**Direction:** 🟢 Bullish / 🔴 Bearish / ⚪ Neutral
-**Confidence:** 🔥 HIGH / 🟡 MILD / 🔵 LOW
-**Legs:** Buy [Strike] Call/Put, Sell [Strike] Call/Put (expiring [date])
-**Entry:** Estimated debit/credit of ~$X.XX per contract
-**Max Risk:** $XXX | **Max Reward:** $XXX | **R/R Ratio:** X:1
-**Rationale:** One precise sentence on why this structure fits current price action, IV, and positioning.
-**Exit Rules:** Profit target at X% gain; stop loss at Y% loss or [trigger condition].
-
----
-
-### ⏱️ 7DTE — [STRUCTURE NAME]
-[same format]
-
----
-
-### ⏱️ 30DTE — [STRUCTURE NAME]
-[same format]
-
----
-
-## ⚠️ Key Risk Factors
-- **Risk 1:** (e.g., IV crush post-catalyst, pin risk near expiration)
-- **Risk 2:** (e.g., gap risk, liquidity at specific strikes)
-
-Use only strikes that exist in the provided chain data. Be precise with numbers. Use markdown with green indicators (🟢) for bullish/calls and red (🔴) for bearish/puts.`;
+  const maxRiskValue = settings?.maxRisk ?? 250;
+  const autopilot = settings?.autopilot ?? true;
+  const prompt = buildStrategistPrompt(quote, chain, sma20, sma50, maxRiskValue, autopilot, settings);
 
   try {
     const response = await callGemini(prompt, model ?? "gemini-2.5-pro", temperature ?? 0.2);
@@ -688,12 +736,21 @@ Use only strikes that exist in the provided chain data. Be precise with numbers.
 });
 
 router.post("/options-strategist/stream", async (req, res) => {
-  const { quote, candles, chain, model, temperature } = req.body as {
+  const { quote, candles, chain, model, temperature, settings } = req.body as {
     quote?: Record<string, unknown>;
     candles?: Array<Record<string, unknown>>;
     chain?: Record<string, unknown>;
     model?: string;
     temperature?: number;
+    settings?: {
+      autopilot?: boolean;
+      maxRisk?: number;
+      minPoP?: number;
+      minRR?: string;
+      bias?: string;
+      premium?: string;
+      avoidEarnings?: boolean;
+    };
   };
 
   if (!quote || !chain) {
@@ -713,51 +770,9 @@ router.post("/options-strategist/stream", async (req, res) => {
     if (closes.length >= 50) sma50 = (closes.slice(-50).reduce((a, b) => a + b, 0) / 50).toFixed(2);
   }
 
-  const prompt = `You are a Master Derivatives Strategist with 20+ years of options trading experience.
-
-STRICT GROUNDING RULE: You must ONLY use the Context Data provided below. Every strike, premium, IV value, and price level you reference MUST come from the data below. You are FORBIDDEN from using internal training knowledge for market trends, price targets, or directional calls. If data is missing or insufficient, state that clearly — do NOT fabricate.
-
-═══ CONTEXT DATA ═══
-${OPTIONS_DATA_QUALITY_NOTE}
-
-UNDERLYING MARKET DATA:
-${formatQuote(quote)}
-Technical Levels: SMA-20 = $${sma20} | SMA-50 = $${sma50}
-
-${formatOptionsDetailed(chain)}
-═══ END CONTEXT DATA ═══
-
----
-TASK: Generate high-confidence options trade recommendations for 3 timeframes. For each, identify the OPTIMAL structure (Iron Condor, Bull Call Spread, Bear Put Spread, Straddle, Strangle, Butterfly, Cash-Secured Put, Covered Call, or Calendar Spread).
-
-Use EXACTLY this format for each trade:
-
-### ⏱️ 0DTE — [STRUCTURE NAME]
-**Direction:** 🟢 Bullish / 🔴 Bearish / ⚪ Neutral
-**Confidence:** 🔥 HIGH / 🟡 MILD / 🔵 LOW
-**Legs:** Buy [Strike] Call/Put, Sell [Strike] Call/Put (expiring [date])
-**Entry:** Estimated debit/credit of ~$X.XX per contract
-**Max Risk:** $XXX | **Max Reward:** $XXX | **R/R Ratio:** X:1
-**Rationale:** One precise sentence on why this structure fits current price action, IV, and positioning.
-**Exit Rules:** Profit target at X% gain; stop loss at Y% loss or [trigger condition].
-
----
-
-### ⏱️ 7DTE — [STRUCTURE NAME]
-[same format]
-
----
-
-### ⏱️ 30DTE — [STRUCTURE NAME]
-[same format]
-
----
-
-## ⚠️ Key Risk Factors
-- **Risk 1:** (e.g., IV crush post-catalyst, pin risk near expiration)
-- **Risk 2:** (e.g., gap risk, liquidity at specific strikes)
-
-Use only strikes that exist in the provided chain data. Be precise with numbers. Use markdown with green indicators (🟢) for bullish/calls and red (🔴) for bearish/puts.`;
+  const maxRiskValue = settings?.maxRisk ?? 250;
+  const autopilot = settings?.autopilot ?? true;
+  const prompt = buildStrategistPrompt(quote, chain, sma20, sma50, maxRiskValue, autopilot, settings);
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {

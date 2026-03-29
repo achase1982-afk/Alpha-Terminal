@@ -1,0 +1,48 @@
+Please execute a complete, robust overhaul of the Options Strategist module. Read all requirements carefully before coding.
+
+1. FIX THE LOADING STATE UI:
+Remove any flipping, rotating, or erratic movement from the loading text. The text container must have a fixed height and width so the layout never jumps. Make the text transition a perfectly smooth CSS fade-out and fade-in (opacity only). Add a continuous, gentle 'breathing' animation to the text (pulsing opacity between 40% and 100% over a 3-second cycle). Ensure the text NEVER loops by using this extended, linear sequence: 'Initializing secure connection...', 'Processing market context and chain data...', 'Scanning live options chain...', 'Evaluating MACD and technical momentum...', 'Cross-referencing historical volatility...', 'Assessing implied volatility percentiles...', 'Mapping options Greeks (Delta, Gamma, Theta)...', 'Analyzing support and resistance zones...', 'Running probability of profit simulations...', 'Calculating risk/reward profiles...', 'Optimizing strike selection...', 'Structuring defined-risk trade parameters...', 'Finalizing institutional strategy recommendations...'. Keep the animated SVG star icon next to it.
+
+2. BUILD THE UPGRADED SETTINGS SIDEBAR:
+Update the 'Strategy Settings' panel for the Options Strategist with these exact controls:
+- 'AI Autopilot' (Master toggle switch at the top).
+- 'Max Risk Per Trade' slider ($50 to $10,000). Default to $250. Remove the "Unlimited" option to protect account capital.
+- 'Min Probability of Profit (PoP)' slider (Floor raised to 60%, ceiling 95%).
+- 'Minimum R/R Ratio' dropdown (e.g., 1:1, 1:2, 1:3).
+- 'Directional Bias' segment control (Auto-Detect, Bullish, Bearish, Neutral).
+- 'Premium Type' segment control (Any, Net Credit, Net Debit).
+- 'Avoid Earnings / Catalyst' toggle (Default ON).
+*UI Logic:* When 'AI Autopilot' is toggled ON, visually disable/grey out the PoP, R/R, Directional, Premium, and Catalyst controls. The 'Max Risk' slider must ALWAYS remain active.
+
+3. UPGRADE AI SYSTEM PROMPT (LOGIC & RULES):
+Inject the new sidebar variables into the AI's API call. Use this exact system prompt: 
+"You are a Tier-1 institutional quantitative options engine. Never use conversational filler or preambles. Output the top 3 optimal strategies based on a holistic synthesis of all provided market data.
+USER CONSTRAINTS (MANDATORY):
+- Never exceed the Max Risk of ${maxRiskValue} per trade.
+- If 'Avoid Earnings' is ON, explicitly flag any strategy whose hold period overlaps an earnings date or macro catalyst.
+- If Autopilot = TRUE: Ignore user bias. Generate mathematically optimal trades based solely on quantitative edge and technical confluence.
+- If Autopilot = FALSE: Strictly filter strategies to match the user's requested PoP, R/R, Bias, and Premium Type.
+STRATEGY RULES:
+- Liquidity Gate: Only recommend options with sufficient open interest and tight bid-ask spreads.
+- Exits: Every strategy MUST include strict Exit Rules (a specific Profit Target, Stop Loss, and Time Exit).
+- Position Sizing: State the exact number of contracts to trade to stay under the Max Risk limit.
+
+4. MIGRATE PARSER TO STRICT JSON OUTPUT:
+To ensure the frontend UI 2x2 cards never break, the AI must NO LONGER output raw markdown for the data points. Instruct the AI to output its response as a strictly formatted JSON array of strategy objects, followed by a brief text rationale.
+The JSON structure MUST be exactly:
+[
+  {
+    "strategyName": "String (e.g., 7DTE Bull Call Spread)",
+    "targetEntryTrigger": "String (Precise price or technical trigger, ONE line only)",
+    "entryCostCredit": "String",
+    "maxRisk": "String",
+    "maxReward": "String",
+    "rrRatio": "String",
+    "pop": "String",
+    "breakevens": "String",
+    "positionSize": "String (e.g., 'Buy 2 contracts')",
+    "exitRules": "String (Profit target, stop loss, time exit)",
+    "rationale": "String (2-3 sentences max, strictly clinical analysis)"
+  }
+]
+Update the Replit frontend parser to read this JSON block, populate the teal Target Entry Trigger box, build the 2x2 grid (Entry, Risk, Reward, R/R), and format the remaining fields cleanly below it."
