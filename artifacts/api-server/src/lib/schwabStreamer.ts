@@ -22,11 +22,12 @@ const FIELD = {
   VOLUME:      8,
   HIGH:        12,
   LOW:         13,
-  CLOSE:       15,
+  CLOSE_A:     14,
+  CLOSE_B:     15,
   MARK:        29,
 } as const;
 
-const FIELDS_STR = "0,1,2,3,8,12,13,15,29";
+const FIELDS_STR = "0,1,2,3,8,12,13,14,15,29";
 
 // ─── LEVELONE_OPTIONS field map ──────────────────────────────────────────────
 // Schwab Streamer LEVELONE_OPTIONS field indices (per official docs):
@@ -274,8 +275,8 @@ function handleData(content: Record<string, unknown>[]) {
       return typeof v === "number" && !isNaN(v) ? v : null;
     };
 
-    const lastVal  = pick(FIELD.LAST)   ?? pick(FIELD.MARK) ?? existing.last;
-    const closeVal = pick(FIELD.CLOSE)  ?? existing.close;
+    const lastVal  = pick(FIELD.LAST)    ?? pick(FIELD.MARK)    ?? existing.last;
+    const closeVal = pick(FIELD.CLOSE_A) ?? pick(FIELD.CLOSE_B) ?? existing.close;
 
     let changeVal:    number | null = existing.change;
     let changePctVal: number | null = existing.changePct;

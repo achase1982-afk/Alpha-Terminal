@@ -91,18 +91,7 @@ export function useQuote(symbol: string) {
     }
   );
 
-  // ── Stream wins when fresh ──────────────────────────────────────────────────
-  if (hasLiveData) {
-    return {
-      data:      fromLive(streamQuote),
-      isLoading: false,
-      error:     null,
-      source:    "stream" as const,
-    };
-  }
-
-  // ── REST fallback ───────────────────────────────────────────────────────────
-  const data: QuoteData | null = restData
+  const restQuote: QuoteData | null = restData
     ? {
         symbol:           restData.symbol,
         description:      restData.description      ?? null,
@@ -122,5 +111,26 @@ export function useQuote(symbol: string) {
       }
     : null;
 
-  return { data, isLoading, error, source: "rest" as const };
+  if (hasLiveData) {
+    const live = fromLive(streamQuote);
+
+    if (live.change === null && restQuote?.change != null) {
+      live.change    = restQuote.change;
+      live.changePct = restQuote.changePct;
+    }
+
+    live.description      = restQuote?.description      ?? live.description;
+    live.fiftyTwoWeekHigh = restQuote?.fiftyTwoWeekHigh ?? live.fiftyTwoWeekHigh;
+    live.fiftyTwoWeekLow  = restQuote?.fiftyTwoWeekLow  ?? live.fiftyTwoWeekLow;
+    live.peRatio          = restQuote?.peRatio           ?? live.peRatio;
+
+    return {
+      data:      live,
+      isLoading: false,
+      error:     null,
+      source:    "stream" as const,
+    };
+  }
+
+  return { data: restQuote, isLoading, error, source: "rest" as const };
 }
