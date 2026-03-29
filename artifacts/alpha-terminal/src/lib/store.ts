@@ -84,8 +84,10 @@ interface TerminalState {
   // ── Streaming (NOT persisted) ─────────────────────────────────────────────
   streamPrices: Record<string, LiveQuote>;
   streamConnected: boolean;
+  streamStatus: "offline" | "connecting" | "live";
   setStreamQuote: (q: LiveQuote) => void;
   setStreamConnected: (v: boolean) => void;
+  setStreamStatus: (s: "offline" | "connecting" | "live") => void;
 }
 
 export const useTerminalStore = create<TerminalState>()(
@@ -184,13 +186,14 @@ export const useTerminalStore = create<TerminalState>()(
         }));
       },
 
-      // Streaming prices — volatile, never persisted
       streamPrices: {},
       streamConnected: false,
+      streamStatus: "offline" as const,
       setStreamQuote: (q) => set((state) => ({
         streamPrices: { ...state.streamPrices, [q.symbol]: q },
       })),
-      setStreamConnected: (v) => set({ streamConnected: v }),
+      setStreamConnected: (v) => set({ streamConnected: v, streamStatus: v ? "live" : "offline" }),
+      setStreamStatus: (s) => set({ streamStatus: s, streamConnected: s === "live" }),
     }),
     {
       name: 'alpha-terminal-storage',
@@ -205,7 +208,7 @@ export const useTerminalStore = create<TerminalState>()(
         return s;
       },
       partialize: (state) => {
-        const { streamPrices, streamConnected, ...persisted } = state;
+        const { streamPrices, streamConnected, streamStatus, ...persisted } = state;
         return persisted;
       },
     }

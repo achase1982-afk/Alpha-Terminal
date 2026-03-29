@@ -12,6 +12,7 @@ import { Router, type IRouter } from "express";
 import {
   startStreamer,
   addSymbols,
+  addOptionSymbols,
   addSseClient,
   getSnapshot,
   isConnected,
@@ -46,6 +47,16 @@ router.post("/symbols", (req, res) => {
   }
   addSymbols(symbols.map((s: string) => String(s).toUpperCase()));
   res.json({ ok: true });
+});
+
+// ── POST /api/stream/option-symbols ───────────────────────────────────────────
+router.post("/option-symbols", (req, res) => {
+  const { symbols } = req.body as { symbols?: string[] };
+  if (!Array.isArray(symbols) || symbols.length === 0) {
+    return res.status(400).json({ error: "symbols array is required" });
+  }
+  addOptionSymbols(symbols);
+  res.json({ ok: true, count: symbols.length });
 });
 
 // ── GET /api/stream/quotes  (SSE) ─────────────────────────────────────────────

@@ -13,14 +13,14 @@ import { useTerminalStore } from "@/lib/store";
 import { useGetPriceHistory } from "@workspace/api-client-react";
 import { ChartControls, chartParamsFromStore, isIntradayInterval } from "@/components/ChartControls";
 import { useAutoRefreshToken } from "@/hooks/useAutoRefreshToken";
-import { useStreamingQuotes } from "@/hooks/useStreamingQuotes";
+import { useMarketStream } from "@/hooks/useMarketStream";
 import { useViewportShell } from "@/hooks/useViewportShell";
 import { AiChatOverlay } from "@/components/AiChatOverlay";
 import { InstitutionalTearSheet } from "@/views/InstitutionalTearSheet";
 import { LineChart, BarChart2, BrainCircuit, Menu, Radar, Wifi, WifiOff } from "lucide-react";
 
 export default function TerminalPage() {
-  const { symbol, accessToken, chartPeriod, chartInterval, streamConnected } = useTerminalStore();
+  const { symbol, accessToken, chartPeriod, chartInterval, streamStatus } = useTerminalStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [tearSheetOpen, setTearSheetOpen] = useState(false);
@@ -37,8 +37,7 @@ export default function TerminalPage() {
     setIsScrolled(prev => (prev ? y > 30 : y > 60));
   }, []);
 
-  // ── Start and maintain the Schwab WebSocket stream ──────────────────────
-  useStreamingQuotes();
+  const { subscribeOptionSymbols } = useMarketStream();
 
   const chartParams = chartParamsFromStore(chartPeriod, chartInterval);
   const { data: historyData, isLoading: historyLoading } = useGetPriceHistory(
@@ -110,9 +109,11 @@ export default function TerminalPage() {
             <div className="ml-auto flex items-center gap-2">
               <span className="font-mono text-xs text-primary font-bold">{symbol}</span>
               {accessToken && (
-                streamConnected
-                  ? <span className="flex items-center gap-0.5 font-mono text-[9px] text-emerald-500"><Wifi className="w-3 h-3" />LIVE</span>
-                  : <span className="flex items-center gap-0.5 font-mono text-[9px] text-gray-600"><WifiOff className="w-3 h-3" />POLL</span>
+                streamStatus === "live"
+                  ? <span className="flex items-center gap-0.5 font-mono text-[9px] text-emerald-400"><Wifi className="w-3 h-3" />LIVE</span>
+                  : streamStatus === "connecting"
+                  ? <span className="flex items-center gap-0.5 font-mono text-[9px] text-amber-400 animate-pulse"><Wifi className="w-3 h-3" />CONNECTING</span>
+                  : <span className="flex items-center gap-0.5 font-mono text-[9px] text-red-400"><WifiOff className="w-3 h-3" />OFFLINE</span>
               )}
             </div>
           </div>
@@ -181,7 +182,7 @@ export default function TerminalPage() {
               </TabsContent>
               <TabsContent value="options" className="m-0 focus-visible:outline-none">
                 <div className="-mx-3 sm:-mx-4 lg:-mx-5 -mb-3 sm:-mb-4 lg:-mb-5" style={{ height: "calc(var(--vvh,100vh) - 140px)" }}>
-                  <OptionsTab />
+                  <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} />
                 </div>
               </TabsContent>
               <TabsContent value="ai" className="m-0 focus-visible:outline-none">

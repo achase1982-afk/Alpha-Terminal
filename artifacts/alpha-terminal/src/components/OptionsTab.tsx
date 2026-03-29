@@ -1,7 +1,8 @@
-import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback, memo } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useOptionsSettingsStore } from "@/lib/options-store";
 import { useOptionsColumnsStore, COLUMN_REGISTRY, type ColumnDef } from "@/lib/options-columns-store";
+import { useOptionsStreamStore, useOptionTick } from "@/lib/options-stream-store";
 import { useGetQuote, useGetOptionChain } from "@workspace/api-client-react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -35,6 +36,7 @@ interface Contract {
   theta?: number;
   vega?: number;
   dte?: number;
+  streamKey?: string;
 }
 
 interface NormalizedRow {
@@ -177,9 +179,29 @@ const noScrollbar: React.CSSProperties = {
   scrollSnapType: "none",
 };
 
-function DataCell({ col, contract }: { col: ColumnDef; contract: Contract | null }) {
-  const topVal = getContractVal(contract, col.topKey);
-  const bottomVal = col.bottomKey ? getContractVal(contract, col.bottomKey) : undefined;
+const STREAM_KEY_MAP: Record<string, string> = {
+  bid: "bid", ask: "ask", last: "last",
+  bidSize: "bidSize", askSize: "askSize",
+  volume: "volume", openInterest: "openInterest",
+  iv: "iv", delta: "delta", gamma: "gamma",
+  theta: "theta", vega: "vega",
+};
+
+function getStreamVal(tick: ReturnType<typeof useOptionTick>, key: string): number | undefined {
+  if (!tick) return undefined;
+  const mapped = STREAM_KEY_MAP[key];
+  if (!mapped) return undefined;
+  const v = (tick as unknown as Record<string, unknown>)[mapped];
+  return typeof v === "number" && !isNaN(v) ? v : undefined;
+}
+
+const DataCell = memo(function DataCell({ col, contract }: { col: ColumnDef; contract: Contract | null }) {
+  const tick = useOptionTick(contract?.streamKey);
+
+  const topVal = getStreamVal(tick, col.topKey) ?? getContractVal(contract, col.topKey);
+  const bottomVal = col.bottomKey
+    ? (getStreamVal(tick, col.bottomKey) ?? getContractVal(contract, col.bottomKey))
+    : undefined;
   const topStr = fmtNum(topVal, col.topDecimals);
   const botStr = col.bottomKey ? fmtNum(bottomVal, col.bottomDecimals ?? 0) : null;
 
@@ -208,7 +230,7 @@ function DataCell({ col, contract }: { col: ColumnDef; contract: Contract | null
   }
 
   return <div style={{ fontVariantNumeric: "tabular-nums" }}>{inner}</div>;
-}
+});
 
 function ColumnsEditorModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { activeColumnIds, toggleColumn, reorderColumns } = useOptionsColumnsStore();
@@ -499,7 +521,22 @@ function OptionsGrid({
   );
 }
 
-export function OptionsTab() {
+function buildSchwabOptionKey(underlying: string, expiration: string, strike: number, type: "C" | "P"): string {
+  const d = parseExpDate(expiration);
+  if (!d) return "";
+  const yy = String(d.getFullYear()).slice(2);
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const strikePadded = String(Math.round(strike * 1000)).padStart(8, "0");
+  const sym = underlying.toUpperCase().padEnd(6, " ");
+  return `${sym}${yy}${mm}${dd}${type}${strikePadded}`;
+}
+
+interface OptionsTabProps {
+  subscribeOptionSymbols?: (symbols: string[]) => Promise<void>;
+}
+
+export function OptionsTab({ subscribeOptionSymbols }: OptionsTabProps) {
   const { symbol, accessToken } = useTerminalStore();
   const { contractType, strikeCount, maxDte, customStrikeInput, setCustomStrikeInput } = useOptionsSettingsStore();
   const setStrikeCount = useOptionsSettingsStore(s => s.setStrikeCount);
@@ -538,19 +575,32 @@ export function OptionsTab() {
 
   const groups = useMemo(() => {
     if (!data) return [];
-    return buildExpirationGroups(
-      (data.calls ?? []) as Contract[],
-      (data.puts ?? []) as Contract[],
-      underlyingPrice,
-      strikeCount
-    );
-  }, [data, underlyingPrice, strikeCount]);
+    const calls = (data.calls ?? []) as Contract[];
+    const puts = (data.puts ?? []) as Contract[];
+    calls.forEach(c => { c.streamKey = buildSchwabOptionKey(symbol, c.expiration, c.strike, "C"); });
+    puts.forEach(c => { c.streamKey = buildSchwabOptionKey(symbol, c.expiration, c.strike, "P"); });
+    return buildExpirationGroups(calls, puts, underlyingPrice, strikeCount);
+  }, [data, underlyingPrice, strikeCount, symbol]);
 
   useEffect(() => {
     if (groups.length > 0 && expandedExps.size === 0) {
       setExpandedExps(new Set([groups[0].expiration]));
     }
   }, [groups]);
+
+  useEffect(() => {
+    if (!subscribeOptionSymbols || groups.length === 0) return;
+    const keys: string[] = [];
+    for (const g of groups) {
+      for (const row of g.rows) {
+        if (row.call?.streamKey) keys.push(row.call.streamKey);
+        if (row.put?.streamKey) keys.push(row.put.streamKey);
+      }
+    }
+    if (keys.length > 0) {
+      void subscribeOptionSymbols(keys);
+    }
+  }, [groups, subscribeOptionSymbols]);
 
   useEffect(() => { setExpandedExps(new Set()); }, [symbol]);
 

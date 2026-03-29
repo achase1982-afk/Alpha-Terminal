@@ -33,8 +33,10 @@ The UI adopts a Bloomberg/TOS-style institutional gold color palette, featuring 
 -   **Monorepo**: pnpm workspaces with TypeScript 5.9.
 -   **API**: Express 5 server (`artifacts/api-server`) with Zod for validation and Orval for API codegen.
 -   **Database**: PostgreSQL with Drizzle ORM (`lib/db`).
--   **Real-Time Streaming**: Singleton WebSocket client (`schwabStreamer.ts`) connecting to Schwab Streamer, broadcasting live ticks to SSE clients. Features exponential backoff for reconnects.
--   **Quote Data Flow**: Schwab WS → Server cache/broadcast → SSE → Zustand `streamPrices` map → `useQuote` hook for UI components.
+-   **Real-Time Streaming**: Singleton WebSocket client (`schwabStreamer.ts`) connecting to Schwab Streamer for LEVELONE_EQUITIES and LEVELONE_OPTIONS, broadcasting live ticks to SSE clients. Features exponential backoff for reconnects. Options streaming uses per-contract Schwab symbol keys (e.g. `AAPL  260417C00200000`).
+-   **Quote Data Flow**: Schwab WS → Server cache/broadcast → SSE → Zustand `streamPrices` map (equities) / `options-stream-store` (options) → `useQuote` hook / `useOptionTick` selector for UI components.
+-   **Options Stream Store**: Volatile Zustand store (`options-stream-store.ts`) with per-contract `OptionTick` records and fine-grained selectors via `useOptionTick(contractKey)` for cell-level re-renders.
+-   **Connection State**: 3-state `streamStatus` (`"offline"` | `"connecting"` | `"live"`) with liveness checks — status only becomes `"live"` after receiving real-time ticks, and reverts to `"connecting"` if no ticks arrive within 10 seconds.
 -   **Authentication**: Schwab OAuth 2.0 with popup + polling flow, server-side token storage, CSRF protection, and auto-refresh for tokens.
 -   **AI Integration**: Backend AI routes (`/api/ai/...`) for market briefing, options strategist, chat, analysis, and strategy generation. Enforces a "Strict Data Grounding Rule" for AI prompts, forbidding internal training knowledge for market predictions and requiring citation of provided context data.
 -   **Technical Analysis**: `technicalindicators` npm package for RSI, EMA, etc., integrated into the strategy endpoint.

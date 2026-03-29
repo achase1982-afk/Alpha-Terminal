@@ -48,7 +48,7 @@ function usePriceFlash(price: number | null, change: number | null): string {
 }
 
 export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps) {
-  const { symbol, accessToken, streamConnected } = useTerminalStore();
+  const { symbol, accessToken, streamStatus } = useTerminalStore();
   const { data: quote, isLoading, source } = useQuote(symbol);
   const tickColor = useTickColor(symbol, quote?.last ?? null);
   const flashClass = usePriceFlash(quote?.last ?? null, quote?.change ?? null);
@@ -193,11 +193,15 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
             ? <span title="Live stream" className="flex items-center gap-0.5 text-[7px] font-mono text-emerald-400 leading-none font-semibold">
                 <Wifi className="w-2.5 h-2.5" />LIVE
               </span>
-            : streamConnected
-              ? null
-              : <span title="REST poll" className="flex items-center gap-0.5 text-[7px] font-mono text-gray-600 leading-none">
-                  <WifiOff className="w-2.5 h-2.5" />POLL
+            : streamStatus === "connecting"
+              ? <span title="Connecting" className="flex items-center gap-0.5 text-[7px] font-mono text-amber-400 leading-none animate-pulse">
+                  <Wifi className="w-2.5 h-2.5" />CONNECTING
                 </span>
+              : streamStatus === "offline"
+                ? <span title="Offline" className="flex items-center gap-0.5 text-[7px] font-mono text-red-400 leading-none">
+                    <WifiOff className="w-2.5 h-2.5" />OFFLINE
+                  </span>
+                : null
           }
         </div>
         <div className="flex flex-col">

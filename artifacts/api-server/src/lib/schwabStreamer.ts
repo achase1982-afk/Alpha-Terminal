@@ -31,6 +31,27 @@ const FIELD = {
 // Fields we actually want to subscribe to (as a comma-separated string)
 const FIELDS_STR = "0,1,2,3,8,12,13,15,20,38,29";
 
+// ─── LEVELONE_OPTIONS field map ──────────────────────────────────────────────
+// Schwab Streamer LEVELONE_OPTIONS field indices (per official docs):
+const OPT_FIELD = {
+  BID:          2,
+  ASK:          3,
+  LAST:         4,
+  VOLUME:       8,
+  OPEN_INT:     23,
+  IV:           22,
+  DELTA:        11,
+  GAMMA:        12,
+  THETA:        13,
+  VEGA:         14,
+  MARK:         28,
+  NET_CHANGE:   19,
+  BID_SIZE:     9,
+  ASK_SIZE:     10,
+} as const;
+
+const OPT_FIELDS_STR = "0,2,3,4,8,9,10,11,12,13,14,19,22,23,28";
+
 // ─── Public types ─────────────────────────────────────────────────────────────
 export interface LiveQuote {
   symbol:     string;
@@ -44,6 +65,25 @@ export interface LiveQuote {
   low:        number | null;
   close:      number | null;
   ts:         number;   // epoch ms of last update
+}
+
+export interface OptionTick {
+  key:          string;   // Schwab option symbol
+  bid:          number | null;
+  ask:          number | null;
+  last:         number | null;
+  bidSize:      number | null;
+  askSize:      number | null;
+  volume:       number | null;
+  openInterest: number | null;
+  iv:           number | null;
+  delta:        number | null;
+  gamma:        number | null;
+  theta:        number | null;
+  vega:         number | null;
+  mark:         number | null;
+  change:       number | null;
+  ts:           number;
 }
 
 // ─── Internal state ───────────────────────────────────────────────────────────
@@ -61,8 +101,14 @@ let reqCounter     = 0;
 // Subscribed symbols (user-friendly names, e.g. "SPY", "VIX")
 const subscribedSymbols = new Set<string>();
 
+// Subscribed option symbols (e.g. "SPY   260330C00632000")
+const subscribedOptionSymbols = new Set<string>();
+
 // In-memory price cache keyed by upper-case symbol
 const quoteCache = new Map<string, LiveQuote>();
+
+// In-memory option tick cache keyed by Schwab option symbol
+const optionCache = new Map<string, OptionTick>();
 
 // SSE response writers — one per connected browser tab
 const sseClients = new Set<Response>();
@@ -228,6 +274,65 @@ function handleData(content: Record<string, unknown>[]) {
   }
 }
 
+// ─── Subscribe to option symbols ─────────────────────────────────────────────
+function sendOptionSubscribe(symbols: string[]) {
+  if (!streamerInfo || !loginAcked || !symbols.length) return;
+  const keys = symbols.join(",");
+  wsSend({
+    requests: [{
+      service:                  "LEVELONE_OPTIONS",
+      requestid:                nextReq(),
+      command:                  "ADD",
+      SchwabClientCustomerId:   streamerInfo.customerId,
+      SchwabClientCorrelId:     streamerInfo.correlId,
+      parameters: { keys, fields: OPT_FIELDS_STR },
+    }],
+  });
+  logger.info({ count: symbols.length }, "Streamer: subscribed option symbols");
+}
+
+// ─── Parse incoming LEVELONE_OPTIONS DATA messages ──────────────────────────
+function handleOptionData(content: Record<string, unknown>[]) {
+  for (const item of content) {
+    const key = item["key"] as string;
+    const existing = optionCache.get(key) ?? {
+      key, bid: null, ask: null, last: null,
+      bidSize: null, askSize: null, volume: null,
+      openInterest: null, iv: null, delta: null,
+      gamma: null, theta: null, vega: null,
+      mark: null, change: null, ts: 0,
+    };
+
+    const pick = (f: number) => {
+      const v = item[String(f)];
+      return typeof v === "number" && !isNaN(v) ? v : null;
+    };
+
+    const updated: OptionTick = {
+      ...existing,
+      key,
+      bid:          pick(OPT_FIELD.BID)        ?? existing.bid,
+      ask:          pick(OPT_FIELD.ASK)        ?? existing.ask,
+      last:         pick(OPT_FIELD.LAST)       ?? existing.last,
+      bidSize:      pick(OPT_FIELD.BID_SIZE)   ?? existing.bidSize,
+      askSize:      pick(OPT_FIELD.ASK_SIZE)   ?? existing.askSize,
+      volume:       pick(OPT_FIELD.VOLUME)     ?? existing.volume,
+      openInterest: pick(OPT_FIELD.OPEN_INT)   ?? existing.openInterest,
+      iv:           pick(OPT_FIELD.IV)         ?? existing.iv,
+      delta:        pick(OPT_FIELD.DELTA)      ?? existing.delta,
+      gamma:        pick(OPT_FIELD.GAMMA)      ?? existing.gamma,
+      theta:        pick(OPT_FIELD.THETA)      ?? existing.theta,
+      vega:         pick(OPT_FIELD.VEGA)       ?? existing.vega,
+      mark:         pick(OPT_FIELD.MARK)       ?? existing.mark,
+      change:       pick(OPT_FIELD.NET_CHANGE) ?? existing.change,
+      ts:           Date.now(),
+    };
+
+    optionCache.set(key, updated);
+    broadcast("optionQuote", updated);
+  }
+}
+
 // ─── WebSocket message handler ───────────────────────────────────────────────
 function onMessage(raw: string) {
   let msg: Record<string, unknown>;
@@ -248,9 +353,11 @@ function onMessage(raw: string) {
           loginAcked = true;
           reconnectDelay = 1_000;   // successful handshake → reset backoff
           logger.info("Streamer: LOGIN OK");
-          // Subscribe to all symbols that accumulated before login completed
           if (subscribedSymbols.size > 0) {
             sendSubscribe([...subscribedSymbols]);
+          }
+          if (subscribedOptionSymbols.size > 0) {
+            sendOptionSubscribe([...subscribedOptionSymbols]);
           }
         } else {
           logger.warn({ code }, "Streamer: LOGIN rejected");
@@ -266,6 +373,8 @@ function onMessage(raw: string) {
       const content = block["content"] as Record<string, unknown>[] | undefined;
       if (svc === "LEVELONE_EQUITIES" && Array.isArray(content)) {
         handleData(content);
+      } else if (svc === "LEVELONE_OPTIONS" && Array.isArray(content)) {
+        handleOptionData(content);
       }
     }
   }
@@ -372,16 +481,31 @@ export function addSymbols(symbols: string[]) {
   }
 }
 
+/** Add option contract symbols to stream (e.g. "SPY   260330C00632000"). */
+export function addOptionSymbols(symbols: string[]) {
+  const newOnes: string[] = [];
+  for (const s of symbols) {
+    if (!subscribedOptionSymbols.has(s)) {
+      subscribedOptionSymbols.add(s);
+      newOnes.push(s);
+    }
+  }
+  if (newOnes.length) {
+    sendOptionSubscribe(newOnes);
+  }
+}
+
 /** Register an SSE response as a subscriber; returns cleanup function. */
 export function addSseClient(res: Response): () => void {
   sseClients.add(res);
   logger.info({ total: sseClients.size }, "SSE client connected");
 
-  // Send current cache snapshot immediately so the UI has data right away
   for (const quote of quoteCache.values()) {
     sseWrite(res, "quote", quote);
   }
-  // Also send a heartbeat so the client knows it's live
+  for (const tick of optionCache.values()) {
+    sseWrite(res, "optionQuote", tick);
+  }
   sseWrite(res, "heartbeat", { ts: Date.now() });
 
   return () => {
