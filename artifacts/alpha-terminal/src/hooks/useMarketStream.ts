@@ -17,7 +17,6 @@ export function useMarketStream() {
 
   const mergeTick = useOptionsStreamStore((s) => s.mergeTick);
   const esRef = useRef<EventSource | null>(null);
-  const tokenRef = useRef<string | null>(null);
 
   function allSymbols(): string[] {
     return [
@@ -31,11 +30,14 @@ export function useMarketStream() {
 
   async function startServerStream(token: string) {
     try {
-      await fetch(`${API_BASE}/stream/start`, {
+      const res = await fetch(`${API_BASE}/stream/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ accessToken: token, symbols: allSymbols() }),
       });
+      if (!res.ok) {
+        console.warn("[stream] startServerStream HTTP", res.status);
+      }
     } catch (err) {
       console.warn("[stream] startServerStream failed:", err);
     }
@@ -103,18 +105,16 @@ export function useMarketStream() {
       setStreamStatus("offline");
       esRef.current?.close();
       esRef.current = null;
-      tokenRef.current = null;
       return;
     }
 
-    const isNewToken = accessToken !== tokenRef.current;
-    tokenRef.current = accessToken;
-
     openEventSource();
+    void startServerStream(accessToken);
 
-    if (isNewToken) {
-      void startServerStream(accessToken);
-    }
+    return () => {
+      esRef.current?.close();
+      esRef.current = null;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessToken]);
 
@@ -141,13 +141,6 @@ export function useMarketStream() {
       document.removeEventListener("visibilitychange", handleVisibility);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessToken]);
-
-  useEffect(() => {
-    return () => {
-      esRef.current?.close();
-      esRef.current = null;
-    };
-  }, []);
 
   const subscribeOptionSymbols = useCallback(
     async (symbols: string[]) => {
