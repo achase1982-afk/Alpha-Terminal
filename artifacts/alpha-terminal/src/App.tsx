@@ -20,6 +20,7 @@ const queryClient = new QueryClient({
 
 function PendingSessionLoader() {
   const { accessToken, setTokens } = useTerminalStore();
+  const { traderAccessToken, setTraderTokens } = useTerminalStore();
 
   useEffect(() => {
     if (accessToken) return;
@@ -51,6 +52,36 @@ function PendingSessionLoader() {
       document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [accessToken, setTokens]);
+
+  useEffect(() => {
+    if (traderAccessToken) return;
+    if (!accessToken) return;
+
+    let cancelled = false;
+
+    const checkTraderPending = async () => {
+      try {
+        const res = await fetch("/api/auth/trader-pending-session");
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        if (data.found && data.accessToken) {
+          setTraderTokens(data.accessToken, data.refreshToken || "");
+        }
+      } catch {}
+    };
+
+    const handleVisibility = () => {
+      if (!document.hidden && !cancelled) {
+        checkTraderPending();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [accessToken, traderAccessToken, setTraderTokens]);
 
   return null;
 }

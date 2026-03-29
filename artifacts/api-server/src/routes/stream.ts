@@ -22,8 +22,9 @@ const router: IRouter = Router();
 
 // ── POST /api/stream/start ────────────────────────────────────────────────────
 router.post("/start", async (req, res) => {
-  const { accessToken, symbols } = req.body as {
+  const { accessToken, traderAccessToken, symbols } = req.body as {
     accessToken?: string;
+    traderAccessToken?: string;
     symbols?: string[];
   };
 
@@ -35,8 +36,9 @@ router.post("/start", async (req, res) => {
     ? symbols.map((s: string) => String(s).toUpperCase())
     : ["SPY", "QQQ", "IWM", "DIA", "VIX", "TSLA", "NVDA", "AAPL", "META", "MSFT", "AMZN", "GOOGL"];
 
-  await startStreamer(accessToken, syms);
-  res.json({ ok: true, subscribedCount: syms.length });
+  const streamerToken = traderAccessToken || accessToken;
+  await startStreamer(streamerToken, syms);
+  res.json({ ok: true, subscribedCount: syms.length, usingTraderToken: !!traderAccessToken });
 });
 
 // ── POST /api/stream/symbols ──────────────────────────────────────────────────

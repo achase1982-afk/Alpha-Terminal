@@ -21,13 +21,16 @@ interface ChatMessage {
 }
 
 interface TerminalState {
-  // Auth
   accessToken: string | null;
   refreshToken: string | null;
   setTokens: (access: string, refresh: string) => void;
   clearTokens: () => void;
 
-  // Market Configuration
+  traderAccessToken: string | null;
+  traderRefreshToken: string | null;
+  setTraderTokens: (access: string, refresh: string) => void;
+  clearTraderTokens: () => void;
+
   symbol: string;
   setSymbol: (s: string) => void;
   recentSymbols: string[];
@@ -47,23 +50,19 @@ interface TerminalState {
   };
   toggleOverlay: (overlay: keyof TerminalState['overlays']) => void;
 
-  // AI Configuration
   aiModel: string;
   setAiModel: (m: string) => void;
   aiTemp: number;
   setAiTemp: (t: number) => void;
   
-  // Ticker Tape (scrolling marquee)
   tickerTapeSymbols: string[];
   setTickerTapeSymbols: (symbols: string[]) => void;
   tapeSpeed: number;
   setTapeSpeed: (speed: number) => void;
 
-  // Macro Cards (user-configurable)
   macroSymbols: string[];
   setMacroSymbols: (symbols: string[]) => void;
 
-  // AI Results (shared across tabs)
   analysisResult: string | null;
   setAnalysisResult: (r: string | null) => void;
   strategistResult: string | null;
@@ -71,12 +70,10 @@ interface TerminalState {
   briefingResult: string | null;
   setBriefingResult: (r: string | null) => void;
 
-  // AI Chat
   chatHistory: ChatMessage[];
   addChatMessage: (msg: ChatMessage) => void;
   clearChat: () => void;
 
-  // Watchlist
   watchlist: string[];
   addToWatchlist: (s: string) => void;
   removeFromWatchlist: (s: string) => void;
@@ -93,13 +90,16 @@ interface TerminalState {
 export const useTerminalStore = create<TerminalState>()(
   persist(
     (set) => ({
-      // Auth
       accessToken: null,
       refreshToken: null,
       setTokens: (access, refresh) => set({ accessToken: access, refreshToken: refresh }),
       clearTokens: () => set({ accessToken: null, refreshToken: null }),
 
-      // Market
+      traderAccessToken: null,
+      traderRefreshToken: null,
+      setTraderTokens: (access, refresh) => set({ traderAccessToken: access, traderRefreshToken: refresh }),
+      clearTraderTokens: () => set({ traderAccessToken: null, traderRefreshToken: null }),
+
       symbol: 'AAPL',
       recentSymbols: ['AAPL'],
       setSymbol: (symbol) => {
@@ -142,23 +142,19 @@ export const useTerminalStore = create<TerminalState>()(
         overlays: { ...state.overlays, [overlay]: !state.overlays[overlay] } 
       })),
 
-      // AI
       aiModel: 'gemini-2.5-pro',
       setAiModel: (aiModel) => set({ aiModel }),
       aiTemp: 0.7,
       setAiTemp: (aiTemp) => set({ aiTemp }),
 
-      // Ticker Tape
       tickerTapeSymbols: ['SPY', 'QQQ', 'IWM', 'DIA', 'VIX', 'TSLA', 'NVDA', 'AAPL', 'META', 'MSFT', 'AMZN', 'GOOGL'],
       setTickerTapeSymbols: (tickerTapeSymbols) => set({ tickerTapeSymbols }),
       tapeSpeed: 25,
       setTapeSpeed: (tapeSpeed) => set({ tapeSpeed }),
 
-      // Macro Cards
       macroSymbols: ['SPY', 'QQQ', 'IWM', 'VIX'],
       setMacroSymbols: (macroSymbols) => set({ macroSymbols }),
 
-      // AI Results
       analysisResult: null,
       setAnalysisResult: (analysisResult) => set({ analysisResult }),
       strategistResult: null,
@@ -166,12 +162,10 @@ export const useTerminalStore = create<TerminalState>()(
       briefingResult: null,
       setBriefingResult: (briefingResult) => set({ briefingResult }),
 
-      // Chat
       chatHistory: [],
       addChatMessage: (msg) => set((state) => ({ chatHistory: [...state.chatHistory, msg] })),
       clearChat: () => set({ chatHistory: [] }),
 
-      // Watchlist
       watchlist: [],
       addToWatchlist: (symbol) => {
         const upper = symbol.toUpperCase();
@@ -197,13 +191,17 @@ export const useTerminalStore = create<TerminalState>()(
     }),
     {
       name: 'alpha-terminal-storage',
-      version: 2,
+      version: 3,
       migrate: (persistedState: unknown, version: number) => {
         const s = persistedState as Record<string, unknown>;
         if (version < 2) {
           const sym = (s['symbol'] as string | undefined) ?? 'AAPL';
           const existing = (s['recentSymbols'] as string[] | undefined) ?? [];
           s['recentSymbols'] = [sym, ...existing.filter(r => r !== sym)].slice(0, 14);
+        }
+        if (version < 3) {
+          s['traderAccessToken'] = null;
+          s['traderRefreshToken'] = null;
         }
         return s;
       },

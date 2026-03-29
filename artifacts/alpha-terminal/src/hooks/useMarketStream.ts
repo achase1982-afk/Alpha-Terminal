@@ -8,6 +8,7 @@ const API_BASE = "/api";
 export function useMarketStream() {
   const {
     accessToken,
+    traderAccessToken,
     symbol,
     tickerTapeSymbols,
     macroSymbols,
@@ -28,12 +29,16 @@ export function useMarketStream() {
     ];
   }
 
-  async function startServerStream(token: string) {
+  async function startServerStream(marketToken: string, traderToken: string | null) {
     try {
       const res = await fetch(`${API_BASE}/stream/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accessToken: token, symbols: allSymbols() }),
+        body: JSON.stringify({
+          accessToken: marketToken,
+          traderAccessToken: traderToken,
+          symbols: allSymbols(),
+        }),
       });
       if (!res.ok) {
         console.warn("[stream] startServerStream HTTP", res.status);
@@ -100,6 +105,8 @@ export function useMarketStream() {
     };
   }
 
+  const streamKey = `${accessToken || ""}|${traderAccessToken || ""}`;
+
   useEffect(() => {
     if (!accessToken) {
       setStreamStatus("offline");
@@ -109,14 +116,14 @@ export function useMarketStream() {
     }
 
     openEventSource();
-    void startServerStream(accessToken);
+    void startServerStream(accessToken, traderAccessToken);
 
     return () => {
       esRef.current?.close();
       esRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accessToken]);
+  }, [streamKey]);
 
   useEffect(() => {
     if (!accessToken) return;
@@ -133,14 +140,14 @@ export function useMarketStream() {
         setStreamStatus("offline");
       } else if (!esRef.current) {
         openEventSource();
-        void startServerStream(accessToken);
+        void startServerStream(accessToken, traderAccessToken);
       }
     }
     document.addEventListener("visibilitychange", handleVisibility);
     return () =>
       document.removeEventListener("visibilitychange", handleVisibility);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accessToken]);
+  }, [streamKey]);
 
   const subscribeOptionSymbols = useCallback(
     async (symbols: string[]) => {
