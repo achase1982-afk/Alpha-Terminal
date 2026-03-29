@@ -77,20 +77,13 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
   const bidTickColor = useTickColor(`${symbol}__bid`, quote?.bid ?? null);
   const askTickColor = useTickColor(`${symbol}__ask`, quote?.ask ?? null);
   const flashClass = usePriceFlash(quote?.last ?? null, quote?.change ?? null);
-  const prevQuoteRef = useRef(quote);
   const [fadeIn, setFadeIn] = useState(true);
 
   useEffect(() => {
-    if (quote && quote.symbol !== prevQuoteRef.current?.symbol) {
-      setFadeIn(false);
-      const t = requestAnimationFrame(() => {
-        requestAnimationFrame(() => setFadeIn(true));
-      });
-      prevQuoteRef.current = quote;
-      return () => cancelAnimationFrame(t);
-    }
-    prevQuoteRef.current = quote;
-  }, [quote]);
+    setFadeIn(false);
+    const t = setTimeout(() => setFadeIn(true), 50);
+    return () => clearTimeout(t);
+  }, [symbol]);
 
   if (!accessToken) {
     return (
