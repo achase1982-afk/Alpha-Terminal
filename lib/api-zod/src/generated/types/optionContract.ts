@@ -11,6 +11,8 @@ export interface OptionContract {
   expiration: string;
   bid?: number;
   ask?: number;
+  bidSize?: number;
+  askSize?: number;
   last?: number;
   volume?: number;
   openInterest?: number;

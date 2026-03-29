@@ -284,13 +284,32 @@ function ColumnsEditorModal({ open, onClose }: { open: boolean; onClose: () => v
   );
 }
 
-function MetricsStrip() {
-  const mockIV = 26.2;
-  const mockIVR = 68;
-  const mockMove = 14.50;
-  const mockERDays = 12;
-  const ivrColor = mockIVR > 50 ? "text-[#FFB800]" : "text-white";
-  const erColor = mockERDays < 14 ? "text-red-400" : "text-white";
+function MetricsStrip({ groups, lastPrice, rawCalls, rawPuts }: {
+  groups: ExpirationGroup[];
+  lastPrice: number | null;
+  rawCalls: Contract[];
+  rawPuts: Contract[];
+}) {
+  const frontMonth = groups.length > 0 ? groups[0] : null;
+  const atmIV = frontMonth?.atmIV ?? null;
+  const expectedMove = frontMonth?.expectedMove ?? null;
+
+  const ivDisplay = atmIV != null ? atmIV.toFixed(1) + "%" : "—";
+  const moveDisplay = expectedMove != null && lastPrice != null
+    ? "±$" + expectedMove.toFixed(2)
+    : "—";
+
+  const totalCallVol = rawCalls.reduce((sum, c) => sum + (c.volume ?? 0), 0);
+  const totalPutVol = rawPuts.reduce((sum, p) => sum + (p.volume ?? 0), 0);
+  const pcr = totalCallVol > 0 ? (totalPutVol / totalCallVol).toFixed(2) : "—";
+
+  const totalOI = rawCalls.reduce((sum, c) => sum + (c.openInterest ?? 0), 0)
+    + rawPuts.reduce((sum, p) => sum + (p.openInterest ?? 0), 0);
+  const oiDisplay = totalOI > 0
+    ? totalOI >= 1000000 ? (totalOI / 1000000).toFixed(1) + "M"
+    : totalOI >= 1000 ? (totalOI / 1000).toFixed(1) + "K"
+    : String(totalOI)
+    : "—";
 
   return (
     <div
@@ -299,19 +318,19 @@ function MetricsStrip() {
     >
       <div className="flex flex-col items-center">
         <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">IV</span>
-        <span className="text-sm font-bold text-white">{mockIV}%</span>
-      </div>
-      <div className="flex flex-col items-center">
-        <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">IVR</span>
-        <span className={`text-sm font-bold ${ivrColor}`}>{mockIVR}</span>
+        <span className={`text-sm font-bold ${atmIV != null ? "text-white" : "text-zinc-600"}`}>{ivDisplay}</span>
       </div>
       <div className="flex flex-col items-center">
         <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">MOVE</span>
-        <span className="text-sm font-bold text-white">±${mockMove.toFixed(2)}</span>
+        <span className={`text-sm font-bold ${expectedMove != null ? "text-white" : "text-zinc-600"}`}>{moveDisplay}</span>
       </div>
       <div className="flex flex-col items-center">
-        <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">ER</span>
-        <span className={`text-sm font-bold ${erColor}`}>{mockERDays}d</span>
+        <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">P/C</span>
+        <span className={`text-sm font-bold ${pcr !== "—" ? (Number(pcr) > 1 ? "text-[#f23645]" : "text-[#00d166]") : "text-zinc-600"}`}>{pcr}</span>
+      </div>
+      <div className="flex flex-col items-center">
+        <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">OI</span>
+        <span className={`text-sm font-bold ${totalOI > 0 ? "text-white" : "text-zinc-600"}`}>{oiDisplay}</span>
       </div>
     </div>
   );
@@ -582,7 +601,12 @@ export function OptionsTab() {
 
   return (
     <div className="h-full flex flex-col" style={{ backgroundColor: BG }}>
-      <MetricsStrip />
+      <MetricsStrip
+        groups={groups}
+        lastPrice={underlyingPrice}
+        rawCalls={(data?.calls ?? []) as Contract[]}
+        rawPuts={(data?.puts ?? []) as Contract[]}
+      />
       <div
         className="flex items-center justify-between gap-2 px-3 py-1.5 shrink-0 flex-wrap"
         style={{ backgroundColor: '#151517', borderBottom: `1px solid ${BORDER}` }}

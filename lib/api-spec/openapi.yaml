@@ -451,6 +451,10 @@ components:
           type: number
         ask:
           type: number
+        bidSize:
+          type: number
+        askSize:
+          type: number
         last:
           type: number
         volume:

@@ -333,12 +333,12 @@ router.get("/options", async (req, res) => {
     const underlyingPrice = json["underlyingPrice"] as number | undefined;
 
     function parseContracts(map: Record<string, unknown>): Array<{
-      strike: number; expiration: string; bid?: number; ask?: number; last?: number;
+      strike: number; expiration: string; bid?: number; ask?: number; bidSize?: number; askSize?: number; last?: number;
       volume?: number; openInterest?: number; iv?: number; delta?: number;
       gamma?: number; theta?: number; vega?: number; dte?: number;
     }> {
       const contracts: Array<{
-        strike: number; expiration: string; bid?: number; ask?: number; last?: number;
+        strike: number; expiration: string; bid?: number; ask?: number; bidSize?: number; askSize?: number; last?: number;
         volume?: number; openInterest?: number; iv?: number; delta?: number;
         gamma?: number; theta?: number; vega?: number; dte?: number;
       }> = [];
@@ -352,6 +352,8 @@ router.get("/options", async (req, res) => {
               expiration: opt["expirationDate"] as string,
               bid: opt["bid"] as number | undefined,
               ask: opt["ask"] as number | undefined,
+              bidSize: opt["bidSize"] as number | undefined,
+              askSize: opt["askSize"] as number | undefined,
               last: opt["last"] as number | undefined,
               volume: opt["totalVolume"] as number | undefined,
               openInterest: opt["openInterest"] as number | undefined,
