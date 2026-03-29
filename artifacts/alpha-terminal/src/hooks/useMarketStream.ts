@@ -4,7 +4,6 @@ import { useOptionsStreamStore, type OptionTick } from "@/lib/options-stream-sto
 import type { LiveQuote } from "@/lib/store";
 
 const API_BASE = "/api";
-const LIVE_THRESHOLD_MS = 10_000;
 
 export function useMarketStream() {
   const {
@@ -19,8 +18,6 @@ export function useMarketStream() {
   const mergeTick = useOptionsStreamStore((s) => s.mergeTick);
   const esRef = useRef<EventSource | null>(null);
   const tokenRef = useRef<string | null>(null);
-  const lastTickRef = useRef<number>(0);
-  const liveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   function allSymbols(): string[] {
     return [
@@ -54,23 +51,6 @@ export function useMarketStream() {
     } catch {}
   }
 
-  function markTick() {
-    lastTickRef.current = Date.now();
-    const cur = useTerminalStore.getState().streamStatus;
-    if (cur !== "live") setStreamStatus("live");
-  }
-
-  function startLivenessCheck() {
-    if (liveTimerRef.current) clearInterval(liveTimerRef.current);
-    liveTimerRef.current = setInterval(() => {
-      if (!esRef.current) return;
-      const age = Date.now() - lastTickRef.current;
-      if (age > LIVE_THRESHOLD_MS && useTerminalStore.getState().streamStatus === "live") {
-        setStreamStatus("connecting");
-      }
-    }, 5_000);
-  }
-
   function openEventSource() {
     esRef.current?.close();
     esRef.current = null;
@@ -79,11 +59,26 @@ export function useMarketStream() {
     const es = new EventSource(`${API_BASE}/stream/quotes`);
     esRef.current = es;
 
+    es.addEventListener("streamerStatus", (e) => {
+      try {
+        const { status } = JSON.parse((e as MessageEvent).data) as { status: string };
+        if (status === "connected") {
+          setStreamStatus("live");
+        } else if (status === "rejected") {
+          setStreamStatus("offline");
+          console.warn("[stream] Schwab streamer LOGIN rejected — re-authentication may be needed");
+        } else if (status === "connecting") {
+          setStreamStatus("connecting");
+        } else if (status === "disconnected") {
+          setStreamStatus("connecting");
+        }
+      } catch {}
+    });
+
     es.addEventListener("quote", (e) => {
       try {
         const q = JSON.parse((e as MessageEvent).data) as LiveQuote;
         setStreamQuote(q);
-        markTick();
       } catch {}
     });
 
@@ -91,21 +86,16 @@ export function useMarketStream() {
       try {
         const tick = JSON.parse((e as MessageEvent).data) as OptionTick;
         mergeTick(tick);
-        markTick();
       } catch {}
     });
 
     es.addEventListener("heartbeat", () => {});
 
-    es.onopen = () => {
-      setStreamStatus("connecting");
-    };
+    es.onopen = () => {};
 
     es.onerror = () => {
       setStreamStatus("connecting");
     };
-
-    startLivenessCheck();
   }
 
   useEffect(() => {
@@ -140,7 +130,6 @@ export function useMarketStream() {
       if (document.hidden) {
         esRef.current?.close();
         esRef.current = null;
-        if (liveTimerRef.current) { clearInterval(liveTimerRef.current); liveTimerRef.current = null; }
         setStreamStatus("offline");
       } else if (!esRef.current) {
         openEventSource();
@@ -157,7 +146,6 @@ export function useMarketStream() {
     return () => {
       esRef.current?.close();
       esRef.current = null;
-      if (liveTimerRef.current) clearInterval(liveTimerRef.current);
     };
   }, []);
 

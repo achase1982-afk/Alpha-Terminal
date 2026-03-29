@@ -88,9 +88,9 @@ export interface OptionTick {
 
 // ─── Internal state ───────────────────────────────────────────────────────────
 interface StreamerInfo {
-  streamerSocketUrl:   string;
-  customerId:          string;
-  correlId:            string;
+  streamerSocketUrl:        string;
+  schwabClientCustomerId:   string;
+  schwabClientCorrelId:     string;
 }
 
 let ws:            WebSocket | null   = null;
@@ -119,6 +119,7 @@ let reconnectDelay   = 1_000;   // ms; doubles each time, capped at 30_000
 let isConnecting     = false;
 let loginSent        = false;
 let loginAcked       = false;
+let loginRejected    = false;
 
 // ─── Symbol formatting (mirrors market.ts) ────────────────────────────────────
 const INDEX_MAP: Record<string, string> = {
@@ -178,11 +179,31 @@ async function fetchStreamerInfo(token: string): Promise<StreamerInfo | null> {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) {
-      logger.warn({ status: res.status }, "userPreference fetch failed");
+      const body = await res.text().catch(() => "");
+      logger.warn({ status: res.status, body: body.slice(0, 200) }, "userPreference fetch failed");
       return null;
     }
-    const json = (await res.json()) as { streamerInfo?: StreamerInfo[] };
-    return json.streamerInfo?.[0] ?? null;
+    const json = (await res.json()) as {
+      streamerInfo?: Array<{
+        streamerSocketUrl?:      string;
+        schwabClientCustomerId?: string;
+        schwabClientCorrelId?:   string;
+      }>;
+    };
+    const raw = json.streamerInfo?.[0];
+    if (!raw?.streamerSocketUrl || !raw?.schwabClientCustomerId || !raw?.schwabClientCorrelId) {
+      logger.warn({ rawKeys: raw ? Object.keys(raw) : [] }, "userPreference: missing streamerInfo fields");
+      return null;
+    }
+    logger.info(
+      { url: raw.streamerSocketUrl, customerId: raw.schwabClientCustomerId.slice(0, 4) + "…" },
+      "userPreference: streamerInfo extracted"
+    );
+    return {
+      streamerSocketUrl:      raw.streamerSocketUrl,
+      schwabClientCustomerId: raw.schwabClientCustomerId,
+      schwabClientCorrelId:   raw.schwabClientCorrelId,
+    };
   } catch (err) {
     logger.error({ err }, "fetchStreamerInfo error");
     return null;
@@ -191,20 +212,22 @@ async function fetchStreamerInfo(token: string): Promise<StreamerInfo | null> {
 
 // ─── Login request ────────────────────────────────────────────────────────────
 function sendLogin(info: StreamerInfo, token: string) {
-  wsSend({
+  const payload = {
     requests: [{
       service:                  "ADMIN",
       requestid:                nextReq(),
       command:                  "LOGIN",
-      SchwabClientCustomerId:   info.customerId,
-      SchwabClientCorrelId:     info.correlId,
+      SchwabClientCustomerId:   info.schwabClientCustomerId,
+      SchwabClientCorrelId:     info.schwabClientCorrelId,
       parameters: {
         Authorization:              token,
         SchwabClientChannel:        "IO",
         SchwabClientFunctionId:     "APIAPP",
       },
     }],
-  });
+  };
+  logger.info("Streamer: sending LOGIN request");
+  wsSend(payload);
   loginSent = true;
 }
 
@@ -223,8 +246,8 @@ function sendSubscribe(symbols: string[]) {
       service:                  "LEVELONE_EQUITIES",
       requestid:                nextReq(),
       command:                  "ADD",
-      SchwabClientCustomerId:   streamerInfo.customerId,
-      SchwabClientCorrelId:     streamerInfo.correlId,
+      SchwabClientCustomerId:   streamerInfo.schwabClientCustomerId,
+      SchwabClientCorrelId:     streamerInfo.schwabClientCorrelId,
       parameters: { keys, fields: FIELDS_STR },
     }],
   });
@@ -283,8 +306,8 @@ function sendOptionSubscribe(symbols: string[]) {
       service:                  "LEVELONE_OPTIONS",
       requestid:                nextReq(),
       command:                  "ADD",
-      SchwabClientCustomerId:   streamerInfo.customerId,
-      SchwabClientCorrelId:     streamerInfo.correlId,
+      SchwabClientCustomerId:   streamerInfo.schwabClientCustomerId,
+      SchwabClientCorrelId:     streamerInfo.schwabClientCorrelId,
       parameters: { keys, fields: OPT_FIELDS_STR },
     }],
   });
@@ -351,8 +374,9 @@ function onMessage(raw: string) {
       if (svc === "ADMIN" && cmd === "LOGIN") {
         if (code === 0 || code === "0") {
           loginAcked = true;
-          reconnectDelay = 1_000;   // successful handshake → reset backoff
-          logger.info("Streamer: LOGIN OK");
+          reconnectDelay = 1_000;
+          logger.info("Streamer: LOGIN OK — broadcasting streamerStatus=connected");
+          broadcast("streamerStatus", { status: "connected" });
           if (subscribedSymbols.size > 0) {
             sendSubscribe([...subscribedSymbols]);
           }
@@ -360,7 +384,10 @@ function onMessage(raw: string) {
             sendOptionSubscribe([...subscribedOptionSymbols]);
           }
         } else {
-          logger.warn({ code }, "Streamer: LOGIN rejected");
+          loginRejected = true;
+          logger.warn({ code }, "Streamer: LOGIN rejected — will not reconnect (token likely invalid)");
+          broadcast("streamerStatus", { status: "rejected", code });
+          ws?.close();
         }
       }
     }
@@ -418,6 +445,7 @@ async function connect() {
     loginSent  = false;
     loginAcked = false;
     isConnecting = false;
+    broadcast("streamerStatus", { status: "disconnected" });
     scheduleReconnect();
   });
 
@@ -432,7 +460,11 @@ async function connect() {
 // ─── Reconnect logic (exponential backoff) ────────────────────────────────────
 function scheduleReconnect() {
   if (reconnectTimer) clearTimeout(reconnectTimer);
-  if (!accessToken || sseClients.size === 0) return;  // no point reconnecting
+  if (!accessToken || sseClients.size === 0) return;
+  if (loginRejected) {
+    logger.info("Streamer: skipping reconnect — login was rejected (re-auth required)");
+    return;
+  }
 
   logger.info({ delay: reconnectDelay }, "Streamer: scheduling reconnect");
   reconnectTimer = setTimeout(() => {
@@ -462,6 +494,7 @@ export async function startStreamer(token: string, symbols: string[]) {
   isConnecting   = false;
   loginSent      = false;
   loginAcked     = false;
+  loginRejected  = false;
 
   await connect();
 }
@@ -500,6 +533,11 @@ export function addSseClient(res: Response): () => void {
   sseClients.add(res);
   logger.info({ total: sseClients.size }, "SSE client connected");
 
+  sseWrite(res, "streamerStatus", {
+    status: loginAcked ? "connected"
+      : loginRejected ? "rejected"
+      : (isConnecting || loginSent ? "connecting" : "disconnected"),
+  });
   for (const quote of quoteCache.values()) {
     sseWrite(res, "quote", quote);
   }
