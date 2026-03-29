@@ -262,11 +262,11 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
               >
                 <span className="text-[9px] uppercase font-bold tracking-widest text-white leading-none text-center py-0.5">SELL</span>
                 <span className="flex-1 rounded-md flex flex-col items-center justify-center" style={{ background: '#0c0c0c' }}>
-                  <span className={`${btnPriceCls} font-bold text-white tabular-nums whitespace-nowrap leading-tight`}>
+                  <span className={`${btnPriceCls} font-medium text-white tabular-nums whitespace-nowrap leading-tight`}>
                     {bidStr}
                   </span>
                   {bidSizeStr && (
-                    <span className="text-[9px] text-white/70 font-normal tabular-nums leading-none mt-1.5">Bid Size: {bidSizeStr}</span>
+                    <span className="text-[9px] text-white/70 font-medium tabular-nums leading-none mt-1.5">Bid Size: {bidSizeStr}</span>
                   )}
                 </span>
               </button>
@@ -277,11 +277,11 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
               >
                 <span className="text-[9px] uppercase font-bold tracking-widest text-white leading-none text-center py-0.5">BUY</span>
                 <span className="flex-1 rounded-md flex flex-col items-center justify-center" style={{ background: '#0c0c0c' }}>
-                  <span className={`${btnPriceCls} font-bold text-white tabular-nums whitespace-nowrap leading-tight`}>
+                  <span className={`${btnPriceCls} font-medium text-white tabular-nums whitespace-nowrap leading-tight`}>
                     {askStr}
                   </span>
                   {askSizeStr && (
-                    <span className="text-[9px] text-white/70 font-normal tabular-nums leading-none mt-1.5">Ask Size: {askSizeStr}</span>
+                    <span className="text-[9px] text-white/70 font-medium tabular-nums leading-none mt-1.5">Ask Size: {askSizeStr}</span>
                   )}
                 </span>
               </button>
