@@ -126,11 +126,11 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
   const changeStr = rawChange !== null
     ? isUp   ? `+$${fmtPrice(rawChange)}`
     : isFlat ? "$0.00"
-    :          `-$${fmtPrice(Math.abs(rawChange))}`
+    :          `\u2212$${fmtPrice(Math.abs(rawChange))}`
     : "—";
 
   const changePctStr = rawPct !== null
-    ? `(${isUp ? "+" : ""}${fmtPrice(rawPct)}%)`
+    ? `(${isUp ? "+" : isDown ? "\u2212" : ""}${fmtPrice(Math.abs(rawPct))}%)`
     : "(—%)";
 
   if (compact) {
@@ -167,46 +167,47 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
     );
   }
 
+  const bidAskStr = quote.bid != null && quote.ask != null
+    ? `$${fmtPrice(quote.bid)} / $${fmtPrice(quote.ask)}`
+    : null;
+  const bidAskLen = bidAskStr?.length ?? 0;
+  const bidAskFontSize = bidAskLen > 22 ? '0.7rem' : bidAskLen > 18 ? '0.78rem' : '0.9rem';
+
   return (
     <div
-      className={`${stickyBase} flex items-center px-4 sm:px-6 overflow-x-auto py-2 sm:h-16`}
+      className={`${stickyBase} flex items-center px-3 sm:px-6 overflow-x-auto py-1.5 sm:py-2`}
       style={{ background: "#0c0c0c" }}
     >
-      <div className="grid items-center w-full min-w-0 max-w-[640px]" style={{ gridTemplateColumns: 'minmax(0,1.2fr) minmax(0,1fr) minmax(0,1fr)' }}>
-        <button onClick={onOpenTearSheet} className="flex flex-col min-w-0 gap-0.5 text-left cursor-pointer group pr-2" aria-label={`View company profile for ${quote.symbol}`}>
-          <span className={LABEL_CLS}>Ticker</span>
-          <span className="font-bold text-white leading-tight group-hover:text-primary transition-colors" style={{ fontSize: '1.1rem' }}>
+      <div className="grid items-center w-full min-w-0 max-w-[640px]" style={{ gridTemplateColumns: 'minmax(0, auto) minmax(0, 1fr) minmax(0, auto)' }}>
+        <button onClick={onOpenTearSheet} className="flex flex-col min-w-0 gap-0 text-left cursor-pointer group pr-3" aria-label={`View company profile for ${quote.symbol}`}>
+          <span className="font-bold text-white leading-tight group-hover:text-primary transition-colors" style={{ fontSize: '1rem' }}>
             {quote.symbol}
           </span>
           <span
-            className="block w-full min-w-0 truncate leading-tight group-hover:text-[#FFB800] transition-colors"
-            style={{ fontSize: '0.8rem', color: '#FFB800', fontWeight: 400 }}
+            className="block w-full min-w-0 leading-snug group-hover:text-[#FFB800] transition-colors"
+            style={{ fontSize: '0.65rem', color: '#FFB800', fontWeight: 400, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
           >
-            {quote.description || "Name Unavailable"}
+            {quote.description || ""}
           </span>
         </button>
 
-        <div className="flex flex-col min-w-0 gap-0.5 border-l border-gray-800 pl-3">
+        <div className="flex flex-col min-w-0 gap-0 border-l border-gray-800 pl-3">
           <span className={LABEL_CLS}>Last Price</span>
-          <div className="flex flex-col">
-            <span className={`tabular-nums leading-tight ${flashClass}`} style={{ fontSize: '1.4rem', fontWeight: 300, color: tickColor }}>
-              {lastStr}
-            </span>
-            <span className="tabular-nums leading-tight" style={{ fontSize: '0.8rem', fontWeight: 300, color: priceColor }}>
-              {changeStr}&nbsp;<span style={{ opacity: 0.8 }}>{changePctStr}</span>
-            </span>
-          </div>
+          <span className={`tabular-nums leading-tight whitespace-nowrap ${flashClass}`} style={{ fontSize: '1.25rem', fontWeight: 300, color: tickColor }}>
+            {lastStr}
+          </span>
+          <span className="tabular-nums leading-tight whitespace-nowrap" style={{ fontSize: '0.7rem', fontWeight: 300, color: priceColor }}>
+            {changeStr}&nbsp;{changePctStr}
+          </span>
         </div>
 
-        <div className="flex flex-col min-w-0 gap-0.5 border-l border-gray-800 pl-3">
+        <div className="flex flex-col min-w-0 gap-0 border-l border-gray-800 pl-3">
           <span className={LABEL_CLS}>Bid / Ask</span>
           <span
-            className="font-mono tabular-nums text-gray-200 whitespace-nowrap shrink-0"
-            style={{ fontSize: '0.9rem', fontWeight: 400 }}
+            className="font-mono tabular-nums text-gray-200 whitespace-nowrap"
+            style={{ fontSize: bidAskFontSize, fontWeight: 400 }}
           >
-            {quote.bid != null && quote.ask != null
-              ? <>${fmtPrice(quote.bid)}&nbsp;<span className="text-gray-600">/</span>&nbsp;${fmtPrice(quote.ask)}</>
-              : <span className="text-gray-600">N/A</span>}
+            {bidAskStr ?? <span className="text-gray-600">N/A</span>}
           </span>
         </div>
       </div>
