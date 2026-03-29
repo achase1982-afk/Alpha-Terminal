@@ -568,14 +568,14 @@ export function OptionsTab() {
   const subHeaderLeftRef = useRef<HTMLDivElement>(null);
   const subHeaderRightRef = useRef<HTMLDivElement>(null);
 
+  const hasData = data && groups.length > 0;
+
   useEffect(() => {
     const cleanups: (() => void)[] = [];
     if (subHeaderLeftRef.current) cleanups.push(registerWing(subHeaderLeftRef.current));
     if (subHeaderRightRef.current) cleanups.push(registerWing(subHeaderRightRef.current));
     return () => cleanups.forEach(fn => fn());
-  }, [registerWing, showCalls, showPuts]);
-
-  const hasData = data && groups.length > 0;
+  }, [registerWing, showCalls, showPuts, hasData]);
 
   return (
     <div className="h-full flex flex-col" style={{ backgroundColor: BG }}>
