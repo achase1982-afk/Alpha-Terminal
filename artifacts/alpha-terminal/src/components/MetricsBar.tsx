@@ -168,69 +168,67 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
 
   return (
     <div
-      className={`${stickyBase} flex items-center px-4 sm:px-6 gap-4 sm:gap-6 lg:gap-8 overflow-x-auto py-2 sm:h-16`}
+      className={`${stickyBase} flex items-center px-4 sm:px-6 overflow-x-auto py-2 sm:h-16`}
       style={{ background: "#0c0c0c" }}
     >
-      <button onClick={onOpenTearSheet} className="flex flex-col shrink-0 gap-0.5 text-left cursor-pointer group" aria-label={`View company profile for ${quote.symbol}`}>
-        <span className={LABEL_CLS}>Ticker</span>
-        <span className="font-bold text-white leading-tight group-hover:text-primary transition-colors" style={{ fontSize: '1.1rem' }}>
-          {quote.symbol}
-        </span>
-        <span
-          className="leading-tight whitespace-normal text-wrap group-hover:text-[#FFB800] transition-colors max-w-[200px] sm:max-w-[280px]"
-          style={{ fontSize: '0.8rem', color: '#FFB800', fontWeight: 400, lineHeight: 1.3 }}
-        >
-          {quote.description || "Name Unavailable"}
-        </span>
-      </button>
+      <div className="grid items-center w-full min-w-0 max-w-[640px]" style={{ gridTemplateColumns: 'minmax(0,1.2fr) minmax(0,1fr) minmax(0,1fr)' }}>
+        <button onClick={onOpenTearSheet} className="flex flex-col min-w-0 gap-0.5 text-left cursor-pointer group pr-2" aria-label={`View company profile for ${quote.symbol}`}>
+          <span className={LABEL_CLS}>Ticker</span>
+          <span className="font-bold text-white leading-tight group-hover:text-primary transition-colors" style={{ fontSize: '1.1rem' }}>
+            {quote.symbol}
+          </span>
+          <span
+            className="block w-full min-w-0 truncate leading-tight group-hover:text-[#FFB800] transition-colors"
+            style={{ fontSize: '0.8rem', color: '#FFB800', fontWeight: 400 }}
+          >
+            {quote.description || "Name Unavailable"}
+          </span>
+        </button>
 
-      <div className="w-px h-10 bg-gray-800 shrink-0" />
-
-      <div className="flex flex-col shrink-0 gap-0.5">
-        <div className="flex items-center gap-1.5">
-          <span className={LABEL_CLS}>Last Price</span>
-          {source === "stream"
-            ? <span title="Live stream" className="flex items-center gap-0.5 text-[7px] font-mono text-emerald-400 leading-none font-semibold">
-                <Wifi className="w-2.5 h-2.5" />LIVE
-              </span>
-            : streamStatus === "connecting" && !quote
-              ? <span title="Connecting" className="flex items-center gap-0.5 text-[7px] font-mono text-amber-400 leading-none animate-pulse">
-                  <Wifi className="w-2.5 h-2.5" />CONNECTING
+        <div className="flex flex-col min-w-0 gap-0.5 border-l border-gray-800 pl-3">
+          <div className="flex items-center gap-1.5">
+            <span className={LABEL_CLS}>Last Price</span>
+            {source === "stream"
+              ? <span title="Live stream" className="flex items-center gap-0.5 text-[7px] font-mono text-emerald-400 leading-none font-semibold">
+                  <Wifi className="w-2.5 h-2.5" />LIVE
                 </span>
-              : null
-          }
+              : streamStatus === "connecting" && !quote
+                ? <span title="Connecting" className="flex items-center gap-0.5 text-[7px] font-mono text-amber-400 leading-none animate-pulse">
+                    <Wifi className="w-2.5 h-2.5" />CONNECTING
+                  </span>
+                : null
+            }
+          </div>
+          <div className="flex flex-col">
+            <span className={`tabular-nums leading-tight ${flashClass}`} style={{ fontSize: '1.4rem', fontWeight: 300, color: tickColor }}>
+              {lastStr}
+            </span>
+            <span className="tabular-nums leading-tight" style={{ fontSize: '0.8rem', fontWeight: 300, color: priceColor }}>
+              {changeStr}&nbsp;<span style={{ opacity: 0.8 }}>{changePctStr}</span>
+            </span>
+          </div>
         </div>
-        <div className="flex flex-col">
-          <span className={`tabular-nums leading-tight ${flashClass}`} style={{ fontSize: '1.4rem', fontWeight: 300, color: tickColor }}>
-            {lastStr}
-          </span>
-          <span className="tabular-nums leading-tight" style={{ fontSize: '0.8rem', fontWeight: 300, color: priceColor }}>
-            {changeStr}&nbsp;<span style={{ opacity: 0.8 }}>{changePctStr}</span>
+
+        <div className="flex flex-col min-w-0 gap-0.5 border-l border-gray-800 pl-3">
+          <span className={LABEL_CLS}>Bid / Ask</span>
+          <span className="font-mono tabular-nums text-gray-200" style={{ fontSize: '0.9rem', fontWeight: 400 }}>
+            ${fmtPrice(quote.bid)}&nbsp;<span className="text-gray-600">/</span>&nbsp;${fmtPrice(quote.ask)}
           </span>
         </div>
       </div>
 
-      <div className="w-px h-10 bg-gray-800 shrink-0" />
+      <div className="w-px h-10 bg-gray-800 shrink-0 hidden sm:block ml-6" />
 
-      <div className="flex flex-col shrink-0 gap-0.5">
-        <span className={LABEL_CLS}>Bid / Ask</span>
-        <span className="font-mono tabular-nums text-gray-200" style={{ fontSize: '0.9rem', fontWeight: 400 }}>
-          ${fmtPrice(quote.bid)}&nbsp;<span className="text-gray-600">/</span>&nbsp;${fmtPrice(quote.ask)}
-        </span>
-      </div>
-
-      <div className="w-px h-10 bg-gray-800 shrink-0 hidden sm:block" />
-
-      <div className="hidden sm:flex flex-col shrink-0 gap-0.5">
+      <div className="hidden sm:flex flex-col shrink-0 gap-0.5 ml-6">
         <span className={LABEL_CLS}>Volume</span>
         <span className="font-mono tabular-nums text-gray-200" style={{ fontSize: '0.9rem', fontWeight: 400 }}>
           {fmtVol(quote.volume)}
         </span>
       </div>
 
-      <div className="w-px h-10 bg-gray-800 shrink-0 hidden md:block" />
+      <div className="w-px h-10 bg-gray-800 shrink-0 hidden md:block ml-6" />
 
-      <div className="hidden md:flex flex-col shrink-0 gap-0.5">
+      <div className="hidden md:flex flex-col shrink-0 gap-0.5 ml-6">
         <span className={LABEL_CLS}>Day Range</span>
         <span className="font-mono tabular-nums" style={{ fontSize: '0.9rem', fontWeight: 400 }}>
           <span style={{ color: DOWN_COLOR }}>${fmtPrice(quote.low)}</span>
@@ -239,9 +237,9 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
         </span>
       </div>
 
-      <div className="w-px h-10 bg-gray-800 shrink-0 hidden lg:block" />
+      <div className="w-px h-10 bg-gray-800 shrink-0 hidden lg:block ml-6" />
 
-      <div className="hidden lg:flex flex-col shrink-0 gap-0.5">
+      <div className="hidden lg:flex flex-col shrink-0 gap-0.5 ml-6">
         <span className={LABEL_CLS}>52W Range</span>
         <span className="font-mono tabular-nums text-gray-500" style={{ fontSize: '0.9rem', fontWeight: 400 }}>
           {quote.fiftyTwoWeekLow != null
