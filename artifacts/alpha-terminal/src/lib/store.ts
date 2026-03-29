@@ -95,6 +95,10 @@ interface TerminalState {
   addToWatchlist: (s: string) => void;
   removeFromWatchlist: (s: string) => void;
 
+  browserUrl: string | null;
+  openBrowser: (url: string) => void;
+  closeBrowser: () => void;
+
   // ── Streaming (NOT persisted) ─────────────────────────────────────────────
   streamPrices: Record<string, LiveQuote>;
   streamConnected: boolean;
@@ -212,6 +216,10 @@ export const useTerminalStore = create<TerminalState>()(
         }));
       },
 
+      browserUrl: null,
+      openBrowser: (url) => set({ browserUrl: url }),
+      closeBrowser: () => set({ browserUrl: null }),
+
       streamPrices: {},
       streamConnected: false,
       streamStatus: "offline" as const,
@@ -238,7 +246,7 @@ export const useTerminalStore = create<TerminalState>()(
         return s;
       },
       partialize: (state) => {
-        const { streamPrices, streamConnected, streamStatus, ...persisted } = state;
+        const { streamPrices, streamConnected, streamStatus, browserUrl, ...persisted } = state;
         return persisted;
       },
     }

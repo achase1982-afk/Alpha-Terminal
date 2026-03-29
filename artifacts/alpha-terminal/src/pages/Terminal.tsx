@@ -17,6 +17,7 @@ import { useMarketStream } from "@/hooks/useMarketStream";
 import { useViewportShell } from "@/hooks/useViewportShell";
 import { AiChatOverlay } from "@/components/AiChatOverlay";
 import { InstitutionalTearSheet } from "@/views/InstitutionalTearSheet";
+import { InAppBrowser } from "@/components/InAppBrowser";
 import { NewsTab } from "@/components/NewsTab";
 import { LineChart, BarChart2, BrainCircuit, Menu, Radar, Newspaper } from "lucide-react";
 
@@ -214,6 +215,7 @@ export default function TerminalPage() {
 
       <AiChatOverlay isOpen={chatOpen} onClose={() => setChatOpen(false)} />
       <InstitutionalTearSheet isOpen={tearSheetOpen} onClose={() => setTearSheetOpen(false)} />
+      <InAppBrowser />
     </div>
   );
 }

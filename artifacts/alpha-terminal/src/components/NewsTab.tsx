@@ -29,7 +29,7 @@ function timeAgo(unixSeconds: number): string {
 }
 
 export function NewsTab() {
-  const { symbol } = useTerminalStore();
+  const { symbol, openBrowser } = useTerminalStore();
 
   const { data, isLoading, error } = useQuery<NewsResponse>({
     queryKey: ["ticker-news", symbol],
@@ -80,12 +80,10 @@ export function NewsTab() {
     <div className="flex-1">
       <div className="space-y-0">
         {articles.map((article) => (
-          <a
+          <button
             key={article.id}
-            href={article.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="block border-b border-zinc-800/50 pb-4 mb-4 hover:bg-zinc-800/30 p-2 rounded-md transition-colors group cursor-pointer"
+            onClick={() => openBrowser(article.url)}
+            className="block w-full text-left border-b border-zinc-800/50 pb-4 mb-4 hover:bg-zinc-800/30 p-2 rounded-md transition-colors group cursor-pointer"
           >
             <div className="flex items-start gap-3">
               <div className="flex-1 min-w-0">
@@ -123,7 +121,7 @@ export function NewsTab() {
 
               <ExternalLink className="w-3 h-3 text-zinc-600 shrink-0 mt-1 group-hover:text-zinc-400 transition-colors" />
             </div>
-          </a>
+          </button>
         ))}
       </div>
     </div>
