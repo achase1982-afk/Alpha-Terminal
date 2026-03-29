@@ -31,6 +31,24 @@ const FIELD = {
 
 const FIELDS_STR = "0,1,2,3,4,5,8,12,13,14,15,29";
 
+// ─── LEVELONE_FUTURES field map (indices differ from equities) ───────────────
+const FUT_FIELD = {
+  BID:         1,
+  ASK:         2,
+  LAST:        3,
+  BID_SIZE:    4,
+  ASK_SIZE:    5,
+  VOLUME:      8,
+  HIGH:        12,
+  LOW:         13,
+  CLOSE:       14,
+  NET_CHANGE:  19,
+  PCT_CHANGE:  20,
+  MARK:        24,
+} as const;
+
+const FUTURES_FIELDS_STR = "0,1,2,3,4,5,8,12,13,14,19,20,24";
+
 // ─── LEVELONE_OPTIONS field map ──────────────────────────────────────────────
 // Schwab Streamer LEVELONE_OPTIONS field indices (per official docs):
 const OPT_FIELD = {
@@ -278,7 +296,7 @@ function sendSubscribe(symbols: string[]) {
         command:                  "ADD",
         SchwabClientCustomerId:   streamerInfo.schwabClientCustomerId,
         SchwabClientCorrelId:     streamerInfo.schwabClientCorrelId,
-        parameters: { keys, fields: FIELDS_STR },
+        parameters: { keys, fields: FUTURES_FIELDS_STR },
       }],
     });
     logger.info({ keys }, "Streamer: subscribed futures symbols");
@@ -326,6 +344,58 @@ function handleData(content: Record<string, unknown>[]) {
       volume:    pick(FIELD.VOLUME)   ?? existing.volume,
       high:      pick(FIELD.HIGH)     ?? existing.high,
       low:       pick(FIELD.LOW)      ?? existing.low,
+      close:     closeVal,
+      ts:        Date.now(),
+    };
+
+    quoteCache.set(sym, updated);
+    broadcast("quote", updated);
+  }
+}
+
+// ─── Parse incoming LEVELONE_FUTURES DATA messages ──────────────────────────
+function handleFuturesData(content: Record<string, unknown>[]) {
+  for (const item of content) {
+    const schwabKey = item["key"] as string;
+    const sym = fromSchwabKey(schwabKey);
+
+    const existing = quoteCache.get(sym) ?? {
+      symbol: sym, last: null, bid: null, ask: null,
+      bidSize: null, askSize: null,
+      change: null, changePct: null, volume: null,
+      high: null, low: null, close: null, ts: 0,
+    };
+
+    const pick = (f: number) => {
+      const v = item[String(f)];
+      return typeof v === "number" && !isNaN(v) ? v : null;
+    };
+
+    const lastVal  = pick(FUT_FIELD.LAST)  ?? pick(FUT_FIELD.MARK) ?? existing.last;
+    const closeVal = pick(FUT_FIELD.CLOSE) ?? existing.close;
+
+    let changeVal:    number | null = pick(FUT_FIELD.NET_CHANGE) ?? existing.change;
+    let changePctVal: number | null = pick(FUT_FIELD.PCT_CHANGE) ?? existing.changePct;
+    if (changeVal === null && lastVal !== null && closeVal !== null && closeVal !== 0) {
+      changeVal    = lastVal - closeVal;
+      changePctVal = (changeVal / closeVal) * 100;
+    } else if (changePctVal === null && changeVal !== null && closeVal !== null && closeVal !== 0) {
+      changePctVal = (changeVal / closeVal) * 100;
+    }
+
+    const updated: LiveQuote = {
+      ...existing,
+      symbol:    sym,
+      last:      lastVal,
+      bid:       pick(FUT_FIELD.BID)      ?? existing.bid,
+      ask:       pick(FUT_FIELD.ASK)      ?? existing.ask,
+      bidSize:   pick(FUT_FIELD.BID_SIZE) ?? existing.bidSize,
+      askSize:   pick(FUT_FIELD.ASK_SIZE) ?? existing.askSize,
+      change:    changeVal,
+      changePct: changePctVal,
+      volume:    pick(FUT_FIELD.VOLUME)   ?? existing.volume,
+      high:      pick(FUT_FIELD.HIGH)     ?? existing.high,
+      low:       pick(FUT_FIELD.LOW)      ?? existing.low,
       close:     closeVal,
       ts:        Date.now(),
     };
@@ -436,8 +506,10 @@ function onMessage(raw: string) {
     for (const block of msg["data"] as Record<string, unknown>[]) {
       const svc     = block["service"] as string;
       const content = block["content"] as Record<string, unknown>[] | undefined;
-      if ((svc === "LEVELONE_EQUITIES" || svc === "LEVELONE_FUTURES") && Array.isArray(content)) {
+      if (svc === "LEVELONE_EQUITIES" && Array.isArray(content)) {
         handleData(content);
+      } else if (svc === "LEVELONE_FUTURES" && Array.isArray(content)) {
+        handleFuturesData(content);
       } else if (svc === "LEVELONE_OPTIONS" && Array.isArray(content)) {
         handleOptionData(content);
       }
