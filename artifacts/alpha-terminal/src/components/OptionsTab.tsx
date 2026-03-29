@@ -11,10 +11,10 @@ import { Reorder } from "framer-motion";
 
 const EPS = 0.0001;
 const COL_W = 72;
-const STRIKE_W = 64;
-const ROW_H = 56;
-const HEADER_H = 44;
-const SUB_HEADER_H = 28;
+const STRIKE_W = 56;
+const ROW_H = 40;
+const HEADER_H = 36;
+const SUB_HEADER_H = 22;
 const STICKY_TOP = HEADER_H + SUB_HEADER_H;
 const BG = "#1C1C1E";
 const BORDER = "#2A2A2C";
@@ -54,25 +54,31 @@ interface ExpirationGroup {
   expectedMove: number | null;
 }
 
-function formatExpDate(expStr: string): string {
-  try {
-    const d = new Date(expStr + "T12:00:00");
-    const months = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
-    return `${d.getDate()} ${months[d.getMonth()]} ${String(d.getFullYear()).slice(2)}`;
-  } catch {
-    return expStr;
+const MONTHS = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
+
+function parseExpDate(expStr: string): Date | null {
+  if (!expStr) return null;
+  const clean = expStr.split(":")[0].trim();
+  const iso = clean.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (iso) {
+    return new Date(parseInt(iso[1]), parseInt(iso[2]) - 1, parseInt(iso[3]), 12, 0, 0);
   }
+  const d = new Date(clean);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function formatExpDate(expStr: string): string {
+  const d = parseExpDate(expStr);
+  if (!d) return expStr || "—";
+  return `${d.getDate()} ${MONTHS[d.getMonth()]} ${String(d.getFullYear()).slice(2)}`;
 }
 
 function isWeeklyExp(expStr: string): boolean {
-  try {
-    const d = new Date(expStr + "T12:00:00");
-    if (d.getDay() !== 5) return true;
-    const date = d.getDate();
-    return !(date >= 15 && date <= 21);
-  } catch {
-    return false;
-  }
+  const d = parseExpDate(expStr);
+  if (!d) return false;
+  if (d.getDay() !== 5) return true;
+  const date = d.getDate();
+  return !(date >= 15 && date <= 21);
 }
 
 function findATMIndex(strikes: number[], lastPrice: number): number {
@@ -178,12 +184,12 @@ function DataCell({ col, contract }: { col: ColumnDef; contract: Contract | null
   const botStr = col.bottomKey ? fmtNum(bottomVal, col.bottomDecimals ?? 0) : null;
 
   const inner = (
-    <div className="flex flex-col justify-center px-2" style={{ height: ROW_H }}>
-      <span className={`text-[13px] font-medium leading-tight ${topStr === "—" ? "text-zinc-600" : "text-zinc-100"}`}>
+    <div className="flex flex-col justify-center px-1.5" style={{ height: ROW_H }}>
+      <span className={`text-[13px] font-bold leading-none ${topStr === "—" ? "text-zinc-600" : "text-white"}`}>
         {topStr}
       </span>
       {botStr != null && (
-        <span className={`text-[10px] leading-tight mt-0.5 ${botStr === "—" ? "text-zinc-700" : "text-zinc-500"}`}>
+        <span className={`text-[9px] leading-none mt-0.5 ${botStr === "—" ? "text-zinc-700" : "text-zinc-500"}`}>
           {col.bottomLabel ? `${col.bottomLabel}: ${botStr}` : botStr}
         </span>
       )}
@@ -313,24 +319,24 @@ function MetricsStrip({ groups, lastPrice, rawCalls, rawPuts }: {
 
   return (
     <div
-      className="flex justify-between items-center py-2.5 px-4 shrink-0 font-mono"
+      className="flex justify-between items-center py-1.5 px-4 shrink-0 font-mono"
       style={{ fontVariantNumeric: "tabular-nums", backgroundColor: BG, borderBottom: `1px solid ${BORDER}` }}
     >
       <div className="flex flex-col items-center">
-        <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">IV</span>
-        <span className={`text-sm font-bold ${atmIV != null ? "text-white" : "text-zinc-600"}`}>{ivDisplay}</span>
+        <span className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold">IV</span>
+        <span className={`text-[13px] font-bold ${atmIV != null ? "text-white" : "text-zinc-600"}`}>{ivDisplay}</span>
       </div>
       <div className="flex flex-col items-center">
-        <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">MOVE</span>
-        <span className={`text-sm font-bold ${expectedMove != null ? "text-white" : "text-zinc-600"}`}>{moveDisplay}</span>
+        <span className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold">MOVE</span>
+        <span className={`text-[13px] font-bold ${expectedMove != null ? "text-white" : "text-zinc-600"}`}>{moveDisplay}</span>
       </div>
       <div className="flex flex-col items-center">
-        <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">P/C</span>
-        <span className={`text-sm font-bold ${pcr !== "—" ? (Number(pcr) > 1 ? "text-[#f23645]" : "text-[#00d166]") : "text-zinc-600"}`}>{pcr}</span>
+        <span className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold">P/C</span>
+        <span className={`text-[13px] font-bold ${pcr !== "—" ? (Number(pcr) > 1 ? "text-[#f23645]" : "text-[#00d166]") : "text-zinc-600"}`}>{pcr}</span>
       </div>
       <div className="flex flex-col items-center">
-        <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">OI</span>
-        <span className={`text-sm font-bold ${totalOI > 0 ? "text-white" : "text-zinc-600"}`}>{oiDisplay}</span>
+        <span className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold">OI</span>
+        <span className={`text-[13px] font-bold ${totalOI > 0 ? "text-white" : "text-zinc-600"}`}>{oiDisplay}</span>
       </div>
     </div>
   );
@@ -454,7 +460,7 @@ function OptionsGrid({
           return (
             <div
               key={row.strike}
-              className={`flex items-center justify-center text-[13px] font-semibold border-b ${isATMStrike ? "text-[#FFB800]" : "text-zinc-300"}`}
+              className={`flex items-center justify-center text-[12px] font-bold border-b ${isATMStrike ? "text-[#FFB800]" : "text-zinc-300"}`}
               style={{ height: ROW_H, fontVariantNumeric: "tabular-nums", borderColor: BORDER }}
             >
               {row.strike % 1 === 0 ? row.strike : row.strike.toFixed(1)}
@@ -695,7 +701,7 @@ export function OptionsTab() {
             >
               {showCalls && (
                 <div className="flex-1 text-center">
-                  <span className="text-[14px] font-extrabold uppercase text-white tracking-widest">CALLS</span>
+                  <span className="text-[12px] font-extrabold uppercase text-white tracking-widest">CALLS</span>
                 </div>
               )}
               <div
@@ -708,12 +714,12 @@ export function OptionsTab() {
                   style={{ width: STRIKE_W, height: HEADER_H }}
                   aria-label="Edit columns"
                 >
-                  <Settings className="w-7 h-7" />
+                  <Settings className="w-5 h-5" />
                 </button>
               </div>
               {showPuts && (
                 <div className="flex-1 text-center">
-                  <span className="text-[14px] font-extrabold uppercase text-white tracking-widest">PUTS</span>
+                  <span className="text-[12px] font-extrabold uppercase text-white tracking-widest">PUTS</span>
                 </div>
               )}
             </div>
@@ -730,8 +736,8 @@ export function OptionsTab() {
                 >
                   <div className="flex items-center" style={{ minWidth: wingWidth, height: SUB_HEADER_H }}>
                     {activeColumns.map(col => (
-                      <div key={col.id} style={{ width: COL_W }} className="shrink-0 flex items-center px-2">
-                        <span className="text-[11px] text-zinc-400 font-medium">{col.topLabel}</span>
+                      <div key={col.id} style={{ width: COL_W }} className="shrink-0 flex items-center px-1.5">
+                        <span className="text-[10px] text-zinc-400 font-medium">{col.topLabel}</span>
                       </div>
                     ))}
                   </div>
@@ -741,7 +747,7 @@ export function OptionsTab() {
                 className="flex-none flex items-center justify-center"
                 style={{ width: STRIKE_W, borderLeft: `1px solid ${BORDER}`, borderRight: `1px solid ${BORDER}` }}
               >
-                <span className="text-[11px] text-zinc-400 font-medium">Strike</span>
+                <span className="text-[10px] text-zinc-400 font-medium">Strike</span>
               </div>
               {showPuts && (
                 <div
@@ -751,8 +757,8 @@ export function OptionsTab() {
                 >
                   <div className="flex items-center" style={{ minWidth: wingWidth, height: SUB_HEADER_H }}>
                     {activeColumns.map(col => (
-                      <div key={col.id} style={{ width: COL_W }} className="shrink-0 flex items-center px-2">
-                        <span className="text-[11px] text-zinc-400 font-medium">{col.topLabel}</span>
+                      <div key={col.id} style={{ width: COL_W }} className="shrink-0 flex items-center px-1.5">
+                        <span className="text-[10px] text-zinc-400 font-medium">{col.topLabel}</span>
                       </div>
                     ))}
                   </div>
@@ -767,25 +773,25 @@ export function OptionsTab() {
                   <div key={group.expiration}>
                     <button
                       onClick={() => toggleExp(group.expiration)}
-                      className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-white/[0.03] transition-colors sticky z-10"
+                      className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-white/[0.03] transition-colors sticky z-10"
                       style={{ top: STICKY_TOP, backgroundColor: BG, borderBottom: `1px solid ${BORDER}` }}
                     >
-                      <div className="flex items-center gap-2 font-mono">
+                      <div className="flex items-center gap-1.5 font-mono">
                         {isOpen
-                          ? <ChevronDown className="w-4 h-4 text-zinc-400" />
-                          : <ChevronUp className="w-4 h-4 text-zinc-400 -rotate-90" />
+                          ? <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />
+                          : <ChevronUp className="w-3.5 h-3.5 text-zinc-400 -rotate-90" />
                         }
-                        <span className="text-[12px] font-medium text-white tracking-wide">
+                        <span className="text-[11px] font-bold text-white tracking-wide">
                           {group.dateLabel}
                         </span>
-                        <span className="text-[12px] text-zinc-400">
+                        <span className="text-[11px] text-zinc-500">
                           ({Math.round(group.dte)})
                         </span>
-                        <span className="text-[12px] text-white">
+                        <span className="text-[11px] text-zinc-300">
                           {group.totalStrikes}
                         </span>
                         {group.isWeekly && (
-                          <span className="text-[12px] text-[#FFB800] font-medium">Weeklys</span>
+                          <span className="text-[11px] text-[#FFB800] font-medium">Weeklys</span>
                         )}
                       </div>
                       <div className="font-mono text-[11px]" style={{ fontVariantNumeric: "tabular-nums" }}>
