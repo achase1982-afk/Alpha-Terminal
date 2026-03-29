@@ -423,7 +423,7 @@ function OptionsGrid({
       {atmLineTop >= 0 && (
         <div
           className="absolute left-0 right-0 z-30 pointer-events-none"
-          style={{ top: atmLineTop, borderTop: "1.5px dashed #FFB800" }}
+          style={{ top: atmLineTop, borderTop: "1.5px dashed #FF6B2B" }}
         />
       )}
 
