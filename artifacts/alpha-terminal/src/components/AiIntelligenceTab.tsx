@@ -137,46 +137,48 @@ export function AiIntelligenceTab() {
     : null;
 
   return (
-    <div className="flex flex-col gap-4 max-w-5xl mx-auto pb-6">
+    <div className="flex flex-col gap-0 max-w-5xl mx-auto pb-6">
 
-      {/* ── DEEP ANALYSIS ── */}
-      <div className="bg-card border border-card-border rounded-xl overflow-hidden">
+      <div
+        className="sticky top-[76px] z-20 flex gap-2 py-2 -mx-3 px-3 sm:-mx-4 sm:px-4 lg:-mx-5 lg:px-5"
+        style={{ background: "#151517" }}
+      >
+        <Button
+          onClick={handleRunTA}
+          disabled={isPendingAny || !accessToken || !quote}
+          className="flex-1 font-mono text-xs bg-primary text-primary-foreground hover:bg-primary/90 h-9"
+        >
+          <Activity className="w-3.5 h-3.5 mr-2 shrink-0" />
+          RUN TECHNICAL ANALYSIS
+        </Button>
+        <Button
+          onClick={handleRunStrategist}
+          disabled={isPendingAny || !accessToken || !quote}
+          variant="outline"
+          className="flex-1 font-mono text-xs border-primary/50 text-primary hover:bg-primary/10 h-9"
+        >
+          {chainLoading ? (
+            <><span className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin mr-2" />LOADING CHAIN...</>
+          ) : (
+            <><BarChart2 className="w-3.5 h-3.5 mr-2 shrink-0" />RUN OPTIONS STRATEGIST</>
+          )}
+        </Button>
+      </div>
+
+      <div className="bg-card border border-card-border rounded-xl overflow-hidden mt-3">
         <div className="px-4 py-3 border-b border-card-border flex items-center gap-2">
           <Target className="w-4 h-4 text-primary" />
           <span className="font-mono text-xs font-bold text-foreground">DEEP ANALYSIS — {symbol}</span>
         </div>
-        <div className="p-4 space-y-3 bg-[#0c0c0c]">
+        <div className="p-4 bg-[#0c0c0c]">
           <Textarea
             placeholder="Add specific instructions (optional)... e.g. 'Focus on the MACD divergence and key gamma levels'"
             value={customPrompt}
             onChange={e => setCustomPrompt(e.target.value)}
             className="font-mono text-xs bg-background border-card-border focus-visible:ring-primary/50 min-h-[60px] resize-none"
           />
-          <div className="flex flex-col sm:flex-row gap-2">
-            <Button
-              onClick={handleRunTA}
-              disabled={isPendingAny || !accessToken || !quote}
-              className="flex-1 font-mono text-xs bg-primary text-primary-foreground hover:bg-primary/90"
-            >
-              <Activity className="w-3.5 h-3.5 mr-2 shrink-0" />
-              RUN TECHNICAL ANALYSIS
-            </Button>
-            <Button
-              onClick={handleRunStrategist}
-              disabled={isPendingAny || !accessToken || !quote}
-              variant="outline"
-              className="flex-1 font-mono text-xs border-primary/50 text-primary hover:bg-primary/10"
-            >
-              {chainLoading ? (
-                <><span className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin mr-2" />LOADING CHAIN...</>
-              ) : (
-                <><BarChart2 className="w-3.5 h-3.5 mr-2 shrink-0" />RUN OPTIONS STRATEGIST</>
-              )}
-            </Button>
-          </div>
         </div>
 
-        {/* Analysis / Strategist Result */}
         {(activeResult === "analysis" || activeResult === "strategist") && (
           <div className="border-t border-card-border p-4 bg-[#0c0c0c]">
             {isPendingAnalysis || isStrategizing ? (
