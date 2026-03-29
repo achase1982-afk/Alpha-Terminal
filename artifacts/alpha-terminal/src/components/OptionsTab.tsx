@@ -89,15 +89,17 @@ function findATMIndex(strikes: number[], lastPrice: number): number {
   return best;
 }
 
-function sliceAroundATM(rows: NormalizedRow[], atmIdx: number, count: number): NormalizedRow[] {
+function sliceAroundATM(rows: NormalizedRow[], lastPrice: number, count: number): NormalizedRow[] {
   if (count <= 0 || rows.length === 0) return rows;
-  const above = Math.floor((count - 1) / 2);
-  const below = count - 1 - above;
-  let start = atmIdx - above;
-  let end = atmIdx + below + 1;
-  if (start < 0) { end = Math.min(rows.length, end - start); start = 0; }
-  if (end > rows.length) { start = Math.max(0, start - (end - rows.length)); end = rows.length; }
-  return rows.slice(start, end);
+  const sorted = [...rows].sort((a, b) => a.strike - b.strike);
+  let splitIdx = sorted.findIndex(r => r.strike > lastPrice + EPS);
+  if (splitIdx < 0) splitIdx = sorted.length;
+  const half = Math.floor(count / 2);
+  let start = splitIdx - half;
+  let end = splitIdx + half;
+  if (start < 0) { end = Math.min(sorted.length, end - start); start = 0; }
+  if (end > sorted.length) { start = Math.max(0, start - (end - sorted.length)); end = sorted.length; }
+  return sorted.slice(start, end);
 }
 
 function buildExpirationGroups(
@@ -134,8 +136,8 @@ function buildExpirationGroups(
       }
     }
 
-    if (strikeCount > 0 && atmIdx >= 0 && normalizedRows.length > strikeCount) {
-      normalizedRows = sliceAroundATM(normalizedRows, atmIdx, strikeCount);
+    if (strikeCount > 0 && lastPrice != null && normalizedRows.length > strikeCount) {
+      normalizedRows = sliceAroundATM(normalizedRows, lastPrice, strikeCount);
     }
     groups.push({
       expiration: exp,
