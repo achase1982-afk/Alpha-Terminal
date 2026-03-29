@@ -149,7 +149,7 @@ export function AiIntelligenceTab() {
           className="flex-1 font-mono text-xs bg-primary text-primary-foreground hover:bg-primary/90 h-9"
         >
           <Activity className="w-3.5 h-3.5 mr-2 shrink-0" />
-          RUN TECHNICAL ANALYSIS
+          TECHNICAL ANALYSIS
         </Button>
         <Button
           onClick={handleRunStrategist}
@@ -160,7 +160,7 @@ export function AiIntelligenceTab() {
           {chainLoading ? (
             <><span className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin mr-2" />LOADING CHAIN...</>
           ) : (
-            <><BarChart2 className="w-3.5 h-3.5 mr-2 shrink-0" />RUN OPTIONS STRATEGIST</>
+            <><BarChart2 className="w-3.5 h-3.5 mr-2 shrink-0" />OPTIONS STRATEGIST</>
           )}
         </Button>
       </div>
