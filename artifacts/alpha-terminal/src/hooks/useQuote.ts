@@ -86,7 +86,9 @@ export function useQuote(symbol: string) {
     }
   );
 
-  const restQuote: QuoteData | null = restData
+  const restMatchesSymbol = restData && restData.symbol?.toUpperCase() === symUpper;
+
+  const restQuote: QuoteData | null = restData && restMatchesSymbol
     ? {
         symbol:           restData.symbol,
         description:      restData.description      ?? null,
@@ -111,24 +113,26 @@ export function useQuote(symbol: string) {
   if (hasLiveData) {
     const live = fromLive(streamQuote);
 
-    if (live.last === null && restQuote?.last != null)       live.last = restQuote.last;
-    if (live.bid === null && restQuote?.bid != null)         live.bid = restQuote.bid;
-    if (live.ask === null && restQuote?.ask != null)         live.ask = restQuote.ask;
-    if (live.bidSize === null && restQuote?.bidSize != null) live.bidSize = restQuote.bidSize;
-    if (live.askSize === null && restQuote?.askSize != null) live.askSize = restQuote.askSize;
-    if (live.change === null && restQuote?.change != null) {
-      live.change    = restQuote.change;
-      live.changePct = restQuote.changePct;
-    }
-    if (live.volume === null && restQuote?.volume != null)   live.volume = restQuote.volume;
-    if (live.high === null && restQuote?.high != null)       live.high = restQuote.high;
-    if (live.low === null && restQuote?.low != null)         live.low = restQuote.low;
-    if (live.close === null && restQuote?.close != null)     live.close = restQuote.close;
+    if (restQuote) {
+      if (live.last === null && restQuote.last != null)       live.last = restQuote.last;
+      if (live.bid === null && restQuote.bid != null)         live.bid = restQuote.bid;
+      if (live.ask === null && restQuote.ask != null)         live.ask = restQuote.ask;
+      if (live.bidSize === null && restQuote.bidSize != null) live.bidSize = restQuote.bidSize;
+      if (live.askSize === null && restQuote.askSize != null) live.askSize = restQuote.askSize;
+      if (live.change === null && restQuote.change != null) {
+        live.change    = restQuote.change;
+        live.changePct = restQuote.changePct;
+      }
+      if (live.volume === null && restQuote.volume != null)   live.volume = restQuote.volume;
+      if (live.high === null && restQuote.high != null)       live.high = restQuote.high;
+      if (live.low === null && restQuote.low != null)         live.low = restQuote.low;
+      if (live.close === null && restQuote.close != null)     live.close = restQuote.close;
 
-    live.description      = restQuote?.description      ?? live.description;
-    live.fiftyTwoWeekHigh = restQuote?.fiftyTwoWeekHigh ?? live.fiftyTwoWeekHigh;
-    live.fiftyTwoWeekLow  = restQuote?.fiftyTwoWeekLow  ?? live.fiftyTwoWeekLow;
-    live.peRatio          = restQuote?.peRatio           ?? live.peRatio;
+      live.description      = restQuote.description      ?? live.description;
+      live.fiftyTwoWeekHigh = restQuote.fiftyTwoWeekHigh ?? live.fiftyTwoWeekHigh;
+      live.fiftyTwoWeekLow  = restQuote.fiftyTwoWeekLow  ?? live.fiftyTwoWeekLow;
+      live.peRatio          = restQuote.peRatio           ?? live.peRatio;
+    }
 
     return {
       data:      live,
@@ -138,5 +142,5 @@ export function useQuote(symbol: string) {
     };
   }
 
-  return { data: restQuote, isLoading, error, source: "rest" as const };
+  return { data: restQuote, isLoading: isLoading || (!restMatchesSymbol && !!accessToken), error, source: "rest" as const };
 }

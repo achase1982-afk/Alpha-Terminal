@@ -197,7 +197,8 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
     );
   }
 
-  const showData = !!quote;
+  const symbolMatches = quote?.symbol?.toUpperCase() === symbol.toUpperCase();
+  const showData = !!quote && symbolMatches;
   const opacityCls = fadeIn && showData ? "opacity-100" : "opacity-0";
   const transitionCls = "transition-opacity duration-150 ease-in-out";
 
