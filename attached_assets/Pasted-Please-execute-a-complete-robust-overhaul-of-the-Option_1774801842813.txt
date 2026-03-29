@@ -1,0 +1,27 @@
+Please execute a complete, robust overhaul of the Options Strategist module and the Macro Ticker UI. Read all requirements carefully before coding.
+
+1. FIX THE MACRO TICKER BAR (FUTURES & CSS):
+- The Futures tickers (/YM, /ES, /NQ, /BZ) are returning $0.00. This is likely an API routing or symbol encoding issue (e.g., the slash needs URL encoding like '%2FES', or the API requires a specific futures endpoint/format). Please debug the quote fetching logic to correctly pull pricing for these slash-prefix symbols.
+- Fix the CSS for the macro ticker boxes. Do NOT add commas to the numbers. Instead, simply decrease the font size slightly or increase the horizontal padding so that 5-digit and 6-digit numbers fit cleanly inside the boxes without squishing against the edges.
+
+2. FIX THE AI LOADING STATE & RAW JSON GLITCH:
+- Do NOT stream raw JSON text (e.g., `[ { "strategyName"...`) to the screen. Keep the loading animation visible and wait silently in the background until the full JSON payload is received and parsed, then instantly render the UI cards.
+- Fix the loading animation pacing: Make the text transition a smooth opacity fade. Add a 'breathing' pulse (opacity 40% to 100%).
+- Cycle through this exact 13-step sequence, keeping each on screen for 2.5 to 3 seconds: 'Initializing secure connection...', 'Processing market context and chain data...', 'Scanning live options chain...', 'Evaluating MACD and technical momentum...', 'Cross-referencing historical volatility...', 'Assessing implied volatility percentiles...', 'Mapping options Greeks (Delta, Gamma, Theta)...', 'Analyzing support and resistance zones...', 'Running probability of profit simulations...', 'Calculating risk/reward profiles...', 'Optimizing strike selection...', 'Structuring defined-risk trade parameters...', 'Finalizing institutional strategy recommendations...'. 
+- Tie the final phrase directly to the API promise resolution so it doesn't hang.
+
+3. BUILD THE SETTINGS SIDEBAR:
+Add a 'Strategy Settings' panel for the Options Strategist with:
+- 'AI Autopilot' (Master toggle switch).
+- 'Max Risk Per Trade' slider ($50 to $10,000, default $250). Do not include an "Unlimited" option.
+- 'Min Probability of Profit (PoP)' slider (60% to 95%).
+- 'Minimum R/R Ratio' dropdown.
+- 'Directional Bias' segment (Auto-Detect, Bullish, Bearish, Neutral).
+- 'Premium Type' segment (Any, Net Credit, Net Debit).
+- 'Avoid Earnings / Catalyst' toggle (Default ON).
+*Logic:* When Autopilot is ON, visually disable/grey out PoP, R/R, Bias, Premium, and Catalyst controls. Max Risk MUST remain active.
+
+4. UPGRADE AI SYSTEM PROMPT & MIGRATE TO STRICT JSON:
+Inject sidebar variables into the AI API call. Use this system prompt logic: "You are a Tier-1 institutional quantitative options engine. Never exceed Max Risk of ${maxRiskValue}. If 'Avoid Earnings' is ON, flag overlaps. If Autopilot = TRUE: Ignore user bias, use math only. If Autopilot = FALSE: Filter to user's PoP, R/R, Bias, Premium. Rule: Every strategy MUST include a 'Target Entry Trigger', 'Exit Rules', and 'Position Size' based on risk limit."
+CRITICAL: The AI MUST output a strictly formatted JSON array of strategy objects (keys: strategyName, targetEntryTrigger, entryCostCredit, maxRisk, maxReward, rrRatio, pop, breakevens, positionSize, exitRules, rationale). 
+Update the frontend parser to read this JSON and render the 2x2 UI cards and Target Entry Trigger box flawlessly.

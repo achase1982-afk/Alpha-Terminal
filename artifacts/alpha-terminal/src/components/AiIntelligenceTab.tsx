@@ -16,19 +16,17 @@ const API_BASE = "/api";
 const THINKING_PHRASES = [
   "Initializing secure connection...",
   "Processing market data feed...",
-  "Scanning options chain for anomalies...",
+  "Scanning options chain...",
   "Computing implied volatility surface...",
   "Mapping gamma exposure by strike...",
   "Evaluating put/call skew...",
-  "Assessing open interest distribution...",
   "Calculating spread risk profiles...",
-  "Analyzing multi-leg structures...",
   "Running Monte Carlo probability engine...",
+  "Analyzing multi-leg structures...",
   "Identifying high-conviction setups...",
-  "Building final risk-reward models...",
+  "Building risk-reward models...",
   "Optimizing position sizing...",
   "Compiling strategy output...",
-  "Performing final quality check...",
 ];
 
 const AI_THINKING_STYLES = `
@@ -683,11 +681,13 @@ export function AiIntelligenceTab() {
 
         {(activeResult === "analysis" || activeResult === "strategist") && (
           <div className="border-t border-card-border p-4 bg-[#0c0c0c]">
-            {isStrategizing && !isStreaming ? (
+            {isStrategizing ? (
               <AiThinking />
-            ) : isStreaming && streamingText ? (
+            ) : activeResult === "strategist" && isStreaming ? (
+              <AiThinking />
+            ) : activeResult === "analysis" && isStreaming && streamingText ? (
               <MarkdownResult content={streamingText} />
-            ) : isStreaming && !streamingText ? (
+            ) : activeResult === "analysis" && isStreaming && !streamingText ? (
               <AiThinking />
             ) : currentResult ? (
               activeResult === "strategist"

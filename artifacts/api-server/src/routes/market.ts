@@ -172,6 +172,7 @@ router.get("/quote", async (req, res) => {
     // ── Percent change ────────────────────────────────────────────────────────
     let changePct = pickNum(
       "netPercentChange",
+      "futurePercentChange",
       "netPercentChangeInDouble",
       "regularMarketPercentChangeInDouble",
       "markPercentChange",

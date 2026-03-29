@@ -51,7 +51,7 @@ function MacroCard({ symbol }: { symbol: string }) {
     <button
       onClick={() => setSymbol(symbol)}
       className={`
-        flex-1 flex flex-col items-center justify-center gap-1 py-2.5 px-2 rounded-lg border min-w-0
+        flex-1 flex flex-col items-center justify-center gap-1 py-2.5 px-3 rounded-lg border
         transition-all duration-200 group cursor-pointer
         ${isActive
           ? "border-primary/60 bg-primary/10"
@@ -61,7 +61,7 @@ function MacroCard({ symbol }: { symbol: string }) {
     >
       <span
         style={{
-          fontSize: '1.1rem',
+          fontSize: '1rem',
           fontWeight: 700,
           color: isActive ? 'var(--color-primary, #ffb800)' : '#FFFFFF',
           letterSpacing: '0.04em',
@@ -73,12 +73,16 @@ function MacroCard({ symbol }: { symbol: string }) {
       </span>
 
       {!accessToken || (isLoading && !data) ? (
-        <span style={{ color: '#374151', fontSize: '0.85rem', fontWeight: 400 }}>—</span>
+        <span style={{ color: '#374151', fontSize: '0.8rem', fontWeight: 400 }}>—</span>
       ) : (
         <>
           <span
             className="tabular-nums"
-            style={{ color: tickColor, fontSize: '0.9rem', fontWeight: 300 }}
+            style={{
+              color: tickColor,
+              fontSize: data?.last != null && Math.abs(data.last) >= 1000 ? '0.78rem' : '0.88rem',
+              fontWeight: 300,
+            }}
           >
             {data?.last != null
               ? (isIndex ? data.last.toFixed(2) : `$${data.last.toFixed(2)}`)
@@ -87,7 +91,7 @@ function MacroCard({ symbol }: { symbol: string }) {
 
           <span
             className="tabular-nums flex items-center gap-0.5"
-            style={{ color: changeColor, fontSize: '0.72rem', fontWeight: 300 }}
+            style={{ color: changeColor, fontSize: '0.68rem', fontWeight: 300 }}
           >
             {ChgIcon}
             {data?.changePct != null ? formatPct(data.changePct, isUp) : "—%"}
