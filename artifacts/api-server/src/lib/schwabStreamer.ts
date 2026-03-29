@@ -22,14 +22,11 @@ const FIELD = {
   VOLUME:      8,
   HIGH:        12,
   LOW:         13,
-  CLOSE:       15,   // previous close
-  NET_CHANGE:  20,
-  NET_PCT:     38,
+  CLOSE:       15,
   MARK:        29,
 } as const;
 
-// Fields we actually want to subscribe to (as a comma-separated string)
-const FIELDS_STR = "0,1,2,3,8,12,13,15,20,38,29";
+const FIELDS_STR = "0,1,2,3,8,12,13,15,29";
 
 // ─── LEVELONE_OPTIONS field map ──────────────────────────────────────────────
 // Schwab Streamer LEVELONE_OPTIONS field indices (per official docs):
@@ -277,26 +274,30 @@ function handleData(content: Record<string, unknown>[]) {
       return typeof v === "number" && !isNaN(v) ? v : null;
     };
 
+    const lastVal  = pick(FIELD.LAST)   ?? pick(FIELD.MARK) ?? existing.last;
+    const closeVal = pick(FIELD.CLOSE)  ?? existing.close;
+
+    let changeVal:    number | null = existing.change;
+    let changePctVal: number | null = existing.changePct;
+    if (lastVal !== null && closeVal !== null && closeVal !== 0) {
+      changeVal    = lastVal - closeVal;
+      changePctVal = (changeVal / closeVal) * 100;
+    }
+
     const updated: LiveQuote = {
       ...existing,
       symbol:    sym,
-      last:      pick(FIELD.LAST)       ?? pick(FIELD.MARK)  ?? existing.last,
-      bid:       pick(FIELD.BID)                             ?? existing.bid,
-      ask:       pick(FIELD.ASK)                             ?? existing.ask,
-      change:    pick(FIELD.NET_CHANGE)                      ?? existing.change,
-      changePct: pick(FIELD.NET_PCT)                         ?? existing.changePct,
-      volume:    pick(FIELD.VOLUME)                          ?? existing.volume,
-      high:      pick(FIELD.HIGH)                            ?? existing.high,
-      low:       pick(FIELD.LOW)                             ?? existing.low,
-      close:     pick(FIELD.CLOSE)                           ?? existing.close,
+      last:      lastVal,
+      bid:       pick(FIELD.BID)     ?? existing.bid,
+      ask:       pick(FIELD.ASK)     ?? existing.ask,
+      change:    changeVal,
+      changePct: changePctVal,
+      volume:    pick(FIELD.VOLUME)  ?? existing.volume,
+      high:      pick(FIELD.HIGH)    ?? existing.high,
+      low:       pick(FIELD.LOW)     ?? existing.low,
+      close:     closeVal,
       ts:        Date.now(),
     };
-
-    // Derive changePct from last-close if Schwab did not send it
-    if (updated.changePct === null && updated.last !== null && updated.close !== null && updated.close !== 0) {
-      updated.change    = updated.last - updated.close;
-      updated.changePct = (updated.change / updated.close) * 100;
-    }
 
     quoteCache.set(sym, updated);
     broadcast("quote", updated);
