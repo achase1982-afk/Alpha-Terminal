@@ -53,7 +53,7 @@ export function AiIntelligenceTab() {
     { query: { enabled: !!accessToken } }
   );
   const { data: chain, isLoading: chainLoading } = useGetOptionChain(
-    { symbol, accessToken: accessToken || "", contractType: "ALL", daysToExpiration: 30 },
+    { symbol, accessToken: accessToken || "", contractType: "ALL", daysToExpiration: 45, strikeCount: 20 },
     { query: { enabled: !!accessToken && chainEnabled } }
   );
 
@@ -82,7 +82,7 @@ export function AiIntelligenceTab() {
       let chainData = chain ?? null;
       if (!chainData) {
         const chainRes = await fetch(
-          `${API_BASE}/market/options?symbol=${encodeURIComponent(symbol)}&accessToken=${encodeURIComponent(accessToken)}&contractType=ALL&daysToExpiration=30`
+          `${API_BASE}/market/options?symbol=${encodeURIComponent(symbol)}&accessToken=${encodeURIComponent(accessToken)}&contractType=ALL&daysToExpiration=45&strikeCount=20`
         );
         if (!chainRes.ok) {
           const errText = await chainRes.text().catch(() => "Unknown error");

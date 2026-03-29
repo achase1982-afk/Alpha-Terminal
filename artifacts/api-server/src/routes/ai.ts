@@ -113,16 +113,33 @@ function formatOptionsDetailed(chain: Record<string, unknown>): string {
   const underlyingPrice = chain["underlyingPrice"];
 
   const formatContracts = (contracts: Array<Record<string, unknown>>, type: string): string => {
-    const clean = sanitizeContracts(contracts).slice(0, 20);
-    return `${type} OPTIONS (nearest 20 strikes):\n` + clean.map(
-      (c) => {
+    const clean = sanitizeContracts(contracts);
+
+    const byExp = new Map<string, Array<Record<string, unknown>>>();
+    for (const c of clean) {
+      const exp = String(c["expiration"] ?? "unknown");
+      if (!byExp.has(exp)) byExp.set(exp, []);
+      byExp.get(exp)!.push(c);
+    }
+
+    const sections: string[] = [];
+    for (const [exp, group] of byExp) {
+      const dte = group[0]?.["dte"] ?? "?";
+      const nearest = group.slice(0, 15);
+      const lines = nearest.map((c) => {
         const iv = c["iv"] != null ? `${c["iv"]}%` : "N/A";
-        return `  Strike $${c["strike"]} | Exp: ${c["expiration"]} | DTE: ${c["dte"]} | Bid: $${c["bid"]} | Ask: $${c["ask"]} | Last: $${c["last"]} | IV: ${iv} | Delta: ${c["delta"]} | Gamma: ${c["gamma"]} | Theta: ${c["theta"]} | Vega: ${c["vega"]} | Vol: ${c["volume"]} | OI: ${c["openInterest"]}`;
-      }
-    ).join("\n");
+        return `  Strike $${c["strike"]} | Bid: $${c["bid"]} | Ask: $${c["ask"]} | Last: $${c["last"]} | IV: ${iv} | Delta: ${c["delta"]} | Gamma: ${c["gamma"]} | Theta: ${c["theta"]} | Vega: ${c["vega"]} | Vol: ${c["volume"]} | OI: ${c["openInterest"]}`;
+      });
+      sections.push(`${type} — Exp: ${exp} (${dte} DTE) [${nearest.length} of ${group.length} strikes]\n${lines.join("\n")}`);
+    }
+    return sections.join("\n\n");
   };
 
-  return `FULL OPTION CHAIN — Underlying Price: $${underlyingPrice}\n\n${formatContracts(rawCalls, "CALL")}\n\n${formatContracts(rawPuts, "PUT")}`;
+  const expirations = new Set<string>();
+  for (const c of rawCalls) expirations.add(String((c as Record<string, unknown>)["expiration"] ?? ""));
+  for (const c of rawPuts) expirations.add(String((c as Record<string, unknown>)["expiration"] ?? ""));
+
+  return `FULL OPTION CHAIN — Underlying Price: $${underlyingPrice} | ${expirations.size} expiration(s) available\n\n${formatContracts(rawCalls, "CALL")}\n\n${formatContracts(rawPuts, "PUT")}`;
 }
 
 const OPTIONS_DATA_QUALITY_NOTE = `DATA QUALITY NOTE: This chain has been pre-sanitized. Strikes with inverted bid/ask spreads have been removed. Any IV shown as "N/A" indicates missing or invalid data — this is normal for deep OTM/ITM strikes, expiring contracts, and illiquid series. Do NOT interpret N/A IV values, wide bid/ask spreads, or zero-volume strikes as data corruption or system errors. They reflect standard market illiquidity and should be acknowledged as such, not flagged as risk factors.`;
