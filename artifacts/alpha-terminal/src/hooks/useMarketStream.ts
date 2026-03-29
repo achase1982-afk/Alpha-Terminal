@@ -149,6 +149,15 @@ export function useMarketStream() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [streamKey]);
 
+  const subscribeEquitySymbols = useCallback(
+    async (symbols: string[]) => {
+      if (!symbols.length || !accessToken) return;
+      void addServerSymbols(symbols.map((s) => s.toUpperCase()));
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [accessToken]
+  );
+
   const subscribeOptionSymbols = useCallback(
     async (symbols: string[]) => {
       if (!symbols.length) return;
@@ -163,5 +172,5 @@ export function useMarketStream() {
     []
   );
 
-  return { subscribeOptionSymbols };
+  return { subscribeOptionSymbols, subscribeEquitySymbols };
 }

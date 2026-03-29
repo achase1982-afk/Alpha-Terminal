@@ -38,7 +38,7 @@ export default function TerminalPage() {
     setIsScrolled(prev => (prev ? y > 30 : y > 60));
   }, []);
 
-  const { subscribeOptionSymbols } = useMarketStream();
+  const { subscribeOptionSymbols, subscribeEquitySymbols } = useMarketStream();
 
   const chartParams = chartParamsFromStore(chartPeriod, chartInterval);
   const { data: historyData, isLoading: historyLoading } = useGetPriceHistory(
@@ -185,7 +185,7 @@ export default function TerminalPage() {
                 <AiIntelligenceTab />
               </TabsContent>
               <TabsContent value="scanner" className="m-0 focus-visible:outline-none">
-                <MarketScanner />
+                <MarketScanner subscribeEquitySymbols={subscribeEquitySymbols} />
               </TabsContent>
               <TabsContent value="chart" className="h-[420px] sm:h-[500px] md:h-[580px] lg:h-[calc(var(--vvh,100vh)-300px)] m-0 focus-visible:outline-none data-[state=active]:flex flex-col">
                 <ChartControls />

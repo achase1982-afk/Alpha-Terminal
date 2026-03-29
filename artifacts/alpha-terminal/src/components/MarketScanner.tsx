@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, memo } from "react";
 import { useTerminalStore } from "@/lib/store";
+import { useQuote } from "@/hooks/useQuote";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
-import { Zap, SlidersHorizontal, TrendingUp, TrendingDown, Minus, ChevronUp, ChevronDown, AlertTriangle, Search } from "lucide-react";
+import { Zap, SlidersHorizontal, TrendingUp, TrendingDown, Minus, ChevronUp, ChevronDown, AlertTriangle, Search, Wifi } from "lucide-react";
 
 const API_BASE = "/api";
 
@@ -114,7 +115,90 @@ function SortHeader({ label, sortKey, currentKey, currentDir, onSort }: {
   );
 }
 
-export function MarketScanner() {
+const LiveAiRow = memo(function LiveAiRow({ setup, index, onSelect }: {
+  setup: ScannerSetup; index: number; onSelect: (sym: string) => void;
+}) {
+  const { data, source } = useQuote(setup.symbol);
+  const livePrice = data?.last ?? setup.price;
+  const liveChangePct = data?.changePct ?? setup.changePct;
+  const dc = dirColor(setup.direction);
+  const isLive = source === "stream";
+
+  return (
+    <tr className="border-b border-card-border/50 hover:bg-primary/5 transition-colors"
+      style={index % 2 === 0 ? { background: "rgba(13,17,23,0.4)" } : undefined}>
+      <td className="px-3 py-2.5">
+        <button onClick={() => onSelect(setup.symbol)}
+          className="font-bold text-sm tracking-wider hover:opacity-70 transition-opacity"
+          style={{ color: dc }}>
+          {setup.symbol}
+        </button>
+        <div className="flex items-center gap-1">
+          <span className="text-[10px] text-gray-500 tabular-nums">${livePrice.toFixed(2)}</span>
+          {isLive && <Wifi className="w-2.5 h-2.5 text-emerald-500" />}
+        </div>
+      </td>
+      <td className="px-3 py-2.5">
+        <div className="flex items-center gap-1.5 text-xs font-bold" style={{ color: dc }}>
+          {dirIcon(setup.direction)}
+          {setup.direction}
+        </div>
+        <div className="text-[10px] text-gray-400 mt-0.5 max-w-[140px] truncate" title={setup.strategy}>
+          {setup.strategy}
+        </div>
+      </td>
+      <td className="px-3 py-2.5">{confBadge(setup.confidence)}</td>
+      <td className="px-3 py-2.5">
+        <span className="text-xs font-bold tabular-nums"
+          style={{ color: liveChangePct >= 0 ? "#00d166" : "#f23645" }}>
+          {liveChangePct >= 0 ? "+" : ""}{liveChangePct.toFixed(2)}%
+        </span>
+      </td>
+      <td className="px-3 py-2.5 hidden md:table-cell">
+        <p className="text-[11px] text-gray-300 leading-snug max-w-xs">
+          {setup.rationale}
+        </p>
+        {setup.riskNote && (
+          <p className="text-[9px] text-yellow-600/70 mt-1 flex items-center gap-1">
+            <AlertTriangle className="w-2.5 h-2.5 shrink-0" />
+            {setup.riskNote}
+          </p>
+        )}
+      </td>
+    </tr>
+  );
+});
+
+const LiveManualRow = memo(function LiveManualRow({ q, onSelect }: {
+  q: ScannerQuote; onSelect: (sym: string) => void;
+}) {
+  const { data, source } = useQuote(q.symbol);
+  const livePrice = data?.last ?? q.last;
+  const liveChangePct = data?.changePct ?? q.changePct;
+  const liveVolume = data?.volume ?? q.volume;
+  const isUp = liveChangePct >= 0;
+  const color = isUp ? "#00d166" : "#f23645";
+  const isLive = source === "stream";
+
+  return (
+    <button onClick={() => onSelect(q.symbol)}
+      className="w-full flex items-center gap-3 px-3 py-2 rounded-lg border border-card-border bg-card
+        hover:border-primary/40 hover:bg-primary/5 transition-all text-left group">
+      <span className="font-bold text-sm w-16 shrink-0" style={{ color }}>{q.symbol}</span>
+      <span className="text-sm font-bold text-gray-200 tabular-nums w-20 shrink-0">${livePrice.toFixed(2)}</span>
+      <span className="text-xs font-bold tabular-nums w-16 shrink-0" style={{ color }}>
+        {isUp ? "▲" : "▼"} {Math.abs(liveChangePct).toFixed(2)}%
+      </span>
+      <span className="text-[10px] text-gray-500 tabular-nums">Vol {(liveVolume / 1e6).toFixed(1)}M</span>
+      {isLive && <Wifi className="w-2.5 h-2.5 text-emerald-500 shrink-0" />}
+      <span className="ml-auto text-[10px] text-gray-600 group-hover:text-primary transition-colors">LOAD →</span>
+    </button>
+  );
+});
+
+export function MarketScanner({ subscribeEquitySymbols }: {
+  subscribeEquitySymbols?: (symbols: string[]) => void;
+}) {
   const { accessToken, aiModel, aiTemp, setSymbol } = useTerminalStore();
 
   const [mode, setMode] = useState<"ai" | "manual">("ai");
@@ -200,11 +284,19 @@ export function MarketScanner() {
       if (data.error && data.error !== "no_data") {
         setRawError(data.error);
       } else if (mode === "ai") {
-        setAiSetups(data.setups ?? []);
+        const setups = data.setups ?? [];
+        setAiSetups(setups);
         setMarketSummary(data.marketSummary ?? "");
-        if (!data.setups?.length && data.rawResponse) setRawError(data.rawResponse);
+        if (!setups.length && data.rawResponse) setRawError(data.rawResponse);
+        if (setups.length && subscribeEquitySymbols) {
+          subscribeEquitySymbols(setups.map(s => s.symbol));
+        }
       } else {
-        setManualQuotes(data.quotes ?? []);
+        const quotes = data.quotes ?? [];
+        setManualQuotes(quotes);
+        if (quotes.length && subscribeEquitySymbols) {
+          subscribeEquitySymbols(quotes.map(q => q.symbol));
+        }
       }
     } catch (err) {
       setRawError(err instanceof Error ? err.message : String(err));
@@ -423,49 +515,9 @@ export function MarketScanner() {
                 </tr>
               </thead>
               <tbody>
-                {sortedSetups.map((s, i) => {
-                  const dc = dirColor(s.direction);
-                  return (
-                    <tr key={s.symbol} className="border-b border-card-border/50 hover:bg-primary/5 transition-colors"
-                      style={i % 2 === 0 ? { background: "rgba(13,17,23,0.4)" } : undefined}>
-                      <td className="px-3 py-2.5">
-                        <button onClick={() => setSymbol(s.symbol)}
-                          className="font-bold text-sm tracking-wider hover:opacity-70 transition-opacity"
-                          style={{ color: dc }}>
-                          {s.symbol}
-                        </button>
-                        <div className="text-[10px] text-gray-500">${s.price.toFixed(2)}</div>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <div className="flex items-center gap-1.5 text-xs font-bold" style={{ color: dc }}>
-                          {dirIcon(s.direction)}
-                          {s.direction}
-                        </div>
-                        <div className="text-[10px] text-gray-400 mt-0.5 max-w-[140px] truncate" title={s.strategy}>
-                          {s.strategy}
-                        </div>
-                      </td>
-                      <td className="px-3 py-2.5">{confBadge(s.confidence)}</td>
-                      <td className="px-3 py-2.5">
-                        <span className="text-xs font-bold tabular-nums"
-                          style={{ color: s.changePct >= 0 ? "#00d166" : "#f23645" }}>
-                          {s.changePct >= 0 ? "+" : ""}{s.changePct.toFixed(2)}%
-                        </span>
-                      </td>
-                      <td className="px-3 py-2.5 hidden md:table-cell">
-                        <p className="text-[11px] text-gray-300 leading-snug max-w-xs">
-                          {s.rationale}
-                        </p>
-                        {s.riskNote && (
-                          <p className="text-[9px] text-yellow-600/70 mt-1 flex items-center gap-1">
-                            <AlertTriangle className="w-2.5 h-2.5 shrink-0" />
-                            {s.riskNote}
-                          </p>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
+                {sortedSetups.map((s, i) => (
+                  <LiveAiRow key={s.symbol} setup={s} index={i} onSelect={setSymbol} />
+                ))}
               </tbody>
             </table>
           </div>
@@ -482,26 +534,14 @@ export function MarketScanner() {
             <Label className="text-[10px] text-muted-foreground uppercase">
               {manualQuotes.length} STOCKS MATCHED — CLICK TO LOAD
             </Label>
-            <span className="text-[9px] text-muted-foreground">Sorted by | Change % |</span>
+            <span className="text-[9px] text-muted-foreground flex items-center gap-1">
+              <Wifi className="w-2.5 h-2.5 text-emerald-500" /> Live prices
+            </span>
           </div>
           <div className="space-y-1.5">
-            {manualQuotes.map(q => {
-              const isUp = q.changePct >= 0;
-              const color = isUp ? "#00d166" : "#f23645";
-              return (
-                <button key={q.symbol} onClick={() => setSymbol(q.symbol)}
-                  className="w-full flex items-center gap-3 px-3 py-2 rounded-lg border border-card-border bg-card
-                    hover:border-primary/40 hover:bg-primary/5 transition-all text-left group">
-                  <span className="font-bold text-sm w-16 shrink-0" style={{ color }}>{q.symbol}</span>
-                  <span className="text-sm font-bold text-gray-200 tabular-nums w-20 shrink-0">${q.last.toFixed(2)}</span>
-                  <span className="text-xs font-bold tabular-nums w-16 shrink-0" style={{ color }}>
-                    {isUp ? "▲" : "▼"} {Math.abs(q.changePct).toFixed(2)}%
-                  </span>
-                  <span className="text-[10px] text-gray-500 tabular-nums">Vol {(q.volume / 1e6).toFixed(1)}M</span>
-                  <span className="ml-auto text-[10px] text-gray-600 group-hover:text-primary transition-colors">LOAD →</span>
-                </button>
-              );
-            })}
+            {manualQuotes.map(q => (
+              <LiveManualRow key={q.symbol} q={q} onSelect={setSymbol} />
+            ))}
           </div>
         </div>
       )}

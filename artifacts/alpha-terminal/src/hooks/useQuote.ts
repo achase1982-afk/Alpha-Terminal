@@ -5,10 +5,8 @@
  *  1. Stream price from Zustand when THAT SYMBOL has fresh data (< 60s old)
  *  2. REST GET /api/market/quote fallback — always runs until stream data arrives
  *
- * Critical design: REST is gated on per-symbol stream freshness, NOT on the
- * global streamConnected flag.  streamConnected only going true when actual
- * Schwab ticks land — but REST must stay alive until the first real tick
- * for each symbol arrives so there are never unexplained dashes.
+ * Performance: uses per-symbol Zustand selector with shallow equality so each
+ * consumer only re-renders when its own symbol's stream data changes.
  */
 
 import { useTerminalStore, type LiveQuote } from "@/lib/store";
@@ -16,7 +14,7 @@ import { useGetQuote }                      from "@workspace/api-client-react";
 
 export interface QuoteData {
   symbol:           string;
-  description:      string | null;   // company name, e.g. "Apple Inc"
+  description:      string | null;
   last:             number | null;
   bid:              number | null;
   ask:              number | null;
@@ -35,7 +33,7 @@ export interface QuoteData {
 function fromLive(q: LiveQuote): QuoteData {
   return {
     symbol:           q.symbol,
-    description:      null,   // streamer doesn't carry reference data
+    description:      null,
     last:             q.last,
     bid:              q.bid,
     ask:              q.ask,
@@ -51,22 +49,16 @@ function fromLive(q: LiveQuote): QuoteData {
   };
 }
 
-// How old stream data can be before we fall back to REST (60 seconds)
 const STREAM_STALE_MS = 60_000;
 
 export function useQuote(symbol: string) {
-  const { accessToken, streamPrices } = useTerminalStore();
+  const symUpper = symbol.toUpperCase();
 
-  const symUpper    = symbol.toUpperCase();
-  const streamQuote = streamPrices[symUpper];
+  const accessToken = useTerminalStore((s) => s.accessToken);
+  const streamQuote = useTerminalStore((s) => s.streamPrices[symUpper]) as LiveQuote | undefined;
 
-  // This symbol has fresh live data if and only if a tick arrived recently
   const hasLiveData = !!streamQuote && (Date.now() - streamQuote.ts) < STREAM_STALE_MS;
 
-  // REST runs when:
-  //  - There is a valid access token
-  //  - We don't already have fresh stream data for this specific symbol
-  //  - Polls every 1 second (backs off to 3s on Schwab 429 rate limit)
   const restEnabled = !!accessToken && !!symbol && !hasLiveData;
 
   const { data: restData, isLoading, error } = useGetQuote(
