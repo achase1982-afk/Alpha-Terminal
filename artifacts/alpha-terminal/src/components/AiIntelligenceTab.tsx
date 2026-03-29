@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { useTerminalStore } from "@/lib/store";
 import {
   useGetQuote, useGetPriceHistory, useGetOptionChain,
@@ -26,9 +26,9 @@ const AI_THINKING_STYLES = `
   0%, 100% { opacity: 0.4; transform: scale(0.85); }
   50% { opacity: 1; transform: scale(1.15); }
 }
-@keyframes ai-text-fade-in {
-  0% { opacity: 0; }
-  100% { opacity: 1; }
+@keyframes ai-breathe {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
 }
 `;
 
@@ -65,7 +65,7 @@ function AiThinking() {
       <span
         key={phraseIdx}
         className="font-mono text-xs text-gray-400 tracking-wide"
-        style={{ animation: "ai-text-fade-in 0.4s ease-in" }}
+        style={{ animation: "ai-breathe 2.5s ease-in-out infinite" }}
       >
         {THINKING_PHRASES[phraseIdx]}
       </span>
@@ -179,6 +179,8 @@ function StrategistResult({ content }: { content: string }) {
   );
 }
 
+const CHUNK_DELAY_MS = 30;
+
 async function consumeStream(
   url: string,
   body: Record<string, unknown>,
@@ -204,6 +206,8 @@ async function consumeStream(
   const decoder = new TextDecoder();
   let buf = "";
 
+  const delay = () => new Promise<void>(r => setTimeout(r, CHUNK_DELAY_MS));
+
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -219,7 +223,10 @@ async function consumeStream(
       try {
         const parsed = JSON.parse(payload) as { text?: string; error?: string };
         if (parsed.error) { onError(parsed.error); return; }
-        if (parsed.text) onChunk(parsed.text);
+        if (parsed.text) {
+          onChunk(parsed.text);
+          await delay();
+        }
       } catch {}
     }
   }
@@ -240,7 +247,6 @@ export function AiIntelligenceTab() {
   const [activeResult, setActiveResult] = useState<"analysis" | "strategist" | null>(null);
   const [chainEnabled, setChainEnabled] = useState(false);
   const [streamingText, setStreamingText] = useState("");
-  const resultEndRef = useRef<HTMLDivElement>(null);
 
   const { data: quote } = useGetQuote(
     { symbol, accessToken: accessToken || "" },
@@ -255,15 +261,6 @@ export function AiIntelligenceTab() {
     { query: { enabled: !!accessToken && chainEnabled } }
   );
 
-  const scrollToBottom = useCallback(() => {
-    resultEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, []);
-
-  useEffect(() => {
-    if (isStreaming && streamingText) {
-      scrollToBottom();
-    }
-  }, [streamingText, isStreaming, scrollToBottom]);
 
   const handleRunTA = useCallback(async () => {
     if (!quote || !history?.candles) return;
@@ -413,10 +410,7 @@ export function AiIntelligenceTab() {
             {isStrategizing && !isStreaming ? (
               <AiThinking />
             ) : isStreaming && streamingText ? (
-              <>
-                <MarkdownResult content={streamingText} />
-                <div ref={resultEndRef} />
-              </>
+              <MarkdownResult content={streamingText} />
             ) : isStreaming && !streamingText ? (
               <AiThinking />
             ) : currentResult ? (
