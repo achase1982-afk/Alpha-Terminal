@@ -2,7 +2,7 @@ import { useRef } from "react";
 
 const UP_COLOR   = "#00d166";
 const DOWN_COLOR = "#f23645";
-const FLAT_COLOR = "#9CA3AF";
+const FLAT_COLOR = "#e4e4e7";
 
 export function useTickColor(symbol: string, currentPrice: number | null): string {
   const prevRef = useRef<{ symbol: string; price: number | null; tickColor: string }>({
