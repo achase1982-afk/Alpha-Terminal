@@ -1,0 +1,30 @@
+Please rewrite the CSS and layout for the Ticker Header. It currently uses flexbox and shifts jarringly when switching between tickers with different string lengths. 
+
+We need to rebuild this as a rigid, institutional-grade CSS Grid (Thinkorswim/Bloomberg standard) so the outer containers NEVER resize or shift.
+
+Please implement the following exact architecture using Tailwind CSS:
+
+1. OUTER HEADER CONTAINER (The Locked Grid):
+- Replace flexbox with a strict CSS Grid: `grid grid-cols-[minmax(120px,1fr)_minmax(180px,1.5fr)_auto] items-center gap-4 w-full`
+- Set a strict minimum height: `min-h-[80px]` so it never collapses during loading.
+- Add `overflow-hidden` to the parent so no child element can force the layout to expand.
+
+2. LEFT ZONE (Ticker + Company Name):
+- Ticker Symbol: `font-semibold text-xl md:text-2xl text-white tracking-tight` (NO extrabold).
+- Company Name: `text-xs font-medium text-zinc-500 tracking-wide line-clamp-2 overflow-hidden text-ellipsis`. This must be strictly clamped to a max of 2 lines. 
+
+3. CENTER ZONE (Last Price + Change - Clinical Typography):
+- Last Price: `font-normal md:font-medium text-3xl md:text-4xl text-white tabular-nums tracking-tight`. (Remove all bold/extrabold—it must look clinical).
+- Price Change: `text-sm font-medium tabular-nums h-[20px]`. (The `h-[20px]` is critical so the container doesn't collapse if the change data is temporarily null during loading).
+- Set this zone to `flex flex-col items-start` (or center) so the decimals stay relatively anchored. The `tabular-nums` class is mandatory so digits don't jitter on live ticks.
+
+4. RIGHT ZONE (Sell/Buy Buttons - Fixed Dimensions):
+- The outer container holding the two buttons MUST be a fixed size: e.g., `w-[180px] flex-shrink-0 grid grid-cols-2 gap-2`.
+- The SELL and BUY buttons must have strict heights (e.g., `h-[48px]`).
+- Inside the buttons, apply dynamic font scaling ONLY to the price text (so a 5-digit price shrinks to fit the fixed box). The outer button box must never change size.
+- Ensure the price text inside the buttons also uses `tabular-nums text-white`.
+
+5. LOADING STATE & TRANSITIONS (Zero Layout Shift):
+- When a user clicks a new ticker from "Recently Viewed", DO NOT unmount the header. 
+- Keep the grid structure perfectly intact. Instead, apply a 150ms opacity fade to the text values (fade out old data -> fetch -> fade in new data) OR use a skeleton `animate-pulse` state that perfectly matches the height of the text.
+- Never transition width, height, or padding.
