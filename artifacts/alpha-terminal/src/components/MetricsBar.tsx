@@ -167,48 +167,84 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
     );
   }
 
-  const bidAskStr = quote.bid != null && quote.ask != null
-    ? `$${fmtPrice(quote.bid)} / $${fmtPrice(quote.ask)}`
-    : null;
-  const bidAskLen = bidAskStr?.length ?? 0;
-  const bidAskFontSize = bidAskLen > 22 ? '0.7rem' : bidAskLen > 18 ? '0.78rem' : '0.9rem';
+  const bidStr = quote.bid != null ? `$${fmtPrice(quote.bid)}` : null;
+  const askStr = quote.ask != null ? `$${fmtPrice(quote.ask)}` : null;
+  const hasBidAsk = bidStr != null && askStr != null;
+  const maxPriceLen = Math.max(bidStr?.length ?? 0, askStr?.length ?? 0);
+  const bidAskFontSize = maxPriceLen > 9 ? '0.65rem' : maxPriceLen > 7 ? '0.72rem' : '0.82rem';
+
+  const handleInitiateTrade = (side: 'buy' | 'sell') => {
+    console.log(`[Trade] ${side.toUpperCase()} initiated for ${quote.symbol} — bid: ${quote.bid}, ask: ${quote.ask}`);
+  };
 
   return (
     <div
       className={`${stickyBase} flex items-center px-3 sm:px-6 overflow-x-auto py-1.5 sm:py-2`}
       style={{ background: "#0c0c0c" }}
     >
-      <div className="grid items-center w-full min-w-0 max-w-[640px]" style={{ gridTemplateColumns: 'minmax(0, auto) minmax(0, 1fr) minmax(0, auto)' }}>
-        <button onClick={onOpenTearSheet} className="flex flex-col min-w-0 gap-0 text-left cursor-pointer group pr-3" aria-label={`View company profile for ${quote.symbol}`}>
+      <div className="flex items-center w-full min-w-0 max-w-[640px]">
+        <button
+          onClick={onOpenTearSheet}
+          className="flex flex-col min-w-0 gap-0 text-left cursor-pointer group pr-2 shrink-0"
+          style={{ maxWidth: '25%' }}
+          aria-label={`View company profile for ${quote.symbol}`}
+        >
           <span className="font-bold text-white leading-tight group-hover:text-primary transition-colors" style={{ fontSize: '1rem' }}>
             {quote.symbol}
           </span>
           <span
             className="block w-full min-w-0 leading-snug group-hover:text-[#FFB800] transition-colors"
-            style={{ fontSize: '0.65rem', color: '#FFB800', fontWeight: 400, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
+            style={{ fontSize: '0.6rem', color: '#FFB800', fontWeight: 400, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
           >
             {quote.description || ""}
           </span>
         </button>
 
-        <div className="flex flex-col min-w-0 gap-0 border-l border-gray-800 pl-3">
+        <div className="flex flex-col min-w-0 gap-0 border-l border-gray-800 pl-3 pr-3" style={{ flex: '1 1 0%' }}>
           <span className={LABEL_CLS}>Last Price</span>
           <span className={`tabular-nums leading-tight whitespace-nowrap ${flashClass}`} style={{ fontSize: '1.25rem', fontWeight: 300, color: tickColor }}>
             {lastStr}
           </span>
-          <span className="tabular-nums leading-tight whitespace-nowrap" style={{ fontSize: '0.7rem', fontWeight: 300, color: priceColor }}>
-            {changeStr}&nbsp;{changePctStr}
+          <span
+            className="tabular-nums leading-tight"
+            style={{ fontSize: '0.7rem', fontWeight: 300, color: priceColor, whiteSpace: 'nowrap', display: 'flex', flexWrap: 'nowrap', alignItems: 'baseline', gap: '0.25em' }}
+          >
+            <span style={{ whiteSpace: 'nowrap' }}>{changeStr}</span>
+            <span style={{ whiteSpace: 'nowrap' }}>{changePctStr}</span>
           </span>
         </div>
 
-        <div className="flex flex-col min-w-0 gap-0 border-l border-gray-800 pl-3">
-          <span className={LABEL_CLS}>Bid / Ask</span>
-          <span
-            className="font-mono tabular-nums text-gray-200 whitespace-nowrap"
-            style={{ fontSize: bidAskFontSize, fontWeight: 400 }}
-          >
-            {bidAskStr ?? <span className="text-gray-600">N/A</span>}
-          </span>
+        <div className="flex gap-1 shrink-0 border-l border-gray-800 pl-2" style={{ width: maxPriceLen > 7 ? 160 : 140 }}>
+          {hasBidAsk ? (
+            <>
+              <button
+                onClick={() => handleInitiateTrade('sell')}
+                className="trade-btn-sell flex-1 flex flex-col items-center justify-center rounded px-1.5 py-1 cursor-pointer transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f23645]"
+                style={{ background: 'rgba(242, 54, 69, 0.12)', border: '1px solid rgba(242, 54, 69, 0.25)' }}
+                aria-label={`Sell ${quote.symbol} at ${bidStr}`}
+              >
+                <span style={{ fontSize: '0.55rem', fontWeight: 600, letterSpacing: '0.08em', color: '#f23645', opacity: 0.8 }}>SELL</span>
+                <span className="font-mono tabular-nums whitespace-nowrap" style={{ fontSize: bidAskFontSize, fontWeight: 500, color: '#f23645' }}>
+                  {bidStr}
+                </span>
+              </button>
+              <button
+                onClick={() => handleInitiateTrade('buy')}
+                className="trade-btn-buy flex-1 flex flex-col items-center justify-center rounded px-1.5 py-1 cursor-pointer transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00d166]"
+                style={{ background: 'rgba(0, 209, 102, 0.12)', border: '1px solid rgba(0, 209, 102, 0.25)' }}
+                aria-label={`Buy ${quote.symbol} at ${askStr}`}
+              >
+                <span style={{ fontSize: '0.55rem', fontWeight: 600, letterSpacing: '0.08em', color: '#00d166', opacity: 0.8 }}>BUY</span>
+                <span className="font-mono tabular-nums whitespace-nowrap" style={{ fontSize: bidAskFontSize, fontWeight: 500, color: '#00d166' }}>
+                  {askStr}
+                </span>
+              </button>
+            </>
+          ) : (
+            <div className="flex-1 flex items-center justify-center">
+              <span className="text-gray-600 text-xs font-mono">N/A</span>
+            </div>
+          )}
         </div>
       </div>
 

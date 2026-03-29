@@ -221,6 +221,16 @@
   100% { text-shadow: none; }
 }
 
+.trade-btn-sell:hover,
+.trade-btn-sell:focus-visible {
+  background: rgba(242, 54, 69, 0.22) !important;
+}
+
+.trade-btn-buy:hover,
+.trade-btn-buy:focus-visible {
+  background: rgba(0, 209, 102, 0.22) !important;
+}
+
 [style*="scrollbar-width: none"]::-webkit-scrollbar {
   display: none;
 }
