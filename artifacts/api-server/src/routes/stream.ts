@@ -97,4 +97,56 @@ router.get("/status", (_req, res) => {
   });
 });
 
+// ── GET /api/stream/diag — diagnose why streaming might not work ─────────────
+router.get("/diag", async (req, res) => {
+  const token = req.query["token"] as string | undefined;
+  if (!token) {
+    return res.status(400).json({ error: "token query param required" });
+  }
+
+  const results: Record<string, unknown> = {};
+
+  try {
+    const prefRes = await fetch("https://api.schwabapi.com/trader/v1/userPreference", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const prefBody = await prefRes.text().catch(() => "");
+    results.userPreference = {
+      status: prefRes.status,
+      ok: prefRes.ok,
+      body: prefRes.ok ? JSON.parse(prefBody) : prefBody.slice(0, 500),
+    };
+  } catch (err) {
+    results.userPreference = { error: String(err) };
+  }
+
+  try {
+    const acctRes = await fetch("https://api.schwabapi.com/trader/v1/accounts", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const acctBody = await acctRes.text().catch(() => "");
+    results.accounts = {
+      status: acctRes.status,
+      ok: acctRes.ok,
+      bodyPreview: acctBody.slice(0, 300),
+    };
+  } catch (err) {
+    results.accounts = { error: String(err) };
+  }
+
+  try {
+    const quoteRes = await fetch("https://api.schwabapi.com/marketdata/v1/SPY/quotes", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    results.marketData = {
+      status: quoteRes.status,
+      ok: quoteRes.ok,
+    };
+  } catch (err) {
+    results.marketData = { error: String(err) };
+  }
+
+  res.json(results);
+});
+
 export default router;
