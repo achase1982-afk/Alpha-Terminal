@@ -448,6 +448,73 @@ router.get("/fundamentals", async (req, res) => {
   }
 });
 
+router.get("/earnings-date", async (req, res) => {
+  const symbol = (req.query["symbol"] as string || "").toUpperCase().trim();
+
+  if (!symbol) {
+    return res.status(400).json({ symbol: "", earningsDate: null });
+  }
+
+  const cleanSymbol = symbol.replace(/^\$/, "");
+
+  try {
+    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(cleanSymbol)}?modules=calendarEvents`;
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      },
+    });
+
+    if (!response.ok) {
+      req.log.warn({ status: response.status, symbol }, "Yahoo earnings fetch failed, trying scrape fallback");
+
+      const pageUrl = `https://finance.yahoo.com/quote/${encodeURIComponent(cleanSymbol)}/`;
+      const pageRes = await fetch(pageUrl, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        },
+      });
+
+      if (pageRes.ok) {
+        const html = await pageRes.text();
+        const dateMatch = html.match(/Earnings Date.*?(\w{3} \d{1,2}, \d{4})/s);
+        if (dateMatch) {
+          const parsed = new Date(dateMatch[1]);
+          if (!isNaN(parsed.getTime())) {
+            const iso = parsed.toISOString().slice(0, 10);
+            return res.json({ symbol: cleanSymbol, earningsDate: iso });
+          }
+        }
+      }
+
+      return res.json({ symbol: cleanSymbol, earningsDate: null });
+    }
+
+    const json = await response.json() as Record<string, unknown>;
+    const result = (json as any)?.quoteSummary?.result?.[0];
+    const earnings = result?.calendarEvents?.earnings;
+    const earningsDateArr = earnings?.earningsDate;
+
+    if (Array.isArray(earningsDateArr) && earningsDateArr.length > 0) {
+      const rawTs = earningsDateArr[0]?.raw;
+      if (typeof rawTs === "number") {
+        const d = new Date(rawTs * 1000);
+        const iso = d.toISOString().slice(0, 10);
+        return res.json({ symbol: cleanSymbol, earningsDate: iso });
+      }
+      const fmt = earningsDateArr[0]?.fmt;
+      if (typeof fmt === "string") {
+        return res.json({ symbol: cleanSymbol, earningsDate: fmt });
+      }
+    }
+
+    res.json({ symbol: cleanSymbol, earningsDate: null });
+  } catch (err) {
+    req.log.error({ err, symbol }, "Earnings date fetch error");
+    res.json({ symbol: cleanSymbol, earningsDate: null });
+  }
+});
+
 router.get("/news", async (req, res) => {
   const symbol = (req.query["symbol"] as string || "").toUpperCase().trim();
 

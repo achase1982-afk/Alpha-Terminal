@@ -574,14 +574,14 @@ export function OptionsTab({ subscribeOptionSymbols }: OptionsTabProps) {
     { query: { enabled: !!accessToken } }
   );
 
-  const { data: fundamentalsData } = useQuery({
-    queryKey: ["fundamentals", symbol],
+  const { data: earningsData } = useQuery({
+    queryKey: ["earnings-date", symbol],
     queryFn: async () => {
-      const res = await fetch(`/api/market/fundamentals?symbol=${encodeURIComponent(symbol)}&accessToken=${encodeURIComponent(accessToken || "")}`);
-      return res.json() as Promise<{ nextEarningsDate?: string | null }>;
+      const res = await fetch(`/api/market/earnings-date?symbol=${encodeURIComponent(symbol)}`);
+      return res.json() as Promise<{ earningsDate?: string | null }>;
     },
-    enabled: !!accessToken && !!symbol,
-    staleTime: 5 * 60 * 1000,
+    enabled: !!symbol,
+    staleTime: 30 * 60 * 1000,
   });
 
   const underlyingPrice = quote?.last ?? (data as unknown as { underlyingPrice?: number })?.underlyingPrice ?? null;
@@ -675,7 +675,7 @@ export function OptionsTab({ subscribeOptionSymbols }: OptionsTabProps) {
         lastPrice={underlyingPrice}
         rawCalls={(data?.calls ?? []) as Contract[]}
         rawPuts={(data?.puts ?? []) as Contract[]}
-        earningsDate={fundamentalsData?.nextEarningsDate ?? quote?.nextEarningsDate}
+        earningsDate={earningsData?.earningsDate ?? quote?.nextEarningsDate}
         isFetching={isFetching}
         hasData={!!data}
         strikeControls={
