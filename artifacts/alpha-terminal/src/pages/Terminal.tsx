@@ -17,7 +17,8 @@ import { useMarketStream } from "@/hooks/useMarketStream";
 import { useViewportShell } from "@/hooks/useViewportShell";
 import { AiChatOverlay } from "@/components/AiChatOverlay";
 import { InstitutionalTearSheet } from "@/views/InstitutionalTearSheet";
-import { LineChart, BarChart2, BrainCircuit, Menu, Radar, Wifi } from "lucide-react";
+import { NewsTab } from "@/components/NewsTab";
+import { LineChart, BarChart2, BrainCircuit, Menu, Radar, Wifi, Newspaper } from "lucide-react";
 
 export default function TerminalPage() {
   const { symbol, accessToken, chartPeriod, chartInterval, streamStatus } = useTerminalStore();
@@ -140,6 +141,13 @@ export default function TerminalPage() {
                     CHART
                   </TabsTrigger>
                   <TabsTrigger
+                    value="news"
+                    className="font-mono text-[10px] sm:text-xs uppercase rounded-none border-b-2 border-b-transparent data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-white data-[state=active]:border-b-[#FFB800] gap-1.5 px-3"
+                  >
+                    <Newspaper className="w-3.5 h-3.5 shrink-0" />
+                    NEWS
+                  </TabsTrigger>
+                  <TabsTrigger
                     value="options"
                     className="font-mono text-[10px] sm:text-xs uppercase rounded-none border-b-2 border-b-transparent data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-white data-[state=active]:border-b-[#FFB800] gap-1.5 px-3"
                   >
@@ -176,6 +184,9 @@ export default function TerminalPage() {
                   tokenExpired={historyData?.error === "unauthorized"}
                   intraday={isIntradayInterval(chartInterval)}
                 />
+              </TabsContent>
+              <TabsContent value="news" className="m-0 focus-visible:outline-none">
+                <NewsTab />
               </TabsContent>
               <TabsContent value="options" className="m-0 focus-visible:outline-none">
                 <div className="-mx-3 sm:-mx-4 lg:-mx-5 -mb-3 sm:-mb-4 lg:-mb-5" style={{ height: "calc(var(--vvh,100vh) - 140px)" }}>

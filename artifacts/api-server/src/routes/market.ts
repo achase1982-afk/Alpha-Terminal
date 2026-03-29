@@ -448,4 +448,61 @@ router.get("/fundamentals", async (req, res) => {
   }
 });
 
+router.get("/news", async (req, res) => {
+  const symbol = (req.query["symbol"] as string || "").toUpperCase().trim();
+
+  if (!symbol) {
+    return res.status(400).json({ articles: [], error: "symbol is required" });
+  }
+
+  const apiKey = process.env["FINNHUB_API_KEY"];
+  if (!apiKey) {
+    return res.status(500).json({ articles: [], error: "FINNHUB_API_KEY not configured" });
+  }
+
+  const now = new Date();
+  const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const toDate = now.toISOString().slice(0, 10);
+  const fromDate = oneWeekAgo.toISOString().slice(0, 10);
+  const cleanSymbol = symbol.replace(/^\$/, "");
+
+  try {
+    const url = `https://finnhub.io/api/v1/company-news?symbol=${encodeURIComponent(cleanSymbol)}&from=${fromDate}&to=${toDate}&token=${apiKey}`;
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      req.log.warn({ status: response.status, symbol }, "Finnhub news API error");
+      return res.json({ articles: [], error: `finnhub_error_${response.status}` });
+    }
+
+    const raw = await response.json() as Array<{
+      id: number;
+      category: string;
+      datetime: number;
+      headline: string;
+      image: string;
+      related: string;
+      source: string;
+      summary: string;
+      url: string;
+    }>;
+
+    const articles = (Array.isArray(raw) ? raw : []).slice(0, 50).map(a => ({
+      id: a.id,
+      source: a.source || "Unknown",
+      headline: a.headline || "",
+      summary: a.summary || "",
+      url: a.url || "",
+      image: a.image || "",
+      datetime: a.datetime || 0,
+      related: a.related || "",
+    }));
+
+    res.json({ articles });
+  } catch (err) {
+    req.log.error({ err, symbol }, "Finnhub news fetch error");
+    res.json({ articles: [], error: "internal_error" });
+  }
+});
+
 export default router;
