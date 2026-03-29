@@ -157,6 +157,8 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
     : maxPriceLen > 7
     ? "text-xs sm:text-sm"
     : "text-sm sm:text-base";
+  const bidSizeStr = quote?.bidSize != null ? String(Math.round(quote.bidSize)) : null;
+  const askSizeStr = quote?.askSize != null ? String(Math.round(quote.askSize)) : null;
 
   const handleInitiateTrade = (side: 'buy' | 'sell') => {
     console.log(`[Trade] ${side.toUpperCase()} initiated for ${quote?.symbol} — bid: ${quote?.bid}, ask: ${quote?.ask}`);
@@ -255,34 +257,48 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
             <>
               <button
                 onClick={() => handleInitiateTrade('sell')}
-                className={`trade-btn-sell h-[68px] bg-red-950/40 border border-red-500/50 rounded-lg flex flex-col items-center justify-center p-1.5 cursor-pointer transition-colors active:bg-red-800/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-400 overflow-hidden ${opacityCls} ${transitionCls}`}
+                className={`trade-btn-sell h-[68px] bg-red-950/40 border border-red-500/50 rounded-lg flex flex-col items-stretch p-1 pt-0.5 cursor-pointer transition-colors active:bg-red-800/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-400 overflow-hidden ${opacityCls} ${transitionCls}`}
                 aria-label={`Sell ${quote?.symbol} at ${bidStr}`}
               >
-                <span className="text-[9px] uppercase font-bold tracking-widest text-red-400 leading-none">SELL</span>
-                <span className={`${btnPriceCls} font-bold text-white tabular-nums whitespace-nowrap leading-tight mt-0.5`}>
-                  {bidStr}
+                <span className="text-[9px] uppercase font-bold tracking-widest text-white leading-none text-center py-0.5">SELL</span>
+                <span className="flex-1 rounded-md flex flex-col items-center justify-center" style={{ background: '#0c0c0c' }}>
+                  <span className={`${btnPriceCls} font-bold text-white tabular-nums whitespace-nowrap leading-tight`}>
+                    {bidStr}
+                  </span>
+                  {bidSizeStr && (
+                    <span className="text-[9px] text-zinc-500 tabular-nums leading-none mt-0.5">Bid: {bidSizeStr}</span>
+                  )}
                 </span>
               </button>
               <button
                 onClick={() => handleInitiateTrade('buy')}
-                className={`trade-btn-buy h-[68px] bg-emerald-950/40 border border-emerald-500/50 rounded-lg flex flex-col items-center justify-center p-1.5 cursor-pointer transition-colors active:bg-emerald-800/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400 overflow-hidden ${opacityCls} ${transitionCls}`}
+                className={`trade-btn-buy h-[68px] bg-emerald-950/40 border border-emerald-500/50 rounded-lg flex flex-col items-stretch p-1 pt-0.5 cursor-pointer transition-colors active:bg-emerald-800/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400 overflow-hidden ${opacityCls} ${transitionCls}`}
                 aria-label={`Buy ${quote?.symbol} at ${askStr}`}
               >
-                <span className="text-[9px] uppercase font-bold tracking-widest text-emerald-400 leading-none">BUY</span>
-                <span className={`${btnPriceCls} font-bold text-white tabular-nums whitespace-nowrap leading-tight mt-0.5`}>
-                  {askStr}
+                <span className="text-[9px] uppercase font-bold tracking-widest text-white leading-none text-center py-0.5">BUY</span>
+                <span className="flex-1 rounded-md flex flex-col items-center justify-center" style={{ background: '#0c0c0c' }}>
+                  <span className={`${btnPriceCls} font-bold text-white tabular-nums whitespace-nowrap leading-tight`}>
+                    {askStr}
+                  </span>
+                  {askSizeStr && (
+                    <span className="text-[9px] text-zinc-500 tabular-nums leading-none mt-0.5">Ask: {askSizeStr}</span>
+                  )}
                 </span>
               </button>
             </>
           ) : (
             <>
-              <div className="h-[68px] border border-zinc-800/50 rounded-lg flex flex-col items-center justify-center">
-                <span className="text-[10px] uppercase font-bold tracking-widest text-zinc-600 leading-none">SELL</span>
-                <span className="text-sm font-bold text-zinc-600 tabular-nums mt-0.5">—</span>
+              <div className="h-[68px] border border-zinc-800/50 rounded-lg flex flex-col items-stretch p-1 pt-0.5">
+                <span className="text-[9px] uppercase font-bold tracking-widest text-zinc-600 leading-none text-center py-0.5">SELL</span>
+                <span className="flex-1 rounded-md flex flex-col items-center justify-center" style={{ background: '#0c0c0c' }}>
+                  <span className="text-sm font-bold text-zinc-600 tabular-nums">—</span>
+                </span>
               </div>
-              <div className="h-[68px] border border-zinc-800/50 rounded-lg flex flex-col items-center justify-center">
-                <span className="text-[10px] uppercase font-bold tracking-widest text-zinc-600 leading-none">BUY</span>
-                <span className="text-sm font-bold text-zinc-600 tabular-nums mt-0.5">—</span>
+              <div className="h-[68px] border border-zinc-800/50 rounded-lg flex flex-col items-stretch p-1 pt-0.5">
+                <span className="text-[9px] uppercase font-bold tracking-widest text-zinc-600 leading-none text-center py-0.5">BUY</span>
+                <span className="flex-1 rounded-md flex flex-col items-center justify-center" style={{ background: '#0c0c0c' }}>
+                  <span className="text-sm font-bold text-zinc-600 tabular-nums">—</span>
+                </span>
               </div>
             </>
           )}

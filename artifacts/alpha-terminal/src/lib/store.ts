@@ -6,6 +6,8 @@ export interface LiveQuote {
   last:       number | null;
   bid:        number | null;
   ask:        number | null;
+  bidSize:    number | null;
+  askSize:    number | null;
   change:     number | null;
   changePct:  number | null;
   volume:     number | null;

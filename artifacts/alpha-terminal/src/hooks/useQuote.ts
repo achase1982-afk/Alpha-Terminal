@@ -18,6 +18,8 @@ export interface QuoteData {
   last:             number | null;
   bid:              number | null;
   ask:              number | null;
+  bidSize:          number | null;
+  askSize:          number | null;
   change:           number | null;
   changePct:        number | null;
   volume:           number | null;
@@ -37,6 +39,8 @@ function fromLive(q: LiveQuote): QuoteData {
     last:             q.last,
     bid:              q.bid,
     ask:              q.ask,
+    bidSize:          q.bidSize,
+    askSize:          q.askSize,
     change:           q.change,
     changePct:        q.changePct,
     volume:           q.volume,
@@ -89,6 +93,8 @@ export function useQuote(symbol: string) {
         last:             restData.last              ?? null,
         bid:              restData.bid               ?? null,
         ask:              restData.ask               ?? null,
+        bidSize:          (restData as any).bidSize   ?? null,
+        askSize:          (restData as any).askSize   ?? null,
         change:           restData.change            ?? null,
         changePct:        restData.changePct         ?? null,
         volume:           restData.volume            ?? null,
@@ -108,6 +114,8 @@ export function useQuote(symbol: string) {
     if (live.last === null && restQuote?.last != null)       live.last = restQuote.last;
     if (live.bid === null && restQuote?.bid != null)         live.bid = restQuote.bid;
     if (live.ask === null && restQuote?.ask != null)         live.ask = restQuote.ask;
+    if (live.bidSize === null && restQuote?.bidSize != null) live.bidSize = restQuote.bidSize;
+    if (live.askSize === null && restQuote?.askSize != null) live.askSize = restQuote.askSize;
     if (live.change === null && restQuote?.change != null) {
       live.change    = restQuote.change;
       live.changePct = restQuote.changePct;

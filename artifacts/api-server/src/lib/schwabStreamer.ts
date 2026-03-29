@@ -19,6 +19,8 @@ const FIELD = {
   BID:         1,
   ASK:         2,
   LAST:        3,
+  BID_SIZE:    4,
+  ASK_SIZE:    5,
   VOLUME:      8,
   HIGH:        12,
   LOW:         13,
@@ -27,7 +29,7 @@ const FIELD = {
   MARK:        29,
 } as const;
 
-const FIELDS_STR = "0,1,2,3,8,12,13,14,15,29";
+const FIELDS_STR = "0,1,2,3,4,5,8,12,13,14,15,29";
 
 // ─── LEVELONE_OPTIONS field map ──────────────────────────────────────────────
 // Schwab Streamer LEVELONE_OPTIONS field indices (per official docs):
@@ -291,6 +293,7 @@ function handleData(content: Record<string, unknown>[]) {
 
     const existing = quoteCache.get(sym) ?? {
       symbol: sym, last: null, bid: null, ask: null,
+      bidSize: null, askSize: null,
       change: null, changePct: null, volume: null,
       high: null, low: null, close: null, ts: 0,
     };
@@ -314,13 +317,15 @@ function handleData(content: Record<string, unknown>[]) {
       ...existing,
       symbol:    sym,
       last:      lastVal,
-      bid:       pick(FIELD.BID)     ?? existing.bid,
-      ask:       pick(FIELD.ASK)     ?? existing.ask,
+      bid:       pick(FIELD.BID)      ?? existing.bid,
+      ask:       pick(FIELD.ASK)      ?? existing.ask,
+      bidSize:   pick(FIELD.BID_SIZE) ?? existing.bidSize,
+      askSize:   pick(FIELD.ASK_SIZE) ?? existing.askSize,
       change:    changeVal,
       changePct: changePctVal,
-      volume:    pick(FIELD.VOLUME)  ?? existing.volume,
-      high:      pick(FIELD.HIGH)    ?? existing.high,
-      low:       pick(FIELD.LOW)     ?? existing.low,
+      volume:    pick(FIELD.VOLUME)   ?? existing.volume,
+      high:      pick(FIELD.HIGH)     ?? existing.high,
+      low:       pick(FIELD.LOW)      ?? existing.low,
       close:     closeVal,
       ts:        Date.now(),
     };

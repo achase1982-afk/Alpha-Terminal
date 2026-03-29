@@ -203,14 +203,17 @@ router.get("/quote", async (req, res) => {
       volume: pickNum("totalVolume", "volume"),
       high:   pickNum("highPrice",  "dayHigh",  "regularMarketHigh"),
       low:    pickNum("lowPrice",   "dayLow",   "regularMarketLow"),
-      // Schwab uses both "52WeekHigh" and "highPrice52Week" depending on endpoint version
       fiftyTwoWeekHigh: pickNum("52WeekHigh", "highPrice52Week", "52WkHigh", "fiftyTwoWeekHigh"),
       fiftyTwoWeekLow:  pickNum("52WeekLow",  "lowPrice52Week",  "52WkLow",  "fiftyTwoWeekLow"),
       peRatio: (fundamental?.["peRatio"] as number) ?? undefined,
       nextEarningsDate: typeof fundamental?.["nextEarningsDate"] === "string" ? fundamental["nextEarningsDate"] : undefined,
     });
 
-    res.json(data);
+    res.json({
+      ...data,
+      bidSize: pickNum("bidSize") ?? undefined,
+      askSize: pickNum("askSize") ?? undefined,
+    });
   } catch (err) {
     req.log.error({ err }, "Quote fetch error");
     const data = GetQuoteResponse.parse({ symbol: displaySymbol, error: "internal_error" });
