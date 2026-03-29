@@ -236,6 +236,10 @@ function sendLogin(info: StreamerInfo, token: string) {
 }
 
 // ─── Subscribe to symbols ────────────────────────────────────────────────────
+function isFuturesSymbol(sym: string): boolean {
+  return sym.startsWith("/");
+}
+
 function sendSubscribe(symbols: string[]) {
   if (!streamerInfo || !loginAcked || !symbols.length) return;
   for (const sym of symbols) {
@@ -244,18 +248,39 @@ function sendSubscribe(symbols: string[]) {
       reverseKeyMap.set(schwabKey, sym.toUpperCase());
     }
   }
-  const keys = symbols.map(toSchwabKey).join(",");
-  wsSend({
-    requests: [{
-      service:                  "LEVELONE_EQUITIES",
-      requestid:                nextReq(),
-      command:                  "ADD",
-      SchwabClientCustomerId:   streamerInfo.schwabClientCustomerId,
-      SchwabClientCorrelId:     streamerInfo.schwabClientCorrelId,
-      parameters: { keys, fields: FIELDS_STR },
-    }],
-  });
-  logger.info({ keys }, "Streamer: subscribed symbols");
+
+  const equitySyms  = symbols.filter((s) => !isFuturesSymbol(s));
+  const futuresSyms = symbols.filter((s) => isFuturesSymbol(s));
+
+  if (equitySyms.length > 0) {
+    const keys = equitySyms.map(toSchwabKey).join(",");
+    wsSend({
+      requests: [{
+        service:                  "LEVELONE_EQUITIES",
+        requestid:                nextReq(),
+        command:                  "ADD",
+        SchwabClientCustomerId:   streamerInfo.schwabClientCustomerId,
+        SchwabClientCorrelId:     streamerInfo.schwabClientCorrelId,
+        parameters: { keys, fields: FIELDS_STR },
+      }],
+    });
+    logger.info({ keys }, "Streamer: subscribed equity symbols");
+  }
+
+  if (futuresSyms.length > 0) {
+    const keys = futuresSyms.map(toSchwabKey).join(",");
+    wsSend({
+      requests: [{
+        service:                  "LEVELONE_FUTURES",
+        requestid:                nextReq(),
+        command:                  "ADD",
+        SchwabClientCustomerId:   streamerInfo.schwabClientCustomerId,
+        SchwabClientCorrelId:     streamerInfo.schwabClientCorrelId,
+        parameters: { keys, fields: FIELDS_STR },
+      }],
+    });
+    logger.info({ keys }, "Streamer: subscribed futures symbols");
+  }
 }
 
 // ─── Parse incoming DATA messages ────────────────────────────────────────────
@@ -406,7 +431,7 @@ function onMessage(raw: string) {
     for (const block of msg["data"] as Record<string, unknown>[]) {
       const svc     = block["service"] as string;
       const content = block["content"] as Record<string, unknown>[] | undefined;
-      if (svc === "LEVELONE_EQUITIES" && Array.isArray(content)) {
+      if ((svc === "LEVELONE_EQUITIES" || svc === "LEVELONE_FUTURES") && Array.isArray(content)) {
         handleData(content);
       } else if (svc === "LEVELONE_OPTIONS" && Array.isArray(content)) {
         handleOptionData(content);
