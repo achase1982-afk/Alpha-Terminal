@@ -18,7 +18,7 @@ import { useViewportShell } from "@/hooks/useViewportShell";
 import { AiChatOverlay } from "@/components/AiChatOverlay";
 import { InstitutionalTearSheet } from "@/views/InstitutionalTearSheet";
 import { NewsTab } from "@/components/NewsTab";
-import { LineChart, BarChart2, BrainCircuit, Menu, Radar, Wifi, Newspaper } from "lucide-react";
+import { LineChart, BarChart2, BrainCircuit, Menu, Radar, Newspaper } from "lucide-react";
 
 export default function TerminalPage() {
   const { symbol, accessToken, chartPeriod, chartInterval, streamStatus } = useTerminalStore();
@@ -109,8 +109,15 @@ export default function TerminalPage() {
             </div>
             <div className="ml-auto flex items-center gap-2">
               <span className="font-mono text-xs text-primary font-bold">{symbol}</span>
-              {accessToken && streamStatus === "live" && (
-                <span className="flex items-center gap-0.5 font-mono text-[9px] text-emerald-400"><Wifi className="w-3 h-3" />LIVE</span>
+              {accessToken && (
+                <span
+                  className="w-2.5 h-2.5 rounded-full shrink-0"
+                  title={streamStatus === "live" ? "Live data" : streamStatus === "connecting" ? "Connecting..." : "Offline"}
+                  style={{
+                    background: streamStatus === "live" ? "#00d166" : streamStatus === "connecting" ? "#FFB800" : "#f23645",
+                    boxShadow: streamStatus === "live" ? "0 0 6px #00d166" : undefined,
+                  }}
+                />
               )}
             </div>
           </div>

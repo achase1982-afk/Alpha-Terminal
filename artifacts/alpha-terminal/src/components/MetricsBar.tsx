@@ -1,7 +1,7 @@
 import { useTerminalStore } from "@/lib/store";
 import { useQuote }         from "@/hooks/useQuote";
 import { useTickColor }     from "@/hooks/useTickColor";
-import { RefreshCw, Wifi, SearchX } from "lucide-react";
+import { RefreshCw, SearchX } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRef, useEffect, useState } from "react";
 
@@ -48,7 +48,7 @@ function usePriceFlash(price: number | null, change: number | null): string {
 }
 
 export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps) {
-  const { symbol, accessToken, streamStatus } = useTerminalStore();
+  const { symbol, accessToken } = useTerminalStore();
   const { data: quote, isLoading, source } = useQuote(symbol);
   const tickColor = useTickColor(symbol, quote?.last ?? null);
   const flashClass = usePriceFlash(quote?.last ?? null, quote?.change ?? null);
@@ -157,11 +157,6 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
           ${fmtPrice(quote.bid)}<span className="text-gray-600 mx-0.5">/</span>${fmtPrice(quote.ask)}
         </span>
 
-        {source === "stream" && (
-          <span className="flex items-center gap-0.5 text-[7px] font-mono text-emerald-400 leading-none font-semibold shrink-0 ml-auto">
-            <Wifi className="w-2.5 h-2.5" />LIVE
-          </span>
-        )}
       </div>
     );
   }
@@ -186,19 +181,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
         </button>
 
         <div className="flex flex-col min-w-0 gap-0.5 border-l border-gray-800 pl-3">
-          <div className="flex items-center gap-1.5">
-            <span className={LABEL_CLS}>Last Price</span>
-            {source === "stream"
-              ? <span title="Live stream" className="flex items-center gap-0.5 text-[7px] font-mono text-emerald-400 leading-none font-semibold">
-                  <Wifi className="w-2.5 h-2.5" />LIVE
-                </span>
-              : streamStatus === "connecting" && !quote
-                ? <span title="Connecting" className="flex items-center gap-0.5 text-[7px] font-mono text-amber-400 leading-none animate-pulse">
-                    <Wifi className="w-2.5 h-2.5" />CONNECTING
-                  </span>
-                : null
-            }
-          </div>
+          <span className={LABEL_CLS}>Last Price</span>
           <div className="flex flex-col">
             <span className={`tabular-nums leading-tight ${flashClass}`} style={{ fontSize: '1.4rem', fontWeight: 300, color: tickColor }}>
               {lastStr}

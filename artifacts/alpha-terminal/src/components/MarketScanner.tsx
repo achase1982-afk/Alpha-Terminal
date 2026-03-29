@@ -4,7 +4,7 @@ import { useQuote } from "@/hooks/useQuote";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
-import { Zap, SlidersHorizontal, TrendingUp, TrendingDown, Minus, ChevronUp, ChevronDown, AlertTriangle, Search, Wifi } from "lucide-react";
+import { Zap, SlidersHorizontal, TrendingUp, TrendingDown, Minus, ChevronUp, ChevronDown, AlertTriangle, Search } from "lucide-react";
 
 const API_BASE = "/api";
 
@@ -118,11 +118,10 @@ function SortHeader({ label, sortKey, currentKey, currentDir, onSort }: {
 const LiveAiRow = memo(function LiveAiRow({ setup, index, onSelect }: {
   setup: ScannerSetup; index: number; onSelect: (sym: string) => void;
 }) {
-  const { data, source } = useQuote(setup.symbol);
+  const { data } = useQuote(setup.symbol);
   const livePrice = data?.last ?? setup.price;
   const liveChangePct = data?.changePct ?? setup.changePct;
   const dc = dirColor(setup.direction);
-  const isLive = source === "stream";
 
   return (
     <tr className="border-b border-card-border/50 hover:bg-primary/5 transition-colors"
@@ -133,10 +132,7 @@ const LiveAiRow = memo(function LiveAiRow({ setup, index, onSelect }: {
           style={{ color: dc }}>
           {setup.symbol}
         </button>
-        <div className="flex items-center gap-1">
-          <span className="text-[10px] text-gray-500 tabular-nums">${livePrice.toFixed(2)}</span>
-          {isLive && <Wifi className="w-2.5 h-2.5 text-emerald-500" />}
-        </div>
+        <div className="text-[10px] text-gray-500 tabular-nums">${livePrice.toFixed(2)}</div>
       </td>
       <td className="px-3 py-2.5">
         <div className="flex items-center gap-1.5 text-xs font-bold" style={{ color: dc }}>
@@ -172,13 +168,12 @@ const LiveAiRow = memo(function LiveAiRow({ setup, index, onSelect }: {
 const LiveManualRow = memo(function LiveManualRow({ q, onSelect }: {
   q: ScannerQuote; onSelect: (sym: string) => void;
 }) {
-  const { data, source } = useQuote(q.symbol);
+  const { data } = useQuote(q.symbol);
   const livePrice = data?.last ?? q.last;
   const liveChangePct = data?.changePct ?? q.changePct;
   const liveVolume = data?.volume ?? q.volume;
   const isUp = liveChangePct >= 0;
   const color = isUp ? "#00d166" : "#f23645";
-  const isLive = source === "stream";
 
   return (
     <button onClick={() => onSelect(q.symbol)}
@@ -190,7 +185,6 @@ const LiveManualRow = memo(function LiveManualRow({ q, onSelect }: {
         {isUp ? "▲" : "▼"} {Math.abs(liveChangePct).toFixed(2)}%
       </span>
       <span className="text-[10px] text-gray-500 tabular-nums">Vol {(liveVolume / 1e6).toFixed(1)}M</span>
-      {isLive && <Wifi className="w-2.5 h-2.5 text-emerald-500 shrink-0" />}
       <span className="ml-auto text-[10px] text-gray-600 group-hover:text-primary transition-colors">LOAD →</span>
     </button>
   );
@@ -534,9 +528,7 @@ export function MarketScanner({ subscribeEquitySymbols }: {
             <Label className="text-[10px] text-muted-foreground uppercase">
               {manualQuotes.length} STOCKS MATCHED — CLICK TO LOAD
             </Label>
-            <span className="text-[9px] text-muted-foreground flex items-center gap-1">
-              <Wifi className="w-2.5 h-2.5 text-emerald-500" /> Live prices
-            </span>
+            <span className="text-[9px] text-muted-foreground">Sorted by | Change % |</span>
           </div>
           <div className="space-y-1.5">
             {manualQuotes.map(q => (
