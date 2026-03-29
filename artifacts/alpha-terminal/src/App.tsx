@@ -55,7 +55,6 @@ function PendingSessionLoader() {
 
   useEffect(() => {
     if (traderAccessToken) return;
-    if (!accessToken) return;
 
     let cancelled = false;
 
@@ -70,6 +69,8 @@ function PendingSessionLoader() {
       } catch {}
     };
 
+    checkTraderPending();
+
     const handleVisibility = () => {
       if (!document.hidden && !cancelled) {
         checkTraderPending();
@@ -81,7 +82,7 @@ function PendingSessionLoader() {
       cancelled = true;
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [accessToken, traderAccessToken, setTraderTokens]);
+  }, [traderAccessToken, setTraderTokens]);
 
   return null;
 }

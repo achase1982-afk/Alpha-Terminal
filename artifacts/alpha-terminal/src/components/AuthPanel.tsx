@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useGetAuthUrl } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -42,37 +42,14 @@ export function AuthPanel() {
         setIsTraderNavigating(false);
         return;
       }
-      window.open(data.url, "_blank", "noopener,noreferrer,width=600,height=700");
+      window.location.href = data.url;
     } catch {
       setIsTraderNavigating(false);
     }
   }, []);
 
-  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
   useEffect(() => {
-    if (!isTraderNavigating) return;
-
-    pollingRef.current = setInterval(async () => {
-      try {
-        const res = await fetch("/api/auth/trader-pending-session");
-        const data = await res.json() as { found?: boolean; accessToken?: string; refreshToken?: string };
-        if (data.found && data.accessToken) {
-          setTraderTokens(data.accessToken, data.refreshToken || "");
-          setIsTraderNavigating(false);
-        }
-      } catch {}
-    }, 2000);
-
-    return () => {
-      if (pollingRef.current) clearInterval(pollingRef.current);
-    };
-  }, [isTraderNavigating, setTraderTokens]);
-
-  useEffect(() => {
-    if (traderAccessToken && pollingRef.current) {
-      clearInterval(pollingRef.current);
-      pollingRef.current = null;
+    if (traderAccessToken) {
       setIsTraderNavigating(false);
     }
   }, [traderAccessToken]);
@@ -116,17 +93,47 @@ export function AuthPanel() {
 
       {isOpen && (
         <div className="p-3 sm:p-4 border-t border-card-border bg-[#0c0c0c] space-y-3 animate-in fade-in slide-in-from-top-2">
-          {/* ── Market Data Auth ── */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-1.5 text-[10px] font-mono text-gray-400 uppercase tracking-wider">
-              <KeyRound className="w-3 h-3" />Market Data API
-            </div>
-            {accessToken ? (
+          {bothConnected ? (
+            <div className="space-y-2">
               <div className="flex items-center gap-2 text-sm text-primary bg-primary/10 p-2.5 rounded-md border border-primary/20">
                 <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                <span className="font-mono text-[10px]">Connected — quotes & charts active</span>
+                <span className="font-mono text-[10px]">Market Data — quotes & charts active</span>
               </div>
-            ) : (
+              <div className="flex items-center gap-2 text-sm text-emerald-400 bg-emerald-500/10 p-2.5 rounded-md border border-emerald-500/20">
+                <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                <span className="font-mono text-[10px]">Streaming — WebSocket live data enabled</span>
+              </div>
+            </div>
+          ) : accessToken && !traderAccessToken ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-sm text-primary bg-primary/10 p-2.5 rounded-md border border-primary/20">
+                <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                <span className="font-mono text-[10px]">Market Data — quotes & charts active</span>
+              </div>
+              <div className="flex items-start gap-2 rounded-lg bg-amber-500/5 border border-amber-500/20 p-2">
+                <Radio className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+                <p className="text-[9px] text-gray-300 leading-snug">
+                  Streaming not connected. Click below to enable live WebSocket data.
+                </p>
+              </div>
+              <Button
+                onClick={handleTraderLoginClick}
+                disabled={isTraderNavigating}
+                variant="outline"
+                className="w-full font-mono text-xs h-9 border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
+              >
+                {isTraderNavigating ? (
+                  <><Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />REDIRECTING...</>
+                ) : (
+                  <>CONNECT STREAMING <ExternalLink className="ml-2 w-3.5 h-3.5" /></>
+                )}
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-[9px] text-gray-400 font-mono leading-snug">
+                Sign in once to connect both Market Data and Live Streaming automatically.
+              </p>
               <Button
                 onClick={handleLoginClick}
                 disabled={isLoading}
@@ -135,49 +142,12 @@ export function AuthPanel() {
                 {isLoading ? (
                   <><Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />REDIRECTING...</>
                 ) : (
-                  <>SIGN IN — MARKET DATA <ExternalLink className="ml-2 w-3.5 h-3.5" /></>
+                  <>SIGN IN TO SCHWAB <ExternalLink className="ml-2 w-3.5 h-3.5" /></>
                 )}
               </Button>
-            )}
-          </div>
-
-          {/* ── Trader (Streaming) Auth ── */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-1.5 text-[10px] font-mono text-gray-400 uppercase tracking-wider">
-              <Radio className="w-3 h-3" />Accounts & Trading API (Live Stream)
             </div>
-            {traderAccessToken ? (
-              <div className="flex items-center gap-2 text-sm text-emerald-400 bg-emerald-500/10 p-2.5 rounded-md border border-emerald-500/20">
-                <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                <span className="font-mono text-[10px]">Connected — WebSocket streaming enabled</span>
-              </div>
-            ) : accessToken ? (
-              <>
-                <div className="flex items-start gap-2 rounded-lg bg-amber-500/5 border border-amber-500/20 p-2">
-                  <Radio className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
-                  <p className="text-[9px] text-gray-300 leading-snug">
-                    Connect your Accounts & Trading API for live WebSocket streaming. Opens in a popup — sign in and return here.
-                  </p>
-                </div>
-                <Button
-                  onClick={handleTraderLoginClick}
-                  disabled={isTraderNavigating}
-                  variant="outline"
-                  className="w-full font-mono text-xs h-9 border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
-                >
-                  {isTraderNavigating ? (
-                    <><Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />WAITING FOR AUTH...</>
-                  ) : (
-                    <>CONNECT STREAMING <ExternalLink className="ml-2 w-3.5 h-3.5" /></>
-                  )}
-                </Button>
-              </>
-            ) : (
-              <p className="text-[9px] text-gray-500 font-mono">Connect Market Data first</p>
-            )}
-          </div>
+          )}
 
-          {/* ── Disconnect ── */}
           {accessToken && (
             <Button
               variant="outline"

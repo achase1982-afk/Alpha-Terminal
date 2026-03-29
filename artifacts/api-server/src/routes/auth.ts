@@ -157,7 +157,26 @@ router.get("/callback", async (req, res) => {
       ts: Date.now(),
     });
 
-    req.log.info("GET /callback — token exchange succeeded, redirecting to app root");
+    req.log.info("GET /callback — token exchange succeeded");
+
+    const traderAppKey = process.env.SCHWAB_TRADER_APP_KEY;
+    const traderRedirectUri = process.env.SCHWAB_TRADER_REDIRECT_URI;
+    if (traderAppKey && traderRedirectUri) {
+      cleanExpired();
+      const traderState = "trader_" + crypto.randomBytes(24).toString("hex");
+      pendingStates.set(traderState, Date.now());
+
+      const traderParams = new URLSearchParams({
+        response_type: "code",
+        client_id: traderAppKey,
+        redirect_uri: traderRedirectUri,
+        state: traderState,
+      });
+
+      const traderUrl = `${SCHWAB_AUTH_BASE}?${traderParams.toString()}`;
+      req.log.info("GET /callback — chaining to Trader OAuth automatically");
+      return res.redirect(traderUrl);
+    }
 
     res.redirect("/");
   } catch (err) {
@@ -397,7 +416,7 @@ router.get("/trader-callback", async (req, res) => {
 
     req.log.info("GET /trader-callback — Trader token exchange succeeded");
 
-    res.send(successPage("Trader API"));
+    res.redirect("/");
   } catch (err) {
     req.log.error({ err }, "GET /trader-callback network error");
     res.status(500).send(errorPage("Connection Error", "Could not reach Schwab API."));
