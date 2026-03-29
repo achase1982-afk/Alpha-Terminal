@@ -234,7 +234,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
         </button>
 
         <div className={`flex flex-col items-start min-w-0 overflow-hidden ${opacityCls} ${transitionCls}`}>
-          <span className="text-[10px] uppercase tracking-[0.1em] text-zinc-500 font-semibold leading-none mb-1">Last Price</span>
+          <span className="text-[10px] uppercase tracking-[0.1em] text-zinc-500 font-semibold leading-none mb-1">&nbsp;</span>
           {showData ? (
             <>
               <span className={`tabular-nums leading-none whitespace-nowrap font-normal md:font-medium text-2xl sm:text-3xl md:text-4xl tracking-tight ${flashClass}`} style={{ color: tickColor }}>
@@ -269,7 +269,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
                     {bidStr}
                   </span>
                   {bidSizeStr && (
-                    <span className="text-[9px] text-white/70 font-medium tabular-nums leading-none mt-1.5">Bid Size: {bidSizeStr}</span>
+                    <span className="text-[9px] text-white font-semibold tabular-nums leading-none mt-1.5">Bid Size: {bidSizeStr}</span>
                   )}
                 </span>
               </button>
@@ -284,7 +284,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
                     {askStr}
                   </span>
                   {askSizeStr && (
-                    <span className="text-[9px] text-white/70 font-medium tabular-nums leading-none mt-1.5">Ask Size: {askSizeStr}</span>
+                    <span className="text-[9px] text-white font-semibold tabular-nums leading-none mt-1.5">Ask Size: {askSizeStr}</span>
                   )}
                 </span>
               </button>
