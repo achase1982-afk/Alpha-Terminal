@@ -119,6 +119,9 @@ router.get("/quote", async (req, res) => {
     // ── DEBUG: log every key Schwab actually returned ──────────────────────
     // This surfaces the real field names so we can extend the mapping below.
     req.log.info({ symbol: displaySymbol, quoteKeys: Object.keys(quote) }, "Schwab raw quote keys");
+    if (fundamental) {
+      req.log.info({ symbol: displaySymbol, fundamentalKeys: Object.keys(fundamental) }, "Schwab raw fundamental keys");
+    }
 
     // ── Robust number extractor ───────────────────────────────────────────────
     // Returns the first key whose value is a finite, non-NaN number.
@@ -415,6 +418,11 @@ router.get("/fundamentals", async (req, res) => {
 
     const fundamental = (entry["fundamental"] ?? {}) as Record<string, unknown>;
 
+    req.log.info({ symbol: displaySymbol, fundamentalKeys: Object.keys(fundamental) }, "Instruments fundamental keys");
+
+    const rawNextEarnings = fundamental["nextEarningsDate"] ?? fundamental["nextEarning"] ?? fundamental["earningsDate"];
+    const nextEarningsDate = typeof rawNextEarnings === "string" ? rawNextEarnings : null;
+
     res.json({
       symbol: displaySymbol,
       description: (entry["description"] as string) ?? null,
@@ -430,6 +438,7 @@ router.get("/fundamentals", async (req, res) => {
       beta: (fundamental["beta"] as number) ?? null,
       high52: (fundamental["high52"] as number) ?? null,
       low52: (fundamental["low52"] as number) ?? null,
+      nextEarningsDate,
       sector: null,
       industry: null,
     });

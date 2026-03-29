@@ -4,6 +4,7 @@ import { useOptionsSettingsStore } from "@/lib/options-store";
 import { useOptionsColumnsStore, COLUMN_REGISTRY, type ColumnDef } from "@/lib/options-columns-store";
 import { useOptionsStreamStore, useOptionTick } from "@/lib/options-stream-store";
 import { useGetQuote, useGetOptionChain } from "@workspace/api-client-react";
+import { useQuery } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -573,6 +574,16 @@ export function OptionsTab({ subscribeOptionSymbols }: OptionsTabProps) {
     { query: { enabled: !!accessToken } }
   );
 
+  const { data: fundamentalsData } = useQuery({
+    queryKey: ["fundamentals", symbol],
+    queryFn: async () => {
+      const res = await fetch(`/api/market/fundamentals?symbol=${encodeURIComponent(symbol)}&accessToken=${encodeURIComponent(accessToken || "")}`);
+      return res.json() as Promise<{ nextEarningsDate?: string | null }>;
+    },
+    enabled: !!accessToken && !!symbol,
+    staleTime: 5 * 60 * 1000,
+  });
+
   const underlyingPrice = quote?.last ?? (data as unknown as { underlyingPrice?: number })?.underlyingPrice ?? null;
 
   const groups = useMemo(() => {
@@ -664,7 +675,7 @@ export function OptionsTab({ subscribeOptionSymbols }: OptionsTabProps) {
         lastPrice={underlyingPrice}
         rawCalls={(data?.calls ?? []) as Contract[]}
         rawPuts={(data?.puts ?? []) as Contract[]}
-        earningsDate={quote?.nextEarningsDate}
+        earningsDate={fundamentalsData?.nextEarningsDate ?? quote?.nextEarningsDate}
         isFetching={isFetching}
         hasData={!!data}
         strikeControls={
