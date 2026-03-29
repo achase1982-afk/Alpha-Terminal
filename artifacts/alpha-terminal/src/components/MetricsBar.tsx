@@ -255,7 +255,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
             <>
               <button
                 onClick={() => handleInitiateTrade('sell')}
-                className={`trade-btn-sell h-[54px] bg-red-950/40 border border-red-500/50 rounded-lg flex flex-col items-center justify-center p-1.5 cursor-pointer transition-colors active:bg-red-800/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-400 overflow-hidden ${opacityCls} ${transitionCls}`}
+                className={`trade-btn-sell h-[68px] bg-red-950/40 border border-red-500/50 rounded-lg flex flex-col items-center justify-center p-1.5 cursor-pointer transition-colors active:bg-red-800/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-400 overflow-hidden ${opacityCls} ${transitionCls}`}
                 aria-label={`Sell ${quote?.symbol} at ${bidStr}`}
               >
                 <span className="text-[9px] uppercase font-bold tracking-widest text-red-400 leading-none">SELL</span>
@@ -265,7 +265,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
               </button>
               <button
                 onClick={() => handleInitiateTrade('buy')}
-                className={`trade-btn-buy h-[54px] bg-emerald-950/40 border border-emerald-500/50 rounded-lg flex flex-col items-center justify-center p-1.5 cursor-pointer transition-colors active:bg-emerald-800/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400 overflow-hidden ${opacityCls} ${transitionCls}`}
+                className={`trade-btn-buy h-[68px] bg-emerald-950/40 border border-emerald-500/50 rounded-lg flex flex-col items-center justify-center p-1.5 cursor-pointer transition-colors active:bg-emerald-800/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400 overflow-hidden ${opacityCls} ${transitionCls}`}
                 aria-label={`Buy ${quote?.symbol} at ${askStr}`}
               >
                 <span className="text-[9px] uppercase font-bold tracking-widest text-emerald-400 leading-none">BUY</span>
@@ -276,11 +276,11 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
             </>
           ) : (
             <>
-              <div className="h-[54px] border border-zinc-800/50 rounded-lg flex flex-col items-center justify-center">
+              <div className="h-[68px] border border-zinc-800/50 rounded-lg flex flex-col items-center justify-center">
                 <span className="text-[10px] uppercase font-bold tracking-widest text-zinc-600 leading-none">SELL</span>
                 <span className="text-sm font-bold text-zinc-600 tabular-nums mt-0.5">—</span>
               </div>
-              <div className="h-[54px] border border-zinc-800/50 rounded-lg flex flex-col items-center justify-center">
+              <div className="h-[68px] border border-zinc-800/50 rounded-lg flex flex-col items-center justify-center">
                 <span className="text-[10px] uppercase font-bold tracking-widest text-zinc-600 leading-none">BUY</span>
                 <span className="text-sm font-bold text-zinc-600 tabular-nums mt-0.5">—</span>
               </div>
