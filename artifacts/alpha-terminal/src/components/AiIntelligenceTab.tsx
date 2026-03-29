@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useTerminalStore } from "@/lib/store";
 import {
   useGetQuote, useGetPriceHistory, useGetOptionChain,
@@ -15,47 +15,55 @@ import ReactMarkdown from "react-markdown";
 
 const API_BASE = "/api";
 
-const SHIMMER_STYLE = `
-@keyframes ai-shimmer {
-  0% { background-position: -400px 0; }
-  100% { background-position: 400px 0; }
-}
-`;
+const THINKING_PHRASES = [
+  "Analyzing options chain...",
+  "Evaluating MACD divergence...",
+  "Calculating risk/reward...",
+  "Drafting strategy...",
+];
 
-function AiSkeleton({ type }: { type: "analysis" | "strategist" }) {
-  const barClass = "rounded-md";
-  const shimmer = {
-    background: "linear-gradient(90deg, #1a1a1c 25%, #2a2a2e 37%, #1a1a1c 63%)",
-    backgroundSize: "800px 100%",
-    animation: "ai-shimmer 1.8s ease-in-out infinite",
-  };
+function AiThinking() {
+  const [phraseIdx, setPhraseIdx] = useState(0);
+
+  useEffect(() => {
+    const t = setInterval(() => setPhraseIdx(i => (i + 1) % THINKING_PHRASES.length), 3000);
+    return () => clearInterval(t);
+  }, []);
 
   return (
-    <div className="flex flex-col gap-4 py-2">
-      <style>{SHIMMER_STYLE}</style>
-      {type === "strategist" && (
-        <div className="grid grid-cols-2 gap-3">
-          {[0, 1, 2, 3].map(i => (
-            <div key={i} className="rounded-lg border border-card-border p-3" style={{ background: "#111113" }}>
-              <div className={`${barClass} h-2.5 w-16 mb-2`} style={shimmer} />
-              <div className={`${barClass} h-5 w-20`} style={shimmer} />
-            </div>
-          ))}
-        </div>
-      )}
-      <div className={`${barClass} h-4 w-3/4`} style={shimmer} />
-      <div className={`${barClass} h-4 w-full`} style={shimmer} />
-      <div className={`${barClass} h-4 w-5/6`} style={shimmer} />
-      <div className={`${barClass} h-3 w-2/3 mt-1`} style={shimmer} />
-      <div className={`${barClass} h-3 w-full`} style={shimmer} />
-      <div className={`${barClass} h-3 w-4/5`} style={shimmer} />
-      {type === "analysis" && (
-        <>
-          <div className={`${barClass} h-4 w-1/2 mt-2`} style={shimmer} />
-          <div className={`${barClass} h-3 w-full`} style={shimmer} />
-          <div className={`${barClass} h-3 w-3/4`} style={shimmer} />
-        </>
-      )}
+    <div className="flex items-center gap-3 py-8 justify-center">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="shrink-0">
+        <style>{`
+          @keyframes ai-star-pulse { 0%,100% { opacity:.45; transform:scale(.85) rotate(0deg); } 50% { opacity:1; transform:scale(1.1) rotate(90deg); } }
+          .ai-star { animation: ai-star-pulse 2.4s ease-in-out infinite; transform-origin: center; }
+        `}</style>
+        <path
+          className="ai-star"
+          d="M12 2l2.09 6.26L20.18 10l-6.09 1.74L12 18l-2.09-6.26L3.82 10l6.09-1.74L12 2z"
+          fill="#FFB800"
+        />
+        <path
+          className="ai-star"
+          d="M19 14l1.05 3.15L23 18.2l-2.95.85L19 22.2l-1.05-3.15L15 18.2l2.95-.85L19 14z"
+          fill="#FFB800"
+          opacity=".6"
+          style={{ animationDelay: "0.6s" }}
+        />
+        <path
+          className="ai-star"
+          d="M5 14l.7 2.1L8 16.8l-2.3.7L5 19.6l-.7-2.1L2 16.8l2.3-.7L5 14z"
+          fill="#FFB800"
+          opacity=".4"
+          style={{ animationDelay: "1.2s" }}
+        />
+      </svg>
+      <span
+        key={phraseIdx}
+        className="font-mono text-xs text-gray-400 tracking-wide"
+        style={{ animation: "ai-star-pulse 3s ease-in-out infinite" }}
+      >
+        {THINKING_PHRASES[phraseIdx]}
+      </span>
     </div>
   );
 }
@@ -317,7 +325,7 @@ export function AiIntelligenceTab() {
         {(activeResult === "analysis" || activeResult === "strategist") && (
           <div className="border-t border-card-border p-4 bg-[#0c0c0c]">
             {isPendingAnalysis || isStrategizing ? (
-              <AiSkeleton type={activeResult} />
+              <AiThinking />
             ) : currentResult ? (
               activeResult === "strategist"
                 ? <StrategistResult content={currentResult} />
