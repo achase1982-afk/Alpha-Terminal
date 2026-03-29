@@ -54,7 +54,8 @@ The UI adopts a Bloomberg/TOS-style institutional gold color palette, featuring 
 -   **AI Strategy Endpoint**: Fetches 30-day 1-minute candles, computes TA, validates data freshness, and generates strategy with Gemini, including strict data grounding.
 -   **Tick Direction Coloring**: `useTickColor` hook colors last price based on immediate momentum.
 -   **Search History**: Stores and displays recently viewed symbols with quick-save functionality.
--   **Indices & Futures Support**: Comprehensive support for symbols like $SPX, $VIX, /ES, /NQ across all data endpoints.
+-   **Indices & Futures Support**: Comprehensive support for symbols like $SPX, $VIX, /ES, /NQ across all data endpoints. Index options use `$INDEX.X` format for Schwab chains API. Futures options pass `assetClass=FUTURES`. Index chains default to `range=NTM` with `strikeCount=20`.
+-   **AI Confidence**: Options strategist prompt mandates `aiConfidence` (High/Medium/Low) and `aiConfidenceReason` per strategy. Frontend shows color-coded badge on PoP row and reason in rationale section.
 
 ## System Design Choices
 

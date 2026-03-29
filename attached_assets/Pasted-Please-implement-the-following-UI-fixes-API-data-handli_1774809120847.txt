@@ -1,0 +1,29 @@
+Please implement the following UI fixes, API data handling updates, and logic additions for my trading terminal app. Please search the workspace for the relevant header components, options API fetch services, and AI Strategist backend routes to apply these exact changes:
+
+1. UI/Layout: Fix Bid/Ask Text Bleeding
+The container holding the 'BID / ASK' prices is bleeding off the screen on mobile.
+- Update the CSS for the quote header to use a grid or flex layout where the text container has `min-width: 0`.
+- Apply `white-space: nowrap`, `overflow: hidden`, and `text-overflow: ellipsis` to the Bid/Ask text.
+- Use `font-size: clamp(12px, 3vw, 15px);` so it scales cleanly on small screens.
+
+2. UI/State: Handle Empty Dash Glitch (| $—/$—)
+When market data is closed or loading, the secondary quote area shows empty dashes.
+- Implement a stateful fallback: If data is actively loading, render a CSS shimmer/skeleton loader.
+- If the data returns null or empty, render a clean "N/A" or hide the element completely. Do not render `$—/$—`.
+- Update the "Strategist failed:" error state at the bottom of the screen. Show a clean error card: "Strategist failed to load — [Error Message]" with a simple "Retry" button.
+
+3. API Logic: Fix Thinkorswim (TOS) Option Chains for Indices
+The Strategist fails on indices like SPX. Create an instrument routing helper before the TOS API call:
+- If the ticker is a cash index (SPX, NDX, RUT, VIX), transform it to the format the API expects: `$SPX.X` (or `$NDX.X`).
+- Pass this formatted symbol into the options chain request.
+- CRITICAL SAFETY: Add `strikeCount=20` or `range=NTM` (Near-The-Money) to the request parameters for indices to prevent 502/timeout errors on massive index chains.
+
+4. API Logic: Enable Futures Options (FOPs)
+Options for futures (like /ES) are returning empty. In the options API fetch call:
+- If the ticker starts with a `/` (e.g., `/ES`), keep the symbol exactly as-is.
+- Explicitly append the parameter `assetClass=FUTURES` (and `includeFOPs=true` if required by the wrapper).
+
+5. Feature Update: Add "AI Confidence" via the LLM Prompt
+Update the backend System Prompt for the AI Strategist to natively output an AI Confidence score.
+- Add this strict instruction to the LLM system prompt: "You must ALWAYS output this exact line for every strategy: '**AI Confidence:** High/Medium/Low — [one-sentence justification]'"
+- Update the frontend UI to parse this specific markdown output and display it next to the POP score.

@@ -151,11 +151,17 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
           {changeStr}&nbsp;{changePctStr}
         </span>
 
-        <span className="text-gray-600 shrink-0">|</span>
-
-        <span className="tabular-nums text-gray-300 shrink-0" style={{ fontSize: '0.75rem', fontWeight: 400 }}>
-          ${fmtPrice(quote.bid)}<span className="text-gray-600 mx-0.5">/</span>${fmtPrice(quote.ask)}
-        </span>
+        {(quote.bid != null && quote.ask != null) && (
+          <>
+            <span className="text-gray-600 shrink-0">|</span>
+            <span
+              className="tabular-nums text-gray-300 truncate min-w-0"
+              style={{ fontSize: 'clamp(11px, 2.8vw, 13px)', fontWeight: 400 }}
+            >
+              ${fmtPrice(quote.bid)}<span className="text-gray-600 mx-0.5">/</span>${fmtPrice(quote.ask)}
+            </span>
+          </>
+        )}
 
       </div>
     );
@@ -194,8 +200,13 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
 
         <div className="flex flex-col min-w-0 gap-0.5 border-l border-gray-800 pl-3">
           <span className={LABEL_CLS}>Bid / Ask</span>
-          <span className="font-mono tabular-nums text-gray-200" style={{ fontSize: '0.9rem', fontWeight: 400 }}>
-            ${fmtPrice(quote.bid)}&nbsp;<span className="text-gray-600">/</span>&nbsp;${fmtPrice(quote.ask)}
+          <span
+            className="font-mono tabular-nums text-gray-200 truncate"
+            style={{ fontSize: 'clamp(12px, 3vw, 15px)', fontWeight: 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+          >
+            {quote.bid != null && quote.ask != null
+              ? <>${fmtPrice(quote.bid)}&nbsp;<span className="text-gray-600">/</span>&nbsp;${fmtPrice(quote.ask)}</>
+              : <span className="text-gray-600">N/A</span>}
           </span>
         </div>
       </div>

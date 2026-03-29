@@ -49,7 +49,8 @@ function formatSchwabSymbol(symbol: string): string {
 
 function isIndex(symbol: string): boolean {
   const upper = symbol.toUpperCase().trim();
-  return upper in INDEX_SYMBOL_MAP || upper.startsWith("$");
+  const bare = upper.endsWith(".X") && upper.startsWith("$") ? upper.slice(0, -2) : upper;
+  return bare in INDEX_SYMBOL_MAP;
 }
 
 function isFutures(symbol: string): boolean {
@@ -306,19 +307,45 @@ router.get("/options", async (req, res) => {
   }
 
   const displaySymbol = symbol.toUpperCase().trim();
-  const apiSymbol = formatSchwabSymbol(displaySymbol);
+  const isFuturesSymbol = isFutures(displaySymbol);
+  const isIndexSymbol = isIndex(displaySymbol);
+
+  let chainSymbol: string;
+  if (isFuturesSymbol) {
+    chainSymbol = displaySymbol;
+  } else if (isIndexSymbol) {
+    const mapped = formatSchwabSymbol(displaySymbol);
+    chainSymbol = mapped.startsWith("$") ? `${mapped}.X` : mapped;
+  } else {
+    chainSymbol = displaySymbol;
+  }
 
   try {
     const params = new URLSearchParams({
-      symbol: apiSymbol,
+      symbol: chainSymbol,
       contractType,
       daysToExpiration: String(daysToExpiration),
-      range: "ALL",
     });
 
-    if (strikeCount && strikeCount > 0) {
-      params.set("strikeCount", String(strikeCount));
+    if (isIndexSymbol) {
+      params.set("range", "NTM");
+      if (!strikeCount || strikeCount <= 0) {
+        params.set("strikeCount", "20");
+      } else {
+        params.set("strikeCount", String(strikeCount));
+      }
+    } else {
+      params.set("range", "ALL");
+      if (strikeCount && strikeCount > 0) {
+        params.set("strikeCount", String(strikeCount));
+      }
     }
+
+    if (isFuturesSymbol) {
+      params.set("assetClass", "FUTURES");
+    }
+
+    req.log.info({ chainSymbol, isFuturesSymbol, isIndexSymbol, params: params.toString() }, "Options chain request");
 
     const response = await fetch(`${SCHWAB_API_BASE}/chains?${params.toString()}`, {
       headers: { "Authorization": `Bearer ${accessToken}` },
@@ -330,7 +357,7 @@ router.get("/options", async (req, res) => {
 
     if (!response.ok) {
       const errBody = await response.text().catch(() => "");
-      req.log.error({ status: response.status, body: errBody, symbol: apiSymbol }, "Options chain API error");
+      req.log.error({ status: response.status, body: errBody, symbol: chainSymbol }, "Options chain API error");
       return res.json({ symbol: displaySymbol, calls: [], puts: [], error: `api_error_${response.status}`, message: errBody });
     }
 

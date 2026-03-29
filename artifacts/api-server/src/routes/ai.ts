@@ -676,10 +676,15 @@ The JSON structure MUST be exactly:
     "breakevens": "String (e.g., $248.25)",
     "positionSize": "String (e.g., Buy 2 contracts)",
     "exitRules": "String (Profit target at 50% max gain; stop loss at 100% of premium; close by 2 DTE)",
-    "rationale": "String (2-3 sentences max, strictly clinical analysis)"
+    "rationale": "String (2-3 sentences max, strictly clinical analysis)",
+    "aiConfidence": "String (High, Medium, or Low)",
+    "aiConfidenceReason": "String (one-sentence justification for the confidence level)"
   }
 ]
 \`\`\`
+
+MANDATORY AI CONFIDENCE:
+You must ALWAYS output this exact line for every strategy object in the JSON: an "aiConfidence" field with value "High", "Medium", or "Low", and an "aiConfidenceReason" field with a one-sentence justification.
 
 Output ONLY the JSON array first (no markdown code fence, no backticks, just the raw [ ... ] array), then a brief "## Key Risk Factors" section in markdown after the JSON.`;
 }

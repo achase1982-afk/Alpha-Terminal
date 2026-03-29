@@ -102,6 +102,8 @@ interface StrategyJSON {
   positionSize: string;
   exitRules: string;
   rationale: string;
+  aiConfidence?: string;
+  aiConfidenceReason?: string;
 }
 
 function extractJSONArray(raw: string): { json: string; endIdx: number } | null {
@@ -176,6 +178,15 @@ function StrategyCard({ s, idx }: { s: StrategyJSON; idx: number }) {
           <div className="flex items-center gap-2 text-xs font-mono text-gray-400">
             <span className="text-gray-500 uppercase tracking-wider w-20 shrink-0">PoP</span>
             <span className="text-white font-bold">{s.pop}</span>
+            {s.aiConfidence && (
+              <span className={`ml-auto px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                s.aiConfidence.toLowerCase() === "high" ? "bg-[#00d166]/15 text-[#00d166]" :
+                s.aiConfidence.toLowerCase() === "medium" ? "bg-[#FFB800]/15 text-[#FFB800]" :
+                "bg-[#f23645]/15 text-[#f23645]"
+              }`}>
+                AI: {s.aiConfidence}
+              </span>
+            )}
           </div>
         )}
         {s.breakevens && (
@@ -198,9 +209,12 @@ function StrategyCard({ s, idx }: { s: StrategyJSON; idx: number }) {
         )}
       </div>
 
-      {s.rationale && (
-        <div className="px-4 py-3 border-t border-card-border text-xs text-gray-400 font-sans leading-relaxed">
-          {s.rationale}
+      {(s.rationale || s.aiConfidenceReason) && (
+        <div className="px-4 py-3 border-t border-card-border text-xs text-gray-400 font-sans leading-relaxed space-y-1">
+          {s.rationale && <p>{s.rationale}</p>}
+          {s.aiConfidenceReason && (
+            <p className="text-gray-500 italic">AI Confidence: {s.aiConfidenceReason}</p>
+          )}
         </div>
       )}
     </div>
