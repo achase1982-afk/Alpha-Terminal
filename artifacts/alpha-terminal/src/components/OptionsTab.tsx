@@ -784,11 +784,11 @@ export function OptionsTab() {
                         <span className="text-[11px] font-bold text-white tracking-wide">
                           {group.dateLabel}
                         </span>
-                        <span className="text-[11px] text-zinc-500">
-                          ({Math.round(group.dte)})
+                        <span className="text-[11px] text-white font-medium">
+                          ({Math.round(group.dte)} DTE)
                         </span>
                         <span className="text-[11px] text-zinc-300">
-                          {group.totalStrikes}
+                          100
                         </span>
                         {group.isWeekly && (
                           <span className="text-[11px] text-[#FFB800] font-medium">Weeklys</span>
