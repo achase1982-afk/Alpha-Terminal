@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useTerminalStore } from "@/lib/store";
 import {
   useGetQuote, useGetPriceHistory, useGetOptionChain,
@@ -8,12 +8,112 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Activity, BarChart2,
-  Target,
+  Target, DollarSign, Shield, TrendingUp, Scale,
 } from "lucide-react";
 
 import ReactMarkdown from "react-markdown";
 
 const API_BASE = "/api";
+
+const SHIMMER_STYLE = `
+@keyframes ai-shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+`;
+
+function AiSkeleton({ type }: { type: "analysis" | "strategist" }) {
+  const barClass = "rounded-md";
+  const shimmer = {
+    background: "linear-gradient(90deg, #1a1a1c 25%, #2a2a2e 37%, #1a1a1c 63%)",
+    backgroundSize: "800px 100%",
+    animation: "ai-shimmer 1.8s ease-in-out infinite",
+  };
+
+  return (
+    <div className="flex flex-col gap-4 py-2">
+      <style>{SHIMMER_STYLE}</style>
+      {type === "strategist" && (
+        <div className="grid grid-cols-2 gap-3">
+          {[0, 1, 2, 3].map(i => (
+            <div key={i} className="rounded-lg border border-card-border p-3" style={{ background: "#111113" }}>
+              <div className={`${barClass} h-2.5 w-16 mb-2`} style={shimmer} />
+              <div className={`${barClass} h-5 w-20`} style={shimmer} />
+            </div>
+          ))}
+        </div>
+      )}
+      <div className={`${barClass} h-4 w-3/4`} style={shimmer} />
+      <div className={`${barClass} h-4 w-full`} style={shimmer} />
+      <div className={`${barClass} h-4 w-5/6`} style={shimmer} />
+      <div className={`${barClass} h-3 w-2/3 mt-1`} style={shimmer} />
+      <div className={`${barClass} h-3 w-full`} style={shimmer} />
+      <div className={`${barClass} h-3 w-4/5`} style={shimmer} />
+      {type === "analysis" && (
+        <>
+          <div className={`${barClass} h-4 w-1/2 mt-2`} style={shimmer} />
+          <div className={`${barClass} h-3 w-full`} style={shimmer} />
+          <div className={`${barClass} h-3 w-3/4`} style={shimmer} />
+        </>
+      )}
+    </div>
+  );
+}
+
+interface MetricCard {
+  label: string;
+  value: string;
+  icon: React.ReactNode;
+  color: string;
+}
+
+const METRIC_KEYS: { key: string; label: string; icon: React.ReactNode; color: string }[] = [
+  { key: "entry", label: "Entry", icon: <DollarSign className="w-3.5 h-3.5" />, color: "#FFB800" },
+  { key: "max risk", label: "Max Risk", icon: <Shield className="w-3.5 h-3.5" />, color: "#f23645" },
+  { key: "max reward", label: "Max Reward", icon: <TrendingUp className="w-3.5 h-3.5" />, color: "#00d166" },
+  { key: "r/r ratio", label: "R/R Ratio", icon: <Scale className="w-3.5 h-3.5" />, color: "#FF6B2B" },
+];
+
+function extractMetrics(md: string): { cards: MetricCard[]; cleaned: string } {
+  const cards: MetricCard[] = [];
+  let cleaned = md;
+
+  for (const mk of METRIC_KEYS) {
+    const re = new RegExp(
+      `\\*\\*${mk.key}:?\\*\\*:?\\s*([^|*\\n]+)`,
+      "i"
+    );
+    const m = cleaned.match(re);
+    if (m) {
+      cards.push({ label: mk.label, value: m[1].trim().replace(/\s*\|?\s*$/, ""), icon: mk.icon, color: mk.color });
+      cleaned = cleaned.replace(m[0], "");
+    }
+  }
+
+  cleaned = cleaned.replace(/\|\s*\|/g, "").replace(/^\s*\|\s*$/gm, "").replace(/\n{3,}/g, "\n\n");
+  return { cards, cleaned };
+}
+
+function MetricCards({ cards }: { cards: MetricCard[] }) {
+  if (cards.length === 0) return null;
+  return (
+    <div className="grid grid-cols-2 gap-3 my-4">
+      {cards.map(c => (
+        <div
+          key={c.label}
+          className="rounded-lg border border-card-border p-3 flex flex-col gap-1"
+          style={{ background: "#111113" }}
+        >
+          <div className="flex items-center gap-1.5">
+            <span style={{ color: c.color }}>{c.icon}</span>
+            <span className="font-mono text-[10px] uppercase tracking-wider text-gray-500">{c.label}</span>
+          </div>
+          <span className="font-mono text-sm font-bold text-white">{c.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function MarkdownResult({ content }: { content: string }) {
   return (
@@ -27,6 +127,41 @@ function MarkdownResult({ content }: { content: string }) {
       prose-pre:bg-card prose-pre:border prose-pre:border-card-border prose-pre:text-xs"
     >
       <ReactMarkdown>{content}</ReactMarkdown>
+    </div>
+  );
+}
+
+function StrategistResult({ content }: { content: string }) {
+  const sections = useMemo(() => {
+    const blocks = content.split(/(?=(?:🎯|🟢|⚪|💰|🔵|🟡|🔴)\s*\d+DTE\b)/);
+    return blocks.map(block => {
+      const { cards, cleaned } = extractMetrics(block);
+      return { cards, cleaned };
+    });
+  }, [content]);
+
+  return (
+    <div>
+      {sections.map((sec, i) => {
+        const legsMatch = sec.cleaned.match(/(.*?(?:Legs:.*?)(?:\n|$)(?:.*?(?:Buy|Sell).*?(?:\n|$))*)(.*)/s);
+        if (sec.cards.length > 0 && legsMatch) {
+          const beforeRationale = legsMatch[1];
+          const afterRationale = legsMatch[2];
+          return (
+            <div key={i}>
+              <MarkdownResult content={beforeRationale} />
+              <MetricCards cards={sec.cards} />
+              <MarkdownResult content={afterRationale} />
+            </div>
+          );
+        }
+        return (
+          <div key={i}>
+            {sec.cards.length > 0 && <MetricCards cards={sec.cards} />}
+            <MarkdownResult content={sec.cleaned} />
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -182,14 +317,11 @@ export function AiIntelligenceTab() {
         {(activeResult === "analysis" || activeResult === "strategist") && (
           <div className="border-t border-card-border p-4 bg-[#0c0c0c]">
             {isPendingAnalysis || isStrategizing ? (
-              <div className="flex flex-col items-center justify-center py-10 gap-4">
-                <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-                <span className="font-mono text-xs text-primary animate-pulse tracking-widest">
-                  {isStrategizing ? "RUNNING DERIVATIVES STRATEGIST..." : "PROCESSING TECHNICAL ANALYSIS..."}
-                </span>
-              </div>
+              <AiSkeleton type={activeResult} />
             ) : currentResult ? (
-              <MarkdownResult content={currentResult} />
+              activeResult === "strategist"
+                ? <StrategistResult content={currentResult} />
+                : <MarkdownResult content={currentResult} />
             ) : null}
           </div>
         )}
