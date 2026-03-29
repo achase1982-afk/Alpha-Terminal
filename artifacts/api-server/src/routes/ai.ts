@@ -189,6 +189,68 @@ Be specific, data-driven, and concise. Use markdown formatting.`;
   }
 });
 
+router.post("/technical-analysis/stream", async (req, res) => {
+  const parsed = RunTechnicalAnalysisBody.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid request body." });
+  }
+
+  const { quote, candles, model, temperature, customPrompt } = parsed.data;
+
+  const prompt = `You are an expert financial analyst and technical trader.
+
+STRICT GROUNDING RULE: You must ONLY use the Context Data provided below for any claims about price levels, trends, momentum, support/resistance, or market direction. You are FORBIDDEN from using your internal training knowledge for market trends, price targets, or directional calls. If the data is insufficient for a conclusion, say "Insufficient data" — do NOT fabricate or supplement with internal knowledge.
+
+═══ CONTEXT DATA ═══
+${formatQuote(quote as Record<string, unknown>)}
+
+${formatCandles((candles ?? []) as Array<Record<string, unknown>>)}
+═══ END CONTEXT DATA ═══
+
+${customPrompt ? `ADDITIONAL CONTEXT: ${customPrompt}` : ""}
+
+Analyze ONLY the above data and provide:
+1. **Price Action Summary** - Key levels, trend direction, momentum
+2. **Technical Indicators** - Analysis based on the price data (moving averages, support/resistance)
+3. **Chart Patterns** - Any notable patterns detected
+4. **Volume Analysis** - Volume trends and what they signal
+5. **Risk Assessment** - Key risks and levels to watch
+6. **Trading Outlook** - Short/medium term outlook with specific price targets
+
+Be specific, data-driven, and concise. Use markdown formatting.`;
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return res.status(500).json({ error: "GEMINI_API_KEY not configured." });
+  }
+
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+  });
+
+  try {
+    const google = createGoogleGenerativeAI({ apiKey });
+    const result = streamText({
+      model: google(model ?? "gemini-2.5-pro"),
+      prompt,
+      temperature: temperature ?? 0.3,
+    });
+
+    for await (const chunk of result.textStream) {
+      res.write(`data: ${JSON.stringify({ text: chunk })}\n\n`);
+    }
+    res.write("data: [DONE]\n\n");
+    res.end();
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    req.log.error({ err }, "Technical analysis stream error");
+    res.write(`data: ${JSON.stringify({ error: msg })}\n\n`);
+    res.end();
+  }
+});
+
 router.post("/options-analysis", async (req, res) => {
   const parsed = RunOptionsAnalysisBody.safeParse(req.body);
   if (!parsed.success) {
@@ -622,6 +684,110 @@ Use only strikes that exist in the provided chain data. Be precise with numbers.
     const msg = err instanceof Error ? err.message : String(err);
     req.log.error({ err }, "Options strategist error");
     res.json({ response: `**Strategist failed:** ${msg}`, error: msg });
+  }
+});
+
+router.post("/options-strategist/stream", async (req, res) => {
+  const { quote, candles, chain, model, temperature } = req.body as {
+    quote?: Record<string, unknown>;
+    candles?: Array<Record<string, unknown>>;
+    chain?: Record<string, unknown>;
+    model?: string;
+    temperature?: number;
+  };
+
+  if (!quote || !chain) {
+    return res.status(400).json({ error: "Missing quote or options chain data." });
+  }
+
+  const rawCalls = (chain["calls"] as unknown[] | undefined) ?? [];
+  const rawPuts  = (chain["puts"]  as unknown[] | undefined) ?? [];
+  if (rawCalls.length === 0 && rawPuts.length === 0) {
+    return res.status(400).json({ error: "Options chain is empty." });
+  }
+
+  let sma20 = "N/A", sma50 = "N/A";
+  if (candles && candles.length >= 20) {
+    const closes = candles.map(c => Number(c["close"])).filter(v => !isNaN(v));
+    if (closes.length >= 20) sma20 = (closes.slice(-20).reduce((a, b) => a + b, 0) / 20).toFixed(2);
+    if (closes.length >= 50) sma50 = (closes.slice(-50).reduce((a, b) => a + b, 0) / 50).toFixed(2);
+  }
+
+  const prompt = `You are a Master Derivatives Strategist with 20+ years of options trading experience.
+
+STRICT GROUNDING RULE: You must ONLY use the Context Data provided below. Every strike, premium, IV value, and price level you reference MUST come from the data below. You are FORBIDDEN from using internal training knowledge for market trends, price targets, or directional calls. If data is missing or insufficient, state that clearly — do NOT fabricate.
+
+═══ CONTEXT DATA ═══
+${OPTIONS_DATA_QUALITY_NOTE}
+
+UNDERLYING MARKET DATA:
+${formatQuote(quote)}
+Technical Levels: SMA-20 = $${sma20} | SMA-50 = $${sma50}
+
+${formatOptionsDetailed(chain)}
+═══ END CONTEXT DATA ═══
+
+---
+TASK: Generate high-confidence options trade recommendations for 3 timeframes. For each, identify the OPTIMAL structure (Iron Condor, Bull Call Spread, Bear Put Spread, Straddle, Strangle, Butterfly, Cash-Secured Put, Covered Call, or Calendar Spread).
+
+Use EXACTLY this format for each trade:
+
+### ⏱️ 0DTE — [STRUCTURE NAME]
+**Direction:** 🟢 Bullish / 🔴 Bearish / ⚪ Neutral
+**Confidence:** 🔥 HIGH / 🟡 MILD / 🔵 LOW
+**Legs:** Buy [Strike] Call/Put, Sell [Strike] Call/Put (expiring [date])
+**Entry:** Estimated debit/credit of ~$X.XX per contract
+**Max Risk:** $XXX | **Max Reward:** $XXX | **R/R Ratio:** X:1
+**Rationale:** One precise sentence on why this structure fits current price action, IV, and positioning.
+**Exit Rules:** Profit target at X% gain; stop loss at Y% loss or [trigger condition].
+
+---
+
+### ⏱️ 7DTE — [STRUCTURE NAME]
+[same format]
+
+---
+
+### ⏱️ 30DTE — [STRUCTURE NAME]
+[same format]
+
+---
+
+## ⚠️ Key Risk Factors
+- **Risk 1:** (e.g., IV crush post-catalyst, pin risk near expiration)
+- **Risk 2:** (e.g., gap risk, liquidity at specific strikes)
+
+Use only strikes that exist in the provided chain data. Be precise with numbers. Use markdown with green indicators (🟢) for bullish/calls and red (🔴) for bearish/puts.`;
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return res.status(500).json({ error: "GEMINI_API_KEY not configured." });
+  }
+
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+  });
+
+  try {
+    const google = createGoogleGenerativeAI({ apiKey });
+    const result = streamText({
+      model: google(model ?? "gemini-2.5-pro"),
+      prompt,
+      temperature: temperature ?? 0.2,
+    });
+
+    for await (const chunk of result.textStream) {
+      res.write(`data: ${JSON.stringify({ text: chunk })}\n\n`);
+    }
+    res.write("data: [DONE]\n\n");
+    res.end();
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    req.log.error({ err }, "Options strategist stream error");
+    res.write(`data: ${JSON.stringify({ error: msg })}\n\n`);
+    res.end();
   }
 });
 

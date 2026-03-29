@@ -1,8 +1,7 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useTerminalStore } from "@/lib/store";
 import {
   useGetQuote, useGetPriceHistory, useGetOptionChain,
-  useRunTechnicalAnalysis,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -22,6 +21,17 @@ const THINKING_PHRASES = [
   "Drafting strategy...",
 ];
 
+const AI_THINKING_STYLES = `
+@keyframes ai-sparkle {
+  0%, 100% { opacity: 0.4; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+@keyframes ai-text-fade-in {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+`;
+
 function AiThinking() {
   const [phraseIdx, setPhraseIdx] = useState(0);
 
@@ -32,35 +42,30 @@ function AiThinking() {
 
   return (
     <div className="flex items-center gap-3 py-8 justify-center">
+      <style>{AI_THINKING_STYLES}</style>
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="shrink-0">
-        <style>{`
-          @keyframes ai-star-pulse { 0%,100% { opacity:.45; transform:scale(.85) rotate(0deg); } 50% { opacity:1; transform:scale(1.1) rotate(90deg); } }
-          .ai-star { animation: ai-star-pulse 2.4s ease-in-out infinite; transform-origin: center; }
-        `}</style>
         <path
-          className="ai-star"
           d="M12 2l2.09 6.26L20.18 10l-6.09 1.74L12 18l-2.09-6.26L3.82 10l6.09-1.74L12 2z"
           fill="#FFB800"
+          style={{ animation: "ai-sparkle 2.4s ease-in-out infinite", transformOrigin: "center" }}
         />
         <path
-          className="ai-star"
           d="M19 14l1.05 3.15L23 18.2l-2.95.85L19 22.2l-1.05-3.15L15 18.2l2.95-.85L19 14z"
           fill="#FFB800"
           opacity=".6"
-          style={{ animationDelay: "0.6s" }}
+          style={{ animation: "ai-sparkle 2.4s ease-in-out infinite 0.6s", transformOrigin: "center" }}
         />
         <path
-          className="ai-star"
           d="M5 14l.7 2.1L8 16.8l-2.3.7L5 19.6l-.7-2.1L2 16.8l2.3-.7L5 14z"
           fill="#FFB800"
           opacity=".4"
-          style={{ animationDelay: "1.2s" }}
+          style={{ animation: "ai-sparkle 2.4s ease-in-out infinite 1.2s", transformOrigin: "center" }}
         />
       </svg>
       <span
         key={phraseIdx}
         className="font-mono text-xs text-gray-400 tracking-wide"
-        style={{ animation: "ai-star-pulse 3s ease-in-out infinite" }}
+        style={{ animation: "ai-text-fade-in 0.4s ease-in" }}
       >
         {THINKING_PHRASES[phraseIdx]}
       </span>
@@ -174,6 +179,53 @@ function StrategistResult({ content }: { content: string }) {
   );
 }
 
+async function consumeStream(
+  url: string,
+  body: Record<string, unknown>,
+  onChunk: (text: string) => void,
+  onDone: () => void,
+  onError: (msg: string) => void,
+): Promise<void> {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "Unknown error");
+    onError(errText);
+    return;
+  }
+
+  const reader = res.body?.getReader();
+  if (!reader) { onError("No readable stream."); return; }
+
+  const decoder = new TextDecoder();
+  let buf = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+
+    const lines = buf.split("\n");
+    buf = lines.pop() ?? "";
+
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const payload = line.slice(6).trim();
+      if (payload === "[DONE]") { onDone(); return; }
+      try {
+        const parsed = JSON.parse(payload) as { text?: string; error?: string };
+        if (parsed.error) { onError(parsed.error); return; }
+        if (parsed.text) onChunk(parsed.text);
+      } catch {}
+    }
+  }
+  onDone();
+}
+
 export function AiIntelligenceTab() {
   const {
     symbol, accessToken,
@@ -183,9 +235,12 @@ export function AiIntelligenceTab() {
   } = useTerminalStore();
 
   const [customPrompt, setCustomPrompt] = useState("");
+  const [isStreaming, setIsStreaming] = useState(false);
   const [isStrategizing, setIsStrategizing] = useState(false);
   const [activeResult, setActiveResult] = useState<"analysis" | "strategist" | null>(null);
   const [chainEnabled, setChainEnabled] = useState(false);
+  const [streamingText, setStreamingText] = useState("");
+  const resultEndRef = useRef<HTMLDivElement>(null);
 
   const { data: quote } = useGetQuote(
     { symbol, accessToken: accessToken || "" },
@@ -200,23 +255,48 @@ export function AiIntelligenceTab() {
     { query: { enabled: !!accessToken && chainEnabled } }
   );
 
+  const scrollToBottom = useCallback(() => {
+    resultEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, []);
 
-  const taMutation = useRunTechnicalAnalysis();
+  useEffect(() => {
+    if (isStreaming && streamingText) {
+      scrollToBottom();
+    }
+  }, [streamingText, isStreaming, scrollToBottom]);
 
-
-  const handleRunTA = () => {
+  const handleRunTA = useCallback(async () => {
     if (!quote || !history?.candles) return;
     setAnalysisResult(null);
+    setStreamingText("");
     setActiveResult("analysis");
-    taMutation.mutate(
-      { data: { quote, candles: history.candles, model: aiModel, temperature: aiTemp, customPrompt } },
-      { onSuccess: (data) => setAnalysisResult(data.response) }
-    );
-  };
+    setIsStreaming(true);
 
-  const handleRunStrategist = async () => {
+    let accumulated = "";
+    await consumeStream(
+      `${API_BASE}/ai/technical-analysis/stream`,
+      { quote, candles: history.candles, model: aiModel, temperature: aiTemp, customPrompt },
+      (chunk) => {
+        accumulated += chunk;
+        setStreamingText(accumulated);
+      },
+      () => {
+        setAnalysisResult(accumulated);
+        setStreamingText("");
+        setIsStreaming(false);
+      },
+      (err) => {
+        setAnalysisResult(`**Analysis failed:** ${err}`);
+        setStreamingText("");
+        setIsStreaming(false);
+      },
+    );
+  }, [quote, history, aiModel, aiTemp, customPrompt, setAnalysisResult]);
+
+  const handleRunStrategist = useCallback(async () => {
     if (!quote || !accessToken) return;
     setStrategistResult(null);
+    setStreamingText("");
     setActiveResult("strategist");
     setChainEnabled(true);
     setIsStrategizing(true);
@@ -230,11 +310,13 @@ export function AiIntelligenceTab() {
         if (!chainRes.ok) {
           const errText = await chainRes.text().catch(() => "Unknown error");
           setStrategistResult(`**Error fetching options chain:** ${errText}`);
+          setIsStrategizing(false);
           return;
         }
         chainData = await chainRes.json();
         if (chainData?.error) {
           setStrategistResult(`**Options chain error:** ${chainData.error}${chainData.message ? ` — ${chainData.message}` : ""}`);
+          setIsStrategizing(false);
           return;
         }
       }
@@ -243,37 +325,41 @@ export function AiIntelligenceTab() {
       const puts = chainData?.puts as unknown[] | undefined;
       if (!calls?.length && !puts?.length) {
         setStrategistResult("**No option chain data available.** The chain returned empty — this can happen outside market hours or if the token has expired. Please re-authenticate and try again.");
+        setIsStrategizing(false);
         return;
       }
 
-      const res = await fetch(`${API_BASE}/ai/options-strategist`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          quote,
-          candles: history?.candles ?? [],
-          chain: chainData,
-          model: aiModel,
-          temperature: aiTemp,
-        }),
-      });
-      if (!res.ok) {
-        const errText = await res.text().catch(() => "Unknown error");
-        setStrategistResult(`**Strategist error:** ${errText}`);
-        return;
-      }
-      const data = await res.json() as { response?: string };
-      setStrategistResult(data.response ?? "No response received.");
+      setIsStrategizing(false);
+      setIsStreaming(true);
+
+      let accumulated = "";
+      await consumeStream(
+        `${API_BASE}/ai/options-strategist/stream`,
+        { quote, candles: history?.candles ?? [], chain: chainData, model: aiModel, temperature: aiTemp },
+        (chunk) => {
+          accumulated += chunk;
+          setStreamingText(accumulated);
+        },
+        () => {
+          setStrategistResult(accumulated);
+          setStreamingText("");
+          setIsStreaming(false);
+        },
+        (err) => {
+          setStrategistResult(`**Strategist failed:** ${err}`);
+          setStreamingText("");
+          setIsStreaming(false);
+        },
+      );
     } catch (err) {
       setStrategistResult(`**Error:** ${err instanceof Error ? err.message : String(err)}`);
-    } finally {
       setIsStrategizing(false);
+      setIsStreaming(false);
     }
-  };
+  }, [quote, accessToken, chain, history, symbol, aiModel, aiTemp, setStrategistResult]);
 
 
-  const isPendingAnalysis = taMutation.isPending;
-  const isPendingAny = isPendingAnalysis || isStrategizing;
+  const isPendingAny = isStreaming || isStrategizing;
 
   const currentResult = activeResult === "analysis" ? analysisResult
     : activeResult === "strategist" ? strategistResult
@@ -324,7 +410,14 @@ export function AiIntelligenceTab() {
 
         {(activeResult === "analysis" || activeResult === "strategist") && (
           <div className="border-t border-card-border p-4 bg-[#0c0c0c]">
-            {isPendingAnalysis || isStrategizing ? (
+            {isStrategizing && !isStreaming ? (
+              <AiThinking />
+            ) : isStreaming && streamingText ? (
+              <>
+                <MarkdownResult content={streamingText} />
+                <div ref={resultEndRef} />
+              </>
+            ) : isStreaming && !streamingText ? (
               <AiThinking />
             ) : currentResult ? (
               activeResult === "strategist"
