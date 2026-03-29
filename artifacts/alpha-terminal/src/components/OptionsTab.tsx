@@ -773,7 +773,7 @@ export function OptionsTab() {
                   <div key={group.expiration}>
                     <button
                       onClick={() => toggleExp(group.expiration)}
-                      className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-white/[0.03] transition-colors sticky z-10"
+                      className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-white/[0.03] transition-colors sticky z-20"
                       style={{ top: STICKY_TOP, backgroundColor: BG, borderBottom: `1px solid ${BORDER}` }}
                     >
                       <div className="flex items-center gap-1.5 font-mono">
@@ -791,7 +791,7 @@ export function OptionsTab() {
                           100
                         </span>
                         {group.isWeekly && (
-                          <span className="text-[11px] text-[#FFB800] font-medium">Weeklys</span>
+                          <span className="text-[11px] text-[#FF6B2B] font-medium">Weeklys</span>
                         )}
                       </div>
                       <div className="font-mono text-[11px]" style={{ fontVariantNumeric: "tabular-nums" }}>
