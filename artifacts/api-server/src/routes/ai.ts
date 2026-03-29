@@ -532,6 +532,14 @@ router.post("/options-strategist", async (req, res) => {
     return res.json({ response: "Error: Missing quote or options chain data.", error: "missing_data" });
   }
 
+  const rawCalls = (chain["calls"] as unknown[] | undefined) ?? [];
+  const rawPuts  = (chain["puts"]  as unknown[] | undefined) ?? [];
+  req.log.info({ callCount: rawCalls.length, putCount: rawPuts.length, underlying: chain["underlyingPrice"] }, "Options strategist chain received");
+
+  if (rawCalls.length === 0 && rawPuts.length === 0) {
+    return res.json({ response: "**Error:** The options chain data is empty — no call or put contracts were provided. This can happen when the market is closed or the access token has expired. Please re-authenticate and try again.", error: "empty_chain" });
+  }
+
   // Compute SMA-20 and SMA-50 from candle data
   let sma20 = "N/A", sma50 = "N/A";
   if (candles && candles.length >= 20) {

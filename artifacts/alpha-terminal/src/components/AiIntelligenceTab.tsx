@@ -90,10 +90,17 @@ export function AiIntelligenceTab() {
           return;
         }
         chainData = await chainRes.json();
-        if (chainData?.error && chainData.error !== "unauthorized") {
+        if (chainData?.error) {
           setStrategistResult(`**Options chain error:** ${chainData.error}${chainData.message ? ` — ${chainData.message}` : ""}`);
           return;
         }
+      }
+
+      const calls = chainData?.calls as unknown[] | undefined;
+      const puts = chainData?.puts as unknown[] | undefined;
+      if (!calls?.length && !puts?.length) {
+        setStrategistResult("**No option chain data available.** The chain returned empty — this can happen outside market hours or if the token has expired. Please re-authenticate and try again.");
+        return;
       }
 
       const res = await fetch(`${API_BASE}/ai/options-strategist`, {
