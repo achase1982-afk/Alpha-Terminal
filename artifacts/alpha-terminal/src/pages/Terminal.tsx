@@ -136,8 +136,8 @@ export default function TerminalPage() {
           {/* ─── Prominent search bar ─── */}
           <TickerSearch />
 
-          <div className="p-3 sm:p-4 lg:p-5" style={{ minHeight: "calc(var(--vvh, 100%) - 80px)" }}>
-            <Tabs defaultValue="news" className="flex flex-col">
+          <div className="p-3 sm:p-4 lg:p-5 flex flex-col" style={{ minHeight: "calc(var(--vvh, 100%) - 80px)" }}>
+            <Tabs defaultValue="news" className="flex flex-col flex-1">
               <div className="overflow-x-auto shrink-0 mb-4 sticky top-[36px] z-30 bg-background py-1 -mx-3 px-3 sm:-mx-4 sm:px-4 lg:-mx-5 lg:px-5">
                 <TabsList className="bg-card border border-card-border p-1 inline-flex min-w-max">
                   <TabsTrigger
@@ -180,7 +180,7 @@ export default function TerminalPage() {
                 </TabsList>
               </div>
 
-              <TabsContent value="news" className="m-0 focus-visible:outline-none">
+              <TabsContent value="news" className="m-0 focus-visible:outline-none flex-1 flex flex-col">
                 <NewsTab />
               </TabsContent>
               <TabsContent value="options" className="m-0 focus-visible:outline-none">

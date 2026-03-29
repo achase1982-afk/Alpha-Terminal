@@ -77,7 +77,7 @@ export function NewsTab() {
   }
 
   return (
-    <div className="overflow-y-auto" style={{ height: "calc(var(--vvh,100vh) - 300px)", minHeight: 300 }}>
+    <div className="flex-1">
       <div className="space-y-0">
         {articles.map((article) => (
           <a
