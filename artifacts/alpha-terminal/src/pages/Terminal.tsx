@@ -17,7 +17,7 @@ import { useMarketStream } from "@/hooks/useMarketStream";
 import { useViewportShell } from "@/hooks/useViewportShell";
 import { AiChatOverlay } from "@/components/AiChatOverlay";
 import { InstitutionalTearSheet } from "@/views/InstitutionalTearSheet";
-import { LineChart, BarChart2, BrainCircuit, Menu, Radar, Wifi, WifiOff } from "lucide-react";
+import { LineChart, BarChart2, BrainCircuit, Menu, Radar, Wifi } from "lucide-react";
 
 export default function TerminalPage() {
   const { symbol, accessToken, chartPeriod, chartInterval, streamStatus } = useTerminalStore();
@@ -108,12 +108,8 @@ export default function TerminalPage() {
             </div>
             <div className="ml-auto flex items-center gap-2">
               <span className="font-mono text-xs text-primary font-bold">{symbol}</span>
-              {accessToken && (
-                streamStatus === "live"
-                  ? <span className="flex items-center gap-0.5 font-mono text-[9px] text-emerald-400"><Wifi className="w-3 h-3" />LIVE</span>
-                  : streamStatus === "connecting"
-                  ? <span className="flex items-center gap-0.5 font-mono text-[9px] text-amber-400 animate-pulse"><Wifi className="w-3 h-3" />CONNECTING</span>
-                  : <span className="flex items-center gap-0.5 font-mono text-[9px] text-red-400"><WifiOff className="w-3 h-3" />OFFLINE</span>
+              {accessToken && streamStatus === "live" && (
+                <span className="flex items-center gap-0.5 font-mono text-[9px] text-emerald-400"><Wifi className="w-3 h-3" />LIVE</span>
               )}
             </div>
           </div>

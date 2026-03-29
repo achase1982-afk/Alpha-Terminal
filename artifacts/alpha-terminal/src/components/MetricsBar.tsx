@@ -1,7 +1,7 @@
 import { useTerminalStore } from "@/lib/store";
 import { useQuote }         from "@/hooks/useQuote";
 import { useTickColor }     from "@/hooks/useTickColor";
-import { RefreshCw, Wifi, WifiOff, SearchX } from "lucide-react";
+import { RefreshCw, Wifi, SearchX } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRef, useEffect, useState } from "react";
 
@@ -193,15 +193,11 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
             ? <span title="Live stream" className="flex items-center gap-0.5 text-[7px] font-mono text-emerald-400 leading-none font-semibold">
                 <Wifi className="w-2.5 h-2.5" />LIVE
               </span>
-            : streamStatus === "connecting"
+            : streamStatus === "connecting" && !quote
               ? <span title="Connecting" className="flex items-center gap-0.5 text-[7px] font-mono text-amber-400 leading-none animate-pulse">
                   <Wifi className="w-2.5 h-2.5" />CONNECTING
                 </span>
-              : streamStatus === "offline"
-                ? <span title="Offline" className="flex items-center gap-0.5 text-[7px] font-mono text-red-400 leading-none">
-                    <WifiOff className="w-2.5 h-2.5" />OFFLINE
-                  </span>
-                : null
+              : null
           }
         </div>
         <div className="flex flex-col">

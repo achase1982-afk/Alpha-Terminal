@@ -120,6 +120,8 @@ let isConnecting     = false;
 let loginSent        = false;
 let loginAcked       = false;
 let loginRejected    = false;
+let streamerFetchFailCount = 0;
+const MAX_FETCH_FAILURES   = 3;
 
 // ─── Symbol formatting (mirrors market.ts) ────────────────────────────────────
 const INDEX_MAP: Record<string, string> = {
@@ -181,8 +183,12 @@ async function fetchStreamerInfo(token: string): Promise<StreamerInfo | null> {
     if (!res.ok) {
       const body = await res.text().catch(() => "");
       logger.warn({ status: res.status, body: body.slice(0, 200) }, "userPreference fetch failed");
+      if (res.status === 401 || res.status === 403) {
+        streamerFetchFailCount++;
+      }
       return null;
     }
+    streamerFetchFailCount = 0;
     const json = (await res.json()) as {
       streamerInfo?: Array<{
         streamerSocketUrl?:      string;
@@ -417,6 +423,12 @@ async function connect() {
   const info = await fetchStreamerInfo(accessToken);
   if (!info) {
     isConnecting = false;
+    if (streamerFetchFailCount >= MAX_FETCH_FAILURES) {
+      loginRejected = true;
+      logger.warn("Streamer: userPreference failed %d times — treating as rejected", streamerFetchFailCount);
+      broadcast("streamerStatus", { status: "rejected" });
+      return;
+    }
     scheduleReconnect();
     return;
   }
@@ -495,6 +507,7 @@ export async function startStreamer(token: string, symbols: string[]) {
   loginSent      = false;
   loginAcked     = false;
   loginRejected  = false;
+  streamerFetchFailCount = 0;
 
   await connect();
 }
