@@ -422,7 +422,7 @@ function OptionsGrid({
     <div className="relative flex font-mono" style={{ fontVariantNumeric: "tabular-nums" }}>
       {atmLineTop >= 0 && (
         <div
-          className="absolute left-0 right-0 z-30 pointer-events-none"
+          className="absolute left-0 right-0 z-[5] pointer-events-none"
           style={{ top: atmLineTop, borderTop: "1.5px dashed #FF6B2B" }}
         />
       )}
