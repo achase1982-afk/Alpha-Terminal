@@ -91,9 +91,10 @@ function findATMIndex(strikes: number[], lastPrice: number): number {
 
 function sliceAroundATM(rows: NormalizedRow[], atmIdx: number, count: number): NormalizedRow[] {
   if (count <= 0 || rows.length === 0) return rows;
-  const half = Math.floor(count / 2);
-  let start = atmIdx - half;
-  let end = atmIdx + half + 1;
+  const above = Math.floor((count - 1) / 2);
+  const below = count - 1 - above;
+  let start = atmIdx - above;
+  let end = atmIdx + below + 1;
   if (start < 0) { end = Math.min(rows.length, end - start); start = 0; }
   if (end > rows.length) { start = Math.max(0, start - (end - rows.length)); end = rows.length; }
   return rows.slice(start, end);
