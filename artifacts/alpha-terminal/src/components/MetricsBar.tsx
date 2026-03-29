@@ -170,8 +170,6 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
   const bidStr = quote.bid != null ? `$${fmtPrice(quote.bid)}` : null;
   const askStr = quote.ask != null ? `$${fmtPrice(quote.ask)}` : null;
   const hasBidAsk = bidStr != null && askStr != null;
-  const maxPriceLen = Math.max(bidStr?.length ?? 0, askStr?.length ?? 0);
-  const bidAskFontSize = maxPriceLen > 9 ? '0.65rem' : maxPriceLen > 7 ? '0.72rem' : '0.82rem';
 
   const handleInitiateTrade = (side: 'buy' | 'sell') => {
     console.log(`[Trade] ${side.toUpperCase()} initiated for ${quote.symbol} — bid: ${quote.bid}, ask: ${quote.ask}`);
@@ -179,104 +177,99 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
 
   return (
     <div
-      className={`${stickyBase} flex items-center px-3 sm:px-6 overflow-x-auto py-1.5 sm:py-2`}
+      className={`${stickyBase} px-3 sm:px-6 py-2 sm:py-3 overflow-x-auto`}
       style={{ background: "#0c0c0c" }}
     >
-      <div className="flex items-center w-full min-w-0 max-w-[640px]">
+      <div className="flex items-center justify-between gap-4 sm:gap-6 min-w-0">
+
         <button
           onClick={onOpenTearSheet}
-          className="flex flex-col min-w-0 gap-0 text-left cursor-pointer group pr-2 shrink-0"
-          style={{ maxWidth: '25%' }}
+          className="flex flex-col min-w-0 gap-0 text-left cursor-pointer group shrink-0"
           aria-label={`View company profile for ${quote.symbol}`}
         >
-          <span className="font-bold text-white leading-tight group-hover:text-primary transition-colors" style={{ fontSize: '1rem' }}>
+          <span className="text-xl font-bold text-white leading-tight group-hover:text-primary transition-colors">
             {quote.symbol}
           </span>
-          <span
-            className="block w-full min-w-0 leading-snug group-hover:text-[#FFB800] transition-colors"
-            style={{ fontSize: '0.6rem', color: '#FFB800', fontWeight: 400, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
-          >
+          <span className="text-xs font-normal text-zinc-500 tracking-wider uppercase truncate max-w-[120px] sm:max-w-[180px] block">
             {quote.description || ""}
           </span>
         </button>
 
-        <div className="flex flex-col min-w-0 gap-0 border-l border-gray-800 pl-3 pr-3" style={{ flex: '1 1 0%' }}>
-          <span className={LABEL_CLS}>Last Price</span>
-          <span className={`tabular-nums leading-tight whitespace-nowrap ${flashClass}`} style={{ fontSize: '1.25rem', fontWeight: 300, color: tickColor }}>
+        <div className="flex flex-col items-center min-w-0 flex-1">
+          <span className="text-[10px] uppercase tracking-[0.1em] text-zinc-500 font-semibold leading-none mb-0.5">Last Price</span>
+          <span className={`tabular-nums leading-none whitespace-nowrap text-2xl sm:text-4xl lg:text-5xl font-extrabold text-white tracking-tighter ${flashClass}`} style={{ color: tickColor }}>
             {lastStr}
           </span>
           <span
-            className="tabular-nums leading-tight"
-            style={{ fontSize: '0.7rem', fontWeight: 300, color: priceColor, whiteSpace: 'nowrap', display: 'flex', flexWrap: 'nowrap', alignItems: 'baseline', gap: '0.25em' }}
+            className="tabular-nums whitespace-nowrap text-sm font-medium leading-tight mt-0.5"
+            style={{ color: priceColor }}
           >
-            <span style={{ whiteSpace: 'nowrap' }}>{changeStr}</span>
-            <span style={{ whiteSpace: 'nowrap' }}>{changePctStr}</span>
+            {changeStr} {changePctStr}
           </span>
         </div>
 
-        <div className="flex gap-1 shrink-0 border-l border-gray-800 pl-2" style={{ width: maxPriceLen > 7 ? 160 : 140 }}>
+        <div className="flex gap-2 shrink-0">
           {hasBidAsk ? (
             <>
               <button
                 onClick={() => handleInitiateTrade('sell')}
-                className="trade-btn-sell flex-1 flex flex-col items-center justify-center rounded px-1.5 py-1 cursor-pointer transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f23645]"
-                style={{ background: 'rgba(242, 54, 69, 0.12)', border: '1px solid rgba(242, 54, 69, 0.25)' }}
+                className="trade-btn-sell min-w-[72px] sm:min-w-[90px] min-h-[44px] sm:min-h-[48px] bg-red-950/40 border border-red-500/50 rounded-lg flex flex-col items-center justify-center p-1.5 sm:p-2 cursor-pointer transition-colors active:bg-red-800/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-400"
                 aria-label={`Sell ${quote.symbol} at ${bidStr}`}
               >
-                <span style={{ fontSize: '0.55rem', fontWeight: 600, letterSpacing: '0.08em', color: '#f23645', opacity: 0.8 }}>SELL</span>
-                <span className="font-mono tabular-nums whitespace-nowrap" style={{ fontSize: bidAskFontSize, fontWeight: 500, color: '#f23645' }}>
+                <span className="text-[10px] uppercase font-bold tracking-widest text-red-400">Sell</span>
+                <span className="text-base sm:text-lg font-bold text-white tabular-nums whitespace-nowrap">
                   {bidStr}
                 </span>
               </button>
               <button
                 onClick={() => handleInitiateTrade('buy')}
-                className="trade-btn-buy flex-1 flex flex-col items-center justify-center rounded px-1.5 py-1 cursor-pointer transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00d166]"
-                style={{ background: 'rgba(0, 209, 102, 0.12)', border: '1px solid rgba(0, 209, 102, 0.25)' }}
+                className="trade-btn-buy min-w-[72px] sm:min-w-[90px] min-h-[44px] sm:min-h-[48px] bg-emerald-950/40 border border-emerald-500/50 rounded-lg flex flex-col items-center justify-center p-1.5 sm:p-2 cursor-pointer transition-colors active:bg-emerald-800/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400"
                 aria-label={`Buy ${quote.symbol} at ${askStr}`}
               >
-                <span style={{ fontSize: '0.55rem', fontWeight: 600, letterSpacing: '0.08em', color: '#00d166', opacity: 0.8 }}>BUY</span>
-                <span className="font-mono tabular-nums whitespace-nowrap" style={{ fontSize: bidAskFontSize, fontWeight: 500, color: '#00d166' }}>
+                <span className="text-[10px] uppercase font-bold tracking-widest text-emerald-400">Buy</span>
+                <span className="text-base sm:text-lg font-bold text-white tabular-nums whitespace-nowrap">
                   {askStr}
                 </span>
               </button>
             </>
           ) : (
-            <div className="flex-1 flex items-center justify-center">
-              <span className="text-gray-600 text-xs font-mono">N/A</span>
+            <div className="min-w-[72px] sm:min-w-[90px] min-h-[44px] sm:min-h-[48px] border border-zinc-700/50 rounded-lg flex items-center justify-center">
+              <span className="text-zinc-600 text-xs font-mono tracking-wider">N/A</span>
             </div>
           )}
         </div>
+
       </div>
 
-      <div className="w-px h-10 bg-gray-800 shrink-0 hidden sm:block ml-6" />
+      <div className="hidden sm:flex items-center gap-6 mt-2 pt-2 border-t border-zinc-800/60">
+        <div className="flex flex-col shrink-0 gap-0.5">
+          <span className="text-[10px] uppercase tracking-[0.1em] text-zinc-500 font-semibold">Volume</span>
+          <span className="font-mono tabular-nums text-zinc-300 text-sm font-medium">
+            {fmtVol(quote.volume)}
+          </span>
+        </div>
 
-      <div className="hidden sm:flex flex-col shrink-0 gap-0.5 ml-6">
-        <span className={LABEL_CLS}>Volume</span>
-        <span className="font-mono tabular-nums text-gray-200" style={{ fontSize: '0.9rem', fontWeight: 400 }}>
-          {fmtVol(quote.volume)}
-        </span>
-      </div>
+        <div className="w-px h-8 bg-zinc-800 shrink-0 hidden md:block" />
 
-      <div className="w-px h-10 bg-gray-800 shrink-0 hidden md:block ml-6" />
+        <div className="hidden md:flex flex-col shrink-0 gap-0.5">
+          <span className="text-[10px] uppercase tracking-[0.1em] text-zinc-500 font-semibold">Day Range</span>
+          <span className="font-mono tabular-nums text-sm font-medium">
+            <span style={{ color: DOWN_COLOR }}>${fmtPrice(quote.low)}</span>
+            <span className="text-zinc-600 mx-1">—</span>
+            <span style={{ color: UP_COLOR }}>${fmtPrice(quote.high)}</span>
+          </span>
+        </div>
 
-      <div className="hidden md:flex flex-col shrink-0 gap-0.5 ml-6">
-        <span className={LABEL_CLS}>Day Range</span>
-        <span className="font-mono tabular-nums" style={{ fontSize: '0.9rem', fontWeight: 400 }}>
-          <span style={{ color: DOWN_COLOR }}>${fmtPrice(quote.low)}</span>
-          <span className="text-gray-600 mx-1">—</span>
-          <span style={{ color: UP_COLOR }}>${fmtPrice(quote.high)}</span>
-        </span>
-      </div>
+        <div className="w-px h-8 bg-zinc-800 shrink-0 hidden lg:block" />
 
-      <div className="w-px h-10 bg-gray-800 shrink-0 hidden lg:block ml-6" />
-
-      <div className="hidden lg:flex flex-col shrink-0 gap-0.5 ml-6">
-        <span className={LABEL_CLS}>52W Range</span>
-        <span className="font-mono tabular-nums text-gray-500" style={{ fontSize: '0.9rem', fontWeight: 400 }}>
-          {quote.fiftyTwoWeekLow != null
-            ? `$${fmtPrice(quote.fiftyTwoWeekLow)} — $${fmtPrice(quote.fiftyTwoWeekHigh)}`
-            : "—"}
-        </span>
+        <div className="hidden lg:flex flex-col shrink-0 gap-0.5">
+          <span className="text-[10px] uppercase tracking-[0.1em] text-zinc-500 font-semibold">52W Range</span>
+          <span className="font-mono tabular-nums text-zinc-500 text-sm font-medium">
+            {quote.fiftyTwoWeekLow != null
+              ? `$${fmtPrice(quote.fiftyTwoWeekLow)} — $${fmtPrice(quote.fiftyTwoWeekHigh)}`
+              : "—"}
+          </span>
+        </div>
       </div>
     </div>
   );
