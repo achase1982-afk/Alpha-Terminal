@@ -190,9 +190,17 @@ export function useMarketStream() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [streamKey]);
 
+  const symDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     if (!accessToken) return;
-    void addServerSymbols(allSymbols());
+    if (symDebounceRef.current) clearTimeout(symDebounceRef.current);
+    symDebounceRef.current = setTimeout(() => {
+      void addServerSymbols(allSymbols());
+    }, 250);
+    return () => {
+      if (symDebounceRef.current) clearTimeout(symDebounceRef.current);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol, tickerTapeSymbols.join(","), macroSymbols.join(",")]);
 

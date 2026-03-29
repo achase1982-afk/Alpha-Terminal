@@ -126,10 +126,17 @@ export function useStreamingQuotes() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessToken]);
 
-  // ── Effect: new symbols added → push them to the server subscription ──────
+  const symbolDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     if (!accessToken) return;
-    void addServerSymbols(allSymbols());
+    if (symbolDebounceRef.current) clearTimeout(symbolDebounceRef.current);
+    symbolDebounceRef.current = setTimeout(() => {
+      void addServerSymbols(allSymbols());
+    }, 250);
+    return () => {
+      if (symbolDebounceRef.current) clearTimeout(symbolDebounceRef.current);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol, tickerTapeSymbols.join(","), macroSymbols.join(",")]);
 
