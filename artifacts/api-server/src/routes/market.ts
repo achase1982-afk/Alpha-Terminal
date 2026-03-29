@@ -568,32 +568,174 @@ function futuresNewsSymbol(sym: string): string {
   return upper;
 }
 
-router.get("/news", async (req, res) => {
-  const symbol = (req.query["symbol"] as string || "").toUpperCase().trim();
+const FUTURES_NAME_MAP: Record<string, string> = {
+  "/ES": "S&P 500 futures",
+  "/MES": "S&P 500 futures",
+  "/NQ": "Nasdaq futures",
+  "/MNQ": "Nasdaq futures",
+  "/YM": "Dow Jones futures",
+  "/MYM": "Dow Jones futures",
+  "/RTY": "Russell 2000 futures",
+  "/M2K": "Russell 2000 futures",
+  "/CL": "crude oil futures",
+  "/MCL": "crude oil futures",
+  "/GC": "gold futures",
+  "/MGC": "gold futures",
+  "/SI": "silver futures",
+  "/ZB": "treasury bond futures",
+  "/ZN": "treasury note futures",
+  "/BZ": "Brent crude oil futures",
+  "/NG": "natural gas futures",
+  "/HG": "copper futures",
+  "/6E": "euro futures",
+  "/6J": "yen futures",
+};
 
-  if (!symbol) {
-    return res.status(400).json({ articles: [], error: "symbol is required" });
+function googleNewsQuery(symbol: string): string {
+  const upper = symbol.toUpperCase().trim();
+  if (upper.startsWith("/")) {
+    const base = upper.replace(/[FGHJKMNQUVXZ]\d{1,2}$/, "");
+    return FUTURES_NAME_MAP[base] || FUTURES_NAME_MAP[upper] || `${upper} futures`;
   }
+  if (upper.startsWith("$")) return upper.slice(1) + " index stock market";
+  return upper + " stock";
+}
 
-  const apiKey = process.env["FINNHUB_API_KEY"];
-  if (!apiKey) {
-    return res.status(500).json({ articles: [], error: "FINNHUB_API_KEY not configured" });
+function extractTag(xml: string, tag: string): string {
+  const open = `<${tag}`;
+  const close = `</${tag}>`;
+  const startIdx = xml.indexOf(open);
+  if (startIdx === -1) return "";
+  const contentStart = xml.indexOf(">", startIdx);
+  if (contentStart === -1) return "";
+  const endIdx = xml.indexOf(close, contentStart);
+  if (endIdx === -1) return "";
+  let content = xml.slice(contentStart + 1, endIdx).trim();
+  if (content.startsWith("<![CDATA[") && content.endsWith("]]>")) {
+    content = content.slice(9, -3);
   }
+  return content;
+}
 
+function extractGoogleSource(title: string): { headline: string; source: string } {
+  const sepIdx = title.lastIndexOf(" - ");
+  if (sepIdx > 0) {
+    return {
+      headline: title.slice(0, sepIdx).trim(),
+      source: title.slice(sepIdx + 3).trim(),
+    };
+  }
+  return { headline: title, source: "Google News" };
+}
+
+interface NormalizedArticle {
+  id: number;
+  source: string;
+  headline: string;
+  summary: string;
+  url: string;
+  image: string;
+  datetime: number;
+  related: string;
+}
+
+async function fetchGoogleNews(symbol: string, logger: any): Promise<NormalizedArticle[]> {
+  const query = googleNewsQuery(symbol);
+  const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query + " when:1d")}&hl=en-US&gl=US&ceid=US:en`;
+
+  try {
+    const response = await fetch(rssUrl, {
+      headers: { "User-Agent": "Mozilla/5.0" },
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (!response.ok) {
+      logger.warn({ status: response.status, symbol, query }, "Google News RSS error");
+      return [];
+    }
+
+    const xml = await response.text();
+    const items: NormalizedArticle[] = [];
+    let searchFrom = 0;
+
+    while (items.length < 30) {
+      const itemStart = xml.indexOf("<item>", searchFrom);
+      if (itemStart === -1) break;
+      const itemEnd = xml.indexOf("</item>", itemStart);
+      if (itemEnd === -1) break;
+      const itemXml = xml.slice(itemStart, itemEnd + 7);
+      searchFrom = itemEnd + 7;
+
+      const rawTitle = extractTag(itemXml, "title");
+      const link = extractTag(itemXml, "link");
+      const pubDate = extractTag(itemXml, "pubDate");
+      const description = extractTag(itemXml, "description");
+
+      if (!rawTitle || !link) continue;
+
+      const { headline, source } = extractGoogleSource(rawTitle);
+      const datetime = pubDate ? Math.floor(new Date(pubDate).getTime() / 1000) : Math.floor(Date.now() / 1000);
+
+      let cleanDesc = description
+        .replace(/&amp;/g, "&")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&nbsp;/g, " ")
+        .replace(/<[^>]*>/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+      const headlineLower = headline.toLowerCase();
+      const descParts = cleanDesc.split(/\s{2,}/);
+      cleanDesc = descParts
+        .filter(p => p.length > 10 && !p.toLowerCase().startsWith(headlineLower.slice(0, 30)))
+        .join(" ")
+        .trim();
+      if (cleanDesc.length > 300) cleanDesc = cleanDesc.slice(0, 297) + "...";
+      if (cleanDesc.length < 10) cleanDesc = "";
+
+      items.push({
+        id: Math.abs(hashString(link)),
+        source: source.toUpperCase(),
+        headline,
+        summary: cleanDesc,
+        url: link,
+        image: "",
+        datetime,
+        related: symbol,
+      });
+    }
+
+    logger.info({ symbol, query, count: items.length }, "Google News RSS fetched");
+    return items;
+  } catch (err) {
+    logger.warn({ err, symbol }, "Google News RSS fetch failed");
+    return [];
+  }
+}
+
+function hashString(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  }
+  return h;
+}
+
+async function fetchFinnhubNews(cleanSymbol: string, apiKey: string, logger: any): Promise<NormalizedArticle[]> {
   const now = new Date();
   const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   const toDate = now.toISOString().slice(0, 10);
   const fromDate = oneWeekAgo.toISOString().slice(0, 10);
-  const isFuturesNews = symbol.startsWith("/");
-  const cleanSymbol = isFuturesNews ? futuresNewsSymbol(symbol) : symbol.replace(/^\$/, "");
 
   try {
     const url = `https://finnhub.io/api/v1/company-news?symbol=${encodeURIComponent(cleanSymbol)}&from=${fromDate}&to=${toDate}&token=${apiKey}`;
-    const response = await fetch(url);
+    const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
 
     if (!response.ok) {
-      req.log.warn({ status: response.status, symbol }, "Finnhub news API error");
-      return res.json({ articles: [], error: `finnhub_error_${response.status}` });
+      logger.warn({ status: response.status, symbol: cleanSymbol }, "Finnhub news API error");
+      return [];
     }
 
     const raw = await response.json() as Array<{
@@ -608,9 +750,9 @@ router.get("/news", async (req, res) => {
       url: string;
     }>;
 
-    const articles = (Array.isArray(raw) ? raw : []).slice(0, 50).map(a => ({
+    return (Array.isArray(raw) ? raw : []).slice(0, 30).map(a => ({
       id: a.id,
-      source: a.source || "Unknown",
+      source: (a.source || "Unknown").toUpperCase(),
       headline: a.headline || "",
       summary: a.summary || "",
       url: a.url || "",
@@ -618,12 +760,50 @@ router.get("/news", async (req, res) => {
       datetime: a.datetime || 0,
       related: a.related || "",
     }));
-
-    res.json({ articles });
   } catch (err) {
-    req.log.error({ err, symbol }, "Finnhub news fetch error");
-    res.json({ articles: [], error: "internal_error" });
+    logger.warn({ err, symbol: cleanSymbol }, "Finnhub news fetch failed");
+    return [];
   }
+}
+
+router.get("/news", async (req, res) => {
+  const symbol = (req.query["symbol"] as string || "").toUpperCase().trim();
+
+  if (!symbol) {
+    return res.status(400).json({ articles: [], error: "symbol is required" });
+  }
+
+  const isFuturesNews = symbol.startsWith("/");
+  const finnhubSymbol = isFuturesNews ? futuresNewsSymbol(symbol) : symbol.replace(/^\$/, "");
+  const apiKey = process.env["FINNHUB_API_KEY"];
+
+  const [googleArticles, finnhubArticles] = await Promise.all([
+    fetchGoogleNews(symbol, req.log),
+    apiKey ? fetchFinnhubNews(finnhubSymbol, apiKey, req.log) : Promise.resolve([]),
+  ]);
+
+  const seenHeadlines = new Set<string>();
+  const merged: NormalizedArticle[] = [];
+
+  for (const a of googleArticles) {
+    const key = a.headline.toLowerCase().slice(0, 60);
+    if (!seenHeadlines.has(key)) {
+      seenHeadlines.add(key);
+      merged.push(a);
+    }
+  }
+
+  for (const a of finnhubArticles) {
+    const key = a.headline.toLowerCase().slice(0, 60);
+    if (!seenHeadlines.has(key)) {
+      seenHeadlines.add(key);
+      merged.push(a);
+    }
+  }
+
+  merged.sort((a, b) => b.datetime - a.datetime);
+
+  res.json({ articles: merged.slice(0, 50) });
 });
 
 export default router;

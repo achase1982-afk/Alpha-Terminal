@@ -39,8 +39,8 @@ export function NewsTab() {
       return res.json();
     },
     enabled: !!symbol,
-    staleTime: 2 * 60 * 1000,
-    refetchInterval: 5 * 60 * 1000,
+    staleTime: 60 * 1000,
+    refetchInterval: 2 * 60 * 1000,
   });
 
   const articles = data?.articles ?? [];
