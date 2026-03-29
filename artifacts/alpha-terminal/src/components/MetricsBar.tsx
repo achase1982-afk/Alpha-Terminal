@@ -46,7 +46,7 @@ function usePriceFlash(price: number | null, change: number | null): string {
 }
 
 const GRID_CLS = "grid items-center gap-2 sm:gap-4 w-full min-h-[70px] sm:min-h-[80px]";
-const GRID_COLS = "grid-cols-[minmax(90px,1.2fr)_minmax(90px,1.3fr)_auto]";
+const GRID_COLS = "grid-cols-[minmax(80px,1fr)_minmax(90px,1.3fr)_auto]";
 const STICKY_BASE = "sticky top-0 z-40 w-full border-b border-card-border shrink-0";
 const HEADER_BG = "#0c0c0c";
 
@@ -228,7 +228,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
           )}
         </button>
 
-        <div className={`flex flex-col items-start overflow-hidden pl-1 sm:pl-2 ${opacityCls} ${transitionCls}`}>
+        <div className={`flex flex-col items-start min-w-0 overflow-hidden ${opacityCls} ${transitionCls}`}>
           <span className="text-[10px] uppercase tracking-[0.1em] text-zinc-500 font-semibold leading-none mb-1">Last Price</span>
           {showData ? (
             <>
