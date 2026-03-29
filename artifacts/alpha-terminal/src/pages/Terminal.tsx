@@ -168,6 +168,7 @@ export default function TerminalPage() {
               <TabsContent value="chart" className="h-[420px] sm:h-[500px] md:h-[580px] lg:h-[calc(var(--vvh,100vh)-300px)] m-0 focus-visible:outline-none data-[state=active]:flex flex-col">
                 <ChartControls />
                 <TradingChart
+                  symbol={symbol}
                   data={historyData?.candles || []}
                   isLoading={historyLoading}
                   error={historyData?.error}

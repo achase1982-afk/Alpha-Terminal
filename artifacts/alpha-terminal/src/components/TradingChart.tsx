@@ -3,8 +3,10 @@ import {
   createChart,
   ColorType,
   IChartApi,
+  ISeriesApi,
   Time,
   CandlestickSeries,
+  CandlestickData,
   LineSeries,
   HistogramSeries,
 } from 'lightweight-charts';
@@ -13,6 +15,7 @@ import { useTerminalStore } from '@/lib/store';
 import { calculateSMA, calculateBollingerBands } from '@/lib/chart-utils';
 
 interface TradingChartProps {
+  symbol?: string;
   data: Candle[];
   isLoading?: boolean;
   error?: string;
@@ -31,9 +34,11 @@ function isNotFoundError(error?: string): boolean {
   );
 }
 
-export function TradingChart({ data, isLoading, error, timedOut, tokenExpired, intraday }: TradingChartProps) {
+export function TradingChart({ symbol, data, isLoading, error, timedOut, tokenExpired, intraday }: TradingChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
+  const candleSeriesRef = useRef<ISeriesApi<typeof CandlestickSeries> | null>(null);
+  const lastCandleTimeRef = useRef<number>(0);
   const { overlays } = useTerminalStore();
 
   useEffect(() => {
@@ -95,6 +100,10 @@ export function TradingChart({ data, isLoading, error, timedOut, tokenExpired, i
       wickDownColor: '#f23645',
     });
     mainSeries.setData(formattedData);
+    candleSeriesRef.current = mainSeries;
+    if (formattedData.length > 0) {
+      lastCandleTimeRef.current = formattedData[formattedData.length - 1].time as number;
+    }
 
     if (overlays.volume) {
       const volumeSeries = chart.addSeries(HistogramSeries, {
@@ -172,9 +181,51 @@ export function TradingChart({ data, isLoading, error, timedOut, tokenExpired, i
     return () => {
       removed = true;
       chartRef.current = null;
+      candleSeriesRef.current = null;
       try { chart.remove(); } catch { /* already disposed */ }
     };
   }, [data, overlays, intraday]);
+
+  const liveCandleRef = useRef<{ open: number; high: number; low: number; close: number } | null>(null);
+
+  useEffect(() => {
+    liveCandleRef.current = null;
+  }, [data]);
+
+  useEffect(() => {
+    if (!symbol) return;
+    const symUpper = symbol.toUpperCase();
+    let prevLast: number | null = null;
+    const unsub = useTerminalStore.subscribe((state) => {
+      const tick = state.streamPrices[symUpper];
+      if (!tick || !candleSeriesRef.current || lastCandleTimeRef.current === 0) return;
+      const price = tick.last;
+      if (price === null || price === undefined || price === prevLast) return;
+      prevLast = price;
+      const candleTime = lastCandleTimeRef.current as Time;
+
+      if (!liveCandleRef.current) {
+        const lastCandle = data?.[data.length - 1];
+        liveCandleRef.current = lastCandle
+          ? { open: lastCandle.open, high: lastCandle.high, low: lastCandle.low, close: lastCandle.close }
+          : { open: price, high: price, low: price, close: price };
+      }
+
+      const lc = liveCandleRef.current;
+      lc.close = price;
+      if (price > lc.high) lc.high = price;
+      if (price < lc.low) lc.low = price;
+
+      candleSeriesRef.current.update({
+        time: candleTime,
+        open: lc.open,
+        high: lc.high,
+        low: lc.low,
+        close: lc.close,
+      } as CandlestickData);
+    });
+    return unsub;
+  }, [symbol, data]);
 
   const legendItems: { color: string; label: string }[] = [];
   if (overlays.sma20) legendItems.push({ color: '#ffb800', label: 'SMA 20' });
