@@ -314,8 +314,7 @@ router.get("/options", async (req, res) => {
   if (isFuturesSymbol) {
     chainSymbol = displaySymbol;
   } else if (isIndexSymbol) {
-    const mapped = formatSchwabSymbol(displaySymbol);
-    chainSymbol = mapped.startsWith("$") ? `${mapped}.X` : mapped;
+    chainSymbol = formatSchwabSymbol(displaySymbol);
   } else {
     chainSymbol = displaySymbol;
   }
@@ -325,20 +324,11 @@ router.get("/options", async (req, res) => {
       symbol: chainSymbol,
       contractType,
       daysToExpiration: String(daysToExpiration),
+      range: "ALL",
     });
 
-    if (isIndexSymbol) {
-      params.set("range", "NTM");
-      if (!strikeCount || strikeCount <= 0) {
-        params.set("strikeCount", "20");
-      } else {
-        params.set("strikeCount", String(strikeCount));
-      }
-    } else {
-      params.set("range", "ALL");
-      if (strikeCount && strikeCount > 0) {
-        params.set("strikeCount", String(strikeCount));
-      }
+    if (strikeCount && strikeCount > 0) {
+      params.set("strikeCount", String(strikeCount));
     }
 
     if (isFuturesSymbol) {
