@@ -48,7 +48,7 @@ The UI adopts a Bloomberg/TOS-style institutional gold color palette, featuring 
 
 -   **MacroBar**: Displays SPY/QQQ/IWM/VIX, clickable to set active symbol. VIX MacroCard inverts color for rising/falling fear.
 -   **Institutional Tear Sheet**: Provides comprehensive fundamental and real-time quote data, with skeleton loaders for pending data.
--   **Options Chain**: Displays bid, ask, bidSize, askSize, last, volume, openInterest, delta, gamma, theta, IV. Columns are configurable and draggable. Supports ATM-centered strike slicing and ITM shading. MetricsStrip shows live computed ATM IV, Expected Move, Put/Call Volume Ratio, and Total Open Interest from the full (unsliced) chain data.
+-   **Options Chain**: Displays bid, ask, bidSize, askSize, last, volume, openInterest, delta, gamma, theta, IV. Columns are configurable and draggable. Supports ATM-centered strike slicing and ITM shading. Single-row MetricsStrip combines Strikes dropdown (left) with compact metrics (right): IV, MOVE, P/C ratio, and dynamic Earnings date (`Earn: MM/DD` or `TBD`). OI removed from top-level metrics. Earnings date sourced from Schwab `fundamental.nextEarningsDate` via the quote endpoint.
 -   **AI Strategy Endpoint**: Fetches 30-day 1-minute candles, computes TA, validates data freshness, and generates strategy with Gemini, including strict data grounding.
 -   **Tick Direction Coloring**: `useTickColor` hook colors last price based on immediate momentum.
 -   **Search History**: Stores and displays recently viewed symbols with quick-save functionality.

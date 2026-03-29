@@ -81,6 +81,7 @@ export const GetQuoteResponse = zod.object({
   fiftyTwoWeekHigh: zod.number().optional(),
   fiftyTwoWeekLow: zod.number().optional(),
   peRatio: zod.number().optional(),
+  nextEarningsDate: zod.string().optional(),
   error: zod.string().optional(),
 });
 

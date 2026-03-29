@@ -312,11 +312,15 @@ function ColumnsEditorModal({ open, onClose }: { open: boolean; onClose: () => v
   );
 }
 
-function MetricsStrip({ groups, lastPrice, rawCalls, rawPuts }: {
+function MetricsStrip({ groups, lastPrice, rawCalls, rawPuts, earningsDate, strikeControls, isFetching, hasData }: {
   groups: ExpirationGroup[];
   lastPrice: number | null;
   rawCalls: Contract[];
   rawPuts: Contract[];
+  earningsDate?: string | null;
+  strikeControls: React.ReactNode;
+  isFetching: boolean;
+  hasData: boolean;
 }) {
   const frontMonth = groups.length > 0 ? groups[0] : null;
   const atmIV = frontMonth?.atmIV ?? null;
@@ -331,34 +335,32 @@ function MetricsStrip({ groups, lastPrice, rawCalls, rawPuts }: {
   const totalPutVol = rawPuts.reduce((sum, p) => sum + (p.volume ?? 0), 0);
   const pcr = totalCallVol > 0 ? (totalPutVol / totalCallVol).toFixed(2) : "—";
 
-  const totalOI = rawCalls.reduce((sum, c) => sum + (c.openInterest ?? 0), 0)
-    + rawPuts.reduce((sum, p) => sum + (p.openInterest ?? 0), 0);
-  const oiDisplay = totalOI > 0
-    ? totalOI >= 1000000 ? (totalOI / 1000000).toFixed(1) + "M"
-    : totalOI >= 1000 ? (totalOI / 1000).toFixed(1) + "K"
-    : String(totalOI)
-    : "—";
+  let earnDisplay = "TBD";
+  if (earningsDate) {
+    const d = new Date(earningsDate);
+    if (!isNaN(d.getTime())) {
+      earnDisplay = `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}`;
+    }
+  }
 
   return (
     <div
-      className="flex justify-between items-center py-1.5 px-4 shrink-0 font-mono"
-      style={{ fontVariantNumeric: "tabular-nums", backgroundColor: BG, borderBottom: `1px solid ${BORDER}` }}
+      className="flex items-center justify-between w-full px-3 py-1.5 shrink-0 font-mono"
+      style={{ fontVariantNumeric: "tabular-nums", backgroundColor: "black", borderBottom: `1px solid ${BORDER}` }}
     >
-      <div className="flex flex-col items-center">
-        <span className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold">IV</span>
-        <span className={`text-[13px] font-bold ${atmIV != null ? "text-white" : "text-zinc-600"}`}>{ivDisplay}</span>
+      <div className="flex items-center gap-3">
+        {strikeControls}
+        {isFetching && hasData && (
+          <div className="flex items-center gap-1.5">
+            <span className="w-2 h-2 border border-[#FFB800] border-t-transparent rounded-full animate-spin" />
+          </div>
+        )}
       </div>
-      <div className="flex flex-col items-center">
-        <span className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold">MOVE</span>
-        <span className={`text-[13px] font-bold ${expectedMove != null ? "text-white" : "text-zinc-600"}`}>{moveDisplay}</span>
-      </div>
-      <div className="flex flex-col items-center">
-        <span className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold">P/C</span>
-        <span className={`text-[13px] font-bold ${pcr !== "—" ? (Number(pcr) > 1 ? "text-[#f23645]" : "text-[#00d166]") : "text-zinc-600"}`}>{pcr}</span>
-      </div>
-      <div className="flex flex-col items-center">
-        <span className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold">OI</span>
-        <span className={`text-[13px] font-bold ${totalOI > 0 ? "text-white" : "text-zinc-600"}`}>{oiDisplay}</span>
+      <div className="flex gap-4 text-xs font-medium text-zinc-400 items-center shrink-0">
+        <span><span className="text-zinc-500">IV</span> <span className={atmIV != null ? "text-white" : "text-zinc-600"}>{ivDisplay}</span></span>
+        <span><span className="text-zinc-500">MOVE</span> <span className={expectedMove != null ? "text-white" : "text-zinc-600"}>{moveDisplay}</span></span>
+        <span><span className="text-zinc-500">P/C</span> <span className={pcr !== "—" ? (Number(pcr) > 1 ? "text-[#f23645]" : "text-[#00d166]") : "text-zinc-600"}>{pcr}</span></span>
+        <span><span className="text-zinc-500">Earn</span> <span className="text-white">{earnDisplay}</span></span>
       </div>
     </div>
   );
@@ -662,12 +664,10 @@ export function OptionsTab({ subscribeOptionSymbols }: OptionsTabProps) {
         lastPrice={underlyingPrice}
         rawCalls={(data?.calls ?? []) as Contract[]}
         rawPuts={(data?.puts ?? []) as Contract[]}
-      />
-      <div
-        className="flex items-center justify-between gap-2 px-3 py-1.5 shrink-0 flex-wrap"
-        style={{ backgroundColor: '#151517', borderBottom: `1px solid ${BORDER}` }}
-      >
-        <div className="flex items-center gap-3">
+        earningsDate={quote?.nextEarningsDate}
+        isFetching={isFetching}
+        hasData={!!data}
+        strikeControls={
           <div className="flex items-center gap-1">
             <span className="font-mono text-[10px] text-zinc-500 uppercase tracking-wider">Strikes</span>
             {isCustomMode ? (
@@ -677,8 +677,7 @@ export function OptionsTab({ subscribeOptionSymbols }: OptionsTabProps) {
                   value={localCustomValue}
                   onChange={e => handleCustomStrikeChange(e.target.value)}
                   onKeyDown={e => { if (e.key === "Escape") handleExitCustomMode(); }}
-                  className="w-[70px] font-mono text-[11px] h-7 px-2"
-                  style={{ backgroundColor: '#111113', borderColor: BORDER }}
+                  className="w-[70px] font-mono text-[11px] h-7 px-2 bg-zinc-900 border border-zinc-700 rounded-md text-white"
                   placeholder="10"
                 />
                 <button onClick={handleExitCustomMode} className="p-0.5 rounded text-zinc-500 hover:text-white hover:bg-white/10 transition-colors" aria-label="Exit custom mode">
@@ -687,7 +686,7 @@ export function OptionsTab({ subscribeOptionSymbols }: OptionsTabProps) {
               </div>
             ) : (
               <Select value={strikeMode} onValueChange={handleStrikeModeChange}>
-                <SelectTrigger className="w-[70px] font-mono text-[11px] h-7 px-2" style={{ backgroundColor: '#111113', borderColor: BORDER }}>
+                <SelectTrigger className="w-[70px] font-mono text-[11px] h-7 px-2 bg-zinc-900 border border-zinc-700 rounded-md text-white">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -699,15 +698,8 @@ export function OptionsTab({ subscribeOptionSymbols }: OptionsTabProps) {
               </Select>
             )}
           </div>
-        </div>
-
-        {isFetching && data && (
-          <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 border border-[#FFB800] border-t-transparent rounded-full animate-spin" />
-            <span className="font-mono text-[10px] text-zinc-500">UPDATING</span>
-          </div>
-        )}
-      </div>
+        }
+      />
 
       <div className="flex-1 overflow-y-auto min-h-0 relative overscroll-y-contain" style={{ WebkitOverflowScrolling: "touch", backgroundColor: BG } as React.CSSProperties}>
         {isLoading && !data && (

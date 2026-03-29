@@ -397,6 +397,8 @@ components:
           type: number
         peRatio:
           type: number
+        nextEarningsDate:
+          type: string
         error:
           type: string
       required:

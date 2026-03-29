@@ -20,5 +20,6 @@ export interface QuoteResponse {
   fiftyTwoWeekHigh?: number;
   fiftyTwoWeekLow?: number;
   peRatio?: number;
+  nextEarningsDate?: string;
   error?: string;
 }

@@ -202,6 +202,7 @@ router.get("/quote", async (req, res) => {
       fiftyTwoWeekHigh: pickNum("52WeekHigh", "highPrice52Week", "52WkHigh", "fiftyTwoWeekHigh"),
       fiftyTwoWeekLow:  pickNum("52WeekLow",  "lowPrice52Week",  "52WkLow",  "fiftyTwoWeekLow"),
       peRatio: (fundamental?.["peRatio"] as number) ?? undefined,
+      nextEarningsDate: typeof fundamental?.["nextEarningsDate"] === "string" ? fundamental["nextEarningsDate"] : undefined,
     });
 
     res.json(data);
