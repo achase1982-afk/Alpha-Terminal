@@ -94,7 +94,7 @@ export default function TerminalPage() {
         </div>
 
         {/* ─── Sticky top: Mobile header + Ticker tape ─── */}
-        <div className="sticky top-0 z-50 shrink-0 bg-background">
+        <div id="terminal-header" className="sticky top-0 z-50 shrink-0 bg-background">
           {/* Mobile top bar */}
           <div className="flex items-center lg:hidden h-12 px-4 border-b border-card-border bg-card">
             <button
