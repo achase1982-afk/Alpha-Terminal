@@ -59,14 +59,13 @@ export function useQuote(symbol: string) {
 
   const hasLiveData = !!streamQuote && (Date.now() - streamQuote.ts) < STREAM_STALE_MS;
 
-  const restEnabled = !!accessToken && !!symbol && !hasLiveData;
-
   const { data: restData, isLoading, error } = useGetQuote(
     { symbol, accessToken: accessToken || "" },
     {
       query: {
-        enabled:         restEnabled,
+        enabled:         !!accessToken && !!symbol,
         refetchInterval: (query) => {
+          if (hasLiveData && query.state.data && !query.state.data.error) return false;
           const err = query.state.data?.error;
           if (err === "rate_limited") return 3_000;
           if (
@@ -78,7 +77,7 @@ export function useQuote(symbol: string) {
           return 1_000;
         },
         refetchIntervalInBackground: false,
-        staleTime:       500,
+        staleTime:       hasLiveData ? 30_000 : 500,
       },
     }
   );
