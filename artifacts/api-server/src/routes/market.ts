@@ -634,6 +634,7 @@ interface NormalizedArticle {
   headline: string;
   summary: string;
   url: string;
+  sourceUrl?: string;
   image: string;
   datetime: number;
   related: string;
@@ -671,6 +672,9 @@ async function fetchGoogleNews(symbol: string, logger: any): Promise<NormalizedA
       const pubDate = extractTag(itemXml, "pubDate");
       const description = extractTag(itemXml, "description");
 
+      const sourceUrlMatch = itemXml.match(/<source\s+url="([^"]+)"/);
+      const sourceUrl = sourceUrlMatch?.[1] || "";
+
       if (!rawTitle || !link) continue;
 
       const { headline, source } = extractGoogleSource(rawTitle);
@@ -701,6 +705,7 @@ async function fetchGoogleNews(symbol: string, logger: any): Promise<NormalizedA
         headline,
         summary: cleanDesc,
         url: link,
+        sourceUrl: sourceUrl || undefined,
         image: "",
         datetime,
         related: symbol,
@@ -804,6 +809,162 @@ router.get("/news", async (req, res) => {
   merged.sort((a, b) => b.datetime - a.datetime);
 
   res.json({ articles: merged.slice(0, 50) });
+});
+
+async function resolveArticleUrl(url: string): Promise<string> {
+  try {
+    const resp = await fetch(url, {
+      method: "GET",
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      },
+      redirect: "follow",
+      signal: AbortSignal.timeout(10000),
+    });
+    return resp.url || url;
+  } catch {
+    return url;
+  }
+}
+
+router.get("/proxy-article", async (req, res) => {
+  const url = req.query.url as string | undefined;
+  if (!url) return res.status(400).json({ error: "url required" });
+
+  try {
+    const parsed = new URL(url);
+    if (!["http:", "https:"].includes(parsed.protocol)) {
+      return res.status(400).json({ error: "invalid url" });
+    }
+
+    const blockedPatterns = /^(localhost|127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|0\.0\.0\.0|\[::1\])/i;
+    if (blockedPatterns.test(parsed.hostname)) {
+      return res.status(400).json({ error: "blocked host" });
+    }
+
+    const isGoogleNews = url.includes("news.google.com/rss/articles/") || url.includes("news.google.com/articles/");
+    const isFinnhub = url.includes("finnhub.io/api/news");
+
+    let articleUrl = url;
+    if (isFinnhub) {
+      articleUrl = await resolveArticleUrl(url);
+    } else if (isGoogleNews) {
+      const resolvedFromRedirect = await resolveArticleUrl(url);
+      if (resolvedFromRedirect !== url && !resolvedFromRedirect.includes("news.google.com")) {
+        articleUrl = resolvedFromRedirect;
+      } else {
+        const sourceBaseUrl = req.query.sourceUrl as string | undefined;
+        const articleTitle = req.query.title as string | undefined;
+        if (sourceBaseUrl && articleTitle) {
+          const searchUrl = `https://www.google.com/search?q=site:${new URL(sourceBaseUrl).hostname}+"${articleTitle.slice(0, 80)}"&btnI=1`;
+          const searchResolved = await resolveArticleUrl(searchUrl);
+          if (searchResolved !== searchUrl && !searchResolved.includes("google.com/search")) {
+            articleUrl = searchResolved;
+          } else {
+            articleUrl = sourceBaseUrl;
+          }
+        }
+      }
+    }
+
+    const response = await fetch(articleUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+      redirect: "follow",
+      signal: AbortSignal.timeout(12000),
+    });
+
+    const finalUrl = response.url || articleUrl;
+
+    if (!response.ok) {
+      return res.status(502).json({ error: `upstream ${response.status}` });
+    }
+
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.includes("text/html")) {
+      return res.status(502).json({ error: "not html" });
+    }
+
+    const rawHtml = await response.text();
+
+    const { Readability } = await import("@mozilla/readability");
+    const { parseHTML } = await import("linkedom");
+    const { document: doc } = parseHTML(rawHtml);
+
+    const reader = new Readability(doc as any, { charThreshold: 100 });
+    const article = reader.parse();
+
+    const baseObj = new URL(finalUrl);
+    const siteName = article?.siteName || baseObj.hostname.replace(/^www\./, "");
+    const rawTitle = (req.query.title as string) || article?.title || "Article";
+    const rawSource = (req.query.source as string) || siteName;
+    const escHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    const title = escHtml(rawTitle);
+    const source = escHtml(rawSource);
+    const articleContent = article?.content || "<p>Could not extract article content.</p>";
+
+    const readerHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <base href="${baseObj.origin}/" target="_blank">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { background: #1C1C1E; color: #e4e4e7; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+      line-height: 1.75; font-size: 16px; -webkit-font-smoothing: antialiased;
+      padding: 20px 16px 80px; max-width: 680px; margin: 0 auto;
+    }
+    .reader-source { color: #FFB800; font-size: 10px; text-transform: uppercase; letter-spacing: 0.15em;
+      font-family: "SF Mono", SFMono-Regular, ui-monospace, monospace; font-weight: 600; margin-bottom: 8px; }
+    .reader-title { color: #fff; font-size: 22px; font-weight: 700; line-height: 1.3; margin-bottom: 12px; }
+    .reader-meta { color: #71717a; font-size: 12px; font-family: "SF Mono", monospace; margin-bottom: 24px;
+      padding-bottom: 16px; border-bottom: 1px solid #2A2A2C; }
+    .reader-content { color: #d4d4d8; }
+    .reader-content p { margin-bottom: 1.2em; }
+    .reader-content h1, .reader-content h2, .reader-content h3, .reader-content h4 { color: #fff; margin: 1.5em 0 0.5em; font-weight: 600; }
+    .reader-content h2 { font-size: 20px; }
+    .reader-content h3 { font-size: 18px; }
+    .reader-content a { color: #FFB800; text-decoration: none; }
+    .reader-content a:hover { text-decoration: underline; }
+    .reader-content img { max-width: 100%; height: auto; border-radius: 8px; margin: 16px 0; }
+    .reader-content figure { margin: 16px 0; }
+    .reader-content figcaption { color: #71717a; font-size: 13px; margin-top: 6px; }
+    .reader-content blockquote { border-left: 3px solid #FFB800; padding-left: 16px; margin: 16px 0; color: #a1a1aa; font-style: italic; }
+    .reader-content pre, .reader-content code { background: #151517; padding: 2px 6px; border-radius: 4px; font-size: 14px; }
+    .reader-content pre { padding: 12px; overflow-x: auto; }
+    .reader-content ul, .reader-content ol { margin: 0.8em 0; padding-left: 1.5em; }
+    .reader-content li { margin-bottom: 0.4em; }
+    .reader-content table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+    .reader-content th, .reader-content td { padding: 8px 12px; border: 1px solid #2A2A2C; text-align: left; }
+    .reader-content th { background: #151517; color: #fff; font-weight: 600; }
+    ::selection { background: #FFB800; color: #0a0a0a; }
+    @media (max-width: 480px) { body { padding: 16px 12px 60px; } .reader-title { font-size: 19px; } }
+  </style>
+</head>
+<body>
+  <div class="reader-source">${source}</div>
+  <h1 class="reader-title">${title.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</h1>
+  <div class="reader-meta">${siteName} · ${new URL(finalUrl).hostname}</div>
+  <div class="reader-content">${articleContent}</div>
+</body>
+</html>`;
+
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("Cache-Control", "private, max-age=300");
+    res.send(readerHtml);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "fetch failed";
+    req.log.error({ err: msg, url }, "proxy-article error");
+    res.status(502).json({ error: msg });
+  }
 });
 
 export default router;

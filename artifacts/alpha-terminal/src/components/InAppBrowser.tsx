@@ -1,57 +1,74 @@
 import { useTerminalStore } from "@/lib/store";
-import { X, ExternalLink, Globe } from "lucide-react";
+import { X, ExternalLink, Globe, RefreshCw } from "lucide-react";
 import { useRef, useEffect, useState, useCallback } from "react";
 
+const API_BASE = import.meta.env.VITE_API_URL || "/api";
+
+function proxyUrl(url: string, title?: string | null, source?: string | null, sourceUrl?: string | null) {
+  let qs = `url=${encodeURIComponent(url)}`;
+  if (title) qs += `&title=${encodeURIComponent(title)}`;
+  if (source) qs += `&source=${encodeURIComponent(source)}`;
+  if (sourceUrl) qs += `&sourceUrl=${encodeURIComponent(sourceUrl)}`;
+  return `${API_BASE}/market/proxy-article?${qs}`;
+}
+
 export function InAppBrowser() {
-  const { browserUrl, browserTitle, browserSource, closeBrowser } = useTerminalStore();
+  const { browserUrl, browserTitle, browserSource, browserSourceUrl, closeBrowser } = useTerminalStore();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [loading, setLoading] = useState(true);
-  const [blocked, setBlocked] = useState(false);
+  const [error, setError] = useState(false);
   const [headerH, setHeaderH] = useState(32);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const clearTimer = useCallback(() => {
-    if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
-  }, []);
+  const [currentUrl, setCurrentUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!browserUrl) { setLoading(true); setBlocked(false); clearTimer(); return; }
+    if (!browserUrl) { setLoading(true); setError(false); setCurrentUrl(null); return; }
     setLoading(true);
-    setBlocked(false);
-
+    setError(false);
+    setCurrentUrl(browserUrl);
     const el = document.getElementById("terminal-header");
     if (el) setHeaderH(el.offsetHeight);
+  }, [browserUrl]);
 
-    timeoutRef.current = setTimeout(() => {
-      setBlocked(true);
-      setLoading(false);
-    }, 5000);
-
-    return clearTimer;
-  }, [browserUrl, clearTimer]);
+  useEffect(() => {
+    const handler = (e: MessageEvent) => {
+      if (e.data?.type === "proxy-navigate" && e.data.url) {
+        setCurrentUrl(e.data.url);
+        setLoading(true);
+        setError(false);
+      }
+    };
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, []);
 
   const handleLoad = useCallback(() => {
-    clearTimer();
     setLoading(false);
-  }, [clearTimer]);
+  }, []);
 
   const handleError = useCallback(() => {
-    clearTimer();
-    setBlocked(true);
+    setError(true);
     setLoading(false);
-  }, [clearTimer]);
+  }, []);
 
-  if (!browserUrl) return null;
+  const handleReload = useCallback(() => {
+    setLoading(true);
+    setError(false);
+    if (iframeRef.current && currentUrl) {
+      iframeRef.current.src = proxyUrl(currentUrl, browserTitle, browserSource, browserSourceUrl);
+    }
+  }, [currentUrl]);
+
+  if (!browserUrl || !currentUrl) return null;
 
   const displayUrl = (() => {
-    try { return new URL(browserUrl).hostname.replace(/^www\./, ""); }
-    catch { return browserUrl.slice(0, 40); }
+    try { return new URL(currentUrl).hostname.replace(/^www\./, ""); }
+    catch { return currentUrl.slice(0, 40); }
   })();
 
   return (
     <div
-      className="fixed left-0 right-0 bottom-0 z-[999] flex flex-col border-t border-zinc-700"
-      style={{ top: `${headerH}px`, background: "#0a0a0a" }}
+      className="fixed left-0 right-0 bottom-0 z-[999] flex flex-col"
+      style={{ top: `${headerH}px`, background: "#1C1C1E" }}
     >
       <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-800 shrink-0" style={{ background: "#111113" }}>
         <button
@@ -67,8 +84,16 @@ export function InAppBrowser() {
           <span className="text-xs text-zinc-400 font-mono truncate">{displayUrl}</span>
         </div>
 
+        <button
+          onClick={handleReload}
+          className="p-1.5 rounded-md hover:bg-zinc-800 transition-colors cursor-pointer"
+          aria-label="Reload"
+        >
+          <RefreshCw className={`w-4 h-4 text-zinc-400 ${loading ? "animate-spin" : ""}`} />
+        </button>
+
         <a
-          href={browserUrl}
+          href={currentUrl}
           target="_blank"
           rel="noopener noreferrer"
           className="p-1.5 rounded-md hover:bg-zinc-800 transition-colors"
@@ -79,27 +104,15 @@ export function InAppBrowser() {
       </div>
 
       <div className="flex-1 relative overflow-hidden">
-        {loading && !blocked && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 z-20" style={{ background: "#0a0a0a" }}>
+        {loading && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 z-20" style={{ background: "#1C1C1E" }}>
             <div className="w-6 h-6 border-2 border-zinc-700 border-t-[#FFB800] rounded-full animate-spin" />
-            <span className="text-xs text-zinc-500 font-mono uppercase tracking-wider">Loading...</span>
+            <span className="text-xs text-zinc-500 font-mono uppercase tracking-wider">Loading article...</span>
           </div>
         )}
 
-        {!blocked && (
-          <iframe
-            ref={iframeRef}
-            src={browserUrl}
-            className="w-full h-full border-0"
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
-            onLoad={handleLoad}
-            onError={handleError}
-            title="In-app browser"
-          />
-        )}
-
-        {blocked && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 px-8 z-10" style={{ background: "#0a0a0a" }}>
+        {error ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 px-8 z-10" style={{ background: "#1C1C1E" }}>
             {browserTitle && (
               <div className="text-center max-w-sm">
                 {browserSource && (
@@ -108,13 +121,13 @@ export function InAppBrowser() {
                 <h2 className="text-base font-semibold text-zinc-200 leading-snug">{browserTitle}</h2>
               </div>
             )}
+            <p className="text-xs text-zinc-500 text-center">Could not load this article.</p>
             <a
-              href={browserUrl}
+              href={currentUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors cursor-pointer"
               style={{ background: "#FFB800", color: "#0a0a0a" }}
-              onClick={closeBrowser}
             >
               <ExternalLink className="w-4 h-4" />
               Read Full Article
@@ -126,6 +139,16 @@ export function InAppBrowser() {
               Go Back
             </button>
           </div>
+        ) : (
+          <iframe
+            ref={iframeRef}
+            src={proxyUrl(currentUrl, browserTitle, browserSource, browserSourceUrl)}
+            className="w-full h-full border-0"
+            sandbox="allow-same-origin"
+            onLoad={handleLoad}
+            onError={handleError}
+            title="Article reader"
+          />
         )}
       </div>
     </div>

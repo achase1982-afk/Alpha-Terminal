@@ -8,6 +8,7 @@ interface NewsArticle {
   headline: string;
   summary: string;
   url: string;
+  sourceUrl?: string;
   image: string;
   datetime: number;
   related: string;
@@ -82,7 +83,7 @@ export function NewsTab() {
         {articles.map((article) => (
           <button
             key={article.id}
-            onClick={() => openBrowser(article.url, article.headline, article.source)}
+            onClick={() => openBrowser(article.url, article.headline, article.source, article.sourceUrl)}
             className="block w-full text-left border-b border-zinc-800/50 pb-4 mb-4 hover:bg-zinc-800/30 p-2 rounded-md transition-colors group cursor-pointer"
           >
             <div className="flex items-start gap-3">
