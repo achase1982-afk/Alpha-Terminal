@@ -130,16 +130,9 @@ export default function TerminalPage() {
           <TickerSearch />
 
           <div className="p-3 sm:p-4 lg:p-5" style={{ minHeight: "calc(var(--vvh, 100%) - 80px)" }}>
-            <Tabs defaultValue="chart" className="flex flex-col">
+            <Tabs defaultValue="news" className="flex flex-col">
               <div className="overflow-x-auto shrink-0 mb-4 sticky top-[36px] z-30 bg-background py-1 -mx-3 px-3 sm:-mx-4 sm:px-4 lg:-mx-5 lg:px-5">
                 <TabsList className="bg-card border border-card-border p-1 inline-flex min-w-max">
-                  <TabsTrigger
-                    value="chart"
-                    className="font-mono text-[10px] sm:text-xs uppercase rounded-none border-b-2 border-b-transparent data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-white data-[state=active]:border-b-[#FFB800] gap-1.5 px-3"
-                  >
-                    <LineChart className="w-3.5 h-3.5 shrink-0" />
-                    CHART
-                  </TabsTrigger>
                   <TabsTrigger
                     value="news"
                     className="font-mono text-[10px] sm:text-xs uppercase rounded-none border-b-2 border-b-transparent data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-white data-[state=active]:border-b-[#FFB800] gap-1.5 px-3"
@@ -170,21 +163,16 @@ export default function TerminalPage() {
                     <span className="hidden sm:inline">MARKET SCANNER</span>
                     <span className="sm:hidden">SCAN</span>
                   </TabsTrigger>
+                  <TabsTrigger
+                    value="chart"
+                    className="font-mono text-[10px] sm:text-xs uppercase rounded-none border-b-2 border-b-transparent data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-white data-[state=active]:border-b-[#FFB800] gap-1.5 px-3"
+                  >
+                    <LineChart className="w-3.5 h-3.5 shrink-0" />
+                    CHART
+                  </TabsTrigger>
                 </TabsList>
               </div>
 
-              <TabsContent value="chart" className="h-[420px] sm:h-[500px] md:h-[580px] lg:h-[calc(var(--vvh,100vh)-300px)] m-0 focus-visible:outline-none data-[state=active]:flex flex-col">
-                <ChartControls />
-                <TradingChart
-                  symbol={symbol}
-                  data={historyData?.candles || []}
-                  isLoading={historyLoading}
-                  error={historyData?.error}
-                  timedOut={historyTimedOut}
-                  tokenExpired={historyData?.error === "unauthorized"}
-                  intraday={isIntradayInterval(chartInterval)}
-                />
-              </TabsContent>
               <TabsContent value="news" className="m-0 focus-visible:outline-none">
                 <NewsTab />
               </TabsContent>
@@ -198,6 +186,18 @@ export default function TerminalPage() {
               </TabsContent>
               <TabsContent value="scanner" className="m-0 focus-visible:outline-none">
                 <MarketScanner />
+              </TabsContent>
+              <TabsContent value="chart" className="h-[420px] sm:h-[500px] md:h-[580px] lg:h-[calc(var(--vvh,100vh)-300px)] m-0 focus-visible:outline-none data-[state=active]:flex flex-col">
+                <ChartControls />
+                <TradingChart
+                  symbol={symbol}
+                  data={historyData?.candles || []}
+                  isLoading={historyLoading}
+                  error={historyData?.error}
+                  timedOut={historyTimedOut}
+                  tokenExpired={historyData?.error === "unauthorized"}
+                  intraday={isIntradayInterval(chartInterval)}
+                />
               </TabsContent>
             </Tabs>
           </div>
