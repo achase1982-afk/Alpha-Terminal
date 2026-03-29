@@ -24,6 +24,7 @@ const BORDER = "#2A2A2C";
 interface Contract {
   strike: number;
   expiration: string;
+  schwabSymbol?: string;
   bid?: number;
   ask?: number;
   bidSize?: number;
@@ -169,7 +170,7 @@ function getContractVal(contract: Contract | null, key: string): number | undefi
 }
 
 function fmtNum(val: number | undefined, decimals: number): string {
-  if (val == null || isNaN(val)) return "—";
+  if (val == null || isNaN(val) || val <= -999) return "—";
   return decimals === 0 ? String(Math.round(val)) : val.toFixed(decimals);
 }
 
@@ -590,8 +591,8 @@ export function OptionsTab({ subscribeOptionSymbols }: OptionsTabProps) {
     if (!data) return [];
     const calls = (data.calls ?? []) as Contract[];
     const puts = (data.puts ?? []) as Contract[];
-    calls.forEach(c => { c.streamKey = buildSchwabOptionKey(symbol, c.expiration, c.strike, "C"); });
-    puts.forEach(c => { c.streamKey = buildSchwabOptionKey(symbol, c.expiration, c.strike, "P"); });
+    calls.forEach(c => { c.streamKey = c.schwabSymbol || buildSchwabOptionKey(symbol, c.expiration, c.strike, "C"); });
+    puts.forEach(c => { c.streamKey = c.schwabSymbol || buildSchwabOptionKey(symbol, c.expiration, c.strike, "P"); });
     return buildExpirationGroups(calls, puts, underlyingPrice, strikeCount);
   }, [data, underlyingPrice, strikeCount, symbol]);
 

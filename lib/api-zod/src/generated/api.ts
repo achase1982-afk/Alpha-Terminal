@@ -146,6 +146,7 @@ export const GetOptionChainResponse = zod.object({
     zod.object({
       strike: zod.number(),
       expiration: zod.string(),
+      schwabSymbol: zod.string().optional(),
       bid: zod.number().optional(),
       ask: zod.number().optional(),
       bidSize: zod.number().optional(),
@@ -165,6 +166,7 @@ export const GetOptionChainResponse = zod.object({
     zod.object({
       strike: zod.number(),
       expiration: zod.string(),
+      schwabSymbol: zod.string().optional(),
       bid: zod.number().optional(),
       ask: zod.number().optional(),
       bidSize: zod.number().optional(),
