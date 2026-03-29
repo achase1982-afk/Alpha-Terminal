@@ -74,6 +74,8 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
   const { symbol, accessToken } = useTerminalStore();
   const { data: quote, isLoading, source } = useQuote(symbol);
   const tickColor = useTickColor(symbol, quote?.last ?? null);
+  const bidTickColor = useTickColor(`${symbol}__bid`, quote?.bid ?? null);
+  const askTickColor = useTickColor(`${symbol}__ask`, quote?.ask ?? null);
   const flashClass = usePriceFlash(quote?.last ?? null, quote?.change ?? null);
   const prevQuoteRef = useRef(quote);
   const [fadeIn, setFadeIn] = useState(true);
@@ -235,7 +237,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
           <span className="text-[10px] uppercase tracking-[0.1em] text-zinc-500 font-semibold leading-none mb-1">Last Price</span>
           {showData ? (
             <>
-              <span className={`tabular-nums leading-none whitespace-nowrap font-normal md:font-medium text-2xl sm:text-3xl md:text-4xl tracking-tight text-white ${flashClass}`}>
+              <span className={`tabular-nums leading-none whitespace-nowrap font-normal md:font-medium text-2xl sm:text-3xl md:text-4xl tracking-tight ${flashClass}`} style={{ color: tickColor }}>
                 {lastStr}
               </span>
               <span
@@ -263,7 +265,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
               >
                 <span className="text-[9px] uppercase font-bold tracking-widest text-white leading-none text-center py-0.5">SELL</span>
                 <span className="flex-1 rounded-md flex flex-col items-center justify-center" style={{ background: '#0c0c0c' }}>
-                  <span className={`${btnPriceCls} font-medium text-white tabular-nums whitespace-nowrap leading-tight`}>
+                  <span className={`${btnPriceCls} font-medium tabular-nums whitespace-nowrap leading-tight`} style={{ color: bidTickColor }}>
                     {bidStr}
                   </span>
                   {bidSizeStr && (
@@ -278,7 +280,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
               >
                 <span className="text-[9px] uppercase font-bold tracking-widest text-white leading-none text-center py-0.5">BUY</span>
                 <span className="flex-1 rounded-md flex flex-col items-center justify-center" style={{ background: '#0c0c0c' }}>
-                  <span className={`${btnPriceCls} font-medium text-white tabular-nums whitespace-nowrap leading-tight`}>
+                  <span className={`${btnPriceCls} font-medium tabular-nums whitespace-nowrap leading-tight`} style={{ color: askTickColor }}>
                     {askStr}
                   </span>
                   {askSizeStr && (

@@ -78,6 +78,7 @@ export function useMarketStream() {
   const mergeTick = useOptionsStreamStore((s) => s.mergeTick);
   const esRef = useRef<EventSource | null>(null);
   const rejectedRetries = useRef(0);
+  const symDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function allSymbols(): string[] {
     return [
@@ -189,8 +190,6 @@ export function useMarketStream() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [streamKey]);
-
-  const symDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!accessToken) return;

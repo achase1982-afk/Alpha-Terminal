@@ -33,6 +33,7 @@ export function useStreamingQuotes() {
 
   const esRef    = useRef<EventSource | null>(null);
   const tokenRef = useRef<string | null>(null);
+  const symbolDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Full symbol list: active + tape + macro cards ─────────────────────────
   function allSymbols(): string[] {
@@ -125,8 +126,6 @@ export function useStreamingQuotes() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessToken]);
-
-  const symbolDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!accessToken) return;
