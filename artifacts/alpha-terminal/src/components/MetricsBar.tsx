@@ -46,7 +46,7 @@ function usePriceFlash(price: number | null, change: number | null): string {
 }
 
 const GRID_CLS = "grid items-center gap-2 sm:gap-4 w-full min-h-[70px] sm:min-h-[80px]";
-const GRID_COLS = "grid-cols-[minmax(80px,1fr)_minmax(100px,1.5fr)_auto]";
+const GRID_COLS = "grid-cols-[minmax(90px,1.2fr)_minmax(90px,1.3fr)_auto]";
 const STICKY_BASE = "sticky top-0 z-40 w-full border-b border-card-border shrink-0";
 const HEADER_BG = "#0c0c0c";
 
