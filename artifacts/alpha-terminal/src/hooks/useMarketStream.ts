@@ -4,6 +4,65 @@ import { useOptionsStreamStore, type OptionTick } from "@/lib/options-stream-sto
 import type { LiveQuote } from "@/lib/store";
 
 const API_BASE = "/api";
+const REJECTED_RETRY_DELAY = 3_000;
+const MAX_REJECTED_RETRIES = 3;
+
+async function refreshAndRetry(retryCount: number): Promise<boolean> {
+  if (retryCount >= MAX_REJECTED_RETRIES) {
+    console.warn("[stream] Max rejected retries reached — giving up");
+    return false;
+  }
+
+  const state = useTerminalStore.getState();
+  const { refreshToken, traderRefreshToken } = state;
+
+  console.info("[stream] Attempting token refresh after streamer rejection (attempt %d)", retryCount + 1);
+
+  let traderOk = false;
+  if (traderRefreshToken) {
+    try {
+      const res = await fetch("/api/auth/trader-refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refreshToken: traderRefreshToken }),
+      });
+      if (res.ok) {
+        const data = await res.json() as { accessToken?: string; refreshToken?: string };
+        if (data.accessToken) {
+          state.setTraderTokens(data.accessToken, data.refreshToken ?? traderRefreshToken);
+          traderOk = true;
+        }
+      }
+    } catch {}
+  }
+
+  let marketOk = false;
+  if (refreshToken) {
+    try {
+      const res = await fetch("/api/auth/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refreshToken }),
+      });
+      if (res.ok) {
+        const data = await res.json() as { accessToken?: string; refreshToken?: string };
+        if (data.accessToken) {
+          state.setTokens(data.accessToken, data.refreshToken ?? refreshToken);
+          marketOk = true;
+        }
+      }
+    } catch {}
+  }
+
+  if (!marketOk && !traderOk) {
+    console.warn("[stream] Token refresh failed — clearing auth");
+    state.clearTokens();
+    state.clearTraderTokens();
+    return false;
+  }
+
+  return true;
+}
 
 export function useMarketStream() {
   const {
@@ -18,6 +77,7 @@ export function useMarketStream() {
 
   const mergeTick = useOptionsStreamStore((s) => s.mergeTick);
   const esRef = useRef<EventSource | null>(null);
+  const rejectedRetries = useRef(0);
 
   function allSymbols(): string[] {
     return [
@@ -71,9 +131,13 @@ export function useMarketStream() {
         const { status } = JSON.parse((e as MessageEvent).data) as { status: string };
         if (status === "connected") {
           setStreamStatus("live");
+          rejectedRetries.current = 0;
         } else if (status === "rejected") {
           setStreamStatus("offline");
-          console.warn("[stream] Schwab streamer LOGIN rejected — re-authentication may be needed");
+          console.warn("[stream] Schwab streamer LOGIN rejected — attempting token refresh");
+          const attempt = rejectedRetries.current;
+          rejectedRetries.current++;
+          setTimeout(() => void refreshAndRetry(attempt), REJECTED_RETRY_DELAY);
         } else if (status === "connecting") {
           setStreamStatus("connecting");
         } else if (status === "disconnected") {
@@ -115,6 +179,7 @@ export function useMarketStream() {
       return;
     }
 
+    rejectedRetries.current = 0;
     openEventSource();
     void startServerStream(accessToken, traderAccessToken);
 

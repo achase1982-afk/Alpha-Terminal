@@ -8,6 +8,7 @@ export function useAutoRefreshToken() {
   const { traderRefreshToken, setTraderTokens, clearTraderTokens } = useTerminalStore();
   const isRefreshing = useRef(false);
   const isRefreshingTrader = useRef(false);
+  const didInitialRefresh = useRef(false);
 
   const refresh = useCallback(async (): Promise<boolean> => {
     if (!refreshToken || isRefreshing.current) return false;
@@ -62,6 +63,18 @@ export function useAutoRefreshToken() {
       isRefreshingTrader.current = false;
     }
   }, [traderRefreshToken, setTraderTokens, clearTraderTokens]);
+
+  useEffect(() => {
+    if (didInitialRefresh.current) return;
+    if (!refreshToken && !traderRefreshToken) return;
+    didInitialRefresh.current = true;
+
+    const doInitial = async () => {
+      if (refreshToken) await refresh();
+      if (traderRefreshToken) await refreshTrader();
+    };
+    void doInitial();
+  }, [refreshToken, traderRefreshToken, refresh, refreshTrader]);
 
   useEffect(() => {
     if (!refreshToken) return;
