@@ -201,7 +201,8 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
 
   const symbolMatches = quote?.symbol?.toUpperCase() === symbol.toUpperCase();
   const showData = !!quote && symbolMatches;
-  const opacityCls = fadeIn && showData ? "opacity-100" : "opacity-0";
+  const dataOpacity = fadeIn && showData ? "opacity-100" : "opacity-0";
+  const loadingOpacity = !showData ? "opacity-100" : "opacity-0";
   const transitionCls = "transition-opacity duration-150 ease-in-out";
 
   return (
@@ -213,18 +214,18 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
 
         <button
           onClick={onOpenTearSheet}
-          className={`flex flex-col min-w-0 gap-0.5 text-left cursor-pointer group overflow-hidden ${opacityCls} ${transitionCls}`}
+          className={`flex flex-col min-w-0 gap-0.5 text-left cursor-pointer group overflow-hidden ${transitionCls}`}
           aria-label={`View company profile for ${quote?.symbol}`}
         >
           {showData ? (
-            <>
+            <span className={`${dataOpacity} ${transitionCls} flex flex-col gap-0.5`}>
               <span className="font-semibold text-xl md:text-2xl text-white tracking-tight leading-tight group-hover:text-primary transition-colors whitespace-nowrap">
                 {quote.symbol}
               </span>
               <span className="text-[11px] font-medium tracking-wide line-clamp-2 overflow-hidden text-ellipsis uppercase leading-snug" style={{ color: '#FFB800' }}>
                 {quote.description || ""}
               </span>
-            </>
+            </span>
           ) : (
             <>
               <Skeleton className="h-6 w-16 bg-zinc-800" />
@@ -233,10 +234,10 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
           )}
         </button>
 
-        <div className={`flex flex-col items-start min-w-0 overflow-hidden ${opacityCls} ${transitionCls}`}>
+        <div className={`flex flex-col items-start min-w-0 overflow-hidden ${transitionCls}`}>
           <span className="text-[10px] uppercase tracking-[0.1em] text-zinc-500 font-semibold leading-none mb-1">&nbsp;</span>
           {showData ? (
-            <>
+            <span className={`${dataOpacity} ${transitionCls} flex flex-col`}>
               <span className={`tabular-nums leading-none whitespace-nowrap font-normal md:font-medium text-2xl sm:text-3xl md:text-4xl tracking-tight ${flashClass}`} style={{ color: tickColor }}>
                 {lastStr}
               </span>
@@ -246,7 +247,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
               >
                 {changeStr} {changePctStr}
               </span>
-            </>
+            </span>
           ) : (
             <>
               <Skeleton className="h-9 w-32 bg-zinc-800" />
@@ -260,7 +261,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
             <>
               <button
                 onClick={() => handleInitiateTrade('sell')}
-                className={`trade-btn-sell h-[68px] bg-red-950/40 border border-red-500/50 rounded-lg flex flex-col items-stretch p-1 pt-0.5 cursor-pointer transition-colors active:bg-red-800/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-400 overflow-hidden ${opacityCls} ${transitionCls}`}
+                className={`trade-btn-sell h-[68px] bg-red-950/40 border border-red-500/50 rounded-lg flex flex-col items-stretch p-1 pt-0.5 cursor-pointer transition-colors active:bg-red-800/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-400 overflow-hidden ${dataOpacity} ${transitionCls}`}
                 aria-label={`Sell ${quote?.symbol} at ${bidStr}`}
               >
                 <span className="text-[9px] uppercase font-bold tracking-widest text-white leading-none text-center py-0.5">SELL</span>
@@ -275,7 +276,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
               </button>
               <button
                 onClick={() => handleInitiateTrade('buy')}
-                className={`trade-btn-buy h-[68px] bg-emerald-950/40 border border-emerald-500/50 rounded-lg flex flex-col items-stretch p-1 pt-0.5 cursor-pointer transition-colors active:bg-emerald-800/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400 overflow-hidden ${opacityCls} ${transitionCls}`}
+                className={`trade-btn-buy h-[68px] bg-emerald-950/40 border border-emerald-500/50 rounded-lg flex flex-col items-stretch p-1 pt-0.5 cursor-pointer transition-colors active:bg-emerald-800/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400 overflow-hidden ${dataOpacity} ${transitionCls}`}
                 aria-label={`Buy ${quote?.symbol} at ${askStr}`}
               >
                 <span className="text-[9px] uppercase font-bold tracking-widest text-white leading-none text-center py-0.5">BUY</span>
@@ -312,7 +313,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
       <div className="hidden sm:flex items-center gap-6 mt-2 pt-2 border-t border-zinc-800/60">
         <div className="flex flex-col shrink-0 gap-0.5">
           <span className="text-[10px] uppercase tracking-[0.1em] text-zinc-500 font-semibold">Volume</span>
-          <span className={`font-mono tabular-nums text-zinc-300 text-sm font-medium ${opacityCls} ${transitionCls}`}>
+          <span className={`font-mono tabular-nums text-zinc-300 text-sm font-medium ${dataOpacity} ${transitionCls}`}>
             {fmtVol(quote?.volume ?? null)}
           </span>
         </div>
@@ -321,7 +322,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
 
         <div className="hidden md:flex flex-col shrink-0 gap-0.5">
           <span className="text-[10px] uppercase tracking-[0.1em] text-zinc-500 font-semibold">Day Range</span>
-          <span className={`font-mono tabular-nums text-sm font-medium ${opacityCls} ${transitionCls}`}>
+          <span className={`font-mono tabular-nums text-sm font-medium ${dataOpacity} ${transitionCls}`}>
             <span style={{ color: DOWN_COLOR }}>${fmtPrice(quote?.low ?? null)}</span>
             <span className="text-zinc-600 mx-1">—</span>
             <span style={{ color: UP_COLOR }}>${fmtPrice(quote?.high ?? null)}</span>
@@ -332,7 +333,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
 
         <div className="hidden lg:flex flex-col shrink-0 gap-0.5">
           <span className="text-[10px] uppercase tracking-[0.1em] text-zinc-500 font-semibold">52W Range</span>
-          <span className={`font-mono tabular-nums text-zinc-500 text-sm font-medium ${opacityCls} ${transitionCls}`}>
+          <span className={`font-mono tabular-nums text-zinc-500 text-sm font-medium ${dataOpacity} ${transitionCls}`}>
             {quote?.fiftyTwoWeekLow != null
               ? `$${fmtPrice(quote.fiftyTwoWeekLow)} — $${fmtPrice(quote.fiftyTwoWeekHigh)}`
               : "—"}

@@ -537,6 +537,37 @@ router.get("/earnings-date", async (req, res) => {
   }
 });
 
+const FUTURES_NEWS_MAP: Record<string, string> = {
+  "/ES": "SPY",
+  "/MES": "SPY",
+  "/NQ": "QQQ",
+  "/MNQ": "QQQ",
+  "/YM": "DIA",
+  "/MYM": "DIA",
+  "/RTY": "IWM",
+  "/M2K": "IWM",
+  "/CL": "USO",
+  "/MCL": "USO",
+  "/GC": "GLD",
+  "/MGC": "GLD",
+  "/SI": "SLV",
+  "/ZB": "TLT",
+  "/ZN": "TLT",
+  "/BZ": "BNO",
+  "/NG": "UNG",
+  "/HG": "CPER",
+  "/6E": "FXE",
+  "/6J": "FXY",
+};
+
+function futuresNewsSymbol(sym: string): string {
+  const upper = sym.toUpperCase().trim();
+  if (FUTURES_NEWS_MAP[upper]) return FUTURES_NEWS_MAP[upper];
+  const base = upper.replace(/[FGHJKMNQUVXZ]\d{1,2}$/, "");
+  if (FUTURES_NEWS_MAP[base]) return FUTURES_NEWS_MAP[base];
+  return upper;
+}
+
 router.get("/news", async (req, res) => {
   const symbol = (req.query["symbol"] as string || "").toUpperCase().trim();
 
@@ -553,7 +584,8 @@ router.get("/news", async (req, res) => {
   const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   const toDate = now.toISOString().slice(0, 10);
   const fromDate = oneWeekAgo.toISOString().slice(0, 10);
-  const cleanSymbol = symbol.replace(/^\$/, "");
+  const isFuturesNews = symbol.startsWith("/");
+  const cleanSymbol = isFuturesNews ? futuresNewsSymbol(symbol) : symbol.replace(/^\$/, "");
 
   try {
     const url = `https://finnhub.io/api/v1/company-news?symbol=${encodeURIComponent(cleanSymbol)}&from=${fromDate}&to=${toDate}&token=${apiKey}`;
