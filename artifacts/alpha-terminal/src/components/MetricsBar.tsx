@@ -46,7 +46,7 @@ function usePriceFlash(price: number | null, change: number | null): string {
 }
 
 const GRID_CLS = "grid items-center gap-2 sm:gap-4 w-full min-h-[70px] sm:min-h-[80px]";
-const GRID_COLS = "grid-cols-[minmax(70px,0.8fr)_minmax(100px,1.5fr)_auto]";
+const GRID_COLS = "grid-cols-[minmax(80px,1fr)_minmax(100px,1.5fr)_auto]";
 const STICKY_BASE = "sticky top-0 z-40 w-full border-b border-card-border shrink-0";
 const HEADER_BG = "#0c0c0c";
 
@@ -216,7 +216,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
               <span className="font-semibold text-xl md:text-2xl text-white tracking-tight leading-tight group-hover:text-primary transition-colors whitespace-nowrap">
                 {quote.symbol}
               </span>
-              <span className="text-[10px] font-medium tracking-wide line-clamp-2 overflow-hidden text-ellipsis uppercase" style={{ color: '#FFB800' }}>
+              <span className="text-[11px] font-medium tracking-wide line-clamp-2 overflow-hidden text-ellipsis uppercase leading-snug" style={{ color: '#FFB800' }}>
                 {quote.description || ""}
               </span>
             </>
@@ -228,7 +228,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
           )}
         </button>
 
-        <div className={`flex flex-col items-start overflow-hidden ${opacityCls} ${transitionCls}`}>
+        <div className={`flex flex-col items-start overflow-hidden pl-1 sm:pl-2 ${opacityCls} ${transitionCls}`}>
           <span className="text-[10px] uppercase tracking-[0.1em] text-zinc-500 font-semibold leading-none mb-1">Last Price</span>
           {showData ? (
             <>
@@ -255,7 +255,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
             <>
               <button
                 onClick={() => handleInitiateTrade('sell')}
-                className={`trade-btn-sell h-[48px] bg-red-950/40 border border-red-500/50 rounded-lg flex flex-col items-center justify-center p-1.5 cursor-pointer transition-colors active:bg-red-800/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-400 overflow-hidden ${opacityCls} ${transitionCls}`}
+                className={`trade-btn-sell h-[54px] bg-red-950/40 border border-red-500/50 rounded-lg flex flex-col items-center justify-center p-1.5 cursor-pointer transition-colors active:bg-red-800/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-400 overflow-hidden ${opacityCls} ${transitionCls}`}
                 aria-label={`Sell ${quote?.symbol} at ${bidStr}`}
               >
                 <span className="text-[9px] uppercase font-bold tracking-widest text-red-400 leading-none">SELL</span>
@@ -265,7 +265,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
               </button>
               <button
                 onClick={() => handleInitiateTrade('buy')}
-                className={`trade-btn-buy h-[48px] bg-emerald-950/40 border border-emerald-500/50 rounded-lg flex flex-col items-center justify-center p-1.5 cursor-pointer transition-colors active:bg-emerald-800/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400 overflow-hidden ${opacityCls} ${transitionCls}`}
+                className={`trade-btn-buy h-[54px] bg-emerald-950/40 border border-emerald-500/50 rounded-lg flex flex-col items-center justify-center p-1.5 cursor-pointer transition-colors active:bg-emerald-800/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400 overflow-hidden ${opacityCls} ${transitionCls}`}
                 aria-label={`Buy ${quote?.symbol} at ${askStr}`}
               >
                 <span className="text-[9px] uppercase font-bold tracking-widest text-emerald-400 leading-none">BUY</span>
@@ -276,11 +276,11 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
             </>
           ) : (
             <>
-              <div className="h-[48px] border border-zinc-800/50 rounded-lg flex flex-col items-center justify-center">
+              <div className="h-[54px] border border-zinc-800/50 rounded-lg flex flex-col items-center justify-center">
                 <span className="text-[10px] uppercase font-bold tracking-widest text-zinc-600 leading-none">SELL</span>
                 <span className="text-sm font-bold text-zinc-600 tabular-nums mt-0.5">—</span>
               </div>
-              <div className="h-[48px] border border-zinc-800/50 rounded-lg flex flex-col items-center justify-center">
+              <div className="h-[54px] border border-zinc-800/50 rounded-lg flex flex-col items-center justify-center">
                 <span className="text-[10px] uppercase font-bold tracking-widest text-zinc-600 leading-none">BUY</span>
                 <span className="text-sm font-bold text-zinc-600 tabular-nums mt-0.5">—</span>
               </div>
