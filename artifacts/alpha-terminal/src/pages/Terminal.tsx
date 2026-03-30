@@ -32,9 +32,24 @@ export default function TerminalPage() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [activeMainTab, setActiveMainTab] = useState("news");
   const [aiSubTab, setAiSubTab] = useState<AiSubTab | undefined>(undefined);
+  const [biasStripPinned, setBiasStripPinned] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const biasSentinelRef = useRef<HTMLDivElement>(null);
   const { refresh } = useAutoRefreshToken();
   useViewportShell();
+
+  useEffect(() => {
+    const sentinel = biasSentinelRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setBiasStripPinned(!entry.isIntersecting);
+      },
+      { root: scrollRef.current, threshold: 0 }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, []);
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -129,15 +144,22 @@ export default function TerminalPage() {
 
           {/* ─── Ticker tape scrolling marquee ─── */}
           <TickerTape />
+
+          {/* ─── AI Bias Strip (pinned copy — shown when scrolled past its natural position) ─── */}
+          {biasStripPinned && (
+            <AiBiasStrip onNavigateToPulse={() => { setActiveMainTab("ai"); setAiSubTab("pulse"); }} />
+          )}
         </div>
 
         <div ref={scrollRef} onScroll={handleScroll} className="app-content z-10">
           {/* ─── Macro Cards ─── */}
           <MacroBar />
 
-          {/* ─── AI Bias Strip (sticky: scrolls with content, pins below ticker tape) ─── */}
-          <div className="sticky top-0 z-40">
-            <AiBiasStrip onNavigateToPulse={() => { setActiveMainTab("ai"); setAiSubTab("pulse"); }} />
+          {/* ─── AI Bias Strip (in-flow — scrolls with content, sentinel triggers pinning) ─── */}
+          <div ref={biasSentinelRef} style={{ minHeight: 42 }}>
+            {!biasStripPinned && (
+              <AiBiasStrip onNavigateToPulse={() => { setActiveMainTab("ai"); setAiSubTab("pulse"); }} />
+            )}
           </div>
 
           {/* ─── Metrics row (sticky + collapsible) ─── */}
@@ -148,7 +170,7 @@ export default function TerminalPage() {
 
           <div className="flex flex-col" style={{ minHeight: "calc(var(--vvh, 100%) - 80px)" }}>
             <Tabs value={activeMainTab} onValueChange={setActiveMainTab} className="flex flex-col flex-1">
-              <div className="shrink-0 mb-4 sticky top-[42px] z-30 bg-background py-1 px-3 sm:px-4 lg:px-5">
+              <div className="shrink-0 mb-4 sticky top-0 z-30 bg-background py-1 px-3 sm:px-4 lg:px-5">
                 <div className="overflow-x-auto">
                   <TabsList className="bg-card border border-card-border p-1 inline-flex min-w-max">
                     <TabsTrigger
