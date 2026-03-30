@@ -178,7 +178,7 @@ export function MarketPulseDashboard({ autoGenerate }: MarketPulseDashboardProps
       {isActive && (
         <>
           <AiThinkingFeed
-            tokens={thinkingTokens}
+            texts={thinkingTokens}
             isStreaming={isStreaming}
           />
           <PulseSkeleton />
@@ -200,10 +200,8 @@ export function MarketPulseDashboard({ autoGenerate }: MarketPulseDashboardProps
       {pulseData && !isActive && (
         <div className="space-y-4 animate-in fade-in duration-300">
           <AiThinkingFeed
-            tokens={thinkingTokens}
+            texts={thinkingTokens}
             isStreaming={false}
-            showTranscript={showTranscript}
-            onToggleTranscript={() => setShowTranscript(!showTranscript)}
           />
 
           <PulseStatusHeader

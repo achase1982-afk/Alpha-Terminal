@@ -650,7 +650,7 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
               <div className="border-t border-card-border p-4 bg-[#0c0c0c]">
                 {(isStrategizing || isStreaming) ? (
                   <AiThinkingFeed
-                    tokens={thinkingTokens}
+                    texts={thinkingTokens}
                     isStreaming={true}
                   />
                 ) : currentResult ? (
@@ -658,10 +658,8 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
                     {thinkingTokens.length > 0 && (
                       <div className="mb-3">
                         <AiThinkingFeed
-                          tokens={thinkingTokens}
+                          texts={thinkingTokens}
                           isStreaming={false}
-                          showTranscript={showThinkingTranscript}
-                          onToggleTranscript={() => setShowThinkingTranscript(!showThinkingTranscript)}
                         />
                       </div>
                     )}
@@ -696,7 +694,7 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
               {isStreaming ? (
                 <>
                   <AiThinkingFeed
-                    tokens={thinkingTokens}
+                    texts={thinkingTokens}
                     isStreaming={true}
                   />
                   {streamingText && (
@@ -710,10 +708,8 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
                   {thinkingTokens.length > 0 && (
                     <div className="mb-3">
                       <AiThinkingFeed
-                        tokens={thinkingTokens}
+                        texts={thinkingTokens}
                         isStreaming={false}
-                        showTranscript={showThinkingTranscript}
-                        onToggleTranscript={() => setShowThinkingTranscript(!showThinkingTranscript)}
                       />
                     </div>
                   )}

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from 'react';
 
 interface AiThinkingFeedProps {
   texts: string[];
@@ -6,7 +6,7 @@ interface AiThinkingFeedProps {
   className?: string;
 }
 
-export function AiThinkingFeed({ texts, isStreaming, className = "" }: AiThinkingFeedProps) {
+export function AiThinkingFeed({ texts, isStreaming, className = '' }: AiThinkingFeedProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isExpanded, setIsExpanded] = useState(true);
 
@@ -60,7 +60,7 @@ export function AiThinkingFeed({ texts, isStreaming, className = "" }: AiThinkin
       <div
         ref={scrollRef}
         className="max-h-[150px] overflow-y-auto px-3 pb-3 border-l-2 border-emerald-500/30 ml-3"
-        style={{ scrollBehavior: "smooth" }}
+        style={{ scrollBehavior: 'smooth' }}
       >
         <div className="text-xs font-mono text-zinc-400 leading-relaxed whitespace-pre-wrap break-words">
           {texts.map((text, i) => (
