@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef } from "react";
+import { fetchWithAuth } from "@/lib/fetchWithAuth";
 
 interface UseAiStreamOptions {
   url: string;
@@ -28,7 +29,7 @@ export function useAiStream({ url, onThinking, onResult, onError }: UseAiStreamO
     setError(null);
 
     try {
-      const response = await fetch(url, {
+      const response = await fetchWithAuth(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload || {}),
