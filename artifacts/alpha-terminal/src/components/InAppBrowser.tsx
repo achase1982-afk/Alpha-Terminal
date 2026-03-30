@@ -1,5 +1,5 @@
 import { useTerminalStore } from "@/lib/store";
-import { X, ExternalLink, Globe, RefreshCw, Shield } from "lucide-react";
+import { X, ExternalLink, Globe, RefreshCw, Shield, ChevronLeft } from "lucide-react";
 import { useRef, useEffect, useState, useCallback } from "react";
 
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
@@ -19,12 +19,14 @@ export function InAppBrowser() {
   const [error, setError] = useState(false);
   const [headerH, setHeaderH] = useState(32);
   const [currentUrl, setCurrentUrl] = useState<string | null>(null);
+  const [history, setHistory] = useState<string[]>([]);
 
   useEffect(() => {
-    if (!browserUrl) { setLoading(true); setError(false); setCurrentUrl(null); return; }
+    if (!browserUrl) { setLoading(true); setError(false); setCurrentUrl(null); setHistory([]); return; }
     setLoading(true);
     setError(false);
     setCurrentUrl(browserUrl);
+    setHistory([]);
     const el = document.getElementById("terminal-header");
     if (el) setHeaderH(el.offsetHeight);
   }, [browserUrl]);
@@ -32,14 +34,21 @@ export function InAppBrowser() {
   useEffect(() => {
     const handler = (e: MessageEvent) => {
       if (e.data?.type === "proxy-navigate" && e.data.url) {
-        setCurrentUrl(e.data.url);
+        if (iframeRef.current && e.source !== iframeRef.current.contentWindow) return;
+        const newUrl = String(e.data.url);
+        if (!/^https?:\/\//i.test(newUrl)) return;
+        setHistory((prev) => currentUrl ? [...prev, currentUrl] : prev);
+        setCurrentUrl(newUrl);
         setLoading(true);
         setError(false);
+        if (iframeRef.current) {
+          iframeRef.current.src = proxyUrl(newUrl);
+        }
       }
     };
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
-  }, []);
+  }, [currentUrl]);
 
   const handleLoad = useCallback(() => {
     setLoading(false);
@@ -58,12 +67,26 @@ export function InAppBrowser() {
     }
   }, [currentUrl, browserTitle, browserSource, browserSourceUrl]);
 
+  const handleBack = useCallback(() => {
+    if (history.length === 0) return;
+    const prev = history[history.length - 1];
+    setHistory((h) => h.slice(0, -1));
+    setCurrentUrl(prev);
+    setLoading(true);
+    setError(false);
+    if (iframeRef.current) {
+      iframeRef.current.src = proxyUrl(prev);
+    }
+  }, [history]);
+
   if (!browserUrl || !currentUrl) return null;
 
   const displayUrl = (() => {
     try { return new URL(currentUrl).hostname.replace(/^www\./, ""); }
     catch { return currentUrl.slice(0, 40); }
   })();
+
+  const canGoBack = history.length > 0;
 
   return (
     <div
@@ -75,7 +98,7 @@ export function InAppBrowser() {
       }}
     >
       <div
-        className="flex items-center gap-2 px-3 py-2 border-b shrink-0"
+        className="flex items-center gap-1.5 px-3 py-2 border-b shrink-0"
         style={{
           background: "#111113",
           borderColor: "#2A2A2C",
@@ -90,6 +113,16 @@ export function InAppBrowser() {
           style={{ WebkitTapHighlightColor: "transparent", touchAction: "manipulation" }}
         >
           <X className="w-5 h-5 text-zinc-300" />
+        </button>
+
+        <button
+          onClick={handleBack}
+          disabled={!canGoBack}
+          className="p-1.5 rounded-md hover:bg-zinc-800 transition-colors cursor-pointer active:scale-95 disabled:opacity-30 disabled:cursor-default disabled:hover:bg-transparent"
+          aria-label="Go back"
+          style={{ WebkitTapHighlightColor: "transparent", touchAction: "manipulation" }}
+        >
+          <ChevronLeft className="w-4.5 h-4.5 text-zinc-300" />
         </button>
 
         <div className="flex-1 flex items-center gap-1.5 bg-zinc-900 rounded-md px-3 py-1.5 min-w-0 border border-zinc-800">
@@ -171,7 +204,7 @@ export function InAppBrowser() {
             ref={iframeRef}
             src={proxyUrl(currentUrl, browserTitle, browserSource, browserSourceUrl)}
             className="w-full h-full border-0"
-            sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+            sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
             referrerPolicy="no-referrer"
             loading="eager"
             allow="encrypted-media"

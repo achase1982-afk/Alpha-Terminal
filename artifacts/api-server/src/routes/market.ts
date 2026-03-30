@@ -1145,7 +1145,7 @@ ${rawSource ? `<div class="s">${escH(rawSource)}</div>` : ""}
   <meta name="referrer" content="no-referrer">
   <meta name="format-detection" content="telephone=no">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
-  <base href="${baseObj.origin}/" target="_blank">
+  <base href="${baseObj.origin}/">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { background: #1C1C1E; color: #e4e4e7; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
@@ -1189,6 +1189,7 @@ ${rawSource ? `<div class="s">${escH(rawSource)}</div>` : ""}
   <h1 class="reader-title">${title.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</h1>
   <div class="reader-meta">${siteName} · ${new URL(finalUrl).hostname}</div>
   <div class="reader-content">${articleContent}</div>
+  <script>document.addEventListener("click",function(e){var a=e.target;while(a&&a.tagName!=="A")a=a.parentElement;if(!a||!a.href)return;var h=a.href;if(!h.match(/^https?:\\/\\//))return;e.preventDefault();e.stopPropagation();if(window.parent!==window){try{window.parent.postMessage({type:"proxy-navigate",url:h},document.referrer||"*")}catch(x){window.parent.postMessage({type:"proxy-navigate",url:h},"*")}}},true);</script>
 </body>
 </html>`;
 
@@ -1199,7 +1200,7 @@ ${rawSource ? `<div class="s">${escH(rawSource)}</div>` : ""}
       r.setHeader("X-Frame-Options", "SAMEORIGIN");
       r.setHeader("Referrer-Policy", "no-referrer");
       r.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()");
-      r.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; img-src https: data:; font-src https: data:; base-uri 'self'; form-action 'none'; frame-ancestors 'self'");
+      r.setHeader("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src https: data:; font-src https: data:; base-uri 'self'; form-action 'none'; frame-ancestors 'self'");
     }
 
     setSecurityHeaders(res);
