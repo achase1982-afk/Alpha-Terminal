@@ -8,8 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
-import { Terminal, SlidersHorizontal, X, LayoutDashboard, ListOrdered, Gauge, BrainCircuit, Zap, MessageCircle, ChevronRight, Settings, Star, Trash2, BarChart2 } from "lucide-react";
+import { Terminal, SlidersHorizontal, X, LayoutDashboard, ListOrdered, Gauge, BrainCircuit, Zap, MessageCircle, ChevronRight, Settings, Star, Trash2, BarChart2, Landmark } from "lucide-react";
 import { useState } from "react";
+import { AccountInfo } from "./AccountInfo";
 import { useGetAvailableModels } from "@workspace/api-client-react";
 
 const API_BASE = "/api";
@@ -34,7 +35,7 @@ export function Sidebar({ onClose, onOpenChat }: SidebarProps) {
     tickerTapeSymbols, setTickerTapeSymbols,
     tapeSpeed, setTapeSpeed,
     aiModel, setAiModel, aiTemp, setAiTemp,
-    accessToken,
+    accessToken, traderAccessToken,
     watchlist, removeFromWatchlist, setSymbol,
   } = useTerminalStore();
 
@@ -54,6 +55,7 @@ export function Sidebar({ onClose, onOpenChat }: SidebarProps) {
     DEFAULT_PULSE_SYMBOLS
   );
 
+  const [accountOpen, setAccountOpen] = useState(false);
   const [pulseOpen, setPulseOpen] = useState(false);
   const [pulseLoading, setPulseLoading] = useState(false);
   const [pulseResult, setPulseResult] = useState<string | null>(null);
@@ -159,6 +161,20 @@ export function Sidebar({ onClose, onOpenChat }: SidebarProps) {
             <MessageCircle className="w-3.5 h-3.5 mr-2 shrink-0" />
             AI SEARCH
           </Button>
+
+          <Button
+            onClick={() => setAccountOpen(true)}
+            disabled={!(traderAccessToken || accessToken)}
+            className="w-full font-mono text-xs h-9 bg-[#1a1a1a] text-foreground border border-card-border hover:bg-primary/15 hover:border-primary/40 hover:text-primary transition-all tracking-wider mt-2"
+          >
+            <Landmark className="w-3.5 h-3.5 mr-2 shrink-0" />
+            ACCOUNT INFORMATION
+          </Button>
+          {!(traderAccessToken || accessToken) && (
+            <p className="font-mono text-[9px] text-muted-foreground/50 text-center mt-1">
+              Connect Schwab to view
+            </p>
+          )}
         </div>
 
         <div className="bg-card border border-card-border rounded-xl overflow-hidden shadow-sm">
@@ -384,6 +400,7 @@ export function Sidebar({ onClose, onOpenChat }: SidebarProps) {
         onSymbolsChange={setPulseSymbols}
         onClose={() => setPulseOpen(false)}
       />
+      {accountOpen && <AccountInfo onClose={() => setAccountOpen(false)} />}
     </div>
   );
 }
