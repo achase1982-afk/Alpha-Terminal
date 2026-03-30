@@ -129,14 +129,16 @@ export default function TerminalPage() {
 
           {/* ─── Ticker tape scrolling marquee ─── */}
           <TickerTape />
-
-          {/* ─── AI Bias Strip (always visible) ─── */}
-          <AiBiasStrip onNavigateToPulse={() => { setActiveMainTab("ai"); setAiSubTab("pulse"); }} />
         </div>
 
         <div ref={scrollRef} onScroll={handleScroll} className="app-content z-10">
           {/* ─── Macro Cards ─── */}
           <MacroBar />
+
+          {/* ─── AI Bias Strip (sticky: scrolls with content, pins below ticker tape) ─── */}
+          <div className="sticky top-0 z-40">
+            <AiBiasStrip onNavigateToPulse={() => { setActiveMainTab("ai"); setAiSubTab("pulse"); }} />
+          </div>
 
           {/* ─── Metrics row (sticky + collapsible) ─── */}
           <MetricsBar compact={isScrolled} onOpenTearSheet={() => setTearSheetOpen(true)} />
@@ -146,7 +148,7 @@ export default function TerminalPage() {
 
           <div className="flex flex-col" style={{ minHeight: "calc(var(--vvh, 100%) - 80px)" }}>
             <Tabs value={activeMainTab} onValueChange={setActiveMainTab} className="flex flex-col flex-1">
-              <div className="shrink-0 mb-4 sticky top-[36px] z-30 bg-background py-1 px-3 sm:px-4 lg:px-5">
+              <div className="shrink-0 mb-4 sticky top-[42px] z-30 bg-background py-1 px-3 sm:px-4 lg:px-5">
                 <div className="overflow-x-auto">
                   <TabsList className="bg-card border border-card-border p-1 inline-flex min-w-max">
                     <TabsTrigger
