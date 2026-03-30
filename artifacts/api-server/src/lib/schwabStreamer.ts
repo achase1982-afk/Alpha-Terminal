@@ -304,7 +304,16 @@ function sendSubscribe(symbols: string[]) {
 }
 
 // ─── Parse incoming DATA messages ────────────────────────────────────────────
+let equityTickCount = 0;
+let lastEquityTickLog = 0;
+
 function handleData(content: Record<string, unknown>[]) {
+  equityTickCount += content.length;
+  const now = Date.now();
+  if (now - lastEquityTickLog > 30_000) {
+    logger.info({ count: content.length, total: equityTickCount, symbols: content.map(i => i["key"]).slice(0, 5) }, "Streamer: EQUITY ticks received");
+    lastEquityTickLog = now;
+  }
   for (const item of content) {
     const schwabKey = item["key"] as string;
     const sym = fromSchwabKey(schwabKey);
@@ -354,7 +363,16 @@ function handleData(content: Record<string, unknown>[]) {
 }
 
 // ─── Parse incoming LEVELONE_FUTURES DATA messages ──────────────────────────
+let futuresTickCount = 0;
+let lastFuturesTickLog = 0;
+
 function handleFuturesData(content: Record<string, unknown>[]) {
+  futuresTickCount += content.length;
+  const now = Date.now();
+  if (now - lastFuturesTickLog > 30_000) {
+    logger.info({ count: content.length, total: futuresTickCount, symbols: content.map(i => i["key"]).slice(0, 5) }, "Streamer: FUTURES ticks received");
+    lastFuturesTickLog = now;
+  }
   for (const item of content) {
     const schwabKey = item["key"] as string;
     const sym = fromSchwabKey(schwabKey);
@@ -498,6 +516,15 @@ function onMessage(raw: string) {
       const svc  = r["service"] as string;
       const cmd  = r["command"] as string;
       const code = (r["content"] as Record<string, unknown>)?.["code"];
+      if (svc !== "ADMIN") {
+        const respCode = (r["content"] as Record<string, unknown>)?.["code"];
+        const respMsg  = (r["content"] as Record<string, unknown>)?.["msg"];
+        if (respCode !== 0 && respCode !== "0") {
+          logger.warn({ svc, cmd, code: respCode, msg: respMsg }, "Streamer: subscription response NON-ZERO");
+        } else {
+          logger.info({ svc, cmd, code: respCode }, "Streamer: subscription ACK");
+        }
+      }
       if (svc === "ADMIN" && cmd === "LOGIN") {
         if (code === 0 || code === "0") {
           loginAcked = true;
