@@ -14,12 +14,12 @@ const TABS: { value: AiSubTab; label: string }[] = [
 export function AiSubTabs({ active, onChange }: AiSubTabsProps) {
   return (
     <div
-      className="sticky z-40 px-3 sm:px-4 lg:px-5 py-2 bg-background"
+      className="sticky z-40 w-full px-3 sm:px-4 lg:px-5 py-2 bg-background"
       style={{ top: 78 }}
     >
       <div
-        className="flex rounded-full p-1 border border-card-border"
-        style={{ background: "rgba(39,39,42,0.45)" }}
+        className="flex w-full rounded-full p-1"
+        style={{ background: "rgba(39,39,42,0.5)" }}
       >
         {TABS.map((tab) => (
           <button

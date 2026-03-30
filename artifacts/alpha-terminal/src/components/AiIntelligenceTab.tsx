@@ -441,11 +441,16 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
   const [streamingText, setStreamingText] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [thinkingTokens, setThinkingTokens] = useState<string[]>([]);
-  const [showThinkingTranscript, setShowThinkingTranscript] = useState(false);
-
   useEffect(() => {
     if (initialSubTab) setSubTab(initialSubTab);
   }, [initialSubTab]);
+
+  const handleSubTabChange = useCallback((tab: AiSubTab) => {
+    setSubTab(tab);
+    setThinkingTokens([]);
+    setStreamingText("");
+    setActiveResult(null);
+  }, []);
 
   const { data: quote } = useGetQuote(
     { symbol, accessToken: accessToken || "" },
@@ -588,8 +593,8 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
     : null;
 
   return (
-    <div className="flex flex-col gap-0 max-w-5xl mx-auto pb-6 flex-1" style={{ minHeight: "calc(var(--vvh, 100vh) - 200px)" }}>
-      <AiSubTabs active={subTab} onChange={setSubTab} />
+    <div className="flex flex-col gap-0 w-full max-w-5xl mx-auto pb-6 flex-1" style={{ minHeight: "calc(var(--vvh, 100vh) - 200px)" }}>
+      <AiSubTabs active={subTab} onChange={handleSubTabChange} />
 
       {subTab === "pulse" && (
         <MarketPulseDashboard autoGenerate={initialSubTab === "pulse"} />
