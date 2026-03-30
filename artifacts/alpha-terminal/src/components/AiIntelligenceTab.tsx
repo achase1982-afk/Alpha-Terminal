@@ -470,7 +470,6 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
     setAnalysisResult(null);
     setStreamingText("");
     setThinkingTokens([]);
-    setShowThinkingTranscript(false);
     setActiveResult("analysis");
     setIsStreaming(true);
 
@@ -503,7 +502,6 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
     setStrategistResult(null);
     setStreamingText("");
     setThinkingTokens([]);
-    setShowThinkingTranscript(false);
     setActiveResult("strategist");
     setChainEnabled(true);
     setIsStrategizing(true);
