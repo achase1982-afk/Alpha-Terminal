@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef } from 'react';
 
 interface UseAiStreamOptions {
   url: string;
@@ -29,8 +29,8 @@ export function useAiStream({ url, onThinking, onResult, onError }: UseAiStreamO
 
     try {
       const response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload || {}),
         signal: abortController.signal,
       });
@@ -40,12 +40,12 @@ export function useAiStream({ url, onThinking, onResult, onError }: UseAiStreamO
       }
 
       if (!response.body) {
-        throw new Error("No response body");
+        throw new Error('No response body');
       }
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
-      let buffer = "";
+      let buffer = '';
 
       while (true) {
         const { done, value } = await reader.read();
@@ -53,20 +53,20 @@ export function useAiStream({ url, onThinking, onResult, onError }: UseAiStreamO
 
         buffer += decoder.decode(value, { stream: true });
 
-        const events = buffer.split("\n\n");
-        buffer = events.pop() || "";
+        const events = buffer.split('\n\n');
+        buffer = events.pop() || '';
 
         for (const event of events) {
           if (!event.trim()) continue;
 
-          const lines = event.split("\n");
-          let eventType = "";
-          let eventData = "";
+          const lines = event.split('\n');
+          let eventType = '';
+          let eventData = '';
 
           for (const line of lines) {
-            if (line.startsWith("event:")) {
+            if (line.startsWith('event:')) {
               eventType = line.slice(6).trim();
-            } else if (line.startsWith("data:")) {
+            } else if (line.startsWith('data:')) {
               eventData = line.slice(5).trim();
             }
           }
@@ -76,25 +76,25 @@ export function useAiStream({ url, onThinking, onResult, onError }: UseAiStreamO
           try {
             const parsed = JSON.parse(eventData);
 
-            if (eventType === "thinking") {
-              const text = parsed.text || parsed.content || "";
+            if (eventType === 'thinking') {
+              const text = parsed.text || parsed.content || '';
               if (text) {
                 setThinkingTexts(prev => [...prev, text]);
                 onThinking?.(text);
               }
-            } else if (eventType === "result") {
+            } else if (eventType === 'result') {
               const resultData = parsed.pulse || parsed.data || parsed;
               setResult(resultData);
               setIsStreaming(false);
               onResult?.(resultData);
-            } else if (eventType === "error") {
-              const msg = parsed.message || "An error occurred";
+            } else if (eventType === 'error') {
+              const msg = parsed.message || 'An error occurred';
               setError(msg);
               setIsStreaming(false);
               onError?.(msg);
             }
           } catch (parseErr) {
-            console.warn("[useAiStream] Failed to parse SSE data:", eventData);
+            console.warn('[useAiStream] Failed to parse SSE data:', eventData);
           }
         }
       }
@@ -102,9 +102,9 @@ export function useAiStream({ url, onThinking, onResult, onError }: UseAiStreamO
       setIsStreaming(false);
 
     } catch (err: any) {
-      if (err.name === "AbortError") return;
-      console.error("[useAiStream] Stream error:", err);
-      const msg = err.message || "Generation failed. Please try again.";
+      if (err.name === 'AbortError') return;
+      console.error('[useAiStream] Stream error:', err);
+      const msg = err.message || 'Generation failed. Please try again.';
       setError(msg);
       setIsStreaming(false);
       onError?.(msg);
@@ -128,13 +128,11 @@ export function useAiStream({ url, onThinking, onResult, onError }: UseAiStreamO
 
   return {
     thinkingTexts,
-    thinking: thinkingTexts,
     result,
     isStreaming,
     error,
     startStream,
     stopStream,
-    abort: stopStream,
     reset,
   };
 }

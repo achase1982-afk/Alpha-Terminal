@@ -65,7 +65,7 @@ export function MarketPulseDashboard({ autoGenerate }: MarketPulseDashboardProps
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [showTranscript, setShowTranscript] = useState(false);
 
-  const { startStream } = useAiStream<MarketPulseData>({
+  const { startStream } = useAiStream({
     url: `${API_BASE}/ai/market-pulse/stream`,
     onThinking: (text) => appendThinking(text),
     onResult: (data) => {
@@ -74,9 +74,15 @@ export function MarketPulseDashboard({ autoGenerate }: MarketPulseDashboardProps
         generatedAt: Date.now(),
       };
       setPulseData(enriched);
+      setLoading(false);
+      setStreaming(false);
       setShowTranscript(false);
     },
-    onError: (msg) => setError(msg),
+    onError: (msg) => {
+      setError(msg);
+      setLoading(false);
+      setStreaming(false);
+    },
   });
 
   const fetchPulse = useCallback(async () => {
