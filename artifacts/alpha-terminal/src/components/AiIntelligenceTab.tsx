@@ -592,13 +592,11 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
       <AiSubTabs active={subTab} onChange={setSubTab} />
 
       {subTab === "pulse" && (
-        <div className="relative z-0">
-          <MarketPulseDashboard autoGenerate={initialSubTab === "pulse"} />
-        </div>
+        <MarketPulseDashboard autoGenerate={initialSubTab === "pulse"} />
       )}
 
       {subTab === "strategist" && (
-        <div className="relative z-0 px-3 sm:px-4 lg:px-5 space-y-4">
+        <div className="px-3 sm:px-4 lg:px-5 space-y-4">
           <div className="flex items-center gap-2 px-1">
             <BarChart2 className="w-4 h-4 text-[#FFB800]" />
             <span className="font-mono text-xs font-bold text-[#e4e4e7] tracking-wider">OPTIONS STRATEGIST</span>
@@ -688,7 +686,7 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
       )}
 
       {subTab === "technicals" && (
-        <div className="relative z-0 px-3 sm:px-4 lg:px-5 space-y-4">
+        <div className="px-3 sm:px-4 lg:px-5 space-y-4">
           <div className="flex items-center gap-2 px-1">
             <Activity className="w-4 h-4 text-[#FFB800]" />
             <span className="font-mono text-xs font-bold text-[#e4e4e7] tracking-wider">TECHNICAL ANALYSIS</span>

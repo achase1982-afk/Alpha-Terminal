@@ -146,7 +146,7 @@ export default function TerminalPage() {
 
           <div className="flex flex-col" style={{ minHeight: "calc(var(--vvh, 100%) - 80px)" }}>
             <Tabs value={activeMainTab} onValueChange={setActiveMainTab} className="flex flex-col flex-1">
-              <div className="overflow-x-auto shrink-0 mb-4 sticky top-[36px] z-40 bg-background py-1 px-3 sm:px-4 lg:px-5 border-b border-card-border">
+              <div className="overflow-x-auto shrink-0 mb-4 sticky top-[36px] z-30 bg-background py-1 px-3 sm:px-4 lg:px-5">
                 <TabsList className="bg-card border border-card-border p-1 inline-flex min-w-max">
                   <TabsTrigger
                     value="news"
