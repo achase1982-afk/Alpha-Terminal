@@ -405,21 +405,40 @@ function handleFuturesData(content: Record<string, unknown>[]) {
   }
 }
 
-// ─── Subscribe to option symbols ─────────────────────────────────────────────
+// ─── Subscribe to option symbols (batched to stay under WS frame limit) ──────
+const OPT_BATCH_SIZE = 200;
+
 function sendOptionSubscribe(symbols: string[]) {
   if (!streamerInfo || !loginAcked || !symbols.length) return;
-  const keys = symbols.join(",");
-  wsSend({
-    requests: [{
-      service:                  "LEVELONE_OPTIONS",
-      requestid:                nextReq(),
-      command:                  "ADD",
-      SchwabClientCustomerId:   streamerInfo.schwabClientCustomerId,
-      SchwabClientCorrelId:     streamerInfo.schwabClientCorrelId,
-      parameters: { keys, fields: OPT_FIELDS_STR },
-    }],
-  });
-  logger.info({ count: symbols.length }, "Streamer: subscribed option symbols");
+
+  for (let i = 0; i < symbols.length; i += OPT_BATCH_SIZE) {
+    const batch = symbols.slice(i, i + OPT_BATCH_SIZE);
+    const keys = batch.join(",");
+    const delay = Math.floor(i / OPT_BATCH_SIZE) * 250;
+
+    const send = () => {
+      if (!streamerInfo || !loginAcked) return;
+      wsSend({
+        requests: [{
+          service:                  "LEVELONE_OPTIONS",
+          requestid:                nextReq(),
+          command:                  "ADD",
+          SchwabClientCustomerId:   streamerInfo.schwabClientCustomerId,
+          SchwabClientCorrelId:     streamerInfo.schwabClientCorrelId,
+          parameters: { keys, fields: OPT_FIELDS_STR },
+        }],
+      });
+    };
+
+    if (delay === 0) {
+      send();
+    } else {
+      setTimeout(send, delay);
+    }
+  }
+
+  const batches = Math.ceil(symbols.length / OPT_BATCH_SIZE);
+  logger.info({ count: symbols.length, batches }, "Streamer: subscribed option symbols");
 }
 
 // ─── Parse incoming LEVELONE_OPTIONS DATA messages ──────────────────────────
