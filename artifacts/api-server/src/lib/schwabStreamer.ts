@@ -758,6 +758,13 @@ export function getSnapshot(): LiveQuote[] {
   return [...quoteCache.values()];
 }
 
+export function getStreamerStatus(): string {
+  if (loginRejected) return "rejected";
+  if (loginAcked) return "connected";
+  if (isConnecting || loginSent) return "connecting";
+  return "disconnected";
+}
+
 /** Is the streamer currently connected? */
 export function isConnected(): boolean {
   return ws !== null && ws.readyState === WebSocket.OPEN && loginAcked;

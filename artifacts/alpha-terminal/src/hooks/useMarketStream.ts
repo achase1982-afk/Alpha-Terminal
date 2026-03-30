@@ -1,9 +1,10 @@
 import { useEffect, useRef, useCallback } from "react";
 import { useTerminalStore } from "@/lib/store";
-import { useOptionsStreamStore, type OptionTick } from "@/lib/options-stream-store";
+import { useOptionsStreamStore } from "@/lib/options-stream-store";
 import type { LiveQuote } from "@/lib/store";
 
 const API_BASE = "/api";
+const POLL_INTERVAL = 2_000;
 const REJECTED_RETRY_DELAY = 3_000;
 const MAX_REJECTED_RETRIES = 3;
 
@@ -76,9 +77,10 @@ export function useMarketStream() {
   } = useTerminalStore();
 
   const mergeTick = useOptionsStreamStore((s) => s.mergeTick);
-  const esRef = useRef<EventSource | null>(null);
   const rejectedRetries = useRef(0);
   const symDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const startedRef = useRef(false);
 
   function allSymbols(): string[] {
     return [
@@ -91,6 +93,8 @@ export function useMarketStream() {
   }
 
   async function startServerStream(marketToken: string, traderToken: string | null) {
+    if (startedRef.current) return;
+    startedRef.current = true;
     try {
       const res = await fetch(`${API_BASE}/stream/start`, {
         method: "POST",
@@ -103,9 +107,11 @@ export function useMarketStream() {
       });
       if (!res.ok) {
         console.warn("[stream] startServerStream HTTP", res.status);
+        startedRef.current = false;
       }
     } catch (err) {
       console.warn("[stream] startServerStream failed:", err);
+      startedRef.current = false;
     }
   }
 
@@ -119,62 +125,34 @@ export function useMarketStream() {
     } catch {}
   }
 
-  function openEventSource() {
-    esRef.current?.close();
-    esRef.current = null;
-    setStreamStatus("connecting");
+  async function pollSnapshot() {
+    try {
+      const res = await fetch(`${API_BASE}/stream/snapshot`);
+      if (!res.ok) return;
+      const data = await res.json() as { quotes: LiveQuote[]; status?: string };
 
-    const es = new EventSource(`${API_BASE}/stream/quotes`);
-    esRef.current = es;
+      if (data.status === "rejected") {
+        setStreamStatus("offline");
+        const attempt = rejectedRetries.current;
+        rejectedRetries.current++;
+        setTimeout(() => void refreshAndRetry(attempt), REJECTED_RETRY_DELAY);
+        return;
+      }
 
-    es.addEventListener("streamerStatus", (e) => {
-      try {
-        const { status } = JSON.parse((e as MessageEvent).data) as { status: string };
-        if (status === "connected") {
-          setStreamStatus("live");
-          rejectedRetries.current = 0;
-        } else if (status === "rejected") {
-          setStreamStatus("offline");
-          console.warn("[stream] Schwab streamer LOGIN rejected — attempting token refresh");
-          const attempt = rejectedRetries.current;
-          rejectedRetries.current++;
-          setTimeout(() => void refreshAndRetry(attempt), REJECTED_RETRY_DELAY);
-        } else if (status === "connecting") {
-          setStreamStatus("connecting");
-        } else if (status === "disconnected") {
-          setStreamStatus("connecting");
+      if (data.status === "connected" && data.quotes && data.quotes.length > 0) {
+        setStreamStatus("live");
+        rejectedRetries.current = 0;
+        for (const q of data.quotes) {
+          setStreamQuote(q);
         }
-      } catch {}
-    });
-
-    es.addEventListener("quote", (e) => {
-      try {
-        const q = JSON.parse((e as MessageEvent).data) as LiveQuote;
-        setStreamQuote(q);
-      } catch {}
-    });
-
-    es.addEventListener("optionQuote", (e) => {
-      try {
-        const tick = JSON.parse((e as MessageEvent).data) as OptionTick;
-        mergeTick(tick);
-      } catch {}
-    });
-
-    es.addEventListener("heartbeat", () => {});
-
-    es.onopen = () => {};
-
-    es.onerror = () => {
+      } else if (data.status === "connecting") {
+        setStreamStatus("connecting");
+      } else if (data.status === "disconnected") {
+        setStreamStatus("offline");
+      }
+    } catch {
       setStreamStatus("connecting");
-      es.close();
-      esRef.current = null;
-      setTimeout(() => {
-        if (!esRef.current && accessToken) {
-          openEventSource();
-        }
-      }, 2_000);
-    };
+    }
   }
 
   const streamKey = `${accessToken || ""}|${traderAccessToken || ""}`;
@@ -182,26 +160,30 @@ export function useMarketStream() {
   useEffect(() => {
     if (!accessToken) {
       setStreamStatus("offline");
-      esRef.current?.close();
-      esRef.current = null;
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+      startedRef.current = false;
       return;
     }
 
     rejectedRetries.current = 0;
-    openEventSource();
+    setStreamStatus("connecting");
+    startedRef.current = false;
     void startServerStream(accessToken, traderAccessToken);
 
-    const watchdog = setInterval(() => {
-      const es = esRef.current;
-      if (!es || es.readyState === EventSource.CLOSED) {
-        openEventSource();
-      }
-    }, 5_000);
+    void pollSnapshot();
+
+    pollRef.current = setInterval(() => {
+      void pollSnapshot();
+    }, POLL_INTERVAL);
 
     return () => {
-      clearInterval(watchdog);
-      esRef.current?.close();
-      esRef.current = null;
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [streamKey]);
@@ -222,12 +204,17 @@ export function useMarketStream() {
     function handleVisibility() {
       if (!accessToken) return;
       if (document.hidden) {
-        esRef.current?.close();
-        esRef.current = null;
+        if (pollRef.current) {
+          clearInterval(pollRef.current);
+          pollRef.current = null;
+        }
         setStreamStatus("offline");
-      } else if (!esRef.current) {
-        openEventSource();
-        void startServerStream(accessToken, traderAccessToken);
+      } else if (!pollRef.current) {
+        setStreamStatus("connecting");
+        void pollSnapshot();
+        pollRef.current = setInterval(() => {
+          void pollSnapshot();
+        }, POLL_INTERVAL);
       }
     }
     document.addEventListener("visibilitychange", handleVisibility);

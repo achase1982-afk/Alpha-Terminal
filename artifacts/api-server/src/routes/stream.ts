@@ -15,6 +15,7 @@ import {
   addOptionSymbols,
   addSseClient,
   getSnapshot,
+  getStreamerStatus,
   isConnected,
 } from "../lib/schwabStreamer.js";
 
@@ -91,7 +92,7 @@ router.get("/quotes", (req, res) => {
 
 // ── GET /api/stream/snapshot ──────────────────────────────────────────────────
 router.get("/snapshot", (_req, res) => {
-  res.json({ quotes: getSnapshot() });
+  res.json({ quotes: getSnapshot(), status: getStreamerStatus() });
 });
 
 // ── GET /api/stream/status ────────────────────────────────────────────────────
