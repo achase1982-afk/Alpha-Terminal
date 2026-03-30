@@ -53,7 +53,7 @@ function fromLive(q: LiveQuote): QuoteData {
   };
 }
 
-const STREAM_STALE_MS = 60_000;
+const STREAM_STALE_MS = 30_000;
 
 export function useQuote(symbol: string) {
   const symUpper = symbol.toUpperCase();
@@ -69,7 +69,6 @@ export function useQuote(symbol: string) {
       query: {
         enabled:         !!accessToken && !!symbol,
         refetchInterval: (query) => {
-          if (hasLiveData && query.state.data && !query.state.data.error) return false;
           const err = query.state.data?.error;
           if (err === "rate_limited") return 3_000;
           if (
@@ -78,6 +77,7 @@ export function useQuote(symbol: string) {
             err?.startsWith("api_error_4") ||
             err?.startsWith("api_error_5")
           ) return false;
+          if (hasLiveData && query.state.data && !err) return 10_000;
           return 1_000;
         },
         refetchIntervalInBackground: false,

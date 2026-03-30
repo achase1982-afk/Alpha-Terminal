@@ -330,7 +330,7 @@ function handleData(content: Record<string, unknown>[]) {
       return typeof v === "number" && !isNaN(v) ? v : null;
     };
 
-    const lastVal  = pick(FIELD.LAST)    ?? pick(FIELD.MARK)    ?? existing.last;
+    const lastVal  = pick(FIELD.MARK)    ?? pick(FIELD.LAST)    ?? existing.last;
     const closeVal = pick(FIELD.CLOSE_A) ?? pick(FIELD.CLOSE_B) ?? existing.close;
 
     let changeVal:    number | null = existing.change;

@@ -136,11 +136,13 @@ router.get("/quote", async (req, res) => {
     }
 
     // ── Last / mark price ─────────────────────────────────────────────────────
+    // Prefer `mark` during extended/overnight hours — it reflects the current
+    // bid-ask midpoint whereas `lastPrice` freezes at the regular-session close.
     const last = pickNum(
-      "lastPrice",
-      "last",
       "mark",
       "markPrice",
+      "lastPrice",
+      "last",
       "regularMarketLastPrice",
     );
 
@@ -157,9 +159,9 @@ router.get("/quote", async (req, res) => {
     //   Regular hours:  netChange, regularMarketNetChange
     //   Extended hours: extendedChange, markChange, postMarketChange
     let change = pickNum(
+      "markChange",
       "netChange",
       "regularMarketNetChange",
-      "markChange",
       "extendedChange",
       "postMarketChange",
       "preMarketChange",
@@ -172,11 +174,11 @@ router.get("/quote", async (req, res) => {
 
     // ── Percent change ────────────────────────────────────────────────────────
     let changePct = pickNum(
+      "markPercentChange",
       "netPercentChange",
       "futurePercentChange",
       "netPercentChangeInDouble",
       "regularMarketPercentChangeInDouble",
-      "markPercentChange",
       "extendedPercentChange",
       "postMarketPercentChange",
       "preMarketPercentChange",
