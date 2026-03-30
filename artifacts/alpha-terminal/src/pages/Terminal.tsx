@@ -129,14 +129,14 @@ export default function TerminalPage() {
 
           {/* ─── Ticker tape scrolling marquee ─── */}
           <TickerTape />
+
+          {/* ─── AI Bias Strip (always visible) ─── */}
+          <AiBiasStrip onNavigateToPulse={() => { setActiveMainTab("ai"); setAiSubTab("pulse"); }} />
         </div>
 
         <div ref={scrollRef} onScroll={handleScroll} className="app-content z-10">
           {/* ─── Macro Cards ─── */}
           <MacroBar />
-
-          {/* ─── AI Bias Strip ─── */}
-          <AiBiasStrip onNavigateToPulse={() => { setActiveMainTab("ai"); setAiSubTab("pulse"); }} />
 
           {/* ─── Metrics row (sticky + collapsible) ─── */}
           <MetricsBar compact={isScrolled} onOpenTearSheet={() => setTearSheetOpen(true)} />
