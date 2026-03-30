@@ -9,6 +9,7 @@ import { setWsTokenGetter } from "@/hooks/useMarketStream";
 import "./index.css";
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string;
+const isDev = import.meta.env.DEV;
 
 function AuthBridge({ children }: { children: React.ReactNode }) {
   const { getToken } = useAuth();
@@ -23,23 +24,44 @@ function AuthBridge({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-createRoot(document.getElementById("root")!).render(
-  <ClerkProvider publishableKey={clerkPubKey} appearance={{ baseTheme: dark }}>
-    <SignedOut>
-      <div style={{
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-        minHeight: "100vh",
-        background: "#0c0c0c",
-      }}>
-        <SignIn routing="hash" />
-      </div>
-    </SignedOut>
-    <SignedIn>
-      <AuthBridge>
+function DevAuthBridge({ children }: { children: React.ReactNode }) {
+  useEffect(() => {
+    const noopGetter = () => Promise.resolve(null);
+    setClerkTokenGetter(noopGetter);
+    setAuthTokenGetter(noopGetter);
+    setWsTokenGetter(noopGetter);
+  }, []);
+
+  return <>{children}</>;
+}
+
+if (isDev) {
+  createRoot(document.getElementById("root")!).render(
+    <ClerkProvider publishableKey={clerkPubKey} appearance={{ baseTheme: dark }}>
+      <DevAuthBridge>
         <App />
-      </AuthBridge>
-    </SignedIn>
-  </ClerkProvider>
-);
+      </DevAuthBridge>
+    </ClerkProvider>
+  );
+} else {
+  createRoot(document.getElementById("root")!).render(
+    <ClerkProvider publishableKey={clerkPubKey} appearance={{ baseTheme: dark }}>
+      <SignedOut>
+        <div style={{
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          minHeight: "100vh",
+          background: "#0c0c0c",
+        }}>
+          <SignIn routing="hash" />
+        </div>
+      </SignedOut>
+      <SignedIn>
+        <AuthBridge>
+          <App />
+        </AuthBridge>
+      </SignedIn>
+    </ClerkProvider>
+  );
+}
