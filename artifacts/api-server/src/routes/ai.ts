@@ -253,10 +253,12 @@ Be specific, data-driven, and concise. Use markdown formatting.`;
     });
 
     for await (const part of result.fullStream) {
-      if (part.type === "reasoning" && (part as any).textDelta) {
-        res.write(`data: ${JSON.stringify({ reasoning: (part as any).textDelta })}\n\n`);
-      } else if (part.type === "text-delta" && part.textDelta) {
-        res.write(`data: ${JSON.stringify({ text: part.textDelta })}\n\n`);
+      const p = part as any;
+      const delta = p.textDelta ?? p.text;
+      if (part.type === "reasoning" && delta) {
+        res.write(`data: ${JSON.stringify({ reasoning: delta })}\n\n`);
+      } else if (part.type === "text-delta" && delta) {
+        res.write(`data: ${JSON.stringify({ text: delta })}\n\n`);
       }
     }
     clearInterval(heartbeat);
@@ -1003,7 +1005,7 @@ RULES:
           if (typeof (res as any).flush === "function") (res as any).flush();
         }
       } else if (part.type === "text-delta") {
-        responseBuffer += part.textDelta;
+        responseBuffer += (part as any).textDelta ?? (part as any).text ?? "";
       }
     }
 
@@ -1263,10 +1265,12 @@ router.post("/options-strategist/stream", async (req, res) => {
     });
 
     for await (const part of result.fullStream) {
-      if (part.type === "reasoning" && (part as any).textDelta) {
-        res.write(`data: ${JSON.stringify({ reasoning: (part as any).textDelta })}\n\n`);
-      } else if (part.type === "text-delta" && part.textDelta) {
-        res.write(`data: ${JSON.stringify({ text: part.textDelta })}\n\n`);
+      const p = part as any;
+      const delta = p.textDelta ?? p.text;
+      if (part.type === "reasoning" && delta) {
+        res.write(`data: ${JSON.stringify({ reasoning: delta })}\n\n`);
+      } else if (part.type === "text-delta" && delta) {
+        res.write(`data: ${JSON.stringify({ text: delta })}\n\n`);
       }
     }
     clearInterval(heartbeat);
