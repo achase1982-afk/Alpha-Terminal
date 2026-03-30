@@ -1,0 +1,62 @@
+Role: Senior Full-Stack Engineer.
+
+Objective: Replace the frontend’s 2-second HTTP polling of `/api/stream/snapshot` with a real WebSocket connection from the browser to the Express server, so all price updates arrive in real-time with zero delay.
+
+CRITICAL RULES:
+
+- Do NOT modify the server’s existing Schwab WebSocket streamer connection. That stays as-is.
+- Do NOT modify Clerk auth, Schwab OAuth, security settings, or any UI layout.
+- The server already receives live ticks from Schwab via WebSocket. The only change is how those ticks reach the frontend.
+
+Current architecture:
+
+- Server connects to Schwab streaming API via WebSocket (schwabStreamer.ts)
+- Server caches latest quotes in memory
+- Frontend polls GET `/api/stream/snapshot` every 2 seconds to read the cache
+- This introduces up to 2 seconds of latency on every price update
+
+Target architecture:
+
+- Server connects to Schwab streaming API via WebSocket (unchanged)
+- Server ALSO runs a WebSocket server that the frontend connects to
+- When the server receives a tick from Schwab, it immediately broadcasts it to all connected frontend clients
+- Frontend receives ticks in real-time and updates the Zustand `streamPrices` store directly
+- Remove the 2-second polling interval entirely
+
+Task 1: Add a WebSocket server on the Express backend.
+
+- Use the existing `ws` library (already in the project).
+- Create a WebSocket server endpoint at `/ws/prices` (or similar path).
+- The WS connection must be authenticated: on upgrade, extract the Clerk session token from the query string (`?clerk_token=<token>`) and verify it using the Clerk Backend SDK. Reject unauthenticated connections with 401.
+- Use `noServer: true` and handle the upgrade in `server.on('upgrade')`.
+- Keep track of connected clients.
+
+Task 2: Broadcast ticks to frontend clients.
+
+- In the Schwab streamer’s message handler (where it parses incoming ticks and updates the cache), after updating the cache, broadcast the parsed tick data to all connected frontend WebSocket clients.
+- Send the same data shape the frontend already expects from the snapshot endpoint so the Zustand store can consume it with minimal changes.
+- Only broadcast symbols that actually changed in each tick, not the entire cache.
+
+Task 3: Update the frontend to connect via WebSocket.
+
+- Replace the polling logic in the stream hook (useMarketStream or equivalent) with a WebSocket connection to `/ws/prices`.
+- On connection open, the server should send the current full snapshot (so the UI populates immediately without waiting for the first tick).
+- On each incoming message, update the Zustand `streamPrices` store the same way the polling response currently does.
+- On disconnect, implement reconnection with exponential backoff (1s, 2s, 4s, max 30s).
+- Fetch a fresh Clerk token on each reconnect attempt.
+
+Task 4: Remove the polling fallback.
+
+- Remove the `setInterval` polling of `/api/stream/snapshot`.
+- You can keep the `/api/stream/snapshot` endpoint alive for debugging, but the frontend should no longer call it automatically.
+
+Task 5: Connection status indicator.
+
+- The existing connection status indicator in the UI (the green dot / “Streaming” badge) should reflect the WebSocket connection state: connected, reconnecting, or disconnected.
+
+BUILD AND TEST:
+
+- Verify prices update in real-time (no visible 2-second stepping).
+- Verify the UI populates immediately on connect (initial snapshot).
+- Verify reconnection works: kill the server, restart it, confirm the frontend reconnects and resumes streaming.
+- Verify unauthenticated WebSocket connections are rejected with 401.

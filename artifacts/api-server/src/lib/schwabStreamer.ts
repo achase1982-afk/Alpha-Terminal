@@ -191,9 +191,18 @@ function sseWrite(res: Response, event: string, data: unknown) {
   }
 }
 
+let wsBroadcastFn: ((event: string, data: unknown) => void) | null = null;
+
+export function registerWsBroadcast(fn: (event: string, data: unknown) => void) {
+  wsBroadcastFn = fn;
+}
+
 function broadcast(event: string, data: unknown) {
   for (const res of sseClients) {
     sseWrite(res, event, data);
+  }
+  if (wsBroadcastFn) {
+    wsBroadcastFn(event, data);
   }
 }
 

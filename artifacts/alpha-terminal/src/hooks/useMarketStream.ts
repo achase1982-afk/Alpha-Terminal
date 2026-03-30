@@ -5,9 +5,16 @@ import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import type { LiveQuote } from "@/lib/store";
 
 const API_BASE = "/api";
-const POLL_INTERVAL = 2_000;
 const REJECTED_RETRY_DELAY = 3_000;
 const MAX_REJECTED_RETRIES = 3;
+const WS_RECONNECT_BASE = 1_000;
+const WS_RECONNECT_MAX = 30_000;
+
+let _getClerkToken: (() => Promise<string | null>) | null = null;
+
+export function setWsTokenGetter(fn: () => Promise<string | null>) {
+  _getClerkToken = fn;
+}
 
 async function refreshAndRetry(retryCount: number): Promise<boolean> {
   if (retryCount >= MAX_REJECTED_RETRIES) {
@@ -63,6 +70,11 @@ async function refreshAndRetry(retryCount: number): Promise<boolean> {
   return true;
 }
 
+function buildWsUrl(clerkToken: string): string {
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${window.location.host}/ws/prices?clerk_token=${encodeURIComponent(clerkToken)}`;
+}
+
 export function useMarketStream() {
   const {
     accessToken,
@@ -77,9 +89,13 @@ export function useMarketStream() {
   const mergeTick = useOptionsStreamStore((s) => s.mergeTick);
   const rejectedRetries = useRef(0);
   const symDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startedRef = useRef(false);
   const startDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const wsRef = useRef<WebSocket | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectDelayRef = useRef(WS_RECONNECT_BASE);
+  const mountedRef = useRef(true);
 
   function allSymbols(): string[] {
     return [
@@ -122,48 +138,132 @@ export function useMarketStream() {
     } catch {}
   }
 
-  async function pollSnapshot() {
-    try {
-      const res = await fetchWithAuth(`${API_BASE}/stream/snapshot`);
-      if (!res.ok) return;
-      const data = await res.json() as { quotes: LiveQuote[]; status?: string };
+  const connectWs = useCallback(async () => {
+    if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
 
-      if (data.status === "rejected") {
-        setStreamStatus("offline");
-        const attempt = rejectedRetries.current;
-        rejectedRetries.current++;
-        setTimeout(() => void refreshAndRetry(attempt), REJECTED_RETRY_DELAY);
-        return;
-      }
+    if (!_getClerkToken) return;
+    const token = await _getClerkToken();
+    if (!token || !mountedRef.current) return;
 
-      if (data.quotes && data.quotes.length > 0) {
-        setStreamStatus("live");
-        rejectedRetries.current = 0;
-        for (const q of data.quotes) {
-          setStreamQuote(q);
+    const url = buildWsUrl(token);
+
+    setStreamStatus("connecting");
+
+    const socket = new WebSocket(url);
+    wsRef.current = socket;
+
+    socket.onopen = () => {
+      reconnectDelayRef.current = WS_RECONNECT_BASE;
+    };
+
+    socket.onmessage = (ev) => {
+      try {
+        const msg = JSON.parse(ev.data as string) as { event: string; data: unknown };
+        const { event, data } = msg;
+
+        if (event === "snapshot") {
+          const snap = data as { quotes: LiveQuote[]; status?: string };
+          if (snap.status === "rejected") {
+            setStreamStatus("offline");
+            const attempt = rejectedRetries.current;
+            rejectedRetries.current++;
+            setTimeout(() => void refreshAndRetry(attempt), REJECTED_RETRY_DELAY);
+            return;
+          }
+          if (snap.quotes && snap.quotes.length > 0) {
+            setStreamStatus("live");
+            rejectedRetries.current = 0;
+            for (const q of snap.quotes) {
+              setStreamQuote(q);
+            }
+          } else if (snap.status === "connecting") {
+            setStreamStatus("connecting");
+          } else if (snap.status === "disconnected") {
+            setStreamStatus("offline");
+          }
+        } else if (event === "quote") {
+          setStreamStatus("live");
+          rejectedRetries.current = 0;
+          setStreamQuote(data as LiveQuote);
+        } else if (event === "optionQuote") {
+          mergeTick(data as Record<string, unknown>);
+        } else if (event === "streamerStatus") {
+          const st = data as { status?: string };
+          if (st.status === "connected") {
+            setStreamStatus("live");
+          } else if (st.status === "disconnected") {
+            setStreamStatus("connecting");
+          } else if (st.status === "rejected") {
+            setStreamStatus("offline");
+            const attempt = rejectedRetries.current;
+            rejectedRetries.current++;
+            setTimeout(() => void refreshAndRetry(attempt), REJECTED_RETRY_DELAY);
+          }
         }
-      } else if (data.status === "connecting") {
-        setStreamStatus("connecting");
-      } else if (data.status === "disconnected") {
-        setStreamStatus("offline");
-      }
-    } catch {}
+      } catch {}
+    };
+
+    socket.onclose = () => {
+      wsRef.current = null;
+      if (!mountedRef.current) return;
+      setStreamStatus("connecting");
+      scheduleReconnect();
+    };
+
+    socket.onerror = () => {
+      socket.close();
+    };
+  }, [setStreamQuote, setStreamStatus, mergeTick]);
+
+  function scheduleReconnect() {
+    if (reconnectTimerRef.current) return;
+    const delay = reconnectDelayRef.current;
+    reconnectDelayRef.current = Math.min(delay * 2, WS_RECONNECT_MAX);
+    reconnectTimerRef.current = setTimeout(() => {
+      reconnectTimerRef.current = null;
+      void connectWs();
+    }, delay);
+  }
+
+  function cleanupWs() {
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+    if (wsRef.current) {
+      wsRef.current.onclose = null;
+      wsRef.current.onerror = null;
+      wsRef.current.onmessage = null;
+      wsRef.current.close();
+      wsRef.current = null;
+    }
   }
 
   useEffect(() => {
-    void pollSnapshot();
-    pollRef.current = setInterval(() => {
-      void pollSnapshot();
-    }, POLL_INTERVAL);
+    mountedRef.current = true;
+    void connectWs();
 
     return () => {
-      if (pollRef.current) {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
-      }
+      mountedRef.current = false;
+      cleanupWs();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [connectWs]);
+
+  useEffect(() => {
+    function handleVisibility() {
+      if (document.hidden) {
+        return;
+      }
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+        cleanupWs();
+        void connectWs();
+      }
+    }
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [connectWs]);
 
   const streamKey = `${accessToken || ""}|${traderAccessToken || ""}`;
 
@@ -193,26 +293,6 @@ export function useMarketStream() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol, tickerTapeSymbols.join(","), macroSymbols.join(",")]);
-
-  useEffect(() => {
-    function handleVisibility() {
-      if (document.hidden) {
-        if (pollRef.current) {
-          clearInterval(pollRef.current);
-          pollRef.current = null;
-        }
-      } else if (!pollRef.current) {
-        void pollSnapshot();
-        pollRef.current = setInterval(() => {
-          void pollSnapshot();
-        }, POLL_INTERVAL);
-      }
-    }
-    document.addEventListener("visibilitychange", handleVisibility);
-    return () =>
-      document.removeEventListener("visibilitychange", handleVisibility);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const subscribeEquitySymbols = useCallback(
     async (symbols: string[]) => {

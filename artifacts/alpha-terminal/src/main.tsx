@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import App from "./App";
 import { setClerkTokenGetter } from "@/lib/fetchWithAuth";
 import { setAuthTokenGetter } from "@workspace/api-client-react";
+import { setWsTokenGetter } from "@/hooks/useMarketStream";
 import "./index.css";
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string;
@@ -16,6 +17,7 @@ function AuthBridge({ children }: { children: React.ReactNode }) {
     const getter = () => getToken();
     setClerkTokenGetter(getter);
     setAuthTokenGetter(getter);
+    setWsTokenGetter(getter);
   }, [getToken]);
 
   return <>{children}</>;

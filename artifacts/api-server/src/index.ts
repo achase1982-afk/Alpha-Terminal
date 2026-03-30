@@ -2,6 +2,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { initTokenStore, setTokenRefreshCallback, getAccessToken } from "./lib/tokenStore";
 import { startStreamer, isConnected } from "./lib/schwabStreamer";
+import { initWsServer } from "./lib/wsServer";
 
 const rawPort = process.env["PORT"];
 
@@ -41,6 +42,8 @@ async function boot() {
   server.timeout = 120_000;
   server.keepAliveTimeout = 120_000;
   server.headersTimeout = 125_000;
+
+  initWsServer(server);
 }
 
 boot().catch((err) => {
