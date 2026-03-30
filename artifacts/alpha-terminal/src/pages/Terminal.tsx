@@ -146,46 +146,48 @@ export default function TerminalPage() {
 
           <div className="flex flex-col" style={{ minHeight: "calc(var(--vvh, 100%) - 80px)" }}>
             <Tabs value={activeMainTab} onValueChange={setActiveMainTab} className="flex flex-col flex-1">
-              <div className="overflow-x-auto shrink-0 mb-4 sticky top-[36px] z-30 bg-background py-1 px-3 sm:px-4 lg:px-5">
-                <TabsList className="bg-card border border-card-border p-1 inline-flex min-w-max">
-                  <TabsTrigger
-                    value="news"
-                    className="font-mono text-[10px] sm:text-xs uppercase rounded-none border-b-2 border-b-transparent data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-white data-[state=active]:border-b-[#FFB800] gap-1.5 px-3"
-                  >
-                    <Newspaper className="w-3.5 h-3.5 shrink-0" />
-                    NEWS
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="options"
-                    className="font-mono text-[10px] sm:text-xs uppercase rounded-none border-b-2 border-b-transparent data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-white data-[state=active]:border-b-[#FFB800] gap-1.5 px-3"
-                  >
-                    <BarChart2 className="w-3.5 h-3.5 shrink-0" />
-                    OPTIONS
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="ai"
-                    className="font-mono text-[10px] sm:text-xs uppercase rounded-none border-b-2 border-b-transparent data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-white data-[state=active]:border-b-[#FFB800] gap-1.5 px-3"
-                  >
-                    <BrainCircuit className="w-3.5 h-3.5 shrink-0" />
-                    <span className="hidden sm:inline">AI INTELLIGENCE</span>
-                    <span className="sm:hidden">AI</span>
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="scanner"
-                    className="font-mono text-[10px] sm:text-xs uppercase rounded-none border-b-2 border-b-transparent data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-white data-[state=active]:border-b-[#FFB800] gap-1.5 px-3"
-                  >
-                    <Radar className="w-3.5 h-3.5 shrink-0" />
-                    <span className="hidden sm:inline">MARKET SCANNER</span>
-                    <span className="sm:hidden">SCAN</span>
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="chart"
-                    className="font-mono text-[10px] sm:text-xs uppercase rounded-none border-b-2 border-b-transparent data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-white data-[state=active]:border-b-[#FFB800] gap-1.5 px-3"
-                  >
-                    <LineChart className="w-3.5 h-3.5 shrink-0" />
-                    CHART
-                  </TabsTrigger>
-                </TabsList>
+              <div className="shrink-0 mb-4 sticky top-[36px] z-30 bg-background py-1 px-3 sm:px-4 lg:px-5">
+                <div className="overflow-x-auto">
+                  <TabsList className="bg-card border border-card-border p-1 inline-flex min-w-max">
+                    <TabsTrigger
+                      value="news"
+                      className="font-mono text-[10px] sm:text-xs uppercase rounded-none border-b-2 border-b-transparent data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-white data-[state=active]:border-b-[#FFB800] gap-1.5 px-3"
+                    >
+                      <Newspaper className="w-3.5 h-3.5 shrink-0" />
+                      NEWS
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="options"
+                      className="font-mono text-[10px] sm:text-xs uppercase rounded-none border-b-2 border-b-transparent data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-white data-[state=active]:border-b-[#FFB800] gap-1.5 px-3"
+                    >
+                      <BarChart2 className="w-3.5 h-3.5 shrink-0" />
+                      OPTIONS
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="ai"
+                      className="font-mono text-[10px] sm:text-xs uppercase rounded-none border-b-2 border-b-transparent data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-white data-[state=active]:border-b-[#FFB800] gap-1.5 px-3"
+                    >
+                      <BrainCircuit className="w-3.5 h-3.5 shrink-0" />
+                      <span className="hidden sm:inline">AI INTELLIGENCE</span>
+                      <span className="sm:hidden">AI</span>
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="scanner"
+                      className="font-mono text-[10px] sm:text-xs uppercase rounded-none border-b-2 border-b-transparent data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-white data-[state=active]:border-b-[#FFB800] gap-1.5 px-3"
+                    >
+                      <Radar className="w-3.5 h-3.5 shrink-0" />
+                      <span className="hidden sm:inline">MARKET SCANNER</span>
+                      <span className="sm:hidden">SCAN</span>
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="chart"
+                      className="font-mono text-[10px] sm:text-xs uppercase rounded-none border-b-2 border-b-transparent data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-white data-[state=active]:border-b-[#FFB800] gap-1.5 px-3"
+                    >
+                      <LineChart className="w-3.5 h-3.5 shrink-0" />
+                      CHART
+                    </TabsTrigger>
+                  </TabsList>
+                </div>
               </div>
 
               <TabsContent value="news" className="m-0 focus-visible:outline-none flex-1 flex flex-col">
