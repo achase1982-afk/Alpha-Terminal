@@ -83,7 +83,7 @@ export function MarketPulseDashboard({ autoGenerate }: MarketPulseDashboardProps
     },
   });
 
-  const fetchPulse = useCallback(async () => {
+  const fetchPulse = useCallback(() => {
     if (!accessToken) return;
     setLoading(true);
     setStreaming(true);
@@ -95,20 +95,22 @@ export function MarketPulseDashboard({ autoGenerate }: MarketPulseDashboardProps
       (s) => STRATEGY_LABELS[s]
     );
 
-    await startStream({
-      accessToken,
-      symbols: DEFAULT_PULSE_SYMBOLS,
-      model: aiModel,
-      temperature: 0.2,
-      preferences: {
-        allowedStrategies: allowedList,
-        defaultSpreadWidth: settings.defaultSpreadWidth,
-        maxContracts: settings.maxContracts,
-        accountSizeTier: settings.accountSizeTier,
-        preferredTickers: settings.preferredTickers,
-        maxRiskPerTrade: settings.maxRiskPerTrade,
-      },
-    });
+    setTimeout(() => {
+      startStream({
+        accessToken,
+        symbols: DEFAULT_PULSE_SYMBOLS,
+        model: aiModel,
+        temperature: 0.2,
+        preferences: {
+          allowedStrategies: allowedList,
+          defaultSpreadWidth: settings.defaultSpreadWidth,
+          maxContracts: settings.maxContracts,
+          accountSizeTier: settings.accountSizeTier,
+          preferredTickers: settings.preferredTickers,
+          maxRiskPerTrade: settings.maxRiskPerTrade,
+        },
+      });
+    }, 0);
   }, [accessToken, aiModel, settings, startStream, setLoading, setStreaming, setError, clearThinking, setPulseData]);
 
   const autoGenRef = useRef(false);
