@@ -57,35 +57,16 @@ export function useQuote(symbol: string) {
   const fiftyTwoWeekLow  = (restMatchesSymbol ? restData.fiftyTwoWeekLow  : null) ?? null;
   const peRatio          = (restMatchesSymbol ? restData.peRatio          : null) ?? null;
 
-  const restExtra = restData as Record<string, unknown> | undefined;
-  const restPrevClose = (restMatchesSymbol && typeof restExtra?.prevClose === "number") ? restExtra.prevClose as number : null;
-  const restChange    = (restMatchesSymbol ? restData.change    : null) ?? null;
-  const restChangePct = (restMatchesSymbol ? restData.changePct : null) ?? null;
-
-  const streamLast = streamQuote?.last ?? null;
-  let computedChange: number | null = streamQuote?.change ?? null;
-  let computedChangePct: number | null = streamQuote?.changePct ?? null;
-
-  if (computedChange === null && streamLast !== null && restPrevClose !== null && restPrevClose !== 0) {
-    computedChange = streamLast - restPrevClose;
-    computedChangePct = (computedChange / restPrevClose) * 100;
-  }
-
-  if (computedChange === null) {
-    computedChange = restChange;
-    computedChangePct = restChangePct;
-  }
-
   const data: QuoteData = {
     symbol:           symUpper,
     description,
-    last:             streamLast,
+    last:             streamQuote?.last      ?? null,
     bid:              streamQuote?.bid       ?? null,
     ask:              streamQuote?.ask       ?? null,
     bidSize:          streamQuote?.bidSize   ?? null,
     askSize:          streamQuote?.askSize   ?? null,
-    change:           computedChange,
-    changePct:        computedChangePct,
+    change:           streamQuote?.change    ?? null,
+    changePct:        streamQuote?.changePct ?? null,
     volume:           streamQuote?.volume    ?? null,
     high:             streamQuote?.high      ?? null,
     low:              streamQuote?.low       ?? null,
