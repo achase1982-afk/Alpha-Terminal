@@ -78,6 +78,7 @@ export function useMarketStream() {
   const symDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startedRef = useRef(false);
+  const startDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function allSymbols(): string[] {
     return [
@@ -168,9 +169,16 @@ export function useMarketStream() {
   useEffect(() => {
     if (!accessToken) return;
 
-    startedRef.current = false;
-    void startServerStream(accessToken, traderAccessToken);
-    void addServerSymbols(allSymbols());
+    if (startDebounceRef.current) clearTimeout(startDebounceRef.current);
+    startDebounceRef.current = setTimeout(() => {
+      startedRef.current = false;
+      void startServerStream(accessToken, traderAccessToken);
+      void addServerSymbols(allSymbols());
+    }, 300);
+
+    return () => {
+      if (startDebounceRef.current) clearTimeout(startDebounceRef.current);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [streamKey]);
 
