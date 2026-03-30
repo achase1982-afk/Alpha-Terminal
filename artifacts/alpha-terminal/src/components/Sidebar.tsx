@@ -9,8 +9,10 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
-import { Terminal, SlidersHorizontal, X, LayoutDashboard, ListOrdered, Gauge, BrainCircuit, Zap, MessageCircle, ChevronRight, Settings, Star, Trash2, BarChart2 } from "lucide-react";
+import { Terminal, SlidersHorizontal, X, LayoutDashboard, ListOrdered, Gauge, BrainCircuit, Zap, MessageCircle, ChevronRight, Settings, Star, Trash2, BarChart2, ShieldCheck, LogOut } from "lucide-react";
 import { useState } from "react";
+import { useClerk } from "@clerk/clerk-react";
+import { useAutoLock } from "@/hooks/useAutoLock";
 import { useGetAvailableModels } from "@workspace/api-client-react";
 
 const API_BASE = "/api";
@@ -40,6 +42,8 @@ export function Sidebar({ onClose, onOpenChat }: SidebarProps) {
   } = useTerminalStore();
 
   const { contractType, setContractType, maxDte, setMaxDte } = useOptionsSettingsStore();
+  const { signOut } = useClerk();
+  const { minutes: autoLockMinutes, setMinutes: setAutoLockMinutes, timerOptions } = useAutoLock();
 
   const { data: modelsData } = useGetAvailableModels();
   const availableModels = modelsData?.models ?? ["gemini-2.5-flash", "gemini-2.5-pro"];
@@ -49,6 +53,7 @@ export function Sidebar({ onClose, onOpenChat }: SidebarProps) {
   const [settingsSaved, setSettingsSaved] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [watchlistOpen, setWatchlistOpen] = useState(true);
+  const [securityOpen, setSecurityOpen] = useState(false);
 
   const [pulseSymbols, setPulseSymbols] = useLocalStorage<string[]>(
     "alpha-pulse-symbols",
@@ -376,6 +381,52 @@ export function Sidebar({ onClose, onOpenChat }: SidebarProps) {
             </div>
           )}
         </div>
+        <div className="bg-card border border-card-border rounded-xl overflow-hidden shadow-sm">
+          <button
+            onClick={() => setSecurityOpen(!securityOpen)}
+            className="w-full flex items-center justify-between p-3 text-sm font-mono font-bold hover:bg-secondary/50 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-primary" />
+              <span className="text-foreground">SECURITY</span>
+            </div>
+            <ChevronRight className={`w-4 h-4 transition-transform duration-300 ${securityOpen ? 'rotate-90' : ''}`} />
+          </button>
+
+          {securityOpen && (
+            <div className="p-3 sm:p-4 border-t border-card-border bg-[#0c0c0c] space-y-3 animate-in fade-in slide-in-from-top-2">
+              <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
+                <ShieldCheck className="w-3 h-3" /> Auto-Lock Timer
+              </Label>
+              <div className="space-y-1">
+                {timerOptions.map(opt => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setAutoLockMinutes(opt.value)}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg font-mono text-[11px] transition-all ${
+                      autoLockMinutes === opt.value
+                        ? "bg-primary/10 text-primary border border-primary/40"
+                        : "text-muted-foreground hover:bg-[#1a1a1a] hover:text-foreground border border-transparent"
+                    }`}
+                  >
+                    <span>{opt.label}</span>
+                    {autoLockMinutes === opt.value && (
+                      <span className="text-[9px] text-primary/70 tracking-wider">ACTIVE</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <button
+          onClick={() => signOut()}
+          className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl font-mono text-xs font-semibold tracking-wider text-[#f23645]/80 hover:text-[#f23645] hover:bg-[#f23645]/10 border border-transparent hover:border-[#f23645]/20 transition-all"
+        >
+          <LogOut className="w-4 h-4" />
+          SIGN OUT
+        </button>
       </div>
 
       <MarketPulseModal
