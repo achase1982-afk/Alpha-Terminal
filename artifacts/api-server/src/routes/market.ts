@@ -828,6 +828,173 @@ async function resolveArticleUrl(url: string): Promise<string> {
   }
 }
 
+function titleToKeywords(title: string): string[] {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]/g, "")
+    .split(/\s+/)
+    .filter((w) => w.length > 3 && !["this", "that", "with", "from", "have", "been", "will", "says", "said", "more", "than", "what", "when", "just", "also", "over", "into", "after", "about"].includes(w));
+}
+
+function titleMatchScore(candidate: string, keywords: string[]): number {
+  const lower = candidate.toLowerCase();
+  return keywords.filter((k) => lower.includes(k)).length;
+}
+
+function isSafeUrl(candidate: string): boolean {
+  try {
+    const u = new URL(candidate);
+    if (!["http:", "https:"].includes(u.protocol)) return false;
+    const blocked = /^(localhost|127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|0\.0\.0\.0|169\.254\.|\[::1\]|\[fc|\[fd)/i;
+    if (blocked.test(u.hostname)) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function findArticleOnPublisher(sourceUrl: string, title: string): Promise<string | null> {
+  let hostname: string;
+  try {
+    if (!isSafeUrl(sourceUrl)) return null;
+    hostname = new URL(sourceUrl).hostname;
+  } catch {
+    return null;
+  }
+  const keywords = titleToKeywords(title);
+  if (keywords.length < 2) return null;
+
+  const rssPaths = ["/feed", "/rss", "/feed.xml", "/rss.xml", "/atom.xml", "/index.xml"];
+  const controller = new AbortController();
+  const budgetTimer = setTimeout(() => controller.abort(), 8000);
+
+  try {
+    const rssProbes = rssPaths.map(async (rssPath) => {
+      const rssUrl = new URL(rssPath, sourceUrl).href;
+      try {
+        const resp = await fetch(rssUrl, {
+          headers: { "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1)", Accept: "application/rss+xml,application/xml,text/xml,*/*" },
+          redirect: "follow",
+          signal: controller.signal,
+        });
+        if (!resp.ok) return null;
+        const ct = resp.headers.get("content-type") || "";
+        const body = await resp.text();
+        if (!ct.includes("xml") && !body.trimStart().startsWith("<?xml") && !body.trimStart().startsWith("<rss") && !body.trimStart().startsWith("<feed")) return null;
+        const items = body.match(/<item>[\s\S]*?<\/item>|<entry>[\s\S]*?<\/entry>/g) || [];
+        for (const item of items) {
+          const itemTitle = item.match(/<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?<\/title>/)?.[1] || "";
+          const score = titleMatchScore(itemTitle, keywords);
+          if (score >= Math.min(3, keywords.length - 1)) {
+            const itemLink = item.match(/<link>(?:<!\[CDATA\[)?(https?:\/\/[^\s<\]]+)/)?.[1]
+              || item.match(/<link[^>]+href="(https?:\/\/[^"]+)"/)?.[1];
+            if (itemLink && isSafeUrl(itemLink)) return itemLink;
+          }
+        }
+      } catch {}
+      return null;
+    });
+
+    const rssResults = await Promise.all(rssProbes);
+    const rssHit = rssResults.find((r) => r !== null);
+    if (rssHit) return rssHit;
+
+    if (!controller.signal.aborted) {
+      const resp = await fetch(sourceUrl, {
+        headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36" },
+        redirect: "follow",
+        signal: controller.signal,
+      });
+      if (resp.ok) {
+        const html = await resp.text();
+        const linkRe = /href="(https?:\/\/[^"]+)"/g;
+        let match: RegExpExecArray | null;
+        let best: { url: string; score: number } | null = null;
+        while ((match = linkRe.exec(html)) !== null) {
+          const href = match[1];
+          try {
+            if (new URL(href).hostname !== hostname) continue;
+          } catch {
+            continue;
+          }
+          const urlScore = titleMatchScore(href, keywords);
+          if (urlScore >= 2 && (!best || urlScore > best.score)) {
+            best = { url: href, score: urlScore };
+          }
+        }
+        if (best && best.score >= Math.min(3, keywords.length - 1) && isSafeUrl(best.url)) return best.url;
+      }
+    }
+  } catch {}
+  finally {
+    clearTimeout(budgetTimer);
+  }
+
+  return null;
+}
+
+async function resolveGoogleNewsUrl(gnUrl: string, sourceUrl?: string, title?: string): Promise<string> {
+  if (sourceUrl && title) {
+    const found = await findArticleOnPublisher(sourceUrl, title);
+    if (found) return found;
+  }
+
+  try {
+    const resp = await fetch(gnUrl, {
+      method: "GET",
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      },
+      redirect: "follow",
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (resp.url && !resp.url.includes("news.google.com") && !resp.url.includes("google.com/sorry")) {
+      return unwrapGoogleRedirect(resp.url);
+    }
+
+    if (resp.ok) {
+      const html = await resp.text();
+      const dataUrlMatch = html.match(/data-url="(https?:\/\/[^"]+)"/);
+      if (dataUrlMatch) return unwrapGoogleRedirect(decodeHtmlEntities(dataUrlMatch[1]));
+      const metaRefreshMatch = html.match(/<meta[^>]+http-equiv=["']refresh["'][^>]+content=["'][^"']*url=(https?:\/\/[^"'>\s]+)/i);
+      if (metaRefreshMatch) return unwrapGoogleRedirect(decodeHtmlEntities(metaRefreshMatch[1]));
+      const anchorMatches = html.match(/<a[^>]+href="(https?:\/\/[^"]+)"/gi);
+      if (anchorMatches) {
+        for (const m of anchorMatches) {
+          const hrefMatch = m.match(/href="(https?:\/\/[^"]+)"/);
+          if (hrefMatch) {
+            const candidate = unwrapGoogleRedirect(decodeHtmlEntities(hrefMatch[1]));
+            if (candidate.length > 30 && !candidate.includes("google.com") && !candidate.includes("gstatic.com")) {
+              return candidate;
+            }
+          }
+        }
+      }
+    }
+  } catch {}
+
+  return sourceUrl || gnUrl;
+}
+
+function decodeHtmlEntities(s: string): string {
+  return s.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16))).replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(parseInt(dec, 10)));
+}
+
+function unwrapGoogleRedirect(candidate: string): string {
+  try {
+    const u = new URL(candidate);
+    if ((u.hostname === "www.google.com" || u.hostname === "google.com") && u.pathname === "/url") {
+      const q = u.searchParams.get("q") || u.searchParams.get("url");
+      if (q && (q.startsWith("http://") || q.startsWith("https://"))) {
+        return q;
+      }
+    }
+  } catch {}
+  return candidate;
+}
+
 router.get("/proxy-article", async (req, res) => {
   const url = req.query.url as string | undefined;
   if (!url) return res.status(400).json({ error: "url required" });
@@ -850,22 +1017,14 @@ router.get("/proxy-article", async (req, res) => {
     if (isFinnhub) {
       articleUrl = await resolveArticleUrl(url);
     } else if (isGoogleNews) {
-      const resolvedFromRedirect = await resolveArticleUrl(url);
-      if (resolvedFromRedirect !== url && !resolvedFromRedirect.includes("news.google.com")) {
-        articleUrl = resolvedFromRedirect;
-      } else {
-        const sourceBaseUrl = req.query.sourceUrl as string | undefined;
-        const articleTitle = req.query.title as string | undefined;
-        if (sourceBaseUrl && articleTitle) {
-          const searchUrl = `https://www.google.com/search?q=site:${new URL(sourceBaseUrl).hostname}+"${articleTitle.slice(0, 80)}"&btnI=1`;
-          const searchResolved = await resolveArticleUrl(searchUrl);
-          if (searchResolved !== searchUrl && !searchResolved.includes("google.com/search")) {
-            articleUrl = searchResolved;
-          } else {
-            articleUrl = sourceBaseUrl;
-          }
-        }
-      }
+      const sourceBaseUrl = req.query.sourceUrl as string | undefined;
+      const articleTitle = req.query.title as string | undefined;
+      articleUrl = await resolveGoogleNewsUrl(url, sourceBaseUrl, articleTitle);
+      req.log.info({ original: url, resolved: articleUrl }, "Google News URL resolved");
+    }
+
+    if (!isSafeUrl(articleUrl)) {
+      return res.status(400).json({ error: "blocked host" });
     }
 
     const response = await fetch(articleUrl, {
@@ -881,7 +1040,25 @@ router.get("/proxy-article", async (req, res) => {
     const finalUrl = response.url || articleUrl;
 
     if (!response.ok) {
-      return res.status(502).json({ error: `upstream ${response.status}` });
+      const rawTitle = (req.query.title as string) || "Article";
+      const rawSource = (req.query.source as string) || "";
+      const escH = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      const fallbackHtml = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>*{box-sizing:border-box;margin:0;padding:0}html,body{background:#1C1C1E;color:#e4e4e7}
+body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;padding:20px 16px 80px;max-width:680px;margin:0 auto}
+.s{color:#FFB800;font-size:10px;text-transform:uppercase;letter-spacing:.15em;font-family:"SF Mono",monospace;font-weight:600;margin-bottom:8px}
+h1{color:#fff;font-size:22px;font-weight:700;line-height:1.3;margin-bottom:24px}
+p{color:#a1a1aa;line-height:1.7;margin-bottom:16px}
+a{color:#FFB800;text-decoration:none;font-weight:600}a:hover{text-decoration:underline}
+</style></head><body>
+${rawSource ? `<div class="s">${escH(rawSource)}</div>` : ""}
+<h1>${escH(rawTitle)}</h1>
+<p>This article requires a subscription or could not be accessed directly.</p>
+<p><a href="${escH(articleUrl)}">Read on ${escH(new URL(articleUrl).hostname.replace(/^www\./, ""))} →</a></p>
+</body></html>`;
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      return res.send(fallbackHtml);
     }
 
     const contentType = response.headers.get("content-type") || "";
@@ -893,10 +1070,38 @@ router.get("/proxy-article", async (req, res) => {
 
     const { Readability } = await import("@mozilla/readability");
     const { parseHTML } = await import("linkedom");
-    const { document: doc } = parseHTML(rawHtml);
 
-    const reader = new Readability(doc as any, { charThreshold: 100 });
-    const article = reader.parse();
+    function extractArticle(html: string) {
+      const { document: doc } = parseHTML(html);
+      const reader = new Readability(doc as any, { charThreshold: 100 });
+      return reader.parse();
+    }
+
+    let article = extractArticle(rawHtml);
+    const textLen = article?.textContent?.trim().length ?? 0;
+
+    if (textLen < 200) {
+      try {
+        const cacheUrl = `https://webcache.googleusercontent.com/search?q=cache:${encodeURIComponent(finalUrl)}`;
+        const cacheResp = await fetch(cacheUrl, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          },
+          redirect: "follow",
+          signal: AbortSignal.timeout(8000),
+        });
+        if (cacheResp.ok) {
+          const cacheHtml = await cacheResp.text();
+          const cacheArticle = extractArticle(cacheHtml);
+          const cacheLen = cacheArticle?.textContent?.trim().length ?? 0;
+          if (cacheLen > textLen) {
+            article = cacheArticle;
+            req.log.info({ textLen, cacheLen }, "Used Google cache for better content");
+          }
+        }
+      } catch {}
+    }
 
     const baseObj = new URL(finalUrl);
     const siteName = article?.siteName || baseObj.hostname.replace(/^www\./, "");
@@ -905,7 +1110,15 @@ router.get("/proxy-article", async (req, res) => {
     const escHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     const title = escHtml(rawTitle);
     const source = escHtml(rawSource);
-    const articleContent = article?.content || "<p>Could not extract article content.</p>";
+
+    const finalTextLen = article?.textContent?.trim().length ?? 0;
+    let articleContent: string;
+    if (finalTextLen < 100) {
+      articleContent = `<p style="color:#a1a1aa;margin-top:24px;">This article is behind a paywall or could not be fully extracted.</p>
+<p style="margin-top:16px;"><a href="${escHtml(finalUrl)}" style="color:#FFB800;text-decoration:none;font-weight:600;">Read full article on ${escHtml(baseObj.hostname.replace(/^www\./, ""))} →</a></p>`;
+    } else {
+      articleContent = article?.content || "<p>Could not extract article content.</p>";
+    }
 
     const readerHtml = `<!DOCTYPE html>
 <html lang="en">
@@ -963,7 +1176,25 @@ router.get("/proxy-article", async (req, res) => {
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "fetch failed";
     req.log.error({ err: msg, url }, "proxy-article error");
-    res.status(502).json({ error: msg });
+    const rawTitle = (req.query.title as string) || "Article";
+    const rawSource = (req.query.source as string) || "";
+    const escH = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    const errorHtml = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>*{box-sizing:border-box;margin:0;padding:0}html,body{background:#1C1C1E;color:#e4e4e7}
+body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;padding:20px 16px 80px;max-width:680px;margin:0 auto}
+.s{color:#FFB800;font-size:10px;text-transform:uppercase;letter-spacing:.15em;font-family:"SF Mono",monospace;font-weight:600;margin-bottom:8px}
+h1{color:#fff;font-size:22px;font-weight:700;line-height:1.3;margin-bottom:24px}
+p{color:#a1a1aa;line-height:1.7;margin-bottom:16px}
+a{color:#FFB800;text-decoration:none;font-weight:600}a:hover{text-decoration:underline}
+</style></head><body>
+${rawSource ? `<div class="s">${escH(rawSource)}</div>` : ""}
+<h1>${escH(rawTitle)}</h1>
+<p>Could not load this article.</p>
+<p><a href="${escH(url || "")}">Open in browser →</a></p>
+</body></html>`;
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.send(errorHtml);
   }
 });
 
