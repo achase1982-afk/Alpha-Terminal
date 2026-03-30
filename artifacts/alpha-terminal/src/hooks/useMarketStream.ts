@@ -191,7 +191,15 @@ export function useMarketStream() {
     openEventSource();
     void startServerStream(accessToken, traderAccessToken);
 
+    const watchdog = setInterval(() => {
+      const es = esRef.current;
+      if (!es || es.readyState === EventSource.CLOSED) {
+        openEventSource();
+      }
+    }, 5_000);
+
     return () => {
+      clearInterval(watchdog);
       esRef.current?.close();
       esRef.current = null;
     };

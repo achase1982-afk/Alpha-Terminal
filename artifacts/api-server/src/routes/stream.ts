@@ -69,14 +69,17 @@ router.get("/quotes", (req, res) => {
   res.setHeader("X-Accel-Buffering", "no");   // disable nginx buffering
   res.flushHeaders();
 
-  // Heartbeat every 15s to keep the connection alive through proxies
+  try {
+    res.write(`event: heartbeat\ndata: ${JSON.stringify({ ts: Date.now() })}\n\n`);
+  } catch {}
+
   const heartbeat = setInterval(() => {
     try {
       res.write(`event: heartbeat\ndata: ${JSON.stringify({ ts: Date.now() })}\n\n`);
     } catch {
       clearInterval(heartbeat);
     }
-  }, 15_000);
+  }, 8_000);
 
   const cleanup = addSseClient(res);
 

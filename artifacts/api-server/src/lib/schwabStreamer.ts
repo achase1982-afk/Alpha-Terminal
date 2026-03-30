@@ -303,12 +303,48 @@ function sendSubscribe(symbols: string[]) {
   }
 }
 
+// ─── Periodic equity re-subscription ─────────────────────────────────────────
+const EQUITY_RESUB_INTERVAL = 10_000;
+let lastEquityTick = 0;
+let equityResubTimer: ReturnType<typeof setInterval> | null = null;
+
+function startEquityResub() {
+  if (equityResubTimer) return;
+  equityResubTimer = setInterval(() => {
+    if (!loginAcked || !streamerInfo || !ws || ws.readyState !== WebSocket.OPEN) return;
+    const equitySyms = [...subscribedSymbols].filter(s => !isFuturesSymbol(s));
+    if (equitySyms.length === 0) return;
+    const elapsed = Date.now() - lastEquityTick;
+    if (elapsed > EQUITY_RESUB_INTERVAL) {
+      const keys = equitySyms.map(toSchwabKey).join(",");
+      wsSend({
+        requests: [{
+          service:                  "LEVELONE_EQUITIES",
+          requestid:                nextReq(),
+          command:                  "SUBS",
+          SchwabClientCustomerId:   streamerInfo.schwabClientCustomerId,
+          SchwabClientCorrelId:     streamerInfo.schwabClientCorrelId,
+          parameters: { keys, fields: FIELDS_STR },
+        }],
+      });
+    }
+  }, EQUITY_RESUB_INTERVAL);
+}
+
+function stopEquityResub() {
+  if (equityResubTimer) {
+    clearInterval(equityResubTimer);
+    equityResubTimer = null;
+  }
+}
+
 // ─── Parse incoming DATA messages ────────────────────────────────────────────
 let equityTickCount = 0;
 let lastEquityTickLog = 0;
 
 function handleData(content: Record<string, unknown>[]) {
   equityTickCount += content.length;
+  lastEquityTick = Date.now();
   const now = Date.now();
   if (now - lastEquityTickLog > 30_000) {
     logger.info({ count: content.length, total: equityTickCount, symbols: content.map(i => i["key"]).slice(0, 5) }, "Streamer: EQUITY ticks received");
@@ -537,6 +573,7 @@ function onMessage(raw: string) {
           if (subscribedOptionSymbols.size > 0) {
             sendOptionSubscribe([...subscribedOptionSymbols]);
           }
+          startEquityResub();
         } else {
           loginRejected = true;
           logger.warn({ code }, "Streamer: LOGIN rejected — will not reconnect (token likely invalid)");
@@ -607,6 +644,7 @@ async function connect() {
     loginSent  = false;
     loginAcked = false;
     isConnecting = false;
+    stopEquityResub();
     broadcast("streamerStatus", { status: "disconnected" });
     scheduleReconnect();
   });
