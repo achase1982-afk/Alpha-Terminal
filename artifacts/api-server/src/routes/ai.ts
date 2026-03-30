@@ -238,8 +238,12 @@ Be specific, data-driven, and concise. Use markdown formatting.`;
       temperature: temperature ?? 0.3,
     });
 
-    for await (const chunk of result.textStream) {
-      res.write(`data: ${JSON.stringify({ text: chunk })}\n\n`);
+    for await (const part of result.fullStream) {
+      if (part.type === "reasoning" && part.textDelta) {
+        res.write(`data: ${JSON.stringify({ reasoning: part.textDelta })}\n\n`);
+      } else if (part.type === "text-delta" && part.textDelta) {
+        res.write(`data: ${JSON.stringify({ text: part.textDelta })}\n\n`);
+      }
     }
     res.write("data: [DONE]\n\n");
     res.end();
@@ -948,9 +952,13 @@ RULES:
 
     let fullText = "";
 
-    for await (const chunk of result.textStream) {
-      fullText += chunk;
-      res.write(`event: thinking\ndata: ${JSON.stringify({ type: "thinking", text: chunk })}\n\n`);
+    for await (const part of result.fullStream) {
+      if (part.type === "reasoning" && part.textDelta) {
+        res.write(`event: thinking\ndata: ${JSON.stringify({ type: "thinking", text: part.textDelta })}\n\n`);
+      } else if (part.type === "text-delta" && part.textDelta) {
+        fullText += part.textDelta;
+        res.write(`event: thinking\ndata: ${JSON.stringify({ type: "thinking", text: part.textDelta })}\n\n`);
+      }
     }
 
     let cleaned = fullText.trim();
@@ -1184,8 +1192,12 @@ router.post("/options-strategist/stream", async (req, res) => {
       temperature: temperature ?? 0.2,
     });
 
-    for await (const chunk of result.textStream) {
-      res.write(`data: ${JSON.stringify({ text: chunk })}\n\n`);
+    for await (const part of result.fullStream) {
+      if (part.type === "reasoning" && part.textDelta) {
+        res.write(`data: ${JSON.stringify({ reasoning: part.textDelta })}\n\n`);
+      } else if (part.type === "text-delta" && part.textDelta) {
+        res.write(`data: ${JSON.stringify({ text: part.textDelta })}\n\n`);
+      }
     }
     res.write("data: [DONE]\n\n");
     res.end();

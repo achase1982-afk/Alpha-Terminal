@@ -367,6 +367,7 @@ async function consumeStream(
   onChunk: (text: string) => void,
   onDone: () => void,
   onError: (msg: string) => void,
+  onReasoning?: (text: string) => void,
 ): Promise<void> {
   const res = await fetchWithAuth(url, {
     method: "POST",
@@ -401,8 +402,12 @@ async function consumeStream(
       const payload = line.slice(6).trim();
       if (payload === "[DONE]") { onDone(); return; }
       try {
-        const parsed = JSON.parse(payload) as { text?: string; error?: string };
+        const parsed = JSON.parse(payload) as { text?: string; reasoning?: string; error?: string };
         if (parsed.error) { onError(parsed.error); return; }
+        if (parsed.reasoning) {
+          onReasoning?.(parsed.reasoning);
+          await delay();
+        }
         if (parsed.text) {
           onChunk(parsed.text);
           await delay();
@@ -471,7 +476,6 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
       (chunk) => {
         accumulated += chunk;
         setStreamingText(accumulated);
-        setThinkingTokens((prev) => [...prev, chunk]);
       },
       () => {
         setAnalysisResult(accumulated);
@@ -482,6 +486,9 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
         setAnalysisResult(`**Analysis failed:** ${err}`);
         setStreamingText("");
         setIsStreaming(false);
+      },
+      (reasoning) => {
+        setThinkingTokens((prev) => [...prev, reasoning]);
       },
     );
   }, [quote, history, aiModel, aiTemp, customPrompt, setAnalysisResult]);
@@ -550,7 +557,6 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
         (chunk) => {
           accumulated += chunk;
           setStreamingText(accumulated);
-          setThinkingTokens((prev) => [...prev, chunk]);
         },
         () => {
           setStrategistResult(accumulated);
@@ -561,6 +567,9 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
           setStrategistResult(`**Strategist failed:** ${err}`);
           setStreamingText("");
           setIsStreaming(false);
+        },
+        (reasoning) => {
+          setThinkingTokens((prev) => [...prev, reasoning]);
         },
       );
     } catch (err) {
