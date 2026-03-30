@@ -85,7 +85,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
     return () => clearTimeout(t);
   }, [symbol]);
 
-  if (!accessToken) {
+  if (!accessToken && !quote?.last) {
     return (
       <div className={`${STICKY_BASE} flex items-center justify-center px-4 min-h-[70px] sm:min-h-[80px]`} style={{ background: HEADER_BG }}>
         <p className="text-muted-foreground text-xs sm:text-sm animate-pulse text-center tracking-wider font-mono">

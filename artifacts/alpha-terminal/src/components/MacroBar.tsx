@@ -17,7 +17,7 @@ function formatPct(pct: number | null | undefined, isUp: boolean): string {
 }
 
 function MacroCard({ symbol }: { symbol: string }) {
-  const { accessToken, symbol: activeSymbol, setSymbol } = useTerminalStore();
+  const { symbol: activeSymbol, setSymbol } = useTerminalStore();
   const { data, isLoading } = useQuote(symbol);
   const tickColor = useTickColor(symbol, data?.last ?? null);
 
@@ -72,7 +72,7 @@ function MacroCard({ symbol }: { symbol: string }) {
         {symbol}
       </span>
 
-      {!accessToken || (isLoading && !data) ? (
+      {isLoading && !data ? (
         <span style={{ color: '#374151', fontSize: '0.8rem', fontWeight: 400 }}>—</span>
       ) : (
         <>

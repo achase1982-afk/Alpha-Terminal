@@ -17,8 +17,6 @@ async function refreshAndRetry(retryCount: number): Promise<boolean> {
   const state = useTerminalStore.getState();
   const { refreshToken, traderRefreshToken } = state;
 
-  console.info("[stream] Attempting token refresh after streamer rejection (attempt %d)", retryCount + 1);
-
   let traderOk = false;
   if (traderRefreshToken) {
     try {
@@ -56,7 +54,6 @@ async function refreshAndRetry(retryCount: number): Promise<boolean> {
   }
 
   if (!marketOk && !traderOk) {
-    console.warn("[stream] Token refresh failed — clearing auth");
     state.clearTokens();
     state.clearTraderTokens();
     return false;
@@ -106,11 +103,9 @@ export function useMarketStream() {
         }),
       });
       if (!res.ok) {
-        console.warn("[stream] startServerStream HTTP", res.status);
         startedRef.current = false;
       }
-    } catch (err) {
-      console.warn("[stream] startServerStream failed:", err);
+    } catch {
       startedRef.current = false;
     }
   }
@@ -139,7 +134,7 @@ export function useMarketStream() {
         return;
       }
 
-      if (data.status === "connected" && data.quotes && data.quotes.length > 0) {
+      if (data.quotes && data.quotes.length > 0) {
         setStreamStatus("live");
         rejectedRetries.current = 0;
         for (const q of data.quotes) {
@@ -150,31 +145,11 @@ export function useMarketStream() {
       } else if (data.status === "disconnected") {
         setStreamStatus("offline");
       }
-    } catch {
-      setStreamStatus("connecting");
-    }
+    } catch {}
   }
 
-  const streamKey = `${accessToken || ""}|${traderAccessToken || ""}`;
-
   useEffect(() => {
-    if (!accessToken) {
-      setStreamStatus("offline");
-      if (pollRef.current) {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
-      }
-      startedRef.current = false;
-      return;
-    }
-
-    rejectedRetries.current = 0;
-    setStreamStatus("connecting");
-    startedRef.current = false;
-    void startServerStream(accessToken, traderAccessToken);
-
     void pollSnapshot();
-
     pollRef.current = setInterval(() => {
       void pollSnapshot();
     }, POLL_INTERVAL);
@@ -186,10 +161,20 @@ export function useMarketStream() {
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [streamKey]);
+  }, []);
+
+  const streamKey = `${accessToken || ""}|${traderAccessToken || ""}`;
 
   useEffect(() => {
     if (!accessToken) return;
+
+    startedRef.current = false;
+    void startServerStream(accessToken, traderAccessToken);
+    void addServerSymbols(allSymbols());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [streamKey]);
+
+  useEffect(() => {
     if (symDebounceRef.current) clearTimeout(symDebounceRef.current);
     symDebounceRef.current = setTimeout(() => {
       void addServerSymbols(allSymbols());
@@ -202,15 +187,12 @@ export function useMarketStream() {
 
   useEffect(() => {
     function handleVisibility() {
-      if (!accessToken) return;
       if (document.hidden) {
         if (pollRef.current) {
           clearInterval(pollRef.current);
           pollRef.current = null;
         }
-        setStreamStatus("offline");
       } else if (!pollRef.current) {
-        setStreamStatus("connecting");
         void pollSnapshot();
         pollRef.current = setInterval(() => {
           void pollSnapshot();
@@ -221,15 +203,14 @@ export function useMarketStream() {
     return () =>
       document.removeEventListener("visibilitychange", handleVisibility);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [streamKey]);
+  }, []);
 
   const subscribeEquitySymbols = useCallback(
     async (symbols: string[]) => {
-      if (!symbols.length || !accessToken) return;
+      if (!symbols.length) return;
       void addServerSymbols(symbols.map((s) => s.toUpperCase()));
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [accessToken]
+    []
   );
 
   const subscribeOptionSymbols = useCallback(
