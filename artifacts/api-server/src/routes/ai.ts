@@ -231,15 +231,18 @@ Be specific, data-driven, and concise. Use markdown formatting.`;
     "X-Accel-Buffering": "no",
   });
 
+  req.socket?.setKeepAlive(true);
   req.setTimeout(0);
   res.setTimeout(0);
-  res.write(": heartbeat\n\n");
+  if (req.socket) req.socket.setTimeout(0);
+  res.write(": ok\n\n");
+  res.flushHeaders();
 
   const heartbeat = setInterval(() => {
     if (!res.writableEnded) {
-      res.write(": heartbeat\n\n");
+      res.write(": ping\n\n");
     }
-  }, 15000);
+  }, 5000);
 
   try {
     const google = createGoogleGenerativeAI({ apiKey });
@@ -250,12 +253,10 @@ Be specific, data-driven, and concise. Use markdown formatting.`;
     });
 
     for await (const part of result.fullStream) {
-      if (part.type === "reasoning" && part.textDelta) {
-        res.write(`data: ${JSON.stringify({ reasoning: part.textDelta })}\n\n`);
-        if (typeof (res as any).flush === "function") (res as any).flush();
+      if (part.type === "reasoning" && (part as any).textDelta) {
+        res.write(`data: ${JSON.stringify({ reasoning: (part as any).textDelta })}\n\n`);
       } else if (part.type === "text-delta" && part.textDelta) {
         res.write(`data: ${JSON.stringify({ text: part.textDelta })}\n\n`);
-        if (typeof (res as any).flush === "function") (res as any).flush();
       }
     }
     clearInterval(heartbeat);
@@ -791,17 +792,19 @@ router.post("/market-pulse/stream", async (req, res) => {
     "X-Accel-Buffering": "no",
   });
 
+  req.socket?.setKeepAlive(true);
   req.setTimeout(0);
   res.setTimeout(0);
-  res.write(": heartbeat\n\n");
+  if (req.socket) req.socket.setTimeout(0);
+  res.write(": ok\n\n");
+  res.flushHeaders();
   res.write(`event: thinking\ndata: ${JSON.stringify({ type: "thinking", text: "Fetching live market data..." })}\n\n`);
-  if (typeof (res as any).flush === "function") (res as any).flush();
 
   const heartbeat = setInterval(() => {
     if (!res.writableEnded) {
-      res.write(": heartbeat\n\n");
+      res.write(": ping\n\n");
     }
-  }, 15000);
+  }, 5000);
 
   const { session, timeET, sessionGuidance } = getMarketSession();
 
@@ -1238,15 +1241,18 @@ router.post("/options-strategist/stream", async (req, res) => {
     "X-Accel-Buffering": "no",
   });
 
+  req.socket?.setKeepAlive(true);
   req.setTimeout(0);
   res.setTimeout(0);
-  res.write(": heartbeat\n\n");
+  if (req.socket) req.socket.setTimeout(0);
+  res.write(": ok\n\n");
+  res.flushHeaders();
 
   const heartbeat = setInterval(() => {
     if (!res.writableEnded) {
-      res.write(": heartbeat\n\n");
+      res.write(": ping\n\n");
     }
-  }, 15000);
+  }, 5000);
 
   try {
     const google = createGoogleGenerativeAI({ apiKey });
@@ -1257,12 +1263,10 @@ router.post("/options-strategist/stream", async (req, res) => {
     });
 
     for await (const part of result.fullStream) {
-      if (part.type === "reasoning" && part.textDelta) {
-        res.write(`data: ${JSON.stringify({ reasoning: part.textDelta })}\n\n`);
-        if (typeof (res as any).flush === "function") (res as any).flush();
+      if (part.type === "reasoning" && (part as any).textDelta) {
+        res.write(`data: ${JSON.stringify({ reasoning: (part as any).textDelta })}\n\n`);
       } else if (part.type === "text-delta" && part.textDelta) {
         res.write(`data: ${JSON.stringify({ text: part.textDelta })}\n\n`);
-        if (typeof (res as any).flush === "function") (res as any).flush();
       }
     }
     clearInterval(heartbeat);

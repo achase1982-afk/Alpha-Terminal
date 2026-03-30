@@ -70,6 +70,8 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
         ws: true,
+        timeout: 0,
+        proxyTimeout: 0,
       },
     },
     fs: {
