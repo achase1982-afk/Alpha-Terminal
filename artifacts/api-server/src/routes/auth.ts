@@ -8,6 +8,7 @@ import {
   RefreshTokenResponse,
   GetAuthStatusResponse,
 } from "@workspace/api-zod";
+import { storeTokens, hasValidTokens, getTokens } from "../lib/tokenStore.js";
 
 const router: IRouter = Router();
 
@@ -161,11 +162,15 @@ router.get("/callback", async (req, res) => {
       return res.status(502).send(errorPage("Invalid Token", "Schwab did not return a valid access token. Please try again."));
     }
 
+    const rfTok = typeof refreshToken === "string" ? refreshToken : "";
     pendingTokens.set("latest", {
       accessToken,
-      refreshToken: typeof refreshToken === "string" ? refreshToken : "",
+      refreshToken: rfTok,
       ts: Date.now(),
     });
+
+    const expiresIn = typeof tokenData["expires_in"] === "number" ? tokenData["expires_in"] : 1800;
+    storeTokens("market", accessToken, rfTok, expiresIn);
 
     req.log.info("GET /callback — token exchange succeeded");
 
@@ -263,10 +268,14 @@ router.post("/callback", async (req, res) => {
 
     req.log.info({ status: response.status }, "Token exchange succeeded");
     const tokenData = JSON.parse(responseText) as Record<string, unknown>;
+    const at = tokenData["access_token"] as string;
+    const rt = (tokenData["refresh_token"] as string) ?? "";
+    const ei = (tokenData["expires_in"] as number) ?? 1800;
+    storeTokens("market", at, rt, ei);
     res.json(ExchangeCodeResponse.parse({
-      accessToken: tokenData["access_token"],
-      refreshToken: tokenData["refresh_token"],
-      expiresIn: tokenData["expires_in"],
+      accessToken: at,
+      refreshToken: rt,
+      expiresIn: ei,
       tokenType: tokenData["token_type"],
     }));
   } catch (err) {
@@ -316,10 +325,14 @@ router.post("/refresh", async (req, res) => {
     }
 
     const tokenData = JSON.parse(responseText) as Record<string, unknown>;
+    const newAt = tokenData["access_token"] as string;
+    const newRt = (tokenData["refresh_token"] as string) ?? refreshToken;
+    const newEi = (tokenData["expires_in"] as number) ?? 1800;
+    storeTokens("market", newAt, newRt, newEi);
     res.json(RefreshTokenResponse.parse({
-      accessToken: tokenData["access_token"],
-      refreshToken: tokenData["refresh_token"] ?? refreshToken,
-      expiresIn: tokenData["expires_in"],
+      accessToken: newAt,
+      refreshToken: newRt,
+      expiresIn: newEi,
       tokenType: tokenData["token_type"],
     }));
   } catch (err) {
@@ -418,11 +431,15 @@ router.get("/trader-callback", async (req, res) => {
       return res.status(502).send(errorPage("Invalid Token", "Schwab did not return a valid Trader access token."));
     }
 
+    const trRfTok = typeof refreshToken === "string" ? refreshToken : "";
     pendingTokens.set("trader_latest", {
       accessToken,
-      refreshToken: typeof refreshToken === "string" ? refreshToken : "",
+      refreshToken: trRfTok,
       ts: Date.now(),
     });
+
+    const trExpiresIn = typeof tokenData["expires_in"] === "number" ? tokenData["expires_in"] : 1800;
+    storeTokens("trader", accessToken, trRfTok, trExpiresIn);
 
     req.log.info("GET /trader-callback — Trader token exchange succeeded");
 
@@ -481,15 +498,32 @@ router.post("/trader-refresh", async (req, res) => {
     }
 
     const tokenData = JSON.parse(responseText) as Record<string, unknown>;
+    const trAt = tokenData["access_token"] as string;
+    const trRt = (tokenData["refresh_token"] as string) ?? refreshToken;
+    const trEi = (tokenData["expires_in"] as number) ?? 1800;
+    storeTokens("trader", trAt, trRt, trEi);
     res.json({
-      accessToken: tokenData["access_token"],
-      refreshToken: tokenData["refresh_token"] ?? refreshToken,
-      expiresIn: tokenData["expires_in"],
+      accessToken: trAt,
+      refreshToken: trRt,
+      expiresIn: trEi,
     });
   } catch (err) {
     req.log.error({ err }, "Trader token refresh error");
     res.status(500).json({ error: "internal_error", message: "Failed to refresh trader token" });
   }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SERVER-SIDE TOKENS (survive restarts)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+router.get("/server-tokens", (_req, res) => {
+  const mkt = hasValidTokens("market") ? getTokens("market") : undefined;
+  const trd = hasValidTokens("trader") ? getTokens("trader") : undefined;
+  res.json({
+    market: mkt ? { accessToken: mkt.accessToken, refreshToken: mkt.refreshToken, expiresAt: mkt.expiresAt } : null,
+    trader: trd ? { accessToken: trd.accessToken, refreshToken: trd.refreshToken, expiresAt: trd.expiresAt } : null,
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════

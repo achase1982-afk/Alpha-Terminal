@@ -1,5 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { initTokenStore, setTokenRefreshCallback, getAccessToken } from "./lib/tokenStore";
+import { startStreamer, isConnected } from "./lib/schwabStreamer";
 
 const rawPort = process.env["PORT"];
 
@@ -15,15 +17,33 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-const server = app.listen(port, (err) => {
-  if (err) {
-    logger.error({ err }, "Error listening on port");
-    process.exit(1);
-  }
+async function boot() {
+  await initTokenStore();
 
-  logger.info({ port }, "Server listening");
+  setTokenRefreshCallback((kind, newAccessToken) => {
+    if (kind === "trader" || (kind === "market" && !getAccessToken("trader"))) {
+      if (isConnected()) {
+        logger.info("TokenStore: %s token refreshed — updating streamer", kind);
+        void startStreamer(newAccessToken, []);
+      }
+    }
+  });
+
+  const server = app.listen(port, (err) => {
+    if (err) {
+      logger.error({ err }, "Error listening on port");
+      process.exit(1);
+    }
+
+    logger.info({ port }, "Server listening");
+  });
+
+  server.timeout = 120_000;
+  server.keepAliveTimeout = 120_000;
+  server.headersTimeout = 125_000;
+}
+
+boot().catch((err) => {
+  logger.error({ err }, "Failed to boot server");
+  process.exit(1);
 });
-
-server.timeout = 120_000;
-server.keepAliveTimeout = 120_000;
-server.headersTimeout = 125_000;

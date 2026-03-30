@@ -24,9 +24,26 @@ function PendingSessionLoader() {
   const { traderAccessToken, setTraderTokens } = useTerminalStore();
 
   useEffect(() => {
-    if (accessToken) return;
+    if (accessToken && traderAccessToken) return;
 
     let cancelled = false;
+
+    const checkServerTokens = async () => {
+      try {
+        const res = await fetchWithAuth("/api/auth/server-tokens");
+        if (!res.ok || cancelled) return;
+        const data = await res.json() as {
+          market?: { accessToken: string; refreshToken: string } | null;
+          trader?: { accessToken: string; refreshToken: string } | null;
+        };
+        if (!cancelled && data.market?.accessToken && !accessToken) {
+          setTokens(data.market.accessToken, data.market.refreshToken || "");
+        }
+        if (!cancelled && data.trader?.accessToken && !traderAccessToken) {
+          setTraderTokens(data.trader.accessToken, data.trader.refreshToken || "");
+        }
+      } catch {}
+    };
 
     const checkPending = async () => {
       try {
@@ -39,26 +56,6 @@ function PendingSessionLoader() {
       } catch {}
     };
 
-    checkPending();
-
-    const handleVisibility = () => {
-      if (!document.hidden && !cancelled) {
-        checkPending();
-      }
-    };
-    document.addEventListener("visibilitychange", handleVisibility);
-
-    return () => {
-      cancelled = true;
-      document.removeEventListener("visibilitychange", handleVisibility);
-    };
-  }, [accessToken, setTokens]);
-
-  useEffect(() => {
-    if (traderAccessToken) return;
-
-    let cancelled = false;
-
     const checkTraderPending = async () => {
       try {
         const res = await fetchWithAuth("/api/auth/trader-pending-session");
@@ -70,11 +67,17 @@ function PendingSessionLoader() {
       } catch {}
     };
 
-    checkTraderPending();
+    const doCheck = async () => {
+      await checkServerTokens();
+      if (!cancelled) await checkPending();
+      if (!cancelled) await checkTraderPending();
+    };
+
+    doCheck();
 
     const handleVisibility = () => {
       if (!document.hidden && !cancelled) {
-        checkTraderPending();
+        doCheck();
       }
     };
     document.addEventListener("visibilitychange", handleVisibility);
@@ -83,7 +86,7 @@ function PendingSessionLoader() {
       cancelled = true;
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [traderAccessToken, setTraderTokens]);
+  }, [accessToken, traderAccessToken, setTokens, setTraderTokens]);
 
   return null;
 }

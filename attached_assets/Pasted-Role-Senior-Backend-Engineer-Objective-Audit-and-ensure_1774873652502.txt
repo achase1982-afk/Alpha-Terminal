@@ -1,0 +1,49 @@
+Role: Senior Backend Engineer.
+
+Objective: Audit and ensure the Schwab OAuth token refresh flow works correctly so the user only needs to manually log in to Schwab once every 7 days.
+
+CRITICAL: Do NOT modify Clerk auth, the frontend auth gate, security settings, or any UI components. This is backend token management only.
+
+Background: Schwab OAuth issues two tokens:
+
+- Access token: expires every 30 minutes. Used for all API calls (quotes, streaming, account data).
+- Refresh token: expires every 7 days. Used to silently get a new access token without user interaction.
+
+The goal is: user logs into Schwab once, and for the next 7 days the app silently refreshes the access token in the background. The user should NEVER see the Schwab login screen again until the refresh token itself expires.
+
+Task 1: Audit the Current Token Flow.
+
+- Find where Schwab OAuth tokens (access_token, refresh_token, expires_in) are stored.
+- Find where/if the app currently refreshes the access token.
+- Check if the refresh token is being persisted across server restarts (it must be - if it’s only in memory, a Replit restart kills it and forces re-login).
+- Report your findings before making any changes.
+
+Task 2: Implement or Fix Silent Token Refresh.
+
+- When any Schwab API call returns a 401 or when the access token is within 5 minutes of expiring, automatically use the refresh token to get a new access token.
+- The refresh call is a POST to `https://api.schwabapi.com/v1/oauth/token` with:
+  - grant_type=refresh_token
+  - refresh_token=<the stored refresh token>
+  - Authorization header: Basic base64(client_id:client_secret)
+- On successful refresh: update the stored access_token, refresh_token (Schwab may rotate it), and expires_in.
+- On failed refresh (refresh token expired or revoked): clear the stored tokens and redirect the user to the Schwab login flow. This should only happen once every 7 days at most.
+
+Task 3: Persist Tokens Across Restarts.
+
+- Tokens MUST survive server restarts. If they are currently stored only in memory (a Map or variable), move them to a persistent store.
+- Options in order of preference:
+1. Your existing database (Drizzle/SQLite or whatever is set up)
+1. A JSON file on disk (simple but works for single-user)
+1. Replit’s key-value store if available
+- Do NOT store tokens in localStorage on the frontend. These are server-side secrets.
+- Encrypt or at minimum do not log the raw token values.
+
+Task 4: Add a Proactive Refresh Timer.
+
+- On server start, if valid tokens exist in the persistent store, calculate when the access token expires and set a timer to refresh it 5 minutes before expiry.
+- This way the token is always fresh and the user never hits a stale token on their first API call after being idle.
+
+BUILD AND TEST:
+
+- After implementation, verify: authenticate with Schwab, confirm streaming data works, then wait for the access token to expire (or temporarily set a short expiry for testing). Confirm the app silently refreshes without any user-facing redirect or error.
+- Verify tokens survive a server restart: authenticate, restart the server, confirm Schwab data resumes without re-login.
