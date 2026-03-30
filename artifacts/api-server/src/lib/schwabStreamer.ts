@@ -403,7 +403,7 @@ function handleData(content: Record<string, unknown>[]) {
       return typeof v === "number" && !isNaN(v) ? v : null;
     };
 
-    const lastVal  = pick(FIELD.REG_LAST)  ?? existing.last;
+    const lastVal  = pick(FIELD.LAST_ALL_SESS) ?? existing.last;
     const closeVal = pick(FIELD.CLOSE)     ?? existing.close;
 
     let changeVal:    number | null = existing.change;

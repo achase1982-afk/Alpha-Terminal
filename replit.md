@@ -1,6 +1,6 @@
 # Overview
 
-This project is a pnpm workspace monorepo using TypeScript, designed as a sophisticated trading command center, "Alpha Terminal — Trading Command Center v2". Its primary purpose is to provide institutional-grade trading tools, real-time market data, and AI-powered insights to traders. The platform integrates with Schwab for data and authentication, offering features like advanced charting, options analysis, and AI-driven market scanning and strategy generation. The overarching goal is to deliver a comprehensive, high-performance trading environment with a focus on data accuracy and user experience, aiming for market leadership in AI-assisted trading platforms.
+This project, "Alpha Terminal — Trading Command Center v2," is a pnpm workspace monorepo using TypeScript, designed to be an institutional-grade trading platform. It provides advanced trading tools, real-time market data, and AI-powered insights, integrating with Schwab for data and authentication. Key capabilities include advanced charting, options analysis, and AI-driven market scanning and strategy generation. The platform aims to offer a comprehensive, high-performance trading environment with a focus on data accuracy and user experience, striving for market leadership in AI-assisted trading solutions.
 
 # User Preferences
 
@@ -15,70 +15,34 @@ I prefer a coding style that emphasizes readability and maintainability, utilizi
 
 ## UI/UX Decisions
 
-The UI adopts a Bloomberg/TOS-style institutional gold color palette, featuring a dark theme with `#0c0c0c` background, `#1a1a1a` cards, `#262626` borders, `#e4e4e7` text, and `#ffb800` as the primary accent color (Institutional Gold). Critically, the design eschews all shades of blue. Typography uses Inter font with `letter-spacing -0.025em` and `tabular-nums` for data consistency. UI components include:
-
--   **MacroBar**: Fixed sticky bar with clickable SPY/QQQ/IWM/VIX cards.
--   **Sidebar**: Collapsible settings panel with sections for Chart Overlays, Macro Tickers, Marquee Setup, and AI Parameters.
--   **Institutional Tear Sheet**: Full-screen overlay for detailed company financials, including a HeroHeader with live prices, TradingMetricsGrid, 52-Week Range Bar, and Institutional Ownership Card.
--   **Options Tab**: ThinkorSwim-replica options chain with `#1C1C1E` dark gray palette (no pure black), edge-to-edge layout, CALLS|gear|PUTS sticky header (h-9, z-30), sticky sub-header row (h-[22px], z-20) with scroll-synced column labels, TOS-format expiration rows (date + DTE + totalStrikes + "Weeklys" tag + atmIV% + expectedMove), compact ROW_H=40 data rows with bold white numbers, "Size: XX" / "OI: XX" sub-labels, COL_W=72 / STRIKE_W=56, ATM gold dashed line, ITM blue shading, and configurable draggable columns. Date parsing uses regex extraction for Schwab format compatibility. Weekly/monthly detection based on 3rd-Friday rule.
--   **AI Chat Overlay**: Full-screen iMessage-style chat interface for AI interaction.
--   **Live Market Pulse Modal**: Displays real-time data for 14 key symbols.
--   **Market Scanner**: AI Discovery and Manual Filter modes with configurable scan universe and sortable results. Scanner results use `useQuote` hook per-row for live-updating prices after scan. Result symbols are subscribed to the WebSocket stream via `subscribeEquitySymbols` for real-time ticks.
--   **Charting**: `lightweight-charts` v5 with transparent background, gold crosshair, green/red candles, and distinct price/volume scales. Features a horizontal timeframe pill bar and a semi-transparent legend.
--   **Ticker Tape**: `requestAnimationFrame`-driven animation for smooth, flash-free scrolling.
--   **Price Pulse Animation**: CSS keyframe animation for price changes (green for uptick, red for downtick).
+The UI features a Bloomberg/TOS-style institutional gold color palette with a dark theme (no blue shades), Inter font, and `tabular-nums`. Key components include a fixed MacroBar, a collapsible Sidebar, an Institutional Tear Sheet for detailed financials, and a ThinkorSwim-replica Options Tab with a dark gray palette, sticky headers, and configurable columns. Other UI elements are an AI Chat Overlay, Live Market Pulse Modal, Market Scanner, `lightweight-charts` based Charting, a `requestAnimationFrame`-driven Ticker Tape, and CSS keyframe Price Pulse Animations.
 
 ## Technical Implementations
 
--   **Monorepo**: pnpm workspaces with TypeScript 5.9.
--   **API**: Express 5 server (`artifacts/api-server`) with Zod for validation and Orval for API codegen.
--   **Database**: PostgreSQL with Drizzle ORM (`lib/db`).
--   **Real-Time Streaming**: Singleton WebSocket client (`schwabStreamer.ts`) connecting to Schwab Streamer for LEVELONE_EQUITIES, LEVELONE_FUTURES, and LEVELONE_OPTIONS, broadcasting live ticks to SSE clients. Features exponential backoff for reconnects. Options streaming uses per-contract Schwab symbol keys (e.g. `AAPL  260417C00200000`). **Futures use separate field mapping** (`FUT_FIELD`): MARK=24 (not 29), NET_CHANGE=19, PCT_CHANGE=20, with dedicated `FUTURES_FIELDS_STR` and `handleFuturesData` parser. Equities field 29 = Mark; futures field 29 = Trading Hours (string, not price).
--   **Quote Data Flow**: Schwab WS → Server cache → Snapshot poll (2s interval) → Zustand `streamPrices` map (equities) / `options-stream-store` (options) → `useQuote` hook / `useOptionTick` selector for UI components. SSE was replaced with snapshot polling because Replit's proxy kills long-lived connections after ~17s. The frontend always polls `/api/stream/snapshot` on mount (no auth gate) — if the server has cached data from a previous auth session, it flows immediately. Auth tokens are only needed to START the server-side Schwab WebSocket, not to receive data. `useQuote` uses per-symbol Zustand selectors (`s.streamPrices[symbol]`) for efficient re-renders — only the row for the updated symbol re-renders, not all consumers.
--   **Options Stream Store**: Volatile Zustand store (`options-stream-store.ts`) with per-contract `OptionTick` records and fine-grained selectors via `useOptionTick(contractKey)` for cell-level re-renders.
--   **Connection State**: 3-state `streamStatus` (`"offline"` | `"connecting"` | `"live"`) driven by backend `streamerStatus` SSE events. Backend is the single source of truth: broadcasts `connected` on Schwab LOGIN ack, `disconnected` on WS close, `rejected` on LOGIN failure (stops auto-reconnect; requires re-auth). Frontend maps `connected→live`, `disconnected→connecting`, `rejected→offline`. **Auto-recovery**: On page load, `useAutoRefreshToken` immediately refreshes both Market Data and Trader tokens before the streamer connects. If the streamer LOGIN is rejected (expired token), `useMarketStream` automatically refreshes both tokens via `getState()` and retries (up to 3 attempts). Successful token refresh updates Zustand → `streamKey` changes → triggers automatic reconnect.
--   **Authentication**: **Clerk** for app-level login (frontend `<ClerkProvider>` + backend `clerkMiddleware()` + `getAuth()` guard). All `/api` routes (except `/api/healthz`) require a valid Clerk session token via `Authorization: Bearer <token>`. Frontend uses `fetchWithAuth()` wrapper and `setAuthTokenGetter()` on the generated API client to inject Clerk tokens automatically. **Schwab OAuth 2.0** (separate concern, untouched by Clerk) — two separate Schwab apps: (1) Market Data API (`SCHWAB_APP_KEY`/`SCHWAB_APP_SECRET`/`SCHWAB_REDIRECT_URI`) for REST quotes, charts, options chains; (2) Accounts & Trading API (`SCHWAB_TRADER_APP_KEY`/`SCHWAB_TRADER_APP_SECRET`/`SCHWAB_TRADER_REDIRECT_URI`) for WebSocket streaming via `/trader/v1/userPreference`. **Chained single-login flow**: Market Data callback automatically redirects to Trader OAuth URL, so the user only clicks "Sign In" once and both APIs are authenticated in one pass. Trader callback redirects back to `/` where `PendingSessionLoader` picks up both token sets. Fallback: if only Market Data is connected, a separate "Connect Streaming" button is available. Both tokens auto-refresh every 25 minutes. The streamer uses the Trader token (falls back to Market Data token if Trader not connected). Schwab tokens are also stored in `localStorage` for frontend state but are not the source of truth.
--   **Server-Side Token Persistence**: Schwab OAuth tokens (access + refresh for both Market Data and Trader APIs) are persisted server-side in `.data/schwab-tokens.json` via `tokenStore.ts`. Tokens survive server restarts. On boot, `initTokenStore()` loads persisted tokens and refreshes expired access tokens immediately. A proactive refresh timer fires 5 minutes before each access token expires, with retry logic (up to 3 attempts, 30s delay) for transient failures. The refresh uses a per-kind mutex to prevent concurrent refresh races. Generation tracking prevents stale refreshes from clearing tokens updated by newer operations. The `storeTokens()` function and proactive refresh both trigger `onTokenRefreshed` callback, which updates the streamer's access token if connected. The frontend bootstraps from `/api/auth/server-tokens` on load, so after a server restart the user's Schwab session resumes without re-login (as long as the 7-day refresh token hasn't expired). Auto-detect redirect URIs: `SCHWAB_REDIRECT_URI` / `SCHWAB_TRADER_REDIRECT_URI` for dev, `SCHWAB_REDIRECT_URI_PROD` / `SCHWAB_TRADER_REDIRECT_URI_PROD` for production (`NODE_ENV=production`).
--   **Market News**: Dual-source: Finnhub API (primary, `FINNHUB_API_KEY`) + Polygon.io API (secondary, `POLYGON_API_KEY`). Merged, deduplicated, sorted newest-first. Auto-refreshes every 2 minutes. Polygon uses ticker-specific news (`/v2/reference/news?ticker=AAPL`). Futures/index symbols mapped to Polygon format (e.g. `/ES` → `I:SPX`, `$VIX` → `I:VIX`, `/CL` → `X:CLUSD`).
--   **In-App Article Reader**: Server-side article proxy (`/api/market/proxy-article`) that resolves Finnhub redirect URLs via HTTP redirect, fetches article HTML, and extracts clean content using `@mozilla/readability` + `linkedom`. Returns dark-themed reader-mode HTML with the terminal's color palette. Frontend `InAppBrowser` component renders the reader in an iframe overlay positioned below the ticker tape. Includes close, reload, back, and external link controls. SSRF protection: `isSafeUrl()` validates all URLs against private/loopback/link-local addresses before any fetch; Finnhub detection uses strict hostname+pathname matching (not substring); iframe uses `sandbox="allow-scripts allow-popups"` (no `allow-same-origin`); all interpolated strings are HTML-escaped.
--   **Earnings Date**: Yahoo Finance integration (`/api/market/earnings-date?symbol=X`) for next earnings date. Used in Options MetricsStrip (`Earn: MM/DD`). Primary source: Yahoo `quoteSummary/calendarEvents` API; fallback: Yahoo quote page scrape. No API key needed, 30-min stale time. Does not require Schwab auth.
--   **AI Integration**: Backend AI routes (`/api/ai/...`) for market briefing, options strategist, chat, analysis, and strategy generation. Enforces a "Strict Data Grounding Rule" for AI prompts, forbidding internal training knowledge for market predictions and requiring citation of provided context data. Options Strategist uses buffered streaming — the loading animation (13-phase non-looping sequence) stays visible until the full response is received, then parsed JSON strategy cards render instantly (no raw JSON flash). Technical Analysis uses live streaming with markdown rendering.
--   **Technical Analysis**: `technicalindicators` npm package for RSI, EMA, etc., integrated into the strategy endpoint.
--   **State Management**: Zustand store for shared application state, with `partialize` for selective persistence.
--   **Error Handling**: React Query cancellation on query-key changes and strategist race guard.
--   **Build System**: `esbuild` for CJS bundles, `tsc --build --emitDeclarationOnly` for typechecking.
+The project is a pnpm monorepo with TypeScript. The API is an Express 5 server using Zod for validation and Orval for codegen. PostgreSQL with Drizzle ORM is used for the database. Real-time streaming is handled by a singleton WebSocket client connecting to Schwab Streamer, broadcasting live ticks via snapshot polling to the frontend due to proxy limitations. Quote data flows from Schwab WS to a server cache, then to Zustand stores and UI hooks. Options streaming uses volatile Zustand storage with fine-grained selectors. Connection state is managed via backend SSE events with auto-recovery for token expiration.
+
+Authentication combines Clerk for app-level login and Schwab OAuth 2.0 for Market Data and Accounts & Trading APIs, with a chained single-login flow. Schwab tokens are persisted server-side in `.data/schwab-tokens.json` and auto-refreshed proactively. Market News is sourced from Finnhub and Polygon.io, merged and deduplicated. An in-app article reader uses a server-side proxy to fetch and clean HTML content. Earnings dates are fetched from Yahoo Finance. AI integration uses Gemini models (`gemini-2.5-flash` and `gemini-2.5-pro`) with strict data grounding rules for market briefing, options strategy, and technical analysis. Technical analysis uses the `technicalindicators` npm package. Zustand is used for state management, with React Query for data fetching and error handling. The build system uses `esbuild` and `tsc`.
 
 ## Feature Specifications
 
--   **MacroBar**: Displays SPY/QQQ/IWM/VIX, clickable to set active symbol. VIX MacroCard inverts color for rising/falling fear.
--   **Institutional Tear Sheet**: Provides comprehensive fundamental and real-time quote data, with skeleton loaders for pending data.
--   **Options Chain**: Displays bid, ask, bidSize, askSize, last, volume, openInterest, delta, gamma, theta, IV. Columns are configurable and draggable. Supports ATM-centered strike slicing and ITM shading. Single-row MetricsStrip combines Strikes dropdown (left) with compact metrics (right): IV, MOVE, P/C ratio, and dynamic Earnings date (`Earn: MM/DD` or `TBD`). OI removed from top-level metrics. Earnings date sourced from Schwab `fundamental.nextEarningsDate` via the quote endpoint.
--   **AI Strategy Endpoint**: Fetches 30-day 1-minute candles, computes TA, validates data freshness, and generates strategy with Gemini, including strict data grounding.
--   **Tick Direction Coloring**: `useTickColor` hook colors last price based on immediate momentum.
--   **Search History**: Stores and displays recently viewed symbols with quick-save functionality.
--   **Indices & Futures Support**: Comprehensive support for symbols like $SPX, $VIX, /ES, /NQ across all data endpoints. Index options use `$INDEX.X` format for Schwab chains API. Futures options pass `assetClass=FUTURES`. Index chains default to `range=NTM` with `strikeCount=20`.
--   **AI Confidence**: Options strategist prompt mandates `aiConfidence` (High/Medium/Low) and `aiConfidenceReason` per strategy. Frontend shows color-coded badge on PoP row and reason in rationale section.
+Features include a MacroBar displaying key indices, an Institutional Tear Sheet for fundamental data, and an Options Chain with bid/ask, Greeks, configurable columns, ATM-centered strike slicing, and a MetricsStrip. The AI Strategy Endpoint generates strategies based on historical data and TA, with mandated `aiConfidence` levels. `useTickColor` provides price momentum coloring. Search History stores recent symbols. Comprehensive support for Indices & Futures is integrated across all data endpoints, including index options and futures options.
 
 ## System Design Choices
 
--   **Monorepo Structure**: Facilitates shared libraries and consistent tooling across `api-server`, `api-client-react`, `api-zod`, `db`, and `scripts`.
--   **TypeScript Composite Projects**: Ensures robust type-checking and efficient dependency management across packages.
--   **Separation of Concerns**: Clear boundaries between UI components, API, database, and streaming logic.
--   **Optimized Real-Time Data**: Prioritizes streamed data with REST fallback, and employs performant state management (Zustand selectors) to minimize re-renders.
--   **Strict AI Grounding**: A core design principle to prevent hallucination and ensure AI responses are based solely on provided, fresh market data.
+The monorepo structure facilitates shared libraries and consistent tooling. TypeScript Composite Projects ensure robust type-checking. A clear separation of concerns is maintained across UI, API, database, and streaming logic. Real-time data is optimized through streamed data with REST fallback and performant state management. Strict AI grounding is a core principle to ensure AI responses are based solely on provided, fresh market data.
 
 # External Dependencies
 
--   **Schwab Developer API**: For OAuth, market data (quotes, historical candles, fundamentals, options chains), and streaming data.
+-   **Schwab Developer API**: OAuth, market data (quotes, candles, fundamentals, options chains), and streaming.
 -   **Gemini Models**: `gemini-2.5-flash` and `gemini-2.5-pro` for AI capabilities.
--   **PostgreSQL**: Relational database for persistence.
--   **Drizzle ORM**: TypeScript ORM for database interaction.
--   **Express**: Node.js web application framework for the API server.
--   **Zod**: Schema declaration and validation library.
--   **Orval**: OpenAPI spec code generator for API client and Zod schemas.
--   **React Query**: Data fetching and caching library for React.
--   **Zustand**: Fast and scalable state management solution.
--   **lightweight-charts**: Financial charting library.
--   **technicalindicators**: npm package for technical analysis calculations.
--   **bunny.net**: Content delivery network for fonts (Inter).
--   **Clerk**: App-level authentication (`@clerk/clerk-react` + `@clerk/themes` on frontend, `@clerk/express` on backend). Publishable key injected via Vite `define`. Separate from Schwab OAuth.
+-   **PostgreSQL**: Database.
+-   **Drizzle ORM**: TypeScript ORM.
+-   **Express**: API server framework.
+-   **Zod**: Schema validation.
+-   **Orval**: OpenAPI spec code generator.
+-   **React Query**: Data fetching and caching.
+-   **Zustand**: State management.
+-   **lightweight-charts**: Financial charting.
+-   **technicalindicators**: Technical analysis calculations.
+-   **bunny.net**: CDN for fonts.
+-   **Clerk**: App-level authentication.
