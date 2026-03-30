@@ -588,7 +588,7 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
     : null;
 
   return (
-    <div className="flex flex-col gap-0 max-w-5xl mx-auto pb-6">
+    <div className="flex flex-col gap-0 max-w-5xl mx-auto pb-6 flex-1" style={{ minHeight: "calc(var(--vvh, 100vh) - 200px)" }}>
       <AiSubTabs active={subTab} onChange={setSubTab} />
 
       {subTab === "pulse" && (
