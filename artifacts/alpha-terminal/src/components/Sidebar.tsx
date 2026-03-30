@@ -1,9 +1,7 @@
 import { useTerminalStore } from "@/lib/store";
 import { useOptionsSettingsStore } from "@/lib/options-store";
-import { fetchWithAuth } from "@/lib/fetchWithAuth";
+import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { AuthPanel } from "./AuthPanel";
-import { MarketPulseModal, DEFAULT_PULSE_SYMBOLS } from "./MarketPulseModal";
-import { useLocalStorage } from "@/lib/useLocalStorage";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -14,8 +12,6 @@ import { useState } from "react";
 import { useClerk } from "@clerk/clerk-react";
 import { useAutoLock } from "@/hooks/useAutoLock";
 import { useGetAvailableModels } from "@workspace/api-client-react";
-
-const API_BASE = "/api";
 
 const OVERLAY_LABELS: Record<string, string> = {
   sma20: "SMA 20",
@@ -37,7 +33,6 @@ export function Sidebar({ onClose, onOpenChat }: SidebarProps) {
     tickerTapeSymbols, setTickerTapeSymbols,
     tapeSpeed, setTapeSpeed,
     aiModel, setAiModel, aiTemp, setAiTemp,
-    accessToken,
     watchlist, removeFromWatchlist, setSymbol,
   } = useTerminalStore();
 
@@ -48,45 +43,21 @@ export function Sidebar({ onClose, onOpenChat }: SidebarProps) {
   const { data: modelsData } = useGetAvailableModels();
   const availableModels = modelsData?.models ?? ["gemini-2.5-flash", "gemini-2.5-pro"];
 
+  const {
+    settings: pulseSettings,
+    setAutoRefresh: setPulseAutoRefresh,
+    setAutoRefreshInterval: setPulseAutoRefreshInterval,
+    setRiskTolerance: setPulseRiskTolerance,
+    setShowBiasStrip: setPulseShowBiasStrip,
+  } = useMarketPulseStore();
+
   const [macroInputs, setMacroInputs] = useState<string[]>(macroSymbols);
   const [tapeInput, setTapeInput] = useState(tickerTapeSymbols.join(", "));
   const [settingsSaved, setSettingsSaved] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [watchlistOpen, setWatchlistOpen] = useState(true);
   const [securityOpen, setSecurityOpen] = useState(false);
-
-  const [pulseSymbols, setPulseSymbols] = useLocalStorage<string[]>(
-    "alpha-pulse-symbols",
-    DEFAULT_PULSE_SYMBOLS
-  );
-
-  const [pulseOpen, setPulseOpen] = useState(false);
-  const [pulseLoading, setPulseLoading] = useState(false);
-  const [pulseResult, setPulseResult] = useState<string | null>(null);
-
-  const handleGeneratePulse = async () => {
-    setPulseResult(null);
-    setPulseOpen(true);
-    setPulseLoading(true);
-    try {
-      const res = await fetchWithAuth(`${API_BASE}/ai/market-briefing`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          accessToken,
-          symbols: pulseSymbols,
-          model: aiModel,
-          temperature: 0.2,
-        }),
-      });
-      const data = await res.json() as { response?: string };
-      setPulseResult(data.response ?? "No response received.");
-    } catch (err) {
-      setPulseResult(`**Error:** ${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      setPulseLoading(false);
-    }
-  };
+  const [pulseSettingsOpen, setPulseSettingsOpen] = useState(false);
 
   const handleMacroChange = (idx: number, val: string) => {
     const updated = [...macroInputs];
@@ -136,36 +107,12 @@ export function Sidebar({ onClose, onOpenChat }: SidebarProps) {
 
         <div className="pt-1">
           <Button
-            onClick={handleGeneratePulse}
-            disabled={!accessToken || pulseLoading}
-            className="w-full font-mono text-xs h-9 bg-[#111111] text-[#FFB800] border border-[#262626] hover:bg-[#1a1a1a] hover:border-[#FFB800]/40 transition-all tracking-wider"
-          >
-            {pulseLoading ? (
-              <>
-                <span className="w-3 h-3 border-2 border-[#FFB800] border-t-transparent rounded-full animate-spin mr-2 shrink-0" />
-                SCANNING MARKET...
-              </>
-            ) : (
-              <>
-                <Zap className="w-3.5 h-3.5 mr-2 shrink-0 text-[#FFB800]" />
-                GENERATE LIVE MARKET PULSE
-              </>
-            )}
-          </Button>
-          {!accessToken && (
-            <p className="font-mono text-[9px] text-muted-foreground/50 text-center mt-1.5">
-              Connect Schwab to enable
-            </p>
-          )}
-
-          <Button
             onClick={() => { onOpenChat?.(); onClose?.(); }}
-            className="w-full font-mono text-xs h-9 bg-[#1a1a1a] text-foreground border border-card-border hover:bg-primary/15 hover:border-primary/40 hover:text-primary transition-all tracking-wider mt-2"
+            className="w-full font-mono text-xs h-9 bg-[#1a1a1a] text-foreground border border-card-border hover:bg-primary/15 hover:border-primary/40 hover:text-primary transition-all tracking-wider"
           >
             <MessageCircle className="w-3.5 h-3.5 mr-2 shrink-0" />
             AI SEARCH
           </Button>
-
         </div>
 
         <div className="bg-card border border-card-border rounded-xl overflow-hidden shadow-sm">
@@ -383,6 +330,102 @@ export function Sidebar({ onClose, onOpenChat }: SidebarProps) {
         </div>
         <div className="bg-card border border-card-border rounded-xl overflow-hidden shadow-sm">
           <button
+            onClick={() => setPulseSettingsOpen(!pulseSettingsOpen)}
+            className="w-full flex items-center justify-between p-3 text-sm font-mono font-bold hover:bg-secondary/50 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <Zap className="w-4 h-4 text-primary" />
+              <span className="text-foreground">MARKET PULSE</span>
+            </div>
+            <ChevronRight className={`w-4 h-4 transition-transform duration-300 ${pulseSettingsOpen ? 'rotate-90' : ''}`} />
+          </button>
+
+          {pulseSettingsOpen && (
+            <div className="p-3 sm:p-4 border-t border-card-border bg-[#0c0c0c] space-y-3 animate-in fade-in slide-in-from-top-2">
+              <div className="flex items-center justify-between">
+                <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
+                  <Zap className="w-3 h-3" /> Show Bias Strip
+                </Label>
+                <button
+                  type="button"
+                  onClick={() => setPulseShowBiasStrip(!pulseSettings.showBiasStrip)}
+                  className="relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors duration-200"
+                  style={{ background: pulseSettings.showBiasStrip ? "#FFB800" : "#2A2A2C" }}
+                >
+                  <span
+                    className="inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-200"
+                    style={{ transform: pulseSettings.showBiasStrip ? "translateX(16px) translateY(2px)" : "translateX(2px) translateY(2px)" }}
+                  />
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
+                  Auto-Refresh
+                </Label>
+                <button
+                  type="button"
+                  onClick={() => setPulseAutoRefresh(!pulseSettings.autoRefresh)}
+                  className="relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors duration-200"
+                  style={{ background: pulseSettings.autoRefresh ? "#FFB800" : "#2A2A2C" }}
+                >
+                  <span
+                    className="inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-200"
+                    style={{ transform: pulseSettings.autoRefresh ? "translateX(16px) translateY(2px)" : "translateX(2px) translateY(2px)" }}
+                  />
+                </button>
+              </div>
+
+              {pulseSettings.autoRefresh && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-[9px] text-muted-foreground/70 uppercase tracking-wider">Interval</span>
+                    <span className="font-mono text-[10px] text-primary tabular-nums">{pulseSettings.autoRefreshInterval}m</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={2}
+                    max={30}
+                    step={1}
+                    value={pulseSettings.autoRefreshInterval}
+                    onChange={e => setPulseAutoRefreshInterval(Number(e.target.value))}
+                    className="w-full h-1 rounded-full appearance-none cursor-pointer"
+                    style={{ accentColor: "#FFB800", background: "#2A2A2C" }}
+                  />
+                  <div className="flex justify-between">
+                    <span className="font-mono text-[9px] text-gray-600">2m</span>
+                    <span className="font-mono text-[9px] text-gray-600">30m</span>
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium">
+                  Risk Tolerance
+                </Label>
+                <div className="flex rounded-lg overflow-hidden border border-card-border">
+                  {(["conservative", "moderate", "aggressive"] as const).map(v => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setPulseRiskTolerance(v)}
+                      className="flex-1 font-mono text-[10px] py-1.5 px-2 transition-colors capitalize"
+                      style={{
+                        background: pulseSettings.riskTolerance === v ? "#FFB800" : "transparent",
+                        color: pulseSettings.riskTolerance === v ? "#0c0c0c" : "#9ca3af",
+                      }}
+                    >
+                      {v}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="bg-card border border-card-border rounded-xl overflow-hidden shadow-sm">
+          <button
             onClick={() => setSecurityOpen(!securityOpen)}
             className="w-full flex items-center justify-between p-3 text-sm font-mono font-bold hover:bg-secondary/50 transition-colors"
           >
@@ -429,14 +472,6 @@ export function Sidebar({ onClose, onOpenChat }: SidebarProps) {
         </button>
       </div>
 
-      <MarketPulseModal
-        isOpen={pulseOpen}
-        isLoading={pulseLoading}
-        result={pulseResult}
-        symbols={pulseSymbols}
-        onSymbolsChange={setPulseSymbols}
-        onClose={() => setPulseOpen(false)}
-      />
     </div>
   );
 }

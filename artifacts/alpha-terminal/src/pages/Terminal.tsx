@@ -19,6 +19,7 @@ import { AiChatOverlay } from "@/components/AiChatOverlay";
 import { InstitutionalTearSheet } from "@/views/InstitutionalTearSheet";
 import { InAppBrowser } from "@/components/InAppBrowser";
 import { NewsTab } from "@/components/NewsTab";
+import { AiBiasStrip } from "@/components/pulse/AiBiasStrip";
 import { LineChart, BarChart2, BrainCircuit, Menu, Radar, Newspaper } from "lucide-react";
 
 export default function TerminalPage() {
@@ -130,6 +131,9 @@ export default function TerminalPage() {
         <div ref={scrollRef} onScroll={handleScroll} className="app-content z-10">
           {/* ─── Macro Cards ─── */}
           <MacroBar />
+
+          {/* ─── AI Bias Strip ─── */}
+          <AiBiasStrip />
 
           {/* ─── Metrics row (sticky + collapsible) ─── */}
           <MetricsBar compact={isScrolled} onOpenTearSheet={() => setTearSheetOpen(true)} />

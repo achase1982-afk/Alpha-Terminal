@@ -11,6 +11,7 @@ import {
   Zap, ChevronDown, AlertTriangle, Crosshair,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import { MarketPulseDashboard } from "@/components/pulse/MarketPulseDashboard";
 
 const API_BASE = "/api";
 
@@ -636,6 +637,12 @@ export function AiIntelligenceTab() {
 
   return (
     <div className="flex flex-col gap-0 max-w-5xl mx-auto pb-6">
+
+      <div className="px-3 sm:px-4 lg:px-5 pt-3 pb-4">
+        <MarketPulseDashboard />
+      </div>
+
+      <div className="border-t border-card-border mx-3 sm:mx-4 lg:mx-5 mb-2" />
 
       <div
         className="sticky top-[76px] z-20 flex gap-2 py-2 -mx-3 px-3 sm:-mx-4 sm:px-4 lg:-mx-5 lg:px-5"

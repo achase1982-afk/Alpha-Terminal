@@ -598,6 +598,148 @@ Keep the entire output under 500 words. Be technically precise, data-driven, and
   }
 });
 
+router.post("/market-pulse", async (req, res) => {
+  const { accessToken, symbols, model, temperature, riskTolerance } = req.body as {
+    accessToken?: string;
+    symbols?: string[];
+    model?: string;
+    temperature?: number;
+    riskTolerance?: string;
+  };
+
+  if (!accessToken) {
+    return res.status(400).json({ error: "Schwab access token required." });
+  }
+
+  const { session, timeET, sessionGuidance } = getMarketSession();
+
+  let dataBlock: string;
+  try {
+    const { dataMap } = await fetchMacroPulseData(accessToken, symbols);
+    dataBlock = buildPulseDataBlock(dataMap, symbols && symbols.length > 0 ? symbols : undefined);
+  } catch (fetchErr: unknown) {
+    const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+    req.log.error({ err: fetchErr }, "Market pulse data fetch error");
+    return res.status(500).json({ error: msg });
+  }
+
+  const symbolList = symbols && symbols.length > 0
+    ? symbols.map(s => s.toUpperCase().trim()).join(", ")
+    : PULSE_SYMBOLS.map(s => s.display).join(", ");
+
+  const riskContext = riskTolerance
+    ? `\nThe trader's risk tolerance is: ${riskTolerance.toUpperCase()}. Tailor your action plan aggressiveness accordingly.`
+    : "";
+
+  const prompt = `You are an elite Macro Prop Desk Analyst at a top-tier systematic hedge fund.
+
+STRICT GROUNDING RULE: You must ONLY use the Context Data provided below. Every price, ratio, volume, and indicator value you cite MUST come from this data. You are ABSOLUTELY FORBIDDEN from using your internal training knowledge for market trends, price targets, or directional predictions. If a data field shows "NO DATA AVAILABLE", skip it — do NOT substitute with internal knowledge.
+
+═══════════════════════════════════════════════════════
+LIVE MARKET PULSE — ${timeET} | SESSION: ${session}
+INSTRUMENTS SCANNED: ${symbolList}
+═══════════════════════════════════════════════════════
+
+SESSION DIRECTIVE: ${sessionGuidance}
+${riskContext}
+
+═══ CONTEXT DATA ═══
+${dataBlock}
+═══ END CONTEXT DATA ═══
+
+═══════════════════════════════════════════════════════
+ANALYTICAL FRAMEWORK — synthesize ONLY the data streams you have:
+
+For any VOLATILITY instruments (VIX, VVIX, Put/Call ratios): assess whether vol is expanding or compressing, and whether institutional hedging or complacency dominates.
+
+For any BREADTH indicators (TICK, ADD/Advance-Decline, TRIN/Arms): determine if breadth is confirming or diverging from price. TRIN < 1.0 = bullish volume distribution; > 1.0 = bearish. Consistent positive TICK = institutional buying pressure.
+
+For any MACRO/FX/COMMODITY instruments (DXY, Gold, Crude, rates): determine whether the inter-market configuration is risk-on or risk-off. Dollar strength = headwind for equities; Gold bid = safe-haven demand; Crude bid = risk appetite.
+
+For any EQUITY FUTURES (ES, NQ, etc.): assess whether futures are leading or lagging cash, and what any premium/discount implies for directional intent.
+
+For any EQUITY ETFs (SPY, QQQ, IWM, etc.): assess breadth, leadership rotation, and key technical levels.
+
+CROSS-ASSET: Do all data streams CONFIRM the same narrative? Or are there DIVERGENCES that signal a trap or reversal risk?
+
+IMPORTANT: Only comment on instruments you have data for. Skip any category where no data was provided.
+═══════════════════════════════════════════════════════
+
+YOU MUST RESPOND WITH VALID JSON ONLY. No markdown. No code fences. No explanation outside the JSON.
+
+Use EXACTLY this JSON schema:
+{
+  "bias": {
+    "direction": "BULLISH" | "BEARISH" | "NEUTRAL",
+    "confidence": "HIGH" | "MEDIUM" | "LOW",
+    "regime": "RISK-ON" | "RISK-OFF" | "NEUTRAL" | "DETERIORATING" | "RECOVERING",
+    "headline": "One sentence. Maximum conviction. Current macro verdict."
+  },
+  "clusters": [
+    {
+      "id": "unique-slug",
+      "category": "equity" | "volatility" | "breadth" | "macro" | "futures" | "commodities",
+      "title": "Short cluster title",
+      "bias": "BULLISH" | "BEARISH" | "NEUTRAL",
+      "confidence": "HIGH" | "MEDIUM" | "LOW",
+      "summary": "2-3 sentence analysis of this cluster using ONLY the data provided.",
+      "keyData": [
+        { "label": "Instrument name", "value": "price or value", "direction": "up" | "down" | "flat" }
+      ]
+    }
+  ],
+  "actionPlan": {
+    "primaryTrade": "Specific trade description",
+    "direction": "BULLISH" | "BEARISH" | "NEUTRAL",
+    "instrument": "Primary instrument symbol",
+    "entry": "Entry level or condition",
+    "stop": "Stop loss level",
+    "target": "Profit target level",
+    "rationale": "Why this trade makes sense given the data",
+    "alternativePlays": ["Alternative trade 1", "Alternative trade 2"]
+  },
+  "invalidation": {
+    "conditions": ["Condition that would invalidate the thesis"],
+    "keyLevels": [
+      { "instrument": "Symbol", "level": "Price level", "significance": "Why this level matters" }
+    ]
+  }
+}
+
+RULES:
+- Include 2-6 clusters covering the data categories you have data for.
+- Each cluster's keyData array should have 1-4 data points with actual values from the context data.
+- The actionPlan must reference specific instruments and levels from the data.
+- Include 1-3 invalidation conditions and 2-4 key levels.
+- All values must come from the context data. Do NOT fabricate prices or levels.
+- Be technically precise, data-driven, and immediately actionable.`;
+
+  try {
+    const raw = await callGemini(prompt, model ?? "gemini-2.5-pro", temperature ?? 0.2);
+
+    let cleaned = raw.trim();
+    if (cleaned.startsWith("```")) {
+      cleaned = cleaned.replace(/^```(?:json)?\s*/, "").replace(/```\s*$/, "").trim();
+    }
+
+    const parsed = JSON.parse(cleaned);
+
+    const result = {
+      ...parsed,
+      session,
+      timeET,
+      instrumentCount: (symbols && symbols.length > 0 ? symbols : PULSE_SYMBOLS.map(s => s.display)).length,
+      generatedAt: Date.now(),
+    };
+
+    res.json(result);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    req.log.error({ err }, "Market pulse JSON error");
+    res.status(500).json({ error: `Market Pulse failed: ${msg}` });
+  }
+});
+
 interface StrategistSettings {
   autopilot?: boolean;
   maxRisk?: number;

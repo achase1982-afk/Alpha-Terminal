@@ -1,0 +1,388 @@
+# MARKET PULSE REDESIGN – Full Implementation Spec
+
+## Context
+
+The “Live Market Pulse” feature currently outputs a dense wall of AI-generated markdown prose. It reads like a research note, not a trading tool. We are overhauling it into a three-layer cockpit dashboard that is glanceable, auditable, and actionable.
+
+The app is Alpha Terminal: a React 18 / Vite / TypeScript / Tailwind / Zustand / TanStack Query / Radix UI trading terminal. The backend is Express 5 with Gemini 2.5 Flash via the AI SDK. The terminal uses a Bloomberg/thinkorswim-inspired dark aesthetic with JetBrains Mono for numerics.
+
+-----
+
+## PART 1: BACKEND – Force Structured JSON Output from the AI
+
+### What to change
+
+Find the backend route/function that calls the LLM (Gemini) for the Market Pulse. Replace the current prompt that asks for a markdown narrative. The new prompt must demand a strict JSON response with absolutely no markdown, no preamble, no backticks, just raw JSON.
+
+### New System Prompt for the Market Pulse LLM Call
+
+```
+You are an institutional-grade multi-asset market analysis engine. You do NOT write prose or narratives. You output ONLY a raw JSON object matching the exact schema below. No markdown. No backticks. No preamble. No commentary. Just the JSON object.
+
+Your job is to analyze the provided market data across five signal clusters and produce:
+1. A factual data snapshot (what is the market doing)
+2. A synthesized cross-asset read with auditable scoring (what does this combination mean)
+3. Conditional action rules (what setups does this environment favor)
+
+CRITICAL RULES:
+- If any data source is missing, stale (>15 min old), or showing zero volume, you MUST set that cluster's dataQuality to "STALE" or "MISSING" and reduce your confidence accordingly.
+- The maxConfidence field equals (number of clusters with "FRESH" dataQuality / 5) * 100. If 4 of 5 clusters have fresh data, maxConfidence = 80. Your confidenceScore can never exceed maxConfidence.
+- If confidenceScore < 40, set bias to "NO_EDGE" and actionPlan to a single item: "Insufficient data or conflicting signals. No clear edge. Stand aside."
+- "NO_EDGE" is a first-class result, not a fallback. Do not force a directional lean from weak data.
+- Each cluster scores from -2 (strongly bearish) to +2 (strongly bullish). The compositeScore is the weighted sum.
+- If clusters are in strong disagreement (e.g., rates at +2 and term structure at -2), set hasDivergence to true and populate the divergenceNote explaining the conflict.
+
+WEIGHT MAP:
+- rates: 25%
+- credit: 20%
+- volLevel: 20%
+- volTermStructure: 15%
+- breadth: 20%
+
+BIAS MAPPING from compositeScore:
+- >= +1.0: "STRONGLY_BULLISH"
+- +0.3 to +0.99: "BULLISH"
+- -0.29 to +0.29: "NEUTRAL"
+- -0.99 to -0.3: "BEARISH"
+- <= -1.0: "STRONGLY_BEARISH"
+- (override to "NO_EDGE" if confidenceScore < 40)
+```
+
+### Required JSON Response Schema
+
+```json
+{
+  "timestamp": "ISO 8601 timestamp of when this analysis was generated",
+  "dataAge": {
+    "oldestSource": "name of the oldest data source used",
+    "oldestSourceAge": "age in minutes as a number"
+  },
+  "bias": "STRONGLY_BULLISH | BULLISH | NEUTRAL | BEARISH | STRONGLY_BEARISH | NO_EDGE",
+  "compositeScore": "number, weighted sum from -2.0 to +2.0",
+  "confidenceScore": "number, 0-100",
+  "maxConfidence": "number, 0-100, based on data availability",
+  "hasDivergence": "boolean",
+  "divergenceNote": "string or null, explains which clusters conflict and why",
+  "clusters": {
+    "rates": {
+      "score": "number, -2 to +2",
+      "dataQuality": "FRESH | STALE | MISSING",
+      "direction": "UP | DOWN | FLAT",
+      "headline": "short string, max 60 chars, e.g. 'Yields sharply lower, risk-on signal'",
+      "keyDataPoints": ["$TNX -2.07%", "$TYX -1.41%"]
+    },
+    "credit": {
+      "score": "number, -2 to +2",
+      "dataQuality": "FRESH | STALE | MISSING",
+      "direction": "UP | DOWN | FLAT",
+      "headline": "short string, max 60 chars",
+      "keyDataPoints": ["HYG +0.32%", "LQD +0.68%", "IEF +0.66%"]
+    },
+    "volLevel": {
+      "score": "number, -2 to +2",
+      "dataQuality": "FRESH | STALE | MISSING",
+      "direction": "COMPRESSING | EXPANDING | FLAT",
+      "headline": "short string, max 60 chars",
+      "keyDataPoints": ["$VIX 30.06 (-3.19%)", "$VVIX 131.11 (-1.55%)"]
+    },
+    "volTermStructure": {
+      "score": "number, -2 to +2",
+      "dataQuality": "FRESH | STALE | MISSING",
+      "direction": "CONTANGO | FLAT | INVERTED",
+      "headline": "short string, max 60 chars",
+      "keyDataPoints": ["$VIX9D 30.76 vs $VIX 30.06 -- near-term inversion"]
+    },
+    "breadth": {
+      "score": "number, -2 to +2",
+      "dataQuality": "FRESH | STALE | MISSING",
+      "direction": "POSITIVE | NEGATIVE | FLAT",
+      "headline": "short string, max 60 chars",
+      "keyDataPoints": ["$ADVN 1740", "$DECN 936", "$TRIN 0.21"]
+    }
+  },
+  "structuralRegime": {
+    "label": "RISK_ON | RISK_OFF | TRANSITION | NO_READ",
+    "timeframe": "1-5 day outlook",
+    "summary": "1 sentence max, e.g. 'Rates and credit aligned bullish. Vol compressing but term structure caution limits conviction.'"
+  },
+  "sessionBias": {
+    "label": "BULLISH | BEARISH | NEUTRAL | NO_EDGE",
+    "summary": "1 sentence max describing today's intraday lean"
+  },
+  "riskState": {
+    "label": "PRESS | NORMAL | REDUCED | NO_TRADE",
+    "reason": "1 sentence max, e.g. 'Vol compression + credit confirmation = normal risk posture'"
+  },
+  "invalidation": {
+    "conditions": ["Array of 1-3 short strings, each an exact condition that flips the thesis, e.g. 'VIX reverses above 32'", "'$TNX rebounds above 44'", "'$TRIN spikes above 2.0'"]
+  },
+  "actionPlan": [
+    {
+      "condition": "IF condition (e.g., 'SPY holds above $634')",
+      "action": "THEN action (e.g., 'Environment favors bullish premium selling: put credit spreads, bull put spreads')",
+      "conviction": "HIGH | MODERATE | LOW"
+    },
+    {
+      "condition": "IF condition",
+      "action": "THEN action",
+      "conviction": "HIGH | MODERATE | LOW"
+    }
+  ]
+}
+```
+
+### Backend Implementation Notes
+
+- Parse the response with a try/catch. If JSON parsing fails, return a standardized error object to the frontend with `bias: "ERROR"` and a user-friendly message. Do not show raw AI output.
+- Validate the parsed JSON against the schema. If required fields are missing, treat it as an error.
+- Store the timestamp of the last successful pulse so the frontend can display data age.
+- The existing endpoint signature can stay the same. Just change what the LLM is prompted to produce and how the response is parsed before sending to the frontend.
+
+-----
+
+## PART 2: FRONTEND – Three-Layer Cockpit Dashboard
+
+### 2A: Persistent Bias Strip (new component)
+
+**Location:** Render this strip directly BELOW the futures macro cards (/YM, /ES, /NQ, /RTY) and ABOVE the ticker header (SPY / price area). It is always visible on the main screen regardless of which tab (NEWS, OPTIONS, AI, SCAN, CHART) is active.
+
+**Component name:** `AiBiasStrip.tsx` (or similar)
+
+**Layout:** A single horizontal bar, approximately 36-40px tall, full width. Horizontally it contains:
+
+- Left: bias badge text, e.g. `AI PULSE: BULLISH`
+- Center: confidence score with denominator, e.g. `68 / 85`
+- Right: timestamp, e.g. `Updated 10:34 AM`
+
+**Color coding (background of the entire strip):**
+
+- `STRONGLY_BULLISH`: bright green background (e.g., bg-emerald-600/90), white text
+- `BULLISH`: muted green (e.g., bg-emerald-800/80), green-100 text
+- `NEUTRAL`: amber/yellow (e.g., bg-amber-700/70), amber-100 text
+- `BEARISH`: muted red (e.g., bg-red-800/80), red-100 text
+- `STRONGLY_BEARISH`: bright red (e.g., bg-red-600/90), white text
+- `NO_EDGE`: dark gray (e.g., bg-zinc-700/80), zinc-300 text
+- `ERROR` or no data yet: dark gray with “AI PULSE: –” placeholder text
+
+**Behavior:**
+
+- Tapping/clicking the strip navigates the user to the AI tab and opens the full Market Pulse dashboard.
+- If the pulse data is older than 15 minutes, show a subtle pulsing amber dot next to the timestamp to indicate staleness.
+- If no pulse has been generated yet in this session, show “AI PULSE: TAP TO GENERATE” in muted text.
+
+**Typography:** JetBrains Mono for the confidence score numbers. System/body font for the labels.
+
+### 2B: AI Tab – Full Market Pulse Dashboard
+
+When the user taps the AI tab in the main tab bar (NEWS, OPTIONS, **AI**, SCAN, CHART), instead of (or above) the existing AI chat/strategist, render the full Market Pulse dashboard.
+
+**Layout from top to bottom:**
+
+#### Layer 1: Status Header
+
+A card or section at the top containing:
+
+- Large bias badge (same color scheme as the strip, but bigger, like a pill-shaped badge, maybe 48px tall)
+- Composite score displayed as a horizontal gauge or number: e.g., `+1.05` with a small label “Composite”
+- Confidence: `68 / 85` with a thin progress bar underneath (filled to 68/85 = 80%)
+- Structural regime badge: smaller, secondary badge, e.g., `REGIME: RISK_ON (1-5d)`
+- Session bias badge: e.g., `TODAY: BULLISH`
+- Risk state badge: e.g., `SIZE: NORMAL`
+- Divergence alert: if `hasDivergence` is true, show a warning banner in amber/orange: `SIGNAL CONFLICT: [divergenceNote]`. If false, don’t render this.
+
+#### Layer 2: Signal Clusters Grid
+
+A 5-column grid on desktop, or a scrollable horizontal card row on mobile (since this is mobile-first). Each cluster is a small card:
+
+Each card contains:
+
+- Cluster name: `RATES`, `CREDIT`, `VOL LEVEL`, `TERM STRUCT`, `BREADTH`
+- Score: the -2 to +2 number, color coded (green for positive, red for negative, gray for zero)
+- Direction indicator: a small arrow icon (up/down/flat) or text
+- Data quality badge: a tiny dot – green for FRESH, amber for STALE, red for MISSING
+- Headline: the short text from the AI (max 60 chars)
+- Key data points: render below the headline in muted smaller text, each on its own line
+
+If a cluster’s dataQuality is STALE or MISSING, visually dim the entire card (reduce opacity to ~50%) so the user can instantly see which inputs are degraded.
+
+#### Layer 3: Action Plan & Invalidation
+
+Below the clusters grid:
+
+**Invalidation box:** A distinct card with a border (e.g., border-red-500/30 with bg-red-950/20). Header: `INVALIDATION`. List the conditions from `invalidation.conditions` as a simple list.
+
+**Action plan:** Below invalidation. Each action item is a small card or row:
+
+- Left side: the IF condition
+- Right side: the THEN action
+- A small conviction pill badge: `HIGH` (green), `MODERATE` (amber), `LOW` (gray)
+
+If the bias is “NO_EDGE”, the action plan section should display a single prominent card: “No clear edge identified. Conflicting signals or insufficient data.” styled in amber/gray, with no fake action items.
+
+#### Below the Dashboard: AI Chat
+
+Below the full dashboard, keep the existing AI strategist chat interface. The dashboard is the “read” and the chat is the “ask.” A user reads the pulse, then can ask follow-up questions via chat.
+
+Alternatively, add a “Ask about this pulse” floating button that opens the chat with the pulse data pre-loaded as context.
+
+### 2C: Loading & Error States
+
+**Loading:** While the Market Pulse is being generated, show a skeleton loader that matches the dashboard layout. Skeleton cards for the status header, 5 skeleton cluster cards, and skeleton rows for the action plan. Add a subtle shimmer/pulse animation. Do NOT show a spinner with “generating…” text.
+
+**Error:** If the AI call fails or returns unparseable JSON, show a clean error card: “Market Pulse generation failed. Tap to retry.” with a retry button. Do not show raw error messages or stack traces.
+
+**Empty state:** If the user has not yet generated a pulse, show the dashboard layout in a dimmed/placeholder state with a prominent “Generate Market Pulse” button in the center.
+
+### 2D: Refresh / Auto-refresh
+
+Add a small refresh icon button in the top-right corner of the dashboard (inside the AI tab). Tapping it regenerates the pulse.
+
+Consider adding an auto-refresh option in Settings (see Part 3). If enabled, the pulse auto-refreshes every N minutes during market hours (9:30 AM - 4:00 PM ET).
+
+-----
+
+## PART 3: SETTINGS – Market Pulse Configuration
+
+### Location
+
+Inside the existing Settings section in the sidebar, add a new subsection called “Market Pulse” or “AI Market Pulse.”
+
+### Settings Fields
+
+```
+Market Pulse Settings:
+├── Auto-Refresh
+│   ├── Enabled: toggle (default: off)
+│   └── Interval: dropdown [5 min, 10 min, 15 min, 30 min] (default: 15 min)
+│
+├── Display Preferences
+│   ├── Show Action Plan: toggle (default: on)
+│   │   (Some users may want data + scores only, no trade suggestions)
+│   ├── Show Cluster Details: toggle (default: on)
+│   │   (Collapse the 5-cluster grid to just show composite score)
+│   └── Compact Mode: toggle (default: off)
+│       (Reduces the dashboard to just the bias strip + composite score + invalidation. No cluster cards, no action plan. For experienced traders who just want the number.)
+│
+├── Strategy Preferences (used by the AI to tailor the Action Plan)
+│   ├── Allowed Strategies: multi-select checklist
+│   │   [ ] Vertical Spreads (Bull Put / Bear Call)
+│   │   [ ] Debit Spreads (Bull Call / Bear Put)
+│   │   [ ] Iron Condors
+│   │   [ ] Calendars / Diagonals
+│   │   [ ] Butterflies
+│   │   [ ] Naked Options
+│   │   [ ] Straddles / Strangles
+│   │   [ ] Covered Calls / Cash-Secured Puts
+│   │   [ ] Equity (long/short shares)
+│   │   (default: all checked)
+│   │
+│   ├── Default Spread Width: dropdown [$2.50, $5, $10, $15, $20, $25, $50] (default: $5)
+│   ├── Max Contracts: number input (default: blank/unlimited)
+│   ├── Account Size Tier: dropdown [Under $5K, $5K-$25K, $25K-$100K, $100K+] (default: blank)
+│   │   (This helps the AI calibrate sizing language. It does not receive the exact balance.)
+│   └── Preferred Tickers: text input, comma-separated (default: blank)
+│       (If set, action plan prioritizes setups on these tickers. If blank, AI uses whatever the data suggests.)
+│
+└── Risk Preferences
+    ├── Max Risk per Trade: dropdown [1%, 2%, 3%, 5%, No Limit] as % of account tier (default: 2%)
+    └── Allow "NO_EDGE" to suppress action plan: toggle (default: on)
+        (If off, the AI always attempts to find a setup even in low-confidence environments. Not recommended.)
+```
+
+### How Settings Flow to the Backend
+
+When the user triggers a Market Pulse generation, the frontend sends the user’s Market Pulse settings as part of the request payload to the backend. The backend includes these preferences in the LLM prompt’s user message (not the system prompt). The system prompt stays constant (the institutional analysis engine). The user message says something like:
+
+```
+Here is the current market data: [data blob]
+
+User preferences for the action plan:
+- Allowed strategies: Vertical Spreads, Iron Condors, Covered Calls
+- Default spread width: $5
+- Account size tier: Under $5K
+- Preferred tickers: SPY, QQQ, AAPL
+
+Generate the Market Pulse JSON.
+```
+
+This keeps the analysis (Jobs 1 and 2) completely objective and user-agnostic. Only Job 3 (the action plan) is personalized.
+
+-----
+
+## PART 4: SIDEBAR CHANGES
+
+### Remove from Sidebar
+
+- Remove the “GENERATE LIVE MARKET PULSE” button entirely. This action now lives in the AI tab and the bias strip.
+
+### Updated Sidebar Structure
+
+```
+SCHWAB AUTH         ● CONNECTED  >
+AI SEARCH                        >
+─────────────────────────────────
+WATCHLIST                        ▼
+  AAPL
+  /ES
+─────────────────────────────────
+SETTINGS                         >
+  (Market Pulse settings live inside here)
+SECURITY                         >
+SIGN OUT
+```
+
+-----
+
+## PART 5: VISUAL DESIGN GUIDELINES
+
+This is a Bloomberg/thinkorswim-inspired dark terminal. All new components must follow these rules:
+
+- **Background:** Dark, near-black. Use the existing terminal background color (likely zinc-950 or similar).
+- **Text:** Primary text in zinc-100/zinc-200. Secondary/muted text in zinc-400/zinc-500. Never use pure white (#fff) for body text.
+- **Accent colors:** Green for bullish (emerald-500/600). Red for bearish (red-500/600). Amber for caution/neutral (amber-500/600). These should match whatever green/red the app already uses for price changes.
+- **Typography:** JetBrains Mono for all numbers, scores, prices, percentages. The existing body font for labels and text.
+- **Cards:** Subtle borders (border-zinc-800), no heavy shadows. Slight background differentiation (bg-zinc-900 on bg-zinc-950).
+- **Spacing:** Tight but not cramped. This is a data-dense terminal, not a consumer app. Prioritize information density over whitespace.
+- **Mobile-first:** The primary use case is mobile (iPhone). The cluster grid should be a horizontally scrollable row of cards on mobile, not a 5-column grid that gets crushed. The bias strip must be legible at phone width.
+- **Animations:** Minimal. A subtle fade-in when the pulse loads. No bouncing, no sliding, no gratuitous motion. This is a professional tool.
+
+-----
+
+## PART 6: FILE STRUCTURE EXPECTATIONS
+
+Based on the existing monorepo structure, expected new/modified files:
+
+**New frontend files (in alpha-terminal/src/):**
+
+- `components/market-pulse/AiBiasStrip.tsx` – the persistent strip below futures cards
+- `components/market-pulse/MarketPulseDashboard.tsx` – the full dashboard in the AI tab
+- `components/market-pulse/ClusterCard.tsx` – individual signal cluster card
+- `components/market-pulse/ActionPlanCard.tsx` – individual action item card
+- `components/market-pulse/InvalidationBox.tsx` – the invalidation conditions display
+- `components/market-pulse/PulseStatusHeader.tsx` – the top-level bias/confidence/regime display
+- `components/market-pulse/PulseSkeleton.tsx` – loading skeleton
+- `stores/marketPulseStore.ts` (or add to existing store) – Zustand store for pulse state
+- `types/marketPulse.ts` – TypeScript interfaces matching the JSON schema
+
+**Modified frontend files:**
+
+- The main layout component that renders the futures cards – add AiBiasStrip below them
+- The AI tab component – add MarketPulseDashboard above the existing chat
+- The sidebar component – remove “GENERATE LIVE MARKET PULSE” button
+- The settings component – add Market Pulse settings subsection
+
+**Modified backend files:**
+
+- The Market Pulse route handler – update the LLM prompt and add JSON parsing/validation
+- Add a Zod schema for the Market Pulse JSON response in the shared api-zod package for type safety across frontend and backend
+
+-----
+
+## Summary of Changes
+
+1. **Backend:** Rewrite the Gemini prompt to output strict JSON with bias, weighted cluster scores, confidence with data-quality-adjusted denominator, divergence detection, layered regime/session/risk reads, invalidation conditions, and personalized action plan.
+1. **Frontend - Bias Strip:** New thin color-coded bar below futures cards, always visible, shows bias + confidence + timestamp. Tappable to navigate to AI tab.
+1. **Frontend - AI Tab Dashboard:** Three-layer cockpit replacing the prose wall. Status header, cluster grid, action plan + invalidation.
+1. **Frontend - Settings:** Market Pulse subsection with auto-refresh, display preferences, strategy preferences, and risk preferences. Flows to backend as part of the pulse request.
+1. **Sidebar:** Remove the “GENERATE LIVE MARKET PULSE” button. It now lives in the AI tab.
+1. **Design:** Dark terminal aesthetic, JetBrains Mono numerics, mobile-first, minimal animation, color-coded bias states including first-class “NO_EDGE” treatment.

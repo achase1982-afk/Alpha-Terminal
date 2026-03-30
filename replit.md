@@ -15,7 +15,7 @@ I prefer a coding style that emphasizes readability and maintainability, utilizi
 
 ## UI/UX Decisions
 
-The UI features a Bloomberg/TOS-style institutional gold color palette with a dark theme (no blue shades), Inter font, and `tabular-nums`. Key components include a fixed MacroBar, a collapsible Sidebar, an Institutional Tear Sheet for detailed financials, and a ThinkorSwim-replica Options Tab with a dark gray palette, sticky headers, and configurable columns. Other UI elements are an AI Chat Overlay, Live Market Pulse Modal, Market Scanner, `lightweight-charts` based Charting, a `requestAnimationFrame`-driven Ticker Tape, and CSS keyframe Price Pulse Animations.
+The UI features a Bloomberg/TOS-style institutional gold color palette with a dark theme (no blue shades), Inter font, and `tabular-nums`. Key components include a fixed MacroBar, a collapsible Sidebar, an Institutional Tear Sheet for detailed financials, and a ThinkorSwim-replica Options Tab with a dark gray palette, sticky headers, and configurable columns. Other UI elements are an AI Chat Overlay, Market Pulse Dashboard (structured JSON-driven AI analysis embedded in AI tab with bias strip, cluster cards, action plan, and invalidation box), Market Scanner, `lightweight-charts` based Charting, a `requestAnimationFrame`-driven Ticker Tape, and CSS keyframe Price Pulse Animations.
 
 ## Technical Implementations
 
@@ -29,7 +29,7 @@ Features include a MacroBar displaying key indices, an Institutional Tear Sheet 
 
 ## System Design Choices
 
-The monorepo structure facilitates shared libraries and consistent tooling. TypeScript Composite Projects ensure robust type-checking. A clear separation of concerns is maintained across UI, API, database, and streaming logic. Real-time data is optimized through streamed data with REST fallback and performant state management. Strict AI grounding is a core principle to ensure AI responses are based solely on provided, fresh market data.
+The monorepo structure facilitates shared libraries and consistent tooling. TypeScript Composite Projects ensure robust type-checking. A clear separation of concerns is maintained across UI, API, database, and streaming logic. Real-time data is optimized through streamed data with REST fallback and performant state management. Strict AI grounding is a core principle to ensure AI responses are based solely on provided, fresh market data. The Market Pulse system uses a dedicated `/api/ai/market-pulse` endpoint that returns strict JSON (bias, clusters, action plan, invalidation) instead of markdown, with a dedicated Zustand store (`marketPulseStore`) and component suite in `components/pulse/`. The bias strip (`AiBiasStrip`) is persistently visible below the MacroBar. Market Pulse settings (auto-refresh, risk tolerance, bias strip toggle) are in the Sidebar settings panel.
 
 # External Dependencies
 
