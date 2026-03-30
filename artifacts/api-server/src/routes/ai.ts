@@ -772,6 +772,14 @@ router.post("/market-pulse/stream", async (req, res) => {
     return res.status(500).json({ error: "GEMINI_API_KEY not configured." });
   }
 
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+
+  req.setTimeout(120000);
+  res.setTimeout(120000);
+
   const { session, timeET, sessionGuidance } = getMarketSession();
 
   let dataBlock: string;
@@ -781,7 +789,9 @@ router.post("/market-pulse/stream", async (req, res) => {
   } catch (fetchErr: unknown) {
     const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
     req.log.error({ err: fetchErr }, "Market pulse stream data fetch error");
-    return res.status(500).json({ error: msg });
+    res.write(`event: error\ndata: ${JSON.stringify({ type: "error", message: msg })}\n\n`);
+    res.end();
+    return;
   }
 
   const symbolList = symbols && symbols.length > 0
@@ -939,13 +949,6 @@ RULES:
 - All values must come from the context data. Do NOT fabricate prices or levels.
 - Be technically precise, data-driven, and immediately actionable.`;
 
-  res.writeHead(200, {
-    "Content-Type": "text/event-stream",
-    "Cache-Control": "no-cache",
-    Connection: "keep-alive",
-    "X-Accel-Buffering": "no",
-  });
-
   try {
     const google = createGoogleGenerativeAI({ apiKey });
     const result = streamText({
@@ -954,23 +957,35 @@ RULES:
       temperature: temperature ?? 0.2,
     });
 
-    let fullText = "";
+    let responseBuffer = "";
 
     for await (const part of result.fullStream) {
-      if (part.type === "reasoning" && part.textDelta) {
-        res.write(`event: thinking\ndata: ${JSON.stringify({ type: "thinking", text: part.textDelta })}\n\n`);
-        if (typeof (res as any).flush === "function") (res as any).flush();
-      } else if (part.type === "text-delta" && part.textDelta) {
-        fullText += part.textDelta;
-        res.write(`event: thinking\ndata: ${JSON.stringify({ type: "thinking", text: part.textDelta })}\n\n`);
-        if (typeof (res as any).flush === "function") (res as any).flush();
+      console.log("[PULSE STREAM] part.type:", part.type);
+
+      if (
+        part.type === "reasoning" ||
+        part.type === "thought" ||
+        (part as any).type === "thinking" ||
+        (part as any).type === "step-start"
+      ) {
+        const text = (part as any).textDelta || (part as any).text || (part as any).content || "";
+        if (text) {
+          res.write(`event: thinking\ndata: ${JSON.stringify({ type: "thinking", text })}\n\n`);
+          if (typeof (res as any).flush === "function") (res as any).flush();
+        }
+      } else if (part.type === "text-delta") {
+        responseBuffer += part.textDelta;
       }
     }
 
-    let cleaned = fullText.trim();
-    if (cleaned.startsWith("```")) {
-      cleaned = cleaned.replace(/^```(?:json)?\s*/, "").replace(/```\s*$/, "").trim();
-    }
+    console.log("[PULSE STREAM] Buffer length:", responseBuffer.length);
+    console.log("[PULSE STREAM] First 300 chars:", responseBuffer.substring(0, 300));
+
+    let cleaned = responseBuffer.trim();
+    if (cleaned.startsWith("```json")) cleaned = cleaned.slice(7);
+    if (cleaned.startsWith("```")) cleaned = cleaned.slice(3);
+    if (cleaned.endsWith("```")) cleaned = cleaned.slice(0, -3);
+    cleaned = cleaned.trim();
 
     try {
       const parsed = JSON.parse(cleaned);
@@ -983,17 +998,21 @@ RULES:
         generatedAt: Date.now(),
       };
 
-      res.write(`data: ${JSON.stringify({ type: "complete", pulse: enrichedPulse })}\n\n`);
+      res.write(`event: result\ndata: ${JSON.stringify({ type: "complete", pulse: enrichedPulse })}\n\n`);
+      if (typeof (res as any).flush === "function") (res as any).flush();
     } catch (parseErr) {
-      req.log.error({ err: parseErr, rawLength: fullText.length }, "Market pulse JSON parse error");
-      res.write(`data: ${JSON.stringify({ type: "error", message: "Failed to parse AI response as valid JSON. Please try again." })}\n\n`);
+      console.error("[PULSE STREAM] JSON parse failed:", parseErr);
+      console.error("[PULSE STREAM] Raw:", cleaned.substring(0, 500));
+      req.log.error({ err: parseErr, rawLength: responseBuffer.length }, "Market pulse JSON parse error");
+      res.write(`event: error\ndata: ${JSON.stringify({ type: "error", message: "Failed to parse AI response as valid JSON. Please try again." })}\n\n`);
     }
 
     res.end();
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
+    console.error("[PULSE STREAM] Error:", err);
     req.log.error({ err }, "Market pulse stream error");
-    res.write(`data: ${JSON.stringify({ type: "error", message: msg })}\n\n`);
+    res.write(`event: error\ndata: ${JSON.stringify({ type: "error", message: "Generation failed. Please try again." })}\n\n`);
     res.end();
   }
 });

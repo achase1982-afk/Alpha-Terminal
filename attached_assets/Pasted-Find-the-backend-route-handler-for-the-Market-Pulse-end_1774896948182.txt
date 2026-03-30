@@ -1,0 +1,137 @@
+Find the backend route handler for the Market Pulse endpoint. The frontend (MarketPulseDashboard.tsx) is making a POST request to `/api/ai/market-pulse/stream` but either the endpoint doesn’t exist or it’s not streaming properly.
+
+Replace or create the handler for that route with this exact code. Adjust the imports to match the existing project structure (import paths for `ai`, `@ai-sdk/google`, the market data fetching function, etc).
+
+```typescript
+import { streamText } from 'ai';
+import { google } from '@ai-sdk/google';
+import type { Request, Response } from 'express';
+
+const MARKET_PULSE_SYSTEM_PROMPT = `You are an institutional-grade multi-asset market analysis engine. You output ONLY a raw JSON object. No markdown. No backticks. No preamble. No commentary. Just the JSON object.
+
+Analyze the provided market data across five signal clusters and produce:
+1. A factual data snapshot
+2. A synthesized cross-asset read with auditable scoring
+3. Conditional strategy guidance
+
+CRITICAL RULES:
+- If any data source is missing, stale (>15 min old), or showing zero volume, set that cluster's dataQuality to "STALE" or "MISSING" and reduce confidence accordingly.
+- maxConfidence = (number of clusters with "FRESH" dataQuality / 5) * 100. confidenceScore can never exceed maxConfidence.
+- If confidenceScore < 40, set bias to "NO_EDGE".
+- Each cluster scores from -2 to +2. compositeScore is the weighted sum.
+- If clusters strongly disagree, set hasDivergence to true.
+
+WEIGHT MAP: rates 25%, credit 20%, volLevel 20%, volTermStructure 15%, breadth 20%
+
+BIAS MAPPING: >= +1.0 STRONGLY_BULLISH, +0.3 to +0.99 BULLISH, -0.29 to +0.29 NEUTRAL, -0.99 to -0.3 BEARISH, <= -1.0 STRONGLY_BEARISH, override to NO_EDGE if confidenceScore < 40
+
+ACTION PLAN RULES:
+- The 30 macro indicators (VIX, VVIX, VIX9D, VIX3M, TNX, TYX, HYG, LQD, IEF, ADVN, DECN, TICK, TRIN, etc.) are DATA INPUTS ONLY. NEVER suggest trading them directly.
+- Translate the environment into STRATEGY GUIDANCE: what type, direction, risk posture, and confirmation conditions.
+- If user has preferred tickers, reference them. Otherwise use SPY/QQQ or "preferred tickers."
+- NEVER include specific entry prices, stops, or targets. Those belong in Options Strategist.`;
+
+export async function handleMarketPulseStream(req: Request, res: Response) {
+  // SSE Headers - all 4 are required
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // Critical for Replit proxy
+
+  req.setTimeout(120000);
+  res.setTimeout(120000);
+
+  try {
+    const { marketData, settings } = req.body;
+
+    const userMessage = `Here is the current market data:
+${JSON.stringify(marketData, null, 2)}
+
+${settings ? `User preferences for the action plan:
+- Allowed strategies: ${settings.allowedStrategies?.join(', ') || 'All'}
+- Default spread width: ${settings.defaultSpreadWidth || '$5'}
+- Account size tier: ${settings.accountSizeTier || 'Not specified'}
+- Preferred tickers: ${settings.preferredTickers || 'None specified'}
+` : ''}
+
+Generate the Market Pulse JSON. Return ONLY the JSON object, no backticks, no markdown.`;
+
+    const result = streamText({
+      model: google('gemini-2.5-pro-preview-05-06'),
+      system: MARKET_PULSE_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: userMessage }],
+    });
+
+    let responseBuffer = '';
+
+    for await (const part of result.fullStream) {
+      // DEBUG: log every part type so we can see what Gemini emits
+      console.log('[PULSE STREAM] part.type:', part.type);
+
+      // THINKING TOKENS: send to frontend immediately
+      if (
+        part.type === 'reasoning' ||
+        part.type === 'thought' ||
+        part.type === 'thinking' ||
+        part.type === 'step-start'
+      ) {
+        const text = (part as any).textDelta || (part as any).text || (part as any).content || '';
+        if (text) {
+          res.write(`event: thinking\ndata: ${JSON.stringify({ type: 'thinking', text })}\n\n`);
+          if (typeof (res as any).flush === 'function') {
+            (res as any).flush();
+          }
+        }
+      }
+      // FINAL RESPONSE TOKENS: buffer silently, NEVER send to frontend
+      else if (part.type === 'text-delta') {
+        responseBuffer += part.textDelta;
+      }
+    }
+
+    // Stream complete: clean up and parse the JSON
+    console.log('[PULSE STREAM] Buffer length:', responseBuffer.length);
+    console.log('[PULSE STREAM] First 300 chars:', responseBuffer.substring(0, 300));
+
+    let cleanedResponse = responseBuffer.trim();
+    if (cleanedResponse.startsWith('```json')) cleanedResponse = cleanedResponse.slice(7);
+    if (cleanedResponse.startsWith('```')) cleanedResponse = cleanedResponse.slice(3);
+    if (cleanedResponse.endsWith('```')) cleanedResponse = cleanedResponse.slice(0, -3);
+    cleanedResponse = cleanedResponse.trim();
+
+    try {
+      const parsed = JSON.parse(cleanedResponse);
+      res.write(`event: result\ndata: ${JSON.stringify({ type: 'complete', pulse: parsed })}\n\n`);
+    } catch (parseError) {
+      console.error('[PULSE STREAM] JSON parse failed:', parseError);
+      console.error('[PULSE STREAM] Raw:', cleanedResponse.substring(0, 500));
+      res.write(`event: error\ndata: ${JSON.stringify({ type: 'error', message: 'Failed to parse AI response.' })}\n\n`);
+    }
+
+    res.end();
+
+  } catch (error) {
+    console.error('[PULSE STREAM] Error:', error);
+    res.write(`event: error\ndata: ${JSON.stringify({ type: 'error', message: 'Generation failed. Please try again.' })}\n\n`);
+    res.end();
+  }
+}
+```
+
+Register this route in your Express router. The URL MUST match what the frontend calls. Based on MarketPulseDashboard.tsx line 68-80, the frontend calls `/api/ai/market-pulse/stream`. So register it as:
+
+```typescript
+router.post('/ai/market-pulse/stream', handleMarketPulseStream);
+```
+
+(or with whatever prefix your router uses to make the full path `/api/ai/market-pulse/stream`)
+
+After deploying, check the Replit server console logs. When you click GENERATE PULSE, you should see:
+
+- `[PULSE STREAM] part.type: reasoning` (or whatever type Gemini emits for thinking)
+- `[PULSE STREAM] part.type: text-delta` (the JSON response being built)
+- `[PULSE STREAM] Buffer length: XXXX` (confirming the response was captured)
+
+If the part.type for thinking tokens is NOT `reasoning`, `thought`, `thinking`, or `step-start`, tell me what it actually is and I’ll update the code.
+
+DO NOT modify the frontend files yet. Only the backend route. We’re testing one thing at a time.
