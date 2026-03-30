@@ -8,7 +8,8 @@ import {
   RefreshTokenResponse,
   GetAuthStatusResponse,
 } from "@workspace/api-zod";
-import { storeTokens, hasValidTokens, getTokens } from "../lib/tokenStore.js";
+import { storeTokens, hasValidTokens, getTokens, clearTokens as clearServerTokens } from "../lib/tokenStore.js";
+import { stopStreamer } from "../lib/schwabStreamer.js";
 
 const router: IRouter = Router();
 
@@ -511,6 +512,17 @@ router.post("/trader-refresh", async (req, res) => {
     req.log.error({ err }, "Trader token refresh error");
     res.status(500).json({ error: "internal_error", message: "Failed to refresh trader token" });
   }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DISCONNECT — clear all server-side tokens, stop streamer, cancel refresh timers
+// ═══════════════════════════════════════════════════════════════════════════════
+
+router.post("/disconnect", (_req, res) => {
+  clearServerTokens("market");
+  clearServerTokens("trader");
+  stopStreamer();
+  res.json({ ok: true });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════

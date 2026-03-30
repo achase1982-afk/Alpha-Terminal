@@ -11,6 +11,7 @@ export function AuthPanel() {
   const [isOpen, setIsOpen] = useState(false);
   const [isNavigating, setIsNavigating] = useState(false);
   const [isTraderNavigating, setIsTraderNavigating] = useState(false);
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
 
   const needsAuth = !accessToken && isOpen;
 
@@ -154,9 +155,22 @@ export function AuthPanel() {
               variant="outline"
               size="sm"
               className="w-full font-mono border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive text-xs"
-              onClick={() => { clearTokens(); clearTraderTokens(); }}
+              disabled={isDisconnecting}
+              onClick={async () => {
+                setIsDisconnecting(true);
+                clearTokens();
+                clearTraderTokens();
+                try {
+                  await fetchWithAuth("/api/auth/disconnect", { method: "POST" });
+                } catch {}
+                setIsDisconnecting(false);
+              }}
             >
-              DISCONNECT ALL
+              {isDisconnecting ? (
+                <><Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />DISCONNECTING...</>
+              ) : (
+                "DISCONNECT ALL"
+              )}
             </Button>
           )}
         </div>

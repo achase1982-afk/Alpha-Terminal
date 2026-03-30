@@ -802,6 +802,28 @@ export function getStreamerStatus(): string {
   return "disconnected";
 }
 
+/** Fully shut down the streamer — close WS, cancel reconnect, clear state. */
+export function stopStreamer() {
+  if (ws) {
+    ws.terminate();
+    ws = null;
+  }
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  accessToken = "";
+  isConnecting = false;
+  loginSent = false;
+  loginAcked = false;
+  loginRejected = false;
+  reconnectDelay = 1_000;
+  streamerFetchFailCount = 0;
+
+  broadcast("streamerStatus", { status: "disconnected" });
+  logger.info("Streamer: stopped and fully cleared");
+}
+
 /** Is the streamer currently connected? */
 export function isConnected(): boolean {
   return ws !== null && ws.readyState === WebSocket.OPEN && loginAcked;
