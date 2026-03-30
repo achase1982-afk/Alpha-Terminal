@@ -1,0 +1,739 @@
+# ALPHA TERMINAL – MARKET PULSE COMPLETE OVERHAUL
+
+# Paste this entire prompt into Replit Agent. Read ALL parts before making changes.
+
+-----
+
+## Context
+
+The “Live Market Pulse” feature currently outputs a dense wall of AI-generated markdown prose. It reads like a research note, not a trading tool. We are overhauling it into a three-layer cockpit dashboard that is glanceable, auditable, and actionable.
+
+The app is Alpha Terminal: a React 18 / Vite / TypeScript / Tailwind / Zustand / TanStack Query / Radix UI trading terminal. The backend is Express 5 with Gemini 2.5 Pro (with thinking/reasoning enabled) via the AI SDK. The terminal uses a Bloomberg/thinkorswim-inspired dark aesthetic with JetBrains Mono for numerics.
+
+There are 9 parts to this overhaul. Implement them ALL in one pass.
+
+-----
+
+## PART 1: BACKEND – Force Structured JSON Output from the AI
+
+### What to change
+
+Find the backend route/function that calls the LLM (Gemini) for the Market Pulse. Replace the current prompt that asks for a markdown narrative. The new prompt must demand a strict JSON response with absolutely no markdown, no preamble, no backticks, just raw JSON.
+
+### New System Prompt for the Market Pulse LLM Call
+
+```
+You are an institutional-grade multi-asset market analysis engine. You do NOT write prose or narratives. You output ONLY a raw JSON object matching the exact schema below. No markdown. No backticks. No preamble. No commentary. Just the JSON object.
+
+Your job is to analyze the provided market data across five signal clusters and produce:
+1. A factual data snapshot (what is the market doing)
+2. A synthesized cross-asset read with auditable scoring (what does this combination mean)
+3. Conditional strategy guidance (what setups does this environment favor)
+
+CRITICAL RULES:
+- If any data source is missing, stale (>15 min old), or showing zero volume, you MUST set that cluster's dataQuality to "STALE" or "MISSING" and reduce your confidence accordingly.
+- The maxConfidence field equals (number of clusters with "FRESH" dataQuality / 5) * 100. If 4 of 5 clusters have fresh data, maxConfidence = 80. Your confidenceScore can never exceed maxConfidence.
+- If confidenceScore < 40, set bias to "NO_EDGE" and actionPlan to a single item: "Insufficient data or conflicting signals. No clear edge. Stand aside."
+- "NO_EDGE" is a first-class result, not a fallback. Do not force a directional lean from weak data.
+- Each cluster scores from -2 (strongly bearish) to +2 (strongly bullish). The compositeScore is the weighted sum.
+- If clusters are in strong disagreement (e.g., rates at +2 and term structure at -2), set hasDivergence to true and populate the divergenceNote explaining the conflict.
+
+WEIGHT MAP:
+- rates: 25%
+- credit: 20%
+- volLevel: 20%
+- volTermStructure: 15%
+- breadth: 20%
+
+BIAS MAPPING from compositeScore:
+- >= +1.0: "STRONGLY_BULLISH"
+- +0.3 to +0.99: "BULLISH"
+- -0.29 to +0.29: "NEUTRAL"
+- -0.99 to -0.3: "BEARISH"
+- <= -1.0: "STRONGLY_BEARISH"
+- (override to "NO_EDGE" if confidenceScore < 40)
+
+ACTION PLAN RULES:
+1. The 30 macro indicators (VIX, VVIX, VIX9D, VIX3M, TNX, TYX, HYG, LQD, IEF, ADVN, DECN, TICK, TRIN, ADD, NYICDX, SKEW, etc.) are DATA INPUTS ONLY. NEVER suggest trading these instruments directly. They measure the market environment -- they are not trade targets.
+
+2. The Action Plan translates the macro environment into STRATEGY GUIDANCE:
+   - What TYPE of strategy is favored by this environment (premium selling, directional, hedging, no-trade)
+   - What DIRECTION is supported (bullish, bearish, neutral)
+   - What RISK POSTURE is appropriate (full size, reduced, quarter size, stand aside)
+   - What CONDITIONS would confirm or invalidate an entry
+
+3. If the user has configured preferred tickers in their Strategy Settings, reference those tickers in the action plan. If no preferred tickers are configured, use broad market references (SPY, QQQ) or say "apply to your preferred tickers."
+
+4. If the user has configured allowed strategies in their Strategy Settings, only suggest strategies from their allowed list. If no preferences are set, suggest whatever strategy the environment warrants.
+
+5. NEVER include specific entry prices, stop losses, or price targets for individual stocks in the Market Pulse. The Market Pulse is a MACRO environment tool. Specific trade entries with price levels belong in the Options Strategist or Technical Analysis features, not here.
+
+6. Examples of GOOD action plan items:
+   - "IF VIX compressing below 30 with bullish breadth, THEN environment favors selling premium via put credit spreads on SPY/QQQ"
+   - "IF rates falling + credit confirming + breadth positive, THEN aggressive long positioning warranted via bull call spreads on preferred tickers"
+   - "IF VIX term structure inverted with SKEW elevated, THEN reduce position sizing and favor defined-risk strategies only"
+   - "IF breadth data stale and VIX above 30, THEN no clear edge. Reduce exposure or stand aside until confirmation."
+
+7. Examples of BAD action plan items (NEVER do this):
+   - "Long HYG at 79.015 with stop at 78.85" -- HYG is a macro indicator, not a trade target
+   - "Short VIX at 29.95 with target 29.33" -- VIX is a macro indicator
+   - "Buy LQD at 108.45" -- LQD is a macro indicator
+   - "Buy SPY at 636.50 with stop at 635.00" -- specific price entries belong in Options Strategist / Technical Analysis, not Market Pulse
+```
+
+### Required JSON Response Schema
+
+```json
+{
+  "timestamp": "ISO 8601 timestamp of when this analysis was generated",
+  "dataAge": {
+    "oldestSource": "name of the oldest data source used",
+    "oldestSourceAge": "age in minutes as a number"
+  },
+  "bias": "STRONGLY_BULLISH | BULLISH | NEUTRAL | BEARISH | STRONGLY_BEARISH | NO_EDGE",
+  "compositeScore": "number, weighted sum from -2.0 to +2.0",
+  "confidenceScore": "number, 0-100",
+  "maxConfidence": "number, 0-100, based on data availability",
+  "hasDivergence": "boolean",
+  "divergenceNote": "string or null, explains which clusters conflict and why",
+  "clusters": {
+    "rates": {
+      "score": "number, -2 to +2",
+      "dataQuality": "FRESH | STALE | MISSING",
+      "direction": "UP | DOWN | FLAT",
+      "headline": "short string, max 60 chars, e.g. 'Yields sharply lower, risk-on signal'",
+      "keyDataPoints": ["$TNX -2.07%", "$TYX -1.41%"]
+    },
+    "credit": {
+      "score": "number, -2 to +2",
+      "dataQuality": "FRESH | STALE | MISSING",
+      "direction": "UP | DOWN | FLAT",
+      "headline": "short string, max 60 chars",
+      "keyDataPoints": ["HYG +0.32%", "LQD +0.68%", "IEF +0.66%"]
+    },
+    "volLevel": {
+      "score": "number, -2 to +2",
+      "dataQuality": "FRESH | STALE | MISSING",
+      "direction": "COMPRESSING | EXPANDING | FLAT",
+      "headline": "short string, max 60 chars",
+      "keyDataPoints": ["$VIX 30.06 (-3.19%)", "$VVIX 131.11 (-1.55%)"]
+    },
+    "volTermStructure": {
+      "score": "number, -2 to +2",
+      "dataQuality": "FRESH | STALE | MISSING",
+      "direction": "CONTANGO | FLAT | INVERTED",
+      "headline": "short string, max 60 chars",
+      "keyDataPoints": ["$VIX9D 30.76 vs $VIX 30.06 -- near-term inversion"]
+    },
+    "breadth": {
+      "score": "number, -2 to +2",
+      "dataQuality": "FRESH | STALE | MISSING",
+      "direction": "POSITIVE | NEGATIVE | FLAT",
+      "headline": "short string, max 60 chars",
+      "keyDataPoints": ["$ADVN 1740", "$DECN 936", "$TRIN 0.21"]
+    }
+  },
+  "structuralRegime": {
+    "label": "RISK_ON | RISK_OFF | TRANSITION | NO_READ",
+    "timeframe": "1-5 day outlook",
+    "summary": "1 sentence max"
+  },
+  "sessionBias": {
+    "label": "BULLISH | BEARISH | NEUTRAL | NO_EDGE",
+    "summary": "1 sentence max describing today's intraday lean"
+  },
+  "riskState": {
+    "label": "PRESS | NORMAL | REDUCED | NO_TRADE",
+    "reason": "1 sentence max"
+  },
+  "invalidation": {
+    "conditions": ["Array of 1-3 short conditions that flip the thesis"]
+  },
+  "levelsToWatch": [
+    {
+      "symbol": "$VIX",
+      "level": 31.32,
+      "direction": "ABOVE | BELOW",
+      "significance": "Short description of what a break means for the macro thesis"
+    }
+  ],
+  "actionPlan": [
+    {
+      "condition": "IF [macro condition based on the data]",
+      "strategy": "THEN [strategy type and direction] on [user's preferred tickers or broad market]",
+      "rationale": "Brief explanation linking macro environment to strategy choice",
+      "riskPosture": "FULL | REDUCED | QUARTER | NO_TRADE",
+      "conviction": "HIGH | MODERATE | LOW"
+    }
+  ]
+}
+```
+
+### Backend Implementation Notes
+
+- Parse the response with a try/catch. If JSON parsing fails, return a standardized error object to the frontend with `bias: "ERROR"` and a user-friendly message. Do not show raw AI output.
+- Validate the parsed JSON against the schema. If required fields are missing, treat it as an error.
+- Store the timestamp of the last successful pulse so the frontend can display data age.
+- The existing endpoint signature can stay the same. Just change what the LLM is prompted to produce and how the response is parsed before sending to the frontend.
+
+-----
+
+## PART 2: AI TAB SUB-NAVIGATION (NEW ARCHITECTURE)
+
+### Problem
+
+Currently, the AI tab stacks Market Pulse, Options Strategist, and Technical Analysis vertically in one long scroll. After generating a Market Pulse, the user has to scroll past the entire pulse output to reach Options Strategist or Technical Analysis. This is unusable.
+
+### Solution
+
+Add a segmented control (sub-tabs) inside the AI tab. When the user taps the main “AI” tab, the first thing below the main tab bar is a secondary segmented control with three options:
+
+```
+[ PULSE ]  [ STRATEGIST ]  [ TECHNICALS ]
+```
+
+Each sub-tab owns the full screen space below it. Only one is visible at a time. No scrolling between them.
+
+### Behavior
+
+- **PULSE sub-tab:** Shows the Market Pulse dashboard (the three-layer cockpit: status header, cluster grid, action plan, invalidation, levels to watch). This is GENERAL market analysis. It does not depend on the currently selected ticker. It analyzes the broad market environment using the 30 macro indicators.
+- **STRATEGIST sub-tab:** Shows the Options Strategist. This is TICKER-SPECIFIC. It runs analysis on whatever ticker is currently active in the main header (e.g., SPY, AAPL, etc.). At the top of this view, show a small label: “Analyzing: [TICKER]” so the user knows which symbol the strategist is targeting.
+- **TECHNICALS sub-tab:** Shows Technical Analysis. Also TICKER-SPECIFIC, same as Strategist. Show the same “Analyzing: [TICKER]” label at the top.
+
+### Visual Design of the Segmented Control
+
+- Style it as a pill-shaped segmented control, similar to iOS native segmented controls
+- Background: bg-zinc-800/50 or similar dark muted background
+- Active segment: bg-zinc-700 or slightly lighter, with white/zinc-100 text
+- Inactive segments: transparent background, zinc-400 text
+- Height: ~36px, full width minus some horizontal padding
+- Placement: immediately below the main tab bar (NEWS, OPTIONS, AI, SCAN, CHART), with ~8px gap
+- The segmented control should be sticky/fixed at the top of the AI tab content area so it remains visible when scrolling within any sub-tab
+
+### Moving Existing Components
+
+- The current “TECHNICAL ANALYSIS” and “OPTIONS STRATEGIST” yellow buttons at the bottom of the AI tab should be REMOVED. Their functionality now lives in the sub-tabs.
+- The “STRATEGY SETTINGS / AUTOPILOT” section and “DEEP ANALYSIS” input at the bottom should move INTO the Strategist sub-tab (since those are Options Strategist settings, not general AI settings).
+- The “GENERATE PULSE” button lives inside the PULSE sub-tab only.
+
+### Default Sub-Tab
+
+When the user first taps the AI tab, default to the PULSE sub-tab. If a pulse has already been generated, show it. If not, show the empty state with the “GENERATE PULSE” button.
+
+-----
+
+## PART 3: PERSISTENT BIAS STRIP
+
+### Location
+
+Render this strip directly BELOW the futures macro cards (/YM, /ES, /NQ, /RTY) and ABOVE the ticker header (SPY / price area). It is always visible on the main screen regardless of which main tab (NEWS, OPTIONS, AI, SCAN, CHART) or AI sub-tab is active.
+
+### Component name: `AiBiasStrip.tsx`
+
+### Layout
+
+A single horizontal bar, approximately 36-40px tall, full width. Contents:
+
+- Left: bias badge text, e.g. `AI PULSE: BULLISH`
+- Center: confidence score with denominator, e.g. `68 / 85`
+- Right: timestamp, e.g. `Updated 10:34 AM`
+
+### Color coding (background of the entire strip):
+
+- `STRONGLY_BULLISH`: bright green (bg-emerald-600/90), white text
+- `BULLISH`: muted green (bg-emerald-800/80), green-100 text
+- `NEUTRAL`: amber (bg-amber-700/70), amber-100 text
+- `BEARISH`: muted red (bg-red-800/80), red-100 text
+- `STRONGLY_BEARISH`: bright red (bg-red-600/90), white text
+- `NO_EDGE`: dark gray (bg-zinc-700/80), zinc-300 text
+- `ERROR` or no data: dark gray with “AI PULSE: –” placeholder
+
+### Behavior
+
+- Tapping the strip navigates to the AI tab, PULSE sub-tab
+- If pulse data is older than 15 minutes, show a pulsing amber dot next to the timestamp
+- If no pulse generated yet, show “AI PULSE: TAP TO GENERATE” in muted text
+- Tapping it when no pulse exists navigates to AI tab and triggers generation
+
+### Typography
+
+JetBrains Mono for the confidence score numbers. Body font for labels.
+
+-----
+
+## PART 4: MARKET PULSE DASHBOARD (inside PULSE sub-tab)
+
+### Layout from top to bottom:
+
+#### Status Header
+
+- Market session info bar: “REGULAR TRADING HOURS | Just now | 30 instruments | REFRESH”
+- Large bias badge (pill-shaped, color-coded per the scheme above, ~48px tall)
+- Composite score: e.g. `+1.05` with label “Composite”
+- Confidence: `68 / 85` with thin progress bar (filled proportionally)
+- Structural regime badge: `REGIME: RISK_ON (1-5d)`
+- Session bias badge: `TODAY: BULLISH`
+- Risk state badge: `SIZE: NORMAL`
+- Divergence alert: if `hasDivergence` is true, show amber warning banner: “SIGNAL CONFLICT: [divergenceNote]”
+
+#### Signal Clusters
+
+Horizontally scrollable row of 5 cards on mobile. Each card:
+
+- Cluster name: RATES, CREDIT, VOL LEVEL, TERM STRUCT, BREADTH
+- Score: -2 to +2 number, color coded (green positive, red negative, gray zero)
+- Direction indicator arrow
+- Data quality dot: green = FRESH, amber = STALE, red = MISSING
+- Headline text (max 60 chars)
+- Key data points in muted smaller text
+
+If a cluster’s dataQuality is STALE or MISSING, dim the entire card (opacity ~50%).
+
+#### Action Plan
+
+Each action item as a card:
+
+- The IF condition
+- The THEN strategy guidance
+- Rationale in muted text
+- Risk posture badge: FULL (green), REDUCED (amber), QUARTER (amber), NO_TRADE (red)
+- Conviction badge: HIGH (green), MODERATE (amber), LOW (gray)
+
+If bias is “NO_EDGE”, show single prominent card: “No clear edge. Conflicting signals or insufficient data. Stand aside.” in amber/gray.
+
+#### Invalidation Box
+
+Distinct card with border (border-red-500/30, bg-red-950/20). Header: “INVALIDATION”. List the thesis-breaking conditions.
+
+#### Levels to Watch
+
+Renamed from “KEY LEVELS.” These are MACRO indicator levels that would change the thesis. NOT trade entry levels. Each row shows: symbol, level, direction (above/below), and what a break means for the macro read.
+
+-----
+
+## PART 5: BUTTON FEEDBACK & LOADING STATES
+
+### Refresh Button (in Market Pulse header bar)
+
+1. **On tap:** Immediate pressed state (opacity 0.7 or scale 0.95 for 100ms)
+1. **Loading:** Refresh icon spins (`animation: spin 1s linear infinite`), text changes to “REFRESHING…”, button is disabled
+1. **Success:** Spin stops, “Just now” timestamp flashes green for 1 second, full opacity restored
+1. **Error:** Spin stops, brief red flash or toast: “Refresh failed. Tap to retry.”
+
+```css
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+```
+
+### Generate Pulse Button
+
+1. **On tap:** Immediate pressed state
+1. **Loading:** Replace button with skeleton loader matching the full dashboard layout (skeleton bias header, skeleton cluster cards, skeleton action plan). Above the skeleton, show a **LIVE AI THINKING FEED** – this displays Gemini’s actual thinking/reasoning tokens streamed in real time (see PART 9 for the streaming architecture). The user sees the AI’s real reasoning process, e.g. “VIX at 29.86 compressing -3.19%, checking term structure… VIX9D 30.42 > VIX, near-term inversion detected…” This is NOT fake cycling text – it is the actual thinking output from Gemini 2.5 Pro streamed to the frontend.
+1. **Success:** Thinking feed fades out, skeleton replaced with real dashboard data via smooth fade-in (200-300ms). Optionally, add a small “View AI Reasoning” toggle/button that lets the user re-read the full thinking output if they want to audit the AI’s logic after the dashboard loads.
+1. **Error:** Show “GENERATE PULSE” button again with error message: “Generation failed. Please try again.”
+
+### “Connect Schwab to enable Market Pulse” empty state
+
+Make the card interactive with a clear CTA button that links to the Schwab Auth flow.
+
+-----
+
+## PART 6: MOBILE VIEWPORT FIX – Horizontal Sliding
+
+### Problem
+
+On iOS Safari / PWA, the page slides left and right on horizontal swipe. Must lock to viewport.
+
+### Fix
+
+Add to global CSS:
+
+```css
+html, body {
+  overflow-x: hidden;
+  position: relative;
+  width: 100%;
+  max-width: 100vw;
+  overscroll-behavior-x: none;
+  -webkit-overflow-scrolling: touch;
+}
+```
+
+Add to root app wrapper:
+
+```css
+.app-root {
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+```
+
+Ensure viewport meta tag in index.html:
+
+```html
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+```
+
+Check for any elements exceeding 100vw: scrolling tickers, cards with fixed widths, padding/margin pushing content wider.
+
+-----
+
+## PART 7: SETTINGS – Market Pulse Configuration
+
+### Location
+
+Inside the existing Settings section in the sidebar, add a “Market Pulse” subsection.
+
+### Settings Fields
+
+```
+Market Pulse Settings:
+├── Auto-Refresh
+│   ├── Enabled: toggle (default: off)
+│   └── Interval: dropdown [5 min, 10 min, 15 min, 30 min] (default: 15 min)
+│
+├── Display Preferences
+│   ├── Show Action Plan: toggle (default: on)
+│   ├── Show Cluster Details: toggle (default: on)
+│   └── Compact Mode: toggle (default: off)
+│       (Reduces dashboard to bias strip + composite score + invalidation only)
+│
+├── Strategy Preferences (used by AI to tailor the Action Plan)
+│   ├── Allowed Strategies: multi-select checklist
+│   │   [ ] Vertical Spreads (Bull Put / Bear Call)
+│   │   [ ] Debit Spreads (Bull Call / Bear Put)
+│   │   [ ] Iron Condors
+│   │   [ ] Calendars / Diagonals
+│   │   [ ] Butterflies
+│   │   [ ] Naked Options
+│   │   [ ] Straddles / Strangles
+│   │   [ ] Covered Calls / Cash-Secured Puts
+│   │   [ ] Equity (long/short shares)
+│   │   (default: all checked)
+│   │
+│   ├── Default Spread Width: dropdown [$2.50, $5, $10, $15, $20, $25, $50] (default: $5)
+│   ├── Max Contracts: number input (default: blank/unlimited)
+│   ├── Account Size Tier: dropdown [Under $5K, $5K-$25K, $25K-$100K, $100K+] (default: blank)
+│   └── Preferred Tickers: text input, comma-separated (default: blank)
+│
+└── Risk Preferences
+    ├── Max Risk per Trade: dropdown [1%, 2%, 3%, 5%, No Limit] (default: 2%)
+    └── Allow "NO_EDGE" to suppress action plan: toggle (default: on)
+```
+
+### How Settings Flow to the Backend
+
+Frontend sends user’s Market Pulse settings as part of the request payload. Backend includes preferences in the LLM’s user message (not system prompt):
+
+```
+Here is the current market data: [data blob]
+
+User preferences for the action plan:
+- Allowed strategies: Vertical Spreads, Iron Condors, Covered Calls
+- Default spread width: $5
+- Account size tier: Under $5K
+- Preferred tickers: SPY, QQQ, AAPL
+
+Generate the Market Pulse JSON.
+```
+
+Analysis (Jobs 1 and 2: data + synthesis) stays objective and user-agnostic. Only the action plan (Job 3) is personalized.
+
+-----
+
+## PART 8: SIDEBAR & CLEANUP
+
+### Remove from Sidebar
+
+- Remove “GENERATE LIVE MARKET PULSE” button entirely. It now lives in the PULSE sub-tab.
+
+### Remove from AI Tab
+
+- Remove the “TECHNICAL ANALYSIS” and “OPTIONS STRATEGIST” yellow buttons at the bottom. Their functionality now lives in the sub-tabs.
+- Move “STRATEGY SETTINGS / AUTOPILOT” and “DEEP ANALYSIS” input into the STRATEGIST sub-tab.
+
+### Updated Sidebar Structure
+
+```
+SCHWAB AUTH         ● CONNECTED  >
+AI SEARCH                        >
+─────────────────────────────────
+WATCHLIST                        ▼
+  AAPL
+  /ES
+─────────────────────────────────
+SETTINGS                         >
+  (Market Pulse settings live inside here)
+SECURITY                         >
+SIGN OUT
+```
+
+-----
+
+## PART 9: LIVE AI THINKING STREAM (Market Pulse + Options Strategist)
+
+### Overview
+
+Gemini 2.5 Pro emits “thinking” tokens before its final response. These thinking tokens contain the AI’s actual reasoning process – what data it’s examining, what connections it’s drawing, what conflicts it’s noticing. Instead of showing fake loading messages, we stream these thinking tokens to the frontend in real time so the user can watch the AI reason through the market data live.
+
+This applies to TWO features:
+
+1. **Market Pulse** (PULSE sub-tab) – when generating or refreshing the pulse
+1. **Options Strategist** (STRATEGIST sub-tab) – when generating a strategy analysis
+
+### Backend Streaming Architecture
+
+#### Switch from request/response to streaming
+
+For both the Market Pulse and Options Strategist LLM calls, switch from a standard `await generateObject()` or `await generateText()` call to a **streaming** call. The AI SDK supports this via `streamText()` or `streamObject()`.
+
+Gemini 2.5 Pro with thinking enabled emits two types of content:
+
+- **Thinking tokens:** The model’s internal reasoning (emitted first, streamed incrementally)
+- **Final response:** The actual JSON output (emitted after thinking is complete)
+
+#### Server-Sent Events (SSE) endpoint
+
+Create a streaming endpoint (or modify the existing ones) that uses Server-Sent Events to push data to the frontend in real time. The flow:
+
+```
+1. Frontend sends POST to /api/market-pulse/stream (or similar)
+2. Backend initiates streaming Gemini call with thinking enabled
+3. As thinking tokens arrive, backend forwards them to frontend via SSE:
+   event: thinking
+   data: {"text": "Examining VIX at 29.86, down 3.19% on the session..."}
+
+4. When thinking completes and the final JSON response arrives:
+   event: result  
+   data: {"type": "complete", "pulse": { ...the full Market Pulse JSON... }}
+
+5. If an error occurs:
+   event: error
+   data: {"message": "Generation failed. Please try again."}
+
+6. Stream closes.
+```
+
+#### Implementation with AI SDK (Vercel AI SDK pattern)
+
+```typescript
+// Backend route handler (Express)
+import { streamText } from 'ai';
+import { google } from '@ai-sdk/google';
+
+app.post('/api/market-pulse/stream', async (req, res) => {
+  // Set SSE headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  try {
+    const result = streamText({
+      model: google('gemini-2.5-pro', {
+        // Enable thinking -- the AI SDK / Gemini API config for this
+        // may use a parameter like `thinkingConfig` or similar.
+        // Check the current AI SDK docs for the exact parameter name.
+      }),
+      system: MARKET_PULSE_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: buildUserMessage(req.body) }],
+    });
+
+    // Stream thinking tokens as they arrive
+    for await (const part of result.fullStream) {
+      if (part.type === 'reasoning') {
+        // These are the thinking tokens
+        res.write(`event: thinking\ndata: ${JSON.stringify({ text: part.text })}\n\n`);
+      } else if (part.type === 'text-delta') {
+        // This is the final response being built
+        // We can optionally stream this too, or wait for completion
+      }
+    }
+
+    // Get the final complete text response
+    const finalText = await result.text;
+    const parsedPulse = JSON.parse(finalText);
+    // Validate with Zod schema here
+
+    res.write(`event: result\ndata: ${JSON.stringify({ type: 'complete', pulse: parsedPulse })}\n\n`);
+    res.end();
+
+  } catch (error) {
+    res.write(`event: error\ndata: ${JSON.stringify({ message: 'Generation failed. Please try again.' })}\n\n`);
+    res.end();
+  }
+});
+```
+
+**IMPORTANT:** The exact API for accessing thinking/reasoning tokens depends on the current version of the AI SDK and the Gemini API. The pattern above is illustrative. Check the AI SDK documentation for:
+
+- How to enable thinking mode for Gemini 2.5 Pro (it may be a model config option, a parameter like `thinkingConfig: { thinkingBudget: 8000 }`, or enabled by default)
+- How thinking tokens surface in the stream (they may come as `reasoning` parts, `thought` parts, or similar)
+- If using `@ai-sdk/google`, check if there’s a specific way to enable and capture thinking output
+
+The key requirement: thinking tokens must be captured and forwarded to the frontend as they arrive. The final JSON response must be captured separately, parsed, validated, and sent as a distinct event.
+
+#### Apply the same pattern to Options Strategist
+
+The Options Strategist already has its own LLM call. Apply the same streaming pattern:
+
+```
+POST /api/options-strategist/stream
+
+SSE events:
+  event: thinking   -- Gemini's live reasoning about the ticker, IV, Greeks, strategy selection
+  event: result     -- The final strategist output
+  event: error      -- Error handling
+```
+
+The thinking tokens for the Strategist will be different content (analyzing a specific ticker’s options chain, IV rank, evaluating strategy fits) but the streaming architecture is identical.
+
+### Frontend Streaming UI
+
+#### Thinking Feed Component: `AiThinkingFeed.tsx`
+
+A shared component used by both Market Pulse and Options Strategist.
+
+**Visual design:**
+
+- Small container (max-height ~120-150px on mobile) with overflow-y auto-scroll
+- Background: bg-zinc-900/50 with a subtle left border (border-l-2 border-emerald-500/50 or border-amber-500/50)
+- Text: JetBrains Mono, ~12px, zinc-400 color (muted, secondary – the thinking is supplementary, not the main event)
+- Auto-scrolls to bottom as new tokens arrive (like a terminal/console log)
+- A small header label: “AI REASONING” with a pulsing green dot to indicate live streaming
+
+**Behavior:**
+
+- Appears when generation starts, positioned above the skeleton loader
+- Tokens append to the feed in real time as they arrive from SSE
+- When the final result arrives:
+  - The thinking feed fades out (200ms transition)
+  - The skeleton is replaced by the actual dashboard/strategist data
+  - A small “View AI Reasoning” text button remains (collapsed by default). Tapping it expands and shows the full thinking transcript for that generation. This lets users audit the AI’s logic after the fact.
+
+**Implementation pattern (React):**
+
+```tsx
+// Hook for consuming the SSE stream
+function useAiStream(url: string) {
+  const [thinking, setThinking] = useState<string[]>([]);
+  const [result, setResult] = useState(null);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const startStream = useCallback(async (payload: any) => {
+    setIsStreaming(true);
+    setThinking([]);
+    setResult(null);
+    setError(null);
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+
+    // Parse SSE events from the stream
+    // Each event has format: "event: type\ndata: json\n\n"
+    // Parse and route to appropriate state setter
+
+    // On 'thinking' event: append to thinking array
+    // On 'result' event: set result, setIsStreaming(false)
+    // On 'error' event: set error, setIsStreaming(false)
+  }, [url]);
+
+  return { thinking, result, isStreaming, error, startStream };
+}
+```
+
+#### Where to render the Thinking Feed:
+
+**In PULSE sub-tab (Market Pulse):**
+
+- When “GENERATE PULSE” is tapped or “REFRESH” is tapped
+- Thinking feed appears above the skeleton/existing dashboard
+- On completion, feed fades out, dashboard updates
+
+**In STRATEGIST sub-tab (Options Strategist):**
+
+- When the user triggers a strategy analysis
+- Thinking feed appears above the strategist results area
+- Shows Gemini reasoning about the specific ticker’s setup
+- On completion, feed fades out, strategist results appear
+
+### SSE vs WebSocket Decision
+
+Use SSE (Server-Sent Events) for this, NOT the existing WebSocket connection. Reasons:
+
+- SSE is simpler for one-directional server-to-client streaming
+- Each generation is a discrete request with a beginning and end
+- The existing WebSocket is for Schwab market data streaming – keep concerns separated
+- SSE works natively with fetch() and EventSource in the browser
+- If the existing WebSocket architecture makes SSE difficult, it’s acceptable to multiplex thinking events over the existing WebSocket, but SSE is preferred for simplicity
+
+-----
+
+## VISUAL DESIGN GUIDELINES (applies to ALL parts)
+
+- **Background:** Dark, near-black (zinc-950 or existing terminal bg)
+- **Text:** Primary zinc-100/zinc-200. Secondary zinc-400/zinc-500. Never pure white for body text.
+- **Accents:** Green bullish (emerald-500/600). Red bearish (red-500/600). Amber caution (amber-500/600). Match existing price change colors.
+- **Typography:** JetBrains Mono for all numbers, scores, prices, percentages. Body font for labels.
+- **Cards:** Subtle borders (border-zinc-800), no heavy shadows. Slight bg differentiation (bg-zinc-900 on bg-zinc-950).
+- **Spacing:** Tight but not cramped. Data-dense terminal, not consumer app.
+- **Mobile-first:** Primary use is iPhone. Cluster grid = horizontally scrollable card row on mobile. Bias strip legible at phone width. Sub-tab segmented control full width with horizontal padding.
+- **Animations:** Minimal. Subtle fade-in for pulse load. Spin for refresh icon. No bouncing, sliding, or gratuitous motion.
+- **Segmented control:** iOS-style pill segmented control for AI sub-tabs. bg-zinc-800/50 track, bg-zinc-700 active segment, zinc-400 inactive text, zinc-100 active text.
+
+-----
+
+## FILE STRUCTURE EXPECTATIONS
+
+**New frontend files (in alpha-terminal/src/):**
+
+- `components/ai-tab/AiTabLayout.tsx` – the AI tab container with sub-tab segmented control
+- `components/ai-tab/AiSubTabs.tsx` – the PULSE / STRATEGIST / TECHNICALS segmented control
+- `components/ai-shared/AiThinkingFeed.tsx` – shared live thinking stream display (used by Pulse and Strategist)
+- `hooks/useAiStream.ts` – shared React hook for consuming SSE thinking streams
+- `components/market-pulse/AiBiasStrip.tsx` – persistent strip below futures cards
+- `components/market-pulse/MarketPulseDashboard.tsx` – full dashboard in PULSE sub-tab
+- `components/market-pulse/ClusterCard.tsx` – individual signal cluster card
+- `components/market-pulse/ActionPlanCard.tsx` – individual action item card
+- `components/market-pulse/InvalidationBox.tsx` – invalidation conditions display
+- `components/market-pulse/LevelsToWatch.tsx` – macro levels monitoring display
+- `components/market-pulse/PulseStatusHeader.tsx` – bias/confidence/regime display
+- `components/market-pulse/PulseSkeleton.tsx` – loading skeleton
+- `stores/marketPulseStore.ts` (or add to existing store) – Zustand store for pulse state
+- `types/marketPulse.ts` – TypeScript interfaces matching the JSON schema
+
+**Modified frontend files:**
+
+- Main layout component – add AiBiasStrip below futures cards
+- AI tab component – replace single scroll with AiTabLayout containing sub-tabs
+- Sidebar component – remove “GENERATE LIVE MARKET PULSE” button
+- Settings component – add Market Pulse settings subsection
+- Global CSS / root layout – add viewport lock styles for mobile
+
+**Modified backend files:**
+
+- Market Pulse route handler – update LLM prompt, switch to streaming call, add SSE endpoint, add JSON parsing/validation
+- Options Strategist route handler – switch to streaming call, add SSE endpoint for thinking tokens
+- Add Zod schema for Market Pulse JSON response in shared api-zod package
+
+-----
+
+## SUMMARY – ALL CHANGES IN ONE PASS
+
+1. **Backend:** Rewrite Gemini prompt to output strict JSON. Weighted cluster scores, confidence with data-quality-adjusted denominator, divergence detection, layered regime/session/risk reads, invalidation, levels to watch, and strategy-guidance action plan (NEVER trade macro indicators).
+1. **AI Tab Sub-Navigation:** Add segmented control: PULSE | STRATEGIST | TECHNICALS. Each owns full screen. PULSE is general market. STRATEGIST and TECHNICALS are ticker-specific (show “Analyzing: [TICKER]” label). Remove old yellow buttons.
+1. **Bias Strip:** Persistent color-coded bar below futures cards, always visible. Shows bias + confidence + timestamp. Tappable to navigate to PULSE sub-tab.
+1. **Market Pulse Dashboard:** Three-layer cockpit in PULSE sub-tab. Status header, cluster grid (horizontally scrollable on mobile), action plan with strategy guidance, invalidation, levels to watch.
+1. **Button Feedback:** Refresh gets spin + disabled state + completion flash. Generate gets skeleton loader + live thinking feed. All buttons get tap feedback.
+1. **Mobile Viewport Fix:** CSS overflow-x hidden, overscroll-behavior-x none, viewport meta tag.
+1. **Settings:** Market Pulse subsection in sidebar Settings. Auto-refresh, display preferences, strategy preferences, risk preferences. Flows to backend for action plan personalization.
+1. **Sidebar Cleanup:** Remove “GENERATE LIVE MARKET PULSE” from sidebar. Move Strategy Settings/Deep Analysis into STRATEGIST sub-tab.
+1. **Live AI Thinking Stream:** Switch Market Pulse and Options Strategist LLM calls from request/response to streaming via SSE. Stream Gemini 2.5 Pro’s thinking/reasoning tokens to the frontend in real time. Users see the AI’s actual reasoning process (not fake status messages) while waiting for results. Shared `AiThinkingFeed` component and `useAiStream` hook used by both features. “View AI Reasoning” toggle available after generation completes for auditing the AI’s logic.

@@ -11,7 +11,8 @@ import {
   Zap, ChevronDown, AlertTriangle, Crosshair,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
-import { MarketPulseDashboard } from "@/components/pulse/MarketPulseDashboard";
+import { MarketPulseDashboard } from "@/components/market-pulse/MarketPulseDashboard";
+import { AiSubTabs, type AiSubTab } from "@/components/ai-tab/AiSubTabs";
 
 const API_BASE = "/api";
 
@@ -488,7 +489,11 @@ async function consumeStream(
   onDone();
 }
 
-export function AiIntelligenceTab() {
+interface AiIntelligenceTabProps {
+  initialSubTab?: AiSubTab;
+}
+
+export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
   const {
     symbol, accessToken,
     aiModel, aiTemp,
@@ -498,6 +503,7 @@ export function AiIntelligenceTab() {
     stratBias, stratPremium, stratAvoidEarnings,
   } = useTerminalStore();
 
+  const [subTab, setSubTab] = useState<AiSubTab>(initialSubTab ?? "pulse");
   const [customPrompt, setCustomPrompt] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [isStrategizing, setIsStrategizing] = useState(false);
@@ -505,6 +511,10 @@ export function AiIntelligenceTab() {
   const [chainEnabled, setChainEnabled] = useState(false);
   const [streamingText, setStreamingText] = useState("");
   const [showSettings, setShowSettings] = useState(false);
+
+  useEffect(() => {
+    if (initialSubTab) setSubTab(initialSubTab);
+  }, [initialSubTab]);
 
   const { data: quote } = useGetQuote(
     { symbol, accessToken: accessToken || "" },
@@ -569,7 +579,8 @@ export function AiIntelligenceTab() {
         }
         chainData = await chainRes.json();
         if (chainData?.error) {
-          setStrategistResult(`**Options chain error:** ${chainData.error}${chainData.message ? ` — ${chainData.message}` : ""}`);
+          const errObj = chainData as Record<string, unknown>;
+          setStrategistResult(`**Options chain error:** ${errObj.error}${errObj["message"] ? ` — ${errObj["message"]}` : ""}`);
           setIsStrategizing(false);
           return;
         }
@@ -637,89 +648,108 @@ export function AiIntelligenceTab() {
 
   return (
     <div className="flex flex-col gap-0 max-w-5xl mx-auto pb-6">
+      <AiSubTabs active={subTab} onChange={setSubTab} />
 
-      <div className="px-3 sm:px-4 lg:px-5 pt-3 pb-4">
-        <MarketPulseDashboard />
-      </div>
+      {subTab === "pulse" && (
+        <MarketPulseDashboard autoGenerate={initialSubTab === "pulse"} />
+      )}
 
-      <div className="border-t border-card-border mx-3 sm:mx-4 lg:mx-5 mb-2" />
-
-      <div
-        className="sticky top-[76px] z-20 flex gap-2 py-2 -mx-3 px-3 sm:-mx-4 sm:px-4 lg:-mx-5 lg:px-5"
-        style={{ background: "#151517" }}
-      >
-        <Button
-          onClick={handleRunTA}
-          disabled={isPendingAny || !accessToken || !quote}
-          className="flex-1 font-mono text-xs bg-primary text-primary-foreground hover:bg-primary/90 h-9"
-        >
-          <Activity className="w-3.5 h-3.5 mr-2 shrink-0" />
-          TECHNICAL ANALYSIS
-        </Button>
-        <Button
-          onClick={handleRunStrategist}
-          disabled={isPendingAny || !accessToken || !quote}
-          variant="outline"
-          className="flex-1 font-mono text-xs border-primary/50 text-primary hover:bg-primary/10 h-9"
-        >
-          {chainLoading ? (
-            <><span className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin mr-2" />LOADING CHAIN...</>
-          ) : (
-            <><BarChart2 className="w-3.5 h-3.5 mr-2 shrink-0" />OPTIONS STRATEGIST</>
-          )}
-        </Button>
-      </div>
-
-      <div className="mt-3">
-        <button
-          type="button"
-          onClick={() => setShowSettings(!showSettings)}
-          className="w-full flex items-center justify-between px-4 py-2 rounded-t-xl border border-card-border font-mono text-[11px] text-gray-400 uppercase tracking-wider hover:text-white transition-colors"
-          style={{ background: "#111113" }}
-        >
-          <span className="flex items-center gap-2">
-            <Zap className="w-3.5 h-3.5 text-primary" />
-            Strategy Settings
-            {stratAutopilot && <span className="text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ background: "rgba(255,184,0,0.15)", color: "#FFB800" }}>AUTOPILOT</span>}
-          </span>
-          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showSettings ? "rotate-180" : ""}`} />
-        </button>
-        {showSettings && <StrategySettings />}
-      </div>
-
-      <div className={`bg-card border border-card-border overflow-hidden ${showSettings ? "rounded-b-xl" : "rounded-xl mt-0 border-t-0"}`}>
-        <div className="px-4 py-3 border-b border-card-border flex items-center gap-2">
-          <Target className="w-4 h-4 text-primary" />
-          <span className="font-mono text-xs font-bold text-foreground">DEEP ANALYSIS — {symbol}</span>
-        </div>
-        <div className="p-4 bg-[#0c0c0c]">
-          <Textarea
-            placeholder="Add specific instructions (optional)... e.g. 'Focus on the MACD divergence and key gamma levels'"
-            value={customPrompt}
-            onChange={e => setCustomPrompt(e.target.value)}
-            className="font-mono text-xs bg-background border-card-border focus-visible:ring-primary/50 min-h-[60px] resize-none"
-          />
-        </div>
-
-        {(activeResult === "analysis" || activeResult === "strategist") && (
-          <div className="border-t border-card-border p-4 bg-[#0c0c0c]">
-            {isStrategizing ? (
-              <AiThinking />
-            ) : activeResult === "strategist" && isStreaming ? (
-              <AiThinking />
-            ) : activeResult === "analysis" && isStreaming && streamingText ? (
-              <MarkdownResult content={streamingText} />
-            ) : activeResult === "analysis" && isStreaming && !streamingText ? (
-              <AiThinking />
-            ) : currentResult ? (
-              activeResult === "strategist"
-                ? <StrategistResultView content={currentResult} />
-                : <MarkdownResult content={currentResult} />
-            ) : null}
+      {subTab === "strategist" && (
+        <div className="px-3 sm:px-4 lg:px-5 space-y-4">
+          <div className="flex items-center gap-2 px-1">
+            <BarChart2 className="w-4 h-4 text-[#FFB800]" />
+            <span className="font-mono text-xs font-bold text-[#e4e4e7] tracking-wider">OPTIONS STRATEGIST</span>
+            <span className="font-mono text-[10px] text-[#71717a] ml-1">Analyzing: <span className="text-[#FFB800] font-bold">{symbol}</span></span>
           </div>
-        )}
-      </div>
 
+          <div className="mt-1">
+            <button
+              type="button"
+              onClick={() => setShowSettings(!showSettings)}
+              className="w-full flex items-center justify-between px-4 py-2 rounded-t-xl border border-card-border font-mono text-[11px] text-gray-400 uppercase tracking-wider hover:text-white transition-colors"
+              style={{ background: "#111113" }}
+            >
+              <span className="flex items-center gap-2">
+                <Zap className="w-3.5 h-3.5 text-primary" />
+                Strategy Settings
+                {stratAutopilot && <span className="text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ background: "rgba(255,184,0,0.15)", color: "#FFB800" }}>AUTOPILOT</span>}
+              </span>
+              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showSettings ? "rotate-180" : ""}`} />
+            </button>
+            {showSettings && <StrategySettings />}
+          </div>
+
+          <Button
+            onClick={handleRunStrategist}
+            disabled={isPendingAny || !accessToken || !quote}
+            className="w-full font-mono text-xs bg-primary text-primary-foreground hover:bg-primary/90 h-9"
+          >
+            {chainLoading ? (
+              <><span className="w-3 h-3 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin mr-2" />LOADING CHAIN...</>
+            ) : (
+              <><BarChart2 className="w-3.5 h-3.5 mr-2 shrink-0" />RUN STRATEGIST</>
+            )}
+          </Button>
+
+          <div className={`bg-card border border-card-border overflow-hidden rounded-xl`}>
+            <div className="px-4 py-3 border-b border-card-border flex items-center gap-2">
+              <Target className="w-4 h-4 text-primary" />
+              <span className="font-mono text-xs font-bold text-foreground">DEEP ANALYSIS — {symbol}</span>
+            </div>
+            <div className="p-4 bg-[#0c0c0c]">
+              <Textarea
+                placeholder="Add specific instructions (optional)... e.g. 'Focus on premium selling setups with high PoP'"
+                value={customPrompt}
+                onChange={e => setCustomPrompt(e.target.value)}
+                className="font-mono text-xs bg-background border-card-border focus-visible:ring-primary/50 min-h-[60px] resize-none"
+              />
+            </div>
+
+            {activeResult === "strategist" && (
+              <div className="border-t border-card-border p-4 bg-[#0c0c0c]">
+                {isStrategizing ? (
+                  <AiThinking />
+                ) : isStreaming ? (
+                  streamingText ? <StrategistResultView content={streamingText} /> : <AiThinking />
+                ) : currentResult ? (
+                  <StrategistResultView content={currentResult} />
+                ) : null}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {subTab === "technicals" && (
+        <div className="px-3 sm:px-4 lg:px-5 space-y-4">
+          <div className="flex items-center gap-2 px-1">
+            <Activity className="w-4 h-4 text-[#FFB800]" />
+            <span className="font-mono text-xs font-bold text-[#e4e4e7] tracking-wider">TECHNICAL ANALYSIS</span>
+            <span className="font-mono text-[10px] text-[#71717a] ml-1">Analyzing: <span className="text-[#FFB800] font-bold">{symbol}</span></span>
+          </div>
+
+          <Button
+            onClick={handleRunTA}
+            disabled={isPendingAny || !accessToken || !quote}
+            className="w-full font-mono text-xs bg-primary text-primary-foreground hover:bg-primary/90 h-9"
+          >
+            <Activity className="w-3.5 h-3.5 mr-2 shrink-0" />
+            RUN TECHNICAL ANALYSIS
+          </Button>
+
+          {activeResult === "analysis" && (
+            <div className="bg-card border border-card-border rounded-xl p-4">
+              {isStreaming && streamingText ? (
+                <MarkdownResult content={streamingText} />
+              ) : isStreaming && !streamingText ? (
+                <AiThinking />
+              ) : analysisResult ? (
+                <MarkdownResult content={analysisResult} />
+              ) : null}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

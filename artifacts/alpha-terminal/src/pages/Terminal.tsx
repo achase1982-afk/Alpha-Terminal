@@ -19,7 +19,8 @@ import { AiChatOverlay } from "@/components/AiChatOverlay";
 import { InstitutionalTearSheet } from "@/views/InstitutionalTearSheet";
 import { InAppBrowser } from "@/components/InAppBrowser";
 import { NewsTab } from "@/components/NewsTab";
-import { AiBiasStrip } from "@/components/pulse/AiBiasStrip";
+import { AiBiasStrip } from "@/components/market-pulse/AiBiasStrip";
+import type { AiSubTab } from "@/components/ai-tab/AiSubTabs";
 import { LineChart, BarChart2, BrainCircuit, Menu, Radar, Newspaper } from "lucide-react";
 
 export default function TerminalPage() {
@@ -29,6 +30,8 @@ export default function TerminalPage() {
   const [tearSheetOpen, setTearSheetOpen] = useState(false);
   const [historyTimedOut, setHistoryTimedOut] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
+  const [activeMainTab, setActiveMainTab] = useState("news");
+  const [aiSubTab, setAiSubTab] = useState<AiSubTab | undefined>(undefined);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { refresh } = useAutoRefreshToken();
   useViewportShell();
@@ -133,7 +136,7 @@ export default function TerminalPage() {
           <MacroBar />
 
           {/* ─── AI Bias Strip ─── */}
-          <AiBiasStrip />
+          <AiBiasStrip onNavigateToPulse={() => { setActiveMainTab("ai"); setAiSubTab("pulse"); }} />
 
           {/* ─── Metrics row (sticky + collapsible) ─── */}
           <MetricsBar compact={isScrolled} onOpenTearSheet={() => setTearSheetOpen(true)} />
@@ -142,7 +145,7 @@ export default function TerminalPage() {
           <TickerSearch />
 
           <div className="flex flex-col" style={{ minHeight: "calc(var(--vvh, 100%) - 80px)" }}>
-            <Tabs defaultValue="news" className="flex flex-col flex-1">
+            <Tabs value={activeMainTab} onValueChange={setActiveMainTab} className="flex flex-col flex-1">
               <div className="overflow-x-auto shrink-0 mb-4 sticky top-[36px] z-30 bg-background py-1 px-3 sm:px-4 lg:px-5">
                 <TabsList className="bg-card border border-card-border p-1 inline-flex min-w-max">
                   <TabsTrigger
@@ -194,7 +197,7 @@ export default function TerminalPage() {
                 </div>
               </TabsContent>
               <TabsContent value="ai" className="m-0 focus-visible:outline-none">
-                <AiIntelligenceTab />
+                <AiIntelligenceTab initialSubTab={aiSubTab} />
               </TabsContent>
               <TabsContent value="scanner" className="m-0 focus-visible:outline-none">
                 <MarketScanner subscribeEquitySymbols={subscribeEquitySymbols} />

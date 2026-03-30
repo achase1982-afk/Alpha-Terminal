@@ -740,6 +740,250 @@ RULES:
   }
 });
 
+router.post("/market-pulse/stream", async (req, res) => {
+  const { accessToken, symbols, model, temperature, preferences } = req.body as {
+    accessToken?: string;
+    symbols?: string[];
+    model?: string;
+    temperature?: number;
+    preferences?: {
+      allowedStrategies?: string[];
+      defaultSpreadWidth?: string;
+      maxContracts?: string;
+      accountSizeTier?: string;
+      preferredTickers?: string;
+      maxRiskPerTrade?: string;
+    };
+  };
+
+  if (!accessToken) {
+    return res.status(400).json({ error: "Schwab access token required." });
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return res.status(500).json({ error: "GEMINI_API_KEY not configured." });
+  }
+
+  const { session, timeET, sessionGuidance } = getMarketSession();
+
+  let dataBlock: string;
+  try {
+    const { dataMap } = await fetchMacroPulseData(accessToken, symbols);
+    dataBlock = buildPulseDataBlock(dataMap, symbols && symbols.length > 0 ? symbols : undefined);
+  } catch (fetchErr: unknown) {
+    const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+    req.log.error({ err: fetchErr }, "Market pulse stream data fetch error");
+    return res.status(500).json({ error: msg });
+  }
+
+  const symbolList = symbols && symbols.length > 0
+    ? symbols.map(s => s.toUpperCase().trim()).join(", ")
+    : PULSE_SYMBOLS.map(s => s.display).join(", ");
+
+  const instrumentCount = (symbols && symbols.length > 0 ? symbols : PULSE_SYMBOLS.map(s => s.display)).length;
+
+  const strategyPrefsBlock = preferences
+    ? `\nTRADER PREFERENCES:
+- Allowed Strategies: ${preferences.allowedStrategies?.join(", ") || "All"}
+- Default Spread Width: ${preferences.defaultSpreadWidth || "Standard"}
+- Account Size Tier: ${preferences.accountSizeTier || "Not specified"}
+- Preferred Tickers: ${preferences.preferredTickers || "Any"}
+- Max Risk Per Trade: ${preferences.maxRiskPerTrade || "2%"}
+- Max Contracts: ${preferences.maxContracts || "Not specified"}`
+    : "";
+
+  const prompt = `You are an elite Macro Prop Desk Analyst at a top-tier systematic hedge fund.
+
+STRICT GROUNDING RULE: You must ONLY use the Context Data provided below. Every price, ratio, volume, and indicator value you cite MUST come from this data. You are ABSOLUTELY FORBIDDEN from using your internal training knowledge for market trends, price targets, or directional predictions. If a data field shows "NO DATA AVAILABLE", skip it — do NOT substitute with internal knowledge.
+
+═══════════════════════════════════════════════════════
+LIVE MARKET PULSE — ${timeET} | SESSION: ${session}
+INSTRUMENTS SCANNED: ${symbolList}
+═══════════════════════════════════════════════════════
+
+SESSION DIRECTIVE: ${sessionGuidance}
+${strategyPrefsBlock}
+
+═══ CONTEXT DATA ═══
+${dataBlock}
+═══ END CONTEXT DATA ═══
+
+═══════════════════════════════════════════════════════
+ANALYTICAL FRAMEWORK — synthesize ONLY the data streams you have:
+
+CLUSTER SCORING (each cluster gets a score from -2.0 to +2.0 where negative=bearish, positive=bullish):
+1. RATES cluster: Treasury yields (TNX, TYX, ZB, ZT, ZQ) — assess direction and velocity of rate moves
+2. CREDIT cluster: Credit spreads (HYG, LQD, HYD, ADSPD, IEF) — assess risk appetite via credit markets
+3. VOL LEVEL cluster: Absolute vol levels (VIX, VVIX, VIX9D, SKEW, Put/Call) — assess fear/complacency
+4. VOL TERM STRUCTURE cluster: VIX term structure (VIX vs VIX9D vs VIX3M) — contango=complacent, inversion=hedging
+5. BREADTH cluster: Market breadth (TICK, ADD, ADVN, DECN, TRIN, UVOL, DVOL) — assess participation
+
+COMPOSITE SCORE = (rates × 0.25) + (credit × 0.20) + (volLevel × 0.20) + (volTermStructure × 0.15) + (breadth × 0.20)
+
+BIAS MAPPING from compositeScore:
+  compositeScore > 1.0 → "STRONGLY_BULLISH"
+  compositeScore > 0.3 → "BULLISH"
+  compositeScore >= -0.3 and <= 0.3 → "NEUTRAL"
+  compositeScore < -0.3 → "BEARISH"
+  compositeScore < -1.0 → "STRONGLY_BEARISH"
+  If clusters conflict significantly → "NO_EDGE"
+
+maxConfidence = (number of FRESH clusters / 5) × 100
+
+IMPORTANT: Only comment on instruments you have data for. Skip any category where no data was provided.
+═══════════════════════════════════════════════════════
+
+YOU MUST RESPOND WITH VALID JSON ONLY. No markdown. No code fences. No explanation outside the JSON.
+
+Use EXACTLY this JSON schema:
+{
+  "timestamp": "ISO 8601 string of current time",
+  "dataAge": {
+    "oldestSource": "name of oldest data source",
+    "oldestSourceAge": 0
+  },
+  "bias": "STRONGLY_BULLISH" | "BULLISH" | "NEUTRAL" | "BEARISH" | "STRONGLY_BEARISH" | "NO_EDGE",
+  "compositeScore": -2.0 to 2.0,
+  "confidenceScore": 0 to 100,
+  "maxConfidence": 0 to 100,
+  "hasDivergence": true | false,
+  "divergenceNote": "string or null — explain divergence between clusters if present",
+  "clusters": {
+    "rates": {
+      "score": -2.0 to 2.0,
+      "dataQuality": "FRESH" | "STALE" | "MISSING",
+      "direction": "UP" | "DOWN" | "FLAT",
+      "headline": "One sentence summary of rates cluster",
+      "keyDataPoints": ["TNX: 4.25%", "ZB: 118.5"]
+    },
+    "credit": {
+      "score": -2.0 to 2.0,
+      "dataQuality": "FRESH" | "STALE" | "MISSING",
+      "direction": "UP" | "DOWN" | "FLAT",
+      "headline": "One sentence summary",
+      "keyDataPoints": ["HYG: $78.50 +0.3%", "LQD: $110.25"]
+    },
+    "volLevel": {
+      "score": -2.0 to 2.0,
+      "dataQuality": "FRESH" | "STALE" | "MISSING",
+      "direction": "COMPRESSING" | "EXPANDING" | "FLAT",
+      "headline": "One sentence summary",
+      "keyDataPoints": ["VIX: 18.5", "VVIX: 95.2"]
+    },
+    "volTermStructure": {
+      "score": -2.0 to 2.0,
+      "dataQuality": "FRESH" | "STALE" | "MISSING",
+      "direction": "CONTANGO" | "FLAT" | "INVERTED",
+      "headline": "One sentence summary",
+      "keyDataPoints": ["VIX: 18.5", "VIX9D: 16.2", "VIX3M: 20.1"]
+    },
+    "breadth": {
+      "score": -2.0 to 2.0,
+      "dataQuality": "FRESH" | "STALE" | "MISSING",
+      "direction": "POSITIVE" | "NEGATIVE" | "FLAT",
+      "headline": "One sentence summary",
+      "keyDataPoints": ["TICK: +450", "ADD: +1200", "TRIN: 0.85"]
+    }
+  },
+  "structuralRegime": {
+    "label": "RISK_ON" | "RISK_OFF" | "TRANSITION" | "NO_READ",
+    "timeframe": "string (e.g. 'multi-day', 'intraday')",
+    "summary": "One sentence explaining regime"
+  },
+  "sessionBias": {
+    "label": "BULLISH" | "BEARISH" | "NEUTRAL" | "NO_EDGE",
+    "summary": "One sentence about today's session bias"
+  },
+  "riskState": {
+    "label": "PRESS" | "NORMAL" | "REDUCED" | "NO_TRADE",
+    "reason": "One sentence explaining why this risk posture"
+  },
+  "invalidation": {
+    "conditions": ["Condition 1 that would invalidate the thesis", "Condition 2"]
+  },
+  "levelsToWatch": [
+    {
+      "symbol": "ES",
+      "level": 5200.00,
+      "direction": "ABOVE" | "BELOW",
+      "significance": "Why this level matters"
+    }
+  ],
+  "actionPlan": [
+    {
+      "condition": "IF [specific trigger from data]",
+      "strategy": "THEN [specific action with instrument and levels]",
+      "rationale": "Because [data-driven reason]",
+      "riskPosture": "FULL" | "REDUCED" | "QUARTER" | "NO_TRADE",
+      "conviction": "HIGH" | "MODERATE" | "LOW"
+    }
+  ]
+}
+
+RULES:
+- Each cluster MUST have a score between -2.0 and +2.0. Negative = bearish signal, Positive = bullish signal.
+- compositeScore MUST equal the weighted sum of cluster scores using the weights specified above.
+- maxConfidence = (FRESH clusters count / 5) × 100.
+- Set hasDivergence=true if clusters point in conflicting directions (e.g., breadth bullish but vol expanding).
+- Include 2-4 actionPlan items using IF/THEN format with specific instruments and levels.
+- Include 2-5 levelsToWatch with specific numerical levels from the data.
+- Include 1-3 invalidation conditions.
+- All values must come from the context data. Do NOT fabricate prices or levels.
+- Be technically precise, data-driven, and immediately actionable.`;
+
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+  });
+
+  try {
+    const google = createGoogleGenerativeAI({ apiKey });
+    const result = streamText({
+      model: google(model ?? "gemini-2.5-pro"),
+      prompt,
+      temperature: temperature ?? 0.2,
+    });
+
+    let fullText = "";
+
+    for await (const chunk of result.textStream) {
+      fullText += chunk;
+      res.write(`event: thinking\ndata: ${JSON.stringify({ type: "thinking", text: chunk })}\n\n`);
+    }
+
+    let cleaned = fullText.trim();
+    if (cleaned.startsWith("```")) {
+      cleaned = cleaned.replace(/^```(?:json)?\s*/, "").replace(/```\s*$/, "").trim();
+    }
+
+    try {
+      const parsed = JSON.parse(cleaned);
+
+      const enrichedPulse = {
+        ...parsed,
+        session,
+        timeET,
+        instrumentCount,
+        generatedAt: Date.now(),
+      };
+
+      res.write(`data: ${JSON.stringify({ type: "complete", pulse: enrichedPulse })}\n\n`);
+    } catch (parseErr) {
+      req.log.error({ err: parseErr, rawLength: fullText.length }, "Market pulse JSON parse error");
+      res.write(`data: ${JSON.stringify({ type: "error", message: "Failed to parse AI response as valid JSON. Please try again." })}\n\n`);
+    }
+
+    res.end();
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    req.log.error({ err }, "Market pulse stream error");
+    res.write(`data: ${JSON.stringify({ type: "error", message: msg })}\n\n`);
+    res.end();
+  }
+});
+
 interface StrategistSettings {
   autopilot?: boolean;
   maxRisk?: number;

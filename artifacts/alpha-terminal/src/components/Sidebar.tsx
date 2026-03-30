@@ -1,6 +1,8 @@
 import { useTerminalStore } from "@/lib/store";
 import { useOptionsSettingsStore } from "@/lib/options-store";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
+import type { MarketPulseSettings, AllowedStrategy } from "@/types/marketPulse";
+import { STRATEGY_LABELS, ALL_STRATEGIES } from "@/types/marketPulse";
 import { AuthPanel } from "./AuthPanel";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -45,10 +47,8 @@ export function Sidebar({ onClose, onOpenChat }: SidebarProps) {
 
   const {
     settings: pulseSettings,
-    setAutoRefresh: setPulseAutoRefresh,
-    setAutoRefreshInterval: setPulseAutoRefreshInterval,
-    setRiskTolerance: setPulseRiskTolerance,
-    setShowBiasStrip: setPulseShowBiasStrip,
+    updateSetting: updatePulseSetting,
+    toggleStrategy,
   } = useMarketPulseStore();
 
   const [macroInputs, setMacroInputs] = useState<string[]>(macroSymbols);
@@ -341,86 +341,11 @@ export function Sidebar({ onClose, onOpenChat }: SidebarProps) {
           </button>
 
           {pulseSettingsOpen && (
-            <div className="p-3 sm:p-4 border-t border-card-border bg-[#0c0c0c] space-y-3 animate-in fade-in slide-in-from-top-2">
-              <div className="flex items-center justify-between">
-                <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
-                  <Zap className="w-3 h-3" /> Show Bias Strip
-                </Label>
-                <button
-                  type="button"
-                  onClick={() => setPulseShowBiasStrip(!pulseSettings.showBiasStrip)}
-                  className="relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors duration-200"
-                  style={{ background: pulseSettings.showBiasStrip ? "#FFB800" : "#2A2A2C" }}
-                >
-                  <span
-                    className="inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-200"
-                    style={{ transform: pulseSettings.showBiasStrip ? "translateX(16px) translateY(2px)" : "translateX(2px) translateY(2px)" }}
-                  />
-                </button>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
-                  Auto-Refresh
-                </Label>
-                <button
-                  type="button"
-                  onClick={() => setPulseAutoRefresh(!pulseSettings.autoRefresh)}
-                  className="relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors duration-200"
-                  style={{ background: pulseSettings.autoRefresh ? "#FFB800" : "#2A2A2C" }}
-                >
-                  <span
-                    className="inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-200"
-                    style={{ transform: pulseSettings.autoRefresh ? "translateX(16px) translateY(2px)" : "translateX(2px) translateY(2px)" }}
-                  />
-                </button>
-              </div>
-
-              {pulseSettings.autoRefresh && (
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono text-[9px] text-muted-foreground/70 uppercase tracking-wider">Interval</span>
-                    <span className="font-mono text-[10px] text-primary tabular-nums">{pulseSettings.autoRefreshInterval}m</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={2}
-                    max={30}
-                    step={1}
-                    value={pulseSettings.autoRefreshInterval}
-                    onChange={e => setPulseAutoRefreshInterval(Number(e.target.value))}
-                    className="w-full h-1 rounded-full appearance-none cursor-pointer"
-                    style={{ accentColor: "#FFB800", background: "#2A2A2C" }}
-                  />
-                  <div className="flex justify-between">
-                    <span className="font-mono text-[9px] text-gray-600">2m</span>
-                    <span className="font-mono text-[9px] text-gray-600">30m</span>
-                  </div>
-                </div>
-              )}
-
-              <div className="space-y-1.5">
-                <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium">
-                  Risk Tolerance
-                </Label>
-                <div className="flex rounded-lg overflow-hidden border border-card-border">
-                  {(["conservative", "moderate", "aggressive"] as const).map(v => (
-                    <button
-                      key={v}
-                      type="button"
-                      onClick={() => setPulseRiskTolerance(v)}
-                      className="flex-1 font-mono text-[10px] py-1.5 px-2 transition-colors capitalize"
-                      style={{
-                        background: pulseSettings.riskTolerance === v ? "#FFB800" : "transparent",
-                        color: pulseSettings.riskTolerance === v ? "#0c0c0c" : "#9ca3af",
-                      }}
-                    >
-                      {v}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
+            <PulseSettingsPanel
+              settings={pulseSettings}
+              updateSetting={updatePulseSetting}
+              toggleStrategy={toggleStrategy}
+            />
           )}
         </div>
 
@@ -472,6 +397,165 @@ export function Sidebar({ onClose, onOpenChat }: SidebarProps) {
         </button>
       </div>
 
+    </div>
+  );
+}
+
+function PulseSettingsPanel({
+  settings,
+  updateSetting,
+  toggleStrategy,
+}: {
+  settings: MarketPulseSettings;
+  updateSetting: <K extends keyof MarketPulseSettings>(key: K, value: MarketPulseSettings[K]) => void;
+  toggleStrategy: (s: AllowedStrategy) => void;
+}) {
+  return (
+    <div className="p-3 sm:p-4 border-t border-card-border bg-[#0c0c0c] space-y-4 animate-in fade-in slide-in-from-top-2">
+      <SidebarToggle
+        label="Show Bias Strip"
+        icon={<Zap className="w-3 h-3" />}
+        checked={settings.showBiasStrip}
+        onChange={() => updateSetting("showBiasStrip", !settings.showBiasStrip)}
+      />
+      <SidebarToggle
+        label="Auto-Refresh"
+        checked={settings.autoRefresh}
+        onChange={() => updateSetting("autoRefresh", !settings.autoRefresh)}
+      />
+      {settings.autoRefresh && (
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-[9px] text-muted-foreground/70 uppercase tracking-wider">Interval</span>
+            <span className="font-mono text-[10px] text-primary tabular-nums">{settings.autoRefreshInterval}m</span>
+          </div>
+          <input
+            type="range"
+            min={2}
+            max={30}
+            step={1}
+            value={settings.autoRefreshInterval}
+            onChange={e => updateSetting("autoRefreshInterval", Number(e.target.value))}
+            className="w-full h-1 rounded-full appearance-none cursor-pointer"
+            style={{ accentColor: "#FFB800", background: "#2A2A2C" }}
+          />
+        </div>
+      )}
+
+      <div className="border-t border-card-border pt-3">
+        <span className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-bold block mb-2">Display Preferences</span>
+        <div className="space-y-2">
+          <SidebarToggle
+            label="Show Cluster Details"
+            checked={settings.showClusterDetails}
+            onChange={() => updateSetting("showClusterDetails", !settings.showClusterDetails)}
+          />
+          <SidebarToggle
+            label="Show Action Plan"
+            checked={settings.showActionPlan}
+            onChange={() => updateSetting("showActionPlan", !settings.showActionPlan)}
+          />
+          <SidebarToggle
+            label="Compact Mode"
+            checked={settings.compactMode}
+            onChange={() => updateSetting("compactMode", !settings.compactMode)}
+          />
+        </div>
+      </div>
+
+      <div className="border-t border-card-border pt-3">
+        <span className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-bold block mb-2">Allowed Strategies</span>
+        <div className="space-y-1.5 max-h-48 overflow-y-auto">
+          {ALL_STRATEGIES.map(s => (
+            <label key={s} className="flex items-center gap-2 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={settings.allowedStrategies.includes(s)}
+                onChange={() => toggleStrategy(s)}
+                className="rounded border-card-border bg-transparent accent-[#FFB800] w-3.5 h-3.5"
+              />
+              <span className="font-mono text-[10px] text-[#a1a1aa] group-hover:text-[#e4e4e7] transition-colors">
+                {STRATEGY_LABELS[s]}
+              </span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <div className="border-t border-card-border pt-3 space-y-3">
+        <span className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-bold block">Strategy Preferences</span>
+
+        <div className="space-y-1">
+          <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest">Default Spread Width</Label>
+          <Input
+            value={settings.defaultSpreadWidth}
+            onChange={e => updateSetting("defaultSpreadWidth", e.target.value)}
+            placeholder="e.g. $5"
+            className="font-mono text-xs h-8 bg-background border-card-border"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest">Account Size Tier</Label>
+          <Input
+            value={settings.accountSizeTier}
+            onChange={e => updateSetting("accountSizeTier", e.target.value)}
+            placeholder="e.g. $10k, $25k, $100k+"
+            className="font-mono text-xs h-8 bg-background border-card-border"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest">Preferred Tickers</Label>
+          <Input
+            value={settings.preferredTickers}
+            onChange={e => updateSetting("preferredTickers", e.target.value)}
+            placeholder="e.g. SPY, QQQ, AAPL"
+            className="font-mono text-xs h-8 bg-background border-card-border"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest">Max Risk Per Trade</Label>
+          <Input
+            value={settings.maxRiskPerTrade}
+            onChange={e => updateSetting("maxRiskPerTrade", e.target.value)}
+            placeholder="e.g. 2% or $500"
+            className="font-mono text-xs h-8 bg-background border-card-border"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SidebarToggle({
+  label,
+  icon,
+  checked,
+  onChange,
+}: {
+  label: string;
+  icon?: React.ReactNode;
+  checked: boolean;
+  onChange: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-between">
+      <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
+        {icon} {label}
+      </Label>
+      <button
+        type="button"
+        onClick={onChange}
+        className="relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors duration-200"
+        style={{ background: checked ? "#FFB800" : "#2A2A2C" }}
+      >
+        <span
+          className="inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-200"
+          style={{ transform: checked ? "translateX(16px) translateY(2px)" : "translateX(2px) translateY(2px)" }}
+        />
+      </button>
     </div>
   );
 }

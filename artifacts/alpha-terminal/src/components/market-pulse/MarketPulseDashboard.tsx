@@ -1,0 +1,324 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Zap } from "lucide-react";
+import { useTerminalStore } from "../../lib/store";
+import { useMarketPulseStore } from "../../stores/marketPulseStore";
+import type { MarketPulseData, ClusterKey } from "../../types/marketPulse";
+import { STRATEGY_LABELS } from "../../types/marketPulse";
+import { useAiStream } from "../../hooks/useAiStream";
+import { AiThinkingFeed } from "../ai-shared/AiThinkingFeed";
+import { PulseStatusHeader } from "./PulseStatusHeader";
+import { ClusterCard } from "./ClusterCard";
+import { ActionPlanCard } from "./ActionPlanCard";
+import { InvalidationBox } from "./InvalidationBox";
+import { LevelsToWatch } from "./LevelsToWatch";
+import { PulseSkeleton } from "./PulseSkeleton";
+import { DEFAULT_PULSE_SYMBOLS } from "../MarketPulseModal";
+
+const API_BASE = "/api";
+const CLUSTER_ORDER: ClusterKey[] = ["rates", "credit", "volLevel", "volTermStructure", "breadth"];
+
+const BIAS_COLORS: Record<string, { bg: string; text: string; border: string }> = {
+  STRONGLY_BULLISH: { bg: "rgba(0,209,102,0.15)", text: "#00d166", border: "rgba(0,209,102,0.4)" },
+  BULLISH: { bg: "rgba(0,209,102,0.10)", text: "#00d166", border: "rgba(0,209,102,0.3)" },
+  NEUTRAL: { bg: "rgba(255,184,0,0.10)", text: "#FFB800", border: "rgba(255,184,0,0.3)" },
+  BEARISH: { bg: "rgba(242,54,69,0.10)", text: "#f23645", border: "rgba(242,54,69,0.3)" },
+  STRONGLY_BEARISH: { bg: "rgba(242,54,69,0.15)", text: "#f23645", border: "rgba(242,54,69,0.4)" },
+  NO_EDGE: { bg: "rgba(113,113,122,0.10)", text: "#71717a", border: "rgba(113,113,122,0.3)" },
+  ERROR: { bg: "rgba(242,54,69,0.10)", text: "#f23645", border: "rgba(242,54,69,0.3)" },
+};
+
+const REGIME_COLORS: Record<string, string> = {
+  RISK_ON: "#00d166",
+  RISK_OFF: "#f23645",
+  TRANSITION: "#FFB800",
+  NO_READ: "#71717a",
+};
+
+const RISK_COLORS: Record<string, string> = {
+  PRESS: "#00d166",
+  NORMAL: "#e4e4e7",
+  REDUCED: "#FFB800",
+  NO_TRADE: "#f23645",
+};
+
+interface MarketPulseDashboardProps {
+  autoGenerate?: boolean;
+}
+
+export function MarketPulseDashboard({ autoGenerate }: MarketPulseDashboardProps = {}) {
+  const { accessToken, aiModel } = useTerminalStore();
+  const {
+    pulseData,
+    isLoading,
+    isStreaming,
+    thinkingTokens,
+    error,
+    settings,
+    setPulseData,
+    setLoading,
+    setStreaming,
+    appendThinking,
+    clearThinking,
+    setError,
+  } = useMarketPulseStore();
+
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [showTranscript, setShowTranscript] = useState(false);
+
+  const { startStream } = useAiStream<MarketPulseData>({
+    url: `${API_BASE}/ai/market-pulse/stream`,
+    onThinking: (text) => appendThinking(text),
+    onResult: (data) => {
+      const enriched = {
+        ...data,
+        generatedAt: Date.now(),
+      };
+      setPulseData(enriched);
+      setShowTranscript(false);
+    },
+    onError: (msg) => setError(msg),
+  });
+
+  const fetchPulse = useCallback(async () => {
+    if (!accessToken) return;
+    setLoading(true);
+    setStreaming(true);
+    setError(null);
+    clearThinking();
+    setShowTranscript(false);
+
+    const allowedList = settings.allowedStrategies.map(
+      (s) => STRATEGY_LABELS[s]
+    );
+
+    await startStream({
+      accessToken,
+      symbols: DEFAULT_PULSE_SYMBOLS,
+      model: aiModel,
+      temperature: 0.2,
+      preferences: {
+        allowedStrategies: allowedList,
+        defaultSpreadWidth: settings.defaultSpreadWidth,
+        maxContracts: settings.maxContracts,
+        accountSizeTier: settings.accountSizeTier,
+        preferredTickers: settings.preferredTickers,
+        maxRiskPerTrade: settings.maxRiskPerTrade,
+      },
+    });
+  }, [accessToken, aiModel, settings, startStream, setLoading, setStreaming, setError, clearThinking, setPulseData]);
+
+  const autoGenRef = useRef(false);
+  useEffect(() => {
+    if (autoGenerate && !autoGenRef.current && !pulseData && !isLoading && !isStreaming && accessToken) {
+      autoGenRef.current = true;
+      fetchPulse();
+    }
+  }, [autoGenerate, pulseData, isLoading, isStreaming, accessToken, fetchPulse]);
+
+  useEffect(() => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    if (settings.autoRefresh && settings.autoRefreshInterval > 0) {
+      intervalRef.current = setInterval(fetchPulse, settings.autoRefreshInterval * 60_000);
+    }
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [settings.autoRefresh, settings.autoRefreshInterval, fetchPulse]);
+
+  if (!accessToken) {
+    return (
+      <div className="rounded-xl border border-[#2A2A2C] p-8 text-center" style={{ background: "#111113" }}>
+        <Zap className="w-8 h-8 text-[#FFB800] mx-auto mb-3 opacity-40" />
+        <p className="font-mono text-sm text-[#71717a] mb-3">Connect Schwab to enable Market Pulse</p>
+        <a
+          href="/api/schwab/auth"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-mono text-xs font-bold tracking-wider text-[#0c0c0c] bg-[#FFB800] hover:bg-[#FFB800]/90 transition-colors"
+        >
+          Connect Schwab →
+        </a>
+      </div>
+    );
+  }
+
+  const isActive = isLoading || isStreaming;
+
+  return (
+    <div className="space-y-4 px-3 sm:px-4 lg:px-5">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-[#FFB800]/15 border border-[#FFB800]/30 flex items-center justify-center">
+            <Zap className="w-3.5 h-3.5 text-[#FFB800]" />
+          </div>
+          <div>
+            <h2 className="font-mono font-bold text-sm text-[#e4e4e7] tracking-wider">MARKET PULSE</h2>
+            <p className="font-mono text-[9px] text-[#71717a] tracking-widest uppercase">Multi-Asset Macro Analysis</p>
+          </div>
+        </div>
+
+        {!pulseData && !isActive && (
+          <button
+            onClick={fetchPulse}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg font-mono text-xs font-bold tracking-wider text-[#0c0c0c] bg-[#FFB800] hover:bg-[#FFB800]/90 transition-all active:scale-95"
+          >
+            <Zap className="w-3.5 h-3.5" />
+            GENERATE PULSE
+          </button>
+        )}
+      </div>
+
+      {isActive && (
+        <>
+          <AiThinkingFeed
+            tokens={thinkingTokens}
+            isStreaming={isStreaming}
+          />
+          <PulseSkeleton />
+        </>
+      )}
+
+      {error && !isActive && (
+        <div className="rounded-xl border border-[#f23645]/30 p-4" style={{ background: "rgba(242,54,69,0.06)" }}>
+          <p className="font-mono text-xs text-[#f23645]">{error}</p>
+          <button
+            onClick={fetchPulse}
+            className="mt-2 font-mono text-[10px] text-[#f23645] hover:text-[#e4e4e7] transition-colors uppercase tracking-wider"
+          >
+            Try Again
+          </button>
+        </div>
+      )}
+
+      {pulseData && !isActive && (
+        <div className="space-y-4 animate-in fade-in duration-300">
+          <AiThinkingFeed
+            tokens={thinkingTokens}
+            isStreaming={false}
+            showTranscript={showTranscript}
+            onToggleTranscript={() => setShowTranscript(!showTranscript)}
+          />
+
+          <PulseStatusHeader
+            data={pulseData}
+            isRefreshing={isActive}
+            onRefresh={fetchPulse}
+            disabled={!accessToken}
+          />
+
+          <BiasHero data={pulseData} />
+
+          {pulseData.hasDivergence && pulseData.divergenceNote && (
+            <div
+              className="rounded-xl border px-4 py-3 flex items-start gap-2"
+              style={{ background: "rgba(255,184,0,0.06)", borderColor: "rgba(255,184,0,0.3)" }}
+            >
+              <span className="text-[#FFB800] text-sm mt-0.5">⚠</span>
+              <div>
+                <span className="font-mono text-[10px] font-bold text-[#FFB800] uppercase tracking-wider">Signal Conflict</span>
+                <p className="font-sans text-xs text-[#a1a1aa] mt-1">{pulseData.divergenceNote}</p>
+              </div>
+            </div>
+          )}
+
+          {settings.showClusterDetails && !settings.compactMode && (
+            <>
+              <div className="font-mono text-[10px] text-[#71717a] uppercase tracking-widest px-1">Signal Clusters</div>
+              <div className="flex gap-3 overflow-x-auto pb-2 -mx-3 px-3 sm:-mx-4 sm:px-4">
+                {CLUSTER_ORDER.map((key) => (
+                  <ClusterCard key={key} clusterKey={key} cluster={pulseData.clusters[key]} />
+                ))}
+              </div>
+            </>
+          )}
+
+          {settings.showActionPlan && !settings.compactMode && (
+            <ActionPlanCard items={pulseData.actionPlan} bias={pulseData.bias} />
+          )}
+
+          {!settings.compactMode && (
+            <InvalidationBox conditions={pulseData.invalidation.conditions} />
+          )}
+
+          {!settings.compactMode && (
+            <LevelsToWatch levels={pulseData.levelsToWatch} />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BiasHero({ data }: { data: MarketPulseData }) {
+  const biasStyle = BIAS_COLORS[data.bias] ?? BIAS_COLORS.NO_EDGE;
+  const regimeColor = REGIME_COLORS[data.structuralRegime?.label] ?? "#71717a";
+  const riskColor = RISK_COLORS[data.riskState?.label] ?? "#71717a";
+
+  const pct = data.maxConfidence > 0 ? (data.confidenceScore / data.maxConfidence) * 100 : 0;
+
+  return (
+    <div
+      className="rounded-xl border p-4 space-y-3"
+      style={{ background: biasStyle.bg, borderColor: biasStyle.border }}
+    >
+      <div className="flex items-center gap-3 flex-wrap">
+        <span
+          className="px-3 py-1.5 rounded-full font-mono text-sm font-black tracking-wider"
+          style={{ background: biasStyle.border, color: biasStyle.text }}
+        >
+          {data.bias.replace(/_/g, " ")}
+        </span>
+
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-[10px] text-[#71717a] uppercase tracking-wider">Composite</span>
+          <span
+            className="font-mono text-sm font-black tabular-nums"
+            style={{ color: biasStyle.text }}
+          >
+            {data.compositeScore > 0 ? "+" : ""}{data.compositeScore.toFixed(2)}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-[10px] text-[#71717a] uppercase tracking-wider">Confidence</span>
+          <span className="font-mono text-sm font-bold tabular-nums text-[#e4e4e7]">
+            {Math.round(data.confidenceScore)}
+          </span>
+          <span className="font-mono text-[10px] text-[#71717a]">/</span>
+          <span className="font-mono text-sm tabular-nums text-[#71717a]">
+            {Math.round(data.maxConfidence)}
+          </span>
+        </div>
+      </div>
+
+      <div className="h-1.5 rounded-full bg-[#2A2A2C] overflow-hidden">
+        <div
+          className="h-full rounded-full transition-all duration-500"
+          style={{ width: `${Math.min(pct, 100)}%`, background: biasStyle.text }}
+        />
+      </div>
+
+      <div className="flex items-center gap-2 flex-wrap">
+        <span
+          className="px-2 py-0.5 rounded font-mono text-[9px] font-bold tracking-wider"
+          style={{ background: `${regimeColor}15`, color: regimeColor }}
+        >
+          REGIME: {data.structuralRegime?.label?.replace(/_/g, " ")} ({data.structuralRegime?.timeframe})
+        </span>
+        <span
+          className="px-2 py-0.5 rounded font-mono text-[9px] font-bold tracking-wider"
+          style={{ background: `${BIAS_COLORS[data.sessionBias?.label]?.bg ?? "rgba(113,113,122,0.1)"}`, color: BIAS_COLORS[data.sessionBias?.label]?.text ?? "#71717a" }}
+        >
+          TODAY: {data.sessionBias?.label}
+        </span>
+        <span
+          className="px-2 py-0.5 rounded font-mono text-[9px] font-bold tracking-wider"
+          style={{ background: `${riskColor}15`, color: riskColor }}
+        >
+          SIZE: {data.riskState?.label}
+        </span>
+      </div>
+    </div>
+  );
+}
