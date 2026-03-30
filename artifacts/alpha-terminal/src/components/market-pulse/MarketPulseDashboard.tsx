@@ -226,26 +226,26 @@ export function MarketPulseDashboard({ autoGenerate }: MarketPulseDashboardProps
             </div>
           )}
 
-          {settings.showClusterDetails && !settings.compactMode && (
+          {settings.showClusterDetails && !settings.compactMode && pulseData.clusters && (
             <>
               <div className="font-mono text-[10px] text-[#71717a] uppercase tracking-widest px-1">Signal Clusters</div>
               <div className="flex gap-3 overflow-x-auto pb-2 -mx-3 px-3 sm:-mx-4 sm:px-4">
-                {CLUSTER_ORDER.map((key) => (
+                {CLUSTER_ORDER.map((key) => pulseData.clusters[key] ? (
                   <ClusterCard key={key} clusterKey={key} cluster={pulseData.clusters[key]} />
-                ))}
+                ) : null)}
               </div>
             </>
           )}
 
-          {settings.showActionPlan && !settings.compactMode && (
+          {settings.showActionPlan && !settings.compactMode && pulseData.actionPlan && (
             <ActionPlanCard items={pulseData.actionPlan} bias={pulseData.bias} />
           )}
 
-          {!settings.compactMode && (
-            <InvalidationBox conditions={pulseData.invalidation.conditions} />
+          {!settings.compactMode && pulseData.invalidation && (
+            <InvalidationBox conditions={Array.isArray(pulseData.invalidation) ? pulseData.invalidation : (pulseData.invalidation.conditions ?? [])} />
           )}
 
-          {!settings.compactMode && (
+          {!settings.compactMode && pulseData.levelsToWatch && (
             <LevelsToWatch levels={pulseData.levelsToWatch} />
           )}
         </div>

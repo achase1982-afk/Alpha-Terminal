@@ -71,7 +71,7 @@ export interface MarketPulseData {
     label: RiskStateLabel;
     reason: string;
   };
-  invalidation: {
+  invalidation: string[] | {
     conditions: string[];
   };
   levelsToWatch: LevelToWatch[];
