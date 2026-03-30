@@ -32,24 +32,9 @@ export default function TerminalPage() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [activeMainTab, setActiveMainTab] = useState("news");
   const [aiSubTab, setAiSubTab] = useState<AiSubTab | undefined>(undefined);
-  const [biasStripPinned, setBiasStripPinned] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const biasSentinelRef = useRef<HTMLDivElement>(null);
   const { refresh } = useAutoRefreshToken();
   useViewportShell();
-
-  useEffect(() => {
-    const sentinel = biasSentinelRef.current;
-    if (!sentinel) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        setBiasStripPinned(!entry.isIntersecting);
-      },
-      { root: scrollRef.current, threshold: 0 }
-    );
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, []);
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -144,22 +129,15 @@ export default function TerminalPage() {
 
           {/* ─── Ticker tape scrolling marquee ─── */}
           <TickerTape />
-
-          {/* ─── AI Bias Strip (pinned copy — shown when scrolled past its natural position) ─── */}
-          {biasStripPinned && (
-            <AiBiasStrip onNavigateToPulse={() => { setActiveMainTab("ai"); setAiSubTab("pulse"); }} />
-          )}
         </div>
 
         <div ref={scrollRef} onScroll={handleScroll} className="app-content z-10">
           {/* ─── Macro Cards ─── */}
           <MacroBar />
 
-          {/* ─── AI Bias Strip (in-flow — scrolls with content, sentinel triggers pinning) ─── */}
-          <div ref={biasSentinelRef} style={{ minHeight: 42 }}>
-            {!biasStripPinned && (
-              <AiBiasStrip onNavigateToPulse={() => { setActiveMainTab("ai"); setAiSubTab("pulse"); }} />
-            )}
+          {/* ─── AI Bias Strip ─── */}
+          <div style={{ position: "sticky", top: 0, zIndex: 45 }}>
+            <AiBiasStrip onNavigateToPulse={() => { setActiveMainTab("ai"); setAiSubTab("pulse"); }} />
           </div>
 
           {/* ─── Metrics row (sticky + collapsible) ─── */}
