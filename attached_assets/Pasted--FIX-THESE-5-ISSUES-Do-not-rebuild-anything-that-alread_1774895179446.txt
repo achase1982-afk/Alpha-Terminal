@@ -1,0 +1,118 @@
+# FIX THESE 5 ISSUES – Do not rebuild anything that already works
+
+The Market Pulse overhaul is mostly built. The structure, sub-tabs, dashboard layout, and strategist are in place. There are 5 specific bugs to fix. Only touch what’s broken.
+
+-----
+
+## BUG 1: Sub-tabs need to be sticky
+
+The AI sub-tabs (PULSE / STRATEGIST / TECHNICALS) work but the user has to scroll past the ticker header, recently viewed chips, and search bar to reach them. The sub-tabs must be sticky so they pin to the top of the scroll area and stay visible at all times when scrolling.
+
+**Fix:** Add `position: sticky` to the sub-tab segmented control container. Set `top` to the correct pixel offset so it pins directly below the main tab bar (NEWS / OPTIONS / AI / SCAN / CHART). Add `z-index: 10` (or appropriate value) so it stays above scrolling content. Add a matching background color so content doesn’t bleed through behind it when scrolling.
+
+-----
+
+## BUG 2: Generate Pulse button does nothing
+
+Clicking “GENERATE PULSE” produces no response. No loading state, no API call, nothing.
+
+**Fix:** The click handler for the GENERATE PULSE button must call the Market Pulse SSE streaming endpoint. When tapped:
+
+1. Show immediate tap feedback (opacity/scale)
+1. Replace button with skeleton loader + AI Thinking Feed
+1. Open an SSE connection to the Market Pulse streaming endpoint
+1. Stream thinking tokens into the AI Thinking Feed in real time
+1. When the final JSON result arrives, parse it and render the Market Pulse dashboard
+1. If the SSE endpoint does not exist yet, create it (see streaming architecture below)
+
+-----
+
+## BUG 3: AI Reasoning feed shows green dot but no thinking text
+
+The AI Reasoning container renders with a green dot but never displays any text from Gemini’s thinking process.
+
+**Fix:** This is a streaming pipeline issue. Debug in order:
+
+1. **Backend:** Verify the SSE endpoint uses `streamText()` (not `generateText()`). Add `console.log('STREAM PART:', part.type)` inside the stream loop to see what part types Gemini actually emits. The thinking tokens might be called `reasoning`, `thought`, `step-start`, or something else depending on the AI SDK version. Update the conditional check to match whatever part type is actually emitted.
+1. **Backend:** After each SSE write, call `res.flush?.()` to force-send the data. Also set the header `X-Accel-Buffering: no` to prevent Replit’s proxy from buffering.
+1. **Frontend:** Verify the SSE consumer (fetch + ReadableStream reader) is parsing SSE events correctly. Each thinking event should append text to the thinking state array. Verify the AiThinkingFeed component actually renders the text from that array, not just the green dot container.
+
+-----
+
+## BUG 4: Options Strategist shows raw JSON on screen
+
+When the Strategist generates results, raw JSON text (curly braces, quotes, property names) appears on screen before/instead of formatted strategy cards.
+
+**Fix:** The backend stream handler is mixing thinking tokens and final response tokens into the same output. They must be completely separated:
+
+```typescript
+let responseBuffer = '';
+
+for await (const part of result.fullStream) {
+  if (part.type === 'reasoning' || part.type === 'thought') {
+    // THINKING: send to frontend as thinking event
+    res.write(`event: thinking\ndata: ${JSON.stringify({ text: part.textDelta || part.text })}\n\n`);
+    if (typeof res.flush === 'function') res.flush();
+  } else if (part.type === 'text-delta') {
+    // FINAL RESPONSE: buffer silently, do NOT send to frontend yet
+    responseBuffer += part.textDelta;
+  }
+}
+
+// After stream completes: parse buffer as JSON, send as result event
+try {
+  const parsed = JSON.parse(responseBuffer);
+  res.write(`event: result\ndata: ${JSON.stringify({ type: 'complete', data: parsed })}\n\n`);
+} catch (e) {
+  res.write(`event: error\ndata: ${JSON.stringify({ message: 'Failed to parse AI response' })}\n\n`);
+}
+res.end();
+```
+
+On the frontend, the SSE consumer must route events to different destinations:
+
+- `event: thinking` data goes ONLY to the AI Thinking Feed component
+- `event: result` data goes through JSON parsing and into the formatted UI components (strategy cards, dashboard, etc.)
+- These two streams must NEVER cross
+
+-----
+
+## BUG 5: Page slides horizontally on mobile
+
+On iOS Safari / PWA, the entire page slides left and right on touch swipe.
+
+**Fix:** Add to global CSS:
+
+```css
+html, body {
+  overflow-x: hidden;
+  position: relative;
+  width: 100%;
+  max-width: 100vw;
+  overscroll-behavior-x: none;
+  -webkit-overflow-scrolling: touch;
+}
+```
+
+Root app wrapper:
+
+```css
+.app-root {
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+```
+
+Verify viewport meta tag in index.html:
+
+```html
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+```
+
+Check for any element exceeding 100vw (scrolling tickers, fixed-width cards, padding).
+
+-----
+
+## Do NOT touch anything else
+
+The sub-tab structure, dashboard layout, strategist UI, technicals UI, bias strip, sidebar changes, and settings are already built. Do not rebuild or restructure them. Only fix the 5 bugs listed above.

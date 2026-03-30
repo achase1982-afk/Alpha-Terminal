@@ -228,6 +228,7 @@ Be specific, data-driven, and concise. Use markdown formatting.`;
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache",
     Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
   });
 
   try {
@@ -241,8 +242,10 @@ Be specific, data-driven, and concise. Use markdown formatting.`;
     for await (const part of result.fullStream) {
       if (part.type === "reasoning" && part.textDelta) {
         res.write(`data: ${JSON.stringify({ reasoning: part.textDelta })}\n\n`);
+        if (typeof (res as any).flush === "function") (res as any).flush();
       } else if (part.type === "text-delta" && part.textDelta) {
         res.write(`data: ${JSON.stringify({ text: part.textDelta })}\n\n`);
+        if (typeof (res as any).flush === "function") (res as any).flush();
       }
     }
     res.write("data: [DONE]\n\n");
@@ -940,6 +943,7 @@ RULES:
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache",
     Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
   });
 
   try {
@@ -955,9 +959,11 @@ RULES:
     for await (const part of result.fullStream) {
       if (part.type === "reasoning" && part.textDelta) {
         res.write(`event: thinking\ndata: ${JSON.stringify({ type: "thinking", text: part.textDelta })}\n\n`);
+        if (typeof (res as any).flush === "function") (res as any).flush();
       } else if (part.type === "text-delta" && part.textDelta) {
         fullText += part.textDelta;
         res.write(`event: thinking\ndata: ${JSON.stringify({ type: "thinking", text: part.textDelta })}\n\n`);
+        if (typeof (res as any).flush === "function") (res as any).flush();
       }
     }
 
@@ -1182,6 +1188,7 @@ router.post("/options-strategist/stream", async (req, res) => {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache",
     Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
   });
 
   try {
@@ -1195,8 +1202,10 @@ router.post("/options-strategist/stream", async (req, res) => {
     for await (const part of result.fullStream) {
       if (part.type === "reasoning" && part.textDelta) {
         res.write(`data: ${JSON.stringify({ reasoning: part.textDelta })}\n\n`);
+        if (typeof (res as any).flush === "function") (res as any).flush();
       } else if (part.type === "text-delta" && part.textDelta) {
         res.write(`data: ${JSON.stringify({ text: part.textDelta })}\n\n`);
+        if (typeof (res as any).flush === "function") (res as any).flush();
       }
     }
     res.write("data: [DONE]\n\n");

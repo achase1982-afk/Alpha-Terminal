@@ -648,23 +648,12 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
 
             {activeResult === "strategist" && (
               <div className="border-t border-card-border p-4 bg-[#0c0c0c]">
-                {(isStrategizing || (isStreaming && !streamingText)) && (
+                {(isStrategizing || isStreaming) ? (
                   <AiThinkingFeed
                     tokens={thinkingTokens}
                     isStreaming={true}
                   />
-                )}
-                {isStreaming && streamingText ? (
-                  <>
-                    <AiThinkingFeed
-                      tokens={thinkingTokens}
-                      isStreaming={true}
-                    />
-                    <div className="mt-3">
-                      <StrategistResultView content={streamingText} />
-                    </div>
-                  </>
-                ) : !isStrategizing && !isStreaming && currentResult ? (
+                ) : currentResult ? (
                   <>
                     {thinkingTokens.length > 0 && (
                       <div className="mb-3">
@@ -704,23 +693,19 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
 
           {activeResult === "analysis" && (
             <div className="bg-card border border-card-border rounded-xl p-4">
-              {isStreaming && !streamingText && (
-                <AiThinkingFeed
-                  tokens={thinkingTokens}
-                  isStreaming={true}
-                />
-              )}
-              {isStreaming && streamingText ? (
+              {isStreaming ? (
                 <>
                   <AiThinkingFeed
                     tokens={thinkingTokens}
                     isStreaming={true}
                   />
-                  <div className="mt-3">
-                    <MarkdownResult content={streamingText} />
-                  </div>
+                  {streamingText && (
+                    <div className="mt-3">
+                      <MarkdownResult content={streamingText} />
+                    </div>
+                  )}
                 </>
-              ) : !isStreaming && analysisResult ? (
+              ) : analysisResult ? (
                 <>
                   {thinkingTokens.length > 0 && (
                     <div className="mb-3">
