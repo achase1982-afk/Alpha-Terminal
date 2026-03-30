@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useTerminalStore } from "@/lib/store";
+import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import {
   X, Building2, TrendingUp, Newspaper, ShieldAlert,
   Loader2, Users, BarChart3, Landmark, DollarSign,
@@ -84,7 +85,7 @@ export function CompanyTearSheet({ isOpen, onClose }: CompanyTearSheetProps) {
     setSympathyResult(null);
 
     try {
-      const res = await fetch(
+      const res = await fetchWithAuth(
         `${API_BASE}/market/fundamentals?symbol=${encodeURIComponent(symbol)}&accessToken=${encodeURIComponent(accessToken)}`
       );
       const data = await res.json() as FundamentalData;
@@ -96,7 +97,7 @@ export function CompanyTearSheet({ isOpen, onClose }: CompanyTearSheetProps) {
     }
 
     try {
-      const res = await fetch(`${API_BASE}/ai/sympathy-plays`, {
+      const res = await fetchWithAuth(`${API_BASE}/ai/sympathy-plays`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ symbol, model: aiModel, temperature: 0.3 }),

@@ -1,7 +1,9 @@
-import express, { type Express } from "express";
+import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
+import { clerkMiddleware, getAuth } from "@clerk/express";
 import router from "./routes";
+import healthRouter from "./routes/health";
 import { logger } from "./lib/logger";
 
 const app: Express = express();
@@ -29,6 +31,19 @@ app.use(cors());
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-app.use("/api", router);
+app.use(clerkMiddleware());
+
+app.use("/api", healthRouter);
+
+function apiRequireAuth(req: Request, res: Response, next: NextFunction) {
+  const auth = getAuth(req);
+  if (!auth?.userId) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  next();
+}
+
+app.use("/api", apiRequireAuth, router);
 
 export default app;

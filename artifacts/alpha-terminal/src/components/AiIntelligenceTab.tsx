@@ -3,6 +3,7 @@ import { useTerminalStore } from "@/lib/store";
 import {
   useGetQuote, useGetPriceHistory, useGetOptionChain,
 } from "@workspace/api-client-react";
+import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -441,7 +442,7 @@ async function consumeStream(
   onDone: () => void,
   onError: (msg: string) => void,
 ): Promise<void> {
-  const res = await fetch(url, {
+  const res = await fetchWithAuth(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -556,7 +557,7 @@ export function AiIntelligenceTab() {
     try {
       let chainData = chain ?? null;
       if (!chainData) {
-        const chainRes = await fetch(
+        const chainRes = await fetchWithAuth(
           `${API_BASE}/market/options?symbol=${encodeURIComponent(symbol)}&accessToken=${encodeURIComponent(accessToken)}&contractType=ALL&daysToExpiration=45&strikeCount=20`
         );
         if (!chainRes.ok) {

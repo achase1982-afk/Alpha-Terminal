@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useGetAuthUrl } from "@workspace/api-client-react";
+import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { Button } from "@/components/ui/button";
 import { ChevronRight, KeyRound, ExternalLink, CheckCircle2, Loader2, Radio } from "lucide-react";
 
@@ -36,7 +37,7 @@ export function AuthPanel() {
   const handleTraderLoginClick = useCallback(async () => {
     setIsTraderNavigating(true);
     try {
-      const res = await fetch("/api/auth/trader-url");
+      const res = await fetchWithAuth("/api/auth/trader-url");
       const data = await res.json() as { url?: string; configured?: boolean };
       if (!data.url) {
         setIsTraderNavigating(false);

@@ -1,6 +1,7 @@
 import { useState, memo } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useQuote } from "@/hooks/useQuote";
+import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
@@ -261,7 +262,7 @@ export function MarketScanner({ subscribeEquitySymbols }: {
               filters: { minChangePct, maxChangePct, minVolume, minPrice, maxPrice },
             };
 
-      const res = await fetch(`${API_BASE}/ai/market-scanner`, {
+      const res = await fetchWithAuth(`${API_BASE}/ai/market-scanner`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),

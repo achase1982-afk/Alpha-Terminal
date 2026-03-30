@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useGetQuote } from "@workspace/api-client-react";
+import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { Button } from "@/components/ui/button";
 import { X, Send, Search, Square, RotateCw } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -80,7 +81,7 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
     abortRef.current = controller;
 
     try {
-      const res = await fetch("/api/ai/chat", {
+      const res = await fetchWithAuth("/api/ai/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: history, marketContext }),

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useOptionsStreamStore } from "@/lib/options-stream-store";
+import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import type { LiveQuote } from "@/lib/store";
 
 const API_BASE = "/api";
@@ -20,7 +21,7 @@ async function refreshAndRetry(retryCount: number): Promise<boolean> {
   let traderOk = false;
   if (traderRefreshToken) {
     try {
-      const res = await fetch("/api/auth/trader-refresh", {
+      const res = await fetchWithAuth("/api/auth/trader-refresh", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refreshToken: traderRefreshToken }),
@@ -38,7 +39,7 @@ async function refreshAndRetry(retryCount: number): Promise<boolean> {
   let marketOk = false;
   if (refreshToken) {
     try {
-      const res = await fetch("/api/auth/refresh", {
+      const res = await fetchWithAuth("/api/auth/refresh", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refreshToken }),
@@ -94,7 +95,7 @@ export function useMarketStream() {
     if (startedRef.current) return;
     startedRef.current = true;
     try {
-      const res = await fetch(`${API_BASE}/stream/start`, {
+      const res = await fetchWithAuth(`${API_BASE}/stream/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -113,7 +114,7 @@ export function useMarketStream() {
 
   async function addServerSymbols(symbols: string[]) {
     try {
-      await fetch(`${API_BASE}/stream/symbols`, {
+      await fetchWithAuth(`${API_BASE}/stream/symbols`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ symbols }),
@@ -123,7 +124,7 @@ export function useMarketStream() {
 
   async function pollSnapshot() {
     try {
-      const res = await fetch(`${API_BASE}/stream/snapshot`);
+      const res = await fetchWithAuth(`${API_BASE}/stream/snapshot`);
       if (!res.ok) return;
       const data = await res.json() as { quotes: LiveQuote[]; status?: string };
 
@@ -225,7 +226,7 @@ export function useMarketStream() {
     async (symbols: string[]) => {
       if (!symbols.length) return;
       try {
-        await fetch(`${API_BASE}/stream/option-symbols`, {
+        await fetchWithAuth(`${API_BASE}/stream/option-symbols`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ symbols }),

@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef, useCallback, memo } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useOptionsSettingsStore } from "@/lib/options-store";
+import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { useOptionsColumnsStore, COLUMN_REGISTRY, type ColumnDef } from "@/lib/options-columns-store";
 import { useOptionsStreamStore, useOptionTick } from "@/lib/options-stream-store";
 import { useGetQuote, useGetOptionChain } from "@workspace/api-client-react";
@@ -578,7 +579,7 @@ export function OptionsTab({ subscribeOptionSymbols }: OptionsTabProps) {
   const { data: earningsData } = useQuery({
     queryKey: ["earnings-date", symbol],
     queryFn: async () => {
-      const res = await fetch(`/api/market/earnings-date?symbol=${encodeURIComponent(symbol)}`);
+      const res = await fetchWithAuth(`/api/market/earnings-date?symbol=${encodeURIComponent(symbol)}`);
       return res.json() as Promise<{ earningsDate?: string | null }>;
     },
     enabled: !!symbol,

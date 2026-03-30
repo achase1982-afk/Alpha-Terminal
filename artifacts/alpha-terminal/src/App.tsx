@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useTerminalStore } from "@/lib/store";
+import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import TerminalPage from "@/pages/Terminal";
 import NotFound from "@/pages/not-found";
 
@@ -29,7 +30,7 @@ function PendingSessionLoader() {
 
     const checkPending = async () => {
       try {
-        const res = await fetch("/api/auth/pending-session");
+        const res = await fetchWithAuth("/api/auth/pending-session");
         if (!res.ok || cancelled) return;
         const data = await res.json();
         if (data.found && data.accessToken) {
@@ -60,7 +61,7 @@ function PendingSessionLoader() {
 
     const checkTraderPending = async () => {
       try {
-        const res = await fetch("/api/auth/trader-pending-session");
+        const res = await fetchWithAuth("/api/auth/trader-pending-session");
         if (!res.ok || cancelled) return;
         const data = await res.json();
         if (data.found && data.accessToken) {

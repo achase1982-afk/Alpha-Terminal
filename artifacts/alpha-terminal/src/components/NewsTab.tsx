@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useTerminalStore } from "@/lib/store";
+import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { Loader2, Newspaper, ExternalLink } from "lucide-react";
 
 interface NewsArticle {
@@ -34,7 +35,7 @@ export function NewsTab() {
   const { data, isLoading, error } = useQuery<NewsResponse>({
     queryKey: ["ticker-news", symbol],
     queryFn: async () => {
-      const res = await fetch(`/api/market/news?symbol=${encodeURIComponent(symbol)}`);
+      const res = await fetchWithAuth(`/api/market/news?symbol=${encodeURIComponent(symbol)}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return res.json();
     },

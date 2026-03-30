@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useTerminalStore } from "@/lib/store";
+import { fetchWithAuth } from "@/lib/fetchWithAuth";
 
 const REFRESH_INTERVAL_MS = 25 * 60 * 1000; // 25 minutes
 
@@ -14,7 +15,7 @@ export function useAutoRefreshToken() {
     if (!refreshToken || isRefreshing.current) return false;
     isRefreshing.current = true;
     try {
-      const res = await fetch("/api/auth/refresh", {
+      const res = await fetchWithAuth("/api/auth/refresh", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refreshToken }),
@@ -41,7 +42,7 @@ export function useAutoRefreshToken() {
     if (!traderRefreshToken || isRefreshingTrader.current) return false;
     isRefreshingTrader.current = true;
     try {
-      const res = await fetch("/api/auth/trader-refresh", {
+      const res = await fetchWithAuth("/api/auth/trader-refresh", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refreshToken: traderRefreshToken }),

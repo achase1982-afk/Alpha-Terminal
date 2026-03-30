@@ -1,5 +1,6 @@
 import { useTerminalStore } from "@/lib/store";
 import { useOptionsSettingsStore } from "@/lib/options-store";
+import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { AuthPanel } from "./AuthPanel";
 import { MarketPulseModal, DEFAULT_PULSE_SYMBOLS } from "./MarketPulseModal";
 import { useLocalStorage } from "@/lib/useLocalStorage";
@@ -63,7 +64,7 @@ export function Sidebar({ onClose, onOpenChat }: SidebarProps) {
     setPulseOpen(true);
     setPulseLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/ai/market-briefing`, {
+      const res = await fetchWithAuth(`${API_BASE}/ai/market-briefing`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

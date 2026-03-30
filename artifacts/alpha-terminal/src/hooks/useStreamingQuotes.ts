@@ -17,6 +17,7 @@
 
 import { useEffect, useRef } from "react";
 import { useTerminalStore } from "@/lib/store";
+import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import type { LiveQuote } from "@/lib/store";
 
 const API_BASE = "/api";
@@ -45,7 +46,7 @@ export function useStreamingQuotes() {
   // ── Tell the server to (re)start its Schwab WS with this token ────────────
   async function startServerStream(token: string) {
     try {
-      await fetch(`${API_BASE}/stream/start`, {
+      await fetchWithAuth(`${API_BASE}/stream/start`, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({ accessToken: token, symbols: allSymbols() }),
@@ -58,7 +59,7 @@ export function useStreamingQuotes() {
   // ── Tell the server about additional symbols (non-blocking) ───────────────
   async function addServerSymbols(symbols: string[]) {
     try {
-      await fetch(`${API_BASE}/stream/symbols`, {
+      await fetchWithAuth(`${API_BASE}/stream/symbols`, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({ symbols }),

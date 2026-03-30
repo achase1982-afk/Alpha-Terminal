@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useQuote } from "@/hooks/useQuote";
+import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import {
   X, Building2, TrendingUp, Activity,
   DollarSign, BarChart3, Users, Landmark, ShieldCheck,
@@ -68,7 +69,7 @@ function useTearSheet(symbol: string) {
     setFundLoading(true);
     setFundError(null);
     try {
-      const res = await fetch(
+      const res = await fetchWithAuth(
         `${API_BASE}/market/fundamentals?symbol=${encodeURIComponent(symbol)}&accessToken=${encodeURIComponent(accessToken)}`
       );
       const data = await res.json() as FundamentalData;
