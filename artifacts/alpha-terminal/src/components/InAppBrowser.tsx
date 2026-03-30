@@ -4,16 +4,15 @@ import { useRef, useEffect, useState, useCallback } from "react";
 
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
 
-function proxyUrl(url: string, title?: string | null, source?: string | null, sourceUrl?: string | null) {
+function proxyUrl(url: string, title?: string | null, source?: string | null) {
   let qs = `url=${encodeURIComponent(url)}`;
   if (title) qs += `&title=${encodeURIComponent(title)}`;
   if (source) qs += `&source=${encodeURIComponent(source)}`;
-  if (sourceUrl) qs += `&sourceUrl=${encodeURIComponent(sourceUrl)}`;
   return `${API_BASE}/market/proxy-article?${qs}`;
 }
 
 export function InAppBrowser() {
-  const { browserUrl, browserTitle, browserSource, browserSourceUrl, closeBrowser } = useTerminalStore();
+  const { browserUrl, browserTitle, browserSource, closeBrowser } = useTerminalStore();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -63,9 +62,9 @@ export function InAppBrowser() {
     setLoading(true);
     setError(false);
     if (iframeRef.current && currentUrl) {
-      iframeRef.current.src = proxyUrl(currentUrl, browserTitle, browserSource, browserSourceUrl);
+      iframeRef.current.src = proxyUrl(currentUrl, browserTitle, browserSource);
     }
-  }, [currentUrl, browserTitle, browserSource, browserSourceUrl]);
+  }, [currentUrl, browserTitle, browserSource]);
 
   const handleBack = useCallback(() => {
     if (history.length === 0) return;
@@ -202,7 +201,7 @@ export function InAppBrowser() {
         ) : (
           <iframe
             ref={iframeRef}
-            src={proxyUrl(currentUrl, browserTitle, browserSource, browserSourceUrl)}
+            src={proxyUrl(currentUrl, browserTitle, browserSource)}
             className="w-full h-full border-0"
             sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
             referrerPolicy="no-referrer"

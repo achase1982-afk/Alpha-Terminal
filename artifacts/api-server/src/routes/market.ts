@@ -568,39 +568,6 @@ function futuresNewsSymbol(sym: string): string {
   return upper;
 }
 
-const FUTURES_NAME_MAP: Record<string, string> = {
-  "/ES": "S&P 500 futures",
-  "/MES": "S&P 500 futures",
-  "/NQ": "Nasdaq futures",
-  "/MNQ": "Nasdaq futures",
-  "/YM": "Dow Jones futures",
-  "/MYM": "Dow Jones futures",
-  "/RTY": "Russell 2000 futures",
-  "/M2K": "Russell 2000 futures",
-  "/CL": "crude oil futures",
-  "/MCL": "crude oil futures",
-  "/GC": "gold futures",
-  "/MGC": "gold futures",
-  "/SI": "silver futures",
-  "/ZB": "treasury bond futures",
-  "/ZN": "treasury note futures",
-  "/BZ": "Brent crude oil futures",
-  "/NG": "natural gas futures",
-  "/HG": "copper futures",
-  "/6E": "euro futures",
-  "/6J": "yen futures",
-};
-
-function googleNewsQuery(symbol: string): string {
-  const upper = symbol.toUpperCase().trim();
-  if (upper.startsWith("/")) {
-    const base = upper.replace(/[FGHJKMNQUVXZ]\d{1,2}$/, "");
-    return FUTURES_NAME_MAP[base] || FUTURES_NAME_MAP[upper] || `${upper} futures`;
-  }
-  if (upper.startsWith("$")) return upper.slice(1) + " index stock market";
-  return upper + " stock";
-}
-
 function extractTag(xml: string, tag: string): string {
   const open = `<${tag}`;
   const close = `</${tag}>`;
@@ -617,107 +584,110 @@ function extractTag(xml: string, tag: string): string {
   return content;
 }
 
-function extractGoogleSource(title: string): { headline: string; source: string } {
-  const sepIdx = title.lastIndexOf(" - ");
-  if (sepIdx > 0) {
-    return {
-      headline: title.slice(0, sepIdx).trim(),
-      source: title.slice(sepIdx + 3).trim(),
-    };
-  }
-  return { headline: title, source: "Google News" };
-}
-
 interface NormalizedArticle {
   id: number;
   source: string;
   headline: string;
   summary: string;
   url: string;
-  sourceUrl?: string;
+
   image: string;
   datetime: number;
   related: string;
 }
 
-async function fetchGoogleNews(symbol: string, logger: any): Promise<NormalizedArticle[]> {
-  const query = googleNewsQuery(symbol);
-  const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query + " when:1d")}&hl=en-US&gl=US&ceid=US:en`;
+async function fetchYahooFinanceNews(symbol: string, logger: any): Promise<NormalizedArticle[]> {
+  const yahooSymbol = yahooNewsSymbol(symbol);
+  const feeds: string[] = [];
 
-  try {
-    const response = await fetch(rssUrl, {
-      headers: { "User-Agent": "Mozilla/5.0" },
-      signal: AbortSignal.timeout(8000),
-    });
-
-    if (!response.ok) {
-      logger.warn({ status: response.status, symbol, query }, "Google News RSS error");
-      return [];
-    }
-
-    const xml = await response.text();
-    const items: NormalizedArticle[] = [];
-    let searchFrom = 0;
-
-    while (items.length < 30) {
-      const itemStart = xml.indexOf("<item>", searchFrom);
-      if (itemStart === -1) break;
-      const itemEnd = xml.indexOf("</item>", itemStart);
-      if (itemEnd === -1) break;
-      const itemXml = xml.slice(itemStart, itemEnd + 7);
-      searchFrom = itemEnd + 7;
-
-      const rawTitle = extractTag(itemXml, "title");
-      const link = extractTag(itemXml, "link");
-      const pubDate = extractTag(itemXml, "pubDate");
-      const description = extractTag(itemXml, "description");
-
-      const sourceUrlMatch = itemXml.match(/<source\s+url="([^"]+)"/);
-      const sourceUrl = sourceUrlMatch?.[1] || "";
-
-      if (!rawTitle || !link) continue;
-
-      const { headline, source } = extractGoogleSource(rawTitle);
-      const datetime = pubDate ? Math.floor(new Date(pubDate).getTime() / 1000) : Math.floor(Date.now() / 1000);
-
-      let cleanDesc = description
-        .replace(/&amp;/g, "&")
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
-        .replace(/&quot;/g, '"')
-        .replace(/&#39;/g, "'")
-        .replace(/&nbsp;/g, " ")
-        .replace(/<[^>]*>/g, "")
-        .replace(/\s+/g, " ")
-        .trim();
-      const headlineLower = headline.toLowerCase();
-      const descParts = cleanDesc.split(/\s{2,}/);
-      cleanDesc = descParts
-        .filter(p => p.length > 10 && !p.toLowerCase().startsWith(headlineLower.slice(0, 30)))
-        .join(" ")
-        .trim();
-      if (cleanDesc.length > 300) cleanDesc = cleanDesc.slice(0, 297) + "...";
-      if (cleanDesc.length < 10) cleanDesc = "";
-
-      items.push({
-        id: Math.abs(hashString(link)),
-        source: source.toUpperCase(),
-        headline,
-        summary: cleanDesc,
-        url: link,
-        sourceUrl: sourceUrl || undefined,
-        image: "",
-        datetime,
-        related: symbol,
-      });
-    }
-
-    logger.info({ symbol, query, count: items.length }, "Google News RSS fetched");
-    return items;
-  } catch (err) {
-    logger.warn({ err, symbol }, "Google News RSS fetch failed");
-    return [];
+  if (yahooSymbol) {
+    feeds.push(`https://finance.yahoo.com/rss/headline?s=${encodeURIComponent(yahooSymbol)}`);
   }
+  feeds.push("https://finance.yahoo.com/rss/topstories");
+
+  const articles: NormalizedArticle[] = [];
+  const seen = new Set<string>();
+
+  for (const feedUrl of feeds) {
+    try {
+      const response = await fetch(feedUrl, {
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1)" },
+        signal: AbortSignal.timeout(8000),
+      });
+
+      if (!response.ok) continue;
+
+      const xml = await response.text();
+      let searchFrom = 0;
+
+      while (articles.length < 40) {
+        const itemStart = xml.indexOf("<item>", searchFrom);
+        if (itemStart === -1) break;
+        const itemEnd = xml.indexOf("</item>", itemStart);
+        if (itemEnd === -1) break;
+        const itemXml = xml.slice(itemStart, itemEnd + 7);
+        searchFrom = itemEnd + 7;
+
+        const title = extractTag(itemXml, "title");
+        const link = extractTag(itemXml, "link");
+        const pubDate = extractTag(itemXml, "pubDate");
+        const description = extractTag(itemXml, "description");
+
+        if (!title || !link) continue;
+
+        const key = title.toLowerCase().slice(0, 50);
+        if (seen.has(key)) continue;
+        seen.add(key);
+
+        const datetime = pubDate ? Math.floor(new Date(pubDate).getTime() / 1000) : Math.floor(Date.now() / 1000);
+
+        let cleanDesc = (description || "")
+          .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+          .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ")
+          .replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
+        if (cleanDesc.length > 300) cleanDesc = cleanDesc.slice(0, 297) + "...";
+
+        let source = "YAHOO FINANCE";
+        const sourceMatch = itemXml.match(/<source[^>]*>([^<]+)<\/source>/);
+        if (sourceMatch) source = sourceMatch[1].toUpperCase();
+
+        articles.push({
+          id: Math.abs(hashString(link)),
+          source,
+          headline: title,
+          summary: cleanDesc,
+          url: link,
+          image: "",
+          datetime,
+          related: symbol,
+        });
+      }
+    } catch (err) {
+      logger.warn({ err, feedUrl }, "Yahoo Finance RSS fetch failed");
+    }
+  }
+
+  logger.info({ symbol, count: articles.length }, "Yahoo Finance RSS fetched");
+  return articles;
+}
+
+function yahooNewsSymbol(symbol: string): string {
+  if (symbol.startsWith("/")) {
+    const futuresMap: Record<string, string> = {
+      "/ES": "ES=F", "/NQ": "NQ=F", "/YM": "YM=F", "/RTY": "RTY=F",
+      "/CL": "CL=F", "/GC": "GC=F", "/SI": "SI=F", "/NG": "NG=F",
+      "/ZB": "ZB=F", "/ZN": "ZN=F", "/ZF": "ZF=F", "/ZT": "ZT=F",
+      "/6E": "6E=F", "/6J": "6J=F", "/6B": "6B=F",
+    };
+    return futuresMap[symbol] || "";
+  }
+  if (symbol.startsWith("$")) {
+    const indexMap: Record<string, string> = {
+      "$SPX": "^GSPC", "$NDX": "^NDX", "$DJI": "^DJI", "$RUT": "^RUT", "$VIX": "^VIX",
+    };
+    return indexMap[symbol] || symbol.replace(/^\$/, "");
+  }
+  return symbol;
 }
 
 function hashString(s: string): number {
@@ -782,15 +752,15 @@ router.get("/news", async (req, res) => {
   const finnhubSymbol = isFuturesNews ? futuresNewsSymbol(symbol) : symbol.replace(/^\$/, "");
   const apiKey = process.env["FINNHUB_API_KEY"];
 
-  const [googleArticles, finnhubArticles] = await Promise.all([
-    fetchGoogleNews(symbol, req.log),
+  const [finnhubArticles, yahooArticles] = await Promise.all([
     apiKey ? fetchFinnhubNews(finnhubSymbol, apiKey, req.log) : Promise.resolve([]),
+    fetchYahooFinanceNews(symbol, req.log),
   ]);
 
   const seenHeadlines = new Set<string>();
   const merged: NormalizedArticle[] = [];
 
-  for (const a of googleArticles) {
+  for (const a of finnhubArticles) {
     const key = a.headline.toLowerCase().slice(0, 60);
     if (!seenHeadlines.has(key)) {
       seenHeadlines.add(key);
@@ -798,7 +768,7 @@ router.get("/news", async (req, res) => {
     }
   }
 
-  for (const a of finnhubArticles) {
+  for (const a of yahooArticles) {
     const key = a.headline.toLowerCase().slice(0, 60);
     if (!seenHeadlines.has(key)) {
       seenHeadlines.add(key);
@@ -828,19 +798,6 @@ async function resolveArticleUrl(url: string): Promise<string> {
   }
 }
 
-function titleToKeywords(title: string): string[] {
-  return title
-    .toLowerCase()
-    .replace(/[^a-z0-9 ]/g, "")
-    .split(/\s+/)
-    .filter((w) => w.length > 3 && !["this", "that", "with", "from", "have", "been", "will", "says", "said", "more", "than", "what", "when", "just", "also", "over", "into", "after", "about"].includes(w));
-}
-
-function titleMatchScore(candidate: string, keywords: string[]): number {
-  const lower = candidate.toLowerCase();
-  return keywords.filter((k) => lower.includes(k)).length;
-}
-
 function isSafeUrl(candidate: string): boolean {
   try {
     const u = new URL(candidate);
@@ -853,178 +810,24 @@ function isSafeUrl(candidate: string): boolean {
   }
 }
 
-async function findArticleOnPublisher(sourceUrl: string, title: string): Promise<string | null> {
-  let hostname: string;
-  try {
-    if (!isSafeUrl(sourceUrl)) return null;
-    hostname = new URL(sourceUrl).hostname;
-  } catch {
-    return null;
-  }
-  const keywords = titleToKeywords(title);
-  if (keywords.length < 2) return null;
-
-  const rssPaths = ["/feed", "/rss", "/feed.xml", "/rss.xml", "/atom.xml", "/index.xml"];
-  const controller = new AbortController();
-  const budgetTimer = setTimeout(() => controller.abort(), 8000);
-
-  try {
-    const rssProbes = rssPaths.map(async (rssPath) => {
-      const rssUrl = new URL(rssPath, sourceUrl).href;
-      try {
-        const resp = await fetch(rssUrl, {
-          headers: { "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1)", Accept: "application/rss+xml,application/xml,text/xml,*/*" },
-          redirect: "follow",
-          signal: controller.signal,
-        });
-        if (!resp.ok) return null;
-        const ct = resp.headers.get("content-type") || "";
-        const body = await resp.text();
-        if (!ct.includes("xml") && !body.trimStart().startsWith("<?xml") && !body.trimStart().startsWith("<rss") && !body.trimStart().startsWith("<feed")) return null;
-        const items = body.match(/<item>[\s\S]*?<\/item>|<entry>[\s\S]*?<\/entry>/g) || [];
-        for (const item of items) {
-          const itemTitle = item.match(/<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?<\/title>/)?.[1] || "";
-          const score = titleMatchScore(itemTitle, keywords);
-          if (score >= Math.min(3, keywords.length - 1)) {
-            const itemLink = item.match(/<link>(?:<!\[CDATA\[)?(https?:\/\/[^\s<\]]+)/)?.[1]
-              || item.match(/<link[^>]+href="(https?:\/\/[^"]+)"/)?.[1];
-            if (itemLink && isSafeUrl(itemLink)) return itemLink;
-          }
-        }
-      } catch {}
-      return null;
-    });
-
-    const rssResults = await Promise.all(rssProbes);
-    const rssHit = rssResults.find((r) => r !== null);
-    if (rssHit) return rssHit;
-
-    if (!controller.signal.aborted) {
-      const resp = await fetch(sourceUrl, {
-        headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36" },
-        redirect: "follow",
-        signal: controller.signal,
-      });
-      if (resp.ok) {
-        const html = await resp.text();
-        const linkRe = /href="(https?:\/\/[^"]+)"/g;
-        let match: RegExpExecArray | null;
-        let best: { url: string; score: number } | null = null;
-        while ((match = linkRe.exec(html)) !== null) {
-          const href = match[1];
-          try {
-            if (new URL(href).hostname !== hostname) continue;
-          } catch {
-            continue;
-          }
-          const urlScore = titleMatchScore(href, keywords);
-          if (urlScore >= 2 && (!best || urlScore > best.score)) {
-            best = { url: href, score: urlScore };
-          }
-        }
-        if (best && best.score >= Math.min(3, keywords.length - 1) && isSafeUrl(best.url)) return best.url;
-      }
-    }
-  } catch {}
-  finally {
-    clearTimeout(budgetTimer);
-  }
-
-  return null;
-}
-
-async function resolveGoogleNewsUrl(gnUrl: string, sourceUrl?: string, title?: string): Promise<string> {
-  if (sourceUrl && title) {
-    const found = await findArticleOnPublisher(sourceUrl, title);
-    if (found) return found;
-  }
-
-  try {
-    const resp = await fetch(gnUrl, {
-      method: "GET",
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      },
-      redirect: "follow",
-      signal: AbortSignal.timeout(8000),
-    });
-
-    if (resp.url && !resp.url.includes("news.google.com") && !resp.url.includes("google.com/sorry")) {
-      return unwrapGoogleRedirect(resp.url);
-    }
-
-    if (resp.ok) {
-      const html = await resp.text();
-      const dataUrlMatch = html.match(/data-url="(https?:\/\/[^"]+)"/);
-      if (dataUrlMatch) return unwrapGoogleRedirect(decodeHtmlEntities(dataUrlMatch[1]));
-      const metaRefreshMatch = html.match(/<meta[^>]+http-equiv=["']refresh["'][^>]+content=["'][^"']*url=(https?:\/\/[^"'>\s]+)/i);
-      if (metaRefreshMatch) return unwrapGoogleRedirect(decodeHtmlEntities(metaRefreshMatch[1]));
-      const anchorMatches = html.match(/<a[^>]+href="(https?:\/\/[^"]+)"/gi);
-      if (anchorMatches) {
-        for (const m of anchorMatches) {
-          const hrefMatch = m.match(/href="(https?:\/\/[^"]+)"/);
-          if (hrefMatch) {
-            const candidate = unwrapGoogleRedirect(decodeHtmlEntities(hrefMatch[1]));
-            if (candidate.length > 30 && !candidate.includes("google.com") && !candidate.includes("gstatic.com")) {
-              return candidate;
-            }
-          }
-        }
-      }
-    }
-  } catch {}
-
-  return sourceUrl || gnUrl;
-}
-
-function decodeHtmlEntities(s: string): string {
-  return s.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16))).replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(parseInt(dec, 10)));
-}
-
-function unwrapGoogleRedirect(candidate: string): string {
-  try {
-    const u = new URL(candidate);
-    if ((u.hostname === "www.google.com" || u.hostname === "google.com") && u.pathname === "/url") {
-      const q = u.searchParams.get("q") || u.searchParams.get("url");
-      if (q && (q.startsWith("http://") || q.startsWith("https://"))) {
-        return q;
-      }
-    }
-  } catch {}
-  return candidate;
-}
-
 router.get("/proxy-article", async (req, res) => {
   const url = req.query.url as string | undefined;
   if (!url) return res.status(400).json({ error: "url required" });
 
   try {
-    const parsed = new URL(url);
-    if (!["http:", "https:"].includes(parsed.protocol)) {
-      return res.status(400).json({ error: "invalid url" });
-    }
-
-    const blockedPatterns = /^(localhost|127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|0\.0\.0\.0|\[::1\])/i;
-    if (blockedPatterns.test(parsed.hostname)) {
+    if (!isSafeUrl(url)) {
       return res.status(400).json({ error: "blocked host" });
     }
 
-    const isGoogleNews = url.includes("news.google.com/rss/articles/") || url.includes("news.google.com/articles/");
-    const isFinnhub = url.includes("finnhub.io/api/news");
+    const parsed = new URL(url);
+    const isFinnhub = parsed.hostname === "finnhub.io" && parsed.pathname.startsWith("/api/news");
 
     let articleUrl = url;
     if (isFinnhub) {
       articleUrl = await resolveArticleUrl(url);
-    } else if (isGoogleNews) {
-      const sourceBaseUrl = req.query.sourceUrl as string | undefined;
-      const articleTitle = req.query.title as string | undefined;
-      articleUrl = await resolveGoogleNewsUrl(url, sourceBaseUrl, articleTitle);
-      req.log.info({ original: url, resolved: articleUrl }, "Google News URL resolved");
-    }
-
-    if (!isSafeUrl(articleUrl)) {
-      return res.status(400).json({ error: "blocked host" });
+      if (!isSafeUrl(articleUrl)) {
+        return res.status(400).json({ error: "blocked host" });
+      }
     }
 
     const response = await fetch(articleUrl, {
