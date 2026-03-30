@@ -11,6 +11,7 @@ import { ActionPlanCard } from "./ActionPlanCard";
 import { InvalidationBox } from "./InvalidationBox";
 import { LevelsToWatch } from "./LevelsToWatch";
 import { DEFAULT_PULSE_SYMBOLS } from "../MarketPulseModal";
+import { AiThinkingFeed } from "../ai-shared/AiThinkingFeed";
 
 const API_BASE = "/api";
 const CLUSTER_ORDER: ClusterKey[] = ["rates", "credit", "volLevel", "volTermStructure", "breadth"];
@@ -176,7 +177,10 @@ export function MarketPulseDashboard({ autoGenerate }: MarketPulseDashboardProps
       </div>
 
       {isActive && (
-        <PulseLoadingStatus thinkingTokens={thinkingTokens} />
+        <>
+          <PulseLoadingStatus thinkingTokens={thinkingTokens} />
+          <AiThinkingFeed texts={thinkingTokens} isStreaming={true} />
+        </>
       )}
 
       {error && !isActive && (
@@ -201,6 +205,10 @@ export function MarketPulseDashboard({ autoGenerate }: MarketPulseDashboardProps
           />
 
           <BiasHero data={pulseData} />
+
+          {thinkingTokens.length > 0 && (
+            <AiThinkingFeed texts={thinkingTokens} isStreaming={false} />
+          )}
 
           {pulseData.hasDivergence && pulseData.divergenceNote && (
             <div
