@@ -2,19 +2,20 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 export interface LiveQuote {
-  symbol:     string;
-  last:       number | null;
-  bid:        number | null;
-  ask:        number | null;
-  bidSize:    number | null;
-  askSize:    number | null;
-  change:     number | null;
-  changePct:  number | null;
-  volume:     number | null;
-  high:       number | null;
-  low:        number | null;
-  close:      number | null;
-  ts:         number;
+  symbol:       string;
+  last:         number | null;
+  extendedLast: number | null;
+  bid:          number | null;
+  ask:          number | null;
+  bidSize:      number | null;
+  askSize:      number | null;
+  change:       number | null;
+  changePct:    number | null;
+  volume:       number | null;
+  high:         number | null;
+  low:          number | null;
+  close:        number | null;
+  ts:           number;
 }
 
 interface ChatMessage {

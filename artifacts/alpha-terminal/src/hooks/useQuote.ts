@@ -16,6 +16,7 @@ export interface QuoteData {
   symbol:           string;
   description:      string | null;
   last:             number | null;
+  extendedLast:     number | null;
   bid:              number | null;
   ask:              number | null;
   bidSize:          number | null;
@@ -60,17 +61,18 @@ export function useQuote(symbol: string) {
   const data: QuoteData = {
     symbol:           symUpper,
     description,
-    last:             streamQuote?.last      ?? null,
-    bid:              streamQuote?.bid       ?? null,
-    ask:              streamQuote?.ask       ?? null,
-    bidSize:          streamQuote?.bidSize   ?? null,
-    askSize:          streamQuote?.askSize   ?? null,
-    change:           streamQuote?.change    ?? null,
-    changePct:        streamQuote?.changePct ?? null,
-    volume:           streamQuote?.volume    ?? null,
-    high:             streamQuote?.high      ?? null,
-    low:              streamQuote?.low       ?? null,
-    close:            streamQuote?.close     ?? null,
+    last:             streamQuote?.last         ?? null,
+    extendedLast:     streamQuote?.extendedLast ?? null,
+    bid:              streamQuote?.bid          ?? null,
+    ask:              streamQuote?.ask          ?? null,
+    bidSize:          streamQuote?.bidSize      ?? null,
+    askSize:          streamQuote?.askSize      ?? null,
+    change:           streamQuote?.change       ?? null,
+    changePct:        streamQuote?.changePct    ?? null,
+    volume:           streamQuote?.volume       ?? null,
+    high:             streamQuote?.high         ?? null,
+    low:              streamQuote?.low          ?? null,
+    close:            streamQuote?.close        ?? null,
     fiftyTwoWeekHigh,
     fiftyTwoWeekLow,
     peRatio,

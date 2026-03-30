@@ -85,17 +85,20 @@ const OPT_FIELDS_STR = "0,2,3,4,8,9,10,11,12,13,14,19,22,23,28";
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 export interface LiveQuote {
-  symbol:     string;
-  last:       number | null;
-  bid:        number | null;
-  ask:        number | null;
-  change:     number | null;
-  changePct:  number | null;
-  volume:     number | null;
-  high:       number | null;
-  low:        number | null;
-  close:      number | null;
-  ts:         number;   // epoch ms of last update
+  symbol:       string;
+  last:         number | null;
+  extendedLast: number | null;
+  bid:          number | null;
+  ask:          number | null;
+  bidSize:      number | null;
+  askSize:      number | null;
+  change:       number | null;
+  changePct:    number | null;
+  volume:       number | null;
+  high:         number | null;
+  low:          number | null;
+  close:        number | null;
+  ts:           number;
 }
 
 export interface OptionTick {
@@ -392,7 +395,7 @@ function handleData(content: Record<string, unknown>[]) {
     const sym = fromSchwabKey(schwabKey);
 
     const existing = quoteCache.get(sym) ?? {
-      symbol: sym, last: null, bid: null, ask: null,
+      symbol: sym, last: null, extendedLast: null, bid: null, ask: null,
       bidSize: null, askSize: null,
       change: null, changePct: null, volume: null,
       high: null, low: null, close: null, ts: 0,
@@ -403,31 +406,33 @@ function handleData(content: Record<string, unknown>[]) {
       return typeof v === "number" && !isNaN(v) ? v : null;
     };
 
-    const lastVal  = pick(FIELD.LAST_ALL_SESS) ?? existing.last;
-    const closeVal = pick(FIELD.CLOSE)     ?? existing.close;
+    const regLastVal     = pick(FIELD.REG_LAST)      ?? existing.last;
+    const extendedLastVal = pick(FIELD.LAST_ALL_SESS) ?? existing.extendedLast;
+    const closeVal       = pick(FIELD.CLOSE)          ?? existing.close;
 
     let changeVal:    number | null = existing.change;
     let changePctVal: number | null = existing.changePct;
-    if (lastVal !== null && closeVal !== null && closeVal !== 0) {
-      changeVal    = lastVal - closeVal;
+    if (regLastVal !== null && closeVal !== null && closeVal !== 0) {
+      changeVal    = regLastVal - closeVal;
       changePctVal = (changeVal / closeVal) * 100;
     }
 
     const updated: LiveQuote = {
       ...existing,
-      symbol:    sym,
-      last:      lastVal,
-      bid:       pick(FIELD.BID)      ?? existing.bid,
-      ask:       pick(FIELD.ASK)      ?? existing.ask,
-      bidSize:   pick(FIELD.BID_SIZE) ?? existing.bidSize,
-      askSize:   pick(FIELD.ASK_SIZE) ?? existing.askSize,
-      change:    changeVal,
-      changePct: changePctVal,
-      volume:    pick(FIELD.VOLUME)   ?? existing.volume,
-      high:      pick(FIELD.HIGH)     ?? existing.high,
-      low:       pick(FIELD.LOW)      ?? existing.low,
-      close:     closeVal,
-      ts:        Date.now(),
+      symbol:       sym,
+      last:         regLastVal,
+      extendedLast: extendedLastVal,
+      bid:          pick(FIELD.BID)      ?? existing.bid,
+      ask:          pick(FIELD.ASK)      ?? existing.ask,
+      bidSize:      pick(FIELD.BID_SIZE) ?? existing.bidSize,
+      askSize:      pick(FIELD.ASK_SIZE) ?? existing.askSize,
+      change:       changeVal,
+      changePct:    changePctVal,
+      volume:       pick(FIELD.VOLUME)   ?? existing.volume,
+      high:         pick(FIELD.HIGH)     ?? existing.high,
+      low:          pick(FIELD.LOW)      ?? existing.low,
+      close:        closeVal,
+      ts:           Date.now(),
     };
 
     quoteCache.set(sym, updated);
@@ -451,7 +456,7 @@ function handleFuturesData(content: Record<string, unknown>[]) {
     const sym = fromSchwabKey(schwabKey);
 
     const existing = quoteCache.get(sym) ?? {
-      symbol: sym, last: null, bid: null, ask: null,
+      symbol: sym, last: null, extendedLast: null, bid: null, ask: null,
       bidSize: null, askSize: null,
       change: null, changePct: null, volume: null,
       high: null, low: null, close: null, ts: 0,
@@ -476,19 +481,20 @@ function handleFuturesData(content: Record<string, unknown>[]) {
 
     const updated: LiveQuote = {
       ...existing,
-      symbol:    sym,
-      last:      lastVal,
-      bid:       pick(FUT_FIELD.BID)      ?? existing.bid,
-      ask:       pick(FUT_FIELD.ASK)      ?? existing.ask,
-      bidSize:   pick(FUT_FIELD.BID_SIZE) ?? existing.bidSize,
-      askSize:   pick(FUT_FIELD.ASK_SIZE) ?? existing.askSize,
-      change:    changeVal,
-      changePct: changePctVal,
-      volume:    pick(FUT_FIELD.VOLUME)   ?? existing.volume,
-      high:      pick(FUT_FIELD.HIGH)     ?? existing.high,
-      low:       pick(FUT_FIELD.LOW)      ?? existing.low,
-      close:     closeVal,
-      ts:        Date.now(),
+      symbol:       sym,
+      last:         lastVal,
+      extendedLast: lastVal,
+      bid:          pick(FUT_FIELD.BID)      ?? existing.bid,
+      ask:          pick(FUT_FIELD.ASK)      ?? existing.ask,
+      bidSize:      pick(FUT_FIELD.BID_SIZE) ?? existing.bidSize,
+      askSize:      pick(FUT_FIELD.ASK_SIZE) ?? existing.askSize,
+      change:       changeVal,
+      changePct:    changePctVal,
+      volume:       pick(FUT_FIELD.VOLUME)   ?? existing.volume,
+      high:         pick(FUT_FIELD.HIGH)     ?? existing.high,
+      low:          pick(FUT_FIELD.LOW)      ?? existing.low,
+      close:        closeVal,
+      ts:           Date.now(),
     };
 
     quoteCache.set(sym, updated);

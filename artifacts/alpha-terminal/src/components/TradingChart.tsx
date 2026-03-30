@@ -199,7 +199,7 @@ export function TradingChart({ symbol, data, isLoading, error, timedOut, tokenEx
     const unsub = useTerminalStore.subscribe((state) => {
       const tick = state.streamPrices[symUpper];
       if (!tick || !candleSeriesRef.current || lastCandleTimeRef.current === 0) return;
-      const price = tick.last;
+      const price = tick.extendedLast ?? tick.last;
       if (price === null || price === undefined || price === prevLast) return;
       prevLast = price;
       const candleTime = lastCandleTimeRef.current as Time;
