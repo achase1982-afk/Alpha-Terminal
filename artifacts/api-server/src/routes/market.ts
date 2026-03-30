@@ -596,96 +596,65 @@ interface NormalizedArticle {
   related: string;
 }
 
-async function fetchYahooFinanceNews(symbol: string, logger: any): Promise<NormalizedArticle[]> {
-  const yahooSymbol = yahooNewsSymbol(symbol);
-  const feeds: string[] = [];
+async function fetchPolygonNews(symbol: string, apiKey: string, logger: any): Promise<NormalizedArticle[]> {
+  const polygonTicker = polygonNewsTicker(symbol);
+  const tickerParam = polygonTicker ? `&ticker=${encodeURIComponent(polygonTicker)}` : "";
+  const url = `https://api.polygon.io/v2/reference/news?limit=50${tickerParam}&order=desc&sort=published_utc&apiKey=${apiKey}`;
 
-  if (yahooSymbol) {
-    feeds.push(`https://finance.yahoo.com/rss/headline?s=${encodeURIComponent(yahooSymbol)}`);
-  }
-  feeds.push("https://finance.yahoo.com/rss/topstories");
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
 
-  const articles: NormalizedArticle[] = [];
-  const seen = new Set<string>();
-
-  for (const feedUrl of feeds) {
-    try {
-      const response = await fetch(feedUrl, {
-        headers: { "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1)" },
-        signal: AbortSignal.timeout(8000),
-      });
-
-      if (!response.ok) continue;
-
-      const xml = await response.text();
-      let searchFrom = 0;
-
-      while (articles.length < 40) {
-        const itemStart = xml.indexOf("<item>", searchFrom);
-        if (itemStart === -1) break;
-        const itemEnd = xml.indexOf("</item>", itemStart);
-        if (itemEnd === -1) break;
-        const itemXml = xml.slice(itemStart, itemEnd + 7);
-        searchFrom = itemEnd + 7;
-
-        const title = extractTag(itemXml, "title");
-        const link = extractTag(itemXml, "link");
-        const pubDate = extractTag(itemXml, "pubDate");
-        const description = extractTag(itemXml, "description");
-
-        if (!title || !link) continue;
-
-        const key = title.toLowerCase().slice(0, 50);
-        if (seen.has(key)) continue;
-        seen.add(key);
-
-        const datetime = pubDate ? Math.floor(new Date(pubDate).getTime() / 1000) : Math.floor(Date.now() / 1000);
-
-        let cleanDesc = (description || "")
-          .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
-          .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ")
-          .replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
-        if (cleanDesc.length > 300) cleanDesc = cleanDesc.slice(0, 297) + "...";
-
-        let source = "YAHOO FINANCE";
-        const sourceMatch = itemXml.match(/<source[^>]*>([^<]+)<\/source>/);
-        if (sourceMatch) source = sourceMatch[1].toUpperCase();
-
-        articles.push({
-          id: Math.abs(hashString(link)),
-          source,
-          headline: title,
-          summary: cleanDesc,
-          url: link,
-          image: "",
-          datetime,
-          related: symbol,
-        });
-      }
-    } catch (err) {
-      logger.warn({ err, feedUrl }, "Yahoo Finance RSS fetch failed");
+    if (!response.ok) {
+      logger.warn({ status: response.status, symbol }, "Polygon news API error");
+      return [];
     }
-  }
 
-  logger.info({ symbol, count: articles.length }, "Yahoo Finance RSS fetched");
-  return articles;
+    const data = await response.json() as {
+      results?: Array<{
+        id: string;
+        publisher: { name: string };
+        title: string;
+        article_url: string;
+        image_url?: string;
+        description?: string;
+        published_utc: string;
+        tickers?: string[];
+      }>;
+    };
+
+    const results = data.results || [];
+    logger.info({ symbol, count: results.length }, "Polygon news fetched");
+
+    return results.map(a => ({
+      id: Math.abs(hashString(a.id || a.article_url)),
+      source: (a.publisher?.name || "Polygon").toUpperCase(),
+      headline: a.title || "",
+      summary: (a.description || "").slice(0, 300),
+      url: a.article_url || "",
+      image: a.image_url || "",
+      datetime: a.published_utc ? Math.floor(new Date(a.published_utc).getTime() / 1000) : Math.floor(Date.now() / 1000),
+      related: polygonTicker || symbol,
+    }));
+  } catch (err) {
+    logger.warn({ err, symbol }, "Polygon news fetch failed");
+    return [];
+  }
 }
 
-function yahooNewsSymbol(symbol: string): string {
+function polygonNewsTicker(symbol: string): string {
   if (symbol.startsWith("/")) {
     const futuresMap: Record<string, string> = {
-      "/ES": "ES=F", "/NQ": "NQ=F", "/YM": "YM=F", "/RTY": "RTY=F",
-      "/CL": "CL=F", "/GC": "GC=F", "/SI": "SI=F", "/NG": "NG=F",
-      "/ZB": "ZB=F", "/ZN": "ZN=F", "/ZF": "ZF=F", "/ZT": "ZT=F",
-      "/6E": "6E=F", "/6J": "6J=F", "/6B": "6B=F",
+      "/ES": "I:SPX", "/NQ": "I:NDX", "/YM": "I:DJI", "/RTY": "I:RUT",
+      "/CL": "X:CLUSD", "/GC": "X:GCUSD", "/SI": "X:SIUSD", "/NG": "X:NGUSD",
     };
-    return futuresMap[symbol] || "";
+    const base = symbol.replace(/[FGHJKMNQUVXZ]\d{1,2}$/, "");
+    return futuresMap[base] || futuresMap[symbol] || "";
   }
   if (symbol.startsWith("$")) {
     const indexMap: Record<string, string> = {
-      "$SPX": "^GSPC", "$NDX": "^NDX", "$DJI": "^DJI", "$RUT": "^RUT", "$VIX": "^VIX",
+      "$SPX": "I:SPX", "$NDX": "I:NDX", "$DJI": "I:DJI", "$RUT": "I:RUT", "$VIX": "I:VIX",
     };
-    return indexMap[symbol] || symbol.replace(/^\$/, "");
+    return indexMap[symbol] || "";
   }
   return symbol;
 }
@@ -750,11 +719,12 @@ router.get("/news", async (req, res) => {
 
   const isFuturesNews = symbol.startsWith("/");
   const finnhubSymbol = isFuturesNews ? futuresNewsSymbol(symbol) : symbol.replace(/^\$/, "");
-  const apiKey = process.env["FINNHUB_API_KEY"];
+  const finnhubKey = process.env["FINNHUB_API_KEY"];
+  const polygonKey = process.env["POLYGON_API_KEY"];
 
-  const [finnhubArticles, yahooArticles] = await Promise.all([
-    apiKey ? fetchFinnhubNews(finnhubSymbol, apiKey, req.log) : Promise.resolve([]),
-    fetchYahooFinanceNews(symbol, req.log),
+  const [finnhubArticles, polygonArticles] = await Promise.all([
+    finnhubKey ? fetchFinnhubNews(finnhubSymbol, finnhubKey, req.log) : Promise.resolve([]),
+    polygonKey ? fetchPolygonNews(symbol, polygonKey, req.log) : Promise.resolve([]),
   ]);
 
   const seenHeadlines = new Set<string>();
@@ -768,7 +738,7 @@ router.get("/news", async (req, res) => {
     }
   }
 
-  for (const a of yahooArticles) {
+  for (const a of polygonArticles) {
     const key = a.headline.toLowerCase().slice(0, 60);
     if (!seenHeadlines.has(key)) {
       seenHeadlines.add(key);
