@@ -13,85 +13,9 @@ import {
 import ReactMarkdown from "react-markdown";
 import { MarketPulseDashboard } from "@/components/market-pulse/MarketPulseDashboard";
 import { AiSubTabs, type AiSubTab } from "@/components/ai-tab/AiSubTabs";
+import { AiThinkingFeed } from "@/components/ai-shared/AiThinkingFeed";
 
 const API_BASE = "/api";
-
-const THINKING_PHRASES = [
-  "Initializing secure connection...",
-  "Processing market data feed...",
-  "Scanning options chain...",
-  "Computing implied volatility surface...",
-  "Mapping gamma exposure by strike...",
-  "Evaluating put/call skew...",
-  "Calculating spread risk profiles...",
-  "Running Monte Carlo probability engine...",
-  "Analyzing multi-leg structures...",
-  "Identifying high-conviction setups...",
-  "Building risk-reward models...",
-  "Optimizing position sizing...",
-  "Compiling strategy output...",
-];
-
-const AI_THINKING_STYLES = `
-@keyframes ai-sparkle {
-  0%, 100% { opacity: 0.4; transform: scale(0.85); }
-  50% { opacity: 1; transform: scale(1.15); }
-}
-@keyframes ai-breathe {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 1; }
-}
-@keyframes ai-fade-swap {
-  0% { opacity: 0; }
-  15% { opacity: 1; }
-  85% { opacity: 1; }
-  100% { opacity: 0; }
-}
-`;
-
-function AiThinking() {
-  const [phraseIdx, setPhraseIdx] = useState(0);
-
-  useEffect(() => {
-    if (phraseIdx >= THINKING_PHRASES.length - 1) return;
-    const t = setTimeout(() => setPhraseIdx(i => i + 1), 3000);
-    return () => clearTimeout(t);
-  }, [phraseIdx]);
-
-  return (
-    <div className="flex items-center gap-3 py-8 justify-center" style={{ minHeight: 72 }}>
-      <style>{AI_THINKING_STYLES}</style>
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="shrink-0">
-        <path
-          d="M12 2l2.09 6.26L20.18 10l-6.09 1.74L12 18l-2.09-6.26L3.82 10l6.09-1.74L12 2z"
-          fill="#FFB800"
-          style={{ animation: "ai-sparkle 2.4s ease-in-out infinite", transformOrigin: "center" }}
-        />
-        <path
-          d="M19 14l1.05 3.15L23 18.2l-2.95.85L19 22.2l-1.05-3.15L15 18.2l2.95-.85L19 14z"
-          fill="#FFB800"
-          opacity=".6"
-          style={{ animation: "ai-sparkle 2.4s ease-in-out infinite 0.6s", transformOrigin: "center" }}
-        />
-        <path
-          d="M5 14l.7 2.1L8 16.8l-2.3.7L5 19.6l-.7-2.1L2 16.8l2.3-.7L5 14z"
-          fill="#FFB800"
-          opacity=".4"
-          style={{ animation: "ai-sparkle 2.4s ease-in-out infinite 1.2s", transformOrigin: "center" }}
-        />
-      </svg>
-      <div style={{ width: 300, height: 18, position: "relative" }}>
-        <span
-          key={phraseIdx}
-          className="font-mono text-xs text-gray-400 tracking-wide absolute inset-0 flex items-center"
-          style={{ animation: "ai-fade-swap 3s ease-in-out forwards, ai-breathe 3s ease-in-out infinite" }}
-        >
-          {THINKING_PHRASES[phraseIdx]}
-        </span>
-      </div>
-    </div>
-  );
-}
 
 interface StrategyJSON {
   strategyName: string;
@@ -511,6 +435,8 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
   const [chainEnabled, setChainEnabled] = useState(false);
   const [streamingText, setStreamingText] = useState("");
   const [showSettings, setShowSettings] = useState(false);
+  const [thinkingTokens, setThinkingTokens] = useState<string[]>([]);
+  const [showThinkingTranscript, setShowThinkingTranscript] = useState(false);
 
   useEffect(() => {
     if (initialSubTab) setSubTab(initialSubTab);
@@ -533,6 +459,8 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
     if (!quote || !history?.candles) return;
     setAnalysisResult(null);
     setStreamingText("");
+    setThinkingTokens([]);
+    setShowThinkingTranscript(false);
     setActiveResult("analysis");
     setIsStreaming(true);
 
@@ -543,6 +471,7 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
       (chunk) => {
         accumulated += chunk;
         setStreamingText(accumulated);
+        setThinkingTokens((prev) => [...prev, chunk]);
       },
       () => {
         setAnalysisResult(accumulated);
@@ -561,6 +490,8 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
     if (!quote || !accessToken) return;
     setStrategistResult(null);
     setStreamingText("");
+    setThinkingTokens([]);
+    setShowThinkingTranscript(false);
     setActiveResult("strategist");
     setChainEnabled(true);
     setIsStrategizing(true);
@@ -619,6 +550,7 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
         (chunk) => {
           accumulated += chunk;
           setStreamingText(accumulated);
+          setThinkingTokens((prev) => [...prev, chunk]);
         },
         () => {
           setStrategistResult(accumulated);
@@ -707,12 +639,36 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
 
             {activeResult === "strategist" && (
               <div className="border-t border-card-border p-4 bg-[#0c0c0c]">
-                {isStrategizing ? (
-                  <AiThinking />
-                ) : isStreaming ? (
-                  streamingText ? <StrategistResultView content={streamingText} /> : <AiThinking />
-                ) : currentResult ? (
-                  <StrategistResultView content={currentResult} />
+                {(isStrategizing || (isStreaming && !streamingText)) && (
+                  <AiThinkingFeed
+                    tokens={thinkingTokens}
+                    isStreaming={true}
+                  />
+                )}
+                {isStreaming && streamingText ? (
+                  <>
+                    <AiThinkingFeed
+                      tokens={thinkingTokens}
+                      isStreaming={true}
+                    />
+                    <div className="mt-3">
+                      <StrategistResultView content={streamingText} />
+                    </div>
+                  </>
+                ) : !isStrategizing && !isStreaming && currentResult ? (
+                  <>
+                    {thinkingTokens.length > 0 && (
+                      <div className="mb-3">
+                        <AiThinkingFeed
+                          tokens={thinkingTokens}
+                          isStreaming={false}
+                          showTranscript={showThinkingTranscript}
+                          onToggleTranscript={() => setShowThinkingTranscript(!showThinkingTranscript)}
+                        />
+                      </div>
+                    )}
+                    <StrategistResultView content={currentResult} />
+                  </>
                 ) : null}
               </div>
             )}
@@ -739,12 +695,36 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
 
           {activeResult === "analysis" && (
             <div className="bg-card border border-card-border rounded-xl p-4">
+              {isStreaming && !streamingText && (
+                <AiThinkingFeed
+                  tokens={thinkingTokens}
+                  isStreaming={true}
+                />
+              )}
               {isStreaming && streamingText ? (
-                <MarkdownResult content={streamingText} />
-              ) : isStreaming && !streamingText ? (
-                <AiThinking />
-              ) : analysisResult ? (
-                <MarkdownResult content={analysisResult} />
+                <>
+                  <AiThinkingFeed
+                    tokens={thinkingTokens}
+                    isStreaming={true}
+                  />
+                  <div className="mt-3">
+                    <MarkdownResult content={streamingText} />
+                  </div>
+                </>
+              ) : !isStreaming && analysisResult ? (
+                <>
+                  {thinkingTokens.length > 0 && (
+                    <div className="mb-3">
+                      <AiThinkingFeed
+                        tokens={thinkingTokens}
+                        isStreaming={false}
+                        showTranscript={showThinkingTranscript}
+                        onToggleTranscript={() => setShowThinkingTranscript(!showThinkingTranscript)}
+                      />
+                    </div>
+                  )}
+                  <MarkdownResult content={analysisResult} />
+                </>
               ) : null}
             </div>
           )}
