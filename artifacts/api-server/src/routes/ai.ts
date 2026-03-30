@@ -231,6 +231,16 @@ Be specific, data-driven, and concise. Use markdown formatting.`;
     "X-Accel-Buffering": "no",
   });
 
+  req.setTimeout(0);
+  res.setTimeout(0);
+  res.write(": heartbeat\n\n");
+
+  const heartbeat = setInterval(() => {
+    if (!res.writableEnded) {
+      res.write(": heartbeat\n\n");
+    }
+  }, 15000);
+
   try {
     const google = createGoogleGenerativeAI({ apiKey });
     const result = streamText({
@@ -248,9 +258,11 @@ Be specific, data-driven, and concise. Use markdown formatting.`;
         if (typeof (res as any).flush === "function") (res as any).flush();
       }
     }
+    clearInterval(heartbeat);
     res.write("data: [DONE]\n\n");
     res.end();
   } catch (err: unknown) {
+    clearInterval(heartbeat);
     const msg = err instanceof Error ? err.message : String(err);
     req.log.error({ err }, "Technical analysis stream error");
     res.write(`data: ${JSON.stringify({ error: msg })}\n\n`);
@@ -772,13 +784,24 @@ router.post("/market-pulse/stream", async (req, res) => {
     return res.status(500).json({ error: "GEMINI_API_KEY not configured." });
   }
 
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection", "keep-alive");
-  res.setHeader("X-Accel-Buffering", "no");
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+  });
 
-  req.setTimeout(120000);
-  res.setTimeout(120000);
+  req.setTimeout(0);
+  res.setTimeout(0);
+  res.write(": heartbeat\n\n");
+  res.write(`event: thinking\ndata: ${JSON.stringify({ type: "thinking", text: "Fetching live market data..." })}\n\n`);
+  if (typeof (res as any).flush === "function") (res as any).flush();
+
+  const heartbeat = setInterval(() => {
+    if (!res.writableEnded) {
+      res.write(": heartbeat\n\n");
+    }
+  }, 15000);
 
   const { session, timeET, sessionGuidance } = getMarketSession();
 
@@ -786,7 +809,10 @@ router.post("/market-pulse/stream", async (req, res) => {
   try {
     const { dataMap } = await fetchMacroPulseData(accessToken, symbols);
     dataBlock = buildPulseDataBlock(dataMap, symbols && symbols.length > 0 ? symbols : undefined);
+    res.write(`event: thinking\ndata: ${JSON.stringify({ type: "thinking", text: "Market data loaded. Analyzing with AI..." })}\n\n`);
+    if (typeof (res as any).flush === "function") (res as any).flush();
   } catch (fetchErr: unknown) {
+    clearInterval(heartbeat);
     const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
     req.log.error({ err: fetchErr }, "Market pulse stream data fetch error");
     res.write(`event: error\ndata: ${JSON.stringify({ type: "error", message: msg })}\n\n`);
@@ -978,6 +1004,7 @@ RULES:
       }
     }
 
+    clearInterval(heartbeat);
     console.log("[PULSE STREAM] Buffer length:", responseBuffer.length);
     console.log("[PULSE STREAM] First 300 chars:", responseBuffer.substring(0, 300));
 
@@ -1009,6 +1036,7 @@ RULES:
 
     res.end();
   } catch (err: unknown) {
+    clearInterval(heartbeat);
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[PULSE STREAM] Error:", err);
     req.log.error({ err }, "Market pulse stream error");
@@ -1210,6 +1238,16 @@ router.post("/options-strategist/stream", async (req, res) => {
     "X-Accel-Buffering": "no",
   });
 
+  req.setTimeout(0);
+  res.setTimeout(0);
+  res.write(": heartbeat\n\n");
+
+  const heartbeat = setInterval(() => {
+    if (!res.writableEnded) {
+      res.write(": heartbeat\n\n");
+    }
+  }, 15000);
+
   try {
     const google = createGoogleGenerativeAI({ apiKey });
     const result = streamText({
@@ -1227,9 +1265,11 @@ router.post("/options-strategist/stream", async (req, res) => {
         if (typeof (res as any).flush === "function") (res as any).flush();
       }
     }
+    clearInterval(heartbeat);
     res.write("data: [DONE]\n\n");
     res.end();
   } catch (err: unknown) {
+    clearInterval(heartbeat);
     const msg = err instanceof Error ? err.message : String(err);
     req.log.error({ err }, "Options strategist stream error");
     res.write(`data: ${JSON.stringify({ error: msg })}\n\n`);
