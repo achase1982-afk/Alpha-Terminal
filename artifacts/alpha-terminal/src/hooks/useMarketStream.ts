@@ -9,6 +9,8 @@ const REJECTED_RETRY_DELAY = 3_000;
 const MAX_REJECTED_RETRIES = 3;
 const WS_RECONNECT_BASE = 1_000;
 const WS_RECONNECT_MAX = 30_000;
+const WS_MAX_FAILURES_BEFORE_POLL = 3;
+const POLL_INTERVAL = 2_000;
 
 let _getClerkToken: (() => Promise<string | null>) | null = null;
 
@@ -96,6 +98,10 @@ export function useMarketStream() {
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectDelayRef = useRef(WS_RECONNECT_BASE);
   const mountedRef = useRef(true);
+  const wsFailCount = useRef(0);
+  const usingPollRef = useRef(false);
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const wsEverConnected = useRef(false);
 
   function allSymbols(): string[] {
     return [
@@ -138,7 +144,63 @@ export function useMarketStream() {
     } catch {}
   }
 
+  function handleSnapshot(data: { quotes?: LiveQuote[]; status?: string }) {
+    if (data.status === "rejected") {
+      setStreamStatus("offline");
+      const attempt = rejectedRetries.current;
+      rejectedRetries.current++;
+      setTimeout(() => void refreshAndRetry(attempt), REJECTED_RETRY_DELAY);
+      return;
+    }
+    if (data.quotes && data.quotes.length > 0) {
+      setStreamStatus("live");
+      rejectedRetries.current = 0;
+      for (const q of data.quotes) {
+        setStreamQuote(q);
+      }
+    } else if (data.status === "connecting") {
+      setStreamStatus("connecting");
+    } else if (data.status === "disconnected") {
+      setStreamStatus("offline");
+    }
+  }
+
+  function startPolling() {
+    if (pollTimerRef.current) return;
+    usingPollRef.current = true;
+    console.info("[stream] Falling back to snapshot polling");
+
+    async function poll() {
+      if (!mountedRef.current) return;
+      try {
+        const res = await fetchWithAuth(`${API_BASE}/stream/snapshot`);
+        if (res.ok) {
+          const data = await res.json() as { quotes?: LiveQuote[]; status?: string; optionQuotes?: Record<string, unknown>[] };
+          handleSnapshot(data);
+          if (data.optionQuotes) {
+            for (const oq of data.optionQuotes) {
+              mergeTick(oq);
+            }
+          }
+        }
+      } catch {}
+    }
+
+    void poll();
+    pollTimerRef.current = setInterval(() => void poll(), POLL_INTERVAL);
+  }
+
+  function stopPolling() {
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+    usingPollRef.current = false;
+  }
+
   const connectWs = useCallback(async () => {
+    if (usingPollRef.current) return;
+
     if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
       return;
     }
@@ -154,8 +216,17 @@ export function useMarketStream() {
     const socket = new WebSocket(url);
     wsRef.current = socket;
 
+    const openTimeout = setTimeout(() => {
+      if (socket.readyState !== WebSocket.OPEN) {
+        socket.close();
+      }
+    }, 5_000);
+
     socket.onopen = () => {
+      clearTimeout(openTimeout);
       reconnectDelayRef.current = WS_RECONNECT_BASE;
+      wsFailCount.current = 0;
+      wsEverConnected.current = true;
     };
 
     socket.onmessage = (ev) => {
@@ -164,25 +235,7 @@ export function useMarketStream() {
         const { event, data } = msg;
 
         if (event === "snapshot") {
-          const snap = data as { quotes: LiveQuote[]; status?: string };
-          if (snap.status === "rejected") {
-            setStreamStatus("offline");
-            const attempt = rejectedRetries.current;
-            rejectedRetries.current++;
-            setTimeout(() => void refreshAndRetry(attempt), REJECTED_RETRY_DELAY);
-            return;
-          }
-          if (snap.quotes && snap.quotes.length > 0) {
-            setStreamStatus("live");
-            rejectedRetries.current = 0;
-            for (const q of snap.quotes) {
-              setStreamQuote(q);
-            }
-          } else if (snap.status === "connecting") {
-            setStreamStatus("connecting");
-          } else if (snap.status === "disconnected") {
-            setStreamStatus("offline");
-          }
+          handleSnapshot(data as { quotes: LiveQuote[]; status?: string });
         } else if (event === "quote") {
           setStreamStatus("live");
           rejectedRetries.current = 0;
@@ -206,8 +259,16 @@ export function useMarketStream() {
     };
 
     socket.onclose = () => {
+      clearTimeout(openTimeout);
       wsRef.current = null;
       if (!mountedRef.current) return;
+
+      wsFailCount.current++;
+      if (wsFailCount.current >= WS_MAX_FAILURES_BEFORE_POLL && !wsEverConnected.current) {
+        startPolling();
+        return;
+      }
+
       setStreamStatus("connecting");
       scheduleReconnect();
     };
@@ -241,13 +302,18 @@ export function useMarketStream() {
     }
   }
 
+  function cleanupAll() {
+    cleanupWs();
+    stopPolling();
+  }
+
   useEffect(() => {
     mountedRef.current = true;
     void connectWs();
 
     return () => {
       mountedRef.current = false;
-      cleanupWs();
+      cleanupAll();
     };
   }, [connectWs]);
 
@@ -256,6 +322,7 @@ export function useMarketStream() {
       if (document.hidden) {
         return;
       }
+      if (usingPollRef.current) return;
       if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
         cleanupWs();
         void connectWs();
