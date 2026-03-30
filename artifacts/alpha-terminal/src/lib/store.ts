@@ -166,7 +166,7 @@ export const useTerminalStore = create<TerminalState>()(
         overlays: { ...state.overlays, [overlay]: !state.overlays[overlay] } 
       })),
 
-      aiModel: 'gemini-2.5-pro',
+      aiModel: 'gemini-2.5-flash',
       setAiModel: (aiModel) => set({ aiModel }),
       aiTemp: 0.7,
       setAiTemp: (aiTemp) => set({ aiTemp }),

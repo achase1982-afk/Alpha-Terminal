@@ -28,7 +28,7 @@ function getClient(): GoogleGenerativeAI | null {
 
 async function callGemini(
   prompt: string,
-  modelName: string = "gemini-2.5-pro",
+  modelName: string = "gemini-2.5-flash",
   temperature: number = 0.3
 ): Promise<string> {
   const client = getClient();
@@ -122,10 +122,17 @@ function formatOptionsDetailed(chain: Record<string, unknown>): string {
       byExp.get(exp)!.push(c);
     }
 
+    const sortedExps = [...byExp.entries()].sort((a, b) => {
+      const dteA = Number(a[1][0]?.["dte"] ?? 999);
+      const dteB = Number(b[1][0]?.["dte"] ?? 999);
+      return dteA - dteB;
+    });
+    const limitedExps = sortedExps.slice(0, 3);
+
     const sections: string[] = [];
-    for (const [exp, group] of byExp) {
+    for (const [exp, group] of limitedExps) {
       const dte = group[0]?.["dte"] ?? "?";
-      const nearest = group.slice(0, 15);
+      const nearest = group.slice(0, 10);
       const lines = nearest.map((c) => {
         const iv = c["iv"] != null ? `${c["iv"]}%` : "N/A";
         return `  Strike $${c["strike"]} | Bid: $${c["bid"]} | Ask: $${c["ask"]} | Last: $${c["last"]} | IV: ${iv} | Delta: ${c["delta"]} | Gamma: ${c["gamma"]} | Theta: ${c["theta"]} | Vega: ${c["vega"]} | Vol: ${c["volume"]} | OI: ${c["openInterest"]}`;
@@ -180,7 +187,7 @@ Analyze ONLY the above data and provide:
 Be specific, data-driven, and concise. Use markdown formatting.`;
 
   try {
-    const response = await callGemini(prompt, model ?? "gemini-2.5-pro", temperature ?? 0.3);
+    const response = await callGemini(prompt, model ?? "gemini-2.5-flash", temperature ?? 0.3);
     res.json(RunTechnicalAnalysisResponse.parse({ response }));
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -246,10 +253,14 @@ Be specific, data-driven, and concise. Use markdown formatting.`;
 
   try {
     const google = createGoogleGenerativeAI({ apiKey });
+    const chosenModel = model ?? "gemini-2.5-flash";
     const result = streamText({
-      model: google(model ?? "gemini-2.5-pro"),
+      model: google(chosenModel),
       prompt,
       temperature: temperature ?? 0.3,
+      providerOptions: {
+        google: { thinkingConfig: { thinkingBudget: 2048 } },
+      },
     });
 
     for await (const part of result.fullStream) {
@@ -306,7 +317,7 @@ Analyze ONLY the above data and provide:
 Be specific with strikes, expirations, and premium estimates. Use markdown formatting.`;
 
   try {
-    const response = await callGemini(prompt, model ?? "gemini-2.5-pro", temperature ?? 0.3);
+    const response = await callGemini(prompt, model ?? "gemini-2.5-flash", temperature ?? 0.3);
     res.json(RunOptionsAnalysisResponse.parse({ response }));
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -611,7 +622,7 @@ Specific and actionable. Include the instrument, direction, key level, and trigg
 Keep the entire output under 500 words. Be technically precise, data-driven, and immediately actionable. No filler. Use markdown.`;
 
   try {
-    const response = await callGemini(prompt, model ?? "gemini-2.5-pro", temperature ?? 0.2);
+    const response = await callGemini(prompt, model ?? "gemini-2.5-flash", temperature ?? 0.2);
     res.json({ response });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -737,7 +748,7 @@ RULES:
 - Be technically precise, data-driven, and immediately actionable.`;
 
   try {
-    const raw = await callGemini(prompt, model ?? "gemini-2.5-pro", temperature ?? 0.2);
+    const raw = await callGemini(prompt, model ?? "gemini-2.5-flash", temperature ?? 0.2);
 
     let cleaned = raw.trim();
     if (cleaned.startsWith("```")) {
@@ -982,10 +993,14 @@ RULES:
 
   try {
     const google = createGoogleGenerativeAI({ apiKey });
+    const chosenModel = model ?? "gemini-2.5-flash";
     const result = streamText({
-      model: google(model ?? "gemini-2.5-pro"),
+      model: google(chosenModel),
       prompt,
       temperature: temperature ?? 0.2,
+      providerOptions: {
+        google: { thinkingConfig: { thinkingBudget: 2048 } },
+      },
     });
 
     let responseBuffer = "";
@@ -1183,7 +1198,7 @@ router.post("/options-strategist", async (req, res) => {
   const prompt = buildStrategistPrompt(quote, chain, sma20, sma50, maxRiskValue, autopilot, settings);
 
   try {
-    const response = await callGemini(prompt, model ?? "gemini-2.5-pro", temperature ?? 0.2);
+    const response = await callGemini(prompt, model ?? "gemini-2.5-flash", temperature ?? 0.2);
     res.json({ response });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -1258,10 +1273,14 @@ router.post("/options-strategist/stream", async (req, res) => {
 
   try {
     const google = createGoogleGenerativeAI({ apiKey });
+    const chosenModel = model ?? "gemini-2.5-flash";
     const result = streamText({
-      model: google(model ?? "gemini-2.5-pro"),
+      model: google(chosenModel),
       prompt,
       temperature: temperature ?? 0.2,
+      providerOptions: {
+        google: { thinkingConfig: { thinkingBudget: 2048 } },
+      },
     });
 
     for await (const part of result.fullStream) {
@@ -1524,7 +1543,7 @@ Return this exact JSON structure:
 }`;
 
   try {
-    const raw = await callGemini(prompt, model ?? "gemini-2.5-pro", temperature ?? 0.1);
+    const raw = await callGemini(prompt, model ?? "gemini-2.5-flash", temperature ?? 0.1);
 
     // Try to parse JSON — strip any markdown fences Gemini may wrap around it
     const cleaned = raw.replace(/^```(?:json)?\s*/im, "").replace(/```\s*$/im, "").trim();
@@ -1673,7 +1692,7 @@ INSTRUCTIONS:
 - Use markdown formatting. Be precise and actionable.`;
 
   try {
-    const response = await callGemini(prompt, model ?? "gemini-2.5-pro", temperature ?? 0.1);
+    const response = await callGemini(prompt, model ?? "gemini-2.5-flash", temperature ?? 0.1);
     res.json({
       response,
       indicators: {
