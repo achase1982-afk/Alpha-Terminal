@@ -730,10 +730,20 @@ function scheduleReconnect() {
 
 /** Start / restart the streamer with a new access token. */
 export async function startStreamer(token: string, symbols: string[]) {
-  accessToken = token;
   for (const s of symbols) subscribedSymbols.add(s.toUpperCase());
 
-  // Tear down existing connection if token changed
+  if (isConnecting) {
+    logger.info("Streamer: already connecting — skipping duplicate start");
+    return;
+  }
+  if (loginAcked && ws && ws.readyState === WebSocket.OPEN && token === accessToken) {
+    logger.info("Streamer: already connected with same token — adding symbols only");
+    addSymbols(symbols);
+    return;
+  }
+
+  accessToken = token;
+
   if (ws) {
     ws.terminate();
     ws = null;

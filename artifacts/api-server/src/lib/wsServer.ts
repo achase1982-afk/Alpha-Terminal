@@ -5,7 +5,7 @@ import { verifyToken } from "@clerk/express";
 import { logger } from "./logger.js";
 import { getSnapshot, getStreamerStatus, registerWsBroadcast } from "./schwabStreamer.js";
 
-const WS_PATH = "/ws/prices";
+const WS_PATH = "/api/ws/prices";
 const HEARTBEAT_MS = 25_000;
 const clients = new Set<WebSocket>();
 

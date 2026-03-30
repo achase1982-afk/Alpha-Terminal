@@ -5,9 +5,10 @@ import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import type { LiveQuote } from "@/lib/store";
 
 const API_BASE = "/api";
+const WS_RECONNECT_BASE = 1_000;
+const WS_RECONNECT_MAX = 30_000;
 const REJECTED_RETRY_DELAY = 3_000;
 const MAX_REJECTED_RETRIES = 3;
-const POLL_INTERVAL = 2_000;
 
 let _getClerkToken: (() => Promise<string | null>) | null = null;
 
@@ -81,6 +82,11 @@ async function refreshAndRetry(retryCount: number): Promise<boolean> {
   return true;
 }
 
+function buildWsUrl(): string {
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${window.location.host}/api/ws/prices`;
+}
+
 export function useMarketStream() {
   const {
     accessToken,
@@ -97,8 +103,11 @@ export function useMarketStream() {
   const symDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startedRef = useRef(false);
   const startDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mountedRef = useRef(true);
+  const wsRef = useRef<WebSocket | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectDelayRef = useRef(WS_RECONNECT_BASE);
+  const tokenReadyRef = useRef(false);
 
   function allSymbols(): string[] {
     return [
@@ -144,64 +153,138 @@ export function useMarketStream() {
     } catch {}
   }
 
-  const handleSnapshot = useCallback(
-    (data: { quotes?: LiveQuote[]; status?: string }) => {
-      if (data.status === "rejected") {
-        setStreamStatus("offline");
-        const attempt = rejectedRetries.current;
-        rejectedRetries.current++;
-        setTimeout(() => void refreshAndRetry(attempt), REJECTED_RETRY_DELAY);
-        return;
+  const connectWs = useCallback(async () => {
+    if (!_getClerkToken) return;
+    if (wsRef.current && wsRef.current.readyState <= WebSocket.OPEN) return;
+
+    let token: string | null = null;
+    try {
+      token = await _getClerkToken();
+    } catch {}
+    if (!token || !mountedRef.current) return;
+
+    const url = `${buildWsUrl()}?clerk_token=${encodeURIComponent(token)}`;
+    setStreamStatus("connecting");
+
+    const socket = new WebSocket(url);
+    wsRef.current = socket;
+
+    const openTimeout = setTimeout(() => {
+      if (socket.readyState !== WebSocket.OPEN) {
+        socket.close();
       }
-      if (data.quotes && data.quotes.length > 0) {
-        setStreamStatus("live");
-        rejectedRetries.current = 0;
-        for (const q of data.quotes) {
-          setStreamQuote(q);
+    }, 10_000);
+
+    socket.onopen = () => {
+      clearTimeout(openTimeout);
+      reconnectDelayRef.current = WS_RECONNECT_BASE;
+      console.log("[ws] connected to /api/ws/prices");
+    };
+
+    socket.onmessage = (evt) => {
+      try {
+        const msg = JSON.parse(evt.data) as {
+          event: string;
+          data: Record<string, unknown>;
+        };
+
+        if (msg.event === "snapshot") {
+          const d = msg.data as { quotes?: LiveQuote[]; status?: string };
+          if (d.status === "rejected") {
+            setStreamStatus("offline");
+            const attempt = rejectedRetries.current;
+            rejectedRetries.current++;
+            setTimeout(() => void refreshAndRetry(attempt), REJECTED_RETRY_DELAY);
+            return;
+          }
+          if (d.quotes && d.quotes.length > 0) {
+            setStreamStatus("live");
+            rejectedRetries.current = 0;
+            for (const q of d.quotes) setStreamQuote(q);
+          } else if (d.status === "connecting") {
+            setStreamStatus("connecting");
+          } else if (d.status === "disconnected") {
+            setStreamStatus("offline");
+          }
+        } else if (msg.event === "quote") {
+          setStreamStatus("live");
+          rejectedRetries.current = 0;
+          setStreamQuote(msg.data as LiveQuote);
+        } else if (msg.event === "optionQuote") {
+          mergeTick(msg.data);
+        } else if (msg.event === "streamerStatus") {
+          const s = (msg.data as { status?: string }).status;
+          if (s === "connected") setStreamStatus("live");
+          else if (s === "rejected") setStreamStatus("offline");
+          else if (s === "connecting") setStreamStatus("connecting");
+          else if (s === "disconnected") setStreamStatus("offline");
         }
-      } else if (data.status === "connecting") {
-        setStreamStatus("connecting");
-      } else if (data.status === "disconnected") {
-        setStreamStatus("offline");
-      }
-    },
-    [setStreamQuote, setStreamStatus]
-  );
+      } catch {}
+    };
+
+    socket.onclose = () => {
+      clearTimeout(openTimeout);
+      wsRef.current = null;
+      if (!mountedRef.current) return;
+      setStreamStatus("connecting");
+      scheduleReconnect();
+    };
+
+    socket.onerror = () => {
+      clearTimeout(openTimeout);
+    };
+  }, [setStreamQuote, setStreamStatus, mergeTick]);
+
+  function scheduleReconnect() {
+    if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+    const delay = reconnectDelayRef.current;
+    reconnectDelayRef.current = Math.min(delay * 2, WS_RECONNECT_MAX);
+    reconnectTimerRef.current = setTimeout(() => {
+      reconnectTimerRef.current = null;
+      void connectWs();
+    }, delay);
+  }
 
   useEffect(() => {
     mountedRef.current = true;
+    tokenReadyRef.current = !!_getClerkToken;
 
-    async function poll() {
-      if (!mountedRef.current) return;
-      try {
-        const res = await fetchWithAuth(`${API_BASE}/stream/snapshot`);
-        if (!res.ok) return;
-        const data = (await res.json()) as {
-          quotes?: LiveQuote[];
-          status?: string;
-          optionQuotes?: Record<string, unknown>[];
-        };
-        if (!mountedRef.current) return;
-        handleSnapshot(data);
-        if (data.optionQuotes) {
-          for (const oq of data.optionQuotes) {
-            mergeTick(oq);
-          }
+    if (tokenReadyRef.current) {
+      void connectWs();
+    } else {
+      const check = setInterval(() => {
+        if (_getClerkToken) {
+          clearInterval(check);
+          tokenReadyRef.current = true;
+          void connectWs();
         }
-      } catch {}
+      }, 200);
+      return () => {
+        clearInterval(check);
+        mountedRef.current = false;
+        if (wsRef.current) {
+          wsRef.current.close();
+          wsRef.current = null;
+        }
+        if (reconnectTimerRef.current) {
+          clearTimeout(reconnectTimerRef.current);
+          reconnectTimerRef.current = null;
+        }
+      };
     }
-
-    void poll();
-    pollTimerRef.current = setInterval(() => void poll(), POLL_INTERVAL);
 
     return () => {
       mountedRef.current = false;
-      if (pollTimerRef.current) {
-        clearInterval(pollTimerRef.current);
-        pollTimerRef.current = null;
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
       }
     };
-  }, [handleSnapshot, mergeTick]);
+  }, [connectWs]);
 
   const streamKey = `${accessToken || ""}|${traderAccessToken || ""}`;
 
