@@ -31,26 +31,30 @@ export function initWsServer(httpServer: HttpServer) {
       return;
     }
 
-    const token = url.searchParams.get("clerk_token");
-    if (!token) {
-      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
-      socket.destroy();
-      return;
-    }
+    const isDev = process.env.NODE_ENV !== "production";
 
-    try {
-      const secretKey = process.env["CLERK_SECRET_KEY"];
-      if (!secretKey) throw new Error("CLERK_SECRET_KEY not set");
+    if (!isDev) {
+      const token = url.searchParams.get("clerk_token");
+      if (!token) {
+        socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+        socket.destroy();
+        return;
+      }
 
-      await verifyToken(token, {
-        secretKey,
-        authorizedParties: undefined,
-      });
-    } catch (err) {
-      logger.warn({ err }, "WS auth failed");
-      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
-      socket.destroy();
-      return;
+      try {
+        const secretKey = process.env["CLERK_SECRET_KEY"];
+        if (!secretKey) throw new Error("CLERK_SECRET_KEY not set");
+
+        await verifyToken(token, {
+          secretKey,
+          authorizedParties: undefined,
+        });
+      } catch (err) {
+        logger.warn({ err }, "WS auth failed");
+        socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+        socket.destroy();
+        return;
+      }
     }
 
     wss.handleUpgrade(req, socket, head, (ws) => {

@@ -154,16 +154,21 @@ export function useMarketStream() {
   }
 
   const connectWs = useCallback(async () => {
-    if (!_getClerkToken) return;
     if (wsRef.current && wsRef.current.readyState <= WebSocket.OPEN) return;
 
     let token: string | null = null;
-    try {
-      token = await _getClerkToken();
-    } catch {}
-    if (!token || !mountedRef.current) return;
+    if (_getClerkToken) {
+      try {
+        token = await _getClerkToken();
+      } catch {}
+    }
 
-    const url = `${buildWsUrl()}?clerk_token=${encodeURIComponent(token)}`;
+    const isDev = import.meta.env.DEV;
+    if (!token && !isDev) return;
+    if (!mountedRef.current) return;
+
+    const base = buildWsUrl();
+    const url = token ? `${base}?clerk_token=${encodeURIComponent(token)}` : base;
     setStreamStatus("connecting");
 
     const socket = new WebSocket(url);
@@ -247,7 +252,8 @@ export function useMarketStream() {
 
   useEffect(() => {
     mountedRef.current = true;
-    tokenReadyRef.current = !!_getClerkToken;
+    const isDev = import.meta.env.DEV;
+    tokenReadyRef.current = !!_getClerkToken || isDev;
 
     if (tokenReadyRef.current) {
       void connectWs();
