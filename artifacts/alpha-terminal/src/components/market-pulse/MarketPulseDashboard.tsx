@@ -1,17 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Zap } from "lucide-react";
+import { Zap, Activity, Radio } from "lucide-react";
 import { useTerminalStore } from "../../lib/store";
 import { useMarketPulseStore } from "../../stores/marketPulseStore";
 import type { MarketPulseData, ClusterKey } from "../../types/marketPulse";
 import { STRATEGY_LABELS } from "../../types/marketPulse";
 import { useAiStream } from "../../hooks/useAiStream";
-import { AiThinkingFeed } from "../ai-shared/AiThinkingFeed";
 import { PulseStatusHeader } from "./PulseStatusHeader";
 import { ClusterCard } from "./ClusterCard";
 import { ActionPlanCard } from "./ActionPlanCard";
 import { InvalidationBox } from "./InvalidationBox";
 import { LevelsToWatch } from "./LevelsToWatch";
-import { PulseSkeleton } from "./PulseSkeleton";
 import { DEFAULT_PULSE_SYMBOLS } from "../MarketPulseModal";
 
 const API_BASE = "/api";
@@ -176,13 +174,7 @@ export function MarketPulseDashboard({ autoGenerate }: MarketPulseDashboardProps
       </div>
 
       {isActive && (
-        <>
-          <AiThinkingFeed
-            texts={thinkingTokens}
-            isStreaming={isStreaming}
-          />
-          <PulseSkeleton />
-        </>
+        <PulseLoadingStatus thinkingTokens={thinkingTokens} />
       )}
 
       {error && !isActive && (
@@ -199,11 +191,6 @@ export function MarketPulseDashboard({ autoGenerate }: MarketPulseDashboardProps
 
       {pulseData && !isActive && (
         <div className="space-y-4 animate-in fade-in duration-300">
-          <AiThinkingFeed
-            texts={thinkingTokens}
-            isStreaming={false}
-          />
-
           <PulseStatusHeader
             data={pulseData}
             isRefreshing={isActive}
@@ -250,6 +237,151 @@ export function MarketPulseDashboard({ autoGenerate }: MarketPulseDashboardProps
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+function PulseLoadingStatus({ thinkingTokens }: { thinkingTokens: string[] }) {
+  const [elapsed, setElapsed] = useState(0);
+  const startRef = useRef(Date.now());
+
+  useEffect(() => {
+    startRef.current = Date.now();
+    const id = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startRef.current) / 1000));
+    }, 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const stages = [
+    { label: "CONNECTING", threshold: 0 },
+    { label: "FETCHING MARKET DATA", threshold: 1 },
+    { label: "ANALYZING WITH AI", threshold: 4 },
+    { label: "GENERATING SIGNALS", threshold: 8 },
+  ];
+
+  const lastThinking = thinkingTokens.length > 0 ? thinkingTokens[thinkingTokens.length - 1] : null;
+
+  let currentStageIdx = 0;
+  for (let i = stages.length - 1; i >= 0; i--) {
+    if (elapsed >= stages[i].threshold) {
+      currentStageIdx = i;
+      break;
+    }
+  }
+
+  if (lastThinking?.toLowerCase().includes("analyzing")) {
+    currentStageIdx = Math.max(currentStageIdx, 2);
+  }
+
+  const currentStage = stages[currentStageIdx];
+  const progress = Math.min((elapsed / 15) * 100, 95);
+
+  return (
+    <div className="space-y-3">
+      <div
+        className="rounded-xl border overflow-hidden"
+        style={{ background: "#111113", borderColor: "rgba(255,184,0,0.3)" }}
+      >
+        <div
+          className="px-4 py-3 flex items-center gap-3"
+          style={{ background: "rgba(255,184,0,0.06)" }}
+        >
+          <span className="relative flex h-3 w-3 shrink-0">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#FFB800] opacity-75" />
+            <span className="relative inline-flex rounded-full h-3 w-3 bg-[#FFB800]" />
+          </span>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-xs font-bold text-[#FFB800] tracking-wider">
+                {currentStage.label}
+              </span>
+              <span className="font-mono text-xs tabular-nums text-[#71717a]">
+                {elapsed}s
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="h-1 bg-[#2A2A2C]">
+          <div
+            className="h-full transition-all duration-1000 ease-out"
+            style={{
+              width: `${progress}%`,
+              background: "linear-gradient(90deg, #FFB800, #FF8C00)",
+            }}
+          />
+        </div>
+
+        <div className="px-4 py-3 space-y-2.5">
+          <div className="space-y-1.5">
+            {stages.map((s, i) => (
+              <div key={s.label} className="flex items-center gap-2">
+                <div
+                  className="w-2 h-2 rounded-full shrink-0"
+                  style={{
+                    background:
+                      i < currentStageIdx
+                        ? "#00d166"
+                        : i === currentStageIdx
+                          ? "#FFB800"
+                          : "#2A2A2C",
+                    boxShadow:
+                      i === currentStageIdx
+                        ? "0 0 6px rgba(255,184,0,0.5)"
+                        : "none",
+                  }}
+                />
+                <span
+                  className="font-mono text-[10px] tracking-wider"
+                  style={{
+                    color:
+                      i < currentStageIdx
+                        ? "#00d166"
+                        : i === currentStageIdx
+                          ? "#FFB800"
+                          : "#52525b",
+                    fontWeight: i === currentStageIdx ? 700 : 400,
+                  }}
+                >
+                  {s.label}
+                </span>
+                {i < currentStageIdx && (
+                  <span className="font-mono text-[9px] text-[#00d166]">✓</span>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {lastThinking && (
+            <div className="flex items-start gap-2 pt-1 border-t border-[#2A2A2C]">
+              <Activity className="w-3 h-3 text-[#FFB800] mt-0.5 shrink-0 animate-pulse" />
+              <span className="font-mono text-[10px] text-[#a1a1aa] leading-relaxed">
+                {lastThinking}
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="flex gap-2 overflow-x-auto pb-1 -mx-3 px-3">
+        {["RATES", "CREDIT", "VOL", "TERM", "BREADTH"].map((label, i) => (
+          <div
+            key={label}
+            className="rounded-lg border border-[#2A2A2C] p-2.5 space-y-2 shrink-0"
+            style={{ background: "#111113", width: 100 }}
+          >
+            <div
+              className="h-2 w-10 rounded bg-[#2A2A2C]/60 animate-pulse"
+              style={{ animationDelay: `${i * 200}ms` }}
+            />
+            <div
+              className="h-4 w-full rounded bg-[#2A2A2C]/60 animate-pulse"
+              style={{ animationDelay: `${i * 200 + 100}ms` }}
+            />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
