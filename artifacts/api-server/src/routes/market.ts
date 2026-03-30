@@ -211,6 +211,7 @@ router.get("/quote", async (req, res) => {
 
     res.json({
       ...data,
+      prevClose,
       bidSize: pickNum("bidSize") ?? undefined,
       askSize: pickNum("askSize") ?? undefined,
     });
