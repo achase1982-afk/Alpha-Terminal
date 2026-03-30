@@ -10,11 +10,6 @@ const WS_RECONNECT_MAX = 30_000;
 const REJECTED_RETRY_DELAY = 3_000;
 const MAX_REJECTED_RETRIES = 3;
 
-let _getClerkToken: (() => Promise<string | null>) | null = null;
-
-export function setWsTokenGetter(fn: () => Promise<string | null>) {
-  _getClerkToken = fn;
-}
 
 async function refreshAndRetry(retryCount: number): Promise<boolean> {
   if (retryCount >= MAX_REJECTED_RETRIES) {
@@ -155,20 +150,9 @@ export function useMarketStream() {
 
   const connectWs = useCallback(async () => {
     if (wsRef.current && wsRef.current.readyState <= WebSocket.OPEN) return;
-
-    let token: string | null = null;
-    if (_getClerkToken) {
-      try {
-        token = await _getClerkToken();
-      } catch {}
-    }
-
-    const isDev = import.meta.env.DEV;
-    if (!token && !isDev) return;
     if (!mountedRef.current) return;
 
-    const base = buildWsUrl();
-    const url = token ? `${base}?clerk_token=${encodeURIComponent(token)}` : base;
+    const url = buildWsUrl();
     setStreamStatus("connecting");
 
     const socket = new WebSocket(url);
@@ -194,21 +178,25 @@ export function useMarketStream() {
         };
 
         if (msg.event === "snapshot") {
-          const d = msg.data as { quotes?: LiveQuote[]; status?: string };
-          if (d.status === "rejected") {
+          const raw = msg.data;
+          const quotes: LiveQuote[] = Array.isArray(raw)
+            ? raw
+            : (raw as { quotes?: LiveQuote[] }).quotes ?? [];
+          const status = Array.isArray(raw) ? undefined : (raw as { status?: string }).status;
+          if (status === "rejected") {
             setStreamStatus("offline");
             const attempt = rejectedRetries.current;
             rejectedRetries.current++;
             setTimeout(() => void refreshAndRetry(attempt), REJECTED_RETRY_DELAY);
             return;
           }
-          if (d.quotes && d.quotes.length > 0) {
+          if (quotes.length > 0) {
             setStreamStatus("live");
             rejectedRetries.current = 0;
-            for (const q of d.quotes) setStreamQuote(q);
-          } else if (d.status === "connecting") {
+            for (const q of quotes) setStreamQuote(q);
+          } else if (status === "connecting") {
             setStreamStatus("connecting");
-          } else if (d.status === "disconnected") {
+          } else if (status === "disconnected") {
             setStreamStatus("offline");
           }
         } else if (msg.event === "quote") {
@@ -252,32 +240,9 @@ export function useMarketStream() {
 
   useEffect(() => {
     mountedRef.current = true;
-    const isDev = import.meta.env.DEV;
-    tokenReadyRef.current = !!_getClerkToken || isDev;
+    tokenReadyRef.current = true;
 
-    if (tokenReadyRef.current) {
-      void connectWs();
-    } else {
-      const check = setInterval(() => {
-        if (_getClerkToken) {
-          clearInterval(check);
-          tokenReadyRef.current = true;
-          void connectWs();
-        }
-      }, 200);
-      return () => {
-        clearInterval(check);
-        mountedRef.current = false;
-        if (wsRef.current) {
-          wsRef.current.close();
-          wsRef.current = null;
-        }
-        if (reconnectTimerRef.current) {
-          clearTimeout(reconnectTimerRef.current);
-          reconnectTimerRef.current = null;
-        }
-      };
-    }
+    void connectWs();
 
     return () => {
       mountedRef.current = false;

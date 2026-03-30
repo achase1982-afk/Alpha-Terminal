@@ -75,8 +75,6 @@
     "zod": "catalog:"
   },
   "dependencies": {
-    "@clerk/clerk-react": "^5.61.3",
-    "@clerk/themes": "^2.4.57",
     "lightweight-charts": "^5.1.0",
     "react-markdown": "^10.1.0",
     "zustand": "^5.0.12"
