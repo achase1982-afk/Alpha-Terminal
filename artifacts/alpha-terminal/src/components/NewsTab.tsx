@@ -77,13 +77,13 @@ export function NewsTab() {
   }
 
   return (
-    <div className="flex-1">
-      <div className="space-y-0">
+    <div className="flex-1 flex flex-col">
+      <div className="flex-1">
         {articles.map((article) => (
           <button
             key={article.id}
             onClick={() => openBrowser(article.url, article.headline, article.source)}
-            className="block w-full text-left border-b border-zinc-800/50 pb-4 mb-4 hover:bg-zinc-800/30 p-2 rounded-md transition-colors group cursor-pointer"
+            className="block w-full text-left border-b border-zinc-800/50 hover:bg-zinc-800/30 px-3 sm:px-4 lg:px-5 py-4 transition-colors group cursor-pointer"
           >
             <div className="flex items-start gap-3">
               <div className="flex-1 min-w-0">

@@ -568,22 +568,6 @@ function futuresNewsSymbol(sym: string): string {
   return upper;
 }
 
-function extractTag(xml: string, tag: string): string {
-  const open = `<${tag}`;
-  const close = `</${tag}>`;
-  const startIdx = xml.indexOf(open);
-  if (startIdx === -1) return "";
-  const contentStart = xml.indexOf(">", startIdx);
-  if (contentStart === -1) return "";
-  const endIdx = xml.indexOf(close, contentStart);
-  if (endIdx === -1) return "";
-  let content = xml.slice(contentStart + 1, endIdx).trim();
-  if (content.startsWith("<![CDATA[") && content.endsWith("]]>")) {
-    content = content.slice(9, -3);
-  }
-  return content;
-}
-
 interface NormalizedArticle {
   id: number;
   source: string;

@@ -181,7 +181,7 @@ export default function TerminalPage() {
                 </TabsList>
               </div>
 
-              <TabsContent value="news" className="m-0 focus-visible:outline-none flex-1 flex flex-col">
+              <TabsContent value="news" className="m-0 focus-visible:outline-none flex-1 flex flex-col -mx-3 sm:-mx-4 lg:-mx-5 -mb-3 sm:-mb-4 lg:-mb-5">
                 <NewsTab />
               </TabsContent>
               <TabsContent value="options" className="m-0 focus-visible:outline-none">
