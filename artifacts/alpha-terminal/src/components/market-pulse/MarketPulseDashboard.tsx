@@ -63,6 +63,7 @@ export function MarketPulseDashboard({ autoGenerate }: MarketPulseDashboardProps
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [showTranscript, setShowTranscript] = useState(false);
+  const [localGenerating, setLocalGenerating] = useState(false);
 
   const { startStream } = useAiStream({
     url: `${API_BASE}/ai/market-pulse/stream`,
@@ -75,17 +76,20 @@ export function MarketPulseDashboard({ autoGenerate }: MarketPulseDashboardProps
       setPulseData(enriched);
       setLoading(false);
       setStreaming(false);
+      setLocalGenerating(false);
       setShowTranscript(false);
     },
     onError: (msg) => {
       setError(msg);
       setLoading(false);
       setStreaming(false);
+      setLocalGenerating(false);
     },
   });
 
   const fetchPulse = useCallback(() => {
     if (!accessToken) return;
+    setLocalGenerating(true);
     setLoading(true);
     setStreaming(true);
     setError(null);
@@ -150,7 +154,7 @@ export function MarketPulseDashboard({ autoGenerate }: MarketPulseDashboardProps
     );
   }
 
-  const isActive = isLoading || isStreaming;
+  const isActive = isLoading || isStreaming || localGenerating;
 
   return (
     <div className="space-y-4 px-3 sm:px-4 lg:px-5 overflow-x-hidden pt-3">

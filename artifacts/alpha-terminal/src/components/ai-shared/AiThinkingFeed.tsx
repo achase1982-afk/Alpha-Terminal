@@ -63,6 +63,9 @@ export function AiThinkingFeed({ texts, isStreaming, className = "" }: AiThinkin
         style={{ scrollBehavior: "smooth" }}
       >
         <div className="text-xs font-mono text-zinc-400 leading-relaxed whitespace-pre-wrap break-words">
+          {texts.length === 0 && isStreaming && (
+            <span className="text-zinc-500">Waiting for AI reasoning...</span>
+          )}
           {texts.map((text, i) => (
             <span key={i}>{text}</span>
           ))}
