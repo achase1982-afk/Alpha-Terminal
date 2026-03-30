@@ -115,10 +115,10 @@ export function useQuote(symbol: string) {
 
     if (restQuote) {
       if (live.last === null && restQuote.last != null)       live.last = restQuote.last;
-      if (live.bid === null && restQuote.bid != null)         live.bid = restQuote.bid;
-      if (live.ask === null && restQuote.ask != null)         live.ask = restQuote.ask;
-      if (live.bidSize === null && restQuote.bidSize != null) live.bidSize = restQuote.bidSize;
-      if (live.askSize === null && restQuote.askSize != null) live.askSize = restQuote.askSize;
+      if (restQuote.bid != null)     live.bid     = restQuote.bid;
+      if (restQuote.ask != null)     live.ask     = restQuote.ask;
+      if (restQuote.bidSize != null) live.bidSize = restQuote.bidSize;
+      if (restQuote.askSize != null) live.askSize = restQuote.askSize;
       if (live.change === null && restQuote.change != null) {
         live.change    = restQuote.change;
         live.changePct = restQuote.changePct;

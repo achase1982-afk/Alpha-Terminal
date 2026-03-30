@@ -167,6 +167,13 @@ export function useMarketStream() {
 
     es.onerror = () => {
       setStreamStatus("connecting");
+      es.close();
+      esRef.current = null;
+      setTimeout(() => {
+        if (!esRef.current && accessToken) {
+          openEventSource();
+        }
+      }, 2_000);
     };
   }
 
