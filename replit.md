@@ -80,3 +80,18 @@ The UI adopts a Bloomberg/TOS-style institutional gold color palette, featuring 
 -   **lightweight-charts**: Financial charting library.
 -   **technicalindicators**: npm package for technical analysis calculations.
 -   **bunny.net**: Content delivery network for fonts (Inter).
+-   **helmet**: Security headers middleware (X-Frame-Options, HSTS, X-Content-Type-Options, etc.).
+-   **express-rate-limit**: API rate limiting (200 req/min general, 15 req/min auth, 20 req/min AI).
+
+## Security Architecture
+
+-   **Security Headers**: `helmet` middleware provides X-Frame-Options (SAMEORIGIN), X-Content-Type-Options (nosniff), Referrer-Policy (no-referrer), Cross-Origin-Opener-Policy, X-DNS-Prefetch-Control, and HSTS (production only, 1 year max-age).
+-   **CORS**: Restricted to Replit domains in production (all `REPLIT_DOMAINS` + `REPLIT_DEV_DOMAIN`). Permissive in development.
+-   **Rate Limiting**: Three tiers — general API (200/min), auth endpoints (15/min), AI endpoints (20/min). Health and snapshot endpoints are excluded from general limits. Uses `trust proxy` for correct client IP behind Replit proxy.
+-   **Input Sanitization**: Symbol parameters validated via `validateSymbolParam` middleware — strips non-alphanumeric characters (except `/.$^-`), rejects XSS patterns (`<>"';&|`), enforces 20-char max. Zod validation on all request bodies.
+-   **AI Route Protection**: POST requests to `/api/ai/*` require `X-Requested-With: AlphaTerminal` header. GET requests (e.g., `/api/ai/models`) are unrestricted. Prevents external abuse of expensive AI endpoints.
+-   **Token Storage**: OAuth tokens stored in `sessionStorage` (not `localStorage`) via custom Zustand storage adapter. Tokens are cleared when the browser tab closes. Preferences (symbol, chart settings) remain in `localStorage`.
+-   **Body Size Limits**: JSON and URL-encoded payloads capped at 1MB.
+-   **Error Handling**: Global error handler returns generic messages in production; only `err.message` in development. No stack traces in API responses.
+-   **X-Powered-By**: Disabled to prevent server fingerprinting.
+-   **SSRF Protection**: Article proxy validates URLs against private/loopback/link-local addresses. Iframe sandbox restricts capabilities.
