@@ -235,32 +235,7 @@ export const useTerminalStore = create<TerminalState>()(
     }),
     {
       name: 'alpha-terminal-storage',
-      version: 4,
-      storage: {
-        getItem: (name: string) => {
-          const prefs = localStorage.getItem(name);
-          const tokens = sessionStorage.getItem(name + '-secure');
-          if (!prefs && !tokens) return null;
-          const prefsObj = prefs ? JSON.parse(prefs) : { state: {} };
-          const tokensObj = tokens ? JSON.parse(tokens) : { state: {} };
-          return JSON.stringify({
-            ...prefsObj,
-            state: { ...prefsObj.state, ...tokensObj.state },
-          });
-        },
-        setItem: (name: string, value: string) => {
-          const parsed = JSON.parse(value);
-          const { accessToken, refreshToken, traderAccessToken, traderRefreshToken, ...prefs } = parsed.state || {};
-          localStorage.setItem(name, JSON.stringify({ ...parsed, state: prefs }));
-          sessionStorage.setItem(name + '-secure', JSON.stringify({
-            state: { accessToken, refreshToken, traderAccessToken, traderRefreshToken },
-          }));
-        },
-        removeItem: (name: string) => {
-          localStorage.removeItem(name);
-          sessionStorage.removeItem(name + '-secure');
-        },
-      },
+      version: 3,
       migrate: (persistedState: unknown, version: number) => {
         const s = persistedState as Record<string, unknown>;
         if (version < 2) {
