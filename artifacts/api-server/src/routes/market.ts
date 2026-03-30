@@ -1077,6 +1077,23 @@ ${rawSource ? `<div class="s">${escH(rawSource)}</div>` : ""}
       return reader.parse();
     }
 
+    function sanitizeContent(html: string): string {
+      return html
+        .replace(/<script[\s\S]*?<\/script>/gi, "")
+        .replace(/<iframe[\s\S]*?<\/iframe>/gi, "")
+        .replace(/<object[\s\S]*?<\/object>/gi, "")
+        .replace(/<embed[\s\S]*?>/gi, "")
+        .replace(/<form[\s\S]*?<\/form>/gi, "")
+        .replace(/<input[\s\S]*?>/gi, "")
+        .replace(/<textarea[\s\S]*?<\/textarea>/gi, "")
+        .replace(/<button[\s\S]*?<\/button>/gi, "")
+        .replace(/<link[^>]+rel=["']stylesheet["'][^>]*>/gi, "")
+        .replace(/\s+on\w+\s*=\s*"[^"]*"/gi, "")
+        .replace(/\s+on\w+\s*=\s*'[^']*'/gi, "")
+        .replace(/javascript\s*:/gi, "void:")
+        .replace(/data\s*:\s*text\/html/gi, "data:text/plain");
+    }
+
     let article = extractArticle(rawHtml);
     const textLen = article?.textContent?.trim().length ?? 0;
 
@@ -1117,23 +1134,28 @@ ${rawSource ? `<div class="s">${escH(rawSource)}</div>` : ""}
       articleContent = `<p style="color:#a1a1aa;margin-top:24px;">This article is behind a paywall or could not be fully extracted.</p>
 <p style="margin-top:16px;"><a href="${escHtml(finalUrl)}" style="color:#FFB800;text-decoration:none;font-weight:600;">Read full article on ${escHtml(baseObj.hostname.replace(/^www\./, ""))} →</a></p>`;
     } else {
-      articleContent = article?.content || "<p>Could not extract article content.</p>";
+      articleContent = sanitizeContent(article?.content || "<p>Could not extract article content.</p>");
     }
 
     const readerHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=yes">
   <meta name="referrer" content="no-referrer">
+  <meta name="format-detection" content="telephone=no">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <base href="${baseObj.origin}/" target="_blank">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { background: #1C1C1E; color: #e4e4e7; }
+    html, body { background: #1C1C1E; color: #e4e4e7; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+    html { height: 100%; overflow-y: auto; -webkit-overflow-scrolling: touch; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
-      line-height: 1.75; font-size: 16px; -webkit-font-smoothing: antialiased;
-      padding: 20px 16px 80px; max-width: 680px; margin: 0 auto;
+      line-height: 1.75; font-size: 16px; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+      padding: 20px 16px 80px; padding: 20px max(16px, env(safe-area-inset-left)) calc(80px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-right));
+      max-width: 680px; margin: 0 auto; min-height: 100%;
+      word-wrap: break-word; overflow-wrap: break-word;
     }
     .reader-source { color: #FFB800; font-size: 10px; text-transform: uppercase; letter-spacing: 0.15em;
       font-family: "SF Mono", SFMono-Regular, ui-monospace, monospace; font-weight: 600; margin-bottom: 8px; }
@@ -1170,8 +1192,17 @@ ${rawSource ? `<div class="s">${escH(rawSource)}</div>` : ""}
 </body>
 </html>`;
 
-    res.setHeader("Content-Type", "text/html; charset=utf-8");
-    res.setHeader("Cache-Control", "private, max-age=300");
+    function setSecurityHeaders(r: typeof res) {
+      r.setHeader("Content-Type", "text/html; charset=utf-8");
+      r.setHeader("Cache-Control", "private, max-age=300");
+      r.setHeader("X-Content-Type-Options", "nosniff");
+      r.setHeader("X-Frame-Options", "SAMEORIGIN");
+      r.setHeader("Referrer-Policy", "no-referrer");
+      r.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()");
+      r.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; img-src https: data:; font-src https: data:; base-uri 'self'; form-action 'none'; frame-ancestors 'self'");
+    }
+
+    setSecurityHeaders(res);
     res.send(readerHtml);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "fetch failed";
@@ -1180,9 +1211,9 @@ ${rawSource ? `<div class="s">${escH(rawSource)}</div>` : ""}
     const rawSource = (req.query.source as string) || "";
     const escH = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     const errorHtml = `<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <style>*{box-sizing:border-box;margin:0;padding:0}html,body{background:#1C1C1E;color:#e4e4e7}
-body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;padding:20px 16px 80px;max-width:680px;margin:0 auto}
+body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;padding:20px 16px 80px;padding:20px max(16px,env(safe-area-inset-left)) 80px max(16px,env(safe-area-inset-right));max-width:680px;margin:0 auto}
 .s{color:#FFB800;font-size:10px;text-transform:uppercase;letter-spacing:.15em;font-family:"SF Mono",monospace;font-weight:600;margin-bottom:8px}
 h1{color:#fff;font-size:22px;font-weight:700;line-height:1.3;margin-bottom:24px}
 p{color:#a1a1aa;line-height:1.7;margin-bottom:16px}
@@ -1194,6 +1225,9 @@ ${rawSource ? `<div class="s">${escH(rawSource)}</div>` : ""}
 <p><a href="${escH(url || "")}">Open in browser →</a></p>
 </body></html>`;
     res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; img-src https: data:; form-action 'none'; frame-ancestors 'self'");
     res.send(errorHtml);
   }
 });

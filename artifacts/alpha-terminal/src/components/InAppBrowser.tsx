@@ -1,5 +1,5 @@
 import { useTerminalStore } from "@/lib/store";
-import { X, ExternalLink, Globe, RefreshCw } from "lucide-react";
+import { X, ExternalLink, Globe, RefreshCw, Shield } from "lucide-react";
 import { useRef, useEffect, useState, useCallback } from "react";
 
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
@@ -56,7 +56,7 @@ export function InAppBrowser() {
     if (iframeRef.current && currentUrl) {
       iframeRef.current.src = proxyUrl(currentUrl, browserTitle, browserSource, browserSourceUrl);
     }
-  }, [currentUrl]);
+  }, [currentUrl, browserTitle, browserSource, browserSourceUrl]);
 
   if (!browserUrl || !currentUrl) return null;
 
@@ -68,26 +68,41 @@ export function InAppBrowser() {
   return (
     <div
       className="fixed left-0 right-0 bottom-0 z-[999] flex flex-col"
-      style={{ top: `${headerH}px`, background: "#1C1C1E" }}
+      style={{
+        top: `${headerH}px`,
+        background: "#1C1C1E",
+        WebkitOverflowScrolling: "touch",
+      }}
     >
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-800 shrink-0" style={{ background: "#111113" }}>
+      <div
+        className="flex items-center gap-2 px-3 py-2 border-b shrink-0"
+        style={{
+          background: "#111113",
+          borderColor: "#2A2A2C",
+          paddingLeft: "max(12px, env(safe-area-inset-left))",
+          paddingRight: "max(12px, env(safe-area-inset-right))",
+        }}
+      >
         <button
           onClick={closeBrowser}
-          className="p-1.5 rounded-md hover:bg-zinc-800 transition-colors cursor-pointer"
+          className="p-1.5 rounded-md hover:bg-zinc-800 transition-colors cursor-pointer active:scale-95"
           aria-label="Close browser"
+          style={{ WebkitTapHighlightColor: "transparent", touchAction: "manipulation" }}
         >
           <X className="w-5 h-5 text-zinc-300" />
         </button>
 
         <div className="flex-1 flex items-center gap-1.5 bg-zinc-900 rounded-md px-3 py-1.5 min-w-0 border border-zinc-800">
-          <Globe className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+          <Shield className="w-3 h-3 text-emerald-500 shrink-0" />
+          <Globe className="w-3 h-3 text-zinc-500 shrink-0" />
           <span className="text-xs text-zinc-400 font-mono truncate">{displayUrl}</span>
         </div>
 
         <button
           onClick={handleReload}
-          className="p-1.5 rounded-md hover:bg-zinc-800 transition-colors cursor-pointer"
+          className="p-1.5 rounded-md hover:bg-zinc-800 transition-colors cursor-pointer active:scale-95"
           aria-label="Reload"
+          style={{ WebkitTapHighlightColor: "transparent", touchAction: "manipulation" }}
         >
           <RefreshCw className={`w-4 h-4 text-zinc-400 ${loading ? "animate-spin" : ""}`} />
         </button>
@@ -96,18 +111,29 @@ export function InAppBrowser() {
           href={currentUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="p-1.5 rounded-md hover:bg-zinc-800 transition-colors"
+          className="p-1.5 rounded-md hover:bg-zinc-800 transition-colors active:scale-95"
           aria-label="Open in new tab"
+          style={{ WebkitTapHighlightColor: "transparent", touchAction: "manipulation" }}
         >
           <ExternalLink className="w-4 h-4 text-zinc-400" />
         </a>
       </div>
 
-      <div className="flex-1 relative overflow-hidden">
+      <div
+        className="flex-1 relative"
+        style={{
+          overflow: "hidden",
+          WebkitOverflowScrolling: "touch",
+          overscrollBehavior: "contain",
+        }}
+      >
         {loading && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 z-20" style={{ background: "#1C1C1E" }}>
             <div className="w-6 h-6 border-2 border-zinc-700 border-t-[#FFB800] rounded-full animate-spin" />
-            <span className="text-xs text-zinc-500 font-mono uppercase tracking-wider">Loading article...</span>
+            <div className="flex items-center gap-1.5">
+              <Shield className="w-3 h-3 text-emerald-500" />
+              <span className="text-xs text-zinc-500 font-mono uppercase tracking-wider">Secure reader loading...</span>
+            </div>
           </div>
         )}
 
@@ -126,15 +152,16 @@ export function InAppBrowser() {
               href={currentUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors cursor-pointer"
-              style={{ background: "#FFB800", color: "#0a0a0a" }}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors cursor-pointer active:scale-95"
+              style={{ background: "#FFB800", color: "#0a0a0a", WebkitTapHighlightColor: "transparent" }}
             >
               <ExternalLink className="w-4 h-4" />
               Read Full Article
             </a>
             <button
               onClick={closeBrowser}
-              className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer font-mono uppercase tracking-wider"
+              className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer font-mono uppercase tracking-wider active:scale-95"
+              style={{ WebkitTapHighlightColor: "transparent", touchAction: "manipulation" }}
             >
               Go Back
             </button>
@@ -144,10 +171,18 @@ export function InAppBrowser() {
             ref={iframeRef}
             src={proxyUrl(currentUrl, browserTitle, browserSource, browserSourceUrl)}
             className="w-full h-full border-0"
-            sandbox="allow-same-origin"
+            sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+            referrerPolicy="no-referrer"
+            loading="eager"
+            allow="encrypted-media"
             onLoad={handleLoad}
             onError={handleError}
-            title="Article reader"
+            title="Secure article reader"
+            style={{
+              colorScheme: "dark",
+              WebkitOverflowScrolling: "touch",
+              overscrollBehavior: "contain",
+            }}
           />
         )}
       </div>
