@@ -1,12 +1,12 @@
 /**
  * useQuote — unified quote data hook.
  *
- * Price data sources (strictly separated):
- *  - ALL price fields (last, bid, ask, change, volume, high, low, close)
- *    come EXCLUSIVELY from the WebSocket stream when live.
- *  - REST is NEVER used for price data when the stream is active.
- *  - REST only provides static/slow metadata: description, 52-week range, PE ratio.
- *  - REST is used as the sole source only before the stream connects.
+ * ALL price data (last, bid, ask, change, volume, high, low, close)
+ * comes 100% from the WebSocket stream via snapshot polling. Never from REST.
+ *
+ * REST GET /api/market/quote is ONLY used for static metadata:
+ * description, 52-week range, PE ratio. It polls infrequently (2 min)
+ * and never touches price fields.
  */
 
 import { useTerminalStore, type LiveQuote } from "@/lib/store";
@@ -32,97 +32,56 @@ export interface QuoteData {
   error?:           string;
 }
 
-const STREAM_STALE_MS = 60_000;
-
 export function useQuote(symbol: string) {
   const symUpper = symbol.toUpperCase();
 
   const accessToken = useTerminalStore((s) => s.accessToken);
   const streamQuote = useTerminalStore((s) => s.streamPrices[symUpper]) as LiveQuote | undefined;
 
-  const hasLiveData = !!streamQuote && (Date.now() - streamQuote.ts) < STREAM_STALE_MS;
-
-  const { data: restData, isLoading, error } = useGetQuote(
+  const { data: restData } = useGetQuote(
     { symbol, accessToken: accessToken || "" },
     {
       query: {
         enabled: !!accessToken && !!symbol,
-        refetchInterval: (query) => {
-          const err = query.state.data?.error;
-          if (err === "rate_limited") return 3_000;
-          if (
-            err === "no_data" ||
-            err === "internal_error" ||
-            err?.startsWith("api_error_4") ||
-            err?.startsWith("api_error_5")
-          ) return false;
-          if (hasLiveData) return 120_000;
-          return 2_000;
-        },
+        refetchInterval: 120_000,
         refetchIntervalInBackground: false,
-        staleTime: hasLiveData ? 120_000 : 500,
+        staleTime: 120_000,
       },
     }
   );
 
   const restMatchesSymbol = restData && restData.symbol?.toUpperCase() === symUpper;
 
-  if (hasLiveData) {
-    const live: QuoteData = {
-      symbol:           streamQuote.symbol,
-      last:             streamQuote.last,
-      bid:              streamQuote.bid,
-      ask:              streamQuote.ask,
-      bidSize:          streamQuote.bidSize,
-      askSize:          streamQuote.askSize,
-      change:           streamQuote.change,
-      changePct:        streamQuote.changePct,
-      volume:           streamQuote.volume,
-      high:             streamQuote.high,
-      low:              streamQuote.low,
-      close:            streamQuote.close,
-      description:      null,
-      fiftyTwoWeekHigh: null,
-      fiftyTwoWeekLow:  null,
-      peRatio:          null,
-    };
+  const description      = (restMatchesSymbol ? restData.description      : null) ?? null;
+  const fiftyTwoWeekHigh = (restMatchesSymbol ? restData.fiftyTwoWeekHigh : null) ?? null;
+  const fiftyTwoWeekLow  = (restMatchesSymbol ? restData.fiftyTwoWeekLow  : null) ?? null;
+  const peRatio          = (restMatchesSymbol ? restData.peRatio          : null) ?? null;
 
-    if (restData && restMatchesSymbol) {
-      live.description      = restData.description      ?? null;
-      live.fiftyTwoWeekHigh = restData.fiftyTwoWeekHigh  ?? null;
-      live.fiftyTwoWeekLow  = restData.fiftyTwoWeekLow   ?? null;
-      live.peRatio          = restData.peRatio           ?? null;
-    }
+  const data: QuoteData = {
+    symbol:           symUpper,
+    description,
+    last:             streamQuote?.last      ?? null,
+    bid:              streamQuote?.bid       ?? null,
+    ask:              streamQuote?.ask       ?? null,
+    bidSize:          streamQuote?.bidSize   ?? null,
+    askSize:          streamQuote?.askSize   ?? null,
+    change:           streamQuote?.change    ?? null,
+    changePct:        streamQuote?.changePct ?? null,
+    volume:           streamQuote?.volume    ?? null,
+    high:             streamQuote?.high      ?? null,
+    low:              streamQuote?.low       ?? null,
+    close:            streamQuote?.close     ?? null,
+    fiftyTwoWeekHigh,
+    fiftyTwoWeekLow,
+    peRatio,
+  };
 
-    return {
-      data:      live,
-      isLoading: false,
-      error:     null,
-      source:    "stream" as const,
-    };
-  }
+  const hasAnyPrice = data.last !== null || data.bid !== null;
 
-  const restQuote: QuoteData | null = restData && restMatchesSymbol
-    ? {
-        symbol:           restData.symbol,
-        description:      restData.description      ?? null,
-        last:             restData.last              ?? null,
-        bid:              restData.bid               ?? null,
-        ask:              restData.ask               ?? null,
-        bidSize:          (restData as any).bidSize   ?? null,
-        askSize:          (restData as any).askSize   ?? null,
-        change:           restData.change            ?? null,
-        changePct:        restData.changePct         ?? null,
-        volume:           restData.volume            ?? null,
-        high:             restData.high              ?? null,
-        low:              restData.low               ?? null,
-        close:            null,
-        fiftyTwoWeekHigh: restData.fiftyTwoWeekHigh  ?? null,
-        fiftyTwoWeekLow:  restData.fiftyTwoWeekLow   ?? null,
-        peRatio:          restData.peRatio           ?? null,
-        error:            restData.error,
-      }
-    : null;
-
-  return { data: restQuote, isLoading: isLoading || (!restMatchesSymbol && !!accessToken), error, source: "rest" as const };
+  return {
+    data:      hasAnyPrice ? data : null,
+    isLoading: !hasAnyPrice && !!accessToken,
+    error:     null,
+    source:    "stream" as const,
+  };
 }
