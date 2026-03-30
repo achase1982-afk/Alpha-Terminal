@@ -198,7 +198,7 @@ export default function TerminalPage() {
                   <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} />
                 </div>
               </TabsContent>
-              <TabsContent value="ai" className="m-0 focus-visible:outline-none flex-1 flex flex-col">
+              <TabsContent value="ai" className="m-0 focus-visible:outline-none flex-1 flex flex-col -mt-3">
                 <AiIntelligenceTab initialSubTab={aiSubTab} />
               </TabsContent>
               <TabsContent value="scanner" className="m-0 focus-visible:outline-none">

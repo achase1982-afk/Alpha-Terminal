@@ -152,7 +152,7 @@ export function MarketPulseDashboard({ autoGenerate }: MarketPulseDashboardProps
   const isActive = isLoading || isStreaming;
 
   return (
-    <div className="space-y-4 px-3 sm:px-4 lg:px-5 overflow-x-hidden">
+    <div className="space-y-4 px-3 sm:px-4 lg:px-5 overflow-x-hidden pt-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <div className="w-7 h-7 rounded-lg bg-[#FFB800]/15 border border-[#FFB800]/30 flex items-center justify-center">

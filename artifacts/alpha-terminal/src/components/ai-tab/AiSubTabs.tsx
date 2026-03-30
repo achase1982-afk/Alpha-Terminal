@@ -14,8 +14,8 @@ const TABS: { value: AiSubTab; label: string }[] = [
 export function AiSubTabs({ active, onChange }: AiSubTabsProps) {
   return (
     <div
-      className="sticky z-40 px-3 sm:px-4 lg:px-5 pb-3 pt-2"
-      style={{ top: 78, background: "#151517" }}
+      className="sticky z-40 px-3 sm:px-4 lg:px-5 pb-2 pt-1"
+      style={{ top: 78, background: "#1C1C1E" }}
     >
       <div
         className="flex rounded-full p-1"
