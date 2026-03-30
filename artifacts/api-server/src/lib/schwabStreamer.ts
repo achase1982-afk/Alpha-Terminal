@@ -15,21 +15,34 @@ import { logger } from "./logger.js";
 
 // ─── LEVELONE_EQUITIES field map ─────────────────────────────────────────────
 // Schwab sends field updates keyed by integer indices.
+// Verified via live diagnostic dump 2026-03-30:
+//   3 = lastPrice (includes extended/pre-market — NOT regular session last)
+//  10 = highPrice (0 when market closed)
+//  11 = lowPrice  (0 when market closed)
+//  12 = closePrice (previous regular-session close)
+//  18 = netChange (dollar change vs close)
+//  29 = regularMarketLastPrice (equals close when market is closed)
+//  33 = regularMarketLastPrice (same as 29 during pre-market)
+//  42 = netPercentChange
+//  50 = netChange (duplicate of 18)
+//  51 = netPercentChange (duplicate of 42)
 const FIELD = {
-  BID:         1,
-  ASK:         2,
-  LAST:        3,
-  BID_SIZE:    4,
-  ASK_SIZE:    5,
-  VOLUME:      8,
-  HIGH:        12,
-  LOW:         13,
-  CLOSE_A:     14,
-  CLOSE_B:     15,
-  MARK:        29,
+  BID:            1,
+  ASK:            2,
+  LAST_ALL_SESS:  3,
+  BID_SIZE:       4,
+  ASK_SIZE:       5,
+  VOLUME:         8,
+  HIGH:           10,
+  LOW:            11,
+  CLOSE:          12,
+  NET_CHANGE:     18,
+  NET_PCT_CHANGE: 42,
+  MARK:           29,
+  REG_LAST:       33,
 } as const;
 
-const FIELDS_STR = "0,1,2,3,4,5,8,12,13,14,15,29";
+const FIELDS_STR = "0,1,2,3,4,5,8,10,11,12,18,29,33,42";
 
 // ─── LEVELONE_FUTURES field map (indices differ from equities) ───────────────
 const FUT_FIELD = {
@@ -341,11 +354,35 @@ function stopEquityResub() {
 // ─── Parse incoming DATA messages ────────────────────────────────────────────
 let equityTickCount = 0;
 let lastEquityTickLog = 0;
+let fieldDiagDone = false;
 
 function handleData(content: Record<string, unknown>[]) {
   equityTickCount += content.length;
   lastEquityTick = Date.now();
   const now = Date.now();
+
+  if (!fieldDiagDone && content.length > 0) {
+    fieldDiagDone = true;
+    const item = content[0];
+    const allFields: Record<string, unknown> = {};
+    for (let i = 0; i <= 52; i++) {
+      if (item[String(i)] !== undefined) {
+        allFields[String(i)] = item[String(i)];
+      }
+    }
+    logger.info({ sym: item["key"], fieldCount: Object.keys(allFields).length, fields: allFields }, "DIAG: ALL equity fields from first tick");
+    if (content.length > 1) {
+      const item2 = content[1];
+      const allFields2: Record<string, unknown> = {};
+      for (let i = 0; i <= 52; i++) {
+        if (item2[String(i)] !== undefined) {
+          allFields2[String(i)] = item2[String(i)];
+        }
+      }
+      logger.info({ sym: item2["key"], fields: allFields2 }, "DIAG: ALL equity fields from second tick");
+    }
+  }
+
   if (now - lastEquityTickLog > 30_000) {
     logger.info({ count: content.length, total: equityTickCount, symbols: content.map(i => i["key"]).slice(0, 5) }, "Streamer: EQUITY ticks received");
     lastEquityTickLog = now;
@@ -366,8 +403,8 @@ function handleData(content: Record<string, unknown>[]) {
       return typeof v === "number" && !isNaN(v) ? v : null;
     };
 
-    const lastVal  = pick(FIELD.LAST)    ?? existing.last;
-    const closeVal = pick(FIELD.CLOSE_A) ?? pick(FIELD.CLOSE_B) ?? existing.close;
+    const lastVal  = pick(FIELD.REG_LAST)  ?? existing.last;
+    const closeVal = pick(FIELD.CLOSE)     ?? existing.close;
 
     let changeVal:    number | null = existing.change;
     let changePctVal: number | null = existing.changePct;
