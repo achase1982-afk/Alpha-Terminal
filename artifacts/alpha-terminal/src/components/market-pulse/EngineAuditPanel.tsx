@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ChevronDown, Database } from "lucide-react";
 import type { MarketPulseData, RawIndicators, ClusterKey } from "../../types/marketPulse";
 
-type AuditCluster = "volLevel" | "volTermStructure" | "rates" | "credit" | "breadth";
+type AuditCluster = "volLevel" | "volTerm" | "rates" | "credit" | "breadth" | "riskAppetite" | "macro";
 
 interface IndicatorRow {
   symbol: string;
@@ -13,32 +13,42 @@ interface IndicatorRow {
 }
 
 const CLUSTER_LABELS: Record<AuditCluster, string> = {
-  volLevel: "Vol Level",
-  volTermStructure: "Vol Term",
   rates: "Rates",
   credit: "Credit",
+  volLevel: "Vol Level",
+  volTerm: "Vol Term",
   breadth: "Breadth",
+  riskAppetite: "Risk App",
+  macro: "Macro",
 };
 
 function buildIndicatorRows(raw: RawIndicators): IndicatorRow[] {
   return [
-    { symbol: "$VIX", label: "VIX (30-Day IV)", value: raw.vix, change: raw.vixChange, cluster: "volLevel" },
-    { symbol: "$VVIX", label: "VVIX (Vol of Vol)", value: raw.vvix, change: raw.vvixChange, cluster: "volLevel" },
-    { symbol: "$VIX9D", label: "VIX9D (9-Day)", value: raw.vix9d, change: raw.vix9dChange, cluster: "volTermStructure" },
-    { symbol: "$VIX3M", label: "VIX3M (3-Month)", value: raw.vix3m, change: raw.vix3mChange, cluster: "volTermStructure" },
-    { symbol: "$SKEW", label: "SKEW (Tail Risk)", value: raw.skew, change: null, cluster: "volTermStructure" },
     { symbol: "$TNX", label: "TNX (10Y Yield)", value: raw.tnx, change: raw.tnxChange, cluster: "rates" },
     { symbol: "$TYX", label: "TYX (30Y Yield)", value: raw.tyx, change: raw.tyxChange, cluster: "rates" },
+    { symbol: "/ZB", label: "30Y Bond Futures", value: raw.zb, change: raw.zbChange, cluster: "rates" },
+    { symbol: "/ZT", label: "2Y Note Futures", value: raw.zt, change: raw.ztChange, cluster: "rates" },
     { symbol: "HYG", label: "HYG (High Yield)", value: raw.hyg, change: raw.hygChange, cluster: "credit" },
     { symbol: "LQD", label: "LQD (Inv Grade)", value: raw.lqd, change: raw.lqdChange, cluster: "credit" },
     { symbol: "IEF", label: "IEF (7-10Y Tsy)", value: raw.ief, change: raw.iefChange, cluster: "credit" },
+    { symbol: "$VIX", label: "VIX (30-Day IV)", value: raw.vix, change: raw.vixChange, cluster: "volLevel" },
+    { symbol: "$VVIX", label: "VVIX (Vol of Vol)", value: raw.vvix, change: raw.vvixChange, cluster: "volLevel" },
+    { symbol: "$VIX9D", label: "VIX9D (9-Day)", value: raw.vix9d, change: raw.vix9dChange, cluster: "volTerm" },
+    { symbol: "$VIX3M", label: "VIX3M (3-Month)", value: raw.vix3m, change: raw.vix3mChange, cluster: "volTerm" },
+    { symbol: "$SKEW", label: "SKEW (Tail Risk)", value: raw.skew, change: null, cluster: "volTerm" },
     { symbol: "$ADVN", label: "Advancers", value: raw.advn, change: null, cluster: "breadth" },
     { symbol: "$DECN", label: "Decliners", value: raw.decn, change: null, cluster: "breadth" },
     { symbol: "$ADD", label: "A/D Line", value: raw.add, change: null, cluster: "breadth" },
     { symbol: "$TICK", label: "NYSE Tick", value: raw.tick, change: null, cluster: "breadth" },
     { symbol: "$TRIN", label: "Arms Index", value: raw.trin, change: null, cluster: "breadth" },
-    // $UVOL and $DVOL removed -- Schwab does not serve these symbols.
-    // If a secondary data source (e.g. IQFeed) is added later, re-enable here.
+    { symbol: "/ES", label: "E-mini S&P 500", value: raw.es, change: raw.esChange, cluster: "riskAppetite" },
+    { symbol: "/NQ", label: "E-mini Nasdaq", value: raw.nq, change: raw.nqChange, cluster: "riskAppetite" },
+    { symbol: "/YM", label: "Mini Dow", value: raw.ym, change: raw.ymChange, cluster: "riskAppetite" },
+    { symbol: "/RTY", label: "E-mini Russell", value: raw.rty, change: raw.rtyChange, cluster: "riskAppetite" },
+    { symbol: "/GC", label: "Gold Futures", value: raw.gc, change: raw.gcChange, cluster: "macro" },
+    { symbol: "/CL", label: "WTI Crude", value: raw.cl, change: raw.clChange, cluster: "macro" },
+    { symbol: "/BZ", label: "Brent Crude", value: raw.bz, change: raw.bzChange, cluster: "macro" },
+    { symbol: "/ZQ", label: "Fed Funds", value: raw.zq, change: raw.zqChange, cluster: "macro" },
   ];
 }
 
@@ -61,7 +71,7 @@ function chgColor(v: number | null): string {
   return "#71717a";
 }
 
-const CLUSTER_ORDER: ClusterKey[] = ["rates", "credit", "volLevel", "volTermStructure", "breadth"];
+const CLUSTER_ORDER: ClusterKey[] = ["rates", "credit", "volLevel", "volTerm", "breadth", "riskAppetite", "macro"];
 
 export function EngineAuditPanel({ data }: { data: MarketPulseData }) {
   const [open, setOpen] = useState(false);
@@ -201,7 +211,7 @@ export function EngineAuditPanel({ data }: { data: MarketPulseData }) {
               Confidence: <span className="text-[#e4e4e7] font-bold">{data.confidenceScore}/{data.maxConfidence}</span>
             </span>
             <span className="font-mono text-[9px] text-[#52525b]">
-              Weights: R25 C20 VL20 VT15 B20
+              Weights: R20 C15 VL15 VT10 B15 RA15 M10
             </span>
           </div>
         </div>

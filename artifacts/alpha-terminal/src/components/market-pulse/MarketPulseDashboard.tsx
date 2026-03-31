@@ -15,7 +15,7 @@ import { ALL_PULSE_INDICATORS } from "@/types/marketPulse";
 import { AiThinkingFeed } from "../ai-shared/AiThinkingFeed";
 
 const API_BASE = "/api";
-const CLUSTER_ORDER: ClusterKey[] = ["rates", "credit", "volLevel", "volTermStructure", "breadth"];
+const CLUSTER_ORDER: ClusterKey[] = ["rates", "credit", "volLevel", "volTerm", "breadth", "riskAppetite", "macro"];
 
 const BIAS_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   STRONGLY_BULLISH: { bg: "rgba(0,209,102,0.15)", text: "#00d166", border: "rgba(0,209,102,0.4)" },
@@ -397,7 +397,7 @@ function PulseLoadingStatus({ thinkingTokens }: { thinkingTokens: string[] }) {
       </div>
 
       <div className="flex gap-2 overflow-x-auto pb-1 -mx-3 px-3">
-        {["RATES", "CREDIT", "VOL", "TERM", "BREADTH"].map((label, i) => (
+        {["RATES", "CREDIT", "VOL", "TERM", "BREADTH", "RISK APP", "MACRO"].map((label, i) => (
           <div
             key={label}
             className="rounded-lg border border-[#2A2A2C] p-2.5 space-y-2 shrink-0"

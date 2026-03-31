@@ -184,7 +184,7 @@ const INDEX_MAP: Record<string, string> = {
   VIX9D: "$VIX9D", "$VIX9D": "$VIX9D",
   VIX3M: "$VIX3M", "$VIX3M": "$VIX3M",
   SKEW: "$SKEW", "$SKEW": "$SKEW",
-  ADSPD: "$ADSPD", "$ADSPD": "$ADSPD",
+  // $ADSPD removed -- not used in scoring engine
 };
 function toSchwabKey(sym: string): string {
   return INDEX_MAP[sym.toUpperCase()] ?? sym.toUpperCase();
@@ -381,7 +381,7 @@ let equityTickCount = 0;
 let lastEquityTickLog = 0;
 let fieldDiagDone = false;
 
-const DIAG_SYMBOLS = new Set(["$ADVN", "$DECN", "$TICK", "$ADD", "$TRIN", "$ADSPD"]);
+const DIAG_SYMBOLS = new Set(["$ADVN", "$DECN", "$TICK", "$ADD", "$TRIN"]);
 const diagDone = new Set<string>();
 
 function handleData(content: Record<string, unknown>[]) {

@@ -1,12 +1,14 @@
-import { TrendingUp, TrendingDown, Minus, BarChart2, Activity, Layers, GitBranch, Users } from "lucide-react";
+import { TrendingUp, TrendingDown, Minus, BarChart2, Activity, Layers, GitBranch, Users, Flame, Globe } from "lucide-react";
 import type { ClusterData, ClusterKey } from "../../types/marketPulse";
 
 const CLUSTER_CONFIG: Record<ClusterKey, { label: string; icon: React.ReactNode }> = {
   rates: { label: "RATES", icon: <BarChart2 className="w-3.5 h-3.5" /> },
   credit: { label: "CREDIT", icon: <Activity className="w-3.5 h-3.5" /> },
   volLevel: { label: "VOL LEVEL", icon: <Layers className="w-3.5 h-3.5" /> },
-  volTermStructure: { label: "TERM STRUCT", icon: <GitBranch className="w-3.5 h-3.5" /> },
+  volTerm: { label: "VOL TERM", icon: <GitBranch className="w-3.5 h-3.5" /> },
   breadth: { label: "BREADTH", icon: <Users className="w-3.5 h-3.5" /> },
+  riskAppetite: { label: "RISK APP", icon: <Flame className="w-3.5 h-3.5" /> },
+  macro: { label: "MACRO", icon: <Globe className="w-3.5 h-3.5" /> },
 };
 
 function scoreColor(score: number): string {

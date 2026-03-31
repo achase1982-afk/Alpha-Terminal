@@ -341,32 +341,38 @@ interface PulseSymbol {
 }
 
 const PULSE_SYMBOLS: PulseSymbol[] = [
-  { display: "SPY",   api: "SPY",    category: "equity",    description: "S&P 500 ETF — broad market barometer" },
-  { display: "QQQ",   api: "QQQ",    category: "equity",    description: "Nasdaq-100 ETF — tech/growth leadership" },
-  { display: "IWM",   api: "IWM",    category: "equity",    description: "Russell 2000 ETF — small-cap risk appetite" },
-  { display: "$VIX",  api: "$VIX",   category: "vol",       description: "CBOE VIX — S&P implied vol (30-day), fear gauge" },
-  { display: "$VVIX", api: "$VVIX",  category: "vol",       description: "VVIX — vol-of-vol, tail risk premium indicator" },
-  { display: "$CPC",  api: "$CPC",   category: "vol",       description: "CBOE Put/Call Ratio — >1.0 fear, <0.7 complacency" },
-  { display: "$TICK", api: "$TICK",  category: "breadth",   description: "NYSE TICK — stocks upticking minus downticking (intraday flow)" },
-  { display: "$ADD",  api: "$ADD",   category: "breadth",   description: "NYSE A/D Line — advancers minus decliners (breadth)" },
-  { display: "$TRIN", api: "$TRIN",  category: "breadth",   description: "TRIN/Arms Index — <1.0 bullish, >1.0 bearish distribution" },
-  { display: "$DXY",  api: "$DXY",   category: "currency",  description: "US Dollar Index — dollar vs. major FX basket" },
-  { display: "/ES",   api: "/ES",    category: "futures",   description: "E-mini S&P 500 Futures" },
-  { display: "/NQ",   api: "/NQ",    category: "futures",   description: "E-mini Nasdaq-100 Futures" },
-  { display: "/GC",   api: "/GC",    category: "commodity", description: "Gold Futures — safe-haven / real rates proxy" },
-  { display: "/CL",   api: "/CL",    category: "commodity", description: "Crude Oil Futures — energy / risk appetite signal" },
-  { display: "$TNX",  api: "$TNX",   category: "rates",     description: "10-Year Treasury Yield Index" },
-  { display: "$TYX",  api: "$TYX",   category: "rates",     description: "30-Year Treasury Yield Index" },
-  { display: "$VIX9D", api: "$VIX9D", category: "vol",      description: "CBOE 9-Day VIX — near-term implied vol" },
-  { display: "$VIX3M", api: "$VIX3M", category: "vol",      description: "CBOE 3-Month VIX — medium-term implied vol" },
-  { display: "$SKEW", api: "$SKEW",  category: "vol",       description: "CBOE SKEW — tail risk / crash hedging indicator" },
-  { display: "HYG",   api: "HYG",    category: "credit",    description: "iShares High Yield Corporate Bond ETF — credit risk appetite" },
-  { display: "LQD",   api: "LQD",    category: "credit",    description: "iShares Investment Grade Corporate Bond ETF" },
-  { display: "IEF",   api: "IEF",    category: "credit",    description: "iShares 7-10 Year Treasury Bond ETF" },
-  { display: "$ADVN", api: "$ADVN",  category: "breadth",   description: "NYSE Advancing Issues — breadth count" },
-  { display: "$DECN", api: "$DECN",  category: "breadth",   description: "NYSE Declining Issues — breadth count" },
-  // $UVOL and $DVOL removed -- Schwab does not serve these symbols.
-  // If a secondary data source (e.g. IQFeed) is added later, re-enable here.
+  { display: "SPY",    api: "SPY",    category: "equity",    description: "S&P 500 ETF — broad market barometer" },
+  { display: "QQQ",    api: "QQQ",    category: "equity",    description: "Nasdaq-100 ETF — tech/growth leadership" },
+  { display: "IWM",    api: "IWM",    category: "equity",    description: "Russell 2000 ETF — small-cap risk appetite" },
+  { display: "$VIX",   api: "$VIX",   category: "vol",       description: "CBOE VIX — S&P implied vol (30-day), fear gauge" },
+  { display: "$VVIX",  api: "$VVIX",  category: "vol",       description: "VVIX — vol-of-vol, tail risk premium indicator" },
+  { display: "$VIX9D", api: "$VIX9D", category: "vol",       description: "CBOE 9-Day VIX — near-term implied vol" },
+  { display: "$VIX3M", api: "$VIX3M", category: "vol",       description: "CBOE 3-Month VIX — medium-term implied vol" },
+  { display: "$SKEW",  api: "$SKEW",  category: "vol",       description: "CBOE SKEW — tail risk / crash hedging indicator" },
+  { display: "$CPC",   api: "$CPC",   category: "vol",       description: "CBOE Put/Call Ratio — >1.0 fear, <0.7 complacency" },
+  { display: "$TICK",  api: "$TICK",  category: "breadth",   description: "NYSE TICK — stocks upticking minus downticking (intraday flow)" },
+  { display: "$ADD",   api: "$ADD",   category: "breadth",   description: "NYSE A/D Line — advancers minus decliners (breadth)" },
+  { display: "$TRIN",  api: "$TRIN",  category: "breadth",   description: "TRIN/Arms Index — <1.0 bullish, >1.0 bearish distribution" },
+  { display: "$ADVN",  api: "$ADVN",  category: "breadth",   description: "NYSE Advancing Issues — breadth count" },
+  { display: "$DECN",  api: "$DECN",  category: "breadth",   description: "NYSE Declining Issues — breadth count" },
+  { display: "$TNX",   api: "$TNX",   category: "rates",     description: "10-Year Treasury Yield Index" },
+  { display: "$TYX",   api: "$TYX",   category: "rates",     description: "30-Year Treasury Yield Index" },
+  { display: "/ZB",    api: "/ZB",    category: "rates",     description: "30Y Treasury Bond Futures" },
+  { display: "/ZT",    api: "/ZT",    category: "rates",     description: "2Y Treasury Note Futures" },
+  { display: "HYG",    api: "HYG",    category: "credit",    description: "iShares High Yield Corporate Bond ETF — credit risk appetite" },
+  { display: "LQD",    api: "LQD",    category: "credit",    description: "iShares Investment Grade Corporate Bond ETF" },
+  { display: "IEF",    api: "IEF",    category: "credit",    description: "iShares 7-10 Year Treasury Bond ETF" },
+  { display: "/ES",    api: "/ES",    category: "futures",   description: "E-mini S&P 500 Futures" },
+  { display: "/NQ",    api: "/NQ",    category: "futures",   description: "E-mini Nasdaq-100 Futures" },
+  { display: "/YM",    api: "/YM",    category: "futures",   description: "Mini Dow Jones Futures" },
+  { display: "/RTY",   api: "/RTY",   category: "futures",   description: "E-mini Russell 2000 Futures" },
+  { display: "/GC",    api: "/GC",    category: "commodity", description: "Gold Futures — safe-haven / real rates proxy" },
+  { display: "/CL",    api: "/CL",    category: "commodity", description: "Crude Oil Futures — energy / risk appetite signal" },
+  { display: "/BZ",    api: "/BZ",    category: "commodity", description: "Brent Crude Oil Futures" },
+  { display: "/ZQ",    api: "/ZQ",    category: "commodity", description: "30-Day Fed Funds Futures" },
+  { display: "$DXY",   api: "$DXY",   category: "currency",  description: "US Dollar Index — dollar vs. major FX basket" },
+  // $UVOL, $DVOL, $TVOL removed -- Schwab does not serve these symbols
+  // HYD removed -- redundant with HYG and LQD
 ];
 
 // Maps user-facing symbols to Schwab API format (adds $ prefix for known indices)
@@ -615,11 +621,14 @@ function extractMarketIndicators(dataMap: Map<string, Record<string, unknown>>):
     vix9dChange: pctChange('$VIX9D'),
     skew: lastOrMark('$SKEW'),
 
-    // BUG FIX 1 applied: yields in actual % (e.g. 4.342 not 43.42)
     tnx: yieldIndex('$TNX'),
     tnxChange: pctChange('$TNX'),
     tyx: yieldIndex('$TYX'),
     tyxChange: pctChange('$TYX'),
+    zb: lastOrMark('/ZB'),
+    zbChange: pctChange('/ZB'),
+    zt: lastOrMark('/ZT'),
+    ztChange: pctChange('/ZT'),
 
     hyg: lastOrMark('HYG'),
     hygChange: pctChange('HYG'),
@@ -627,17 +636,32 @@ function extractMarketIndicators(dataMap: Map<string, Record<string, unknown>>):
     lqdChange: pctChange('LQD'),
     ief: lastOrMark('IEF'),
     iefChange: pctChange('IEF'),
-    nyicdx: null,
-    nyicdxChange: null,
 
     advn,
     decn,
     tick: lastOrMark('$TICK'),
     trin: lastOrMark('$TRIN'),
-    add, // BUG FIX 3 applied: computed from ADVN−DECN if API returns 0
+    add,
 
-    // $UVOL and $DVOL removed -- Schwab does not serve these symbols.
-    // If a secondary data source (e.g. IQFeed) is added later, re-enable here.
+    es: lastOrMark('/ES'),
+    esChange: pctChange('/ES'),
+    nq: lastOrMark('/NQ'),
+    nqChange: pctChange('/NQ'),
+    ym: lastOrMark('/YM'),
+    ymChange: pctChange('/YM'),
+    rty: lastOrMark('/RTY'),
+    rtyChange: pctChange('/RTY'),
+
+    gc: lastOrMark('/GC'),
+    gcChange: pctChange('/GC'),
+    cl: lastOrMark('/CL'),
+    clChange: pctChange('/CL'),
+    bz: lastOrMark('/BZ'),
+    bzChange: pctChange('/BZ'),
+    zq: lastOrMark('/ZQ'),
+    zqChange: pctChange('/ZQ'),
+    // $UVOL, $DVOL, $TVOL removed -- Schwab does not serve these symbols
+    // HYD removed -- redundant with HYG and LQD
   };
 }
 

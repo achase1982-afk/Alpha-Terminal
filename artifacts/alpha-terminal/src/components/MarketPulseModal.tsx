@@ -1,10 +1,11 @@
 export const DEFAULT_PULSE_SYMBOLS = [
-  "$ADD", "$ADVN", "$DECN", "$TICK",
-  "$TRIN", "$VIX", "$VVIX", "$VIX9D",
-  "$VIX3M", "$SKEW", "$TYX", "$TNX", "HYG",
-  "LQD", "IEF", "/GC", "/ES", "/NQ", "/YM",
-  "/RTY", "/CL", "/BZ", "$NYICDX", "/ZQ",
-  "/ZB", "/ZT", "$ADSPD",
-  // $UVOL and $DVOL removed -- Schwab does not serve these symbols.
-  "$HYD",
+  "$TNX", "$TYX", "/ZB", "/ZT",
+  "HYG", "LQD", "IEF",
+  "$VIX", "$VVIX",
+  "$VIX9D", "$VIX3M", "$SKEW",
+  "$ADD", "$ADVN", "$DECN", "$TICK", "$TRIN",
+  "/ES", "/NQ", "/YM", "/RTY",
+  "/GC", "/CL", "/BZ", "/ZQ",
+  // $UVOL, $DVOL, $TVOL removed -- Schwab does not serve these symbols
+  // HYD removed -- redundant with HYG and LQD
 ];

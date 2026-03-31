@@ -1,0 +1,778 @@
+# PROMPT 1: COMPLETE MARKET PULSE SCORING ENGINE – ALL 27 SYMBOLS
+
+Rebuild the Market Pulse deterministic TypeScript scoring engine from scratch. Replace whatever exists. Do not patch – write new.
+
+This engine scores 27 market indicators across 7 clusters. All math is deterministic TypeScript. Gemini only consumes the output for narrative. Gemini does NOT do math.
+
+-----
+
+## INDICATOR CONFIG
+
+Every scored indicator lives in one config. If an indicator needs to be disabled (broken feed), flip enabled to false. The scoring functions check this before processing.
+
+```typescript
+type ClusterName = 'rates' | 'credit' | 'volLevel' | 'volTerm' | 'breadth' | 'riskAppetite' | 'macro';
+
+interface IndicatorConfig {
+  symbol: string;
+  cluster: ClusterName;
+  enabled: boolean;
+  label: string;
+}
+
+const INDICATOR_CONFIG: IndicatorConfig[] = [
+  // RATES (4 symbols)
+  { symbol: '$TNX',   cluster: 'rates',        enabled: true, label: '10Y Yield' },
+  { symbol: '$TYX',   cluster: 'rates',        enabled: true, label: '30Y Yield' },
+  { symbol: '/ZB',    cluster: 'rates',        enabled: true, label: '30Y Treasury Futures' },
+  { symbol: '/ZT',    cluster: 'rates',        enabled: true, label: '2Y Treasury Futures' },
+
+  // CREDIT (3 symbols)
+  { symbol: 'HYG',    cluster: 'credit',       enabled: true, label: 'HY Corporate Bond ETF' },
+  { symbol: 'LQD',    cluster: 'credit',       enabled: true, label: 'IG Corporate Bond ETF' },
+  { symbol: 'IEF',    cluster: 'credit',       enabled: true, label: '7-10Y Treasury ETF' },
+
+  // VOL LEVEL (2 symbols)
+  { symbol: 'VIX',    cluster: 'volLevel',     enabled: true, label: 'CBOE Volatility Index' },
+  { symbol: 'VVIX',   cluster: 'volLevel',     enabled: true, label: 'VIX of VIX' },
+
+  // VOL TERM (3 symbols)
+  { symbol: 'VIX9D',  cluster: 'volTerm',      enabled: true, label: 'CBOE 9-Day VIX' },
+  { symbol: 'VIX3M',  cluster: 'volTerm',      enabled: true, label: 'CBOE 3-Month VIX' },
+  { symbol: 'SKEW',   cluster: 'volTerm',      enabled: true, label: 'CBOE Skew Index' },
+
+  // BREADTH (5 symbols)
+  { symbol: '$ADVN',  cluster: 'breadth',      enabled: true, label: 'NYSE Advancing Issues' },
+  { symbol: '$DECN',  cluster: 'breadth',      enabled: true, label: 'NYSE Declining Issues' },
+  { symbol: '$TRIN',  cluster: 'breadth',      enabled: true, label: 'Arms Index' },
+  { symbol: '$TICK',  cluster: 'breadth',      enabled: true, label: 'NYSE Tick' },
+  { symbol: '$ADD',   cluster: 'breadth',      enabled: true, label: 'NYSE Advance-Decline' },
+
+  // RISK APPETITE (4 symbols)
+  { symbol: '/ES',    cluster: 'riskAppetite', enabled: true, label: 'E-mini S&P 500' },
+  { symbol: '/NQ',    cluster: 'riskAppetite', enabled: true, label: 'E-mini Nasdaq 100' },
+  { symbol: '/YM',    cluster: 'riskAppetite', enabled: true, label: 'Mini Dow Jones' },
+  { symbol: '/RTY',   cluster: 'riskAppetite', enabled: true, label: 'E-mini Russell 2000' },
+
+  // MACRO (6 symbols)
+  { symbol: '/GC',    cluster: 'macro',        enabled: true, label: 'Gold Futures' },
+  { symbol: '/CL',    cluster: 'macro',        enabled: true, label: 'WTI Crude Oil' },
+  { symbol: '/BZ',    cluster: 'macro',        enabled: true, label: 'Brent Crude Oil' },
+  { symbol: '/ZQ',    cluster: 'macro',        enabled: true, label: '30-Day Fed Funds' },
+];
+```
+
+IMPORTANT: Add this sentinel guard at the data ingestion layer. Schwab returns 92233720368 for unsupported symbols. Never let that into scoring.
+
+```typescript
+const SCHWAB_SENTINEL = 92233720368;
+
+function sanitizeValue(raw: number | null | undefined): number | null {
+  if (raw === null || raw === undefined) return null;
+  if (raw === SCHWAB_SENTINEL) return null;
+  return raw;
+}
+```
+
+Remove $UVOL, $DVOL, $TVOL, and HYD from everywhere. They are dead. Add this comment where they were:
+
+```
+// $UVOL, $DVOL, $TVOL removed -- Schwab does not serve these symbols
+// HYD removed -- redundant with HYG and LQD
+```
+
+-----
+
+## CLUSTER WEIGHTS (must total 100)
+
+```typescript
+const CLUSTER_WEIGHTS: Record<ClusterName, number> = {
+  rates:        20,
+  credit:       15,
+  volLevel:     15,
+  volTerm:      10,
+  breadth:      15,
+  riskAppetite: 15,
+  macro:        10,
+};
+```
+
+-----
+
+## CLUSTER 1: RATES (Weight 20)
+
+Inputs: $TNX, $TYX, /ZB, /ZT
+
+```typescript
+function scoreRates(data: MarketData): ClusterResult {
+  let score = 0;
+  const rules: string[] = [];
+
+  const tnxChange = getPercentChange('$TNX');
+  if (tnxChange !== null) {
+    if (tnxChange <= -1.0) { score += 1.0; rules.push('TNX down >1%: +1.0'); }
+    else if (tnxChange <= -0.5) { score += 0.75; rules.push('TNX down 0.5-1%: +0.75'); }
+    else if (tnxChange <= -0.1) { score += 0.5; rules.push('TNX down 0.1-0.5%: +0.5'); }
+    else if (tnxChange >= 1.0) { score -= 1.0; rules.push('TNX up >1%: -1.0'); }
+    else if (tnxChange >= 0.5) { score -= 0.75; rules.push('TNX up 0.5-1%: -0.75'); }
+    else if (tnxChange >= 0.1) { score -= 0.5; rules.push('TNX up 0.1-0.5%: -0.5'); }
+  }
+
+  // TYX directional confirmation/divergence
+  const tyxChange = getPercentChange('$TYX');
+  if (tyxChange !== null && tnxChange !== null) {
+    const sameDir = (tnxChange > 0 && tyxChange > 0) || (tnxChange < 0 && tyxChange < 0);
+    if (!sameDir && Math.abs(tnxChange) > 0.1 && Math.abs(tyxChange) > 0.1) {
+      score -= 0.25;
+      rules.push('TNX/TYX divergence: -0.25');
+    }
+  }
+
+  // Bond futures confirmation
+  const zbChange = getPercentChange('/ZB');
+  const ztChange = getPercentChange('/ZT');
+  if (zbChange !== null && ztChange !== null) {
+    const bondsRallying = zbChange > 0 && ztChange > 0;
+    const bondsSelling = zbChange < 0 && ztChange < 0;
+
+    if (score > 0 && bondsRallying) {
+      score += 0.25;
+      rules.push('Bond futures confirm yield decline: +0.25');
+    } else if (score > 0 && bondsSelling) {
+      score -= 0.25;
+      rules.push('Bond futures contradict yield decline: -0.25');
+    } else if (score < 0 && bondsSelling) {
+      score -= 0.25;
+      rules.push('Bond futures confirm yield rise: -0.25');
+    } else if (score < 0 && bondsRallying) {
+      score += 0.25;
+      rules.push('Bond futures contradict yield rise: +0.25');
+    }
+  }
+
+  return { name: 'rates', score: clamp(score, -2.0, 2.0), rules };
+}
+```
+
+-----
+
+## CLUSTER 2: CREDIT (Weight 15)
+
+Inputs: HYG, LQD, IEF
+
+```typescript
+function scoreCredit(data: MarketData): ClusterResult {
+  let score = 0;
+  const rules: string[] = [];
+
+  const hygChange = getPercentChange('HYG');
+  if (hygChange !== null) {
+    if (hygChange > 0.5) { score += 2.0; rules.push('HYG up >0.5%: +2.0'); }
+    else if (hygChange > 0.2) { score += 1.0; rules.push('HYG up 0.2-0.5%: +1.0'); }
+    else if (hygChange < -0.5) { score -= 2.0; rules.push('HYG down >0.5%: -2.0'); }
+    else if (hygChange < -0.2) { score -= 1.0; rules.push('HYG down 0.2-0.5%: -1.0'); }
+  }
+
+  const lqdChange = getPercentChange('LQD');
+  if (lqdChange !== null) {
+    if (lqdChange > 0.3) { score += 0.5; rules.push('LQD up >0.3%: +0.5'); }
+    else if (lqdChange < -0.3) { score -= 0.5; rules.push('LQD down >0.3%: -0.5'); }
+  }
+
+  const iefChange = getPercentChange('IEF');
+  if (iefChange !== null) {
+    if (iefChange > 0.3) { score += 0.25; rules.push('IEF up >0.3%: +0.25'); }
+    else if (iefChange < -0.3) { score -= 0.25; rules.push('IEF down >0.3%: -0.25'); }
+  }
+
+  return { name: 'credit', score: clamp(score, -2.0, 2.0), rules };
+}
+```
+
+-----
+
+## CLUSTER 3: VOL LEVEL (Weight 15)
+
+Inputs: VIX, VVIX
+
+```typescript
+function scoreVolLevel(data: MarketData): ClusterResult {
+  let score = 0;
+  const rules: string[] = [];
+
+  const vixValue = getValue('VIX');
+  const vixChange = getPercentChange('VIX');
+
+  // VIX absolute level
+  if (vixValue !== null) {
+    if (vixValue < 15) { score += 0.5; rules.push('VIX <15 (low vol): +0.5'); }
+    else if (vixValue >= 15 && vixValue < 20) { score += 0.25; rules.push('VIX 15-20 (normal): +0.25'); }
+    else if (vixValue >= 20 && vixValue < 25) { /* neutral */ }
+    else if (vixValue >= 25 && vixValue < 30) { score -= 0.5; rules.push('VIX 25-30 (high): -0.5'); }
+    else if (vixValue >= 30 && vixValue < 35) { score -= 1.0; rules.push('VIX 30-35 (very high): -1.0'); }
+    else if (vixValue >= 35) { score -= 1.5; rules.push('VIX >35 (extreme): -1.5'); }
+  }
+
+  // VIX intraday direction
+  if (vixChange !== null) {
+    if (vixChange <= -5) { score += 1.5; rules.push('VIX down >5% intraday: +1.5'); }
+    else if (vixChange <= -3) { score += 0.75; rules.push('VIX down 3-5% intraday: +0.75'); }
+    else if (vixChange >= 5) { score -= 1.5; rules.push('VIX up >5% intraday: -1.5'); }
+    else if (vixChange >= 3) { score -= 0.75; rules.push('VIX up 3-5% intraday: -0.75'); }
+  }
+
+  // VVIX (vol of vol)
+  const vvixChange = getPercentChange('VVIX');
+  if (vvixChange !== null) {
+    if (vvixChange <= -3) { score += 0.5; rules.push('VVIX down >3%: +0.5'); }
+    else if (vvixChange >= 3) { score -= 0.5; rules.push('VVIX up >3%: -0.5'); }
+  }
+
+  return { name: 'volLevel', score: clamp(score, -2.5, 2.5), rules };
+}
+```
+
+-----
+
+## CLUSTER 4: VOL TERM (Weight 10)
+
+Inputs: VIX9D, VIX3M, SKEW, VIX (for comparison)
+
+```typescript
+function scoreVolTerm(data: MarketData): ClusterResult {
+  let score = 0;
+  const rules: string[] = [];
+
+  const vix = getValue('VIX');
+  const vix9d = getValue('VIX9D');
+  const vix3m = getValue('VIX3M');
+  const skew = getValue('SKEW');
+
+  // VIX9D vs VIX term structure
+  if (vix9d !== null && vix !== null) {
+    if (vix9d < vix) { score += 1.0; rules.push('VIX9D < VIX (contango): +1.0'); }
+    else if (vix9d > vix * 1.05) { score -= 1.0; rules.push('VIX9D > VIX (backwardation): -1.0'); }
+  }
+
+  // SKEW tail risk
+  if (skew !== null) {
+    if (skew > 150) { score -= 1.0; rules.push(`SKEW ${skew.toFixed(2)} (>150 extreme tail risk): -1.0`); }
+    else if (skew > 140) { score -= 0.5; rules.push(`SKEW ${skew.toFixed(2)} (140-150 elevated tail risk): -0.5`); }
+    else if (skew < 110) { score += 0.25; rules.push(`SKEW ${skew.toFixed(2)} (<110 low tail demand): +0.25`); }
+  }
+
+  return { name: 'volTerm', score: clamp(score, -2.0, 2.0), rules };
+}
+```
+
+-----
+
+## CLUSTER 5: BREADTH (Weight 15)
+
+Inputs: $ADVN, $DECN, $TRIN, $TICK, $ADD
+
+```typescript
+function scoreBreadth(data: MarketData): ClusterResult {
+  let score = 0;
+  const rules: string[] = [];
+
+  const advn = getValue('$ADVN');
+  const decn = getValue('$DECN');
+  const trin = getValue('$TRIN');
+  const tick = getValue('$TICK');
+  const add = getValue('$ADD');
+
+  // AD Ratio
+  if (advn !== null && decn !== null && decn > 0) {
+    const adRatio = advn / decn;
+    if (adRatio > 3) { score += 2.0; rules.push(`AD ratio ${adRatio.toFixed(2)} (>3): +2.0`); }
+    else if (adRatio > 2) { score += 1.5; rules.push(`AD ratio ${adRatio.toFixed(2)} (2-3): +1.5`); }
+    else if (adRatio > 1.5) { score += 0.75; rules.push(`AD ratio ${adRatio.toFixed(2)} (1.5-2): +0.75`); }
+    else if (adRatio < 0.33) { score -= 2.0; rules.push(`AD ratio ${adRatio.toFixed(2)} (<0.33): -2.0`); }
+    else if (adRatio < 0.5) { score -= 1.5; rules.push(`AD ratio ${adRatio.toFixed(2)} (0.33-0.5): -1.5`); }
+    else if (adRatio < 0.67) { score -= 0.75; rules.push(`AD ratio ${adRatio.toFixed(2)} (0.5-0.67): -0.75`); }
+  }
+
+  // TRIN tiered scoring
+  if (trin !== null) {
+    if (trin < 0.5) { score += 1.0; rules.push(`TRIN ${trin.toFixed(4)} (<0.5 strongly bullish vol breadth): +1.0`); }
+    else if (trin < 1.0) { score += 0.5; rules.push(`TRIN ${trin.toFixed(4)} (0.5-1.0 bullish vol breadth): +0.5`); }
+    else if (trin >= 1.5 && trin < 2.0) { score -= 0.5; rules.push(`TRIN ${trin.toFixed(4)} (1.5-2.0 mildly bearish): -0.5`); }
+    else if (trin >= 2.0 && trin < 2.5) { score -= 1.0; rules.push(`TRIN ${trin.toFixed(4)} (2.0-2.5 bearish): -1.0`); }
+    else if (trin >= 2.5 && trin < 3.0) { score -= 1.5; rules.push(`TRIN ${trin.toFixed(4)} (2.5-3.0 very bearish): -1.5`); }
+    else if (trin >= 3.0) { score -= 2.0; rules.push(`TRIN ${trin.toFixed(4)} (>=3.0 extreme bearish): -2.0`); }
+  }
+
+  // TRIN cluster cap: if TRIN >= 3.0, breadth cannot be positive
+  if (trin !== null && trin >= 3.0 && score > 0) {
+    score = 0;
+    rules.push('TRIN >=3.0 cluster cap: score clamped to 0');
+  }
+
+  return { name: 'breadth', score: clamp(score, -3.0, 3.0), rules };
+}
+```
+
+-----
+
+## CLUSTER 6: RISK APPETITE (Weight 15) – NEW
+
+Inputs: /ES, /NQ, /YM, /RTY
+
+```typescript
+function scoreRiskAppetite(data: MarketData): ClusterResult {
+  let score = 0;
+  const rules: string[] = [];
+
+  const esChange = getPercentChange('/ES');
+  const nqChange = getPercentChange('/NQ');
+  const ymChange = getPercentChange('/YM');
+  const rtyChange = getPercentChange('/RTY');
+
+  const changes = [esChange, nqChange, rtyChange, ymChange].filter(c => c !== null) as number[];
+  if (changes.length < 2) return { name: 'riskAppetite', score: 0, rules: ['Insufficient data'] };
+
+  const allPositive = changes.every(c => c > 0);
+  const allNegative = changes.every(c => c < 0);
+  const avg = changes.reduce((a, b) => a + b, 0) / changes.length;
+
+  // Broad rally/selloff strength
+  if (allPositive && avg > 1.0) { score += 1.5; rules.push(`All futures up, avg +${avg.toFixed(2)}%: +1.5`); }
+  else if (allPositive && avg > 0.5) { score += 1.0; rules.push(`All futures up, avg +${avg.toFixed(2)}%: +1.0`); }
+  else if (allPositive) { score += 0.5; rules.push(`All futures up, avg +${avg.toFixed(2)}%: +0.5`); }
+  else if (allNegative && avg < -1.0) { score -= 1.5; rules.push(`All futures down, avg ${avg.toFixed(2)}%: -1.5`); }
+  else if (allNegative && avg < -0.5) { score -= 1.0; rules.push(`All futures down, avg ${avg.toFixed(2)}%: -1.0`); }
+  else if (allNegative) { score -= 0.5; rules.push(`All futures down, avg ${avg.toFixed(2)}%: -0.5`); }
+
+  // Leadership quality: Russell vs S&P
+  if (rtyChange !== null && esChange !== null) {
+    const rtyVsEs = rtyChange - esChange;
+    if (rtyVsEs > 0.5) { score += 0.5; rules.push(`RTY outperforming ES by ${rtyVsEs.toFixed(2)}%: +0.5`); }
+    else if (rtyVsEs < -0.5) { score -= 0.5; rules.push(`RTY underperforming ES by ${Math.abs(rtyVsEs).toFixed(2)}%: -0.5`); }
+  }
+
+  // Narrow tech leadership warning
+  if (nqChange !== null && esChange !== null && rtyChange !== null && ymChange !== null) {
+    const nqVsOthers = nqChange - ((esChange + rtyChange + ymChange) / 3);
+    if (nqVsOthers > 1.0) { score -= 0.25; rules.push(`NQ leading others by ${nqVsOthers.toFixed(2)}% (narrow): -0.25`); }
+  }
+
+  return { name: 'riskAppetite', score: clamp(score, -2.0, 2.0), rules };
+}
+```
+
+-----
+
+## CLUSTER 7: MACRO (Weight 10) – NEW
+
+Inputs: /GC, /CL, /BZ, /ZQ
+
+```typescript
+function scoreMacro(data: MarketData): ClusterResult {
+  let score = 0;
+  const rules: string[] = [];
+
+  // Gold as risk-off signal
+  const gcChange = getPercentChange('/GC');
+  if (gcChange !== null) {
+    if (gcChange > 1.5) { score -= 0.5; rules.push(`Gold up ${gcChange.toFixed(2)}% (risk-off hedging): -0.5`); }
+    else if (gcChange > 0.75) { score -= 0.25; rules.push(`Gold up ${gcChange.toFixed(2)}% (mild caution): -0.25`); }
+    else if (gcChange < -0.75) { score += 0.25; rules.push(`Gold down ${gcChange.toFixed(2)}% (risk-on): +0.25`); }
+  }
+
+  // Oil: sharp moves in either direction = macro uncertainty
+  const clChange = getPercentChange('/CL');
+  const bzChange = getPercentChange('/BZ');
+  if (clChange !== null && bzChange !== null) {
+    const avgOil = (clChange + bzChange) / 2;
+    if (avgOil > 2.0) { score -= 0.5; rules.push(`Oil avg up ${avgOil.toFixed(2)}% (inflation/supply risk): -0.5`); }
+    else if (avgOil < -2.0) { score -= 0.5; rules.push(`Oil avg down ${avgOil.toFixed(2)}% (demand destruction): -0.5`); }
+    else if (avgOil < -1.0) { score -= 0.25; rules.push(`Oil avg down ${avgOil.toFixed(2)}% (demand concern): -0.25`); }
+  }
+
+  // Fed funds futures: price up = dovish (bullish), price down = hawkish (bearish)
+  const zqChange = getPercentChange('/ZQ');
+  if (zqChange !== null) {
+    if (zqChange > 0.01) { score += 0.5; rules.push(`Fed funds up (dovish shift): +0.5`); }
+    else if (zqChange < -0.01) { score -= 0.5; rules.push(`Fed funds down (hawkish shift): -0.5`); }
+  }
+
+  return { name: 'macro', score: clamp(score, -1.5, 1.5), rules };
+}
+```
+
+-----
+
+## COMPOSITE, CONFIDENCE, AND BIAS LABEL
+
+```typescript
+function calculateComposite(clusters: ClusterResult[]): PulseOutput {
+  // Weighted composite
+  let composite = 0;
+  for (const cluster of clusters) {
+    const weight = CLUSTER_WEIGHTS[cluster.name] / 100;
+    composite += cluster.score * weight;
+  }
+
+  // Base confidence from composite magnitude (0-100 scale)
+  let confidence = Math.min(100, Math.round(Math.abs(composite) * 40));
+
+  // Cluster disagreement penalty
+  const scores = clusters.map(c => c.score);
+  const positiveCount = scores.filter(s => s > 0).length;
+  const negativeCount = scores.filter(s => s < 0).length;
+  const disagreementPairs = Math.min(positiveCount, negativeCount);
+  const disagreementPenalty = disagreementPairs * 10;
+  confidence = Math.max(0, confidence - disagreementPenalty);
+
+  // Bias label
+  let label: string;
+  if (composite > 1.75 && confidence >= 75) label = 'STRONGLY BULLISH';
+  else if (composite > 0.75) label = 'MODERATELY BULLISH';
+  else if (composite > 0.25) label = 'SLIGHTLY BULLISH';
+  else if (composite >= -0.25) label = 'NEUTRAL';
+  else if (composite >= -0.75) label = 'SLIGHTLY BEARISH';
+  else if (composite >= -1.75) label = 'MODERATELY BEARISH';
+  else if (composite < -1.75 && confidence >= 75) label = 'STRONGLY BEARISH';
+  else label = 'NEUTRAL';
+
+  // Today's edge (for the Strategist)
+  let todayEdge: string;
+  if (confidence < 40) todayEdge = 'NO_EDGE';
+  else if (composite > 0.5) todayEdge = 'BULLISH_EDGE';
+  else if (composite < -0.5) todayEdge = 'BEARISH_EDGE';
+  else todayEdge = 'NEUTRAL_EDGE';
+
+  // Size recommendation
+  let size: string;
+  if (confidence < 40) size = 'NO_TRADE';
+  else if (confidence < 60) size = 'HALF_SIZE';
+  else size = 'FULL_SIZE';
+
+  return {
+    composite: Math.round(composite * 100) / 100,
+    confidence,
+    label,
+    todayEdge,
+    size,
+    clusters,
+    weights: CLUSTER_WEIGHTS,
+    timestamp: Date.now(),
+  };
+}
+```
+
+-----
+
+## ENGINE AUDIT DISPLAY
+
+The engine audit must show ALL 27 scored symbols organized by cluster. For each symbol show: symbol, current value, intraday % change, cluster assignment. Below that show each cluster with its score and the specific rules that fired.
+
+At the bottom show: Composite, Confidence, Weights, Bias Label, Today’s Edge, Size.
+
+-----
+
+## WHAT TO VERIFY AFTER BUILDING
+
+Generate a fresh pulse using live market data and show me:
+
+1. All 27 symbols with values in the engine audit
+1. All 7 cluster scores with rules
+1. Composite, confidence, label
+1. Confirm the Risk Appetite cluster is reading /ES /NQ /YM /RTY correctly
+1. Confirm the Macro cluster is reading /GC /CL /BZ /ZQ correctly
+1. Confirm /ZB and /ZT are showing in the Rates cluster
+
+-----
+
+-----
+
+-----
+
+# PROMPT 2: FIX OPTIONS STRATEGIST – SHOW REAL STRIKES FROM SCHWAB
+
+The Options Strategist currently generates strategy recommendations but does NOT show specific strikes, specific expiration dates, or exact premium amounts from the Schwab options chain. It’s giving vague output like “Net Credit $2.90 per spread” without telling the user which exact contracts to trade.
+
+Fix this by having the backend pull the real options chain from Schwab and select specific strikes before sending anything to Gemini.
+
+-----
+
+## THE PROBLEM
+
+Right now the Strategist flow is:
+
+1. User taps “Strategist”
+1. Frontend sends the current symbol + pulse data to Gemini
+1. Gemini guesses at strikes, premiums, and expiration dates
+1. User gets a recommendation with made-up numbers
+
+This is wrong. Gemini must never calculate options math.
+
+-----
+
+## THE CORRECT FLOW
+
+```
+User taps Strategist
+        |
+        v
+Backend receives symbol + pulse output (bias, edge, confidence)
+        |
+        v
+Backend calls Schwab GET /chains endpoint for that symbol
+(with appropriate parameters: contractType, strikeCount, range, expMonth)
+        |
+        v
+Backend deterministic engine selects optimal strikes:
+  - Reads delta, bid, ask, volume, open interest from chain
+  - Filters for liquid contracts (volume > 10, OI > 100, bid/ask spread < 30% of mid)
+  - Selects strikes based on pulse bias and strategy type
+  - Calculates max profit, max loss, POP from the real chain data
+        |
+        v
+Backend packages a STRICT JSON payload with all solved math
+        |
+        v
+Gemini receives JSON and ONLY generates the narrative explanation
+Gemini cannot change any number in the payload
+        |
+        v
+Frontend displays the trade card with real strikes and the AI explanation
+```
+
+-----
+
+## SCHWAB OPTIONS CHAIN ENDPOINT
+
+The Schwab API endpoint for options chains is:
+
+```
+GET /marketdata/v1/chains?symbol={symbol}&contractType={type}&strikeCount={count}&range=OTM&expMonth={month}
+```
+
+You already have Schwab OAuth working. Use the existing authenticated client.
+
+The response includes for each contract:
+
+- putExpDateMap or callExpDateMap (nested by expiration date then strike)
+- For each contract: bid, ask, last, mark, delta, gamma, theta, vega, volume, openInterest, strikePrice, expirationDate, daysToExpiration, inTheMoney
+
+-----
+
+## STRATEGY SELECTION LOGIC
+
+Based on the pulse output todayEdge, select strategies:
+
+```typescript
+function selectStrategies(edge: string, symbol: string, chain: SchwabChainResponse): StrategyPayload[] {
+  const strategies: StrategyPayload[] = [];
+
+  if (edge === 'BEARISH_EDGE') {
+    // Strategy 1: Bear Call Spread (call credit spread)
+    strategies.push(buildBearCallSpread(chain, symbol));
+    // Strategy 2: Bear Put Spread (put debit spread) for higher conviction
+    strategies.push(buildBearPutSpread(chain, symbol));
+  } else if (edge === 'BULLISH_EDGE') {
+    // Strategy 1: Bull Put Spread (put credit spread)
+    strategies.push(buildBullPutSpread(chain, symbol));
+    // Strategy 2: Bull Call Spread (call debit spread)
+    strategies.push(buildBullCallSpread(chain, symbol));
+  } else if (edge === 'NEUTRAL_EDGE') {
+    // Strategy 1: Iron Condor
+    strategies.push(buildIronCondor(chain, symbol));
+    // Strategy 2: Short Strangle (if account allows)
+    strategies.push(buildShortStrangle(chain, symbol));
+  } else {
+    // NO_EDGE: no strategies, tell user to sit out
+    return [];
+  }
+
+  return strategies;
+}
+```
+
+-----
+
+## EXAMPLE: BUILD BEAR CALL SPREAD
+
+```typescript
+function buildBearCallSpread(chain: SchwabChainResponse, symbol: string): StrategyPayload {
+  // Get the nearest weekly or next Friday expiration with 1-7 DTE
+  const targetDTE = findExpiration(chain.callExpDateMap, { minDTE: 1, maxDTE: 7 });
+
+  // Get all call strikes for that expiration
+  const calls = getCallsForExpiration(chain, targetDTE);
+
+  // Filter for liquidity
+  const liquidCalls = calls.filter(c =>
+    c.volume > 10 &&
+    c.openInterest > 100 &&
+    (c.ask - c.bid) / ((c.ask + c.bid) / 2) < 0.30
+  );
+
+  // Short strike: closest to 0.20 delta (OTM, ~80% POP)
+  const shortLeg = liquidCalls.reduce((best, c) =>
+    Math.abs(Math.abs(c.delta) - 0.20) < Math.abs(Math.abs(best.delta) - 0.20) ? c : best
+  );
+
+  // Long strike: next strike above short (typically $5 wide for SPX, $1-2 for equities)
+  // Find the next available strike above the short strike
+  const longLeg = liquidCalls
+    .filter(c => c.strikePrice > shortLeg.strikePrice)
+    .sort((a, b) => a.strikePrice - b.strikePrice)[0];
+
+  if (!longLeg) throw new Error('Cannot construct spread: no long strike available');
+
+  const netCredit = (shortLeg.bid + shortLeg.ask) / 2 - (longLeg.bid + longLeg.ask) / 2;
+  const strikeWidth = longLeg.strikePrice - shortLeg.strikePrice;
+  const maxProfit = netCredit * 100; // per contract
+  const maxLoss = (strikeWidth - netCredit) * 100;
+  const pop = Math.round((1 - Math.abs(shortLeg.delta)) * 100);
+  const breakeven = shortLeg.strikePrice + netCredit;
+
+  return {
+    strategy_type: 'Bear Call Spread (Call Credit Spread)',
+    expiration_date: targetDTE.expirationDate,
+    days_to_expiration: targetDTE.daysToExpiration,
+    short_leg: {
+      strike: shortLeg.strikePrice,
+      type: 'CALL',
+      action: 'SELL',
+      bid: shortLeg.bid,
+      ask: shortLeg.ask,
+      mark: (shortLeg.bid + shortLeg.ask) / 2,
+      delta: shortLeg.delta,
+      volume: shortLeg.volume,
+      openInterest: shortLeg.openInterest,
+    },
+    long_leg: {
+      strike: longLeg.strikePrice,
+      type: 'CALL',
+      action: 'BUY',
+      bid: longLeg.bid,
+      ask: longLeg.ask,
+      mark: (longLeg.bid + longLeg.ask) / 2,
+      delta: longLeg.delta,
+      volume: longLeg.volume,
+      openInterest: longLeg.openInterest,
+    },
+    net_credit: Math.round(netCredit * 100) / 100,
+    max_profit: Math.round(maxProfit * 100) / 100,
+    max_loss: Math.round(maxLoss * 100) / 100,
+    breakeven: Math.round(breakeven * 100) / 100,
+    probability_of_profit_pct: pop,
+    risk_reward_ratio: `1:${(maxLoss / maxProfit).toFixed(2)}`,
+    size_recommendation: 'Based on $250 max risk per trade',
+    contracts: Math.max(1, Math.floor(250 / maxLoss)),
+    exit_rules: {
+      profit_target_pct: 50,
+      profit_target_amount: Math.round(maxProfit * 0.5 * 100) / 100,
+      stop_loss_pct: 100,
+      stop_loss_amount: maxProfit, // 2x credit = 100% of credit received
+      time_exit: 'Close by expiration day if not exited',
+    },
+  };
+}
+```
+
+Apply the same pattern for buildBullPutSpread, buildBullCallSpread, buildBearPutSpread, buildIronCondor, buildShortStrangle. Each one:
+
+1. Reads the real chain from Schwab
+1. Filters for liquidity
+1. Selects strikes based on delta targets
+1. Calculates all math deterministically
+1. Packages into the StrategyPayload
+
+-----
+
+## THE JSON PAYLOAD SENT TO GEMINI
+
+After the backend builds the strategies, package everything into one payload:
+
+```typescript
+interface StrategistPayload {
+  // From Market Pulse
+  pulse: {
+    composite: number;
+    confidence: number;
+    label: string;
+    todayEdge: string;
+    size: string;
+    clusters: ClusterResult[];
+  };
+
+  // Current equity context
+  equity: {
+    symbol: string;
+    price: number;
+    change: number;
+    changePct: number;
+  };
+
+  // Calculated strategies (backend did ALL the math)
+  strategies: StrategyPayload[];
+}
+```
+
+-----
+
+## GEMINI SYSTEM PROMPT FOR STRATEGIST
+
+Use this exact system prompt when calling Gemini for the Strategist narrative:
+
+```
+You are a professional options trading analyst presenting trade recommendations.
+You receive a JSON payload containing a market pulse analysis and pre-calculated options strategies.
+
+ABSOLUTE RULES:
+1. You MUST NOT change, recalculate, or adjust any number from the payload.
+2. You MUST NOT invent strikes, premiums, or expiration dates. Use ONLY what is in the payload.
+3. You MUST NOT suggest additional trades beyond what the payload contains.
+4. Every number you mention (strikes, credit, max profit, max loss, POP, breakeven) MUST match the payload exactly.
+5. Your job is ONLY to explain WHY this trade makes sense given the market pulse and to present it clearly.
+
+For each strategy, explain:
+- Why this strategy fits the current market environment (connect pulse bias to strategy choice)
+- The specific entry: which strikes to sell, which to buy, what expiration
+- The risk/reward profile in plain English
+- The exit rules
+- Any conditions that would invalidate the trade thesis
+
+Format the output as structured sections. Be concise and professional.
+Do NOT add disclaimers about not being financial advice -- the user is a professional trader.
+```
+
+-----
+
+## FRONTEND DISPLAY
+
+Each strategy card must show these fields pulled directly from the StrategyPayload (NOT from Gemini’s text):
+
+- Strategy name
+- Expiration date and DTE
+- Short leg: strike, action (SELL), bid/ask, delta
+- Long leg: strike, action (BUY), bid/ask, delta
+- Net credit/debit
+- Max profit
+- Max loss
+- Breakeven
+- POP
+- R/R ratio
+- Suggested contracts
+- Exit rules (profit target, stop loss)
+
+Below the data card, show Gemini’s narrative explanation of the thesis.
+
+This way the user sees the REAL numbers from Schwab in the card, and the AI explanation underneath. If the numbers don’t match, the user can see it immediately.
+
+-----
+
+## WHAT TO VERIFY AFTER BUILDING
+
+1. Switch to SPX ($SPX.X) and tap Strategist – verify it shows real strikes from the live chain
+1. Check that the short leg delta is near 0.20 for credit spreads
+1. Check that bid/ask values match what ThinkorSwim shows for the same strikes
+1. Verify max profit = net credit * 100, max loss = (width - credit) * 100
+1. Verify POP roughly equals 100 - |short delta| * 100
+1. Confirm Gemini’s narrative matches the numbers in the card exactly
+1. Test with SPY, AAPL, and an equity with wide spreads to confirm the liquidity filter works

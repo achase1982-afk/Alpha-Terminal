@@ -25,8 +25,10 @@ export interface MarketPulseClusters {
   rates: ClusterData;
   credit: ClusterData;
   volLevel: ClusterData;
-  volTermStructure: ClusterData;
+  volTerm: ClusterData;
   breadth: ClusterData;
+  riskAppetite: ClusterData;
+  macro: ClusterData;
 }
 
 export type ClusterKey = keyof MarketPulseClusters;
@@ -60,21 +62,37 @@ export interface RawIndicators {
   tnxChange: number | null;
   tyx: number | null;
   tyxChange: number | null;
+  zb: number | null;
+  zbChange: number | null;
+  zt: number | null;
+  ztChange: number | null;
   hyg: number | null;
   hygChange: number | null;
   lqd: number | null;
   lqdChange: number | null;
   ief: number | null;
   iefChange: number | null;
-  nyicdx: number | null;
-  nyicdxChange: number | null;
   advn: number | null;
   decn: number | null;
   tick: number | null;
   trin: number | null;
   add: number | null;
-  // $UVOL and $DVOL removed -- Schwab does not serve these symbols.
-  // If a secondary data source (e.g. IQFeed) is added later, re-enable here.
+  es: number | null;
+  esChange: number | null;
+  nq: number | null;
+  nqChange: number | null;
+  ym: number | null;
+  ymChange: number | null;
+  rty: number | null;
+  rtyChange: number | null;
+  gc: number | null;
+  gcChange: number | null;
+  cl: number | null;
+  clChange: number | null;
+  bz: number | null;
+  bzChange: number | null;
+  zq: number | null;
+  zqChange: number | null;
 }
 
 export interface MarketPulseData {
@@ -182,9 +200,7 @@ export const ALL_PULSE_INDICATORS: PulseIndicator[] = [
   { symbol: "HYG",    label: "HYG (High Yield Corp Bonds)",  category: "credit" },
   { symbol: "LQD",    label: "LQD (Investment Grade Bonds)", category: "credit" },
   { symbol: "IEF",    label: "IEF (7-10Y Treasury ETF)",     category: "credit" },
-  { symbol: "$HYD",   label: "HYD (High Yield Muni)",        category: "credit" },
-  { symbol: "$NYICDX", label: "NYICDX (NY ICE Index)",       category: "credit" },
-  { symbol: "$ADSPD", label: "ADSPD (A/D Spread)",           category: "credit" },
+  // HYD removed -- redundant with HYG and LQD
 
   { symbol: "/ES",    label: "/ES (S&P 500 Futures)",        category: "futures" },
   { symbol: "/NQ",    label: "/NQ (Nasdaq Futures)",         category: "futures" },
