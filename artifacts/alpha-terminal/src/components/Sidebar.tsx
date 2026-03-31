@@ -527,7 +527,7 @@ function PulseSettingsPanel({
                   style={{ background: "rgba(255,184,0,0.04)" }}
                 >
                   <div className="flex flex-col min-w-0">
-                    <span className="font-mono text-[10px] text-primary font-bold tabular-nums leading-none">{sym}</span>
+                    <span className="font-mono text-[10px] text-primary font-bold tabular-nums leading-none">{sym.replace(/^\$/, '')}</span>
                     <span className="font-mono text-[9px] text-[#52525b] leading-tight truncate mt-0.5">{getLabel(sym)}</span>
                   </div>
                   <button
@@ -593,7 +593,7 @@ function PulseSettingsPanel({
                       onMouseDown={() => handleAdd(ind.symbol)}
                       className="w-full text-left px-3 py-2 flex flex-col hover:bg-[#1a1a1c] transition-colors border-b border-[#1a1a1c] last:border-0"
                     >
-                      <span className="font-mono text-[10px] text-primary font-bold tabular-nums">{ind.symbol}</span>
+                      <span className="font-mono text-[10px] text-primary font-bold tabular-nums">{ind.symbol.replace(/^\$/, '')}</span>
                       <span className="font-mono text-[9px] text-[#52525b] leading-tight">{ind.label}</span>
                     </button>
                   ))}

@@ -116,7 +116,7 @@ export function EngineAuditPanel({ data }: { data: MarketPulseData }) {
                     {rows.map((r) => (
                       <tr key={r.symbol} className="border-b border-[#2A2A2C]/50 hover:bg-[#1C1C1E]/50">
                         <td className="py-1 px-1.5">
-                          <span className="font-mono text-[10px] font-bold text-[#e4e4e7]">{r.symbol}</span>
+                          <span className="font-mono text-[10px] font-bold text-[#e4e4e7]">{r.symbol.replace(/^\$/, '')}</span>
                           <span className="font-mono text-[9px] text-[#52525b] ml-1.5 hidden sm:inline">{r.label}</span>
                         </td>
                         <td className="py-1 px-1.5 text-right">
