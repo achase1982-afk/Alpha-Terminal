@@ -15,7 +15,7 @@ export function AiSubTabs({ active, onChange }: AiSubTabsProps) {
   return (
     <div
       className="sticky z-40 w-full px-3 sm:px-4 lg:px-5 py-2 bg-background"
-      style={{ top: 78 }}
+      style={{ top: 72 }}
     >
       <div
         className="flex w-full rounded-full p-1"

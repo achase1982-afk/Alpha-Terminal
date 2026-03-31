@@ -90,7 +90,7 @@ export function AiBiasStrip({ onNavigateToPulse }: AiBiasStripProps) {
       </div>
 
       {/* Right section: regime + summary */}
-      <div className="flex items-center gap-2 min-w-0 flex-1">
+      <div className="flex items-center gap-2 min-w-0 shrink-0 max-w-[200px]">
         {isStale && (
           <span className="relative flex h-2 w-2 shrink-0">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
@@ -98,10 +98,10 @@ export function AiBiasStrip({ onNavigateToPulse }: AiBiasStripProps) {
           </span>
         )}
         <span className="font-mono text-[9px] uppercase tracking-wider text-zinc-500 shrink-0">
-          RISK-ON
+          {pulseData.structuralRegime?.label?.replace(/_/g, "-") ?? "—"}
         </span>
-        <span className="font-mono text-[9px] text-zinc-500 truncate overflow-hidden text-ellipsis whitespace-nowrap">
-          {pulseData.synthesisSummary?.substring(0, 30)}...
+        <span className="font-mono text-[9px] text-zinc-500 truncate">
+          {pulseData.sessionBias?.summary || pulseData.structuralRegime?.summary || ""}
         </span>
       </div>
     </button>

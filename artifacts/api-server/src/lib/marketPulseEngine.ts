@@ -480,7 +480,8 @@ function calculateConfidence(
     * regimeMultiplier
     * conflictMultiplier;
 
-  const finalConfidence = Math.round(Math.max(15, Math.min(rawConfidence, maxConfidence)));
+  const clamped = Math.max(15, Math.min(rawConfidence, maxConfidence));
+  const finalConfidence = Number.isFinite(clamped) ? Math.round(clamped) : 15;
 
   return { score: finalConfidence, max: Math.round(maxConfidence) };
 }

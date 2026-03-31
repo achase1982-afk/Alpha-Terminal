@@ -1,0 +1,83 @@
+# FIX: AI Bias Strip Styling
+
+The persistent AI Bias strip below the futures cards is too bright. Restyle it to be a muted, informational bar that doesn’t scream at the user. It should feel like a subtle status indicator, not an alert banner.
+
+## Current (wrong)
+
+Bright green background that dominates the screen.
+
+## Target design
+
+A thin, dark, muted strip that blends with the terminal aesthetic. The color coding should be subtle, not overwhelming.
+
+## Exact styling to apply to the AiBiasStrip component:
+
+```
+Background: bg-zinc-900/80 (dark, nearly matches the terminal background)
+Border: border-b border-zinc-800 (subtle separator)
+Height: ~36px, padding py-2 px-4
+Full width, flex row, items-center, justify-between
+```
+
+### Left section (bias label):
+
+```
+Container: flex items-center gap-2
+Lightning bolt icon: text-amber-500, small (14-16px)
+"AI BIAS" text: text-zinc-500, text-xs, uppercase, tracking-wider, font-medium
+Trend arrow icon: small, colored by bias (green for bullish, red for bearish, zinc for neutral)
+Bias label ("BULLISH"): text-sm, font-semibold, colored by bias:
+  - STRONGLY_BULLISH / BULLISH: text-emerald-400
+  - NEUTRAL: text-amber-400
+  - BEARISH / STRONGLY_BEARISH: text-red-400
+  - NO_EDGE: text-zinc-500
+```
+
+### Center section (confidence dots):
+
+```
+3 small dots (6px circles) in a row with gap-1
+Fill the dots based on confidence level:
+  - Confidence >= 70: 3 filled dots (bg-emerald-400 for bullish, bg-red-400 for bearish)
+  - Confidence 40-69: 2 filled dots + 1 empty (border only, border-zinc-600)
+  - Confidence < 40: 1 filled dot + 2 empty
+```
+
+### Right section (regime + summary):
+
+```
+"RISK-ON" text: text-zinc-500, text-xs, uppercase
+Truncated summary text: text-zinc-500, text-xs, max-width ~200px, overflow hidden, text-ellipsis, whitespace-nowrap
+  Example: "Volatility compresses an..."
+```
+
+### Color coding summary (bias determines the accent color, NOT the background):
+
+The strip background is ALWAYS dark (bg-zinc-900/80). Only the text accents change:
+
+- Bullish: emerald-400 for label and filled dots
+- Bearish: red-400 for label and filled dots
+- Neutral: amber-400 for label and filled dots
+- No Edge: zinc-500 for everything (fully muted)
+
+### Add a subtle left border accent (optional but nice):
+
+```
+border-l-2 with the bias color:
+  - Bullish: border-l-emerald-500/50
+  - Bearish: border-l-red-500/50
+  - Neutral: border-l-amber-500/50
+  - No Edge: border-l-zinc-700
+```
+
+## Behavior (unchanged):
+
+- Tapping the strip navigates to AI tab, PULSE sub-tab
+- If data > 15 min old, show a pulsing amber dot next to the regime text
+- If no pulse generated yet, show “AI PULSE: TAP TO GENERATE” in zinc-500 muted text
+
+## Do NOT change:
+
+- The position of the strip (below futures cards, above ticker header)
+- The data it displays (bias, confidence, regime, summary)
+- Any of the scoring engine logic
