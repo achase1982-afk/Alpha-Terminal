@@ -429,12 +429,9 @@ function handleData(content: Record<string, unknown>[]) {
     logger.info({ count: content.length, total: equityTickCount, symbols: content.map(i => i["key"]).slice(0, 5) }, "Streamer: EQUITY ticks received");
     lastEquityTickLog = now;
   }
-  const DERIVED_ONLY = new Set(["$UVOL", "$DVOL"]);
   for (const item of content) {
     const schwabKey = item["key"] as string;
     const sym = fromSchwabKey(schwabKey);
-
-    if (DERIVED_ONLY.has(sym)) continue;
 
     const existing = quoteCache.get(sym) ?? {
       symbol: sym, last: null, extendedLast: null, bid: null, ask: null,
@@ -893,13 +890,10 @@ export function isConnected(): boolean {
   return ws !== null && ws.readyState === WebSocket.OPEN && loginAcked;
 }
 
-// ─── Derived UVOL/DVOL from TRIN, ADVN, DECN ────────────────────────────────
-// Schwab does NOT provide $UVOL/$DVOL (returns 64-bit sentinel = "no data").
-// But we CAN derive them: TRIN = (ADVN/DECN) / (UVOL/DVOL)
-// So UVOL/DVOL ratio = (ADVN/DECN) / TRIN
-// We poll Schwab REST for ADVN, DECN, TRIN every 2s and compute UVOL/DVOL.
-const BREADTH_POLL_INTERVAL_MS = 2_000;
-let breadthPollTimer: ReturnType<typeof setInterval> | null = null;
+// ─── REST poller for $UVOL / $DVOL (not available via Schwab streaming) ─────
+const REST_POLL_SYMBOLS = ["$UVOL", "$DVOL"];
+const REST_POLL_INTERVAL_MS = 15_000;
+let restPollTimer: ReturnType<typeof setInterval> | null = null;
 
 const SENTINEL_THRESHOLD = 9e10;
 function safeNum(v: unknown): number | null {
@@ -908,85 +902,81 @@ function safeNum(v: unknown): number | null {
   return v;
 }
 
-async function pollBreadthAndDerive() {
+async function pollBreadthRest() {
   const token = getAccessToken("market") ?? getAccessToken("trader") ?? accessToken;
   if (!token) return;
 
-  const syms = ["$ADVN", "$DECN", "$TRIN"];
-  const url = `https://api.schwabapi.com/marketdata/v1/quotes?symbols=${syms.map(encodeURIComponent).join(",")}&fields=quote`;
+  const symbolsParam = REST_POLL_SYMBOLS.map(encodeURIComponent).join(",");
+  const url = `https://api.schwabapi.com/marketdata/v1/quotes?symbols=${symbolsParam}&fields=quote`;
 
   try {
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
     if (!res.ok) {
-      if (res.status !== 401) logger.warn({ status: res.status }, "Breadth REST poll failed");
+      if (res.status !== 401) {
+        logger.warn({ status: res.status }, "REST breadth poll failed");
+      }
       return;
     }
     const json = (await res.json()) as Record<string, Record<string, unknown>>;
 
-    const advnEntry = (json["$ADVN"]?.["quote"] ?? json["$ADVN"]) as Record<string, unknown> | undefined;
-    const decnEntry = (json["$DECN"]?.["quote"] ?? json["$DECN"]) as Record<string, unknown> | undefined;
-    const trinEntry = (json["$TRIN"]?.["quote"] ?? json["$TRIN"]) as Record<string, unknown> | undefined;
+    for (const schwabSym of REST_POLL_SYMBOLS) {
+      const entry = json[schwabSym] as Record<string, unknown> | undefined;
+      const quote = (entry?.["quote"] ?? entry) as Record<string, unknown> | undefined;
+      if (!quote) continue;
 
-    const advn = safeNum(advnEntry?.["lastPrice"]);
-    const decn = safeNum(decnEntry?.["lastPrice"]);
-    const trin = safeNum(trinEntry?.["lastPrice"]);
+      const last     = safeNum(quote["lastPrice"]);
+      const close    = safeNum(quote["closePrice"]);
+      const change   = safeNum(quote["netChange"]);
+      const changePct = safeNum(quote["netPercentChange"]);
+      const volume   = safeNum(quote["totalVolume"]);
+      const high     = safeNum(quote["highPrice"]);
+      const low      = safeNum(quote["lowPrice"]);
+      const bid      = safeNum(quote["bidPrice"]);
+      const ask      = safeNum(quote["askPrice"]);
 
-    if (advn == null || decn == null || trin == null || advn <= 0 || decn <= 0 || trin <= 0) {
-      return;
-    }
-
-    const adRatio = advn / decn;
-    const volRatio = adRatio / trin;
-
-    const totalIssues = advn + decn;
-    const estimatedTotalVol = totalIssues * 1_000_000;
-
-    const uvol = Math.round((volRatio / (1 + volRatio)) * estimatedTotalVol);
-    const dvol = Math.round((1 / (1 + volRatio)) * estimatedTotalVol);
-
-    const now = Date.now();
-
-    for (const [sym, val] of [["$UVOL", uvol], ["$DVOL", dvol]] as const) {
+      const sym = fromSchwabKey(schwabSym);
       const existing = quoteCache.get(sym);
+
       const updated: LiveQuote = {
         symbol:       sym,
-        last:         val,
-        extendedLast: val,
-        bid:          null,
-        ask:          null,
+        last:         last ?? existing?.last ?? null,
+        extendedLast: last ?? existing?.extendedLast ?? null,
+        bid:          bid ?? existing?.bid ?? null,
+        ask:          ask ?? existing?.ask ?? null,
         bidSize:      null,
         askSize:      null,
-        change:       null,
-        changePct:    null,
-        volume:       null,
-        high:         existing?.high != null ? Math.max(existing.high, val) : val,
-        low:          existing?.low  != null ? Math.min(existing.low,  val) : val,
-        close:        existing?.close ?? null,
-        ts:           now,
+        change:       change ?? existing?.change ?? null,
+        changePct:    changePct ?? existing?.changePct ?? null,
+        volume:       volume ?? existing?.volume ?? null,
+        high:         high ?? existing?.high ?? null,
+        low:          low ?? existing?.low ?? null,
+        close:        close ?? existing?.close ?? null,
+        ts:           Date.now(),
       };
+
       quoteCache.set(sym, updated);
       broadcast("quote", updated);
     }
-
-    logger.debug({ advn, decn, trin, volRatio: volRatio.toFixed(3), uvol, dvol }, "Derived UVOL/DVOL from TRIN formula");
   } catch (err) {
-    logger.warn({ err }, "Breadth derivation poll error");
+    logger.warn({ err }, "REST breadth poll error");
   }
 }
 
 function startBreadthRestPoll() {
-  if (breadthPollTimer) return;
-  for (const s of ["$UVOL", "$DVOL"]) {
+  if (restPollTimer) return;
+  for (const s of REST_POLL_SYMBOLS) {
     if (!reverseKeyMap.has(s)) reverseKeyMap.set(s, s);
   }
-  logger.info({ intervalMs: BREADTH_POLL_INTERVAL_MS }, "Starting derived UVOL/DVOL poller (from TRIN/ADVN/DECN)");
-  void pollBreadthAndDerive();
-  breadthPollTimer = setInterval(() => void pollBreadthAndDerive(), BREADTH_POLL_INTERVAL_MS);
+  logger.info({ symbols: REST_POLL_SYMBOLS, intervalMs: REST_POLL_INTERVAL_MS }, "Starting REST breadth poller for $UVOL/$DVOL");
+  void pollBreadthRest();
+  restPollTimer = setInterval(() => void pollBreadthRest(), REST_POLL_INTERVAL_MS);
 }
 
 function stopBreadthRestPoll() {
-  if (breadthPollTimer) {
-    clearInterval(breadthPollTimer);
-    breadthPollTimer = null;
+  if (restPollTimer) {
+    clearInterval(restPollTimer);
+    restPollTimer = null;
   }
 }
