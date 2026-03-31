@@ -46,9 +46,41 @@ export interface ActionPlanItem {
   conviction: Conviction;
 }
 
+export interface RawIndicators {
+  vix: number | null;
+  vixChange: number | null;
+  vvix: number | null;
+  vvixChange: number | null;
+  vix3m: number | null;
+  vix3mChange: number | null;
+  vix9d: number | null;
+  vix9dChange: number | null;
+  skew: number | null;
+  tnx: number | null;
+  tnxChange: number | null;
+  tyx: number | null;
+  tyxChange: number | null;
+  hyg: number | null;
+  hygChange: number | null;
+  lqd: number | null;
+  lqdChange: number | null;
+  ief: number | null;
+  iefChange: number | null;
+  nyicdx: number | null;
+  nyicdxChange: number | null;
+  advn: number | null;
+  decn: number | null;
+  tick: number | null;
+  trin: number | null;
+  add: number | null;
+  uvol: number | null;
+  dvol: number | null;
+}
+
 export interface MarketPulseData {
   timestamp: string;
   engineVersion?: string;
+  rawIndicators?: RawIndicators;
   dataAge: {
     oldestSource: string;
     oldestSourceAge: number;

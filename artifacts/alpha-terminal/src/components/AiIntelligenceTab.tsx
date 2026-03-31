@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { MarketPulseDashboard } from "@/components/market-pulse/MarketPulseDashboard";
+import { StrategistAuditPanel, type StrategistAuditData } from "@/components/market-pulse/StrategistAuditPanel";
 import { AiSubTabs, type AiSubTab } from "@/components/ai-tab/AiSubTabs";
 import { AiThinkingFeed } from "@/components/ai-shared/AiThinkingFeed";
 
@@ -447,6 +448,7 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
   const [streamingText, setStreamingText] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [thinkingTokens, setThinkingTokens] = useState<string[]>([]);
+  const [strategistAudit, setStrategistAudit] = useState<StrategistAuditData | null>(null);
   useEffect(() => {
     if (initialSubTab) setSubTab(initialSubTab);
   }, [initialSubTab]);
@@ -506,6 +508,7 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
   const handleRunStrategist = useCallback(async () => {
     if (!quote || !accessToken) return;
     setStrategistResult(null);
+    setStrategistAudit(null);
     setStreamingText("");
     setThinkingTokens([]);
     setActiveResult("strategist");
@@ -540,6 +543,27 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
         setIsStrategizing(false);
         return;
       }
+
+      const q = quote as Record<string, unknown>;
+      setStrategistAudit({
+        symbol,
+        price: typeof q.last === "number" ? q.last : typeof q.lastPrice === "number" ? q.lastPrice : null,
+        change: typeof q.change === "number" ? q.change : typeof q.netChange === "number" ? q.netChange : null,
+        changePct: typeof q.changePct === "number" ? q.changePct : typeof q.netPercentChange === "number" ? q.netPercentChange : null,
+        volume: typeof q.volume === "number" ? q.volume : typeof q.totalVolume === "number" ? q.totalVolume : null,
+        autopilot: stratAutopilot,
+        maxRisk: stratMaxRisk,
+        minPoP: stratMinPoP,
+        minRR: stratMinRR,
+        bias: stratBias,
+        premium: stratPremium,
+        avoidEarnings: stratAvoidEarnings,
+        chainCallCount: calls?.length ?? 0,
+        chainPutCount: puts?.length ?? 0,
+        model: aiModel,
+        temperature: aiTemp,
+        timestamp: Date.now(),
+      });
 
       setIsStrategizing(false);
       setIsStreaming(true);
@@ -678,6 +702,10 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
               </div>
             )}
           </div>
+
+          {strategistAudit && activeResult === "strategist" && !isStreaming && !isStrategizing && (
+            <StrategistAuditPanel audit={strategistAudit} />
+          )}
         </div>
       )}
 

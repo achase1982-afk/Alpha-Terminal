@@ -10,6 +10,7 @@ import { ClusterCard } from "./ClusterCard";
 import { ActionPlanCard } from "./ActionPlanCard";
 import { InvalidationBox } from "./InvalidationBox";
 import { LevelsToWatch } from "./LevelsToWatch";
+import { EngineAuditPanel } from "./EngineAuditPanel";
 import { ALL_PULSE_INDICATORS } from "@/types/marketPulse";
 import { AiThinkingFeed } from "../ai-shared/AiThinkingFeed";
 
@@ -260,6 +261,8 @@ export function MarketPulseDashboard({ autoGenerate }: MarketPulseDashboardProps
           {!settings.compactMode && pulseData.levelsToWatch && (
             <LevelsToWatch levels={pulseData.levelsToWatch} />
           )}
+
+          <EngineAuditPanel data={pulseData} />
         </div>
       )}
     </div>

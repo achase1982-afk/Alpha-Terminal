@@ -1059,6 +1059,7 @@ Write ONLY the narrative fields. Return this exact JSON structure:
 
       const finalPulse = {
         ...engineResult,
+        rawIndicators: indicators,
         dataAge: { oldestSource: "schwab-batch", oldestSourceAge: 0 },
         sessionBias: {
           label: engineResult.bias === 'NO_EDGE' ? 'NO_EDGE' :
@@ -1094,6 +1095,7 @@ Write ONLY the narrative fields. Return this exact JSON structure:
 
       const fallbackPulse = {
         ...engineResult,
+        rawIndicators: indicators,
         dataAge: { oldestSource: "schwab-batch", oldestSourceAge: 0 },
         sessionBias: {
           label: engineResult.bias === 'NO_EDGE' ? 'NO_EDGE' :
