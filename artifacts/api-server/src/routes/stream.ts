@@ -33,9 +33,22 @@ router.post("/start", async (req, res) => {
     return res.status(400).json({ error: "accessToken is required" });
   }
 
-  const syms = Array.isArray(symbols) && symbols.length > 0
+  const userSyms = Array.isArray(symbols) && symbols.length > 0
     ? symbols.map((s: string) => String(s).toUpperCase())
     : ["SPY", "QQQ", "IWM", "DIA", "VIX", "TSLA", "NVDA", "AAPL", "META", "MSFT", "AMZN", "GOOGL"];
+
+  const pulseSymbols = [
+    "$VIX", "$VVIX", "$VIX9D", "$VIX3M", "$SKEW", "$CPC",
+    "$TICK", "$ADD", "$TRIN", "$ADVN", "$DECN",
+    "$TNX", "$TYX", "$DXY",
+    "HYG", "LQD", "IEF",
+    "/ES", "/NQ", "/YM", "/RTY",
+    "/ZB", "/ZT",
+    "/GC", "/CL", "/BZ", "/ZQ",
+  ];
+
+  const combined = new Set([...userSyms, ...pulseSymbols]);
+  const syms = [...combined];
 
   const streamerToken = traderAccessToken || accessToken;
   await startStreamer(streamerToken, syms);

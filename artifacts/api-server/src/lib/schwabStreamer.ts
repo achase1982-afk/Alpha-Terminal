@@ -167,6 +167,7 @@ const INDEX_MAP: Record<string, string> = {
   DJI: "$DJI", "$DJI": "$DJI", DJIA: "$DJI",
   COMP: "$COMP", "$COMP": "$COMP",
   DXY: "$DXY", "$DXY": "$DXY",
+  CPC: "$CPC", "$CPC": "$CPC",
   TNX: "$TNX", "$TNX": "$TNX",
   TYX: "$TYX", "$TYX": "$TYX",
   VXN: "$VXN", "$VXN": "$VXN",
@@ -491,13 +492,30 @@ let lastFuturesTickLog = 0;
 function handleFuturesData(content: Record<string, unknown>[]) {
   futuresTickCount += content.length;
   const now = Date.now();
+  if (futuresTickCount <= content.length) {
+    for (const item of content.slice(0, 3)) {
+      logger.info({ sym: item["key"], fieldCount: Object.keys(item).length - 1, fields: item }, "DIAG: FUTURES first tick raw data");
+    }
+  }
   if (now - lastFuturesTickLog > 30_000) {
-    logger.info({ count: content.length, total: futuresTickCount, symbols: content.map(i => i["key"]).slice(0, 5) }, "Streamer: FUTURES ticks received");
+    logger.info({ count: content.length, total: futuresTickCount, symbols: content.map(i => i["key"]).slice(0, 10) }, "Streamer: FUTURES ticks received");
     lastFuturesTickLog = now;
   }
   for (const item of content) {
     const schwabKey = item["key"] as string;
-    const sym = fromSchwabKey(schwabKey);
+    let sym = fromSchwabKey(schwabKey);
+
+    if (sym === schwabKey && schwabKey.startsWith("/")) {
+      const baseMatch = schwabKey.match(/^(\/[A-Z]{1,3})/);
+      if (baseMatch) {
+        const baseSym = baseMatch[1];
+        if (subscribedSymbols.has(baseSym) && !reverseKeyMap.has(schwabKey)) {
+          reverseKeyMap.set(schwabKey, baseSym);
+          sym = baseSym;
+          logger.info({ schwabKey, baseSym }, "Streamer: futures contract mapped to continuous symbol");
+        }
+      }
+    }
 
     const existing = quoteCache.get(sym) ?? {
       symbol: sym, last: null, extendedLast: null, bid: null, ask: null,
