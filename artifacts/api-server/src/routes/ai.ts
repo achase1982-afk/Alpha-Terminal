@@ -15,6 +15,7 @@ import {
 import { computeIndicators, formatTAContext, isDataStale, type Candle } from "../lib/ta.js";
 import { runMarketPulseEngine, type MarketIndicators, type BiasLabel } from "../lib/marketPulseEngine.js";
 import { getSnapshot, type LiveQuote } from "../lib/schwabStreamer.js";
+import { selectStrategies, STRATEGIST_SYSTEM_PROMPT, type OptionContract, type StrategyPayload } from "../lib/optionsStrategist.js";
 
 const router: IRouter = Router();
 
@@ -1233,242 +1234,316 @@ Write ONLY the narrative fields. Return this exact JSON structure:
   }
 });
 
-interface StrategistSettings {
-  autopilot?: boolean;
-  maxRisk?: number;
-  minPoP?: number;
-  minRR?: string;
-  bias?: string;
-  premium?: string;
-  avoidEarnings?: boolean;
-}
+const SCHWAB_CHAIN_BASE = "https://api.schwabapi.com/marketdata/v1";
 
-function buildStrategistPrompt(
-  quote: Record<string, unknown>,
-  chain: Record<string, unknown>,
-  sma20: string,
-  sma50: string,
-  maxRiskValue: number,
-  autopilot: boolean,
-  settings?: StrategistSettings,
-): string {
-  const minPoP = settings?.minPoP ?? 70;
-  const minRR = settings?.minRR ?? "1:2";
-  const bias = settings?.bias ?? "auto";
-  const premium = settings?.premium ?? "any";
-  const avoidEarnings = settings?.avoidEarnings ?? true;
-
-  const userConstraintBlock = autopilot
-    ? `- Autopilot = TRUE: Ignore user directional bias. Generate mathematically optimal trades based solely on quantitative edge, technical confluence, and statistical probability.
-- Max Risk Per Trade: NEVER exceed $${maxRiskValue}. Size every position to stay under this hard cap.`
-    : `- Autopilot = FALSE: Strictly filter strategies to match ALL of the following user constraints:
-  - Max Risk Per Trade: NEVER exceed $${maxRiskValue}. Size every position to stay under this hard cap.
-  - Minimum Probability of Profit (PoP): ${minPoP}%
-  - Minimum Risk/Reward Ratio: ${minRR}
-  - Directional Bias: ${bias === "auto" ? "Auto-Detect from data" : bias.charAt(0).toUpperCase() + bias.slice(1)}
-  - Premium Type: ${premium === "any" ? "Any (credit or debit)" : premium === "credit" ? "Net Credit only" : "Net Debit only"}`;
-
-  const earningsLine = avoidEarnings
-    ? `- Avoid Earnings / Catalyst: ON — explicitly flag and REJECT any strategy whose hold period overlaps a known earnings date or major macro catalyst.`
-    : `- Avoid Earnings / Catalyst: OFF — earnings overlap is acceptable.`;
-
-  return `You are a Tier-1 institutional quantitative options engine. Never use conversational filler or preambles. Output the top 3 optimal strategies based on a holistic synthesis of all provided market data.
-
-═══ CONTEXT DATA ═══
-${OPTIONS_DATA_QUALITY_NOTE}
-
-UNDERLYING MARKET DATA:
-${formatQuote(quote)}
-Technical Levels: SMA-20 = $${sma20} | SMA-50 = $${sma50}
-
-${formatOptionsDetailed(chain)}
-═══ END CONTEXT DATA ═══
-
-USER CONSTRAINTS (MANDATORY):
-${userConstraintBlock}
-${earningsLine}
-
-STRATEGY RULES:
-- Liquidity Gate: Only recommend options with sufficient open interest (>50 OI) and tight bid-ask spreads (spread < 15% of mid price).
-- Exits: Every strategy MUST include strict Exit Rules — a specific Profit Target percentage, Stop Loss percentage, and Time Exit rule.
-- Position Sizing: State the exact number of contracts to trade to stay under the Max Risk limit of $${maxRiskValue}.
-- Use only strikes that exist in the provided chain data. Be precise with numbers.
-
-OUTPUT FORMAT:
-You MUST output a JSON array of exactly 3 strategy objects, followed by a brief text rationale section.
-
-The JSON structure MUST be exactly:
-\`\`\`json
-[
-  {
-    "strategyName": "String (e.g., 7DTE Bull Call Spread)",
-    "targetEntryTrigger": "String (Precise price or technical trigger for entry, ONE line only)",
-    "entryCostCredit": "String (e.g., Net Debit $1.25 per spread)",
-    "maxRisk": "String (e.g., $250)",
-    "maxReward": "String (e.g., $500)",
-    "rrRatio": "String (e.g., 1:2)",
-    "pop": "String (e.g., 72%)",
-    "breakevens": "String (e.g., $248.25)",
-    "positionSize": "String (e.g., Buy 2 contracts)",
-    "exitRules": "String (Profit target at 50% max gain; stop loss at 100% of premium; close by 2 DTE)",
-    "rationale": "String (2-3 sentences max, strictly clinical analysis)",
-    "aiConfidence": "String (High, Medium, or Low)",
-    "aiConfidenceReason": "String (one-sentence justification for the confidence level)"
+function parseChainContracts(map: Record<string, unknown>): OptionContract[] {
+  const contracts: OptionContract[] = [];
+  for (const expDate of Object.values(map)) {
+    const strikeMap = expDate as Record<string, unknown>;
+    for (const [, options] of Object.entries(strikeMap)) {
+      const optionArr = options as Array<Record<string, unknown>>;
+      for (const opt of optionArr) {
+        contracts.push({
+          strike: opt["strikePrice"] as number,
+          expiration: opt["expirationDate"] as string,
+          schwabSymbol: opt["symbol"] as string | undefined,
+          bid: opt["bid"] as number | undefined,
+          ask: opt["ask"] as number | undefined,
+          last: opt["last"] as number | undefined,
+          volume: opt["totalVolume"] as number | undefined,
+          openInterest: opt["openInterest"] as number | undefined,
+          iv: opt["volatility"] as number | undefined,
+          delta: opt["delta"] as number | undefined,
+          gamma: opt["gamma"] as number | undefined,
+          theta: opt["theta"] as number | undefined,
+          vega: opt["vega"] as number | undefined,
+          dte: opt["daysToExpiration"] as number | undefined,
+        });
+      }
+    }
   }
-]
-\`\`\`
-
-MANDATORY AI CONFIDENCE:
-You must ALWAYS output this exact line for every strategy object in the JSON: an "aiConfidence" field with value "High", "Medium", or "Low", and an "aiConfidenceReason" field with a one-sentence justification.
-
-Output ONLY the JSON array first (no markdown code fence, no backticks, just the raw [ ... ] array), then a brief "## Key Risk Factors" section in markdown after the JSON.`;
+  return contracts;
 }
 
 router.post("/options-strategist", async (req, res) => {
-  const { quote, candles, chain, model, temperature, settings } = req.body as {
-    quote?: Record<string, unknown>;
-    candles?: Array<Record<string, unknown>>;
-    chain?: Record<string, unknown>;
-    model?: string;
-    temperature?: number;
-    settings?: {
-      autopilot?: boolean;
-      maxRisk?: number;
-      minPoP?: number;
-      minRR?: string;
-      bias?: string;
-      premium?: string;
-      avoidEarnings?: boolean;
+  const { symbol, accessToken, todayEdge, pulse } = req.body as {
+    symbol?: string;
+    accessToken?: string;
+    todayEdge?: string;
+    pulse?: {
+      composite: number;
+      confidence: number;
+      label: string;
+      todayEdge: string;
+      size: string;
     };
   };
 
-  if (!quote || !chain) {
-    return res.json({ response: "Error: Missing quote or options chain data.", error: "missing_data" });
+  if (!symbol || !accessToken) {
+    return res.json({ strategies: [], narrative: "", error: "Symbol and accessToken are required." });
   }
 
-  const rawCalls = (chain["calls"] as unknown[] | undefined) ?? [];
-  const rawPuts  = (chain["puts"]  as unknown[] | undefined) ?? [];
-  req.log.info({ callCount: rawCalls.length, putCount: rawPuts.length, underlying: chain["underlyingPrice"] }, "Options strategist chain received");
+  let edge = todayEdge ?? pulse?.todayEdge ?? "";
+  let resolvedPulse = pulse;
 
-  if (rawCalls.length === 0 && rawPuts.length === 0) {
-    return res.json({ response: "**Error:** The options chain data is empty — no call or put contracts were provided. This can happen when the market is closed or the access token has expired. Please re-authenticate and try again.", error: "empty_chain" });
+  if (!edge || edge === "NO_EDGE") {
+    try {
+      const wsPairs = PULSE_SYMBOLS.map(s => ({ display: s.display, api: s.api }));
+      const wsResult = readFromWebSocketCache(wsPairs);
+      if (wsResult.dataMap.size > 0) {
+        const indicators = extractMarketIndicators(wsResult.dataMap);
+        const engineResult = runMarketPulseEngine(indicators);
+        edge = engineResult.todayEdge;
+        resolvedPulse = {
+          composite: engineResult.composite,
+          confidence: engineResult.confidence,
+          label: engineResult.biasLabel,
+          todayEdge: engineResult.todayEdge,
+          size: engineResult.sizeRecommendation,
+        };
+      }
+    } catch (err) {
+      req.log.warn({ err }, "Failed to auto-resolve edge");
+    }
   }
 
-  let sma20 = "N/A", sma50 = "N/A";
-  if (candles && candles.length >= 20) {
-    const closes = candles.map(c => Number(c["close"])).filter(v => !isNaN(v));
-    if (closes.length >= 20) sma20 = (closes.slice(-20).reduce((a, b) => a + b, 0) / 20).toFixed(2);
-    if (closes.length >= 50) sma50 = (closes.slice(-50).reduce((a, b) => a + b, 0) / 50).toFixed(2);
+  if (!edge || edge === "NO_EDGE") {
+    return res.json({
+      strategies: [],
+      narrative: "No actionable edge detected. The scoring engine shows insufficient directional conviction to recommend a trade. Sit this one out.",
+      edge: edge || "NO_EDGE",
+    });
   }
-
-  const maxRiskValue = settings?.maxRisk ?? 250;
-  const autopilot = settings?.autopilot ?? true;
-  const prompt = buildStrategistPrompt(quote, chain, sma20, sma50, maxRiskValue, autopilot, settings);
 
   try {
-    const response = await callGemini(prompt, model ?? "gemini-2.5-flash", temperature ?? 0.2);
-    res.json({ response });
+    const chainSymbol = symbol.toUpperCase().trim();
+    const params = new URLSearchParams({
+      symbol: chainSymbol,
+      contractType: "ALL",
+      strikeCount: "20",
+      range: "OTM",
+    });
+    if (chainSymbol.startsWith("/")) params.set("assetClass", "FUTURES");
+
+    const chainRes = await fetch(`${SCHWAB_CHAIN_BASE}/chains?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!chainRes.ok) {
+      const errBody = await chainRes.text().catch(() => "");
+      req.log.error({ status: chainRes.status, body: errBody }, "Strategist chain fetch failed");
+      return res.json({ strategies: [], narrative: "", error: `Chain fetch failed (${chainRes.status})` });
+    }
+
+    const chainJson = await chainRes.json() as Record<string, unknown>;
+    const underlyingPrice = (chainJson["underlyingPrice"] as number) ?? 0;
+    const callMap = (chainJson["callExpDateMap"] as Record<string, unknown>) ?? {};
+    const putMap = (chainJson["putExpDateMap"] as Record<string, unknown>) ?? {};
+    const calls = parseChainContracts(callMap);
+    const puts = parseChainContracts(putMap);
+
+    req.log.info({ symbol, edge, callCount: calls.length, putCount: puts.length, underlyingPrice }, "Strategist deterministic engine running");
+
+    if (calls.length === 0 && puts.length === 0) {
+      return res.json({ strategies: [], narrative: "Options chain is empty. Market may be closed or token expired.", error: "empty_chain" });
+    }
+
+    const strategies = selectStrategies(edge, calls, puts, symbol);
+
+    if (strategies.length === 0) {
+      return res.json({
+        strategies: [],
+        narrative: "Could not construct any valid spreads. This can happen when liquidity filters eliminate all available strikes (low volume, wide spreads, or insufficient open interest).",
+        edge,
+      });
+    }
+
+    const payload = {
+      pulse: resolvedPulse ?? { composite: 0, confidence: 0, label: "NEUTRAL", todayEdge: edge, size: "NO_TRADE" },
+      equity: { symbol, price: underlyingPrice, change: 0, changePct: 0 },
+      strategies,
+    };
+
+    const narrativePrompt = `${STRATEGIST_SYSTEM_PROMPT}\n\nHere is the payload:\n\n${JSON.stringify(payload, null, 2)}`;
+    const narrative = await callGemini(narrativePrompt, "gemini-2.5-flash", 0.2);
+
+    res.json({ strategies, narrative, edge, underlyingPrice });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     req.log.error({ err }, "Options strategist error");
-    res.json({ response: `**Strategist failed:** ${msg}`, error: msg });
+    res.json({ strategies: [], narrative: "", error: msg });
   }
 });
 
 router.post("/options-strategist/stream", async (req, res) => {
-  const { quote, candles, chain, model, temperature, settings } = req.body as {
-    quote?: Record<string, unknown>;
-    candles?: Array<Record<string, unknown>>;
-    chain?: Record<string, unknown>;
-    model?: string;
-    temperature?: number;
-    settings?: {
-      autopilot?: boolean;
-      maxRisk?: number;
-      minPoP?: number;
-      minRR?: string;
-      bias?: string;
-      premium?: string;
-      avoidEarnings?: boolean;
+  const { symbol, accessToken, todayEdge, pulse } = req.body as {
+    symbol?: string;
+    accessToken?: string;
+    todayEdge?: string;
+    pulse?: {
+      composite: number;
+      confidence: number;
+      label: string;
+      todayEdge: string;
+      size: string;
     };
   };
 
-  if (!quote || !chain) {
-    return res.status(400).json({ error: "Missing quote or options chain data." });
+  if (!symbol || !accessToken) {
+    return res.status(400).json({ error: "Symbol and accessToken are required." });
   }
 
-  const rawCalls = (chain["calls"] as unknown[] | undefined) ?? [];
-  const rawPuts  = (chain["puts"]  as unknown[] | undefined) ?? [];
-  if (rawCalls.length === 0 && rawPuts.length === 0) {
-    return res.status(400).json({ error: "Options chain is empty." });
-  }
+  let edge = todayEdge ?? pulse?.todayEdge ?? "";
+  let resolvedPulse = pulse;
 
-  let sma20 = "N/A", sma50 = "N/A";
-  if (candles && candles.length >= 20) {
-    const closes = candles.map(c => Number(c["close"])).filter(v => !isNaN(v));
-    if (closes.length >= 20) sma20 = (closes.slice(-20).reduce((a, b) => a + b, 0) / 20).toFixed(2);
-    if (closes.length >= 50) sma50 = (closes.slice(-50).reduce((a, b) => a + b, 0) / 50).toFixed(2);
-  }
-
-  const maxRiskValue = settings?.maxRisk ?? 250;
-  const autopilot = settings?.autopilot ?? true;
-  const prompt = buildStrategistPrompt(quote, chain, sma20, sma50, maxRiskValue, autopilot, settings);
-
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    return res.status(500).json({ error: "GEMINI_API_KEY not configured." });
-  }
-
-  res.writeHead(200, {
-    "Content-Type": "text/event-stream",
-    "Cache-Control": "no-cache",
-    Connection: "keep-alive",
-    "X-Accel-Buffering": "no",
-  });
-
-  req.socket?.setKeepAlive(true);
-  req.setTimeout(0);
-  res.setTimeout(0);
-  if (req.socket) req.socket.setTimeout(0);
-  res.write(": ok\n\n");
-  res.flushHeaders();
-
-  const heartbeat = setInterval(() => {
-    if (!res.writableEnded) {
-      res.write(": ping\n\n");
+  if (!edge || edge === "NO_EDGE") {
+    try {
+      const wsPairs = PULSE_SYMBOLS.map(s => ({ display: s.display, api: s.api }));
+      const wsResult = readFromWebSocketCache(wsPairs);
+      if (wsResult.dataMap.size > 0) {
+        const indicators = extractMarketIndicators(wsResult.dataMap);
+        const engineResult = runMarketPulseEngine(indicators);
+        edge = engineResult.todayEdge;
+        resolvedPulse = {
+          composite: engineResult.composite,
+          confidence: engineResult.confidence,
+          label: engineResult.biasLabel,
+          todayEdge: engineResult.todayEdge,
+          size: engineResult.sizeRecommendation,
+        };
+        req.log.info({ autoEdge: edge, composite: engineResult.composite }, "Strategist auto-resolved edge from pulse engine");
+      }
+    } catch (err) {
+      req.log.warn({ err }, "Failed to auto-resolve edge from pulse engine");
     }
-  }, 5000);
+  }
+
+  if (!edge || edge === "NO_EDGE") {
+    return res.json({
+      strategies: [],
+      narrative: "No actionable edge detected. The scoring engine shows insufficient directional conviction to recommend a trade. Sit this one out.",
+      edge: edge || "NO_EDGE",
+    });
+  }
 
   try {
-    const google = createGoogleGenerativeAI({ apiKey });
-    const chosenModel = model ?? "gemini-2.5-flash";
-    const result = streamText({
-      model: google(chosenModel),
-      prompt,
-      temperature: temperature ?? 0.2,
-      providerOptions: {
-        google: { thinkingConfig: { thinkingBudget: 2048 } },
-      },
+    const chainSymbol = symbol.toUpperCase().trim();
+    const params = new URLSearchParams({
+      symbol: chainSymbol,
+      contractType: "ALL",
+      strikeCount: "20",
+      range: "OTM",
+    });
+    if (chainSymbol.startsWith("/")) params.set("assetClass", "FUTURES");
+
+    const chainRes = await fetch(`${SCHWAB_CHAIN_BASE}/chains?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
     });
 
-    for await (const part of result.fullStream) {
-      const p = part as any;
-      const delta = p.textDelta ?? p.text;
-      if (part.type === "reasoning" && delta) {
-        res.write(`data: ${JSON.stringify({ reasoning: delta })}\n\n`);
-      } else if (part.type === "text-delta" && delta) {
-        res.write(`data: ${JSON.stringify({ text: delta })}\n\n`);
-      }
+    if (!chainRes.ok) {
+      const errBody = await chainRes.text().catch(() => "");
+      req.log.error({ status: chainRes.status, body: errBody }, "Strategist chain fetch failed");
+      return res.status(502).json({ error: `Chain fetch failed (${chainRes.status})` });
     }
+
+    const chainJson = await chainRes.json() as Record<string, unknown>;
+    const underlyingPrice = (chainJson["underlyingPrice"] as number) ?? 0;
+    const callMap = (chainJson["callExpDateMap"] as Record<string, unknown>) ?? {};
+    const putMap = (chainJson["putExpDateMap"] as Record<string, unknown>) ?? {};
+    const calls = parseChainContracts(callMap);
+    const puts = parseChainContracts(putMap);
+
+    req.log.info({ symbol, edge, callCount: calls.length, putCount: puts.length, underlyingPrice }, "Strategist deterministic engine running");
+
+    if (calls.length === 0 && puts.length === 0) {
+      return res.json({ strategies: [], narrative: "Options chain is empty.", error: "empty_chain" });
+    }
+
+    const strategies = selectStrategies(edge, calls, puts, symbol);
+
+    if (strategies.length === 0) {
+      return res.json({
+        strategies: [],
+        narrative: "Could not construct valid spreads. Liquidity filters eliminated all available strikes.",
+        edge,
+      });
+    }
+
+    const strategistPayload = {
+      pulse: resolvedPulse ?? { composite: 0, confidence: 0, label: "NEUTRAL", todayEdge: edge, size: "NO_TRADE" },
+      equity: { symbol, price: underlyingPrice, change: 0, changePct: 0 },
+      strategies,
+    };
+
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+
+    req.socket?.setKeepAlive(true);
+    req.setTimeout(0);
+    res.setTimeout(0);
+    if (req.socket) req.socket.setTimeout(0);
+    res.write(": ok\n\n");
+    res.flushHeaders();
+
+    res.write(`data: ${JSON.stringify({ strategies, edge, underlyingPrice })}\n\n`);
+
+    const heartbeat = setInterval(() => {
+      if (!res.writableEnded) res.write(": ping\n\n");
+    }, 5000);
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      clearInterval(heartbeat);
+      res.write(`data: ${JSON.stringify({ error: "GEMINI_API_KEY not configured" })}\n\n`);
+      res.write("data: [DONE]\n\n");
+      res.end();
+      return;
+    }
+
+    try {
+      const google = createGoogleGenerativeAI({ apiKey });
+      const narrativePrompt = `${STRATEGIST_SYSTEM_PROMPT}\n\nHere is the payload:\n\n${JSON.stringify(strategistPayload, null, 2)}`;
+
+      const result = streamText({
+        model: google("gemini-2.5-flash"),
+        prompt: narrativePrompt,
+        temperature: 0.2,
+        providerOptions: {
+          google: { thinkingConfig: { thinkingBudget: 2048 } },
+        },
+      });
+
+      for await (const part of result.fullStream) {
+        const p = part as any;
+        const delta = p.textDelta ?? p.text;
+        if (part.type === "reasoning" && delta) {
+          res.write(`data: ${JSON.stringify({ reasoning: delta })}\n\n`);
+        } else if (part.type === "text-delta" && delta) {
+          res.write(`data: ${JSON.stringify({ text: delta })}\n\n`);
+        }
+      }
+    } catch (aiErr: unknown) {
+      const msg = aiErr instanceof Error ? aiErr.message : String(aiErr);
+      req.log.error({ err: aiErr }, "Strategist narrative stream error");
+      res.write(`data: ${JSON.stringify({ error: `Narrative failed: ${msg}` })}\n\n`);
+    }
+
     clearInterval(heartbeat);
     res.write("data: [DONE]\n\n");
     res.end();
   } catch (err: unknown) {
-    clearInterval(heartbeat);
     const msg = err instanceof Error ? err.message : String(err);
     req.log.error({ err }, "Options strategist stream error");
-    res.write(`data: ${JSON.stringify({ error: msg })}\n\n`);
-    res.end();
+    if (!res.headersSent) {
+      res.status(500).json({ error: msg });
+    } else {
+      res.write(`data: ${JSON.stringify({ error: msg })}\n\n`);
+      res.end();
+    }
   }
 });
 

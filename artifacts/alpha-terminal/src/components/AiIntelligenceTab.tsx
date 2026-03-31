@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Activity, BarChart2, Target, DollarSign, Shield, TrendingUp, Scale,
-  Zap, ChevronDown, AlertTriangle, Crosshair,
+  Zap, ChevronDown, AlertTriangle,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { MarketPulseDashboard } from "@/components/market-pulse/MarketPulseDashboard";
@@ -18,76 +18,100 @@ import { AiThinkingFeed } from "@/components/ai-shared/AiThinkingFeed";
 
 const API_BASE = "/api";
 
-interface StrategyJSON {
-  strategyName: string;
-  targetEntryTrigger: string;
-  entryCostCredit: string;
-  maxRisk: string;
-  maxReward: string;
-  rrRatio: string;
-  pop: string;
-  breakevens: string;
-  positionSize: string;
-  exitRules: string;
-  rationale: string;
-  aiConfidence?: string;
-  aiConfidenceReason?: string;
+interface LegPayload {
+  strike: number;
+  type: "CALL" | "PUT";
+  action: "BUY" | "SELL";
+  bid: number;
+  ask: number;
+  mark: number;
+  delta: number;
+  volume: number;
+  openInterest: number;
 }
 
-function extractJSONArray(raw: string): { json: string; endIdx: number } | null {
-  const start = raw.indexOf("[");
-  if (start === -1) return null;
-  let depth = 0;
-  let inString = false;
-  let escape = false;
-  for (let i = start; i < raw.length; i++) {
-    const ch = raw[i];
-    if (escape) { escape = false; continue; }
-    if (ch === "\\") { escape = true; continue; }
-    if (ch === '"') { inString = !inString; continue; }
-    if (inString) continue;
-    if (ch === "[") depth++;
-    if (ch === "]") { depth--; if (depth === 0) return { json: raw.slice(start, i + 1), endIdx: i + 1 }; }
-  }
-  return null;
+interface ExitRules {
+  profit_target_pct: number;
+  profit_target_amount: number;
+  stop_loss_pct: number;
+  stop_loss_amount: number;
+  time_exit: string;
 }
 
-function parseStrategistJSON(raw: string): { strategies: StrategyJSON[]; extraText: string } | null {
-  const extracted = extractJSONArray(raw);
-  if (!extracted) return null;
-
-  try {
-    const parsed = JSON.parse(extracted.json);
-    if (!Array.isArray(parsed) || parsed.length === 0) return null;
-    if (!parsed[0].strategyName) return null;
-    const after = raw.slice(extracted.endIdx).trim();
-    return { strategies: parsed as StrategyJSON[], extraText: after };
-  } catch {
-    return null;
-  }
+interface StrategyPayload {
+  strategy_type: string;
+  expiration_date: string;
+  days_to_expiration: number;
+  short_leg: LegPayload;
+  long_leg: LegPayload;
+  short_leg_2?: LegPayload;
+  long_leg_2?: LegPayload;
+  net_credit: number;
+  max_profit: number;
+  max_loss: number;
+  breakeven: number;
+  breakeven_upper?: number;
+  probability_of_profit_pct: number;
+  risk_reward_ratio: string;
+  size_recommendation: string;
+  contracts: number;
+  exit_rules: ExitRules;
 }
 
-function StrategyCard({ s, idx }: { s: StrategyJSON; idx: number }) {
+function fmtDollar(v: number): string {
+  return `$${Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function LegRow({ leg, label }: { leg: LegPayload; label: string }) {
+  const actionColor = leg.action === "SELL" ? "#f23645" : "#00d166";
+  return (
+    <div className="flex items-center justify-between py-1.5 border-b border-[#2A2A2C] last:border-0">
+      <div className="flex items-center gap-2">
+        <span className="font-mono text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ background: `${actionColor}20`, color: actionColor }}>
+          {leg.action}
+        </span>
+        <span className="font-mono text-[10px] text-[#a1a1aa] uppercase">{label}</span>
+      </div>
+      <div className="flex items-center gap-3">
+        <span className="font-mono text-xs text-white font-bold">{leg.strike} {leg.type}</span>
+        <span className="font-mono text-[10px] text-[#71717a]">\u0394{leg.delta.toFixed(2)}</span>
+        <span className="font-mono text-[10px] text-[#71717a]">{leg.bid}/{leg.ask}</span>
+      </div>
+    </div>
+  );
+}
+
+function RealStrategyCard({ s, idx }: { s: StrategyPayload; idx: number }) {
+  const isCredit = s.net_credit > 0;
+
   const metrics = [
-    { label: "Entry / Credit", value: s.entryCostCredit, icon: <DollarSign className="w-3.5 h-3.5" />, color: "#FFB800" },
-    { label: "Max Risk", value: s.maxRisk, icon: <Shield className="w-3.5 h-3.5" />, color: "#f23645" },
-    { label: "Max Reward", value: s.maxReward, icon: <TrendingUp className="w-3.5 h-3.5" />, color: "#00d166" },
-    { label: "R/R Ratio", value: s.rrRatio, icon: <Scale className="w-3.5 h-3.5" />, color: "#FF6B2B" },
+    { label: isCredit ? "Net Credit" : "Net Debit", value: fmtDollar(s.net_credit), icon: <DollarSign className="w-3.5 h-3.5" />, color: "#FFB800" },
+    { label: "Max Risk", value: fmtDollar(s.max_loss), icon: <Shield className="w-3.5 h-3.5" />, color: "#f23645" },
+    { label: "Max Reward", value: fmtDollar(s.max_profit), icon: <TrendingUp className="w-3.5 h-3.5" />, color: "#00d166" },
+    { label: "R/R Ratio", value: s.risk_reward_ratio, icon: <Scale className="w-3.5 h-3.5" />, color: "#FF6B2B" },
   ];
 
   return (
     <div className="rounded-xl border border-card-border overflow-hidden" style={{ background: "#111113" }}>
-      <div className="px-4 py-3 border-b border-card-border flex items-center gap-2" style={{ background: "#151517" }}>
-        <span className="font-mono text-xs font-bold text-primary">#{idx + 1}</span>
-        <span className="font-mono text-sm font-bold text-white">{s.strategyName}</span>
+      <div className="px-4 py-3 border-b border-card-border flex items-center justify-between" style={{ background: "#151517" }}>
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-xs font-bold text-primary">#{idx + 1}</span>
+          <span className="font-mono text-sm font-bold text-white">{s.strategy_type}</span>
+        </div>
+        <span className="font-mono text-[10px] text-[#71717a]">{s.days_to_expiration}DTE</span>
       </div>
 
-      {s.targetEntryTrigger && (
-        <div className="mx-4 mt-3 rounded-lg px-3 py-2 border flex items-start gap-2" style={{ background: "rgba(0,180,150,0.08)", borderColor: "rgba(0,180,150,0.3)" }}>
-          <Crosshair className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: "#00b496" }} />
-          <span className="font-mono text-xs" style={{ color: "#00b496" }}>{s.targetEntryTrigger}</span>
+      <div className="mx-4 mt-3 rounded-lg border border-[#2A2A2C] overflow-hidden" style={{ background: "#0c0c0c" }}>
+        <div className="px-3 py-1.5 border-b border-[#2A2A2C]">
+          <span className="font-mono text-[9px] text-[#52525b] uppercase tracking-widest">Contract Legs — Exp {s.expiration_date}</span>
         </div>
-      )}
+        <div className="px-3">
+          <LegRow leg={s.short_leg} label="Short" />
+          <LegRow leg={s.long_leg} label={s.long_leg.action === "SELL" ? "Short 2" : "Long"} />
+          {s.short_leg_2 && <LegRow leg={s.short_leg_2} label="Short Call" />}
+          {s.long_leg_2 && <LegRow leg={s.long_leg_2} label="Long Call" />}
+        </div>
+      </div>
 
       <div className="grid grid-cols-2 gap-3 p-4">
         {metrics.map(m => (
@@ -102,68 +126,42 @@ function StrategyCard({ s, idx }: { s: StrategyJSON; idx: number }) {
       </div>
 
       <div className="px-4 pb-3 space-y-2">
-        {s.pop && (
-          <div className="flex items-center gap-2 text-xs font-mono text-gray-400">
-            <span className="text-gray-500 uppercase tracking-wider w-20 shrink-0">PoP</span>
-            <span className="text-white font-bold">{s.pop}</span>
-            {s.aiConfidence && (
-              <span className={`ml-auto px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
-                s.aiConfidence.toLowerCase() === "high" ? "bg-[#00d166]/15 text-[#00d166]" :
-                s.aiConfidence.toLowerCase() === "medium" ? "bg-[#FFB800]/15 text-[#FFB800]" :
-                "bg-[#f23645]/15 text-[#f23645]"
-              }`}>
-                AI: {s.aiConfidence}
-              </span>
-            )}
-          </div>
-        )}
-        {s.breakevens && (
-          <div className="flex items-center gap-2 text-xs font-mono text-gray-400">
-            <span className="text-gray-500 uppercase tracking-wider w-20 shrink-0">Breakevens</span>
-            <span className="text-white">{s.breakevens}</span>
-          </div>
-        )}
-        {s.positionSize && (
-          <div className="flex items-center gap-2 text-xs font-mono text-gray-400">
-            <span className="text-gray-500 uppercase tracking-wider w-20 shrink-0">Size</span>
-            <span className="text-white">{s.positionSize}</span>
-          </div>
-        )}
-        {s.exitRules && (
-          <div className="flex items-start gap-2 text-xs font-mono text-gray-400 mt-1">
-            <span className="text-gray-500 uppercase tracking-wider w-20 shrink-0">Exit Rules</span>
-            <span className="text-white">{s.exitRules}</span>
-          </div>
-        )}
-      </div>
-
-      {(s.rationale || s.aiConfidenceReason) && (
-        <div className="px-4 py-3 border-t border-card-border text-xs text-gray-400 font-sans leading-relaxed space-y-1">
-          {s.rationale && <p>{s.rationale}</p>}
-          {s.aiConfidenceReason && (
-            <p className="text-gray-500 italic">AI Confidence: {s.aiConfidenceReason}</p>
-          )}
+        <div className="flex items-center gap-2 text-xs font-mono text-gray-400">
+          <span className="text-gray-500 uppercase tracking-wider w-20 shrink-0">PoP</span>
+          <span className="text-white font-bold">{s.probability_of_profit_pct}%</span>
         </div>
-      )}
+        <div className="flex items-center gap-2 text-xs font-mono text-gray-400">
+          <span className="text-gray-500 uppercase tracking-wider w-20 shrink-0">Breakeven</span>
+          <span className="text-white">{fmtDollar(s.breakeven)}{s.breakeven_upper ? ` / ${fmtDollar(s.breakeven_upper)}` : ""}</span>
+        </div>
+        <div className="flex items-center gap-2 text-xs font-mono text-gray-400">
+          <span className="text-gray-500 uppercase tracking-wider w-20 shrink-0">Size</span>
+          <span className="text-white">{s.contracts} contract{s.contracts > 1 ? "s" : ""}</span>
+        </div>
+        <div className="flex items-start gap-2 text-xs font-mono text-gray-400 mt-1">
+          <span className="text-gray-500 uppercase tracking-wider w-20 shrink-0">Exit Rules</span>
+          <span className="text-white">Take profit at {s.exit_rules.profit_target_pct}% ({fmtDollar(s.exit_rules.profit_target_amount)}); Stop at {fmtDollar(s.exit_rules.stop_loss_amount)}; {s.exit_rules.time_exit}</span>
+        </div>
+      </div>
     </div>
   );
 }
 
-function StrategistResultView({ content }: { content: string }) {
-  const parsed = useMemo(() => parseStrategistJSON(content), [content]);
-
-  if (!parsed) {
-    return <MarkdownResult content={content} />;
-  }
-
+function StrategistResultView({ strategies, narrative, isStreaming, streamingText }: {
+  strategies: StrategyPayload[];
+  narrative: string;
+  isStreaming: boolean;
+  streamingText: string;
+}) {
   return (
     <div className="space-y-4">
-      {parsed.strategies.map((s, i) => (
-        <StrategyCard key={i} s={s} idx={i} />
+      {strategies.map((s, i) => (
+        <RealStrategyCard key={i} s={s} idx={i} />
       ))}
-      {parsed.extraText && (
+      {(narrative || streamingText) && (
         <div className="border-t border-card-border pt-4">
-          <MarkdownResult content={parsed.extraText} />
+          <div className="font-mono text-[9px] text-[#52525b] uppercase tracking-widest mb-2">AI Thesis</div>
+          <MarkdownResult content={isStreaming ? streamingText : narrative} />
         </div>
       )}
     </div>
@@ -505,113 +503,134 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
     );
   }, [quote, history, aiModel, aiTemp, customPrompt, setAnalysisResult]);
 
+  const [realStrategies, setRealStrategies] = useState<StrategyPayload[]>([]);
+  const [narrativeText, setNarrativeText] = useState("");
+
   const handleRunStrategist = useCallback(async () => {
-    if (!quote || !accessToken) return;
+    if (!accessToken) return;
     setStrategistResult(null);
     setStrategistAudit(null);
     setStreamingText("");
     setThinkingTokens([]);
+    setRealStrategies([]);
+    setNarrativeText("");
     setActiveResult("strategist");
-    setChainEnabled(true);
     setIsStrategizing(true);
 
     try {
-      let chainData = chain ?? null;
-      if (!chainData) {
-        const chainRes = await fetchWithAuth(
-          `${API_BASE}/market/options?symbol=${encodeURIComponent(symbol)}&accessToken=${encodeURIComponent(accessToken)}&contractType=ALL&daysToExpiration=45&strikeCount=20`
-        );
-        if (!chainRes.ok) {
-          const errText = await chainRes.text().catch(() => "Unknown error");
-          setStrategistResult(`**Error fetching options chain:** ${errText}`);
-          setIsStrategizing(false);
-          return;
-        }
-        chainData = await chainRes.json();
-        if (chainData?.error) {
-          const errObj = chainData as Record<string, unknown>;
-          setStrategistResult(`**Options chain error:** ${errObj.error}${errObj["message"] ? ` — ${errObj["message"]}` : ""}`);
-          setIsStrategizing(false);
-          return;
-        }
-      }
+      const res = await fetchWithAuth(`${API_BASE}/ai/options-strategist/stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          symbol,
+          accessToken,
+          todayEdge: stratBias === "auto" ? undefined : stratBias === "bullish" ? "BULLISH_EDGE" : stratBias === "bearish" ? "BEARISH_EDGE" : "NEUTRAL_EDGE",
+        }),
+      });
 
-      const calls = chainData?.calls as unknown[] | undefined;
-      const puts = chainData?.puts as unknown[] | undefined;
-      if (!calls?.length && !puts?.length) {
-        setStrategistResult("**No option chain data available.** The chain returned empty — this can happen outside market hours or if the token has expired. Please re-authenticate and try again.");
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "Unknown error");
+        setStrategistResult(`**Error:** ${errText}`);
         setIsStrategizing(false);
         return;
       }
 
-      const q = quote as Record<string, unknown>;
-      setStrategistAudit({
-        symbol,
-        price: typeof q.last === "number" ? q.last : typeof q.lastPrice === "number" ? q.lastPrice : null,
-        change: typeof q.change === "number" ? q.change : typeof q.netChange === "number" ? q.netChange : null,
-        changePct: typeof q.changePct === "number" ? q.changePct : typeof q.netPercentChange === "number" ? q.netPercentChange : null,
-        volume: typeof q.volume === "number" ? q.volume : typeof q.totalVolume === "number" ? q.totalVolume : null,
-        autopilot: stratAutopilot,
-        maxRisk: stratMaxRisk,
-        minPoP: stratMinPoP,
-        minRR: stratMinRR,
-        bias: stratBias,
-        premium: stratPremium,
-        avoidEarnings: stratAvoidEarnings,
-        chainCallCount: calls?.length ?? 0,
-        chainPutCount: puts?.length ?? 0,
-        model: aiModel,
-        temperature: aiTemp,
-        timestamp: Date.now(),
-      });
+      const contentType = res.headers.get("content-type") ?? "";
+      if (contentType.includes("application/json")) {
+        const json = await res.json() as { strategies?: StrategyPayload[]; narrative?: string; error?: string; edge?: string };
+        if (json.error) {
+          setStrategistResult(`**Error:** ${json.error}`);
+        } else if (json.strategies && json.strategies.length > 0) {
+          setRealStrategies(json.strategies);
+          setNarrativeText(json.narrative ?? "");
+          setStrategistResult("done");
+        } else {
+          setStrategistResult(json.narrative ?? "No strategies available.");
+        }
+        setIsStrategizing(false);
+        return;
+      }
 
       setIsStrategizing(false);
       setIsStreaming(true);
 
+      const reader = res.body?.getReader();
+      if (!reader) { setStrategistResult("**Error:** No readable stream."); setIsStreaming(false); return; }
+
+      const decoder = new TextDecoder();
+      let buf = "";
       let accumulated = "";
-      await consumeStream(
-        `${API_BASE}/ai/options-strategist/stream`,
-        {
-          quote,
-          candles: history?.candles ?? [],
-          chain: chainData,
-          model: aiModel,
-          temperature: aiTemp,
-          settings: {
-            autopilot: stratAutopilot,
-            maxRisk: stratMaxRisk,
-            minPoP: stratMinPoP,
-            minRR: stratMinRR,
-            bias: stratBias,
-            premium: stratPremium,
-            avoidEarnings: stratAvoidEarnings,
-          },
-        },
-        (chunk) => {
-          accumulated += chunk;
-          setStreamingText(accumulated);
-        },
-        () => {
-          setStrategistResult(accumulated);
-          setStreamingText("");
-          setIsStreaming(false);
-        },
-        (err) => {
-          setStrategistResult(`**Strategist failed:** ${err}`);
-          setStreamingText("");
-          setIsStreaming(false);
-        },
-        (reasoning) => {
-          setThinkingTokens((prev) => [...prev, reasoning]);
-        },
-      );
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const payload = line.slice(6).trim();
+          if (payload === "[DONE]") break;
+          try {
+            const parsed = JSON.parse(payload) as {
+              strategies?: StrategyPayload[];
+              edge?: string;
+              underlyingPrice?: number;
+              text?: string;
+              reasoning?: string;
+              error?: string;
+            };
+            if (parsed.error) {
+              setStrategistResult(`**Error:** ${parsed.error}`);
+              setIsStreaming(false);
+              return;
+            }
+            if (parsed.strategies) {
+              setRealStrategies(parsed.strategies);
+              const q = quote as Record<string, unknown> | undefined;
+              setStrategistAudit({
+                symbol,
+                price: parsed.underlyingPrice ?? null,
+                change: q && typeof q.netChange === "number" ? q.netChange : null,
+                changePct: q && typeof q.netPercentChange === "number" ? q.netPercentChange : null,
+                volume: null,
+                autopilot: stratAutopilot,
+                maxRisk: stratMaxRisk,
+                minPoP: 0,
+                minRR: "—",
+                bias: parsed.edge ?? "—",
+                premium: "—",
+                avoidEarnings: false,
+                chainCallCount: 0,
+                chainPutCount: 0,
+                model: "gemini-2.5-flash",
+                temperature: 0.2,
+                timestamp: Date.now(),
+              });
+            }
+            if (parsed.reasoning) {
+              setThinkingTokens((prev) => [...prev, parsed.reasoning!]);
+            }
+            if (parsed.text) {
+              accumulated += parsed.text;
+              setStreamingText(accumulated);
+            }
+          } catch {}
+        }
+      }
+      setNarrativeText(accumulated);
+      setStrategistResult("done");
+      setStreamingText("");
+      setIsStreaming(false);
     } catch (err) {
       setStrategistResult(`**Error:** ${err instanceof Error ? err.message : String(err)}`);
       setIsStrategizing(false);
       setIsStreaming(false);
     }
-  }, [quote, accessToken, chain, history, symbol, aiModel, aiTemp, setStrategistResult,
-      stratAutopilot, stratMaxRisk, stratMinPoP, stratMinRR, stratBias, stratPremium, stratAvoidEarnings]);
+  }, [quote, accessToken, symbol, setStrategistResult,
+      stratAutopilot, stratMaxRisk, stratBias]);
 
 
   const isPendingAny = isStreaming || isStrategizing;
@@ -619,6 +638,8 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
   const currentResult = activeResult === "analysis" ? analysisResult
     : activeResult === "strategist" ? strategistResult
     : null;
+
+  const hasRealStrategies = realStrategies.length > 0;
 
   return (
     <div className="flex flex-col gap-0 w-full max-w-5xl mx-auto pb-6 flex-1" style={{ minHeight: "calc(var(--vvh, 100vh) - 200px)" }}>
@@ -655,14 +676,10 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
 
           <Button
             onClick={handleRunStrategist}
-            disabled={isPendingAny || !accessToken || !quote}
+            disabled={isPendingAny || !accessToken}
             className="w-full font-mono text-xs bg-primary text-primary-foreground hover:bg-primary/90 h-9"
           >
-            {chainLoading ? (
-              <><span className="w-3 h-3 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin mr-2" />LOADING CHAIN...</>
-            ) : (
-              <><BarChart2 className="w-3.5 h-3.5 mr-2 shrink-0" />RUN STRATEGIST</>
-            )}
+            <BarChart2 className="w-3.5 h-3.5 mr-2 shrink-0" />RUN STRATEGIST
           </Button>
 
           <div className={`bg-card border border-card-border overflow-hidden rounded-xl`}>
@@ -681,23 +698,29 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
 
             {activeResult === "strategist" && (
               <div className="border-t border-card-border p-4 bg-[#0c0c0c]">
-                {(isStrategizing || isStreaming) ? (
-                  <AiThinkingFeed
-                    texts={thinkingTokens}
-                    isStreaming={true}
-                  />
-                ) : currentResult ? (
+                {isStrategizing ? (
+                  <div className="flex items-center gap-3 py-4">
+                    <span className="w-4 h-4 border-2 border-[#FFB800] border-t-transparent rounded-full animate-spin" />
+                    <span className="font-mono text-xs text-[#a1a1aa]">Fetching chain & selecting strikes...</span>
+                  </div>
+                ) : hasRealStrategies ? (
                   <>
                     {thinkingTokens.length > 0 && (
                       <div className="mb-3">
-                        <AiThinkingFeed
-                          texts={thinkingTokens}
-                          isStreaming={false}
-                        />
+                        <AiThinkingFeed texts={thinkingTokens} isStreaming={isStreaming} />
                       </div>
                     )}
-                    <StrategistResultView content={currentResult} />
+                    <StrategistResultView
+                      strategies={realStrategies}
+                      narrative={narrativeText}
+                      isStreaming={isStreaming}
+                      streamingText={streamingText}
+                    />
                   </>
+                ) : currentResult && currentResult !== "done" ? (
+                  <MarkdownResult content={currentResult} />
+                ) : isStreaming ? (
+                  <AiThinkingFeed texts={thinkingTokens} isStreaming={true} />
                 ) : null}
               </div>
             )}
