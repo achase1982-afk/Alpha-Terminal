@@ -148,44 +148,44 @@ export default function TerminalPage() {
 
           <div className="flex flex-col" style={{ minHeight: "calc(var(--vvh, 100%) - 80px)" }}>
             <Tabs value={activeMainTab} onValueChange={setActiveMainTab} className="flex flex-col flex-1">
-              <div className="shrink-0 mb-4 sticky top-0 z-30 bg-background py-1 px-3 sm:px-4 lg:px-5">
-                <div className="overflow-x-auto">
-                  <TabsList className="bg-card border border-card-border p-1 inline-flex min-w-max">
+              <div className="shrink-0 mb-4 sticky top-0 z-30 bg-background py-2 px-1 w-full" style={{ position: "sticky", top: 42, zIndex: 40 }}>
+                <div className="overflow-x-auto flex justify-center">
+                  <TabsList className="bg-card border border-card-border p-1 inline-flex min-w-max w-full">
                     <TabsTrigger
                       value="news"
-                      className="font-mono text-[10px] sm:text-xs uppercase rounded-none border-b-2 border-b-transparent data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-white data-[state=active]:border-b-[#FFB800] gap-1.5 px-3"
+                      className="font-mono text-xs sm:text-sm uppercase rounded-none border-b-2 border-b-transparent data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-white data-[state=active]:border-b-[#FFB800] gap-2 px-4 py-2.5"
                     >
-                      <Newspaper className="w-3.5 h-3.5 shrink-0" />
+                      <Newspaper className="w-4 h-4 shrink-0" />
                       NEWS
                     </TabsTrigger>
                     <TabsTrigger
                       value="options"
-                      className="font-mono text-[10px] sm:text-xs uppercase rounded-none border-b-2 border-b-transparent data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-white data-[state=active]:border-b-[#FFB800] gap-1.5 px-3"
+                      className="font-mono text-xs sm:text-sm uppercase rounded-none border-b-2 border-b-transparent data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-white data-[state=active]:border-b-[#FFB800] gap-2 px-4 py-2.5"
                     >
-                      <BarChart2 className="w-3.5 h-3.5 shrink-0" />
+                      <BarChart2 className="w-4 h-4 shrink-0" />
                       OPTIONS
                     </TabsTrigger>
                     <TabsTrigger
                       value="ai"
-                      className="font-mono text-[10px] sm:text-xs uppercase rounded-none border-b-2 border-b-transparent data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-white data-[state=active]:border-b-[#FFB800] gap-1.5 px-3"
+                      className="font-mono text-xs sm:text-sm uppercase rounded-none border-b-2 border-b-transparent data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-white data-[state=active]:border-b-[#FFB800] gap-2 px-4 py-2.5"
                     >
-                      <BrainCircuit className="w-3.5 h-3.5 shrink-0" />
+                      <BrainCircuit className="w-4 h-4 shrink-0" />
                       <span className="hidden sm:inline">AI INTELLIGENCE</span>
                       <span className="sm:hidden">AI</span>
                     </TabsTrigger>
                     <TabsTrigger
                       value="scanner"
-                      className="font-mono text-[10px] sm:text-xs uppercase rounded-none border-b-2 border-b-transparent data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-white data-[state=active]:border-b-[#FFB800] gap-1.5 px-3"
+                      className="font-mono text-xs sm:text-sm uppercase rounded-none border-b-2 border-b-transparent data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-white data-[state=active]:border-b-[#FFB800] gap-2 px-4 py-2.5"
                     >
-                      <Radar className="w-3.5 h-3.5 shrink-0" />
+                      <Radar className="w-4 h-4 shrink-0" />
                       <span className="hidden sm:inline">MARKET SCANNER</span>
                       <span className="sm:hidden">SCAN</span>
                     </TabsTrigger>
                     <TabsTrigger
                       value="chart"
-                      className="font-mono text-[10px] sm:text-xs uppercase rounded-none border-b-2 border-b-transparent data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-white data-[state=active]:border-b-[#FFB800] gap-1.5 px-3"
+                      className="font-mono text-xs sm:text-sm uppercase rounded-none border-b-2 border-b-transparent data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-white data-[state=active]:border-b-[#FFB800] gap-2 px-4 py-2.5"
                     >
-                      <LineChart className="w-3.5 h-3.5 shrink-0" />
+                      <LineChart className="w-4 h-4 shrink-0" />
                       CHART
                     </TabsTrigger>
                   </TabsList>
