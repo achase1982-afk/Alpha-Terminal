@@ -172,6 +172,18 @@ const INDEX_MAP: Record<string, string> = {
   OEX: "$OEX", "$OEX": "$OEX",
   MNX: "$MNX", "$MNX": "$MNX",
   XSP: "$XSP", "$XSP": "$XSP",
+  UVOL: "$UVOL", "$UVOL": "$UVOL",
+  DVOL: "$DVOL", "$DVOL": "$DVOL",
+  ADVN: "$ADVN", "$ADVN": "$ADVN",
+  DECN: "$DECN", "$DECN": "$DECN",
+  TICK: "$TICK", "$TICK": "$TICK",
+  ADD: "$ADD", "$ADD": "$ADD",
+  TRIN: "$TRIN", "$TRIN": "$TRIN",
+  VVIX: "$VVIX", "$VVIX": "$VVIX",
+  VIX9D: "$VIX9D", "$VIX9D": "$VIX9D",
+  VIX3M: "$VIX3M", "$VIX3M": "$VIX3M",
+  SKEW: "$SKEW", "$SKEW": "$SKEW",
+  ADSPD: "$ADSPD", "$ADSPD": "$ADSPD",
 };
 function toSchwabKey(sym: string): string {
   return INDEX_MAP[sym.toUpperCase()] ?? sym.toUpperCase();
@@ -368,6 +380,9 @@ let equityTickCount = 0;
 let lastEquityTickLog = 0;
 let fieldDiagDone = false;
 
+const DIAG_SYMBOLS = new Set(["$UVOL", "$DVOL", "$ADVN", "$DECN", "$TICK", "$ADD", "$TRIN", "$ADSPD"]);
+const diagDone = new Set<string>();
+
 function handleData(content: Record<string, unknown>[]) {
   equityTickCount += content.length;
   lastEquityTick = Date.now();
@@ -395,6 +410,20 @@ function handleData(content: Record<string, unknown>[]) {
     }
   }
 
+  for (const item of content) {
+    const key = item["key"] as string;
+    if (DIAG_SYMBOLS.has(key) && !diagDone.has(key)) {
+      diagDone.add(key);
+      const allFields: Record<string, unknown> = {};
+      for (let i = 0; i <= 52; i++) {
+        if (item[String(i)] !== undefined) {
+          allFields[String(i)] = item[String(i)];
+        }
+      }
+      logger.info({ sym: key, fieldCount: Object.keys(allFields).length, fields: allFields }, "DIAG: breadth/index symbol first tick — ALL fields");
+    }
+  }
+
   if (now - lastEquityTickLog > 30_000) {
     logger.info({ count: content.length, total: equityTickCount, symbols: content.map(i => i["key"]).slice(0, 5) }, "Streamer: EQUITY ticks received");
     lastEquityTickLog = now;
@@ -415,9 +444,11 @@ function handleData(content: Record<string, unknown>[]) {
       return typeof v === "number" && !isNaN(v) ? v : null;
     };
 
-    const regLastVal     = pick(FIELD.REG_LAST)      ?? existing.last;
-    const extendedLastVal = pick(FIELD.LAST_ALL_SESS) ?? existing.extendedLast;
-    const closeVal       = pick(FIELD.CLOSE)          ?? existing.close;
+    const regLastRaw      = pick(FIELD.REG_LAST);
+    const allSessLastRaw  = pick(FIELD.LAST_ALL_SESS);
+    const regLastVal      = regLastRaw ?? allSessLastRaw ?? existing.last;
+    const extendedLastVal = allSessLastRaw ?? existing.extendedLast;
+    const closeVal        = pick(FIELD.CLOSE) ?? existing.close;
 
     let changeVal:    number | null = existing.change;
     let changePctVal: number | null = existing.changePct;
@@ -605,12 +636,13 @@ function onMessage(raw: string) {
       const cmd  = r["command"] as string;
       const code = (r["content"] as Record<string, unknown>)?.["code"];
       if (svc !== "ADMIN") {
-        const respCode = (r["content"] as Record<string, unknown>)?.["code"];
-        const respMsg  = (r["content"] as Record<string, unknown>)?.["msg"];
+        const respContent = r["content"] as Record<string, unknown>;
+        const respCode = respContent?.["code"];
+        const respMsg  = respContent?.["msg"];
         if (respCode !== 0 && respCode !== "0") {
-          logger.warn({ svc, cmd, code: respCode, msg: respMsg }, "Streamer: subscription response NON-ZERO");
+          logger.warn({ svc, cmd, code: respCode, msg: respMsg, content: respContent }, "Streamer: subscription response NON-ZERO");
         } else {
-          logger.info({ svc, cmd, code: respCode }, "Streamer: subscription ACK");
+          logger.info({ svc, cmd, code: respCode, msg: respMsg }, "Streamer: subscription ACK");
         }
       }
       if (svc === "ADMIN" && cmd === "LOGIN") {
