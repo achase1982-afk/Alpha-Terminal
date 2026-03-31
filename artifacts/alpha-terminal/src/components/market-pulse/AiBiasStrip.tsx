@@ -23,7 +23,7 @@ export function AiBiasStrip({ onNavigateToPulse }: AiBiasStripProps) {
     return (
       <button
         onClick={onNavigateToPulse}
-        className="flex items-center justify-center gap-2 w-full px-4 border-b border-zinc-800 border-l-2 border-l-zinc-700 cursor-pointer hover:bg-zinc-800/40 transition-colors bg-zinc-900/80"
+        className="flex items-center justify-center gap-2 w-full px-4 border-b border-zinc-800 border-l-2 border-l-zinc-700 cursor-pointer hover:bg-zinc-800 transition-colors bg-zinc-900"
         style={{ height: 36 }}
       >
         <Zap className="w-3.5 h-3.5 text-zinc-500" />
@@ -58,7 +58,7 @@ export function AiBiasStrip({ onNavigateToPulse }: AiBiasStripProps) {
   return (
     <button
       onClick={onNavigateToPulse}
-      className={`flex items-center justify-between w-full px-4 border-b border-l-2 border-zinc-800 cursor-pointer transition-colors bg-zinc-900/80 hover:bg-zinc-900 ${colors.border}`}
+      className={`flex items-center justify-between w-full px-4 border-b border-l-2 border-zinc-800 cursor-pointer transition-colors bg-zinc-900 hover:bg-zinc-800 ${colors.border}`}
       style={{ height: 36 }}
     >
       {/* Left section: bias label */}
