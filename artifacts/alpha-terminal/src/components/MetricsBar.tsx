@@ -85,7 +85,22 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
     return () => clearTimeout(t);
   }, [symbol]);
 
-  if (!accessToken && !quote?.last) {
+  const noSchwab = !accessToken && !quote?.last;
+
+  if (noSchwab && compact) {
+    return (
+      <div
+        className={`${STICKY_BASE} flex items-center justify-center px-4`}
+        style={{ background: HEADER_BG, height: 36, position: "sticky", top: 36, zIndex: 45 }}
+      >
+        <p className="text-muted-foreground text-xs animate-pulse text-center tracking-wider font-mono">
+          CONNECT SCHWAB TO VIEW MARKET DATA
+        </p>
+      </div>
+    );
+  }
+
+  if (noSchwab) {
     return (
       <div className={`${STICKY_BASE} flex items-center justify-center px-4 min-h-[70px] sm:min-h-[80px]`} style={{ background: HEADER_BG }}>
         <p className="text-muted-foreground text-xs sm:text-sm animate-pulse text-center tracking-wider font-mono">

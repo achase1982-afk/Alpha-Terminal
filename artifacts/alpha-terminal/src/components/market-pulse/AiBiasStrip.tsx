@@ -1,13 +1,13 @@
 import { Zap, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { useMarketPulseStore } from "../../stores/marketPulseStore";
 
-const BIAS_COLORS: Record<string, { label: string; accent: string; border: string }> = {
-  STRONGLY_BULLISH: { label: "text-emerald-400", accent: "bg-emerald-400", border: "border-l-emerald-500/50" },
-  BULLISH: { label: "text-emerald-400", accent: "bg-emerald-400", border: "border-l-emerald-500/50" },
-  NEUTRAL: { label: "text-amber-400", accent: "bg-amber-400", border: "border-l-amber-500/50" },
-  BEARISH: { label: "text-red-400", accent: "bg-red-400", border: "border-l-red-500/50" },
-  STRONGLY_BEARISH: { label: "text-red-400", accent: "bg-red-400", border: "border-l-red-500/50" },
-  NO_EDGE: { label: "text-zinc-500", accent: "bg-zinc-600", border: "border-l-zinc-700" },
+const BIAS_COLORS: Record<string, { label: string; accent: string }> = {
+  STRONGLY_BULLISH: { label: "text-emerald-400", accent: "bg-emerald-400" },
+  BULLISH: { label: "text-emerald-400", accent: "bg-emerald-400" },
+  NEUTRAL: { label: "text-amber-400", accent: "bg-amber-400" },
+  BEARISH: { label: "text-red-400", accent: "bg-red-400" },
+  STRONGLY_BEARISH: { label: "text-red-400", accent: "bg-red-400" },
+  NO_EDGE: { label: "text-zinc-500", accent: "bg-zinc-600" },
 };
 
 interface AiBiasStripProps {
@@ -23,7 +23,7 @@ export function AiBiasStrip({ onNavigateToPulse }: AiBiasStripProps) {
     return (
       <button
         onClick={onNavigateToPulse}
-        className="flex items-center justify-center gap-2 w-full px-4 border-b border-zinc-800 border-l-2 border-l-zinc-700 cursor-pointer hover:bg-zinc-800 transition-colors"
+        className="flex items-center justify-center gap-2 w-full px-4 border-b border-zinc-800 cursor-pointer hover:bg-zinc-800 transition-colors"
         style={{ height: 36, backgroundColor: '#1C1C1E' }}
       >
         <Zap className="w-3.5 h-3.5 text-zinc-500" />
@@ -58,7 +58,7 @@ export function AiBiasStrip({ onNavigateToPulse }: AiBiasStripProps) {
   return (
     <button
       onClick={onNavigateToPulse}
-      className={`flex items-center justify-between w-full px-4 border-b border-l-2 border-zinc-800 cursor-pointer transition-colors hover:bg-zinc-800 ${colors.border}`}
+      className="flex items-center justify-between w-full px-4 border-b border-zinc-800 cursor-pointer transition-colors hover:bg-zinc-800"
       style={{ height: 36, backgroundColor: '#1C1C1E' }}
     >
       <div className="flex items-center gap-2 shrink-0">
