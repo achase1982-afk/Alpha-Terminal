@@ -1002,9 +1002,8 @@ Write ONLY the narrative fields. Return this exact JSON structure:
 
   try {
     const google = createGoogleGenerativeAI({ apiKey });
-    const chosenModel = model ?? "gemini-2.5-flash";
     const result = streamText({
-      model: google(chosenModel),
+      model: google("gemini-2.5-pro"),
       prompt: narrativePrompt,
       temperature: 0,
       providerOptions: {
