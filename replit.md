@@ -40,6 +40,19 @@ Features include a MacroBar displaying key indices, an Institutional Tear Sheet 
 - Settings (persisted in Zustand): `preTradeEnabled`, `preTradeBlockOnRed`, `preTradeMinRR` (0.25), `preTradeMaxPositionPct` (3%), `preTradeMinDTE` (5), `accountSize` (25000)
 - Auto-runs when strategies load; results are per-strategy
 
+### Session Timeout & Biometric Auth
+- All security preferences stored in `localStorage` under key `alphaTerminalSecurityPrefs`
+- `SecurityPrefs` interface: `sessionTimeout` (number, minutes), `biometricLogin`, `biometricSensitiveData`, `biometricTradeConfirmation` (all boolean)
+- Session timeout options: 15, 30, 60, 90 minutes, or Never (0). Default: 30 min
+- `useAutoLock` hook reads timeout from `alphaTerminalSecurityPrefs.sessionTimeout`, no hardcoded timeout values
+- Biometric auth uses WebAuthn API (native browser) + Clerk passkeys (`clerk.user.createPasskey()`)
+- Login screen: "Sign in with Face ID" button (passkey strategy) shown when `biometricLogin=true` and WebAuthn supported
+- `useBiometricGate` hook: local device-level WebAuthn verification for sensitive data access
+- `useTradeConfirmationGate` hook: local device-level WebAuthn verification before trade execution
+- Security Settings UI in sidebar: segmented timeout control, passkey registration button, 3 biometric toggles
+- Legacy `at_auto_lock_minutes` localStorage key auto-migrated to new prefs format
+- Key files: `securityPrefs.ts`, `useAutoLock.ts`, `useBiometric.ts`, `main.tsx`, `Sidebar.tsx`
+
 ## System Design Choices
 
 The monorepo structure facilitates shared libraries and consistent tooling. TypeScript Composite Projects ensure robust type-checking. A clear separation of concerns is maintained across UI, API, database, and streaming logic. Real-time data is optimized through streamed data with REST fallback and performant state management. Strict AI grounding ensures AI responses are based solely on provided, fresh market data. The Market Pulse system uses a two-layer architecture: a deterministic scoring engine (pure TypeScript math/rules) that calculates composite scores and bias, and Gemini (temperature=0) which writes only the narrative based on these pre-calculated scores. The bias strip (`AiBiasStrip`) provides a visual indication of market bias. Market Pulse settings are persisted in Zustand, allowing user-defined indicator management and strategy preferences.

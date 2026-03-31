@@ -20,7 +20,11 @@ function useClerkSafe() {
   return useClerk();
 }
 import { useGetAvailableModels } from "@workspace/api-client-react";
-import { useAutoLock, AUTO_LOCK_OPTIONS, type AutoLockMinutes } from "@/hooks/useAutoLock";
+import { useAutoLock, TIMEOUT_OPTIONS, type SessionTimeoutMinutes } from "@/hooks/useAutoLock";
+import { readSecurityPrefs, updateSecurityPref, type SecurityPrefs } from "@/lib/securityPrefs";
+import { useBiometricRegistration, useWebAuthnSupported } from "@/hooks/useBiometric";
+import { Switch } from "@/components/ui/switch";
+import { Fingerprint } from "lucide-react";
 
 const OVERLAY_LABELS: Record<string, string> = {
   sma20: "SMA 20",
@@ -38,6 +42,13 @@ interface SidebarProps {
 export function Sidebar({ onClose, onOpenChat }: SidebarProps) {
   const { signOut } = useClerkSafe();
   const { minutes: autoLockMinutes, setMinutes: setAutoLockMinutes } = useAutoLock();
+  const [secPrefs, setSecPrefs] = useState<SecurityPrefs>(readSecurityPrefs);
+  const { registerPasskey, loading: passkeyLoading, error: passkeyError, hasPasskey, webAuthnSupported } = useBiometricRegistration();
+
+  const handleSecPrefToggle = (key: keyof SecurityPrefs, value: boolean) => {
+    const updated = updateSecurityPref(key, value);
+    setSecPrefs(updated);
+  };
   const {
     overlays, toggleOverlay,
     macroSymbols, setMacroSymbols,
@@ -376,28 +387,92 @@ export function Sidebar({ onClose, onOpenChat }: SidebarProps) {
           </button>
 
           {securityOpen && (
-            <div className="p-3 sm:p-4 border-t border-card-border bg-[#0c0c0c] space-y-3 animate-in fade-in slide-in-from-top-2">
+            <div className="p-3 sm:p-4 border-t border-card-border bg-[#0c0c0c] space-y-4 animate-in fade-in slide-in-from-top-2">
               <div className="space-y-1.5">
                 <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
-                  <Shield className="w-3 h-3" /> Auto-Lock Timer
+                  <Shield className="w-3 h-3" /> Session Timeout
                 </Label>
-                <Select
-                  value={String(autoLockMinutes)}
-                  onValueChange={(v) => setAutoLockMinutes(Number(v) as AutoLockMinutes)}
-                >
-                  <SelectTrigger className="font-mono text-[10px] bg-card border-card-border h-8 focus:ring-primary/50">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-card border-card-border font-mono text-[10px]">
-                    {AUTO_LOCK_OPTIONS.map((opt) => (
-                      <SelectItem key={opt.value} value={String(opt.value)} className="text-[10px]">
-                        {opt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="flex flex-wrap gap-1">
+                  {TIMEOUT_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      onClick={() => setAutoLockMinutes(opt.value as SessionTimeoutMinutes)}
+                      className={`px-2.5 py-1.5 rounded-md font-mono text-[10px] font-bold tracking-wide transition-all border ${
+                        autoLockMinutes === opt.value
+                          ? "bg-primary/20 border-primary text-primary"
+                          : "bg-card border-card-border text-muted-foreground hover:border-primary/30 hover:text-foreground"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
                 <p className="font-mono text-[9px] text-muted-foreground/50 leading-relaxed">
                   Signs you out after inactivity. A warning appears 60s before.
+                </p>
+              </div>
+
+              <div className="border-t border-card-border pt-3 space-y-3">
+                <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
+                  <Fingerprint className="w-3 h-3" /> Face ID / Biometrics
+                </Label>
+
+                {!webAuthnSupported && (
+                  <p className="font-mono text-[9px] text-red-400/70 leading-relaxed">
+                    WebAuthn is not supported on this device.
+                  </p>
+                )}
+
+                {webAuthnSupported && !hasPasskey && (
+                  <button
+                    onClick={() => void registerPasskey()}
+                    disabled={passkeyLoading}
+                    className="w-full flex items-center justify-center gap-2 p-2.5 rounded-lg font-mono text-[10px] font-bold tracking-wide text-primary bg-primary/10 border border-primary/20 hover:bg-primary/20 transition-all disabled:opacity-50"
+                  >
+                    <Fingerprint className="w-3.5 h-3.5" />
+                    {passkeyLoading ? "REGISTERING..." : "REGISTER FACE ID / PASSKEY"}
+                  </button>
+                )}
+
+                {passkeyError && (
+                  <p className="font-mono text-[9px] text-red-400 leading-relaxed">{passkeyError}</p>
+                )}
+
+                {webAuthnSupported && hasPasskey && (
+                  <p className="font-mono text-[9px] text-green-400/70 leading-relaxed flex items-center gap-1">
+                    ✓ Passkey registered
+                  </p>
+                )}
+
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-[10px] text-foreground/80">App Login</span>
+                    <Switch
+                      checked={secPrefs.biometricLogin}
+                      onCheckedChange={(v) => handleSecPrefToggle("biometricLogin", v)}
+                      disabled={!webAuthnSupported || !hasPasskey}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-[10px] text-foreground/80">Sensitive Data</span>
+                    <Switch
+                      checked={secPrefs.biometricSensitiveData}
+                      onCheckedChange={(v) => handleSecPrefToggle("biometricSensitiveData", v)}
+                      disabled={!webAuthnSupported || !hasPasskey}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-[10px] text-foreground/80">Trade Confirmation</span>
+                    <Switch
+                      checked={secPrefs.biometricTradeConfirmation}
+                      onCheckedChange={(v) => handleSecPrefToggle("biometricTradeConfirmation", v)}
+                      disabled={!webAuthnSupported || !hasPasskey}
+                    />
+                  </div>
+                </div>
+
+                <p className="font-mono text-[9px] text-muted-foreground/50 leading-relaxed">
+                  Requires a registered passkey. Toggles are disabled until one is set up.
                 </p>
               </div>
             </div>

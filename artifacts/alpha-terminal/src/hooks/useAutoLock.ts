@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useRef, useCallback, useState } f
 import type { ReactNode } from "react";
 import { useClerk } from "@clerk/clerk-react";
 import React from "react";
+import { readSecurityPrefs, updateSecurityPref, TIMEOUT_OPTIONS } from "@/lib/securityPrefs";
 
 const devBypass = import.meta.env.VITE_DEV_BYPASS_AUTH === "true";
 
@@ -10,40 +11,20 @@ function useClerkSafe() {
   return useClerk();
 }
 
-const LS_KEY = "at_auto_lock_minutes";
 const WARNING_SECONDS = 60;
 
-export type AutoLockMinutes = 0 | 5 | 10 | 15 | 30 | 60 | 120;
+export type SessionTimeoutMinutes = 0 | 15 | 30 | 60 | 90;
 
-export const AUTO_LOCK_OPTIONS: { value: AutoLockMinutes; label: string }[] = [
-  { value: 0, label: "Never" },
-  { value: 5, label: "After 5 min" },
-  { value: 10, label: "After 10 min" },
-  { value: 15, label: "After 15 min" },
-  { value: 30, label: "After 30 min" },
-  { value: 60, label: "After 1 hour" },
-  { value: 120, label: "After 2 hours" },
-];
+export { TIMEOUT_OPTIONS };
 
-function readStoredMinutes(): AutoLockMinutes {
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (raw === null) return 30;
-    const n = Number(raw);
-    if (AUTO_LOCK_OPTIONS.some((o) => o.value === n)) return n as AutoLockMinutes;
-  } catch {}
-  return 30;
-}
-
-function storeMinutes(m: AutoLockMinutes) {
-  try {
-    localStorage.setItem(LS_KEY, String(m));
-  } catch {}
+function readStoredTimeout(): SessionTimeoutMinutes {
+  const prefs = readSecurityPrefs();
+  return prefs.sessionTimeout as SessionTimeoutMinutes;
 }
 
 interface AutoLockState {
-  minutes: AutoLockMinutes;
-  setMinutes: (m: AutoLockMinutes) => void;
+  minutes: SessionTimeoutMinutes;
+  setMinutes: (m: SessionTimeoutMinutes) => void;
   warning: boolean;
   countdown: number;
 }
@@ -52,7 +33,7 @@ const AutoLockContext = createContext<AutoLockState | null>(null);
 
 export function AutoLockProvider({ children }: { children: ReactNode }) {
   const { signOut } = useClerkSafe();
-  const [minutes, setMinutesState] = useState<AutoLockMinutes>(readStoredMinutes);
+  const [minutes, setMinutesState] = useState<SessionTimeoutMinutes>(readStoredTimeout);
   const [warning, setWarning] = useState(false);
   const [countdown, setCountdown] = useState(WARNING_SECONDS);
 
@@ -125,8 +106,8 @@ export function AutoLockProvider({ children }: { children: ReactNode }) {
     };
   }, [startTimers, resetActivity, clearAllTimers]);
 
-  const setMinutes = useCallback((m: AutoLockMinutes) => {
-    storeMinutes(m);
+  const setMinutes = useCallback((m: SessionTimeoutMinutes) => {
+    updateSecurityPref("sessionTimeout", m);
     setMinutesState(m);
   }, []);
 
