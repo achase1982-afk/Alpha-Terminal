@@ -14,6 +14,7 @@ import {
 } from "@workspace/api-zod";
 import { computeIndicators, formatTAContext, isDataStale, type Candle } from "../lib/ta.js";
 import { runMarketPulseEngine, type MarketIndicators, type BiasLabel } from "../lib/marketPulseEngine.js";
+import { getSnapshot, type LiveQuote } from "../lib/schwabStreamer.js";
 
 const router: IRouter = Router();
 
@@ -384,6 +385,60 @@ function symbolToSchwabApi(userSymbol: string): string {
   return INDEX_TO_SCHWAB[upper] ?? upper;
 }
 
+function readFromWebSocketCache(
+  userSymbols?: string[]
+): { dataMap: Map<string, Record<string, unknown>>; displayToApi: Map<string, string>; hitCount: number } {
+  const snapshot = getSnapshot();
+  const cacheBySymbol = new Map<string, LiveQuote>();
+  for (const q of snapshot) {
+    cacheBySymbol.set(q.symbol, q);
+  }
+
+  let pairs: Array<{ display: string; api: string }>;
+  if (userSymbols && userSymbols.length > 0) {
+    pairs = userSymbols.map(s => ({
+      display: s.toUpperCase().trim(),
+      api: symbolToSchwabApi(s),
+    }));
+  } else {
+    pairs = PULSE_SYMBOLS.map(s => ({ display: s.display, api: s.api }));
+  }
+
+  const displayToApi = new Map<string, string>(pairs.map(p => [p.display, p.api]));
+  const dataMap = new Map<string, Record<string, unknown>>();
+  let hitCount = 0;
+
+  for (const pair of pairs) {
+    const q = cacheBySymbol.get(pair.api) ?? cacheBySymbol.get(pair.display);
+    if (q && q.last !== null) {
+      hitCount++;
+      const closeVal = q.close ?? q.last;
+      const changeVal = q.change ?? (closeVal ? q.last! - closeVal : null);
+      const changePctVal = q.changePct ?? (closeVal && closeVal !== 0 ? ((q.last! - closeVal) / closeVal) * 100 : null);
+      dataMap.set(pair.display, {
+        lastPrice: q.last,
+        mark: q.last,
+        closePrice: q.close,
+        close: q.close,
+        netChange: changeVal,
+        markChange: changeVal,
+        netPercentChange: changePctVal,
+        markPercentChange: changePctVal,
+        highPrice: q.high,
+        high: q.high,
+        lowPrice: q.low,
+        low: q.low,
+        totalVolume: q.volume,
+        volume: q.volume,
+        bidPrice: q.bid,
+        askPrice: q.ask,
+      });
+    }
+  }
+
+  return { dataMap, displayToApi, hitCount };
+}
+
 async function fetchMacroPulseData(
   accessToken: string,
   userSymbols?: string[]
@@ -644,7 +699,17 @@ router.post("/market-briefing", async (req, res) => {
 
   let dataBlock: string;
   try {
-    const { dataMap } = await fetchMacroPulseData(accessToken, symbols);
+    const wsResult = readFromWebSocketCache(symbols);
+    const expectedCount = symbols && symbols.length > 0 ? symbols.length : PULSE_SYMBOLS.length;
+    let dataMap: Map<string, Record<string, unknown>>;
+    if (wsResult.hitCount >= Math.floor(expectedCount * 0.5)) {
+      dataMap = wsResult.dataMap;
+      req.log.info({ source: "websocket", hits: wsResult.hitCount, expected: expectedCount }, "Pulse data from WebSocket cache");
+    } else {
+      const restResult = await fetchMacroPulseData(accessToken, symbols);
+      dataMap = restResult.dataMap;
+      req.log.info({ source: "rest_fallback", wsHits: wsResult.hitCount, expected: expectedCount }, "Pulse data from REST fallback (WS cache too sparse)");
+    }
     dataBlock = buildPulseDataBlock(dataMap, symbols && symbols.length > 0 ? symbols : undefined);
   } catch (fetchErr: unknown) {
     const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
@@ -740,7 +805,17 @@ router.post("/market-pulse", async (req, res) => {
 
   let dataBlock: string;
   try {
-    const { dataMap } = await fetchMacroPulseData(accessToken, symbols);
+    const wsResult = readFromWebSocketCache(symbols);
+    const expectedCount = symbols && symbols.length > 0 ? symbols.length : PULSE_SYMBOLS.length;
+    let dataMap: Map<string, Record<string, unknown>>;
+    if (wsResult.hitCount >= Math.floor(expectedCount * 0.5)) {
+      dataMap = wsResult.dataMap;
+      req.log.info({ source: "websocket", hits: wsResult.hitCount, expected: expectedCount }, "Analysis data from WebSocket cache");
+    } else {
+      const restResult = await fetchMacroPulseData(accessToken, symbols);
+      dataMap = restResult.dataMap;
+      req.log.info({ source: "rest_fallback", wsHits: wsResult.hitCount, expected: expectedCount }, "Analysis data from REST fallback");
+    }
     dataBlock = buildPulseDataBlock(dataMap, symbols && symbols.length > 0 ? symbols : undefined);
   } catch (fetchErr: unknown) {
     const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
@@ -917,8 +992,16 @@ router.post("/market-pulse/stream", async (req, res) => {
   let dataMap: Map<string, Record<string, unknown>>;
   let dataBlock: string;
   try {
-    const result = await fetchMacroPulseData(accessToken, symbols);
-    dataMap = result.dataMap;
+    const wsResult = readFromWebSocketCache(symbols);
+    const expectedCount = symbols && symbols.length > 0 ? symbols.length : PULSE_SYMBOLS.length;
+    if (wsResult.hitCount >= Math.floor(expectedCount * 0.5)) {
+      dataMap = wsResult.dataMap;
+      req.log.info({ source: "websocket", hits: wsResult.hitCount, expected: expectedCount }, "Pulse stream data from WebSocket cache");
+    } else {
+      const restResult = await fetchMacroPulseData(accessToken, symbols);
+      dataMap = restResult.dataMap;
+      req.log.info({ source: "rest_fallback", wsHits: wsResult.hitCount, expected: expectedCount }, "Pulse stream data from REST fallback");
+    }
     dataBlock = buildPulseDataBlock(dataMap, symbols && symbols.length > 0 ? symbols : undefined);
     res.write(`event: thinking\ndata: ${JSON.stringify({ type: "thinking", text: "Market data loaded. Running scoring engine..." })}\n\n`);
     if (typeof (res as any).flush === "function") (res as any).flush();

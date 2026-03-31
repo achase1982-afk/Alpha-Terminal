@@ -801,7 +801,6 @@ export async function startStreamer(token: string, symbols: string[]) {
   loginRejected  = false;
   streamerFetchFailCount = 0;
 
-  startBreadthRestPoll();
   await connect();
 }
 
@@ -818,7 +817,6 @@ export function addSymbols(symbols: string[]) {
   if (newOnes.length) {
     sendSubscribe(newOnes);
   }
-  startBreadthRestPoll();
 }
 
 /** Add option contract symbols to stream (e.g. "SPY   260330C00632000"). */
@@ -889,7 +887,6 @@ export function stopStreamer() {
   reconnectDelay = 1_000;
   streamerFetchFailCount = 0;
 
-  stopBreadthRestPoll();
   broadcast("streamerStatus", { status: "disconnected" });
   logger.info("Streamer: stopped and fully cleared");
 }
@@ -899,93 +896,5 @@ export function isConnected(): boolean {
   return ws !== null && ws.readyState === WebSocket.OPEN && loginAcked;
 }
 
-// ─── REST poller for $UVOL / $DVOL (not available via Schwab streaming) ─────
-const REST_POLL_SYMBOLS = ["$UVOL", "$DVOL"];
-const REST_POLL_INTERVAL_MS = 15_000;
-let restPollTimer: ReturnType<typeof setInterval> | null = null;
-
-const SENTINEL_THRESHOLD = 9e10;
-function safeNum(v: unknown): number | null {
-  if (typeof v !== "number" || isNaN(v)) return null;
-  if (Math.abs(v) > SENTINEL_THRESHOLD) return null;
-  return v;
-}
-
-async function pollBreadthRest() {
-  const token = getAccessToken("market") ?? getAccessToken("trader") ?? accessToken;
-  if (!token) return;
-
-  const symbolsParam = REST_POLL_SYMBOLS.map(encodeURIComponent).join(",");
-  const url = `https://api.schwabapi.com/marketdata/v1/quotes?symbols=${symbolsParam}&fields=quote`;
-
-  try {
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) {
-      if (res.status !== 401) {
-        logger.warn({ status: res.status }, "REST breadth poll failed");
-      }
-      return;
-    }
-    const json = (await res.json()) as Record<string, Record<string, unknown>>;
-
-    for (const schwabSym of REST_POLL_SYMBOLS) {
-      const entry = json[schwabSym] as Record<string, unknown> | undefined;
-      const quote = (entry?.["quote"] ?? entry) as Record<string, unknown> | undefined;
-      if (!quote) continue;
-
-      const last     = safeNum(quote["lastPrice"]);
-      const close    = safeNum(quote["closePrice"]);
-      const change   = safeNum(quote["netChange"]);
-      const changePct = safeNum(quote["netPercentChange"]);
-      const volume   = safeNum(quote["totalVolume"]);
-      const high     = safeNum(quote["highPrice"]);
-      const low      = safeNum(quote["lowPrice"]);
-      const bid      = safeNum(quote["bidPrice"]);
-      const ask      = safeNum(quote["askPrice"]);
-
-      const sym = fromSchwabKey(schwabSym);
-      const existing = quoteCache.get(sym);
-
-      const updated: LiveQuote = {
-        symbol:       sym,
-        last:         last ?? existing?.last ?? null,
-        extendedLast: last ?? existing?.extendedLast ?? null,
-        bid:          bid ?? existing?.bid ?? null,
-        ask:          ask ?? existing?.ask ?? null,
-        bidSize:      null,
-        askSize:      null,
-        change:       change ?? existing?.change ?? null,
-        changePct:    changePct ?? existing?.changePct ?? null,
-        volume:       volume ?? existing?.volume ?? null,
-        high:         high ?? existing?.high ?? null,
-        low:          low ?? existing?.low ?? null,
-        close:        close ?? existing?.close ?? null,
-        ts:           Date.now(),
-      };
-
-      quoteCache.set(sym, updated);
-      broadcast("quote", updated);
-    }
-  } catch (err) {
-    logger.warn({ err }, "REST breadth poll error");
-  }
-}
-
-function startBreadthRestPoll() {
-  if (restPollTimer) return;
-  for (const s of REST_POLL_SYMBOLS) {
-    if (!reverseKeyMap.has(s)) reverseKeyMap.set(s, s);
-  }
-  logger.info({ symbols: REST_POLL_SYMBOLS, intervalMs: REST_POLL_INTERVAL_MS }, "Starting REST breadth poller for $UVOL/$DVOL");
-  void pollBreadthRest();
-  restPollTimer = setInterval(() => void pollBreadthRest(), REST_POLL_INTERVAL_MS);
-}
-
-function stopBreadthRestPoll() {
-  if (restPollTimer) {
-    clearInterval(restPollTimer);
-    restPollTimer = null;
-  }
-}
+// REST poller for $UVOL/$DVOL removed — Schwab does not serve these symbols.
+// All market indicators now flow through the WebSocket streaming cache.
