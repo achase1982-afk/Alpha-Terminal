@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useOptionsStreamStore } from "@/lib/options-stream-store";
-import { fetchWithAuth } from "@/lib/fetchWithAuth";
+import { fetchWithAuth, getClerkToken } from "@/lib/fetchWithAuth";
 import type { LiveQuote } from "@/lib/store";
 
 const API_BASE = "/api";
@@ -77,9 +77,13 @@ async function refreshAndRetry(retryCount: number): Promise<boolean> {
   return true;
 }
 
-function buildWsUrl(): string {
+function buildWsUrl(clerkToken: string | null): string {
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${proto}//${window.location.host}/api/ws/prices`;
+  const base = `${proto}//${window.location.host}/api/ws/prices`;
+  if (clerkToken) {
+    return `${base}?clerk_token=${encodeURIComponent(clerkToken)}`;
+  }
+  return base;
 }
 
 export function useMarketStream() {
@@ -152,7 +156,8 @@ export function useMarketStream() {
     if (wsRef.current && wsRef.current.readyState <= WebSocket.OPEN) return;
     if (!mountedRef.current) return;
 
-    const url = buildWsUrl();
+    const clerkToken = await getClerkToken();
+    const url = buildWsUrl(clerkToken);
     setStreamStatus("connecting");
 
     const socket = new WebSocket(url);

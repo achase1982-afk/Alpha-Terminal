@@ -1,10 +1,12 @@
 import { useEffect } from "react";
+import { useAuth } from "@clerk/clerk-react";
 import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { setAuthTokenGetter } from "@workspace/api-client-react";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useTerminalStore } from "@/lib/store";
-import { fetchWithAuth } from "@/lib/fetchWithAuth";
+import { fetchWithAuth, setClerkTokenGetter } from "@/lib/fetchWithAuth";
 import TerminalPage from "@/pages/Terminal";
 import NotFound from "@/pages/not-found";
 
@@ -91,6 +93,17 @@ function PendingSessionLoader() {
   return null;
 }
 
+function ClerkTokenBridge() {
+  const { getToken } = useAuth();
+
+  useEffect(() => {
+    setClerkTokenGetter(() => getToken());
+    setAuthTokenGetter(() => getToken());
+  }, [getToken]);
+
+  return null;
+}
+
 function Router() {
   return (
     <Switch>
@@ -104,6 +117,7 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
+        <ClerkTokenBridge />
         <PendingSessionLoader />
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
           <Router />

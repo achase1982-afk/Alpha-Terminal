@@ -1,12 +1,17 @@
 import { WebSocketServer, WebSocket } from "ws";
 import type { Server as HttpServer, IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
+import { createClerkClient } from "@clerk/express";
 import { logger } from "./logger.js";
 import { getSnapshot, getStreamerStatus, registerWsBroadcast } from "./schwabStreamer.js";
 
 const WS_PATH = "/api/ws/prices";
 const HEARTBEAT_MS = 25_000;
 const clients = new Set<WebSocket>();
+
+const clerkClient = createClerkClient({
+  secretKey: process.env.CLERK_SECRET_KEY!,
+});
 
 function broadcastToClients(event: string, data: unknown) {
   if (clients.size === 0) return;
@@ -23,9 +28,25 @@ export function initWsServer(httpServer: HttpServer) {
 
   registerWsBroadcast(broadcastToClients);
 
-  httpServer.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+  httpServer.on("upgrade", async (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
     if (url.pathname !== WS_PATH) {
+      socket.destroy();
+      return;
+    }
+
+    const token = url.searchParams.get("clerk_token");
+    if (!token) {
+      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+
+    try {
+      await clerkClient.verifyToken(token);
+    } catch (err) {
+      logger.warn({ err }, "WS Clerk token verification failed");
+      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
       socket.destroy();
       return;
     }

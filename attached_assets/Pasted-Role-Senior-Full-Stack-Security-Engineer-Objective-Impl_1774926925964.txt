@@ -1,0 +1,59 @@
+Role: Senior Full-Stack Security Engineer.
+
+Objective: Implement Clerk Authentication to secure the React frontend, the Express REST API, AND the Charles Schwab WebSocket proxy.
+
+CRITICAL RULES:
+
+- Do NOT touch, move, or modify the existing Schwab OAuth token storage (localStorage). Clerk handles app-level login. Schwab OAuth is a separate concern and must remain untouched.
+- Do NOT add helmet, CSP, CORS changes, rate limiting, or any other security hardening. This task is ONLY about Clerk auth. Nothing else.
+- Do NOT modify any existing API route logic, request/response shapes, or middleware order beyond what is strictly required for Clerk.
+- Test after EACH task below. Do not batch all changes and test at the end.
+
+-----
+
+Task 1: Dependencies & Environment.
+
+- Install `@clerk/clerk-react`, `@clerk/themes`, and `@clerk/express`.
+- Add `CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` to Replit Secrets (I will provide the values).
+- The frontend reads `CLERK_PUBLISHABLE_KEY` via `import.meta.env.VITE_CLERK_PUBLISHABLE_KEY`. Add the VITE_ prefixed key to the environment.
+
+Task 2: Frontend Auth Gate.
+
+- In the React entry point (main.tsx), wrap the app in `<ClerkProvider>` with:
+  - `publishableKey={import.meta.env.VITE_CLERK_PUBLISHABLE_KEY}`
+  - `appearance={{ baseTheme: dark }}` (import `dark` from `@clerk/themes`)
+- Gate the entire app: render `<SignIn routing="hash" />` inside `<SignedOut>`, render the existing `<App />` inside `<SignedIn>`.
+- `routing="hash"` is mandatory for Replit .dev URLs.
+- BUILD AND TEST: The app should show a Clerk sign-in page. Nothing else should change yet.
+
+Task 3: Protect Express REST Routes.
+
+- In the Express server entry point (app.ts or index.ts), add `app.use(clerkMiddleware())` BEFORE route registration.
+- Protect API routes: `app.use('/api', requireAuth())`.
+- IMPORTANT: Exclude health check and any public status endpoints from auth if they exist.
+- BUILD AND TEST: Confirm the frontend can still fetch data when signed in. Confirm unauthenticated curl requests to /api return 401.
+
+Task 4: Protect the WebSocket Server.
+
+- Modify the WebSocket server initialization to use `noServer: true`.
+- Intercept the HTTP upgrade in `server.on('upgrade', async (req, socket, head) => {...})`.
+- Extract the Clerk session token from the query string: `?clerk_token=<token>`.
+- Verify the token server-side using `createClerkClient({ secretKey }).verifyToken(token)`.
+- If invalid or missing: `socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n'); socket.destroy(); return;`
+- If valid: call `wss.handleUpgrade(req, socket, head, (ws) => { wss.emit('connection', ws, req); })`.
+- Do NOT use the Authorization header approach for WebSocket; browser WebSocket API cannot set custom headers. Use query param.
+
+Task 5: Frontend Token Injection.
+
+- In the API client utility (wherever fetch/axios calls are made to /api), use Clerk’s `useAuth().getToken()` to get a session token and add it as a `Bearer` token in the `Authorization` header for all REST calls.
+- In the WebSocket connection hook (useMarketStream or equivalent), call `getToken()` before opening the socket and append it as `?clerk_token=<token>` to the WebSocket URL.
+- On WebSocket reconnect, always fetch a fresh token before reconnecting.
+- BUILD AND TEST: Confirm streaming data works when signed in. Confirm the AI strategist and all tabs function normally.
+
+-----
+
+Stack context for reference:
+
+- Frontend: React 18, Vite 7, TypeScript, Zustand, TanStack Query, Wouter
+- Backend: Express 5, ws WebSocket library, ESM modules
+- The Schwab OAuth flow (separate from Clerk) stores tokens in localStorage via a Zustand store with persist middleware. DO NOT CHANGE THIS.

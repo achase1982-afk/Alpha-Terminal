@@ -28,6 +28,11 @@ if (!basePath) {
 
 export default defineConfig({
   base: basePath,
+  define: {
+    "import.meta.env.VITE_CLERK_PUBLISHABLE_KEY": JSON.stringify(
+      process.env.CLERK_PUBLISHABLE_KEY ?? "",
+    ),
+  },
   plugins: [
     react(),
     tailwindcss(),
