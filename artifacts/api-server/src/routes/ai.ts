@@ -15,7 +15,7 @@ import {
 import { computeIndicators, formatTAContext, isDataStale, type Candle } from "../lib/ta.js";
 import { runMarketPulseEngine, type MarketIndicators, type BiasLabel } from "../lib/marketPulseEngine.js";
 import { getSnapshot, type LiveQuote } from "../lib/schwabStreamer.js";
-import { selectStrategies, STRATEGIST_SYSTEM_PROMPT, type OptionContract, type StrategyPayload } from "../lib/optionsStrategist.js";
+import { selectStrategies, selectStrategiesByRegime, classifyRegime, checkOverrideConflict, STRATEGIST_SYSTEM_PROMPT, type OptionContract, type StrategyPayload, type RegimeClassification } from "../lib/optionsStrategist.js";
 
 const router: IRouter = Router();
 
@@ -1269,62 +1269,55 @@ function parseChainContracts(map: Record<string, unknown>): OptionContract[] {
 }
 
 router.post("/options-strategist", async (req, res) => {
-  const { symbol, accessToken, todayEdge, pulse } = req.body as {
+  const { symbol, accessToken, todayEdge } = req.body as {
     symbol?: string;
     accessToken?: string;
     todayEdge?: string;
-    pulse?: {
-      composite: number;
-      confidence: number;
-      label: string;
-      todayEdge: string;
-      size: string;
-    };
   };
 
   if (!symbol || !accessToken) {
     return res.json({ strategies: [], narrative: "", error: "Symbol and accessToken are required." });
   }
 
-  let edge = todayEdge ?? pulse?.todayEdge ?? "";
-  let resolvedPulse = pulse;
+  const wsResult = readFromWebSocketCache();
+  const indicators = extractMarketIndicators(wsResult.dataMap);
+  const engineResult = runMarketPulseEngine(indicators);
+  const regime = classifyRegime(engineResult, indicators);
 
-  if (!edge || edge === "NO_EDGE") {
-    try {
-      const wsPairs = PULSE_SYMBOLS.map(s => ({ display: s.display, api: s.api }));
-      const wsResult = readFromWebSocketCache(wsPairs);
-      if (wsResult.dataMap.size > 0) {
-        const indicators = extractMarketIndicators(wsResult.dataMap);
-        const engineResult = runMarketPulseEngine(indicators);
-        edge = engineResult.todayEdge;
-        resolvedPulse = {
-          composite: engineResult.composite,
-          confidence: engineResult.confidence,
-          label: engineResult.biasLabel,
-          todayEdge: engineResult.todayEdge,
-          size: engineResult.sizeRecommendation,
-        };
-      }
-    } catch (err) {
-      req.log.warn({ err }, "Failed to auto-resolve edge");
-    }
-  }
+  const userOverride = todayEdge && todayEdge !== "auto" && todayEdge !== engineResult.todayEdge ? todayEdge : null;
+  const overrideWarning = userOverride ? checkOverrideConflict(userOverride, engineResult.compositeScore, engineResult.bias) : null;
+  const edge = userOverride ?? engineResult.todayEdge;
 
-  if (!edge || edge === "NO_EDGE") {
+  const resolvedPulse = {
+    composite: engineResult.compositeScore,
+    confidence: engineResult.confidenceScore,
+    label: engineResult.bias,
+    todayEdge: engineResult.todayEdge,
+    size: engineResult.sizeRecommendation,
+    timestamp: Date.now(),
+  };
+
+  req.log.info({ regime: regime.regime, edge, composite: engineResult.compositeScore, userOverride }, "Strategist auto-pulse + regime classified");
+
+  if (regime.regime === "NO_REGIME" && !userOverride) {
     return res.json({
       strategies: [],
-      narrative: "No actionable edge detected. The scoring engine shows insufficient directional conviction to recommend a trade. Sit this one out.",
+      narrative: "No actionable regime detected. The scoring engine shows insufficient conviction to recommend a trade. Sit this one out.",
       edge: edge || "NO_EDGE",
+      regime,
+      pulse: resolvedPulse,
     });
   }
 
   try {
     const chainSymbol = symbol.toUpperCase().trim();
+    const dteForChain = Math.max(regime.dteRange.max, 45);
     const params = new URLSearchParams({
       symbol: chainSymbol,
       contractType: "ALL",
-      strikeCount: "20",
-      range: "OTM",
+      strikeCount: "30",
+      range: "ALL",
+      daysToExpiration: String(dteForChain),
     });
     if (chainSymbol.startsWith("/")) params.set("assetClass", "FUTURES");
 
@@ -1345,24 +1338,27 @@ router.post("/options-strategist", async (req, res) => {
     const calls = parseChainContracts(callMap);
     const puts = parseChainContracts(putMap);
 
-    req.log.info({ symbol, edge, callCount: calls.length, putCount: puts.length, underlyingPrice }, "Strategist deterministic engine running");
+    req.log.info({ symbol, regime: regime.regime, edge, callCount: calls.length, putCount: puts.length, underlyingPrice, dteRange: regime.dteRange }, "Strategist scanning chain with regime params");
 
     if (calls.length === 0 && puts.length === 0) {
-      return res.json({ strategies: [], narrative: "Options chain is empty. Market may be closed or token expired.", error: "empty_chain" });
+      return res.json({ strategies: [], narrative: "Options chain is empty. Market may be closed or token expired.", error: "empty_chain", regime, pulse: resolvedPulse });
     }
 
-    const strategies = selectStrategies(edge, calls, puts, symbol);
+    const strategies = selectStrategiesByRegime(regime, calls, puts);
 
     if (strategies.length === 0) {
       return res.json({
         strategies: [],
-        narrative: "Could not construct any valid spreads. This can happen when liquidity filters eliminate all available strikes (low volume, wide spreads, or insufficient open interest).",
+        narrative: `No viable setups found for the ${regime.regime} regime in the current chain. The available premium does not support a favorable risk/reward (minimum 0.20:1). Consider: waiting for better conditions, trying a different expiration range, or switching strategy direction.`,
         edge,
+        regime,
+        pulse: resolvedPulse,
       });
     }
 
     const payload = {
-      pulse: resolvedPulse ?? { composite: 0, confidence: 0, label: "NEUTRAL", todayEdge: edge, size: "NO_TRADE" },
+      pulse: resolvedPulse,
+      regime,
       equity: { symbol, price: underlyingPrice, change: 0, changePct: 0 },
       strategies,
     };
@@ -1370,7 +1366,7 @@ router.post("/options-strategist", async (req, res) => {
     const narrativePrompt = `${STRATEGIST_SYSTEM_PROMPT}\n\nHere is the payload:\n\n${JSON.stringify(payload, null, 2)}`;
     const narrative = await callGemini(narrativePrompt, "gemini-2.5-flash", 0.2);
 
-    res.json({ strategies, narrative, edge, underlyingPrice });
+    res.json({ strategies, narrative, edge, underlyingPrice, regime, pulse: resolvedPulse, overrideWarning });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     req.log.error({ err }, "Options strategist error");
@@ -1379,63 +1375,55 @@ router.post("/options-strategist", async (req, res) => {
 });
 
 router.post("/options-strategist/stream", async (req, res) => {
-  const { symbol, accessToken, todayEdge, pulse } = req.body as {
+  const { symbol, accessToken, todayEdge } = req.body as {
     symbol?: string;
     accessToken?: string;
     todayEdge?: string;
-    pulse?: {
-      composite: number;
-      confidence: number;
-      label: string;
-      todayEdge: string;
-      size: string;
-    };
   };
 
   if (!symbol || !accessToken) {
     return res.status(400).json({ error: "Symbol and accessToken are required." });
   }
 
-  let edge = todayEdge ?? pulse?.todayEdge ?? "";
-  let resolvedPulse = pulse;
+  const wsResult = readFromWebSocketCache();
+  const indicators = extractMarketIndicators(wsResult.dataMap);
+  const engineResult = runMarketPulseEngine(indicators);
+  const regime = classifyRegime(engineResult, indicators);
 
-  if (!edge || edge === "NO_EDGE") {
-    try {
-      const wsPairs = PULSE_SYMBOLS.map(s => ({ display: s.display, api: s.api }));
-      const wsResult = readFromWebSocketCache(wsPairs);
-      if (wsResult.dataMap.size > 0) {
-        const indicators = extractMarketIndicators(wsResult.dataMap);
-        const engineResult = runMarketPulseEngine(indicators);
-        edge = engineResult.todayEdge;
-        resolvedPulse = {
-          composite: engineResult.composite,
-          confidence: engineResult.confidence,
-          label: engineResult.biasLabel,
-          todayEdge: engineResult.todayEdge,
-          size: engineResult.sizeRecommendation,
-        };
-        req.log.info({ autoEdge: edge, composite: engineResult.composite }, "Strategist auto-resolved edge from pulse engine");
-      }
-    } catch (err) {
-      req.log.warn({ err }, "Failed to auto-resolve edge from pulse engine");
-    }
-  }
+  const userOverride = todayEdge && todayEdge !== "auto" && todayEdge !== engineResult.todayEdge ? todayEdge : null;
+  const overrideWarning = userOverride ? checkOverrideConflict(userOverride, engineResult.compositeScore, engineResult.bias) : null;
+  const edge = userOverride ?? engineResult.todayEdge;
 
-  if (!edge || edge === "NO_EDGE") {
+  const resolvedPulse = {
+    composite: engineResult.compositeScore,
+    confidence: engineResult.confidenceScore,
+    label: engineResult.bias,
+    todayEdge: engineResult.todayEdge,
+    size: engineResult.sizeRecommendation,
+    timestamp: Date.now(),
+  };
+
+  req.log.info({ regime: regime.regime, edge, composite: engineResult.compositeScore, userOverride }, "Strategist stream: auto-pulse + regime classified");
+
+  if (regime.regime === "NO_REGIME" && !userOverride) {
     return res.json({
       strategies: [],
-      narrative: "No actionable edge detected. The scoring engine shows insufficient directional conviction to recommend a trade. Sit this one out.",
+      narrative: "No actionable regime detected. The scoring engine shows insufficient conviction to recommend a trade. Sit this one out.",
       edge: edge || "NO_EDGE",
+      regime,
+      pulse: resolvedPulse,
     });
   }
 
   try {
     const chainSymbol = symbol.toUpperCase().trim();
+    const dteForChain = Math.max(regime.dteRange.max, 45);
     const params = new URLSearchParams({
       symbol: chainSymbol,
       contractType: "ALL",
-      strikeCount: "20",
-      range: "OTM",
+      strikeCount: "30",
+      range: "ALL",
+      daysToExpiration: String(dteForChain),
     });
     if (chainSymbol.startsWith("/")) params.set("assetClass", "FUTURES");
 
@@ -1456,24 +1444,27 @@ router.post("/options-strategist/stream", async (req, res) => {
     const calls = parseChainContracts(callMap);
     const puts = parseChainContracts(putMap);
 
-    req.log.info({ symbol, edge, callCount: calls.length, putCount: puts.length, underlyingPrice }, "Strategist deterministic engine running");
+    req.log.info({ symbol, regime: regime.regime, edge, callCount: calls.length, putCount: puts.length, underlyingPrice, dteRange: regime.dteRange }, "Strategist scanning chain with regime params");
 
     if (calls.length === 0 && puts.length === 0) {
-      return res.json({ strategies: [], narrative: "Options chain is empty.", error: "empty_chain" });
+      return res.json({ strategies: [], narrative: "Options chain is empty.", error: "empty_chain", regime, pulse: resolvedPulse });
     }
 
-    const strategies = selectStrategies(edge, calls, puts, symbol);
+    const strategies = selectStrategiesByRegime(regime, calls, puts);
 
     if (strategies.length === 0) {
       return res.json({
         strategies: [],
-        narrative: "Could not construct valid spreads. Liquidity filters eliminated all available strikes.",
+        narrative: `No viable setups found for the ${regime.regime} regime in the current chain. The available premium does not support a favorable risk/reward (minimum 0.20:1). Consider: waiting for better conditions, trying a different expiration range, or switching strategy direction.`,
         edge,
+        regime,
+        pulse: resolvedPulse,
       });
     }
 
     const strategistPayload = {
-      pulse: resolvedPulse ?? { composite: 0, confidence: 0, label: "NEUTRAL", todayEdge: edge, size: "NO_TRADE" },
+      pulse: resolvedPulse,
+      regime,
       equity: { symbol, price: underlyingPrice, change: 0, changePct: 0 },
       strategies,
     };
@@ -1492,7 +1483,7 @@ router.post("/options-strategist/stream", async (req, res) => {
     res.write(": ok\n\n");
     res.flushHeaders();
 
-    res.write(`data: ${JSON.stringify({ strategies, edge, underlyingPrice })}\n\n`);
+    res.write(`data: ${JSON.stringify({ strategies, edge, underlyingPrice, regime, pulse: resolvedPulse, overrideWarning })}\n\n`);
 
     const heartbeat = setInterval(() => {
       if (!res.writableEnded) res.write(": ping\n\n");

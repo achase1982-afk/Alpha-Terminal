@@ -56,6 +56,25 @@ interface StrategyPayload {
   size_recommendation: string;
   contracts: number;
   exit_rules: ExitRules;
+  undefined_risk?: boolean;
+}
+
+interface RegimeInfo {
+  regime: string;
+  description: string;
+  strategyUniverse: string[];
+  dteRange: { min: number; max: number };
+  deltaTargets: { shortStrike: number };
+  sizeMultiplier: number;
+}
+
+interface PulseSnapshot {
+  composite: number;
+  confidence: number;
+  label: string;
+  todayEdge: string;
+  size: string;
+  timestamp?: number;
 }
 
 function fmtDollar(v: number): string {
@@ -81,6 +100,52 @@ function LegRow({ leg, label }: { leg: LegPayload; label: string }) {
   );
 }
 
+function RegimeDisplayBanner({ regime, pulse }: { regime: RegimeInfo; pulse?: PulseSnapshot }) {
+  const regimeFormatted = regime.regime.replace(/_/g, " ");
+  const strategies = regime.strategyUniverse.map(s => s.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())).join(", ");
+
+  return (
+    <div className="rounded-xl border border-[#FFB800]/30 overflow-hidden" style={{ background: "rgba(255,184,0,0.05)" }}>
+      <div className="px-4 py-3">
+        <div className="flex items-center gap-2 mb-1.5">
+          <div className="w-2 h-2 rounded-full" style={{ background: "#FFB800" }} />
+          <span className="font-mono text-[10px] font-bold text-[#FFB800] uppercase tracking-widest">Market Regime</span>
+        </div>
+        <div className="font-mono text-sm font-bold text-white mb-1">{regimeFormatted}</div>
+        <div className="font-mono text-[11px] text-[#a1a1aa] leading-relaxed">{regime.description}</div>
+        <div className="font-mono text-[10px] text-[#71717a] mt-2">
+          Scanning {regime.dteRange.min}–{regime.dteRange.max} DTE | Universe: {strategies}
+        </div>
+        {pulse?.timestamp && (
+          <div className="font-mono text-[9px] text-[#52525b] mt-1">
+            Pulse snapshot: {new Date(pulse.timestamp).toLocaleTimeString()}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function OverrideWarningBanner({ message }: { message: string }) {
+  return (
+    <div className="rounded-xl border border-yellow-500/40 px-4 py-3 flex items-start gap-2" style={{ background: "rgba(234,179,8,0.08)" }}>
+      <AlertTriangle className="w-4 h-4 text-yellow-500 shrink-0 mt-0.5" />
+      <span className="font-mono text-[11px] text-yellow-400 leading-relaxed">{message}</span>
+    </div>
+  );
+}
+
+function UndefinedRiskWarning() {
+  return (
+    <div className="rounded-lg border border-red-500/40 px-3 py-2 flex items-start gap-2 mx-4 mb-3" style={{ background: "rgba(239,68,68,0.08)" }}>
+      <AlertTriangle className="w-3.5 h-3.5 text-red-500 shrink-0 mt-0.5" />
+      <span className="font-mono text-[10px] text-red-400 leading-relaxed">
+        This strategy has undefined/unlimited risk. Requires margin and active management. Not suitable for small accounts.
+      </span>
+    </div>
+  );
+}
+
 function RealStrategyCard({ s, idx }: { s: StrategyPayload; idx: number }) {
   const isCredit = s.net_credit > 0;
 
@@ -100,6 +165,7 @@ function RealStrategyCard({ s, idx }: { s: StrategyPayload; idx: number }) {
         </div>
         <span className="font-mono text-[10px] text-[#71717a]">{s.days_to_expiration}DTE</span>
       </div>
+      {s.undefined_risk && <UndefinedRiskWarning />}
 
       <div className="mx-4 mt-3 rounded-lg border border-[#2A2A2C] overflow-hidden" style={{ background: "#0c0c0c" }}>
         <div className="px-3 py-1.5 border-b border-[#2A2A2C]">
@@ -147,14 +213,19 @@ function RealStrategyCard({ s, idx }: { s: StrategyPayload; idx: number }) {
   );
 }
 
-function StrategistResultView({ strategies, narrative, isStreaming, streamingText }: {
+function StrategistResultView({ strategies, narrative, isStreaming, streamingText, regime, pulse, overrideWarning }: {
   strategies: StrategyPayload[];
   narrative: string;
   isStreaming: boolean;
   streamingText: string;
+  regime?: RegimeInfo | null;
+  pulse?: PulseSnapshot | null;
+  overrideWarning?: string | null;
 }) {
   return (
     <div className="space-y-4">
+      {regime && <RegimeDisplayBanner regime={regime} pulse={pulse ?? undefined} />}
+      {overrideWarning && <OverrideWarningBanner message={overrideWarning} />}
       {strategies.map((s, i) => (
         <RealStrategyCard key={i} s={s} idx={i} />
       ))}
@@ -505,6 +576,10 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
 
   const [realStrategies, setRealStrategies] = useState<StrategyPayload[]>([]);
   const [narrativeText, setNarrativeText] = useState("");
+  const [regimeInfo, setRegimeInfo] = useState<RegimeInfo | null>(null);
+  const [pulseSnapshot, setPulseSnapshot] = useState<PulseSnapshot | null>(null);
+  const [overrideWarning, setOverrideWarning] = useState<string | null>(null);
+  const [strategistStatus, setStrategistStatus] = useState<string>("");
 
   const handleRunStrategist = useCallback(async () => {
     if (!accessToken) return;
@@ -514,10 +589,15 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
     setThinkingTokens([]);
     setRealStrategies([]);
     setNarrativeText("");
+    setRegimeInfo(null);
+    setPulseSnapshot(null);
+    setOverrideWarning(null);
     setActiveResult("strategist");
     setIsStrategizing(true);
+    setStrategistStatus("Running market pulse...");
 
     try {
+      setStrategistStatus("Classifying regime & scanning chain...");
       const res = await fetchWithAuth(`${API_BASE}/ai/options-strategist/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -537,7 +617,10 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
 
       const contentType = res.headers.get("content-type") ?? "";
       if (contentType.includes("application/json")) {
-        const json = await res.json() as { strategies?: StrategyPayload[]; narrative?: string; error?: string; edge?: string };
+        const json = await res.json() as { strategies?: StrategyPayload[]; narrative?: string; error?: string; edge?: string; regime?: RegimeInfo; pulse?: PulseSnapshot; overrideWarning?: string };
+        if (json.regime) setRegimeInfo(json.regime);
+        if (json.pulse) setPulseSnapshot(json.pulse);
+        if (json.overrideWarning) setOverrideWarning(json.overrideWarning);
         if (json.error) {
           setStrategistResult(`**Error:** ${json.error}`);
         } else if (json.strategies && json.strategies.length > 0) {
@@ -548,6 +631,7 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
           setStrategistResult(json.narrative ?? "No strategies available.");
         }
         setIsStrategizing(false);
+        setStrategistStatus("");
         return;
       }
 
@@ -581,13 +665,21 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
               text?: string;
               reasoning?: string;
               error?: string;
+              regime?: RegimeInfo;
+              pulse?: PulseSnapshot;
+              overrideWarning?: string;
             };
             if (parsed.error) {
               setStrategistResult(`**Error:** ${parsed.error}`);
               setIsStreaming(false);
+              setStrategistStatus("");
               return;
             }
+            if (parsed.regime) setRegimeInfo(parsed.regime);
+            if (parsed.pulse) setPulseSnapshot(parsed.pulse);
+            if (parsed.overrideWarning) setOverrideWarning(parsed.overrideWarning);
             if (parsed.strategies) {
+              setStrategistStatus("Building AI thesis...");
               setRealStrategies(parsed.strategies);
               const q = quote as Record<string, unknown> | undefined;
               setStrategistAudit({
@@ -599,7 +691,7 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
                 autopilot: stratAutopilot,
                 maxRisk: stratMaxRisk,
                 minPoP: 0,
-                minRR: "—",
+                minRR: "0.20:1",
                 bias: parsed.edge ?? "—",
                 premium: "—",
                 avoidEarnings: false,
@@ -624,10 +716,12 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
       setStrategistResult("done");
       setStreamingText("");
       setIsStreaming(false);
+      setStrategistStatus("");
     } catch (err) {
       setStrategistResult(`**Error:** ${err instanceof Error ? err.message : String(err)}`);
       setIsStrategizing(false);
       setIsStreaming(false);
+      setStrategistStatus("");
     }
   }, [quote, accessToken, symbol, setStrategistResult,
       stratAutopilot, stratMaxRisk, stratBias]);
@@ -701,7 +795,7 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
                 {isStrategizing ? (
                   <div className="flex items-center gap-3 py-4">
                     <span className="w-4 h-4 border-2 border-[#FFB800] border-t-transparent rounded-full animate-spin" />
-                    <span className="font-mono text-xs text-[#a1a1aa]">Fetching chain & selecting strikes...</span>
+                    <span className="font-mono text-xs text-[#a1a1aa]">{strategistStatus || "Processing..."}</span>
                   </div>
                 ) : hasRealStrategies ? (
                   <>
@@ -715,6 +809,9 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
                       narrative={narrativeText}
                       isStreaming={isStreaming}
                       streamingText={streamingText}
+                      regime={regimeInfo}
+                      pulse={pulseSnapshot}
+                      overrideWarning={overrideWarning}
                     />
                   </>
                 ) : currentResult && currentResult !== "done" ? (

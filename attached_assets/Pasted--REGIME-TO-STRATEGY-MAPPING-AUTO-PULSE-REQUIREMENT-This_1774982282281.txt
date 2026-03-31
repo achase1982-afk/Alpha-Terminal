@@ -1,0 +1,460 @@
+# REGIME-TO-STRATEGY MAPPING + AUTO-PULSE REQUIREMENT
+
+This prompt upgrades the Options Strategist to:
+
+1. ALWAYS run a fresh Market Pulse automatically before generating strategies
+1. Map the pulse output to a market regime
+1. Use the regime to determine which strategy universe to scan and what DTE range to use
+1. Scan the appropriate depth of the options chain based on regime
+
+Do NOT change the Market Pulse scoring engine or its 7 clusters. That is working correctly. This builds on top of it.
+
+-----
+
+## CRITICAL REQUIREMENT: AUTO-PULSE BEFORE EVERY STRATEGIST RUN
+
+Every time the user taps “Run Strategist” or the Strategist is triggered in any way, the backend MUST:
+
+1. Run a fresh Market Pulse scoring cycle using live streaming data (all 27 symbols, all 7 clusters)
+1. Wait for the pulse to complete
+1. Use that FRESH pulse output to determine the regime and strategy universe
+1. Then and only then fetch the options chain and generate strategies
+
+This happens automatically. The user should NOT need to manually run a pulse first. The Strategist does it on its own every time.
+
+In the UI, show a brief status indicator while this happens:
+
+```
+"Running market pulse... Scanning options chain... Building strategies..."
+```
+
+Store the pulse result that was used for the Strategist run so the user can see it in the audit panel. Display it as “Pulse snapshot at [timestamp]” in the Strategist output.
+
+If the user already has a recent pulse (less than 60 seconds old) from the Pulse tab, you MAY reuse it instead of running a new one. But if it is older than 60 seconds, always run fresh.
+
+-----
+
+## MARKET REGIME CLASSIFICATION
+
+After the pulse runs, classify the market into one of these regimes based on the pulse output. This classification drives everything downstream.
+
+```typescript
+interface RegimeClassification {
+  regime: MarketRegime;
+  description: string;
+  strategyUniverse: StrategyType[];
+  dteRange: { min: number; max: number };
+  deltaTargets: { shortStrike: number; longStrike?: number };
+  sizeMultiplier: number; // 0 = no trade, 0.5 = half size, 1.0 = full size
+}
+
+type MarketRegime =
+  | 'HIGH_VOL_TRENDING_DOWN'    // Correction/crash in progress
+  | 'HIGH_VOL_BOTTOMING'        // Washout, potential mean reversion
+  | 'HIGH_VOL_TRENDING_UP'      // Recovery rally with elevated vol
+  | 'LOW_VOL_TRENDING_UP'       // Bull grind, low fear
+  | 'LOW_VOL_RANGE_BOUND'       // Chop, no direction
+  | 'RISING_VOL_TRANSITION'     // Vol expanding from low base, caution
+  | 'NO_REGIME'                 // Conflicted signals, sit out
+
+function classifyRegime(pulse: PulseOutput): RegimeClassification {
+  const vix = getIndicatorValue('VIX');
+  const vixChange = getPercentChange('VIX');
+  const composite = pulse.composite;
+  const confidence = pulse.confidence;
+  const riskAppScore = getClusterScore(pulse, 'riskAppetite');
+  const breadthScore = getClusterScore(pulse, 'breadth');
+  const volLevelScore = getClusterScore(pulse, 'volLevel');
+  const macroScore = getClusterScore(pulse, 'macro');
+
+  // NO REGIME: confidence too low to classify
+  if (confidence < 25) {
+    return {
+      regime: 'NO_REGIME',
+      description: 'Signals too conflicted to classify a regime. Mixed internals.',
+      strategyUniverse: [],
+      dteRange: { min: 0, max: 0 },
+      deltaTargets: { shortStrike: 0 },
+      sizeMultiplier: 0,
+    };
+  }
+
+  // HIGH VOL environments (VIX >= 25)
+  if (vix !== null && vix >= 25) {
+
+    // HIGH_VOL_TRENDING_DOWN: VIX high AND rising or flat, breadth negative, risk appetite negative
+    if (vixChange !== null && vixChange > -2 && breadthScore < 0 && riskAppScore < 0) {
+      return {
+        regime: 'HIGH_VOL_TRENDING_DOWN',
+        description: 'Active correction/selloff. Elevated fear, weak breadth, risk-off.',
+        strategyUniverse: [
+          'LONG_PUT',              // Directional downside
+          'BEAR_PUT_SPREAD',       // Defined risk bearish
+          'PUT_DEBIT_SPREAD',      // Same as above, explicit naming
+          'LONG_CALL_90DTE',       // Contrarian: buy long-dated calls if deeply oversold
+        ],
+        dteRange: { min: 30, max: 120 },
+        deltaTargets: { shortStrike: 0.30 },
+        sizeMultiplier: 0.5,
+      };
+    }
+
+    // HIGH_VOL_BOTTOMING: VIX high but dropping fast, breadth recovering
+    if (vixChange !== null && vixChange < -5 && (breadthScore >= 0 || riskAppScore > 0)) {
+      return {
+        regime: 'HIGH_VOL_BOTTOMING',
+        description: 'Potential bottom forming. VIX collapsing, internals improving.',
+        strategyUniverse: [
+          'BULL_PUT_SPREAD',       // Sell premium at support
+          'CALL_DEBIT_SPREAD',     // Defined risk bullish on bounce
+          'LONG_CALL_45_90DTE',    // Buy calls on mean reversion
+          'CASH_SECURED_PUT',      // Sell puts at levels you want to own
+        ],
+        dteRange: { min: 30, max: 90 },
+        deltaTargets: { shortStrike: 0.25 },
+        sizeMultiplier: 0.5,
+      };
+    }
+
+    // HIGH_VOL_TRENDING_UP: VIX still elevated but market rallying (recovery)
+    if (riskAppScore > 0 && composite > 0) {
+      return {
+        regime: 'HIGH_VOL_TRENDING_UP',
+        description: 'Recovery rally with elevated vol. Premium is rich, use it.',
+        strategyUniverse: [
+          'BULL_PUT_SPREAD',       // Sell rich premium on pullbacks
+          'CALL_DEBIT_SPREAD',     // Ride the recovery
+          'IRON_CONDOR',           // If range-bound within recovery
+          'BULL_CALL_SPREAD',      // Defined risk bullish
+        ],
+        dteRange: { min: 14, max: 60 },
+        deltaTargets: { shortStrike: 0.25 },
+        sizeMultiplier: 0.75,
+      };
+    }
+  }
+
+  // LOW VOL environments (VIX < 20)
+  if (vix !== null && vix < 20) {
+
+    // LOW_VOL_TRENDING_UP: Low fear, broad rally
+    if (composite > 0.5 && riskAppScore > 0 && breadthScore >= 0) {
+      return {
+        regime: 'LOW_VOL_TRENDING_UP',
+        description: 'Bull grind. Low vol, broad participation. Premium selling sweet spot.',
+        strategyUniverse: [
+          'BULL_PUT_SPREAD',       // Bread and butter
+          'BEAR_CALL_SPREAD',      // Sell above resistance
+          'IRON_CONDOR',           // Range plays
+          'SHORT_PUT',             // Simple premium collection
+        ],
+        dteRange: { min: 1, max: 14 },
+        deltaTargets: { shortStrike: 0.15 },
+        sizeMultiplier: 1.0,
+      };
+    }
+
+    // LOW_VOL_RANGE_BOUND: Low fear, no direction
+    if (Math.abs(composite) < 0.5) {
+      return {
+        regime: 'LOW_VOL_RANGE_BOUND',
+        description: 'Chop. No clear direction. Sell premium on both sides.',
+        strategyUniverse: [
+          'IRON_CONDOR',           // Primary strategy
+          'SHORT_STRANGLE',        // If account allows
+          'IRON_BUTTERFLY',        // ATM premium collection
+          'CALENDAR_SPREAD',       // Time decay play
+        ],
+        dteRange: { min: 7, max: 30 },
+        deltaTargets: { shortStrike: 0.20 },
+        sizeMultiplier: 1.0,
+      };
+    }
+  }
+
+  // RISING VOL TRANSITION (VIX 20-25 or VIX expanding from recent low)
+  if (vix !== null && vix >= 20 && vix < 25) {
+    // Check if vol is expanding (VIX rising)
+    if (vixChange !== null && vixChange > 3) {
+      return {
+        regime: 'RISING_VOL_TRANSITION',
+        description: 'Vol expanding. Market transitioning. Reduce exposure, tighten stops.',
+        strategyUniverse: [
+          'IRON_CONDOR',           // Wide wings
+          'BEAR_CALL_SPREAD',      // If leaning bearish
+          'BULL_PUT_SPREAD',       // If leaning bullish
+          'LONG_PUT',              // Portfolio hedge
+        ],
+        dteRange: { min: 14, max: 45 },
+        deltaTargets: { shortStrike: 0.20 },
+        sizeMultiplier: 0.5,
+      };
+    }
+  }
+
+  // FALLBACK: moderate conditions, use middle-of-road approach
+  return {
+    regime: composite > 0.25 ? 'LOW_VOL_TRENDING_UP' : composite < -0.25 ? 'HIGH_VOL_TRENDING_DOWN' : 'LOW_VOL_RANGE_BOUND',
+    description: 'Standard conditions. Moderate approach.',
+    strategyUniverse: [
+      'BULL_PUT_SPREAD',
+      'BEAR_CALL_SPREAD',
+      'IRON_CONDOR',
+    ],
+    dteRange: { min: 7, max: 45 },
+    deltaTargets: { shortStrike: 0.20 },
+    sizeMultiplier: 0.75,
+  };
+}
+```
+
+-----
+
+## CHAIN SCAN: USE THE REGIME TO DETERMINE SCAN DEPTH
+
+When calling the Schwab options chain endpoint, use the regime’s dteRange to determine how many expirations to pull:
+
+```typescript
+async function fetchChainForRegime(
+  symbol: string,
+  regime: RegimeClassification,
+  schwabClient: SchwabClient
+): Promise<SchwabChainResponse> {
+  // Calculate the date range based on regime
+  const today = new Date();
+  const fromDate = formatDate(today);
+  const toDate = formatDate(addDays(today, regime.dteRange.max));
+
+  // Fetch the full chain within the regime's DTE window
+  const chain = await schwabClient.getOptionChain({
+    symbol: formatSymbol(symbol), // Handle $SPX.X formatting
+    contractType: 'ALL',          // Get both calls and puts
+    strikeCount: 30,              // Enough strikes to find good setups
+    range: 'OTM',                 // Focus on OTM for premium selling
+    fromDate,
+    toDate,
+    // Do NOT limit to a few expirations -- scan the full DTE range
+    // The regime already constrains the window appropriately
+  });
+
+  return chain;
+}
+```
+
+IMPORTANT: Do NOT hardcode a small number of expirations. Let the regime’s dteRange control the scan window. A HIGH_VOL_BOTTOMING regime needs to see 30-90 DTE expirations. A LOW_VOL_TRENDING_UP regime only needs 1-14 DTE. The regime drives the scan depth.
+
+-----
+
+## STRATEGY BUILDER: ITERATE ACROSS EXPIRATIONS
+
+For each strategy type in the regime’s strategyUniverse, scan across ALL available expirations within the DTE range and find the best setup:
+
+```typescript
+function findBestSetup(
+  chain: SchwabChainResponse,
+  strategyType: StrategyType,
+  regime: RegimeClassification,
+  symbol: string
+): StrategyPayload | null {
+  const allExpirations = getExpirations(chain, regime.dteRange.min, regime.dteRange.max);
+  let bestSetup: StrategyPayload | null = null;
+  let bestScore = -Infinity;
+
+  for (const expiration of allExpirations) {
+    const setup = buildStrategy(chain, strategyType, expiration, regime, symbol);
+    if (setup === null) continue;
+
+    // Score each setup based on:
+    // - R/R ratio (higher is better)
+    // - POP (higher is better for credit strategies)
+    // - Liquidity (volume * OI)
+    // - Bid/ask width (tighter is better)
+    const score = scoreSetup(setup, strategyType);
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestSetup = setup;
+    }
+  }
+
+  // Minimum R/R filter: reject setups below threshold
+  if (bestSetup !== null) {
+    const rr = bestSetup.max_profit / bestSetup.max_loss;
+    if (rr < 0.20) {
+      // R/R too poor, skip this strategy entirely
+      return null;
+    }
+  }
+
+  return bestSetup;
+}
+
+function scoreSetup(setup: StrategyPayload, type: StrategyType): number {
+  let score = 0;
+
+  if (isCreditStrategy(type)) {
+    // Credit strategies: optimize for POP and R/R
+    score += setup.probability_of_profit_pct * 0.4;
+    score += (setup.max_profit / setup.max_loss) * 100 * 0.3;
+    score += Math.min(setup.short_leg.volume, 500) / 500 * 20 * 0.15;
+    score += Math.min(setup.short_leg.openInterest, 5000) / 5000 * 20 * 0.15;
+  } else {
+    // Debit strategies: optimize for R/R (reward relative to cost)
+    score += (setup.max_profit / setup.max_loss) * 100 * 0.5;
+    score += setup.probability_of_profit_pct * 0.2;
+    score += Math.min(setup.long_leg.volume, 500) / 500 * 20 * 0.15;
+    score += Math.min(setup.long_leg.openInterest, 5000) / 5000 * 20 * 0.15;
+  }
+
+  return score;
+}
+```
+
+-----
+
+## OVERRIDE MODE (MANUAL / NON-AUTOPILOT)
+
+When the user turns off Autopilot and manually selects a direction or strategy type:
+
+1. Still run the fresh pulse (always)
+1. Still classify the regime
+1. BUT override the strategy universe with whatever the user selected
+1. Use the regime’s DTE range (don’t narrow it just because the user overrode)
+1. Show a warning banner if the selected direction conflicts with the pulse:
+
+```typescript
+function checkOverrideConflict(
+  userDirection: 'BULLISH' | 'BEARISH' | 'NEUTRAL',
+  pulse: PulseOutput
+): string | null {
+  if (userDirection === 'BEARISH' && pulse.composite > 0.5) {
+    return `Manual override: BEARISH strategy conflicts with pulse (composite +${pulse.composite}, ${pulse.label}). The best bearish setups may have poor R/R in this environment.`;
+  }
+  if (userDirection === 'BULLISH' && pulse.composite < -0.5) {
+    return `Manual override: BULLISH strategy conflicts with pulse (composite ${pulse.composite}, ${pulse.label}). The best bullish setups may have poor R/R in this environment.`;
+  }
+  return null;
+}
+```
+
+Display this warning in a yellow banner above the strategy cards (same style as the Signal Conflict and Invalidation banners you already have).
+
+-----
+
+## MINIMUM R/R GATE
+
+Add a hard filter: if no strategy in the entire scanned chain meets a minimum R/R of 0.20:1, show the user:
+
+```
+"No viable setups found for [STRATEGY TYPE] in the current chain. 
+The available premium does not support a favorable risk/reward. 
+Consider: waiting for better conditions, trying a different 
+expiration range, or switching strategy direction."
+```
+
+Do NOT show a strategy card with garbage R/R just to fill the screen. If the math says there’s nothing worth trading, say so.
+
+-----
+
+## REGIME DISPLAY IN UI
+
+Show the classified regime prominently in the Strategist output, between the pulse summary and the strategy cards:
+
+```
+MARKET REGIME: HIGH_VOL_BOTTOMING
+Potential bottom forming. VIX collapsing, internals improving.
+Scanning 30-90 DTE | Strategy Universe: Bull Put Spread, Call Debit Spread, Long Call, Cash Secured Put
+```
+
+This tells the user exactly why the engine is showing the strategies it’s showing and what DTE range it scanned.
+
+-----
+
+## STRATEGY TYPES TO SUPPORT
+
+Build these strategy constructors. Each one follows the same pattern: read chain, filter for liquidity, select strikes by delta target, calculate all math, return StrategyPayload or null.
+
+### Credit Strategies (premium selling)
+
+- `BULL_PUT_SPREAD`: Sell OTM put, buy further OTM put
+- `BEAR_CALL_SPREAD`: Sell OTM call, buy further OTM call
+- `IRON_CONDOR`: Bull put spread + bear call spread
+- `SHORT_STRANGLE`: Sell OTM call + sell OTM put (undefined risk, flag clearly)
+- `SHORT_PUT`: Sell OTM put (undefined risk, flag clearly)
+- `IRON_BUTTERFLY`: Sell ATM call + sell ATM put, buy OTM wings
+
+### Debit Strategies (directional bets)
+
+- `BULL_CALL_SPREAD`: Buy ATM/ITM call, sell OTM call
+- `BEAR_PUT_SPREAD`: Buy ATM/ITM put, sell OTM put
+- `CALL_DEBIT_SPREAD`: Same as bull call spread
+- `PUT_DEBIT_SPREAD`: Same as bear put spread
+- `LONG_CALL`: Single leg long call (for high conviction / recovery plays)
+- `LONG_PUT`: Single leg long put (for hedging / crash protection)
+- `LONG_CALL_45_90DTE`: Long call specifically targeting 45-90 DTE for mean reversion
+- `LONG_CALL_90DTE`: Long call specifically targeting 90+ DTE for deep contrarian
+
+### Neutral / Volatility Strategies
+
+- `CALENDAR_SPREAD`: Sell short-dated, buy longer-dated same strike
+
+For undefined risk strategies (SHORT_STRANGLE, SHORT_PUT), always display a red warning:
+
+```
+"WARNING: This strategy has undefined/unlimited risk. 
+Requires margin and active management. Not suitable for small accounts."
+```
+
+-----
+
+## FULL FLOW SUMMARY
+
+```
+User taps "Run Strategist"
+        |
+        v
+Backend runs FRESH Market Pulse (all 27 symbols, 7 clusters)
+        |
+        v
+Regime classifier maps pulse output to market regime
+        |
+        v
+Regime determines: strategy universe, DTE range, delta targets, size
+        |
+        v
+Backend calls Schwab chain endpoint with regime-appropriate parameters
+        |
+        v
+For each strategy in the universe:
+  - Scan ALL expirations in the DTE range
+  - Find the best setup by scoring R/R, POP, liquidity
+  - Apply minimum R/R gate (reject < 0.20:1)
+        |
+        v
+Package top 2-3 strategies into strict JSON payload
+        |
+        v
+Send to Gemini with guardrailed system prompt
+(Gemini explains the thesis, cannot change numbers)
+        |
+        v
+Frontend displays:
+  - Regime classification + description
+  - Pulse snapshot summary
+  - Strategy cards with REAL strikes from Schwab
+  - AI thesis narrative below each card
+  - Override warning if user contradicted pulse
+```
+
+-----
+
+## WHAT TO VERIFY AFTER BUILDING
+
+1. Tap “Run Strategist” and confirm the pulse runs automatically (check the status indicator)
+1. Confirm the regime classification matches the current market conditions
+1. Confirm the DTE range in the output matches the regime (not hardcoded to 1-7 DTE)
+1. Run it during high vol day vs low vol day and confirm different strategy universes appear
+1. Turn off Autopilot, select bearish in a bullish environment, confirm the yellow warning banner appears
+1. Confirm no strategy cards appear with R/R below 0.20:1
+1. Check that the regime display shows which strategies were scanned and what DTE range
+1. Verify the pulse snapshot timestamp matches when the Strategist was run, not some old cached pulse
