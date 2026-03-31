@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useAuth } from "@clerk/clerk-react";
 import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -22,9 +22,13 @@ const queryClient = new QueryClient({
   }
 });
 
+const SESSION_CHECK_COOLDOWN_MS = 30_000;
+
 function PendingSessionLoader() {
   const { accessToken, setTokens } = useTerminalStore();
   const { traderAccessToken, setTraderTokens } = useTerminalStore();
+  const lastCheckRef = useRef(0);
+  const didInitialCheck = useRef(false);
 
   useEffect(() => {
     if (accessToken && traderAccessToken) return;
@@ -71,6 +75,12 @@ function PendingSessionLoader() {
     };
 
     const doCheck = async () => {
+      const now = Date.now();
+      if (didInitialCheck.current && now - lastCheckRef.current < SESSION_CHECK_COOLDOWN_MS) {
+        return;
+      }
+      lastCheckRef.current = now;
+      didInitialCheck.current = true;
       await checkServerTokens();
       if (!cancelled) await checkPending();
       if (!cancelled) await checkTraderPending();

@@ -112,7 +112,14 @@ async function doRefresh(
 
       if (res.status === 401 || res.status === 400) {
         const errorBody = text.toLowerCase();
-        if (errorBody.includes("expired") || errorBody.includes("invalid_grant") || errorBody.includes("revoked")) {
+        if (
+          errorBody.includes("expired") ||
+          errorBody.includes("invalid_grant") ||
+          errorBody.includes("revoked") ||
+          errorBody.includes("unsupported_token_type") ||
+          errorBody.includes("refresh_token_authentication_error") ||
+          errorBody.includes("failed refresh token authentication")
+        ) {
           logger.warn("TokenStore: %s refresh token expired/revoked — clearing", kind);
           store[kind] = undefined;
           saveToDisk();
