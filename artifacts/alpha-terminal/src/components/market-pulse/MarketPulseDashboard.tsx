@@ -105,7 +105,8 @@ export function MarketPulseDashboard({ autoGenerate }: MarketPulseDashboardProps
         accessToken,
         symbols: DEFAULT_PULSE_SYMBOLS,
         model: aiModel,
-        temperature: 0.2,
+        temperature: 0,
+        previousBias: pulseData?.bias ?? undefined,
         preferences: {
           allowedStrategies: allowedList,
           defaultSpreadWidth: settings.defaultSpreadWidth,
@@ -116,7 +117,7 @@ export function MarketPulseDashboard({ autoGenerate }: MarketPulseDashboardProps
         },
       });
     }, 0);
-  }, [accessToken, aiModel, settings, startStream, setLoading, setStreaming, setError, clearThinking, setPulseData]);
+  }, [accessToken, aiModel, settings, startStream, setLoading, setStreaming, setError, clearThinking, setPulseData, pulseData]);
 
   const autoGenRef = useRef(false);
   useEffect(() => {

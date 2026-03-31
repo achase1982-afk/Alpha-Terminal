@@ -18,6 +18,7 @@ export interface ClusterData {
   direction: ClusterDirection;
   headline: string;
   keyDataPoints: string[];
+  rulesApplied?: string[];
 }
 
 export interface MarketPulseClusters {
@@ -47,6 +48,7 @@ export interface ActionPlanItem {
 
 export interface MarketPulseData {
   timestamp: string;
+  engineVersion?: string;
   dataAge: {
     oldestSource: string;
     oldestSourceAge: number;

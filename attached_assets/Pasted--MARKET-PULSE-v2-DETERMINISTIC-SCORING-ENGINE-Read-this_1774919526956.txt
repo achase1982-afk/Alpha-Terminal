@@ -1,0 +1,872 @@
+# MARKET PULSE v2: DETERMINISTIC SCORING ENGINE
+
+# Read this entire document before writing any code.
+
+-----
+
+## THE PROBLEM
+
+The Market Pulse currently asks the LLM (Gemini) to do ALL the work: score 30 indicators, calculate composites, determine bias, AND write the narrative. Because LLMs are non-deterministic, the same data produces different scores on every call. The user taps Generate Pulse and gets BULLISH, taps again 2 minutes later and gets NEUTRAL, taps again and gets NO EDGE. The data didn’t change. The AI just scored it differently each time. This destroys trust.
+
+## THE SOLUTION
+
+Split the work into two layers:
+
+**Layer 1: Deterministic Scoring Engine (TypeScript code, NO AI)**
+
+- Takes the 30 raw indicator values as input
+- Applies fixed threshold rules to score each of 5 clusters from -2 to +2
+- Calculates the weighted composite score
+- Determines the bias label
+- Calculates confidence based on data quality
+- Applies hysteresis to prevent label flickering
+- Outputs a deterministic JSON object
+- Same input ALWAYS produces same output. No exceptions.
+
+**Layer 2: AI Narrative Layer (Gemini, temperature = 0)**
+
+- Receives the pre-calculated scores AND the raw data
+- CANNOT change any scores, labels, or numbers
+- Only writes: synthesis narrative, action plan, invalidation conditions
+- Structured JSON output, no prose
+
+**Analogy: Code is the lab that produces exact blood work numbers. AI is the doctor that reads the numbers and tells you what they mean.**
+
+-----
+
+## ROADMAP
+
+### Phase 1: Build the Scoring Engine
+
+Create a new file: `api-server/src/lib/marketPulseEngine.ts`
+This is pure TypeScript. No AI, no API calls. Just math and rules.
+
+### Phase 2: Integrate with the Market Pulse Route
+
+Update the existing `/api/ai/market-pulse/stream` endpoint to:
+
+1. Run the scoring engine FIRST (produces deterministic scores)
+1. Pass the scores + raw data to Gemini (produces narrative only)
+1. Merge both into the final response
+
+### Phase 3: Update the Frontend
+
+The frontend already renders the dashboard. The JSON shape stays mostly the same. The only change is that scores/bias/confidence now come from the engine (deterministic) and the narrative/action plan come from Gemini (interpretive).
+
+-----
+
+## PHASE 1: THE SCORING ENGINE
+
+### File: `api-server/src/lib/marketPulseEngine.ts`
+
+```typescript
+// ============================================================
+// MARKET PULSE DETERMINISTIC SCORING ENGINE v1.0
+// ============================================================
+// This file contains NO AI calls. It is pure math and rules.
+// Same input ALWAYS produces the same output.
+// ============================================================
+
+// ---------- TYPES ----------
+
+export interface MarketIndicators {
+  // Volatility
+  vix: number | null;
+  vixChange: number | null;       // intraday % change (e.g., -3.19)
+  vvix: number | null;
+  vvixChange: number | null;
+  vix3m: number | null;
+  vix3mChange: number | null;
+  vix9d: number | null;
+  vix9dChange: number | null;
+  skew: number | null;
+
+  // Rates
+  tnx: number | null;             // 10Y yield level
+  tnxChange: number | null;       // intraday % change
+  tyx: number | null;             // 30Y yield level
+  tyxChange: number | null;
+
+  // Credit / Fixed Income
+  hyg: number | null;
+  hygChange: number | null;
+  lqd: number | null;
+  lqdChange: number | null;
+  ief: number | null;
+  iefChange: number | null;
+  nyicdx: number | null;
+  nyicdxChange: number | null;
+
+  // Breadth
+  advn: number | null;
+  decn: number | null;
+  tick: number | null;
+  trin: number | null;
+  add: number | null;
+
+  // Volume
+  uvol: number | null;
+  dvol: number | null;
+
+  // Timestamps (for staleness detection)
+  dataTimestamps?: Record<string, number>; // indicator name -> unix ms
+}
+
+export type DataQuality = 'FRESH' | 'STALE' | 'MISSING';
+export type BiasLabel = 'STRONGLY_BULLISH' | 'BULLISH' | 'NEUTRAL' | 'BEARISH' | 'STRONGLY_BEARISH' | 'NO_EDGE';
+export type Direction = 'UP' | 'DOWN' | 'FLAT' | 'COMPRESSING' | 'EXPANDING' | 'CONTANGO' | 'INVERTED' | 'POSITIVE' | 'NEGATIVE';
+export type RiskState = 'PRESS' | 'NORMAL' | 'REDUCED' | 'NO_TRADE';
+export type RegimeLabel = 'RISK_ON' | 'RISK_OFF' | 'TRANSITION' | 'NO_READ';
+
+export interface ClusterResult {
+  score: number;          // -2.0 to +2.0
+  dataQuality: DataQuality;
+  direction: Direction;
+  headline: string;
+  keyDataPoints: string[];
+  rulesApplied: string[]; // transparency: which rules fired
+}
+
+export interface EngineOutput {
+  timestamp: string;
+  engineVersion: string;
+  clusters: {
+    rates: ClusterResult;
+    credit: ClusterResult;
+    volLevel: ClusterResult;
+    volTermStructure: ClusterResult;
+    breadth: ClusterResult;
+  };
+  compositeScore: number;
+  bias: BiasLabel;
+  confidenceScore: number;
+  maxConfidence: number;
+  hasDivergence: boolean;
+  divergenceNote: string | null;
+  structuralRegime: RegimeLabel;
+  riskState: RiskState;
+  riskReason: string;
+  levelsToWatch: Array<{
+    symbol: string;
+    level: number;
+    direction: 'ABOVE' | 'BELOW';
+    significance: string;
+  }>;
+}
+
+// ---------- CONSTANTS ----------
+
+const ENGINE_VERSION = 'v1.0.0';
+const STALE_THRESHOLD_MS = 15 * 60 * 1000; // 15 minutes
+
+// Cluster weights (must sum to 1.0)
+const WEIGHTS = {
+  rates: 0.25,
+  credit: 0.20,
+  volLevel: 0.20,
+  volTermStructure: 0.15,
+  breadth: 0.20,
+} as const;
+
+// Hysteresis: once a bias is set, it takes a bigger move to change it.
+// Example: BULLISH starts at composite >= +0.30
+// But to DROP from BULLISH back to NEUTRAL, composite must fall below +0.15
+// This prevents flickering on tiny moves.
+const BIAS_THRESHOLDS = {
+  STRONGLY_BULLISH: { enter: 1.00, exit: 0.85 },
+  BULLISH:          { enter: 0.30, exit: 0.15 },
+  NEUTRAL:          { enter: -0.29, exit: -0.29 }, // default band
+  BEARISH:          { enter: -0.30, exit: -0.15 },
+  STRONGLY_BEARISH: { enter: -1.00, exit: -0.85 },
+} as const;
+
+// ---------- HELPER FUNCTIONS ----------
+
+function checkDataQuality(
+  value: number | null,
+  timestampMs?: number
+): DataQuality {
+  if (value === null || value === undefined) return 'MISSING';
+  if (timestampMs) {
+    const age = Date.now() - timestampMs;
+    if (age > STALE_THRESHOLD_MS) return 'STALE';
+  }
+  return 'FRESH';
+}
+
+function clampScore(score: number): number {
+  return Math.max(-2, Math.min(2, Math.round(score * 4) / 4)); // round to 0.25 increments
+}
+
+function fmt(val: number | null, prefix: string, suffix: string = ''): string {
+  if (val === null) return `${prefix} N/A`;
+  return `${prefix} ${val > 0 ? '+' : ''}${val.toFixed(2)}${suffix}`;
+}
+
+// ---------- CLUSTER SCORING FUNCTIONS ----------
+
+function scoreRates(data: MarketIndicators): ClusterResult {
+  const rules: string[] = [];
+  let score = 0;
+  const points: string[] = [];
+
+  const tnxQ = checkDataQuality(data.tnx);
+  const tyxQ = checkDataQuality(data.tyx);
+
+  // If both missing, return empty
+  if (tnxQ === 'MISSING' && tyxQ === 'MISSING') {
+    return {
+      score: 0,
+      dataQuality: 'MISSING',
+      direction: 'FLAT',
+      headline: 'Rates data unavailable',
+      keyDataPoints: [],
+      rulesApplied: ['All rates data missing'],
+    };
+  }
+
+  // TNX (10-year yield) scoring based on intraday % change
+  // Falling yields = bullish for equities, rising = bearish
+  if (data.tnxChange !== null) {
+    if (data.tnxChange <= -2.0) {
+      score += 2.0;
+      rules.push('TNX down >2%: +2.0');
+    } else if (data.tnxChange <= -1.0) {
+      score += 1.5;
+      rules.push('TNX down 1-2%: +1.5');
+    } else if (data.tnxChange <= -0.5) {
+      score += 1.0;
+      rules.push('TNX down 0.5-1%: +1.0');
+    } else if (data.tnxChange <= -0.1) {
+      score += 0.5;
+      rules.push('TNX down 0.1-0.5%: +0.5');
+    } else if (data.tnxChange >= 2.0) {
+      score -= 2.0;
+      rules.push('TNX up >2%: -2.0');
+    } else if (data.tnxChange >= 1.0) {
+      score -= 1.5;
+      rules.push('TNX up 1-2%: -1.5');
+    } else if (data.tnxChange >= 0.5) {
+      score -= 1.0;
+      rules.push('TNX up 0.5-1%: -1.0');
+    } else if (data.tnxChange >= 0.1) {
+      score -= 0.5;
+      rules.push('TNX up 0.1-0.5%: -0.5');
+    } else {
+      rules.push('TNX flat: 0');
+    }
+    points.push(fmt(data.tnxChange, '$TNX', '%'));
+  }
+
+  // TYX (30-year yield) as confirming signal (half weight of TNX)
+  if (data.tyxChange !== null) {
+    if (data.tyxChange <= -1.0) {
+      score += 0.5;
+      rules.push('TYX down >1%: +0.5 (confirming)');
+    } else if (data.tyxChange >= 1.0) {
+      score -= 0.5;
+      rules.push('TYX up >1%: -0.5 (confirming)');
+    }
+    points.push(fmt(data.tyxChange, '$TYX', '%'));
+  }
+
+  // Average if we have both inputs, otherwise just use what we have
+  const divisor = (data.tnxChange !== null && data.tyxChange !== null) ? 1 : 1;
+  const finalScore = clampScore(score);
+
+  const direction: Direction = finalScore > 0.25 ? 'DOWN' : finalScore < -0.25 ? 'UP' : 'FLAT';
+  const worstQuality = tnxQ === 'MISSING' || tyxQ === 'MISSING' ? 'STALE' :
+                       tnxQ === 'STALE' || tyxQ === 'STALE' ? 'STALE' : 'FRESH';
+
+  let headline = '';
+  if (finalScore >= 1.5) headline = 'Yields falling sharply, strong risk-on signal';
+  else if (finalScore >= 0.5) headline = 'Yields declining, supportive for equities';
+  else if (finalScore <= -1.5) headline = 'Yields surging, risk-off pressure';
+  else if (finalScore <= -0.5) headline = 'Yields rising, headwind for equities';
+  else headline = 'Yields relatively stable, neutral signal';
+
+  return {
+    score: finalScore,
+    dataQuality: worstQuality,
+    direction,
+    headline,
+    keyDataPoints: points,
+    rulesApplied: rules,
+  };
+}
+
+function scoreCredit(data: MarketIndicators): ClusterResult {
+  const rules: string[] = [];
+  let score = 0;
+  const points: string[] = [];
+
+  const hygQ = checkDataQuality(data.hyg);
+  const lqdQ = checkDataQuality(data.lqd);
+  const iefQ = checkDataQuality(data.ief);
+
+  if (hygQ === 'MISSING' && lqdQ === 'MISSING' && iefQ === 'MISSING') {
+    return {
+      score: 0, dataQuality: 'MISSING', direction: 'FLAT',
+      headline: 'Credit data unavailable', keyDataPoints: [], rulesApplied: ['All credit data missing'],
+    };
+  }
+
+  // HYG (high yield corporate bonds) - primary credit signal
+  // Rising HYG = credit improving = bullish
+  if (data.hygChange !== null) {
+    if (data.hygChange >= 0.5) { score += 2.0; rules.push('HYG up >0.5%: +2.0'); }
+    else if (data.hygChange >= 0.2) { score += 1.0; rules.push('HYG up 0.2-0.5%: +1.0'); }
+    else if (data.hygChange >= 0.05) { score += 0.5; rules.push('HYG up 0.05-0.2%: +0.5'); }
+    else if (data.hygChange <= -0.5) { score -= 2.0; rules.push('HYG down >0.5%: -2.0'); }
+    else if (data.hygChange <= -0.2) { score -= 1.0; rules.push('HYG down 0.2-0.5%: -1.0'); }
+    else if (data.hygChange <= -0.05) { score -= 0.5; rules.push('HYG down 0.05-0.2%: -0.5'); }
+    else { rules.push('HYG flat: 0'); }
+    points.push(fmt(data.hygChange, 'HYG', '%'));
+  }
+
+  // LQD (investment grade) - confirming signal (half weight)
+  if (data.lqdChange !== null) {
+    if (data.lqdChange >= 0.3) { score += 0.5; rules.push('LQD up >0.3%: +0.5'); }
+    else if (data.lqdChange <= -0.3) { score -= 0.5; rules.push('LQD down >0.3%: -0.5'); }
+    points.push(fmt(data.lqdChange, 'LQD', '%'));
+  }
+
+  // IEF (treasury ETF) - confirming signal (half weight)
+  if (data.iefChange !== null) {
+    if (data.iefChange >= 0.3) { score += 0.5; rules.push('IEF up >0.3%: +0.5'); }
+    else if (data.iefChange <= -0.3) { score -= 0.5; rules.push('IEF down >0.3%: -0.5'); }
+    points.push(fmt(data.iefChange, 'IEF', '%'));
+  }
+
+  const finalScore = clampScore(score);
+  const direction: Direction = finalScore > 0.25 ? 'UP' : finalScore < -0.25 ? 'DOWN' : 'FLAT';
+  const worstQuality = [hygQ, lqdQ, iefQ].includes('MISSING') ? 'STALE' :
+                       [hygQ, lqdQ, iefQ].includes('STALE') ? 'STALE' : 'FRESH';
+
+  let headline = '';
+  if (finalScore >= 1.5) headline = 'Credit surging, strong risk-on confirmation';
+  else if (finalScore >= 0.5) headline = 'Credit improving, supportive backdrop';
+  else if (finalScore <= -1.5) headline = 'Credit deteriorating sharply, risk-off';
+  else if (finalScore <= -0.5) headline = 'Credit weakening, caution warranted';
+  else headline = 'Credit stable, neutral signal';
+
+  return {
+    score: finalScore, dataQuality: worstQuality, direction, headline,
+    keyDataPoints: points, rulesApplied: rules,
+  };
+}
+
+function scoreVolLevel(data: MarketIndicators): ClusterResult {
+  const rules: string[] = [];
+  let score = 0;
+  const points: string[] = [];
+
+  const vixQ = checkDataQuality(data.vix);
+
+  if (vixQ === 'MISSING') {
+    return {
+      score: 0, dataQuality: 'MISSING', direction: 'FLAT',
+      headline: 'Volatility data unavailable', keyDataPoints: [], rulesApplied: ['VIX data missing'],
+    };
+  }
+
+  // VIX absolute level scoring
+  // Lower VIX = more complacent/bullish, higher = more fearful/bearish
+  if (data.vix !== null) {
+    if (data.vix < 15) { score += 1.0; rules.push('VIX < 15 (low fear): +1.0'); }
+    else if (data.vix < 20) { score += 0.5; rules.push('VIX 15-20 (moderate): +0.5'); }
+    else if (data.vix < 25) { score += 0.0; rules.push('VIX 20-25 (elevated): 0'); }
+    else if (data.vix < 30) { score -= 0.5; rules.push('VIX 25-30 (high): -0.5'); }
+    else if (data.vix < 35) { score -= 1.0; rules.push('VIX 30-35 (very high): -1.0'); }
+    else { score -= 1.5; rules.push('VIX >= 35 (extreme fear): -1.5'); }
+    points.push(`$VIX ${data.vix.toFixed(2)}`);
+  }
+
+  // VIX intraday change - momentum matters
+  // VIX compressing = bullish, expanding = bearish
+  if (data.vixChange !== null) {
+    if (data.vixChange <= -5.0) { score += 1.5; rules.push('VIX down >5% intraday: +1.5'); }
+    else if (data.vixChange <= -3.0) { score += 1.0; rules.push('VIX down 3-5%: +1.0'); }
+    else if (data.vixChange <= -1.0) { score += 0.5; rules.push('VIX down 1-3%: +0.5'); }
+    else if (data.vixChange >= 5.0) { score -= 1.5; rules.push('VIX up >5% intraday: -1.5'); }
+    else if (data.vixChange >= 3.0) { score -= 1.0; rules.push('VIX up 3-5%: -1.0'); }
+    else if (data.vixChange >= 1.0) { score -= 0.5; rules.push('VIX up 1-3%: -0.5'); }
+    points.push(fmt(data.vixChange, '$VIX change', '%'));
+  }
+
+  // VVIX confirming (half weight)
+  if (data.vvixChange !== null) {
+    if (data.vvixChange <= -3.0) { score += 0.5; rules.push('VVIX down >3%: +0.5'); }
+    else if (data.vvixChange >= 3.0) { score -= 0.5; rules.push('VVIX up >3%: -0.5'); }
+    points.push(fmt(data.vvixChange, '$VVIX change', '%'));
+  }
+
+  const finalScore = clampScore(score);
+  const direction: Direction = finalScore > 0.25 ? 'COMPRESSING' : finalScore < -0.25 ? 'EXPANDING' : 'FLAT';
+
+  let headline = '';
+  if (finalScore >= 1.5) headline = 'Vol compressing sharply, strong risk-on';
+  else if (finalScore >= 0.5) headline = 'Vol declining, reduced market fear';
+  else if (finalScore <= -1.5) headline = 'Vol expanding sharply, elevated fear';
+  else if (finalScore <= -0.5) headline = 'Vol rising, increasing uncertainty';
+  else headline = 'Volatility stable, neutral signal';
+
+  return {
+    score: finalScore, dataQuality: vixQ, direction, headline,
+    keyDataPoints: points, rulesApplied: rules,
+  };
+}
+
+function scoreVolTermStructure(data: MarketIndicators): ClusterResult {
+  const rules: string[] = [];
+  let score = 0;
+  const points: string[] = [];
+
+  const vixQ = checkDataQuality(data.vix);
+  const vix9dQ = checkDataQuality(data.vix9d);
+  const vix3mQ = checkDataQuality(data.vix3m);
+
+  if (vixQ === 'MISSING' || (vix9dQ === 'MISSING' && vix3mQ === 'MISSING')) {
+    return {
+      score: 0, dataQuality: 'MISSING', direction: 'FLAT',
+      headline: 'Term structure data unavailable', keyDataPoints: [], rulesApplied: ['Insufficient term structure data'],
+    };
+  }
+
+  // VIX9D vs VIX: near-term term structure
+  // Normal (contango): VIX9D < VIX = bullish (no near-term panic)
+  // Inverted: VIX9D > VIX = bearish (near-term hedging demand)
+  if (data.vix9d !== null && data.vix !== null) {
+    const spread9d = data.vix9d - data.vix;
+    if (spread9d < -2.0) { score += 1.5; rules.push('VIX9D << VIX (strong contango): +1.5'); }
+    else if (spread9d < -0.5) { score += 1.0; rules.push('VIX9D < VIX (contango): +1.0'); }
+    else if (spread9d < 0.5) { score += 0.0; rules.push('VIX9D ~ VIX (flat): 0'); }
+    else if (spread9d < 2.0) { score -= 1.0; rules.push('VIX9D > VIX (mild inversion): -1.0'); }
+    else { score -= 1.5; rules.push('VIX9D >> VIX (strong inversion): -1.5'); }
+    points.push(`$VIX9D ${data.vix9d.toFixed(2)} vs $VIX ${data.vix.toFixed(2)}`);
+  }
+
+  // VIX vs VIX3M: medium-term term structure
+  if (data.vix3m !== null && data.vix !== null) {
+    const spread3m = data.vix - data.vix3m;
+    if (spread3m < -3.0) { score += 1.0; rules.push('VIX << VIX3M (strong contango): +1.0'); }
+    else if (spread3m < -1.0) { score += 0.5; rules.push('VIX < VIX3M (contango): +0.5'); }
+    else if (spread3m > 3.0) { score -= 1.0; rules.push('VIX >> VIX3M (strong backwardation): -1.0'); }
+    else if (spread3m > 1.0) { score -= 0.5; rules.push('VIX > VIX3M (backwardation): -0.5'); }
+    points.push(`$VIX3M ${data.vix3m.toFixed(2)}`);
+  }
+
+  // SKEW as modifier
+  if (data.skew !== null) {
+    if (data.skew > 145) { score -= 0.5; rules.push('SKEW > 145 (tail hedging): -0.5'); }
+    else if (data.skew < 120) { score += 0.25; rules.push('SKEW < 120 (complacent): +0.25'); }
+    points.push(`$SKEW ${data.skew.toFixed(2)}`);
+  }
+
+  const finalScore = clampScore(score);
+  const direction: Direction = finalScore > 0.25 ? 'CONTANGO' : finalScore < -0.25 ? 'INVERTED' : 'FLAT';
+
+  let headline = '';
+  if (finalScore >= 1.0) headline = 'Term structure healthy, no near-term panic';
+  else if (finalScore >= 0.25) headline = 'Term structure mostly normal';
+  else if (finalScore <= -1.0) headline = 'Term structure inverted, hedging demand elevated';
+  else if (finalScore <= -0.25) headline = 'Term structure showing caution';
+  else headline = 'Term structure flat, inconclusive';
+
+  return {
+    score: finalScore, dataQuality: vix9dQ === 'MISSING' ? 'STALE' : vix9dQ, direction, headline,
+    keyDataPoints: points, rulesApplied: rules,
+  };
+}
+
+function scoreBreadth(data: MarketIndicators): ClusterResult {
+  const rules: string[] = [];
+  let score = 0;
+  const points: string[] = [];
+
+  const hasAny = data.advn !== null || data.decn !== null || data.tick !== null || data.trin !== null;
+  if (!hasAny) {
+    return {
+      score: 0, dataQuality: 'MISSING', direction: 'FLAT',
+      headline: 'Breadth data unavailable', keyDataPoints: [], rulesApplied: ['All breadth data missing'],
+    };
+  }
+
+  // ADVN/DECN ratio
+  if (data.advn !== null && data.decn !== null && data.decn > 0) {
+    const adRatio = data.advn / data.decn;
+    if (adRatio >= 3.0) { score += 2.0; rules.push(`AD ratio ${adRatio.toFixed(2)} (>3.0): +2.0`); }
+    else if (adRatio >= 2.0) { score += 1.5; rules.push(`AD ratio ${adRatio.toFixed(2)} (2-3): +1.5`); }
+    else if (adRatio >= 1.3) { score += 0.75; rules.push(`AD ratio ${adRatio.toFixed(2)} (1.3-2): +0.75`); }
+    else if (adRatio >= 0.8) { score += 0.0; rules.push(`AD ratio ${adRatio.toFixed(2)} (0.8-1.3): 0`); }
+    else if (adRatio >= 0.5) { score -= 0.75; rules.push(`AD ratio ${adRatio.toFixed(2)} (0.5-0.8): -0.75`); }
+    else if (adRatio >= 0.33) { score -= 1.5; rules.push(`AD ratio ${adRatio.toFixed(2)} (0.33-0.5): -1.5`); }
+    else { score -= 2.0; rules.push(`AD ratio ${adRatio.toFixed(2)} (<0.33): -2.0`); }
+    points.push(`$ADVN ${data.advn}`, `$DECN ${data.decn}`);
+  }
+
+  // TRIN (Arms Index)
+  // TRIN < 0.5 = very bullish volume distribution
+  // TRIN 0.5-0.8 = bullish
+  // TRIN 0.8-1.2 = neutral
+  // TRIN 1.2-2.0 = bearish
+  // TRIN > 2.0 = very bearish (selling capitulation, can be contrarian bullish)
+  if (data.trin !== null) {
+    if (data.trin < 0.5) { score += 1.0; rules.push(`TRIN ${data.trin.toFixed(2)} (<0.5): +1.0`); }
+    else if (data.trin < 0.8) { score += 0.5; rules.push(`TRIN ${data.trin.toFixed(2)} (0.5-0.8): +0.5`); }
+    else if (data.trin <= 1.2) { rules.push(`TRIN ${data.trin.toFixed(2)} (0.8-1.2): 0`); }
+    else if (data.trin <= 2.0) { score -= 0.5; rules.push(`TRIN ${data.trin.toFixed(2)} (1.2-2.0): -0.5`); }
+    else { score -= 1.0; rules.push(`TRIN ${data.trin.toFixed(2)} (>2.0): -1.0`); }
+    points.push(`$TRIN ${data.trin.toFixed(4)}`);
+  }
+
+  // TICK
+  if (data.tick !== null) {
+    if (data.tick > 500) { score += 0.5; rules.push(`TICK ${data.tick} (>500): +0.5`); }
+    else if (data.tick < -500) { score -= 0.5; rules.push(`TICK ${data.tick} (<-500): -0.5`); }
+    points.push(`$TICK ${data.tick}`);
+  }
+
+  const finalScore = clampScore(score);
+  const direction: Direction = finalScore > 0.25 ? 'POSITIVE' : finalScore < -0.25 ? 'NEGATIVE' : 'FLAT';
+
+  const freshCount = [data.advn, data.decn, data.tick, data.trin].filter(v => v !== null).length;
+  const dataQuality: DataQuality = freshCount >= 3 ? 'FRESH' : freshCount >= 1 ? 'STALE' : 'MISSING';
+
+  let headline = '';
+  if (finalScore >= 1.5) headline = 'Breadth strongly bullish, broad participation';
+  else if (finalScore >= 0.5) headline = 'Breadth positive, healthy internals';
+  else if (finalScore <= -1.5) headline = 'Breadth deeply negative, broad selling';
+  else if (finalScore <= -0.5) headline = 'Breadth weak, limited participation';
+  else headline = 'Breadth mixed, no clear signal';
+
+  return {
+    score: finalScore, dataQuality, direction, headline,
+    keyDataPoints: points, rulesApplied: rules,
+  };
+}
+
+// ---------- COMPOSITE SCORING ----------
+
+function calculateComposite(clusters: EngineOutput['clusters']): number {
+  const raw =
+    clusters.rates.score * WEIGHTS.rates +
+    clusters.credit.score * WEIGHTS.credit +
+    clusters.volLevel.score * WEIGHTS.volLevel +
+    clusters.volTermStructure.score * WEIGHTS.volTermStructure +
+    clusters.breadth.score * WEIGHTS.breadth;
+
+  // Round to 2 decimal places
+  return Math.round(raw * 100) / 100;
+}
+
+function calculateConfidence(clusters: EngineOutput['clusters']): { score: number; max: number } {
+  const clusterList = Object.values(clusters);
+  const freshCount = clusterList.filter(c => c.dataQuality === 'FRESH').length;
+  const maxConfidence = (freshCount / 5) * 100;
+
+  // Base confidence from data availability
+  let confidence = maxConfidence;
+
+  // Reduce confidence if scores are tightly clustered near zero (weak signals)
+  const avgMagnitude = clusterList.reduce((sum, c) => sum + Math.abs(c.score), 0) / clusterList.length;
+  if (avgMagnitude < 0.5) {
+    confidence *= 0.7; // weak signals reduce confidence by 30%
+  }
+
+  // Reduce confidence if clusters disagree strongly
+  const scores = clusterList.map(c => c.score);
+  const hasStrongBull = scores.some(s => s >= 1.5);
+  const hasStrongBear = scores.some(s => s <= -1.5);
+  if (hasStrongBull && hasStrongBear) {
+    confidence *= 0.6; // strong disagreement reduces confidence by 40%
+  }
+
+  return {
+    score: Math.round(Math.min(confidence, maxConfidence)),
+    max: Math.round(maxConfidence),
+  };
+}
+
+function determineBias(
+  composite: number,
+  confidence: number,
+  previousBias?: BiasLabel
+): BiasLabel {
+  // NO_EDGE override if confidence too low
+  if (confidence < 40) return 'NO_EDGE';
+
+  // With hysteresis: if we have a previous bias, use exit thresholds to keep it
+  if (previousBias && previousBias !== 'NO_EDGE' && previousBias !== 'NEUTRAL') {
+    const thresholds = BIAS_THRESHOLDS[previousBias];
+    if (thresholds) {
+      // Check if we should STAY in the current bias
+      if (previousBias === 'STRONGLY_BULLISH' && composite >= thresholds.exit) return 'STRONGLY_BULLISH';
+      if (previousBias === 'BULLISH' && composite >= thresholds.exit) return 'BULLISH';
+      if (previousBias === 'BEARISH' && composite <= -Math.abs(thresholds.exit)) return 'BEARISH';
+      if (previousBias === 'STRONGLY_BEARISH' && composite <= -Math.abs(thresholds.exit)) return 'STRONGLY_BEARISH';
+    }
+  }
+
+  // Fresh determination using entry thresholds
+  if (composite >= BIAS_THRESHOLDS.STRONGLY_BULLISH.enter) return 'STRONGLY_BULLISH';
+  if (composite >= BIAS_THRESHOLDS.BULLISH.enter) return 'BULLISH';
+  if (composite <= -Math.abs(BIAS_THRESHOLDS.STRONGLY_BEARISH.enter)) return 'STRONGLY_BEARISH';
+  if (composite <= -Math.abs(BIAS_THRESHOLDS.BEARISH.enter)) return 'BEARISH';
+  return 'NEUTRAL';
+}
+
+function detectDivergence(clusters: EngineOutput['clusters']): { has: boolean; note: string | null } {
+  const entries = Object.entries(clusters) as [string, ClusterResult][];
+  const bullish = entries.filter(([_, c]) => c.score >= 1.0);
+  const bearish = entries.filter(([_, c]) => c.score <= -1.0);
+
+  if (bullish.length > 0 && bearish.length > 0) {
+    const bullNames = bullish.map(([n]) => n).join(', ');
+    const bearNames = bearish.map(([n]) => n).join(', ');
+    return {
+      has: true,
+      note: `Signal conflict: ${bullNames} bullish vs ${bearNames} bearish. Mixed signals reduce conviction.`,
+    };
+  }
+  return { has: false, note: null };
+}
+
+function determineRegime(clusters: EngineOutput['clusters'], composite: number): RegimeLabel {
+  const freshCount = Object.values(clusters).filter(c => c.dataQuality === 'FRESH').length;
+  if (freshCount < 3) return 'NO_READ';
+  if (composite >= 0.5) return 'RISK_ON';
+  if (composite <= -0.5) return 'RISK_OFF';
+  return 'TRANSITION';
+}
+
+function determineRiskState(composite: number, confidence: number, hasDivergence: boolean): { state: RiskState; reason: string } {
+  if (confidence < 40) return { state: 'NO_TRADE', reason: 'Insufficient data or confidence for positioning' };
+  if (hasDivergence) return { state: 'REDUCED', reason: 'Cross-asset divergence warrants reduced exposure' };
+  if (Math.abs(composite) >= 1.0 && confidence >= 70) return { state: 'PRESS', reason: 'Strong aligned signals with high confidence support full positioning' };
+  if (Math.abs(composite) >= 0.5) return { state: 'NORMAL', reason: 'Moderate signal strength supports standard positioning' };
+  return { state: 'REDUCED', reason: 'Weak or mixed signals warrant reduced exposure' };
+}
+
+function generateLevelsToWatch(data: MarketIndicators, clusters: EngineOutput['clusters']): EngineOutput['levelsToWatch'] {
+  const levels: EngineOutput['levelsToWatch'] = [];
+
+  // VIX levels
+  if (data.vix !== null) {
+    if (clusters.volLevel.score > 0) {
+      // Bullish vol - watch for reversal
+      levels.push({
+        symbol: '$VIX',
+        level: Math.ceil(data.vix + 2),
+        direction: 'ABOVE',
+        significance: 'VIX reversal above this level would signal renewed fear',
+      });
+    } else {
+      levels.push({
+        symbol: '$VIX',
+        level: Math.floor(data.vix - 2),
+        direction: 'BELOW',
+        significance: 'VIX break below this level would confirm fear subsiding',
+      });
+    }
+  }
+
+  // TNX level
+  if (data.tnx !== null) {
+    levels.push({
+      symbol: '$TNX',
+      level: Math.round((data.tnx + (clusters.rates.score > 0 ? 1.0 : -1.0)) * 100) / 100,
+      direction: clusters.rates.score > 0 ? 'ABOVE' : 'BELOW',
+      significance: clusters.rates.score > 0
+        ? 'Yield reversal above this level would negate rates tailwind'
+        : 'Yield break below this level would flip rates supportive',
+    });
+  }
+
+  // HYG level
+  if (data.hyg !== null) {
+    levels.push({
+      symbol: 'HYG',
+      level: Math.round((data.hyg - 0.3) * 100) / 100,
+      direction: 'BELOW',
+      significance: 'Break below this level would signal credit deterioration',
+    });
+  }
+
+  return levels;
+}
+
+// ---------- MAIN ENGINE FUNCTION ----------
+
+export function runMarketPulseEngine(
+  data: MarketIndicators,
+  previousBias?: BiasLabel
+): EngineOutput {
+  // Score all 5 clusters
+  const clusters = {
+    rates: scoreRates(data),
+    credit: scoreCredit(data),
+    volLevel: scoreVolLevel(data),
+    volTermStructure: scoreVolTermStructure(data),
+    breadth: scoreBreadth(data),
+  };
+
+  // Calculate composite
+  const compositeScore = calculateComposite(clusters);
+
+  // Calculate confidence
+  const { score: confidenceScore, max: maxConfidence } = calculateConfidence(clusters);
+
+  // Determine bias with hysteresis
+  const bias = determineBias(compositeScore, confidenceScore, previousBias);
+
+  // Detect divergence
+  const divergence = detectDivergence(clusters);
+
+  // Determine regime and risk
+  const structuralRegime = determineRegime(clusters, compositeScore);
+  const { state: riskState, reason: riskReason } = determineRiskState(compositeScore, confidenceScore, divergence.has);
+
+  // Generate levels to watch
+  const levelsToWatch = generateLevelsToWatch(data, clusters);
+
+  return {
+    timestamp: new Date().toISOString(),
+    engineVersion: ENGINE_VERSION,
+    clusters,
+    compositeScore,
+    bias,
+    confidenceScore,
+    maxConfidence,
+    hasDivergence: divergence.has,
+    divergenceNote: divergence.note,
+    structuralRegime,
+    riskState,
+    riskReason,
+    levelsToWatch,
+  };
+}
+```
+
+-----
+
+## PHASE 2: UPDATE THE MARKET PULSE ROUTE
+
+Update the existing `/api/ai/market-pulse/stream` handler to use the engine.
+
+The flow is now:
+
+1. Receive the 30 indicator values from the frontend
+1. Run `runMarketPulseEngine(data, previousBias)` – this produces deterministic scores
+1. Send the engine output to Gemini with a NEW prompt that says “DO NOT change any scores or labels, only write the narrative and action plan”
+1. Stream thinking tokens to the frontend
+1. Merge engine output + Gemini narrative into the final response
+
+```typescript
+// In your market pulse streaming route handler:
+
+import { runMarketPulseEngine } from '../lib/marketPulseEngine';
+
+// Inside the handler, BEFORE the Gemini call:
+const engineResult = runMarketPulseEngine(req.body.marketData, req.body.previousBias);
+
+// NEW system prompt for Gemini (it no longer does scoring)
+const NARRATIVE_SYSTEM_PROMPT = `You are a senior market strategist writing institutional-grade analysis. You receive pre-calculated market scores from a deterministic scoring engine. Your job is to INTERPRET the scores, NOT recalculate them.
+
+RULES:
+- DO NOT change, override, or recalculate any cluster scores, composite score, bias label, or confidence values. They are final.
+- Write a concise 1-2 sentence synthesis explaining WHY this combination of cluster scores produces the given bias.
+- Write a concise 1 sentence session bias summary for today's intraday lean.
+- Generate 2-3 action plan items with IF/THEN strategy guidance.
+- The 30 macro indicators are DATA INPUTS ONLY. NEVER suggest trading them directly.
+- NEVER include specific entry prices, stops, or targets. Those belong in the Options Strategist.
+- Return ONLY a raw JSON object matching the schema below. No markdown, no backticks.`;
+
+// User message now includes the engine output
+const userMessage = `
+DETERMINISTIC ENGINE OUTPUT (DO NOT MODIFY THESE VALUES):
+${JSON.stringify(engineResult, null, 2)}
+
+RAW INDICATOR DATA FOR CONTEXT:
+${JSON.stringify(req.body.marketData, null, 2)}
+
+${req.body.settings ? `USER PREFERENCES:
+- Allowed strategies: ${req.body.settings.allowedStrategies?.join(', ') || 'All'}
+- Default spread width: ${req.body.settings.defaultSpreadWidth || '$5'}
+- Preferred tickers: ${req.body.settings.preferredTickers || 'Not specified'}
+` : ''}
+
+Write ONLY the narrative fields. Return this exact JSON structure:
+{
+  "sessionBiasSummary": "1 sentence about today's intraday lean",
+  "synthesisSummary": "1-2 sentences explaining why the cluster scores produce this bias",
+  "actionPlan": [
+    {
+      "condition": "IF [condition based on the scores and data]",
+      "strategy": "THEN [strategy guidance for user's preferred tickers]",
+      "rationale": "Brief explanation",
+      "riskPosture": "FULL | REDUCED | QUARTER | NO_TRADE",
+      "conviction": "HIGH | MODERATE | LOW"
+    }
+  ],
+  "invalidationConditions": ["1-3 short conditions that would change the thesis"]
+}`;
+
+// Stream Gemini response, then MERGE engine output + narrative
+// The final result sent to the frontend combines both:
+const finalResult = {
+  ...engineResult,
+  sessionBias: {
+    label: engineResult.bias === 'NO_EDGE' ? 'NO_EDGE' :
+           engineResult.compositeScore > 0 ? 'BULLISH' :
+           engineResult.compositeScore < 0 ? 'BEARISH' : 'NEUTRAL',
+    summary: narrativeFromGemini.sessionBiasSummary,
+  },
+  structuralRegime: {
+    label: engineResult.structuralRegime,
+    timeframe: '1-5 day outlook',
+    summary: narrativeFromGemini.synthesisSummary,
+  },
+  riskState: {
+    label: engineResult.riskState,
+    reason: engineResult.riskReason,
+  },
+  invalidation: {
+    conditions: narrativeFromGemini.invalidationConditions,
+  },
+  actionPlan: narrativeFromGemini.actionPlan,
+};
+
+// Send as event: result
+res.write(`event: result\ndata: ${JSON.stringify({ type: 'complete', pulse: finalResult })}\n\n`);
+```
+
+-----
+
+## PHASE 3: FRONTEND CHANGES
+
+Minimal. The frontend dashboard already renders the JSON. The shape is mostly the same. Two small additions:
+
+1. **Send `previousBias` with each request.** Store the last bias label in the Zustand store. When generating a new pulse, include it in the request payload so the engine can apply hysteresis. If no previous bias exists (first generation), omit it.
+1. **Optional: Show the `rulesApplied` array.** Each cluster card could have an expandable “View Rules” section showing exactly which threshold rules fired for that cluster. This gives traders full transparency into why a cluster scored the way it did. Not required for MVP but highly recommended.
+
+-----
+
+## WHAT THIS FIXES
+
+- **Same data = same score, every single time.** The deterministic engine eliminates bias label flickering.
+- **Hysteresis prevents micro-flips.** Once BULLISH, it takes a real move to change, not a rounding difference.
+- **Confidence is math-based, not vibes.** Data quality, signal magnitude, and cluster agreement all feed a formula.
+- **AI focuses on what it’s good at.** Gemini writes the narrative and action plan, which is where LLMs excel.
+- **Full auditability.** The `rulesApplied` array on every cluster shows exactly why the score is what it is.
+- **Faster Gemini calls.** The AI prompt is much simpler now (just write narrative, don’t do math), so it responds faster.
+
+-----
+
+## DO NOT
+
+- Do not let Gemini change any scores, bias labels, or confidence values
+- Do not remove the existing streaming/SSE architecture – it still works for thinking tokens
+- Do not change the frontend dashboard layout – it already renders the right components
+- Do not downgrade to Gemini Flash for the narrative layer – Pro’s interpretation quality matters here
+- Do not skip the hysteresis – it is the single most important fix for label stability

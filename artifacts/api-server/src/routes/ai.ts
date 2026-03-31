@@ -12,6 +12,7 @@ import {
   GetAvailableModelsResponse,
 } from "@workspace/api-zod";
 import { computeIndicators, formatTAContext, isDataStale, type Candle } from "../lib/ta.js";
+import { runMarketPulseEngine, type MarketIndicators, type BiasLabel } from "../lib/marketPulseEngine.js";
 
 const router: IRouter = Router();
 
@@ -333,7 +334,7 @@ const SCHWAB_API_BASE_PULSE = "https://api.schwabapi.com/marketdata/v1";
 interface PulseSymbol {
   display: string;
   api: string;
-  category: "equity" | "vol" | "breadth" | "futures" | "currency" | "commodity";
+  category: "equity" | "vol" | "breadth" | "futures" | "currency" | "commodity" | "rates" | "credit";
   description: string;
 }
 
@@ -352,6 +353,18 @@ const PULSE_SYMBOLS: PulseSymbol[] = [
   { display: "/NQ",   api: "/NQ",    category: "futures",   description: "E-mini Nasdaq-100 Futures" },
   { display: "/GC",   api: "/GC",    category: "commodity", description: "Gold Futures — safe-haven / real rates proxy" },
   { display: "/CL",   api: "/CL",    category: "commodity", description: "Crude Oil Futures — energy / risk appetite signal" },
+  { display: "$TNX",  api: "$TNX",   category: "rates",     description: "10-Year Treasury Yield Index" },
+  { display: "$TYX",  api: "$TYX",   category: "rates",     description: "30-Year Treasury Yield Index" },
+  { display: "$VIX9D", api: "$VIX9D", category: "vol",      description: "CBOE 9-Day VIX — near-term implied vol" },
+  { display: "$VIX3M", api: "$VIX3M", category: "vol",      description: "CBOE 3-Month VIX — medium-term implied vol" },
+  { display: "$SKEW", api: "$SKEW",  category: "vol",       description: "CBOE SKEW — tail risk / crash hedging indicator" },
+  { display: "HYG",   api: "HYG",    category: "credit",    description: "iShares High Yield Corporate Bond ETF — credit risk appetite" },
+  { display: "LQD",   api: "LQD",    category: "credit",    description: "iShares Investment Grade Corporate Bond ETF" },
+  { display: "IEF",   api: "IEF",    category: "credit",    description: "iShares 7-10 Year Treasury Bond ETF" },
+  { display: "$ADVN", api: "$ADVN",  category: "breadth",   description: "NYSE Advancing Issues — breadth count" },
+  { display: "$DECN", api: "$DECN",  category: "breadth",   description: "NYSE Declining Issues — breadth count" },
+  { display: "$UVOL", api: "$UVOL",  category: "breadth",   description: "NYSE Up Volume — volume in advancing stocks" },
+  { display: "$DVOL", api: "$DVOL",  category: "breadth",   description: "NYSE Down Volume — volume in declining stocks" },
 ];
 
 // Maps user-facing symbols to Schwab API format (adds $ prefix for known indices)
@@ -361,6 +374,8 @@ const INDEX_TO_SCHWAB: Record<string, string> = {
   "DXY": "$DXY", "TNX": "$TNX", "TYX": "$TYX", "VXN": "$VXN",
   "TICK": "$TICK", "ADD": "$ADD", "TRIN": "$TRIN", "CPC": "$CPC",
   "OEX": "$OEX", "MNX": "$MNX", "XSP": "$XSP",
+  "VIX9D": "$VIX9D", "VIX3M": "$VIX3M", "SKEW": "$SKEW",
+  "ADVN": "$ADVN", "DECN": "$DECN", "UVOL": "$UVOL", "DVOL": "$DVOL",
 };
 
 function symbolToSchwabApi(userSymbol: string): string {
@@ -487,11 +502,65 @@ function buildPulseDataBlock(
   return [
     section("equity",    "── EQUITY INDICES ──"),
     section("vol",       "── VOLATILITY STRUCTURE ──"),
+    section("rates",     "── RATES / TREASURIES ──"),
+    section("credit",    "── CREDIT / FIXED INCOME ──"),
     section("breadth",   "── MARKET BREADTH (NYSE INTERNALS) ──"),
     section("currency",  "── MACRO / CURRENCIES ──"),
     section("futures",   "── EQUITY FUTURES ──"),
     section("commodity", "── COMMODITIES ──"),
   ].join("\n\n");
+}
+
+function extractMarketIndicators(dataMap: Map<string, Record<string, unknown>>): MarketIndicators {
+  const num = (sym: string, field: string): number | null => {
+    const entry = dataMap.get(sym) ?? dataMap.get(sym.replace(/^\$/, ''));
+    if (!entry) return null;
+    const v = entry[field];
+    return typeof v === 'number' && isFinite(v) ? v : null;
+  };
+
+  const lastOrMark = (sym: string): number | null => {
+    return num(sym, 'lastPrice') ?? num(sym, 'mark') ?? num(sym, 'closePrice') ?? num(sym, 'close') ?? null;
+  };
+
+  const pctChange = (sym: string): number | null => {
+    return num(sym, 'netPercentChange') ?? num(sym, 'markPercentChange') ?? null;
+  };
+
+  return {
+    vix: lastOrMark('$VIX'),
+    vixChange: pctChange('$VIX'),
+    vvix: lastOrMark('$VVIX'),
+    vvixChange: pctChange('$VVIX'),
+    vix3m: lastOrMark('$VIX3M'),
+    vix3mChange: pctChange('$VIX3M'),
+    vix9d: lastOrMark('$VIX9D'),
+    vix9dChange: pctChange('$VIX9D'),
+    skew: lastOrMark('$SKEW'),
+
+    tnx: lastOrMark('$TNX'),
+    tnxChange: pctChange('$TNX'),
+    tyx: lastOrMark('$TYX'),
+    tyxChange: pctChange('$TYX'),
+
+    hyg: lastOrMark('HYG'),
+    hygChange: pctChange('HYG'),
+    lqd: lastOrMark('LQD'),
+    lqdChange: pctChange('LQD'),
+    ief: lastOrMark('IEF'),
+    iefChange: pctChange('IEF'),
+    nyicdx: null,
+    nyicdxChange: null,
+
+    advn: lastOrMark('$ADVN'),
+    decn: lastOrMark('$DECN'),
+    tick: lastOrMark('$TICK'),
+    trin: lastOrMark('$TRIN'),
+    add: lastOrMark('$ADD'),
+
+    uvol: lastOrMark('$UVOL'),
+    dvol: lastOrMark('$DVOL'),
+  };
 }
 
 // ── MARKET SESSION DETECTION ─────────────────────────────────────────────────
@@ -774,11 +843,12 @@ RULES:
 });
 
 router.post("/market-pulse/stream", async (req, res) => {
-  const { accessToken, symbols, model, temperature, preferences } = req.body as {
+  const { accessToken, symbols, model, temperature, preferences, previousBias } = req.body as {
     accessToken?: string;
     symbols?: string[];
     model?: string;
     temperature?: number;
+    previousBias?: BiasLabel;
     preferences?: {
       allowedStrategies?: string[];
       defaultSpreadWidth?: string;
@@ -821,11 +891,13 @@ router.post("/market-pulse/stream", async (req, res) => {
 
   const { session, timeET, sessionGuidance } = getMarketSession();
 
+  let dataMap: Map<string, Record<string, unknown>>;
   let dataBlock: string;
   try {
-    const { dataMap } = await fetchMacroPulseData(accessToken, symbols);
+    const result = await fetchMacroPulseData(accessToken, symbols);
+    dataMap = result.dataMap;
     dataBlock = buildPulseDataBlock(dataMap, symbols && symbols.length > 0 ? symbols : undefined);
-    res.write(`event: thinking\ndata: ${JSON.stringify({ type: "thinking", text: "Market data loaded. Analyzing with AI..." })}\n\n`);
+    res.write(`event: thinking\ndata: ${JSON.stringify({ type: "thinking", text: "Market data loaded. Running scoring engine..." })}\n\n`);
     if (typeof (res as any).flush === "function") (res as any).flush();
   } catch (fetchErr: unknown) {
     clearInterval(heartbeat);
@@ -836,168 +908,74 @@ router.post("/market-pulse/stream", async (req, res) => {
     return;
   }
 
-  const symbolList = symbols && symbols.length > 0
-    ? symbols.map(s => s.toUpperCase().trim()).join(", ")
-    : PULSE_SYMBOLS.map(s => s.display).join(", ");
+  const indicators = extractMarketIndicators(dataMap);
+  const engineResult = runMarketPulseEngine(indicators, previousBias);
+
+  console.log("[PULSE ENGINE] Deterministic result:", JSON.stringify({
+    bias: engineResult.bias,
+    composite: engineResult.compositeScore,
+    confidence: engineResult.confidenceScore,
+    clusters: Object.fromEntries(
+      Object.entries(engineResult.clusters).map(([k, v]) => [k, { score: v.score, quality: v.dataQuality }])
+    ),
+  }));
+
+  res.write(`event: thinking\ndata: ${JSON.stringify({ type: "thinking", text: `Engine scored: ${engineResult.bias} (composite ${engineResult.compositeScore >= 0 ? '+' : ''}${engineResult.compositeScore.toFixed(2)}, confidence ${engineResult.confidenceScore}%). Generating AI narrative...` })}\n\n`);
+  if (typeof (res as any).flush === "function") (res as any).flush();
 
   const instrumentCount = (symbols && symbols.length > 0 ? symbols : PULSE_SYMBOLS.map(s => s.display)).length;
 
   const strategyPrefsBlock = preferences
-    ? `\nTRADER PREFERENCES:
-- Allowed Strategies: ${preferences.allowedStrategies?.join(", ") || "All"}
-- Default Spread Width: ${preferences.defaultSpreadWidth || "Standard"}
-- Account Size Tier: ${preferences.accountSizeTier || "Not specified"}
-- Preferred Tickers: ${preferences.preferredTickers || "Any"}
-- Max Risk Per Trade: ${preferences.maxRiskPerTrade || "2%"}
-- Max Contracts: ${preferences.maxContracts || "Not specified"}`
+    ? `\nUSER PREFERENCES:
+- Allowed strategies: ${preferences.allowedStrategies?.join(", ") || "All"}
+- Default spread width: ${preferences.defaultSpreadWidth || "Standard"}
+- Preferred tickers: ${preferences.preferredTickers || "Any"}`
     : "";
 
-  const prompt = `You are an elite Macro Prop Desk Analyst at a top-tier systematic hedge fund.
+  const narrativePrompt = `You are a senior market strategist writing institutional-grade analysis. You receive pre-calculated market scores from a deterministic scoring engine. Your job is to INTERPRET the scores, NOT recalculate them.
 
-STRICT GROUNDING RULE: You must ONLY use the Context Data provided below. Every price, ratio, volume, and indicator value you cite MUST come from this data. You are ABSOLUTELY FORBIDDEN from using your internal training knowledge for market trends, price targets, or directional predictions. If a data field shows "NO DATA AVAILABLE", skip it — do NOT substitute with internal knowledge.
+RULES:
+- DO NOT change, override, or recalculate any cluster scores, composite score, bias label, or confidence values. They are final.
+- Write a concise 1-2 sentence synthesis explaining WHY this combination of cluster scores produces the given bias.
+- Write a concise 1 sentence session bias summary for today's intraday lean.
+- Generate 2-3 action plan items with IF/THEN strategy guidance.
+- The 30 macro indicators are DATA INPUTS ONLY. NEVER suggest trading them directly.
+- NEVER include specific entry prices, stops, or targets. Those belong in the Options Strategist.
+- Return ONLY a raw JSON object matching the schema below. No markdown, no backticks.
 
-═══════════════════════════════════════════════════════
-LIVE MARKET PULSE — ${timeET} | SESSION: ${session}
-INSTRUMENTS SCANNED: ${symbolList}
-═══════════════════════════════════════════════════════
+DETERMINISTIC ENGINE OUTPUT (DO NOT MODIFY THESE VALUES):
+${JSON.stringify(engineResult, null, 2)}
 
+RAW INDICATOR DATA FOR CONTEXT:
+${dataBlock}
+
+SESSION: ${session} | TIME: ${timeET}
 SESSION DIRECTIVE: ${sessionGuidance}
 ${strategyPrefsBlock}
 
-═══ CONTEXT DATA ═══
-${dataBlock}
-═══ END CONTEXT DATA ═══
-
-═══════════════════════════════════════════════════════
-ANALYTICAL FRAMEWORK — synthesize ONLY the data streams you have:
-
-CLUSTER SCORING (each cluster gets a score from -2.0 to +2.0 where negative=bearish, positive=bullish):
-1. RATES cluster: Treasury yields (TNX, TYX, ZB, ZT, ZQ) — assess direction and velocity of rate moves
-2. CREDIT cluster: Credit spreads (HYG, LQD, HYD, ADSPD, IEF) — assess risk appetite via credit markets
-3. VOL LEVEL cluster: Absolute vol levels (VIX, VVIX, VIX9D, SKEW, Put/Call) — assess fear/complacency
-4. VOL TERM STRUCTURE cluster: VIX term structure (VIX vs VIX9D vs VIX3M) — contango=complacent, inversion=hedging
-5. BREADTH cluster: Market breadth (TICK, ADD, ADVN, DECN, TRIN, UVOL, DVOL) — assess participation
-
-COMPOSITE SCORE = (rates × 0.25) + (credit × 0.20) + (volLevel × 0.20) + (volTermStructure × 0.15) + (breadth × 0.20)
-
-BIAS MAPPING from compositeScore:
-  compositeScore > 1.0 → "STRONGLY_BULLISH"
-  compositeScore > 0.3 → "BULLISH"
-  compositeScore >= -0.3 and <= 0.3 → "NEUTRAL"
-  compositeScore < -0.3 → "BEARISH"
-  compositeScore < -1.0 → "STRONGLY_BEARISH"
-  If clusters conflict significantly → "NO_EDGE"
-
-maxConfidence = (number of FRESH clusters / 5) × 100
-
-IMPORTANT: Only comment on instruments you have data for. Skip any category where no data was provided.
-═══════════════════════════════════════════════════════
-
-YOU MUST RESPOND WITH VALID JSON ONLY. No markdown. No code fences. No explanation outside the JSON.
-
-Use EXACTLY this JSON schema:
+Write ONLY the narrative fields. Return this exact JSON structure:
 {
-  "timestamp": "ISO 8601 string of current time",
-  "dataAge": {
-    "oldestSource": "name of oldest data source",
-    "oldestSourceAge": 0
-  },
-  "bias": "STRONGLY_BULLISH" | "BULLISH" | "NEUTRAL" | "BEARISH" | "STRONGLY_BEARISH" | "NO_EDGE",
-  "compositeScore": -2.0 to 2.0,
-  "confidenceScore": 0 to 100,
-  "maxConfidence": 0 to 100,
-  "hasDivergence": true | false,
-  "divergenceNote": "string or null — explain divergence between clusters if present",
-  "clusters": {
-    "rates": {
-      "score": -2.0 to 2.0,
-      "dataQuality": "FRESH" | "STALE" | "MISSING",
-      "direction": "UP" | "DOWN" | "FLAT",
-      "headline": "One sentence summary of rates cluster",
-      "keyDataPoints": ["TNX: 4.25%", "ZB: 118.5"]
-    },
-    "credit": {
-      "score": -2.0 to 2.0,
-      "dataQuality": "FRESH" | "STALE" | "MISSING",
-      "direction": "UP" | "DOWN" | "FLAT",
-      "headline": "One sentence summary",
-      "keyDataPoints": ["HYG: $78.50 +0.3%", "LQD: $110.25"]
-    },
-    "volLevel": {
-      "score": -2.0 to 2.0,
-      "dataQuality": "FRESH" | "STALE" | "MISSING",
-      "direction": "COMPRESSING" | "EXPANDING" | "FLAT",
-      "headline": "One sentence summary",
-      "keyDataPoints": ["VIX: 18.5", "VVIX: 95.2"]
-    },
-    "volTermStructure": {
-      "score": -2.0 to 2.0,
-      "dataQuality": "FRESH" | "STALE" | "MISSING",
-      "direction": "CONTANGO" | "FLAT" | "INVERTED",
-      "headline": "One sentence summary",
-      "keyDataPoints": ["VIX: 18.5", "VIX9D: 16.2", "VIX3M: 20.1"]
-    },
-    "breadth": {
-      "score": -2.0 to 2.0,
-      "dataQuality": "FRESH" | "STALE" | "MISSING",
-      "direction": "POSITIVE" | "NEGATIVE" | "FLAT",
-      "headline": "One sentence summary",
-      "keyDataPoints": ["TICK: +450", "ADD: +1200", "TRIN: 0.85"]
-    }
-  },
-  "structuralRegime": {
-    "label": "RISK_ON" | "RISK_OFF" | "TRANSITION" | "NO_READ",
-    "timeframe": "string (e.g. 'multi-day', 'intraday')",
-    "summary": "One sentence explaining regime"
-  },
-  "sessionBias": {
-    "label": "BULLISH" | "BEARISH" | "NEUTRAL" | "NO_EDGE",
-    "summary": "One sentence about today's session bias"
-  },
-  "riskState": {
-    "label": "PRESS" | "NORMAL" | "REDUCED" | "NO_TRADE",
-    "reason": "One sentence explaining why this risk posture"
-  },
-  "invalidation": {
-    "conditions": ["Condition 1 that would invalidate the thesis", "Condition 2"]
-  },
-  "levelsToWatch": [
-    {
-      "symbol": "ES",
-      "level": 5200.00,
-      "direction": "ABOVE" | "BELOW",
-      "significance": "Why this level matters"
-    }
-  ],
+  "sessionBiasSummary": "1 sentence about today's intraday lean",
+  "synthesisSummary": "1-2 sentences explaining why the cluster scores produce this bias",
   "actionPlan": [
     {
-      "condition": "IF [specific trigger from data]",
-      "strategy": "THEN [specific action with instrument and levels]",
-      "rationale": "Because [data-driven reason]",
+      "condition": "IF [condition based on the scores and data]",
+      "strategy": "THEN [strategy guidance for user's preferred tickers]",
+      "rationale": "Brief explanation",
       "riskPosture": "FULL" | "REDUCED" | "QUARTER" | "NO_TRADE",
       "conviction": "HIGH" | "MODERATE" | "LOW"
     }
-  ]
-}
-
-RULES:
-- Each cluster MUST have a score between -2.0 and +2.0. Negative = bearish signal, Positive = bullish signal.
-- compositeScore MUST equal the weighted sum of cluster scores using the weights specified above.
-- maxConfidence = (FRESH clusters count / 5) × 100.
-- Set hasDivergence=true if clusters point in conflicting directions (e.g., breadth bullish but vol expanding).
-- Include 2-4 actionPlan items using IF/THEN format with specific instruments and levels.
-- Include 2-5 levelsToWatch with specific numerical levels from the data.
-- Include 1-3 invalidation conditions.
-- All values must come from the context data. Do NOT fabricate prices or levels.
-- Be technically precise, data-driven, and immediately actionable.`;
+  ],
+  "invalidationConditions": ["1-3 short conditions that would change the thesis"]
+}`;
 
   try {
     const google = createGoogleGenerativeAI({ apiKey });
     const chosenModel = model ?? "gemini-2.5-flash";
     const result = streamText({
       model: google(chosenModel),
-      prompt,
-      temperature: temperature ?? 0.2,
+      prompt: narrativePrompt,
+      temperature: 0,
       providerOptions: {
         google: { thinkingConfig: { thinkingBudget: 2048 } },
       },
@@ -1006,8 +984,6 @@ RULES:
     let responseBuffer = "";
 
     for await (const part of result.fullStream) {
-      console.log("[PULSE STREAM] part.type:", part.type);
-
       if (
         part.type === "reasoning" ||
         part.type === "thought" ||
@@ -1025,8 +1001,7 @@ RULES:
     }
 
     clearInterval(heartbeat);
-    console.log("[PULSE STREAM] Buffer length:", responseBuffer.length);
-    console.log("[PULSE STREAM] First 300 chars:", responseBuffer.substring(0, 300));
+    console.log("[PULSE STREAM] Narrative buffer length:", responseBuffer.length);
 
     let cleaned = responseBuffer.trim();
     if (cleaned.startsWith("```json")) cleaned = cleaned.slice(7);
@@ -1035,23 +1010,70 @@ RULES:
     cleaned = cleaned.trim();
 
     try {
-      const parsed = JSON.parse(cleaned);
+      const narrative = JSON.parse(cleaned);
 
-      const enrichedPulse = {
-        ...parsed,
+      const finalPulse = {
+        ...engineResult,
+        dataAge: { oldestSource: "schwab-batch", oldestSourceAge: 0 },
+        sessionBias: {
+          label: engineResult.bias === 'NO_EDGE' ? 'NO_EDGE' :
+                 engineResult.compositeScore > 0 ? 'BULLISH' :
+                 engineResult.compositeScore < 0 ? 'BEARISH' : 'NEUTRAL',
+          summary: narrative.sessionBiasSummary || '',
+        },
+        structuralRegime: {
+          label: engineResult.structuralRegime,
+          timeframe: '1-5 day outlook',
+          summary: narrative.synthesisSummary || '',
+        },
+        riskState: {
+          label: engineResult.riskState,
+          reason: engineResult.riskReason,
+        },
+        invalidation: {
+          conditions: narrative.invalidationConditions || [],
+        },
+        actionPlan: narrative.actionPlan || [],
         session,
         timeET,
         instrumentCount,
         generatedAt: Date.now(),
       };
 
-      res.write(`event: result\ndata: ${JSON.stringify({ type: "complete", pulse: enrichedPulse })}\n\n`);
+      res.write(`event: result\ndata: ${JSON.stringify({ type: "complete", pulse: finalPulse })}\n\n`);
       if (typeof (res as any).flush === "function") (res as any).flush();
     } catch (parseErr) {
-      console.error("[PULSE STREAM] JSON parse failed:", parseErr);
-      console.error("[PULSE STREAM] Raw:", cleaned.substring(0, 500));
-      req.log.error({ err: parseErr, rawLength: responseBuffer.length }, "Market pulse JSON parse error");
-      res.write(`event: error\ndata: ${JSON.stringify({ type: "error", message: "Failed to parse AI response as valid JSON. Please try again." })}\n\n`);
+      console.error("[PULSE STREAM] Narrative JSON parse failed:", parseErr);
+      console.error("[PULSE STREAM] Raw narrative:", cleaned.substring(0, 500));
+      req.log.error({ err: parseErr, rawLength: responseBuffer.length }, "Market pulse narrative parse error");
+
+      const fallbackPulse = {
+        ...engineResult,
+        dataAge: { oldestSource: "schwab-batch", oldestSourceAge: 0 },
+        sessionBias: {
+          label: engineResult.bias === 'NO_EDGE' ? 'NO_EDGE' :
+                 engineResult.compositeScore > 0 ? 'BULLISH' :
+                 engineResult.compositeScore < 0 ? 'BEARISH' : 'NEUTRAL',
+          summary: 'AI narrative unavailable — engine scores are still valid.',
+        },
+        structuralRegime: {
+          label: engineResult.structuralRegime,
+          timeframe: '1-5 day outlook',
+          summary: 'AI narrative generation failed. Scores shown are deterministic.',
+        },
+        riskState: {
+          label: engineResult.riskState,
+          reason: engineResult.riskReason,
+        },
+        invalidation: { conditions: [] },
+        actionPlan: [],
+        session,
+        timeET,
+        instrumentCount,
+        generatedAt: Date.now(),
+      };
+      res.write(`event: result\ndata: ${JSON.stringify({ type: "complete", pulse: fallbackPulse })}\n\n`);
+      if (typeof (res as any).flush === "function") (res as any).flush();
     }
 
     res.end();
