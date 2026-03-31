@@ -545,6 +545,7 @@ export function runMarketPulseEngine(
   data: MarketIndicators,
   previousBias?: BiasLabel
 ): EngineOutput {
+  console.log('[ENGINE INPUT]', JSON.stringify(data, null, 2));
   const clusters = {
     rates: scoreRates(data),
     credit: scoreCredit(data),

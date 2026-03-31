@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { getAccessToken } from "../lib/tokenStore.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { streamText } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
@@ -1763,6 +1764,29 @@ Be concise and institutional-grade. Focus on actual market correlations, sector 
   } catch (err) {
     req.log.error({ err }, "Sympathy plays AI error");
     res.json({ response: "Unable to generate sympathy plays at this time." });
+  }
+});
+
+// TEMPORARY DEBUG — remove after inspection
+router.post("/debug-engine-input", async (req, res) => {
+  const token = getAccessToken("market");
+  if (!token) return res.status(503).json({ error: "No market access token available on server." });
+
+  const symbols: string[] = (req.body as { symbols?: string[] }).symbols ?? [
+    "$VIX","$VVIX","$VIX9D","$VIX3M","$SKEW",
+    "$TNX","$TYX","HYG","LQD","IEF",
+    "$ADD","$TICK","$TRIN","$ADVN","$DECN","$UVOL","$DVOL",
+    "/ES","/NQ","/GC","/CL",
+  ];
+
+  try {
+    const { dataMap } = await fetchMacroPulseData(token, symbols);
+    const indicators = extractMarketIndicators(dataMap);
+    console.log("[DEBUG ENGINE INPUT]", JSON.stringify(indicators, null, 2));
+    return res.json({ indicators, symbolsRequested: symbols });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return res.status(500).json({ error: msg });
   }
 });
 
