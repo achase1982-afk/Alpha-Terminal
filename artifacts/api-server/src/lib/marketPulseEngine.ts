@@ -38,14 +38,14 @@ export interface MarketIndicators {
   trin: number | null;
   add: number | null;
 
-  uvol: number | null;
-  dvol: number | null;
+  // $UVOL and $DVOL removed -- Schwab does not serve these symbols.
+  // If a secondary data source (e.g. IQFeed) is added later, re-enable here.
 
   dataTimestamps?: Record<string, number>;
 }
 
 export type DataQuality = 'FRESH' | 'STALE' | 'MISSING';
-export type BiasLabel = 'STRONGLY_BULLISH' | 'BULLISH' | 'NEUTRAL' | 'BEARISH' | 'STRONGLY_BEARISH' | 'NO_EDGE';
+export type BiasLabel = 'STRONGLY_BULLISH' | 'MODERATELY_BULLISH' | 'SLIGHTLY_BULLISH' | 'NEUTRAL' | 'SLIGHTLY_BEARISH' | 'MODERATELY_BEARISH' | 'STRONGLY_BEARISH' | 'NO_EDGE';
 export type Direction = 'UP' | 'DOWN' | 'FLAT' | 'COMPRESSING' | 'EXPANDING' | 'CONTANGO' | 'INVERTED' | 'POSITIVE' | 'NEGATIVE';
 export type RiskState = 'PRESS' | 'NORMAL' | 'REDUCED' | 'NO_TRADE';
 export type RegimeLabel = 'RISK_ON' | 'RISK_OFF' | 'TRANSITION' | 'NO_READ';
@@ -99,13 +99,9 @@ const WEIGHTS = {
   breadth: 0.20,
 } as const;
 
-const BIAS_THRESHOLDS = {
-  STRONGLY_BULLISH: { enter: 1.00, exit: 0.85 },
-  BULLISH:          { enter: 0.30, exit: 0.15 },
-  NEUTRAL:          { enter: -0.29, exit: -0.29 },
-  BEARISH:          { enter: -0.30, exit: -0.15 },
-  STRONGLY_BEARISH: { enter: -1.00, exit: -0.85 },
-} as const;
+// Bias label thresholds recalibrated —
+// "Strongly" labels require BOTH high composite AND high confidence.
+// Hysteresis thresholds kept for the new granular labels.
 
 // ---------- HELPER FUNCTIONS ----------
 
@@ -323,9 +319,18 @@ function scoreVolTermStructure(data: MarketIndicators): ClusterResult {
     points.push(`$VIX3M ${data.vix3m.toFixed(2)}`);
   }
 
+  let skewScore = 0;
   if (data.skew !== null) {
-    if (data.skew > 145) { score -= 0.5; rules.push('SKEW > 145 (tail hedging): -0.5'); }
-    else if (data.skew < 120) { score += 0.25; rules.push('SKEW < 120 (complacent): +0.25'); }
+    if (data.skew > 150) {
+      skewScore = -1.0; rules.push(`SKEW ${data.skew.toFixed(2)} (>150 extreme tail risk hedging): -1.0`);
+    } else if (data.skew > 140) {
+      skewScore = -0.5; rules.push(`SKEW ${data.skew.toFixed(2)} (140-150 elevated tail risk hedging): -0.5`);
+    } else if (data.skew < 110) {
+      skewScore = +0.25; rules.push(`SKEW ${data.skew.toFixed(2)} (<110 low tail demand, complacency): +0.25`);
+    } else {
+      rules.push(`SKEW ${data.skew.toFixed(2)} (110-140 normal range): 0`);
+    }
+    score += skewScore;
     points.push(`$SKEW ${data.skew.toFixed(2)}`);
   }
 
@@ -370,12 +375,24 @@ function scoreBreadth(data: MarketIndicators): ClusterResult {
     points.push(`$ADVN ${data.advn}`, `$DECN ${data.decn}`);
   }
 
+  let trinScore = 0;
   if (data.trin !== null) {
-    if (data.trin < 0.5) { score += 1.0; rules.push(`TRIN ${data.trin.toFixed(2)} (<0.5): +1.0`); }
-    else if (data.trin < 0.8) { score += 0.5; rules.push(`TRIN ${data.trin.toFixed(2)} (0.5-0.8): +0.5`); }
-    else if (data.trin <= 1.2) { rules.push(`TRIN ${data.trin.toFixed(2)} (0.8-1.2): 0`); }
-    else if (data.trin <= 2.0) { score -= 0.5; rules.push(`TRIN ${data.trin.toFixed(2)} (1.2-2.0): -0.5`); }
-    else { score -= 1.0; rules.push(`TRIN ${data.trin.toFixed(2)} (>2.0): -1.0`); }
+    if (data.trin < 0.5) {
+      trinScore = +1.0; rules.push(`TRIN ${data.trin.toFixed(2)} (<0.5 strongly bullish vol breadth): +1.0`);
+    } else if (data.trin >= 0.5 && data.trin < 1.0) {
+      trinScore = +0.5; rules.push(`TRIN ${data.trin.toFixed(2)} (0.5-1.0 bullish vol breadth): +0.5`);
+    } else if (data.trin >= 1.0 && data.trin < 1.5) {
+      trinScore = 0; rules.push(`TRIN ${data.trin.toFixed(2)} (1.0-1.5 normal range): 0`);
+    } else if (data.trin >= 1.5 && data.trin < 2.0) {
+      trinScore = -0.5; rules.push(`TRIN ${data.trin.toFixed(2)} (1.5-2.0 mildly bearish vol breadth): -0.5`);
+    } else if (data.trin >= 2.0 && data.trin < 2.5) {
+      trinScore = -1.0; rules.push(`TRIN ${data.trin.toFixed(2)} (2.0-2.5 bearish vol breadth): -1.0`);
+    } else if (data.trin >= 2.5 && data.trin < 3.0) {
+      trinScore = -1.5; rules.push(`TRIN ${data.trin.toFixed(2)} (2.5-3.0 very bearish vol breadth): -1.5`);
+    } else if (data.trin >= 3.0) {
+      trinScore = -2.0; rules.push(`TRIN ${data.trin.toFixed(2)} (>=3.0 extreme bearish vol breadth): -2.0`);
+    }
+    score += trinScore;
     points.push(`$TRIN ${data.trin.toFixed(4)}`);
   }
 
@@ -385,7 +402,13 @@ function scoreBreadth(data: MarketIndicators): ClusterResult {
     points.push(`$TICK ${data.tick}`);
   }
 
-  const finalScore = clampScore(score);
+  let finalScore = clampScore(score);
+
+  if (data.trin !== null && data.trin >= 3.0 && finalScore > 0) {
+    rules.push(`Breadth cluster cap: TRIN >= 3.0 overrides positive breadth → clamped to 0.00`);
+    finalScore = 0;
+  }
+
   const direction: Direction = finalScore > 0.25 ? 'POSITIVE' : finalScore < -0.25 ? 'NEGATIVE' : 'FLAT';
 
   const freshCount = [data.advn, data.decn, data.tick, data.trin].filter(v => v !== null).length;
@@ -440,7 +463,7 @@ function calculateConfidence(
   const participationMultiplier = Math.max(0.50, Math.min(1.0, agreeingWeight * 1.67));
 
   // ---- FACTOR 3: Boundary Proximity ----
-  const boundaries = [1.00, 0.30, -0.30, -1.00];
+  const boundaries = [1.75, 0.75, 0.25, -0.25, -0.75, -1.75];
   let minDistanceToBoundary = 2.0;
   for (const boundary of boundaries) {
     const dist = Math.abs(compositeScore - boundary);
@@ -486,21 +509,16 @@ function calculateConfidence(
   return { score: finalConfidence, max: Math.round(maxConfidence) };
 }
 
-function determineBiasFromComposite(composite: number, previousBias?: BiasLabel): BiasLabel {
-  if (previousBias && previousBias !== 'NO_EDGE' && previousBias !== 'NEUTRAL') {
-    const thresholds = BIAS_THRESHOLDS[previousBias];
-    if (thresholds) {
-      if (previousBias === 'STRONGLY_BULLISH' && composite >= thresholds.exit) return 'STRONGLY_BULLISH';
-      if (previousBias === 'BULLISH' && composite >= thresholds.exit) return 'BULLISH';
-      if (previousBias === 'BEARISH' && composite <= -Math.abs(thresholds.exit)) return 'BEARISH';
-      if (previousBias === 'STRONGLY_BEARISH' && composite <= -Math.abs(thresholds.exit)) return 'STRONGLY_BEARISH';
-    }
-  }
-
-  if (composite >= BIAS_THRESHOLDS.STRONGLY_BULLISH.enter) return 'STRONGLY_BULLISH';
-  if (composite >= BIAS_THRESHOLDS.BULLISH.enter) return 'BULLISH';
-  if (composite <= -Math.abs(BIAS_THRESHOLDS.STRONGLY_BEARISH.enter)) return 'STRONGLY_BEARISH';
-  if (composite <= -Math.abs(BIAS_THRESHOLDS.BEARISH.enter)) return 'BEARISH';
+function determineBiasFromComposite(composite: number, _previousBias?: BiasLabel, confidence: number = 0): BiasLabel {
+  if (composite > 1.75 && confidence >= 75) return 'STRONGLY_BULLISH';
+  if (composite > 0.75) return 'MODERATELY_BULLISH';
+  if (composite > 0.25) return 'SLIGHTLY_BULLISH';
+  if (composite >= -0.25) return 'NEUTRAL';
+  if (composite >= -0.75) return 'SLIGHTLY_BEARISH';
+  if (composite >= -1.75) return 'MODERATELY_BEARISH';
+  if (composite < -1.75 && confidence >= 75) return 'STRONGLY_BEARISH';
+  if (composite > 1.75) return 'MODERATELY_BULLISH';
+  if (composite < -1.75) return 'MODERATELY_BEARISH';
   return 'NEUTRAL';
 }
 
@@ -595,8 +613,22 @@ export function runMarketPulseEngine(
   };
 
   const compositeScore = calculateComposite(clusters);
-  const preliminaryBias = determineBiasFromComposite(compositeScore, previousBias);
-  const { score: confidenceScore, max: maxConfidence } = calculateConfidence(clusters, compositeScore, preliminaryBias);
+  const { score: rawConfidenceScore, max: maxConfidence } = calculateConfidence(clusters, compositeScore, 'NEUTRAL');
+
+  const clusterScores = [
+    clusters.rates.score,
+    clusters.credit.score,
+    clusters.volLevel.score,
+    clusters.volTermStructure.score,
+    clusters.breadth.score,
+  ];
+  const positiveCount = clusterScores.filter(s => s > 0).length;
+  const negativeCount = clusterScores.filter(s => s < 0).length;
+  const disagreementPairs = Math.min(positiveCount, negativeCount);
+  const disagreementPenalty = disagreementPairs * 12;
+  const confidenceScore = Math.max(0, rawConfidenceScore - disagreementPenalty);
+
+  const preliminaryBias = determineBiasFromComposite(compositeScore, previousBias, confidenceScore);
   const bias: BiasLabel = confidenceScore < 40 ? 'NO_EDGE' : preliminaryBias;
   const divergence = detectDivergence(clusters);
   const structuralRegime = determineRegime(clusters, compositeScore);

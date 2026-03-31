@@ -1,4 +1,4 @@
-export type PulseBias = "STRONGLY_BULLISH" | "BULLISH" | "NEUTRAL" | "BEARISH" | "STRONGLY_BEARISH" | "NO_EDGE" | "ERROR";
+export type PulseBias = "STRONGLY_BULLISH" | "MODERATELY_BULLISH" | "SLIGHTLY_BULLISH" | "NEUTRAL" | "SLIGHTLY_BEARISH" | "MODERATELY_BEARISH" | "STRONGLY_BEARISH" | "NO_EDGE" | "ERROR";
 export type DataQuality = "FRESH" | "STALE" | "MISSING";
 export type RatesDirection = "UP" | "DOWN" | "FLAT";
 export type CreditDirection = "UP" | "DOWN" | "FLAT";
@@ -73,8 +73,8 @@ export interface RawIndicators {
   tick: number | null;
   trin: number | null;
   add: number | null;
-  uvol: number | null;
-  dvol: number | null;
+  // $UVOL and $DVOL removed -- Schwab does not serve these symbols.
+  // If a secondary data source (e.g. IQFeed) is added later, re-enable here.
 }
 
 export interface MarketPulseData {
@@ -170,8 +170,8 @@ export const ALL_PULSE_INDICATORS: PulseIndicator[] = [
   { symbol: "$ADVN",  label: "ADVN (Advancers)",             category: "breadth" },
   { symbol: "$DECN",  label: "DECN (Decliners)",             category: "breadth" },
   { symbol: "$TRIN",  label: "TRIN (Arms Index)",            category: "breadth" },
-  { symbol: "$UVOL",  label: "UVOL (Up Volume)",             category: "breadth" },
-  { symbol: "$DVOL",  label: "DVOL (Down Volume)",           category: "breadth" },
+  // $UVOL and $DVOL removed -- Schwab does not serve these symbols.
+  // If a secondary data source (e.g. IQFeed) is added later, re-enable here.
 
   { symbol: "$TNX",   label: "TNX (10Y Yield)",              category: "rates" },
   { symbol: "$TYX",   label: "TYX (30Y Yield)",              category: "rates" },

@@ -1,0 +1,162 @@
+# Scoring Engine Fixes – Paste This Into Replit
+
+I need you to make the following changes to the Market Pulse deterministic TypeScript scoring engine. These are all frontend scoring logic changes. Do not touch Gemini narrative generation, the backend, or the Schwab streaming layer.
+
+-----
+
+## 1. Remove $UVOL and $DVOL
+
+Remove $UVOL and $DVOL from the breadth indicator symbol list entirely. They are not supported by Schwab (return sentinel value 92233720368 or zero). Do not attempt to derive them from TRIN. Remove any references to them in:
+
+- The symbol subscription list
+- The breadth cluster scoring rules
+- The engine audit display
+- Any type definitions or interfaces that reference them
+
+Leave a code comment where they were removed:
+
+```
+// $UVOL and $DVOL removed -- Schwab does not serve these symbols.
+// If a secondary data source (e.g. IQFeed) is added later, re-enable here.
+```
+
+Also add a guard in the Schwab streaming handler: if any indicator value equals 92233720368 (the Schwab sentinel for unsupported symbols), treat it as null/undefined and skip it. Do not pass sentinel values into any scoring calculation.
+
+-----
+
+## 2. Tiered TRIN Penalty in Breadth Cluster
+
+Find the current TRIN scoring rule in the Breadth cluster. It currently applies a flat -1.0 penalty when TRIN > 2.0. Replace it with tiered scoring:
+
+```
+// TRIN Tiered Penalty
+if (trin >= 1.0 && trin < 1.5) {
+  // Normal range, neutral -- no score contribution from TRIN
+  trinScore = 0;
+} else if (trin >= 0.5 && trin < 1.0) {
+  // Bullish volume breadth
+  trinScore = +0.5;
+} else if (trin < 0.5) {
+  // Strongly bullish volume breadth
+  trinScore = +1.0;
+} else if (trin >= 1.5 && trin < 2.0) {
+  // Mildly bearish volume breadth
+  trinScore = -0.5;
+} else if (trin >= 2.0 && trin < 2.5) {
+  // Bearish volume breadth
+  trinScore = -1.0;
+} else if (trin >= 2.5 && trin < 3.0) {
+  // Very bearish volume breadth
+  trinScore = -1.5;
+} else if (trin >= 3.0) {
+  // Extreme bearish volume breadth
+  trinScore = -2.0;
+}
+```
+
+CRITICAL: Add a cluster cap rule. If TRIN >= 3.0, the entire Breadth cluster score must be capped at 0.00 maximum, regardless of what $ADVN/$DECN AD ratio or other breadth inputs contribute. This prevents a positive AD ratio from masking extreme volume distribution. Implement this as a post-calculation clamp:
+
+```
+// Breadth cluster cap: extreme TRIN overrides positive breadth
+if (trin >= 3.0 && breadthClusterScore > 0) {
+  breadthClusterScore = 0;
+}
+```
+
+-----
+
+## 3. SKEW Penalty in Vol Term Cluster
+
+The Vol Term cluster currently only evaluates VIX9D vs VIX (term structure). Add SKEW as a new scored input in this cluster:
+
+```
+// SKEW tail risk scoring
+let skewScore = 0;
+if (skew > 150) {
+  skewScore = -1.0;   // Extreme tail risk hedging
+} else if (skew > 140) {
+  skewScore = -0.5;   // Elevated tail risk hedging
+} else if (skew < 110) {
+  skewScore = +0.25;  // Low tail demand, complacency
+}
+// Normal range 110-140: no score contribution
+```
+
+Add this skewScore to the Vol Term cluster total alongside the existing VIX9D vs VIX term structure score.
+
+Update the engine audit display to show the SKEW value, its score contribution, and which rule triggered.
+
+-----
+
+## 4. Label Threshold Recalibration
+
+Find where the composite score maps to the bias label string (e.g. “STRONGLY BULLISH”, “BULLISH”, etc.). Replace the current thresholds with:
+
+```
+// Bias label from composite score
+function getBiasLabel(composite: number, confidence: number): string {
+  // "Strongly" labels require BOTH high composite AND high confidence
+  if (composite > 1.75 && confidence >= 75) return "STRONGLY BULLISH";
+  if (composite > 0.75) return "MODERATELY BULLISH";
+  if (composite > 0.25) return "SLIGHTLY BULLISH";
+  if (composite >= -0.25) return "NEUTRAL";
+  if (composite >= -0.75) return "SLIGHTLY BEARISH";
+  if (composite >= -1.75) return "MODERATELY BEARISH";
+  if (composite < -1.75 && confidence >= 75) return "STRONGLY BEARISH";
+  // Fallback for strong composite but low confidence
+  if (composite > 1.75) return "MODERATELY BULLISH";
+  if (composite < -1.75) return "MODERATELY BEARISH";
+  return "NEUTRAL";
+}
+```
+
+-----
+
+## 5. Confidence Penalty for Cluster Disagreement
+
+Add a new step after all clusters are scored but before final confidence is output. Check for cluster disagreement and penalize confidence:
+
+```
+// Cluster disagreement penalty
+// Compare signs of each cluster score
+const clusterScores = [ratesScore, creditScore, volLevelScore, volTermScore, breadthScore];
+const positiveCount = clusterScores.filter(s => s > 0).length;
+const negativeCount = clusterScores.filter(s => s < 0).length;
+
+// If clusters disagree (some positive, some negative), penalize confidence
+const disagreementPairs = Math.min(positiveCount, negativeCount);
+const disagreementPenalty = disagreementPairs * 12; // 12 points per conflicting pair
+confidence = Math.max(0, confidence - disagreementPenalty);
+```
+
+This ensures that when signals conflict (e.g. credit is bullish but breadth volume is bearish), the confidence score reflects that uncertainty rather than presenting a high-confidence call built on contradictory data.
+
+-----
+
+## Summary of Changes
+
+1. Remove $UVOL/$DVOL from everything + add sentinel guard
+1. Replace flat TRIN penalty with 7-tier scoring + cluster cap at TRIN >= 3.0
+1. Add SKEW scoring to Vol Term cluster
+1. Recalibrate bias labels to require higher composite + confidence for “Strongly” labels
+1. Add cluster disagreement confidence penalty
+
+Do NOT change: Gemini narrative generation, Schwab OAuth, WebSocket streaming layer, or any backend routes. These are all deterministic frontend scoring engine changes.
+
+After implementing, show me the updated engine audit output using today’s values so I can verify the math:
+
+- VIX: 28.03 (-8.43%)
+- VVIX: 122.23 (-4.39%)
+- VIX9D: 27.96
+- VIX3M: 27.38
+- SKEW: 142.23
+- TNX: 4.31 (-0.76%)
+- TYX: 4.90 (-0.18%)
+- HYG: +0.53%
+- LQD: +0.39%
+- IEF: +0.27%
+- ADVN: 1950
+- DECN: 826
+- TRIN: 3.37
+- TICK: 130 (or latest)
+- ADD: 1066

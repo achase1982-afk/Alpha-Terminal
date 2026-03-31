@@ -3,9 +3,11 @@ import { useMarketPulseStore } from "../../stores/marketPulseStore";
 
 const BIAS_COLORS: Record<string, { label: string; accent: string }> = {
   STRONGLY_BULLISH: { label: "text-emerald-400", accent: "bg-emerald-400" },
-  BULLISH: { label: "text-emerald-400", accent: "bg-emerald-400" },
+  MODERATELY_BULLISH: { label: "text-emerald-400", accent: "bg-emerald-400" },
+  SLIGHTLY_BULLISH: { label: "text-emerald-300", accent: "bg-emerald-300" },
   NEUTRAL: { label: "text-amber-400", accent: "bg-amber-400" },
-  BEARISH: { label: "text-red-400", accent: "bg-red-400" },
+  SLIGHTLY_BEARISH: { label: "text-red-300", accent: "bg-red-300" },
+  MODERATELY_BEARISH: { label: "text-red-400", accent: "bg-red-400" },
   STRONGLY_BEARISH: { label: "text-red-400", accent: "bg-red-400" },
   NO_EDGE: { label: "text-zinc-500", accent: "bg-zinc-600" },
 };
@@ -35,8 +37,8 @@ export function AiBiasStrip({ onNavigateToPulse }: AiBiasStripProps) {
   }
 
   const colors = BIAS_COLORS[pulseData.bias] ?? BIAS_COLORS.NO_EDGE;
-  const isBullish = pulseData.bias === "BULLISH" || pulseData.bias === "STRONGLY_BULLISH";
-  const isBearish = pulseData.bias === "BEARISH" || pulseData.bias === "STRONGLY_BEARISH";
+  const isBullish = pulseData.bias === "STRONGLY_BULLISH" || pulseData.bias === "MODERATELY_BULLISH" || pulseData.bias === "SLIGHTLY_BULLISH";
+  const isBearish = pulseData.bias === "STRONGLY_BEARISH" || pulseData.bias === "MODERATELY_BEARISH" || pulseData.bias === "SLIGHTLY_BEARISH";
   const ageMs = Date.now() - pulseData.generatedAt;
   const ageMinutes = Math.floor(ageMs / 60_000);
   const isStale = ageMinutes > 15;

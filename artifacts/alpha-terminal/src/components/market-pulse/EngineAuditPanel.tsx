@@ -37,8 +37,8 @@ function buildIndicatorRows(raw: RawIndicators): IndicatorRow[] {
     { symbol: "$ADD", label: "A/D Line", value: raw.add, change: null, cluster: "breadth" },
     { symbol: "$TICK", label: "NYSE Tick", value: raw.tick, change: null, cluster: "breadth" },
     { symbol: "$TRIN", label: "Arms Index", value: raw.trin, change: null, cluster: "breadth" },
-    { symbol: "$UVOL", label: "Up Volume", value: raw.uvol, change: null, cluster: "breadth" },
-    { symbol: "$DVOL", label: "Down Volume", value: raw.dvol, change: null, cluster: "breadth" },
+    // $UVOL and $DVOL removed -- Schwab does not serve these symbols.
+    // If a secondary data source (e.g. IQFeed) is added later, re-enable here.
   ];
 }
 

@@ -364,8 +364,8 @@ const PULSE_SYMBOLS: PulseSymbol[] = [
   { display: "IEF",   api: "IEF",    category: "credit",    description: "iShares 7-10 Year Treasury Bond ETF" },
   { display: "$ADVN", api: "$ADVN",  category: "breadth",   description: "NYSE Advancing Issues — breadth count" },
   { display: "$DECN", api: "$DECN",  category: "breadth",   description: "NYSE Declining Issues — breadth count" },
-  { display: "$UVOL", api: "$UVOL",  category: "breadth",   description: "NYSE Up Volume — volume in advancing stocks" },
-  { display: "$DVOL", api: "$DVOL",  category: "breadth",   description: "NYSE Down Volume — volume in declining stocks" },
+  // $UVOL and $DVOL removed -- Schwab does not serve these symbols.
+  // If a secondary data source (e.g. IQFeed) is added later, re-enable here.
 ];
 
 // Maps user-facing symbols to Schwab API format (adds $ prefix for known indices)
@@ -376,7 +376,7 @@ const INDEX_TO_SCHWAB: Record<string, string> = {
   "TICK": "$TICK", "ADD": "$ADD", "TRIN": "$TRIN", "CPC": "$CPC",
   "OEX": "$OEX", "MNX": "$MNX", "XSP": "$XSP",
   "VIX9D": "$VIX9D", "VIX3M": "$VIX3M", "SKEW": "$SKEW",
-  "ADVN": "$ADVN", "DECN": "$DECN", "UVOL": "$UVOL", "DVOL": "$DVOL",
+  "ADVN": "$ADVN", "DECN": "$DECN",
 };
 
 function symbolToSchwabApi(userSymbol: string): string {
@@ -537,16 +537,8 @@ function extractMarketIndicators(dataMap: Map<string, Record<string, unknown>>):
     return raw > 10 ? Math.round((raw / 10) * 10000) / 10000 : raw;
   };
 
-  // BUG FIX 2: UVOL/DVOL — Schwab sometimes returns a 64-bit integer sentinel
-  // (~9.22×10^18) when real volume is unavailable, which overflows to ~92B in JS.
-  // Cap at 50B; anything above is a sentinel value and should be null.
-  const MAX_REASONABLE_VOLUME = 50_000_000_000;
-  const safeVol = (sym: string): number | null => {
-    const v = lastOrMark(sym);
-    if (v === null) return null;
-    if (v > MAX_REASONABLE_VOLUME) return null;
-    return v;
-  };
+  // BUG FIX 2: UVOL/DVOL sentinel guard now handled in schwabStreamer.ts pick() function.
+  // safeVol helper removed — $UVOL/$DVOL no longer polled.
 
   // BUG FIX 3: ADD — Schwab's $ADD intraday net A/D often returns 0 when no real
   // tick is available. Fall back to computing ADVN − DECN from the same snapshot.
@@ -589,8 +581,8 @@ function extractMarketIndicators(dataMap: Map<string, Record<string, unknown>>):
     trin: lastOrMark('$TRIN'),
     add, // BUG FIX 3 applied: computed from ADVN−DECN if API returns 0
 
-    uvol: safeVol('$UVOL'), // BUG FIX 2 applied: sentinel overflow → null
-    dvol: safeVol('$DVOL'), // BUG FIX 2 applied: sentinel overflow → null
+    // $UVOL and $DVOL removed -- Schwab does not serve these symbols.
+    // If a secondary data source (e.g. IQFeed) is added later, re-enable here.
   };
 }
 
@@ -947,8 +939,8 @@ router.post("/market-pulse/stream", async (req, res) => {
   const spyDivergenceBlock = (() => {
     if (spyChangePct === null) return "";
     const spyDir = spyChangePct > 0 ? "UP" : spyChangePct < 0 ? "DOWN" : "FLAT";
-    const biasBullish = engineResult.bias === "BULLISH" || engineResult.bias === "STRONGLY_BULLISH";
-    const biasBearish = engineResult.bias === "BEARISH" || engineResult.bias === "STRONGLY_BEARISH";
+    const biasBullish = engineResult.bias === "STRONGLY_BULLISH" || engineResult.bias === "MODERATELY_BULLISH" || engineResult.bias === "SLIGHTLY_BULLISH";
+    const biasBearish = engineResult.bias === "STRONGLY_BEARISH" || engineResult.bias === "MODERATELY_BEARISH" || engineResult.bias === "SLIGHTLY_BEARISH";
     const diverges = (biasBullish && spyDir === "DOWN") || (biasBearish && spyDir === "UP");
     const line = `Current SPY performance: ${spyChangePct >= 0 ? "+" : ""}${spyChangePct.toFixed(2)}% (${spyDir})`;
     if (diverges) {

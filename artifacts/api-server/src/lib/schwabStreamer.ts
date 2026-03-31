@@ -173,8 +173,8 @@ const INDEX_MAP: Record<string, string> = {
   OEX: "$OEX", "$OEX": "$OEX",
   MNX: "$MNX", "$MNX": "$MNX",
   XSP: "$XSP", "$XSP": "$XSP",
-  UVOL: "$UVOL", "$UVOL": "$UVOL",
-  DVOL: "$DVOL", "$DVOL": "$DVOL",
+  // $UVOL and $DVOL removed -- Schwab does not serve these symbols.
+  // If a secondary data source (e.g. IQFeed) is added later, re-enable here.
   ADVN: "$ADVN", "$ADVN": "$ADVN",
   DECN: "$DECN", "$DECN": "$DECN",
   TICK: "$TICK", "$TICK": "$TICK",
@@ -381,7 +381,7 @@ let equityTickCount = 0;
 let lastEquityTickLog = 0;
 let fieldDiagDone = false;
 
-const DIAG_SYMBOLS = new Set(["$UVOL", "$DVOL", "$ADVN", "$DECN", "$TICK", "$ADD", "$TRIN", "$ADSPD"]);
+const DIAG_SYMBOLS = new Set(["$ADVN", "$DECN", "$TICK", "$ADD", "$TRIN", "$ADSPD"]);
 const diagDone = new Set<string>();
 
 function handleData(content: Record<string, unknown>[]) {
@@ -440,9 +440,12 @@ function handleData(content: Record<string, unknown>[]) {
       high: null, low: null, close: null, ts: 0,
     };
 
+    const SENTINEL_THRESHOLD = 9e10;
     const pick = (f: number) => {
       const v = item[String(f)];
-      return typeof v === "number" && !isNaN(v) ? v : null;
+      if (typeof v !== "number" || isNaN(v)) return null;
+      if (Math.abs(v) > SENTINEL_THRESHOLD) return null;
+      return v;
     };
 
     const regLastRaw      = pick(FIELD.REG_LAST);
@@ -503,9 +506,12 @@ function handleFuturesData(content: Record<string, unknown>[]) {
       high: null, low: null, close: null, ts: 0,
     };
 
+    const SENTINEL_THRESHOLD = 9e10;
     const pick = (f: number) => {
       const v = item[String(f)];
-      return typeof v === "number" && !isNaN(v) ? v : null;
+      if (typeof v !== "number" || isNaN(v)) return null;
+      if (Math.abs(v) > SENTINEL_THRESHOLD) return null;
+      return v;
     };
 
     const lastVal  = pick(FUT_FIELD.LAST)  ?? pick(FUT_FIELD.MARK) ?? existing.last;
@@ -591,9 +597,12 @@ function handleOptionData(content: Record<string, unknown>[]) {
       mark: null, change: null, ts: 0,
     };
 
+    const SENTINEL_THRESHOLD = 9e10;
     const pick = (f: number) => {
       const v = item[String(f)];
-      return typeof v === "number" && !isNaN(v) ? v : null;
+      if (typeof v !== "number" || isNaN(v)) return null;
+      if (Math.abs(v) > SENTINEL_THRESHOLD) return null;
+      return v;
     };
 
     const updated: OptionTick = {
