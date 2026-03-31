@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Zap, Activity, Radio } from "lucide-react";
 import { useTerminalStore } from "../../lib/store";
 import { useMarketPulseStore } from "../../stores/marketPulseStore";
@@ -13,6 +14,7 @@ import { LevelsToWatch } from "./LevelsToWatch";
 import { EngineAuditPanel } from "./EngineAuditPanel";
 import { ALL_PULSE_INDICATORS } from "@/types/marketPulse";
 import { AiThinkingFeed } from "../ai-shared/AiThinkingFeed";
+import { queryKeys } from "../../api/queryKeys";
 
 const API_BASE = "/api";
 const CLUSTER_ORDER: ClusterKey[] = ["rates", "credit", "volLevel", "volTerm", "breadth", "riskAppetite", "macro"];
@@ -51,6 +53,7 @@ interface MarketPulseDashboardProps {
 
 export function MarketPulseDashboard({ autoGenerate }: MarketPulseDashboardProps = {}) {
   const { accessToken, aiModel } = useTerminalStore();
+  const queryClient = useQueryClient();
   const {
     pulseData,
     isLoading,
@@ -79,6 +82,7 @@ export function MarketPulseDashboard({ autoGenerate }: MarketPulseDashboardProps
         generatedAt: Date.now(),
       };
       setPulseData(enriched);
+      queryClient.setQueryData(queryKeys.marketPulse.current(), enriched);
       setLoading(false);
       setStreaming(false);
       setLocalGenerating(false);

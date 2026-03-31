@@ -1,0 +1,387 @@
+# Persist All AI Results Across Tab Navigation with TanStack Query
+
+## The Problem
+
+When the user generates results in any AI sub-tab (PULSE, STRATEGIST, TECHNICALS) or runs a SCAN, then navigates away and comes back, all results are gone. The components unmount on navigation and their local state (useState) is destroyed. The user has to regenerate everything from scratch.
+
+This happens because all result data is stored in component-level state. When the component unmounts (user switches tabs), React destroys that state.
+
+## The Solution
+
+Use TanStack Query as a global cache layer. TanStack Query is already installed in the project. Each feature stores its results in the query cache with a unique key. When the user navigates away and returns, the component reads from the cache instantly – no loading state, no re-fetch, no delay.
+
+The streaming hooks (useAiStream) still handle the SSE connections. TanStack Query just stores and serves the final results.
+
+## Implementation
+
+### Step 1: Create query key definitions
+
+Create a new file for all AI-related query keys:
+
+```typescript
+// src/api/queryKeys.ts
+
+export const queryKeys = {
+  // Market Pulse
+  marketPulse: {
+    all: ['marketPulse'] as const,
+    current: () => [...queryKeys.marketPulse.all, 'current'] as const,
+  },
+
+  // Options Strategist (keyed by ticker)
+  strategist: {
+    all: ['strategist'] as const,
+    byTicker: (ticker: string) => [...queryKeys.strategist.all, ticker] as const,
+  },
+
+  // Technical Analysis (keyed by ticker)
+  technicals: {
+    all: ['technicals'] as const,
+    byTicker: (ticker: string) => [...queryKeys.technicals.all, ticker] as const,
+  },
+
+  // Scanner results
+  scan: {
+    all: ['scan'] as const,
+    latest: () => [...queryKeys.scan.all, 'latest'] as const,
+  },
+} as const;
+```
+
+### Step 2: Create a hook for each feature
+
+Each hook wraps TanStack Query for caching + the existing streaming/fetch logic for data retrieval.
+
+**Market Pulse hook:**
+
+```typescript
+// src/hooks/useMarketPulse.ts
+
+import { useQueryClient, useQuery } from '@tanstack/react-query';
+import { useAiStream } from './useAiStream';
+import { queryKeys } from '../api/queryKeys';
+import { useCallback } from 'react';
+
+export function useMarketPulse(settings?: any) {
+  const queryClient = useQueryClient();
+
+  // Cache layer: serves stored pulse data instantly on re-mount
+  const { data: pulseData } = useQuery({
+    queryKey: queryKeys.marketPulse.current(),
+    enabled: false, // never auto-fetches, we populate manually
+    staleTime: 10 * 60 * 1000,   // 10 min before stale
+    gcTime: 30 * 60 * 1000,      // 30 min before garbage collected
+  });
+
+  // Streaming layer: handles SSE connection
+  const {
+    thinkingTexts,
+    isStreaming,
+    error,
+    startStream,
+  } = useAiStream({
+    url: '/api/ai/market-pulse/stream',
+    onResult: (data) => {
+      // When stream completes, store in TanStack Query cache
+      queryClient.setQueryData(queryKeys.marketPulse.current(), data);
+    },
+  });
+
+  const generatePulse = useCallback(async () => {
+    const previousBias = pulseData?.bias || undefined;
+    await startStream({ settings, previousBias });
+  }, [startStream, settings, pulseData?.bias]);
+
+  return {
+    pulseData,
+    thinkingTexts,
+    isStreaming,
+    error,
+    generatePulse,
+    refreshPulse: generatePulse,
+    hasPulse: !!pulseData,
+    isStale: pulseData
+      ? (Date.now() - new Date(pulseData.timestamp).getTime()) > 15 * 60 * 1000
+      : false,
+  };
+}
+```
+
+**Options Strategist hook:**
+
+```typescript
+// src/hooks/useStrategist.ts
+
+import { useQueryClient, useQuery } from '@tanstack/react-query';
+import { useAiStream } from './useAiStream';
+import { queryKeys } from '../api/queryKeys';
+import { useCallback } from 'react';
+
+export function useStrategist(ticker: string, settings?: any) {
+  const queryClient = useQueryClient();
+
+  // Cache layer: keyed by ticker so each ticker's results persist separately
+  const { data: strategistData } = useQuery({
+    queryKey: queryKeys.strategist.byTicker(ticker),
+    enabled: false,
+    staleTime: 10 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+  });
+
+  // Streaming layer
+  const {
+    thinkingTexts,
+    isStreaming,
+    error,
+    startStream,
+  } = useAiStream({
+    url: '/api/ai/options-strategist/stream',
+    onResult: (data) => {
+      queryClient.setQueryData(queryKeys.strategist.byTicker(ticker), data);
+    },
+  });
+
+  const runStrategist = useCallback(async (instructions?: string) => {
+    await startStream({ ticker, settings, instructions });
+  }, [startStream, ticker, settings]);
+
+  return {
+    strategistData,
+    thinkingTexts,
+    isStreaming,
+    error,
+    runStrategist,
+    hasResults: !!strategistData,
+  };
+}
+```
+
+**Technical Analysis hook:**
+
+```typescript
+// src/hooks/useTechnicals.ts
+
+import { useQueryClient, useQuery } from '@tanstack/react-query';
+import { useAiStream } from './useAiStream';
+import { queryKeys } from '../api/queryKeys';
+import { useCallback } from 'react';
+
+export function useTechnicals(ticker: string) {
+  const queryClient = useQueryClient();
+
+  const { data: techData } = useQuery({
+    queryKey: queryKeys.technicals.byTicker(ticker),
+    enabled: false,
+    staleTime: 10 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+  });
+
+  const {
+    thinkingTexts,
+    isStreaming,
+    error,
+    startStream,
+  } = useAiStream({
+    url: '/api/ai/technical-analysis/stream',
+    onResult: (data) => {
+      queryClient.setQueryData(queryKeys.technicals.byTicker(ticker), data);
+    },
+  });
+
+  const runTechnicals = useCallback(async () => {
+    await startStream({ ticker });
+  }, [startStream, ticker]);
+
+  return {
+    techData,
+    thinkingTexts,
+    isStreaming,
+    error,
+    runTechnicals,
+    hasResults: !!techData,
+  };
+}
+```
+
+**Scan hook:**
+
+```typescript
+// src/hooks/useScan.ts
+
+import { useQueryClient, useQuery } from '@tanstack/react-query';
+import { queryKeys } from '../api/queryKeys';
+import { useCallback, useState } from 'react';
+
+export function useScan() {
+  const queryClient = useQueryClient();
+  const [isScanning, setIsScanning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const { data: scanResults } = useQuery({
+    queryKey: queryKeys.scan.latest(),
+    enabled: false,
+    staleTime: 10 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+  });
+
+  const runScan = useCallback(async (scanParams: any) => {
+    setIsScanning(true);
+    setError(null);
+    try {
+      // Use whatever the current scan endpoint is
+      const response = await fetch('/api/ai/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(scanParams),
+      });
+      if (!response.ok) throw new Error(`Scan failed: ${response.status}`);
+      const data = await response.json();
+      // Store in cache
+      queryClient.setQueryData(queryKeys.scan.latest(), data);
+    } catch (err: any) {
+      setError(err.message || 'Scan failed');
+    } finally {
+      setIsScanning(false);
+    }
+  }, [queryClient]);
+
+  return {
+    scanResults,
+    isScanning,
+    error,
+    runScan,
+    hasResults: !!scanResults,
+  };
+}
+```
+
+### Step 3: Update each component to use the new hooks
+
+Replace direct state management and fetch calls in each component with the new hooks.
+
+**MarketPulseDashboard.tsx:**
+
+```tsx
+// BEFORE (component manages its own state, loses data on unmount):
+// const [pulseData, setPulseData] = useState(null);
+// const { startStream, ... } = useAiStream({ onResult: setPulseData });
+
+// AFTER (TanStack Query persists data across navigation):
+import { useMarketPulse } from '../../hooks/useMarketPulse';
+
+function MarketPulseDashboard() {
+  const {
+    pulseData, thinkingTexts, isStreaming, error,
+    generatePulse, refreshPulse, hasPulse, isStale,
+  } = useMarketPulse(/* settings */);
+
+  if (!hasPulse && !isStreaming) return <GenerateButton onClick={generatePulse} />;
+  if (isStreaming) return <><AiThinkingFeed texts={thinkingTexts} isStreaming /><PulseSkeleton /></>;
+  if (pulseData) return <Dashboard data={pulseData} onRefresh={refreshPulse} isStale={isStale} />;
+  if (error) return <ErrorCard message={error} onRetry={generatePulse} />;
+}
+```
+
+**Options Strategist component:**
+
+```tsx
+import { useStrategist } from '../../hooks/useStrategist';
+
+function OptionsStrategist({ ticker }: { ticker: string }) {
+  const {
+    strategistData, thinkingTexts, isStreaming, error,
+    runStrategist, hasResults,
+  } = useStrategist(ticker);
+
+  // If user already ran the strategist on AAPL, switches to Pulse tab,
+  // and comes back -- strategistData is still here from the cache.
+  // No re-generation needed.
+}
+```
+
+**Technical Analysis component:**
+
+```tsx
+import { useTechnicals } from '../../hooks/useTechnicals';
+
+function TechnicalAnalysis({ ticker }: { ticker: string }) {
+  const {
+    techData, thinkingTexts, isStreaming, error,
+    runTechnicals, hasResults,
+  } = useTechnicals(ticker);
+}
+```
+
+**Scan component:**
+
+```tsx
+import { useScan } from '../../hooks/useScan';
+
+function ScanView() {
+  const { scanResults, isScanning, error, runScan, hasResults } = useScan();
+}
+```
+
+**AiBiasStrip.tsx (persistent strip reads from same cache as dashboard):**
+
+```tsx
+import { useMarketPulse } from '../../hooks/useMarketPulse';
+
+function AiBiasStrip() {
+  const { pulseData, hasPulse, isStale } = useMarketPulse();
+  // This reads from the SAME cache as MarketPulseDashboard.
+  // No duplicate fetches, no separate state management.
+}
+```
+
+### Step 4: Verify QueryClient is configured at app root
+
+Make sure the app root has a QueryClientProvider. It probably already does since TanStack Query is installed, but verify:
+
+```tsx
+// In your App.tsx or main layout:
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000,      // 5 min default
+      gcTime: 30 * 60 * 1000,         // 30 min default
+      refetchOnWindowFocus: false,     // don't refetch when user switches browser tabs
+      refetchOnReconnect: false,
+      retry: false,
+    },
+  },
+});
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      {/* rest of app */}
+    </QueryClientProvider>
+  );
+}
+```
+
+### What this fixes:
+
+- **PULSE tab:** Generate pulse, switch to STRATEGIST, switch back to PULSE – data is still there. No regeneration.
+- **STRATEGIST tab:** Run strategist on AAPL, switch to PULSE, switch back – AAPL strategy results still there.
+- **TECHNICALS tab:** Same behavior. Results persist across tab switches.
+- **SCAN tab:** Run a scan, check a specific ticker, come back – scan results still there.
+- **Cross-ticker:** If you run the strategist on AAPL, then switch to MU and run it, then switch back to AAPL – the AAPL results are still cached separately from MU (because the query key includes the ticker).
+- **Bias strip:** Reads from the same pulse cache as the dashboard. Always in sync.
+
+### Cache timing:
+
+- **staleTime (10 min):** Data is considered fresh for 10 minutes. During this window, re-mounting the component serves cached data instantly with zero loading state.
+- **gcTime (30 min):** After 30 minutes of the component being unmounted, the cache entry is garbage collected (deleted from memory). This is the security feature: data doesn’t live in memory forever.
+- **Data lives in JavaScript memory only.** Not in localStorage, not in sessionStorage. When the user closes the tab, everything is gone. This is the most secure approach for financial data.
+
+### What NOT to change:
+
+- Do NOT change the backend endpoints
+- Do NOT change the useAiStream hook (it still handles SSE streaming)
+- Do NOT change the scoring engine
+- Do NOT use localStorage or sessionStorage for any of this data
+- Do NOT change the UI components’ visual layout – only replace how they get their data (from local useState to these hooks)

@@ -1,4 +1,4 @@
-import { useState, memo } from "react";
+import { useState, useEffect, memo, useRef } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useQuote } from "@/hooks/useQuote";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
 import { Zap, SlidersHorizontal, TrendingUp, TrendingDown, Minus, ChevronUp, ChevronDown, AlertTriangle, Search } from "lucide-react";
+import { useScanCache } from "@/hooks/useScanCache";
 
 const API_BASE = "/api";
 
@@ -195,6 +196,7 @@ export function MarketScanner({ subscribeEquitySymbols }: {
   subscribeEquitySymbols?: (symbols: string[]) => void;
 }) {
   const { accessToken, aiModel, aiTemp, setSymbol } = useTerminalStore();
+  const { cachedData: scanCache, setCachedData: setScanCache } = useScanCache();
 
   const [mode, setMode] = useState<"ai" | "manual">("ai");
   const [universe, setUniverse] = useState("sp100");
@@ -206,6 +208,17 @@ export function MarketScanner({ subscribeEquitySymbols }: {
   const [rawError, setRawError] = useState<string | null>(null);
   const [manualQuotes, setManualQuotes] = useState<ScannerQuote[]>([]);
   const [scanCount, setScanCount] = useState<number | null>(null);
+
+  const scanCacheRestoredRef = useRef(false);
+  useEffect(() => {
+    if (scanCacheRestoredRef.current || !scanCache) return;
+    scanCacheRestoredRef.current = true;
+    const r = scanCache.results;
+    if (r?.aiSetups) setAiSetups(r.aiSetups);
+    if (r?.marketSummary) setMarketSummary(r.marketSummary);
+    if (r?.manualQuotes) setManualQuotes(r.manualQuotes);
+    if (r?.scanCount != null) setScanCount(r.scanCount);
+  }, [scanCache]);
 
   const [sortKey, setSortKey] = useState<SortKey>("confidence");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
@@ -286,12 +299,20 @@ export function MarketScanner({ subscribeEquitySymbols }: {
         if (setups.length && subscribeEquitySymbols) {
           subscribeEquitySymbols(setups.map(s => s.symbol));
         }
+        setScanCache({
+          results: { aiSetups: setups, marketSummary: data.marketSummary ?? "", manualQuotes: [], scanCount: syms.length },
+          timestamp: Date.now(),
+        });
       } else {
         const quotes = data.quotes ?? [];
         setManualQuotes(quotes);
         if (quotes.length && subscribeEquitySymbols) {
           subscribeEquitySymbols(quotes.map(q => q.symbol));
         }
+        setScanCache({
+          results: { aiSetups: [], marketSummary: "", manualQuotes: quotes, scanCount: syms.length },
+          timestamp: Date.now(),
+        });
       }
     } catch (err) {
       setRawError(err instanceof Error ? err.message : String(err));
