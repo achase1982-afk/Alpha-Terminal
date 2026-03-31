@@ -163,7 +163,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
     return (
       <div
         className={`${STICKY_BASE} flex items-center px-3 sm:px-4 gap-3 sm:gap-4 overflow-x-auto`}
-        style={{ background: HEADER_BG, height: 36 }}
+        style={{ background: HEADER_BG, height: 36, position: "sticky", top: 42, zIndex: 45 }}
       >
         {quote ? (
           <>
