@@ -303,7 +303,8 @@ function sendSubscribe(symbols: string[]) {
   if (!streamerInfo || !loginAcked || !symbols.length) return;
   for (const sym of symbols) {
     const schwabKey = toSchwabKey(sym);
-    if (!reverseKeyMap.has(schwabKey)) {
+    const existing = reverseKeyMap.get(schwabKey);
+    if (!existing || (sym.startsWith("$") && !existing.startsWith("$"))) {
       reverseKeyMap.set(schwabKey, sym.toUpperCase());
     }
   }

@@ -416,7 +416,10 @@ function readFromWebSocketCache(
   let hitCount = 0;
 
   for (const pair of pairs) {
-    const q = cacheBySymbol.get(pair.api) ?? cacheBySymbol.get(pair.display);
+    const q = cacheBySymbol.get(pair.api)
+           ?? cacheBySymbol.get(pair.display)
+           ?? cacheBySymbol.get(pair.api.replace(/^\$/, ''))
+           ?? cacheBySymbol.get(pair.display.replace(/^\$/, ''));
     if (q && q.last !== null) {
       hitCount++;
       const closeVal = q.close ?? q.last;
@@ -477,7 +480,7 @@ async function fetchMacroPulseData(
   const dataMap = new Map<string, Record<string, unknown>>();
 
   for (const pair of pairs) {
-    const entry = (json[pair.api] ?? json[pair.display]) as Record<string, unknown> | undefined;
+    const entry = (json[pair.api] ?? json[pair.display] ?? json[pair.api.replace(/^\$/, '')] ?? json[pair.display.replace(/^\$/, '')]) as Record<string, unknown> | undefined;
     const q = entry?.["quote"] as Record<string, unknown> | undefined;
     if (q) {
       dataMap.set(pair.display, { ...q });
