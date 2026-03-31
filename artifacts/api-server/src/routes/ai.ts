@@ -942,6 +942,21 @@ router.post("/market-pulse/stream", async (req, res) => {
   const indicators = extractMarketIndicators(dataMap);
   const engineResult = runMarketPulseEngine(indicators, previousBias);
 
+  const spyRaw = dataMap.get("SPY");
+  const spyChangePct: number | null = typeof spyRaw?.netPercentChange === "number" ? spyRaw.netPercentChange : null;
+  const spyDivergenceBlock = (() => {
+    if (spyChangePct === null) return "";
+    const spyDir = spyChangePct > 0 ? "UP" : spyChangePct < 0 ? "DOWN" : "FLAT";
+    const biasBullish = engineResult.bias === "BULLISH" || engineResult.bias === "STRONGLY_BULLISH";
+    const biasBearish = engineResult.bias === "BEARISH" || engineResult.bias === "STRONGLY_BEARISH";
+    const diverges = (biasBullish && spyDir === "DOWN") || (biasBearish && spyDir === "UP");
+    const line = `Current SPY performance: ${spyChangePct >= 0 ? "+" : ""}${spyChangePct.toFixed(2)}% (${spyDir})`;
+    if (diverges) {
+      return `\n${line}\nDIVERGENCE DETECTED: The macro bias is ${engineResult.bias} but SPY is ${spyDir} ${Math.abs(spyChangePct).toFixed(2)}% today. Your narrative MUST address this divergence. Explain whether macro is leading price, or whether the equity weakness could signal something the macro indicators are not capturing.`;
+    }
+    return `\n${line}`;
+  })();
+
   console.log("[PULSE ENGINE] Deterministic result:", JSON.stringify({
     bias: engineResult.bias,
     composite: engineResult.compositeScore,
@@ -982,7 +997,7 @@ ${dataBlock}
 
 SESSION: ${session} | TIME: ${timeET}
 SESSION DIRECTIVE: ${sessionGuidance}
-${strategyPrefsBlock}
+${spyDivergenceBlock}${strategyPrefsBlock}
 
 Write ONLY the narrative fields. Return this exact JSON structure:
 {

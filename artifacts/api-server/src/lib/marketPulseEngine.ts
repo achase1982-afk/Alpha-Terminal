@@ -414,38 +414,78 @@ function calculateComposite(clusters: EngineOutput['clusters']): number {
   return Math.round(raw * 100) / 100;
 }
 
-function calculateConfidence(clusters: EngineOutput['clusters']): { score: number; max: number } {
+function calculateConfidence(
+  clusters: EngineOutput['clusters'],
+  compositeScore: number,
+  bias: BiasLabel
+): { score: number; max: number } {
   const clusterList = Object.values(clusters);
+  const clusterEntries = Object.entries(clusters) as [string, ClusterResult][];
+
+  // ---- FACTOR 1: Data Freshness (base) ----
   const freshCount = clusterList.filter(c => c.dataQuality === 'FRESH').length;
   const maxConfidence = (freshCount / 5) * 100;
 
-  let confidence = maxConfidence;
-
-  const avgMagnitude = clusterList.reduce((sum, c) => sum + Math.abs(c.score), 0) / clusterList.length;
-  if (avgMagnitude < 0.5) {
-    confidence *= 0.7;
+  // ---- FACTOR 2: Weighted Participation ----
+  const biasSign = compositeScore >= 0 ? 1 : -1;
+  const weights: Record<string, number> = {
+    rates: 0.25, credit: 0.20, volLevel: 0.20, volTermStructure: 0.15, breadth: 0.20,
+  };
+  let agreeingWeight = 0;
+  for (const [name, cluster] of clusterEntries) {
+    const w = weights[name] || 0;
+    if (Math.abs(cluster.score) < 0.25) continue;
+    if (Math.sign(cluster.score) === biasSign) agreeingWeight += w;
   }
+  const participationMultiplier = Math.max(0.50, Math.min(1.0, agreeingWeight * 1.67));
 
+  // ---- FACTOR 3: Boundary Proximity ----
+  const boundaries = [1.00, 0.30, -0.30, -1.00];
+  let minDistanceToBoundary = 2.0;
+  for (const boundary of boundaries) {
+    const dist = Math.abs(compositeScore - boundary);
+    if (dist < minDistanceToBoundary) minDistanceToBoundary = dist;
+  }
+  const boundaryMultiplier = minDistanceToBoundary >= 0.30
+    ? 1.0
+    : 0.70 + (minDistanceToBoundary / 0.30) * 0.30;
+
+  // ---- FACTOR 4: Signal Magnitude ----
+  const magnitudeMultiplier = Math.min(1.0, 0.40 + (Math.abs(compositeScore) / 1.0) * 0.60);
+
+  // ---- FACTOR 5: Dispersion ----
   const scores = clusterList.map(c => c.score);
+  const mean = scores.reduce((a, b) => a + b, 0) / scores.length;
+  const variance = scores.reduce((sum, s) => sum + Math.pow(s - mean, 2), 0) / scores.length;
+  const stdev = Math.sqrt(variance);
+  const dispersionMultiplier = Math.max(0.60, 1.0 - (stdev / 3.5));
+
+  // ---- FACTOR 6: Volatility Regime Cap ----
+  const volCluster = clusters.volLevel;
+  let regimeMultiplier = 1.0;
+  if (volCluster.score <= -1.5) regimeMultiplier = 0.70;
+  else if (volCluster.score <= -1.0) regimeMultiplier = 0.80;
+  else if (volCluster.score <= -0.5) regimeMultiplier = 0.90;
+
+  // ---- FACTOR 7: Extreme Disagreement ----
   const hasStrongBull = scores.some(s => s >= 1.5);
   const hasStrongBear = scores.some(s => s <= -1.5);
-  if (hasStrongBull && hasStrongBear) {
-    confidence *= 0.6;
-  }
+  const conflictMultiplier = (hasStrongBull && hasStrongBear) ? 0.60 : 1.0;
 
-  return {
-    score: Math.round(Math.min(confidence, maxConfidence)),
-    max: Math.round(maxConfidence),
-  };
+  const rawConfidence = maxConfidence
+    * participationMultiplier
+    * boundaryMultiplier
+    * magnitudeMultiplier
+    * dispersionMultiplier
+    * regimeMultiplier
+    * conflictMultiplier;
+
+  const finalConfidence = Math.round(Math.max(15, Math.min(rawConfidence, maxConfidence)));
+
+  return { score: finalConfidence, max: Math.round(maxConfidence) };
 }
 
-function determineBias(
-  composite: number,
-  confidence: number,
-  previousBias?: BiasLabel
-): BiasLabel {
-  if (confidence < 40) return 'NO_EDGE';
-
+function determineBiasFromComposite(composite: number, previousBias?: BiasLabel): BiasLabel {
   if (previousBias && previousBias !== 'NO_EDGE' && previousBias !== 'NEUTRAL') {
     const thresholds = BIAS_THRESHOLDS[previousBias];
     if (thresholds) {
@@ -554,8 +594,9 @@ export function runMarketPulseEngine(
   };
 
   const compositeScore = calculateComposite(clusters);
-  const { score: confidenceScore, max: maxConfidence } = calculateConfidence(clusters);
-  const bias = determineBias(compositeScore, confidenceScore, previousBias);
+  const preliminaryBias = determineBiasFromComposite(compositeScore, previousBias);
+  const { score: confidenceScore, max: maxConfidence } = calculateConfidence(clusters, compositeScore, preliminaryBias);
+  const bias: BiasLabel = confidenceScore < 40 ? 'NO_EDGE' : preliminaryBias;
   const divergence = detectDivergence(clusters);
   const structuralRegime = determineRegime(clusters, compositeScore);
   const { state: riskState, reason: riskReason } = determineRiskState(compositeScore, confidenceScore, divergence.has);

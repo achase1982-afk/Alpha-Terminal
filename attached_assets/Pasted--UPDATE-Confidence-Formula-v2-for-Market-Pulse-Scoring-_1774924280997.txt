@@ -1,0 +1,178 @@
+# UPDATE: Confidence Formula v2 for Market Pulse Scoring Engine
+
+The current confidence formula only checks data freshness, average magnitude, and extreme disagreement. It outputs 100% when only 2 of 5 clusters drive the bullish read. This update adds 4 new factors validated by multiple independent reviews.
+
+## Replace the existing `calculateConfidence` function in `marketPulseEngine.ts` with this:
+
+```typescript
+function calculateConfidence(
+  clusters: EngineOutput['clusters'],
+  compositeScore: number,
+  bias: BiasLabel
+): { score: number; max: number } {
+  const clusterList = Object.values(clusters);
+  const clusterEntries = Object.entries(clusters) as [string, ClusterResult][];
+
+  // ---- FACTOR 1: Data Freshness (base) ----
+  const freshCount = clusterList.filter(c => c.dataQuality === 'FRESH').length;
+  const maxConfidence = (freshCount / 5) * 100;
+
+  // ---- FACTOR 2: Weighted Participation ----
+  // How much of the weighted signal mass agrees with the bias direction?
+  // Only count clusters with |score| >= 0.25 to avoid counting noise as agreement
+  const biasSign = compositeScore >= 0 ? 1 : -1;
+  const clusterNames = ['rates', 'credit', 'volLevel', 'volTermStructure', 'breadth'] as const;
+  const weights: Record<string, number> = {
+    rates: 0.25,
+    credit: 0.20,
+    volLevel: 0.20,
+    volTermStructure: 0.15,
+    breadth: 0.20,
+  };
+
+  let agreeingWeight = 0;
+  let opposingWeight = 0;
+  for (const [name, cluster] of clusterEntries) {
+    const w = weights[name] || 0;
+    if (Math.abs(cluster.score) < 0.25) continue; // skip noise
+    if (Math.sign(cluster.score) === biasSign) {
+      agreeingWeight += w;
+    } else {
+      opposingWeight += w;
+    }
+  }
+  // Scale: 60%+ agreement = 1.0, below that scales down, floor at 0.50
+  const participationMultiplier = Math.max(0.50, Math.min(1.0, agreeingWeight * 1.67));
+
+  // ---- FACTOR 3: Boundary Proximity ----
+  // How close is the composite to the nearest bias label boundary?
+  // If you're barely BULLISH (+0.53 when threshold is +0.50), confidence should drop
+  const boundaries = [1.00, 0.30, -0.30, -1.00]; // STRONGLY_BULLISH, BULLISH, BEARISH, STRONGLY_BEARISH
+  let minDistanceToBoundary = 2.0; // max possible
+  for (const boundary of boundaries) {
+    const dist = Math.abs(compositeScore - boundary);
+    if (dist < minDistanceToBoundary) {
+      minDistanceToBoundary = dist;
+    }
+  }
+  // If within 0.20 of any boundary, apply penalty
+  // Scale: distance >= 0.30 = no penalty (1.0), distance 0.0 = max penalty (0.70)
+  const boundaryMultiplier = minDistanceToBoundary >= 0.30 
+    ? 1.0 
+    : 0.70 + (minDistanceToBoundary / 0.30) * 0.30;
+
+  // ---- FACTOR 4: Signal Magnitude ----
+  // A composite of +0.63 is objectively weaker than +1.5
+  // Scale: |composite| >= 1.0 = full credit (1.0), |composite| 0.0 = minimum (0.40)
+  const magnitudeMultiplier = Math.min(1.0, 0.40 + (Math.abs(compositeScore) / 1.0) * 0.60);
+
+  // ---- FACTOR 5: Dispersion (cluster disagreement) ----
+  // Standard deviation of the 5 cluster scores
+  // High stdev = clusters disagree = lower confidence
+  const scores = clusterList.map(c => c.score);
+  const mean = scores.reduce((a, b) => a + b, 0) / scores.length;
+  const variance = scores.reduce((sum, s) => sum + Math.pow(s - mean, 2), 0) / scores.length;
+  const stdev = Math.sqrt(variance);
+  // Scale: stdev 0.0 = no penalty (1.0), stdev >= 1.5 = max penalty (0.60)
+  const dispersionMultiplier = Math.max(0.60, 1.0 - (stdev / 2.5));
+
+  // ---- FACTOR 6: Volatility Regime Cap ----
+  // When VIX is elevated (Vol Level cluster strongly negative), cap confidence
+  // because macro correlations break down in high-vol environments
+  const volCluster = clusters.volLevel;
+  let regimeMultiplier = 1.0;
+  if (volCluster.score <= -1.5) {
+    regimeMultiplier = 0.70; // extreme vol, heavy cap
+  } else if (volCluster.score <= -1.0) {
+    regimeMultiplier = 0.80; // high vol
+  } else if (volCluster.score <= -0.5) {
+    regimeMultiplier = 0.90; // elevated vol
+  }
+
+  // ---- FACTOR 7: Extreme Disagreement (existing) ----
+  const hasStrongBull = scores.some(s => s >= 1.5);
+  const hasStrongBear = scores.some(s => s <= -1.5);
+  const conflictMultiplier = (hasStrongBull && hasStrongBear) ? 0.60 : 1.0;
+
+  // ---- COMBINE ALL FACTORS ----
+  const rawConfidence = maxConfidence
+    * participationMultiplier
+    * boundaryMultiplier
+    * magnitudeMultiplier
+    * dispersionMultiplier
+    * regimeMultiplier
+    * conflictMultiplier;
+
+  // Floor at 15, cap at maxConfidence
+  const finalConfidence = Math.round(Math.max(15, Math.min(rawConfidence, maxConfidence)));
+
+  return {
+    score: finalConfidence,
+    max: Math.round(maxConfidence),
+  };
+}
+```
+
+## IMPORTANT: Update the function signature
+
+The function now takes `compositeScore` and `bias` as additional parameters. Update the call site in `runMarketPulseEngine()`:
+
+```typescript
+// OLD:
+const { score: confidenceScore, max: maxConfidence } = calculateConfidence(clusters);
+
+// NEW:
+const { score: confidenceScore, max: maxConfidence } = calculateConfidence(clusters, compositeScore, bias);
+```
+
+Note: you may need to compute `compositeScore` first and do a preliminary `bias` determination, then pass both into `calculateConfidence`. The bias determination itself does NOT depend on confidence (confidence only overrides to NO_EDGE if below 40), so the ordering works:
+
+```typescript
+const compositeScore = calculateComposite(clusters);
+const preliminaryBias = determineBiasFromComposite(compositeScore); // just the threshold mapping, no confidence check
+const { score: confidenceScore, max: maxConfidence } = calculateConfidence(clusters, compositeScore, preliminaryBias);
+const finalBias = confidenceScore < 40 ? 'NO_EDGE' : preliminaryBias;
+```
+
+## What this produces for today’s example
+
+Inputs: Rates +2.0, Credit +1.5, Vol Level 0.0, Term Structure -0.5, Breadth -0.5
+Composite: +0.63
+
+Factor breakdown:
+
+- maxConfidence: 100 (all data fresh)
+- participationMultiplier: ~0.75 (only Rates 25% + Credit 20% = 45% agree)
+- boundaryMultiplier: ~0.70 (composite +0.63 is only 0.33 from the +0.30 BULLISH boundary – actually just above the 0.30 threshold so this would be ~0.93. Closer to the +1.00 STRONGLY_BULLISH boundary at distance 0.37, which is > 0.30 so no penalty from that one. Nearest boundary is +0.30 at distance 0.33 -> ~1.0)
+- magnitudeMultiplier: ~0.78 (|0.63| / 1.0 * 0.60 + 0.40)
+- dispersionMultiplier: ~0.65 (stdev of [2.0, 1.5, 0.0, -0.5, -0.5] is ~1.0 -> 1.0 - (1.0/2.5) = 0.60)
+- regimeMultiplier: 1.0 (Vol Level is 0.0, not negative enough to trigger)
+- conflictMultiplier: 1.0 (no extreme disagreement)
+
+Approximate result: 100 * 0.75 * 0.93 * 0.78 * 0.60 * 1.0 * 1.0 = ~33
+
+That’s likely too aggressive. Tune the dispersion divisor from 2.5 to 3.0 or 3.5 to soften it. With a divisor of 3.5:
+
+- dispersionMultiplier: 1.0 - (1.0 / 3.5) = ~0.71
+- Result: 100 * 0.75 * 0.93 * 0.78 * 0.71 * 1.0 * 1.0 = ~39
+
+Still aggressive. The participation and dispersion are double-penalizing the same concept (clusters disagreeing). Consider softening participation to floor at 0.65 instead of 0.50:
+
+- participationMultiplier with 0.65 floor: ~0.75 (same, already above floor)
+
+A reasonable target for today’s output would be around 55-70. The exact constants (1.67 participation slope, 2.5 or 3.5 dispersion divisor, 0.30 boundary distance threshold) should be tuned via backtest. Ship these starting values and adjust once you have historical data.
+
+## Also add: Divergence Alert (separate from confidence)
+
+Do NOT put SPY price action into the confidence formula. Instead, add a separate visual flag. When the bias is BULLISH but SPY is red (or vice versa), the AI narrative should explicitly address this divergence. Update the Gemini prompt to include:
+
+```
+Current SPY performance: [SPY daily change %]
+If the Market Pulse bias disagrees with SPY's intraday direction, your narrative MUST address this divergence. Explain whether macro is leading price, or whether the equity weakness could signal something the macro indicators are not capturing.
+```
+
+This keeps the confidence score purely macro-based while giving the trader the full picture.
+
+## Do NOT change any other scoring logic
+
+The cluster scoring functions, composite calculation, bias thresholds, and hysteresis logic are all working correctly. Only replace the `calculateConfidence` function and update its call site.
