@@ -9,9 +9,11 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
-import { Terminal, SlidersHorizontal, X, LayoutDashboard, ListOrdered, Gauge, BrainCircuit, Zap, MessageCircle, ChevronRight, Settings, Star, Trash2, BarChart2, Plus, RotateCcw } from "lucide-react";
+import { Terminal, SlidersHorizontal, X, LayoutDashboard, ListOrdered, Gauge, BrainCircuit, Zap, MessageCircle, ChevronRight, Settings, Star, Trash2, BarChart2, Plus, RotateCcw, Shield, LogOut } from "lucide-react";
 import { useState } from "react";
+import { useClerk } from "@clerk/clerk-react";
 import { useGetAvailableModels } from "@workspace/api-client-react";
+import { useAutoLock, AUTO_LOCK_OPTIONS, type AutoLockMinutes } from "@/hooks/useAutoLock";
 
 const OVERLAY_LABELS: Record<string, string> = {
   sma20: "SMA 20",
@@ -27,6 +29,8 @@ interface SidebarProps {
 }
 
 export function Sidebar({ onClose, onOpenChat }: SidebarProps) {
+  const { signOut } = useClerk();
+  const { minutes: autoLockMinutes, setMinutes: setAutoLockMinutes } = useAutoLock();
   const {
     overlays, toggleOverlay,
     macroSymbols, setMacroSymbols,
@@ -55,6 +59,7 @@ export function Sidebar({ onClose, onOpenChat }: SidebarProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [watchlistOpen, setWatchlistOpen] = useState(true);
   const [pulseSettingsOpen, setPulseSettingsOpen] = useState(false);
+  const [securityOpen, setSecurityOpen] = useState(false);
 
   const handleMacroChange = (idx: number, val: string) => {
     const updated = [...macroInputs];
@@ -348,6 +353,57 @@ export function Sidebar({ onClose, onOpenChat }: SidebarProps) {
           )}
         </div>
 
+      </div>
+
+      <div className="p-3 sm:p-4 border-t border-card-border space-y-2">
+        <div className="bg-card border border-card-border rounded-xl overflow-hidden shadow-sm">
+          <button
+            onClick={() => setSecurityOpen(!securityOpen)}
+            className="w-full flex items-center justify-between p-3 text-sm font-mono font-bold hover:bg-secondary/50 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <Shield className="w-4 h-4 text-primary" />
+              <span className="text-foreground">SECURITY</span>
+            </div>
+            <ChevronRight className={`w-4 h-4 transition-transform duration-300 ${securityOpen ? 'rotate-90' : ''}`} />
+          </button>
+
+          {securityOpen && (
+            <div className="p-3 sm:p-4 border-t border-card-border bg-[#0c0c0c] space-y-3 animate-in fade-in slide-in-from-top-2">
+              <div className="space-y-1.5">
+                <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
+                  <Shield className="w-3 h-3" /> Auto-Lock Timer
+                </Label>
+                <Select
+                  value={String(autoLockMinutes)}
+                  onValueChange={(v) => setAutoLockMinutes(Number(v) as AutoLockMinutes)}
+                >
+                  <SelectTrigger className="font-mono text-[10px] bg-card border-card-border h-8 focus:ring-primary/50">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-card border-card-border font-mono text-[10px]">
+                    {AUTO_LOCK_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={String(opt.value)} className="text-[10px]">
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="font-mono text-[9px] text-muted-foreground/50 leading-relaxed">
+                  Signs you out after inactivity. A warning appears 60s before.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <button
+          onClick={() => void signOut()}
+          className="w-full flex items-center justify-center gap-2 p-3 rounded-xl font-mono text-xs font-bold tracking-wider text-red-400/80 bg-red-500/5 border border-red-500/10 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/20 transition-all"
+        >
+          <LogOut className="w-4 h-4" />
+          SIGN OUT
+        </button>
       </div>
 
     </div>

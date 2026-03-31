@@ -7,6 +7,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useTerminalStore } from "@/lib/store";
 import { fetchWithAuth, setClerkTokenGetter } from "@/lib/fetchWithAuth";
+import { useAutoLock, AutoLockProvider } from "@/hooks/useAutoLock";
 import TerminalPage from "@/pages/Terminal";
 import NotFound from "@/pages/not-found";
 
@@ -104,6 +105,20 @@ function ClerkTokenBridge() {
   return null;
 }
 
+function InactivityWarning() {
+  const { warning, countdown } = useAutoLock();
+
+  if (!warning) return null;
+
+  return (
+    <div className="fixed top-0 left-0 right-0 z-[9999] flex items-center justify-center px-4 py-2 bg-amber-600/95 backdrop-blur-sm animate-in fade-in slide-in-from-top-2">
+      <p className="font-mono text-xs text-white text-center">
+        Session expiring in <span className="font-bold tabular-nums">{countdown}s</span> due to inactivity. Tap anywhere to stay signed in.
+      </p>
+    </div>
+  );
+}
+
 function Router() {
   return (
     <Switch>
@@ -117,12 +132,15 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <ClerkTokenBridge />
-        <PendingSessionLoader />
-        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <Router />
-        </WouterRouter>
-        <Toaster />
+        <AutoLockProvider>
+          <ClerkTokenBridge />
+          <InactivityWarning />
+          <PendingSessionLoader />
+          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+            <Router />
+          </WouterRouter>
+          <Toaster />
+        </AutoLockProvider>
       </TooltipProvider>
     </QueryClientProvider>
   );

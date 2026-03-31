@@ -1,17 +1,13 @@
 import { WebSocketServer, WebSocket } from "ws";
 import type { Server as HttpServer, IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
-import { createClerkClient } from "@clerk/express";
+import { verifyToken } from "@clerk/express";
 import { logger } from "./logger.js";
 import { getSnapshot, getStreamerStatus, registerWsBroadcast } from "./schwabStreamer.js";
 
 const WS_PATH = "/api/ws/prices";
 const HEARTBEAT_MS = 25_000;
 const clients = new Set<WebSocket>();
-
-const clerkClient = createClerkClient({
-  secretKey: process.env.CLERK_SECRET_KEY!,
-});
 
 function broadcastToClients(event: string, data: unknown) {
   if (clients.size === 0) return;
@@ -43,7 +39,7 @@ export function initWsServer(httpServer: HttpServer) {
     }
 
     try {
-      await clerkClient.verifyToken(token);
+      await verifyToken(token, { secretKey: process.env.CLERK_SECRET_KEY! });
     } catch (err) {
       logger.warn({ err }, "WS Clerk token verification failed");
       socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
