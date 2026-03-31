@@ -1,0 +1,49 @@
+type ClusterName = 'rates' | 'credit' | 'volLevel' | 'volTerm' | 'breadth' | 'riskAppetite' | 'macro';
+
+interface IndicatorConfig {
+  symbol: string;
+  cluster: ClusterName;
+  enabled: boolean;
+  label: string;
+}
+
+const INDICATOR_CONFIG: IndicatorConfig[] = [
+  // RATES (4 symbols)
+  { symbol: '$TNX',   cluster: 'rates',        enabled: true, label: '10Y Yield' },
+  { symbol: '$TYX',   cluster: 'rates',        enabled: true, label: '30Y Yield' },
+  { symbol: '/ZB',    cluster: 'rates',        enabled: true, label: '30Y Treasury Futures' },
+  { symbol: '/ZT',    cluster: 'rates',        enabled: true, label: '2Y Treasury Futures' },
+
+  // CREDIT (3 symbols)
+  { symbol: 'HYG',    cluster: 'credit',       enabled: true, label: 'HY Corporate Bond ETF' },
+  { symbol: 'LQD',    cluster: 'credit',       enabled: true, label: 'IG Corporate Bond ETF' },
+  { symbol: 'IEF',    cluster: 'credit',       enabled: true, label: '7-10Y Treasury ETF' },
+
+  // VOL LEVEL (2 symbols)
+  { symbol: 'VIX',    cluster: 'volLevel',     enabled: true, label: 'CBOE Volatility Index' },
+  { symbol: 'VVIX',   cluster: 'volLevel',     enabled: true, label: 'VIX of VIX' },
+
+  // VOL TERM (3 symbols)
+  { symbol: 'VIX9D',  cluster: 'volTerm',      enabled: true, label: 'CBOE 9-Day VIX' },
+  { symbol: 'VIX3M',  cluster: 'volTerm',      enabled: true, label: 'CBOE 3-Month VIX' },
+  { symbol: 'SKEW',   cluster: 'volTerm',      enabled: true, label: 'CBOE Skew Index' },
+
+  // BREADTH (5 symbols)
+  { symbol: '$ADVN',  cluster: 'breadth',      enabled: true, label: 'NYSE Advancing Issues' },
+  { symbol: '$DECN',  cluster: 'breadth',      enabled: true, label: 'NYSE Declining Issues' },
+  { symbol: '$TRIN',  cluster: 'breadth',      enabled: true, label: 'Arms Index' },
+  { symbol: '$TICK',  cluster: 'breadth',      enabled: true, label: 'NYSE Tick' },
+  { symbol: '$ADD',   cluster: 'breadth',      enabled: true, label: 'NYSE Advance-Decline' },
+
+  // RISK APPETITE (4 symbols)
+  { symbol: '/ES',    cluster: 'riskAppetite', enabled: true, label: 'E-mini S&P 500' },
+  { symbol: '/NQ',    cluster: 'riskAppetite', enabled: true, label: 'E-mini Nasdaq 100' },
+  { symbol: '/YM',    cluster: 'riskAppetite', enabled: true, label: 'Mini Dow Jones' },
+  { symbol: '/RTY',   cluster: 'riskAppetite', enabled: true, label: 'E-mini Russell 2000' },
+
+  // MACRO (6 symbols)
+  { symbol: '/GC',    cluster: 'macro',        enabled: true, label: 'Gold Futures' },
+  { symbol: '/CL',    cluster: 'macro',        enabled: true, label: 'WTI Crude Oil' },
+  { symbol: '/BZ',    cluster: 'macro',        enabled: true, label: 'Brent Crude Oil' },
+  { symbol: '/ZQ',    cluster: 'macro',        enabled: true, label: '30-Day Fed Funds' },
+];

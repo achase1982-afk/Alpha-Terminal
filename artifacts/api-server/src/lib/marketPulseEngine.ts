@@ -22,6 +22,10 @@ export interface MarketIndicators {
   tnxChange: number | null;
   tyx: number | null;
   tyxChange: number | null;
+  zb: number | null;
+  zbChange: number | null;
+  zt: number | null;
+  ztChange: number | null;
 
   hyg: number | null;
   hygChange: number | null;
@@ -29,8 +33,6 @@ export interface MarketIndicators {
   lqdChange: number | null;
   ief: number | null;
   iefChange: number | null;
-  nyicdx: number | null;
-  nyicdxChange: number | null;
 
   advn: number | null;
   decn: number | null;
@@ -38,8 +40,23 @@ export interface MarketIndicators {
   trin: number | null;
   add: number | null;
 
-  // $UVOL and $DVOL removed -- Schwab does not serve these symbols.
-  // If a secondary data source (e.g. IQFeed) is added later, re-enable here.
+  es: number | null;
+  esChange: number | null;
+  nq: number | null;
+  nqChange: number | null;
+  ym: number | null;
+  ymChange: number | null;
+  rty: number | null;
+  rtyChange: number | null;
+
+  gc: number | null;
+  gcChange: number | null;
+  cl: number | null;
+  clChange: number | null;
+  bz: number | null;
+  bzChange: number | null;
+  zq: number | null;
+  zqChange: number | null;
 
   dataTimestamps?: Record<string, number>;
 }
@@ -66,8 +83,10 @@ export interface EngineOutput {
     rates: ClusterResult;
     credit: ClusterResult;
     volLevel: ClusterResult;
-    volTermStructure: ClusterResult;
+    volTerm: ClusterResult;
     breadth: ClusterResult;
+    riskAppetite: ClusterResult;
+    macro: ClusterResult;
   };
   compositeScore: number;
   bias: BiasLabel;
@@ -88,15 +107,17 @@ export interface EngineOutput {
 
 // ---------- CONSTANTS ----------
 
-const ENGINE_VERSION = 'v1.0.0';
+const ENGINE_VERSION = 'v2.0.0';
 const STALE_THRESHOLD_MS = 15 * 60 * 1000;
 
 const WEIGHTS = {
-  rates: 0.25,
-  credit: 0.20,
-  volLevel: 0.20,
-  volTermStructure: 0.15,
-  breadth: 0.20,
+  rates: 0.15,
+  credit: 0.15,
+  volLevel: 0.15,
+  volTerm: 0.10,
+  breadth: 0.15,
+  riskAppetite: 0.15,
+  macro: 0.15,
 } as const;
 
 // Bias label thresholds recalibrated —
@@ -162,10 +183,25 @@ function scoreRates(data: MarketIndicators): ClusterResult {
     points.push(fmt(data.tyxChange, '$TYX', '%'));
   }
 
+  if (data.zbChange !== null) {
+    if (data.zbChange >= 0.5) { score += 0.5; rules.push('/ZB up >0.5% (bond rally, yields falling): +0.5'); }
+    else if (data.zbChange <= -0.5) { score -= 0.5; rules.push('/ZB down >0.5% (bond selloff, yields rising): -0.5'); }
+    points.push(fmt(data.zbChange, '/ZB', '%'));
+  }
+
+  if (data.ztChange !== null) {
+    if (data.ztChange >= 0.3) { score += 0.25; rules.push('/ZT up >0.3% (short-end rally): +0.25'); }
+    else if (data.ztChange <= -0.3) { score -= 0.25; rules.push('/ZT down >0.3% (short-end selloff): -0.25'); }
+    points.push(fmt(data.ztChange, '/ZT', '%'));
+  }
+
   const finalScore = clampScore(score);
   const direction: Direction = finalScore > 0.25 ? 'DOWN' : finalScore < -0.25 ? 'UP' : 'FLAT';
-  const worstQuality = tnxQ === 'MISSING' || tyxQ === 'MISSING' ? 'STALE' :
-                       tnxQ === 'STALE' || tyxQ === 'STALE' ? 'STALE' : 'FRESH';
+  const zbQ = checkDataQuality(data.zb);
+  const ztQ = checkDataQuality(data.zt);
+  const ratesQualities = [tnxQ, tyxQ, zbQ, ztQ];
+  const worstQuality = ratesQualities.includes('MISSING') ? 'STALE' :
+                       ratesQualities.includes('STALE') ? 'STALE' : 'FRESH';
 
   let headline = '';
   if (finalScore >= 1.5) headline = 'Yields falling sharply, strong risk-on signal';
@@ -284,7 +320,7 @@ function scoreVolLevel(data: MarketIndicators): ClusterResult {
   return { score: finalScore, dataQuality: vixQ, direction, headline, keyDataPoints: points, rulesApplied: rules };
 }
 
-function scoreVolTermStructure(data: MarketIndicators): ClusterResult {
+function scoreVolTerm(data: MarketIndicators): ClusterResult {
   const rules: string[] = [];
   let score = 0;
   const points: string[] = [];
@@ -420,6 +456,123 @@ function scoreBreadth(data: MarketIndicators): ClusterResult {
   else if (finalScore <= -1.5) headline = 'Breadth deeply negative, broad selling';
   else if (finalScore <= -0.5) headline = 'Breadth weak, limited participation';
   else headline = 'Breadth mixed, no clear signal';
+
+  return { score: finalScore, dataQuality, direction, headline, keyDataPoints: points, rulesApplied: rules };
+}
+
+function scoreRiskAppetite(data: MarketIndicators): ClusterResult {
+  const rules: string[] = [];
+  let score = 0;
+  const points: string[] = [];
+
+  const hasAny = data.es !== null || data.nq !== null || data.ym !== null || data.rty !== null;
+  if (!hasAny) {
+    return {
+      score: 0, dataQuality: 'MISSING', direction: 'FLAT',
+      headline: 'Risk appetite data unavailable', keyDataPoints: [], rulesApplied: ['All equity futures data missing'],
+    };
+  }
+
+  if (data.esChange !== null) {
+    if (data.esChange >= 1.0) { score += 1.5; rules.push(`/ES up ${data.esChange.toFixed(2)}% (>1%): +1.5`); }
+    else if (data.esChange >= 0.5) { score += 1.0; rules.push(`/ES up ${data.esChange.toFixed(2)}% (0.5-1%): +1.0`); }
+    else if (data.esChange >= 0.1) { score += 0.5; rules.push(`/ES up ${data.esChange.toFixed(2)}% (0.1-0.5%): +0.5`); }
+    else if (data.esChange <= -1.0) { score -= 1.5; rules.push(`/ES down ${data.esChange.toFixed(2)}% (>1%): -1.5`); }
+    else if (data.esChange <= -0.5) { score -= 1.0; rules.push(`/ES down ${data.esChange.toFixed(2)}% (0.5-1%): -1.0`); }
+    else if (data.esChange <= -0.1) { score -= 0.5; rules.push(`/ES down ${data.esChange.toFixed(2)}% (0.1-0.5%): -0.5`); }
+    else { rules.push(`/ES flat: 0`); }
+    points.push(fmt(data.esChange, '/ES', '%'));
+  }
+
+  if (data.nqChange !== null) {
+    if (data.nqChange >= 1.0) { score += 0.5; rules.push(`/NQ up >1% (confirming): +0.5`); }
+    else if (data.nqChange <= -1.0) { score -= 0.5; rules.push(`/NQ down >1% (confirming): -0.5`); }
+    points.push(fmt(data.nqChange, '/NQ', '%'));
+  }
+
+  if (data.ymChange !== null) {
+    if (data.ymChange >= 0.5) { score += 0.25; rules.push(`/YM up >0.5% (Dow confirming): +0.25`); }
+    else if (data.ymChange <= -0.5) { score -= 0.25; rules.push(`/YM down >0.5% (Dow confirming): -0.25`); }
+    points.push(fmt(data.ymChange, '/YM', '%'));
+  }
+
+  if (data.rtyChange !== null) {
+    if (data.rtyChange >= 1.0) { score += 0.5; rules.push(`/RTY up >1% (small-cap risk-on): +0.5`); }
+    else if (data.rtyChange <= -1.0) { score -= 0.5; rules.push(`/RTY down >1% (small-cap risk-off): -0.5`); }
+    points.push(fmt(data.rtyChange, '/RTY', '%'));
+  }
+
+  const esNqDivergence = data.esChange !== null && data.nqChange !== null &&
+    Math.sign(data.esChange) !== Math.sign(data.nqChange) &&
+    Math.abs(data.esChange) > 0.3 && Math.abs(data.nqChange) > 0.3;
+  if (esNqDivergence) {
+    rules.push('ES/NQ divergence detected — rotation signal, reducing conviction');
+    score *= 0.7;
+  }
+
+  const finalScore = clampScore(score);
+  const direction: Direction = finalScore > 0.25 ? 'POSITIVE' : finalScore < -0.25 ? 'NEGATIVE' : 'FLAT';
+  const freshCount = [data.es, data.nq, data.ym, data.rty].filter(v => v !== null).length;
+  const dataQuality: DataQuality = freshCount >= 3 ? 'FRESH' : freshCount >= 1 ? 'STALE' : 'MISSING';
+
+  let headline = '';
+  if (finalScore >= 1.5) headline = 'Equity futures surging, strong risk-on';
+  else if (finalScore >= 0.5) headline = 'Equity futures positive, risk appetite healthy';
+  else if (finalScore <= -1.5) headline = 'Equity futures selling off, risk aversion';
+  else if (finalScore <= -0.5) headline = 'Equity futures weak, cautious positioning';
+  else headline = 'Equity futures mixed, no clear direction';
+
+  return { score: finalScore, dataQuality, direction, headline, keyDataPoints: points, rulesApplied: rules };
+}
+
+function scoreMacro(data: MarketIndicators): ClusterResult {
+  const rules: string[] = [];
+  let score = 0;
+  const points: string[] = [];
+
+  const hasAny = data.gc !== null || data.cl !== null || data.bz !== null || data.zq !== null;
+  if (!hasAny) {
+    return {
+      score: 0, dataQuality: 'MISSING', direction: 'FLAT',
+      headline: 'Macro data unavailable', keyDataPoints: [], rulesApplied: ['All macro data missing'],
+    };
+  }
+
+  if (data.gcChange !== null) {
+    if (data.gcChange >= 1.0) { score -= 0.5; rules.push(`/GC up ${data.gcChange.toFixed(2)}% (>1% gold rally, safe-haven bid): -0.5`); }
+    else if (data.gcChange <= -1.0) { score += 0.5; rules.push(`/GC down ${data.gcChange.toFixed(2)}% (>1% gold selloff, risk-on): +0.5`); }
+    points.push(fmt(data.gcChange, '/GC', '%'));
+  }
+
+  if (data.clChange !== null) {
+    if (data.clChange >= 2.0) { score += 0.5; rules.push(`/CL up ${data.clChange.toFixed(2)}% (>2% oil rally, demand signal): +0.5`); }
+    else if (data.clChange <= -2.0) { score -= 0.5; rules.push(`/CL down ${data.clChange.toFixed(2)}% (>2% oil drop, demand destruction): -0.5`); }
+    points.push(fmt(data.clChange, '/CL', '%'));
+  }
+
+  if (data.bzChange !== null) {
+    if (data.bzChange >= 2.0) { score += 0.25; rules.push(`/BZ up >2% (Brent confirming): +0.25`); }
+    else if (data.bzChange <= -2.0) { score -= 0.25; rules.push(`/BZ down >2% (Brent confirming): -0.25`); }
+    points.push(fmt(data.bzChange, '/BZ', '%'));
+  }
+
+  if (data.zqChange !== null) {
+    if (data.zqChange >= 0.1) { score += 0.25; rules.push(`/ZQ up >0.1% (fed funds rally, rate cut expectations): +0.25`); }
+    else if (data.zqChange <= -0.1) { score -= 0.25; rules.push(`/ZQ down >0.1% (fed funds selling, rate hike expectations): -0.25`); }
+    points.push(fmt(data.zqChange, '/ZQ', '%'));
+  }
+
+  const finalScore = clampScore(score);
+  const direction: Direction = finalScore > 0.25 ? 'POSITIVE' : finalScore < -0.25 ? 'NEGATIVE' : 'FLAT';
+  const freshCount = [data.gc, data.cl, data.bz, data.zq].filter(v => v !== null).length;
+  const dataQuality: DataQuality = freshCount >= 2 ? 'FRESH' : freshCount >= 1 ? 'STALE' : 'MISSING';
+
+  let headline = '';
+  if (finalScore >= 1.0) headline = 'Macro signals supportive, pro-risk commodities';
+  else if (finalScore >= 0.25) headline = 'Macro slightly positive, constructive backdrop';
+  else if (finalScore <= -1.0) headline = 'Macro headwinds, safe-haven bids / demand concerns';
+  else if (finalScore <= -0.25) headline = 'Macro slightly negative, caution warranted';
+  else headline = 'Macro neutral, no strong directional signal';
 
   return { score: finalScore, dataQuality, direction, headline, keyDataPoints: points, rulesApplied: rules };
 }
