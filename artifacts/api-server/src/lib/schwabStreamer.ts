@@ -892,7 +892,7 @@ export function isConnected(): boolean {
 
 // ─── REST poller for $UVOL / $DVOL (not available via Schwab streaming) ─────
 const REST_POLL_SYMBOLS = ["$UVOL", "$DVOL"];
-const REST_POLL_INTERVAL_MS = 15_000;
+const REST_POLL_INTERVAL_MS = 2_000;
 let restPollTimer: ReturnType<typeof setInterval> | null = null;
 
 const SENTINEL_THRESHOLD = 9e10;
@@ -933,8 +933,13 @@ async function pollBreadthRest() {
       const volume   = safeNum(quote["totalVolume"]);
       const high     = safeNum(quote["highPrice"]);
       const low      = safeNum(quote["lowPrice"]);
-      const bid      = safeNum(quote["bidPrice"]);
-      const ask      = safeNum(quote["askPrice"]);
+      const bid      = safeNum(quote["bidPrice"]) || null;
+      const ask      = safeNum(quote["askPrice"]) || null;
+
+      const noRealData = last === null && close === null && high === null && low === null && (volume === null || volume === 0);
+      if (noRealData) {
+        logger.debug({ symbol: schwabSym }, "REST breadth poll: no real data from Schwab (sentinel/zeros)");
+      }
 
       const sym = fromSchwabKey(schwabSym);
       const existing = quoteCache.get(sym);
