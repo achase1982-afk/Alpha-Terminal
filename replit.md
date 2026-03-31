@@ -25,6 +25,21 @@ The project is a pnpm monorepo with TypeScript. The API is an Express 5 server u
 
 Features include a MacroBar displaying key indices, an Institutional Tear Sheet for fundamental data, and an Options Chain with bid/ask, Greeks, configurable columns, and a MetricsStrip. The AI Strategy Endpoint generates strategies based on historical data and TA, with mandated `aiConfidence` levels. `useTickColor` provides price momentum coloring. Search History stores recent symbols. Comprehensive support for Indices & Futures is integrated across all data endpoints.
 
+### Strategy-Aware Risk Evaluation (optionsStrategist.ts)
+- `RiskCategory` type: `DEFINED | CASH_SECURED | MARGIN_BASED`
+- `evaluateRisk()` returns per-strategy risk metrics (max_loss for defined, strike×100 for CSP, managed stop for margin)
+- `RiskEvaluation` interface: `category`, `risk_metric`, `risk_label`, `capital_required?`, `within_limits`
+- `risk_reward_display` field: human-readable "Risk $X / Reward $Y" format
+- All 11 strategy builders populate `risk_evaluation` and `risk_reward_display` fields
+
+### Pre-Trade Risk Manager
+- Backend: `preTradeRiskEngine.ts` with 7 deterministic checks: Pulse Alignment, R/R ≥ threshold, Bid/Ask Spread ≤15%, PoP ≥35%, Position Size ≤ max%, Vol Environment, DTE ≥ min
+- API route: `POST /api/ai/pre-trade-check` runs engine + Gemini Flash one-liner
+- Frontend: `PreTradeCheckPanel` shows green/yellow/red checklist below each strategy card
+- `RiskCategoryBadge` shows Defined Risk / Cash Secured / Margin Based on each card header
+- Settings (persisted in Zustand): `preTradeEnabled`, `preTradeBlockOnRed`, `preTradeMinRR` (0.25), `preTradeMaxPositionPct` (3%), `preTradeMinDTE` (5), `accountSize` (25000)
+- Auto-runs when strategies load; results are per-strategy
+
 ## System Design Choices
 
 The monorepo structure facilitates shared libraries and consistent tooling. TypeScript Composite Projects ensure robust type-checking. A clear separation of concerns is maintained across UI, API, database, and streaming logic. Real-time data is optimized through streamed data with REST fallback and performant state management. Strict AI grounding ensures AI responses are based solely on provided, fresh market data. The Market Pulse system uses a two-layer architecture: a deterministic scoring engine (pure TypeScript math/rules) that calculates composite scores and bias, and Gemini (temperature=0) which writes only the narrative based on these pre-calculated scores. The bias strip (`AiBiasStrip`) provides a visual indication of market bias. Market Pulse settings are persisted in Zustand, allowing user-defined indicator management and strategy preferences.

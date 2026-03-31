@@ -16,6 +16,7 @@ import { computeIndicators, formatTAContext, isDataStale, type Candle } from "..
 import { runMarketPulseEngine, type MarketIndicators, type BiasLabel } from "../lib/marketPulseEngine.js";
 import { getSnapshot, type LiveQuote } from "../lib/schwabStreamer.js";
 import { selectStrategies, selectStrategiesByRegime, classifyRegime, checkOverrideConflict, STRATEGIST_SYSTEM_PROMPT, type OptionContract, type StrategyPayload, type RegimeClassification } from "../lib/optionsStrategist.js";
+import { runPreTradeChecks, type PreTradeInput, type PreTradeResult } from "../lib/preTradeRiskEngine.js";
 
 const router: IRouter = Router();
 
@@ -1978,6 +1979,50 @@ Be concise and institutional-grade. Focus on actual market correlations, sector 
   } catch (err) {
     req.log.error({ err }, "Sympathy plays AI error");
     res.json({ response: "Unable to generate sympathy plays at this time." });
+  }
+});
+
+router.post("/pre-trade-check", async (req, res) => {
+  try {
+  const { strategy, pulseComposite, pulseConfidence, pulseEdge, vix, accountSize, settings } = req.body as PreTradeInput;
+
+  if (!strategy || !strategy.strategy_type || strategy.max_loss === undefined) {
+    return res.status(400).json({ error: "Valid strategy payload is required" });
+  }
+
+  const input: PreTradeInput = {
+    strategy,
+    pulseComposite: pulseComposite ?? 0,
+    pulseConfidence: pulseConfidence ?? 0,
+    pulseEdge: pulseEdge ?? "NO_EDGE",
+    vix: vix ?? null,
+    accountSize: accountSize ?? 25000,
+    settings: {
+      minRR: settings?.minRR ?? 0.25,
+      maxPositionPct: settings?.maxPositionPct ?? 3,
+      minDTE: settings?.minDTE ?? 5,
+      blockOnRed: settings?.blockOnRed ?? false,
+    },
+  };
+
+  const result = runPreTradeChecks(input);
+
+  let aiOneLiner = "";
+  try {
+    const summary = result.checks.map(c => `${c.label}: ${c.status} (${c.value})`).join("; ");
+    const prompt = `You are a risk manager giving a one-sentence summary of a pre-trade risk check. Be direct and concise. The overall result is ${result.overall} with ${result.passCount} passes, ${result.warnCount} warnings, ${result.failCount} fails. Details: ${summary}. Strategy: ${strategy.strategy_type}. Give exactly one short sentence (max 20 words) that a trader would find useful.`;
+    aiOneLiner = await callGemini(prompt, "gemini-2.5-flash", 0.3);
+  } catch {
+    aiOneLiner = result.overall === "PASS" ? "All checks passed. Clear to trade."
+      : result.overall === "WARN" ? "Caution: some checks flagged. Review before entry."
+      : "Multiple risk flags. Consider passing on this setup.";
+  }
+
+  res.json({ ...result, aiOneLiner });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    req.log.error({ err }, "Pre-trade check error");
+    res.status(500).json({ error: msg });
   }
 });
 

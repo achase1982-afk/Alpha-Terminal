@@ -37,6 +37,16 @@ export interface ExitRules {
   time_exit: string;
 }
 
+export type RiskCategory = "DEFINED" | "CASH_SECURED" | "MARGIN_BASED";
+
+export interface RiskEvaluation {
+  category: RiskCategory;
+  risk_metric: number;
+  risk_label: string;
+  capital_required?: number;
+  within_limits: boolean;
+}
+
 export interface StrategyPayload {
   strategy_type: string;
   expiration_date: string;
@@ -52,10 +62,12 @@ export interface StrategyPayload {
   breakeven_upper?: number;
   probability_of_profit_pct: number;
   risk_reward_ratio: string;
+  risk_reward_display: string;
   size_recommendation: string;
   contracts: number;
   exit_rules: ExitRules;
   undefined_risk?: boolean;
+  risk_evaluation: RiskEvaluation;
 }
 
 export type MarketRegime =
@@ -145,6 +157,58 @@ function toLeg(c: OptionContract, type: "CALL" | "PUT", action: "BUY" | "SELL"):
 
 function r2(v: number): number {
   return Math.round(v * 100) / 100;
+}
+
+export function getRiskCategory(strategyType: StrategyType): RiskCategory {
+  const defined: StrategyType[] = [
+    "BULL_PUT_SPREAD", "BEAR_CALL_SPREAD", "BULL_CALL_SPREAD", "BEAR_PUT_SPREAD",
+    "CALL_DEBIT_SPREAD", "PUT_DEBIT_SPREAD", "IRON_CONDOR", "IRON_BUTTERFLY",
+    "LONG_CALL", "LONG_CALL_45_90DTE", "LONG_CALL_90DTE", "LONG_PUT",
+  ];
+  const cashSecured: StrategyType[] = ["CASH_SECURED_PUT"];
+  if (defined.includes(strategyType)) return "DEFINED";
+  if (cashSecured.includes(strategyType)) return "CASH_SECURED";
+  return "MARGIN_BASED";
+}
+
+export function evaluateRisk(
+  setup: { max_loss: number; max_profit: number; short_leg: { strike: number } },
+  strategyType: StrategyType,
+  maxRiskCap: number,
+): RiskEvaluation {
+  const category = getRiskCategory(strategyType);
+  switch (category) {
+    case "DEFINED":
+      return {
+        category,
+        risk_metric: setup.max_loss,
+        risk_label: "Max Loss",
+        within_limits: setup.max_loss <= maxRiskCap,
+      };
+    case "CASH_SECURED": {
+      const capitalRequired = setup.short_leg.strike * 100;
+      return {
+        category,
+        risk_metric: capitalRequired,
+        risk_label: "Capital Required",
+        capital_required: capitalRequired,
+        within_limits: capitalRequired <= maxRiskCap,
+      };
+    }
+    case "MARGIN_BASED": {
+      const marginReq = setup.max_loss;
+      return {
+        category,
+        risk_metric: marginReq,
+        risk_label: "Margin Required",
+        within_limits: marginReq <= maxRiskCap,
+      };
+    }
+  }
+}
+
+function rrDisplay(maxLoss: number, maxProfit: number): string {
+  return `Risk $${Math.abs(maxLoss).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })} / Reward $${Math.abs(maxProfit).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 }
 
 function sizeContracts(maxLoss: number, multiplier: number): number {
@@ -365,21 +429,25 @@ function buildBullPutSpreadForExp(
   if (contracts === 0) return null;
   const pop = Math.round((1 - Math.abs(shortLeg.delta ?? delta)) * 100);
 
+  const sl = toLeg(shortLeg, "PUT", "SELL");
+  const ll = toLeg(longLeg, "PUT", "BUY");
   return {
     strategy_type: "Bull Put Spread (Put Credit Spread)",
     expiration_date: exp.expirationDate,
     days_to_expiration: exp.daysToExpiration,
-    short_leg: toLeg(shortLeg, "PUT", "SELL"),
-    long_leg: toLeg(longLeg, "PUT", "BUY"),
+    short_leg: sl,
+    long_leg: ll,
     net_credit: r2(netCredit),
     max_profit: r2(maxProfit),
     max_loss: r2(maxLoss),
     breakeven: r2(shortLeg.strike - netCredit),
     probability_of_profit_pct: pop,
     risk_reward_ratio: `${r2(maxProfit / maxLoss)}:1`,
+    risk_reward_display: rrDisplay(maxLoss, maxProfit),
     size_recommendation: `Based on $${Math.round(MAX_RISK_PER_TRADE * sizeMul)} max risk per trade`,
     contracts,
     exit_rules: buildCreditExitRules(maxProfit),
+    risk_evaluation: evaluateRisk({ max_loss: r2(maxLoss), max_profit: r2(maxProfit), short_leg: sl }, "BULL_PUT_SPREAD", MAX_RISK_PER_TRADE * sizeMul),
   };
 }
 
@@ -410,21 +478,25 @@ function buildBearCallSpreadForExp(
   if (contracts === 0) return null;
   const pop = Math.round((1 - Math.abs(shortLeg.delta ?? delta)) * 100);
 
+  const sl = toLeg(shortLeg, "CALL", "SELL");
+  const ll = toLeg(longLeg, "CALL", "BUY");
   return {
     strategy_type: "Bear Call Spread (Call Credit Spread)",
     expiration_date: exp.expirationDate,
     days_to_expiration: exp.daysToExpiration,
-    short_leg: toLeg(shortLeg, "CALL", "SELL"),
-    long_leg: toLeg(longLeg, "CALL", "BUY"),
+    short_leg: sl,
+    long_leg: ll,
     net_credit: r2(netCredit),
     max_profit: r2(maxProfit),
     max_loss: r2(maxLoss),
     breakeven: r2(shortLeg.strike + netCredit),
     probability_of_profit_pct: pop,
     risk_reward_ratio: `${r2(maxProfit / maxLoss)}:1`,
+    risk_reward_display: rrDisplay(maxLoss, maxProfit),
     size_recommendation: `Based on $${Math.round(MAX_RISK_PER_TRADE * sizeMul)} max risk per trade`,
     contracts,
     exit_rules: buildCreditExitRules(maxProfit),
+    risk_evaluation: evaluateRisk({ max_loss: r2(maxLoss), max_profit: r2(maxProfit), short_leg: sl }, "BEAR_CALL_SPREAD", MAX_RISK_PER_TRADE * sizeMul),
   };
 }
 
@@ -455,21 +527,25 @@ function buildBullCallSpreadForExp(
   if (contracts === 0) return null;
   const pop = Math.round(Math.abs(longLeg.delta ?? 0.40) * 100);
 
+  const sl = toLeg(shortLeg, "CALL", "SELL");
+  const ll = toLeg(longLeg, "CALL", "BUY");
   return {
     strategy_type: "Bull Call Spread (Call Debit Spread)",
     expiration_date: exp.expirationDate,
     days_to_expiration: exp.daysToExpiration,
-    short_leg: toLeg(shortLeg, "CALL", "SELL"),
-    long_leg: toLeg(longLeg, "CALL", "BUY"),
+    short_leg: sl,
+    long_leg: ll,
     net_credit: r2(-netDebit),
     max_profit: r2(maxProfit),
     max_loss: r2(maxLoss),
     breakeven: r2(longLeg.strike + netDebit),
     probability_of_profit_pct: pop,
     risk_reward_ratio: `${r2(maxProfit / maxLoss)}:1`,
+    risk_reward_display: rrDisplay(maxLoss, maxProfit),
     size_recommendation: `Based on $${Math.round(MAX_RISK_PER_TRADE * sizeMul)} max risk per trade`,
     contracts,
     exit_rules: buildDebitExitRules(maxProfit, maxLoss),
+    risk_evaluation: evaluateRisk({ max_loss: r2(maxLoss), max_profit: r2(maxProfit), short_leg: sl }, "BULL_CALL_SPREAD", MAX_RISK_PER_TRADE * sizeMul),
   };
 }
 
@@ -500,21 +576,25 @@ function buildBearPutSpreadForExp(
   if (contracts === 0) return null;
   const pop = Math.round(Math.abs(longLeg.delta ?? 0.40) * 100);
 
+  const sl = toLeg(shortLeg, "PUT", "SELL");
+  const ll = toLeg(longLeg, "PUT", "BUY");
   return {
     strategy_type: "Bear Put Spread (Put Debit Spread)",
     expiration_date: exp.expirationDate,
     days_to_expiration: exp.daysToExpiration,
-    short_leg: toLeg(shortLeg, "PUT", "SELL"),
-    long_leg: toLeg(longLeg, "PUT", "BUY"),
+    short_leg: sl,
+    long_leg: ll,
     net_credit: r2(-netDebit),
     max_profit: r2(maxProfit),
     max_loss: r2(maxLoss),
     breakeven: r2(longLeg.strike - netDebit),
     probability_of_profit_pct: pop,
     risk_reward_ratio: `${r2(maxProfit / maxLoss)}:1`,
+    risk_reward_display: rrDisplay(maxLoss, maxProfit),
     size_recommendation: `Based on $${Math.round(MAX_RISK_PER_TRADE * sizeMul)} max risk per trade`,
     contracts,
     exit_rules: buildDebitExitRules(maxProfit, maxLoss),
+    risk_evaluation: evaluateRisk({ max_loss: r2(maxLoss), max_profit: r2(maxProfit), short_leg: sl }, "BEAR_PUT_SPREAD", MAX_RISK_PER_TRADE * sizeMul),
   };
 }
 
@@ -554,11 +634,12 @@ function buildIronCondorForExp(
   if (contracts === 0) return null;
   const pop = Math.round((1 - Math.abs(shortCall.delta ?? delta) - Math.abs(shortPut.delta ?? delta)) * 100);
 
+  const sl = toLeg(shortPut, "PUT", "SELL");
   return {
     strategy_type: "Iron Condor",
     expiration_date: exp.expirationDate,
     days_to_expiration: exp.daysToExpiration,
-    short_leg: toLeg(shortPut, "PUT", "SELL"),
+    short_leg: sl,
     long_leg: toLeg(longPut, "PUT", "BUY"),
     short_leg_2: toLeg(shortCall, "CALL", "SELL"),
     long_leg_2: toLeg(longCall, "CALL", "BUY"),
@@ -569,9 +650,11 @@ function buildIronCondorForExp(
     breakeven_upper: r2(shortCall.strike + totalCredit),
     probability_of_profit_pct: pop,
     risk_reward_ratio: `${r2(maxProfit / maxLoss)}:1`,
+    risk_reward_display: rrDisplay(maxLoss, maxProfit),
     size_recommendation: `Based on $${Math.round(MAX_RISK_PER_TRADE * sizeMul)} max risk per trade`,
     contracts,
     exit_rules: buildCreditExitRules(maxProfit),
+    risk_evaluation: evaluateRisk({ max_loss: r2(maxLoss), max_profit: r2(maxProfit), short_leg: sl }, "IRON_CONDOR", MAX_RISK_PER_TRADE * sizeMul),
   };
 }
 
@@ -599,11 +682,12 @@ function buildShortStrangleForExp(
   if (contracts === 0) return null;
   const pop = Math.round((1 - Math.abs(shortCall.delta ?? delta) - Math.abs(shortPut.delta ?? delta)) * 100);
 
+  const sl = toLeg(shortPut, "PUT", "SELL");
   return {
     strategy_type: "Short Strangle (Undefined Risk — managed stop at 2x credit)",
     expiration_date: exp.expirationDate,
     days_to_expiration: exp.daysToExpiration,
-    short_leg: toLeg(shortPut, "PUT", "SELL"),
+    short_leg: sl,
     long_leg: toLeg(shortCall, "CALL", "SELL"),
     net_credit: r2(totalCredit),
     max_profit: r2(maxProfit),
@@ -612,9 +696,11 @@ function buildShortStrangleForExp(
     breakeven_upper: r2(shortCall.strike + totalCredit),
     probability_of_profit_pct: pop,
     risk_reward_ratio: `${r2(maxProfit / managedStop)}:1`,
+    risk_reward_display: rrDisplay(managedStop, maxProfit),
     size_recommendation: `Sized to $${Math.round(MAX_RISK_PER_TRADE * sizeMul)} max risk with 2x credit stop`,
     contracts,
     undefined_risk: true,
+    risk_evaluation: evaluateRisk({ max_loss: r2(managedStop), max_profit: r2(maxProfit), short_leg: sl }, "SHORT_STRANGLE", MAX_RISK_PER_TRADE * sizeMul),
     exit_rules: {
       profit_target_pct: 50,
       profit_target_amount: r2(maxProfit * 0.5),
@@ -652,11 +738,12 @@ function buildShortPutForExp(
   dummyLong.bid = 0;
   dummyLong.ask = 0;
 
+  const sl = toLeg(shortLeg, "PUT", "SELL");
   return {
     strategy_type: "Short Put (Undefined Risk — managed stop at 3x premium)",
     expiration_date: exp.expirationDate,
     days_to_expiration: exp.daysToExpiration,
-    short_leg: toLeg(shortLeg, "PUT", "SELL"),
+    short_leg: sl,
     long_leg: dummyLong,
     net_credit: r2(premium),
     max_profit: r2(maxProfit),
@@ -664,9 +751,11 @@ function buildShortPutForExp(
     breakeven: r2(shortLeg.strike - premium),
     probability_of_profit_pct: pop,
     risk_reward_ratio: `${r2(maxProfit / managedStop)}:1`,
+    risk_reward_display: rrDisplay(managedStop, maxProfit),
     size_recommendation: `Sized to $${Math.round(MAX_RISK_PER_TRADE * sizeMul)} max risk with 3x premium stop`,
     contracts,
     undefined_risk: true,
+    risk_evaluation: evaluateRisk({ max_loss: r2(managedStop), max_profit: r2(maxProfit), short_leg: sl }, "SHORT_PUT", MAX_RISK_PER_TRADE * sizeMul),
     exit_rules: {
       profit_target_pct: 50,
       profit_target_amount: r2(maxProfit * 0.5),
@@ -683,7 +772,23 @@ function buildCashSecuredPutForExp(
   delta: number,
   sizeMul: number,
 ): StrategyPayload | null {
-  return buildShortPutForExp(puts, exp, delta, sizeMul);
+  const base = buildShortPutForExp(puts, exp, delta, sizeMul);
+  if (!base) return null;
+  const capitalRequired = base.short_leg.strike * 100;
+  return {
+    ...base,
+    strategy_type: "Cash Secured Put",
+    undefined_risk: false,
+    risk_evaluation: {
+      category: "CASH_SECURED",
+      risk_metric: capitalRequired,
+      risk_label: "Capital Required",
+      capital_required: capitalRequired,
+      within_limits: capitalRequired <= MAX_RISK_PER_TRADE * sizeMul,
+    },
+    risk_reward_display: rrDisplay(capitalRequired, base.max_profit),
+    size_recommendation: `Capital required: $${capitalRequired.toLocaleString()} per contract`,
+  };
 }
 
 function buildIronButterflyForExp(
@@ -722,11 +827,12 @@ function buildIronButterflyForExp(
   if (contracts === 0) return null;
   const pop = Math.round((1 - Math.abs(shortCall.delta ?? 0.50) - Math.abs(shortPut.delta ?? 0.50)) * 100);
 
+  const sl = toLeg(shortPut, "PUT", "SELL");
   return {
     strategy_type: "Iron Butterfly",
     expiration_date: exp.expirationDate,
     days_to_expiration: exp.daysToExpiration,
-    short_leg: toLeg(shortPut, "PUT", "SELL"),
+    short_leg: sl,
     long_leg: toLeg(longPut, "PUT", "BUY"),
     short_leg_2: toLeg(shortCall, "CALL", "SELL"),
     long_leg_2: toLeg(longCall, "CALL", "BUY"),
@@ -737,9 +843,11 @@ function buildIronButterflyForExp(
     breakeven_upper: r2(shortCall.strike + totalCredit),
     probability_of_profit_pct: pop,
     risk_reward_ratio: `${r2(maxProfit / maxLoss)}:1`,
+    risk_reward_display: rrDisplay(maxLoss, maxProfit),
     size_recommendation: `Based on $${Math.round(MAX_RISK_PER_TRADE * sizeMul)} max risk per trade`,
     contracts,
     exit_rules: buildCreditExitRules(maxProfit),
+    risk_evaluation: evaluateRisk({ max_loss: r2(maxLoss), max_profit: r2(maxProfit), short_leg: sl }, "IRON_BUTTERFLY", MAX_RISK_PER_TRADE * sizeMul),
   };
 }
 
@@ -782,9 +890,11 @@ function buildLongPutForExp(
     breakeven: r2(longLeg.strike - premium),
     probability_of_profit_pct: pop,
     risk_reward_ratio: `${r2(maxProfit / maxLoss)}:1`,
+    risk_reward_display: rrDisplay(maxLoss, maxProfit),
     size_recommendation: `Based on $${Math.round(MAX_RISK_PER_TRADE * sizeMul)} max risk per trade`,
     contracts,
     exit_rules: buildDebitExitRules(maxProfit, maxLoss),
+    risk_evaluation: evaluateRisk({ max_loss: r2(maxLoss), max_profit: r2(maxProfit), short_leg: dummyShort }, "LONG_PUT", MAX_RISK_PER_TRADE * sizeMul),
   };
 }
 
@@ -826,9 +936,11 @@ function buildLongCallForExp(
     breakeven: r2(longLeg.strike + premium),
     probability_of_profit_pct: pop,
     risk_reward_ratio: `${r2(maxProfit / maxLoss)}:1`,
+    risk_reward_display: rrDisplay(maxLoss, maxProfit),
     size_recommendation: `Based on $${Math.round(MAX_RISK_PER_TRADE * sizeMul)} max risk per trade`,
     contracts,
     exit_rules: buildDebitExitRules(maxProfit, maxLoss),
+    risk_evaluation: evaluateRisk({ max_loss: r2(maxLoss), max_profit: r2(maxProfit), short_leg: dummyShort }, "LONG_CALL", MAX_RISK_PER_TRADE * sizeMul),
   };
 }
 
@@ -858,8 +970,9 @@ function buildStrategyForExpiration(
     case "SHORT_STRANGLE":
       return buildShortStrangleForExp(calls, puts, exp, d, s);
     case "SHORT_PUT":
-    case "CASH_SECURED_PUT":
       return buildShortPutForExp(puts, exp, d, s);
+    case "CASH_SECURED_PUT":
+      return buildCashSecuredPutForExp(puts, exp, d, s);
     case "IRON_BUTTERFLY":
       return buildIronButterflyForExp(calls, puts, exp, 0.50, s);
     case "LONG_PUT":

@@ -88,6 +88,19 @@ interface TerminalState {
   stratAvoidEarnings: boolean;
   setStratAvoidEarnings: (v: boolean) => void;
 
+  preTradeEnabled: boolean;
+  setPreTradeEnabled: (v: boolean) => void;
+  preTradeBlockOnRed: boolean;
+  setPreTradeBlockOnRed: (v: boolean) => void;
+  preTradeMinRR: number;
+  setPreTradeMinRR: (v: number) => void;
+  preTradeMaxPositionPct: number;
+  setPreTradeMaxPositionPct: (v: number) => void;
+  preTradeMinDTE: number;
+  setPreTradeMinDTE: (v: number) => void;
+  accountSize: number;
+  setAccountSize: (v: number) => void;
+
   chatHistory: ChatMessage[];
   addChatMessage: (msg: ChatMessage) => void;
   clearChat: () => void;
@@ -200,6 +213,19 @@ export const useTerminalStore = create<TerminalState>()(
       setStratPremium: (stratPremium) => set({ stratPremium }),
       stratAvoidEarnings: true,
       setStratAvoidEarnings: (stratAvoidEarnings) => set({ stratAvoidEarnings }),
+
+      preTradeEnabled: true,
+      setPreTradeEnabled: (preTradeEnabled) => set({ preTradeEnabled }),
+      preTradeBlockOnRed: false,
+      setPreTradeBlockOnRed: (preTradeBlockOnRed) => set({ preTradeBlockOnRed }),
+      preTradeMinRR: 0.25,
+      setPreTradeMinRR: (preTradeMinRR) => set({ preTradeMinRR }),
+      preTradeMaxPositionPct: 3,
+      setPreTradeMaxPositionPct: (preTradeMaxPositionPct) => set({ preTradeMaxPositionPct }),
+      preTradeMinDTE: 5,
+      setPreTradeMinDTE: (preTradeMinDTE) => set({ preTradeMinDTE }),
+      accountSize: 25000,
+      setAccountSize: (accountSize) => set({ accountSize }),
 
       chatHistory: [],
       addChatMessage: (msg) => set((state) => ({ chatHistory: [...state.chatHistory, msg] })),

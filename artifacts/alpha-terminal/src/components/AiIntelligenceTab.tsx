@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Activity, BarChart2, Target, DollarSign, Shield, TrendingUp, Scale,
-  Zap, ChevronDown, AlertTriangle,
+  Zap, ChevronDown, AlertTriangle, CheckCircle2, XCircle, AlertCircle,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { MarketPulseDashboard } from "@/components/market-pulse/MarketPulseDashboard";
@@ -40,6 +40,33 @@ interface ExitRules {
   time_exit: string;
 }
 
+interface RiskEvaluation {
+  category: "DEFINED" | "CASH_SECURED" | "MARGIN_BASED";
+  risk_metric: number;
+  risk_label: string;
+  capital_required?: number;
+  within_limits: boolean;
+}
+
+interface PreTradeCheck {
+  id: string;
+  label: string;
+  status: "PASS" | "WARN" | "FAIL";
+  value: string;
+  threshold: string;
+  detail: string;
+}
+
+interface PreTradeResult {
+  overall: "PASS" | "WARN" | "FAIL";
+  checks: PreTradeCheck[];
+  failCount: number;
+  warnCount: number;
+  passCount: number;
+  blockTrade: boolean;
+  aiOneLiner?: string;
+}
+
 interface StrategyPayload {
   strategy_type: string;
   expiration_date: string;
@@ -55,10 +82,12 @@ interface StrategyPayload {
   breakeven_upper?: number;
   probability_of_profit_pct: number;
   risk_reward_ratio: string;
+  risk_reward_display?: string;
   size_recommendation: string;
   contracts: number;
   exit_rules: ExitRules;
   undefined_risk?: boolean;
+  risk_evaluation?: RiskEvaluation;
 }
 
 interface RegimeInfo {
@@ -148,12 +177,71 @@ function UndefinedRiskWarning() {
   );
 }
 
-function RealStrategyCard({ s, idx }: { s: StrategyPayload; idx: number }) {
+const STATUS_COLORS: Record<string, string> = { PASS: "#00d166", WARN: "#FFB800", FAIL: "#f23645" };
+const STATUS_ICONS: Record<string, React.ReactNode> = {
+  PASS: <CheckCircle2 className="w-3.5 h-3.5" style={{ color: "#00d166" }} />,
+  WARN: <AlertCircle className="w-3.5 h-3.5" style={{ color: "#FFB800" }} />,
+  FAIL: <XCircle className="w-3.5 h-3.5" style={{ color: "#f23645" }} />,
+};
+
+function PreTradeCheckPanel({ result }: { result: PreTradeResult }) {
+  const overallColor = STATUS_COLORS[result.overall];
+  const overallLabel = result.overall === "PASS" ? "CLEAR" : result.overall === "WARN" ? "CAUTION" : "BLOCKED";
+  return (
+    <div className="mx-4 mb-3 rounded-lg border overflow-hidden" style={{ borderColor: `${overallColor}40`, background: `${overallColor}08` }}>
+      <div className="px-3 py-2 flex items-center justify-between" style={{ borderBottom: `1px solid ${overallColor}30` }}>
+        <div className="flex items-center gap-2">
+          {STATUS_ICONS[result.overall]}
+          <span className="font-mono text-[10px] font-bold uppercase tracking-widest" style={{ color: overallColor }}>
+            Pre-Trade: {overallLabel}
+          </span>
+        </div>
+        <span className="font-mono text-[9px] text-[#71717a]">
+          {result.passCount}P / {result.warnCount}W / {result.failCount}F
+        </span>
+      </div>
+      <div className="px-3 py-1.5">
+        {result.checks.map(c => (
+          <div key={c.id} className="flex items-center justify-between py-1 border-b border-[#2A2A2C]/50 last:border-0">
+            <div className="flex items-center gap-1.5">
+              {STATUS_ICONS[c.status]}
+              <span className="font-mono text-[10px] text-[#a1a1aa]">{c.label}</span>
+            </div>
+            <span className="font-mono text-[10px] font-bold text-white">{c.value}</span>
+          </div>
+        ))}
+      </div>
+      {result.aiOneLiner && (
+        <div className="px-3 py-2 border-t" style={{ borderColor: `${overallColor}20` }}>
+          <span className="font-mono text-[10px] text-[#a1a1aa] italic">{result.aiOneLiner}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RiskCategoryBadge({ evaluation }: { evaluation?: RiskEvaluation }) {
+  if (!evaluation) return null;
+  const badgeColor = evaluation.category === "DEFINED" ? "#00d166"
+    : evaluation.category === "CASH_SECURED" ? "#FFB800" : "#f23645";
+  const label = evaluation.category === "DEFINED" ? "Defined Risk"
+    : evaluation.category === "CASH_SECURED" ? "Cash Secured" : "Margin Based";
+  return (
+    <span className="font-mono text-[8px] px-1.5 py-0.5 rounded font-bold" style={{ background: `${badgeColor}15`, color: badgeColor }}>
+      {label}
+    </span>
+  );
+}
+
+function RealStrategyCard({ s, idx, preTradeResult }: { s: StrategyPayload; idx: number; preTradeResult?: PreTradeResult | null }) {
   const isCredit = s.net_credit > 0;
+  const re = s.risk_evaluation;
+  const riskLabel = re ? re.risk_label : "Max Risk";
+  const riskValue = re ? fmtDollar(re.risk_metric) : fmtDollar(s.max_loss);
 
   const metrics = [
     { label: isCredit ? "Net Credit" : "Net Debit", value: fmtDollar(s.net_credit), icon: <DollarSign className="w-3.5 h-3.5" />, color: "#FFB800" },
-    { label: "Max Risk", value: fmtDollar(s.max_loss), icon: <Shield className="w-3.5 h-3.5" />, color: "#f23645" },
+    { label: riskLabel, value: riskValue, icon: <Shield className="w-3.5 h-3.5" />, color: "#f23645" },
     { label: "Max Reward", value: fmtDollar(s.max_profit), icon: <TrendingUp className="w-3.5 h-3.5" />, color: "#00d166" },
     { label: "R/R Ratio", value: s.risk_reward_ratio, icon: <Scale className="w-3.5 h-3.5" />, color: "#FF6B2B" },
   ];
@@ -164,10 +252,18 @@ function RealStrategyCard({ s, idx }: { s: StrategyPayload; idx: number }) {
         <div className="flex items-center gap-2">
           <span className="font-mono text-xs font-bold text-primary">#{idx + 1}</span>
           <span className="font-mono text-sm font-bold text-white">{s.strategy_type}</span>
+          <RiskCategoryBadge evaluation={re} />
         </div>
         <span className="font-mono text-[10px] text-[#71717a]">{s.days_to_expiration}DTE</span>
       </div>
       {s.undefined_risk && <UndefinedRiskWarning />}
+      {preTradeResult && <PreTradeCheckPanel result={preTradeResult} />}
+
+      {s.risk_reward_display && (
+        <div className="mx-4 mt-2 px-3 py-1.5 rounded-lg border border-[#FF6B2B]/30" style={{ background: "rgba(255,107,43,0.06)" }}>
+          <span className="font-mono text-[10px] text-[#FF6B2B] font-bold">{s.risk_reward_display}</span>
+        </div>
+      )}
 
       <div className="mx-4 mt-3 rounded-lg border border-[#2A2A2C] overflow-hidden" style={{ background: "#0c0c0c" }}>
         <div className="px-3 py-1.5 border-b border-[#2A2A2C]">
@@ -215,7 +311,7 @@ function RealStrategyCard({ s, idx }: { s: StrategyPayload; idx: number }) {
   );
 }
 
-function StrategistResultView({ strategies, narrative, isStreaming, streamingText, regime, pulse, overrideWarning }: {
+function StrategistResultView({ strategies, narrative, isStreaming, streamingText, regime, pulse, overrideWarning, preTradeResults }: {
   strategies: StrategyPayload[];
   narrative: string;
   isStreaming: boolean;
@@ -223,13 +319,14 @@ function StrategistResultView({ strategies, narrative, isStreaming, streamingTex
   regime?: RegimeInfo | null;
   pulse?: PulseSnapshot | null;
   overrideWarning?: string | null;
+  preTradeResults?: Record<number, PreTradeResult>;
 }) {
   return (
     <div className="space-y-4">
       {regime && <RegimeDisplayBanner regime={regime} pulse={pulse ?? undefined} />}
       {overrideWarning && <OverrideWarningBanner message={overrideWarning} />}
       {strategies.map((s, i) => (
-        <RealStrategyCard key={i} s={s} idx={i} />
+        <RealStrategyCard key={i} s={s} idx={i} preTradeResult={preTradeResults?.[i]} />
       ))}
       {(narrative || streamingText) && (
         <div className="border-t border-card-border pt-4">
@@ -310,6 +407,12 @@ function StrategySettings() {
     stratBias, setStratBias,
     stratPremium, setStratPremium,
     stratAvoidEarnings, setStratAvoidEarnings,
+    preTradeEnabled, setPreTradeEnabled,
+    preTradeBlockOnRed, setPreTradeBlockOnRed,
+    preTradeMinRR, setPreTradeMinRR,
+    preTradeMaxPositionPct, setPreTradeMaxPositionPct,
+    preTradeMinDTE, setPreTradeMinDTE,
+    accountSize, setAccountSize,
   } = useTerminalStore();
 
   const locked = stratAutopilot;
@@ -426,6 +529,99 @@ function StrategySettings() {
           </div>
           <ToggleSwitch checked={stratAvoidEarnings} onChange={setStratAvoidEarnings} disabled={locked} />
         </div>
+
+        <div className="border-t border-card-border pt-4 mt-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Shield className="w-3.5 h-3.5 text-[#FFB800]" />
+            <span className="font-mono text-[11px] font-bold text-gray-400 uppercase tracking-wider">Pre-Trade Risk Manager</span>
+          </div>
+
+          <div className="flex items-center justify-between mb-3">
+            <span className="font-mono text-[10px] text-gray-400 uppercase tracking-wider">Enable Risk Checks</span>
+            <ToggleSwitch checked={preTradeEnabled} onChange={setPreTradeEnabled} />
+          </div>
+
+          <div className="flex items-center justify-between mb-3" style={{ opacity: preTradeEnabled ? 1 : 0.35 }}>
+            <span className="font-mono text-[10px] text-gray-400 uppercase tracking-wider">Block on RED</span>
+            <ToggleSwitch checked={preTradeBlockOnRed} onChange={setPreTradeBlockOnRed} disabled={!preTradeEnabled} />
+          </div>
+
+          <div className="mb-3" style={{ opacity: preTradeEnabled ? 1 : 0.35 }}>
+            <div className="flex items-center justify-between mb-1">
+              <span className="font-mono text-[10px] text-gray-400 uppercase tracking-wider">Account Size</span>
+              <span className="font-mono text-xs text-white font-bold">${accountSize.toLocaleString()}</span>
+            </div>
+            <input
+              type="range"
+              min={5000}
+              max={500000}
+              step={5000}
+              value={accountSize}
+              onChange={e => setAccountSize(Number(e.target.value))}
+              disabled={!preTradeEnabled}
+              className="w-full h-1 rounded-full appearance-none"
+              style={{ accentColor: "#FFB800", background: "#2A2A2C", cursor: preTradeEnabled ? "pointer" : "not-allowed" }}
+            />
+            <div className="flex justify-between mt-0.5">
+              <span className="font-mono text-[9px] text-gray-600">$5K</span>
+              <span className="font-mono text-[9px] text-gray-600">$500K</span>
+            </div>
+          </div>
+
+          <div className="mb-3" style={{ opacity: preTradeEnabled ? 1 : 0.35 }}>
+            <div className="flex items-center justify-between mb-1">
+              <span className="font-mono text-[10px] text-gray-400 uppercase tracking-wider">Min R/R</span>
+              <span className="font-mono text-xs text-white font-bold">{preTradeMinRR.toFixed(2)}:1</span>
+            </div>
+            <input
+              type="range"
+              min={0.1}
+              max={1.0}
+              step={0.05}
+              value={preTradeMinRR}
+              onChange={e => setPreTradeMinRR(Number(e.target.value))}
+              disabled={!preTradeEnabled}
+              className="w-full h-1 rounded-full appearance-none"
+              style={{ accentColor: "#FF6B2B", background: "#2A2A2C", cursor: preTradeEnabled ? "pointer" : "not-allowed" }}
+            />
+          </div>
+
+          <div className="mb-3" style={{ opacity: preTradeEnabled ? 1 : 0.35 }}>
+            <div className="flex items-center justify-between mb-1">
+              <span className="font-mono text-[10px] text-gray-400 uppercase tracking-wider">Max Position %</span>
+              <span className="font-mono text-xs text-white font-bold">{preTradeMaxPositionPct}%</span>
+            </div>
+            <input
+              type="range"
+              min={1}
+              max={10}
+              step={0.5}
+              value={preTradeMaxPositionPct}
+              onChange={e => setPreTradeMaxPositionPct(Number(e.target.value))}
+              disabled={!preTradeEnabled}
+              className="w-full h-1 rounded-full appearance-none"
+              style={{ accentColor: "#FF6B2B", background: "#2A2A2C", cursor: preTradeEnabled ? "pointer" : "not-allowed" }}
+            />
+          </div>
+
+          <div style={{ opacity: preTradeEnabled ? 1 : 0.35 }}>
+            <div className="flex items-center justify-between mb-1">
+              <span className="font-mono text-[10px] text-gray-400 uppercase tracking-wider">Min DTE</span>
+              <span className="font-mono text-xs text-white font-bold">{preTradeMinDTE} days</span>
+            </div>
+            <input
+              type="range"
+              min={1}
+              max={30}
+              step={1}
+              value={preTradeMinDTE}
+              onChange={e => setPreTradeMinDTE(Number(e.target.value))}
+              disabled={!preTradeEnabled}
+              className="w-full h-1 rounded-full appearance-none"
+              style={{ accentColor: "#FF6B2B", background: "#2A2A2C", cursor: preTradeEnabled ? "pointer" : "not-allowed" }}
+            />
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -508,6 +704,8 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
     strategistResult, setStrategistResult,
     stratAutopilot, stratMaxRisk, stratMinPoP, stratMinRR,
     stratBias, stratPremium, stratAvoidEarnings,
+    preTradeEnabled, preTradeBlockOnRed, preTradeMinRR,
+    preTradeMaxPositionPct, preTradeMinDTE, accountSize,
   } = useTerminalStore();
 
   const { cachedData: strategistCache, setCachedData: setStrategistCache } = useStrategistCache(symbol);
@@ -529,6 +727,7 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
   const [pulseSnapshot, setPulseSnapshot] = useState<PulseSnapshot | null>(null);
   const [overrideWarning, setOverrideWarning] = useState<string | null>(null);
   const [strategistStatus, setStrategistStatus] = useState<string>("");
+  const [preTradeResults, setPreTradeResults] = useState<Record<number, PreTradeResult>>({});
   const cacheRestoredRef = useRef(false);
   const prevSymbolRef = useRef(symbol);
   const strategistRunRef = useRef(0);
@@ -603,6 +802,47 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
     { query: { enabled: !!accessToken && chainEnabled } }
   );
 
+  useEffect(() => {
+    if (!preTradeEnabled) {
+      setPreTradeResults({});
+      return;
+    }
+    if (realStrategies.length === 0 || !pulseSnapshot) return;
+    if (isStreaming || isStrategizing) return;
+
+    const runChecks = async () => {
+      const results: Record<number, PreTradeResult> = {};
+      for (let i = 0; i < realStrategies.length; i++) {
+        try {
+          const res = await fetchWithAuth(`${API_BASE}/ai/pre-trade-check`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              strategy: realStrategies[i],
+              pulseComposite: pulseSnapshot.composite,
+              pulseConfidence: pulseSnapshot.confidence,
+              pulseEdge: pulseSnapshot.todayEdge,
+              vix: null,
+              accountSize,
+              settings: {
+                minRR: preTradeMinRR,
+                maxPositionPct: preTradeMaxPositionPct,
+                minDTE: preTradeMinDTE,
+                blockOnRed: preTradeBlockOnRed,
+              },
+            }),
+          });
+          if (res.ok) {
+            results[i] = await res.json();
+          }
+        } catch {}
+      }
+      setPreTradeResults(results);
+    };
+
+    runChecks();
+  }, [realStrategies, pulseSnapshot, preTradeEnabled, preTradeMinRR, preTradeMaxPositionPct, preTradeMinDTE, preTradeBlockOnRed, accountSize, isStreaming, isStrategizing]);
+
   const handleRunTA = useCallback(async () => {
     if (!quote || !history?.candles) return;
     const runId = ++technicalsRunRef.current;
@@ -659,6 +899,7 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
     setRegimeInfo(null);
     setPulseSnapshot(null);
     setOverrideWarning(null);
+    setPreTradeResults({});
     setActiveResult("strategist");
     setIsStrategizing(true);
     setStrategistStatus("Running market pulse...");
@@ -907,6 +1148,7 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
                       regime={regimeInfo}
                       pulse={pulseSnapshot}
                       overrideWarning={overrideWarning}
+                      preTradeResults={preTradeResults}
                     />
                   </>
                 ) : currentResult && currentResult !== "done" ? (

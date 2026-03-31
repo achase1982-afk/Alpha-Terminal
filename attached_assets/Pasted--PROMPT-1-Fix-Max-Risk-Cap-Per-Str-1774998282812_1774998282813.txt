@@ -1,0 +1,608 @@
+# ============================================================
+
+# PROMPT 1: Fix Max Risk Cap Per Strategy Type
+
+# ============================================================
+
+The Options Strategist currently applies a flat $10,000 max risk cap to all trade suggestions. This is incorrect because different strategy types have fundamentally different risk profiles.
+
+## The Problem
+
+Defined-risk strategies (verticals, iron condors, butterflies) have a known, fixed max loss. A $5-wide bull put spread on a $150 stock has a max loss of $500 per contract. The $10,000 cap works fine here.
+
+Undefined-risk strategies (cash secured puts, covered calls, naked options) have a theoretical max loss that is much larger than the realistic expected loss. A cash secured put on a $150 stock has a theoretical max loss of $15,000 (stock goes to zero). With a $10,000 cap, the strategist will never suggest CSPs on anything trading above $100, which eliminates most of the market.
+
+## The Fix
+
+Replace the single flat max risk cap with strategy-aware risk evaluation:
+
+### For defined-risk strategies (verticals, iron condors, butterflies, debit spreads):
+
+- Use actual max loss (spread width x 100 - credit received) as the risk metric
+- Apply the user’s max risk cap normally
+- This is straightforward and already mostly works
+
+### For cash secured puts:
+
+- Risk metric should be the BUYING POWER REDUCTION (strike price x 100), NOT the theoretical max loss
+- But also show the user the theoretical max loss for transparency
+- If the user’s max risk cap is set, compare it against the cash required to secure the put (strike x 100), not against the theoretical max loss of the stock going to zero
+- Example: CSP on $150 stock, $145 strike = $14,500 buying power required. If user cap is $10,000, this trade is flagged as exceeding risk limits. CSP on $95 stock, $90 strike = $9,000 buying power = within limits.
+
+### For covered calls:
+
+- Risk metric is the cost basis of the shares (100 x current price - premium received)
+- Compare against max risk cap
+
+### For naked puts / naked calls:
+
+- These are the highest risk. Use the margin requirement as the risk metric.
+- Always flag these with a warning regardless of cap
+
+### For straddles / strangles:
+
+- If selling: max loss is theoretically unlimited. Use the combined margin requirement.
+- If buying: max loss is the debit paid. Treat like defined-risk.
+
+## Implementation
+
+In the strategist’s LLM prompt or the post-processing logic, add strategy-type awareness:
+
+```typescript
+type RiskCategory = 'DEFINED' | 'CASH_SECURED' | 'MARGIN_BASED' | 'UNLIMITED';
+
+function getRiskCategory(strategyType: string): RiskCategory {
+  const defined = ['vertical', 'iron_condor', 'butterfly', 'debit_spread', 'calendar'];
+  const cashSecured = ['cash_secured_put', 'covered_call'];
+  const marginBased = ['naked_put', 'naked_call', 'short_straddle', 'short_strangle'];
+  
+  if (defined.some(s => strategyType.includes(s))) return 'DEFINED';
+  if (cashSecured.some(s => strategyType.includes(s))) return 'CASH_SECURED';
+  if (marginBased.some(s => strategyType.includes(s))) return 'MARGIN_BASED';
+  return 'UNLIMITED';
+}
+
+function evaluateRisk(strategy: any, maxRiskCap: number): {
+  withinLimits: boolean;
+  riskMetric: number;
+  riskLabel: string;
+} {
+  const category = getRiskCategory(strategy.type);
+  
+  switch (category) {
+    case 'DEFINED':
+      return {
+        riskMetric: strategy.maxLoss,
+        withinLimits: strategy.maxLoss <= maxRiskCap,
+        riskLabel: 'Max Loss',
+      };
+    case 'CASH_SECURED':
+      const capitalRequired = strategy.strike * 100;
+      return {
+        riskMetric: capitalRequired,
+        withinLimits: capitalRequired <= maxRiskCap,
+        riskLabel: 'Capital Required',
+      };
+    case 'MARGIN_BASED':
+      return {
+        riskMetric: strategy.marginRequirement,
+        withinLimits: strategy.marginRequirement <= maxRiskCap,
+        riskLabel: 'Margin Required',
+      };
+    default:
+      return {
+        riskMetric: Infinity,
+        withinLimits: false,
+        riskLabel: 'Unlimited Risk',
+      };
+  }
+}
+```
+
+## Also update the Strategy Settings
+
+In the settings panel, change the “Max Risk per Trade” field to show:
+
+- The current cap value (e.g., $10,000)
+- A note: “For defined-risk trades, this limits max loss. For cash-secured puts, this limits capital required. For margin trades, this limits margin requirement.”
+
+## Also update the RR display
+
+The R:R ratio on the strategy cards should be labeled clearly:
+
+- “R/R” means Risk to Reward
+- Show it as “Risk $248 / Reward $172” or “1:0.69 R/R”
+- Make sure the ratio is consistently formatted: risk first, reward second
+- Currently it shows “1:1.44” which could be confusing about which side is which
+
+Do NOT change any other strategist logic. Only the risk evaluation and the R:R display.
+
+# ============================================================
+
+# PROMPT 2: TanStack Query Setup for Market Pulse
+
+# ============================================================
+
+Set up TanStack Query (React Query) for the Market Pulse data fetching and caching. The app already has TanStack Query installed but the Market Pulse currently uses a custom streaming hook. We want TanStack Query to manage the pulse STATE and CACHING while the streaming hook handles the SSE connection.
+
+## Architecture
+
+TanStack Query manages:
+
+- Caching the last pulse result
+- Stale time / refetch intervals
+- Loading/error states
+- Providing pulse data to any component that needs it (bias strip, dashboard, etc.)
+
+The useAiStream hook manages:
+
+- The SSE connection
+- Streaming thinking tokens
+- Receiving the final result
+
+They work together: useAiStream fetches the data, TanStack Query stores and distributes it.
+
+## Implementation
+
+### 1. Create the query key and fetcher
+
+```typescript
+// api/marketPulse.ts
+
+export const marketPulseKeys = {
+  all: ['marketPulse'] as const,
+  pulse: () => [...marketPulseKeys.all, 'pulse'] as const,
+  history: () => [...marketPulseKeys.all, 'history'] as const,
+};
+```
+
+### 2. Create a custom hook that combines TanStack Query with the streaming hook
+
+```typescript
+// hooks/useMarketPulse.ts
+
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useAiStream } from './useAiStream';
+import { marketPulseKeys } from '../api/marketPulse';
+import { useCallback, useEffect } from 'react';
+
+interface MarketPulseSettings {
+  allowedStrategies?: string[];
+  defaultSpreadWidth?: string;
+  accountSizeTier?: string;
+  preferredTickers?: string;
+}
+
+export function useMarketPulse(settings?: MarketPulseSettings) {
+  const queryClient = useQueryClient();
+
+  // TanStack Query for cached pulse data
+  const {
+    data: pulseData,
+    isLoading: isQueryLoading,
+    error: queryError,
+  } = useQuery({
+    queryKey: marketPulseKeys.pulse(),
+    // No queryFn -- we manually set data via setQueryData
+    // This query is purely a cache/state container
+    enabled: false,
+    staleTime: 5 * 60 * 1000,      // 5 minutes before considered stale
+    gcTime: 30 * 60 * 1000,         // 30 minutes before garbage collected
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+
+  // Streaming hook for SSE connection
+  const {
+    thinkingTexts,
+    result: streamResult,
+    isStreaming,
+    error: streamError,
+    startStream,
+    reset: resetStream,
+  } = useAiStream({
+    url: '/api/ai/market-pulse/stream',
+    onResult: (data) => {
+      // When stream completes, store result in TanStack Query cache
+      queryClient.setQueryData(marketPulseKeys.pulse(), data);
+    },
+  });
+
+  // Generate pulse function
+  const generatePulse = useCallback(async () => {
+    const previousBias = pulseData?.bias || undefined;
+    await startStream({
+      settings,
+      previousBias,
+    });
+  }, [startStream, settings, pulseData?.bias]);
+
+  // Refresh is the same as generate but indicates intent
+  const refreshPulse = generatePulse;
+
+  return {
+    // Data
+    pulseData,
+    previousBias: pulseData?.bias,
+
+    // Streaming state
+    thinkingTexts,
+    isStreaming,
+    isGenerating: isStreaming,
+
+    // Errors
+    error: streamError || (queryError?.message ?? null),
+
+    // Actions
+    generatePulse,
+    refreshPulse,
+    resetStream,
+
+    // Derived state
+    hasPulse: !!pulseData,
+    isStale: pulseData
+      ? (Date.now() - new Date(pulseData.timestamp).getTime()) > 15 * 60 * 1000
+      : false,
+  };
+}
+```
+
+### 3. Use the hook in components
+
+**In MarketPulseDashboard.tsx:**
+
+```typescript
+import { useMarketPulse } from '../../hooks/useMarketPulse';
+
+function MarketPulseDashboard() {
+  const {
+    pulseData,
+    thinkingTexts,
+    isStreaming,
+    error,
+    generatePulse,
+    refreshPulse,
+    hasPulse,
+    isStale,
+  } = useMarketPulse(/* pass settings from store/context */);
+
+  // Empty state
+  if (!hasPulse && !isStreaming) {
+    return <GeneratePulseButton onClick={generatePulse} />;
+  }
+
+  // Streaming state
+  if (isStreaming) {
+    return (
+      <>
+        <AiThinkingFeed texts={thinkingTexts} isStreaming={isStreaming} />
+        <PulseSkeleton />
+      </>
+    );
+  }
+
+  // Data state
+  if (pulseData) {
+    return <PulseDashboard data={pulseData} onRefresh={refreshPulse} isStale={isStale} />;
+  }
+
+  // Error state
+  if (error) {
+    return <ErrorCard message={error} onRetry={generatePulse} />;
+  }
+}
+```
+
+**In AiBiasStrip.tsx (persistent strip):**
+
+```typescript
+import { useMarketPulse } from '../../hooks/useMarketPulse';
+
+function AiBiasStrip() {
+  const { pulseData, hasPulse, isStale, generatePulse } = useMarketPulse();
+
+  if (!hasPulse) {
+    return <StripPlaceholder onClick={generatePulse} />;
+  }
+
+  return (
+    <Strip
+      bias={pulseData.bias}
+      confidence={pulseData.confidenceScore}
+      maxConfidence={pulseData.maxConfidence}
+      timestamp={pulseData.timestamp}
+      isStale={isStale}
+    />
+  );
+}
+```
+
+### 4. Auto-refresh (if enabled in settings)
+
+```typescript
+// Inside useMarketPulse, add auto-refresh logic:
+
+useEffect(() => {
+  if (!settings?.autoRefreshEnabled || !settings?.autoRefreshInterval) return;
+  if (isStreaming) return; // don't refresh while already generating
+
+  const interval = setInterval(() => {
+    // Only auto-refresh during market hours (9:30 AM - 4:00 PM ET)
+    const now = new Date();
+    const et = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    const hours = et.getHours();
+    const minutes = et.getMinutes();
+    const marketOpen = hours > 9 || (hours === 9 && minutes >= 30);
+    const marketClose = hours < 16;
+
+    if (marketOpen && marketClose) {
+      generatePulse();
+    }
+  }, settings.autoRefreshInterval * 60 * 1000);
+
+  return () => clearInterval(interval);
+}, [settings?.autoRefreshEnabled, settings?.autoRefreshInterval, isStreaming, generatePulse]);
+```
+
+### What this gives you:
+
+- **Single source of truth:** Any component can call `useMarketPulse()` and get the cached pulse data without re-fetching
+- **The bias strip and the dashboard share the same data** automatically through TanStack Query’s cache
+- **Stale detection** is built in (5 min staleTime + manual 15 min check)
+- **Auto-refresh** during market hours if the user enables it in settings
+- **Previous bias** is automatically passed for hysteresis on each regeneration
+- **Streaming and caching are decoupled:** the SSE hook handles the connection, TanStack Query handles the state
+
+### Migration steps:
+
+1. Create the `api/marketPulse.ts` file with query keys
+1. Create the `hooks/useMarketPulse.ts` file with the combined hook
+1. Update MarketPulseDashboard.tsx to use `useMarketPulse()` instead of calling `useAiStream` directly
+1. Update AiBiasStrip.tsx to use `useMarketPulse()` to read cached data
+1. Remove any direct state management for pulse data in the components (the hook owns all state now)
+
+Do NOT change the backend, the streaming endpoint, or the useAiStream hook. This layer sits on top of what already works.
+
+# ============================================================
+
+# PRE-TRADE RISK MANAGER SPEC
+
+# ============================================================
+
+## My Thoughts
+
+This is an excellent feature and the architecture is exactly right: deterministic checks for the math, a color-coded status for quick decisions, and AI for the one-liner explanation. Here is the full spec with refinements.
+
+## Phase X: Pre-Trade Risk Manager (AI Copilot)
+
+### Concept
+
+A pre-flight checklist that runs automatically when the user is about to execute a trade from the Options Strategist. It evaluates the specific trade setup against live market data and the user’s risk parameters before the order routes.
+
+### Where it lives in the UI
+
+When the user taps a strategy card from the Strategist and is reviewing the trade details (entry, stop, target, legs), a “PRE-TRADE CHECK” panel appears below the trade card. It shows the checklist results BEFORE the user can confirm execution.
+
+Think of it like a pilot’s pre-flight checklist. You don’t take off until every item is green or you’ve consciously acknowledged the yellows.
+
+### Layer 1: Deterministic Checks (Backend Rules Engine)
+
+```typescript
+// preTradeRiskEngine.ts
+
+interface PreTradeCheck {
+  name: string;
+  status: 'GREEN' | 'YELLOW' | 'RED';
+  value: string;        // the actual measured value
+  threshold: string;    // what the threshold is
+  message: string;      // human-readable explanation
+}
+
+interface PreTradeResult {
+  overallStatus: 'GREEN' | 'YELLOW' | 'RED';
+  checks: PreTradeCheck[];
+  timestamp: string;
+}
+
+function runPreTradeChecks(
+  trade: TradeSetup,
+  pulse: EngineOutput,
+  liveQuote: QuoteData,
+  userSettings: UserSettings
+): PreTradeResult {
+
+  const checks: PreTradeCheck[] = [];
+
+  // ---- CHECK 1: Pulse Alignment ----
+  // Does the trade direction match the Market Pulse regime?
+  const tradeDirection = trade.isBullish ? 'BULLISH' : 'BEARISH';
+  const pulseDirection = pulse.compositeScore > 0 ? 'BULLISH' : pulse.compositeScore < 0 ? 'BEARISH' : 'NEUTRAL';
+  const aligned = tradeDirection === pulseDirection || pulseDirection === 'NEUTRAL';
+  
+  checks.push({
+    name: 'Pulse Alignment',
+    status: aligned ? 'GREEN' : pulse.confidenceScore > 70 ? 'RED' : 'YELLOW',
+    value: `Trade: ${tradeDirection}, Pulse: ${pulse.bias}`,
+    threshold: 'Trade direction should align with macro regime',
+    message: aligned
+      ? `Trade aligns with ${pulse.bias} macro environment`
+      : `Trade fights the ${pulse.bias} macro regime (confidence ${pulse.confidenceScore}%)`,
+  });
+
+  // ---- CHECK 2: Risk/Reward Ratio ----
+  const rrRatio = trade.maxReward / trade.maxRisk;
+  checks.push({
+    name: 'Risk/Reward',
+    status: rrRatio >= 0.50 ? 'GREEN' : rrRatio >= 0.25 ? 'YELLOW' : 'RED',
+    value: `1:${rrRatio.toFixed(2)}`,
+    threshold: 'Minimum 1:0.25 R/R',
+    message: rrRatio >= 0.50
+      ? `Favorable risk/reward at 1:${rrRatio.toFixed(2)}`
+      : `Low risk/reward: risking $${trade.maxRisk} to make $${trade.maxReward}`,
+  });
+
+  // ---- CHECK 3: Bid/Ask Spread (Liquidity) ----
+  // Wide spreads mean bad fills and hidden costs
+  const bidAskSpread = liveQuote.ask - liveQuote.bid;
+  const midpoint = (liveQuote.ask + liveQuote.bid) / 2;
+  const spreadPct = midpoint > 0 ? (bidAskSpread / midpoint) * 100 : 0;
+  
+  checks.push({
+    name: 'Liquidity',
+    status: spreadPct <= 5 ? 'GREEN' : spreadPct <= 15 ? 'YELLOW' : 'RED',
+    value: `${spreadPct.toFixed(1)}% spread`,
+    threshold: '< 5% = good, 5-15% = caution, > 15% = poor',
+    message: spreadPct <= 5
+      ? `Tight spread, good liquidity`
+      : `Wide ${spreadPct.toFixed(1)}% bid/ask spread, expect slippage`,
+  });
+
+  // ---- CHECK 4: Probability of Profit ----
+  // Based on delta of short strike (for credit spreads) or long strike (for debits)
+  const pop = trade.probabilityOfProfit; // should come from the strategy calculation
+  checks.push({
+    name: 'Probability of Profit',
+    status: pop >= 50 ? 'GREEN' : pop >= 35 ? 'YELLOW' : 'RED',
+    value: `${pop.toFixed(0)}%`,
+    threshold: '> 50% = good, 35-50% = moderate, < 35% = low',
+    message: pop >= 50
+      ? `${pop.toFixed(0)}% probability of profit`
+      : `Low ${pop.toFixed(0)}% probability of profit`,
+  });
+
+  // ---- CHECK 5: Position Size vs Account ----
+  // Does this trade risk too much of the account?
+  const riskPct = (trade.maxRisk / userSettings.accountSize) * 100;
+  checks.push({
+    name: 'Position Size',
+    status: riskPct <= 3 ? 'GREEN' : riskPct <= 5 ? 'YELLOW' : 'RED',
+    value: `${riskPct.toFixed(1)}% of account`,
+    threshold: '< 3% = conservative, 3-5% = moderate, > 5% = aggressive',
+    message: riskPct <= 3
+      ? `Conservative ${riskPct.toFixed(1)}% risk`
+      : `${riskPct.toFixed(1)}% of account at risk on single trade`,
+  });
+
+  // ---- CHECK 6: Volatility Environment ----
+  // Is IV elevated? Are you selling expensive premium (good) or buying it (bad)?
+  const sellingPremium = trade.isCredit;
+  const highVol = pulse.clusters.volLevel.score <= -0.5; // VIX elevated
+  
+  if (sellingPremium && highVol) {
+    checks.push({
+      name: 'Vol Environment',
+      status: 'GREEN',
+      value: 'Selling premium in high IV',
+      threshold: 'Selling premium benefits from elevated IV',
+      message: 'Elevated volatility favors premium selling strategies',
+    });
+  } else if (!sellingPremium && highVol) {
+    checks.push({
+      name: 'Vol Environment',
+      status: 'YELLOW',
+      value: 'Buying premium in high IV',
+      threshold: 'Buying premium in high IV means paying up',
+      message: 'Elevated IV makes long options expensive, consider alternatives',
+    });
+  } else {
+    checks.push({
+      name: 'Vol Environment',
+      status: 'GREEN',
+      value: 'Normal volatility',
+      threshold: 'No vol concern',
+      message: 'Volatility environment is neutral for this strategy',
+    });
+  }
+
+  // ---- CHECK 7: Days to Expiration ----
+  const dte = trade.daysToExpiration;
+  checks.push({
+    name: 'Time Horizon',
+    status: dte >= 14 ? 'GREEN' : dte >= 5 ? 'YELLOW' : 'RED',
+    value: `${dte} DTE`,
+    threshold: '> 14 DTE = standard, 5-14 = short-dated, < 5 = gamma risk',
+    message: dte >= 14
+      ? `${dte} days to expiration, standard time frame`
+      : dte >= 5
+        ? `${dte} DTE, accelerated theta but increasing gamma risk`
+        : `${dte} DTE, extreme gamma risk zone`,
+  });
+
+  // ---- OVERALL STATUS ----
+  const hasRed = checks.some(c => c.status === 'RED');
+  const hasYellow = checks.some(c => c.status === 'YELLOW');
+  const overallStatus: 'GREEN' | 'YELLOW' | 'RED' = hasRed ? 'RED' : hasYellow ? 'YELLOW' : 'GREEN';
+
+  return {
+    overallStatus,
+    checks,
+    timestamp: new Date().toISOString(),
+  };
+}
+```
+
+### Layer 2: UI Display
+
+The pre-trade check panel shows:
+
+**Header bar:**
+
+- Overall status light: large colored circle (green/yellow/red)
+- “PRE-TRADE CHECK” label
+- Status text: “ALL CLEAR” / “CAUTION: 2 WARNINGS” / “BLOCKED: 1 CRITICAL ISSUE”
+
+**Checklist:**
+
+- Each check is a row with:
+  - Status dot (green/yellow/red)
+  - Check name (e.g., “Pulse Alignment”)
+  - Value (e.g., “Trade: BULLISH, Pulse: BULLISH”)
+  - Expandable detail showing the threshold and message
+
+**Color scheme:**
+
+- GREEN: bg-emerald-900/20, border-emerald-500/30, text-emerald-400
+- YELLOW: bg-amber-900/20, border-amber-500/30, text-amber-400
+- RED: bg-red-900/20, border-red-500/30, text-red-400
+
+### Layer 3: AI Narrative (Single Punchy Line)
+
+After the deterministic checks run, pass the result to Gemini for a single-sentence summary. This is a fast, cheap call (Flash is fine here since it’s just summarizing checks, not doing analysis).
+
+**Prompt:**
+
+```
+You are a risk manager copilot. Given these pre-trade check results, write a single sentence (max 30 words) summarizing the key concern or confirmation. Be direct and specific. Include the overall status emoji.
+
+Check results:
+${JSON.stringify(preTradeResult)}
+
+Examples:
+- "🟢 ALL CLEAR: Bullish spread aligns with risk-on regime, solid 1:1.8 R/R, tight spreads."
+- "🟡 CAUTION: Trade fights bearish macro regime. Acceptable R/R but low 38% POP."
+- "🔴 BLOCKED: 22% bid/ask spread on illiquid name with only 3 DTE. Do not enter."
+```
+
+This one-liner appears at the top of the pre-trade panel, above the checklist. Users who want the quick read get it instantly. Users who want detail can expand the individual checks.
+
+### How it integrates
+
+1. User taps a strategy card from the Strategist
+1. Trade detail view opens showing legs, entry, stop, target
+1. Pre-Trade Risk Manager automatically runs in the background (no button needed)
+1. Results appear in a panel between the trade details and the “Execute” button
+1. If status is RED, the Execute button is dimmed with a warning: “Risk check failed. Review issues above.”
+1. If status is YELLOW, Execute button works but shows: “Proceed with caution”
+1. If status is GREEN, Execute button is fully active: “All checks passed”
+
+### Settings (add to existing Strategy Settings)
+
+```
+Pre-Trade Risk Manager:
+├── Enabled: toggle (default: on)
+├── Block on RED: toggle (default: on)
+│   (If on, RED status prevents execution. If off, RED is advisory only.)
+├── Minimum R/R: input [0.10, 0.25, 0.50, 1.00] (default: 0.25)
+├── Max Position Size: dropdown [1%, 2%, 3%, 5%, 10%] (default: 3%)
+└── Min DTE: input [1, 3, 5, 7, 14] (default: 5)
+```
