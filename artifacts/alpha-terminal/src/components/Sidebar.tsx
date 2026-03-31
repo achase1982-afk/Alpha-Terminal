@@ -1,15 +1,15 @@
 import { useTerminalStore } from "@/lib/store";
 import { useOptionsSettingsStore } from "@/lib/options-store";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
-import type { MarketPulseSettings, AllowedStrategy, PulseIndicatorCategory } from "@/types/marketPulse";
-import { STRATEGY_LABELS, ALL_STRATEGIES, ALL_PULSE_INDICATORS, PULSE_INDICATOR_CATEGORIES } from "@/types/marketPulse";
+import type { MarketPulseSettings, AllowedStrategy } from "@/types/marketPulse";
+import { STRATEGY_LABELS, ALL_STRATEGIES, ALL_PULSE_INDICATORS } from "@/types/marketPulse";
 import { AuthPanel } from "./AuthPanel";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
-import { Terminal, SlidersHorizontal, X, LayoutDashboard, ListOrdered, Gauge, BrainCircuit, Zap, MessageCircle, ChevronRight, Settings, Star, Trash2, BarChart2 } from "lucide-react";
+import { Terminal, SlidersHorizontal, X, LayoutDashboard, ListOrdered, Gauge, BrainCircuit, Zap, MessageCircle, ChevronRight, Settings, Star, Trash2, BarChart2, Plus, RotateCcw } from "lucide-react";
 import { useState } from "react";
 import { useGetAvailableModels } from "@workspace/api-client-react";
 
@@ -368,17 +368,29 @@ function PulseSettingsPanel({
   resetIndicators: () => void;
 }) {
   const [indicatorsOpen, setIndicatorsOpen] = useState(false);
+  const [addQuery, setAddQuery] = useState("");
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
   const activeIndicators = settings.pulseIndicators ?? ALL_PULSE_INDICATORS.map(i => i.symbol);
-  const totalCount = ALL_PULSE_INDICATORS.length;
-  const activeCount = activeIndicators.length;
 
-  const groupedIndicators = ALL_PULSE_INDICATORS.reduce((acc, ind) => {
-    if (!acc[ind.category]) acc[ind.category] = [];
-    acc[ind.category].push(ind);
-    return acc;
-  }, {} as Record<PulseIndicatorCategory, typeof ALL_PULSE_INDICATORS>);
+  const catalogMap = Object.fromEntries(ALL_PULSE_INDICATORS.map(i => [i.symbol, i.label]));
+  const getLabel = (sym: string) => catalogMap[sym] ?? sym;
 
-  const categoryOrder: PulseIndicatorCategory[] = ["volatility", "breadth", "rates", "credit", "futures", "commodities"];
+  const inactiveFromCatalog = ALL_PULSE_INDICATORS.filter(i => !activeIndicators.includes(i.symbol));
+  const suggestions = addQuery.length > 0
+    ? inactiveFromCatalog.filter(i =>
+        i.symbol.toLowerCase().includes(addQuery.toLowerCase()) ||
+        i.label.toLowerCase().includes(addQuery.toLowerCase())
+      )
+    : inactiveFromCatalog;
+
+  const handleAdd = (sym: string) => {
+    const clean = sym.trim().toUpperCase();
+    if (!clean || activeIndicators.includes(clean)) return;
+    toggleIndicator(clean);
+    setAddQuery("");
+    setShowSuggestions(false);
+  };
 
   return (
     <div className="p-3 sm:p-4 border-t border-card-border bg-[#0c0c0c] space-y-4 animate-in fade-in slide-in-from-top-2">
@@ -420,83 +432,112 @@ function PulseSettingsPanel({
           <span className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-bold flex items-center gap-1.5">
             <BarChart2 className="w-3 h-3" />
             Indicators
-            <span className="text-primary tabular-nums ml-1">{activeCount}/{totalCount}</span>
+            <span className="text-primary tabular-nums ml-1">{activeIndicators.length}</span>
           </span>
           <ChevronRight className={`w-3 h-3 text-[#71717a] transition-transform duration-200 ${indicatorsOpen ? 'rotate-90' : ''}`} />
         </button>
 
         {indicatorsOpen && (
-          <div className="space-y-3 animate-in fade-in slide-in-from-top-1">
-            <div className="flex items-center gap-2">
+          <div className="space-y-2 animate-in fade-in slide-in-from-top-1">
+
+            <div className="flex items-center justify-between pb-1">
+              <span className="font-mono text-[9px] text-[#52525b] tabular-nums">{activeIndicators.length} active</span>
               <button
-                onClick={() => {
-                  if (activeCount === totalCount) {
-                    ALL_PULSE_INDICATORS.forEach(i => {
-                      if (activeIndicators.includes(i.symbol)) toggleIndicator(i.symbol);
-                    });
-                  } else {
-                    resetIndicators();
-                  }
-                }}
-                className="font-mono text-[9px] text-primary hover:text-primary/80 uppercase tracking-wider transition-colors"
+                onClick={resetIndicators}
+                className="flex items-center gap-1 font-mono text-[9px] text-[#52525b] hover:text-[#71717a] transition-colors"
               >
-                {activeCount === totalCount ? "Deselect All" : "Select All"}
+                <RotateCcw className="w-2.5 h-2.5" />
+                Reset to defaults
               </button>
-              {activeCount !== totalCount && (
-                <button
-                  onClick={resetIndicators}
-                  className="font-mono text-[9px] text-[#71717a] hover:text-[#a1a1aa] uppercase tracking-wider transition-colors"
+            </div>
+
+            <div className="space-y-0.5 max-h-[240px] overflow-y-auto pr-0.5">
+              {activeIndicators.length === 0 && (
+                <div className="font-mono text-[10px] text-[#3f3f46] text-center py-3">
+                  No indicators — add at least one below
+                </div>
+              )}
+              {activeIndicators.map(sym => (
+                <div
+                  key={sym}
+                  className="flex items-center justify-between px-2 py-1.5 rounded-md group"
+                  style={{ background: "rgba(255,184,0,0.04)" }}
                 >
-                  Reset
+                  <div className="flex flex-col min-w-0">
+                    <span className="font-mono text-[10px] text-primary font-bold tabular-nums leading-none">{sym}</span>
+                    <span className="font-mono text-[9px] text-[#52525b] leading-tight truncate mt-0.5">{getLabel(sym)}</span>
+                  </div>
+                  <button
+                    onClick={() => toggleIndicator(sym)}
+                    className="flex-shrink-0 ml-2 p-1 rounded hover:bg-[#f23645]/10 text-[#3f3f46] hover:text-[#f23645] transition-colors"
+                    aria-label={`Remove ${sym}`}
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div className="pt-1 relative">
+              <div className="flex gap-1.5">
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    value={addQuery}
+                    onChange={e => { setAddQuery(e.target.value); setShowSuggestions(true); }}
+                    onFocus={() => setShowSuggestions(true)}
+                    onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+                    onKeyDown={e => {
+                      if (e.key === "Enter") {
+                        if (suggestions.length > 0 && addQuery.length > 0) {
+                          handleAdd(suggestions[0].symbol);
+                        } else if (addQuery.length > 0) {
+                          handleAdd(addQuery);
+                        }
+                      }
+                      if (e.key === "Escape") setShowSuggestions(false);
+                    }}
+                    placeholder="Search or type symbol…"
+                    className="w-full h-7 px-2 rounded-md font-mono text-[11px] text-[#e4e4e7] placeholder:text-[#3f3f46] border border-[#2A2A2C] focus:border-primary focus:outline-none transition-colors"
+                    style={{ background: "#111113" }}
+                  />
+                </div>
+                <button
+                  onClick={() => {
+                    if (suggestions.length > 0 && addQuery.length > 0) {
+                      handleAdd(suggestions[0].symbol);
+                    } else if (addQuery.length > 0) {
+                      handleAdd(addQuery);
+                    }
+                  }}
+                  disabled={!addQuery.trim()}
+                  className="flex items-center gap-1 h-7 px-2.5 rounded-md font-mono text-[10px] font-bold transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  style={{ background: "#FFB800", color: "#000" }}
+                >
+                  <Plus className="w-3 h-3" />
+                  Add
                 </button>
+              </div>
+
+              {showSuggestions && suggestions.length > 0 && (
+                <div
+                  className="absolute left-0 right-10 top-8 z-50 rounded-md border border-[#2A2A2C] overflow-y-auto max-h-[180px] shadow-xl"
+                  style={{ background: "#111113" }}
+                >
+                  {suggestions.map(ind => (
+                    <button
+                      key={ind.symbol}
+                      onMouseDown={() => handleAdd(ind.symbol)}
+                      className="w-full text-left px-3 py-2 flex flex-col hover:bg-[#1a1a1c] transition-colors border-b border-[#1a1a1c] last:border-0"
+                    >
+                      <span className="font-mono text-[10px] text-primary font-bold tabular-nums">{ind.symbol}</span>
+                      <span className="font-mono text-[9px] text-[#52525b] leading-tight">{ind.label}</span>
+                    </button>
+                  ))}
+                </div>
               )}
             </div>
 
-            <div className="space-y-2.5 max-h-[320px] overflow-y-auto pr-1">
-              {categoryOrder.map(cat => {
-                const indicators = groupedIndicators[cat];
-                if (!indicators) return null;
-                const catActive = indicators.filter(i => activeIndicators.includes(i.symbol)).length;
-                const allCatActive = catActive === indicators.length;
-
-                return (
-                  <div key={cat}>
-                    <button
-                      onClick={() => {
-                        indicators.forEach(i => {
-                          const isActive = activeIndicators.includes(i.symbol);
-                          if (allCatActive && isActive) toggleIndicator(i.symbol);
-                          if (!allCatActive && !isActive) toggleIndicator(i.symbol);
-                        });
-                      }}
-                      className="flex items-center gap-1.5 mb-1 group cursor-pointer"
-                    >
-                      <span className="font-mono text-[8px] text-[#52525b] uppercase tracking-widest font-bold group-hover:text-[#71717a] transition-colors">
-                        {PULSE_INDICATOR_CATEGORIES[cat]}
-                      </span>
-                      <span className="font-mono text-[8px] text-[#3f3f46] tabular-nums">
-                        {catActive}/{indicators.length}
-                      </span>
-                    </button>
-                    <div className="space-y-0.5">
-                      {indicators.map(ind => (
-                        <label key={ind.symbol} className="flex items-center gap-2 cursor-pointer group py-0.5">
-                          <input
-                            type="checkbox"
-                            checked={activeIndicators.includes(ind.symbol)}
-                            onChange={() => toggleIndicator(ind.symbol)}
-                            className="rounded border-card-border bg-transparent accent-[#FFB800] w-3 h-3 flex-shrink-0"
-                          />
-                          <span className="font-mono text-[10px] text-[#a1a1aa] group-hover:text-[#e4e4e7] transition-colors leading-tight">
-                            {ind.label}
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
           </div>
         )}
       </div>
