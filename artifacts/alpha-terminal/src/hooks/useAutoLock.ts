@@ -3,6 +3,13 @@ import type { ReactNode } from "react";
 import { useClerk } from "@clerk/clerk-react";
 import React from "react";
 
+const devBypass = import.meta.env.VITE_DEV_BYPASS_AUTH === "true";
+
+function useClerkSafe() {
+  if (devBypass) return { signOut: () => Promise.resolve() };
+  return useClerk();
+}
+
 const LS_KEY = "at_auto_lock_minutes";
 const WARNING_SECONDS = 60;
 
@@ -44,7 +51,7 @@ interface AutoLockState {
 const AutoLockContext = createContext<AutoLockState | null>(null);
 
 export function AutoLockProvider({ children }: { children: ReactNode }) {
-  const { signOut } = useClerk();
+  const { signOut } = useClerkSafe();
   const [minutes, setMinutesState] = useState<AutoLockMinutes>(readStoredMinutes);
   const [warning, setWarning] = useState(false);
   const [countdown, setCountdown] = useState(WARNING_SECONDS);

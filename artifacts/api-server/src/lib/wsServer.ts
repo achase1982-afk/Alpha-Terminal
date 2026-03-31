@@ -7,6 +7,7 @@ import { getSnapshot, getStreamerStatus, registerWsBroadcast } from "./schwabStr
 
 const WS_PATH = "/api/ws/prices";
 const HEARTBEAT_MS = 25_000;
+const DEV_BYPASS = process.env.DEV_BYPASS_AUTH === "true";
 const clients = new Set<WebSocket>();
 
 function broadcastToClients(event: string, data: unknown) {
@@ -31,20 +32,22 @@ export function initWsServer(httpServer: HttpServer) {
       return;
     }
 
-    const token = url.searchParams.get("clerk_token");
-    if (!token) {
-      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
-      socket.destroy();
-      return;
-    }
+    if (!DEV_BYPASS) {
+      const token = url.searchParams.get("clerk_token");
+      if (!token) {
+        socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+        socket.destroy();
+        return;
+      }
 
-    try {
-      await verifyToken(token, { secretKey: process.env.CLERK_SECRET_KEY! });
-    } catch (err) {
-      logger.warn({ err }, "WS Clerk token verification failed");
-      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
-      socket.destroy();
-      return;
+      try {
+        await verifyToken(token, { secretKey: process.env.CLERK_SECRET_KEY! });
+      } catch (err) {
+        logger.warn({ err }, "WS Clerk token verification failed");
+        socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+        socket.destroy();
+        return;
+      }
     }
 
     wss.handleUpgrade(req, socket, head, (ws) => {

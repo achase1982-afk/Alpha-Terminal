@@ -32,6 +32,9 @@ export default defineConfig({
     "import.meta.env.VITE_CLERK_PUBLISHABLE_KEY": JSON.stringify(
       process.env.CLERK_PUBLISHABLE_KEY ?? "",
     ),
+    "import.meta.env.VITE_DEV_BYPASS_AUTH": JSON.stringify(
+      process.env.DEV_BYPASS_AUTH ?? "",
+    ),
   },
   plugins: [
     react(),

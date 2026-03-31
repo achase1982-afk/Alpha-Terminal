@@ -104,7 +104,14 @@ function PendingSessionLoader() {
   return null;
 }
 
+const devBypass = import.meta.env.VITE_DEV_BYPASS_AUTH === "true";
+
 function ClerkTokenBridge() {
+  if (devBypass) return null;
+  return <ClerkTokenBridgeInner />;
+}
+
+function ClerkTokenBridgeInner() {
   const { getToken } = useAuth();
 
   useEffect(() => {

@@ -12,6 +12,13 @@ import { Slider } from "@/components/ui/slider";
 import { Terminal, SlidersHorizontal, X, LayoutDashboard, ListOrdered, Gauge, BrainCircuit, Zap, MessageCircle, ChevronRight, Settings, Star, Trash2, BarChart2, Plus, RotateCcw, Shield, LogOut } from "lucide-react";
 import { useState } from "react";
 import { useClerk } from "@clerk/clerk-react";
+
+const devBypass = import.meta.env.VITE_DEV_BYPASS_AUTH === "true";
+
+function useClerkSafe() {
+  if (devBypass) return { signOut: () => Promise.resolve() };
+  return useClerk();
+}
 import { useGetAvailableModels } from "@workspace/api-client-react";
 import { useAutoLock, AUTO_LOCK_OPTIONS, type AutoLockMinutes } from "@/hooks/useAutoLock";
 
@@ -29,7 +36,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({ onClose, onOpenChat }: SidebarProps) {
-  const { signOut } = useClerk();
+  const { signOut } = useClerkSafe();
   const { minutes: autoLockMinutes, setMinutes: setAutoLockMinutes } = useAutoLock();
   const {
     overlays, toggleOverlay,
