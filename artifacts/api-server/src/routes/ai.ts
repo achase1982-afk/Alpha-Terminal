@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { getAccessToken } from "../lib/tokenStore.js";
+
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { streamText } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
@@ -528,6 +528,35 @@ function extractMarketIndicators(dataMap: Map<string, Record<string, unknown>>):
     return num(sym, 'netPercentChange') ?? num(sym, 'markPercentChange') ?? null;
   };
 
+  // BUG FIX 1: TNX and TYX — Schwab quotes yield indices as (yield% × 10).
+  // e.g. TNX=43.42 → actual 10Y yield = 4.342%. Divide by 10 for real-world units.
+  const yieldIndex = (sym: string): number | null => {
+    const raw = lastOrMark(sym);
+    if (raw === null) return null;
+    // Values clearly in ×10 format (e.g. 43.42 for 4.342%). Normalize to actual %.
+    return raw > 10 ? Math.round((raw / 10) * 10000) / 10000 : raw;
+  };
+
+  // BUG FIX 2: UVOL/DVOL — Schwab sometimes returns a 64-bit integer sentinel
+  // (~9.22×10^18) when real volume is unavailable, which overflows to ~92B in JS.
+  // Cap at 50B; anything above is a sentinel value and should be null.
+  const MAX_REASONABLE_VOLUME = 50_000_000_000;
+  const safeVol = (sym: string): number | null => {
+    const v = lastOrMark(sym);
+    if (v === null) return null;
+    if (v > MAX_REASONABLE_VOLUME) return null;
+    return v;
+  };
+
+  // BUG FIX 3: ADD — Schwab's $ADD intraday net A/D often returns 0 when no real
+  // tick is available. Fall back to computing ADVN − DECN from the same snapshot.
+  const advn = lastOrMark('$ADVN');
+  const decn = lastOrMark('$DECN');
+  const addRaw = lastOrMark('$ADD');
+  const add = (addRaw !== null && addRaw !== 0)
+    ? addRaw
+    : (advn !== null && decn !== null ? advn - decn : null);
+
   return {
     vix: lastOrMark('$VIX'),
     vixChange: pctChange('$VIX'),
@@ -539,9 +568,10 @@ function extractMarketIndicators(dataMap: Map<string, Record<string, unknown>>):
     vix9dChange: pctChange('$VIX9D'),
     skew: lastOrMark('$SKEW'),
 
-    tnx: lastOrMark('$TNX'),
+    // BUG FIX 1 applied: yields in actual % (e.g. 4.342 not 43.42)
+    tnx: yieldIndex('$TNX'),
     tnxChange: pctChange('$TNX'),
-    tyx: lastOrMark('$TYX'),
+    tyx: yieldIndex('$TYX'),
     tyxChange: pctChange('$TYX'),
 
     hyg: lastOrMark('HYG'),
@@ -553,14 +583,14 @@ function extractMarketIndicators(dataMap: Map<string, Record<string, unknown>>):
     nyicdx: null,
     nyicdxChange: null,
 
-    advn: lastOrMark('$ADVN'),
-    decn: lastOrMark('$DECN'),
+    advn,
+    decn,
     tick: lastOrMark('$TICK'),
     trin: lastOrMark('$TRIN'),
-    add: lastOrMark('$ADD'),
+    add, // BUG FIX 3 applied: computed from ADVN−DECN if API returns 0
 
-    uvol: lastOrMark('$UVOL'),
-    dvol: lastOrMark('$DVOL'),
+    uvol: safeVol('$UVOL'), // BUG FIX 2 applied: sentinel overflow → null
+    dvol: safeVol('$DVOL'), // BUG FIX 2 applied: sentinel overflow → null
   };
 }
 
@@ -1764,29 +1794,6 @@ Be concise and institutional-grade. Focus on actual market correlations, sector 
   } catch (err) {
     req.log.error({ err }, "Sympathy plays AI error");
     res.json({ response: "Unable to generate sympathy plays at this time." });
-  }
-});
-
-// TEMPORARY DEBUG — remove after inspection
-router.post("/debug-engine-input", async (req, res) => {
-  const token = getAccessToken("market");
-  if (!token) return res.status(503).json({ error: "No market access token available on server." });
-
-  const symbols: string[] = (req.body as { symbols?: string[] }).symbols ?? [
-    "$VIX","$VVIX","$VIX9D","$VIX3M","$SKEW",
-    "$TNX","$TYX","HYG","LQD","IEF",
-    "$ADD","$TICK","$TRIN","$ADVN","$DECN","$UVOL","$DVOL",
-    "/ES","/NQ","/GC","/CL",
-  ];
-
-  try {
-    const { dataMap } = await fetchMacroPulseData(token, symbols);
-    const indicators = extractMarketIndicators(dataMap);
-    console.log("[DEBUG ENGINE INPUT]", JSON.stringify(indicators, null, 2));
-    return res.json({ indicators, symbolsRequested: symbols });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return res.status(500).json({ error: msg });
   }
 });
 
