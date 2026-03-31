@@ -5,7 +5,7 @@ import type {
   MarketPulseSettings,
   AllowedStrategy,
 } from "../types/marketPulse";
-import { ALL_STRATEGIES } from "../types/marketPulse";
+import { ALL_STRATEGIES, ALL_PULSE_INDICATORS } from "../types/marketPulse";
 
 interface MarketPulseState {
   pulseData: MarketPulseData | null;
@@ -27,6 +27,8 @@ interface MarketPulseState {
 
   updateSetting: <K extends keyof MarketPulseSettings>(key: K, value: MarketPulseSettings[K]) => void;
   toggleStrategy: (s: AllowedStrategy) => void;
+  toggleIndicator: (symbol: string) => void;
+  resetIndicators: () => void;
 }
 
 export const useMarketPulseStore = create<MarketPulseState>()(
@@ -53,6 +55,7 @@ export const useMarketPulseStore = create<MarketPulseState>()(
         preferredTickers: "",
         maxRiskPerTrade: "2%",
         allowNoEdgeSuppression: true,
+        pulseIndicators: ALL_PULSE_INDICATORS.map(i => i.symbol),
       },
 
       setPulseData: (data) =>
@@ -75,12 +78,36 @@ export const useMarketPulseStore = create<MarketPulseState>()(
             : [...current, strategy];
           return { settings: { ...s.settings, allowedStrategies: next } };
         }),
+      toggleIndicator: (symbol) =>
+        set((s) => {
+          const current = s.settings.pulseIndicators ?? ALL_PULSE_INDICATORS.map(i => i.symbol);
+          const next = current.includes(symbol)
+            ? current.filter((sym) => sym !== symbol)
+            : [...current, symbol];
+          return { settings: { ...s.settings, pulseIndicators: next } };
+        }),
+      resetIndicators: () =>
+        set((s) => ({
+          settings: { ...s.settings, pulseIndicators: ALL_PULSE_INDICATORS.map(i => i.symbol) },
+        })),
     }),
     {
       name: "alpha-market-pulse",
+      version: 1,
       partialize: (state) => ({
         settings: state.settings,
       }),
+      migrate: (persisted: unknown, version: number) => {
+        const state = persisted as Record<string, unknown>;
+        if (version === 0 || !state.settings) {
+          const s = (state.settings ?? {}) as Record<string, unknown>;
+          if (!s.pulseIndicators || !Array.isArray(s.pulseIndicators)) {
+            s.pulseIndicators = ALL_PULSE_INDICATORS.map(i => i.symbol);
+          }
+          return { ...state, settings: s };
+        }
+        return state;
+      },
     }
   )
 );

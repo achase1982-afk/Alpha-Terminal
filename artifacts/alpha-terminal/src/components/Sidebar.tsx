@@ -1,8 +1,8 @@
 import { useTerminalStore } from "@/lib/store";
 import { useOptionsSettingsStore } from "@/lib/options-store";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
-import type { MarketPulseSettings, AllowedStrategy } from "@/types/marketPulse";
-import { STRATEGY_LABELS, ALL_STRATEGIES } from "@/types/marketPulse";
+import type { MarketPulseSettings, AllowedStrategy, PulseIndicatorCategory } from "@/types/marketPulse";
+import { STRATEGY_LABELS, ALL_STRATEGIES, ALL_PULSE_INDICATORS, PULSE_INDICATOR_CATEGORIES } from "@/types/marketPulse";
 import { AuthPanel } from "./AuthPanel";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -45,6 +45,8 @@ export function Sidebar({ onClose, onOpenChat }: SidebarProps) {
     settings: pulseSettings,
     updateSetting: updatePulseSetting,
     toggleStrategy,
+    toggleIndicator,
+    resetIndicators,
   } = useMarketPulseStore();
 
   const [macroInputs, setMacroInputs] = useState<string[]>(macroSymbols);
@@ -340,6 +342,8 @@ export function Sidebar({ onClose, onOpenChat }: SidebarProps) {
               settings={pulseSettings}
               updateSetting={updatePulseSetting}
               toggleStrategy={toggleStrategy}
+              toggleIndicator={toggleIndicator}
+              resetIndicators={resetIndicators}
             />
           )}
         </div>
@@ -354,11 +358,28 @@ function PulseSettingsPanel({
   settings,
   updateSetting,
   toggleStrategy,
+  toggleIndicator,
+  resetIndicators,
 }: {
   settings: MarketPulseSettings;
   updateSetting: <K extends keyof MarketPulseSettings>(key: K, value: MarketPulseSettings[K]) => void;
   toggleStrategy: (s: AllowedStrategy) => void;
+  toggleIndicator: (symbol: string) => void;
+  resetIndicators: () => void;
 }) {
+  const [indicatorsOpen, setIndicatorsOpen] = useState(false);
+  const activeIndicators = settings.pulseIndicators ?? ALL_PULSE_INDICATORS.map(i => i.symbol);
+  const totalCount = ALL_PULSE_INDICATORS.length;
+  const activeCount = activeIndicators.length;
+
+  const groupedIndicators = ALL_PULSE_INDICATORS.reduce((acc, ind) => {
+    if (!acc[ind.category]) acc[ind.category] = [];
+    acc[ind.category].push(ind);
+    return acc;
+  }, {} as Record<PulseIndicatorCategory, typeof ALL_PULSE_INDICATORS>);
+
+  const categoryOrder: PulseIndicatorCategory[] = ["volatility", "breadth", "rates", "credit", "futures", "commodities"];
+
   return (
     <div className="p-3 sm:p-4 border-t border-card-border bg-[#0c0c0c] space-y-4 animate-in fade-in slide-in-from-top-2">
       <SidebarToggle
@@ -390,6 +411,95 @@ function PulseSettingsPanel({
           />
         </div>
       )}
+
+      <div className="border-t border-card-border pt-3">
+        <button
+          onClick={() => setIndicatorsOpen(!indicatorsOpen)}
+          className="w-full flex items-center justify-between mb-2"
+        >
+          <span className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-bold flex items-center gap-1.5">
+            <BarChart2 className="w-3 h-3" />
+            Indicators
+            <span className="text-primary tabular-nums ml-1">{activeCount}/{totalCount}</span>
+          </span>
+          <ChevronRight className={`w-3 h-3 text-[#71717a] transition-transform duration-200 ${indicatorsOpen ? 'rotate-90' : ''}`} />
+        </button>
+
+        {indicatorsOpen && (
+          <div className="space-y-3 animate-in fade-in slide-in-from-top-1">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  if (activeCount === totalCount) {
+                    ALL_PULSE_INDICATORS.forEach(i => {
+                      if (activeIndicators.includes(i.symbol)) toggleIndicator(i.symbol);
+                    });
+                  } else {
+                    resetIndicators();
+                  }
+                }}
+                className="font-mono text-[9px] text-primary hover:text-primary/80 uppercase tracking-wider transition-colors"
+              >
+                {activeCount === totalCount ? "Deselect All" : "Select All"}
+              </button>
+              {activeCount !== totalCount && (
+                <button
+                  onClick={resetIndicators}
+                  className="font-mono text-[9px] text-[#71717a] hover:text-[#a1a1aa] uppercase tracking-wider transition-colors"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+
+            <div className="space-y-2.5 max-h-[320px] overflow-y-auto pr-1">
+              {categoryOrder.map(cat => {
+                const indicators = groupedIndicators[cat];
+                if (!indicators) return null;
+                const catActive = indicators.filter(i => activeIndicators.includes(i.symbol)).length;
+                const allCatActive = catActive === indicators.length;
+
+                return (
+                  <div key={cat}>
+                    <button
+                      onClick={() => {
+                        indicators.forEach(i => {
+                          const isActive = activeIndicators.includes(i.symbol);
+                          if (allCatActive && isActive) toggleIndicator(i.symbol);
+                          if (!allCatActive && !isActive) toggleIndicator(i.symbol);
+                        });
+                      }}
+                      className="flex items-center gap-1.5 mb-1 group cursor-pointer"
+                    >
+                      <span className="font-mono text-[8px] text-[#52525b] uppercase tracking-widest font-bold group-hover:text-[#71717a] transition-colors">
+                        {PULSE_INDICATOR_CATEGORIES[cat]}
+                      </span>
+                      <span className="font-mono text-[8px] text-[#3f3f46] tabular-nums">
+                        {catActive}/{indicators.length}
+                      </span>
+                    </button>
+                    <div className="space-y-0.5">
+                      {indicators.map(ind => (
+                        <label key={ind.symbol} className="flex items-center gap-2 cursor-pointer group py-0.5">
+                          <input
+                            type="checkbox"
+                            checked={activeIndicators.includes(ind.symbol)}
+                            onChange={() => toggleIndicator(ind.symbol)}
+                            className="rounded border-card-border bg-transparent accent-[#FFB800] w-3 h-3 flex-shrink-0"
+                          />
+                          <span className="font-mono text-[10px] text-[#a1a1aa] group-hover:text-[#e4e4e7] transition-colors leading-tight">
+                            {ind.label}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
 
       <div className="border-t border-card-border pt-3">
         <span className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-bold block mb-2">Display Preferences</span>

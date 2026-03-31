@@ -109,6 +109,61 @@ export const STRATEGY_LABELS: Record<AllowedStrategy, string> = {
 
 export const ALL_STRATEGIES: AllowedStrategy[] = Object.keys(STRATEGY_LABELS) as AllowedStrategy[];
 
+export type PulseIndicatorCategory = "volatility" | "breadth" | "rates" | "credit" | "futures" | "commodities";
+
+export interface PulseIndicator {
+  symbol: string;
+  label: string;
+  category: PulseIndicatorCategory;
+}
+
+export const PULSE_INDICATOR_CATEGORIES: Record<PulseIndicatorCategory, string> = {
+  volatility: "Volatility",
+  breadth: "Market Breadth",
+  rates: "Rates / Treasuries",
+  credit: "Credit / Fixed Income",
+  futures: "Equity Futures",
+  commodities: "Commodities",
+};
+
+export const ALL_PULSE_INDICATORS: PulseIndicator[] = [
+  { symbol: "$VIX",   label: "VIX (30-Day Implied Vol)",      category: "volatility" },
+  { symbol: "$VVIX",  label: "VVIX (Vol of Vol)",             category: "volatility" },
+  { symbol: "$VIX9D", label: "VIX9D (9-Day VIX)",            category: "volatility" },
+  { symbol: "$VIX3M", label: "VIX3M (3-Month VIX)",          category: "volatility" },
+  { symbol: "$SKEW",  label: "SKEW (Tail Risk)",             category: "volatility" },
+
+  { symbol: "$TICK",  label: "TICK (NYSE Tick)",              category: "breadth" },
+  { symbol: "$ADD",   label: "ADD (A/D Line)",               category: "breadth" },
+  { symbol: "$ADVN",  label: "ADVN (Advancers)",             category: "breadth" },
+  { symbol: "$DECN",  label: "DECN (Decliners)",             category: "breadth" },
+  { symbol: "$TRIN",  label: "TRIN (Arms Index)",            category: "breadth" },
+  { symbol: "$UVOL",  label: "UVOL (Up Volume)",             category: "breadth" },
+  { symbol: "$DVOL",  label: "DVOL (Down Volume)",           category: "breadth" },
+
+  { symbol: "$TNX",   label: "TNX (10Y Yield)",              category: "rates" },
+  { symbol: "$TYX",   label: "TYX (30Y Yield)",              category: "rates" },
+  { symbol: "/ZB",    label: "/ZB (30Y Bond Futures)",       category: "rates" },
+  { symbol: "/ZT",    label: "/ZT (2Y Note Futures)",        category: "rates" },
+  { symbol: "/ZQ",    label: "/ZQ (Fed Funds Futures)",      category: "rates" },
+
+  { symbol: "HYG",    label: "HYG (High Yield Corp Bonds)",  category: "credit" },
+  { symbol: "LQD",    label: "LQD (Investment Grade Bonds)", category: "credit" },
+  { symbol: "IEF",    label: "IEF (7-10Y Treasury ETF)",     category: "credit" },
+  { symbol: "$HYD",   label: "HYD (High Yield Muni)",        category: "credit" },
+  { symbol: "$NYICDX", label: "NYICDX (NY ICE Index)",       category: "credit" },
+  { symbol: "$ADSPD", label: "ADSPD (A/D Spread)",           category: "credit" },
+
+  { symbol: "/ES",    label: "/ES (S&P 500 Futures)",        category: "futures" },
+  { symbol: "/NQ",    label: "/NQ (Nasdaq Futures)",         category: "futures" },
+  { symbol: "/YM",    label: "/YM (Dow Futures)",            category: "futures" },
+  { symbol: "/RTY",   label: "/RTY (Russell 2000 Futures)",  category: "futures" },
+
+  { symbol: "/GC",    label: "/GC (Gold Futures)",           category: "commodities" },
+  { symbol: "/CL",    label: "/CL (Crude Oil Futures)",      category: "commodities" },
+  { symbol: "/BZ",    label: "/BZ (Brent Crude Futures)",    category: "commodities" },
+];
+
 export interface MarketPulseSettings {
   showBiasStrip: boolean;
   autoRefresh: boolean;
@@ -123,4 +178,5 @@ export interface MarketPulseSettings {
   preferredTickers: string;
   maxRiskPerTrade: string;
   allowNoEdgeSuppression: boolean;
+  pulseIndicators: string[];
 }

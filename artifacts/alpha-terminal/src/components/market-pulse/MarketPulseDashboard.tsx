@@ -10,7 +10,7 @@ import { ClusterCard } from "./ClusterCard";
 import { ActionPlanCard } from "./ActionPlanCard";
 import { InvalidationBox } from "./InvalidationBox";
 import { LevelsToWatch } from "./LevelsToWatch";
-import { DEFAULT_PULSE_SYMBOLS } from "../MarketPulseModal";
+import { ALL_PULSE_INDICATORS } from "@/types/marketPulse";
 import { AiThinkingFeed } from "../ai-shared/AiThinkingFeed";
 
 const API_BASE = "/api";
@@ -100,10 +100,20 @@ export function MarketPulseDashboard({ autoGenerate }: MarketPulseDashboardProps
       (s) => STRATEGY_LABELS[s]
     );
 
+    const activeSymbols = settings.pulseIndicators && settings.pulseIndicators.length > 0
+      ? settings.pulseIndicators
+      : ALL_PULSE_INDICATORS.map(i => i.symbol);
+
+    if (activeSymbols.length === 0) {
+      setError("No indicators selected. Open Settings → Market Pulse → Indicators to enable at least one.");
+      setLoading(false);
+      return;
+    }
+
     setTimeout(() => {
       startStream({
         accessToken,
-        symbols: DEFAULT_PULSE_SYMBOLS,
+        symbols: activeSymbols,
         model: aiModel,
         temperature: 0,
         previousBias: pulseData?.bias ?? undefined,
