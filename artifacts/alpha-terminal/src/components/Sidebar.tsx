@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import {
-  X, Shield, Link, Fingerprint, LogOut,
+  X, Shield, Link, Fingerprint, Power,
   Star, Activity, Briefcase, MessageCircle,
   Zap, LineChart, LayoutDashboard, BrainCircuit,
   ChevronLeft, Trash2, Plus, RotateCcw, BarChart2,
@@ -109,13 +109,18 @@ export function Sidebar({ isOpen, onClose, onOpenChat, onNavigate }: SidebarProp
           </div>
         </div>
 
-        <div className="p-4 mt-auto border-t border-card-border/50 bg-[#0c0c0c]">
+        <div className="shrink-0 px-4 py-5 border-t border-card-border/50 bg-[#0a0a0a]">
           <button
             onClick={() => { queryClient.clear(); void signOut(); }}
-            className="w-full flex items-center justify-center gap-3 py-3.5 bg-terminal-danger/10 border border-terminal-danger/30 hover:bg-terminal-danger hover:text-white text-terminal-danger rounded-xl transition-all shadow-sm"
+            className="w-full flex items-center justify-center gap-3 py-3.5 rounded-xl transition-all active:scale-[0.97]"
+            style={{
+              background: "linear-gradient(180deg, #2A2A2C 0%, #1C1C1E 100%)",
+              border: "1px solid rgba(255,255,255,0.08)",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05)",
+            }}
           >
-            <LogOut className="w-5 h-5" />
-            <span className="font-black text-[13px] tracking-widest uppercase">Log Out</span>
+            <Power className="w-4.5 h-4.5 text-white/80" />
+            <span className="font-bold text-[13px] tracking-[0.2em] uppercase text-white/90">Logout</span>
           </button>
         </div>
       </div>
