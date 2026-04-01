@@ -193,15 +193,29 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
       {showEmptyOrLoading && (
         <div className={`flex-1 flex flex-col ${isActive ? "overflow-y-auto space-y-4" : "justify-center space-y-4"}`}>
           <div className={`rounded-xl border border-[#2A2A2C] p-8 text-center ${isActive ? "shrink-0" : ""}`} style={{ background: "#111113" }}>
-            <Activity className="w-8 h-8 text-[#FFB800] mx-auto mb-3 opacity-50" />
+            <div className="relative mx-auto mb-3 w-8 h-8">
+              {isActive && (
+                <span className="absolute inset-0 rounded-full bg-[#FFB800]/20 animate-ping" />
+              )}
+              <Activity
+                className="w-8 h-8 text-[#FFB800] relative"
+                style={isActive
+                  ? { opacity: 1, animation: "pulse-breathe 1.5s ease-in-out infinite" }
+                  : { opacity: 0.5 }
+                }
+              />
+            </div>
             <p className="font-mono text-xs text-[#71717a] mb-4">
               {isActive ? "Analyzing markets..." : "No Market Pulse generated yet"}
             </p>
             <button
               onClick={fetchPulse}
               disabled={!accessToken || isActive}
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-mono text-xs font-bold tracking-wider text-[#0c0c0c] bg-[#FFB800] hover:bg-[#FFB800]/90 transition-colors disabled:opacity-40 active:scale-95 active:brightness-110"
-              style={{ transition: "transform 0.1s, filter 0.1s" }}
+              className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-mono text-xs font-bold tracking-wider transition-colors active:scale-95 active:brightness-110 ${isActive ? "text-[#FFB800] border border-[#FFB800]/30" : "text-[#0c0c0c] bg-[#FFB800] hover:bg-[#FFB800]/90"}`}
+              style={isActive
+                ? { background: "rgba(255,184,0,0.1)", animation: "pulse-breathe 1.5s ease-in-out infinite", transition: "transform 0.1s, filter 0.1s" }
+                : { transition: "transform 0.1s, filter 0.1s" }
+              }
             >
               <Zap className="w-3.5 h-3.5" />
               {isActive ? "Checking..." : "Check Market Pulse"}

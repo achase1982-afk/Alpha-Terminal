@@ -41,6 +41,45 @@ import {
 type BottomTab = "scanner" | "markets" | "ai" | "portfolio" | "watchlist";
 type ContextTab = MarketDataTab;
 
+function PulseHeader({ pulseData, onRefresh }: { pulseData: any; onRefresh: () => void }) {
+  const pulseAge = pulseData?.generatedAt ? Math.floor((Date.now() - pulseData.generatedAt) / 60_000) : null;
+  const ageLabel = pulseAge === null ? null : pulseAge < 1 ? "Just now" : pulseAge < 60 ? `${pulseAge}m ago` : `${Math.floor(pulseAge / 60)}h ${pulseAge % 60}m ago`;
+
+  return (
+    <div className="flex items-center justify-between px-3 sm:px-4 lg:px-5 py-2 border-b border-card-border/30">
+      <div className="flex items-center gap-2.5">
+        <div>
+          <h2 className="font-mono font-bold text-sm text-[#e4e4e7] tracking-wider">MARKET PULSE</h2>
+          <p className="font-mono text-[9px] text-[#71717a] tracking-widest uppercase">Multi-Asset Macro Analysis</p>
+        </div>
+      </div>
+      {pulseData && (
+        <div className="flex items-center gap-3 mr-3">
+          {ageLabel && (
+            <div className="flex items-center gap-1">
+              <Clock className="w-3 h-3 text-[#8a8a8e]" />
+              <span className="font-mono text-[11px] text-[#8a8a8e] tracking-wider">{ageLabel}</span>
+            </div>
+          )}
+          <button
+            onClick={onRefresh}
+            className="flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-100 disabled:opacity-40 disabled:cursor-not-allowed active:translate-y-[1px]"
+            style={{
+              background: "linear-gradient(180deg, #2A2A2C 0%, #1E1E20 100%)",
+              color: "#a1a1aa",
+              border: "1px solid #3a3a3c",
+              borderBottom: "2px solid #1a1a1c",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05)",
+            }}
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function TerminalPage() {
   const { symbol, accessToken, chartPeriod, chartInterval, streamStatus } = useTerminalStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -145,43 +184,9 @@ export default function TerminalPage() {
             </div>
           </div>
 
-          {aiSubTab === "pulse" && (() => {
-              const pulseAge = pulseData?.generatedAt ? Math.floor((Date.now() - pulseData.generatedAt) / 60_000) : null;
-              const ageLabel = pulseAge === null ? null : pulseAge < 1 ? "Just now" : pulseAge < 60 ? `${pulseAge}m ago` : `${Math.floor(pulseAge / 60)}h ${pulseAge % 60}m ago`;
-              return (
-                <div className="flex items-center justify-between px-3 sm:px-4 lg:px-5 py-2 border-b border-card-border/30">
-                  <div className="flex items-center gap-2.5">
-                    <div>
-                      <h2 className="font-mono font-bold text-sm text-[#e4e4e7] tracking-wider">MARKET PULSE</h2>
-                      <p className="font-mono text-[9px] text-[#71717a] tracking-widest uppercase">Multi-Asset Macro Analysis</p>
-                    </div>
-                  </div>
-                  {pulseData && (
-                    <div className="flex items-center gap-3 mr-3">
-                      {ageLabel && (
-                        <div className="flex items-center gap-1">
-                          <Clock className="w-3 h-3 text-[#8a8a8e]" />
-                          <span className="font-mono text-[11px] text-[#8a8a8e] tracking-wider">{ageLabel}</span>
-                        </div>
-                      )}
-                      <button
-                        onClick={() => pulseDashRef.current?.fetchPulse()}
-                        className="flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-100 disabled:opacity-40 disabled:cursor-not-allowed active:translate-y-[1px]"
-                        style={{
-                          background: "linear-gradient(180deg, #2A2A2C 0%, #1E1E20 100%)",
-                          color: "#a1a1aa",
-                          border: "1px solid #3a3a3c",
-                          borderBottom: "2px solid #1a1a1c",
-                          boxShadow: "0 1px 3px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05)",
-                        }}
-                      >
-                        <RefreshCw className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
+          {aiSubTab === "pulse" && (
+            <PulseHeader pulseData={pulseData} onRefresh={() => pulseDashRef.current?.fetchPulse()} />
+          )}
         </div>
       )}
 
