@@ -131,7 +131,7 @@ export function MarketSessionClock() {
   }, []);
 
   return (
-    <div className="flex items-center gap-1.5 min-w-0 ml-auto">
+    <div className="flex items-center gap-1 min-w-0 ml-auto">
       <span
         className="text-[13px] font-light uppercase whitespace-nowrap"
         style={{ color: info.color, fontFamily: "Inter, system-ui, sans-serif", letterSpacing: "0.04em" }}
