@@ -8,7 +8,7 @@ import { MarketScanner } from "@/components/MarketScanner";
 import { MacroBar } from "@/components/MacroBar";
 import { TickerTape } from "@/components/TickerTape";
 import { TickerSearch } from "@/components/TickerSearch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { MarketDataTabs, type MarketDataTab } from "@/components/MarketDataTabs";
 import { useTerminalStore } from "@/lib/store";
 import { useGetPriceHistory } from "@workspace/api-client-react";
 import { ChartControls, chartParamsFromStore, isIntradayInterval } from "@/components/ChartControls";
@@ -20,7 +20,6 @@ import { AiChatOverlay } from "@/components/AiChatOverlay";
 import { InAppBrowser } from "@/components/InAppBrowser";
 import { NewsTab } from "@/components/NewsTab";
 import { AiBiasStrip } from "@/components/market-pulse/AiBiasStrip";
-import { CompanyResearchHub } from "@/components/CompanyResearchHub";
 import type { AiSubTab } from "@/components/ai-tab/AiSubTabs";
 import {
   BrainCircuit,
@@ -35,7 +34,7 @@ import {
 } from "lucide-react";
 
 type BottomTab = "scanner" | "markets" | "ai" | "portfolio" | "watchlist";
-type ContextTab = "news" | "options" | "chart" | "company";
+type ContextTab = MarketDataTab;
 
 export default function TerminalPage() {
   const { symbol, accessToken, chartPeriod, chartInterval, streamStatus } = useTerminalStore();
@@ -139,31 +138,13 @@ export default function TerminalPage() {
 
               <TickerSearch />
 
-              <Tabs value={contextTab} onValueChange={(v) => setContextTab(v as ContextTab)} className="w-full">
-                <div className="sticky top-[110px] z-30 bg-background/95 backdrop-blur-sm py-2 px-1 border-b border-card-border">
-                  <TabsList className="grid grid-cols-4 w-full bg-card h-11 border border-card-border">
-                    <TabsTrigger value="news" className="font-mono text-[10px] sm:text-xs uppercase data-[state=active]:text-white data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-b-primary rounded-none">
-                      NEWS
-                    </TabsTrigger>
-                    <TabsTrigger value="options" className="font-mono text-[10px] sm:text-xs uppercase data-[state=active]:text-white data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-b-primary rounded-none">
-                      OPTIONS
-                    </TabsTrigger>
-                    <TabsTrigger value="chart" className="font-mono text-[10px] sm:text-xs uppercase data-[state=active]:text-white data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-b-primary rounded-none">
-                      CHART
-                    </TabsTrigger>
-                    <TabsTrigger value="company" className="font-mono text-[10px] sm:text-xs uppercase data-[state=active]:text-white data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-b-primary rounded-none">
-                      COMPANY
-                    </TabsTrigger>
-                  </TabsList>
-                </div>
+              <MarketDataTabs activeTab={contextTab} setActiveTab={setContextTab} />
 
-                <TabsContent value="news" className="m-0 focus-visible:outline-none">
-                  <NewsTab />
-                </TabsContent>
-                <TabsContent value="options" className="m-0 focus-visible:outline-none">
-                  <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} />
-                </TabsContent>
-                <TabsContent value="chart" className="m-0 focus-visible:outline-none">
+              {contextTab === "news" && <NewsTab />}
+              {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} />}
+              {contextTab === "scan" && <MarketScanner subscribeEquitySymbols={subscribeEquitySymbols} />}
+              {contextTab === "chart" && (
+                <>
                   <ChartControls />
                   <div className="h-[420px] sm:h-[500px] md:h-[580px]">
                     <TradingChart
@@ -176,11 +157,8 @@ export default function TerminalPage() {
                       intraday={isIntradayInterval(chartInterval)}
                     />
                   </div>
-                </TabsContent>
-                <TabsContent value="company" className="m-0 focus-visible:outline-none">
-                  <CompanyResearchHub candles={historyData?.candles as any} />
-                </TabsContent>
-              </Tabs>
+                </>
+              )}
             </>
           )}
 
