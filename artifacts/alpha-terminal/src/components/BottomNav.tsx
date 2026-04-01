@@ -65,6 +65,8 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
   const containerRef = useRef<HTMLElement | null>(null);
   const dragStartIdx = useRef(0);
   const jiggleStartedAt = useRef(0);
+  const jigglingRef = useRef(false);
+  const blockClicksUntil = useRef(0);
 
   const saveOrder = useCallback((newOrder: BottomTab[]) => {
     setOrder(newOrder);
@@ -89,6 +91,7 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
     const rect = tabRects.current[idx];
     if (!rect) return;
     jiggleStartedAt.current = Date.now();
+    jigglingRef.current = true;
     setJiggling(true);
     setDragging(true);
     setDragTabId(order[idx]);
@@ -174,40 +177,51 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
     setPreviewOrder([]);
   }, [dragging, dragTabId, order, dragX, cancelLongPress, saveOrder]);
 
+  const stopJiggle = useCallback(() => {
+    jigglingRef.current = false;
+    blockClicksUntil.current = Date.now() + 400;
+    setJiggling(false);
+    setDragging(false);
+    setDragTabId(null);
+    setPreviewOrder([]);
+  }, []);
+
   useEffect(() => {
-    if (!jiggling) return;
-    const stop = () => {
-      setJiggling(false);
-      setDragging(false);
-      setDragTabId(null);
-      setPreviewOrder([]);
-    };
-    const handler = (e: TouchEvent | MouseEvent) => {
-      if (Date.now() - jiggleStartedAt.current < 500) return;
+    const isGracePeriod = () => Date.now() - jiggleStartedAt.current < 500;
+
+    const touchHandler = (e: TouchEvent | MouseEvent) => {
+      if (!jigglingRef.current) return;
+      if (isGracePeriod()) return;
       const container = containerRef.current;
-      if (!container) return;
-      if (!container.contains(e.target as Node)) {
+      if (container && !container.contains(e.target as Node)) {
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
-        stop();
+        stopJiggle();
       }
     };
     const clickBlocker = (e: Event) => {
-      if (Date.now() - jiggleStartedAt.current < 500) return;
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
+      if (jigglingRef.current && !isGracePeriod()) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        return;
+      }
+      if (Date.now() < blockClicksUntil.current) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+      }
     };
-    document.addEventListener("touchstart", handler, { capture: true });
-    document.addEventListener("mousedown", handler, { capture: true });
+    document.addEventListener("touchstart", touchHandler, { capture: true });
+    document.addEventListener("mousedown", touchHandler, { capture: true });
     document.addEventListener("click", clickBlocker, { capture: true });
     return () => {
-      document.removeEventListener("touchstart", handler, { capture: true });
-      document.removeEventListener("mousedown", handler, { capture: true });
+      document.removeEventListener("touchstart", touchHandler, { capture: true });
+      document.removeEventListener("mousedown", touchHandler, { capture: true });
       document.removeEventListener("click", clickBlocker, { capture: true });
     };
-  }, [jiggling]);
+  }, [stopJiggle]);
 
   const displayOrder = dragging && previewOrder.length === order.length ? previewOrder : order;
   const dragOffset = dragging ? dragX - dragOriginX : 0;
@@ -266,7 +280,7 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
             <button
               key={tabId}
               ref={(el) => { tabRefs.current[i] = el; }}
-              onClick={() => { if (jiggling) { if (Date.now() - jiggleStartedAt.current > 500) { setJiggling(false); setDragging(false); setDragTabId(null); setPreviewOrder([]); } return; } if (!touchMoved.current) onTabChange(tabId); }}
+              onClick={() => { if (jiggling) { if (Date.now() - jiggleStartedAt.current > 500) stopJiggle(); return; } if (!touchMoved.current) onTabChange(tabId); }}
               onTouchStart={(e) => handleTouchStart(i, e)}
               className={[
                 "flex flex-col items-center justify-center w-12 h-12 rounded-full shadow-[0_0_12px_rgba(255,184,0,0.35)] transition-transform active:scale-95 select-none",
@@ -285,7 +299,7 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
           <button
             key={tabId}
             ref={(el) => { tabRefs.current[i] = el; }}
-            onClick={() => { if (jiggling) { if (Date.now() - jiggleStartedAt.current > 500) { setJiggling(false); setDragging(false); setDragTabId(null); setPreviewOrder([]); } return; } if (!touchMoved.current) onTabChange(tabId); }}
+            onClick={() => { if (jiggling) { if (Date.now() - jiggleStartedAt.current > 500) stopJiggle(); return; } if (!touchMoved.current) onTabChange(tabId); }}
             onTouchStart={(e) => handleTouchStart(i, e)}
             className={[
               "flex flex-col items-center gap-1 min-w-0 px-2 py-1.5 select-none transition-colors",

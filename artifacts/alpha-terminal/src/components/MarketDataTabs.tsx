@@ -58,6 +58,8 @@ export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps)
   const containerRef = useRef<HTMLDivElement | null>(null);
   const dragStartIdx = useRef(0);
   const jiggleStartedAt = useRef(0);
+  const jigglingRef = useRef(false);
+  const blockClicksUntil = useRef(0);
 
   const saveOrder = useCallback((newOrder: MarketDataTab[]) => {
     setOrder(newOrder);
@@ -83,6 +85,7 @@ export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps)
     if (!rect) return;
 
     jiggleStartedAt.current = Date.now();
+    jigglingRef.current = true;
     setJiggling(true);
     setDragging(true);
     setDragTabId(order[idx]);
@@ -177,40 +180,51 @@ export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps)
     setPreviewOrder([]);
   }, [dragging, dragTabId, order, dragX, cancelLongPress, saveOrder]);
 
+  const stopJiggle = useCallback(() => {
+    jigglingRef.current = false;
+    blockClicksUntil.current = Date.now() + 400;
+    setJiggling(false);
+    setDragging(false);
+    setDragTabId(null);
+    setPreviewOrder([]);
+  }, []);
+
   useEffect(() => {
-    if (!jiggling) return;
-    const stop = () => {
-      setJiggling(false);
-      setDragging(false);
-      setDragTabId(null);
-      setPreviewOrder([]);
-    };
-    const handler = (e: TouchEvent | MouseEvent) => {
-      if (Date.now() - jiggleStartedAt.current < 500) return;
+    const isGracePeriod = () => Date.now() - jiggleStartedAt.current < 500;
+
+    const touchHandler = (e: TouchEvent | MouseEvent) => {
+      if (!jigglingRef.current) return;
+      if (isGracePeriod()) return;
       const container = containerRef.current;
-      if (!container) return;
-      if (!container.contains(e.target as Node)) {
+      if (container && !container.contains(e.target as Node)) {
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
-        stop();
+        stopJiggle();
       }
     };
     const clickBlocker = (e: Event) => {
-      if (Date.now() - jiggleStartedAt.current < 500) return;
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
+      if (jigglingRef.current && !isGracePeriod()) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        return;
+      }
+      if (Date.now() < blockClicksUntil.current) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+      }
     };
-    document.addEventListener("touchstart", handler, { capture: true });
-    document.addEventListener("mousedown", handler, { capture: true });
+    document.addEventListener("touchstart", touchHandler, { capture: true });
+    document.addEventListener("mousedown", touchHandler, { capture: true });
     document.addEventListener("click", clickBlocker, { capture: true });
     return () => {
-      document.removeEventListener("touchstart", handler, { capture: true });
-      document.removeEventListener("mousedown", handler, { capture: true });
+      document.removeEventListener("touchstart", touchHandler, { capture: true });
+      document.removeEventListener("mousedown", touchHandler, { capture: true });
       document.removeEventListener("click", clickBlocker, { capture: true });
     };
-  }, [jiggling]);
+  }, [stopJiggle]);
 
   const displayOrder = dragging && previewOrder.length === order.length ? previewOrder : order;
   const dragOffset = dragging ? dragX - dragOriginX : 0;
@@ -276,9 +290,7 @@ export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps)
                 ref={(el) => { tabRefs.current[i] = el; }}
                 onClick={() => {
                   if (jiggling) {
-                    if (Date.now() - jiggleStartedAt.current > 500) {
-                      setJiggling(false); setDragging(false); setDragTabId(null); setPreviewOrder([]);
-                    }
+                    if (Date.now() - jiggleStartedAt.current > 500) stopJiggle();
                     return;
                   }
                   if (!touchMoved.current) setActiveTab(tabId);
