@@ -35,6 +35,7 @@ import {
   ListOrdered,
   Star,
   X,
+  Clock,
 } from "lucide-react";
 
 type BottomTab = "scanner" | "markets" | "ai" | "portfolio" | "watchlist";
@@ -155,9 +156,12 @@ export default function TerminalPage() {
                       <p className="font-mono text-[9px] text-[#71717a] tracking-widest uppercase">Multi-Asset Macro Analysis</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3 mr-1">
+                  <div className="flex items-center gap-3 mr-3">
                     {ageLabel && (
-                      <span className="font-mono text-[10px] text-[#8a8a8e] tracking-wider">{ageLabel}</span>
+                      <div className="flex items-center gap-1">
+                        <Clock className="w-3 h-3 text-[#8a8a8e]" />
+                        <span className="font-mono text-[11px] text-[#8a8a8e] tracking-wider">{ageLabel}</span>
+                      </div>
                     )}
                     <button
                       onClick={() => pulseDashRef.current?.fetchPulse()}
