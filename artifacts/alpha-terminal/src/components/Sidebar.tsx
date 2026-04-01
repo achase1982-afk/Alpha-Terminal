@@ -88,7 +88,7 @@ export function Sidebar({ isOpen, onClose, onOpenChat, onNavigate }: SidebarProp
 
         <div className="flex-1 overflow-y-auto py-2">
           <div className="flex flex-col pb-2">
-            <MenuRow icon={<Star />} label="Watchlist" onClick={() => setActivePage("Watchlist")} />
+            <MenuRow icon={<Star />} label="Watchlist" onClick={() => { setActivePage("Watchlist"); onClose(); }} />
             <MenuRow icon={<Activity />} label="Markets" onClick={() => { onNavigate?.("markets"); handleClose(); }} />
             <MenuRow icon={<Briefcase />} label="Portfolio" onClick={() => { onNavigate?.("portfolio"); handleClose(); }} />
             <MenuRow icon={<MessageCircle />} label="AI Search" onClick={() => { handleClose(); onOpenChat?.(); }} />
@@ -97,12 +97,12 @@ export function Sidebar({ isOpen, onClose, onOpenChat, onNavigate }: SidebarProp
           <div className="mx-5 border-b border-card-border/50" />
 
           <div className="flex flex-col pt-2 pb-2">
-            <MenuRow icon={<Link />} label="Linked Brokerage" onClick={() => setActivePage("Linked Brokerage")} />
-            <MenuRow icon={<Zap />} label="Market Pulse" onClick={() => setActivePage("Market Pulse")} />
-            <MenuRow icon={<LineChart />} label="Chart & Options" onClick={() => setActivePage("Chart & Options")} />
-            <MenuRow icon={<LayoutDashboard />} label="Display & Marquee" onClick={() => setActivePage("Display & Marquee")} />
-            <MenuRow icon={<BrainCircuit />} label="AI Parameters" onClick={() => setActivePage("AI Parameters")} />
-            <MenuRow icon={<Shield />} label="Security & Privacy" onClick={() => setActivePage("Security & Privacy")} />
+            <MenuRow icon={<Link />} label="Linked Brokerage" onClick={() => { setActivePage("Linked Brokerage"); onClose(); }} />
+            <MenuRow icon={<Zap />} label="Market Pulse" onClick={() => { setActivePage("Market Pulse"); onClose(); }} />
+            <MenuRow icon={<LineChart />} label="Chart & Options" onClick={() => { setActivePage("Chart & Options"); onClose(); }} />
+            <MenuRow icon={<LayoutDashboard />} label="Display & Marquee" onClick={() => { setActivePage("Display & Marquee"); onClose(); }} />
+            <MenuRow icon={<BrainCircuit />} label="AI Parameters" onClick={() => { setActivePage("AI Parameters"); onClose(); }} />
+            <MenuRow icon={<Shield />} label="Security & Privacy" onClick={() => { setActivePage("Security & Privacy"); onClose(); }} />
           </div>
         </div>
 
@@ -120,20 +120,14 @@ export function Sidebar({ isOpen, onClose, onOpenChat, onNavigate }: SidebarProp
       {activePage && createPortal(
         <div
           className="fixed left-0 right-0 bottom-0 z-[100] bg-background animate-in slide-in-from-bottom-8 duration-300 flex flex-col shadow-2xl border-t border-card-border"
-          style={{ top: "80px" }}
+          style={{ top: "0px" }}
         >
+          <div className="h-16 bg-[#141414] shrink-0" />
+
           <div className="flex items-center justify-between p-3 border-b border-card-border bg-card">
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setActivePage(null)}
-                className="p-1.5 text-muted-foreground hover:text-white transition-colors"
-              >
-                <ChevronLeft className="w-6 h-6" />
-              </button>
-              <h2 className="font-bold text-sm tracking-widest text-white uppercase">{activePage}</h2>
-            </div>
+            <h2 className="font-bold text-sm tracking-widest text-white uppercase ml-2">{activePage}</h2>
             <button
-              onClick={handleClose}
+              onClick={() => setActivePage(null)}
               className="p-1.5 text-muted-foreground hover:text-white transition-colors"
             >
               <X className="w-5 h-5" />
