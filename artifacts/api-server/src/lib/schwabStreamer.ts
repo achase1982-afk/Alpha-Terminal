@@ -411,19 +411,45 @@ function handleData(content: Record<string, unknown>[]) {
 
     const regLastRaw      = pick(FIELD.REG_LAST);
     const allSessLastRaw  = pick(FIELD.LAST_ALL_SESS);
-    const regLastVal      = (regLastRaw !== null && regLastRaw !== 0)
-      ? regLastRaw
-      : (allSessLastRaw !== null && allSessLastRaw !== 0)
+
+    // For $ index/breadth symbols ($TICK, $ADD, $VIX, etc.):
+    //   - They have no pre/post-market distinction — field 3 (LAST_ALL_SESS) IS the live value.
+    //   - Field 33 (REG_LAST) is either inapplicable or a stale snapshot value.
+    //   - 0 is a legitimate value for $TICK/$ADD (perfectly balanced market), so do NOT filter it.
+    // For regular equities: field 33 is the regular-session last (preferred during market hours).
+    const isIndexSym = schwabKey.startsWith("$");
+
+    let regLastVal: number | null;
+    if (isIndexSym) {
+      // Index: trust field 3 first; field 33 as fallback; then existing
+      regLastVal = allSessLastRaw !== null
         ? allSessLastRaw
-        : (allSessLastRaw ?? existing.last);
+        : regLastRaw !== null
+          ? regLastRaw
+          : existing.last;
+    } else {
+      // Equity: trust field 33 first (regular session), fallback to field 3, skip sentinel 0
+      regLastVal = (regLastRaw !== null && regLastRaw !== 0)
+        ? regLastRaw
+        : (allSessLastRaw !== null && allSessLastRaw !== 0)
+          ? allSessLastRaw
+          : (allSessLastRaw ?? existing.last);
+    }
+
     const extendedLastVal = allSessLastRaw ?? existing.extendedLast;
     const closeVal        = pick(FIELD.CLOSE) ?? existing.close;
 
     let changeVal:    number | null = existing.change;
     let changePctVal: number | null = existing.changePct;
-    if (regLastVal !== null && closeVal !== null && closeVal !== 0) {
+    // For index symbols, only compute % change if close is a meaningful baseline
+    // (e.g. $TICK close can be -350 which makes % change meaningless — keep it null)
+    if (regLastVal !== null && closeVal !== null && closeVal !== 0 && !isIndexSym) {
       changeVal    = regLastVal - closeVal;
       changePctVal = (changeVal / closeVal) * 100;
+    } else if (regLastVal !== null && closeVal !== null && closeVal !== 0 && isIndexSym) {
+      // For index symbols, compute raw change but skip the % (often nonsensical for TICK/ADD)
+      changeVal    = regLastVal - closeVal;
+      changePctVal = null;
     }
 
     const updated: LiveQuote = {

@@ -614,7 +614,8 @@ function extractMarketIndicators(dataMap: Map<string, Record<string, unknown>>):
   const advn = lastOrMark('$ADVN');
   const decn = lastOrMark('$DECN');
   const addRaw = lastOrMark('$ADD');
-  const add = (addRaw !== null && addRaw !== 0)
+  // $ADD = 0 is a valid reading (balanced market). Use ADVN-DECN only when $ADD is truly missing.
+  const add = addRaw !== null
     ? addRaw
     : (advn !== null && decn !== null ? advn - decn : null);
   const tickVal = lastOrMark('$TICK');
@@ -2031,6 +2032,35 @@ router.post("/pre-trade-check", async (req, res) => {
 router.get("/market-pulse/verify", (_req, res) => {
   const { passed, output } = verifyEngineScoring();
   res.json({ passed, output });
+});
+
+router.get("/market-pulse/data-check", (_req, res) => {
+  const { dataMap } = readFromWebSocketCache();
+  const now = Date.now();
+  const rows: Record<string, unknown>[] = [];
+
+  for (const sym of PULSE_SYMBOLS) {
+    const d = dataMap.get(sym.display);
+    const last = d ? (d["lastPrice"] ?? d["mark"] ?? d["close"] ?? null) : null;
+    const snapshot = getSnapshot();
+    const cached = snapshot.find(q => q.symbol === sym.api || q.symbol === sym.display);
+    const ageMs = cached ? now - cached.ts : null;
+    rows.push({
+      symbol: sym.display,
+      category: sym.category,
+      last,
+      close: d?.["closePrice"] ?? d?.["close"] ?? null,
+      change: d?.["netChange"] ?? null,
+      hasData: last !== null,
+      ageSec: ageMs !== null ? Math.round(ageMs / 1000) : null,
+    });
+  }
+
+  const total = rows.length;
+  const withData = rows.filter(r => r["hasData"]).length;
+  const stale = rows.filter(r => typeof r["ageSec"] === "number" && (r["ageSec"] as number) > 60).length;
+
+  res.json({ summary: { total, withData, missing: total - withData, stale }, rows });
 });
 
 {
