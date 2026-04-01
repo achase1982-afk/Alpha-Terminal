@@ -113,6 +113,7 @@ export default function TerminalPage() {
           </div>
         </div>
         <TickerTape />
+        <AiBiasStrip onNavigateToPulse={() => { setActiveBottom("ai"); setAiSubTab("pulse"); }} />
       </header>
 
       <div className="flex flex-1 min-h-0 relative">
@@ -131,7 +132,6 @@ export default function TerminalPage() {
               <MacroBar />
 
               <div className="sticky top-0 z-40 bg-background">
-                <AiBiasStrip onNavigateToPulse={() => { setActiveBottom("ai"); setAiSubTab("pulse"); }} />
                 <MetricsBar compact={isScrolled} />
               </div>
 
