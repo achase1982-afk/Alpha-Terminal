@@ -79,6 +79,7 @@ export async function runPulseStream(payload: Record<string, unknown>) {
 
         try {
           const parsed = JSON.parse(eventData);
+          console.log(`[pulseStreamRunner] SSE event: "${eventType}"`, eventType === "thinking" ? `text="${(parsed.text || parsed.content || "").substring(0, 80)}"` : parsed);
 
           if (eventType === "thinking") {
             const text = parsed.text || parsed.content || "";
