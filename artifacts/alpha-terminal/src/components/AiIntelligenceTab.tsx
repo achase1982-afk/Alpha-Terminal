@@ -635,13 +635,15 @@ interface AiIntelligenceTabProps {
 export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef }: AiIntelligenceTabProps) {
   const {
     symbol, accessToken,
-    aiModel, aiTemp,
+    aiFeatureSettings,
     strategistResult, setStrategistResult,
     stratAutopilot, stratMaxRisk, stratMinPoP, stratMinRR,
     stratBias, stratPremium, stratAvoidEarnings,
     preTradeEnabled, preTradeBlockOnRed, preTradeMinRR,
     preTradeMaxPositionPct, preTradeMinDTE, accountSize,
   } = useTerminalStore();
+  const aiModel = aiFeatureSettings.strategist.model;
+  const aiTemp = aiFeatureSettings.strategist.temperature;
 
   const { cachedData: strategistCache, setCachedData: setStrategistCache } = useStrategistCache(symbol);
 

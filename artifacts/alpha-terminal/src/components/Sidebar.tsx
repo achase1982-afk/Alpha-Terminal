@@ -19,7 +19,7 @@ import {
   X, Shield, Link, Fingerprint, Power, Menu,
   Star, Activity, Briefcase, MessageCircle,
   Zap, LineChart, LayoutDashboard, BrainCircuit,
-  ChevronLeft, Trash2, Plus, RotateCcw, BarChart2,
+  ChevronLeft, ChevronRight, Trash2, Plus, RotateCcw, BarChart2,
   SlidersHorizontal, Gauge, ListOrdered,
 } from "lucide-react";
 import { useClerk } from "@clerk/clerk-react";
@@ -484,65 +484,127 @@ function DisplayMarqueePage() {
 }
 
 const ALL_MODELS = [
-  { id: "gemini-3.1-pro-preview", label: "GEMINI 3.1 PRO", badge: "LATEST" },
-  { id: "gemini-2.5-pro-preview-05-06", label: "GEMINI 2.5 PRO PREVIEW" },
-  { id: "gemini-2.5-pro", label: "GEMINI 2.5 PRO" },
-  { id: "gemini-2.5-flash", label: "GEMINI 2.5 FLASH" },
-  { id: "gemini-2.5-flash-lite-preview", label: "GEMINI 2.5 FLASH LITE" },
-  { id: "gemini-2.0-flash", label: "GEMINI 2.0 FLASH" },
-  { id: "gemini-2.0-flash-lite", label: "GEMINI 2.0 FLASH LITE" },
+  "gemini-3.1-pro-preview",
+  "gemini-2.5-pro-preview-05-06",
+  "gemini-2.5-pro",
+  "gemini-2.5-flash",
+  "gemini-2.5-flash-lite-preview",
+  "gemini-2.0-flash",
+  "gemini-2.0-flash-lite",
 ];
 
-function AiParametersPage() {
-  const { aiModel, setAiModel, aiTemp, setAiTemp } = useTerminalStore();
+const AI_FEATURES: Array<{
+  key: keyof ReturnType<typeof useTerminalStore>['aiFeatureSettings'];
+  label: string;
+  icon: string;
+}> = [
+  { key: 'marketPulse', label: 'MARKET PULSE', icon: '⚡' },
+  { key: 'technicals',  label: 'TECHNICAL ANALYSIS', icon: '📊' },
+  { key: 'strategist',  label: 'OPTIONS STRATEGIST', icon: '🎯' },
+  { key: 'chat',        label: 'AI CHAT', icon: '💬' },
+  { key: 'scanner',     label: 'MARKET SCANNER', icon: '🔍' },
+];
+
+function AiFeatureControl({ featureKey, label, icon }: {
+  featureKey: keyof ReturnType<typeof useTerminalStore>['aiFeatureSettings'];
+  label: string;
+  icon: string;
+}) {
+  const { aiFeatureSettings, setAiFeatureSetting } = useTerminalStore();
+  const settings = aiFeatureSettings[featureKey];
+  const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="space-y-6 max-w-xl mx-auto">
-      <div className="space-y-2">
-        <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
-          <BrainCircuit className="w-3 h-3" /> Model
-        </Label>
-        <div className="space-y-1">
-          {ALL_MODELS.map((m) => {
-            const active = aiModel === m.id;
-            return (
-              <button
-                key={m.id}
-                onClick={() => setAiModel(m.id)}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg border font-mono text-[10px] tracking-wide transition-all cursor-pointer ${
-                  active
-                    ? "border-primary/60 bg-primary/10 text-primary"
-                    : "border-card-border bg-card text-zinc-400 active:bg-zinc-800"
-                }`}
-              >
-                <span className="flex items-center gap-2">
-                  <span className={`w-2 h-2 rounded-full ${active ? "bg-primary" : "bg-zinc-700"}`} />
-                  {m.label}
-                </span>
-                {m.badge && (
-                  <span className="text-[8px] font-bold tracking-widest px-1.5 py-0.5 rounded bg-primary/20 text-primary">
-                    {m.badge}
-                  </span>
-                )}
-              </button>
-            );
-          })}
+    <div className="border border-card-border rounded-lg overflow-hidden">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between px-3 py-2.5 bg-card cursor-pointer active:bg-zinc-800/60 transition-colors"
+      >
+        <span className="flex items-center gap-2 font-mono text-[10px] text-white tracking-wide">
+          <span>{icon}</span>
+          {label}
+        </span>
+        <span className="flex items-center gap-2">
+          <span className="font-mono text-[8px] text-zinc-500 tracking-wider">
+            {settings.model.replace('gemini-', '').toUpperCase()}
+          </span>
+          <ChevronRight className={`w-3 h-3 text-zinc-500 transition-transform ${expanded ? 'rotate-90' : ''}`} />
+        </span>
+      </button>
+
+      {expanded && (
+        <div className="px-3 py-3 space-y-3 bg-[#0a0a0a] border-t border-card-border">
+          <div className="space-y-1.5">
+            <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest">Model</span>
+            <select
+              value={settings.model}
+              onChange={(e) => setAiFeatureSetting(featureKey, 'model', e.target.value)}
+              className="w-full bg-card border border-card-border rounded-md px-2 py-2 font-mono text-[10px] text-white focus:outline-none focus:border-primary/50 appearance-none cursor-pointer"
+              style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center' }}
+            >
+              {ALL_MODELS.map((m) => (
+                <option key={m} value={m}>{m.toUpperCase()}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest">Temperature</span>
+              <span className="font-mono text-[10px] text-primary tabular-nums">{settings.temperature.toFixed(1)}</span>
+            </div>
+            <Slider
+              value={[settings.temperature]}
+              onValueChange={(v) => setAiFeatureSetting(featureKey, 'temperature', v[0])}
+              max={2}
+              step={0.1}
+              className="py-1"
+            />
+            <div className="flex justify-between">
+              <span className="font-mono text-[8px] text-zinc-600">Precise</span>
+              <span className="font-mono text-[8px] text-zinc-600">Creative</span>
+            </div>
+          </div>
         </div>
-        <p className="font-mono text-[9px] text-zinc-600 mt-1">
-          Active: {aiModel}
-        </p>
+      )}
+    </div>
+  );
+}
+
+function AiParametersPage() {
+  const { aiFeatureSettings, setAiFeatureSetting } = useTerminalStore();
+
+  const setAllModels = (model: string) => {
+    for (const f of AI_FEATURES) {
+      setAiFeatureSetting(f.key, 'model', model);
+    }
+  };
+
+  return (
+    <div className="space-y-4 max-w-xl mx-auto">
+      <div className="space-y-1.5">
+        <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
+          <BrainCircuit className="w-3 h-3" /> Set All Models
+        </Label>
+        <select
+          value=""
+          onChange={(e) => { if (e.target.value) setAllModels(e.target.value); }}
+          className="w-full bg-card border border-card-border rounded-md px-2 py-2 font-mono text-[10px] text-zinc-400 focus:outline-none focus:border-primary/50 appearance-none cursor-pointer"
+          style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center' }}
+        >
+          <option value="" disabled>Apply one model to all features...</option>
+          {ALL_MODELS.map((m) => (
+            <option key={m} value={m}>{m.toUpperCase()}</option>
+          ))}
+        </select>
       </div>
 
+      <div className="h-px bg-zinc-800" />
+
       <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <span className="font-mono text-[9px] text-muted-foreground/70 uppercase tracking-wider">Temperature</span>
-          <span className="font-mono text-[10px] text-primary tabular-nums">{aiTemp.toFixed(1)}</span>
-        </div>
-        <Slider value={[aiTemp]} onValueChange={(v) => setAiTemp(v[0])} max={2} step={0.1} className="py-1" />
-        <div className="flex justify-between">
-          <span className="font-mono text-[9px] text-muted-foreground/40">Precise</span>
-          <span className="font-mono text-[9px] text-muted-foreground/40">Creative</span>
-        </div>
+        {AI_FEATURES.map((f) => (
+          <AiFeatureControl key={f.key} featureKey={f.key} label={f.label} icon={f.icon} />
+        ))}
       </div>
     </div>
   );

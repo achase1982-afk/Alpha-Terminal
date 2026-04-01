@@ -34,7 +34,8 @@ function nextId(): string {
 }
 
 export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
-  const { symbol, accessToken, aiModel } = useTerminalStore();
+  const { symbol, accessToken, aiFeatureSettings } = useTerminalStore();
+  const aiModel = aiFeatureSettings.chat.model;
 
   const { data: quote } = useGetQuote(
     { symbol, accessToken: accessToken || "" },

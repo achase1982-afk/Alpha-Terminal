@@ -69,7 +69,9 @@ function MetricCard({ icon, label, value }: { icon: React.ReactNode; label: stri
 }
 
 export function CompanyTearSheet({ isOpen, onClose }: CompanyTearSheetProps) {
-  const { symbol, accessToken, aiModel } = useTerminalStore();
+  const { symbol, accessToken, aiFeatureSettings } = useTerminalStore();
+  const aiModel = aiFeatureSettings.technicals.model;
+  const aiTemp = aiFeatureSettings.technicals.temperature;
 
   const [fundamentals, setFundamentals] = useState<FundamentalData | null>(null);
   const [fundLoading, setFundLoading] = useState(false);
@@ -100,7 +102,7 @@ export function CompanyTearSheet({ isOpen, onClose }: CompanyTearSheetProps) {
       const res = await fetchWithAuth(`${API_BASE}/ai/sympathy-plays`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ symbol, model: aiModel, temperature: 0.3 }),
+        body: JSON.stringify({ symbol, model: aiModel, temperature: aiTemp }),
       });
       const data = await res.json() as { response?: string };
       setSympathyResult(data.response ?? null);

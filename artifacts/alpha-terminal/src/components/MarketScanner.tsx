@@ -195,7 +195,9 @@ const LiveManualRow = memo(function LiveManualRow({ q, onSelect }: {
 export function MarketScanner({ subscribeEquitySymbols }: {
   subscribeEquitySymbols?: (symbols: string[]) => void;
 }) {
-  const { accessToken, aiModel, aiTemp, setSymbol } = useTerminalStore();
+  const { accessToken, aiFeatureSettings, setSymbol } = useTerminalStore();
+  const aiModel = aiFeatureSettings.scanner.model;
+  const aiTemp = aiFeatureSettings.scanner.temperature;
   const { cachedData: scanCache, setCachedData: setScanCache } = useScanCache();
 
   const [mode, setMode] = useState<"ai" | "manual">("ai");

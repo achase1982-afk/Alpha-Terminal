@@ -96,7 +96,9 @@ function MarkdownResult({ content }: { content: string }) {
 }
 
 export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
-  const { symbol, accessToken, aiModel, aiTemp, analysisResult, setAnalysisResult } = useTerminalStore();
+  const { symbol, accessToken, aiFeatureSettings, analysisResult, setAnalysisResult } = useTerminalStore();
+  const aiModel = aiFeatureSettings.technicals.model;
+  const aiTemp = aiFeatureSettings.technicals.temperature;
   const { data: quoteData } = useQuote(symbol);
   const { cachedData: technicalsCache, setCachedData: setTechnicalsCache } = useTechnicalsCache(symbol);
 

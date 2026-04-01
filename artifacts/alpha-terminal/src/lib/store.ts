@@ -57,6 +57,19 @@ interface TerminalState {
   setAiModel: (m: string) => void;
   aiTemp: number;
   setAiTemp: (t: number) => void;
+
+  aiFeatureSettings: {
+    marketPulse:   { model: string; temperature: number };
+    technicals:    { model: string; temperature: number };
+    strategist:    { model: string; temperature: number };
+    chat:          { model: string; temperature: number };
+    scanner:       { model: string; temperature: number };
+  };
+  setAiFeatureSetting: (
+    feature: keyof TerminalState['aiFeatureSettings'],
+    key: 'model' | 'temperature',
+    value: string | number,
+  ) => void;
   
   tickerTapeSymbols: string[];
   setTickerTapeSymbols: (symbols: string[]) => void;
@@ -184,6 +197,21 @@ export const useTerminalStore = create<TerminalState>()(
       aiTemp: 0.7,
       setAiTemp: (aiTemp) => set({ aiTemp }),
 
+      aiFeatureSettings: {
+        marketPulse:   { model: 'gemini-3.1-pro-preview', temperature: 0 },
+        technicals:    { model: 'gemini-3.1-pro-preview', temperature: 0.3 },
+        strategist:    { model: 'gemini-3.1-pro-preview', temperature: 0.2 },
+        chat:          { model: 'gemini-3.1-pro-preview', temperature: 0.1 },
+        scanner:       { model: 'gemini-3.1-pro-preview', temperature: 0.2 },
+      },
+      setAiFeatureSetting: (feature, key, value) =>
+        set((state) => ({
+          aiFeatureSettings: {
+            ...state.aiFeatureSettings,
+            [feature]: { ...state.aiFeatureSettings[feature], [key]: value },
+          },
+        })),
+
       tickerTapeSymbols: ['SPY', 'QQQ', 'IWM', 'DIA', 'VIX', 'TSLA', 'NVDA', 'AAPL', 'META', 'MSFT', 'AMZN', 'GOOGL'],
       setTickerTapeSymbols: (tickerTapeSymbols) => set({ tickerTapeSymbols }),
       tapeSpeed: 25,
@@ -262,7 +290,7 @@ export const useTerminalStore = create<TerminalState>()(
     }),
     {
       name: 'alpha-terminal-storage',
-      version: 4,
+      version: 5,
       migrate: (persistedState: unknown, version: number) => {
         const s = persistedState as Record<string, unknown>;
         if (version < 2) {
@@ -276,6 +304,16 @@ export const useTerminalStore = create<TerminalState>()(
         }
         if (version < 4) {
           s['aiModel'] = 'gemini-3.1-pro-preview';
+        }
+        if (version < 5) {
+          s['aiModel'] = 'gemini-3.1-pro-preview';
+          s['aiFeatureSettings'] = {
+            marketPulse:   { model: 'gemini-3.1-pro-preview', temperature: 0 },
+            technicals:    { model: 'gemini-3.1-pro-preview', temperature: 0.3 },
+            strategist:    { model: 'gemini-3.1-pro-preview', temperature: 0.2 },
+            chat:          { model: 'gemini-3.1-pro-preview', temperature: 0.1 },
+            scanner:       { model: 'gemini-3.1-pro-preview', temperature: 0.2 },
+          };
         }
         return s;
       },
