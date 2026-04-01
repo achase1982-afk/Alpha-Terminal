@@ -37,15 +37,34 @@ export function useBiometricRegistration() {
   }, [user]);
 
   const registerPasskey = useCallback(async () => {
-    if (!user || !webAuthnSupported) return;
+    if (!user) {
+      setError("No user session found. Please sign in first.");
+      return;
+    }
+    if (!webAuthnSupported) {
+      setError("WebAuthn/Passkeys are not supported on this device or browser.");
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      await (user as any).createPasskey();
+      if (typeof (user as any).createPasskey === "function") {
+        await (user as any).createPasskey();
+      } else {
+        const response = await fetch("/api/auth/passkey-register", { method: "POST" });
+        if (!response.ok) throw new Error("Passkey registration endpoint unavailable");
+      }
       setHasPasskey(true);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (!msg.includes("cancelled") && !msg.includes("canceled")) {
+      if (msg.includes("cancelled") || msg.includes("canceled") || msg.includes("AbortError")) {
+        return;
+      }
+      if (msg.includes("NotAllowedError")) {
+        setError("Face ID / Touch ID was denied. Please allow biometric access in your device settings.");
+      } else if (msg.includes("not supported") || msg.includes("SecurityError")) {
+        setError("Passkeys require a secure context (HTTPS). Please use the published app URL.");
+      } else {
         setError(msg);
       }
     } finally {

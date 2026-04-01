@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useGetAuthUrl } from "@workspace/api-client-react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
+import { queryClient } from "@/App";
 import { Button } from "@/components/ui/button";
 import { ChevronRight, KeyRound, ExternalLink, CheckCircle2, Loader2, Radio } from "lucide-react";
 
@@ -160,6 +161,7 @@ export function AuthPanel() {
                 setIsDisconnecting(true);
                 clearTokens();
                 clearTraderTokens();
+                queryClient.clear();
                 try {
                   await fetchWithAuth("/api/auth/disconnect", { method: "POST" });
                 } catch {}

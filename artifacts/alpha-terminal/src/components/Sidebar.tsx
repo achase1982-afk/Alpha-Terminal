@@ -9,6 +9,7 @@ import { useAutoLock, TIMEOUT_OPTIONS, type SessionTimeoutMinutes } from "@/hook
 import { readSecurityPrefs, updateSecurityPref, type SecurityPrefs } from "@/lib/securityPrefs";
 import { useBiometricRegistration, useWebAuthnSupported } from "@/hooks/useBiometric";
 import { AuthPanel } from "./AuthPanel";
+import { queryClient } from "@/App";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -103,7 +104,7 @@ export function Sidebar({ isOpen, onClose, onOpenChat, onNavigate }: SidebarProp
 
         <div className="p-4 mt-auto border-t border-card-border/50 bg-[#0c0c0c]">
           <button
-            onClick={() => void signOut()}
+            onClick={() => { queryClient.clear(); void signOut(); }}
             className="w-full flex items-center justify-center gap-3 py-3.5 bg-terminal-danger/10 border border-terminal-danger/30 hover:bg-terminal-danger hover:text-white text-terminal-danger rounded-xl transition-all shadow-sm"
           >
             <LogOut className="w-5 h-5" />
