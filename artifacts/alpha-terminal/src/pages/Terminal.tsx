@@ -147,9 +147,6 @@ export default function TerminalPage() {
           {aiSubTab === "pulse" && (
             <div className="flex items-center justify-between px-3 sm:px-4 lg:px-5 py-2 border-b border-card-border/30">
               <div className="flex items-center gap-2.5">
-                <div className="w-7 h-7 rounded-lg bg-[#FFB800]/15 border border-[#FFB800]/30 flex items-center justify-center">
-                  <Zap className="w-3.5 h-3.5 text-[#FFB800]" />
-                </div>
                 <div>
                   <h2 className="font-mono font-bold text-sm text-[#e4e4e7] tracking-wider">MARKET PULSE</h2>
                   <p className="font-mono text-[9px] text-[#71717a] tracking-widest uppercase">Multi-Asset Macro Analysis</p>
