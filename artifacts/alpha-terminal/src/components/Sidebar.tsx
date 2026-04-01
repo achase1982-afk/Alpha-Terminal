@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useTerminalStore } from "@/lib/store";
 import { useOptionsSettingsStore } from "@/lib/options-store";
@@ -46,6 +46,7 @@ interface SidebarProps {
   onClose: () => void;
   onOpenChat?: () => void;
   onNavigate?: (dest: "markets" | "portfolio") => void;
+  onToggle?: () => void;
 }
 
 function MenuRow({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) {
@@ -65,6 +66,12 @@ function MenuRow({ icon, label, onClick }: { icon: React.ReactNode; label: strin
 export function Sidebar({ isOpen, onClose, onOpenChat, onNavigate }: SidebarProps) {
   const { signOut } = useClerkSafe();
   const [activePage, setActivePage] = useState<SidebarPage>(null);
+
+  useEffect(() => {
+    if (isOpen && activePage) {
+      setActivePage(null);
+    }
+  }, [isOpen]);
 
   const handleClose = () => {
     setActivePage(null);
