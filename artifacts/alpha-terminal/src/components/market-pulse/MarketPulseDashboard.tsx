@@ -11,7 +11,7 @@ import { LevelsToWatch } from "./LevelsToWatch";
 import { EngineAuditPanel } from "./EngineAuditPanel";
 import { ALL_PULSE_INDICATORS } from "@/types/marketPulse";
 import { AiThinkingFeed } from "../ai-shared/AiThinkingFeed";
-import { runPulseStream } from "../../stores/pulseStreamRunner";
+import { runPulseStream, isPulseStreamActive } from "../../stores/pulseStreamRunner";
 
 const CLUSTER_ORDER: ClusterKey[] = ["rates", "credit", "volLevel", "volTerm", "breadth", "riskAppetite", "macro"];
 
@@ -98,6 +98,10 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
   useEffect(() => { settingsRef.current = settings; }, [settings]);
 
   const fetchPulse = useCallback(() => {
+    if (isPulseStreamActive()) {
+      console.log("[MarketPulse] fetchPulse: stream already active, skipping");
+      return;
+    }
     const token = accessTokenRef.current;
     if (!token) {
       console.warn("[MarketPulse] fetchPulse: no accessToken, skipping");

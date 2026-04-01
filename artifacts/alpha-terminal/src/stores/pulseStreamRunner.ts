@@ -4,6 +4,7 @@ import { useMarketPulseStore } from "./marketPulseStore";
 const API_BASE = "/api";
 
 let activeAbort: AbortController | null = null;
+let streamStartedAt = 0;
 
 export function isPulseStreamActive(): boolean {
   return activeAbort !== null;
@@ -17,6 +18,15 @@ export function abortPulseStream() {
 }
 
 export async function runPulseStream(payload: Record<string, unknown>) {
+  if (activeAbort) {
+    const elapsed = Date.now() - streamStartedAt;
+    if (elapsed < 60_000) {
+      console.log("[pulseStreamRunner] Ignoring duplicate call — stream already active for", elapsed, "ms");
+      return;
+    }
+    console.log("[pulseStreamRunner] Stream has been running >60s, allowing restart");
+  }
+
   abortPulseStream();
 
   const store = useMarketPulseStore.getState();
@@ -25,6 +35,7 @@ export async function runPulseStream(payload: Record<string, unknown>) {
   store.setStreaming(true);
   store.setError(null);
   store.clearThinking();
+  streamStartedAt = Date.now();
 
   const abort = new AbortController();
   activeAbort = abort;
