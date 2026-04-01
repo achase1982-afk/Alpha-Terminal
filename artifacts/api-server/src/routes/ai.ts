@@ -523,15 +523,37 @@ async function fetchMacroPulseData(
   }
 
   const json = await response.json() as Record<string, unknown>;
+  const responseKeys = Object.keys(json);
   const displayToApi = new Map<string, string>(pairs.map(p => [p.display, p.api]));
   const dataMap = new Map<string, Record<string, unknown>>();
 
+  const jsonKeyMap = new Map<string, unknown>();
+  for (const k of responseKeys) {
+    jsonKeyMap.set(k, json[k]);
+    jsonKeyMap.set(k.toUpperCase(), json[k]);
+    const stripped = k.replace(/\/Q$/, '').replace(/^\$/, '');
+    jsonKeyMap.set(stripped, json[k]);
+    jsonKeyMap.set('$' + stripped, json[k]);
+  }
+
+  const breadthSymbols = new Set(["$TICK", "$TRIN", "$ADD", "$ADVN", "$DECN"]);
+  const missingBreadth: string[] = [];
+
   for (const pair of pairs) {
-    const entry = (json[pair.api] ?? json[pair.display] ?? json[pair.api.replace(/^\$/, '')] ?? json[pair.display.replace(/^\$/, '')]) as Record<string, unknown> | undefined;
+    const entry = (json[pair.api] ?? json[pair.display]
+      ?? jsonKeyMap.get(pair.api) ?? jsonKeyMap.get(pair.display)
+      ?? json[pair.api.replace(/^\$/, '')] ?? json[pair.display.replace(/^\$/, '')]) as Record<string, unknown> | undefined;
     const q = entry?.["quote"] as Record<string, unknown> | undefined;
     if (q) {
       dataMap.set(pair.display, { ...q });
+    } else if (breadthSymbols.has(pair.display)) {
+      missingBreadth.push(pair.display);
     }
+  }
+
+  if (missingBreadth.length > 0) {
+    const matchedKeys = responseKeys.filter(k => k.includes("TICK") || k.includes("TRIN") || k.includes("DECN") || k.includes("ADD") || k.includes("ADVN"));
+    console.warn(`[Market Pulse] Missing breadth symbols in REST response: ${missingBreadth.join(", ")}. Response keys containing breadth: ${matchedKeys.join(", ") || "NONE"}. All response keys (first 40): ${responseKeys.slice(0, 40).join(", ")}`);
   }
 
   return { displayToApi, dataMap };
@@ -652,14 +674,14 @@ function extractMarketIndicators(dataMap: Map<string, Record<string, unknown>>):
   // BUG FIX 2: UVOL/DVOL sentinel guard now handled in schwabStreamer.ts pick() function.
   // safeVol helper removed — $UVOL/$DVOL no longer polled.
 
-  // BUG FIX 3: ADD — Schwab's $ADD intraday net A/D often returns 0 when no real
-  // tick is available. Fall back to computing ADVN − DECN from the same snapshot.
   const advn = lastOrMark('$ADVN');
   const decn = lastOrMark('$DECN');
   const addRaw = lastOrMark('$ADD');
   const add = (addRaw !== null && addRaw !== 0)
     ? addRaw
     : (advn !== null && decn !== null ? advn - decn : null);
+  const tickVal = lastOrMark('$TICK');
+  const trinVal = lastOrMark('$TRIN');
 
   return {
     vix: lastOrMark('$VIX'),
@@ -690,8 +712,8 @@ function extractMarketIndicators(dataMap: Map<string, Record<string, unknown>>):
 
     advn,
     decn,
-    tick: lastOrMark('$TICK'),
-    trin: lastOrMark('$TRIN'),
+    tick: tickVal,
+    trin: trinVal,
     add,
 
     es: lastOrMark('/ES'),
@@ -1107,15 +1129,6 @@ router.post("/market-pulse/stream", async (req, res) => {
     return `\n${line}`;
   })();
 
-  console.log("[PULSE ENGINE] Deterministic result:", JSON.stringify({
-    bias: engineResult.bias,
-    composite: engineResult.compositeScore,
-    confidence: engineResult.confidenceScore,
-    clusters: Object.fromEntries(
-      Object.entries(engineResult.clusters).map(([k, v]) => [k, { score: v.score, quality: v.dataQuality }])
-    ),
-  }));
-
   res.write(`event: thinking\ndata: ${JSON.stringify({ type: "thinking", text: `Engine scored: ${engineResult.bias} (composite ${engineResult.compositeScore >= 0 ? '+' : ''}${engineResult.compositeScore.toFixed(2)}, confidence ${engineResult.confidenceScore}%). Generating AI narrative...` })}\n\n`);
   if (typeof (res as any).flush === "function") (res as any).flush();
 
@@ -1196,7 +1209,6 @@ Write ONLY the narrative fields. Return this exact JSON structure:
     }
 
     clearInterval(heartbeat);
-    console.log("[PULSE STREAM] Narrative buffer length:", responseBuffer.length);
 
     let cleaned = responseBuffer.trim();
     if (cleaned.startsWith("```json")) cleaned = cleaned.slice(7);

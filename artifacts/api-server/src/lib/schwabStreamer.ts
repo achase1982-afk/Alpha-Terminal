@@ -381,51 +381,10 @@ function stopEquityResub() {
 // ─── Parse incoming DATA messages ────────────────────────────────────────────
 let equityTickCount = 0;
 let lastEquityTickLog = 0;
-let fieldDiagDone = false;
-
-const DIAG_SYMBOLS = new Set(["$ADVN", "$DECN", "$TICK", "$ADD", "$TRIN"]);
-const diagDone = new Set<string>();
-
 function handleData(content: Record<string, unknown>[]) {
   equityTickCount += content.length;
   lastEquityTick = Date.now();
   const now = Date.now();
-
-  if (!fieldDiagDone && content.length > 0) {
-    fieldDiagDone = true;
-    const item = content[0];
-    const allFields: Record<string, unknown> = {};
-    for (let i = 0; i <= 52; i++) {
-      if (item[String(i)] !== undefined) {
-        allFields[String(i)] = item[String(i)];
-      }
-    }
-    logger.info({ sym: item["key"], fieldCount: Object.keys(allFields).length, fields: allFields }, "DIAG: ALL equity fields from first tick");
-    if (content.length > 1) {
-      const item2 = content[1];
-      const allFields2: Record<string, unknown> = {};
-      for (let i = 0; i <= 52; i++) {
-        if (item2[String(i)] !== undefined) {
-          allFields2[String(i)] = item2[String(i)];
-        }
-      }
-      logger.info({ sym: item2["key"], fields: allFields2 }, "DIAG: ALL equity fields from second tick");
-    }
-  }
-
-  for (const item of content) {
-    const key = item["key"] as string;
-    if (DIAG_SYMBOLS.has(key) && !diagDone.has(key)) {
-      diagDone.add(key);
-      const allFields: Record<string, unknown> = {};
-      for (let i = 0; i <= 52; i++) {
-        if (item[String(i)] !== undefined) {
-          allFields[String(i)] = item[String(i)];
-        }
-      }
-      logger.info({ sym: key, fieldCount: Object.keys(allFields).length, fields: allFields }, "DIAG: breadth/index symbol first tick — ALL fields");
-    }
-  }
 
   if (now - lastEquityTickLog > 30_000) {
     logger.info({ count: content.length, total: equityTickCount, symbols: content.map(i => i["key"]).slice(0, 5) }, "Streamer: EQUITY ticks received");
@@ -452,7 +411,11 @@ function handleData(content: Record<string, unknown>[]) {
 
     const regLastRaw      = pick(FIELD.REG_LAST);
     const allSessLastRaw  = pick(FIELD.LAST_ALL_SESS);
-    const regLastVal      = regLastRaw ?? allSessLastRaw ?? existing.last;
+    const regLastVal      = (regLastRaw !== null && regLastRaw !== 0)
+      ? regLastRaw
+      : (allSessLastRaw !== null && allSessLastRaw !== 0)
+        ? allSessLastRaw
+        : (regLastRaw ?? allSessLastRaw ?? existing.last);
     const extendedLastVal = allSessLastRaw ?? existing.extendedLast;
     const closeVal        = pick(FIELD.CLOSE) ?? existing.close;
 
@@ -493,11 +456,6 @@ let lastFuturesTickLog = 0;
 function handleFuturesData(content: Record<string, unknown>[]) {
   futuresTickCount += content.length;
   const now = Date.now();
-  if (futuresTickCount <= content.length) {
-    for (const item of content.slice(0, 3)) {
-      logger.info({ sym: item["key"], fieldCount: Object.keys(item).length - 1, fields: item }, "DIAG: FUTURES first tick raw data");
-    }
-  }
   if (now - lastFuturesTickLog > 30_000) {
     logger.info({ count: content.length, total: futuresTickCount, symbols: content.map(i => i["key"]).slice(0, 10) }, "Streamer: FUTURES ticks received");
     lastFuturesTickLog = now;
