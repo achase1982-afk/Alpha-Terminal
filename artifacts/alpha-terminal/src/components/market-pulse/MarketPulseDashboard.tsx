@@ -182,7 +182,7 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
   const showEmptyOrLoading = !pulseData && !error;
 
   return (
-    <div className={`px-3 sm:px-4 lg:px-5 pt-1 ${showEmptyOrLoading ? "overflow-hidden" : "space-y-4 overflow-x-hidden"}`}>
+    <div className={`px-3 sm:px-4 lg:px-5 pt-1 ${showEmptyOrLoading ? "overflow-hidden h-full flex flex-col" : "space-y-4 overflow-x-hidden"}`}>
 
       {pulseData && isActive && (
         <div className="mt-4">
@@ -191,7 +191,7 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
       )}
 
       {showEmptyOrLoading && (
-        <div className="space-y-4">
+        <div className="space-y-4 flex-1 flex flex-col justify-center">
           <div className="rounded-xl border border-[#2A2A2C] p-8 text-center" style={{ background: "#111113" }}>
             <Activity className="w-8 h-8 text-[#FFB800] mx-auto mb-3 opacity-50" />
             <p className="font-mono text-xs text-[#71717a] mb-4">
