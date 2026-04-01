@@ -12,6 +12,7 @@ interface MarketPulseState {
   isLoading: boolean;
   isStreaming: boolean;
   thinkingTokens: string[];
+  statusMessages: string[];
   error: string | null;
   lastFetchedAt: number | null;
 
@@ -21,6 +22,7 @@ interface MarketPulseState {
   setLoading: (v: boolean) => void;
   setStreaming: (v: boolean) => void;
   appendThinking: (text: string) => void;
+  appendStatus: (text: string) => void;
   clearThinking: () => void;
   setError: (e: string | null) => void;
   clearPulse: () => void;
@@ -38,6 +40,7 @@ export const useMarketPulseStore = create<MarketPulseState>()(
       isLoading: false,
       isStreaming: false,
       thinkingTokens: [],
+      statusMessages: [],
       error: null,
       lastFetchedAt: null,
 
@@ -64,7 +67,9 @@ export const useMarketPulseStore = create<MarketPulseState>()(
       setStreaming: (isStreaming) => set({ isStreaming }),
       appendThinking: (text) =>
         set((s) => ({ thinkingTokens: [...s.thinkingTokens, text] })),
-      clearThinking: () => set({ thinkingTokens: [] }),
+      appendStatus: (text) =>
+        set((s) => ({ statusMessages: [...s.statusMessages, text] })),
+      clearThinking: () => set({ thinkingTokens: [], statusMessages: [] }),
       setError: (error) => set({ error, isLoading: false, isStreaming: false }),
       clearPulse: () => set({ pulseData: null, error: null, lastFetchedAt: null }),
 

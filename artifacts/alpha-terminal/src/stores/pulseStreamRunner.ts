@@ -84,6 +84,11 @@ export async function runPulseStream(payload: Record<string, unknown>) {
             if (text) {
               useMarketPulseStore.getState().appendThinking(text);
             }
+          } else if (eventType === "status") {
+            const text = parsed.text || "";
+            if (text) {
+              useMarketPulseStore.getState().appendStatus(text);
+            }
           } else if (eventType === "result") {
             const resultData = parsed.pulse || parsed.data || parsed;
             const enriched = { ...resultData, generatedAt: Date.now() };

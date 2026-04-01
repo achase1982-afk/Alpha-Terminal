@@ -1051,7 +1051,7 @@ router.post("/market-pulse/stream", async (req, res) => {
   if (req.socket) req.socket.setTimeout(0);
   res.write(": ok\n\n");
   res.flushHeaders();
-  res.write(`event: thinking\ndata: ${JSON.stringify({ type: "thinking", text: "Fetching live market data..." })}\n\n`);
+  res.write(`event: status\ndata: ${JSON.stringify({ type: "status", text: "Fetching live market data..." })}\n\n`);
 
   const heartbeat = setInterval(() => {
     if (!res.writableEnded) {
@@ -1076,7 +1076,7 @@ router.post("/market-pulse/stream", async (req, res) => {
     }
     dataMap = wsResult.dataMap;
     dataBlock = buildPulseDataBlock(dataMap, symbols && symbols.length > 0 ? symbols : undefined);
-    res.write(`event: thinking\ndata: ${JSON.stringify({ type: "thinking", text: "Market data loaded. Running scoring engine..." })}\n\n`);
+    res.write(`event: status\ndata: ${JSON.stringify({ type: "status", text: "Market data loaded. Running scoring engine..." })}\n\n`);
     if (typeof (res as any).flush === "function") (res as any).flush();
   } catch (fetchErr: unknown) {
     clearInterval(heartbeat);
@@ -1119,7 +1119,7 @@ router.post("/market-pulse/stream", async (req, res) => {
   })();
 
   const clusterDebug = formatClusterDebugLine(engineResult);
-  res.write(`event: thinking\ndata: ${JSON.stringify({ type: "thinking", text: `Engine scored: ${engineResult.bias} (composite ${engineResult.compositeScore >= 0 ? '+' : ''}${engineResult.compositeScore.toFixed(2)}, confidence ${engineResult.confidenceScore}%). ${clusterDebug}. Generating AI narrative...` })}\n\n`);
+  res.write(`event: status\ndata: ${JSON.stringify({ type: "status", text: `Engine scored: ${engineResult.bias} (composite ${engineResult.compositeScore >= 0 ? '+' : ''}${engineResult.compositeScore.toFixed(2)}, confidence ${engineResult.confidenceScore}%). ${clusterDebug}. Generating AI narrative...` })}\n\n`);
   if (typeof (res as any).flush === "function") (res as any).flush();
 
   const instrumentCount = (symbols && symbols.length > 0 ? symbols : PULSE_SYMBOLS.map(s => s.display)).length;

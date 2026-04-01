@@ -60,6 +60,7 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
     isLoading,
     isStreaming,
     thinkingTokens,
+    statusMessages,
     error,
     settings,
     setError,
@@ -179,7 +180,7 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
       )}
 
       {isActive && (
-        <PulseLoadingStatus thinkingTokens={thinkingTokens} />
+        <PulseLoadingStatus thinkingTokens={thinkingTokens} statusMessages={statusMessages} />
       )}
 
       {error && !isActive && (
@@ -245,9 +246,10 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
   );
 });
 
-function PulseLoadingStatus({ thinkingTokens }: { thinkingTokens: string[] }) {
+function PulseLoadingStatus({ thinkingTokens, statusMessages }: { thinkingTokens: string[]; statusMessages: string[] }) {
   const [elapsed, setElapsed] = useState(0);
   const startRef = useRef(Date.now());
+  const thinkingRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     startRef.current = Date.now();
@@ -257,32 +259,24 @@ function PulseLoadingStatus({ thinkingTokens }: { thinkingTokens: string[] }) {
     return () => clearInterval(id);
   }, []);
 
+  useEffect(() => {
+    if (thinkingRef.current) thinkingRef.current.scrollTop = thinkingRef.current.scrollHeight;
+  }, [thinkingTokens]);
+
+  const latestStatus = statusMessages.length > 0 ? statusMessages[statusMessages.length - 1] : "";
+  const lower = latestStatus.toLowerCase();
+  const hasScored = lower.includes("scored") || lower.includes("narrative") || lower.includes("generat");
+  const hasData = lower.includes("loaded") || lower.includes("running scoring");
+  const hasAi = thinkingTokens.length > 0 || lower.includes("narrative") || lower.includes("generat");
+
   const stages = [
-    { label: "CONNECTING", threshold: 0 },
-    { label: "FETCHING MARKET DATA", threshold: 1 },
-    { label: "ANALYZING WITH AI", threshold: 4 },
-    { label: "GENERATING SIGNALS", threshold: 8 },
+    { label: "FETCHING MARKET DATA" },
+    { label: "RUNNING SCORING ENGINE" },
+    { label: "GEMINI AI REASONING" },
   ];
+  let currentIdx = hasAi ? 2 : hasScored ? 2 : hasData ? 1 : statusMessages.length > 0 ? 0 : 0;
 
-  const allThinking = thinkingTokens.join("").toLowerCase();
-
-  let currentStageIdx = 0;
-  for (let i = stages.length - 1; i >= 0; i--) {
-    if (elapsed >= stages[i].threshold) {
-      currentStageIdx = i;
-      break;
-    }
-  }
-
-  if (allThinking.includes("analyz") || allThinking.includes("signal")) {
-    currentStageIdx = Math.max(currentStageIdx, 2);
-  }
-  if (allThinking.includes("generat") || allThinking.includes("narrativ")) {
-    currentStageIdx = Math.max(currentStageIdx, 3);
-  }
-
-  const currentStage = stages[currentStageIdx];
-  const progress = Math.min((elapsed / 15) * 100, 95);
+  const progress = Math.min((elapsed / 20) * 100, 95);
 
   return (
     <div className="space-y-3">
@@ -291,7 +285,7 @@ function PulseLoadingStatus({ thinkingTokens }: { thinkingTokens: string[] }) {
         style={{ background: "#111113", borderColor: "rgba(255,184,0,0.3)" }}
       >
         <div
-          className="px-4 py-3 flex items-center gap-3"
+          className="px-4 py-2.5 flex items-center gap-3"
           style={{ background: "rgba(255,184,0,0.06)" }}
         >
           <span className="relative flex h-3 w-3 shrink-0">
@@ -301,7 +295,7 @@ function PulseLoadingStatus({ thinkingTokens }: { thinkingTokens: string[] }) {
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between">
               <span className="font-mono text-xs font-bold text-[#FFB800] tracking-wider">
-                {currentStage.label}
+                {stages[currentIdx].label}
               </span>
               <span className="font-mono text-xs tabular-nums text-[#71717a]">
                 {elapsed}s
@@ -320,89 +314,64 @@ function PulseLoadingStatus({ thinkingTokens }: { thinkingTokens: string[] }) {
           />
         </div>
 
-        <div className="px-4 py-3 space-y-2.5">
-          <div className="space-y-1.5">
-            {stages.map((s, i) => (
-              <div key={s.label} className="flex items-center gap-2">
-                <div
-                  className="w-2 h-2 rounded-full shrink-0"
-                  style={{
-                    background:
-                      i < currentStageIdx
-                        ? "#00d166"
-                        : i === currentStageIdx
-                          ? "#FFB800"
-                          : "#2A2A2C",
-                    boxShadow:
-                      i === currentStageIdx
-                        ? "0 0 6px rgba(255,184,0,0.5)"
-                        : "none",
-                  }}
-                />
-                <span
-                  className="font-mono text-[10px] tracking-wider"
-                  style={{
-                    color:
-                      i < currentStageIdx
-                        ? "#00d166"
-                        : i === currentStageIdx
-                          ? "#FFB800"
-                          : "#52525b",
-                    fontWeight: i === currentStageIdx ? 700 : 400,
-                  }}
-                >
-                  {s.label}
-                </span>
-                {i < currentStageIdx && (
-                  <span className="font-mono text-[9px] text-[#00d166]">✓</span>
-                )}
-              </div>
-            ))}
-          </div>
-
-          <div className="pt-2 border-t border-[#2A2A2C] space-y-1.5">
-            <div className="flex items-center gap-1.5">
-              <span className="relative flex h-2 w-2 shrink-0">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+        <div className="px-4 py-3 space-y-1.5">
+          {stages.map((s, i) => (
+            <div key={s.label} className="flex items-center gap-2">
+              <div
+                className="w-2 h-2 rounded-full shrink-0"
+                style={{
+                  background: i < currentIdx ? "#00d166" : i === currentIdx ? "#FFB800" : "#2A2A2C",
+                  boxShadow: i === currentIdx ? "0 0 6px rgba(255,184,0,0.5)" : "none",
+                }}
+              />
+              <span
+                className="font-mono text-[10px] tracking-wider"
+                style={{
+                  color: i < currentIdx ? "#00d166" : i === currentIdx ? "#FFB800" : "#52525b",
+                  fontWeight: i === currentIdx ? 700 : 400,
+                }}
+              >
+                {s.label}
               </span>
-              <span className="font-mono text-[10px] text-emerald-500 uppercase tracking-widest font-bold">AI Reasoning</span>
+              {i < currentIdx && <span className="font-mono text-[9px] text-[#00d166]">✓</span>}
             </div>
-            <div
-              className="max-h-[140px] overflow-y-auto border-l-2 border-emerald-500/30 pl-2.5"
-              style={{ scrollBehavior: "smooth" }}
-              ref={(el) => { if (el) el.scrollTop = el.scrollHeight; }}
-            >
-              <span className="font-mono text-[10px] text-[#a1a1aa] leading-relaxed whitespace-pre-wrap">
-                {thinkingTokens.length === 0 ? (
-                  <span className="text-[#52525b]">Waiting for AI reasoning...</span>
-                ) : (
-                  thinkingTokens.join("")
-                )}
-                <span className="inline-block w-1 h-3 bg-emerald-500 ml-0.5 animate-pulse" />
-              </span>
-            </div>
-          </div>
+          ))}
         </div>
       </div>
 
-      <div className="flex gap-2 overflow-x-auto pb-1 -mx-3 px-3">
-        {["RATES", "CREDIT", "VOL", "TERM", "BREADTH", "RISK APP", "MACRO"].map((label, i) => (
-          <div
-            key={label}
-            className="rounded-lg border border-[#2A2A2C] p-2.5 space-y-2 shrink-0"
-            style={{ background: "#111113", width: 100 }}
-          >
-            <div
-              className="h-2 w-10 rounded bg-[#2A2A2C]/60 animate-pulse"
-              style={{ animationDelay: `${i * 200}ms` }}
-            />
-            <div
-              className="h-4 w-full rounded bg-[#2A2A2C]/60 animate-pulse"
-              style={{ animationDelay: `${i * 200 + 100}ms` }}
-            />
-          </div>
-        ))}
+      <div
+        className="rounded-xl border overflow-hidden"
+        style={{ background: "#111113", borderColor: "rgba(16,185,129,0.3)" }}
+      >
+        <div
+          className="px-4 py-2.5 flex items-center gap-2"
+          style={{ background: "rgba(16,185,129,0.06)" }}
+        >
+          <span className="relative flex h-2.5 w-2.5 shrink-0">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+          </span>
+          <span className="font-mono text-[11px] text-emerald-400 uppercase tracking-widest font-bold">Live Gemini Reasoning</span>
+        </div>
+        <div
+          ref={thinkingRef}
+          className="max-h-[200px] overflow-y-auto px-4 py-3"
+          style={{ scrollBehavior: "smooth" }}
+        >
+          {thinkingTokens.length === 0 ? (
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+              <span className="font-mono text-[11px] text-[#52525b]">Connecting to Gemini...</span>
+            </div>
+          ) : (
+            <div className="border-l-2 border-emerald-500/40 pl-3">
+              <p className="font-mono text-[11px] text-[#c4c4cc] leading-[1.7] whitespace-pre-wrap break-words">
+                {thinkingTokens.join("")}
+                <span className="inline-block w-1.5 h-3.5 bg-emerald-500 ml-0.5 animate-pulse align-text-bottom" />
+              </p>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
