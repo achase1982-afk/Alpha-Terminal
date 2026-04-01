@@ -131,24 +131,24 @@ export function MarketSessionClock() {
   }, []);
 
   return (
-    <div className="flex items-center gap-2 min-w-0">
-      <span className="relative flex h-2 w-2 shrink-0">
-        {info.session === "RTH" && (
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ background: info.dotColor }} />
-        )}
-        <span className="relative inline-flex rounded-full h-2 w-2" style={{ background: info.dotColor }} />
-      </span>
+    <div className="flex items-center gap-1.5 min-w-0 ml-auto">
       <span
-        className="font-mono text-[12px] font-normal uppercase tracking-widest whitespace-nowrap"
-        style={{ color: info.color }}
+        className="text-[11px] font-light uppercase tracking-[0.15em] whitespace-nowrap"
+        style={{ color: info.color, fontFamily: "Inter, system-ui, sans-serif" }}
       >
         {info.label}
       </span>
-      <span className="text-[#3a3a3c] font-mono text-[10px]">|</span>
-      <span className="font-mono text-[10px] font-light text-[#71717a] tracking-wider whitespace-nowrap">
+      <span className="text-[#3a3a3c] text-[9px]">|</span>
+      <span
+        className="text-[9px] font-light text-[#71717a] tracking-wider whitespace-nowrap"
+        style={{ fontFamily: "Inter, system-ui, sans-serif" }}
+      >
         {info.countdownLabel}
       </span>
-      <span className="font-mono text-[13px] font-normal tabular-nums whitespace-nowrap text-white tracking-wider">
+      <span
+        className="text-[12px] font-light tabular-nums whitespace-nowrap text-white tracking-wider"
+        style={{ fontFamily: "Inter, system-ui, sans-serif" }}
+      >
         {info.countdown}
       </span>
     </div>
