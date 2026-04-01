@@ -154,7 +154,7 @@ export default function TerminalPage() {
               </div>
               <button
                 onClick={() => pulseDashRef.current?.fetchPulse()}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-mono text-[10px] font-bold uppercase tracking-wider transition-all duration-100 disabled:opacity-40 disabled:cursor-not-allowed active:translate-y-[1px]"
+                className="flex items-center justify-center w-7 h-7 rounded-lg transition-all duration-100 disabled:opacity-40 disabled:cursor-not-allowed active:translate-y-[1px]"
                 style={{
                   background: "linear-gradient(180deg, #2A2A2C 0%, #1E1E20 100%)",
                   color: "#a1a1aa",
@@ -163,8 +163,7 @@ export default function TerminalPage() {
                   boxShadow: "0 1px 3px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05)",
                 }}
               >
-                <RefreshCw className="w-3 h-3" />
-                REFRESH
+                <RefreshCw className="w-3.5 h-3.5" />
               </button>
             </div>
           )}
