@@ -64,6 +64,7 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const containerRef = useRef<HTMLElement | null>(null);
   const dragStartIdx = useRef(0);
+  const jiggleStartedAt = useRef(0);
 
   const saveOrder = useCallback((newOrder: BottomTab[]) => {
     setOrder(newOrder);
@@ -87,6 +88,7 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
     snapshotRects();
     const rect = tabRects.current[idx];
     if (!rect) return;
+    jiggleStartedAt.current = Date.now();
     setJiggling(true);
     setDragging(true);
     setDragTabId(order[idx]);
@@ -180,6 +182,7 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
       setPreviewOrder([]);
     };
     const handler = (e: TouchEvent | MouseEvent) => {
+      if (Date.now() - jiggleStartedAt.current < 500) return;
       const container = containerRef.current;
       if (!container) return;
       if (!container.contains(e.target as Node)) {
@@ -253,7 +256,7 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
             <button
               key={tabId}
               ref={(el) => { tabRefs.current[i] = el; }}
-              onClick={() => { if (jiggling) { setJiggling(false); setDragging(false); setDragTabId(null); setPreviewOrder([]); return; } if (!touchMoved.current) onTabChange(tabId); }}
+              onClick={() => { if (jiggling) { if (Date.now() - jiggleStartedAt.current > 500) { setJiggling(false); setDragging(false); setDragTabId(null); setPreviewOrder([]); } return; } if (!touchMoved.current) onTabChange(tabId); }}
               onTouchStart={(e) => handleTouchStart(i, e)}
               className={[
                 "flex flex-col items-center justify-center w-12 h-12 rounded-full shadow-[0_0_12px_rgba(255,184,0,0.35)] transition-transform active:scale-95 select-none",
@@ -272,7 +275,7 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
           <button
             key={tabId}
             ref={(el) => { tabRefs.current[i] = el; }}
-            onClick={() => { if (jiggling) { setJiggling(false); setDragging(false); setDragTabId(null); setPreviewOrder([]); return; } if (!touchMoved.current) onTabChange(tabId); }}
+            onClick={() => { if (jiggling) { if (Date.now() - jiggleStartedAt.current > 500) { setJiggling(false); setDragging(false); setDragTabId(null); setPreviewOrder([]); } return; } if (!touchMoved.current) onTabChange(tabId); }}
             onTouchStart={(e) => handleTouchStart(i, e)}
             className={[
               "flex flex-col items-center gap-1 min-w-0 px-2 py-1.5 select-none transition-colors",

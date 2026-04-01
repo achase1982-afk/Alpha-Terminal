@@ -57,6 +57,7 @@ export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps)
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const dragStartIdx = useRef(0);
+  const jiggleStartedAt = useRef(0);
 
   const saveOrder = useCallback((newOrder: MarketDataTab[]) => {
     setOrder(newOrder);
@@ -81,6 +82,7 @@ export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps)
     const rect = tabRects.current[idx];
     if (!rect) return;
 
+    jiggleStartedAt.current = Date.now();
     setJiggling(true);
     setDragging(true);
     setDragTabId(order[idx]);
@@ -183,6 +185,7 @@ export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps)
       setPreviewOrder([]);
     };
     const handler = (e: TouchEvent | MouseEvent) => {
+      if (Date.now() - jiggleStartedAt.current < 500) return;
       const container = containerRef.current;
       if (!container) return;
       if (!container.contains(e.target as Node)) {
@@ -262,7 +265,12 @@ export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps)
               <button
                 ref={(el) => { tabRefs.current[i] = el; }}
                 onClick={() => {
-                  if (jiggling) { setJiggling(false); setDragging(false); setDragTabId(null); setPreviewOrder([]); return; }
+                  if (jiggling) {
+                    if (Date.now() - jiggleStartedAt.current > 500) {
+                      setJiggling(false); setDragging(false); setDragTabId(null); setPreviewOrder([]);
+                    }
+                    return;
+                  }
                   if (!touchMoved.current) setActiveTab(tabId);
                 }}
                 onTouchStart={(e) => handleTouchStart(i, e)}
