@@ -131,22 +131,22 @@ export function MarketSessionClock() {
   }, []);
 
   return (
-    <div className="flex items-center gap-1 min-w-0 ml-auto mr-1">
+    <div className="flex items-center gap-1.5 min-w-0 ml-auto">
       <span
-        className="text-[13px] font-light uppercase tracking-[0.08em] whitespace-nowrap"
+        className="text-[11px] font-light uppercase tracking-[0.15em] whitespace-nowrap"
         style={{ color: info.color, fontFamily: "Inter, system-ui, sans-serif" }}
       >
         {info.label}
       </span>
-      <span className="text-[#3a3a3c] text-[10px] mx-0.5">|</span>
+      <span className="text-[#3a3a3c] text-[9px]">|</span>
       <span
-        className="text-[11px] font-light tracking-wide whitespace-nowrap"
-        style={{ color: "#a1a1aa", fontFamily: "Inter, system-ui, sans-serif" }}
+        className="text-[9px] font-light text-[#71717a] tracking-wider whitespace-nowrap"
+        style={{ fontFamily: "Inter, system-ui, sans-serif" }}
       >
         {info.countdownLabel}
       </span>
       <span
-        className="text-[14px] font-light tabular-nums whitespace-nowrap text-white tracking-wide"
+        className="text-[12px] font-light tabular-nums whitespace-nowrap text-white tracking-wider"
         style={{ fontFamily: "Inter, system-ui, sans-serif" }}
       >
         {info.countdown}
