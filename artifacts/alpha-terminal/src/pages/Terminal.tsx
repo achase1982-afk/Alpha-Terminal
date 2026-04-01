@@ -126,7 +126,7 @@ export default function TerminalPage() {
           onNavigate={(dest) => { if (dest === "markets") setActiveBottom("markets"); else if (dest === "portfolio") setActiveBottom("portfolio"); }}
         />
 
-        <main ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto app-content pb-20">
+        <main ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto app-content pb-24">
 
           {activeBottom === "markets" && (
             <>
@@ -182,7 +182,7 @@ export default function TerminalPage() {
         </main>
       </div>
 
-      <nav className="fixed bottom-0 left-0 right-0 h-16 bg-[#0c0c0c] border-t border-primary/30 flex items-center justify-around px-2 z-50 safe-bottom">
+      <nav className="fixed bottom-0 left-0 right-0 h-20 bg-[#0c0c0c] border-t border-zinc-800/60 flex items-center justify-around px-2 z-50 safe-bottom">
         <NavBtn
           icon={<Radar className="w-5 h-5" />}
           label="SCANNER"
@@ -198,7 +198,7 @@ export default function TerminalPage() {
 
         <button
           onClick={() => setActiveBottom("ai")}
-          className={`relative -top-4 flex items-center justify-center w-14 h-14 rounded-full shadow-[0_0_15px_rgba(255,184,0,0.4)] transition-transform active:scale-95 ${
+          className={`relative flex items-center justify-center w-14 h-14 rounded-full shadow-[0_0_15px_rgba(255,184,0,0.4)] transition-transform active:scale-95 ${
             activeBottom === "ai" ? "bg-primary text-background" : "bg-primary/80 text-background/80"
           }`}
         >
