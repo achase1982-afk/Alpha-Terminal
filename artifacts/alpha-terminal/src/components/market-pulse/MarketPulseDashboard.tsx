@@ -180,8 +180,10 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
 
   const isActive = isLoading || isStreaming;
 
+  const showEmptyOrLoading = !pulseData && !error;
+
   return (
-    <div className="space-y-4 px-3 sm:px-4 lg:px-5 overflow-x-hidden pt-1">
+    <div className={`px-3 sm:px-4 lg:px-5 pt-1 ${showEmptyOrLoading ? "overflow-hidden" : "space-y-4 overflow-x-hidden"}`}>
       {pulseData && (
         <PulseStatusHeader
           data={pulseData}
@@ -191,28 +193,38 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
         />
       )}
 
-      {isActive && (
-        <PulseLoadingStatus thinkingTokens={thinkingTokens} statusMessages={statusMessages} />
-      )}
-
-      {!pulseData && !isActive && !error && (
-        <div className="rounded-xl border border-[#2A2A2C] p-8 text-center" style={{ background: "#111113" }}>
-          <Activity className="w-8 h-8 text-[#FFB800] mx-auto mb-3 opacity-50" />
-          <p className="font-mono text-xs text-[#71717a] mb-4">No Market Pulse generated yet</p>
-          <button
-            onClick={fetchPulse}
-            disabled={!accessToken}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-mono text-xs font-bold tracking-wider text-[#0c0c0c] bg-[#FFB800] hover:bg-[#FFB800]/90 transition-colors disabled:opacity-40 active:scale-95 active:brightness-110"
-            style={{ transition: "transform 0.1s, filter 0.1s" }}
-          >
-            <Zap className="w-3.5 h-3.5" />
-            Check Market Pulse
-          </button>
+      {pulseData && isActive && (
+        <div className="mt-4">
+          <PulseLoadingStatus thinkingTokens={thinkingTokens} statusMessages={statusMessages} />
         </div>
       )}
 
-      {error && !isActive && (
-        <div className="rounded-xl border border-[#f23645]/30 p-4" style={{ background: "rgba(242,54,69,0.06)" }}>
+      {showEmptyOrLoading && (
+        <div className="space-y-4">
+          <div className="rounded-xl border border-[#2A2A2C] p-8 text-center" style={{ background: "#111113" }}>
+            <Activity className="w-8 h-8 text-[#FFB800] mx-auto mb-3 opacity-50" />
+            <p className="font-mono text-xs text-[#71717a] mb-4">
+              {isActive ? "Analyzing markets..." : "No Market Pulse generated yet"}
+            </p>
+            <button
+              onClick={fetchPulse}
+              disabled={!accessToken || isActive}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-mono text-xs font-bold tracking-wider text-[#0c0c0c] bg-[#FFB800] hover:bg-[#FFB800]/90 transition-colors disabled:opacity-40 active:scale-95 active:brightness-110"
+              style={{ transition: "transform 0.1s, filter 0.1s" }}
+            >
+              <Zap className="w-3.5 h-3.5" />
+              {isActive ? "Checking..." : "Check Market Pulse"}
+            </button>
+          </div>
+
+          {isActive && (
+            <PulseLoadingStatus thinkingTokens={thinkingTokens} statusMessages={statusMessages} />
+          )}
+        </div>
+      )}
+
+      {error && !isActive && !pulseData && (
+        <div className="rounded-xl border border-[#f23645]/30 p-4 mt-4" style={{ background: "rgba(242,54,69,0.06)" }}>
           <p className="font-mono text-xs text-[#f23645]">{error}</p>
           <button
             onClick={fetchPulse}
