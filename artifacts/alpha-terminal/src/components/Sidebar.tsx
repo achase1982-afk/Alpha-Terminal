@@ -574,9 +574,18 @@ function AiFeatureControl({ featureKey, label, icon }: {
 function AiParametersPage() {
   const { aiFeatureSettings, setAiFeatureSetting } = useTerminalStore();
 
+  const [globalTemp, setGlobalTemp] = useState(0);
+
   const setAllModels = (model: string) => {
     for (const f of AI_FEATURES) {
       setAiFeatureSetting(f.key, 'model', model);
+    }
+  };
+
+  const setAllTemps = (temp: number) => {
+    setGlobalTemp(temp);
+    for (const f of AI_FEATURES) {
+      setAiFeatureSetting(f.key, 'temperature', temp);
     }
   };
 
@@ -597,6 +606,24 @@ function AiParametersPage() {
             <option key={m} value={m}>{m.toUpperCase()}</option>
           ))}
         </select>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
+          <Gauge className="w-3 h-3" /> Set All Temperatures
+        </Label>
+        <div className="flex items-center gap-3">
+          <input
+            type="range"
+            min={0}
+            max={2}
+            step={0.1}
+            value={globalTemp}
+            onChange={(e) => setAllTemps(parseFloat(e.target.value))}
+            className="flex-1 h-1.5 accent-[#FFB800] cursor-pointer"
+          />
+          <span className="font-mono text-[10px] text-zinc-400 w-7 text-right">{globalTemp.toFixed(1)}</span>
+        </div>
       </div>
 
       <div className="h-px bg-zinc-800" />
