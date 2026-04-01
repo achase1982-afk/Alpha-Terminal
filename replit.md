@@ -24,6 +24,17 @@ The project is a pnpm monorepo with TypeScript. The API is an Express 5 server u
 ### Schwab Streamer Field Handling
 NYSE breadth indices ($TICK, $TRIN, $ADVN, $DECN, $ADD) only populate field 3 (LAST_ALL_SESS) in the Schwab WebSocket stream — field 33 (REG_LAST) is always 0. The `regLastVal` logic in `schwabStreamer.ts` explicitly handles this: when REG_LAST is 0 and LAST_ALL_SESS has a non-zero value, it prefers LAST_ALL_SESS. This prevents the JS nullish coalescing operator (`??`) from returning 0 as a valid value when it's actually a sentinel.
 
+### Portfolio Page
+- Backend routes at `/api/portfolio/accounts`, `/api/portfolio/orders`, `/api/portfolio/transactions`
+- Uses Schwab Trader API (`trader/v1/accounts?fields=positions`, `trader/v1/accounts/{hash}/orders`, `trader/v1/accounts/{hash}/transactions`)
+- Server-side token from `TokenStore.getTokens("trader")` — no client token needed
+- Frontend: `PortfolioView.tsx` component with three sub-tabs: POSITIONS, ORDERS, BALANCE
+- Positions split into Equities and Options sections, each row expandable with full details (qty, avg price, total P&L, maintenance req)
+- Clicking a position's "View SYMBOL →" navigates to that symbol in the Markets tab
+- Orders tab shows 30 days of orders with status badges, fill details, multi-leg display
+- Balance tab shows full account details: equity, cash, margin, buying power, market values, account info
+- Key files: `artifacts/api-server/src/routes/portfolio.ts`, `artifacts/alpha-terminal/src/components/PortfolioView.tsx`
+
 ## Feature Specifications
 
 Features include a MacroBar displaying key indices, an Institutional Tear Sheet for fundamental data, and an Options Chain with bid/ask, Greeks, configurable columns, and a MetricsStrip. The AI Strategy Endpoint generates strategies based on historical data and TA, with mandated `aiConfidence` levels. `useTickColor` provides price momentum coloring. Search History stores recent symbols. Comprehensive support for Indices & Futures is integrated across all data endpoints.

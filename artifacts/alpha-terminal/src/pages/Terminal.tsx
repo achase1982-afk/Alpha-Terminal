@@ -21,6 +21,7 @@ import { InAppBrowser } from "@/components/InAppBrowser";
 import { NewsTab } from "@/components/NewsTab";
 import { AiBiasStrip } from "@/components/market-pulse/AiBiasStrip";
 import { BottomNav } from "@/components/BottomNav";
+import { PortfolioView } from "@/components/PortfolioView";
 import { CompanyResearchHub } from "@/components/CompanyResearchHub";
 import { AiSubTabs, type AiSubTab } from "@/components/ai-tab/AiSubTabs";
 import type { MarketPulseDashboardHandle } from "@/components/market-pulse/MarketPulseDashboard";
@@ -29,7 +30,6 @@ import {
   Menu,
   Zap,
   Newspaper,
-  Briefcase,
   ListOrdered,
   Star,
   X,
@@ -223,7 +223,7 @@ export default function TerminalPage() {
           )}
 
           {activeBottom === "portfolio" && (
-            <PortfolioView />
+            <PortfolioView onNavigateToSymbol={() => setActiveBottom("markets")} />
           )}
 
           {activeBottom === "watchlist" && (
@@ -241,52 +241,6 @@ export default function TerminalPage() {
   );
 }
 
-
-function PortfolioView() {
-  const { accessToken } = useTerminalStore();
-
-  if (!accessToken) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 min-h-[60vh]">
-        <Briefcase className="w-12 h-12 text-primary/30" />
-        <p className="font-mono text-sm text-muted-foreground text-center">CONNECT SCHWAB TO VIEW PORTFOLIO</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex-1 flex flex-col gap-4 p-4">
-      <div className="flex items-center gap-2">
-        <Briefcase className="w-5 h-5 text-primary" />
-        <h2 className="font-mono text-sm font-bold text-foreground tracking-wider">PORTFOLIO</h2>
-      </div>
-      <div className="grid gap-3">
-        <div className="bg-card border border-card-border rounded-xl p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="font-mono text-[10px] text-muted-foreground uppercase tracking-widest">Net Liquidation</span>
-            <span className="font-mono text-lg font-bold text-foreground tabular-nums">--</span>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <span className="font-mono text-[9px] text-muted-foreground uppercase tracking-widest">Day P&L</span>
-              <p className="font-mono text-sm font-bold text-foreground tabular-nums">--</p>
-            </div>
-            <div className="space-y-1">
-              <span className="font-mono text-[9px] text-muted-foreground uppercase tracking-widest">Buying Power</span>
-              <p className="font-mono text-sm font-bold text-foreground tabular-nums">--</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-card border border-card-border rounded-xl p-4">
-          <span className="font-mono text-[10px] text-muted-foreground uppercase tracking-widest">Open Positions</span>
-          <p className="font-mono text-xs text-muted-foreground/60 text-center py-8">
-            Position data will populate when Schwab streaming is active.
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function WatchlistView() {
   const { watchlist, removeFromWatchlist, setSymbol } = useTerminalStore();
