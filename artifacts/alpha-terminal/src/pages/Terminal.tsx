@@ -187,11 +187,10 @@ export default function TerminalPage() {
 
               <div className="sticky top-0 z-40 bg-background">
                 <MetricsBar compact={isScrolled} />
+                <MarketDataTabs activeTab={contextTab} setActiveTab={setContextTab} />
               </div>
 
               <TickerSearch />
-
-              <MarketDataTabs activeTab={contextTab} setActiveTab={setContextTab} />
 
               {contextTab === "news" && <NewsTab />}
               {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} />}
