@@ -25,6 +25,56 @@ const AVAILABLE_MODELS = [
   "gemini-2.5-flash",
 ];
 
+interface NativeStreamOptions {
+  prompt: string;
+  modelName?: string;
+  temperature?: number;
+  thinkingBudget?: number;
+  onThinking?: (text: string) => void;
+  onText?: (text: string) => void;
+}
+
+async function nativeStreamGemini(opts: NativeStreamOptions): Promise<string> {
+  const client = getClient();
+  if (!client) throw new Error("GEMINI_API_KEY not configured");
+
+  const {
+    prompt,
+    modelName = "gemini-2.5-pro",
+    temperature = 0,
+    thinkingBudget = 4096,
+    onThinking,
+    onText,
+  } = opts;
+
+  const model = client.getGenerativeModel({
+    model: modelName,
+    generationConfig: {
+      temperature,
+      thinkingConfig: { thinkingBudget },
+    } as any,
+  });
+
+  const result = await model.generateContentStream(prompt);
+  let textBuffer = "";
+
+  for await (const chunk of result.stream) {
+    const candidates = chunk.candidates;
+    if (!candidates || candidates.length === 0) continue;
+
+    for (const part of candidates[0].content?.parts ?? []) {
+      if ((part as any).thought === true && (part as any).text) {
+        onThinking?.((part as any).text);
+      } else if (part.text) {
+        textBuffer += part.text;
+        onText?.(part.text);
+      }
+    }
+  }
+
+  return textBuffer;
+}
+
 function getClient(): GoogleGenerativeAI | null {
   const key = process.env.GEMINI_API_KEY;
   if (!key) return null;
@@ -303,26 +353,21 @@ Be specific, data-driven, and concise. Use markdown formatting.`;
   }, 5000);
 
   try {
-    const google = createGoogleGenerativeAI({ apiKey });
     const chosenModel = model ?? "gemini-2.5-flash";
-    const result = streamText({
-      model: google(chosenModel),
+    await nativeStreamGemini({
       prompt,
+      modelName: chosenModel,
       temperature: temperature ?? 0.3,
-      providerOptions: {
-        google: { thinkingConfig: { thinkingBudget: 2048 } },
+      thinkingBudget: 2048,
+      onThinking: (text) => {
+        res.write(`data: ${JSON.stringify({ reasoning: text })}\n\n`);
+        if (typeof (res as any).flush === "function") (res as any).flush();
+      },
+      onText: (text) => {
+        res.write(`data: ${JSON.stringify({ text })}\n\n`);
+        if (typeof (res as any).flush === "function") (res as any).flush();
       },
     });
-
-    for await (const part of result.fullStream) {
-      const p = part as any;
-      const delta = p.textDelta ?? p.text;
-      if (part.type === "reasoning" && delta) {
-        res.write(`data: ${JSON.stringify({ reasoning: delta })}\n\n`);
-      } else if (part.type === "text-delta" && delta) {
-        res.write(`data: ${JSON.stringify({ text: delta })}\n\n`);
-      }
-    }
     clearInterval(heartbeat);
     res.write("data: [DONE]\n\n");
     res.end();
@@ -1125,34 +1170,16 @@ Write ONLY the narrative fields. Return this exact JSON structure:
 }`;
 
   try {
-    const google = createGoogleGenerativeAI({ apiKey });
-    const result = streamText({
-      model: google("gemini-2.5-pro"),
+    const responseBuffer = await nativeStreamGemini({
       prompt: narrativePrompt,
+      modelName: "gemini-2.5-pro",
       temperature: 0,
-      providerOptions: {
-        google: { thinkingConfig: { thinkingBudget: 2048 } },
+      thinkingBudget: 4096,
+      onThinking: (text) => {
+        res.write(`event: thinking\ndata: ${JSON.stringify({ type: "thinking", text })}\n\n`);
+        if (typeof (res as any).flush === "function") (res as any).flush();
       },
     });
-
-    let responseBuffer = "";
-
-    for await (const part of result.fullStream) {
-      if (
-        part.type === "reasoning" ||
-        part.type === "thought" ||
-        (part as any).type === "thinking" ||
-        (part as any).type === "step-start"
-      ) {
-        const text = (part as any).textDelta || (part as any).text || (part as any).content || "";
-        if (text) {
-          res.write(`event: thinking\ndata: ${JSON.stringify({ type: "thinking", text })}\n\n`);
-          if (typeof (res as any).flush === "function") (res as any).flush();
-        }
-      } else if (part.type === "text-delta") {
-        responseBuffer += (part as any).textDelta ?? (part as any).text ?? "";
-      }
-    }
 
     clearInterval(heartbeat);
 
@@ -1504,27 +1531,22 @@ router.post("/options-strategist/stream", async (req, res) => {
     }
 
     try {
-      const google = createGoogleGenerativeAI({ apiKey });
       const narrativePrompt = `${STRATEGIST_SYSTEM_PROMPT}\n\nHere is the payload:\n\n${JSON.stringify(strategistPayload, null, 2)}`;
 
-      const result = streamText({
-        model: google("gemini-2.5-flash"),
+      await nativeStreamGemini({
         prompt: narrativePrompt,
+        modelName: "gemini-2.5-flash",
         temperature: 0.2,
-        providerOptions: {
-          google: { thinkingConfig: { thinkingBudget: 2048 } },
+        thinkingBudget: 2048,
+        onThinking: (text) => {
+          res.write(`data: ${JSON.stringify({ reasoning: text })}\n\n`);
+          if (typeof (res as any).flush === "function") (res as any).flush();
+        },
+        onText: (text) => {
+          res.write(`data: ${JSON.stringify({ text })}\n\n`);
+          if (typeof (res as any).flush === "function") (res as any).flush();
         },
       });
-
-      for await (const part of result.fullStream) {
-        const p = part as any;
-        const delta = p.textDelta ?? p.text;
-        if (part.type === "reasoning" && delta) {
-          res.write(`data: ${JSON.stringify({ reasoning: delta })}\n\n`);
-        } else if (part.type === "text-delta" && delta) {
-          res.write(`data: ${JSON.stringify({ text: delta })}\n\n`);
-        }
-      }
     } catch (aiErr: unknown) {
       const msg = aiErr instanceof Error ? aiErr.message : String(aiErr);
       req.log.error({ err: aiErr }, "Strategist narrative stream error");
