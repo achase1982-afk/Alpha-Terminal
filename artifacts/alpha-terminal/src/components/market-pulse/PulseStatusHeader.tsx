@@ -45,10 +45,6 @@ export function PulseStatusHeader({ data, isRefreshing, onRefresh, disabled }: P
             </span>
           )}
         </div>
-        <span className="text-[#2A2A2C]">|</span>
-        <span className="font-mono text-[10px] text-[#71717a] tracking-wider">
-          {data.instrumentCount} instruments
-        </span>
       </div>
 
       <button

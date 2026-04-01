@@ -154,7 +154,20 @@ export default function TerminalPage() {
                   <p className="font-mono text-[9px] text-[#71717a] tracking-widest uppercase">Multi-Asset Macro Analysis</p>
                 </div>
               </div>
-
+              <button
+                onClick={() => pulseDashRef.current?.fetchPulse()}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-mono text-[10px] font-bold uppercase tracking-wider transition-all duration-100 disabled:opacity-40 disabled:cursor-not-allowed active:translate-y-[1px]"
+                style={{
+                  background: "linear-gradient(180deg, #2A2A2C 0%, #1E1E20 100%)",
+                  color: "#a1a1aa",
+                  border: "1px solid #3a3a3c",
+                  borderBottom: "2px solid #1a1a1c",
+                  boxShadow: "0 1px 3px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05)",
+                }}
+              >
+                <Zap className="w-3 h-3" />
+                REFRESH
+              </button>
             </div>
           )}
         </div>
