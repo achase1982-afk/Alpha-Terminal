@@ -4,6 +4,7 @@ import { useTerminalStore } from "../../lib/store";
 import { useMarketPulseStore } from "../../stores/marketPulseStore";
 import type { MarketPulseData, ClusterKey } from "../../types/marketPulse";
 import { STRATEGY_LABELS } from "../../types/marketPulse";
+import { PulseStatusHeader } from "./PulseStatusHeader";
 import { ClusterCard } from "./ClusterCard";
 import { ActionPlanCard } from "./ActionPlanCard";
 import { InvalidationBox } from "./InvalidationBox";
@@ -183,6 +184,14 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
 
   return (
     <div className={`px-3 sm:px-4 lg:px-5 pt-1 ${showEmptyOrLoading ? "overflow-hidden" : "space-y-4 overflow-x-hidden"}`}>
+      {pulseData && (
+        <PulseStatusHeader
+          data={pulseData}
+          isRefreshing={isActive}
+          onRefresh={fetchPulse}
+          disabled={!accessToken}
+        />
+      )}
 
       {pulseData && isActive && (
         <div className="mt-4">
