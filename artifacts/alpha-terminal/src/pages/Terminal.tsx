@@ -155,15 +155,6 @@ export default function TerminalPage() {
                 </div>
               </div>
 
-              {!pulseData && !pulseLoading && !pulseStreaming && (
-                <button
-                  onClick={() => pulseDashRef.current?.fetchPulse()}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg font-mono text-xs font-bold tracking-wider text-[#0c0c0c] bg-[#FFB800] hover:bg-[#FFB800]/90 transition-all active:scale-95"
-                >
-                  <Zap className="w-3.5 h-3.5" />
-                  GENERATE PULSE
-                </button>
-              )}
             </div>
           )}
         </div>

@@ -202,10 +202,11 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
           <button
             onClick={fetchPulse}
             disabled={!accessToken}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-mono text-xs font-bold tracking-wider text-[#0c0c0c] bg-[#FFB800] hover:bg-[#FFB800]/90 transition-colors disabled:opacity-40"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-mono text-xs font-bold tracking-wider text-[#0c0c0c] bg-[#FFB800] hover:bg-[#FFB800]/90 transition-colors disabled:opacity-40 active:scale-95 active:brightness-110"
+            style={{ transition: "transform 0.1s, filter 0.1s" }}
           >
             <Zap className="w-3.5 h-3.5" />
-            Generate Market Pulse
+            Check Market Pulse
           </button>
         </div>
       )}
