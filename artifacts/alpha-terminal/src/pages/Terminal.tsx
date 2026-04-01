@@ -21,7 +21,22 @@ import { InAppBrowser } from "@/components/InAppBrowser";
 import { NewsTab } from "@/components/NewsTab";
 import { AiBiasStrip } from "@/components/market-pulse/AiBiasStrip";
 import type { AiSubTab } from "@/components/ai-tab/AiSubTabs";
-import { LineChart, BarChart2, BrainCircuit, Menu, Radar, Newspaper, Activity, Briefcase, ListOrdered, Star, TrendingUp, TrendingDown, Minus, X } from "lucide-react";
+import {
+  LineChart,
+  BarChart2,
+  BrainCircuit,
+  Menu,
+  Radar,
+  Newspaper,
+  Activity,
+  Briefcase,
+  ListOrdered,
+  Star,
+  X,
+} from "lucide-react";
+
+type BottomTab = "scanner" | "markets" | "ai" | "portfolio" | "watchlist";
+type ContextTab = "news" | "options" | "chart" | "company";
 
 export default function TerminalPage() {
   const { symbol, accessToken, chartPeriod, chartInterval, streamStatus } = useTerminalStore();
@@ -30,7 +45,8 @@ export default function TerminalPage() {
   const [tearSheetOpen, setTearSheetOpen] = useState(false);
   const [historyTimedOut, setHistoryTimedOut] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
-  const [activeMainTab, setActiveMainTab] = useState("news");
+  const [activeBottom, setActiveBottom] = useState<BottomTab>("markets");
+  const [contextTab, setContextTab] = useState<ContextTab>("news");
   const [aiSubTab, setAiSubTab] = useState<AiSubTab | undefined>(undefined);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { refresh } = useAutoRefreshToken();
@@ -40,7 +56,7 @@ export default function TerminalPage() {
     const el = scrollRef.current;
     if (!el) return;
     const y = el.scrollTop;
-    setIsScrolled(prev => (prev ? y > 30 : y > 60));
+    setIsScrolled(y > 80);
   }, []);
 
   const { subscribeOptionSymbols, subscribeEquitySymbols } = useMarketStream();
@@ -64,7 +80,6 @@ export default function TerminalPage() {
     }
   }, [historyData?.error, refresh]);
 
-  // ── 5-second safety timeout: forces "not found" state if no data arrives ──
   useEffect(() => {
     setHistoryTimedOut(false);
     if (!accessToken) return;
@@ -73,217 +88,178 @@ export default function TerminalPage() {
   }, [symbol, accessToken]);
 
   return (
-    <div className="app-shell bg-background selection:bg-primary/30 selection:text-white">
-      <div className="flex flex-row flex-1 min-h-0 w-full">
+    <div className="app-shell bg-background h-[100dvh] flex flex-col overflow-hidden selection:bg-primary/30 selection:text-white">
 
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black/60 z-30 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
+      <header className="shrink-0 bg-background z-50 border-b border-card-border">
+        <div className="flex items-center h-12 px-4 bg-card">
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-card-border transition-colors mr-3"
+            aria-label="Open menu"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+          <div className="flex flex-col leading-none">
+            <span className="font-sans font-black text-base tracking-wider text-foreground">ALPHA</span>
+            <span className="font-sans font-semibold text-[10px] tracking-[0.25em] text-primary">TERMINAL</span>
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            <span className="font-mono text-xs text-primary font-bold">{symbol}</span>
+            <div
+              className="w-2.5 h-2.5 rounded-full shrink-0"
+              title={streamStatus === "live" ? "Live data" : streamStatus === "connecting" ? "Connecting..." : "Offline"}
+              style={{
+                background: streamStatus === "live" ? "#00d166" : streamStatus === "connecting" ? "#FFB800" : "#f23645",
+                boxShadow: streamStatus === "live" ? "0 0 6px #00d166" : undefined,
+              }}
+            />
+          </div>
+        </div>
+        <TickerTape />
+      </header>
 
-      <div className={`
-        fixed lg:relative top-0 left-0 h-full z-40 shrink-0
-        transition-transform duration-300 ease-in-out
-        ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
-      `}>
-        <Sidebar onClose={() => setSidebarOpen(false)} onOpenChat={() => setChatOpen(true)} />
-      </div>
+      <div className="flex flex-1 min-h-0 relative">
 
-      <main className="flex-1 flex flex-col min-h-0 bg-background relative min-w-0" style={{ overflow: "clip" }}>
-        {/* Ambient glow — clipped inside its own overflow-hidden layer */}
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-primary/5 blur-[120px] rounded-full" />
+        {sidebarOpen && (
+          <div
+            className="fixed inset-0 bg-black/60 z-30"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
+        <div className={`
+          fixed top-0 left-0 h-full z-40 shrink-0
+          transition-transform duration-300 ease-in-out
+          ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
+        `}>
+          <Sidebar onClose={() => setSidebarOpen(false)} onOpenChat={() => setChatOpen(true)} />
         </div>
 
-        {/* ─── Sticky top: Mobile header + Ticker tape ─── */}
-        <div id="terminal-header" className="sticky top-0 z-50 shrink-0 bg-background">
-          {/* Mobile top bar */}
-          <div className="flex items-center lg:hidden h-12 px-4 border-b border-card-border bg-card">
-            <button
-              onClick={() => setSidebarOpen(prev => !prev)}
-              className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-card-border transition-colors mr-3"
-              aria-label="Open menu"
-            >
-              <Menu className="w-5 h-5" />
-            </button>
-            <div className="flex flex-col leading-none">
-              <span className="font-sans font-black text-base tracking-wider text-foreground">ALPHA</span>
-              <span className="font-sans font-semibold text-[10px] tracking-[0.25em] text-primary">TERMINAL</span>
-            </div>
-            <div className="ml-auto flex items-center gap-2">
-              <span className="font-mono text-xs text-primary font-bold">{symbol}</span>
-              {accessToken && (
-                <span
-                  className="w-2.5 h-2.5 rounded-full shrink-0"
-                  title={streamStatus === "live" ? "Live data" : streamStatus === "connecting" ? "Connecting..." : "Offline"}
-                  style={{
-                    background: streamStatus === "live" ? "#00d166" : streamStatus === "connecting" ? "#FFB800" : "#f23645",
-                    boxShadow: streamStatus === "live" ? "0 0 6px #00d166" : undefined,
-                  }}
-                />
-              )}
-            </div>
-          </div>
+        <main ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto app-content pb-20">
 
-          {/* ─── Ticker tape scrolling marquee ─── */}
-          <TickerTape />
-        </div>
+          {activeBottom === "markets" && (
+            <>
+              <MacroBar />
 
-        <div ref={scrollRef} onScroll={handleScroll} className="app-content z-10">
-          {/* ─── Macro Cards ─── */}
-          <MacroBar />
+              <div className="sticky top-0 z-40 bg-background">
+                <AiBiasStrip onNavigateToPulse={() => { setActiveBottom("ai"); setAiSubTab("pulse"); }} />
+                <MetricsBar compact={isScrolled} onOpenTearSheet={() => setTearSheetOpen(true)} />
+              </div>
 
-          {/* ─── AI Bias Strip ─── */}
-          <div style={{ position: "sticky", top: 0, zIndex: 45 }}>
-            <AiBiasStrip onNavigateToPulse={() => { setActiveMainTab("ai"); setAiSubTab("pulse"); }} />
-          </div>
+              <TickerSearch />
 
-          {/* ─── Metrics row (sticky + collapsible) ─── */}
-          <MetricsBar compact={isScrolled} onOpenTearSheet={() => setTearSheetOpen(true)} />
-
-          {/* ─── Prominent search bar ─── */}
-          <TickerSearch />
-
-          <div className="flex flex-col pb-20 lg:pb-0" style={{ minHeight: "calc(var(--vvh, 100%) - 80px)" }}>
-            <Tabs value={activeMainTab} onValueChange={setActiveMainTab} className="flex flex-col flex-1">
-              <div className="shrink-0 mb-4 sticky top-0 z-30 bg-background px-1 w-full hidden lg:block" style={{ position: "sticky", top: 71, zIndex: 40 }}>
-                <div className="overflow-x-auto flex justify-center">
-                  <TabsList className="bg-card border border-card-border p-1 inline-flex min-w-max">
-                    <TabsTrigger
-                      value="news"
-                      className="font-mono text-xs sm:text-sm uppercase rounded-none border-b-2 border-b-transparent data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-white data-[state=active]:border-b-[#FFB800] gap-2 px-4 py-2.5"
-                    >
-                      <Newspaper className="w-4 h-4 shrink-0" />
+              <Tabs value={contextTab} onValueChange={(v) => setContextTab(v as ContextTab)} className="w-full">
+                <div className="sticky top-[110px] z-30 bg-background/95 backdrop-blur-sm py-2 px-1 border-b border-card-border">
+                  <TabsList className="grid grid-cols-4 w-full bg-card h-11 border border-card-border">
+                    <TabsTrigger value="news" className="font-mono text-[10px] sm:text-xs uppercase data-[state=active]:text-white data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-b-primary rounded-none">
                       NEWS
                     </TabsTrigger>
-                    <TabsTrigger
-                      value="options"
-                      className="font-mono text-xs sm:text-sm uppercase rounded-none border-b-2 border-b-transparent data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-white data-[state=active]:border-b-[#FFB800] gap-2 px-4 py-2.5"
-                    >
-                      <BarChart2 className="w-4 h-4 shrink-0" />
+                    <TabsTrigger value="options" className="font-mono text-[10px] sm:text-xs uppercase data-[state=active]:text-white data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-b-primary rounded-none">
                       OPTIONS
                     </TabsTrigger>
-                    <TabsTrigger
-                      value="ai"
-                      className="font-mono text-xs sm:text-sm uppercase rounded-none border-b-2 border-b-transparent data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-white data-[state=active]:border-b-[#FFB800] gap-2 px-4 py-2.5"
-                    >
-                      <BrainCircuit className="w-4 h-4 shrink-0" />
-                      AI INTELLIGENCE
-                    </TabsTrigger>
-                    <TabsTrigger
-                      value="scanner"
-                      className="font-mono text-xs sm:text-sm uppercase rounded-none border-b-2 border-b-transparent data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-white data-[state=active]:border-b-[#FFB800] gap-2 px-4 py-2.5"
-                    >
-                      <Radar className="w-4 h-4 shrink-0" />
-                      MARKET SCANNER
-                    </TabsTrigger>
-                    <TabsTrigger
-                      value="chart"
-                      className="font-mono text-xs sm:text-sm uppercase rounded-none border-b-2 border-b-transparent data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-white data-[state=active]:border-b-[#FFB800] gap-2 px-4 py-2.5"
-                    >
-                      <LineChart className="w-4 h-4 shrink-0" />
+                    <TabsTrigger value="chart" className="font-mono text-[10px] sm:text-xs uppercase data-[state=active]:text-white data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-b-primary rounded-none">
                       CHART
                     </TabsTrigger>
-                    <TabsTrigger
-                      value="portfolio"
-                      className="font-mono text-xs sm:text-sm uppercase rounded-none border-b-2 border-b-transparent data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-white data-[state=active]:border-b-[#FFB800] gap-2 px-4 py-2.5"
-                    >
-                      <Briefcase className="w-4 h-4 shrink-0" />
-                      PORTFOLIO
-                    </TabsTrigger>
-                    <TabsTrigger
-                      value="watchlist"
-                      className="font-mono text-xs sm:text-sm uppercase rounded-none border-b-2 border-b-transparent data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-white data-[state=active]:border-b-[#FFB800] gap-2 px-4 py-2.5"
-                    >
-                      <ListOrdered className="w-4 h-4 shrink-0" />
-                      WATCHLIST
+                    <TabsTrigger value="company" className="font-mono text-[10px] sm:text-xs uppercase data-[state=active]:text-white data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-b-primary rounded-none">
+                      COMPANY
                     </TabsTrigger>
                   </TabsList>
                 </div>
-              </div>
 
-              <TabsContent value="news" className="m-0 focus-visible:outline-none flex-1 flex flex-col">
-                <NewsTab />
-              </TabsContent>
-              <TabsContent value="markets" className="m-0 focus-visible:outline-none flex-1 flex flex-col">
-                <NewsTab />
-              </TabsContent>
-              <TabsContent value="options" className="m-0 focus-visible:outline-none">
-                <div style={{ height: "calc(var(--vvh,100vh) - 140px)" }}>
+                <TabsContent value="news" className="m-0 focus-visible:outline-none">
+                  <NewsTab />
+                </TabsContent>
+                <TabsContent value="options" className="m-0 focus-visible:outline-none">
                   <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} />
-                </div>
-              </TabsContent>
-              <TabsContent value="ai" className="m-0 focus-visible:outline-none flex-1 flex flex-col -mt-2">
-                <AiIntelligenceTab initialSubTab={aiSubTab} />
-              </TabsContent>
-              <TabsContent value="scanner" className="m-0 focus-visible:outline-none">
-                <MarketScanner subscribeEquitySymbols={subscribeEquitySymbols} />
-              </TabsContent>
-              <TabsContent value="chart" className="h-[420px] sm:h-[500px] md:h-[580px] lg:h-[calc(var(--vvh,100vh)-300px)] m-0 focus-visible:outline-none data-[state=active]:flex flex-col">
-                <ChartControls />
-                <TradingChart
-                  symbol={symbol}
-                  data={historyData?.candles || []}
-                  isLoading={historyLoading}
-                  error={historyData?.error}
-                  timedOut={historyTimedOut}
-                  tokenExpired={historyData?.error === "unauthorized"}
-                  intraday={isIntradayInterval(chartInterval)}
-                />
-              </TabsContent>
-              <TabsContent value="portfolio" className="m-0 focus-visible:outline-none flex-1 flex flex-col">
-                <PortfolioView />
-              </TabsContent>
-              <TabsContent value="watchlist" className="m-0 focus-visible:outline-none flex-1 flex flex-col">
-                <WatchlistView />
-              </TabsContent>
-            </Tabs>
-          </div>
-        </div>
-      </main>
+                </TabsContent>
+                <TabsContent value="chart" className="m-0 focus-visible:outline-none">
+                  <ChartControls />
+                  <div className="h-[420px] sm:h-[500px] md:h-[580px]">
+                    <TradingChart
+                      symbol={symbol}
+                      data={historyData?.candles || []}
+                      isLoading={historyLoading}
+                      error={historyData?.error}
+                      timedOut={historyTimedOut}
+                      tokenExpired={historyData?.error === "unauthorized"}
+                      intraday={isIntradayInterval(chartInterval)}
+                    />
+                  </div>
+                </TabsContent>
+                <TabsContent value="company" className="m-0 focus-visible:outline-none">
+                  <div className="p-4">
+                    <button
+                      onClick={() => setTearSheetOpen(true)}
+                      className="w-full bg-card border border-card-border rounded-xl p-4 flex items-center justify-between hover:border-primary/30 transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <BarChart2 className="w-5 h-5 text-primary" />
+                        <div className="text-left">
+                          <span className="font-mono text-xs font-bold text-foreground block">COMPANY RESEARCH</span>
+                          <span className="font-mono text-[10px] text-muted-foreground">Tear Sheet & Fundamentals</span>
+                        </div>
+                      </div>
+                      <span className="font-mono text-[10px] text-primary">OPEN →</span>
+                    </button>
+                  </div>
+                </TabsContent>
+              </Tabs>
+            </>
+          )}
+
+          {activeBottom === "scanner" && (
+            <MarketScanner subscribeEquitySymbols={subscribeEquitySymbols} />
+          )}
+
+          {activeBottom === "ai" && (
+            <AiIntelligenceTab initialSubTab={aiSubTab} />
+          )}
+
+          {activeBottom === "portfolio" && (
+            <PortfolioView />
+          )}
+
+          {activeBottom === "watchlist" && (
+            <WatchlistView />
+          )}
+
+        </main>
       </div>
 
-      <nav className="fixed bottom-0 left-0 right-0 h-16 bg-[#0c0c0c] border-t border-primary/20 flex items-center justify-around px-2 z-50 lg:hidden safe-bottom">
-        <button
-          onClick={() => setActiveMainTab("scanner")}
-          className={`flex flex-col items-center gap-0.5 min-w-0 px-1 transition-colors ${activeMainTab === "scanner" ? "text-primary" : "text-muted-foreground"}`}
-        >
-          <Radar className="w-5 h-5" />
-          <span className="text-[8px] font-mono font-bold tracking-tighter">SCANNER</span>
-        </button>
+      <nav className="fixed bottom-0 left-0 right-0 h-16 bg-[#0c0c0c] border-t border-primary/30 flex items-center justify-around px-2 z-50 safe-bottom">
+        <NavBtn
+          icon={<Radar className="w-5 h-5" />}
+          label="SCANNER"
+          active={activeBottom === "scanner"}
+          onClick={() => setActiveBottom("scanner")}
+        />
+        <NavBtn
+          icon={<Activity className="w-5 h-5" />}
+          label="MARKETS"
+          active={activeBottom === "markets"}
+          onClick={() => setActiveBottom("markets")}
+        />
 
         <button
-          onClick={() => setActiveMainTab("markets")}
-          className={`flex flex-col items-center gap-0.5 min-w-0 px-1 transition-colors ${activeMainTab === "markets" || activeMainTab === "news" ? "text-primary" : "text-muted-foreground"}`}
-        >
-          <Activity className="w-5 h-5" />
-          <span className="text-[8px] font-mono font-bold tracking-tighter">MARKETS</span>
-        </button>
-
-        <button
-          onClick={() => { setActiveMainTab("ai"); setChatOpen(false); }}
-          className="relative -top-4 flex items-center justify-center w-14 h-14 rounded-full bg-primary shadow-lg shadow-primary/30 text-background transition-transform active:scale-95"
+          onClick={() => setActiveBottom("ai")}
+          className={`relative -top-4 flex items-center justify-center w-14 h-14 rounded-full shadow-[0_0_15px_rgba(255,184,0,0.4)] transition-transform active:scale-95 ${
+            activeBottom === "ai" ? "bg-primary text-background" : "bg-primary/80 text-background/80"
+          }`}
         >
           <BrainCircuit className="w-7 h-7" />
         </button>
 
-        <button
-          onClick={() => setActiveMainTab("portfolio")}
-          className={`flex flex-col items-center gap-0.5 min-w-0 px-1 transition-colors ${activeMainTab === "portfolio" ? "text-primary" : "text-muted-foreground"}`}
-        >
-          <Briefcase className="w-5 h-5" />
-          <span className="text-[8px] font-mono font-bold tracking-tighter">PORTFOLIO</span>
-        </button>
-
-        <button
-          onClick={() => setActiveMainTab("watchlist")}
-          className={`flex flex-col items-center gap-0.5 min-w-0 px-1 transition-colors ${activeMainTab === "watchlist" ? "text-primary" : "text-muted-foreground"}`}
-        >
-          <ListOrdered className="w-5 h-5" />
-          <span className="text-[8px] font-mono font-bold tracking-tighter">WATCHLIST</span>
-        </button>
+        <NavBtn
+          icon={<Briefcase className="w-5 h-5" />}
+          label="PORTFOLIO"
+          active={activeBottom === "portfolio"}
+          onClick={() => setActiveBottom("portfolio")}
+        />
+        <NavBtn
+          icon={<ListOrdered className="w-5 h-5" />}
+          label="WATCHLIST"
+          active={activeBottom === "watchlist"}
+          onClick={() => setActiveBottom("watchlist")}
+        />
       </nav>
 
       <AiChatOverlay isOpen={chatOpen} onClose={() => setChatOpen(false)} />
@@ -293,12 +269,24 @@ export default function TerminalPage() {
   );
 }
 
+function NavBtn({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex flex-col items-center gap-0.5 min-w-0 px-1 transition-colors ${active ? "text-primary" : "text-muted-foreground"}`}
+    >
+      {icon}
+      <span className="text-[9px] font-mono font-bold tracking-tighter">{label}</span>
+    </button>
+  );
+}
+
 function PortfolioView() {
   const { accessToken } = useTerminalStore();
 
   if (!accessToken) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
+      <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 min-h-[60vh]">
         <Briefcase className="w-12 h-12 text-primary/30" />
         <p className="font-mono text-sm text-muted-foreground text-center">CONNECT SCHWAB TO VIEW PORTFOLIO</p>
       </div>
@@ -329,9 +317,7 @@ function PortfolioView() {
           </div>
         </div>
         <div className="bg-card border border-card-border rounded-xl p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <span className="font-mono text-[10px] text-muted-foreground uppercase tracking-widest">Open Positions</span>
-          </div>
+          <span className="font-mono text-[10px] text-muted-foreground uppercase tracking-widest">Open Positions</span>
           <p className="font-mono text-xs text-muted-foreground/60 text-center py-8">
             Position data will populate when Schwab streaming is active.
           </p>

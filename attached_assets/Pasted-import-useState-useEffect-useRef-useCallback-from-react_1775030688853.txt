@@ -1,0 +1,138 @@
+import { useState, useEffect, useRef, useCallback } from "react";
+import { Sidebar } from "@/components/Sidebar";
+import { MetricsBar } from "@/components/MetricsBar";
+import { TradingChart } from "@/components/TradingChart";
+import { OptionsTab } from "@/components/OptionsTab";
+import { AiIntelligenceTab } from "@/components/AiIntelligenceTab";
+import { MarketScanner } from "@/components/MarketScanner";
+import { MacroBar } from "@/components/MacroBar";
+import { TickerTape } from "@/components/TickerTape";
+import { TickerSearch } from "@/components/TickerSearch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useTerminalStore } from "@/lib/store";
+import { useMarketStream } from "@/hooks/useMarketStream";
+import { useViewportShell } from "@/hooks/useViewportShell";
+import { NewsTab } from "@/components/NewsTab";
+import { AiBiasStrip } from "@/components/market-pulse/AiBiasStrip";
+import { 
+  LineChart, 
+  BarChart2, 
+  BrainCircuit, 
+  Menu, 
+  Radar, 
+  Newspaper, 
+  LayoutDashboard, 
+  Activity, 
+  Briefcase 
+} from "lucide-react";
+
+export default function TerminalPage() {
+  const { symbol, streamStatus } = useTerminalStore();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(false);
+  const [activeMainTab, setActiveMainTab] = useState("news");
+  const scrollRef = useRef<HTMLDivElement>(null);
+  
+  useViewportShell();
+  const { subscribeOptionSymbols, subscribeEquitySymbols } = useMarketStream();
+
+  // Scroll listener for the Collapsed Buy/Sell Bar
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const y = el.scrollTop;
+    // Threshold for collapsing the MetricsBar into the thin Buy/Sell strip
+    setIsScrolled(y > 80);
+  }, []);
+
+  return (
+    <div className="app-shell bg-background h-screen flex flex-col overflow-hidden">
+      
+      {/* ─── 1. FIXED TOP: MOBILE HEADER + TICKER TAPE ─── */}
+      <header className="shrink-0 bg-background z-50 border-b border-card-border">
+        <div className="flex items-center h-12 px-4 bg-card">
+          <button onClick={() => setSidebarOpen(true)} className="p-2 mr-3 text-muted-foreground">
+            <Menu className="w-5 h-5" />
+          </button>
+          <div className="flex flex-col leading-none">
+            <span className="font-black text-base tracking-wider">ALPHA</span>
+            <span className="font-semibold text-[10px] tracking-[0.25em] text-primary">TERMINAL</span>
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            <span className="font-mono text-xs text-primary font-bold">{symbol}</span>
+            <div 
+              className={`w-2.5 h-2.5 rounded-full ${streamStatus === 'live' ? 'bg-terminal-success shadow-[0_0_6px_#00d166]' : 'bg-terminal-danger'}`} 
+            />
+          </div>
+        </div>
+        <TickerTape />
+      </header>
+
+      <div className="flex flex-1 min-h-0 relative">
+        
+        {/* ─── 2. SIDEBAR (Full-Page Modal Logic) ─── */}
+        <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+
+        {/* ─── 3. MAIN WORKSPACE ─── */}
+        <main ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto app-content pb-20">
+          
+          <MacroBar />
+          
+          <div className="sticky top-0 z-40 bg-background">
+             <AiBiasStrip onNavigateToPulse={() => setActiveMainTab("ai")} />
+             {/* THE DYNAMIC HEADER: 
+                When !isScrolled: Shows full MetricsBar (Bid/Ask, etc)
+                When isScrolled: Shows thin red/green SELL/BUY buttons
+             */}
+             <MetricsBar compact={isScrolled} />
+          </div>
+
+          <TickerSearch />
+
+          <Tabs value={activeMainTab} onValueChange={setActiveMainTab} className="w-full">
+            {/* STATIC TOP MENU: No scroll, spelled out COMPANY */}
+            <div className="sticky top-[110px] z-30 bg-background/95 backdrop-blur-sm py-2 px-1 border-b border-card-border">
+              <TabsList className="grid grid-cols-4 w-full bg-card h-11">
+                <TabsTrigger value="news" className="text-[10px] sm:text-xs">NEWS</TabsTrigger>
+                <TabsTrigger value="options" className="text-[10px] sm:text-xs">OPTIONS</TabsTrigger>
+                <TabsTrigger value="chart" className="text-[10px] sm:text-xs">CHART</TabsTrigger>
+                <TabsTrigger value="company" className="text-[10px] sm:text-xs uppercase">COMPANY</TabsTrigger>
+              </TabsList>
+            </div>
+
+            <TabsContent value="news"><NewsTab /></TabsContent>
+            <TabsContent value="options"><OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} /></TabsContent>
+            <TabsContent value="chart"><TradingChart symbol={symbol} /></TabsContent>
+            <TabsContent value="company">
+                {/* Unified Research Hub (Tear Sheet + Technicals) */}
+                <div className="p-4 text-center text-muted-foreground font-mono">Company Research & Technicals</div>
+            </TabsContent>
+          </Tabs>
+        </main>
+
+        {/* ─── 4. NEW BOTTOM NAVIGATION ─── */}
+        <nav className="fixed bottom-0 left-0 right-0 h-16 bg-[#0c0c0c] border-t border-primary/30 flex items-center justify-around px-2 z-50">
+          <button className="flex flex-col items-center gap-1 text-muted-foreground">
+            <Radar className="w-5 h-5" /><span className="text-[9px]">SCANNER</span>
+          </button>
+          <button className="flex flex-col items-center gap-1 text-muted-foreground">
+            <Activity className="w-5 h-5" /><span className="text-[9px]">MARKETS</span>
+          </button>
+          
+          {/* THE AI HUB BUTTON */}
+          <button className="relative -top-4 w-14 h-14 bg-primary rounded-full flex items-center justify-center shadow-[0_0_15px_rgba(255,184,0,0.4)] text-black">
+            <BrainCircuit className="w-7 h-7" />
+          </button>
+
+          <button className="flex flex-col items-center gap-1 text-muted-foreground">
+            <Briefcase className="w-5 h-5" /><span className="text-[9px]">PORTFOLIO</span>
+          </button>
+          <button className="flex flex-col items-center gap-1 text-muted-foreground">
+            <ListOrdered className="w-5 h-5" /><span className="text-[9px]">WATCHLIST</span>
+          </button>
+        </nav>
+
+      </div>
+    </div>
+  );
+}
