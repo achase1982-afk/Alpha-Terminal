@@ -20,14 +20,12 @@ import { AiChatOverlay } from "@/components/AiChatOverlay";
 import { InAppBrowser } from "@/components/InAppBrowser";
 import { NewsTab } from "@/components/NewsTab";
 import { AiBiasStrip } from "@/components/market-pulse/AiBiasStrip";
+import { BottomNav } from "@/components/BottomNav";
 import { CompanyResearchHub } from "@/components/CompanyResearchHub";
 import type { AiSubTab } from "@/components/ai-tab/AiSubTabs";
 import {
-  BrainCircuit,
   Menu,
-  Radar,
   Newspaper,
-  Activity,
   Briefcase,
   ListOrdered,
   Star,
@@ -182,42 +180,7 @@ export default function TerminalPage() {
         </main>
       </div>
 
-      <nav className="fixed bottom-0 left-0 right-0 h-20 bg-[#0c0c0c] border-t border-zinc-800/60 flex items-center justify-around px-2 z-50 safe-bottom">
-        <NavBtn
-          icon={<Radar className="w-5 h-5" />}
-          label="SCANNER"
-          active={activeBottom === "scanner"}
-          onClick={() => setActiveBottom("scanner")}
-        />
-        <NavBtn
-          icon={<Activity className="w-5 h-5" />}
-          label="MARKETS"
-          active={activeBottom === "markets"}
-          onClick={() => setActiveBottom("markets")}
-        />
-
-        <button
-          onClick={() => setActiveBottom("ai")}
-          className={`relative flex items-center justify-center w-14 h-14 rounded-full shadow-[0_0_15px_rgba(255,184,0,0.4)] transition-transform active:scale-95 ${
-            activeBottom === "ai" ? "bg-primary text-background" : "bg-primary/80 text-background/80"
-          }`}
-        >
-          <BrainCircuit className="w-7 h-7" />
-        </button>
-
-        <NavBtn
-          icon={<Briefcase className="w-5 h-5" />}
-          label="PORTFOLIO"
-          active={activeBottom === "portfolio"}
-          onClick={() => setActiveBottom("portfolio")}
-        />
-        <NavBtn
-          icon={<ListOrdered className="w-5 h-5" />}
-          label="WATCHLIST"
-          active={activeBottom === "watchlist"}
-          onClick={() => setActiveBottom("watchlist")}
-        />
-      </nav>
+      <BottomNav activeTab={activeBottom} onTabChange={setActiveBottom} />
 
       <AiChatOverlay isOpen={chatOpen} onClose={() => setChatOpen(false)} />
       <InAppBrowser />
@@ -225,17 +188,6 @@ export default function TerminalPage() {
   );
 }
 
-function NavBtn({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`flex flex-col items-center gap-0.5 min-w-0 px-1 transition-colors ${active ? "text-primary" : "text-muted-foreground"}`}
-    >
-      {icon}
-      <span className="text-[9px] font-mono font-bold tracking-tighter">{label}</span>
-    </button>
-  );
-}
 
 function PortfolioView() {
   const { accessToken } = useTerminalStore();
