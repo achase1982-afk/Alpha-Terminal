@@ -87,7 +87,7 @@ export function Sidebar({ isOpen, onClose, onOpenChat, onNavigate }: SidebarProp
 
       <div className={`fixed top-0 left-0 h-full w-[280px] sm:w-[320px] bg-[#0c0c0c] border-r border-card-border z-50 transform transition-transform duration-300 flex flex-col ${isOpen ? "translate-x-0" : "-translate-x-full"}`}>
 
-        <div className="h-16 bg-[#141414] shrink-0 border-b border-card-border/50" />
+        <div className="h-12 bg-card shrink-0 border-b border-card-border" />
 
         <div className="flex-1 overflow-y-auto py-2">
           <div className="flex flex-col pb-2">
@@ -107,21 +107,23 @@ export function Sidebar({ isOpen, onClose, onOpenChat, onNavigate }: SidebarProp
             <MenuRow icon={<BrainCircuit />} label="AI Parameters" onClick={() => { setActivePage("AI Parameters"); onClose(); }} />
             <MenuRow icon={<Shield />} label="Security & Privacy" onClick={() => { setActivePage("Security & Privacy"); onClose(); }} />
           </div>
-        </div>
 
-        <div className="shrink-0 px-4 py-5 border-t border-card-border/50 bg-[#0a0a0a]">
-          <button
-            onClick={() => { queryClient.clear(); void signOut(); }}
-            className="w-full flex items-center justify-center gap-3 py-3.5 rounded-xl transition-all active:scale-[0.97]"
-            style={{
-              background: "linear-gradient(180deg, #2A2A2C 0%, #1C1C1E 100%)",
-              border: "1px solid rgba(255,255,255,0.08)",
-              boxShadow: "0 2px 8px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05)",
-            }}
-          >
-            <Power className="w-4.5 h-4.5 text-white/80" />
-            <span className="font-bold text-[13px] tracking-[0.2em] uppercase text-white/90">Logout</span>
-          </button>
+          <div className="mx-5 border-b border-card-border/50" />
+
+          <div className="px-4 pt-4 pb-8">
+            <button
+              onClick={() => { queryClient.clear(); void signOut(); }}
+              className="w-full flex items-center justify-center gap-3 py-3.5 rounded-xl transition-all active:scale-[0.97]"
+              style={{
+                background: "linear-gradient(180deg, #2A2A2C 0%, #1C1C1E 100%)",
+                border: "1px solid rgba(255,255,255,0.08)",
+                boxShadow: "0 2px 8px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05)",
+              }}
+            >
+              <Power className="w-4 h-4 text-white/80" />
+              <span className="font-bold text-[13px] tracking-[0.2em] uppercase text-white/90">Logout</span>
+            </button>
+          </div>
         </div>
       </div>
 
