@@ -21,7 +21,7 @@ import { runPreTradeChecks, type PreTradeInput, type PreTradeResult } from "../l
 const router: IRouter = Router();
 
 const AVAILABLE_MODELS = [
-  "gemini-2.5-pro",
+  "gemini-2.5-pro-preview-05-06",
   "gemini-2.5-flash",
 ];
 
@@ -40,7 +40,7 @@ async function nativeStreamGemini(opts: NativeStreamOptions): Promise<string> {
 
   const {
     prompt,
-    modelName = "gemini-2.5-pro",
+    modelName = "gemini-2.5-pro-preview-05-06",
     temperature = 0,
     thinkingBudget = 4096,
     onThinking,
@@ -1172,7 +1172,7 @@ Write ONLY the narrative fields. Return this exact JSON structure:
   try {
     const responseBuffer = await nativeStreamGemini({
       prompt: narrativePrompt,
-      modelName: "gemini-2.5-pro",
+      modelName: "gemini-2.5-pro-preview-05-06",
       temperature: 0,
       thinkingBudget: 4096,
       onThinking: (text) => {
