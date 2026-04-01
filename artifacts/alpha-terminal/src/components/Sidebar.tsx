@@ -79,12 +79,7 @@ export function Sidebar({ isOpen, onClose, onOpenChat, onNavigate }: SidebarProp
 
       <div className={`fixed top-0 left-0 h-full w-[280px] sm:w-[320px] bg-[#0c0c0c] border-r border-card-border z-50 transform transition-transform duration-300 flex flex-col ${isOpen ? "translate-x-0" : "-translate-x-full"}`}>
 
-        <div className="p-5 flex justify-between items-center bg-[#141414]">
-          <span className="font-black text-lg tracking-wider text-white">COMMAND CENTER</span>
-          <button onClick={handleClose} className="text-muted-foreground hover:text-white transition-colors">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+        <div className="h-16 bg-[#141414] shrink-0 border-b border-card-border/50" />
 
         <div className="flex-1 overflow-y-auto py-2">
           <div className="flex flex-col pb-2">
@@ -120,11 +115,9 @@ export function Sidebar({ isOpen, onClose, onOpenChat, onNavigate }: SidebarProp
       {activePage && createPortal(
         <div
           className="fixed left-0 right-0 bottom-0 z-[100] bg-background animate-in slide-in-from-bottom-8 duration-300 flex flex-col shadow-2xl border-t border-card-border"
-          style={{ top: "0px" }}
+          style={{ top: "120px" }}
         >
-          <div className="h-16 bg-[#141414] shrink-0" />
-
-          <div className="flex items-center justify-between p-3 border-b border-card-border bg-card">
+          <div className="flex items-center justify-between p-3 border-b border-card-border bg-[#141414]">
             <h2 className="font-bold text-sm tracking-widest text-white uppercase ml-2">{activePage}</h2>
             <button
               onClick={() => setActivePage(null)}

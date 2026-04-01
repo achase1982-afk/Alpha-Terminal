@@ -1,0 +1,119 @@
+import React, { useState } from "react";
+import { createPortal } from "react-dom";
+import { useTerminalStore } from "@/lib/store";
+import { useAutoLock, TIMEOUT_OPTIONS } from "@/hooks/useAutoLock";
+import { AuthPanel } from "./AuthPanel";
+import { 
+  X, Fingerprint, Link, LayoutDashboard, 
+  Zap, Settings, Bell, Shield, LogOut, Star, Activity, 
+  Briefcase, MessageCircle, LineChart, BrainCircuit
+} from "lucide-react";
+
+/**
+ * REPLIT AGENT INSTRUCTION:
+ * 1. The 'top' value is set to 120px to pin the iframe exactly BELOW the scrolling ticker tape.
+ * 2. If the ticker is still covered, increase to 130px. If there is a gap, decrease to 110px.
+ * 3. The 'COMMAND CENTER' text and Back Arrow have been removed per user request.
+ * 4. The Sidebar now auto-closes when an iframe page is selected.
+ */
+
+interface SidebarProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+export function Sidebar({ isOpen, onClose }: SidebarProps) {
+  const [activePage, setActivePage] = useState<string | null>(null);
+
+  if (!isOpen && !activePage) return null;
+
+  return (
+    <>
+      {/* ─── 1. SLIDE-OUT PANEL ─── */}
+      <div 
+        className={`fixed inset-0 bg-black/60 z-40 transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+        onClick={onClose}
+      />
+
+      <div className={`fixed top-0 left-0 h-full w-[280px] sm:w-[320px] bg-[#0c0c0c] border-r border-card-border z-50 transform transition-transform duration-300 flex flex-col ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        
+        {/* Empty Header / Top Spacer */}
+        <div className="h-16 bg-[#141414] shrink-0 border-b border-card-border/50"></div>
+
+        <div className="flex-1 overflow-y-auto py-2">
+          {/* Navigation - Auto-closes sidebar on click */}
+          <div className="flex flex-col pb-2">
+            <MenuRow icon={<Star />} label="Watchlist" onClick={() => { setActivePage("Watchlist"); onClose(); }} />
+            <MenuRow icon={<Activity />} label="Markets" onClick={() => { setActivePage("Markets"); onClose(); }} />
+            <MenuRow icon={<Briefcase />} label="Portfolio" onClick={() => { setActivePage("Portfolio"); onClose(); }} />
+            <MenuRow icon={<MessageCircle />} label="AI Search" onClick={() => { onClose(); /* Trigger Chat */ }} />
+          </div>
+
+          <div className="mx-5 border-b border-card-border/50" />
+
+          {/* Settings - Auto-closes sidebar on click */}
+          <div className="flex flex-col pt-2 pb-2">
+            <MenuRow icon={<Link />} label="Linked Brokerage" onClick={() => { setActivePage("Linked Brokerage"); onClose(); }} />
+            <MenuRow icon={<Zap />} label="Market Pulse" onClick={() => { setActivePage("Market Pulse"); onClose(); }} />
+            <MenuRow icon={<LineChart />} label="Chart & Options" onClick={() => { setActivePage("Chart & Options"); onClose(); }} />
+            <MenuRow icon={<LayoutDashboard />} label="Display & Marquee" onClick={() => { setActivePage("Display & Marquee"); onClose(); }} />
+            <MenuRow icon={<BrainCircuit />} label="AI Parameters" onClick={() => { setActivePage("AI Parameters"); onClose(); }} />
+            <MenuRow icon={<Shield />} label="Security & Privacy" onClick={() => { setActivePage("Security & Privacy"); onClose(); }} />
+          </div>
+        </div>
+
+        {/* DOMINANT LOGOUT BUTTON */}
+        <div className="p-4 mt-auto border-t border-card-border/50 bg-[#0c0c0c]">
+          <button className="w-full flex items-center justify-center gap-3 py-3.5 bg-terminal-danger/10 border border-terminal-danger/30 hover:bg-terminal-danger hover:text-white text-terminal-danger rounded-xl transition-all shadow-sm">
+            <LogOut className="w-5 h-5" />
+            <span className="font-black text-[13px] tracking-widest uppercase">Log Out</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ─── 2. DEDICATED PAGE OVERLAY (IFRAME) ─── */}
+      {activePage && createPortal(
+        <div 
+          className="fixed left-0 right-0 bottom-0 z-[100] bg-background animate-in slide-in-from-bottom-8 duration-300 flex flex-col shadow-2xl border-t border-card-border"
+          style={{ top: '120px' }} // Adjusted to pin under the scrolling ticker
+        >
+          {/* Iframe Control Bar (No Back Arrow, Just X to close) */}
+          <div className="flex items-center justify-between p-3 border-b border-card-border bg-[#141414]">
+            <h2 className="font-bold text-sm tracking-widest text-white uppercase ml-2">{activePage}</h2>
+            <button 
+              onClick={() => setActivePage(null)} 
+              className="p-1.5 text-muted-foreground hover:text-white transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 pb-24">
+            {activePage === "Linked Brokerage" && <LinkedServicesView />}
+            {activePage === "Security & Privacy" && <SecurityView />}
+            {activePage === "Display & Marquee" && <PreferencesView />}
+            {activePage === "Market Pulse" && <MarketPulseView />}
+          </div>
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}
+
+function MenuRow({ icon, label, onClick }: { icon: React.ReactNode, label: string, onClick: () => void }) {
+  return (
+    <button onClick={onClick} className="w-full flex items-center gap-4 px-5 py-3.5 hover:bg-card/50 transition-colors text-left group">
+      <div className="text-white group-hover:text-primary transition-colors">
+        {React.cloneElement(icon as React.ReactElement, { className: "w-5 h-5" })}
+      </div>
+      <span className="font-bold text-[15px] text-white tracking-wide">{label}</span>
+    </button>
+  );
+}
+
+// Placeholder Views
+function LinkedServicesView() { return <div className="max-w-xl mx-auto"><AuthPanel /></div>; }
+function SecurityView() { return <div className="max-w-xl mx-auto text-white">Security Settings</div>; }
+function PreferencesView() { return <div className="max-w-xl mx-auto text-white">Display Preferences</div>; }
+function MarketPulseView() { return <div className="max-w-xl mx-auto text-white">Market Pulse Settings</div>; }
