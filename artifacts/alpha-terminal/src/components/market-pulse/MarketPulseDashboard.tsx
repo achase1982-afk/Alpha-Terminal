@@ -82,11 +82,6 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
     }
   }, [pulseData, clearPulse, clearThinking]);
 
-  const handleReset = useCallback(() => {
-    clearPulse();
-    clearThinking();
-  }, [clearPulse, clearThinking]);
-
   // Use refs to avoid fetchPulse changing on every pulseData/store update
   const pulseDataRef = useRef(pulseData);
   useEffect(() => { pulseDataRef.current = pulseData; }, [pulseData]);
@@ -192,7 +187,6 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
           data={pulseData}
           isRefreshing={isActive}
           onRefresh={fetchPulse}
-          onReset={handleReset}
           disabled={!accessToken}
         />
       )}
