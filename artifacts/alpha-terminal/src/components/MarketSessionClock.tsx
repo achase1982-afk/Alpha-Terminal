@@ -139,16 +139,16 @@ export function MarketSessionClock() {
         <span className="relative inline-flex rounded-full h-2 w-2" style={{ background: info.dotColor }} />
       </span>
       <span
-        className="font-mono text-[10px] font-bold uppercase tracking-widest whitespace-nowrap"
+        className="font-sans text-[12px] font-medium uppercase tracking-wider whitespace-nowrap"
         style={{ color: info.color }}
       >
         {info.label}
       </span>
-      <span className="text-[#3a3a3c] font-mono text-[9px]">|</span>
-      <span className="font-mono text-[9px] text-[#71717a] tracking-wider whitespace-nowrap">
+      <span className="text-[#3a3a3c] text-[10px]">|</span>
+      <span className="font-sans text-[10px] text-[#71717a] tracking-wide whitespace-nowrap">
         {info.countdownLabel}
       </span>
-      <span className="font-mono text-[11px] font-bold tabular-nums whitespace-nowrap text-white">
+      <span className="font-sans text-[13px] font-medium tabular-nums whitespace-nowrap text-white">
         {info.countdown}
       </span>
     </div>
