@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import {
-  X, Shield, Link, Fingerprint, Power,
+  X, Shield, Link, Fingerprint, Power, Menu,
   Star, Activity, Briefcase, MessageCircle,
   Zap, LineChart, LayoutDashboard, BrainCircuit,
   ChevronLeft, Trash2, Plus, RotateCcw, BarChart2,
@@ -87,7 +87,15 @@ export function Sidebar({ isOpen, onClose, onOpenChat, onNavigate }: SidebarProp
 
       <div className={`fixed top-0 left-0 h-full w-[280px] sm:w-[320px] bg-[#0c0c0c] border-r border-card-border z-50 transform transition-transform duration-300 flex flex-col ${isOpen ? "translate-x-0" : "-translate-x-full"}`}>
 
-        <div className="h-12 bg-card shrink-0 border-b border-card-border" />
+        <div className="h-12 bg-card shrink-0 border-b border-card-border flex items-center px-4">
+          <button
+            onClick={handleClose}
+            className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-card-border transition-colors"
+            aria-label="Close menu"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+        </div>
 
         <div className="flex-1 overflow-y-auto py-2">
           <div className="flex flex-col pb-2">
@@ -108,20 +116,13 @@ export function Sidebar({ isOpen, onClose, onOpenChat, onNavigate }: SidebarProp
             <MenuRow icon={<Shield />} label="Security & Privacy" onClick={() => { setActivePage("Security & Privacy"); onClose(); }} />
           </div>
 
-          <div className="mx-5 border-b border-card-border/50" />
-
-          <div className="px-4 pt-4 pb-8">
+          <div className="pt-8 pb-10 pl-5">
             <button
               onClick={() => { queryClient.clear(); void signOut(); }}
-              className="w-full flex items-center justify-center gap-3 py-3.5 rounded-xl transition-all active:scale-[0.97]"
-              style={{
-                background: "linear-gradient(180deg, #2A2A2C 0%, #1C1C1E 100%)",
-                border: "1px solid rgba(255,255,255,0.08)",
-                boxShadow: "0 2px 8px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05)",
-              }}
+              className="flex items-center gap-3 transition-opacity hover:opacity-70 active:opacity-50"
             >
-              <Power className="w-4 h-4 text-white/80" />
-              <span className="font-bold text-[13px] tracking-[0.2em] uppercase text-white/90">Logout</span>
+              <Power className="w-[18px] h-[18px] text-white/80" />
+              <span className="font-bold text-[14px] tracking-[0.15em] uppercase text-white/90">Logout</span>
             </button>
           </div>
         </div>
