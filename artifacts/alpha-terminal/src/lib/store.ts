@@ -199,10 +199,10 @@ export const useTerminalStore = create<TerminalState>()(
 
       aiFeatureSettings: {
         marketPulse:   { model: 'gemini-3.1-pro-preview', temperature: 0 },
-        technicals:    { model: 'gemini-3.1-pro-preview', temperature: 0.3 },
-        strategist:    { model: 'gemini-3.1-pro-preview', temperature: 0.2 },
-        chat:          { model: 'gemini-3.1-pro-preview', temperature: 0.1 },
-        scanner:       { model: 'gemini-3.1-pro-preview', temperature: 0.2 },
+        technicals:    { model: 'gemini-3.1-pro-preview', temperature: 0 },
+        strategist:    { model: 'gemini-3.1-pro-preview', temperature: 0 },
+        chat:          { model: 'gemini-3.1-pro-preview', temperature: 0 },
+        scanner:       { model: 'gemini-3.1-pro-preview', temperature: 0 },
       },
       setAiFeatureSetting: (feature, key, value) =>
         set((state) => ({
@@ -309,10 +309,10 @@ export const useTerminalStore = create<TerminalState>()(
           s['aiModel'] = 'gemini-3.1-pro-preview';
           s['aiFeatureSettings'] = {
             marketPulse:   { model: 'gemini-3.1-pro-preview', temperature: 0 },
-            technicals:    { model: 'gemini-3.1-pro-preview', temperature: 0.3 },
-            strategist:    { model: 'gemini-3.1-pro-preview', temperature: 0.2 },
-            chat:          { model: 'gemini-3.1-pro-preview', temperature: 0.1 },
-            scanner:       { model: 'gemini-3.1-pro-preview', temperature: 0.2 },
+            technicals:    { model: 'gemini-3.1-pro-preview', temperature: 0 },
+            strategist:    { model: 'gemini-3.1-pro-preview', temperature: 0 },
+            chat:          { model: 'gemini-3.1-pro-preview', temperature: 0 },
+            scanner:       { model: 'gemini-3.1-pro-preview', temperature: 0 },
           };
         }
         return s;
