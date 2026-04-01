@@ -171,6 +171,7 @@ export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps)
       }
     }
 
+    jiggleStartedAt.current = Date.now();
     setDragging(false);
     setDragTabId(null);
     setPreviewOrder([]);

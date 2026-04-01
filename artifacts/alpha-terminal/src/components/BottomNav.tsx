@@ -168,6 +168,7 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
         saveOrder(reorder(order, fromIdx, targetIdx));
       }
     }
+    jiggleStartedAt.current = Date.now();
     setDragging(false);
     setDragTabId(null);
     setPreviewOrder([]);
