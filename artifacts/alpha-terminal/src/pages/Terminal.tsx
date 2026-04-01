@@ -142,7 +142,7 @@ export default function TerminalPage() {
 
               <div className="sticky top-0 z-40 bg-background">
                 <AiBiasStrip onNavigateToPulse={() => { setActiveBottom("ai"); setAiSubTab("pulse"); }} />
-                <MetricsBar compact={isScrolled} onOpenTearSheet={() => setTearSheetOpen(true)} />
+                <MetricsBar compact={isScrolled} />
               </div>
 
               <TickerSearch />
