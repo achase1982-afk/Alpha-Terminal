@@ -415,7 +415,7 @@ function handleData(content: Record<string, unknown>[]) {
       ? regLastRaw
       : (allSessLastRaw !== null && allSessLastRaw !== 0)
         ? allSessLastRaw
-        : (regLastRaw ?? allSessLastRaw ?? existing.last);
+        : (allSessLastRaw ?? existing.last);
     const extendedLastVal = allSessLastRaw ?? existing.extendedLast;
     const closeVal        = pick(FIELD.CLOSE) ?? existing.close;
 

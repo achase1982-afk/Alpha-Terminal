@@ -379,7 +379,6 @@ Be specific with strikes, expirations, and premium estimates. Use markdown forma
 
 // ── LIVE MARKET PULSE: Symbol definitions ─────────────────────────────────────
 
-const SCHWAB_API_BASE_PULSE = "https://api.schwabapi.com/marketdata/v1";
 
 interface PulseSymbol {
   display: string;
@@ -496,68 +495,6 @@ function readFromWebSocketCache(
   return { dataMap, displayToApi, hitCount };
 }
 
-async function fetchMacroPulseData(
-  accessToken: string,
-  userSymbols?: string[]
-): Promise<{ displayToApi: Map<string, string>; dataMap: Map<string, Record<string, unknown>> }> {
-  let pairs: Array<{ display: string; api: string }>;
-
-  if (userSymbols && userSymbols.length > 0) {
-    pairs = userSymbols.map(s => ({
-      display: s.toUpperCase().trim(),
-      api: symbolToSchwabApi(s),
-    }));
-  } else {
-    pairs = PULSE_SYMBOLS.map(s => ({ display: s.display, api: s.api }));
-  }
-
-  const symbolsParam = pairs.map(p => encodeURIComponent(p.api)).join(",");
-  const url = `${SCHWAB_API_BASE_PULSE}/quotes?symbols=${symbolsParam}&fields=quote,fundamental,reference`;
-
-  const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Schwab batch quote error: ${response.status} ${response.statusText}`);
-  }
-
-  const json = await response.json() as Record<string, unknown>;
-  const responseKeys = Object.keys(json);
-  const displayToApi = new Map<string, string>(pairs.map(p => [p.display, p.api]));
-  const dataMap = new Map<string, Record<string, unknown>>();
-
-  const jsonKeyMap = new Map<string, unknown>();
-  for (const k of responseKeys) {
-    jsonKeyMap.set(k, json[k]);
-    jsonKeyMap.set(k.toUpperCase(), json[k]);
-    const stripped = k.replace(/\/Q$/, '').replace(/^\$/, '');
-    jsonKeyMap.set(stripped, json[k]);
-    jsonKeyMap.set('$' + stripped, json[k]);
-  }
-
-  const breadthSymbols = new Set(["$TICK", "$TRIN", "$ADD", "$ADVN", "$DECN"]);
-  const missingBreadth: string[] = [];
-
-  for (const pair of pairs) {
-    const entry = (json[pair.api] ?? json[pair.display]
-      ?? jsonKeyMap.get(pair.api) ?? jsonKeyMap.get(pair.display)
-      ?? json[pair.api.replace(/^\$/, '')] ?? json[pair.display.replace(/^\$/, '')]) as Record<string, unknown> | undefined;
-    const q = entry?.["quote"] as Record<string, unknown> | undefined;
-    if (q) {
-      dataMap.set(pair.display, { ...q });
-    } else if (breadthSymbols.has(pair.display)) {
-      missingBreadth.push(pair.display);
-    }
-  }
-
-  if (missingBreadth.length > 0) {
-    const matchedKeys = responseKeys.filter(k => k.includes("TICK") || k.includes("TRIN") || k.includes("DECN") || k.includes("ADD") || k.includes("ADVN"));
-    console.warn(`[Market Pulse] Missing breadth symbols in REST response: ${missingBreadth.join(", ")}. Response keys containing breadth: ${matchedKeys.join(", ") || "NONE"}. All response keys (first 40): ${responseKeys.slice(0, 40).join(", ")}`);
-  }
-
-  return { displayToApi, dataMap };
-}
 
 function formatPulseSymbol(sym: PulseSymbol, data: Record<string, unknown> | undefined): string {
   if (!data) return `${sym.display}: NO DATA AVAILABLE`;
@@ -798,16 +735,12 @@ router.post("/market-briefing", async (req, res) => {
   try {
     const wsResult = readFromWebSocketCache(symbols);
     const expectedCount = symbols && symbols.length > 0 ? symbols.length : PULSE_SYMBOLS.length;
-    let dataMap: Map<string, Record<string, unknown>>;
-    if (wsResult.hitCount >= Math.floor(expectedCount * 0.5)) {
-      dataMap = wsResult.dataMap;
-      req.log.info({ source: "websocket", hits: wsResult.hitCount, expected: expectedCount }, "Pulse data from WebSocket cache");
-    } else {
-      const restResult = await fetchMacroPulseData(accessToken, symbols);
-      dataMap = restResult.dataMap;
-      req.log.info({ source: "rest_fallback", wsHits: wsResult.hitCount, expected: expectedCount }, "Pulse data from REST fallback (WS cache too sparse)");
+    const minRequired = Math.max(5, Math.ceil(expectedCount * 0.4));
+    req.log.info({ source: "websocket", hits: wsResult.hitCount, expected: expectedCount, minRequired }, "Pulse data from WebSocket cache");
+    if (wsResult.hitCount < minRequired) {
+      return res.json({ response: `**Waiting for WebSocket data.** Only ${wsResult.hitCount}/${expectedCount} symbols available (need ${minRequired}). Ensure the live streamer is connected.`, error: "insufficient_ws_data" });
     }
-    dataBlock = buildPulseDataBlock(dataMap, symbols && symbols.length > 0 ? symbols : undefined);
+    dataBlock = buildPulseDataBlock(wsResult.dataMap, symbols && symbols.length > 0 ? symbols : undefined);
   } catch (fetchErr: unknown) {
     const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
     req.log.error({ err: fetchErr }, "Macro pulse data fetch error");
@@ -904,16 +837,12 @@ router.post("/market-pulse", async (req, res) => {
   try {
     const wsResult = readFromWebSocketCache(symbols);
     const expectedCount = symbols && symbols.length > 0 ? symbols.length : PULSE_SYMBOLS.length;
-    let dataMap: Map<string, Record<string, unknown>>;
-    if (wsResult.hitCount >= Math.floor(expectedCount * 0.5)) {
-      dataMap = wsResult.dataMap;
-      req.log.info({ source: "websocket", hits: wsResult.hitCount, expected: expectedCount }, "Analysis data from WebSocket cache");
-    } else {
-      const restResult = await fetchMacroPulseData(accessToken, symbols);
-      dataMap = restResult.dataMap;
-      req.log.info({ source: "rest_fallback", wsHits: wsResult.hitCount, expected: expectedCount }, "Analysis data from REST fallback");
+    const minRequired = Math.max(5, Math.ceil(expectedCount * 0.4));
+    req.log.info({ source: "websocket", hits: wsResult.hitCount, expected: expectedCount, minRequired }, "Analysis data from WebSocket cache");
+    if (wsResult.hitCount < minRequired) {
+      return res.status(503).json({ error: `Insufficient WebSocket data: ${wsResult.hitCount}/${expectedCount} symbols (need ${minRequired}). Ensure the live streamer is connected.` });
     }
-    dataBlock = buildPulseDataBlock(dataMap, symbols && symbols.length > 0 ? symbols : undefined);
+    dataBlock = buildPulseDataBlock(wsResult.dataMap, symbols && symbols.length > 0 ? symbols : undefined);
   } catch (fetchErr: unknown) {
     const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
     req.log.error({ err: fetchErr }, "Market pulse data fetch error");
@@ -1091,14 +1020,15 @@ router.post("/market-pulse/stream", async (req, res) => {
   try {
     const wsResult = readFromWebSocketCache(symbols);
     const expectedCount = symbols && symbols.length > 0 ? symbols.length : PULSE_SYMBOLS.length;
-    if (wsResult.hitCount >= Math.floor(expectedCount * 0.5)) {
-      dataMap = wsResult.dataMap;
-      req.log.info({ source: "websocket", hits: wsResult.hitCount, expected: expectedCount }, "Pulse stream data from WebSocket cache");
-    } else {
-      const restResult = await fetchMacroPulseData(accessToken, symbols);
-      dataMap = restResult.dataMap;
-      req.log.info({ source: "rest_fallback", wsHits: wsResult.hitCount, expected: expectedCount }, "Pulse stream data from REST fallback");
+    const minRequired = Math.max(5, Math.ceil(expectedCount * 0.4));
+    req.log.info({ source: "websocket", hits: wsResult.hitCount, expected: expectedCount, minRequired }, "Pulse stream data from WebSocket cache");
+    if (wsResult.hitCount < minRequired) {
+      clearInterval(heartbeat);
+      res.write(`event: error\ndata: ${JSON.stringify({ type: "error", message: `Insufficient WebSocket data: ${wsResult.hitCount}/${expectedCount} symbols (need ${minRequired}). Ensure the live streamer is connected.` })}\n\n`);
+      res.end();
+      return;
     }
+    dataMap = wsResult.dataMap;
     dataBlock = buildPulseDataBlock(dataMap, symbols && symbols.length > 0 ? symbols : undefined);
     res.write(`event: thinking\ndata: ${JSON.stringify({ type: "thinking", text: "Market data loaded. Running scoring engine..." })}\n\n`);
     if (typeof (res as any).flush === "function") (res as any).flush();
