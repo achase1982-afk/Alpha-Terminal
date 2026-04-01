@@ -220,13 +220,14 @@ export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps)
           margin: 2px 3px;
         }
         .tab-slot-shift {
-          transition: transform 0.3s cubic-bezier(0.2, 0, 0, 1), opacity 0.2s ease;
+          transition: transform 0.5s cubic-bezier(0.25, 0.1, 0.25, 1), opacity 0.3s ease;
         }
         .tab-dragging {
           z-index: 50;
-          box-shadow: 0 8px 24px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,184,0,0.3);
+          border: 1px solid rgba(255,255,255,0.7) !important;
           border-radius: 8px;
           background: #2a2a2a;
+          box-shadow: 0 10px 30px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.2);
           animation: none !important;
         }
       `}</style>
