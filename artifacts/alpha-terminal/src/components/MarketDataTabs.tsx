@@ -18,8 +18,8 @@ interface MarketDataTabsProps {
 export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps) {
   return (
     <nav
-      className="sticky z-30 w-full bg-[#0c0c0c] border-b border-card-border/50 p-0 m-0"
-      style={{ top: "124px" }}
+      className="sticky z-30 w-full bg-[#1a1a1a] border-b border-card-border/50 p-0 m-0"
+      style={{ top: "164px" }}
     >
       <div className="flex w-full items-stretch p-0 border-t border-card-border/20">
         {tabs.map((tab) => (
@@ -29,7 +29,7 @@ export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps)
             className={`flex flex-1 items-center justify-center gap-2 py-2.5 transition-all border-b-2 ${
               activeTab === tab.id
                 ? "border-primary text-primary bg-primary/5"
-                : "border-transparent text-muted-foreground"
+                : "border-transparent text-white/80"
             }`}
           >
             {tab.icon}
