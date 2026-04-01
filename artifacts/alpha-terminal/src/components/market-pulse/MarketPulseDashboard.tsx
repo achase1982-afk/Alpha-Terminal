@@ -53,7 +53,7 @@ export interface MarketPulseDashboardHandle {
 }
 
 export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, MarketPulseDashboardProps>(function MarketPulseDashboard({ autoGenerate }, ref) {
-  const { accessToken, aiModel } = useTerminalStore();
+  const { accessToken, aiModel, aiTemp } = useTerminalStore();
   const {
     pulseData,
     isLoading,
@@ -88,7 +88,7 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
       accessToken,
       symbols: activeSymbols,
       model: aiModel,
-      temperature: 0,
+      temperature: aiTemp,
       previousBias: pulseData?.bias ?? undefined,
       preferences: {
         allowedStrategies: allowedList,

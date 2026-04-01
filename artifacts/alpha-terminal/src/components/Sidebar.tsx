@@ -483,33 +483,54 @@ function DisplayMarqueePage() {
   );
 }
 
+const ALL_MODELS = [
+  { id: "gemini-3.1-pro-preview", label: "GEMINI 3.1 PRO", badge: "LATEST" },
+  { id: "gemini-2.5-pro-preview-05-06", label: "GEMINI 2.5 PRO PREVIEW" },
+  { id: "gemini-2.5-pro", label: "GEMINI 2.5 PRO" },
+  { id: "gemini-2.5-flash", label: "GEMINI 2.5 FLASH" },
+  { id: "gemini-2.5-flash-lite-preview", label: "GEMINI 2.5 FLASH LITE" },
+  { id: "gemini-2.0-flash", label: "GEMINI 2.0 FLASH" },
+  { id: "gemini-2.0-flash-lite", label: "GEMINI 2.0 FLASH LITE" },
+];
+
 function AiParametersPage() {
   const { aiModel, setAiModel, aiTemp, setAiTemp } = useTerminalStore();
 
   return (
     <div className="space-y-6 max-w-xl mx-auto">
-      <div className="space-y-1.5">
+      <div className="space-y-2">
         <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
           <BrainCircuit className="w-3 h-3" /> Model
         </Label>
-        <Select value={aiModel} onValueChange={setAiModel}>
-          <SelectTrigger className="font-mono text-[10px] bg-card border-card-border h-8 focus:ring-primary/50">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent className="bg-card border-card-border font-mono text-[10px]">
-            {[
-              "gemini-3.1-pro-preview",
-              "gemini-2.5-pro-preview-05-06",
-              "gemini-2.5-pro",
-              "gemini-2.5-flash",
-              "gemini-2.5-flash-lite-preview",
-              "gemini-2.0-flash",
-              "gemini-2.0-flash-lite",
-            ].map((m) => (
-              <SelectItem key={m} value={m} className="text-[10px]">{m.toUpperCase()}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="space-y-1">
+          {ALL_MODELS.map((m) => {
+            const active = aiModel === m.id;
+            return (
+              <button
+                key={m.id}
+                onClick={() => setAiModel(m.id)}
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg border font-mono text-[10px] tracking-wide transition-all cursor-pointer ${
+                  active
+                    ? "border-primary/60 bg-primary/10 text-primary"
+                    : "border-card-border bg-card text-zinc-400 active:bg-zinc-800"
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  <span className={`w-2 h-2 rounded-full ${active ? "bg-primary" : "bg-zinc-700"}`} />
+                  {m.label}
+                </span>
+                {m.badge && (
+                  <span className="text-[8px] font-bold tracking-widest px-1.5 py-0.5 rounded bg-primary/20 text-primary">
+                    {m.badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        <p className="font-mono text-[9px] text-zinc-600 mt-1">
+          Active: {aiModel}
+        </p>
       </div>
 
       <div className="space-y-2">

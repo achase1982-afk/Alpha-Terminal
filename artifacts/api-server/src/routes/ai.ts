@@ -1172,7 +1172,7 @@ Write ONLY the narrative fields. Return this exact JSON structure:
     const responseBuffer = await nativeStreamGemini({
       prompt: narrativePrompt,
       modelName: model ?? "gemini-3.1-pro-preview",
-      temperature: 0,
+      temperature: temperature ?? 0,
       thinkingBudget: 4096,
       onThinking: (text) => {
         res.write(`event: thinking\ndata: ${JSON.stringify({ type: "thinking", text })}\n\n`);
@@ -1406,11 +1406,12 @@ router.post("/options-strategist", async (req, res) => {
 });
 
 router.post("/options-strategist/stream", async (req, res) => {
-  const { symbol, accessToken, todayEdge, model } = req.body as {
+  const { symbol, accessToken, todayEdge, model, temperature } = req.body as {
     symbol?: string;
     accessToken?: string;
     todayEdge?: string;
     model?: string;
+    temperature?: number;
   };
 
   if (!symbol || !accessToken) {
@@ -1536,7 +1537,7 @@ router.post("/options-strategist/stream", async (req, res) => {
       await nativeStreamGemini({
         prompt: narrativePrompt,
         modelName: model ?? "gemini-3.1-pro-preview",
-        temperature: 0.2,
+        temperature: temperature ?? 0.2,
         thinkingBudget: 2048,
         onThinking: (text) => {
           res.write(`data: ${JSON.stringify({ reasoning: text })}\n\n`);

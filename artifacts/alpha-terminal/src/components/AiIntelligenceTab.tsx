@@ -799,6 +799,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef }: AiIn
           symbol,
           accessToken,
           model: aiModel,
+          temperature: aiTemp,
           todayEdge: stratBias === "auto" ? undefined : stratBias === "bullish" ? "BULLISH_EDGE" : stratBias === "bearish" ? "BEARISH_EDGE" : "NEUTRAL_EDGE",
         }),
       });
