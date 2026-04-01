@@ -163,6 +163,9 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
   const bidSizeStr = quote?.bidSize != null ? String(Math.round(quote.bidSize)) : null;
   const askSizeStr = quote?.askSize != null ? String(Math.round(quote.askSize)) : null;
 
+  const symbolMatches = quote?.symbol?.toUpperCase() === symbol.toUpperCase();
+  const showData = !!quote && symbolMatches;
+
   const handleInitiateTrade = (side: 'buy' | 'sell') => {
     console.log(`[Trade] ${side.toUpperCase()} initiated for ${quote?.symbol} — bid: ${quote?.bid}, ask: ${quote?.ask}`);
   };
@@ -170,25 +173,28 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
   if (compact) {
     return (
       <div
-        className="w-full border-b border-card-border flex items-center justify-end px-3 sm:px-4 gap-2"
+        className="w-full border-b border-card-border flex items-center px-3 sm:px-4 gap-3 sm:gap-4 overflow-x-auto"
         style={{ background: HEADER_BG, height: 36 }}
       >
-        {showData && hasBidAsk ? (
+        {quote ? (
           <>
-            <button
-              onClick={() => handleInitiateTrade('sell')}
-              className="h-7 w-14 bg-red-950/40 border border-red-500/50 rounded flex items-center justify-center cursor-pointer transition-colors active:bg-red-800/70 trade-btn-sell"
-              aria-label={`Sell ${quote?.symbol} at ${bidStr}`}
-            >
-              <span className="text-[8px] uppercase font-bold tracking-widest text-white leading-none">SELL</span>
+            <button onClick={onOpenTearSheet} className="font-semibold text-white text-sm tracking-wide shrink-0 hover:text-primary transition-colors cursor-pointer">
+              {quote.symbol}
             </button>
-            <button
-              onClick={() => handleInitiateTrade('buy')}
-              className="h-7 w-14 bg-emerald-950/40 border border-emerald-500/50 rounded flex items-center justify-center cursor-pointer transition-colors active:bg-emerald-800/70 trade-btn-buy"
-              aria-label={`Buy ${quote?.symbol} at ${askStr}`}
-            >
-              <span className="text-[8px] uppercase font-bold tracking-widest text-white leading-none">BUY</span>
-            </button>
+            <span className="tabular-nums shrink-0" style={{ fontSize: '0.95rem', fontWeight: 300, color: tickColor }}>
+              {lastStr}
+            </span>
+            <span className="tabular-nums shrink-0 whitespace-nowrap" style={{ fontSize: '0.75rem', fontWeight: 300, color: priceColor }}>
+              {changeStr}&nbsp;{changePctStr}
+            </span>
+            {hasBidAsk && (
+              <>
+                <span className="text-zinc-700 shrink-0">|</span>
+                <span className="tabular-nums text-zinc-400 shrink-0 whitespace-nowrap" style={{ fontSize: '0.75rem', fontWeight: 400 }}>
+                  {bidStr}<span className="text-zinc-700 mx-0.5">/</span>{askStr}
+                </span>
+              </>
+            )}
           </>
         ) : (
           <Skeleton className="h-4 w-48 bg-zinc-800" />
@@ -197,8 +203,6 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
     );
   }
 
-  const symbolMatches = quote?.symbol?.toUpperCase() === symbol.toUpperCase();
-  const showData = !!quote && symbolMatches;
   const opacityCls = fadeIn && showData ? "opacity-100" : "opacity-0";
   const transitionCls = "transition-opacity duration-150 ease-in-out";
 
