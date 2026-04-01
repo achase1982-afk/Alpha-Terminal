@@ -19,7 +19,7 @@ export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps)
   return (
     <nav
       className="sticky z-30 w-full bg-[#1a1a1a] border-b border-card-border/50 p-0 m-0"
-      style={{ top: "164px" }}
+      style={{ top: "80px" }}
     >
       <div className="flex w-full items-stretch p-0 border-t border-card-border/20">
         {tabs.map((tab) => (
