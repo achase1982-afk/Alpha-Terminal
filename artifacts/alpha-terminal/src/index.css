@@ -210,21 +210,31 @@
   }
 
   .price-flash-up {
-    animation: flash-up 0.6s ease-out;
+    animation: flash-up-green 0.8s cubic-bezier(0.4, 0, 0.2, 1);
   }
   .price-flash-down {
-    animation: flash-down 0.6s ease-out;
+    animation: flash-down-red 0.8s cubic-bezier(0.4, 0, 0.2, 1);
   }
-}
 
-@keyframes flash-up {
-  0%   { color: #00d166; text-shadow: 0 0 8px rgba(0, 209, 102, 0.6); }
-  100% { text-shadow: none; }
-}
+  @keyframes flash-up-green {
+    0% { background-color: rgba(0, 209, 102, 0.4); color: #fff; }
+    100% { background-color: transparent; }
+  }
 
-@keyframes flash-down {
-  0%   { color: #f23645; text-shadow: 0 0 8px rgba(242, 54, 69, 0.6); }
-  100% { text-shadow: none; }
+  @keyframes flash-down-red {
+    0% { background-color: rgba(242, 54, 69, 0.4); color: #fff; }
+    100% { background-color: transparent; }
+  }
+
+  .jiggle {
+    animation: jiggle-kb 0.3s infinite ease-in-out;
+  }
+
+  @keyframes jiggle-kb {
+    0% { transform: rotate(-1deg); }
+    50% { transform: rotate(1.5deg); }
+    100% { transform: rotate(-1deg); }
+  }
 }
 
 .trade-btn-sell:hover {
