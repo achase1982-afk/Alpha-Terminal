@@ -310,6 +310,79 @@ function RealStrategyCard({ s, idx, preTradeResult }: { s: StrategyPayload; idx:
   );
 }
 
+function StrategistLoadingReasoning({ status, thinkingTokens }: { status: string; thinkingTokens: string[] }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [thinkingTokens]);
+
+  const stages = [
+    { key: "pulse", label: "RUNNING MARKET PULSE ENGINE" },
+    { key: "regime", label: "CLASSIFYING REGIME & SCANNING CHAIN" },
+    { key: "ai", label: "GEMINI AI REASONING" },
+  ];
+
+  const currentIdx = status.toLowerCase().includes("regime") || status.toLowerCase().includes("chain") ? 1
+    : status.toLowerCase().includes("thesis") || thinkingTokens.length > 0 ? 2
+    : 0;
+
+  return (
+    <div
+      className="rounded-xl border overflow-hidden"
+      style={{ background: "#111113", borderColor: "rgba(255,184,0,0.3)" }}
+    >
+      <div className="px-4 py-3 space-y-1.5">
+        {stages.map((s, i) => (
+          <div key={s.key} className="flex items-center gap-2">
+            <div
+              className="w-2 h-2 rounded-full shrink-0"
+              style={{
+                background: i < currentIdx ? "#00d166" : i === currentIdx ? "#FFB800" : "#2A2A2C",
+                boxShadow: i === currentIdx ? "0 0 6px rgba(255,184,0,0.5)" : "none",
+              }}
+            />
+            <span
+              className="font-mono text-[10px] tracking-wider"
+              style={{
+                color: i < currentIdx ? "#00d166" : i === currentIdx ? "#FFB800" : "#52525b",
+                fontWeight: i === currentIdx ? 700 : 400,
+              }}
+            >
+              {s.label}
+            </span>
+            {i < currentIdx && <span className="font-mono text-[9px] text-[#00d166]">✓</span>}
+          </div>
+        ))}
+      </div>
+
+      <div className="px-4 py-3 border-t border-[#2A2A2C] space-y-1.5">
+        <div className="flex items-center gap-1.5">
+          <span className="relative flex h-2 w-2 shrink-0">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+          </span>
+          <span className="font-mono text-[10px] text-emerald-500 uppercase tracking-widest font-bold">AI Reasoning</span>
+        </div>
+        <div
+          ref={scrollRef}
+          className="max-h-[140px] overflow-y-auto border-l-2 border-emerald-500/30 pl-2.5"
+          style={{ scrollBehavior: "smooth" }}
+        >
+          <span className="font-mono text-[10px] text-[#a1a1aa] leading-relaxed whitespace-pre-wrap">
+            {thinkingTokens.length === 0 ? (
+              <span className="text-[#52525b]">Waiting for AI reasoning...</span>
+            ) : (
+              thinkingTokens.join("")
+            )}
+            <span className="inline-block w-1 h-3 bg-emerald-500 ml-0.5 animate-pulse" />
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function StrategistResultView({ strategies, narrative, isStreaming, streamingText, regime, pulse, overrideWarning, preTradeResults }: {
   strategies: StrategyPayload[];
   narrative: string;
@@ -1003,34 +1076,37 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef }: AiIn
 
             {activeResult === "strategist" && (
               <div className="border-t border-card-border p-4 bg-[#0c0c0c]">
-                {isStrategizing ? (
-                  <div className="flex items-center gap-3 py-4">
-                    <span className="w-4 h-4 border-2 border-[#FFB800] border-t-transparent rounded-full animate-spin" />
-                    <span className="font-mono text-xs text-[#a1a1aa]">{strategistStatus || "Processing..."}</span>
+                {isStrategizing && (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-3 py-2">
+                      <span className="w-4 h-4 border-2 border-[#FFB800] border-t-transparent rounded-full animate-spin" />
+                      <span className="font-mono text-xs text-[#a1a1aa]">{strategistStatus || "Processing..."}</span>
+                    </div>
+                    <StrategistLoadingReasoning status={strategistStatus} thinkingTokens={thinkingTokens} />
                   </div>
-                ) : hasRealStrategies ? (
+                )}
+                {!isStrategizing && (isStreaming || hasRealStrategies) && (
                   <>
-                    {thinkingTokens.length > 0 && (
-                      <div className="mb-3">
-                        <AiThinkingFeed texts={thinkingTokens} isStreaming={isStreaming} />
-                      </div>
+                    <div className="mb-3">
+                      <AiThinkingFeed texts={thinkingTokens} isStreaming={isStreaming} />
+                    </div>
+                    {hasRealStrategies && (
+                      <StrategistResultView
+                        strategies={realStrategies}
+                        narrative={narrativeText}
+                        isStreaming={isStreaming}
+                        streamingText={streamingText}
+                        regime={regimeInfo}
+                        pulse={pulseSnapshot}
+                        overrideWarning={overrideWarning}
+                        preTradeResults={preTradeResults}
+                      />
                     )}
-                    <StrategistResultView
-                      strategies={realStrategies}
-                      narrative={narrativeText}
-                      isStreaming={isStreaming}
-                      streamingText={streamingText}
-                      regime={regimeInfo}
-                      pulse={pulseSnapshot}
-                      overrideWarning={overrideWarning}
-                      preTradeResults={preTradeResults}
-                    />
                   </>
-                ) : currentResult && currentResult !== "done" ? (
+                )}
+                {!isStrategizing && !isStreaming && !hasRealStrategies && currentResult && currentResult !== "done" && (
                   <MarkdownResult content={currentResult} />
-                ) : isStreaming ? (
-                  <AiThinkingFeed texts={thinkingTokens} isStreaming={true} />
-                ) : null}
+                )}
               </div>
             )}
           </div>
