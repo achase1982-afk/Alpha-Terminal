@@ -1042,7 +1042,20 @@ router.post("/market-pulse/stream", async (req, res) => {
   }
 
   const indicators = extractMarketIndicators(dataMap);
+  req.log.info({
+    breadthData: { tick: indicators.tick, trin: indicators.trin, add: indicators.add, advn: indicators.advn, decn: indicators.decn },
+    volTermData: { vix: indicators.vix, vix9d: indicators.vix9d, vix3m: indicators.vix3m, skew: indicators.skew },
+  }, "Market pulse engine input (breadth + volTerm)");
   const engineResult = runMarketPulseEngine(indicators, previousBias);
+  req.log.info({
+    breadthScore: engineResult.clusters.breadth.score,
+    breadthRules: engineResult.clusters.breadth.rulesApplied,
+    volTermScore: engineResult.clusters.volTerm.score,
+    volTermRules: engineResult.clusters.volTerm.rulesApplied,
+    composite: engineResult.compositeScore,
+    confidence: engineResult.confidenceScore,
+    bias: engineResult.bias,
+  }, "Market pulse engine output (breadth + volTerm scores)");
 
   const spyRaw = dataMap.get("SPY");
   const spyChangePct: number | null = typeof spyRaw?.netPercentChange === "number" ? spyRaw.netPercentChange : null;

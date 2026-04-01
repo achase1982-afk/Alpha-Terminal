@@ -354,98 +354,149 @@ function scoreVolLevel(data: MarketIndicators): ClusterResult {
 }
 
 // ---------- CLUSTER 4: VOL TERM (Weight 10) ----------
+// Scored on RATIOS: VIX9D/VIX, VIX/VIX3M, and absolute SKEW level.
+// Never uses percent-change fields.
+// Final score = AVERAGE of available component scores, clamped to [-2.0, +2.0].
 
 function scoreVolTerm(data: MarketIndicators): ClusterResult {
-  let score = 0;
   const rules: string[] = [];
   const points: string[] = [];
+  const componentScores: number[] = [];
 
   const vixQ = checkDataQuality(data.vix);
   const vix9dQ = checkDataQuality(data.vix9d);
+  const vix3mQ = checkDataQuality(data.vix3m);
 
-  if (vixQ === 'MISSING' || (vix9dQ === 'MISSING' && checkDataQuality(data.vix3m) === 'MISSING')) {
+  if (vixQ === 'MISSING' || (vix9dQ === 'MISSING' && vix3mQ === 'MISSING')) {
     return { score: 0, dataQuality: 'MISSING', direction: 'FLAT', headline: 'Term structure data unavailable', keyDataPoints: [], rulesApplied: ['Insufficient term structure data'] };
   }
 
-  if (data.vix9d !== null && data.vix !== null) {
-    if (data.vix9d < data.vix) { score += 1.0; rules.push('VIX9D < VIX (contango): +1.0'); }
-    else if (data.vix9d > data.vix * 1.05) { score -= 1.0; rules.push('VIX9D > VIX (backwardation): -1.0'); }
-    points.push(`$VIX9D ${data.vix9d.toFixed(2)} vs $VIX ${data.vix.toFixed(2)}`);
+  if (data.vix9d !== null && data.vix !== null && data.vix > 0) {
+    const ratio9d = data.vix9d / data.vix;
+    let s = 0;
+    if (ratio9d < 0.90)       { s = 1.5; rules.push(`VIX9D/VIX ${ratio9d.toFixed(3)} (<0.90 short-term vol collapsing, bullish): +1.5`); }
+    else if (ratio9d < 0.95)  { s = 1.0; rules.push(`VIX9D/VIX ${ratio9d.toFixed(3)} (0.90-0.95 mild contango, bullish): +1.0`); }
+    else if (ratio9d <= 1.05) { s = 0; rules.push(`VIX9D/VIX ${ratio9d.toFixed(3)} (0.95-1.05 flat, neutral): 0`); }
+    else if (ratio9d <= 1.10) { s = -1.0; rules.push(`VIX9D/VIX ${ratio9d.toFixed(3)} (1.05-1.10 mild backwardation, bearish): -1.0`); }
+    else                      { s = -1.5; rules.push(`VIX9D/VIX ${ratio9d.toFixed(3)} (>1.10 steep backwardation, strongly bearish): -1.5`); }
+    componentScores.push(s);
+    points.push(`$VIX9D ${data.vix9d.toFixed(2)} / $VIX ${data.vix.toFixed(2)} = ${ratio9d.toFixed(3)}`);
+  }
+
+  if (data.vix3m !== null && data.vix !== null && data.vix3m > 0) {
+    const ratioVixVs3m = data.vix / data.vix3m;
+    let s = 0;
+    if (ratioVixVs3m < 0.85)       { s = 1.5; rules.push(`VIX/VIX3M ${ratioVixVs3m.toFixed(3)} (<0.85 steep contango, bullish): +1.5`); }
+    else if (ratioVixVs3m < 0.95)  { s = 1.0; rules.push(`VIX/VIX3M ${ratioVixVs3m.toFixed(3)} (0.85-0.95 contango, bullish): +1.0`); }
+    else if (ratioVixVs3m <= 1.05) { s = 0; rules.push(`VIX/VIX3M ${ratioVixVs3m.toFixed(3)} (0.95-1.05 flat, neutral): 0`); }
+    else if (ratioVixVs3m <= 1.15) { s = -1.0; rules.push(`VIX/VIX3M ${ratioVixVs3m.toFixed(3)} (1.05-1.15 mild backwardation): -1.0`); }
+    else                           { s = -1.5; rules.push(`VIX/VIX3M ${ratioVixVs3m.toFixed(3)} (>1.15 steep backwardation, bearish): -1.5`); }
+    componentScores.push(s);
+    points.push(`$VIX ${data.vix.toFixed(2)} / $VIX3M ${data.vix3m.toFixed(2)} = ${ratioVixVs3m.toFixed(3)}`);
   }
 
   if (data.skew !== null) {
-    if (data.skew > 150) { score -= 1.0; rules.push(`SKEW ${data.skew.toFixed(2)} (>150 extreme tail risk): -1.0`); }
-    else if (data.skew > 140) { score -= 0.5; rules.push(`SKEW ${data.skew.toFixed(2)} (140-150 elevated tail risk): -0.5`); }
-    else if (data.skew < 110) { score += 0.25; rules.push(`SKEW ${data.skew.toFixed(2)} (<110 low tail demand): +0.25`); }
+    let s = 0;
+    if (data.skew > 150)       { s = -1.0; rules.push(`SKEW ${data.skew.toFixed(2)} (>150 elevated tail hedging): -1.0`); }
+    else if (data.skew >= 130) { s = 0; rules.push(`SKEW ${data.skew.toFixed(2)} (130-150 normal): 0`); }
+    else if (data.skew >= 110) { s = 0.5; rules.push(`SKEW ${data.skew.toFixed(2)} (110-130 low tail demand, mildly bullish): +0.5`); }
+    else                       { s = 1.0; rules.push(`SKEW ${data.skew.toFixed(2)} (<110 very low tail demand, bullish): +1.0`); }
+    componentScores.push(s);
     points.push(`$SKEW ${data.skew.toFixed(2)}`);
   }
 
-  if (data.vix3m !== null) {
-    points.push(`$VIX3M ${data.vix3m.toFixed(2)}`);
-  }
+  const avg = componentScores.length > 0
+    ? componentScores.reduce((a, b) => a + b, 0) / componentScores.length
+    : 0;
+  rules.push(`VolTerm avg of ${componentScores.length} components: ${avg.toFixed(3)}`);
 
-  const finalScore = clamp(score, -2.0, 2.0);
+  const finalScore = clamp(avg, -2.0, 2.0);
   const direction: Direction = finalScore > 0.25 ? 'CONTANGO' : finalScore < -0.25 ? 'INVERTED' : 'FLAT';
 
   let headline = '';
-  if (finalScore >= 1.0) headline = 'Term structure healthy, no near-term panic';
-  else if (finalScore >= 0.25) headline = 'Term structure mostly normal';
+  if (finalScore >= 1.0) headline = 'Term structure healthy contango, no near-term panic';
+  else if (finalScore >= 0.25) headline = 'Term structure mostly normal, mild contango';
   else if (finalScore <= -1.0) headline = 'Term structure inverted, hedging demand elevated';
-  else if (finalScore <= -0.25) headline = 'Term structure showing caution';
+  else if (finalScore <= -0.25) headline = 'Term structure showing caution, backwardation forming';
   else headline = 'Term structure flat, inconclusive';
 
-  return { score: finalScore, dataQuality: vix9dQ === 'MISSING' ? 'STALE' : vix9dQ, direction, headline, keyDataPoints: points, rulesApplied: rules };
+  const dq = vix9dQ !== 'MISSING' ? vix9dQ : vix3mQ !== 'MISSING' ? vix3mQ : 'STALE';
+  return { score: finalScore, dataQuality: dq, direction, headline, keyDataPoints: points, rulesApplied: rules };
 }
 
 // ---------- CLUSTER 5: BREADTH (Weight 15) ----------
+// All five breadth indicators (TICK, TRIN, ADD, ADVN, DECN) are scored on
+// ABSOLUTE values only. Percent-change is never used for breadth.
+// Final score = AVERAGE of 4 component scores (TICK, TRIN, ADD, ADVN/DECN ratio),
+// clamped to [-2.0, +2.0].
 
 function scoreBreadth(data: MarketIndicators): ClusterResult {
-  let score = 0;
   const rules: string[] = [];
   const points: string[] = [];
+  const componentScores: number[] = [];
 
-  const hasAny = data.advn !== null || data.decn !== null || data.tick !== null || data.trin !== null;
+  const hasAny = data.advn !== null || data.decn !== null || data.tick !== null || data.trin !== null || data.add !== null;
   if (!hasAny) {
     return { score: 0, dataQuality: 'MISSING', direction: 'FLAT', headline: 'Breadth data unavailable', keyDataPoints: [], rulesApplied: ['All breadth data missing'] };
   }
 
-  if (data.advn !== null && data.decn !== null && data.decn > 0) {
-    const adRatio = data.advn / data.decn;
-    if (adRatio > 3) { score += 2.0; rules.push(`AD ratio ${adRatio.toFixed(2)} (>3): +2.0`); }
-    else if (adRatio > 2) { score += 1.5; rules.push(`AD ratio ${adRatio.toFixed(2)} (2-3): +1.5`); }
-    else if (adRatio > 1.5) { score += 0.75; rules.push(`AD ratio ${adRatio.toFixed(2)} (1.5-2): +0.75`); }
-    else if (adRatio < 0.33) { score -= 2.0; rules.push(`AD ratio ${adRatio.toFixed(2)} (<0.33): -2.0`); }
-    else if (adRatio < 0.5) { score -= 1.5; rules.push(`AD ratio ${adRatio.toFixed(2)} (0.33-0.5): -1.5`); }
-    else if (adRatio < 0.67) { score -= 0.75; rules.push(`AD ratio ${adRatio.toFixed(2)} (0.5-0.67): -0.75`); }
-    points.push(`$ADVN ${data.advn}`, `$DECN ${data.decn}`);
+  if (data.tick !== null) {
+    const t = data.tick;
+    let s = 0;
+    if (t > 1000)      { s = 2.0; rules.push(`TICK ${t} (>1000): +2.0`); }
+    else if (t > 600)  { s = 1.0; rules.push(`TICK ${t} (600-1000): +1.0`); }
+    else if (t > 200)  { s = 0.5; rules.push(`TICK ${t} (200-600): +0.5`); }
+    else if (t < -1000){ s = -2.0; rules.push(`TICK ${t} (<-1000): -2.0`); }
+    else if (t < -600) { s = -1.0; rules.push(`TICK ${t} (-1000 to -600): -1.0`); }
+    else if (t < -200) { s = -0.5; rules.push(`TICK ${t} (-600 to -200): -0.5`); }
+    else               { s = 0; rules.push(`TICK ${t} (-200 to 200 neutral): 0`); }
+    componentScores.push(s);
+    points.push(`$TICK ${t}`);
   }
 
   if (data.trin !== null) {
-    if (data.trin < 0.5) { score += 1.0; rules.push(`TRIN ${data.trin.toFixed(4)} (<0.5 strongly bullish vol breadth): +1.0`); }
-    else if (data.trin < 1.0) { score += 0.5; rules.push(`TRIN ${data.trin.toFixed(4)} (0.5-1.0 bullish vol breadth): +0.5`); }
-    else if (data.trin >= 1.5 && data.trin < 2.0) { score -= 0.5; rules.push(`TRIN ${data.trin.toFixed(4)} (1.5-2.0 mildly bearish): -0.5`); }
-    else if (data.trin >= 2.0 && data.trin < 2.5) { score -= 1.0; rules.push(`TRIN ${data.trin.toFixed(4)} (2.0-2.5 bearish): -1.0`); }
-    else if (data.trin >= 2.5 && data.trin < 3.0) { score -= 1.5; rules.push(`TRIN ${data.trin.toFixed(4)} (2.5-3.0 very bearish): -1.5`); }
-    else if (data.trin >= 3.0) { score -= 2.0; rules.push(`TRIN ${data.trin.toFixed(4)} (>=3.0 extreme bearish): -2.0`); }
-    points.push(`$TRIN ${data.trin.toFixed(4)}`);
-  }
-
-  if (data.trin !== null && data.trin >= 3.0 && score > 0) {
-    score = 0;
-    rules.push('TRIN >=3.0 cluster cap: score clamped to 0');
-  }
-
-  if (data.tick !== null) {
-    if (data.tick > 500) { score += 0.5; rules.push(`TICK ${data.tick} (>500): +0.5`); }
-    else if (data.tick < -500) { score -= 0.5; rules.push(`TICK ${data.tick} (<-500): -0.5`); }
-    points.push(`$TICK ${data.tick}`);
+    const tr = data.trin;
+    let s = 0;
+    if (tr < 0.8)      { s = 2.0; rules.push(`TRIN ${tr.toFixed(4)} (<0.80 strongly bullish): +2.0`); }
+    else if (tr < 1.0) { s = 1.0; rules.push(`TRIN ${tr.toFixed(4)} (0.80-1.00 bullish): +1.0`); }
+    else if (tr <= 1.2){ s = -1.0; rules.push(`TRIN ${tr.toFixed(4)} (1.00-1.20 bearish): -1.0`); }
+    else               { s = -2.0; rules.push(`TRIN ${tr.toFixed(4)} (>1.20 strongly bearish): -2.0`); }
+    componentScores.push(s);
+    points.push(`$TRIN ${tr.toFixed(4)}`);
   }
 
   if (data.add !== null) {
-    points.push(`$ADD ${data.add}`);
+    const a = data.add;
+    let s = 0;
+    if (a > 1000)        { s = 2.0; rules.push(`ADD ${a} (>1000): +2.0`); }
+    else if (a > 500)    { s = 1.0; rules.push(`ADD ${a} (500-1000): +1.0`); }
+    else if (a > 0)      { s = 0.5; rules.push(`ADD ${a} (0-500): +0.5`); }
+    else if (a >= 0)     { s = 0; rules.push(`ADD ${a} (=0 neutral): 0`); }
+    else if (a >= -500)  { s = -0.5; rules.push(`ADD ${a} (-500 to 0): -0.5`); }
+    else if (a >= -1000) { s = -1.0; rules.push(`ADD ${a} (-1000 to -500): -1.0`); }
+    else                 { s = -2.0; rules.push(`ADD ${a} (<-1000): -2.0`); }
+    componentScores.push(s);
+    points.push(`$ADD ${a}`);
   }
 
-  const finalScore = clamp(score, -3.0, 3.0);
+  if (data.advn !== null && data.decn !== null && data.decn > 0) {
+    const adRatio = data.advn / data.decn;
+    let s = 0;
+    if (adRatio > 3.0)      { s = 2.0; rules.push(`ADVN/DECN ${adRatio.toFixed(2)} (>3.0 strongly bullish): +2.0`); }
+    else if (adRatio > 2.0) { s = 1.0; rules.push(`ADVN/DECN ${adRatio.toFixed(2)} (2.0-3.0 bullish): +1.0`); }
+    else if (adRatio >= 0.5){ s = 0; rules.push(`ADVN/DECN ${adRatio.toFixed(2)} (0.5-2.0 neutral): 0`); }
+    else if (adRatio >= 0.33){ s = -1.0; rules.push(`ADVN/DECN ${adRatio.toFixed(2)} (0.33-0.5 bearish): -1.0`); }
+    else                    { s = -2.0; rules.push(`ADVN/DECN ${adRatio.toFixed(2)} (<0.33 strongly bearish): -2.0`); }
+    componentScores.push(s);
+    points.push(`$ADVN ${data.advn}`, `$DECN ${data.decn}`);
+  }
+
+  const avg = componentScores.length > 0
+    ? componentScores.reduce((a, b) => a + b, 0) / componentScores.length
+    : 0;
+  rules.push(`Breadth avg of ${componentScores.length} components: ${avg.toFixed(3)}`);
+
+  const finalScore = clamp(avg, -2.0, 2.0);
   const direction: Direction = finalScore > 0.25 ? 'POSITIVE' : finalScore < -0.25 ? 'NEGATIVE' : 'FLAT';
 
   const freshCount = [data.advn, data.decn, data.tick, data.trin, data.add].filter(v => v !== null).length;
@@ -579,16 +630,25 @@ function calculateComposite(clusters: Record<ClusterName, ClusterResult>): numbe
 }
 
 function calculateConfidence(clusters: Record<ClusterName, ClusterResult>, composite: number): number {
-  let confidence = Math.min(100, Math.round(Math.abs(composite) * 40));
+  const rawConfidence = Math.min(100, Math.round(Math.abs(composite) * 40));
 
   const scores = Object.values(clusters).map(c => c.score);
   const positiveCount = scores.filter(s => s > 0).length;
   const negativeCount = scores.filter(s => s < 0).length;
   const disagreementPairs = Math.min(positiveCount, negativeCount);
-  const disagreementPenalty = disagreementPairs * 10;
-  confidence = Math.max(0, confidence - disagreementPenalty);
 
-  return confidence;
+  const missingCount = Object.values(clusters).filter(c => c.dataQuality === 'MISSING').length;
+  const staleCount = Object.values(clusters).filter(c => c.dataQuality === 'STALE').length;
+
+  let penaltyMultiplier = 1.0;
+  penaltyMultiplier *= Math.max(0.7, 1.0 - disagreementPairs * 0.1);
+  penaltyMultiplier *= Math.max(0.8, 1.0 - missingCount * 0.15);
+  penaltyMultiplier *= Math.max(0.9, 1.0 - staleCount * 0.05);
+
+  penaltyMultiplier = Math.max(0.3, penaltyMultiplier);
+
+  const confidence = Math.round(rawConfidence * penaltyMultiplier);
+  return Math.max(0, Math.min(100, confidence));
 }
 
 function determineBias(composite: number, confidence: number): BiasLabel {
@@ -603,15 +663,15 @@ function determineBias(composite: number, confidence: number): BiasLabel {
 }
 
 function determineTodayEdge(composite: number, confidence: number): TodayEdge {
-  if (confidence < 40) return 'NO_EDGE';
+  if (confidence < 25) return 'NO_EDGE';
   if (composite > 0.5) return 'BULLISH_EDGE';
   if (composite < -0.5) return 'BEARISH_EDGE';
   return 'NEUTRAL_EDGE';
 }
 
 function determineSizeRecommendation(confidence: number): SizeRecommendation {
-  if (confidence < 40) return 'NO_TRADE';
-  if (confidence < 60) return 'HALF_SIZE';
+  if (confidence < 25) return 'NO_TRADE';
+  if (confidence < 50) return 'HALF_SIZE';
   return 'FULL_SIZE';
 }
 
@@ -637,7 +697,7 @@ function determineRegime(clusters: Record<ClusterName, ClusterResult>, composite
 }
 
 function determineRiskState(composite: number, confidence: number, hasDivergence: boolean): { state: RiskState; reason: string } {
-  if (confidence < 40) return { state: 'NO_TRADE', reason: 'Insufficient data or confidence for positioning' };
+  if (confidence < 25) return { state: 'NO_TRADE', reason: 'Insufficient data or confidence for positioning' };
   if (hasDivergence) return { state: 'REDUCED', reason: 'Cross-asset divergence warrants reduced exposure' };
   if (Math.abs(composite) >= 1.0 && confidence >= 70) return { state: 'PRESS', reason: 'Strong aligned signals with high confidence support full positioning' };
   if (Math.abs(composite) >= 0.5) return { state: 'NORMAL', reason: 'Moderate signal strength supports standard positioning' };
@@ -699,7 +759,7 @@ export function runMarketPulseEngine(
   const compositeScore = calculateComposite(clusters);
   const confidenceScore = calculateConfidence(clusters, compositeScore);
 
-  const bias: BiasLabel = confidenceScore < 40 ? 'NO_EDGE' : determineBias(compositeScore, confidenceScore);
+  const bias: BiasLabel = confidenceScore < 25 ? 'NO_EDGE' : determineBias(compositeScore, confidenceScore);
   const todayEdge = determineTodayEdge(compositeScore, confidenceScore);
   const sizeRecommendation = determineSizeRecommendation(confidenceScore);
   const divergence = detectDivergence(clusters);
