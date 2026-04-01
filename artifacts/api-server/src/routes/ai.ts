@@ -61,6 +61,7 @@ async function nativeStreamGemini(opts: NativeStreamOptions): Promise<string> {
     if (!candidates || candidates.length === 0) continue;
 
     for (const part of candidates[0].content?.parts ?? []) {
+      console.log("[GEMINI-PART-DEBUG]", JSON.stringify(Object.keys(part)), JSON.stringify(part).slice(0, 200));
       if (((part as any).thought === true || (part as any).type === "thinking") && (part as any).text) {
         onThinking?.((part as any).text);
       } else if (part.text) {
