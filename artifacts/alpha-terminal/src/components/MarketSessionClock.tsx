@@ -5,9 +5,10 @@ type Session = "PRE" | "RTH" | "AH" | "CLOSED";
 interface SessionInfo {
   session: Session;
   label: string;
-  timeStr: string;
+  countdownLabel: string;
   countdown: string;
   color: string;
+  dotColor: string;
 }
 
 function getEasternTime(): Date {
@@ -23,13 +24,12 @@ function pad(n: number): string {
 }
 
 function fmtCountdown(ms: number): string {
-  if (ms <= 0) return "0:00";
+  if (ms <= 0) return "0:00:00";
   const totalSec = Math.floor(ms / 1000);
   const h = Math.floor(totalSec / 3600);
   const m = Math.floor((totalSec % 3600) / 60);
   const s = totalSec % 60;
-  if (h > 0) return `${h}h ${pad(m)}m`;
-  return `${m}m ${pad(s)}s`;
+  return `${h}:${pad(m)}:${pad(s)}`;
 }
 
 function getSessionInfo(): SessionInfo {
@@ -40,20 +40,19 @@ function getSessionInfo(): SessionInfo {
   const day = et.getDay();
   const isWeekend = day === 0 || day === 6;
 
-  const timeStr = `${h > 12 ? h - 12 : h || 12}:${pad(m)} ${h >= 12 ? "PM" : "AM"} ET`;
-
   if (isWeekend) {
     const daysUntilMon = day === 0 ? 1 : 2;
     const nextOpen = new Date(et);
     nextOpen.setDate(nextOpen.getDate() + daysUntilMon);
-    nextOpen.setHours(4, 0, 0, 0);
+    nextOpen.setHours(9, 30, 0, 0);
     const msLeft = nextOpen.getTime() - et.getTime();
     return {
       session: "CLOSED",
-      label: "WEEKEND",
-      timeStr,
+      label: "MARKET CLOSED",
+      countdownLabel: "Opens in",
       countdown: fmtCountdown(msLeft),
-      color: "#71717a",
+      color: "#ffffff",
+      dotColor: "#71717a",
     };
   }
 
@@ -67,9 +66,10 @@ function getSessionInfo(): SessionInfo {
     return {
       session: "RTH",
       label: "MARKET OPEN",
-      timeStr,
+      countdownLabel: "Closes in",
       countdown: fmtCountdown(msLeft),
       color: "#00d166",
+      dotColor: "#00d166",
     };
   }
 
@@ -78,39 +78,47 @@ function getSessionInfo(): SessionInfo {
     return {
       session: "PRE",
       label: "PRE-MARKET",
-      timeStr,
+      countdownLabel: "Opens in",
       countdown: fmtCountdown(msLeft),
       color: "#FFB800",
+      dotColor: "#FFB800",
     };
   }
 
   if (mins >= RTH_CLOSE && mins < AH_CLOSE) {
-    const msLeft = ((AH_CLOSE - mins) * 60 - et.getSeconds()) * 1000;
+    const nextOpen = new Date(et);
+    nextOpen.setDate(nextOpen.getDate() + (day === 5 ? 3 : 1));
+    nextOpen.setHours(9, 30, 0, 0);
+    const msLeft = nextOpen.getTime() - et.getTime();
     return {
       session: "AH",
-      label: "AFTER HOURS",
-      timeStr,
+      label: "MARKET CLOSED",
+      countdownLabel: "Opens in",
       countdown: fmtCountdown(msLeft),
-      color: "#a78bfa",
+      color: "#ffffff",
+      dotColor: "#71717a",
     };
   }
 
   let msLeft: number;
   if (mins >= AH_CLOSE) {
-    const nextPre = new Date(et);
-    nextPre.setDate(nextPre.getDate() + (day === 5 ? 3 : 1));
-    nextPre.setHours(4, 0, 0, 0);
-    msLeft = nextPre.getTime() - et.getTime();
+    const nextOpen = new Date(et);
+    nextOpen.setDate(nextOpen.getDate() + (day === 5 ? 3 : 1));
+    nextOpen.setHours(9, 30, 0, 0);
+    msLeft = nextOpen.getTime() - et.getTime();
   } else {
-    msLeft = ((PRE_OPEN - mins) * 60 - et.getSeconds()) * 1000;
+    const nextOpen = new Date(et);
+    nextOpen.setHours(9, 30, 0, 0);
+    msLeft = nextOpen.getTime() - et.getTime();
   }
 
   return {
     session: "CLOSED",
-    label: "CLOSED",
-    timeStr,
+    label: "MARKET CLOSED",
+    countdownLabel: "Opens in",
     countdown: fmtCountdown(msLeft),
-    color: "#71717a",
+    color: "#ffffff",
+    dotColor: "#71717a",
   };
 }
 
@@ -122,26 +130,25 @@ export function MarketSessionClock() {
     return () => clearInterval(id);
   }, []);
 
-  const countdownLabel =
-    info.session === "RTH"
-      ? "closes"
-      : info.session === "AH"
-        ? "ends"
-        : info.session === "PRE"
-          ? "opens"
-          : "opens";
-
   return (
-    <div className="flex items-center gap-1.5 min-w-0">
+    <div className="flex items-center gap-2 min-w-0">
+      <span className="relative flex h-2 w-2 shrink-0">
+        {info.session === "RTH" && (
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ background: info.dotColor }} />
+        )}
+        <span className="relative inline-flex rounded-full h-2 w-2" style={{ background: info.dotColor }} />
+      </span>
       <span
-        className="font-mono text-[10px] font-bold uppercase tracking-widest"
+        className="font-mono text-[10px] font-bold uppercase tracking-widest whitespace-nowrap"
         style={{ color: info.color }}
       >
         {info.label}
       </span>
-      <span
-        className="font-mono text-[11px] font-bold tabular-nums whitespace-nowrap text-white"
-      >
+      <span className="text-[#3a3a3c] font-mono text-[9px]">|</span>
+      <span className="font-mono text-[9px] text-[#71717a] tracking-wider whitespace-nowrap">
+        {info.countdownLabel}
+      </span>
+      <span className="font-mono text-[11px] font-bold tabular-nums whitespace-nowrap text-white">
         {info.countdown}
       </span>
     </div>
