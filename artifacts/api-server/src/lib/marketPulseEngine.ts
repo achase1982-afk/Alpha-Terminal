@@ -634,8 +634,6 @@ function calculateComposite(clusters: Record<ClusterName, ClusterResult>): numbe
 }
 
 function calculateConfidence(clusters: Record<ClusterName, ClusterResult>, composite: number): number {
-  const rawConfidence = Math.min(100, Math.round(Math.abs(composite) * 40));
-
   const scores = Object.values(clusters).map(c => c.score);
   const positiveCount = scores.filter(s => s > 0).length;
   const negativeCount = scores.filter(s => s < 0).length;
@@ -651,7 +649,8 @@ function calculateConfidence(clusters: Record<ClusterName, ClusterResult>, compo
 
   penaltyMultiplier = Math.max(0.3, penaltyMultiplier);
 
-  const confidence = Math.round(rawConfidence * penaltyMultiplier);
+  const compositeStrength = Math.min(1.5, 0.3 + Math.abs(composite) * 3);
+  const confidence = Math.round(penaltyMultiplier * 100 * compositeStrength);
   return Math.max(0, Math.min(100, confidence));
 }
 
