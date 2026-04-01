@@ -48,8 +48,8 @@ export const INDICATOR_CONFIG: IndicatorConfig[] = [
   { symbol: '/CL',    cluster: 'macro',        enabled: true, label: 'WTI Crude Oil' },
   { symbol: '/BZ',    cluster: 'macro',        enabled: true, label: 'Brent Crude Oil' },
   { symbol: '/ZQ',    cluster: 'macro',        enabled: true, label: '30-Day Fed Funds' },
-  // $UVOL, $DVOL, $TVOL removed -- Schwab does not serve these symbols
-  // HYD removed -- redundant with HYG and LQD
+  { symbol: '$UVOL',  cluster: 'breadth',      enabled: true, label: 'NYSE Up Volume' },
+  { symbol: '$DVOL',  cluster: 'breadth',      enabled: true, label: 'NYSE Down Volume' },
 ];
 
 export interface MarketIndicators {
@@ -84,6 +84,8 @@ export interface MarketIndicators {
   tick: number | null;
   trin: number | null;
   add: number | null;
+  uvol: number | null;
+  dvol: number | null;
 
   es: number | null;
   esChange: number | null;
@@ -439,7 +441,7 @@ function scoreBreadth(data: MarketIndicators): ClusterResult {
   const points: string[] = [];
   const componentScores: number[] = [];
 
-  const hasAny = data.advn !== null || data.decn !== null || data.tick !== null || data.trin !== null || data.add !== null;
+  const hasAny = data.advn !== null || data.decn !== null || data.tick !== null || data.trin !== null || data.add !== null || data.uvol !== null || data.dvol !== null;
   if (!hasAny) {
     return { score: 0, dataQuality: 'MISSING', direction: 'FLAT', headline: 'Breadth data unavailable', keyDataPoints: [], rulesApplied: ['All breadth data missing'] };
   }
@@ -495,6 +497,18 @@ function scoreBreadth(data: MarketIndicators): ClusterResult {
     points.push(`$ADVN ${data.advn}`, `$DECN ${data.decn}`);
   }
 
+  if (data.uvol !== null && data.dvol !== null && data.dvol > 0) {
+    const uvRatio = data.uvol / data.dvol;
+    let s = 0;
+    if (uvRatio > 4.0)      { s = 2.0; rules.push(`UVOL/DVOL ${uvRatio.toFixed(2)} (>4.0 strongly bullish): +2.0`); }
+    else if (uvRatio > 2.0) { s = 1.0; rules.push(`UVOL/DVOL ${uvRatio.toFixed(2)} (2.0-4.0 bullish): +1.0`); }
+    else if (uvRatio >= 0.5){ s = 0; rules.push(`UVOL/DVOL ${uvRatio.toFixed(2)} (0.5-2.0 neutral): 0`); }
+    else if (uvRatio >= 0.25){ s = -1.0; rules.push(`UVOL/DVOL ${uvRatio.toFixed(2)} (0.25-0.5 bearish): -1.0`); }
+    else                    { s = -2.0; rules.push(`UVOL/DVOL ${uvRatio.toFixed(2)} (<0.25 strongly bearish): -2.0`); }
+    componentScores.push(s);
+    points.push(`$UVOL ${data.uvol}`, `$DVOL ${data.dvol}`);
+  }
+
   const avg = componentScores.length > 0
     ? componentScores.reduce((a, b) => a + b, 0) / componentScores.length
     : 0;
@@ -503,7 +517,7 @@ function scoreBreadth(data: MarketIndicators): ClusterResult {
   const finalScore = clampPrecise(avg, -2.0, 2.0);
   const direction: Direction = finalScore > 0.25 ? 'POSITIVE' : finalScore < -0.25 ? 'NEGATIVE' : 'FLAT';
 
-  const freshCount = [data.advn, data.decn, data.tick, data.trin, data.add].filter(v => v !== null).length;
+  const freshCount = [data.advn, data.decn, data.tick, data.trin, data.add, data.uvol, data.dvol].filter(v => v !== null).length;
   const dataQuality: DataQuality = freshCount >= 3 ? 'FRESH' : freshCount >= 1 ? 'STALE' : 'MISSING';
 
   let headline = '';
@@ -815,6 +829,7 @@ export function verifyEngineScoring(): { passed: boolean; output: string } {
     ief: 95.0, iefChange: 0.01,
     advn: 2177, decn: 570,
     tick: 239, trin: 0.92, add: 1607,
+    uvol: null, dvol: null,
     es: 5400, esChange: 0.61,
     nq: 18500, nqChange: 0.86,
     ym: 42000, ymChange: 0.59,

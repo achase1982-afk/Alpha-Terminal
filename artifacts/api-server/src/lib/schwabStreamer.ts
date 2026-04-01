@@ -174,8 +174,8 @@ const INDEX_MAP: Record<string, string> = {
   OEX: "$OEX", "$OEX": "$OEX",
   MNX: "$MNX", "$MNX": "$MNX",
   XSP: "$XSP", "$XSP": "$XSP",
-  // $UVOL and $DVOL removed -- Schwab does not serve these symbols.
-  // If a secondary data source (e.g. IQFeed) is added later, re-enable here.
+  UVOL: "$UVOL", "$UVOL": "$UVOL",
+  DVOL: "$DVOL", "$DVOL": "$DVOL",
   ADVN: "$ADVN", "$ADVN": "$ADVN",
   DECN: "$DECN", "$DECN": "$DECN",
   TICK: "$TICK", "$TICK": "$TICK",
@@ -899,5 +899,7 @@ export function isConnected(): boolean {
   return ws !== null && ws.readyState === WebSocket.OPEN && loginAcked;
 }
 
-// REST poller for $UVOL/$DVOL removed — Schwab does not serve these symbols.
-// All market indicators now flow through the WebSocket streaming cache.
+export function injectExternalQuote(sym: string, quote: LiveQuote) {
+  quoteCache.set(sym, quote);
+  broadcast("quote", quote);
+}

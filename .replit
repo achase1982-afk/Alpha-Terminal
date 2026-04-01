@@ -32,3 +32,8 @@ channel = "stable-25_05"
 
 [userenv.development]
 DEV_BYPASS_AUTH = "true"
+
+[userenv.shared]
+IB_HOST = "127.0.0.1"
+IB_PORT = "4002"
+IB_CLIENT_ID = "1"

@@ -418,8 +418,8 @@ const PULSE_SYMBOLS: PulseSymbol[] = [
   { display: "/BZ",    api: "/BZ",    category: "commodity", description: "Brent Crude Oil Futures" },
   { display: "/ZQ",    api: "/ZQ",    category: "commodity", description: "30-Day Fed Funds Futures" },
   { display: "$DXY",   api: "$DXY",   category: "currency",  description: "US Dollar Index — dollar vs. major FX basket" },
-  // $UVOL, $DVOL, $TVOL removed -- Schwab does not serve these symbols
-  // HYD removed -- redundant with HYG and LQD
+  { display: "$UVOL",  api: "$UVOL",  category: "breadth",   description: "NYSE Up Volume — volume in advancing issues" },
+  { display: "$DVOL",  api: "$DVOL",  category: "breadth",   description: "NYSE Down Volume — volume in declining issues" },
 ];
 
 // Maps user-facing symbols to Schwab API format (adds $ prefix for known indices)
@@ -431,6 +431,7 @@ const INDEX_TO_SCHWAB: Record<string, string> = {
   "OEX": "$OEX", "MNX": "$MNX", "XSP": "$XSP",
   "VIX9D": "$VIX9D", "VIX3M": "$VIX3M", "SKEW": "$SKEW",
   "ADVN": "$ADVN", "DECN": "$DECN",
+  "UVOL": "$UVOL", "DVOL": "$DVOL",
 };
 
 function symbolToSchwabApi(userSymbol: string): string {
@@ -653,6 +654,8 @@ function extractMarketIndicators(dataMap: Map<string, Record<string, unknown>>):
     tick: tickVal,
     trin: trinVal,
     add,
+    uvol: lastOrMark('$UVOL'),
+    dvol: lastOrMark('$DVOL'),
 
     es: lastOrMark('/ES'),
     esChange: pctChange('/ES'),
@@ -671,8 +674,6 @@ function extractMarketIndicators(dataMap: Map<string, Record<string, unknown>>):
     bzChange: pctChange('/BZ'),
     zq: lastOrMark('/ZQ'),
     zqChange: pctChange('/ZQ'),
-    // $UVOL, $DVOL, $TVOL removed -- Schwab does not serve these symbols
-    // HYD removed -- redundant with HYG and LQD
   };
 }
 

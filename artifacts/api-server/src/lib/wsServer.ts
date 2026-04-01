@@ -10,7 +10,7 @@ const HEARTBEAT_MS = 25_000;
 const DEV_BYPASS = process.env.DEV_BYPASS_AUTH === "true";
 const clients = new Set<WebSocket>();
 
-function broadcastToClients(event: string, data: unknown) {
+export function broadcastToClients(event: string, data: unknown) {
   if (clients.size === 0) return;
   const msg = JSON.stringify({ event, data });
   for (const ws of clients) {

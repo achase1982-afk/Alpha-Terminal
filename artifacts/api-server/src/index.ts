@@ -1,8 +1,9 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { initTokenStore, setTokenRefreshCallback, getAccessToken } from "./lib/tokenStore";
-import { startStreamer, isConnected } from "./lib/schwabStreamer";
-import { initWsServer } from "./lib/wsServer";
+import { startStreamer, isConnected, injectExternalQuote } from "./lib/schwabStreamer";
+import { initWsServer, broadcastToClients } from "./lib/wsServer";
+import { connectIB, registerQuoteCacheInjector, registerIBBroadcast } from "./lib/ibStreamer";
 
 const rawPort = process.env["PORT"];
 
@@ -44,6 +45,12 @@ async function boot() {
   server.headersTimeout = 125_000;
 
   initWsServer(server);
+
+  registerQuoteCacheInjector(injectExternalQuote);
+  registerIBBroadcast(broadcastToClients);
+  connectIB().catch(err => {
+    logger.warn({ err }, "IB: initial connection attempt failed (gateway may not be running)");
+  });
 }
 
 boot().catch((err) => {

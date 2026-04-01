@@ -21,6 +21,18 @@ The UI features an institutional gold color palette with a dark theme, Inter fon
 
 The project is a pnpm monorepo with TypeScript. The API is an Express 5 server using Zod for validation. PostgreSQL with Drizzle ORM is used for the database. Real-time streaming is handled by a singleton WebSocket client connecting to Schwab Streamer, broadcasting live ticks to the frontend via a second WebSocket server. The frontend uses Zustand for state management and `lightweight-charts` for charting. Authentication uses Clerk for app-level login and Schwab OAuth 2.0 for market data APIs. A development bypass for authentication (`DEV_BYPASS_AUTH=true`) is available. Market data flows from Schwab WebSocket to a server-side cache, then to the frontend via WebSocket. All price data is sourced exclusively from the WebSocket cache — no REST polling fallback. If the streamer is not connected and the WS cache is empty, endpoints return a clear "no data" error instead of silently falling back to REST. The Market Pulse engine and AI narratives read from this single live cache. A robust scoring engine (v2) with 7 bias tiers and cluster disagreement penalties determines market sentiment. The Options Strategist (v3) uses a three-layer architecture: Auto-Pulse for market regime classification, Regime-Driven Scan to build and score strategies, and Gemini for narrative generation. AI integration defaults to `gemini-2.5-flash` with `gemini-2.5-pro` as an option. Technical analysis uses the `technicalindicators` npm package. TanStack Query (React Query) is used as a caching layer for AI results (Strategist, Technicals, Market Scanner) so they persist across tab navigation. QueryClient is configured with 30min staleTime and 60min gcTime. Cache hooks (`useStrategistCache`, `useTechnicalsCache`, `useScanCache`) use `enabled: false` queries with manual `setQueryData` writes. Market Pulse uses Zustand store (global, persists inherently) with a dual-write to TanStack Query cache. Run-id guards protect against race conditions from overlapping stream requests.
 
+### Interactive Brokers Integration
+- Package: `@stoqey/ib` (Node.js IB TWS API client)
+- Backend: `ibStreamer.ts` — connects to IB Gateway via TCP socket, subscribes to market data
+- IB route: `/api/ib/status`, `/api/ib/symbols`, `/api/ib/snapshot`, `POST /api/ib/connect`, `POST /api/ib/disconnect`
+- Subscribed symbols: TICK-NYSE, TRIN-NYSE, AD-NYSE, ADVN-NYSE, DECN-NYSE, UVOL-NYSE, DVOL-NYSE, VIX, SPX, VVIX
+- Data flow: IB ticks → `ibStreamer.ts` → `injectExternalQuote()` → shared `quoteCache` → broadcasts to all WS clients
+- UVOL/DVOL are IB-exclusive breadth signals not available from Schwab
+- Environment variables: `IB_HOST` (default 127.0.0.1), `IB_PORT` (default 4002), `IB_CLIENT_ID` (default 1)
+- Auto-reconnects with exponential backoff when gateway drops
+- Gracefully handles missing gateway — Schwab data continues unaffected
+- To connect: Run IB Gateway on local machine, tunnel port 4002 to Replit (e.g., ngrok)
+
 ### Schwab Streamer Field Handling
 NYSE breadth indices ($TICK, $TRIN, $ADVN, $DECN, $ADD) only populate field 3 (LAST_ALL_SESS) in the Schwab WebSocket stream — field 33 (REG_LAST) is always 0. The `regLastVal` logic in `schwabStreamer.ts` explicitly handles this: when REG_LAST is 0 and LAST_ALL_SESS has a non-zero value, it prefers LAST_ALL_SESS. This prevents the JS nullish coalescing operator (`??`) from returning 0 as a valid value when it's actually a sentinel.
 
@@ -85,3 +97,4 @@ The monorepo structure facilitates shared libraries and consistent tooling. Type
 -   **lightweight-charts**: Financial charting.
 -   **technicalindicators**: Technical analysis calculations.
 -   **Clerk**: App-level authentication.
+-   **Interactive Brokers API** (`@stoqey/ib`): Secondary data source for streaming breadth signals (UVOL, DVOL, TICK, TRIN, ADD, ADVN, DECN). Requires IB Gateway running externally. Gracefully degrades when gateway unavailable.
