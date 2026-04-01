@@ -33,11 +33,27 @@ export interface QuoteData {
   error?:           string;
 }
 
+const INDEX_PREFIXES = new Set([
+  "VIX","SPX","NDX","RUT","DJI","DJIA","COMP","DXY","CPC","TNX","TYX","VXN",
+  "OEX","MNX","XSP","ADVN","DECN","TICK","ADD","TRIN","VVIX","VIX9D","VIX3M","SKEW",
+]);
+
 export function useQuote(symbol: string) {
   const symUpper = symbol.toUpperCase();
 
   const accessToken = useTerminalStore((s) => s.accessToken);
-  const streamQuote = useTerminalStore((s) => s.streamPrices[symUpper]) as LiveQuote | undefined;
+  const directQuote = useTerminalStore((s) => s.streamPrices[symUpper]) as LiveQuote | undefined;
+  const bareName = symUpper.startsWith("$") ? symUpper.slice(1) : symUpper;
+  const isIndex = symUpper.startsWith("$") || INDEX_PREFIXES.has(bareName);
+  const altKey = isIndex
+    ? (symUpper.startsWith("$") ? bareName : `$${symUpper}`)
+    : null;
+  const altQuote = useTerminalStore((s) =>
+    !directQuote && altKey
+      ? s.streamPrices[altKey] as LiveQuote | undefined
+      : undefined
+  );
+  const streamQuote = directQuote ?? altQuote;
 
   const { data: restData } = useGetQuote(
     { symbol, accessToken: accessToken || "" },

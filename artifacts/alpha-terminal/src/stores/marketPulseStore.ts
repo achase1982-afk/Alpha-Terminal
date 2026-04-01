@@ -93,18 +93,33 @@ export const useMarketPulseStore = create<MarketPulseState>()(
     }),
     {
       name: "alpha-market-pulse",
-      version: 1,
+      version: 2,
       partialize: (state) => ({
         settings: state.settings,
+        pulseData: state.pulseData,
+        thinkingTokens: state.thinkingTokens,
+        lastFetchedAt: state.lastFetchedAt,
       }),
+      onRehydrateStorage: () => (state) => {
+        if (state) {
+          state.isLoading = false;
+          state.isStreaming = false;
+          state.error = null;
+        }
+      },
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
-        if (version === 0 || !state.settings) {
+        if (version < 1 || !state.settings) {
           const s = (state.settings ?? {}) as Record<string, unknown>;
           if (!s.pulseIndicators || !Array.isArray(s.pulseIndicators)) {
             s.pulseIndicators = ALL_PULSE_INDICATORS.map(i => i.symbol);
           }
-          return { ...state, settings: s };
+          state.settings = s;
+        }
+        if (version < 2) {
+          if (!state.pulseData) state.pulseData = null;
+          if (!state.thinkingTokens) state.thinkingTokens = [];
+          if (!state.lastFetchedAt) state.lastFetchedAt = null;
         }
         return state;
       },
