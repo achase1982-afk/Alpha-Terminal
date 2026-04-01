@@ -7,7 +7,7 @@ import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Activity, BarChart2, Target, DollarSign, Shield, TrendingUp, Scale,
+  BarChart2, Target, DollarSign, Shield, TrendingUp, Scale,
   Zap, ChevronDown, AlertTriangle, CheckCircle2, XCircle, AlertCircle,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -16,7 +16,6 @@ import { StrategistAuditPanel, type StrategistAuditData } from "@/components/mar
 import { AiSubTabs, type AiSubTab } from "@/components/ai-tab/AiSubTabs";
 import { AiThinkingFeed } from "@/components/ai-shared/AiThinkingFeed";
 import { useStrategistCache, type StrategistCacheData } from "@/hooks/useStrategistCache";
-import { useTechnicalsCache } from "@/hooks/useTechnicalsCache";
 
 const API_BASE = "/api";
 
@@ -627,71 +626,6 @@ function StrategySettings() {
   );
 }
 
-const CHUNK_DELAY_MS = 30;
-
-async function consumeStream(
-  url: string,
-  body: Record<string, unknown>,
-  onChunk: (text: string) => void,
-  onDone: () => void,
-  onError: (msg: string) => void,
-  onReasoning?: (text: string) => void,
-): Promise<void> {
-  try {
-    const res = await fetchWithAuth(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-
-    if (!res.ok) {
-      const errText = await res.text().catch(() => "Unknown error");
-      console.error("[consumeStream] HTTP error:", res.status, errText);
-      onError(`Server error (${res.status}). Please refresh the page and try again.`);
-      return;
-    }
-
-    const reader = res.body?.getReader();
-    if (!reader) { onError("No readable stream."); return; }
-
-    const decoder = new TextDecoder();
-    let buf = "";
-
-    const delay = () => new Promise<void>(r => setTimeout(r, CHUNK_DELAY_MS));
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
-
-      const lines = buf.split("\n");
-      buf = lines.pop() ?? "";
-
-      for (const line of lines) {
-        if (!line.startsWith("data: ")) continue;
-        const payload = line.slice(6).trim();
-        if (payload === "[DONE]") { onDone(); return; }
-        try {
-          const parsed = JSON.parse(payload) as { text?: string; reasoning?: string; error?: string };
-          if (parsed.error) { onError(parsed.error); return; }
-          if (parsed.reasoning) {
-            onReasoning?.(parsed.reasoning);
-            await delay();
-          }
-          if (parsed.text) {
-            onChunk(parsed.text);
-            await delay();
-          }
-        } catch {}
-      }
-    }
-    onDone();
-  } catch (err: any) {
-    console.error("[consumeStream] Network error:", err);
-    onError("Connection lost. Please try again.");
-  }
-}
-
 interface AiIntelligenceTabProps {
   initialSubTab?: AiSubTab;
 }
@@ -700,7 +634,6 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
   const {
     symbol, accessToken,
     aiModel, aiTemp,
-    analysisResult, setAnalysisResult,
     strategistResult, setStrategistResult,
     stratAutopilot, stratMaxRisk, stratMinPoP, stratMinRR,
     stratBias, stratPremium, stratAvoidEarnings,
@@ -709,13 +642,12 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
   } = useTerminalStore();
 
   const { cachedData: strategistCache, setCachedData: setStrategistCache } = useStrategistCache(symbol);
-  const { cachedData: technicalsCache, setCachedData: setTechnicalsCache } = useTechnicalsCache(symbol);
 
   const [subTab, setSubTab] = useState<AiSubTab>(initialSubTab ?? "pulse");
   const [customPrompt, setCustomPrompt] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [isStrategizing, setIsStrategizing] = useState(false);
-  const [activeResult, setActiveResult] = useState<"analysis" | "strategist" | null>(null);
+  const [activeResult, setActiveResult] = useState<"strategist" | null>(null);
   const [chainEnabled, setChainEnabled] = useState(false);
   const [streamingText, setStreamingText] = useState("");
   const [showSettings, setShowSettings] = useState(false);
@@ -731,7 +663,6 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
   const cacheRestoredRef = useRef(false);
   const prevSymbolRef = useRef(symbol);
   const strategistRunRef = useRef(0);
-  const technicalsRunRef = useRef(0);
 
   useEffect(() => {
     if (initialSubTab) setSubTab(initialSubTab);
@@ -758,12 +689,8 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
       setThinkingTokens(strategistCache.thinkingTokens);
       if (strategistCache.resultStatus) setStrategistResult(strategistCache.resultStatus);
       setActiveResult("strategist");
-    } else if (subTab === "technicals" && technicalsCache && !isStreaming) {
-      setAnalysisResult(technicalsCache.analysisResult);
-      setThinkingTokens(technicalsCache.thinkingTokens);
-      setActiveResult("analysis");
     }
-  }, [symbol, strategistCache, technicalsCache]);
+  }, [symbol, strategistCache]);
 
   const handleSubTabChange = useCallback((tab: AiSubTab) => {
     setSubTab(tab);
@@ -779,15 +706,11 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
       setThinkingTokens(strategistCache.thinkingTokens);
       if (strategistCache.resultStatus) setStrategistResult(strategistCache.resultStatus);
       setActiveResult("strategist");
-    } else if (tab === "technicals" && technicalsCache && !isStreaming) {
-      setAnalysisResult(technicalsCache.analysisResult);
-      setThinkingTokens(technicalsCache.thinkingTokens);
-      setActiveResult("analysis");
     } else {
       setThinkingTokens([]);
       setActiveResult(null);
     }
-  }, [strategistCache, technicalsCache, isStreaming, isStrategizing, setStrategistResult, setAnalysisResult]);
+  }, [strategistCache, isStreaming, isStrategizing, setStrategistResult]);
 
   const { data: quote } = useGetQuote(
     { symbol, accessToken: accessToken || "" },
@@ -842,50 +765,6 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
 
     runChecks();
   }, [realStrategies, pulseSnapshot, preTradeEnabled, preTradeMinRR, preTradeMaxPositionPct, preTradeMinDTE, preTradeBlockOnRed, accountSize, isStreaming, isStrategizing]);
-
-  const handleRunTA = useCallback(async () => {
-    if (!quote || !history?.candles) return;
-    const runId = ++technicalsRunRef.current;
-    setAnalysisResult(null);
-    setStreamingText("");
-    setThinkingTokens([]);
-    setActiveResult("analysis");
-    setIsStreaming(true);
-
-    let accumulated = "";
-    const collectedThinking: string[] = [];
-    await consumeStream(
-      `${API_BASE}/ai/technical-analysis/stream`,
-      { quote, candles: history.candles, model: aiModel, temperature: aiTemp, customPrompt },
-      (chunk) => {
-        if (technicalsRunRef.current !== runId) return;
-        accumulated += chunk;
-        setStreamingText(accumulated);
-      },
-      () => {
-        if (technicalsRunRef.current !== runId) return;
-        setAnalysisResult(accumulated);
-        setStreamingText("");
-        setIsStreaming(false);
-        setTechnicalsCache({
-          analysisResult: accumulated,
-          thinkingTokens: collectedThinking,
-          timestamp: Date.now(),
-        });
-      },
-      (err) => {
-        if (technicalsRunRef.current !== runId) return;
-        setAnalysisResult(`**Analysis failed:** ${err}`);
-        setStreamingText("");
-        setIsStreaming(false);
-      },
-      (reasoning) => {
-        if (technicalsRunRef.current !== runId) return;
-        collectedThinking.push(reasoning);
-        setThinkingTokens((prev) => [...prev, reasoning]);
-      },
-    );
-  }, [quote, history, aiModel, aiTemp, customPrompt, setAnalysisResult, setTechnicalsCache]);
 
   const handleRunStrategist = useCallback(async () => {
     if (!accessToken) return;
@@ -1065,9 +944,7 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
 
   const isPendingAny = isStreaming || isStrategizing;
 
-  const currentResult = activeResult === "analysis" ? analysisResult
-    : activeResult === "strategist" ? strategistResult
-    : null;
+  const currentResult = activeResult === "strategist" ? strategistResult : null;
 
   const hasRealStrategies = realStrategies.length > 0;
 
@@ -1166,54 +1043,6 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
         </div>
       )}
 
-      {subTab === "technicals" && (
-        <div className="px-3 sm:px-4 lg:px-5 space-y-4 pt-3">
-          <div className="flex items-center gap-2 px-1">
-            <Activity className="w-4 h-4 text-[#FFB800]" />
-            <span className="font-mono text-xs font-bold text-[#e4e4e7] tracking-wider">TECHNICAL ANALYSIS</span>
-            <span className="font-mono text-[10px] text-[#71717a] ml-1">Analyzing: <span className="text-[#FFB800] font-bold">{symbol}</span></span>
-          </div>
-
-          <Button
-            onClick={handleRunTA}
-            disabled={isPendingAny || !accessToken || !quote}
-            className="w-full font-mono text-xs bg-primary text-primary-foreground hover:bg-primary/90 h-9"
-          >
-            <Activity className="w-3.5 h-3.5 mr-2 shrink-0" />
-            RUN TECHNICAL ANALYSIS
-          </Button>
-
-          {activeResult === "analysis" && (
-            <div className="bg-card border border-card-border rounded-xl p-4">
-              {isStreaming ? (
-                <>
-                  <AiThinkingFeed
-                    texts={thinkingTokens}
-                    isStreaming={true}
-                  />
-                  {streamingText && (
-                    <div className="mt-3">
-                      <MarkdownResult content={streamingText} />
-                    </div>
-                  )}
-                </>
-              ) : analysisResult ? (
-                <>
-                  {thinkingTokens.length > 0 && (
-                    <div className="mb-3">
-                      <AiThinkingFeed
-                        texts={thinkingTokens}
-                        isStreaming={false}
-                      />
-                    </div>
-                  )}
-                  <MarkdownResult content={analysisResult} />
-                </>
-              ) : null}
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }

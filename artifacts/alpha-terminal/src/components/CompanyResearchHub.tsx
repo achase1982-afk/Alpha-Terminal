@@ -1,8 +1,16 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useQuote } from "@/hooks/useQuote";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
-import { Loader2 } from "lucide-react";
+import { consumeStream } from "@/lib/consumeStream";
+import { useTechnicalsCache } from "@/hooks/useTechnicalsCache";
+import { AiThinkingFeed } from "@/components/ai-shared/AiThinkingFeed";
+import { Button } from "@/components/ui/button";
+import { Loader2, Activity } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import {
+  useGetQuote, useGetPriceHistory,
+} from "@workspace/api-client-react";
 
 const API_BASE = "/api";
 
@@ -71,14 +79,108 @@ interface CompanyResearchHubProps {
   candles?: Array<{ datetime: string; open: number; high: number; low: number; close: number; volume: number }>;
 }
 
+function MarkdownResult({ content }: { content: string }) {
+  return (
+    <div className="prose prose-invert prose-primary max-w-none font-sans text-gray-300
+      prose-headings:text-white prose-headings:font-bold prose-headings:tracking-wide prose-headings:mt-4 prose-headings:mb-2
+      prose-h2:text-base prose-h3:text-sm
+      prose-a:text-primary hover:prose-a:text-primary/80
+      prose-strong:text-white prose-strong:font-bold
+      prose-li:my-0.5
+      prose-code:text-primary prose-code:bg-primary/10 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-xs
+      prose-pre:bg-card prose-pre:border prose-pre:border-card-border prose-pre:text-xs"
+    >
+      <ReactMarkdown>{content}</ReactMarkdown>
+    </div>
+  );
+}
+
 export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
-  const { symbol, accessToken } = useTerminalStore();
+  const { symbol, accessToken, aiModel, aiTemp, analysisResult, setAnalysisResult } = useTerminalStore();
   const { data: quoteData } = useQuote(symbol);
+  const { cachedData: technicalsCache, setCachedData: setTechnicalsCache } = useTechnicalsCache(symbol);
 
   const [fundamentals, setFundamentals] = useState<FundamentalData | null>(null);
   const [fundLoading, setFundLoading] = useState(false);
   const [technicals, setTechnicals] = useState<TechnicalSnapshot | null>(null);
   const [techLoading, setTechLoading] = useState(false);
+
+  const [taStreaming, setTaStreaming] = useState(false);
+  const [taStreamingText, setTaStreamingText] = useState("");
+  const [taThinkingTokens, setTaThinkingTokens] = useState<string[]>([]);
+  const [taShowResult, setTaShowResult] = useState(false);
+  const taRunRef = useRef(0);
+  const cacheRestoredRef = useRef(false);
+
+  const { data: quote } = useGetQuote(
+    { symbol, accessToken: accessToken || "" },
+    { query: { enabled: !!accessToken } }
+  );
+  const { data: history } = useGetPriceHistory(
+    { symbol, accessToken: accessToken || "", periodType: "month", period: 3, frequencyType: "daily", frequency: 1 },
+    { query: { enabled: !!accessToken } }
+  );
+
+  useEffect(() => {
+    cacheRestoredRef.current = false;
+    setTaShowResult(false);
+    setTaStreamingText("");
+    setTaThinkingTokens([]);
+  }, [symbol]);
+
+  useEffect(() => {
+    if (cacheRestoredRef.current) return;
+    cacheRestoredRef.current = true;
+    if (technicalsCache) {
+      setAnalysisResult(technicalsCache.analysisResult);
+      setTaThinkingTokens(technicalsCache.thinkingTokens);
+      setTaShowResult(true);
+    }
+  }, [symbol, technicalsCache]);
+
+  const handleRunTA = useCallback(async () => {
+    if (!quote || !history?.candles) return;
+    const runId = ++taRunRef.current;
+    setAnalysisResult(null);
+    setTaStreamingText("");
+    setTaThinkingTokens([]);
+    setTaShowResult(true);
+    setTaStreaming(true);
+
+    let accumulated = "";
+    const collectedThinking: string[] = [];
+    await consumeStream(
+      `${API_BASE}/ai/technical-analysis/stream`,
+      { quote, candles: history.candles, model: aiModel, temperature: aiTemp },
+      (chunk) => {
+        if (taRunRef.current !== runId) return;
+        accumulated += chunk;
+        setTaStreamingText(accumulated);
+      },
+      () => {
+        if (taRunRef.current !== runId) return;
+        setAnalysisResult(accumulated);
+        setTaStreamingText("");
+        setTaStreaming(false);
+        setTechnicalsCache({
+          analysisResult: accumulated,
+          thinkingTokens: collectedThinking,
+          timestamp: Date.now(),
+        });
+      },
+      (err) => {
+        if (taRunRef.current !== runId) return;
+        setAnalysisResult(`**Analysis failed:** ${err}`);
+        setTaStreamingText("");
+        setTaStreaming(false);
+      },
+      (reasoning) => {
+        if (taRunRef.current !== runId) return;
+        collectedThinking.push(reasoning);
+        setTaThinkingTokens((prev) => [...prev, reasoning]);
+      },
+    );
+  }, [quote, history, aiModel, aiTemp, setAnalysisResult, setTechnicalsCache]);
 
   const fetchFundamentals = useCallback(async () => {
     if (!accessToken || !symbol) return;
@@ -280,6 +382,53 @@ export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
           </>
         ) : (
           <p className="text-xs text-muted-foreground font-mono">No data available</p>
+        )}
+      </section>
+
+      <section>
+        <div className="flex items-center gap-2 mb-3">
+          <Activity className="w-3.5 h-3.5 text-[#FFB800]" />
+          <h3 className="text-primary text-[10px] font-black tracking-widest">AI DEEP ANALYSIS</h3>
+          <span className="font-mono text-[10px] text-[#71717a] ml-1">
+            <span className="text-[#FFB800] font-bold">{symbol}</span>
+          </span>
+        </div>
+
+        <Button
+          onClick={handleRunTA}
+          disabled={taStreaming || !accessToken || !quote}
+          className="w-full font-mono text-xs bg-primary text-primary-foreground hover:bg-primary/90 h-9"
+        >
+          {taStreaming ? (
+            <Loader2 className="w-3.5 h-3.5 mr-2 shrink-0 animate-spin" />
+          ) : (
+            <Activity className="w-3.5 h-3.5 mr-2 shrink-0" />
+          )}
+          {taStreaming ? "ANALYZING..." : "RUN TECHNICAL ANALYSIS"}
+        </Button>
+
+        {taShowResult && (
+          <div className="bg-card border border-card-border rounded-xl p-4 mt-3">
+            {taStreaming ? (
+              <>
+                <AiThinkingFeed texts={taThinkingTokens} isStreaming={true} />
+                {taStreamingText && (
+                  <div className="mt-3">
+                    <MarkdownResult content={taStreamingText} />
+                  </div>
+                )}
+              </>
+            ) : analysisResult ? (
+              <>
+                {taThinkingTokens.length > 0 && (
+                  <div className="mb-3">
+                    <AiThinkingFeed texts={taThinkingTokens} isStreaming={false} />
+                  </div>
+                )}
+                <MarkdownResult content={analysisResult} />
+              </>
+            ) : null}
+          </div>
         )}
       </section>
     </div>
