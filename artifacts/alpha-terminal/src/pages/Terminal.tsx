@@ -18,6 +18,7 @@ import { useViewportShell } from "@/hooks/useViewportShell";
 import { AiChatOverlay } from "@/components/AiChatOverlay";
 
 import { InAppBrowser } from "@/components/InAppBrowser";
+import { MarketSessionClock } from "@/components/MarketSessionClock";
 import { NewsTab } from "@/components/NewsTab";
 import { AiBiasStrip } from "@/components/market-pulse/AiBiasStrip";
 import { BottomNav } from "@/components/BottomNav";
@@ -96,16 +97,17 @@ export default function TerminalPage() {
         <div className="flex items-center h-12 px-4 bg-card">
           <button
             onClick={() => setSidebarOpen(true)}
-            className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-card-border transition-colors mr-3"
+            className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-card-border transition-colors mr-2"
             aria-label="Open menu"
           >
             <Menu className="w-5 h-5" />
           </button>
-          <div className="flex flex-col leading-none">
+          <div className="flex flex-col leading-none mr-auto">
             <span className="font-sans font-black text-base tracking-wider text-foreground">ALPHA</span>
             <span className="font-sans font-semibold text-[10px] tracking-[0.25em] text-primary">TERMINAL</span>
           </div>
-          <div className="ml-auto flex items-center gap-2">
+          <MarketSessionClock />
+          <div className="ml-3 flex items-center gap-1.5">
             <span className="font-mono text-xs text-primary font-bold">{symbol}</span>
             <div
               className="w-2.5 h-2.5 rounded-full shrink-0"
