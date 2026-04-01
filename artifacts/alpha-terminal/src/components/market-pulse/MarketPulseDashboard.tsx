@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useRef, useState, useImperativeHandle, forwardRef } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { Zap, Activity, Radio } from "lucide-react";
 import { useTerminalStore } from "../../lib/store";
 import { useMarketPulseStore } from "../../stores/marketPulseStore";
 import type { MarketPulseData, ClusterKey } from "../../types/marketPulse";
 import { STRATEGY_LABELS } from "../../types/marketPulse";
-import { useAiStream } from "../../hooks/useAiStream";
 import { PulseStatusHeader } from "./PulseStatusHeader";
 import { ClusterCard } from "./ClusterCard";
 import { ActionPlanCard } from "./ActionPlanCard";
@@ -14,9 +12,8 @@ import { LevelsToWatch } from "./LevelsToWatch";
 import { EngineAuditPanel } from "./EngineAuditPanel";
 import { ALL_PULSE_INDICATORS } from "@/types/marketPulse";
 import { AiThinkingFeed } from "../ai-shared/AiThinkingFeed";
-import { queryKeys } from "../../api/queryKeys";
+import { runPulseStream } from "../../stores/pulseStreamRunner";
 
-const API_BASE = "/api";
 const CLUSTER_ORDER: ClusterKey[] = ["rates", "credit", "volLevel", "volTerm", "breadth", "riskAppetite", "macro"];
 
 const BIAS_COLORS: Record<string, { bg: string; text: string; border: string }> = {
@@ -57,7 +54,6 @@ export interface MarketPulseDashboardHandle {
 
 export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, MarketPulseDashboardProps>(function MarketPulseDashboard({ autoGenerate }, ref) {
   const { accessToken, aiModel } = useTerminalStore();
-  const queryClient = useQueryClient();
   const {
     pulseData,
     isLoading,
@@ -65,48 +61,14 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
     thinkingTokens,
     error,
     settings,
-    setPulseData,
-    setLoading,
-    setStreaming,
-    appendThinking,
-    clearThinking,
     setError,
   } = useMarketPulseStore();
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [showTranscript, setShowTranscript] = useState(false);
-  const [localGenerating, setLocalGenerating] = useState(false);
-
-  const { startStream } = useAiStream({
-    url: `${API_BASE}/ai/market-pulse/stream`,
-    onThinking: (text) => appendThinking(text),
-    onResult: (data) => {
-      const enriched = {
-        ...data,
-        generatedAt: Date.now(),
-      };
-      setPulseData(enriched);
-      queryClient.setQueryData(queryKeys.marketPulse.current(), enriched);
-      setLoading(false);
-      setStreaming(false);
-      setLocalGenerating(false);
-      setShowTranscript(false);
-    },
-    onError: (msg) => {
-      setError(msg);
-      setLoading(false);
-      setStreaming(false);
-      setLocalGenerating(false);
-    },
-  });
 
   const fetchPulse = useCallback(() => {
     if (!accessToken) return;
-    setLocalGenerating(true);
-    setLoading(true);
-    setStreaming(true);
-    setError(null);
-    clearThinking();
     setShowTranscript(false);
 
     const allowedList = settings.allowedStrategies.map(
@@ -119,28 +81,25 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
 
     if (activeSymbols.length === 0) {
       setError("No indicators selected. Open Settings → Market Pulse → Indicators to enable at least one.");
-      setLoading(false);
       return;
     }
 
-    setTimeout(() => {
-      startStream({
-        accessToken,
-        symbols: activeSymbols,
-        model: aiModel,
-        temperature: 0,
-        previousBias: pulseData?.bias ?? undefined,
-        preferences: {
-          allowedStrategies: allowedList,
-          defaultSpreadWidth: settings.defaultSpreadWidth,
-          maxContracts: settings.maxContracts,
-          accountSizeTier: settings.accountSizeTier,
-          preferredTickers: settings.preferredTickers,
-          maxRiskPerTrade: settings.maxRiskPerTrade,
-        },
-      });
-    }, 0);
-  }, [accessToken, aiModel, settings, startStream, setLoading, setStreaming, setError, clearThinking, setPulseData, pulseData]);
+    runPulseStream({
+      accessToken,
+      symbols: activeSymbols,
+      model: aiModel,
+      temperature: 0,
+      previousBias: pulseData?.bias ?? undefined,
+      preferences: {
+        allowedStrategies: allowedList,
+        defaultSpreadWidth: settings.defaultSpreadWidth,
+        maxContracts: settings.maxContracts,
+        accountSizeTier: settings.accountSizeTier,
+        preferredTickers: settings.preferredTickers,
+        maxRiskPerTrade: settings.maxRiskPerTrade,
+      },
+    });
+  }, [accessToken, aiModel, settings, setError, pulseData]);
 
   useImperativeHandle(ref, () => ({ fetchPulse }), [fetchPulse]);
 
@@ -180,7 +139,7 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
     );
   }
 
-  const isActive = isLoading || isStreaming || localGenerating;
+  const isActive = isLoading || isStreaming;
 
   return (
     <div className="space-y-4 px-3 sm:px-4 lg:px-5 overflow-x-hidden pt-1">
