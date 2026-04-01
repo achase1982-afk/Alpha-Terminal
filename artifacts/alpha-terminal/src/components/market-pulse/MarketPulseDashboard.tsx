@@ -68,16 +68,32 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [showTranscript, setShowTranscript] = useState(false);
 
+  // Use refs to avoid fetchPulse changing on every pulseData/store update
+  const pulseDataRef = useRef(pulseData);
+  useEffect(() => { pulseDataRef.current = pulseData; }, [pulseData]);
+
+  const accessTokenRef = useRef(accessToken);
+  useEffect(() => { accessTokenRef.current = accessToken; }, [accessToken]);
+
+  const aiModelRef = useRef(aiModel);
+  useEffect(() => { aiModelRef.current = aiModel; }, [aiModel]);
+
+  const aiTempRef = useRef(aiTemp);
+  useEffect(() => { aiTempRef.current = aiTemp; }, [aiTemp]);
+
+  const settingsRef = useRef(settings);
+  useEffect(() => { settingsRef.current = settings; }, [settings]);
+
   const fetchPulse = useCallback(() => {
-    if (!accessToken) return;
+    const token = accessTokenRef.current;
+    if (!token) return;
     setShowTranscript(false);
 
-    const allowedList = settings.allowedStrategies.map(
-      (s) => STRATEGY_LABELS[s]
-    );
+    const s = settingsRef.current;
+    const allowedList = s.allowedStrategies.map((k) => STRATEGY_LABELS[k]);
 
-    const activeSymbols = settings.pulseIndicators && settings.pulseIndicators.length > 0
-      ? settings.pulseIndicators
+    const activeSymbols = s.pulseIndicators && s.pulseIndicators.length > 0
+      ? s.pulseIndicators
       : ALL_PULSE_INDICATORS.map(i => i.symbol);
 
     if (activeSymbols.length === 0) {
@@ -86,32 +102,36 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
     }
 
     runPulseStream({
-      accessToken,
+      accessToken: token,
       symbols: activeSymbols,
-      model: aiModel,
-      temperature: aiTemp,
-      previousBias: pulseData?.bias ?? undefined,
+      model: aiModelRef.current,
+      temperature: aiTempRef.current,
+      previousBias: pulseDataRef.current?.bias ?? undefined,
       preferences: {
         allowedStrategies: allowedList,
-        defaultSpreadWidth: settings.defaultSpreadWidth,
-        maxContracts: settings.maxContracts,
-        accountSizeTier: settings.accountSizeTier,
-        preferredTickers: settings.preferredTickers,
-        maxRiskPerTrade: settings.maxRiskPerTrade,
+        defaultSpreadWidth: s.defaultSpreadWidth,
+        maxContracts: s.maxContracts,
+        accountSizeTier: s.accountSizeTier,
+        preferredTickers: s.preferredTickers,
+        maxRiskPerTrade: s.maxRiskPerTrade,
       },
     });
-  }, [accessToken, aiModel, settings, setError, pulseData]);
+  }, [setError]); // stable — all deps read from refs
 
   useImperativeHandle(ref, () => ({ fetchPulse }), [fetchPulse]);
 
-  const autoGenRef = useRef(false);
+  // Auto-generate once on first mount when autoGenerate=true and no data yet
+  const autoGenFiredRef = useRef(false);
   useEffect(() => {
-    if (autoGenerate && !autoGenRef.current && !pulseData && !isLoading && !isStreaming && accessToken) {
-      autoGenRef.current = true;
+    if (autoGenerate && !autoGenFiredRef.current && !pulseData && !isLoading && !isStreaming && accessToken) {
+      autoGenFiredRef.current = true;
       fetchPulse();
     }
-  }, [autoGenerate, pulseData, isLoading, isStreaming, accessToken, fetchPulse]);
+    // Only run when the guard conditions change, not on every pulseData update
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoGenerate, isLoading, isStreaming, accessToken]);
 
+  // Auto-refresh interval — stable since fetchPulse is stable
   useEffect(() => {
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
@@ -240,7 +260,7 @@ function PulseLoadingStatus({ thinkingTokens }: { thinkingTokens: string[] }) {
     { label: "GENERATING SIGNALS", threshold: 8 },
   ];
 
-  const lastThinking = thinkingTokens.length > 0 ? thinkingTokens[thinkingTokens.length - 1] : null;
+  const allThinking = thinkingTokens.join("").toLowerCase();
 
   let currentStageIdx = 0;
   for (let i = stages.length - 1; i >= 0; i--) {
@@ -250,8 +270,11 @@ function PulseLoadingStatus({ thinkingTokens }: { thinkingTokens: string[] }) {
     }
   }
 
-  if (lastThinking?.toLowerCase().includes("analyzing")) {
+  if (allThinking.includes("analyz") || allThinking.includes("signal")) {
     currentStageIdx = Math.max(currentStageIdx, 2);
+  }
+  if (allThinking.includes("generat") || allThinking.includes("narrativ")) {
+    currentStageIdx = Math.max(currentStageIdx, 3);
   }
 
   const currentStage = stages[currentStageIdx];
@@ -333,12 +356,25 @@ function PulseLoadingStatus({ thinkingTokens }: { thinkingTokens: string[] }) {
             ))}
           </div>
 
-          {lastThinking && (
-            <div className="flex items-start gap-2 pt-1 border-t border-[#2A2A2C]">
-              <Activity className="w-3 h-3 text-[#FFB800] mt-0.5 shrink-0 animate-pulse" />
-              <span className="font-mono text-[10px] text-[#a1a1aa] leading-relaxed">
-                {lastThinking}
-              </span>
+          {thinkingTokens.length > 0 && (
+            <div className="pt-1 border-t border-[#2A2A2C] space-y-1">
+              <div className="flex items-center gap-1.5">
+                <span className="relative flex h-1.5 w-1.5 shrink-0">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
+                </span>
+                <span className="font-mono text-[9px] text-emerald-500 uppercase tracking-widest">AI Reasoning</span>
+              </div>
+              <div
+                className="max-h-[80px] overflow-y-auto border-l-2 border-emerald-500/30 pl-2"
+                style={{ scrollBehavior: "smooth" }}
+                ref={(el) => { if (el) el.scrollTop = el.scrollHeight; }}
+              >
+                <span className="font-mono text-[10px] text-[#a1a1aa] leading-relaxed whitespace-pre-wrap">
+                  {thinkingTokens.join("")}
+                  <span className="inline-block w-1 h-3 bg-emerald-500 ml-0.5 animate-pulse" />
+                </span>
+              </div>
             </div>
           )}
         </div>

@@ -96,11 +96,6 @@ export async function runPulseStream(payload: Record<string, unknown>) {
       }
     }
 
-    const finalState = useMarketPulseStore.getState();
-    if (finalState.isStreaming) {
-      finalState.setStreaming(false);
-      finalState.setLoading(false);
-    }
   } catch (err: any) {
     if (err.name === "AbortError") return;
     console.error("[pulseStreamRunner] Stream error:", err);
@@ -110,5 +105,8 @@ export async function runPulseStream(payload: Record<string, unknown>) {
     if (activeAbort === abort) {
       activeAbort = null;
     }
+    const s = useMarketPulseStore.getState();
+    s.setStreaming(false);
+    s.setLoading(false);
   }
 }
