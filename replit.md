@@ -15,7 +15,7 @@ I prefer a coding style that emphasizes readability and maintainability, utilizi
 
 ## UI/UX Decisions
 
-The UI features an institutional gold color palette with a dark theme, Inter font, and `tabular-nums`. Key components include a fixed MacroBar, a slide-out Sidebar (Command Center) with portal-based sub-pages, a ThinkorSwim-replica Options Tab, an AI Chat Overlay, Market Pulse Dashboard (SSE-streamed structured JSON with 7 fixed clusters and composite scoring), Market Scanner, `lightweight-charts` based Charting, a `requestAnimationFrame`-driven Ticker Tape, and CSS keyframe Price Pulse Animations. The Markets view uses a 5-tab `MarketDataTabs` bar (NEWS, OPTIONS, AI, SCAN, CHART) with icons, sticky at `top: 118px` to pin under the ticker tape. The AI tab uses iOS-style pill sub-tabs. Audit panels for Market Pulse and Options Strategist display raw data and rules applied.
+The UI features an institutional gold color palette with a dark theme, Inter font, and `tabular-nums`. Key components include a fixed MacroBar, a slide-out Sidebar (Command Center) with portal-based sub-pages, a ThinkorSwim-replica Options Tab, an AI Chat Overlay, Market Pulse Dashboard (SSE-streamed structured JSON with 7 fixed clusters and composite scoring), Market Scanner, `lightweight-charts` based Charting, a `requestAnimationFrame`-driven Ticker Tape, and CSS keyframe Price Pulse Animations. The AI tab uses iOS-style pill sub-tabs. Audit panels for Market Pulse and Options Strategist display raw data and rules applied.
 
 ## Technical Implementations
 
