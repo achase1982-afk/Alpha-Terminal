@@ -164,6 +164,16 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
 
   return (
     <div className="space-y-4 px-3 sm:px-4 lg:px-5 overflow-x-hidden pt-1">
+      {/* Header always visible when we have data (even while refreshing) */}
+      {pulseData && (
+        <PulseStatusHeader
+          data={pulseData}
+          isRefreshing={isActive}
+          onRefresh={fetchPulse}
+          disabled={!accessToken}
+        />
+      )}
+
       {isActive && (
         <>
           <PulseLoadingStatus thinkingTokens={thinkingTokens} />
@@ -185,13 +195,6 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
 
       {pulseData && !isActive && (
         <div className="space-y-4 animate-in fade-in duration-300">
-          <PulseStatusHeader
-            data={pulseData}
-            isRefreshing={isActive}
-            onRefresh={fetchPulse}
-            disabled={!accessToken}
-          />
-
           <BiasHero data={pulseData} />
 
           {thinkingTokens.length > 0 && (

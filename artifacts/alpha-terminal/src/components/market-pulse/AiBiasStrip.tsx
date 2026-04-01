@@ -17,9 +17,28 @@ interface AiBiasStripProps {
 }
 
 export function AiBiasStrip({ onNavigateToPulse }: AiBiasStripProps) {
-  const { pulseData, settings } = useMarketPulseStore();
+  const { pulseData, isLoading, isStreaming, settings } = useMarketPulseStore();
+  const isActive = isLoading || isStreaming;
 
   if (!settings.showBiasStrip) return null;
+
+  if (isActive) {
+    return (
+      <button
+        onClick={onNavigateToPulse}
+        className="flex items-center justify-center gap-2 w-full px-4 border-b border-zinc-800 cursor-pointer hover:bg-zinc-800 transition-colors"
+        style={{ height: 36, backgroundColor: '#1C1C1E' }}
+      >
+        <span className="relative flex h-2 w-2 shrink-0">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#FFB800] opacity-75" />
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-[#FFB800]" />
+        </span>
+        <span className="font-mono text-[10px] font-medium uppercase tracking-wider text-[#FFB800]">
+          AI PULSE: GENERATING…
+        </span>
+      </button>
+    );
+  }
 
   if (!pulseData) {
     return (
