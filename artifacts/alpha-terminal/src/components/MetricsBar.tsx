@@ -173,31 +173,33 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
   if (compact) {
     return (
       <div
-        className="w-full border-b border-card-border flex items-center px-3 sm:px-4 gap-3 sm:gap-4 overflow-x-auto"
+        className="w-full border-b border-card-border flex items-center px-3 sm:px-6 overflow-x-auto"
         style={{ background: HEADER_BG, height: 36 }}
       >
         {quote ? (
           <>
-            <button onClick={onOpenTearSheet} className="font-semibold text-white text-sm tracking-wide shrink-0 hover:text-primary transition-colors cursor-pointer">
-              {quote.symbol}
-            </button>
-            <span className="tabular-nums shrink-0" style={{ fontSize: '0.95rem', fontWeight: 300, color: tickColor }}>
-              {lastStr}
-            </span>
-            <span className="tabular-nums shrink-0 whitespace-nowrap" style={{ fontSize: '0.75rem', fontWeight: 300, color: priceColor }}>
-              {changeStr}&nbsp;{changePctStr}
-            </span>
-            <div className="flex gap-1.5 ml-auto shrink-0">
+            <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
+              <button onClick={onOpenTearSheet} className="font-semibold text-white text-sm tracking-wide shrink-0 hover:text-primary transition-colors cursor-pointer">
+                {quote.symbol}
+              </button>
+              <span className="tabular-nums shrink-0" style={{ fontSize: '0.95rem', fontWeight: 300, color: tickColor }}>
+                {lastStr}
+              </span>
+              <span className="tabular-nums shrink-0 whitespace-nowrap" style={{ fontSize: '0.75rem', fontWeight: 300, color: priceColor }}>
+                {changeStr}&nbsp;{changePctStr}
+              </span>
+            </div>
+            <div className="w-[164px] sm:w-[200px] flex-shrink-0 grid grid-cols-2 gap-1.5 sm:gap-2">
               <button
                 onClick={() => handleInitiateTrade('sell')}
-                className="h-6 px-2.5 bg-red-950/40 border border-red-500/50 rounded flex items-center justify-center cursor-pointer transition-colors active:bg-red-800/70 trade-btn-sell"
+                className="h-6 bg-red-950/40 border border-red-500/50 rounded flex items-center justify-center cursor-pointer transition-colors active:bg-red-800/70 trade-btn-sell"
                 aria-label={`Sell ${quote?.symbol}`}
               >
                 <span className="text-[9px] uppercase font-bold tracking-widest text-white leading-none">SELL</span>
               </button>
               <button
                 onClick={() => handleInitiateTrade('buy')}
-                className="h-6 px-2.5 bg-emerald-950/40 border border-emerald-500/50 rounded flex items-center justify-center cursor-pointer transition-colors active:bg-emerald-800/70 trade-btn-buy"
+                className="h-6 bg-emerald-950/40 border border-emerald-500/50 rounded flex items-center justify-center cursor-pointer transition-colors active:bg-emerald-800/70 trade-btn-buy"
                 aria-label={`Buy ${quote?.symbol}`}
               >
                 <span className="text-[9px] uppercase font-bold tracking-widest text-white leading-none">BUY</span>
