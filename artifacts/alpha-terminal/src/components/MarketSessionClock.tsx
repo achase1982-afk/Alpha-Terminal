@@ -133,21 +133,21 @@ export function MarketSessionClock() {
   return (
     <div className="flex items-center gap-1.5 min-w-0 ml-auto">
       <span
-        className="text-[11px] font-light uppercase tracking-[0.15em] whitespace-nowrap"
-        style={{ color: info.color, fontFamily: "Inter, system-ui, sans-serif" }}
+        className="text-[11px] font-light uppercase whitespace-nowrap"
+        style={{ color: info.color, fontFamily: "Inter, system-ui, sans-serif", letterSpacing: "0.02em" }}
       >
         {info.label}
       </span>
       <span className="text-[#3a3a3c] text-[9px]">|</span>
       <span
-        className="text-[9px] font-light text-[#71717a] tracking-wider whitespace-nowrap"
-        style={{ fontFamily: "Inter, system-ui, sans-serif" }}
+        className="text-[9px] font-light text-[#a1a1aa] whitespace-nowrap"
+        style={{ fontFamily: "Inter, system-ui, sans-serif", letterSpacing: "0.02em" }}
       >
         {info.countdownLabel}
       </span>
       <span
-        className="text-[12px] font-light tabular-nums whitespace-nowrap text-white tracking-wider"
-        style={{ fontFamily: "Inter, system-ui, sans-serif" }}
+        className="text-[12px] font-light tabular-nums whitespace-nowrap text-white"
+        style={{ fontFamily: "Inter, system-ui, sans-serif", letterSpacing: "0.01em" }}
       >
         {info.countdown}
       </span>
