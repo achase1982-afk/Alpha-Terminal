@@ -1,17 +1,25 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { useTerminalStore } from "@/lib/store";
-
+import { useOptionsSettingsStore } from "@/lib/options-store";
+import { useMarketPulseStore } from "@/stores/marketPulseStore";
+import type { MarketPulseSettings, AllowedStrategy } from "@/types/marketPulse";
+import { STRATEGY_LABELS, ALL_STRATEGIES, ALL_PULSE_INDICATORS } from "@/types/marketPulse";
 import { useAutoLock, TIMEOUT_OPTIONS, type SessionTimeoutMinutes } from "@/hooks/useAutoLock";
 import { readSecurityPrefs, updateSecurityPref, type SecurityPrefs } from "@/lib/securityPrefs";
 import { useBiometricRegistration, useWebAuthnSupported } from "@/hooks/useBiometric";
 import { AuthPanel } from "./AuthPanel";
-import {
-  X, Shield, Settings, Link,
-  Fingerprint, LogOut,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
+import {
+  X, Shield, Link, Fingerprint, LogOut,
+  Star, Activity, Briefcase, MessageCircle,
+  Zap, LineChart, LayoutDashboard, BrainCircuit,
+  ChevronLeft, Trash2, Plus, RotateCcw, BarChart2,
+  SlidersHorizontal, Gauge, ListOrdered,
+} from "lucide-react";
 import { useClerk } from "@clerk/clerk-react";
 
 const devBypass = import.meta.env.VITE_DEV_BYPASS_AUTH === "true";
@@ -21,202 +29,571 @@ function useClerkSafe() {
   return useClerk();
 }
 
+type SidebarPage =
+  | null
+  | "Watchlist"
+  | "Linked Brokerage"
+  | "Market Pulse"
+  | "Chart & Options"
+  | "Display & Marquee"
+  | "AI Parameters"
+  | "Security & Privacy";
+
 interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
+  onOpenChat?: () => void;
+  onNavigate?: (dest: "markets" | "portfolio") => void;
 }
 
-export function Sidebar({ isOpen, onClose }: SidebarProps) {
-  const { signOut } = useClerkSafe();
-  const {
-    overlays, toggleOverlay,
-    aiTemp, setAiTemp,
-  } = useTerminalStore();
+function MenuRow({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="w-full flex items-center gap-4 px-5 py-3.5 hover:bg-card/50 transition-colors text-left group"
+    >
+      <div className="text-white group-hover:text-primary transition-colors">
+        {React.cloneElement(icon as React.ReactElement, { className: "w-5 h-5" })}
+      </div>
+      <span className="font-bold text-[15px] text-white tracking-wide">{label}</span>
+    </button>
+  );
+}
 
+function PageHeader({ title, onBack }: { title: string; onBack: () => void }) {
+  return (
+    <div className="p-4 flex items-center gap-3 border-b border-card-border bg-[#141414]">
+      <button onClick={onBack} className="p-1 text-muted-foreground hover:text-white transition-colors">
+        <ChevronLeft className="w-5 h-5" />
+      </button>
+      <span className="font-black text-sm tracking-wider text-white uppercase">{title}</span>
+    </div>
+  );
+}
+
+export function Sidebar({ isOpen, onClose, onOpenChat, onNavigate }: SidebarProps) {
+  const { signOut } = useClerkSafe();
+  const [activePage, setActivePage] = useState<SidebarPage>(null);
+
+  const handleClose = () => {
+    setActivePage(null);
+    onClose();
+  };
+
+  return (
+    <>
+      {isOpen && (
+        <div className="fixed inset-0 bg-black/60 z-30" onClick={handleClose} />
+      )}
+      <div className={`absolute top-0 left-0 h-full w-[280px] sm:w-[320px] bg-[#0c0c0c] border-r border-card-border z-50 transform transition-transform duration-300 flex flex-col ${isOpen ? "translate-x-0" : "-translate-x-full"}`}>
+
+        {activePage === null ? (
+          <>
+            <div className="p-5 flex justify-between items-center bg-[#141414]">
+              <span className="font-black text-lg tracking-wider text-white">COMMAND CENTER</span>
+              <button onClick={handleClose} className="text-muted-foreground hover:text-white transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto py-2">
+              <div className="flex flex-col pb-2">
+                <MenuRow icon={<Star />} label="Watchlist" onClick={() => setActivePage("Watchlist")} />
+                <MenuRow icon={<Activity />} label="Markets" onClick={() => { onNavigate?.("markets"); handleClose(); }} />
+                <MenuRow icon={<Briefcase />} label="Portfolio" onClick={() => { onNavigate?.("portfolio"); handleClose(); }} />
+                <MenuRow icon={<MessageCircle />} label="AI Search" onClick={() => { handleClose(); onOpenChat?.(); }} />
+              </div>
+
+              <div className="mx-5 border-b border-card-border/50" />
+
+              <div className="flex flex-col pt-2 pb-2">
+                <MenuRow icon={<Link />} label="Linked Brokerage" onClick={() => setActivePage("Linked Brokerage")} />
+                <MenuRow icon={<Zap />} label="Market Pulse" onClick={() => setActivePage("Market Pulse")} />
+                <MenuRow icon={<LineChart />} label="Chart & Options" onClick={() => setActivePage("Chart & Options")} />
+                <MenuRow icon={<LayoutDashboard />} label="Display & Marquee" onClick={() => setActivePage("Display & Marquee")} />
+                <MenuRow icon={<BrainCircuit />} label="AI Parameters" onClick={() => setActivePage("AI Parameters")} />
+                <MenuRow icon={<Shield />} label="Security & Privacy" onClick={() => setActivePage("Security & Privacy")} />
+              </div>
+            </div>
+
+            <div className="p-4 mt-auto border-t border-card-border/50 bg-[#0c0c0c]">
+              <button
+                onClick={() => void signOut()}
+                className="w-full flex items-center justify-center gap-3 py-3.5 bg-terminal-danger/10 border border-terminal-danger/30 hover:bg-terminal-danger hover:text-white text-terminal-danger rounded-xl transition-all shadow-sm"
+              >
+                <LogOut className="w-5 h-5" />
+                <span className="font-black text-[13px] tracking-widest uppercase">Log Out</span>
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <PageHeader title={activePage} onBack={() => setActivePage(null)} />
+            <div className="flex-1 overflow-y-auto">
+              {activePage === "Watchlist" && <WatchlistPage onClose={handleClose} />}
+              {activePage === "Linked Brokerage" && <LinkedBrokeragePage />}
+              {activePage === "Market Pulse" && <MarketPulsePage />}
+              {activePage === "Chart & Options" && <ChartOptionsPage />}
+              {activePage === "Display & Marquee" && <DisplayMarqueePage />}
+              {activePage === "AI Parameters" && <AiParametersPage />}
+              {activePage === "Security & Privacy" && <SecurityPrivacyPage />}
+            </div>
+          </>
+        )}
+      </div>
+    </>
+  );
+}
+
+function WatchlistPage({ onClose }: { onClose: () => void }) {
+  const { watchlist, removeFromWatchlist, setSymbol } = useTerminalStore();
+
+  return (
+    <div className="p-4 space-y-3">
+      {watchlist.length === 0 ? (
+        <p className="font-mono text-[10px] text-muted-foreground/60 text-center leading-relaxed py-6">
+          No symbols watched. Click the '+' next to a searched ticker to add it.
+        </p>
+      ) : (
+        <div className="space-y-1">
+          {watchlist.map((sym) => (
+            <div key={sym} className="flex items-center justify-between px-3 py-2.5 rounded-lg hover:bg-[#1a1a1a] transition-colors group">
+              <button
+                onClick={() => { setSymbol(sym); onClose(); }}
+                className="font-mono text-sm text-foreground hover:text-primary transition-colors tracking-wider font-bold"
+              >
+                {sym}
+              </button>
+              <button
+                onClick={() => removeFromWatchlist(sym)}
+                className="opacity-0 group-hover:opacity-100 p-1.5 rounded text-muted-foreground hover:text-destructive transition-all"
+                aria-label={`Remove ${sym}`}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LinkedBrokeragePage() {
+  return (
+    <div className="p-4 space-y-4">
+      <AuthPanel />
+      <p className="text-[10px] text-muted-foreground leading-relaxed">
+        Connect your brokerage to enable one-tap execution and live portfolio syncing.
+      </p>
+    </div>
+  );
+}
+
+function MarketPulsePage() {
+  const {
+    settings,
+    updateSetting,
+    toggleStrategy,
+    toggleIndicator,
+    resetIndicators,
+  } = useMarketPulseStore();
+
+  const [indicatorsOpen, setIndicatorsOpen] = useState(false);
+  const [addQuery, setAddQuery] = useState("");
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  const activeIndicators = settings.pulseIndicators ?? ALL_PULSE_INDICATORS.map((i) => i.symbol);
+  const catalogMap = Object.fromEntries(ALL_PULSE_INDICATORS.map((i) => [i.symbol, i.label]));
+  const getLabel = (sym: string) => catalogMap[sym] ?? sym;
+
+  const inactiveFromCatalog = ALL_PULSE_INDICATORS.filter((i) => !activeIndicators.includes(i.symbol));
+  const suggestions =
+    addQuery.length > 0
+      ? inactiveFromCatalog.filter(
+          (i) => i.symbol.toLowerCase().includes(addQuery.toLowerCase()) || i.label.toLowerCase().includes(addQuery.toLowerCase())
+        )
+      : inactiveFromCatalog;
+
+  const handleAdd = (sym: string) => {
+    const clean = sym.trim().toUpperCase();
+    if (!clean || activeIndicators.includes(clean)) return;
+    toggleIndicator(clean);
+    setAddQuery("");
+    setShowSuggestions(false);
+  };
+
+  return (
+    <div className="p-4 space-y-4">
+      <SidebarToggle label="Show Bias Strip" icon={<Zap className="w-3 h-3" />} checked={settings.showBiasStrip} onChange={() => updateSetting("showBiasStrip", !settings.showBiasStrip)} />
+      <SidebarToggle label="Auto-Refresh" checked={settings.autoRefresh} onChange={() => updateSetting("autoRefresh", !settings.autoRefresh)} />
+      {settings.autoRefresh && (
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-[9px] text-muted-foreground/70 uppercase tracking-wider">Interval</span>
+            <span className="font-mono text-[10px] text-primary tabular-nums">{settings.autoRefreshInterval}m</span>
+          </div>
+          <input type="range" min={2} max={30} step={1} value={settings.autoRefreshInterval} onChange={(e) => updateSetting("autoRefreshInterval", Number(e.target.value))} className="w-full h-1 rounded-full appearance-none cursor-pointer" style={{ accentColor: "#FFB800", background: "#2A2A2C" }} />
+        </div>
+      )}
+
+      <div className="border-t border-card-border pt-3">
+        <button onClick={() => setIndicatorsOpen(!indicatorsOpen)} className="w-full flex items-center justify-between mb-2">
+          <span className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-bold flex items-center gap-1.5">
+            <BarChart2 className="w-3 h-3" /> Indicators <span className="text-primary tabular-nums ml-1">{activeIndicators.length}</span>
+          </span>
+          <ChevronLeft className={`w-3 h-3 text-[#71717a] transition-transform duration-200 ${indicatorsOpen ? "-rotate-90" : "rotate-180"}`} />
+        </button>
+
+        {indicatorsOpen && (
+          <div className="space-y-2 animate-in fade-in slide-in-from-top-1">
+            <div className="flex items-center justify-between pb-1">
+              <span className="font-mono text-[9px] text-[#52525b] tabular-nums">{activeIndicators.length} active</span>
+              <button onClick={resetIndicators} className="flex items-center gap-1 font-mono text-[9px] text-[#52525b] hover:text-[#71717a] transition-colors">
+                <RotateCcw className="w-2.5 h-2.5" /> Reset
+              </button>
+            </div>
+            <div className="space-y-0.5 max-h-[200px] overflow-y-auto pr-0.5">
+              {activeIndicators.map((sym) => (
+                <div key={sym} className="flex items-center justify-between px-2 py-1.5 rounded-md group" style={{ background: "rgba(255,184,0,0.04)" }}>
+                  <div className="flex flex-col min-w-0">
+                    <span className="font-mono text-[10px] text-primary font-bold tabular-nums leading-none">{sym.replace(/^\$/, "")}</span>
+                    <span className="font-mono text-[9px] text-[#52525b] leading-tight truncate mt-0.5">{getLabel(sym)}</span>
+                  </div>
+                  <button onClick={() => toggleIndicator(sym)} className="flex-shrink-0 ml-2 p-1 rounded hover:bg-[#f23645]/10 text-[#3f3f46] hover:text-[#f23645] transition-colors">
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="pt-1 relative">
+              <div className="flex gap-1.5">
+                <input
+                  type="text"
+                  value={addQuery}
+                  onChange={(e) => { setAddQuery(e.target.value); setShowSuggestions(true); }}
+                  onFocus={() => setShowSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (suggestions.length > 0 ? handleAdd(suggestions[0].symbol) : addQuery.length > 0 && handleAdd(addQuery), true)) return;
+                    if (e.key === "Escape") setShowSuggestions(false);
+                  }}
+                  placeholder="Search or type symbol..."
+                  className="w-full h-7 px-2 rounded-md font-mono text-[11px] text-[#e4e4e7] placeholder:text-[#3f3f46] border border-[#2A2A2C] focus:border-primary focus:outline-none transition-colors"
+                  style={{ background: "#111113" }}
+                />
+                <button
+                  onClick={() => { if (suggestions.length > 0 && addQuery.length > 0) handleAdd(suggestions[0].symbol); else if (addQuery.length > 0) handleAdd(addQuery); }}
+                  disabled={!addQuery.trim()}
+                  className="flex items-center gap-1 h-7 px-2.5 rounded-md font-mono text-[10px] font-bold transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  style={{ background: "#FFB800", color: "#000" }}
+                >
+                  <Plus className="w-3 h-3" /> Add
+                </button>
+              </div>
+              {showSuggestions && suggestions.length > 0 && (
+                <div className="absolute left-0 right-10 top-8 z-50 rounded-md border border-[#2A2A2C] overflow-y-auto max-h-[180px] shadow-xl" style={{ background: "#111113" }}>
+                  {suggestions.map((ind) => (
+                    <button key={ind.symbol} onMouseDown={() => handleAdd(ind.symbol)} className="w-full text-left px-3 py-2 flex flex-col hover:bg-[#1a1a1c] transition-colors border-b border-[#1a1a1c] last:border-0">
+                      <span className="font-mono text-[10px] text-primary font-bold tabular-nums">{ind.symbol.replace(/^\$/, "")}</span>
+                      <span className="font-mono text-[9px] text-[#52525b] leading-tight">{ind.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="border-t border-card-border pt-3">
+        <span className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-bold block mb-2">Display Preferences</span>
+        <div className="space-y-2">
+          <SidebarToggle label="Show Cluster Details" checked={settings.showClusterDetails} onChange={() => updateSetting("showClusterDetails", !settings.showClusterDetails)} />
+          <SidebarToggle label="Show Action Plan" checked={settings.showActionPlan} onChange={() => updateSetting("showActionPlan", !settings.showActionPlan)} />
+          <SidebarToggle label="Compact Mode" checked={settings.compactMode} onChange={() => updateSetting("compactMode", !settings.compactMode)} />
+        </div>
+      </div>
+
+      <div className="border-t border-card-border pt-3">
+        <span className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-bold block mb-2">Allowed Strategies</span>
+        <div className="space-y-1.5 max-h-48 overflow-y-auto">
+          {ALL_STRATEGIES.map((s) => (
+            <label key={s} className="flex items-center gap-2 cursor-pointer group">
+              <input type="checkbox" checked={settings.allowedStrategies.includes(s)} onChange={() => toggleStrategy(s)} className="rounded border-card-border bg-transparent accent-[#FFB800] w-3.5 h-3.5" />
+              <span className="font-mono text-[10px] text-[#a1a1aa] group-hover:text-[#e4e4e7] transition-colors">{STRATEGY_LABELS[s]}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <div className="border-t border-card-border pt-3 space-y-3">
+        <span className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-bold block">Strategy Preferences</span>
+        <SettingInput label="Default Spread Width" value={settings.defaultSpreadWidth} onChange={(v) => updateSetting("defaultSpreadWidth", v)} placeholder="e.g. $5" />
+        <SettingInput label="Account Size Tier" value={settings.accountSizeTier} onChange={(v) => updateSetting("accountSizeTier", v)} placeholder="e.g. $10k, $25k, $100k+" />
+        <SettingInput label="Preferred Tickers" value={settings.preferredTickers} onChange={(v) => updateSetting("preferredTickers", v)} placeholder="e.g. SPY, QQQ, AAPL" />
+        <SettingInput label="Max Risk Per Trade" value={settings.maxRiskPerTrade} onChange={(v) => updateSetting("maxRiskPerTrade", v)} placeholder="e.g. 2% or $500" />
+      </div>
+    </div>
+  );
+}
+
+function ChartOptionsPage() {
+  const { overlays, toggleOverlay } = useTerminalStore();
+  const { contractType, setContractType, maxDte, setMaxDte } = useOptionsSettingsStore();
+
+  const OVERLAY_LABELS: Record<string, string> = { sma20: "SMA 20", sma50: "SMA 50", bb: "BB", rsi: "RSI", volume: "VOL" };
+
+  return (
+    <div className="p-4 space-y-4">
+      <div className="space-y-2">
+        <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
+          <SlidersHorizontal className="w-3 h-3" /> Chart Overlays
+        </Label>
+        <div className="flex flex-wrap gap-2">
+          {(Object.entries(overlays) as [keyof typeof overlays, boolean][]).map(([key, active]) => (
+            <button
+              key={key}
+              onClick={() => toggleOverlay(key)}
+              className={`px-3 py-1.5 rounded-full font-mono text-[10px] font-semibold border transition-all duration-200 ${active ? "bg-[#1a1a1a] text-[#FFB800] border-[#FFB800]" : "bg-[#1a1a1a] text-[#71717a] border-[#262626] hover:border-[#404040] hover:text-foreground"}`}
+            >
+              {OVERLAY_LABELS[key] ?? key.toUpperCase()}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="border-t border-card-border pt-3 space-y-3">
+        <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
+          <BarChart2 className="w-3 h-3" /> Options Chain
+        </Label>
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-[9px] text-muted-foreground/70 uppercase tracking-wider whitespace-nowrap">Type</span>
+          <Select value={contractType} onValueChange={(v) => setContractType(v as "ALL" | "CALL" | "PUT")}>
+            <SelectTrigger className="font-mono text-[10px] bg-card border-card-border h-8 focus:ring-primary/50">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="bg-card border-card-border font-mono text-[10px]">
+              <SelectItem value="ALL" className="text-[10px]">ALL</SelectItem>
+              <SelectItem value="CALL" className="text-[10px]">CALLS</SelectItem>
+              <SelectItem value="PUT" className="text-[10px]">PUTS</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-[9px] text-muted-foreground/70 uppercase tracking-wider whitespace-nowrap">Max DTE</span>
+          <Input
+            type="number"
+            value={maxDte}
+            onChange={(e) => { const v = parseInt(e.target.value); if (!isNaN(v) && v > 0) setMaxDte(v); }}
+            className="font-mono text-[10px] bg-card border-card-border h-8 w-20"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DisplayMarqueePage() {
+  const { macroSymbols, setMacroSymbols, tickerTapeSymbols, setTickerTapeSymbols, tapeSpeed, setTapeSpeed } = useTerminalStore();
+  const [macroInputs, setMacroInputs] = useState<string[]>(macroSymbols);
+  const [tapeInput, setTapeInput] = useState(tickerTapeSymbols.join(", "));
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = () => {
+    const validMacro = macroInputs.map((s) => s.trim().toUpperCase()).filter(Boolean);
+    setMacroSymbols(validMacro.length > 0 ? validMacro : macroSymbols);
+    const tapeParsed = tapeInput.split(/[,\s]+/).map((s) => s.trim().toUpperCase()).filter(Boolean);
+    if (tapeParsed.length > 0) setTickerTapeSymbols(tapeParsed);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  return (
+    <div className="p-4 space-y-4">
+      <div className="space-y-2">
+        <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
+          <LayoutDashboard className="w-3 h-3" /> Macro Tickers
+        </Label>
+        <div className="grid grid-cols-2 gap-2">
+          {[0, 1, 2, 3].map((idx) => (
+            <Input
+              key={idx}
+              value={macroInputs[idx] ?? ""}
+              onChange={(e) => { const u = [...macroInputs]; u[idx] = e.target.value.toUpperCase(); setMacroInputs(u); }}
+              placeholder={["SPY", "QQQ", "IWM", "VIX"][idx]}
+              className="font-mono uppercase text-xs h-8 bg-card border-card-border focus-visible:ring-primary/50 text-foreground"
+              autoCapitalize="characters"
+              autoCorrect="off"
+              maxLength={8}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div className="border-t border-card-border pt-3 space-y-2">
+        <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
+          <ListOrdered className="w-3 h-3" /> Marquee Setup
+        </Label>
+        <Input
+          value={tapeInput}
+          onChange={(e) => setTapeInput(e.target.value.toUpperCase())}
+          placeholder="SPY, QQQ, AAPL, TSLA..."
+          className="font-mono uppercase text-xs h-8 bg-card border-card-border focus-visible:ring-primary/50 text-foreground"
+          autoCorrect="off"
+        />
+        <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2 mt-1">
+          <Gauge className="w-3 h-3" /> Scroll Speed
+        </Label>
+        <div className="flex items-center gap-2">
+          <span className="text-[9px] text-muted-foreground/60">Fast</span>
+          <input type="range" min={5} max={60} step={1} value={tapeSpeed} onChange={(e) => setTapeSpeed(Number(e.target.value))} className="flex-1 h-1.5 accent-primary cursor-pointer" />
+          <span className="text-[9px] text-muted-foreground/60">Slow</span>
+          <span className="font-mono text-[10px] text-primary w-6 text-right tabular-nums">{tapeSpeed}s</span>
+        </div>
+      </div>
+
+      <button
+        onClick={handleSave}
+        className={`w-full font-mono text-xs h-8 rounded-md transition-all border ${saved ? "bg-primary/10 text-primary border-primary/50" : "bg-[#0c0c0c] text-primary border-primary hover:bg-primary/10"}`}
+      >
+        {saved ? "✓ SAVED" : "APPLY SETTINGS"}
+      </button>
+    </div>
+  );
+}
+
+function AiParametersPage() {
+  const { aiModel, setAiModel, aiTemp, setAiTemp } = useTerminalStore();
+
+  return (
+    <div className="p-4 space-y-4">
+      <div className="space-y-1.5">
+        <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
+          <BrainCircuit className="w-3 h-3" /> Model
+        </Label>
+        <Select value={aiModel} onValueChange={setAiModel}>
+          <SelectTrigger className="font-mono text-[10px] bg-card border-card-border h-8 focus:ring-primary/50">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="bg-card border-card-border font-mono text-[10px]">
+            {["gemini-2.5-flash", "gemini-2.5-pro"].map((m) => (
+              <SelectItem key={m} value={m} className="text-[10px]">{m.toUpperCase()}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="font-mono text-[9px] text-muted-foreground/70 uppercase tracking-wider">Temperature</span>
+          <span className="font-mono text-[10px] text-primary tabular-nums">{aiTemp.toFixed(1)}</span>
+        </div>
+        <Slider value={[aiTemp]} onValueChange={(v) => setAiTemp(v[0])} max={2} step={0.1} className="py-1" />
+        <div className="flex justify-between">
+          <span className="font-mono text-[9px] text-muted-foreground/40">Precise</span>
+          <span className="font-mono text-[9px] text-muted-foreground/40">Creative</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SecurityPrivacyPage() {
   const { minutes: autoLock, setMinutes: setAutoLock } = useAutoLock();
   const [secPrefs, setSecPrefs] = useState<SecurityPrefs>(readSecurityPrefs);
   const { registerPasskey, loading: passkeyLoading, error: passkeyError, hasPasskey } = useBiometricRegistration();
   const webAuthnSupported = useWebAuthnSupported();
 
-  const handleSecPrefToggle = (key: keyof SecurityPrefs, value: boolean) => {
+  const handleToggle = (key: keyof SecurityPrefs, value: boolean) => {
     const updated = updateSecurityPref(key, value);
     setSecPrefs(updated);
   };
 
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 z-[100] bg-background animate-in slide-in-from-right duration-300 flex flex-col">
-
-      <header className="flex items-center justify-between p-6 border-b border-card-border bg-card/50">
-        <div className="flex flex-col">
-          <h2 className="font-black text-xl tracking-tighter text-white">COMMAND CENTER</h2>
-          <span className="text-[10px] text-primary font-mono tracking-widest uppercase">System Configuration v2.0</span>
+    <div className="p-4 space-y-4">
+      <div className="space-y-2">
+        <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
+          <Shield className="w-3 h-3" /> Session Timeout
+        </Label>
+        <div className="flex flex-wrap gap-1">
+          {TIMEOUT_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => setAutoLock(opt.value as SessionTimeoutMinutes)}
+              className={`px-2.5 py-1.5 rounded-md font-mono text-[10px] font-bold tracking-wide transition-all border ${autoLock === opt.value ? "bg-primary/20 border-primary text-primary" : "bg-card border-card-border text-muted-foreground hover:border-primary/30 hover:text-foreground"}`}
+            >
+              {opt.label}
+            </button>
+          ))}
         </div>
-        <button onClick={onClose} className="p-2 bg-secondary rounded-full text-primary hover:scale-110 transition-transform">
-          <X className="w-6 h-6" />
-        </button>
-      </header>
-
-      <div className="flex-1 overflow-y-auto p-6 space-y-8 pb-32">
-
-        <section className="space-y-4">
-          <div className="flex items-center gap-2 text-primary">
-            <Link className="w-4 h-4" />
-            <h3 className="text-xs font-bold uppercase tracking-widest">Linked Services</h3>
-          </div>
-          <div className="bg-card border border-card-border rounded-xl p-4">
-            <AuthPanel />
-            <p className="text-[10px] text-muted-foreground mt-3 leading-relaxed">
-              Connect your brokerage to enable one-tap execution and live portfolio syncing.
-            </p>
-          </div>
-        </section>
-
-        <section className="space-y-4">
-          <div className="flex items-center gap-2 text-primary">
-            <Settings className="w-4 h-4" />
-            <h3 className="text-xs font-bold uppercase tracking-widest">Terminal Preferences</h3>
-          </div>
-
-          <div className="space-y-4">
-            <div className="bg-card border border-card-border rounded-xl p-4 space-y-3">
-              <span className="text-[10px] font-bold text-muted-foreground uppercase">Chart Overlays</span>
-              <div className="flex flex-wrap gap-2">
-                {(Object.entries(overlays) as [keyof typeof overlays, boolean][]).map(([key, active]) => (
-                  <button
-                    key={key}
-                    onClick={() => toggleOverlay(key)}
-                    className={`px-3 py-1.5 rounded-md text-[10px] font-bold border transition-all
-                      ${active ? "bg-primary text-black border-primary" : "bg-secondary text-muted-foreground border-card-border"}`}
-                  >
-                    {key.toUpperCase()}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="bg-card border border-card-border rounded-xl p-4 space-y-4">
-              <span className="text-[10px] font-bold text-muted-foreground uppercase">AI Intelligence Params</span>
-              <div className="space-y-4">
-                <div className="flex justify-between items-center">
-                  <span className="text-xs font-mono">Temperature: {aiTemp.toFixed(1)}</span>
-                  <span className="text-[10px] text-primary">{aiTemp > 1 ? "Creative" : "Precise"}</span>
-                </div>
-                <Slider value={[aiTemp]} onValueChange={(v) => setAiTemp(v[0])} max={2} step={0.1} />
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="space-y-4">
-          <div className="flex items-center gap-2 text-primary">
-            <Shield className="w-4 h-4" />
-            <h3 className="text-xs font-bold uppercase tracking-widest">Security & Privacy</h3>
-          </div>
-
-          <div className="bg-card border border-card-border rounded-xl divide-y divide-card-border">
-            <div className="p-4 flex flex-col gap-3">
-              <span className="text-[10px] font-bold text-muted-foreground uppercase">Session Timeout</span>
-              <div className="flex gap-2">
-                {TIMEOUT_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.value}
-                    onClick={() => setAutoLock(opt.value as SessionTimeoutMinutes)}
-                    className={`flex-1 py-2 rounded text-[10px] font-bold border transition-all
-                      ${autoLock === opt.value ? "bg-primary/20 border-primary text-primary" : "bg-background border-card-border text-muted-foreground"}`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="p-4 space-y-4">
-              {!webAuthnSupported && (
-                <p className="font-mono text-[9px] text-red-400/70 leading-relaxed">
-                  WebAuthn is not supported on this device.
-                </p>
-              )}
-
-              {webAuthnSupported && !hasPasskey && (
-                <button
-                  onClick={() => void registerPasskey()}
-                  disabled={passkeyLoading}
-                  className="w-full flex items-center justify-center gap-2 p-2.5 rounded-lg font-mono text-[10px] font-bold tracking-wide text-primary bg-primary/10 border border-primary/20 hover:bg-primary/20 transition-all disabled:opacity-50"
-                >
-                  <Fingerprint className="w-3.5 h-3.5" />
-                  {passkeyLoading ? "REGISTERING..." : "REGISTER FACE ID / PASSKEY"}
-                </button>
-              )}
-
-              {passkeyError && (
-                <p className="font-mono text-[9px] text-red-400 leading-relaxed">{passkeyError}</p>
-              )}
-
-              {webAuthnSupported && hasPasskey && (
-                <p className="font-mono text-[9px] text-green-400/70 leading-relaxed flex items-center gap-1">
-                  ✓ Passkey registered
-                </p>
-              )}
-
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Fingerprint className="w-5 h-5 text-primary" />
-                  <div className="flex flex-col">
-                    <span className="text-xs font-bold">App Login</span>
-                    <span className="text-[10px] text-muted-foreground">Biometric authentication on launch</span>
-                  </div>
-                </div>
-                <Switch
-                  checked={secPrefs.biometricLogin}
-                  onCheckedChange={(v) => handleSecPrefToggle("biometricLogin", v)}
-                  disabled={!webAuthnSupported || !hasPasskey}
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Fingerprint className="w-5 h-5 text-primary" />
-                  <div className="flex flex-col">
-                    <span className="text-xs font-bold">Sensitive Data</span>
-                    <span className="text-[10px] text-muted-foreground">Protect portfolio & account info</span>
-                  </div>
-                </div>
-                <Switch
-                  checked={secPrefs.biometricSensitiveData}
-                  onCheckedChange={(v) => handleSecPrefToggle("biometricSensitiveData", v)}
-                  disabled={!webAuthnSupported || !hasPasskey}
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Fingerprint className="w-5 h-5 text-primary" />
-                  <div className="flex flex-col">
-                    <span className="text-xs font-bold">Trade Confirmation</span>
-                    <span className="text-[10px] text-muted-foreground">Require biometrics for trade execution</span>
-                  </div>
-                </div>
-                <Switch
-                  checked={secPrefs.biometricTradeConfirmation}
-                  onCheckedChange={(v) => handleSecPrefToggle("biometricTradeConfirmation", v)}
-                  disabled={!webAuthnSupported || !hasPasskey}
-                />
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <Button
-          variant="destructive"
-          onClick={() => void signOut()}
-          className="w-full h-12 font-black tracking-widest gap-2"
-        >
-          <LogOut className="w-4 h-4" /> SIGN OUT
-        </Button>
-
+        <p className="font-mono text-[9px] text-muted-foreground/50 leading-relaxed">Signs you out after inactivity.</p>
       </div>
+
+      <div className="border-t border-card-border pt-3 space-y-3">
+        <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
+          <Fingerprint className="w-3 h-3" /> Face ID / Biometrics
+        </Label>
+
+        {!webAuthnSupported && <p className="font-mono text-[9px] text-red-400/70 leading-relaxed">WebAuthn is not supported on this device.</p>}
+
+        {webAuthnSupported && !hasPasskey && (
+          <button
+            onClick={() => void registerPasskey()}
+            disabled={passkeyLoading}
+            className="w-full flex items-center justify-center gap-2 p-2.5 rounded-lg font-mono text-[10px] font-bold tracking-wide text-primary bg-primary/10 border border-primary/20 hover:bg-primary/20 transition-all disabled:opacity-50"
+          >
+            <Fingerprint className="w-3.5 h-3.5" />
+            {passkeyLoading ? "REGISTERING..." : "REGISTER FACE ID / PASSKEY"}
+          </button>
+        )}
+
+        {passkeyError && <p className="font-mono text-[9px] text-red-400 leading-relaxed">{passkeyError}</p>}
+        {webAuthnSupported && hasPasskey && <p className="font-mono text-[9px] text-green-400/70 leading-relaxed flex items-center gap-1">✓ Passkey registered</p>}
+
+        <div className="space-y-2.5">
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-[10px] text-foreground/80">App Login</span>
+            <Switch checked={secPrefs.biometricLogin} onCheckedChange={(v) => handleToggle("biometricLogin", v)} disabled={!webAuthnSupported || !hasPasskey} />
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-[10px] text-foreground/80">Sensitive Data</span>
+            <Switch checked={secPrefs.biometricSensitiveData} onCheckedChange={(v) => handleToggle("biometricSensitiveData", v)} disabled={!webAuthnSupported || !hasPasskey} />
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-[10px] text-foreground/80">Trade Confirmation</span>
+            <Switch checked={secPrefs.biometricTradeConfirmation} onCheckedChange={(v) => handleToggle("biometricTradeConfirmation", v)} disabled={!webAuthnSupported || !hasPasskey} />
+          </div>
+        </div>
+        <p className="font-mono text-[9px] text-muted-foreground/50 leading-relaxed">Requires a registered passkey. Toggles disabled until one is set up.</p>
+      </div>
+    </div>
+  );
+}
+
+function SettingInput({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder: string }) {
+  return (
+    <div className="space-y-1">
+      <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest">{label}</Label>
+      <Input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="font-mono text-xs h-8 bg-background border-card-border" />
+    </div>
+  );
+}
+
+function SidebarToggle({ label, icon, checked, onChange }: { label: string; icon?: React.ReactNode; checked: boolean; onChange: () => void }) {
+  return (
+    <div className="flex items-center justify-between">
+      <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
+        {icon} {label}
+      </Label>
+      <button
+        type="button"
+        onClick={onChange}
+        className="relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors duration-200"
+        style={{ background: checked ? "#FFB800" : "#2A2A2C" }}
+      >
+        <span className="inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-200" style={{ transform: checked ? "translateX(16px) translateY(2px)" : "translateX(2px) translateY(2px)" }} />
+      </button>
     </div>
   );
 }

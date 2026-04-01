@@ -119,7 +119,12 @@ export default function TerminalPage() {
 
       <div className="flex flex-1 min-h-0 relative">
 
-        <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+        <Sidebar
+          isOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+          onOpenChat={() => setChatOpen(true)}
+          onNavigate={(dest) => { if (dest === "markets") setActiveBottom("markets"); else if (dest === "portfolio") setActiveBottom("portfolio"); }}
+        />
 
         <main ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto app-content pb-20">
 

@@ -1,0 +1,46 @@
+      {/* Slide-out Panel */}
+      <div className={`absolute top-0 left-0 h-full w-[280px] sm:w-[320px] bg-[#0c0c0c] border-r border-card-border z-50 transform transition-transform duration-300 flex flex-col ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        
+        {/* Simple Header */}
+        <div className="p-5 flex justify-between items-center bg-[#141414]">
+          <span className="font-black text-lg tracking-wider text-white">COMMAND CENTER</span>
+          <button onClick={onClose} className="text-muted-foreground hover:text-white transition-colors">
+             <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Scrollable Menu Area */}
+        <div className="flex-1 overflow-y-auto py-2">
+          
+          {/* GROUP 1: Navigation (Top) */}
+          <div className="flex flex-col pb-2">
+            <MenuRow icon={<Star />} label="Watchlist" onClick={() => setActivePage("Watchlist")} />
+            <MenuRow icon={<Activity />} label="Markets" onClick={() => setActivePage("Markets")} />
+            <MenuRow icon={<Briefcase />} label="Portfolio" onClick={() => setActivePage("Portfolio")} />
+            <MenuRow icon={<MessageCircle />} label="AI Search" onClick={() => { onClose(); onOpenChat?.(); }} />
+          </div>
+
+          {/* FAINT DIVIDER LINE */}
+          <div className="mx-5 border-b border-card-border/50" />
+
+          {/* GROUP 2: Settings & Preferences (Bottom) */}
+          <div className="flex flex-col pt-2 pb-2">
+            <MenuRow icon={<Link />} label="Linked Brokerage" onClick={() => setActivePage("Linked Brokerage")} />
+            <MenuRow icon={<Zap />} label="Market Pulse" onClick={() => setActivePage("Market Pulse")} />
+            <MenuRow icon={<LineChart />} label="Chart & Options" onClick={() => setActivePage("Chart & Options")} />
+            <MenuRow icon={<LayoutDashboard />} label="Display & Marquee" onClick={() => setActivePage("Display & Marquee")} />
+            <MenuRow icon={<BrainCircuit />} label="AI Parameters" onClick={() => setActivePage("AI Parameters")} />
+            <MenuRow icon={<Shield />} label="Security & Privacy" onClick={() => setActivePage("Security & Privacy")} />
+          </div>
+
+        </div>
+
+        {/* DOMINANT LOGOUT BUTTON (Pinned to Absolute Bottom) */}
+        <div className="p-4 mt-auto border-t border-card-border/50 bg-[#0c0c0c]">
+          <button className="w-full flex items-center justify-center gap-3 py-3.5 bg-terminal-danger/10 border border-terminal-danger/30 hover:bg-terminal-danger hover:text-white text-terminal-danger rounded-xl transition-all shadow-sm">
+            <LogOut className="w-5 h-5" />
+            <span className="font-black text-[13px] tracking-widest uppercase">Log Out</span>
+          </button>
+        </div>
+
+      </div>
