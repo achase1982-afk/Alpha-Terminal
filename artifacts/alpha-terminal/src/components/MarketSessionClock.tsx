@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 
 type Session = "PRE" | "RTH" | "AH" | "CLOSED";
 
@@ -114,28 +114,11 @@ function getSessionInfo(): SessionInfo {
   };
 }
 
-function playClosingBell() {
-  try {
-    const base = import.meta.env.BASE_URL || "/";
-    const audio = new Audio(`${base}closing-bell.wav`);
-    audio.volume = 0.6;
-    audio.play().catch(() => {});
-  } catch {}
-}
-
 export function MarketSessionClock() {
   const [info, setInfo] = useState<SessionInfo>(getSessionInfo);
-  const prevSessionRef = useRef<Session>(info.session);
 
   useEffect(() => {
-    const id = setInterval(() => {
-      const next = getSessionInfo();
-      if (prevSessionRef.current === "RTH" && next.session !== "RTH") {
-        playClosingBell();
-      }
-      prevSessionRef.current = next.session;
-      setInfo(next);
-    }, 1000);
+    const id = setInterval(() => setInfo(getSessionInfo()), 1000);
     return () => clearInterval(id);
   }, []);
 
