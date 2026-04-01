@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { createPortal } from "react-dom";
 import { useTerminalStore } from "@/lib/store";
 import { useOptionsSettingsStore } from "@/lib/options-store";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
@@ -60,17 +61,6 @@ function MenuRow({ icon, label, onClick }: { icon: React.ReactNode; label: strin
   );
 }
 
-function PageHeader({ title, onBack }: { title: string; onBack: () => void }) {
-  return (
-    <div className="p-4 flex items-center gap-3 border-b border-card-border bg-[#141414]">
-      <button onClick={onBack} className="p-1 text-muted-foreground hover:text-white transition-colors">
-        <ChevronLeft className="w-5 h-5" />
-      </button>
-      <span className="font-black text-sm tracking-wider text-white uppercase">{title}</span>
-    </div>
-  );
-}
-
 export function Sidebar({ isOpen, onClose, onOpenChat, onNavigate }: SidebarProps) {
   const { signOut } = useClerkSafe();
   const [activePage, setActivePage] = useState<SidebarPage>(null);
@@ -82,65 +72,86 @@ export function Sidebar({ isOpen, onClose, onOpenChat, onNavigate }: SidebarProp
 
   return (
     <>
-      {isOpen && (
-        <div className="fixed inset-0 bg-black/60 z-30" onClick={handleClose} />
-      )}
-      <div className={`absolute top-0 left-0 h-full w-[280px] sm:w-[320px] bg-[#0c0c0c] border-r border-card-border z-50 transform transition-transform duration-300 flex flex-col ${isOpen ? "translate-x-0" : "-translate-x-full"}`}>
+      <div
+        className={`fixed inset-0 bg-black/60 z-40 transition-opacity duration-300 ${isOpen ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+        onClick={handleClose}
+      />
 
-        {activePage === null ? (
-          <>
-            <div className="p-5 flex justify-between items-center bg-[#141414]">
-              <span className="font-black text-lg tracking-wider text-white">COMMAND CENTER</span>
-              <button onClick={handleClose} className="text-muted-foreground hover:text-white transition-colors">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+      <div className={`fixed top-0 left-0 h-full w-[280px] sm:w-[320px] bg-[#0c0c0c] border-r border-card-border z-50 transform transition-transform duration-300 flex flex-col ${isOpen ? "translate-x-0" : "-translate-x-full"}`}>
 
-            <div className="flex-1 overflow-y-auto py-2">
-              <div className="flex flex-col pb-2">
-                <MenuRow icon={<Star />} label="Watchlist" onClick={() => setActivePage("Watchlist")} />
-                <MenuRow icon={<Activity />} label="Markets" onClick={() => { onNavigate?.("markets"); handleClose(); }} />
-                <MenuRow icon={<Briefcase />} label="Portfolio" onClick={() => { onNavigate?.("portfolio"); handleClose(); }} />
-                <MenuRow icon={<MessageCircle />} label="AI Search" onClick={() => { handleClose(); onOpenChat?.(); }} />
-              </div>
+        <div className="p-5 flex justify-between items-center bg-[#141414]">
+          <span className="font-black text-lg tracking-wider text-white">COMMAND CENTER</span>
+          <button onClick={handleClose} className="text-muted-foreground hover:text-white transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
 
-              <div className="mx-5 border-b border-card-border/50" />
+        <div className="flex-1 overflow-y-auto py-2">
+          <div className="flex flex-col pb-2">
+            <MenuRow icon={<Star />} label="Watchlist" onClick={() => setActivePage("Watchlist")} />
+            <MenuRow icon={<Activity />} label="Markets" onClick={() => { onNavigate?.("markets"); handleClose(); }} />
+            <MenuRow icon={<Briefcase />} label="Portfolio" onClick={() => { onNavigate?.("portfolio"); handleClose(); }} />
+            <MenuRow icon={<MessageCircle />} label="AI Search" onClick={() => { handleClose(); onOpenChat?.(); }} />
+          </div>
 
-              <div className="flex flex-col pt-2 pb-2">
-                <MenuRow icon={<Link />} label="Linked Brokerage" onClick={() => setActivePage("Linked Brokerage")} />
-                <MenuRow icon={<Zap />} label="Market Pulse" onClick={() => setActivePage("Market Pulse")} />
-                <MenuRow icon={<LineChart />} label="Chart & Options" onClick={() => setActivePage("Chart & Options")} />
-                <MenuRow icon={<LayoutDashboard />} label="Display & Marquee" onClick={() => setActivePage("Display & Marquee")} />
-                <MenuRow icon={<BrainCircuit />} label="AI Parameters" onClick={() => setActivePage("AI Parameters")} />
-                <MenuRow icon={<Shield />} label="Security & Privacy" onClick={() => setActivePage("Security & Privacy")} />
-              </div>
-            </div>
+          <div className="mx-5 border-b border-card-border/50" />
 
-            <div className="p-4 mt-auto border-t border-card-border/50 bg-[#0c0c0c]">
-              <button
-                onClick={() => void signOut()}
-                className="w-full flex items-center justify-center gap-3 py-3.5 bg-terminal-danger/10 border border-terminal-danger/30 hover:bg-terminal-danger hover:text-white text-terminal-danger rounded-xl transition-all shadow-sm"
-              >
-                <LogOut className="w-5 h-5" />
-                <span className="font-black text-[13px] tracking-widest uppercase">Log Out</span>
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            <PageHeader title={activePage} onBack={() => setActivePage(null)} />
-            <div className="flex-1 overflow-y-auto">
-              {activePage === "Watchlist" && <WatchlistPage onClose={handleClose} />}
-              {activePage === "Linked Brokerage" && <LinkedBrokeragePage />}
-              {activePage === "Market Pulse" && <MarketPulsePage />}
-              {activePage === "Chart & Options" && <ChartOptionsPage />}
-              {activePage === "Display & Marquee" && <DisplayMarqueePage />}
-              {activePage === "AI Parameters" && <AiParametersPage />}
-              {activePage === "Security & Privacy" && <SecurityPrivacyPage />}
-            </div>
-          </>
-        )}
+          <div className="flex flex-col pt-2 pb-2">
+            <MenuRow icon={<Link />} label="Linked Brokerage" onClick={() => setActivePage("Linked Brokerage")} />
+            <MenuRow icon={<Zap />} label="Market Pulse" onClick={() => setActivePage("Market Pulse")} />
+            <MenuRow icon={<LineChart />} label="Chart & Options" onClick={() => setActivePage("Chart & Options")} />
+            <MenuRow icon={<LayoutDashboard />} label="Display & Marquee" onClick={() => setActivePage("Display & Marquee")} />
+            <MenuRow icon={<BrainCircuit />} label="AI Parameters" onClick={() => setActivePage("AI Parameters")} />
+            <MenuRow icon={<Shield />} label="Security & Privacy" onClick={() => setActivePage("Security & Privacy")} />
+          </div>
+        </div>
+
+        <div className="p-4 mt-auto border-t border-card-border/50 bg-[#0c0c0c]">
+          <button
+            onClick={() => void signOut()}
+            className="w-full flex items-center justify-center gap-3 py-3.5 bg-terminal-danger/10 border border-terminal-danger/30 hover:bg-terminal-danger hover:text-white text-terminal-danger rounded-xl transition-all shadow-sm"
+          >
+            <LogOut className="w-5 h-5" />
+            <span className="font-black text-[13px] tracking-widest uppercase">Log Out</span>
+          </button>
+        </div>
       </div>
+
+      {activePage && createPortal(
+        <div
+          className="fixed left-0 right-0 bottom-0 z-[100] bg-background animate-in slide-in-from-bottom-8 duration-300 flex flex-col shadow-2xl border-t border-card-border"
+          style={{ top: "80px" }}
+        >
+          <div className="flex items-center justify-between p-3 border-b border-card-border bg-card">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setActivePage(null)}
+                className="p-1.5 text-muted-foreground hover:text-white transition-colors"
+              >
+                <ChevronLeft className="w-6 h-6" />
+              </button>
+              <h2 className="font-bold text-sm tracking-widest text-white uppercase">{activePage}</h2>
+            </div>
+            <button
+              onClick={handleClose}
+              className="p-1.5 text-muted-foreground hover:text-white transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 pb-24">
+            {activePage === "Watchlist" && <WatchlistPage onClose={handleClose} />}
+            {activePage === "Linked Brokerage" && <LinkedBrokeragePage />}
+            {activePage === "Market Pulse" && <MarketPulsePage />}
+            {activePage === "Chart & Options" && <ChartOptionsPage />}
+            {activePage === "Display & Marquee" && <DisplayMarqueePage />}
+            {activePage === "AI Parameters" && <AiParametersPage />}
+            {activePage === "Security & Privacy" && <SecurityPrivacyPage />}
+          </div>
+        </div>,
+        document.body
+      )}
     </>
   );
 }
@@ -149,7 +160,8 @@ function WatchlistPage({ onClose }: { onClose: () => void }) {
   const { watchlist, removeFromWatchlist, setSymbol } = useTerminalStore();
 
   return (
-    <div className="p-4 space-y-3">
+    <div className="space-y-3 max-w-xl mx-auto">
+      <h3 className="text-xs font-bold text-primary uppercase tracking-widest">Saved Symbols</h3>
       {watchlist.length === 0 ? (
         <p className="font-mono text-[10px] text-muted-foreground/60 text-center leading-relaxed py-6">
           No symbols watched. Click the '+' next to a searched ticker to add it.
@@ -181,8 +193,11 @@ function WatchlistPage({ onClose }: { onClose: () => void }) {
 
 function LinkedBrokeragePage() {
   return (
-    <div className="p-4 space-y-4">
-      <AuthPanel />
+    <div className="space-y-4 max-w-xl mx-auto">
+      <h3 className="text-xs font-bold text-primary uppercase tracking-widest">Brokerage Connections</h3>
+      <div className="bg-card border border-card-border rounded-xl p-4">
+        <AuthPanel />
+      </div>
       <p className="text-[10px] text-muted-foreground leading-relaxed">
         Connect your brokerage to enable one-tap execution and live portfolio syncing.
       </p>
@@ -224,20 +239,22 @@ function MarketPulsePage() {
   };
 
   return (
-    <div className="p-4 space-y-4">
-      <SidebarToggle label="Show Bias Strip" icon={<Zap className="w-3 h-3" />} checked={settings.showBiasStrip} onChange={() => updateSetting("showBiasStrip", !settings.showBiasStrip)} />
-      <SidebarToggle label="Auto-Refresh" checked={settings.autoRefresh} onChange={() => updateSetting("autoRefresh", !settings.autoRefresh)} />
-      {settings.autoRefresh && (
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <span className="font-mono text-[9px] text-muted-foreground/70 uppercase tracking-wider">Interval</span>
-            <span className="font-mono text-[10px] text-primary tabular-nums">{settings.autoRefreshInterval}m</span>
+    <div className="space-y-6 max-w-xl mx-auto">
+      <div className="space-y-3">
+        <SidebarToggle label="Show Bias Strip" icon={<Zap className="w-3 h-3" />} checked={settings.showBiasStrip} onChange={() => updateSetting("showBiasStrip", !settings.showBiasStrip)} />
+        <SidebarToggle label="Auto-Refresh" checked={settings.autoRefresh} onChange={() => updateSetting("autoRefresh", !settings.autoRefresh)} />
+        {settings.autoRefresh && (
+          <div className="space-y-1.5 pl-1">
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-[9px] text-muted-foreground/70 uppercase tracking-wider">Interval</span>
+              <span className="font-mono text-[10px] text-primary tabular-nums">{settings.autoRefreshInterval}m</span>
+            </div>
+            <input type="range" min={2} max={30} step={1} value={settings.autoRefreshInterval} onChange={(e) => updateSetting("autoRefreshInterval", Number(e.target.value))} className="w-full h-1 rounded-full appearance-none cursor-pointer" style={{ accentColor: "#FFB800", background: "#2A2A2C" }} />
           </div>
-          <input type="range" min={2} max={30} step={1} value={settings.autoRefreshInterval} onChange={(e) => updateSetting("autoRefreshInterval", Number(e.target.value))} className="w-full h-1 rounded-full appearance-none cursor-pointer" style={{ accentColor: "#FFB800", background: "#2A2A2C" }} />
-        </div>
-      )}
+        )}
+      </div>
 
-      <div className="border-t border-card-border pt-3">
+      <div className="border-t border-card-border pt-4">
         <button onClick={() => setIndicatorsOpen(!indicatorsOpen)} className="w-full flex items-center justify-between mb-2">
           <span className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-bold flex items-center gap-1.5">
             <BarChart2 className="w-3 h-3" /> Indicators <span className="text-primary tabular-nums ml-1">{activeIndicators.length}</span>
@@ -253,7 +270,7 @@ function MarketPulsePage() {
                 <RotateCcw className="w-2.5 h-2.5" /> Reset
               </button>
             </div>
-            <div className="space-y-0.5 max-h-[200px] overflow-y-auto pr-0.5">
+            <div className="space-y-0.5 max-h-[240px] overflow-y-auto pr-0.5">
               {activeIndicators.map((sym) => (
                 <div key={sym} className="flex items-center justify-between px-2 py-1.5 rounded-md group" style={{ background: "rgba(255,184,0,0.04)" }}>
                   <div className="flex flex-col min-w-0">
@@ -275,7 +292,7 @@ function MarketPulsePage() {
                   onFocus={() => setShowSuggestions(true)}
                   onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && (suggestions.length > 0 ? handleAdd(suggestions[0].symbol) : addQuery.length > 0 && handleAdd(addQuery), true)) return;
+                    if (e.key === "Enter") { if (suggestions.length > 0) handleAdd(suggestions[0].symbol); else if (addQuery.length > 0) handleAdd(addQuery); }
                     if (e.key === "Escape") setShowSuggestions(false);
                   }}
                   placeholder="Search or type symbol..."
@@ -306,7 +323,7 @@ function MarketPulsePage() {
         )}
       </div>
 
-      <div className="border-t border-card-border pt-3">
+      <div className="border-t border-card-border pt-4">
         <span className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-bold block mb-2">Display Preferences</span>
         <div className="space-y-2">
           <SidebarToggle label="Show Cluster Details" checked={settings.showClusterDetails} onChange={() => updateSetting("showClusterDetails", !settings.showClusterDetails)} />
@@ -315,7 +332,7 @@ function MarketPulsePage() {
         </div>
       </div>
 
-      <div className="border-t border-card-border pt-3">
+      <div className="border-t border-card-border pt-4">
         <span className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-bold block mb-2">Allowed Strategies</span>
         <div className="space-y-1.5 max-h-48 overflow-y-auto">
           {ALL_STRATEGIES.map((s) => (
@@ -327,7 +344,7 @@ function MarketPulsePage() {
         </div>
       </div>
 
-      <div className="border-t border-card-border pt-3 space-y-3">
+      <div className="border-t border-card-border pt-4 space-y-3">
         <span className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-bold block">Strategy Preferences</span>
         <SettingInput label="Default Spread Width" value={settings.defaultSpreadWidth} onChange={(v) => updateSetting("defaultSpreadWidth", v)} placeholder="e.g. $5" />
         <SettingInput label="Account Size Tier" value={settings.accountSizeTier} onChange={(v) => updateSetting("accountSizeTier", v)} placeholder="e.g. $10k, $25k, $100k+" />
@@ -345,8 +362,8 @@ function ChartOptionsPage() {
   const OVERLAY_LABELS: Record<string, string> = { sma20: "SMA 20", sma50: "SMA 50", bb: "BB", rsi: "RSI", volume: "VOL" };
 
   return (
-    <div className="p-4 space-y-4">
-      <div className="space-y-2">
+    <div className="space-y-6 max-w-xl mx-auto">
+      <div className="space-y-3">
         <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
           <SlidersHorizontal className="w-3 h-3" /> Chart Overlays
         </Label>
@@ -363,7 +380,7 @@ function ChartOptionsPage() {
         </div>
       </div>
 
-      <div className="border-t border-card-border pt-3 space-y-3">
+      <div className="border-t border-card-border pt-4 space-y-3">
         <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
           <BarChart2 className="w-3 h-3" /> Options Chain
         </Label>
@@ -410,7 +427,7 @@ function DisplayMarqueePage() {
   };
 
   return (
-    <div className="p-4 space-y-4">
+    <div className="space-y-6 max-w-xl mx-auto">
       <div className="space-y-2">
         <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
           <LayoutDashboard className="w-3 h-3" /> Macro Tickers
@@ -431,7 +448,7 @@ function DisplayMarqueePage() {
         </div>
       </div>
 
-      <div className="border-t border-card-border pt-3 space-y-2">
+      <div className="border-t border-card-border pt-4 space-y-2">
         <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
           <ListOrdered className="w-3 h-3" /> Marquee Setup
         </Label>
@@ -467,7 +484,7 @@ function AiParametersPage() {
   const { aiModel, setAiModel, aiTemp, setAiTemp } = useTerminalStore();
 
   return (
-    <div className="p-4 space-y-4">
+    <div className="space-y-6 max-w-xl mx-auto">
       <div className="space-y-1.5">
         <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
           <BrainCircuit className="w-3 h-3" /> Model
@@ -511,17 +528,15 @@ function SecurityPrivacyPage() {
   };
 
   return (
-    <div className="p-4 space-y-4">
-      <div className="space-y-2">
-        <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
-          <Shield className="w-3 h-3" /> Session Timeout
-        </Label>
-        <div className="flex flex-wrap gap-1">
+    <div className="space-y-8 max-w-xl mx-auto">
+      <div className="space-y-3">
+        <h3 className="text-xs font-bold text-primary uppercase tracking-widest">Session Timeout</h3>
+        <div className="flex flex-wrap gap-2">
           {TIMEOUT_OPTIONS.map((opt) => (
             <button
               key={opt.value}
               onClick={() => setAutoLock(opt.value as SessionTimeoutMinutes)}
-              className={`px-2.5 py-1.5 rounded-md font-mono text-[10px] font-bold tracking-wide transition-all border ${autoLock === opt.value ? "bg-primary/20 border-primary text-primary" : "bg-card border-card-border text-muted-foreground hover:border-primary/30 hover:text-foreground"}`}
+              className={`px-3 py-2 rounded text-xs font-bold border transition-all ${autoLock === opt.value ? "bg-primary text-black border-primary" : "bg-card text-muted-foreground border-card-border hover:border-primary/30"}`}
             >
               {opt.label}
             </button>
@@ -530,10 +545,8 @@ function SecurityPrivacyPage() {
         <p className="font-mono text-[9px] text-muted-foreground/50 leading-relaxed">Signs you out after inactivity.</p>
       </div>
 
-      <div className="border-t border-card-border pt-3 space-y-3">
-        <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
-          <Fingerprint className="w-3 h-3" /> Face ID / Biometrics
-        </Label>
+      <div className="border-t border-card-border pt-4 space-y-3">
+        <h3 className="text-xs font-bold text-primary uppercase tracking-widest">Face ID / Biometrics</h3>
 
         {!webAuthnSupported && <p className="font-mono text-[9px] text-red-400/70 leading-relaxed">WebAuthn is not supported on this device.</p>}
 

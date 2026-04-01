@@ -1,0 +1,169 @@
+import React, { useState } from "react";
+import { createPortal } from "react-dom"; // <-- We need this to break out of the sidebar
+import { useTerminalStore } from "@/lib/store";
+import { useAutoLock, TIMEOUT_OPTIONS } from "@/hooks/useAutoLock";
+import { AuthPanel } from "./AuthPanel";
+import { 
+  X, ChevronLeft, Fingerprint, Link, LayoutDashboard, 
+  Zap, Settings, Bell, Shield, LogOut, Star, Activity, Briefcase, MessageCircle, LineChart, BrainCircuit
+} from "lucide-react";
+
+interface SidebarProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+export function Sidebar({ isOpen, onClose }: SidebarProps) {
+  const [activePage, setActivePage] = useState<string | null>(null);
+
+  if (!isOpen && !activePage) return null;
+
+  return (
+    <>
+      {/* ─── 1. SLIDE-OUT PANEL (Always renders underneath) ─── */}
+      {/* Background Dim Overlay */}
+      <div 
+        className={`fixed inset-0 bg-black/60 z-40 transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+        onClick={onClose}
+      />
+
+      {/* The Sidebar Drawer */}
+      <div className={`fixed top-0 left-0 h-full w-[280px] sm:w-[320px] bg-[#0c0c0c] border-r border-card-border z-50 transform transition-transform duration-300 flex flex-col ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        
+        <div className="p-5 flex justify-between items-center bg-[#141414]">
+          <span className="font-black text-lg tracking-wider text-white">COMMAND CENTER</span>
+          <button onClick={onClose} className="text-muted-foreground hover:text-white transition-colors">
+             <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto py-2">
+          {/* Navigation */}
+          <div className="flex flex-col pb-2">
+            <MenuRow icon={<Star />} label="Watchlist" onClick={() => setActivePage("Watchlist")} />
+            <MenuRow icon={<Activity />} label="Markets" onClick={() => setActivePage("Markets")} />
+            <MenuRow icon={<Briefcase />} label="Portfolio" onClick={() => setActivePage("Portfolio")} />
+            <MenuRow icon={<MessageCircle />} label="AI Search" onClick={() => { onClose(); /* Trigger Chat */ }} />
+          </div>
+
+          <div className="mx-5 border-b border-card-border/50" />
+
+          {/* Settings */}
+          <div className="flex flex-col pt-2 pb-2">
+            <MenuRow icon={<Link />} label="Linked Brokerage" onClick={() => setActivePage("Linked Brokerage")} />
+            <MenuRow icon={<Zap />} label="Market Pulse" onClick={() => setActivePage("Market Pulse")} />
+            <MenuRow icon={<LineChart />} label="Chart & Options" onClick={() => setActivePage("Chart & Options")} />
+            <MenuRow icon={<LayoutDashboard />} label="Display & Marquee" onClick={() => setActivePage("Display & Marquee")} />
+            <MenuRow icon={<BrainCircuit />} label="AI Parameters" onClick={() => setActivePage("AI Parameters")} />
+            <MenuRow icon={<Shield />} label="Security & Privacy" onClick={() => setActivePage("Security & Privacy")} />
+          </div>
+        </div>
+
+        <div className="p-4 mt-auto border-t border-card-border/50 bg-[#0c0c0c]">
+          <button className="w-full flex items-center justify-center gap-3 py-3.5 bg-terminal-danger/10 border border-terminal-danger/30 hover:bg-terminal-danger hover:text-white text-terminal-danger rounded-xl transition-all shadow-sm">
+            <LogOut className="w-5 h-5" />
+            <span className="font-black text-[13px] tracking-widest uppercase">Log Out</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ─── 2. DEDICATED PAGE OVERLAY (Teleported out of the drawer) ─── */}
+      {activePage && createPortal(
+        <div 
+          className="fixed left-0 right-0 bottom-0 z-[100] bg-background animate-in slide-in-from-bottom-8 duration-300 flex flex-col shadow-2xl border-t border-card-border"
+          style={{ top: '80px' }} // This 80px gap leaves the Header (48px) and Ticker (32px) visible. Adjust slightly if your ticker is thicker.
+        >
+          {/* Iframe Control Bar */}
+          <div className="flex items-center justify-between p-3 border-b border-card-border bg-card">
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={() => setActivePage(null)} 
+                className="p-1.5 text-muted-foreground hover:text-white transition-colors"
+              >
+                <ChevronLeft className="w-6 h-6" />
+              </button>
+              <h2 className="font-bold text-sm tracking-widest text-white uppercase">{activePage}</h2>
+            </div>
+            <button 
+              onClick={() => {
+                setActivePage(null);
+                onClose();
+              }} 
+              className="p-1.5 text-muted-foreground hover:text-white transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Page Content */}
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 pb-24">
+            {activePage === "Linked Brokerage" && <LinkedServicesView />}
+            {activePage === "Security & Privacy" && <SecurityView />}
+            {activePage === "Display & Marquee" && <PreferencesView />}
+            {/* Add other views here */}
+          </div>
+        </div>,
+        document.body // Teleports this block entirely out of the sidebar container
+      )}
+    </>
+  );
+}
+
+// ─── HELPER COMPONENTS ───
+
+function MenuRow({ icon, label, onClick }: { icon: React.ReactNode, label: string, onClick: () => void }) {
+  return (
+    <button 
+      onClick={onClick}
+      className="w-full flex items-center gap-4 px-5 py-3.5 hover:bg-card/50 transition-colors text-left group"
+    >
+      <div className="text-white group-hover:text-primary transition-colors">
+        {React.cloneElement(icon as React.ReactElement, { className: "w-5 h-5" })}
+      </div>
+      <span className="font-bold text-[15px] text-white tracking-wide">{label}</span>
+    </button>
+  );
+}
+
+// ─── PAGE VIEWS ───
+
+function LinkedServicesView() {
+  return (
+    <div className="space-y-4 max-w-xl mx-auto">
+      <h3 className="text-xs font-bold text-primary uppercase tracking-widest">Brokerage Connections</h3>
+      <div className="bg-card border border-card-border rounded-xl p-4">
+        <AuthPanel />
+      </div>
+    </div>
+  );
+}
+
+function SecurityView() {
+  const { minutes: autoLock, setMinutes: setAutoLock } = useAutoLock();
+  return (
+    <div className="space-y-8 max-w-xl mx-auto">
+      <div className="space-y-3">
+        <h3 className="text-xs font-bold text-primary uppercase tracking-widest">Session Timeout</h3>
+        <div className="flex flex-wrap gap-2">
+          {TIMEOUT_OPTIONS.map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => setAutoLock(opt.value as any)}
+              className={`px-3 py-2 rounded text-xs font-bold border transition-all ${autoLock === opt.value ? 'bg-primary text-black border-primary' : 'bg-card text-muted-foreground border-card-border'}`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PreferencesView() {
+  return (
+    <div className="space-y-4 max-w-xl mx-auto text-center text-muted-foreground mt-10">
+      Preferences Content Goes Here
+    </div>
+  );
+}
