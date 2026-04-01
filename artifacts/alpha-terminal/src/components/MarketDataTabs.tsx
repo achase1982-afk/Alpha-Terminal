@@ -205,13 +205,13 @@ export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps)
       <style>{`
         @keyframes tab-jiggle {
           0%   { transform: rotate(0deg) translate(0, 0); }
-          25%  { transform: rotate(-1.2deg) translate(-0.5px, 0); }
+          25%  { transform: rotate(-2deg) translate(-1px, 0); }
           50%  { transform: rotate(0deg) translate(0, 0); }
-          75%  { transform: rotate(1.2deg) translate(0.5px, 0); }
+          75%  { transform: rotate(2deg) translate(1px, 0); }
           100% { transform: rotate(0deg) translate(0, 0); }
         }
         .tab-jiggle {
-          animation: tab-jiggle 0.8s ease-in-out infinite;
+          animation: tab-jiggle 0.55s ease-in-out infinite;
           border: 1px solid rgba(255,255,255,0.7);
           border-radius: 6px;
           margin: 2px 3px;
