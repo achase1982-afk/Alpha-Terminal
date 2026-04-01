@@ -161,6 +161,52 @@ router.get("/models", (_req, res) => {
   res.json(data);
 });
 
+router.post("/technical-snapshot", async (req, res) => {
+  const { quote, candles } = req.body ?? {};
+  if (!quote?.symbol) {
+    return res.json({ error: "Missing quote.symbol" });
+  }
+
+  const prompt = `You are a financial analyst. Analyze ONLY the data below and return a JSON object.
+
+${formatQuote(quote as Record<string, unknown>)}
+
+${formatCandles((candles ?? []) as Array<Record<string, unknown>>)}
+
+Return ONLY valid JSON (no markdown, no code fences) with this exact structure:
+{
+  "trend": "Strong Uptrend" | "Uptrend" | "Sideways" | "Downtrend" | "Strong Downtrend",
+  "trendSignal": "bullish" | "neutral" | "bearish",
+  "rsi": <number 0-100 or null if insufficient data>,
+  "rsiLabel": "Overbought" | "Neutral" | "Oversold",
+  "resistance1": <number or null>,
+  "support1": <number or null>,
+  "resistance2": <number or null>,
+  "support2": <number or null>,
+  "shortTermOutlook": "<one sentence>"
+}
+
+If data is insufficient for any field, use null. Base RSI on 14-period calculation from the candle closes. Support/resistance from recent swing highs/lows.`;
+
+  try {
+    const client = getClient();
+    if (!client) return res.json({ error: "GEMINI_API_KEY not configured" });
+
+    const model = client.getGenerativeModel({
+      model: "gemini-2.5-flash",
+      generationConfig: { temperature: 0.1, responseMimeType: "application/json" },
+    });
+    const result = await model.generateContent(prompt);
+    const text = result.response.text();
+    const parsed = JSON.parse(text);
+    res.json(parsed);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    req.log.error({ err }, "Technical snapshot error");
+    res.json({ error: msg });
+  }
+});
+
 router.post("/technical-analysis", async (req, res) => {
   const parsed = RunTechnicalAnalysisBody.safeParse(req.body);
   if (!parsed.success) {

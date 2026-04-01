@@ -1,0 +1,147 @@
+import React, { useState } from "react";
+import { useTerminalStore } from "@/lib/store";
+import { useMarketPulseStore } from "@/stores/marketPulseStore";
+import { useAutoLock, TIMEOUT_OPTIONS } from "@/hooks/useAutoLock";
+import { AuthPanel } from "./AuthPanel";
+import { 
+  X, Shield, Settings, Zap, Link, 
+  Fingerprint, ChevronRight, LogOut, 
+  SlidersHorizontal, Gauge, BrainCircuit 
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
+
+interface SidebarProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+export function Sidebar({ isOpen, onClose }: SidebarProps) {
+  const { 
+    overlays, toggleOverlay, tapeSpeed, setTapeSpeed, 
+    aiTemp, setAiTemp, aiModel, setAiModel 
+  } = useTerminalStore();
+  
+  const { minutes: autoLock, setMinutes: setAutoLock } = useAutoLock();
+  const [activeSection, setActiveSection] = useState<string | null>("LINKED");
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[100] bg-background animate-in slide-in-from-right duration-300 flex flex-col">
+      
+      {/* HEADER */}
+      <header className="flex items-center justify-between p-6 border-b border-card-border bg-card/50">
+        <div className="flex flex-col">
+          <h2 className="font-black text-xl tracking-tighter text-white">COMMAND CENTER</h2>
+          <span className="text-[10px] text-primary font-mono tracking-widest uppercase">System Configuration v2.0</span>
+        </div>
+        <button onClick={onClose} className="p-2 bg-secondary rounded-full text-primary hover:scale-110 transition-transform">
+          <X className="w-6 h-6" />
+        </button>
+      </header>
+
+      <div className="flex-1 overflow-y-auto p-6 space-y-8 pb-32">
+        
+        {/* SECTION 1: LINKED SERVICES (Brokerage Connections) */}
+        <section className="space-y-4">
+          <div className="flex items-center gap-2 text-primary">
+            <Link className="w-4 h-4" />
+            <h3 className="text-xs font-bold uppercase tracking-widest">Linked Services</h3>
+          </div>
+          <div className="bg-card border border-card-border rounded-xl p-4">
+            <AuthPanel /> {/* Your existing Schwab Auth logic */}
+            <p className="text-[10px] text-muted-foreground mt-3 leading-relaxed">
+              Connect your brokerage to enable one-tap execution and live portfolio syncing.
+            </p>
+          </div>
+        </section>
+
+        {/* SECTION 2: PREFERENCES (Chart & AI Params) */}
+        <section className="space-y-4">
+          <div className="flex items-center gap-2 text-primary">
+            <Settings className="w-4 h-4" />
+            <h3 className="text-xs font-bold uppercase tracking-widest">Terminal Preferences</h3>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Chart Overlays */}
+            <div className="bg-card border border-card-border rounded-xl p-4 space-y-3">
+              <span className="text-[10px] font-bold text-muted-foreground uppercase">Chart Overlays</span>
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(overlays).map(([key, active]) => (
+                  <button
+                    key={key}
+                    onClick={() => toggleOverlay(key as any)}
+                    className={`px-3 py-1.5 rounded-md text-[10px] font-bold border transition-all 
+                      ${active ? 'bg-primary text-black border-primary' : 'bg-secondary text-muted-foreground border-card-border'}`}
+                  >
+                    {key.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* AI Settings */}
+            <div className="bg-card border border-card-border rounded-xl p-4 space-y-4">
+              <span className="text-[10px] font-bold text-muted-foreground uppercase">AI Intelligence Params</span>
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-mono">Temperature: {aiTemp}</span>
+                  <span className="text-[10px] text-primary">{aiTemp > 1 ? 'Creative' : 'Precise'}</span>
+                </div>
+                <Slider value={[aiTemp]} onValueChange={(v) => setAiTemp(v[0])} max={2} step={0.1} />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* SECTION 3: SECURITY & BIOMETRICS */}
+        <section className="space-y-4">
+          <div className="flex items-center gap-2 text-primary">
+            <Shield className="w-4 h-4" />
+            <h3 className="text-xs font-bold uppercase tracking-widest">Security & Privacy</h3>
+          </div>
+          
+          <div className="bg-card border border-card-border rounded-xl divide-y divide-card-border">
+            {/* Session Timeout */}
+            <div className="p-4 flex flex-col gap-3">
+              <span className="text-[10px] font-bold text-muted-foreground uppercase">Session Timeout</span>
+              <div className="flex gap-2">
+                {TIMEOUT_OPTIONS.map(opt => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setAutoLock(opt.value as any)}
+                    className={`flex-1 py-2 rounded text-[10px] font-bold border transition-all
+                      ${autoLock === opt.value ? 'bg-primary/20 border-primary text-primary' : 'bg-background border-card-border'}`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Biometric Toggles */}
+            <div className="p-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Fingerprint className="w-5 h-5 text-primary" />
+                <div className="flex flex-col">
+                  <span className="text-xs font-bold">FaceID Authentication</span>
+                  <span className="text-[10px] text-muted-foreground">Require Biometrics for trade execution</span>
+                </div>
+              </div>
+              <Switch />
+            </div>
+          </div>
+        </section>
+
+        {/* SIGN OUT */}
+        <Button variant="destructive" className="w-full h-12 font-black tracking-widest gap-2">
+          <LogOut className="w-4 h-4" /> SIGN OUT
+        </Button>
+
+      </div>
+    </div>
+  );
+}

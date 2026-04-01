@@ -16,14 +16,15 @@ import { useAutoRefreshToken } from "@/hooks/useAutoRefreshToken";
 import { useMarketStream } from "@/hooks/useMarketStream";
 import { useViewportShell } from "@/hooks/useViewportShell";
 import { AiChatOverlay } from "@/components/AiChatOverlay";
-import { InstitutionalTearSheet } from "@/views/InstitutionalTearSheet";
+
 import { InAppBrowser } from "@/components/InAppBrowser";
 import { NewsTab } from "@/components/NewsTab";
 import { AiBiasStrip } from "@/components/market-pulse/AiBiasStrip";
+import { CompanyResearchHub } from "@/components/CompanyResearchHub";
 import type { AiSubTab } from "@/components/ai-tab/AiSubTabs";
 import {
   LineChart,
-  BarChart2,
+
   BrainCircuit,
   Menu,
   Radar,
@@ -42,7 +43,7 @@ export default function TerminalPage() {
   const { symbol, accessToken, chartPeriod, chartInterval, streamStatus } = useTerminalStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
-  const [tearSheetOpen, setTearSheetOpen] = useState(false);
+
   const [historyTimedOut, setHistoryTimedOut] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const [activeBottom, setActiveBottom] = useState<BottomTab>("markets");
@@ -186,21 +187,7 @@ export default function TerminalPage() {
                   </div>
                 </TabsContent>
                 <TabsContent value="company" className="m-0 focus-visible:outline-none">
-                  <div className="p-4">
-                    <button
-                      onClick={() => setTearSheetOpen(true)}
-                      className="w-full bg-card border border-card-border rounded-xl p-4 flex items-center justify-between hover:border-primary/30 transition-colors"
-                    >
-                      <div className="flex items-center gap-3">
-                        <BarChart2 className="w-5 h-5 text-primary" />
-                        <div className="text-left">
-                          <span className="font-mono text-xs font-bold text-foreground block">COMPANY RESEARCH</span>
-                          <span className="font-mono text-[10px] text-muted-foreground">Tear Sheet & Fundamentals</span>
-                        </div>
-                      </div>
-                      <span className="font-mono text-[10px] text-primary">OPEN →</span>
-                    </button>
-                  </div>
+                  <CompanyResearchHub candles={historyData?.candles as any} />
                 </TabsContent>
               </Tabs>
             </>
@@ -263,7 +250,6 @@ export default function TerminalPage() {
       </nav>
 
       <AiChatOverlay isOpen={chatOpen} onClose={() => setChatOpen(false)} />
-      <InstitutionalTearSheet isOpen={tearSheetOpen} onClose={() => setTearSheetOpen(false)} />
       <InAppBrowser />
     </div>
   );

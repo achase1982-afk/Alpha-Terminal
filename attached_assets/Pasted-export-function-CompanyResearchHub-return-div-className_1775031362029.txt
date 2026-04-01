@@ -1,0 +1,68 @@
+export function CompanyResearchHub() {
+  return (
+    <div className="flex flex-col gap-6 p-4 animate-in fade-in duration-500">
+      
+      {/* FUNDAMENTALS GRID (3 columns) */}
+      <section>
+        <h3 className="text-primary text-[10px] font-black tracking-widest mb-3">FUNDAMENTALS</h3>
+        <div className="grid grid-cols-3 gap-y-4 gap-x-2 bg-card/30 p-3 rounded-lg border border-card-border">
+          <DataPoint label="MKT CAP" value="$82.97B" />
+          <DataPoint label="SHARES" value="874.5M" />
+          <DataPoint label="P/E RATIO" value="28.60" />
+          <DataPoint label="EPS (TTM)" value="$3.07" />
+          <DataPoint label="BETA" value="1.99" />
+          <DataPoint label="DIV YIELD" value="--" />
+        </div>
+        
+        {/* Visual 52-Week Bar */}
+        <div className="mt-4 px-1">
+          <div className="flex justify-between text-[9px] text-muted-foreground mb-1">
+            <span>52W LOW $47.09</span>
+            <span className="text-primary">CURRENT $101.00</span>
+            <span>52W HIGH $102.77</span>
+          </div>
+          <div className="h-1.5 w-full bg-secondary rounded-full overflow-hidden relative">
+            <div className="absolute h-full bg-gradient-to-r from-red-500 via-yellow-500 to-green-500 w-full opacity-30" />
+            <div className="absolute h-full w-1 bg-white shadow-[0_0_8px_white]" style={{ left: '92%' }} />
+          </div>
+        </div>
+      </section>
+
+      {/* AI TECHNICAL ANALYSIS */}
+      <section>
+        <h3 className="text-primary text-[10px] font-black tracking-widest mb-3">TECHNICAL ANALYSIS</h3>
+        <div className="grid grid-cols-2 gap-2 mb-3">
+          <div className="bg-[#1a1a1a] p-3 rounded border border-terminal-success/30">
+            <span className="text-[9px] text-muted-foreground block">TREND</span>
+            <span className="text-terminal-success font-bold text-sm uppercase">Strong Uptrend</span>
+          </div>
+          <div className="bg-[#1a1a1a] p-3 rounded border border-card-border">
+            <span className="text-[9px] text-muted-foreground block">RSI (14)</span>
+            <span className="text-white font-bold text-sm">64.2 (Neutral)</span>
+          </div>
+        </div>
+
+        {/* AI Levels */}
+        <div className="space-y-2">
+          <div className="flex justify-between items-center p-2 bg-card border-l-2 border-l-terminal-danger">
+            <span className="text-[10px] font-bold">RESISTANCE 1</span>
+            <span className="font-mono text-xs">$105.15</span>
+          </div>
+          <div className="flex justify-between items-center p-2 bg-card border-l-2 border-l-terminal-success">
+            <span className="text-[10px] font-bold">SUPPORT 1</span>
+            <span className="font-mono text-xs">$98.40</span>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function DataPoint({ label, value }: { label: string, value: string }) {
+  return (
+    <div className="flex flex-col">
+      <span className="text-[8px] text-muted-foreground font-bold tracking-tighter uppercase">{label}</span>
+      <span className="text-xs font-mono font-semibold text-white">{value}</span>
+    </div>
+  );
+}
