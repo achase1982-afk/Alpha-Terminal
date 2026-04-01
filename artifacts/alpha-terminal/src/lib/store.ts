@@ -262,7 +262,7 @@ export const useTerminalStore = create<TerminalState>()(
     }),
     {
       name: 'alpha-terminal-storage',
-      version: 3,
+      version: 4,
       migrate: (persistedState: unknown, version: number) => {
         const s = persistedState as Record<string, unknown>;
         if (version < 2) {
@@ -273,6 +273,9 @@ export const useTerminalStore = create<TerminalState>()(
         if (version < 3) {
           s['traderAccessToken'] = null;
           s['traderRefreshToken'] = null;
+        }
+        if (version < 4) {
+          s['aiModel'] = 'gemini-3.1-pro-preview';
         }
         return s;
       },
