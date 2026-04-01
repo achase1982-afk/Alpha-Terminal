@@ -107,17 +107,14 @@ export default function TerminalPage() {
             <span className="font-sans font-semibold text-[10px] tracking-[0.25em] text-primary">TERMINAL</span>
           </div>
           <MarketSessionClock />
-          <div className="ml-3 flex items-center gap-1.5">
-            <span className="font-mono text-xs text-primary font-bold">{symbol}</span>
-            <div
-              className="w-2.5 h-2.5 rounded-full shrink-0"
-              title={streamStatus === "live" ? "Live data" : streamStatus === "connecting" ? "Connecting..." : "Offline"}
-              style={{
-                background: streamStatus === "live" ? "#00d166" : streamStatus === "connecting" ? "#FFB800" : "#f23645",
-                boxShadow: streamStatus === "live" ? "0 0 6px #00d166" : undefined,
-              }}
-            />
-          </div>
+          <div
+            className="ml-3 w-2.5 h-2.5 rounded-full shrink-0"
+            title={streamStatus === "live" ? "Live data" : streamStatus === "connecting" ? "Connecting..." : "Offline"}
+            style={{
+              background: streamStatus === "live" ? "#00d166" : streamStatus === "connecting" ? "#FFB800" : "#f23645",
+              boxShadow: streamStatus === "live" ? "0 0 6px #00d166" : undefined,
+            }}
+          />
         </div>
         <TickerTape />
         <AiBiasStrip onNavigateToPulse={() => { setActiveBottom("ai"); setAiSubTab("pulse"); }} />

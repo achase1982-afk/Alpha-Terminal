@@ -151,7 +151,7 @@ export function MarketSessionClock() {
   return (
     <div className="flex items-center gap-1.5 min-w-0">
       <span
-        className="font-mono text-[9px] font-bold uppercase tracking-widest"
+        className="font-mono text-[10px] font-bold uppercase tracking-widest"
         style={{ color: info.color }}
       >
         {info.label}
