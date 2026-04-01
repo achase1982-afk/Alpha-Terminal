@@ -173,21 +173,26 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
 
   useEffect(() => {
     if (!jiggling) return;
+    const stop = () => {
+      setJiggling(false);
+      setDragging(false);
+      setDragTabId(null);
+      setPreviewOrder([]);
+    };
     const handler = (e: TouchEvent | MouseEvent) => {
       const container = containerRef.current;
       if (!container) return;
       if (!container.contains(e.target as Node)) {
-        setJiggling(false);
-        setDragging(false);
-        setDragTabId(null);
-        setPreviewOrder([]);
+        e.preventDefault();
+        e.stopPropagation();
+        stop();
       }
     };
-    document.addEventListener("touchstart", handler, { passive: true });
-    document.addEventListener("mousedown", handler);
+    document.addEventListener("touchstart", handler, { capture: true });
+    document.addEventListener("mousedown", handler, { capture: true });
     return () => {
-      document.removeEventListener("touchstart", handler);
-      document.removeEventListener("mousedown", handler);
+      document.removeEventListener("touchstart", handler, { capture: true });
+      document.removeEventListener("mousedown", handler, { capture: true });
     };
   }, [jiggling]);
 
@@ -248,7 +253,7 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
             <button
               key={tabId}
               ref={(el) => { tabRefs.current[i] = el; }}
-              onClick={() => { if (!jiggling && !touchMoved.current) onTabChange(tabId); }}
+              onClick={() => { if (jiggling) { setJiggling(false); setDragging(false); setDragTabId(null); setPreviewOrder([]); return; } if (!touchMoved.current) onTabChange(tabId); }}
               onTouchStart={(e) => handleTouchStart(i, e)}
               className={[
                 "flex flex-col items-center justify-center w-12 h-12 rounded-full shadow-[0_0_12px_rgba(255,184,0,0.35)] transition-transform active:scale-95 select-none",
@@ -267,7 +272,7 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
           <button
             key={tabId}
             ref={(el) => { tabRefs.current[i] = el; }}
-            onClick={() => { if (!jiggling && !touchMoved.current) onTabChange(tabId); }}
+            onClick={() => { if (jiggling) { setJiggling(false); setDragging(false); setDragTabId(null); setPreviewOrder([]); return; } if (!touchMoved.current) onTabChange(tabId); }}
             onTouchStart={(e) => handleTouchStart(i, e)}
             className={[
               "flex flex-col items-center gap-1 min-w-0 px-2 py-1.5 select-none transition-colors",

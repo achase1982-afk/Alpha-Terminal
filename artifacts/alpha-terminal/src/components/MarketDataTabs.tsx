@@ -176,21 +176,26 @@ export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps)
 
   useEffect(() => {
     if (!jiggling) return;
+    const stop = () => {
+      setJiggling(false);
+      setDragging(false);
+      setDragTabId(null);
+      setPreviewOrder([]);
+    };
     const handler = (e: TouchEvent | MouseEvent) => {
       const container = containerRef.current;
       if (!container) return;
       if (!container.contains(e.target as Node)) {
-        setJiggling(false);
-        setDragging(false);
-        setDragTabId(null);
-        setPreviewOrder([]);
+        e.preventDefault();
+        e.stopPropagation();
+        stop();
       }
     };
-    document.addEventListener("touchstart", handler, { passive: true });
-    document.addEventListener("mousedown", handler);
+    document.addEventListener("touchstart", handler, { capture: true });
+    document.addEventListener("mousedown", handler, { capture: true });
     return () => {
-      document.removeEventListener("touchstart", handler);
-      document.removeEventListener("mousedown", handler);
+      document.removeEventListener("touchstart", handler, { capture: true });
+      document.removeEventListener("mousedown", handler, { capture: true });
     };
   }, [jiggling]);
 
@@ -257,7 +262,8 @@ export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps)
               <button
                 ref={(el) => { tabRefs.current[i] = el; }}
                 onClick={() => {
-                  if (!jiggling && !touchMoved.current) setActiveTab(tabId);
+                  if (jiggling) { setJiggling(false); setDragging(false); setDragTabId(null); setPreviewOrder([]); return; }
+                  if (!touchMoved.current) setActiveTab(tabId);
                 }}
                 onTouchStart={(e) => handleTouchStart(i, e)}
                 className={[
