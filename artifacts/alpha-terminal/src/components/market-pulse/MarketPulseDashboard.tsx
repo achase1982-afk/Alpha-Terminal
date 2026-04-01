@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useImperativeHandle, forwardRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Zap, Activity, Radio } from "lucide-react";
 import { useTerminalStore } from "../../lib/store";
@@ -51,7 +51,11 @@ interface MarketPulseDashboardProps {
   autoGenerate?: boolean;
 }
 
-export function MarketPulseDashboard({ autoGenerate }: MarketPulseDashboardProps = {}) {
+export interface MarketPulseDashboardHandle {
+  fetchPulse: () => void;
+}
+
+export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, MarketPulseDashboardProps>(function MarketPulseDashboard({ autoGenerate }, ref) {
   const { accessToken, aiModel } = useTerminalStore();
   const queryClient = useQueryClient();
   const {
@@ -138,6 +142,8 @@ export function MarketPulseDashboard({ autoGenerate }: MarketPulseDashboardProps
     }, 0);
   }, [accessToken, aiModel, settings, startStream, setLoading, setStreaming, setError, clearThinking, setPulseData, pulseData]);
 
+  useImperativeHandle(ref, () => ({ fetchPulse }), [fetchPulse]);
+
   const autoGenRef = useRef(false);
   useEffect(() => {
     if (autoGenerate && !autoGenRef.current && !pulseData && !isLoading && !isStreaming && accessToken) {
@@ -177,29 +183,7 @@ export function MarketPulseDashboard({ autoGenerate }: MarketPulseDashboardProps
   const isActive = isLoading || isStreaming || localGenerating;
 
   return (
-    <div className="space-y-4 px-3 sm:px-4 lg:px-5 overflow-x-hidden">
-      <div className="sticky z-30 flex items-center justify-between py-2 bg-background" style={{ top: 0 }}>
-        <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-lg bg-[#FFB800]/15 border border-[#FFB800]/30 flex items-center justify-center">
-            <Zap className="w-3.5 h-3.5 text-[#FFB800]" />
-          </div>
-          <div>
-            <h2 className="font-mono font-bold text-sm text-[#e4e4e7] tracking-wider">MARKET PULSE</h2>
-            <p className="font-mono text-[9px] text-[#71717a] tracking-widest uppercase">Multi-Asset Macro Analysis</p>
-          </div>
-        </div>
-
-        {!pulseData && !isActive && (
-          <button
-            onClick={fetchPulse}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg font-mono text-xs font-bold tracking-wider text-[#0c0c0c] bg-[#FFB800] hover:bg-[#FFB800]/90 transition-all active:scale-95"
-          >
-            <Zap className="w-3.5 h-3.5" />
-            GENERATE PULSE
-          </button>
-        )}
-      </div>
-
+    <div className="space-y-4 px-3 sm:px-4 lg:px-5 overflow-x-hidden pt-1">
       {isActive && (
         <>
           <PulseLoadingStatus thinkingTokens={thinkingTokens} />
@@ -275,7 +259,7 @@ export function MarketPulseDashboard({ autoGenerate }: MarketPulseDashboardProps
       )}
     </div>
   );
-}
+});
 
 function PulseLoadingStatus({ thinkingTokens }: { thinkingTokens: string[] }) {
   const [elapsed, setElapsed] = useState(0);

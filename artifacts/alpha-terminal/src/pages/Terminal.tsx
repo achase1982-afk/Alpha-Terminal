@@ -23,8 +23,11 @@ import { AiBiasStrip } from "@/components/market-pulse/AiBiasStrip";
 import { BottomNav } from "@/components/BottomNav";
 import { CompanyResearchHub } from "@/components/CompanyResearchHub";
 import { AiSubTabs, type AiSubTab } from "@/components/ai-tab/AiSubTabs";
+import type { MarketPulseDashboardHandle } from "@/components/market-pulse/MarketPulseDashboard";
+import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import {
   Menu,
+  Zap,
   Newspaper,
   Briefcase,
   ListOrdered,
@@ -46,6 +49,8 @@ export default function TerminalPage() {
   const [contextTab, setContextTab] = useState<ContextTab>("news");
   const [aiSubTab, setAiSubTab] = useState<AiSubTab>("pulse");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const pulseDashRef = useRef<MarketPulseDashboardHandle>(null);
+  const { pulseData, isLoading: pulseLoading, isStreaming: pulseStreaming } = useMarketPulseStore();
   const { refresh } = useAutoRefreshToken();
   useViewportShell();
 
@@ -117,25 +122,51 @@ export default function TerminalPage() {
       </header>
 
       {activeBottom === "ai" && (
-        <div className="shrink-0 bg-background z-40 px-3 sm:px-4 lg:px-5 pt-1 pb-1">
-          <div
-            className="flex w-full rounded-full p-1"
-            style={{ background: "rgba(39,39,42,0.5)" }}
-          >
-            {(["pulse", "strategist"] as AiSubTab[]).map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setAiSubTab(tab)}
-                className="flex-1 font-mono text-xs font-bold tracking-wider py-2 rounded-full transition-all duration-200"
-                style={{
-                  background: aiSubTab === tab ? "#3f3f46" : "transparent",
-                  color: aiSubTab === tab ? "#fafafa" : "#71717a",
-                }}
-              >
-                {tab.toUpperCase()}
-              </button>
-            ))}
+        <div className="shrink-0 bg-background z-40">
+          <div className="px-3 sm:px-4 lg:px-5 pt-1 pb-1">
+            <div
+              className="flex w-full rounded-full p-1"
+              style={{ background: "rgba(39,39,42,0.5)" }}
+            >
+              {(["pulse", "strategist"] as AiSubTab[]).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setAiSubTab(tab)}
+                  className="flex-1 font-mono text-xs font-bold tracking-wider py-2 rounded-full transition-all duration-200"
+                  style={{
+                    background: aiSubTab === tab ? "#3f3f46" : "transparent",
+                    color: aiSubTab === tab ? "#fafafa" : "#71717a",
+                  }}
+                >
+                  {tab.toUpperCase()}
+                </button>
+              ))}
+            </div>
           </div>
+
+          {aiSubTab === "pulse" && (
+            <div className="flex items-center justify-between px-3 sm:px-4 lg:px-5 py-2 border-b border-card-border/30">
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-lg bg-[#FFB800]/15 border border-[#FFB800]/30 flex items-center justify-center">
+                  <Zap className="w-3.5 h-3.5 text-[#FFB800]" />
+                </div>
+                <div>
+                  <h2 className="font-mono font-bold text-sm text-[#e4e4e7] tracking-wider">MARKET PULSE</h2>
+                  <p className="font-mono text-[9px] text-[#71717a] tracking-widest uppercase">Multi-Asset Macro Analysis</p>
+                </div>
+              </div>
+
+              {!pulseData && !pulseLoading && !pulseStreaming && (
+                <button
+                  onClick={() => pulseDashRef.current?.fetchPulse()}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg font-mono text-xs font-bold tracking-wider text-[#0c0c0c] bg-[#FFB800] hover:bg-[#FFB800]/90 transition-all active:scale-95"
+                >
+                  <Zap className="w-3.5 h-3.5" />
+                  GENERATE PULSE
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -189,7 +220,7 @@ export default function TerminalPage() {
           )}
 
           {activeBottom === "ai" && (
-            <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} />
+            <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} />
           )}
 
           {activeBottom === "portfolio" && (

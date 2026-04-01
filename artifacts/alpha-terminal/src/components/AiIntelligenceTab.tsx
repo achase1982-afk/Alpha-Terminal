@@ -11,7 +11,7 @@ import {
   Zap, ChevronDown, AlertTriangle, CheckCircle2, XCircle, AlertCircle,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
-import { MarketPulseDashboard } from "@/components/market-pulse/MarketPulseDashboard";
+import { MarketPulseDashboard, type MarketPulseDashboardHandle } from "@/components/market-pulse/MarketPulseDashboard";
 import { StrategistAuditPanel, type StrategistAuditData } from "@/components/market-pulse/StrategistAuditPanel";
 import type { AiSubTab } from "@/components/ai-tab/AiSubTabs";
 import { AiThinkingFeed } from "@/components/ai-shared/AiThinkingFeed";
@@ -629,9 +629,10 @@ function StrategySettings() {
 interface AiIntelligenceTabProps {
   subTab: AiSubTab;
   onSubTabChange: (tab: AiSubTab) => void;
+  pulseDashRef?: React.RefObject<MarketPulseDashboardHandle | null>;
 }
 
-export function AiIntelligenceTab({ subTab, onSubTabChange }: AiIntelligenceTabProps) {
+export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef }: AiIntelligenceTabProps) {
   const {
     symbol, accessToken,
     aiModel, aiTemp,
@@ -946,7 +947,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange }: AiIntelligenceTabP
   return (
     <div className="flex flex-col gap-0 w-full max-w-5xl mx-auto pb-6 flex-1" style={{ minHeight: "calc(var(--vvh, 100vh) - 200px)" }}>
       {subTab === "pulse" && (
-        <MarketPulseDashboard />
+        <MarketPulseDashboard ref={pulseDashRef} />
       )}
 
       {subTab === "strategist" && (
