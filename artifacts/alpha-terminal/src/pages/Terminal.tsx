@@ -30,6 +30,7 @@ import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import {
   Menu,
   Zap,
+  RefreshCw,
   Newspaper,
   ListOrdered,
   Star,
@@ -165,7 +166,7 @@ export default function TerminalPage() {
                   boxShadow: "0 1px 3px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05)",
                 }}
               >
-                <Zap className="w-3 h-3" />
+                <RefreshCw className="w-3 h-3" />
                 REFRESH
               </button>
             </div>
