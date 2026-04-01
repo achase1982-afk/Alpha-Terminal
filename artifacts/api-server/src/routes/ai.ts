@@ -21,8 +21,8 @@ import { runPreTradeChecks, type PreTradeInput, type PreTradeResult } from "../l
 const router: IRouter = Router();
 
 const AVAILABLE_MODELS = [
-  "gemini-2.5-pro-preview-05-06",
-  "gemini-2.5-flash",
+  "gemini-3.1-pro-preview",
+  "gemini-3.1-flash-lite-preview",
 ];
 
 interface NativeStreamOptions {
@@ -40,7 +40,7 @@ async function nativeStreamGemini(opts: NativeStreamOptions): Promise<string> {
 
   const {
     prompt,
-    modelName = "gemini-2.5-pro-preview-05-06",
+    modelName = "gemini-3.1-pro-preview",
     temperature = 0,
     thinkingBudget = 4096,
     onThinking,
@@ -83,7 +83,7 @@ function getClient(): GoogleGenerativeAI | null {
 
 async function callGemini(
   prompt: string,
-  modelName: string = "gemini-2.5-flash",
+  modelName: string = "gemini-3.1-flash-lite-preview",
   temperature: number = 0.3
 ): Promise<string> {
   const client = getClient();
@@ -243,7 +243,7 @@ If data is insufficient for any field, use null. Base RSI on 14-period calculati
     if (!client) return res.json({ error: "GEMINI_API_KEY not configured" });
 
     const model = client.getGenerativeModel({
-      model: "gemini-2.5-flash",
+      model: "gemini-3.1-flash-lite-preview",
       generationConfig: { temperature: 0.1, responseMimeType: "application/json" },
     });
     const result = await model.generateContent(prompt);
@@ -288,7 +288,7 @@ Analyze ONLY the above data and provide:
 Be specific, data-driven, and concise. Use markdown formatting.`;
 
   try {
-    const response = await callGemini(prompt, model ?? "gemini-2.5-flash", temperature ?? 0.3);
+    const response = await callGemini(prompt, model ?? "gemini-3.1-flash-lite-preview", temperature ?? 0.3);
     res.json(RunTechnicalAnalysisResponse.parse({ response }));
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -353,7 +353,7 @@ Be specific, data-driven, and concise. Use markdown formatting.`;
   }, 5000);
 
   try {
-    const chosenModel = model ?? "gemini-2.5-flash";
+    const chosenModel = model ?? "gemini-3.1-flash-lite-preview";
     await nativeStreamGemini({
       prompt,
       modelName: chosenModel,
@@ -413,7 +413,7 @@ Analyze ONLY the above data and provide:
 Be specific with strikes, expirations, and premium estimates. Use markdown formatting.`;
 
   try {
-    const response = await callGemini(prompt, model ?? "gemini-2.5-flash", temperature ?? 0.3);
+    const response = await callGemini(prompt, model ?? "gemini-3.1-flash-lite-preview", temperature ?? 0.3);
     res.json(RunOptionsAnalysisResponse.parse({ response }));
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -856,7 +856,7 @@ Specific and actionable. Include the instrument, direction, key level, and trigg
 Keep the entire output under 500 words. Be technically precise, data-driven, and immediately actionable. No filler. Use markdown.`;
 
   try {
-    const response = await callGemini(prompt, model ?? "gemini-2.5-flash", temperature ?? 0.2);
+    const response = await callGemini(prompt, model ?? "gemini-3.1-flash-lite-preview", temperature ?? 0.2);
     res.json({ response });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -988,7 +988,7 @@ RULES:
 - Be technically precise, data-driven, and immediately actionable.`;
 
   try {
-    const raw = await callGemini(prompt, model ?? "gemini-2.5-flash", temperature ?? 0.2);
+    const raw = await callGemini(prompt, model ?? "gemini-3.1-flash-lite-preview", temperature ?? 0.2);
 
     let cleaned = raw.trim();
     if (cleaned.startsWith("```")) {
@@ -1172,7 +1172,7 @@ Write ONLY the narrative fields. Return this exact JSON structure:
   try {
     const responseBuffer = await nativeStreamGemini({
       prompt: narrativePrompt,
-      modelName: "gemini-2.5-pro-preview-05-06",
+      modelName: "gemini-3.1-pro-preview",
       temperature: 0,
       thinkingBudget: 4096,
       onThinking: (text) => {
@@ -1396,7 +1396,7 @@ router.post("/options-strategist", async (req, res) => {
     };
 
     const narrativePrompt = `${STRATEGIST_SYSTEM_PROMPT}\n\nHere is the payload:\n\n${JSON.stringify(payload, null, 2)}`;
-    const narrative = await callGemini(narrativePrompt, "gemini-2.5-flash", 0.2);
+    const narrative = await callGemini(narrativePrompt, "gemini-3.1-flash-lite-preview", 0.2);
 
     res.json({ strategies, narrative, edge, underlyingPrice, regime, pulse: resolvedPulse, overrideWarning });
   } catch (err: unknown) {
@@ -1535,7 +1535,7 @@ router.post("/options-strategist/stream", async (req, res) => {
 
       await nativeStreamGemini({
         prompt: narrativePrompt,
-        modelName: "gemini-2.5-flash",
+        modelName: "gemini-3.1-flash-lite-preview",
         temperature: 0.2,
         thinkingBudget: 2048,
         onThinking: (text) => {
@@ -1605,7 +1605,7 @@ STRICT DATA GROUNDING RULE FOR MARKET/TRADING QUESTIONS:
 ${marketContext ? `═══ LIVE SCHWAB CONTEXT DATA ═══\n${marketContext}\n═══ END CONTEXT DATA ═══` : "No live Schwab data connected."}`;
 
     const result = streamText({
-      model: google("gemini-2.5-flash"),
+      model: google("gemini-3.1-flash-lite-preview"),
       system: systemPrompt,
       temperature: 0.1,
       tools: {
@@ -1807,7 +1807,7 @@ Return this exact JSON structure:
 }`;
 
   try {
-    const raw = await callGemini(prompt, model ?? "gemini-2.5-flash", temperature ?? 0.1);
+    const raw = await callGemini(prompt, model ?? "gemini-3.1-flash-lite-preview", temperature ?? 0.1);
 
     // Try to parse JSON — strip any markdown fences Gemini may wrap around it
     const cleaned = raw.replace(/^```(?:json)?\s*/im, "").replace(/```\s*$/im, "").trim();
@@ -1956,7 +1956,7 @@ INSTRUCTIONS:
 - Use markdown formatting. Be precise and actionable.`;
 
   try {
-    const response = await callGemini(prompt, model ?? "gemini-2.5-flash", temperature ?? 0.1);
+    const response = await callGemini(prompt, model ?? "gemini-3.1-flash-lite-preview", temperature ?? 0.1);
     res.json({
       response,
       indicators: {
@@ -1976,7 +1976,7 @@ INSTRUCTIONS:
 });
 
 router.post("/sympathy-plays", async (req, res) => {
-  const { symbol, model = "gemini-2.5-flash", temperature = 0.3 } = req.body as {
+  const { symbol, model = "gemini-3.1-flash-lite-preview", temperature = 0.3 } = req.body as {
     symbol?: string;
     model?: string;
     temperature?: number;
@@ -2037,7 +2037,7 @@ router.post("/pre-trade-check", async (req, res) => {
   try {
     const summary = result.checks.map(c => `${c.label}: ${c.status} (${c.value})`).join("; ");
     const prompt = `You are a risk manager giving a one-sentence summary of a pre-trade risk check. Be direct and concise. The overall result is ${result.overall} with ${result.passCount} passes, ${result.warnCount} warnings, ${result.failCount} fails. Details: ${summary}. Strategy: ${strategy.strategy_type}. Give exactly one short sentence (max 20 words) that a trader would find useful.`;
-    aiOneLiner = await callGemini(prompt, "gemini-2.5-flash", 0.3);
+    aiOneLiner = await callGemini(prompt, "gemini-3.1-flash-lite-preview", 0.3);
   } catch {
     aiOneLiner = result.overall === "PASS" ? "All checks passed. Clear to trade."
       : result.overall === "WARN" ? "Caution: some checks flagged. Review before entry."
