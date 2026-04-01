@@ -26,7 +26,12 @@ interface MetricsBarProps {
   onOpenTearSheet?: () => void;
 }
 
-function usePriceFlash(price: number | null, change: number | null): string {
+const TICK_UP = "#00d166";
+const TICK_DN = "#f23645";
+const TICK_NEUTRAL = "#e4e4e7";
+const TICK_FLASH_MS = 800;
+
+function usePriceFlash(price: number | null, _change: number | null): string {
   const [flash, setFlash] = useState("");
   const prevPrice = useRef<number | null>(null);
 
@@ -43,6 +48,31 @@ function usePriceFlash(price: number | null, change: number | null): string {
   }, [price]);
 
   return flash;
+}
+
+function useTickFlashColor(price: number | null): string {
+  const prevPrice = useRef<number | null>(null);
+  const [color, setColor] = useState(TICK_NEUTRAL);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (price == null) {
+      prevPrice.current = price;
+      return;
+    }
+    if (prevPrice.current != null && price !== prevPrice.current) {
+      const tickColor = price > prevPrice.current ? TICK_UP : TICK_DN;
+      setColor(tickColor);
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => setColor(TICK_NEUTRAL), TICK_FLASH_MS);
+    }
+    prevPrice.current = price;
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [price]);
+
+  return color;
 }
 
 const GRID_CLS = "grid items-center gap-2 sm:gap-4 w-full min-h-[70px] sm:min-h-[80px]";
@@ -72,7 +102,7 @@ function HeaderSkeleton() {
 export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps) {
   const { symbol, accessToken } = useTerminalStore();
   const { data: quote, isLoading, source } = useQuote(symbol);
-  const tickColor = useTickColor(symbol, quote?.last ?? null);
+  const mainPriceColor = useTickFlashColor(quote?.last ?? null);
   const bidTickColor = useTickColor(`${symbol}__bid`, quote?.bid ?? null);
   const askTickColor = useTickColor(`${symbol}__ask`, quote?.ask ?? null);
   const flashClass = usePriceFlash(quote?.last ?? null, quote?.change ?? null);
