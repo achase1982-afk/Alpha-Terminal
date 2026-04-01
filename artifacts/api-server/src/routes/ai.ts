@@ -41,7 +41,6 @@ async function nativeStreamGemini(opts: NativeStreamOptions): Promise<string> {
     prompt,
     modelName = "gemini-3.1-pro-preview",
     temperature = 0,
-    thinkingBudget = 4096,
     onThinking,
     onText,
   } = opts;
@@ -50,7 +49,7 @@ async function nativeStreamGemini(opts: NativeStreamOptions): Promise<string> {
     model: modelName,
     generationConfig: {
       temperature,
-      thinkingConfig: { thinkingBudget },
+      thinkingConfig: { thinkingLevel: "high" },
     } as any,
   });
 
@@ -62,7 +61,7 @@ async function nativeStreamGemini(opts: NativeStreamOptions): Promise<string> {
     if (!candidates || candidates.length === 0) continue;
 
     for (const part of candidates[0].content?.parts ?? []) {
-      if ((part as any).thought === true && (part as any).text) {
+      if (((part as any).thought === true || (part as any).type === "thinking") && (part as any).text) {
         onThinking?.((part as any).text);
       } else if (part.text) {
         textBuffer += part.text;
