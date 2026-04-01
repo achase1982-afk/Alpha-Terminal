@@ -191,8 +191,8 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
       )}
 
       {showEmptyOrLoading && (
-        <div className="space-y-4 flex-1 flex flex-col justify-center">
-          <div className="rounded-xl border border-[#2A2A2C] p-8 text-center" style={{ background: "#111113" }}>
+        <div className={`flex-1 flex flex-col ${isActive ? "overflow-y-auto space-y-4" : "justify-center space-y-4"}`}>
+          <div className={`rounded-xl border border-[#2A2A2C] p-8 text-center ${isActive ? "shrink-0" : ""}`} style={{ background: "#111113" }}>
             <Activity className="w-8 h-8 text-[#FFB800] mx-auto mb-3 opacity-50" />
             <p className="font-mono text-xs text-[#71717a] mb-4">
               {isActive ? "Analyzing markets..." : "No Market Pulse generated yet"}
@@ -210,6 +210,26 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
 
           {isActive && (
             <PulseLoadingStatus thinkingTokens={thinkingTokens} statusMessages={statusMessages} />
+          )}
+
+          {!isActive && (
+            <div
+              className="rounded-xl border overflow-hidden"
+              style={{ background: "#111113", borderColor: "rgba(16,185,129,0.2)" }}
+            >
+              <div
+                className="px-4 py-2.5 flex items-center gap-2"
+                style={{ background: "rgba(16,185,129,0.04)" }}
+              >
+                <span className="inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500/30" />
+                <span className="font-mono text-[11px] text-emerald-500/50 uppercase tracking-widest font-bold">Gemini Reasoning</span>
+              </div>
+              <div className="px-4 py-4">
+                <p className="font-mono text-[11px] text-[#52525b] leading-relaxed">
+                  AI reasoning will appear here during analysis...
+                </p>
+              </div>
+            </div>
           )}
         </div>
       )}
