@@ -239,10 +239,6 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
         <div className="space-y-4 animate-in fade-in duration-300">
           <BiasHero data={pulseData} />
 
-          {thinkingTokens.length > 0 && (
-            <AiThinkingFeed texts={thinkingTokens} isStreaming={false} />
-          )}
-
           {pulseData.hasDivergence && pulseData.divergenceNote && (
             <div
               className="rounded-xl border px-4 py-3 flex items-start gap-2"
