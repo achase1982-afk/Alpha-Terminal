@@ -34,8 +34,8 @@ interface NativeStreamOptions {
 }
 
 async function nativeStreamGemini(opts: NativeStreamOptions): Promise<string> {
-  const client = getClient();
-  if (!client) throw new Error("GEMINI_API_KEY not configured");
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error("GEMINI_API_KEY not configured");
 
   const {
     prompt,
@@ -45,28 +45,62 @@ async function nativeStreamGemini(opts: NativeStreamOptions): Promise<string> {
     onText,
   } = opts;
 
-  const model = client.getGenerativeModel({
-    model: modelName,
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:streamGenerateContent?alt=sse&key=${apiKey}`;
+
+  const body = {
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
     generationConfig: {
       temperature,
-      thinkingConfig: { thinkingLevel: "high" },
-    } as any,
+      thinkingConfig: { thinkingLevel: "high", includeThoughts: true },
+    },
+  };
+
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
   });
 
-  const result = await model.generateContentStream(prompt);
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error(`Gemini REST error ${resp.status}: ${errText.slice(0, 500)}`);
+  }
+
+  const reader = resp.body?.getReader();
+  if (!reader) throw new Error("No response body from Gemini REST stream");
+
+  const decoder = new TextDecoder();
   let textBuffer = "";
+  let sseBuffer = "";
 
-  for await (const chunk of result.stream) {
-    const candidates = chunk.candidates;
-    if (!candidates || candidates.length === 0) continue;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
 
-    for (const part of candidates[0].content?.parts ?? []) {
-      console.log("[GEMINI-PART-DEBUG]", JSON.stringify(Object.keys(part)), JSON.stringify(part).slice(0, 200));
-      if (((part as any).thought === true || (part as any).type === "thinking") && (part as any).text) {
-        onThinking?.((part as any).text);
-      } else if (part.text) {
-        textBuffer += part.text;
-        onText?.(part.text);
+    sseBuffer += decoder.decode(value, { stream: true });
+
+    const lines = sseBuffer.split("\n");
+    sseBuffer = lines.pop() ?? "";
+
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const jsonStr = line.slice(6).trim();
+      if (!jsonStr || jsonStr === "[DONE]") continue;
+
+      try {
+        const chunk = JSON.parse(jsonStr);
+        const candidates = chunk.candidates;
+        if (!candidates || candidates.length === 0) continue;
+
+        for (const part of candidates[0].content?.parts ?? []) {
+          if (part.thought === true && part.text) {
+            onThinking?.(part.text);
+          } else if (part.text) {
+            textBuffer += part.text;
+            onText?.(part.text);
+          }
+        }
+      } catch {
       }
     }
   }
