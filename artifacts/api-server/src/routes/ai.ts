@@ -61,6 +61,8 @@ async function nativeStreamGemini(opts: NativeStreamOptions): Promise<string> {
     body: JSON.stringify(body),
   });
 
+  console.log("[GEMINI-REST] fetch response status:", resp.status);
+
   if (!resp.ok) {
     const errText = await resp.text();
     throw new Error(`Gemini REST error ${resp.status}: ${errText.slice(0, 500)}`);
@@ -72,10 +74,14 @@ async function nativeStreamGemini(opts: NativeStreamOptions): Promise<string> {
   const decoder = new TextDecoder();
   let textBuffer = "";
   let sseBuffer = "";
+  let chunkCount = 0;
+  let thoughtPartCount = 0;
+  let textPartCount = 0;
 
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
+    chunkCount++;
 
     sseBuffer += decoder.decode(value, { stream: true });
 
@@ -93,17 +99,26 @@ async function nativeStreamGemini(opts: NativeStreamOptions): Promise<string> {
         if (!candidates || candidates.length === 0) continue;
 
         for (const part of candidates[0].content?.parts ?? []) {
+          const keys = Object.keys(part);
+          if (chunkCount <= 3 || part.thought) {
+            console.log("[GEMINI-REST] part keys:", JSON.stringify(keys), "thought:", part.thought, "text:", (part.text || "").slice(0, 80));
+          }
           if (part.thought === true && part.text) {
+            thoughtPartCount++;
             onThinking?.(part.text);
           } else if (part.text) {
+            textPartCount++;
             textBuffer += part.text;
             onText?.(part.text);
           }
         }
-      } catch {
+      } catch (e) {
+        console.log("[GEMINI-REST] SSE parse error:", (e as Error).message?.slice(0, 100));
       }
     }
   }
+
+  console.log("[GEMINI-REST] stream done. chunks:", chunkCount, "thoughtParts:", thoughtPartCount, "textParts:", textPartCount);
 
   return textBuffer;
 }
