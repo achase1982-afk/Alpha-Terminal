@@ -121,8 +121,8 @@ export function Sidebar({ isOpen, onClose, onOpenChat, onNavigate }: SidebarProp
               onClick={() => { queryClient.clear(); void signOut(); }}
               className="flex items-center gap-3 transition-opacity hover:opacity-70 active:opacity-50"
             >
-              <Power className="w-[18px] h-[18px] text-white/80" />
-              <span className="font-bold text-[14px] tracking-[0.15em] uppercase text-white/90">Logout</span>
+              <Power className="w-[22px] h-[22px] text-white/80" strokeWidth={2.5} />
+              <span className="font-extrabold text-[17px] tracking-[0.15em] uppercase text-white/90">Logout</span>
             </button>
           </div>
         </div>
