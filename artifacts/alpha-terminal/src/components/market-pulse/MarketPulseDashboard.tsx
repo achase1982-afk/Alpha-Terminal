@@ -66,8 +66,26 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
     setError,
   } = useMarketPulseStore();
 
+  const clearPulse = useMarketPulseStore((s) => s.clearPulse);
+  const clearThinking = useMarketPulseStore((s) => s.clearThinking);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [showTranscript, setShowTranscript] = useState(false);
+
+  const EXPIRY_MS = 2 * 60 * 60 * 1000;
+  useEffect(() => {
+    if (pulseData && pulseData.generatedAt) {
+      const age = Date.now() - pulseData.generatedAt;
+      if (age > EXPIRY_MS) {
+        clearPulse();
+        clearThinking();
+      }
+    }
+  }, [pulseData, clearPulse, clearThinking]);
+
+  const handleReset = useCallback(() => {
+    clearPulse();
+    clearThinking();
+  }, [clearPulse, clearThinking]);
 
   // Use refs to avoid fetchPulse changing on every pulseData/store update
   const pulseDataRef = useRef(pulseData);
@@ -169,18 +187,33 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
 
   return (
     <div className="space-y-4 px-3 sm:px-4 lg:px-5 overflow-x-hidden pt-1">
-      {/* Header always visible when we have data (even while refreshing) */}
       {pulseData && (
         <PulseStatusHeader
           data={pulseData}
           isRefreshing={isActive}
           onRefresh={fetchPulse}
+          onReset={handleReset}
           disabled={!accessToken}
         />
       )}
 
       {isActive && (
         <PulseLoadingStatus thinkingTokens={thinkingTokens} statusMessages={statusMessages} />
+      )}
+
+      {!pulseData && !isActive && !error && (
+        <div className="rounded-xl border border-[#2A2A2C] p-8 text-center" style={{ background: "#111113" }}>
+          <Activity className="w-8 h-8 text-[#FFB800] mx-auto mb-3 opacity-50" />
+          <p className="font-mono text-xs text-[#71717a] mb-4">No Market Pulse generated yet</p>
+          <button
+            onClick={fetchPulse}
+            disabled={!accessToken}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-mono text-xs font-bold tracking-wider text-[#0c0c0c] bg-[#FFB800] hover:bg-[#FFB800]/90 transition-colors disabled:opacity-40"
+          >
+            <Zap className="w-3.5 h-3.5" />
+            Generate Market Pulse
+          </button>
+        </div>
       )}
 
       {error && !isActive && (

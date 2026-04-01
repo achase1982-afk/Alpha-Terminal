@@ -20,6 +20,7 @@ export async function runPulseStream(payload: Record<string, unknown>) {
   abortPulseStream();
 
   const store = useMarketPulseStore.getState();
+  store.clearPulse();
   store.setLoading(true);
   store.setStreaming(true);
   store.setError(null);

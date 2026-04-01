@@ -1,14 +1,15 @@
-import { Clock, Radio, RefreshCw } from "lucide-react";
+import { Clock, Radio, RefreshCw, RotateCcw } from "lucide-react";
 import type { MarketPulseData } from "../../types/marketPulse";
 
 interface PulseStatusHeaderProps {
   data: MarketPulseData;
   isRefreshing: boolean;
   onRefresh: () => void;
+  onReset: () => void;
   disabled?: boolean;
 }
 
-export function PulseStatusHeader({ data, isRefreshing, onRefresh, disabled }: PulseStatusHeaderProps) {
+export function PulseStatusHeader({ data, isRefreshing, onRefresh, onReset, disabled }: PulseStatusHeaderProps) {
   const age = Date.now() - data.generatedAt;
   const ageMinutes = Math.floor(age / 60_000);
   const ageLabel =
@@ -51,18 +52,27 @@ export function PulseStatusHeader({ data, isRefreshing, onRefresh, disabled }: P
         </span>
       </div>
 
-      <button
-        onClick={onRefresh}
-        disabled={disabled || isRefreshing}
-        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-mono text-[10px] uppercase tracking-wider text-[#71717a] hover:text-[#e4e4e7] hover:bg-[#1a1a1a] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-        style={{ transform: isRefreshing ? undefined : "scale(1)" }}
-      >
-        <RefreshCw
-          className="w-3 h-3"
-          style={isRefreshing ? { animation: "spin 1s linear infinite" } : undefined}
-        />
-        {isRefreshing ? "Refreshing…" : "Refresh"}
-      </button>
+      <div className="flex items-center gap-1">
+        <button
+          onClick={onRefresh}
+          disabled={disabled || isRefreshing}
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-mono text-[10px] uppercase tracking-wider text-[#71717a] hover:text-[#e4e4e7] hover:bg-[#1a1a1a] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <RefreshCw
+            className="w-3 h-3"
+            style={isRefreshing ? { animation: "spin 1s linear infinite" } : undefined}
+          />
+          {isRefreshing ? "..." : "Refresh"}
+        </button>
+        <button
+          onClick={onReset}
+          disabled={disabled || isRefreshing}
+          className="flex items-center gap-1.5 px-2 py-1 rounded-lg font-mono text-[10px] uppercase tracking-wider text-[#71717a] hover:text-[#f23645] hover:bg-[#1a1a1a] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          title="Clear pulse data"
+        >
+          <RotateCcw className="w-3 h-3" />
+        </button>
+      </div>
     </div>
   );
 }
