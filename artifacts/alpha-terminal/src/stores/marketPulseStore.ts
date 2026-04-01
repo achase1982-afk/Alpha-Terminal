@@ -62,7 +62,7 @@ export const useMarketPulseStore = create<MarketPulseState>()(
       },
 
       setPulseData: (data) =>
-        set({ pulseData: data, error: null, isLoading: false, isStreaming: false, lastFetchedAt: Date.now() }),
+        set({ pulseData: data, error: null, lastFetchedAt: Date.now() }),
       setLoading: (isLoading) => set({ isLoading }),
       setStreaming: (isStreaming) => set({ isStreaming }),
       appendThinking: (text) =>
@@ -102,7 +102,6 @@ export const useMarketPulseStore = create<MarketPulseState>()(
       partialize: (state) => ({
         settings: state.settings,
         pulseData: state.pulseData,
-        thinkingTokens: state.thinkingTokens,
         lastFetchedAt: state.lastFetchedAt,
       }),
       onRehydrateStorage: () => (state) => {
@@ -123,7 +122,6 @@ export const useMarketPulseStore = create<MarketPulseState>()(
         }
         if (version < 2) {
           if (!state.pulseData) state.pulseData = null;
-          if (!state.thinkingTokens) state.thinkingTokens = [];
           if (!state.lastFetchedAt) state.lastFetchedAt = null;
         }
         return state;

@@ -226,11 +226,11 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
             </button>
           </div>
 
-          {isActive && (
+          {(isActive || thinkingTokens.length > 0) && (
             <PulseLoadingStatus thinkingTokens={thinkingTokens} statusMessages={statusMessages} />
           )}
 
-          {!isActive && (
+          {!isActive && thinkingTokens.length === 0 && (
             <div
               className="rounded-xl border overflow-hidden"
               style={{ background: "#111113", borderColor: "rgba(16,185,129,0.2)" }}
@@ -266,6 +266,31 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
 
       {pulseData && !isActive && (
         <div className="space-y-4 animate-in fade-in duration-300">
+          {thinkingTokens.length > 0 && (
+            <div
+              className="rounded-xl border overflow-hidden"
+              style={{ background: "#111113", borderColor: "rgba(16,185,129,0.2)" }}
+            >
+              <button
+                onClick={() => setShowTranscript((v) => !v)}
+                className="w-full px-4 py-2.5 flex items-center gap-2 cursor-pointer"
+                style={{ background: "rgba(16,185,129,0.04)" }}
+              >
+                <span className="inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500/30" />
+                <span className="font-mono text-[11px] text-emerald-500/50 uppercase tracking-widest font-bold flex-1 text-left">Gemini Reasoning</span>
+                <span className="font-mono text-[10px] text-emerald-500/40">{showTranscript ? "▲" : "▼"}</span>
+              </button>
+              {showTranscript && (
+                <div className="max-h-[200px] overflow-y-auto px-4 py-3" style={{ scrollBehavior: "smooth" }}>
+                  <div className="border-l-2 border-emerald-500/40 pl-3">
+                    <p className="font-mono text-[11px] text-[#c4c4cc] leading-[1.7] whitespace-pre-wrap break-words">
+                      {thinkingTokens.join("")}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           <BiasHero data={pulseData} />
 
           {pulseData.hasDivergence && pulseData.divergenceNote && (
