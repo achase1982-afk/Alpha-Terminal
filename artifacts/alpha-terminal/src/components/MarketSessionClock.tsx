@@ -135,13 +135,13 @@ export function MarketSessionClock() {
     <div className="flex items-center gap-1.5 min-w-0">
       <div
         className="flex items-center gap-1 px-1.5 py-0.5 rounded"
-        style={{ background: `${info.color}15` }}
+        style={{ background: `${info.color}20` }}
       >
         <div
           className="w-1.5 h-1.5 rounded-full shrink-0"
           style={{
             background: info.color,
-            boxShadow: info.session === "RTH" ? `0 0 4px ${info.color}` : undefined,
+            boxShadow: `0 0 4px ${info.color}`,
           }}
         />
         <span
@@ -151,8 +151,11 @@ export function MarketSessionClock() {
           {info.label}
         </span>
       </div>
-      <span className="font-mono text-[9px] text-zinc-500 tabular-nums whitespace-nowrap">
-        {countdownLabel} {info.countdown}
+      <span
+        className="font-mono text-[11px] font-bold tabular-nums whitespace-nowrap"
+        style={{ color: info.color }}
+      >
+        {info.countdown}
       </span>
     </div>
   );
