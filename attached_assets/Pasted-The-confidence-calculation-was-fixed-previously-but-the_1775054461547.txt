@@ -1,0 +1,52 @@
+The confidence calculation was fixed previously but the new formula overshoots. It produces confidence of 84 to 98 on a composite of 0.25 to 0.31 with two opposing clusters which is way too high. Replace the entire calculateConfidence function with the following formula. This is the final version. Do not modify the formula or add scaling factors beyond what is specified here.
+
+STEP 1 BASE CONFIDENCE FROM COMPOSITE MAGNITUDE. The base confidence is a linear scale of how far the composite is from zero. The composite theoretical range is negative 2.0 to positive 2.0 but in practice rarely exceeds 1.0. Use the formula:
+
+baseConfidence = min(95, round(abs(composite) * 120))
+
+This produces: composite 0.15 gives base 18. Composite 0.30 gives base 36. Composite 0.50 gives base 60. Composite 0.80 gives base 95 (capped). Composite 1.0 gives base 95 (capped). The cap at 95 means confidence never reaches 100 because there is always some uncertainty.
+
+STEP 2 AGREEMENT MULTIPLIER. Count how many clusters are opposing the composite direction. A cluster is opposing if the composite is positive and the cluster score is below negative 0.5, or if the composite is negative and the cluster score is above positive 0.5. Clusters between negative 0.5 and positive 0.5 are not considered opposing regardless of sign.
+
+opposingCount = number of clusters that oppose the composite direction using the 0.5 threshold above
+
+agreementMultiplier = max(0.4, 1.0 - (opposingCount * 0.15))
+
+This produces: 0 opposing gives multiplier 1.0. 1 opposing gives 0.85. 2 opposing gives 0.70. 3 opposing gives 0.55. 4 or more opposing gives 0.40 (floor). The floor of 0.4 prevents confidence from being completely destroyed even in maximum conflict scenarios.
+
+STEP 3 DATA QUALITY MULTIPLIER. Keep the existing staleness and data quality penalties but floor the combined data quality multiplier at 0.5. If there are no staleness or data quality issues the multiplier is 1.0.
+
+STEP 4 FINAL CONFIDENCE. Multiply the three factors together:
+
+confidence = round(baseConfidence * agreementMultiplier * dataQualityMultiplier)
+confidence = max(0, min(100, confidence))
+
+VERIFICATION WITH CURRENT LIVE DATA. Here is the math for the current market data to verify the implementation.
+
+Cluster scores from live output: rates=-0.75 credit=0 volLevel=0.75 volTerm=0.3333 breadth=1.25 riskApp=1.5 macro=-1. Composite=0.31.
+
+Step 1: baseConfidence = min(95, round(0.31 * 120)) = min(95, round(37.2)) = 37.
+
+Step 2: Composite is positive (0.31). Check each cluster for opposing direction below -0.5. Rates=-0.75 is below -0.5 so it is opposing. Credit=0 is not opposing. VolLevel=0.75 is not opposing. VolTerm=0.3333 is not opposing. Breadth=1.25 is not opposing. RiskApp=1.5 is not opposing. Macro=-1 is below -0.5 so it is opposing. OpposingCount=2. AgreementMultiplier = max(0.4, 1.0 - (2 * 0.15)) = max(0.4, 0.70) = 0.70.
+
+Step 3: Data is fresh (just now) so dataQualityMultiplier = 1.0.
+
+Step 4: confidence = round(37 * 0.70 * 1.0) = round(25.9) = 26.
+
+The correct confidence for the current market should be approximately 26. This means the engine is saying there is a very mild bullish lean (composite +0.31) but conviction is low (26 out of 100) because rates and macro are pulling the other direction. This is the correct read for a mixed signal environment.
+
+REFERENCE TABLE FOR VALIDATION. Use these scenarios to verify the formula produces correct results across different market conditions.
+
+All clusters mildly bullish, no conflict: composite 0.50, 0 opposing. Base=60, multiplier=1.0. Confidence=60. Correct because moderate signal with full agreement.
+
+Strong bull, one dissenter: composite 0.80, 1 opposing. Base=95, multiplier=0.85. Confidence=81. Correct because strong signal with minor disagreement.
+
+Strong bull, clean agreement: composite 0.80, 0 opposing. Base=95, multiplier=1.0. Confidence=95. Correct because strong conviction.
+
+Weak signal, no conflict: composite 0.20, 0 opposing. Base=24, multiplier=1.0. Confidence=24. Correct because the signal itself is weak even though nothing opposes it.
+
+Moderate signal, heavy conflict: composite 0.40, 3 opposing. Base=48, multiplier=0.55. Confidence=26. Correct because decent composite but too many clusters disagree.
+
+Near zero composite: composite 0.10, 0 opposing. Base=12, multiplier=1.0. Confidence=12. Correct because almost no directional signal.
+
+Remove the old compositeStrength variable entirely. Remove the old rawConfidence = Math.abs(composite) * 40 formula entirely. Replace them with the three step formula above. After making the change run the verifyEngineScoring test and also regenerate a live market pulse. The confidence in the CLUSTER SCORES debug line should be approximately 26 for the current market data, not 84 or 98.

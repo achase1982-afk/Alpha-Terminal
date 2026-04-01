@@ -634,23 +634,24 @@ function calculateComposite(clusters: Record<ClusterName, ClusterResult>): numbe
 }
 
 function calculateConfidence(clusters: Record<ClusterName, ClusterResult>, composite: number): number {
+  const baseConfidence = Math.min(95, Math.round(Math.abs(composite) * 120));
+
   const scores = Object.values(clusters).map(c => c.score);
-  const positiveCount = scores.filter(s => s > 0).length;
-  const negativeCount = scores.filter(s => s < 0).length;
-  const disagreementPairs = Math.min(positiveCount, negativeCount);
+  let opposingCount = 0;
+  for (const s of scores) {
+    if (composite > 0 && s < -0.5) opposingCount++;
+    else if (composite < 0 && s > 0.5) opposingCount++;
+  }
+  const agreementMultiplier = Math.max(0.4, 1.0 - opposingCount * 0.15);
 
   const missingCount = Object.values(clusters).filter(c => c.dataQuality === 'MISSING').length;
   const staleCount = Object.values(clusters).filter(c => c.dataQuality === 'STALE').length;
+  let dataQualityMultiplier = 1.0;
+  dataQualityMultiplier *= Math.max(0.8, 1.0 - missingCount * 0.15);
+  dataQualityMultiplier *= Math.max(0.9, 1.0 - staleCount * 0.05);
+  dataQualityMultiplier = Math.max(0.5, dataQualityMultiplier);
 
-  let penaltyMultiplier = 1.0;
-  penaltyMultiplier *= Math.max(0.7, 1.0 - disagreementPairs * 0.1);
-  penaltyMultiplier *= Math.max(0.8, 1.0 - missingCount * 0.15);
-  penaltyMultiplier *= Math.max(0.9, 1.0 - staleCount * 0.05);
-
-  penaltyMultiplier = Math.max(0.3, penaltyMultiplier);
-
-  const compositeStrength = Math.min(1.5, 0.3 + Math.abs(composite) * 3);
-  const confidence = Math.round(penaltyMultiplier * 100 * compositeStrength);
+  const confidence = Math.round(baseConfidence * agreementMultiplier * dataQualityMultiplier);
   return Math.max(0, Math.min(100, confidence));
 }
 
