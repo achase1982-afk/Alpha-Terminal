@@ -192,14 +192,23 @@ export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps)
       if (!container.contains(e.target as Node)) {
         e.preventDefault();
         e.stopPropagation();
+        e.stopImmediatePropagation();
         stop();
       }
     };
+    const clickBlocker = (e: Event) => {
+      if (Date.now() - jiggleStartedAt.current < 500) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    };
     document.addEventListener("touchstart", handler, { capture: true });
     document.addEventListener("mousedown", handler, { capture: true });
+    document.addEventListener("click", clickBlocker, { capture: true });
     return () => {
       document.removeEventListener("touchstart", handler, { capture: true });
       document.removeEventListener("mousedown", handler, { capture: true });
+      document.removeEventListener("click", clickBlocker, { capture: true });
     };
   }, [jiggling]);
 
