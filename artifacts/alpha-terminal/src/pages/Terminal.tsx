@@ -20,6 +20,7 @@ import { AiChatOverlay } from "@/components/AiChatOverlay";
 import { InAppBrowser } from "@/components/InAppBrowser";
 import { NewsTab } from "@/components/NewsTab";
 import { AiBiasStrip } from "@/components/market-pulse/AiBiasStrip";
+import { CompanyResearchHub } from "@/components/CompanyResearchHub";
 import type { AiSubTab } from "@/components/ai-tab/AiSubTabs";
 import {
   BrainCircuit,
@@ -142,7 +143,7 @@ export default function TerminalPage() {
 
               {contextTab === "news" && <NewsTab />}
               {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} />}
-              {contextTab === "scan" && <MarketScanner subscribeEquitySymbols={subscribeEquitySymbols} />}
+              {contextTab === "company" && <CompanyResearchHub candles={historyData?.candles as any} />}
               {contextTab === "chart" && (
                 <>
                   <ChartControls />

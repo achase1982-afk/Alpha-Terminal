@@ -1,12 +1,12 @@
 import React from "react";
-import { Newspaper, BarChart2, Target, LineChart } from "lucide-react";
+import { Newspaper, BarChart2, Building2, LineChart } from "lucide-react";
 
-export type MarketDataTab = "news" | "options" | "scan" | "chart";
+export type MarketDataTab = "news" | "options" | "company" | "chart";
 
 const tabs: { id: MarketDataTab; label: string; icon: React.ReactNode }[] = [
   { id: "news", label: "NEWS", icon: <Newspaper className="w-4 h-4" /> },
   { id: "options", label: "OPTIONS", icon: <BarChart2 className="w-4 h-4" /> },
-  { id: "scan", label: "SCAN", icon: <Target className="w-4 h-4" /> },
+  { id: "company", label: "COMPANY", icon: <Building2 className="w-4 h-4" /> },
   { id: "chart", label: "CHART", icon: <LineChart className="w-4 h-4" /> },
 ];
 
