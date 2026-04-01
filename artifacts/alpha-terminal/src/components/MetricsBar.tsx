@@ -187,14 +187,22 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
             <span className="tabular-nums shrink-0 whitespace-nowrap" style={{ fontSize: '0.75rem', fontWeight: 300, color: priceColor }}>
               {changeStr}&nbsp;{changePctStr}
             </span>
-            {hasBidAsk && (
-              <>
-                <span className="text-zinc-700 shrink-0">|</span>
-                <span className="tabular-nums text-zinc-400 shrink-0 whitespace-nowrap" style={{ fontSize: '0.75rem', fontWeight: 400 }}>
-                  {bidStr}<span className="text-zinc-700 mx-0.5">/</span>{askStr}
-                </span>
-              </>
-            )}
+            <div className="flex gap-1.5 ml-auto shrink-0">
+              <button
+                onClick={() => handleInitiateTrade('sell')}
+                className="h-6 px-2.5 bg-red-950/40 border border-red-500/50 rounded flex items-center justify-center cursor-pointer transition-colors active:bg-red-800/70 trade-btn-sell"
+                aria-label={`Sell ${quote?.symbol}`}
+              >
+                <span className="text-[9px] uppercase font-bold tracking-widest text-white leading-none">SELL</span>
+              </button>
+              <button
+                onClick={() => handleInitiateTrade('buy')}
+                className="h-6 px-2.5 bg-emerald-950/40 border border-emerald-500/50 rounded flex items-center justify-center cursor-pointer transition-colors active:bg-emerald-800/70 trade-btn-buy"
+                aria-label={`Buy ${quote?.symbol}`}
+              >
+                <span className="text-[9px] uppercase font-bold tracking-widest text-white leading-none">BUY</span>
+              </button>
+            </div>
           </>
         ) : (
           <Skeleton className="h-4 w-48 bg-zinc-800" />
