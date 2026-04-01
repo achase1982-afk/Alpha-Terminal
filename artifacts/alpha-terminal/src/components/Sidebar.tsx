@@ -497,7 +497,12 @@ function AiParametersPage() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent className="bg-card border-card-border font-mono text-[10px]">
-            {["gemini-2.5-flash", "gemini-2.5-pro"].map((m) => (
+            {[
+              "gemini-3.1-pro-preview",
+              "gemini-2.5-pro",
+              "gemini-2.5-flash",
+              "gemini-2.0-flash",
+            ].map((m) => (
               <SelectItem key={m} value={m} className="text-[10px]">{m.toUpperCase()}</SelectItem>
             ))}
           </SelectContent>

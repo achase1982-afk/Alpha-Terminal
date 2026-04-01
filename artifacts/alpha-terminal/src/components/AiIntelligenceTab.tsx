@@ -798,6 +798,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef }: AiIn
         body: JSON.stringify({
           symbol,
           accessToken,
+          model: aiModel,
           todayEdge: stratBias === "auto" ? undefined : stratBias === "bullish" ? "BULLISH_EDGE" : stratBias === "bearish" ? "BEARISH_EDGE" : "NEUTRAL_EDGE",
         }),
       });

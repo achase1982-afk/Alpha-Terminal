@@ -1171,7 +1171,7 @@ Write ONLY the narrative fields. Return this exact JSON structure:
   try {
     const responseBuffer = await nativeStreamGemini({
       prompt: narrativePrompt,
-      modelName: "gemini-3.1-pro-preview",
+      modelName: model ?? "gemini-3.1-pro-preview",
       temperature: 0,
       thinkingBudget: 4096,
       onThinking: (text) => {
@@ -1406,10 +1406,11 @@ router.post("/options-strategist", async (req, res) => {
 });
 
 router.post("/options-strategist/stream", async (req, res) => {
-  const { symbol, accessToken, todayEdge } = req.body as {
+  const { symbol, accessToken, todayEdge, model } = req.body as {
     symbol?: string;
     accessToken?: string;
     todayEdge?: string;
+    model?: string;
   };
 
   if (!symbol || !accessToken) {
@@ -1534,7 +1535,7 @@ router.post("/options-strategist/stream", async (req, res) => {
 
       await nativeStreamGemini({
         prompt: narrativePrompt,
-        modelName: "gemini-3.1-pro-preview",
+        modelName: model ?? "gemini-3.1-pro-preview",
         temperature: 0.2,
         thinkingBudget: 2048,
         onThinking: (text) => {
@@ -1569,9 +1570,10 @@ router.post("/options-strategist/stream", async (req, res) => {
 
 router.post("/chat", async (req, res) => {
   try {
-    const { messages, marketContext } = req.body as {
+    const { messages, marketContext, model: reqModel } = req.body as {
       messages?: Array<{ role: string; content: string }>;
       marketContext?: string;
+      model?: string;
     };
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
@@ -1604,7 +1606,7 @@ STRICT DATA GROUNDING RULE FOR MARKET/TRADING QUESTIONS:
 ${marketContext ? `═══ LIVE SCHWAB CONTEXT DATA ═══\n${marketContext}\n═══ END CONTEXT DATA ═══` : "No live Schwab data connected."}`;
 
     const result = streamText({
-      model: google("gemini-3.1-pro-preview"),
+      model: google(reqModel ?? "gemini-3.1-pro-preview"),
       system: systemPrompt,
       temperature: 0.1,
       tools: {

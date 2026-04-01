@@ -34,7 +34,7 @@ function nextId(): string {
 }
 
 export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
-  const { symbol, accessToken } = useTerminalStore();
+  const { symbol, accessToken, aiModel } = useTerminalStore();
 
   const { data: quote } = useGetQuote(
     { symbol, accessToken: accessToken || "" },
@@ -84,7 +84,7 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
       const res = await fetchWithAuth("/api/ai/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: history, marketContext }),
+        body: JSON.stringify({ messages: history, marketContext, model: aiModel }),
         signal: controller.signal,
       });
 
