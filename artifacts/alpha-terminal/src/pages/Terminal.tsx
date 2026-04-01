@@ -155,13 +155,13 @@ export default function TerminalPage() {
                       <p className="font-mono text-[9px] text-[#71717a] tracking-widest uppercase">Multi-Asset Macro Analysis</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex items-center gap-3 mr-1">
                     {ageLabel && (
-                      <span className="font-mono text-[9px] text-[#52525b] tracking-wider">{ageLabel}</span>
+                      <span className="font-mono text-[10px] text-[#8a8a8e] tracking-wider">{ageLabel}</span>
                     )}
                     <button
                       onClick={() => pulseDashRef.current?.fetchPulse()}
-                      className="flex items-center justify-center w-7 h-7 rounded-lg transition-all duration-100 disabled:opacity-40 disabled:cursor-not-allowed active:translate-y-[1px]"
+                      className="flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-100 disabled:opacity-40 disabled:cursor-not-allowed active:translate-y-[1px]"
                       style={{
                         background: "linear-gradient(180deg, #2A2A2C 0%, #1E1E20 100%)",
                         color: "#a1a1aa",
