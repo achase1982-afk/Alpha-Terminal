@@ -28,7 +28,7 @@ export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps)
             onClick={() => setActiveTab(tab.id)}
             className={`flex flex-1 items-center justify-center gap-2 py-2.5 transition-all border-b-2 ${
               activeTab === tab.id
-                ? "border-primary text-white bg-primary/5"
+                ? "border-primary text-white"
                 : "border-transparent text-zinc-500"
             }`}
           >
