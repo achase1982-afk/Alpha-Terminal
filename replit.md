@@ -15,7 +15,7 @@ I prefer a coding style that emphasizes readability and maintainability, utilizi
 
 ## UI/UX Decisions
 
-The UI features an institutional gold color palette with a dark theme, Inter font, and `tabular-nums`. Key components include a fixed MacroBar, a collapsible Sidebar, an Institutional Tear Sheet, a ThinkorSwim-replica Options Tab, an AI Chat Overlay, Market Pulse Dashboard (SSE-streamed structured JSON with 7 fixed clusters and composite scoring), Market Scanner, `lightweight-charts` based Charting, a `requestAnimationFrame`-driven Ticker Tape, and CSS keyframe Price Pulse Animations. The AI tab uses iOS-style pill sub-tabs. Audit panels for Market Pulse and Options Strategist display raw data and rules applied.
+The UI features an institutional gold color palette with a dark theme, Inter font, and `tabular-nums`. Mobile-first design (iPhone Pro Max 430×932). Navigation uses a persistent bottom nav bar (5 items: Scanner, Markets, AI, Portfolio, Watchlist) with full-page overlay views. Settings accessed via gear icon in the mobile header. Key components include a fixed MacroBar, an Institutional Tear Sheet, a ThinkorSwim-replica Options Tab, an AI Chat Overlay, Market Pulse Dashboard (SSE-streamed structured JSON with 7 fixed clusters and composite scoring), Market Scanner, `lightweight-charts` based Charting, a `requestAnimationFrame`-driven Ticker Tape, and CSS keyframe Price Pulse Animations. The AI tab uses iOS-style pill sub-tabs. Audit panels for Market Pulse and Options Strategist display raw data and rules applied.
 
 ## Technical Implementations
 
@@ -49,9 +49,16 @@ Features include a MacroBar displaying key indices, an Institutional Tear Sheet 
 - Login screen: "Sign in with Face ID" button (passkey strategy) shown when `biometricLogin=true` and WebAuthn supported
 - `useBiometricGate` hook: local device-level WebAuthn verification for sensitive data access
 - `useTradeConfirmationGate` hook: local device-level WebAuthn verification before trade execution
-- Security Settings UI in sidebar: segmented timeout control, passkey registration button, 3 biometric toggles
+- Security Settings UI in SettingsPage: segmented timeout control, passkey registration button, 3 biometric toggles
 - Legacy `at_auto_lock_minutes` localStorage key auto-migrated to new prefs format
-- Key files: `securityPrefs.ts`, `useAutoLock.ts`, `useBiometric.ts`, `main.tsx`, `Sidebar.tsx`
+- Key files: `securityPrefs.ts`, `useAutoLock.ts`, `useBiometric.ts`, `main.tsx`, `SettingsPage.tsx`
+
+### Navigation Architecture
+- Bottom nav bar (`BottomNav.tsx`): 5 items — Scanner (switches main tab), Markets (full-page), AI (opens chat overlay), Portfolio (full-page), Watchlist (full-page)
+- Full-page views (`FullPageView.tsx` wrapper): `WatchlistPage`, `MarketsPage`, `PortfolioPage`, `SettingsPage`
+- Settings gear icon in mobile header opens `SettingsPage` with all former sidebar settings organized into collapsible sections: Connections, Display, Chart, Options, AI, Market Pulse, Security, Sign Out
+- CSS: `.bottom-nav` fixed to bottom with safe-area-inset-bottom padding; `.app-content` has bottom padding to avoid content hiding behind nav
+- Sidebar.tsx deleted — all functionality migrated to SettingsPage and full-page views
 
 ## System Design Choices
 

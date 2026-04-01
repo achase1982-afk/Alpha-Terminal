@@ -1,0 +1,438 @@
+# NAVIGATION REFACTOR: Sidebar to Bottom Nav + Full Page Views
+
+# Do NOT delete any functionality. Everything in the sidebar moves somewhere.
+
+-----
+
+## WHAT WE’RE DOING
+
+Removing the collapsible sidebar menu and replacing it with:
+
+1. A persistent bottom navigation bar (5 items)
+1. Full-screen page views that open when bottom nav or menu items are tapped
+1. The top tab bar (NEWS, OPTIONS, AI, SCAN, CHART) stays exactly as-is for the main content area
+
+The theme, colors, fonts, and overall dark terminal aesthetic stay identical.
+
+-----
+
+## CURRENT SIDEBAR FEATURES (must ALL be preserved)
+
+Every single one of these must have a new home:
+
+|Sidebar Feature                       |New Location                                     |
+|--------------------------------------|-------------------------------------------------|
+|ALPHA TERMINAL logo + header          |Top mobile header (already exists, keep it)      |
+|Schwab Auth (AuthPanel)               |Settings full-page view > “Connections” section  |
+|AI SEARCH button                      |Bottom nav center button (the AI lightning bolt) |
+|WATCHLIST (add/remove symbols)        |Bottom nav “Watchlist” tab > full-page view      |
+|SETTINGS > Chart Overlays             |Settings full-page view > “Chart” section        |
+|SETTINGS > Options Chain (type, DTE)  |Settings full-page view > “Options” section      |
+|SETTINGS > Macro Tickers              |Settings full-page view > “Display” section      |
+|SETTINGS > Marquee Setup              |Settings full-page view > “Display” section      |
+|SETTINGS > AI Parameters (model, temp)|Settings full-page view > “AI” section           |
+|SETTINGS > Apply Settings button      |Settings full-page view > save button per section|
+|MARKET PULSE settings                 |Settings full-page view > “Market Pulse” section |
+|SECURITY > Session Timeout            |Settings full-page view > “Security” section     |
+|SECURITY > Biometrics/Face ID         |Settings full-page view > “Security” section     |
+|SIGN OUT button                       |Settings full-page view > bottom of page         |
+|Sidebar open/close toggle             |Remove (no longer needed)                        |
+|Mobile overlay backdrop               |Remove (no longer needed)                        |
+
+-----
+
+## NEW LAYOUT ARCHITECTURE
+
+```
+┌─────────────────────────────────────┐
+│ Mobile Header (ALPHA TERMINAL logo) │  ← keep as-is
+├─────────────────────────────────────┤
+│ Ticker Tape (scrolling marquee)     │  ← keep as-is
+├─────────────────────────────────────┤
+│ Macro Cards (/YM, /ES, /NQ, /RTY)  │  ← keep as-is
+├─────────────────────────────────────┤
+│ AI Bias Strip                       │  ← keep as-is
+├─────────────────────────────────────┤
+│ Metrics Bar (ticker price/info)     │  ← keep as-is
+├─────────────────────────────────────┤
+│ Ticker Search                       │  ← keep as-is
+├─────────────────────────────────────┤
+│ Top Tabs [NEWS|OPTIONS|AI|SCAN|CHART] │  ← keep as-is
+├─────────────────────────────────────┤
+│                                     │
+│         Tab Content Area            │  ← keep as-is
+│         (scrollable)                │
+│                                     │
+├─────────────────────────────────────┤
+│ Bottom Nav [Scan|Markets|⚡|Port|WL] │  ← NEW
+└─────────────────────────────────────┘
+```
+
+-----
+
+## PART 1: BOTTOM NAVIGATION BAR
+
+### Component: `BottomNav.tsx`
+
+A persistent bottom bar that sits at the very bottom of the screen, BELOW all content. It never scrolls away.
+
+**5 items:**
+
+```
+[ SCANNER ]  [ MARKETS ]  [ ⚡ AI ]  [ PORTFOLIO ]  [ WATCHLIST ]
+```
+
+**Behavior:**
+
+- SCANNER: Switches the main top tab to “scanner” (same as tapping SCAN in the top tabs)
+- MARKETS: Opens a full-page Markets view (market overview, indices, sectors – this is a NEW page, can be a placeholder for now)
+- ⚡ AI (center button): Opens the AI Chat overlay (same as the current AI SEARCH button in the sidebar)
+- PORTFOLIO: Opens a full-page Portfolio view (NEW page, placeholder for now showing “Portfolio coming soon”)
+- WATCHLIST: Opens a full-page Watchlist view showing the user’s watched symbols with price data
+
+**Styling:**
+
+```
+Container:
+  - Fixed to bottom of screen
+  - height: 56px (standard mobile nav height)
+  - bg-[#0c0c0c] (match sidebar background)
+  - border-t border-card-border
+  - z-index: 50 (above all content)
+  - safe-area-inset-bottom padding for iPhone notch/home indicator:
+    padding-bottom: env(safe-area-inset-bottom, 0px)
+
+Each nav item:
+  - flex-1, flex-col, items-center, justify-center
+  - gap-0.5
+  - Icon: 20px, muted-foreground when inactive, primary (#FFB800) when active
+  - Label: font-mono, text-[9px], uppercase, tracking-wider
+  - Active state: text-primary, icon text-primary
+  - Tap feedback: opacity-70 on press
+
+Center AI button (special):
+  - Larger icon area: w-12 h-12 rounded-full
+  - bg-primary/10, border border-primary/30
+  - The lightning bolt icon centered inside
+  - Slightly elevated: -mt-3 to pop above the nav bar
+  - Glow effect on active: box-shadow 0 0 12px primary/30
+```
+
+**Important:** The bottom nav must account for the iPhone home indicator bar. Add:
+
+```css
+.bottom-nav {
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 8px);
+}
+```
+
+Also, the main content area needs bottom padding so content doesn’t hide behind the bottom nav:
+
+```css
+.app-content {
+  padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+}
+```
+
+### State Management
+
+Add a `bottomNavRoute` state to track which bottom nav item is active. When a bottom nav item is tapped:
+
+- **SCANNER:** Set `activeMainTab` to “scanner” (reuses existing tab system). Bottom nav highlights SCANNER.
+- **MARKETS:** Set `bottomNavRoute` to “markets”. Renders MarketsPage as a full-screen view OVER the main content.
+- **⚡ AI:** Opens `chatOpen` state (already exists for AiChatOverlay). No route change.
+- **PORTFOLIO:** Set `bottomNavRoute` to “portfolio”. Renders PortfolioPage as a full-screen view.
+- **WATCHLIST:** Set `bottomNavRoute` to “watchlist”. Renders WatchlistPage as a full-screen view.
+
+When a full-page view is open (markets, portfolio, watchlist), the main terminal content is hidden behind it. The full-page view has its own back/close button in its header.
+
+-----
+
+## PART 2: FULL-PAGE VIEWS
+
+### Architecture
+
+Full-page views render on top of the main terminal content. They have:
+
+- A header bar with title + close/back button
+- Scrollable content area
+- The bottom nav remains visible at the bottom
+
+```tsx
+interface FullPageViewProps {
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}
+
+function FullPageView({ title, onClose, children }: FullPageViewProps) {
+  return (
+    <div className="fixed inset-0 z-40 bg-background flex flex-col" style={{ paddingBottom: 'calc(56px + env(safe-area-inset-bottom, 0px))' }}>
+      <header className="shrink-0 flex items-center h-12 px-4 border-b border-card-border bg-card">
+        <button onClick={onClose} className="p-2 rounded-lg text-muted-foreground hover:text-foreground">
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+        <h2 className="font-mono text-sm font-bold tracking-wider text-foreground ml-3">{title}</h2>
+      </header>
+      <div className="flex-1 overflow-y-auto">
+        {children}
+      </div>
+    </div>
+  );
+}
+```
+
+### Watchlist Full Page (`WatchlistPage.tsx`)
+
+Move the watchlist functionality from Sidebar.tsx into a full-page view:
+
+- Shows all watched symbols as rows/cards with live price data
+- Each symbol row shows: symbol, price, change, % change
+- Tap a symbol to navigate back to main terminal with that symbol selected
+- Add symbol button (+ icon in header)
+- Swipe or long-press to remove a symbol
+- Uses the same `watchlist`, `removeFromWatchlist`, `setSymbol` from useTerminalStore
+
+### Markets Full Page (`MarketsPage.tsx`)
+
+New page (can be a placeholder initially):
+
+- Shows major indices (S&P 500, Nasdaq, Dow, Russell)
+- Sector performance overview
+- Market breadth summary
+- Links to the Market Pulse
+- Can be built out later, just needs a basic structure now
+
+### Portfolio Full Page (`PortfolioPage.tsx`)
+
+New page (placeholder):
+
+- “Portfolio view coming soon”
+- Will eventually show positions, P&L, Greeks exposure
+- Just needs the FullPageView shell with placeholder content for now
+
+### Settings Full Page (`SettingsPage.tsx`)
+
+This is where ALL the sidebar settings move. Opened from a gear icon in the mobile header (replacing the hamburger menu).
+
+**Add a gear icon to the mobile header bar** (where the hamburger menu currently is):
+
+```tsx
+<button onClick={() => setSettingsOpen(true)} className="...">
+  <Settings className="w-5 h-5" />
+</button>
+```
+
+**Settings page sections (each is a collapsible card, same styling as current sidebar sections):**
+
+1. **Connections**
+- Schwab Auth status (AuthPanel component)
+1. **Display**
+- Macro Tickers (4 input fields)
+- Marquee Setup (symbols + scroll speed)
+1. **Chart**
+- Chart Overlays (SMA20, SMA50, BB, RSI, VOL toggle pills)
+1. **Options**
+- Contract Type filter (ALL/CALLS/PUTS)
+- Max DTE input
+1. **AI**
+- Model dropdown
+- Temperature slider
+1. **Market Pulse**
+- All pulse settings (strategies, indicators, etc.)
+- This is the existing PulseSettingsPanel component, just moved here
+1. **Security**
+- Session Timeout (segmented control)
+- Face ID / Biometrics (passkey registration + toggles)
+1. **Account**
+- SIGN OUT button (red, at the bottom)
+
+Each section is a collapsible card identical to how they look in the current sidebar. The styling, spacing, and components are the same. They’re just in a full-page scrollable view instead of a narrow sidebar.
+
+-----
+
+## PART 3: TERMINAL.TSX CHANGES
+
+### Remove from Terminal.tsx:
+
+- The sidebar component import and rendering
+- The sidebar open/close state (`sidebarOpen`, `setSidebarOpen`)
+- The sidebar overlay backdrop div
+- The sidebar container div with translate animation
+- The hamburger menu button in the mobile header
+
+### Add to Terminal.tsx:
+
+- Import and render `BottomNav` component (fixed to bottom)
+- Import and render full-page views conditionally based on `bottomNavRoute` state
+- Settings gear icon in the mobile header
+- State for full-page views: `bottomNavRoute` and `settingsOpen`
+
+### Keep in Terminal.tsx (DO NOT TOUCH):
+
+- ALL the sticky header content (logo, ticker tape)
+- MacroBar
+- AiBiasStrip
+- MetricsBar
+- TickerSearch
+- The entire Tabs system (NEWS, OPTIONS, AI, SCAN, CHART)
+- ALL tab content (NewsTab, OptionsTab, AiIntelligenceTab, MarketScanner, TradingChart)
+- AiChatOverlay
+- InstitutionalTearSheet
+- InAppBrowser
+- All hooks (useAutoRefreshToken, useMarketStream, useViewportShell, etc.)
+- The scroll handling logic
+- Chart data fetching logic
+
+### Updated Terminal.tsx structure (pseudocode):
+
+```tsx
+export default function TerminalPage() {
+  // ... all existing state ...
+  const [bottomNavRoute, setBottomNavRoute] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  return (
+    <div className="app-shell">
+      <main className="flex-1 flex flex-col min-h-0 bg-background relative min-w-0" style={{ overflow: "clip" }}>
+        
+        {/* Sticky header - SAME AS CURRENT but replace hamburger with gear icon */}
+        <div id="terminal-header" className="sticky top-0 z-50 shrink-0 bg-background">
+          <div className="flex items-center lg:hidden h-12 px-4 border-b border-card-border bg-card">
+            <button onClick={() => setSettingsOpen(true)} className="...">
+              <Settings className="w-5 h-5" />
+            </button>
+            {/* ... rest of header (logo, symbol, connection dot) ... */}
+          </div>
+          <TickerTape />
+        </div>
+
+        {/* Scrollable content - SAME AS CURRENT */}
+        <div ref={scrollRef} onScroll={handleScroll} className="app-content" style={{ paddingBottom: 'calc(56px + env(safe-area-inset-bottom, 0px))' }}>
+          <MacroBar />
+          <AiBiasStrip ... />
+          <MetricsBar ... />
+          <TickerSearch />
+          <Tabs ...>
+            {/* ALL EXISTING TAB CONTENT - UNCHANGED */}
+          </Tabs>
+        </div>
+      </main>
+
+      {/* Bottom Navigation - NEW */}
+      <BottomNav
+        activeRoute={bottomNavRoute}
+        activeMainTab={activeMainTab}
+        onNavigate={(route) => {
+          if (route === 'scanner') {
+            setBottomNavRoute(null);
+            setActiveMainTab('scanner');
+          } else if (route === 'ai') {
+            setChatOpen(true);
+          } else {
+            setBottomNavRoute(route);
+          }
+        }}
+      />
+
+      {/* Full-page views - NEW */}
+      {bottomNavRoute === 'watchlist' && (
+        <WatchlistPage onClose={() => setBottomNavRoute(null)} />
+      )}
+      {bottomNavRoute === 'markets' && (
+        <MarketsPage onClose={() => setBottomNavRoute(null)} />
+      )}
+      {bottomNavRoute === 'portfolio' && (
+        <PortfolioPage onClose={() => setBottomNavRoute(null)} />
+      )}
+      {settingsOpen && (
+        <SettingsPage onClose={() => setSettingsOpen(false)} />
+      )}
+
+      {/* Existing overlays - UNCHANGED */}
+      <AiChatOverlay isOpen={chatOpen} onClose={() => setChatOpen(false)} />
+      <InstitutionalTearSheet isOpen={tearSheetOpen} onClose={() => setTearSheetOpen(false)} />
+      <InAppBrowser />
+    </div>
+  );
+}
+```
+
+-----
+
+## PART 4: CSS CHANGES
+
+### Add bottom nav safe area padding:
+
+```css
+.bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 8px);
+}
+```
+
+### Update .app-content to account for bottom nav:
+
+```css
+.app-content {
+  /* existing styles stay */
+  padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px) + 8px);
+}
+```
+
+### Update viewport meta (add viewport-fit=cover if not present):
+
+```html
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+```
+
+-----
+
+## PART 5: WHAT TO DELETE
+
+After confirming everything works:
+
+1. **Sidebar.tsx** – the entire file can be deleted (all functionality moved to SettingsPage.tsx and other full-page views)
+1. **In Terminal.tsx** – remove:
+- `import { Sidebar }`
+- `sidebarOpen` state
+- The sidebar overlay div
+- The sidebar container div
+- The hamburger Menu button in the mobile header
+
+Do NOT delete Sidebar.tsx until all settings/watchlist/security features are confirmed working in their new locations.
+
+-----
+
+## VISUAL DESIGN RULES
+
+All new components must match the existing terminal aesthetic:
+
+- Backgrounds: bg-background (#0d0d0d), bg-card (#191919), bg-[#0c0c0c]
+- Borders: border-card-border (#262626)
+- Text: text-foreground (light gray), text-muted-foreground (#71717a)
+- Primary accent: #FFB800 (gold)
+- Font: font-mono for labels, font-sans for body
+- All sizes: text-[9px] to text-xs for labels, text-sm for content
+- Cards: rounded-xl, border, shadow-sm
+- Transitions: transition-all or transition-colors, no bouncing/sliding
+- Icons: lucide-react, 16-20px, muted-foreground default, primary when active
+
+-----
+
+## SUMMARY
+
+1. Add BottomNav component (5 items: Scanner, Markets, AI, Portfolio, Watchlist)
+1. Add FullPageView wrapper component
+1. Create WatchlistPage (move watchlist from sidebar)
+1. Create MarketsPage (placeholder)
+1. Create PortfolioPage (placeholder)
+1. Create SettingsPage (move ALL sidebar settings: auth, chart, options, macro, marquee, AI params, pulse settings, security, sign out)
+1. Replace hamburger menu with gear icon in mobile header
+1. Update Terminal.tsx to render bottom nav + full-page views
+1. Add CSS for bottom nav safe area + content padding
+1. After confirming: delete Sidebar.tsx and all sidebar references

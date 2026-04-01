@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Sidebar } from "@/components/Sidebar";
 import { MetricsBar } from "@/components/MetricsBar";
 import { TradingChart } from "@/components/TradingChart";
 import { OptionsTab } from "@/components/OptionsTab";
@@ -20,18 +19,25 @@ import { InstitutionalTearSheet } from "@/views/InstitutionalTearSheet";
 import { InAppBrowser } from "@/components/InAppBrowser";
 import { NewsTab } from "@/components/NewsTab";
 import { AiBiasStrip } from "@/components/market-pulse/AiBiasStrip";
+import { BottomNav } from "@/components/BottomNav";
+import { WatchlistPage } from "@/pages/WatchlistPage";
+import { MarketsPage } from "@/pages/MarketsPage";
+import { PortfolioPage } from "@/pages/PortfolioPage";
+import { SettingsPage } from "@/pages/SettingsPage";
+import type { BottomNavRoute } from "@/components/BottomNav";
 import type { AiSubTab } from "@/components/ai-tab/AiSubTabs";
-import { LineChart, BarChart2, BrainCircuit, Menu, Radar, Newspaper } from "lucide-react";
+import { LineChart, BarChart2, BrainCircuit, Radar, Newspaper, Settings } from "lucide-react";
 
 export default function TerminalPage() {
-  const { symbol, accessToken, chartPeriod, chartInterval, streamStatus } = useTerminalStore();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { symbol, accessToken, chartPeriod, chartInterval, streamStatus, setSymbol } = useTerminalStore();
   const [chatOpen, setChatOpen] = useState(false);
   const [tearSheetOpen, setTearSheetOpen] = useState(false);
   const [historyTimedOut, setHistoryTimedOut] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const [activeMainTab, setActiveMainTab] = useState("news");
   const [aiSubTab, setAiSubTab] = useState<AiSubTab | undefined>(undefined);
+  const [bottomNavRoute, setBottomNavRoute] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { refresh } = useAutoRefreshToken();
   useViewportShell();
@@ -64,7 +70,6 @@ export default function TerminalPage() {
     }
   }, [historyData?.error, refresh]);
 
-  // ── 5-second safety timeout: forces "not found" state if no data arrives ──
   useEffect(() => {
     setHistoryTimedOut(false);
     if (!accessToken) return;
@@ -72,41 +77,32 @@ export default function TerminalPage() {
     return () => clearTimeout(timer);
   }, [symbol, accessToken]);
 
+  const handleBottomNav = (route: BottomNavRoute) => {
+    if (route === "scanner") {
+      setBottomNavRoute(null);
+      setActiveMainTab("scanner");
+    } else if (route === "ai") {
+      setChatOpen(true);
+    } else {
+      setBottomNavRoute(route);
+    }
+  };
+
   return (
     <div className="app-shell bg-background selection:bg-primary/30 selection:text-white">
-      <div className="flex flex-row flex-1 min-h-0 w-full">
-
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black/60 z-30 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-
-      <div className={`
-        fixed lg:relative top-0 left-0 h-full z-40 shrink-0
-        transition-transform duration-300 ease-in-out
-        ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
-      `}>
-        <Sidebar onClose={() => setSidebarOpen(false)} onOpenChat={() => setChatOpen(true)} />
-      </div>
-
       <main className="flex-1 flex flex-col min-h-0 bg-background relative min-w-0" style={{ overflow: "clip" }}>
-        {/* Ambient glow — clipped inside its own overflow-hidden layer */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-primary/5 blur-[120px] rounded-full" />
         </div>
 
-        {/* ─── Sticky top: Mobile header + Ticker tape ─── */}
         <div id="terminal-header" className="sticky top-0 z-50 shrink-0 bg-background">
-          {/* Mobile top bar */}
-          <div className="flex items-center lg:hidden h-12 px-4 border-b border-card-border bg-card">
+          <div className="flex items-center h-12 px-4 border-b border-card-border bg-card">
             <button
-              onClick={() => setSidebarOpen(prev => !prev)}
+              onClick={() => setSettingsOpen(true)}
               className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-card-border transition-colors mr-3"
-              aria-label="Open menu"
+              aria-label="Open settings"
             >
-              <Menu className="w-5 h-5" />
+              <Settings className="w-5 h-5" />
             </button>
             <div className="flex flex-col leading-none">
               <span className="font-sans font-black text-base tracking-wider text-foreground">ALPHA</span>
@@ -127,23 +123,18 @@ export default function TerminalPage() {
             </div>
           </div>
 
-          {/* ─── Ticker tape scrolling marquee ─── */}
           <TickerTape />
         </div>
 
         <div ref={scrollRef} onScroll={handleScroll} className="app-content z-10">
-          {/* ─── Macro Cards ─── */}
           <MacroBar />
 
-          {/* ─── AI Bias Strip ─── */}
           <div style={{ position: "sticky", top: 0, zIndex: 45 }}>
             <AiBiasStrip onNavigateToPulse={() => { setActiveMainTab("ai"); setAiSubTab("pulse"); }} />
           </div>
 
-          {/* ─── Metrics row (sticky + collapsible) ─── */}
           <MetricsBar compact={isScrolled} onOpenTearSheet={() => setTearSheetOpen(true)} />
 
-          {/* ─── Prominent search bar ─── */}
           <TickerSearch />
 
           <div className="flex flex-col" style={{ minHeight: "calc(var(--vvh, 100%) - 80px)" }}>
@@ -222,7 +213,28 @@ export default function TerminalPage() {
           </div>
         </div>
       </main>
-      </div>
+
+      <BottomNav
+        activeRoute={bottomNavRoute}
+        activeMainTab={activeMainTab}
+        onNavigate={handleBottomNav}
+      />
+
+      {bottomNavRoute === "watchlist" && (
+        <WatchlistPage
+          onClose={() => setBottomNavRoute(null)}
+          onSelectSymbol={(sym) => { setSymbol(sym); setBottomNavRoute(null); }}
+        />
+      )}
+      {bottomNavRoute === "markets" && (
+        <MarketsPage onClose={() => setBottomNavRoute(null)} />
+      )}
+      {bottomNavRoute === "portfolio" && (
+        <PortfolioPage onClose={() => setBottomNavRoute(null)} />
+      )}
+      {settingsOpen && (
+        <SettingsPage onClose={() => setSettingsOpen(false)} />
+      )}
 
       <AiChatOverlay isOpen={chatOpen} onClose={() => setChatOpen(false)} />
       <InstitutionalTearSheet isOpen={tearSheetOpen} onClose={() => setTearSheetOpen(false)} />
