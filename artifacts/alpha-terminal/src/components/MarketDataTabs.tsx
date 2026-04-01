@@ -215,7 +215,7 @@ export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps)
         }
         .tab-jiggle {
           animation: tab-jiggle 0.6s ease-in-out infinite;
-          border: 1px solid rgba(255,255,255,0.35);
+          border: 1px solid rgba(255,255,255,0.7);
           border-radius: 6px;
           margin: 2px 3px;
         }
