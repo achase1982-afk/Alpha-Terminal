@@ -1169,14 +1169,22 @@ Write ONLY the narrative fields. Return this exact JSON structure:
 }`;
 
   try {
+    let hasEmittedThinking = false;
     const responseBuffer = await nativeStreamGemini({
       prompt: narrativePrompt,
       modelName: model ?? "gemini-3.1-pro-preview",
       temperature: temperature ?? 0,
       thinkingBudget: 4096,
       onThinking: (text) => {
+        hasEmittedThinking = true;
         res.write(`event: thinking\ndata: ${JSON.stringify({ type: "thinking", text })}\n\n`);
         if (typeof (res as any).flush === "function") (res as any).flush();
+      },
+      onText: (text) => {
+        if (!hasEmittedThinking) {
+          res.write(`event: thinking\ndata: ${JSON.stringify({ type: "thinking", text })}\n\n`);
+          if (typeof (res as any).flush === "function") (res as any).flush();
+        }
       },
     });
 
