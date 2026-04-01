@@ -13,7 +13,7 @@ import {
 import ReactMarkdown from "react-markdown";
 import { MarketPulseDashboard } from "@/components/market-pulse/MarketPulseDashboard";
 import { StrategistAuditPanel, type StrategistAuditData } from "@/components/market-pulse/StrategistAuditPanel";
-import { AiSubTabs, type AiSubTab } from "@/components/ai-tab/AiSubTabs";
+import type { AiSubTab } from "@/components/ai-tab/AiSubTabs";
 import { AiThinkingFeed } from "@/components/ai-shared/AiThinkingFeed";
 import { useStrategistCache, type StrategistCacheData } from "@/hooks/useStrategistCache";
 
@@ -627,10 +627,11 @@ function StrategySettings() {
 }
 
 interface AiIntelligenceTabProps {
-  initialSubTab?: AiSubTab;
+  subTab: AiSubTab;
+  onSubTabChange: (tab: AiSubTab) => void;
 }
 
-export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
+export function AiIntelligenceTab({ subTab, onSubTabChange }: AiIntelligenceTabProps) {
   const {
     symbol, accessToken,
     aiModel, aiTemp,
@@ -643,7 +644,6 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
 
   const { cachedData: strategistCache, setCachedData: setStrategistCache } = useStrategistCache(symbol);
 
-  const [subTab, setSubTab] = useState<AiSubTab>(initialSubTab ?? "pulse");
   const [customPrompt, setCustomPrompt] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [isStrategizing, setIsStrategizing] = useState(false);
@@ -663,10 +663,6 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
   const cacheRestoredRef = useRef(false);
   const prevSymbolRef = useRef(symbol);
   const strategistRunRef = useRef(0);
-
-  useEffect(() => {
-    if (initialSubTab) setSubTab(initialSubTab);
-  }, [initialSubTab]);
 
   useEffect(() => {
     if (prevSymbolRef.current !== symbol) {
@@ -692,11 +688,10 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
     }
   }, [symbol, strategistCache]);
 
-  const handleSubTabChange = useCallback((tab: AiSubTab) => {
-    setSubTab(tab);
+  useEffect(() => {
     setStreamingText("");
 
-    if (tab === "strategist" && strategistCache && !isStreaming && !isStrategizing) {
+    if (subTab === "strategist" && strategistCache && !isStreaming && !isStrategizing) {
       setRealStrategies(strategistCache.strategies);
       setNarrativeText(strategistCache.narrative);
       setRegimeInfo(strategistCache.regime);
@@ -710,7 +705,7 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
       setThinkingTokens([]);
       setActiveResult(null);
     }
-  }, [strategistCache, isStreaming, isStrategizing, setStrategistResult]);
+  }, [subTab]);
 
   const { data: quote } = useGetQuote(
     { symbol, accessToken: accessToken || "" },
@@ -950,10 +945,8 @@ export function AiIntelligenceTab({ initialSubTab }: AiIntelligenceTabProps) {
 
   return (
     <div className="flex flex-col gap-0 w-full max-w-5xl mx-auto pb-6 flex-1" style={{ minHeight: "calc(var(--vvh, 100vh) - 200px)" }}>
-      <AiSubTabs active={subTab} onChange={handleSubTabChange} />
-
       {subTab === "pulse" && (
-        <MarketPulseDashboard autoGenerate={initialSubTab === "pulse"} />
+        <MarketPulseDashboard />
       )}
 
       {subTab === "strategist" && (

@@ -22,7 +22,7 @@ import { NewsTab } from "@/components/NewsTab";
 import { AiBiasStrip } from "@/components/market-pulse/AiBiasStrip";
 import { BottomNav } from "@/components/BottomNav";
 import { CompanyResearchHub } from "@/components/CompanyResearchHub";
-import type { AiSubTab } from "@/components/ai-tab/AiSubTabs";
+import { AiSubTabs, type AiSubTab } from "@/components/ai-tab/AiSubTabs";
 import {
   Menu,
   Newspaper,
@@ -44,7 +44,7 @@ export default function TerminalPage() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [activeBottom, setActiveBottom] = useState<BottomTab>("markets");
   const [contextTab, setContextTab] = useState<ContextTab>("news");
-  const [aiSubTab, setAiSubTab] = useState<AiSubTab | undefined>(undefined);
+  const [aiSubTab, setAiSubTab] = useState<AiSubTab>("pulse");
   const scrollRef = useRef<HTMLDivElement>(null);
   const { refresh } = useAutoRefreshToken();
   useViewportShell();
@@ -116,6 +116,29 @@ export default function TerminalPage() {
         <AiBiasStrip onNavigateToPulse={() => { setActiveBottom("ai"); setAiSubTab("pulse"); }} />
       </header>
 
+      {activeBottom === "ai" && (
+        <div className="shrink-0 bg-background z-40 px-3 sm:px-4 lg:px-5 pt-1 pb-1">
+          <div
+            className="flex w-full rounded-full p-1"
+            style={{ background: "rgba(39,39,42,0.5)" }}
+          >
+            {(["pulse", "strategist"] as AiSubTab[]).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setAiSubTab(tab)}
+                className="flex-1 font-mono text-xs font-bold tracking-wider py-2 rounded-full transition-all duration-200"
+                style={{
+                  background: aiSubTab === tab ? "#3f3f46" : "transparent",
+                  color: aiSubTab === tab ? "#fafafa" : "#71717a",
+                }}
+              >
+                {tab.toUpperCase()}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-1 min-h-0 relative">
 
         <Sidebar
@@ -166,7 +189,7 @@ export default function TerminalPage() {
           )}
 
           {activeBottom === "ai" && (
-            <AiIntelligenceTab initialSubTab={aiSubTab} />
+            <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} />
           )}
 
           {activeBottom === "portfolio" && (

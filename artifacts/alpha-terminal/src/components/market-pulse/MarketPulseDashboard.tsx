@@ -178,7 +178,7 @@ export function MarketPulseDashboard({ autoGenerate }: MarketPulseDashboardProps
 
   return (
     <div className="space-y-4 px-3 sm:px-4 lg:px-5 overflow-x-hidden">
-      <div className="sticky z-30 flex items-center justify-between py-3 bg-background" style={{ top: 44 }}>
+      <div className="sticky z-30 flex items-center justify-between py-2 bg-background" style={{ top: 0 }}>
         <div className="flex items-center gap-2.5">
           <div className="w-7 h-7 rounded-lg bg-[#FFB800]/15 border border-[#FFB800]/30 flex items-center justify-center">
             <Zap className="w-3.5 h-3.5 text-[#FFB800]" />
