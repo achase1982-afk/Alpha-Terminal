@@ -194,7 +194,7 @@ export default function TerminalPage() {
           onNavigate={(dest) => { if (dest === "markets") setActiveBottom("markets"); else if (dest === "portfolio") setActiveBottom("portfolio"); }}
         />
 
-        <main ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto app-content pb-24">
+        <main ref={scrollRef} onScroll={handleScroll} className={`flex-1 app-content pb-24 ${activeBottom === "ai" && aiSubTab === "pulse" && !pulseData ? "overflow-hidden" : "overflow-y-auto"}`}>
 
           {activeBottom === "markets" && (
             <>
