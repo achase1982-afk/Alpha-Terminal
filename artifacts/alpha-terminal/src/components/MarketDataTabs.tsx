@@ -12,7 +12,7 @@ const TAB_DEFS: Record<MarketDataTab, { label: string; icon: React.ReactNode }> 
 
 const DEFAULT_ORDER: MarketDataTab[] = ["news", "options", "company", "chart"];
 const STORAGE_KEY = "alphaTerminalTabOrder";
-const LONG_PRESS_MS = 500;
+const LONG_PRESS_MS = 450;
 
 function loadOrder(): MarketDataTab[] {
   try {
@@ -23,12 +23,17 @@ function loadOrder(): MarketDataTab[] {
         Array.isArray(parsed) &&
         parsed.length === DEFAULT_ORDER.length &&
         DEFAULT_ORDER.every((t) => parsed.includes(t))
-      ) {
-        return parsed;
-      }
+      ) return parsed;
     }
   } catch {}
   return [...DEFAULT_ORDER];
+}
+
+function reorder<T>(arr: T[], from: number, to: number): T[] {
+  const next = [...arr];
+  const [item] = next.splice(from, 1);
+  next.splice(to, 0, item);
+  return next;
 }
 
 interface MarketDataTabsProps {
@@ -39,14 +44,19 @@ interface MarketDataTabsProps {
 export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps) {
   const [order, setOrder] = useState<MarketDataTab[]>(loadOrder);
   const [jiggling, setJiggling] = useState(false);
-  const [dragIdx, setDragIdx] = useState<number | null>(null);
-  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [dragTabId, setDragTabId] = useState<MarketDataTab | null>(null);
+  const [dragX, setDragX] = useState(0);
+  const [dragOriginX, setDragOriginX] = useState(0);
+  const [previewOrder, setPreviewOrder] = useState<MarketDataTab[]>([]);
 
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const touchStartX = useRef(0);
-  const touchStartIdx = useRef<number | null>(null);
+  const touchMoved = useRef(false);
+  const tabRects = useRef<DOMRect[]>([]);
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const dragStartIdx = useRef(0);
 
   const saveOrder = useCallback((newOrder: MarketDataTab[]) => {
     setOrder(newOrder);
@@ -60,78 +70,123 @@ export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps)
     }
   }, []);
 
+  const snapshotRects = useCallback(() => {
+    tabRects.current = tabRefs.current.map(
+      (el) => el?.getBoundingClientRect() ?? new DOMRect()
+    );
+  }, []);
+
+  const startDrag = useCallback((idx: number, clientX: number) => {
+    snapshotRects();
+    const rect = tabRects.current[idx];
+    if (!rect) return;
+
+    setJiggling(true);
+    setDragging(true);
+    setDragTabId(order[idx]);
+    setDragOriginX(rect.left + rect.width / 2);
+    setDragX(clientX);
+    setPreviewOrder([...order]);
+    dragStartIdx.current = idx;
+    if (navigator.vibrate) navigator.vibrate(40);
+  }, [order, snapshotRects]);
+
   const handleTouchStart = useCallback(
     (idx: number, e: React.TouchEvent) => {
-      touchStartX.current = e.touches[0].clientX;
-      touchStartIdx.current = idx;
+      const x = e.touches[0].clientX;
+      touchStartX.current = x;
+      touchMoved.current = false;
+
+      if (jiggling) {
+        startDrag(idx, x);
+        return;
+      }
+
       longPressTimer.current = setTimeout(() => {
-        setJiggling(true);
-        setDragIdx(idx);
-        if (navigator.vibrate) navigator.vibrate(30);
+        startDrag(idx, x);
       }, LONG_PRESS_MS);
     },
-    []
+    [jiggling, startDrag]
   );
 
   const handleTouchMove = useCallback(
     (e: React.TouchEvent) => {
-      if (!jiggling || dragIdx === null) {
-        const dx = Math.abs(e.touches[0].clientX - touchStartX.current);
-        if (dx > 10) cancelLongPress();
+      const x = e.touches[0].clientX;
+
+      if (!dragging) {
+        const dx = Math.abs(x - touchStartX.current);
+        if (dx > 8) {
+          cancelLongPress();
+          touchMoved.current = true;
+        }
         return;
       }
 
-      const x = e.touches[0].clientX;
-      const container = containerRef.current;
-      if (!container) return;
+      e.preventDefault();
+      setDragX(x);
 
-      let closestIdx = dragIdx;
+      let targetIdx = dragStartIdx.current;
       let closestDist = Infinity;
-      tabRefs.current.forEach((el, i) => {
-        if (!el) return;
-        const rect = el.getBoundingClientRect();
+      tabRects.current.forEach((rect, i) => {
         const center = rect.left + rect.width / 2;
         const dist = Math.abs(x - center);
         if (dist < closestDist) {
           closestDist = dist;
-          closestIdx = i;
+          targetIdx = i;
         }
       });
 
-      setDragOverIdx(closestIdx);
+      const fromIdx = order.indexOf(dragTabId!);
+      if (fromIdx !== -1 && targetIdx !== fromIdx) {
+        const newPreview = reorder(order, fromIdx, targetIdx);
+        setPreviewOrder(newPreview);
+      } else {
+        setPreviewOrder([...order]);
+      }
     },
-    [jiggling, dragIdx, cancelLongPress]
+    [dragging, cancelLongPress, order, dragTabId]
   );
 
   const handleTouchEnd = useCallback(() => {
     cancelLongPress();
 
-    if (jiggling && dragIdx !== null && dragOverIdx !== null && dragIdx !== dragOverIdx) {
-      const newOrder = [...order];
-      const [moved] = newOrder.splice(dragIdx, 1);
-      newOrder.splice(dragOverIdx, 0, moved);
-      saveOrder(newOrder);
+    if (dragging && dragTabId !== null) {
+      const fromIdx = order.indexOf(dragTabId);
+      let targetIdx = dragStartIdx.current;
+      let closestDist = Infinity;
+      tabRects.current.forEach((rect, i) => {
+        const center = rect.left + rect.width / 2;
+        const dist = Math.abs(dragX - center);
+        if (dist < closestDist) {
+          closestDist = dist;
+          targetIdx = i;
+        }
+      });
+
+      if (fromIdx !== -1 && targetIdx !== fromIdx) {
+        const newOrder = reorder(order, fromIdx, targetIdx);
+        saveOrder(newOrder);
+      }
     }
 
-    setDragIdx(null);
-    setDragOverIdx(null);
-  }, [jiggling, dragIdx, dragOverIdx, order, cancelLongPress, saveOrder]);
+    setDragging(false);
+    setDragTabId(null);
+    setPreviewOrder([]);
+  }, [dragging, dragTabId, order, dragX, cancelLongPress, saveOrder]);
 
   useEffect(() => {
     if (!jiggling) return;
-
     const handler = (e: TouchEvent | MouseEvent) => {
       const container = containerRef.current;
       if (!container) return;
-      const target = e.target as Node;
-      if (!container.contains(target)) {
+      if (!container.contains(e.target as Node)) {
         setJiggling(false);
-        setDragIdx(null);
-        setDragOverIdx(null);
+        setDragging(false);
+        setDragTabId(null);
+        setPreviewOrder([]);
       }
     };
-
-    document.addEventListener("touchstart", handler);
+    document.addEventListener("touchstart", handler, { passive: true });
     document.addEventListener("mousedown", handler);
     return () => {
       document.removeEventListener("touchstart", handler);
@@ -139,15 +194,8 @@ export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps)
     };
   }, [jiggling]);
 
-  const displayOrder =
-    jiggling && dragIdx !== null && dragOverIdx !== null && dragIdx !== dragOverIdx
-      ? (() => {
-          const preview = [...order];
-          const [moved] = preview.splice(dragIdx, 1);
-          preview.splice(dragOverIdx, 0, moved);
-          return preview;
-        })()
-      : order;
+  const displayOrder = dragging && previewOrder.length === order.length ? previewOrder : order;
+  const dragOffset = dragging ? dragX - dragOriginX : 0;
 
   return (
     <nav
@@ -156,40 +204,65 @@ export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps)
     >
       <style>{`
         @keyframes tab-jiggle {
-          0%, 100% { transform: rotate(0deg); }
-          25% { transform: rotate(-1.5deg); }
-          75% { transform: rotate(1.5deg); }
+          0%, 100% { transform: rotate(0deg) scale(1); }
+          20% { transform: rotate(-2deg) scale(1.01); }
+          40% { transform: rotate(2deg) scale(1.01); }
+          60% { transform: rotate(-1.5deg) scale(1); }
+          80% { transform: rotate(1.5deg) scale(1); }
         }
-        .tab-jiggle { animation: tab-jiggle 0.25s ease-in-out infinite; }
+        .tab-jiggle {
+          animation: tab-jiggle 0.35s ease-in-out infinite;
+        }
+        .tab-slot-shift {
+          transition: transform 0.3s cubic-bezier(0.2, 0, 0, 1), opacity 0.2s ease;
+        }
+        .tab-dragging {
+          z-index: 50;
+          box-shadow: 0 8px 24px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,184,0,0.3);
+          border-radius: 8px;
+          background: #2a2a2a;
+          animation: none !important;
+        }
       `}</style>
       <div
         ref={containerRef}
-        className="flex w-full items-stretch p-0 border-t border-card-border/20"
+        className="relative flex w-full items-stretch p-0 border-t border-card-border/20 overflow-hidden"
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
+        style={{ touchAction: dragging ? "none" : "auto" }}
       >
         {displayOrder.map((tabId, i) => {
           const tab = TAB_DEFS[tabId];
           const isActive = activeTab === tabId;
-          const isDragging = jiggling && dragIdx !== null && order[dragIdx] === tabId;
+          const isBeingDragged = dragging && tabId === dragTabId;
+
+          const style: React.CSSProperties = {};
+          if (isBeingDragged) {
+            style.transform = `translateX(${dragOffset}px) scale(1.08)`;
+            style.transition = "scale 0.2s ease";
+          }
+          if (jiggling && !isBeingDragged) {
+            style.animationDelay = `${i * 70}ms`;
+          }
 
           return (
             <React.Fragment key={tabId}>
-              {i > 0 && (
+              {i > 0 && !dragging && (
                 <div className="w-px self-stretch my-1.5 bg-zinc-700/30" />
               )}
               <button
                 ref={(el) => { tabRefs.current[i] = el; }}
                 onClick={() => {
-                  if (!jiggling) setActiveTab(tabId);
+                  if (!jiggling && !touchMoved.current) setActiveTab(tabId);
                 }}
                 onTouchStart={(e) => handleTouchStart(i, e)}
-                className={`flex flex-1 items-center justify-center gap-2 py-2.5 transition-all border-b-2 select-none ${
-                  isActive
-                    ? "border-primary text-white"
-                    : "border-transparent text-zinc-500"
-                } ${jiggling ? "tab-jiggle" : ""} ${isDragging ? "opacity-60 scale-95" : ""}`}
-                style={jiggling ? { animationDelay: `${i * 60}ms` } : undefined}
+                className={[
+                  "flex flex-1 items-center justify-center gap-2 py-2.5 border-b-2 select-none",
+                  isActive ? "border-primary text-white" : "border-transparent text-zinc-500",
+                  jiggling && !isBeingDragged ? "tab-jiggle tab-slot-shift" : "",
+                  isBeingDragged ? "tab-dragging" : "",
+                ].join(" ")}
+                style={style}
               >
                 {tab.icon}
                 <span className="text-[10px] font-medium tracking-widest uppercase">
