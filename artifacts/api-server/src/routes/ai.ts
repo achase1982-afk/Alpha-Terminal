@@ -13,7 +13,7 @@ import {
   GetAvailableModelsResponse,
 } from "@workspace/api-zod";
 import { computeIndicators, formatTAContext, isDataStale, type Candle } from "../lib/ta.js";
-import { runMarketPulseEngine, type MarketIndicators, type BiasLabel } from "../lib/marketPulseEngine.js";
+import { runMarketPulseEngine, formatClusterDebugLine, verifyEngineScoring, type MarketIndicators, type BiasLabel } from "../lib/marketPulseEngine.js";
 import { getSnapshot, type LiveQuote } from "../lib/schwabStreamer.js";
 import { selectStrategies, selectStrategiesByRegime, classifyRegime, checkOverrideConflict, STRATEGIST_SYSTEM_PROMPT, type OptionContract, type StrategyPayload, type RegimeClassification } from "../lib/optionsStrategist.js";
 import { runPreTradeChecks, type PreTradeInput, type PreTradeResult } from "../lib/preTradeRiskEngine.js";
@@ -1072,7 +1072,8 @@ router.post("/market-pulse/stream", async (req, res) => {
     return `\n${line}`;
   })();
 
-  res.write(`event: thinking\ndata: ${JSON.stringify({ type: "thinking", text: `Engine scored: ${engineResult.bias} (composite ${engineResult.compositeScore >= 0 ? '+' : ''}${engineResult.compositeScore.toFixed(2)}, confidence ${engineResult.confidenceScore}%). Generating AI narrative...` })}\n\n`);
+  const clusterDebug = formatClusterDebugLine(engineResult);
+  res.write(`event: thinking\ndata: ${JSON.stringify({ type: "thinking", text: `Engine scored: ${engineResult.bias} (composite ${engineResult.compositeScore >= 0 ? '+' : ''}${engineResult.compositeScore.toFixed(2)}, confidence ${engineResult.confidenceScore}%). ${clusterDebug}. Generating AI narrative...` })}\n\n`);
   if (typeof (res as any).flush === "function") (res as any).flush();
 
   const instrumentCount = (symbols && symbols.length > 0 ? symbols : PULSE_SYMBOLS.map(s => s.display)).length;
@@ -2026,5 +2027,18 @@ router.post("/pre-trade-check", async (req, res) => {
     res.status(500).json({ error: msg });
   }
 });
+
+router.get("/market-pulse/verify", (_req, res) => {
+  const { passed, output } = verifyEngineScoring();
+  res.json({ passed, output });
+});
+
+{
+  const { passed, output } = verifyEngineScoring();
+  console.log(output);
+  if (!passed) {
+    console.error("ENGINE VERIFICATION FAILED — see output above");
+  }
+}
 
 export default router;

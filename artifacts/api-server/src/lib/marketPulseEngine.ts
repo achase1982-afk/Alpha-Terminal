@@ -180,6 +180,10 @@ function clamp(score: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, Math.round(score * 100) / 100));
 }
 
+function clampPrecise(score: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, Math.round(score * 10000) / 10000));
+}
+
 function fmt(val: number | null, prefix: string, suffix: string = ''): string {
   if (val === null) return `${prefix} N/A`;
   return `${prefix} ${val > 0 ? '+' : ''}${val.toFixed(2)}${suffix}`;
@@ -410,7 +414,7 @@ function scoreVolTerm(data: MarketIndicators): ClusterResult {
     : 0;
   rules.push(`VolTerm avg of ${componentScores.length} components: ${avg.toFixed(3)}`);
 
-  const finalScore = clamp(avg, -2.0, 2.0);
+  const finalScore = clampPrecise(avg, -2.0, 2.0);
   const direction: Direction = finalScore > 0.25 ? 'CONTANGO' : finalScore < -0.25 ? 'INVERTED' : 'FLAT';
 
   let headline = '';
@@ -496,7 +500,7 @@ function scoreBreadth(data: MarketIndicators): ClusterResult {
     : 0;
   rules.push(`Breadth avg of ${componentScores.length} components: ${avg.toFixed(3)}`);
 
-  const finalScore = clamp(avg, -2.0, 2.0);
+  const finalScore = clampPrecise(avg, -2.0, 2.0);
   const direction: Direction = finalScore > 0.25 ? 'POSITIVE' : finalScore < -0.25 ? 'NEGATIVE' : 'FLAT';
 
   const freshCount = [data.advn, data.decn, data.tick, data.trin, data.add].filter(v => v !== null).length;
@@ -759,7 +763,7 @@ export function runMarketPulseEngine(
   const compositeScore = calculateComposite(clusters);
   const confidenceScore = calculateConfidence(clusters, compositeScore);
 
-  const bias: BiasLabel = confidenceScore < 25 ? 'NO_EDGE' : determineBias(compositeScore, confidenceScore);
+  const bias: BiasLabel = Math.abs(compositeScore) < 0.30 ? 'NO_EDGE' : determineBias(compositeScore, confidenceScore);
   const todayEdge = determineTodayEdge(compositeScore, confidenceScore);
   const sizeRecommendation = determineSizeRecommendation(confidenceScore);
   const divergence = detectDivergence(clusters);
@@ -785,4 +789,84 @@ export function runMarketPulseEngine(
     levelsToWatch,
     weights: CLUSTER_WEIGHTS,
   };
+}
+
+export function formatClusterDebugLine(result: EngineOutput): string {
+  const c = result.clusters;
+  return `CLUSTER SCORES: rates=${c.rates.score} credit=${c.credit.score} volLevel=${c.volLevel.score} volTerm=${c.volTerm.score} breadth=${c.breadth.score} riskApp=${c.riskAppetite.score} macro=${c.macro.score} COMPOSITE=${result.compositeScore} CONFIDENCE=${result.confidenceScore}`;
+}
+
+export function verifyEngineScoring(): { passed: boolean; output: string } {
+  const lines: string[] = [];
+  let allPassed = true;
+
+  const testData: MarketIndicators = {
+    vix: 25.13, vixChange: null,
+    vvix: null, vvixChange: null,
+    vix3m: 25.51, vix3mChange: null,
+    vix9d: 24.19, vix9dChange: null,
+    skew: 145.45,
+    tnx: 43.5, tnxChange: 0.19,
+    tyx: 47.0, tyxChange: 0.27,
+    zb: 118.0, zbChange: -0.16,
+    zt: 103.0, ztChange: 0.00,
+    hyg: 78.0, hygChange: 0.14,
+    lqd: 110.0, lqdChange: 0.13,
+    ief: 95.0, iefChange: 0.01,
+    advn: 2177, decn: 570,
+    tick: 239, trin: 0.92, add: 1607,
+    es: 5400, esChange: 0.61,
+    nq: 18500, nqChange: 0.86,
+    ym: 42000, ymChange: 0.59,
+    rty: 2100, rtyChange: 1.15,
+    gc: null, gcChange: null,
+    cl: null, clChange: null,
+    bz: null, bzChange: null,
+    zq: null, zqChange: null,
+  };
+
+  const result = runMarketPulseEngine(testData);
+
+  lines.push('=== VERIFICATION AUDIT ===');
+  lines.push('');
+
+  lines.push('--- BREADTH CLUSTER ---');
+  lines.push(`TICK 239: expected +0.5 (above 200)`);
+  lines.push(`TRIN 0.92: expected +1.0 (between 0.8 and 1.0)`);
+  lines.push(`ADD 1607: expected +2.0 (above 1000)`);
+  lines.push(`ADVN/DECN = 2177/570 = ${(2177/570).toFixed(2)}: expected +2.0 (above 3.0)`);
+  lines.push(`Expected average: (0.5 + 1.0 + 2.0 + 2.0) / 4 = 1.375`);
+  lines.push(`Actual breadth score: ${result.clusters.breadth.score}`);
+  lines.push(`Rules applied: ${JSON.stringify(result.clusters.breadth.rulesApplied)}`);
+
+  const expectedBreadth = 1.375;
+  if (result.clusters.breadth.score !== expectedBreadth) {
+    lines.push(`FAIL: breadth score ${result.clusters.breadth.score} !== expected ${expectedBreadth}`);
+    allPassed = false;
+  } else {
+    lines.push(`PASS: breadth score = ${expectedBreadth}`);
+  }
+
+  lines.push('');
+  lines.push('--- VOL TERM STRUCTURE CLUSTER ---');
+  lines.push(`VIX9D/VIX = ${(24.19/25.13).toFixed(3)}: expected 0 (0.95-1.05 neutral)`);
+  lines.push(`VIX/VIX3M = ${(25.13/25.51).toFixed(3)}: expected 0 (0.95-1.05 flat)`);
+  lines.push(`SKEW 145.45: expected 0 (130-150 normal)`);
+  lines.push(`Expected average: 0`);
+  lines.push(`Actual volTerm score: ${result.clusters.volTerm.score}`);
+  lines.push(`Rules applied: ${JSON.stringify(result.clusters.volTerm.rulesApplied)}`);
+
+  if (result.clusters.volTerm.score !== 0) {
+    lines.push(`FAIL: volTerm score ${result.clusters.volTerm.score} !== expected 0`);
+    allPassed = false;
+  } else {
+    lines.push(`PASS: volTerm score = 0`);
+  }
+
+  lines.push('');
+  lines.push(formatClusterDebugLine(result));
+  lines.push('');
+  lines.push(`Overall: ${allPassed ? 'ALL TESTS PASSED' : 'SOME TESTS FAILED'}`);
+
+  return { passed: allPassed, output: lines.join('\n') };
 }

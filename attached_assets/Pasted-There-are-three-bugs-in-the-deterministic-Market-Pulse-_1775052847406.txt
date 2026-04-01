@@ -1,0 +1,39 @@
+There are three bugs in the deterministic Market Pulse scoring engine that need to be fixed. After fixing them you must run a verification audit before considering the task complete.
+
+BUG 1 BREADTH CLUSTER SCORING. The five breadth indicators TICK, TRIN, ADD, ADVN, and DECN must never be scored using percent change. These are cumulative intraday readings that reset daily. They are not price instruments. The percent change field will always be missing or zero for these indicators and that is expected behavior from the TOS data feed. Remove any percent change logic from the breadth scoring function entirely. Replace it with the following absolute value scoring rules.
+
+TICK: above 1000 scores +2.0, above 600 scores +1.0, above 200 scores +0.5, between negative 200 and positive 200 scores 0, below negative 200 scores -0.5, below negative 600 scores -1.0, below negative 1000 scores -2.0.
+
+TRIN: below 0.8 scores +2.0 strongly bullish, between 0.8 and 1.0 scores +1.0 bullish, between 1.0 and 1.2 scores -1.0 bearish, above 1.2 scores -2.0 strongly bearish. TRIN is inverted so low values are bullish and high values are bearish.
+
+ADD: above 1000 scores +2.0, above 500 scores +1.0, above 0 scores +0.5, below 0 scores -0.5, below negative 500 scores -1.0, below negative 1000 scores -2.0.
+
+ADVN and DECN: do not score these individually. Compute the ratio ADVN divided by DECN. Ratio above 3.0 scores +2.0 strongly bullish, above 2.0 scores +1.0 bullish, between 0.5 and 2.0 scores 0 neutral, below 0.5 scores -1.0 bearish, below 0.33 scores -2.0 strongly bearish.
+
+The final breadth cluster score is the average of four component scores: TICK score, TRIN score, ADD score, and ADVN/DECN ratio score. Clamp the result to the range negative 2.0 to positive 2.0.
+
+BUG 2 VOL TERM STRUCTURE CLUSTER SCORING. VIX9D, VIX3M, and SKEW should not be scored using percent change. Even when percent change is available after market open it is the wrong signal. What matters is the shape of the volatility term structure curve which is determined by the ratios between these values and spot VIX. Replace the current scoring logic with the following.
+
+VIX9D vs VIX: compute VIX9D divided by VIX. Below 0.90 scores +1.5 meaning short term vol is collapsing which is bullish. Between 0.90 and 0.95 scores +1.0 mild contango bullish. Between 0.95 and 1.05 scores 0 neutral flat curve. Between 1.05 and 1.10 scores -1.0 mild backwardation bearish. Above 1.10 scores -1.5 steep backwardation meaning near term fear is elevated.
+
+VIX vs VIX3M: compute VIX divided by VIX3M. Below 0.85 scores +1.5 steep contango bullish. Between 0.85 and 0.95 scores +1.0. Between 0.95 and 1.05 scores 0 flat. Between 1.05 and 1.15 scores -1.0 mild backwardation. Above 1.15 scores -1.5 steep backwardation bearish.
+
+SKEW: above 150 scores -1.0 elevated tail risk hedging mildly bearish. Between 130 and 150 scores 0 normal. Between 110 and 130 scores +0.5 low tail hedging mildly bullish. Below 110 scores +1.0.
+
+The final vol term structure cluster score is the average of three component scores: VIX9D/VIX ratio score, VIX/VIX3M ratio score, and SKEW score. Clamp to negative 2.0 to positive 2.0.
+
+BUG 3 CONFIDENCE FLOOR. The confidence calculation allows penalty multipliers to stack and multiply each other to near zero. This is why the engine outputs confidence values like 3 or 5 out of 100 even when the composite is positive. Add a floor so the combined penalty multiplier can never go below 0.3. Also lower the NO_EDGE composite threshold from 0.40 to 0.30.
+
+VERIFICATION AUDIT. After implementing all three fixes you must run the following verification test before considering this task complete. Do not skip this step.
+
+Create a test function called verifyEngineScoring that takes hardcoded test data and checks the output of each cluster scoring function. Use the following test case.
+
+Test input values: TICK=239, TRIN=0.92, ADD=1607, ADVN=2177, DECN=570, VIX=25.13, VIX9D=24.19, VIX3M=25.51, SKEW=145.45, TNX change=+0.19%, TYX change=+0.27%, ZB change=-0.16%, ZT change=+0.00%, HYG change=+0.14%, LQD change=+0.13%, IEF change=+0.01%, ES change=+0.61%, NQ change=+0.86%, YM change=+0.59%, RTY change=+1.15%.
+
+Expected breadth cluster results: TICK 239 should score +0.5 (above 200 threshold). TRIN 0.92 should score +1.0 (between 0.8 and 1.0). ADD 1607 should score +2.0 (above 1000). ADVN/DECN ratio is 2177/570 = 3.82 which should score +2.0 (above 3.0). Breadth cluster average is (0.5 + 1.0 + 2.0 + 2.0) / 4 = 1.375.
+
+Expected vol term structure results: VIX9D/VIX ratio is 24.19/25.13 = 0.963 which scores 0 (between 0.95 and 1.05 neutral). VIX/VIX3M ratio is 25.13/25.51 = 0.985 which scores 0 (between 0.95 and 1.05 flat). SKEW 145.45 scores 0 (between 130 and 150 normal). Vol term cluster average is 0.
+
+The test function must assert that the breadth cluster score equals 1.375 and the vol term cluster score equals 0. If either assertion fails log the actual values and the expected values so I can see exactly what went wrong. Run this test function and show me the output in the console. Also add the cluster debug logging to the AI Reasoning output permanently in the format CLUSTER SCORES: rates=X credit=X volLevel=X volTerm=X breadth=X riskApp=X macro=X COMPOSITE=X CONFIDENCE=X so that every time the engine runs I can see what each cluster contributed.
+
+Do not change anything about how the rates, credit, vol level, risk appetite, or macro clusters work. Only fix breadth, vol term structure, and the confidence floor.
