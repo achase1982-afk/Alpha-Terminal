@@ -28,6 +28,8 @@ export async function runPulseStream(payload: Record<string, unknown>) {
   const abort = new AbortController();
   activeAbort = abort;
 
+  console.log("[pulseStreamRunner] Starting stream request...");
+
   try {
     const response = await fetchWithAuth(`${API_BASE}/ai/market-pulse/stream`, {
       method: "POST",

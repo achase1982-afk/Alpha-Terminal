@@ -86,7 +86,11 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
 
   const fetchPulse = useCallback(() => {
     const token = accessTokenRef.current;
-    if (!token) return;
+    if (!token) {
+      console.warn("[MarketPulse] fetchPulse: no accessToken, skipping");
+      return;
+    }
+    console.log("[MarketPulse] fetchPulse: starting stream...");
     setShowTranscript(false);
 
     const s = settingsRef.current;
@@ -175,10 +179,7 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
       )}
 
       {isActive && (
-        <>
-          <PulseLoadingStatus thinkingTokens={thinkingTokens} />
-          <AiThinkingFeed texts={thinkingTokens} isStreaming={true} />
-        </>
+        <PulseLoadingStatus thinkingTokens={thinkingTokens} />
       )}
 
       {error && !isActive && (
@@ -359,27 +360,29 @@ function PulseLoadingStatus({ thinkingTokens }: { thinkingTokens: string[] }) {
             ))}
           </div>
 
-          {thinkingTokens.length > 0 && (
-            <div className="pt-1 border-t border-[#2A2A2C] space-y-1">
-              <div className="flex items-center gap-1.5">
-                <span className="relative flex h-1.5 w-1.5 shrink-0">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
-                </span>
-                <span className="font-mono text-[9px] text-emerald-500 uppercase tracking-widest">AI Reasoning</span>
-              </div>
-              <div
-                className="max-h-[80px] overflow-y-auto border-l-2 border-emerald-500/30 pl-2"
-                style={{ scrollBehavior: "smooth" }}
-                ref={(el) => { if (el) el.scrollTop = el.scrollHeight; }}
-              >
-                <span className="font-mono text-[10px] text-[#a1a1aa] leading-relaxed whitespace-pre-wrap">
-                  {thinkingTokens.join("")}
-                  <span className="inline-block w-1 h-3 bg-emerald-500 ml-0.5 animate-pulse" />
-                </span>
-              </div>
+          <div className="pt-2 border-t border-[#2A2A2C] space-y-1.5">
+            <div className="flex items-center gap-1.5">
+              <span className="relative flex h-2 w-2 shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+              </span>
+              <span className="font-mono text-[10px] text-emerald-500 uppercase tracking-widest font-bold">AI Reasoning</span>
             </div>
-          )}
+            <div
+              className="max-h-[140px] overflow-y-auto border-l-2 border-emerald-500/30 pl-2.5"
+              style={{ scrollBehavior: "smooth" }}
+              ref={(el) => { if (el) el.scrollTop = el.scrollHeight; }}
+            >
+              <span className="font-mono text-[10px] text-[#a1a1aa] leading-relaxed whitespace-pre-wrap">
+                {thinkingTokens.length === 0 ? (
+                  <span className="text-[#52525b]">Waiting for AI reasoning...</span>
+                ) : (
+                  thinkingTokens.join("")
+                )}
+                <span className="inline-block w-1 h-3 bg-emerald-500 ml-0.5 animate-pulse" />
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 
