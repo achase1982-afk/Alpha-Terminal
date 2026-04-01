@@ -198,7 +198,7 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
     <nav
       ref={containerRef}
       className="fixed bottom-0 left-0 right-0 h-20 bg-[#0c0c0c] border-t border-zinc-800/60 flex items-center justify-around px-2 z-50 safe-bottom"
-      style={{ paddingTop: 2 }}
+      style={{ paddingTop: 8 }}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
@@ -251,14 +251,14 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
               onClick={() => { if (!jiggling && !touchMoved.current) onTabChange(tabId); }}
               onTouchStart={(e) => handleTouchStart(i, e)}
               className={[
-                "flex flex-col items-center justify-center w-14 h-14 rounded-full shadow-[0_0_15px_rgba(255,184,0,0.4)] transition-transform active:scale-95 select-none mb-1",
+                "flex flex-col items-center justify-center w-12 h-12 rounded-full shadow-[0_0_12px_rgba(255,184,0,0.35)] transition-transform active:scale-95 select-none",
                 isActive ? "bg-primary text-background" : "bg-primary/80 text-background/80",
                 jiggling && !isBeingDragged ? "bnav-jiggle" : "",
                 isBeingDragged ? "bnav-dragging" : "",
               ].join(" ")}
               style={style}
             >
-              {def.icon("w-7 h-7")}
+              {def.icon("w-6 h-6")}
             </button>
           );
         }
