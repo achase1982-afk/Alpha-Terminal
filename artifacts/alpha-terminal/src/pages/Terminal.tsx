@@ -210,8 +210,6 @@ export default function TerminalPage() {
                 <MarketDataTabs activeTab={contextTab} setActiveTab={setContextTab} />
               </div>
 
-              <TickerSearch />
-
               {contextTab === "news" && <NewsTab />}
               {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} />}
               {contextTab === "company" && <CompanyResearchHub candles={historyData?.candles as any} />}
