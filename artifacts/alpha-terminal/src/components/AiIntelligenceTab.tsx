@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useTerminalStore } from "@/lib/store";
 import {
   useGetQuote, useGetPriceHistory, useGetOptionChain,
@@ -507,7 +507,7 @@ function SegmentControl({ value, options, onChange, disabled }: {
   );
 }
 
-function StrategySettings() {
+export function StrategySettings() {
   const {
     stratAutopilot, setStratAutopilot,
     stratMaxRisk, setStratMaxRisk,
@@ -762,7 +762,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef }: AiIn
   const [activeResult, setActiveResult] = useState<"strategist" | null>(null);
   const [chainEnabled, setChainEnabled] = useState(false);
   const [streamingText, setStreamingText] = useState("");
-  const [showSettings, setShowSettings] = useState(false);
+
   const [thinkingTokens, setThinkingTokens] = useState<string[]>([]);
   const [strategistAudit, setStrategistAudit] = useState<StrategistAuditData | null>(null);
   const [realStrategies, setRealStrategies] = useState<StrategyPayload[]>([]);
@@ -1069,23 +1069,6 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef }: AiIn
             <BarChart2 className="w-4 h-4 text-[#FFB800]" />
             <span className="font-mono text-xs font-bold text-[#e4e4e7] tracking-wider">OPTIONS STRATEGIST</span>
             <span className="font-mono text-[10px] text-[#71717a] ml-1">Analyzing: <span className="text-[#FFB800] font-bold">{symbol}</span></span>
-          </div>
-
-          <div className="mt-1">
-            <button
-              type="button"
-              onClick={() => setShowSettings(!showSettings)}
-              className="w-full flex items-center justify-between px-4 py-2 rounded-t-xl border border-card-border font-mono text-[11px] text-gray-400 uppercase tracking-wider hover:text-white transition-colors"
-              style={{ background: "#111113" }}
-            >
-              <span className="flex items-center gap-2">
-                <Zap className="w-3.5 h-3.5 text-primary" />
-                Strategy Settings
-                {stratAutopilot && <span className="text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ background: "rgba(255,184,0,0.15)", color: "#FFB800" }}>AUTOPILOT</span>}
-              </span>
-              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showSettings ? "rotate-180" : ""}`} />
-            </button>
-            {showSettings && <StrategySettings />}
           </div>
 
           <StrategistTickerSearch />

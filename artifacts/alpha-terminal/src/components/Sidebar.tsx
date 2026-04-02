@@ -9,6 +9,7 @@ import { useAutoLock, TIMEOUT_OPTIONS, type SessionTimeoutMinutes } from "@/hook
 import { readSecurityPrefs, updateSecurityPref, type SecurityPrefs } from "@/lib/securityPrefs";
 import { useBiometricRegistration, useWebAuthnSupported } from "@/hooks/useBiometric";
 import { AuthPanel } from "./AuthPanel";
+import { StrategySettings } from "./AiIntelligenceTab";
 import { queryClient } from "@/App";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -36,6 +37,7 @@ type SidebarPage =
   | "Watchlist"
   | "Linked Brokerage"
   | "Market Pulse"
+  | "Strategist Settings"
   | "Chart & Options"
   | "Display & Marquee"
   | "AI Parameters"
@@ -110,6 +112,7 @@ export function Sidebar({ isOpen, onClose, onOpenChat, onNavigate }: SidebarProp
           <div className="flex flex-col pt-2 pb-2">
             <MenuRow icon={<Link />} label="Linked Brokerage" onClick={() => { setActivePage("Linked Brokerage"); onClose(); }} />
             <MenuRow icon={<Zap />} label="Market Pulse" onClick={() => { setActivePage("Market Pulse"); onClose(); }} />
+            <MenuRow icon={<SlidersHorizontal />} label="Strategist Settings" onClick={() => { setActivePage("Strategist Settings"); onClose(); }} />
             <MenuRow icon={<LineChart />} label="Chart & Options" onClick={() => { setActivePage("Chart & Options"); onClose(); }} />
             <MenuRow icon={<LayoutDashboard />} label="Display & Marquee" onClick={() => { setActivePage("Display & Marquee"); onClose(); }} />
             <MenuRow icon={<BrainCircuit />} label="AI Parameters" onClick={() => { setActivePage("AI Parameters"); onClose(); }} />
@@ -147,6 +150,7 @@ export function Sidebar({ isOpen, onClose, onOpenChat, onNavigate }: SidebarProp
             {activePage === "Watchlist" && <WatchlistPage onClose={handleClose} />}
             {activePage === "Linked Brokerage" && <LinkedBrokeragePage />}
             {activePage === "Market Pulse" && <MarketPulsePage />}
+            {activePage === "Strategist Settings" && <StrategistSettingsPage />}
             {activePage === "Chart & Options" && <ChartOptionsPage />}
             {activePage === "Display & Marquee" && <DisplayMarqueePage />}
             {activePage === "AI Parameters" && <AiParametersPage />}
@@ -354,6 +358,15 @@ function MarketPulsePage() {
         <SettingInput label="Preferred Tickers" value={settings.preferredTickers} onChange={(v) => updateSetting("preferredTickers", v)} placeholder="e.g. SPY, QQQ, AAPL" />
         <SettingInput label="Max Risk Per Trade" value={settings.maxRiskPerTrade} onChange={(v) => updateSetting("maxRiskPerTrade", v)} placeholder="e.g. 2% or $500" />
       </div>
+    </div>
+  );
+}
+
+function StrategistSettingsPage() {
+  return (
+    <div className="space-y-4">
+      <h2 className="font-mono text-sm font-bold text-white tracking-wider uppercase">Strategist Settings</h2>
+      <StrategySettings />
     </div>
   );
 }
