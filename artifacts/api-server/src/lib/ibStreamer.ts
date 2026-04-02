@@ -42,13 +42,13 @@ interface IBSymbolDef {
 }
 
 const BREADTH_SYMBOLS: IBSymbolDef[] = [
-  { reqId: 5001, symbol: "$TICK",   ibSymbol: "TICK",   secType: "IND", exchange: "NYSE",     displaySymbol: "$TICK" },
-  { reqId: 5002, symbol: "$TRIN",   ibSymbol: "TRIN",   secType: "IND", exchange: "NYSE",     displaySymbol: "$TRIN" },
-  { reqId: 5003, symbol: "$ADD",    ibSymbol: "ADD",    secType: "IND", exchange: "NYSE",     displaySymbol: "$ADD" },
-  { reqId: 5004, symbol: "$VOLD",   ibSymbol: "VOLD",   secType: "IND", exchange: "NYSE",     displaySymbol: "$VOLD" },
-  { reqId: 5005, symbol: "$TICKI",  ibSymbol: "TICKI",  secType: "IND", exchange: "NASDAQ",   displaySymbol: "$TICKI" },
-  { reqId: 5006, symbol: "$ADDN",   ibSymbol: "ADDN",   secType: "IND", exchange: "NASDAQ",   displaySymbol: "$ADDN" },
-  { reqId: 5007, symbol: "$TRINQ",  ibSymbol: "TRINQ",  secType: "IND", exchange: "NASDAQ",   displaySymbol: "$TRINQ" },
+  { reqId: 5001, symbol: "$TICK",   ibSymbol: "TICK-NYSE",   secType: "IND", exchange: "NYSE",     displaySymbol: "$TICK" },
+  { reqId: 5002, symbol: "$TRIN",   ibSymbol: "TRIN-NYSE",   secType: "IND", exchange: "NYSE",     displaySymbol: "$TRIN" },
+  { reqId: 5003, symbol: "$ADD",    ibSymbol: "ADD-NYSE",    secType: "IND", exchange: "NYSE",     displaySymbol: "$ADD" },
+  { reqId: 5004, symbol: "$VOLD",   ibSymbol: "VOLD-NYSE",   secType: "IND", exchange: "NYSE",     displaySymbol: "$VOLD" },
+  { reqId: 5005, symbol: "$TICKI",  ibSymbol: "TICK-NASD",   secType: "IND", exchange: "NASDAQ",   displaySymbol: "$TICKI" },
+  { reqId: 5006, symbol: "$ADDN",   ibSymbol: "ADD-NASD",    secType: "IND", exchange: "NASDAQ",   displaySymbol: "$ADDN" },
+  { reqId: 5007, symbol: "$TRINQ",  ibSymbol: "TRIN-NASD",   secType: "IND", exchange: "NASDAQ",   displaySymbol: "$TRINQ" },
   { reqId: 5008, symbol: "$VIX",    ibSymbol: "VIX",    secType: "IND", exchange: "CBOE",     displaySymbol: "$VIX" },
   { reqId: 5009, symbol: "$VIX9D",  ibSymbol: "VIX9D",  secType: "IND", exchange: "CBOE",     displaySymbol: "$VIX9D" },
   { reqId: 5010, symbol: "$VIX3M",  ibSymbol: "VIX3M",  secType: "IND", exchange: "CBOE",     displaySymbol: "$VIX3M" },
@@ -70,6 +70,8 @@ const BREADTH_SYMBOLS: IBSymbolDef[] = [
   { reqId: 5026, symbol: "LQD",     ibSymbol: "LQD",    secType: "STK", exchange: "SMART",    displaySymbol: "LQD" },
   { reqId: 5027, symbol: "$SPX",    ibSymbol: "SPX",    secType: "IND", exchange: "CBOE",     displaySymbol: "$SPX" },
   { reqId: 5028, symbol: "SPY",     ibSymbol: "SPY",    secType: "STK", exchange: "SMART",    displaySymbol: "SPY" },
+  { reqId: 5029, symbol: "$ADVN",   ibSymbol: "ADVN-NYSE",   secType: "IND", exchange: "NYSE",     displaySymbol: "$ADVN" },
+  { reqId: 5030, symbol: "$DECN",   ibSymbol: "DECN-NYSE",   secType: "IND", exchange: "NYSE",     displaySymbol: "$DECN" },
 ];
 
 const reqIdToSymbol = new Map<number, IBSymbolDef>();
@@ -117,6 +119,33 @@ function emitStatus(status: string) {
   }
 }
 
+const QUARTERLY_MONTHS = [3, 6, 9, 12];
+const MONTHLY_FUTURES = new Set(["CL", "GC", "DX"]);
+
+function getFrontMonth(symbol: string): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+  const day = now.getDate();
+
+  if (MONTHLY_FUTURES.has(symbol)) {
+    let m = month;
+    let y = year;
+    if (day > 15) {
+      m++;
+      if (m > 12) { m = 1; y++; }
+    }
+    return y.toString() + String(m).padStart(2, "0");
+  }
+
+  for (const q of QUARTERLY_MONTHS) {
+    if (month < q || (month === q && day <= 20)) {
+      return year.toString() + String(q).padStart(2, "0");
+    }
+  }
+  return (year + 1).toString() + "03";
+}
+
 function buildContract(def: IBSymbolDef): Contract {
   const contract: Contract = {
     symbol: def.ibSymbol,
@@ -126,11 +155,7 @@ function buildContract(def: IBSymbolDef): Contract {
   };
   
   if (def.secType === "FUT") {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth() + 1;
-    const nextMonth = month === 12 ? (year + 1).toString() + "01" : year.toString() + String(month + 1).padStart(2, "0");
-    (contract as any).lastTradeDateOrContractMonth = nextMonth;
+    (contract as any).lastTradeDateOrContractMonth = getFrontMonth(def.ibSymbol);
   }
   
   return contract;
