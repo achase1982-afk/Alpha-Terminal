@@ -97,7 +97,7 @@ export default function TerminalPage() {
     const el = scrollRef.current;
     if (!el) return;
     const y = el.scrollTop;
-    setIsScrolled(y > 30);
+    setIsScrolled(y > 80);
   }, []);
 
   const { subscribeOptionSymbols, subscribeEquitySymbols } = useMarketStream();
@@ -200,10 +200,10 @@ export default function TerminalPage() {
 
           {activeBottom === "markets" && (
             <>
-              {!isScrolled && <MacroBar />}
+              <MacroBar />
 
               <div className="sticky top-0 z-40 bg-background">
-                <MetricsBar compact />
+                <MetricsBar compact={isScrolled} />
                 <MarketDataTabs activeTab={contextTab} setActiveTab={setContextTab} />
               </div>
 
