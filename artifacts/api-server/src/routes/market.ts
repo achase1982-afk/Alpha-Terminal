@@ -4,6 +4,7 @@ import {
   GetPriceHistoryResponse,
   GetOptionChainResponse,
 } from "@workspace/api-zod";
+import { getAccessToken } from "../lib/tokenStore.js";
 
 const router: IRouter = Router();
 
@@ -432,7 +433,7 @@ router.get("/options", async (req, res) => {
 
 router.get("/pc-ratio", async (req, res) => {
   const symbol = req.query["symbol"] as string;
-  const accessToken = req.query["accessToken"] as string;
+  const accessToken = (req.query["accessToken"] as string) || getAccessToken("market");
 
   if (!symbol || !accessToken) {
     return res.json({ symbol: "", pcRatio: null, error: "symbol and accessToken are required" });
@@ -460,26 +461,34 @@ router.get("/pc-ratio", async (req, res) => {
 
     const json = await response.json() as Record<string, unknown>;
 
-    function sumVolume(map: Record<string, unknown>): number {
-      let total = 0;
+    const callMap = json["callExpDateMap"] as Record<string, unknown> ?? {};
+    const putMap = json["putExpDateMap"] as Record<string, unknown> ?? {};
+
+    function sumFields(map: Record<string, unknown>): { volume: number; openInterest: number } {
+      let volume = 0;
+      let openInterest = 0;
       for (const expDate of Object.values(map)) {
         const strikeMap = expDate as Record<string, unknown>;
         for (const [, options] of Object.entries(strikeMap)) {
           const optionArr = options as Array<Record<string, unknown>>;
           for (const opt of optionArr) {
-            total += (opt["totalVolume"] as number) || 0;
+            volume += (opt["totalVolume"] as number) || 0;
+            openInterest += (opt["openInterest"] as number) || 0;
           }
         }
       }
-      return total;
+      return { volume, openInterest };
     }
 
-    const callVol = sumVolume((json["callExpDateMap"] as Record<string, unknown>) ?? {});
-    const putVol = sumVolume((json["putExpDateMap"] as Record<string, unknown>) ?? {});
-    const pcRatio = callVol > 0 ? putVol / callVol : null;
+    const calls = sumFields(callMap);
+    const puts = sumFields(putMap);
 
-    req.log.info({ symbol: displaySymbol, callVol, putVol, pcRatio }, "P/C ratio calculated");
-    res.json({ symbol: displaySymbol, pcRatio, callVolume: callVol, putVolume: putVol });
+    const pcRatioVol = calls.volume > 0 ? puts.volume / calls.volume : null;
+    const pcRatioOI = calls.openInterest > 0 ? puts.openInterest / calls.openInterest : null;
+    const pcRatio = pcRatioOI ?? pcRatioVol;
+
+    req.log.info({ symbol: displaySymbol, callVol: calls.volume, putVol: puts.volume, callOI: calls.openInterest, putOI: puts.openInterest, pcRatioVol, pcRatioOI }, "P/C ratio calculated");
+    res.json({ symbol: displaySymbol, pcRatio, pcRatioVolume: pcRatioVol, pcRatioOI, callVolume: calls.volume, putVolume: puts.volume, callOI: calls.openInterest, putOI: puts.openInterest });
   } catch (err) {
     req.log.error({ err }, "P/C ratio fetch error");
     res.json({ symbol: displaySymbol, pcRatio: null, error: "internal_error" });
