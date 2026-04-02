@@ -567,6 +567,7 @@ function StrategistPipeline({ status, thinkingTokens }: { status: string; thinki
           <div className="flex items-center gap-2">
             <span className="w-4 h-4 border-2 border-[#FFB800] border-t-transparent rounded-full animate-spin" />
             <span className="font-mono text-[10px] font-bold text-[#FFB800] uppercase tracking-widest">Analyzing</span>
+            <span className="font-mono text-[10px] text-[#FFB800]/60 tabular-nums">{Math.round(((currentIdx + (currentIdx < 2 ? 0.6 : 0.3)) / 3) * 100)}%</span>
           </div>
           <span className="font-mono text-[10px] text-[#52525b] tabular-nums">
             <Clock className="w-3 h-3 inline mr-1 -mt-px" />{fmtTime(elapsed)}
@@ -965,7 +966,7 @@ export function StrategySettings() {
               type="range"
               min={1}
               max={10}
-              step={1}
+              step={0.5}
               value={preTradeMaxPositionPct}
               onChange={e => setPreTradeMaxPositionPct(Number(e.target.value))}
               disabled={!preTradeEnabled}
