@@ -119,7 +119,7 @@ function WatchlistRow({
             )}
             <div className="flex items-center gap-2 font-mono text-[12px]">
               <span style={{ color: cColor }}>{fmtChange(change)}</span>
-              <span className="px-1.5 py-0.5 rounded" style={{ background: `${cColor}15`, color: cColor }}>
+              <span className="px-1.5 py-0.5 rounded" style={{ color: cColor }}>
                 {fmtPct(changePct)}
               </span>
             </div>
@@ -134,8 +134,6 @@ function WatchlistRow({
             className="font-mono text-[16px] font-bold tabular-nums px-2.5 py-1 rounded-lg"
             style={{
               color: hasData ? "#fff" : "#52525b",
-              background: hasData ? `${cColor}18` : "transparent",
-              border: hasData ? `1px solid ${cColor}30` : "none",
             }}
           >
             {hasData ? `$${fmtPrice(last)}` : "—"}

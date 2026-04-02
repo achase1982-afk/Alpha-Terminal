@@ -518,7 +518,7 @@ function BiasHero({ data }: { data: MarketPulseData }) {
       <div className="flex items-center gap-2 flex-wrap">
         <span
           className="px-2 py-0.5 rounded font-mono text-[9px] font-bold tracking-wider"
-          style={{ background: `${regimeColor}15`, color: regimeColor }}
+          style={{ color: regimeColor }}
         >
           REGIME: {data.structuralRegime?.label?.replace(/_/g, " ")} ({data.structuralRegime?.timeframe})
         </span>
@@ -530,7 +530,7 @@ function BiasHero({ data }: { data: MarketPulseData }) {
         </span>
         <span
           className="px-2 py-0.5 rounded font-mono text-[9px] font-bold tracking-wider"
-          style={{ background: `${riskColor}15`, color: riskColor }}
+          style={{ color: riskColor }}
         >
           SIZE: {data.riskState?.label}
         </span>

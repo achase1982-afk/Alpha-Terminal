@@ -50,7 +50,6 @@ export function ActionPlanCard({ items, bias }: ActionPlanCardProps) {
               <span
                 className="px-2 py-0.5 rounded-full font-mono text-[9px] font-bold tracking-wider"
                 style={{
-                  background: `${POSTURE_COLORS[item.riskPosture] ?? "#71717a"}15`,
                   color: POSTURE_COLORS[item.riskPosture] ?? "#71717a",
                 }}
               >
@@ -59,7 +58,6 @@ export function ActionPlanCard({ items, bias }: ActionPlanCardProps) {
               <span
                 className="px-2 py-0.5 rounded-full font-mono text-[9px] font-bold tracking-wider"
                 style={{
-                  background: `${CONVICTION_COLORS[item.conviction] ?? "#71717a"}15`,
                   color: CONVICTION_COLORS[item.conviction] ?? "#71717a",
                 }}
               >

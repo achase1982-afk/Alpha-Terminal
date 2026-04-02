@@ -182,7 +182,7 @@ function LegRow({ leg, label, even }: { leg: LegPayload; label: string; even: bo
   return (
     <div className="flex items-center justify-between py-2 px-3" style={{ background: even ? "rgba(255,255,255,0.015)" : "transparent" }}>
       <div className="flex items-center gap-2">
-        <span className="font-mono text-[9px] w-10 text-center py-0.5 rounded font-bold" style={{ background: `${actionColor}15`, color: actionColor }}>
+        <span className="font-mono text-[9px] w-10 text-center py-0.5 rounded font-bold" style={{ color: actionColor }}>
           {leg.action}
         </span>
         <span className="font-mono text-[10px] text-[#71717a] uppercase w-14">{label}</span>
@@ -207,11 +207,11 @@ function RegimeDisplayBanner({ regime, pulse }: { regime: RegimeInfo; pulse?: Pu
     : regime.regime.toLowerCase().includes("bear") ? "#f23645" : "#FFB800";
 
   return (
-    <div className="rounded-xl border overflow-hidden" style={{ borderColor: `${regimeColor}30`, background: `${regimeColor}06` }}>
+    <div className="rounded-xl border overflow-hidden" style={{ borderColor: `${regimeColor}30` }}>
       <div className="px-4 py-3.5">
         <div className="flex items-start gap-3">
           <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 text-lg font-bold"
-            style={{ background: `${regimeColor}15`, color: regimeColor }}>
+            style={{ color: regimeColor }}>
             {regimeIcon}
           </div>
           <div className="flex-1 min-w-0">
@@ -226,7 +226,7 @@ function RegimeDisplayBanner({ regime, pulse }: { regime: RegimeInfo; pulse?: Pu
         <div className="flex flex-wrap gap-1.5 mt-3">
           {strategies.map(s => (
             <span key={s} className="font-mono text-[9px] px-2 py-1 rounded-full font-bold uppercase tracking-wider"
-              style={{ background: `${regimeColor}12`, color: regimeColor, border: `1px solid ${regimeColor}25` }}>
+              style={{ color: regimeColor, border: `1px solid ${regimeColor}25` }}>
               {s}
             </span>
           ))}
@@ -296,7 +296,7 @@ function PreTradeCheckPanel({ result }: { result: PreTradeResult }) {
   const overallColor = STATUS_COLORS[result.overall];
   const overallLabel = result.overall === "PASS" ? "CLEAR" : result.overall === "WARN" ? "CAUTION" : "BLOCKED";
   return (
-    <div className="mx-4 mb-3 rounded-lg border overflow-hidden" style={{ borderColor: `${overallColor}30`, background: `${overallColor}06` }}>
+    <div className="mx-4 mb-3 rounded-lg border overflow-hidden" style={{ borderColor: `${overallColor}30` }}>
       <div className="px-3 py-2 flex items-center justify-between" style={{ borderBottom: `1px solid ${overallColor}20` }}>
         <div className="flex items-center gap-2">
           {STATUS_ICONS[result.overall]}
@@ -336,7 +336,7 @@ function RiskCategoryBadge({ evaluation }: { evaluation?: RiskEvaluation }) {
     : evaluation.category === "CASH_SECURED" ? "CASH SECURED" : "MARGIN";
   return (
     <span className="font-mono text-[8px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider"
-      style={{ background: `${badgeColor}12`, color: badgeColor, border: `1px solid ${badgeColor}25` }}>
+      style={{ color: badgeColor, border: `1px solid ${badgeColor}25` }}>
       {label}
     </span>
   );
@@ -372,7 +372,7 @@ function RealStrategyCard({ s, idx, preTradeResult }: { s: StrategyPayload; idx:
           <div className="px-4 py-3 flex items-center justify-between" style={{ background: "#151517", borderBottom: "1px solid #2A2A2C" }}>
             <div className="flex items-center gap-2.5">
               <div className="w-7 h-7 rounded-lg flex items-center justify-center font-mono text-xs font-bold"
-                style={{ background: `${accentColor}15`, color: accentColor }}>
+                style={{ color: accentColor }}>
                 {idx + 1}
               </div>
               <div>

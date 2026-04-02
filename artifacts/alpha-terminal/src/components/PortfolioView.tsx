@@ -160,7 +160,7 @@ function StatusBadge({ status }: { status: string }) {
   return (
     <span
       className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
-      style={{ color: statusColor(status), backgroundColor: `${statusColor(status)}15` }}
+      style={{ color: statusColor(status) }}
     >
       {status}
     </span>
@@ -194,7 +194,7 @@ function PositionRow({ pos, onSelect }: { pos: Position; onSelect: (sym: string)
           ) : (
             <span
               className="text-[9px] font-bold px-1 py-0.5 rounded shrink-0"
-              style={{ color: GOLD, backgroundColor: `${GOLD}15` }}
+              style={{ color: GOLD }}
             >
               EQ
             </span>
@@ -303,7 +303,6 @@ function OrderRow({ order }: { order: Order }) {
               className="text-[9px] font-bold px-1 py-0.5 rounded shrink-0"
               style={{
                 color: isBuy ? UP : DOWN,
-                backgroundColor: isBuy ? `${UP}15` : `${DOWN}15`,
               }}
             >
               {primaryLeg?.instruction?.replace(/_/g, " ") ?? "—"}
@@ -363,7 +362,6 @@ function OrderRow({ order }: { order: Order }) {
                     className="text-[8px] font-bold px-1 rounded"
                     style={{
                       color: leg.instruction?.includes("BUY") ? UP : DOWN,
-                      backgroundColor: leg.instruction?.includes("BUY") ? `${UP}10` : `${DOWN}10`,
                     }}
                   >
                     {leg.instruction?.replace(/_/g, " ")}
@@ -579,7 +577,7 @@ export function PortfolioView({ onNavigateToSymbol }: PortfolioViewProps) {
               className="flex-1 py-2 font-mono text-[10px] font-bold uppercase tracking-widest transition-colors cursor-pointer relative"
               style={{
                 color: subTab === tab ? GOLD : "#6b7280",
-                background: subTab === tab ? `${GOLD}08` : "transparent",
+                background: "transparent",
               }}
             >
               {tab === "positions" && <BarChart3 className="w-3 h-3 mx-auto mb-0.5" />}

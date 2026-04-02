@@ -96,7 +96,7 @@ function confBadge(conf: string) {
   const c = conf === "HIGH" ? "#ffb800" : conf === "MILD" ? "#ffb800" : "#6B7280";
   return (
     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-      style={{ color: c, background: `${c}15`, border: `1px solid ${c}40` }}>
+      style={{ color: c, border: `1px solid ${c}40` }}>
       {conf}
     </span>
   );
