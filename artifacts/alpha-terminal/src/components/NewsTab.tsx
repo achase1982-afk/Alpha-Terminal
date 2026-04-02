@@ -65,11 +65,15 @@ interface UnifiedItem {
   isLive: boolean;
 }
 
+function cleanHeadline(raw: string): string {
+  return raw.replace(/\{[A-Z]:[^}]*\}/g, "").trim();
+}
+
 function toLiveItems(items: LiveNewsItem[]): UnifiedItem[] {
   return items.map((item, i) => ({
     key: `ib-live-${item.articleId}-${i}`,
     source: PROVIDER_LABELS[item.providerCode] || item.providerCode,
-    headline: item.headline,
+    headline: cleanHeadline(item.headline),
     ts: new Date(item.time).getTime() || Date.now(),
     isLive: true,
   }));
@@ -79,7 +83,7 @@ function toIBHistItems(items: IBNewsItem[]): UnifiedItem[] {
   return items.map((item, i) => ({
     key: `ib-hist-${item.articleId}-${i}`,
     source: PROVIDER_LABELS[item.providerCode] || item.providerCode,
-    headline: item.headline,
+    headline: cleanHeadline(item.headline),
     ts: new Date(item.time).getTime() || Date.now(),
     isLive: true,
   }));
