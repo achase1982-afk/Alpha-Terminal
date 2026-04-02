@@ -741,7 +741,7 @@ interface AiIntelligenceTabProps {
 
 export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef }: AiIntelligenceTabProps) {
   const {
-    symbol, accessToken,
+    symbol, setSymbol, accessToken,
     aiFeatureSettings,
     strategistResult, setStrategistResult,
     stratAutopilot, stratMaxRisk, stratMinPoP, stratMinRR,
