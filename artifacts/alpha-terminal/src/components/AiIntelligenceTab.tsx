@@ -461,10 +461,41 @@ function RealStrategyCard({ s, idx, preTradeResult }: { s: StrategyPayload; idx:
 function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
   onRun: (ticker: string) => void; disabled: boolean; lastRunSymbol?: string | null; lastRunTime?: number | null;
 }) {
-  const { symbol, streamPrices } = useTerminalStore();
+  const { symbol, streamPrices, accessToken } = useTerminalStore();
   const [inputVal, setInputVal] = useState("");
   const [isFocused, setIsFocused] = useState(false);
-  const liveQuote = streamPrices[symbol];
+  const [previewTicker, setPreviewTicker] = useState("");
+  const [previewQuote, setPreviewQuote] = useState<{ last: number; change: number; changePct: number; volume?: number } | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const displaySymbol = previewTicker || symbol;
+  const liveQuote = streamPrices[displaySymbol];
+
+  useEffect(() => {
+    const typed = inputVal.trim().toUpperCase();
+    if (!typed || typed.length < 1) {
+      setPreviewTicker("");
+      setPreviewQuote(null);
+      return;
+    }
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      setPreviewTicker(typed);
+      if (streamPrices[typed]?.last != null) return;
+      if (!accessToken) return;
+      try {
+        const res = await fetch(`/api/market/quote?symbol=${encodeURIComponent(typed)}`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data?.last != null) {
+          setPreviewQuote({ last: data.last, change: data.change ?? 0, changePct: data.changePct ?? 0, volume: data.volume });
+        }
+      } catch {}
+    }, 400);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [inputVal, accessToken, streamPrices]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -472,10 +503,12 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
     onRun(ticker);
   };
 
-  const price = liveQuote?.last;
-  const change = liveQuote?.change;
-  const changePct = liveQuote?.changePct;
+  const quoteData = liveQuote?.last != null ? liveQuote : previewQuote;
+  const price = quoteData?.last;
+  const change = quoteData?.change;
+  const changePct = quoteData?.changePct;
   const isPositive = (change ?? 0) >= 0;
+  const volume = liveQuote?.volume ?? previewQuote?.volume;
 
   return (
     <form onSubmit={handleSubmit}>
@@ -489,8 +522,8 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
       >
         <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: "1px solid #1f1f22" }}>
           <div>
-            <div className="font-mono text-xl font-normal text-white tracking-wide leading-tight">{symbol}</div>
-            <div className="font-mono text-sm font-normal text-[#FFB800] tracking-wide leading-tight">{COMPANY_NAMES[symbol.toUpperCase()] ?? symbol}</div>
+            <div className="font-mono text-xl font-normal text-white tracking-wide leading-tight">{displaySymbol}</div>
+            <div className="font-mono text-sm font-normal text-[#FFB800] tracking-wide leading-tight">{COMPANY_NAMES[displaySymbol.toUpperCase()] ?? displaySymbol}</div>
           </div>
           {price != null && (
             <div className="flex flex-col items-end">
@@ -507,7 +540,7 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
           <div className="flex items-center gap-2">
             <span className="font-mono text-sm text-white/40 uppercase tracking-wider">Vol</span>
             <span className="font-mono text-sm text-white/70 tabular-nums">
-              {liveQuote?.volume != null ? liveQuote.volume.toLocaleString() : "—"}
+              {volume != null ? volume.toLocaleString() : "—"}
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -524,7 +557,7 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
               onChange={e => setInputVal(e.target.value.toUpperCase())}
               onFocus={() => setIsFocused(true)}
               onBlur={() => setIsFocused(false)}
-              placeholder={`Analyze ${symbol} or enter new ticker...`}
+              placeholder={`Analyze ${displaySymbol} or enter new ticker...`}
               className="w-full h-10 pl-9 pr-3 rounded-lg font-mono text-xs text-white
                 placeholder:text-[#3f3f46] focus:outline-none transition-colors uppercase"
               style={{ background: "#0a0a0b", border: "1px solid #1f1f22" }}
