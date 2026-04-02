@@ -430,6 +430,62 @@ router.get("/options", async (req, res) => {
   }
 });
 
+router.get("/pc-ratio", async (req, res) => {
+  const symbol = req.query["symbol"] as string;
+  const accessToken = req.query["accessToken"] as string;
+
+  if (!symbol || !accessToken) {
+    return res.json({ symbol: "", pcRatio: null, error: "symbol and accessToken are required" });
+  }
+
+  const displaySymbol = symbol.toUpperCase().trim();
+  const chainSymbol = isFutures(displaySymbol) ? displaySymbol : formatSchwabSymbol(displaySymbol);
+
+  try {
+    const params = new URLSearchParams({
+      symbol: chainSymbol,
+      contractType: "ALL",
+      daysToExpiration: "30",
+      range: "ALL",
+      strikeCount: "20",
+    });
+
+    const response = await fetch(`${SCHWAB_API_BASE}/chains?${params.toString()}`, {
+      headers: { "Authorization": `Bearer ${accessToken}` },
+    });
+
+    if (!response.ok) {
+      return res.json({ symbol: displaySymbol, pcRatio: null, error: `api_error_${response.status}` });
+    }
+
+    const json = await response.json() as Record<string, unknown>;
+
+    function sumVolume(map: Record<string, unknown>): number {
+      let total = 0;
+      for (const expDate of Object.values(map)) {
+        const strikeMap = expDate as Record<string, unknown>;
+        for (const [, options] of Object.entries(strikeMap)) {
+          const optionArr = options as Array<Record<string, unknown>>;
+          for (const opt of optionArr) {
+            total += (opt["totalVolume"] as number) || 0;
+          }
+        }
+      }
+      return total;
+    }
+
+    const callVol = sumVolume((json["callExpDateMap"] as Record<string, unknown>) ?? {});
+    const putVol = sumVolume((json["putExpDateMap"] as Record<string, unknown>) ?? {});
+    const pcRatio = callVol > 0 ? putVol / callVol : null;
+
+    req.log.info({ symbol: displaySymbol, callVol, putVol, pcRatio }, "P/C ratio calculated");
+    res.json({ symbol: displaySymbol, pcRatio, callVolume: callVol, putVolume: putVol });
+  } catch (err) {
+    req.log.error({ err }, "P/C ratio fetch error");
+    res.json({ symbol: displaySymbol, pcRatio: null, error: "internal_error" });
+  }
+});
+
 router.get("/fundamentals", async (req, res) => {
   const symbol = req.query["symbol"] as string;
   const accessToken = req.query["accessToken"] as string;

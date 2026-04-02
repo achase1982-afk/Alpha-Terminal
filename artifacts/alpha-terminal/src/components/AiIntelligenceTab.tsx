@@ -477,7 +477,9 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
   const [previewTicker, setPreviewTicker] = useState("");
   const [previewQuote, setPreviewQuote] = useState<{ last: number; change: number; changePct: number; volume?: number } | null>(null);
   const [fetchingTicker, setFetchingTicker] = useState(false);
+  const [tickerPcRatio, setTickerPcRatio] = useState<number | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pcDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const streamPricesRef = useRef(streamPrices);
   streamPricesRef.current = streamPrices;
 
@@ -519,6 +521,22 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [inputVal, accessToken]);
 
+  useEffect(() => {
+    const ticker = (inputVal.trim().toUpperCase()) || symbol;
+    if (!ticker || !accessToken) { setTickerPcRatio(null); return; }
+    setTickerPcRatio(null);
+    if (pcDebounceRef.current) clearTimeout(pcDebounceRef.current);
+    pcDebounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/market/pc-ratio?symbol=${encodeURIComponent(ticker)}&accessToken=${encodeURIComponent(accessToken)}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data?.pcRatio != null) setTickerPcRatio(data.pcRatio);
+      } catch { /* ignore */ }
+    }, 400);
+    return () => { if (pcDebounceRef.current) clearTimeout(pcDebounceRef.current); };
+  }, [inputVal, accessToken, symbol]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const ticker = inputVal.trim().toUpperCase() || symbol;
@@ -531,8 +549,7 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
   const changePct = quoteData?.changePct;
   const isPositive = (change ?? 0) >= 0;
   const volume = liveQuote?.volume ?? previewQuote?.volume;
-  const cpcQuote = streamPrices["$CPC"];
-  const pcRatio = cpcQuote?.last;
+  const pcRatio = tickerPcRatio;
 
   return (
     <form onSubmit={handleSubmit}>
