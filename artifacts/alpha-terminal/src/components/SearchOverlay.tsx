@@ -24,6 +24,7 @@ export function SearchOverlay({ isOpen, onClose, onSelectSymbol }: SearchOverlay
     e.preventDefault();
     const trimmed = inputVal.trim().toUpperCase();
     if (trimmed) {
+      inputRef.current?.blur();
       setSymbol(trimmed);
       setInputVal("");
       onSelectSymbol(trimmed);
@@ -32,6 +33,7 @@ export function SearchOverlay({ isOpen, onClose, onSelectSymbol }: SearchOverlay
 
   const handleQuickSelect = (sym: string) => {
     const clean = sym.replace(/^\$/, "");
+    inputRef.current?.blur();
     setSymbol(clean);
     onSelectSymbol(clean);
   };
