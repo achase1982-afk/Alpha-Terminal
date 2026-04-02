@@ -129,6 +129,8 @@ export interface TickerProfile {
   beta: number;
   adjustedDelta: number;
   sizeMultiplierOverride: number;
+  ivr: number;
+  putSkew: number;
   measurements: {
     avgAtmSpreadPct: number;
     avgAtmVolume: number;
@@ -213,12 +215,17 @@ export function classifyTicker(
     3: "Tier 3 (Low Liquidity)",
   };
 
+  const ivr = computeIVR(allContracts, underlyingPrice, sortedExps);
+  const putSkew = computePutSkew(calls, puts, underlyingPrice, sortedExps[0] ?? "");
+
   return {
     tier,
     tierLabel: tierLabels[tier],
     beta: 1.0,
     adjustedDelta: 0.20,
     sizeMultiplierOverride: tier === 3 ? 0.5 : 1.0,
+    ivr,
+    putSkew,
     measurements: {
       avgAtmSpreadPct: r2(avgSpread * 100),
       avgAtmVolume: Math.round(avgVol),
@@ -226,6 +233,90 @@ export function classifyTicker(
       activeStrikeCount,
     },
   };
+}
+
+export function computeIVR(
+  contracts: OptionContract[],
+  underlyingPrice: number,
+  frontExps: string[],
+): number {
+  const withIV = contracts.filter((c) => typeof c.iv === "number" && c.iv > 0);
+  if (withIV.length < 3) return 50;
+
+  let minIV = Infinity;
+  let maxIV = -Infinity;
+  for (const c of withIV) {
+    const iv = c.iv!;
+    if (iv < minIV) minIV = iv;
+    if (iv > maxIV) maxIV = iv;
+  }
+
+  if (maxIV <= minIV) return 50;
+
+  const atmRange = underlyingPrice * 0.03;
+  const frontExp = frontExps[0] ?? "";
+  const atmFront = withIV.filter(
+    (c) =>
+      c.expiration === frontExp &&
+      Math.abs(c.strike - underlyingPrice) <= atmRange,
+  );
+
+  let currentIV: number;
+  if (atmFront.length > 0) {
+    atmFront.sort((a, b) => Math.abs(a.strike - underlyingPrice) - Math.abs(b.strike - underlyingPrice));
+    currentIV = atmFront[0].iv!;
+  } else {
+    const allAtm = withIV
+      .filter((c) => Math.abs(c.strike - underlyingPrice) <= underlyingPrice * 0.05)
+      .sort((a, b) => Math.abs(a.strike - underlyingPrice) - Math.abs(b.strike - underlyingPrice));
+    currentIV = allAtm.length > 0 ? allAtm[0].iv! : (minIV + maxIV) / 2;
+  }
+
+  const ivr = ((currentIV - minIV) / (maxIV - minIV)) * 100;
+  return r2(Math.max(0, Math.min(100, ivr)));
+}
+
+export function computePutSkew(
+  calls: OptionContract[],
+  puts: OptionContract[],
+  _underlyingPrice: number,
+  frontExp: string,
+): number {
+  if (!frontExp) return 0;
+
+  const frontPuts = puts.filter(
+    (c) => c.expiration === frontExp && typeof c.delta === "number" && typeof c.iv === "number" && c.iv > 0,
+  );
+  const frontCalls = calls.filter(
+    (c) => c.expiration === frontExp && typeof c.delta === "number" && typeof c.iv === "number" && c.iv > 0,
+  );
+
+  if (frontPuts.length === 0 || frontCalls.length === 0) return 0;
+
+  let bestPut: OptionContract | null = null;
+  let bestPutDist = Infinity;
+  for (const p of frontPuts) {
+    const dist = Math.abs(Math.abs(p.delta!) - 0.25);
+    if (dist < bestPutDist) {
+      bestPutDist = dist;
+      bestPut = p;
+    }
+  }
+
+  let bestCall: OptionContract | null = null;
+  let bestCallDist = Infinity;
+  for (const c of frontCalls) {
+    const dist = Math.abs(Math.abs(c.delta!) - 0.25);
+    if (dist < bestCallDist) {
+      bestCallDist = dist;
+      bestCall = c;
+    }
+  }
+
+  if (!bestPut || !bestCall) return 0;
+
+  const skew = (bestPut.iv ?? 0) - (bestCall.iv ?? 0);
+  return r2(skew);
 }
 
 export interface DailyCandle {
@@ -1288,12 +1379,23 @@ The payload includes a tickerProfile object with:
 - beta: computed from recent daily returns vs SPY
 - adjustedDelta: delta target adjusted for the ticker's beta
 - sizeMultiplierOverride: 0.5 for Tier 3 (low liquidity) tickers, 1.0 otherwise
+- ivr: IV Rank (0-100) computed from the live chain. High IVR (>50) favors credit/premium-selling strategies. Low IVR (<30) favors debit/directional strategies.
+- putSkew: difference in IV between 25-delta put and 25-delta call in vol points. High put skew (>5) means downside protection is expensive.
 - measurements: avgAtmSpreadPct, avgAtmVolume, avgAtmOI, activeStrikeCount
 
-Incorporate the ticker profile into your narrative:
+The payload also includes a chainAnalytics object with:
+- ivr, putSkew: same as tickerProfile for convenience
+- earningsDaysAway: number of calendar days until next earnings (null if unknown). Within 7 days = earnings imminent, credit strategies blocked. Within 14 days = earnings caution, size reduced 50%.
+- preTradeChecks: array of named risk checks with PASS/WARN/FAIL status
+
+Incorporate the ticker profile and chain analytics into your narrative:
 - Mention the liquidity tier and what it means for execution quality
 - Reference beta when explaining delta selection and directional exposure
 - If Tier 3, note the automatic position size reduction and wider spread risk
+- Explain IVR level and whether it supports the chosen strategy type (credit vs debit)
+- If put skew is elevated, explain the cost implications for put-selling strategies
+- If earnings are nearby, explain the risk and any size adjustments or blocks applied
+- Reference any WARN or FAIL pre-trade checks and explain their impact
 
 For each strategy, explain:
 - Why this strategy fits the current market regime (connect regime to strategy choice)

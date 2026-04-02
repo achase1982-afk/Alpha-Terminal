@@ -27,6 +27,9 @@ export interface PreTradeInput {
   pulseEdge: string;
   vix: number | null;
   accountSize: number;
+  ivr?: number;
+  putSkew?: number;
+  earningsDaysAway?: number | null;
   settings: {
     minRR: number;
     maxPositionPct: number;
@@ -192,6 +195,141 @@ function checkDTE(input: PreTradeInput): PreTradeCheck {
   };
 }
 
+function isStrategyCredit(strategy: StrategyPayload): boolean {
+  return strategy.net_credit > 0;
+}
+
+function strategyInvolvesSellPuts(strategy: StrategyPayload): boolean {
+  if (strategy.short_leg.type === "PUT" && strategy.short_leg.action === "SELL" && strategy.short_leg.strike > 0) return true;
+  if (strategy.short_leg_2?.type === "PUT" && strategy.short_leg_2?.action === "SELL" && (strategy.short_leg_2?.strike ?? 0) > 0) return true;
+  return false;
+}
+
+function checkIVR(input: PreTradeInput): PreTradeCheck {
+  const ivr = input.ivr;
+  if (ivr === undefined || ivr === null) {
+    return {
+      id: "ivr",
+      label: "IV Rank",
+      status: "WARN",
+      value: "Unavailable",
+      threshold: "IVR gates strategy type",
+      detail: "Cannot compute IV Rank from chain data",
+    };
+  }
+
+  const credit = isStrategyCredit(input.strategy);
+  let status: CheckStatus = "PASS";
+  let detail: string;
+
+  if (ivr > 50) {
+    if (credit) {
+      detail = `IVR ${ivr}% favors premium selling — credit strategy is well-suited`;
+    } else {
+      status = "WARN";
+      detail = `IVR ${ivr}% is elevated — debit strategies face inflated premium costs`;
+    }
+  } else if (ivr < 30) {
+    if (!credit) {
+      detail = `IVR ${ivr}% is low — debit/directional strategy benefits from cheap premium`;
+    } else {
+      status = "WARN";
+      detail = `IVR ${ivr}% is low — credit strategies collect insufficient premium`;
+    }
+  } else {
+    detail = `IVR ${ivr}% is in neutral zone — both credit and debit strategies viable`;
+  }
+
+  return {
+    id: "ivr",
+    label: "IV Rank",
+    status,
+    value: `${ivr}%`,
+    threshold: ">50 favors credit, <30 favors debit",
+    detail,
+  };
+}
+
+function checkPutSkew(input: PreTradeInput): PreTradeCheck {
+  const skew = input.putSkew;
+  if (skew === undefined || skew === null) {
+    return {
+      id: "put_skew",
+      label: "Put Skew",
+      status: "PASS",
+      value: "Unavailable",
+      threshold: "Skew <5 vol pts",
+      detail: "Cannot compute put skew from chain data",
+    };
+  }
+
+  const sellsPuts = strategyInvolvesSellPuts(input.strategy);
+
+  let status: CheckStatus = "PASS";
+  let detail: string;
+
+  if (sellsPuts && skew > 10) {
+    status = "FAIL";
+    detail = `Put skew ${skew} vol pts is extreme — selling puts carries outsized downside risk`;
+  } else if (sellsPuts && skew > 5) {
+    status = "WARN";
+    detail = `Elevated put skew increases cost of downside protection`;
+  } else if (skew > 5) {
+    detail = `Put skew ${skew} vol pts is elevated but strategy does not sell puts`;
+  } else {
+    detail = `Put skew ${skew} vol pts is within normal range`;
+  }
+
+  return {
+    id: "put_skew",
+    label: "Put Skew",
+    status,
+    value: `${skew} vol pts`,
+    threshold: sellsPuts ? "≤5 vol pts (selling puts)" : "Informational",
+    detail,
+  };
+}
+
+function checkEarningsProximity(input: PreTradeInput): PreTradeCheck {
+  const days = input.earningsDaysAway;
+  if (days === undefined || days === null) {
+    return {
+      id: "earnings_proximity",
+      label: "Earnings Proximity",
+      status: "PASS",
+      value: "Unknown",
+      threshold: ">14 days",
+      detail: "Earnings date unavailable — no proximity gate applied",
+    };
+  }
+
+  const credit = isStrategyCredit(input.strategy);
+  let status: CheckStatus = "PASS";
+  let detail: string;
+
+  if (days <= 7 && credit) {
+    status = "FAIL";
+    detail = `Earnings in ${days} day${days !== 1 ? "s" : ""} — earnings risk makes premium selling unsuitable`;
+  } else if (days <= 14 && credit) {
+    status = "WARN";
+    detail = `Earnings in ${days} days — credit strategy size reduced 50% due to earnings risk`;
+  } else if (days <= 7) {
+    status = "WARN";
+    detail = `Earnings in ${days} day${days !== 1 ? "s" : ""} — elevated vol event ahead`;
+  } else {
+    detail = `Earnings in ${days} days — no proximity concern`;
+  }
+
+  return {
+    id: "earnings_proximity",
+    label: "Earnings Proximity",
+    status,
+    value: days <= 0 ? "Imminent" : `${days} days`,
+    threshold: credit ? ">14 days for credit" : ">7 days",
+    detail,
+  };
+}
+
 export function runPreTradeChecks(input: PreTradeInput): PreTradeResult {
   const checks: PreTradeCheck[] = [
     checkPulseAlignment(input),
@@ -201,6 +339,9 @@ export function runPreTradeChecks(input: PreTradeInput): PreTradeResult {
     checkPositionSize(input),
     checkVolEnvironment(input),
     checkDTE(input),
+    checkIVR(input),
+    checkPutSkew(input),
+    checkEarningsProximity(input),
   ];
 
   const failCount = checks.filter(c => c.status === "FAIL").length;

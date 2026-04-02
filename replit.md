@@ -70,12 +70,17 @@ Features include a MacroBar displaying key indices, an Institutional Tear Sheet 
 - Key types: `LiquidityTier`, `TickerProfile`, `DailyCandle`
 
 ### Pre-Trade Risk Manager
-- Backend: `preTradeRiskEngine.ts` with 7 deterministic checks: Pulse Alignment, R/R ≥ threshold, Bid/Ask Spread ≤15%, PoP ≥35%, Position Size ≤ max%, Vol Environment, DTE ≥ min
+- Backend: `preTradeRiskEngine.ts` with 10 deterministic checks: Pulse Alignment, R/R ≥ threshold, Bid/Ask Spread ≤15%, PoP ≥35%, Position Size ≤ max%, Vol Environment, DTE ≥ min, IV Rank, Put Skew, Earnings Proximity
 - API route: `POST /api/ai/pre-trade-check` runs engine + Gemini Flash one-liner
 - Frontend: `PreTradeCheckPanel` shows green/yellow/red checklist below each strategy card
 - `RiskCategoryBadge` shows Defined Risk / Cash Secured / Margin Based on each card header
 - Settings (persisted in Zustand): `preTradeEnabled`, `preTradeBlockOnRed`, `preTradeMinRR` (0.25), `preTradeMaxPositionPct` (3%), `preTradeMinDTE` (5), `accountSize` (25000)
 - Auto-runs when strategies load; results are per-strategy
+- **IVR Check**: `computeIVR()` in optionsStrategist.ts uses ATM IV in front expiration as current IV, min/max IV across all chain strikes as range. IVR = (current-min)/(max-min)*100. IVR>50 favors credit (WARN on debit), IVR<30 favors debit (WARN on credit), 30-50 neutral.
+- **Put Skew Check**: `computePutSkew()` finds closest-to-25-delta put and call in front expiration, skew = putIV - callIV in vol points. >5 pts + selling puts = WARN, >10 pts + selling puts = FAIL.
+- **Earnings Proximity Check**: `fetchEarningsDaysAway()` estimates next earnings from Schwab `lastEarningsDate` fundamental (+90 day cadence). ≤7 days + credit = FAIL (earnings risk blocks premium selling), ≤14 days + credit = WARN + 50% size reduction.
+- `chainAnalytics` object (ivr, putSkew, earningsDaysAway, preTradeResults) included in both strategist endpoints and Gemini narrative payload
+- IVR and putSkew also stored on `TickerProfile` object for convenience
 
 ### Session Timeout & Biometric Auth
 - All security preferences stored in `localStorage` under key `alphaTerminalSecurityPrefs`

@@ -1409,9 +1409,103 @@ async function buildTickerProfile(
     profile = applyBetaToProfile(profile, beta);
   }
 
-  console.log(`[TICKER-PROFILE] ${symbol.toUpperCase()} | Tier: ${profile.tier} | Avg ATM Spread: ${profile.measurements.avgAtmSpreadPct}% | Avg ATM Vol: ${profile.measurements.avgAtmVolume} | Avg ATM OI: ${profile.measurements.avgAtmOI} | Beta vs SPY: ${profile.beta} | Adjusted Delta: ${profile.adjustedDelta} | Size Override: ${profile.sizeMultiplierOverride}`);
+  console.log(`[TICKER-PROFILE] ${symbol.toUpperCase()} | Tier: ${profile.tier} | IVR: ${profile.ivr}% | Put Skew: ${profile.putSkew} | Avg ATM Spread: ${profile.measurements.avgAtmSpreadPct}% | Avg ATM Vol: ${profile.measurements.avgAtmVolume} | Avg ATM OI: ${profile.measurements.avgAtmOI} | Beta vs SPY: ${profile.beta} | Adjusted Delta: ${profile.adjustedDelta} | Size Override: ${profile.sizeMultiplierOverride}`);
 
   return profile;
+}
+
+async function fetchEarningsDaysAway(
+  symbol: string,
+  accessToken: string,
+): Promise<number | null> {
+  try {
+    const apiSymbol = symbolToSchwabApi(symbol.toUpperCase().trim());
+    const res = await fetch(
+      `${SCHWAB_CHAIN_BASE}/quotes?symbols=${encodeURIComponent(apiSymbol)}&fields=quote,fundamental`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    if (!res.ok) return null;
+    const json = (await res.json()) as Record<string, Record<string, unknown>>;
+    const entry = Object.values(json)[0];
+    if (!entry) return null;
+    const fund = entry["fundamental"] as Record<string, unknown> | undefined;
+    if (!fund) return null;
+
+    const lastEarnings = fund["lastEarningsDate"] as string | undefined;
+    if (!lastEarnings) return null;
+
+    const lastDate = new Date(lastEarnings);
+    if (isNaN(lastDate.getTime())) return null;
+
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    let nextEarnings: Date | null = null;
+
+    const candidate = new Date(lastDate);
+    for (let q = 0; q < 8; q++) {
+      candidate.setDate(candidate.getDate() + (q === 0 ? 90 : [91, 90, 92, 91, 90, 91, 90][q - 1]));
+      if (candidate >= today) {
+        nextEarnings = new Date(candidate);
+        break;
+      }
+    }
+
+    if (!nextEarnings) {
+      const fallback = new Date(lastDate);
+      while (fallback < today) fallback.setDate(fallback.getDate() + 91);
+      nextEarnings = fallback;
+    }
+
+    const diffMs = nextEarnings.getTime() - today.getTime();
+    return Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+  } catch {
+    return null;
+  }
+}
+
+function buildChainAnalytics(
+  tickerProfile: TickerProfile,
+  earningsDaysAway: number | null,
+  strategies: StrategyPayload[],
+  vix: number | null,
+  pulseComposite: number,
+  pulseConfidence: number,
+  pulseEdge: string,
+) {
+  const preTradeResults: PreTradeResult[] = [];
+  for (const strategy of strategies) {
+    const input: PreTradeInput = {
+      strategy,
+      pulseComposite,
+      pulseConfidence,
+      pulseEdge,
+      vix,
+      accountSize: 25000,
+      ivr: tickerProfile.ivr,
+      putSkew: tickerProfile.putSkew,
+      earningsDaysAway,
+      settings: {
+        minRR: 0.25,
+        maxPositionPct: 3,
+        minDTE: 5,
+        blockOnRed: false,
+      },
+    };
+    preTradeResults.push(runPreTradeChecks(input));
+  }
+
+  return {
+    ivr: tickerProfile.ivr,
+    putSkew: tickerProfile.putSkew,
+    earningsDaysAway,
+    preTradeResults,
+  };
+}
+
+function getVixFromCache(): number | null {
+  const snap = getSnapshot().find((q) => q.symbol === "$VIX" || q.symbol === "VIX");
+  if (!snap) return null;
+  return (snap as Record<string, unknown>)["lastPrice"] as number ?? null;
 }
 
 router.post("/options-strategist", async (req, res) => {
@@ -1490,7 +1584,10 @@ router.post("/options-strategist", async (req, res) => {
       return res.json({ strategies: [], narrative: "Options chain is empty. Market may be closed or token expired.", error: "empty_chain", regime, pulse: resolvedPulse });
     }
 
-    const tickerProfile = await buildTickerProfile(calls, puts, underlyingPrice, symbol, accessToken, req.log);
+    const [tickerProfile, earningsDaysAway] = await Promise.all([
+      buildTickerProfile(calls, puts, underlyingPrice, symbol, accessToken, req.log),
+      fetchEarningsDaysAway(symbol, accessToken),
+    ]);
     const strategies = selectStrategiesByRegime(regime, calls, puts, tickerProfile);
 
     if (strategies.length === 0) {
@@ -1504,18 +1601,24 @@ router.post("/options-strategist", async (req, res) => {
       });
     }
 
+    const chainAnalytics = buildChainAnalytics(
+      tickerProfile, earningsDaysAway, strategies,
+      getVixFromCache(), resolvedPulse.composite, resolvedPulse.confidence, edge,
+    );
+
     const payload = {
       pulse: resolvedPulse,
       regime,
       equity: { symbol, price: underlyingPrice, change: 0, changePct: 0 },
       strategies,
       tickerProfile,
+      chainAnalytics,
     };
 
     const narrativePrompt = `${STRATEGIST_SYSTEM_PROMPT}\n\nHere is the payload:\n\n${JSON.stringify(payload, null, 2)}`;
     const narrative = await callGemini(narrativePrompt, "gemini-3.1-pro-preview", 0.2);
 
-    res.json({ strategies, narrative, edge, underlyingPrice, regime, pulse: resolvedPulse, overrideWarning, tickerProfile });
+    res.json({ strategies, narrative, edge, underlyingPrice, regime, pulse: resolvedPulse, overrideWarning, tickerProfile, chainAnalytics });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     req.log.error({ err }, "Options strategist error");
@@ -1601,7 +1704,10 @@ router.post("/options-strategist/stream", async (req, res) => {
       return res.json({ strategies: [], narrative: "Options chain is empty.", error: "empty_chain", regime, pulse: resolvedPulse });
     }
 
-    const tickerProfile = await buildTickerProfile(calls, puts, underlyingPrice, symbol, accessToken, req.log);
+    const [tickerProfile, earningsDaysAway] = await Promise.all([
+      buildTickerProfile(calls, puts, underlyingPrice, symbol, accessToken, req.log),
+      fetchEarningsDaysAway(symbol, accessToken),
+    ]);
     const strategies = selectStrategiesByRegime(regime, calls, puts, tickerProfile);
 
     if (strategies.length === 0) {
@@ -1615,12 +1721,18 @@ router.post("/options-strategist/stream", async (req, res) => {
       });
     }
 
+    const chainAnalytics = buildChainAnalytics(
+      tickerProfile, earningsDaysAway, strategies,
+      getVixFromCache(), resolvedPulse.composite, resolvedPulse.confidence, edge,
+    );
+
     const strategistPayload = {
       pulse: resolvedPulse,
       regime,
       equity: { symbol, price: underlyingPrice, change: 0, changePct: 0 },
       strategies,
       tickerProfile,
+      chainAnalytics,
     };
 
     res.writeHead(200, {
@@ -1637,7 +1749,7 @@ router.post("/options-strategist/stream", async (req, res) => {
     res.write(": ok\n\n");
     res.flushHeaders();
 
-    res.write(`data: ${JSON.stringify({ strategies, edge, underlyingPrice, regime, pulse: resolvedPulse, overrideWarning, tickerProfile })}\n\n`);
+    res.write(`data: ${JSON.stringify({ strategies, edge, underlyingPrice, regime, pulse: resolvedPulse, overrideWarning, tickerProfile, chainAnalytics })}\n\n`);
 
     const heartbeat = setInterval(() => {
       if (!res.writableEnded) res.write(": ping\n\n");
@@ -2133,7 +2245,7 @@ Be concise and institutional-grade. Focus on actual market correlations, sector 
 
 router.post("/pre-trade-check", async (req, res) => {
   try {
-  const { strategy, pulseComposite, pulseConfidence, pulseEdge, vix, accountSize, settings } = req.body as PreTradeInput;
+  const { strategy, pulseComposite, pulseConfidence, pulseEdge, vix, accountSize, settings, ivr, putSkew, earningsDaysAway } = req.body as PreTradeInput;
 
   if (!strategy || !strategy.strategy_type || strategy.max_loss === undefined) {
     return res.status(400).json({ error: "Valid strategy payload is required" });
@@ -2146,6 +2258,9 @@ router.post("/pre-trade-check", async (req, res) => {
     pulseEdge: pulseEdge ?? "NO_EDGE",
     vix: vix ?? null,
     accountSize: accountSize ?? 25000,
+    ivr: ivr ?? undefined,
+    putSkew: putSkew ?? undefined,
+    earningsDaysAway: earningsDaysAway ?? null,
     settings: {
       minRR: settings?.minRR ?? 0.25,
       maxPositionPct: settings?.maxPositionPct ?? 3,
