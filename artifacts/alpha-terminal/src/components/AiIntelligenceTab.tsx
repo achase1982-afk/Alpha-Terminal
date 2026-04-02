@@ -932,7 +932,7 @@ export function StrategySettings() {
             <input
               type="range"
               min={1}
-              max={25}
+              max={10}
               step={1}
               value={preTradeMaxPositionPct}
               onChange={e => setPreTradeMaxPositionPct(Number(e.target.value))}
@@ -950,7 +950,7 @@ export function StrategySettings() {
             <input
               type="range"
               min={1}
-              max={60}
+              max={30}
               step={1}
               value={preTradeMinDTE}
               onChange={e => setPreTradeMinDTE(Number(e.target.value))}
@@ -1126,140 +1126,151 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef }: AiIn
     setPreTradeResults({});
     setStrategistStatus("Running market pulse engine...");
 
-    const currentSettings = {
-      autopilot: useTerminalStore.getState().stratAutopilot,
-      maxRisk: useTerminalStore.getState().stratMaxRisk,
-      minPoP: useTerminalStore.getState().stratMinPoP,
-      minRR: useTerminalStore.getState().stratMinRR,
-      bias: useTerminalStore.getState().stratBias,
-      premium: useTerminalStore.getState().stratPremium,
-      avoidEarnings: useTerminalStore.getState().stratAvoidEarnings,
+    const snap = useTerminalStore.getState();
+    const currentBias = snap.stratBias;
+    const currentAiModel = snap.aiFeatureSettings.strategist.model;
+    const currentAiTemp = snap.aiFeatureSettings.strategist.temperature;
+
+    const collected: StrategistCacheData = {
+      strategies: [],
+      narrative: "",
+      regime: null,
+      pulse: null,
+      overrideWarning: null,
+      audit: null,
+      thinkingTokens: [],
+      resultStatus: null,
+      timestamp: 0,
     };
-    const currentAiModel = useTerminalStore.getState().aiFeatureSettings.strategist.model;
-    const currentAiTemp = useTerminalStore.getState().aiFeatureSettings.strategist.temperature;
 
     try {
-      const q = quote;
-
-      const collected: StrategistCacheData = {
-        strategies: [],
-        narrative: "",
-        regime: null,
-        pulse: null,
-        overrideWarning: null,
-        audit: null,
-        thinkingTokens: [],
-        resultStatus: null,
-        timestamp: 0,
-      };
-
-      const auditData: StrategistAuditData = {
-        symbol: runSymbol,
-        price: q?.lastPrice ?? null,
-        change: q?.netChange ?? null,
-        changePct: q?.netPercentChange ?? null,
-        volume: q?.totalVolume ?? null,
-        autopilot: currentSettings.autopilot,
-        maxRisk: currentSettings.maxRisk,
-        minPoP: currentSettings.minPoP,
-        minRR: currentSettings.minRR,
-        bias: currentSettings.bias,
-        premium: currentSettings.premium,
-        avoidEarnings: currentSettings.avoidEarnings,
-        chainCallCount: 0,
-        chainPutCount: 0,
-        model: currentAiModel,
-        temperature: currentAiTemp,
-        timestamp: Date.now(),
-      };
-
       setStrategistStatus("Classifying regime & scanning chain...");
-
-      const body: Record<string, unknown> = {
-        symbol: runSymbol,
-        price: q?.lastPrice,
-        change: q?.netChange,
-        changePct: q?.netPercentChange,
-        volume: q?.totalVolume,
-        accessToken,
-        autopilot: currentSettings.autopilot,
-        maxRisk: currentSettings.maxRisk,
-        bias: currentSettings.bias,
-      };
-      if (history) body.priceHistory = history;
-
-      const res = await fetchWithAuth(`${API_BASE}/ai/strategist`, {
+      const res = await fetchWithAuth(`${API_BASE}/ai/options-strategist/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({
+          symbol: runSymbol,
+          accessToken,
+          model: currentAiModel,
+          temperature: currentAiTemp,
+          todayEdge: currentBias === "auto" ? undefined : currentBias === "bullish" ? "BULLISH_EDGE" : currentBias === "bearish" ? "BEARISH_EDGE" : "NEUTRAL_EDGE",
+        }),
       });
-      if (!res.ok) throw new Error(`Strategist returned ${res.status}`);
+
       if (strategistRunRef.current !== runId) return;
 
-      const reader = res.body?.getReader();
-      if (!reader) throw new Error("No response stream");
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "Unknown error");
+        setStrategistResult(`**Error:** ${errText}`);
+        setIsStrategizing(false);
+        setStrategistStatus("");
+        return;
+      }
 
-      const dec = new TextDecoder();
-      let buffer = "";
+      const contentType = res.headers.get("content-type") ?? "";
+      if (contentType.includes("application/json")) {
+        if (strategistRunRef.current !== runId) return;
+        const json = await res.json() as { strategies?: StrategyPayload[]; narrative?: string; error?: string; edge?: string; regime?: RegimeInfo; pulse?: PulseSnapshot; overrideWarning?: string };
+        if (json.regime) { setRegimeInfo(json.regime); collected.regime = json.regime; }
+        if (json.pulse) { setPulseSnapshot(json.pulse); collected.pulse = json.pulse; }
+        if (json.overrideWarning) { setOverrideWarning(json.overrideWarning); collected.overrideWarning = json.overrideWarning; }
+        if (json.error) {
+          setStrategistResult(`**Error:** ${json.error}`);
+        } else if (json.strategies && json.strategies.length > 0) {
+          setRealStrategies(json.strategies);
+          setNarrativeText(json.narrative ?? "");
+          setStrategistResult("done");
+          collected.strategies = json.strategies;
+          collected.narrative = json.narrative ?? "";
+          collected.resultStatus = "done";
+          setStrategistCache({ ...collected, timestamp: Date.now() });
+        } else {
+          setStrategistResult(json.narrative ?? "No strategies available.");
+          collected.resultStatus = json.narrative ?? "No strategies available.";
+          setStrategistCache({ ...collected, timestamp: Date.now() });
+        }
+        setIsStrategizing(false);
+        setStrategistStatus("");
+        return;
+      }
+
+      setIsStrategizing(false);
+      setIsStreaming(true);
+
+      const reader = res.body?.getReader();
+      if (!reader) { setStrategistResult("**Error:** No readable stream."); setIsStreaming(false); return; }
+
+      const decoder = new TextDecoder();
+      let buf = "";
       let accumulated = "";
-      let receivedStrategies = false;
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         if (strategistRunRef.current !== runId) { reader.cancel(); return; }
+        buf += decoder.decode(value, { stream: true });
 
-        buffer += dec.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
 
         for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed || !trimmed.startsWith("data: ")) continue;
-          const payload = trimmed.slice(6);
-          if (payload === "[DONE]") continue;
-
+          if (!line.startsWith("data: ")) continue;
+          const payload = line.slice(6).trim();
+          if (payload === "[DONE]") break;
           try {
-            const evt = JSON.parse(payload);
-
-            if (evt.type === "regime") {
-              if (strategistRunRef.current !== runId) return;
-              setRegimeInfo(evt.data);
-              collected.regime = evt.data;
-            } else if (evt.type === "pulse") {
-              if (strategistRunRef.current !== runId) return;
-              setPulseSnapshot(evt.data);
-              collected.pulse = evt.data;
-            } else if (evt.type === "override_warning") {
-              if (strategistRunRef.current !== runId) return;
-              setOverrideWarning(evt.data);
-              collected.overrideWarning = evt.data;
-            } else if (evt.type === "status") {
-              if (strategistRunRef.current !== runId) return;
-              setStrategistStatus(evt.data);
-            } else if (evt.type === "chain_stats") {
-              auditData.chainCallCount = evt.data?.callCount ?? 0;
-              auditData.chainPutCount  = evt.data?.putCount ?? 0;
-            } else if (evt.type === "thinking") {
-              if (strategistRunRef.current !== runId) return;
-              setThinkingTokens(prev => {
-                const next = [...prev, evt.data];
-                collected.thinkingTokens = next;
-                return next;
-              });
-            } else if (evt.type === "strategies") {
-              if (strategistRunRef.current !== runId) return;
-              receivedStrategies = true;
-              const strats = Array.isArray(evt.data) ? evt.data : [evt.data];
-              setRealStrategies(strats);
-              collected.strategies = strats;
-              setIsStrategizing(false);
-              setIsStreaming(true);
+            const parsed = JSON.parse(payload) as {
+              strategies?: StrategyPayload[];
+              edge?: string;
+              underlyingPrice?: number;
+              text?: string;
+              reasoning?: string;
+              error?: string;
+              regime?: RegimeInfo;
+              pulse?: PulseSnapshot;
+              overrideWarning?: string;
+            };
+            if (parsed.error) {
+              setStrategistResult(`**Error:** ${parsed.error}`);
+              setIsStreaming(false);
+              setStrategistStatus("");
+              return;
+            }
+            if (parsed.regime) { setRegimeInfo(parsed.regime); collected.regime = parsed.regime; }
+            if (parsed.pulse) { setPulseSnapshot(parsed.pulse); collected.pulse = parsed.pulse; }
+            if (parsed.overrideWarning) { setOverrideWarning(parsed.overrideWarning); collected.overrideWarning = parsed.overrideWarning; }
+            if (parsed.strategies) {
+              setStrategistStatus("Building AI thesis...");
+              setRealStrategies(parsed.strategies);
+              collected.strategies = parsed.strategies;
+              const q = quote as Record<string, unknown> | undefined;
+              const auditData: StrategistAuditData = {
+                symbol: runSymbol,
+                price: parsed.underlyingPrice ?? null,
+                change: q && typeof q.netChange === "number" ? q.netChange : null,
+                changePct: q && typeof q.netPercentChange === "number" ? q.netPercentChange : null,
+                volume: null,
+                autopilot: snap.stratAutopilot,
+                maxRisk: snap.stratMaxRisk,
+                minPoP: snap.stratMinPoP,
+                minRR: snap.stratMinRR,
+                bias: parsed.edge ?? "—",
+                premium: snap.stratPremium,
+                avoidEarnings: snap.stratAvoidEarnings,
+                chainCallCount: 0,
+                chainPutCount: 0,
+                model: currentAiModel,
+                temperature: currentAiTemp,
+                timestamp: Date.now(),
+              };
               setStrategistAudit(auditData);
               collected.audit = auditData;
-            } else if (evt.type === "narrative_chunk") {
-              if (strategistRunRef.current !== runId) return;
-              accumulated += evt.data;
+            }
+            if (parsed.reasoning) {
+              collected.thinkingTokens.push(parsed.reasoning);
+              setThinkingTokens(prev => [...prev, parsed.reasoning!]);
+            }
+            if (parsed.text) {
+              accumulated += parsed.text;
               setStreamingText(accumulated);
             }
           } catch {}
@@ -1272,12 +1283,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef }: AiIn
       setStrategistResult("done");
       setStreamingText("");
       setIsStreaming(false);
-      setIsStrategizing(false);
       setStrategistStatus("");
-      if (!receivedStrategies) {
-        setStrategistAudit(auditData);
-        collected.audit = auditData;
-      }
       setStrategistCache({ ...collected, timestamp: Date.now() });
     } catch (err) {
       setStrategistResult(`**Error:** ${err instanceof Error ? err.message : String(err)}`);
@@ -1285,7 +1291,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef }: AiIn
       setIsStreaming(false);
       setStrategistStatus("");
     }
-  }, [quote, history, accessToken, symbol, setSymbol, setStrategistResult, setStrategistCache]);
+  }, [quote, accessToken, symbol, setSymbol, setStrategistResult, setStrategistCache]);
 
   const handleRunStrategistWithTicker = useCallback((ticker: string) => {
     handleRunStrategist(ticker);
