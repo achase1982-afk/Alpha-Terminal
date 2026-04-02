@@ -203,8 +203,8 @@ export default function TerminalPage() {
               <MacroBar />
 
               <div className="sticky top-0 z-40 bg-background">
-                <VolumeBar />
                 <MetricsBar compact={isScrolled} />
+                <VolumeBar />
                 <MarketDataTabs activeTab={contextTab} setActiveTab={setContextTab} />
               </div>
 
