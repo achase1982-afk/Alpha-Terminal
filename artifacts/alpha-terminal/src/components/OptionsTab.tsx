@@ -564,12 +564,28 @@ export function OptionsTab({ subscribeOptionSymbols }: OptionsTabProps) {
   }, [strikeCount]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const brokerStrikeCount = Math.max(strikeCount, 20);
-
-  const { data, isLoading, error, isFetching } = useGetOptionChain(
-    { symbol, accessToken: accessToken || "", contractType, daysToExpiration: maxDte, strikeCount: brokerStrikeCount },
-    { query: { enabled: !!accessToken && !!symbol } }
+  const { data: rawData, isLoading, error, isFetching } = useGetOptionChain(
+    { symbol, accessToken: accessToken || "", contractType: "ALL" },
+    { query: { enabled: !!accessToken && !!symbol, staleTime: 25_000, gcTime: 60_000 } }
   );
+
+  const data = useMemo(() => {
+    if (!rawData) return rawData;
+    const allCalls = (rawData.calls ?? []) as Contract[];
+    const allPuts = (rawData.puts ?? []) as Contract[];
+    let calls = allCalls;
+    let puts = allPuts;
+
+    if (maxDte > 0) {
+      calls = calls.filter(c => (c.dte ?? 0) <= maxDte);
+      puts = puts.filter(p => (p.dte ?? 0) <= maxDte);
+    }
+
+    if (contractType === "CALL") puts = [];
+    else if (contractType === "PUT") calls = [];
+
+    return { ...rawData, calls, puts };
+  }, [rawData, maxDte, contractType]);
 
   const { data: quote } = useGetQuote(
     { symbol, accessToken: accessToken || "" },

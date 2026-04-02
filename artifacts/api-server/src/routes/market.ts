@@ -319,111 +319,158 @@ router.get("/history", async (req, res) => {
   }
 });
 
+interface ParsedContract {
+  strike: number; expiration: string; schwabSymbol?: string; bid?: number; ask?: number; bidSize?: number; askSize?: number; last?: number;
+  volume?: number; openInterest?: number; iv?: number; delta?: number;
+  gamma?: number; theta?: number; vega?: number; dte?: number;
+}
+
+interface CachedChain {
+  symbol: string;
+  underlyingPrice?: number;
+  calls: ParsedContract[];
+  puts: ParsedContract[];
+  fetchedAt: number;
+  totalCalls: number;
+  totalPuts: number;
+}
+
+const chainCache = new Map<string, CachedChain>();
+const chainFetchInFlight = new Map<string, Promise<CachedChain | null>>();
+const CHAIN_CACHE_TTL = 30_000;
+const CHAIN_CACHE_MAX = 20;
+
+function evictStaleChains() {
+  if (chainCache.size <= CHAIN_CACHE_MAX) return;
+  const entries = [...chainCache.entries()].sort((a, b) => a[1].fetchedAt - b[1].fetchedAt);
+  while (chainCache.size > CHAIN_CACHE_MAX && entries.length > 0) {
+    const oldest = entries.shift()!;
+    chainCache.delete(oldest[0]);
+  }
+}
+
+function parseContracts(map: Record<string, unknown>): ParsedContract[] {
+  const contracts: ParsedContract[] = [];
+  for (const expDate of Object.values(map)) {
+    const strikeMap = expDate as Record<string, unknown>;
+    for (const [, options] of Object.entries(strikeMap)) {
+      const optionArr = options as Array<Record<string, unknown>>;
+      for (const opt of optionArr) {
+        contracts.push({
+          strike: opt["strikePrice"] as number,
+          expiration: opt["expirationDate"] as string,
+          schwabSymbol: opt["symbol"] as string | undefined,
+          bid: opt["bid"] as number | undefined,
+          ask: opt["ask"] as number | undefined,
+          bidSize: opt["bidSize"] as number | undefined,
+          askSize: opt["askSize"] as number | undefined,
+          last: opt["last"] as number | undefined,
+          volume: opt["totalVolume"] as number | undefined,
+          openInterest: opt["openInterest"] as number | undefined,
+          iv: opt["volatility"] as number | undefined,
+          delta: opt["delta"] as number | undefined,
+          gamma: opt["gamma"] as number | undefined,
+          theta: opt["theta"] as number | undefined,
+          vega: opt["vega"] as number | undefined,
+          dte: opt["daysToExpiration"] as number | undefined,
+        });
+      }
+    }
+  }
+  return contracts;
+}
+
+async function fetchFullChain(displaySymbol: string, token: string, log: any): Promise<CachedChain | null> {
+  const isFuturesSymbol = isFutures(displaySymbol);
+  const isIndexSymbol = isIndex(displaySymbol);
+  const chainSymbol = isFuturesSymbol ? displaySymbol : isIndexSymbol ? formatSchwabSymbol(displaySymbol) : displaySymbol;
+
+  const params = new URLSearchParams({
+    symbol: chainSymbol,
+    contractType: "ALL",
+    range: "ALL",
+  });
+  if (isFuturesSymbol) params.set("assetClass", "FUTURES");
+
+  const response = await fetch(`${SCHWAB_API_BASE}/chains?${params.toString()}`, {
+    headers: { "Authorization": `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    log.error({ status: response.status, symbol: chainSymbol }, "Options chain fetch failed");
+    return null;
+  }
+
+  const json = await response.json() as Record<string, unknown>;
+  const underlyingPrice = json["underlyingPrice"] as number | undefined;
+  const callMap = json["callExpDateMap"] as Record<string, unknown> ?? {};
+  const putMap = json["putExpDateMap"] as Record<string, unknown> ?? {};
+  const calls = parseContracts(callMap);
+  const puts = parseContracts(putMap);
+
+  const cached: CachedChain = {
+    symbol: displaySymbol,
+    underlyingPrice,
+    calls,
+    puts,
+    fetchedAt: Date.now(),
+    totalCalls: calls.length,
+    totalPuts: puts.length,
+  };
+
+  chainCache.set(displaySymbol, cached);
+  evictStaleChains();
+  log.info({ symbol: displaySymbol, totalCalls: calls.length, totalPuts: puts.length, cacheSize: chainCache.size }, "Options chain cached (ALL strikes)");
+  return cached;
+}
+
+async function getOrFetchChain(displaySymbol: string, token: string, log: any): Promise<CachedChain | null> {
+  const existing = chainCache.get(displaySymbol);
+  if (existing && (Date.now() - existing.fetchedAt) < CHAIN_CACHE_TTL) {
+    return existing;
+  }
+
+  const inFlight = chainFetchInFlight.get(displaySymbol);
+  if (inFlight) return inFlight;
+
+  const promise = fetchFullChain(displaySymbol, token, log).finally(() => {
+    chainFetchInFlight.delete(displaySymbol);
+  });
+  chainFetchInFlight.set(displaySymbol, promise);
+
+  if (existing) {
+    promise.catch(() => {});
+    return existing;
+  }
+
+  return promise;
+}
+
 router.get("/options", async (req, res) => {
   const symbol = req.query["symbol"] as string;
-  const accessToken = req.query["accessToken"] as string;
+  const accessToken = (req.query["accessToken"] as string) || getAccessToken("market");
   const contractType = (req.query["contractType"] as string) ?? "ALL";
-  const daysToExpiration = Number(req.query["daysToExpiration"] ?? 30);
-  const strikeCount = req.query["strikeCount"] ? Number(req.query["strikeCount"]) : undefined;
 
   if (!symbol || !accessToken) {
     return res.json({ symbol: "", calls: [], puts: [], error: "symbol and accessToken are required" });
   }
 
   const displaySymbol = symbol.toUpperCase().trim();
-  const isFuturesSymbol = isFutures(displaySymbol);
-  const isIndexSymbol = isIndex(displaySymbol);
-
-  let chainSymbol: string;
-  if (isFuturesSymbol) {
-    chainSymbol = displaySymbol;
-  } else if (isIndexSymbol) {
-    chainSymbol = formatSchwabSymbol(displaySymbol);
-  } else {
-    chainSymbol = displaySymbol;
-  }
 
   try {
-    const params = new URLSearchParams({
-      symbol: chainSymbol,
-      contractType,
-      daysToExpiration: String(daysToExpiration),
-      range: "ALL",
-    });
+    const cached = await getOrFetchChain(displaySymbol, accessToken, req.log);
 
-    if (strikeCount && strikeCount > 0) {
-      params.set("strikeCount", String(strikeCount));
+    if (!cached) {
+      return res.json({ symbol: displaySymbol, calls: [], puts: [], error: "fetch_failed" });
     }
 
-    if (isFuturesSymbol) {
-      params.set("assetClass", "FUTURES");
-    }
+    let calls = cached.calls;
+    let puts = cached.puts;
 
-    req.log.info({ chainSymbol, isFuturesSymbol, isIndexSymbol, params: params.toString() }, "Options chain request");
+    if (contractType === "CALL") puts = [];
+    else if (contractType === "PUT") calls = [];
 
-    const response = await fetch(`${SCHWAB_API_BASE}/chains?${params.toString()}`, {
-      headers: { "Authorization": `Bearer ${accessToken}` },
-    });
-
-    if (response.status === 401) {
-      return res.json({ symbol: displaySymbol, calls: [], puts: [], error: "unauthorized" });
-    }
-
-    if (!response.ok) {
-      const errBody = await response.text().catch(() => "");
-      req.log.error({ status: response.status, body: errBody, symbol: chainSymbol }, "Options chain API error");
-      return res.json({ symbol: displaySymbol, calls: [], puts: [], error: `api_error_${response.status}`, message: errBody });
-    }
-
-    const json = await response.json() as Record<string, unknown>;
-    const underlyingPrice = json["underlyingPrice"] as number | undefined;
-
-    function parseContracts(map: Record<string, unknown>): Array<{
-      strike: number; expiration: string; schwabSymbol?: string; bid?: number; ask?: number; bidSize?: number; askSize?: number; last?: number;
-      volume?: number; openInterest?: number; iv?: number; delta?: number;
-      gamma?: number; theta?: number; vega?: number; dte?: number;
-    }> {
-      const contracts: Array<{
-        strike: number; expiration: string; schwabSymbol?: string; bid?: number; ask?: number; bidSize?: number; askSize?: number; last?: number;
-        volume?: number; openInterest?: number; iv?: number; delta?: number;
-        gamma?: number; theta?: number; vega?: number; dte?: number;
-      }> = [];
-      for (const expDate of Object.values(map)) {
-        const strikeMap = expDate as Record<string, unknown>;
-        for (const [, options] of Object.entries(strikeMap)) {
-          const optionArr = options as Array<Record<string, unknown>>;
-          for (const opt of optionArr) {
-            contracts.push({
-              strike: opt["strikePrice"] as number,
-              expiration: opt["expirationDate"] as string,
-              schwabSymbol: opt["symbol"] as string | undefined,
-              bid: opt["bid"] as number | undefined,
-              ask: opt["ask"] as number | undefined,
-              bidSize: opt["bidSize"] as number | undefined,
-              askSize: opt["askSize"] as number | undefined,
-              last: opt["last"] as number | undefined,
-              volume: opt["totalVolume"] as number | undefined,
-              openInterest: opt["openInterest"] as number | undefined,
-              iv: opt["volatility"] as number | undefined,
-              delta: opt["delta"] as number | undefined,
-              gamma: opt["gamma"] as number | undefined,
-              theta: opt["theta"] as number | undefined,
-              vega: opt["vega"] as number | undefined,
-              dte: opt["daysToExpiration"] as number | undefined,
-            });
-          }
-        }
-      }
-      return contracts;
-    }
-
-    const callMap = json["callExpDateMap"] as Record<string, unknown> ?? {};
-    const putMap = json["putExpDateMap"] as Record<string, unknown> ?? {};
-
-    const calls = parseContracts(callMap);
-    const puts = parseContracts(putMap);
-
-    const data = GetOptionChainResponse.parse({ symbol: displaySymbol, underlyingPrice, calls, puts });
+    const data = GetOptionChainResponse.parse({ symbol: displaySymbol, underlyingPrice: cached.underlyingPrice, calls, puts });
     res.json(data);
   } catch (err) {
     req.log.error({ err }, "Options chain fetch error");
@@ -440,53 +487,24 @@ router.get("/pc-ratio", async (req, res) => {
   }
 
   const displaySymbol = symbol.toUpperCase().trim();
-  const chainSymbol = isFutures(displaySymbol) ? displaySymbol : formatSchwabSymbol(displaySymbol);
 
   try {
-    const params = new URLSearchParams({
-      symbol: chainSymbol,
-      contractType: "ALL",
-      range: "ALL",
-    });
+    const cached = await getOrFetchChain(displaySymbol, accessToken, req.log);
 
-    const response = await fetch(`${SCHWAB_API_BASE}/chains?${params.toString()}`, {
-      headers: { "Authorization": `Bearer ${accessToken}` },
-    });
-
-    if (!response.ok) {
-      return res.json({ symbol: displaySymbol, pcRatio: null, error: `api_error_${response.status}` });
+    if (!cached) {
+      return res.json({ symbol: displaySymbol, pcRatio: null, error: "fetch_failed" });
     }
 
-    const json = await response.json() as Record<string, unknown>;
+    let callVol = 0, putVol = 0, callOI = 0, putOI = 0;
+    for (const c of cached.calls) { callVol += c.volume || 0; callOI += c.openInterest || 0; }
+    for (const p of cached.puts) { putVol += p.volume || 0; putOI += p.openInterest || 0; }
 
-    const callMap = json["callExpDateMap"] as Record<string, unknown> ?? {};
-    const putMap = json["putExpDateMap"] as Record<string, unknown> ?? {};
-
-    function sumFields(map: Record<string, unknown>): { volume: number; openInterest: number } {
-      let volume = 0;
-      let openInterest = 0;
-      for (const expDate of Object.values(map)) {
-        const strikeMap = expDate as Record<string, unknown>;
-        for (const [, options] of Object.entries(strikeMap)) {
-          const optionArr = options as Array<Record<string, unknown>>;
-          for (const opt of optionArr) {
-            volume += (opt["totalVolume"] as number) || 0;
-            openInterest += (opt["openInterest"] as number) || 0;
-          }
-        }
-      }
-      return { volume, openInterest };
-    }
-
-    const calls = sumFields(callMap);
-    const puts = sumFields(putMap);
-
-    const pcRatioVol = calls.volume > 0 ? puts.volume / calls.volume : null;
-    const pcRatioOI = calls.openInterest > 0 ? puts.openInterest / calls.openInterest : null;
+    const pcRatioVol = callVol > 0 ? putVol / callVol : null;
+    const pcRatioOI = callOI > 0 ? putOI / callOI : null;
     const pcRatio = pcRatioVol ?? pcRatioOI;
 
-    req.log.info({ symbol: displaySymbol, callVol: calls.volume, putVol: puts.volume, callOI: calls.openInterest, putOI: puts.openInterest, pcRatioVol, pcRatioOI }, "P/C ratio calculated");
-    res.json({ symbol: displaySymbol, pcRatio, pcRatioVolume: pcRatioVol, pcRatioOI, callVolume: calls.volume, putVolume: puts.volume, callOI: calls.openInterest, putOI: puts.openInterest });
+    req.log.info({ symbol: displaySymbol, callVol, putVol, callOI, putOI, pcRatioVol, pcRatioOI }, "P/C ratio calculated");
+    res.json({ symbol: displaySymbol, pcRatio, pcRatioVolume: pcRatioVol, pcRatioOI, callVolume: callVol, putVolume: putVol, callOI, putOI });
   } catch (err) {
     req.log.error({ err }, "P/C ratio fetch error");
     res.json({ symbol: displaySymbol, pcRatio: null, error: "internal_error" });
