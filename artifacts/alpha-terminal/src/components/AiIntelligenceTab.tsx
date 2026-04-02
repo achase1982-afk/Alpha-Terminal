@@ -482,15 +482,17 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
               )}
             </div>
           </div>
-          <div className="flex flex-col items-end gap-1">
-            {liveQuote?.volume != null && (
-              <span className="font-mono text-[11px] text-white/60 tabular-nums">
-                Vol: {liveQuote.volume >= 1_000_000 ? (liveQuote.volume / 1_000_000).toFixed(1) + "M" : liveQuote.volume >= 1_000 ? (liveQuote.volume / 1_000).toFixed(0) + "K" : liveQuote.volume.toLocaleString()}
-              </span>
-            )}
-            <span className="font-mono text-[11px] text-white/60 tabular-nums">
-              P/C: —
+        </div>
+        <div className="px-4 pb-2 flex items-start gap-6">
+          <div className="flex flex-col">
+            <span className="font-mono text-[10px] text-white/40 uppercase tracking-wider">Vol</span>
+            <span className="font-mono text-[12px] text-white/70 tabular-nums">
+              {liveQuote?.volume != null ? liveQuote.volume.toLocaleString() : "—"}
             </span>
+          </div>
+          <div className="flex flex-col">
+            <span className="font-mono text-[10px] text-white/40 uppercase tracking-wider">P/C Ratio</span>
+            <span className="font-mono text-[12px] text-white/70 tabular-nums">—</span>
           </div>
         </div>
 
