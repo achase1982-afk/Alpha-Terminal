@@ -3,21 +3,22 @@ import {
   BrainCircuit,
   Radar,
   Activity,
-  Briefcase,
+  Search,
   ListOrdered,
 } from "lucide-react";
 
-type BottomTab = "scanner" | "markets" | "ai" | "portfolio" | "watchlist";
+type BottomTab = "scanner" | "markets" | "ai" | "search" | "portfolio" | "watchlist";
 
 const TAB_DEFS: Record<BottomTab, { label: string; icon: (cls: string) => React.ReactNode; isAi?: boolean }> = {
   scanner:   { label: "SCANNER",   icon: (c) => <Radar className={c} /> },
   markets:   { label: "MARKETS",   icon: (c) => <Activity className={c} /> },
   ai:        { label: "AI",        icon: (c) => <BrainCircuit className={c} />, isAi: true },
-  portfolio: { label: "PORTFOLIO", icon: (c) => <Briefcase className={c} /> },
+  search:    { label: "SEARCH",    icon: (c) => <Search className={c} /> },
+  portfolio: { label: "PORTFOLIO", icon: (c) => <Search className={c} /> },
   watchlist: { label: "WATCHLIST", icon: (c) => <ListOrdered className={c} /> },
 };
 
-const DEFAULT_ORDER: BottomTab[] = ["scanner", "markets", "ai", "portfolio", "watchlist"];
+const DEFAULT_ORDER: BottomTab[] = ["scanner", "markets", "ai", "search", "watchlist"];
 const STORAGE_KEY = "alphaTerminalBottomNavOrder";
 const LONG_PRESS_MS = 450;
 
@@ -29,7 +30,8 @@ function loadOrder(): BottomTab[] {
       if (
         Array.isArray(parsed) &&
         parsed.length === DEFAULT_ORDER.length &&
-        DEFAULT_ORDER.every((t) => parsed.includes(t))
+        DEFAULT_ORDER.every((t) => parsed.includes(t)) &&
+        parsed.every((t) => DEFAULT_ORDER.includes(t))
       ) return parsed;
     }
   } catch {}

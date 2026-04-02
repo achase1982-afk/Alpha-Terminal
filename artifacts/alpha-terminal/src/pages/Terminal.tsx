@@ -38,7 +38,7 @@ import {
   Clock,
 } from "lucide-react";
 
-type BottomTab = "scanner" | "markets" | "ai" | "portfolio" | "watchlist";
+type BottomTab = "scanner" | "markets" | "ai" | "search" | "portfolio" | "watchlist";
 type ContextTab = MarketDataTab;
 
 function PulseHeader({ pulseData, onRefresh }: { pulseData: any; onRefresh: () => void }) {
@@ -240,6 +240,10 @@ export default function TerminalPage() {
 
           {activeBottom === "ai" && (
             <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} />
+          )}
+
+          {activeBottom === "search" && (
+            <TickerSearch />
           )}
 
           {activeBottom === "portfolio" && (
