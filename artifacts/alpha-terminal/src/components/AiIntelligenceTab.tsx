@@ -5,10 +5,9 @@ import {
 } from "@workspace/api-client-react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import {
-  BarChart2, Target, DollarSign, Shield, TrendingUp, Scale,
-  Zap, ChevronDown, AlertTriangle, CheckCircle2, XCircle, AlertCircle,
+  BarChart2, DollarSign, Shield, TrendingUp, Scale,
+  Zap, ChevronDown, AlertTriangle, CheckCircle2, XCircle, AlertCircle, Search,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { MarketPulseDashboard, type MarketPulseDashboardHandle } from "@/components/market-pulse/MarketPulseDashboard";
@@ -307,6 +306,44 @@ function RealStrategyCard({ s, idx, preTradeResult }: { s: StrategyPayload; idx:
         </div>
       </div>
     </div>
+  );
+}
+
+function StrategistTickerSearch() {
+  const { symbol, setSymbol } = useTerminalStore();
+  const [inputVal, setInputVal] = useState("");
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = inputVal.trim().toUpperCase();
+    if (trimmed) {
+      setSymbol(trimmed);
+      setInputVal("");
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="flex items-center gap-2">
+      <div className="relative flex-1">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+        <input
+          value={inputVal}
+          onChange={e => setInputVal(e.target.value.toUpperCase())}
+          placeholder={symbol}
+          className="w-full h-9 pl-9 pr-3 rounded-lg border border-card-border bg-[#18181B] font-mono text-xs text-foreground
+            placeholder:text-muted-foreground/40 focus:outline-none focus:border-[#FFB800]/50 transition-colors uppercase"
+          autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
+        />
+      </div>
+      <button
+        type="submit"
+        className="h-9 px-4 rounded-lg font-mono text-[10px] font-bold tracking-wider shrink-0 border border-card-border bg-[#18181B] text-zinc-300 hover:bg-[#27272A] transition-colors"
+      >
+        SWITCH
+      </button>
+    </form>
   );
 }
 
@@ -720,7 +757,6 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef }: AiIn
 
   const { cachedData: strategistCache, setCachedData: setStrategistCache } = useStrategistCache(symbol);
 
-  const [customPrompt, setCustomPrompt] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [isStrategizing, setIsStrategizing] = useState(false);
   const [activeResult, setActiveResult] = useState<"strategist" | null>(null);
@@ -1052,64 +1088,51 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef }: AiIn
             {showSettings && <StrategySettings />}
           </div>
 
+          <StrategistTickerSearch />
+
           <Button
             onClick={handleRunStrategist}
             disabled={isPendingAny || !accessToken}
             className="w-full font-mono text-xs bg-primary text-primary-foreground hover:bg-primary/90 h-9"
           >
-            <BarChart2 className="w-3.5 h-3.5 mr-2 shrink-0" />RUN STRATEGIST
+            <BarChart2 className="w-3.5 h-3.5 mr-2 shrink-0" />RUN STRATEGIST — {symbol}
           </Button>
 
-          <div className={`bg-card border border-card-border overflow-hidden rounded-xl`}>
-            <div className="px-4 py-3 border-b border-card-border flex items-center gap-2">
-              <Target className="w-4 h-4 text-primary" />
-              <span className="font-mono text-xs font-bold text-foreground">DEEP ANALYSIS — {symbol}</span>
-            </div>
-            <div className="p-4 bg-[#0c0c0c]">
-              <Textarea
-                placeholder="Add specific instructions (optional)... e.g. 'Focus on premium selling setups with high PoP'"
-                value={customPrompt}
-                onChange={e => setCustomPrompt(e.target.value)}
-                className="font-mono text-xs bg-background border-card-border focus-visible:ring-primary/50 min-h-[60px] resize-none"
-              />
-            </div>
-
-            {activeResult === "strategist" && (
-              <div className="border-t border-card-border p-4 bg-[#0c0c0c]">
-                {isStrategizing && (
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-3 py-2">
-                      <span className="w-4 h-4 border-2 border-[#FFB800] border-t-transparent rounded-full animate-spin" />
-                      <span className="font-mono text-xs text-[#a1a1aa]">{strategistStatus || "Processing..."}</span>
-                    </div>
-                    <StrategistLoadingReasoning status={strategistStatus} thinkingTokens={thinkingTokens} />
+          {activeResult === "strategist" && (
+            <div className="bg-card border border-card-border rounded-xl overflow-hidden p-4 bg-[#0c0c0c]">
+              {isStrategizing && (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3 py-2">
+                    <span className="w-4 h-4 border-2 border-[#FFB800] border-t-transparent rounded-full animate-spin" />
+                    <span className="font-mono text-xs text-[#a1a1aa]">{strategistStatus || "Processing..."}</span>
                   </div>
-                )}
-                {!isStrategizing && (isStreaming || hasRealStrategies) && (
-                  <>
-                    <div className="mb-3">
-                      <AiThinkingFeed texts={thinkingTokens} isStreaming={isStreaming} />
-                    </div>
-                    {hasRealStrategies && (
-                      <StrategistResultView
-                        strategies={realStrategies}
-                        narrative={narrativeText}
-                        isStreaming={isStreaming}
-                        streamingText={streamingText}
-                        regime={regimeInfo}
-                        pulse={pulseSnapshot}
-                        overrideWarning={overrideWarning}
-                        preTradeResults={preTradeResults}
-                      />
-                    )}
-                  </>
-                )}
-                {!isStrategizing && !isStreaming && !hasRealStrategies && currentResult && currentResult !== "done" && (
-                  <MarkdownResult content={currentResult} />
-                )}
-              </div>
-            )}
-          </div>
+                  <StrategistLoadingReasoning status={strategistStatus} thinkingTokens={thinkingTokens} />
+                </div>
+              )}
+              {!isStrategizing && (isStreaming || hasRealStrategies) && (
+                <>
+                  <div className="mb-3">
+                    <AiThinkingFeed texts={thinkingTokens} isStreaming={isStreaming} />
+                  </div>
+                  {hasRealStrategies && (
+                    <StrategistResultView
+                      strategies={realStrategies}
+                      narrative={narrativeText}
+                      isStreaming={isStreaming}
+                      streamingText={streamingText}
+                      regime={regimeInfo}
+                      pulse={pulseSnapshot}
+                      overrideWarning={overrideWarning}
+                      preTradeResults={preTradeResults}
+                    />
+                  )}
+                </>
+              )}
+              {!isStrategizing && !isStreaming && !hasRealStrategies && currentResult && currentResult !== "done" && (
+                <MarkdownResult content={currentResult} />
+              )}
+            </div>
+          )}
 
           {strategistAudit && activeResult === "strategist" && !isStreaming && !isStrategizing && (
             <StrategistAuditPanel audit={strategistAudit} />
