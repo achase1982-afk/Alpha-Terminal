@@ -505,14 +505,14 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
         </div>
         <div className="px-4 pb-2 flex flex-col gap-0.5">
           <div className="flex items-center gap-2">
-            <span className="font-mono text-[10px] text-white/40 uppercase tracking-wider">Vol</span>
-            <span className="font-mono text-[12px] text-white/70 tabular-nums">
+            <span className="font-mono text-sm text-white/40 uppercase tracking-wider">Vol</span>
+            <span className="font-mono text-sm text-white/70 tabular-nums">
               {liveQuote?.volume != null ? liveQuote.volume.toLocaleString() : "—"}
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="font-mono text-[10px] text-white/40 uppercase tracking-wider">P/C</span>
-            <span className="font-mono text-[12px] text-white/70 tabular-nums">—</span>
+            <span className="font-mono text-sm text-white/40 uppercase tracking-wider">P/C</span>
+            <span className="font-mono text-sm text-white/70 tabular-nums">—</span>
           </div>
         </div>
 
