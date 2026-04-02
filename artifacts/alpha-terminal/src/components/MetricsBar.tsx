@@ -330,8 +330,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
           onOpenTearSheet={onOpenTearSheet}
         />
 
-        <div className={`flex flex-col items-start min-w-0 overflow-hidden ${opacityCls} ${transitionCls}`}>
-          <span className="text-[10px] uppercase tracking-[0.1em] text-zinc-500 font-semibold leading-none mb-1">&nbsp;</span>
+        <div className={`flex flex-col justify-center items-start min-w-0 overflow-hidden ${opacityCls} ${transitionCls}`}>
           {showData ? (
             <>
               <span className="tabular-nums leading-none whitespace-nowrap font-normal md:font-medium text-2xl sm:text-3xl md:text-4xl tracking-tight" style={{ color: tickColor }}>
