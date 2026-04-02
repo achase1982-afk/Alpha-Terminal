@@ -22,7 +22,6 @@ import { MarketSessionClock } from "@/components/MarketSessionClock";
 import { NewsTab } from "@/components/NewsTab";
 import { AiBiasStrip } from "@/components/market-pulse/AiBiasStrip";
 import { BottomNav } from "@/components/BottomNav";
-import { PortfolioView } from "@/components/PortfolioView";
 import { CompanyResearchHub } from "@/components/CompanyResearchHub";
 import { AiSubTabs, type AiSubTab } from "@/components/ai-tab/AiSubTabs";
 import type { MarketPulseDashboardHandle } from "@/components/market-pulse/MarketPulseDashboard";
@@ -38,7 +37,7 @@ import {
   Clock,
 } from "lucide-react";
 
-type BottomTab = "scanner" | "markets" | "ai" | "portfolio" | "watchlist";
+type BottomTab = "scanner" | "markets" | "ai" | "search" | "watchlist";
 type ContextTab = MarketDataTab;
 
 function PulseHeader({ pulseData, onRefresh }: { pulseData: any; onRefresh: () => void }) {
@@ -196,7 +195,7 @@ export default function TerminalPage() {
           isOpen={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
           onOpenChat={() => setChatOpen(true)}
-          onNavigate={(dest) => { if (dest === "markets") setActiveBottom("markets"); else if (dest === "portfolio") setActiveBottom("portfolio"); }}
+          onNavigate={(dest) => { if (dest === "markets") setActiveBottom("markets"); }}
         />
 
         <main ref={scrollRef} onScroll={handleScroll} className={`flex-1 app-content pb-24 ${activeBottom === "ai" && aiSubTab === "pulse" && !pulseData && !pulseLoading && !pulseStreaming ? "overflow-hidden" : "overflow-y-auto"}`}>
@@ -242,8 +241,8 @@ export default function TerminalPage() {
             <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} />
           )}
 
-          {activeBottom === "portfolio" && (
-            <PortfolioView onNavigateToSymbol={() => setActiveBottom("markets")} />
+          {activeBottom === "search" && (
+            <TickerSearch />
           )}
 
           {activeBottom === "watchlist" && (
