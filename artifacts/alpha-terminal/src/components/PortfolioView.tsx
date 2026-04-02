@@ -187,7 +187,6 @@ function PositionRow({ pos, onSelect }: { pos: Position; onSelect: (sym: string)
               className="text-[9px] font-bold px-1 py-0.5 rounded shrink-0"
               style={{
                 color: pos.putCall === "CALL" ? UP : DOWN,
-                backgroundColor: pos.putCall === "CALL" ? `${UP}15` : `${DOWN}15`,
               }}
             >
               {pos.putCall === "CALL" ? "C" : "P"}
