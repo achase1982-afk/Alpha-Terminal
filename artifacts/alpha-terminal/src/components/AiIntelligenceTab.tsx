@@ -469,12 +469,12 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
               <BarChart2 className="w-5 h-5 text-[#FFB800]" />
             </div>
             <div>
-              <div className="font-mono text-xl font-bold text-white tracking-wide">{symbol}</div>
+              <div className="font-mono text-xl font-normal text-white tracking-wide">{symbol}</div>
               {price != null && (
                 <div className="flex items-center gap-2">
-                  <span className="font-mono text-base font-semibold text-white tabular-nums">${price.toFixed(2)}</span>
+                  <span className="font-mono text-base font-normal tabular-nums" style={{ color: isPositive ? "#00d166" : "#f23645" }}>${price.toFixed(2)}</span>
                   {change != null && changePct != null && (
-                    <span className="font-mono text-sm font-medium tabular-nums" style={{ color: isPositive ? "#00d166" : "#f23645" }}>
+                    <span className="font-mono text-sm font-light tabular-nums" style={{ color: isPositive ? "#00d166" : "#f23645" }}>
                       {isPositive ? "+" : ""}{change.toFixed(2)} ({isPositive ? "+" : ""}{changePct.toFixed(2)}%)
                     </span>
                   )}
