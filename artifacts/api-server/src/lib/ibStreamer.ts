@@ -29,16 +29,27 @@ interface IBSymbolDef {
 }
 
 const BREADTH_SYMBOLS: IBSymbolDef[] = [
-  { reqId: 5001, symbol: "$TICK",  ibSymbol: "TICK-NYSE",  secType: "IND", exchange: "NYSE",  displaySymbol: "$TICK" },
-  { reqId: 5002, symbol: "$TRIN",  ibSymbol: "TRIN-NYSE",  secType: "IND", exchange: "NYSE",  displaySymbol: "$TRIN" },
-  { reqId: 5003, symbol: "$ADD",   ibSymbol: "AD-NYSE",    secType: "IND", exchange: "NYSE",  displaySymbol: "$ADD" },
-  { reqId: 5004, symbol: "$ADVN",  ibSymbol: "ADVN-NYSE",  secType: "IND", exchange: "NYSE",  displaySymbol: "$ADVN" },
-  { reqId: 5005, symbol: "$DECN",  ibSymbol: "DECN-NYSE",  secType: "IND", exchange: "NYSE",  displaySymbol: "$DECN" },
-  { reqId: 5006, symbol: "$UVOL",  ibSymbol: "UVOL-NYSE",  secType: "IND", exchange: "NYSE",  displaySymbol: "$UVOL" },
-  { reqId: 5007, symbol: "$DVOL",  ibSymbol: "DVOL-NYSE",  secType: "IND", exchange: "NYSE",  displaySymbol: "$DVOL" },
-  { reqId: 5008, symbol: "$VIX",   ibSymbol: "VIX",        secType: "IND", exchange: "CBOE",  displaySymbol: "$VIX" },
-  { reqId: 5009, symbol: "$SPX",   ibSymbol: "SPX",        secType: "IND", exchange: "CBOE",  displaySymbol: "$SPX" },
-  { reqId: 5010, symbol: "$VVIX",  ibSymbol: "VVIX",       secType: "IND", exchange: "CBOE",  displaySymbol: "$VVIX" },
+  { reqId: 5001, symbol: "$TICK",  ibSymbol: "TICK-NYSE",   secType: "IND", exchange: "NYSE",  displaySymbol: "$TICK" },
+  { reqId: 5002, symbol: "$TRIN",  ibSymbol: "TRIN-NYSE",   secType: "IND", exchange: "NYSE",  displaySymbol: "$TRIN" },
+  { reqId: 5003, symbol: "$ADD",   ibSymbol: "ADV-NYSE",    secType: "IND", exchange: "NYSE",  displaySymbol: "$ADD" },
+  { reqId: 5004, symbol: "$DECL",  ibSymbol: "DECL-NYSE",   secType: "IND", exchange: "NYSE",  displaySymbol: "$DECL" },
+  { reqId: 5005, symbol: "$UVOL",  ibSymbol: "UVOL-NYSE",   secType: "IND", exchange: "NYSE",  displaySymbol: "$UVOL" },
+  { reqId: 5006, symbol: "$DVOL",  ibSymbol: "DVOL-NYSE",   secType: "IND", exchange: "NYSE",  displaySymbol: "$DVOL" },
+  { reqId: 5007, symbol: "$TICK",  ibSymbol: "TICK-NASD",   secType: "IND", exchange: "NASD",  displaySymbol: "$TICK.NASD" },
+  { reqId: 5008, symbol: "$TRIN",  ibSymbol: "TRIN-NASD",   secType: "IND", exchange: "NASD",  displaySymbol: "$TRIN.NASD" },
+  { reqId: 5009, symbol: "$ADD",   ibSymbol: "ADV-NASD",    secType: "IND", exchange: "NASD",  displaySymbol: "$ADD.NASD" },
+  { reqId: 5010, symbol: "$DECL",  ibSymbol: "DECL-NASD",   secType: "IND", exchange: "NASD",  displaySymbol: "$DECL.NASD" },
+  { reqId: 5011, symbol: "$UVOL",  ibSymbol: "UVOL-NASD",   secType: "IND", exchange: "NASD",  displaySymbol: "$UVOL.NASD" },
+  { reqId: 5012, symbol: "$DVOL",  ibSymbol: "DVOL-NASD",   secType: "IND", exchange: "NASD",  displaySymbol: "$DVOL.NASD" },
+  { reqId: 5013, symbol: "$TICK",  ibSymbol: "TICK-AMEX",   secType: "IND", exchange: "AMEX",  displaySymbol: "$TICK.AMEX" },
+  { reqId: 5014, symbol: "$TRIN",  ibSymbol: "TRIN-AMEX",   secType: "IND", exchange: "AMEX",  displaySymbol: "$TRIN.AMEX" },
+  { reqId: 5015, symbol: "$ADD",   ibSymbol: "ADV-AMEX",    secType: "IND", exchange: "AMEX",  displaySymbol: "$ADD.AMEX" },
+  { reqId: 5016, symbol: "$DECL",  ibSymbol: "DECL-AMEX",   secType: "IND", exchange: "AMEX",  displaySymbol: "$DECL.AMEX" },
+  { reqId: 5017, symbol: "$UVOL",  ibSymbol: "UVOL-AMEX",   secType: "IND", exchange: "AMEX",  displaySymbol: "$UVOL.AMEX" },
+  { reqId: 5018, symbol: "$DVOL",  ibSymbol: "DVOL-AMEX",   secType: "IND", exchange: "AMEX",  displaySymbol: "$DVOL.AMEX" },
+  { reqId: 5019, symbol: "$VIX",   ibSymbol: "VIX",         secType: "IND", exchange: "CBOE",  displaySymbol: "$VIX" },
+  { reqId: 5020, symbol: "$SPX",   ibSymbol: "SPX",         secType: "IND", exchange: "CBOE",  displaySymbol: "$SPX" },
+  { reqId: 5021, symbol: "$VVIX",  ibSymbol: "VVIX",        secType: "IND", exchange: "CBOE",  displaySymbol: "$VVIX" },
 ];
 
 const reqIdToSymbol = new Map<number, IBSymbolDef>();
