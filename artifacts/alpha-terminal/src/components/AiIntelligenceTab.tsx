@@ -31,7 +31,17 @@ const COMPANY_NAMES: Record<string, string> = {
   PYPL: "PayPal Holdings", SQ: "Block Inc.", COIN: "Coinbase Global",
   PLTR: "Palantir Technologies", SOFI: "SoFi Technologies", UBER: "Uber Technologies",
   SNOW: "Snowflake Inc.", NET: "Cloudflare Inc.", SHOP: "Shopify Inc.",
-  ROKU: "Roku Inc.", RIVN: "Rivian Automotive", LCID: "Lucid Group",
+  ROKU: "Roku Inc.", RIVN: "Rivian Automotive Inc.", LCID: "Lucid Group Inc.",
+  PANW: "Palo Alto Networks", CRWD: "CrowdStrike Holdings", ZS: "Zscaler Inc.",
+  DDOG: "Datadog Inc.", MDB: "MongoDB Inc.", TTD: "The Trade Desk",
+  ENPH: "Enphase Energy", FSLR: "First Solar Inc.", ON: "ON Semiconductor",
+  ANET: "Arista Networks", NOW: "ServiceNow Inc.", ADBE: "Adobe Inc.",
+  ORCL: "Oracle Corp.", IBM: "IBM Corp.", DELL: "Dell Technologies",
+  GM: "General Motors", F: "Ford Motor Co.", SNAP: "Snap Inc.",
+  PINS: "Pinterest Inc.", SQ: "Block Inc.", HOOD: "Robinhood Markets",
+  SOXX: "iShares Semiconductor", XLF: "Financial Select SPDR", XLE: "Energy Select SPDR",
+  GLD: "SPDR Gold Trust", SLV: "iShares Silver Trust", TLT: "iShares 20+ Year Treasury",
+  USO: "United States Oil Fund", ARKK: "ARK Innovation ETF",
   NIO: "NIO Inc.", BABA: "Alibaba Group", JD: "JD.com Inc.",
   XOM: "Exxon Mobil Corp.", CVX: "Chevron Corp.", PFE: "Pfizer Inc.",
   MRNA: "Moderna Inc.", UNH: "UnitedHealth Group", LLY: "Eli Lilly & Co.",
@@ -466,36 +476,48 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
   const [isFocused, setIsFocused] = useState(false);
   const [previewTicker, setPreviewTicker] = useState("");
   const [previewQuote, setPreviewQuote] = useState<{ last: number; change: number; changePct: number; volume?: number } | null>(null);
+  const [fetchingTicker, setFetchingTicker] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const streamPricesRef = useRef(streamPrices);
+  streamPricesRef.current = streamPrices;
 
   const displaySymbol = previewTicker || symbol;
   const liveQuote = streamPrices[displaySymbol];
 
   useEffect(() => {
     const typed = inputVal.trim().toUpperCase();
-    if (!typed || typed.length < 1) {
+    if (!typed) {
       setPreviewTicker("");
       setPreviewQuote(null);
+      setFetchingTicker(false);
       return;
     }
+    setPreviewTicker(typed);
+    if (streamPricesRef.current[typed]?.last != null) {
+      setPreviewQuote(null);
+      setFetchingTicker(false);
+      return;
+    }
+    setFetchingTicker(true);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
-      setPreviewTicker(typed);
-      if (streamPrices[typed]?.last != null) return;
-      if (!accessToken) return;
+      if (!accessToken) { setFetchingTicker(false); return; }
       try {
-        const res = await fetch(`/api/market/quote?symbol=${encodeURIComponent(typed)}`, {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
-        if (!res.ok) return;
+        const res = await fetch(`/api/market/quote?symbol=${encodeURIComponent(typed)}&accessToken=${encodeURIComponent(accessToken)}`);
+        if (!res.ok) { setFetchingTicker(false); return; }
         const data = await res.json();
         if (data?.last != null) {
           setPreviewQuote({ last: data.last, change: data.change ?? 0, changePct: data.changePct ?? 0, volume: data.volume });
+        } else {
+          setPreviewQuote(null);
         }
-      } catch {}
-    }, 400);
+      } catch {
+        setPreviewQuote(null);
+      }
+      setFetchingTicker(false);
+    }, 250);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [inputVal, accessToken, streamPrices]);
+  }, [inputVal, accessToken]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -525,7 +547,9 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
             <div className="font-mono text-xl font-normal text-white tracking-wide leading-tight">{displaySymbol}</div>
             <div className="font-mono text-sm font-normal text-[#FFB800] tracking-wide leading-tight">{COMPANY_NAMES[displaySymbol.toUpperCase()] ?? displaySymbol}</div>
           </div>
-          {price != null && (
+          {fetchingTicker ? (
+            <span className="font-mono text-xs text-white/40 animate-pulse">Loading...</span>
+          ) : price != null ? (
             <div className="flex flex-col items-end">
               <span className="font-mono text-lg font-normal tabular-nums" style={{ color: isPositive ? "#00d166" : "#f23645" }}>${price.toFixed(2)}</span>
               {change != null && changePct != null && (
@@ -534,7 +558,7 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
                 </span>
               )}
             </div>
-          )}
+          ) : null}
         </div>
         <div className="px-4 pb-2 flex flex-col gap-0.5">
           <div className="flex items-center gap-2">
