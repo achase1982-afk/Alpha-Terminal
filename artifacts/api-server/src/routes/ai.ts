@@ -1409,7 +1409,6 @@ async function buildTickerProfile(
     profile = applyBetaToProfile(profile, beta);
   }
 
-  console.log(`[TICKER-PROFILE] ${symbol.toUpperCase()} | Tier: ${profile.tier} | IVR: ${profile.ivr}% | Put Skew: ${profile.putSkew} | Avg ATM Spread: ${profile.measurements.avgAtmSpreadPct}% | Avg ATM Vol: ${profile.measurements.avgAtmVolume} | Avg ATM OI: ${profile.measurements.avgAtmOI} | Beta vs SPY: ${profile.beta} | Adjusted Delta: ${profile.adjustedDelta} | Size Override: ${profile.sizeMultiplierOverride}`);
 
   return profile;
 }
