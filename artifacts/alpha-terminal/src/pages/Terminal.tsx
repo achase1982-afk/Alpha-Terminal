@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Sidebar } from "@/components/Sidebar";
-import { MetricsBar } from "@/components/MetricsBar";
+import { MetricsBar, VolumeBar } from "@/components/MetricsBar";
 import { TradingChart } from "@/components/TradingChart";
 import { OptionsTab } from "@/components/OptionsTab";
 import { AiIntelligenceTab } from "@/components/AiIntelligenceTab";
@@ -203,6 +203,7 @@ export default function TerminalPage() {
               <MacroBar />
 
               <div className="sticky top-0 z-40 bg-background">
+                <VolumeBar />
                 <MetricsBar compact={isScrolled} />
                 <MarketDataTabs activeTab={contextTab} setActiveTab={setContextTab} />
               </div>

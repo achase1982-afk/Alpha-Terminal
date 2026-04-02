@@ -151,6 +151,42 @@ function HeaderSkeleton() {
   );
 }
 
+export function VolumeBar() {
+  const { symbol, streamPrices } = useTerminalStore();
+  const { data: quote } = useQuote(symbol);
+  const vol = streamPrices[symbol]?.volume ?? quote?.volume ?? null;
+  const dayHigh = streamPrices[symbol]?.high ?? quote?.high ?? null;
+  const dayLow = streamPrices[symbol]?.low ?? quote?.low ?? null;
+  const wk52High = quote?.fiftyTwoWeekHigh ?? null;
+  const wk52Low = quote?.fiftyTwoWeekLow ?? null;
+
+  return (
+    <div
+      className="w-full flex items-center justify-between px-3 sm:px-6 border-b border-card-border"
+      style={{ background: HEADER_BG, height: 32 }}
+    >
+      <div className="flex items-center gap-1">
+        <span className="text-[10px] uppercase tracking-[0.12em] text-zinc-500 font-semibold">Volume</span>
+        <span className="font-mono tabular-nums text-zinc-300 text-xs font-medium">{fmtVol(vol)}</span>
+      </div>
+      <div className="flex items-center gap-1">
+        <span className="text-[10px] uppercase tracking-[0.12em] text-zinc-500 font-semibold">Day Range</span>
+        <span className="font-mono tabular-nums text-xs font-medium">
+          <span style={{ color: DOWN_COLOR }}>${fmtPrice(dayLow)}</span>
+          <span className="text-zinc-600 mx-0.5">—</span>
+          <span style={{ color: UP_COLOR }}>${fmtPrice(dayHigh)}</span>
+        </span>
+      </div>
+      <div className="flex items-center gap-1">
+        <span className="text-[10px] uppercase tracking-[0.12em] text-zinc-500 font-semibold">52W Range</span>
+        <span className="font-mono tabular-nums text-zinc-500 text-xs font-medium">
+          {wk52Low != null ? `$${fmtPrice(wk52Low)} — $${fmtPrice(wk52High)}` : "—"}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps) {
   const { symbol, accessToken, streamPrices } = useTerminalStore();
   const { data: quote, isLoading, source } = useQuote(symbol);
