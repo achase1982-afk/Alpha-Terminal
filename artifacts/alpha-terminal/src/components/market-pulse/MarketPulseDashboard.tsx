@@ -102,6 +102,8 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
     query: { enabled: !accessToken },
   });
 
+  const hasInitiatedRef = useRef(!!pulseData);
+
   const [isAuthNavigating, setIsAuthNavigating] = useState(false);
   const handleConnectSchwab = useCallback(async () => {
     setIsAuthNavigating(true);
@@ -128,6 +130,7 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
       return;
     }
     console.log("[MarketPulse] fetchPulse: starting stream...");
+    hasInitiatedRef.current = true;
     setShowTranscript(false);
 
     const s = settingsRef.current;
@@ -206,6 +209,7 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
   const isActive = isLoading || isStreaming;
 
   const showEmptyOrLoading = !pulseData && !error;
+  const showEmptyBox = showEmptyOrLoading && !isActive && !hasInitiatedRef.current;
 
   return (
     <div className={`px-3 sm:px-4 lg:px-5 pt-1 ${showEmptyOrLoading ? "overflow-hidden h-full flex flex-col" : "space-y-4 overflow-x-hidden"}`}>
@@ -216,7 +220,7 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
         </div>
       )}
 
-      {showEmptyOrLoading && !isActive && (
+      {showEmptyBox && (
         <div className="flex-1 flex flex-col justify-center space-y-4">
           <div className="rounded-xl border border-[#2A2A2C] p-8 text-center" style={{ background: "#111113" }}>
             <div className="relative mx-auto mb-3 w-8 h-8">
@@ -241,7 +245,7 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
         </div>
       )}
 
-      {showEmptyOrLoading && isActive && (
+      {showEmptyOrLoading && !showEmptyBox && (
         <div className="flex-1 flex flex-col overflow-y-auto space-y-4">
           <PulseLoadingStatus thinkingTokens={thinkingTokens} statusMessages={statusMessages} />
         </div>
