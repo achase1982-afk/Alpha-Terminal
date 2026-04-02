@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, useImperativeHandle, forwardRef } from "react";
-import { Zap, Activity, Radio } from "lucide-react";
+import { Zap, Activity, Radio, Loader2 } from "lucide-react";
 import { useTerminalStore } from "../../lib/store";
 import { useMarketPulseStore } from "../../stores/marketPulseStore";
 import type { MarketPulseData, ClusterKey } from "../../types/marketPulse";
@@ -12,6 +12,7 @@ import { EngineAuditPanel } from "./EngineAuditPanel";
 import { ALL_PULSE_INDICATORS } from "@/types/marketPulse";
 import { AiThinkingFeed } from "../ai-shared/AiThinkingFeed";
 import { runPulseStream, isPulseStreamActive } from "../../stores/pulseStreamRunner";
+import { useGetAuthUrl } from "@workspace/api-client-react";
 
 const CLUSTER_ORDER: ClusterKey[] = ["rates", "credit", "volLevel", "volTerm", "breadth", "riskAppetite", "macro"];
 
@@ -97,6 +98,25 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
   const settingsRef = useRef(settings);
   useEffect(() => { settingsRef.current = settings; }, [settings]);
 
+  const { data: authUrlData, refetch: refetchAuthUrl } = useGetAuthUrl({
+    query: { enabled: !accessToken },
+  });
+
+  const [isAuthNavigating, setIsAuthNavigating] = useState(false);
+  const handleConnectSchwab = useCallback(async () => {
+    setIsAuthNavigating(true);
+    let url = authUrlData?.url || "";
+    if (!url) {
+      const result = await refetchAuthUrl();
+      url = result.data?.url || "";
+    }
+    if (!url) {
+      setIsAuthNavigating(false);
+      return;
+    }
+    window.location.href = url;
+  }, [authUrlData, refetchAuthUrl]);
+
   const fetchPulse = useCallback(() => {
     if (isPulseStreamActive()) {
       console.log("[MarketPulse] fetchPulse: stream already active, skipping");
@@ -171,12 +191,14 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
       <div className="rounded-xl border border-[#2A2A2C] p-8 text-center" style={{ background: "#111113" }}>
         <Zap className="w-8 h-8 text-[#FFB800] mx-auto mb-3 opacity-40" />
         <p className="font-mono text-sm text-[#71717a] mb-3">Connect Schwab to enable Market Pulse</p>
-        <a
-          href="/api/schwab/auth"
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-mono text-xs font-bold tracking-wider text-[#0c0c0c] bg-[#FFB800] hover:bg-[#FFB800]/90 transition-colors"
+        <button
+          onClick={handleConnectSchwab}
+          disabled={isAuthNavigating}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-mono text-xs font-bold tracking-wider text-[#0c0c0c] bg-[#FFB800] hover:bg-[#FFB800]/90 transition-colors disabled:opacity-60"
         >
+          {isAuthNavigating ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
           Connect Schwab →
-        </a>
+        </button>
       </div>
     );
   }
