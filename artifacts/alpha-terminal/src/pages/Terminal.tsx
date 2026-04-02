@@ -7,7 +7,7 @@ import { AiIntelligenceTab } from "@/components/AiIntelligenceTab";
 import { MarketScanner } from "@/components/MarketScanner";
 import { MacroBar } from "@/components/MacroBar";
 import { TickerTape } from "@/components/TickerTape";
-import { TickerSearch } from "@/components/TickerSearch";
+import { SearchOverlay } from "@/components/SearchOverlay";
 import { MarketDataTabs, type MarketDataTab } from "@/components/MarketDataTabs";
 import { useTerminalStore } from "@/lib/store";
 import { useGetPriceHistory } from "@workspace/api-client-react";
@@ -84,6 +84,7 @@ export default function TerminalPage() {
   const { symbol, accessToken, chartPeriod, chartInterval, streamStatus } = useTerminalStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
 
   const [historyTimedOut, setHistoryTimedOut] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
@@ -240,10 +241,6 @@ export default function TerminalPage() {
             <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} />
           )}
 
-          {activeBottom === "search" && (
-            <TickerSearch onNavigateToMarkets={() => setActiveBottom("markets")} />
-          )}
-
           {activeBottom === "portfolio" && (
             <PortfolioView onNavigateToSymbol={() => setActiveBottom("markets")} />
           )}
@@ -255,8 +252,19 @@ export default function TerminalPage() {
         </main>
       </div>
 
-      <BottomNav activeTab={activeBottom} onTabChange={setActiveBottom} />
+      <BottomNav activeTab={activeBottom} onTabChange={(tab) => {
+        if (tab === "search") {
+          setSearchOpen(true);
+        } else {
+          setActiveBottom(tab);
+        }
+      }} />
 
+      <SearchOverlay
+        isOpen={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        onSelectSymbol={() => { setSearchOpen(false); setActiveBottom("markets"); }}
+      />
       <AiChatOverlay isOpen={chatOpen} onClose={() => setChatOpen(false)} />
       <InAppBrowser />
     </div>
