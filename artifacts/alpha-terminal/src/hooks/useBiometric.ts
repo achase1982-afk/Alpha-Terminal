@@ -17,10 +17,10 @@ export function useWebAuthnSupported(): boolean {
 }
 
 function useClerkUser() {
-  if (devBypass) return null;
+  if (devBypass) return { user: null, isLoaded: true };
   // eslint-disable-next-line react-hooks/rules-of-hooks
-  const { user } = useUser();
-  return user;
+  const { user, isLoaded } = useUser();
+  return { user: user ?? null, isLoaded };
 }
 
 export function useBiometricRegistration() {
@@ -28,7 +28,7 @@ export function useBiometricRegistration() {
   const [error, setError] = useState<string | null>(null);
   const [hasPasskey, setHasPasskey] = useState(false);
   const webAuthnSupported = useWebAuthnSupported();
-  const user = useClerkUser();
+  const { user, isLoaded: clerkLoaded } = useClerkUser();
 
   useEffect(() => {
     if (!user) return;
@@ -39,6 +39,7 @@ export function useBiometricRegistration() {
   }, [user]);
 
   const registerPasskey = useCallback(async () => {
+    if (!clerkLoaded) return;
     if (!user) {
       setError("No user session found. Please sign in first.");
       return;
@@ -78,9 +79,9 @@ export function useBiometricRegistration() {
     } finally {
       setLoading(false);
     }
-  }, [user, webAuthnSupported]);
+  }, [user, webAuthnSupported, clerkLoaded]);
 
-  return { registerPasskey, loading, error, hasPasskey, webAuthnSupported };
+  return { registerPasskey, loading, error, hasPasskey, webAuthnSupported, clerkLoaded };
 }
 
 export function useBiometricGate() {

@@ -663,7 +663,7 @@ function AiParametersPage() {
 function SecurityPrivacyPage() {
   const { minutes: autoLock, setMinutes: setAutoLock } = useAutoLock();
   const [secPrefs, setSecPrefs] = useState<SecurityPrefs>(readSecurityPrefs);
-  const { registerPasskey, loading: passkeyLoading, error: passkeyError, hasPasskey } = useBiometricRegistration();
+  const { registerPasskey, loading: passkeyLoading, error: passkeyError, hasPasskey, clerkLoaded } = useBiometricRegistration();
   const webAuthnSupported = useWebAuthnSupported();
 
   const handleToggle = (key: keyof SecurityPrefs, value: boolean) => {
@@ -697,11 +697,11 @@ function SecurityPrivacyPage() {
         {webAuthnSupported && !hasPasskey && (
           <button
             onClick={() => void registerPasskey()}
-            disabled={passkeyLoading}
+            disabled={passkeyLoading || !clerkLoaded}
             className="w-full flex items-center justify-center gap-2 p-2.5 rounded-lg font-mono text-[10px] font-bold tracking-wide text-primary bg-primary/10 border border-primary/20 hover:bg-primary/20 transition-all disabled:opacity-50"
           >
             <Fingerprint className="w-3.5 h-3.5" />
-            {passkeyLoading ? "REGISTERING..." : "REGISTER FACE ID / PASSKEY"}
+            {!clerkLoaded ? "LOADING SESSION..." : passkeyLoading ? "REGISTERING..." : "REGISTER FACE ID / PASSKEY"}
           </button>
         )}
 
