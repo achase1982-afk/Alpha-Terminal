@@ -7,6 +7,7 @@ import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import {
   BarChart2, DollarSign, Shield, TrendingUp, Scale,
   Zap, ChevronDown, AlertTriangle, CheckCircle2, XCircle, AlertCircle, Search,
+  Target, Activity, Clock, Crosshair,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { MarketPulseDashboard, type MarketPulseDashboardHandle } from "@/components/market-pulse/MarketPulseDashboard";
@@ -109,46 +110,98 @@ function fmtDollar(v: number): string {
   return `$${Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-function LegRow({ leg, label }: { leg: LegPayload; label: string }) {
+function MiniGauge({ value, max, color, label }: { value: number; max: number; color: string; label: string }) {
+  const pct = Math.min(100, Math.max(0, (value / max) * 100));
+  const r = 20;
+  const circ = 2 * Math.PI * r;
+  const dash = (pct / 100) * circ * 0.75;
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <div className="relative w-12 h-12">
+        <svg viewBox="0 0 48 48" className="w-full h-full -rotate-[135deg]">
+          <circle cx="24" cy="24" r={r} fill="none" stroke="#2A2A2C" strokeWidth="3"
+            strokeDasharray={`${circ * 0.75} ${circ * 0.25}`} strokeLinecap="round" />
+          <circle cx="24" cy="24" r={r} fill="none" stroke={color} strokeWidth="3"
+            strokeDasharray={`${dash} ${circ - dash}`} strokeLinecap="round"
+            style={{ transition: "stroke-dasharray 0.6s ease" }} />
+        </svg>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className="font-mono text-[10px] font-bold text-white">{value}%</span>
+        </div>
+      </div>
+      <span className="font-mono text-[8px] text-[#71717a] uppercase tracking-wider">{label}</span>
+    </div>
+  );
+}
+
+function LegRow({ leg, label, even }: { leg: LegPayload; label: string; even: boolean }) {
   const actionColor = leg.action === "SELL" ? "#f23645" : "#00d166";
   return (
-    <div className="flex items-center justify-between py-1.5 border-b border-[#2A2A2C] last:border-0">
+    <div className="flex items-center justify-between py-2 px-3" style={{ background: even ? "rgba(255,255,255,0.015)" : "transparent" }}>
       <div className="flex items-center gap-2">
-        <span className="font-mono text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ background: `${actionColor}20`, color: actionColor }}>
+        <span className="font-mono text-[9px] w-10 text-center py-0.5 rounded font-bold" style={{ background: `${actionColor}15`, color: actionColor }}>
           {leg.action}
         </span>
-        <span className="font-mono text-[10px] text-[#a1a1aa] uppercase">{label}</span>
+        <span className="font-mono text-[10px] text-[#71717a] uppercase w-14">{label}</span>
       </div>
       <div className="flex items-center gap-3">
-        <span className="font-mono text-xs text-white font-bold">{leg.strike} {leg.type}</span>
-        <span className="font-mono text-[10px] text-[#71717a]">\u0394{leg.delta.toFixed(2)}</span>
-        <span className="font-mono text-[10px] text-[#71717a]">{leg.bid}/{leg.ask}</span>
+        <span className="font-mono text-xs text-white font-bold tabular-nums">{leg.strike}</span>
+        <span className="font-mono text-[10px] text-white/60">{leg.type}</span>
+        <span className="font-mono text-[10px] text-[#52525b] tabular-nums">{'\u0394'}{leg.delta.toFixed(2)}</span>
+        <span className="font-mono text-[10px] text-[#52525b] tabular-nums">{leg.bid}/{leg.ask}</span>
       </div>
     </div>
   );
 }
 
 function RegimeDisplayBanner({ regime, pulse }: { regime: RegimeInfo; pulse?: PulseSnapshot }) {
-  const regimeFormatted = regime.regime.replace(/_/g, " ");
-  const strategies = regime.strategyUniverse.map(s => s.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())).join(", ");
+  const regimeFormatted = regime.regime.replace(/_/g, " ").toUpperCase();
+  const strategies = regime.strategyUniverse.map(s => s.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()));
+
+  const regimeIcon = regime.regime.toLowerCase().includes("bull") ? "▲"
+    : regime.regime.toLowerCase().includes("bear") ? "▼" : "◆";
+  const regimeColor = regime.regime.toLowerCase().includes("bull") ? "#00d166"
+    : regime.regime.toLowerCase().includes("bear") ? "#f23645" : "#FFB800";
 
   return (
-    <div className="rounded-xl border border-[#FFB800]/30 overflow-hidden" style={{ background: "rgba(255,184,0,0.05)" }}>
-      <div className="px-4 py-3">
-        <div className="flex items-center gap-2 mb-1.5">
-          <div className="w-2 h-2 rounded-full" style={{ background: "#FFB800" }} />
-          <span className="font-mono text-[10px] font-bold text-[#FFB800] uppercase tracking-widest">Market Regime</span>
-        </div>
-        <div className="font-mono text-sm font-bold text-white mb-1">{regimeFormatted}</div>
-        <div className="font-mono text-[11px] text-[#a1a1aa] leading-relaxed">{regime.description}</div>
-        <div className="font-mono text-[10px] text-[#71717a] mt-2">
-          Scanning {regime.dteRange.min}–{regime.dteRange.max} DTE | Universe: {strategies}
-        </div>
-        {pulse?.timestamp && (
-          <div className="font-mono text-[9px] text-[#52525b] mt-1">
-            Pulse snapshot: {new Date(pulse.timestamp).toLocaleTimeString()}
+    <div className="rounded-xl border overflow-hidden" style={{ borderColor: `${regimeColor}30`, background: `${regimeColor}06` }}>
+      <div className="px-4 py-3.5">
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 text-lg font-bold"
+            style={{ background: `${regimeColor}15`, color: regimeColor }}>
+            {regimeIcon}
           </div>
-        )}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-0.5">
+              <span className="font-mono text-[10px] font-bold uppercase tracking-widest" style={{ color: regimeColor }}>Market Regime</span>
+            </div>
+            <div className="font-mono text-sm font-bold text-white mb-1">{regimeFormatted}</div>
+            <div className="font-mono text-[11px] text-[#a1a1aa] leading-relaxed">{regime.description}</div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-1.5 mt-3">
+          {strategies.map(s => (
+            <span key={s} className="font-mono text-[9px] px-2 py-1 rounded-full font-bold uppercase tracking-wider"
+              style={{ background: `${regimeColor}12`, color: regimeColor, border: `1px solid ${regimeColor}25` }}>
+              {s}
+            </span>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-4 mt-3 pt-2 border-t" style={{ borderColor: `${regimeColor}15` }}>
+          <span className="font-mono text-[10px] text-[#52525b]">
+            <Clock className="w-3 h-3 inline mr-1 -mt-px" />{regime.dteRange.min}–{regime.dteRange.max} DTE
+          </span>
+          <span className="font-mono text-[10px] text-[#52525b]">
+            <Crosshair className="w-3 h-3 inline mr-1 -mt-px" />{'\u0394'}{regime.deltaTargets.shortStrike}
+          </span>
+          {pulse?.timestamp && (
+            <span className="font-mono text-[9px] text-[#3f3f46] ml-auto">
+              {new Date(pulse.timestamp).toLocaleTimeString()}
+            </span>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -156,19 +209,21 @@ function RegimeDisplayBanner({ regime, pulse }: { regime: RegimeInfo; pulse?: Pu
 
 function OverrideWarningBanner({ message }: { message: string }) {
   return (
-    <div className="rounded-xl border border-yellow-500/40 px-4 py-3 flex items-start gap-2" style={{ background: "rgba(234,179,8,0.08)" }}>
-      <AlertTriangle className="w-4 h-4 text-yellow-500 shrink-0 mt-0.5" />
-      <span className="font-mono text-[11px] text-yellow-400 leading-relaxed">{message}</span>
+    <div className="rounded-xl border border-yellow-500/30 px-4 py-3 flex items-start gap-3" style={{ background: "rgba(234,179,8,0.06)" }}>
+      <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: "rgba(234,179,8,0.12)" }}>
+        <AlertTriangle className="w-4 h-4 text-yellow-500" />
+      </div>
+      <span className="font-mono text-[11px] text-yellow-400/90 leading-relaxed pt-1.5">{message}</span>
     </div>
   );
 }
 
 function UndefinedRiskWarning() {
   return (
-    <div className="rounded-lg border border-red-500/40 px-3 py-2 flex items-start gap-2 mx-4 mb-3" style={{ background: "rgba(239,68,68,0.08)" }}>
+    <div className="rounded-lg border border-red-500/30 px-3 py-2 flex items-start gap-2 mx-4 mb-3" style={{ background: "rgba(239,68,68,0.06)" }}>
       <AlertTriangle className="w-3.5 h-3.5 text-red-500 shrink-0 mt-0.5" />
-      <span className="font-mono text-[10px] text-red-400 leading-relaxed">
-        This strategy has undefined/unlimited risk. Requires margin and active management. Not suitable for small accounts.
+      <span className="font-mono text-[10px] text-red-400/80 leading-relaxed">
+        Undefined/unlimited risk. Requires margin and active management.
       </span>
     </div>
   );
@@ -185,31 +240,31 @@ function PreTradeCheckPanel({ result }: { result: PreTradeResult }) {
   const overallColor = STATUS_COLORS[result.overall];
   const overallLabel = result.overall === "PASS" ? "CLEAR" : result.overall === "WARN" ? "CAUTION" : "BLOCKED";
   return (
-    <div className="mx-4 mb-3 rounded-lg border overflow-hidden" style={{ borderColor: `${overallColor}40`, background: `${overallColor}08` }}>
-      <div className="px-3 py-2 flex items-center justify-between" style={{ borderBottom: `1px solid ${overallColor}30` }}>
+    <div className="mx-4 mb-3 rounded-lg border overflow-hidden" style={{ borderColor: `${overallColor}30`, background: `${overallColor}06` }}>
+      <div className="px-3 py-2 flex items-center justify-between" style={{ borderBottom: `1px solid ${overallColor}20` }}>
         <div className="flex items-center gap-2">
           {STATUS_ICONS[result.overall]}
           <span className="font-mono text-[10px] font-bold uppercase tracking-widest" style={{ color: overallColor }}>
             Pre-Trade: {overallLabel}
           </span>
         </div>
-        <span className="font-mono text-[9px] text-[#71717a]">
+        <span className="font-mono text-[9px] text-[#52525b]">
           {result.passCount}P / {result.warnCount}W / {result.failCount}F
         </span>
       </div>
       <div className="px-3 py-1.5">
         {result.checks.map(c => (
-          <div key={c.id} className="flex items-center justify-between py-1 border-b border-[#2A2A2C]/50 last:border-0">
+          <div key={c.id} className="flex items-center justify-between py-1 border-b border-[#2A2A2C]/30 last:border-0">
             <div className="flex items-center gap-1.5">
               {STATUS_ICONS[c.status]}
               <span className="font-mono text-[10px] text-[#a1a1aa]">{c.label}</span>
             </div>
-            <span className="font-mono text-[10px] font-bold text-white">{c.value}</span>
+            <span className="font-mono text-[10px] font-bold text-white tabular-nums">{c.value}</span>
           </div>
         ))}
       </div>
       {result.aiOneLiner && (
-        <div className="px-3 py-2 border-t" style={{ borderColor: `${overallColor}20` }}>
+        <div className="px-3 py-2 border-t" style={{ borderColor: `${overallColor}15` }}>
           <span className="font-mono text-[10px] text-[#a1a1aa] italic">{result.aiOneLiner}</span>
         </div>
       )}
@@ -221,20 +276,23 @@ function RiskCategoryBadge({ evaluation }: { evaluation?: RiskEvaluation }) {
   if (!evaluation) return null;
   const badgeColor = evaluation.category === "DEFINED" ? "#00d166"
     : evaluation.category === "CASH_SECURED" ? "#FFB800" : "#f23645";
-  const label = evaluation.category === "DEFINED" ? "Defined Risk"
-    : evaluation.category === "CASH_SECURED" ? "Cash Secured" : "Margin Based";
+  const label = evaluation.category === "DEFINED" ? "DEFINED"
+    : evaluation.category === "CASH_SECURED" ? "CASH SECURED" : "MARGIN";
   return (
-    <span className="font-mono text-[8px] px-1.5 py-0.5 rounded font-bold" style={{ background: `${badgeColor}15`, color: badgeColor }}>
+    <span className="font-mono text-[8px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider"
+      style={{ background: `${badgeColor}12`, color: badgeColor, border: `1px solid ${badgeColor}25` }}>
       {label}
     </span>
   );
 }
 
 function RealStrategyCard({ s, idx, preTradeResult }: { s: StrategyPayload; idx: number; preTradeResult?: PreTradeResult | null }) {
+  const [showTradePlan, setShowTradePlan] = useState(false);
   const isCredit = s.net_credit > 0;
   const re = s.risk_evaluation;
   const riskLabel = re ? re.risk_label : "Max Risk";
   const riskValue = re ? fmtDollar(re.risk_metric) : fmtDollar(s.max_loss);
+  const accentColor = isCredit ? "#00d166" : "#f23645";
 
   const metrics = [
     { label: isCredit ? "Net Credit" : "Net Debit", value: fmtDollar(s.net_credit), icon: <DollarSign className="w-3.5 h-3.5" />, color: "#FFB800" },
@@ -243,74 +301,121 @@ function RealStrategyCard({ s, idx, preTradeResult }: { s: StrategyPayload; idx:
     { label: "R/R Ratio", value: s.risk_reward_ratio, icon: <Scale className="w-3.5 h-3.5" />, color: "#FF6B2B" },
   ];
 
+  const allLegs = [
+    { leg: s.short_leg, label: "Short" },
+    { leg: s.long_leg, label: s.long_leg.action === "SELL" ? "Short 2" : "Long" },
+    ...(s.short_leg_2 ? [{ leg: s.short_leg_2, label: "Short Call" }] : []),
+    ...(s.long_leg_2 ? [{ leg: s.long_leg_2, label: "Long Call" }] : []),
+  ];
+
   return (
-    <div className="rounded-xl border border-card-border overflow-hidden" style={{ background: "#111113" }}>
-      <div className="px-4 py-3 border-b border-card-border flex items-center justify-between" style={{ background: "#151517" }}>
-        <div className="flex items-center gap-2">
-          <span className="font-mono text-xs font-bold text-primary">#{idx + 1}</span>
-          <span className="font-mono text-sm font-bold text-white">{s.strategy_type}</span>
-          <RiskCategoryBadge evaluation={re} />
-        </div>
-        <span className="font-mono text-[10px] text-[#71717a]">{s.days_to_expiration}DTE</span>
-      </div>
-      {s.undefined_risk && <UndefinedRiskWarning />}
-      {preTradeResult && <PreTradeCheckPanel result={preTradeResult} />}
-
-      {s.risk_reward_display && (
-        <div className="mx-4 mt-2 px-3 py-1.5 rounded-lg border border-[#FF6B2B]/30" style={{ background: "rgba(255,107,43,0.06)" }}>
-          <span className="font-mono text-[10px] text-[#FF6B2B] font-bold">{s.risk_reward_display}</span>
-        </div>
-      )}
-
-      <div className="mx-4 mt-3 rounded-lg border border-[#2A2A2C] overflow-hidden" style={{ background: "#0c0c0c" }}>
-        <div className="px-3 py-1.5 border-b border-[#2A2A2C]">
-          <span className="font-mono text-[9px] text-[#52525b] uppercase tracking-widest">Contract Legs — Exp {s.expiration_date}</span>
-        </div>
-        <div className="px-3">
-          <LegRow leg={s.short_leg} label="Short" />
-          <LegRow leg={s.long_leg} label={s.long_leg.action === "SELL" ? "Short 2" : "Long"} />
-          {s.short_leg_2 && <LegRow leg={s.short_leg_2} label="Short Call" />}
-          {s.long_leg_2 && <LegRow leg={s.long_leg_2} label="Long Call" />}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3 p-4">
-        {metrics.map(m => (
-          <div key={m.label} className="rounded-lg border border-card-border p-3 flex flex-col gap-1" style={{ background: "#0c0c0c" }}>
-            <div className="flex items-center gap-1.5">
-              <span style={{ color: m.color }}>{m.icon}</span>
-              <span className="font-mono text-[10px] uppercase tracking-wider text-gray-500">{m.label}</span>
+    <div className="rounded-xl overflow-hidden" style={{ background: "#111113", border: "1px solid #2A2A2C" }}>
+      <div className="flex">
+        <div className="w-1 shrink-0" style={{ background: accentColor }} />
+        <div className="flex-1">
+          <div className="px-4 py-3 flex items-center justify-between" style={{ background: "#151517", borderBottom: "1px solid #2A2A2C" }}>
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-lg flex items-center justify-center font-mono text-xs font-bold"
+                style={{ background: `${accentColor}15`, color: accentColor }}>
+                {idx + 1}
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-sm font-bold text-white">{s.strategy_type}</span>
+                  <RiskCategoryBadge evaluation={re} />
+                </div>
+                <span className="font-mono text-[10px] text-[#52525b]">{s.days_to_expiration} DTE · Exp {s.expiration_date}</span>
+              </div>
             </div>
-            <span className="font-mono text-sm font-bold text-white">{m.value}</span>
           </div>
-        ))}
-      </div>
 
-      <div className="px-4 pb-3 space-y-2">
-        <div className="flex items-center gap-2 text-xs font-mono text-gray-400">
-          <span className="text-gray-500 uppercase tracking-wider w-20 shrink-0">PoP</span>
-          <span className="text-white font-bold">{s.probability_of_profit_pct}%</span>
-        </div>
-        <div className="flex items-center gap-2 text-xs font-mono text-gray-400">
-          <span className="text-gray-500 uppercase tracking-wider w-20 shrink-0">Breakeven</span>
-          <span className="text-white">{fmtDollar(s.breakeven)}{s.breakeven_upper ? ` / ${fmtDollar(s.breakeven_upper)}` : ""}</span>
-        </div>
-        <div className="flex items-center gap-2 text-xs font-mono text-gray-400">
-          <span className="text-gray-500 uppercase tracking-wider w-20 shrink-0">Size</span>
-          <span className="text-white">{s.contracts} contract{s.contracts > 1 ? "s" : ""}</span>
-        </div>
-        <div className="flex items-start gap-2 text-xs font-mono text-gray-400 mt-1">
-          <span className="text-gray-500 uppercase tracking-wider w-20 shrink-0">Exit Rules</span>
-          <span className="text-white">Take profit at {s.exit_rules.profit_target_pct}% ({fmtDollar(s.exit_rules.profit_target_amount)}); Stop at {fmtDollar(s.exit_rules.stop_loss_amount)}; {s.exit_rules.time_exit}</span>
+          {s.undefined_risk && <UndefinedRiskWarning />}
+          {preTradeResult && <PreTradeCheckPanel result={preTradeResult} />}
+
+          {s.risk_reward_display && (
+            <div className="mx-4 mt-3 px-3 py-1.5 rounded-lg" style={{ background: "rgba(255,107,43,0.06)", border: "1px solid rgba(255,107,43,0.2)" }}>
+              <span className="font-mono text-[10px] text-[#FF6B2B] font-bold">{s.risk_reward_display}</span>
+            </div>
+          )}
+
+          <div className="mx-4 mt-3 rounded-lg overflow-hidden" style={{ border: "1px solid #2A2A2C" }}>
+            <div className="px-3 py-1.5" style={{ background: "#0c0c0c", borderBottom: "1px solid #2A2A2C" }}>
+              <span className="font-mono text-[9px] text-[#3f3f46] uppercase tracking-widest">Contract Legs</span>
+            </div>
+            <div style={{ background: "#0a0a0a" }}>
+              {allLegs.map((l, i) => (
+                <LegRow key={i} leg={l.leg} label={l.label} even={i % 2 === 0} />
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2.5 p-4">
+            {metrics.map(m => (
+              <div key={m.label} className="rounded-lg p-3 flex flex-col gap-1" style={{ background: "#0a0a0b", border: "1px solid #1f1f22" }}>
+                <div className="flex items-center gap-1.5">
+                  <span style={{ color: m.color }}>{m.icon}</span>
+                  <span className="font-mono text-[9px] uppercase tracking-wider text-[#52525b]">{m.label}</span>
+                </div>
+                <span className="font-mono text-sm font-bold text-white tabular-nums">{m.value}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="px-4 pb-2 flex items-center gap-4">
+            <MiniGauge value={s.probability_of_profit_pct} max={100} color="#00d166" label="PoP" />
+            <div className="flex-1 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[9px] text-[#52525b] uppercase tracking-wider">Breakeven</span>
+                <span className="font-mono text-[11px] text-white tabular-nums">{fmtDollar(s.breakeven)}{s.breakeven_upper ? ` / ${fmtDollar(s.breakeven_upper)}` : ""}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[9px] text-[#52525b] uppercase tracking-wider">Size</span>
+                <span className="font-mono text-[11px] text-white">{s.contracts} contract{s.contracts > 1 ? "s" : ""}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="mx-4 mb-4">
+            <button
+              type="button"
+              onClick={() => setShowTradePlan(!showTradePlan)}
+              className="w-full flex items-center justify-between px-3 py-2 rounded-lg font-mono text-[10px] text-[#52525b] uppercase tracking-widest hover:text-[#a1a1aa] transition-colors"
+              style={{ background: "#0a0a0b", border: "1px solid #1f1f22" }}
+            >
+              <span className="flex items-center gap-1.5">
+                <Target className="w-3 h-3" />
+                Trade Plan
+              </span>
+              <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${showTradePlan ? "rotate-180" : ""}`} />
+            </button>
+            {showTradePlan && (
+              <div className="mt-1.5 px-3 py-2.5 rounded-lg space-y-1.5" style={{ background: "#0a0a0b", border: "1px solid #1f1f22" }}>
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-[9px] text-[#52525b] uppercase">Profit Target</span>
+                  <span className="font-mono text-[10px] text-[#00d166] font-bold">{s.exit_rules.profit_target_pct}% ({fmtDollar(s.exit_rules.profit_target_amount)})</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-[9px] text-[#52525b] uppercase">Stop Loss</span>
+                  <span className="font-mono text-[10px] text-[#f23645] font-bold">{fmtDollar(s.exit_rules.stop_loss_amount)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-[9px] text-[#52525b] uppercase">Time Exit</span>
+                  <span className="font-mono text-[10px] text-[#a1a1aa]">{s.exit_rules.time_exit}</span>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-function StrategistRunBar({ onRun, disabled }: { onRun: (ticker: string) => void; disabled: boolean }) {
-  const { symbol } = useTerminalStore();
+function StrategistCommandBar({ onRun, disabled }: { onRun: (ticker: string) => void; disabled: boolean }) {
+  const { symbol, streamPrices } = useTerminalStore();
   const [inputVal, setInputVal] = useState("");
+  const [isFocused, setIsFocused] = useState(false);
+  const liveQuote = streamPrices[symbol];
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -318,99 +423,181 @@ function StrategistRunBar({ onRun, disabled }: { onRun: (ticker: string) => void
     onRun(ticker);
   };
 
+  const price = liveQuote?.last;
+  const change = liveQuote?.change;
+  const changePct = liveQuote?.changePct;
+  const isPositive = (change ?? 0) >= 0;
+
   return (
-    <form onSubmit={handleSubmit} className="flex items-center gap-2">
-      <div className="relative flex-1">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
-        <input
-          value={inputVal}
-          onChange={e => setInputVal(e.target.value.toUpperCase())}
-          placeholder={symbol}
-          className="w-full h-9 pl-9 pr-3 rounded-lg border border-card-border bg-[#18181B] font-mono text-xs text-foreground
-            placeholder:text-muted-foreground/40 focus:outline-none focus:border-[#FFB800]/50 transition-colors uppercase"
-          autoComplete="off"
-          autoCorrect="off"
-          spellCheck={false}
-        />
-      </div>
-      <button
-        type="submit"
-        disabled={disabled}
-        className="h-9 px-4 rounded-lg font-mono text-[10px] font-bold tracking-wider shrink-0 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 transition-colors"
+    <form onSubmit={handleSubmit}>
+      <div
+        className="rounded-xl overflow-hidden transition-all duration-300"
+        style={{
+          background: "#111113",
+          border: `1px solid ${isFocused ? "rgba(255,184,0,0.5)" : "#2A2A2C"}`,
+          boxShadow: isFocused ? "0 0 20px rgba(255,184,0,0.08), inset 0 1px 0 rgba(255,184,0,0.05)" : "none",
+        }}
       >
-        <BarChart2 className="w-3.5 h-3.5 inline mr-1.5 -mt-px" />RUN
-      </button>
+        <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: "1px solid #1f1f22" }}>
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "rgba(255,184,0,0.1)" }}>
+              <BarChart2 className="w-4 h-4 text-[#FFB800]" />
+            </div>
+            <div>
+              <div className="font-mono text-base font-bold text-white tracking-wide">{symbol}</div>
+              {price != null && (
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-[11px] text-white/70 tabular-nums">${price.toFixed(2)}</span>
+                  {change != null && changePct != null && (
+                    <span className="font-mono text-[10px] tabular-nums" style={{ color: isPositive ? "#00d166" : "#f23645" }}>
+                      {isPositive ? "+" : ""}{change.toFixed(2)} ({isPositive ? "+" : ""}{changePct.toFixed(2)}%)
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+          {!disabled && (
+            <div className="flex items-center gap-1.5">
+              <Activity className="w-3 h-3 text-[#00d166]" />
+              <span className="font-mono text-[9px] text-[#00d166] uppercase tracking-widest">Ready</span>
+            </div>
+          )}
+        </div>
+
+        <div className="px-4 py-3 flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#3f3f46] pointer-events-none" />
+            <input
+              value={inputVal}
+              onChange={e => setInputVal(e.target.value.toUpperCase())}
+              onFocus={() => setIsFocused(true)}
+              onBlur={() => setIsFocused(false)}
+              placeholder={`Analyze ${symbol} or enter new ticker...`}
+              className="w-full h-10 pl-9 pr-3 rounded-lg font-mono text-xs text-white
+                placeholder:text-[#3f3f46] focus:outline-none transition-colors uppercase"
+              style={{ background: "#0a0a0b", border: "1px solid #1f1f22" }}
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={disabled}
+            className="h-10 px-5 rounded-lg font-mono text-[11px] font-bold tracking-widest shrink-0 transition-all duration-200 uppercase
+              disabled:opacity-30 disabled:cursor-not-allowed"
+            style={{
+              background: disabled ? "#2A2A2C" : "linear-gradient(135deg, #FFB800, #E5A600)",
+              color: disabled ? "#52525b" : "#0c0c0c",
+              boxShadow: disabled ? "none" : "0 2px 8px rgba(255,184,0,0.25)",
+            }}
+          >
+            <BarChart2 className="w-3.5 h-3.5 inline mr-1.5 -mt-px" />Analyze
+          </button>
+        </div>
+      </div>
     </form>
   );
 }
 
-function StrategistLoadingReasoning({ status, thinkingTokens }: { status: string; thinkingTokens: string[] }) {
+function StrategistPipeline({ status, thinkingTokens }: { status: string; thinkingTokens: string[] }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [elapsed, setElapsed] = useState(0);
+  const startRef = useRef(Date.now());
+
+  useEffect(() => {
+    startRef.current = Date.now();
+    const timer = setInterval(() => setElapsed(Math.floor((Date.now() - startRef.current) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [thinkingTokens]);
 
   const stages = [
-    { key: "pulse", label: "RUNNING MARKET PULSE ENGINE" },
-    { key: "regime", label: "CLASSIFYING REGIME & SCANNING CHAIN" },
-    { key: "ai", label: "GEMINI AI REASONING" },
+    { key: "pulse", label: "PULSE ENGINE", icon: <Activity className="w-3 h-3" /> },
+    { key: "regime", label: "REGIME SCAN", icon: <Crosshair className="w-3 h-3" /> },
+    { key: "ai", label: "AI REASONING", icon: <Zap className="w-3 h-3" /> },
   ];
 
   const currentIdx = status.toLowerCase().includes("regime") || status.toLowerCase().includes("chain") ? 1
     : status.toLowerCase().includes("thesis") || thinkingTokens.length > 0 ? 2
     : 0;
 
+  const fmtTime = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
+
   return (
-    <div
-      className="rounded-xl border overflow-hidden"
-      style={{ background: "#111113", borderColor: "rgba(255,184,0,0.3)" }}
-    >
-      <div className="px-4 py-3 space-y-1.5">
-        {stages.map((s, i) => (
-          <div key={s.key} className="flex items-center gap-2">
-            <div
-              className="w-2 h-2 rounded-full shrink-0"
-              style={{
-                background: i < currentIdx ? "#00d166" : i === currentIdx ? "#FFB800" : "#2A2A2C",
-                boxShadow: i === currentIdx ? "0 0 6px rgba(255,184,0,0.5)" : "none",
-              }}
-            />
-            <span
-              className="font-mono text-[10px] tracking-wider"
-              style={{
-                color: i < currentIdx ? "#00d166" : i === currentIdx ? "#FFB800" : "#52525b",
-                fontWeight: i === currentIdx ? 700 : 400,
-              }}
-            >
-              {s.label}
-            </span>
-            {i < currentIdx && <span className="font-mono text-[9px] text-[#00d166]">✓</span>}
+    <div className="rounded-xl overflow-hidden" style={{ background: "#111113", border: "1px solid rgba(255,184,0,0.2)" }}>
+      <div className="px-4 py-3">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <span className="w-4 h-4 border-2 border-[#FFB800] border-t-transparent rounded-full animate-spin" />
+            <span className="font-mono text-[10px] font-bold text-[#FFB800] uppercase tracking-widest">Analyzing</span>
           </div>
-        ))}
+          <span className="font-mono text-[10px] text-[#52525b] tabular-nums">
+            <Clock className="w-3 h-3 inline mr-1 -mt-px" />{fmtTime(elapsed)}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-1">
+          {stages.map((s, i) => (
+            <div key={s.key} className="flex-1 flex items-center gap-1">
+              <div className="flex-1">
+                <div className="flex items-center gap-1 mb-1">
+                  <span style={{ color: i < currentIdx ? "#00d166" : i === currentIdx ? "#FFB800" : "#2A2A2C" }}>
+                    {i < currentIdx ? <CheckCircle2 className="w-3 h-3" /> : s.icon}
+                  </span>
+                  <span className="font-mono text-[8px] tracking-wider"
+                    style={{
+                      color: i < currentIdx ? "#00d166" : i === currentIdx ? "#FFB800" : "#3f3f46",
+                      fontWeight: i === currentIdx ? 700 : 400,
+                    }}>
+                    {s.label}
+                  </span>
+                </div>
+                <div className="h-1 rounded-full overflow-hidden" style={{ background: "#1f1f22" }}>
+                  <div
+                    className="h-full rounded-full transition-all duration-700"
+                    style={{
+                      width: i < currentIdx ? "100%" : i === currentIdx ? "60%" : "0%",
+                      background: i < currentIdx ? "#00d166" : i === currentIdx
+                        ? "linear-gradient(90deg, #FFB800, #FFB800 60%, transparent)" : "transparent",
+                    }}
+                  />
+                </div>
+              </div>
+              {i < stages.length - 1 && (
+                <div className="w-3 h-px mt-2" style={{ background: i < currentIdx ? "#00d166" : "#1f1f22" }} />
+              )}
+            </div>
+          ))}
+        </div>
       </div>
 
-      <div className="px-4 py-3 border-t border-[#2A2A2C] space-y-1.5">
-        <div className="flex items-center gap-1.5">
+      <div className="border-t" style={{ borderColor: "#1f1f22" }}>
+        <div className="px-4 py-2 flex items-center gap-1.5">
           <span className="relative flex h-2 w-2 shrink-0">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
             <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
           </span>
-          <span className="font-mono text-[10px] text-emerald-500 uppercase tracking-widest font-bold">AI Reasoning</span>
+          <span className="font-mono text-[9px] text-emerald-500 uppercase tracking-widest font-bold">Terminal Output</span>
         </div>
         <div
           ref={scrollRef}
-          className="max-h-[140px] overflow-y-auto border-l-2 border-emerald-500/30 pl-2.5"
+          className="max-h-[160px] overflow-y-auto px-4 pb-3 relative"
           style={{ scrollBehavior: "smooth" }}
         >
-          <span className="font-mono text-[10px] text-[#a1a1aa] leading-relaxed whitespace-pre-wrap">
+          <div className="font-mono text-[10px] leading-relaxed whitespace-pre-wrap"
+            style={{ color: "#4ade80" }}>
             {thinkingTokens.length === 0 ? (
-              <span className="text-[#52525b]">Waiting for AI reasoning...</span>
+              <span style={{ color: "#2A2A2C" }}>Awaiting AI output...</span>
             ) : (
               thinkingTokens.join("")
             )}
-            <span className="inline-block w-1 h-3 bg-emerald-500 ml-0.5 animate-pulse" />
-          </span>
+            <span className="inline-block w-2 h-3.5 ml-0.5 animate-pulse" style={{ background: "#4ade80" }} />
+          </div>
         </div>
       </div>
     </div>
@@ -435,9 +622,20 @@ function StrategistResultView({ strategies, narrative, isStreaming, streamingTex
         <RealStrategyCard key={i} s={s} idx={i} preTradeResult={preTradeResults?.[i]} />
       ))}
       {(narrative || streamingText) && (
-        <div className="border-t border-card-border pt-4">
-          <div className="font-mono text-[9px] text-[#52525b] uppercase tracking-widest mb-2">AI Thesis</div>
-          <MarkdownResult content={isStreaming ? streamingText : narrative} />
+        <div className="rounded-xl overflow-hidden" style={{ background: "#111113", border: "1px solid #2A2A2C" }}>
+          <div style={{ height: 2, background: "linear-gradient(90deg, #FFB800, #E5A600, #FFB800)" }} />
+          <div className="px-4 py-3">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="font-mono text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-widest"
+                style={{ background: "rgba(255,184,0,0.1)", color: "#FFB800", border: "1px solid rgba(255,184,0,0.2)" }}>
+                Thesis
+              </span>
+              {isStreaming && (
+                <span className="font-mono text-[9px] text-[#52525b] animate-pulse">Streaming...</span>
+              )}
+            </div>
+            <MarkdownResult content={isStreaming ? streamingText : narrative} />
+          </div>
         </div>
       )}
     </div>
@@ -446,16 +644,50 @@ function StrategistResultView({ strategies, narrative, isStreaming, streamingTex
 
 function MarkdownResult({ content }: { content: string }) {
   return (
-    <div className="prose prose-invert prose-primary max-w-none font-sans text-gray-300
+    <div className="prose prose-invert prose-primary max-w-none text-[13px] text-[#c4c4c6] leading-relaxed
       prose-headings:text-white prose-headings:font-bold prose-headings:tracking-wide prose-headings:mt-4 prose-headings:mb-2
       prose-h2:text-base prose-h3:text-sm
-      prose-a:text-primary hover:prose-a:text-primary/80
+      prose-a:text-[#FFB800] hover:prose-a:text-[#FFB800]/80
       prose-strong:text-white prose-strong:font-bold
       prose-li:my-0.5
-      prose-code:text-primary prose-code:bg-primary/10 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-xs
-      prose-pre:bg-card prose-pre:border prose-pre:border-card-border prose-pre:text-xs"
+      prose-code:text-[#FFB800] prose-code:bg-[#FFB800]/10 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-xs
+      prose-pre:bg-[#0a0a0b] prose-pre:border prose-pre:border-[#1f1f22] prose-pre:text-xs"
     >
       <ReactMarkdown>{content}</ReactMarkdown>
+    </div>
+  );
+}
+
+function StrategistEmptyState() {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 px-6 relative">
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+        <div className="w-32 h-32 rounded-full opacity-[0.04]"
+          style={{ background: "radial-gradient(circle, #FFB800 0%, transparent 70%)" }} />
+      </div>
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+        <div className="w-48 h-48 rounded-full animate-pulse opacity-[0.03]"
+          style={{ background: "radial-gradient(circle, #FFB800 0%, transparent 70%)", animationDuration: "3s" }} />
+      </div>
+
+      <div className="relative z-10 flex flex-col items-center">
+        <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4"
+          style={{ background: "rgba(255,184,0,0.08)", border: "1px solid rgba(255,184,0,0.15)" }}>
+          <BarChart2 className="w-7 h-7 text-[#FFB800]/40" />
+        </div>
+        <h3 className="font-mono text-sm font-bold text-white/80 tracking-wide mb-1.5">Options Strategist</h3>
+        <p className="font-mono text-[11px] text-[#52525b] text-center leading-relaxed max-w-[240px]">
+          Enter a ticker above to run AI-powered options analysis with real-time chain data.
+        </p>
+        <div className="flex items-center gap-4 mt-4">
+          {["Regime Detection", "Chain Scanning", "AI Thesis"].map(label => (
+            <div key={label} className="flex items-center gap-1">
+              <div className="w-1 h-1 rounded-full" style={{ background: "#FFB800" }} />
+              <span className="font-mono text-[9px] text-[#3f3f46] uppercase tracking-wider">{label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -700,8 +932,8 @@ export function StrategySettings() {
             <input
               type="range"
               min={1}
-              max={10}
-              step={0.5}
+              max={25}
+              step={1}
               value={preTradeMaxPositionPct}
               onChange={e => setPreTradeMaxPositionPct(Number(e.target.value))}
               disabled={!preTradeEnabled}
@@ -710,7 +942,7 @@ export function StrategySettings() {
             />
           </div>
 
-          <div style={{ opacity: preTradeEnabled ? 1 : 0.35 }}>
+          <div className="mb-3" style={{ opacity: preTradeEnabled ? 1 : 0.35 }}>
             <div className="flex items-center justify-between mb-1">
               <span className="font-mono text-[10px] text-gray-400 uppercase tracking-wider">Min DTE</span>
               <span className="font-mono text-xs text-white font-bold">{preTradeMinDTE} days</span>
@@ -718,7 +950,7 @@ export function StrategySettings() {
             <input
               type="range"
               min={1}
-              max={30}
+              max={60}
               step={1}
               value={preTradeMinDTE}
               onChange={e => setPreTradeMinDTE(Number(e.target.value))}
@@ -870,160 +1102,164 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef }: AiIn
     runChecks();
   }, [realStrategies, pulseSnapshot, preTradeEnabled, preTradeMinRR, preTradeMaxPositionPct, preTradeMinDTE, preTradeBlockOnRed, accountSize, isStreaming, isStrategizing]);
 
-  const handleRunStrategist = useCallback(async () => {
+  const handleRunStrategist = useCallback(async (targetTicker?: string) => {
     if (!accessToken) return;
+
+    const runSymbol = targetTicker?.toUpperCase() || symbol;
+    if (targetTicker && targetTicker.toUpperCase() !== symbol) {
+      setSymbol(targetTicker.toUpperCase());
+    }
+
     const runId = ++strategistRunRef.current;
     setStrategistResult(null);
     setStrategistAudit(null);
     setStreamingText("");
-    setThinkingTokens([]);
+    setIsStreaming(false);
+    setIsStrategizing(true);
+    setActiveResult("strategist");
     setRealStrategies([]);
     setNarrativeText("");
     setRegimeInfo(null);
     setPulseSnapshot(null);
     setOverrideWarning(null);
+    setThinkingTokens([]);
     setPreTradeResults({});
-    setActiveResult("strategist");
-    setIsStrategizing(true);
-    setStrategistStatus("Running market pulse...");
+    setStrategistStatus("Running market pulse engine...");
 
-    const collected = {
-      strategies: [] as StrategyPayload[],
-      narrative: "",
-      regime: null as RegimeInfo | null,
-      pulse: null as PulseSnapshot | null,
-      overrideWarning: null as string | null,
-      audit: null as StrategistAuditData | null,
-      thinkingTokens: [] as string[],
-      resultStatus: null as string | null,
+    const currentSettings = {
+      autopilot: useTerminalStore.getState().stratAutopilot,
+      maxRisk: useTerminalStore.getState().stratMaxRisk,
+      minPoP: useTerminalStore.getState().stratMinPoP,
+      minRR: useTerminalStore.getState().stratMinRR,
+      bias: useTerminalStore.getState().stratBias,
+      premium: useTerminalStore.getState().stratPremium,
+      avoidEarnings: useTerminalStore.getState().stratAvoidEarnings,
     };
+    const currentAiModel = useTerminalStore.getState().aiFeatureSettings.strategist.model;
+    const currentAiTemp = useTerminalStore.getState().aiFeatureSettings.strategist.temperature;
 
     try {
+      const q = quote;
+
+      const collected: StrategistCacheData = {
+        strategies: [],
+        narrative: "",
+        regime: null,
+        pulse: null,
+        overrideWarning: null,
+        audit: null,
+        thinkingTokens: [],
+        resultStatus: null,
+        timestamp: 0,
+      };
+
+      const auditData: StrategistAuditData = {
+        symbol: runSymbol,
+        price: q?.lastPrice ?? null,
+        change: q?.netChange ?? null,
+        changePct: q?.netPercentChange ?? null,
+        volume: q?.totalVolume ?? null,
+        autopilot: currentSettings.autopilot,
+        maxRisk: currentSettings.maxRisk,
+        minPoP: currentSettings.minPoP,
+        minRR: currentSettings.minRR,
+        bias: currentSettings.bias,
+        premium: currentSettings.premium,
+        avoidEarnings: currentSettings.avoidEarnings,
+        chainCallCount: 0,
+        chainPutCount: 0,
+        model: currentAiModel,
+        temperature: currentAiTemp,
+        timestamp: Date.now(),
+      };
+
       setStrategistStatus("Classifying regime & scanning chain...");
-      const res = await fetchWithAuth(`${API_BASE}/ai/options-strategist/stream`, {
+
+      const body: Record<string, unknown> = {
+        symbol: runSymbol,
+        price: q?.lastPrice,
+        change: q?.netChange,
+        changePct: q?.netPercentChange,
+        volume: q?.totalVolume,
+        accessToken,
+        autopilot: currentSettings.autopilot,
+        maxRisk: currentSettings.maxRisk,
+        bias: currentSettings.bias,
+      };
+      if (history) body.priceHistory = history;
+
+      const res = await fetchWithAuth(`${API_BASE}/ai/strategist`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          symbol,
-          accessToken,
-          model: aiModel,
-          temperature: aiTemp,
-          todayEdge: stratBias === "auto" ? undefined : stratBias === "bullish" ? "BULLISH_EDGE" : stratBias === "bearish" ? "BEARISH_EDGE" : "NEUTRAL_EDGE",
-        }),
+        body: JSON.stringify(body),
       });
-
+      if (!res.ok) throw new Error(`Strategist returned ${res.status}`);
       if (strategistRunRef.current !== runId) return;
 
-      if (!res.ok) {
-        const errText = await res.text().catch(() => "Unknown error");
-        setStrategistResult(`**Error:** ${errText}`);
-        setIsStrategizing(false);
-        return;
-      }
-
-      const contentType = res.headers.get("content-type") ?? "";
-      if (contentType.includes("application/json")) {
-        if (strategistRunRef.current !== runId) return;
-        const json = await res.json() as { strategies?: StrategyPayload[]; narrative?: string; error?: string; edge?: string; regime?: RegimeInfo; pulse?: PulseSnapshot; overrideWarning?: string };
-        if (json.regime) { setRegimeInfo(json.regime); collected.regime = json.regime; }
-        if (json.pulse) { setPulseSnapshot(json.pulse); collected.pulse = json.pulse; }
-        if (json.overrideWarning) { setOverrideWarning(json.overrideWarning); collected.overrideWarning = json.overrideWarning; }
-        if (json.error) {
-          setStrategistResult(`**Error:** ${json.error}`);
-        } else if (json.strategies && json.strategies.length > 0) {
-          setRealStrategies(json.strategies);
-          setNarrativeText(json.narrative ?? "");
-          setStrategistResult("done");
-          collected.strategies = json.strategies;
-          collected.narrative = json.narrative ?? "";
-          collected.resultStatus = "done";
-          setStrategistCache({ ...collected, timestamp: Date.now() });
-        } else {
-          setStrategistResult(json.narrative ?? "No strategies available.");
-          collected.resultStatus = json.narrative ?? "No strategies available.";
-          setStrategistCache({ ...collected, timestamp: Date.now() });
-        }
-        setIsStrategizing(false);
-        setStrategistStatus("");
-        return;
-      }
-
-      setIsStrategizing(false);
-      setIsStreaming(true);
-
       const reader = res.body?.getReader();
-      if (!reader) { setStrategistResult("**Error:** No readable stream."); setIsStreaming(false); return; }
+      if (!reader) throw new Error("No response stream");
 
-      const decoder = new TextDecoder();
-      let buf = "";
+      const dec = new TextDecoder();
+      let buffer = "";
       let accumulated = "";
+      let receivedStrategies = false;
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        buf += decoder.decode(value, { stream: true });
+        if (strategistRunRef.current !== runId) { reader.cancel(); return; }
 
-        const lines = buf.split("\n");
-        buf = lines.pop() ?? "";
+        buffer += dec.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
 
         for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const payload = line.slice(6).trim();
-          if (payload === "[DONE]") break;
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith("data: ")) continue;
+          const payload = trimmed.slice(6);
+          if (payload === "[DONE]") continue;
+
           try {
-            const parsed = JSON.parse(payload) as {
-              strategies?: StrategyPayload[];
-              edge?: string;
-              underlyingPrice?: number;
-              text?: string;
-              reasoning?: string;
-              error?: string;
-              regime?: RegimeInfo;
-              pulse?: PulseSnapshot;
-              overrideWarning?: string;
-            };
-            if (parsed.error) {
-              setStrategistResult(`**Error:** ${parsed.error}`);
-              setIsStreaming(false);
-              setStrategistStatus("");
-              return;
-            }
-            if (parsed.regime) { setRegimeInfo(parsed.regime); collected.regime = parsed.regime; }
-            if (parsed.pulse) { setPulseSnapshot(parsed.pulse); collected.pulse = parsed.pulse; }
-            if (parsed.overrideWarning) { setOverrideWarning(parsed.overrideWarning); collected.overrideWarning = parsed.overrideWarning; }
-            if (parsed.strategies) {
-              setStrategistStatus("Building AI thesis...");
-              setRealStrategies(parsed.strategies);
-              collected.strategies = parsed.strategies;
-              const q = quote as Record<string, unknown> | undefined;
-              const auditData: StrategistAuditData = {
-                symbol,
-                price: parsed.underlyingPrice ?? null,
-                change: q && typeof q.netChange === "number" ? q.netChange : null,
-                changePct: q && typeof q.netPercentChange === "number" ? q.netPercentChange : null,
-                volume: null,
-                autopilot: stratAutopilot,
-                maxRisk: stratMaxRisk,
-                minPoP: 0,
-                minRR: "0.20:1",
-                bias: parsed.edge ?? "—",
-                premium: "—",
-                avoidEarnings: false,
-                chainCallCount: 0,
-                chainPutCount: 0,
-                model: "gemini-2.5-flash",
-                temperature: 0.2,
-                timestamp: Date.now(),
-              };
+            const evt = JSON.parse(payload);
+
+            if (evt.type === "regime") {
+              if (strategistRunRef.current !== runId) return;
+              setRegimeInfo(evt.data);
+              collected.regime = evt.data;
+            } else if (evt.type === "pulse") {
+              if (strategistRunRef.current !== runId) return;
+              setPulseSnapshot(evt.data);
+              collected.pulse = evt.data;
+            } else if (evt.type === "override_warning") {
+              if (strategistRunRef.current !== runId) return;
+              setOverrideWarning(evt.data);
+              collected.overrideWarning = evt.data;
+            } else if (evt.type === "status") {
+              if (strategistRunRef.current !== runId) return;
+              setStrategistStatus(evt.data);
+            } else if (evt.type === "chain_stats") {
+              auditData.chainCallCount = evt.data?.callCount ?? 0;
+              auditData.chainPutCount  = evt.data?.putCount ?? 0;
+            } else if (evt.type === "thinking") {
+              if (strategistRunRef.current !== runId) return;
+              setThinkingTokens(prev => {
+                const next = [...prev, evt.data];
+                collected.thinkingTokens = next;
+                return next;
+              });
+            } else if (evt.type === "strategies") {
+              if (strategistRunRef.current !== runId) return;
+              receivedStrategies = true;
+              const strats = Array.isArray(evt.data) ? evt.data : [evt.data];
+              setRealStrategies(strats);
+              collected.strategies = strats;
+              setIsStrategizing(false);
+              setIsStreaming(true);
               setStrategistAudit(auditData);
               collected.audit = auditData;
-            }
-            if (parsed.reasoning) {
-              collected.thinkingTokens.push(parsed.reasoning);
-              setThinkingTokens((prev) => [...prev, parsed.reasoning!]);
-            }
-            if (parsed.text) {
-              accumulated += parsed.text;
+            } else if (evt.type === "narrative_chunk") {
+              if (strategistRunRef.current !== runId) return;
+              accumulated += evt.data;
               setStreamingText(accumulated);
             }
           } catch {}
@@ -1036,7 +1272,12 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef }: AiIn
       setStrategistResult("done");
       setStreamingText("");
       setIsStreaming(false);
+      setIsStrategizing(false);
       setStrategistStatus("");
+      if (!receivedStrategies) {
+        setStrategistAudit(auditData);
+        collected.audit = auditData;
+      }
       setStrategistCache({ ...collected, timestamp: Date.now() });
     } catch (err) {
       setStrategistResult(`**Error:** ${err instanceof Error ? err.message : String(err)}`);
@@ -1044,13 +1285,11 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef }: AiIn
       setIsStreaming(false);
       setStrategistStatus("");
     }
-  }, [quote, accessToken, symbol, setStrategistResult, setStrategistCache,
-      stratAutopilot, stratMaxRisk, stratBias]);
+  }, [quote, history, accessToken, symbol, setSymbol, setStrategistResult, setStrategistCache]);
 
   const handleRunStrategistWithTicker = useCallback((ticker: string) => {
-    if (ticker !== symbol) setSymbol(ticker);
-    handleRunStrategist();
-  }, [symbol, setSymbol, handleRunStrategist]);
+    handleRunStrategist(ticker);
+  }, [handleRunStrategist]);
 
   const isPendingAny = isStreaming || isStrategizing;
 
@@ -1066,29 +1305,20 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef }: AiIn
 
       {subTab === "strategist" && (
         <div className="px-3 sm:px-4 lg:px-5 space-y-4 pt-3">
-          <div className="flex items-center gap-2 px-1">
-            <BarChart2 className="w-4 h-4 text-[#FFB800]" />
-            <span className="font-mono text-xs font-bold text-[#e4e4e7] tracking-wider">OPTIONS STRATEGIST</span>
-          </div>
-
-          <StrategistRunBar onRun={handleRunStrategistWithTicker} disabled={isPendingAny || !accessToken} />
+          <StrategistCommandBar onRun={handleRunStrategistWithTicker} disabled={isPendingAny || !accessToken} />
 
           {activeResult === "strategist" && (
-            <div className="bg-card border border-card-border rounded-xl overflow-hidden p-4 bg-[#0c0c0c]">
+            <div className="space-y-4">
               {isStrategizing && (
-                <div className="space-y-3">
-                  <div className="flex items-center gap-3 py-2">
-                    <span className="w-4 h-4 border-2 border-[#FFB800] border-t-transparent rounded-full animate-spin" />
-                    <span className="font-mono text-xs text-[#a1a1aa]">{strategistStatus || "Processing..."}</span>
-                  </div>
-                  <StrategistLoadingReasoning status={strategistStatus} thinkingTokens={thinkingTokens} />
-                </div>
+                <StrategistPipeline status={strategistStatus} thinkingTokens={thinkingTokens} />
               )}
               {!isStrategizing && (isStreaming || hasRealStrategies) && (
                 <>
-                  <div className="mb-3">
-                    <AiThinkingFeed texts={thinkingTokens} isStreaming={isStreaming} />
-                  </div>
+                  {(isStreaming || thinkingTokens.length > 0) && (
+                    <div className="rounded-xl overflow-hidden" style={{ background: "#111113", border: "1px solid #2A2A2C" }}>
+                      <AiThinkingFeed texts={thinkingTokens} isStreaming={isStreaming} />
+                    </div>
+                  )}
                   {hasRealStrategies && (
                     <StrategistResultView
                       strategies={realStrategies}
@@ -1104,9 +1334,15 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef }: AiIn
                 </>
               )}
               {!isStrategizing && !isStreaming && !hasRealStrategies && currentResult && currentResult !== "done" && (
-                <MarkdownResult content={currentResult} />
+                <div className="rounded-xl overflow-hidden p-4" style={{ background: "#111113", border: "1px solid #2A2A2C" }}>
+                  <MarkdownResult content={currentResult} />
+                </div>
               )}
             </div>
+          )}
+
+          {!activeResult && !isPendingAny && (
+            <StrategistEmptyState />
           )}
 
           {strategistAudit && activeResult === "strategist" && !isStreaming && !isStrategizing && (
