@@ -557,9 +557,9 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
   useLayoutEffect(() => {
     const el = companyNameRef.current;
     if (!el) return;
-    el.style.fontSize = "32px";
+    el.style.fontSize = "16px";
     const isOneLine = el.scrollHeight <= el.clientHeight + 2;
-    setCompanyNameSize(isOneLine ? "" : "text-xs");
+    setCompanyNameSize(isOneLine ? "text-base" : "text-xs");
   }, [companyName]);
 
   return (
@@ -575,7 +575,7 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
         <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: "1px solid #1f1f22" }}>
           <div>
             <div className="font-mono text-xl font-normal text-white tracking-wide leading-tight">{displaySymbol}</div>
-            <div ref={companyNameRef} className={`font-mono ${companyNameSize} font-normal text-[#FFB800] tracking-wide leading-tight`} style={{ fontSize: companyNameSize === "" ? "32px" : undefined, maxHeight: "2.6em", overflow: "hidden" }}>{companyName}</div>
+            <div ref={companyNameRef} className={`font-mono ${companyNameSize} font-normal text-[#FFB800] tracking-wide leading-tight`} style={{ maxHeight: "2.6em", overflow: "hidden" }}>{companyName}</div>
           </div>
           {fetchingTicker ? (
             <span className="font-mono text-xs text-white/40 animate-pulse">Loading...</span>
