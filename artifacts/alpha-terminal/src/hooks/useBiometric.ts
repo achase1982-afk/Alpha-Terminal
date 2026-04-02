@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import { useClerk, useUser } from "@clerk/clerk-react";
+import { useUser } from "@clerk/clerk-react";
 import { readSecurityPrefs } from "@/lib/securityPrefs";
 
 const devBypass = import.meta.env.VITE_DEV_BYPASS_AUTH === "true";
@@ -16,17 +16,19 @@ export function useWebAuthnSupported(): boolean {
   return supported;
 }
 
+function useClerkUser() {
+  if (devBypass) return null;
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const { user } = useUser();
+  return user;
+}
+
 export function useBiometricRegistration() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasPasskey, setHasPasskey] = useState(false);
   const webAuthnSupported = useWebAuthnSupported();
-
-  let user: ReturnType<typeof useUser>["user"] = null;
-  if (!devBypass) {
-    const clerkUser = useUser();
-    user = clerkUser.user;
-  }
+  const user = useClerkUser();
 
   useEffect(() => {
     if (!user) return;
@@ -45,18 +47,22 @@ export function useBiometricRegistration() {
       setError("WebAuthn/Passkeys are not supported on this device or browser.");
       return;
     }
+    if (typeof (user as any).createPasskey !== "function") {
+      setError("Passkey registration is not available. Ensure Passkeys are enabled in the authentication dashboard.");
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      if (typeof (user as any).createPasskey === "function") {
-        await (user as any).createPasskey();
-      } else {
-        const response = await fetch("/api/auth/passkey-register", { method: "POST" });
-        if (!response.ok) throw new Error("Passkey registration endpoint unavailable");
-      }
+      await (user as any).createPasskey();
       setHasPasskey(true);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
+      const clerkErrors = (err as any)?.errors;
+      const clerkMsg = Array.isArray(clerkErrors) && clerkErrors.length > 0
+        ? clerkErrors.map((e: any) => e.longMessage || e.message).join("; ")
+        : null;
+
       if (msg.includes("cancelled") || msg.includes("canceled") || msg.includes("AbortError")) {
         return;
       }
@@ -64,8 +70,10 @@ export function useBiometricRegistration() {
         setError("Face ID / Touch ID was denied. Please allow biometric access in your device settings.");
       } else if (msg.includes("not supported") || msg.includes("SecurityError")) {
         setError("Passkeys require a secure context (HTTPS). Please use the published app URL.");
+      } else if (clerkMsg) {
+        setError(clerkMsg);
       } else {
-        setError(msg);
+        setError(msg || "Passkey registration failed. Please try again.");
       }
     } finally {
       setLoading(false);

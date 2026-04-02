@@ -9,11 +9,12 @@ const devBypass = import.meta.env.VITE_DEV_BYPASS_AUTH === "true";
 
 function useClerkSafe() {
   if (devBypass) return { signOut: () => Promise.resolve() };
+  // eslint-disable-next-line react-hooks/rules-of-hooks
   return useClerk();
 }
 
-const WARNING_SECONDS = 60;
 const LAST_ACTIVITY_KEY = "alphaTerminal_lastActivity";
+const WARNING_SECONDS = 60;
 
 export type SessionTimeoutMinutes = 0 | 15 | 30 | 60 | 90;
 
@@ -24,7 +25,7 @@ function readStoredTimeout(): SessionTimeoutMinutes {
   return prefs.sessionTimeout as SessionTimeoutMinutes;
 }
 
-function saveLastActivity() {
+function stampActivity() {
   try { localStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now())); } catch {}
 }
 
@@ -33,6 +34,12 @@ function getLastActivity(): number {
     const val = localStorage.getItem(LAST_ACTIVITY_KEY);
     return val ? Number(val) : Date.now();
   } catch { return Date.now(); }
+}
+
+function isExpired(timeoutMinutes: number): boolean {
+  if (timeoutMinutes <= 0) return false;
+  const elapsed = Date.now() - getLastActivity();
+  return elapsed >= timeoutMinutes * 60 * 1000;
 }
 
 interface AutoLockState {
@@ -49,45 +56,48 @@ export function AutoLockProvider({ children }: { children: ReactNode }) {
   const [minutes, setMinutesState] = useState<SessionTimeoutMinutes>(readStoredTimeout);
   const [warning, setWarning] = useState(false);
   const [countdown, setCountdown] = useState(WARNING_SECONDS);
+  const [locked, setLocked] = useState(false);
 
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const warningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const warningActiveRef = useRef(false);
-  const deadlineRef = useRef<number>(0);
+  const minutesRef = useRef(minutes);
+  minutesRef.current = minutes;
 
   const doSignOut = useCallback(() => {
+    setLocked(true);
     queryClient.clear();
-    void signOut();
+    try { localStorage.removeItem(LAST_ACTIVITY_KEY); } catch {}
+    if (!devBypass) {
+      void signOut({ redirectUrl: window.location.origin + (import.meta.env.BASE_URL || "/") });
+    }
   }, [signOut]);
 
-  const clearAllTimers = useCallback(() => {
-    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+  const clearTimers = useCallback(() => {
     if (warningTimerRef.current) { clearTimeout(warningTimerRef.current); warningTimerRef.current = null; }
+    if (lockTimerRef.current) { clearTimeout(lockTimerRef.current); lockTimerRef.current = null; }
     if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; }
     warningActiveRef.current = false;
     setWarning(false);
     setCountdown(WARNING_SECONDS);
   }, []);
 
-  const startTimers = useCallback(() => {
-    clearAllTimers();
-    if (minutes === 0) { deadlineRef.current = 0; return; }
+  const scheduleTimers = useCallback(() => {
+    clearTimers();
+    const m = minutesRef.current;
+    if (m <= 0) return;
 
-    const totalMs = minutes * 60 * 1000;
-    const now = Date.now();
-    const lastActivity = getLastActivity();
-    const elapsed = now - lastActivity;
-
-    if (elapsed >= totalMs) {
+    if (isExpired(m)) {
       doSignOut();
       return;
     }
 
+    const totalMs = m * 60 * 1000;
+    const elapsed = Date.now() - getLastActivity();
     const remaining = totalMs - elapsed;
-    deadlineRef.current = now + remaining;
-    const warningMs = remaining - WARNING_SECONDS * 1000;
 
+    const warningMs = remaining - WARNING_SECONDS * 1000;
     if (warningMs > 0) {
       warningTimerRef.current = setTimeout(() => {
         warningActiveRef.current = true;
@@ -118,68 +128,84 @@ export function AutoLockProvider({ children }: { children: ReactNode }) {
       }, 1000);
     }
 
-    timerRef.current = setTimeout(() => {
-      clearAllTimers();
+    lockTimerRef.current = setTimeout(() => {
+      clearTimers();
       doSignOut();
     }, remaining);
-  }, [minutes, clearAllTimers, doSignOut]);
-
-  const resetActivity = useCallback(() => {
-    saveLastActivity();
-    startTimers();
-  }, [startTimers]);
+  }, [clearTimers, doSignOut]);
 
   useEffect(() => {
-    saveLastActivity();
-    startTimers();
+    if (minutes > 0 && isExpired(minutes)) {
+      doSignOut();
+      return;
+    }
 
-    const events = ["mousemove", "mousedown", "keydown", "touchstart", "scroll"] as const;
+    stampActivity();
+    scheduleTimers();
 
-    const handler = () => {
+    const INTERACTION_EVENTS = [
+      "mousedown", "keydown", "touchstart", "touchmove",
+      "scroll", "pointerdown", "click", "input", "wheel",
+    ] as const;
+
+    const onInteraction = () => {
+      stampActivity();
       if (warningActiveRef.current) {
         warningActiveRef.current = false;
         setWarning(false);
         setCountdown(WARNING_SECONDS);
       }
-      resetActivity();
+      scheduleTimers();
     };
 
-    for (const evt of events) {
-      window.addEventListener(evt, handler, { passive: true });
+    for (const evt of INTERACTION_EVENTS) {
+      window.addEventListener(evt, onInteraction, { passive: true, capture: true });
     }
 
-    const handleVisibility = () => {
-      if (!document.hidden) {
-        if (minutes === 0) return;
-        const now = Date.now();
-        const lastActivity = getLastActivity();
-        const totalMs = minutes * 60 * 1000;
-        const elapsed = now - lastActivity;
-
-        if (elapsed >= totalMs) {
-          clearAllTimers();
-          doSignOut();
-        } else {
-          startTimers();
-        }
+    const onVisibilityChange = () => {
+      if (document.hidden) return;
+      const m = minutesRef.current;
+      if (m <= 0) return;
+      if (isExpired(m)) {
+        clearTimers();
+        doSignOut();
+      } else {
+        scheduleTimers();
       }
     };
-    document.addEventListener("visibilitychange", handleVisibility);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    const onFocus = () => {
+      const m = minutesRef.current;
+      if (m <= 0) return;
+      if (isExpired(m)) {
+        clearTimers();
+        doSignOut();
+      } else {
+        scheduleTimers();
+      }
+    };
+    window.addEventListener("focus", onFocus);
 
     return () => {
-      clearAllTimers();
-      for (const evt of events) {
-        window.removeEventListener(evt, handler);
+      clearTimers();
+      for (const evt of INTERACTION_EVENTS) {
+        window.removeEventListener(evt, onInteraction, true);
       }
-      document.removeEventListener("visibilitychange", handleVisibility);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("focus", onFocus);
     };
-  }, [startTimers, resetActivity, clearAllTimers, minutes, doSignOut]);
+  }, [minutes, scheduleTimers, clearTimers, doSignOut]);
 
   const setMinutes = useCallback((m: SessionTimeoutMinutes) => {
     updateSecurityPref("sessionTimeout", m);
     setMinutesState(m);
-    saveLastActivity();
+    stampActivity();
   }, []);
+
+  if (locked && !devBypass) {
+    return null;
+  }
 
   const value: AutoLockState = { minutes, setMinutes, warning, countdown };
 
