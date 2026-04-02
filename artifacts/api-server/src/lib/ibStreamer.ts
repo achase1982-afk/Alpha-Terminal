@@ -14,8 +14,8 @@ const IB_HOST = process.env.IB_HOST ?? "127.0.0.1";
 const IB_PORT = Number(process.env.IB_PORT ?? "4002");
 const IB_CLIENT_ID = Number(process.env.IB_CLIENT_ID ?? "1");
 
-const RECONNECT_INTERVAL_MS = 10_000;
-const MAX_RECONNECT_DELAY_MS = 60_000;
+const RECONNECT_INTERVAL_MS = 5_000;
+const MAX_RECONNECT_DELAY_MS = 30_000;
 
 type ConnectionState = "DISCONNECTED" | "CONNECTING" | "CONNECTED";
 
@@ -86,6 +86,7 @@ let connState: ConnectionState = "DISCONNECTED";
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectDelay = RECONNECT_INTERVAL_MS;
 let intentionalDisconnect = false;
+let reconnectAttempt = 0;
 let broadcastFn: ((event: string, data: unknown) => void) | null = null;
 let quoteCacheInjector: ((sym: string, quote: LiveQuote) => void) | null = null;
 
@@ -188,26 +189,36 @@ function teardownIB() {
   }
 }
 
-function scheduleReconnect() {
-  if (intentionalDisconnect || reconnectTimer) return;
-  const jitter = Math.random() * 2000;
-  const delay = reconnectDelay + jitter;
-  logger.info({ delay: Math.round(delay) }, "IB: scheduling reconnect");
-  reconnectTimer = setTimeout(() => {
-    reconnectTimer = null;
+function scheduleReconnect(immediate = false) {
+  if (intentionalDisconnect) return;
+  if (reconnectTimer) {
+    if (immediate) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    } else {
+      return;
+    }
+  }
+  reconnectAttempt++;
+  const delay = immediate ? 0 : reconnectDelay + Math.random() * 1000;
+  logger.info({ attempt: reconnectAttempt, delayMs: Math.round(delay), immediate }, "IB: reconnect scheduled");
+  if (immediate) {
+    reconnectDelay = RECONNECT_INTERVAL_MS;
     void connectIB();
-  }, delay);
-  reconnectDelay = Math.min(reconnectDelay * 1.5, MAX_RECONNECT_DELAY_MS);
+  } else {
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      void connectIB();
+    }, delay);
+    reconnectDelay = Math.min(reconnectDelay * 1.5, MAX_RECONNECT_DELAY_MS);
+  }
 }
 
-function handleDisconnectOrError() {
-  if (connState === "DISCONNECTED" && !reconnectTimer) {
-    return;
-  }
+function handleDisconnectOrError(immediate = false) {
   teardownIB();
   connState = "DISCONNECTED";
   emitStatus("disconnected");
-  scheduleReconnect();
+  scheduleReconnect(immediate);
 }
 
 export async function connectIB(): Promise<void> {
@@ -249,14 +260,15 @@ export async function connectIB(): Promise<void> {
     ib.on(EventName.connected, () => {
       connState = "CONNECTED";
       reconnectDelay = RECONNECT_INTERVAL_MS;
-      logger.info({ host: IB_HOST, port: IB_PORT }, "IB: connected to gateway");
+      logger.info({ host: IB_HOST, port: IB_PORT, attempt: reconnectAttempt }, "IB: connected to gateway");
+      reconnectAttempt = 0;
       emitStatus("connected");
       subscribeAll();
     });
 
     ib.on(EventName.disconnected, () => {
-      logger.warn("IB: disconnected from gateway");
-      handleDisconnectOrError();
+      logger.warn("IB: disconnected from gateway — triggering immediate reconnect");
+      handleDisconnectOrError(true);
     });
 
     ib.on(EventName.error, (err: Error, code: number, reqId: number) => {
@@ -270,13 +282,20 @@ export async function connectIB(): Promise<void> {
         return;
       }
 
+      const isImmediateReconnect = code === 504 || code === 2110;
+      if (isImmediateReconnect) {
+        logger.warn({ code, msg: err.message }, "IB: transport/connectivity error — immediate reconnect");
+        handleDisconnectOrError(true);
+        return;
+      }
+
       logger.error({ err, code, reqId }, "IB: API error");
 
-      const isTransportError = code === 502 || code === 504 || code === 1100 ||
+      const isTransportError = code === 502 || code === 1100 ||
         (err.message && (err.message.includes("ECONNREFUSED") || err.message.includes("ECONNRESET") || err.message.includes("ETIMEDOUT")));
 
-      if (isTransportError && connState !== "CONNECTED") {
-        handleDisconnectOrError();
+      if (isTransportError) {
+        handleDisconnectOrError(false);
       }
     });
 
