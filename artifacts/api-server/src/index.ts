@@ -48,9 +48,6 @@ async function boot() {
 
   registerQuoteCacheInjector(injectExternalQuote);
   registerIBBroadcast(broadcastToClients);
-  connectIB().catch(err => {
-    logger.warn({ err }, "IB: initial connection attempt failed (gateway may not be running)");
-  });
 }
 
 boot().catch((err) => {
