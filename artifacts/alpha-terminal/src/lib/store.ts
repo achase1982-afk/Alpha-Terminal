@@ -140,6 +140,19 @@ interface TerminalState {
   setStreamQuote: (q: LiveQuote) => void;
   setStreamConnected: (v: boolean) => void;
   setStreamStatus: (s: "offline" | "connecting" | "live") => void;
+
+  liveNews: LiveNewsItem[];
+  addLiveNews: (item: LiveNewsItem) => void;
+  clearLiveNews: () => void;
+}
+
+export interface LiveNewsItem {
+  time: string;
+  providerCode: string;
+  articleId: string;
+  headline: string;
+  extraData?: string;
+  source: "live" | "historical";
 }
 
 export const useTerminalStore = create<TerminalState>()(
