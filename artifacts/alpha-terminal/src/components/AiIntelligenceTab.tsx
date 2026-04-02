@@ -531,6 +531,8 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
   const changePct = quoteData?.changePct;
   const isPositive = (change ?? 0) >= 0;
   const volume = liveQuote?.volume ?? previewQuote?.volume;
+  const cpcQuote = streamPrices["$CPC"];
+  const pcRatio = cpcQuote?.last;
 
   return (
     <form onSubmit={handleSubmit}>
@@ -569,7 +571,7 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
           </div>
           <div className="flex items-center gap-2">
             <span className="font-mono text-sm text-white/40 uppercase tracking-wider">P/C</span>
-            <span className="font-mono text-sm text-white/70 tabular-nums">—</span>
+            <span className="font-mono text-sm text-white/70 tabular-nums">{pcRatio != null ? pcRatio.toFixed(2) : "—"}</span>
           </div>
         </div>
 
