@@ -75,7 +75,7 @@ function useTickFlashColor(price: number | null): string {
   return color;
 }
 
-const COMPANY_FONT_LG = 15;
+const COMPANY_FONT_LG = 20;
 const COMPANY_FONT_SM = 11;
 const COMPANY_BOX_H = 34;
 
