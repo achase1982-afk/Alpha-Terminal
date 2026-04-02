@@ -1409,20 +1409,7 @@ async function buildTickerProfile(
     profile = applyBetaToProfile(profile, beta);
   }
 
-  if (logger) {
-    logger.info(
-      {
-        symbol,
-        tier: profile.tier,
-        tierLabel: profile.tierLabel,
-        beta: profile.beta,
-        adjustedDelta: profile.adjustedDelta,
-        sizeOverride: profile.sizeMultiplierOverride,
-        measurements: profile.measurements,
-      },
-      "Ticker profile computed",
-    );
-  }
+  console.log(`[TICKER-PROFILE] ${symbol.toUpperCase()} | Tier: ${profile.tier} | Avg ATM Spread: ${profile.measurements.avgAtmSpreadPct}% | Avg ATM Vol: ${profile.measurements.avgAtmVolume} | Avg ATM OI: ${profile.measurements.avgAtmOI} | Beta vs SPY: ${profile.beta} | Adjusted Delta: ${profile.adjustedDelta} | Size Override: ${profile.sizeMultiplierOverride}`);
 
   return profile;
 }
