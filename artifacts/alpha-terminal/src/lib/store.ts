@@ -331,6 +331,14 @@ export const useTerminalStore = create<TerminalState>()(
       openBrowser: (url, title, source) => set({ browserUrl: url, browserTitle: title ?? null, browserSource: source ?? null }),
       closeBrowser: () => set({ browserUrl: null, browserTitle: null, browserSource: null }),
 
+      liveNews: [] as LiveNewsItem[],
+      addLiveNews: (item) => set((state) => {
+        const updated = [item, ...state.liveNews];
+        if (updated.length > 200) updated.length = 200;
+        return { liveNews: updated };
+      }),
+      clearLiveNews: () => set({ liveNews: [] }),
+
       streamPrices: {},
       streamConnected: false,
       streamStatus: "offline" as const,
@@ -376,7 +384,7 @@ export const useTerminalStore = create<TerminalState>()(
         return s;
       },
       partialize: (state) => {
-        const { streamPrices, streamConnected, streamStatus, browserUrl, browserTitle, browserSource, ...persisted } = state;
+        const { streamPrices, streamConnected, streamStatus, browserUrl, browserTitle, browserSource, liveNews, ...persisted } = state;
         return persisted;
       },
     }

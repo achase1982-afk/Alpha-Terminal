@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useOptionsStreamStore } from "@/lib/options-stream-store";
 import { fetchWithAuth, getClerkToken } from "@/lib/fetchWithAuth";
-import type { LiveQuote } from "@/lib/store";
+import type { LiveQuote, LiveNewsItem } from "@/lib/store";
 
 const API_BASE = "/api";
 const WS_RECONNECT_BASE = 1_000;
@@ -95,6 +95,7 @@ export function useMarketStream() {
     macroSymbols,
     setStreamQuote,
     setStreamStatus,
+    addLiveNews,
   } = useTerminalStore();
 
   const mergeTick = useOptionsStreamStore((s) => s.mergeTick);
@@ -212,6 +213,8 @@ export function useMarketStream() {
           setStreamQuote(msg.data as LiveQuote);
         } else if (msg.event === "optionQuote") {
           mergeTick(msg.data);
+        } else if (msg.event === "ibNews") {
+          addLiveNews(msg.data as LiveNewsItem);
         } else if (msg.event === "streamerStatus") {
           const s = (msg.data as { status?: string }).status;
           if (s === "connected") setStreamStatus("live");
@@ -233,7 +236,7 @@ export function useMarketStream() {
     socket.onerror = () => {
       clearTimeout(openTimeout);
     };
-  }, [setStreamQuote, setStreamStatus, mergeTick]);
+  }, [setStreamQuote, setStreamStatus, mergeTick, addLiveNews]);
 
   function scheduleReconnect() {
     if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
