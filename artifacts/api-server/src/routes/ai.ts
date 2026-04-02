@@ -1594,11 +1594,18 @@ router.post("/options-strategist", async (req, res) => {
       fetchEarningsDaysAway(symbol, accessToken),
     ]);
     const expectedMove = computeExpectedMove(calls, puts, underlyingPrice);
+    req.log.info({ symbol, underlyingPrice, expectedMove, earningsDaysAway }, "Strategist: expectedMove computed");
     const convictionParams: ConvictionParams = {
       earningsDaysAway,
       confidence: resolvedPulse.confidence,
     };
     const strategies = selectStrategiesByRegime(regime, calls, puts, tickerProfile, convictionParams);
+
+    for (const s of strategies) {
+      if (s.convictionSizing) {
+        req.log.info({ strategy: s.strategy_type, sizing: s.convictionSizing }, "Strategist: conviction sizing");
+      }
+    }
 
     if (strategies.length === 0) {
       return res.json({
@@ -1720,11 +1727,18 @@ router.post("/options-strategist/stream", async (req, res) => {
       fetchEarningsDaysAway(symbol, accessToken),
     ]);
     const expectedMove = computeExpectedMove(calls, puts, underlyingPrice);
+    req.log.info({ symbol, underlyingPrice, expectedMove, earningsDaysAway }, "Strategist stream: expectedMove computed");
     const convictionParams: ConvictionParams = {
       earningsDaysAway,
       confidence: resolvedPulse.confidence,
     };
     const strategies = selectStrategiesByRegime(regime, calls, puts, tickerProfile, convictionParams);
+
+    for (const s of strategies) {
+      if (s.convictionSizing) {
+        req.log.info({ strategy: s.strategy_type, sizing: s.convictionSizing }, "Strategist stream: conviction sizing");
+      }
+    }
 
     if (strategies.length === 0) {
       return res.json({
