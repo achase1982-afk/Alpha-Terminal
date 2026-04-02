@@ -271,15 +271,28 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
 
         <button
           onClick={onOpenTearSheet}
-          className={`flex flex-col min-w-0 gap-0.5 text-left cursor-pointer group overflow-hidden ${opacityCls} ${transitionCls}`}
+          className={`flex flex-col min-w-0 text-left cursor-pointer group overflow-hidden ${opacityCls} ${transitionCls}`}
+          style={{ paddingTop: 0 }}
           aria-label={`View company profile for ${quote?.symbol}`}
         >
           {showData ? (
             <>
-              <span className="font-semibold text-xl md:text-2xl text-white tracking-tight leading-tight group-hover:text-primary transition-colors whitespace-nowrap">
+              <span className="font-semibold text-2xl text-white tracking-tight leading-tight group-hover:text-primary transition-colors whitespace-nowrap" style={{ fontSize: '20px', lineHeight: '1.1' }}>
                 {quote.symbol}
               </span>
-              <span className="text-[11px] font-medium tracking-wide line-clamp-2 overflow-hidden text-ellipsis uppercase leading-snug" style={{ color: '#FFB800' }}>
+              <span
+                className="font-medium tracking-wide overflow-hidden text-ellipsis uppercase transition-all"
+                style={{
+                  color: '#FFB800',
+                  fontSize: quote.description && quote.description.length > 25 ? '11px' : '14px',
+                  display: '-webkit-box',
+                  WebkitLineClamp: quote.description && quote.description.length > 25 ? 2 : 1,
+                  WebkitBoxOrient: 'vertical',
+                  lineHeight: '1.2',
+                  minHeight: '28px',
+                  maxHeight: '28px',
+                }}
+              >
                 {quote.description || ""}
               </span>
             </>
