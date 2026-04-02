@@ -524,9 +524,10 @@ function buildSchwabOptionKey(underlying: string, expiration: string, strike: nu
 
 interface OptionsTabProps {
   subscribeOptionSymbols?: (symbols: string[]) => Promise<void>;
+  stickyOffset?: number;
 }
 
-export function OptionsTab({ subscribeOptionSymbols }: OptionsTabProps) {
+export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0 }: OptionsTabProps) {
   const { symbol, accessToken } = useTerminalStore();
   const { contractType, strikeCount, customStrikeInput, setCustomStrikeInput } = useOptionsSettingsStore();
   const setStrikeCount = useOptionsSettingsStore(s => s.setStrikeCount);
@@ -659,7 +660,7 @@ export function OptionsTab({ subscribeOptionSymbols }: OptionsTabProps) {
   }, [registerWing, showCalls, showPuts, hasData]);
 
   return (
-    <div className="h-full flex flex-col overflow-hidden" style={{ backgroundColor: BG }}>
+    <div style={{ backgroundColor: BG }}>
       <MetricsStrip
         groups={groups}
         lastPrice={underlyingPrice}
@@ -702,7 +703,7 @@ export function OptionsTab({ subscribeOptionSymbols }: OptionsTabProps) {
         }
       />
 
-      <div className="flex-1 overflow-y-auto min-h-0 relative overscroll-y-contain" style={{ WebkitOverflowScrolling: "touch", backgroundColor: BG } as React.CSSProperties}>
+      <div className="relative" style={{ backgroundColor: BG }}>
         {isLoading && !data && (
           <div className="p-4 space-y-1.5">
             {Array.from({ length: strikeCount }).map((_, i) => (
@@ -739,8 +740,8 @@ export function OptionsTab({ subscribeOptionSymbols }: OptionsTabProps) {
         {hasData && (
           <>
             <div
-              className="w-full flex items-center sticky top-0 z-30 font-mono"
-              style={{ height: HEADER_H, backgroundColor: BG, borderBottom: `1px solid ${BORDER}` }}
+              className="w-full flex items-center sticky z-30 font-mono"
+              style={{ top: stickyOffset, height: HEADER_H, backgroundColor: BG, borderBottom: `1px solid ${BORDER}` }}
             >
               {showCalls && (
                 <div className="flex-1 text-center">
@@ -769,7 +770,7 @@ export function OptionsTab({ subscribeOptionSymbols }: OptionsTabProps) {
 
             <div
               className="w-full flex items-center sticky z-20 font-mono"
-              style={{ top: HEADER_H, height: SUB_HEADER_H, backgroundColor: BG, borderBottom: `1px solid ${BORDER}` }}
+              style={{ top: stickyOffset + HEADER_H, height: SUB_HEADER_H, backgroundColor: BG, borderBottom: `1px solid ${BORDER}` }}
             >
               {showCalls && (
                 <div
@@ -817,7 +818,7 @@ export function OptionsTab({ subscribeOptionSymbols }: OptionsTabProps) {
                     <button
                       onClick={() => toggleExp(group.expiration)}
                       className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-white/[0.03] transition-colors sticky z-20"
-                      style={{ top: STICKY_TOP, backgroundColor: BG, borderBottom: `1px solid ${BORDER}` }}
+                      style={{ top: stickyOffset + STICKY_TOP, backgroundColor: BG, borderBottom: `1px solid ${BORDER}` }}
                     >
                       <div className="flex items-center gap-1.5 font-mono">
                         {isOpen

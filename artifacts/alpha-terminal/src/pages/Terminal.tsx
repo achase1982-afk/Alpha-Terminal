@@ -88,6 +88,8 @@ export default function TerminalPage() {
   const [contextTab, setContextTab] = useState<ContextTab>("news");
   const [aiSubTab, setAiSubTab] = useState<AiSubTab>("pulse");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const stickyWrapRef = useRef<HTMLDivElement>(null);
+  const [stickyH, setStickyH] = useState(0);
   const pulseDashRef = useRef<MarketPulseDashboardHandle>(null);
   const { pulseData, isLoading: pulseLoading, isStreaming: pulseStreaming } = useMarketPulseStore();
   const { refresh } = useAutoRefreshToken();
@@ -99,6 +101,17 @@ export default function TerminalPage() {
     const y = el.scrollTop;
     setIsScrolled(y > 80);
   }, []);
+
+  useEffect(() => {
+    const el = stickyWrapRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      if (entry) setStickyH(entry.contentRect.height);
+    });
+    ro.observe(el);
+    setStickyH(el.getBoundingClientRect().height);
+    return () => ro.disconnect();
+  }, [activeBottom]);
 
   const { subscribeOptionSymbols, subscribeEquitySymbols } = useMarketStream();
 
@@ -202,14 +215,14 @@ export default function TerminalPage() {
             <>
               <MacroBar />
 
-              <div className="sticky top-0 z-40 bg-background">
+              <div ref={stickyWrapRef} className="sticky top-0 z-40 bg-background">
                 <MetricsBar compact={isScrolled} />
                 <VolumeBar />
                 <MarketDataTabs activeTab={contextTab} setActiveTab={setContextTab} />
               </div>
 
               {contextTab === "news" && <NewsTab />}
-              {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} />}
+              {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={stickyH} />}
               {contextTab === "company" && <CompanyResearchHub candles={historyData?.candles as any} />}
               {contextTab === "chart" && (
                 <>
