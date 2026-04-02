@@ -678,3 +678,50 @@ export function getIBStatus(): { connected: boolean; state: ConnectionState; hos
 export function getIBSymbolList(): Array<{ symbol: string; ibSymbol: string; exchange: string }> {
   return BREADTH_SYMBOLS.map(d => ({ symbol: d.displaySymbol, ibSymbol: d.ibSymbol, exchange: d.exchange }));
 }
+
+const conIdResolvers = new Map<number, (conId: number | null) => void>();
+let conIdReqCounter = 9000;
+
+export async function resolveConId(symbol: string): Promise<number | null> {
+  if (!ib || connState !== "CONNECTED") return null;
+  const reqId = conIdReqCounter++;
+  const contract: Contract = {
+    symbol: symbol.replace(/^\$/, "").replace(/^\//, ""),
+    secType: symbol.startsWith("/") ? "FUT" : "STK",
+    exchange: "SMART",
+    currency: "USD",
+  };
+
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      conIdResolvers.delete(reqId);
+      resolve(null);
+    }, 5_000);
+
+    const handler = (rId: number, details: any) => {
+      if (rId !== reqId) return;
+      clearTimeout(timeout);
+      conIdResolvers.delete(reqId);
+      ib!.off(EventName.contractDetails, handler);
+      resolve(details?.contract?.conId ?? null);
+    };
+
+    ib!.on(EventName.contractDetails, handler);
+    try {
+      ib!.reqContractDetails(reqId, contract);
+    } catch {
+      clearTimeout(timeout);
+      conIdResolvers.delete(reqId);
+      ib!.off(EventName.contractDetails, handler);
+      resolve(null);
+    }
+  });
+}
+
+export async function fetchNewsForSymbol(symbol: string, maxResults = 30): Promise<IBNewsHeadline[]> {
+  const conId = await resolveConId(symbol);
+  if (!conId) return [];
+  const providers = ibNewsProviders.join("+");
+  if (!providers) return [];
+  return fetchIBHistoricalNews(conId, providers, maxResults);
+}

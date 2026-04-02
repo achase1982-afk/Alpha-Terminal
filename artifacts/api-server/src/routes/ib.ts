@@ -10,6 +10,7 @@ import {
   getIBLiveNews,
   fetchIBHistoricalNews,
   fetchIBNewsArticle,
+  fetchNewsForSymbol,
 } from "../lib/ibStreamer.js";
 
 const router = Router();
@@ -97,6 +98,25 @@ router.get("/news/article", async (req: Request, res: Response) => {
     res.json(article);
   } catch (err: any) {
     res.status(500).json({ error: err.message ?? "Failed to fetch article" });
+  }
+});
+
+router.get("/news/symbol", async (req: Request, res: Response) => {
+  if (!isIBConnected()) {
+    res.status(503).json({ error: "IB not connected", news: [] });
+    return;
+  }
+  const symbol = (req.query["symbol"] as string) || "";
+  if (!symbol) {
+    res.status(400).json({ error: "symbol is required", news: [] });
+    return;
+  }
+  const max = Math.min(Number(req.query["max"] ?? 30), 100);
+  try {
+    const news = await fetchNewsForSymbol(symbol, max);
+    res.json({ news });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message ?? "Failed to fetch news", news: [] });
   }
 });
 

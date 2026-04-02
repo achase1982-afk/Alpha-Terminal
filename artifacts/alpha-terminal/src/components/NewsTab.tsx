@@ -20,6 +20,19 @@ interface NewsResponse {
   error?: string;
 }
 
+interface IBNewsItem {
+  time: string;
+  providerCode: string;
+  articleId: string;
+  headline: string;
+  source: string;
+}
+
+interface IBNewsResponse {
+  news: IBNewsItem[];
+  error?: string;
+}
+
 const PROVIDER_LABELS: Record<string, string> = {
   "BRFG": "BRIEFING",
   "BRFUPDN": "BRIEFING",
@@ -54,7 +67,17 @@ interface UnifiedItem {
 
 function toLiveItems(items: LiveNewsItem[]): UnifiedItem[] {
   return items.map((item, i) => ({
-    key: `ib-${item.articleId}-${i}`,
+    key: `ib-live-${item.articleId}-${i}`,
+    source: PROVIDER_LABELS[item.providerCode] || item.providerCode,
+    headline: item.headline,
+    ts: new Date(item.time).getTime() || Date.now(),
+    isLive: true,
+  }));
+}
+
+function toIBHistItems(items: IBNewsItem[]): UnifiedItem[] {
+  return items.map((item, i) => ({
+    key: `ib-hist-${item.articleId}-${i}`,
     source: PROVIDER_LABELS[item.providerCode] || item.providerCode,
     headline: item.headline,
     ts: new Date(item.time).getTime() || Date.now(),
@@ -75,11 +98,33 @@ function toFinnhubItems(articles: NewsArticle[]): UnifiedItem[] {
   }));
 }
 
+function dedup(items: UnifiedItem[]): UnifiedItem[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const norm = item.headline.toLowerCase().trim().slice(0, 80);
+    if (seen.has(norm)) return false;
+    seen.add(norm);
+    return true;
+  });
+}
+
 export function NewsTab() {
   const { symbol, openBrowser } = useTerminalStore();
   const liveNews = useTerminalStore((s) => s.liveNews);
 
-  const { data, isLoading } = useQuery<NewsResponse>({
+  const { data: ibData } = useQuery<IBNewsResponse>({
+    queryKey: ["ib-news", symbol],
+    queryFn: async () => {
+      const res = await fetchWithAuth(`/api/ib/news/symbol?symbol=${encodeURIComponent(symbol)}&max=30`);
+      if (!res.ok) return { news: [] };
+      return res.json();
+    },
+    enabled: !!symbol,
+    staleTime: 60 * 1000,
+    refetchInterval: 5 * 60 * 1000,
+  });
+
+  const { data: fhData, isLoading: fhLoading } = useQuery<NewsResponse>({
     queryKey: ["ticker-news", symbol],
     queryFn: async () => {
       const res = await fetchWithAuth(`/api/market/news?symbol=${encodeURIComponent(symbol)}`);
@@ -91,14 +136,16 @@ export function NewsTab() {
     refetchInterval: 2 * 60 * 1000,
   });
 
-  const articles = data?.articles ?? [];
+  const ibHistNews = ibData?.news ?? [];
+  const fhArticles = fhData?.articles ?? [];
 
-  const unified = [
+  const unified = dedup([
     ...toLiveItems(liveNews),
-    ...toFinnhubItems(articles),
-  ].sort((a, b) => b.ts - a.ts);
+    ...toIBHistItems(ibHistNews),
+    ...toFinnhubItems(fhArticles),
+  ].sort((a, b) => b.ts - a.ts));
 
-  if (isLoading && liveNews.length === 0) {
+  if (fhLoading && liveNews.length === 0 && ibHistNews.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="w-5 h-5 animate-spin text-[#FFB800]" />
