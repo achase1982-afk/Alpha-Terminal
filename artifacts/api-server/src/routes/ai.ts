@@ -15,7 +15,7 @@ import {
 import { computeIndicators, formatTAContext, isDataStale, type Candle } from "../lib/ta.js";
 import { runMarketPulseEngine, formatClusterDebugLine, verifyEngineScoring, type MarketIndicators, type BiasLabel } from "../lib/marketPulseEngine.js";
 import { getSnapshot, type LiveQuote } from "../lib/schwabStreamer.js";
-import { selectStrategies, selectStrategiesByRegime, classifyRegime, checkOverrideConflict, classifyTicker, computeBeta, applyBetaToProfile, STRATEGIST_SYSTEM_PROMPT, type OptionContract, type StrategyPayload, type RegimeClassification, type TickerProfile, type DailyCandle } from "../lib/optionsStrategist.js";
+import { selectStrategies, selectStrategiesByRegime, classifyRegime, checkOverrideConflict, classifyTicker, computeBeta, applyBetaToProfile, computeExpectedMove, STRATEGIST_SYSTEM_PROMPT, type OptionContract, type StrategyPayload, type RegimeClassification, type TickerProfile, type DailyCandle, type ConvictionParams } from "../lib/optionsStrategist.js";
 import { runPreTradeChecks, type PreTradeInput, type PreTradeResult } from "../lib/preTradeRiskEngine.js";
 
 const router: IRouter = Router();
@@ -1471,6 +1471,8 @@ function buildChainAnalytics(
   pulseComposite: number,
   pulseConfidence: number,
   pulseEdge: string,
+  expectedMove: number,
+  underlyingPrice: number,
 ) {
   const preTradeResults: PreTradeResult[] = [];
   for (const strategy of strategies) {
@@ -1484,6 +1486,8 @@ function buildChainAnalytics(
       ivr: tickerProfile.ivr,
       putSkew: tickerProfile.putSkew,
       earningsDaysAway,
+      expectedMove,
+      underlyingPrice,
       settings: {
         minRR: 0.25,
         maxPositionPct: 3,
@@ -1498,6 +1502,7 @@ function buildChainAnalytics(
     ivr: tickerProfile.ivr,
     putSkew: tickerProfile.putSkew,
     earningsDaysAway,
+    expectedMove,
     preTradeResults,
   };
 }
@@ -1588,7 +1593,12 @@ router.post("/options-strategist", async (req, res) => {
       buildTickerProfile(calls, puts, underlyingPrice, symbol, accessToken, req.log),
       fetchEarningsDaysAway(symbol, accessToken),
     ]);
-    const strategies = selectStrategiesByRegime(regime, calls, puts, tickerProfile);
+    const expectedMove = computeExpectedMove(calls, puts, underlyingPrice);
+    const convictionParams: ConvictionParams = {
+      earningsDaysAway,
+      confidence: resolvedPulse.confidence,
+    };
+    const strategies = selectStrategiesByRegime(regime, calls, puts, tickerProfile, convictionParams);
 
     if (strategies.length === 0) {
       return res.json({
@@ -1604,6 +1614,7 @@ router.post("/options-strategist", async (req, res) => {
     const chainAnalytics = buildChainAnalytics(
       tickerProfile, earningsDaysAway, strategies,
       getVixFromCache(), resolvedPulse.composite, resolvedPulse.confidence, edge,
+      expectedMove, underlyingPrice,
     );
 
     const payload = {
@@ -1708,7 +1719,12 @@ router.post("/options-strategist/stream", async (req, res) => {
       buildTickerProfile(calls, puts, underlyingPrice, symbol, accessToken, req.log),
       fetchEarningsDaysAway(symbol, accessToken),
     ]);
-    const strategies = selectStrategiesByRegime(regime, calls, puts, tickerProfile);
+    const expectedMove = computeExpectedMove(calls, puts, underlyingPrice);
+    const convictionParams: ConvictionParams = {
+      earningsDaysAway,
+      confidence: resolvedPulse.confidence,
+    };
+    const strategies = selectStrategiesByRegime(regime, calls, puts, tickerProfile, convictionParams);
 
     if (strategies.length === 0) {
       return res.json({
@@ -1724,6 +1740,7 @@ router.post("/options-strategist/stream", async (req, res) => {
     const chainAnalytics = buildChainAnalytics(
       tickerProfile, earningsDaysAway, strategies,
       getVixFromCache(), resolvedPulse.composite, resolvedPulse.confidence, edge,
+      expectedMove, underlyingPrice,
     );
 
     const strategistPayload = {

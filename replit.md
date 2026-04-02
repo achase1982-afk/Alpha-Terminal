@@ -70,7 +70,7 @@ Features include a MacroBar displaying key indices, an Institutional Tear Sheet 
 - Key types: `LiquidityTier`, `TickerProfile`, `DailyCandle`
 
 ### Pre-Trade Risk Manager
-- Backend: `preTradeRiskEngine.ts` with 10 deterministic checks: Pulse Alignment, R/R ≥ threshold, Bid/Ask Spread ≤15%, PoP ≥35%, Position Size ≤ max%, Vol Environment, DTE ≥ min, IV Rank, Put Skew, Earnings Proximity
+- Backend: `preTradeRiskEngine.ts` with 11 deterministic checks: Pulse Alignment, R/R ≥ threshold, Bid/Ask Spread ≤15%, PoP ≥35%, Position Size ≤ max%, Vol Environment, DTE ≥ min, IV Rank, Put Skew, Earnings Proximity, Expected Move
 - API route: `POST /api/ai/pre-trade-check` runs engine + Gemini Flash one-liner
 - Frontend: `PreTradeCheckPanel` shows green/yellow/red checklist below each strategy card
 - `RiskCategoryBadge` shows Defined Risk / Cash Secured / Margin Based on each card header
@@ -79,8 +79,20 @@ Features include a MacroBar displaying key indices, an Institutional Tear Sheet 
 - **IVR Check**: `computeIVR()` in optionsStrategist.ts uses ATM IV in front expiration as current IV, min/max IV across all chain strikes as range. IVR = (current-min)/(max-min)*100. IVR>50 favors credit (WARN on debit), IVR<30 favors debit (WARN on credit), 30-50 neutral.
 - **Put Skew Check**: `computePutSkew()` finds closest-to-25-delta put and call in front expiration, skew = putIV - callIV in vol points. >5 pts + selling puts = WARN, >10 pts + selling puts = FAIL.
 - **Earnings Proximity Check**: `fetchEarningsDaysAway()` estimates next earnings from Schwab `lastEarningsDate` fundamental (+90 day cadence). ≤7 days + credit = FAIL (earnings risk blocks premium selling), ≤14 days + credit = WARN + 50% size reduction.
-- `chainAnalytics` object (ivr, putSkew, earningsDaysAway, preTradeResults) included in both strategist endpoints and Gemini narrative payload
+- **Expected Move Check**: `computeExpectedMove()` computes ATM straddle (same-strike call+put mid) from nearest expiration. For credit strategies: breakevens must fall outside underlyingPrice ± expectedMove. Both inside = FAIL, between 100-110% of EM = WARN, both beyond 110% = PASS.
+- `chainAnalytics` object (ivr, putSkew, earningsDaysAway, expectedMove, preTradeResults) included in both strategist endpoints and Gemini narrative payload
 - IVR and putSkew also stored on `TickerProfile` object for convenience
+
+### Conviction Sizing (optionsStrategist.ts)
+- Replaces flat `sizeMultiplier × sizeMultiplierOverride` with multi-factor formula
+- `computeConvictionSize()` computes: `baseSize(1.0) × regimeMultiplier × tierMultiplier × ivrModifier × earningsModifier × confidenceWeight`
+- **IVR Modifier**: 1.0 if IVR favors strategy direction (high IVR + credit, low IVR + debit), 0.75 if neutral, 0.5 if IVR opposes
+- **Earnings Modifier**: 1.0 if >14 days, 0.5 if 8-14 days, 0.0 if ≤7 days AND credit (blocks trade entirely)
+- **Confidence Weight**: 1.0 if confidence ≥75, 0.75 if 50-75, 0.0 if <50
+- Final size clamped: floor 0.25, cap 1.0. If earningsModifier=0, size is 0 and trade is blocked
+- `ConvictionSizing` object attached to each `StrategyPayload` with full breakdown of all multipliers
+- Gemini system prompt requires AI to explain each multiplier value and how they determine final position size
+- Key types: `ConvictionSizing`, `ConvictionParams`
 
 ### Session Timeout & Biometric Auth
 - All security preferences stored in `localStorage` under key `alphaTerminalSecurityPrefs`

@@ -68,6 +68,25 @@ export interface StrategyPayload {
   exit_rules: ExitRules;
   undefined_risk?: boolean;
   risk_evaluation: RiskEvaluation;
+  convictionSizing?: ConvictionSizing;
+}
+
+export interface ConvictionSizing {
+  baseSize: number;
+  regimeMultiplier: number;
+  tierMultiplier: number;
+  ivrModifier: number;
+  earningsModifier: number;
+  confidenceWeight: number;
+  rawProduct: number;
+  finalSize: number;
+  blocked: boolean;
+  blockReason: string | null;
+}
+
+export interface ConvictionParams {
+  earningsDaysAway: number | null;
+  confidence: number;
 }
 
 export type MarketRegime =
@@ -317,6 +336,108 @@ export function computePutSkew(
 
   const skew = (bestPut.iv ?? 0) - (bestCall.iv ?? 0);
   return r2(skew);
+}
+
+export function computeExpectedMove(
+  calls: OptionContract[],
+  puts: OptionContract[],
+  underlyingPrice: number,
+): number {
+  const allContracts = [...calls, ...puts];
+  const expirations = new Map<string, number>();
+  for (const c of allContracts) {
+    if (c.dte !== undefined && !expirations.has(c.expiration)) {
+      expirations.set(c.expiration, c.dte);
+    }
+  }
+  const sorted = [...expirations.entries()].sort((a, b) => a[1] - b[1]);
+  if (sorted.length === 0) return 0;
+  const nearestExp = sorted[0][0];
+
+  const expCalls = calls.filter(c => c.expiration === nearestExp && (c.bid ?? 0) > 0 && (c.ask ?? 0) > 0);
+  const expPuts = puts.filter(c => c.expiration === nearestExp && (c.bid ?? 0) > 0 && (c.ask ?? 0) > 0);
+  if (expCalls.length === 0 || expPuts.length === 0) return 0;
+
+  const strikes = new Set<number>();
+  for (const c of expCalls) strikes.add(c.strike);
+
+  let bestStrike = 0;
+  let bestDist = Infinity;
+  for (const s of strikes) {
+    const hasPut = expPuts.some(p => p.strike === s);
+    if (!hasPut) continue;
+    const dist = Math.abs(s - underlyingPrice);
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestStrike = s;
+    }
+  }
+  if (bestStrike === 0) return 0;
+
+  const atmCall = expCalls.find(c => c.strike === bestStrike);
+  const atmPut = expPuts.find(p => p.strike === bestStrike);
+  if (!atmCall || !atmPut) return 0;
+
+  const callMid = ((atmCall.bid ?? 0) + (atmCall.ask ?? 0)) / 2;
+  const putMid = ((atmPut.bid ?? 0) + (atmPut.ask ?? 0)) / 2;
+  return r2(callMid + putMid);
+}
+
+export function computeConvictionSize(
+  regimeMultiplier: number,
+  tierMultiplier: number,
+  ivr: number,
+  isCredit: boolean,
+  earningsDaysAway: number | null,
+  confidence: number,
+): ConvictionSizing {
+  const baseSize = 1.0;
+
+  let ivrModifier: number;
+  if (ivr > 50) {
+    ivrModifier = isCredit ? 1.0 : 0.5;
+  } else if (ivr < 30) {
+    ivrModifier = isCredit ? 0.5 : 1.0;
+  } else {
+    ivrModifier = 0.75;
+  }
+
+  let earningsModifier: number;
+  if (earningsDaysAway === null || earningsDaysAway === undefined) {
+    earningsModifier = 1.0;
+  } else if (earningsDaysAway <= 7 && isCredit) {
+    earningsModifier = 0.0;
+  } else if (earningsDaysAway <= 14 && earningsDaysAway > 7) {
+    earningsModifier = 0.5;
+  } else {
+    earningsModifier = 1.0;
+  }
+
+  let confidenceWeight: number;
+  if (confidence >= 75) {
+    confidenceWeight = 1.0;
+  } else if (confidence >= 50) {
+    confidenceWeight = 0.75;
+  } else {
+    confidenceWeight = 0.0;
+  }
+
+  const rawProduct = baseSize * regimeMultiplier * tierMultiplier * ivrModifier * earningsModifier * confidenceWeight;
+  const blocked = earningsModifier === 0.0;
+  const finalSize = blocked ? 0 : Math.max(0.25, Math.min(1.0, rawProduct));
+
+  return {
+    baseSize,
+    regimeMultiplier: r2(regimeMultiplier),
+    tierMultiplier: r2(tierMultiplier),
+    ivrModifier,
+    earningsModifier,
+    confidenceWeight,
+    rawProduct: r2(rawProduct),
+    finalSize: r2(finalSize),
+    blocked,
+    blockReason: blocked ? "Earnings within 7 days — credit strategy blocked" : null,
+  };
 }
 
 export interface DailyCandle {
@@ -1302,22 +1423,46 @@ export function selectStrategiesByRegime(
   calls: OptionContract[],
   puts: OptionContract[],
   tickerProfile?: TickerProfile,
+  convictionParams?: ConvictionParams,
 ): StrategyPayload[] {
   const tier = tickerProfile?.tier ?? 1;
-
-  const effectiveRegime = tickerProfile
-    ? {
-        ...regime,
-        deltaTargets: { ...regime.deltaTargets, shortStrike: tickerProfile.adjustedDelta },
-        sizeMultiplier: regime.sizeMultiplier * tickerProfile.sizeMultiplierOverride,
-      }
-    : regime;
+  const adjustedDelta = tickerProfile
+    ? { ...regime.deltaTargets, shortStrike: tickerProfile.adjustedDelta }
+    : regime.deltaTargets;
 
   const results: StrategyPayload[] = [];
 
-  for (const stratType of effectiveRegime.strategyUniverse) {
+  for (const stratType of regime.strategyUniverse) {
+    let sizeMul: number;
+    let sizing: ConvictionSizing | undefined;
+
+    if (convictionParams) {
+      const isCredit = isCreditStrategy(stratType);
+      sizing = computeConvictionSize(
+        regime.sizeMultiplier,
+        tickerProfile?.sizeMultiplierOverride ?? 1.0,
+        tickerProfile?.ivr ?? 50,
+        isCredit,
+        convictionParams.earningsDaysAway,
+        convictionParams.confidence,
+      );
+      if (sizing.blocked || sizing.finalSize === 0) continue;
+      sizeMul = sizing.finalSize;
+    } else {
+      sizeMul = regime.sizeMultiplier * (tickerProfile?.sizeMultiplierOverride ?? 1.0);
+    }
+
+    const effectiveRegime: RegimeClassification = {
+      ...regime,
+      deltaTargets: adjustedDelta,
+      sizeMultiplier: sizeMul,
+    };
+
     const setup = findBestSetupForStrategy(stratType, calls, puts, effectiveRegime, tier);
-    if (setup) results.push(setup);
+    if (setup) {
+      if (sizing) setup.convictionSizing = sizing;
+      results.push(setup);
+    }
   }
 
   results.sort((a, b) => {
@@ -1386,7 +1531,18 @@ The payload includes a tickerProfile object with:
 The payload also includes a chainAnalytics object with:
 - ivr, putSkew: same as tickerProfile for convenience
 - earningsDaysAway: number of calendar days until next earnings (null if unknown). Within 7 days = earnings imminent, credit strategies blocked. Within 14 days = earnings caution, size reduced 50%.
+- expectedMove: the options-implied expected move in dollar terms (ATM straddle price from nearest expiration). Breakevens on credit strategies must fall outside this range.
 - preTradeChecks: array of named risk checks with PASS/WARN/FAIL status
+
+Each strategy includes a convictionSizing object showing the full sizing breakdown:
+- baseSize: always 1.0
+- regimeMultiplier: from the classified market regime
+- tierMultiplier: from the ticker's liquidity tier (0.5 for Tier 3, 1.0 otherwise)
+- ivrModifier: 1.0 if IVR favors the strategy direction, 0.75 if neutral, 0.5 if it opposes
+- earningsModifier: 1.0 if >14 days away, 0.5 if 8-14 days, 0.0 if ≤7 days (blocks trade)
+- confidenceWeight: 1.0 if confidence >75, 0.75 if 50-75, 0.0 if <50
+- finalSize: clamped product (floor 0.25, cap 1.0). Zero if earnings blocks the trade.
+You MUST explain the conviction sizing for each strategy: state each multiplier's value and why it was set that way, then show how the product determines the final position size.
 
 Incorporate the ticker profile and chain analytics into your narrative:
 - Mention the liquidity tier and what it means for execution quality
@@ -1396,6 +1552,7 @@ Incorporate the ticker profile and chain analytics into your narrative:
 - If put skew is elevated, explain the cost implications for put-selling strategies
 - If earnings are nearby, explain the risk and any size adjustments or blocks applied
 - Reference any WARN or FAIL pre-trade checks and explain their impact
+- If expected move check is WARN or FAIL, explain that breakevens are too close to the implied move
 
 For each strategy, explain:
 - Why this strategy fits the current market regime (connect regime to strategy choice)

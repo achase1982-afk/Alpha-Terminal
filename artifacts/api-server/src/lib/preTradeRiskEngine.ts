@@ -30,6 +30,8 @@ export interface PreTradeInput {
   ivr?: number;
   putSkew?: number;
   earningsDaysAway?: number | null;
+  expectedMove?: number;
+  underlyingPrice?: number;
   settings: {
     minRR: number;
     maxPositionPct: number;
@@ -290,6 +292,81 @@ function checkPutSkew(input: PreTradeInput): PreTradeCheck {
   };
 }
 
+function checkExpectedMove(input: PreTradeInput): PreTradeCheck {
+  const { strategy, expectedMove, underlyingPrice } = input;
+
+  if (!expectedMove || !underlyingPrice || expectedMove <= 0) {
+    return {
+      id: "expected_move",
+      label: "Expected Move",
+      status: "PASS",
+      value: "Unavailable",
+      threshold: "Breakevens outside expected move",
+      detail: "Expected move data unavailable — no gate applied",
+    };
+  }
+
+  const isCredit = isStrategyCredit(strategy);
+  if (!isCredit) {
+    return {
+      id: "expected_move",
+      label: "Expected Move",
+      status: "PASS",
+      value: `±$${expectedMove.toFixed(2)}`,
+      threshold: "Credit strategies only",
+      detail: "Expected move validation applies to credit spreads and iron condors only",
+    };
+  }
+
+  const breakevens: number[] = [];
+  if (strategy.breakeven) breakevens.push(strategy.breakeven);
+  if (strategy.breakeven_upper) breakevens.push(strategy.breakeven_upper);
+
+  if (breakevens.length === 0) {
+    return {
+      id: "expected_move",
+      label: "Expected Move",
+      status: "PASS",
+      value: `±$${expectedMove.toFixed(2)}`,
+      threshold: "Breakevens outside expected move",
+      detail: "No breakeven data available",
+    };
+  }
+
+  const ratios = breakevens.map(be => Math.abs(be - underlyingPrice) / expectedMove);
+  const ratioStr = ratios.map(r => `${(r * 100).toFixed(0)}%`).join(", ");
+
+  const allInside = ratios.every(r => r < 1.0);
+  const allBeyond110 = ratios.every(r => r >= 1.1);
+  const anyBetween100And110 = ratios.some(r => r >= 1.0 && r < 1.1);
+
+  let status: CheckStatus;
+  let detail: string;
+
+  if (allInside) {
+    status = "FAIL";
+    detail = `Breakevens inside the options-implied expected move (${ratioStr} of EM) — trade has negative expected value`;
+  } else if (allBeyond110) {
+    status = "PASS";
+    detail = `Breakevens beyond 110% of expected move (${ratioStr} of EM) — adequate safety margin`;
+  } else if (anyBetween100And110) {
+    status = "WARN";
+    detail = `Breakevens near expected move boundary (${ratioStr} of EM) — thin margin of safety`;
+  } else {
+    status = "WARN";
+    detail = `Mixed breakeven placement relative to expected move (${ratioStr} of EM)`;
+  }
+
+  return {
+    id: "expected_move",
+    label: "Expected Move",
+    status,
+    value: `±$${expectedMove.toFixed(2)} (${ratioStr})`,
+    threshold: "Breakevens >110% of EM",
+    detail,
+  };
+}
+
 function checkEarningsProximity(input: PreTradeInput): PreTradeCheck {
   const days = input.earningsDaysAway;
   if (days === undefined || days === null) {
@@ -342,6 +419,7 @@ export function runPreTradeChecks(input: PreTradeInput): PreTradeResult {
     checkIVR(input),
     checkPutSkew(input),
     checkEarningsProximity(input),
+    checkExpectedMove(input),
   ];
 
   const failCount = checks.filter(c => c.status === "FAIL").length;
