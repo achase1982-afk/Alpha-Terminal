@@ -108,7 +108,7 @@ export function useMarketStream() {
   const reconnectDelayRef = useRef(WS_RECONNECT_BASE);
   const tokenReadyRef = useRef(false);
 
-  const watchlist = useTerminalStore((s) => s.watchlist);
+  const watchlist = useTerminalStore((s) => s.watchlists[s.activeWatchlistId]?.symbols ?? []);
 
   function allSymbols(): string[] {
     return [

@@ -1,23 +1,24 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { useTerminalStore, type LiveQuote } from "@/lib/store";
+import { useTerminalStore, useActiveWatchlist, type LiveQuote } from "@/lib/store";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import {
   Star,
   ListOrdered,
-  ArrowUpDown,
   TrendingUp,
   TrendingDown,
   Minus,
   ChevronRight,
   Trash2,
   Plus,
-  BarChart3,
-  Activity,
   Wifi,
   WifiOff,
+  ChevronDown,
+  Pencil,
+  Check,
+  X,
 } from "lucide-react";
 
-type SortKey = "symbol" | "last" | "change" | "changePct" | "volume";
+type SortKey = "symbol" | "last" | "changePct";
 type SortDir = "asc" | "desc";
 
 interface SparkData {
@@ -29,7 +30,7 @@ const FMT_COMPACT = new Intl.NumberFormat("en-US", { notation: "compact", maximu
 
 function fmtPrice(v: number | null): string {
   if (v == null) return "—";
-  return v >= 1000 ? v.toFixed(0) : v >= 100 ? v.toFixed(2) : v.toFixed(2);
+  return v >= 1000 ? v.toFixed(0) : v.toFixed(2);
 }
 
 function fmtChange(v: number | null): string {
@@ -56,14 +57,12 @@ function changeColor(v: number | null): string {
   return "#71717a";
 }
 
-function MiniSparkline({ data, color, width = 60, height = 20 }: { data: number[]; color: string; width?: number; height?: number }) {
+function MiniSparkline({ data, color, width = 56, height = 22 }: { data: number[]; color: string; width?: number; height?: number }) {
   if (data.length < 2) return <div style={{ width, height }} />;
-
   const min = Math.min(...data);
   const max = Math.max(...data);
   const range = max - min || 1;
   const step = width / (data.length - 1);
-
   const points = data.map((v, i) => {
     const x = i * step;
     const y = height - ((v - min) / range) * (height - 2) - 1;
@@ -72,41 +71,8 @@ function MiniSparkline({ data, color, width = 60, height = 20 }: { data: number[
 
   return (
     <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="shrink-0">
-      <polyline
-        points={points}
-        fill="none"
-        stroke={color}
-        strokeWidth={1.2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <polyline points={points} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
     </svg>
-  );
-}
-
-function DayRangeBar({ low, high, last }: { low: number | null; high: number | null; last: number | null }) {
-  if (low == null || high == null || last == null) return null;
-  const range = high - low;
-  if (range <= 0) return null;
-  const pct = Math.max(0, Math.min(100, ((last - low) / range) * 100));
-
-  return (
-    <div className="w-full">
-      <div className="flex justify-between mb-0.5">
-        <span className="font-mono text-[8px] text-[#71717a]">{low.toFixed(2)}</span>
-        <span className="font-mono text-[8px] text-[#71717a]">{high.toFixed(2)}</span>
-      </div>
-      <div className="relative h-[3px] rounded-full overflow-hidden" style={{ background: "#2A2A2C" }}>
-        <div
-          className="absolute left-0 top-0 h-full rounded-full"
-          style={{ width: `${pct}%`, background: "linear-gradient(90deg, #ef4444, #FFB800, #22c55e)" }}
-        />
-        <div
-          className="absolute top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full border border-white"
-          style={{ left: `calc(${pct}% - 3px)`, background: "#fff" }}
-        />
-      </div>
-    </div>
   );
 }
 
@@ -127,10 +93,6 @@ function WatchlistRow({
   const change = quote?.change ?? null;
   const changePct = quote?.changePct ?? null;
   const volume = quote?.volume ?? null;
-  const bid = quote?.bid ?? null;
-  const ask = quote?.ask ?? null;
-  const high = quote?.high ?? null;
-  const low = quote?.low ?? null;
   const cColor = changeColor(change);
   const hasData = last != null;
 
@@ -139,36 +101,37 @@ function WatchlistRow({
       onClick={onTap}
       role="button"
       tabIndex={0}
-      className="group relative cursor-pointer border-b border-[#2A2A2C]/60 last:border-b-0"
-      style={{ background: "#1C1C1E" }}
+      className="group relative cursor-pointer active:bg-white/[0.04] transition-colors"
+      style={{ background: "#1C1C1E", borderBottom: "1px solid #2A2A2C" }}
     >
-      <div className="flex items-center px-3 py-2.5 gap-2">
+      <div className="flex items-center px-4 py-3 gap-3">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5">
-              {change != null && change > 0 && <TrendingUp className="w-3 h-3 shrink-0" style={{ color: "#22c55e" }} />}
-              {change != null && change < 0 && <TrendingDown className="w-3 h-3 shrink-0" style={{ color: "#ef4444" }} />}
-              {(change == null || change === 0) && <Minus className="w-3 h-3 shrink-0" style={{ color: "#71717a" }} />}
-              <span className="font-mono text-xs font-bold text-white tracking-wider">{sym}</span>
-            </div>
+          <div className="flex items-center gap-2 mb-1">
+            {change != null && change > 0 && <TrendingUp className="w-4 h-4 shrink-0" style={{ color: "#22c55e" }} />}
+            {change != null && change < 0 && <TrendingDown className="w-4 h-4 shrink-0" style={{ color: "#ef4444" }} />}
+            {(change == null || change === 0) && <Minus className="w-4 h-4 shrink-0" style={{ color: "#71717a" }} />}
+            <span className="font-mono text-[15px] font-bold text-white tracking-wider">{sym}</span>
           </div>
 
-          <div className="flex items-center gap-3 mt-1">
+          <div className="flex items-center gap-3 pl-6">
             {spark && spark.closes.length > 1 && (
-              <MiniSparkline data={spark.closes} color={cColor} width={48} height={16} />
+              <MiniSparkline data={spark.closes} color={cColor} />
             )}
-            <div className="flex items-center gap-2 font-mono text-[9px]">
+            <div className="flex items-center gap-2 font-mono text-[12px]">
               <span style={{ color: cColor }}>{fmtChange(change)}</span>
-              <span className="px-1 py-0.5 rounded" style={{ background: `${cColor}15`, color: cColor }}>
+              <span className="px-1.5 py-0.5 rounded" style={{ background: `${cColor}15`, color: cColor }}>
                 {fmtPct(changePct)}
               </span>
             </div>
+            <span className="font-mono text-[11px] text-[#71717a]">
+              {fmtVol(volume)}
+            </span>
           </div>
         </div>
 
         <div className="flex flex-col items-end gap-1 shrink-0">
           <span
-            className="font-mono text-sm font-bold tabular-nums px-2 py-0.5 rounded"
+            className="font-mono text-[16px] font-bold tabular-nums px-2.5 py-1 rounded-lg"
             style={{
               color: hasData ? "#fff" : "#52525b",
               background: hasData ? `${cColor}18` : "transparent",
@@ -177,37 +140,183 @@ function WatchlistRow({
           >
             {hasData ? `$${fmtPrice(last)}` : "—"}
           </span>
-          <span className="font-mono text-[9px] text-[#52525b] tabular-nums">
-            VOL {fmtVol(volume)}
-          </span>
         </div>
 
-        <ChevronRight className="w-3.5 h-3.5 text-[#3a3a3c] group-hover:text-[#71717a] transition-colors shrink-0" />
+        <ChevronRight className="w-4 h-4 text-[#3a3a3c] group-hover:text-[#71717a] transition-colors shrink-0" />
       </div>
 
-      <div className="flex items-center gap-3 px-3 pb-2">
-        <div className="flex-1">
-          <DayRangeBar low={low} high={high} last={last} />
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <div className="font-mono text-[8px] text-[#52525b]">
-            <span className="text-[#22c55e]/70">{bid != null ? bid.toFixed(2) : "—"}</span>
-            <span className="mx-0.5">×</span>
-            <span className="text-[#ef4444]/70">{ask != null ? ask.toFixed(2) : "—"}</span>
-          </div>
-          <button
-            onClick={(e) => { e.stopPropagation(); onRemove(); }}
-            className="p-1 rounded text-[#3a3a3c] hover:text-red-400 hover:bg-red-400/10 transition-colors opacity-0 group-hover:opacity-100"
-          >
-            <Trash2 className="w-3 h-3" />
-          </button>
-        </div>
-      </div>
+      <button
+        onClick={(e) => { e.stopPropagation(); onRemove(); }}
+        className="absolute top-3 right-3 p-2 rounded-lg text-[#52525b] hover:text-red-400 hover:bg-red-400/10 active:bg-red-400/20 transition-all"
+      >
+        <Trash2 className="w-4 h-4" />
+      </button>
     </div>
   );
 }
 
-function ColumnHeader({
+function WatchlistSwitcher() {
+  const { watchlists, activeWatchlistId, setActiveWatchlist, createWatchlist, deleteWatchlist, renameWatchlist } = useTerminalStore();
+  const [open, setOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [showNew, setShowNew] = useState(false);
+  const [newName, setNewName] = useState("");
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(e: MouseEvent | TouchEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    document.addEventListener("touchstart", handleClick);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("touchstart", handleClick);
+    };
+  }, [open]);
+
+  const ids = Object.keys(watchlists);
+  const activeList = watchlists[activeWatchlistId];
+
+  const handleCreate = () => {
+    const name = newName.trim();
+    if (!name) return;
+    createWatchlist(name);
+    setNewName("");
+    setShowNew(false);
+    setOpen(false);
+  };
+
+  const handleRename = (id: string) => {
+    const name = editName.trim();
+    if (!name) return;
+    renameWatchlist(id, name);
+    setEditingId(null);
+  };
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-2 px-3 py-2 rounded-lg transition-colors hover:bg-white/[0.04] active:bg-white/[0.08]"
+      >
+        <Star className="w-5 h-5" style={{ color: "#FFB800" }} />
+        <span className="font-mono text-[14px] font-bold tracking-wider text-white">
+          {activeList?.name ?? "Watchlist"}
+        </span>
+        <span
+          className="font-mono text-[11px] px-1.5 py-0.5 rounded-md"
+          style={{ background: "#FFB80015", color: "#FFB800", border: "1px solid #FFB80030" }}
+        >
+          {activeList?.symbols.length ?? 0}
+        </span>
+        <ChevronDown className={`w-4 h-4 text-[#71717a] transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div
+          className="absolute left-0 top-full mt-1 z-50 w-72 rounded-xl border overflow-hidden shadow-2xl"
+          style={{ background: "#111113", borderColor: "#2A2A2C" }}
+        >
+          {ids.map((id) => {
+            const wl = watchlists[id];
+            const isActive = id === activeWatchlistId;
+            const isEditing = editingId === id;
+
+            return (
+              <div
+                key={id}
+                className={`flex items-center justify-between px-4 py-3 transition-colors ${isActive ? "bg-[#FFB800]/10" : "hover:bg-white/[0.04]"}`}
+                style={{ borderBottom: "1px solid #2A2A2C" }}
+              >
+                {isEditing ? (
+                  <div className="flex items-center gap-2 flex-1">
+                    <input
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") handleRename(id); if (e.key === "Escape") setEditingId(null); }}
+                      className="flex-1 font-mono text-[13px] bg-transparent text-white outline-none border-b border-[#FFB800]"
+                      autoFocus
+                    />
+                    <button onClick={() => handleRename(id)} className="p-1 text-[#22c55e] hover:bg-[#22c55e]/10 rounded">
+                      <Check className="w-3.5 h-3.5" />
+                    </button>
+                    <button onClick={() => setEditingId(null)} className="p-1 text-[#71717a] hover:bg-white/10 rounded">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => { setActiveWatchlist(id); setOpen(false); }}
+                      className="flex-1 text-left flex items-center gap-2"
+                    >
+                      <span className={`font-mono text-[13px] font-medium ${isActive ? "text-[#FFB800]" : "text-white"}`}>
+                        {wl.name}
+                      </span>
+                      <span className="font-mono text-[11px] text-[#71717a]">
+                        ({wl.symbols.length})
+                      </span>
+                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setEditingId(id); setEditName(wl.name); }}
+                        className="p-1.5 text-[#52525b] hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      {id !== "default" && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); deleteWatchlist(id); }}
+                          className="p-1.5 text-[#52525b] hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })}
+
+          {showNew ? (
+            <div className="flex items-center gap-2 px-4 py-3">
+              <input
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); if (e.key === "Escape") { setShowNew(false); setNewName(""); } }}
+                placeholder="Watchlist name..."
+                className="flex-1 font-mono text-[13px] bg-transparent text-white outline-none border-b border-[#FFB800] placeholder:text-[#52525b]"
+                autoFocus
+              />
+              <button onClick={handleCreate} className="p-1 text-[#22c55e] hover:bg-[#22c55e]/10 rounded">
+                <Check className="w-3.5 h-3.5" />
+              </button>
+              <button onClick={() => { setShowNew(false); setNewName(""); }} className="p-1 text-[#71717a] hover:bg-white/10 rounded">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowNew(true)}
+              className="w-full flex items-center gap-2 px-4 py-3 text-[#FFB800] hover:bg-[#FFB800]/5 transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              <span className="font-mono text-[12px] font-bold tracking-wider">NEW WATCHLIST</span>
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SortButton({
   label,
   sortKey,
   currentSort,
@@ -224,19 +333,18 @@ function ColumnHeader({
   return (
     <button
       onClick={() => onSort(sortKey)}
-      className="flex items-center gap-0.5 font-mono text-[8px] uppercase tracking-widest transition-colors"
+      className="flex items-center gap-0.5 font-mono text-[10px] uppercase tracking-widest transition-colors"
       style={{ color: active ? "#FFB800" : "#52525b" }}
     >
       {label}
-      {active && (
-        <span className="text-[7px]">{currentDir === "asc" ? "▲" : "▼"}</span>
-      )}
+      {active && <span className="text-[9px]">{currentDir === "asc" ? "▲" : "▼"}</span>}
     </button>
   );
 }
 
 export function WatchlistView() {
-  const { watchlist, removeFromWatchlist, setSymbol, streamPrices, accessToken, streamStatus } = useTerminalStore();
+  const { removeFromWatchlist, setSymbol, streamPrices, accessToken, streamStatus } = useTerminalStore();
+  const watchlist = useActiveWatchlist();
   const [sortKey, setSortKey] = useState<SortKey>("symbol");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [sparkData, setSparkData] = useState<Record<string, SparkData>>({});
@@ -253,10 +361,8 @@ export function WatchlistView() {
 
   useEffect(() => {
     if (!accessToken || watchlist.length === 0) return;
-
     const toFetch = watchlist.filter((s) => !fetchedRef.current.has(s));
     if (toFetch.length === 0) return;
-
     const controller = new AbortController();
 
     async function fetchSpark(sym: string) {
@@ -273,8 +379,7 @@ export function WatchlistView() {
           fetchedRef.current.add(sym);
           setSparkData((prev) => ({ ...prev, [sym]: { closes, fetched: true } }));
         }
-      } catch {
-      }
+      } catch {}
     }
 
     const batchSize = 3;
@@ -288,7 +393,6 @@ export function WatchlistView() {
       });
     }
     nextBatch();
-
     return () => controller.abort();
   }, [watchlist, accessToken]);
 
@@ -299,21 +403,9 @@ export function WatchlistView() {
       const qb = streamPrices[b];
       let cmp = 0;
       switch (sortKey) {
-        case "symbol":
-          cmp = a.localeCompare(b);
-          break;
-        case "last":
-          cmp = (qa?.last ?? 0) - (qb?.last ?? 0);
-          break;
-        case "change":
-          cmp = (qa?.change ?? 0) - (qb?.change ?? 0);
-          break;
-        case "changePct":
-          cmp = (qa?.changePct ?? 0) - (qb?.changePct ?? 0);
-          break;
-        case "volume":
-          cmp = (qa?.volume ?? 0) - (qb?.volume ?? 0);
-          break;
+        case "symbol": cmp = a.localeCompare(b); break;
+        case "last": cmp = (qa?.last ?? 0) - (qb?.last ?? 0); break;
+        case "changePct": cmp = (qa?.changePct ?? 0) - (qb?.changePct ?? 0); break;
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
@@ -327,45 +419,36 @@ export function WatchlistView() {
   return (
     <div className="flex-1 flex flex-col" style={{ background: "#1C1C1E" }}>
       <div className="px-4 pt-4 pb-2">
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2">
-            <Star className="w-4 h-4" style={{ color: "#FFB800" }} />
-            <h2 className="font-mono text-sm font-bold tracking-wider" style={{ color: "#e4e4e7" }}>WATCHLIST</h2>
-            <span
-              className="font-mono text-[9px] px-1.5 py-0.5 rounded"
-              style={{ background: "#FFB800" + "15", color: "#FFB800", border: `1px solid #FFB80030` }}
-            >
-              {watchlist.length}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between mb-3">
+          <WatchlistSwitcher />
+          <div className="flex items-center gap-1.5">
             {streamStatus === "live" ? (
-              <div className="flex items-center gap-1">
-                <Wifi className="w-3 h-3 text-[#22c55e]" />
-                <span className="font-mono text-[8px] text-[#22c55e] uppercase">Live</span>
-              </div>
+              <>
+                <Wifi className="w-3.5 h-3.5 text-[#22c55e]" />
+                <span className="font-mono text-[10px] text-[#22c55e] uppercase font-bold">Live</span>
+              </>
             ) : (
-              <div className="flex items-center gap-1">
-                <WifiOff className="w-3 h-3 text-[#71717a]" />
-                <span className="font-mono text-[8px] text-[#71717a] uppercase">{streamStatus}</span>
-              </div>
+              <>
+                <WifiOff className="w-3.5 h-3.5 text-[#71717a]" />
+                <span className="font-mono text-[10px] text-[#71717a] uppercase">{streamStatus}</span>
+              </>
             )}
           </div>
         </div>
 
         {watchlist.length > 0 && (
-          <div className="flex items-center gap-3 mb-3">
-            <div className="flex items-center gap-1">
-              <div className="w-1.5 h-1.5 rounded-full" style={{ background: "#22c55e" }} />
-              <span className="font-mono text-[9px] text-[#71717a]">{gainers} up</span>
+          <div className="flex items-center gap-4 mb-2">
+            <div className="flex items-center gap-1.5">
+              <div className="w-2 h-2 rounded-full" style={{ background: "#22c55e" }} />
+              <span className="font-mono text-[11px] text-[#a1a1aa]">{gainers} up</span>
             </div>
-            <div className="flex items-center gap-1">
-              <div className="w-1.5 h-1.5 rounded-full" style={{ background: "#ef4444" }} />
-              <span className="font-mono text-[9px] text-[#71717a]">{losers} down</span>
+            <div className="flex items-center gap-1.5">
+              <div className="w-2 h-2 rounded-full" style={{ background: "#ef4444" }} />
+              <span className="font-mono text-[11px] text-[#a1a1aa]">{losers} down</span>
             </div>
-            <div className="flex items-center gap-1">
-              <div className="w-1.5 h-1.5 rounded-full" style={{ background: "#71717a" }} />
-              <span className="font-mono text-[9px] text-[#71717a]">{unchanged} flat</span>
+            <div className="flex items-center gap-1.5">
+              <div className="w-2 h-2 rounded-full" style={{ background: "#71717a" }} />
+              <span className="font-mono text-[11px] text-[#a1a1aa]">{unchanged} flat</span>
             </div>
           </div>
         )}
@@ -373,30 +456,34 @@ export function WatchlistView() {
 
       {watchlist.length > 0 && (
         <div className="flex items-center justify-between px-4 pb-2 border-b border-[#2A2A2C]">
-          <ColumnHeader label="Symbol" sortKey="symbol" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
-          <div className="flex items-center gap-4">
-            <ColumnHeader label="Chg" sortKey="change" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
-            <ColumnHeader label="Chg%" sortKey="changePct" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
-            <ColumnHeader label="Vol" sortKey="volume" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
-            <ColumnHeader label="Price" sortKey="last" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
+          <SortButton label="Symbol" sortKey="symbol" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
+          <div className="flex items-center gap-6">
+            <SortButton label="Change" sortKey="changePct" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
+            <SortButton label="Price" sortKey="last" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
           </div>
         </div>
       )}
 
       <div className="flex-1 overflow-y-auto">
         {watchlist.length === 0 ? (
-          <div className="flex-1 flex flex-col items-center justify-center gap-4 py-16">
+          <div className="flex-1 flex flex-col items-center justify-center gap-4 py-20">
             <div className="relative">
-              <div className="w-16 h-16 rounded-2xl flex items-center justify-center" style={{ background: "#FFB800" + "10", border: `1px solid #FFB80020` }}>
-                <ListOrdered className="w-7 h-7" style={{ color: "#FFB800" + "40" }} />
+              <div
+                className="w-20 h-20 rounded-2xl flex items-center justify-center"
+                style={{ background: "#FFB80010", border: "1px solid #FFB80020" }}
+              >
+                <ListOrdered className="w-9 h-9" style={{ color: "#FFB80040" }} />
               </div>
-              <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center" style={{ background: "#2A2A2C", border: "1px solid #3a3a3c" }}>
-                <Plus className="w-3 h-3 text-[#71717a]" />
+              <div
+                className="absolute -top-1 -right-1 w-6 h-6 rounded-full flex items-center justify-center"
+                style={{ background: "#2A2A2C", border: "1px solid #3a3a3c" }}
+              >
+                <Plus className="w-3.5 h-3.5 text-[#71717a]" />
               </div>
             </div>
             <div className="text-center">
-              <p className="font-mono text-xs text-[#a1a1aa] mb-1">No symbols watched</p>
-              <p className="font-mono text-[10px] text-[#52525b] leading-relaxed">
+              <p className="font-mono text-[14px] text-[#a1a1aa] mb-1.5">No symbols watched</p>
+              <p className="font-mono text-[12px] text-[#52525b] leading-relaxed">
                 Search for a ticker and tap <span style={{ color: "#FFB800" }}>+</span> to add
               </p>
             </div>
@@ -414,21 +501,6 @@ export function WatchlistView() {
           ))
         )}
       </div>
-
-      {watchlist.length > 0 && (
-        <div className="px-4 py-2 border-t border-[#2A2A2C] flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Activity className="w-3 h-3 text-[#52525b]" />
-            <span className="font-mono text-[8px] text-[#52525b] uppercase tracking-wider">
-              {watchlist.length} instrument{watchlist.length !== 1 ? "s" : ""} tracked
-            </span>
-          </div>
-          <div className="flex items-center gap-1">
-            <BarChart3 className="w-3 h-3 text-[#52525b]" />
-            <span className="font-mono text-[8px] text-[#52525b]">WebSocket</span>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -118,9 +118,14 @@ interface TerminalState {
   addChatMessage: (msg: ChatMessage) => void;
   clearChat: () => void;
 
-  watchlist: string[];
+  watchlists: Record<string, { name: string; symbols: string[] }>;
+  activeWatchlistId: string;
   addToWatchlist: (s: string) => void;
   removeFromWatchlist: (s: string) => void;
+  createWatchlist: (name: string) => string;
+  deleteWatchlist: (id: string) => void;
+  renameWatchlist: (id: string, name: string) => void;
+  setActiveWatchlist: (id: string) => void;
 
   browserUrl: string | null;
   browserTitle: string | null;
@@ -259,19 +264,53 @@ export const useTerminalStore = create<TerminalState>()(
       addChatMessage: (msg) => set((state) => ({ chatHistory: [...state.chatHistory, msg] })),
       clearChat: () => set({ chatHistory: [] }),
 
-      watchlist: [],
+      watchlists: { default: { name: "My Watchlist", symbols: [] } },
+      activeWatchlistId: "default",
       addToWatchlist: (symbol) => {
         const upper = symbol.toUpperCase();
-        set((state) => ({
-          watchlist: state.watchlist.includes(upper) ? state.watchlist : [...state.watchlist, upper],
-        }));
+        set((state) => {
+          const id = state.watchlists[state.activeWatchlistId] ? state.activeWatchlistId : "default";
+          const wl = state.watchlists[id];
+          if (!wl || wl.symbols.includes(upper)) return {};
+          return { watchlists: { ...state.watchlists, [id]: { ...wl, symbols: [...wl.symbols, upper] } }, activeWatchlistId: id };
+        });
       },
       removeFromWatchlist: (symbol) => {
         const upper = symbol.toUpperCase();
-        set((state) => ({
-          watchlist: state.watchlist.filter(s => s !== upper),
-        }));
+        set((state) => {
+          const id = state.watchlists[state.activeWatchlistId] ? state.activeWatchlistId : "default";
+          const wl = state.watchlists[id];
+          if (!wl) return {};
+          return { watchlists: { ...state.watchlists, [id]: { ...wl, symbols: wl.symbols.filter(s => s !== upper) } }, activeWatchlistId: id };
+        });
       },
+      createWatchlist: (name) => {
+        const id = `wl_${Date.now()}`;
+        set((state) => ({
+          watchlists: { ...state.watchlists, [id]: { name, symbols: [] } },
+          activeWatchlistId: id,
+        }));
+        return id;
+      },
+      deleteWatchlist: (id) => {
+        set((state) => {
+          if (id === "default") return {};
+          const next = { ...state.watchlists };
+          delete next[id];
+          return {
+            watchlists: next,
+            activeWatchlistId: state.activeWatchlistId === id ? "default" : state.activeWatchlistId,
+          };
+        });
+      },
+      renameWatchlist: (id, name) => {
+        set((state) => {
+          const wl = state.watchlists[id];
+          if (!wl) return {};
+          return { watchlists: { ...state.watchlists, [id]: { ...wl, name } } };
+        });
+      },
+      setActiveWatchlist: (id) => set({ activeWatchlistId: id }),
 
       browserUrl: null,
       browserTitle: null,
@@ -290,7 +329,7 @@ export const useTerminalStore = create<TerminalState>()(
     }),
     {
       name: 'alpha-terminal-storage',
-      version: 5,
+      version: 6,
       migrate: (persistedState: unknown, version: number) => {
         const s = persistedState as Record<string, unknown>;
         if (version < 2) {
@@ -315,6 +354,12 @@ export const useTerminalStore = create<TerminalState>()(
             scanner:       { model: 'gemini-3.1-pro-preview', temperature: 0 },
           };
         }
+        if (version < 6) {
+          const oldWl = Array.isArray(s['watchlist']) ? s['watchlist'] as string[] : [];
+          s['watchlists'] = { default: { name: 'My Watchlist', symbols: oldWl } };
+          s['activeWatchlistId'] = 'default';
+          delete s['watchlist'];
+        }
         return s;
       },
       partialize: (state) => {
@@ -324,3 +369,10 @@ export const useTerminalStore = create<TerminalState>()(
     }
   )
 );
+
+export function useActiveWatchlist() {
+  return useTerminalStore((s) => {
+    const wl = s.watchlists[s.activeWatchlistId];
+    return wl?.symbols ?? [];
+  });
+}

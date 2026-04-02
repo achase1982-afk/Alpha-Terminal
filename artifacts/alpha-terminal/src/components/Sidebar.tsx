@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { useTerminalStore } from "@/lib/store";
+import { useTerminalStore, useActiveWatchlist } from "@/lib/store";
 import { useOptionsSettingsStore } from "@/lib/options-store";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import type { MarketPulseSettings, AllowedStrategy } from "@/types/marketPulse";
@@ -164,7 +164,8 @@ export function Sidebar({ isOpen, onClose, onOpenChat, onNavigate }: SidebarProp
 }
 
 function WatchlistPage({ onClose }: { onClose: () => void }) {
-  const { watchlist, removeFromWatchlist, setSymbol, streamPrices } = useTerminalStore();
+  const { removeFromWatchlist, setSymbol, streamPrices } = useTerminalStore();
+  const watchlist = useActiveWatchlist();
 
   return (
     <div className="space-y-3 max-w-xl mx-auto">
@@ -194,7 +195,7 @@ function WatchlistPage({ onClose }: { onClose: () => void }) {
                 </button>
                 <button
                   onClick={() => removeFromWatchlist(sym)}
-                  className="opacity-0 group-hover:opacity-100 p-1.5 rounded text-muted-foreground hover:text-destructive transition-all"
+                  className="p-1.5 rounded text-muted-foreground hover:text-destructive active:text-destructive transition-all"
                   aria-label={`Remove ${sym}`}
                 >
                   <Trash2 className="w-3.5 h-3.5" />
