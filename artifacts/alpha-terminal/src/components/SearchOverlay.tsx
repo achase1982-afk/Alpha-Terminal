@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useTerminalStore } from "@/lib/store";
-import { Search, Plus, X, ChevronDown } from "lucide-react";
+import { Search, Plus } from "lucide-react";
 
 interface SearchOverlayProps {
   isOpen: boolean;
@@ -76,10 +76,10 @@ export function SearchOverlay({ isOpen, onClose, onSelectSymbol }: SearchOverlay
           </span>
           <button
             onClick={onClose}
-            className="p-2 rounded-lg hover:bg-zinc-800 transition-colors"
+            className="px-3 py-1.5 rounded-lg hover:bg-zinc-800 transition-colors font-mono text-xs text-zinc-400 tracking-wider"
             aria-label="Close search"
           >
-            <ChevronDown className="w-5 h-5 text-zinc-400" />
+            CLOSE
           </button>
         </div>
 
