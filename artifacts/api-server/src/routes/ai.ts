@@ -15,7 +15,7 @@ import {
 import { computeIndicators, formatTAContext, isDataStale, type Candle } from "../lib/ta.js";
 import { runMarketPulseEngine, formatClusterDebugLine, verifyEngineScoring, type MarketIndicators, type BiasLabel } from "../lib/marketPulseEngine.js";
 import { getSnapshot, type LiveQuote } from "../lib/schwabStreamer.js";
-import { selectStrategies, selectStrategiesByRegime, classifyRegime, checkOverrideConflict, classifyTicker, computeBeta, applyBetaToProfile, computeExpectedMove, STRATEGIST_SYSTEM_PROMPT, type OptionContract, type StrategyPayload, type RegimeClassification, type TickerProfile, type DailyCandle, type ConvictionParams } from "../lib/optionsStrategist.js";
+import { selectStrategies, selectStrategiesByRegime, classifyRegime, checkOverrideConflict, classifyTicker, computeBeta, applyBetaToProfile, computeExpectedMove, computeIVR, STRATEGIST_SYSTEM_PROMPT, type OptionContract, type StrategyPayload, type RegimeClassification, type TickerProfile, type DailyCandle, type ConvictionParams } from "../lib/optionsStrategist.js";
 import { runPreTradeChecks, type PreTradeInput, type PreTradeResult } from "../lib/preTradeRiskEngine.js";
 
 const router: IRouter = Router();
@@ -1929,6 +1929,74 @@ interface ScannerQuote {
   low: number;
 }
 
+interface ScannerOptionsAnalytics {
+  ivr: number | null;
+  pcRatio: number | null;
+  expectedMove: number | null;
+}
+
+async function fetchScannerOptionsAnalytics(symbol: string, accessToken: string, log: any): Promise<ScannerOptionsAnalytics> {
+  const result: ScannerOptionsAnalytics = { ivr: null, pcRatio: null, expectedMove: null };
+  try {
+    const apiSymbol = symbolToSchwabApi(symbol);
+    const params = new URLSearchParams({
+      symbol: apiSymbol,
+      contractType: "ALL",
+      strikeCount: "20",
+      includeUnderlyingQuote: "true",
+    });
+    const chainRes = await fetch(`${SCHWAB_API_BASE_AI}/chains?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!chainRes.ok) return result;
+    const chainJson = await chainRes.json() as Record<string, unknown>;
+    const underlyingPrice = (chainJson["underlyingPrice"] as number) ?? 0;
+    if (underlyingPrice <= 0) return result;
+
+    const parseMap = (map: unknown): OptionContract[] => {
+      const contracts: OptionContract[] = [];
+      if (!map || typeof map !== "object") return contracts;
+      for (const expDate of Object.values(map as Record<string, unknown>)) {
+        for (const opts of Object.values(expDate as Record<string, unknown>)) {
+          for (const o of (opts as Array<Record<string, unknown>>)) {
+            contracts.push({
+              strike: (o["strikePrice"] as number) ?? 0,
+              expiration: (o["expirationDate"] as string)?.split("T")[0] ?? "",
+              schwabSymbol: (o["symbol"] as string) ?? "",
+              bid: (o["bid"] as number) ?? 0,
+              ask: (o["ask"] as number) ?? 0,
+              volume: (o["totalVolume"] as number) ?? 0,
+              openInterest: (o["openInterest"] as number) ?? 0,
+              iv: (o["volatility"] as number) ?? 0,
+              delta: (o["delta"] as number) ?? 0,
+              dte: (o["daysToExpiration"] as number) ?? undefined,
+            });
+          }
+        }
+      }
+      return contracts;
+    };
+
+    const calls = parseMap(chainJson["callExpDateMap"]);
+    const puts = parseMap(chainJson["putExpDateMap"]);
+    const allContracts = [...calls, ...puts];
+
+    if (allContracts.length > 0) {
+      const exps = [...new Set(allContracts.map(c => c.expiration))].sort();
+      result.ivr = computeIVR(allContracts, underlyingPrice, exps);
+      result.expectedMove = computeExpectedMove(calls, puts, underlyingPrice);
+
+      let callVol = 0, putVol = 0;
+      for (const c of calls) callVol += c.volume || 0;
+      for (const p of puts) putVol += p.volume || 0;
+      result.pcRatio = callVol > 0 ? Math.round((putVol / callVol) * 100) / 100 : null;
+    }
+  } catch (err) {
+    log.warn({ symbol, err }, "Scanner options analytics fetch failed");
+  }
+  return result;
+}
+
 interface ScannerSetup {
   symbol: string;
   direction: "BULLISH" | "BEARISH" | "NEUTRAL";
@@ -1938,6 +2006,9 @@ interface ScannerSetup {
   changePct: number;
   rationale: string;
   riskNote: string;
+  ivr?: number | null;
+  pcRatio?: number | null;
+  expectedMove?: number | null;
 }
 
 interface ScannerAiResult {
@@ -2027,31 +2098,75 @@ router.post("/market-scanner", async (req, res) => {
     return res.json({ mode: "ai", error: "no_data", response: "No quote data available to analyze.", setups: [] });
   }
 
-  // Sort by absolute change % to surface the most interesting movers
   const sortedQuotes = [...quotes].sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct)).slice(0, 30);
 
-  const tableRows = sortedQuotes.map(q =>
-    `${q.symbol.padEnd(6)} | $${q.last.toFixed(2).padStart(9)} | ${q.changePct >= 0 ? "+" : ""}${q.changePct.toFixed(2)}% | Vol: ${(q.volume / 1e6).toFixed(1)}M | Range: ${q.low.toFixed(2)}-${q.high.toFixed(2)}`
-  ).join("\n");
+  const enrichCount = Math.min(sortedQuotes.length, 15);
+  const topMovers = sortedQuotes.slice(0, enrichCount);
+  const analyticsMap = new Map<string, ScannerOptionsAnalytics>();
+  let vixLevel: number | null = null;
 
-  const prompt = `You are an elite quantitative trader with 20+ years of systematic trading experience.
+  try {
+    const snap = getSnapshot();
+    const vixQuote = snap.find(q => q.symbol === "$VIX" || q.symbol === "VIX");
+    if (vixQuote) vixLevel = vixQuote.last ?? null;
+  } catch { /* ignore */ }
 
-STRICT GROUNDING RULE: You must ONLY use the Context Data provided below. Every price, volume, and change value you cite MUST come from this data. You are FORBIDDEN from using internal training knowledge for market trends, price targets, or directional predictions. If data is insufficient, say so — do NOT fabricate.
+  try {
+    const analyticsResults = await Promise.allSettled(
+      topMovers.map(q => fetchScannerOptionsAnalytics(q.symbol, accessToken, req.log))
+    );
+    topMovers.forEach((q, i) => {
+      const r = analyticsResults[i];
+      if (r.status === "fulfilled") analyticsMap.set(q.symbol, r.value);
+    });
+    req.log.info({ enriched: analyticsMap.size, total: sortedQuotes.length }, "Scanner options enrichment complete");
+  } catch (err) {
+    req.log.warn({ err }, "Scanner options enrichment failed, proceeding with price-only data");
+  }
+
+  const tableRows = sortedQuotes.map(q => {
+    const a = analyticsMap.get(q.symbol);
+    const ivrStr = a?.ivr != null ? `IVR:${a.ivr}%` : "";
+    const pcStr = a?.pcRatio != null ? `P/C:${a.pcRatio.toFixed(2)}` : "";
+    const emStr = a?.expectedMove != null ? `EM:±$${a.expectedMove.toFixed(2)}` : "";
+    const optsSuffix = [ivrStr, pcStr, emStr].filter(Boolean).join(" | ");
+    return `${q.symbol.padEnd(6)} | $${q.last.toFixed(2).padStart(9)} | ${q.changePct >= 0 ? "+" : ""}${q.changePct.toFixed(2)}% | Vol: ${(q.volume / 1e6).toFixed(1)}M | Range: ${q.low.toFixed(2)}-${q.high.toFixed(2)}${optsSuffix ? ` | ${optsSuffix}` : ""}`;
+  }).join("\n");
+
+  const vixContext = vixLevel != null ? `\nVIX Level: ${vixLevel.toFixed(2)} (${vixLevel > 25 ? "ELEVATED — favor credit/premium-selling strategies" : vixLevel < 15 ? "LOW — favor debit/directional strategies" : "MODERATE — both credit and debit viable"})` : "";
+
+  const prompt = `You are an elite quantitative options trader with 20+ years of systematic trading experience. You specialize in options strategies informed by implied volatility analytics.
+
+STRICT GROUNDING RULE: You must ONLY use the Context Data provided below. Every price, volume, IVR, P/C ratio, expected move, and change value you cite MUST come from this data. You are FORBIDDEN from using internal training knowledge for market trends, price targets, or directional predictions. If data is insufficient, say so — do NOT fabricate.
 
 ═══ CONTEXT DATA ═══
 REAL-TIME MARKET DATA (sorted by momentum) — ${sortedQuotes.length} instruments:
-Symbol | Last Price | Day Change | Volume  | Day Range
+Symbol | Last Price | Day Change | Volume  | Day Range | Options Analytics
 ${tableRows}
+${vixContext}
+
+OPTIONS ANALYTICS KEY:
+- IVR = IV Rank (0-100): >50 = elevated IV, favor credit/premium-selling strategies; <30 = low IV, favor debit/directional strategies
+- P/C = Put/Call volume ratio: >1.0 = bearish flow, <0.7 = bullish flow
+- EM = Expected Move (ATM straddle): the options market's implied move for nearest expiration
 ═══ END CONTEXT DATA ═══
 
-YOUR TASK: Analyze ONLY the above data and identify the TOP ${resultCount} highest-probability trading setups right now.
+YOUR TASK: Analyze ONLY the above data and identify the TOP ${resultCount} highest-probability OPTIONS trading setups right now.
+
+STRATEGY SELECTION RULES (consistent with institutional options strategy framework):
+1. When IVR > 50: Favor CREDIT strategies (Iron Condor, Credit Spread, Short Strangle, Cash-Secured Put)
+2. When IVR < 30: Favor DEBIT strategies (Long Calls/Puts, Debit Spread, Calendar Spread)
+3. When IVR 30-50: Either credit or debit viable — use directional signals to decide
+4. NEUTRAL direction with high IVR = Iron Condor or Iron Butterfly
+5. Strategy breakevens should ideally fall outside the Expected Move range for credit strategies
+6. P/C ratio > 1.2 with bearish momentum = bearish bias; P/C < 0.7 with bullish momentum = bullish bias
 
 STRICT RULES:
 1. Return EXACTLY ${resultCount} setups — no more, no less
 2. Each setup must have a clear DIRECTION: BULLISH, BEARISH, or NEUTRAL
 3. NEUTRAL = low volatility, range-bound, ideal for Iron Condor/Butterfly/Strangle
-4. Confidence must be: HIGH (strong multi-factor confluence), MILD (moderate signals), or LOW (speculative)
-5. Only choose HIGH confidence when multiple technical factors align
+4. Confidence must be: HIGH (strong multi-factor confluence including IVR alignment), MILD (moderate signals), or LOW (speculative)
+5. Only choose HIGH confidence when price momentum, volume, AND options analytics (IVR/P/C) all align
 6. Your response must be valid JSON only — no markdown, no commentary before or after
 
 Return this exact JSON structure:
@@ -2064,11 +2179,11 @@ Return this exact JSON structure:
       "strategy": "Bull Call Spread / Long Calls / Short Puts",
       "price": 123.45,
       "changePct": 2.34,
-      "rationale": "One precise sentence: specific technical reason this setup has edge (momentum, volume spike, breakout, etc.)",
+      "rationale": "One precise sentence: specific reason this setup has edge — reference IVR, P/C ratio, expected move, and/or momentum data.",
       "riskNote": "One brief risk: what could invalidate this setup."
     }
   ],
-  "marketSummary": "One sentence: overall market regime (risk-on/risk-off, trending/ranging, sector rotation)."
+  "marketSummary": "One sentence: overall market regime (risk-on/risk-off, trending/ranging, VIX environment)."
 }`;
 
   try {
@@ -2084,7 +2199,11 @@ Return this exact JSON structure:
       return res.json({ mode: "ai", rawResponse: raw, setups: [], quotes });
     }
 
-    return res.json({ mode: "ai", setups: parsed.setups ?? [], marketSummary: parsed.marketSummary ?? "", quotes });
+    const enrichedSetups = (parsed.setups ?? []).map(s => {
+      const a = analyticsMap.get(s.symbol);
+      return { ...s, ivr: a?.ivr ?? null, pcRatio: a?.pcRatio ?? null, expectedMove: a?.expectedMove ?? null };
+    });
+    return res.json({ mode: "ai", setups: enrichedSetups, marketSummary: parsed.marketSummary ?? "", quotes });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     req.log.error({ err }, "Market scanner AI error");

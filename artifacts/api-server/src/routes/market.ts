@@ -525,8 +525,47 @@ router.get("/pc-ratio", async (req, res) => {
     const pcRatioOI = callOI > 0 ? putOI / callOI : null;
     const pcRatio = pcRatioVol ?? pcRatioOI;
 
-    req.log.info({ symbol: displaySymbol, callVol, putVol, callOI, putOI, pcRatioVol, pcRatioOI }, "P/C ratio calculated");
-    res.json({ symbol: displaySymbol, pcRatio, pcRatioVolume: pcRatioVol, pcRatioOI, callVolume: callVol, putVolume: putVol, callOI, putOI });
+    let ivr: number | null = null;
+    let expectedMove: number | null = null;
+    const underlyingPrice = cached.underlyingPrice;
+    if (underlyingPrice && underlyingPrice > 0) {
+      const allContracts = [...cached.calls, ...cached.puts];
+      const withIV = allContracts.filter(c => typeof c.iv === "number" && c.iv > 0);
+      if (withIV.length >= 3) {
+        let minIV = Infinity, maxIV = -Infinity;
+        for (const c of withIV) { if (c.iv! < minIV) minIV = c.iv!; if (c.iv! > maxIV) maxIV = c.iv!; }
+        if (maxIV > minIV) {
+          const exps = [...new Set(allContracts.map(c => c.expiration))].sort();
+          const frontExp = exps[0] ?? "";
+          const atmRange = underlyingPrice * 0.03;
+          const atmFront = withIV.filter(c => c.expiration === frontExp && Math.abs(c.strike - underlyingPrice) <= atmRange)
+            .sort((a, b) => Math.abs(a.strike - underlyingPrice) - Math.abs(b.strike - underlyingPrice));
+          const currentIV = atmFront.length > 0 ? atmFront[0].iv! :
+            (() => { const atm = withIV.filter(c => Math.abs(c.strike - underlyingPrice) <= underlyingPrice * 0.05)
+              .sort((a, b) => Math.abs(a.strike - underlyingPrice) - Math.abs(b.strike - underlyingPrice));
+              return atm.length > 0 ? atm[0].iv! : (minIV + maxIV) / 2; })();
+          ivr = Math.round(Math.max(0, Math.min(100, ((currentIV - minIV) / (maxIV - minIV)) * 100)));
+        }
+      }
+
+      const nearExp = [...new Set(cached.calls.map(c => c.expiration))].sort()[0];
+      if (nearExp) {
+        const nearCalls = cached.calls.filter(c => c.expiration === nearExp && typeof c.bid === "number" && typeof c.ask === "number");
+        const nearPuts = cached.puts.filter(c => c.expiration === nearExp && typeof c.bid === "number" && typeof c.ask === "number");
+        let bestCall: ParsedContract | null = null, bestPut: ParsedContract | null = null;
+        let bestCallDist = Infinity, bestPutDist = Infinity;
+        for (const c of nearCalls) { const d = Math.abs(c.strike - underlyingPrice); if (d < bestCallDist) { bestCallDist = d; bestCall = c; } }
+        for (const p of nearPuts) { const d = Math.abs(p.strike - underlyingPrice); if (d < bestPutDist) { bestPutDist = d; bestPut = p; } }
+        if (bestCall && bestPut) {
+          const callMid = ((bestCall.bid ?? 0) + (bestCall.ask ?? 0)) / 2;
+          const putMid = ((bestPut.bid ?? 0) + (bestPut.ask ?? 0)) / 2;
+          expectedMove = Math.round((callMid + putMid) * 100) / 100;
+        }
+      }
+    }
+
+    req.log.info({ symbol: displaySymbol, callVol, putVol, callOI, putOI, pcRatioVol, pcRatioOI, ivr, expectedMove }, "P/C ratio + analytics calculated");
+    res.json({ symbol: displaySymbol, pcRatio, pcRatioVolume: pcRatioVol, pcRatioOI, callVolume: callVol, putVolume: putVol, callOI, putOI, ivr, expectedMove });
   } catch (err) {
     req.log.error({ err }, "P/C ratio fetch error");
     res.json({ symbol: displaySymbol, pcRatio: null, error: "internal_error" });

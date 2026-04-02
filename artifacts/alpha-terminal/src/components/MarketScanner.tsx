@@ -66,6 +66,9 @@ interface ScannerSetup {
   changePct: number;
   rationale: string;
   riskNote: string;
+  ivr?: number | null;
+  pcRatio?: number | null;
+  expectedMove?: number | null;
 }
 
 interface ScannerQuote {
@@ -144,6 +147,25 @@ const LiveAiRow = memo(function LiveAiRow({ setup, index, onSelect }: {
         <div className="text-[10px] text-gray-400 mt-0.5 max-w-[140px] truncate" title={setup.strategy}>
           {setup.strategy}
         </div>
+        {(setup.ivr != null || setup.expectedMove != null) && (
+          <div className="flex items-center gap-2 mt-0.5">
+            {setup.ivr != null && (
+              <span className="text-[9px] font-mono tabular-nums" style={{ color: setup.ivr > 50 ? "#FFB800" : setup.ivr < 30 ? "#00d166" : "#6B7280" }}>
+                IVR:{setup.ivr}%
+              </span>
+            )}
+            {setup.expectedMove != null && (
+              <span className="text-[9px] font-mono tabular-nums text-gray-500">
+                EM:±${setup.expectedMove.toFixed(2)}
+              </span>
+            )}
+            {setup.pcRatio != null && (
+              <span className="text-[9px] font-mono tabular-nums text-gray-500">
+                P/C:{setup.pcRatio.toFixed(2)}
+              </span>
+            )}
+          </div>
+        )}
       </td>
       <td className="px-3 py-2.5">{confBadge(setup.confidence)}</td>
       <td className="px-3 py-2.5">

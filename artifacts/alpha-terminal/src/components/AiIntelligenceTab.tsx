@@ -478,6 +478,8 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
   const [previewQuote, setPreviewQuote] = useState<{ last: number; change: number; changePct: number; volume?: number } | null>(null);
   const [fetchingTicker, setFetchingTicker] = useState(false);
   const [tickerPcRatio, setTickerPcRatio] = useState<number | null>(null);
+  const [tickerIvr, setTickerIvr] = useState<number | null>(null);
+  const [tickerExpectedMove, setTickerExpectedMove] = useState<number | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pcDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const companyNameRef = useRef<HTMLDivElement>(null);
@@ -525,8 +527,8 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
 
   useEffect(() => {
     const ticker = (inputVal.trim().toUpperCase()) || symbol;
-    if (!ticker || !accessToken) { setTickerPcRatio(null); return; }
-    setTickerPcRatio(null);
+    if (!ticker || !accessToken) { setTickerPcRatio(null); setTickerIvr(null); setTickerExpectedMove(null); return; }
+    setTickerPcRatio(null); setTickerIvr(null); setTickerExpectedMove(null);
     if (pcDebounceRef.current) clearTimeout(pcDebounceRef.current);
     pcDebounceRef.current = setTimeout(async () => {
       try {
@@ -534,6 +536,8 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
         if (!res.ok) return;
         const data = await res.json();
         if (data?.pcRatio != null) setTickerPcRatio(data.pcRatio);
+        if (data?.ivr != null) setTickerIvr(data.ivr);
+        if (data?.expectedMove != null) setTickerExpectedMove(data.expectedMove);
       } catch { /* ignore */ }
     }, 400);
     return () => { if (pcDebounceRef.current) clearTimeout(pcDebounceRef.current); };
@@ -590,7 +594,7 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
             </div>
           ) : null}
         </div>
-        <div className="px-4 pb-2 flex flex-col gap-0.5">
+        <div className="px-4 pb-2 grid grid-cols-2 gap-x-4 gap-y-0.5">
           <div className="flex items-center gap-2">
             <span className="font-mono text-sm text-white/40 uppercase tracking-wider">Vol</span>
             <span className="font-mono text-sm text-white/70 tabular-nums">
@@ -600,6 +604,18 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
           <div className="flex items-center gap-2">
             <span className="font-mono text-sm text-white/40 uppercase tracking-wider">P/C</span>
             <span className="font-mono text-sm text-white/70 tabular-nums">{pcRatio != null ? pcRatio.toFixed(2) : "—"}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-sm text-white/40 uppercase tracking-wider">IVR</span>
+            <span className="font-mono text-sm tabular-nums" style={{ color: tickerIvr != null ? (tickerIvr > 50 ? "#FFB800" : tickerIvr < 30 ? "#00d166" : "#a1a1aa") : "#a1a1aa" }}>
+              {tickerIvr != null ? `${tickerIvr}%` : "—"}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-sm text-white/40 uppercase tracking-wider">EM</span>
+            <span className="font-mono text-sm text-white/70 tabular-nums">
+              {tickerExpectedMove != null ? `±$${tickerExpectedMove.toFixed(2)}` : "—"}
+            </span>
           </div>
         </div>
 
