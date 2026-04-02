@@ -23,7 +23,9 @@ const COMPANY_NAMES: Record<string, string> = {
   AMZN: "Amazon.com Inc.", META: "Meta Platforms Inc.", NVDA: "NVIDIA Corp.", TSLA: "Tesla Inc.",
   SPY: "SPDR S&P 500 ETF", QQQ: "Invesco QQQ Trust", IWM: "iShares Russell 2000",
   DIA: "SPDR Dow Jones ETF", HYG: "iShares High Yield Corp", LQD: "iShares Invest Grade Corp",
-  AMD: "Advanced Micro Devices", NFLX: "Netflix Inc.", CRM: "Salesforce Inc.",
+  AMD: "Advanced Micro Devices", NFLX: "Netflix Inc.", CRM: "Salesforce Inc.", MRVL: "Marvell Technology",
+  MU: "Micron Technology", AVGO: "Broadcom Inc.", QCOM: "Qualcomm Inc.", ARM: "Arm Holdings",
+  SMCI: "Super Micro Computer", TSM: "Taiwan Semiconductor",
   INTC: "Intel Corp.", BA: "Boeing Co.", JPM: "JPMorgan Chase", GS: "Goldman Sachs",
   V: "Visa Inc.", MA: "Mastercard Inc.", WMT: "Walmart Inc.", DIS: "Walt Disney Co.",
   PYPL: "PayPal Holdings", SQ: "Block Inc.", COIN: "Coinbase Global",
@@ -486,14 +488,9 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
         }}
       >
         <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: "1px solid #1f1f22" }}>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: "rgba(255,184,0,0.1)" }}>
-              <BarChart2 className="w-5 h-5 text-[#FFB800]" />
-            </div>
-            <div>
-              <div className="font-mono text-xl font-normal text-white tracking-wide">{symbol}</div>
-              <div className="font-mono text-[11px] font-normal text-[#FFB800] tracking-wide">{COMPANY_NAMES[symbol.toUpperCase()] ?? ""}</div>
-            </div>
+          <div>
+            <div className="font-mono text-xl font-normal text-white tracking-wide">{symbol}</div>
+            <div className="font-mono text-[11px] font-normal text-[#FFB800] tracking-wide">{COMPANY_NAMES[symbol.toUpperCase()] ?? symbol}</div>
           </div>
           {price != null && (
             <div className="flex flex-col items-end">
@@ -717,10 +714,6 @@ function StrategistEmptyState() {
   return (
     <div className="flex flex-col items-center justify-center py-16 px-6 relative">
       <div className="relative z-10 flex flex-col items-center">
-        <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4"
-          style={{ background: "rgba(255,184,0,0.08)", border: "1px solid rgba(255,184,0,0.15)" }}>
-          <BarChart2 className="w-7 h-7 text-[#FFB800]/40" />
-        </div>
         <h3 className="font-mono text-lg font-bold text-white tracking-wide mb-2">Options Strategist</h3>
         <p className="font-mono text-sm text-white text-center leading-relaxed max-w-[280px]">
           Enter a ticker above to run AI-powered options analysis with real-time chain data.
