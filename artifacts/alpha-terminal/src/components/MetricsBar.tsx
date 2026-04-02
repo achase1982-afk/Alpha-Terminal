@@ -100,7 +100,7 @@ function HeaderSkeleton() {
 }
 
 export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps) {
-  const { symbol, accessToken } = useTerminalStore();
+  const { symbol, accessToken, streamPrices } = useTerminalStore();
   const { data: quote, isLoading, source } = useQuote(symbol);
   const tickColor = useTickColor(symbol, quote?.last ?? null);
   const bidTickColor = useTickColor(`${symbol}__bid`, quote?.bid ?? null);
@@ -120,7 +120,11 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
     prevQuoteRef.current = quote;
   }, [quote]);
 
-  const noSchwab = !accessToken && !quote?.last;
+  const hasAnyStreamData = Object.keys(streamPrices).length > 0;
+  // Only show "connect" message if stream has no data at all — not just because this symbol hasn't arrived yet
+  const noSchwab = !accessToken && !quote?.last && !hasAnyStreamData;
+  // Stream is working but new symbol data hasn't arrived yet — show skeleton instead of "connect" message
+  const waitingForSymbol = !accessToken && !quote?.last && hasAnyStreamData;
 
   if (noSchwab) {
     return (
@@ -128,6 +132,14 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
         <p className="text-muted-foreground text-xs sm:text-sm animate-pulse text-center tracking-wider font-mono">
           CONNECT SCHWAB TO VIEW MARKET DATA
         </p>
+      </div>
+    );
+  }
+
+  if (waitingForSymbol) {
+    return (
+      <div className="w-full border-b border-card-border px-4 sm:px-6 min-h-[70px] sm:min-h-[80px] flex items-center" style={{ background: HEADER_BG }}>
+        <HeaderSkeleton />
       </div>
     );
   }
