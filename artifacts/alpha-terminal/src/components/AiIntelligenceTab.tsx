@@ -465,16 +465,16 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
       >
         <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: "1px solid #1f1f22" }}>
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "rgba(255,184,0,0.1)" }}>
-              <BarChart2 className="w-4 h-4 text-[#FFB800]" />
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: "rgba(255,184,0,0.1)" }}>
+              <BarChart2 className="w-5 h-5 text-[#FFB800]" />
             </div>
             <div>
-              <div className="font-mono text-base font-bold text-white tracking-wide">{symbol}</div>
+              <div className="font-mono text-xl font-bold text-white tracking-wide">{symbol}</div>
               {price != null && (
                 <div className="flex items-center gap-2">
-                  <span className="font-mono text-[11px] text-white/70 tabular-nums">${price.toFixed(2)}</span>
+                  <span className="font-mono text-base font-semibold text-white tabular-nums">${price.toFixed(2)}</span>
                   {change != null && changePct != null && (
-                    <span className="font-mono text-[10px] tabular-nums" style={{ color: isPositive ? "#00d166" : "#f23645" }}>
+                    <span className="font-mono text-sm font-medium tabular-nums" style={{ color: isPositive ? "#00d166" : "#f23645" }}>
                       {isPositive ? "+" : ""}{change.toFixed(2)} ({isPositive ? "+" : ""}{changePct.toFixed(2)}%)
                     </span>
                   )}
@@ -482,18 +482,15 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
               )}
             </div>
           </div>
-          <div className="flex flex-col items-end gap-0.5">
-            {!disabled && (
-              <div className="flex items-center gap-1.5">
-                <Activity className="w-3 h-3 text-[#00d166]" />
-                <span className="font-mono text-[9px] text-[#00d166] uppercase tracking-widest">Ready</span>
-              </div>
-            )}
-            {lastRunSymbol && lastRunTime && !disabled && (
-              <span className="font-mono text-[8px] text-[#3f3f46]">
-                Last: {lastRunSymbol} · {new Date(lastRunTime).toLocaleTimeString()}
+          <div className="flex flex-col items-end gap-1">
+            {liveQuote?.volume != null && (
+              <span className="font-mono text-[11px] text-white/60 tabular-nums">
+                Vol: {liveQuote.volume >= 1_000_000 ? (liveQuote.volume / 1_000_000).toFixed(1) + "M" : liveQuote.volume >= 1_000 ? (liveQuote.volume / 1_000).toFixed(0) + "K" : liveQuote.volume.toLocaleString()}
               </span>
             )}
+            <span className="font-mono text-[11px] text-white/60 tabular-nums">
+              P/C: —
+            </span>
           </div>
         </div>
 
@@ -694,29 +691,20 @@ function MarkdownResult({ content }: { content: string }) {
 function StrategistEmptyState() {
   return (
     <div className="flex flex-col items-center justify-center py-16 px-6 relative">
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-        <div className="w-32 h-32 rounded-full opacity-[0.04]"
-          style={{ background: "radial-gradient(circle, #FFB800 0%, transparent 70%)" }} />
-      </div>
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-        <div className="w-48 h-48 rounded-full animate-pulse opacity-[0.03]"
-          style={{ background: "radial-gradient(circle, #FFB800 0%, transparent 70%)", animationDuration: "3s" }} />
-      </div>
-
       <div className="relative z-10 flex flex-col items-center">
         <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4"
           style={{ background: "rgba(255,184,0,0.08)", border: "1px solid rgba(255,184,0,0.15)" }}>
           <BarChart2 className="w-7 h-7 text-[#FFB800]/40" />
         </div>
-        <h3 className="font-mono text-sm font-bold text-white/80 tracking-wide mb-1.5">Options Strategist</h3>
-        <p className="font-mono text-[11px] text-[#52525b] text-center leading-relaxed max-w-[240px]">
+        <h3 className="font-mono text-lg font-bold text-white tracking-wide mb-2">Options Strategist</h3>
+        <p className="font-mono text-sm text-white text-center leading-relaxed max-w-[280px]">
           Enter a ticker above to run AI-powered options analysis with real-time chain data.
         </p>
-        <div className="flex items-center gap-4 mt-4">
+        <div className="flex items-center gap-5 mt-5">
           {["Regime Detection", "Chain Scanning", "AI Thesis"].map(label => (
-            <div key={label} className="flex items-center gap-1">
-              <div className="w-1 h-1 rounded-full" style={{ background: "#FFB800" }} />
-              <span className="font-mono text-[9px] text-[#3f3f46] uppercase tracking-wider">{label}</span>
+            <div key={label} className="flex items-center gap-1.5">
+              <div className="w-1.5 h-1.5 rounded-full" style={{ background: "#FFB800" }} />
+              <span className="font-mono text-xs text-white uppercase tracking-wider">{label}</span>
             </div>
           ))}
         </div>
