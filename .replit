@@ -34,6 +34,6 @@ channel = "stable-25_05"
 DEV_BYPASS_AUTH = "true"
 
 [userenv.shared]
-IB_HOST = "127.0.0.1"
-IB_PORT = "4002"
+IB_HOST = "8.tcp.ngrok.io"
+IB_PORT = "15201"
 IB_CLIENT_ID = "1"

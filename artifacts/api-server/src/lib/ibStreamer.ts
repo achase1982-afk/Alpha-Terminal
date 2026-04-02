@@ -1,6 +1,14 @@
-import { IBApi, EventName, Contract, SecType, TickType } from "@stoqey/ib";
+import { IBApi, EventName, Contract, SecType } from "@stoqey/ib";
 import { logger } from "./logger.js";
 import type { LiveQuote } from "./schwabStreamer.js";
+
+const TT = {
+  BID: 1, ASK: 2, LAST: 4, HIGH: 6, LOW: 7, VOLUME: 8, CLOSE: 9,
+  BID_SIZE: 0, ASK_SIZE: 3,
+  DELAYED_BID: 66, DELAYED_ASK: 67, DELAYED_LAST: 68,
+  DELAYED_BID_SIZE: 69, DELAYED_ASK_SIZE: 70,
+  DELAYED_HIGH: 72, DELAYED_LOW: 73, DELAYED_VOLUME: 74, DELAYED_CLOSE: 75,
+} as const;
 
 const IB_HOST = process.env.IB_HOST ?? "127.0.0.1";
 const IB_PORT = Number(process.env.IB_PORT ?? "4002");
@@ -124,6 +132,12 @@ function getOrCreateState(sym: string): IBQuoteState {
 
 function subscribeAll() {
   if (!ib) return;
+  try {
+    ib.reqMarketDataType(3);
+    logger.info("IB: requested delayed market data type (fallback)");
+  } catch (err) {
+    logger.warn({ err }, "IB: failed to set market data type");
+  }
   for (const def of BREADTH_SYMBOLS) {
     const contract = buildContract(def);
     try {
@@ -193,7 +207,7 @@ export async function connectIB(): Promise<void> {
     });
 
     ib.on(EventName.error, (err: Error, code: number, reqId: number) => {
-      if (code === 2104 || code === 2106 || code === 2158) {
+      if (code === 2104 || code === 2106 || code === 2158 || code === 10167) {
         logger.debug({ code, msg: err.message }, "IB: info message (not an error)");
         return;
       }
@@ -213,7 +227,7 @@ export async function connectIB(): Promise<void> {
       }
     });
 
-    ib.on(EventName.tickPrice, (reqId: number, tickType: TickType, price: number, _attribs: unknown) => {
+    ib.on(EventName.tickPrice, (reqId: number, tickType: number, price: number, _attribs: unknown) => {
       const def = reqIdToSymbol.get(reqId);
       if (!def || price === -1) return;
 
@@ -221,32 +235,32 @@ export async function connectIB(): Promise<void> {
       state.ts = Date.now();
 
       switch (tickType) {
-        case TickType.LAST:
-        case TickType.DELAYED_LAST:
+        case TT.LAST:
+        case TT.DELAYED_LAST:
           state.last = price;
           if (state.close !== null && state.close !== 0) {
             state.change = price - state.close;
             state.changePct = (state.change / state.close) * 100;
           }
           break;
-        case TickType.BID:
-        case TickType.DELAYED_BID:
+        case TT.BID:
+        case TT.DELAYED_BID:
           state.bid = price;
           break;
-        case TickType.ASK:
-        case TickType.DELAYED_ASK:
+        case TT.ASK:
+        case TT.DELAYED_ASK:
           state.ask = price;
           break;
-        case TickType.HIGH:
-        case TickType.DELAYED_HIGH:
+        case TT.HIGH:
+        case TT.DELAYED_HIGH:
           state.high = price;
           break;
-        case TickType.LOW:
-        case TickType.DELAYED_LOW:
+        case TT.LOW:
+        case TT.DELAYED_LOW:
           state.low = price;
           break;
-        case TickType.CLOSE:
-        case TickType.DELAYED_CLOSE:
+        case TT.CLOSE:
+        case TT.DELAYED_CLOSE:
           state.close = price;
           if (state.last !== null && price !== 0) {
             state.change = state.last - price;
@@ -260,7 +274,7 @@ export async function connectIB(): Promise<void> {
       emitQuote(def, state);
     });
 
-    ib.on(EventName.tickSize, (reqId: number, tickType: TickType, size: number) => {
+    ib.on(EventName.tickSize, (reqId: number, tickType: number, size: number) => {
       const def = reqIdToSymbol.get(reqId);
       if (!def || size === -1) return;
 
@@ -268,16 +282,16 @@ export async function connectIB(): Promise<void> {
       state.ts = Date.now();
 
       switch (tickType) {
-        case TickType.BID_SIZE:
-        case TickType.DELAYED_BID_SIZE:
+        case TT.BID_SIZE:
+        case TT.DELAYED_BID_SIZE:
           state.bidSize = size;
           break;
-        case TickType.ASK_SIZE:
-        case TickType.DELAYED_ASK_SIZE:
+        case TT.ASK_SIZE:
+        case TT.DELAYED_ASK_SIZE:
           state.askSize = size;
           break;
-        case TickType.VOLUME:
-        case TickType.DELAYED_VOLUME:
+        case TT.VOLUME:
+        case TT.DELAYED_VOLUME:
           state.volume = size;
           break;
         default:
