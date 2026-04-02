@@ -79,10 +79,10 @@ const GRID_CLS = "grid items-center gap-2 sm:gap-4 w-full min-h-[70px] sm:min-h-
 const GRID_COLS = "grid-cols-[minmax(80px,1fr)_minmax(90px,1.3fr)_auto]";
 const HEADER_BG = "#0c0c0c";
 
-const TICKER_FONT_SIZE = 22;
-const COMPANY_MAX_FONT = 13;
+const TICKER_FONT_SIZE = 24;
+const COMPANY_MAX_FONT = 15;
 const COMPANY_MIN_FONT = 9.5;
-const COMPANY_BOX_H = 30;
+const COMPANY_BOX_H = 40;
 
 function useCompanyFontSize(text: string | null | undefined, containerRef: React.RefObject<HTMLElement | null>) {
   const [fontSize, setFontSize] = useState(COMPANY_MAX_FONT);
@@ -313,15 +313,15 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
 
         <button
           onClick={onOpenTearSheet}
-          className={`flex flex-col min-w-0 text-left cursor-pointer group overflow-hidden ${opacityCls} ${transitionCls}`}
+          className={`relative flex flex-col min-w-0 text-left cursor-pointer group overflow-visible ${opacityCls} ${transitionCls}`}
           aria-label={`View company profile for ${quote?.symbol}`}
-          style={{ paddingTop: 0, marginTop: -1 }}
+          style={{ paddingTop: 0 }}
         >
           {showData ? (
             <>
               <span
-                className="font-semibold text-white tracking-tight group-hover:text-primary transition-colors whitespace-nowrap"
-                style={{ fontSize: `${TICKER_FONT_SIZE}px`, lineHeight: '1.15' }}
+                className="font-semibold text-white tracking-tight group-hover:text-primary transition-colors whitespace-nowrap absolute"
+                style={{ fontSize: `${TICKER_FONT_SIZE}px`, lineHeight: '1.15', top: '-2px', left: 0 }}
               >
                 {quote.symbol}
               </span>
@@ -337,6 +337,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
                     maxHeight: `${COMPANY_BOX_H}px`,
                     overflow: 'hidden',
                     wordBreak: 'break-word' as const,
+                    paddingTop: `${TICKER_FONT_SIZE + 4}px`,
                   }}
                 >
                   {quote.description}
