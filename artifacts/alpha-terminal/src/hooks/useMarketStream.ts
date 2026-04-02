@@ -108,10 +108,12 @@ export function useMarketStream() {
   const reconnectDelayRef = useRef(WS_RECONNECT_BASE);
   const tokenReadyRef = useRef(false);
 
+  const watchlist = useTerminalStore((s) => s.watchlist);
+
   function allSymbols(): string[] {
     return [
       ...new Set(
-        [symbol, ...tickerTapeSymbols, ...macroSymbols].map((s) =>
+        [symbol, ...tickerTapeSymbols, ...macroSymbols, ...watchlist].map((s) =>
           s.toUpperCase()
         )
       ),
@@ -289,7 +291,7 @@ export function useMarketStream() {
       if (symDebounceRef.current) clearTimeout(symDebounceRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [symbol, tickerTapeSymbols.join(","), macroSymbols.join(",")]);
+  }, [symbol, tickerTapeSymbols.join(","), macroSymbols.join(","), watchlist.join(",")]);
 
   const subscribeEquitySymbols = useCallback(
     async (symbols: string[]) => {

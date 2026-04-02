@@ -164,7 +164,7 @@ export function Sidebar({ isOpen, onClose, onOpenChat, onNavigate }: SidebarProp
 }
 
 function WatchlistPage({ onClose }: { onClose: () => void }) {
-  const { watchlist, removeFromWatchlist, setSymbol } = useTerminalStore();
+  const { watchlist, removeFromWatchlist, setSymbol, streamPrices } = useTerminalStore();
 
   return (
     <div className="space-y-3 max-w-xl mx-auto">
@@ -175,23 +175,33 @@ function WatchlistPage({ onClose }: { onClose: () => void }) {
         </p>
       ) : (
         <div className="space-y-1">
-          {watchlist.map((sym) => (
-            <div key={sym} className="flex items-center justify-between px-3 py-2.5 rounded-lg hover:bg-[#1a1a1a] transition-colors group">
-              <button
-                onClick={() => { setSymbol(sym); onClose(); }}
-                className="font-mono text-sm text-foreground hover:text-primary transition-colors tracking-wider font-bold"
-              >
-                {sym}
-              </button>
-              <button
-                onClick={() => removeFromWatchlist(sym)}
-                className="opacity-0 group-hover:opacity-100 p-1.5 rounded text-muted-foreground hover:text-destructive transition-all"
-                aria-label={`Remove ${sym}`}
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          ))}
+          {watchlist.map((sym) => {
+            const q = streamPrices[sym];
+            const cColor = q?.change != null ? (q.change > 0 ? "#22c55e" : q.change < 0 ? "#ef4444" : "#71717a") : "#71717a";
+            return (
+              <div key={sym} className="flex items-center justify-between px-3 py-2.5 rounded-lg hover:bg-[#1a1a1a] transition-colors group">
+                <button
+                  onClick={() => { setSymbol(sym); onClose(); }}
+                  className="flex items-center gap-3 font-mono text-sm text-foreground hover:text-primary transition-colors tracking-wider font-bold"
+                >
+                  <span>{sym}</span>
+                  {q?.last != null && (
+                    <span className="text-[10px] font-normal tabular-nums" style={{ color: cColor }}>
+                      ${q.last.toFixed(2)}
+                      {q.changePct != null && ` (${q.changePct > 0 ? "+" : ""}${q.changePct.toFixed(2)}%)`}
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={() => removeFromWatchlist(sym)}
+                  className="opacity-0 group-hover:opacity-100 p-1.5 rounded text-muted-foreground hover:text-destructive transition-all"
+                  aria-label={`Remove ${sym}`}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

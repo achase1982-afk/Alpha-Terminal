@@ -27,14 +27,10 @@ import { CompanyResearchHub } from "@/components/CompanyResearchHub";
 import { AiSubTabs, type AiSubTab } from "@/components/ai-tab/AiSubTabs";
 import type { MarketPulseDashboardHandle } from "@/components/market-pulse/MarketPulseDashboard";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
+import { WatchlistView } from "@/components/WatchlistView";
 import {
   Menu,
-  Zap,
   RefreshCw,
-  Newspaper,
-  ListOrdered,
-  Star,
-  X,
   Clock,
 } from "lucide-react";
 
@@ -272,48 +268,3 @@ export default function TerminalPage() {
 }
 
 
-function WatchlistView() {
-  const { watchlist, removeFromWatchlist, setSymbol } = useTerminalStore();
-
-  return (
-    <div className="flex-1 flex flex-col gap-4 p-4">
-      <div className="flex items-center gap-2">
-        <Star className="w-5 h-5 text-primary" />
-        <h2 className="font-mono text-sm font-bold text-foreground tracking-wider">WATCHLIST</h2>
-        <span className="ml-auto font-mono text-[10px] text-muted-foreground">{watchlist.length} symbols</span>
-      </div>
-
-      {watchlist.length === 0 ? (
-        <div className="flex-1 flex flex-col items-center justify-center gap-3 py-12">
-          <ListOrdered className="w-10 h-10 text-primary/20" />
-          <p className="font-mono text-xs text-muted-foreground text-center">No symbols watched.<br />Search for a ticker and tap '+' to add.</p>
-        </div>
-      ) : (
-        <div className="grid gap-2">
-          {watchlist.map((sym) => (
-            <div
-              key={sym}
-              onClick={() => setSymbol(sym)}
-              role="button"
-              tabIndex={0}
-              className="bg-card border border-card-border rounded-xl p-3 flex items-center gap-3 hover:border-primary/30 transition-colors group cursor-pointer"
-            >
-              <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                <span className="font-mono text-[10px] font-bold text-primary">{sym.slice(0, 3)}</span>
-              </div>
-              <div className="flex-1 text-left min-w-0">
-                <span className="font-mono text-xs font-bold text-foreground">{sym}</span>
-              </div>
-              <button
-                onClick={(e) => { e.stopPropagation(); removeFromWatchlist(sym); }}
-                className="p-1.5 rounded-md text-muted-foreground/40 hover:text-red-400 hover:bg-red-400/10 transition-colors opacity-0 group-hover:opacity-100"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
