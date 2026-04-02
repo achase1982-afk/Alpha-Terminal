@@ -450,6 +450,7 @@ router.get("/options", async (req, res) => {
   const symbol = req.query["symbol"] as string;
   const accessToken = (req.query["accessToken"] as string) || getAccessToken("market");
   const contractType = (req.query["contractType"] as string) ?? "ALL";
+  const strikeCount = parseInt(req.query["strikeCount"] as string) || 10;
 
   if (!symbol || !accessToken) {
     return res.json({ symbol: "", calls: [], puts: [], error: "symbol and accessToken are required" });
@@ -458,19 +459,40 @@ router.get("/options", async (req, res) => {
   const displaySymbol = symbol.toUpperCase().trim();
 
   try {
-    const cached = await getOrFetchChain(displaySymbol, accessToken, req.log);
+    const isFuturesSymbol = isFutures(displaySymbol);
+    const isIndexSymbol = isIndex(displaySymbol);
+    const chainSymbol = isFuturesSymbol ? displaySymbol : isIndexSymbol ? formatSchwabSymbol(displaySymbol) : displaySymbol;
 
-    if (!cached) {
+    const params = new URLSearchParams({
+      symbol: chainSymbol,
+      contractType: "ALL",
+      range: "NTM",
+      strikeCount: String(strikeCount),
+    });
+    if (isFuturesSymbol) params.set("assetClass", "FUTURES");
+
+    const response = await fetch(`${SCHWAB_API_BASE}/chains?${params.toString()}`, {
+      headers: { "Authorization": `Bearer ${accessToken}` },
+      signal: req.socket.destroyed ? AbortSignal.abort() : AbortSignal.timeout(15_000),
+    });
+
+    if (!response.ok) {
+      req.log.error({ status: response.status, symbol: chainSymbol }, "Options chain fetch failed");
       return res.json({ symbol: displaySymbol, calls: [], puts: [], error: "fetch_failed" });
     }
 
-    let calls = cached.calls;
-    let puts = cached.puts;
+    const json = await response.json() as Record<string, unknown>;
+    const underlyingPrice = json["underlyingPrice"] as number | undefined;
+    const callMap = json["callExpDateMap"] as Record<string, unknown> ?? {};
+    const putMap = json["putExpDateMap"] as Record<string, unknown> ?? {};
+    let calls = parseContracts(callMap);
+    let puts = parseContracts(putMap);
 
     if (contractType === "CALL") puts = [];
     else if (contractType === "PUT") calls = [];
 
-    const data = GetOptionChainResponse.parse({ symbol: displaySymbol, underlyingPrice: cached.underlyingPrice, calls, puts });
+    req.log.info({ symbol: displaySymbol, strikeCount, calls: calls.length, puts: puts.length }, "Options chain (NTM)");
+    const data = GetOptionChainResponse.parse({ symbol: displaySymbol, underlyingPrice, calls, puts });
     res.json(data);
   } catch (err) {
     req.log.error({ err }, "Options chain fetch error");

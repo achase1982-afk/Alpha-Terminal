@@ -6,6 +6,7 @@ import { useOptionsColumnsStore, COLUMN_REGISTRY, type ColumnDef } from "@/lib/o
 import { useOptionsStreamStore, useOptionTick } from "@/lib/options-stream-store";
 import { useGetQuote, useGetOptionChain } from "@workspace/api-client-react";
 import { useQuery } from "@tanstack/react-query";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -100,21 +101,9 @@ function findATMIndex(strikes: number[], lastPrice: number): number {
   return best;
 }
 
-function sliceAroundATM(rows: NormalizedRow[], lastPrice: number, count: number): NormalizedRow[] {
-  if (count <= 0 || rows.length === 0) return rows;
-  const sorted = [...rows].sort((a, b) => a.strike - b.strike);
-  let splitIdx = sorted.findIndex(r => r.strike > lastPrice + EPS);
-  if (splitIdx < 0) splitIdx = sorted.length;
-  const half = Math.floor(count / 2);
-  let start = splitIdx - half;
-  let end = splitIdx + half;
-  if (start < 0) { end = Math.min(sorted.length, end - start); start = 0; }
-  if (end > sorted.length) { start = Math.max(0, start - (end - sorted.length)); end = sorted.length; }
-  return sorted.slice(start, end);
-}
 
 function buildExpirationGroups(
-  calls: Contract[], puts: Contract[], lastPrice: number | null, strikeCount: number
+  calls: Contract[], puts: Contract[], lastPrice: number | null
 ): ExpirationGroup[] {
   const expMap = new Map<string, { calls: Map<number, Contract>; puts: Map<number, Contract>; dte: number }>();
   for (const c of calls) {
@@ -130,7 +119,7 @@ function buildExpirationGroups(
     const allStrikes = [...new Set([...callMap.keys(), ...putMap.keys()])].sort((a, b) => a - b);
     const totalStrikes = allStrikes.length;
     const atmIdx = lastPrice != null ? findATMIndex(allStrikes, lastPrice) : -1;
-    let normalizedRows: NormalizedRow[] = allStrikes.map((strike) => ({
+    const normalizedRows: NormalizedRow[] = allStrikes.map((strike) => ({
       strike, call: callMap.get(strike) ?? null, put: putMap.get(strike) ?? null,
     }));
 
@@ -147,9 +136,6 @@ function buildExpirationGroups(
       }
     }
 
-    if (strikeCount > 0 && lastPrice != null && normalizedRows.length > strikeCount) {
-      normalizedRows = sliceAroundATM(normalizedRows, lastPrice, strikeCount);
-    }
     groups.push({
       expiration: exp,
       dte,
@@ -417,8 +403,16 @@ function OptionsGrid({
 }) {
   const leftBodyRef = useRef<HTMLDivElement>(null);
   const rightBodyRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const sortedRows = useMemo(() => [...rows].sort((a, b) => a.strike - b.strike), [rows]);
+
+  const virtualizer = useVirtualizer({
+    count: sortedRows.length,
+    getScrollElement: () => scrollContainerRef.current,
+    estimateSize: () => ROW_H,
+    overscan: 5,
+  });
 
   const transitionIdx = useMemo(() => {
     if (underlyingPrice == null) return -1;
@@ -445,83 +439,91 @@ function OptionsGrid({
     return () => cleanups.forEach(fn => fn());
   }, [registerWing, showCalls, showPuts]);
 
+  const totalHeight = virtualizer.getTotalSize();
+  const virtualItems = virtualizer.getVirtualItems();
+
   return (
-    <div className="relative flex font-mono" style={{ fontVariantNumeric: "tabular-nums" }}>
-      {atmLineTop >= 0 && (
-        <div
-          className="absolute left-0 right-0 z-[5] pointer-events-none"
-          style={{ top: atmLineTop, borderTop: "1.5px dashed #FF6B2B" }}
-        />
-      )}
+    <div ref={scrollContainerRef} className="relative" style={{ height: sortedRows.length * ROW_H, overflow: "hidden" }}>
+      <div className="flex font-mono" style={{ fontVariantNumeric: "tabular-nums", height: totalHeight, position: "relative" }}>
+        {atmLineTop >= 0 && (
+          <div
+            className="absolute left-0 right-0 z-[5] pointer-events-none"
+            style={{ top: atmLineTop, borderTop: "1.5px dashed #FF6B2B" }}
+          />
+        )}
 
-      {showCalls && (
-        <div
-          ref={leftBodyRef}
-          className="flex-1 overflow-x-auto overflow-y-hidden overscroll-x-contain"
-          style={noScrollbar}
-        >
-          <div style={{ minWidth: wingWidth }}>
-            {sortedRows.map((row) => {
-              const callITM = underlyingPrice != null && row.strike < underlyingPrice - EPS;
-              return (
-                <div
-                  key={row.strike}
-                  className={`flex border-b hover:bg-white/[0.03] transition-colors ${callITM ? "bg-[#1e293b]/60" : ""}`}
-                  style={{ height: ROW_H, borderColor: BORDER }}
-                >
-                  {columns.map(col => (
-                    <div key={col.id} style={{ width: COL_W }} className="shrink-0">
-                      <DataCell col={col} contract={row.call} />
-                    </div>
-                  ))}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      <div className="flex-none z-10" style={{ width: STRIKE_W, backgroundColor: '#151517', borderLeft: `1px solid ${BORDER}`, borderRight: `1px solid ${BORDER}` }}>
-        {sortedRows.map((row) => {
-          const isATMStrike = underlyingPrice != null && Math.abs(row.strike - underlyingPrice) <= EPS;
-          return (
-            <div
-              key={row.strike}
-              className={`flex items-center justify-center text-[12px] font-bold border-b ${isATMStrike ? "text-[#FFB800]" : "text-zinc-300"}`}
-              style={{ height: ROW_H, fontVariantNumeric: "tabular-nums", borderColor: BORDER }}
-            >
-              {row.strike % 1 === 0 ? row.strike : row.strike.toFixed(1)}
+        {showCalls && (
+          <div
+            ref={leftBodyRef}
+            className="flex-1 overflow-x-auto overflow-y-hidden overscroll-x-contain"
+            style={noScrollbar}
+          >
+            <div style={{ minWidth: wingWidth, height: totalHeight, position: "relative" }}>
+              {virtualItems.map((virtualRow) => {
+                const row = sortedRows[virtualRow.index];
+                const callITM = underlyingPrice != null && row.strike < underlyingPrice - EPS;
+                return (
+                  <div
+                    key={row.strike}
+                    className={`flex border-b hover:bg-white/[0.03] transition-colors ${callITM ? "bg-[#1e293b]/60" : ""}`}
+                    style={{ height: ROW_H, borderColor: BORDER, position: "absolute", top: virtualRow.start, width: "100%" }}
+                  >
+                    {columns.map(col => (
+                      <div key={col.id} style={{ width: COL_W }} className="shrink-0">
+                        <DataCell col={col} contract={row.call} />
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
             </div>
-          );
-        })}
-      </div>
-
-      {showPuts && (
-        <div
-          ref={rightBodyRef}
-          className="flex-1 overflow-x-auto overflow-y-hidden overscroll-x-contain"
-          style={noScrollbar}
-        >
-          <div style={{ minWidth: wingWidth }}>
-            {sortedRows.map((row) => {
-              const putITM = underlyingPrice != null && row.strike > underlyingPrice + EPS;
-              return (
-                <div
-                  key={row.strike}
-                  className={`flex border-b hover:bg-white/[0.03] transition-colors ${putITM ? "bg-[#1e293b]/60" : ""}`}
-                  style={{ height: ROW_H, borderColor: BORDER }}
-                >
-                  {columns.map(col => (
-                    <div key={col.id} style={{ width: COL_W }} className="shrink-0">
-                      <DataCell col={col} contract={row.put} />
-                    </div>
-                  ))}
-                </div>
-              );
-            })}
           </div>
+        )}
+
+        <div className="flex-none z-10" style={{ width: STRIKE_W, backgroundColor: '#151517', borderLeft: `1px solid ${BORDER}`, borderRight: `1px solid ${BORDER}`, position: "relative" }}>
+          {virtualItems.map((virtualRow) => {
+            const row = sortedRows[virtualRow.index];
+            const isATMStrike = underlyingPrice != null && Math.abs(row.strike - underlyingPrice) <= EPS;
+            return (
+              <div
+                key={row.strike}
+                className={`flex items-center justify-center text-[12px] font-bold border-b ${isATMStrike ? "text-[#FFB800]" : "text-zinc-300"}`}
+                style={{ height: ROW_H, fontVariantNumeric: "tabular-nums", borderColor: BORDER, position: "absolute", top: virtualRow.start, width: "100%" }}
+              >
+                {row.strike % 1 === 0 ? row.strike : row.strike.toFixed(1)}
+              </div>
+            );
+          })}
         </div>
-      )}
+
+        {showPuts && (
+          <div
+            ref={rightBodyRef}
+            className="flex-1 overflow-x-auto overflow-y-hidden overscroll-x-contain"
+            style={noScrollbar}
+          >
+            <div style={{ minWidth: wingWidth, height: totalHeight, position: "relative" }}>
+              {virtualItems.map((virtualRow) => {
+                const row = sortedRows[virtualRow.index];
+                const putITM = underlyingPrice != null && row.strike > underlyingPrice + EPS;
+                return (
+                  <div
+                    key={row.strike}
+                    className={`flex border-b hover:bg-white/[0.03] transition-colors ${putITM ? "bg-[#1e293b]/60" : ""}`}
+                    style={{ height: ROW_H, borderColor: BORDER, position: "absolute", top: virtualRow.start, width: "100%" }}
+                  >
+                    {columns.map(col => (
+                      <div key={col.id} style={{ width: COL_W }} className="shrink-0">
+                        <DataCell col={col} contract={row.put} />
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -565,7 +567,7 @@ export function OptionsTab({ subscribeOptionSymbols }: OptionsTabProps) {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { data: rawData, isLoading, error, isFetching } = useGetOptionChain(
-    { symbol, accessToken: accessToken || "", contractType: "ALL" },
+    { symbol, accessToken: accessToken || "", contractType: "ALL", strikeCount },
     { query: { enabled: !!accessToken && !!symbol, staleTime: 25_000, gcTime: 60_000 } }
   );
 
@@ -610,8 +612,8 @@ export function OptionsTab({ subscribeOptionSymbols }: OptionsTabProps) {
     const puts = (data.puts ?? []) as Contract[];
     calls.forEach(c => { c.streamKey = c.schwabSymbol || buildSchwabOptionKey(symbol, c.expiration, c.strike, "C"); });
     puts.forEach(c => { c.streamKey = c.schwabSymbol || buildSchwabOptionKey(symbol, c.expiration, c.strike, "P"); });
-    return buildExpirationGroups(calls, puts, underlyingPrice, strikeCount);
-  }, [data, underlyingPrice, strikeCount, symbol]);
+    return buildExpirationGroups(calls, puts, underlyingPrice);
+  }, [data, underlyingPrice, symbol]);
 
   useEffect(() => {
     if (groups.length > 0 && expandedExps.size === 0) {
@@ -733,7 +735,7 @@ export function OptionsTab({ subscribeOptionSymbols }: OptionsTabProps) {
       <div className="flex-1 overflow-y-auto min-h-0 relative overscroll-y-contain" style={{ WebkitOverflowScrolling: "touch", backgroundColor: BG } as React.CSSProperties}>
         {isLoading && !data && (
           <div className="p-4 space-y-1.5">
-            {Array.from({ length: 12 }).map((_, i) => (
+            {Array.from({ length: strikeCount }).map((_, i) => (
               <Skeleton key={i} className="h-6 w-full" style={{ backgroundColor: '#252528' }} />
             ))}
           </div>
