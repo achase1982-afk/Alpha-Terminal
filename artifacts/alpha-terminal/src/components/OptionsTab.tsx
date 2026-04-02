@@ -545,7 +545,7 @@ interface OptionsTabProps {
 
 export function OptionsTab({ subscribeOptionSymbols }: OptionsTabProps) {
   const { symbol, accessToken } = useTerminalStore();
-  const { contractType, strikeCount, maxDte, customStrikeInput, setCustomStrikeInput } = useOptionsSettingsStore();
+  const { contractType, strikeCount, customStrikeInput, setCustomStrikeInput } = useOptionsSettingsStore();
   const setStrikeCount = useOptionsSettingsStore(s => s.setStrikeCount);
   const { activeColumnIds } = useOptionsColumnsStore();
   const [columnsEditorOpen, setColumnsEditorOpen] = useState(false);
@@ -573,21 +573,14 @@ export function OptionsTab({ subscribeOptionSymbols }: OptionsTabProps) {
 
   const data = useMemo(() => {
     if (!rawData) return rawData;
-    const allCalls = (rawData.calls ?? []) as Contract[];
-    const allPuts = (rawData.puts ?? []) as Contract[];
-    let calls = allCalls;
-    let puts = allPuts;
-
-    if (maxDte > 0) {
-      calls = calls.filter(c => (c.dte ?? 0) <= maxDte);
-      puts = puts.filter(p => (p.dte ?? 0) <= maxDte);
-    }
+    let calls = (rawData.calls ?? []) as Contract[];
+    let puts = (rawData.puts ?? []) as Contract[];
 
     if (contractType === "CALL") puts = [];
     else if (contractType === "PUT") calls = [];
 
     return { ...rawData, calls, puts };
-  }, [rawData, maxDte, contractType]);
+  }, [rawData, contractType]);
 
   const { data: quote } = useGetQuote(
     { symbol, accessToken: accessToken || "" },
@@ -614,12 +607,6 @@ export function OptionsTab({ subscribeOptionSymbols }: OptionsTabProps) {
     puts.forEach(c => { c.streamKey = c.schwabSymbol || buildSchwabOptionKey(symbol, c.expiration, c.strike, "P"); });
     return buildExpirationGroups(calls, puts, underlyingPrice);
   }, [data, underlyingPrice, symbol]);
-
-  useEffect(() => {
-    if (groups.length > 0 && expandedExps.size === 0) {
-      setExpandedExps(new Set([groups[0].expiration]));
-    }
-  }, [groups]);
 
   useEffect(() => {
     if (!subscribeOptionSymbols || groups.length === 0) return;
