@@ -12,6 +12,7 @@ export function useScanCache() {
 
   const { data: cachedData } = useQuery<ScanCacheData>({
     queryKey: queryKeys.scan.latest(),
+    queryFn: () => Promise.resolve(undefined as unknown as ScanCacheData),
     enabled: false,
     staleTime: 10 * 60 * 1000,
     gcTime: 30 * 60 * 1000,

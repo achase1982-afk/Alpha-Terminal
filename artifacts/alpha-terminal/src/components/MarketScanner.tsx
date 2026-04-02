@@ -1,4 +1,4 @@
-import { useState, useEffect, memo, useRef } from "react";
+import { useState, useEffect, memo, useRef, useCallback } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useQuote } from "@/hooks/useQuote";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
@@ -127,15 +127,26 @@ const LiveAiRow = memo(function LiveAiRow({ setup, index, onSelect }: {
   const livePrice = data?.last ?? setup.price;
   const liveChangePct = data?.changePct ?? setup.changePct;
   const dc = dirColor(setup.direction);
+  const [tapped, setTapped] = useState(false);
+
+  const handleTap = useCallback(() => {
+    setTapped(true);
+    setTimeout(() => setTapped(false), 400);
+    onSelect(setup.symbol);
+  }, [onSelect, setup.symbol]);
 
   return (
     <tr className="border-b border-card-border/50 hover:bg-primary/5 transition-colors"
-      style={index % 2 === 0 ? { background: "rgba(13,17,23,0.4)" } : undefined}>
+      style={{
+        ...(index % 2 === 0 ? { background: "rgba(13,17,23,0.4)" } : {}),
+        ...(tapped ? { background: "rgba(255,184,0,0.12)" } : {}),
+      }}>
       <td className="px-3 py-2.5">
-        <button onClick={() => onSelect(setup.symbol)}
-          className="font-bold text-sm tracking-wider hover:opacity-70 transition-opacity"
-          style={{ color: dc }}>
+        <button onClick={handleTap}
+          className="font-bold text-sm tracking-wider transition-all active:scale-95"
+          style={{ color: tapped ? "#FFB800" : dc }}>
           {setup.symbol}
+          <span className="text-[8px] ml-1 opacity-60">→</span>
         </button>
         <div className="text-[10px] text-gray-500 tabular-nums">${livePrice.toFixed(2)}</div>
       </td>
@@ -198,24 +209,33 @@ const LiveManualRow = memo(function LiveManualRow({ q, onSelect }: {
   const liveVolume = data?.volume ?? q.volume;
   const isUp = liveChangePct >= 0;
   const color = isUp ? "#00d166" : "#f23645";
+  const [tapped, setTapped] = useState(false);
+
+  const handleTap = useCallback(() => {
+    setTapped(true);
+    setTimeout(() => setTapped(false), 400);
+    onSelect(q.symbol);
+  }, [onSelect, q.symbol]);
 
   return (
-    <button onClick={() => onSelect(q.symbol)}
-      className="w-full flex items-center gap-3 px-3 py-2 rounded-lg border border-card-border bg-card
-        hover:border-primary/40 hover:bg-primary/5 transition-all text-left group">
-      <span className="font-bold text-sm w-16 shrink-0" style={{ color }}>{q.symbol}</span>
+    <button onClick={handleTap}
+      className="w-full flex items-center gap-3 px-3 py-2 rounded-lg border bg-card
+        hover:border-primary/40 hover:bg-primary/5 transition-all text-left group active:scale-[0.98]"
+      style={{ borderColor: tapped ? "rgba(255,184,0,0.5)" : undefined, background: tapped ? "rgba(255,184,0,0.08)" : undefined }}>
+      <span className="font-bold text-sm w-16 shrink-0" style={{ color: tapped ? "#FFB800" : color }}>{q.symbol}</span>
       <span className="text-sm font-bold text-gray-200 tabular-nums w-20 shrink-0">${livePrice.toFixed(2)}</span>
       <span className="text-xs font-bold tabular-nums w-16 shrink-0" style={{ color }}>
         {isUp ? "▲" : "▼"} {Math.abs(liveChangePct).toFixed(2)}%
       </span>
       <span className="text-[10px] text-gray-500 tabular-nums">Vol {(liveVolume / 1e6).toFixed(1)}M</span>
-      <span className="ml-auto text-[10px] text-gray-600 group-hover:text-primary transition-colors">LOAD →</span>
+      <span className="ml-auto text-[10px] text-gray-600 group-hover:text-primary transition-colors">VIEW →</span>
     </button>
   );
 });
 
-export function MarketScanner({ subscribeEquitySymbols }: {
+export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol }: {
   subscribeEquitySymbols?: (symbols: string[]) => void;
+  onNavigateToSymbol?: (sym: string) => void;
 }) {
   const { accessToken, aiFeatureSettings, setSymbol } = useTerminalStore();
   const aiModel = aiFeatureSettings.scanner.model;
@@ -556,7 +576,7 @@ export function MarketScanner({ subscribeEquitySymbols }: {
               </thead>
               <tbody>
                 {sortedSetups.map((s, i) => (
-                  <LiveAiRow key={s.symbol} setup={s} index={i} onSelect={setSymbol} />
+                  <LiveAiRow key={s.symbol} setup={s} index={i} onSelect={onNavigateToSymbol ?? setSymbol} />
                 ))}
               </tbody>
             </table>
@@ -578,7 +598,7 @@ export function MarketScanner({ subscribeEquitySymbols }: {
           </div>
           <div className="space-y-1.5">
             {manualQuotes.map(q => (
-              <LiveManualRow key={q.symbol} q={q} onSelect={setSymbol} />
+              <LiveManualRow key={q.symbol} q={q} onSelect={onNavigateToSymbol ?? setSymbol} />
             ))}
           </div>
         </div>

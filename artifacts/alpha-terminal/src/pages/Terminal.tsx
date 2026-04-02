@@ -243,9 +243,9 @@ export default function TerminalPage() {
             </>
           )}
 
-          {activeBottom === "scanner" && (
-            <MarketScanner subscribeEquitySymbols={subscribeEquitySymbols} />
-          )}
+          <div style={{ display: activeBottom === "scanner" ? "block" : "none" }}>
+            <MarketScanner subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToSymbol={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} />
+          </div>
 
           {activeBottom === "ai" && (
             <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} />
