@@ -44,10 +44,7 @@ interface IBSymbolDef {
 const BREADTH_SYMBOLS: IBSymbolDef[] = [
   { reqId: 5001, symbol: "$TICK",   ibSymbol: "TICK-NYSE",   secType: "IND", exchange: "NYSE",     displaySymbol: "$TICK" },
   { reqId: 5002, symbol: "$TRIN",   ibSymbol: "TRIN-NYSE",   secType: "IND", exchange: "NYSE",     displaySymbol: "$TRIN" },
-  { reqId: 5003, symbol: "$ADD",    ibSymbol: "ADD-NYSE",    secType: "IND", exchange: "NYSE",     displaySymbol: "$ADD" },
-  { reqId: 5004, symbol: "$VOLD",   ibSymbol: "VOLD-NYSE",   secType: "IND", exchange: "NYSE",     displaySymbol: "$VOLD" },
   { reqId: 5005, symbol: "$TICKI",  ibSymbol: "TICK-NASD",   secType: "IND", exchange: "NASDAQ",   displaySymbol: "$TICKI" },
-  { reqId: 5006, symbol: "$ADDN",   ibSymbol: "ADD-NASD",    secType: "IND", exchange: "NASDAQ",   displaySymbol: "$ADDN" },
   { reqId: 5007, symbol: "$TRINQ",  ibSymbol: "TRIN-NASD",   secType: "IND", exchange: "NASDAQ",   displaySymbol: "$TRINQ" },
   { reqId: 5008, symbol: "$VIX",    ibSymbol: "VIX",    secType: "IND", exchange: "CBOE",     displaySymbol: "$VIX" },
   { reqId: 5009, symbol: "$VIX9D",  ibSymbol: "VIX9D",  secType: "IND", exchange: "CBOE",     displaySymbol: "$VIX9D" },
@@ -70,8 +67,9 @@ const BREADTH_SYMBOLS: IBSymbolDef[] = [
   { reqId: 5026, symbol: "LQD",     ibSymbol: "LQD",    secType: "STK", exchange: "SMART",    displaySymbol: "LQD" },
   { reqId: 5027, symbol: "$SPX",    ibSymbol: "SPX",    secType: "IND", exchange: "CBOE",     displaySymbol: "$SPX" },
   { reqId: 5028, symbol: "SPY",     ibSymbol: "SPY",    secType: "STK", exchange: "SMART",    displaySymbol: "SPY" },
-  { reqId: 5029, symbol: "$ADVN",   ibSymbol: "ADVN-NYSE",   secType: "IND", exchange: "NYSE",     displaySymbol: "$ADVN" },
-  { reqId: 5030, symbol: "$DECN",   ibSymbol: "DECN-NYSE",   secType: "IND", exchange: "NYSE",     displaySymbol: "$DECN" },
+  { reqId: 5029, symbol: "QQQ",     ibSymbol: "QQQ",    secType: "STK", exchange: "SMART",    displaySymbol: "QQQ" },
+  { reqId: 5030, symbol: "IWM",     ibSymbol: "IWM",    secType: "STK", exchange: "SMART",    displaySymbol: "IWM" },
+  { reqId: 5031, symbol: "TLT",     ibSymbol: "TLT",    secType: "STK", exchange: "SMART",    displaySymbol: "TLT" },
 ];
 
 const reqIdToSymbol = new Map<number, IBSymbolDef>();
@@ -120,7 +118,7 @@ function emitStatus(status: string) {
 }
 
 const QUARTERLY_MONTHS = [3, 6, 9, 12];
-const MONTHLY_FUTURES = new Set(["CL", "GC", "DX"]);
+const BIMONTHLY_MONTHS = [2, 4, 6, 8, 10, 12];
 
 function getFrontMonth(symbol: string): string {
   const now = new Date();
@@ -128,14 +126,20 @@ function getFrontMonth(symbol: string): string {
   const month = now.getMonth() + 1;
   const day = now.getDate();
 
-  if (MONTHLY_FUTURES.has(symbol)) {
-    let m = month;
+  if (symbol === "CL") {
+    let m = month + 1;
     let y = year;
-    if (day > 15) {
-      m++;
-      if (m > 12) { m = 1; y++; }
-    }
+    if (m > 12) { m = 1; y++; }
     return y.toString() + String(m).padStart(2, "0");
+  }
+
+  if (symbol === "GC") {
+    for (const bm of BIMONTHLY_MONTHS) {
+      if (month < bm || (month === bm && day <= 20)) {
+        return year.toString() + String(bm).padStart(2, "0");
+      }
+    }
+    return (year + 1).toString() + "02";
   }
 
   for (const q of QUARTERLY_MONTHS) {
@@ -197,19 +201,22 @@ function getOrCreateState(sym: string): IBQuoteState {
   return s;
 }
 
+const NEWS_TICK_SYMBOLS = new Set(["SPY", "QQQ"]);
+
 function subscribeAll() {
   if (!ib) return;
   try {
-    ib.reqMarketDataType(3);
-    logger.info("IB: requested delayed market data type (fallback)");
+    ib.reqMarketDataType(1);
+    logger.info("IB: requested LIVE market data type");
   } catch (err) {
     logger.warn({ err }, "IB: failed to set market data type");
   }
   for (const def of BREADTH_SYMBOLS) {
     const contract = buildContract(def);
+    const genericTicks = NEWS_TICK_SYMBOLS.has(def.ibSymbol) ? "292" : "";
     try {
-      ib.reqMktData(def.reqId, contract, "", false, false);
-      logger.info({ symbol: def.ibSymbol, reqId: def.reqId }, "IB: subscribed to market data");
+      ib.reqMktData(def.reqId, contract, genericTicks, false, false);
+      logger.info({ symbol: def.ibSymbol, reqId: def.reqId, news: genericTicks === "292" }, "IB: subscribed to market data");
     } catch (err) {
       logger.error({ err, symbol: def.ibSymbol }, "IB: failed to subscribe");
     }
