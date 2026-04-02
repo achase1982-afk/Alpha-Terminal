@@ -35,5 +35,5 @@ DEV_BYPASS_AUTH = "true"
 
 [userenv.shared]
 IB_HOST = "8.tcp.ngrok.io"
-IB_PORT = "15201"
+IB_PORT = "19717"
 IB_CLIENT_ID = "1"
