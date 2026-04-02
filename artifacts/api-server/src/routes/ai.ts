@@ -15,7 +15,7 @@ import {
 import { computeIndicators, formatTAContext, isDataStale, type Candle } from "../lib/ta.js";
 import { runMarketPulseEngine, formatClusterDebugLine, verifyEngineScoring, type MarketIndicators, type BiasLabel } from "../lib/marketPulseEngine.js";
 import { getSnapshot, type LiveQuote } from "../lib/schwabStreamer.js";
-import { selectStrategies, selectStrategiesByRegime, classifyRegime, checkOverrideConflict, STRATEGIST_SYSTEM_PROMPT, type OptionContract, type StrategyPayload, type RegimeClassification } from "../lib/optionsStrategist.js";
+import { selectStrategies, selectStrategiesByRegime, classifyRegime, checkOverrideConflict, classifyTicker, computeBeta, applyBetaToProfile, STRATEGIST_SYSTEM_PROMPT, type OptionContract, type StrategyPayload, type RegimeClassification, type TickerProfile, type DailyCandle } from "../lib/optionsStrategist.js";
 import { runPreTradeChecks, type PreTradeInput, type PreTradeResult } from "../lib/preTradeRiskEngine.js";
 
 const router: IRouter = Router();
@@ -1364,6 +1364,69 @@ function parseChainContracts(map: Record<string, unknown>): OptionContract[] {
   return contracts;
 }
 
+async function fetchDailyCandles(
+  symbol: string,
+  accessToken: string,
+): Promise<DailyCandle[]> {
+  try {
+    const apiSymbol = symbolToSchwabApi(symbol);
+    const params = new URLSearchParams({
+      symbol: apiSymbol,
+      periodType: "month",
+      period: "1",
+      frequencyType: "daily",
+      frequency: "1",
+      needExtendedHoursData: "false",
+    });
+    const res = await fetch(`${SCHWAB_CHAIN_BASE}/pricehistory?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok) return [];
+    const json = (await res.json()) as { candles?: Array<{ close: number }> };
+    return (json.candles ?? []).map((c) => ({ close: c.close }));
+  } catch {
+    return [];
+  }
+}
+
+async function buildTickerProfile(
+  calls: OptionContract[],
+  puts: OptionContract[],
+  underlyingPrice: number,
+  symbol: string,
+  accessToken: string,
+  logger?: { info: (...args: unknown[]) => void },
+): Promise<TickerProfile> {
+  let profile = classifyTicker(calls, puts, underlyingPrice);
+
+  const [tickerCandles, spyCandles] = await Promise.all([
+    fetchDailyCandles(symbol.toUpperCase().trim(), accessToken),
+    fetchDailyCandles("SPY", accessToken),
+  ]);
+
+  if (tickerCandles.length >= 6 && spyCandles.length >= 6) {
+    const beta = computeBeta(tickerCandles, spyCandles);
+    profile = applyBetaToProfile(profile, beta);
+  }
+
+  if (logger) {
+    logger.info(
+      {
+        symbol,
+        tier: profile.tier,
+        tierLabel: profile.tierLabel,
+        beta: profile.beta,
+        adjustedDelta: profile.adjustedDelta,
+        sizeOverride: profile.sizeMultiplierOverride,
+        measurements: profile.measurements,
+      },
+      "Ticker profile computed",
+    );
+  }
+
+  return profile;
+}
+
 router.post("/options-strategist", async (req, res) => {
   const { symbol, accessToken, todayEdge } = req.body as {
     symbol?: string;
@@ -1440,7 +1503,8 @@ router.post("/options-strategist", async (req, res) => {
       return res.json({ strategies: [], narrative: "Options chain is empty. Market may be closed or token expired.", error: "empty_chain", regime, pulse: resolvedPulse });
     }
 
-    const strategies = selectStrategiesByRegime(regime, calls, puts);
+    const tickerProfile = await buildTickerProfile(calls, puts, underlyingPrice, symbol, accessToken, req.log);
+    const strategies = selectStrategiesByRegime(regime, calls, puts, tickerProfile);
 
     if (strategies.length === 0) {
       return res.json({
@@ -1449,6 +1513,7 @@ router.post("/options-strategist", async (req, res) => {
         edge,
         regime,
         pulse: resolvedPulse,
+        tickerProfile,
       });
     }
 
@@ -1457,12 +1522,13 @@ router.post("/options-strategist", async (req, res) => {
       regime,
       equity: { symbol, price: underlyingPrice, change: 0, changePct: 0 },
       strategies,
+      tickerProfile,
     };
 
     const narrativePrompt = `${STRATEGIST_SYSTEM_PROMPT}\n\nHere is the payload:\n\n${JSON.stringify(payload, null, 2)}`;
     const narrative = await callGemini(narrativePrompt, "gemini-3.1-pro-preview", 0.2);
 
-    res.json({ strategies, narrative, edge, underlyingPrice, regime, pulse: resolvedPulse, overrideWarning });
+    res.json({ strategies, narrative, edge, underlyingPrice, regime, pulse: resolvedPulse, overrideWarning, tickerProfile });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     req.log.error({ err }, "Options strategist error");
@@ -1548,7 +1614,8 @@ router.post("/options-strategist/stream", async (req, res) => {
       return res.json({ strategies: [], narrative: "Options chain is empty.", error: "empty_chain", regime, pulse: resolvedPulse });
     }
 
-    const strategies = selectStrategiesByRegime(regime, calls, puts);
+    const tickerProfile = await buildTickerProfile(calls, puts, underlyingPrice, symbol, accessToken, req.log);
+    const strategies = selectStrategiesByRegime(regime, calls, puts, tickerProfile);
 
     if (strategies.length === 0) {
       return res.json({
@@ -1557,6 +1624,7 @@ router.post("/options-strategist/stream", async (req, res) => {
         edge,
         regime,
         pulse: resolvedPulse,
+        tickerProfile,
       });
     }
 
@@ -1565,6 +1633,7 @@ router.post("/options-strategist/stream", async (req, res) => {
       regime,
       equity: { symbol, price: underlyingPrice, change: 0, changePct: 0 },
       strategies,
+      tickerProfile,
     };
 
     res.writeHead(200, {
@@ -1581,7 +1650,7 @@ router.post("/options-strategist/stream", async (req, res) => {
     res.write(": ok\n\n");
     res.flushHeaders();
 
-    res.write(`data: ${JSON.stringify({ strategies, edge, underlyingPrice, regime, pulse: resolvedPulse, overrideWarning })}\n\n`);
+    res.write(`data: ${JSON.stringify({ strategies, edge, underlyingPrice, regime, pulse: resolvedPulse, overrideWarning, tickerProfile })}\n\n`);
 
     const heartbeat = setInterval(() => {
       if (!res.writableEnded) res.write(": ping\n\n");

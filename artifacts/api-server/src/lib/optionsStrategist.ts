@@ -121,6 +121,171 @@ export interface StrategistInput {
   };
 }
 
+export type LiquidityTier = 1 | 2 | 3;
+
+export interface TickerProfile {
+  tier: LiquidityTier;
+  tierLabel: string;
+  beta: number;
+  adjustedDelta: number;
+  sizeMultiplierOverride: number;
+  measurements: {
+    avgAtmSpreadPct: number;
+    avgAtmVolume: number;
+    avgAtmOI: number;
+    activeStrikeCount: number;
+  };
+}
+
+interface TierGates {
+  minVolume: number;
+  minOI: number;
+  maxSpreadPct: number;
+}
+
+const TIER_GATES: Record<LiquidityTier, TierGates> = {
+  1: { minVolume: 100, minOI: 500, maxSpreadPct: 0.10 },
+  2: { minVolume: 50, minOI: 200, maxSpreadPct: 0.20 },
+  3: { minVolume: 100, minOI: 500, maxSpreadPct: 0.15 },
+};
+
+export function classifyTicker(
+  calls: OptionContract[],
+  puts: OptionContract[],
+  underlyingPrice: number,
+): TickerProfile {
+  const allContracts = [...calls, ...puts];
+
+  const expirations = new Map<string, number>();
+  for (const c of allContracts) {
+    if (c.dte !== undefined && !expirations.has(c.expiration)) {
+      expirations.set(c.expiration, c.dte);
+    }
+  }
+  const sortedExps = [...expirations.entries()]
+    .sort((a, b) => a[1] - b[1])
+    .slice(0, 2)
+    .map(([exp]) => exp);
+
+  const atmRange = underlyingPrice * 0.05;
+  const atmContracts = allContracts.filter(
+    (c) =>
+      sortedExps.includes(c.expiration) &&
+      Math.abs(c.strike - underlyingPrice) <= atmRange &&
+      (c.bid ?? 0) > 0 &&
+      (c.ask ?? 0) > 0
+  );
+
+  let avgSpread = 1;
+  let avgVol = 0;
+  let avgOI = 0;
+  if (atmContracts.length > 0) {
+    let totalSpread = 0;
+    let totalVol = 0;
+    let totalOI = 0;
+    for (const c of atmContracts) {
+      const bid = c.bid ?? 0;
+      const ask = c.ask ?? 0;
+      const m = (bid + ask) / 2;
+      totalSpread += m > 0 ? (ask - bid) / m : 1;
+      totalVol += c.volume ?? 0;
+      totalOI += c.openInterest ?? 0;
+    }
+    avgSpread = totalSpread / atmContracts.length;
+    avgVol = totalVol / atmContracts.length;
+    avgOI = totalOI / atmContracts.length;
+  }
+
+  const activeStrikeCount = allContracts.filter((c) => (c.volume ?? 0) > 0).length;
+
+  let tier: LiquidityTier;
+  if (avgSpread < 0.05 && avgVol > 200 && avgOI > 1000) {
+    tier = 1;
+  } else if (avgSpread < 0.15 && avgVol > 50 && avgOI > 200) {
+    tier = 2;
+  } else {
+    tier = 3;
+  }
+
+  const tierLabels: Record<LiquidityTier, string> = {
+    1: "Tier 1 (High Liquidity)",
+    2: "Tier 2 (Moderate Liquidity)",
+    3: "Tier 3 (Low Liquidity)",
+  };
+
+  return {
+    tier,
+    tierLabel: tierLabels[tier],
+    beta: 1.0,
+    adjustedDelta: 0.20,
+    sizeMultiplierOverride: tier === 3 ? 0.5 : 1.0,
+    measurements: {
+      avgAtmSpreadPct: r2(avgSpread * 100),
+      avgAtmVolume: Math.round(avgVol),
+      avgAtmOI: Math.round(avgOI),
+      activeStrikeCount,
+    },
+  };
+}
+
+export interface DailyCandle {
+  close: number;
+}
+
+export function computeBeta(
+  tickerCandles: DailyCandle[],
+  spyCandles: DailyCandle[],
+): number {
+  const tLen = tickerCandles.length;
+  const sLen = spyCandles.length;
+  const useLen = Math.min(tLen, sLen, 21);
+  if (useLen < 6) return 1.0;
+
+  const tSlice = tickerCandles.slice(tLen - useLen);
+  const sSlice = spyCandles.slice(sLen - useLen);
+
+  const tickerReturns: number[] = [];
+  const spyReturns: number[] = [];
+  for (let i = 1; i < useLen; i++) {
+    const tr = tSlice[i - 1].close !== 0
+      ? (tSlice[i].close - tSlice[i - 1].close) / tSlice[i - 1].close
+      : 0;
+    const sr = sSlice[i - 1].close !== 0
+      ? (sSlice[i].close - sSlice[i - 1].close) / sSlice[i - 1].close
+      : 0;
+    tickerReturns.push(tr);
+    spyReturns.push(sr);
+  }
+
+  const n = tickerReturns.length;
+  if (n < 5) return 1.0;
+
+  const meanT = tickerReturns.reduce((s, v) => s + v, 0) / n;
+  const meanS = spyReturns.reduce((s, v) => s + v, 0) / n;
+
+  let cov = 0;
+  let varS = 0;
+  for (let i = 0; i < n; i++) {
+    const dt = tickerReturns[i] - meanT;
+    const ds = spyReturns[i] - meanS;
+    cov += dt * ds;
+    varS += ds * ds;
+  }
+
+  if (varS === 0) return 1.0;
+  const beta = cov / varS;
+  return Math.max(0.1, Math.min(beta, 5.0));
+}
+
+export function applyBetaToProfile(profile: TickerProfile, beta: number): TickerProfile {
+  let adjustedDelta: number;
+  if (beta > 1.5) adjustedDelta = 0.15;
+  else if (beta >= 1.0) adjustedDelta = 0.20;
+  else adjustedDelta = 0.25;
+
+  return { ...profile, beta: r2(beta), adjustedDelta };
+}
+
 const MAX_RISK_PER_TRADE = 250;
 const MIN_RR_GATE = 0.20;
 
@@ -128,16 +293,17 @@ function mid(c: OptionContract): number {
   return ((c.bid ?? 0) + (c.ask ?? 0)) / 2;
 }
 
-function isLiquid(c: OptionContract): boolean {
+function isLiquidForTier(c: OptionContract, tier: LiquidityTier): boolean {
   const bid = c.bid ?? 0;
   const ask = c.ask ?? 0;
   if (bid <= 0 || ask <= 0) return false;
   if (ask < bid) return false;
-  if ((c.volume ?? 0) <= 10) return false;
-  if ((c.openInterest ?? 0) <= 100) return false;
+  const gates = TIER_GATES[tier];
+  if ((c.volume ?? 0) < gates.minVolume) return false;
+  if ((c.openInterest ?? 0) < gates.minOI) return false;
   const m = (bid + ask) / 2;
   if (m <= 0) return false;
-  if ((ask - bid) / m > 0.30) return false;
+  if ((ask - bid) / m > gates.maxSpreadPct) return false;
   return true;
 }
 
@@ -407,8 +573,9 @@ function buildBullPutSpreadForExp(
   exp: ExpirationGroup,
   delta: number,
   sizeMul: number,
+  tier: LiquidityTier = 1,
 ): StrategyPayload | null {
-  const expPuts = getContractsForExpiration(puts, exp.expirationDate).filter(isLiquid);
+  const expPuts = getContractsForExpiration(puts, exp.expirationDate).filter(c => isLiquidForTier(c, tier));
   if (expPuts.length < 2) return null;
 
   const shortLeg = findClosestDelta(expPuts, delta);
@@ -456,8 +623,9 @@ function buildBearCallSpreadForExp(
   exp: ExpirationGroup,
   delta: number,
   sizeMul: number,
+  tier: LiquidityTier = 1,
 ): StrategyPayload | null {
-  const expCalls = getContractsForExpiration(calls, exp.expirationDate).filter(isLiquid);
+  const expCalls = getContractsForExpiration(calls, exp.expirationDate).filter(c => isLiquidForTier(c, tier));
   if (expCalls.length < 2) return null;
 
   const shortLeg = findClosestDelta(expCalls, delta);
@@ -505,8 +673,9 @@ function buildBullCallSpreadForExp(
   exp: ExpirationGroup,
   delta: number,
   sizeMul: number,
+  tier: LiquidityTier = 1,
 ): StrategyPayload | null {
-  const expCalls = getContractsForExpiration(calls, exp.expirationDate).filter(isLiquid);
+  const expCalls = getContractsForExpiration(calls, exp.expirationDate).filter(c => isLiquidForTier(c, tier));
   if (expCalls.length < 2) return null;
 
   const longLeg = findClosestDelta(expCalls, Math.min(delta + 0.20, 0.50));
@@ -554,8 +723,9 @@ function buildBearPutSpreadForExp(
   exp: ExpirationGroup,
   delta: number,
   sizeMul: number,
+  tier: LiquidityTier = 1,
 ): StrategyPayload | null {
-  const expPuts = getContractsForExpiration(puts, exp.expirationDate).filter(isLiquid);
+  const expPuts = getContractsForExpiration(puts, exp.expirationDate).filter(c => isLiquidForTier(c, tier));
   if (expPuts.length < 2) return null;
 
   const longLeg = findClosestDelta(expPuts, Math.min(delta + 0.20, 0.50));
@@ -604,9 +774,10 @@ function buildIronCondorForExp(
   exp: ExpirationGroup,
   delta: number,
   sizeMul: number,
+  tier: LiquidityTier = 1,
 ): StrategyPayload | null {
-  const expCalls = getContractsForExpiration(calls, exp.expirationDate).filter(isLiquid);
-  const expPuts = getContractsForExpiration(puts, exp.expirationDate).filter(isLiquid);
+  const expCalls = getContractsForExpiration(calls, exp.expirationDate).filter(c => isLiquidForTier(c, tier));
+  const expPuts = getContractsForExpiration(puts, exp.expirationDate).filter(c => isLiquidForTier(c, tier));
   if (expCalls.length < 2 || expPuts.length < 2) return null;
 
   const shortCall = findClosestDelta(expCalls, delta);
@@ -664,9 +835,10 @@ function buildShortStrangleForExp(
   exp: ExpirationGroup,
   delta: number,
   sizeMul: number,
+  tier: LiquidityTier = 1,
 ): StrategyPayload | null {
-  const expCalls = getContractsForExpiration(calls, exp.expirationDate).filter(isLiquid);
-  const expPuts = getContractsForExpiration(puts, exp.expirationDate).filter(isLiquid);
+  const expCalls = getContractsForExpiration(calls, exp.expirationDate).filter(c => isLiquidForTier(c, tier));
+  const expPuts = getContractsForExpiration(puts, exp.expirationDate).filter(c => isLiquidForTier(c, tier));
   if (expCalls.length === 0 || expPuts.length === 0) return null;
 
   const shortCall = findClosestDelta(expCalls, delta);
@@ -716,8 +888,9 @@ function buildShortPutForExp(
   exp: ExpirationGroup,
   delta: number,
   sizeMul: number,
+  tier: LiquidityTier = 1,
 ): StrategyPayload | null {
-  const expPuts = getContractsForExpiration(puts, exp.expirationDate).filter(isLiquid);
+  const expPuts = getContractsForExpiration(puts, exp.expirationDate).filter(c => isLiquidForTier(c, tier));
   if (expPuts.length === 0) return null;
 
   const shortLeg = findClosestDelta(expPuts, delta);
@@ -771,8 +944,9 @@ function buildCashSecuredPutForExp(
   exp: ExpirationGroup,
   delta: number,
   sizeMul: number,
+  tier: LiquidityTier = 1,
 ): StrategyPayload | null {
-  const base = buildShortPutForExp(puts, exp, delta, sizeMul);
+  const base = buildShortPutForExp(puts, exp, delta, sizeMul, tier);
   if (!base) return null;
   const capitalRequired = base.short_leg.strike * 100;
   return {
@@ -797,9 +971,10 @@ function buildIronButterflyForExp(
   exp: ExpirationGroup,
   _delta: number,
   sizeMul: number,
+  tier: LiquidityTier = 1,
 ): StrategyPayload | null {
-  const expCalls = getContractsForExpiration(calls, exp.expirationDate).filter(isLiquid);
-  const expPuts = getContractsForExpiration(puts, exp.expirationDate).filter(isLiquid);
+  const expCalls = getContractsForExpiration(calls, exp.expirationDate).filter(c => isLiquidForTier(c, tier));
+  const expPuts = getContractsForExpiration(puts, exp.expirationDate).filter(c => isLiquidForTier(c, tier));
   if (expCalls.length < 2 || expPuts.length < 2) return null;
 
   const shortCall = findClosestDelta(expCalls, 0.50);
@@ -856,8 +1031,9 @@ function buildLongPutForExp(
   exp: ExpirationGroup,
   delta: number,
   sizeMul: number,
+  tier: LiquidityTier = 1,
 ): StrategyPayload | null {
-  const expPuts = getContractsForExpiration(puts, exp.expirationDate).filter(isLiquid);
+  const expPuts = getContractsForExpiration(puts, exp.expirationDate).filter(c => isLiquidForTier(c, tier));
   if (expPuts.length === 0) return null;
 
   const longLeg = findClosestDelta(expPuts, Math.min(delta + 0.10, 0.40));
@@ -903,8 +1079,9 @@ function buildLongCallForExp(
   exp: ExpirationGroup,
   delta: number,
   sizeMul: number,
+  tier: LiquidityTier = 1,
 ): StrategyPayload | null {
-  const expCalls = getContractsForExpiration(calls, exp.expirationDate).filter(isLiquid);
+  const expCalls = getContractsForExpiration(calls, exp.expirationDate).filter(c => isLiquidForTier(c, tier));
   if (expCalls.length === 0) return null;
 
   const longLeg = findClosestDelta(expCalls, Math.min(delta + 0.10, 0.50));
@@ -950,37 +1127,38 @@ function buildStrategyForExpiration(
   puts: OptionContract[],
   exp: ExpirationGroup,
   regime: RegimeClassification,
+  tier: LiquidityTier = 1,
 ): StrategyPayload | null {
   const d = regime.deltaTargets.shortStrike;
   const s = regime.sizeMultiplier;
 
   switch (type) {
     case "BULL_PUT_SPREAD":
-      return buildBullPutSpreadForExp(puts, exp, d, s);
+      return buildBullPutSpreadForExp(puts, exp, d, s, tier);
     case "BEAR_CALL_SPREAD":
-      return buildBearCallSpreadForExp(calls, exp, d, s);
+      return buildBearCallSpreadForExp(calls, exp, d, s, tier);
     case "BULL_CALL_SPREAD":
     case "CALL_DEBIT_SPREAD":
-      return buildBullCallSpreadForExp(calls, exp, d, s);
+      return buildBullCallSpreadForExp(calls, exp, d, s, tier);
     case "BEAR_PUT_SPREAD":
     case "PUT_DEBIT_SPREAD":
-      return buildBearPutSpreadForExp(puts, exp, d, s);
+      return buildBearPutSpreadForExp(puts, exp, d, s, tier);
     case "IRON_CONDOR":
-      return buildIronCondorForExp(calls, puts, exp, d, s);
+      return buildIronCondorForExp(calls, puts, exp, d, s, tier);
     case "SHORT_STRANGLE":
-      return buildShortStrangleForExp(calls, puts, exp, d, s);
+      return buildShortStrangleForExp(calls, puts, exp, d, s, tier);
     case "SHORT_PUT":
-      return buildShortPutForExp(puts, exp, d, s);
+      return buildShortPutForExp(puts, exp, d, s, tier);
     case "CASH_SECURED_PUT":
-      return buildCashSecuredPutForExp(puts, exp, d, s);
+      return buildCashSecuredPutForExp(puts, exp, d, s, tier);
     case "IRON_BUTTERFLY":
-      return buildIronButterflyForExp(calls, puts, exp, 0.50, s);
+      return buildIronButterflyForExp(calls, puts, exp, 0.50, s, tier);
     case "LONG_PUT":
-      return buildLongPutForExp(puts, exp, d, s);
+      return buildLongPutForExp(puts, exp, d, s, tier);
     case "LONG_CALL":
     case "LONG_CALL_45_90DTE":
     case "LONG_CALL_90DTE":
-      return buildLongCallForExp(calls, exp, d, s);
+      return buildLongCallForExp(calls, exp, d, s, tier);
     default:
       return null;
   }
@@ -991,6 +1169,7 @@ function findBestSetupForStrategy(
   calls: OptionContract[],
   puts: OptionContract[],
   regime: RegimeClassification,
+  tier: LiquidityTier = 1,
 ): StrategyPayload | null {
   let dteMin = regime.dteRange.min;
   let dteMax = regime.dteRange.max;
@@ -1011,7 +1190,7 @@ function findBestSetupForStrategy(
   let bestScore = -Infinity;
 
   for (const exp of expirations) {
-    const setup = buildStrategyForExpiration(type, calls, puts, exp, regime);
+    const setup = buildStrategyForExpiration(type, calls, puts, exp, regime, tier);
     if (!setup) continue;
 
     const rr = setup.max_loss > 0 ? setup.max_profit / setup.max_loss : 0;
@@ -1031,11 +1210,22 @@ export function selectStrategiesByRegime(
   regime: RegimeClassification,
   calls: OptionContract[],
   puts: OptionContract[],
+  tickerProfile?: TickerProfile,
 ): StrategyPayload[] {
+  const tier = tickerProfile?.tier ?? 1;
+
+  const effectiveRegime = tickerProfile
+    ? {
+        ...regime,
+        deltaTargets: { ...regime.deltaTargets, shortStrike: tickerProfile.adjustedDelta },
+        sizeMultiplier: regime.sizeMultiplier * tickerProfile.sizeMultiplierOverride,
+      }
+    : regime;
+
   const results: StrategyPayload[] = [];
 
-  for (const stratType of regime.strategyUniverse) {
-    const setup = findBestSetupForStrategy(stratType, calls, puts, regime);
+  for (const stratType of effectiveRegime.strategyUniverse) {
+    const setup = findBestSetupForStrategy(stratType, calls, puts, effectiveRegime, tier);
     if (setup) results.push(setup);
   }
 
@@ -1084,7 +1274,7 @@ export function checkOverrideConflict(
 }
 
 export const STRATEGIST_SYSTEM_PROMPT = `You are a professional options trading analyst presenting trade recommendations.
-You receive a JSON payload containing a market pulse analysis, regime classification, and pre-calculated options strategies.
+You receive a JSON payload containing a market pulse analysis, regime classification, ticker profile, and pre-calculated options strategies.
 
 ABSOLUTE RULES:
 1. You MUST NOT change, recalculate, or adjust any number from the payload.
@@ -1092,6 +1282,18 @@ ABSOLUTE RULES:
 3. You MUST NOT suggest additional trades beyond what the payload contains.
 4. Every number you mention (strikes, credit, max profit, max loss, POP, breakeven) MUST match the payload exactly.
 5. Your job is ONLY to explain WHY this trade makes sense given the market regime and to present it clearly.
+
+The payload includes a tickerProfile object with:
+- tier (1/2/3): dynamically classified liquidity tier based on real-time chain analysis
+- beta: computed from recent daily returns vs SPY
+- adjustedDelta: delta target adjusted for the ticker's beta
+- sizeMultiplierOverride: 0.5 for Tier 3 (low liquidity) tickers, 1.0 otherwise
+- measurements: avgAtmSpreadPct, avgAtmVolume, avgAtmOI, activeStrikeCount
+
+Incorporate the ticker profile into your narrative:
+- Mention the liquidity tier and what it means for execution quality
+- Reference beta when explaining delta selection and directional exposure
+- If Tier 3, note the automatic position size reduction and wider spread risk
 
 For each strategy, explain:
 - Why this strategy fits the current market regime (connect regime to strategy choice)

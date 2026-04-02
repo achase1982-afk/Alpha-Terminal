@@ -58,6 +58,17 @@ Features include a MacroBar displaying key indices, an Institutional Tear Sheet 
 - `risk_reward_display` field: human-readable "Risk $X / Reward $Y" format
 - All 11 strategy builders populate `risk_evaluation` and `risk_reward_display` fields
 
+### Dynamic Ticker Classification (optionsStrategist.ts)
+- No hardcoded ticker names — classification is purely data-driven from the options chain
+- `classifyTicker()` measures ATM contracts across front 2 expirations: avg spread%, avg volume, avg OI, active strike count
+- Three tiers: Tier 1 (high liquidity: spread<5%, vol>200, OI>1000), Tier 2 (moderate: spread<15%, vol>50, OI>200), Tier 3 (low: everything else)
+- Tier-specific liquidity gates applied via `isLiquidForTier()`: Tier 1 (vol>100, OI>500, spread<10%), Tier 2 (vol>50, OI>200, spread<20%), Tier 3 (vol>100, OI>500, spread<15% + 50% size multiplier)
+- `computeBeta()` calculates beta from last ~20 daily returns vs SPY using covariance/variance formula, clamped to [0.1, 5.0]
+- Beta-adjusted delta targets: beta>1.5→0.15, beta 1.0-1.5→0.20, beta<1.0→0.25
+- `TickerProfile` object (tier, beta, adjustedDelta, sizeMultiplierOverride, measurements) passed through both strategist endpoints and included in Gemini narrative payload
+- `buildTickerProfile()` in ai.ts fetches daily candles for ticker + SPY in parallel for beta computation
+- Key types: `LiquidityTier`, `TickerProfile`, `DailyCandle`
+
 ### Pre-Trade Risk Manager
 - Backend: `preTradeRiskEngine.ts` with 7 deterministic checks: Pulse Alignment, R/R ≥ threshold, Bid/Ask Spread ≤15%, PoP ≥35%, Position Size ≤ max%, Vol Environment, DTE ≥ min
 - API route: `POST /api/ai/pre-trade-check` runs engine + Gemini Flash one-liner
