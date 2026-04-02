@@ -446,9 +446,7 @@ router.get("/pc-ratio", async (req, res) => {
     const params = new URLSearchParams({
       symbol: chainSymbol,
       contractType: "ALL",
-      daysToExpiration: "30",
       range: "ALL",
-      strikeCount: "20",
     });
 
     const response = await fetch(`${SCHWAB_API_BASE}/chains?${params.toString()}`, {
@@ -485,7 +483,7 @@ router.get("/pc-ratio", async (req, res) => {
 
     const pcRatioVol = calls.volume > 0 ? puts.volume / calls.volume : null;
     const pcRatioOI = calls.openInterest > 0 ? puts.openInterest / calls.openInterest : null;
-    const pcRatio = pcRatioOI ?? pcRatioVol;
+    const pcRatio = pcRatioVol ?? pcRatioOI;
 
     req.log.info({ symbol: displaySymbol, callVol: calls.volume, putVol: puts.volume, callOI: calls.openInterest, putOI: puts.openInterest, pcRatioVol, pcRatioOI }, "P/C ratio calculated");
     res.json({ symbol: displaySymbol, pcRatio, pcRatioVolume: pcRatioVol, pcRatioOI, callVolume: calls.volume, putVolume: puts.volume, callOI: calls.openInterest, putOI: puts.openInterest });
