@@ -116,7 +116,7 @@ function buildContract(def: IBSymbolDef): Contract {
     const year = now.getFullYear();
     const month = now.getMonth() + 1;
     const nextMonth = month === 12 ? (year + 1).toString() + "01" : year.toString() + String(month + 1).padStart(2, "0");
-    (contract as any).expiry = nextMonth;
+    (contract as any).lastTradeDateOrContractMonth = nextMonth;
   }
   
   return contract;
@@ -221,6 +221,31 @@ export async function connectIB(): Promise<void> {
   try {
     ib = new IBApi({ host: IB_HOST, port: IB_PORT, clientId: IB_CLIENT_ID });
 
+    let allEventCount = 0;
+    ib.on(EventName.all, (...args: unknown[]) => {
+      allEventCount++;
+      if (allEventCount <= 10) {
+        const eventName = typeof args[0] === "string" ? args[0] : "unknown";
+        logger.info({ eventName, argCount: args.length, allEventCount }, "IB: raw event received");
+      }
+      if (allEventCount === 50) {
+        logger.info({ allEventCount }, "IB: suppressing further raw event logs");
+      }
+    });
+
+    ib.on(EventName.info, (msg: string, code: number) => {
+      logger.info({ msg, code }, "IB: info event");
+    });
+
+    ib.on(EventName.marketDataType, (reqId: number, marketDataType: number) => {
+      logger.info({ reqId, marketDataType }, "IB: marketDataType event");
+    });
+
+    ib.on(EventName.tickReqParams, (reqId: number, minTick: number, bboExchange: string, snapshotPermissions: number) => {
+      const def = reqIdToSymbol.get(reqId);
+      logger.info({ symbol: def?.displaySymbol, reqId, minTick, bboExchange, snapshotPermissions }, "IB: tickReqParams received");
+    });
+
     ib.on(EventName.connected, () => {
       connState = "CONNECTED";
       reconnectDelay = RECONNECT_INTERVAL_MS;
@@ -236,7 +261,7 @@ export async function connectIB(): Promise<void> {
 
     ib.on(EventName.error, (err: Error, code: number, reqId: number) => {
       if (code === 2104 || code === 2106 || code === 2158 || code === 10167) {
-        logger.debug({ code, msg: err.message }, "IB: info message (not an error)");
+        logger.info({ code, msg: err.message }, "IB: info/status message");
         return;
       }
       if (code === 200 && reqId > 0) {
@@ -255,9 +280,16 @@ export async function connectIB(): Promise<void> {
       }
     });
 
+    const tickLogCounts = new Map<string, number>();
     ib.on(EventName.tickPrice, (reqId: number, tickType: number, price: number, _attribs: unknown) => {
       const def = reqIdToSymbol.get(reqId);
       if (!def || price === -1) return;
+
+      const cnt = (tickLogCounts.get(def.displaySymbol) ?? 0) + 1;
+      tickLogCounts.set(def.displaySymbol, cnt);
+      if (cnt <= 3) {
+        logger.info({ symbol: def.displaySymbol, tickType, price }, "IB: tickPrice received");
+      }
 
       const state = getOrCreateState(def.displaySymbol);
       state.ts = Date.now();
@@ -328,6 +360,37 @@ export async function connectIB(): Promise<void> {
 
       emitQuote(def, state);
     });
+
+    ib.on(EventName.tickString, (reqId: number, tickType: number, value: string) => {
+      const def = reqIdToSymbol.get(reqId);
+      if (!def) return;
+      const cnt = (tickLogCounts.get(def.displaySymbol + "_str") ?? 0) + 1;
+      tickLogCounts.set(def.displaySymbol + "_str", cnt);
+      if (cnt <= 2) {
+        logger.info({ symbol: def.displaySymbol, tickType, value }, "IB: tickString received");
+      }
+    });
+
+    ib.on(EventName.tickGeneric, (reqId: number, tickType: number, value: number) => {
+      const def = reqIdToSymbol.get(reqId);
+      if (!def) return;
+      const cnt = (tickLogCounts.get(def.displaySymbol + "_gen") ?? 0) + 1;
+      tickLogCounts.set(def.displaySymbol + "_gen", cnt);
+      if (cnt <= 2) {
+        logger.info({ symbol: def.displaySymbol, tickType, value }, "IB: tickGeneric received");
+      }
+    });
+
+    setInterval(() => {
+      if (connState !== "CONNECTED") return;
+      const symsWithData: string[] = [];
+      for (const [sym, state] of ibQuoteCache.entries()) {
+        if (state.last !== null || state.bid !== null || state.close !== null) {
+          symsWithData.push(sym);
+        }
+      }
+      logger.info({ total: ibQuoteCache.size, withData: symsWithData.length, symbols: symsWithData }, "IB: quote cache summary");
+    }, 30_000);
 
     ib.connect();
   } catch (err) {
