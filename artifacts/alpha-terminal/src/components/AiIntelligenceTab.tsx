@@ -110,7 +110,7 @@ function fmtDollar(v: number): string {
   return `$${Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-function MiniGauge({ value, max, color, label }: { value: number; max: number; color: string; label: string }) {
+function MiniGauge({ value, max, color, label, display }: { value: number; max: number; color: string; label: string; display?: string }) {
   const pct = Math.min(100, Math.max(0, (value / max) * 100));
   const r = 20;
   const circ = 2 * Math.PI * r;
@@ -126,12 +126,21 @@ function MiniGauge({ value, max, color, label }: { value: number; max: number; c
             style={{ transition: "stroke-dasharray 0.6s ease" }} />
         </svg>
         <div className="absolute inset-0 flex items-center justify-center">
-          <span className="font-mono text-[10px] font-bold text-white">{value}%</span>
+          <span className="font-mono text-[10px] font-bold text-white">{display ?? `${value}%`}</span>
         </div>
       </div>
       <span className="font-mono text-[8px] text-[#71717a] uppercase tracking-wider">{label}</span>
     </div>
   );
+}
+
+function parseRRValue(rr: string): number {
+  const parts = rr.split(":");
+  if (parts.length === 2) {
+    const num = parseFloat(parts[1]);
+    if (!isNaN(num)) return Math.min(num, 5);
+  }
+  return 1;
 }
 
 function LegRow({ leg, label, even }: { leg: LegPayload; label: string; even: boolean }) {
@@ -189,7 +198,20 @@ function RegimeDisplayBanner({ regime, pulse }: { regime: RegimeInfo; pulse?: Pu
           ))}
         </div>
 
-        <div className="flex items-center gap-4 mt-3 pt-2 border-t" style={{ borderColor: `${regimeColor}15` }}>
+        {pulse && (
+          <div className="mt-3 pt-2 border-t" style={{ borderColor: `${regimeColor}15` }}>
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="font-mono text-[9px] text-[#3f3f46] uppercase tracking-wider">Confidence</span>
+              <span className="font-mono text-[10px] font-bold" style={{ color: regimeColor }}>{pulse.confidence}%</span>
+            </div>
+            <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "#1f1f22" }}>
+              <div className="h-full rounded-full transition-all duration-700"
+                style={{ width: `${pulse.confidence}%`, background: `linear-gradient(90deg, ${regimeColor}80, ${regimeColor})` }} />
+            </div>
+          </div>
+        )}
+
+        <div className="flex items-center gap-4 mt-2.5">
           <span className="font-mono text-[10px] text-[#52525b]">
             <Clock className="w-3 h-3 inline mr-1 -mt-px" />{regime.dteRange.min}–{regime.dteRange.max} DTE
           </span>
@@ -363,6 +385,7 @@ function RealStrategyCard({ s, idx, preTradeResult }: { s: StrategyPayload; idx:
 
           <div className="px-4 pb-2 flex items-center gap-4">
             <MiniGauge value={s.probability_of_profit_pct} max={100} color="#00d166" label="PoP" />
+            <MiniGauge value={parseRRValue(s.risk_reward_ratio)} max={5} color="#FF6B2B" label="R/R" display={s.risk_reward_ratio} />
             <div className="flex-1 space-y-1.5">
               <div className="flex items-center justify-between">
                 <span className="font-mono text-[9px] text-[#52525b] uppercase tracking-wider">Breakeven</span>
@@ -411,7 +434,9 @@ function RealStrategyCard({ s, idx, preTradeResult }: { s: StrategyPayload; idx:
   );
 }
 
-function StrategistCommandBar({ onRun, disabled }: { onRun: (ticker: string) => void; disabled: boolean }) {
+function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
+  onRun: (ticker: string) => void; disabled: boolean; lastRunSymbol?: string | null; lastRunTime?: number | null;
+}) {
   const { symbol, streamPrices } = useTerminalStore();
   const [inputVal, setInputVal] = useState("");
   const [isFocused, setIsFocused] = useState(false);
@@ -457,12 +482,19 @@ function StrategistCommandBar({ onRun, disabled }: { onRun: (ticker: string) => 
               )}
             </div>
           </div>
-          {!disabled && (
-            <div className="flex items-center gap-1.5">
-              <Activity className="w-3 h-3 text-[#00d166]" />
-              <span className="font-mono text-[9px] text-[#00d166] uppercase tracking-widest">Ready</span>
-            </div>
-          )}
+          <div className="flex flex-col items-end gap-0.5">
+            {!disabled && (
+              <div className="flex items-center gap-1.5">
+                <Activity className="w-3 h-3 text-[#00d166]" />
+                <span className="font-mono text-[9px] text-[#00d166] uppercase tracking-widest">Ready</span>
+              </div>
+            )}
+            {lastRunSymbol && lastRunTime && !disabled && (
+              <span className="font-mono text-[8px] text-[#3f3f46]">
+                Last: {lastRunSymbol} · {new Date(lastRunTime).toLocaleTimeString()}
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="px-4 py-3 flex items-center gap-2">
@@ -1001,6 +1033,8 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef }: AiIn
   const [overrideWarning, setOverrideWarning] = useState<string | null>(null);
   const [strategistStatus, setStrategistStatus] = useState<string>("");
   const [preTradeResults, setPreTradeResults] = useState<Record<number, PreTradeResult>>({});
+  const [lastRunSymbol, setLastRunSymbol] = useState<string | null>(null);
+  const [lastRunTime, setLastRunTime] = useState<number | null>(null);
   const cacheRestoredRef = useRef(false);
   const prevSymbolRef = useRef(symbol);
   const strategistRunRef = useRef(0);
@@ -1125,6 +1159,8 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef }: AiIn
     setThinkingTokens([]);
     setPreTradeResults({});
     setStrategistStatus("Running market pulse engine...");
+    setLastRunSymbol(runSymbol);
+    setLastRunTime(Date.now());
 
     const snap = useTerminalStore.getState();
     const currentBias = snap.stratBias;
@@ -1311,7 +1347,8 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef }: AiIn
 
       {subTab === "strategist" && (
         <div className="px-3 sm:px-4 lg:px-5 space-y-4 pt-3">
-          <StrategistCommandBar onRun={handleRunStrategistWithTicker} disabled={isPendingAny || !accessToken} />
+          <StrategistCommandBar onRun={handleRunStrategistWithTicker} disabled={isPendingAny || !accessToken}
+            lastRunSymbol={lastRunSymbol} lastRunTime={lastRunTime} />
 
           {activeResult === "strategist" && (
             <div className="space-y-4">

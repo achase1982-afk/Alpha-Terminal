@@ -58,7 +58,7 @@ export function AiThinkingFeed({ texts, isStreaming, className = "" }: AiThinkin
 
       <div
         ref={scrollRef}
-        className="max-h-[150px] overflow-y-auto px-4 pb-3"
+        className="max-h-[150px] overflow-y-auto px-4 pb-3 relative"
         style={{ scrollBehavior: "smooth" }}
       >
         <div className="font-mono text-[10px] leading-relaxed whitespace-pre-wrap break-words"
@@ -73,6 +73,10 @@ export function AiThinkingFeed({ texts, isStreaming, className = "" }: AiThinkin
             <span className="inline-block w-1.5 h-3.5 ml-0.5 animate-pulse" style={{ background: "#4ade80" }} />
           )}
         </div>
+        <div className="pointer-events-none absolute inset-0" style={{
+          backgroundImage: "repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.08) 2px, rgba(0,0,0,0.08) 4px)",
+          backgroundSize: "100% 4px",
+        }} />
       </div>
     </div>
   );
