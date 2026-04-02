@@ -216,61 +216,34 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
         </div>
       )}
 
-      {showEmptyOrLoading && (
-        <div className={`flex-1 flex flex-col ${isActive ? "overflow-y-auto space-y-4" : "justify-center space-y-4"}`}>
-          <div className={`rounded-xl border border-[#2A2A2C] p-8 text-center ${isActive ? "shrink-0" : ""}`} style={{ background: "#111113" }}>
+      {showEmptyOrLoading && !isActive && (
+        <div className="flex-1 flex flex-col justify-center space-y-4">
+          <div className="rounded-xl border border-[#2A2A2C] p-8 text-center" style={{ background: "#111113" }}>
             <div className="relative mx-auto mb-3 w-8 h-8">
-              {isActive && (
-                <span className="absolute inset-0 rounded-full bg-[#FFB800]/20 animate-ping" />
-              )}
               <Activity
                 className="w-8 h-8 text-[#FFB800] relative"
-                style={isActive
-                  ? { opacity: 1, animation: "pulse-breathe 1.5s ease-in-out infinite" }
-                  : { opacity: 0.5 }
-                }
+                style={{ opacity: 0.5 }}
               />
             </div>
             <p className="font-mono text-xs text-[#71717a] mb-4">
-              {isActive ? "Analyzing markets..." : "No Market Pulse generated yet"}
+              No Market Pulse generated yet
             </p>
             <button
               onClick={fetchPulse}
-              disabled={!accessToken || isActive}
-              className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-mono text-xs font-bold tracking-wider transition-colors active:scale-95 active:brightness-110 ${isActive ? "text-[#FFB800] border border-[#FFB800]/30" : "text-[#0c0c0c] bg-[#FFB800] hover:bg-[#FFB800]/90"}`}
-              style={isActive
-                ? { background: "rgba(255,184,0,0.1)", animation: "pulse-breathe 1.5s ease-in-out infinite", transition: "transform 0.1s, filter 0.1s" }
-                : { transition: "transform 0.1s, filter 0.1s" }
-              }
+              disabled={!accessToken}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-mono text-xs font-bold tracking-wider transition-colors active:scale-95 active:brightness-110 text-[#0c0c0c] bg-[#FFB800] hover:bg-[#FFB800]/90"
+              style={{ transition: "transform 0.1s, filter 0.1s" }}
             >
               <Zap className="w-3.5 h-3.5" />
-              {isActive ? "Checking..." : "Check Market Pulse"}
+              Check Market Pulse
             </button>
           </div>
+        </div>
+      )}
 
-          {(isActive || thinkingTokens.length > 0) && (
-            <PulseLoadingStatus thinkingTokens={thinkingTokens} statusMessages={statusMessages} />
-          )}
-
-          {!isActive && thinkingTokens.length === 0 && (
-            <div
-              className="rounded-xl border overflow-hidden"
-              style={{ background: "#111113", borderColor: "rgba(16,185,129,0.2)" }}
-            >
-              <div
-                className="px-4 py-2.5 flex items-center gap-2"
-                style={{ background: "rgba(16,185,129,0.04)" }}
-              >
-                <span className="inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500/30" />
-                <span className="font-mono text-[11px] text-emerald-500/50 uppercase tracking-widest font-bold">Gemini Reasoning</span>
-              </div>
-              <div className="px-4 py-4">
-                <p className="font-mono text-[11px] text-[#52525b] leading-relaxed">
-                  AI reasoning will appear here during analysis...
-                </p>
-              </div>
-            </div>
-          )}
+      {showEmptyOrLoading && isActive && (
+        <div className="flex-1 flex flex-col overflow-y-auto space-y-4">
+          <PulseLoadingStatus thinkingTokens={thinkingTokens} statusMessages={statusMessages} />
         </div>
       )}
 
