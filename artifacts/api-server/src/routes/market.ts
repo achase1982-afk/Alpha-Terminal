@@ -532,19 +532,20 @@ router.get("/pc-ratio", async (req, res) => {
       const allContracts = [...cached.calls, ...cached.puts];
       const withIV = allContracts.filter(c => typeof c.iv === "number" && c.iv > 0);
       if (withIV.length >= 3) {
-        let minIV = Infinity, maxIV = -Infinity;
-        for (const c of withIV) { if (c.iv! < minIV) minIV = c.iv!; if (c.iv! > maxIV) maxIV = c.iv!; }
-        if (maxIV > minIV) {
-          const exps = [...new Set(allContracts.map(c => c.expiration))].sort();
-          const frontExp = exps[0] ?? "";
-          const atmRange = underlyingPrice * 0.03;
-          const atmFront = withIV.filter(c => c.expiration === frontExp && Math.abs(c.strike - underlyingPrice) <= atmRange)
-            .sort((a, b) => Math.abs(a.strike - underlyingPrice) - Math.abs(b.strike - underlyingPrice));
-          const currentIV = atmFront.length > 0 ? atmFront[0].iv! :
-            (() => { const atm = withIV.filter(c => Math.abs(c.strike - underlyingPrice) <= underlyingPrice * 0.05)
+        const exps = [...new Set(allContracts.map(c => c.expiration))].sort();
+        const frontExp = exps[0] ?? "";
+        const atmRange = underlyingPrice * 0.05;
+        const atmContracts = withIV.filter(c => Math.abs(c.strike - underlyingPrice) <= atmRange);
+        
+        if (atmContracts.length >= 3) {
+          let minIV = Infinity, maxIV = -Infinity;
+          for (const c of atmContracts) { if (c.iv! < minIV) minIV = c.iv!; if (c.iv! > maxIV) maxIV = c.iv!; }
+          if (maxIV > minIV) {
+            const atmFront = withIV.filter(c => c.expiration === frontExp && Math.abs(c.strike - underlyingPrice) <= underlyingPrice * 0.03)
               .sort((a, b) => Math.abs(a.strike - underlyingPrice) - Math.abs(b.strike - underlyingPrice));
-              return atm.length > 0 ? atm[0].iv! : (minIV + maxIV) / 2; })();
-          ivr = Math.round(Math.max(0, Math.min(100, ((currentIV - minIV) / (maxIV - minIV)) * 100)));
+            const currentIV = atmFront.length > 0 ? atmFront[0].iv! : atmContracts[0].iv!;
+            ivr = Math.round(Math.max(0, Math.min(100, ((currentIV - minIV) / (maxIV - minIV)) * 100)));
+          }
         }
       }
 
