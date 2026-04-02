@@ -169,9 +169,9 @@ export function VolumeBar() {
         <span className="text-[9px] uppercase tracking-[0.12em] text-zinc-500 font-semibold leading-none">Volume</span>
         <span className="font-mono tabular-nums text-zinc-300 text-[13px] font-medium leading-none">{fmtVol(vol)}</span>
       </div>
-      <div className="flex flex-col items-center gap-0.5">
+      <div className="flex flex-col items-center gap-0.5 text-center">
         <span className="text-[9px] uppercase tracking-[0.12em] text-zinc-500 font-semibold leading-none">Day Range</span>
-        <span className="font-mono tabular-nums text-[13px] font-medium leading-none">
+        <span className="font-mono tabular-nums text-[13px] font-medium leading-none whitespace-nowrap">
           <span style={{ color: DOWN_COLOR }}>${fmtPrice(dayLow)}</span>
           <span className="text-zinc-600 mx-0.5">—</span>
           <span style={{ color: UP_COLOR }}>${fmtPrice(dayHigh)}</span>
@@ -179,7 +179,7 @@ export function VolumeBar() {
       </div>
       <div className="flex flex-col items-end gap-0.5">
         <span className="text-[9px] uppercase tracking-[0.12em] text-zinc-500 font-semibold leading-none">52W Range</span>
-        <span className="font-mono tabular-nums text-zinc-500 text-[13px] font-medium leading-none">
+        <span className="font-mono tabular-nums text-zinc-300 text-[13px] font-medium leading-none">
           {wk52Low != null ? `$${fmtPrice(wk52Low)} — $${fmtPrice(wk52High)}` : "—"}
         </span>
       </div>
