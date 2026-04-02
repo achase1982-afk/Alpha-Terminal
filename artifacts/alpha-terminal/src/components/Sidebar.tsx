@@ -45,7 +45,7 @@ interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
   onOpenChat?: () => void;
-  onNavigate?: (dest: "markets" | "portfolio") => void;
+  onNavigate?: (dest: "markets") => void;
   onToggle?: () => void;
 }
 
@@ -101,7 +101,7 @@ export function Sidebar({ isOpen, onClose, onOpenChat, onNavigate }: SidebarProp
           <div className="flex flex-col pb-2">
             <MenuRow icon={<Star />} label="Watchlist" onClick={() => { setActivePage("Watchlist"); onClose(); }} />
             <MenuRow icon={<Activity />} label="Markets" onClick={() => { onNavigate?.("markets"); handleClose(); }} />
-            <MenuRow icon={<Briefcase />} label="Portfolio" onClick={() => { onNavigate?.("portfolio"); handleClose(); }} />
+            <MenuRow icon={<Briefcase />} label="Portfolio" onClick={() => { window.open("https://client.schwab.com/app/accounts", "_blank"); handleClose(); }} />
             <MenuRow icon={<MessageCircle />} label="AI Search" onClick={() => { handleClose(); onOpenChat?.(); }} />
           </div>
 
