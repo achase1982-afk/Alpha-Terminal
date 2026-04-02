@@ -489,8 +489,8 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
       >
         <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: "1px solid #1f1f22" }}>
           <div>
-            <div className="font-mono text-xl font-normal text-white tracking-wide">{symbol}</div>
-            <div className="font-mono text-[11px] font-normal text-[#FFB800] tracking-wide">{COMPANY_NAMES[symbol.toUpperCase()] ?? symbol}</div>
+            <div className="font-mono text-xl font-normal text-white tracking-wide leading-tight">{symbol}</div>
+            <div className="font-mono text-sm font-normal text-[#FFB800] tracking-wide leading-tight">{COMPANY_NAMES[symbol.toUpperCase()] ?? symbol}</div>
           </div>
           {price != null && (
             <div className="flex flex-col items-end">
