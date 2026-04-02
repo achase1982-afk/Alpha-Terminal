@@ -3,7 +3,7 @@ import { useQuote }         from "@/hooks/useQuote";
 import { useTickColor }     from "@/hooks/useTickColor";
 import { RefreshCw, SearchX } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState, useLayoutEffect } from "react";
 
 const UP_COLOR   = "#00d166";
 const DOWN_COLOR = "#f23645";
@@ -73,6 +73,58 @@ function useTickFlashColor(price: number | null): string {
   }, [price]);
 
   return color;
+}
+
+const COMPANY_FONT_LG = 15;
+const COMPANY_FONT_SM = 11;
+const COMPANY_BOX_H = 34;
+
+function TickerBlock({ symbol, description, showData, opacityCls, transitionCls, onOpenTearSheet }: {
+  symbol?: string; description?: string; showData: boolean;
+  opacityCls: string; transitionCls: string; onOpenTearSheet?: () => void;
+}) {
+  const nameRef = useRef<HTMLSpanElement>(null);
+  const [nameFontSize, setNameFontSize] = useState(COMPANY_FONT_LG);
+
+  useLayoutEffect(() => {
+    const el = nameRef.current;
+    if (!el || !description) return;
+    el.style.fontSize = `${COMPANY_FONT_LG}px`;
+    if (el.scrollHeight > COMPANY_BOX_H) {
+      el.style.fontSize = `${COMPANY_FONT_SM}px`;
+      setNameFontSize(COMPANY_FONT_SM);
+    } else {
+      setNameFontSize(COMPANY_FONT_LG);
+    }
+  }, [description]);
+
+  return (
+    <button
+      onClick={onOpenTearSheet}
+      className={`flex flex-col min-w-0 text-left cursor-pointer group overflow-hidden ${opacityCls} ${transitionCls}`}
+      aria-label={`View company profile for ${symbol}`}
+    >
+      {showData ? (
+        <>
+          <span className="font-semibold text-white tracking-tight leading-none group-hover:text-primary transition-colors whitespace-nowrap" style={{ fontSize: 24 }}>
+            {symbol}
+          </span>
+          <span
+            ref={nameRef}
+            className="font-medium tracking-wide uppercase leading-snug overflow-hidden"
+            style={{ color: '#FFB800', fontSize: nameFontSize, height: COMPANY_BOX_H, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const, marginTop: 2 }}
+          >
+            {description || ""}
+          </span>
+        </>
+      ) : (
+        <>
+          <Skeleton className="h-6 w-16 bg-zinc-800" />
+          <Skeleton className="h-3 w-24 bg-zinc-800 mt-1" />
+        </>
+      )}
+    </button>
+  );
 }
 
 const GRID_CLS = "grid items-center gap-2 sm:gap-4 w-full min-h-[70px] sm:min-h-[80px]";
@@ -269,27 +321,14 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
     >
       <div className={`${GRID_CLS} ${GRID_COLS}`}>
 
-        <button
-          onClick={onOpenTearSheet}
-          className={`flex flex-col min-w-0 gap-0.5 text-left cursor-pointer group overflow-hidden ${opacityCls} ${transitionCls}`}
-          aria-label={`View company profile for ${quote?.symbol}`}
-        >
-          {showData ? (
-            <>
-              <span className="font-semibold text-xl md:text-2xl text-white tracking-tight leading-tight group-hover:text-primary transition-colors whitespace-nowrap">
-                {quote.symbol}
-              </span>
-              <span className="text-[11px] font-medium tracking-wide line-clamp-2 overflow-hidden text-ellipsis uppercase leading-snug" style={{ color: '#FFB800' }}>
-                {quote.description || ""}
-              </span>
-            </>
-          ) : (
-            <>
-              <Skeleton className="h-6 w-16 bg-zinc-800" />
-              <Skeleton className="h-3 w-24 bg-zinc-800 mt-1" />
-            </>
-          )}
-        </button>
+        <TickerBlock
+          symbol={quote?.symbol}
+          description={quote?.description}
+          showData={showData}
+          opacityCls={opacityCls}
+          transitionCls={transitionCls}
+          onOpenTearSheet={onOpenTearSheet}
+        />
 
         <div className={`flex flex-col items-start min-w-0 overflow-hidden ${opacityCls} ${transitionCls}`}>
           <span className="text-[10px] uppercase tracking-[0.1em] text-zinc-500 font-semibold leading-none mb-1">&nbsp;</span>
