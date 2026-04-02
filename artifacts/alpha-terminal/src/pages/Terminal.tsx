@@ -241,7 +241,7 @@ export default function TerminalPage() {
           )}
 
           {activeBottom === "search" && (
-            <TickerSearch />
+            <TickerSearch onNavigateToMarkets={() => setActiveBottom("markets")} />
           )}
 
           {activeBottom === "portfolio" && (

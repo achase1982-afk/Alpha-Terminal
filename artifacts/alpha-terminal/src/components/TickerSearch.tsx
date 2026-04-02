@@ -2,7 +2,11 @@ import { useState } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { Search, Plus } from "lucide-react";
 
-export function TickerSearch() {
+interface TickerSearchProps {
+  onNavigateToMarkets?: () => void;
+}
+
+export function TickerSearch({ onNavigateToMarkets }: TickerSearchProps = {}) {
   const { symbol, setSymbol, recentSymbols, addToWatchlist } = useTerminalStore();
   const [inputVal, setInputVal] = useState("");
 
@@ -12,11 +16,13 @@ export function TickerSearch() {
     if (trimmed) {
       setSymbol(trimmed);
       setInputVal("");
+      onNavigateToMarkets?.();
     }
   };
 
   const handleQuickSelect = (sym: string) => {
     setSymbol(sym);
+    onNavigateToMarkets?.();
   };
 
   const handleAddToWatchlist = () => {
