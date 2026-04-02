@@ -105,20 +105,25 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
   const tickColor = useTickColor(symbol, quote?.last ?? null);
   const bidTickColor = useTickColor(`${symbol}__bid`, quote?.bid ?? null);
   const askTickColor = useTickColor(`${symbol}__ask`, quote?.ask ?? null);
-  const prevQuoteRef = useRef(quote);
+  const prevSymbolRef = useRef<string | null>(quote?.symbol ?? null);
   const [fadeIn, setFadeIn] = useState(true);
 
   useEffect(() => {
-    if (quote && quote.symbol !== prevQuoteRef.current?.symbol) {
+    const sym = quote?.symbol ?? null;
+    if (!sym) return;
+    if (sym !== prevSymbolRef.current) {
+      prevSymbolRef.current = sym;
       setFadeIn(false);
-      const t = requestAnimationFrame(() => {
-        requestAnimationFrame(() => setFadeIn(true));
+      let inner: number | null = null;
+      const outer = requestAnimationFrame(() => {
+        inner = requestAnimationFrame(() => setFadeIn(true));
       });
-      prevQuoteRef.current = quote;
-      return () => cancelAnimationFrame(t);
+      return () => {
+        cancelAnimationFrame(outer);
+        if (inner !== null) cancelAnimationFrame(inner);
+      };
     }
-    prevQuoteRef.current = quote;
-  }, [quote]);
+  }, [quote?.symbol]);
 
   const hasAnyStreamData = Object.keys(streamPrices).length > 0;
   // Only show "connect" message if stream has no data at all — not just because this symbol hasn't arrived yet
