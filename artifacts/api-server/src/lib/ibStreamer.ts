@@ -29,27 +29,34 @@ interface IBSymbolDef {
 }
 
 const BREADTH_SYMBOLS: IBSymbolDef[] = [
-  { reqId: 5001, symbol: "$TICK",  ibSymbol: "TICK-NYSE",   secType: "IND", exchange: "NYSE",  displaySymbol: "$TICK" },
-  { reqId: 5002, symbol: "$TRIN",  ibSymbol: "TRIN-NYSE",   secType: "IND", exchange: "NYSE",  displaySymbol: "$TRIN" },
-  { reqId: 5003, symbol: "$ADD",   ibSymbol: "ADV-NYSE",    secType: "IND", exchange: "NYSE",  displaySymbol: "$ADD" },
-  { reqId: 5004, symbol: "$DECL",  ibSymbol: "DECL-NYSE",   secType: "IND", exchange: "NYSE",  displaySymbol: "$DECL" },
-  { reqId: 5005, symbol: "$UVOL",  ibSymbol: "UVOL-NYSE",   secType: "IND", exchange: "NYSE",  displaySymbol: "$UVOL" },
-  { reqId: 5006, symbol: "$DVOL",  ibSymbol: "DVOL-NYSE",   secType: "IND", exchange: "NYSE",  displaySymbol: "$DVOL" },
-  { reqId: 5007, symbol: "$TICK",  ibSymbol: "TICK-NASD",   secType: "IND", exchange: "NASD",  displaySymbol: "$TICK.NASD" },
-  { reqId: 5008, symbol: "$TRIN",  ibSymbol: "TRIN-NASD",   secType: "IND", exchange: "NASD",  displaySymbol: "$TRIN.NASD" },
-  { reqId: 5009, symbol: "$ADD",   ibSymbol: "ADV-NASD",    secType: "IND", exchange: "NASD",  displaySymbol: "$ADD.NASD" },
-  { reqId: 5010, symbol: "$DECL",  ibSymbol: "DECL-NASD",   secType: "IND", exchange: "NASD",  displaySymbol: "$DECL.NASD" },
-  { reqId: 5011, symbol: "$UVOL",  ibSymbol: "UVOL-NASD",   secType: "IND", exchange: "NASD",  displaySymbol: "$UVOL.NASD" },
-  { reqId: 5012, symbol: "$DVOL",  ibSymbol: "DVOL-NASD",   secType: "IND", exchange: "NASD",  displaySymbol: "$DVOL.NASD" },
-  { reqId: 5013, symbol: "$TICK",  ibSymbol: "TICK-AMEX",   secType: "IND", exchange: "AMEX",  displaySymbol: "$TICK.AMEX" },
-  { reqId: 5014, symbol: "$TRIN",  ibSymbol: "TRIN-AMEX",   secType: "IND", exchange: "AMEX",  displaySymbol: "$TRIN.AMEX" },
-  { reqId: 5015, symbol: "$ADD",   ibSymbol: "ADV-AMEX",    secType: "IND", exchange: "AMEX",  displaySymbol: "$ADD.AMEX" },
-  { reqId: 5016, symbol: "$DECL",  ibSymbol: "DECL-AMEX",   secType: "IND", exchange: "AMEX",  displaySymbol: "$DECL.AMEX" },
-  { reqId: 5017, symbol: "$UVOL",  ibSymbol: "UVOL-AMEX",   secType: "IND", exchange: "AMEX",  displaySymbol: "$UVOL.AMEX" },
-  { reqId: 5018, symbol: "$DVOL",  ibSymbol: "DVOL-AMEX",   secType: "IND", exchange: "AMEX",  displaySymbol: "$DVOL.AMEX" },
-  { reqId: 5019, symbol: "$VIX",   ibSymbol: "VIX",         secType: "IND", exchange: "CBOE",  displaySymbol: "$VIX" },
-  { reqId: 5020, symbol: "$SPX",   ibSymbol: "SPX",         secType: "IND", exchange: "CBOE",  displaySymbol: "$SPX" },
-  { reqId: 5021, symbol: "$VVIX",  ibSymbol: "VVIX",        secType: "IND", exchange: "CBOE",  displaySymbol: "$VVIX" },
+  { reqId: 5001, symbol: "$TICK",   ibSymbol: "TICK",   secType: "IND", exchange: "NYSE",     displaySymbol: "$TICK" },
+  { reqId: 5002, symbol: "$TRIN",   ibSymbol: "TRIN",   secType: "IND", exchange: "NYSE",     displaySymbol: "$TRIN" },
+  { reqId: 5003, symbol: "$ADD",    ibSymbol: "ADD",    secType: "IND", exchange: "NYSE",     displaySymbol: "$ADD" },
+  { reqId: 5004, symbol: "$VOLD",   ibSymbol: "VOLD",   secType: "IND", exchange: "NYSE",     displaySymbol: "$VOLD" },
+  { reqId: 5005, symbol: "$TICKI",  ibSymbol: "TICKI",  secType: "IND", exchange: "NASDAQ",   displaySymbol: "$TICKI" },
+  { reqId: 5006, symbol: "$ADDN",   ibSymbol: "ADDN",   secType: "IND", exchange: "NASDAQ",   displaySymbol: "$ADDN" },
+  { reqId: 5007, symbol: "$TRINQ",  ibSymbol: "TRINQ",  secType: "IND", exchange: "NASDAQ",   displaySymbol: "$TRINQ" },
+  { reqId: 5008, symbol: "$VIX",    ibSymbol: "VIX",    secType: "IND", exchange: "CBOE",     displaySymbol: "$VIX" },
+  { reqId: 5009, symbol: "$VIX9D",  ibSymbol: "VIX9D",  secType: "IND", exchange: "CBOE",     displaySymbol: "$VIX9D" },
+  { reqId: 5010, symbol: "$VIX3M",  ibSymbol: "VIX3M",  secType: "IND", exchange: "CBOE",     displaySymbol: "$VIX3M" },
+  { reqId: 5011, symbol: "$VVIX",   ibSymbol: "VVIX",   secType: "IND", exchange: "CBOE",     displaySymbol: "$VVIX" },
+  { reqId: 5012, symbol: "$VIX1D",  ibSymbol: "VIX1D",  secType: "IND", exchange: "CBOE",     displaySymbol: "$VIX1D" },
+  { reqId: 5013, symbol: "$SKEW",   ibSymbol: "SKEW",   secType: "IND", exchange: "CBOE",     displaySymbol: "$SKEW" },
+  { reqId: 5014, symbol: "/VIX",    ibSymbol: "VIX",    secType: "FUT", exchange: "CFE",      displaySymbol: "/VIX" },
+  { reqId: 5015, symbol: "/ES",     ibSymbol: "ES",     secType: "FUT", exchange: "CME",      displaySymbol: "/ES" },
+  { reqId: 5016, symbol: "/NQ",     ibSymbol: "NQ",     secType: "FUT", exchange: "CME",      displaySymbol: "/NQ" },
+  { reqId: 5017, symbol: "/RTY",    ibSymbol: "RTY",    secType: "FUT", exchange: "CME",      displaySymbol: "/RTY" },
+  { reqId: 5018, symbol: "/ZB",     ibSymbol: "ZB",     secType: "FUT", exchange: "CBOT",     displaySymbol: "/ZB" },
+  { reqId: 5019, symbol: "/ZN",     ibSymbol: "ZN",     secType: "FUT", exchange: "CBOT",     displaySymbol: "/ZN" },
+  { reqId: 5020, symbol: "/ZT",     ibSymbol: "ZT",     secType: "FUT", exchange: "CBOT",     displaySymbol: "/ZT" },
+  { reqId: 5021, symbol: "/ZF",     ibSymbol: "ZF",     secType: "FUT", exchange: "CBOT",     displaySymbol: "/ZF" },
+  { reqId: 5022, symbol: "/DX",     ibSymbol: "DX",     secType: "FUT", exchange: "NYBOT",    displaySymbol: "/DX" },
+  { reqId: 5023, symbol: "/CL",     ibSymbol: "CL",     secType: "FUT", exchange: "NYMEX",    displaySymbol: "/CL" },
+  { reqId: 5024, symbol: "/GC",     ibSymbol: "GC",     secType: "FUT", exchange: "COMEX",    displaySymbol: "/GC" },
+  { reqId: 5025, symbol: "HYG",     ibSymbol: "HYG",    secType: "STK", exchange: "SMART",    displaySymbol: "HYG" },
+  { reqId: 5026, symbol: "LQD",     ibSymbol: "LQD",    secType: "STK", exchange: "SMART",    displaySymbol: "LQD" },
+  { reqId: 5027, symbol: "$SPX",    ibSymbol: "SPX",    secType: "IND", exchange: "CBOE",     displaySymbol: "$SPX" },
+  { reqId: 5028, symbol: "SPY",     ibSymbol: "SPY",    secType: "STK", exchange: "SMART",    displaySymbol: "SPY" },
 ];
 
 const reqIdToSymbol = new Map<number, IBSymbolDef>();
@@ -97,12 +104,22 @@ function emitStatus(status: string) {
 }
 
 function buildContract(def: IBSymbolDef): Contract {
-  return {
+  const contract: Contract = {
     symbol: def.ibSymbol,
     secType: def.secType as SecType,
     exchange: def.exchange,
     currency: "USD",
   };
+  
+  if (def.secType === "FUT") {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1;
+    const nextMonth = month === 12 ? (year + 1).toString() + "01" : year.toString() + String(month + 1).padStart(2, "0");
+    (contract as any).expiry = nextMonth;
+  }
+  
+  return contract;
 }
 
 function emitQuote(def: IBSymbolDef, state: IBQuoteState) {
