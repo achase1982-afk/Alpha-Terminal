@@ -162,24 +162,24 @@ export function VolumeBar() {
 
   return (
     <div
-      className="w-full flex items-center justify-between px-3 sm:px-6 border-b border-card-border"
-      style={{ background: HEADER_BG, height: 32 }}
+      className="w-full grid grid-cols-3 px-3 sm:px-6 border-b border-card-border py-1.5"
+      style={{ background: HEADER_BG }}
     >
-      <div className="flex items-center gap-1">
-        <span className="text-[10px] uppercase tracking-[0.12em] text-zinc-500 font-semibold">Volume</span>
-        <span className="font-mono tabular-nums text-zinc-300 text-xs font-medium">{fmtVol(vol)}</span>
+      <div className="flex flex-col items-start gap-0.5">
+        <span className="text-[9px] uppercase tracking-[0.12em] text-zinc-500 font-semibold leading-none">Volume</span>
+        <span className="font-mono tabular-nums text-zinc-300 text-[13px] font-medium leading-none">{fmtVol(vol)}</span>
       </div>
-      <div className="flex items-center gap-1">
-        <span className="text-[10px] uppercase tracking-[0.12em] text-zinc-500 font-semibold">Day Range</span>
-        <span className="font-mono tabular-nums text-xs font-medium">
+      <div className="flex flex-col items-center gap-0.5">
+        <span className="text-[9px] uppercase tracking-[0.12em] text-zinc-500 font-semibold leading-none">Day Range</span>
+        <span className="font-mono tabular-nums text-[13px] font-medium leading-none">
           <span style={{ color: DOWN_COLOR }}>${fmtPrice(dayLow)}</span>
           <span className="text-zinc-600 mx-0.5">—</span>
           <span style={{ color: UP_COLOR }}>${fmtPrice(dayHigh)}</span>
         </span>
       </div>
-      <div className="flex items-center gap-1">
-        <span className="text-[10px] uppercase tracking-[0.12em] text-zinc-500 font-semibold">52W Range</span>
-        <span className="font-mono tabular-nums text-zinc-500 text-xs font-medium">
+      <div className="flex flex-col items-end gap-0.5">
+        <span className="text-[9px] uppercase tracking-[0.12em] text-zinc-500 font-semibold leading-none">52W Range</span>
+        <span className="font-mono tabular-nums text-zinc-500 text-[13px] font-medium leading-none">
           {wk52Low != null ? `$${fmtPrice(wk52Low)} — $${fmtPrice(wk52High)}` : "—"}
         </span>
       </div>
