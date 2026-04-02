@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "WSNKvbLuz6-493Uep5w7H"
+uri = "file://ALPHA_TERMINAL_DEVELOPER_BRIEF.md"
+type = "text"
+title = "Alpha Terminal — Developer Brief"
