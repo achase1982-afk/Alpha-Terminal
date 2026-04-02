@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useLayoutEffect } from "react";
 import { useTerminalStore } from "@/lib/store";
 import {
   useGetQuote, useGetPriceHistory, useGetOptionChain,
@@ -480,6 +480,8 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
   const [tickerPcRatio, setTickerPcRatio] = useState<number | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pcDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const companyNameRef = useRef<HTMLDivElement>(null);
+  const [companyNameSize, setCompanyNameSize] = useState("text-base");
   const streamPricesRef = useRef(streamPrices);
   streamPricesRef.current = streamPrices;
 
@@ -551,6 +553,15 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
   const volume = liveQuote?.volume ?? previewQuote?.volume;
   const pcRatio = tickerPcRatio;
 
+  const companyName = COMPANY_NAMES[displaySymbol.toUpperCase()] ?? displaySymbol;
+  useLayoutEffect(() => {
+    const el = companyNameRef.current;
+    if (!el) return;
+    el.style.fontSize = "16px";
+    const isOneLine = el.scrollHeight <= el.clientHeight + 2;
+    setCompanyNameSize(isOneLine ? "text-base" : "text-xs");
+  }, [companyName]);
+
   return (
     <form onSubmit={handleSubmit}>
       <div
@@ -564,7 +575,7 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
         <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: "1px solid #1f1f22" }}>
           <div>
             <div className="font-mono text-xl font-normal text-white tracking-wide leading-tight">{displaySymbol}</div>
-            <div className="font-mono text-sm font-normal text-[#FFB800] tracking-wide leading-tight">{COMPANY_NAMES[displaySymbol.toUpperCase()] ?? displaySymbol}</div>
+            <div ref={companyNameRef} className={`font-mono ${companyNameSize} font-normal text-[#FFB800] tracking-wide leading-tight`} style={{ maxHeight: "2.6em", overflow: "hidden" }}>{companyName}</div>
           </div>
           {fetchingTicker ? (
             <span className="font-mono text-xs text-white/40 animate-pulse">Loading...</span>
