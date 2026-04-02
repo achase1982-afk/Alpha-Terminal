@@ -4,7 +4,6 @@ import {
   useGetQuote, useGetPriceHistory, useGetOptionChain,
 } from "@workspace/api-client-react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
-import { Button } from "@/components/ui/button";
 import {
   BarChart2, DollarSign, Shield, TrendingUp, Scale,
   Zap, ChevronDown, AlertTriangle, CheckCircle2, XCircle, AlertCircle, Search,
@@ -309,17 +308,14 @@ function RealStrategyCard({ s, idx, preTradeResult }: { s: StrategyPayload; idx:
   );
 }
 
-function StrategistTickerSearch() {
-  const { symbol, setSymbol } = useTerminalStore();
+function StrategistRunBar({ onRun, disabled }: { onRun: (ticker: string) => void; disabled: boolean }) {
+  const { symbol } = useTerminalStore();
   const [inputVal, setInputVal] = useState("");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const trimmed = inputVal.trim().toUpperCase();
-    if (trimmed) {
-      setSymbol(trimmed);
-      setInputVal("");
-    }
+    const ticker = inputVal.trim().toUpperCase() || symbol;
+    onRun(ticker);
   };
 
   return (
@@ -339,9 +335,10 @@ function StrategistTickerSearch() {
       </div>
       <button
         type="submit"
-        className="h-9 px-4 rounded-lg font-mono text-[10px] font-bold tracking-wider shrink-0 border border-card-border bg-[#18181B] text-zinc-300 hover:bg-[#27272A] transition-colors"
+        disabled={disabled}
+        className="h-9 px-4 rounded-lg font-mono text-[10px] font-bold tracking-wider shrink-0 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 transition-colors"
       >
-        SWITCH
+        <BarChart2 className="w-3.5 h-3.5 inline mr-1.5 -mt-px" />RUN
       </button>
     </form>
   );
@@ -1050,6 +1047,10 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef }: AiIn
   }, [quote, accessToken, symbol, setStrategistResult, setStrategistCache,
       stratAutopilot, stratMaxRisk, stratBias]);
 
+  const handleRunStrategistWithTicker = useCallback((ticker: string) => {
+    if (ticker !== symbol) setSymbol(ticker);
+    handleRunStrategist();
+  }, [symbol, setSymbol, handleRunStrategist]);
 
   const isPendingAny = isStreaming || isStrategizing;
 
@@ -1068,18 +1069,9 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef }: AiIn
           <div className="flex items-center gap-2 px-1">
             <BarChart2 className="w-4 h-4 text-[#FFB800]" />
             <span className="font-mono text-xs font-bold text-[#e4e4e7] tracking-wider">OPTIONS STRATEGIST</span>
-            <span className="font-mono text-[10px] text-[#71717a] ml-1">Analyzing: <span className="text-[#FFB800] font-bold">{symbol}</span></span>
           </div>
 
-          <StrategistTickerSearch />
-
-          <Button
-            onClick={handleRunStrategist}
-            disabled={isPendingAny || !accessToken}
-            className="w-full font-mono text-xs bg-primary text-primary-foreground hover:bg-primary/90 h-9"
-          >
-            <BarChart2 className="w-3.5 h-3.5 mr-2 shrink-0" />RUN STRATEGIST — {symbol}
-          </Button>
+          <StrategistRunBar onRun={handleRunStrategistWithTicker} disabled={isPendingAny || !accessToken} />
 
           {activeResult === "strategist" && (
             <div className="bg-card border border-card-border rounded-xl overflow-hidden p-4 bg-[#0c0c0c]">
