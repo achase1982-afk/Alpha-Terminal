@@ -2,6 +2,19 @@ import { IBApi, EventName, Contract, SecType } from "@stoqey/ib";
 import { logger } from "./logger.js";
 import type { LiveQuote } from "./schwabStreamer.js";
 
+export interface IBNewsHeadline {
+  time: string;
+  providerCode: string;
+  articleId: string;
+  headline: string;
+  extraData?: string;
+  source: "historical" | "live";
+}
+
+const ibNewsProviders: string[] = [];
+const ibLiveNews: IBNewsHeadline[] = [];
+const MAX_LIVE_NEWS = 200;
+
 const TT = {
   BID: 1, ASK: 2, LAST: 4, HIGH: 6, LOW: 7, VOLUME: 8, CLOSE: 9,
   BID_SIZE: 0, ASK_SIZE: 3,
@@ -264,6 +277,18 @@ export async function connectIB(): Promise<void> {
       reconnectAttempt = 0;
       emitStatus("connected");
       subscribeAll();
+      try {
+        ib!.reqNewsProviders();
+        logger.info("IB: requested news providers");
+      } catch (err) {
+        logger.warn({ err }, "IB: failed to request news providers");
+      }
+      try {
+        ib!.reqNewsBulletins(true);
+        logger.info("IB: subscribed to news bulletins");
+      } catch (err) {
+        logger.warn({ err }, "IB: failed to subscribe news bulletins");
+      }
     });
 
     ib.on(EventName.disconnected, () => {
@@ -400,6 +425,81 @@ export async function connectIB(): Promise<void> {
       }
     });
 
+    ib.on(EventName.newsProviders, (providers: any[]) => {
+      ibNewsProviders.length = 0;
+      for (const p of providers) {
+        const code = p.providerCode ?? p.code ?? String(p);
+        ibNewsProviders.push(code);
+      }
+      logger.info({ providers: ibNewsProviders }, "IB: news providers received");
+    });
+
+    ib.on(EventName.tickNews, (_reqId: number, timeStamp: number, providerCode: string, articleId: string, headline: string, extraData: string) => {
+      const item: IBNewsHeadline = {
+        time: new Date(timeStamp).toISOString(),
+        providerCode,
+        articleId,
+        headline,
+        extraData: extraData || undefined,
+        source: "live",
+      };
+      ibLiveNews.unshift(item);
+      if (ibLiveNews.length > MAX_LIVE_NEWS) ibLiveNews.length = MAX_LIVE_NEWS;
+      logger.info({ providerCode, headline: headline.substring(0, 80) }, "IB: live news tick");
+      if (broadcastFn) {
+        broadcastFn("ibNews", item);
+      }
+    });
+
+    ib.on(EventName.updateNewsBulletin, (msgId: number, msgType: number, newsMessage: string, originExch: string) => {
+      logger.info({ msgId, msgType, originExch, msg: newsMessage.substring(0, 100) }, "IB: news bulletin");
+      const item: IBNewsHeadline = {
+        time: new Date().toISOString(),
+        providerCode: `BULLETIN:${originExch}`,
+        articleId: `bulletin-${msgId}`,
+        headline: newsMessage,
+        source: "live",
+      };
+      ibLiveNews.unshift(item);
+      if (ibLiveNews.length > MAX_LIVE_NEWS) ibLiveNews.length = MAX_LIVE_NEWS;
+      if (broadcastFn) {
+        broadcastFn("ibNews", item);
+      }
+    });
+
+    const historicalNewsBuffer = new Map<number, IBNewsHeadline[]>();
+
+    ib.on(EventName.historicalNews, (reqId: number, time: string, providerCode: string, articleId: string, headline: string) => {
+      if (!historicalNewsBuffer.has(reqId)) historicalNewsBuffer.set(reqId, []);
+      historicalNewsBuffer.get(reqId)!.push({
+        time,
+        providerCode,
+        articleId,
+        headline,
+        source: "historical",
+      });
+    });
+
+    ib.on(EventName.historicalNewsEnd, (reqId: number, hasMore: boolean) => {
+      const items = historicalNewsBuffer.get(reqId) || [];
+      historicalNewsBuffer.delete(reqId);
+      logger.info({ reqId, count: items.length, hasMore }, "IB: historical news batch complete");
+      const resolver = historicalNewsResolvers.get(reqId);
+      if (resolver) {
+        resolver(items);
+        historicalNewsResolvers.delete(reqId);
+      }
+    });
+
+    ib.on(EventName.newsArticle, (reqId: number, articleType: number, articleText: string) => {
+      logger.info({ reqId, articleType, length: articleText.length }, "IB: news article received");
+      const resolver = articleResolvers.get(reqId);
+      if (resolver) {
+        resolver({ articleType, articleText });
+        articleResolvers.delete(reqId);
+      }
+    });
+
     setInterval(() => {
       if (connState !== "CONNECTED") return;
       const symsWithData: string[] = [];
@@ -418,6 +518,75 @@ export async function connectIB(): Promise<void> {
     emitStatus("disconnected");
     scheduleReconnect();
   }
+}
+
+const historicalNewsResolvers = new Map<number, (items: IBNewsHeadline[]) => void>();
+const articleResolvers = new Map<number, (data: { articleType: number; articleText: string }) => void>();
+let newsReqIdCounter = 8000;
+
+export function getIBNewsProviders(): string[] {
+  return [...ibNewsProviders];
+}
+
+export function getIBLiveNews(limit = 50): IBNewsHeadline[] {
+  return ibLiveNews.slice(0, limit);
+}
+
+export async function fetchIBHistoricalNews(conId: number, providerCodes: string, maxResults = 30): Promise<IBNewsHeadline[]> {
+  if (!ib || connState !== "CONNECTED") {
+    throw new Error("IB not connected");
+  }
+  const reqId = newsReqIdCounter++;
+  const now = new Date();
+  const start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const fmt = (d: Date) => d.toISOString().replace("T", " ").replace("Z", "");
+
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      historicalNewsResolvers.delete(reqId);
+      resolve([]);
+    }, 10_000);
+
+    historicalNewsResolvers.set(reqId, (items) => {
+      clearTimeout(timeout);
+      resolve(items);
+    });
+
+    try {
+      ib!.reqHistoricalNews(reqId, conId, providerCodes, fmt(start), fmt(now), maxResults);
+    } catch (err) {
+      clearTimeout(timeout);
+      historicalNewsResolvers.delete(reqId);
+      reject(err);
+    }
+  });
+}
+
+export async function fetchIBNewsArticle(providerCode: string, articleId: string): Promise<{ articleType: number; articleText: string }> {
+  if (!ib || connState !== "CONNECTED") {
+    throw new Error("IB not connected");
+  }
+  const reqId = newsReqIdCounter++;
+
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      articleResolvers.delete(reqId);
+      reject(new Error("Article fetch timeout"));
+    }, 10_000);
+
+    articleResolvers.set(reqId, (data) => {
+      clearTimeout(timeout);
+      resolve(data);
+    });
+
+    try {
+      ib!.reqNewsArticle(reqId, providerCode, articleId);
+    } catch (err) {
+      clearTimeout(timeout);
+      articleResolvers.delete(reqId);
+      reject(err);
+    }
+  });
 }
 
 export function disconnectIB(): void {
