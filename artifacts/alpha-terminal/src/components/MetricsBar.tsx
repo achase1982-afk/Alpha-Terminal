@@ -3,7 +3,7 @@ import { useQuote }         from "@/hooks/useQuote";
 import { useTickColor }     from "@/hooks/useTickColor";
 import { RefreshCw, SearchX } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useRef, useEffect, useState, useLayoutEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 
 const UP_COLOR   = "#00d166";
 const DOWN_COLOR = "#f23645";
@@ -78,46 +78,6 @@ function useTickFlashColor(price: number | null): string {
 const GRID_CLS = "grid items-center gap-2 sm:gap-4 w-full min-h-[70px] sm:min-h-[80px]";
 const GRID_COLS = "grid-cols-[minmax(80px,1fr)_minmax(90px,1.3fr)_auto]";
 const HEADER_BG = "#0c0c0c";
-
-const TICKER_FONT_SIZE = 24;
-const COMPANY_MAX_FONT = 15;
-const COMPANY_MIN_FONT = 9.5;
-const COMPANY_BOX_H = 40;
-
-function useCompanyFontSize(text: string | null | undefined, containerRef: React.RefObject<HTMLElement | null>) {
-  const [fontSize, setFontSize] = useState(COMPANY_MAX_FONT);
-
-  useLayoutEffect(() => {
-    if (!text || !containerRef.current) {
-      setFontSize(COMPANY_MAX_FONT);
-      return;
-    }
-    const el = containerRef.current;
-    const containerW = el.clientWidth;
-    if (containerW <= 0) { setFontSize(COMPANY_MAX_FONT); return; }
-
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-    if (!ctx) { setFontSize(COMPANY_MAX_FONT); return; }
-
-    const style = getComputedStyle(el);
-    const fontFamily = style.fontFamily || "system-ui, sans-serif";
-
-    let size = COMPANY_MAX_FONT;
-    while (size > COMPANY_MIN_FONT) {
-      ctx.font = `500 ${size}px ${fontFamily}`;
-      const textW = ctx.measureText(text.toUpperCase()).width;
-      const lineH = size * 1.25;
-      const lines = Math.ceil(textW / containerW);
-      const totalH = lines * lineH;
-      if (totalH <= COMPANY_BOX_H) break;
-      size -= 0.5;
-    }
-    setFontSize(size);
-  }, [text, containerRef]);
-
-  return fontSize;
-}
 
 function HeaderSkeleton() {
   return (
@@ -301,8 +261,6 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
 
   const opacityCls = fadeIn || !showData ? "opacity-100" : "opacity-0";
   const transitionCls = "transition-opacity duration-150 ease-in-out";
-  const companyRef = useRef<HTMLSpanElement>(null);
-  const companyFontSize = useCompanyFontSize(quote?.description, companyRef);
 
   return (
     <div
@@ -313,36 +271,17 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
 
         <button
           onClick={onOpenTearSheet}
-          className={`relative flex flex-col min-w-0 text-left cursor-pointer group overflow-visible ${opacityCls} ${transitionCls}`}
+          className={`flex flex-col min-w-0 gap-0.5 text-left cursor-pointer group overflow-hidden ${opacityCls} ${transitionCls}`}
           aria-label={`View company profile for ${quote?.symbol}`}
-          style={{ paddingTop: 0 }}
         >
           {showData ? (
             <>
-              <span
-                className="font-semibold text-white tracking-tight group-hover:text-primary transition-colors whitespace-nowrap absolute"
-                style={{ fontSize: `${TICKER_FONT_SIZE}px`, lineHeight: '1.15', top: '-2px', left: 0 }}
-              >
+              <span className="font-semibold text-xl md:text-2xl text-white tracking-tight leading-tight group-hover:text-primary transition-colors whitespace-nowrap">
                 {quote.symbol}
               </span>
-              {quote.description ? (
-                <span
-                  ref={companyRef}
-                  className="font-medium tracking-wide uppercase"
-                  style={{
-                    color: '#FFB800',
-                    fontSize: `${companyFontSize}px`,
-                    lineHeight: '1.2',
-                    display: 'block',
-                    maxHeight: `${COMPANY_BOX_H}px`,
-                    overflow: 'hidden',
-                    wordBreak: 'break-word' as const,
-                    paddingTop: `${TICKER_FONT_SIZE + 4}px`,
-                  }}
-                >
-                  {quote.description}
-                </span>
-              ) : null}
+              <span className="text-[11px] font-medium tracking-wide line-clamp-2 overflow-hidden text-ellipsis uppercase leading-snug" style={{ color: '#FFB800' }}>
+                {quote.description || ""}
+              </span>
             </>
           ) : (
             <>

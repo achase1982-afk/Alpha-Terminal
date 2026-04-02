@@ -81,13 +81,10 @@ function isFutures(symbol: string): boolean {
 
 router.get("/quote", async (req, res) => {
   const symbol = req.query["symbol"] as string;
-  const accessToken = (req.query["accessToken"] as string) || getAccessToken("market");
+  const accessToken = req.query["accessToken"] as string;
 
-  if (!symbol) {
-    return res.status(400).json({ symbol: "", error: "symbol is required" });
-  }
-  if (!accessToken) {
-    return res.status(400).json({ symbol: "", error: "no access token available" });
+  if (!symbol || !accessToken) {
+    return res.status(400).json({ symbol: "", error: "symbol and accessToken are required" });
   }
 
   const displaySymbol = symbol.toUpperCase().trim();
@@ -146,9 +143,6 @@ router.get("/quote", async (req, res) => {
     req.log.info({ symbol: displaySymbol, quoteKeys: Object.keys(quote) }, "Schwab raw quote keys");
     if (fundamental) {
       req.log.info({ symbol: displaySymbol, fundamentalKeys: Object.keys(fundamental) }, "Schwab raw fundamental keys");
-    }
-    if (reference) {
-      req.log.info({ symbol: displaySymbol, referenceKeys: Object.keys(reference) }, "Schwab raw reference keys");
     }
 
     // ── Robust number extractor ───────────────────────────────────────────────

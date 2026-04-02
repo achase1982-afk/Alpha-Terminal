@@ -59,7 +59,7 @@ export function useQuote(symbol: string) {
     { symbol, accessToken: accessToken || "" },
     {
       query: {
-        enabled: !!symbol,
+        enabled: !!accessToken && !!symbol,
         refetchInterval: 120_000,
         refetchIntervalInBackground: false,
         staleTime: 120_000,
