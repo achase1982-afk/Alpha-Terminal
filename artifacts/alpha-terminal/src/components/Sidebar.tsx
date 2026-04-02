@@ -290,7 +290,7 @@ function MarketPulsePage() {
             </div>
             <div className="space-y-0.5 max-h-[240px] overflow-y-auto pr-0.5">
               {activeIndicators.map((sym) => (
-                <div key={sym} className="flex items-center justify-between px-2 py-1.5 rounded-md group" style={{ background: "rgba(255,184,0,0.04)" }}>
+                <div key={sym} className="flex items-center justify-between px-2 py-1.5 rounded-md group">
                   <div className="flex flex-col min-w-0">
                     <span className="font-mono text-[10px] text-primary font-bold tabular-nums leading-none">{sym.replace(/^\$/, "")}</span>
                     <span className="font-mono text-[9px] text-[#52525b] leading-tight truncate mt-0.5">{getLabel(sym)}</span>

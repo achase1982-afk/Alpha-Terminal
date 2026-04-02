@@ -22,7 +22,7 @@ interface ActionPlanCardProps {
 export function ActionPlanCard({ items, bias }: ActionPlanCardProps) {
   if (bias === "NO_EDGE" || items.length === 0) {
     return (
-      <div className="rounded-xl border border-[#FFB800]/30 p-4" style={{ background: "rgba(255,184,0,0.06)" }}>
+      <div className="rounded-xl border border-[#FFB800]/30 p-4">
         <div className="flex items-center gap-2 mb-2">
           <Crosshair className="w-4 h-4 text-[#FFB800]" />
           <span className="font-mono text-xs font-bold text-[#FFB800]">NO EDGE</span>

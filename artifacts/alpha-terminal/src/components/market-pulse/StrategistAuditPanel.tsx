@@ -38,12 +38,12 @@ export function StrategistAuditPanel({ audit }: { audit: StrategistAuditData }) 
         style={{ background: open ? "#151517" : "transparent" }}
       >
         <span className="flex items-center gap-2.5">
-          <div className="w-6 h-6 rounded-md flex items-center justify-center" style={{ background: "rgba(255,184,0,0.08)" }}>
+          <div className="w-6 h-6 rounded-md flex items-center justify-center">
             <FileText className="w-3 h-3 text-[#FFB800]/60" />
           </div>
           <span className="font-mono text-[10px] font-bold text-[#52525b] uppercase tracking-widest">Audit Trail</span>
           <span className="font-mono text-[9px] px-2 py-0.5 rounded-full"
-            style={{ background: "rgba(255,184,0,0.08)", color: "#FFB800", border: "1px solid rgba(255,184,0,0.15)" }}>
+            style={{ color: "#FFB800", border: "1px solid rgba(255,184,0,0.15)" }}>
             {audit.symbol}
           </span>
         </span>

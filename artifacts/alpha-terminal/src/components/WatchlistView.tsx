@@ -208,7 +208,7 @@ function WatchlistSwitcher() {
         </span>
         <span
           className="font-mono text-[11px] px-1.5 py-0.5 rounded-md"
-          style={{ background: "#FFB80015", color: "#FFB800", border: "1px solid #FFB80030" }}
+          style={{ color: "#FFB800", border: "1px solid #FFB80030" }}
         >
           {activeList?.symbols.length ?? 0}
         </span>
@@ -228,7 +228,7 @@ function WatchlistSwitcher() {
             return (
               <div
                 key={id}
-                className={`flex items-center justify-between px-4 py-3 transition-colors ${isActive ? "bg-[#FFB800]/10" : "hover:bg-white/[0.04]"}`}
+                className={`flex items-center justify-between px-4 py-3 transition-colors ${isActive ? "bg-white/[0.04]" : "hover:bg-white/[0.04]"}`}
                 style={{ borderBottom: "1px solid #2A2A2C" }}
               >
                 {isEditing ? (
@@ -302,7 +302,7 @@ function WatchlistSwitcher() {
           ) : (
             <button
               onClick={() => setShowNew(true)}
-              className="w-full flex items-center gap-2 px-4 py-3 text-[#FFB800] hover:bg-[#FFB800]/5 transition-colors"
+              className="w-full flex items-center gap-2 px-4 py-3 text-[#FFB800] hover:bg-white/[0.04] transition-colors"
             >
               <Plus className="w-4 h-4" />
               <span className="font-mono text-[12px] font-bold tracking-wider">NEW WATCHLIST</span>
@@ -468,7 +468,7 @@ export function WatchlistView() {
             <div className="relative">
               <div
                 className="w-20 h-20 rounded-2xl flex items-center justify-center"
-                style={{ background: "#FFB80010", border: "1px solid #FFB80020" }}
+                style={{ border: "1px solid #FFB80020" }}
               >
                 <ListOrdered className="w-9 h-9" style={{ color: "#FFB80040" }} />
               </div>

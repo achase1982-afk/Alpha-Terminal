@@ -295,7 +295,7 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
           {pulseData.hasDivergence && pulseData.divergenceNote && (
             <div
               className="rounded-xl border px-4 py-3 flex items-start gap-2"
-              style={{ background: "rgba(255,184,0,0.06)", borderColor: "rgba(255,184,0,0.3)" }}
+              style={{ borderColor: "rgba(255,184,0,0.3)" }}
             >
               <span className="text-[#FFB800] text-sm mt-0.5">⚠</span>
               <div>
@@ -375,7 +375,7 @@ function PulseLoadingStatus({ thinkingTokens, statusMessages }: { thinkingTokens
       >
         <div
           className="px-4 py-2.5 flex items-center gap-3"
-          style={{ background: "rgba(255,184,0,0.06)" }}
+          style={{ background: "transparent" }}
         >
           <span className="relative flex h-3 w-3 shrink-0">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#FFB800] opacity-75" />

@@ -93,7 +93,7 @@ export function SearchOverlay({ isOpen, onClose, onSelectSymbol }: SearchOverlay
                 onChange={e => setInputVal(e.target.value.toUpperCase())}
                 placeholder="TICKER SYMBOL..."
                 className="w-full h-10 pl-10 pr-3 rounded-lg border border-[#2A2A2C] bg-[#18181B] font-mono text-sm text-foreground
-                  placeholder:text-muted-foreground/40 focus:outline-none focus:border-[#FFB800]/50 focus:bg-[#FFB800]/5 transition-colors uppercase"
+                  placeholder:text-muted-foreground/40 focus:outline-none focus:border-[#FFB800]/50 transition-colors uppercase"
                 autoComplete="off"
                 autoCorrect="off"
                 autoCapitalize="characters"
@@ -132,7 +132,7 @@ export function SearchOverlay({ isOpen, onClose, onSelectSymbol }: SearchOverlay
                     onClick={() => handleQuickSelect(sym)}
                     className={`font-mono text-xs px-3 py-1.5 rounded-lg border transition-all duration-150
                       ${symbol === cleanSymbol(sym)
-                        ? "bg-[#FFB800]/15 text-[#FFB800] border-[#FFB800]/30"
+                        ? "text-[#FFB800] border-[#FFB800]/30"
                         : "bg-[#18181B] text-zinc-400 border-[#2A2A2C] hover:border-[#404040] hover:text-foreground"
                       }`}
                   >

@@ -766,7 +766,7 @@ function StrategistResultView({ strategies, narrative, isStreaming, streamingTex
           <div className="px-4 py-3">
             <div className="flex items-center gap-2 mb-3">
               <span className="font-mono text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-widest"
-                style={{ background: "rgba(255,184,0,0.1)", color: "#FFB800", border: "1px solid rgba(255,184,0,0.2)" }}>
+                style={{ color: "#FFB800", border: "1px solid rgba(255,184,0,0.2)" }}>
                 Thesis
               </span>
               {isStreaming && (
@@ -789,7 +789,7 @@ function MarkdownResult({ content }: { content: string }) {
       prose-a:text-[#FFB800] hover:prose-a:text-[#FFB800]/80
       prose-strong:text-white prose-strong:font-bold
       prose-li:my-0.5
-      prose-code:text-[#FFB800] prose-code:bg-[#FFB800]/10 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-xs
+      prose-code:text-[#FFB800] prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-xs
       prose-pre:bg-[#0a0a0b] prose-pre:border prose-pre:border-[#1f1f22] prose-pre:text-xs"
     >
       <ReactMarkdown>{content}</ReactMarkdown>

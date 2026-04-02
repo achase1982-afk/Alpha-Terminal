@@ -505,7 +505,7 @@ export function MarketScanner({ subscribeEquitySymbols }: {
         <div className="space-y-3">
           {marketSummary && (
             <div className="px-4 py-3 rounded-xl border text-sm text-gray-300 leading-relaxed"
-              style={{ background: "rgba(255,184,0,0.05)", borderColor: "rgba(255,184,0,0.2)" }}>
+              style={{ borderColor: "rgba(255,184,0,0.2)" }}>
               <span className="text-[9px] font-bold" style={{ color: "#ffb800" }}>MARKET REGIME  </span>
               {marketSummary}
             </div>
