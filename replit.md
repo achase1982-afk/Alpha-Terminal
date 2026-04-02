@@ -1,6 +1,6 @@
 # Overview
 
-This project, "Alpha Terminal — Trading Command Center v2," is a pnpm workspace monorepo using TypeScript, designed as an institutional-grade trading platform. It offers advanced trading tools, real-time market data, and AI-powered insights. The platform integrates with Schwab for data and authentication, providing features like advanced charting, options analysis, AI-driven market scanning, and strategy generation. The primary goal is to deliver a comprehensive, high-performance trading environment with a focus on data accuracy and user experience, aiming for leadership in AI-assisted trading solutions.
+"Alpha Terminal — Trading Command Center v2" is an institutional-grade trading platform designed as a pnpm workspace monorepo using TypeScript. It provides advanced trading tools, real-time market data, and AI-powered insights. The platform integrates with Schwab for data and authentication, offering features such as advanced charting, options analysis, AI-driven market scanning, and strategy generation. The core purpose is to deliver a comprehensive, high-performance trading environment with a focus on data accuracy and user experience, aiming to be a leader in AI-assisted trading solutions.
 
 # User Preferences
 
@@ -15,101 +15,19 @@ I prefer a coding style that emphasizes readability and maintainability, utilizi
 
 ## UI/UX Decisions
 
-The UI features an institutional gold color palette with a dark theme, Inter font, and `tabular-nums`. Key components include a fixed MacroBar, a slide-out Sidebar (Command Center) with portal-based sub-pages, a ThinkorSwim-replica Options Tab, an AI Chat Overlay, Market Pulse Dashboard (SSE-streamed structured JSON with 7 fixed clusters and composite scoring), Market Scanner, `lightweight-charts` based Charting, a `requestAnimationFrame`-driven Ticker Tape, and CSS keyframe Price Pulse Animations. The AI tab uses iOS-style pill sub-tabs. Audit panels for Market Pulse and Options Strategist display raw data and rules applied.
+The UI employs an institutional gold color palette with a dark theme, Inter font, and `tabular-nums`. Key UI components include a fixed MacroBar, a slide-out Sidebar (Command Center) with portal-based sub-pages, a ThinkorSwim-replica Options Tab, an AI Chat Overlay, a Market Pulse Dashboard (SSE-streamed structured JSON with 7 fixed clusters and composite scoring), a Market Scanner, `lightweight-charts` for charting, a `requestAnimationFrame`-driven Ticker Tape, and CSS keyframe Price Pulse Animations. The AI tab features iOS-style pill sub-tabs. Audit panels for Market Pulse and Options Strategist display raw data and applied rules.
 
 ## Technical Implementations
 
-The project is a pnpm monorepo with TypeScript. The API is an Express 5 server using Zod for validation. PostgreSQL with Drizzle ORM is used for the database. Real-time streaming is handled by a singleton WebSocket client connecting to Schwab Streamer, broadcasting live ticks to the frontend via a second WebSocket server. The frontend uses Zustand for state management and `lightweight-charts` for charting. Authentication uses Clerk for app-level login and Schwab OAuth 2.0 for market data APIs. A development bypass for authentication (`DEV_BYPASS_AUTH=true`) is available. Market data flows from Schwab WebSocket to a server-side cache, then to the frontend via WebSocket. All price data is sourced exclusively from the WebSocket cache — no REST polling fallback. If the streamer is not connected and the WS cache is empty, endpoints return a clear "no data" error instead of silently falling back to REST. The Market Pulse engine and AI narratives read from this single live cache. A robust scoring engine (v2) with 7 bias tiers and cluster disagreement penalties determines market sentiment. The Options Strategist (v3) uses a three-layer architecture: Auto-Pulse for market regime classification, Regime-Driven Scan to build and score strategies, and Gemini for narrative generation. AI integration defaults to `gemini-2.5-flash` with `gemini-2.5-pro` as an option. Technical analysis uses the `technicalindicators` npm package. TanStack Query (React Query) is used as a caching layer for AI results (Strategist, Technicals, Market Scanner) so they persist across tab navigation. QueryClient is configured with 30min staleTime and 60min gcTime. Cache hooks (`useStrategistCache`, `useTechnicalsCache`, `useScanCache`) use `enabled: false` queries with manual `setQueryData` writes. Market Pulse uses Zustand store (global, persists inherently) with a dual-write to TanStack Query cache. Run-id guards protect against race conditions from overlapping stream requests.
-
-### Interactive Brokers Integration
-- Package: `@stoqey/ib` (Node.js IB TWS API client)
-- Backend: `ibStreamer.ts` — connects to IB Gateway via TCP socket, subscribes to market data
-- IB route: `/api/ib/status`, `/api/ib/symbols`, `/api/ib/snapshot`, `POST /api/ib/connect`, `POST /api/ib/disconnect`
-- Subscribed symbols: TICK-NYSE, TRIN-NYSE, AD-NYSE, ADVN-NYSE, DECN-NYSE, UVOL-NYSE, DVOL-NYSE, VIX, SPX, VVIX
-- Data flow: IB ticks → `ibStreamer.ts` → `injectExternalQuote()` → shared `quoteCache` → broadcasts to all WS clients
-- UVOL/DVOL are IB-exclusive breadth signals not available from Schwab
-- Environment variables: `IB_HOST` (default 127.0.0.1), `IB_PORT` (default 4002), `IB_CLIENT_ID` (default 1)
-- Auto-reconnects with exponential backoff when gateway drops
-- Gracefully handles missing gateway — Schwab data continues unaffected
-- To connect: Run IB Gateway on local machine, tunnel port 4002 to Replit (e.g., ngrok)
-
-### Schwab Streamer Field Handling
-NYSE breadth indices ($TICK, $TRIN, $ADVN, $DECN, $ADD) only populate field 3 (LAST_ALL_SESS) in the Schwab WebSocket stream — field 33 (REG_LAST) is always 0. The `regLastVal` logic in `schwabStreamer.ts` explicitly handles this: when REG_LAST is 0 and LAST_ALL_SESS has a non-zero value, it prefers LAST_ALL_SESS. This prevents the JS nullish coalescing operator (`??`) from returning 0 as a valid value when it's actually a sentinel.
-
-### Portfolio Page
-- Backend routes at `/api/portfolio/accounts`, `/api/portfolio/orders`, `/api/portfolio/transactions`
-- Uses Schwab Trader API (`trader/v1/accounts?fields=positions`, `trader/v1/accounts/{hash}/orders`, `trader/v1/accounts/{hash}/transactions`)
-- Server-side token from `TokenStore.getTokens("trader")` — no client token needed
-- Frontend: `PortfolioView.tsx` component with three sub-tabs: POSITIONS, ORDERS, BALANCE
-- Positions split into Equities and Options sections, each row expandable with full details (qty, avg price, total P&L, maintenance req)
-- Clicking a position's "View SYMBOL →" navigates to that symbol in the Markets tab
-- Orders tab shows 30 days of orders with status badges, fill details, multi-leg display
-- Balance tab shows full account details: equity, cash, margin, buying power, market values, account info
-- Key files: `artifacts/api-server/src/routes/portfolio.ts`, `artifacts/alpha-terminal/src/components/PortfolioView.tsx`
+The project is a pnpm monorepo using TypeScript. The backend API is built with Express 5 and uses Zod for validation. PostgreSQL with Drizzle ORM handles database operations. Real-time data streaming utilizes a singleton WebSocket client connecting to Schwab Streamer, broadcasting live ticks to the frontend via a separate WebSocket server. The frontend uses Zustand for state management and `lightweight-charts` for charting. Authentication is managed by Clerk for app-level login and Schwab OAuth 2.0 for market data APIs. Market data flows from the Schwab WebSocket to a server-side cache, then to the frontend via WebSocket, with all price data exclusively sourced from this cache. The Market Pulse engine and AI narratives operate on this live cache. A robust scoring engine (v2) with 7 bias tiers and cluster disagreement penalties determines market sentiment. The Options Strategist (v3) uses a three-layer architecture: Auto-Pulse for market regime classification, Regime-Driven Scan for strategy building and scoring, and Gemini for narrative generation. AI integration defaults to `gemini-2.5-flash` with `gemini-2.5-pro` as an option. Technical analysis is powered by the `technicalindicators` npm package. TanStack Query (React Query) serves as a caching layer for AI results. Interactive Brokers integration provides additional breadth signals not available from Schwab, connecting via TCP socket to IB Gateway. A comprehensive Portfolio Page displays accounts, orders, and transactions using Schwab Trader API.
 
 ## Feature Specifications
 
-Features include a MacroBar displaying key indices, an Institutional Tear Sheet for fundamental data, and an Options Chain with bid/ask, Greeks, configurable columns, and a MetricsStrip. The AI Strategy Endpoint generates strategies based on historical data and TA, with mandated `aiConfidence` levels. `useTickColor` provides price momentum coloring. Search History stores recent symbols. Comprehensive support for Indices & Futures is integrated across all data endpoints.
-
-### Strategy-Aware Risk Evaluation (optionsStrategist.ts)
-- `RiskCategory` type: `DEFINED | CASH_SECURED | MARGIN_BASED`
-- `evaluateRisk()` returns per-strategy risk metrics (max_loss for defined, strike×100 for CSP, managed stop for margin)
-- `RiskEvaluation` interface: `category`, `risk_metric`, `risk_label`, `capital_required?`, `within_limits`
-- `risk_reward_display` field: human-readable "Risk $X / Reward $Y" format
-- All 11 strategy builders populate `risk_evaluation` and `risk_reward_display` fields
-
-### Dynamic Ticker Classification (optionsStrategist.ts)
-- No hardcoded ticker names — classification is purely data-driven from the options chain
-- `classifyTicker()` measures ATM contracts across front 2 expirations: avg spread%, avg volume, avg OI, active strike count
-- Three tiers: Tier 1 (high liquidity: spread<5%, vol>200, OI>1000), Tier 2 (moderate: spread<15%, vol>50, OI>200), Tier 3 (low: everything else)
-- Tier-specific liquidity gates applied via `isLiquidForTier()`: Tier 1 (vol>100, OI>500, spread<10%), Tier 2 (vol>50, OI>200, spread<20%), Tier 3 (vol>100, OI>500, spread<15% + 50% size multiplier)
-- `computeBeta()` calculates beta from last ~20 daily returns vs SPY using covariance/variance formula, clamped to [0.1, 5.0]
-- Beta-adjusted delta targets: beta>1.5→0.15, beta 1.0-1.5→0.20, beta<1.0→0.25
-- `TickerProfile` object (tier, beta, adjustedDelta, sizeMultiplierOverride, measurements) passed through both strategist endpoints and included in Gemini narrative payload
-- `buildTickerProfile()` in ai.ts fetches daily candles for ticker + SPY in parallel for beta computation
-- Key types: `LiquidityTier`, `TickerProfile`, `DailyCandle`
-
-### Pre-Trade Risk Manager
-- Backend: `preTradeRiskEngine.ts` with 11 deterministic checks: Pulse Alignment, R/R ≥ threshold, Bid/Ask Spread ≤15%, PoP ≥35%, Position Size ≤ max%, Vol Environment, DTE ≥ min, IV Rank, Put Skew, Earnings Proximity, Expected Move
-- API route: `POST /api/ai/pre-trade-check` runs engine + Gemini Flash one-liner
-- Frontend: `PreTradeCheckPanel` shows green/yellow/red checklist below each strategy card
-- `RiskCategoryBadge` shows Defined Risk / Cash Secured / Margin Based on each card header
-- Settings (persisted in Zustand): `preTradeEnabled`, `preTradeBlockOnRed`, `preTradeMinRR` (0.25), `preTradeMaxPositionPct` (3%), `preTradeMinDTE` (5), `accountSize` (25000)
-- Auto-runs when strategies load; results are per-strategy
-- **IVR Check**: `computeIVR()` in optionsStrategist.ts uses ATM IV in front expiration as current IV, min/max IV across all chain strikes as range. IVR = (current-min)/(max-min)*100. IVR>50 favors credit (WARN on debit), IVR<30 favors debit (WARN on credit), 30-50 neutral.
-- **Put Skew Check**: `computePutSkew()` finds closest-to-25-delta put and call in front expiration, skew = putIV - callIV in vol points. >5 pts + selling puts = WARN, >10 pts + selling puts = FAIL.
-- **Earnings Proximity Check**: `fetchEarningsDaysAway()` estimates next earnings from Schwab `lastEarningsDate` fundamental (+90 day cadence). ≤7 days + credit = FAIL (earnings risk blocks premium selling), ≤14 days + credit = WARN + 50% size reduction.
-- **Expected Move Check**: `computeExpectedMove()` computes ATM straddle (same-strike call+put mid) from nearest expiration. For credit strategies: breakevens must fall outside underlyingPrice ± expectedMove. Both inside = FAIL, between 100-110% of EM = WARN, both beyond 110% = PASS.
-- `chainAnalytics` object (ivr, putSkew, earningsDaysAway, expectedMove, preTradeResults) included in both strategist endpoints and Gemini narrative payload
-- IVR and putSkew also stored on `TickerProfile` object for convenience
-
-### Conviction Sizing (optionsStrategist.ts)
-- Replaces flat `sizeMultiplier × sizeMultiplierOverride` with multi-factor formula
-- `computeConvictionSize()` computes: `baseSize(1.0) × regimeMultiplier × tierMultiplier × ivrModifier × earningsModifier × confidenceWeight`
-- **IVR Modifier**: 1.0 if IVR favors strategy direction (high IVR + credit, low IVR + debit), 0.75 if neutral, 0.5 if IVR opposes
-- **Earnings Modifier**: 1.0 if >14 days, 0.5 if 8-14 days, 0.0 if ≤7 days AND credit (blocks trade entirely)
-- **Confidence Weight**: 1.0 if confidence ≥75, 0.75 if 50-75, 0.0 if <50
-- Final size clamped: floor 0.25, cap 1.0. If earningsModifier=0, size is 0 and trade is blocked
-- `ConvictionSizing` object attached to each `StrategyPayload` with full breakdown of all multipliers
-- Gemini system prompt requires AI to explain each multiplier value and how they determine final position size
-- Key types: `ConvictionSizing`, `ConvictionParams`
-
-### Session Timeout & Biometric Auth
-- All security preferences stored in `localStorage` under key `alphaTerminalSecurityPrefs`
-- `SecurityPrefs` interface: `sessionTimeout` (number, minutes), `biometricLogin`, `biometricSensitiveData`, `biometricTradeConfirmation` (all boolean)
-- Session timeout options: 15, 30, 60, 90 minutes, or Never (0). Default: 30 min
-- `useAutoLock` hook reads timeout from `alphaTerminalSecurityPrefs.sessionTimeout`, no hardcoded timeout values
-- Biometric auth uses WebAuthn API (native browser) + Clerk passkeys (`clerk.user.createPasskey()`)
-- Login screen: "Sign in with Face ID" button (passkey strategy) shown when `biometricLogin=true` and WebAuthn supported
-- `useBiometricGate` hook: local device-level WebAuthn verification for sensitive data access
-- `useTradeConfirmationGate` hook: local device-level WebAuthn verification before trade execution
-- Security Settings UI in sidebar: segmented timeout control, passkey registration button, 3 biometric toggles
-- Legacy `at_auto_lock_minutes` localStorage key auto-migrated to new prefs format
-- Key files: `securityPrefs.ts`, `useAutoLock.ts`, `useBiometric.ts`, `main.tsx`, `Sidebar.tsx`
+Key features include a MacroBar for indices, an Institutional Tear Sheet for fundamental data, an Options Chain with detailed metrics, and an AI Strategy Endpoint generating strategies with `aiConfidence` levels. `useTickColor` provides price momentum coloring. Search History stores recent symbols, and comprehensive support for Indices & Futures is integrated. Strategy-Aware Risk Evaluation categorizes and evaluates risk for each strategy, providing human-readable risk/reward displays. Dynamic Ticker Classification, based purely on options chain data, assigns liquidity tiers and calculates beta, which is used for beta-adjusted delta targets and position sizing. A Pre-Trade Risk Manager executes 11 deterministic checks against strategies (e.g., Pulse Alignment, R/R, Bid/Ask Spread, PoP, Position Size, Vol Environment, DTE, IV Rank, Put Skew, Earnings Proximity, Expected Move) and provides a green/yellow/red checklist. Conviction Sizing replaces flat multipliers with a multi-factor formula considering regime, tier, IVR, earnings, and confidence. Session Timeout and Biometric Authentication (via WebAuthn and Clerk passkeys) enhance security, with preferences stored in `localStorage`.
 
 ## System Design Choices
 
-The monorepo structure facilitates shared libraries and consistent tooling. TypeScript Composite Projects ensure robust type-checking. A clear separation of concerns is maintained across UI, API, database, and streaming logic. Real-time data is optimized through streamed data with REST fallback and performant state management. Strict AI grounding ensures AI responses are based solely on provided, fresh market data. The Market Pulse system uses a two-layer architecture: a deterministic scoring engine (pure TypeScript math/rules) that calculates composite scores and bias, and Gemini (temperature=0) which writes only the narrative based on these pre-calculated scores. The bias strip (`AiBiasStrip`) provides a visual indication of market bias. Market Pulse settings are persisted in Zustand, allowing user-defined indicator management and strategy preferences.
+The monorepo structure supports shared libraries and consistent tooling, with TypeScript Composite Projects ensuring robust type-checking. Clear separation of concerns is maintained across UI, API, database, and streaming logic. Real-time data is optimized through streamed data and performant state management. Strict AI grounding ensures responses are based on fresh market data. The Market Pulse system uses a two-layer architecture: a deterministic scoring engine for composite scores and bias, and Gemini for narrative generation based on these scores. Market Pulse settings are persisted in Zustand.
 
 # External Dependencies
 
@@ -125,4 +43,4 @@ The monorepo structure facilitates shared libraries and consistent tooling. Type
 -   **lightweight-charts**: Financial charting.
 -   **technicalindicators**: Technical analysis calculations.
 -   **Clerk**: App-level authentication.
--   **Interactive Brokers API** (`@stoqey/ib`): Secondary data source for streaming breadth signals (UVOL, DVOL, TICK, TRIN, ADD, ADVN, DECN). Requires IB Gateway running externally. Gracefully degrades when gateway unavailable.
+-   **Interactive Brokers API** (`@stoqey/ib`): Secondary data source for streaming breadth signals.

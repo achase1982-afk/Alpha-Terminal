@@ -659,7 +659,7 @@ export function OptionsTab({ subscribeOptionSymbols }: OptionsTabProps) {
   }, [registerWing, showCalls, showPuts, hasData]);
 
   return (
-    <div className="h-full flex flex-col" style={{ backgroundColor: BG }}>
+    <div className="h-full flex flex-col overflow-hidden" style={{ backgroundColor: BG }}>
       <MetricsStrip
         groups={groups}
         lastPrice={underlyingPrice}
