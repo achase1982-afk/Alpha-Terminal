@@ -715,14 +715,14 @@ function StrategistEmptyState() {
     <div className="flex flex-col items-center justify-center py-16 px-6 relative">
       <div className="relative z-10 flex flex-col items-center">
         <h3 className="font-mono text-lg font-bold text-white tracking-wide mb-2">Options Strategist</h3>
-        <p className="font-mono text-sm text-white text-center leading-relaxed max-w-[280px]">
+        <p className="font-mono text-sm font-light text-white/70 text-center leading-relaxed max-w-[280px]">
           Enter a ticker above to run AI-powered options analysis with real-time chain data.
         </p>
         <div className="flex items-center gap-5 mt-5">
           {["Regime Detection", "Chain Scanning", "AI Thesis"].map(label => (
             <div key={label} className="flex items-center gap-1.5">
               <div className="w-1.5 h-1.5 rounded-full" style={{ background: "#FFB800" }} />
-              <span className="font-mono text-xs text-white uppercase tracking-wider">{label}</span>
+              <span className="font-mono text-xs font-light text-white/70 uppercase tracking-wider">{label}</span>
             </div>
           ))}
         </div>
