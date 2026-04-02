@@ -18,6 +18,28 @@ import { useStrategistCache, type StrategistCacheData } from "@/hooks/useStrateg
 
 const API_BASE = "/api";
 
+const COMPANY_NAMES: Record<string, string> = {
+  AAPL: "Apple Inc.", MSFT: "Microsoft Corp.", GOOGL: "Alphabet Inc.", GOOG: "Alphabet Inc.",
+  AMZN: "Amazon.com Inc.", META: "Meta Platforms Inc.", NVDA: "NVIDIA Corp.", TSLA: "Tesla Inc.",
+  SPY: "SPDR S&P 500 ETF", QQQ: "Invesco QQQ Trust", IWM: "iShares Russell 2000",
+  DIA: "SPDR Dow Jones ETF", HYG: "iShares High Yield Corp", LQD: "iShares Invest Grade Corp",
+  AMD: "Advanced Micro Devices", NFLX: "Netflix Inc.", CRM: "Salesforce Inc.",
+  INTC: "Intel Corp.", BA: "Boeing Co.", JPM: "JPMorgan Chase", GS: "Goldman Sachs",
+  V: "Visa Inc.", MA: "Mastercard Inc.", WMT: "Walmart Inc.", DIS: "Walt Disney Co.",
+  PYPL: "PayPal Holdings", SQ: "Block Inc.", COIN: "Coinbase Global",
+  PLTR: "Palantir Technologies", SOFI: "SoFi Technologies", UBER: "Uber Technologies",
+  SNOW: "Snowflake Inc.", NET: "Cloudflare Inc.", SHOP: "Shopify Inc.",
+  ROKU: "Roku Inc.", RIVN: "Rivian Automotive", LCID: "Lucid Group",
+  NIO: "NIO Inc.", BABA: "Alibaba Group", JD: "JD.com Inc.",
+  XOM: "Exxon Mobil Corp.", CVX: "Chevron Corp.", PFE: "Pfizer Inc.",
+  MRNA: "Moderna Inc.", UNH: "UnitedHealth Group", LLY: "Eli Lilly & Co.",
+  COST: "Costco Wholesale", HD: "Home Depot Inc.", LOW: "Lowe's Companies",
+  TGT: "Target Corp.", KO: "Coca-Cola Co.", PEP: "PepsiCo Inc.",
+  MCD: "McDonald's Corp.", SBUX: "Starbucks Corp.", NKE: "Nike Inc.",
+  ABNB: "Airbnb Inc.", DASH: "DoorDash Inc.", LYFT: "Lyft Inc.",
+  VIX: "CBOE Volatility Index", "$VIX": "CBOE Volatility Index", "$TRIN": "Arms Index",
+};
+
 interface LegPayload {
   strike: number;
   type: "CALL" | "PUT";
@@ -470,18 +492,19 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
             </div>
             <div>
               <div className="font-mono text-xl font-normal text-white tracking-wide">{symbol}</div>
-              {price != null && (
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-base font-normal tabular-nums" style={{ color: isPositive ? "#00d166" : "#f23645" }}>${price.toFixed(2)}</span>
-                  {change != null && changePct != null && (
-                    <span className="font-mono text-sm font-light tabular-nums" style={{ color: isPositive ? "#00d166" : "#f23645" }}>
-                      {isPositive ? "+" : ""}{change.toFixed(2)} ({isPositive ? "+" : ""}{changePct.toFixed(2)}%)
-                    </span>
-                  )}
-                </div>
-              )}
+              <div className="font-mono text-[11px] font-normal text-[#FFB800] tracking-wide">{COMPANY_NAMES[symbol.toUpperCase()] ?? ""}</div>
             </div>
           </div>
+          {price != null && (
+            <div className="flex flex-col items-end">
+              <span className="font-mono text-lg font-normal tabular-nums" style={{ color: isPositive ? "#00d166" : "#f23645" }}>${price.toFixed(2)}</span>
+              {change != null && changePct != null && (
+                <span className="font-mono text-xs font-light tabular-nums" style={{ color: isPositive ? "#00d166" : "#f23645" }}>
+                  {isPositive ? "+" : ""}{change.toFixed(2)} ({isPositive ? "+" : ""}{changePct.toFixed(2)}%)
+                </span>
+              )}
+            </div>
+          )}
         </div>
         <div className="px-4 pb-2 flex items-start gap-6">
           <div className="flex flex-col">
