@@ -100,14 +100,14 @@ function WatchlistToggle({ symbol }: { symbol: string }) {
   return (
     <button
       onClick={handleToggle}
-      className={`flex items-center justify-center w-4 h-4 transition-all duration-200 active:scale-90 shrink-0
+      className={`flex items-center justify-center w-5 h-5 transition-all duration-200 active:scale-90 shrink-0
         ${isInWatchlist
           ? "text-primary"
-          : "text-zinc-500 hover:text-primary"}
+          : "text-zinc-400 hover:text-primary"}
         ${flash ? "scale-110 text-primary" : ""}`}
       aria-label={isInWatchlist ? `Remove ${symbol} from watchlist` : `Add ${symbol} to watchlist`}
     >
-      {isInWatchlist ? <Minus className="w-3 h-3" strokeWidth={2.5} /> : <Plus className="w-3 h-3" strokeWidth={2.5} />}
+      {isInWatchlist ? <Minus className="w-3.5 h-3.5" strokeWidth={2.5} /> : <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />}
     </button>
   );
 }
