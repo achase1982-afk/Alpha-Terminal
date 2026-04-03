@@ -740,7 +740,7 @@ export function MarketCalendar({ onClose }: Props) {
             )}
             {upcomingEvents.length > 0 && (
               <>
-                <span className={`font-mono text-[10px] text-zinc-600 tracking-widest block mb-1 ${todayEvents.length > 0 ? "mt-2 pt-1.5 border-t border-[#2a2a2c]" : "mt-1"}`}>UPCOMING</span>
+                <span className="font-mono text-[10px] text-zinc-600 tracking-widest block mb-1 mt-1">UPCOMING</span>
                 <div>
                   {upcomingEvents.map((ev, i) => renderRow(ev, i, true))}
                 </div>
