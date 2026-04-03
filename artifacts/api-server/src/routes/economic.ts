@@ -235,38 +235,37 @@ const NFP_CACHE_TTL = 5 * 60 * 1000;
 const finnhubCache: { expected: string | null; ts: number } = { expected: null, ts: 0 };
 const FINNHUB_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
-async function fetchFinnhubNfpExpected(): Promise<string | null> {
+async function fetchPolygonNfpExpected(): Promise<string | null> {
   try {
-    const apiKey = process.env.FINNHUB_API_KEY;
+    const apiKey = process.env.POLYGON_API_KEY;
     if (!apiKey) {
-      logger.warn("FINNHUB_API_KEY not set, skipping expected NFP forecast");
+      logger.warn("POLYGON_API_KEY not set, skipping expected NFP forecast");
       return null;
     }
     
     const res = await fetch(
-      `https://finnhub.io/api/v1/calendar/economic?token=${apiKey}`,
+      `https://api.polygon.io/v2/reference/economic/calendar?apikey=${apiKey}`,
       { headers: { "Accept": "application/json" } }
     );
     
     if (!res.ok) {
-      logger.warn({ status: res.status }, "Finnhub API error, skipping expected NFP");
+      logger.warn({ status: res.status }, "Polygon API error, skipping expected NFP");
       return null;
     }
     
     const data = await res.json();
-    const events = data.economicCalendar || [];
-    logger.info({ eventCount: events.length, firstEvent: events[0] }, "Finnhub calendar response");
+    const events = data.results || [];
+    logger.info({ eventCount: events.length }, "Polygon economic calendar response");
     
-    // Find the next upcoming NFP event or the most recent one
+    // Find the most recent NFP event
     const nfpEvent = events.find((e: any) => {
       const name = (e.event || "").toLowerCase();
       return name.includes("nonfarm payroll") || name.includes("nonfarm employment");
     });
     
     if (nfpEvent) {
-      logger.info({ event: nfpEvent.event, forecast: nfpEvent.forecast, actual: nfpEvent.actual }, "Found NFP event");
+      logger.info({ event: nfpEvent.event, forecast: nfpEvent.forecast }, "Found NFP event");
       if (nfpEvent.forecast) {
-        // Finnhub returns the forecast in thousands, format it
         const forecast = parseFloat(nfpEvent.forecast);
         if (Number.isFinite(forecast)) {
           const nfpChangeExpected = Math.round(forecast);
@@ -274,12 +273,12 @@ async function fetchFinnhubNfpExpected(): Promise<string | null> {
         }
       }
     } else {
-      logger.warn({ eventCount: events.length }, "NFP event not found in Finnhub calendar");
+      logger.warn({ eventCount: events.length }, "NFP event not found in Polygon calendar");
     }
     
     return null;
   } catch (err: any) {
-    logger.warn({ err }, "Failed to fetch Finnhub expected NFP");
+    logger.warn({ err }, "Failed to fetch Polygon expected NFP");
     return null;
   }
 }
@@ -458,10 +457,10 @@ router.get("/nfp-full", async (req, res) => {
       }
     }
 
-    // Fetch Finnhub expected value (cached for 24 hours)
+    // Fetch Polygon expected value (cached for 24 hours)
     let expected: string | null = null;
     if (!finnhubCache.expected || Date.now() - finnhubCache.ts > FINNHUB_CACHE_TTL) {
-      expected = await fetchFinnhubNfpExpected();
+      expected = await fetchPolygonNfpExpected();
       if (expected) {
         finnhubCache.expected = expected;
         finnhubCache.ts = Date.now();
@@ -496,25 +495,42 @@ router.get("/nfp-full", async (req, res) => {
   }
 });
 
-router.get("/finnhub-debug", async (req, res) => {
+router.get("/polygon-debug", async (req, res) => {
   try {
-    const apiKey = process.env.FINNHUB_API_KEY;
+    const apiKey = process.env.POLYGON_API_KEY;
     if (!apiKey) {
-      return res.json({ error: "FINNHUB_API_KEY not set" });
+      return res.json({ error: "POLYGON_API_KEY not set" });
     }
     
-    const finnhubRes = await fetch(
-      `https://finnhub.io/api/v1/calendar/economic?token=${apiKey}`,
+    const polygonRes = await fetch(
+      `https://api.polygon.io/v2/reference/economic/calendar?apikey=${apiKey}`,
       { headers: { "Accept": "application/json" } }
     );
     
-    const rawText = await finnhubRes.text();
-    const data = JSON.parse(rawText);
+    const rawText = await polygonRes.text();
+    let data: any = {};
+    try {
+      data = JSON.parse(rawText);
+    } catch (e: any) {
+      return res.json({ 
+        status: polygonRes.status,
+        error: `Failed to parse JSON: ${e.message}`,
+        rawLength: rawText.length,
+        rawPreview: rawText.substring(0, 500),
+      });
+    }
+    
+    const events = data.results || [];
+    const nfpEvents = events.filter((e: any) => {
+      const name = (e.event || "").toLowerCase();
+      return name.includes("nonfarm") || name.includes("employment") || name.includes("payroll");
+    });
     
     return res.json({
-      status: finnhubRes.status,
-      rawResponse: data,
-      keys: Object.keys(data),
+      status: polygonRes.status,
+      totalEvents: events.length,
+      nfpEventsFound: nfpEvents.length,
+      nfpEvents: nfpEvents.slice(0, 3),
     });
   } catch (err: any) {
     return res.json({ error: err.message });
