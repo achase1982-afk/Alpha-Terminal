@@ -95,43 +95,56 @@ export default function TerminalPage() {
   const { refresh } = useAutoRefreshToken();
   useViewportShell();
 
-  const autoScrolling = useRef(false);
   const lastY = useRef(0);
+  const snapRaf = useRef(0);
+  const scrollEndTimer = useRef(0);
   const COLLAPSE_PX = 80;
+
+  const snapTo = useCallback((el: HTMLElement, target: number) => {
+    cancelAnimationFrame(snapRaf.current);
+    const start = el.scrollTop;
+    const dist = target - start;
+    if (Math.abs(dist) < 1) { el.scrollTop = target; return; }
+    const duration = 200;
+    const t0 = performance.now();
+    const step = (now: number) => {
+      const elapsed = now - t0;
+      const progress = Math.min(elapsed / duration, 1);
+      const ease = 1 - Math.pow(1 - progress, 3);
+      el.scrollTop = start + dist * ease;
+      if (progress < 1) snapRaf.current = requestAnimationFrame(step);
+    };
+    snapRaf.current = requestAnimationFrame(step);
+  }, []);
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
     const y = el.scrollTop;
-    const prev = lastY.current;
     lastY.current = y;
 
-    if (autoScrolling.current) {
-      setIsScrolled(y >= COLLAPSE_PX);
-      return;
-    }
-
-    const goingDown = y > prev;
-    const goingUp = y < prev;
-
-    if (goingDown && y > 8 && y < COLLAPSE_PX) {
-      autoScrolling.current = true;
-      el.scrollTo({ top: COLLAPSE_PX, behavior: "smooth" });
-      setTimeout(() => { autoScrolling.current = false; }, 350);
-      setIsScrolled(true);
-      return;
-    }
-
-    if (goingUp && y < COLLAPSE_PX && y > 0 && prev >= COLLAPSE_PX) {
-      autoScrolling.current = true;
-      el.scrollTo({ top: 0, behavior: "smooth" });
-      setTimeout(() => { autoScrolling.current = false; }, 350);
-      setIsScrolled(false);
-      return;
-    }
-
     setIsScrolled(y >= COLLAPSE_PX);
-  }, []);
+
+    clearTimeout(scrollEndTimer.current);
+    scrollEndTimer.current = window.setTimeout(() => {
+      const cur = el.scrollTop;
+      if (cur > 0 && cur < COLLAPSE_PX) {
+        snapTo(el, cur > COLLAPSE_PX / 2 ? COLLAPSE_PX : 0);
+      }
+    }, 100);
+  }, [snapTo]);
+
+  const handleTouchEnd = useCallback(() => {
+    clearTimeout(scrollEndTimer.current);
+    scrollEndTimer.current = window.setTimeout(() => {
+      const el = scrollRef.current;
+      if (!el) return;
+      const y = el.scrollTop;
+      if (y > 0 && y < COLLAPSE_PX) {
+        snapTo(el, y > COLLAPSE_PX / 2 ? COLLAPSE_PX : 0);
+      }
+    }, 120);
+  }, [snapTo]);
 
   useEffect(() => {
     const el = stickyWrapRef.current;
@@ -240,7 +253,7 @@ export default function TerminalPage() {
           onNavigate={(dest) => { if (dest === "markets") setActiveBottom("markets"); else if (dest === "portfolio") setActiveBottom("portfolio"); }}
         />
 
-        <main ref={scrollRef} onScroll={handleScroll} className={`flex-1 app-content pb-24 ${activeBottom === "ai" && aiSubTab === "pulse" && !pulseData && !pulseLoading && !pulseStreaming ? "overflow-hidden" : "overflow-y-auto"}`}>
+        <main ref={scrollRef} onScroll={handleScroll} onTouchEnd={handleTouchEnd} className={`flex-1 app-content pb-24 ${activeBottom === "ai" && aiSubTab === "pulse" && !pulseData && !pulseLoading && !pulseStreaming ? "overflow-hidden" : "overflow-y-auto"}`}>
 
           {activeBottom === "markets" && (
             <>
