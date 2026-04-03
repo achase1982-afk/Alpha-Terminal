@@ -54,8 +54,8 @@ function MacroCard({ symbol }: { symbol: string }) {
         flex-1 flex flex-col items-center justify-center gap-1 py-2.5 px-3 rounded-lg border
         transition-all duration-200 group cursor-pointer
         ${isActive
-          ? "border-primary/60 bg-primary/10"
-          : "border-card-border bg-card hover:border-primary/30 hover:bg-primary/5"}
+          ? "border-primary/60"
+          : "border-card-border bg-card hover:border-primary/30"}
       `}
       style={isActive ? { boxShadow: `0 0 12px ${ACTIVE_GLOW}` } : undefined}
     >

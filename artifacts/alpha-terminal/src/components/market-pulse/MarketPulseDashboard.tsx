@@ -17,16 +17,16 @@ import { useGetAuthUrl } from "@workspace/api-client-react";
 const CLUSTER_ORDER: ClusterKey[] = ["rates", "credit", "volLevel", "volTerm", "breadth", "riskAppetite", "macro"];
 
 const BIAS_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-  STRONGLY_BULLISH: { bg: "rgba(0,209,102,0.15)", text: "#00d166", border: "rgba(0,209,102,0.4)" },
-  MODERATELY_BULLISH: { bg: "rgba(0,209,102,0.12)", text: "#00d166", border: "rgba(0,209,102,0.35)" },
-  SLIGHTLY_BULLISH: { bg: "rgba(0,209,102,0.08)", text: "#34d399", border: "rgba(0,209,102,0.25)" },
-  BULLISH: { bg: "rgba(0,209,102,0.10)", text: "#00d166", border: "rgba(0,209,102,0.3)" },
-  NEUTRAL: { bg: "rgba(255,184,0,0.10)", text: "#FFB800", border: "rgba(255,184,0,0.3)" },
-  SLIGHTLY_BEARISH: { bg: "rgba(242,54,69,0.08)", text: "#fb7185", border: "rgba(242,54,69,0.25)" },
-  MODERATELY_BEARISH: { bg: "rgba(242,54,69,0.12)", text: "#f23645", border: "rgba(242,54,69,0.35)" },
-  BEARISH: { bg: "rgba(242,54,69,0.10)", text: "#f23645", border: "rgba(242,54,69,0.3)" },
-  STRONGLY_BEARISH: { bg: "rgba(242,54,69,0.15)", text: "#f23645", border: "rgba(242,54,69,0.4)" },
-  NO_EDGE: { bg: "rgba(113,113,122,0.10)", text: "#71717a", border: "rgba(113,113,122,0.3)" },
+  STRONGLY_BULLISH: { bg: "transparent", text: "#00d166", border: "rgba(0,209,102,0.4)" },
+  MODERATELY_BULLISH: { bg: "transparent", text: "#00d166", border: "rgba(0,209,102,0.35)" },
+  SLIGHTLY_BULLISH: { bg: "transparent", text: "#34d399", border: "rgba(0,209,102,0.25)" },
+  BULLISH: { bg: "transparent", text: "#00d166", border: "rgba(0,209,102,0.3)" },
+  NEUTRAL: { bg: "transparent", text: "#FFB800", border: "rgba(255,184,0,0.3)" },
+  SLIGHTLY_BEARISH: { bg: "transparent", text: "#fb7185", border: "rgba(242,54,69,0.25)" },
+  MODERATELY_BEARISH: { bg: "transparent", text: "#f23645", border: "rgba(242,54,69,0.35)" },
+  BEARISH: { bg: "transparent", text: "#f23645", border: "rgba(242,54,69,0.3)" },
+  STRONGLY_BEARISH: { bg: "transparent", text: "#f23645", border: "rgba(242,54,69,0.4)" },
+  NO_EDGE: { bg: "transparent", text: "#71717a", border: "rgba(113,113,122,0.3)" },
   ERROR: { bg: "rgba(242,54,69,0.10)", text: "#f23645", border: "rgba(242,54,69,0.3)" },
 };
 

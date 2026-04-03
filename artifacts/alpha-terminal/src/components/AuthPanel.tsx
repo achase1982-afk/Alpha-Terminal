@@ -98,22 +98,22 @@ export function AuthPanel() {
         <div className="p-3 sm:p-4 border-t border-card-border bg-[#0c0c0c] space-y-3 animate-in fade-in slide-in-from-top-2">
           {bothConnected ? (
             <div className="space-y-2">
-              <div className="flex items-center gap-2 text-sm text-primary bg-primary/10 p-2.5 rounded-md border border-primary/20">
+              <div className="flex items-center gap-2 text-sm text-primary p-2.5 rounded-md border border-primary/20">
                 <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
                 <span className="font-mono text-[10px]">Market Data — quotes & charts active</span>
               </div>
-              <div className="flex items-center gap-2 text-sm text-emerald-400 bg-emerald-500/10 p-2.5 rounded-md border border-emerald-500/20">
+              <div className="flex items-center gap-2 text-sm text-emerald-400 p-2.5 rounded-md border border-emerald-500/20">
                 <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
                 <span className="font-mono text-[10px]">Streaming — WebSocket live data enabled</span>
               </div>
             </div>
           ) : accessToken && !traderAccessToken ? (
             <div className="space-y-2">
-              <div className="flex items-center gap-2 text-sm text-primary bg-primary/10 p-2.5 rounded-md border border-primary/20">
+              <div className="flex items-center gap-2 text-sm text-primary p-2.5 rounded-md border border-primary/20">
                 <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
                 <span className="font-mono text-[10px]">Market Data — quotes & charts active</span>
               </div>
-              <div className="flex items-start gap-2 rounded-lg bg-amber-500/5 border border-amber-500/20 p-2">
+              <div className="flex items-start gap-2 rounded-lg border border-amber-500/20 p-2">
                 <Radio className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
                 <p className="text-[9px] text-gray-300 leading-snug">
                   Streaming not connected. Click below to enable live WebSocket data.
@@ -123,7 +123,7 @@ export function AuthPanel() {
                 onClick={handleTraderLoginClick}
                 disabled={isTraderNavigating}
                 variant="outline"
-                className="w-full font-mono text-xs h-9 border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
+                className="w-full font-mono text-xs h-9 border-amber-500/30 text-amber-400 hover:border-amber-500/50"
               >
                 {isTraderNavigating ? (
                   <><Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />REDIRECTING...</>

@@ -337,7 +337,7 @@ function InstitutionalOwnershipCard() {
             Institutional Ownership (13F)
           </span>
         </div>
-        <span className="text-[9px] font-mono text-amber-400/70 bg-amber-400/10 border border-amber-400/20 px-2 py-0.5 rounded-full">
+        <span className="text-[9px] font-mono text-amber-400/70 border border-amber-400/20 px-2 py-0.5 rounded-full">
           DATA PENDING
         </span>
       </div>

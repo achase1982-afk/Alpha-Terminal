@@ -265,8 +265,8 @@ function RegimeDisplayBanner({ regime, pulse }: { regime: RegimeInfo; pulse?: Pu
 
 function OverrideWarningBanner({ message }: { message: string }) {
   return (
-    <div className="rounded-xl border border-yellow-500/30 px-4 py-3 flex items-start gap-3" style={{ background: "rgba(234,179,8,0.06)" }}>
-      <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: "rgba(234,179,8,0.12)" }}>
+    <div className="rounded-xl border border-yellow-500/30 px-4 py-3 flex items-start gap-3">
+      <div className="w-8 h-8 rounded-lg border border-yellow-500/20 flex items-center justify-center shrink-0">
         <AlertTriangle className="w-4 h-4 text-yellow-500" />
       </div>
       <span className="font-mono text-[11px] text-yellow-400/90 leading-relaxed pt-1.5">{message}</span>
@@ -573,7 +573,7 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
         style={{
           background: "#111113",
           border: `1px solid ${isFocused ? "rgba(255,184,0,0.5)" : "#2A2A2C"}`,
-          boxShadow: isFocused ? "0 0 20px rgba(255,184,0,0.08), inset 0 1px 0 rgba(255,184,0,0.05)" : "none",
+          boxShadow: "none",
         }}
       >
         <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: "1px solid #1f1f22" }}>

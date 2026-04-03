@@ -263,7 +263,7 @@ export function CompanyTearSheet({ isOpen, onClose }: CompanyTearSheetProps) {
           <div className="px-4 py-3 border-b border-card-border flex items-center gap-2">
             <ShieldAlert className="w-4 h-4 text-amber-500/70" />
             <span className="font-mono text-xs font-bold text-foreground tracking-wider">INSTITUTIONAL FLOW</span>
-            <span className="font-mono text-[8px] text-amber-500/60 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full ml-auto">
+            <span className="font-mono text-[8px] text-amber-500/60 border border-amber-500/20 px-1.5 py-0.5 rounded-full ml-auto">
               PREMIUM
             </span>
           </div>

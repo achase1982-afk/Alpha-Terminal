@@ -499,7 +499,7 @@ function DisplayMarqueePage() {
 
       <button
         onClick={handleSave}
-        className={`w-full font-mono text-xs h-8 rounded-md transition-all border ${saved ? "bg-primary/10 text-primary border-primary/50" : "bg-[#0c0c0c] text-primary border-primary hover:bg-primary/10"}`}
+        className={`w-full font-mono text-xs h-8 rounded-md transition-all border ${saved ? "text-primary border-primary/50" : "bg-[#0c0c0c] text-primary border-primary hover:border-primary/70"}`}
       >
         {saved ? "✓ SAVED" : "APPLY SETTINGS"}
       </button>
@@ -699,7 +699,7 @@ function SecurityPrivacyPage() {
           <button
             onClick={() => void registerPasskey()}
             disabled={passkeyLoading || !clerkLoaded}
-            className="w-full flex items-center justify-center gap-2 p-2.5 rounded-lg font-mono text-[10px] font-bold tracking-wide text-primary bg-primary/10 border border-primary/20 hover:bg-primary/20 transition-all disabled:opacity-50"
+            className="w-full flex items-center justify-center gap-2 p-2.5 rounded-lg font-mono text-[10px] font-bold tracking-wide text-primary border border-primary/20 hover:border-primary/40 transition-all disabled:opacity-50"
           >
             <Fingerprint className="w-3.5 h-3.5" />
             {!clerkLoaded ? "LOADING SESSION..." : passkeyLoading ? "REGISTERING..." : "REGISTER FACE ID / PASSKEY"}

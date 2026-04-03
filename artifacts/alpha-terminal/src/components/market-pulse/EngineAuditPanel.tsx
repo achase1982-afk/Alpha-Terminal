@@ -170,8 +170,9 @@ export function EngineAuditPanel({ data }: { data: MarketPulseData }) {
                         <span
                           className="font-mono text-[8px] px-1.5 py-0.5 rounded"
                           style={{
-                            background: cluster.dataQuality === "FRESH" ? "rgba(0,209,102,0.12)" :
-                                       cluster.dataQuality === "STALE" ? "rgba(255,184,0,0.12)" : "rgba(113,113,122,0.12)",
+                            background: "transparent",
+                            border: `1px solid ${cluster.dataQuality === "FRESH" ? "rgba(0,209,102,0.3)" :
+                                       cluster.dataQuality === "STALE" ? "rgba(255,184,0,0.3)" : "rgba(113,113,122,0.3)"}`,
                             color: cluster.dataQuality === "FRESH" ? "#00d166" :
                                   cluster.dataQuality === "STALE" ? "#FFB800" : "#71717a",
                           }}

@@ -53,7 +53,7 @@ function PasskeySignInButton() {
           padding: "12px 24px",
           borderRadius: 12,
           border: "1px solid rgba(255, 184, 0, 0.3)",
-          background: "rgba(255, 184, 0, 0.08)",
+          background: "transparent",
           color: "#FFB800",
           fontFamily: "'Inter', monospace",
           fontSize: 12,

@@ -228,7 +228,7 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-4">
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-center px-6">
-            <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mb-4">
+            <div className="w-16 h-16 rounded-2xl border border-primary/20 flex items-center justify-center mb-4">
               <Search className="w-8 h-8 text-primary" />
             </div>
             <h3 className="font-sans font-bold text-foreground text-lg mb-1">Ask anything</h3>
@@ -240,8 +240,8 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
                 <button
                   key={chip}
                   onClick={() => { setInput(chip); inputRef.current?.focus(); }}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20
-                    text-primary font-mono text-[10px] hover:bg-primary/20 transition-colors"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-primary/20
+                    text-primary font-mono text-[10px] hover:border-primary/40 transition-colors"
                 >
                   <Search className="w-2.5 h-2.5 shrink-0" />
                   {chip}

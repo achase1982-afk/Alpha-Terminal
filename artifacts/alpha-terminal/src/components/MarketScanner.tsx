@@ -136,10 +136,10 @@ const LiveAiRow = memo(function LiveAiRow({ setup, index, onSelect }: {
   }, [onSelect, setup.symbol]);
 
   return (
-    <tr className="border-b border-card-border/50 hover:bg-primary/5 transition-colors"
+    <tr className="border-b border-card-border/50 transition-colors"
       style={{
         ...(index % 2 === 0 ? { background: "rgba(13,17,23,0.4)" } : {}),
-        ...(tapped ? { background: "rgba(255,184,0,0.12)" } : {}),
+        ...(tapped ? { background: "transparent" } : {}),
       }}>
       <td className="px-3 py-2.5">
         <button onClick={handleTap}
@@ -220,8 +220,8 @@ const LiveManualRow = memo(function LiveManualRow({ q, onSelect }: {
   return (
     <button onClick={handleTap}
       className="w-full flex items-center gap-3 px-3 py-2 rounded-lg border bg-card
-        hover:border-primary/40 hover:bg-primary/5 transition-all text-left group active:scale-[0.98]"
-      style={{ borderColor: tapped ? "rgba(255,184,0,0.5)" : undefined, background: tapped ? "rgba(255,184,0,0.08)" : undefined }}>
+        hover:border-primary/40 transition-all text-left group active:scale-[0.98]"
+      style={{ borderColor: tapped ? "rgba(255,184,0,0.5)" : undefined }}>
       <span className="font-bold text-sm w-16 shrink-0" style={{ color: tapped ? "#FFB800" : color }}>{q.symbol}</span>
       <span className="text-sm font-bold text-gray-200 tabular-nums w-20 shrink-0">${livePrice.toFixed(2)}</span>
       <span className="text-xs font-bold tabular-nums w-16 shrink-0" style={{ color }}>

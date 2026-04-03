@@ -72,7 +72,7 @@ export function TickerSearch({ onNavigateToMarkets }: TickerSearchProps = {}) {
             onChange={e => setInputVal(e.target.value.toUpperCase())}
             placeholder="SEARCH..."
             className="w-32 sm:w-36 h-7 pl-7 pr-2 rounded border border-card-border bg-card font-mono text-[10px] text-foreground
-              placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50 focus:bg-primary/5 transition-colors uppercase"
+              placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50 focus:bg-transparent transition-colors uppercase"
             autoComplete="off"
             autoCorrect="off"
             spellCheck={false}
