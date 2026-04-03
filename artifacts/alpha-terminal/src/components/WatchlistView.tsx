@@ -176,37 +176,34 @@ function WatchlistRow({
           transition: swiping ? "none" : "transform 0.25s ease-out, background 0.15s ease",
         }}
       >
-        <div className="flex items-center px-4 py-2.5 gap-3">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="font-mono text-[15px] font-bold text-white tracking-wider">{sym}</span>
-              {spark && spark.closes.length > 1 && (
-                <MiniSparkline data={spark.closes} color={cColor} width={56} height={28} />
-              )}
-            </div>
+        <div className="flex items-center px-3 py-2 gap-2">
+          <div className="w-[72px] shrink-0 min-w-0">
+            <span className="block font-mono text-[13px] font-bold tracking-wide truncate" style={{ color: cColor === "#71717a" ? "#fff" : cColor }}>{sym}</span>
             {description && (
-              <span className="block font-mono text-[10px] uppercase tracking-wide mt-0.5 truncate" style={{ color: "#FFB800" }}>
+              <span className="block font-mono text-[9px] uppercase tracking-wide truncate" style={{ color: "#FFB800" }}>
                 {description}
               </span>
             )}
-            <div className="flex items-center gap-2 font-mono text-[11px] mt-0.5">
-              <span style={{ color: cColor }}>{fmtChange(change)}</span>
-              <span style={{ color: cColor }}>{fmtPct(changePct)}</span>
-              <span className="text-[#71717a]">{fmtVol(volume)}</span>
-            </div>
           </div>
 
-          <div className="flex items-center gap-2.5 shrink-0">
-            <div className="flex flex-col items-end">
-              <span
-                className="font-mono text-[16px] font-bold tabular-nums"
-                style={{ color: hasData ? "#fff" : "#52525b" }}
-              >
-                {hasData ? `$${fmtPrice(last)}` : "—"}
-              </span>
-            </div>
-            <ChevronRight className="w-4 h-4 text-[#3a3a3c] shrink-0" />
+          {spark && spark.closes.length > 1 ? (
+            <MiniSparkline data={spark.closes} color={cColor} width={52} height={24} />
+          ) : (
+            <div style={{ width: 52, height: 24 }} />
+          )}
+
+          <div className="flex-1 flex items-center justify-end gap-3">
+            <span className="font-mono text-[13px] tabular-nums" style={{ color: cColor }}>{fmtChange(change)}</span>
+            <span className="font-mono text-[13px] tabular-nums text-right w-[72px]" style={{ color: "#a1a1aa" }}>{fmtVol(volume)}</span>
+            <span
+              className="font-mono text-[13px] font-bold tabular-nums text-right w-[64px]"
+              style={{ color: hasData ? "#fff" : "#52525b" }}
+            >
+              {hasData ? fmtPrice(last) : "—"}
+            </span>
           </div>
+
+          <ChevronRight className="w-3.5 h-3.5 text-[#3a3a3c] shrink-0" />
         </div>
       </div>
     </div>
