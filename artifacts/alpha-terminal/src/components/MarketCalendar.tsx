@@ -829,7 +829,7 @@ export function MarketCalendar({ onClose }: Props) {
                 <div className="flex items-center pt-1">
                   <button
                     onClick={() => setShowFullBreakdown(true)}
-                    className="font-mono text-[11px] font-bold tracking-wider transition-opacity hover:opacity-70"
+                    className="font-mono text-[14px] font-bold tracking-wider transition-opacity hover:opacity-70"
                     style={{ color: "#FFB800" }}
                   >
                     Read More
@@ -959,11 +959,11 @@ export function MarketCalendar({ onClose }: Props) {
                   )}
                 </div>
 
-                <div className="flex items-center justify-end pb-2">
+                <div className="flex items-center pb-2">
                   <button
                     onClick={() => setReportIframeUrl(reportUrl)}
-                    className="flex items-center gap-1.5 font-mono text-[16px] font-bold tracking-wider transition-opacity hover:opacity-70 px-3 py-2 rounded-md"
-                    style={{ color: "#FFB800", border: "1px solid #FFB80040" }}
+                    className="flex items-center gap-1.5 font-mono text-[14px] font-bold tracking-wider transition-opacity hover:opacity-70"
+                    style={{ color: "#FFB800" }}
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
                     Read Full Report
