@@ -117,6 +117,32 @@ router.get("/report", async (req, res) => {
       reportUrl = "https://www.bls.gov/news.release/ppi.nr0.htm";
     }
 
+    let summary = "";
+    if (change && monthlyData.length >= 2) {
+      const cur = parseFloat(monthlyData[0].value);
+      const prev = parseFloat(monthlyData[1].value);
+      if (reportType === "nfp") {
+        const diff = Math.round(cur - prev);
+        const diffFull = Math.abs(diff * 1000).toLocaleString();
+        const direction = diff >= 0 ? "added" : "lost";
+        summary = `The economy ${direction} ${diffFull} jobs in ${latest.periodName}. Total nonfarm payrolls: ${Math.round(cur * 1000).toLocaleString()}. Previous month: ${Math.round(prev * 1000).toLocaleString()}.`;
+      } else if (reportType === "unemployment") {
+        const direction = cur > prev ? "rose" : cur < prev ? "fell" : "held steady at";
+        summary = `The unemployment rate ${direction === "held steady at" ? direction : `${direction} to`} ${cur.toFixed(1)}% in ${latest.periodName}${direction !== "held steady at" ? `, from ${prev.toFixed(1)}% the prior month` : ""}.`;
+      } else if (reportType === "cpi") {
+        const pctChange = ((cur - prev) / prev) * 100;
+        const direction = pctChange >= 0 ? "rose" : "fell";
+        summary = `Consumer prices ${direction} ${Math.abs(pctChange).toFixed(1)}% in ${latest.periodName}. The CPI index stands at ${cur.toFixed(1)}, compared to ${prev.toFixed(1)} the prior month.`;
+      } else if (reportType === "ppi") {
+        const pctChange = ((cur - prev) / prev) * 100;
+        const direction = pctChange >= 0 ? "rose" : "fell";
+        summary = `Producer prices ${direction} ${Math.abs(pctChange).toFixed(1)}% in ${latest.periodName}. The PPI final demand index is at ${cur.toFixed(1)}, versus ${prev.toFixed(1)} previously.`;
+      } else if (reportType === "earnings") {
+        const direction = cur > prev ? "increased" : cur < prev ? "decreased" : "were unchanged";
+        summary = `Average hourly earnings ${direction} to $${cur.toFixed(2)} in ${latest.periodName}, from $${prev.toFixed(2)} the prior month.`;
+      }
+    }
+
     return res.json({
       reportType,
       series: series.label,
@@ -128,6 +154,7 @@ router.get("/report", async (req, res) => {
         isLatest: latest.latest === "true",
       },
       change,
+      summary,
       recentHistory,
       reportUrl,
     });

@@ -27,6 +27,7 @@ interface BlsReportData {
     currentMonth: string;
     currentYear: string;
   } | null;
+  summary?: string;
   recentHistory: Array<{ month: string; year: string; value: string }>;
   reportUrl: string;
 }
@@ -549,20 +550,24 @@ export function MarketCalendar({ onClose }: Props) {
                   </div>
                 )}
 
-                {selectedEvent.blsType && blsData[selectedEvent.blsType]?.change && (
-                  <div className="flex flex-col gap-3">
-                    <span className="font-mono text-[13px] font-bold text-white">{selectedEvent.title}</span>
-                    <div className="flex items-baseline gap-3">
-                      <span className="font-mono text-2xl font-extrabold text-white">{blsData[selectedEvent.blsType]!.change!.actual}</span>
-                      <span className="font-mono text-[11px] text-zinc-500">vs</span>
-                      <span className="font-mono text-base text-zinc-400 font-semibold">{blsData[selectedEvent.blsType]!.change!.previousLevel}</span>
-                      <span className="font-mono text-[9px] text-zinc-600">prev</span>
+                {selectedEvent.blsType && blsData[selectedEvent.blsType]?.change && (() => {
+                  const d = blsData[selectedEvent.blsType]!;
+                  const c = d.change!;
+                  const raw = c.actualRaw;
+                  const fullNum = d.unit === "thousands"
+                    ? Math.abs(raw).toLocaleString()
+                    : c.actual;
+                  const sign = d.unit === "thousands" && raw >= 0 ? "+" : "";
+                  return (
+                    <div className="flex flex-col gap-2">
+                      <span className="font-mono text-[13px] font-bold text-white">{selectedEvent.title}</span>
+                      <span className="font-mono text-2xl font-extrabold text-white">{sign}{fullNum}</span>
+                      {d.summary && (
+                        <p className="font-mono text-[11px] text-zinc-400 leading-relaxed">{d.summary}</p>
+                      )}
                     </div>
-                    <span className="font-mono text-[10px] text-zinc-600">
-                      {blsData[selectedEvent.blsType]!.change!.currentMonth} {blsData[selectedEvent.blsType]!.change!.currentYear} · {blsData[selectedEvent.blsType]!.series}
-                    </span>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {selectedEvent.detail && (!selectedEvent.blsType || !blsData[selectedEvent.blsType]?.change) && !blsLoading && (
                   <p className="font-mono text-[11px] text-zinc-400 leading-relaxed">{selectedEvent.detail}</p>
