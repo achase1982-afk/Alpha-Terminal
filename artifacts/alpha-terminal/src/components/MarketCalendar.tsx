@@ -42,6 +42,7 @@ interface NfpSeriesResult {
   month: string;
   year: string;
   threeMonthAvg?: string;
+  expected?: string;
   error?: string;
 }
 

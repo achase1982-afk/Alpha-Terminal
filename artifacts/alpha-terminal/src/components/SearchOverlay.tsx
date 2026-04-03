@@ -30,7 +30,7 @@ function RecentRow({
   isActive: boolean;
   onTap: () => void;
 }) {
-  const quote = useQuote(sym);
+  const { data: quoteData } = useQuote(sym);
   const { addToWatchlist, removeFromWatchlist } = useTerminalStore();
   const watchlistSymbols = useActiveWatchlist();
   const isInWatchlist = watchlistSymbols.includes(sym.toUpperCase());
@@ -47,7 +47,7 @@ function RecentRow({
     setTimeout(() => setFlash(false), 400);
   }, [sym, isInWatchlist, addToWatchlist, removeFromWatchlist]);
 
-  const cColor = changeColor(quote.changePct);
+  const cColor = changeColor(quoteData?.changePct ?? null);
 
   return (
     <div
@@ -64,9 +64,9 @@ function RecentRow({
         >
           {sym}
         </span>
-        {quote.description && (
+        {quoteData?.description && (
           <span className="font-mono text-[11px] text-zinc-500 truncate mt-0.5">
-            {quote.description}
+            {quoteData.description}
           </span>
         )}
       </div>
@@ -75,15 +75,15 @@ function RecentRow({
         <div className="flex flex-col items-end">
           <span
             className="font-mono text-[14px] font-bold tabular-nums"
-            style={{ color: quote.last != null ? "#ffffff" : "#52525b" }}
+            style={{ color: quoteData?.last != null ? "#ffffff" : "#52525b" }}
           >
-            {fmtPrice(quote.last)}
+            {fmtPrice(quoteData?.last ?? null)}
           </span>
           <span
             className="font-mono text-[11px] tabular-nums"
             style={{ color: cColor }}
           >
-            {fmtPct(quote.changePct)}
+            {fmtPct(quoteData?.changePct ?? null)}
           </span>
         </div>
 

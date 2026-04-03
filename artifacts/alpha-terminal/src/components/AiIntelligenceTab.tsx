@@ -38,7 +38,7 @@ const COMPANY_NAMES: Record<string, string> = {
   ANET: "Arista Networks", NOW: "ServiceNow Inc.", ADBE: "Adobe Inc.",
   ORCL: "Oracle Corp.", IBM: "IBM Corp.", DELL: "Dell Technologies",
   GM: "General Motors", F: "Ford Motor Co.", SNAP: "Snap Inc.",
-  PINS: "Pinterest Inc.", SQ: "Block Inc.", HOOD: "Robinhood Markets",
+  PINS: "Pinterest Inc.", HOOD: "Robinhood Markets",
   SOXX: "iShares Semiconductor", XLF: "Financial Select SPDR", XLE: "Energy Select SPDR",
   GLD: "SPDR Gold Trust", SLV: "iShares Silver Trust", TLT: "iShares 20+ Year Treasury",
   USO: "United States Oil Fund", ARKK: "ARK Innovation ETF",
