@@ -826,7 +826,7 @@ export function MarketCalendar({ onClose }: Props) {
                   <SummaryRow label="Labor Force Part." data={nfpData.lfpr} />
                 </div>
 
-                <div className="flex items-center pt-1">
+                <div className="flex items-center justify-end pt-1">
                   <button
                     onClick={() => setShowFullBreakdown(true)}
                     className="font-mono text-[14px] font-bold tracking-wider transition-opacity hover:opacity-70"
@@ -959,10 +959,10 @@ export function MarketCalendar({ onClose }: Props) {
                   )}
                 </div>
 
-                <div className="flex items-center justify-end pb-2">
+                <div className="flex items-center justify-end pb-4">
                   <button
                     onClick={() => setReportIframeUrl(reportUrl)}
-                    className="flex items-center gap-1.5 font-mono text-[14px] font-bold tracking-wider transition-opacity hover:opacity-70 pr-2"
+                    className="flex items-center gap-1.5 font-mono text-[14px] font-bold tracking-wider transition-opacity hover:opacity-70 pr-2 pl-2"
                     style={{ color: "#FFB800" }}
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
