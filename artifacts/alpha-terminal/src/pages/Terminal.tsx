@@ -98,7 +98,9 @@ export default function TerminalPage() {
   const COLLAPSE_PX = 80;
   const PAUSE_MS = 1000;
   const wasCollapsed = useRef(false);
+  const pauseAnchor = useRef<number | null>(null);
   const pauseTimer = useRef(0);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -110,15 +112,22 @@ export default function TerminalPage() {
       wasCollapsed.current = true;
       setIsScrolled(true);
 
-      const savedTop = el.scrollTop;
-      el.style.overflow = "hidden";
-      el.scrollTop = savedTop;
-
+      pauseAnchor.current = y;
       clearTimeout(pauseTimer.current);
       pauseTimer.current = window.setTimeout(() => {
-        el.style.overflow = "";
-        el.scrollTop = savedTop;
+        pauseAnchor.current = null;
+        if (contentRef.current) {
+          contentRef.current.style.transform = "";
+          contentRef.current.style.willChange = "";
+        }
       }, PAUSE_MS);
+      return;
+    }
+
+    if (pauseAnchor.current !== null && contentRef.current) {
+      const diff = y - pauseAnchor.current;
+      contentRef.current.style.willChange = "transform";
+      contentRef.current.style.transform = `translateY(${diff}px)`;
       return;
     }
 
@@ -257,7 +266,7 @@ export default function TerminalPage() {
                 <MarketDataTabs activeTab={contextTab} setActiveTab={setContextTab} />
               </div>
 
-              <div style={{ minHeight: "calc(100vh - 60px)" }}>
+              <div ref={contentRef} style={{ minHeight: "calc(100vh - 60px)" }}>
                 {contextTab === "news" && <NewsTab />}
                 {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={stickyH} />}
                 {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles as any} stickyOffset={stickyH} />}
