@@ -95,13 +95,17 @@ export default function TerminalPage() {
   const { refresh } = useAutoRefreshToken();
   useViewportShell();
 
-  const COLLAPSE_PX = 80;
+  const COLLAPSE_PX = 10;
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
     const y = el.scrollTop;
-    setIsScrolled(y > COLLAPSE_PX);
+    setIsScrolled((prev) => {
+      if (!prev && y > COLLAPSE_PX) return true;
+      if (prev && y <= 0) return false;
+      return prev;
+    });
   }, []);
 
   const prevStickyH = useRef(0);
@@ -227,9 +231,13 @@ export default function TerminalPage() {
 
           {activeBottom === "markets" && (
             <>
-              <MacroBar />
-
               <div ref={stickyWrapRef} className="sticky top-0 z-40 bg-background">
+                <div
+                  className="overflow-hidden transition-all duration-300 ease-in-out"
+                  style={{ maxHeight: isScrolled ? 0 : 200, opacity: isScrolled ? 0 : 1 }}
+                >
+                  <MacroBar />
+                </div>
                 <MetricsBar compact={isScrolled} />
                 <VolumeBar />
                 <MarketDataTabs activeTab={contextTab} setActiveTab={setContextTab} />
