@@ -261,16 +261,17 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
   if (noSchwab) {
     return (
       <div
-        className="w-full border-b border-card-border flex items-center justify-center px-4 transition-all duration-300 overflow-hidden"
+        className="w-full border-b border-card-border flex items-center justify-center px-4 overflow-hidden"
         style={{
           background: HEADER_BG,
-          height: compact ? 32 : 70,
-          minHeight: compact ? 32 : 70,
+          height: compact ? 36 : 70,
+          minHeight: compact ? 36 : 70,
+          transition: "height 500ms ease, min-height 500ms ease",
         }}
       >
         <p
           className="text-muted-foreground animate-pulse text-center tracking-wider font-mono whitespace-nowrap"
-          style={{ fontSize: compact ? 11 : 12 }}
+          style={{ fontSize: compact ? 11 : 12, transition: "font-size 500ms ease" }}
         >
           Connect Schwab to view market data
         </p>
