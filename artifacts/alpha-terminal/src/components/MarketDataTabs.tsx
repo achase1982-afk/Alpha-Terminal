@@ -52,6 +52,7 @@ export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps)
 
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const touchStartX = useRef(0);
+  const touchStartY = useRef(0);
   const touchMoved = useRef(false);
   const tabRects = useRef<DOMRect[]>([]);
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -60,6 +61,7 @@ export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps)
   const jiggleStartedAt = useRef(0);
   const jigglingRef = useRef(false);
   const blockClicksUntil = useRef(0);
+  const scrolling = useRef(false);
 
   const saveOrder = useCallback((newOrder: MarketDataTab[]) => {
     setOrder(newOrder);
@@ -99,8 +101,11 @@ export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps)
   const handleTouchStart = useCallback(
     (idx: number, e: React.TouchEvent) => {
       const x = e.touches[0].clientX;
+      const y = e.touches[0].clientY;
       touchStartX.current = x;
+      touchStartY.current = y;
       touchMoved.current = false;
+      scrolling.current = false;
 
       if (jiggling) {
         startDrag(idx, x);
@@ -108,7 +113,9 @@ export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps)
       }
 
       longPressTimer.current = setTimeout(() => {
-        startDrag(idx, x);
+        if (!scrolling.current) {
+          startDrag(idx, x);
+        }
       }, LONG_PRESS_MS);
     },
     [jiggling, startDrag]
@@ -117,9 +124,16 @@ export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps)
   const handleTouchMove = useCallback(
     (e: React.TouchEvent) => {
       const x = e.touches[0].clientX;
+      const y = e.touches[0].clientY;
 
       if (!dragging) {
         const dx = Math.abs(x - touchStartX.current);
+        const dy = Math.abs(y - touchStartY.current);
+        if (dy > 5) {
+          scrolling.current = true;
+          cancelLongPress();
+          touchMoved.current = true;
+        }
         if (dx > 8) {
           cancelLongPress();
           touchMoved.current = true;
