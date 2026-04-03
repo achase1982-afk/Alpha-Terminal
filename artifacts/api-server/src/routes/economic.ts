@@ -167,4 +167,52 @@ router.get("/multi", async (req, res) => {
   }
 });
 
+router.get("/bls-report", async (req, res) => {
+  try {
+    const reportType = (req.query.type as string || "nfp").toLowerCase();
+
+    let url = "";
+    if (reportType === "nfp" || reportType === "unemployment" || reportType === "earnings") {
+      url = "https://www.bls.gov/news.release/empsit.nr0.htm";
+    } else if (reportType === "cpi") {
+      url = "https://www.bls.gov/news.release/cpi.nr0.htm";
+    } else if (reportType === "ppi") {
+      url = "https://www.bls.gov/news.release/ppi.nr0.htm";
+    }
+
+    if (!url) {
+      return res.status(400).json({ error: "Unknown report type" });
+    }
+
+    const blsRes = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "identity",
+        "Connection": "keep-alive",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "Upgrade-Insecure-Requests": "1",
+      },
+    });
+
+    if (!blsRes.ok) {
+      return res.json({ url, error: `Could not load report (${blsRes.status}). Open directly.` });
+    }
+
+    let html = await blsRes.text();
+    html = html.replace(/<head>/i, `<head><base href="https://www.bls.gov/" />`);
+
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("X-Frame-Options", "ALLOWALL");
+    return res.send(html);
+  } catch (err: any) {
+    logger.error({ err }, "BLS report proxy failed");
+    return res.json({ error: err.message || "Failed to load report" });
+  }
+});
+
 export default router;

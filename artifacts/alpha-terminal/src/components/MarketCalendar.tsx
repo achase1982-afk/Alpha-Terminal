@@ -206,6 +206,80 @@ interface Props {
 const BASE = import.meta.env.BASE_URL ?? "/";
 const apiBase = `${BASE}api`;
 
+function ReportViewer({ url, onClose }: { url: string; onClose: () => void }) {
+  const [content, setContent] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    const blsType = url.includes("empsit") ? "nfp" : url.includes("cpi") ? "cpi" : url.includes("ppi") ? "ppi" : "nfp";
+    fetch(`${apiBase}/economic/bls-report?type=${blsType}`)
+      .then(async (res) => {
+        const ct = res.headers.get("content-type") || "";
+        if (ct.includes("text/html")) {
+          const html = await res.text();
+          setContent(html);
+        } else {
+          setError(true);
+        }
+      })
+      .catch(() => setError(true))
+      .finally(() => setLoading(false));
+  }, [url]);
+
+  if (error) {
+    return (
+      <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center" style={{ background: "#0a0a0a" }}>
+        <p className="font-mono text-sm text-zinc-400 mb-4">Report could not be loaded in-app.</p>
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-mono text-sm font-bold px-4 py-2 rounded-lg"
+          style={{ color: "#FFB800", border: "1px solid #FFB800" }}
+        >
+          Open Report on BLS.gov
+        </a>
+        <button onClick={onClose} className="mt-4 font-mono text-[10px] text-zinc-600">Close</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-[200] flex flex-col" style={{ background: "#0a0a0a" }}>
+      <div className="flex items-center justify-between px-4 py-3 border-b border-[#2a2a2c]">
+        <span className="font-mono text-[11px] text-zinc-400 tracking-wider">BLS Report</span>
+        <div className="flex items-center gap-2">
+          <a
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="p-1.5 rounded-lg transition-colors"
+          >
+            <ExternalLink className="w-4 h-4 text-zinc-500" />
+          </a>
+          <button onClick={onClose} className="p-1.5 rounded-lg transition-colors">
+            <X className="w-5 h-5 text-zinc-400" />
+          </button>
+        </div>
+      </div>
+      {loading ? (
+        <div className="flex-1 flex items-center justify-center">
+          <Loader2 className="w-6 h-6 text-zinc-500 animate-spin" />
+        </div>
+      ) : content ? (
+        <iframe
+          srcDoc={content}
+          className="flex-1 w-full"
+          style={{ border: "none", background: "#ffffff" }}
+          title="BLS Report"
+          sandbox="allow-same-origin"
+        />
+      ) : null}
+    </div>
+  );
+}
+
 async function fetchBlsReport(blsType: string): Promise<BlsReportData | null> {
   try {
     const res = await fetch(`${apiBase}/economic/report?type=${blsType}`);
@@ -362,14 +436,14 @@ export function MarketCalendar({ onClose }: Props) {
                 setSelectedDate(cell.key === selectedDate ? null : cell.key);
                 setSelectedEvent(null);
               }}
-              className="relative flex flex-col items-center py-1.5 min-h-[48px] rounded-md transition-all"
+              className="relative flex flex-col items-center py-1 min-h-[52px] rounded-md transition-all justify-center"
               style={{
                 background: "transparent",
                 border: isSelected ? "1px solid #FFB80060" : isToday ? "1px solid #ffffff20" : "1px solid transparent",
               }}
             >
               <span
-                className="font-mono text-[11px] font-semibold"
+                className="font-mono text-[15px] font-bold"
                 style={{
                   color: !cell.inMonth ? "#2a2a2c"
                     : hasHoliday ? "#f23645"
@@ -567,37 +641,7 @@ export function MarketCalendar({ onClose }: Props) {
       )}
 
       {reportIframeUrl && (
-        <div className="fixed inset-0 z-[200] flex flex-col" style={{ background: "#0a0a0a" }}>
-          <div className="flex items-center justify-between px-4 py-3 border-b border-[#2a2a2c]">
-            <span className="font-mono text-[11px] text-zinc-400 tracking-wider">BLS Report</span>
-            <div className="flex items-center gap-2">
-              <a
-                href={reportIframeUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="p-1.5 rounded-lg transition-colors"
-              >
-                <ExternalLink className="w-4 h-4 text-zinc-500" />
-              </a>
-              <button
-                onClick={() => setReportIframeUrl(null)}
-                className="p-1.5 rounded-lg transition-colors"
-              >
-                <X className="w-5 h-5 text-zinc-400" />
-              </button>
-            </div>
-          </div>
-          <iframe
-            src={reportIframeUrl}
-            className="flex-1 w-full"
-            style={{ border: "none", background: "#ffffff" }}
-            title="BLS Report"
-            onError={() => {
-              window.open(reportIframeUrl!, "_blank");
-              setReportIframeUrl(null);
-            }}
-          />
-        </div>
+        <ReportViewer url={reportIframeUrl} onClose={() => setReportIframeUrl(null)} />
       )}
     </div>
   );
