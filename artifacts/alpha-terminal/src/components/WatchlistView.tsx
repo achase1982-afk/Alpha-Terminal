@@ -176,27 +176,22 @@ function WatchlistRow({
           transition: swiping ? "none" : "transform 0.25s ease-out, background 0.15s ease",
         }}
       >
-        <div className="flex items-center px-4 py-3 gap-3">
+        <div className="flex items-center px-4 py-2.5 gap-3">
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              {change != null && change > 0 && <TrendingUp className="w-4 h-4 shrink-0" style={{ color: "#22c55e" }} />}
-              {change != null && change < 0 && <TrendingDown className="w-4 h-4 shrink-0" style={{ color: "#ef4444" }} />}
-              {(change == null || change === 0) && <Minus className="w-4 h-4 shrink-0" style={{ color: "#71717a" }} />}
-              <span className="font-mono text-[15px] font-bold text-white tracking-wider">{sym}</span>
-            </div>
+            <span className="font-mono text-[15px] font-bold text-white tracking-wider">{sym}</span>
             {description && (
-              <span className="block font-mono text-[10px] uppercase tracking-wide mt-0.5 pl-6 truncate" style={{ color: "#FFB800" }}>
+              <span className="block font-mono text-[10px] uppercase tracking-wide mt-0.5 truncate" style={{ color: "#FFB800" }}>
                 {description}
               </span>
             )}
-            <div className="flex items-center gap-2 font-mono text-[12px] mt-1 pl-6">
+            <div className="flex items-center gap-2 font-mono text-[12px] mt-0.5">
               <span style={{ color: cColor }}>{fmtChange(change)}</span>
               <span style={{ color: cColor }}>{fmtPct(changePct)}</span>
               <span className="text-[11px] text-[#71717a]">{fmtVol(volume)}</span>
             </div>
           </div>
 
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-2.5 shrink-0">
             {spark && spark.closes.length > 1 && (
               <MiniSparkline data={spark.closes} color={cColor} width={56} height={28} />
             )}
