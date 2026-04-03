@@ -1111,9 +1111,11 @@ interface AiIntelligenceTabProps {
   subTab: AiSubTab;
   onSubTabChange: (tab: AiSubTab) => void;
   pulseDashRef?: React.RefObject<MarketPulseDashboardHandle | null>;
+  pulseAutoGen?: boolean;
+  onPulseAutoGenConsumed?: () => void;
 }
 
-export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef }: AiIntelligenceTabProps) {
+export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, pulseAutoGen, onPulseAutoGenConsumed }: AiIntelligenceTabProps) {
   const {
     symbol, setSymbol, accessToken,
     aiFeatureSettings,
@@ -1452,7 +1454,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef }: AiIn
   return (
     <div className="flex flex-col gap-0 w-full max-w-5xl mx-auto pb-6 flex-1" style={{ minHeight: "calc(var(--vvh, 100vh) - 200px)" }}>
       {subTab === "pulse" && (
-        <MarketPulseDashboard ref={pulseDashRef} />
+        <MarketPulseDashboard ref={pulseDashRef} autoGenerate={pulseAutoGen} onAutoGenConsumed={onPulseAutoGenConsumed} />
       )}
 
       {subTab === "strategist" && (

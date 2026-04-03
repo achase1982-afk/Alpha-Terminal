@@ -46,13 +46,14 @@ const RISK_COLORS: Record<string, string> = {
 
 interface MarketPulseDashboardProps {
   autoGenerate?: boolean;
+  onAutoGenConsumed?: () => void;
 }
 
 export interface MarketPulseDashboardHandle {
   fetchPulse: () => void;
 }
 
-export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, MarketPulseDashboardProps>(function MarketPulseDashboard({ autoGenerate }, ref) {
+export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, MarketPulseDashboardProps>(function MarketPulseDashboard({ autoGenerate, onAutoGenConsumed }, ref) {
   const { accessToken, aiFeatureSettings } = useTerminalStore();
   const { model: aiModel, temperature: aiTemp } = aiFeatureSettings.marketPulse;
   const {
@@ -164,15 +165,11 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
 
   useImperativeHandle(ref, () => ({ fetchPulse }), [fetchPulse]);
 
-  // Auto-generate once on first mount when autoGenerate=true and no data yet
-  const autoGenFiredRef = useRef(false);
   useEffect(() => {
-    if (autoGenerate && !autoGenFiredRef.current && !pulseData && !isLoading && !isStreaming && accessToken) {
-      autoGenFiredRef.current = true;
+    if (autoGenerate && !isLoading && !isStreaming && accessToken) {
       fetchPulse();
+      onAutoGenConsumed?.();
     }
-    // Only run when the guard conditions change, not on every pulseData update
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoGenerate, isLoading, isStreaming, accessToken]);
 
   // Auto-refresh interval — stable since fetchPulse is stable

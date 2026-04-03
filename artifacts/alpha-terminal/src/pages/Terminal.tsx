@@ -87,6 +87,7 @@ export default function TerminalPage() {
   const [activeBottom, setActiveBottom] = useState<BottomTab>("markets");
   const [contextTab, setContextTab] = useState<ContextTab>("news");
   const [aiSubTab, setAiSubTab] = useState<AiSubTab>("pulse");
+  const [pulseAutoGen, setPulseAutoGen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickyWrapRef = useRef<HTMLDivElement>(null);
   const [stickyH, setStickyH] = useState(0);
@@ -192,7 +193,7 @@ export default function TerminalPage() {
           />
         </div>
         <TickerTape />
-        <AiBiasStrip onNavigateToPulse={() => { setActiveBottom("ai"); setAiSubTab("pulse"); pulseDashRef.current?.fetchPulse(); }} />
+        <AiBiasStrip onNavigateToPulse={() => { setActiveBottom("ai"); setAiSubTab("pulse"); setPulseAutoGen(true); }} />
       </header>
 
       {activeBottom === "ai" && (
@@ -274,7 +275,7 @@ export default function TerminalPage() {
           </div>
 
           {activeBottom === "ai" && (
-            <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} />
+            <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} pulseAutoGen={pulseAutoGen} onPulseAutoGenConsumed={() => setPulseAutoGen(false)} />
           )}
 
           {activeBottom === "portfolio" && (
