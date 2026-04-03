@@ -255,6 +255,7 @@ async function fetchFinnhubNfpExpected(): Promise<string | null> {
     
     const data = await res.json();
     const events = data.economicCalendar || [];
+    logger.info({ eventCount: events.length, firstEvent: events[0] }, "Finnhub calendar response");
     
     // Find the next upcoming NFP event or the most recent one
     const nfpEvent = events.find((e: any) => {
@@ -262,13 +263,18 @@ async function fetchFinnhubNfpExpected(): Promise<string | null> {
       return name.includes("nonfarm payroll") || name.includes("nonfarm employment");
     });
     
-    if (nfpEvent && nfpEvent.forecast) {
-      // Finnhub returns the forecast in thousands, format it
-      const forecast = parseFloat(nfpEvent.forecast);
-      if (Number.isFinite(forecast)) {
-        const nfpChangeExpected = Math.round(forecast);
-        return `${nfpChangeExpected >= 0 ? "+" : ""}${(nfpChangeExpected * 1000).toLocaleString()}`;
+    if (nfpEvent) {
+      logger.info({ event: nfpEvent.event, forecast: nfpEvent.forecast, actual: nfpEvent.actual }, "Found NFP event");
+      if (nfpEvent.forecast) {
+        // Finnhub returns the forecast in thousands, format it
+        const forecast = parseFloat(nfpEvent.forecast);
+        if (Number.isFinite(forecast)) {
+          const nfpChangeExpected = Math.round(forecast);
+          return `${nfpChangeExpected >= 0 ? "+" : ""}${(nfpChangeExpected * 1000).toLocaleString()}`;
+        }
       }
+    } else {
+      logger.warn({ eventCount: events.length }, "NFP event not found in Finnhub calendar");
     }
     
     return null;
@@ -487,6 +493,31 @@ router.get("/nfp-full", async (req, res) => {
   } catch (err: any) {
     logger.error({ err }, "NFP full report fetch failed");
     return res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/finnhub-debug", async (req, res) => {
+  try {
+    const apiKey = process.env.FINNHUB_API_KEY;
+    if (!apiKey) {
+      return res.json({ error: "FINNHUB_API_KEY not set" });
+    }
+    
+    const finnhubRes = await fetch(
+      `https://finnhub.io/api/v1/calendar/economic?token=${apiKey}`,
+      { headers: { "Accept": "application/json" } }
+    );
+    
+    const rawText = await finnhubRes.text();
+    const data = JSON.parse(rawText);
+    
+    return res.json({
+      status: finnhubRes.status,
+      rawResponse: data,
+      keys: Object.keys(data),
+    });
+  } catch (err: any) {
+    return res.json({ error: err.message });
   }
 });
 
