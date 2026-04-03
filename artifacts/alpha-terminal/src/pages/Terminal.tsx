@@ -23,7 +23,7 @@ import { NewsTab } from "@/components/NewsTab";
 import { AiBiasStrip } from "@/components/market-pulse/AiBiasStrip";
 import { BottomNav } from "@/components/BottomNav";
 import { PortfolioView } from "@/components/PortfolioView";
-import { CompanyResearchHub } from "@/components/CompanyResearchHub";
+import { CompanySwipablePages } from "@/components/CompanySwipablePages";
 import { AiSubTabs, type AiSubTab } from "@/components/ai-tab/AiSubTabs";
 import type { MarketPulseDashboardHandle } from "@/components/market-pulse/MarketPulseDashboard";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
@@ -223,7 +223,7 @@ export default function TerminalPage() {
 
               {contextTab === "news" && <NewsTab />}
               {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={stickyH} />}
-              {contextTab === "company" && <CompanyResearchHub candles={historyData?.candles as any} />}
+              {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles as any} />}
               {contextTab === "chart" && (
                 <>
                   <ChartControls />

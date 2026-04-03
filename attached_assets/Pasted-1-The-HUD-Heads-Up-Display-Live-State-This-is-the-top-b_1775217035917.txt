@@ -1,0 +1,35 @@
+1. The "HUD" (Heads-Up Display) / Live State
+This is the top banner. It gives the absolute most critical "right now" context before they dive into the weeds.
+• Live Price & Tick Direction: (e.g., $254.10 ▲)
+• Daily VWAP (Volume-Weighted Average Price): The institutional benchmark for the day.
+• Distance to VWAP: (+0.4% or -$1.20) tells them instantly if the stock is overextended for the day.
+• Current ATR (Average True Range): Shows the expected daily volatility. If the ATR is $5 and the stock has already moved $5 today, the trader knows the move is likely done.
+• Overall Trend Bias: A dynamic text readout (e.g., "Aggressively Bullish", "Neutral/Chop", "Bearish Divergence").
+2. Volume Profile & Value Area (The Institutional Map)
+Retail looks at time; pros look at volume at specific price levels. This box defines the battlefield.
+• POC (Point of Control): The exact price level where the most volume has traded.
+• VAH (Value Area High): The upper boundary where 70% of the volume traded.
+• VAL (Value Area Low): The lower boundary.
+• Volume Nodes: Text readout of the nearest High Volume Node (HVN - acts as heavy resistance/support) and Low Volume Node (LVN - areas price will rip through quickly).
+• Profile Shape Status: (e.g., "P-Shape / Short Covering", "b-Shape / Long Liquidation", "Normal Distribution").
+3. Order Flow & Microstructure (The Tape)
+This is the "x-ray" showing who is hitting the buy/sell buttons hardest right now.
+• CVD (Cumulative Volume Delta): Is the aggressive market buying outpacing the selling? (Needs a numeric value, e.g., +45,000 shares).
+• Order Flow Imbalance: A percentage or ratio showing if buyers or sellers are trapped at the current price.
+• Large Block Tracker: A scrolling mini-feed or counter of trades executing over a specific massive threshold (e.g., "5 blocks > 50k shares in the last 10 mins").
+4. Quantitative Exhaustion & Timing
+This panel replaces traditional lagging indicators like RSI or MACD with mathematical probability models.
+• Sequential Exhaustion Count: (e.g., "Daily: Bar 8 of 9", "Hourly: Bar 13 - Reversal Imminent").
+• Standard Deviation / Z-Score: How far is the price from its historical mean? (e.g., "+2.5 Std Dev - High Reversion Risk").
+• Squeeze Monitor: Measures historical volatility contraction to predict an explosive move (Status: "Squeeze Firing" or "Consolidating").
+5. The "Hidden Hand" (Derivatives & Dark Pools)
+A serious equity trader will not execute without knowing what the options and dark pools are doing to the underlying stock.
+• Net Gamma Exposure (GEX): Is the options market makers' hedging adding fuel to the fire, or acting as a wet blanket? (Readout: "Positive Gamma / Low Volatility expected" or "Negative Gamma / High Volatility expected").
+• Key Gamma Strikes (The "Walls"): * Top Call Wall (e.g., "$260")
+• Top Put Wall (e.g., "$240")
+• Dark Pool Prints: The largest off-exchange institutional trades from the last 24-48 hours (Price level and Volume).
+6. Relative Strength & Macro Linkage
+How does this stock fit into the global machine right now?
+• Beta to SPY/QQQ: How sensitive is it to the broader market today?
+• Relative Strength (RS) Score: Not RSI, but actual performance vs. the S&P 500 (e.g., "Outperforming SPY by 1.2% today").
+• Sector Correlation: (e.g., "85% correlated to XLK (Tech) movement today").
