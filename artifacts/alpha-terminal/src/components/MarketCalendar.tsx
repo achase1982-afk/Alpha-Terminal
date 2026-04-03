@@ -380,7 +380,7 @@ export function MarketCalendar({ onClose }: Props) {
   const [filterOpen, setFilterOpen] = useState(false);
 
   return (
-    <div className="flex flex-col h-full max-w-xl mx-auto">
+    <div className="flex flex-col h-full max-w-xl mx-auto" onClick={() => filterOpen && setFilterOpen(false)}>
       <div className="flex items-center justify-between mb-3">
         <div className="relative">
           <button
@@ -391,7 +391,7 @@ export function MarketCalendar({ onClose }: Props) {
             Filter{activeFilters.size > 0 ? ` (${activeFilters.size})` : ""}
           </button>
           {filterOpen && (
-            <div className="absolute top-full left-0 mt-1 bg-[#1a1a1c] border border-[#2a2a2c] rounded-lg py-1 z-50 min-w-[180px] shadow-xl">
+            <div className="absolute top-full left-0 mt-1 bg-[#1a1a1c] border border-[#2a2a2c] rounded-lg py-1 z-50 min-w-[180px] shadow-xl" onClick={(e) => e.stopPropagation()}>
               {Object.entries(TYPE_LABELS).map(([type, label]) => {
                 const isOn = activeFilters.has(type);
                 return (
