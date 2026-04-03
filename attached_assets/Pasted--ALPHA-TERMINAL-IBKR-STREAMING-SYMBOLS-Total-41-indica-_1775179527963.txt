@@ -1,0 +1,65 @@
+═══════════════════════════════════════════
+ALPHA TERMINAL — IBKR STREAMING SYMBOLS
+Total: 41 indicators across 7 clusters
+═══════════════════════════════════════════
+
+── RATES (7) ──────────────────────────────
+TNX      IND   CBOE       10Y Yield
+TYX      IND   CBOE       30Y Yield
+ZT       FUT   CBOT       2Y Treasury Futures
+ZF       FUT   CBOT       5Y Treasury Futures
+ZN       FUT   CBOT       10Y Treasury Futures
+ZB       FUT   CBOT       30Y Treasury Futures
+ZQ       FUT   CBOT       30-Day Fed Funds Futures
+
+── CREDIT (3) ─────────────────────────────
+HYG      STK   SMART      HY Corporate Bond ETF
+LQD      STK   SMART      IG Corporate Bond ETF
+IEF      STK   SMART      7-10Y Treasury ETF
+
+── VOLATILITY LEVEL (2) ───────────────────
+VIX      IND   CBOE       CBOE Volatility Index
+VVIX     IND   CBOE       VIX of VIX
+
+── VOLATILITY TERM STRUCTURE (4) ──────────
+VIX1D    IND   CBOE       1-Day VIX
+VIX9D    IND   CBOE       9-Day VIX
+VIX3M    IND   CBOE       3-Month VIX
+SKEW     IND   CBOE       CBOE Skew Index
+
+── NYSE BREADTH (7) ───────────────────────
+TICK-NYSE   IND   NYSE    NYSE Tick Index
+TRIN-NYSE   IND   NYSE    NYSE Arms Index
+ADD-NYSE    IND   NYSE    NYSE Advance-Decline
+ADVN-NYSE   IND   NYSE    NYSE Advancing Issues
+DECN-NYSE   IND   NYSE    NYSE Declining Issues
+UVOL-NYSE   IND   NYSE    NYSE Up Volume
+DVOL-NYSE   IND   NYSE    NYSE Down Volume
+
+── NASDAQ BREADTH (7) ─────────────────────
+TICK-NASD   IND   NASDAQ  Nasdaq Tick Index
+TRIN-NASD   IND   NASDAQ  Nasdaq Arms Index
+ADD-NASD    IND   NASDAQ  Nasdaq Advance-Decline
+ADVN-NASD   IND   NASDAQ  Nasdaq Advancing Issues
+DECN-NASD   IND   NASDAQ  Nasdaq Declining Issues
+UVOL-NASD   IND   NASDAQ  Nasdaq Up Volume
+DVOL-NASD   IND   NASDAQ  Nasdaq Down Volume
+
+── RISK APPETITE (4) ──────────────────────
+ES       FUT   CME        E-mini S&P 500
+NQ       FUT   CME        E-mini Nasdaq 100
+YM       FUT   CBOT       Mini Dow Jones
+RTY      FUT   CME        E-mini Russell 2000
+
+── MACRO (5) ──────────────────────────────
+GC       FUT   COMEX      Gold Futures
+CL       FUT   NYMEX      WTI Crude Oil
+BZ       FUT   NYMEX      Brent Crude Oil
+DX       FUT   NYBOT      US Dollar Index
+ZQ       FUT   CBOT       (shared with Rates)
+
+── SENTIMENT / OPTIONS LAYER (2) ──────────
+CPC      IND   CBOE       Total Put/Call Ratio
+CPCE     IND   CBOE       Equity Put/Call Ratio
+
+═══════════════════════════════════════════
