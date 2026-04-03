@@ -91,9 +91,17 @@ function getFrontMonth(symbol: string): string {
   const month = now.getMonth() + 1;
   const day = now.getDate();
 
-  if (symbol === "CL") {
+  if (symbol === "CL" || symbol === "BZ") {
     let m = month + 1;
     let y = year;
+    if (m > 12) { m = 1; y++; }
+    return y.toString() + String(m).padStart(2, "0");
+  }
+
+  if (symbol === "ZQ") {
+    let m = month;
+    let y = year;
+    if (day > 20) { m = month + 1; }
     if (m > 12) { m = 1; y++; }
     return y.toString() + String(m).padStart(2, "0");
   }
