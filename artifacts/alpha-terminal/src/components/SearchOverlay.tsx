@@ -1,6 +1,112 @@
-import { useState, useRef, useEffect } from "react";
-import { useTerminalStore } from "@/lib/store";
-import { Search, Plus } from "lucide-react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { useTerminalStore, useActiveWatchlist } from "@/lib/store";
+import { useQuote } from "@/hooks/useQuote";
+import { Search, Plus, Check } from "lucide-react";
+
+function fmtPrice(v: number | null): string {
+  if (v == null) return "—";
+  return v >= 1000 ? v.toFixed(0) : v.toFixed(2);
+}
+
+function fmtPct(v: number | null): string {
+  if (v == null) return "—";
+  const sign = v > 0 ? "+" : "";
+  return `${sign}${v.toFixed(2)}%`;
+}
+
+function changeColor(v: number | null): string {
+  if (v == null) return "#71717a";
+  if (v > 0) return "#26a69a";
+  if (v < 0) return "#f23645";
+  return "#71717a";
+}
+
+function RecentRow({
+  sym,
+  isActive,
+  onTap,
+}: {
+  sym: string;
+  isActive: boolean;
+  onTap: () => void;
+}) {
+  const quote = useQuote(sym);
+  const { addToWatchlist, removeFromWatchlist } = useTerminalStore();
+  const watchlistSymbols = useActiveWatchlist();
+  const isInWatchlist = watchlistSymbols.includes(sym.toUpperCase());
+  const [flash, setFlash] = useState(false);
+
+  const handleWatchlistToggle = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isInWatchlist) {
+      removeFromWatchlist(sym);
+    } else {
+      addToWatchlist(sym);
+    }
+    setFlash(true);
+    setTimeout(() => setFlash(false), 400);
+  }, [sym, isInWatchlist, addToWatchlist, removeFromWatchlist]);
+
+  const cColor = changeColor(quote.changePct);
+
+  return (
+    <div
+      onClick={onTap}
+      className="flex items-center px-4 py-2.5 gap-3 cursor-pointer active:bg-white/[0.04] transition-colors"
+      style={{ borderBottom: "1px solid #1a1a1c" }}
+    >
+      <div className="flex flex-col min-w-0 flex-1">
+        <div className="flex items-baseline gap-2">
+          <span
+            className="font-mono text-[16px] font-bold tracking-wide"
+            style={{ color: isActive ? "#FFB800" : "#ffffff" }}
+          >
+            {sym}
+          </span>
+          {quote.description && (
+            <span className="font-mono text-[11px] text-zinc-500 truncate">
+              {quote.description}
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3 shrink-0">
+        <div className="flex flex-col items-end">
+          <span
+            className="font-mono text-[14px] font-bold tabular-nums"
+            style={{ color: quote.last != null ? "#ffffff" : "#52525b" }}
+          >
+            {fmtPrice(quote.last)}
+          </span>
+          <span
+            className="font-mono text-[11px] tabular-nums"
+            style={{ color: cColor }}
+          >
+            {fmtPct(quote.changePct)}
+          </span>
+        </div>
+
+        <button
+          onClick={handleWatchlistToggle}
+          className={`flex items-center justify-center h-7 px-2 rounded-md transition-all duration-200 active:scale-95 shrink-0 ${
+            flash ? "scale-105" : ""
+          }`}
+          style={{
+            background: isInWatchlist ? "#FFB80015" : "#18181B",
+            border: `1px solid ${isInWatchlist ? "#FFB80040" : "#2a2a2c"}`,
+          }}
+        >
+          {isInWatchlist ? (
+            <Check className="w-3.5 h-3.5" style={{ color: "#FFB800" }} />
+          ) : (
+            <Plus className="w-3.5 h-3.5 text-zinc-400" />
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 interface SearchOverlayProps {
   isOpen: boolean;
@@ -9,7 +115,7 @@ interface SearchOverlayProps {
 }
 
 export function SearchOverlay({ isOpen, onClose, onSelectSymbol }: SearchOverlayProps) {
-  const { symbol, setSymbol, recentSymbols, addToWatchlist } = useTerminalStore();
+  const { symbol, setSymbol, recentSymbols } = useTerminalStore();
   const [inputVal, setInputVal] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -36,14 +142,6 @@ export function SearchOverlay({ isOpen, onClose, onSelectSymbol }: SearchOverlay
     inputRef.current?.blur();
     setSymbol(clean);
     onSelectSymbol(clean);
-  };
-
-  const handleAddToWatchlist = () => {
-    const trimmed = inputVal.trim().toUpperCase();
-    const target = trimmed || symbol;
-    if (target) {
-      addToWatchlist(target);
-    }
   };
 
   const cleanSymbol = (sym: string) => sym.replace(/^\$/, "");
@@ -107,39 +205,28 @@ export function SearchOverlay({ isOpen, onClose, onSelectSymbol }: SearchOverlay
             >
               GO
             </button>
-            <button
-              type="button"
-              onClick={handleAddToWatchlist}
-              className="h-10 w-10 rounded-lg bg-[#18181B] border border-[#2A2A2C] text-white flex items-center justify-center hover:bg-[#27272A] transition-colors shrink-0"
-              aria-label="Save to watchlist"
-              title="Save to watchlist"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
           </form>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-4 pb-8">
+        <div className="flex-1 overflow-y-auto pb-8">
           {recentSymbols.length > 0 && (
-            <div className="mb-4">
-              <span className="font-mono text-[10px] text-[#71717a] uppercase tracking-widest font-medium block mb-2">
-                RECENTLY VIEWED
-              </span>
-              <div className="flex flex-wrap gap-2">
-                {recentSymbols.map(sym => (
-                  <button
-                    key={sym}
-                    onClick={() => handleQuickSelect(sym)}
-                    className={`font-mono text-xs px-3 py-1.5 rounded-lg border transition-all duration-150
-                      ${symbol === cleanSymbol(sym)
-                        ? "text-[#FFB800] border-[#FFB800]/30"
-                        : "bg-[#18181B] text-zinc-400 border-[#2A2A2C] hover:border-[#404040] hover:text-foreground"
-                      }`}
-                  >
-                    {cleanSymbol(sym)}
-                  </button>
-                ))}
+            <div>
+              <div className="px-4 pb-2">
+                <span className="font-mono text-[10px] text-zinc-600 uppercase tracking-widest font-medium">
+                  RECENTLY VIEWED
+                </span>
               </div>
+              {recentSymbols.map(sym => {
+                const clean = cleanSymbol(sym);
+                return (
+                  <RecentRow
+                    key={clean}
+                    sym={clean}
+                    isActive={symbol === clean}
+                    onTap={() => handleQuickSelect(sym)}
+                  />
+                );
+              })}
             </div>
           )}
 
