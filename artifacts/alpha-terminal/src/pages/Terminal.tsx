@@ -96,12 +96,30 @@ export default function TerminalPage() {
   useViewportShell();
 
   const COLLAPSE_PX = 80;
+  const PAUSE_MS = 500;
+  const wasCollapsed = useRef(false);
+  const pauseTimer = useRef(0);
+  const [contentPaused, setContentPaused] = useState(false);
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
     const y = el.scrollTop;
-    setIsScrolled(y > COLLAPSE_PX);
+    const collapsed = y > COLLAPSE_PX;
+
+    if (collapsed && !wasCollapsed.current) {
+      wasCollapsed.current = true;
+      setIsScrolled(true);
+      setContentPaused(true);
+      clearTimeout(pauseTimer.current);
+      pauseTimer.current = window.setTimeout(() => {
+        setContentPaused(false);
+      }, PAUSE_MS);
+      return;
+    }
+
+    if (!collapsed) wasCollapsed.current = false;
+    setIsScrolled(collapsed);
   }, []);
 
   const prevStickyH = useRef(0);
@@ -235,7 +253,10 @@ export default function TerminalPage() {
                 <MarketDataTabs activeTab={contextTab} setActiveTab={setContextTab} />
               </div>
 
-              <div style={{ minHeight: "calc(100vh - 60px)" }}>
+              <div style={{
+                minHeight: "calc(100vh - 60px)",
+                ...(contentPaused ? { position: "sticky" as const, top: stickyH, zIndex: 30 } : {}),
+              }}>
                 {contextTab === "news" && <NewsTab />}
                 {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={stickyH} />}
                 {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles as any} stickyOffset={stickyH} />}
