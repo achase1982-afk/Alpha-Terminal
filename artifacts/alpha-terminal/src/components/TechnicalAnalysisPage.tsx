@@ -313,7 +313,7 @@ export function TechnicalAnalysisPage({ candles }: Props) {
       <div className="border-b border-[#2a2a2c] px-1" style={{ height: "30vh", minHeight: 180 }}>
         {chartCandles.length === 0 ? (
           <div className="flex items-center justify-center h-full text-zinc-600 font-mono text-xs">
-            Connect Schwab for chart data
+            Connect for chart data
           </div>
         ) : (
           <div className="flex h-full">
