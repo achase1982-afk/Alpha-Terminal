@@ -100,9 +100,12 @@ export default function TerminalPage() {
   const headerScrollAnchor = useRef(0);
   const contentWrapRef = useRef<HTMLDivElement>(null);
 
+  const touchStartY = useRef(0);
+
   const handleMainTouchStart = useCallback((e: React.TouchEvent) => {
     const touch = e.touches[0];
     if (!touch || !stickyWrapRef.current || !scrollRef.current) return;
+    touchStartY.current = touch.clientY;
     const headerRect = stickyWrapRef.current.getBoundingClientRect();
     const mainRect = scrollRef.current.getBoundingClientRect();
     const touchY = touch.clientY - mainRect.top;
@@ -113,6 +116,21 @@ export default function TerminalPage() {
     } else {
       headerTouch.current = false;
     }
+  }, []);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onTouchMove = (e: TouchEvent) => {
+      const touch = e.touches[0];
+      if (!touch) return;
+      const dy = touch.clientY - touchStartY.current;
+      if (el.scrollTop <= 0 && dy > 0) {
+        e.preventDefault();
+      }
+    };
+    el.addEventListener("touchmove", onTouchMove, { passive: false });
+    return () => el.removeEventListener("touchmove", onTouchMove);
   }, []);
 
   const handleMainTouchEnd = useCallback(() => {
@@ -261,7 +279,7 @@ export default function TerminalPage() {
           onNavigate={(dest) => { if (dest === "markets") setActiveBottom("markets"); else if (dest === "portfolio") setActiveBottom("portfolio"); }}
         />
 
-        <main ref={scrollRef} onScroll={handleScroll} onTouchStart={handleMainTouchStart} onTouchEnd={handleMainTouchEnd} onTouchCancel={handleMainTouchEnd} className={`flex-1 app-content pb-24 ${activeBottom === "ai" && aiSubTab === "pulse" && !pulseData && !pulseLoading && !pulseStreaming ? "overflow-hidden" : "overflow-y-auto"}`}>
+        <main ref={scrollRef} onScroll={handleScroll} onTouchStart={handleMainTouchStart} onTouchEnd={handleMainTouchEnd} onTouchCancel={handleMainTouchEnd} style={{ overscrollBehavior: "none" }} className={`flex-1 app-content pb-24 ${activeBottom === "ai" && aiSubTab === "pulse" && !pulseData && !pulseLoading && !pulseStreaming ? "overflow-hidden" : "overflow-y-auto"}`}>
 
           {activeBottom === "markets" && (
             <>
