@@ -13,11 +13,12 @@ interface Candle {
 
 interface Props {
   candles?: Candle[];
+  stickyOffset?: number;
 }
 
 const PAGE_LABELS = ["Research", "Institutional"];
 
-export function CompanySwipablePages({ candles }: Props) {
+export function CompanySwipablePages({ candles, stickyOffset = 0 }: Props) {
   const [page, setPage] = useState(0);
   const startX = useRef(0);
   const startY = useRef(0);
@@ -76,7 +77,10 @@ export function CompanySwipablePages({ candles }: Props) {
 
   return (
     <div className="flex flex-col">
-      <div className="flex items-center justify-center gap-3 py-2 border-b border-[#2a2a2c]">
+      <div
+        className="flex items-center justify-center gap-3 py-2 border-b border-[#2a2a2c] z-30 bg-background"
+        style={{ position: "sticky", top: stickyOffset }}
+      >
         {PAGE_LABELS.map((label, i) => (
           <button
             key={label}

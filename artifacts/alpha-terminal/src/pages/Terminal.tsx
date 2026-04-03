@@ -224,7 +224,7 @@ export default function TerminalPage() {
               <div style={{ minHeight: "calc(100vh - 60px)" }}>
                 {contextTab === "news" && <NewsTab />}
                 {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={stickyH} />}
-                {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles as any} />}
+                {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles as any} stickyOffset={stickyH} />}
                 {contextTab === "chart" && (
                   <>
                     <ChartControls />
