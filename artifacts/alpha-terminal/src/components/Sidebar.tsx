@@ -137,17 +137,19 @@ export function Sidebar({ isOpen, onClose, onOpenChat, onNavigate }: SidebarProp
           className="fixed left-0 right-0 bottom-0 z-[100] bg-background animate-in slide-in-from-bottom-8 duration-300 flex flex-col shadow-2xl border-t border-card-border"
           style={{ top: "120px" }}
         >
-          <div className="flex items-center justify-between p-3 border-b border-card-border bg-[#141414]">
-            <h2 className="font-bold text-sm tracking-widest text-white uppercase ml-2">{activePage}</h2>
-            <button
-              onClick={() => setActivePage(null)}
-              className="p-1.5 text-muted-foreground hover:text-white transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
+          {activePage !== "Calendar" && (
+            <div className="flex items-center justify-between p-3 border-b border-card-border bg-[#141414]">
+              <h2 className="font-bold text-sm tracking-widest text-white uppercase ml-2">{activePage}</h2>
+              <button
+                onClick={() => setActivePage(null)}
+                className="p-1.5 text-muted-foreground hover:text-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          )}
 
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6 pb-24">
+          <div className={`flex-1 overflow-y-auto pb-24 ${activePage === "Calendar" ? "p-3" : "p-4 sm:p-6"}`}>
             {activePage === "Watchlist" && <WatchlistPage onClose={handleClose} />}
             {activePage === "Calendar" && <MarketCalendar onClose={() => setActivePage(null)} />}
             {activePage === "Linked Brokerage" && <LinkedBrokeragePage />}

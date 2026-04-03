@@ -111,6 +111,7 @@ const MARKET_EVENTS: CalendarEvent[] = [
   { date: "2026-03-18", type: "fomc", title: "FOMC Decision", detail: "Rate decision + dot plot + projections.", time: "2:00 PM ET" },
   { date: "2026-03-20", type: "witching", title: "Quad Witching", detail: "Quarterly options/futures expiration." },
   { date: "2026-04-03", type: "holiday", title: "Good Friday", detail: "NYSE & NASDAQ closed." },
+  { date: "2026-04-03", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls — monthly employment data released by BLS. Measures total number of paid U.S. workers excluding farm, government, private household, and nonprofit employees. A key indicator of economic health.", time: "8:30 AM ET" },
   { date: "2026-04-10", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET" },
   { date: "2026-04-17", type: "opex", title: "Monthly OpEx", detail: "Monthly options expiration." },
   { date: "2026-04-23", type: "earnings", title: "TSLA Earnings", ticker: "TSLA", detail: "Tesla Q1 2026 earnings report.", time: "After Close" },
@@ -249,14 +250,17 @@ export function MarketCalendar({ onClose }: Props) {
         <button onClick={prevMonth} className="p-2 rounded-lg hover:bg-[#1a1a1c] transition-colors">
           <ChevronLeft className="w-5 h-5 text-zinc-400" />
         </button>
-        <div className="flex flex-col items-center">
-          <span className="font-mono font-bold text-sm text-white tracking-wider">
-            {MONTHS[month]} {year}
-          </span>
+        <span className="font-mono font-bold text-sm text-white tracking-wider">
+          {MONTHS[month]} {year}
+        </span>
+        <div className="flex items-center gap-1">
+          <button onClick={nextMonth} className="p-2 rounded-lg hover:bg-[#1a1a1c] transition-colors">
+            <ChevronRight className="w-5 h-5 text-zinc-400" />
+          </button>
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-[#1a1a1c] transition-colors">
+            <X className="w-5 h-5 text-zinc-400" />
+          </button>
         </div>
-        <button onClick={nextMonth} className="p-2 rounded-lg hover:bg-[#1a1a1c] transition-colors">
-          <ChevronRight className="w-5 h-5 text-zinc-400" />
-        </button>
       </div>
 
       <div className="flex gap-1.5 mb-3 overflow-x-auto pb-1">
@@ -264,8 +268,8 @@ export function MarketCalendar({ onClose }: Props) {
           onClick={() => setFilterType(null)}
           className="shrink-0 px-2.5 py-1 rounded-full font-mono text-[9px] tracking-wider transition-all"
           style={{
-            background: filterType === null ? "#FFB80020" : "transparent",
-            border: `1px solid ${filterType === null ? "#FFB80050" : "#2a2a2c"}`,
+            background: "transparent",
+            border: `1px solid ${filterType === null ? "#FFB800" : "#2a2a2c"}`,
             color: filterType === null ? "#FFB800" : "#71717a",
           }}
         >
@@ -277,8 +281,8 @@ export function MarketCalendar({ onClose }: Props) {
             onClick={() => setFilterType(filterType === type ? null : type)}
             className="shrink-0 px-2.5 py-1 rounded-full font-mono text-[9px] tracking-wider transition-all"
             style={{
-              background: filterType === type ? `${TYPE_COLORS[type]}20` : "transparent",
-              border: `1px solid ${filterType === type ? `${TYPE_COLORS[type]}50` : "#2a2a2c"}`,
+              background: "transparent",
+              border: `1px solid ${filterType === type ? TYPE_COLORS[type] : "#2a2a2c"}`,
               color: filterType === type ? TYPE_COLORS[type] : "#71717a",
             }}
           >
@@ -312,8 +316,8 @@ export function MarketCalendar({ onClose }: Props) {
               }}
               className="relative flex flex-col items-center py-1.5 min-h-[48px] rounded-md transition-all"
               style={{
-                background: isSelected ? "#FFB80015" : isToday ? "#ffffff08" : "transparent",
-                border: isSelected ? "1px solid #FFB80040" : isToday ? "1px solid #ffffff15" : "1px solid transparent",
+                background: "transparent",
+                border: isSelected ? "1px solid #FFB80060" : isToday ? "1px solid #ffffff20" : "1px solid transparent",
               }}
             >
               <span
@@ -377,8 +381,8 @@ export function MarketCalendar({ onClose }: Props) {
                   onClick={() => setSelectedEvent(selectedEvent === ev ? null : ev)}
                   className="w-full text-left rounded-lg p-3 transition-all"
                   style={{
-                    background: selectedEvent === ev ? `${TYPE_COLORS[ev.type]}10` : "#111113",
-                    border: `1px solid ${selectedEvent === ev ? `${TYPE_COLORS[ev.type]}30` : "#1a1a1c"}`,
+                    background: "#111113",
+                    border: `1px solid ${selectedEvent === ev ? TYPE_COLORS[ev.type] : "#1a1a1c"}`,
                   }}
                 >
                   <div className="flex items-center gap-2 mb-1">
@@ -397,8 +401,7 @@ export function MarketCalendar({ onClose }: Props) {
                         className="font-mono font-bold text-sm px-1.5 py-0.5 rounded cursor-pointer transition-colors"
                         style={{
                           color: "#FFB800",
-                          background: "#FFB80015",
-                          border: "1px solid #FFB80030",
+                          border: "1px solid #FFB80050",
                         }}
                       >
                         {ev.ticker}
@@ -439,7 +442,7 @@ export function MarketCalendar({ onClose }: Props) {
                     <span
                       onClick={(e) => { e.stopPropagation(); handleTickerClick(ev.ticker!); }}
                       className="font-mono font-bold text-[10px] px-1.5 py-0.5 rounded shrink-0"
-                      style={{ color: "#FFB800", background: "#FFB80015" }}
+                      style={{ color: "#FFB800", border: "1px solid #FFB80050" }}
                     >
                       {ev.ticker}
                     </span>
