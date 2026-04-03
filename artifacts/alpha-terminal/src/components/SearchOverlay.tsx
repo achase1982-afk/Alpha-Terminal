@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useTerminalStore, useActiveWatchlist } from "@/lib/store";
 import { useQuote } from "@/hooks/useQuote";
-import { Search, Plus, Check } from "lucide-react";
+import { Search } from "lucide-react";
 
 function fmtPrice(v: number | null): string {
   if (v == null) return "—";
@@ -51,27 +51,27 @@ function RecentRow({
 
   return (
     <div
-      onClick={onTap}
-      className="flex items-center px-4 py-2.5 gap-3 cursor-pointer active:bg-white/[0.04] transition-colors"
+      className="flex items-center px-4 py-3 gap-3"
       style={{ borderBottom: "1px solid #1a1a1c" }}
     >
-      <div className="flex flex-col min-w-0 flex-1">
-        <div className="flex items-baseline gap-2">
-          <span
-            className="font-mono text-[16px] font-bold tracking-wide"
-            style={{ color: isActive ? "#FFB800" : "#ffffff" }}
-          >
-            {sym}
+      <div
+        onClick={onTap}
+        className="flex flex-col min-w-0 flex-1 cursor-pointer active:opacity-70 transition-opacity"
+      >
+        <span
+          className="font-mono text-[16px] font-bold tracking-wide"
+          style={{ color: isActive ? "#FFB800" : "#ffffff" }}
+        >
+          {sym}
+        </span>
+        {quote.description && (
+          <span className="font-mono text-[11px] text-zinc-500 truncate mt-0.5">
+            {quote.description}
           </span>
-          {quote.description && (
-            <span className="font-mono text-[11px] text-zinc-500 truncate">
-              {quote.description}
-            </span>
-          )}
-        </div>
+        )}
       </div>
 
-      <div className="flex items-center gap-3 shrink-0">
+      <div className="flex items-center gap-4 shrink-0">
         <div className="flex flex-col items-end">
           <span
             className="font-mono text-[14px] font-bold tabular-nums"
@@ -87,22 +87,16 @@ function RecentRow({
           </span>
         </div>
 
-        <button
+        <span
           onClick={handleWatchlistToggle}
-          className={`flex items-center justify-center h-7 px-2 rounded-md transition-all duration-200 active:scale-95 shrink-0 ${
+          className={`font-mono text-[11px] font-semibold tracking-wide cursor-pointer transition-all duration-200 active:scale-95 ${
             flash ? "scale-105" : ""
           }`}
-          style={{
-            background: isInWatchlist ? "#FFB80015" : "#18181B",
-            border: `1px solid ${isInWatchlist ? "#FFB80040" : "#2a2a2c"}`,
-          }}
+          style={{ color: isInWatchlist ? "#26a69a" : "#5b9cf6" }}
+          role="button"
         >
-          {isInWatchlist ? (
-            <Check className="w-3.5 h-3.5" style={{ color: "#FFB800" }} />
-          ) : (
-            <Plus className="w-3.5 h-3.5 text-zinc-400" />
-          )}
-        </button>
+          {isInWatchlist ? "ADDED" : "ADD TO WATCHLIST"}
+        </span>
       </div>
     </div>
   );
