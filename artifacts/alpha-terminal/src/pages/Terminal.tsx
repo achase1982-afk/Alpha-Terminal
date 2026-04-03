@@ -221,25 +221,27 @@ export default function TerminalPage() {
                 <MarketDataTabs activeTab={contextTab} setActiveTab={setContextTab} />
               </div>
 
-              {contextTab === "news" && <NewsTab />}
-              {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={stickyH} />}
-              {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles as any} />}
-              {contextTab === "chart" && (
-                <>
-                  <ChartControls />
-                  <div className="h-[420px] sm:h-[500px] md:h-[580px]">
-                    <TradingChart
-                      symbol={symbol}
-                      data={historyData?.candles || []}
-                      isLoading={historyLoading}
-                      error={historyData?.error}
-                      timedOut={historyTimedOut}
-                      tokenExpired={historyData?.error === "unauthorized"}
-                      intraday={isIntradayInterval(chartInterval)}
-                    />
-                  </div>
-                </>
-              )}
+              <div style={{ minHeight: "calc(100vh - 60px)" }}>
+                {contextTab === "news" && <NewsTab />}
+                {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={stickyH} />}
+                {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles as any} />}
+                {contextTab === "chart" && (
+                  <>
+                    <ChartControls />
+                    <div className="h-[420px] sm:h-[500px] md:h-[580px]">
+                      <TradingChart
+                        symbol={symbol}
+                        data={historyData?.candles || []}
+                        isLoading={historyLoading}
+                        error={historyData?.error}
+                        timedOut={historyTimedOut}
+                        tokenExpired={historyData?.error === "unauthorized"}
+                        intraday={isIntradayInterval(chartInterval)}
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
             </>
           )}
 
