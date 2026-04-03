@@ -193,14 +193,14 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
     return (
       <div className="rounded-xl border border-[#2A2A2C] p-8 text-center" style={{ background: "#111113" }}>
         <Zap className="w-8 h-8 text-[#FFB800] mx-auto mb-3 opacity-40" />
-        <p className="font-mono text-sm text-[#71717a] mb-3">Connect brokerage for Market Pulse</p>
+        <p className="font-mono text-sm text-[#71717a] mb-3">Connect Brokerage For Market Pulse</p>
         <button
           onClick={handleConnectSchwab}
           disabled={isAuthNavigating}
           className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-mono text-xs font-bold tracking-wider text-[#0c0c0c] bg-[#FFB800] hover:bg-[#FFB800]/90 transition-colors disabled:opacity-60"
         >
           {isAuthNavigating ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-          Connect brokerage →
+          Connect Brokerage →
         </button>
       </div>
     );

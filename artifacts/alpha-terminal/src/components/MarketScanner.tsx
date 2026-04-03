@@ -513,7 +513,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol }: {
           </Button>
           {!accessToken && (
             <p className="text-[10px] text-destructive mt-2 text-center">
-              Connect brokerage for Market Scanner
+              Connect Brokerage For Market Scanner
             </p>
           )}
         </div>

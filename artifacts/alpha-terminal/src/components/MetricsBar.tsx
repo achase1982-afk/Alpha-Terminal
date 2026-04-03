@@ -273,7 +273,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
           className="text-muted-foreground animate-pulse text-center tracking-wider font-mono whitespace-nowrap"
           style={{ fontSize: compact ? 11 : 12, transition: "font-size 500ms ease" }}
         >
-          Connect brokerage for market data
+          Connect Brokerage For Market Data
         </p>
       </div>
     );

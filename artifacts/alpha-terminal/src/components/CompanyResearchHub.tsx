@@ -273,7 +273,7 @@ export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
     return (
       <div className="p-6 text-center">
         <p className="font-mono text-xs text-muted-foreground tracking-widest">
-          Connect brokerage for company data
+          Connect Brokerage For Company Data
         </p>
       </div>
     );
