@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useTerminalStore, useActiveWatchlist, type LiveQuote } from "@/lib/store";
+import { useQuote } from "@/hooks/useQuote";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import {
   Star,
@@ -93,9 +94,12 @@ function WatchlistRow({
   const volume = quote?.volume ?? null;
   const cColor = changeColor(change);
   const hasData = last != null;
+  const { data: restQuote } = useQuote(sym);
+  const description = restQuote?.description ?? null;
 
   const [offsetX, setOffsetX] = useState(0);
   const [swiping, setSwiping] = useState(false);
+  const [tapped, setTapped] = useState(false);
   const startXRef = useRef(0);
   const startYRef = useRef(0);
   const lockedRef = useRef<"h" | "v" | null>(null);
@@ -141,7 +145,11 @@ function WatchlistRow({
       setOffsetX(0);
       return;
     }
-    onTap();
+    setTapped(true);
+    setTimeout(() => {
+      onTap();
+      setTapped(false);
+    }, 150);
   }, [offsetX, onTap]);
 
   return (
@@ -161,50 +169,47 @@ function WatchlistRow({
         onTouchEnd={onTouchEnd}
         role="button"
         tabIndex={0}
-        className="relative cursor-pointer active:bg-white/[0.04]"
+        className="relative cursor-pointer"
         style={{
-          background: "#000000",
+          background: tapped ? "#1a1a1a" : "#000000",
           transform: `translateX(${offsetX}px)`,
-          transition: swiping ? "none" : "transform 0.25s ease-out",
+          transition: swiping ? "none" : "transform 0.25s ease-out, background 0.15s ease",
         }}
       >
         <div className="flex items-center px-4 py-3 gap-3">
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
+            <div className="flex items-center gap-2">
               {change != null && change > 0 && <TrendingUp className="w-4 h-4 shrink-0" style={{ color: "#22c55e" }} />}
               {change != null && change < 0 && <TrendingDown className="w-4 h-4 shrink-0" style={{ color: "#ef4444" }} />}
               {(change == null || change === 0) && <Minus className="w-4 h-4 shrink-0" style={{ color: "#71717a" }} />}
               <span className="font-mono text-[15px] font-bold text-white tracking-wider">{sym}</span>
             </div>
-
-            <div className="flex items-center gap-3 pl-6">
-              {spark && spark.closes.length > 1 && (
-                <MiniSparkline data={spark.closes} color={cColor} />
-              )}
-              <div className="flex items-center gap-2 font-mono text-[12px]">
-                <span style={{ color: cColor }}>{fmtChange(change)}</span>
-                <span className="px-1.5 py-0.5 rounded" style={{ color: cColor }}>
-                  {fmtPct(changePct)}
-                </span>
-              </div>
-              <span className="font-mono text-[11px] text-[#71717a]">
-                {fmtVol(volume)}
+            {description && (
+              <span className="block font-mono text-[10px] uppercase tracking-wide mt-0.5 pl-6 truncate" style={{ color: "#FFB800" }}>
+                {description}
               </span>
+            )}
+            <div className="flex items-center gap-2 font-mono text-[12px] mt-1 pl-6">
+              <span style={{ color: cColor }}>{fmtChange(change)}</span>
+              <span style={{ color: cColor }}>{fmtPct(changePct)}</span>
+              <span className="text-[11px] text-[#71717a]">{fmtVol(volume)}</span>
             </div>
           </div>
 
-          <div className="flex flex-col items-end gap-1 shrink-0">
-            <span
-              className="font-mono text-[16px] font-bold tabular-nums px-2.5 py-1 rounded-lg"
-              style={{
-                color: hasData ? "#fff" : "#52525b",
-              }}
-            >
-              {hasData ? `$${fmtPrice(last)}` : "—"}
-            </span>
+          <div className="flex items-center gap-3 shrink-0">
+            {spark && spark.closes.length > 1 && (
+              <MiniSparkline data={spark.closes} color={cColor} width={56} height={28} />
+            )}
+            <div className="flex flex-col items-end">
+              <span
+                className="font-mono text-[16px] font-bold tabular-nums"
+                style={{ color: hasData ? "#fff" : "#52525b" }}
+              >
+                {hasData ? `$${fmtPrice(last)}` : "—"}
+              </span>
+            </div>
+            <ChevronRight className="w-4 h-4 text-[#3a3a3c] shrink-0" />
           </div>
-
-          <ChevronRight className="w-4 h-4 text-[#3a3a3c] shrink-0" />
         </div>
       </div>
     </div>
@@ -411,7 +416,7 @@ function SortButton({
   );
 }
 
-export function WatchlistView() {
+export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sym: string) => void }) {
   const { removeFromWatchlist, setSymbol, streamPrices, accessToken } = useTerminalStore();
   const watchlist = useActiveWatchlist();
   const [sortKey, setSortKey] = useState<SortKey>("symbol");
@@ -554,7 +559,7 @@ export function WatchlistView() {
               sym={sym}
               quote={streamPrices[sym]}
               spark={sparkData[sym]}
-              onTap={() => setSymbol(sym)}
+              onTap={() => { setSymbol(sym); onNavigateToSymbol?.(sym); }}
               onRemove={() => removeFromWatchlist(sym)}
             />
           ))
