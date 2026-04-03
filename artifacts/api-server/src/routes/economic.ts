@@ -232,53 +232,49 @@ interface NfpSeriesResult {
 const nfpCache: { data: any | null; ts: number } = { data: null, ts: 0 };
 const NFP_CACHE_TTL = 5 * 60 * 1000;
 
-const finnhubCache: { expected: string | null; ts: number } = { expected: null, ts: 0 };
-const FINNHUB_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+const nfpExpectedCache: { expected: string | null; ts: number } = { expected: null, ts: 0 };
+const NFP_EXPECTED_CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
 
-async function fetchPolygonNfpExpected(): Promise<string | null> {
+const TE_INDICATOR_URLS: Record<string, string> = {
+  nfp: "https://tradingeconomics.com/united-states/non-farm-payrolls",
+  unemployment: "https://tradingeconomics.com/united-states/unemployment-rate",
+  cpi: "https://tradingeconomics.com/united-states/consumer-price-index-cpi",
+};
+
+async function fetchTradingEconomicsForecast(indicator: string = "nfp"): Promise<string | null> {
   try {
-    const apiKey = process.env.POLYGON_API_KEY;
-    if (!apiKey) {
-      logger.warn("POLYGON_API_KEY not set, skipping expected NFP forecast");
-      return null;
-    }
-    
-    const res = await fetch(
-      `https://api.polygon.io/v2/reference/economic/calendar?apikey=${apiKey}`,
-      { headers: { "Accept": "application/json" } }
-    );
-    
-    if (!res.ok) {
-      logger.warn({ status: res.status }, "Polygon API error, skipping expected NFP");
-      return null;
-    }
-    
-    const data = await res.json();
-    const events = data.results || [];
-    logger.info({ eventCount: events.length }, "Polygon economic calendar response");
-    
-    // Find the most recent NFP event
-    const nfpEvent = events.find((e: any) => {
-      const name = (e.event || "").toLowerCase();
-      return name.includes("nonfarm payroll") || name.includes("nonfarm employment");
+    const url = TE_INDICATOR_URLS[indicator] || TE_INDICATOR_URLS.nfp;
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
     });
     
-    if (nfpEvent) {
-      logger.info({ event: nfpEvent.event, forecast: nfpEvent.forecast }, "Found NFP event");
-      if (nfpEvent.forecast) {
-        const forecast = parseFloat(nfpEvent.forecast);
-        if (Number.isFinite(forecast)) {
-          const nfpChangeExpected = Math.round(forecast);
-          return `${nfpChangeExpected >= 0 ? "+" : ""}${(nfpChangeExpected * 1000).toLocaleString()}`;
-        }
-      }
-    } else {
-      logger.warn({ eventCount: events.length }, "NFP event not found in Polygon calendar");
+    if (!res.ok) {
+      logger.warn({ status: res.status }, "Trading Economics page fetch failed");
+      return null;
     }
     
+    const html = await res.text();
+    
+    const forecastMatch = html.match(/Forecast[^<]*?(-?\d+[\d,.]*)\s*K/i);
+    if (forecastMatch) {
+      const forecastStr = forecastMatch[1].replace(/,/g, "");
+      const forecastNum = parseFloat(forecastStr);
+      if (Number.isFinite(forecastNum)) {
+        const forecastJobs = Math.round(forecastNum * 1000);
+        const formatted = `${forecastJobs >= 0 ? "+" : ""}${forecastJobs.toLocaleString()}`;
+        logger.info({ forecast: formatted, raw: forecastNum }, "Trading Economics NFP forecast extracted");
+        return formatted;
+      }
+    }
+    
+    logger.warn("Could not extract forecast from Trading Economics HTML");
     return null;
   } catch (err: any) {
-    logger.warn({ err }, "Failed to fetch Polygon expected NFP");
+    logger.warn({ err }, "Failed to fetch Trading Economics forecast");
     return null;
   }
 }
@@ -457,16 +453,16 @@ router.get("/nfp-full", async (req, res) => {
       }
     }
 
-    // Fetch Polygon expected value (cached for 24 hours)
+    // Fetch Trading Economics expected value (cached for 6 hours)
     let expected: string | null = null;
-    if (!finnhubCache.expected || Date.now() - finnhubCache.ts > FINNHUB_CACHE_TTL) {
-      expected = await fetchPolygonNfpExpected();
+    if (!nfpExpectedCache.expected || Date.now() - nfpExpectedCache.ts > NFP_EXPECTED_CACHE_TTL) {
+      expected = await fetchTradingEconomicsForecast("nfp");
       if (expected) {
-        finnhubCache.expected = expected;
-        finnhubCache.ts = Date.now();
+        nfpExpectedCache.expected = expected;
+        nfpExpectedCache.ts = Date.now();
       }
     } else {
-      expected = finnhubCache.expected;
+      expected = nfpExpectedCache.expected;
     }
 
     // Add expected to nfp result
@@ -492,48 +488,6 @@ router.get("/nfp-full", async (req, res) => {
   } catch (err: any) {
     logger.error({ err }, "NFP full report fetch failed");
     return res.status(500).json({ error: err.message });
-  }
-});
-
-router.get("/polygon-debug", async (req, res) => {
-  try {
-    const apiKey = process.env.POLYGON_API_KEY;
-    if (!apiKey) {
-      return res.json({ error: "POLYGON_API_KEY not set" });
-    }
-    
-    const polygonRes = await fetch(
-      `https://api.polygon.io/v2/reference/economic/calendar?apikey=${apiKey}`,
-      { headers: { "Accept": "application/json" } }
-    );
-    
-    const rawText = await polygonRes.text();
-    let data: any = {};
-    try {
-      data = JSON.parse(rawText);
-    } catch (e: any) {
-      return res.json({ 
-        status: polygonRes.status,
-        error: `Failed to parse JSON: ${e.message}`,
-        rawLength: rawText.length,
-        rawPreview: rawText.substring(0, 500),
-      });
-    }
-    
-    const events = data.results || [];
-    const nfpEvents = events.filter((e: any) => {
-      const name = (e.event || "").toLowerCase();
-      return name.includes("nonfarm") || name.includes("employment") || name.includes("payroll");
-    });
-    
-    return res.json({
-      status: polygonRes.status,
-      totalEvents: events.length,
-      nfpEventsFound: nfpEvents.length,
-      nfpEvents: nfpEvents.slice(0, 3),
-    });
-  } catch (err: any) {
-    return res.json({ error: err.message });
   }
 });
 

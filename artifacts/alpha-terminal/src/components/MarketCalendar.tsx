@@ -559,8 +559,7 @@ export function MarketCalendar({ onClose }: Props) {
                   color: !cell.inMonth ? "#2a2a2c"
                     : hasHoliday ? "#f23645"
                     : isToday ? "#FFB800"
-                    : isWeekend ? "#a1a1aa"
-                    : "#e4e4e7",
+                    : "#ffffff",
                 }}
               >
                 {cell.day}
@@ -808,7 +807,7 @@ export function MarketCalendar({ onClose }: Props) {
                   <span className="font-mono text-[33px] font-extrabold tabular-nums leading-tight" style={{ color: mc(nfp.changeRaw) }}>{nfp.change}</span>
                   <span className="text-[21px]" style={{ color: mc(nfp.changeRaw) }}>{nfp.changeRaw >= 0 ? "↑" : "↓"}</span>
                   {nfp.expected && (
-                    <span className="font-mono text-[14px] text-zinc-500 ml-1">vs {nfp.expected}</span>
+                    <span className="font-mono text-[14px] text-zinc-500 ml-1">vs {nfp.expected} exp</span>
                   )}
                 </div>
 
