@@ -807,8 +807,8 @@ export function MarketCalendar({ onClose }: Props) {
                 <div className="flex items-baseline gap-2">
                   <span className="font-mono text-[33px] font-extrabold tabular-nums leading-tight" style={{ color: mc(nfp.changeRaw) }}>{nfp.change}</span>
                   <span className="text-[21px]" style={{ color: mc(nfp.changeRaw) }}>{nfp.changeRaw >= 0 ? "↑" : "↓"}</span>
-                  {meta?.prevMonths?.[0] && (
-                    <span className="font-mono text-[14px] text-zinc-500 ml-1">vs {meta.prevMonths[0].change} prior</span>
+                  {nfp.expected && (
+                    <span className="font-mono text-[14px] text-zinc-500 ml-1">vs {nfp.expected}</span>
                   )}
                 </div>
 

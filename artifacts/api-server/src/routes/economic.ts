@@ -232,6 +232,52 @@ interface NfpSeriesResult {
 const nfpCache: { data: any | null; ts: number } = { data: null, ts: 0 };
 const NFP_CACHE_TTL = 5 * 60 * 1000;
 
+const finnhubCache: { expected: string | null; ts: number } = { expected: null, ts: 0 };
+const FINNHUB_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+
+async function fetchFinnhubNfpExpected(): Promise<string | null> {
+  try {
+    const apiKey = process.env.FINNHUB_API_KEY;
+    if (!apiKey) {
+      logger.warn("FINNHUB_API_KEY not set, skipping expected NFP forecast");
+      return null;
+    }
+    
+    const res = await fetch(
+      `https://finnhub.io/api/v1/calendar/economic?token=${apiKey}`,
+      { headers: { "Accept": "application/json" } }
+    );
+    
+    if (!res.ok) {
+      logger.warn({ status: res.status }, "Finnhub API error, skipping expected NFP");
+      return null;
+    }
+    
+    const data = await res.json();
+    const events = data.economicCalendar || [];
+    
+    // Find the next upcoming NFP event or the most recent one
+    const nfpEvent = events.find((e: any) => {
+      const name = (e.event || "").toLowerCase();
+      return name.includes("nonfarm payroll") || name.includes("nonfarm employment");
+    });
+    
+    if (nfpEvent && nfpEvent.forecast) {
+      // Finnhub returns the forecast in thousands, format it
+      const forecast = parseFloat(nfpEvent.forecast);
+      if (Number.isFinite(forecast)) {
+        const nfpChangeExpected = Math.round(forecast);
+        return `${nfpChangeExpected >= 0 ? "+" : ""}${(nfpChangeExpected * 1000).toLocaleString()}`;
+      }
+    }
+    
+    return null;
+  } catch (err: any) {
+    logger.warn({ err }, "Failed to fetch Finnhub expected NFP");
+    return null;
+  }
+}
+
 async function fetchBlsSeriesBatch(seriesIds: string[]): Promise<Record<string, BlsDataPoint[]>> {
   const res = await fetch("https://api.bls.gov/publicAPI/v1/timeseries/data/", {
     method: "POST",
@@ -406,6 +452,23 @@ router.get("/nfp-full", async (req, res) => {
       }
     }
 
+    // Fetch Finnhub expected value (cached for 24 hours)
+    let expected: string | null = null;
+    if (!finnhubCache.expected || Date.now() - finnhubCache.ts > FINNHUB_CACHE_TTL) {
+      expected = await fetchFinnhubNfpExpected();
+      if (expected) {
+        finnhubCache.expected = expected;
+        finnhubCache.ts = Date.now();
+      }
+    } else {
+      expected = finnhubCache.expected;
+    }
+
+    // Add expected to nfp result
+    if (expected && results.nfp && !results.nfp.error) {
+      results.nfp.expected = expected;
+    }
+
     results._meta = {
       month: results.nfp?.month || "",
       year: results.nfp?.year || "",
@@ -414,6 +477,7 @@ router.get("/nfp-full", async (req, res) => {
       sixMonthNfpAvg: computeNMonthAvg(nfpMonthly, 6, "thousands"),
       prevMonths,
       narrative: generateNfpNarrative(results),
+      expectedNfp: expected,
     };
 
     nfpCache.data = results;
