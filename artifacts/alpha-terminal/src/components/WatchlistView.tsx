@@ -184,10 +184,10 @@ function WatchlistRow({
                 {description}
               </span>
             )}
-            <div className="flex items-center gap-2 font-mono text-[12px] mt-0.5">
+            <div className="flex items-center gap-2 font-mono text-[11px] mt-0.5">
               <span style={{ color: cColor }}>{fmtChange(change)}</span>
               <span style={{ color: cColor }}>{fmtPct(changePct)}</span>
-              <span className="text-[11px] text-[#71717a]">{fmtVol(volume)}</span>
+              <span className="text-[#71717a]">{fmtVol(volume)}</span>
             </div>
           </div>
 
