@@ -803,15 +803,15 @@ export function MarketCalendar({ onClose }: Props) {
 
             {nfp && !showFullBreakdown && (
               <div className="flex-1 overflow-y-auto px-2 py-1 space-y-1">
-                <div className="flex items-end justify-center gap-6 pb-3">
+                <div className="flex items-end justify-center gap-6 pb-5">
                   <div className="flex flex-col items-center">
-                    <span className="font-mono text-[10px] text-zinc-500 tracking-wider">ACTUAL</span>
+                    <span className="font-mono text-[12px] text-zinc-500 tracking-wider">ACTUAL</span>
                     <span className="font-mono text-[30px] font-extrabold tabular-nums leading-none" style={{ color: mc(nfp.changeRaw) }}>{nfp.change}</span>
                   </div>
                   <span className="text-[18px] mb-0.5" style={{ color: mc(nfp.changeRaw) }}>{nfp.changeRaw >= 0 ? "↑" : "↓"}</span>
                   {nfp.expected && (
                     <div className="flex flex-col items-center">
-                      <span className="font-mono text-[10px] text-zinc-500 tracking-wider">CONSENSUS</span>
+                      <span className="font-mono text-[12px] text-zinc-500 tracking-wider">CONSENSUS</span>
                       <span className="font-mono text-[30px] font-extrabold tabular-nums leading-none text-zinc-200">{nfp.expected}</span>
                     </div>
                   )}
