@@ -959,10 +959,10 @@ export function MarketCalendar({ onClose }: Props) {
                   )}
                 </div>
 
-                <div className="flex items-center justify-end pb-4">
+                <div className="flex items-center justify-end pb-4 -mt-2">
                   <button
                     onClick={() => setReportIframeUrl(reportUrl)}
-                    className="flex items-center gap-1.5 font-mono text-[14px] font-bold tracking-wider transition-opacity hover:opacity-70 pr-4 pl-2"
+                    className="flex items-center gap-1.5 font-mono text-[14px] font-bold tracking-wider transition-opacity hover:opacity-70 pr-6 pl-2"
                     style={{ color: "#FFB800" }}
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
