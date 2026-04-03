@@ -71,61 +71,13 @@ export function Sidebar({ isOpen, onClose, onOpenChat, onNavigate }: SidebarProp
   const { signOut } = useClerkSafe();
   const [activePage, setActivePage] = useState<SidebarPage>(null);
 
-  const handleClose = () => {
+  const handleCloseAll = () => {
     setActivePage(null);
     onClose();
   };
 
   return (
     <>
-      <div
-        className={`fixed inset-0 bg-black/60 z-[110] transition-opacity duration-300 ${isOpen ? "opacity-100" : "opacity-0 pointer-events-none"}`}
-        onClick={handleClose}
-      />
-
-      <div className={`fixed top-0 left-0 h-full w-[280px] sm:w-[320px] bg-[#0c0c0c] border-r border-card-border z-[120] transform transition-transform duration-300 flex flex-col ${isOpen ? "translate-x-0" : "-translate-x-full"}`}>
-
-        <div className="h-12 bg-card shrink-0 border-b border-card-border flex items-center px-4">
-          <button
-            onClick={handleClose}
-            className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-card-border transition-colors"
-            aria-label="Close menu"
-          >
-            <Menu className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto py-2">
-          <div className="flex flex-col pb-2">
-            <MenuRow icon={<CalendarDays />} label="Calendar" onClick={() => { setActivePage("Calendar"); onClose(); }} />
-            <MenuRow icon={<Briefcase />} label="Portfolio" onClick={() => { onNavigate?.("portfolio"); handleClose(); }} />
-            <MenuRow icon={<MessageCircle />} label="AI Search" onClick={() => { handleClose(); onOpenChat?.(); }} />
-          </div>
-
-          <div className="mx-5 border-b border-card-border/50" />
-
-          <div className="flex flex-col pt-2 pb-2">
-            <MenuRow icon={<Link />} label="Linked Brokerage" onClick={() => { setActivePage("Linked Brokerage"); onClose(); }} />
-            <MenuRow icon={<Zap />} label="Market Pulse" onClick={() => { setActivePage("Market Pulse"); onClose(); }} />
-            <MenuRow icon={<SlidersHorizontal />} label="Options Strategist" onClick={() => { setActivePage("Strategist Settings"); onClose(); }} />
-            <MenuRow icon={<LineChart />} label="Chart & Options" onClick={() => { setActivePage("Chart & Options"); onClose(); }} />
-            <MenuRow icon={<LayoutDashboard />} label="Display & Marquee" onClick={() => { setActivePage("Display & Marquee"); onClose(); }} />
-            <MenuRow icon={<BrainCircuit />} label="AI Parameters" onClick={() => { setActivePage("AI Parameters"); onClose(); }} />
-            <MenuRow icon={<Shield />} label="Security & Privacy" onClick={() => { setActivePage("Security & Privacy"); onClose(); }} />
-          </div>
-
-          <div className="pt-8 pb-10 pl-5">
-            <button
-              onClick={() => { queryClient.clear(); void signOut(); }}
-              className="flex items-center gap-3 transition-opacity hover:opacity-70 active:opacity-50"
-            >
-              <Power className="w-[22px] h-[22px] text-white/80" strokeWidth={2.5} />
-              <span className="font-extrabold text-[17px] tracking-[0.15em] uppercase text-white/90">Logout</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
       {activePage && createPortal(
         <div
           className="fixed left-0 right-0 z-[100] bg-background animate-in slide-in-from-bottom-8 duration-300 flex flex-col shadow-2xl border-t border-card-border"
@@ -144,7 +96,7 @@ export function Sidebar({ isOpen, onClose, onOpenChat, onNavigate }: SidebarProp
           )}
 
           <div className={`flex-1 overflow-y-auto pb-4 ${activePage === "Calendar" ? "p-3" : "p-4 sm:p-6"}`}>
-            {activePage === "Watchlist" && <WatchlistPage onClose={handleClose} />}
+            {activePage === "Watchlist" && <WatchlistPage onClose={handleCloseAll} />}
             {activePage === "Calendar" && <MarketCalendar onClose={() => setActivePage(null)} />}
             {activePage === "Linked Brokerage" && <LinkedBrokeragePage />}
             {activePage === "Market Pulse" && <MarketPulsePage />}
@@ -155,6 +107,59 @@ export function Sidebar({ isOpen, onClose, onOpenChat, onNavigate }: SidebarProp
             {activePage === "Security & Privacy" && <SecurityPrivacyPage />}
           </div>
         </div>,
+        document.body
+      )}
+
+      {createPortal(
+        <>
+          <div
+            className={`fixed inset-0 bg-black/60 z-[110] transition-opacity duration-300 ${isOpen ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+            onClick={activePage ? onClose : handleCloseAll}
+          />
+
+          <div className={`fixed top-0 left-0 h-full w-[280px] sm:w-[320px] bg-[#0c0c0c] border-r border-card-border z-[120] transform transition-transform duration-300 flex flex-col ${isOpen ? "translate-x-0" : "-translate-x-full"}`}>
+
+            <div className="h-12 bg-card shrink-0 border-b border-card-border flex items-center px-4">
+              <button
+                onClick={onClose}
+                className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-card-border transition-colors"
+                aria-label="Close menu"
+              >
+                <Menu className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto py-2">
+              <div className="flex flex-col pb-2">
+                <MenuRow icon={<CalendarDays />} label="Calendar" onClick={() => { setActivePage("Calendar"); onClose(); }} />
+                <MenuRow icon={<Briefcase />} label="Portfolio" onClick={() => { onNavigate?.("portfolio"); handleCloseAll(); }} />
+                <MenuRow icon={<MessageCircle />} label="AI Search" onClick={() => { handleCloseAll(); onOpenChat?.(); }} />
+              </div>
+
+              <div className="mx-5 border-b border-card-border/50" />
+
+              <div className="flex flex-col pt-2 pb-2">
+                <MenuRow icon={<Link />} label="Linked Brokerage" onClick={() => { setActivePage("Linked Brokerage"); onClose(); }} />
+                <MenuRow icon={<Zap />} label="Market Pulse" onClick={() => { setActivePage("Market Pulse"); onClose(); }} />
+                <MenuRow icon={<SlidersHorizontal />} label="Options Strategist" onClick={() => { setActivePage("Strategist Settings"); onClose(); }} />
+                <MenuRow icon={<LineChart />} label="Chart & Options" onClick={() => { setActivePage("Chart & Options"); onClose(); }} />
+                <MenuRow icon={<LayoutDashboard />} label="Display & Marquee" onClick={() => { setActivePage("Display & Marquee"); onClose(); }} />
+                <MenuRow icon={<BrainCircuit />} label="AI Parameters" onClick={() => { setActivePage("AI Parameters"); onClose(); }} />
+                <MenuRow icon={<Shield />} label="Security & Privacy" onClick={() => { setActivePage("Security & Privacy"); onClose(); }} />
+              </div>
+
+              <div className="pt-8 pb-10 pl-5">
+                <button
+                  onClick={() => { queryClient.clear(); void signOut(); }}
+                  className="flex items-center gap-3 transition-opacity hover:opacity-70 active:opacity-50"
+                >
+                  <Power className="w-[22px] h-[22px] text-white/80" strokeWidth={2.5} />
+                  <span className="font-extrabold text-[17px] tracking-[0.15em] uppercase text-white/90">Logout</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </>,
         document.body
       )}
     </>

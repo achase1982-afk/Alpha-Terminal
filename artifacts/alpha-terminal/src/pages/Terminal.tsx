@@ -168,7 +168,7 @@ export default function TerminalPage() {
   return (
     <div className="app-shell bg-background h-[100dvh] flex flex-col overflow-hidden selection:bg-primary/30 selection:text-white">
 
-      <header id="terminal-header" className="shrink-0 bg-background z-50 border-b border-card-border">
+      <header id="terminal-header" className="shrink-0 bg-background z-[105] border-b border-card-border">
         <div className="flex items-center h-12 px-4 bg-card">
           <button
             onClick={() => setSidebarOpen(true)}
