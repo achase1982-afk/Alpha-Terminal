@@ -151,7 +151,7 @@ function WatchlistRow({
         style={{ width: DELETE_W, background: "#ef4444" }}
         onClick={handleDelete}
       >
-        <span className="font-mono text-[12px] font-bold text-white tracking-wider">DELETE</span>
+        <span className="font-mono text-[12px] font-bold text-white tracking-wider">REMOVE</span>
       </div>
 
       <div
