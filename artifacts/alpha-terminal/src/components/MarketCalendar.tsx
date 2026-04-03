@@ -302,6 +302,7 @@ export function MarketCalendar({ onClose }: Props) {
   const [blsData, setBlsData] = useState<Record<string, BlsReportData>>({});
   const [blsLoading, setBlsLoading] = useState<string | null>(null);
   const [reportIframeUrl, setReportIframeUrl] = useState<string | null>(null);
+  const [showFullBreakdown, setShowFullBreakdown] = useState(false);
 
   const eventMap = useMemo(() => {
     const map: Record<string, CalendarEvent[]> = {};
@@ -436,6 +437,7 @@ export function MarketCalendar({ onClose }: Props) {
               onClick={() => {
                 setSelectedDate(cell.key === selectedDate ? null : cell.key);
                 setSelectedEvent(null);
+                setShowFullBreakdown(false);
               }}
               className="relative flex flex-col items-center py-1.5 min-h-[56px] rounded-md transition-all justify-center"
               style={{
@@ -489,7 +491,7 @@ export function MarketCalendar({ onClose }: Props) {
             <span className="font-mono text-[10px] text-zinc-500 tracking-wider">
               {new Date(selectedDate + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
             </span>
-            <button onClick={() => { setSelectedDate(null); setSelectedEvent(null); }} className="p-1">
+            <button onClick={() => { setSelectedDate(null); setSelectedEvent(null); setShowFullBreakdown(false); }} className="p-1">
               <X className="w-3.5 h-3.5 text-zinc-600" />
             </button>
           </div>
@@ -529,9 +531,9 @@ export function MarketCalendar({ onClose }: Props) {
         </div>
       )}
 
-      {selectedEvent && (
+      {selectedEvent && !showFullBreakdown && (
         <div className="mt-2 flex-1 flex flex-col relative" style={{ borderTop: `1px solid ${TYPE_COLORS[selectedEvent.type]}30` }}>
-          <button onClick={() => setSelectedEvent(null)} className="absolute top-2 right-1 p-1 z-10">
+          <button onClick={() => { setSelectedEvent(null); setShowFullBreakdown(false); }} className="absolute top-2 right-1 p-1 z-10">
             <X className="w-4 h-4 text-zinc-500" />
           </button>
 
@@ -554,14 +556,20 @@ export function MarketCalendar({ onClose }: Props) {
                   const d = blsData[selectedEvent.blsType]!;
                   const c = d.change!;
                   const raw = c.actualRaw;
+                  const isPositive = raw >= 0;
+                  const color = isPositive ? "#26a69a" : "#f23645";
+                  const arrow = isPositive ? "▲" : "▼";
                   const fullNum = d.unit === "thousands"
                     ? Math.abs(raw).toLocaleString()
                     : c.actual;
-                  const sign = d.unit === "thousands" && raw >= 0 ? "+" : "";
+                  const sign = d.unit === "thousands" && isPositive ? "+" : d.unit === "thousands" ? "-" : "";
                   return (
                     <div className="flex flex-col gap-2">
                       <span className="font-mono text-[13px] font-bold text-white">{selectedEvent.title}</span>
-                      <span className="font-mono text-2xl font-extrabold text-white">{sign}{fullNum}</span>
+                      <div className="flex items-baseline gap-2">
+                        <span className="font-mono text-2xl font-extrabold" style={{ color }}>{sign}{fullNum}</span>
+                        <span className="text-sm" style={{ color }}>{arrow}</span>
+                      </div>
                       {d.summary && (
                         <p className="font-mono text-[11px] text-zinc-400 leading-relaxed">{d.summary}</p>
                       )}
@@ -576,16 +584,110 @@ export function MarketCalendar({ onClose }: Props) {
             )}
           </div>
 
-          {(selectedEvent.reportUrl || (selectedEvent.blsType && blsData[selectedEvent.blsType]?.reportUrl)) && (
+          {selectedEvent.blsType && blsData[selectedEvent.blsType]?.change && (
             <button
-              onClick={() => setReportIframeUrl(selectedEvent.reportUrl || blsData[selectedEvent.blsType!]!.reportUrl)}
+              onClick={() => setShowFullBreakdown(true)}
               className="absolute bottom-2 right-3 font-mono text-[10px] text-white tracking-wider transition-opacity hover:opacity-70"
             >
-              Read Report
+              Read More
             </button>
           )}
         </div>
       )}
+
+      {showFullBreakdown && selectedEvent?.blsType && blsData[selectedEvent.blsType]?.change && (() => {
+        const d = blsData[selectedEvent.blsType]!;
+        const c = d.change!;
+        const raw = c.actualRaw;
+        const isPositive = raw >= 0;
+        const upColor = "#26a69a";
+        const downColor = "#f23645";
+        const mainColor = isPositive ? upColor : downColor;
+        const arrow = isPositive ? "▲" : "▼";
+        const fullNum = d.unit === "thousands" ? Math.abs(raw).toLocaleString() : c.actual;
+        const sign = d.unit === "thousands" && isPositive ? "+" : d.unit === "thousands" ? "-" : "";
+        const reportUrl = selectedEvent.reportUrl || d.reportUrl;
+
+        return (
+          <div
+            className="fixed left-0 right-0 bottom-0 z-[150] flex flex-col bg-[#0c0c0c] border-t animate-in slide-in-from-bottom duration-300"
+            style={{ top: "48px", borderColor: `${mainColor}40` }}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[#1a1a1c]">
+              <span className="font-mono text-[13px] font-bold text-white">{selectedEvent.title}</span>
+              <button onClick={() => setShowFullBreakdown(false)} className="p-1">
+                <X className="w-4 h-4 text-zinc-500" />
+              </button>
+            </div>
+
+            <div className="flex-1 flex flex-col justify-center px-5 py-4 gap-5 relative">
+              <div className="flex items-baseline gap-3">
+                <span className="font-mono text-3xl font-extrabold" style={{ color: mainColor }}>{sign}{fullNum}</span>
+                <span className="text-lg" style={{ color: mainColor }}>{arrow}</span>
+                <span className="font-mono text-[10px] text-zinc-600 ml-1">{c.currentMonth} {c.currentYear}</span>
+              </div>
+
+              <div className="flex gap-6">
+                <div>
+                  <span className="font-mono text-[9px] text-zinc-600 block tracking-wider mb-1">CURRENT</span>
+                  <span className="font-mono text-base font-bold text-white">{c.currentLevel || d.latest.value}</span>
+                </div>
+                <div>
+                  <span className="font-mono text-[9px] text-zinc-600 block tracking-wider mb-1">PREVIOUS</span>
+                  <span className="font-mono text-base font-semibold text-zinc-400">{c.previousLevel}</span>
+                </div>
+                <div>
+                  <span className="font-mono text-[9px] text-zinc-600 block tracking-wider mb-1">CHANGE</span>
+                  <span className="font-mono text-base font-bold" style={{ color: mainColor }}>{c.actual}</span>
+                </div>
+              </div>
+
+              {d.recentHistory.length > 0 && (
+                <div>
+                  <span className="font-mono text-[9px] text-zinc-600 tracking-wider block mb-2">RECENT MONTHS</span>
+                  <div className="flex gap-3">
+                    {d.recentHistory.slice(0, 6).map((h, hi) => {
+                      const val = parseFloat(h.value);
+                      const prevVal = d.recentHistory[hi + 1] ? parseFloat(d.recentHistory[hi + 1].value) : val;
+                      let barColor = "#3a3a3c";
+                      if (d.unit === "thousands") {
+                        barColor = val > prevVal ? upColor : val < prevVal ? downColor : "#3a3a3c";
+                      } else if (d.unit === "percent") {
+                        barColor = val < prevVal ? upColor : val > prevVal ? downColor : "#3a3a3c";
+                      } else {
+                        const pct = ((val - prevVal) / prevVal) * 100;
+                        barColor = pct >= 0 ? upColor : downColor;
+                      }
+                      return (
+                        <div key={hi} className="flex flex-col items-center gap-1 flex-1">
+                          <span className="font-mono text-[10px] font-bold tabular-nums" style={{ color: barColor }}>
+                            {d.unit === "thousands" ? `${((val - prevVal) * 1000) >= 0 ? "+" : ""}${Math.round((val - prevVal) * 1000).toLocaleString()}` : h.value}
+                          </span>
+                          <div className="w-full h-1 rounded-full" style={{ background: barColor }} />
+                          <span className="font-mono text-[8px] text-zinc-600">{h.month.slice(0, 3)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {d.summary && (
+                <p className="font-mono text-[11px] text-zinc-500 leading-relaxed">{d.summary}</p>
+              )}
+
+              {reportUrl && (
+                <button
+                  onClick={() => setReportIframeUrl(reportUrl)}
+                  className="absolute bottom-4 right-5 font-mono text-[10px] text-white tracking-wider transition-opacity hover:opacity-70"
+                >
+                  Read Full Report
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {!selectedDate && (
         <div className="mt-3 border-t border-[#2a2a2c] pt-3 flex-1 overflow-y-auto">
