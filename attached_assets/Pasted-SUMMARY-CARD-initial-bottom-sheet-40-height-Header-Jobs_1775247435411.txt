@@ -1,0 +1,76 @@
+SUMMARY CARD (initial bottom sheet ~40% height)
+
+Header:
+Jobs Report (NFP) – March 2026
+Released: April 3, 2026 • 8:30 AM ET (BLS)
+
+Headline:
+Nonfarm Payrolls
++178,000   ← (huge green text with ↑ arrow)
++118k beat vs consensus   ← (smaller green text)
+
+Key Metrics Grid:
+Metric                        | Actual          | Consensus / Prior          | Beat/Miss
+------------------------------|-----------------|----------------------------|--------------------
+Unemployment Rate             | 4.3%            | 4.4% / 4.4%                | -0.1 pts (green)
+Avg. Hourly Earnings MoM      | +0.2%           | +0.3%                      | -0.1 pts (red)
+Avg. Hourly Earnings YoY      | +3.5%           | +3.7%                      | -0.2 pts (red)
+Private Payrolls              | +186k           | +100k                      | +86k (green)
+Labor Force Participation     | 61.9%           | 62.0% / 62.0%              | -0.1 pts (neutral)
+
+One-line narrative:
+Stronger-than-expected rebound (+118k beat) with cooler wage growth and a drop in labor-force participation; prior two months revised down a net -7k.
+
+Bottom bar:
+[Read More] button (accent color) + tiny top-right link: Read Full Report
+
+────────────────────────────────────
+
+FULL BREAKDOWN PAGE (expanded ~85% height, fixed single screen)
+
+Header (same as summary card):
+Jobs Report (NFP) – March 2026
+Released: April 3, 2026 • 8:30 AM ET (BLS)
+
+Expanded Key Metrics Table:
+Metric                        | Actual     | Consensus   | Previous (Rev.)   | 3-Mo Trend     | Beat/Miss
+------------------------------|------------|-------------|-------------------|----------------|----------------
+Nonfarm Payrolls              | +178k      | +60k        | -133k             | +68k avg       | +118k (green)
+Unemployment Rate             | 4.3%       | 4.4%        | 4.4%              | 4.4% avg       | -0.1 pts (green)
+Avg. Hourly Earnings MoM      | +0.2%      | +0.3%       | +0.2%             | +0.3% avg      | -0.1 pts (red)
+Avg. Hourly Earnings YoY      | +3.5%      | +3.7%       | +3.8%             | +3.7% avg      | -0.2 pts (red)
+Private Payrolls              | +186k      | +100k       | -150k             | +45k avg       | +86k (green)
+Labor Force Participation     | 61.9%      | 62.0%       | 62.0%             | 62.0% avg      | -0.1 pts (neutral)
+
+Revisions Block:
+Prior two months net revision: -7k
+January revised to +160k (+34k)
+February revised to -133k (-41k)
+Three-month avg NFP: +68k | Six-month avg: +12k
+
+Sector Job Gains/Losses:
+Sector                        | Change
+------------------------------|-----------
+Health Care                   | +76k (green)
+Leisure & Hospitality         | +44k (green)
+Construction                  | +26k (green)
+Transportation & Warehousing  | +21k
+Federal Government            | -18k (red)
+Financial Activities          | -15k (red)
+
+Household Survey Snapshot:
+Employed: -64k
+Unemployed: -332k
+Labor Force: -396k
+Employment-Population Ratio: 59.2% (neutral)
+U-6 Underemployment Rate: 8.0%
+
+Other Key Details:
+Average Workweek: 34.2 hours (-0.1)
+Private vs. Government split: Private +186k | Government -8k
+
+One-line narrative (same as summary):
+Stronger-than-expected rebound (+118k beat) with cooler wage growth and a drop in labor-force participation; prior two months revised down a net -7k. Job gains led by health care and leisure & hospitality after strike resolution.
+
+Pinned bottom-right button:
+Read Full Report   ← (big accent color button, opens BLS PDF/site in-app)

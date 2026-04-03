@@ -195,15 +195,25 @@ router.get("/multi", async (req, res) => {
 });
 
 const NFP_SERIES: Record<string, { id: string; label: string; unit: string }> = {
-  nfp:           { id: "CES0000000001", label: "Headline NFP",            unit: "thousands" },
-  unemployment:  { id: "LNS14000000",   label: "Unemployment Rate (U-3)", unit: "percent" },
-  earningsMom:   { id: "CES0500000003", label: "Avg Hourly Earnings",     unit: "dollars" },
-  lfpr:          { id: "LNS11300000",   label: "Labor Force Participation Rate", unit: "percent" },
-  weeklyHours:   { id: "CES0500000002", label: "Avg Weekly Hours",        unit: "hours" },
-  privatePayroll:{ id: "CES0500000001", label: "Total Private Payrolls",  unit: "thousands" },
-  manufacturing: { id: "CES3000000001", label: "Manufacturing Payrolls",  unit: "thousands" },
-  leisureHosp:   { id: "CES7000000001", label: "Leisure & Hospitality",   unit: "thousands" },
-  govPayroll:    { id: "CES9000000001", label: "Government Payrolls",     unit: "thousands" },
+  nfp:              { id: "CES0000000001", label: "Headline NFP",                  unit: "thousands" },
+  unemployment:     { id: "LNS14000000",   label: "Unemployment Rate (U-3)",       unit: "percent" },
+  earningsMom:      { id: "CES0500000003", label: "Avg Hourly Earnings",           unit: "dollars" },
+  lfpr:             { id: "LNS11300000",   label: "Labor Force Part. Rate",        unit: "percent" },
+  weeklyHours:      { id: "CES0500000002", label: "Avg Weekly Hours",              unit: "hours" },
+  privatePayroll:   { id: "CES0500000001", label: "Private Payrolls",              unit: "thousands" },
+  govPayroll:       { id: "CES9000000001", label: "Government",                    unit: "thousands" },
+  manufacturing:    { id: "CES3000000001", label: "Manufacturing",                 unit: "thousands" },
+  leisureHosp:      { id: "CES7000000001", label: "Leisure & Hospitality",         unit: "thousands" },
+  healthCare:       { id: "CES6562000001", label: "Health Care",                   unit: "thousands" },
+  construction:     { id: "CES2000000001", label: "Construction",                  unit: "thousands" },
+  transportWare:    { id: "CES4300000001", label: "Transportation & Warehousing",  unit: "thousands" },
+  financialAct:     { id: "CES5500000001", label: "Financial Activities",          unit: "thousands" },
+  fedGov:           { id: "CES9091000001", label: "Federal Government",            unit: "thousands" },
+  employed:         { id: "LNS12000000",   label: "Employed",                      unit: "thousands" },
+  unemployed:       { id: "LNS13000000",   label: "Unemployed",                    unit: "thousands" },
+  laborForce:       { id: "LNS11000000",   label: "Labor Force",                  unit: "thousands" },
+  empPopRatio:      { id: "LNS12300000",   label: "Emp-Pop Ratio",                unit: "percent" },
+  u6:               { id: "LNS13327709",   label: "U-6 Underemployment",          unit: "percent" },
 };
 
 interface NfpSeriesResult {
@@ -215,18 +225,33 @@ interface NfpSeriesResult {
   changeRaw: number;
   month: string;
   year: string;
+  threeMonthAvg?: string;
   error?: string;
 }
 
-const nfpCache: { data: Record<string, NfpSeriesResult> | null; ts: number } = { data: null, ts: 0 };
+const nfpCache: { data: any | null; ts: number } = { data: null, ts: 0 };
 const NFP_CACHE_TTL = 5 * 60 * 1000;
 
-function formatNfpValue(val: number, unit: string, includeSign = false): string {
-  if (unit === "thousands") {
-    const rounded = Math.round(val);
-    const prefix = includeSign && rounded > 0 ? "+" : includeSign && rounded < 0 ? "" : "";
-    return `${prefix}${rounded.toLocaleString()}K`;
+async function fetchBlsSeriesBatch(seriesIds: string[]): Promise<Record<string, BlsDataPoint[]>> {
+  const res = await fetch("https://api.bls.gov/publicAPI/v1/timeseries/data/", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ seriesid: seriesIds }),
+  });
+  if (!res.ok) throw new Error(`BLS batch API error: ${res.status}`);
+  const json = await res.json();
+  if (json.status !== "REQUEST_SUCCEEDED") {
+    throw new Error(`BLS API status: ${json.status} — ${JSON.stringify(json.message)}`);
   }
+  const result: Record<string, BlsDataPoint[]> = {};
+  for (const s of json.Results?.series ?? []) {
+    result[s.seriesID] = s.data ?? [];
+  }
+  return result;
+}
+
+function formatNfpValue(val: number, unit: string): string {
+  if (unit === "thousands") return `${Math.round(val).toLocaleString()}K`;
   if (unit === "percent") return `${val.toFixed(1)}%`;
   if (unit === "dollars") return `$${val.toFixed(2)}`;
   if (unit === "hours") return val.toFixed(1);
@@ -240,7 +265,7 @@ function computeNfpChange(val: number, prev: number, unit: string): { change: st
   }
   if (unit === "percent") {
     const diff = val - prev;
-    return { change: `${diff >= 0 ? "+" : ""}${diff.toFixed(1)}pp`, changeRaw: diff };
+    return { change: `${diff >= 0 ? "+" : ""}${diff.toFixed(1)} pts`, changeRaw: diff };
   }
   if (unit === "dollars") {
     const diff = val - prev;
@@ -250,27 +275,78 @@ function computeNfpChange(val: number, prev: number, unit: string): { change: st
   return { change: `${diff >= 0 ? "+" : ""}${diff.toFixed(1)}`, changeRaw: diff };
 }
 
+function computeNMonthAvg(monthly: BlsDataPoint[], n: number, unit: string): string | undefined {
+  if (monthly.length < n + 1) return undefined;
+  const changes: number[] = [];
+  for (let i = 0; i < n && i + 1 < monthly.length; i++) {
+    changes.push(parseFloat(monthly[i].value) - parseFloat(monthly[i + 1].value));
+  }
+  const avg = changes.reduce((a, b) => a + b, 0) / changes.length;
+  if (unit === "thousands") return `${avg >= 0 ? "+" : ""}${Math.round(avg * 1000).toLocaleString()}`;
+  if (unit === "percent") return `${avg.toFixed(1)}%`;
+  return `${avg.toFixed(1)}`;
+}
+
+function generateNfpNarrative(data: Record<string, any>): string {
+  const nfp = data.nfp;
+  if (!nfp || nfp.error) return "";
+  const change = nfp.changeRaw as number;
+  const absChange = Math.abs(change).toLocaleString();
+  const direction = change >= 0 ? "added" : "shed";
+  const parts: string[] = [];
+  parts.push(`Economy ${direction} ${absChange} jobs in ${nfp.month}`);
+  if (data.unemployment && !data.unemployment.error) {
+    const uRate = data.unemployment.actual;
+    const uChange = data.unemployment.changeRaw;
+    if (uChange < 0) parts.push(`unemployment fell to ${uRate}`);
+    else if (uChange > 0) parts.push(`unemployment rose to ${uRate}`);
+    else parts.push(`unemployment held at ${uRate}`);
+  }
+  if (data.earningsMom && !data.earningsMom.error) {
+    const wc = data.earningsMom.changeRaw;
+    parts.push(`wages ${wc > 0 ? "up" : wc < 0 ? "down" : "flat"} ${data.earningsMom.change} MoM`);
+  }
+  if (data.lfpr && !data.lfpr.error && data.lfpr.changeRaw !== 0) {
+    parts.push(`participation ${data.lfpr.changeRaw > 0 ? "rose" : "fell"} to ${data.lfpr.actual}`);
+  }
+  const sectorKeys = ["healthCare", "leisureHosp", "construction", "transportWare", "manufacturing", "financialAct", "fedGov"];
+  const sectors = sectorKeys
+    .filter(k => data[k] && !data[k].error && data[k].changeRaw !== 0)
+    .sort((a, b) => Math.abs(data[b].changeRaw) - Math.abs(data[a].changeRaw));
+  if (sectors.length > 0) {
+    const top = data[sectors[0]];
+    parts.push(`led by ${(top.label as string).toLowerCase()} (${top.change})`);
+  }
+  return parts.join("; ") + ".";
+}
+
 router.get("/nfp-full", async (req, res) => {
   try {
     if (nfpCache.data && Date.now() - nfpCache.ts < NFP_CACHE_TTL) {
       return res.json(nfpCache.data);
     }
 
-    const results: Record<string, NfpSeriesResult> = {};
+    const allSeriesIds = Object.values(NFP_SERIES).map(s => s.id);
+    const allData = await fetchBlsSeriesBatch(allSeriesIds);
 
-    const fetches = Object.entries(NFP_SERIES).map(async ([key, series]) => {
+    const results: Record<string, any> = {};
+
+    for (const [key, series] of Object.entries(NFP_SERIES)) {
       try {
-        const data = await fetchBlsSeries(series.id);
+        const data = allData[series.id] ?? [];
         const monthly = data.filter((d) => d.period.startsWith("M"));
         if (monthly.length < 2) {
-          results[key] = { label: series.label, unit: series.unit, actual: "N/A", previous: "N/A", change: "N/A", changeRaw: 0, month: "", year: "" };
-          return;
+          results[key] = { label: series.label, unit: series.unit, actual: "N/A", previous: "N/A", change: "N/A", changeRaw: 0, month: "", year: "", error: "insufficient data" };
+          continue;
         }
         const cur = parseFloat(monthly[0].value);
         const prev = parseFloat(monthly[1].value);
+        if (!Number.isFinite(cur) || !Number.isFinite(prev)) {
+          results[key] = { label: series.label, unit: series.unit, actual: "N/A", previous: "N/A", change: "N/A", changeRaw: 0, month: monthly[0].periodName, year: monthly[0].year, error: "invalid data" };
+          continue;
+        }
         const { change, changeRaw } = computeNfpChange(cur, prev, series.unit);
-
-        const r: NfpSeriesResult = {
+        results[key] = {
           label: series.label,
           unit: series.unit,
           actual: formatNfpValue(cur, series.unit),
@@ -279,15 +355,67 @@ router.get("/nfp-full", async (req, res) => {
           changeRaw,
           month: monthly[0].periodName,
           year: monthly[0].year,
+          threeMonthAvg: computeNMonthAvg(monthly, 3, series.unit),
         };
-
-        results[key] = r;
       } catch (err: any) {
         results[key] = { label: series.label, unit: series.unit, actual: "N/A", previous: "N/A", change: "N/A", changeRaw: 0, month: "", year: "", error: err.message };
       }
-    });
+    }
 
-    await Promise.all(fetches);
+    const earningsData = allData[NFP_SERIES.earningsMom.id] ?? [];
+    const earningsMonthly = earningsData.filter(d => d.period.startsWith("M"));
+    if (earningsMonthly.length >= 13) {
+      const cur = parseFloat(earningsMonthly[0].value);
+      const yearAgo = parseFloat(earningsMonthly[12].value);
+      const prevCur = earningsMonthly.length >= 14 ? parseFloat(earningsMonthly[1].value) : NaN;
+      const prevYearAgo = earningsMonthly.length >= 14 ? parseFloat(earningsMonthly[13].value) : NaN;
+      if (Number.isFinite(cur) && Number.isFinite(yearAgo) && yearAgo > 0) {
+        const yoyPct = ((cur - yearAgo) / yearAgo) * 100;
+        let prevYoyStr = "N/A";
+        if (Number.isFinite(prevCur) && Number.isFinite(prevYearAgo) && prevYearAgo > 0) {
+          prevYoyStr = `${(((prevCur - prevYearAgo) / prevYearAgo) * 100).toFixed(1)}%`;
+        }
+        results.earningsYoy = {
+          label: "Avg Hourly Earnings YoY",
+          unit: "percent",
+          actual: `${yoyPct.toFixed(1)}%`,
+          previous: prevYoyStr,
+          change: `${yoyPct >= 0 ? "+" : ""}${yoyPct.toFixed(1)}%`,
+          changeRaw: yoyPct,
+          month: earningsMonthly[0].periodName,
+          year: earningsMonthly[0].year,
+        };
+      }
+    }
+
+    const nfpRawData = allData[NFP_SERIES.nfp.id] ?? [];
+    const nfpMonthly = nfpRawData.filter(d => d.period.startsWith("M"));
+
+    const prevMonths: Array<{ month: string; change: string; changeRaw: number }> = [];
+    for (let i = 1; i < Math.min(3, nfpMonthly.length); i++) {
+      if (i + 1 < nfpMonthly.length) {
+        const v = parseFloat(nfpMonthly[i].value);
+        const pv = parseFloat(nfpMonthly[i + 1].value);
+        if (!Number.isFinite(v) || !Number.isFinite(pv)) continue;
+        const diff = Math.round(v - pv);
+        prevMonths.push({
+          month: nfpMonthly[i].periodName,
+          change: `${diff >= 0 ? "+" : ""}${(diff * 1000).toLocaleString()}`,
+          changeRaw: diff * 1000,
+        });
+      }
+    }
+
+    results._meta = {
+      month: results.nfp?.month || "",
+      year: results.nfp?.year || "",
+      earningsYoy: results.earningsYoy || null,
+      threeMonthNfpAvg: computeNMonthAvg(nfpMonthly, 3, "thousands"),
+      sixMonthNfpAvg: computeNMonthAvg(nfpMonthly, 6, "thousands"),
+      prevMonths,
+      narrative: generateNfpNarrative(results),
+    };
+
     nfpCache.data = results;
     nfpCache.ts = Date.now();
 
