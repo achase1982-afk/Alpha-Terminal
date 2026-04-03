@@ -697,55 +697,58 @@ export function MarketCalendar({ onClose }: Props) {
         );
       })()}
 
-      {!selectedDate && (
-        <div className="mt-1 border-t border-[#2a2a2c] pt-1 flex-1 overflow-y-auto">
-          <span className="font-mono text-[9px] text-zinc-600 tracking-widest block mb-2">UPCOMING</span>
-          <div className="space-y-1">
-            {MARKET_EVENTS
-              .filter((ev) => {
-                if (activeFilters.size > 0 && !activeFilters.has(ev.type)) return false;
-                if (ev.date > todayKey) return true;
-                if (ev.date < todayKey) return false;
-                if (!ev.time) return false;
-                const match = ev.time.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)\s*ET$/i);
-                if (!match) return false;
-                let h = parseInt(match[1]);
-                const m = parseInt(match[2]);
-                const ampm = match[3].toUpperCase();
-                if (ampm === "PM" && h !== 12) h += 12;
-                if (ampm === "AM" && h === 12) h = 0;
-                const etNow = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" }));
-                const eventMinutes = h * 60 + m;
-                const nowMinutes = etNow.getHours() * 60 + etNow.getMinutes();
-                return eventMinutes > nowMinutes;
-              })
-              .slice(0, 12)
-              .map((ev, i) => (
-                <button
-                  key={i}
-                  onClick={() => { setSelectedDate(ev.date); setSelectedEvent(ev); }}
-                  className="w-full text-left flex items-center gap-2 px-2 py-2 rounded-lg transition-colors"
-                >
-                  <div className="w-2 h-2 rounded-full shrink-0" style={{ background: TYPE_COLORS[ev.type] }} />
-                  <span className="font-mono text-[10px] text-zinc-500 w-[70px] shrink-0">
-                    {new Date(ev.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                  </span>
-                  {ev.ticker && (
-                    <span
-                      onClick={(e) => { e.stopPropagation(); handleTickerClick(ev.ticker!); }}
-                      className="font-mono font-bold text-[10px] px-1.5 py-0.5 rounded shrink-0"
-                      style={{ color: "#FFB800", border: "1px solid #FFB80050" }}
-                    >
-                      {ev.ticker}
-                    </span>
-                  )}
-                  <span className="font-mono text-[11px] text-zinc-300 truncate">{ev.title}</span>
-                  {ev.time && <span className="font-mono text-[8px] text-zinc-600 ml-auto shrink-0">{ev.time}</span>}
-                </button>
-              ))}
+      {!selectedDate && (() => {
+        const filterFn = (ev: CalendarEvent) => activeFilters.size === 0 || activeFilters.has(ev.type);
+        const todayEvents = MARKET_EVENTS.filter((ev) => ev.date === todayKey && filterFn(ev));
+        const upcomingEvents = MARKET_EVENTS.filter((ev) => ev.date > todayKey && filterFn(ev)).slice(0, 10);
+
+        const renderRow = (ev: CalendarEvent, i: number, showDate: boolean) => (
+          <button
+            key={i}
+            onClick={() => { setSelectedDate(ev.date); setSelectedEvent(ev); }}
+            className="w-full text-left flex items-center gap-2 px-2 py-2 rounded-lg transition-colors hover:bg-[#1a1a1c]"
+          >
+            <div className="w-2 h-2 rounded-full shrink-0" style={{ background: TYPE_COLORS[ev.type] }} />
+            {showDate && (
+              <span className="font-mono text-[10px] text-zinc-500 w-[70px] shrink-0">
+                {new Date(ev.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+              </span>
+            )}
+            {ev.ticker && (
+              <span
+                onClick={(e) => { e.stopPropagation(); handleTickerClick(ev.ticker!); }}
+                className="font-mono font-bold text-[10px] px-1.5 py-0.5 rounded shrink-0"
+                style={{ color: "#FFB800", border: "1px solid #FFB80050" }}
+              >
+                {ev.ticker}
+              </span>
+            )}
+            <span className="font-mono text-[11px] text-zinc-300 truncate">{ev.title}</span>
+            {ev.time && <span className="font-mono text-[8px] text-zinc-600 ml-auto shrink-0">{ev.time}</span>}
+          </button>
+        );
+
+        return (
+          <div className="mt-1 border-t border-[#2a2a2c] pt-1 flex-1 overflow-y-auto">
+            {todayEvents.length > 0 && (
+              <>
+                <span className="font-mono text-[9px] text-zinc-600 tracking-widest block mb-1 mt-1">TODAY</span>
+                <div className="space-y-0.5">
+                  {todayEvents.map((ev, i) => renderRow(ev, i, false))}
+                </div>
+              </>
+            )}
+            {upcomingEvents.length > 0 && (
+              <>
+                <span className={`font-mono text-[9px] text-zinc-600 tracking-widest block mb-1 ${todayEvents.length > 0 ? "mt-3 pt-2 border-t border-[#2a2a2c]" : "mt-1"}`}>UPCOMING</span>
+                <div className="space-y-0.5">
+                  {upcomingEvents.map((ev, i) => renderRow(ev, i, true))}
+                </div>
+              </>
+            )}
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {reportIframeUrl && (
         <ReportViewer url={reportIframeUrl} onClose={() => setReportIframeUrl(null)} />
