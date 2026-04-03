@@ -436,20 +436,20 @@ export function MarketCalendar({ onClose }: Props) {
                 setSelectedDate(cell.key === selectedDate ? null : cell.key);
                 setSelectedEvent(null);
               }}
-              className="relative flex flex-col items-center py-1 min-h-[52px] rounded-md transition-all justify-center"
+              className="relative flex flex-col items-center py-1.5 min-h-[56px] rounded-md transition-all justify-center"
               style={{
                 background: "transparent",
                 border: isSelected ? "1px solid #FFB80060" : isToday ? "1px solid #ffffff20" : "1px solid transparent",
               }}
             >
               <span
-                className="font-mono text-[15px] font-bold"
+                className={`font-mono ${cell.inMonth ? "text-[22px] font-extrabold" : "text-[12px] font-normal"}`}
                 style={{
                   color: !cell.inMonth ? "#2a2a2c"
                     : hasHoliday ? "#f23645"
                     : isToday ? "#FFB800"
-                    : isWeekend ? "#3a3a3c"
-                    : "#a1a1aa",
+                    : isWeekend ? "#52525b"
+                    : "#e4e4e7",
                 }}
               >
                 {cell.day}
