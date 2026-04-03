@@ -719,11 +719,11 @@ export function MarketCalendar({ onClose }: Props) {
           if (!data || data.error) return null;
           const c = mc(data.changeRaw, invertColor);
           return (
-            <div className="flex items-center py-1.5 border-b border-[#1a1a1c]">
-              <span className="font-mono text-[15px] text-zinc-400 flex-1 min-w-0 truncate">{label}</span>
-              <span className="font-mono text-[16px] font-bold tabular-nums w-[64px] text-right" style={{ color: c }}>{data.unit === "thousands" ? data.change : data.actual}</span>
-              <span className="font-mono text-[15px] text-zinc-500 tabular-nums w-[64px] text-right">{data.previous}</span>
-              <span className="font-mono text-[15px] font-bold tabular-nums w-[60px] text-right" style={{ color: c }}>{data.change}</span>
+            <div className="flex items-center py-1.5 border-b border-[#1a1a1c] gap-2">
+              <span className="font-mono text-[13px] text-zinc-400 flex-1 min-w-0 truncate">{label}</span>
+              <span className="font-mono text-[13px] font-bold tabular-nums w-[72px] text-right shrink-0" style={{ color: c }}>{data.unit === "thousands" ? data.change : data.actual}</span>
+              <span className="font-mono text-[13px] text-zinc-500 tabular-nums w-[72px] text-right shrink-0">{data.previous}</span>
+              <span className="font-mono text-[13px] font-bold tabular-nums w-[68px] text-right shrink-0" style={{ color: c }}>{data.change}</span>
             </div>
           );
         };
@@ -732,12 +732,12 @@ export function MarketCalendar({ onClose }: Props) {
           if (!data || data.error) return null;
           const c = mc(data.changeRaw, invertColor);
           return (
-            <div className="flex items-center py-1 border-b border-[#1a1a1c]">
-              <span className="font-mono text-[15px] text-zinc-400 flex-1 min-w-0 truncate">{label}</span>
-              <span className="font-mono text-[15px] font-bold tabular-nums w-[56px] text-right" style={{ color: c }}>{data.unit === "thousands" ? data.change : data.actual}</span>
-              <span className="font-mono text-[15px] text-zinc-500 tabular-nums w-[56px] text-right">{data.previous}</span>
-              <span className="font-mono text-[14px] text-zinc-600 tabular-nums w-[52px] text-right">{data.threeMonthAvg || "—"}</span>
-              <span className="font-mono text-[15px] font-bold tabular-nums w-[56px] text-right" style={{ color: c }}>{data.change}</span>
+            <div className="flex items-center py-1 border-b border-[#1a1a1c] gap-1">
+              <span className="font-mono text-[12px] text-zinc-400 flex-1 min-w-0 truncate">{label}</span>
+              <span className="font-mono text-[12px] font-bold tabular-nums w-[68px] text-right shrink-0" style={{ color: c }}>{data.unit === "thousands" ? data.change : data.actual}</span>
+              <span className="font-mono text-[12px] text-zinc-500 tabular-nums w-[60px] text-right shrink-0">{data.previous}</span>
+              <span className="font-mono text-[11px] text-zinc-600 tabular-nums w-[56px] text-right shrink-0">{data.threeMonthAvg || "—"}</span>
+              <span className="font-mono text-[12px] font-bold tabular-nums w-[68px] text-right shrink-0" style={{ color: c }}>{data.change}</span>
             </div>
           );
         };
@@ -765,7 +765,7 @@ export function MarketCalendar({ onClose }: Props) {
         return (
           <div
             className="fixed left-0 right-0 bottom-0 z-[150] flex flex-col bg-[#0c0c0c] border-t border-[#2a2a2c] animate-in slide-in-from-bottom duration-300"
-            style={{ top: showFullBreakdown ? "80px" : "auto", maxHeight: showFullBreakdown ? undefined : "48%" }}
+            style={{ top: showFullBreakdown ? "80px" : "auto", maxHeight: showFullBreakdown ? undefined : "45%" }}
           >
             <div className="flex items-center px-2 py-1 shrink-0">
               <button onClick={() => { if (showFullBreakdown) setShowFullBreakdown(false); else setSelectedEvent(null); }} className="p-1 shrink-0">
@@ -807,11 +807,11 @@ export function MarketCalendar({ onClose }: Props) {
                 </div>
 
                 <div>
-                  <div className="flex items-center pb-1 border-b border-[#2a2a2c]">
-                    <span className="font-mono text-[13px] text-zinc-600 flex-1">METRIC</span>
-                    <span className="font-mono text-[13px] text-zinc-600 w-[64px] text-right">ACTUAL</span>
-                    <span className="font-mono text-[13px] text-zinc-600 w-[64px] text-right">PRIOR</span>
-                    <span className="font-mono text-[13px] text-zinc-600 w-[60px] text-right">CHANGE</span>
+                  <div className="flex items-center pb-1 border-b border-[#2a2a2c] gap-2">
+                    <span className="font-mono text-[11px] text-zinc-600 flex-1">METRIC</span>
+                    <span className="font-mono text-[11px] text-zinc-600 w-[72px] text-right shrink-0">ACTUAL</span>
+                    <span className="font-mono text-[11px] text-zinc-600 w-[72px] text-right shrink-0">PRIOR</span>
+                    <span className="font-mono text-[11px] text-zinc-600 w-[68px] text-right shrink-0">CHANGE</span>
                   </div>
                   <SummaryRow label="Unemployment Rate" data={nfpData.unemployment} invertColor />
                   <SummaryRow label="Avg Hourly Earnings MoM" data={nfpData.earningsMom} />
@@ -819,10 +819,6 @@ export function MarketCalendar({ onClose }: Props) {
                   <SummaryRow label="Private Payrolls" data={nfpData.privatePayroll} />
                   <SummaryRow label="Labor Force Part." data={nfpData.lfpr} />
                 </div>
-
-                {meta?.narrative && (
-                  <p className="font-mono text-[15px] text-zinc-500 leading-relaxed">{meta.narrative}</p>
-                )}
 
                 <div className="flex items-center justify-between pt-1">
                   <button
@@ -847,12 +843,12 @@ export function MarketCalendar({ onClose }: Props) {
               <div className="flex-1 overflow-y-auto px-4 py-2 space-y-4">
                 <div>
                   <span className="font-mono text-[14px] text-zinc-600 tracking-widest block mb-1.5">EXPANDED KEY METRICS</span>
-                  <div className="flex items-center pb-1 border-b border-[#2a2a2c]">
-                    <span className="font-mono text-[13px] text-zinc-600 flex-1">METRIC</span>
-                    <span className="font-mono text-[13px] text-zinc-600 w-[56px] text-right">ACTUAL</span>
-                    <span className="font-mono text-[13px] text-zinc-600 w-[56px] text-right">PREV</span>
-                    <span className="font-mono text-[13px] text-zinc-600 w-[52px] text-right">3-MO</span>
-                    <span className="font-mono text-[13px] text-zinc-600 w-[56px] text-right">CHG</span>
+                  <div className="flex items-center pb-1 border-b border-[#2a2a2c] gap-1">
+                    <span className="font-mono text-[11px] text-zinc-600 flex-1">METRIC</span>
+                    <span className="font-mono text-[11px] text-zinc-600 w-[68px] text-right shrink-0">ACTUAL</span>
+                    <span className="font-mono text-[11px] text-zinc-600 w-[60px] text-right shrink-0">PREV</span>
+                    <span className="font-mono text-[11px] text-zinc-600 w-[56px] text-right shrink-0">3-MO</span>
+                    <span className="font-mono text-[11px] text-zinc-600 w-[68px] text-right shrink-0">CHG</span>
                   </div>
                   <FullRow label="Nonfarm Payrolls" data={nfpData.nfp} />
                   <FullRow label="Unemployment Rate" data={nfpData.unemployment} invertColor />
@@ -963,10 +959,6 @@ export function MarketCalendar({ onClose }: Props) {
                     </div>
                   )}
                 </div>
-
-                {meta?.narrative && (
-                  <p className="font-mono text-[15px] text-zinc-500 leading-relaxed">{meta.narrative}</p>
-                )}
 
                 <div className="flex items-center justify-end pb-2">
                   <button
