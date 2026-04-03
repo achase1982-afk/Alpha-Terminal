@@ -807,7 +807,7 @@ export function MarketCalendar({ onClose }: Props) {
                   <span className="font-mono text-[33px] font-extrabold tabular-nums leading-tight" style={{ color: mc(nfp.changeRaw) }}>{nfp.change}</span>
                   <span className="text-[21px]" style={{ color: mc(nfp.changeRaw) }}>{nfp.changeRaw >= 0 ? "↑" : "↓"}</span>
                   {nfp.expected && (
-                    <span className="font-mono text-[19px] font-bold tabular-nums text-zinc-200 ml-1">vs {nfp.expected} consensus</span>
+                    <span className="font-mono font-bold tabular-nums text-zinc-200 ml-1 text-[19px]">vs {nfp.expected} <span className="text-[15px] font-semibold text-zinc-400">consensus</span></span>
                   )}
                 </div>
 
