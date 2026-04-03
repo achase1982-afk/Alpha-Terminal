@@ -99,7 +99,6 @@ export default function TerminalPage() {
   const PAUSE_MS = 1000;
   const wasCollapsed = useRef(false);
   const pauseTimer = useRef(0);
-  const [contentPaused, setContentPaused] = useState(false);
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -110,10 +109,15 @@ export default function TerminalPage() {
     if (collapsed && !wasCollapsed.current) {
       wasCollapsed.current = true;
       setIsScrolled(true);
-      setContentPaused(true);
+
+      const savedTop = el.scrollTop;
+      el.style.overflow = "hidden";
+      el.scrollTop = savedTop;
+
       clearTimeout(pauseTimer.current);
       pauseTimer.current = window.setTimeout(() => {
-        setContentPaused(false);
+        el.style.overflow = "";
+        el.scrollTop = savedTop;
       }, PAUSE_MS);
       return;
     }
@@ -253,10 +257,7 @@ export default function TerminalPage() {
                 <MarketDataTabs activeTab={contextTab} setActiveTab={setContextTab} />
               </div>
 
-              <div style={{
-                minHeight: "calc(100vh - 60px)",
-                ...(contentPaused ? { position: "sticky" as const, top: stickyH, zIndex: 30 } : {}),
-              }}>
+              <div style={{ minHeight: "calc(100vh - 60px)" }}>
                 {contextTab === "news" && <NewsTab />}
                 {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={stickyH} />}
                 {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles as any} stickyOffset={stickyH} />}
