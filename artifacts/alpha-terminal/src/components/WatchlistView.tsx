@@ -401,7 +401,7 @@ function SortButton({
   return (
     <button
       onClick={() => onSort(sortKey)}
-      className="flex items-center gap-0.5 font-mono text-[10px] uppercase tracking-widest transition-colors"
+      className="flex items-center gap-0.5 font-mono text-[12px] font-bold uppercase tracking-widest transition-colors"
       style={{ color: active ? "#FFB800" : "#52525b" }}
     >
       {label}
