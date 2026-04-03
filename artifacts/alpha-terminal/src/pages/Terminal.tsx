@@ -256,7 +256,9 @@ export default function TerminalPage() {
           )}
 
           {activeBottom === "watchlist" && (
-            <WatchlistView />
+            <div className="flex flex-col" style={{ minHeight: "calc(100vh - 60px)", background: "#000000" }}>
+              <WatchlistView />
+            </div>
           )}
 
         </main>
