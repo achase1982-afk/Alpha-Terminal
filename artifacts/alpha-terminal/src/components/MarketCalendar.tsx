@@ -298,21 +298,30 @@ export function MarketCalendar({ onClose }: Props) {
   const [month, setMonth] = useState(now.getMonth());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
-  const [filterType, setFilterType] = useState<string | null>(null);
+  const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set());
   const [blsData, setBlsData] = useState<Record<string, BlsReportData>>({});
   const [blsLoading, setBlsLoading] = useState<string | null>(null);
   const [reportIframeUrl, setReportIframeUrl] = useState<string | null>(null);
   const [showFullBreakdown, setShowFullBreakdown] = useState(false);
 
+  const toggleFilter = useCallback((type: string) => {
+    setActiveFilters((prev) => {
+      const next = new Set(prev);
+      if (next.has(type)) next.delete(type);
+      else next.add(type);
+      return next;
+    });
+  }, []);
+
   const eventMap = useMemo(() => {
     const map: Record<string, CalendarEvent[]> = {};
     for (const ev of MARKET_EVENTS) {
-      if (filterType && ev.type !== filterType) continue;
+      if (activeFilters.size > 0 && !activeFilters.has(ev.type)) continue;
       if (!map[ev.date]) map[ev.date] = [];
       map[ev.date].push(ev);
     }
     return map;
-  }, [filterType]);
+  }, [activeFilters]);
 
   const calendarDays = useMemo(() => {
     const firstDay = new Date(year, month, 1).getDay();
@@ -377,30 +386,34 @@ export function MarketCalendar({ onClose }: Props) {
           <button
             onClick={() => setFilterOpen(!filterOpen)}
             className="font-mono font-bold text-[13px] tracking-wider px-2 py-1 rounded-md transition-colors hover:bg-[#1a1a1c]"
-            style={{ color: filterType ? TYPE_COLORS[filterType] || "#FFB800" : "#a1a1aa" }}
+            style={{ color: activeFilters.size > 0 ? "#FFB800" : "#a1a1aa" }}
           >
-            Filter{filterType ? ` · ${TYPE_LABELS[filterType]}` : ""}
+            Filter{activeFilters.size > 0 ? ` (${activeFilters.size})` : ""}
           </button>
           {filterOpen && (
-            <div className="absolute top-full left-0 mt-1 bg-[#1a1a1c] border border-[#2a2a2c] rounded-lg py-1 z-50 min-w-[160px] shadow-xl">
-              <button
-                onClick={() => { setFilterType(null); setFilterOpen(false); }}
-                className="w-full text-left px-3 py-2 font-mono text-[11px] tracking-wider transition-colors hover:bg-[#252528]"
-                style={{ color: filterType === null ? "#FFB800" : "#a1a1aa" }}
-              >
-                All Events
-              </button>
-              {Object.entries(TYPE_LABELS).map(([type, label]) => (
-                <button
-                  key={type}
-                  onClick={() => { setFilterType(filterType === type ? null : type); setFilterOpen(false); }}
-                  className="w-full text-left px-3 py-2 font-mono text-[11px] tracking-wider transition-colors hover:bg-[#252528] flex items-center gap-2"
-                  style={{ color: filterType === type ? TYPE_COLORS[type] : "#a1a1aa" }}
-                >
-                  <div className="w-2 h-2 rounded-full shrink-0" style={{ background: TYPE_COLORS[type] }} />
-                  {label}
-                </button>
-              ))}
+            <div className="absolute top-full left-0 mt-1 bg-[#1a1a1c] border border-[#2a2a2c] rounded-lg py-1 z-50 min-w-[180px] shadow-xl">
+              {Object.entries(TYPE_LABELS).map(([type, label]) => {
+                const isOn = activeFilters.has(type);
+                return (
+                  <button
+                    key={type}
+                    onClick={() => toggleFilter(type)}
+                    className="w-full text-left px-3 py-2 font-mono text-[11px] tracking-wider transition-colors hover:bg-[#252528] flex items-center gap-2"
+                  >
+                    <div className="w-2 h-2 rounded-full shrink-0" style={{ background: TYPE_COLORS[type] }} />
+                    <span className="flex-1" style={{ color: isOn ? TYPE_COLORS[type] : "#a1a1aa" }}>{label}</span>
+                    <div
+                      className="w-7 h-4 rounded-full relative transition-colors shrink-0"
+                      style={{ background: isOn ? TYPE_COLORS[type] : "#3a3a3c" }}
+                    >
+                      <div
+                        className="absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all"
+                        style={{ left: isOn ? "14px" : "2px" }}
+                      />
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
@@ -689,7 +702,7 @@ export function MarketCalendar({ onClose }: Props) {
           <span className="font-mono text-[9px] text-zinc-600 tracking-widest block mb-2">UPCOMING</span>
           <div className="space-y-1">
             {MARKET_EVENTS
-              .filter((ev) => ev.date >= todayKey && (!filterType || ev.type === filterType))
+              .filter((ev) => ev.date >= todayKey && (activeFilters.size === 0 || activeFilters.has(ev.type)))
               .slice(0, 12)
               .map((ev, i) => (
                 <button
