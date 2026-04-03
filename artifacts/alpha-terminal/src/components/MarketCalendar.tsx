@@ -448,7 +448,7 @@ export function MarketCalendar({ onClose }: Props) {
                   color: !cell.inMonth ? "#2a2a2c"
                     : hasHoliday ? "#f23645"
                     : isToday ? "#FFB800"
-                    : isWeekend ? "#52525b"
+                    : isWeekend ? "#a1a1aa"
                     : "#e4e4e7",
                 }}
               >
