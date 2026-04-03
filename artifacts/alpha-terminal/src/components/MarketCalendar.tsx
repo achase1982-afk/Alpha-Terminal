@@ -230,7 +230,7 @@ function ReportViewer({ url, onClose }: { url: string; onClose: () => void }) {
 
   if (error) {
     return (
-      <div className="fixed left-0 right-0 bottom-0 z-[200] flex flex-col items-center justify-center" style={{ top: "48px", background: "#0a0a0a" }}>
+      <div className="fixed left-0 right-0 bottom-0 z-[200] flex flex-col items-center justify-center" style={{ top: "80px", background: "#0a0a0a" }}>
         <p className="font-mono text-sm text-zinc-400 mb-4">Report could not be loaded in-app.</p>
         <a
           href={url}
@@ -247,7 +247,7 @@ function ReportViewer({ url, onClose }: { url: string; onClose: () => void }) {
   }
 
   return (
-    <div className="fixed left-0 right-0 bottom-0 z-[200] flex flex-col" style={{ top: "48px", background: "#0a0a0a" }}>
+    <div className="fixed left-0 right-0 bottom-0 z-[200] flex flex-col" style={{ top: "80px", background: "#0a0a0a" }}>
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-[#2a2a2c]">
         <span className="font-mono text-[11px] text-zinc-400 tracking-wider">BLS Report</span>
         <div className="flex items-center gap-2">
@@ -602,7 +602,7 @@ export function MarketCalendar({ onClose }: Props) {
         return (
           <div
             className="fixed left-0 right-0 bottom-0 z-[150] flex flex-col bg-[#0c0c0c] border-t animate-in slide-in-from-bottom duration-300"
-            style={{ top: "48px", borderColor: `${mainColor}40` }}
+            style={{ top: "80px", borderColor: `${mainColor}40` }}
           >
             <div className="flex items-center justify-between px-4 py-3 border-b border-[#1a1a1c]">
               <span className="font-mono text-[13px] font-bold text-white">{selectedEvent.title}</span>

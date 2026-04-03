@@ -129,7 +129,7 @@ export function Sidebar({ isOpen, onClose, onOpenChat, onNavigate }: SidebarProp
       {activePage && createPortal(
         <div
           className="fixed left-0 right-0 z-[100] bg-background animate-in slide-in-from-bottom-8 duration-300 flex flex-col shadow-2xl border-t border-card-border"
-          style={{ top: activePage === "Calendar" ? "48px" : "120px", bottom: "80px" }}
+          style={{ top: "80px", bottom: "80px" }}
         >
           {activePage !== "Calendar" && (
             <div className="flex items-center justify-between p-3 border-b border-card-border bg-[#141414]">
