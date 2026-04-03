@@ -96,29 +96,12 @@ export default function TerminalPage() {
   useViewportShell();
 
   const COLLAPSE_PX = 80;
-  const PAUSE_MS = 500;
-  const wasCollapsed = useRef(false);
-  const pauseTimer = useRef(0);
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
     const y = el.scrollTop;
-    const collapsed = y > COLLAPSE_PX;
-
-    if (collapsed && !wasCollapsed.current) {
-      wasCollapsed.current = true;
-      setIsScrolled(true);
-      el.style.overflow = "hidden";
-      clearTimeout(pauseTimer.current);
-      pauseTimer.current = window.setTimeout(() => {
-        el.style.overflow = "";
-      }, PAUSE_MS);
-      return;
-    }
-
-    if (!collapsed) wasCollapsed.current = false;
-    setIsScrolled(collapsed);
+    setIsScrolled(y > COLLAPSE_PX);
   }, []);
 
   const prevStickyH = useRef(0);
