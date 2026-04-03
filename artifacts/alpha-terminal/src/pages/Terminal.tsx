@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Sidebar } from "@/components/Sidebar";
+import { Sidebar, type SidebarHandle } from "@/components/Sidebar";
 import { MetricsBar, VolumeBar } from "@/components/MetricsBar";
 import { TradingChart } from "@/components/TradingChart";
 import { OptionsTab } from "@/components/OptionsTab";
@@ -92,6 +92,7 @@ export default function TerminalPage() {
   const stickyWrapRef = useRef<HTMLDivElement>(null);
   const [stickyH, setStickyH] = useState(0);
   const pulseDashRef = useRef<MarketPulseDashboardHandle>(null);
+  const sidebarRef = useRef<SidebarHandle>(null);
   const { pulseData, isLoading: pulseLoading, isStreaming: pulseStreaming } = useMarketPulseStore();
   const { refresh } = useAutoRefreshToken();
   useViewportShell();
@@ -228,6 +229,7 @@ export default function TerminalPage() {
       <div className="flex flex-1 min-h-0 relative">
 
         <Sidebar
+          ref={sidebarRef}
           isOpen={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
           onOpenChat={() => setChatOpen(true)}
@@ -292,6 +294,8 @@ export default function TerminalPage() {
       </div>
 
       <BottomNav activeTab={activeBottom} onTabChange={(tab) => {
+        sidebarRef.current?.clearActivePage();
+        setSidebarOpen(false);
         if (tab === "search") {
           setSearchOpen(true);
         } else {

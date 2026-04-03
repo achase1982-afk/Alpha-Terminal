@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, forwardRef, useImperativeHandle } from "react";
 import { createPortal } from "react-dom";
 import { useTerminalStore, useActiveWatchlist } from "@/lib/store";
 import { useOptionsSettingsStore } from "@/lib/options-store";
@@ -45,6 +45,10 @@ type SidebarPage =
   | "AI Parameters"
   | "Security & Privacy";
 
+export interface SidebarHandle {
+  clearActivePage: () => void;
+}
+
 interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
@@ -67,9 +71,11 @@ function MenuRow({ icon, label, onClick }: { icon: React.ReactNode; label: strin
   );
 }
 
-export function Sidebar({ isOpen, onClose, onOpenChat, onNavigate }: SidebarProps) {
+export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar({ isOpen, onClose, onOpenChat, onNavigate }, ref) {
   const { signOut } = useClerkSafe();
   const [activePage, setActivePage] = useState<SidebarPage>(null);
+
+  useImperativeHandle(ref, () => ({ clearActivePage: () => setActivePage(null) }), []);
 
   const handleCloseAll = () => {
     setActivePage(null);
@@ -164,7 +170,7 @@ export function Sidebar({ isOpen, onClose, onOpenChat, onNavigate }: SidebarProp
       )}
     </>
   );
-}
+});
 
 function WatchlistPage({ onClose }: { onClose: () => void }) {
   const { removeFromWatchlist, setSymbol, streamPrices } = useTerminalStore();
