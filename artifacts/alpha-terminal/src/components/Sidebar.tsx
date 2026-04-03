@@ -71,12 +71,6 @@ export function Sidebar({ isOpen, onClose, onOpenChat, onNavigate }: SidebarProp
   const { signOut } = useClerkSafe();
   const [activePage, setActivePage] = useState<SidebarPage>(null);
 
-  useEffect(() => {
-    if (isOpen && activePage) {
-      setActivePage(null);
-    }
-  }, [isOpen]);
-
   const handleClose = () => {
     setActivePage(null);
     onClose();
