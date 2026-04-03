@@ -209,7 +209,12 @@ export default function TerminalPage() {
           onNavigate={(dest) => { if (dest === "markets") setActiveBottom("markets"); else if (dest === "portfolio") setActiveBottom("portfolio"); }}
         />
 
-        <main ref={scrollRef} onScroll={handleScroll} className={`flex-1 app-content pb-24 ${activeBottom === "ai" && aiSubTab === "pulse" && !pulseData && !pulseLoading && !pulseStreaming ? "overflow-hidden" : "overflow-y-auto"}`}>
+        <main
+          ref={scrollRef}
+          onScroll={handleScroll}
+          className={`flex-1 app-content pb-24 ${activeBottom === "ai" && aiSubTab === "pulse" && !pulseData && !pulseLoading && !pulseStreaming ? "overflow-hidden" : "overflow-y-auto"}`}
+          style={activeBottom === "markets" ? { scrollSnapType: "y proximity", scrollPaddingTop: stickyH } as React.CSSProperties : undefined}
+        >
 
           {activeBottom === "markets" && (
             <>
@@ -221,7 +226,7 @@ export default function TerminalPage() {
                 <MarketDataTabs activeTab={contextTab} setActiveTab={setContextTab} />
               </div>
 
-              <div style={{ minHeight: "calc(100vh - 60px)" }}>
+              <div style={{ minHeight: "calc(100vh - 60px)", scrollSnapAlign: "start" } as React.CSSProperties}>
                 {contextTab === "news" && <NewsTab />}
                 {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={stickyH} />}
                 {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles as any} stickyOffset={stickyH} />}
