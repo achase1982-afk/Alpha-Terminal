@@ -802,17 +802,23 @@ export function MarketCalendar({ onClose }: Props) {
             )}
 
             {nfp && !showFullBreakdown && (
-              <div className="flex-1 overflow-y-auto px-2 py-2 space-y-3">
-                <div className="flex items-baseline gap-2">
-                  <span className="font-mono text-[33px] font-extrabold tabular-nums leading-tight" style={{ color: mc(nfp.changeRaw) }}>{nfp.change}</span>
-                  <span className="text-[21px]" style={{ color: mc(nfp.changeRaw) }}>{nfp.changeRaw >= 0 ? "↑" : "↓"}</span>
+              <div className="flex-1 overflow-y-auto px-2 py-1 space-y-1">
+                <div className="flex items-end gap-3">
+                  <div className="flex flex-col">
+                    <span className="font-mono text-[10px] text-zinc-500 tracking-wider">ACTUAL</span>
+                    <span className="font-mono text-[30px] font-extrabold tabular-nums leading-none" style={{ color: mc(nfp.changeRaw) }}>{nfp.change}</span>
+                  </div>
                   {nfp.expected && (
-                    <span className="font-mono font-extrabold tabular-nums text-zinc-200 ml-1 text-[33px]">vs {nfp.expected} <span className="text-[15px] font-semibold text-zinc-400">consensus</span></span>
+                    <div className="flex flex-col">
+                      <span className="font-mono text-[10px] text-zinc-500 tracking-wider">CONSENSUS</span>
+                      <span className="font-mono text-[30px] font-extrabold tabular-nums leading-none text-zinc-200">{nfp.expected}</span>
+                    </div>
                   )}
+                  <span className="text-[18px] mb-0.5" style={{ color: mc(nfp.changeRaw) }}>{nfp.changeRaw >= 0 ? "↑" : "↓"}</span>
                 </div>
 
                 <div>
-                  <div className="flex items-center pb-1 border-b border-[#2a2a2c] gap-2">
+                  <div className="flex items-center pb-0.5 border-b border-[#2a2a2c] gap-2">
                     <span className="font-mono text-[11px] text-zinc-600 flex-1">METRIC</span>
                     <span className="font-mono text-[11px] text-zinc-600 w-[76px] text-right shrink-0">ACTUAL</span>
                     <span className="font-mono text-[11px] text-zinc-600 w-[76px] text-right shrink-0">PRIOR</span>
@@ -825,7 +831,7 @@ export function MarketCalendar({ onClose }: Props) {
                   <SummaryRow label="Labor Force Part." data={nfpData.lfpr} />
                 </div>
 
-                <div className="flex items-center justify-end pt-1">
+                <div className="flex items-center justify-end">
                   <button
                     onClick={() => setShowFullBreakdown(true)}
                     className="font-mono text-[14px] font-bold tracking-wider transition-opacity hover:opacity-70"
