@@ -229,7 +229,7 @@ function ReportViewer({ url, onClose }: { url: string; onClose: () => void }) {
 
   if (error) {
     return (
-      <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center" style={{ background: "#0a0a0a" }}>
+      <div className="fixed left-0 right-0 bottom-0 z-[200] flex flex-col items-center justify-center" style={{ top: "48px", background: "#0a0a0a" }}>
         <p className="font-mono text-sm text-zinc-400 mb-4">Report could not be loaded in-app.</p>
         <a
           href={url}
@@ -246,8 +246,8 @@ function ReportViewer({ url, onClose }: { url: string; onClose: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 z-[200] flex flex-col" style={{ background: "#0a0a0a" }}>
-      <div className="flex items-center justify-between px-4 py-3 border-b border-[#2a2a2c]">
+    <div className="fixed left-0 right-0 bottom-0 z-[200] flex flex-col" style={{ top: "48px", background: "#0a0a0a" }}>
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-[#2a2a2c]">
         <span className="font-mono text-[11px] text-zinc-400 tracking-wider">BLS Report</span>
         <div className="flex items-center gap-2">
           <a
@@ -529,74 +529,56 @@ export function MarketCalendar({ onClose }: Props) {
       )}
 
       {selectedEvent && (
-        <div className="mt-2 border-t border-[#2a2a2c] flex-1 flex flex-col rounded-lg overflow-hidden" style={{ border: `1px solid ${TYPE_COLORS[selectedEvent.type]}` }}>
-          <div className="flex items-center justify-between px-4 py-2.5" style={{ borderBottom: `1px solid ${TYPE_COLORS[selectedEvent.type]}30` }}>
-            <div className="flex items-center gap-2">
-              <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: TYPE_COLORS[selectedEvent.type] }} />
-              <span className="font-mono text-[11px] font-bold text-white">{selectedEvent.title}</span>
-            </div>
-            <button onClick={() => setSelectedEvent(null)} className="p-1">
-              <X className="w-4 h-4 text-zinc-500" />
-            </button>
-          </div>
+        <div className="mt-2 flex-1 flex flex-col relative" style={{ borderTop: `1px solid ${TYPE_COLORS[selectedEvent.type]}30` }}>
+          <button onClick={() => setSelectedEvent(null)} className="absolute top-2 right-1 p-1 z-10">
+            <X className="w-4 h-4 text-zinc-500" />
+          </button>
 
-          <div className="flex-1 flex flex-col items-center justify-center p-4">
+          <div className="flex-1 flex flex-col justify-center px-4">
             {selectedEvent.type === "holiday" ? (
-              <>
-                <span className="font-mono text-2xl font-extrabold text-white mb-3">{selectedEvent.title}</span>
-                <span className="font-mono text-[12px] text-zinc-500 tracking-wider">Holiday · Markets Closed</span>
-              </>
+              <div className="flex flex-col items-center justify-center">
+                <span className="font-mono text-xl font-extrabold text-white mb-2">{selectedEvent.title}</span>
+                <span className="font-mono text-[11px] text-zinc-500 tracking-wider">Holiday · Markets Closed</span>
+              </div>
             ) : (
-              <div className="w-full flex flex-col items-center justify-center gap-4">
+              <div className="w-full">
                 {selectedEvent.blsType && blsLoading === selectedEvent.blsType && (
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-center gap-2 py-4">
                     <Loader2 className="w-4 h-4 text-zinc-500 animate-spin" />
                     <span className="font-mono text-[11px] text-zinc-500">Loading...</span>
                   </div>
                 )}
 
                 {selectedEvent.blsType && blsData[selectedEvent.blsType]?.change && (
-                  <>
-                    <div className="flex items-center gap-8">
-                      <div className="text-center">
-                        <span className="font-mono text-[10px] text-zinc-600 block tracking-wider mb-1">ACTUAL</span>
-                        <span className="font-mono text-3xl font-extrabold text-white">{blsData[selectedEvent.blsType]!.change!.actual}</span>
-                      </div>
-                      <span className="font-mono text-zinc-600 text-lg">vs</span>
-                      <div className="text-center">
-                        <span className="font-mono text-[10px] text-zinc-600 block tracking-wider mb-1">PREVIOUS</span>
-                        <span className="font-mono text-xl text-zinc-400 font-bold">{blsData[selectedEvent.blsType]!.change!.previousLevel}</span>
-                      </div>
+                  <div className="flex flex-col gap-3">
+                    <span className="font-mono text-[13px] font-bold text-white">{selectedEvent.title}</span>
+                    <div className="flex items-baseline gap-3">
+                      <span className="font-mono text-2xl font-extrabold text-white">{blsData[selectedEvent.blsType]!.change!.actual}</span>
+                      <span className="font-mono text-[11px] text-zinc-500">vs</span>
+                      <span className="font-mono text-base text-zinc-400 font-semibold">{blsData[selectedEvent.blsType]!.change!.previousLevel}</span>
+                      <span className="font-mono text-[9px] text-zinc-600">prev</span>
                     </div>
-
-                    {(selectedEvent.reportUrl || blsData[selectedEvent.blsType]!.reportUrl) && (
-                      <button
-                        onClick={() => setReportIframeUrl(selectedEvent.reportUrl || blsData[selectedEvent.blsType]!.reportUrl)}
-                        className="flex items-center gap-2 font-mono text-[12px] font-bold py-2.5 px-5 rounded-lg transition-colors mt-2"
-                        style={{ color: "#FFB800", border: "1px solid #FFB80050" }}
-                      >
-                        <ExternalLink className="w-4 h-4" /> Read Full Report
-                      </button>
-                    )}
-                  </>
+                    <span className="font-mono text-[10px] text-zinc-600">
+                      {blsData[selectedEvent.blsType]!.change!.currentMonth} {blsData[selectedEvent.blsType]!.change!.currentYear} · {blsData[selectedEvent.blsType]!.series}
+                    </span>
+                  </div>
                 )}
 
                 {selectedEvent.detail && (!selectedEvent.blsType || !blsData[selectedEvent.blsType]?.change) && !blsLoading && (
-                  <p className="font-mono text-[12px] text-zinc-400 leading-relaxed text-center">{selectedEvent.detail}</p>
-                )}
-
-                {selectedEvent.reportUrl && !selectedEvent.blsType && (
-                  <button
-                    onClick={() => setReportIframeUrl(selectedEvent.reportUrl!)}
-                    className="flex items-center gap-2 font-mono text-[12px] font-bold py-2.5 px-5 rounded-lg transition-colors"
-                    style={{ color: "#FFB800", border: "1px solid #FFB80050" }}
-                  >
-                    <ExternalLink className="w-4 h-4" /> Read Full Report
-                  </button>
+                  <p className="font-mono text-[11px] text-zinc-400 leading-relaxed">{selectedEvent.detail}</p>
                 )}
               </div>
             )}
           </div>
+
+          {(selectedEvent.reportUrl || (selectedEvent.blsType && blsData[selectedEvent.blsType]?.reportUrl)) && (
+            <button
+              onClick={() => setReportIframeUrl(selectedEvent.reportUrl || blsData[selectedEvent.blsType!]!.reportUrl)}
+              className="absolute bottom-2 right-3 font-mono text-[10px] text-white tracking-wider transition-opacity hover:opacity-70"
+            >
+              Read Report
+            </button>
+          )}
         </div>
       )}
 
