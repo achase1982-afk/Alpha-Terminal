@@ -94,59 +94,119 @@ function WatchlistRow({
   const cColor = changeColor(change);
   const hasData = last != null;
 
+  const [offsetX, setOffsetX] = useState(0);
+  const [swiping, setSwiping] = useState(false);
+  const startXRef = useRef(0);
+  const startYRef = useRef(0);
+  const lockedRef = useRef<"h" | "v" | null>(null);
+  const DELETE_W = 80;
+
+  const onTouchStart = useCallback((e: React.TouchEvent) => {
+    startXRef.current = e.touches[0].clientX;
+    startYRef.current = e.touches[0].clientY;
+    lockedRef.current = null;
+    setSwiping(true);
+  }, []);
+
+  const onTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!swiping) return;
+    const dx = e.touches[0].clientX - startXRef.current;
+    const dy = e.touches[0].clientY - startYRef.current;
+
+    if (!lockedRef.current) {
+      if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
+        lockedRef.current = Math.abs(dx) > Math.abs(dy) ? "h" : "v";
+      }
+      return;
+    }
+    if (lockedRef.current === "v") return;
+
+    const clamped = Math.max(-DELETE_W, Math.min(0, dx));
+    setOffsetX(clamped);
+  }, [swiping]);
+
+  const onTouchEnd = useCallback(() => {
+    setSwiping(false);
+    lockedRef.current = null;
+    setOffsetX((prev) => (prev < -DELETE_W / 2 ? -DELETE_W : 0));
+  }, []);
+
+  const handleDelete = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    e.stopPropagation();
+    onRemove();
+  }, [onRemove]);
+
+  const handleTap = useCallback(() => {
+    if (offsetX < -10) {
+      setOffsetX(0);
+      return;
+    }
+    onTap();
+  }, [offsetX, onTap]);
+
   return (
-    <div
-      onClick={onTap}
-      role="button"
-      tabIndex={0}
-      className="group relative cursor-pointer active:bg-white/[0.04] transition-colors"
-      style={{ background: "#000000", borderBottom: "1px solid #2A2A2C" }}
-    >
-      <div className="flex items-center px-4 py-3 gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            {change != null && change > 0 && <TrendingUp className="w-4 h-4 shrink-0" style={{ color: "#22c55e" }} />}
-            {change != null && change < 0 && <TrendingDown className="w-4 h-4 shrink-0" style={{ color: "#ef4444" }} />}
-            {(change == null || change === 0) && <Minus className="w-4 h-4 shrink-0" style={{ color: "#71717a" }} />}
-            <span className="font-mono text-[15px] font-bold text-white tracking-wider">{sym}</span>
-          </div>
-
-          <div className="flex items-center gap-3 pl-6">
-            {spark && spark.closes.length > 1 && (
-              <MiniSparkline data={spark.closes} color={cColor} />
-            )}
-            <div className="flex items-center gap-2 font-mono text-[12px]">
-              <span style={{ color: cColor }}>{fmtChange(change)}</span>
-              <span className="px-1.5 py-0.5 rounded" style={{ color: cColor }}>
-                {fmtPct(changePct)}
-              </span>
-            </div>
-            <span className="font-mono text-[11px] text-[#71717a]">
-              {fmtVol(volume)}
-            </span>
-          </div>
-        </div>
-
-        <div className="flex flex-col items-end gap-1 shrink-0">
-          <span
-            className="font-mono text-[16px] font-bold tabular-nums px-2.5 py-1 rounded-lg"
-            style={{
-              color: hasData ? "#fff" : "#52525b",
-            }}
-          >
-            {hasData ? `$${fmtPrice(last)}` : "—"}
-          </span>
-        </div>
-
-        <ChevronRight className="w-4 h-4 text-[#3a3a3c] group-hover:text-[#71717a] transition-colors shrink-0" />
+    <div className="relative overflow-hidden" style={{ borderBottom: "1px solid #2A2A2C" }}>
+      <div
+        className="absolute right-0 top-0 bottom-0 flex items-center justify-center cursor-pointer active:opacity-80"
+        style={{ width: DELETE_W, background: "#ef4444" }}
+        onClick={handleDelete}
+      >
+        <span className="font-mono text-[12px] font-bold text-white tracking-wider">DELETE</span>
       </div>
 
-      <button
-        onClick={(e) => { e.stopPropagation(); onRemove(); }}
-        className="absolute top-3 right-3 p-2 rounded-lg text-[#52525b] hover:text-red-400 hover:bg-red-400/10 active:bg-red-400/20 transition-all"
+      <div
+        onClick={handleTap}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+        role="button"
+        tabIndex={0}
+        className="relative cursor-pointer active:bg-white/[0.04]"
+        style={{
+          background: "#000000",
+          transform: `translateX(${offsetX}px)`,
+          transition: swiping ? "none" : "transform 0.25s ease-out",
+        }}
       >
-        <Trash2 className="w-4 h-4" />
-      </button>
+        <div className="flex items-center px-4 py-3 gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+              {change != null && change > 0 && <TrendingUp className="w-4 h-4 shrink-0" style={{ color: "#22c55e" }} />}
+              {change != null && change < 0 && <TrendingDown className="w-4 h-4 shrink-0" style={{ color: "#ef4444" }} />}
+              {(change == null || change === 0) && <Minus className="w-4 h-4 shrink-0" style={{ color: "#71717a" }} />}
+              <span className="font-mono text-[15px] font-bold text-white tracking-wider">{sym}</span>
+            </div>
+
+            <div className="flex items-center gap-3 pl-6">
+              {spark && spark.closes.length > 1 && (
+                <MiniSparkline data={spark.closes} color={cColor} />
+              )}
+              <div className="flex items-center gap-2 font-mono text-[12px]">
+                <span style={{ color: cColor }}>{fmtChange(change)}</span>
+                <span className="px-1.5 py-0.5 rounded" style={{ color: cColor }}>
+                  {fmtPct(changePct)}
+                </span>
+              </div>
+              <span className="font-mono text-[11px] text-[#71717a]">
+                {fmtVol(volume)}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex flex-col items-end gap-1 shrink-0">
+            <span
+              className="font-mono text-[16px] font-bold tabular-nums px-2.5 py-1 rounded-lg"
+              style={{
+                color: hasData ? "#fff" : "#52525b",
+              }}
+            >
+              {hasData ? `$${fmtPrice(last)}` : "—"}
+            </span>
+          </div>
+
+          <ChevronRight className="w-4 h-4 text-[#3a3a3c] shrink-0" />
+        </div>
+      </div>
     </div>
   );
 }
