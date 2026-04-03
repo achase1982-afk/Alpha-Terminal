@@ -434,7 +434,7 @@ export function WatchlistView() {
   const unchanged = watchlist.length - gainers - losers;
 
   return (
-    <div className="flex-1 flex flex-col" style={{ background: "#000000" }}>
+    <div className="flex-1 flex flex-col min-h-full" style={{ background: "#000000" }}>
       <WatchlistSwitcherPanel open={switcherOpen} onClose={() => setSwitcherOpen(false)} />
 
       <div className="px-4 pt-4 pb-2">
