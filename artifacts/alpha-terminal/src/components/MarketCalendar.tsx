@@ -1,6 +1,6 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { useTerminalStore } from "@/lib/store";
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, X, ExternalLink, Loader2 } from "lucide-react";
 
 interface CalendarEvent {
   date: string;
@@ -9,6 +9,26 @@ interface CalendarEvent {
   ticker?: string;
   detail?: string;
   time?: string;
+  blsType?: string;
+  reportUrl?: string;
+}
+
+interface BlsReportData {
+  reportType: string;
+  series: string;
+  unit: string;
+  latest: { month: string; year: string; value: string; isLatest: boolean };
+  change: {
+    actual: string;
+    actualRaw: number;
+    currentLevel?: string;
+    previousLevel: string;
+    previousMonth: string;
+    currentMonth: string;
+    currentYear: string;
+  } | null;
+  recentHistory: Array<{ month: string; year: string; value: string }>;
+  reportUrl: string;
 }
 
 const TYPE_COLORS: Record<string, string> = {
@@ -32,69 +52,69 @@ const TYPE_LABELS: Record<string, string> = {
 const MARKET_EVENTS: CalendarEvent[] = [
   { date: "2025-01-01", type: "holiday", title: "New Year's Day", detail: "NYSE & NASDAQ closed." },
   { date: "2025-01-09", type: "holiday", title: "National Day of Mourning", detail: "NYSE & NASDAQ closed in honor of President Carter." },
-  { date: "2025-01-14", type: "economic", title: "PPI Report", detail: "Producer Price Index measures wholesale inflation. Higher than expected = hawkish." },
-  { date: "2025-01-15", type: "economic", title: "CPI Report", detail: "Consumer Price Index — key inflation gauge watched by the Fed.", time: "8:30 AM ET" },
+  { date: "2025-01-14", type: "economic", title: "PPI Report", detail: "Producer Price Index — measures wholesale inflation. Higher than expected = hawkish for rates.", time: "8:30 AM ET", blsType: "ppi", reportUrl: "https://www.bls.gov/news.release/ppi.nr0.htm" },
+  { date: "2025-01-15", type: "economic", title: "CPI Report", detail: "Consumer Price Index — key inflation gauge watched by the Fed.", time: "8:30 AM ET", blsType: "cpi", reportUrl: "https://www.bls.gov/news.release/cpi.nr0.htm" },
   { date: "2025-01-17", type: "opex", title: "Monthly OpEx", detail: "Monthly options expiration. Expect increased volatility and volume." },
   { date: "2025-01-20", type: "holiday", title: "MLK Jr. Day", detail: "NYSE & NASDAQ closed." },
   { date: "2025-01-29", type: "fomc", title: "FOMC Decision", detail: "Federal Open Market Committee rate decision and statement.", time: "2:00 PM ET" },
   { date: "2025-01-30", type: "earnings", title: "AAPL Earnings", ticker: "AAPL", detail: "Apple Q1 FY25 earnings report.", time: "After Close" },
   { date: "2025-01-30", type: "earnings", title: "MSFT Earnings", ticker: "MSFT", detail: "Microsoft Q2 FY25 earnings report.", time: "After Close" },
   { date: "2025-02-05", type: "earnings", title: "GOOG Earnings", ticker: "GOOG", detail: "Alphabet Q4 2024 earnings report.", time: "After Close" },
-  { date: "2025-02-07", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls — monthly employment data.", time: "8:30 AM ET" },
-  { date: "2025-02-12", type: "economic", title: "CPI Report", detail: "Consumer Price Index — key inflation gauge.", time: "8:30 AM ET" },
+  { date: "2025-02-07", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls — monthly employment data.", time: "8:30 AM ET", blsType: "nfp", reportUrl: "https://www.bls.gov/news.release/empsit.nr0.htm" },
+  { date: "2025-02-12", type: "economic", title: "CPI Report", detail: "Consumer Price Index — key inflation gauge.", time: "8:30 AM ET", blsType: "cpi", reportUrl: "https://www.bls.gov/news.release/cpi.nr0.htm" },
   { date: "2025-02-17", type: "holiday", title: "Presidents' Day", detail: "NYSE & NASDAQ closed." },
   { date: "2025-02-21", type: "opex", title: "Monthly OpEx", detail: "Monthly options expiration." },
-  { date: "2025-03-07", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls.", time: "8:30 AM ET" },
-  { date: "2025-03-12", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET" },
+  { date: "2025-03-07", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls.", time: "8:30 AM ET", blsType: "nfp", reportUrl: "https://www.bls.gov/news.release/empsit.nr0.htm" },
+  { date: "2025-03-12", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET", blsType: "cpi", reportUrl: "https://www.bls.gov/news.release/cpi.nr0.htm" },
   { date: "2025-03-19", type: "fomc", title: "FOMC Decision", detail: "Rate decision + dot plot + economic projections.", time: "2:00 PM ET" },
   { date: "2025-03-21", type: "witching", title: "Quad Witching", detail: "Quarterly expiration of stock options, index options, index futures, and single stock futures." },
   { date: "2025-04-02", type: "economic", title: "ADP Employment", detail: "Private sector employment change.", time: "8:15 AM ET" },
-  { date: "2025-04-04", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls.", time: "8:30 AM ET" },
-  { date: "2025-04-10", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET" },
+  { date: "2025-04-04", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls.", time: "8:30 AM ET", blsType: "nfp", reportUrl: "https://www.bls.gov/news.release/empsit.nr0.htm" },
+  { date: "2025-04-10", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET", blsType: "cpi", reportUrl: "https://www.bls.gov/news.release/cpi.nr0.htm" },
   { date: "2025-04-17", type: "opex", title: "Monthly OpEx", detail: "Monthly options expiration." },
   { date: "2025-04-18", type: "holiday", title: "Good Friday", detail: "NYSE & NASDAQ closed." },
-  { date: "2025-05-02", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls.", time: "8:30 AM ET" },
+  { date: "2025-05-02", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls.", time: "8:30 AM ET", blsType: "nfp", reportUrl: "https://www.bls.gov/news.release/empsit.nr0.htm" },
   { date: "2025-05-07", type: "fomc", title: "FOMC Decision", detail: "Rate decision and statement.", time: "2:00 PM ET" },
-  { date: "2025-05-13", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET" },
+  { date: "2025-05-13", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET", blsType: "cpi", reportUrl: "https://www.bls.gov/news.release/cpi.nr0.htm" },
   { date: "2025-05-16", type: "opex", title: "Monthly OpEx", detail: "Monthly options expiration." },
   { date: "2025-05-26", type: "holiday", title: "Memorial Day", detail: "NYSE & NASDAQ closed." },
-  { date: "2025-06-06", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls.", time: "8:30 AM ET" },
-  { date: "2025-06-11", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET" },
+  { date: "2025-06-06", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls.", time: "8:30 AM ET", blsType: "nfp", reportUrl: "https://www.bls.gov/news.release/empsit.nr0.htm" },
+  { date: "2025-06-11", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET", blsType: "cpi", reportUrl: "https://www.bls.gov/news.release/cpi.nr0.htm" },
   { date: "2025-06-18", type: "fomc", title: "FOMC Decision", detail: "Rate decision + dot plot + projections.", time: "2:00 PM ET" },
   { date: "2025-06-19", type: "holiday", title: "Juneteenth", detail: "NYSE & NASDAQ closed." },
   { date: "2025-06-20", type: "witching", title: "Quad Witching", detail: "Quarterly options/futures expiration." },
   { date: "2025-07-03", type: "economic", title: "Early Close (1 PM)", detail: "Markets close at 1:00 PM ET ahead of Independence Day." },
   { date: "2025-07-04", type: "holiday", title: "Independence Day", detail: "NYSE & NASDAQ closed." },
-  { date: "2025-07-11", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET" },
+  { date: "2025-07-11", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET", blsType: "cpi", reportUrl: "https://www.bls.gov/news.release/cpi.nr0.htm" },
   { date: "2025-07-18", type: "opex", title: "Monthly OpEx", detail: "Monthly options expiration." },
   { date: "2025-07-30", type: "fomc", title: "FOMC Decision", detail: "Rate decision and statement.", time: "2:00 PM ET" },
-  { date: "2025-08-01", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls.", time: "8:30 AM ET" },
-  { date: "2025-08-12", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET" },
+  { date: "2025-08-01", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls.", time: "8:30 AM ET", blsType: "nfp", reportUrl: "https://www.bls.gov/news.release/empsit.nr0.htm" },
+  { date: "2025-08-12", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET", blsType: "cpi", reportUrl: "https://www.bls.gov/news.release/cpi.nr0.htm" },
   { date: "2025-08-15", type: "opex", title: "Monthly OpEx", detail: "Monthly options expiration." },
   { date: "2025-09-01", type: "holiday", title: "Labor Day", detail: "NYSE & NASDAQ closed." },
-  { date: "2025-09-05", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls.", time: "8:30 AM ET" },
-  { date: "2025-09-10", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET" },
+  { date: "2025-09-05", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls.", time: "8:30 AM ET", blsType: "nfp", reportUrl: "https://www.bls.gov/news.release/empsit.nr0.htm" },
+  { date: "2025-09-10", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET", blsType: "cpi", reportUrl: "https://www.bls.gov/news.release/cpi.nr0.htm" },
   { date: "2025-09-17", type: "fomc", title: "FOMC Decision", detail: "Rate decision + dot plot + projections.", time: "2:00 PM ET" },
   { date: "2025-09-19", type: "witching", title: "Quad Witching", detail: "Quarterly options/futures expiration." },
-  { date: "2025-10-03", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls.", time: "8:30 AM ET" },
-  { date: "2025-10-14", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET" },
+  { date: "2025-10-03", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls.", time: "8:30 AM ET", blsType: "nfp", reportUrl: "https://www.bls.gov/news.release/empsit.nr0.htm" },
+  { date: "2025-10-14", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET", blsType: "cpi", reportUrl: "https://www.bls.gov/news.release/cpi.nr0.htm" },
   { date: "2025-10-17", type: "opex", title: "Monthly OpEx", detail: "Monthly options expiration." },
   { date: "2025-10-29", type: "fomc", title: "FOMC Decision", detail: "Rate decision and statement.", time: "2:00 PM ET" },
-  { date: "2025-11-07", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls.", time: "8:30 AM ET" },
-  { date: "2025-11-12", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET" },
+  { date: "2025-11-07", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls.", time: "8:30 AM ET", blsType: "nfp", reportUrl: "https://www.bls.gov/news.release/empsit.nr0.htm" },
+  { date: "2025-11-12", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET", blsType: "cpi", reportUrl: "https://www.bls.gov/news.release/cpi.nr0.htm" },
   { date: "2025-11-21", type: "opex", title: "Monthly OpEx", detail: "Monthly options expiration." },
   { date: "2025-11-27", type: "holiday", title: "Thanksgiving Day", detail: "NYSE & NASDAQ closed." },
   { date: "2025-11-28", type: "economic", title: "Early Close (1 PM)", detail: "Markets close at 1:00 PM ET." },
-  { date: "2025-12-05", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls.", time: "8:30 AM ET" },
-  { date: "2025-12-10", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET" },
+  { date: "2025-12-05", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls.", time: "8:30 AM ET", blsType: "nfp", reportUrl: "https://www.bls.gov/news.release/empsit.nr0.htm" },
+  { date: "2025-12-10", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET", blsType: "cpi", reportUrl: "https://www.bls.gov/news.release/cpi.nr0.htm" },
   { date: "2025-12-17", type: "fomc", title: "FOMC Decision", detail: "Rate decision + dot plot + projections.", time: "2:00 PM ET" },
   { date: "2025-12-19", type: "witching", title: "Quad Witching", detail: "Quarterly options/futures expiration." },
   { date: "2025-12-24", type: "economic", title: "Early Close (1 PM)", detail: "Markets close at 1:00 PM ET ahead of Christmas." },
   { date: "2025-12-25", type: "holiday", title: "Christmas Day", detail: "NYSE & NASDAQ closed." },
 
   { date: "2026-01-01", type: "holiday", title: "New Year's Day", detail: "NYSE & NASDAQ closed." },
-  { date: "2026-01-09", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls.", time: "8:30 AM ET" },
-  { date: "2026-01-14", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET" },
+  { date: "2026-01-09", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls.", time: "8:30 AM ET", blsType: "nfp", reportUrl: "https://www.bls.gov/news.release/empsit.nr0.htm" },
+  { date: "2026-01-14", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET", blsType: "cpi", reportUrl: "https://www.bls.gov/news.release/cpi.nr0.htm" },
   { date: "2026-01-16", type: "opex", title: "Monthly OpEx", detail: "Monthly options expiration." },
   { date: "2026-01-19", type: "holiday", title: "MLK Jr. Day", detail: "NYSE & NASDAQ closed." },
   { date: "2026-01-28", type: "fomc", title: "FOMC Decision", detail: "Rate decision and statement.", time: "2:00 PM ET" },
@@ -102,17 +122,17 @@ const MARKET_EVENTS: CalendarEvent[] = [
   { date: "2026-01-29", type: "earnings", title: "MSFT Earnings", ticker: "MSFT", detail: "Microsoft Q2 FY26 earnings report.", time: "After Close" },
   { date: "2026-02-04", type: "earnings", title: "AMZN Earnings", ticker: "AMZN", detail: "Amazon Q4 2025 earnings report.", time: "After Close" },
   { date: "2026-02-04", type: "earnings", title: "GOOG Earnings", ticker: "GOOG", detail: "Alphabet Q4 2025 earnings report.", time: "After Close" },
-  { date: "2026-02-06", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls.", time: "8:30 AM ET" },
-  { date: "2026-02-11", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET" },
+  { date: "2026-02-06", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls.", time: "8:30 AM ET", blsType: "nfp", reportUrl: "https://www.bls.gov/news.release/empsit.nr0.htm" },
+  { date: "2026-02-11", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET", blsType: "cpi", reportUrl: "https://www.bls.gov/news.release/cpi.nr0.htm" },
   { date: "2026-02-16", type: "holiday", title: "Presidents' Day", detail: "NYSE & NASDAQ closed." },
   { date: "2026-02-20", type: "opex", title: "Monthly OpEx", detail: "Monthly options expiration." },
-  { date: "2026-03-06", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls.", time: "8:30 AM ET" },
-  { date: "2026-03-11", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET" },
+  { date: "2026-03-06", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls.", time: "8:30 AM ET", blsType: "nfp", reportUrl: "https://www.bls.gov/news.release/empsit.nr0.htm" },
+  { date: "2026-03-11", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET", blsType: "cpi", reportUrl: "https://www.bls.gov/news.release/cpi.nr0.htm" },
   { date: "2026-03-18", type: "fomc", title: "FOMC Decision", detail: "Rate decision + dot plot + projections.", time: "2:00 PM ET" },
   { date: "2026-03-20", type: "witching", title: "Quad Witching", detail: "Quarterly options/futures expiration." },
   { date: "2026-04-03", type: "holiday", title: "Good Friday", detail: "NYSE & NASDAQ closed." },
-  { date: "2026-04-03", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls — monthly employment data released by BLS. Measures total number of paid U.S. workers excluding farm, government, private household, and nonprofit employees. A key indicator of economic health.", time: "8:30 AM ET" },
-  { date: "2026-04-10", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET" },
+  { date: "2026-04-03", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls — monthly employment data released by BLS. Measures total number of paid U.S. workers excluding farm, government, private household, and nonprofit employees. A key indicator of economic health.", time: "8:30 AM ET", blsType: "nfp", reportUrl: "https://www.bls.gov/news.release/empsit.nr0.htm" },
+  { date: "2026-04-10", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET", blsType: "cpi", reportUrl: "https://www.bls.gov/news.release/cpi.nr0.htm" },
   { date: "2026-04-17", type: "opex", title: "Monthly OpEx", detail: "Monthly options expiration." },
   { date: "2026-04-23", type: "earnings", title: "TSLA Earnings", ticker: "TSLA", detail: "Tesla Q1 2026 earnings report.", time: "After Close" },
   { date: "2026-04-24", type: "earnings", title: "GOOG Earnings", ticker: "GOOG", detail: "Alphabet Q1 2026 earnings report.", time: "After Close" },
@@ -120,19 +140,19 @@ const MARKET_EVENTS: CalendarEvent[] = [
   { date: "2026-04-29", type: "earnings", title: "MSFT Earnings", ticker: "MSFT", detail: "Microsoft Q3 FY26 earnings report.", time: "After Close" },
   { date: "2026-04-30", type: "earnings", title: "AAPL Earnings", ticker: "AAPL", detail: "Apple Q2 FY26 earnings report.", time: "After Close" },
   { date: "2026-04-30", type: "earnings", title: "AMZN Earnings", ticker: "AMZN", detail: "Amazon Q1 2026 earnings report.", time: "After Close" },
-  { date: "2026-05-01", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls.", time: "8:30 AM ET" },
+  { date: "2026-05-01", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls.", time: "8:30 AM ET", blsType: "nfp", reportUrl: "https://www.bls.gov/news.release/empsit.nr0.htm" },
   { date: "2026-05-06", type: "fomc", title: "FOMC Decision", detail: "Rate decision and statement.", time: "2:00 PM ET" },
-  { date: "2026-05-12", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET" },
+  { date: "2026-05-12", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET", blsType: "cpi", reportUrl: "https://www.bls.gov/news.release/cpi.nr0.htm" },
   { date: "2026-05-15", type: "opex", title: "Monthly OpEx", detail: "Monthly options expiration." },
   { date: "2026-05-25", type: "holiday", title: "Memorial Day", detail: "NYSE & NASDAQ closed." },
-  { date: "2026-06-05", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls.", time: "8:30 AM ET" },
-  { date: "2026-06-10", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET" },
+  { date: "2026-06-05", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls.", time: "8:30 AM ET", blsType: "nfp", reportUrl: "https://www.bls.gov/news.release/empsit.nr0.htm" },
+  { date: "2026-06-10", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET", blsType: "cpi", reportUrl: "https://www.bls.gov/news.release/cpi.nr0.htm" },
   { date: "2026-06-17", type: "fomc", title: "FOMC Decision", detail: "Rate decision + dot plot + projections.", time: "2:00 PM ET" },
   { date: "2026-06-19", type: "holiday", title: "Juneteenth", detail: "NYSE & NASDAQ closed." },
   { date: "2026-06-19", type: "witching", title: "Quad Witching", detail: "Quarterly options/futures expiration." },
-  { date: "2026-07-02", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls.", time: "8:30 AM ET" },
+  { date: "2026-07-02", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls.", time: "8:30 AM ET", blsType: "nfp", reportUrl: "https://www.bls.gov/news.release/empsit.nr0.htm" },
   { date: "2026-07-03", type: "holiday", title: "Independence Day (Observed)", detail: "NYSE & NASDAQ closed." },
-  { date: "2026-07-14", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET" },
+  { date: "2026-07-14", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET", blsType: "cpi", reportUrl: "https://www.bls.gov/news.release/cpi.nr0.htm" },
   { date: "2026-07-17", type: "opex", title: "Monthly OpEx", detail: "Monthly options expiration." },
   { date: "2026-07-22", type: "earnings", title: "TSLA Earnings", ticker: "TSLA", detail: "Tesla Q2 2026 earnings report.", time: "After Close" },
   { date: "2026-07-23", type: "earnings", title: "GOOG Earnings", ticker: "GOOG", detail: "Alphabet Q2 2026 earnings report.", time: "After Close" },
@@ -141,16 +161,16 @@ const MARKET_EVENTS: CalendarEvent[] = [
   { date: "2026-07-29", type: "earnings", title: "MSFT Earnings", ticker: "MSFT", detail: "Microsoft Q4 FY26 earnings report.", time: "After Close" },
   { date: "2026-07-30", type: "earnings", title: "AAPL Earnings", ticker: "AAPL", detail: "Apple Q3 FY26 earnings report.", time: "After Close" },
   { date: "2026-07-30", type: "earnings", title: "AMZN Earnings", ticker: "AMZN", detail: "Amazon Q2 2026 earnings report.", time: "After Close" },
-  { date: "2026-08-07", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls.", time: "8:30 AM ET" },
-  { date: "2026-08-12", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET" },
+  { date: "2026-08-07", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls.", time: "8:30 AM ET", blsType: "nfp", reportUrl: "https://www.bls.gov/news.release/empsit.nr0.htm" },
+  { date: "2026-08-12", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET", blsType: "cpi", reportUrl: "https://www.bls.gov/news.release/cpi.nr0.htm" },
   { date: "2026-08-21", type: "opex", title: "Monthly OpEx", detail: "Monthly options expiration." },
-  { date: "2026-09-04", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls.", time: "8:30 AM ET" },
+  { date: "2026-09-04", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls.", time: "8:30 AM ET", blsType: "nfp", reportUrl: "https://www.bls.gov/news.release/empsit.nr0.htm" },
   { date: "2026-09-07", type: "holiday", title: "Labor Day", detail: "NYSE & NASDAQ closed." },
-  { date: "2026-09-10", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET" },
+  { date: "2026-09-10", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET", blsType: "cpi", reportUrl: "https://www.bls.gov/news.release/cpi.nr0.htm" },
   { date: "2026-09-16", type: "fomc", title: "FOMC Decision", detail: "Rate decision + dot plot + projections.", time: "2:00 PM ET" },
   { date: "2026-09-18", type: "witching", title: "Quad Witching", detail: "Quarterly options/futures expiration." },
-  { date: "2026-10-02", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls.", time: "8:30 AM ET" },
-  { date: "2026-10-13", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET" },
+  { date: "2026-10-02", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls.", time: "8:30 AM ET", blsType: "nfp", reportUrl: "https://www.bls.gov/news.release/empsit.nr0.htm" },
+  { date: "2026-10-13", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET", blsType: "cpi", reportUrl: "https://www.bls.gov/news.release/cpi.nr0.htm" },
   { date: "2026-10-16", type: "opex", title: "Monthly OpEx", detail: "Monthly options expiration." },
   { date: "2026-10-22", type: "earnings", title: "TSLA Earnings", ticker: "TSLA", detail: "Tesla Q3 2026 earnings report.", time: "After Close" },
   { date: "2026-10-27", type: "earnings", title: "GOOG Earnings", ticker: "GOOG", detail: "Alphabet Q3 2026 earnings report.", time: "After Close" },
@@ -159,13 +179,13 @@ const MARKET_EVENTS: CalendarEvent[] = [
   { date: "2026-10-28", type: "earnings", title: "MSFT Earnings", ticker: "MSFT", detail: "Microsoft Q1 FY27 earnings report.", time: "After Close" },
   { date: "2026-10-29", type: "earnings", title: "AAPL Earnings", ticker: "AAPL", detail: "Apple Q4 FY26 earnings report.", time: "After Close" },
   { date: "2026-10-29", type: "earnings", title: "AMZN Earnings", ticker: "AMZN", detail: "Amazon Q3 2026 earnings report.", time: "After Close" },
-  { date: "2026-11-06", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls.", time: "8:30 AM ET" },
-  { date: "2026-11-12", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET" },
+  { date: "2026-11-06", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls.", time: "8:30 AM ET", blsType: "nfp", reportUrl: "https://www.bls.gov/news.release/empsit.nr0.htm" },
+  { date: "2026-11-12", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET", blsType: "cpi", reportUrl: "https://www.bls.gov/news.release/cpi.nr0.htm" },
   { date: "2026-11-20", type: "opex", title: "Monthly OpEx", detail: "Monthly options expiration." },
   { date: "2026-11-26", type: "holiday", title: "Thanksgiving Day", detail: "NYSE & NASDAQ closed." },
   { date: "2026-11-27", type: "economic", title: "Early Close (1 PM)", detail: "Markets close at 1:00 PM ET." },
-  { date: "2026-12-04", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls.", time: "8:30 AM ET" },
-  { date: "2026-12-09", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET" },
+  { date: "2026-12-04", type: "economic", title: "Jobs Report (NFP)", detail: "Non-Farm Payrolls.", time: "8:30 AM ET", blsType: "nfp", reportUrl: "https://www.bls.gov/news.release/empsit.nr0.htm" },
+  { date: "2026-12-09", type: "economic", title: "CPI Report", detail: "Consumer Price Index.", time: "8:30 AM ET", blsType: "cpi", reportUrl: "https://www.bls.gov/news.release/cpi.nr0.htm" },
   { date: "2026-12-16", type: "fomc", title: "FOMC Decision", detail: "Rate decision + dot plot + projections.", time: "2:00 PM ET" },
   { date: "2026-12-18", type: "witching", title: "Quad Witching", detail: "Quarterly options/futures expiration." },
   { date: "2026-12-24", type: "economic", title: "Early Close (1 PM)", detail: "Markets close at 1:00 PM ET ahead of Christmas." },
@@ -183,6 +203,19 @@ interface Props {
   onClose: () => void;
 }
 
+const BASE = import.meta.env.BASE_URL ?? "/";
+const apiBase = `${BASE}api`;
+
+async function fetchBlsReport(blsType: string): Promise<BlsReportData | null> {
+  try {
+    const res = await fetch(`${apiBase}/economic/report?type=${blsType}`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
 export function MarketCalendar({ onClose }: Props) {
   const setSymbol = useTerminalStore((s) => s.setSymbol);
   const now = new Date();
@@ -191,6 +224,9 @@ export function MarketCalendar({ onClose }: Props) {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [filterType, setFilterType] = useState<string | null>(null);
+  const [blsData, setBlsData] = useState<Record<string, BlsReportData>>({});
+  const [blsLoading, setBlsLoading] = useState<string | null>(null);
+  const [reportIframeUrl, setReportIframeUrl] = useState<string | null>(null);
 
   const eventMap = useMemo(() => {
     const map: Record<string, CalendarEvent[]> = {};
@@ -243,6 +279,18 @@ export function MarketCalendar({ onClose }: Props) {
     setSymbol(ticker);
     onClose();
   }, [setSymbol, onClose]);
+
+  useEffect(() => {
+    if (!selectedEvent?.blsType) return;
+    if (blsData[selectedEvent.blsType]) return;
+    setBlsLoading(selectedEvent.blsType);
+    fetchBlsReport(selectedEvent.blsType).then((data) => {
+      if (data) {
+        setBlsData((prev) => ({ ...prev, [selectedEvent.blsType!]: data }));
+      }
+      setBlsLoading(null);
+    });
+  }, [selectedEvent?.blsType]);
 
   return (
     <div className="flex flex-col h-full max-w-xl mx-auto">
@@ -381,8 +429,7 @@ export function MarketCalendar({ onClose }: Props) {
                   onClick={() => setSelectedEvent(selectedEvent === ev ? null : ev)}
                   className="w-full text-left rounded-lg p-3 transition-all"
                   style={{
-                    background: "#111113",
-                    border: `1px solid ${selectedEvent === ev ? TYPE_COLORS[ev.type] : "#1a1a1c"}`,
+                    border: `1px solid ${selectedEvent === ev ? TYPE_COLORS[ev.type] : "#2a2a2c"}`,
                   }}
                 >
                   <div className="flex items-center gap-2 mb-1">
@@ -409,10 +456,74 @@ export function MarketCalendar({ onClose }: Props) {
                     )}
                     <span className="font-mono text-[12px] text-white font-semibold">{ev.title}</span>
                   </div>
-                  {selectedEvent === ev && ev.detail && (
-                    <p className="font-mono text-[10px] text-zinc-400 mt-2 leading-relaxed">
-                      {ev.detail}
-                    </p>
+                  {selectedEvent === ev && (
+                    <div className="mt-2 space-y-2">
+                      {ev.blsType && blsLoading === ev.blsType && (
+                        <div className="flex items-center gap-2 py-2">
+                          <Loader2 className="w-3.5 h-3.5 text-zinc-500 animate-spin" />
+                          <span className="font-mono text-[10px] text-zinc-500">Loading report data...</span>
+                        </div>
+                      )}
+                      {ev.blsType && blsData[ev.blsType]?.change && (
+                        <div className="rounded-lg p-3" style={{ border: "1px solid #2a2a2c" }}>
+                          <div className="flex items-baseline justify-between mb-2">
+                            <span className="font-mono text-[9px] text-zinc-500 tracking-wider">
+                              {blsData[ev.blsType]!.change!.currentMonth} {blsData[ev.blsType]!.change!.currentYear}
+                            </span>
+                            <span className="font-mono text-[9px] text-zinc-600">{blsData[ev.blsType]!.series}</span>
+                          </div>
+                          <div className="flex items-center gap-4 mb-2">
+                            <div>
+                              <span className="font-mono text-[8px] text-zinc-600 block tracking-wider">ACTUAL</span>
+                              <span className="font-mono text-lg font-bold text-white">{blsData[ev.blsType]!.change!.actual}</span>
+                            </div>
+                            <div>
+                              <span className="font-mono text-[8px] text-zinc-600 block tracking-wider">PREVIOUS</span>
+                              <span className="font-mono text-sm text-zinc-400">{blsData[ev.blsType]!.change!.previousLevel}</span>
+                            </div>
+                          </div>
+                          {blsData[ev.blsType]!.recentHistory.length > 0 && (
+                            <div className="border-t border-[#2a2a2c] pt-2 mt-2">
+                              <span className="font-mono text-[8px] text-zinc-600 tracking-wider block mb-1">RECENT</span>
+                              <div className="grid grid-cols-3 gap-x-4 gap-y-0.5">
+                                {blsData[ev.blsType]!.recentHistory.slice(0, 6).map((h, hi) => (
+                                  <div key={hi} className="flex justify-between">
+                                    <span className="font-mono text-[9px] text-zinc-500">{h.month.slice(0, 3)}</span>
+                                    <span className="font-mono text-[9px] text-zinc-300 tabular-nums">{h.value}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {(ev.reportUrl || blsData[ev.blsType]!.reportUrl) && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setReportIframeUrl(ev.reportUrl || blsData[ev.blsType]!.reportUrl);
+                              }}
+                              className="flex items-center gap-1.5 mt-3 font-mono text-[10px] font-semibold transition-colors"
+                              style={{ color: "#FFB800" }}
+                            >
+                              <ExternalLink className="w-3 h-3" /> Read Full Report
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      {ev.detail && (!ev.blsType || !blsData[ev.blsType]?.change) && !blsLoading && (
+                        <p className="font-mono text-[10px] text-zinc-400 leading-relaxed">
+                          {ev.detail}
+                        </p>
+                      )}
+                      {ev.reportUrl && !ev.blsType && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setReportIframeUrl(ev.reportUrl!); }}
+                          className="flex items-center gap-1.5 font-mono text-[10px] font-semibold transition-colors"
+                          style={{ color: "#FFB800" }}
+                        >
+                          <ExternalLink className="w-3 h-3" /> Read Full Report
+                        </button>
+                      )}
+                    </div>
                   )}
                 </button>
               ))}
@@ -432,7 +543,7 @@ export function MarketCalendar({ onClose }: Props) {
                 <button
                   key={i}
                   onClick={() => { setSelectedDate(ev.date); setSelectedEvent(ev); }}
-                  className="w-full text-left flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-[#111113] transition-colors"
+                  className="w-full text-left flex items-center gap-2 px-2 py-2 rounded-lg transition-colors"
                 >
                   <div className="w-2 h-2 rounded-full shrink-0" style={{ background: TYPE_COLORS[ev.type] }} />
                   <span className="font-mono text-[10px] text-zinc-500 w-[70px] shrink-0">
@@ -452,6 +563,40 @@ export function MarketCalendar({ onClose }: Props) {
                 </button>
               ))}
           </div>
+        </div>
+      )}
+
+      {reportIframeUrl && (
+        <div className="fixed inset-0 z-[200] flex flex-col" style={{ background: "#0a0a0a" }}>
+          <div className="flex items-center justify-between px-4 py-3 border-b border-[#2a2a2c]">
+            <span className="font-mono text-[11px] text-zinc-400 tracking-wider">BLS Report</span>
+            <div className="flex items-center gap-2">
+              <a
+                href={reportIframeUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="p-1.5 rounded-lg transition-colors"
+              >
+                <ExternalLink className="w-4 h-4 text-zinc-500" />
+              </a>
+              <button
+                onClick={() => setReportIframeUrl(null)}
+                className="p-1.5 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-zinc-400" />
+              </button>
+            </div>
+          </div>
+          <iframe
+            src={reportIframeUrl}
+            className="flex-1 w-full"
+            style={{ border: "none", background: "#ffffff" }}
+            title="BLS Report"
+            onError={() => {
+              window.open(reportIframeUrl!, "_blank");
+              setReportIframeUrl(null);
+            }}
+          />
         </div>
       )}
     </div>
