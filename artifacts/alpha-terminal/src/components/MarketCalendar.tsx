@@ -495,7 +495,7 @@ export function MarketCalendar({ onClose }: Props) {
       </div>
 
       {selectedDate && !selectedEvent && (
-        <div className="mt-2 border-t border-[#2a2a2c] pt-2 flex-1 flex flex-col">
+        <div className="mt-1 border-t border-[#2a2a2c] pt-1 flex-1 flex flex-col">
           <div className="flex items-center justify-between mb-2">
             <span className="font-mono text-[10px] text-zinc-500 tracking-wider">
               {new Date(selectedDate + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
@@ -698,11 +698,27 @@ export function MarketCalendar({ onClose }: Props) {
       })()}
 
       {!selectedDate && (
-        <div className="mt-3 border-t border-[#2a2a2c] pt-3 flex-1 overflow-y-auto">
+        <div className="mt-1 border-t border-[#2a2a2c] pt-1 flex-1 overflow-y-auto">
           <span className="font-mono text-[9px] text-zinc-600 tracking-widest block mb-2">UPCOMING</span>
           <div className="space-y-1">
             {MARKET_EVENTS
-              .filter((ev) => ev.date >= todayKey && (activeFilters.size === 0 || activeFilters.has(ev.type)))
+              .filter((ev) => {
+                if (activeFilters.size > 0 && !activeFilters.has(ev.type)) return false;
+                if (ev.date > todayKey) return true;
+                if (ev.date < todayKey) return false;
+                if (!ev.time) return false;
+                const match = ev.time.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)\s*ET$/i);
+                if (!match) return false;
+                let h = parseInt(match[1]);
+                const m = parseInt(match[2]);
+                const ampm = match[3].toUpperCase();
+                if (ampm === "PM" && h !== 12) h += 12;
+                if (ampm === "AM" && h === 12) h = 0;
+                const etNow = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" }));
+                const eventMinutes = h * 60 + m;
+                const nowMinutes = etNow.getHours() * 60 + etNow.getMinutes();
+                return eventMinutes > nowMinutes;
+              })
               .slice(0, 12)
               .map((ev, i) => (
                 <button
