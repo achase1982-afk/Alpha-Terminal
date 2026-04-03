@@ -531,7 +531,7 @@ export function MarketCalendar({ onClose }: Props) {
         ))}
       </div>
 
-      <div className="grid grid-cols-7 gap-0 flex-shrink-0">
+      <div className="grid grid-cols-7 gap-0 flex-shrink-0 mb-auto">
         {calendarDays.map((cell) => {
           const events = eventMap[cell.key] || [];
           const isToday = cell.key === todayKey;
@@ -547,7 +547,7 @@ export function MarketCalendar({ onClose }: Props) {
                 setSelectedEvent(null);
                 setShowFullBreakdown(false);
               }}
-              className="relative flex flex-col items-center py-1.5 min-h-[56px] rounded-md transition-all justify-center"
+              className="relative flex flex-col items-center py-1 min-h-[48px] rounded-md transition-all justify-center"
               style={{
                 background: "transparent",
                 border: isSelected ? "1px solid #FFB80060" : isToday ? "1px solid #ffffff20" : "1px solid transparent",
