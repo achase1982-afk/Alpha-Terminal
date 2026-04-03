@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from "react";
 import { CompanyResearchHub } from "@/components/CompanyResearchHub";
 import { InstitutionalDashboard } from "@/components/InstitutionalDashboard";
+import { TechnicalAnalysisPage } from "@/components/TechnicalAnalysisPage";
 
 interface Candle {
   datetime: string;
@@ -16,7 +17,7 @@ interface Props {
   stickyOffset?: number;
 }
 
-const PAGE_LABELS = ["Research", "Institutional"];
+const PAGE_LABELS = ["Research", "Institutional", "Technical"];
 
 export function CompanySwipablePages({ candles, stickyOffset = 0 }: Props) {
   const [page, setPage] = useState(0);
@@ -126,6 +127,9 @@ export function CompanySwipablePages({ candles, stickyOffset = 0 }: Props) {
           </div>
           <div className="w-full shrink-0">
             <InstitutionalDashboard candles={candles} />
+          </div>
+          <div className="w-full shrink-0">
+            <TechnicalAnalysisPage candles={candles} />
           </div>
         </div>
       </div>
