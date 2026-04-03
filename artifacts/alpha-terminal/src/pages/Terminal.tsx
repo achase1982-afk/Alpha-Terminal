@@ -102,7 +102,7 @@ export default function TerminalPage() {
   const lockScrollTop = useRef(0);
   const wasScrolled = useRef(false);
   const COLLAPSE_PX = 80;
-  const PAUSE_MS = 250;
+  const PAUSE_MS = 1000;
 
   const snapTo = useCallback((el: HTMLElement, target: number, onDone?: () => void) => {
     cancelAnimationFrame(snapRaf.current);
