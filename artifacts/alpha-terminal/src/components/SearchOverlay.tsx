@@ -95,7 +95,7 @@ function RecentRow({
           style={{ color: isInWatchlist ? "#f23645" : "#5b9cf6" }}
           role="button"
         >
-          {isInWatchlist ? "REMOVE" : "ADD TO WATCHLIST"}
+          {isInWatchlist ? "REMOVE" : "+ WATCHLIST"}
         </span>
       </div>
     </div>
