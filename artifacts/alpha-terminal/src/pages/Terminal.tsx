@@ -95,11 +95,42 @@ export default function TerminalPage() {
   const { refresh } = useAutoRefreshToken();
   useViewportShell();
 
+  const autoScrolling = useRef(false);
+  const lastY = useRef(0);
+  const COLLAPSE_PX = 80;
+
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
     const y = el.scrollTop;
-    setIsScrolled(y > 80);
+    const prev = lastY.current;
+    lastY.current = y;
+
+    if (autoScrolling.current) {
+      setIsScrolled(y >= COLLAPSE_PX);
+      return;
+    }
+
+    const goingDown = y > prev;
+    const goingUp = y < prev;
+
+    if (goingDown && y > 8 && y < COLLAPSE_PX) {
+      autoScrolling.current = true;
+      el.scrollTo({ top: COLLAPSE_PX, behavior: "smooth" });
+      setTimeout(() => { autoScrolling.current = false; }, 350);
+      setIsScrolled(true);
+      return;
+    }
+
+    if (goingUp && y < COLLAPSE_PX && y > 0 && prev >= COLLAPSE_PX) {
+      autoScrolling.current = true;
+      el.scrollTo({ top: 0, behavior: "smooth" });
+      setTimeout(() => { autoScrolling.current = false; }, 350);
+      setIsScrolled(false);
+      return;
+    }
+
+    setIsScrolled(y >= COLLAPSE_PX);
   }, []);
 
   useEffect(() => {
@@ -209,12 +240,7 @@ export default function TerminalPage() {
           onNavigate={(dest) => { if (dest === "markets") setActiveBottom("markets"); else if (dest === "portfolio") setActiveBottom("portfolio"); }}
         />
 
-        <main
-          ref={scrollRef}
-          onScroll={handleScroll}
-          className={`flex-1 app-content pb-24 ${activeBottom === "ai" && aiSubTab === "pulse" && !pulseData && !pulseLoading && !pulseStreaming ? "overflow-hidden" : "overflow-y-auto"}`}
-          style={activeBottom === "markets" ? { scrollSnapType: "y proximity", scrollPaddingTop: stickyH } as React.CSSProperties : undefined}
-        >
+        <main ref={scrollRef} onScroll={handleScroll} className={`flex-1 app-content pb-24 ${activeBottom === "ai" && aiSubTab === "pulse" && !pulseData && !pulseLoading && !pulseStreaming ? "overflow-hidden" : "overflow-y-auto"}`}>
 
           {activeBottom === "markets" && (
             <>
@@ -226,7 +252,7 @@ export default function TerminalPage() {
                 <MarketDataTabs activeTab={contextTab} setActiveTab={setContextTab} />
               </div>
 
-              <div style={{ minHeight: "calc(100vh - 60px)", scrollSnapAlign: "start" } as React.CSSProperties}>
+              <div style={{ minHeight: "calc(100vh - 60px)" }}>
                 {contextTab === "news" && <NewsTab />}
                 {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={stickyH} />}
                 {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles as any} stickyOffset={stickyH} />}
