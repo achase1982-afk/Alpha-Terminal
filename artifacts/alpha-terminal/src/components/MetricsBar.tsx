@@ -260,9 +260,19 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
 
   if (noSchwab) {
     return (
-      <div className="w-full border-b border-card-border flex items-center justify-center px-4 min-h-[70px] sm:min-h-[80px]" style={{ background: HEADER_BG }}>
-        <p className="text-muted-foreground text-xs sm:text-sm animate-pulse text-center tracking-wider font-mono">
-          CONNECT SCHWAB TO VIEW MARKET DATA
+      <div
+        className="w-full border-b border-card-border flex items-center justify-center px-4 transition-all duration-300"
+        style={{
+          background: HEADER_BG,
+          height: compact ? 32 : 70,
+          minHeight: compact ? 32 : 70,
+        }}
+      >
+        <p
+          className="text-muted-foreground animate-pulse text-center tracking-wider font-mono transition-all duration-300"
+          style={{ fontSize: compact ? 9 : 12 }}
+        >
+          Connect Schwab to view market data
         </p>
       </div>
     );
