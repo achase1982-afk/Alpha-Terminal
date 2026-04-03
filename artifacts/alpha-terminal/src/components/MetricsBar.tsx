@@ -132,33 +132,36 @@ function TickerBlock({ symbol, description, showData, opacityCls, transitionCls,
   }, [description]);
 
   return (
-    <div className={`flex items-start gap-1.5 min-w-0 overflow-hidden ${opacityCls} ${transitionCls}`}>
-      <button
-        onClick={onOpenTearSheet}
-        className="flex flex-col min-w-0 text-left cursor-pointer group overflow-hidden"
-        aria-label={`View company profile for ${symbol}`}
-      >
-        {showData ? (
-          <>
-            <span className="font-semibold text-white tracking-tight leading-none group-hover:text-primary transition-colors whitespace-nowrap" style={{ fontSize: 24 }}>
+    <div className={`flex flex-col min-w-0 text-left overflow-hidden ${opacityCls} ${transitionCls}`}>
+      {showData ? (
+        <>
+          <span className="inline-flex items-center gap-1.5 leading-none">
+            <span
+              onClick={onOpenTearSheet}
+              className="font-semibold text-white tracking-tight cursor-pointer hover:text-primary transition-colors whitespace-nowrap"
+              style={{ fontSize: 24 }}
+              role="button"
+              tabIndex={0}
+            >
               {symbol}
             </span>
-            <span
-              ref={nameRef}
-              className="font-medium tracking-wide uppercase leading-snug overflow-hidden text-ellipsis"
-              style={{ color: '#FFB800', fontSize: nameFontSize, maxHeight: COMPANY_BOX_H, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const, marginTop: 2, wordBreak: 'break-word' }}
-            >
-              {description || ""}
-            </span>
-          </>
-        ) : (
-          <>
-            <Skeleton className="h-6 w-16 bg-zinc-800" />
-            <Skeleton className="h-3 w-24 bg-zinc-800 mt-1" />
-          </>
-        )}
-      </button>
-      {showData && symbol && <WatchlistToggle symbol={symbol} />}
+            {symbol && <WatchlistToggle symbol={symbol} />}
+          </span>
+          <span
+            ref={nameRef}
+            onClick={onOpenTearSheet}
+            className="font-medium tracking-wide uppercase leading-snug overflow-hidden text-ellipsis cursor-pointer"
+            style={{ color: '#FFB800', fontSize: nameFontSize, maxHeight: COMPANY_BOX_H, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const, marginTop: 2, wordBreak: 'break-word' }}
+          >
+            {description || ""}
+          </span>
+        </>
+      ) : (
+        <>
+          <Skeleton className="h-6 w-16 bg-zinc-800" />
+          <Skeleton className="h-3 w-24 bg-zinc-800 mt-1" />
+        </>
+      )}
     </div>
   );
 }
