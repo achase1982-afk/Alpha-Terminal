@@ -710,21 +710,21 @@ export function MarketCalendar({ onClose }: Props) {
           >
             <div className="w-2 h-2 rounded-full shrink-0" style={{ background: TYPE_COLORS[ev.type] }} />
             {showDate && (
-              <span className="font-mono text-[10px] text-zinc-500 w-[70px] shrink-0">
+              <span className="font-mono text-[13px] text-zinc-500 w-[75px] shrink-0">
                 {new Date(ev.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
               </span>
             )}
             {ev.ticker && (
               <span
                 onClick={(e) => { e.stopPropagation(); handleTickerClick(ev.ticker!); }}
-                className="font-mono font-bold text-[10px] px-1.5 py-0.5 rounded shrink-0"
+                className="font-mono font-bold text-[13px] px-1.5 py-0.5 rounded shrink-0"
                 style={{ color: "#FFB800", border: "1px solid #FFB80050" }}
               >
                 {ev.ticker}
               </span>
             )}
-            <span className="font-mono text-[11px] text-zinc-300 truncate">{ev.title}</span>
-            {ev.time && <span className="font-mono text-[8px] text-zinc-600 ml-auto shrink-0">{ev.time}</span>}
+            <span className="font-mono text-[14px] text-zinc-300 truncate">{ev.title}</span>
+            {ev.time && <span className="font-mono text-[11px] text-zinc-500 ml-auto shrink-0">{ev.time}</span>}
           </button>
         );
 
@@ -732,7 +732,7 @@ export function MarketCalendar({ onClose }: Props) {
           <div className="mt-1 border-t border-[#2a2a2c] pt-1 flex-1 overflow-y-auto">
             {todayEvents.length > 0 && (
               <>
-                <span className="font-mono text-[9px] text-zinc-600 tracking-widest block mb-1 mt-1">TODAY</span>
+                <span className="font-mono text-[10px] text-zinc-600 tracking-widest block mb-1 mt-1">TODAY</span>
                 <div>
                   {todayEvents.map((ev, i) => renderRow(ev, i, false))}
                 </div>
@@ -740,7 +740,7 @@ export function MarketCalendar({ onClose }: Props) {
             )}
             {upcomingEvents.length > 0 && (
               <>
-                <span className={`font-mono text-[9px] text-zinc-600 tracking-widest block mb-1 ${todayEvents.length > 0 ? "mt-2 pt-1.5 border-t border-[#2a2a2c]" : "mt-1"}`}>UPCOMING</span>
+                <span className={`font-mono text-[10px] text-zinc-600 tracking-widest block mb-1 ${todayEvents.length > 0 ? "mt-2 pt-1.5 border-t border-[#2a2a2c]" : "mt-1"}`}>UPCOMING</span>
                 <div>
                   {upcomingEvents.map((ev, i) => renderRow(ev, i, true))}
                 </div>
