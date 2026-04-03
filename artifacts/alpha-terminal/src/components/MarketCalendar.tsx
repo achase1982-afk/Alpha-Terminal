@@ -483,7 +483,7 @@ export function MarketCalendar({ onClose }: Props) {
       </div>
 
       {selectedDate && (
-        <div className="mt-2 border-t border-[#2a2a2c] pt-3 flex-1 overflow-y-auto">
+        <div className="mt-2 border-t border-[#2a2a2c] pt-3 flex-1 overflow-y-auto flex flex-col">
           <div className="flex items-center justify-between mb-2">
             <span className="font-mono text-[10px] text-zinc-500 tracking-wider">
               {new Date(selectedDate + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
@@ -495,16 +495,121 @@ export function MarketCalendar({ onClose }: Props) {
 
           {selectedEvents.length === 0 ? (
             <p className="font-mono text-[11px] text-zinc-600 py-4 text-center">No events scheduled</p>
+          ) : selectedEvent ? (
+            <div className="flex-1 flex flex-col rounded-lg overflow-hidden" style={{ border: `1px solid ${TYPE_COLORS[selectedEvent.type]}` }}>
+              <div className="flex items-center justify-between p-3 border-b border-[#2a2a2c]">
+                <div className="flex items-center gap-2">
+                  <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: TYPE_COLORS[selectedEvent.type] }} />
+                  <span className="font-mono text-[10px] tracking-wider" style={{ color: TYPE_COLORS[selectedEvent.type] }}>
+                    {TYPE_LABELS[selectedEvent.type]}
+                  </span>
+                  {selectedEvent.time && (
+                    <span className="font-mono text-[9px] text-zinc-600">{selectedEvent.time}</span>
+                  )}
+                </div>
+                <button onClick={() => setSelectedEvent(null)} className="p-1">
+                  <X className="w-3.5 h-3.5 text-zinc-500" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-4">
+                {selectedEvent.type === "holiday" ? (
+                  <div className="flex-1 flex flex-col items-center justify-center py-8">
+                    <span className="font-mono text-xl font-extrabold text-white mb-2">{selectedEvent.title}</span>
+                    <span className="font-mono text-[11px] text-zinc-500 tracking-wider">Holiday · Markets Closed</span>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      {selectedEvent.ticker && (
+                        <span
+                          onClick={() => handleTickerClick(selectedEvent.ticker!)}
+                          className="font-mono font-bold text-sm px-1.5 py-0.5 rounded cursor-pointer transition-colors"
+                          style={{ color: "#FFB800", border: "1px solid #FFB80050" }}
+                        >
+                          {selectedEvent.ticker}
+                        </span>
+                      )}
+                      <span className="font-mono text-base text-white font-bold">{selectedEvent.title}</span>
+                    </div>
+
+                    {selectedEvent.blsType && blsLoading === selectedEvent.blsType && (
+                      <div className="flex items-center gap-2 py-4">
+                        <Loader2 className="w-4 h-4 text-zinc-500 animate-spin" />
+                        <span className="font-mono text-[11px] text-zinc-500">Loading report data...</span>
+                      </div>
+                    )}
+
+                    {selectedEvent.blsType && blsData[selectedEvent.blsType]?.change && (
+                      <>
+                        <div className="flex items-baseline justify-between mb-1">
+                          <span className="font-mono text-[10px] text-zinc-500 tracking-wider">
+                            {blsData[selectedEvent.blsType]!.change!.currentMonth} {blsData[selectedEvent.blsType]!.change!.currentYear}
+                          </span>
+                          <span className="font-mono text-[9px] text-zinc-600">{blsData[selectedEvent.blsType]!.series}</span>
+                        </div>
+                        <div className="flex items-center gap-6 py-3 border-y border-[#2a2a2c]">
+                          <div>
+                            <span className="font-mono text-[9px] text-zinc-600 block tracking-wider mb-1">ACTUAL</span>
+                            <span className="font-mono text-2xl font-extrabold text-white">{blsData[selectedEvent.blsType]!.change!.actual}</span>
+                          </div>
+                          <div>
+                            <span className="font-mono text-[9px] text-zinc-600 block tracking-wider mb-1">PREVIOUS</span>
+                            <span className="font-mono text-lg text-zinc-400">{blsData[selectedEvent.blsType]!.change!.previousLevel}</span>
+                          </div>
+                        </div>
+
+                        {blsData[selectedEvent.blsType]!.recentHistory.length > 0 && (
+                          <div className="pt-2">
+                            <span className="font-mono text-[9px] text-zinc-600 tracking-wider block mb-2">RECENT HISTORY</span>
+                            <div className="grid grid-cols-3 gap-x-6 gap-y-1">
+                              {blsData[selectedEvent.blsType]!.recentHistory.slice(0, 6).map((h, hi) => (
+                                <div key={hi} className="flex justify-between">
+                                  <span className="font-mono text-[10px] text-zinc-500">{h.month.slice(0, 3)}</span>
+                                  <span className="font-mono text-[10px] text-zinc-300 tabular-nums font-semibold">{h.value}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {(selectedEvent.reportUrl || blsData[selectedEvent.blsType]!.reportUrl) && (
+                          <button
+                            onClick={() => setReportIframeUrl(selectedEvent.reportUrl || blsData[selectedEvent.blsType]!.reportUrl)}
+                            className="flex items-center gap-2 mt-3 font-mono text-[11px] font-bold py-2 px-4 rounded-lg transition-colors"
+                            style={{ color: "#FFB800", border: "1px solid #FFB80040" }}
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" /> Read Full Report
+                          </button>
+                        )}
+                      </>
+                    )}
+
+                    {selectedEvent.detail && (!selectedEvent.blsType || !blsData[selectedEvent.blsType]?.change) && !blsLoading && (
+                      <p className="font-mono text-[11px] text-zinc-400 leading-relaxed">{selectedEvent.detail}</p>
+                    )}
+
+                    {selectedEvent.reportUrl && !selectedEvent.blsType && (
+                      <button
+                        onClick={() => setReportIframeUrl(selectedEvent.reportUrl!)}
+                        className="flex items-center gap-2 font-mono text-[11px] font-bold py-2 px-4 rounded-lg transition-colors"
+                        style={{ color: "#FFB800", border: "1px solid #FFB80040" }}
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" /> Read Full Report
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
           ) : (
             <div className="space-y-1.5">
               {selectedEvents.map((ev, i) => (
                 <button
                   key={i}
-                  onClick={() => setSelectedEvent(selectedEvent === ev ? null : ev)}
+                  onClick={() => setSelectedEvent(ev)}
                   className="w-full text-left rounded-lg p-3 transition-all"
-                  style={{
-                    border: `1px solid ${selectedEvent === ev ? TYPE_COLORS[ev.type] : "#2a2a2c"}`,
-                  }}
+                  style={{ border: `1px solid #2a2a2c` }}
                 >
                   <div className="flex items-center gap-2 mb-1">
                     <div className="w-2 h-2 rounded-full shrink-0" style={{ background: TYPE_COLORS[ev.type] }} />
@@ -517,88 +622,12 @@ export function MarketCalendar({ onClose }: Props) {
                   </div>
                   <div className="flex items-center gap-2">
                     {ev.ticker && (
-                      <span
-                        onClick={(e) => { e.stopPropagation(); handleTickerClick(ev.ticker!); }}
-                        className="font-mono font-bold text-sm px-1.5 py-0.5 rounded cursor-pointer transition-colors"
-                        style={{
-                          color: "#FFB800",
-                          border: "1px solid #FFB80050",
-                        }}
-                      >
+                      <span className="font-mono font-bold text-sm" style={{ color: "#FFB800" }}>
                         {ev.ticker}
                       </span>
                     )}
                     <span className="font-mono text-[12px] text-white font-semibold">{ev.title}</span>
                   </div>
-                  {selectedEvent === ev && (
-                    <div className="mt-2 space-y-2">
-                      {ev.blsType && blsLoading === ev.blsType && (
-                        <div className="flex items-center gap-2 py-2">
-                          <Loader2 className="w-3.5 h-3.5 text-zinc-500 animate-spin" />
-                          <span className="font-mono text-[10px] text-zinc-500">Loading report data...</span>
-                        </div>
-                      )}
-                      {ev.blsType && blsData[ev.blsType]?.change && (
-                        <div className="rounded-lg p-3" style={{ border: "1px solid #2a2a2c" }}>
-                          <div className="flex items-baseline justify-between mb-2">
-                            <span className="font-mono text-[9px] text-zinc-500 tracking-wider">
-                              {blsData[ev.blsType]!.change!.currentMonth} {blsData[ev.blsType]!.change!.currentYear}
-                            </span>
-                            <span className="font-mono text-[9px] text-zinc-600">{blsData[ev.blsType]!.series}</span>
-                          </div>
-                          <div className="flex items-center gap-4 mb-2">
-                            <div>
-                              <span className="font-mono text-[8px] text-zinc-600 block tracking-wider">ACTUAL</span>
-                              <span className="font-mono text-lg font-bold text-white">{blsData[ev.blsType]!.change!.actual}</span>
-                            </div>
-                            <div>
-                              <span className="font-mono text-[8px] text-zinc-600 block tracking-wider">PREVIOUS</span>
-                              <span className="font-mono text-sm text-zinc-400">{blsData[ev.blsType]!.change!.previousLevel}</span>
-                            </div>
-                          </div>
-                          {blsData[ev.blsType]!.recentHistory.length > 0 && (
-                            <div className="border-t border-[#2a2a2c] pt-2 mt-2">
-                              <span className="font-mono text-[8px] text-zinc-600 tracking-wider block mb-1">RECENT</span>
-                              <div className="grid grid-cols-3 gap-x-4 gap-y-0.5">
-                                {blsData[ev.blsType]!.recentHistory.slice(0, 6).map((h, hi) => (
-                                  <div key={hi} className="flex justify-between">
-                                    <span className="font-mono text-[9px] text-zinc-500">{h.month.slice(0, 3)}</span>
-                                    <span className="font-mono text-[9px] text-zinc-300 tabular-nums">{h.value}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                          {(ev.reportUrl || blsData[ev.blsType]!.reportUrl) && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setReportIframeUrl(ev.reportUrl || blsData[ev.blsType]!.reportUrl);
-                              }}
-                              className="flex items-center gap-1.5 mt-3 font-mono text-[10px] font-semibold transition-colors"
-                              style={{ color: "#FFB800" }}
-                            >
-                              <ExternalLink className="w-3 h-3" /> Read Full Report
-                            </button>
-                          )}
-                        </div>
-                      )}
-                      {ev.detail && (!ev.blsType || !blsData[ev.blsType]?.change) && !blsLoading && (
-                        <p className="font-mono text-[10px] text-zinc-400 leading-relaxed">
-                          {ev.detail}
-                        </p>
-                      )}
-                      {ev.reportUrl && !ev.blsType && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setReportIframeUrl(ev.reportUrl!); }}
-                          className="flex items-center gap-1.5 font-mono text-[10px] font-semibold transition-colors"
-                          style={{ color: "#FFB800" }}
-                        >
-                          <ExternalLink className="w-3 h-3" /> Read Full Report
-                        </button>
-                      )}
-                    </div>
-                  )}
                 </button>
               ))}
             </div>
