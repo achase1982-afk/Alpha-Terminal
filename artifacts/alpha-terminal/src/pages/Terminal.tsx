@@ -96,7 +96,7 @@ export default function TerminalPage() {
   useViewportShell();
 
   const COLLAPSE_PX = 80;
-  const PAUSE_MS = 500;
+  const PAUSE_MS = 1000;
   const wasCollapsed = useRef(false);
   const pauseTimer = useRef(0);
   const [contentPaused, setContentPaused] = useState(false);
