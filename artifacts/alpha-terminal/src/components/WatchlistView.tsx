@@ -177,10 +177,10 @@ function WatchlistRow({
         }}
       >
         <div className="flex items-center px-3 py-2 gap-2">
-          <div className="w-[72px] shrink-0 min-w-0">
-            <span className="block font-mono text-[13px] font-bold tracking-wide truncate" style={{ color: cColor === "#71717a" ? "#fff" : cColor }}>{sym}</span>
+          <div className="w-[80px] shrink-0 min-w-0">
+            <span className="block font-mono text-[15px] font-bold tracking-wide truncate" style={{ color: cColor === "#71717a" ? "#fff" : cColor }}>{sym}</span>
             {description && (
-              <span className="block font-mono text-[9px] uppercase tracking-wide truncate" style={{ color: "#FFB800" }}>
+              <span className="block font-mono text-[11px] uppercase tracking-wide truncate" style={{ color: "#FFB800" }}>
                 {description}
               </span>
             )}
