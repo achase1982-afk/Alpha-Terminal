@@ -98,13 +98,17 @@ export default function TerminalPage() {
   const lastY = useRef(0);
   const snapRaf = useRef(0);
   const scrollEndTimer = useRef(0);
+  const scrollLocked = useRef(false);
+  const lockScrollTop = useRef(0);
+  const wasScrolled = useRef(false);
   const COLLAPSE_PX = 80;
+  const PAUSE_MS = 250;
 
-  const snapTo = useCallback((el: HTMLElement, target: number) => {
+  const snapTo = useCallback((el: HTMLElement, target: number, onDone?: () => void) => {
     cancelAnimationFrame(snapRaf.current);
     const start = el.scrollTop;
     const dist = target - start;
-    if (Math.abs(dist) < 1) { el.scrollTop = target; return; }
+    if (Math.abs(dist) < 1) { el.scrollTop = target; onDone?.(); return; }
     const duration = 200;
     const t0 = performance.now();
     const step = (now: number) => {
@@ -113,6 +117,7 @@ export default function TerminalPage() {
       const ease = 1 - Math.pow(1 - progress, 3);
       el.scrollTop = start + dist * ease;
       if (progress < 1) snapRaf.current = requestAnimationFrame(step);
+      else onDone?.();
     };
     snapRaf.current = requestAnimationFrame(step);
   }, []);
@@ -120,14 +125,32 @@ export default function TerminalPage() {
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
+
+    if (scrollLocked.current) {
+      el.scrollTop = lockScrollTop.current;
+      return;
+    }
+
     const y = el.scrollTop;
     lastY.current = y;
+
+    const justCollapsed = !wasScrolled.current && y >= COLLAPSE_PX;
 
     setIsScrolled((prev) => {
       if (!prev && y >= COLLAPSE_PX) return true;
       if (prev && y <= 2) return false;
       return prev;
     });
+
+    if (justCollapsed) {
+      wasScrolled.current = true;
+      scrollLocked.current = true;
+      lockScrollTop.current = el.scrollTop;
+      setTimeout(() => { scrollLocked.current = false; }, PAUSE_MS);
+      return;
+    }
+
+    wasScrolled.current = y >= COLLAPSE_PX;
 
     clearTimeout(scrollEndTimer.current);
     scrollEndTimer.current = window.setTimeout(() => {
