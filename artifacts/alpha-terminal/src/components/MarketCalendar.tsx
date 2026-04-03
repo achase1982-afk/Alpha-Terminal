@@ -706,7 +706,7 @@ export function MarketCalendar({ onClose }: Props) {
           <button
             key={i}
             onClick={() => { setSelectedDate(ev.date); setSelectedEvent(ev); }}
-            className="w-full text-left flex items-center gap-2 px-2 py-2 rounded-lg transition-colors hover:bg-[#1a1a1c]"
+            className="w-full text-left flex items-center gap-2 px-2 py-1 rounded-lg transition-colors hover:bg-[#1a1a1c]"
           >
             <div className="w-2 h-2 rounded-full shrink-0" style={{ background: TYPE_COLORS[ev.type] }} />
             {showDate && (
@@ -733,15 +733,15 @@ export function MarketCalendar({ onClose }: Props) {
             {todayEvents.length > 0 && (
               <>
                 <span className="font-mono text-[9px] text-zinc-600 tracking-widest block mb-1 mt-1">TODAY</span>
-                <div className="space-y-0.5">
+                <div>
                   {todayEvents.map((ev, i) => renderRow(ev, i, false))}
                 </div>
               </>
             )}
             {upcomingEvents.length > 0 && (
               <>
-                <span className={`font-mono text-[9px] text-zinc-600 tracking-widest block mb-1 ${todayEvents.length > 0 ? "mt-3 pt-2 border-t border-[#2a2a2c]" : "mt-1"}`}>UPCOMING</span>
-                <div className="space-y-0.5">
+                <span className={`font-mono text-[9px] text-zinc-600 tracking-widest block mb-1 ${todayEvents.length > 0 ? "mt-2 pt-1.5 border-t border-[#2a2a2c]" : "mt-1"}`}>UPCOMING</span>
+                <div>
                   {upcomingEvents.map((ev, i) => renderRow(ev, i, true))}
                 </div>
               </>
