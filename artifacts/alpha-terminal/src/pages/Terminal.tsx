@@ -96,90 +96,22 @@ export default function TerminalPage() {
   useViewportShell();
 
   const COLLAPSE_PX = 80;
-  const headerTouch = useRef(false);
-  const headerScrollAnchor = useRef(0);
-  const contentWrapRef = useRef<HTMLDivElement>(null);
-
-  const touchStartY = useRef(0);
-
-  const handleMainTouchStart = useCallback((e: React.TouchEvent) => {
-    const touch = e.touches[0];
-    if (!touch || !stickyWrapRef.current || !scrollRef.current) return;
-    touchStartY.current = touch.clientY;
-    const headerRect = stickyWrapRef.current.getBoundingClientRect();
-    const mainRect = scrollRef.current.getBoundingClientRect();
-    const touchY = touch.clientY - mainRect.top;
-    const headerBottom = headerRect.bottom - mainRect.top;
-    if (touchY <= headerBottom) {
-      headerTouch.current = true;
-      headerScrollAnchor.current = scrollRef.current.scrollTop;
-    } else {
-      headerTouch.current = false;
-    }
-  }, []);
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const onTouchMove = (e: TouchEvent) => {
-      const touch = e.touches[0];
-      if (!touch) return;
-      const dy = touch.clientY - touchStartY.current;
-      if (el.scrollTop <= 0 && dy > 0) {
-        e.preventDefault();
-      }
-    };
-    el.addEventListener("touchmove", onTouchMove, { passive: false });
-    return () => el.removeEventListener("touchmove", onTouchMove);
-  }, []);
-
-  const handleMainTouchEnd = useCallback(() => {
-    if (headerTouch.current && contentWrapRef.current) {
-      contentWrapRef.current.style.transition = "transform 300ms ease-out";
-      contentWrapRef.current.style.transform = "";
-      setTimeout(() => {
-        if (contentWrapRef.current) {
-          contentWrapRef.current.style.transition = "";
-          contentWrapRef.current.style.willChange = "";
-        }
-      }, 300);
-    }
-    headerTouch.current = false;
-  }, []);
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const y = el.scrollTop;
-    setIsScrolled(y > COLLAPSE_PX);
-
-    if (headerTouch.current && contentWrapRef.current) {
-      const diff = y - headerScrollAnchor.current;
-      contentWrapRef.current.style.willChange = "transform";
-      contentWrapRef.current.style.transform = `translateY(${diff}px)`;
-    }
+    setIsScrolled(el.scrollTop > COLLAPSE_PX);
   }, []);
-
-  const prevStickyH = useRef(0);
 
   useEffect(() => {
     const el = stickyWrapRef.current;
     if (!el) return;
     const ro = new ResizeObserver(([entry]) => {
       if (!entry) return;
-      const newH = entry.contentRect.height;
-      const delta = prevStickyH.current - newH;
-      prevStickyH.current = newH;
-      setStickyH(newH);
-
-      if (scrollRef.current && delta !== 0 && scrollRef.current.scrollTop > 0) {
-        scrollRef.current.scrollTop = Math.max(0, scrollRef.current.scrollTop - delta);
-      }
+      setStickyH(entry.contentRect.height);
     });
     ro.observe(el);
-    const h = el.getBoundingClientRect().height;
-    prevStickyH.current = h;
-    setStickyH(h);
+    setStickyH(el.getBoundingClientRect().height);
     return () => ro.disconnect();
   }, [activeBottom]);
 
@@ -279,7 +211,7 @@ export default function TerminalPage() {
           onNavigate={(dest) => { if (dest === "markets") setActiveBottom("markets"); else if (dest === "portfolio") setActiveBottom("portfolio"); }}
         />
 
-        <main ref={scrollRef} onScroll={handleScroll} onTouchStart={handleMainTouchStart} onTouchEnd={handleMainTouchEnd} onTouchCancel={handleMainTouchEnd} style={{ overscrollBehavior: "none" }} className={`flex-1 app-content pb-24 ${activeBottom === "ai" && aiSubTab === "pulse" && !pulseData && !pulseLoading && !pulseStreaming ? "overflow-hidden" : "overflow-y-auto"}`}>
+        <main ref={scrollRef} onScroll={handleScroll} className={`flex-1 app-content pb-24 ${activeBottom === "ai" && aiSubTab === "pulse" && !pulseData && !pulseLoading && !pulseStreaming ? "overflow-hidden" : "overflow-y-auto"}`}>
 
           {activeBottom === "markets" && (
             <>
@@ -291,7 +223,7 @@ export default function TerminalPage() {
                 <MarketDataTabs activeTab={contextTab} setActiveTab={setContextTab} />
               </div>
 
-              <div ref={contentWrapRef} style={{ minHeight: "calc(100vh - 60px)" }}>
+              <div style={{ minHeight: "calc(100vh - 60px)" }}>
                 {contextTab === "news" && <NewsTab />}
                 {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={stickyH} />}
                 {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles as any} stickyOffset={stickyH} />}
