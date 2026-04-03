@@ -100,14 +100,14 @@ function WatchlistToggle({ symbol }: { symbol: string }) {
   return (
     <button
       onClick={handleToggle}
-      className={`flex items-center justify-center w-6 h-6 rounded-md border transition-all duration-200 active:scale-90 shrink-0
+      className={`flex items-center justify-center w-4 h-4 transition-all duration-200 active:scale-90 shrink-0
         ${isInWatchlist
-          ? "border-primary/40 text-primary"
-          : "border-zinc-600 text-zinc-400 hover:border-primary/40 hover:text-primary"}
-        ${flash ? "scale-110 border-primary text-primary" : ""}`}
+          ? "text-primary"
+          : "text-zinc-500 hover:text-primary"}
+        ${flash ? "scale-110 text-primary" : ""}`}
       aria-label={isInWatchlist ? `Remove ${symbol} from watchlist` : `Add ${symbol} to watchlist`}
     >
-      {isInWatchlist ? <Minus className="w-3.5 h-3.5" strokeWidth={2.5} /> : <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />}
+      {isInWatchlist ? <Minus className="w-3 h-3" strokeWidth={2.5} /> : <Plus className="w-3 h-3" strokeWidth={2.5} />}
     </button>
   );
 }
@@ -135,7 +135,7 @@ function TickerBlock({ symbol, description, showData, opacityCls, transitionCls,
     <div className={`flex flex-col min-w-0 text-left overflow-hidden ${opacityCls} ${transitionCls}`}>
       {showData ? (
         <>
-          <span className="inline-flex items-center gap-1.5 leading-none">
+          <span className="inline-flex items-center gap-0.5 leading-none">
             <span
               onClick={onOpenTearSheet}
               className="font-semibold text-white tracking-tight cursor-pointer hover:text-primary transition-colors whitespace-nowrap"
