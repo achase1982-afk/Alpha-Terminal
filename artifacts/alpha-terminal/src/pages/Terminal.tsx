@@ -123,7 +123,11 @@ export default function TerminalPage() {
     const y = el.scrollTop;
     lastY.current = y;
 
-    setIsScrolled(y >= COLLAPSE_PX);
+    setIsScrolled((prev) => {
+      if (!prev && y >= COLLAPSE_PX) return true;
+      if (prev && y <= 2) return false;
+      return prev;
+    });
 
     clearTimeout(scrollEndTimer.current);
     scrollEndTimer.current = window.setTimeout(() => {
@@ -146,14 +150,26 @@ export default function TerminalPage() {
     }, 120);
   }, [snapTo]);
 
+  const prevStickyH = useRef(0);
+
   useEffect(() => {
     const el = stickyWrapRef.current;
     if (!el) return;
     const ro = new ResizeObserver(([entry]) => {
-      if (entry) setStickyH(entry.contentRect.height);
+      if (!entry) return;
+      const newH = entry.contentRect.height;
+      const delta = prevStickyH.current - newH;
+      prevStickyH.current = newH;
+      setStickyH(newH);
+
+      if (scrollRef.current && delta !== 0 && scrollRef.current.scrollTop > 0) {
+        scrollRef.current.scrollTop = Math.max(0, scrollRef.current.scrollTop - delta);
+      }
     });
     ro.observe(el);
-    setStickyH(el.getBoundingClientRect().height);
+    const h = el.getBoundingClientRect().height;
+    prevStickyH.current = h;
+    setStickyH(h);
     return () => ro.disconnect();
   }, [activeBottom]);
 
