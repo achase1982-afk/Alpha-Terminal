@@ -96,9 +96,12 @@ export default function TerminalPage() {
   useViewportShell();
 
   const COLLAPSE_PX = 80;
-  const PAUSE_MS = 1000;
+  const PAUSE_MS = 250;
+  const EASE_MS = 600;
   const wasCollapsed = useRef(false);
   const pauseAnchor = useRef<number | null>(null);
+  const easeStart = useRef<number | null>(null);
+  const easeOffset = useRef(0);
   const pauseTimer = useRef(0);
   const contentRef = useRef<HTMLDivElement>(null);
 
@@ -111,24 +114,41 @@ export default function TerminalPage() {
     if (collapsed && !wasCollapsed.current) {
       wasCollapsed.current = true;
       setIsScrolled(true);
-
       pauseAnchor.current = y;
+      easeStart.current = null;
+
       clearTimeout(pauseTimer.current);
       pauseTimer.current = window.setTimeout(() => {
+        easeStart.current = performance.now();
+        easeOffset.current = pauseAnchor.current !== null ? el.scrollTop - pauseAnchor.current : 0;
         pauseAnchor.current = null;
-        if (contentRef.current) {
-          contentRef.current.style.transform = "";
-          contentRef.current.style.willChange = "";
-        }
       }, PAUSE_MS);
       return;
     }
 
-    if (pauseAnchor.current !== null && contentRef.current) {
-      const diff = y - pauseAnchor.current;
-      contentRef.current.style.willChange = "transform";
-      contentRef.current.style.transform = `translateY(${diff}px)`;
-      return;
+    if (contentRef.current) {
+      if (pauseAnchor.current !== null) {
+        const diff = y - pauseAnchor.current;
+        contentRef.current.style.willChange = "transform";
+        contentRef.current.style.transform = `translateY(${diff}px)`;
+        return;
+      }
+
+      if (easeStart.current !== null) {
+        const elapsed = performance.now() - easeStart.current;
+        const progress = Math.min(elapsed / EASE_MS, 1);
+        const ease = progress * progress;
+        const remaining = easeOffset.current * (1 - ease);
+        contentRef.current.style.transform = `translateY(${remaining}px)`;
+        if (progress >= 1) {
+          easeStart.current = null;
+          contentRef.current.style.transform = "";
+          contentRef.current.style.willChange = "";
+        }
+        setIsScrolled(collapsed);
+        if (!collapsed) wasCollapsed.current = false;
+        return;
+      }
     }
 
     if (!collapsed) wasCollapsed.current = false;
