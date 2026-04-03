@@ -720,10 +720,10 @@ export function MarketCalendar({ onClose }: Props) {
           const c = mc(data.changeRaw, invertColor);
           return (
             <div className="flex items-center py-1.5 border-b border-[#1a1a1c] gap-2">
-              <span className="font-mono text-[13px] text-zinc-400 flex-1 min-w-0 truncate">{label}</span>
-              <span className="font-mono text-[13px] font-bold tabular-nums w-[72px] text-right shrink-0" style={{ color: c }}>{data.unit === "thousands" ? data.change : data.actual}</span>
-              <span className="font-mono text-[13px] text-zinc-500 tabular-nums w-[72px] text-right shrink-0">{data.previous}</span>
-              <span className="font-mono text-[13px] font-bold tabular-nums w-[68px] text-right shrink-0" style={{ color: c }}>{data.change}</span>
+              <span className="font-mono text-[15px] text-zinc-400 flex-1 min-w-0 truncate">{label}</span>
+              <span className="font-mono text-[15px] font-bold tabular-nums w-[76px] text-right shrink-0" style={{ color: c }}>{data.unit === "thousands" ? data.change : data.actual}</span>
+              <span className="font-mono text-[15px] text-zinc-500 tabular-nums w-[76px] text-right shrink-0">{data.previous}</span>
+              <span className="font-mono text-[15px] font-bold tabular-nums w-[76px] text-right shrink-0" style={{ color: c }}>{data.change}</span>
             </div>
           );
         };
@@ -733,11 +733,11 @@ export function MarketCalendar({ onClose }: Props) {
           const c = mc(data.changeRaw, invertColor);
           return (
             <div className="flex items-center py-1 border-b border-[#1a1a1c] gap-1">
-              <span className="font-mono text-[12px] text-zinc-400 flex-1 min-w-0 truncate">{label}</span>
-              <span className="font-mono text-[12px] font-bold tabular-nums w-[68px] text-right shrink-0" style={{ color: c }}>{data.unit === "thousands" ? data.change : data.actual}</span>
-              <span className="font-mono text-[12px] text-zinc-500 tabular-nums w-[60px] text-right shrink-0">{data.previous}</span>
-              <span className="font-mono text-[11px] text-zinc-600 tabular-nums w-[56px] text-right shrink-0">{data.threeMonthAvg || "—"}</span>
-              <span className="font-mono text-[12px] font-bold tabular-nums w-[68px] text-right shrink-0" style={{ color: c }}>{data.change}</span>
+              <span className="font-mono text-[15px] text-zinc-400 flex-1 min-w-0 truncate">{label}</span>
+              <span className="font-mono text-[15px] font-bold tabular-nums w-[72px] text-right shrink-0" style={{ color: c }}>{data.unit === "thousands" ? data.change : data.actual}</span>
+              <span className="font-mono text-[15px] text-zinc-500 tabular-nums w-[64px] text-right shrink-0">{data.previous}</span>
+              <span className="font-mono text-[14px] text-zinc-600 tabular-nums w-[60px] text-right shrink-0">{data.threeMonthAvg || "—"}</span>
+              <span className="font-mono text-[15px] font-bold tabular-nums w-[72px] text-right shrink-0" style={{ color: c }}>{data.change}</span>
             </div>
           );
         };
@@ -803,18 +803,21 @@ export function MarketCalendar({ onClose }: Props) {
             )}
 
             {nfp && !showFullBreakdown && (
-              <div className="flex-1 overflow-y-auto px-4 py-2 space-y-3">
+              <div className="flex-1 overflow-y-auto px-2 py-2 space-y-3">
                 <div className="flex items-baseline gap-2">
                   <span className="font-mono text-[33px] font-extrabold tabular-nums leading-tight" style={{ color: mc(nfp.changeRaw) }}>{nfp.change}</span>
                   <span className="text-[21px]" style={{ color: mc(nfp.changeRaw) }}>{nfp.changeRaw >= 0 ? "↑" : "↓"}</span>
+                  {meta?.prevMonths?.[0] && (
+                    <span className="font-mono text-[14px] text-zinc-500 ml-1">vs {meta.prevMonths[0].change} prior</span>
+                  )}
                 </div>
 
                 <div>
                   <div className="flex items-center pb-1 border-b border-[#2a2a2c] gap-2">
                     <span className="font-mono text-[11px] text-zinc-600 flex-1">METRIC</span>
-                    <span className="font-mono text-[11px] text-zinc-600 w-[72px] text-right shrink-0">ACTUAL</span>
-                    <span className="font-mono text-[11px] text-zinc-600 w-[72px] text-right shrink-0">PRIOR</span>
-                    <span className="font-mono text-[11px] text-zinc-600 w-[68px] text-right shrink-0">CHANGE</span>
+                    <span className="font-mono text-[11px] text-zinc-600 w-[76px] text-right shrink-0">ACTUAL</span>
+                    <span className="font-mono text-[11px] text-zinc-600 w-[76px] text-right shrink-0">PRIOR</span>
+                    <span className="font-mono text-[11px] text-zinc-600 w-[76px] text-right shrink-0">CHANGE</span>
                   </div>
                   <SummaryRow label="Unemployment Rate" data={nfpData.unemployment} invertColor />
                   <SummaryRow label="Avg Hourly Earnings MoM" data={nfpData.earningsMom} />
@@ -823,35 +826,28 @@ export function MarketCalendar({ onClose }: Props) {
                   <SummaryRow label="Labor Force Part." data={nfpData.lfpr} />
                 </div>
 
-                <div className="flex items-center justify-between pt-1">
+                <div className="flex items-center pt-1">
                   <button
                     onClick={() => setShowFullBreakdown(true)}
-                    className="font-mono text-[16px] font-bold tracking-wider transition-opacity hover:opacity-70"
+                    className="font-mono text-[11px] font-bold tracking-wider transition-opacity hover:opacity-70"
                     style={{ color: "#FFB800" }}
                   >
                     Read More
-                  </button>
-                  <button
-                    onClick={() => setReportIframeUrl(reportUrl)}
-                    className="flex items-center gap-1 font-mono text-[15px] text-zinc-500 tracking-wider transition-opacity hover:opacity-70"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    Read Full Report
                   </button>
                 </div>
               </div>
             )}
 
             {nfp && showFullBreakdown && (
-              <div className="flex-1 overflow-y-auto px-4 py-2 space-y-4">
+              <div className="flex-1 overflow-y-auto px-2 py-2 space-y-4">
                 <div>
                   <span className="font-mono text-[14px] text-zinc-600 tracking-widest block mb-1.5">EXPANDED KEY METRICS</span>
                   <div className="flex items-center pb-1 border-b border-[#2a2a2c] gap-1">
                     <span className="font-mono text-[11px] text-zinc-600 flex-1">METRIC</span>
-                    <span className="font-mono text-[11px] text-zinc-600 w-[68px] text-right shrink-0">ACTUAL</span>
-                    <span className="font-mono text-[11px] text-zinc-600 w-[60px] text-right shrink-0">PREV</span>
-                    <span className="font-mono text-[11px] text-zinc-600 w-[56px] text-right shrink-0">3-MO</span>
-                    <span className="font-mono text-[11px] text-zinc-600 w-[68px] text-right shrink-0">CHG</span>
+                    <span className="font-mono text-[11px] text-zinc-600 w-[72px] text-right shrink-0">ACTUAL</span>
+                    <span className="font-mono text-[11px] text-zinc-600 w-[64px] text-right shrink-0">PREV</span>
+                    <span className="font-mono text-[11px] text-zinc-600 w-[60px] text-right shrink-0">3-MO</span>
+                    <span className="font-mono text-[11px] text-zinc-600 w-[72px] text-right shrink-0">CHG</span>
                   </div>
                   <FullRow label="Nonfarm Payrolls" data={nfpData.nfp} />
                   <FullRow label="Unemployment Rate" data={nfpData.unemployment} invertColor />
