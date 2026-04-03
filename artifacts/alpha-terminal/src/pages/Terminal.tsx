@@ -96,12 +96,50 @@ export default function TerminalPage() {
   useViewportShell();
 
   const COLLAPSE_PX = 80;
+  const headerTouch = useRef(false);
+  const headerScrollAnchor = useRef(0);
+  const contentWrapRef = useRef<HTMLDivElement>(null);
+
+  const handleMainTouchStart = useCallback((e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    if (!touch || !stickyWrapRef.current || !scrollRef.current) return;
+    const headerRect = stickyWrapRef.current.getBoundingClientRect();
+    const mainRect = scrollRef.current.getBoundingClientRect();
+    const touchY = touch.clientY - mainRect.top;
+    const headerBottom = headerRect.bottom - mainRect.top;
+    if (touchY <= headerBottom) {
+      headerTouch.current = true;
+      headerScrollAnchor.current = scrollRef.current.scrollTop;
+    } else {
+      headerTouch.current = false;
+    }
+  }, []);
+
+  const handleMainTouchEnd = useCallback(() => {
+    if (headerTouch.current && contentWrapRef.current) {
+      contentWrapRef.current.style.transition = "transform 300ms ease-out";
+      contentWrapRef.current.style.transform = "";
+      setTimeout(() => {
+        if (contentWrapRef.current) {
+          contentWrapRef.current.style.transition = "";
+          contentWrapRef.current.style.willChange = "";
+        }
+      }, 300);
+    }
+    headerTouch.current = false;
+  }, []);
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
     const y = el.scrollTop;
     setIsScrolled(y > COLLAPSE_PX);
+
+    if (headerTouch.current && contentWrapRef.current) {
+      const diff = y - headerScrollAnchor.current;
+      contentWrapRef.current.style.willChange = "transform";
+      contentWrapRef.current.style.transform = `translateY(${diff}px)`;
+    }
   }, []);
 
   const prevStickyH = useRef(0);
@@ -223,7 +261,7 @@ export default function TerminalPage() {
           onNavigate={(dest) => { if (dest === "markets") setActiveBottom("markets"); else if (dest === "portfolio") setActiveBottom("portfolio"); }}
         />
 
-        <main ref={scrollRef} onScroll={handleScroll} className={`flex-1 app-content pb-24 ${activeBottom === "ai" && aiSubTab === "pulse" && !pulseData && !pulseLoading && !pulseStreaming ? "overflow-hidden" : "overflow-y-auto"}`}>
+        <main ref={scrollRef} onScroll={handleScroll} onTouchStart={handleMainTouchStart} onTouchEnd={handleMainTouchEnd} onTouchCancel={handleMainTouchEnd} className={`flex-1 app-content pb-24 ${activeBottom === "ai" && aiSubTab === "pulse" && !pulseData && !pulseLoading && !pulseStreaming ? "overflow-hidden" : "overflow-y-auto"}`}>
 
           {activeBottom === "markets" && (
             <>
@@ -235,7 +273,7 @@ export default function TerminalPage() {
                 <MarketDataTabs activeTab={contextTab} setActiveTab={setContextTab} />
               </div>
 
-              <div style={{ minHeight: "calc(100vh - 60px)" }}>
+              <div ref={contentWrapRef} style={{ minHeight: "calc(100vh - 60px)" }}>
                 {contextTab === "news" && <NewsTab />}
                 {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={stickyH} />}
                 {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles as any} stickyOffset={stickyH} />}
