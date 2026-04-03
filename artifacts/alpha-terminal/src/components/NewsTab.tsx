@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useTerminalStore } from "@/lib/store";
 import type { LiveNewsItem } from "@/lib/store";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
-import { Loader2, Newspaper, ExternalLink, Zap } from "lucide-react";
+import { Loader2, Newspaper, ExternalLink, Zap, FileText } from "lucide-react";
 
 interface NewsArticle {
   id: number;
@@ -54,6 +54,20 @@ function timeAgo(ts: number): string {
   return `${Math.floor(diff / 604800)}w ago`;
 }
 
+interface SecFiling {
+  id: string;
+  formType: string;
+  filedAt: string;
+  description: string;
+  url: string;
+  accessionNo: string;
+}
+
+interface SecFilingsResponse {
+  filings: SecFiling[];
+  error?: string;
+}
+
 interface UnifiedItem {
   key: string;
   source: string;
@@ -63,6 +77,7 @@ interface UnifiedItem {
   image?: string;
   ts: number;
   isLive: boolean;
+  isFiling?: boolean;
 }
 
 function cleanHeadline(raw: string): string {
@@ -102,9 +117,62 @@ function toFinnhubItems(articles: NewsArticle[]): UnifiedItem[] {
   }));
 }
 
+const FORM_LABELS: Record<string, string> = {
+  "10-K": "Annual Report",
+  "10-K/A": "Amended Annual Report",
+  "10-Q": "Quarterly Report",
+  "10-Q/A": "Amended Quarterly Report",
+  "8-K": "Current Report",
+  "8-K/A": "Amended Current Report",
+  "4": "Insider Transaction",
+  "4/A": "Amended Insider Transaction",
+  "3": "Initial Insider Filing",
+  "5": "Annual Insider Filing",
+  "144": "Insider Sale Notice",
+  "SC 13G": "Institutional Ownership",
+  "SC 13G/A": "Amended Institutional Ownership",
+  "SC 13D": "Activist Ownership",
+  "SC 13D/A": "Amended Activist Ownership",
+  "SCHEDULE 13G/A": "Amended Institutional Ownership",
+  "SCHEDULE 13G": "Institutional Ownership",
+  "DEF 14A": "Proxy Statement",
+  "DEFA14A": "Additional Proxy Materials",
+  "PRE 14A": "Preliminary Proxy",
+  "S-1": "IPO Registration",
+  "S-3": "Shelf Registration",
+  "S-8": "Employee Benefit Plan",
+  "424B5": "Prospectus Supplement",
+  "6-K": "Foreign Issuer Report",
+  "20-F": "Foreign Annual Report",
+  "13F-HR": "Institutional Holdings Report",
+  "SD": "Conflict Minerals Report",
+  "CT ORDER": "Court Order",
+};
+
+function toSecItems(filings: SecFiling[], symbol: string): UnifiedItem[] {
+  return filings.map((f) => {
+    const label = FORM_LABELS[f.formType] || f.formType;
+    return {
+      key: `sec-${f.id}`,
+      source: "SEC EDGAR",
+      headline: `${symbol.toUpperCase()} — ${f.formType}: ${label}`,
+      summary: f.description !== f.formType ? f.description : undefined,
+      url: f.url,
+      ts: new Date(f.filedAt + "T16:00:00Z").getTime(),
+      isLive: false,
+      isFiling: true,
+    };
+  });
+}
+
 function dedup(items: UnifiedItem[]): UnifiedItem[] {
   const seen = new Set<string>();
   return items.filter((item) => {
+    if (item.isFiling) {
+      if (seen.has(item.key)) return false;
+      seen.add(item.key);
+      return true;
+    }
     const norm = item.headline.toLowerCase().trim().slice(0, 80);
     if (seen.has(norm)) return false;
     seen.add(norm);
@@ -140,13 +208,27 @@ export function NewsTab() {
     refetchInterval: 2 * 60 * 1000,
   });
 
+  const { data: secData } = useQuery<SecFilingsResponse>({
+    queryKey: ["sec-filings", symbol],
+    queryFn: async () => {
+      const res = await fetchWithAuth(`/api/sec/filings?symbol=${encodeURIComponent(symbol)}`);
+      if (!res.ok) return { filings: [] };
+      return res.json();
+    },
+    enabled: !!symbol,
+    staleTime: 5 * 60 * 1000,
+    refetchInterval: 5 * 60 * 1000,
+  });
+
   const ibHistNews = ibData?.news ?? [];
   const fhArticles = fhData?.articles ?? [];
+  const secFilings = secData?.filings ?? [];
 
   const unified = dedup([
     ...toLiveItems(liveNews),
     ...toIBHistItems(ibHistNews),
     ...toFinnhubItems(fhArticles),
+    ...toSecItems(secFilings, symbol),
   ].sort((a, b) => b.ts - a.ts));
 
   if (fhLoading && liveNews.length === 0 && ibHistNews.length === 0) {
@@ -181,7 +263,8 @@ export function NewsTab() {
             <div className="flex items-start gap-3">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
-                  {item.isLive && <Zap className="w-3 h-3 text-[#FFB800] shrink-0" />}
+                  {item.isFiling && <FileText className="w-3 h-3 text-[#FFB800] shrink-0" />}
+                  {item.isLive && !item.isFiling && <Zap className="w-3 h-3 text-[#FFB800] shrink-0" />}
                   <span className="text-[#FFB800] text-[10px] uppercase tracking-wider font-mono font-semibold shrink-0">
                     {item.source}
                   </span>

@@ -6,6 +6,7 @@ import streamRouter from "./stream";
 import portfolioRouter from "./portfolio";
 import ibRouter from "./ib";
 import economicRouter from "./economic";
+import secRouter from "./sec";
 const router: IRouter = Router();
 
 router.use("/auth", authRouter);
@@ -15,5 +16,6 @@ router.use("/stream", streamRouter);
 router.use("/portfolio", portfolioRouter);
 router.use("/ib", ibRouter);
 router.use("/economic", economicRouter);
+router.use("/sec", secRouter);
 
 export default router;
