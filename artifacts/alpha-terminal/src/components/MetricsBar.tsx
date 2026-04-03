@@ -1,9 +1,9 @@
-import { useTerminalStore } from "@/lib/store";
+import { useTerminalStore, useActiveWatchlist } from "@/lib/store";
 import { useQuote }         from "@/hooks/useQuote";
 import { useTickColor }     from "@/hooks/useTickColor";
-import { RefreshCw, SearchX } from "lucide-react";
+import { RefreshCw, SearchX, Plus, Minus } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useRef, useEffect, useState, useLayoutEffect } from "react";
+import { useRef, useEffect, useState, useLayoutEffect, useCallback } from "react";
 
 const UP_COLOR   = "#00d166";
 const DOWN_COLOR = "#f23645";
@@ -79,6 +79,39 @@ const COMPANY_FONT_LG = 15;
 const COMPANY_FONT_SM = 11;
 const COMPANY_BOX_H = 34;
 
+function WatchlistToggle({ symbol }: { symbol: string }) {
+  const watchlistSymbols = useActiveWatchlist();
+  const addToWatchlist = useTerminalStore((s) => s.addToWatchlist);
+  const removeFromWatchlist = useTerminalStore((s) => s.removeFromWatchlist);
+  const isInWatchlist = watchlistSymbols.includes(symbol.toUpperCase());
+  const [flash, setFlash] = useState(false);
+
+  const handleToggle = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isInWatchlist) {
+      removeFromWatchlist(symbol);
+    } else {
+      addToWatchlist(symbol);
+    }
+    setFlash(true);
+    setTimeout(() => setFlash(false), 300);
+  }, [symbol, isInWatchlist, addToWatchlist, removeFromWatchlist]);
+
+  return (
+    <button
+      onClick={handleToggle}
+      className={`flex items-center justify-center w-6 h-6 rounded-md border transition-all duration-200 active:scale-90 shrink-0
+        ${isInWatchlist
+          ? "border-primary/40 text-primary"
+          : "border-zinc-600 text-zinc-400 hover:border-primary/40 hover:text-primary"}
+        ${flash ? "scale-110 border-primary text-primary" : ""}`}
+      aria-label={isInWatchlist ? `Remove ${symbol} from watchlist` : `Add ${symbol} to watchlist`}
+    >
+      {isInWatchlist ? <Minus className="w-3.5 h-3.5" strokeWidth={2.5} /> : <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />}
+    </button>
+  );
+}
+
 function TickerBlock({ symbol, description, showData, opacityCls, transitionCls, onOpenTearSheet }: {
   symbol?: string; description?: string; showData: boolean;
   opacityCls: string; transitionCls: string; onOpenTearSheet?: () => void;
@@ -99,31 +132,34 @@ function TickerBlock({ symbol, description, showData, opacityCls, transitionCls,
   }, [description]);
 
   return (
-    <button
-      onClick={onOpenTearSheet}
-      className={`flex flex-col min-w-0 text-left cursor-pointer group overflow-hidden ${opacityCls} ${transitionCls}`}
-      aria-label={`View company profile for ${symbol}`}
-    >
-      {showData ? (
-        <>
-          <span className="font-semibold text-white tracking-tight leading-none group-hover:text-primary transition-colors whitespace-nowrap" style={{ fontSize: 24 }}>
-            {symbol}
-          </span>
-          <span
-            ref={nameRef}
-            className="font-medium tracking-wide uppercase leading-snug overflow-hidden"
-            style={{ color: '#FFB800', fontSize: nameFontSize, height: COMPANY_BOX_H, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const, marginTop: 2 }}
-          >
-            {description || ""}
-          </span>
-        </>
-      ) : (
-        <>
-          <Skeleton className="h-6 w-16 bg-zinc-800" />
-          <Skeleton className="h-3 w-24 bg-zinc-800 mt-1" />
-        </>
-      )}
-    </button>
+    <div className={`flex items-start gap-1.5 min-w-0 overflow-hidden ${opacityCls} ${transitionCls}`}>
+      <button
+        onClick={onOpenTearSheet}
+        className="flex flex-col min-w-0 text-left cursor-pointer group overflow-hidden"
+        aria-label={`View company profile for ${symbol}`}
+      >
+        {showData ? (
+          <>
+            <span className="font-semibold text-white tracking-tight leading-none group-hover:text-primary transition-colors whitespace-nowrap" style={{ fontSize: 24 }}>
+              {symbol}
+            </span>
+            <span
+              ref={nameRef}
+              className="font-medium tracking-wide uppercase leading-snug overflow-hidden"
+              style={{ color: '#FFB800', fontSize: nameFontSize, height: COMPANY_BOX_H, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const, marginTop: 2 }}
+            >
+              {description || ""}
+            </span>
+          </>
+        ) : (
+          <>
+            <Skeleton className="h-6 w-16 bg-zinc-800" />
+            <Skeleton className="h-3 w-24 bg-zinc-800 mt-1" />
+          </>
+        )}
+      </button>
+      {showData && symbol && <WatchlistToggle symbol={symbol} />}
+    </div>
   );
 }
 
