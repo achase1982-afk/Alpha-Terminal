@@ -21,8 +21,9 @@ import {
   Star, Activity, Briefcase, MessageCircle,
   Zap, LineChart, LayoutDashboard, BrainCircuit,
   ChevronLeft, ChevronRight, Trash2, Plus, RotateCcw, BarChart2,
-  SlidersHorizontal, Gauge, ListOrdered,
+  SlidersHorizontal, Gauge, ListOrdered, CalendarDays,
 } from "lucide-react";
+import { MarketCalendar } from "@/components/MarketCalendar";
 import { useClerk } from "@clerk/clerk-react";
 
 const devBypass = import.meta.env.VITE_DEV_BYPASS_AUTH === "true";
@@ -35,6 +36,7 @@ function useClerkSafe() {
 type SidebarPage =
   | null
   | "Watchlist"
+  | "Calendar"
   | "Linked Brokerage"
   | "Market Pulse"
   | "Strategist Settings"
@@ -101,8 +103,7 @@ export function Sidebar({ isOpen, onClose, onOpenChat, onNavigate }: SidebarProp
 
         <div className="flex-1 overflow-y-auto py-2">
           <div className="flex flex-col pb-2">
-            <MenuRow icon={<Star />} label="Watchlist" onClick={() => { setActivePage("Watchlist"); onClose(); }} />
-            <MenuRow icon={<Activity />} label="Markets" onClick={() => { onNavigate?.("markets"); handleClose(); }} />
+            <MenuRow icon={<CalendarDays />} label="Calendar" onClick={() => { setActivePage("Calendar"); onClose(); }} />
             <MenuRow icon={<Briefcase />} label="Portfolio" onClick={() => { onNavigate?.("portfolio"); handleClose(); }} />
             <MenuRow icon={<MessageCircle />} label="AI Search" onClick={() => { handleClose(); onOpenChat?.(); }} />
           </div>
@@ -148,6 +149,7 @@ export function Sidebar({ isOpen, onClose, onOpenChat, onNavigate }: SidebarProp
 
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 pb-24">
             {activePage === "Watchlist" && <WatchlistPage onClose={handleClose} />}
+            {activePage === "Calendar" && <MarketCalendar onClose={() => setActivePage(null)} />}
             {activePage === "Linked Brokerage" && <LinkedBrokeragePage />}
             {activePage === "Market Pulse" && <MarketPulsePage />}
             {activePage === "Strategist Settings" && <StrategistSettingsPage />}
