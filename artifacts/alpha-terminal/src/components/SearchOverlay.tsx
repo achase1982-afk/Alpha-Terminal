@@ -92,10 +92,10 @@ function RecentRow({
           className={`font-mono text-[11px] font-semibold tracking-wide cursor-pointer transition-all duration-200 active:scale-95 ${
             flash ? "scale-105" : ""
           }`}
-          style={{ color: isInWatchlist ? "#26a69a" : "#5b9cf6" }}
+          style={{ color: isInWatchlist ? "#f23645" : "#5b9cf6" }}
           role="button"
         >
-          {isInWatchlist ? "REMOVE FROM WATCHLIST" : "ADD TO WATCHLIST"}
+          {isInWatchlist ? "REMOVE" : "ADD TO WATCHLIST"}
         </span>
       </div>
     </div>
