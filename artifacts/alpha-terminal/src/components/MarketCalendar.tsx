@@ -32,6 +32,30 @@ interface BlsReportData {
   reportUrl: string;
 }
 
+interface NfpSeriesResult {
+  label: string;
+  unit: string;
+  actual: string;
+  previous: string;
+  change: string;
+  changeRaw: number;
+  month: string;
+  year: string;
+  error?: string;
+}
+
+interface NfpFullData {
+  nfp?: NfpSeriesResult;
+  unemployment?: NfpSeriesResult;
+  earningsMom?: NfpSeriesResult;
+  lfpr?: NfpSeriesResult;
+  weeklyHours?: NfpSeriesResult;
+  privatePayroll?: NfpSeriesResult;
+  govPayroll?: NfpSeriesResult;
+  manufacturing?: NfpSeriesResult;
+  leisureHosp?: NfpSeriesResult;
+}
+
 const TYPE_COLORS: Record<string, string> = {
   holiday: "#f23645",
   fomc: "#a855f7",
@@ -291,6 +315,16 @@ async function fetchBlsReport(blsType: string): Promise<BlsReportData | null> {
   }
 }
 
+async function fetchNfpFull(): Promise<NfpFullData | null> {
+  try {
+    const res = await fetch(`${apiBase}/economic/nfp-full`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
 export function MarketCalendar({ onClose }: Props) {
   const setSymbol = useTerminalStore((s) => s.setSymbol);
   const now = new Date();
@@ -303,6 +337,8 @@ export function MarketCalendar({ onClose }: Props) {
   const [blsLoading, setBlsLoading] = useState<string | null>(null);
   const [reportIframeUrl, setReportIframeUrl] = useState<string | null>(null);
   const [showFullBreakdown, setShowFullBreakdown] = useState(false);
+  const [nfpData, setNfpData] = useState<NfpFullData | null>(null);
+  const [nfpLoading, setNfpLoading] = useState(false);
 
   const toggleFilter = useCallback((type: string) => {
     setActiveFilters((prev) => {
@@ -365,8 +401,19 @@ export function MarketCalendar({ onClose }: Props) {
     onClose();
   }, [setSymbol, onClose]);
 
+  const isNfpEvent = selectedEvent?.blsType === "nfp";
+
   useEffect(() => {
     if (!selectedEvent?.blsType) return;
+    if (isNfpEvent) {
+      if (nfpData) return;
+      setNfpLoading(true);
+      fetchNfpFull().then((data) => {
+        if (data) setNfpData(data);
+        setNfpLoading(false);
+      });
+      return;
+    }
     if (blsData[selectedEvent.blsType]) return;
     setBlsLoading(selectedEvent.blsType);
     fetchBlsReport(selectedEvent.blsType).then((data) => {
@@ -551,6 +598,61 @@ export function MarketCalendar({ onClose }: Props) {
                 <span className="font-mono text-xl font-extrabold text-white mb-2">{selectedEvent.title}</span>
                 <span className="font-mono text-[11px] text-zinc-500 tracking-wider">Holiday · Markets Closed</span>
               </div>
+            ) : isNfpEvent ? (
+              <div className="w-full">
+                {nfpLoading && (
+                  <div className="flex items-center justify-center gap-2 py-4">
+                    <Loader2 className="w-4 h-4 text-zinc-500 animate-spin" />
+                    <span className="font-mono text-[11px] text-zinc-500">Loading NFP data...</span>
+                  </div>
+                )}
+                {nfpData?.nfp && (() => {
+                  const nfp = nfpData.nfp;
+                  const raw = nfp.changeRaw;
+                  const isPositive = raw >= 0;
+                  const color = isPositive ? "#26a69a" : "#f23645";
+                  return (
+                    <div className="flex flex-col gap-3">
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-[13px] font-bold text-white">Non-Farm Payrolls (NFP)</span>
+                        <span className="font-mono text-[10px] text-zinc-500">8:30 AM ET</span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="flex flex-col items-center py-2 rounded-md" style={{ border: `1px solid ${color}40` }}>
+                          <span className="font-mono text-[9px] text-zinc-500 tracking-wider mb-1">ACTUAL</span>
+                          <span className="font-mono text-lg font-extrabold tabular-nums" style={{ color }}>{nfp.change}</span>
+                        </div>
+                        <div className="flex flex-col items-center py-2 rounded-md border border-[#2a2a2c]">
+                          <span className="font-mono text-[9px] text-zinc-500 tracking-wider mb-1">ESTIMATE</span>
+                          <span className="font-mono text-lg font-bold text-zinc-400 tabular-nums">—</span>
+                        </div>
+                        <div className="flex flex-col items-center py-2 rounded-md border border-[#2a2a2c]">
+                          <span className="font-mono text-[9px] text-zinc-500 tracking-wider mb-1">PREVIOUS</span>
+                          <span className="font-mono text-lg font-bold text-zinc-400 tabular-nums">{nfp.previous}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        {nfpData.unemployment && (
+                          <div className="flex items-center gap-1">
+                            <span className="font-mono text-[9px] text-zinc-600">U-3:</span>
+                            <span className="font-mono text-[12px] font-bold" style={{ color: nfpData.unemployment.changeRaw <= 0 ? "#26a69a" : "#f23645" }}>{nfpData.unemployment.actual}</span>
+                          </div>
+                        )}
+                        {nfpData.earningsMom && (
+                          <div className="flex items-center gap-1">
+                            <span className="font-mono text-[9px] text-zinc-600">WAGES:</span>
+                            <span className="font-mono text-[12px] font-bold text-zinc-300">{nfpData.earningsMom.actual}</span>
+                          </div>
+                        )}
+                        <span className="font-mono text-[9px] text-zinc-600 ml-auto">{nfp.month} {nfp.year}</span>
+                      </div>
+                    </div>
+                  );
+                })()}
+                {!nfpLoading && !nfpData?.nfp && selectedEvent.detail && (
+                  <p className="font-mono text-[11px] text-zinc-400 leading-relaxed">{selectedEvent.detail}</p>
+                )}
+              </div>
             ) : (
               <div className="w-full">
                 {selectedEvent.blsType && blsLoading === selectedEvent.blsType && (
@@ -592,7 +694,7 @@ export function MarketCalendar({ onClose }: Props) {
             )}
           </div>
 
-          {selectedEvent.blsType && blsData[selectedEvent.blsType]?.change && (
+          {((isNfpEvent && nfpData?.nfp) || (!isNfpEvent && selectedEvent.blsType && blsData[selectedEvent.blsType]?.change)) && (
             <button
               onClick={() => setShowFullBreakdown(true)}
               className="absolute bottom-2 right-3 font-mono text-[10px] text-white tracking-wider transition-opacity hover:opacity-70"
@@ -603,7 +705,113 @@ export function MarketCalendar({ onClose }: Props) {
         </div>
       )}
 
-      {showFullBreakdown && selectedEvent?.blsType && blsData[selectedEvent.blsType]?.change && (() => {
+      {showFullBreakdown && selectedEvent?.blsType && isNfpEvent && nfpData?.nfp && (() => {
+        const nfp = nfpData.nfp;
+        const raw = nfp.changeRaw;
+        const isPositive = raw >= 0;
+        const upColor = "#26a69a";
+        const downColor = "#f23645";
+        const mainColor = isPositive ? upColor : downColor;
+        const reportUrl = selectedEvent.reportUrl || "https://www.bls.gov/news.release/empsit.nr0.htm";
+
+        const metricColor = (val: number, invertGood = false) => {
+          if (val === 0) return "#a1a1aa";
+          return invertGood ? (val > 0 ? downColor : upColor) : (val >= 0 ? upColor : downColor);
+        };
+
+        const MetricRow = ({ label, data }: { label: string; data?: NfpSeriesResult }) => {
+          if (!data || data.error) return null;
+          const c = metricColor(data.changeRaw, data.unit === "percent" && label.includes("Unemployment"));
+          return (
+            <div className="flex items-center justify-between py-1.5 border-b border-[#1a1a1c]">
+              <span className="font-mono text-[11px] text-zinc-400 flex-1">{label}</span>
+              <span className="font-mono text-[12px] font-bold tabular-nums w-[72px] text-right" style={{ color: c }}>{data.actual}</span>
+              <span className="font-mono text-[11px] text-zinc-500 tabular-nums w-[72px] text-right">{data.previous}</span>
+              <span className="font-mono text-[11px] font-bold tabular-nums w-[72px] text-right" style={{ color: c }}>{data.change}</span>
+            </div>
+          );
+        };
+
+        return (
+          <div
+            className="fixed left-0 right-0 bottom-0 z-[150] flex flex-col bg-[#0c0c0c] border-t animate-in slide-in-from-bottom duration-300"
+            style={{ top: "80px", borderColor: `${mainColor}40` }}
+          >
+            <div className="flex items-center justify-between px-4 py-2.5 border-b border-[#1a1a1c]">
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-[13px] font-bold text-white">Jobs Report (NFP)</span>
+                <span className="font-mono text-[10px] text-zinc-500">{nfp.month} {nfp.year}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                {reportUrl && (
+                  <button
+                    onClick={() => setReportIframeUrl(reportUrl)}
+                    className="flex items-center gap-1 font-mono text-[10px] tracking-wider transition-opacity hover:opacity-70"
+                    style={{ color: "#FFB800" }}
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                    Full Report
+                  </button>
+                )}
+                <button onClick={() => setShowFullBreakdown(false)} className="p-1">
+                  <X className="w-4 h-4 text-zinc-500" />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
+              <div>
+                <span className="font-mono text-[9px] text-zinc-600 tracking-widest block mb-2">CORE METRICS</span>
+                <div className="flex items-center justify-between pb-1 border-b border-[#2a2a2c]">
+                  <span className="font-mono text-[9px] text-zinc-600 flex-1">METRIC</span>
+                  <span className="font-mono text-[9px] text-zinc-600 w-[72px] text-right">ACTUAL</span>
+                  <span className="font-mono text-[9px] text-zinc-600 w-[72px] text-right">PREVIOUS</span>
+                  <span className="font-mono text-[9px] text-zinc-600 w-[72px] text-right">CHANGE</span>
+                </div>
+                <MetricRow label="Headline NFP" data={nfpData.nfp} />
+                <MetricRow label="Unemployment (U-3)" data={nfpData.unemployment} />
+                <MetricRow label="Avg Hourly Earnings" data={nfpData.earningsMom} />
+              </div>
+
+              <div>
+                <span className="font-mono text-[9px] text-zinc-600 tracking-widest block mb-2">SECONDARY LABOR METRICS</span>
+                <div className="grid grid-cols-2 gap-3">
+                  {nfpData.lfpr && (
+                    <div className="rounded-md border border-[#2a2a2c] p-2.5">
+                      <span className="font-mono text-[9px] text-zinc-600 tracking-wider block mb-1">PARTICIPATION RATE</span>
+                      <span className="font-mono text-base font-bold text-white tabular-nums">{nfpData.lfpr.actual}</span>
+                      <span className="font-mono text-[10px] ml-2 tabular-nums" style={{ color: metricColor(nfpData.lfpr.changeRaw) }}>{nfpData.lfpr.change}</span>
+                    </div>
+                  )}
+                  {nfpData.weeklyHours && (
+                    <div className="rounded-md border border-[#2a2a2c] p-2.5">
+                      <span className="font-mono text-[9px] text-zinc-600 tracking-wider block mb-1">AVG WEEKLY HOURS</span>
+                      <span className="font-mono text-base font-bold text-white tabular-nums">{nfpData.weeklyHours.actual}</span>
+                      <span className="font-mono text-[10px] ml-2 tabular-nums" style={{ color: metricColor(nfpData.weeklyHours.changeRaw) }}>{nfpData.weeklyHours.change}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <span className="font-mono text-[9px] text-zinc-600 tracking-widest block mb-2">SECTOR BREAKDOWN</span>
+                <div className="flex items-center justify-between pb-1 border-b border-[#2a2a2c]">
+                  <span className="font-mono text-[9px] text-zinc-600 flex-1">SECTOR</span>
+                  <span className="font-mono text-[9px] text-zinc-600 w-[72px] text-right">ACTUAL</span>
+                  <span className="font-mono text-[9px] text-zinc-600 w-[72px] text-right">PREVIOUS</span>
+                  <span className="font-mono text-[9px] text-zinc-600 w-[72px] text-right">CHANGE</span>
+                </div>
+                <MetricRow label="Total Private" data={nfpData.privatePayroll} />
+                <MetricRow label="Government" data={nfpData.govPayroll} />
+                <MetricRow label="Manufacturing" data={nfpData.manufacturing} />
+                <MetricRow label="Leisure & Hospitality" data={nfpData.leisureHosp} />
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {showFullBreakdown && selectedEvent?.blsType && !isNfpEvent && blsData[selectedEvent.blsType]?.change && (() => {
         const d = blsData[selectedEvent.blsType]!;
         const c = d.change!;
         const raw = c.actualRaw;

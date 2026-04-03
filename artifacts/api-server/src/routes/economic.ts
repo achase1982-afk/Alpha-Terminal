@@ -194,6 +194,110 @@ router.get("/multi", async (req, res) => {
   }
 });
 
+const NFP_SERIES: Record<string, { id: string; label: string; unit: string }> = {
+  nfp:           { id: "CES0000000001", label: "Headline NFP",            unit: "thousands" },
+  unemployment:  { id: "LNS14000000",   label: "Unemployment Rate (U-3)", unit: "percent" },
+  earningsMom:   { id: "CES0500000003", label: "Avg Hourly Earnings",     unit: "dollars" },
+  lfpr:          { id: "LNS11300000",   label: "Labor Force Participation Rate", unit: "percent" },
+  weeklyHours:   { id: "CES0500000002", label: "Avg Weekly Hours",        unit: "hours" },
+  privatePayroll:{ id: "CES0500000001", label: "Total Private Payrolls",  unit: "thousands" },
+  manufacturing: { id: "CES3000000001", label: "Manufacturing Payrolls",  unit: "thousands" },
+  leisureHosp:   { id: "CES7000000001", label: "Leisure & Hospitality",   unit: "thousands" },
+  govPayroll:    { id: "CES9000000001", label: "Government Payrolls",     unit: "thousands" },
+};
+
+interface NfpSeriesResult {
+  label: string;
+  unit: string;
+  actual: string;
+  previous: string;
+  change: string;
+  changeRaw: number;
+  month: string;
+  year: string;
+  error?: string;
+}
+
+const nfpCache: { data: Record<string, NfpSeriesResult> | null; ts: number } = { data: null, ts: 0 };
+const NFP_CACHE_TTL = 5 * 60 * 1000;
+
+function formatNfpValue(val: number, unit: string, includeSign = false): string {
+  if (unit === "thousands") {
+    const rounded = Math.round(val);
+    const prefix = includeSign && rounded > 0 ? "+" : includeSign && rounded < 0 ? "" : "";
+    return `${prefix}${rounded.toLocaleString()}K`;
+  }
+  if (unit === "percent") return `${val.toFixed(1)}%`;
+  if (unit === "dollars") return `$${val.toFixed(2)}`;
+  if (unit === "hours") return val.toFixed(1);
+  return String(val);
+}
+
+function computeNfpChange(val: number, prev: number, unit: string): { change: string; changeRaw: number } {
+  if (unit === "thousands") {
+    const diff = Math.round(val - prev);
+    return { change: `${diff >= 0 ? "+" : ""}${(diff * 1000).toLocaleString()}`, changeRaw: diff * 1000 };
+  }
+  if (unit === "percent") {
+    const diff = val - prev;
+    return { change: `${diff >= 0 ? "+" : ""}${diff.toFixed(1)}pp`, changeRaw: diff };
+  }
+  if (unit === "dollars") {
+    const diff = val - prev;
+    return { change: `${diff >= 0 ? "+$" : "-$"}${Math.abs(diff).toFixed(2)}`, changeRaw: diff };
+  }
+  const diff = val - prev;
+  return { change: `${diff >= 0 ? "+" : ""}${diff.toFixed(1)}`, changeRaw: diff };
+}
+
+router.get("/nfp-full", async (req, res) => {
+  try {
+    if (nfpCache.data && Date.now() - nfpCache.ts < NFP_CACHE_TTL) {
+      return res.json(nfpCache.data);
+    }
+
+    const results: Record<string, NfpSeriesResult> = {};
+
+    const fetches = Object.entries(NFP_SERIES).map(async ([key, series]) => {
+      try {
+        const data = await fetchBlsSeries(series.id);
+        const monthly = data.filter((d) => d.period.startsWith("M"));
+        if (monthly.length < 2) {
+          results[key] = { label: series.label, unit: series.unit, actual: "N/A", previous: "N/A", change: "N/A", changeRaw: 0, month: "", year: "" };
+          return;
+        }
+        const cur = parseFloat(monthly[0].value);
+        const prev = parseFloat(monthly[1].value);
+        const { change, changeRaw } = computeNfpChange(cur, prev, series.unit);
+
+        const r: NfpSeriesResult = {
+          label: series.label,
+          unit: series.unit,
+          actual: formatNfpValue(cur, series.unit),
+          previous: formatNfpValue(prev, series.unit),
+          change,
+          changeRaw,
+          month: monthly[0].periodName,
+          year: monthly[0].year,
+        };
+
+        results[key] = r;
+      } catch (err: any) {
+        results[key] = { label: series.label, unit: series.unit, actual: "N/A", previous: "N/A", change: "N/A", changeRaw: 0, month: "", year: "", error: err.message };
+      }
+    });
+
+    await Promise.all(fetches);
+    nfpCache.data = results;
+    nfpCache.ts = Date.now();
+
+    return res.json(results);
+  } catch (err: any) {
+    logger.error({ err }, "NFP full report fetch failed");
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 router.get("/bls-report", async (req, res) => {
   try {
     const reportType = (req.query.type as string || "nfp").toLowerCase();

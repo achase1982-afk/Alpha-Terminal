@@ -1,0 +1,31 @@
+Here is the exact blueprint for your two-step UI flow, specifically tailored for the Jobs Report (NFP) to give institutional and quant traders exactly what they need without wasting screen space.
+Step 1: The Summary Card (The Quick Glance)
+This small box replaces your current text paragraph. It must be instantly scannable, color-coded, and devoid of conversational text. It should only contain the highest-impact headline number and its immediate context.
+• Header: Event Name and Release Time (e.g., "Non-Farm Payrolls (NFP) | 8:30 AM ET").
+• The Grid (3 columns):
+• Actual: The released number (e.g., 265K).
+• Estimate: The market consensus (e.g., 240K).
+• Previous: The prior month's initial number (e.g., 275K).
+• Visual Indicators: The "Actual" number must be color-coded. If Actual > Estimate, color it Green. If Actual < Estimate, color it Red.
+• Action Button: A small, clearly visible "Read More" button in the bottom corner to trigger the slide-up sheet.
+Step 2: The Bottom Sheet (The Full Single-Page Breakdown)
+When the user clicks "Read More," this sheet slides up. It should be highly dense, require zero scrolling, and group the data into logical macroeconomic buckets.
+Section 1: The "Big 3" Core Metrics
+Display these in a clean, multi-row table showing Actual, Estimate, and Previous for each:
+• Headline NFP: Total jobs added/lost.
+• Unemployment Rate (U-3): The percentage of the labor force actively seeking work.
+• Average Hourly Earnings (MoM & YoY): The wage growth metric, which is critical for inflation modeling.
+Section 2: Prior Month Revisions
+This is often more important to quants than the headline number itself.
+• Net Revisions: Display the combined total revisions for the previous two months (e.g., "2-Month Net Revision: -45K"). Color-code this red if negative and green if positive.
+Section 3: Secondary Labor Metrics
+Place these side-by-side in a compact row to provide context to the unemployment rate:
+• Labor Force Participation Rate: The percentage of the working-age population employed or seeking work.
+• Average Weekly Hours: A leading indicator for labor demand.
+Section 4: Key Sector Breakdown
+Quants look here to see exactly where the jobs are coming from to adjust their equity portfolios. Keep it to the most market-moving sectors:
+• Total Private Payrolls (vs. Government jobs).
+• Manufacturing Payrolls.
+• Leisure & Hospitality.
+Section 5: The Source Link
+• Action Button: A prominent "Read Full Report" button anchored at the top right or bottom right of the sheet, linking directly to the raw Bureau of Labor Statistics (BLS) release.
