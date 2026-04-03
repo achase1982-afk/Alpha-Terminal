@@ -145,8 +145,8 @@ function TickerBlock({ symbol, description, showData, opacityCls, transitionCls,
             </span>
             <span
               ref={nameRef}
-              className="font-medium tracking-wide uppercase leading-snug overflow-hidden"
-              style={{ color: '#FFB800', fontSize: nameFontSize, height: COMPANY_BOX_H, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const, marginTop: 2 }}
+              className="font-medium tracking-wide uppercase leading-snug overflow-hidden text-ellipsis"
+              style={{ color: '#FFB800', fontSize: nameFontSize, maxHeight: COMPANY_BOX_H, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const, marginTop: 2, wordBreak: 'break-word' }}
             >
               {description || ""}
             </span>
