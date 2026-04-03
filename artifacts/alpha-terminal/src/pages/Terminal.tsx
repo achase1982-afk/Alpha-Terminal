@@ -192,7 +192,7 @@ export default function TerminalPage() {
           />
         </div>
         <TickerTape />
-        <AiBiasStrip onNavigateToPulse={() => { setActiveBottom("ai"); setAiSubTab("pulse"); }} />
+        <AiBiasStrip onNavigateToPulse={() => { setActiveBottom("ai"); setAiSubTab("pulse"); pulseDashRef.current?.fetchPulse(); }} />
       </header>
 
       {activeBottom === "ai" && (
