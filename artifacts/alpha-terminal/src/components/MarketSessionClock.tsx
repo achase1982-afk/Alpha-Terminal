@@ -115,7 +115,7 @@ function getSessionInfo(): SessionInfo {
     const msLeft = nextOpen.getTime() - et.getTime();
     return {
       session: "CLOSED",
-      label: holidayName ? `CLOSED — ${holidayName}` : "MARKET CLOSED",
+      label: "MARKET CLOSED",
       countdownLabel: "Opens in",
       countdown: fmtCountdown(msLeft),
       color: "#ffffff",
