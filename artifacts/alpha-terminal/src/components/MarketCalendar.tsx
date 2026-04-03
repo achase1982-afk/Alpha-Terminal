@@ -476,17 +476,8 @@ export function MarketCalendar({ onClose }: Props) {
         })}
       </div>
 
-      <div className="flex gap-2 flex-wrap mt-3 mb-2">
-        {Object.entries(TYPE_COLORS).map(([type, color]) => (
-          <div key={type} className="flex items-center gap-1">
-            <div className="w-2 h-2 rounded-full" style={{ background: color }} />
-            <span className="font-mono text-[8px] text-zinc-600 tracking-wider">{TYPE_LABELS[type]}</span>
-          </div>
-        ))}
-      </div>
-
       {selectedDate && !selectedEvent && (
-        <div className="mt-2 border-t border-[#2a2a2c] pt-3 flex-1 flex flex-col">
+        <div className="mt-2 border-t border-[#2a2a2c] pt-2 flex-1 flex flex-col">
           <div className="flex items-center justify-between mb-2">
             <span className="font-mono text-[10px] text-zinc-500 tracking-wider">
               {new Date(selectedDate + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
