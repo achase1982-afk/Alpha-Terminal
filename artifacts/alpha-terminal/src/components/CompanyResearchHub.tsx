@@ -69,7 +69,7 @@ function fmtPct(n: number | null): string {
 function DataPoint({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col">
-      <span className="text-[8px] text-muted-foreground font-bold tracking-tighter uppercase">{label}</span>
+      <span className="text-[8px] text-muted-foreground font-bold tracking-tighter">{label}</span>
       <span className="text-xs font-mono font-semibold text-white tabular-nums">{value}</span>
     </div>
   );
@@ -272,7 +272,7 @@ export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
   if (!accessToken) {
     return (
       <div className="p-6 text-center">
-        <p className="font-mono text-xs text-muted-foreground uppercase tracking-widest">
+        <p className="font-mono text-xs text-muted-foreground tracking-widest">
           Connect Schwab to view company data
         </p>
       </div>
@@ -333,7 +333,7 @@ export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
             <div className="grid grid-cols-2 gap-2 mb-3">
               <div className={`bg-[#1a1a1a] p-3 rounded border ${trendBorderColor}`}>
                 <span className="text-[9px] text-muted-foreground block">TREND</span>
-                <span className={`${trendTextColor} font-bold text-sm uppercase`}>
+                <span className={`${trendTextColor} font-bold text-sm`}>
                   {technicals.trend ?? "—"}
                 </span>
               </div>

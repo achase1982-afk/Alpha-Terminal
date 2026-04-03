@@ -25,7 +25,7 @@ export function AiThinkingFeed({ texts, isStreaming, className = "" }: AiThinkin
         className="flex items-center gap-2 text-xs text-[#52525b] hover:text-[#a1a1aa] transition-colors py-2 px-3"
       >
         <span className="inline-flex rounded-full h-2 w-2 bg-emerald-500/50" />
-        <span className="font-mono text-[10px] uppercase tracking-wider">View AI Reasoning</span>
+        <span className="font-mono text-[10px] tracking-wider">View Ai Reasoning</span>
       </button>
     );
   }
@@ -42,14 +42,14 @@ export function AiThinkingFeed({ texts, isStreaming, className = "" }: AiThinkin
           ) : (
             <span className="inline-flex rounded-full h-2 w-2 bg-emerald-500/50" />
           )}
-          <span className="font-mono text-[9px] font-bold text-emerald-500/70 uppercase tracking-widest">
+          <span className="font-mono text-[9px] font-bold text-emerald-500/70 tracking-widest">
             AI Reasoning
           </span>
         </div>
         {!isStreaming && texts.length > 0 && (
           <button
             onClick={() => setIsExpanded(false)}
-            className="font-mono text-[9px] text-[#3f3f46] hover:text-[#71717a] transition-colors uppercase tracking-wider"
+            className="font-mono text-[9px] text-[#3f3f46] hover:text-[#71717a] transition-colors tracking-wider"
           >
             Hide
           </button>

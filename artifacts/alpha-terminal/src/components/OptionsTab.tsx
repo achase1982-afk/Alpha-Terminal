@@ -671,7 +671,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0 }: Options
         hasData={!!data}
         strikeControls={
           <div className="flex items-center gap-1">
-            <span className="font-mono text-[10px] text-zinc-500 uppercase tracking-wider">Strikes</span>
+            <span className="font-mono text-[10px] text-zinc-500 tracking-wider">Strikes</span>
             {isCustomMode ? (
               <div className="flex items-center gap-1">
                 <Input
@@ -745,7 +745,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0 }: Options
             >
               {showCalls && (
                 <div className="flex-1 text-center">
-                  <span className="text-[12px] font-extrabold uppercase text-white tracking-widest">CALLS</span>
+                  <span className="text-[12px] font-extrabold text-white tracking-widest">Calls</span>
                 </div>
               )}
               <div
@@ -763,7 +763,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0 }: Options
               </div>
               {showPuts && (
                 <div className="flex-1 text-center">
-                  <span className="text-[12px] font-extrabold uppercase text-white tracking-widest">PUTS</span>
+                  <span className="text-[12px] font-extrabold text-white tracking-widest">Puts</span>
                 </div>
               )}
             </div>

@@ -215,12 +215,12 @@ function HeroHeader({ symbol, data }: { symbol: string; data: TearSheetData | nu
                 {symbol}
               </h1>
               {data?.exchange && (
-                <span className="text-[10px] font-mono text-gray-500 bg-white/[0.04] border border-white/[0.06] px-2 py-0.5 rounded-full uppercase tracking-widest">
+                <span className="text-[10px] font-mono text-gray-500 bg-white/[0.04] border border-white/[0.06] px-2 py-0.5 rounded-full tracking-widest">
                   {data.exchange}
                 </span>
               )}
               {data?.assetType && (
-                <span className="text-[10px] font-mono text-gray-500 bg-white/[0.04] border border-white/[0.06] px-2 py-0.5 rounded-full uppercase tracking-widest">
+                <span className="text-[10px] font-mono text-gray-500 bg-white/[0.04] border border-white/[0.06] px-2 py-0.5 rounded-full tracking-widest">
                   {data.assetType}
                 </span>
               )}
@@ -286,7 +286,7 @@ function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string
     <div className="bg-white/[0.02] border border-white/[0.06] rounded-xl p-3.5 flex flex-col gap-1.5 hover:border-white/[0.1] transition-colors">
       <div className="flex items-center gap-1.5">
         {icon}
-        <span className="text-[9px] font-mono text-gray-500 uppercase tracking-widest leading-none">{label}</span>
+        <span className="text-[9px] font-mono text-gray-500 tracking-widest leading-none">{label}</span>
       </div>
       <span className="text-sm font-bold text-white tabular-nums">{value}</span>
     </div>
@@ -302,7 +302,7 @@ function FiftyTwoWeekBar({ high, low, current }: { high: number | null; low: num
   return (
     <div className="bg-white/[0.02] border border-white/[0.06] rounded-xl p-4">
       <div className="flex items-center justify-between mb-3">
-        <span className="text-[10px] font-mono text-gray-500 uppercase tracking-widest">52-Week Range</span>
+        <span className="text-[10px] font-mono text-gray-500 tracking-widest">52-Week Range</span>
         {current != null && (
           <span className="text-[10px] font-mono text-gray-400 tabular-nums">
             Current: {fmtCurrency(current)}
@@ -333,7 +333,7 @@ function InstitutionalOwnershipCard() {
       <div className="px-5 py-3.5 border-b border-white/[0.06] flex items-center justify-between">
         <div className="flex items-center gap-2">
           <ShieldCheck className="w-4 h-4 text-primary" />
-          <span className="text-xs font-mono font-bold text-white uppercase tracking-wider">
+          <span className="text-xs font-mono font-bold text-white tracking-wider">
             Institutional Ownership (13F)
           </span>
         </div>
@@ -346,11 +346,11 @@ function InstitutionalOwnershipCard() {
         <table className="w-full min-w-[600px]">
           <thead>
             <tr className="border-b border-white/[0.06]">
-              <th className="text-left py-2.5 px-4 text-[10px] font-mono text-gray-500 uppercase tracking-wider font-medium">Institution</th>
-              <th className="text-right py-2.5 px-4 text-[10px] font-mono text-gray-500 uppercase tracking-wider font-medium">Shares</th>
-              <th className="text-right py-2.5 px-4 text-[10px] font-mono text-gray-500 uppercase tracking-wider font-medium">Value</th>
-              <th className="text-right py-2.5 px-4 text-[10px] font-mono text-gray-500 uppercase tracking-wider font-medium">Change</th>
-              <th className="text-right py-2.5 px-4 text-[10px] font-mono text-gray-500 uppercase tracking-wider font-medium">Filing</th>
+              <th className="text-left py-2.5 px-4 text-[10px] font-mono text-gray-500 tracking-wider font-medium">Institution</th>
+              <th className="text-right py-2.5 px-4 text-[10px] font-mono text-gray-500 tracking-wider font-medium">Shares</th>
+              <th className="text-right py-2.5 px-4 text-[10px] font-mono text-gray-500 tracking-wider font-medium">Value</th>
+              <th className="text-right py-2.5 px-4 text-[10px] font-mono text-gray-500 tracking-wider font-medium">Change</th>
+              <th className="text-right py-2.5 px-4 text-[10px] font-mono text-gray-500 tracking-wider font-medium">Filing</th>
             </tr>
           </thead>
           <tbody>

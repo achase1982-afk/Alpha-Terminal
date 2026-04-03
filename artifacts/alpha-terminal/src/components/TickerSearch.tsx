@@ -37,7 +37,7 @@ export function TickerSearch({ onNavigateToMarkets }: TickerSearchProps = {}) {
     <div className="px-3 sm:px-4 py-2 border-b border-card-border bg-[#0c0c0c]/95 shrink-0 flex flex-col sm:flex-row items-start sm:items-center gap-2">
       <div className="flex flex-col gap-1 flex-1 min-w-0">
         {recentSymbols.length > 0 && (
-          <span className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium">
+          <span className="font-mono text-[9px] text-[#71717a] tracking-widest font-medium">
             RECENTLY VIEWED
           </span>
         )}
@@ -72,7 +72,7 @@ export function TickerSearch({ onNavigateToMarkets }: TickerSearchProps = {}) {
             onChange={e => setInputVal(e.target.value.toUpperCase())}
             placeholder="SEARCH..."
             className="w-32 sm:w-36 h-7 pl-7 pr-2 rounded border border-card-border bg-card font-mono text-[10px] text-foreground
-              placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50 focus:bg-transparent transition-colors uppercase"
+              placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50 focus:bg-transparent transition-colors"
             autoComplete="off"
             autoCorrect="off"
             spellCheck={false}

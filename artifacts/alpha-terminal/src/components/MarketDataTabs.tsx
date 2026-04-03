@@ -305,7 +305,7 @@ export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps)
                 style={style}
               >
                 {tab.icon}
-                <span className="text-[10px] font-medium tracking-widest uppercase">
+                <span className="text-[10px] font-medium tracking-widest">
                   {tab.label}
                 </span>
               </button>

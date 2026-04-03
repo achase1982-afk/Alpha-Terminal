@@ -164,7 +164,7 @@ export function InAppBrowser() {
             <div className="w-6 h-6 border-2 border-zinc-700 border-t-[#FFB800] rounded-full animate-spin" />
             <div className="flex items-center gap-1.5">
               <Shield className="w-3 h-3 text-emerald-500" />
-              <span className="text-xs text-zinc-500 font-mono uppercase tracking-wider">Secure reader loading...</span>
+              <span className="text-xs text-zinc-500 font-mono tracking-wider">Secure Reader Loading...</span>
             </div>
           </div>
         )}

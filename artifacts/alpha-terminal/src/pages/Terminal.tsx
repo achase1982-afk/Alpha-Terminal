@@ -46,7 +46,7 @@ function PulseHeader({ pulseData, onRefresh }: { pulseData: any; onRefresh: () =
       <div className="flex items-center gap-2.5">
         <div>
           <h2 className="font-mono font-bold text-sm text-[#e4e4e7] tracking-wider">MARKET PULSE</h2>
-          <p className="font-mono text-[9px] text-[#71717a] tracking-widest uppercase">Multi-Asset Macro Analysis</p>
+          <p className="font-mono text-[9px] text-[#71717a] tracking-widest">Multi-Asset Macro Analysis</p>
         </div>
       </div>
       {pulseData && (

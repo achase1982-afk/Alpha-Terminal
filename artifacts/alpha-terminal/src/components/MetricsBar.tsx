@@ -205,11 +205,11 @@ export function VolumeBar() {
       style={{ background: HEADER_BG }}
     >
       <div className="flex flex-col items-start gap-0.5">
-        <span className="text-[9px] uppercase tracking-[0.12em] text-zinc-500 font-semibold leading-none">Volume</span>
+        <span className="text-[9px] tracking-[0.12em] text-zinc-500 font-semibold leading-none">Volume</span>
         <span className="font-mono tabular-nums text-zinc-300 text-[13px] font-medium leading-none">{fmtVol(vol)}</span>
       </div>
       <div className="flex flex-col items-center gap-0.5 text-center">
-        <span className="text-[9px] uppercase tracking-[0.12em] text-zinc-500 font-semibold leading-none">Day Range</span>
+        <span className="text-[9px] tracking-[0.12em] text-zinc-500 font-semibold leading-none">Day Range</span>
         <span className="font-mono tabular-nums text-[13px] font-medium leading-none whitespace-nowrap">
           <span style={{ color: DOWN_COLOR }}>${fmtPrice(dayLow)}</span>
           <span className="text-zinc-600 mx-0.5">—</span>
@@ -217,7 +217,7 @@ export function VolumeBar() {
         </span>
       </div>
       <div className="flex flex-col items-end gap-0.5">
-        <span className="text-[9px] uppercase tracking-[0.12em] text-zinc-500 font-semibold leading-none">52W Range</span>
+        <span className="text-[9px] tracking-[0.12em] text-zinc-500 font-semibold leading-none">52W Range</span>
         <span className="font-mono tabular-nums text-zinc-300 text-[13px] font-medium leading-none">
           {wk52Low != null ? `$${fmtPrice(wk52Low)} — $${fmtPrice(wk52High)}` : "—"}
         </span>
@@ -368,14 +368,14 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
                 className="h-6 bg-red-950/40 border border-red-500/50 rounded flex items-center justify-center cursor-pointer transition-colors active:bg-red-800/70 trade-btn-sell"
                 aria-label={`Sell ${quote?.symbol}`}
               >
-                <span className="text-[9px] uppercase font-bold tracking-widest text-white leading-none">SELL</span>
+                <span className="text-[9px] font-bold tracking-widest text-white leading-none">Sell</span>
               </button>
               <button
                 onClick={() => handleInitiateTrade('buy')}
                 className="h-6 bg-emerald-950/40 border border-emerald-500/50 rounded flex items-center justify-center cursor-pointer transition-colors active:bg-emerald-800/70 trade-btn-buy"
                 aria-label={`Buy ${quote?.symbol}`}
               >
-                <span className="text-[9px] uppercase font-bold tracking-widest text-white leading-none">BUY</span>
+                <span className="text-[9px] font-bold tracking-widest text-white leading-none">Buy</span>
               </button>
             </div>
           </>
@@ -482,7 +482,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
 
       <div className="hidden sm:flex items-center gap-6 mt-2 pt-2 border-t border-zinc-800/60">
         <div className="flex flex-col shrink-0 gap-0.5">
-          <span className="text-[10px] uppercase tracking-[0.1em] text-zinc-500 font-semibold">Volume</span>
+          <span className="text-[10px] tracking-[0.1em] text-zinc-500 font-semibold">Volume</span>
           <span className={`font-mono tabular-nums text-zinc-300 text-sm font-medium ${opacityCls} ${transitionCls}`}>
             {fmtVol(quote?.volume ?? null)}
           </span>
@@ -491,7 +491,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
         <div className="w-px h-8 bg-zinc-800 shrink-0 hidden md:block" />
 
         <div className="hidden md:flex flex-col shrink-0 gap-0.5">
-          <span className="text-[10px] uppercase tracking-[0.1em] text-zinc-500 font-semibold">Day Range</span>
+          <span className="text-[10px] tracking-[0.1em] text-zinc-500 font-semibold">Day Range</span>
           <span className={`font-mono tabular-nums text-sm font-medium ${opacityCls} ${transitionCls}`}>
             <span style={{ color: DOWN_COLOR }}>${fmtPrice(quote?.low ?? null)}</span>
             <span className="text-zinc-600 mx-1">—</span>
@@ -502,7 +502,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
         <div className="w-px h-8 bg-zinc-800 shrink-0 hidden lg:block" />
 
         <div className="hidden lg:flex flex-col shrink-0 gap-0.5">
-          <span className="text-[10px] uppercase tracking-[0.1em] text-zinc-500 font-semibold">52W Range</span>
+          <span className="text-[10px] tracking-[0.1em] text-zinc-500 font-semibold">52W Range</span>
           <span className={`font-mono tabular-nums text-zinc-500 text-sm font-medium ${opacityCls} ${transitionCls}`}>
             {quote?.fiftyTwoWeekLow != null
               ? `$${fmtPrice(quote.fiftyTwoWeekLow)} — $${fmtPrice(quote.fiftyTwoWeekHigh)}`
