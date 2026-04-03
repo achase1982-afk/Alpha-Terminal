@@ -317,15 +317,8 @@ function WatchlistSwitcherButton({ onOpen }: { onOpen: () => void }) {
       onClick={onOpen}
       className="flex items-center gap-2 px-3 py-2 rounded-lg transition-colors hover:bg-white/[0.04] active:bg-white/[0.08]"
     >
-      <Star className="w-5 h-5" style={{ color: "#FFB800" }} />
       <span className="font-mono text-[14px] font-bold tracking-wider text-white">
         {activeList?.name ?? "Watchlist"}
-      </span>
-      <span
-        className="font-mono text-[11px] px-1.5 py-0.5 rounded-md"
-        style={{ color: "#FFB800", border: "1px solid #FFB80030" }}
-      >
-        {activeList?.symbols.length ?? 0}
       </span>
       <ChevronDown className="w-4 h-4 text-[#71717a]" />
     </button>
