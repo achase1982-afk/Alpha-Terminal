@@ -959,7 +959,7 @@ export function MarketCalendar({ onClose }: Props) {
                   )}
                 </div>
 
-                <div className="flex items-center pb-2">
+                <div className="flex items-center justify-end pb-2">
                   <button
                     onClick={() => setReportIframeUrl(reportUrl)}
                     className="flex items-center gap-1.5 font-mono text-[14px] font-bold tracking-wider transition-opacity hover:opacity-70"
