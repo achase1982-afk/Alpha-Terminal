@@ -368,51 +368,56 @@ export function MarketCalendar({ onClose }: Props) {
     });
   }, [selectedEvent?.blsType]);
 
+  const [filterOpen, setFilterOpen] = useState(false);
+
   return (
     <div className="flex flex-col h-full max-w-xl mx-auto">
       <div className="flex items-center justify-between mb-3">
-        <button onClick={prevMonth} className="p-2 rounded-lg hover:bg-[#1a1a1c] transition-colors">
-          <ChevronLeft className="w-5 h-5 text-zinc-400" />
-        </button>
-        <span className="font-mono font-bold text-sm text-white tracking-wider">
-          {MONTHS[month]} {year}
-        </span>
-        <div className="flex items-center gap-1">
-          <button onClick={nextMonth} className="p-2 rounded-lg hover:bg-[#1a1a1c] transition-colors">
-            <ChevronRight className="w-5 h-5 text-zinc-400" />
+        <div className="relative">
+          <button
+            onClick={() => setFilterOpen(!filterOpen)}
+            className="font-mono font-bold text-[13px] tracking-wider px-2 py-1 rounded-md transition-colors hover:bg-[#1a1a1c]"
+            style={{ color: filterType ? TYPE_COLORS[filterType] || "#FFB800" : "#a1a1aa" }}
+          >
+            Filter{filterType ? ` · ${TYPE_LABELS[filterType]}` : ""}
           </button>
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-[#1a1a1c] transition-colors">
-            <X className="w-5 h-5 text-zinc-400" />
+          {filterOpen && (
+            <div className="absolute top-full left-0 mt-1 bg-[#1a1a1c] border border-[#2a2a2c] rounded-lg py-1 z-50 min-w-[160px] shadow-xl">
+              <button
+                onClick={() => { setFilterType(null); setFilterOpen(false); }}
+                className="w-full text-left px-3 py-2 font-mono text-[11px] tracking-wider transition-colors hover:bg-[#252528]"
+                style={{ color: filterType === null ? "#FFB800" : "#a1a1aa" }}
+              >
+                All Events
+              </button>
+              {Object.entries(TYPE_LABELS).map(([type, label]) => (
+                <button
+                  key={type}
+                  onClick={() => { setFilterType(filterType === type ? null : type); setFilterOpen(false); }}
+                  className="w-full text-left px-3 py-2 font-mono text-[11px] tracking-wider transition-colors hover:bg-[#252528] flex items-center gap-2"
+                  style={{ color: filterType === type ? TYPE_COLORS[type] : "#a1a1aa" }}
+                >
+                  <div className="w-2 h-2 rounded-full shrink-0" style={{ background: TYPE_COLORS[type] }} />
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-0">
+          <button onClick={prevMonth} className="p-1.5 rounded-lg hover:bg-[#1a1a1c] transition-colors">
+            <ChevronLeft className="w-4 h-4 text-zinc-400" />
+          </button>
+          <span className="font-mono font-bold text-sm text-white tracking-wider mx-1">
+            {MONTHS[month]} {year}
+          </span>
+          <button onClick={nextMonth} className="p-1.5 rounded-lg hover:bg-[#1a1a1c] transition-colors">
+            <ChevronRight className="w-4 h-4 text-zinc-400" />
           </button>
         </div>
-      </div>
-
-      <div className="flex gap-1.5 mb-3 overflow-x-auto pb-1">
-        <button
-          onClick={() => setFilterType(null)}
-          className="shrink-0 px-2.5 py-1 rounded-full font-mono text-[9px] tracking-wider transition-all"
-          style={{
-            background: "transparent",
-            border: `1px solid ${filterType === null ? "#FFB800" : "#2a2a2c"}`,
-            color: filterType === null ? "#FFB800" : "#71717a",
-          }}
-        >
-          All
+        <button onClick={onClose} className="p-2 rounded-lg hover:bg-[#1a1a1c] transition-colors">
+          <X className="w-5 h-5 text-zinc-400" />
         </button>
-        {Object.entries(TYPE_LABELS).map(([type, label]) => (
-          <button
-            key={type}
-            onClick={() => setFilterType(filterType === type ? null : type)}
-            className="shrink-0 px-2.5 py-1 rounded-full font-mono text-[9px] tracking-wider transition-all"
-            style={{
-              background: "transparent",
-              border: `1px solid ${filterType === type ? TYPE_COLORS[type] : "#2a2a2c"}`,
-              color: filterType === type ? TYPE_COLORS[type] : "#71717a",
-            }}
-          >
-            {label}
-          </button>
-        ))}
       </div>
 
       <div className="grid grid-cols-7 gap-0 mb-1">
@@ -495,8 +500,7 @@ export function MarketCalendar({ onClose }: Props) {
                 <button
                   key={i}
                   onClick={() => setSelectedEvent(ev)}
-                  className="w-full text-left rounded-lg p-3 transition-all"
-                  style={{ border: `1px solid #2a2a2c` }}
+                  className="w-full text-left rounded-lg p-3 transition-all hover:bg-[#1a1a1c]"
                 >
                   <div className="flex items-center gap-2 mb-1">
                     <div className="w-2 h-2 rounded-full shrink-0" style={{ background: TYPE_COLORS[ev.type] }} />
