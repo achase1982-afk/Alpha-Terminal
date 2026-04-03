@@ -178,7 +178,12 @@ function WatchlistRow({
       >
         <div className="flex items-center px-4 py-2.5 gap-3">
           <div className="flex-1 min-w-0">
-            <span className="font-mono text-[15px] font-bold text-white tracking-wider">{sym}</span>
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-[15px] font-bold text-white tracking-wider">{sym}</span>
+              {spark && spark.closes.length > 1 && (
+                <MiniSparkline data={spark.closes} color={cColor} width={56} height={28} />
+              )}
+            </div>
             {description && (
               <span className="block font-mono text-[10px] uppercase tracking-wide mt-0.5 truncate" style={{ color: "#FFB800" }}>
                 {description}
@@ -192,9 +197,6 @@ function WatchlistRow({
           </div>
 
           <div className="flex items-center gap-2.5 shrink-0">
-            {spark && spark.closes.length > 1 && (
-              <MiniSparkline data={spark.closes} color={cColor} width={56} height={28} />
-            )}
             <div className="flex flex-col items-end">
               <span
                 className="font-mono text-[16px] font-bold tabular-nums"
