@@ -10,8 +10,6 @@ import {
   ChevronRight,
   Trash2,
   Plus,
-  Wifi,
-  WifiOff,
   ChevronDown,
   Pencil,
   Check,
@@ -102,7 +100,7 @@ function WatchlistRow({
       role="button"
       tabIndex={0}
       className="group relative cursor-pointer active:bg-white/[0.04] transition-colors"
-      style={{ background: "#1C1C1E", borderBottom: "1px solid #2A2A2C" }}
+      style={{ background: "#000000", borderBottom: "1px solid #2A2A2C" }}
     >
       <div className="flex items-center px-4 py-3 gap-3">
         <div className="flex-1 min-w-0">
@@ -153,32 +151,24 @@ function WatchlistRow({
   );
 }
 
-function WatchlistSwitcher() {
+function WatchlistSwitcherPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { watchlists, activeWatchlistId, setActiveWatchlist, createWatchlist, deleteWatchlist, renameWatchlist } = useTerminalStore();
-  const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [showNew, setShowNew] = useState(false);
   const [newName, setNewName] = useState("");
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [headerH, setHeaderH] = useState(0);
 
   useEffect(() => {
-    if (!open) return;
-    function handleClick(e: MouseEvent | TouchEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClick);
-    document.addEventListener("touchstart", handleClick);
-    return () => {
-      document.removeEventListener("mousedown", handleClick);
-      document.removeEventListener("touchstart", handleClick);
-    };
-  }, [open]);
+    const el = document.getElementById("terminal-header");
+    if (!el) return;
+    const ro = new ResizeObserver(() => setHeaderH(el.offsetHeight));
+    ro.observe(el);
+    setHeaderH(el.offsetHeight);
+    return () => ro.disconnect();
+  }, []);
 
   const ids = Object.keys(watchlists);
-  const activeList = watchlists[activeWatchlistId];
 
   const handleCreate = () => {
     const name = newName.trim();
@@ -186,7 +176,6 @@ function WatchlistSwitcher() {
     createWatchlist(name);
     setNewName("");
     setShowNew(false);
-    setOpen(false);
   };
 
   const handleRename = (id: string) => {
@@ -197,29 +186,31 @@ function WatchlistSwitcher() {
   };
 
   return (
-    <div className="relative" ref={dropdownRef}>
-      <button
-        onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 px-3 py-2 rounded-lg transition-colors hover:bg-white/[0.04] active:bg-white/[0.08]"
-      >
-        <Star className="w-5 h-5" style={{ color: "#FFB800" }} />
-        <span className="font-mono text-[14px] font-bold tracking-wider text-white">
-          {activeList?.name ?? "Watchlist"}
-        </span>
-        <span
-          className="font-mono text-[11px] px-1.5 py-0.5 rounded-md"
-          style={{ color: "#FFB800", border: "1px solid #FFB80030" }}
-        >
-          {activeList?.symbols.length ?? 0}
-        </span>
-        <ChevronDown className={`w-4 h-4 text-[#71717a] transition-transform ${open ? "rotate-180" : ""}`} />
-      </button>
+    <>
+      <div
+        className={`fixed left-0 right-0 bottom-0 bg-black/60 z-40 transition-opacity duration-300 ${open ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+        style={{ top: headerH }}
+        onClick={onClose}
+      />
 
-      {open && (
-        <div
-          className="absolute left-0 top-full mt-1 z-50 w-72 rounded-xl border overflow-hidden shadow-2xl"
-          style={{ background: "#111113", borderColor: "#2A2A2C" }}
-        >
+      <div
+        className={`fixed left-0 right-0 bottom-0 z-50 transform transition-transform duration-300 flex flex-col ${open ? "translate-x-0" : "-translate-x-full"}`}
+        style={{ background: "#000000", top: headerH }}
+      >
+        <div className="flex items-center justify-center px-4 py-4 border-b border-[#2A2A2C]">
+          <div className="flex items-center gap-2">
+            <Star className="w-5 h-5" style={{ color: "#FFB800" }} />
+            <span className="font-mono text-[16px] font-bold tracking-wider text-white">SWITCH WATCHLIST</span>
+          </div>
+          <button
+            onClick={onClose}
+            className="absolute right-4 p-2 rounded-lg text-[#71717a] hover:text-white transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
           {ids.map((id) => {
             const wl = watchlists[id];
             const isActive = id === activeWatchlistId;
@@ -228,7 +219,7 @@ function WatchlistSwitcher() {
             return (
               <div
                 key={id}
-                className={`flex items-center justify-between px-4 py-3 transition-colors ${isActive ? "bg-white/[0.04]" : "hover:bg-white/[0.04]"}`}
+                className={`flex items-center justify-between px-5 py-4 transition-colors ${isActive ? "border-l-2 border-l-[#FFB800]" : "border-l-2 border-l-transparent hover:bg-white/[0.03]"}`}
                 style={{ borderBottom: "1px solid #2A2A2C" }}
               >
                 {isEditing ? (
@@ -237,42 +228,45 @@ function WatchlistSwitcher() {
                       value={editName}
                       onChange={(e) => setEditName(e.target.value)}
                       onKeyDown={(e) => { if (e.key === "Enter") handleRename(id); if (e.key === "Escape") setEditingId(null); }}
-                      className="flex-1 font-mono text-[13px] bg-transparent text-white outline-none border-b border-[#FFB800]"
+                      className="flex-1 font-mono text-[14px] bg-transparent text-white outline-none border-b border-[#FFB800]"
                       autoFocus
                     />
-                    <button onClick={() => handleRename(id)} className="p-1 text-[#22c55e] hover:bg-[#22c55e]/10 rounded">
-                      <Check className="w-3.5 h-3.5" />
+                    <button onClick={() => handleRename(id)} className="p-1.5 text-[#22c55e] rounded">
+                      <Check className="w-4 h-4" />
                     </button>
-                    <button onClick={() => setEditingId(null)} className="p-1 text-[#71717a] hover:bg-white/10 rounded">
-                      <X className="w-3.5 h-3.5" />
+                    <button onClick={() => setEditingId(null)} className="p-1.5 text-[#71717a] rounded">
+                      <X className="w-4 h-4" />
                     </button>
                   </div>
                 ) : (
                   <>
                     <button
-                      onClick={() => { setActiveWatchlist(id); setOpen(false); }}
-                      className="flex-1 text-left flex items-center gap-2"
+                      onClick={() => { setActiveWatchlist(id); onClose(); }}
+                      className="flex-1 text-left flex items-center gap-3"
                     >
-                      <span className={`font-mono text-[13px] font-medium ${isActive ? "text-[#FFB800]" : "text-white"}`}>
-                        {wl.name}
-                      </span>
-                      <span className="font-mono text-[11px] text-[#71717a]">
-                        ({wl.symbols.length})
-                      </span>
+                      <Star className="w-4 h-4" style={{ color: isActive ? "#FFB800" : "#3a3a3c" }} />
+                      <div className="flex flex-col">
+                        <span className={`font-mono text-[14px] font-bold ${isActive ? "text-[#FFB800]" : "text-white"}`}>
+                          {wl.name}
+                        </span>
+                        <span className="font-mono text-[11px] text-[#52525b]">
+                          {wl.symbols.length} {wl.symbols.length === 1 ? "symbol" : "symbols"}
+                        </span>
+                      </div>
                     </button>
                     <div className="flex items-center gap-1">
                       <button
                         onClick={(e) => { e.stopPropagation(); setEditingId(id); setEditName(wl.name); }}
-                        className="p-1.5 text-[#52525b] hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                        className="p-2 text-[#52525b] hover:text-white rounded-lg transition-colors"
                       >
-                        <Pencil className="w-3.5 h-3.5" />
+                        <Pencil className="w-4 h-4" />
                       </button>
                       {id !== "default" && (
                         <button
                           onClick={(e) => { e.stopPropagation(); deleteWatchlist(id); }}
-                          className="p-1.5 text-[#52525b] hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
+                          className="p-2 text-[#52525b] hover:text-red-400 rounded-lg transition-colors"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <Trash2 className="w-4 h-4" />
                         </button>
                       )}
                     </div>
@@ -283,34 +277,58 @@ function WatchlistSwitcher() {
           })}
 
           {showNew ? (
-            <div className="flex items-center gap-2 px-4 py-3">
+            <div className="flex items-center gap-2 px-5 py-4" style={{ borderBottom: "1px solid #2A2A2C" }}>
               <input
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); if (e.key === "Escape") { setShowNew(false); setNewName(""); } }}
                 placeholder="Watchlist name..."
-                className="flex-1 font-mono text-[13px] bg-transparent text-white outline-none border-b border-[#FFB800] placeholder:text-[#52525b]"
+                className="flex-1 font-mono text-[14px] bg-transparent text-white outline-none border-b border-[#FFB800] placeholder:text-[#52525b]"
                 autoFocus
               />
-              <button onClick={handleCreate} className="p-1 text-[#22c55e] hover:bg-[#22c55e]/10 rounded">
-                <Check className="w-3.5 h-3.5" />
+              <button onClick={handleCreate} className="p-1.5 text-[#22c55e] rounded">
+                <Check className="w-4 h-4" />
               </button>
-              <button onClick={() => { setShowNew(false); setNewName(""); }} className="p-1 text-[#71717a] hover:bg-white/10 rounded">
-                <X className="w-3.5 h-3.5" />
+              <button onClick={() => { setShowNew(false); setNewName(""); }} className="p-1.5 text-[#71717a] rounded">
+                <X className="w-4 h-4" />
               </button>
             </div>
           ) : (
             <button
               onClick={() => setShowNew(true)}
-              className="w-full flex items-center gap-2 px-4 py-3 text-[#FFB800] hover:bg-white/[0.04] transition-colors"
+              className="w-full flex items-center gap-3 px-5 py-4 text-[#FFB800] hover:bg-white/[0.04] transition-colors"
             >
               <Plus className="w-4 h-4" />
-              <span className="font-mono text-[12px] font-bold tracking-wider">NEW WATCHLIST</span>
+              <span className="font-mono text-[13px] font-bold tracking-wider">NEW WATCHLIST</span>
             </button>
           )}
         </div>
-      )}
-    </div>
+      </div>
+    </>
+  );
+}
+
+function WatchlistSwitcherButton({ onOpen }: { onOpen: () => void }) {
+  const { watchlists, activeWatchlistId } = useTerminalStore();
+  const activeList = watchlists[activeWatchlistId];
+
+  return (
+    <button
+      onClick={onOpen}
+      className="flex items-center gap-2 px-3 py-2 rounded-lg transition-colors hover:bg-white/[0.04] active:bg-white/[0.08]"
+    >
+      <Star className="w-5 h-5" style={{ color: "#FFB800" }} />
+      <span className="font-mono text-[14px] font-bold tracking-wider text-white">
+        {activeList?.name ?? "Watchlist"}
+      </span>
+      <span
+        className="font-mono text-[11px] px-1.5 py-0.5 rounded-md"
+        style={{ color: "#FFB800", border: "1px solid #FFB80030" }}
+      >
+        {activeList?.symbols.length ?? 0}
+      </span>
+      <ChevronDown className="w-4 h-4 text-[#71717a]" />
+    </button>
   );
 }
 
@@ -341,11 +359,12 @@ function SortButton({
 }
 
 export function WatchlistView() {
-  const { removeFromWatchlist, setSymbol, streamPrices, accessToken, streamStatus } = useTerminalStore();
+  const { removeFromWatchlist, setSymbol, streamPrices, accessToken } = useTerminalStore();
   const watchlist = useActiveWatchlist();
   const [sortKey, setSortKey] = useState<SortKey>("symbol");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [sparkData, setSparkData] = useState<Record<string, SparkData>>({});
+  const [switcherOpen, setSwitcherOpen] = useState(false);
   const fetchedRef = useRef<Set<string>>(new Set());
 
   const handleSort = useCallback((key: SortKey) => {
@@ -415,23 +434,12 @@ export function WatchlistView() {
   const unchanged = watchlist.length - gainers - losers;
 
   return (
-    <div className="flex-1 flex flex-col" style={{ background: "#1C1C1E" }}>
+    <div className="flex-1 flex flex-col" style={{ background: "#000000" }}>
+      <WatchlistSwitcherPanel open={switcherOpen} onClose={() => setSwitcherOpen(false)} />
+
       <div className="px-4 pt-4 pb-2">
-        <div className="flex items-center justify-between mb-3">
-          <WatchlistSwitcher />
-          <div className="flex items-center gap-1.5">
-            {streamStatus === "live" ? (
-              <>
-                <Wifi className="w-3.5 h-3.5 text-[#22c55e]" />
-                <span className="font-mono text-[10px] text-[#22c55e] uppercase font-bold">Live</span>
-              </>
-            ) : (
-              <>
-                <WifiOff className="w-3.5 h-3.5 text-[#71717a]" />
-                <span className="font-mono text-[10px] text-[#71717a] uppercase">{streamStatus}</span>
-              </>
-            )}
-          </div>
+        <div className="flex items-center justify-center mb-3">
+          <WatchlistSwitcherButton onOpen={() => setSwitcherOpen(true)} />
         </div>
 
         {watchlist.length > 0 && (
