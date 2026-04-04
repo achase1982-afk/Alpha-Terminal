@@ -221,4 +221,98 @@ router.get("/transactions", async (req, res) => {
   }
 });
 
+router.get("/account-hash", async (_req, res) => {
+  const token = getTraderToken();
+  if (!token) return res.status(401).json({ error: "no_trader_token" });
+
+  try {
+    const nums = await schwabGet("/accounts/accountNumbers", token);
+    if (!nums.length) return res.status(404).json({ error: "no_accounts" });
+    res.json({ hashValue: nums[0].hashValue });
+  } catch (err) {
+    logger.error({ err }, "Account hash fetch failed");
+    res.status(502).json({ error: "schwab_api_error" });
+  }
+});
+
+router.post("/place-order", async (req, res) => {
+  const token = getTraderToken();
+  if (!token) return res.status(401).json({ error: "no_trader_token" });
+
+  const { accountHash, order } = req.body as {
+    accountHash: string;
+    order: Record<string, unknown>;
+  };
+
+  if (!accountHash || !order) {
+    return res.status(400).json({ error: "Missing accountHash or order" });
+  }
+
+  try {
+    const schwabRes = await fetch(
+      `${SCHWAB_TRADER_BASE}/accounts/${accountHash}/orders`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(order),
+      }
+    );
+
+    if (!schwabRes.ok) {
+      const body = await schwabRes.text().catch(() => "");
+      logger.error({ status: schwabRes.status, body: body.slice(0, 500) }, "Schwab order placement failed");
+      return res.status(schwabRes.status).json({
+        error: "order_rejected",
+        message: body.slice(0, 500),
+      });
+    }
+
+    const locationHeader = schwabRes.headers.get("location") ?? "";
+    const orderIdMatch = locationHeader.match(/orders\/(\d+)/);
+    const orderId = orderIdMatch ? orderIdMatch[1] : null;
+
+    res.json({ success: true, orderId });
+  } catch (err) {
+    logger.error({ err }, "Order placement error");
+    res.status(502).json({ error: "schwab_api_error" });
+  }
+});
+
+router.delete("/cancel-order", async (req, res) => {
+  const token = getTraderToken();
+  if (!token) return res.status(401).json({ error: "no_trader_token" });
+
+  const { accountHash, orderId } = req.body as {
+    accountHash: string;
+    orderId: string;
+  };
+
+  if (!accountHash || !orderId) {
+    return res.status(400).json({ error: "Missing accountHash or orderId" });
+  }
+
+  try {
+    const schwabRes = await fetch(
+      `${SCHWAB_TRADER_BASE}/accounts/${accountHash}/orders/${orderId}`,
+      {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      }
+    );
+
+    if (!schwabRes.ok) {
+      const body = await schwabRes.text().catch(() => "");
+      return res.status(schwabRes.status).json({ error: "cancel_failed", message: body.slice(0, 500) });
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    logger.error({ err }, "Order cancel error");
+    res.status(502).json({ error: "schwab_api_error" });
+  }
+});
+
 export default router;

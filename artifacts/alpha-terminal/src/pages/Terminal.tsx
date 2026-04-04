@@ -18,6 +18,7 @@ import { useViewportShell } from "@/hooks/useViewportShell";
 import { AiChatOverlay } from "@/components/AiChatOverlay";
 
 import { InAppBrowser } from "@/components/InAppBrowser";
+import { OrderTicket } from "@/components/OrderTicket";
 import { MarketSessionClock } from "@/components/MarketSessionClock";
 import { NewsTab } from "@/components/NewsTab";
 import { AiBiasStrip } from "@/components/market-pulse/AiBiasStrip";
@@ -119,6 +120,13 @@ export default function TerminalPage() {
   const [contextTab, setContextTab] = useState<ContextTab>("news");
   const [aiSubTab, setAiSubTab] = useState<AiSubTab>("pulse");
   const [pulseAutoGen, setPulseAutoGen] = useState(false);
+  const [orderOpen, setOrderOpen] = useState(false);
+  const [orderSide, setOrderSide] = useState<"BUY" | "SELL">("BUY");
+
+  const openOrder = useCallback((side: "BUY" | "SELL") => {
+    setOrderSide(side);
+    setOrderOpen(true);
+  }, []);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickyWrapRef = useRef<HTMLDivElement>(null);
   const [stickyH, setStickyH] = useState(0);
@@ -294,7 +302,7 @@ export default function TerminalPage() {
               <>
                 <MacroBar />
                 <div ref={stickyWrapRef} className="sticky top-0 z-40 bg-background">
-                  <MetricsBar compact={isScrolled} />
+                  <MetricsBar compact={isScrolled} onTrade={openOrder} />
                   <VolumeBar />
                   <MarketDataTabs activeTab={contextTab} setActiveTab={setContextTab} />
                 </div>
@@ -338,7 +346,7 @@ export default function TerminalPage() {
               <>
                 <div className="flex flex-col flex-1 min-w-0">
                   <div className="shrink-0 border-b border-zinc-800/60" style={{ background: "#0a0a0a" }}>
-                    <MetricsBar compact={true} />
+                    <MetricsBar compact={true} onTrade={openOrder} />
                   </div>
                   <div className="shrink-0 border-b border-zinc-800/40" style={{ background: "#111" }}>
                     <ChartControls />
@@ -378,7 +386,7 @@ export default function TerminalPage() {
             {activeBottom === "markets" && (
               <>
                 <div className="shrink-0 border-b border-zinc-800/60" style={{ background: "#0a0a0a" }}>
-                  <MetricsBar compact={isScrolled} />
+                  <MetricsBar compact={isScrolled} onTrade={openOrder} />
                   <VolumeBar />
                 </div>
                 <div ref={stickyWrapRef} className="sticky top-0 z-40 bg-background">
@@ -460,6 +468,7 @@ export default function TerminalPage() {
       />
       <AiChatOverlay isOpen={chatOpen} onClose={() => setChatOpen(false)} />
       <InAppBrowser />
+      <OrderTicket isOpen={orderOpen} onClose={() => setOrderOpen(false)} initialSide={orderSide} />
     </div>
   );
 }

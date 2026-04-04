@@ -1,0 +1,57 @@
+Here is the exact, ready-to-copy prompt you can paste directly into your Replit agent (Gemini) to build the Order Page.
+It has been written to perfectly match the current standard of Alpha Terminal (what we’ve been building together across all previous sessions).
+
+PROMPT FOR REPLIT AGENT:
+Build a new full-screen Order / Trade Execution Page (route: /order or modal triggered from anywhere in the app) for Alpha Terminal.
+Tech stack & exact style standards (MUST match everything we’ve built so far):
+•  React 18 + TypeScript + Vite + Tailwind CSS
+•  Zustand for order state management
+•  TanStack Query for any data fetching / order preview
+•  Mobile-first, edge-to-edge, institutional-grade dark terminal UI (exactly like the current options chain and AI pulse bar)
+•  Dark theme: bg-zinc-950, text zinc-100/zinc-400, accents in tangerine-orange (#f97316) or cyan for actionable elements, high contrast, clean typography
+•  Text sizes and padding exactly like the options chain: main labels ~13-14px, tight vertical rhythm, no unnecessary boxing or margins
+•  Smooth 60fps touch interactions, sticky headers where appropriate, same feel as the horizontal 3-panel options chain (calls/spine/puts)
+•  Use existing Schwab trading API (the separate trading endpoint we already have – do NOT use the market-data one here)
+•  Assume we already have a Zustand store for current ticker/symbol and a backend API client (use fetch or existing useTradeMutation pattern if it exists; otherwise create a clean one)
+•  No splash pages, no extra wrappers – pure clean production code
+Page layout & components (Bloomberg/Thinkorswim professional terminal standard):
+1.  Top Header (sticky)
+	•  Symbol (large, bold, with live last price and % change from current ticker context)
+	•  “ORDER TICKET” title
+	•  Close/X button (top-right)
+2.  Order Form (scrollable content, full-width)
+	•  Side selector: Large segmented control – BUY (green) | SELL (red) | (for options: BUY TO OPEN / SELL TO CLOSE etc.)
+	•  Order Type: Dropdown / segmented: Market | Limit | Stop | Stop Limit | Trailing Stop
+	•  Quantity: Numeric input with + / – quick buttons (shares or contracts)
+	•  Price field(s):
+		•  Conditional: hidden for Market, shown for Limit/Stop
+		•  Live bid/ask display right next to price input (click-to-fill)
+	•  Time-in-Force (TIF): Day | GTC | Extended Hours (toggle if supported by Schwab)
+	•  Optional: Stop price (for Stop orders), Limit price (for Stop Limit)
+3.  Order Preview Panel (sticky bottom or inline card)
+	•  Real-time estimated cost / credit
+	•  Estimated PnL (if options context available)
+	•  Margin requirement / buying power impact (pull from Schwab preview endpoint if available)
+	•  “Review & Send” big button (orange accent, full-width, disabled until valid)
+4.  Confirmation Flow
+	•  On “Review & Send” → show clean modal overlay with final order details
+	•  “CONFIRM” button that actually calls the Schwab trading API to place the order
+	•  Success toast with order ID + link to activity (or navigate to activity page)
+	•  Error handling with clean message
+Additional requirements (must match our exact standards):
+•  Fully responsive but optimized for mobile (iPhone Chrome experience we fixed earlier)
+•  Use the same Zustand store pattern we use everywhere (create useOrderStore if needed)
+•  TanStack Query mutation for order placement + optimistic updates
+•  Live bid/ask from existing market data store (pull current symbol’s quote)
+•  Support both equities and options seamlessly (detect asset type from current ticker)
+•  Accessibility: large touch targets, proper labels, keyboard support
+•  Loading states with shimmer exactly like the options chain
+•  No clutter – every pixel should feel like the rest of Alpha Terminal
+•  Include proper TypeScript interfaces for OrderRequest matching Schwab API schema
+Deliverables:
+•  Full new component: OrderPage.tsx (or OrderTicket.tsx)
+•  Any new Zustand store slice
+•  Updated routing if needed (assume we use React Router or file-based)
+•  One clean, copy-paste-ready prompt I can give you next time if we need tweaks
+Make it production-ready, clean, and exactly consistent with the current Alpha Terminal aesthetic and code style we’ve established (options chain, AI bias strip, macro cards, etc.).
+Start building now.

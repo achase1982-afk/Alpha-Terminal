@@ -24,6 +24,7 @@ function fmtVol(n: number | null): string {
 interface MetricsBarProps {
   compact?: boolean;
   onOpenTearSheet?: () => void;
+  onTrade?: (side: "BUY" | "SELL") => void;
 }
 
 const TICK_UP = "#00d166";
@@ -226,7 +227,7 @@ export function VolumeBar() {
   );
 }
 
-export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps) {
+export function MetricsBar({ compact = false, onOpenTearSheet, onTrade }: MetricsBarProps) {
   const { symbol, accessToken, streamPrices } = useTerminalStore();
   const { data: quote, isLoading, source } = useQuote(symbol);
   const tickColor = useTickColor(symbol, quote?.last ?? null);
@@ -351,7 +352,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet }: MetricsBarProps
   const showData = !!quote && symbolMatches;
 
   const handleInitiateTrade = (side: 'buy' | 'sell') => {
-    console.log(`[Trade] ${side.toUpperCase()} initiated for ${quote?.symbol} — bid: ${quote?.bid}, ask: ${quote?.ask}`);
+    onTrade?.(side === 'buy' ? 'BUY' : 'SELL');
   };
 
   if (compact) {
