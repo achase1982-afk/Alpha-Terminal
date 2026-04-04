@@ -3,32 +3,42 @@ import { useTerminalStore } from "@/lib/store";
 import { useOptionsSettingsStore } from "@/lib/options-store";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { useOptionsColumnsStore, COLUMN_REGISTRY, type ColumnDef } from "@/lib/options-columns-store";
-import { useOptionsStreamStore, useOptionTick } from "@/lib/options-stream-store";
+import { useOptionTick } from "@/lib/options-stream-store";
+
 import { useGetQuote, useGetOptionChain } from "@workspace/api-client-react";
 import { useQuery } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Table2, ChevronDown, ChevronUp, X, Settings, GripVertical, Layers, Check } from "lucide-react";
+import {
+  Table2, ChevronDown, ChevronRight, X, Settings, GripVertical,
+  Layers, Check, TrendingUp, Plus, BarChart3,
+} from "lucide-react";
 import { Reorder } from "framer-motion";
 
 const EPS = 0.0001;
-const COL_W = 76;
-const STRIKE_W = 58;
-const ROW_H = 40;
-const HEADER_H = 34;
-const SUB_HEADER_H = 22;
+const COL_W = 70;
+const STRIKE_W = 56;
+const ROW_H = 38;
+const HEADER_H = 32;
+const SUB_HEADER_H = 20;
 const STICKY_TOP = HEADER_H + SUB_HEADER_H;
-const BG = "#1C1C1E";
-const BORDER = "#2A2A2C";
-const BORDER_ROW = "#222224";
-const BID_TINT = "rgba(0,209,102,0.07)";
-const ASK_TINT = "rgba(242,54,69,0.07)";
-const BID_HOVER = "rgba(0,209,102,0.14)";
-const ASK_HOVER = "rgba(242,54,69,0.14)";
+
+const BG = "#000000";
+const BG_HEADER = "#080808";
+const BG_STRIKE = "#060606";
+const BG_EXP_BAR = "#0a0a0a";
+const BORDER = "#1a1a1a";
+const BORDER_ROW = "#111111";
 const GOLD = "#fbbf24";
+const GOLD_DIM = "#b8941c";
 const UP = "#00d166";
 const DOWN = "#f23645";
+const WHITE = "#f4f4f5";
+const GRAY = "#a1a1aa";
+const DIM = "#52525b";
+const MUTED = "#3f3f46";
+const ITM_TINT = "rgba(251,191,36,0.03)";
 
 interface Contract {
   strike: number;
@@ -65,6 +75,13 @@ interface ExpirationGroup {
   isWeekly: boolean;
   atmIV: number | null;
   expectedMove: number | null;
+  maxOI: number;
+  maxVol: number;
+  totalCallOI: number;
+  totalPutOI: number;
+  totalCallVol: number;
+  totalPutVol: number;
+  ivSkew: number | null;
 }
 
 interface SelectedLeg {
@@ -73,22 +90,28 @@ interface SelectedLeg {
   expiration: string;
 }
 
+interface LongPressTarget {
+  contract: Contract;
+  type: "CALL" | "PUT";
+  side: "BUY" | "SELL";
+  x: number;
+  y: number;
+}
+
 const MONTHS = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
 
 function parseExpDate(expStr: string): Date | null {
   if (!expStr) return null;
   const clean = expStr.split(":")[0].trim();
   const iso = clean.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-  if (iso) {
-    return new Date(parseInt(iso[1]), parseInt(iso[2]) - 1, parseInt(iso[3]), 12, 0, 0);
-  }
+  if (iso) return new Date(parseInt(iso[1]), parseInt(iso[2]) - 1, parseInt(iso[3]), 12, 0, 0);
   const d = new Date(clean);
   return isNaN(d.getTime()) ? null : d;
 }
 
 function formatExpDate(expStr: string): string {
   const d = parseExpDate(expStr);
-  if (!d) return expStr || "—";
+  if (!d) return expStr || "\u2014";
   return `${d.getDate()} ${MONTHS[d.getMonth()]} ${String(d.getFullYear()).slice(2)}`;
 }
 
@@ -148,10 +171,42 @@ function buildExpirationGroups(
       }
     }
 
+    let maxOI = 0;
+    let maxVol = 0;
+    let totalCallOI = 0;
+    let totalPutOI = 0;
+    let totalCallVol = 0;
+    let totalPutVol = 0;
+    for (const row of normalizedRows) {
+      const cOI = row.call?.openInterest ?? 0;
+      const pOI = row.put?.openInterest ?? 0;
+      const cVol = row.call?.volume ?? 0;
+      const pVol = row.put?.volume ?? 0;
+      maxOI = Math.max(maxOI, cOI, pOI);
+      maxVol = Math.max(maxVol, cVol, pVol);
+      totalCallOI += cOI;
+      totalPutOI += pOI;
+      totalCallVol += cVol;
+      totalPutVol += pVol;
+    }
+
+    const otmCallIVs: number[] = [];
+    const otmPutIVs: number[] = [];
+    if (lastPrice != null) {
+      for (const row of normalizedRows) {
+        if (row.strike > lastPrice && row.call?.iv) otmCallIVs.push(row.call.iv);
+        if (row.strike < lastPrice && row.put?.iv) otmPutIVs.push(row.put.iv);
+      }
+    }
+    const avgOtmCallIV = otmCallIVs.length > 0 ? otmCallIVs.reduce((a, b) => a + b, 0) / otmCallIVs.length : null;
+    const avgOtmPutIV = otmPutIVs.length > 0 ? otmPutIVs.reduce((a, b) => a + b, 0) / otmPutIVs.length : null;
+    const ivSkew = avgOtmPutIV != null && avgOtmCallIV != null ? avgOtmPutIV - avgOtmCallIV : null;
+
     groups.push({
       expiration: exp, dte, dateLabel: formatExpDate(exp),
       rows: normalizedRows, totalStrikes,
       isWeekly: isWeeklyExp(exp), atmIV, expectedMove,
+      maxOI, maxVol, totalCallOI, totalPutOI, totalCallVol, totalPutVol, ivSkew,
     });
   }
   groups.sort((a, b) => a.dte - b.dte);
@@ -164,8 +219,15 @@ function getContractVal(contract: Contract | null, key: string): number | undefi
 }
 
 function fmtNum(val: number | undefined, decimals: number): string {
-  if (val == null || isNaN(val) || val <= -999) return "—";
+  if (val == null || isNaN(val) || val <= -999) return "\u2014";
   return decimals === 0 ? String(Math.round(val)) : val.toFixed(decimals);
+}
+
+function fmtCompact(val: number | undefined): string {
+  if (val == null || isNaN(val)) return "\u2014";
+  if (val >= 1_000_000) return (val / 1_000_000).toFixed(1) + "M";
+  if (val >= 1_000) return (val / 1_000).toFixed(1) + "K";
+  return String(Math.round(val));
 }
 
 const noScrollbar: React.CSSProperties = {
@@ -195,14 +257,32 @@ function makeLegKey(contract: Contract, type: "CALL" | "PUT"): string {
   return `${contract.expiration}|${contract.strike}|${type}`;
 }
 
+const OIBar = memo(function OIBar({ value, max }: { value: number; max: number }) {
+  if (!value || !max) return null;
+  const pct = Math.min((value / max) * 100, 100);
+  return (
+    <div className="w-full h-[3px] rounded-full mt-0.5" style={{ background: "#1a1a1a" }}>
+      <div
+        className="h-full rounded-full"
+        style={{
+          width: `${pct}%`,
+          background: `linear-gradient(90deg, ${GOLD}60, ${GOLD}30)`,
+        }}
+      />
+    </div>
+  );
+});
+
 const DataCell = memo(function DataCell({
-  col, contract, isSelected, onSelect, onLongPress,
+  col, contract, isSelected, onSelect, onLongPress, showInlineGreeks, maxOI,
 }: {
   col: ColumnDef;
   contract: Contract | null;
   isSelected?: boolean;
   onSelect?: () => void;
-  onLongPress?: () => void;
+  onLongPress?: (e: React.PointerEvent) => void;
+  showInlineGreeks?: boolean;
+  maxOI?: number;
 }) {
   const tick = useOptionTick(contract?.streamKey);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -213,23 +293,27 @@ const DataCell = memo(function DataCell({
     ? (getStreamVal(tick, col.bottomKey) ?? getContractVal(contract, col.bottomKey))
     : undefined;
   const topStr = fmtNum(topVal, col.topDecimals);
-  const botStr = col.bottomKey ? fmtNum(bottomVal, col.bottomDecimals ?? 0) : null;
 
   const isBid = col.id === "bid";
   const isAsk = col.id === "ask";
-  const deltaVal = (isBid || isAsk)
+  const isOI = col.id === "oi";
+  const isVol = col.id === "vol";
+  const isGreek = col.group === "Greeks";
+  const isIV = col.id === "iv";
+
+  const deltaVal = (isBid || isAsk) && showInlineGreeks
     ? (getStreamVal(tick, "delta") ?? getContractVal(contract, "delta"))
     : undefined;
+  const thetaVal = (isBid || isAsk) && showInlineGreeks
+    ? (getStreamVal(tick, "theta") ?? getContractVal(contract, "theta"))
+    : undefined;
 
-  const tint = isBid ? BID_TINT : isAsk ? ASK_TINT : undefined;
-  const hoverTint = isBid ? BID_HOVER : isAsk ? ASK_HOVER : "rgba(255,255,255,0.06)";
-
-  const handlePointerDown = useCallback(() => {
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
     didLongPress.current = false;
     if (onLongPress) {
       longPressTimer.current = setTimeout(() => {
         didLongPress.current = true;
-        onLongPress();
+        onLongPress(e);
       }, 500);
     }
   }, [onLongPress]);
@@ -239,9 +323,7 @@ const DataCell = memo(function DataCell({
       clearTimeout(longPressTimer.current);
       longPressTimer.current = null;
     }
-    if (!didLongPress.current && onSelect) {
-      onSelect();
-    }
+    if (!didLongPress.current && onSelect) onSelect();
   }, [onSelect]);
 
   const handlePointerLeave = useCallback(() => {
@@ -251,40 +333,53 @@ const DataCell = memo(function DataCell({
     }
   }, []);
 
-  const priceColor = topStr === "—" ? "#3f3f46" : isBid ? "#22c55e" : isAsk ? "#ef4444" : "#f4f4f5";
+  let priceColor: string;
+  if (topStr === "\u2014") priceColor = MUTED;
+  else if (isBid || isAsk) priceColor = GOLD;
+  else if (isGreek) priceColor = "#d4d4d8";
+  else if (isIV) priceColor = "#e4e4e7";
+  else priceColor = "#d4d4d8";
+
+  const oiValue = isOI ? topVal : undefined;
 
   const inner = (
-    <div className="flex flex-col justify-center px-1.5 relative" style={{ height: ROW_H }}>
+    <div className="flex flex-col justify-center px-1" style={{ height: ROW_H, minHeight: ROW_H }}>
       {isSelected && (
         <div className="absolute top-0.5 right-0.5">
           <Check className="w-2.5 h-2.5" style={{ color: GOLD }} />
         </div>
       )}
       <span
-        className="leading-none font-bold"
+        className="leading-none"
         style={{
-          fontSize: (isBid || isAsk) ? 13 : 12,
+          fontSize: (isBid || isAsk) ? 13 : isVol || isOI ? 11 : 11,
+          fontWeight: (isBid || isAsk) ? 700 : isGreek || isIV ? 500 : 600,
           color: priceColor,
           fontVariantNumeric: "tabular-nums",
+          fontFamily: "'SF Mono', 'Cascadia Code', 'Consolas', monospace",
         }}
       >
-        {topStr}
+        {isVol || isOI ? fmtCompact(topVal) : topStr}
+        {isIV && topStr !== "\u2014" ? "%" : ""}
       </span>
-      {deltaVal != null && (isBid || isAsk) ? (
+
+      {(isBid || isAsk) && showInlineGreeks && deltaVal != null ? (
+        <div className="flex gap-1 mt-0.5" style={{ fontSize: 8, color: GRAY, fontFamily: "'SF Mono', monospace", fontVariantNumeric: "tabular-nums" }}>
+          <span>\u0394{fmtNum(deltaVal, 2)}</span>
+          {thetaVal != null && <span>\u0398{fmtNum(thetaVal, 2)}</span>}
+        </div>
+      ) : (isBid || isAsk) && !showInlineGreeks ? (
         <span
           className="leading-none mt-0.5"
-          style={{ fontSize: 9, color: "#a1a1aa", fontVariantNumeric: "tabular-nums" }}
+          style={{ fontSize: 9, color: DIM, fontVariantNumeric: "tabular-nums", fontFamily: "'SF Mono', monospace" }}
         >
-          {"\u0394"} {fmtNum(deltaVal, 2)}
-        </span>
-      ) : botStr != null ? (
-        <span
-          className="leading-none mt-0.5"
-          style={{ fontSize: 9, color: botStr === "—" ? "#3f3f46" : "#71717a", fontVariantNumeric: "tabular-nums" }}
-        >
-          {col.bottomLabel ? `${col.bottomLabel}: ${botStr}` : botStr}
+          {bottomVal != null ? fmtCompact(bottomVal) : ""}
         </span>
       ) : null}
+
+      {isOI && oiValue != null && maxOI != null && maxOI > 0 && (
+        <OIBar value={oiValue} max={maxOI} />
+      )}
     </div>
   );
 
@@ -297,11 +392,11 @@ const DataCell = memo(function DataCell({
         onPointerLeave={handlePointerLeave}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect?.(); } }}
         aria-pressed={isSelected}
-        aria-label={`${col.id === "bid" ? "Bid" : "Ask"} ${topStr} strike ${contract.strike}`}
-        className="w-full text-left cursor-pointer select-none transition-colors"
+        aria-label={`${isBid ? "Bid" : "Ask"} ${topStr} strike ${contract.strike}`}
+        className="w-full text-left cursor-pointer select-none relative"
         style={{
           fontVariantNumeric: "tabular-nums",
-          background: isSelected ? `${GOLD}18` : tint,
+          background: isSelected ? `${GOLD}12` : "transparent",
           borderLeft: isSelected ? `2px solid ${GOLD}` : "2px solid transparent",
         }}
       >
@@ -310,8 +405,81 @@ const DataCell = memo(function DataCell({
     );
   }
 
-  return <div style={{ fontVariantNumeric: "tabular-nums", background: tint }}>{inner}</div>;
+  return <div className="relative" style={{ fontVariantNumeric: "tabular-nums" }}>{inner}</div>;
 });
+
+function LongPressMenu({
+  target,
+  onClose,
+  onTradeSingle,
+  onAddToStrategy,
+}: {
+  target: LongPressTarget;
+  onClose: () => void;
+  onTradeSingle: () => void;
+  onAddToStrategy: () => void;
+}) {
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: PointerEvent | TouchEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) onClose();
+    };
+    document.addEventListener("pointerdown", handler);
+    document.addEventListener("touchstart", handler);
+    return () => {
+      document.removeEventListener("pointerdown", handler);
+      document.removeEventListener("touchstart", handler);
+    };
+  }, [onClose]);
+
+  const menuY = Math.min(target.y, window.innerHeight - 160);
+  const menuX = Math.min(Math.max(target.x - 100, 8), window.innerWidth - 216);
+
+  return (
+    <div className="fixed inset-0 z-[300]" style={{ background: "rgba(0,0,0,0.4)" }}>
+      <div
+        ref={menuRef}
+        className="absolute rounded-lg border shadow-2xl overflow-hidden"
+        style={{
+          top: menuY,
+          left: menuX,
+          width: 208,
+          background: "#111111",
+          borderColor: "#2a2a2a",
+          boxShadow: `0 8px 32px rgba(0,0,0,0.8), 0 0 0 1px ${GOLD}15`,
+        }}
+      >
+        <div className="px-3 py-2 border-b" style={{ borderColor: "#1a1a1a", background: "#0a0a0a" }}>
+          <span className="text-[10px] font-bold tracking-widest" style={{ color: GRAY, fontFamily: "'SF Mono', monospace" }}>
+            {target.type} ${target.contract.strike} \u2022 {target.side}
+          </span>
+        </div>
+        <button
+          onClick={() => { onTradeSingle(); onClose(); }}
+          className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-white/5 active:bg-white/10"
+        >
+          <TrendingUp className="w-3.5 h-3.5" style={{ color: GOLD }} />
+          <span className="text-[11px] font-semibold text-white" style={{ fontFamily: "'SF Mono', monospace" }}>Trade Single Leg</span>
+        </button>
+        <button
+          onClick={() => { onAddToStrategy(); onClose(); }}
+          className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-white/5 active:bg-white/10"
+        >
+          <Plus className="w-3.5 h-3.5" style={{ color: GOLD }} />
+          <span className="text-[11px] font-semibold text-white" style={{ fontFamily: "'SF Mono', monospace" }}>Add to Strategy</span>
+        </button>
+        <button
+          onClick={onClose}
+          className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-white/5 active:bg-white/10"
+        >
+          <BarChart3 className="w-3.5 h-3.5" style={{ color: GOLD }} />
+          <span className="text-[11px] font-semibold text-white" style={{ fontFamily: "'SF Mono', monospace" }}>Analyze Payoff</span>
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function ColumnsEditorModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { activeColumnIds, toggleColumn, reorderColumns } = useOptionsColumnsStore();
@@ -328,79 +496,100 @@ function ColumnsEditorModal({ open, onClose }: { open: boolean; onClose: () => v
 
   if (!open) return null;
 
+  const groups = [
+    { label: "PRICE", ids: ["bid", "ask", "last"] },
+    { label: "FLOW", ids: ["vol", "oi"] },
+    { label: "GREEKS", ids: ["delta", "gamma", "theta", "vega"] },
+    { label: "VOLATILITY", ids: ["iv"] },
+  ];
+
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/60" />
+    <div className="fixed inset-0 z-[250] flex items-end justify-center" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/70" />
       <div
-        className="relative border rounded-t-xl sm:rounded-xl w-full sm:max-w-sm mx-auto p-4 z-10"
-        style={{ backgroundColor: BG, borderColor: BORDER }}
+        className="relative border rounded-t-2xl w-full max-w-md mx-auto z-10"
+        style={{ background: "#0a0a0a", borderColor: "#1a1a1a", maxHeight: "75vh" }}
         onClick={e => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between mb-4">
-          <span className="font-mono text-sm font-bold text-white tracking-wider">COLUMNS</span>
-          <button onClick={onClose} className="p-1 rounded text-zinc-500 hover:text-white hover:bg-white/10 transition-colors">
-            <X className="w-4 h-4" />
+        <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: "#1a1a1a" }}>
+          <span className="text-[11px] font-bold tracking-[0.2em]" style={{ color: GOLD, fontFamily: "'SF Mono', monospace" }}>COLUMN CONFIG</span>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/5 transition-colors">
+            <X className="w-4 h-4" style={{ color: GRAY }} />
           </button>
         </div>
 
-        <Reorder.Group axis="y" values={localOrder} onReorder={handleReorder} className="space-y-1.5">
-          {localOrder.map(id => {
-            const col = COLUMN_REGISTRY.find(c => c.id === id);
-            if (!col) return null;
-            return (
-              <Reorder.Item
-                key={id}
-                value={id}
-                style={{ touchAction: "none" }}
-                whileDrag={{ scale: 1.03, boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}
-                className="cursor-grab active:cursor-grabbing"
-              >
-                <div className="flex items-center justify-between px-3 py-2.5 rounded-lg border text-white select-none" style={{ backgroundColor: '#252528', borderColor: `${GOLD}40` }}>
-                  <span className="font-mono text-sm font-medium">{col.label}</span>
-                  <div className="flex items-center gap-2">
+        <div className="overflow-y-auto px-4 py-3 space-y-4" style={{ maxHeight: "60vh", ...noScrollbar }}>
+          <Reorder.Group axis="y" values={localOrder} onReorder={handleReorder} className="space-y-1">
+            {localOrder.map(id => {
+              const col = COLUMN_REGISTRY.find(c => c.id === id);
+              if (!col) return null;
+              return (
+                <Reorder.Item
+                  key={id}
+                  value={id}
+                  style={{ touchAction: "none" }}
+                  whileDrag={{ scale: 1.02, boxShadow: `0 4px 16px rgba(0,0,0,0.6)` }}
+                  className="cursor-grab active:cursor-grabbing"
+                >
+                  <div
+                    className="flex items-center justify-between px-3 py-2 rounded-lg border select-none"
+                    style={{ background: "#111111", borderColor: `${GOLD}20` }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <GripVertical className="w-3.5 h-3.5" style={{ color: DIM }} />
+                      <span className="text-[11px] font-semibold text-white" style={{ fontFamily: "'SF Mono', monospace" }}>{col.label}</span>
+                      <span className="text-[9px] px-1 py-0.5 rounded" style={{ color: DIM, background: "#1a1a1a" }}>{col.group}</span>
+                    </div>
                     <button
                       onClick={(e) => { e.stopPropagation(); toggleColumn(id); setLocalOrder(prev => prev.filter(x => x !== id)); }}
-                      className={`w-9 h-5 rounded-full flex items-center transition-colors justify-end ${activeColumnIds.length <= 1 ? "opacity-40" : ""}`}
+                      className="w-8 h-4 rounded-full flex items-center transition-colors justify-end"
                       style={{ background: GOLD }}
                       disabled={activeColumnIds.length <= 1}
                     >
-                      <div className="w-4 h-4 rounded-full bg-white mx-0.5 shadow-sm" />
+                      <div className="w-3.5 h-3.5 rounded-full bg-black mx-0.5" />
                     </button>
-                    <GripVertical className="w-4 h-4 text-zinc-400" />
                   </div>
+                </Reorder.Item>
+              );
+            })}
+          </Reorder.Group>
+
+          {groups.map(group => {
+            const offCols = COLUMN_REGISTRY.filter(c => group.ids.includes(c.id) && !localOrder.includes(c.id));
+            if (offCols.length === 0) return null;
+            return (
+              <div key={group.label}>
+                <span className="text-[9px] font-bold tracking-[0.15em] mb-1.5 block" style={{ color: DIM }}>{group.label}</span>
+                <div className="space-y-1">
+                  {offCols.map(col => (
+                    <button
+                      key={col.id}
+                      onClick={() => { toggleColumn(col.id); setLocalOrder(prev => [...prev, col.id]); }}
+                      className="w-full flex items-center justify-between px-3 py-2 rounded-lg border transition-colors hover:border-white/10"
+                      style={{ background: "transparent", borderColor: "#1a1a1a" }}
+                    >
+                      <span className="text-[11px] font-medium" style={{ color: DIM, fontFamily: "'SF Mono', monospace" }}>{col.label}</span>
+                      <div className="w-8 h-4 rounded-full flex items-center transition-colors justify-start" style={{ background: "#1a1a1a" }}>
+                        <div className="w-3.5 h-3.5 rounded-full mx-0.5" style={{ background: "#333" }} />
+                      </div>
+                    </button>
+                  ))}
                 </div>
-              </Reorder.Item>
+              </div>
             );
           })}
-        </Reorder.Group>
-
-        <div className="mt-3 space-y-1.5">
-          {COLUMN_REGISTRY.filter(c => !localOrder.includes(c.id)).map(col => (
-            <button
-              key={col.id}
-              onClick={() => { toggleColumn(col.id); setLocalOrder(prev => [...prev, col.id]); }}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-lg border text-zinc-500 hover:text-zinc-300 transition-colors"
-              style={{ backgroundColor: '#111113', borderColor: BORDER }}
-            >
-              <span className="font-mono text-sm font-medium">{col.label}</span>
-              <div className="w-9 h-5 rounded-full flex items-center transition-colors justify-start" style={{ backgroundColor: BORDER }}>
-                <div className="w-4 h-4 rounded-full bg-white mx-0.5 shadow-sm" />
-              </div>
-            </button>
-          ))}
         </div>
       </div>
     </div>
   );
 }
 
-function MetricsStrip({ groups, lastPrice, rawCalls, rawPuts, earningsDate, strikeControls, isFetching, hasData }: {
+function MetricsStrip({ groups, lastPrice, rawCalls, rawPuts, earningsDate, isFetching, hasData }: {
   groups: ExpirationGroup[];
   lastPrice: number | null;
   rawCalls: Contract[];
   rawPuts: Contract[];
   earningsDate?: string | null;
-  strikeControls: React.ReactNode;
   isFetching: boolean;
   hasData: boolean;
 }) {
@@ -408,40 +597,41 @@ function MetricsStrip({ groups, lastPrice, rawCalls, rawPuts, earningsDate, stri
   const atmIV = frontMonth?.atmIV ?? null;
   const expectedMove = frontMonth?.expectedMove ?? null;
 
-  const ivDisplay = atmIV != null ? atmIV.toFixed(1) + "%" : "—";
-  const moveDisplay = expectedMove != null && lastPrice != null
-    ? "\u00B1$" + expectedMove.toFixed(2)
-    : "—";
-
   const totalCallVol = rawCalls.reduce((sum, c) => sum + (c.volume ?? 0), 0);
   const totalPutVol = rawPuts.reduce((sum, p) => sum + (p.volume ?? 0), 0);
-  const pcr = totalCallVol > 0 ? (totalPutVol / totalCallVol).toFixed(2) : "—";
+  const pcr = totalCallVol > 0 ? (totalPutVol / totalCallVol).toFixed(2) : "\u2014";
 
-  let earnDisplay = "TBD";
+  let earnDisplay = "\u2014";
   if (earningsDate) {
     const d = new Date(earningsDate);
-    if (!isNaN(d.getTime())) {
-      earnDisplay = `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}`;
-    }
+    if (!isNaN(d.getTime())) earnDisplay = `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}`;
   }
 
   return (
-    <div
-      className="flex items-center justify-between w-full px-3 py-2 shrink-0 font-mono"
-      style={{ fontVariantNumeric: "tabular-nums", backgroundColor: "#111113", borderBottom: `1px solid ${BORDER}` }}
-    >
-      <div className="flex items-center gap-1">
-        {strikeControls}
-        {isFetching && hasData && (
-          <span className="w-2 h-2 border border-amber-400 border-t-transparent rounded-full animate-spin ml-1" />
-        )}
-      </div>
-      <div className="flex gap-3 text-[11px] font-medium items-center shrink-0">
-        <span><span className="text-zinc-500">IV</span> <span className={atmIV != null ? "text-white font-bold" : "text-zinc-600"}>{ivDisplay}</span></span>
-        <span><span className="text-zinc-500">MOVE</span> <span className={expectedMove != null ? "text-white font-bold" : "text-zinc-600"}>{moveDisplay}</span></span>
-        <span><span className="text-zinc-500">P/C</span> <span style={{ color: pcr !== "—" ? (Number(pcr) > 1 ? DOWN : UP) : "#52525b", fontWeight: 700 }}>{pcr}</span></span>
-        <span><span className="text-zinc-500">Earn</span> <span className="text-white font-bold">{earnDisplay}</span></span>
-      </div>
+    <div className="flex gap-2 text-[10px] font-medium items-center shrink-0" style={{ fontVariantNumeric: "tabular-nums", fontFamily: "'SF Mono', monospace" }}>
+      {isFetching && hasData && (
+        <span className="w-2 h-2 border border-amber-400 border-t-transparent rounded-full animate-spin" />
+      )}
+      <span>
+        <span style={{ color: DIM }}>IV </span>
+        <span style={{ color: atmIV != null ? GOLD : MUTED, fontWeight: 700 }}>
+          {atmIV != null ? atmIV.toFixed(1) + "%" : "\u2014"}
+        </span>
+      </span>
+      <span>
+        <span style={{ color: DIM }}>MV </span>
+        <span style={{ color: expectedMove != null ? WHITE : MUTED, fontWeight: 700 }}>
+          {expectedMove != null ? "\u00B1$" + expectedMove.toFixed(2) : "\u2014"}
+        </span>
+      </span>
+      <span>
+        <span style={{ color: DIM }}>P/C </span>
+        <span style={{ color: pcr !== "\u2014" ? (Number(pcr) > 1 ? DOWN : UP) : MUTED, fontWeight: 700 }}>{pcr}</span>
+      </span>
+      <span>
+        <span style={{ color: DIM }}>ERN </span>
+        <span style={{ color: WHITE, fontWeight: 700 }}>{earnDisplay}</span>
+      </span>
     </div>
   );
 }
@@ -477,6 +667,14 @@ function useScrollSync() {
   return { registerWing };
 }
 
+function MoneynessLabel({ strike, underlyingPrice }: { strike: number; underlyingPrice: number | null }) {
+  if (underlyingPrice == null) return null;
+  const diff = Math.abs(strike - underlyingPrice);
+  const pct = (diff / underlyingPrice) * 100;
+  if (pct < 0.3) return <span className="text-[7px] font-bold" style={{ color: GOLD }}>ATM</span>;
+  return null;
+}
+
 function OptionsGrid({
   rows,
   underlyingPrice,
@@ -486,7 +684,9 @@ function OptionsGrid({
   registerWing,
   selectedLegs,
   onToggleLeg,
-  onQuickTrade,
+  onLongPressCell,
+  showInlineGreeks,
+  maxOI,
 }: {
   rows: NormalizedRow[];
   underlyingPrice: number | null;
@@ -496,11 +696,12 @@ function OptionsGrid({
   registerWing: (el: HTMLDivElement) => () => void;
   selectedLegs: Map<string, SelectedLeg>;
   onToggleLeg: (contract: Contract, type: "CALL" | "PUT") => void;
-  onQuickTrade: (contract: Contract, side: "BUY" | "SELL", type: "CALL" | "PUT") => void;
+  onLongPressCell: (target: LongPressTarget) => void;
+  showInlineGreeks: boolean;
+  maxOI: number;
 }) {
   const leftBodyRef = useRef<HTMLDivElement>(null);
   const rightBodyRef = useRef<HTMLDivElement>(null);
-
   const sortedRows = useMemo(() => [...rows].sort((a, b) => a.strike - b.strike), [rows]);
 
   const transitionIdx = useMemo(() => {
@@ -529,11 +730,11 @@ function OptionsGrid({
   }, [registerWing, showCalls, showPuts]);
 
   return (
-    <div className="relative flex font-mono" style={{ fontVariantNumeric: "tabular-nums" }}>
+    <div className="relative flex" style={{ fontVariantNumeric: "tabular-nums", fontFamily: "'SF Mono', monospace" }}>
       {atmLineTop >= 0 && (
         <div
           className="absolute left-0 right-0 z-[5] pointer-events-none"
-          style={{ top: atmLineTop, borderTop: "2px dashed #FF6B2B" }}
+          style={{ top: atmLineTop, borderTop: "1.5px dotted #FF6B2B" }}
         />
       )}
 
@@ -551,11 +752,11 @@ function OptionsGrid({
               return (
                 <div
                   key={row.strike}
-                  className="flex transition-colors"
+                  className="flex"
                   style={{
                     height: ROW_H,
                     borderBottom: `1px solid ${BORDER_ROW}`,
-                    background: isCallSelected ? `${GOLD}0d` : callITM ? "rgba(30,41,59,0.35)" : "transparent",
+                    background: isCallSelected ? `${GOLD}10` : callITM ? ITM_TINT : "transparent",
                   }}
                 >
                   {columns.map(col => (
@@ -565,7 +766,13 @@ function OptionsGrid({
                         contract={row.call}
                         isSelected={isCallSelected && col.isPrice}
                         onSelect={col.isPrice && row.call ? () => onToggleLeg(row.call!, "CALL") : undefined}
-                        onLongPress={col.isPrice && row.call ? () => onQuickTrade(row.call!, col.id === "bid" ? "SELL" : "BUY", "CALL") : undefined}
+                        onLongPress={col.isPrice && row.call ? (e) => onLongPressCell({
+                          contract: row.call!, type: "CALL",
+                          side: col.id === "bid" ? "SELL" : "BUY",
+                          x: e.clientX, y: e.clientY,
+                        }) : undefined}
+                        showInlineGreeks={showInlineGreeks}
+                        maxOI={col.id === "oi" ? maxOI : undefined}
                       />
                     </div>
                   ))}
@@ -576,23 +783,24 @@ function OptionsGrid({
         </div>
       )}
 
-      <div className="flex-none z-10" style={{ width: STRIKE_W, backgroundColor: '#131315', borderLeft: `1px solid ${BORDER}`, borderRight: `1px solid ${BORDER}` }}>
+      <div className="flex-none z-10" style={{ width: STRIKE_W, background: BG_STRIKE, borderLeft: `1px solid ${BORDER}`, borderRight: `1px solid ${BORDER}` }}>
         {sortedRows.map((row) => {
-          const isATMStrike = underlyingPrice != null && Math.abs(row.strike - underlyingPrice) <= EPS;
+          const isATM = underlyingPrice != null && Math.abs(row.strike - underlyingPrice) < (underlyingPrice * 0.003);
           return (
             <div
               key={row.strike}
-              className="flex items-center justify-center font-bold"
+              className="flex flex-col items-center justify-center"
               style={{
                 height: ROW_H,
-                fontSize: 12,
-                fontVariantNumeric: "tabular-nums",
                 borderBottom: `1px solid ${BORDER_ROW}`,
-                color: isATMStrike ? GOLD : "#e4e4e7",
-                background: isATMStrike ? `${GOLD}0a` : "transparent",
+                color: isATM ? GOLD : WHITE,
+                background: isATM ? `${GOLD}08` : "transparent",
               }}
             >
-              {row.strike % 1 === 0 ? row.strike : row.strike.toFixed(1)}
+              <span className="text-[11px] font-bold leading-none" style={{ fontVariantNumeric: "tabular-nums" }}>
+                {row.strike % 1 === 0 ? row.strike : row.strike.toFixed(1)}
+              </span>
+              <MoneynessLabel strike={row.strike} underlyingPrice={underlyingPrice} />
             </div>
           );
         })}
@@ -612,11 +820,11 @@ function OptionsGrid({
               return (
                 <div
                   key={row.strike}
-                  className="flex transition-colors"
+                  className="flex"
                   style={{
                     height: ROW_H,
                     borderBottom: `1px solid ${BORDER_ROW}`,
-                    background: isPutSelected ? `${GOLD}0d` : putITM ? "rgba(30,41,59,0.35)" : "transparent",
+                    background: isPutSelected ? `${GOLD}10` : putITM ? ITM_TINT : "transparent",
                   }}
                 >
                   {columns.map(col => (
@@ -626,7 +834,13 @@ function OptionsGrid({
                         contract={row.put}
                         isSelected={isPutSelected && col.isPrice}
                         onSelect={col.isPrice && row.put ? () => onToggleLeg(row.put!, "PUT") : undefined}
-                        onLongPress={col.isPrice && row.put ? () => onQuickTrade(row.put!, col.id === "bid" ? "SELL" : "BUY", "PUT") : undefined}
+                        onLongPress={col.isPrice && row.put ? (e) => onLongPressCell({
+                          contract: row.put!, type: "PUT",
+                          side: col.id === "bid" ? "SELL" : "BUY",
+                          x: e.clientX, y: e.clientY,
+                        }) : undefined}
+                        showInlineGreeks={showInlineGreeks}
+                        maxOI={col.id === "oi" ? maxOI : undefined}
                       />
                     </div>
                   ))}
@@ -662,11 +876,13 @@ export type { Contract as OptionsContract };
 
 export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSingle, onOpenStrategyBuilder }: OptionsTabProps) {
   const { symbol, accessToken } = useTerminalStore();
-  const { contractType, strikeCount, customStrikeInput, setCustomStrikeInput } = useOptionsSettingsStore();
+  const { contractType, strikeCount, setCustomStrikeInput } = useOptionsSettingsStore();
   const setStrikeCount = useOptionsSettingsStore(s => s.setStrikeCount);
   const { activeColumnIds } = useOptionsColumnsStore();
   const [columnsEditorOpen, setColumnsEditorOpen] = useState(false);
   const [selectedLegs, setSelectedLegs] = useState<Map<string, SelectedLeg>>(new Map());
+  const [showInlineGreeks, setShowInlineGreeks] = useState(false);
+  const [longPressTarget, setLongPressTarget] = useState<LongPressTarget | null>(null);
 
   const activeColumns = useMemo(
     () => activeColumnIds.map(id => COLUMN_REGISTRY.find(c => c.id === id)).filter(Boolean) as ColumnDef[],
@@ -693,10 +909,8 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
     if (!rawData) return rawData;
     let calls = (rawData.calls ?? []) as Contract[];
     let puts = (rawData.puts ?? []) as Contract[];
-
     if (contractType === "CALL") puts = [];
     else if (contractType === "PUT") calls = [];
-
     return { ...rawData, calls, puts };
   }, [rawData, contractType]);
 
@@ -735,9 +949,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
         if (row.put?.streamKey) keys.push(row.put.streamKey);
       }
     }
-    if (keys.length > 0) {
-      void subscribeOptionSymbols(keys);
-    }
+    if (keys.length > 0) void subscribeOptionSymbols(keys);
   }, [groups, subscribeOptionSymbols]);
 
   useEffect(() => { setExpandedExps(new Set()); setSelectedLegs(new Map()); }, [symbol]);
@@ -760,19 +972,18 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
     const key = makeLegKey(contract, type);
     setSelectedLegs(prev => {
       const next = new Map(prev);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.set(key, { contract, type, expiration: contract.expiration });
-      }
+      if (next.has(key)) next.delete(key);
+      else next.set(key, { contract, type, expiration: contract.expiration });
       return next;
     });
   }, []);
 
+  const handleLongPressCell = useCallback((target: LongPressTarget) => {
+    setLongPressTarget(target);
+  }, []);
+
   const handleQuickTrade = useCallback((contract: Contract, side: "BUY" | "SELL", type: "CALL" | "PUT") => {
-    if (onTradeSingle) {
-      onTradeSingle(contract, side, type);
-    }
+    if (onTradeSingle) onTradeSingle(contract, side, type);
   }, [onTradeSingle]);
 
   const handleClearSelection = useCallback(() => {
@@ -833,12 +1044,9 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
 
   const showCalls = contractType !== "PUT";
   const showPuts = contractType !== "CALL";
-
   const { registerWing } = useScrollSync();
-
   const subHeaderLeftRef = useRef<HTMLDivElement>(null);
   const subHeaderRightRef = useRef<HTMLDivElement>(null);
-
   const hasData = data && groups.length > 0;
   const apiError = (rawData as Record<string, unknown> | undefined)?.error as string | undefined;
 
@@ -852,146 +1060,158 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
   const selCount = selectedLegs.size;
 
   return (
-    <div style={{ backgroundColor: BG }} className="relative">
-      <MetricsStrip
-        groups={groups}
-        lastPrice={underlyingPrice}
-        rawCalls={(data?.calls ?? []) as Contract[]}
-        rawPuts={(data?.puts ?? []) as Contract[]}
-        earningsDate={earningsData?.earningsDate ?? quote?.nextEarningsDate}
-        isFetching={isFetching}
-        hasData={!!data}
-        strikeControls={
-          <div className="flex items-center gap-1">
-            <span className="font-mono text-[10px] text-zinc-500 tracking-wider">Strikes</span>
-            {isCustomMode ? (
-              <div className="flex items-center gap-1">
-                <Input
-                  type="number" min={2} max={100} autoFocus
-                  value={localCustomValue}
-                  onChange={e => handleCustomStrikeChange(e.target.value)}
-                  onKeyDown={e => { if (e.key === "Escape") handleExitCustomMode(); }}
-                  className="w-[70px] font-mono text-[11px] h-7 px-2 bg-zinc-900 border border-zinc-700 rounded-md text-white"
-                  placeholder="10"
-                />
-                <button onClick={handleExitCustomMode} className="p-0.5 rounded text-zinc-500 hover:text-white hover:bg-white/10 transition-colors" aria-label="Exit custom mode">
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            ) : (
-              <Select value={strikeMode} onValueChange={handleStrikeModeChange}>
-                <SelectTrigger className="w-[70px] font-mono text-[11px] h-7 px-2 bg-zinc-900 border border-zinc-700 rounded-md text-white">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="6">6</SelectItem>
-                  <SelectItem value="10">10</SelectItem>
-                  <SelectItem value="20">20</SelectItem>
-                  <SelectItem value="custom">Custom</SelectItem>
-                </SelectContent>
-              </Select>
-            )}
-          </div>
-        }
-      />
+    <div style={{ background: BG }} className="relative">
+      <div
+        className="flex items-center justify-between w-full px-3 py-1 shrink-0"
+        style={{ background: BG_EXP_BAR, borderBottom: `1px solid ${BORDER}`, fontFamily: "'SF Mono', monospace" }}
+      >
+        <div className="flex items-center gap-1.5">
+          <span className="text-[9px] font-bold tracking-widest" style={{ color: DIM }}>STK</span>
+          {isCustomMode ? (
+            <div className="flex items-center gap-1">
+              <Input
+                type="number" min={2} max={100} autoFocus
+                value={localCustomValue}
+                onChange={e => handleCustomStrikeChange(e.target.value)}
+                onKeyDown={e => { if (e.key === "Escape") handleExitCustomMode(); }}
+                className="w-[52px] text-[10px] h-6 px-1.5 border rounded text-white"
+                style={{ background: "#111", borderColor: "#2a2a2a", fontFamily: "'SF Mono', monospace" }}
+                placeholder="10"
+              />
+              <button onClick={handleExitCustomMode} className="p-0.5 rounded hover:bg-white/5 transition-colors" aria-label="Exit custom mode">
+                <X className="w-3 h-3" style={{ color: DIM }} />
+              </button>
+            </div>
+          ) : (
+            <Select value={strikeMode} onValueChange={handleStrikeModeChange}>
+              <SelectTrigger className="w-[52px] text-[10px] h-6 px-1.5 border rounded text-white" style={{ background: "#111", borderColor: "#2a2a2a", fontFamily: "'SF Mono', monospace" }}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="6">6</SelectItem>
+                <SelectItem value="10">10</SelectItem>
+                <SelectItem value="20">20</SelectItem>
+                <SelectItem value="custom">Custom</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+          <button
+            onClick={() => setShowInlineGreeks(!showInlineGreeks)}
+            className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold transition-colors"
+            style={{
+              color: showInlineGreeks ? GOLD : DIM,
+              background: showInlineGreeks ? `${GOLD}15` : "transparent",
+              border: `1px solid ${showInlineGreeks ? `${GOLD}30` : "transparent"}`,
+            }}
+            aria-label="Toggle inline Greeks"
+          >
+            \u0394\u0398
+          </button>
+        </div>
+        <MetricsStrip
+          groups={groups}
+          lastPrice={underlyingPrice}
+          rawCalls={(data?.calls ?? []) as Contract[]}
+          rawPuts={(data?.puts ?? []) as Contract[]}
+          earningsDate={earningsData?.earningsDate ?? quote?.nextEarningsDate}
+          isFetching={isFetching}
+          hasData={!!data}
+        />
+      </div>
 
-      <div className="relative" style={{ backgroundColor: BG, paddingBottom: selCount > 0 ? 56 : 0 }}>
+      <div className="relative" style={{ background: BG, paddingBottom: selCount > 0 ? 56 : 0 }}>
         {isLoading && !data && (
-          <div className="p-4 space-y-1.5">
+          <div className="p-4 space-y-1">
             {Array.from({ length: strikeCount }).map((_, i) => (
-              <Skeleton key={i} className="h-6 w-full" style={{ backgroundColor: '#252528' }} />
+              <Skeleton key={i} className="h-5 w-full rounded" style={{ background: "#111" }} />
             ))}
           </div>
         )}
 
         {isFetching && data && (
-          <div className="absolute inset-0 z-40 pointer-events-none" style={{ backgroundColor: 'rgba(28,28,30,0.3)' }} />
+          <div className="absolute inset-0 z-40 pointer-events-none" style={{ background: "rgba(0,0,0,0.2)" }} />
         )}
 
         {error && !data && (
-          <div className="p-10 text-center text-red-400 font-mono flex flex-col items-center">
-            <span className="text-3xl mb-3">⚠</span>
-            <span className="text-xs">FAILED TO LOAD OPTIONS DATA.</span>
+          <div className="p-12 text-center font-mono flex flex-col items-center" style={{ color: DOWN }}>
+            <span className="text-2xl mb-2">\u26A0</span>
+            <span className="text-[10px] tracking-widest">FAILED TO LOAD OPTIONS</span>
           </div>
         )}
 
         {!hasData && !isLoading && !error && apiError && (
-          <div className="p-10 text-center font-mono flex flex-col items-center" style={{ color: `${GOLD}cc` }}>
-            <span className="text-3xl mb-3">⚠</span>
-            <span className="text-xs tracking-wider">OPTIONS DATA TEMPORARILY UNAVAILABLE</span>
-            <span className="text-[10px] text-zinc-500 mt-1.5">Schwab options service may be down — retries automatically</span>
+          <div className="p-12 text-center font-mono flex flex-col items-center" style={{ color: GOLD_DIM }}>
+            <span className="text-2xl mb-2">\u26A0</span>
+            <span className="text-[10px] tracking-widest">OPTIONS UNAVAILABLE</span>
+            <span className="text-[9px] mt-1" style={{ color: DIM }}>Service may be down \u2014 retries automatically</span>
           </div>
         )}
 
         {!isLoading && !error && !data && !accessToken && (
-          <div className="p-16 flex flex-col items-center justify-center text-zinc-500 font-mono h-full">
-            <Table2 className="w-8 h-8 mb-2 opacity-20" />
-            <span className="text-xs">CONNECT SCHWAB TO VIEW OPTIONS CHAIN.</span>
+          <div className="p-16 flex flex-col items-center justify-center font-mono">
+            <Table2 className="w-7 h-7 mb-2" style={{ color: MUTED }} />
+            <span className="text-[10px] tracking-widest" style={{ color: DIM }}>CONNECT SCHWAB TO VIEW OPTIONS</span>
           </div>
         )}
 
         {!isLoading && !error && !data && accessToken && (
-          <div className="p-16 flex flex-col items-center justify-center text-zinc-500 font-mono h-full">
-            <Table2 className="w-8 h-8 mb-2 opacity-20" />
-            <span className="text-xs">LOADING OPTIONS CHAIN...</span>
+          <div className="p-16 flex flex-col items-center justify-center font-mono">
+            <Table2 className="w-7 h-7 mb-2 animate-pulse" style={{ color: MUTED }} />
+            <span className="text-[10px] tracking-widest" style={{ color: DIM }}>LOADING OPTIONS CHAIN...</span>
           </div>
         )}
 
         {hasData && (
           <>
             <div
-              className="w-full flex items-center sticky z-30 font-mono"
-              style={{ top: stickyOffset, height: HEADER_H, backgroundColor: BG, borderBottom: `1px solid ${BORDER}` }}
+              className="w-full flex items-center sticky z-30"
+              style={{ top: stickyOffset, height: HEADER_H, background: BG_HEADER, borderBottom: `1px solid ${BORDER}` }}
             >
               {showCalls && (
                 <div className="flex-1 text-center">
-                  <span className="text-[13px] font-extrabold text-white tracking-widest">Calls</span>
+                  <span className="text-[11px] font-extrabold tracking-[0.25em]" style={{ color: WHITE, fontFamily: "'SF Mono', monospace" }}>CALLS</span>
                 </div>
               )}
               <div
-                className="flex items-center justify-center gap-0"
+                className="flex items-center justify-center"
                 style={{ width: STRIKE_W, borderLeft: `1px solid ${BORDER}`, borderRight: `1px solid ${BORDER}` }}
               >
-                {onOpenStrategyBuilder ? (
+                {onOpenStrategyBuilder && (
                   <button
                     onClick={handleBuildStrategy}
-                    className="flex items-center justify-center transition-colors"
+                    className="flex items-center justify-center transition-colors hover:bg-white/5"
                     style={{ width: STRIKE_W / 2, height: HEADER_H, color: GOLD }}
                     aria-label="Strategy builder"
                   >
-                    <Layers className="w-4 h-4" />
+                    <Layers className="w-3.5 h-3.5" />
                   </button>
-                ) : null}
+                )}
                 <button
                   onClick={() => setColumnsEditorOpen(true)}
-                  className="flex items-center justify-center text-white hover:text-amber-400 transition-colors"
-                  style={{ width: onOpenStrategyBuilder ? STRIKE_W / 2 : STRIKE_W, height: HEADER_H }}
+                  className="flex items-center justify-center transition-colors hover:bg-white/5"
+                  style={{ width: onOpenStrategyBuilder ? STRIKE_W / 2 : STRIKE_W, height: HEADER_H, color: GRAY }}
                   aria-label="Edit columns"
                 >
-                  <Settings className="w-4 h-4" />
+                  <Settings className="w-3.5 h-3.5" />
                 </button>
               </div>
               {showPuts && (
                 <div className="flex-1 text-center">
-                  <span className="text-[13px] font-extrabold text-white tracking-widest">Puts</span>
+                  <span className="text-[11px] font-extrabold tracking-[0.25em]" style={{ color: WHITE, fontFamily: "'SF Mono', monospace" }}>PUTS</span>
                 </div>
               )}
             </div>
 
             <div
-              className="w-full flex items-center sticky z-20 font-mono"
-              style={{ top: stickyOffset + HEADER_H, height: SUB_HEADER_H, backgroundColor: "#131315", borderBottom: `1px solid ${BORDER}` }}
+              className="w-full flex items-center sticky z-20"
+              style={{ top: stickyOffset + HEADER_H, height: SUB_HEADER_H, background: BG_HEADER, borderBottom: `1px solid ${BORDER}` }}
             >
               {showCalls && (
-                <div
-                  ref={subHeaderLeftRef}
-                  className="flex-1 overflow-x-auto overflow-y-hidden"
-                  style={noScrollbar}
-                >
+                <div ref={subHeaderLeftRef} className="flex-1 overflow-x-auto overflow-y-hidden" style={noScrollbar}>
                   <div className="flex items-center" style={{ minWidth: wingWidth, height: SUB_HEADER_H }}>
                     {activeColumns.map(col => (
-                      <div key={col.id} style={{ width: COL_W }} className="shrink-0 flex items-center px-1.5">
-                        <span className="text-[10px] font-semibold" style={{ color: "#a1a1aa" }}>{col.topLabel}</span>
+                      <div key={col.id} style={{ width: COL_W }} className="shrink-0 flex items-center px-1">
+                        <span className="text-[9px] font-bold tracking-wider" style={{ color: DIM, fontFamily: "'SF Mono', monospace" }}>{col.topLabel}</span>
                       </div>
                     ))}
                   </div>
@@ -1001,18 +1221,14 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
                 className="flex-none flex items-center justify-center"
                 style={{ width: STRIKE_W, borderLeft: `1px solid ${BORDER}`, borderRight: `1px solid ${BORDER}` }}
               >
-                <span className="text-[10px] font-semibold" style={{ color: "#a1a1aa" }}>Strike</span>
+                <span className="text-[9px] font-bold tracking-wider" style={{ color: DIM, fontFamily: "'SF Mono', monospace" }}>STRIKE</span>
               </div>
               {showPuts && (
-                <div
-                  ref={subHeaderRightRef}
-                  className="flex-1 overflow-x-auto overflow-y-hidden"
-                  style={noScrollbar}
-                >
+                <div ref={subHeaderRightRef} className="flex-1 overflow-x-auto overflow-y-hidden" style={noScrollbar}>
                   <div className="flex items-center" style={{ minWidth: wingWidth, height: SUB_HEADER_H }}>
                     {activeColumns.map(col => (
-                      <div key={col.id} style={{ width: COL_W }} className="shrink-0 flex items-center px-1.5">
-                        <span className="text-[10px] font-semibold" style={{ color: "#a1a1aa" }}>{col.topLabel}</span>
+                      <div key={col.id} style={{ width: COL_W }} className="shrink-0 flex items-center px-1">
+                        <span className="text-[9px] font-bold tracking-wider" style={{ color: DIM, fontFamily: "'SF Mono', monospace" }}>{col.topLabel}</span>
                       </div>
                     ))}
                   </div>
@@ -1023,42 +1239,51 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
             <div>
               {groups.map(group => {
                 const isOpen = expandedExps.has(group.expiration);
+                const pcr = group.totalCallVol > 0 ? (group.totalPutVol / group.totalCallVol) : null;
                 return (
                   <div key={group.expiration}>
                     <button
                       onClick={() => toggleExp(group.expiration)}
-                      className="w-full flex items-center justify-between px-3 py-2 hover:bg-white/[0.03] transition-colors sticky z-20"
-                      style={{ top: stickyOffset + STICKY_TOP, backgroundColor: "#111113", borderBottom: `1px solid ${BORDER}` }}
+                      className="w-full flex items-center justify-between px-3 py-1.5 transition-colors sticky z-20"
+                      style={{
+                        top: stickyOffset + STICKY_TOP,
+                        background: BG_EXP_BAR,
+                        borderBottom: `1px solid ${BORDER}`,
+                        fontFamily: "'SF Mono', monospace",
+                      }}
                     >
-                      <div className="flex items-center gap-2 font-mono">
+                      <div className="flex items-center gap-1.5">
                         {isOpen
-                          ? <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />
-                          : <ChevronUp className="w-3.5 h-3.5 text-zinc-400 -rotate-90" />
+                          ? <ChevronDown className="w-3 h-3" style={{ color: DIM }} />
+                          : <ChevronRight className="w-3 h-3" style={{ color: DIM }} />
                         }
-                        <span className="text-[12px] font-bold text-white tracking-wide">
+                        <span className="text-[11px] font-bold tracking-wide" style={{ color: WHITE }}>
                           {group.dateLabel}
                         </span>
-                        <span className="text-[11px] font-bold" style={{ color: "#d4d4d8" }}>
+                        <span className="text-[10px] font-bold" style={{ color: GRAY }}>
                           {Math.round(group.dte)}d
                         </span>
                         {group.isWeekly && (
-                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ color: "#FF6B2B", background: "rgba(255,107,43,0.1)" }}>
-                            Wkly
+                          <span className="text-[8px] font-bold px-1 py-0.5 rounded" style={{ color: "#FF6B2B", background: "rgba(255,107,43,0.08)" }}>
+                            W
                           </span>
                         )}
                       </div>
-                      <div className="font-mono text-[11px]" style={{ fontVariantNumeric: "tabular-nums" }}>
-                        {group.atmIV != null ? (
-                          <span className="font-bold" style={{ color: "#e4e4e7" }}>
-                            {group.atmIV.toFixed(1)}%
-                            {group.expectedMove != null && (
-                              <span className="ml-1.5 font-medium" style={{ color: "#a1a1aa" }}>
-                                ({"\u00B1"}{group.expectedMove.toFixed(2)})
-                              </span>
-                            )}
+                      <div className="flex items-center gap-2 text-[10px]" style={{ fontVariantNumeric: "tabular-nums" }}>
+                        {group.atmIV != null && (
+                          <span style={{ color: GOLD, fontWeight: 700 }}>
+                            IV {group.atmIV.toFixed(1)}%
                           </span>
-                        ) : (
-                          <span style={{ color: "#3f3f46" }}>—</span>
+                        )}
+                        {group.expectedMove != null && (
+                          <span style={{ color: GRAY, fontWeight: 500 }}>
+                            \u00B1${group.expectedMove.toFixed(2)}
+                          </span>
+                        )}
+                        {pcr != null && (
+                          <span style={{ color: pcr > 1 ? DOWN : UP, fontWeight: 600 }}>
+                            P/C {pcr.toFixed(2)}
+                          </span>
                         )}
                       </div>
                     </button>
@@ -1073,7 +1298,9 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
                         registerWing={registerWing}
                         selectedLegs={selectedLegs}
                         onToggleLeg={handleToggleLeg}
-                        onQuickTrade={handleQuickTrade}
+                        onLongPressCell={handleLongPressCell}
+                        showInlineGreeks={showInlineGreeks}
+                        maxOI={group.maxOI}
                       />
                     )}
                   </div>
@@ -1084,42 +1311,52 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
         )}
 
         {data && groups.length === 0 && (
-          <div className="p-16 flex flex-col items-center justify-center text-zinc-500 font-mono h-full">
-            <Table2 className="w-8 h-8 mb-2 opacity-20" />
-            <span className="text-xs">NO OPTIONS DATA AVAILABLE FOR THIS RANGE.</span>
+          <div className="p-16 flex flex-col items-center justify-center font-mono">
+            <Table2 className="w-7 h-7 mb-2" style={{ color: MUTED }} />
+            <span className="text-[10px] tracking-widest" style={{ color: DIM }}>NO OPTIONS DATA FOR THIS RANGE</span>
           </div>
         )}
       </div>
 
       {selCount > 0 && (
         <div
-          className="fixed bottom-16 left-0 right-0 z-[100] flex items-center justify-between px-4 py-3 font-mono"
+          className="fixed bottom-16 left-0 right-0 z-[100] flex items-center justify-between px-3 py-2.5"
           style={{
-            background: "linear-gradient(180deg, #1C1C1E 0%, #111113 100%)",
-            borderTop: `1px solid ${GOLD}40`,
-            boxShadow: `0 -4px 20px rgba(0,0,0,0.5), 0 -1px 0 ${GOLD}20`,
+            background: "linear-gradient(180deg, #0a0a0a 0%, #000000 100%)",
+            borderTop: `1px solid ${GOLD}30`,
+            boxShadow: `0 -4px 24px rgba(0,0,0,0.8), 0 -1px 0 ${GOLD}15`,
+            fontFamily: "'SF Mono', monospace",
           }}
         >
           <button
             onClick={handleBuildStrategy}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-[12px] tracking-wider transition-all active:scale-[0.97]"
+            className="flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-[11px] tracking-wider transition-all active:scale-[0.97]"
             style={{
               background: `linear-gradient(180deg, ${GOLD} 0%, #d97706 100%)`,
-              color: "#111",
+              color: "#000",
               boxShadow: `0 2px 12px ${GOLD}40`,
             }}
           >
             <Layers className="w-3.5 h-3.5" />
-            Build Strategy with {selCount} leg{selCount > 1 ? "s" : ""}
+            BUILD {selCount} LEG{selCount > 1 ? "S" : ""}
           </button>
           <button
             onClick={handleClearSelection}
-            className="px-3 py-2 rounded-lg text-[11px] font-medium tracking-wider transition-colors"
-            style={{ color: "#a1a1aa", background: "rgba(255,255,255,0.05)", border: `1px solid ${BORDER}` }}
+            className="px-3 py-2 rounded-lg text-[10px] font-bold tracking-wider transition-colors"
+            style={{ color: DIM, background: "transparent", border: `1px solid ${BORDER}` }}
           >
-            Clear
+            CLEAR
           </button>
         </div>
+      )}
+
+      {longPressTarget && (
+        <LongPressMenu
+          target={longPressTarget}
+          onClose={() => setLongPressTarget(null)}
+          onTradeSingle={() => handleQuickTrade(longPressTarget.contract, longPressTarget.side, longPressTarget.type)}
+          onAddToStrategy={() => handleToggleLeg(longPressTarget.contract, longPressTarget.type)}
+        />
       )}
 
       <ColumnsEditorModal open={columnsEditorOpen} onClose={() => setColumnsEditorOpen(false)} />
