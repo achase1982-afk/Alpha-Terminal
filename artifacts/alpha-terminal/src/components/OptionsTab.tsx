@@ -364,10 +364,7 @@ const DataCell = memo(function DataCell({
 
   let textColor: string;
   if (topStr === "\u2014") textColor = MUTED;
-  else if (isPrice && isShaded) textColor = WHITE;
-  else if (isPrice) textColor = GOLD;
-  else if (isShaded) textColor = "#e8e8ea";
-  else textColor = "#c4c4c8";
+  else textColor = WHITE;
 
   const oiValue = isOI ? topVal : undefined;
 
