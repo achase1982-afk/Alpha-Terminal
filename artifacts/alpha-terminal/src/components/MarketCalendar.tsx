@@ -876,12 +876,15 @@ export function MarketCalendar({ onClose }: Props) {
                   <div>
                     <span className="font-mono text-[16px] font-extrabold tracking-widest block mb-1.5" style={{ color: "#FFB800" }}>REVISIONS</span>
                     <div className="rounded-md border border-[#2a2a2c] p-2.5 space-y-1.5">
-                      {meta.prevMonths.map((pm, i) => (
-                        <div key={i} className="flex items-center justify-between">
-                          <span className="font-mono text-[15px] text-zinc-400">{pm.month} (revised)</span>
-                          <span className="font-mono text-[16px] font-bold tabular-nums" style={{ color: mc(pm.changeRaw) }}>{pm.change}</span>
-                        </div>
-                      ))}
+                      {meta.prevMonths.map((pm, i) => {
+                        const revColor = pm.changeRaw === 0 ? "#a1a1aa" : pm.changeRaw > 0 ? "#00e676" : "#ff1744";
+                        return (
+                          <div key={i} className="flex items-center justify-between">
+                            <span className="font-mono text-[15px] text-zinc-400">{pm.month} (revised)</span>
+                            <span className="font-mono text-[17px] font-extrabold tabular-nums" style={{ color: revColor }}>{pm.change}</span>
+                          </div>
+                        );
+                      })}
                       <div className="border-t border-[#1a1a1c] pt-1.5 mt-1.5 flex items-center gap-4">
                         {meta.threeMonthNfpAvg && (
                           <div className="flex items-center gap-1">
