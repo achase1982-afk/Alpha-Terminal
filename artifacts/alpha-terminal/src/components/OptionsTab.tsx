@@ -697,7 +697,6 @@ function StrikeCell({ strike, underlyingPrice }: { strike: number; underlyingPri
   const isATM = underlyingPrice != null && Math.abs(strike - underlyingPrice) < (underlyingPrice * 0.003);
 
   let moneynessLabel: string | null = null;
-  let moneynessColor = "rgba(0,0,0,0.5)";
 
   if (underlyingPrice != null) {
     const diff = strike - underlyingPrice;
@@ -706,10 +705,8 @@ function StrikeCell({ strike, underlyingPrice }: { strike: number; underlyingPri
 
     if (absPct < 0.3) {
       moneynessLabel = "ATM";
-      moneynessColor = "#FF6B2B";
     } else if (absPct < 10) {
       moneynessLabel = `${pct > 0 ? "+" : ""}${pct.toFixed(1)}%`;
-      moneynessColor = "rgba(0,0,0,0.5)";
     }
   }
 
@@ -719,15 +716,13 @@ function StrikeCell({ strike, underlyingPrice }: { strike: number; underlyingPri
       style={{
         height: ROW_H,
         borderBottom: `1px solid rgba(0,0,0,0.25)`,
-        color: isATM ? "#FF6B2B" : "#000",
-        background: isATM ? "rgba(255,107,43,0.25)" : "transparent",
       }}
     >
       <span style={{ fontSize: 12, fontWeight: FW_LIGHT, color: "#000", fontVariantNumeric: "tabular-nums", fontFamily: MONO, lineHeight: 1 }}>
         {strike % 1 === 0 ? strike : strike.toFixed(1)}
       </span>
       {moneynessLabel && (
-        <span style={{ fontSize: 9, fontWeight: FW_LIGHT, color: moneynessColor, fontFamily: MONO, lineHeight: 1, marginTop: 2 }}>
+        <span style={{ fontSize: 9, fontWeight: FW_LIGHT, color: "rgba(0,0,0,0.5)", fontFamily: MONO, lineHeight: 1, marginTop: 2 }}>
           {moneynessLabel}
         </span>
       )}
