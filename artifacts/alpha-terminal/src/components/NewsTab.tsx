@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useTerminalStore } from "@/lib/store";
 import type { LiveNewsItem } from "@/lib/store";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
-import { Loader2, Newspaper, ExternalLink, Zap, FileText } from "lucide-react";
+import { Loader2, Newspaper, Zap, FileText } from "lucide-react";
 
 interface NewsArticle {
   id: number;
@@ -258,48 +258,21 @@ export function NewsTab() {
           <button
             key={item.key}
             onClick={() => item.url ? openBrowser(item.url, item.headline, item.source) : undefined}
-            className="block w-full text-left border-b border-zinc-800/50 hover:bg-zinc-800/30 px-3 py-4 transition-colors group cursor-pointer"
+            className="block w-full text-left border-b border-zinc-800/50 hover:bg-zinc-800/30 px-3 py-2.5 transition-colors group cursor-pointer"
           >
-            <div className="flex items-start gap-3">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  {item.isFiling && <FileText className="w-3 h-3 text-[#FFB800] shrink-0" />}
-                  {item.isLive && !item.isFiling && <Zap className="w-3 h-3 text-[#FFB800] shrink-0" />}
-                  <span className="text-[#FFB800] text-[10px] uppercase tracking-wider font-mono font-semibold shrink-0">
-                    {item.source}
-                  </span>
-                  <span className="text-zinc-500 text-xs font-mono">
-                    {timeAgo(item.ts)}
-                  </span>
-                </div>
-
-                <h3 className="text-sm font-semibold text-zinc-200 mt-1 leading-snug group-hover:text-white transition-colors">
-                  {item.headline}
-                </h3>
-
-                {item.summary && (
-                  <p className="text-xs text-zinc-400 mt-1 line-clamp-2 leading-relaxed">
-                    {item.summary}
-                  </p>
-                )}
-              </div>
-
-              {item.image && (
-                <div className="shrink-0 w-16 h-16 rounded overflow-hidden bg-zinc-800 mt-1">
-                  <img
-                    src={item.image}
-                    alt=""
-                    className="w-full h-full object-cover"
-                    loading="lazy"
-                    onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-                  />
-                </div>
-              )}
-
-              {item.url && (
-                <ExternalLink className="w-3 h-3 text-zinc-600 shrink-0 mt-1 group-hover:text-zinc-400 transition-colors" />
-              )}
+            <div className="flex items-center gap-2 mb-0.5">
+              {item.isFiling && <FileText className="w-3 h-3 text-[#FFB800] shrink-0" />}
+              {item.isLive && !item.isFiling && <Zap className="w-3 h-3 text-[#FFB800] shrink-0" />}
+              <span className="text-[#FFB800] text-[10px] uppercase tracking-wider font-mono font-semibold shrink-0">
+                {item.source}
+              </span>
+              <span className="text-zinc-500 text-xs font-mono">
+                {timeAgo(item.ts)}
+              </span>
             </div>
+            <h3 className="text-sm font-semibold text-zinc-200 leading-snug group-hover:text-white transition-colors line-clamp-2">
+              {item.headline}
+            </h3>
           </button>
         ))}
       </div>
