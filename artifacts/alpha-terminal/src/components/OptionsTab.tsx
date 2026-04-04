@@ -398,7 +398,7 @@ const DataCell = memo(function DataCell({
       ) : isPrice && !showInlineGreeks ? (
         <span
           className="leading-none mt-0.5"
-          style={{ fontSize: 11, color: isShaded ? "#78787e" : DIM, fontVariantNumeric: "tabular-nums", fontFamily: MONO, fontWeight: FW_LIGHT }}
+          style={{ fontSize: 9, color: isShaded ? "#78787e" : DIM, fontVariantNumeric: "tabular-nums", fontFamily: MONO, fontWeight: FW_LIGHT }}
         >
           {bottomVal != null ? <>Size: {fmtCompact(bottomVal)}</> : ""}
         </span>
