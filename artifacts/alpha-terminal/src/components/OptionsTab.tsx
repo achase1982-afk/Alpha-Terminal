@@ -395,8 +395,8 @@ const DataCell = memo(function DataCell({
 
       {isPrice && showInlineGreeks && deltaVal != null ? (
         <div className="flex gap-1 mt-0.5" style={{ fontSize: 10, color: isShaded ? "#a0a0a8" : GRAY, fontFamily: MONO, fontVariantNumeric: "tabular-nums", fontWeight: FW_LIGHT }}>
-          <span>\u0394{fmtNum(deltaVal, 2)}</span>
-          {thetaVal != null && <span>\u0398{fmtNum(thetaVal, 2)}</span>}
+          <span>{"Δ"}{fmtNum(deltaVal, 2)}</span>
+          {thetaVal != null && <span>{"Θ"}{fmtNum(thetaVal, 2)}</span>}
         </div>
       ) : isPrice && !showInlineGreeks ? (
         <span
@@ -634,7 +634,7 @@ function MetricsStrip({ groups, lastPrice, rawCalls, rawPuts, earningsDate, isFe
   }
 
   return (
-    <div className="flex gap-2 text-[11px] items-center shrink-0" style={{ fontVariantNumeric: "tabular-nums", fontFamily: MONO, fontWeight: FW_LIGHT }}>
+    <div className="flex gap-2 items-center shrink-0" style={{ fontSize: 12, fontVariantNumeric: "tabular-nums", fontFamily: MONO, fontWeight: FW_LIGHT }}>
       {isFetching && hasData && (
         <span className="w-2 h-2 border border-amber-400 border-t-transparent rounded-full animate-spin" />
       )}
@@ -1115,7 +1115,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
         style={{ top: stickyOffset, height: TOOLBAR_H, background: BG_EXP_BAR, borderBottom: `1px solid ${BORDER}`, fontFamily: MONO }}
       >
         <div className="flex items-center gap-1.5">
-          <span className="text-[11px] tracking-widest" style={{ color: DIM, fontWeight: FW_NORMAL }}>STK</span>
+          <span style={{ fontSize: 12, color: DIM, fontWeight: FW_NORMAL, fontFamily: MONO }}>STK</span>
           {isCustomMode ? (
             <div className="flex items-center gap-1">
               <Input
@@ -1123,8 +1123,8 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
                 value={localCustomValue}
                 onChange={e => handleCustomStrikeChange(e.target.value)}
                 onKeyDown={e => { if (e.key === "Escape") handleExitCustomMode(); }}
-                className="w-[48px] text-[10px] h-5 px-1.5 border rounded text-white"
-                style={{ background: "#111", borderColor: "#2a2a2a", fontFamily: MONO }}
+                className="w-[52px] h-6 px-1.5 border rounded text-white"
+                style={{ fontSize: 12, background: "#111", borderColor: "#2a2a2a", fontFamily: MONO }}
                 placeholder="10"
               />
               <button onClick={handleExitCustomMode} className="p-0.5 rounded hover:bg-white/5 transition-colors" aria-label="Exit custom mode">
@@ -1133,7 +1133,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
             </div>
           ) : (
             <Select value={strikeMode} onValueChange={handleStrikeModeChange}>
-              <SelectTrigger className="w-[48px] text-[10px] h-5 px-1.5 border rounded text-white" style={{ background: "#111", borderColor: "#2a2a2a", fontFamily: MONO }}>
+              <SelectTrigger className="w-[52px] h-6 px-1.5 border rounded text-white" style={{ fontSize: 12, background: "#111", borderColor: "#2a2a2a", fontFamily: MONO }}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1146,16 +1146,18 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
           )}
           <button
             onClick={() => setShowInlineGreeks(!showInlineGreeks)}
-            className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8px] transition-colors"
+            className="flex items-center gap-0.5 px-1.5 py-0.5 rounded transition-colors"
             style={{
+              fontSize: 12,
               color: showInlineGreeks ? GOLD : DIM,
               background: showInlineGreeks ? `${GOLD}12` : "transparent",
               border: `1px solid ${showInlineGreeks ? `${GOLD}25` : "transparent"}`,
               fontWeight: FW_NORMAL,
+              fontFamily: MONO,
             }}
             aria-label="Toggle inline Greeks"
           >
-            \u0394\u0398
+            {"ΔΘ"}
           </button>
         </div>
         <MetricsStrip
@@ -1319,15 +1321,10 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
                           </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-2 text-[12px]" style={{ fontVariantNumeric: "tabular-nums" }}>
+                      <div className="flex items-center gap-2" style={{ fontSize: 12, fontVariantNumeric: "tabular-nums", fontFamily: MONO }}>
                         {group.atmIV != null && (
                           <span style={{ color: GOLD, fontWeight: FW_PREMIUM }}>
                             IV {group.atmIV.toFixed(1)}%
-                          </span>
-                        )}
-                        {group.expectedMove != null && (
-                          <span style={{ color: WHITE, fontWeight: FW_LIGHT }}>
-                            {"±$"}{group.expectedMove.toFixed(2)}
                           </span>
                         )}
                         {pcr != null && (
