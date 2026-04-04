@@ -313,6 +313,9 @@ const DataCell = memo(function DataCell({
   const tick = useOptionTick(contract?.streamKey);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const didLongPress = useRef(false);
+  const didSwipe = useRef(false);
+  const startPos = useRef<{ x: number; y: number } | null>(null);
+  const SWIPE_THRESHOLD = 10;
 
   const topVal = getStreamVal(tick, col.topKey) ?? getContractVal(contract, col.topKey);
   const bottomVal = col.bottomKey
@@ -337,22 +340,44 @@ const DataCell = memo(function DataCell({
     ? (getStreamVal(tick, "theta") ?? getContractVal(contract, "theta"))
     : undefined;
 
+  const cancelGesture = useCallback(() => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+    didSwipe.current = true;
+  }, []);
+
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     didLongPress.current = false;
+    didSwipe.current = false;
+    startPos.current = { x: e.clientX, y: e.clientY };
     if (onLongPress) {
       longPressTimer.current = setTimeout(() => {
-        didLongPress.current = true;
-        onLongPress(e);
+        if (!didSwipe.current) {
+          didLongPress.current = true;
+          onLongPress(e);
+        }
       }, 500);
     }
   }, [onLongPress]);
+
+  const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    if (didSwipe.current || !startPos.current) return;
+    const dx = e.clientX - startPos.current.x;
+    const dy = e.clientY - startPos.current.y;
+    if (Math.abs(dx) > SWIPE_THRESHOLD || Math.abs(dy) > SWIPE_THRESHOLD) {
+      cancelGesture();
+    }
+  }, [cancelGesture]);
 
   const handlePointerUp = useCallback(() => {
     if (longPressTimer.current) {
       clearTimeout(longPressTimer.current);
       longPressTimer.current = null;
     }
-    if (!didLongPress.current && onSelect) onSelect();
+    if (!didLongPress.current && !didSwipe.current && onSelect) onSelect();
+    startPos.current = null;
   }, [onSelect]);
 
   const handlePointerLeave = useCallback(() => {
@@ -360,6 +385,7 @@ const DataCell = memo(function DataCell({
       clearTimeout(longPressTimer.current);
       longPressTimer.current = null;
     }
+    startPos.current = null;
   }, []);
 
   let textColor: string;
@@ -421,6 +447,7 @@ const DataCell = memo(function DataCell({
       <button
         type="button"
         onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerLeave={handlePointerLeave}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect?.(); } }}
