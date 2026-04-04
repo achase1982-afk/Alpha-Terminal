@@ -798,12 +798,12 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
         mapContract(row.put);
       }
     }
-    const preSelected = selCount > 0
+    const preSelected = selectedLegs.size > 0
       ? [...selectedLegs.values()].map(l => ({ contract: l.contract, type: l.type }))
       : undefined;
     onOpenStrategyBuilder([...allStrikes].sort((a, b) => a - b), expLabels, cMap, preSelected);
     setSelectedLegs(new Map());
-  }, [onOpenStrategyBuilder, groups, selectedLegs, selCount]);
+  }, [onOpenStrategyBuilder, groups, selectedLegs]);
 
   const handleStrikeModeChange = useCallback((val: string) => {
     if (val === "custom") { setLocalCustomValue(String(strikeCount)); setIsCustomMode(true); return; }
