@@ -584,11 +584,11 @@ export function MarketCalendar({ onClose }: Props) {
         })}
       </div>
 
-      <div className="flex flex-wrap gap-x-4 gap-y-1 px-1 pt-2 pb-1">
+      <div className="flex flex-wrap gap-x-3 gap-y-1 px-1 pt-2 pb-1">
         {Object.entries(TYPE_LABELS).map(([key, label]) => (
           <div key={key} className="flex items-center gap-1.5">
             <div className="w-[6px] h-[6px] rounded-full" style={{ background: TYPE_COLORS[key] }} />
-            <span className="font-mono text-[10px] text-white">{label}</span>
+            <span className="font-mono text-[11px] text-white">{label}</span>
           </div>
         ))}
       </div>
