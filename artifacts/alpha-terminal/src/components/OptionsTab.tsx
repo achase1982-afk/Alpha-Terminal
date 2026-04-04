@@ -20,9 +20,10 @@ const EPS = 0.0001;
 const COL_W = 70;
 const STRIKE_W = 56;
 const ROW_H = 38;
+const TOOLBAR_H = 30;
 const HEADER_H = 32;
 const SUB_HEADER_H = 20;
-const STICKY_TOP = HEADER_H + SUB_HEADER_H;
+const STICKY_TOP = TOOLBAR_H + HEADER_H + SUB_HEADER_H;
 
 const BG = "#000000";
 const BG_HEADER = "#080808";
@@ -1062,8 +1063,8 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
   return (
     <div style={{ background: BG }} className="relative">
       <div
-        className="flex items-center justify-between w-full px-3 py-1 shrink-0"
-        style={{ background: BG_EXP_BAR, borderBottom: `1px solid ${BORDER}`, fontFamily: "'SF Mono', monospace" }}
+        className="flex items-center justify-between w-full px-3 py-1 shrink-0 sticky z-40"
+        style={{ top: stickyOffset, height: TOOLBAR_H, background: BG_EXP_BAR, borderBottom: `1px solid ${BORDER}`, fontFamily: "'SF Mono', monospace" }}
       >
         <div className="flex items-center gap-1.5">
           <span className="text-[9px] font-bold tracking-widest" style={{ color: DIM }}>STK</span>
@@ -1165,7 +1166,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
           <>
             <div
               className="w-full flex items-center sticky z-30"
-              style={{ top: stickyOffset, height: HEADER_H, background: BG_HEADER, borderBottom: `1px solid ${BORDER}` }}
+              style={{ top: stickyOffset + TOOLBAR_H, height: HEADER_H, background: BG_HEADER, borderBottom: `1px solid ${BORDER}` }}
             >
               {showCalls && (
                 <div className="flex-1 text-center">
@@ -1204,7 +1205,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
 
             <div
               className="w-full flex items-center sticky z-20"
-              style={{ top: stickyOffset + HEADER_H, height: SUB_HEADER_H, background: BG_HEADER, borderBottom: `1px solid ${BORDER}` }}
+              style={{ top: stickyOffset + TOOLBAR_H + HEADER_H, height: SUB_HEADER_H, background: BG_HEADER, borderBottom: `1px solid ${BORDER}` }}
             >
               {showCalls && (
                 <div ref={subHeaderLeftRef} className="flex-1 overflow-x-auto overflow-y-hidden" style={noScrollbar}>
