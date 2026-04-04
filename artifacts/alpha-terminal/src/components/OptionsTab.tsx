@@ -1326,8 +1326,8 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
                           </span>
                         )}
                         {group.expectedMove != null && (
-                          <span style={{ color: GRAY, fontWeight: FW_LIGHT }}>
-                            \u00B1${group.expectedMove.toFixed(2)}
+                          <span style={{ color: WHITE, fontWeight: FW_LIGHT }}>
+                            {"±$"}{group.expectedMove.toFixed(2)}
                           </span>
                         )}
                         {pcr != null && (
