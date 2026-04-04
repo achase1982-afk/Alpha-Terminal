@@ -733,6 +733,8 @@ function OptionsGrid({
   onBuildStrategy?: () => void;
 }) {
   const sortedRows = useMemo(() => [...rows].sort((a, b) => a.strike - b.strike), [rows]);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [strikeLeft, setStrikeLeft] = useState(0);
 
   const transitionIdx = useMemo(() => {
     if (underlyingPrice == null) return -1;
@@ -741,250 +743,236 @@ function OptionsGrid({
 
   const callColCount = showCalls ? columns.length : 0;
   const putColCount = showPuts ? columns.length : 0;
+  const callWingW = callColCount * COL_W;
+  const totalW = callWingW + STRIKE_W + putColCount * COL_W;
 
-  const thBase: React.CSSProperties = {
-    background: BG_HEADER,
-    fontFamily: MONO,
-    fontWeight: FW_LIGHT,
-    padding: 0,
-    margin: 0,
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const containerW = el.clientWidth;
+    const center = Math.max(0, Math.floor((containerW - STRIKE_W) / 2));
+    setStrikeLeft(center);
+    const idealScroll = callWingW - center;
+    if (idealScroll > 0) {
+      el.scrollLeft = idealScroll;
+    }
+  }, [callWingW, columns.length]);
+
+  const thStyle: React.CSSProperties = {
     position: "sticky",
     top: 0,
+    background: "#111111",
+    fontFamily: MONO,
+    fontWeight: FW_LIGHT,
+    padding: "0 4px",
+    margin: 0,
+    zIndex: 40,
+    boxShadow: "0 2px 4px rgba(0,0,0,0.5)",
+  };
+
+  const strikeStickyStyle: React.CSSProperties = {
+    position: "sticky",
+    left: strikeLeft,
+    background: accentHex,
+    zIndex: 10,
+    padding: 0,
+    verticalAlign: "middle",
+    borderLeft: `1px solid ${accentHex}`,
+    borderRight: `1px solid ${accentHex}`,
   };
 
   return (
-    <div
-      style={{
-        overflowX: "auto",
-        overflowY: "auto",
-        maxHeight: "calc(100dvh - 240px)",
-        WebkitOverflowScrolling: "touch" as React.CSSProperties["WebkitOverflowScrolling"],
-        willChange: "transform",
-        backfaceVisibility: "hidden",
-        scrollbarWidth: "none" as React.CSSProperties["scrollbarWidth"],
-        msOverflowStyle: "none",
-        transform: "translateZ(0)",
-      } as React.CSSProperties}
-    >
-      <table
+    <div>
+      <div
         style={{
-          tableLayout: "fixed",
-          borderCollapse: "separate",
-          borderSpacing: 0,
-          fontFamily: MONO,
-          fontVariantNumeric: "tabular-nums",
-          width: (callColCount + putColCount) * COL_W + STRIKE_W,
-          minWidth: (callColCount + putColCount) * COL_W + STRIKE_W,
+          display: "flex",
+          height: HEADER_H,
+          background: BG_HEADER,
+          borderBottom: `1px solid ${BORDER}`,
+          alignItems: "center",
+          position: "relative",
+          zIndex: 51,
         }}
       >
-        <colgroup>
-          {showCalls && columns.map(col => <col key={`cc-${col.id}`} style={{ width: COL_W }} />)}
-          <col style={{ width: STRIKE_W }} />
-          {showPuts && columns.map(col => <col key={`pc-${col.id}`} style={{ width: COL_W }} />)}
-        </colgroup>
-
-        <thead style={{ position: "sticky", top: 0, zIndex: 50 }}>
-          {/* Row 1: CALLS | Settings+Strategy | PUTS */}
-          <tr style={{ height: HEADER_H }}>
-            {showCalls && (
-              <th
-                colSpan={callColCount}
-                style={{
-                  ...thBase,
-                  textAlign: "center",
-                  borderBottom: `1px solid ${BORDER}`,
-                  borderRight: `1px solid ${BORDER}`,
-                  boxShadow: "0 2px 4px rgba(0,0,0,0.4)",
-                }}
-              >
-                <span style={{ fontSize: 12, letterSpacing: "0.3em", color: GRAY, fontWeight: FW_PREMIUM }}>CALLS</span>
-              </th>
-            )}
-            <th
-              style={{
-                ...thBase,
-                width: STRIKE_W,
-                borderBottom: `1px solid ${BORDER}`,
-                borderLeft: showCalls ? undefined : undefined,
-                borderRight: `1px solid ${BORDER}`,
-                boxShadow: "0 2px 4px rgba(0,0,0,0.4)",
-              }}
+        {showCalls && (
+          <div style={{ flex: 1, textAlign: "center" }}>
+            <span style={{ fontSize: 12, letterSpacing: "0.3em", color: GRAY, fontFamily: MONO, fontWeight: FW_PREMIUM }}>CALLS</span>
+          </div>
+        )}
+        <div style={{ width: STRIKE_W, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", borderLeft: `1px solid ${BORDER}`, borderRight: `1px solid ${BORDER}` }}>
+          {onBuildStrategy && (
+            <button
+              onClick={onBuildStrategy}
+              style={{ width: STRIKE_W / 2, height: HEADER_H, color: GRAY, display: "flex", alignItems: "center", justifyContent: "center" }}
+              aria-label="Strategy builder"
             >
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: HEADER_H }}>
-                {onBuildStrategy && (
-                  <button
-                    onClick={onBuildStrategy}
-                    style={{ width: STRIKE_W / 2, height: HEADER_H, color: GRAY, display: "flex", alignItems: "center", justifyContent: "center" }}
-                    aria-label="Strategy builder"
-                  >
-                    <Layers className="w-3.5 h-3.5" />
-                  </button>
-                )}
-                <button
-                  onClick={onColumnsEditor}
-                  style={{ width: onBuildStrategy ? STRIKE_W / 2 : STRIKE_W, height: HEADER_H, color: GRAY, display: "flex", alignItems: "center", justifyContent: "center" }}
-                  aria-label="Edit columns"
-                >
-                  <Settings className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </th>
-            {showPuts && (
+              <Layers className="w-3.5 h-3.5" />
+            </button>
+          )}
+          <button
+            onClick={onColumnsEditor}
+            style={{ width: onBuildStrategy ? STRIKE_W / 2 : STRIKE_W, height: HEADER_H, color: GRAY, display: "flex", alignItems: "center", justifyContent: "center" }}
+            aria-label="Edit columns"
+          >
+            <Settings className="w-3.5 h-3.5" />
+          </button>
+        </div>
+        {showPuts && (
+          <div style={{ flex: 1, textAlign: "center" }}>
+            <span style={{ fontSize: 12, letterSpacing: "0.3em", color: GRAY, fontFamily: MONO, fontWeight: FW_PREMIUM }}>PUTS</span>
+          </div>
+        )}
+      </div>
+
+      <div
+        ref={scrollRef}
+        style={{
+          overflow: "auto",
+          maxHeight: "calc(100dvh - 272px)",
+          WebkitOverflowScrolling: "touch" as React.CSSProperties["WebkitOverflowScrolling"],
+          willChange: "transform",
+          backfaceVisibility: "hidden",
+          scrollbarWidth: "none" as React.CSSProperties["scrollbarWidth"],
+          msOverflowStyle: "none",
+          transform: "translateZ(0)",
+        } as React.CSSProperties}
+      >
+        <table
+          style={{
+            tableLayout: "fixed",
+            borderCollapse: "separate",
+            borderSpacing: 0,
+            fontFamily: MONO,
+            fontVariantNumeric: "tabular-nums",
+            width: totalW,
+            minWidth: totalW,
+          }}
+        >
+          <colgroup>
+            {showCalls && columns.map(col => <col key={`cc-${col.id}`} style={{ width: COL_W }} />)}
+            <col style={{ width: STRIKE_W }} />
+            {showPuts && columns.map(col => <col key={`pc-${col.id}`} style={{ width: COL_W }} />)}
+          </colgroup>
+
+          <thead>
+            <tr style={{ height: SUB_HEADER_H }}>
+              {showCalls && columns.map(col => (
+                <th key={`ch-${col.id}`} style={{ ...thStyle, textAlign: "left" }}>
+                  <span style={{ fontSize: 10, color: DIM, fontWeight: FW_LIGHT, textTransform: "uppercase", letterSpacing: "0.08em" }}>{col.topLabel}</span>
+                </th>
+              ))}
               <th
-                colSpan={putColCount}
                 style={{
-                  ...thBase,
+                  ...thStyle,
+                  position: "sticky",
+                  left: strikeLeft,
+                  top: 0,
                   textAlign: "center",
-                  borderBottom: `1px solid ${BORDER}`,
+                  background: "#111111",
+                  zIndex: 55,
                   borderLeft: `1px solid ${BORDER}`,
-                  boxShadow: "0 2px 4px rgba(0,0,0,0.4)",
+                  borderRight: `1px solid ${BORDER}`,
+                  padding: 0,
                 }}
               >
-                <span style={{ fontSize: 12, letterSpacing: "0.3em", color: GRAY, fontWeight: FW_PREMIUM }}>PUTS</span>
+                <span style={{ fontSize: 9, color: WHITE, fontWeight: FW_PREMIUM, letterSpacing: "0.08em" }}>STRIKE</span>
               </th>
-            )}
-          </tr>
+              {showPuts && columns.map(col => (
+                <th key={`ph-${col.id}`} style={{ ...thStyle, textAlign: "left" }}>
+                  <span style={{ fontSize: 10, color: DIM, fontWeight: FW_LIGHT, textTransform: "uppercase", letterSpacing: "0.08em" }}>{col.topLabel}</span>
+                </th>
+              ))}
+            </tr>
+          </thead>
 
-          {/* Row 2: individual column labels */}
-          <tr style={{ height: SUB_HEADER_H }}>
-            {showCalls && columns.map(col => (
-              <th
-                key={col.id}
-                style={{
-                  ...thBase,
-                  textAlign: "left",
-                  padding: "0 4px",
-                  borderBottom: `1px solid ${BORDER}`,
-                  boxShadow: "0 2px 4px rgba(0,0,0,0.3)",
-                }}
-              >
-                <span style={{ fontSize: 10, color: DIM, fontWeight: FW_LIGHT, textTransform: "uppercase", letterSpacing: "0.08em" }}>{col.topLabel}</span>
-              </th>
-            ))}
-            <th
-              style={{
-                ...thBase,
-                textAlign: "center",
-                borderBottom: `1px solid ${BORDER}`,
-                borderLeft: `1px solid ${BORDER}`,
-                borderRight: `1px solid ${BORDER}`,
-                boxShadow: "0 2px 4px rgba(0,0,0,0.3)",
-              }}
-            >
-              <span style={{ fontSize: 9, color: WHITE, fontWeight: FW_PREMIUM, letterSpacing: "0.08em" }}>STRIKE</span>
-            </th>
-            {showPuts && columns.map(col => (
-              <th
-                key={col.id}
-                style={{
-                  ...thBase,
-                  textAlign: "left",
-                  padding: "0 4px",
-                  borderBottom: `1px solid ${BORDER}`,
-                  boxShadow: "0 2px 4px rgba(0,0,0,0.3)",
-                }}
-              >
-                <span style={{ fontSize: 10, color: DIM, fontWeight: FW_LIGHT, textTransform: "uppercase", letterSpacing: "0.08em" }}>{col.topLabel}</span>
-              </th>
-            ))}
-          </tr>
-        </thead>
+          <tbody>
+            {sortedRows.map((row, idx) => {
+              const callKey = row.call ? makeLegKey(row.call, "CALL") : "";
+              const putKey = row.put ? makeLegKey(row.put, "PUT") : "";
+              const isCallSelected = callKey ? selectedLegs.has(callKey) : false;
+              const isPutSelected = putKey ? selectedLegs.has(putKey) : false;
+              const callMoney = classifyMoneyness(row.strike, underlyingPrice, true);
+              const putMoney = classifyMoneyness(row.strike, underlyingPrice, false);
+              const callBg = getRowBg(callMoney, isCallSelected);
+              const putBg = getRowBg(putMoney, isPutSelected);
+              const isAtmBoundary = transitionIdx >= 0 && idx === transitionIdx;
+              const atmBorder = isAtmBoundary ? "1px dotted #FF6B2B" : undefined;
 
-        <tbody>
-          {sortedRows.map((row, idx) => {
-            const callKey = row.call ? makeLegKey(row.call, "CALL") : "";
-            const putKey = row.put ? makeLegKey(row.put, "PUT") : "";
-            const isCallSelected = callKey ? selectedLegs.has(callKey) : false;
-            const isPutSelected = putKey ? selectedLegs.has(putKey) : false;
-            const callMoney = classifyMoneyness(row.strike, underlyingPrice, true);
-            const putMoney = classifyMoneyness(row.strike, underlyingPrice, false);
-            const callBg = getRowBg(callMoney, isCallSelected);
-            const putBg = getRowBg(putMoney, isPutSelected);
-            const isAtmBoundary = transitionIdx >= 0 && idx === transitionIdx;
+              return (
+                <tr key={row.strike} style={{ height: ROW_H }}>
+                  {showCalls && columns.map((col, i) => (
+                    <td
+                      key={col.id}
+                      style={{
+                        background: callBg,
+                        borderBottom: `1px solid ${BORDER_ROW}`,
+                        borderTop: atmBorder,
+                        borderLeft: isCallSelected && i === 0 ? `2px solid ${SEL_BORDER_COLOR}` : undefined,
+                        padding: 0,
+                        verticalAlign: "middle",
+                      }}
+                    >
+                      <DataCell
+                        col={col}
+                        contract={row.call}
+                        isSelected={isCallSelected && col.isPrice}
+                        onSelect={col.isPrice && row.call ? () => onToggleLeg(row.call!, "CALL") : undefined}
+                        onLongPress={col.isPrice && row.call ? (e) => onLongPressCell({
+                          contract: row.call!, type: "CALL",
+                          side: col.id === "bid" ? "SELL" : "BUY",
+                          x: e.clientX, y: e.clientY,
+                        }) : undefined}
+                        showInlineGreeks={showInlineGreeks}
+                        maxOI={col.id === "oi" ? maxOI : undefined}
+                        moneyness={callMoney}
+                      />
+                    </td>
+                  ))}
 
-            const atmBorderStyle = isAtmBoundary ? "1px dotted #FF6B2B" : undefined;
-
-            return (
-              <tr
-                key={row.strike}
-                style={{ height: ROW_H }}
-              >
-                {showCalls && columns.map((col, i) => (
                   <td
-                    key={col.id}
                     style={{
-                      background: callBg,
-                      borderBottom: `1px solid ${BORDER_ROW}`,
-                      borderTop: atmBorderStyle,
-                      borderLeft: isCallSelected && i === 0 ? `2px solid ${SEL_BORDER_COLOR}` : undefined,
-                      padding: 0,
-                      verticalAlign: "middle",
+                      ...strikeStickyStyle,
+                      borderBottom: `1px solid rgba(0,0,0,0.25)`,
+                      borderTop: atmBorder,
                     }}
                   >
-                    <DataCell
-                      col={col}
-                      contract={row.call}
-                      isSelected={isCallSelected && col.isPrice}
-                      onSelect={col.isPrice && row.call ? () => onToggleLeg(row.call!, "CALL") : undefined}
-                      onLongPress={col.isPrice && row.call ? (e) => onLongPressCell({
-                        contract: row.call!, type: "CALL",
-                        side: col.id === "bid" ? "SELL" : "BUY",
-                        x: e.clientX, y: e.clientY,
-                      }) : undefined}
-                      showInlineGreeks={showInlineGreeks}
-                      maxOI={col.id === "oi" ? maxOI : undefined}
-                      moneyness={callMoney}
-                    />
+                    <StrikeCell strike={row.strike} underlyingPrice={underlyingPrice} />
                   </td>
-                ))}
 
-                <td
-                  style={{
-                    background: accentHex,
-                    borderBottom: `1px solid rgba(0,0,0,0.25)`,
-                    borderTop: atmBorderStyle,
-                    borderLeft: `1px solid ${accentHex}`,
-                    borderRight: `1px solid ${accentHex}`,
-                    padding: 0,
-                    verticalAlign: "middle",
-                  }}
-                >
-                  <StrikeCell strike={row.strike} underlyingPrice={underlyingPrice} />
-                </td>
-
-                {showPuts && columns.map((col, i) => (
-                  <td
-                    key={col.id}
-                    style={{
-                      background: putBg,
-                      borderBottom: `1px solid ${BORDER_ROW}`,
-                      borderTop: atmBorderStyle,
-                      borderRight: isPutSelected && i === columns.length - 1 ? `2px solid ${SEL_BORDER_COLOR}` : undefined,
-                      padding: 0,
-                      verticalAlign: "middle",
-                    }}
-                  >
-                    <DataCell
-                      col={col}
-                      contract={row.put}
-                      isSelected={isPutSelected && col.isPrice}
-                      onSelect={col.isPrice && row.put ? () => onToggleLeg(row.put!, "PUT") : undefined}
-                      onLongPress={col.isPrice && row.put ? (e) => onLongPressCell({
-                        contract: row.put!, type: "PUT",
-                        side: col.id === "bid" ? "SELL" : "BUY",
-                        x: e.clientX, y: e.clientY,
-                      }) : undefined}
-                      showInlineGreeks={showInlineGreeks}
-                      maxOI={col.id === "oi" ? maxOI : undefined}
-                      moneyness={putMoney}
-                    />
-                  </td>
-                ))}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+                  {showPuts && columns.map((col, i) => (
+                    <td
+                      key={col.id}
+                      style={{
+                        background: putBg,
+                        borderBottom: `1px solid ${BORDER_ROW}`,
+                        borderTop: atmBorder,
+                        borderRight: isPutSelected && i === columns.length - 1 ? `2px solid ${SEL_BORDER_COLOR}` : undefined,
+                        padding: 0,
+                        verticalAlign: "middle",
+                      }}
+                    >
+                      <DataCell
+                        col={col}
+                        contract={row.put}
+                        isSelected={isPutSelected && col.isPrice}
+                        onSelect={col.isPrice && row.put ? () => onToggleLeg(row.put!, "PUT") : undefined}
+                        onLongPress={col.isPrice && row.put ? (e) => onLongPressCell({
+                          contract: row.put!, type: "PUT",
+                          side: col.id === "bid" ? "SELL" : "BUY",
+                          x: e.clientX, y: e.clientY,
+                        }) : undefined}
+                        showInlineGreeks={showInlineGreeks}
+                        maxOI={col.id === "oi" ? maxOI : undefined}
+                        moneyness={putMoney}
+                      />
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
