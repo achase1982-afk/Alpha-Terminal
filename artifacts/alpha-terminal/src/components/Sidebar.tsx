@@ -6,6 +6,7 @@ import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import type { MarketPulseSettings, AllowedStrategy } from "@/types/marketPulse";
 import { STRATEGY_LABELS, ALL_STRATEGIES, ALL_PULSE_INDICATORS } from "@/types/marketPulse";
 import { useAutoLock, TIMEOUT_OPTIONS, type SessionTimeoutMinutes } from "@/hooks/useAutoLock";
+import { useUICustomizationStore, ACCENT_COLORS, type ThemeAccent, type FontSize, type ChartStyle, type GridDensity } from "@/lib/ui-customization-store";
 import { readSecurityPrefs, updateSecurityPref, type SecurityPrefs } from "@/lib/securityPrefs";
 import { useBiometricRegistration, useWebAuthnSupported } from "@/hooks/useBiometric";
 import { AuthPanel } from "./AuthPanel";
@@ -21,7 +22,7 @@ import {
   Star, Activity, Briefcase, MessageCircle,
   Zap, LineChart, LayoutDashboard, BrainCircuit,
   ChevronLeft, ChevronRight, Trash2, Plus, RotateCcw, BarChart2,
-  SlidersHorizontal, Gauge, ListOrdered, CalendarDays,
+  SlidersHorizontal, Gauge, ListOrdered, CalendarDays, Palette,
 } from "lucide-react";
 import { MarketCalendar } from "@/components/MarketCalendar";
 import { useClerk } from "@clerk/clerk-react";
@@ -43,6 +44,7 @@ type SidebarPage =
   | "Chart & Options"
   | "Display & Marquee"
   | "AI Parameters"
+  | "UI Customization"
   | "Security & Privacy";
 
 export interface SidebarHandle {
@@ -110,6 +112,7 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
             {activePage === "Chart & Options" && <ChartOptionsPage />}
             {activePage === "Display & Marquee" && <DisplayMarqueePage />}
             {activePage === "AI Parameters" && <AiParametersPage />}
+            {activePage === "UI Customization" && <UICustomizationPage />}
             {activePage === "Security & Privacy" && <SecurityPrivacyPage />}
           </div>
         </div>,
@@ -151,6 +154,7 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
                 <MenuRow icon={<LineChart />} label="Chart & Options" onClick={() => { setActivePage("Chart & Options"); onClose(); }} />
                 <MenuRow icon={<LayoutDashboard />} label="Display & Marquee" onClick={() => { setActivePage("Display & Marquee"); onClose(); }} />
                 <MenuRow icon={<BrainCircuit />} label="AI Parameters" onClick={() => { setActivePage("AI Parameters"); onClose(); }} />
+                <MenuRow icon={<Palette />} label="UI Customization" onClick={() => { setActivePage("UI Customization"); onClose(); }} />
                 <MenuRow icon={<Shield />} label="Security & Privacy" onClick={() => { setActivePage("Security & Privacy"); onClose(); }} />
               </div>
 
@@ -662,6 +666,141 @@ function AiParametersPage() {
         {AI_FEATURES.map((f) => (
           <AiFeatureControl key={f.key} featureKey={f.key} label={f.label} icon={f.icon} />
         ))}
+      </div>
+    </div>
+  );
+}
+
+function UICustomizationPage() {
+  const {
+    accentColor, fontSize, defaultChartStyle, gridDensity,
+    showTickerTape, showMiniCards, animatePriceChanges, hapticFeedback, reducedMotion,
+    setAccentColor, setFontSize, setDefaultChartStyle, setGridDensity,
+    setShowTickerTape, setShowMiniCards, setAnimatePriceChanges, setHapticFeedback, setReducedMotion,
+    resetDefaults,
+  } = useUICustomizationStore();
+
+  const accents: { key: ThemeAccent; label: string }[] = [
+    { key: "gold", label: "Gold" },
+    { key: "blue", label: "Blue" },
+    { key: "green", label: "Green" },
+    { key: "orange", label: "Orange" },
+    { key: "purple", label: "Purple" },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <div className="space-y-3">
+        <Label className="text-[11px] font-bold tracking-[0.15em] text-muted-foreground uppercase">Accent Color</Label>
+        <div className="flex gap-2">
+          {accents.map(a => (
+            <button
+              key={a.key}
+              onClick={() => setAccentColor(a.key)}
+              className="flex flex-col items-center gap-1"
+            >
+              <div
+                className="w-9 h-9 rounded-full border-2 transition-all"
+                style={{
+                  background: ACCENT_COLORS[a.key],
+                  borderColor: accentColor === a.key ? "#fff" : "transparent",
+                  boxShadow: accentColor === a.key ? `0 0 12px ${ACCENT_COLORS[a.key]}60` : "none",
+                }}
+              />
+              <span className="text-[9px] font-medium" style={{ color: accentColor === a.key ? "#fff" : "#71717a" }}>{a.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <Label className="text-[11px] font-bold tracking-[0.15em] text-muted-foreground uppercase">Font Size</Label>
+        <Select value={fontSize} onValueChange={(v) => setFontSize(v as FontSize)}>
+          <SelectTrigger className="bg-card border-card-border">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="compact">Compact</SelectItem>
+            <SelectItem value="default">Default</SelectItem>
+            <SelectItem value="large">Large</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-3">
+        <Label className="text-[11px] font-bold tracking-[0.15em] text-muted-foreground uppercase">Default Chart Style</Label>
+        <Select value={defaultChartStyle} onValueChange={(v) => setDefaultChartStyle(v as ChartStyle)}>
+          <SelectTrigger className="bg-card border-card-border">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="candles">Candlestick</SelectItem>
+            <SelectItem value="bars">OHLC Bars</SelectItem>
+            <SelectItem value="line">Line</SelectItem>
+            <SelectItem value="area">Area</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-3">
+        <Label className="text-[11px] font-bold tracking-[0.15em] text-muted-foreground uppercase">Grid Density</Label>
+        <Select value={gridDensity} onValueChange={(v) => setGridDensity(v as GridDensity)}>
+          <SelectTrigger className="bg-card border-card-border">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="tight">Tight</SelectItem>
+            <SelectItem value="default">Default</SelectItem>
+            <SelectItem value="relaxed">Relaxed</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="border-t border-card-border pt-4 space-y-4">
+        <Label className="text-[11px] font-bold tracking-[0.15em] text-muted-foreground uppercase">Display</Label>
+
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-white">Ticker Tape</span>
+          <Switch checked={showTickerTape} onCheckedChange={setShowTickerTape} />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-white">Index Mini Cards</span>
+          <Switch checked={showMiniCards} onCheckedChange={setShowMiniCards} />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-white">Price Change Animations</span>
+          <Switch checked={animatePriceChanges} onCheckedChange={setAnimatePriceChanges} />
+        </div>
+      </div>
+
+      <div className="border-t border-card-border pt-4 space-y-4">
+        <Label className="text-[11px] font-bold tracking-[0.15em] text-muted-foreground uppercase">Accessibility</Label>
+
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-white">Haptic Feedback</span>
+          <Switch checked={hapticFeedback} onCheckedChange={setHapticFeedback} />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div>
+            <span className="text-sm text-white">Reduced Motion</span>
+            <p className="text-[10px] text-muted-foreground mt-0.5">Minimize animations throughout the app</p>
+          </div>
+          <Switch checked={reducedMotion} onCheckedChange={setReducedMotion} />
+        </div>
+      </div>
+
+      <div className="border-t border-card-border pt-4">
+        <button
+          onClick={resetDefaults}
+          className="flex items-center gap-2 text-sm font-semibold transition-colors hover:opacity-80"
+          style={{ color: "#fbbf24" }}
+        >
+          <RotateCcw className="w-4 h-4" />
+          Reset to Defaults
+        </button>
       </div>
     </div>
   );
