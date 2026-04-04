@@ -27,7 +27,7 @@ export function AiBiasStrip({ onNavigateToPulse }: AiBiasStripProps) {
       <button
         onClick={onNavigateToPulse}
         className="flex items-center justify-center gap-2 w-full px-4 border-b border-zinc-800 cursor-pointer hover:bg-zinc-800 transition-colors"
-        style={{ height: 36, backgroundColor: '#1C1C1E' }}
+        style={{ height: 28, backgroundColor: '#1C1C1E' }}
       >
         <span className="relative flex h-2 w-2 shrink-0">
           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#FFB800] opacity-75" />
@@ -45,7 +45,7 @@ export function AiBiasStrip({ onNavigateToPulse }: AiBiasStripProps) {
       <button
         onClick={onNavigateToPulse}
         className="flex items-center justify-center gap-2 w-full px-4 border-b border-zinc-800 cursor-pointer hover:bg-zinc-800 transition-colors"
-        style={{ height: 36, backgroundColor: '#1C1C1E' }}
+        style={{ height: 28, backgroundColor: '#1C1C1E' }}
       >
         <Zap className="w-3.5 h-3.5 text-zinc-500" />
         <span className="font-mono text-[10px] font-medium uppercase tracking-wider text-zinc-500">
@@ -80,7 +80,7 @@ export function AiBiasStrip({ onNavigateToPulse }: AiBiasStripProps) {
     <button
       onClick={onNavigateToPulse}
       className="flex items-center justify-between w-full px-4 border-b border-zinc-800 cursor-pointer transition-colors hover:bg-zinc-800"
-      style={{ height: 36, backgroundColor: '#1C1C1E' }}
+      style={{ height: 28, backgroundColor: '#1C1C1E' }}
     >
       <div className="flex items-center gap-2 shrink-0">
         <Zap className="w-4 h-4 text-amber-500" />
