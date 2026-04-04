@@ -381,7 +381,7 @@ const DataCell = memo(function DataCell({
       <span
         className="leading-none"
         style={{
-          fontSize: isPrice ? 16 : 14,
+          fontSize: isPrice ? 15 : 13,
           fontWeight: FW_LIGHT,
           color: textColor,
           fontVariantNumeric: "tabular-nums",
@@ -634,29 +634,29 @@ function MetricsStrip({ groups, lastPrice, rawCalls, rawPuts, earningsDate, isFe
   }
 
   return (
-    <div className="flex gap-2 items-center shrink-0" style={{ fontSize: 12, fontVariantNumeric: "tabular-nums", fontFamily: MONO, fontWeight: FW_LIGHT }}>
+    <div className="flex gap-2 items-center shrink-0" style={{ fontSize: 11, fontVariantNumeric: "tabular-nums", fontFamily: MONO, fontWeight: FW_LIGHT }}>
       {isFetching && hasData && (
         <span className="w-2 h-2 border border-amber-400 border-t-transparent rounded-full animate-spin" />
       )}
       <span>
         <span style={{ color: DIM }}>IV </span>
-        <span style={{ color: atmIV != null ? GOLD : MUTED, fontWeight: FW_NORMAL }}>
+        <span style={{ color: atmIV != null ? GOLD : MUTED, fontWeight: FW_LIGHT }}>
           {atmIV != null ? atmIV.toFixed(1) + "%" : "\u2014"}
         </span>
       </span>
       <span>
         <span style={{ color: DIM }}>MV </span>
-        <span style={{ color: expectedMove != null ? WHITE : MUTED, fontWeight: FW_NORMAL }}>
+        <span style={{ color: expectedMove != null ? WHITE : MUTED, fontWeight: FW_LIGHT }}>
           {expectedMove != null ? "\u00B1$" + expectedMove.toFixed(2) : "\u2014"}
         </span>
       </span>
       <span>
         <span style={{ color: DIM }}>P/C </span>
-        <span style={{ color: pcr !== "\u2014" ? (Number(pcr) > 1 ? DOWN : UP) : MUTED, fontWeight: FW_NORMAL }}>{pcr}</span>
+        <span style={{ color: pcr !== "\u2014" ? (Number(pcr) > 1 ? DOWN : UP) : MUTED, fontWeight: FW_LIGHT }}>{pcr}</span>
       </span>
       <span>
         <span style={{ color: DIM }}>ERN </span>
-        <span style={{ color: WHITE, fontWeight: FW_NORMAL }}>{earnDisplay}</span>
+        <span style={{ color: WHITE, fontWeight: FW_LIGHT }}>{earnDisplay}</span>
       </span>
     </div>
   );
@@ -723,7 +723,7 @@ function StrikeCell({ strike, underlyingPrice }: { strike: number; underlyingPri
         background: isATM ? "rgba(255,107,43,0.25)" : "transparent",
       }}
     >
-      <span style={{ fontSize: 14, fontWeight: FW_LIGHT, fontVariantNumeric: "tabular-nums", fontFamily: MONO, lineHeight: 1 }}>
+      <span style={{ fontSize: 13, fontWeight: FW_LIGHT, fontVariantNumeric: "tabular-nums", fontFamily: MONO, lineHeight: 1 }}>
         {strike % 1 === 0 ? strike : strike.toFixed(1)}
       </span>
       {moneynessLabel && (
