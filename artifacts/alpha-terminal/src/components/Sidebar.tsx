@@ -6,7 +6,7 @@ import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import type { MarketPulseSettings, AllowedStrategy } from "@/types/marketPulse";
 import { STRATEGY_LABELS, ALL_STRATEGIES, ALL_PULSE_INDICATORS } from "@/types/marketPulse";
 import { useAutoLock, TIMEOUT_OPTIONS, type SessionTimeoutMinutes } from "@/hooks/useAutoLock";
-import { useUICustomizationStore, ACCENT_COLORS, type ThemeAccent, type FontSize, type ChartStyle, type GridDensity } from "@/lib/ui-customization-store";
+import { useUICustomizationStore, ACCENT_COLORS, type ThemeAccent, type FontSize, type ChartStyle, type GridDensity, type HeaderMode } from "@/lib/ui-customization-store";
 import { readSecurityPrefs, updateSecurityPref, type SecurityPrefs } from "@/lib/securityPrefs";
 import { useBiometricRegistration, useWebAuthnSupported } from "@/hooks/useBiometric";
 import { AuthPanel } from "./AuthPanel";
@@ -675,7 +675,9 @@ function UICustomizationPage() {
   const {
     accentColor, fontSize, defaultChartStyle, gridDensity,
     showTickerTape, showMiniCards, animatePriceChanges, hapticFeedback, reducedMotion,
+    headerMode,
     setAccentColor, setFontSize, setDefaultChartStyle, setGridDensity,
+    setHeaderMode,
     setShowTickerTape, setShowMiniCards, setAnimatePriceChanges, setHapticFeedback, setReducedMotion,
     resetDefaults,
   } = useUICustomizationStore();
@@ -708,6 +710,30 @@ function UICustomizationPage() {
                 }}
               />
               <span className="text-[9px] font-medium" style={{ color: accentColor === a.key ? "#fff" : "#71717a" }}>{a.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <Label className="text-[11px] font-bold tracking-[0.15em] text-muted-foreground uppercase">Header Behavior</Label>
+        <div className="flex gap-1.5">
+          {([
+            { key: "auto" as HeaderMode, label: "Auto", desc: "Collapses on scroll" },
+            { key: "collapsed" as HeaderMode, label: "Compact", desc: "Always collapsed" },
+            { key: "expanded" as HeaderMode, label: "Full", desc: "Always expanded" },
+          ]).map(opt => (
+            <button
+              key={opt.key}
+              onClick={() => setHeaderMode(opt.key)}
+              className="flex-1 flex flex-col items-center gap-0.5 py-2.5 px-1 rounded-lg border transition-all"
+              style={{
+                borderColor: headerMode === opt.key ? "#fbbf24" : "#1a1a1a",
+                background: headerMode === opt.key ? "rgba(251,191,36,0.08)" : "transparent",
+              }}
+            >
+              <span className="text-[11px] font-bold" style={{ color: headerMode === opt.key ? "#fbbf24" : "#fff" }}>{opt.label}</span>
+              <span className="text-[8px] leading-tight text-center" style={{ color: "#71717a" }}>{opt.desc}</span>
             </button>
           ))}
         </div>

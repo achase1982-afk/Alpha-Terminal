@@ -5,6 +5,7 @@ export type ThemeAccent = "gold" | "blue" | "green" | "orange" | "purple";
 export type FontSize = "compact" | "default" | "large";
 export type ChartStyle = "candles" | "bars" | "line" | "area";
 export type GridDensity = "tight" | "default" | "relaxed";
+export type HeaderMode = "auto" | "collapsed" | "expanded";
 
 export const ACCENT_COLORS: Record<ThemeAccent, string> = {
   gold: "#fbbf24",
@@ -19,6 +20,7 @@ interface UICustomizationState {
   fontSize: FontSize;
   defaultChartStyle: ChartStyle;
   gridDensity: GridDensity;
+  headerMode: HeaderMode;
   showTickerTape: boolean;
   showMiniCards: boolean;
   animatePriceChanges: boolean;
@@ -28,6 +30,7 @@ interface UICustomizationState {
   setFontSize: (s: FontSize) => void;
   setDefaultChartStyle: (s: ChartStyle) => void;
   setGridDensity: (d: GridDensity) => void;
+  setHeaderMode: (m: HeaderMode) => void;
   setShowTickerTape: (v: boolean) => void;
   setShowMiniCards: (v: boolean) => void;
   setAnimatePriceChanges: (v: boolean) => void;
@@ -41,6 +44,7 @@ const DEFAULTS = {
   fontSize: "default" as FontSize,
   defaultChartStyle: "candles" as ChartStyle,
   gridDensity: "default" as GridDensity,
+  headerMode: "auto" as HeaderMode,
   showTickerTape: true,
   showMiniCards: true,
   animatePriceChanges: true,
@@ -56,6 +60,7 @@ export const useUICustomizationStore = create<UICustomizationState>()(
       setFontSize: (fontSize) => set({ fontSize }),
       setDefaultChartStyle: (defaultChartStyle) => set({ defaultChartStyle }),
       setGridDensity: (gridDensity) => set({ gridDensity }),
+      setHeaderMode: (headerMode) => set({ headerMode }),
       setShowTickerTape: (showTickerTape) => set({ showTickerTape }),
       setShowMiniCards: (showMiniCards) => set({ showMiniCards }),
       setAnimatePriceChanges: (animatePriceChanges) => set({ animatePriceChanges }),
@@ -65,7 +70,12 @@ export const useUICustomizationStore = create<UICustomizationState>()(
     }),
     {
       name: "alpha-ui-customization",
-      version: 1,
+      version: 2,
+      migrate: (persisted: any) => ({
+        ...DEFAULTS,
+        ...persisted,
+        headerMode: persisted?.headerMode ?? "auto",
+      }),
     }
   )
 );

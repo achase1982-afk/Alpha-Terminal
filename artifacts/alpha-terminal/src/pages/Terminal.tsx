@@ -10,6 +10,7 @@ import { TickerTape } from "@/components/TickerTape";
 import { SearchOverlay } from "@/components/SearchOverlay";
 import { MarketDataTabs, type MarketDataTab } from "@/components/MarketDataTabs";
 import { useTerminalStore } from "@/lib/store";
+import { useUICustomizationStore } from "@/lib/ui-customization-store";
 import { useGetPriceHistory } from "@workspace/api-client-react";
 import { ChartControls, chartParamsFromStore, isIntradayInterval } from "@/components/ChartControls";
 import { useAutoRefreshToken } from "@/hooks/useAutoRefreshToken";
@@ -117,7 +118,9 @@ export default function TerminalPage() {
   const [searchOpen, setSearchOpen] = useState(false);
 
   const [historyTimedOut, setHistoryTimedOut] = useState(false);
-  const [isScrolled, setIsScrolled] = useState(false);
+  const [isScrolledRaw, setIsScrolledRaw] = useState(false);
+  const headerMode = useUICustomizationStore((s) => s.headerMode);
+  const isScrolled = headerMode === "collapsed" ? true : headerMode === "expanded" ? false : isScrolledRaw;
   const [activeBottom, setActiveBottom] = useState<BottomTab>("markets");
   const [contextTab, setContextTab] = useState<ContextTab>("news");
   const [aiSubTab, setAiSubTab] = useState<AiSubTab>("pulse");
@@ -276,7 +279,7 @@ export default function TerminalPage() {
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
-    setIsScrolled(el.scrollTop > COLLAPSE_PX);
+    setIsScrolledRaw(el.scrollTop > COLLAPSE_PX);
   }, []);
 
   useEffect(() => {
@@ -445,7 +448,7 @@ export default function TerminalPage() {
               <>
                 <div className="flex flex-col flex-1 min-w-0">
                   <div className="shrink-0 border-b border-zinc-800/60" style={{ background: "#0a0a0a" }}>
-                    <MetricsBar compact={true} onTrade={openOrder} />
+                    <MetricsBar compact={isScrolled} onTrade={openOrder} />
                   </div>
                   <div className="shrink-0 border-b border-zinc-800/40" style={{ background: "#111" }}>
                     <ChartControls />
