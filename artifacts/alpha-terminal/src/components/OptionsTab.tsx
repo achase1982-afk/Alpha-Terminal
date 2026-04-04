@@ -723,7 +723,7 @@ function StrikeCell({ strike, underlyingPrice }: { strike: number; underlyingPri
         background: isATM ? "rgba(255,107,43,0.25)" : "transparent",
       }}
     >
-      <span style={{ fontSize: 12, fontWeight: FW_LIGHT, fontVariantNumeric: "tabular-nums", fontFamily: MONO, lineHeight: 1 }}>
+      <span style={{ fontSize: 12, fontWeight: FW_LIGHT, color: "#000", fontVariantNumeric: "tabular-nums", fontFamily: MONO, lineHeight: 1 }}>
         {strike % 1 === 0 ? strike : strike.toFixed(1)}
       </span>
       {moneynessLabel && (
