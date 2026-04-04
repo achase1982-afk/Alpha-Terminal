@@ -40,7 +40,8 @@ const GRAY = "#a1a1aa";
 const DIM = "#52525b";
 const MUTED = "#3f3f46";
 
-const ITM_GREEN = "rgba(34,197,94,0.055)";
+const STRIKE_BORDER = "#3f3f46";
+const ITM_OCEAN = "rgba(56,189,193,0.06)";
 const OTM_PURPLE = "rgba(168,130,255,0.04)";
 const SEL_BG = "rgba(251,191,36,0.09)";
 const SEL_BORDER_COLOR = "#fbbf2480";
@@ -278,7 +279,7 @@ function classifyMoneyness(strike: number, underlyingPrice: number | null, isCal
 
 function getRowBg(moneyness: Moneyness, isSelected: boolean): string {
   if (isSelected) return SEL_BG;
-  if (moneyness === "itm") return ITM_GREEN;
+  if (moneyness === "itm") return ITM_OCEAN;
   if (moneyness === "otm") return OTM_PURPLE;
   return "transparent";
 }
@@ -846,7 +847,7 @@ function OptionsGrid({
         </div>
       )}
 
-      <div className="flex-none z-10" style={{ width: STRIKE_W, background: BG_STRIKE, borderLeft: `1px solid ${BORDER}`, borderRight: `1px solid ${BORDER}` }}>
+      <div className="flex-none z-10" style={{ width: STRIKE_W, background: BG_STRIKE, borderLeft: `1px solid ${STRIKE_BORDER}`, borderRight: `1px solid ${STRIKE_BORDER}` }}>
         {sortedRows.map((row) => (
           <StrikeCell key={row.strike} strike={row.strike} underlyingPrice={underlyingPrice} />
         ))}
@@ -1224,7 +1225,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
               )}
               <div
                 className="flex items-center justify-center"
-                style={{ width: STRIKE_W, borderLeft: `1px solid ${BORDER}`, borderRight: `1px solid ${BORDER}` }}
+                style={{ width: STRIKE_W, borderLeft: `1px solid ${STRIKE_BORDER}`, borderRight: `1px solid ${STRIKE_BORDER}` }}
               >
                 {onOpenStrategyBuilder && (
                   <button
@@ -1269,7 +1270,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
               )}
               <div
                 className="flex-none flex items-center justify-center"
-                style={{ width: STRIKE_W, borderLeft: `1px solid ${BORDER}`, borderRight: `1px solid ${BORDER}` }}
+                style={{ width: STRIKE_W, borderLeft: `1px solid ${STRIKE_BORDER}`, borderRight: `1px solid ${STRIKE_BORDER}` }}
               >
                 <span className="text-[7px] tracking-wider" style={{ color: DIM, fontFamily: MONO, fontWeight: FW_LIGHT }}>STRIKE</span>
               </div>
