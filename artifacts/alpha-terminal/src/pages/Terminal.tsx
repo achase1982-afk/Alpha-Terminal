@@ -11,6 +11,7 @@ import { SearchOverlay } from "@/components/SearchOverlay";
 import { MarketDataTabs, type MarketDataTab } from "@/components/MarketDataTabs";
 import { useTerminalStore } from "@/lib/store";
 import { useUICustomizationStore } from "@/lib/ui-customization-store";
+import { useUIThemeSync } from "@/hooks/useUIThemeSync";
 import { useGetPriceHistory } from "@workspace/api-client-react";
 import { ChartControls, chartParamsFromStore, isIntradayInterval } from "@/components/ChartControls";
 import { useAutoRefreshToken } from "@/hooks/useAutoRefreshToken";
@@ -120,6 +121,8 @@ export default function TerminalPage() {
   const [historyTimedOut, setHistoryTimedOut] = useState(false);
   const [isScrolledRaw, setIsScrolledRaw] = useState(false);
   const headerMode = useUICustomizationStore((s) => s.headerMode);
+  const showTickerTape = useUICustomizationStore((s) => s.showTickerTape);
+  const showMiniCards = useUICustomizationStore((s) => s.showMiniCards);
   const isScrolled = headerMode === "collapsed" ? true : headerMode === "expanded" ? false : isScrolledRaw;
   const [activeBottom, setActiveBottom] = useState<BottomTab>("markets");
   const [contextTab, setContextTab] = useState<ContextTab>("news");
@@ -237,6 +240,7 @@ export default function TerminalPage() {
   const { pulseData, isLoading: pulseLoading, isStreaming: pulseStreaming } = useMarketPulseStore();
   const { refresh } = useAutoRefreshToken();
   useViewportShell();
+  useUIThemeSync();
   const isWide = useIsTablet();
   const isThreePanel = useIsDesktop();
 
@@ -348,7 +352,7 @@ export default function TerminalPage() {
             }}
           />
         </div>
-        <TickerTape />
+        {showTickerTape && <TickerTape />}
         <AiBiasStrip onNavigateToPulse={() => { setActiveBottom("ai"); setAiSubTab("pulse"); setPulseAutoGen(true); }} />
       </header>
 
@@ -402,7 +406,7 @@ export default function TerminalPage() {
 
             {activeBottom === "markets" && (
               <>
-                <MacroBar />
+                {showMiniCards && <MacroBar />}
                 <div ref={stickyWrapRef} className="sticky top-0 z-40 bg-background">
                   <MetricsBar compact={isScrolled} onTrade={openOrder} />
                   <VolumeBar />
