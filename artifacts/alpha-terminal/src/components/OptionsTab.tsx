@@ -19,7 +19,7 @@ import { Reorder } from "framer-motion";
 
 const EPS = 0.0001;
 const COL_W = 74;
-const STRIKE_W = 66;
+const STRIKE_W = 52;
 const ROW_H = 40;
 const TOOLBAR_H = 32;
 const HEADER_H = 32;
