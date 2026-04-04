@@ -19,7 +19,7 @@ import { Reorder } from "framer-motion";
 
 const EPS = 0.0001;
 const COL_W = 74;
-const STRIKE_W = 52;
+const STRIKE_W = 44;
 const ROW_H = 40;
 const TOOLBAR_H = 32;
 const HEADER_H = 32;
@@ -372,7 +372,7 @@ const DataCell = memo(function DataCell({
   const oiValue = isOI ? topVal : undefined;
 
   const inner = (
-    <div className="flex flex-col justify-center px-1" style={{ height: ROW_H, minHeight: ROW_H }}>
+    <div className="flex flex-col justify-center px-0.5" style={{ height: ROW_H, minHeight: ROW_H }}>
       {isSelected && (
         <div className="absolute top-0.5 right-0.5">
           <Check className="w-2.5 h-2.5" style={{ color: GOLD }} />
@@ -382,7 +382,7 @@ const DataCell = memo(function DataCell({
         className="leading-none"
         style={{
           fontSize: isPrice ? 16 : 14,
-          fontWeight: isPrice ? FW_PREMIUM : FW_LIGHT,
+          fontWeight: isPrice ? FW_NORMAL : FW_LIGHT,
           color: textColor,
           fontVariantNumeric: "tabular-nums",
           fontFamily: MONO,
@@ -723,7 +723,7 @@ function StrikeCell({ strike, underlyingPrice }: { strike: number; underlyingPri
         background: isATM ? "rgba(255,107,43,0.25)" : "transparent",
       }}
     >
-      <span style={{ fontSize: 14, fontWeight: isATM ? FW_PREMIUM : FW_NORMAL, fontVariantNumeric: "tabular-nums", fontFamily: MONO, lineHeight: 1 }}>
+      <span style={{ fontSize: 14, fontWeight: FW_NORMAL, fontVariantNumeric: "tabular-nums", fontFamily: MONO, lineHeight: 1 }}>
         {strike % 1 === 0 ? strike : strike.toFixed(1)}
       </span>
       {moneynessLabel && (
