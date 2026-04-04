@@ -392,7 +392,7 @@ const DataCell = memo(function DataCell({
       </span>
 
       {isVol && oiVal != null && (
-        <span className="leading-none mt-0.5" style={{ fontSize: 9, color: WHITE, fontVariantNumeric: "tabular-nums", fontFamily: MONO, fontWeight: FW_LIGHT }}>
+        <span className="leading-none mt-0.5" style={{ fontSize: 10, color: WHITE, fontVariantNumeric: "tabular-nums", fontFamily: MONO, fontWeight: FW_LIGHT }}>
           OI: {fmtCompact(oiVal)}
         </span>
       )}
@@ -405,7 +405,7 @@ const DataCell = memo(function DataCell({
       ) : isPrice && !showInlineGreeks ? (
         <span
           className="leading-none mt-0.5"
-          style={{ fontSize: 9, color: WHITE, fontVariantNumeric: "tabular-nums", fontFamily: MONO, fontWeight: FW_LIGHT }}
+          style={{ fontSize: 10, color: WHITE, fontVariantNumeric: "tabular-nums", fontFamily: MONO, fontWeight: FW_LIGHT }}
         >
           {bottomVal != null ? <>Size: {fmtCompact(bottomVal)}</> : ""}
         </span>
