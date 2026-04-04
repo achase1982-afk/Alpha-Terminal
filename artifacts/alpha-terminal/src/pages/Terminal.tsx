@@ -123,7 +123,8 @@ export default function TerminalPage() {
   const headerMode = useUICustomizationStore((s) => s.headerMode);
   const showTickerTape = useUICustomizationStore((s) => s.showTickerTape);
   const showMiniCards = useUICustomizationStore((s) => s.showMiniCards);
-  const isScrolled = headerMode === "collapsed" ? true : headerMode === "expanded" ? false : isScrolledRaw;
+  const isCompact = headerMode === "collapsed";
+  const isScrolled = isCompact ? true : headerMode === "expanded" ? false : isScrolledRaw;
   const [activeBottom, setActiveBottom] = useState<BottomTab>("markets");
   const [contextTab, setContextTab] = useState<ContextTab>("news");
   const [aiSubTab, setAiSubTab] = useState<AiSubTab>("pulse");
@@ -352,8 +353,8 @@ export default function TerminalPage() {
             }}
           />
         </div>
-        {showTickerTape && <TickerTape />}
-        <AiBiasStrip onNavigateToPulse={() => { setActiveBottom("ai"); setAiSubTab("pulse"); setPulseAutoGen(true); }} />
+        {showTickerTape && !isCompact && <TickerTape />}
+        {!isCompact && <AiBiasStrip onNavigateToPulse={() => { setActiveBottom("ai"); setAiSubTab("pulse"); setPulseAutoGen(true); }} />}
       </header>
 
       {activeBottom === "ai" && (
@@ -406,7 +407,7 @@ export default function TerminalPage() {
 
             {activeBottom === "markets" && (
               <>
-                {showMiniCards && <MacroBar />}
+                {showMiniCards && !isCompact && <MacroBar />}
                 <div ref={stickyWrapRef} className="sticky top-0 z-40 bg-background">
                   <MetricsBar compact={isScrolled} onTrade={openOrder} />
                   <VolumeBar />
