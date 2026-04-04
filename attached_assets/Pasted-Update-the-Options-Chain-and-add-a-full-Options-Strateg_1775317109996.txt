@@ -1,0 +1,33 @@
+Update the Options Chain and add a full Options Strategy Builder in Alpha Terminal, using the exact screenshots provided for RIVN. Everything must match the current institutional dark-terminal style (gold #fbbf24 accents, tight rows, subtle dividers, green/red color coding) from the Portfolio, Order Ticket, and Pre-Trade Risk Manager we just built.
+1. POLISH THE OPTIONS CHAIN (exact match to screenshots + institutional upgrades)
+•  Keep the top symbol header, bid/ask pills, volume, day range, IV, MOVE, P/C, earnings exactly as shown.
+•  Expiration selector: keep the clean expandable list with DTE and “Weeklys” orange badges.
+•  Main chain layout: Calls (left) | Settings gear | Puts (right).
+•  Columns: Bid | Ask | Vol | Strike | Bid | Ask | Vol (perfect alignment).
+•  Make rows denser and tighter (smaller secondary text for size/OI).
+•  Add Delta in small text under each premium.
+•  Bid column = subtle green tint, Ask = subtle red tint.
+•  Current expiration row gets subtle orange dotted line (ATM).
+•  All data pulls live from existing market-data store.
+•  Tap any row → quick “TRADE” action that opens Order Ticket or Strategy Builder.
+2. NEW OPTIONS STRATEGY BUILDER (triggered from ⚙️ gear or new “STRATEGY” tab)
+•  Clean modal or bottom sheet with two modes:
+	•  Quick Strategies: Pre-built cards (Bull Call Spread, Bear Put Spread, Iron Condor, Straddle, Strangle, Butterfly, Calendar). Tap one → auto-populates legs from current chain.
+	•  Freeform Builder: Add/remove legs manually from the chain (long/short call/put, quantity, strike, expiration).
+•  Live preview panel (always visible):
+	•  Net debit/credit
+	•  Max risk / max reward
+	•  Breakevens
+	•  Greeks (Delta, Gamma, Theta, Vega)
+	•  Probability of Profit
+	•  Risk/Reward ratio
+•  “SEND TO ORDER TICKET” big button (gold accent) → opens the existing Order Ticket with all legs pre-filled as a multi-leg order.
+•  The Pre-Trade Risk Manager (already built) automatically runs on the entire strategy and shows its 7-check summary + one-liner + GREEN/YELLOW/RED status before you can Review.
+3. DEEP INTEGRATION
+•  From any position in Portfolio → “TRADE” opens Order Ticket or Strategy Builder with correct side/legs pre-filled.
+•  From Options Chain row → quick single-leg or multi-leg builder.
+•  All multi-leg orders respect the Pre-Trade Risk Manager exactly as built.
+•  Use existing Zustand stores, TanStack Query, and Schwab trading API (supports multi-leg).
+•  Seamless, 60fps, mobile-first, no bloat.
+Deliver clean, production-ready code for the updated Options Chain component + new Strategy Builder component + any necessary store updates. Make the whole flow feel like a professional institutional desk that completely replaces Thinkorswim.
+Start building now.

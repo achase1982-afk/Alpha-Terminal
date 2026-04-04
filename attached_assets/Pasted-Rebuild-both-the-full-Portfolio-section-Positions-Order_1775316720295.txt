@@ -1,0 +1,62 @@
+Rebuild both the full Portfolio section (Positions / Orders / Balance tabs) and the Order Ticket page in Alpha Terminal, plus add a new Pre-Trade Risk Manager feature. Use the exact visual style, colors, spacing, typography, and dark-terminal aesthetic from the Order Ticket and Portfolio screenshots provided in this conversation.
+STYLE RULES (match 100%):
+•  Full top header with “ALPHA TERMINAL” logo, “MARKET CLOSED | Opens in XX:XX:XX” + green dot
+•  Gold/yellow #fbbf24 accents for active tabs, selected states, quick buttons, and headers
+•  BUY = vibrant green background, SELL = deep red background
+•  Dense institutional layout: tight rows, subtle horizontal dividers, smaller secondary text, Bloomberg-level data density
+•  Same card style as ACCOUNT DETAILS / MARKET VALUES (label-left / value-right)
+•  Edge-to-edge mobile-first, 60fps feel, no extra whitespace
+1. ORDER TICKET PAGE (route /order or modal) — fully polished + new Pre-Trade Risk Manager
+•  Top: symbol + live price/% change (red/green)
+•  BUY / SELL segmented control (green/red)
+•  Order Type: horizontal segmented control — Market | Limit | Stop | Stop Limit | Trail Stop
+•  Quantity with – / + and gold quick buttons (1,5,10,25,50,100)
+•  Conditional price fields + live BID (green pill) / ASK (red pill) with click-to-fill
+•  Time-in-Force: segmented Day | GTC | FOK + Extended Hours toggle
+•  NEW: Pre-Trade Risk Manager — prominent card right above the Review button:
+	•  Title: “PRE-TRADE RISK CHECK” with last-updated timestamp
+	•  Automatically runs 7 deterministic checks using live data + Strategist Settings from Zustand store:
+		1.  Pulse Alignment (trade direction vs Market Pulse regime)
+		2.  Risk/Reward (vs your 0.25:1 minimum)
+		3.  Liquidity (bid/ask spread >15% = RED)
+		4.  Probability of Profit (delta-based, vs your 35% or 70% min)
+		5.  Position Size (max risk vs your 3% of account = $750)
+		6.  Vol Environment (selling premium in high IV good, buying expensive)
+		7.  DTE / Gamma Risk (under 5 DTE = RED, vs your 1-day min)
+	•  Each check shows GREEN check / YELLOW warning / RED X with short label
+	•  Overall status bar: GREEN / YELLOW / RED
+	•  Claude-style one-liner summary at bottom (e.g. “🟡 CAUTION: Bullish spread aligns with regime but 4 DTE puts you in gamma risk zone.”)
+	•  “Block on RED” setting from Strategist Settings respected (if on, disables Review button on RED)
+	•  Review button: full-width, green when BUY + overall GREEN, red when SELL + overall GREEN; shows caution banner on YELLOW; fully disabled + red message on RED
+•  Preview card below checklist (Side | Symbol | Qty | Type | Price | Duration | Est. Cost/Credit | Bid/Ask) — exact same style as portfolio cards
+•  On “Review” → clean confirmation modal → calls Schwab trading API
+2. PORTFOLIO SECTION (Positions / Orders / Balance tabs) — institutional upgrade
+•  Keep Net Liquidation, Day P&L, Total P&L, Buying Power at top
+•  Add small Day P&L sparkline + “Margin Utilization XX%” visual bar (red if high)
+•  “LAST UPDATED just now” timestamp top-right of each tab
+POSITIONS tab:
+•  Top summary: “UNREALIZED P&L +$X,XXX (+X.XX%)”
+•  EQUITIES and OPTIONS sections (collapsible headers with EQ green / OPT cyan badges)
+•  Columns: Symbol | Qty | Avg Price | Last | Unrealized P&L | % Return | % of Portfolio
+•  Options rows also show Delta / Gamma / Theta / Vega in small text
+•  Every row has right-side “TRADE” button → opens Order Ticket pre-filled with correct side (Sell to Close, Buy to Open, etc.)
+•  Tap row elsewhere → symbol detail/chart
+•  Bottom grand totals row
+ORDERS tab:
+•  Top filter bar: All | Open | Filled | Canceled | Rejected (gold segmented)
+•  Search input
+•  Columns: Side | Symbol | Qty | Type | Price | Status (colored badge) | Time
+•  Open orders have Cancel / Modify buttons (call Schwab API)
+•  Real-time via TanStack Query
+BALANCE tab:
+•  Keep all current Account Details + Market Values
+•  Add Margin Utilization bar + mini “Risk Metrics” section (Portfolio Beta, Margin Usage %, Day Trader Status)
+•  Quick “Export CSV” placeholder button
+Tech & Integration (use existing patterns):
+•  Zustand for all state (order store + strategist settings + current ticker)
+•  TanStack Query for live data, positions, orders, and risk checks
+•  Seamless deep linking: position row → Order Ticket with side pre-filled
+•  All Schwab API endpoints already in the project
+•  Production-clean TypeScript, loading states, error handling, accessibility
+Deliver clean, copy-paste-ready files for both pages plus any new store slices or components. Make the whole experience feel like a professional institutional terminal that completely replaces Thinkorswim.
+Start building now.

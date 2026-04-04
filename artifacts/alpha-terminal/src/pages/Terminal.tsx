@@ -122,9 +122,21 @@ export default function TerminalPage() {
   const [pulseAutoGen, setPulseAutoGen] = useState(false);
   const [orderOpen, setOrderOpen] = useState(false);
   const [orderSide, setOrderSide] = useState<"BUY" | "SELL">("BUY");
+  const [orderOptionSymbol, setOrderOptionSymbol] = useState<string | undefined>();
+  const [orderOptionInstruction, setOrderOptionInstruction] = useState<string | undefined>();
 
   const openOrder = useCallback((side: "BUY" | "SELL") => {
+    setOrderOptionSymbol(undefined);
+    setOrderOptionInstruction(undefined);
     setOrderSide(side);
+    setOrderOpen(true);
+  }, []);
+
+  const openOrderForSymbol = useCallback((sym: string, side: "BUY" | "SELL", optionSymbol?: string, optionInstruction?: string) => {
+    useTerminalStore.getState().setSymbol(sym);
+    setOrderSide(side);
+    setOrderOptionSymbol(optionSymbol);
+    setOrderOptionInstruction(optionInstruction);
     setOrderOpen(true);
   }, []);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -331,7 +343,7 @@ export default function TerminalPage() {
             )}
 
             {activeBottom === "portfolio" && (
-              <PortfolioView onNavigateToSymbol={() => setActiveBottom("markets")} />
+              <PortfolioView onNavigateToSymbol={() => setActiveBottom("markets")} onTrade={openOrderForSymbol} />
             )}
 
             {activeBottom === "watchlist" && (
@@ -376,7 +388,7 @@ export default function TerminalPage() {
                   <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} pulseAutoGen={pulseAutoGen} onPulseAutoGenConsumed={() => setPulseAutoGen(false)} />
                 )}
                 {activeBottom === "portfolio" && (
-                  <PortfolioView onNavigateToSymbol={() => setActiveBottom("markets")} />
+                  <PortfolioView onNavigateToSymbol={() => setActiveBottom("markets")} onTrade={openOrderForSymbol} />
                 )}
               </main>
             )}
@@ -417,7 +429,7 @@ export default function TerminalPage() {
             )}
 
             {activeBottom === "portfolio" && (
-              <PortfolioView onNavigateToSymbol={() => setActiveBottom("markets")} />
+              <PortfolioView onNavigateToSymbol={() => setActiveBottom("markets")} onTrade={openOrderForSymbol} />
             )}
           </main>
         )}
@@ -468,7 +480,7 @@ export default function TerminalPage() {
       />
       <AiChatOverlay isOpen={chatOpen} onClose={() => setChatOpen(false)} />
       <InAppBrowser />
-      <OrderTicket isOpen={orderOpen} onClose={() => setOrderOpen(false)} initialSide={orderSide} />
+      <OrderTicket isOpen={orderOpen} onClose={() => setOrderOpen(false)} initialSide={orderSide} optionSymbol={orderOptionSymbol} optionInstruction={orderOptionInstruction} />
     </div>
   );
 }
