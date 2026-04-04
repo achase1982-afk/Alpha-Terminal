@@ -33,6 +33,7 @@ import {
   RefreshCw,
   Clock,
 } from "lucide-react";
+import { useIsTablet } from "@/hooks/useMediaQuery";
 
 type BottomTab = "scanner" | "markets" | "ai" | "search" | "portfolio" | "watchlist";
 type ContextTab = MarketDataTab;
@@ -96,6 +97,13 @@ export default function TerminalPage() {
   const { pulseData, isLoading: pulseLoading, isStreaming: pulseStreaming } = useMarketPulseStore();
   const { refresh } = useAutoRefreshToken();
   useViewportShell();
+  const isTablet = useIsTablet();
+
+  useEffect(() => {
+    if (isTablet && activeBottom === "watchlist") {
+      setActiveBottom("markets");
+    }
+  }, [isTablet, activeBottom]);
 
   const COLLAPSE_PX = 80;
   const lastTouchY = useRef(0);
@@ -236,7 +244,13 @@ export default function TerminalPage() {
           onNavigate={(dest) => { if (dest === "markets") setActiveBottom("markets"); else if (dest === "portfolio") setActiveBottom("portfolio"); }}
         />
 
-        <main ref={scrollRef} onScroll={handleScroll} className={`flex-1 app-content pb-24 ${activeBottom === "ai" && aiSubTab === "pulse" && !pulseData && !pulseLoading && !pulseStreaming ? "overflow-hidden" : "overflow-y-auto"}`}>
+        {isTablet && (
+          <aside className="hidden md:flex flex-col border-r border-card-border" style={{ width: 320, minWidth: 320, background: "#000000" }}>
+            <WatchlistView onNavigateToSymbol={() => setActiveBottom("markets")} />
+          </aside>
+        )}
+
+        <main ref={scrollRef} onScroll={handleScroll} className={`flex-1 app-content ${isTablet ? "pb-4" : "pb-24"} ${activeBottom === "ai" && aiSubTab === "pulse" && !pulseData && !pulseLoading && !pulseStreaming ? "overflow-hidden" : "overflow-y-auto"}`}>
 
           {activeBottom === "markets" && (
             <>
@@ -284,7 +298,7 @@ export default function TerminalPage() {
             <PortfolioView onNavigateToSymbol={() => setActiveBottom("markets")} />
           )}
 
-          {activeBottom === "watchlist" && (
+          {!isTablet && activeBottom === "watchlist" && (
             <div className="flex flex-col" style={{ minHeight: "calc(100vh - 60px)", background: "#000000" }}>
               <WatchlistView onNavigateToSymbol={() => setActiveBottom("markets")} />
             </div>
@@ -293,15 +307,43 @@ export default function TerminalPage() {
         </main>
       </div>
 
-      <BottomNav activeTab={activeBottom} onTabChange={(tab) => {
-        sidebarRef.current?.clearActivePage();
-        setSidebarOpen(false);
-        if (tab === "search") {
-          setSearchOpen(true);
-        } else {
-          setActiveBottom(tab);
-        }
-      }} />
+      {!isTablet && (
+        <BottomNav activeTab={activeBottom} onTabChange={(tab) => {
+          sidebarRef.current?.clearActivePage();
+          setSidebarOpen(false);
+          if (tab === "search") {
+            setSearchOpen(true);
+          } else {
+            setActiveBottom(tab);
+          }
+        }} />
+      )}
+
+      {isTablet && (
+        <nav className="hidden md:flex shrink-0 h-12 bg-[#0c0c0c] border-t border-zinc-800/60 items-center justify-center gap-1 px-4 z-50">
+          {(["scanner", "markets", "ai", "search"] as BottomTab[]).map((tab) => {
+            const labels: Record<string, string> = { scanner: "SCANNER", markets: "MARKETS", ai: "AI", search: "SEARCH" };
+            const isActive = activeBottom === tab || (tab === "search" && searchOpen);
+            return (
+              <button
+                key={tab}
+                onClick={() => {
+                  sidebarRef.current?.clearActivePage();
+                  setSidebarOpen(false);
+                  if (tab === "search") { setSearchOpen(true); } else { setActiveBottom(tab); }
+                }}
+                className="font-mono text-[11px] font-bold tracking-wider px-4 py-2 rounded-md transition-colors"
+                style={{
+                  color: isActive ? "#FFB800" : "#71717a",
+                  background: isActive ? "rgba(255,184,0,0.08)" : "transparent",
+                }}
+              >
+                {labels[tab]}
+              </button>
+            );
+          })}
+        </nav>
+      )}
 
       <SearchOverlay
         isOpen={searchOpen}
