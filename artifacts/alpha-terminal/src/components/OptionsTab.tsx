@@ -17,36 +17,38 @@ import {
 import { Reorder } from "framer-motion";
 
 const EPS = 0.0001;
-const COL_W = 70;
-const STRIKE_W = 60;
-const ROW_H = 36;
-const TOOLBAR_H = 30;
-const HEADER_H = 30;
-const SUB_HEADER_H = 18;
+const COL_W = 68;
+const STRIKE_W = 58;
+const ROW_H = 34;
+const TOOLBAR_H = 28;
+const HEADER_H = 28;
+const SUB_HEADER_H = 16;
 const STICKY_TOP = TOOLBAR_H + HEADER_H + SUB_HEADER_H;
 
 const BG = "#000000";
-const BG_HEADER = "#070707";
-const BG_STRIKE = "#050505";
-const BG_EXP_BAR = "#080808";
+const BG_HEADER = "#060606";
+const BG_STRIKE = "#030303";
+const BG_EXP_BAR = "#070707";
 const BORDER = "#1a1a1a";
-const BORDER_ROW = "#0e0e0e";
+const BORDER_ROW = "#0c0c0c";
 const GOLD = "#fbbf24";
 const GOLD_DIM = "#b8941c";
 const UP = "#00d166";
 const DOWN = "#f23645";
-const WHITE = "#f4f4f5";
+const WHITE = "#f0f0f0";
 const GRAY = "#a1a1aa";
 const DIM = "#52525b";
 const MUTED = "#3f3f46";
 
-const ITM_BG = "rgba(251,191,36,0.045)";
-const ITM_BG_DEEP = "rgba(251,191,36,0.07)";
-const ATM_BG = "rgba(255,107,43,0.06)";
-const SEL_BG = "rgba(251,191,36,0.10)";
-const SEL_BORDER = `${GOLD}80`;
+const ITM_GREEN = "rgba(34,197,94,0.055)";
+const OTM_PURPLE = "rgba(168,130,255,0.04)";
+const SEL_BG = "rgba(251,191,36,0.09)";
+const SEL_BORDER_COLOR = "#fbbf2480";
 
 const MONO = "'SF Mono', 'Cascadia Code', 'Consolas', monospace";
+const FW_LIGHT = 400;
+const FW_NORMAL = 450;
+const FW_PREMIUM = 600;
 
 interface Contract {
   strike: number;
@@ -265,26 +267,19 @@ function makeLegKey(contract: Contract, type: "CALL" | "PUT"): string {
   return `${contract.expiration}|${contract.strike}|${type}`;
 }
 
-function itmDepthAlpha(strike: number, underlyingPrice: number, isCall: boolean): number {
-  const diff = Math.abs(strike - underlyingPrice);
-  const pct = (diff / underlyingPrice) * 100;
-  if (pct < 0.3) return 0;
-  const depth = Math.min(pct / 15, 1);
-  return 0.035 + depth * 0.04;
+type Moneyness = "itm" | "otm" | "atm" | "none";
+
+function classifyMoneyness(strike: number, underlyingPrice: number | null, isCallSide: boolean): Moneyness {
+  if (underlyingPrice == null) return "none";
+  if (Math.abs(strike - underlyingPrice) < underlyingPrice * 0.003) return "atm";
+  if (isCallSide) return strike < underlyingPrice - EPS ? "itm" : "otm";
+  return strike > underlyingPrice + EPS ? "itm" : "otm";
 }
 
-function getRowBg(strike: number, underlyingPrice: number | null, isCallSide: boolean, isSelected: boolean, isATM: boolean): string {
+function getRowBg(moneyness: Moneyness, isSelected: boolean): string {
   if (isSelected) return SEL_BG;
-  if (isATM) return ATM_BG;
-  if (underlyingPrice == null) return "transparent";
-
-  const callITM = isCallSide && strike < underlyingPrice - EPS;
-  const putITM = !isCallSide && strike > underlyingPrice + EPS;
-
-  if (callITM || putITM) {
-    const alpha = itmDepthAlpha(strike, underlyingPrice, isCallSide);
-    return `rgba(251,191,36,${alpha.toFixed(3)})`;
-  }
+  if (moneyness === "itm") return ITM_GREEN;
+  if (moneyness === "otm") return OTM_PURPLE;
   return "transparent";
 }
 
@@ -297,7 +292,7 @@ const OIBar = memo(function OIBar({ value, max }: { value: number; max: number }
         className="h-full rounded-full"
         style={{
           width: `${pct}%`,
-          background: `linear-gradient(90deg, ${GOLD}50, ${GOLD}25)`,
+          background: `linear-gradient(90deg, ${GOLD}50, ${GOLD}20)`,
         }}
       />
     </div>
@@ -305,7 +300,7 @@ const OIBar = memo(function OIBar({ value, max }: { value: number; max: number }
 });
 
 const DataCell = memo(function DataCell({
-  col, contract, isSelected, onSelect, onLongPress, showInlineGreeks, maxOI,
+  col, contract, isSelected, onSelect, onLongPress, showInlineGreeks, maxOI, moneyness,
 }: {
   col: ColumnDef;
   contract: Contract | null;
@@ -314,6 +309,7 @@ const DataCell = memo(function DataCell({
   onLongPress?: (e: React.PointerEvent) => void;
   showInlineGreeks?: boolean;
   maxOI?: number;
+  moneyness?: Moneyness;
 }) {
   const tick = useOptionTick(contract?.streamKey);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -331,11 +327,13 @@ const DataCell = memo(function DataCell({
   const isVol = col.id === "vol";
   const isGreek = col.group === "Greeks";
   const isIV = col.id === "iv";
+  const isPrice = isBid || isAsk;
+  const isShaded = moneyness === "itm" || moneyness === "otm";
 
-  const deltaVal = (isBid || isAsk) && showInlineGreeks
+  const deltaVal = isPrice && showInlineGreeks
     ? (getStreamVal(tick, "delta") ?? getContractVal(contract, "delta"))
     : undefined;
-  const thetaVal = (isBid || isAsk) && showInlineGreeks
+  const thetaVal = isPrice && showInlineGreeks
     ? (getStreamVal(tick, "theta") ?? getContractVal(contract, "theta"))
     : undefined;
 
@@ -364,12 +362,12 @@ const DataCell = memo(function DataCell({
     }
   }, []);
 
-  let priceColor: string;
-  if (topStr === "\u2014") priceColor = MUTED;
-  else if (isBid || isAsk) priceColor = GOLD;
-  else if (isGreek) priceColor = "#d4d4d8";
-  else if (isIV) priceColor = "#e4e4e7";
-  else priceColor = "#d4d4d8";
+  let textColor: string;
+  if (topStr === "\u2014") textColor = MUTED;
+  else if (isPrice && isShaded) textColor = WHITE;
+  else if (isPrice) textColor = GOLD;
+  else if (isShaded) textColor = "#e8e8ea";
+  else textColor = "#c4c4c8";
 
   const oiValue = isOI ? topVal : undefined;
 
@@ -383,27 +381,27 @@ const DataCell = memo(function DataCell({
       <span
         className="leading-none"
         style={{
-          fontSize: (isBid || isAsk) ? 13 : 10,
-          fontWeight: (isBid || isAsk) ? 700 : isGreek || isIV ? 500 : 600,
-          color: priceColor,
+          fontSize: isPrice ? 12 : 10,
+          fontWeight: isPrice ? FW_PREMIUM : FW_LIGHT,
+          color: textColor,
           fontVariantNumeric: "tabular-nums",
           fontFamily: MONO,
-          letterSpacing: (isBid || isAsk) ? "-0.01em" : "0.02em",
+          letterSpacing: "0.01em",
         }}
       >
         {isVol || isOI ? fmtCompact(topVal) : topStr}
         {isIV && topStr !== "\u2014" ? "%" : ""}
       </span>
 
-      {(isBid || isAsk) && showInlineGreeks && deltaVal != null ? (
-        <div className="flex gap-1 mt-0.5" style={{ fontSize: 8, color: GRAY, fontFamily: MONO, fontVariantNumeric: "tabular-nums" }}>
+      {isPrice && showInlineGreeks && deltaVal != null ? (
+        <div className="flex gap-1 mt-0.5" style={{ fontSize: 8, color: isShaded ? "#a0a0a8" : GRAY, fontFamily: MONO, fontVariantNumeric: "tabular-nums", fontWeight: FW_LIGHT }}>
           <span>\u0394{fmtNum(deltaVal, 2)}</span>
           {thetaVal != null && <span>\u0398{fmtNum(thetaVal, 2)}</span>}
         </div>
-      ) : (isBid || isAsk) && !showInlineGreeks ? (
+      ) : isPrice && !showInlineGreeks ? (
         <span
           className="leading-none mt-0.5"
-          style={{ fontSize: 9, color: DIM, fontVariantNumeric: "tabular-nums", fontFamily: MONO }}
+          style={{ fontSize: 9, color: isShaded ? "#78787e" : DIM, fontVariantNumeric: "tabular-nums", fontFamily: MONO, fontWeight: FW_LIGHT }}
         >
           {bottomVal != null ? fmtCompact(bottomVal) : ""}
         </span>
@@ -426,10 +424,7 @@ const DataCell = memo(function DataCell({
         aria-pressed={isSelected}
         aria-label={`${isBid ? "Bid" : "Ask"} ${topStr} strike ${contract.strike}`}
         className="w-full text-left cursor-pointer select-none relative"
-        style={{
-          fontVariantNumeric: "tabular-nums",
-          background: "transparent",
-        }}
+        style={{ fontVariantNumeric: "tabular-nums" }}
       >
         {inner}
       </button>
@@ -482,7 +477,7 @@ function LongPressMenu({
         }}
       >
         <div className="px-3 py-2 border-b" style={{ borderColor: "#1a1a1a", background: "#0a0a0a" }}>
-          <span className="text-[10px] font-bold tracking-widest" style={{ color: GRAY, fontFamily: MONO }}>
+          <span className="text-[10px] tracking-widest" style={{ color: GRAY, fontFamily: MONO, fontWeight: FW_NORMAL }}>
             {target.type} ${target.contract.strike} \u2022 {target.side}
           </span>
         </div>
@@ -491,21 +486,21 @@ function LongPressMenu({
           className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-white/5 active:bg-white/10"
         >
           <TrendingUp className="w-3.5 h-3.5" style={{ color: GOLD }} />
-          <span className="text-[11px] font-semibold text-white" style={{ fontFamily: MONO }}>Trade Single Leg</span>
+          <span className="text-[11px] text-white" style={{ fontFamily: MONO, fontWeight: FW_NORMAL }}>Trade Single Leg</span>
         </button>
         <button
           onClick={() => { onAddToStrategy(); onClose(); }}
           className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-white/5 active:bg-white/10"
         >
           <Plus className="w-3.5 h-3.5" style={{ color: GOLD }} />
-          <span className="text-[11px] font-semibold text-white" style={{ fontFamily: MONO }}>Add to Strategy</span>
+          <span className="text-[11px] text-white" style={{ fontFamily: MONO, fontWeight: FW_NORMAL }}>Add to Strategy</span>
         </button>
         <button
           onClick={onClose}
           className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-white/5 active:bg-white/10"
         >
           <BarChart3 className="w-3.5 h-3.5" style={{ color: GOLD }} />
-          <span className="text-[11px] font-semibold text-white" style={{ fontFamily: MONO }}>Analyze Payoff</span>
+          <span className="text-[11px] text-white" style={{ fontFamily: MONO, fontWeight: FW_NORMAL }}>Analyze Payoff</span>
         </button>
       </div>
     </div>
@@ -543,7 +538,7 @@ function ColumnsEditorModal({ open, onClose }: { open: boolean; onClose: () => v
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: "#1a1a1a" }}>
-          <span className="text-[11px] font-bold tracking-[0.2em]" style={{ color: GOLD, fontFamily: MONO }}>COLUMN CONFIG</span>
+          <span className="text-[11px] tracking-[0.2em]" style={{ color: GOLD, fontFamily: MONO, fontWeight: FW_PREMIUM }}>COLUMN CONFIG</span>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/5 transition-colors">
             <X className="w-4 h-4" style={{ color: GRAY }} />
           </button>
@@ -568,7 +563,7 @@ function ColumnsEditorModal({ open, onClose }: { open: boolean; onClose: () => v
                   >
                     <div className="flex items-center gap-2">
                       <GripVertical className="w-3.5 h-3.5" style={{ color: DIM }} />
-                      <span className="text-[11px] font-semibold text-white" style={{ fontFamily: MONO }}>{col.label}</span>
+                      <span className="text-[11px] text-white" style={{ fontFamily: MONO, fontWeight: FW_NORMAL }}>{col.label}</span>
                       <span className="text-[9px] px-1 py-0.5 rounded" style={{ color: DIM, background: "#1a1a1a" }}>{col.group}</span>
                     </div>
                     <button
@@ -590,7 +585,7 @@ function ColumnsEditorModal({ open, onClose }: { open: boolean; onClose: () => v
             if (offCols.length === 0) return null;
             return (
               <div key={group.label}>
-                <span className="text-[9px] font-bold tracking-[0.15em] mb-1.5 block" style={{ color: DIM }}>{group.label}</span>
+                <span className="text-[9px] tracking-[0.15em] mb-1.5 block" style={{ color: DIM, fontWeight: FW_NORMAL }}>{group.label}</span>
                 <div className="space-y-1">
                   {offCols.map(col => (
                     <button
@@ -599,7 +594,7 @@ function ColumnsEditorModal({ open, onClose }: { open: boolean; onClose: () => v
                       className="w-full flex items-center justify-between px-3 py-2 rounded-lg border transition-colors hover:border-white/10"
                       style={{ background: "transparent", borderColor: "#1a1a1a" }}
                     >
-                      <span className="text-[11px] font-medium" style={{ color: DIM, fontFamily: MONO }}>{col.label}</span>
+                      <span className="text-[11px]" style={{ color: DIM, fontFamily: MONO, fontWeight: FW_LIGHT }}>{col.label}</span>
                       <div className="w-8 h-4 rounded-full flex items-center transition-colors justify-start" style={{ background: "#1a1a1a" }}>
                         <div className="w-3.5 h-3.5 rounded-full mx-0.5" style={{ background: "#333" }} />
                       </div>
@@ -639,29 +634,29 @@ function MetricsStrip({ groups, lastPrice, rawCalls, rawPuts, earningsDate, isFe
   }
 
   return (
-    <div className="flex gap-2 text-[10px] font-medium items-center shrink-0" style={{ fontVariantNumeric: "tabular-nums", fontFamily: MONO }}>
+    <div className="flex gap-2 text-[9px] items-center shrink-0" style={{ fontVariantNumeric: "tabular-nums", fontFamily: MONO, fontWeight: FW_LIGHT }}>
       {isFetching && hasData && (
         <span className="w-2 h-2 border border-amber-400 border-t-transparent rounded-full animate-spin" />
       )}
       <span>
         <span style={{ color: DIM }}>IV </span>
-        <span style={{ color: atmIV != null ? GOLD : MUTED, fontWeight: 700 }}>
+        <span style={{ color: atmIV != null ? GOLD : MUTED, fontWeight: FW_PREMIUM }}>
           {atmIV != null ? atmIV.toFixed(1) + "%" : "\u2014"}
         </span>
       </span>
       <span>
         <span style={{ color: DIM }}>MV </span>
-        <span style={{ color: expectedMove != null ? WHITE : MUTED, fontWeight: 700 }}>
+        <span style={{ color: expectedMove != null ? WHITE : MUTED, fontWeight: FW_PREMIUM }}>
           {expectedMove != null ? "\u00B1$" + expectedMove.toFixed(2) : "\u2014"}
         </span>
       </span>
       <span>
         <span style={{ color: DIM }}>P/C </span>
-        <span style={{ color: pcr !== "\u2014" ? (Number(pcr) > 1 ? DOWN : UP) : MUTED, fontWeight: 700 }}>{pcr}</span>
+        <span style={{ color: pcr !== "\u2014" ? (Number(pcr) > 1 ? DOWN : UP) : MUTED, fontWeight: FW_PREMIUM }}>{pcr}</span>
       </span>
       <span>
         <span style={{ color: DIM }}>ERN </span>
-        <span style={{ color: WHITE, fontWeight: 700 }}>{earnDisplay}</span>
+        <span style={{ color: WHITE, fontWeight: FW_PREMIUM }}>{earnDisplay}</span>
       </span>
     </div>
   );
@@ -698,7 +693,9 @@ function useScrollSync() {
   return { registerWing };
 }
 
-function StrikeCell({ strike, underlyingPrice, isATM }: { strike: number; underlyingPrice: number | null; isATM: boolean }) {
+function StrikeCell({ strike, underlyingPrice }: { strike: number; underlyingPrice: number | null }) {
+  const isATM = underlyingPrice != null && Math.abs(strike - underlyingPrice) < (underlyingPrice * 0.003);
+
   let moneynessLabel: string | null = null;
   let moneynessColor = DIM;
 
@@ -709,7 +706,7 @@ function StrikeCell({ strike, underlyingPrice, isATM }: { strike: number; underl
 
     if (absPct < 0.3) {
       moneynessLabel = "ATM";
-      moneynessColor = GOLD;
+      moneynessColor = "#FF6B2B";
     } else if (absPct < 10) {
       moneynessLabel = `${pct > 0 ? "+" : ""}${pct.toFixed(1)}%`;
       moneynessColor = "#52525b";
@@ -722,15 +719,15 @@ function StrikeCell({ strike, underlyingPrice, isATM }: { strike: number; underl
       style={{
         height: ROW_H,
         borderBottom: `1px solid ${BORDER_ROW}`,
-        color: isATM ? GOLD : WHITE,
-        background: isATM ? ATM_BG : "transparent",
+        color: isATM ? "#FF6B2B" : WHITE,
+        background: isATM ? "rgba(255,107,43,0.04)" : "transparent",
       }}
     >
-      <span className="text-[11px] font-bold leading-none" style={{ fontVariantNumeric: "tabular-nums", fontFamily: MONO }}>
+      <span style={{ fontSize: 11, fontWeight: isATM ? FW_PREMIUM : FW_NORMAL, fontVariantNumeric: "tabular-nums", fontFamily: MONO, lineHeight: 1 }}>
         {strike % 1 === 0 ? strike : strike.toFixed(1)}
       </span>
       {moneynessLabel && (
-        <span className="text-[7px] font-bold leading-none mt-0.5" style={{ color: moneynessColor, fontFamily: MONO }}>
+        <span style={{ fontSize: 7, fontWeight: FW_LIGHT, color: moneynessColor, fontFamily: MONO, lineHeight: 1, marginTop: 2 }}>
           {moneynessLabel}
         </span>
       )}
@@ -797,7 +794,7 @@ function OptionsGrid({
       {atmLineTop >= 0 && (
         <div
           className="absolute left-0 right-0 z-[5] pointer-events-none"
-          style={{ top: atmLineTop, borderTop: "1.5px dotted #FF6B2B" }}
+          style={{ top: atmLineTop, borderTop: "1px dotted #FF6B2B" }}
         />
       )}
 
@@ -809,10 +806,10 @@ function OptionsGrid({
         >
           <div style={{ minWidth: wingWidth }}>
             {sortedRows.map((row) => {
-              const isATM = underlyingPrice != null && Math.abs(row.strike - underlyingPrice) < (underlyingPrice * 0.003);
               const callKey = row.call ? makeLegKey(row.call, "CALL") : "";
               const isCallSelected = callKey ? selectedLegs.has(callKey) : false;
-              const bg = getRowBg(row.strike, underlyingPrice, true, isCallSelected, isATM);
+              const moneyness = classifyMoneyness(row.strike, underlyingPrice, true);
+              const bg = getRowBg(moneyness, isCallSelected);
               return (
                 <div
                   key={row.strike}
@@ -821,7 +818,7 @@ function OptionsGrid({
                     height: ROW_H,
                     borderBottom: `1px solid ${BORDER_ROW}`,
                     background: bg,
-                    borderLeft: isCallSelected ? `2px solid ${SEL_BORDER}` : "2px solid transparent",
+                    borderLeft: isCallSelected ? `2px solid ${SEL_BORDER_COLOR}` : "2px solid transparent",
                   }}
                 >
                   {columns.map(col => (
@@ -838,6 +835,7 @@ function OptionsGrid({
                         }) : undefined}
                         showInlineGreeks={showInlineGreeks}
                         maxOI={col.id === "oi" ? maxOI : undefined}
+                        moneyness={moneyness}
                       />
                     </div>
                   ))}
@@ -849,12 +847,9 @@ function OptionsGrid({
       )}
 
       <div className="flex-none z-10" style={{ width: STRIKE_W, background: BG_STRIKE, borderLeft: `1px solid ${BORDER}`, borderRight: `1px solid ${BORDER}` }}>
-        {sortedRows.map((row) => {
-          const isATM = underlyingPrice != null && Math.abs(row.strike - underlyingPrice) < (underlyingPrice * 0.003);
-          return (
-            <StrikeCell key={row.strike} strike={row.strike} underlyingPrice={underlyingPrice} isATM={isATM} />
-          );
-        })}
+        {sortedRows.map((row) => (
+          <StrikeCell key={row.strike} strike={row.strike} underlyingPrice={underlyingPrice} />
+        ))}
       </div>
 
       {showPuts && (
@@ -865,10 +860,10 @@ function OptionsGrid({
         >
           <div style={{ minWidth: wingWidth }}>
             {sortedRows.map((row) => {
-              const isATM = underlyingPrice != null && Math.abs(row.strike - underlyingPrice) < (underlyingPrice * 0.003);
               const putKey = row.put ? makeLegKey(row.put, "PUT") : "";
               const isPutSelected = putKey ? selectedLegs.has(putKey) : false;
-              const bg = getRowBg(row.strike, underlyingPrice, false, isPutSelected, isATM);
+              const moneyness = classifyMoneyness(row.strike, underlyingPrice, false);
+              const bg = getRowBg(moneyness, isPutSelected);
               return (
                 <div
                   key={row.strike}
@@ -877,7 +872,7 @@ function OptionsGrid({
                     height: ROW_H,
                     borderBottom: `1px solid ${BORDER_ROW}`,
                     background: bg,
-                    borderRight: isPutSelected ? `2px solid ${SEL_BORDER}` : "2px solid transparent",
+                    borderRight: isPutSelected ? `2px solid ${SEL_BORDER_COLOR}` : "2px solid transparent",
                   }}
                 >
                   {columns.map(col => (
@@ -894,6 +889,7 @@ function OptionsGrid({
                         }) : undefined}
                         showInlineGreeks={showInlineGreeks}
                         maxOI={col.id === "oi" ? maxOI : undefined}
+                        moneyness={moneyness}
                       />
                     </div>
                   ))}
@@ -1115,11 +1111,11 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
   return (
     <div style={{ background: BG }} className="relative">
       <div
-        className="flex items-center justify-between w-full px-3 py-0.5 shrink-0 sticky z-40"
+        className="flex items-center justify-between w-full px-3 shrink-0 sticky z-40"
         style={{ top: stickyOffset, height: TOOLBAR_H, background: BG_EXP_BAR, borderBottom: `1px solid ${BORDER}`, fontFamily: MONO }}
       >
         <div className="flex items-center gap-1.5">
-          <span className="text-[9px] font-bold tracking-widest" style={{ color: DIM }}>STK</span>
+          <span className="text-[8px] tracking-widest" style={{ color: DIM, fontWeight: FW_NORMAL }}>STK</span>
           {isCustomMode ? (
             <div className="flex items-center gap-1">
               <Input
@@ -1127,7 +1123,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
                 value={localCustomValue}
                 onChange={e => handleCustomStrikeChange(e.target.value)}
                 onKeyDown={e => { if (e.key === "Escape") handleExitCustomMode(); }}
-                className="w-[52px] text-[10px] h-6 px-1.5 border rounded text-white"
+                className="w-[48px] text-[10px] h-5 px-1.5 border rounded text-white"
                 style={{ background: "#111", borderColor: "#2a2a2a", fontFamily: MONO }}
                 placeholder="10"
               />
@@ -1137,7 +1133,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
             </div>
           ) : (
             <Select value={strikeMode} onValueChange={handleStrikeModeChange}>
-              <SelectTrigger className="w-[52px] text-[10px] h-6 px-1.5 border rounded text-white" style={{ background: "#111", borderColor: "#2a2a2a", fontFamily: MONO }}>
+              <SelectTrigger className="w-[48px] text-[10px] h-5 px-1.5 border rounded text-white" style={{ background: "#111", borderColor: "#2a2a2a", fontFamily: MONO }}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1150,11 +1146,12 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
           )}
           <button
             onClick={() => setShowInlineGreeks(!showInlineGreeks)}
-            className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold transition-colors"
+            className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8px] transition-colors"
             style={{
               color: showInlineGreeks ? GOLD : DIM,
-              background: showInlineGreeks ? `${GOLD}15` : "transparent",
-              border: `1px solid ${showInlineGreeks ? `${GOLD}30` : "transparent"}`,
+              background: showInlineGreeks ? `${GOLD}12` : "transparent",
+              border: `1px solid ${showInlineGreeks ? `${GOLD}25` : "transparent"}`,
+              fontWeight: FW_NORMAL,
             }}
             aria-label="Toggle inline Greeks"
           >
@@ -1172,45 +1169,45 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
         />
       </div>
 
-      <div className="relative" style={{ background: BG, paddingBottom: selCount > 0 ? 56 : 0 }}>
+      <div className="relative" style={{ background: BG, paddingBottom: selCount > 0 ? 52 : 0 }}>
         {isLoading && !data && (
           <div className="p-4 space-y-1">
             {Array.from({ length: strikeCount }).map((_, i) => (
-              <Skeleton key={i} className="h-5 w-full rounded" style={{ background: "#111" }} />
+              <Skeleton key={i} className="h-4 w-full rounded" style={{ background: "#0a0a0a" }} />
             ))}
           </div>
         )}
 
         {isFetching && data && (
-          <div className="absolute inset-0 z-40 pointer-events-none" style={{ background: "rgba(0,0,0,0.15)" }} />
+          <div className="absolute inset-0 z-40 pointer-events-none" style={{ background: "rgba(0,0,0,0.12)" }} />
         )}
 
         {error && !data && (
           <div className="p-12 text-center font-mono flex flex-col items-center" style={{ color: DOWN }}>
             <span className="text-2xl mb-2">\u26A0</span>
-            <span className="text-[10px] tracking-widest">FAILED TO LOAD OPTIONS</span>
+            <span className="text-[10px] tracking-widest" style={{ fontWeight: FW_LIGHT }}>FAILED TO LOAD OPTIONS</span>
           </div>
         )}
 
         {!hasData && !isLoading && !error && apiError && (
           <div className="p-12 text-center font-mono flex flex-col items-center" style={{ color: GOLD_DIM }}>
             <span className="text-2xl mb-2">\u26A0</span>
-            <span className="text-[10px] tracking-widest">OPTIONS UNAVAILABLE</span>
-            <span className="text-[9px] mt-1" style={{ color: DIM }}>Service may be down \u2014 retries automatically</span>
+            <span className="text-[10px] tracking-widest" style={{ fontWeight: FW_LIGHT }}>OPTIONS UNAVAILABLE</span>
+            <span className="text-[9px] mt-1" style={{ color: DIM, fontWeight: FW_LIGHT }}>Service may be down \u2014 retries automatically</span>
           </div>
         )}
 
         {!isLoading && !error && !data && !accessToken && (
           <div className="p-16 flex flex-col items-center justify-center font-mono">
             <Table2 className="w-7 h-7 mb-2" style={{ color: MUTED }} />
-            <span className="text-[10px] tracking-widest" style={{ color: DIM }}>CONNECT SCHWAB TO VIEW OPTIONS</span>
+            <span className="text-[10px] tracking-widest" style={{ color: DIM, fontWeight: FW_LIGHT }}>CONNECT SCHWAB TO VIEW OPTIONS</span>
           </div>
         )}
 
         {!isLoading && !error && !data && accessToken && (
           <div className="p-16 flex flex-col items-center justify-center font-mono">
             <Table2 className="w-7 h-7 mb-2 animate-pulse" style={{ color: MUTED }} />
-            <span className="text-[10px] tracking-widest" style={{ color: DIM }}>LOADING OPTIONS CHAIN...</span>
+            <span className="text-[10px] tracking-widest" style={{ color: DIM, fontWeight: FW_LIGHT }}>LOADING OPTIONS CHAIN...</span>
           </div>
         )}
 
@@ -1222,7 +1219,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
             >
               {showCalls && (
                 <div className="flex-1 text-center">
-                  <span className="text-[10px] font-extrabold tracking-[0.3em]" style={{ color: WHITE, fontFamily: MONO }}>CALLS</span>
+                  <span className="text-[9px] tracking-[0.3em]" style={{ color: GRAY, fontFamily: MONO, fontWeight: FW_PREMIUM }}>CALLS</span>
                 </div>
               )}
               <div
@@ -1236,7 +1233,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
                     style={{ width: STRIKE_W / 2, height: HEADER_H, color: GOLD }}
                     aria-label="Strategy builder"
                   >
-                    <Layers className="w-3.5 h-3.5" />
+                    <Layers className="w-3 h-3" />
                   </button>
                 )}
                 <button
@@ -1245,12 +1242,12 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
                   style={{ width: onOpenStrategyBuilder ? STRIKE_W / 2 : STRIKE_W, height: HEADER_H, color: GRAY }}
                   aria-label="Edit columns"
                 >
-                  <Settings className="w-3.5 h-3.5" />
+                  <Settings className="w-3 h-3" />
                 </button>
               </div>
               {showPuts && (
                 <div className="flex-1 text-center">
-                  <span className="text-[10px] font-extrabold tracking-[0.3em]" style={{ color: WHITE, fontFamily: MONO }}>PUTS</span>
+                  <span className="text-[9px] tracking-[0.3em]" style={{ color: GRAY, fontFamily: MONO, fontWeight: FW_PREMIUM }}>PUTS</span>
                 </div>
               )}
             </div>
@@ -1264,7 +1261,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
                   <div className="flex items-center" style={{ minWidth: wingWidth, height: SUB_HEADER_H }}>
                     {activeColumns.map(col => (
                       <div key={col.id} style={{ width: COL_W }} className="shrink-0 flex items-center px-1">
-                        <span className="text-[8px] font-bold tracking-wider uppercase" style={{ color: DIM, fontFamily: MONO }}>{col.topLabel}</span>
+                        <span className="text-[7px] tracking-wider uppercase" style={{ color: DIM, fontFamily: MONO, fontWeight: FW_LIGHT }}>{col.topLabel}</span>
                       </div>
                     ))}
                   </div>
@@ -1274,14 +1271,14 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
                 className="flex-none flex items-center justify-center"
                 style={{ width: STRIKE_W, borderLeft: `1px solid ${BORDER}`, borderRight: `1px solid ${BORDER}` }}
               >
-                <span className="text-[8px] font-bold tracking-wider" style={{ color: DIM, fontFamily: MONO }}>STRIKE</span>
+                <span className="text-[7px] tracking-wider" style={{ color: DIM, fontFamily: MONO, fontWeight: FW_LIGHT }}>STRIKE</span>
               </div>
               {showPuts && (
                 <div ref={subHeaderRightRef} className="flex-1 overflow-x-auto overflow-y-hidden" style={noScrollbar}>
                   <div className="flex items-center" style={{ minWidth: wingWidth, height: SUB_HEADER_H }}>
                     {activeColumns.map(col => (
                       <div key={col.id} style={{ width: COL_W }} className="shrink-0 flex items-center px-1">
-                        <span className="text-[8px] font-bold tracking-wider uppercase" style={{ color: DIM, fontFamily: MONO }}>{col.topLabel}</span>
+                        <span className="text-[7px] tracking-wider uppercase" style={{ color: DIM, fontFamily: MONO, fontWeight: FW_LIGHT }}>{col.topLabel}</span>
                       </div>
                     ))}
                   </div>
@@ -1297,7 +1294,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
                   <div key={group.expiration}>
                     <button
                       onClick={() => toggleExp(group.expiration)}
-                      className="w-full flex items-center justify-between px-3 py-1.5 transition-colors sticky z-20"
+                      className="w-full flex items-center justify-between px-3 py-1 transition-colors sticky z-20"
                       style={{
                         top: stickyOffset + STICKY_TOP,
                         background: BG_EXP_BAR,
@@ -1310,31 +1307,31 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
                           ? <ChevronDown className="w-3 h-3" style={{ color: DIM }} />
                           : <ChevronRight className="w-3 h-3" style={{ color: DIM }} />
                         }
-                        <span className="text-[11px] font-bold tracking-wide" style={{ color: WHITE }}>
+                        <span className="text-[10px] tracking-wide" style={{ color: WHITE, fontWeight: FW_NORMAL }}>
                           {group.dateLabel}
                         </span>
-                        <span className="text-[10px] font-bold" style={{ color: GRAY }}>
+                        <span className="text-[9px]" style={{ color: GRAY, fontWeight: FW_LIGHT }}>
                           {Math.round(group.dte)}d
                         </span>
                         {group.isWeekly && (
-                          <span className="text-[8px] font-bold px-1 py-0.5 rounded" style={{ color: "#FF6B2B", background: "rgba(255,107,43,0.08)" }}>
+                          <span className="text-[7px] px-1 py-0.5 rounded" style={{ color: "#FF6B2B", background: "rgba(255,107,43,0.08)", fontWeight: FW_NORMAL }}>
                             W
                           </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-2 text-[10px]" style={{ fontVariantNumeric: "tabular-nums" }}>
+                      <div className="flex items-center gap-2 text-[9px]" style={{ fontVariantNumeric: "tabular-nums" }}>
                         {group.atmIV != null && (
-                          <span style={{ color: GOLD, fontWeight: 700 }}>
+                          <span style={{ color: GOLD, fontWeight: FW_PREMIUM }}>
                             IV {group.atmIV.toFixed(1)}%
                           </span>
                         )}
                         {group.expectedMove != null && (
-                          <span style={{ color: GRAY, fontWeight: 500 }}>
+                          <span style={{ color: GRAY, fontWeight: FW_LIGHT }}>
                             \u00B1${group.expectedMove.toFixed(2)}
                           </span>
                         )}
                         {pcr != null && (
-                          <span style={{ color: pcr > 1 ? DOWN : UP, fontWeight: 600 }}>
+                          <span style={{ color: pcr > 1 ? DOWN : UP, fontWeight: FW_NORMAL }}>
                             P/C {pcr.toFixed(2)}
                           </span>
                         )}
@@ -1366,14 +1363,14 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
         {data && groups.length === 0 && (
           <div className="p-16 flex flex-col items-center justify-center font-mono">
             <Table2 className="w-7 h-7 mb-2" style={{ color: MUTED }} />
-            <span className="text-[10px] tracking-widest" style={{ color: DIM }}>NO OPTIONS DATA FOR THIS RANGE</span>
+            <span className="text-[10px] tracking-widest" style={{ color: DIM, fontWeight: FW_LIGHT }}>NO OPTIONS DATA FOR THIS RANGE</span>
           </div>
         )}
       </div>
 
       {selCount > 0 && (
         <div
-          className="fixed bottom-16 left-0 right-0 z-[100] flex items-center justify-between px-3 py-2.5"
+          className="fixed bottom-16 left-0 right-0 z-[100] flex items-center justify-between px-3 py-2"
           style={{
             background: "linear-gradient(180deg, #0a0a0a 0%, #000000 100%)",
             borderTop: `1px solid ${GOLD}30`,
@@ -1383,10 +1380,11 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
         >
           <button
             onClick={handleBuildStrategy}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-[11px] tracking-wider transition-all active:scale-[0.97]"
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-[11px] tracking-wider transition-all active:scale-[0.97]"
             style={{
               background: `linear-gradient(180deg, ${GOLD} 0%, #d97706 100%)`,
               color: "#000",
+              fontWeight: FW_PREMIUM,
               boxShadow: `0 2px 12px ${GOLD}40`,
             }}
           >
@@ -1395,8 +1393,8 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
           </button>
           <button
             onClick={handleClearSelection}
-            className="px-3 py-2 rounded-lg text-[10px] font-bold tracking-wider transition-colors"
-            style={{ color: DIM, background: "transparent", border: `1px solid ${BORDER}` }}
+            className="px-3 py-2 rounded-lg text-[10px] tracking-wider transition-colors"
+            style={{ color: DIM, background: "transparent", border: `1px solid ${BORDER}`, fontWeight: FW_LIGHT }}
           >
             CLEAR
           </button>
