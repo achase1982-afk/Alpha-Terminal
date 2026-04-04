@@ -311,7 +311,7 @@ export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps)
                 }}
                 onTouchStart={(e) => handleTouchStart(i, e)}
                 className={[
-                  "flex flex-1 items-center justify-center gap-2 py-2.5 border-b-2 select-none",
+                  "flex flex-1 items-center justify-center gap-2 py-1.5 border-b-2 select-none",
                   isActive ? "border-primary text-white" : "border-transparent text-zinc-500",
                   jiggling && !isBeingDragged ? "tab-jiggle tab-slot-shift" : "",
                   isBeingDragged ? "tab-dragging" : "",
