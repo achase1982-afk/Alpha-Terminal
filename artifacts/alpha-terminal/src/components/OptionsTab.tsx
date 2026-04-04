@@ -651,6 +651,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0 }: Options
   const subHeaderRightRef = useRef<HTMLDivElement>(null);
 
   const hasData = data && groups.length > 0;
+  const apiError = (rawData as any)?.error as string | undefined;
 
   useEffect(() => {
     const cleanups: (() => void)[] = [];
@@ -720,6 +721,14 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0 }: Options
           <div className="p-10 text-center text-red-400 font-mono flex flex-col items-center">
             <span className="text-3xl mb-3">⚠</span>
             <span className="text-xs">FAILED TO LOAD OPTIONS DATA.</span>
+          </div>
+        )}
+
+        {!hasData && !isLoading && !error && apiError && (
+          <div className="p-10 text-center text-[#FFB800]/80 font-mono flex flex-col items-center">
+            <span className="text-3xl mb-3">⚠</span>
+            <span className="text-xs tracking-wider">OPTIONS DATA TEMPORARILY UNAVAILABLE</span>
+            <span className="text-[10px] text-zinc-500 mt-1.5">Schwab options service may be down — retries automatically</span>
           </div>
         )}
 

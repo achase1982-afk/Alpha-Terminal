@@ -392,12 +392,24 @@ async function fetchFullChain(displaySymbol: string, token: string, log: any): P
   });
   if (isFuturesSymbol) params.set("assetClass", "FUTURES");
 
-  const response = await fetch(`${SCHWAB_API_BASE}/chains?${params.toString()}`, {
+  const fullChainUrl = `${SCHWAB_API_BASE}/chains?${params.toString()}`;
+  let response = await fetch(fullChainUrl, {
     headers: { "Authorization": `Bearer ${token}` },
+    signal: AbortSignal.timeout(20_000),
   });
 
+  if (response.status === 503 || response.status === 502 || response.status === 429) {
+    log.warn({ status: response.status, symbol: chainSymbol }, "Full chain transient error — retrying in 1s");
+    await new Promise(r => setTimeout(r, 1000));
+    response = await fetch(fullChainUrl, {
+      headers: { "Authorization": `Bearer ${token}` },
+      signal: AbortSignal.timeout(20_000),
+    });
+  }
+
   if (!response.ok) {
-    log.error({ status: response.status, symbol: chainSymbol }, "Options chain fetch failed");
+    const body = await response.text().catch(() => "");
+    log.error({ status: response.status, symbol: chainSymbol, body: body.slice(0, 500) }, "Options chain fetch failed");
     return null;
   }
 
@@ -471,13 +483,24 @@ router.get("/options", async (req, res) => {
     });
     if (isFuturesSymbol) params.set("assetClass", "FUTURES");
 
-    const response = await fetch(`${SCHWAB_API_BASE}/chains?${params.toString()}`, {
+    const chainUrl = `${SCHWAB_API_BASE}/chains?${params.toString()}`;
+    let response = await fetch(chainUrl, {
       headers: { "Authorization": `Bearer ${accessToken}` },
       signal: req.socket.destroyed ? AbortSignal.abort() : AbortSignal.timeout(15_000),
     });
 
+    if (response.status === 503 || response.status === 502 || response.status === 429) {
+      req.log.warn({ status: response.status, symbol: chainSymbol }, "Options chain transient error — retrying in 1s");
+      await new Promise(r => setTimeout(r, 1000));
+      response = await fetch(chainUrl, {
+        headers: { "Authorization": `Bearer ${accessToken}` },
+        signal: AbortSignal.timeout(15_000),
+      });
+    }
+
     if (!response.ok) {
-      req.log.error({ status: response.status, symbol: chainSymbol }, "Options chain fetch failed");
+      const body = await response.text().catch(() => "");
+      req.log.error({ status: response.status, symbol: chainSymbol, body: body.slice(0, 500) }, "Options chain fetch failed");
       return res.json({ symbol: displaySymbol, calls: [], puts: [], error: "fetch_failed" });
     }
 
