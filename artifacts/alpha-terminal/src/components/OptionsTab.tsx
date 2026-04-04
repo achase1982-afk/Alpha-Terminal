@@ -381,7 +381,7 @@ const DataCell = memo(function DataCell({
       <span
         className="leading-none"
         style={{
-          fontSize: isPrice ? 15 : 13,
+          fontSize: isPrice ? 14 : 12,
           fontWeight: FW_LIGHT,
           color: textColor,
           fontVariantNumeric: "tabular-nums",
@@ -634,7 +634,7 @@ function MetricsStrip({ groups, lastPrice, rawCalls, rawPuts, earningsDate, isFe
   }
 
   return (
-    <div className="flex gap-2 items-center shrink-0" style={{ fontSize: 11, fontVariantNumeric: "tabular-nums", fontFamily: MONO, fontWeight: FW_LIGHT }}>
+    <div className="flex gap-2 items-center shrink-0" style={{ fontSize: 10, fontVariantNumeric: "tabular-nums", fontFamily: MONO, fontWeight: FW_LIGHT }}>
       {isFetching && hasData && (
         <span className="w-2 h-2 border border-amber-400 border-t-transparent rounded-full animate-spin" />
       )}
@@ -723,7 +723,7 @@ function StrikeCell({ strike, underlyingPrice }: { strike: number; underlyingPri
         background: isATM ? "rgba(255,107,43,0.25)" : "transparent",
       }}
     >
-      <span style={{ fontSize: 13, fontWeight: FW_LIGHT, fontVariantNumeric: "tabular-nums", fontFamily: MONO, lineHeight: 1 }}>
+      <span style={{ fontSize: 12, fontWeight: FW_LIGHT, fontVariantNumeric: "tabular-nums", fontFamily: MONO, lineHeight: 1 }}>
         {strike % 1 === 0 ? strike : strike.toFixed(1)}
       </span>
       {moneynessLabel && (
