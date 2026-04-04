@@ -97,13 +97,13 @@ export default function TerminalPage() {
   const { pulseData, isLoading: pulseLoading, isStreaming: pulseStreaming } = useMarketPulseStore();
   const { refresh } = useAutoRefreshToken();
   useViewportShell();
-  const isTablet = useIsTablet();
+  const isWide = useIsTablet();
 
   useEffect(() => {
-    if (isTablet && activeBottom === "watchlist") {
+    if (isWide && activeBottom === "watchlist") {
       setActiveBottom("markets");
     }
-  }, [isTablet, activeBottom]);
+  }, [isWide, activeBottom]);
 
   const COLLAPSE_PX = 80;
   const lastTouchY = useRef(0);
@@ -244,70 +244,106 @@ export default function TerminalPage() {
           onNavigate={(dest) => { if (dest === "markets") setActiveBottom("markets"); else if (dest === "portfolio") setActiveBottom("portfolio"); }}
         />
 
-        {isTablet && (
-          <aside className="hidden md:flex flex-col border-r border-card-border" style={{ width: 320, minWidth: 320, background: "#000000" }}>
+        {isWide && (
+          <aside className="hidden md:flex flex-col border-r border-card-border shrink-0" style={{ width: 280, background: "#000000" }}>
             <WatchlistView onNavigateToSymbol={() => setActiveBottom("markets")} />
           </aside>
         )}
 
-        <main ref={scrollRef} onScroll={handleScroll} className={`flex-1 app-content ${isTablet ? "pb-4" : "pb-24"} ${activeBottom === "ai" && aiSubTab === "pulse" && !pulseData && !pulseLoading && !pulseStreaming ? "overflow-hidden" : "overflow-y-auto"}`}>
+        {!isWide ? (
+          <main ref={scrollRef} onScroll={handleScroll} className={`flex-1 app-content pb-24 ${activeBottom === "ai" && aiSubTab === "pulse" && !pulseData && !pulseLoading && !pulseStreaming ? "overflow-hidden" : "overflow-y-auto"}`}>
 
-          {activeBottom === "markets" && (
-            <>
-              <MacroBar />
+            {activeBottom === "markets" && (
+              <>
+                <MacroBar />
+                <div ref={stickyWrapRef} className="sticky top-0 z-40 bg-background">
+                  <MetricsBar compact={isScrolled} />
+                  <VolumeBar />
+                  <MarketDataTabs activeTab={contextTab} setActiveTab={setContextTab} />
+                </div>
+                <div style={{ minHeight: "calc(100vh - 60px)" }}>
+                  {contextTab === "news" && <NewsTab />}
+                  {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={stickyH} />}
+                  {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles as any} stickyOffset={stickyH} />}
+                  {contextTab === "chart" && (
+                    <>
+                      <ChartControls />
+                      <div className="h-[420px] sm:h-[500px] md:h-[580px]">
+                        <TradingChart symbol={symbol} data={historyData?.candles || []} isLoading={historyLoading} error={historyData?.error} timedOut={historyTimedOut} tokenExpired={historyData?.error === "unauthorized"} intraday={isIntradayInterval(chartInterval)} />
+                      </div>
+                    </>
+                  )}
+                </div>
+              </>
+            )}
 
-              <div ref={stickyWrapRef} className="sticky top-0 z-40 bg-background">
-                <MetricsBar compact={isScrolled} />
-                <VolumeBar />
-                <MarketDataTabs activeTab={contextTab} setActiveTab={setContextTab} />
-              </div>
-
-              <div style={{ minHeight: "calc(100vh - 60px)" }}>
-                {contextTab === "news" && <NewsTab />}
-                {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={stickyH} />}
-                {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles as any} stickyOffset={stickyH} />}
-                {contextTab === "chart" && (
-                  <>
-                    <ChartControls />
-                    <div className="h-[420px] sm:h-[500px] md:h-[580px]">
-                      <TradingChart
-                        symbol={symbol}
-                        data={historyData?.candles || []}
-                        isLoading={historyLoading}
-                        error={historyData?.error}
-                        timedOut={historyTimedOut}
-                        tokenExpired={historyData?.error === "unauthorized"}
-                        intraday={isIntradayInterval(chartInterval)}
-                      />
-                    </div>
-                  </>
-                )}
-              </div>
-            </>
-          )}
-
-          <div style={{ display: activeBottom === "scanner" ? "block" : "none" }}>
-            <MarketScanner subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToSymbol={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} />
-          </div>
-
-          {activeBottom === "ai" && (
-            <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} pulseAutoGen={pulseAutoGen} onPulseAutoGenConsumed={() => setPulseAutoGen(false)} />
-          )}
-
-          {activeBottom === "portfolio" && (
-            <PortfolioView onNavigateToSymbol={() => setActiveBottom("markets")} />
-          )}
-
-          {!isTablet && activeBottom === "watchlist" && (
-            <div className="flex flex-col" style={{ minHeight: "calc(100vh - 60px)", background: "#000000" }}>
-              <WatchlistView onNavigateToSymbol={() => setActiveBottom("markets")} />
+            <div style={{ display: activeBottom === "scanner" ? "block" : "none" }}>
+              <MarketScanner subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToSymbol={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} />
             </div>
-          )}
 
-        </main>
+            {activeBottom === "ai" && (
+              <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} pulseAutoGen={pulseAutoGen} onPulseAutoGenConsumed={() => setPulseAutoGen(false)} />
+            )}
+
+            {activeBottom === "portfolio" && (
+              <PortfolioView onNavigateToSymbol={() => setActiveBottom("markets")} />
+            )}
+
+            {activeBottom === "watchlist" && (
+              <div className="flex flex-col" style={{ minHeight: "calc(100vh - 60px)", background: "#000000" }}>
+                <WatchlistView onNavigateToSymbol={() => setActiveBottom("markets")} />
+              </div>
+            )}
+          </main>
+        ) : (
+          <>
+            {activeBottom === "markets" ? (
+              <>
+                <div className="flex flex-col flex-1 min-w-0 border-r border-card-border">
+                  <div className="shrink-0">
+                    <MetricsBar compact={false} />
+                    <VolumeBar />
+                    <ChartControls />
+                  </div>
+                  <div className="flex-1 min-h-0">
+                    <TradingChart symbol={symbol} data={historyData?.candles || []} isLoading={historyLoading} error={historyData?.error} timedOut={historyTimedOut} tokenExpired={historyData?.error === "unauthorized"} intraday={isIntradayInterval(chartInterval)} />
+                  </div>
+                </div>
+
+                <div className="flex flex-col shrink-0 overflow-hidden" style={{ width: 380 }}>
+                  <div className="shrink-0 border-b border-card-border">
+                    <MarketDataTabs activeTab={contextTab} setActiveTab={setContextTab} />
+                  </div>
+                  <div className="flex-1 overflow-y-auto">
+                    {contextTab === "news" && <NewsTab />}
+                    {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={0} />}
+                    {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles as any} stickyOffset={0} />}
+                    {contextTab === "chart" && (
+                      <div className="p-4">
+                        <MacroBar />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <main ref={scrollRef} onScroll={handleScroll} className="flex-1 app-content pb-4 overflow-y-auto">
+                <div style={{ display: activeBottom === "scanner" ? "block" : "none" }}>
+                  <MarketScanner subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToSymbol={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} />
+                </div>
+                {activeBottom === "ai" && (
+                  <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} pulseAutoGen={pulseAutoGen} onPulseAutoGenConsumed={() => setPulseAutoGen(false)} />
+                )}
+                {activeBottom === "portfolio" && (
+                  <PortfolioView onNavigateToSymbol={() => setActiveBottom("markets")} />
+                )}
+              </main>
+            )}
+          </>
+        )}
       </div>
 
-      {!isTablet && (
+      {!isWide && (
         <BottomNav activeTab={activeBottom} onTabChange={(tab) => {
           sidebarRef.current?.clearActivePage();
           setSidebarOpen(false);
@@ -319,8 +355,8 @@ export default function TerminalPage() {
         }} />
       )}
 
-      {isTablet && (
-        <nav className="hidden md:flex shrink-0 h-12 bg-[#0c0c0c] border-t border-zinc-800/60 items-center justify-center gap-1 px-4 z-50">
+      {isWide && (
+        <nav className="hidden md:flex shrink-0 h-10 bg-[#0c0c0c] border-t border-zinc-800/60 items-center justify-center gap-1 px-4 z-50">
           {(["scanner", "markets", "ai", "search"] as BottomTab[]).map((tab) => {
             const labels: Record<string, string> = { scanner: "SCANNER", markets: "MARKETS", ai: "AI", search: "SEARCH" };
             const isActive = activeBottom === tab || (tab === "search" && searchOpen);
