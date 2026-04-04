@@ -175,10 +175,33 @@ export default function TerminalPage() {
     setOrderOpen(true);
   }, []);
 
-  const handleOpenStrategyBuilder = useCallback((strikes: number[], expirations: { label: string; value: string }[], chainData: Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number }>) => {
+  const [strategyInitialLegs, setStrategyInitialLegs] = useState<StrategyLeg[]>([]);
+
+  const handleOpenStrategyBuilder = useCallback((strikes: number[], expirations: { label: string; value: string }[], chainData: Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number }>, preSelectedLegs?: { contract: OptionsContract; type: "CALL" | "PUT" }[]) => {
     setStrategyStrikes(strikes);
     setStrategyExpirations(expirations);
     setStrategyChainData(chainData);
+    if (preSelectedLegs && preSelectedLegs.length > 0) {
+      const mapped: StrategyLeg[] = preSelectedLegs.map((leg, i) => ({
+        id: `pre-${Date.now()}-${i}`,
+        optionType: leg.type === "CALL" ? "CALL" as const : "PUT" as const,
+        direction: "BUY_TO_OPEN" as const,
+        strike: leg.contract.strike,
+        expiration: leg.contract.expiration,
+        quantity: 1,
+        bid: leg.contract.bid,
+        ask: leg.contract.ask,
+        delta: leg.contract.delta,
+        gamma: leg.contract.gamma,
+        theta: leg.contract.theta,
+        vega: leg.contract.vega,
+        iv: leg.contract.iv,
+        schwabSymbol: leg.contract.schwabSymbol || "",
+      }));
+      setStrategyInitialLegs(mapped);
+    } else {
+      setStrategyInitialLegs([]);
+    }
     setStrategyOpen(true);
   }, []);
 
@@ -551,6 +574,7 @@ export default function TerminalPage() {
         availableStrikes={strategyStrikes}
         availableExpirations={strategyExpirations}
         chainData={strategyChainData}
+        initialLegs={strategyInitialLegs}
       />
       <OrderTicket
         isOpen={orderOpen}

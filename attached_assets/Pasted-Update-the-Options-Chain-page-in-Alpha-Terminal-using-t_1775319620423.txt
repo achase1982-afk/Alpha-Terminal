@@ -1,0 +1,29 @@
+Update the **Options Chain** page in Alpha Terminal using the latest RIVN screenshot provided.
+
+**FIX 1: SIGNIFICANTLY IMPROVE CONTRAST (eyes must love it now)**
+- Make premium prices (Bid/Ask) much bolder and larger (main focus)
+- Delta values: larger font, higher contrast, placed clearly under each premium
+- Stronger green (bid) and red (ask) tints with subtle background shading on cells for instant readability
+- Strike column: bold white on slightly darker background, orange ATM dotted line more visible
+- DTE / Weeklys labels: brighter and larger
+- Overall row spacing tightened but with better visual separation (subtle horizontal dividers between expirations)
+- All text must pass high-contrast accessibility standards while staying true to our dark terminal aesthetic
+
+**FIX 2: MULTI-SELECT STRIKE BEHAVIOR (critical)**
+- Tapping any row now **selects** the strike (adds highlight border + checkmark) instead of immediately jumping to Order Ticket
+- Support multi-selection: user can tap multiple calls and/or puts across different expirations
+- When 1+ strikes are selected, show a floating bottom bar: “Build Strategy with X legs” (gold accent) + “Clear Selection”
+- Tapping the floating bar opens the existing Options Strategy Builder with all selected legs pre-loaded
+- Long-press a single row (or single tap when nothing else is selected) still offers quick “Trade Single Leg” that goes directly to Order Ticket (pre-filled)
+
+**KEEP ALL PREVIOUS FEATURES:**
+- Expiration selector with DTE and Weeklys badges
+- Settings gear (for chain preferences)
+- Live bid/ask/vol data from existing store
+- Seamless integration: selected legs → Strategy Builder → Order Ticket with Pre-Trade Risk Manager running on the full strategy
+- Gold #fbbf24 accents where appropriate
+- Mobile-first, 60fps, dense institutional feel
+
+Make the chain feel premium, easy on the eyes, and actually useful for building real strategies — no more accidental single-leg orders when you want a spread.
+
+Start building now.

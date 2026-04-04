@@ -9,20 +9,26 @@ import { useQuery } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Table2, ChevronDown, ChevronUp, X, Settings, GripVertical, Layers } from "lucide-react";
+import { Table2, ChevronDown, ChevronUp, X, Settings, GripVertical, Layers, Check } from "lucide-react";
 import { Reorder } from "framer-motion";
 
 const EPS = 0.0001;
-const COL_W = 72;
-const STRIKE_W = 56;
-const ROW_H = 36;
-const HEADER_H = 32;
-const SUB_HEADER_H = 20;
+const COL_W = 76;
+const STRIKE_W = 58;
+const ROW_H = 40;
+const HEADER_H = 34;
+const SUB_HEADER_H = 22;
 const STICKY_TOP = HEADER_H + SUB_HEADER_H;
 const BG = "#1C1C1E";
 const BORDER = "#2A2A2C";
-const BID_TINT = "rgba(0,209,102,0.04)";
-const ASK_TINT = "rgba(242,54,69,0.04)";
+const BORDER_ROW = "#222224";
+const BID_TINT = "rgba(0,209,102,0.07)";
+const ASK_TINT = "rgba(242,54,69,0.07)";
+const BID_HOVER = "rgba(0,209,102,0.14)";
+const ASK_HOVER = "rgba(242,54,69,0.14)";
+const GOLD = "#fbbf24";
+const UP = "#00d166";
+const DOWN = "#f23645";
 
 interface Contract {
   strike: number;
@@ -59,6 +65,12 @@ interface ExpirationGroup {
   isWeekly: boolean;
   atmIV: number | null;
   expectedMove: number | null;
+}
+
+interface SelectedLeg {
+  contract: Contract;
+  type: "CALL" | "PUT";
+  expiration: string;
 }
 
 const MONTHS = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
@@ -102,7 +114,6 @@ function findATMIndex(strikes: number[], lastPrice: number): number {
   return best;
 }
 
-
 function buildExpirationGroups(
   calls: Contract[], puts: Contract[], lastPrice: number | null
 ): ExpirationGroup[] {
@@ -138,14 +149,9 @@ function buildExpirationGroups(
     }
 
     groups.push({
-      expiration: exp,
-      dte,
-      dateLabel: formatExpDate(exp),
-      rows: normalizedRows,
-      totalStrikes,
-      isWeekly: isWeeklyExp(exp),
-      atmIV,
-      expectedMove,
+      expiration: exp, dte, dateLabel: formatExpDate(exp),
+      rows: normalizedRows, totalStrikes,
+      isWeekly: isWeeklyExp(exp), atmIV, expectedMove,
     });
   }
   groups.sort((a, b) => a.dte - b.dte);
@@ -185,8 +191,22 @@ function getStreamVal(tick: ReturnType<typeof useOptionTick>, key: string): numb
   return typeof v === "number" && !isNaN(v) ? v : undefined;
 }
 
-const DataCell = memo(function DataCell({ col, contract, onTap }: { col: ColumnDef; contract: Contract | null; onTap?: () => void }) {
+function makeLegKey(contract: Contract, type: "CALL" | "PUT"): string {
+  return `${contract.expiration}|${contract.strike}|${type}`;
+}
+
+const DataCell = memo(function DataCell({
+  col, contract, isSelected, onSelect, onLongPress,
+}: {
+  col: ColumnDef;
+  contract: Contract | null;
+  isSelected?: boolean;
+  onSelect?: () => void;
+  onLongPress?: () => void;
+}) {
   const tick = useOptionTick(contract?.streamKey);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const didLongPress = useRef(false);
 
   const topVal = getStreamVal(tick, col.topKey) ?? getContractVal(contract, col.topKey);
   const bottomVal = col.bottomKey
@@ -197,35 +217,93 @@ const DataCell = memo(function DataCell({ col, contract, onTap }: { col: ColumnD
 
   const isBid = col.id === "bid";
   const isAsk = col.id === "ask";
-  const deltaVal = (col.id === "bid" || col.id === "ask")
+  const deltaVal = (isBid || isAsk)
     ? (getStreamVal(tick, "delta") ?? getContractVal(contract, "delta"))
     : undefined;
 
   const tint = isBid ? BID_TINT : isAsk ? ASK_TINT : undefined;
+  const hoverTint = isBid ? BID_HOVER : isAsk ? ASK_HOVER : "rgba(255,255,255,0.06)";
+
+  const handlePointerDown = useCallback(() => {
+    didLongPress.current = false;
+    if (onLongPress) {
+      longPressTimer.current = setTimeout(() => {
+        didLongPress.current = true;
+        onLongPress();
+      }, 500);
+    }
+  }, [onLongPress]);
+
+  const handlePointerUp = useCallback(() => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+    if (!didLongPress.current && onSelect) {
+      onSelect();
+    }
+  }, [onSelect]);
+
+  const handlePointerLeave = useCallback(() => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  }, []);
+
+  const priceColor = topStr === "—" ? "#3f3f46" : isBid ? "#22c55e" : isAsk ? "#ef4444" : "#f4f4f5";
 
   const inner = (
-    <div className="flex flex-col justify-center px-1.5" style={{ height: ROW_H }}>
-      <span className={`text-[12px] font-bold leading-none ${topStr === "—" ? "text-zinc-600" : isBid ? "text-[#00d166]" : isAsk ? "text-[#f23645]" : "text-white"}`}>
+    <div className="flex flex-col justify-center px-1.5 relative" style={{ height: ROW_H }}>
+      {isSelected && (
+        <div className="absolute top-0.5 right-0.5">
+          <Check className="w-2.5 h-2.5" style={{ color: GOLD }} />
+        </div>
+      )}
+      <span
+        className="leading-none font-bold"
+        style={{
+          fontSize: (isBid || isAsk) ? 13 : 12,
+          color: priceColor,
+          fontVariantNumeric: "tabular-nums",
+        }}
+      >
         {topStr}
       </span>
       {deltaVal != null && (isBid || isAsk) ? (
-        <span className="text-[8px] leading-none mt-0.5 text-zinc-500" style={{ fontVariantNumeric: "tabular-nums" }}>
+        <span
+          className="leading-none mt-0.5"
+          style={{ fontSize: 9, color: "#a1a1aa", fontVariantNumeric: "tabular-nums" }}
+        >
           {"\u0394"} {fmtNum(deltaVal, 2)}
         </span>
       ) : botStr != null ? (
-        <span className={`text-[8px] leading-none mt-0.5 ${botStr === "—" ? "text-zinc-700" : "text-zinc-500"}`}>
+        <span
+          className="leading-none mt-0.5"
+          style={{ fontSize: 9, color: botStr === "—" ? "#3f3f46" : "#71717a", fontVariantNumeric: "tabular-nums" }}
+        >
           {col.bottomLabel ? `${col.bottomLabel}: ${botStr}` : botStr}
         </span>
       ) : null}
     </div>
   );
 
-  if (col.isPrice && onTap) {
+  if (col.isPrice && contract && (onSelect || onLongPress)) {
     return (
       <button
-        onClick={onTap}
-        className="w-full text-left hover:bg-white/[0.06] active:bg-white/[0.12] transition-colors cursor-pointer"
-        style={{ fontVariantNumeric: "tabular-nums", background: tint }}
+        type="button"
+        onPointerDown={handlePointerDown}
+        onPointerUp={handlePointerUp}
+        onPointerLeave={handlePointerLeave}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect?.(); } }}
+        aria-pressed={isSelected}
+        aria-label={`${col.id === "bid" ? "Bid" : "Ask"} ${topStr} strike ${contract.strike}`}
+        className="w-full text-left cursor-pointer select-none transition-colors"
+        style={{
+          fontVariantNumeric: "tabular-nums",
+          background: isSelected ? `${GOLD}18` : tint,
+          borderLeft: isSelected ? `2px solid ${GOLD}` : "2px solid transparent",
+        }}
       >
         {inner}
       </button>
@@ -277,12 +355,13 @@ function ColumnsEditorModal({ open, onClose }: { open: boolean; onClose: () => v
                 whileDrag={{ scale: 1.03, boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}
                 className="cursor-grab active:cursor-grabbing"
               >
-                <div className="flex items-center justify-between px-3 py-2.5 rounded-lg border border-[#FFB800]/30 text-white select-none" style={{ backgroundColor: '#252528' }}>
+                <div className="flex items-center justify-between px-3 py-2.5 rounded-lg border text-white select-none" style={{ backgroundColor: '#252528', borderColor: `${GOLD}40` }}>
                   <span className="font-mono text-sm font-medium">{col.label}</span>
                   <div className="flex items-center gap-2">
                     <button
                       onClick={(e) => { e.stopPropagation(); toggleColumn(id); setLocalOrder(prev => prev.filter(x => x !== id)); }}
-                      className={`w-9 h-5 rounded-full flex items-center transition-colors bg-[#FFB800] justify-end ${activeColumnIds.length <= 1 ? "opacity-40" : ""}`}
+                      className={`w-9 h-5 rounded-full flex items-center transition-colors justify-end ${activeColumnIds.length <= 1 ? "opacity-40" : ""}`}
+                      style={{ background: GOLD }}
                       disabled={activeColumnIds.length <= 1}
                     >
                       <div className="w-4 h-4 rounded-full bg-white mx-0.5 shadow-sm" />
@@ -331,7 +410,7 @@ function MetricsStrip({ groups, lastPrice, rawCalls, rawPuts, earningsDate, stri
 
   const ivDisplay = atmIV != null ? atmIV.toFixed(1) + "%" : "—";
   const moveDisplay = expectedMove != null && lastPrice != null
-    ? "±$" + expectedMove.toFixed(2)
+    ? "\u00B1$" + expectedMove.toFixed(2)
     : "—";
 
   const totalCallVol = rawCalls.reduce((sum, c) => sum + (c.volume ?? 0), 0);
@@ -348,22 +427,20 @@ function MetricsStrip({ groups, lastPrice, rawCalls, rawPuts, earningsDate, stri
 
   return (
     <div
-      className="flex items-center justify-between w-full px-3 py-1.5 shrink-0 font-mono"
-      style={{ fontVariantNumeric: "tabular-nums", backgroundColor: "black", borderBottom: `1px solid ${BORDER}` }}
+      className="flex items-center justify-between w-full px-3 py-2 shrink-0 font-mono"
+      style={{ fontVariantNumeric: "tabular-nums", backgroundColor: "#111113", borderBottom: `1px solid ${BORDER}` }}
     >
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-1">
         {strikeControls}
         {isFetching && hasData && (
-          <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 border border-[#FFB800] border-t-transparent rounded-full animate-spin" />
-          </div>
+          <span className="w-2 h-2 border border-amber-400 border-t-transparent rounded-full animate-spin ml-1" />
         )}
       </div>
-      <div className="flex gap-4 text-xs font-medium text-zinc-400 items-center shrink-0">
-        <span><span className="text-zinc-500">IV</span> <span className={atmIV != null ? "text-white" : "text-zinc-600"}>{ivDisplay}</span></span>
-        <span><span className="text-zinc-500">MOVE</span> <span className={expectedMove != null ? "text-white" : "text-zinc-600"}>{moveDisplay}</span></span>
-        <span><span className="text-zinc-500">P/C</span> <span className={pcr !== "—" ? (Number(pcr) > 1 ? "text-[#f23645]" : "text-[#00d166]") : "text-zinc-600"}>{pcr}</span></span>
-        <span><span className="text-zinc-500">Earn</span> <span className="text-white">{earnDisplay}</span></span>
+      <div className="flex gap-3 text-[11px] font-medium items-center shrink-0">
+        <span><span className="text-zinc-500">IV</span> <span className={atmIV != null ? "text-white font-bold" : "text-zinc-600"}>{ivDisplay}</span></span>
+        <span><span className="text-zinc-500">MOVE</span> <span className={expectedMove != null ? "text-white font-bold" : "text-zinc-600"}>{moveDisplay}</span></span>
+        <span><span className="text-zinc-500">P/C</span> <span style={{ color: pcr !== "—" ? (Number(pcr) > 1 ? DOWN : UP) : "#52525b", fontWeight: 700 }}>{pcr}</span></span>
+        <span><span className="text-zinc-500">Earn</span> <span className="text-white font-bold">{earnDisplay}</span></span>
       </div>
     </div>
   );
@@ -407,7 +484,9 @@ function OptionsGrid({
   showCalls,
   showPuts,
   registerWing,
-  onTradeSingle,
+  selectedLegs,
+  onToggleLeg,
+  onQuickTrade,
 }: {
   rows: NormalizedRow[];
   underlyingPrice: number | null;
@@ -415,7 +494,9 @@ function OptionsGrid({
   showCalls: boolean;
   showPuts: boolean;
   registerWing: (el: HTMLDivElement) => () => void;
-  onTradeSingle?: (contract: Contract, side: "BUY" | "SELL", type: "CALL" | "PUT") => void;
+  selectedLegs: Map<string, SelectedLeg>;
+  onToggleLeg: (contract: Contract, type: "CALL" | "PUT") => void;
+  onQuickTrade: (contract: Contract, side: "BUY" | "SELL", type: "CALL" | "PUT") => void;
 }) {
   const leftBodyRef = useRef<HTMLDivElement>(null);
   const rightBodyRef = useRef<HTMLDivElement>(null);
@@ -452,7 +533,7 @@ function OptionsGrid({
       {atmLineTop >= 0 && (
         <div
           className="absolute left-0 right-0 z-[5] pointer-events-none"
-          style={{ top: atmLineTop, borderTop: "1.5px dashed #FF6B2B" }}
+          style={{ top: atmLineTop, borderTop: "2px dashed #FF6B2B" }}
         />
       )}
 
@@ -465,18 +546,26 @@ function OptionsGrid({
           <div style={{ minWidth: wingWidth }}>
             {sortedRows.map((row) => {
               const callITM = underlyingPrice != null && row.strike < underlyingPrice - EPS;
+              const callKey = row.call ? makeLegKey(row.call, "CALL") : "";
+              const isCallSelected = callKey ? selectedLegs.has(callKey) : false;
               return (
                 <div
                   key={row.strike}
-                  className={`flex border-b hover:bg-white/[0.03] transition-colors ${callITM ? "bg-[#1e293b]/40" : ""}`}
-                  style={{ height: ROW_H, borderColor: BORDER }}
+                  className="flex transition-colors"
+                  style={{
+                    height: ROW_H,
+                    borderBottom: `1px solid ${BORDER_ROW}`,
+                    background: isCallSelected ? `${GOLD}0d` : callITM ? "rgba(30,41,59,0.35)" : "transparent",
+                  }}
                 >
                   {columns.map(col => (
                     <div key={col.id} style={{ width: COL_W }} className="shrink-0">
                       <DataCell
                         col={col}
                         contract={row.call}
-                        onTap={col.isPrice && row.call && onTradeSingle ? () => onTradeSingle(row.call!, col.id === "bid" ? "SELL" : "BUY", "CALL") : undefined}
+                        isSelected={isCallSelected && col.isPrice}
+                        onSelect={col.isPrice && row.call ? () => onToggleLeg(row.call!, "CALL") : undefined}
+                        onLongPress={col.isPrice && row.call ? () => onQuickTrade(row.call!, col.id === "bid" ? "SELL" : "BUY", "CALL") : undefined}
                       />
                     </div>
                   ))}
@@ -487,14 +576,21 @@ function OptionsGrid({
         </div>
       )}
 
-      <div className="flex-none z-10" style={{ width: STRIKE_W, backgroundColor: '#151517', borderLeft: `1px solid ${BORDER}`, borderRight: `1px solid ${BORDER}` }}>
+      <div className="flex-none z-10" style={{ width: STRIKE_W, backgroundColor: '#131315', borderLeft: `1px solid ${BORDER}`, borderRight: `1px solid ${BORDER}` }}>
         {sortedRows.map((row) => {
           const isATMStrike = underlyingPrice != null && Math.abs(row.strike - underlyingPrice) <= EPS;
           return (
             <div
               key={row.strike}
-              className={`flex items-center justify-center text-[11px] font-bold border-b ${isATMStrike ? "text-[#FFB800]" : "text-zinc-300"}`}
-              style={{ height: ROW_H, fontVariantNumeric: "tabular-nums", borderColor: BORDER }}
+              className="flex items-center justify-center font-bold"
+              style={{
+                height: ROW_H,
+                fontSize: 12,
+                fontVariantNumeric: "tabular-nums",
+                borderBottom: `1px solid ${BORDER_ROW}`,
+                color: isATMStrike ? GOLD : "#e4e4e7",
+                background: isATMStrike ? `${GOLD}0a` : "transparent",
+              }}
             >
               {row.strike % 1 === 0 ? row.strike : row.strike.toFixed(1)}
             </div>
@@ -511,18 +607,26 @@ function OptionsGrid({
           <div style={{ minWidth: wingWidth }}>
             {sortedRows.map((row) => {
               const putITM = underlyingPrice != null && row.strike > underlyingPrice + EPS;
+              const putKey = row.put ? makeLegKey(row.put, "PUT") : "";
+              const isPutSelected = putKey ? selectedLegs.has(putKey) : false;
               return (
                 <div
                   key={row.strike}
-                  className={`flex border-b hover:bg-white/[0.03] transition-colors ${putITM ? "bg-[#1e293b]/40" : ""}`}
-                  style={{ height: ROW_H, borderColor: BORDER }}
+                  className="flex transition-colors"
+                  style={{
+                    height: ROW_H,
+                    borderBottom: `1px solid ${BORDER_ROW}`,
+                    background: isPutSelected ? `${GOLD}0d` : putITM ? "rgba(30,41,59,0.35)" : "transparent",
+                  }}
                 >
                   {columns.map(col => (
                     <div key={col.id} style={{ width: COL_W }} className="shrink-0">
                       <DataCell
                         col={col}
                         contract={row.put}
-                        onTap={col.isPrice && row.put && onTradeSingle ? () => onTradeSingle(row.put!, col.id === "bid" ? "SELL" : "BUY", "PUT") : undefined}
+                        isSelected={isPutSelected && col.isPrice}
+                        onSelect={col.isPrice && row.put ? () => onToggleLeg(row.put!, "PUT") : undefined}
+                        onLongPress={col.isPrice && row.put ? () => onQuickTrade(row.put!, col.id === "bid" ? "SELL" : "BUY", "PUT") : undefined}
                       />
                     </div>
                   ))}
@@ -551,7 +655,7 @@ interface OptionsTabProps {
   subscribeOptionSymbols?: (symbols: string[]) => Promise<void>;
   stickyOffset?: number;
   onTradeSingle?: (contract: Contract, side: "BUY" | "SELL", type: "CALL" | "PUT") => void;
-  onOpenStrategyBuilder?: (strikes: number[], expirations: { label: string; value: string }[], chainData: Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number }>) => void;
+  onOpenStrategyBuilder?: (strikes: number[], expirations: { label: string; value: string }[], chainData: Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number }>, preSelectedLegs?: { contract: Contract; type: "CALL" | "PUT" }[]) => void;
 }
 
 export type { Contract as OptionsContract };
@@ -562,6 +666,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
   const setStrikeCount = useOptionsSettingsStore(s => s.setStrikeCount);
   const { activeColumnIds } = useOptionsColumnsStore();
   const [columnsEditorOpen, setColumnsEditorOpen] = useState(false);
+  const [selectedLegs, setSelectedLegs] = useState<Map<string, SelectedLeg>>(new Map());
 
   const activeColumns = useMemo(
     () => activeColumnIds.map(id => COLUMN_REGISTRY.find(c => c.id === id)).filter(Boolean) as ColumnDef[],
@@ -635,7 +740,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
     }
   }, [groups, subscribeOptionSymbols]);
 
-  useEffect(() => { setExpandedExps(new Set()); }, [symbol]);
+  useEffect(() => { setExpandedExps(new Set()); setSelectedLegs(new Map()); }, [symbol]);
 
   const toggleExp = (exp: string) => {
     setExpandedExps(prev => {
@@ -644,6 +749,55 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
       return next;
     });
   };
+
+  const handleToggleLeg = useCallback((contract: Contract, type: "CALL" | "PUT") => {
+    const key = makeLegKey(contract, type);
+    setSelectedLegs(prev => {
+      const next = new Map(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.set(key, { contract, type, expiration: contract.expiration });
+      }
+      return next;
+    });
+  }, []);
+
+  const handleQuickTrade = useCallback((contract: Contract, side: "BUY" | "SELL", type: "CALL" | "PUT") => {
+    if (onTradeSingle) {
+      onTradeSingle(contract, side, type);
+    }
+  }, [onTradeSingle]);
+
+  const handleClearSelection = useCallback(() => {
+    setSelectedLegs(new Map());
+  }, []);
+
+  const handleBuildStrategy = useCallback(() => {
+    if (!onOpenStrategyBuilder || groups.length === 0) return;
+    const allStrikes = new Set<number>();
+    const expLabels: { label: string; value: string }[] = [];
+    const cMap = new Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number }>();
+    for (const g of groups) {
+      if (!expLabels.some(e => e.value === g.expiration)) {
+        expLabels.push({ label: `${g.dateLabel} (${Math.round(g.dte)}d)`, value: g.expiration });
+      }
+      for (const row of g.rows) {
+        allStrikes.add(row.strike);
+        const mapContract = (c: Contract | null) => {
+          if (!c?.streamKey) return;
+          cMap.set(c.streamKey, { bid: c.bid, ask: c.ask, delta: c.delta, gamma: c.gamma, theta: c.theta, vega: c.vega, iv: c.iv });
+        };
+        mapContract(row.call);
+        mapContract(row.put);
+      }
+    }
+    const preSelected = selCount > 0
+      ? [...selectedLegs.values()].map(l => ({ contract: l.contract, type: l.type }))
+      : undefined;
+    onOpenStrategyBuilder([...allStrikes].sort((a, b) => a - b), expLabels, cMap, preSelected);
+    setSelectedLegs(new Map());
+  }, [onOpenStrategyBuilder, groups, selectedLegs, selCount]);
 
   const handleStrikeModeChange = useCallback((val: string) => {
     if (val === "custom") { setLocalCustomValue(String(strikeCount)); setIsCustomMode(true); return; }
@@ -674,35 +828,13 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
   const showCalls = contractType !== "PUT";
   const showPuts = contractType !== "CALL";
 
-  const handleOpenStrategy = useCallback(() => {
-    if (!onOpenStrategyBuilder || groups.length === 0) return;
-    const allStrikes = new Set<number>();
-    const expLabels: { label: string; value: string }[] = [];
-    const cMap = new Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number }>();
-    for (const g of groups) {
-      if (!expLabels.some(e => e.value === g.expiration)) {
-        expLabels.push({ label: `${g.dateLabel} (${Math.round(g.dte)}d)`, value: g.expiration });
-      }
-      for (const row of g.rows) {
-        allStrikes.add(row.strike);
-        const mapContract = (c: Contract | null) => {
-          if (!c?.streamKey) return;
-          cMap.set(c.streamKey, { bid: c.bid, ask: c.ask, delta: c.delta, gamma: c.gamma, theta: c.theta, vega: c.vega, iv: c.iv });
-        };
-        mapContract(row.call);
-        mapContract(row.put);
-      }
-    }
-    onOpenStrategyBuilder([...allStrikes].sort((a, b) => a - b), expLabels, cMap);
-  }, [onOpenStrategyBuilder, groups]);
-
   const { registerWing } = useScrollSync();
 
   const subHeaderLeftRef = useRef<HTMLDivElement>(null);
   const subHeaderRightRef = useRef<HTMLDivElement>(null);
 
   const hasData = data && groups.length > 0;
-  const apiError = (rawData as any)?.error as string | undefined;
+  const apiError = (rawData as Record<string, unknown> | undefined)?.error as string | undefined;
 
   useEffect(() => {
     const cleanups: (() => void)[] = [];
@@ -711,8 +843,10 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
     return () => cleanups.forEach(fn => fn());
   }, [registerWing, showCalls, showPuts, hasData]);
 
+  const selCount = selectedLegs.size;
+
   return (
-    <div style={{ backgroundColor: BG }}>
+    <div style={{ backgroundColor: BG }} className="relative">
       <MetricsStrip
         groups={groups}
         lastPrice={underlyingPrice}
@@ -755,7 +889,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
         }
       />
 
-      <div className="relative" style={{ backgroundColor: BG }}>
+      <div className="relative" style={{ backgroundColor: BG, paddingBottom: selCount > 0 ? 56 : 0 }}>
         {isLoading && !data && (
           <div className="p-4 space-y-1.5">
             {Array.from({ length: strikeCount }).map((_, i) => (
@@ -776,7 +910,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
         )}
 
         {!hasData && !isLoading && !error && apiError && (
-          <div className="p-10 text-center text-[#FFB800]/80 font-mono flex flex-col items-center">
+          <div className="p-10 text-center font-mono flex flex-col items-center" style={{ color: `${GOLD}cc` }}>
             <span className="text-3xl mb-3">⚠</span>
             <span className="text-xs tracking-wider">OPTIONS DATA TEMPORARILY UNAVAILABLE</span>
             <span className="text-[10px] text-zinc-500 mt-1.5">Schwab options service may be down — retries automatically</span>
@@ -805,7 +939,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
             >
               {showCalls && (
                 <div className="flex-1 text-center">
-                  <span className="text-[12px] font-extrabold text-white tracking-widest">Calls</span>
+                  <span className="text-[13px] font-extrabold text-white tracking-widest">Calls</span>
                 </div>
               )}
               <div
@@ -814,9 +948,9 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
               >
                 {onOpenStrategyBuilder ? (
                   <button
-                    onClick={handleOpenStrategy}
-                    className="flex items-center justify-center text-[#FFB800] hover:text-[#FFD54F] transition-colors"
-                    style={{ width: STRIKE_W / 2, height: HEADER_H }}
+                    onClick={handleBuildStrategy}
+                    className="flex items-center justify-center transition-colors"
+                    style={{ width: STRIKE_W / 2, height: HEADER_H, color: GOLD }}
                     aria-label="Strategy builder"
                   >
                     <Layers className="w-4 h-4" />
@@ -824,7 +958,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
                 ) : null}
                 <button
                   onClick={() => setColumnsEditorOpen(true)}
-                  className="flex items-center justify-center text-white hover:text-[#FFB800] transition-colors"
+                  className="flex items-center justify-center text-white hover:text-amber-400 transition-colors"
                   style={{ width: onOpenStrategyBuilder ? STRIKE_W / 2 : STRIKE_W, height: HEADER_H }}
                   aria-label="Edit columns"
                 >
@@ -833,14 +967,14 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
               </div>
               {showPuts && (
                 <div className="flex-1 text-center">
-                  <span className="text-[12px] font-extrabold text-white tracking-widest">Puts</span>
+                  <span className="text-[13px] font-extrabold text-white tracking-widest">Puts</span>
                 </div>
               )}
             </div>
 
             <div
               className="w-full flex items-center sticky z-20 font-mono"
-              style={{ top: stickyOffset + HEADER_H, height: SUB_HEADER_H, backgroundColor: BG, borderBottom: `1px solid ${BORDER}` }}
+              style={{ top: stickyOffset + HEADER_H, height: SUB_HEADER_H, backgroundColor: "#131315", borderBottom: `1px solid ${BORDER}` }}
             >
               {showCalls && (
                 <div
@@ -851,7 +985,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
                   <div className="flex items-center" style={{ minWidth: wingWidth, height: SUB_HEADER_H }}>
                     {activeColumns.map(col => (
                       <div key={col.id} style={{ width: COL_W }} className="shrink-0 flex items-center px-1.5">
-                        <span className="text-[10px] text-zinc-400 font-medium">{col.topLabel}</span>
+                        <span className="text-[10px] font-semibold" style={{ color: "#a1a1aa" }}>{col.topLabel}</span>
                       </div>
                     ))}
                   </div>
@@ -861,7 +995,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
                 className="flex-none flex items-center justify-center"
                 style={{ width: STRIKE_W, borderLeft: `1px solid ${BORDER}`, borderRight: `1px solid ${BORDER}` }}
               >
-                <span className="text-[10px] text-zinc-400 font-medium">Strike</span>
+                <span className="text-[10px] font-semibold" style={{ color: "#a1a1aa" }}>Strike</span>
               </div>
               {showPuts && (
                 <div
@@ -872,7 +1006,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
                   <div className="flex items-center" style={{ minWidth: wingWidth, height: SUB_HEADER_H }}>
                     {activeColumns.map(col => (
                       <div key={col.id} style={{ width: COL_W }} className="shrink-0 flex items-center px-1.5">
-                        <span className="text-[10px] text-zinc-400 font-medium">{col.topLabel}</span>
+                        <span className="text-[10px] font-semibold" style={{ color: "#a1a1aa" }}>{col.topLabel}</span>
                       </div>
                     ))}
                   </div>
@@ -887,39 +1021,38 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
                   <div key={group.expiration}>
                     <button
                       onClick={() => toggleExp(group.expiration)}
-                      className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-white/[0.03] transition-colors sticky z-20"
-                      style={{ top: stickyOffset + STICKY_TOP, backgroundColor: BG, borderBottom: `1px solid ${BORDER}` }}
+                      className="w-full flex items-center justify-between px-3 py-2 hover:bg-white/[0.03] transition-colors sticky z-20"
+                      style={{ top: stickyOffset + STICKY_TOP, backgroundColor: "#111113", borderBottom: `1px solid ${BORDER}` }}
                     >
-                      <div className="flex items-center gap-1.5 font-mono">
+                      <div className="flex items-center gap-2 font-mono">
                         {isOpen
                           ? <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />
                           : <ChevronUp className="w-3.5 h-3.5 text-zinc-400 -rotate-90" />
                         }
-                        <span className="text-[11px] font-bold text-white tracking-wide">
+                        <span className="text-[12px] font-bold text-white tracking-wide">
                           {group.dateLabel}
                         </span>
-                        <span className="text-[11px] text-white font-medium">
-                          ({Math.round(group.dte)} DTE)
-                        </span>
-                        <span className="text-[11px] text-zinc-300">
-                          100
+                        <span className="text-[11px] font-bold" style={{ color: "#d4d4d8" }}>
+                          {Math.round(group.dte)}d
                         </span>
                         {group.isWeekly && (
-                          <span className="text-[11px] text-[#FF6B2B] font-medium">Weeklys</span>
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ color: "#FF6B2B", background: "rgba(255,107,43,0.1)" }}>
+                            Wkly
+                          </span>
                         )}
                       </div>
                       <div className="font-mono text-[11px]" style={{ fontVariantNumeric: "tabular-nums" }}>
                         {group.atmIV != null ? (
-                          <span className="text-zinc-300">
-                            {group.atmIV.toFixed(2)}%
+                          <span className="font-bold" style={{ color: "#e4e4e7" }}>
+                            {group.atmIV.toFixed(1)}%
                             {group.expectedMove != null && (
-                              <span className="text-zinc-500 ml-1">
-                                (±{group.expectedMove.toFixed(3)})
+                              <span className="ml-1.5 font-medium" style={{ color: "#a1a1aa" }}>
+                                ({"\u00B1"}{group.expectedMove.toFixed(2)})
                               </span>
                             )}
                           </span>
                         ) : (
-                          <span className="text-zinc-600">—</span>
+                          <span style={{ color: "#3f3f46" }}>—</span>
                         )}
                       </div>
                     </button>
@@ -932,7 +1065,9 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
                         showCalls={showCalls}
                         showPuts={showPuts}
                         registerWing={registerWing}
-                        onTradeSingle={onTradeSingle}
+                        selectedLegs={selectedLegs}
+                        onToggleLeg={handleToggleLeg}
+                        onQuickTrade={handleQuickTrade}
                       />
                     )}
                   </div>
@@ -949,6 +1084,37 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
           </div>
         )}
       </div>
+
+      {selCount > 0 && (
+        <div
+          className="fixed bottom-16 left-0 right-0 z-[100] flex items-center justify-between px-4 py-3 font-mono"
+          style={{
+            background: "linear-gradient(180deg, #1C1C1E 0%, #111113 100%)",
+            borderTop: `1px solid ${GOLD}40`,
+            boxShadow: `0 -4px 20px rgba(0,0,0,0.5), 0 -1px 0 ${GOLD}20`,
+          }}
+        >
+          <button
+            onClick={handleBuildStrategy}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-[12px] tracking-wider transition-all active:scale-[0.97]"
+            style={{
+              background: `linear-gradient(180deg, ${GOLD} 0%, #d97706 100%)`,
+              color: "#111",
+              boxShadow: `0 2px 12px ${GOLD}40`,
+            }}
+          >
+            <Layers className="w-3.5 h-3.5" />
+            Build Strategy with {selCount} leg{selCount > 1 ? "s" : ""}
+          </button>
+          <button
+            onClick={handleClearSelection}
+            className="px-3 py-2 rounded-lg text-[11px] font-medium tracking-wider transition-colors"
+            style={{ color: "#a1a1aa", background: "rgba(255,255,255,0.05)", border: `1px solid ${BORDER}` }}
+          >
+            Clear
+          </button>
+        </div>
+      )}
 
       <ColumnsEditorModal open={columnsEditorOpen} onClose={() => setColumnsEditorOpen(false)} />
     </div>
