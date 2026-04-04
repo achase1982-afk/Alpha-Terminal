@@ -742,6 +742,12 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
 
   useEffect(() => { setExpandedExps(new Set()); setSelectedLegs(new Map()); }, [symbol]);
 
+  useEffect(() => {
+    if (groups.length > 0 && expandedExps.size === 0) {
+      setExpandedExps(new Set([groups[0].expiration]));
+    }
+  }, [groups.length]);
+
   const toggleExp = (exp: string) => {
     setExpandedExps(prev => {
       const next = new Set(prev);
