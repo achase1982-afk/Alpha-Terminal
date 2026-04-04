@@ -18,7 +18,9 @@ import { useViewportShell } from "@/hooks/useViewportShell";
 import { AiChatOverlay } from "@/components/AiChatOverlay";
 
 import { InAppBrowser } from "@/components/InAppBrowser";
-import { OrderTicket } from "@/components/OrderTicket";
+import { OrderTicket, type OrderLeg } from "@/components/OrderTicket";
+import { StrategyBuilder, type StrategyLeg } from "@/components/StrategyBuilder";
+import type { OptionsContract } from "@/components/OptionsTab";
 import { MarketSessionClock } from "@/components/MarketSessionClock";
 import { NewsTab } from "@/components/NewsTab";
 import { AiBiasStrip } from "@/components/market-pulse/AiBiasStrip";
@@ -124,10 +126,20 @@ export default function TerminalPage() {
   const [orderSide, setOrderSide] = useState<"BUY" | "SELL">("BUY");
   const [orderOptionSymbol, setOrderOptionSymbol] = useState<string | undefined>();
   const [orderOptionInstruction, setOrderOptionInstruction] = useState<string | undefined>();
+  const [orderStrategyLegs, setOrderStrategyLegs] = useState<OrderLeg[] | undefined>();
+  const [orderStrategyNetPrice, setOrderStrategyNetPrice] = useState<number | undefined>();
+  const [orderStrategyIsCredit, setOrderStrategyIsCredit] = useState(false);
+
+  const [strategyOpen, setStrategyOpen] = useState(false);
+  const [strategyStrikes, setStrategyStrikes] = useState<number[]>([]);
+  const [strategyExpirations, setStrategyExpirations] = useState<{ label: string; value: string }[]>([]);
+  const [strategyChainData, setStrategyChainData] = useState<Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number }>>(new Map());
 
   const openOrder = useCallback((side: "BUY" | "SELL") => {
     setOrderOptionSymbol(undefined);
     setOrderOptionInstruction(undefined);
+    setOrderStrategyLegs(undefined);
+    setOrderStrategyNetPrice(undefined);
     setOrderSide(side);
     setOrderOpen(true);
   }, []);
@@ -137,6 +149,58 @@ export default function TerminalPage() {
     setOrderSide(side);
     setOrderOptionSymbol(optionSymbol);
     setOrderOptionInstruction(optionInstruction);
+    setOrderStrategyLegs(undefined);
+    setOrderStrategyNetPrice(undefined);
+    setOrderOpen(true);
+  }, []);
+
+  const closeOrderTicket = useCallback(() => {
+    setOrderOpen(false);
+    setOrderStrategyLegs(undefined);
+    setOrderStrategyNetPrice(undefined);
+    setOrderStrategyIsCredit(false);
+    setOrderOptionSymbol(undefined);
+    setOrderOptionInstruction(undefined);
+  }, []);
+
+  const handleOptionTradeSingle = useCallback((contract: OptionsContract, side: "BUY" | "SELL", type: "CALL" | "PUT") => {
+    const c = contract as Record<string, unknown>;
+    const schwabSym = (typeof c.streamKey === "string" ? c.streamKey : typeof c.schwabSymbol === "string" ? c.schwabSymbol : "") as string;
+    const instruction = side === "BUY" ? "BUY_TO_OPEN" : "SELL_TO_OPEN";
+    setOrderSide(side);
+    setOrderOptionSymbol(schwabSym);
+    setOrderOptionInstruction(instruction);
+    setOrderStrategyLegs(undefined);
+    setOrderStrategyNetPrice(undefined);
+    setOrderOpen(true);
+  }, []);
+
+  const handleOpenStrategyBuilder = useCallback((strikes: number[], expirations: { label: string; value: string }[], chainData: Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number }>) => {
+    setStrategyStrikes(strikes);
+    setStrategyExpirations(expirations);
+    setStrategyChainData(chainData);
+    setStrategyOpen(true);
+  }, []);
+
+  const handleStrategyToOrderTicket = useCallback((legs: StrategyLeg[], netPrice: number, isCredit: boolean) => {
+    setStrategyOpen(false);
+    const orderLegs: OrderLeg[] = legs.map(l => ({
+      schwabSymbol: l.schwabSymbol,
+      instruction: l.direction,
+      quantity: l.quantity,
+      optionType: l.optionType,
+      strike: l.strike,
+      expiration: l.expiration,
+      bid: l.bid,
+      ask: l.ask,
+      delta: l.delta,
+    }));
+    setOrderStrategyLegs(orderLegs);
+    setOrderStrategyNetPrice(netPrice);
+    setOrderStrategyIsCredit(isCredit);
+    setOrderOptionSymbol(undefined);
+    setOrderOptionInstruction(undefined);
+    setOrderSide("BUY");
     setOrderOpen(true);
   }, []);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -320,7 +384,7 @@ export default function TerminalPage() {
                 </div>
                 <div style={{ minHeight: "calc(100vh - 60px)" }}>
                   {contextTab === "news" && <NewsTab />}
-                  {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={stickyH} />}
+                  {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={stickyH} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
                   {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles as any} stickyOffset={stickyH} />}
                   {contextTab === "chart" && (
                     <>
@@ -374,7 +438,7 @@ export default function TerminalPage() {
                   </div>
                   <div className="flex-1 overflow-y-auto">
                     {contextTab === "news" && <NewsTab />}
-                    {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={0} />}
+                    {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={0} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
                     {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles as any} stickyOffset={0} />}
                   </div>
                 </div>
@@ -406,7 +470,7 @@ export default function TerminalPage() {
                 </div>
                 <div style={{ minHeight: "calc(100vh - 60px)" }}>
                   {contextTab === "news" && <NewsTab />}
-                  {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={stickyH} />}
+                  {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={stickyH} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
                   {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles as any} stickyOffset={stickyH} />}
                   {contextTab === "chart" && (
                     <>
@@ -480,7 +544,24 @@ export default function TerminalPage() {
       />
       <AiChatOverlay isOpen={chatOpen} onClose={() => setChatOpen(false)} />
       <InAppBrowser />
-      <OrderTicket isOpen={orderOpen} onClose={() => setOrderOpen(false)} initialSide={orderSide} optionSymbol={orderOptionSymbol} optionInstruction={orderOptionInstruction} />
+      <StrategyBuilder
+        isOpen={strategyOpen}
+        onClose={() => setStrategyOpen(false)}
+        onSendToOrderTicket={handleStrategyToOrderTicket}
+        availableStrikes={strategyStrikes}
+        availableExpirations={strategyExpirations}
+        chainData={strategyChainData}
+      />
+      <OrderTicket
+        isOpen={orderOpen}
+        onClose={closeOrderTicket}
+        initialSide={orderSide}
+        optionSymbol={orderOptionSymbol}
+        optionInstruction={orderOptionInstruction}
+        strategyLegs={orderStrategyLegs}
+        strategyNetPrice={orderStrategyNetPrice}
+        strategyIsCredit={orderStrategyIsCredit}
+      />
     </div>
   );
 }

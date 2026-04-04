@@ -9,18 +9,20 @@ import { useQuery } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Table2, ChevronDown, ChevronUp, X, Settings, GripVertical } from "lucide-react";
+import { Table2, ChevronDown, ChevronUp, X, Settings, GripVertical, Layers } from "lucide-react";
 import { Reorder } from "framer-motion";
 
 const EPS = 0.0001;
 const COL_W = 72;
 const STRIKE_W = 56;
-const ROW_H = 40;
-const HEADER_H = 36;
-const SUB_HEADER_H = 22;
+const ROW_H = 36;
+const HEADER_H = 32;
+const SUB_HEADER_H = 20;
 const STICKY_TOP = HEADER_H + SUB_HEADER_H;
 const BG = "#1C1C1E";
 const BORDER = "#2A2A2C";
+const BID_TINT = "rgba(0,209,102,0.04)";
+const ASK_TINT = "rgba(242,54,69,0.04)";
 
 interface Contract {
   strike: number;
@@ -183,7 +185,7 @@ function getStreamVal(tick: ReturnType<typeof useOptionTick>, key: string): numb
   return typeof v === "number" && !isNaN(v) ? v : undefined;
 }
 
-const DataCell = memo(function DataCell({ col, contract }: { col: ColumnDef; contract: Contract | null }) {
+const DataCell = memo(function DataCell({ col, contract, onTap }: { col: ColumnDef; contract: Contract | null; onTap?: () => void }) {
   const tick = useOptionTick(contract?.streamKey);
 
   const topVal = getStreamVal(tick, col.topKey) ?? getContractVal(contract, col.topKey);
@@ -193,31 +195,44 @@ const DataCell = memo(function DataCell({ col, contract }: { col: ColumnDef; con
   const topStr = fmtNum(topVal, col.topDecimals);
   const botStr = col.bottomKey ? fmtNum(bottomVal, col.bottomDecimals ?? 0) : null;
 
+  const isBid = col.id === "bid";
+  const isAsk = col.id === "ask";
+  const deltaVal = (col.id === "bid" || col.id === "ask")
+    ? (getStreamVal(tick, "delta") ?? getContractVal(contract, "delta"))
+    : undefined;
+
+  const tint = isBid ? BID_TINT : isAsk ? ASK_TINT : undefined;
+
   const inner = (
     <div className="flex flex-col justify-center px-1.5" style={{ height: ROW_H }}>
-      <span className={`text-[13px] font-bold leading-none ${topStr === "—" ? "text-zinc-600" : "text-white"}`}>
+      <span className={`text-[12px] font-bold leading-none ${topStr === "—" ? "text-zinc-600" : isBid ? "text-[#00d166]" : isAsk ? "text-[#f23645]" : "text-white"}`}>
         {topStr}
       </span>
-      {botStr != null && (
-        <span className={`text-[9px] leading-none mt-0.5 ${botStr === "—" ? "text-zinc-700" : "text-zinc-500"}`}>
+      {deltaVal != null && (isBid || isAsk) ? (
+        <span className="text-[8px] leading-none mt-0.5 text-zinc-500" style={{ fontVariantNumeric: "tabular-nums" }}>
+          {"\u0394"} {fmtNum(deltaVal, 2)}
+        </span>
+      ) : botStr != null ? (
+        <span className={`text-[8px] leading-none mt-0.5 ${botStr === "—" ? "text-zinc-700" : "text-zinc-500"}`}>
           {col.bottomLabel ? `${col.bottomLabel}: ${botStr}` : botStr}
         </span>
-      )}
+      ) : null}
     </div>
   );
 
-  if (col.isPrice) {
+  if (col.isPrice && onTap) {
     return (
       <button
-        className="w-full text-left hover:bg-white/[0.04] active:bg-white/[0.08] transition-colors cursor-pointer"
-        style={{ fontVariantNumeric: "tabular-nums" }}
+        onClick={onTap}
+        className="w-full text-left hover:bg-white/[0.06] active:bg-white/[0.12] transition-colors cursor-pointer"
+        style={{ fontVariantNumeric: "tabular-nums", background: tint }}
       >
         {inner}
       </button>
     );
   }
 
-  return <div style={{ fontVariantNumeric: "tabular-nums" }}>{inner}</div>;
+  return <div style={{ fontVariantNumeric: "tabular-nums", background: tint }}>{inner}</div>;
 });
 
 function ColumnsEditorModal({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -392,6 +407,7 @@ function OptionsGrid({
   showCalls,
   showPuts,
   registerWing,
+  onTradeSingle,
 }: {
   rows: NormalizedRow[];
   underlyingPrice: number | null;
@@ -399,6 +415,7 @@ function OptionsGrid({
   showCalls: boolean;
   showPuts: boolean;
   registerWing: (el: HTMLDivElement) => () => void;
+  onTradeSingle?: (contract: Contract, side: "BUY" | "SELL", type: "CALL" | "PUT") => void;
 }) {
   const leftBodyRef = useRef<HTMLDivElement>(null);
   const rightBodyRef = useRef<HTMLDivElement>(null);
@@ -451,12 +468,16 @@ function OptionsGrid({
               return (
                 <div
                   key={row.strike}
-                  className={`flex border-b hover:bg-white/[0.03] transition-colors ${callITM ? "bg-[#1e293b]/60" : ""}`}
+                  className={`flex border-b hover:bg-white/[0.03] transition-colors ${callITM ? "bg-[#1e293b]/40" : ""}`}
                   style={{ height: ROW_H, borderColor: BORDER }}
                 >
                   {columns.map(col => (
                     <div key={col.id} style={{ width: COL_W }} className="shrink-0">
-                      <DataCell col={col} contract={row.call} />
+                      <DataCell
+                        col={col}
+                        contract={row.call}
+                        onTap={col.isPrice && row.call && onTradeSingle ? () => onTradeSingle(row.call!, col.id === "bid" ? "SELL" : "BUY", "CALL") : undefined}
+                      />
                     </div>
                   ))}
                 </div>
@@ -472,7 +493,7 @@ function OptionsGrid({
           return (
             <div
               key={row.strike}
-              className={`flex items-center justify-center text-[12px] font-bold border-b ${isATMStrike ? "text-[#FFB800]" : "text-zinc-300"}`}
+              className={`flex items-center justify-center text-[11px] font-bold border-b ${isATMStrike ? "text-[#FFB800]" : "text-zinc-300"}`}
               style={{ height: ROW_H, fontVariantNumeric: "tabular-nums", borderColor: BORDER }}
             >
               {row.strike % 1 === 0 ? row.strike : row.strike.toFixed(1)}
@@ -493,12 +514,16 @@ function OptionsGrid({
               return (
                 <div
                   key={row.strike}
-                  className={`flex border-b hover:bg-white/[0.03] transition-colors ${putITM ? "bg-[#1e293b]/60" : ""}`}
+                  className={`flex border-b hover:bg-white/[0.03] transition-colors ${putITM ? "bg-[#1e293b]/40" : ""}`}
                   style={{ height: ROW_H, borderColor: BORDER }}
                 >
                   {columns.map(col => (
                     <div key={col.id} style={{ width: COL_W }} className="shrink-0">
-                      <DataCell col={col} contract={row.put} />
+                      <DataCell
+                        col={col}
+                        contract={row.put}
+                        onTap={col.isPrice && row.put && onTradeSingle ? () => onTradeSingle(row.put!, col.id === "bid" ? "SELL" : "BUY", "PUT") : undefined}
+                      />
                     </div>
                   ))}
                 </div>
@@ -525,9 +550,13 @@ function buildSchwabOptionKey(underlying: string, expiration: string, strike: nu
 interface OptionsTabProps {
   subscribeOptionSymbols?: (symbols: string[]) => Promise<void>;
   stickyOffset?: number;
+  onTradeSingle?: (contract: Contract, side: "BUY" | "SELL", type: "CALL" | "PUT") => void;
+  onOpenStrategyBuilder?: (strikes: number[], expirations: { label: string; value: string }[], chainData: Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number }>) => void;
 }
 
-export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0 }: OptionsTabProps) {
+export type { Contract as OptionsContract };
+
+export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSingle, onOpenStrategyBuilder }: OptionsTabProps) {
   const { symbol, accessToken } = useTerminalStore();
   const { contractType, strikeCount, customStrikeInput, setCustomStrikeInput } = useOptionsSettingsStore();
   const setStrikeCount = useOptionsSettingsStore(s => s.setStrikeCount);
@@ -645,6 +674,28 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0 }: Options
   const showCalls = contractType !== "PUT";
   const showPuts = contractType !== "CALL";
 
+  const handleOpenStrategy = useCallback(() => {
+    if (!onOpenStrategyBuilder || groups.length === 0) return;
+    const allStrikes = new Set<number>();
+    const expLabels: { label: string; value: string }[] = [];
+    const cMap = new Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number }>();
+    for (const g of groups) {
+      if (!expLabels.some(e => e.value === g.expiration)) {
+        expLabels.push({ label: `${g.dateLabel} (${Math.round(g.dte)}d)`, value: g.expiration });
+      }
+      for (const row of g.rows) {
+        allStrikes.add(row.strike);
+        const mapContract = (c: Contract | null) => {
+          if (!c?.streamKey) return;
+          cMap.set(c.streamKey, { bid: c.bid, ask: c.ask, delta: c.delta, gamma: c.gamma, theta: c.theta, vega: c.vega, iv: c.iv });
+        };
+        mapContract(row.call);
+        mapContract(row.put);
+      }
+    }
+    onOpenStrategyBuilder([...allStrikes].sort((a, b) => a - b), expLabels, cMap);
+  }, [onOpenStrategyBuilder, groups]);
+
   const { registerWing } = useScrollSync();
 
   const subHeaderLeftRef = useRef<HTMLDivElement>(null);
@@ -758,16 +809,26 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0 }: Options
                 </div>
               )}
               <div
-                className="flex items-center justify-center"
+                className="flex items-center justify-center gap-0"
                 style={{ width: STRIKE_W, borderLeft: `1px solid ${BORDER}`, borderRight: `1px solid ${BORDER}` }}
               >
+                {onOpenStrategyBuilder ? (
+                  <button
+                    onClick={handleOpenStrategy}
+                    className="flex items-center justify-center text-[#FFB800] hover:text-[#FFD54F] transition-colors"
+                    style={{ width: STRIKE_W / 2, height: HEADER_H }}
+                    aria-label="Strategy builder"
+                  >
+                    <Layers className="w-4 h-4" />
+                  </button>
+                ) : null}
                 <button
                   onClick={() => setColumnsEditorOpen(true)}
                   className="flex items-center justify-center text-white hover:text-[#FFB800] transition-colors"
-                  style={{ width: STRIKE_W, height: HEADER_H }}
+                  style={{ width: onOpenStrategyBuilder ? STRIKE_W / 2 : STRIKE_W, height: HEADER_H }}
                   aria-label="Edit columns"
                 >
-                  <Settings className="w-5 h-5" />
+                  <Settings className="w-4 h-4" />
                 </button>
               </div>
               {showPuts && (
@@ -871,6 +932,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0 }: Options
                         showCalls={showCalls}
                         showPuts={showPuts}
                         registerWing={registerWing}
+                        onTradeSingle={onTradeSingle}
                       />
                     )}
                   </div>
