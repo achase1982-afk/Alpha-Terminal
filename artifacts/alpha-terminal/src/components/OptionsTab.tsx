@@ -1224,13 +1224,13 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
               )}
               <div
                 className="flex items-center justify-center"
-                style={{ width: STRIKE_W, background: accentHex, borderLeft: `1px solid ${accentHex}`, borderRight: `1px solid ${accentHex}` }}
+                style={{ width: STRIKE_W, background: BG_HEADER, borderLeft: `1px solid ${BORDER}`, borderRight: `1px solid ${BORDER}` }}
               >
                 {onOpenStrategyBuilder && (
                   <button
                     onClick={handleBuildStrategy}
-                    className="flex items-center justify-center transition-colors hover:bg-black/20"
-                    style={{ width: STRIKE_W / 2, height: HEADER_H, color: "#000" }}
+                    className="flex items-center justify-center transition-colors hover:bg-white/5"
+                    style={{ width: STRIKE_W / 2, height: HEADER_H, color: GRAY }}
                     aria-label="Strategy builder"
                   >
                     <Layers className="w-3.5 h-3.5" />
@@ -1238,8 +1238,8 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
                 )}
                 <button
                   onClick={() => setColumnsEditorOpen(true)}
-                  className="flex items-center justify-center transition-colors hover:bg-black/20"
-                  style={{ width: onOpenStrategyBuilder ? STRIKE_W / 2 : STRIKE_W, height: HEADER_H, color: "#000" }}
+                  className="flex items-center justify-center transition-colors hover:bg-white/5"
+                  style={{ width: onOpenStrategyBuilder ? STRIKE_W / 2 : STRIKE_W, height: HEADER_H, color: GRAY }}
                   aria-label="Edit columns"
                 >
                   <Settings className="w-3.5 h-3.5" />
@@ -1269,9 +1269,9 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
               )}
               <div
                 className="flex-none flex items-center justify-center"
-                style={{ width: STRIKE_W, background: accentHex, borderLeft: `1px solid ${accentHex}`, borderRight: `1px solid ${accentHex}` }}
+                style={{ width: STRIKE_W, background: BG_HEADER, borderLeft: `1px solid ${BORDER}`, borderRight: `1px solid ${BORDER}` }}
               >
-                <span className="text-[9px] tracking-wider" style={{ color: "#000", fontFamily: MONO, fontWeight: FW_PREMIUM }}>STRIKE</span>
+                <span className="text-[9px] tracking-wider" style={{ color: WHITE, fontFamily: MONO, fontWeight: FW_PREMIUM }}>STRIKE</span>
               </div>
               {showPuts && (
                 <div ref={subHeaderRightRef} className="flex-1 overflow-x-auto overflow-y-hidden" style={noScrollbar}>
