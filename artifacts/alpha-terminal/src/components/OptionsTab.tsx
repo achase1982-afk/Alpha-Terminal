@@ -39,7 +39,7 @@ const GRAY = "#a1a1aa";
 const DIM = "#52525b";
 const MUTED = "#3f3f46";
 
-const ITM_OCEAN = "rgba(176,120,135,0.14)";
+const ITM_OCEAN = "rgba(120,80,100,0.45)";
 const OTM_PURPLE = "rgba(168,130,255,0.04)";
 const SEL_BG = "rgba(251,191,36,0.09)";
 const SEL_BORDER_COLOR = "#fbbf2480";
