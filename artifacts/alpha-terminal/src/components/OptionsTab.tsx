@@ -400,7 +400,7 @@ const DataCell = memo(function DataCell({
           className="leading-none mt-0.5"
           style={{ fontSize: 11, color: isShaded ? "#78787e" : DIM, fontVariantNumeric: "tabular-nums", fontFamily: MONO, fontWeight: FW_LIGHT }}
         >
-          {bottomVal != null ? fmtCompact(bottomVal) : ""}
+          {bottomVal != null ? <>sz {fmtCompact(bottomVal)}</> : ""}
         </span>
       ) : null}
 
