@@ -369,7 +369,7 @@ const DataCell = memo(function DataCell({
   const oiValue = isOI ? topVal : undefined;
 
   const inner = (
-    <div className="flex flex-col justify-center px-0.5" style={{ height: ROW_H, minHeight: ROW_H }}>
+    <div className="flex flex-col justify-center" style={{ height: ROW_H, minHeight: ROW_H, padding: isBid ? "0 2px 0 8px" : "0 2px" }}>
       {isSelected && (
         <div className="absolute top-0.5 right-0.5">
           <Check className="w-2.5 h-2.5" style={{ color: GOLD }} />
