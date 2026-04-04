@@ -32,7 +32,7 @@ export interface TokenResponse {
 
 export interface AuthStatusResponse {
   configured: boolean;
-  geminiConfigured: boolean;
+  claudeConfigured: boolean;
 }
 
 export interface ErrorResponse {

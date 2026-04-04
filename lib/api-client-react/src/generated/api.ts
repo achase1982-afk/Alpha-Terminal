@@ -985,7 +985,7 @@ export const useRunChatQuery = <
 };
 
 /**
- * @summary Get available Gemini models
+ * @summary Get available AI models
  */
 export const getGetAvailableModelsUrl = () => {
   return `/api/ai/models`;
@@ -1036,7 +1036,7 @@ export type GetAvailableModelsQueryResult = NonNullable<
 export type GetAvailableModelsQueryError = ErrorType<unknown>;
 
 /**
- * @summary Get available Gemini models
+ * @summary Get available AI models
  */
 
 export function useGetAvailableModels<

@@ -14,7 +14,7 @@ tags:
   - name: market
     description: Market data from Schwab
   - name: ai
-    description: AI analysis via Gemini
+    description: AI analysis via Claude
 paths:
   /healthz:
     get:
@@ -280,7 +280,7 @@ paths:
     get:
       operationId: getAvailableModels
       tags: [ai]
-      summary: Get available Gemini models
+      summary: Get available AI models
       responses:
         "200":
           description: List of models
@@ -351,11 +351,11 @@ components:
       properties:
         configured:
           type: boolean
-        geminiConfigured:
+        claudeConfigured:
           type: boolean
       required:
         - configured
-        - geminiConfigured
+        - claudeConfigured
 
     ErrorResponse:
       type: object

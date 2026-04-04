@@ -1,8 +1,8 @@
 import { Router, type IRouter } from "express";
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import Anthropic from "@anthropic-ai/sdk";
 import { streamText } from "ai";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createAnthropic } from "@ai-sdk/anthropic";
 import {
   RunTechnicalAnalysisBody,
   RunTechnicalAnalysisResponse,
@@ -21,7 +21,7 @@ import { runPreTradeChecks, type PreTradeInput, type PreTradeResult } from "../l
 const router: IRouter = Router();
 
 const AVAILABLE_MODELS = [
-  "gemini-3.1-pro-preview",
+  "claude-3-5-sonnet-20241022",
 ];
 
 interface NativeStreamOptions {
@@ -33,55 +33,87 @@ interface NativeStreamOptions {
   onText?: (text: string) => void;
 }
 
-async function nativeStreamGemini(opts: NativeStreamOptions): Promise<string> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error("GEMINI_API_KEY not configured");
+async function nativeStreamClaude(opts: NativeStreamOptions): Promise<string> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
 
   const {
     prompt,
-    modelName = "gemini-3.1-pro-preview",
+    modelName = "claude-3-5-sonnet-20241022",
     temperature = 0,
-    onThinking,
     onText,
   } = opts;
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:streamGenerateContent?alt=sse&key=${apiKey}`;
+  const client = new Anthropic({ apiKey });
+
+  let fullText = "";
+
+  const stream = client.messages.stream({
+    model: modelName,
+    max_tokens: 4096,
+    temperature,
+    messages: [
+      { role: "user", content: prompt },
+    ],
+  });
+
+  stream.on("text", (text) => {
+    fullText += text;
+    if (onText) onText(text);
+  });
+
+  await stream.finalMessage();
+
+  return fullText;
+}
+
+async function nativeStreamClaudeOld(opts: NativeStreamOptions): Promise<string> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
+
+  const {
+    prompt,
+    modelName = "claude-3-5-sonnet-20241022",
+    temperature = 0,
+    onText,
+  } = opts;
+
+  const url = "https://api.anthropic.com/v1/messages";
 
   const body = {
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
-    generationConfig: {
-      temperature,
-      thinkingConfig: { thinkingLevel: "high", includeThoughts: true },
-    },
+    model: modelName,
+    max_tokens: 4096,
+    temperature,
+    messages: [{ role: "user", content: prompt }],
   };
 
   const resp = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { 
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
     body: JSON.stringify(body),
   });
 
-  console.log("[GEMINI-REST] fetch response status:", resp.status);
+  console.log("[CLAUDE-REST] fetch response status:", resp.status);
 
   if (!resp.ok) {
     const errText = await resp.text();
-    throw new Error(`Gemini REST error ${resp.status}: ${errText.slice(0, 500)}`);
+    throw new Error(`Claude REST error ${resp.status}: ${errText.slice(0, 500)}`);
   }
 
   const reader = resp.body?.getReader();
-  if (!reader) throw new Error("No response body from Gemini REST stream");
+  if (!reader) throw new Error("No response body from Claude REST stream");
 
   const decoder = new TextDecoder();
   let textBuffer = "";
   let sseBuffer = "";
-  let chunkCount = 0;
-  let thoughtPartCount = 0;
-  let textPartCount = 0;
 
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    chunkCount++;
 
     sseBuffer += decoder.decode(value, { stream: true });
 
@@ -91,61 +123,51 @@ async function nativeStreamGemini(opts: NativeStreamOptions): Promise<string> {
     for (const line of lines) {
       if (!line.startsWith("data: ")) continue;
       const jsonStr = line.slice(6).trim();
-      if (!jsonStr || jsonStr === "[DONE]") continue;
+      if (!jsonStr) continue;
 
       try {
-        const chunk = JSON.parse(jsonStr);
-        const candidates = chunk.candidates;
-        if (!candidates || candidates.length === 0) continue;
-
-        for (const part of candidates[0].content?.parts ?? []) {
-          const keys = Object.keys(part);
-          if (chunkCount <= 3 || part.thought) {
-            console.log("[GEMINI-REST] part keys:", JSON.stringify(keys), "thought:", part.thought, "text:", (part.text || "").slice(0, 80));
-          }
-          if (part.thought === true && part.text) {
-            thoughtPartCount++;
-            onThinking?.(part.text);
-          } else if (part.text) {
-            textPartCount++;
-            textBuffer += part.text;
-            onText?.(part.text);
-          }
+        const event = JSON.parse(jsonStr);
+        if (event.type === "content_block_delta" && event.delta?.type === "text_delta") {
+          const text = event.delta.text;
+          textBuffer += text;
+          if (onText) onText(text);
         }
       } catch (e) {
-        console.log("[GEMINI-REST] SSE parse error:", (e as Error).message?.slice(0, 100));
+        console.log("[CLAUDE-REST] SSE parse error:", (e as Error).message?.slice(0, 100));
       }
     }
   }
 
-  console.log("[GEMINI-REST] stream done. chunks:", chunkCount, "thoughtParts:", thoughtPartCount, "textParts:", textPartCount);
+  console.log("[CLAUDE-REST] stream done.");
 
   return textBuffer;
 }
 
-function getClient(): GoogleGenerativeAI | null {
-  const key = process.env.GEMINI_API_KEY;
+function getClient(): Anthropic | null {
+  const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return null;
-  return new GoogleGenerativeAI(key);
+  return new Anthropic({ apiKey: key });
 }
 
-async function callGemini(
+async function callClaude(
   prompt: string,
-  modelName: string = "gemini-3.1-pro-preview",
+  modelName: string = "claude-3-5-sonnet-20241022",
   temperature: number = 0.3
 ): Promise<string> {
   const client = getClient();
   if (!client) {
-    return "Error: GEMINI_API_KEY not configured.";
+    return "Error: ANTHROPIC_API_KEY not configured.";
   }
 
-  const model = client.getGenerativeModel({
+  const message = await client.messages.create({
     model: modelName,
-    generationConfig: { temperature },
+    max_tokens: 4096,
+    temperature,
+    messages: [{ role: "user", content: prompt }],
   });
 
-  const result = await model.generateContent(prompt);
-  return result.response.text();
+  const content = message.content[0];
+  return content.type === "text" ? content.text : "No response";
 }
 
 function formatQuote(quote: Record<string, unknown>): string {
@@ -288,14 +310,17 @@ If data is insufficient for any field, use null. Base RSI on 14-period calculati
 
   try {
     const client = getClient();
-    if (!client) return res.json({ error: "GEMINI_API_KEY not configured" });
+    if (!client) return res.json({ error: "ANTHROPIC_API_KEY not configured" });
 
-    const model = client.getGenerativeModel({
-      model: "gemini-3.1-pro-preview",
-      generationConfig: { temperature: 0.1, responseMimeType: "application/json" },
+    const response = await client.messages.create({
+      model: "claude-3-5-sonnet-20241022",
+      max_tokens: 4096,
+      temperature: 0.1,
+      messages: [{ role: "user", content: prompt }],
     });
-    const result = await model.generateContent(prompt);
-    const text = result.response.text();
+    
+    const content = response.content[0];
+    const text = content.type === "text" ? content.text : "No response";
     const parsed = JSON.parse(text);
     res.json(parsed);
   } catch (err: unknown) {
@@ -336,7 +361,7 @@ Analyze ONLY the above data and provide:
 Be specific, data-driven, and concise. Use markdown formatting.`;
 
   try {
-    const response = await callGemini(prompt, model ?? "gemini-3.1-pro-preview", temperature ?? 0.3);
+    const response = await callClaude(prompt, model ?? "claude-3-5-sonnet-20241022", temperature ?? 0.3);
     res.json(RunTechnicalAnalysisResponse.parse({ response }));
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -375,9 +400,9 @@ Analyze ONLY the above data and provide:
 
 Be specific, data-driven, and concise. Use markdown formatting.`;
 
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    return res.status(500).json({ error: "GEMINI_API_KEY not configured." });
+    return res.status(500).json({ error: "ANTHROPIC_API_KEY not configured." });
   }
 
   res.writeHead(200, {
@@ -401,8 +426,8 @@ Be specific, data-driven, and concise. Use markdown formatting.`;
   }, 5000);
 
   try {
-    const chosenModel = model ?? "gemini-3.1-pro-preview";
-    await nativeStreamGemini({
+    const chosenModel = model ?? "claude-3-5-sonnet-20241022";
+    await nativeStreamClaude({
       prompt,
       modelName: chosenModel,
       temperature: temperature ?? 0.3,
@@ -461,7 +486,7 @@ Analyze ONLY the above data and provide:
 Be specific with strikes, expirations, and premium estimates. Use markdown formatting.`;
 
   try {
-    const response = await callGemini(prompt, model ?? "gemini-3.1-pro-preview", temperature ?? 0.3);
+    const response = await callClaude(prompt, model ?? "claude-3-5-sonnet-20241022", temperature ?? 0.3);
     res.json(RunOptionsAnalysisResponse.parse({ response }));
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -904,7 +929,7 @@ Specific and actionable. Include the instrument, direction, key level, and trigg
 Keep the entire output under 500 words. Be technically precise, data-driven, and immediately actionable. No filler. Use markdown.`;
 
   try {
-    const response = await callGemini(prompt, model ?? "gemini-3.1-pro-preview", temperature ?? 0.2);
+    const response = await callClaude(prompt, model ?? "claude-3-5-sonnet-20241022", temperature ?? 0.2);
     res.json({ response });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -1036,7 +1061,7 @@ RULES:
 - Be technically precise, data-driven, and immediately actionable.`;
 
   try {
-    const raw = await callGemini(prompt, model ?? "gemini-3.1-pro-preview", temperature ?? 0.2);
+    const raw = await callClaude(prompt, model ?? "claude-3-5-sonnet-20241022", temperature ?? 0.2);
 
     let cleaned = raw.trim();
     if (cleaned.startsWith("```")) {
@@ -1082,9 +1107,9 @@ router.post("/market-pulse/stream", async (req, res) => {
     return res.status(400).json({ error: "Schwab access token required." });
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    return res.status(500).json({ error: "GEMINI_API_KEY not configured." });
+    return res.status(500).json({ error: "ANTHROPIC_API_KEY not configured." });
   }
 
   res.writeHead(200, {
@@ -1227,9 +1252,9 @@ Write ONLY the narrative fields. Return this exact JSON structure:
 
   try {
     let hasEmittedThinking = false;
-    const responseBuffer = await nativeStreamGemini({
+    const responseBuffer = await nativeStreamClaude({
       prompt: narrativePrompt,
-      modelName: model ?? "gemini-3.1-pro-preview",
+      modelName: model ?? "claude-3-5-sonnet-20241022",
       temperature: temperature ?? 0,
       thinkingBudget: 4096,
       onThinking: (text) => {
@@ -1633,7 +1658,7 @@ router.post("/options-strategist", async (req, res) => {
     };
 
     const narrativePrompt = `${STRATEGIST_SYSTEM_PROMPT}\n\nHere is the payload:\n\n${JSON.stringify(payload, null, 2)}`;
-    const narrative = await callGemini(narrativePrompt, "gemini-3.1-pro-preview", 0.2);
+    const narrative = await callClaude(narrativePrompt, "claude-3-5-sonnet-20241022", 0.2);
 
     res.json({ strategies, narrative, edge, underlyingPrice, regime, pulse: resolvedPulse, overrideWarning, tickerProfile, chainAnalytics });
   } catch (err: unknown) {
@@ -1785,10 +1810,10 @@ router.post("/options-strategist/stream", async (req, res) => {
       if (!res.writableEnded) res.write(": ping\n\n");
     }, 5000);
 
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
       clearInterval(heartbeat);
-      res.write(`data: ${JSON.stringify({ error: "GEMINI_API_KEY not configured" })}\n\n`);
+      res.write(`data: ${JSON.stringify({ error: "ANTHROPIC_API_KEY not configured" })}\n\n`);
       res.write("data: [DONE]\n\n");
       res.end();
       return;
@@ -1797,9 +1822,9 @@ router.post("/options-strategist/stream", async (req, res) => {
     try {
       const narrativePrompt = `${STRATEGIST_SYSTEM_PROMPT}\n\nHere is the payload:\n\n${JSON.stringify(strategistPayload, null, 2)}`;
 
-      await nativeStreamGemini({
+      await nativeStreamClaude({
         prompt: narrativePrompt,
-        modelName: model ?? "gemini-3.1-pro-preview",
+        modelName: model ?? "claude-3-5-sonnet-20241022",
         temperature: temperature ?? 0.2,
         thinkingBudget: 2048,
         onThinking: (text) => {
@@ -1844,16 +1869,15 @@ router.post("/chat", async (req, res) => {
       return res.status(400).json({ error: "Messages array is required." });
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
-      return res.status(500).json({ error: "Gemini API key not configured." });
+      return res.status(500).json({ error: "Claude API key not configured." });
     }
 
-    const google = createGoogleGenerativeAI({ apiKey });
+    const anthropic = createAnthropic({ apiKey });
 
-    const systemPrompt = `You are Alpha Terminal, a world-class AI assistant powered by Gemini. You have access to real-time Google Search and your full general knowledge. Your primary UI is the Alpha Financial Terminal.
+    const systemPrompt = `You are Alpha Terminal, a world-class AI assistant powered by Claude. Your primary UI is the Alpha Financial Terminal.
 - Today is ${new Date().toDateString()}. Current time: ${new Date().toLocaleString()}.
-- If a user asks about today's news, current events, live scores, or real-time market trends, use Google Search to get fresh data.
 - If the user asks a general question (like how to make a pizza), answer it directly and concisely.
 - If the user asks about specific stock data and Schwab context is provided below, use that live data.
 - Keep answers concise. Use bullet points or short lines when listing data.
@@ -1864,18 +1888,15 @@ router.post("/chat", async (req, res) => {
 STRICT DATA GROUNDING RULE FOR MARKET/TRADING QUESTIONS:
 - When answering questions about specific stock prices, trends, technical levels, or trading strategies, you must ONLY use the Context Data provided below.
 - You are FORBIDDEN from using your internal training knowledge to state current prices, recent price movements, support/resistance levels, or directional predictions for any specific security.
-- If no Schwab context data is provided and the user asks about a specific stock's current state, tell them to connect Schwab for live data or use Google Search for the latest.
+- If no Schwab context data is provided and the user asks about a specific stock's current state, tell them to connect Schwab for live data.
 - For general financial education (e.g. "what is a put option"), internal knowledge is fine.
 
 ${marketContext ? `═══ LIVE SCHWAB CONTEXT DATA ═══\n${marketContext}\n═══ END CONTEXT DATA ═══` : "No live Schwab data connected."}`;
 
     const result = streamText({
-      model: google(reqModel ?? "gemini-3.1-pro-preview"),
+      model: anthropic(reqModel ?? "claude-3-5-sonnet-20241022"),
       system: systemPrompt,
       temperature: 0.1,
-      tools: {
-        googleSearch: google.tools.googleSearch({}),
-      },
       messages: messages.map(m => ({
         role: m.role as "user" | "assistant",
         content: m.content,
@@ -1888,7 +1909,7 @@ ${marketContext ? `═══ LIVE SCHWAB CONTEXT DATA ═══\n${marketContext
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Connection", "keep-alive");
 
-    // Heartbeat: send a newline every 5s while Gemini searches so the proxy
+    // Heartbeat: send a newline every 5s to keep connection alive so the proxy
     // doesn't cut the connection before the first real text chunk arrives.
     let firstChunkSent = false;
     const heartbeat = setInterval(() => {
@@ -2187,9 +2208,9 @@ Return this exact JSON structure:
 }`;
 
   try {
-    const raw = await callGemini(prompt, model ?? "gemini-3.1-pro-preview", temperature ?? 0.1);
+    const raw = await callClaude(prompt, model ?? "claude-3-5-sonnet-20241022", temperature ?? 0.1);
 
-    // Try to parse JSON — strip any markdown fences Gemini may wrap around it
+    // Try to parse JSON — strip any markdown fences Claude may wrap around it
     const cleaned = raw.replace(/^```(?:json)?\s*/im, "").replace(/```\s*$/im, "").trim();
     let parsed: ScannerAiResult | null = null;
     try {
@@ -2213,7 +2234,7 @@ Return this exact JSON structure:
 
 // ── GROUNDED STRATEGY ENDPOINT ────────────────────────────────────────────────
 // Fetches 30-day 1-minute candles from Schwab, runs RSI(14)/EMA(50)/EMA(200),
-// builds a strict context block, and sends to Gemini with data-grounding enforced.
+// builds a strict context block, and sends to Claude with data-grounding enforced.
 
 const SCHWAB_API_BASE_STRATEGY = "https://api.schwabapi.com/marketdata/v1";
 
@@ -2315,7 +2336,7 @@ router.post("/strategy", async (req, res) => {
     c => `${c.datetime}: O=${c.open.toFixed(2)} H=${c.high.toFixed(2)} L=${c.low.toFixed(2)} C=${c.close.toFixed(2)} V=${c.volume}`
   ).join("\n");
 
-  // Step 4: Send to Gemini with strict grounding
+  // Step 4: Send to Claude with strict grounding
   const prompt = `You are an elite quantitative strategist.
 
 STRICT GROUNDING RULE: You must ONLY use the Context Data provided below. Every price, indicator value, and level you reference MUST come from this data. You are ABSOLUTELY FORBIDDEN from using your internal training knowledge for market trends, price targets, support/resistance levels, or directional predictions. If the data is insufficient to answer, say "Insufficient data for this analysis" — do NOT fabricate or supplement with internal knowledge.
@@ -2340,7 +2361,7 @@ INSTRUCTIONS:
 - Use markdown formatting. Be precise and actionable.`;
 
   try {
-    const response = await callGemini(prompt, model ?? "gemini-3.1-pro-preview", temperature ?? 0.1);
+    const response = await callClaude(prompt, model ?? "claude-3-5-sonnet-20241022", temperature ?? 0.1);
     res.json({
       response,
       indicators: {
@@ -2360,7 +2381,7 @@ INSTRUCTIONS:
 });
 
 router.post("/sympathy-plays", async (req, res) => {
-  const { symbol, model = "gemini-3.1-pro-preview", temperature = 0.3 } = req.body as {
+  const { symbol, model = "claude-3-5-sonnet-20241022", temperature = 0.3 } = req.body as {
     symbol?: string;
     model?: string;
     temperature?: number;
@@ -2384,7 +2405,7 @@ Format your response as a markdown list like:
 Be concise and institutional-grade. Focus on actual market correlations, sector peers, and supply-chain links.`;
 
   try {
-    const response = await callGemini(prompt, model, temperature);
+    const response = await callClaude(prompt, model, temperature);
     res.json({ response });
   } catch (err) {
     req.log.error({ err }, "Sympathy plays AI error");
@@ -2424,7 +2445,7 @@ router.post("/pre-trade-check", async (req, res) => {
   try {
     const summary = result.checks.map(c => `${c.label}: ${c.status} (${c.value})`).join("; ");
     const prompt = `You are a risk manager giving a one-sentence summary of a pre-trade risk check. Be direct and concise. The overall result is ${result.overall} with ${result.passCount} passes, ${result.warnCount} warnings, ${result.failCount} fails. Details: ${summary}. Strategy: ${strategy.strategy_type}. Give exactly one short sentence (max 20 words) that a trader would find useful.`;
-    aiOneLiner = await callGemini(prompt, "gemini-3.1-pro-preview", 0.3);
+    aiOneLiner = await callClaude(prompt, "claude-3-5-sonnet-20241022", 0.3);
   } catch {
     aiOneLiner = result.overall === "PASS" ? "All checks passed. Clear to trade."
       : result.overall === "WARN" ? "Caution: some checks flagged. Review before entry."

@@ -19,7 +19,7 @@ Real-time streaming market data, AI-driven analysis, options strategy engine.
 | **Charts**    | Lightweight Charts (TradingView) + Recharts                 |
 | **UI Kit**    | Radix UI primitives + shadcn/ui components                  |
 | **Backend**   | Express 5 (Node.js) + TypeScript                            |
-| **AI**        | Google Gemini (gemini-2.5-flash / pro) via Vercel AI SDK    |
+| **AI**        | Anthropic Claude (claude-3-5-sonnet) via Vercel AI SDK      |
 | **Auth**      | Clerk (user auth) + Schwab OAuth (brokerage)                |
 | **Streaming** | WebSocket (ws) — Schwab Level 1 real-time quotes            |
 | **Logging**   | Pino                                                        |
@@ -91,7 +91,7 @@ workspace/
 |------------------|--------------------------------------------|--------------------|
 | **Schwab API**   | Market data, options chains, quotes, orders | OAuth 2.0 (PKCE)  |
 | **Schwab Stream**| Real-time Level 1 WebSocket quotes          | OAuth token        |
-| **Google Gemini**| AI analysis, strategy generation, chat      | API key            |
+| **Google Claude**| AI analysis, strategy generation, chat      | API key            |
 | **Finnhub**      | News feed                                   | API key            |
 | **Polygon.io**   | Supplementary market data                   | API key            |
 
@@ -108,7 +108,7 @@ SCHWAB_REDIRECT_URI
 SCHWAB_TRADER_APP_KEY      # Schwab Trader OAuth (orders)
 SCHWAB_TRADER_APP_SECRET
 SCHWAB_TRADER_REDIRECT_URI
-GEMINI_API_KEY             # Google Gemini AI
+ANTHROPIC_API_KEY             # Anthropic Claude AI
 FINNHUB_API_KEY            # Finnhub news
 POLYGON_API_KEY            # Polygon.io data
 VITE_DEV_BYPASS_AUTH=true  # Skip Clerk auth in dev
@@ -229,7 +229,7 @@ Outputs: composite score (0-100), bias tier, confidence level
 3-layer architecture:
 1. Auto-Pulse → market regime classification
 2. Regime-Driven Scan → strategy selection + scoring
-3. Gemini AI → narrative generation with trade plan
+3. Claude AI → narrative generation with trade plan
 Computes: IVR, expected move, P/C ratio, Greeks analysis
 
 ### 3. Schwab Streamer (`schwabStreamer.ts`)

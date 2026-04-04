@@ -8,5 +8,5 @@
 
 export interface AuthStatusResponse {
   configured: boolean;
-  geminiConfigured: boolean;
+  claudeConfigured: boolean;
 }

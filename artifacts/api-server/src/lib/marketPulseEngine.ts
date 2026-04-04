@@ -2,7 +2,7 @@
 // MARKET PULSE DETERMINISTIC SCORING ENGINE v2.0
 // ============================================================
 // 27 symbols across 7 clusters. All math is deterministic.
-// Gemini only consumes the output for narrative. Gemini does NOT do math.
+// Claude only consumes the output for narrative. Claude does NOT do math.
 // ============================================================
 
 // ---------- TYPES ----------

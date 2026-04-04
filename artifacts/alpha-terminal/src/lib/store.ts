@@ -210,17 +210,17 @@ export const useTerminalStore = create<TerminalState>()(
         overlays: { ...state.overlays, [overlay]: !state.overlays[overlay] } 
       })),
 
-      aiModel: 'gemini-3.1-pro-preview',
+      aiModel: 'claude-3-5-sonnet-20241022',
       setAiModel: (aiModel) => set({ aiModel }),
       aiTemp: 0.7,
       setAiTemp: (aiTemp) => set({ aiTemp }),
 
       aiFeatureSettings: {
-        marketPulse:   { model: 'gemini-3.1-pro-preview', temperature: 0 },
-        technicals:    { model: 'gemini-3.1-pro-preview', temperature: 0 },
-        strategist:    { model: 'gemini-3.1-pro-preview', temperature: 0 },
-        chat:          { model: 'gemini-3.1-pro-preview', temperature: 0 },
-        scanner:       { model: 'gemini-3.1-pro-preview', temperature: 0 },
+        marketPulse:   { model: 'claude-3-5-sonnet-20241022', temperature: 0 },
+        technicals:    { model: 'claude-3-5-sonnet-20241022', temperature: 0 },
+        strategist:    { model: 'claude-3-5-sonnet-20241022', temperature: 0 },
+        chat:          { model: 'claude-3-5-sonnet-20241022', temperature: 0 },
+        scanner:       { model: 'claude-3-5-sonnet-20241022', temperature: 0 },
       },
       setAiFeatureSetting: (feature, key, value) =>
         set((state) => ({
@@ -350,7 +350,7 @@ export const useTerminalStore = create<TerminalState>()(
     }),
     {
       name: 'alpha-terminal-storage',
-      version: 6,
+      version: 7,
       migrate: (persistedState: unknown, version: number) => {
         const s = persistedState as Record<string, unknown>;
         if (version < 2) {
@@ -363,16 +363,16 @@ export const useTerminalStore = create<TerminalState>()(
           s['traderRefreshToken'] = null;
         }
         if (version < 4) {
-          s['aiModel'] = 'gemini-3.1-pro-preview';
+          s['aiModel'] = 'claude-3-5-sonnet-20241022';
         }
         if (version < 5) {
-          s['aiModel'] = 'gemini-3.1-pro-preview';
+          s['aiModel'] = 'claude-3-5-sonnet-20241022';
           s['aiFeatureSettings'] = {
-            marketPulse:   { model: 'gemini-3.1-pro-preview', temperature: 0 },
-            technicals:    { model: 'gemini-3.1-pro-preview', temperature: 0 },
-            strategist:    { model: 'gemini-3.1-pro-preview', temperature: 0 },
-            chat:          { model: 'gemini-3.1-pro-preview', temperature: 0 },
-            scanner:       { model: 'gemini-3.1-pro-preview', temperature: 0 },
+            marketPulse:   { model: 'claude-3-5-sonnet-20241022', temperature: 0 },
+            technicals:    { model: 'claude-3-5-sonnet-20241022', temperature: 0 },
+            strategist:    { model: 'claude-3-5-sonnet-20241022', temperature: 0 },
+            chat:          { model: 'claude-3-5-sonnet-20241022', temperature: 0 },
+            scanner:       { model: 'claude-3-5-sonnet-20241022', temperature: 0 },
           };
         }
         if (version < 6) {
@@ -380,6 +380,20 @@ export const useTerminalStore = create<TerminalState>()(
           s['watchlists'] = { default: { name: 'My Watchlist', symbols: oldWl } };
           s['activeWatchlistId'] = 'default';
           delete s['watchlist'];
+        }
+        if (version < 7) {
+          const model = s['aiModel'] as string | undefined;
+          if (!model || model.startsWith('gemini')) {
+            s['aiModel'] = 'claude-3-5-sonnet-20241022';
+          }
+          const features = s['aiFeatureSettings'] as Record<string, { model: string; temperature: number }> | undefined;
+          if (features) {
+            for (const key of Object.keys(features)) {
+              if (features[key]?.model?.startsWith('gemini')) {
+                features[key].model = 'claude-3-5-sonnet-20241022';
+              }
+            }
+          }
         }
         return s;
       },

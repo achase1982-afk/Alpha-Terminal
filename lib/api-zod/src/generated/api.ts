@@ -56,7 +56,7 @@ export const RefreshTokenResponse = zod.object({
  */
 export const GetAuthStatusResponse = zod.object({
   configured: zod.boolean(),
-  geminiConfigured: zod.boolean(),
+  claudeConfigured: zod.boolean(),
 });
 
 /**
@@ -314,7 +314,7 @@ export const RunChatQueryResponse = zod.object({
 });
 
 /**
- * @summary Get available Gemini models
+ * @summary Get available AI models
  */
 export const GetAvailableModelsResponse = zod.object({
   models: zod.array(zod.string()),

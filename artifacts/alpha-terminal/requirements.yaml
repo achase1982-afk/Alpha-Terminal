@@ -10,6 +10,6 @@ packages:
 images: []
 
 notes:
-  - "The app requires Schwab API credentials and Gemini API keys configured on the backend."
+  - "The app requires Schwab API credentials and Claude API keys configured on the backend."
   - "Assumes standard shadcn/ui components are available in src/components/ui/"
   - "The frontend relies strictly on the provided OpenAPI schemas for data structure."

@@ -517,13 +517,7 @@ function DisplayMarqueePage() {
 }
 
 const ALL_MODELS = [
-  "gemini-3.1-pro-preview",
-  "gemini-2.5-pro-preview-05-06",
-  "gemini-2.5-pro",
-  "gemini-2.5-flash",
-  "gemini-2.5-flash-lite-preview",
-  "gemini-2.0-flash",
-  "gemini-2.0-flash-lite",
+  "claude-3-5-sonnet-20241022",
 ];
 
 const AI_FEATURES: Array<{
@@ -559,7 +553,7 @@ function AiFeatureControl({ featureKey, label, icon }: {
         </span>
         <span className="flex items-center gap-2">
           <span className="font-mono text-[8px] text-zinc-500 tracking-wider">
-            {settings.model.replace('gemini-', '').toUpperCase()}
+            {settings.model.replace('claude-', '').toUpperCase()}
           </span>
           <ChevronRight className={`w-3 h-3 text-zinc-500 transition-transform ${expanded ? 'rotate-90' : ''}`} />
         </span>

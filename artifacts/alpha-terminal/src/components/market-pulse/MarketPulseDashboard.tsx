@@ -273,7 +273,7 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
                 style={{ background: "rgba(16,185,129,0.04)" }}
               >
                 <span className="inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500/30" />
-                <span className="font-mono text-[11px] text-emerald-500/50 uppercase tracking-widest font-bold flex-1 text-left">Gemini Reasoning</span>
+                <span className="font-mono text-[11px] text-emerald-500/50 uppercase tracking-widest font-bold flex-1 text-left">Claude Reasoning</span>
                 <span className="font-mono text-[10px] text-emerald-500/40">{showTranscript ? "▲" : "▼"}</span>
               </button>
               {showTranscript && (
@@ -358,7 +358,7 @@ function PulseLoadingStatus({ thinkingTokens, statusMessages }: { thinkingTokens
   const stages = [
     { label: "FETCHING MARKET DATA" },
     { label: "RUNNING SCORING ENGINE" },
-    { label: "GEMINI AI REASONING" },
+    { label: "CLAUDE AI REASONING" },
   ];
   let currentIdx = hasAi ? 2 : hasScored ? 2 : hasData ? 1 : statusMessages.length > 0 ? 0 : 0;
 
@@ -437,7 +437,7 @@ function PulseLoadingStatus({ thinkingTokens, statusMessages }: { thinkingTokens
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
             <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
           </span>
-          <span className="font-mono text-[11px] text-emerald-400 uppercase tracking-widest font-bold">Live Gemini Reasoning</span>
+          <span className="font-mono text-[11px] text-emerald-400 uppercase tracking-widest font-bold">Live Claude Reasoning</span>
         </div>
         <div
           ref={thinkingRef}
@@ -447,7 +447,7 @@ function PulseLoadingStatus({ thinkingTokens, statusMessages }: { thinkingTokens
           {thinkingTokens.length === 0 ? (
             <div className="flex items-center gap-2">
               <span className="w-3 h-3 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-              <span className="font-mono text-[11px] text-[#52525b]">Connecting to Gemini...</span>
+              <span className="font-mono text-[11px] text-[#52525b]">Connecting to Claude...</span>
             </div>
           ) : (
             <div className="border-l-2 border-emerald-500/40 pl-3">

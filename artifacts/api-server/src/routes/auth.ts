@@ -545,8 +545,8 @@ router.get("/server-tokens", (_req, res) => {
 router.get("/status", (_req, res) => {
   const configured = !!(process.env.SCHWAB_APP_KEY && process.env.SCHWAB_APP_SECRET && getSchwabRedirectUri());
   const traderConfigured = !!(process.env.SCHWAB_TRADER_APP_KEY && process.env.SCHWAB_TRADER_APP_SECRET && getTraderRedirectUri());
-  const geminiConfigured = !!process.env.GEMINI_API_KEY;
-  res.json(GetAuthStatusResponse.parse({ configured, geminiConfigured }));
+  const claudeConfigured = !!process.env.ANTHROPIC_API_KEY;
+  res.json(GetAuthStatusResponse.parse({ configured, claudeConfigured }));
 });
 
 export default router;
