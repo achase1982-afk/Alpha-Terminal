@@ -101,7 +101,7 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
             </div>
           )}
 
-          <div className={`flex-1 overflow-y-auto pb-4 ${activePage === "Calendar" ? "p-3" : "p-4 sm:p-6"}`}>
+          <div className={`flex-1 overflow-y-auto pb-4 ${activePage === "Calendar" ? "px-3 pt-1 pb-3" : "p-4 sm:p-6"}`}>
             {activePage === "Watchlist" && <WatchlistPage onClose={handleCloseAll} />}
             {activePage === "Calendar" && <MarketCalendar onClose={() => setActivePage(null)} />}
             {activePage === "Linked Brokerage" && <LinkedBrokeragePage />}
