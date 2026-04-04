@@ -18,19 +18,19 @@ import { Reorder } from "framer-motion";
 
 const EPS = 0.0001;
 const COL_W = 70;
-const STRIKE_W = 56;
-const ROW_H = 38;
+const STRIKE_W = 60;
+const ROW_H = 36;
 const TOOLBAR_H = 30;
-const HEADER_H = 32;
-const SUB_HEADER_H = 20;
+const HEADER_H = 30;
+const SUB_HEADER_H = 18;
 const STICKY_TOP = TOOLBAR_H + HEADER_H + SUB_HEADER_H;
 
 const BG = "#000000";
-const BG_HEADER = "#080808";
-const BG_STRIKE = "#060606";
-const BG_EXP_BAR = "#0a0a0a";
+const BG_HEADER = "#070707";
+const BG_STRIKE = "#050505";
+const BG_EXP_BAR = "#080808";
 const BORDER = "#1a1a1a";
-const BORDER_ROW = "#111111";
+const BORDER_ROW = "#0e0e0e";
 const GOLD = "#fbbf24";
 const GOLD_DIM = "#b8941c";
 const UP = "#00d166";
@@ -39,7 +39,14 @@ const WHITE = "#f4f4f5";
 const GRAY = "#a1a1aa";
 const DIM = "#52525b";
 const MUTED = "#3f3f46";
-const ITM_TINT = "rgba(251,191,36,0.03)";
+
+const ITM_BG = "rgba(251,191,36,0.045)";
+const ITM_BG_DEEP = "rgba(251,191,36,0.07)";
+const ATM_BG = "rgba(255,107,43,0.06)";
+const SEL_BG = "rgba(251,191,36,0.10)";
+const SEL_BORDER = `${GOLD}80`;
+
+const MONO = "'SF Mono', 'Cascadia Code', 'Consolas', monospace";
 
 interface Contract {
   strike: number;
@@ -258,16 +265,39 @@ function makeLegKey(contract: Contract, type: "CALL" | "PUT"): string {
   return `${contract.expiration}|${contract.strike}|${type}`;
 }
 
+function itmDepthAlpha(strike: number, underlyingPrice: number, isCall: boolean): number {
+  const diff = Math.abs(strike - underlyingPrice);
+  const pct = (diff / underlyingPrice) * 100;
+  if (pct < 0.3) return 0;
+  const depth = Math.min(pct / 15, 1);
+  return 0.035 + depth * 0.04;
+}
+
+function getRowBg(strike: number, underlyingPrice: number | null, isCallSide: boolean, isSelected: boolean, isATM: boolean): string {
+  if (isSelected) return SEL_BG;
+  if (isATM) return ATM_BG;
+  if (underlyingPrice == null) return "transparent";
+
+  const callITM = isCallSide && strike < underlyingPrice - EPS;
+  const putITM = !isCallSide && strike > underlyingPrice + EPS;
+
+  if (callITM || putITM) {
+    const alpha = itmDepthAlpha(strike, underlyingPrice, isCallSide);
+    return `rgba(251,191,36,${alpha.toFixed(3)})`;
+  }
+  return "transparent";
+}
+
 const OIBar = memo(function OIBar({ value, max }: { value: number; max: number }) {
   if (!value || !max) return null;
   const pct = Math.min((value / max) * 100, 100);
   return (
-    <div className="w-full h-[3px] rounded-full mt-0.5" style={{ background: "#1a1a1a" }}>
+    <div className="w-full h-[2px] rounded-full mt-0.5" style={{ background: "#111" }}>
       <div
         className="h-full rounded-full"
         style={{
           width: `${pct}%`,
-          background: `linear-gradient(90deg, ${GOLD}60, ${GOLD}30)`,
+          background: `linear-gradient(90deg, ${GOLD}50, ${GOLD}25)`,
         }}
       />
     </div>
@@ -353,11 +383,12 @@ const DataCell = memo(function DataCell({
       <span
         className="leading-none"
         style={{
-          fontSize: (isBid || isAsk) ? 13 : isVol || isOI ? 11 : 11,
+          fontSize: (isBid || isAsk) ? 13 : 10,
           fontWeight: (isBid || isAsk) ? 700 : isGreek || isIV ? 500 : 600,
           color: priceColor,
           fontVariantNumeric: "tabular-nums",
-          fontFamily: "'SF Mono', 'Cascadia Code', 'Consolas', monospace",
+          fontFamily: MONO,
+          letterSpacing: (isBid || isAsk) ? "-0.01em" : "0.02em",
         }}
       >
         {isVol || isOI ? fmtCompact(topVal) : topStr}
@@ -365,14 +396,14 @@ const DataCell = memo(function DataCell({
       </span>
 
       {(isBid || isAsk) && showInlineGreeks && deltaVal != null ? (
-        <div className="flex gap-1 mt-0.5" style={{ fontSize: 8, color: GRAY, fontFamily: "'SF Mono', monospace", fontVariantNumeric: "tabular-nums" }}>
+        <div className="flex gap-1 mt-0.5" style={{ fontSize: 8, color: GRAY, fontFamily: MONO, fontVariantNumeric: "tabular-nums" }}>
           <span>\u0394{fmtNum(deltaVal, 2)}</span>
           {thetaVal != null && <span>\u0398{fmtNum(thetaVal, 2)}</span>}
         </div>
       ) : (isBid || isAsk) && !showInlineGreeks ? (
         <span
           className="leading-none mt-0.5"
-          style={{ fontSize: 9, color: DIM, fontVariantNumeric: "tabular-nums", fontFamily: "'SF Mono', monospace" }}
+          style={{ fontSize: 9, color: DIM, fontVariantNumeric: "tabular-nums", fontFamily: MONO }}
         >
           {bottomVal != null ? fmtCompact(bottomVal) : ""}
         </span>
@@ -397,8 +428,7 @@ const DataCell = memo(function DataCell({
         className="w-full text-left cursor-pointer select-none relative"
         style={{
           fontVariantNumeric: "tabular-nums",
-          background: isSelected ? `${GOLD}12` : "transparent",
-          borderLeft: isSelected ? `2px solid ${GOLD}` : "2px solid transparent",
+          background: "transparent",
         }}
       >
         {inner}
@@ -452,7 +482,7 @@ function LongPressMenu({
         }}
       >
         <div className="px-3 py-2 border-b" style={{ borderColor: "#1a1a1a", background: "#0a0a0a" }}>
-          <span className="text-[10px] font-bold tracking-widest" style={{ color: GRAY, fontFamily: "'SF Mono', monospace" }}>
+          <span className="text-[10px] font-bold tracking-widest" style={{ color: GRAY, fontFamily: MONO }}>
             {target.type} ${target.contract.strike} \u2022 {target.side}
           </span>
         </div>
@@ -461,21 +491,21 @@ function LongPressMenu({
           className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-white/5 active:bg-white/10"
         >
           <TrendingUp className="w-3.5 h-3.5" style={{ color: GOLD }} />
-          <span className="text-[11px] font-semibold text-white" style={{ fontFamily: "'SF Mono', monospace" }}>Trade Single Leg</span>
+          <span className="text-[11px] font-semibold text-white" style={{ fontFamily: MONO }}>Trade Single Leg</span>
         </button>
         <button
           onClick={() => { onAddToStrategy(); onClose(); }}
           className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-white/5 active:bg-white/10"
         >
           <Plus className="w-3.5 h-3.5" style={{ color: GOLD }} />
-          <span className="text-[11px] font-semibold text-white" style={{ fontFamily: "'SF Mono', monospace" }}>Add to Strategy</span>
+          <span className="text-[11px] font-semibold text-white" style={{ fontFamily: MONO }}>Add to Strategy</span>
         </button>
         <button
           onClick={onClose}
           className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-white/5 active:bg-white/10"
         >
           <BarChart3 className="w-3.5 h-3.5" style={{ color: GOLD }} />
-          <span className="text-[11px] font-semibold text-white" style={{ fontFamily: "'SF Mono', monospace" }}>Analyze Payoff</span>
+          <span className="text-[11px] font-semibold text-white" style={{ fontFamily: MONO }}>Analyze Payoff</span>
         </button>
       </div>
     </div>
@@ -513,7 +543,7 @@ function ColumnsEditorModal({ open, onClose }: { open: boolean; onClose: () => v
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: "#1a1a1a" }}>
-          <span className="text-[11px] font-bold tracking-[0.2em]" style={{ color: GOLD, fontFamily: "'SF Mono', monospace" }}>COLUMN CONFIG</span>
+          <span className="text-[11px] font-bold tracking-[0.2em]" style={{ color: GOLD, fontFamily: MONO }}>COLUMN CONFIG</span>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/5 transition-colors">
             <X className="w-4 h-4" style={{ color: GRAY }} />
           </button>
@@ -538,7 +568,7 @@ function ColumnsEditorModal({ open, onClose }: { open: boolean; onClose: () => v
                   >
                     <div className="flex items-center gap-2">
                       <GripVertical className="w-3.5 h-3.5" style={{ color: DIM }} />
-                      <span className="text-[11px] font-semibold text-white" style={{ fontFamily: "'SF Mono', monospace" }}>{col.label}</span>
+                      <span className="text-[11px] font-semibold text-white" style={{ fontFamily: MONO }}>{col.label}</span>
                       <span className="text-[9px] px-1 py-0.5 rounded" style={{ color: DIM, background: "#1a1a1a" }}>{col.group}</span>
                     </div>
                     <button
@@ -569,7 +599,7 @@ function ColumnsEditorModal({ open, onClose }: { open: boolean; onClose: () => v
                       className="w-full flex items-center justify-between px-3 py-2 rounded-lg border transition-colors hover:border-white/10"
                       style={{ background: "transparent", borderColor: "#1a1a1a" }}
                     >
-                      <span className="text-[11px] font-medium" style={{ color: DIM, fontFamily: "'SF Mono', monospace" }}>{col.label}</span>
+                      <span className="text-[11px] font-medium" style={{ color: DIM, fontFamily: MONO }}>{col.label}</span>
                       <div className="w-8 h-4 rounded-full flex items-center transition-colors justify-start" style={{ background: "#1a1a1a" }}>
                         <div className="w-3.5 h-3.5 rounded-full mx-0.5" style={{ background: "#333" }} />
                       </div>
@@ -609,7 +639,7 @@ function MetricsStrip({ groups, lastPrice, rawCalls, rawPuts, earningsDate, isFe
   }
 
   return (
-    <div className="flex gap-2 text-[10px] font-medium items-center shrink-0" style={{ fontVariantNumeric: "tabular-nums", fontFamily: "'SF Mono', monospace" }}>
+    <div className="flex gap-2 text-[10px] font-medium items-center shrink-0" style={{ fontVariantNumeric: "tabular-nums", fontFamily: MONO }}>
       {isFetching && hasData && (
         <span className="w-2 h-2 border border-amber-400 border-t-transparent rounded-full animate-spin" />
       )}
@@ -668,12 +698,44 @@ function useScrollSync() {
   return { registerWing };
 }
 
-function MoneynessLabel({ strike, underlyingPrice }: { strike: number; underlyingPrice: number | null }) {
-  if (underlyingPrice == null) return null;
-  const diff = Math.abs(strike - underlyingPrice);
-  const pct = (diff / underlyingPrice) * 100;
-  if (pct < 0.3) return <span className="text-[7px] font-bold" style={{ color: GOLD }}>ATM</span>;
-  return null;
+function StrikeCell({ strike, underlyingPrice, isATM }: { strike: number; underlyingPrice: number | null; isATM: boolean }) {
+  let moneynessLabel: string | null = null;
+  let moneynessColor = DIM;
+
+  if (underlyingPrice != null) {
+    const diff = strike - underlyingPrice;
+    const pct = (diff / underlyingPrice) * 100;
+    const absPct = Math.abs(pct);
+
+    if (absPct < 0.3) {
+      moneynessLabel = "ATM";
+      moneynessColor = GOLD;
+    } else if (absPct < 10) {
+      moneynessLabel = `${pct > 0 ? "+" : ""}${pct.toFixed(1)}%`;
+      moneynessColor = "#52525b";
+    }
+  }
+
+  return (
+    <div
+      className="flex flex-col items-center justify-center"
+      style={{
+        height: ROW_H,
+        borderBottom: `1px solid ${BORDER_ROW}`,
+        color: isATM ? GOLD : WHITE,
+        background: isATM ? ATM_BG : "transparent",
+      }}
+    >
+      <span className="text-[11px] font-bold leading-none" style={{ fontVariantNumeric: "tabular-nums", fontFamily: MONO }}>
+        {strike % 1 === 0 ? strike : strike.toFixed(1)}
+      </span>
+      {moneynessLabel && (
+        <span className="text-[7px] font-bold leading-none mt-0.5" style={{ color: moneynessColor, fontFamily: MONO }}>
+          {moneynessLabel}
+        </span>
+      )}
+    </div>
+  );
 }
 
 function OptionsGrid({
@@ -731,7 +793,7 @@ function OptionsGrid({
   }, [registerWing, showCalls, showPuts]);
 
   return (
-    <div className="relative flex" style={{ fontVariantNumeric: "tabular-nums", fontFamily: "'SF Mono', monospace" }}>
+    <div className="relative flex" style={{ fontVariantNumeric: "tabular-nums", fontFamily: MONO }}>
       {atmLineTop >= 0 && (
         <div
           className="absolute left-0 right-0 z-[5] pointer-events-none"
@@ -747,9 +809,10 @@ function OptionsGrid({
         >
           <div style={{ minWidth: wingWidth }}>
             {sortedRows.map((row) => {
-              const callITM = underlyingPrice != null && row.strike < underlyingPrice - EPS;
+              const isATM = underlyingPrice != null && Math.abs(row.strike - underlyingPrice) < (underlyingPrice * 0.003);
               const callKey = row.call ? makeLegKey(row.call, "CALL") : "";
               const isCallSelected = callKey ? selectedLegs.has(callKey) : false;
+              const bg = getRowBg(row.strike, underlyingPrice, true, isCallSelected, isATM);
               return (
                 <div
                   key={row.strike}
@@ -757,7 +820,8 @@ function OptionsGrid({
                   style={{
                     height: ROW_H,
                     borderBottom: `1px solid ${BORDER_ROW}`,
-                    background: isCallSelected ? `${GOLD}10` : callITM ? ITM_TINT : "transparent",
+                    background: bg,
+                    borderLeft: isCallSelected ? `2px solid ${SEL_BORDER}` : "2px solid transparent",
                   }}
                 >
                   {columns.map(col => (
@@ -788,21 +852,7 @@ function OptionsGrid({
         {sortedRows.map((row) => {
           const isATM = underlyingPrice != null && Math.abs(row.strike - underlyingPrice) < (underlyingPrice * 0.003);
           return (
-            <div
-              key={row.strike}
-              className="flex flex-col items-center justify-center"
-              style={{
-                height: ROW_H,
-                borderBottom: `1px solid ${BORDER_ROW}`,
-                color: isATM ? GOLD : WHITE,
-                background: isATM ? `${GOLD}08` : "transparent",
-              }}
-            >
-              <span className="text-[11px] font-bold leading-none" style={{ fontVariantNumeric: "tabular-nums" }}>
-                {row.strike % 1 === 0 ? row.strike : row.strike.toFixed(1)}
-              </span>
-              <MoneynessLabel strike={row.strike} underlyingPrice={underlyingPrice} />
-            </div>
+            <StrikeCell key={row.strike} strike={row.strike} underlyingPrice={underlyingPrice} isATM={isATM} />
           );
         })}
       </div>
@@ -815,9 +865,10 @@ function OptionsGrid({
         >
           <div style={{ minWidth: wingWidth }}>
             {sortedRows.map((row) => {
-              const putITM = underlyingPrice != null && row.strike > underlyingPrice + EPS;
+              const isATM = underlyingPrice != null && Math.abs(row.strike - underlyingPrice) < (underlyingPrice * 0.003);
               const putKey = row.put ? makeLegKey(row.put, "PUT") : "";
               const isPutSelected = putKey ? selectedLegs.has(putKey) : false;
+              const bg = getRowBg(row.strike, underlyingPrice, false, isPutSelected, isATM);
               return (
                 <div
                   key={row.strike}
@@ -825,7 +876,8 @@ function OptionsGrid({
                   style={{
                     height: ROW_H,
                     borderBottom: `1px solid ${BORDER_ROW}`,
-                    background: isPutSelected ? `${GOLD}10` : putITM ? ITM_TINT : "transparent",
+                    background: bg,
+                    borderRight: isPutSelected ? `2px solid ${SEL_BORDER}` : "2px solid transparent",
                   }}
                 >
                   {columns.map(col => (
@@ -1063,8 +1115,8 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
   return (
     <div style={{ background: BG }} className="relative">
       <div
-        className="flex items-center justify-between w-full px-3 py-1 shrink-0 sticky z-40"
-        style={{ top: stickyOffset, height: TOOLBAR_H, background: BG_EXP_BAR, borderBottom: `1px solid ${BORDER}`, fontFamily: "'SF Mono', monospace" }}
+        className="flex items-center justify-between w-full px-3 py-0.5 shrink-0 sticky z-40"
+        style={{ top: stickyOffset, height: TOOLBAR_H, background: BG_EXP_BAR, borderBottom: `1px solid ${BORDER}`, fontFamily: MONO }}
       >
         <div className="flex items-center gap-1.5">
           <span className="text-[9px] font-bold tracking-widest" style={{ color: DIM }}>STK</span>
@@ -1076,7 +1128,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
                 onChange={e => handleCustomStrikeChange(e.target.value)}
                 onKeyDown={e => { if (e.key === "Escape") handleExitCustomMode(); }}
                 className="w-[52px] text-[10px] h-6 px-1.5 border rounded text-white"
-                style={{ background: "#111", borderColor: "#2a2a2a", fontFamily: "'SF Mono', monospace" }}
+                style={{ background: "#111", borderColor: "#2a2a2a", fontFamily: MONO }}
                 placeholder="10"
               />
               <button onClick={handleExitCustomMode} className="p-0.5 rounded hover:bg-white/5 transition-colors" aria-label="Exit custom mode">
@@ -1085,7 +1137,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
             </div>
           ) : (
             <Select value={strikeMode} onValueChange={handleStrikeModeChange}>
-              <SelectTrigger className="w-[52px] text-[10px] h-6 px-1.5 border rounded text-white" style={{ background: "#111", borderColor: "#2a2a2a", fontFamily: "'SF Mono', monospace" }}>
+              <SelectTrigger className="w-[52px] text-[10px] h-6 px-1.5 border rounded text-white" style={{ background: "#111", borderColor: "#2a2a2a", fontFamily: MONO }}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1130,7 +1182,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
         )}
 
         {isFetching && data && (
-          <div className="absolute inset-0 z-40 pointer-events-none" style={{ background: "rgba(0,0,0,0.2)" }} />
+          <div className="absolute inset-0 z-40 pointer-events-none" style={{ background: "rgba(0,0,0,0.15)" }} />
         )}
 
         {error && !data && (
@@ -1170,7 +1222,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
             >
               {showCalls && (
                 <div className="flex-1 text-center">
-                  <span className="text-[11px] font-extrabold tracking-[0.25em]" style={{ color: WHITE, fontFamily: "'SF Mono', monospace" }}>CALLS</span>
+                  <span className="text-[10px] font-extrabold tracking-[0.3em]" style={{ color: WHITE, fontFamily: MONO }}>CALLS</span>
                 </div>
               )}
               <div
@@ -1198,7 +1250,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
               </div>
               {showPuts && (
                 <div className="flex-1 text-center">
-                  <span className="text-[11px] font-extrabold tracking-[0.25em]" style={{ color: WHITE, fontFamily: "'SF Mono', monospace" }}>PUTS</span>
+                  <span className="text-[10px] font-extrabold tracking-[0.3em]" style={{ color: WHITE, fontFamily: MONO }}>PUTS</span>
                 </div>
               )}
             </div>
@@ -1212,7 +1264,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
                   <div className="flex items-center" style={{ minWidth: wingWidth, height: SUB_HEADER_H }}>
                     {activeColumns.map(col => (
                       <div key={col.id} style={{ width: COL_W }} className="shrink-0 flex items-center px-1">
-                        <span className="text-[9px] font-bold tracking-wider" style={{ color: DIM, fontFamily: "'SF Mono', monospace" }}>{col.topLabel}</span>
+                        <span className="text-[8px] font-bold tracking-wider uppercase" style={{ color: DIM, fontFamily: MONO }}>{col.topLabel}</span>
                       </div>
                     ))}
                   </div>
@@ -1222,14 +1274,14 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
                 className="flex-none flex items-center justify-center"
                 style={{ width: STRIKE_W, borderLeft: `1px solid ${BORDER}`, borderRight: `1px solid ${BORDER}` }}
               >
-                <span className="text-[9px] font-bold tracking-wider" style={{ color: DIM, fontFamily: "'SF Mono', monospace" }}>STRIKE</span>
+                <span className="text-[8px] font-bold tracking-wider" style={{ color: DIM, fontFamily: MONO }}>STRIKE</span>
               </div>
               {showPuts && (
                 <div ref={subHeaderRightRef} className="flex-1 overflow-x-auto overflow-y-hidden" style={noScrollbar}>
                   <div className="flex items-center" style={{ minWidth: wingWidth, height: SUB_HEADER_H }}>
                     {activeColumns.map(col => (
                       <div key={col.id} style={{ width: COL_W }} className="shrink-0 flex items-center px-1">
-                        <span className="text-[9px] font-bold tracking-wider" style={{ color: DIM, fontFamily: "'SF Mono', monospace" }}>{col.topLabel}</span>
+                        <span className="text-[8px] font-bold tracking-wider uppercase" style={{ color: DIM, fontFamily: MONO }}>{col.topLabel}</span>
                       </div>
                     ))}
                   </div>
@@ -1250,7 +1302,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
                         top: stickyOffset + STICKY_TOP,
                         background: BG_EXP_BAR,
                         borderBottom: `1px solid ${BORDER}`,
-                        fontFamily: "'SF Mono', monospace",
+                        fontFamily: MONO,
                       }}
                     >
                       <div className="flex items-center gap-1.5">
@@ -1326,7 +1378,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
             background: "linear-gradient(180deg, #0a0a0a 0%, #000000 100%)",
             borderTop: `1px solid ${GOLD}30`,
             boxShadow: `0 -4px 24px rgba(0,0,0,0.8), 0 -1px 0 ${GOLD}15`,
-            fontFamily: "'SF Mono', monospace",
+            fontFamily: MONO,
           }}
         >
           <button
