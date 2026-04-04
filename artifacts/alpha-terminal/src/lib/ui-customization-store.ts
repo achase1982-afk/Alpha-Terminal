@@ -22,6 +22,7 @@ interface UICustomizationState {
   gridDensity: GridDensity;
   headerMode: HeaderMode;
   showTickerTape: boolean;
+  showAiBiasStrip: boolean;
   showMiniCards: boolean;
   animatePriceChanges: boolean;
   hapticFeedback: boolean;
@@ -32,6 +33,7 @@ interface UICustomizationState {
   setGridDensity: (d: GridDensity) => void;
   setHeaderMode: (m: HeaderMode) => void;
   setShowTickerTape: (v: boolean) => void;
+  setShowAiBiasStrip: (v: boolean) => void;
   setShowMiniCards: (v: boolean) => void;
   setAnimatePriceChanges: (v: boolean) => void;
   setHapticFeedback: (v: boolean) => void;
@@ -46,6 +48,7 @@ const DEFAULTS = {
   gridDensity: "default" as GridDensity,
   headerMode: "auto" as HeaderMode,
   showTickerTape: true,
+  showAiBiasStrip: true,
   showMiniCards: true,
   animatePriceChanges: true,
   hapticFeedback: true,
@@ -62,6 +65,7 @@ export const useUICustomizationStore = create<UICustomizationState>()(
       setGridDensity: (gridDensity) => set({ gridDensity }),
       setHeaderMode: (headerMode) => set({ headerMode }),
       setShowTickerTape: (showTickerTape) => set({ showTickerTape }),
+      setShowAiBiasStrip: (showAiBiasStrip) => set({ showAiBiasStrip }),
       setShowMiniCards: (showMiniCards) => set({ showMiniCards }),
       setAnimatePriceChanges: (animatePriceChanges) => set({ animatePriceChanges }),
       setHapticFeedback: (hapticFeedback) => set({ hapticFeedback }),
@@ -70,11 +74,12 @@ export const useUICustomizationStore = create<UICustomizationState>()(
     }),
     {
       name: "alpha-ui-customization",
-      version: 2,
+      version: 3,
       migrate: (persisted: any) => ({
         ...DEFAULTS,
         ...persisted,
         headerMode: persisted?.headerMode ?? "auto",
+        showAiBiasStrip: persisted?.showAiBiasStrip ?? true,
       }),
     }
   )

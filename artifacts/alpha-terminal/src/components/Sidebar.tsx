@@ -674,11 +674,11 @@ function AiParametersPage() {
 function UICustomizationPage() {
   const {
     accentColor, fontSize, defaultChartStyle, gridDensity,
-    showTickerTape, showMiniCards, animatePriceChanges, hapticFeedback, reducedMotion,
+    showTickerTape, showAiBiasStrip, showMiniCards, animatePriceChanges, hapticFeedback, reducedMotion,
     headerMode,
     setAccentColor, setFontSize, setDefaultChartStyle, setGridDensity,
     setHeaderMode,
-    setShowTickerTape, setShowMiniCards, setAnimatePriceChanges, setHapticFeedback, setReducedMotion,
+    setShowTickerTape, setShowAiBiasStrip, setShowMiniCards, setAnimatePriceChanges, setHapticFeedback, setReducedMotion,
     resetDefaults,
   } = useUICustomizationStore();
 
@@ -788,6 +788,11 @@ function UICustomizationPage() {
         <div className="flex items-center justify-between">
           <span className="text-sm text-white">Ticker Tape</span>
           <Switch checked={showTickerTape} onCheckedChange={setShowTickerTape} />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-white">AI Bias Bar</span>
+          <Switch checked={showAiBiasStrip} onCheckedChange={setShowAiBiasStrip} />
         </div>
 
         <div className="flex items-center justify-between">

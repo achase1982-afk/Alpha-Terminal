@@ -122,6 +122,7 @@ export default function TerminalPage() {
   const [isScrolledRaw, setIsScrolledRaw] = useState(false);
   const headerMode = useUICustomizationStore((s) => s.headerMode);
   const showTickerTape = useUICustomizationStore((s) => s.showTickerTape);
+  const showAiBiasStrip = useUICustomizationStore((s) => s.showAiBiasStrip);
   const showMiniCards = useUICustomizationStore((s) => s.showMiniCards);
   const isCompact = headerMode === "collapsed";
   const isScrolled = isCompact ? true : headerMode === "expanded" ? false : isScrolledRaw;
@@ -354,7 +355,7 @@ export default function TerminalPage() {
           />
         </div>
         {showTickerTape && !isCompact && <TickerTape />}
-        {!isCompact && <AiBiasStrip onNavigateToPulse={() => { setActiveBottom("ai"); setAiSubTab("pulse"); setPulseAutoGen(true); }} />}
+        {showAiBiasStrip && !isCompact && <AiBiasStrip onNavigateToPulse={() => { setActiveBottom("ai"); setAiSubTab("pulse"); setPulseAutoGen(true); }} />}
       </header>
 
       {activeBottom === "ai" && (
