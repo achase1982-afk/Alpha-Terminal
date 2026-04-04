@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table2, ChevronDown, ChevronRight, X, Settings, GripVertical,
-  Layers, Check, TrendingUp, Plus, BarChart3,
+  Layers, TrendingUp, Plus, BarChart3,
 } from "lucide-react";
 import { Reorder } from "framer-motion";
 
@@ -396,11 +396,6 @@ const DataCell = memo(function DataCell({
 
   const inner = (
     <div className="flex flex-col justify-center" style={{ height: ROW_H, minHeight: ROW_H, padding: isBid ? "0 2px 0 8px" : "0 2px" }}>
-      {isSelected && (
-        <div className="absolute top-0.5 right-0.5">
-          <Check className="w-2.5 h-2.5" style={{ color: GOLD }} />
-        </div>
-      )}
       <span
         className="leading-none"
         style={{
@@ -454,7 +449,7 @@ const DataCell = memo(function DataCell({
         aria-pressed={isSelected}
         aria-label={`${isBid ? "Bid" : "Ask"} ${topStr} strike ${contract.strike}`}
         className="w-full text-left cursor-pointer select-none relative"
-        style={{ fontVariantNumeric: "tabular-nums" }}
+        style={{ fontVariantNumeric: "tabular-nums", outline: isSelected ? "1px solid #ffffff" : "none", outlineOffset: -1 }}
       >
         {inner}
       </button>
