@@ -33,10 +33,40 @@ import {
   RefreshCw,
   Clock,
 } from "lucide-react";
-import { useIsTablet } from "@/hooks/useMediaQuery";
+import { useIsTablet, useIsDesktop } from "@/hooks/useMediaQuery";
 
 type BottomTab = "scanner" | "markets" | "ai" | "search" | "portfolio" | "watchlist";
 type ContextTab = MarketDataTab;
+
+const DESKTOP_CONTEXT_TABS: { id: MarketDataTab; label: string }[] = [
+  { id: "news", label: "News" },
+  { id: "options", label: "Options" },
+  { id: "company", label: "Company" },
+];
+
+function DesktopContextTabs({ activeTab, setActiveTab }: { activeTab: MarketDataTab; setActiveTab: (t: MarketDataTab) => void }) {
+  return (
+    <div className="flex items-stretch border-b border-zinc-800/60" style={{ background: "#111" }}>
+      {DESKTOP_CONTEXT_TABS.map((tab) => {
+        const isActive = activeTab === tab.id || (activeTab === "chart" && tab.id === "news");
+        return (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className="flex-1 py-2 font-mono text-[11px] font-bold tracking-wider transition-colors border-b-2"
+            style={{
+              color: isActive ? "#FFB800" : "#71717a",
+              borderColor: isActive ? "#FFB800" : "transparent",
+              background: isActive ? "rgba(255,184,0,0.04)" : "transparent",
+            }}
+          >
+            {tab.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 function PulseHeader({ pulseData, onRefresh }: { pulseData: any; onRefresh: () => void }) {
   const pulseAge = pulseData?.generatedAt ? Math.floor((Date.now() - pulseData.generatedAt) / 60_000) : null;
@@ -98,12 +128,19 @@ export default function TerminalPage() {
   const { refresh } = useAutoRefreshToken();
   useViewportShell();
   const isWide = useIsTablet();
+  const isThreePanel = useIsDesktop();
 
   useEffect(() => {
     if (isWide && activeBottom === "watchlist") {
       setActiveBottom("markets");
     }
   }, [isWide, activeBottom]);
+
+  useEffect(() => {
+    if (isThreePanel && contextTab === "chart") {
+      setContextTab("news");
+    }
+  }, [isThreePanel, contextTab]);
 
   const COLLAPSE_PX = 80;
   const lastTouchY = useRef(0);
@@ -295,34 +332,30 @@ export default function TerminalPage() {
               </div>
             )}
           </main>
-        ) : (
+        ) : isThreePanel ? (
           <>
             {activeBottom === "markets" ? (
               <>
-                <div className="flex flex-col flex-1 min-w-0 border-r border-card-border">
-                  <div className="shrink-0">
-                    <MetricsBar compact={false} />
-                    <VolumeBar />
+                <div className="flex flex-col flex-1 min-w-0">
+                  <div className="shrink-0 border-b border-zinc-800/60" style={{ background: "#0a0a0a" }}>
+                    <MetricsBar compact={true} />
+                  </div>
+                  <div className="shrink-0 border-b border-zinc-800/40" style={{ background: "#111" }}>
                     <ChartControls />
                   </div>
-                  <div className="flex-1 min-h-0">
+                  <div className="flex-1 min-h-0 relative" style={{ background: "#0c0c0c" }}>
                     <TradingChart symbol={symbol} data={historyData?.candles || []} isLoading={historyLoading} error={historyData?.error} timedOut={historyTimedOut} tokenExpired={historyData?.error === "unauthorized"} intraday={isIntradayInterval(chartInterval)} />
                   </div>
                 </div>
 
-                <div className="flex flex-col shrink-0 overflow-hidden" style={{ width: 380 }}>
-                  <div className="shrink-0 border-b border-card-border">
-                    <MarketDataTabs activeTab={contextTab} setActiveTab={setContextTab} />
+                <div className="flex flex-col shrink-0 border-l border-zinc-800/60 overflow-hidden" style={{ width: 360, background: "#0c0c0c" }}>
+                  <div className="shrink-0">
+                    <DesktopContextTabs activeTab={contextTab} setActiveTab={setContextTab} />
                   </div>
                   <div className="flex-1 overflow-y-auto">
                     {contextTab === "news" && <NewsTab />}
                     {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={0} />}
                     {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles as any} stickyOffset={0} />}
-                    {contextTab === "chart" && (
-                      <div className="p-4">
-                        <MacroBar />
-                      </div>
-                    )}
                   </div>
                 </div>
               </>
@@ -340,6 +373,45 @@ export default function TerminalPage() {
               </main>
             )}
           </>
+        ) : (
+          <main ref={scrollRef} onScroll={handleScroll} className="flex-1 app-content pb-4 overflow-y-auto">
+            {activeBottom === "markets" && (
+              <>
+                <div className="shrink-0 border-b border-zinc-800/60" style={{ background: "#0a0a0a" }}>
+                  <MetricsBar compact={isScrolled} />
+                  <VolumeBar />
+                </div>
+                <div ref={stickyWrapRef} className="sticky top-0 z-40 bg-background">
+                  <MarketDataTabs activeTab={contextTab} setActiveTab={setContextTab} />
+                </div>
+                <div style={{ minHeight: "calc(100vh - 60px)" }}>
+                  {contextTab === "news" && <NewsTab />}
+                  {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={stickyH} />}
+                  {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles as any} stickyOffset={stickyH} />}
+                  {contextTab === "chart" && (
+                    <>
+                      <ChartControls />
+                      <div className="h-[580px]">
+                        <TradingChart symbol={symbol} data={historyData?.candles || []} isLoading={historyLoading} error={historyData?.error} timedOut={historyTimedOut} tokenExpired={historyData?.error === "unauthorized"} intraday={isIntradayInterval(chartInterval)} />
+                      </div>
+                    </>
+                  )}
+                </div>
+              </>
+            )}
+
+            <div style={{ display: activeBottom === "scanner" ? "block" : "none" }}>
+              <MarketScanner subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToSymbol={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} />
+            </div>
+
+            {activeBottom === "ai" && (
+              <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} pulseAutoGen={pulseAutoGen} onPulseAutoGenConsumed={() => setPulseAutoGen(false)} />
+            )}
+
+            {activeBottom === "portfolio" && (
+              <PortfolioView onNavigateToSymbol={() => setActiveBottom("markets")} />
+            )}
+          </main>
         )}
       </div>
 
@@ -356,9 +428,9 @@ export default function TerminalPage() {
       )}
 
       {isWide && (
-        <nav className="hidden md:flex shrink-0 h-10 bg-[#0c0c0c] border-t border-zinc-800/60 items-center justify-center gap-1 px-4 z-50">
-          {(["scanner", "markets", "ai", "search"] as BottomTab[]).map((tab) => {
-            const labels: Record<string, string> = { scanner: "SCANNER", markets: "MARKETS", ai: "AI", search: "SEARCH" };
+        <nav className="hidden md:flex shrink-0 h-9 bg-[#080808] border-t border-zinc-800/40 items-center justify-center gap-0 px-2 z-50">
+          {(["scanner", "markets", "portfolio", "ai", "search"] as BottomTab[]).map((tab) => {
+            const labels: Record<string, string> = { scanner: "Scanner", markets: "Markets", portfolio: "Portfolio", ai: "AI", search: "Search" };
             const isActive = activeBottom === tab || (tab === "search" && searchOpen);
             return (
               <button
@@ -368,10 +440,10 @@ export default function TerminalPage() {
                   setSidebarOpen(false);
                   if (tab === "search") { setSearchOpen(true); } else { setActiveBottom(tab); }
                 }}
-                className="font-mono text-[11px] font-bold tracking-wider px-4 py-2 rounded-md transition-colors"
+                className="font-mono text-[10px] font-semibold tracking-wider px-3 py-1.5 rounded transition-colors"
                 style={{
-                  color: isActive ? "#FFB800" : "#71717a",
-                  background: isActive ? "rgba(255,184,0,0.08)" : "transparent",
+                  color: isActive ? "#FFB800" : "#52525b",
+                  background: isActive ? "rgba(255,184,0,0.06)" : "transparent",
                 }}
               >
                 {labels[tab]}
