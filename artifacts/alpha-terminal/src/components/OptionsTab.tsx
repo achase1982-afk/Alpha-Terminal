@@ -1144,21 +1144,6 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
               </SelectContent>
             </Select>
           )}
-          <button
-            onClick={() => setShowInlineGreeks(!showInlineGreeks)}
-            className="flex items-center gap-0.5 px-1.5 py-0.5 rounded transition-colors"
-            style={{
-              fontSize: 12,
-              color: showInlineGreeks ? GOLD : DIM,
-              background: showInlineGreeks ? `${GOLD}12` : "transparent",
-              border: `1px solid ${showInlineGreeks ? `${GOLD}25` : "transparent"}`,
-              fontWeight: FW_NORMAL,
-              fontFamily: MONO,
-            }}
-            aria-label="Toggle inline Greeks"
-          >
-            {"ΔΘ"}
-          </button>
         </div>
         <MetricsStrip
           groups={groups}
