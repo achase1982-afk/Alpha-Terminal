@@ -24,7 +24,6 @@ const ROW_H = 40;
 const TOOLBAR_H = 32;
 const HEADER_H = 32;
 const SUB_HEADER_H = 20;
-const STICKY_TOP = TOOLBAR_H + HEADER_H + SUB_HEADER_H;
 
 const BG = "#000000";
 const BG_HEADER = "#060606";
@@ -666,36 +665,6 @@ function MetricsStrip({ groups, lastPrice, rawCalls, rawPuts, earningsDate, isFe
   );
 }
 
-function useScrollSync() {
-  const scrollXRef = useRef(0);
-  const isSyncing = useRef(false);
-  const wingsRef = useRef<Set<HTMLDivElement>>(new Set());
-
-  const broadcast = useCallback((sourceScrollLeft: number, source: HTMLDivElement) => {
-    if (isSyncing.current) return;
-    isSyncing.current = true;
-    scrollXRef.current = sourceScrollLeft;
-    requestAnimationFrame(() => {
-      for (const t of wingsRef.current) {
-        if (t !== source) t.scrollLeft = sourceScrollLeft;
-      }
-      isSyncing.current = false;
-    });
-  }, []);
-
-  const registerWing = useCallback((el: HTMLDivElement) => {
-    wingsRef.current.add(el);
-    el.scrollLeft = scrollXRef.current;
-    const handler = () => broadcast(el.scrollLeft, el);
-    el.addEventListener("scroll", handler, { passive: true });
-    return () => {
-      wingsRef.current.delete(el);
-      el.removeEventListener("scroll", handler);
-    };
-  }, [broadcast]);
-
-  return { registerWing };
-}
 
 function StrikeCell({ strike, underlyingPrice }: { strike: number; underlyingPrice: number | null }) {
   const isATM = underlyingPrice != null && Math.abs(strike - underlyingPrice) < (underlyingPrice * 0.003);
@@ -740,29 +709,29 @@ function OptionsGrid({
   columns,
   showCalls,
   showPuts,
-  registerWing,
   selectedLegs,
   onToggleLeg,
   onLongPressCell,
   showInlineGreeks,
   maxOI,
   accentHex,
+  onColumnsEditor,
+  onBuildStrategy,
 }: {
   rows: NormalizedRow[];
   underlyingPrice: number | null;
   columns: ColumnDef[];
   showCalls: boolean;
   showPuts: boolean;
-  registerWing: (el: HTMLDivElement) => () => void;
   selectedLegs: Map<string, SelectedLeg>;
   onToggleLeg: (contract: Contract, type: "CALL" | "PUT") => void;
   onLongPressCell: (target: LongPressTarget) => void;
   showInlineGreeks: boolean;
   maxOI: number;
   accentHex: string;
+  onColumnsEditor: () => void;
+  onBuildStrategy?: () => void;
 }) {
-  const leftBodyRef = useRef<HTMLDivElement>(null);
-  const rightBodyRef = useRef<HTMLDivElement>(null);
   const sortedRows = useMemo(() => [...rows].sort((a, b) => a.strike - b.strike), [rows]);
 
   const transitionIdx = useMemo(() => {
@@ -770,136 +739,252 @@ function OptionsGrid({
     return sortedRows.findIndex(r => r.strike > underlyingPrice + EPS);
   }, [sortedRows, underlyingPrice]);
 
-  const priceAboveAll = useMemo(() => {
-    if (underlyingPrice == null || sortedRows.length === 0) return false;
-    return underlyingPrice > sortedRows[sortedRows.length - 1].strike + EPS;
-  }, [underlyingPrice, sortedRows]);
+  const callColCount = showCalls ? columns.length : 0;
+  const putColCount = showPuts ? columns.length : 0;
 
-  const wingWidth = columns.length * COL_W;
-
-  const atmLineTop = useMemo(() => {
-    if (transitionIdx >= 0) return transitionIdx * ROW_H;
-    if (priceAboveAll && sortedRows.length > 0) return sortedRows.length * ROW_H;
-    return -1;
-  }, [transitionIdx, priceAboveAll, sortedRows.length]);
-
-  useEffect(() => {
-    const cleanups: (() => void)[] = [];
-    if (leftBodyRef.current) cleanups.push(registerWing(leftBodyRef.current));
-    if (rightBodyRef.current) cleanups.push(registerWing(rightBodyRef.current));
-    return () => cleanups.forEach(fn => fn());
-  }, [registerWing, showCalls, showPuts]);
+  const thBase: React.CSSProperties = {
+    background: BG_HEADER,
+    fontFamily: MONO,
+    fontWeight: FW_LIGHT,
+    padding: 0,
+    margin: 0,
+    position: "sticky",
+    top: 0,
+  };
 
   return (
-    <div className="relative flex" style={{ fontVariantNumeric: "tabular-nums", fontFamily: MONO }}>
-      {atmLineTop >= 0 && (
-        <div
-          className="absolute left-0 right-0 z-[5] pointer-events-none"
-          style={{ top: atmLineTop, borderTop: "1px dotted #FF6B2B" }}
-        />
-      )}
+    <div
+      style={{
+        overflowX: "auto",
+        overflowY: "auto",
+        maxHeight: "calc(100dvh - 240px)",
+        WebkitOverflowScrolling: "touch" as React.CSSProperties["WebkitOverflowScrolling"],
+        willChange: "transform",
+        backfaceVisibility: "hidden",
+        scrollbarWidth: "none" as React.CSSProperties["scrollbarWidth"],
+        msOverflowStyle: "none",
+        transform: "translateZ(0)",
+      } as React.CSSProperties}
+    >
+      <table
+        style={{
+          tableLayout: "fixed",
+          borderCollapse: "separate",
+          borderSpacing: 0,
+          fontFamily: MONO,
+          fontVariantNumeric: "tabular-nums",
+          width: (callColCount + putColCount) * COL_W + STRIKE_W,
+          minWidth: (callColCount + putColCount) * COL_W + STRIKE_W,
+        }}
+      >
+        <colgroup>
+          {showCalls && columns.map(col => <col key={`cc-${col.id}`} style={{ width: COL_W }} />)}
+          <col style={{ width: STRIKE_W }} />
+          {showPuts && columns.map(col => <col key={`pc-${col.id}`} style={{ width: COL_W }} />)}
+        </colgroup>
 
-      {showCalls && (
-        <div
-          ref={leftBodyRef}
-          className="flex-1 overflow-x-auto overflow-y-hidden overscroll-x-contain"
-          style={noScrollbar}
-        >
-          <div style={{ minWidth: wingWidth }}>
-            {sortedRows.map((row) => {
-              const callKey = row.call ? makeLegKey(row.call, "CALL") : "";
-              const isCallSelected = callKey ? selectedLegs.has(callKey) : false;
-              const moneyness = classifyMoneyness(row.strike, underlyingPrice, true);
-              const bg = getRowBg(moneyness, isCallSelected);
-              return (
-                <div
-                  key={row.strike}
-                  className="flex"
+        <thead style={{ position: "sticky", top: 0, zIndex: 50 }}>
+          {/* Row 1: CALLS | Settings+Strategy | PUTS */}
+          <tr style={{ height: HEADER_H }}>
+            {showCalls && (
+              <th
+                colSpan={callColCount}
+                style={{
+                  ...thBase,
+                  textAlign: "center",
+                  borderBottom: `1px solid ${BORDER}`,
+                  borderRight: `1px solid ${BORDER}`,
+                  boxShadow: "0 2px 4px rgba(0,0,0,0.4)",
+                }}
+              >
+                <span style={{ fontSize: 12, letterSpacing: "0.3em", color: GRAY, fontWeight: FW_PREMIUM }}>CALLS</span>
+              </th>
+            )}
+            <th
+              style={{
+                ...thBase,
+                width: STRIKE_W,
+                borderBottom: `1px solid ${BORDER}`,
+                borderLeft: showCalls ? undefined : undefined,
+                borderRight: `1px solid ${BORDER}`,
+                boxShadow: "0 2px 4px rgba(0,0,0,0.4)",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: HEADER_H }}>
+                {onBuildStrategy && (
+                  <button
+                    onClick={onBuildStrategy}
+                    style={{ width: STRIKE_W / 2, height: HEADER_H, color: GRAY, display: "flex", alignItems: "center", justifyContent: "center" }}
+                    aria-label="Strategy builder"
+                  >
+                    <Layers className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                <button
+                  onClick={onColumnsEditor}
+                  style={{ width: onBuildStrategy ? STRIKE_W / 2 : STRIKE_W, height: HEADER_H, color: GRAY, display: "flex", alignItems: "center", justifyContent: "center" }}
+                  aria-label="Edit columns"
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </th>
+            {showPuts && (
+              <th
+                colSpan={putColCount}
+                style={{
+                  ...thBase,
+                  textAlign: "center",
+                  borderBottom: `1px solid ${BORDER}`,
+                  borderLeft: `1px solid ${BORDER}`,
+                  boxShadow: "0 2px 4px rgba(0,0,0,0.4)",
+                }}
+              >
+                <span style={{ fontSize: 12, letterSpacing: "0.3em", color: GRAY, fontWeight: FW_PREMIUM }}>PUTS</span>
+              </th>
+            )}
+          </tr>
+
+          {/* Row 2: individual column labels */}
+          <tr style={{ height: SUB_HEADER_H }}>
+            {showCalls && columns.map(col => (
+              <th
+                key={col.id}
+                style={{
+                  ...thBase,
+                  textAlign: "left",
+                  padding: "0 4px",
+                  borderBottom: `1px solid ${BORDER}`,
+                  boxShadow: "0 2px 4px rgba(0,0,0,0.3)",
+                }}
+              >
+                <span style={{ fontSize: 10, color: DIM, fontWeight: FW_LIGHT, textTransform: "uppercase", letterSpacing: "0.08em" }}>{col.topLabel}</span>
+              </th>
+            ))}
+            <th
+              style={{
+                ...thBase,
+                textAlign: "center",
+                borderBottom: `1px solid ${BORDER}`,
+                borderLeft: `1px solid ${BORDER}`,
+                borderRight: `1px solid ${BORDER}`,
+                boxShadow: "0 2px 4px rgba(0,0,0,0.3)",
+              }}
+            >
+              <span style={{ fontSize: 9, color: WHITE, fontWeight: FW_PREMIUM, letterSpacing: "0.08em" }}>STRIKE</span>
+            </th>
+            {showPuts && columns.map(col => (
+              <th
+                key={col.id}
+                style={{
+                  ...thBase,
+                  textAlign: "left",
+                  padding: "0 4px",
+                  borderBottom: `1px solid ${BORDER}`,
+                  boxShadow: "0 2px 4px rgba(0,0,0,0.3)",
+                }}
+              >
+                <span style={{ fontSize: 10, color: DIM, fontWeight: FW_LIGHT, textTransform: "uppercase", letterSpacing: "0.08em" }}>{col.topLabel}</span>
+              </th>
+            ))}
+          </tr>
+        </thead>
+
+        <tbody>
+          {sortedRows.map((row, idx) => {
+            const callKey = row.call ? makeLegKey(row.call, "CALL") : "";
+            const putKey = row.put ? makeLegKey(row.put, "PUT") : "";
+            const isCallSelected = callKey ? selectedLegs.has(callKey) : false;
+            const isPutSelected = putKey ? selectedLegs.has(putKey) : false;
+            const callMoney = classifyMoneyness(row.strike, underlyingPrice, true);
+            const putMoney = classifyMoneyness(row.strike, underlyingPrice, false);
+            const callBg = getRowBg(callMoney, isCallSelected);
+            const putBg = getRowBg(putMoney, isPutSelected);
+            const isAtmBoundary = transitionIdx >= 0 && idx === transitionIdx;
+
+            const atmBorderStyle = isAtmBoundary ? "1px dotted #FF6B2B" : undefined;
+
+            return (
+              <tr
+                key={row.strike}
+                style={{ height: ROW_H }}
+              >
+                {showCalls && columns.map((col, i) => (
+                  <td
+                    key={col.id}
+                    style={{
+                      background: callBg,
+                      borderBottom: `1px solid ${BORDER_ROW}`,
+                      borderTop: atmBorderStyle,
+                      borderLeft: isCallSelected && i === 0 ? `2px solid ${SEL_BORDER_COLOR}` : undefined,
+                      padding: 0,
+                      verticalAlign: "middle",
+                    }}
+                  >
+                    <DataCell
+                      col={col}
+                      contract={row.call}
+                      isSelected={isCallSelected && col.isPrice}
+                      onSelect={col.isPrice && row.call ? () => onToggleLeg(row.call!, "CALL") : undefined}
+                      onLongPress={col.isPrice && row.call ? (e) => onLongPressCell({
+                        contract: row.call!, type: "CALL",
+                        side: col.id === "bid" ? "SELL" : "BUY",
+                        x: e.clientX, y: e.clientY,
+                      }) : undefined}
+                      showInlineGreeks={showInlineGreeks}
+                      maxOI={col.id === "oi" ? maxOI : undefined}
+                      moneyness={callMoney}
+                    />
+                  </td>
+                ))}
+
+                <td
                   style={{
-                    height: ROW_H,
-                    borderBottom: `1px solid ${BORDER_ROW}`,
-                    background: bg,
-                    borderLeft: isCallSelected ? `2px solid ${SEL_BORDER_COLOR}` : "2px solid transparent",
+                    background: accentHex,
+                    borderBottom: `1px solid rgba(0,0,0,0.25)`,
+                    borderTop: atmBorderStyle,
+                    borderLeft: `1px solid ${accentHex}`,
+                    borderRight: `1px solid ${accentHex}`,
+                    padding: 0,
+                    verticalAlign: "middle",
                   }}
                 >
-                  {columns.map(col => (
-                    <div key={col.id} style={{ width: COL_W }} className="shrink-0">
-                      <DataCell
-                        col={col}
-                        contract={row.call}
-                        isSelected={isCallSelected && col.isPrice}
-                        onSelect={col.isPrice && row.call ? () => onToggleLeg(row.call!, "CALL") : undefined}
-                        onLongPress={col.isPrice && row.call ? (e) => onLongPressCell({
-                          contract: row.call!, type: "CALL",
-                          side: col.id === "bid" ? "SELL" : "BUY",
-                          x: e.clientX, y: e.clientY,
-                        }) : undefined}
-                        showInlineGreeks={showInlineGreeks}
-                        maxOI={col.id === "oi" ? maxOI : undefined}
-                        moneyness={moneyness}
-                      />
-                    </div>
-                  ))}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+                  <StrikeCell strike={row.strike} underlyingPrice={underlyingPrice} />
+                </td>
 
-      <div className="flex-none z-10" style={{ width: STRIKE_W, background: accentHex, borderLeft: `1px solid ${accentHex}`, borderRight: `1px solid ${accentHex}` }}>
-        {sortedRows.map((row) => (
-          <StrikeCell key={row.strike} strike={row.strike} underlyingPrice={underlyingPrice} />
-        ))}
-      </div>
-
-      {showPuts && (
-        <div
-          ref={rightBodyRef}
-          className="flex-1 overflow-x-auto overflow-y-hidden overscroll-x-contain"
-          style={noScrollbar}
-        >
-          <div style={{ minWidth: wingWidth }}>
-            {sortedRows.map((row) => {
-              const putKey = row.put ? makeLegKey(row.put, "PUT") : "";
-              const isPutSelected = putKey ? selectedLegs.has(putKey) : false;
-              const moneyness = classifyMoneyness(row.strike, underlyingPrice, false);
-              const bg = getRowBg(moneyness, isPutSelected);
-              return (
-                <div
-                  key={row.strike}
-                  className="flex"
-                  style={{
-                    height: ROW_H,
-                    borderBottom: `1px solid ${BORDER_ROW}`,
-                    background: bg,
-                    borderRight: isPutSelected ? `2px solid ${SEL_BORDER_COLOR}` : "2px solid transparent",
-                  }}
-                >
-                  {columns.map(col => (
-                    <div key={col.id} style={{ width: COL_W }} className="shrink-0">
-                      <DataCell
-                        col={col}
-                        contract={row.put}
-                        isSelected={isPutSelected && col.isPrice}
-                        onSelect={col.isPrice && row.put ? () => onToggleLeg(row.put!, "PUT") : undefined}
-                        onLongPress={col.isPrice && row.put ? (e) => onLongPressCell({
-                          contract: row.put!, type: "PUT",
-                          side: col.id === "bid" ? "SELL" : "BUY",
-                          x: e.clientX, y: e.clientY,
-                        }) : undefined}
-                        showInlineGreeks={showInlineGreeks}
-                        maxOI={col.id === "oi" ? maxOI : undefined}
-                        moneyness={moneyness}
-                      />
-                    </div>
-                  ))}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+                {showPuts && columns.map((col, i) => (
+                  <td
+                    key={col.id}
+                    style={{
+                      background: putBg,
+                      borderBottom: `1px solid ${BORDER_ROW}`,
+                      borderTop: atmBorderStyle,
+                      borderRight: isPutSelected && i === columns.length - 1 ? `2px solid ${SEL_BORDER_COLOR}` : undefined,
+                      padding: 0,
+                      verticalAlign: "middle",
+                    }}
+                  >
+                    <DataCell
+                      col={col}
+                      contract={row.put}
+                      isSelected={isPutSelected && col.isPrice}
+                      onSelect={col.isPrice && row.put ? () => onToggleLeg(row.put!, "PUT") : undefined}
+                      onLongPress={col.isPrice && row.put ? (e) => onLongPressCell({
+                        contract: row.put!, type: "PUT",
+                        side: col.id === "bid" ? "SELL" : "BUY",
+                        x: e.clientX, y: e.clientY,
+                      }) : undefined}
+                      showInlineGreeks={showInlineGreeks}
+                      maxOI={col.id === "oi" ? maxOI : undefined}
+                      moneyness={putMoney}
+                    />
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -940,8 +1025,6 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
     () => activeColumnIds.map(id => COLUMN_REGISTRY.find(c => c.id === id)).filter(Boolean) as ColumnDef[],
     [activeColumnIds]
   );
-
-  const wingWidth = activeColumns.length * COL_W;
 
   const [expandedExps, setExpandedExps] = useState<Set<string>>(new Set());
   const [isCustomMode, setIsCustomMode] = useState(() => ![6, 10, 20].includes(strikeCount));
@@ -1092,18 +1175,8 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
 
   const showCalls = contractType !== "PUT";
   const showPuts = contractType !== "CALL";
-  const { registerWing } = useScrollSync();
-  const subHeaderLeftRef = useRef<HTMLDivElement>(null);
-  const subHeaderRightRef = useRef<HTMLDivElement>(null);
   const hasData = data && groups.length > 0;
   const apiError = (rawData as Record<string, unknown> | undefined)?.error as string | undefined;
-
-  useEffect(() => {
-    const cleanups: (() => void)[] = [];
-    if (subHeaderLeftRef.current) cleanups.push(registerWing(subHeaderLeftRef.current));
-    if (subHeaderRightRef.current) cleanups.push(registerWing(subHeaderRightRef.current));
-    return () => cleanups.forEach(fn => fn());
-  }, [registerWing, showCalls, showPuts, hasData]);
 
   const selCount = selectedLegs.size;
 
@@ -1198,148 +1271,74 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
         )}
 
         {hasData && (
-          <>
-            <div
-              className="w-full flex items-center sticky z-30"
-              style={{ top: stickyOffset + TOOLBAR_H, height: HEADER_H, background: BG_HEADER, borderBottom: `1px solid ${BORDER}` }}
-            >
-              {showCalls && (
-                <div className="flex-1 text-center">
-                  <span className="text-[12px] tracking-[0.3em]" style={{ color: GRAY, fontFamily: MONO, fontWeight: FW_PREMIUM }}>CALLS</span>
-                </div>
-              )}
-              <div
-                className="flex items-center justify-center"
-                style={{ width: STRIKE_W, background: BG_HEADER, borderLeft: `1px solid ${BORDER}`, borderRight: `1px solid ${BORDER}` }}
-              >
-                {onOpenStrategyBuilder && (
+          <div>
+            {groups.map(group => {
+              const isOpen = expandedExps.has(group.expiration);
+              const pcr = group.totalCallVol > 0 ? (group.totalPutVol / group.totalCallVol) : null;
+              return (
+                <div key={group.expiration}>
                   <button
-                    onClick={handleBuildStrategy}
-                    className="flex items-center justify-center transition-colors hover:bg-white/5"
-                    style={{ width: STRIKE_W / 2, height: HEADER_H, color: GRAY }}
-                    aria-label="Strategy builder"
+                    onClick={() => toggleExp(group.expiration)}
+                    className="w-full flex items-center justify-between px-3 py-1 transition-colors sticky z-20"
+                    style={{
+                      top: stickyOffset + TOOLBAR_H,
+                      background: BG_EXP_BAR,
+                      borderBottom: `1px solid ${BORDER}`,
+                      fontFamily: MONO,
+                    }}
                   >
-                    <Layers className="w-3.5 h-3.5" />
+                    <div className="flex items-center gap-1.5">
+                      {isOpen
+                        ? <ChevronDown className="w-3 h-3" style={{ color: DIM }} />
+                        : <ChevronRight className="w-3 h-3" style={{ color: DIM }} />
+                      }
+                      <span className="text-[13px] tracking-wide" style={{ color: WHITE, fontWeight: FW_NORMAL }}>
+                        {group.dateLabel}
+                      </span>
+                      <span className="text-[12px]" style={{ color: GRAY, fontWeight: FW_LIGHT }}>
+                        {Math.round(group.dte)}d
+                      </span>
+                      {group.isWeekly && (
+                        <span className="text-[10px] px-1 py-0.5 rounded" style={{ color: "#FF6B2B", background: "rgba(255,107,43,0.08)", fontWeight: FW_NORMAL }}>
+                          W
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2" style={{ fontSize: 12, fontVariantNumeric: "tabular-nums", fontFamily: MONO }}>
+                      {group.atmIV != null && (
+                        <span style={{ color: GOLD, fontWeight: FW_PREMIUM }}>
+                          IV {group.atmIV.toFixed(1)}%
+                        </span>
+                      )}
+                      {pcr != null && (
+                        <span style={{ color: pcr > 1 ? DOWN : UP, fontWeight: FW_NORMAL }}>
+                          P/C {pcr.toFixed(2)}
+                        </span>
+                      )}
+                    </div>
                   </button>
-                )}
-                <button
-                  onClick={() => setColumnsEditorOpen(true)}
-                  className="flex items-center justify-center transition-colors hover:bg-white/5"
-                  style={{ width: onOpenStrategyBuilder ? STRIKE_W / 2 : STRIKE_W, height: HEADER_H, color: GRAY }}
-                  aria-label="Edit columns"
-                >
-                  <Settings className="w-3.5 h-3.5" />
-                </button>
-              </div>
-              {showPuts && (
-                <div className="flex-1 text-center">
-                  <span className="text-[12px] tracking-[0.3em]" style={{ color: GRAY, fontFamily: MONO, fontWeight: FW_PREMIUM }}>PUTS</span>
-                </div>
-              )}
-            </div>
 
-            <div
-              className="w-full flex items-center sticky z-20"
-              style={{ top: stickyOffset + TOOLBAR_H + HEADER_H, height: SUB_HEADER_H, background: BG_HEADER, borderBottom: `1px solid ${BORDER}` }}
-            >
-              {showCalls && (
-                <div ref={subHeaderLeftRef} className="flex-1 overflow-x-auto overflow-y-hidden" style={noScrollbar}>
-                  <div className="flex items-center" style={{ minWidth: wingWidth, height: SUB_HEADER_H }}>
-                    {activeColumns.map(col => (
-                      <div key={col.id} style={{ width: COL_W }} className="shrink-0 flex items-center px-1">
-                        <span className="text-[10px] tracking-wider uppercase" style={{ color: DIM, fontFamily: MONO, fontWeight: FW_LIGHT }}>{col.topLabel}</span>
-                      </div>
-                    ))}
-                  </div>
+                  {isOpen && (
+                    <OptionsGrid
+                      rows={group.rows}
+                      underlyingPrice={underlyingPrice}
+                      columns={activeColumns}
+                      showCalls={showCalls}
+                      showPuts={showPuts}
+                      selectedLegs={selectedLegs}
+                      onToggleLeg={handleToggleLeg}
+                      onLongPressCell={handleLongPressCell}
+                      showInlineGreeks={showInlineGreeks}
+                      maxOI={group.maxOI}
+                      accentHex={accentHex}
+                      onColumnsEditor={() => setColumnsEditorOpen(true)}
+                      onBuildStrategy={onOpenStrategyBuilder ? handleBuildStrategy : undefined}
+                    />
+                  )}
                 </div>
-              )}
-              <div
-                className="flex-none flex items-center justify-center"
-                style={{ width: STRIKE_W, background: BG_HEADER, borderLeft: `1px solid ${BORDER}`, borderRight: `1px solid ${BORDER}` }}
-              >
-                <span className="text-[9px] tracking-wider" style={{ color: WHITE, fontFamily: MONO, fontWeight: FW_PREMIUM }}>STRIKE</span>
-              </div>
-              {showPuts && (
-                <div ref={subHeaderRightRef} className="flex-1 overflow-x-auto overflow-y-hidden" style={noScrollbar}>
-                  <div className="flex items-center" style={{ minWidth: wingWidth, height: SUB_HEADER_H }}>
-                    {activeColumns.map(col => (
-                      <div key={col.id} style={{ width: COL_W }} className="shrink-0 flex items-center px-1">
-                        <span className="text-[10px] tracking-wider uppercase" style={{ color: DIM, fontFamily: MONO, fontWeight: FW_LIGHT }}>{col.topLabel}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div>
-              {groups.map(group => {
-                const isOpen = expandedExps.has(group.expiration);
-                const pcr = group.totalCallVol > 0 ? (group.totalPutVol / group.totalCallVol) : null;
-                return (
-                  <div key={group.expiration}>
-                    <button
-                      onClick={() => toggleExp(group.expiration)}
-                      className="w-full flex items-center justify-between px-3 py-1 transition-colors sticky z-20"
-                      style={{
-                        top: stickyOffset + STICKY_TOP,
-                        background: BG_EXP_BAR,
-                        borderBottom: `1px solid ${BORDER}`,
-                        fontFamily: MONO,
-                      }}
-                    >
-                      <div className="flex items-center gap-1.5">
-                        {isOpen
-                          ? <ChevronDown className="w-3 h-3" style={{ color: DIM }} />
-                          : <ChevronRight className="w-3 h-3" style={{ color: DIM }} />
-                        }
-                        <span className="text-[13px] tracking-wide" style={{ color: WHITE, fontWeight: FW_NORMAL }}>
-                          {group.dateLabel}
-                        </span>
-                        <span className="text-[12px]" style={{ color: GRAY, fontWeight: FW_LIGHT }}>
-                          {Math.round(group.dte)}d
-                        </span>
-                        {group.isWeekly && (
-                          <span className="text-[10px] px-1 py-0.5 rounded" style={{ color: "#FF6B2B", background: "rgba(255,107,43,0.08)", fontWeight: FW_NORMAL }}>
-                            W
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2" style={{ fontSize: 12, fontVariantNumeric: "tabular-nums", fontFamily: MONO }}>
-                        {group.atmIV != null && (
-                          <span style={{ color: GOLD, fontWeight: FW_PREMIUM }}>
-                            IV {group.atmIV.toFixed(1)}%
-                          </span>
-                        )}
-                        {pcr != null && (
-                          <span style={{ color: pcr > 1 ? DOWN : UP, fontWeight: FW_NORMAL }}>
-                            P/C {pcr.toFixed(2)}
-                          </span>
-                        )}
-                      </div>
-                    </button>
-
-                    {isOpen && (
-                      <OptionsGrid
-                        rows={group.rows}
-                        underlyingPrice={underlyingPrice}
-                        columns={activeColumns}
-                        showCalls={showCalls}
-                        showPuts={showPuts}
-                        registerWing={registerWing}
-                        selectedLegs={selectedLegs}
-                        onToggleLeg={handleToggleLeg}
-                        onLongPressCell={handleLongPressCell}
-                        showInlineGreeks={showInlineGreeks}
-                        maxOI={group.maxOI}
-                        accentHex={accentHex}
-                      />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </>
+              );
+            })}
+          </div>
         )}
 
         {data && groups.length === 0 && (
