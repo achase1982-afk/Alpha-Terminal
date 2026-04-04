@@ -874,7 +874,7 @@ export function MarketCalendar({ onClose }: Props) {
 
                 {meta?.prevMonths && meta.prevMonths.length > 0 && (
                   <div>
-                    <span className="font-mono text-[14px] text-zinc-600 tracking-widest block mb-1.5">REVISIONS</span>
+                    <span className="font-mono text-[16px] font-extrabold tracking-widest block mb-1.5" style={{ color: "#FFB800" }}>REVISIONS</span>
                     <div className="rounded-md border border-[#2a2a2c] p-2.5 space-y-1.5">
                       {meta.prevMonths.map((pm, i) => (
                         <div key={i} className="flex items-center justify-between">
