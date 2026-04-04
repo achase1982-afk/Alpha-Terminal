@@ -27,7 +27,7 @@ const STICKY_TOP = TOOLBAR_H + HEADER_H + SUB_HEADER_H;
 
 const BG = "#000000";
 const BG_HEADER = "#060606";
-const BG_STRIKE = "#030303";
+const BG_STRIKE = "#3f3f46";
 const BG_EXP_BAR = "#070707";
 const BORDER = "#1a1a1a";
 const BORDER_ROW = "#0c0c0c";
@@ -710,7 +710,7 @@ function StrikeCell({ strike, underlyingPrice }: { strike: number; underlyingPri
       moneynessColor = "#FF6B2B";
     } else if (absPct < 10) {
       moneynessLabel = `${pct > 0 ? "+" : ""}${pct.toFixed(1)}%`;
-      moneynessColor = "#52525b";
+      moneynessColor = "#a1a1aa";
     }
   }
 
@@ -721,7 +721,7 @@ function StrikeCell({ strike, underlyingPrice }: { strike: number; underlyingPri
         height: ROW_H,
         borderBottom: `1px solid ${BORDER_ROW}`,
         color: isATM ? "#FF6B2B" : WHITE,
-        background: isATM ? "rgba(255,107,43,0.04)" : "transparent",
+        background: isATM ? "rgba(255,107,43,0.12)" : "transparent",
       }}
     >
       <span style={{ fontSize: 11, fontWeight: isATM ? FW_PREMIUM : FW_NORMAL, fontVariantNumeric: "tabular-nums", fontFamily: MONO, lineHeight: 1 }}>
