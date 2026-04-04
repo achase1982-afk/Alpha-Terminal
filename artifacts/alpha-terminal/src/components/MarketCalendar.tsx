@@ -881,7 +881,7 @@ export function MarketCalendar({ onClose }: Props) {
                         return (
                           <div key={i} className="flex items-center justify-between">
                             <span className="font-mono text-[15px] text-zinc-400">{pm.month} (revised)</span>
-                            <span className="font-mono text-[17px] font-extrabold tabular-nums" style={{ color: revColor }}>{pm.change}</span>
+                            <span className="font-mono text-[19px] font-extrabold tabular-nums" style={{ color: revColor }}>{pm.change}</span>
                           </div>
                         );
                       })}
