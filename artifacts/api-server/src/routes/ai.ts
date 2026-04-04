@@ -21,11 +21,15 @@ import { runPreTradeChecks, type PreTradeInput, type PreTradeResult } from "../l
 const router: IRouter = Router();
 
 const AVAILABLE_MODELS = [
+  "claude-opus-4-20250514",
+  "claude-sonnet-4-20250514",
+  "claude-3-7-sonnet-20250219",
   "claude-3-5-sonnet-20241022",
 ];
 
 interface NativeStreamOptions {
   prompt: string;
+  systemPrompt?: string;
   modelName?: string;
   temperature?: number;
   thinkingBudget?: number;
@@ -33,115 +37,68 @@ interface NativeStreamOptions {
   onText?: (text: string) => void;
 }
 
+const DEFAULT_MODEL = "claude-opus-4-20250514";
+
+const THINKING_CAPABLE_MODELS = new Set([
+  "claude-opus-4-20250514",
+  "claude-sonnet-4-20250514",
+  "claude-3-7-sonnet-20250219",
+]);
+
 async function nativeStreamClaude(opts: NativeStreamOptions): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
 
   const {
     prompt,
-    modelName = "claude-3-5-sonnet-20241022",
+    systemPrompt,
+    modelName,
     temperature = 0,
+    thinkingBudget,
+    onThinking,
     onText,
   } = opts;
 
   const client = new Anthropic({ apiKey });
 
+  const resolvedModel = modelName || DEFAULT_MODEL;
+  const useThinking = !!(thinkingBudget && thinkingBudget > 0 && THINKING_CAPABLE_MODELS.has(resolvedModel));
+
   let fullText = "";
 
-  const stream = client.messages.stream({
-    model: modelName,
-    max_tokens: 4096,
-    temperature,
-    messages: [
-      { role: "user", content: prompt },
-    ],
-  });
-
-  stream.on("text", (text) => {
-    fullText += text;
-    if (onText) onText(text);
-  });
-
-  await stream.finalMessage();
-
-  return fullText;
-}
-
-async function nativeStreamClaudeOld(opts: NativeStreamOptions): Promise<string> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
-
-  const {
-    prompt,
-    modelName = "claude-3-5-sonnet-20241022",
-    temperature = 0,
-    onText,
-  } = opts;
-
-  const url = "https://api.anthropic.com/v1/messages";
-
-  const body = {
-    model: modelName,
-    max_tokens: 4096,
-    temperature,
+  const params: Anthropic.MessageStreamParams = {
+    model: resolvedModel,
+    max_tokens: useThinking ? Math.max(16000, thinkingBudget! + 8000) : 4096,
     messages: [{ role: "user", content: prompt }],
   };
 
-  const resp = await fetch(url, {
-    method: "POST",
-    headers: { 
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify(body),
-  });
-
-  console.log("[CLAUDE-REST] fetch response status:", resp.status);
-
-  if (!resp.ok) {
-    const errText = await resp.text();
-    throw new Error(`Claude REST error ${resp.status}: ${errText.slice(0, 500)}`);
+  if (systemPrompt) {
+    params.system = systemPrompt;
   }
 
-  const reader = resp.body?.getReader();
-  if (!reader) throw new Error("No response body from Claude REST stream");
+  if (useThinking) {
+    params.thinking = { type: "enabled", budget_tokens: thinkingBudget! };
+    params.temperature = 1;
+  } else {
+    params.temperature = temperature;
+  }
 
-  const decoder = new TextDecoder();
-  let textBuffer = "";
-  let sseBuffer = "";
+  const stream = client.messages.stream(params);
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    sseBuffer += decoder.decode(value, { stream: true });
-
-    const lines = sseBuffer.split("\n");
-    sseBuffer = lines.pop() ?? "";
-
-    for (const line of lines) {
-      if (!line.startsWith("data: ")) continue;
-      const jsonStr = line.slice(6).trim();
-      if (!jsonStr) continue;
-
-      try {
-        const event = JSON.parse(jsonStr);
-        if (event.type === "content_block_delta" && event.delta?.type === "text_delta") {
-          const text = event.delta.text;
-          textBuffer += text;
-          if (onText) onText(text);
-        }
-      } catch (e) {
-        console.log("[CLAUDE-REST] SSE parse error:", (e as Error).message?.slice(0, 100));
+  for await (const event of stream) {
+    if (event.type === "content_block_delta") {
+      if (event.delta.type === "thinking_delta") {
+        if (onThinking) onThinking(event.delta.thinking);
+      } else if (event.delta.type === "text_delta") {
+        fullText += event.delta.text;
+        if (onText) onText(event.delta.text);
       }
     }
   }
 
-  console.log("[CLAUDE-REST] stream done.");
-
-  return textBuffer;
+  return fullText;
 }
+
 
 function getClient(): Anthropic | null {
   const key = process.env.ANTHROPIC_API_KEY;
@@ -151,7 +108,7 @@ function getClient(): Anthropic | null {
 
 async function callClaude(
   prompt: string,
-  modelName: string = "claude-3-5-sonnet-20241022",
+  modelName: string = "claude-opus-4-20250514",
   temperature: number = 0.3
 ): Promise<string> {
   const client = getClient();
@@ -313,7 +270,7 @@ If data is insufficient for any field, use null. Base RSI on 14-period calculati
     if (!client) return res.json({ error: "ANTHROPIC_API_KEY not configured" });
 
     const response = await client.messages.create({
-      model: "claude-3-5-sonnet-20241022",
+      model: "claude-opus-4-20250514",
       max_tokens: 4096,
       temperature: 0.1,
       messages: [{ role: "user", content: prompt }],
@@ -361,7 +318,7 @@ Analyze ONLY the above data and provide:
 Be specific, data-driven, and concise. Use markdown formatting.`;
 
   try {
-    const response = await callClaude(prompt, model ?? "claude-3-5-sonnet-20241022", temperature ?? 0.3);
+    const response = await callClaude(prompt, model ?? "claude-opus-4-20250514", temperature ?? 0.3);
     res.json(RunTechnicalAnalysisResponse.parse({ response }));
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -426,7 +383,7 @@ Be specific, data-driven, and concise. Use markdown formatting.`;
   }, 5000);
 
   try {
-    const chosenModel = model ?? "claude-3-5-sonnet-20241022";
+    const chosenModel = model ?? "claude-opus-4-20250514";
     await nativeStreamClaude({
       prompt,
       modelName: chosenModel,
@@ -486,7 +443,7 @@ Analyze ONLY the above data and provide:
 Be specific with strikes, expirations, and premium estimates. Use markdown formatting.`;
 
   try {
-    const response = await callClaude(prompt, model ?? "claude-3-5-sonnet-20241022", temperature ?? 0.3);
+    const response = await callClaude(prompt, model ?? "claude-opus-4-20250514", temperature ?? 0.3);
     res.json(RunOptionsAnalysisResponse.parse({ response }));
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -929,7 +886,7 @@ Specific and actionable. Include the instrument, direction, key level, and trigg
 Keep the entire output under 500 words. Be technically precise, data-driven, and immediately actionable. No filler. Use markdown.`;
 
   try {
-    const response = await callClaude(prompt, model ?? "claude-3-5-sonnet-20241022", temperature ?? 0.2);
+    const response = await callClaude(prompt, model ?? "claude-opus-4-20250514", temperature ?? 0.2);
     res.json({ response });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -1061,7 +1018,7 @@ RULES:
 - Be technically precise, data-driven, and immediately actionable.`;
 
   try {
-    const raw = await callClaude(prompt, model ?? "claude-3-5-sonnet-20241022", temperature ?? 0.2);
+    const raw = await callClaude(prompt, model ?? "claude-opus-4-20250514", temperature ?? 0.2);
 
     let cleaned = raw.trim();
     if (cleaned.startsWith("```")) {
@@ -1254,7 +1211,7 @@ Write ONLY the narrative fields. Return this exact JSON structure:
     let hasEmittedThinking = false;
     const responseBuffer = await nativeStreamClaude({
       prompt: narrativePrompt,
-      modelName: model ?? "claude-3-5-sonnet-20241022",
+      modelName: model ?? "claude-opus-4-20250514",
       temperature: temperature ?? 0,
       thinkingBudget: 4096,
       onThinking: (text) => {
@@ -1658,7 +1615,7 @@ router.post("/options-strategist", async (req, res) => {
     };
 
     const narrativePrompt = `${STRATEGIST_SYSTEM_PROMPT}\n\nHere is the payload:\n\n${JSON.stringify(payload, null, 2)}`;
-    const narrative = await callClaude(narrativePrompt, "claude-3-5-sonnet-20241022", 0.2);
+    const narrative = await callClaude(narrativePrompt, "claude-opus-4-20250514", 0.2);
 
     res.json({ strategies, narrative, edge, underlyingPrice, regime, pulse: resolvedPulse, overrideWarning, tickerProfile, chainAnalytics });
   } catch (err: unknown) {
@@ -1824,7 +1781,7 @@ router.post("/options-strategist/stream", async (req, res) => {
 
       await nativeStreamClaude({
         prompt: narrativePrompt,
-        modelName: model ?? "claude-3-5-sonnet-20241022",
+        modelName: model ?? "claude-opus-4-20250514",
         temperature: temperature ?? 0.2,
         thinkingBudget: 2048,
         onThinking: (text) => {
@@ -1894,7 +1851,7 @@ STRICT DATA GROUNDING RULE FOR MARKET/TRADING QUESTIONS:
 ${marketContext ? `═══ LIVE SCHWAB CONTEXT DATA ═══\n${marketContext}\n═══ END CONTEXT DATA ═══` : "No live Schwab data connected."}`;
 
     const result = streamText({
-      model: anthropic(reqModel ?? "claude-3-5-sonnet-20241022"),
+      model: anthropic(reqModel ?? "claude-opus-4-20250514"),
       system: systemPrompt,
       temperature: 0.1,
       messages: messages.map(m => ({
@@ -2208,7 +2165,7 @@ Return this exact JSON structure:
 }`;
 
   try {
-    const raw = await callClaude(prompt, model ?? "claude-3-5-sonnet-20241022", temperature ?? 0.1);
+    const raw = await callClaude(prompt, model ?? "claude-opus-4-20250514", temperature ?? 0.1);
 
     // Try to parse JSON — strip any markdown fences Claude may wrap around it
     const cleaned = raw.replace(/^```(?:json)?\s*/im, "").replace(/```\s*$/im, "").trim();
@@ -2361,7 +2318,7 @@ INSTRUCTIONS:
 - Use markdown formatting. Be precise and actionable.`;
 
   try {
-    const response = await callClaude(prompt, model ?? "claude-3-5-sonnet-20241022", temperature ?? 0.1);
+    const response = await callClaude(prompt, model ?? "claude-opus-4-20250514", temperature ?? 0.1);
     res.json({
       response,
       indicators: {
@@ -2381,7 +2338,7 @@ INSTRUCTIONS:
 });
 
 router.post("/sympathy-plays", async (req, res) => {
-  const { symbol, model = "claude-3-5-sonnet-20241022", temperature = 0.3 } = req.body as {
+  const { symbol, model = "claude-opus-4-20250514", temperature = 0.3 } = req.body as {
     symbol?: string;
     model?: string;
     temperature?: number;
@@ -2445,7 +2402,7 @@ router.post("/pre-trade-check", async (req, res) => {
   try {
     const summary = result.checks.map(c => `${c.label}: ${c.status} (${c.value})`).join("; ");
     const prompt = `You are a risk manager giving a one-sentence summary of a pre-trade risk check. Be direct and concise. The overall result is ${result.overall} with ${result.passCount} passes, ${result.warnCount} warnings, ${result.failCount} fails. Details: ${summary}. Strategy: ${strategy.strategy_type}. Give exactly one short sentence (max 20 words) that a trader would find useful.`;
-    aiOneLiner = await callClaude(prompt, "claude-3-5-sonnet-20241022", 0.3);
+    aiOneLiner = await callClaude(prompt, "claude-opus-4-20250514", 0.3);
   } catch {
     aiOneLiner = result.overall === "PASS" ? "All checks passed. Clear to trade."
       : result.overall === "WARN" ? "Caution: some checks flagged. Review before entry."
