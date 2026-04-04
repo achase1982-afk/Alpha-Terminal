@@ -19,7 +19,7 @@ Real-time streaming market data, AI-driven analysis, options strategy engine.
 | **Charts**    | Lightweight Charts (TradingView) + Recharts                 |
 | **UI Kit**    | Radix UI primitives + shadcn/ui components                  |
 | **Backend**   | Express 5 (Node.js) + TypeScript                            |
-| **AI**        | Anthropic Claude (claude-opus-4) via Vercel AI SDK          |
+| **AI**        | Anthropic Claude (Sonnet 4.6 / Opus 4.6) via Vercel AI SDK  |
 | **Auth**      | Clerk (user auth) + Schwab OAuth (brokerage)                |
 | **Streaming** | WebSocket (ws) — Schwab Level 1 real-time quotes            |
 | **Logging**   | Pino                                                        |
