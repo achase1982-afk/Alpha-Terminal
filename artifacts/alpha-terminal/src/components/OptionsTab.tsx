@@ -325,6 +325,7 @@ const DataCell = memo(function DataCell({
   const isAsk = col.id === "ask";
   const isOI = col.id === "oi";
   const isVol = col.id === "vol";
+  const oiVal = isVol ? getContractVal(contract, "openInterest") : undefined;
   const isGreek = col.group === "Greeks";
   const isIV = col.id === "iv";
   const isPrice = isBid || isAsk;
@@ -389,6 +390,12 @@ const DataCell = memo(function DataCell({
         {isVol || isOI ? fmtCompact(topVal) : topStr}
         {isIV && topStr !== "\u2014" ? "%" : ""}
       </span>
+
+      {isVol && oiVal != null && (
+        <span className="leading-none mt-0.5" style={{ fontSize: 9, color: WHITE, fontVariantNumeric: "tabular-nums", fontFamily: MONO, fontWeight: FW_LIGHT }}>
+          OI: {fmtCompact(oiVal)}
+        </span>
+      )}
 
       {isPrice && showInlineGreeks && deltaVal != null ? (
         <div className="flex gap-1 mt-0.5" style={{ fontSize: 10, color: isShaded ? "#a0a0a8" : GRAY, fontFamily: MONO, fontVariantNumeric: "tabular-nums", fontWeight: FW_LIGHT }}>
