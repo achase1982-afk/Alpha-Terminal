@@ -733,56 +733,70 @@ function OptionsGrid({
   onBuildStrategy?: () => void;
 }) {
   const sortedRows = useMemo(() => [...rows].sort((a, b) => a.strike - b.strike), [rows]);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [strikeLeft, setStrikeLeft] = useState(0);
 
   const transitionIdx = useMemo(() => {
     if (underlyingPrice == null) return -1;
     return sortedRows.findIndex(r => r.strike > underlyingPrice + EPS);
   }, [sortedRows, underlyingPrice]);
 
-  const callColCount = showCalls ? columns.length : 0;
-  const putColCount = showPuts ? columns.length : 0;
-  const callWingW = callColCount * COL_W;
-  const totalW = callWingW + STRIKE_W + putColCount * COL_W;
+  const priceAboveAll = useMemo(() => {
+    if (underlyingPrice == null || sortedRows.length === 0) return false;
+    return underlyingPrice > sortedRows[sortedRows.length - 1].strike + EPS;
+  }, [underlyingPrice, sortedRows]);
+
+  const wingWidth = columns.length * COL_W;
+
+  const callLabelRef = useRef<HTMLDivElement>(null);
+  const putLabelRef = useRef<HTMLDivElement>(null);
+  const callWingRef = useRef<HTMLDivElement>(null);
+  const putWingRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const containerW = el.clientWidth;
-    const center = Math.max(0, Math.floor((containerW - STRIKE_W) / 2));
-    setStrikeLeft(center);
-    const idealScroll = callWingW - center;
-    if (idealScroll > 0) {
-      el.scrollLeft = idealScroll;
+    const cw = callWingRef.current;
+    const cl = callLabelRef.current;
+    if (cw && cl) {
+      cl.scrollLeft = cw.scrollLeft;
+      const h = () => { cl.scrollLeft = cw.scrollLeft; };
+      cw.addEventListener("scroll", h, { passive: true });
+      return () => cw.removeEventListener("scroll", h);
     }
-  }, [callWingW, columns.length]);
+  }, [showCalls, columns.length]);
 
-  const thStyle: React.CSSProperties = {
-    position: "sticky",
-    top: 0,
-    background: "#111111",
-    fontFamily: MONO,
-    fontWeight: FW_LIGHT,
-    padding: "0 4px",
-    margin: 0,
-    zIndex: 40,
-    boxShadow: "0 2px 4px rgba(0,0,0,0.5)",
-  };
+  useEffect(() => {
+    const pw = putWingRef.current;
+    const pl = putLabelRef.current;
+    if (pw && pl) {
+      pl.scrollLeft = pw.scrollLeft;
+      const h = () => { pl.scrollLeft = pw.scrollLeft; };
+      pw.addEventListener("scroll", h, { passive: true });
+      return () => pw.removeEventListener("scroll", h);
+    }
+  }, [showPuts, columns.length]);
 
-  const strikeStickyStyle: React.CSSProperties = {
-    position: "sticky",
-    left: strikeLeft,
-    background: accentHex,
-    zIndex: 10,
-    padding: 0,
-    verticalAlign: "middle",
-    borderLeft: `1px solid ${accentHex}`,
-    borderRight: `1px solid ${accentHex}`,
+  const atmLineTop = useMemo(() => {
+    if (transitionIdx >= 0) return transitionIdx * ROW_H;
+    if (priceAboveAll && sortedRows.length > 0) return sortedRows.length * ROW_H;
+    return -1;
+  }, [transitionIdx, priceAboveAll, sortedRows.length]);
+
+  const wingScrollStyle: React.CSSProperties = {
+    overflowX: "auto",
+    overflowY: "hidden",
+    scrollbarWidth: "none" as React.CSSProperties["scrollbarWidth"],
+    msOverflowStyle: "none",
+    WebkitOverflowScrolling: "touch" as React.CSSProperties["WebkitOverflowScrolling"],
+    willChange: "transform",
   };
 
   return (
-    <div>
+    <div
+      style={{
+        overflowY: "auto",
+        maxHeight: "calc(100dvh - 240px)",
+        scrollbarWidth: "none" as React.CSSProperties["scrollbarWidth"],
+        msOverflowStyle: "none",
+      } as React.CSSProperties}
+    >
       <div
         style={{
           display: "flex",
@@ -790,8 +804,9 @@ function OptionsGrid({
           background: BG_HEADER,
           borderBottom: `1px solid ${BORDER}`,
           alignItems: "center",
-          position: "relative",
-          zIndex: 51,
+          position: "sticky",
+          top: 0,
+          zIndex: 50,
         }}
       >
         {showCalls && (
@@ -825,153 +840,158 @@ function OptionsGrid({
       </div>
 
       <div
-        ref={scrollRef}
         style={{
-          overflow: "auto",
-          maxHeight: "calc(100dvh - 272px)",
-          WebkitOverflowScrolling: "touch" as React.CSSProperties["WebkitOverflowScrolling"],
-          willChange: "transform",
-          backfaceVisibility: "hidden",
-          scrollbarWidth: "none" as React.CSSProperties["scrollbarWidth"],
-          msOverflowStyle: "none",
-          transform: "translateZ(0)",
-        } as React.CSSProperties}
+          display: "flex",
+          height: SUB_HEADER_H,
+          background: "#111111",
+          borderBottom: `1px solid ${BORDER}`,
+          alignItems: "center",
+          position: "sticky",
+          top: HEADER_H,
+          zIndex: 45,
+          boxShadow: "0 2px 4px rgba(0,0,0,0.5)",
+        }}
       >
-        <table
-          style={{
-            tableLayout: "fixed",
-            borderCollapse: "separate",
-            borderSpacing: 0,
-            fontFamily: MONO,
-            fontVariantNumeric: "tabular-nums",
-            width: totalW,
-            minWidth: totalW,
-          }}
-        >
-          <colgroup>
-            {showCalls && columns.map(col => <col key={`cc-${col.id}`} style={{ width: COL_W }} />)}
-            <col style={{ width: STRIKE_W }} />
-            {showPuts && columns.map(col => <col key={`pc-${col.id}`} style={{ width: COL_W }} />)}
-          </colgroup>
-
-          <thead>
-            <tr style={{ height: SUB_HEADER_H }}>
-              {showCalls && columns.map(col => (
-                <th key={`ch-${col.id}`} style={{ ...thStyle, textAlign: "left" }}>
-                  <span style={{ fontSize: 10, color: DIM, fontWeight: FW_LIGHT, textTransform: "uppercase", letterSpacing: "0.08em" }}>{col.topLabel}</span>
-                </th>
+        {showCalls && (
+          <div
+            ref={callLabelRef}
+            style={{ flex: 1, overflow: "hidden", height: SUB_HEADER_H }}
+          >
+            <div style={{ display: "flex", alignItems: "center", minWidth: wingWidth, height: SUB_HEADER_H }}>
+              {columns.map(col => (
+                <div key={col.id} style={{ width: COL_W, flexShrink: 0, padding: "0 4px" }}>
+                  <span style={{ fontSize: 10, color: DIM, fontFamily: MONO, fontWeight: FW_LIGHT, textTransform: "uppercase", letterSpacing: "0.08em" }}>{col.topLabel}</span>
+                </div>
               ))}
-              <th
-                style={{
-                  ...thStyle,
-                  position: "sticky",
-                  left: strikeLeft,
-                  top: 0,
-                  textAlign: "center",
-                  background: "#111111",
-                  zIndex: 55,
-                  borderLeft: `1px solid ${BORDER}`,
-                  borderRight: `1px solid ${BORDER}`,
-                  padding: 0,
-                }}
-              >
-                <span style={{ fontSize: 9, color: WHITE, fontWeight: FW_PREMIUM, letterSpacing: "0.08em" }}>STRIKE</span>
-              </th>
-              {showPuts && columns.map(col => (
-                <th key={`ph-${col.id}`} style={{ ...thStyle, textAlign: "left" }}>
-                  <span style={{ fontSize: 10, color: DIM, fontWeight: FW_LIGHT, textTransform: "uppercase", letterSpacing: "0.08em" }}>{col.topLabel}</span>
-                </th>
+            </div>
+          </div>
+        )}
+        <div style={{ width: STRIKE_W, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", borderLeft: `1px solid ${BORDER}`, borderRight: `1px solid ${BORDER}`, background: "#111111" }}>
+          <span style={{ fontSize: 9, color: WHITE, fontFamily: MONO, fontWeight: FW_PREMIUM, letterSpacing: "0.08em" }}>STRIKE</span>
+        </div>
+        {showPuts && (
+          <div
+            ref={putLabelRef}
+            style={{ flex: 1, overflow: "hidden", height: SUB_HEADER_H }}
+          >
+            <div style={{ display: "flex", alignItems: "center", minWidth: wingWidth, height: SUB_HEADER_H }}>
+              {columns.map(col => (
+                <div key={col.id} style={{ width: COL_W, flexShrink: 0, padding: "0 4px" }}>
+                  <span style={{ fontSize: 10, color: DIM, fontFamily: MONO, fontWeight: FW_LIGHT, textTransform: "uppercase", letterSpacing: "0.08em" }}>{col.topLabel}</span>
+                </div>
               ))}
-            </tr>
-          </thead>
+            </div>
+          </div>
+        )}
+      </div>
 
-          <tbody>
-            {sortedRows.map((row, idx) => {
-              const callKey = row.call ? makeLegKey(row.call, "CALL") : "";
-              const putKey = row.put ? makeLegKey(row.put, "PUT") : "";
-              const isCallSelected = callKey ? selectedLegs.has(callKey) : false;
-              const isPutSelected = putKey ? selectedLegs.has(putKey) : false;
-              const callMoney = classifyMoneyness(row.strike, underlyingPrice, true);
-              const putMoney = classifyMoneyness(row.strike, underlyingPrice, false);
-              const callBg = getRowBg(callMoney, isCallSelected);
-              const putBg = getRowBg(putMoney, isPutSelected);
-              const isAtmBoundary = transitionIdx >= 0 && idx === transitionIdx;
-              const atmBorder = isAtmBoundary ? "1px dotted #FF6B2B" : undefined;
+      <div style={{ display: "flex", fontVariantNumeric: "tabular-nums", fontFamily: MONO, position: "relative" }}>
+        {atmLineTop >= 0 && (
+          <div
+            className="pointer-events-none"
+            style={{ position: "absolute", left: 0, right: 0, top: atmLineTop, borderTop: "1px dotted #FF6B2B", zIndex: 5 }}
+          />
+        )}
 
-              return (
-                <tr key={row.strike} style={{ height: ROW_H }}>
-                  {showCalls && columns.map((col, i) => (
-                    <td
-                      key={col.id}
-                      style={{
-                        background: callBg,
-                        borderBottom: `1px solid ${BORDER_ROW}`,
-                        borderTop: atmBorder,
-                        borderLeft: isCallSelected && i === 0 ? `2px solid ${SEL_BORDER_COLOR}` : undefined,
-                        padding: 0,
-                        verticalAlign: "middle",
-                      }}
-                    >
-                      <DataCell
-                        col={col}
-                        contract={row.call}
-                        isSelected={isCallSelected && col.isPrice}
-                        onSelect={col.isPrice && row.call ? () => onToggleLeg(row.call!, "CALL") : undefined}
-                        onLongPress={col.isPrice && row.call ? (e) => onLongPressCell({
-                          contract: row.call!, type: "CALL",
-                          side: col.id === "bid" ? "SELL" : "BUY",
-                          x: e.clientX, y: e.clientY,
-                        }) : undefined}
-                        showInlineGreeks={showInlineGreeks}
-                        maxOI={col.id === "oi" ? maxOI : undefined}
-                        moneyness={callMoney}
-                      />
-                    </td>
-                  ))}
-
-                  <td
+        {showCalls && (
+          <div
+            ref={callWingRef}
+            style={{ ...wingScrollStyle, flex: 1 }}
+          >
+            <div style={{ minWidth: wingWidth }}>
+              {sortedRows.map((row) => {
+                const callKey = row.call ? makeLegKey(row.call, "CALL") : "";
+                const isCallSelected = callKey ? selectedLegs.has(callKey) : false;
+                const moneyness = classifyMoneyness(row.strike, underlyingPrice, true);
+                const bg = getRowBg(moneyness, isCallSelected);
+                return (
+                  <div
+                    key={row.strike}
+                    className="flex"
                     style={{
-                      ...strikeStickyStyle,
-                      borderBottom: `1px solid rgba(0,0,0,0.25)`,
-                      borderTop: atmBorder,
+                      height: ROW_H,
+                      borderBottom: `1px solid ${BORDER_ROW}`,
+                      background: bg,
+                      boxShadow: isCallSelected ? `inset 2px 0 0 ${SEL_BORDER_COLOR}` : undefined,
                     }}
                   >
-                    <StrikeCell strike={row.strike} underlyingPrice={underlyingPrice} />
-                  </td>
+                    {columns.map(col => (
+                      <div key={col.id} style={{ width: COL_W }} className="shrink-0">
+                        <DataCell
+                          col={col}
+                          contract={row.call}
+                          isSelected={isCallSelected && col.isPrice}
+                          onSelect={col.isPrice && row.call ? () => onToggleLeg(row.call!, "CALL") : undefined}
+                          onLongPress={col.isPrice && row.call ? (e) => onLongPressCell({
+                            contract: row.call!, type: "CALL",
+                            side: col.id === "bid" ? "SELL" : "BUY",
+                            x: e.clientX, y: e.clientY,
+                          }) : undefined}
+                          showInlineGreeks={showInlineGreeks}
+                          maxOI={col.id === "oi" ? maxOI : undefined}
+                          moneyness={moneyness}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
-                  {showPuts && columns.map((col, i) => (
-                    <td
-                      key={col.id}
-                      style={{
-                        background: putBg,
-                        borderBottom: `1px solid ${BORDER_ROW}`,
-                        borderTop: atmBorder,
-                        borderRight: isPutSelected && i === columns.length - 1 ? `2px solid ${SEL_BORDER_COLOR}` : undefined,
-                        padding: 0,
-                        verticalAlign: "middle",
-                      }}
-                    >
-                      <DataCell
-                        col={col}
-                        contract={row.put}
-                        isSelected={isPutSelected && col.isPrice}
-                        onSelect={col.isPrice && row.put ? () => onToggleLeg(row.put!, "PUT") : undefined}
-                        onLongPress={col.isPrice && row.put ? (e) => onLongPressCell({
-                          contract: row.put!, type: "PUT",
-                          side: col.id === "bid" ? "SELL" : "BUY",
-                          x: e.clientX, y: e.clientY,
-                        }) : undefined}
-                        showInlineGreeks={showInlineGreeks}
-                        maxOI={col.id === "oi" ? maxOI : undefined}
-                        moneyness={putMoney}
-                      />
-                    </td>
-                  ))}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <div className="flex-none" style={{ width: STRIKE_W, background: accentHex, borderLeft: `1px solid ${accentHex}`, borderRight: `1px solid ${accentHex}`, zIndex: 10, position: "relative" }}>
+          {sortedRows.map((row) => (
+            <StrikeCell key={row.strike} strike={row.strike} underlyingPrice={underlyingPrice} />
+          ))}
+        </div>
+
+        {showPuts && (
+          <div
+            ref={putWingRef}
+            style={{ ...wingScrollStyle, flex: 1 }}
+          >
+            <div style={{ minWidth: wingWidth }}>
+              {sortedRows.map((row) => {
+                const putKey = row.put ? makeLegKey(row.put, "PUT") : "";
+                const isPutSelected = putKey ? selectedLegs.has(putKey) : false;
+                const moneyness = classifyMoneyness(row.strike, underlyingPrice, false);
+                const bg = getRowBg(moneyness, isPutSelected);
+                return (
+                  <div
+                    key={row.strike}
+                    className="flex"
+                    style={{
+                      height: ROW_H,
+                      borderBottom: `1px solid ${BORDER_ROW}`,
+                      background: bg,
+                      boxShadow: isPutSelected ? `inset -2px 0 0 ${SEL_BORDER_COLOR}` : undefined,
+                    }}
+                  >
+                    {columns.map(col => (
+                      <div key={col.id} style={{ width: COL_W }} className="shrink-0">
+                        <DataCell
+                          col={col}
+                          contract={row.put}
+                          isSelected={isPutSelected && col.isPrice}
+                          onSelect={col.isPrice && row.put ? () => onToggleLeg(row.put!, "PUT") : undefined}
+                          onLongPress={col.isPrice && row.put ? (e) => onLongPressCell({
+                            contract: row.put!, type: "PUT",
+                            side: col.id === "bid" ? "SELL" : "BUY",
+                            x: e.clientX, y: e.clientY,
+                          }) : undefined}
+                          showInlineGreeks={showInlineGreeks}
+                          maxOI={col.id === "oi" ? maxOI : undefined}
+                          moneyness={moneyness}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
