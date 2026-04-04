@@ -210,17 +210,17 @@ export const useTerminalStore = create<TerminalState>()(
         overlays: { ...state.overlays, [overlay]: !state.overlays[overlay] } 
       })),
 
-      aiModel: 'claude-sonnet-4-6-20250620',
+      aiModel: 'claude-sonnet-4-20250514',
       setAiModel: (aiModel) => set({ aiModel }),
       aiTemp: 0.7,
       setAiTemp: (aiTemp) => set({ aiTemp }),
 
       aiFeatureSettings: {
-        marketPulse:   { model: 'claude-sonnet-4-6-20250620', temperature: 0 },
-        technicals:    { model: 'claude-sonnet-4-6-20250620', temperature: 0 },
-        strategist:    { model: 'claude-sonnet-4-6-20250620', temperature: 0 },
-        chat:          { model: 'claude-sonnet-4-6-20250620', temperature: 0 },
-        scanner:       { model: 'claude-sonnet-4-6-20250620', temperature: 0 },
+        marketPulse:   { model: 'claude-sonnet-4-20250514', temperature: 0 },
+        technicals:    { model: 'claude-sonnet-4-20250514', temperature: 0 },
+        strategist:    { model: 'claude-sonnet-4-20250514', temperature: 0 },
+        chat:          { model: 'claude-sonnet-4-20250514', temperature: 0 },
+        scanner:       { model: 'claude-sonnet-4-20250514', temperature: 0 },
       },
       setAiFeatureSetting: (feature, key, value) =>
         set((state) => ({
@@ -350,7 +350,7 @@ export const useTerminalStore = create<TerminalState>()(
     }),
     {
       name: 'alpha-terminal-storage',
-      version: 9,
+      version: 10,
       migrate: (persistedState: unknown, version: number) => {
         const s = persistedState as Record<string, unknown>;
         if (version < 2) {
@@ -396,20 +396,34 @@ export const useTerminalStore = create<TerminalState>()(
           }
         }
         if (version < 8) {
-          s['aiModel'] = 'claude-sonnet-4-6-20250620';
+          s['aiModel'] = 'claude-sonnet-4-20250514';
           const features = s['aiFeatureSettings'] as Record<string, { model: string; temperature: number }> | undefined;
           if (features) {
             for (const key of Object.keys(features)) {
-              features[key].model = 'claude-sonnet-4-6-20250620';
+              features[key].model = 'claude-sonnet-4-20250514';
             }
           }
         }
         if (version < 9) {
-          s['aiModel'] = 'claude-sonnet-4-6-20250620';
+          s['aiModel'] = 'claude-sonnet-4-20250514';
           const features = s['aiFeatureSettings'] as Record<string, { model: string; temperature: number }> | undefined;
           if (features) {
             for (const key of Object.keys(features)) {
-              features[key].model = 'claude-sonnet-4-6-20250620';
+              features[key].model = 'claude-sonnet-4-20250514';
+            }
+          }
+        }
+        if (version < 10) {
+          const model = s['aiModel'] as string | undefined;
+          if (model && model.includes('4-6')) {
+            s['aiModel'] = 'claude-sonnet-4-20250514';
+          }
+          const features = s['aiFeatureSettings'] as Record<string, { model: string; temperature: number }> | undefined;
+          if (features) {
+            for (const key of Object.keys(features)) {
+              if (features[key]?.model?.includes('4-6')) {
+                features[key].model = 'claude-sonnet-4-20250514';
+              }
             }
           }
         }
