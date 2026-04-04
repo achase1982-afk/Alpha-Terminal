@@ -524,9 +524,9 @@ export function MarketCalendar({ onClose }: Props) {
         </button>
       </div>
 
-      <div className="grid grid-cols-7 gap-0 mb-1">
+      <div className="grid grid-cols-7 gap-0 mb-0">
         {DAYS.map((d) => (
-          <div key={d} className="text-center font-mono text-[9px] text-zinc-600 tracking-wider py-1">
+          <div key={d} className="text-center font-mono text-[9px] text-zinc-600 tracking-wider pt-1 pb-0.5">
             {d}
           </div>
         ))}
