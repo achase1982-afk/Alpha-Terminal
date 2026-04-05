@@ -1332,7 +1332,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
                         {Math.round(group.dte)}d
                       </span>
                       {group.isWeekly && (
-                        <span className="text-[10px] px-1 py-0.5 rounded" style={{ color: "#FF6B2B", background: "rgba(255,107,43,0.08)", fontWeight: FW_NORMAL }}>
+                        <span className="text-[13px] px-1 py-0.5 rounded" style={{ color: "#FF6B2B", background: "rgba(255,107,43,0.08)", fontWeight: FW_NORMAL }}>
                           Weekly
                         </span>
                       )}
