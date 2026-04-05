@@ -50,15 +50,48 @@ function WatchlistIcon({ isInWatchlist, flash }: { isInWatchlist: boolean; flash
   );
 }
 
-function SymbolLivePreview({ sym }: { sym: string }) {
+function SymbolLivePreview({ sym, onNavigate }: { sym: string; onNavigate: () => void }) {
   const { data } = useQuote(sym);
+  const { addToWatchlist, removeFromWatchlist } = useTerminalStore();
+  const watchlistSymbols = useActiveWatchlist();
+  const isInWatchlist = watchlistSymbols.includes(sym.toUpperCase());
+  const [flash, setFlash] = useState(false);
+
+  const handleWatchlistToggle = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isInWatchlist) {
+      removeFromWatchlist(sym);
+    } else {
+      addToWatchlist(sym);
+    }
+    setFlash(true);
+    setTimeout(() => setFlash(false), 400);
+  }, [sym, isInWatchlist, addToWatchlist, removeFromWatchlist]);
+
   if (!data?.description) return null;
+
   return (
-    <div className="mx-4 mb-2 px-3 py-2 rounded-lg flex items-center gap-2" style={{ background: "#18181B", border: "1px solid #2A2A2C" }}>
-      <span className="font-mono text-[14px] font-bold text-white tracking-wide shrink-0">{sym}</span>
-      <span className="font-mono text-[12px] font-bold text-[#FFB800] tracking-wide truncate">
-        {data.description.toUpperCase()}
-      </span>
+    <div
+      className="mx-4 mb-2 px-3 py-2 rounded-lg flex items-center gap-3"
+      style={{ background: "#18181B", border: "1px solid #FFB800/30", borderColor: "rgba(255,184,0,0.25)" }}
+    >
+      <div
+        onClick={onNavigate}
+        className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer active:opacity-70 transition-opacity"
+      >
+        <span className="font-mono text-[15px] font-bold text-white tracking-wide shrink-0">{sym}</span>
+        <span className="font-mono text-[12px] font-bold text-[#FFB800] tracking-wide truncate">
+          {data.description.toUpperCase()}
+        </span>
+      </div>
+      <div
+        onClick={handleWatchlistToggle}
+        className="cursor-pointer active:scale-90 transition-transform shrink-0"
+        role="button"
+        aria-label={isInWatchlist ? "Remove from watchlist" : "Add to watchlist"}
+      >
+        <WatchlistIcon isInWatchlist={isInWatchlist} flash={flash} />
+      </div>
     </div>
   );
 }
@@ -252,7 +285,18 @@ export function SearchOverlay({ isOpen, onClose, onSelectSymbol }: SearchOverlay
           </form>
         </div>
 
-        {debouncedVal && <SymbolLivePreview sym={debouncedVal} />}
+        {debouncedVal && (
+          <SymbolLivePreview
+            sym={debouncedVal}
+            onNavigate={() => {
+              inputRef.current?.blur();
+              setSymbol(debouncedVal);
+              setInputVal("");
+              setDebouncedVal("");
+              onSelectSymbol(debouncedVal);
+            }}
+          />
+        )}
 
         <div className="flex-1 overflow-y-auto pb-8">
           {recentSymbols.length > 0 && (
