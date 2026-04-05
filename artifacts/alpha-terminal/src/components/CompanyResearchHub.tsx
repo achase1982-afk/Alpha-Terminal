@@ -207,6 +207,20 @@ interface QuoteInfo {
   peRatio?: number;
 }
 
+function FundCard({ label, value, sub, color, accent }: { label: string; value: string; sub?: string; color?: string; accent?: string }) {
+  return (
+    <div style={{
+      background: C.card, border: `1px solid ${accent ? accent + "30" : C.border}`,
+      padding: "10px 12px", display: "flex", flexDirection: "column", gap: 2,
+      borderLeft: accent ? `3px solid ${accent}` : undefined,
+    }}>
+      <div style={{ fontSize: 9, fontFamily: f, fontWeight: 700, color: C.textDim, letterSpacing: 1.5, textTransform: "uppercase" }}>{label}</div>
+      <div style={{ fontSize: 18, fontFamily: f, fontWeight: 800, color: color || C.text, letterSpacing: -0.5 }}>{value}</div>
+      {sub && <div style={{ fontSize: 9, fontFamily: f, color: C.textDim }}>{sub}</div>}
+    </div>
+  );
+}
+
 function SubOverview({ fund, quoteData, priceHist, volHist }: {
   fund: FundamentalData | null;
   quoteData: QuoteInfo | null;
@@ -218,61 +232,105 @@ function SubOverview({ fund, quoteData, priceHist, volHist }: {
   const low52 = fund?.low52 ?? quoteData?.fiftyTwoWeekLow;
   const mock = useMemo(() => genMockData(quoteData?.symbol || "AAPL"), [quoteData?.symbol]);
 
+  const pe = fund?.peRatio ?? quoteData?.peRatio ?? null;
+  const eps = fund?.eps ?? null;
+  const beta = fund?.beta ?? null;
+  const divYield = fund?.dividendYield ?? null;
+  const betaColor = beta != null ? (beta > 1.3 ? C.red : beta > 0.8 ? C.gold : C.green) : C.text;
+
   return (
     <>
       <Sec>FUNDAMENTALS</Sec>
-      <FundGrid items={[
-        { label: "Mkt Cap", value: fmtMarketCap(fund?.marketCap ?? null) },
-        { label: "Shares", value: fmtShares(fund?.sharesOutstanding ?? null) },
-        { label: "P/E Ratio", value: fmtNum(fund?.peRatio ?? quoteData?.peRatio ?? null) },
-        { label: "EPS (TTM)", value: fmtNum(fund?.eps ?? null) },
-        { label: "Beta", value: fmtNum(fund?.beta ?? null) },
-        { label: "Div Yield", value: fund?.dividendYield != null ? `${fund.dividendYield.toFixed(2)}%` : "—" },
-      ]} />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+        <div style={{ gridColumn: "1 / -1" }}>
+          <FundCard
+            label="Market Cap"
+            value={fmtMarketCap(fund?.marketCap ?? null)}
+            sub={`${fmtShares(fund?.sharesOutstanding ?? null)} shares outstanding`}
+            accent={C.gold}
+          />
+        </div>
+        <FundCard
+          label="P/E Ratio"
+          value={pe != null ? pe.toFixed(2) : "—"}
+          sub={pe != null ? (pe > 30 ? "Premium" : pe > 15 ? "Fair Value" : "Value") : undefined}
+          color={pe != null ? (pe > 40 ? C.red : pe > 20 ? C.gold : C.green) : undefined}
+          accent={pe != null ? (pe > 40 ? C.red : pe > 20 ? C.gold : C.green) : undefined}
+        />
+        <FundCard
+          label="EPS (TTM)"
+          value={eps != null ? `$${eps.toFixed(2)}` : "—"}
+          color={eps != null ? (eps > 0 ? C.green : C.red) : undefined}
+          accent={eps != null ? (eps > 0 ? C.green : C.red) : undefined}
+        />
+        <FundCard
+          label="Beta"
+          value={beta != null ? beta.toFixed(2) : "—"}
+          sub={beta != null ? (beta > 1.3 ? "High Vol" : beta > 0.8 ? "Market" : "Low Vol") : undefined}
+          color={betaColor}
+          accent={betaColor}
+        />
+        <FundCard
+          label="Div Yield"
+          value={divYield != null ? `${divYield.toFixed(2)}%` : "—"}
+          sub={divYield != null && divYield > 0 ? "Paying" : divYield === 0 ? "None" : undefined}
+          color={divYield != null && divYield > 2 ? C.green : undefined}
+          accent={divYield != null && divYield > 0 ? C.green : undefined}
+        />
+      </div>
+
       {high52 != null && low52 != null && currentPrice != null && (
-        <RangeBar lo={low52} hi={high52} current={currentPrice.toFixed(2)} />
+        <div style={{ marginTop: 8 }}>
+          <RangeBar lo={low52} hi={high52} current={currentPrice.toFixed(2)} />
+        </div>
       )}
 
       <Sec>52-WEEK PRICE</Sec>
-      <ResponsiveContainer width="100%" height={180}>
-        <AreaChart data={priceHist}>
-          <defs>
-            <linearGradient id="pg" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor={C.gold} stopOpacity={0.12} />
-              <stop offset="95%" stopColor={C.gold} stopOpacity={0} />
-            </linearGradient>
-          </defs>
-          <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
-          <XAxis dataKey="w" tick={{ fill: C.textDim, fontSize: 9, fontFamily: f }} interval={Math.max(1, Math.floor(priceHist.length / 5))} axisLine={{ stroke: C.border }} tickLine={false} />
-          <YAxis tick={{ fill: C.textDim, fontSize: 9, fontFamily: f }} domain={["auto", "auto"]} axisLine={{ stroke: C.border }} tickLine={false} />
-          <Tooltip contentStyle={tt} labelStyle={{ color: C.textDim }} />
-          <Area type="monotone" dataKey="p" stroke={C.gold} fill="url(#pg)" strokeWidth={1.5} dot={false} name="Price" />
-        </AreaChart>
-      </ResponsiveContainer>
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: "12px 8px 8px" }}>
+        <ResponsiveContainer width="100%" height={180}>
+          <AreaChart data={priceHist}>
+            <defs>
+              <linearGradient id="pg" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor={C.gold} stopOpacity={0.15} />
+                <stop offset="95%" stopColor={C.gold} stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
+            <XAxis dataKey="w" tick={{ fill: C.textDim, fontSize: 9, fontFamily: f }} interval={Math.max(1, Math.floor(priceHist.length / 5))} axisLine={{ stroke: C.border }} tickLine={false} />
+            <YAxis tick={{ fill: C.textDim, fontSize: 9, fontFamily: f }} domain={["auto", "auto"]} axisLine={{ stroke: C.border }} tickLine={false} />
+            <Tooltip contentStyle={tt} labelStyle={{ color: C.textDim }} />
+            <Area type="monotone" dataKey="p" stroke={C.gold} fill="url(#pg)" strokeWidth={1.5} dot={false} name="Price" />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
 
       <Sec>VOLUME (20D)</Sec>
-      <ResponsiveContainer width="100%" height={100}>
-        <BarChart data={volHist}>
-          <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
-          <XAxis dataKey="d" tick={{ fill: C.textDim, fontSize: 8, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
-          <YAxis tick={{ fill: C.textDim, fontSize: 8, fontFamily: f }} tickFormatter={(v: number) => `${(v / 1e6).toFixed(0)}M`} axisLine={{ stroke: C.border }} tickLine={false} />
-          <Tooltip contentStyle={tt} formatter={(v: number) => [`${(v / 1e6).toFixed(1)}M`, "Vol"]} />
-          <Bar dataKey="v" fill={C.textDim} radius={[1, 1, 0, 0]} />
-        </BarChart>
-      </ResponsiveContainer>
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: "12px 8px 8px" }}>
+        <ResponsiveContainer width="100%" height={100}>
+          <BarChart data={volHist}>
+            <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
+            <XAxis dataKey="d" tick={{ fill: C.textDim, fontSize: 8, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
+            <YAxis tick={{ fill: C.textDim, fontSize: 8, fontFamily: f }} tickFormatter={(v: number) => `${(v / 1e6).toFixed(0)}M`} axisLine={{ stroke: C.border }} tickLine={false} />
+            <Tooltip contentStyle={tt} formatter={(v: number) => [`${(v / 1e6).toFixed(1)}M`, "Vol"]} />
+            <Bar dataKey="v" fill={C.textDim} radius={[1, 1, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
 
       <Sec>MARGIN PROFILE</Sec>
-      {mock.margins.map((m, i) => (
-        <div key={i} style={{ padding: "7px 0", borderBottom: `1px solid ${C.border}` }}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-            <span style={{ fontSize: 11, fontFamily: f, color: C.textMuted }}>{m.k}</span>
-            <span style={{ fontSize: 11, fontFamily: f, color: m.v > 20 ? C.green : m.v > 10 ? C.gold : C.red, fontWeight: 600 }}>{m.v}%</span>
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: "10px 14px" }}>
+        {mock.margins.map((m, i) => (
+          <div key={i} style={{ padding: "7px 0", borderBottom: i < mock.margins.length - 1 ? `1px solid ${C.border}` : "none" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+              <span style={{ fontSize: 11, fontFamily: f, color: C.textMuted }}>{m.k}</span>
+              <span style={{ fontSize: 11, fontFamily: f, color: m.v > 20 ? C.green : m.v > 10 ? C.gold : C.red, fontWeight: 600 }}>{m.v}%</span>
+            </div>
+            <div style={{ height: 4, background: C.border, borderRadius: 2 }}>
+              <div style={{ height: 4, borderRadius: 2, width: `${Math.min(m.v, 100)}%`, background: m.v > 20 ? C.green : m.v > 10 ? C.gold : C.red, transition: "width 0.5s" }} />
+            </div>
           </div>
-          <div style={{ height: 3, background: C.border }}>
-            <div style={{ height: 3, width: `${Math.min(m.v, 100)}%`, background: m.v > 20 ? C.green : m.v > 10 ? C.gold : C.red }} />
-          </div>
-        </div>
       ))}
+      </div>
     </>
   );
 }
@@ -673,6 +731,7 @@ export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
   const [taStreamingText, setTaStreamingText] = useState("");
   const [taThinkingTokens, setTaThinkingTokens] = useState<string[]>([]);
   const [taShowResult, setTaShowResult] = useState(false);
+  const [taCollapsed, setTaCollapsed] = useState(false);
   const taRunRef = useRef(0);
   const cacheRestoredRef = useRef(false);
 
@@ -690,6 +749,7 @@ export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
     setTaShowResult(false);
     setTaStreamingText("");
     setTaThinkingTokens([]);
+    setTaCollapsed(false);
     setPage(0);
   }, [symbol]);
 
@@ -889,48 +949,75 @@ export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
           >
             <div style={{ width: "100%", flexShrink: 0, padding: "0 16px 40px" }}>
               <div style={{ paddingTop: 12, paddingBottom: 4 }}>
-                <button
-                  onClick={handleRunTA}
-                  disabled={taStreaming || !accessToken || !quote || !history?.candles}
-                  style={{
-                    width: "100%", padding: "10px 0", fontSize: 11, fontFamily: f, fontWeight: 700,
-                    color: taStreaming ? C.textDim : "#000",
-                    background: taStreaming ? "transparent" : C.gold,
-                    border: `1px solid ${taStreaming ? C.borderHi : C.gold}`,
-                    cursor: taStreaming ? "default" : "pointer",
-                    letterSpacing: 1.5, display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                  }}
-                >
-                  {taStreaming ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Activity className="w-3.5 h-3.5" />
-                  )}
-                  {taStreaming ? "ANALYZING..." : "RUN AI ANALYSIS"}
-                </button>
-
-                {taShowResult && (
-                  <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: 16, marginTop: 12 }}>
-                    {taStreaming ? (
-                      <>
-                        <AiThinkingFeed texts={taThinkingTokens} isStreaming={true} />
-                        {taStreamingText && (
-                          <div style={{ marginTop: 12 }}>
-                            <MarkdownResult content={taStreamingText} />
-                          </div>
-                        )}
-                      </>
-                    ) : analysisResult ? (
-                      <>
+                {taShowResult && !taStreaming && analysisResult ? (
+                  <div style={{ background: C.card, border: `1px solid ${C.gold}25`, marginBottom: 8 }}>
+                    <button
+                      onClick={() => setTaCollapsed(c => !c)}
+                      style={{
+                        width: "100%", padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between",
+                        background: "transparent", border: "none", cursor: "pointer", borderBottom: taCollapsed ? "none" : `1px solid ${C.border}`,
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <Activity style={{ width: 14, height: 14, color: C.gold }} />
+                        <span style={{ fontSize: 11, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 1 }}>AI ANALYSIS</span>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleRunTA(); }}
+                          disabled={taStreaming || !quote || !history?.candles}
+                          style={{
+                            fontSize: 9, fontFamily: f, fontWeight: 700, color: C.textDim,
+                            background: "transparent", border: `1px solid ${C.borderHi}`,
+                            padding: "2px 8px", cursor: "pointer", letterSpacing: 0.5,
+                          }}
+                        >RERUN</button>
+                        <span style={{
+                          fontSize: 11, color: C.textDim, display: "inline-block",
+                          transform: taCollapsed ? "rotate(0deg)" : "rotate(180deg)", transition: "transform 0.2s",
+                        }}>▾</span>
+                      </div>
+                    </button>
+                    {!taCollapsed && (
+                      <div style={{ padding: 16 }}>
                         {taThinkingTokens.length > 0 && (
                           <div style={{ marginBottom: 12 }}>
                             <AiThinkingFeed texts={taThinkingTokens} isStreaming={false} />
                           </div>
                         )}
                         <MarkdownResult content={analysisResult} />
-                      </>
-                    ) : null}
+                      </div>
+                    )}
                   </div>
+                ) : taShowResult && taStreaming ? (
+                  <div style={{ background: C.card, border: `1px solid ${C.gold}25`, padding: 16, marginBottom: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                      <Loader2 style={{ width: 14, height: 14, color: C.gold }} className="animate-spin" />
+                      <span style={{ fontSize: 11, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 1 }}>ANALYZING...</span>
+                    </div>
+                    <AiThinkingFeed texts={taThinkingTokens} isStreaming={true} />
+                    {taStreamingText && (
+                      <div style={{ marginTop: 12 }}>
+                        <MarkdownResult content={taStreamingText} />
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => { setTaCollapsed(false); handleRunTA(); }}
+                    disabled={taStreaming || !accessToken || !quote || !history?.candles}
+                    style={{
+                      width: "100%", padding: "10px 0", fontSize: 11, fontFamily: f, fontWeight: 700,
+                      color: taStreaming ? C.textDim : "#000",
+                      background: taStreaming ? "transparent" : C.gold,
+                      border: `1px solid ${taStreaming ? C.borderHi : C.gold}`,
+                      cursor: taStreaming ? "default" : "pointer",
+                      letterSpacing: 1.5, display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                    }}
+                  >
+                    <Activity style={{ width: 14, height: 14 }} />
+                    RUN AI ANALYSIS
+                  </button>
                 )}
               </div>
 
