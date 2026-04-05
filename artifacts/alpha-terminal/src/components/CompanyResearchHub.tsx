@@ -665,24 +665,6 @@ const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, volH
         </CollapseSection>
       )}
 
-      <Sec>30-DAY PRICE</Sec>
-      <ResponsiveContainer width="100%" height={160}>
-        <AreaChart data={priceHist}>
-          <defs><linearGradient id="pg" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.gold} stopOpacity={0.15} /><stop offset="95%" stopColor={C.gold} stopOpacity={0} /></linearGradient></defs>
-          <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
-          <XAxis dataKey="w" tick={{ fill: C.label, fontSize: 10, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
-          <YAxis tick={{ fill: C.label, fontSize: 10, fontFamily: f }} domain={["auto", "auto"]} axisLine={{ stroke: C.border }} tickLine={false} />
-          <Tooltip contentStyle={tt} />
-          <Area type="monotone" dataKey="p" stroke={C.gold} fill="url(#pg)" strokeWidth={2} dot={false} name="Price" />
-        </AreaChart>
-      </ResponsiveContainer>
-      <ResponsiveContainer width="100%" height={50}>
-        <BarChart data={volHist}>
-          <XAxis dataKey="d" tick={false} axisLine={{ stroke: C.border }} />
-          <YAxis tick={false} axisLine={false} />
-          <Bar dataKey="v" fill={C.dim} radius={[1, 1, 0, 0]} />
-        </BarChart>
-      </ResponsiveContainer>
 
       {ai?.priceAction && (
         <CollapseSection label="Price Action">
