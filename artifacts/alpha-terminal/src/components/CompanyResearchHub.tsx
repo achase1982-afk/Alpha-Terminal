@@ -276,6 +276,16 @@ const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, volH
 
   const biasColor = ai?.priceAction?.bias?.includes("Bullish") ? C.green : ai?.priceAction?.bias?.includes("Bearish") ? C.red : C.gold;
 
+  if (!ai) {
+    return (
+      <div style={{ padding: "60px 20px", textAlign: "center" }}>
+        <div style={{ fontSize: 13, fontFamily: f, color: C.textMuted, letterSpacing: 1 }}>
+          Run AI Analysis to populate overview data
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
       <Sec>FUNDAMENTALS</Sec>
