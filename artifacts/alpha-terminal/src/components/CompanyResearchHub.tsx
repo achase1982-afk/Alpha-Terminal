@@ -854,9 +854,10 @@ const SubValuation = memo(function SubValuation({ ticker, fund }: { ticker: stri
 
 interface CompanyResearchHubProps {
   candles?: CandleData[];
+  stickyOffset?: number;
 }
 
-export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
+export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearchHubProps) {
   const { symbol, accessToken, aiFeatureSettings, analysisResult, setAnalysisResult } = useTerminalStore();
   const aiModel = aiFeatureSettings.technicals.model;
   const aiTemp = aiFeatureSettings.technicals.temperature;
@@ -1053,7 +1054,7 @@ export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
 
   return (
     <div style={{ background: C.bg, color: C.text, fontFamily: f }}>
-      <div style={{ display: "flex", gap: 6, padding: "10px 16px", overflowX: "auto", borderBottom: `1px solid ${C.border}` }}>
+      <div style={{ position: "sticky", top: stickyOffset, zIndex: 30, background: C.bg, display: "flex", gap: 6, padding: "10px 16px", overflowX: "auto", borderBottom: `1px solid ${C.border}` }}>
         {SUB_LABELS.map((label, i) => (
           <button key={label} onClick={() => setPage(i)} style={{
             padding: "5px 14px", fontSize: 11, fontFamily: f, fontWeight: 600,

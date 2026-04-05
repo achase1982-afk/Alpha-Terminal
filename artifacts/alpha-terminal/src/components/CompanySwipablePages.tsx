@@ -14,6 +14,6 @@ interface Props {
   stickyOffset?: number;
 }
 
-export function CompanySwipablePages({ candles }: Props) {
-  return <CompanyResearchHub candles={candles} />;
+export function CompanySwipablePages({ candles, stickyOffset }: Props) {
+  return <CompanyResearchHub candles={candles} stickyOffset={stickyOffset} />;
 }
