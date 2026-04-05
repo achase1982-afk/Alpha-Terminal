@@ -1290,7 +1290,7 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
       <div style={{ position: "sticky", top: stickyOffset, zIndex: 30, background: C.bg, display: "flex", gap: 6, padding: "10px 16px", overflowX: "auto", borderBottom: `1px solid ${C.border}` }}>
         {SUB_LABELS.map((label, i) => (
           <button key={label} onClick={() => setPage(i)} style={{
-            padding: "5px 14px", fontSize: 11, fontFamily: f, fontWeight: page === i ? 700 : 500,
+            padding: "5px 14px", fontSize: 11, fontFamily: f, fontWeight: 500,
             color: page === i ? C.text : C.textMuted,
             background: "transparent",
             border: `1px solid transparent`,
