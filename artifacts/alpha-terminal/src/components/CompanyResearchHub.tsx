@@ -85,217 +85,6 @@ function fmtNum(n: number | null, decimals = 2): string {
   return n.toFixed(decimals);
 }
 
-function genMockData(ticker: string) {
-  const s = ticker.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
-  let seed = s;
-  const rng = (min: number, max: number) => {
-    seed = (seed * 9301 + 49297) % 233280;
-    const x = seed / 233280;
-    return min + x * (max - min);
-  };
-  const price = +rng(50, 500).toFixed(2);
-
-  const rev = [
-    { yr: "FY21", val: +rng(20, 100).toFixed(1) },
-    { yr: "FY22", val: +rng(25, 120).toFixed(1) },
-    { yr: "FY23", val: +rng(30, 140).toFixed(1) },
-    { yr: "FY24", val: +rng(35, 160).toFixed(1) },
-    { yr: "FY25E", val: +rng(40, 180).toFixed(1) },
-  ];
-  const epsData = rev.map(d => ({ yr: d.yr, val: +(d.val / rng(10, 25)).toFixed(2) }));
-  const margins = [
-    { k: "Gross Margin", v: +rng(30, 75).toFixed(1) },
-    { k: "Op Margin", v: +rng(10, 40).toFixed(1) },
-    { k: "Net Margin", v: +rng(5, 25).toFixed(1) },
-    { k: "FCF Margin", v: +rng(8, 30).toFixed(1) },
-  ];
-  const bs = {
-    assets: +rng(50, 500).toFixed(1), liab: +rng(20, 250).toFixed(1),
-    equity: +rng(30, 250).toFixed(1), cash: +rng(5, 80).toFixed(1),
-    debt: +rng(10, 150).toFixed(1), curRatio: +rng(0.8, 3).toFixed(2),
-    deRatio: +rng(0.2, 2.5).toFixed(2),
-  };
-  const cf = [
-    { yr: "FY22", op: +rng(5, 40).toFixed(1), inv: +(-rng(3, 20)).toFixed(1), fin: +(-rng(2, 15)).toFixed(1) },
-    { yr: "FY23", op: +rng(8, 50).toFixed(1), inv: +(-rng(4, 25)).toFixed(1), fin: +(-rng(3, 18)).toFixed(1) },
-    { yr: "FY24", op: +rng(10, 60).toFixed(1), inv: +(-rng(5, 30)).toFixed(1), fin: +(-rng(2, 20)).toFixed(1) },
-  ];
-  const filings = [
-    { type: "10-K", date: "2025-02-15", desc: "Annual Report", acc: "0001234567-25-000123", period: "FY2024" },
-    { type: "10-Q", date: "2024-11-05", desc: "Quarterly Report", acc: "0001234567-24-000456", period: "Q3 2024" },
-    { type: "10-Q", date: "2024-08-02", desc: "Quarterly Report", acc: "0001234567-24-000321", period: "Q2 2024" },
-    { type: "10-Q", date: "2024-05-03", desc: "Quarterly Report", acc: "0001234567-24-000111", period: "Q1 2024" },
-    { type: "8-K", date: "2025-01-28", desc: "Earnings Release", acc: "0001234567-25-000089", period: "–" },
-    { type: "8-K", date: "2024-12-10", desc: "Material Event", acc: "0001234567-24-000777", period: "–" },
-    { type: "DEF 14A", date: "2025-03-20", desc: "Proxy Statement", acc: "0001234567-25-000234", period: "2025 Mtg" },
-    { type: "SC 13G/A", date: "2025-02-14", desc: "Ownership Amend", acc: "0001234567-25-000100", period: "–" },
-    { type: "4", date: "2025-03-15", desc: "Insider Tx - CEO", acc: "0001234567-25-000345", period: "–" },
-    { type: "4", date: "2025-03-01", desc: "Insider Tx - CFO", acc: "0001234567-25-000300", period: "–" },
-    { type: "S-3", date: "2024-09-20", desc: "Shelf Registration", acc: "0001234567-24-000555", period: "–" },
-    { type: "10-K", date: "2024-02-16", desc: "Annual Report", acc: "0001234567-24-000012", period: "FY2023" },
-  ];
-  const holders = [
-    { name: "Vanguard Group", pct: +rng(5, 12).toFixed(2), chg: "+0.3%" },
-    { name: "BlackRock", pct: +rng(4, 10).toFixed(2), chg: "-0.1%" },
-    { name: "State Street", pct: +rng(2, 7).toFixed(2), chg: "+0.2%" },
-    { name: "Fidelity Mgmt", pct: +rng(1.5, 5).toFixed(2), chg: "+0.5%" },
-    { name: "Capital Research", pct: +rng(1, 4).toFixed(2), chg: "-0.4%" },
-    { name: "T. Rowe Price", pct: +rng(0.8, 3.5).toFixed(2), chg: "+0.1%" },
-    { name: "Wellington Mgmt", pct: +rng(0.5, 3).toFixed(2), chg: "0.0%" },
-    { name: "Geode Capital", pct: +rng(0.4, 2).toFixed(2), chg: "+0.2%" },
-  ];
-  const insiders = [
-    { name: "J. Smith", title: "CEO", action: "SELL", shares: "50,000", date: "03/15", price: `$${(price * 0.98).toFixed(2)}` },
-    { name: "J. Doe", title: "CFO", action: "BUY", shares: "25,000", date: "03/01", price: `$${(price * 0.97).toFixed(2)}` },
-    { name: "B. Wilson", title: "CTO", action: "SELL", shares: "15,000", date: "02/20", price: `$${(price * 0.95).toFixed(2)}` },
-    { name: "A. Chen", title: "EVP", action: "BUY", shares: "10,000", date: "02/10", price: `$${(price * 1.01).toFixed(2)}` },
-  ];
-  const cik = `000${Math.floor(rng(1000000, 9999999))}`;
-  const mktCapStr = `$${(price * rng(0.5, 5)).toFixed(1)}B`;
-  const pe = +rng(15, 60).toFixed(1);
-  const fwdPe = +rng(12, 45).toFixed(1);
-
-  const valuation = {
-    peTrailing: pe.toFixed(1) + "x",
-    peForward: fwdPe.toFixed(1) + "x",
-    peg: rng(0.8, 3).toFixed(2),
-    priceBook: rng(2, 12).toFixed(1) + "x",
-    priceSales: rng(1, 8).toFixed(1) + "x",
-    evRevenue: rng(2, 10).toFixed(1) + "x",
-    evEbitda: rng(10, 30).toFixed(1) + "x",
-    earningsYield: rng(2, 6).toFixed(2) + "%",
-  };
-
-  const profitability = {
-    grossMargin: rng(30, 75).toFixed(1),
-    opMargin: rng(10, 40).toFixed(1),
-    netMargin: rng(5, 25).toFixed(1),
-    ebitdaMargin: rng(15, 45).toFixed(1),
-    roe: rng(10, 50).toFixed(1),
-    roa: rng(5, 20).toFixed(1),
-    roic: rng(8, 25).toFixed(1),
-    fcfMargin: rng(8, 30).toFixed(1),
-  };
-
-  const growth = {
-    revYoY: rng(-5, 25).toFixed(1),
-    epsYoY: rng(-10, 30).toFixed(1),
-    fwdRevGrowth: rng(2, 15).toFixed(1),
-    fwdEpsGrowth: rng(5, 20).toFixed(1),
-  };
-
-  const cashFlow = {
-    fcfTTM: `$${rng(5, 80).toFixed(1)}B`,
-    fcfYield: rng(1.5, 6).toFixed(2),
-    fcfPerShare: `$${rng(1, 10).toFixed(2)}`,
-    fcfMarginVal: rng(8, 30).toFixed(1),
-    capexRevenue: rng(3, 15).toFixed(1) + "%",
-  };
-
-  const dividends = {
-    divYield: rng(0, 4).toFixed(2),
-    annualDiv: `$${rng(0.5, 5).toFixed(2)}`,
-    payoutRatio: rng(15, 60).toFixed(1) + "%",
-    exDivDate: "Feb 7, 2025",
-    div5yGrowth: rng(2, 12).toFixed(1),
-    frequency: "Quarterly",
-  };
-
-  const shareStructure = {
-    mktCap: mktCapStr,
-    sharesOut: `${rng(0.5, 10).toFixed(2)}B`,
-    float: `${rng(0.4, 9.5).toFixed(2)}B`,
-    sharesShort: `${rng(10, 200).toFixed(1)}M`,
-    shortPctFloat: rng(1, 8).toFixed(2) + "%",
-    daysToCover: rng(1, 5).toFixed(1),
-    instOwnership: rng(60, 85).toFixed(1) + "%",
-    insiderOwnership: rng(0.5, 5).toFixed(1) + "%",
-    netChange13F: `${rng(0.5, 5).toFixed(1)}B`,
-  };
-
-  const earnings = {
-    nextEarnings: "Apr 25, 2025",
-    lastEpsSurprise: rng(-5, 12).toFixed(1),
-    consensus: rng(0, 1) > 0.3 ? "STRONG BUY" : rng(0, 1) > 0.5 ? "BUY" : "HOLD",
-    meanTarget: `$${(price * rng(1.02, 1.2)).toFixed(2)}`,
-    upsideToTarget: rng(2, 15).toFixed(1),
-    numAnalysts: Math.floor(rng(15, 50)).toString(),
-    impliedMove: `±${rng(2, 8).toFixed(1)}%`,
-  };
-
-  const optionsProfile = {
-    ivRank: `${Math.floor(rng(20, 80))} / 100`,
-    ivPercentile: `${Math.floor(rng(25, 85))}%`,
-    iv30d: rng(15, 40).toFixed(1) + "%",
-    putCallRatio: rng(0.6, 1.5).toFixed(2),
-    shortInterest: rng(1, 6).toFixed(2) + "% float",
-    borrowRate: rng(0.1, 2).toFixed(2) + "% ann.",
-  };
-
-  const etfData = {
-    expenseRatio: rng(0.03, 0.75).toFixed(4) + "%",
-    aum: `$${rng(10, 700).toFixed(1)}B`,
-    holdings: Math.floor(rng(30, 600)).toString(),
-    indexTracked: ["S&P 500", "NASDAQ-100", "Russell 2000", "Dow Jones"][Math.floor(rng(0, 4))],
-    issuer: ["State Street", "Vanguard", "BlackRock", "Invesco"][Math.floor(rng(0, 4))],
-    inception: ["Jan 22, 1993", "Sep 7, 2010", "Jun 15, 2006", "Mar 10, 1999"][Math.floor(rng(0, 4))],
-    replication: "Physical",
-    nav: `$${price.toFixed(2)}`,
-    premDiscount: (rng(-0.1, 0.1)).toFixed(2) + "%",
-    bidAskSpread: rng(0.01, 0.05).toFixed(2) + "%",
-    peTrailing: rng(18, 30).toFixed(1) + "x",
-    peForward: rng(16, 25).toFixed(1) + "x",
-    priceBook: rng(3, 6).toFixed(1) + "x",
-    wtdAvgMktCap: `$${rng(300, 900).toFixed(1)}B`,
-    sec30dayYield: rng(0.5, 3).toFixed(2) + "%",
-    distTTM: rng(0.8, 3).toFixed(2) + "%",
-    annualDist: `$${rng(3, 12).toFixed(2)}`,
-    exDivDate: "Mar 21, 2025",
-    volToday: `${rng(20, 100).toFixed(2)}M`,
-    vol30dAvg: `${rng(20, 90).toFixed(1)}M`,
-    volVs30d: rng(-10, 15).toFixed(1),
-    turnoverRatio: Math.floor(rng(2, 8)) + "%",
-    dailyNetFlow: rng(-500, 800).toFixed(0),
-    weekFlow: rng(-2, 5).toFixed(2),
-    monthFlow: rng(-5, 10).toFixed(2),
-    threeMonthFlow: rng(-8, 15).toFixed(2),
-    beta: rng(0.95, 1.05).toFixed(2),
-    stdDev1y: rng(10, 22).toFixed(1) + "%",
-    sharpe1y: rng(0.5, 1.5).toFixed(2),
-    maxDrawdown1y: rng(10, 25).toFixed(1),
-    trackingError: rng(0.01, 0.1).toFixed(2) + "%",
-    trackingDiff: rng(-0.1, 0.05).toFixed(2) + "%",
-    sectorWeights: [
-      ["Information Tech.", +rng(25, 35).toFixed(1), "#4FC3F7"],
-      ["Financials", +rng(10, 16).toFixed(1), "#81C784"],
-      ["Health Care", +rng(9, 14).toFixed(1), "#CE93D8"],
-      ["Consumer Discr.", +rng(8, 13).toFixed(1), "#FFB74D"],
-      ["Industrials", +rng(6, 11).toFixed(1), "#4DD0E1"],
-      ["Communication Svcs", +rng(5, 10).toFixed(1), "#F48FB1"],
-      ["Consumer Staples", +rng(4, 8).toFixed(1), "#A5D6A7"],
-      ["Energy", +rng(2, 5).toFixed(1), "#FFCC02"],
-      ["Utilities", +rng(1.5, 4).toFixed(1), "#80DEEA"],
-      ["Materials", +rng(1, 3.5).toFixed(1), "#BCAAA4"],
-    ] as [string, number, string][],
-    topHoldings: [
-      ["1", "AAPL", "Apple Inc.", rng(5, 8).toFixed(2) + "%"],
-      ["2", "MSFT", "Microsoft Corp.", rng(5, 7).toFixed(2) + "%"],
-      ["3", "NVDA", "NVIDIA Corp.", rng(4, 7).toFixed(2) + "%"],
-      ["4", "AMZN", "Amazon.com", rng(2, 5).toFixed(2) + "%"],
-      ["5", "META", "Meta Platforms", rng(1.5, 4).toFixed(2) + "%"],
-      ["6", "GOOGL", "Alphabet Cl A", rng(1, 3).toFixed(2) + "%"],
-      ["7", "GOOG", "Alphabet Cl C", rng(1, 2.5).toFixed(2) + "%"],
-      ["8", "BRK.B", "Berkshire Hath.", rng(1, 2.5).toFixed(2) + "%"],
-      ["9", "LLY", "Eli Lilly", rng(1, 2).toFixed(2) + "%"],
-      ["10", "JPM", "JPMorgan Chase", rng(1, 2).toFixed(2) + "%"],
-    ] as [string, string, string, string][],
-  };
-
-  return { rev, epsData, margins, bs, cf, filings, holders, insiders, cik, mktCapStr, price,
-    pe: pe.toFixed(1), fwdPe: fwdPe.toFixed(1),
-    valuation, profitability, growth, cashFlow, dividends, shareStructure, earnings, optionsProfile, etfData,
-  };
-}
 
 function Sec({ children }: { children: React.ReactNode }) {
   return <div style={{ fontSize: 14, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 2, textTransform: "uppercase", padding: "20px 0 12px" }}>{children}</div>;
@@ -721,85 +510,248 @@ const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, volH
   );
 });
 
+interface FinancialPeriod {
+  end: string;
+  val: number;
+  form: string;
+  fy: number;
+  fp: string;
+  filed: string;
+}
+
+interface CompanyFinancialsData {
+  revenue: FinancialPeriod[];
+  netIncome: FinancialPeriod[];
+  operatingIncome: FinancialPeriod[];
+  eps: FinancialPeriod[];
+  totalAssets: FinancialPeriod[];
+  totalLiabilities: FinancialPeriod[];
+  stockholdersEquity: FinancialPeriod[];
+  cash: FinancialPeriod[];
+  sharesOutstanding: FinancialPeriod[];
+  grossProfit: FinancialPeriod[];
+}
+
+function useCompanyFinancials(ticker: string) {
+  const [data, setData] = useState<CompanyFinancialsData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
+  const fetchedRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!ticker) return;
+    if (fetchedRef.current === ticker && retryCount === 0) return;
+    fetchedRef.current = ticker;
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch(`${API_BASE}/sec/company-financials?symbol=${encodeURIComponent(ticker)}`);
+        if (!res.ok) throw new Error(`API returned ${res.status}`);
+        const json = await res.json();
+        if (!cancelled) setData(json.financials || null);
+      } catch (err: any) {
+        if (!cancelled) setError(err.message || "Failed to load financials");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [ticker, retryCount]);
+
+  return { data, loading, error, retry: () => { setRetryCount(c => c + 1); } };
+}
+
+
 const SubFinancials = memo(function SubFinancials({ ticker }: { ticker: string }) {
   const [view, setView] = useState("income");
-  const mock = useMemo(() => genMockData(ticker), [ticker]);
+  const { data: fin, loading, error, retry } = useCompanyFinancials(ticker);
+
+  const revChart = useMemo(() => {
+    if (!fin) return [];
+    return fin.revenue
+      .filter(r => r.form === "10-K")
+      .slice(-5)
+      .map(r => ({ yr: `FY${String(r.fy).slice(-2)}`, val: +(r.val / 1e9).toFixed(1) }));
+  }, [fin]);
+
+  const epsChart = useMemo(() => {
+    if (!fin) return [];
+    return fin.eps
+      .filter(r => r.form === "10-K")
+      .slice(-5)
+      .map(r => ({ yr: `FY${String(r.fy).slice(-2)}`, val: +r.val.toFixed(2) }));
+  }, [fin]);
+
+  const bsData = useMemo(() => {
+    if (!fin) return null;
+    const latest = (arr: FinancialPeriod[]) => arr.filter(r => r.form === "10-K").slice(-1)[0];
+    const a = latest(fin.totalAssets);
+    const l = latest(fin.totalLiabilities);
+    const e = latest(fin.stockholdersEquity);
+    const c = latest(fin.cash);
+    const assets = a ? a.val / 1e9 : 0;
+    const liab = l ? l.val / 1e9 : 0;
+    const equity = e ? e.val / 1e9 : 0;
+    const cash = c ? c.val / 1e9 : 0;
+    const curRatio = liab > 0 ? assets / liab : 0;
+    const deRatio = equity > 0 ? liab / equity : 0;
+    return {
+      assets: assets.toFixed(1),
+      liab: liab.toFixed(1),
+      equity: equity.toFixed(1),
+      cash: cash.toFixed(1),
+      curRatio: curRatio.toFixed(2),
+      deRatio: deRatio.toFixed(2),
+    };
+  }, [fin]);
+
+  const cfChart = useMemo(() => {
+    if (!fin) return [];
+    const annualNI = fin.netIncome.filter(r => r.form === "10-K").slice(-3);
+    const annualOI = fin.operatingIncome.filter(r => r.form === "10-K").slice(-3);
+    return annualNI.map((ni, i) => ({
+      yr: `FY${String(ni.fy).slice(-2)}`,
+      op: annualOI[i] ? +(annualOI[i].val / 1e9).toFixed(1) : 0,
+      inv: 0,
+      fin: +(ni.val / 1e9).toFixed(1),
+    }));
+  }, [fin]);
+
+  if (loading) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 40 }}>
+        <Loader2 className="w-5 h-5 text-primary animate-spin" />
+        <span style={{ fontSize: 11, fontFamily: f, color: C.textDim, marginLeft: 10 }}>Loading financials...</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={{ padding: "20px 0", textAlign: "center" }}>
+        <span style={{ fontSize: 11, fontFamily: f, color: C.red }}>{error}</span>
+        <button onClick={retry}
+          style={{ display: "block", margin: "10px auto 0", fontSize: 10, fontFamily: f, color: C.gold, background: "transparent", border: `1px solid ${C.gold}44`, padding: "4px 12px", cursor: "pointer" }}>
+          RETRY
+        </button>
+      </div>
+    );
+  }
+
+  if (!fin) {
+    return (
+      <div style={{ padding: "20px 0", textAlign: "center", fontSize: 11, fontFamily: f, color: C.textDim }}>
+        No financial data available
+      </div>
+    );
+  }
 
   return (
     <>
-      <div style={{ display: "flex", gap: 6, padding: "14px 0 8px" }}>
-        {FINANCIALS_TABS.map(([id, label]) => (
-          <button key={id} onClick={() => setView(id)} style={{
-            padding: "4px 12px", fontSize: 10, fontFamily: f, fontWeight: 600,
-            color: view === id ? "#000" : C.textMuted,
-            background: view === id ? C.gold : "transparent",
-            border: `1px solid ${view === id ? C.gold : C.borderHi}`,
-            borderRadius: 14, cursor: "pointer", letterSpacing: 0.5,
-          }}>{label}</button>
-        ))}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 0 4px" }}>
+        <div style={{ display: "flex", gap: 6 }}>
+          {FINANCIALS_TABS.map(([id, label]) => (
+            <button key={id} onClick={() => setView(id)} style={{
+              padding: "4px 12px", fontSize: 10, fontFamily: f, fontWeight: 600,
+              color: view === id ? "#000" : C.textMuted,
+              background: view === id ? C.gold : "transparent",
+              border: `1px solid ${view === id ? C.gold : C.borderHi}`,
+              borderRadius: 14, cursor: "pointer", letterSpacing: 0.5,
+            }}>{label}</button>
+          ))}
+        </div>
+        <span style={{ fontSize: 9, fontFamily: f, color: C.textDim }}>SEC XBRL</span>
       </div>
 
       {view === "income" && (
         <>
-          <Sec>REVENUE ($B)</Sec>
-          <ResponsiveContainer width="100%" height={160}>
-            <BarChart data={mock.rev}>
-              <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
-              <XAxis dataKey="yr" tick={{ fill: C.textDim, fontSize: 10, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
-              <YAxis tick={{ fill: C.textDim, fontSize: 10, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
-              <Tooltip contentStyle={tt} />
-              <Bar dataKey="val" fill={C.gold} radius={[2, 2, 0, 0]} name="Revenue" />
-            </BarChart>
-          </ResponsiveContainer>
-          <Sec>EPS TREND</Sec>
-          <ResponsiveContainer width="100%" height={140}>
-            <LineChart data={mock.epsData}>
-              <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
-              <XAxis dataKey="yr" tick={{ fill: C.textDim, fontSize: 10, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
-              <YAxis tick={{ fill: C.textDim, fontSize: 10, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
-              <Tooltip contentStyle={tt} />
-              <Line type="monotone" dataKey="val" stroke={C.green} strokeWidth={2} dot={{ fill: C.green, r: 3, strokeWidth: 0 }} name="EPS" />
-            </LineChart>
-          </ResponsiveContainer>
+          {revChart.length > 0 && (
+            <>
+              <Sec>REVENUE ($B)</Sec>
+              <ResponsiveContainer width="100%" height={160}>
+                <BarChart data={revChart}>
+                  <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
+                  <XAxis dataKey="yr" tick={{ fill: C.textDim, fontSize: 10, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
+                  <YAxis tick={{ fill: C.textDim, fontSize: 10, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
+                  <Tooltip contentStyle={tt} />
+                  <Bar dataKey="val" fill={C.gold} radius={[2, 2, 0, 0]} name="Revenue" />
+                </BarChart>
+              </ResponsiveContainer>
+            </>
+          )}
+          {epsChart.length > 0 && (
+            <>
+              <Sec>EPS TREND</Sec>
+              <ResponsiveContainer width="100%" height={140}>
+                <LineChart data={epsChart}>
+                  <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
+                  <XAxis dataKey="yr" tick={{ fill: C.textDim, fontSize: 10, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
+                  <YAxis tick={{ fill: C.textDim, fontSize: 10, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
+                  <Tooltip contentStyle={tt} />
+                  <Line type="monotone" dataKey="val" stroke={C.green} strokeWidth={2} dot={{ fill: C.green, r: 3, strokeWidth: 0 }} name="EPS" />
+                </LineChart>
+              </ResponsiveContainer>
+            </>
+          )}
+          {revChart.length === 0 && epsChart.length === 0 && (
+            <div style={{ padding: "20px 0", textAlign: "center", fontSize: 11, fontFamily: f, color: C.textDim }}>
+              No income statement data available
+            </div>
+          )}
         </>
       )}
 
-      {view === "balance" && (
+      {view === "balance" && bsData && (
         <>
           <Sec>BALANCE SHEET ($B)</Sec>
           <FundGrid items={[
-            { label: "Total Assets", value: `$${mock.bs.assets}B` },
-            { label: "Liabilities", value: `$${mock.bs.liab}B`, color: C.red },
-            { label: "Equity", value: `$${mock.bs.equity}B`, color: C.green },
-            { label: "Cash", value: `$${mock.bs.cash}B`, color: C.gold },
-            { label: "Debt", value: `$${mock.bs.debt}B`, color: C.red },
-            { label: "Cur Ratio", value: String(mock.bs.curRatio), color: +mock.bs.curRatio >= 1.5 ? C.green : C.gold },
+            { label: "Total Assets", value: `$${bsData.assets}B` },
+            { label: "Liabilities", value: `$${bsData.liab}B`, color: C.red },
+            { label: "Equity", value: `$${bsData.equity}B`, color: C.green },
+            { label: "Cash", value: `$${bsData.cash}B`, color: C.gold },
+            { label: "Cur Ratio", value: bsData.curRatio, color: +bsData.curRatio >= 1.5 ? C.green : C.gold },
           ]} />
           <div style={{ marginTop: 12 }}>
-            <MetricRow label="Debt/Equity" value={String(mock.bs.deRatio)} color={+mock.bs.deRatio <= 1 ? C.green : C.red} />
+            <MetricRow label="Debt/Equity" value={bsData.deRatio} color={+bsData.deRatio <= 1 ? C.green : C.red} />
           </div>
         </>
+      )}
+
+      {view === "balance" && !bsData && (
+        <div style={{ padding: "20px 0", textAlign: "center", fontSize: 11, fontFamily: f, color: C.textDim }}>
+          No balance sheet data available
+        </div>
       )}
 
       {view === "cashflow" && (
         <>
-          <Sec>CASH FLOW ($B)</Sec>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={mock.cf}>
-              <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
-              <XAxis dataKey="yr" tick={{ fill: C.textDim, fontSize: 10, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
-              <YAxis tick={{ fill: C.textDim, fontSize: 10, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
-              <Tooltip contentStyle={tt} />
-              <Bar dataKey="op" fill={C.green} name="Operating" radius={[2, 2, 0, 0]} />
-              <Bar dataKey="inv" fill={C.gold} name="Investing" radius={[2, 2, 0, 0]} />
-              <Bar dataKey="fin" fill={C.textDim} name="Financing" radius={[2, 2, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-          <div style={{ display: "flex", gap: 14, padding: "6px 0" }}>
-            {CF_LEGEND.map(([l, c]) => (
-              <span key={l} style={{ fontSize: 10, fontFamily: f, color: C.textDim }}><span style={{ color: c }}>■</span> {l}</span>
-            ))}
-          </div>
+          <Sec>INCOME BREAKDOWN ($B)</Sec>
+          {cfChart.length > 0 ? (
+            <>
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={cfChart}>
+                  <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
+                  <XAxis dataKey="yr" tick={{ fill: C.textDim, fontSize: 10, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
+                  <YAxis tick={{ fill: C.textDim, fontSize: 10, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
+                  <Tooltip contentStyle={tt} />
+                  <Bar dataKey="op" fill={C.green} name="Operating Income" radius={[2, 2, 0, 0]} />
+                  <Bar dataKey="fin" fill={C.gold} name="Net Income" radius={[2, 2, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+              <div style={{ display: "flex", gap: 14, padding: "6px 0" }}>
+                {[["Operating", C.green], ["Net Income", C.gold]].map(([l, c]) => (
+                  <span key={l} style={{ fontSize: 10, fontFamily: f, color: C.textDim }}><span style={{ color: c as string }}>■</span> {l}</span>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div style={{ padding: "20px 0", textAlign: "center", fontSize: 11, fontFamily: f, color: C.textDim }}>
+              No cash flow data available
+            </div>
+          )}
         </>
       )}
     </>
@@ -967,95 +919,264 @@ const SubSEC = memo(function SubSEC({ ticker }: { ticker: string }) {
   );
 });
 
+interface InsiderTxn {
+  ownerName: string;
+  officerTitle: string;
+  transactionDate: string;
+  shares: number;
+  pricePerShare: number | null;
+  acquiredOrDisposed: string;
+}
+
+interface InstHolder {
+  name: string;
+  shares: number;
+  percentOfClass: number;
+  filingDate: string;
+  formType: string;
+}
+
 const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) {
-  const mock = useMemo(() => genMockData(ticker), [ticker]);
+  const [insiders, setInsiders] = useState<InsiderTxn[]>([]);
+  const [holders, setHolders] = useState<InstHolder[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
+  const fetchedRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!ticker) return;
+    if (fetchedRef.current === ticker && retryCount === 0) return;
+    fetchedRef.current = ticker;
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const [insRes, holdRes] = await Promise.all([
+          fetch(`${API_BASE}/sec/insider-transactions?symbol=${encodeURIComponent(ticker)}`),
+          fetch(`${API_BASE}/sec/institutional-holders?symbol=${encodeURIComponent(ticker)}`),
+        ]);
+        if (!insRes.ok || !holdRes.ok) throw new Error("Failed to load ownership data");
+        const insJson = await insRes.json();
+        const holdJson = await holdRes.json();
+        if (!cancelled) {
+          setInsiders(insJson.transactions || []);
+          setHolders(holdJson.holders || []);
+        }
+      } catch (err: any) {
+        if (!cancelled) setError(err.message || "Failed to load ownership data");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [ticker, retryCount]);
+
+  if (loading) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 40 }}>
+        <Loader2 className="w-5 h-5 text-primary animate-spin" />
+        <span style={{ fontSize: 11, fontFamily: f, color: C.textDim, marginLeft: 10 }}>Loading ownership data...</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={{ padding: "20px 0", textAlign: "center" }}>
+        <span style={{ fontSize: 11, fontFamily: f, color: C.red }}>{error}</span>
+        <button onClick={() => { setRetryCount(c => c + 1); }}
+          style={{ display: "block", margin: "10px auto 0", fontSize: 10, fontFamily: f, color: C.gold, background: "transparent", border: `1px solid ${C.gold}44`, padding: "4px 12px", cursor: "pointer" }}>
+          RETRY
+        </button>
+      </div>
+    );
+  }
+
   return (
     <>
       <Sec>INSTITUTIONAL HOLDERS</Sec>
-      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", padding: "5px 0", borderBottom: `1px solid ${C.borderHi}` }}>
-        {["INSTITUTION", "% OUT", "CHG"].map((h, i) => (
-          <span key={i} style={{ fontSize: 15, fontFamily: f, fontWeight: 700, color: C.textDim, letterSpacing: 1.5, textAlign: i > 0 ? "right" : "left" }}>{h}</span>
-        ))}
-      </div>
-      {mock.holders.map((h, i) => (
-        <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", padding: "6px 0", borderBottom: `1px solid ${C.border}` }}>
-          <span style={{ fontSize: 15, fontFamily: f, color: C.text }}>{h.name}</span>
-          <span style={{ fontSize: 15, fontFamily: f, color: C.gold, textAlign: "right", fontWeight: 600 }}>{h.pct}%</span>
-          <span style={{ fontSize: 15, fontFamily: f, textAlign: "right", color: h.chg.startsWith("+") ? C.green : h.chg.startsWith("-") ? C.red : C.textDim }}>{h.chg}</span>
+      {holders.length > 0 ? (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", padding: "5px 0", borderBottom: `1px solid ${C.borderHi}` }}>
+            {["INSTITUTION", "% CLASS", "FILED"].map((h, i) => (
+              <span key={i} style={{ fontSize: 15, fontFamily: f, fontWeight: 700, color: C.textDim, letterSpacing: 1.5, textAlign: i > 0 ? "right" : "left" }}>{h}</span>
+            ))}
+          </div>
+          {holders.map((h, i) => (
+            <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", padding: "6px 0", borderBottom: `1px solid ${C.border}` }}>
+              <span style={{ fontSize: 15, fontFamily: f, color: C.text }}>{h.name}</span>
+              <span style={{ fontSize: 15, fontFamily: f, color: C.gold, textAlign: "right", fontWeight: 600 }}>{h.percentOfClass > 0 ? `${h.percentOfClass.toFixed(1)}%` : "—"}</span>
+              <span style={{ fontSize: 15, fontFamily: f, color: C.textDim, textAlign: "right" }}>{h.filingDate?.slice(5) || "—"}</span>
+            </div>
+          ))}
+        </>
+      ) : (
+        <div style={{ padding: "12px 0", fontSize: 11, fontFamily: f, color: C.textDim }}>
+          No SC 13G/D filings found
         </div>
-      ))}
+      )}
 
       <Sec>INSIDER TRANSACTIONS</Sec>
-      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr 0.6fr 1fr 0.6fr", padding: "5px 0", borderBottom: `1px solid ${C.borderHi}` }}>
-        {["NAME", "TITLE", "TYPE", "SHARES", "DATE"].map((h, i) => (
-          <span key={i} style={{ fontSize: 15, fontFamily: f, fontWeight: 700, color: C.textDim, letterSpacing: 1.2, textAlign: i >= 3 ? "right" : "left" }}>{h}</span>
-        ))}
-      </div>
-      {mock.insiders.map((t, i) => (
-        <div key={i} style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr 0.6fr 1fr 0.6fr", padding: "6px 0", borderBottom: `1px solid ${C.border}` }}>
-          <span style={{ fontSize: 15, fontFamily: f, color: C.text }}>{t.name}</span>
-          <span style={{ fontSize: 15, fontFamily: f, color: C.textMuted }}>{t.title}</span>
-          <span style={{ fontSize: 15, fontFamily: f, color: t.action === "BUY" ? C.green : C.red, fontWeight: 700 }}>{t.action}</span>
-          <span style={{ fontSize: 15, fontFamily: f, color: C.text, textAlign: "right" }}>{t.shares}</span>
-          <span style={{ fontSize: 15, fontFamily: f, color: C.textDim, textAlign: "right" }}>{t.date}</span>
+      {insiders.length > 0 ? (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr 0.6fr 1fr 0.6fr", padding: "5px 0", borderBottom: `1px solid ${C.borderHi}` }}>
+            {["NAME", "TITLE", "TYPE", "SHARES", "DATE"].map((h, i) => (
+              <span key={i} style={{ fontSize: 15, fontFamily: f, fontWeight: 700, color: C.textDim, letterSpacing: 1.2, textAlign: i >= 3 ? "right" : "left" }}>{h}</span>
+            ))}
+          </div>
+          {insiders.slice(0, 15).map((t, i) => {
+            const action = t.acquiredOrDisposed === "A" ? "BUY" : "SELL";
+            const dateShort = t.transactionDate ? t.transactionDate.slice(5).replace("-", "/") : "—";
+            return (
+              <div key={i} style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr 0.6fr 1fr 0.6fr", padding: "6px 0", borderBottom: `1px solid ${C.border}` }}>
+                <span style={{ fontSize: 15, fontFamily: f, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.ownerName?.split(" ").slice(0, 2).join(" ") || "—"}</span>
+                <span style={{ fontSize: 15, fontFamily: f, color: C.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.officerTitle?.split(",")[0] || "—"}</span>
+                <span style={{ fontSize: 15, fontFamily: f, color: action === "BUY" ? C.green : C.red, fontWeight: 700 }}>{action}</span>
+                <span style={{ fontSize: 15, fontFamily: f, color: C.text, textAlign: "right" }}>{t.shares?.toLocaleString() || "—"}</span>
+                <span style={{ fontSize: 15, fontFamily: f, color: C.textDim, textAlign: "right" }}>{dateShort}</span>
+              </div>
+            );
+          })}
+        </>
+      ) : (
+        <div style={{ padding: "12px 0", fontSize: 11, fontFamily: f, color: C.textDim }}>
+          No Form 4 insider transactions found
         </div>
-      ))}
+      )}
+      <div style={{ fontSize: 9, fontFamily: f, color: C.textDim, padding: "8px 0 0", textAlign: "right" }}>
+        Source: SEC EDGAR Form 4 & SC 13G/D
+      </div>
     </>
   );
 });
 
 const SubValuation = memo(function SubValuation({ ticker, fund }: { ticker: string; fund: FundamentalData | null }) {
-  const mock = useMemo(() => genMockData(ticker), [ticker]);
-  const pe = fund?.peRatio ?? +mock.pe;
-  const fwdPe = +mock.fwdPe;
-  const mktCapNum = fund?.marketCap ? fund.marketCap / 1e9 : parseFloat(mock.mktCapStr.replace(/[$B]/g, ""));
+  const { data: fin, loading } = useCompanyFinancials(ticker);
 
-  const multiples = [
-    { m: "P/E (TTM)", co: +pe.toFixed(1), sec: +(pe * 0.85).toFixed(1), sp: 22.5 },
-    { m: "Fwd P/E", co: +fwdPe.toFixed(1), sec: +(fwdPe * 0.9).toFixed(1), sp: 19.8 },
-    { m: "EV/Rev", co: +(mktCapNum / (mock.rev[3]?.val || 1)).toFixed(1), sec: 6.2, sp: 3.1 },
-    { m: "EV/EBITDA", co: +(pe * 0.65).toFixed(1), sec: +(pe * 0.55).toFixed(1), sp: 14.2 },
-    { m: "P/B", co: +(mktCapNum / (+mock.bs.equity || 1)).toFixed(1), sec: 5.8, sp: 4.2 },
-  ];
+  const metrics = useMemo(() => {
+    if (!fin || !fund) return null;
+    const mktCap = fund.marketCap || 0;
+    const price = fund.eps && fund.peRatio ? fund.eps * fund.peRatio : 0;
+
+    const latestAnnual = (arr: FinancialPeriod[]) => arr.filter(r => r.form === "10-K").slice(-1)[0];
+    const latestRev = latestAnnual(fin.revenue);
+    const latestNI = latestAnnual(fin.netIncome);
+    const latestEquity = latestAnnual(fin.stockholdersEquity);
+    const latestAssets = latestAnnual(fin.totalAssets);
+    const latestGP = latestAnnual(fin.grossProfit);
+    const latestOI = latestAnnual(fin.operatingIncome);
+
+    const revenue = latestRev?.val || 0;
+    const netIncome = latestNI?.val || 0;
+    const equity = latestEquity?.val || 0;
+    const assets = latestAssets?.val || 0;
+    const grossProfit = latestGP?.val || 0;
+    const opIncome = latestOI?.val || 0;
+
+    const pe = fund.peRatio || (netIncome > 0 && mktCap > 0 ? mktCap / netIncome : null);
+    const ps = revenue > 0 && mktCap > 0 ? mktCap / revenue : null;
+    const pb = equity > 0 && mktCap > 0 ? mktCap / equity : null;
+    const evRev = revenue > 0 && mktCap > 0 ? mktCap / revenue : null;
+    const grossMargin = revenue > 0 ? (grossProfit / revenue) * 100 : null;
+    const opMargin = revenue > 0 ? (opIncome / revenue) * 100 : null;
+    const netMargin = revenue > 0 ? (netIncome / revenue) * 100 : null;
+    const roe = equity > 0 ? (netIncome / equity) * 100 : null;
+    const roa = assets > 0 ? (netIncome / assets) * 100 : null;
+
+    const revHistory = fin.revenue.filter(r => r.form === "10-K").slice(-2);
+    const revGrowth = revHistory.length === 2 && revHistory[0].val > 0
+      ? ((revHistory[1].val - revHistory[0].val) / revHistory[0].val) * 100
+      : null;
+
+    return { pe, ps, pb, evRev, grossMargin, opMargin, netMargin, roe, roa, revGrowth, revenue, mktCap };
+  }, [fin, fund]);
+
+  const multiples = useMemo(() => {
+    if (!metrics) return [];
+    const items: { m: string; co: number; sp: number }[] = [];
+    if (metrics.pe != null) items.push({ m: "P/E (TTM)", co: +metrics.pe.toFixed(1), sp: 22.5 });
+    if (metrics.ps != null) items.push({ m: "P/S", co: +metrics.ps.toFixed(1), sp: 3.1 });
+    if (metrics.evRev != null) items.push({ m: "EV/Rev", co: +metrics.evRev.toFixed(1), sp: 3.1 });
+    if (metrics.pb != null) items.push({ m: "P/B", co: +metrics.pb.toFixed(1), sp: 4.2 });
+    return items;
+  }, [metrics]);
+
+  if (loading) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 40 }}>
+        <Loader2 className="w-5 h-5 text-primary animate-spin" />
+        <span style={{ fontSize: 11, fontFamily: f, color: C.textDim, marginLeft: 10 }}>Loading valuation data...</span>
+      </div>
+    );
+  }
+
+  if (!metrics) {
+    return (
+      <div style={{ padding: "20px 0", textAlign: "center", fontSize: 11, fontFamily: f, color: C.textDim }}>
+        {!fund ? "Waiting for price data..." : "No financial data available for valuation"}
+      </div>
+    );
+  }
 
   return (
     <>
       <Sec>VALUATION MULTIPLES</Sec>
-      <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr 1fr 1fr", padding: "5px 0", borderBottom: `1px solid ${C.borderHi}` }}>
-        {["METRIC", ticker, "SECTOR", "S&P", "vs SEC"].map((h, i) => (
-          <span key={i} style={{ fontSize: 9, fontFamily: f, fontWeight: 700, color: C.textDim, letterSpacing: 1.2, textAlign: i > 0 ? "right" : "left" }}>{h}</span>
-        ))}
-      </div>
-      {multiples.map((m, i) => {
-        const diff = ((m.co - m.sec) / m.sec * 100).toFixed(0);
-        const over = +diff > 0;
-        return (
-          <div key={i} style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr 1fr 1fr", padding: "6px 0", borderBottom: `1px solid ${C.border}` }}>
-            <span style={{ fontSize: 11, fontFamily: f, color: C.textMuted, fontWeight: 600 }}>{m.m}</span>
-            <span style={{ fontSize: 11, fontFamily: f, color: C.gold, textAlign: "right", fontWeight: 600 }}>{m.co}</span>
-            <span style={{ fontSize: 11, fontFamily: f, color: C.textDim, textAlign: "right" }}>{m.sec}</span>
-            <span style={{ fontSize: 11, fontFamily: f, color: C.textDim, textAlign: "right" }}>{m.sp}</span>
-            <span style={{ fontSize: 11, fontFamily: f, color: over ? C.red : C.green, textAlign: "right", fontWeight: 600 }}>{over ? "+" : ""}{diff}%</span>
+      {multiples.length > 0 ? (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr 1fr", padding: "5px 0", borderBottom: `1px solid ${C.borderHi}` }}>
+            {["METRIC", ticker, "S&P 500", "vs S&P"].map((h, i) => (
+              <span key={i} style={{ fontSize: 9, fontFamily: f, fontWeight: 700, color: C.textDim, letterSpacing: 1.2, textAlign: i > 0 ? "right" : "left" }}>{h}</span>
+            ))}
           </div>
-        );
-      })}
+          {multiples.map((m, i) => {
+            const diffNum = m.sp > 0 ? (m.co - m.sp) / m.sp * 100 : null;
+            const diff = diffNum != null ? diffNum.toFixed(0) : "—";
+            const over = diffNum != null && diffNum > 0;
+            return (
+              <div key={i} style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr 1fr", padding: "6px 0", borderBottom: `1px solid ${C.border}` }}>
+                <span style={{ fontSize: 11, fontFamily: f, color: C.textMuted, fontWeight: 600 }}>{m.m}</span>
+                <span style={{ fontSize: 11, fontFamily: f, color: C.gold, textAlign: "right", fontWeight: 600 }}>{m.co}x</span>
+                <span style={{ fontSize: 11, fontFamily: f, color: C.textDim, textAlign: "right" }}>{m.sp}x</span>
+                <span style={{ fontSize: 11, fontFamily: f, color: over ? C.red : C.green, textAlign: "right", fontWeight: 600 }}>{over ? "+" : ""}{diff}%</span>
+              </div>
+            );
+          })}
 
-      <Sec>COMPARATIVE</Sec>
-      <ResponsiveContainer width="100%" height={200}>
-        <BarChart data={multiples}>
-          <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
-          <XAxis dataKey="m" tick={{ fill: C.textDim, fontSize: 8, fontFamily: f }} interval={0} angle={-15} textAnchor="end" height={40} axisLine={{ stroke: C.border }} tickLine={false} />
-          <YAxis tick={{ fill: C.textDim, fontSize: 9, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
-          <Tooltip contentStyle={tt} />
-          <Bar dataKey="co" fill={C.gold} name={ticker} radius={[2, 2, 0, 0]} />
-          <Bar dataKey="sec" fill={C.textDim} name="Sector" radius={[2, 2, 0, 0]} />
-          <Bar dataKey="sp" fill={C.borderHi} name="S&P 500" radius={[2, 2, 0, 0]} />
-        </BarChart>
-      </ResponsiveContainer>
-      <div style={{ display: "flex", gap: 14, padding: "6px 0" }}>
-        {([[ticker, C.gold], ["Sector", C.textDim], ["S&P 500", C.borderHi]] as const).map(([l, c]) => (
-          <span key={l} style={{ fontSize: 10, fontFamily: f, color: C.textDim }}><span style={{ color: c as string }}>■</span> {l}</span>
-        ))}
+          <Sec>COMPARATIVE</Sec>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={multiples}>
+              <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
+              <XAxis dataKey="m" tick={{ fill: C.textDim, fontSize: 8, fontFamily: f }} interval={0} angle={-15} textAnchor="end" height={40} axisLine={{ stroke: C.border }} tickLine={false} />
+              <YAxis tick={{ fill: C.textDim, fontSize: 9, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
+              <Tooltip contentStyle={tt} />
+              <Bar dataKey="co" fill={C.gold} name={ticker} radius={[2, 2, 0, 0]} />
+              <Bar dataKey="sp" fill={C.borderHi} name="S&P 500" radius={[2, 2, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+          <div style={{ display: "flex", gap: 14, padding: "6px 0" }}>
+            {([[ticker, C.gold], ["S&P 500", C.borderHi]] as const).map(([l, c]) => (
+              <span key={l} style={{ fontSize: 10, fontFamily: f, color: C.textDim }}><span style={{ color: c as string }}>■</span> {l}</span>
+            ))}
+          </div>
+        </>
+      ) : (
+        <div style={{ padding: "12px 0", fontSize: 11, fontFamily: f, color: C.textDim }}>No multiples available</div>
+      )}
+
+      <Sec>PROFITABILITY</Sec>
+      <FundGrid items={[
+        { label: "Gross Margin", value: metrics.grossMargin != null ? `${metrics.grossMargin.toFixed(1)}%` : "—", color: C.green },
+        { label: "Op Margin", value: metrics.opMargin != null ? `${metrics.opMargin.toFixed(1)}%` : "—", color: C.gold },
+        { label: "Net Margin", value: metrics.netMargin != null ? `${metrics.netMargin.toFixed(1)}%` : "—" },
+        { label: "ROE", value: metrics.roe != null ? `${metrics.roe.toFixed(1)}%` : "—", color: C.cyan },
+        { label: "ROA", value: metrics.roa != null ? `${metrics.roa.toFixed(1)}%` : "—", color: C.amber },
+        { label: "Rev Growth", value: metrics.revGrowth != null ? `${metrics.revGrowth > 0 ? "+" : ""}${metrics.revGrowth.toFixed(1)}%` : "—", color: metrics.revGrowth != null ? (metrics.revGrowth >= 0 ? C.green : C.red) : undefined },
+      ]} />
+
+      <div style={{ fontSize: 9, fontFamily: f, color: C.textDim, padding: "8px 0 0", textAlign: "right" }}>
+        Source: SEC XBRL + Schwab
       </div>
     </>
   );
