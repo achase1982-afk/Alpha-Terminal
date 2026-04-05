@@ -1325,10 +1325,11 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
                     disabled={taStreaming || !accessToken || !quote || !history?.candles}
                     className="inline-flex items-center justify-center rounded-lg font-mono font-bold tracking-wider transition-colors active:scale-95 active:brightness-110"
                     style={{
-                      padding: "10px", fontSize: 13, fontFamily: f, fontWeight: 700,
+                      padding: "10px 24px", fontSize: 13, fontFamily: f, fontWeight: 700,
                       color: "#FFB800",
-                      background: "#18181b",
+                      background: "#2a2a2d",
                       border: "none",
+                      outline: "none",
                       cursor: "pointer",
                       letterSpacing: "0.08em",
                     }}
