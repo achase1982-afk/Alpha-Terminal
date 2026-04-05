@@ -510,7 +510,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol }: {
                   : "APPLY FILTERS & SCAN"}
               </span>
             )}
-          </Button>
+          </button>
           {!accessToken && (
             <p className="text-[10px] text-destructive mt-2 text-center">
               Connect Brokerage For Market Scanner
