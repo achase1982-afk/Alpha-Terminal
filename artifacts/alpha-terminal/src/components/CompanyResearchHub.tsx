@@ -1421,34 +1421,32 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
                   )}
                 </div>
               ) : analysisResult ? (
-                <div style={{ paddingTop: 12, paddingBottom: 8 }}>
-                  <div className="flex items-center justify-between px-4 py-2.5 rounded-xl border border-[#2A2A2C]" style={{ background: "#111113" }}>
-                    <div>
-                      <h2 className="font-mono font-bold text-sm text-[#e4e4e7] tracking-wider">TECHNICAL ANALYSIS</h2>
-                      <p className="font-mono text-[9px] text-[#71717a] tracking-widest">AI-Powered Company Analysis</p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      {taAge && (
-                        <div className="flex items-center gap-1.5">
-                          <Clock className="w-3 h-3 text-[#71717a]" />
-                          <span className="font-mono text-[10px] tracking-wider text-[#71717a]">{taAge}</span>
-                        </div>
-                      )}
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleRunTA(); }}
-                        disabled={taStreaming || !quote || !history?.candles}
-                        className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-mono text-[10px] font-bold uppercase tracking-wider transition-all duration-100 disabled:opacity-40 disabled:cursor-not-allowed active:translate-y-[1px]"
-                        style={{
-                          background: "linear-gradient(180deg, #2A2A2C 0%, #1E1E20 100%)",
-                          color: "#a1a1aa",
-                          border: "1px solid #3a3a3c",
-                          borderBottom: "2px solid #1a1a1c",
-                          boxShadow: "0 1px 3px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05)",
-                        }}
-                      >
-                        <RefreshCw className="w-3 h-3" />
-                      </button>
-                    </div>
+                <div className="flex items-center justify-between py-2.5" style={{ paddingTop: 12, paddingBottom: 8 }}>
+                  <div>
+                    <h2 className="font-mono font-bold text-sm text-[#e4e4e7] tracking-wider">TECHNICAL ANALYSIS</h2>
+                    <p className="font-mono text-[9px] text-[#71717a] tracking-widest">AI-Powered Company Analysis</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {taAge && (
+                      <div className="flex items-center gap-1.5">
+                        <Clock className="w-3 h-3 text-[#71717a]" />
+                        <span className="font-mono text-[10px] tracking-wider text-[#71717a]">{taAge}</span>
+                      </div>
+                    )}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleRunTA(); }}
+                      disabled={taStreaming || !quote || !history?.candles}
+                      className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-mono text-[10px] font-bold uppercase tracking-wider transition-all duration-100 disabled:opacity-40 disabled:cursor-not-allowed active:translate-y-[1px]"
+                      style={{
+                        background: "linear-gradient(180deg, #2A2A2C 0%, #1E1E20 100%)",
+                        color: "#a1a1aa",
+                        border: "1px solid #3a3a3c",
+                        borderBottom: "2px solid #1a1a1c",
+                        boxShadow: "0 1px 3px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05)",
+                      }}
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                    </button>
                   </div>
                 </div>
               ) : null}
