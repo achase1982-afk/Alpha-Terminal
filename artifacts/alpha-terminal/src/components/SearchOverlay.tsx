@@ -60,12 +60,12 @@ function RecentRow({
       >
         <span
           className="font-mono text-[16px] font-bold tracking-wide"
-          style={{ color: isActive ? "#FFB800" : "#ffffff" }}
+          style={{ color: "#ffffff" }}
         >
           {sym}
         </span>
         {quoteData?.description && (
-          <span className="font-mono text-[11px] text-zinc-500 truncate mt-0.5">
+          <span className="font-mono text-[13px] font-medium truncate mt-0.5" style={{ color: "#FFB800" }}>
             {quoteData.description}
           </span>
         )}
