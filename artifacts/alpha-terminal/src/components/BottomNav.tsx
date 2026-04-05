@@ -299,7 +299,7 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
               onClick={() => { if (jiggling) { if (Date.now() - jiggleStartedAt.current > 500) stopJiggle(); return; } if (!touchMoved.current) onTabChange(tabId); }}
               onTouchStart={(e) => handleTouchStart(i, e)}
               className={[
-                "flex flex-col items-center justify-center w-12 h-12 rounded-full shadow-[0_0_12px_rgba(255,184,0,0.35)] transition-transform active:scale-95 select-none",
+                "flex flex-col items-center justify-center w-12 h-12 rounded-full transition-transform active:scale-95 select-none",
                 isActive ? "bg-[#18181b] text-[#FFB800]" : "bg-[#18181b] text-[#FFB800]/80",
                 jiggling && !isBeingDragged ? "bnav-jiggle" : "",
                 isBeingDragged ? "bnav-dragging" : "",
