@@ -89,13 +89,13 @@ function RecentRow({
 
         <span
           onClick={handleWatchlistToggle}
-          className={`font-mono text-[11px] font-semibold tracking-wide cursor-pointer transition-all duration-200 active:scale-95 text-right w-[80px] shrink-0 ${
-            flash ? "scale-105" : ""
+          className={`font-mono text-[22px] font-bold cursor-pointer transition-all duration-200 active:scale-90 text-center w-[32px] shrink-0 leading-none ${
+            flash ? "scale-110" : ""
           }`}
           style={{ color: isInWatchlist ? "#f23645" : "#5b9cf6" }}
           role="button"
         >
-          {isInWatchlist ? "REMOVE" : "+ WATCHLIST"}
+          {isInWatchlist ? "−" : "+"}
         </span>
       </div>
     </div>
@@ -205,9 +205,12 @@ export function SearchOverlay({ isOpen, onClose, onSelectSymbol }: SearchOverlay
         <div className="flex-1 overflow-y-auto pb-8">
           {recentSymbols.length > 0 && (
             <div>
-              <div className="px-4 pb-2">
-                <span className="font-mono text-[10px] text-zinc-600 uppercase tracking-widest font-medium">
+              <div className="flex items-center justify-between px-4 pb-2">
+                <span className="font-mono text-[13px] text-zinc-400 uppercase tracking-widest font-bold">
                   RECENTLY VIEWED
+                </span>
+                <span className="font-mono text-[13px] text-zinc-400 uppercase tracking-widest font-bold">
+                  WATCHLIST
                 </span>
               </div>
               {recentSymbols.map(sym => {
