@@ -639,7 +639,7 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
           <button
             type="submit"
             disabled={disabled}
-            className="p-3 rounded-lg font-mono text-[13px] font-bold tracking-widest shrink-0 transition-all duration-200 uppercase
+            className="py-2 px-3 rounded-lg font-mono text-[13px] font-bold tracking-widest shrink-0 transition-all duration-200 uppercase
               disabled:opacity-30 disabled:cursor-not-allowed"
             style={{
               background: disabled ? "#2A2A2C" : "linear-gradient(135deg, #FFB800, #E5A600)",
