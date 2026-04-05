@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useTerminalStore, useActiveWatchlist } from "@/lib/store";
 import { useQuote } from "@/hooks/useQuote";
-import { Search } from "lucide-react";
+import { Search, FileText, PlusCircle, MinusCircle } from "lucide-react";
 
 function fmtPrice(v: number | null): string {
   if (v == null) return "—";
@@ -19,6 +19,48 @@ function changeColor(v: number | null): string {
   if (v > 0) return "#26a69a";
   if (v < 0) return "#f23645";
   return "#71717a";
+}
+
+function WatchlistIcon({ isInWatchlist, flash }: { isInWatchlist: boolean; flash: boolean }) {
+  const BadgeIcon = isInWatchlist ? MinusCircle : PlusCircle;
+  const color = isInWatchlist ? "#f23645" : "#5b9cf6";
+  return (
+    <div
+      className={`relative shrink-0 transition-transform duration-200 ${flash ? "scale-110" : ""}`}
+      style={{ width: 28, height: 32 }}
+    >
+      <FileText
+        style={{ color, position: "absolute", top: 0, left: 0 }}
+        strokeWidth={1.5}
+        size={26}
+      />
+      <BadgeIcon
+        style={{
+          color,
+          position: "absolute",
+          bottom: 0,
+          right: -4,
+          background: "#0c0c0c",
+          borderRadius: "50%",
+        }}
+        strokeWidth={2}
+        size={13}
+      />
+    </div>
+  );
+}
+
+function SymbolLivePreview({ sym }: { sym: string }) {
+  const { data } = useQuote(sym);
+  if (!data?.description) return null;
+  return (
+    <div className="mx-4 mb-2 px-3 py-2 rounded-lg flex items-center gap-2" style={{ background: "#18181B", border: "1px solid #2A2A2C" }}>
+      <span className="font-mono text-[14px] font-bold text-white tracking-wide shrink-0">{sym}</span>
+      <span className="font-mono text-[12px] font-bold text-[#FFB800] tracking-wide truncate">
+        {data.description.toUpperCase()}
+      </span>
+    </div>
+  );
 }
 
 function RecentRow({
@@ -87,16 +129,14 @@ function RecentRow({
           </span>
         </div>
 
-        <span
+        <div
           onClick={handleWatchlistToggle}
-          className={`font-mono text-[22px] font-bold cursor-pointer transition-all duration-200 active:scale-90 text-center w-[32px] shrink-0 leading-none ${
-            flash ? "scale-110" : ""
-          }`}
-          style={{ color: isInWatchlist ? "#f23645" : "#5b9cf6" }}
+          className="cursor-pointer active:scale-90 transition-transform"
           role="button"
+          aria-label={isInWatchlist ? "Remove from watchlist" : "Add to watchlist"}
         >
-          {isInWatchlist ? "−" : "+"}
-        </span>
+          <WatchlistIcon isInWatchlist={isInWatchlist} flash={flash} />
+        </div>
       </div>
     </div>
   );
@@ -111,14 +151,23 @@ interface SearchOverlayProps {
 export function SearchOverlay({ isOpen, onClose, onSelectSymbol }: SearchOverlayProps) {
   const { symbol, setSymbol, recentSymbols } = useTerminalStore();
   const [inputVal, setInputVal] = useState("");
+  const [debouncedVal, setDebouncedVal] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (isOpen) {
       setInputVal("");
+      setDebouncedVal("");
       setTimeout(() => inputRef.current?.focus(), 350);
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    const trimmed = inputVal.trim().toUpperCase();
+    if (!trimmed) { setDebouncedVal(""); return; }
+    const t = setTimeout(() => setDebouncedVal(trimmed), 300);
+    return () => clearTimeout(t);
+  }, [inputVal]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -127,6 +176,7 @@ export function SearchOverlay({ isOpen, onClose, onSelectSymbol }: SearchOverlay
       inputRef.current?.blur();
       setSymbol(trimmed);
       setInputVal("");
+      setDebouncedVal("");
       onSelectSymbol(trimmed);
     }
   };
@@ -175,7 +225,7 @@ export function SearchOverlay({ isOpen, onClose, onSelectSymbol }: SearchOverlay
           </button>
         </div>
 
-        <div className="px-4 pt-4 pb-3">
+        <div className="px-4 pt-4 pb-2">
           <form onSubmit={handleSubmit} className="flex items-center gap-2">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
@@ -201,6 +251,8 @@ export function SearchOverlay({ isOpen, onClose, onSelectSymbol }: SearchOverlay
             </button>
           </form>
         </div>
+
+        {debouncedVal && <SymbolLivePreview sym={debouncedVal} />}
 
         <div className="flex-1 overflow-y-auto pb-8">
           {recentSymbols.length > 0 && (
