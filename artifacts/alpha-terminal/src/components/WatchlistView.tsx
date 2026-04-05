@@ -15,10 +15,36 @@ import {
   Pencil,
   Check,
   X,
+  Settings,
+  MinusCircle,
 } from "lucide-react";
 
-type SortKey = "symbol" | "last" | "changePct";
+type IndicatorKey = "change" | "changePct" | "volume" | "price" | "dayHigh" | "dayLow" | "open" | "bid" | "ask" | "marketCap";
+type SortKey = "symbol" | "last" | "changePct" | "change" | "volume" | "dayHigh" | "dayLow" | "open" | "bid" | "ask" | "marketCap";
 type SortDir = "asc" | "desc";
+
+interface IndicatorDef {
+  key: IndicatorKey;
+  label: string;
+  sortKey: SortKey;
+  width: number;
+  format: (q: LiveQuote | undefined) => string;
+  color: (q: LiveQuote | undefined) => string;
+}
+
+const ALL_INDICATORS: IndicatorDef[] = [
+  { key: "change", label: "Chg", sortKey: "change", width: 64, format: (q) => fmtChange(q?.change ?? null), color: (q) => changeColor(q?.change ?? null) },
+  { key: "changePct", label: "Chg%", sortKey: "changePct", width: 64, format: (q) => fmtPct(q?.changePct ?? null), color: (q) => changeColor(q?.changePct ?? null) },
+  { key: "volume", label: "Vol", sortKey: "volume", width: 64, format: (q) => fmtVol(q?.volume ?? null), color: () => "#a1a1aa" },
+  { key: "price", label: "Price", sortKey: "last", width: 72, format: (q) => fmtPrice(q?.last ?? null), color: (q) => q?.last != null ? "#fff" : "#52525b" },
+  { key: "dayHigh", label: "High", sortKey: "dayHigh", width: 72, format: (q) => fmtPrice(q?.high ?? null), color: () => "#a1a1aa" },
+  { key: "dayLow", label: "Low", sortKey: "dayLow", width: 72, format: (q) => fmtPrice(q?.low ?? null), color: () => "#a1a1aa" },
+  { key: "open", label: "Close", sortKey: "open", width: 72, format: (q) => fmtPrice(q?.close ?? null), color: () => "#a1a1aa" },
+  { key: "bid", label: "Bid", sortKey: "bid", width: 72, format: (q) => fmtPrice(q?.bid ?? null), color: () => "#a1a1aa" },
+  { key: "ask", label: "Ask", sortKey: "ask", width: 72, format: (q) => fmtPrice(q?.ask ?? null), color: () => "#a1a1aa" },
+];
+
+const DEFAULT_INDICATORS: IndicatorKey[] = ["change", "volume", "price"];
 
 interface SparkData {
   closes: number[];
@@ -81,134 +107,157 @@ function WatchlistRow({
   spark,
   onTap,
   onRemove,
+  editMode,
+  indicators,
 }: {
   sym: string;
   quote: LiveQuote | undefined;
   spark: SparkData | undefined;
   onTap: () => void;
   onRemove: () => void;
+  editMode: boolean;
+  indicators: IndicatorDef[];
 }) {
-  const last = quote?.last ?? null;
   const change = quote?.change ?? null;
-  const changePct = quote?.changePct ?? null;
-  const volume = quote?.volume ?? null;
   const cColor = changeColor(change);
-  const hasData = last != null;
   const { data: restQuote } = useQuote(sym);
   const description = restQuote?.description ?? null;
 
-  const [offsetX, setOffsetX] = useState(0);
-  const [swiping, setSwiping] = useState(false);
   const [tapped, setTapped] = useState(false);
-  const startXRef = useRef(0);
-  const startYRef = useRef(0);
-  const lockedRef = useRef<"h" | "v" | null>(null);
-  const DELETE_W = 80;
-
-  const onTouchStart = useCallback((e: React.TouchEvent) => {
-    startXRef.current = e.touches[0].clientX;
-    startYRef.current = e.touches[0].clientY;
-    lockedRef.current = null;
-    setSwiping(true);
-  }, []);
-
-  const onTouchMove = useCallback((e: React.TouchEvent) => {
-    if (!swiping) return;
-    const dx = e.touches[0].clientX - startXRef.current;
-    const dy = e.touches[0].clientY - startYRef.current;
-
-    if (!lockedRef.current) {
-      if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
-        lockedRef.current = Math.abs(dx) > Math.abs(dy) ? "h" : "v";
-      }
-      return;
-    }
-    if (lockedRef.current === "v") return;
-
-    const clamped = Math.max(-DELETE_W, Math.min(0, dx));
-    setOffsetX(clamped);
-  }, [swiping]);
-
-  const onTouchEnd = useCallback(() => {
-    setSwiping(false);
-    lockedRef.current = null;
-    setOffsetX((prev) => (prev < -DELETE_W / 2 ? -DELETE_W : 0));
-  }, []);
-
-  const handleDelete = useCallback((e: React.MouseEvent | React.TouchEvent) => {
-    e.stopPropagation();
-    onRemove();
-  }, [onRemove]);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const handleTap = useCallback(() => {
-    if (offsetX < -10) {
-      setOffsetX(0);
-      return;
-    }
+    if (editMode) return;
     setTapped(true);
     setTimeout(() => {
       onTap();
       setTapped(false);
     }, 150);
-  }, [offsetX, onTap]);
+  }, [editMode, onTap]);
 
   return (
-    <div className="relative overflow-hidden" style={{ borderBottom: "1px solid #2A2A2C" }}>
+    <div style={{ borderBottom: "1px solid #2A2A2C" }}>
       <div
-        className="absolute right-0 top-0 bottom-0 flex items-center justify-center cursor-pointer active:opacity-80"
-        style={{ width: DELETE_W, background: "#ef4444" }}
-        onClick={handleDelete}
-      >
-        <span className="font-mono text-[12px] font-bold text-white tracking-wider">REMOVE</span>
-      </div>
-
-      <div
-        onClick={handleTap}
-        onTouchStart={onTouchStart}
-        onTouchMove={onTouchMove}
-        onTouchEnd={onTouchEnd}
-        role="button"
-        tabIndex={0}
-        className="relative cursor-pointer"
+        className="relative"
         style={{
           background: tapped ? "#1a1a1a" : "#000000",
-          transform: `translateX(${offsetX}px)`,
-          transition: swiping ? "none" : "transform 0.25s ease-out, background 0.15s ease",
+          transition: "background 0.15s ease",
         }}
       >
-        <div className="flex items-center px-3 py-2 gap-2">
-          <div className="w-[80px] shrink-0 min-w-0">
-            <span className="block font-mono text-[15px] font-bold tracking-wide truncate" style={{ color: cColor === "#71717a" ? "#fff" : cColor }}>{sym}</span>
-            {description && (
-              <span className="block font-mono text-[11px] tracking-wide truncate" style={{ color: "#FFB800" }}>
-                {description}
-              </span>
-            )}
-          </div>
-
-          {spark && spark.closes.length > 1 ? (
-            <MiniSparkline data={spark.closes} color={cColor} width={52} height={24} />
-          ) : (
-            <div className="shrink-0 rounded overflow-hidden" style={{ width: 52, height: 24, background: "#1a1a1a" }}>
-              <div className="w-full h-full animate-pulse" style={{ background: "linear-gradient(90deg, #1a1a1a 0%, #252525 50%, #1a1a1a 100%)", backgroundSize: "200% 100%" }} />
-            </div>
+        <div className="flex items-center" style={{ minHeight: 52 }}>
+          {editMode && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onRemove(); }}
+              className="shrink-0 flex items-center justify-center pl-2"
+              style={{ width: 36 }}
+            >
+              <MinusCircle className="w-5 h-5" style={{ color: "#ef4444" }} />
+            </button>
           )}
 
-          <div className="flex-1 flex items-center justify-end gap-3">
-            <span className="font-mono text-[13px] tabular-nums" style={{ color: cColor }}>{fmtChange(change)}</span>
-            <span className="font-mono text-[13px] tabular-nums text-right w-[72px]" style={{ color: "#a1a1aa" }}>{fmtVol(volume)}</span>
-            <span
-              className="font-mono text-[13px] font-bold tabular-nums text-right w-[64px]"
-              style={{ color: hasData ? "#fff" : "#52525b" }}
-            >
-              {hasData ? fmtPrice(last) : "—"}
-            </span>
+          <div
+            onClick={handleTap}
+            className="shrink-0 flex items-center px-3 py-2 cursor-pointer"
+            style={{ width: editMode ? 90 : 100 }}
+          >
+            <div className="min-w-0">
+              <span className="block font-mono text-[15px] font-bold tracking-wide truncate" style={{ color: cColor === "#71717a" ? "#fff" : cColor }}>{sym}</span>
+              {description && (
+                <span className="block font-mono text-[11px] tracking-wide truncate" style={{ color: "#FFB800" }}>
+                  {description}
+                </span>
+              )}
+            </div>
           </div>
 
-          <ChevronRight className="w-3.5 h-3.5 text-[#3a3a3c] shrink-0" />
+          <div className="shrink-0" style={{ width: 1, height: 32, background: "rgba(255,255,255,0.08)" }} />
+
+          <div
+            ref={scrollRef}
+            onClick={handleTap}
+            className="flex-1 overflow-x-auto cursor-pointer"
+            style={{ scrollbarWidth: "none", msOverflowStyle: "none", WebkitOverflowScrolling: "touch" }}
+          >
+            <style>{`.wl-scroll::-webkit-scrollbar { display: none; }`}</style>
+            <div className="wl-scroll flex items-center gap-1 px-2 py-2" style={{ minWidth: "max-content" }}>
+              {spark && spark.closes.length > 1 ? (
+                <MiniSparkline data={spark.closes} color={cColor} width={48} height={22} />
+              ) : (
+                <div className="shrink-0 rounded overflow-hidden" style={{ width: 48, height: 22, background: "#1a1a1a" }}>
+                  <div className="w-full h-full animate-pulse" style={{ background: "linear-gradient(90deg, #1a1a1a 0%, #252525 50%, #1a1a1a 100%)", backgroundSize: "200% 100%" }} />
+                </div>
+              )}
+
+              {indicators.map((ind) => (
+                <span
+                  key={ind.key}
+                  className="font-mono text-[13px] tabular-nums text-right shrink-0"
+                  style={{ color: ind.color(quote), width: ind.width, fontWeight: ind.key === "price" ? 700 : 400 }}
+                >
+                  {ind.format(quote)}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {!editMode && (
+            <ChevronRight className="w-3.5 h-3.5 text-[#3a3a3c] shrink-0 mr-2" />
+          )}
         </div>
       </div>
     </div>
+  );
+}
+
+function IndicatorSettingsPanel({
+  open,
+  onClose,
+  activeIndicators,
+  onToggle,
+}: {
+  open: boolean;
+  onClose: () => void;
+  activeIndicators: IndicatorKey[];
+  onToggle: (key: IndicatorKey) => void;
+}) {
+  if (!open) return null;
+
+  return (
+    <>
+      <div
+        className="fixed inset-0 bg-black/60 z-[200]"
+        onClick={onClose}
+      />
+      <div className="fixed left-4 right-4 z-[210] flex flex-col" style={{ top: "50%", transform: "translateY(-50%)", maxHeight: "70vh", background: "#111", border: "1px solid #2A2A2C", borderRadius: 12 }}>
+        <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: "1px solid #2A2A2C" }}>
+          <span className="font-mono text-[14px] font-bold tracking-wider text-white">INDICATORS</span>
+          <button onClick={onClose} className="p-1 text-[#71717a] hover:text-white">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="overflow-y-auto py-1">
+          {ALL_INDICATORS.map((ind) => {
+            const isActive = activeIndicators.includes(ind.key);
+            return (
+              <button
+                key={ind.key}
+                onClick={() => onToggle(ind.key)}
+                className="w-full flex items-center justify-between px-4 py-3 transition-colors hover:bg-white/[0.04]"
+                style={{ borderBottom: "1px solid #1c1c1c" }}
+              >
+                <span className="font-mono text-[13px] tracking-wider" style={{ color: isActive ? "#fff" : "#52525b" }}>{ind.label}</span>
+                <div
+                  className="w-5 h-5 rounded flex items-center justify-center"
+                  style={{ background: isActive ? "#FFB800" : "transparent", border: isActive ? "none" : "1px solid #3a3a3c" }}
+                >
+                  {isActive && <Check className="w-3.5 h-3.5 text-black" />}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -386,28 +435,26 @@ function WatchlistSwitcherButton({ onOpen }: { onOpen: () => void }) {
   );
 }
 
-function SortButton({
-  label,
+function ColumnHeader({
+  indicator,
   sortKey,
-  currentSort,
-  currentDir,
+  sortDir,
   onSort,
 }: {
-  label: string;
+  indicator: IndicatorDef;
   sortKey: SortKey;
-  currentSort: SortKey;
-  currentDir: SortDir;
+  sortDir: SortDir;
   onSort: (k: SortKey) => void;
 }) {
-  const active = currentSort === sortKey;
+  const active = sortKey === indicator.sortKey;
   return (
     <button
-      onClick={() => onSort(sortKey)}
-      className="flex items-center gap-0.5 font-mono text-[12px] tracking-widest transition-colors"
-      style={{ color: "#52525b" }}
+      onClick={() => onSort(indicator.sortKey)}
+      className="font-mono text-[11px] tracking-wider text-right shrink-0 flex items-center justify-end gap-0.5 transition-colors"
+      style={{ color: active ? "#FFB800" : "#52525b", width: indicator.width }}
     >
-      {label}
-      {active && <span className="text-[9px]">{currentDir === "asc" ? "▲" : "▼"}</span>}
+      <span>{indicator.label}</span>
+      <span className="text-[8px]">{active ? (sortDir === "asc" ? "▲" : "▼") : "↕"}</span>
     </button>
   );
 }
@@ -420,9 +467,32 @@ export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sy
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [sparkData, setSparkData] = useState<Record<string, SparkData>>({});
   const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [activeIndicators, setActiveIndicators] = useState<IndicatorKey[]>(() => {
+    try {
+      const saved = localStorage.getItem("wl_indicators");
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return DEFAULT_INDICATORS;
+  });
   const fetchedRef = useRef<Set<string>>(new Set());
   const prevTokenRef = useRef<string | null>(null);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const visibleIndicators = useMemo(() =>
+    activeIndicators.map((k) => ALL_INDICATORS.find((i) => i.key === k)!).filter(Boolean),
+    [activeIndicators]
+  );
+
+  const toggleIndicator = useCallback((key: IndicatorKey) => {
+    setActiveIndicators((prev) => {
+      const next = prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key];
+      if (next.length === 0) return prev;
+      localStorage.setItem("wl_indicators", JSON.stringify(next));
+      return next;
+    });
+  }, []);
 
   const handleSort = useCallback((key: SortKey) => {
     if (sortKey === key) {
@@ -504,6 +574,14 @@ export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sy
         case "symbol": cmp = a.localeCompare(b); break;
         case "last": cmp = (qa?.last ?? 0) - (qb?.last ?? 0); break;
         case "changePct": cmp = (qa?.changePct ?? 0) - (qb?.changePct ?? 0); break;
+        case "change": cmp = (qa?.change ?? 0) - (qb?.change ?? 0); break;
+        case "volume": cmp = (qa?.volume ?? 0) - (qb?.volume ?? 0); break;
+        case "dayHigh": cmp = (qa?.high ?? 0) - (qb?.high ?? 0); break;
+        case "dayLow": cmp = (qa?.low ?? 0) - (qb?.low ?? 0); break;
+        case "open": cmp = (qa?.close ?? 0) - (qb?.close ?? 0); break;
+        case "bid": cmp = (qa?.bid ?? 0) - (qb?.bid ?? 0); break;
+        case "ask": cmp = (qa?.ask ?? 0) - (qb?.ask ?? 0); break;
+        default: cmp = 0;
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
@@ -517,10 +595,29 @@ export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sy
   return (
     <div className="flex-1 flex flex-col" style={{ background: "#000000" }}>
       <WatchlistSwitcherPanel open={switcherOpen} onClose={() => setSwitcherOpen(false)} />
+      <IndicatorSettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} activeIndicators={activeIndicators} onToggle={toggleIndicator} />
 
       <div className="px-4 pt-4 pb-2">
-        <div className="flex items-center justify-center mb-3">
+        <div className="flex items-center justify-center mb-3 relative">
           <WatchlistSwitcherButton onOpen={() => setSwitcherOpen(true)} />
+          <div className="absolute right-0 flex items-center gap-1">
+            <button
+              onClick={() => setSettingsOpen(true)}
+              className="p-2 rounded-lg transition-colors hover:bg-white/[0.06]"
+            >
+              <Settings className="w-4.5 h-4.5" style={{ color: "#71717a" }} />
+            </button>
+            <button
+              onClick={() => setEditMode((p) => !p)}
+              className="p-2 rounded-lg transition-colors hover:bg-white/[0.06]"
+            >
+              {editMode ? (
+                <Check className="w-4.5 h-4.5" style={{ color: "#FFB800" }} />
+              ) : (
+                <Pencil className="w-4.5 h-4.5" style={{ color: "#71717a" }} />
+              )}
+            </button>
+          </div>
         </div>
 
         {watchlist.length > 0 && (
@@ -542,12 +639,30 @@ export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sy
       </div>
 
       {watchlist.length > 0 && (
-        <div className="flex items-center justify-between px-4 pb-2 border-b border-[#2A2A2C]">
-          <SortButton label="Symbol" sortKey="symbol" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
-          <div className="flex items-center gap-6">
-            <SortButton label="Change" sortKey="changePct" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
-            <SortButton label="Price" sortKey="last" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
+        <div className="flex items-center px-3 pb-2" style={{ borderBottom: "1px solid #2A2A2C" }}>
+          <div style={{ width: editMode ? 126 : 100 }} className="shrink-0">
+            <button
+              onClick={() => handleSort("symbol")}
+              className="font-mono text-[11px] tracking-wider flex items-center gap-0.5 transition-colors"
+              style={{ color: sortKey === "symbol" ? "#FFB800" : "#52525b" }}
+            >
+              Symbol
+              <span className="text-[8px]">{sortKey === "symbol" ? (sortDir === "asc" ? "▲" : "▼") : "↕"}</span>
+            </button>
           </div>
+
+          <div className="shrink-0" style={{ width: 1, height: 14, background: "rgba(255,255,255,0.08)", marginRight: 4 }} />
+
+          <div className="flex-1 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+            <div className="flex items-center gap-1 px-2" style={{ minWidth: "max-content" }}>
+              <div style={{ width: 48 }} className="shrink-0" />
+              {visibleIndicators.map((ind) => (
+                <ColumnHeader key={ind.key} indicator={ind} sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+              ))}
+            </div>
+          </div>
+
+          {!editMode && <div style={{ width: 18 }} className="shrink-0" />}
         </div>
       )}
 
@@ -584,6 +699,8 @@ export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sy
               spark={sparkData[sym]}
               onTap={() => { setSymbol(sym); onNavigateToSymbol?.(sym); }}
               onRemove={() => removeFromWatchlist(sym)}
+              editMode={editMode}
+              indicators={visibleIndicators}
             />
           ))
         )}
