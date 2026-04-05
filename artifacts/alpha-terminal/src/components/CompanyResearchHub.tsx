@@ -974,14 +974,14 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
       <Sec>INSTITUTIONAL HOLDERS</Sec>
       <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", padding: "5px 0", borderBottom: `1px solid ${C.borderHi}` }}>
         {["INSTITUTION", "% OUT", "CHG"].map((h, i) => (
-          <span key={i} style={{ fontSize: 9, fontFamily: f, fontWeight: 700, color: C.textDim, letterSpacing: 1.5, textAlign: i > 0 ? "right" : "left" }}>{h}</span>
+          <span key={i} style={{ fontSize: 15, fontFamily: f, fontWeight: 700, color: C.textDim, letterSpacing: 1.5, textAlign: i > 0 ? "right" : "left" }}>{h}</span>
         ))}
       </div>
       {mock.holders.map((h, i) => (
         <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", padding: "6px 0", borderBottom: `1px solid ${C.border}` }}>
-          <span style={{ fontSize: 11, fontFamily: f, color: C.text }}>{h.name}</span>
-          <span style={{ fontSize: 11, fontFamily: f, color: C.gold, textAlign: "right", fontWeight: 600 }}>{h.pct}%</span>
-          <span style={{ fontSize: 11, fontFamily: f, textAlign: "right", color: h.chg.startsWith("+") ? C.green : h.chg.startsWith("-") ? C.red : C.textDim }}>{h.chg}</span>
+          <span style={{ fontSize: 15, fontFamily: f, color: C.text }}>{h.name}</span>
+          <span style={{ fontSize: 15, fontFamily: f, color: C.gold, textAlign: "right", fontWeight: 600 }}>{h.pct}%</span>
+          <span style={{ fontSize: 15, fontFamily: f, textAlign: "right", color: h.chg.startsWith("+") ? C.green : h.chg.startsWith("-") ? C.red : C.textDim }}>{h.chg}</span>
         </div>
       ))}
 
