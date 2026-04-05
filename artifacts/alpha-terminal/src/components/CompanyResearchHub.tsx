@@ -6,7 +6,6 @@ import { consumeStream } from "@/lib/consumeStream";
 import { useTechnicalsCache } from "@/hooks/useTechnicalsCache";
 import { AiThinkingFeed } from "@/components/ai-shared/AiThinkingFeed";
 import { Loader2, Activity, RefreshCw } from "lucide-react";
-import ReactMarkdown from "react-markdown";
 import {
   useGetQuote, useGetPriceHistory,
 } from "@workspace/api-client-react";
@@ -247,44 +246,83 @@ function parseAiAnalysis(text: string): AiAnalysis | null {
   return null;
 }
 
-const AiAnalysisCards = memo(function AiAnalysisCards({ data }: { data: AiAnalysis }) {
-  const d = data;
-  const biasColor = d.priceAction?.bias?.includes("Bullish") ? C.green : d.priceAction?.bias?.includes("Bearish") ? C.red : C.gold;
+
+interface QuoteInfo {
+  symbol?: string;
+  last?: number;
+  fiftyTwoWeekHigh?: number;
+  fiftyTwoWeekLow?: number;
+  peRatio?: number;
+  netChange?: number;
+}
+
+const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, volHist, ai }: {
+  fund: FundamentalData | null;
+  quoteData: QuoteInfo | null;
+  priceHist: { w: string; p: number }[];
+  volHist: { d: string; v: number }[];
+  ai: AiAnalysis | null;
+}) {
+  const currentPrice = quoteData?.last;
+  const high52 = fund?.high52 ?? quoteData?.fiftyTwoWeekHigh;
+  const low52 = fund?.low52 ?? quoteData?.fiftyTwoWeekLow;
+  const mock = useMemo(() => genMockData(quoteData?.symbol || "AAPL"), [quoteData?.symbol]);
+
+  const pe = fund?.peRatio ?? quoteData?.peRatio ?? null;
+  const eps = fund?.eps ?? null;
+  const beta = fund?.beta ?? null;
+  const divYield = fund?.dividendYield ?? null;
+  const chg = quoteData?.netChange ?? 0;
+
+  const biasColor = ai?.priceAction?.bias?.includes("Bullish") ? C.green : ai?.priceAction?.bias?.includes("Bearish") ? C.red : C.gold;
 
   return (
     <>
-      {d.priceAction && (
+      <Sec>FUNDAMENTALS</Sec>
+      <FundGrid items={[
+        { label: "Mkt Cap", value: fmtMarketCap(fund?.marketCap ?? null) },
+        { label: "Shares", value: fmtShares(fund?.sharesOutstanding ?? null) },
+        { label: "P/E", value: pe != null ? pe.toFixed(1) : "—" },
+        { label: "EPS", value: eps != null ? eps.toFixed(2) : "—" },
+        { label: "Beta", value: beta != null ? beta.toFixed(2) : "—" },
+        { label: "Div Yld", value: divYield != null ? `${divYield.toFixed(2)}%` : "—" },
+      ]} />
+      {high52 != null && low52 != null && currentPrice != null && (
+        <RangeBar lo={low52} hi={high52} current={currentPrice.toFixed(2)} />
+      )}
+
+      {ai?.priceAction && (
         <>
           <Sec>PRICE ACTION</Sec>
           <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: "16px 18px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
               <div>
                 <div style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1.5, marginBottom: 4 }}>STATUS</div>
-                <div style={{ fontSize: 20, fontFamily: f, fontWeight: 700, color: C.text }}>{d.priceAction.status}</div>
+                <div style={{ fontSize: 20, fontFamily: f, fontWeight: 700, color: C.text }}>{ai.priceAction.status}</div>
               </div>
               <span style={{ padding: "4px 12px", fontSize: 13, fontFamily: f, fontWeight: 700, color: biasColor, border: `1px solid ${biasColor}55`, borderRadius: 2 }}>
-                {d.priceAction.bias?.includes("Bullish") ? "▲" : d.priceAction.bias?.includes("Bearish") ? "▼" : "◆"} {d.priceAction.bias}
+                {ai.priceAction.bias?.includes("Bullish") ? "▲" : ai.priceAction.bias?.includes("Bearish") ? "▼" : "◆"} {ai.priceAction.bias}
               </span>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 18px" }}>
               <div>
                 <div style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1.5, marginBottom: 4 }}>TREND</div>
-                <div style={{ fontSize: 14, fontFamily: f, color: C.textSoft, lineHeight: 1.4 }}>{d.priceAction.trend}</div>
+                <div style={{ fontSize: 14, fontFamily: f, color: C.textSoft, lineHeight: 1.4 }}>{ai.priceAction.trend}</div>
               </div>
               <div>
                 <div style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1.5, marginBottom: 4 }}>MOMENTUM</div>
-                <div style={{ fontSize: 14, fontFamily: f, color: d.priceAction.momentum?.toLowerCase().includes("positive") || d.priceAction.momentum?.toLowerCase().includes("bullish") ? C.green : d.priceAction.momentum?.toLowerCase().includes("negative") || d.priceAction.momentum?.toLowerCase().includes("bearish") ? C.red : C.textSoft, lineHeight: 1.4 }}>{d.priceAction.momentum}</div>
+                <div style={{ fontSize: 14, fontFamily: f, color: chg >= 0 ? C.green : C.red, lineHeight: 1.4 }}>{ai.priceAction.momentum}</div>
               </div>
             </div>
           </div>
         </>
       )}
 
-      {(d.support || d.resistance) && (
+      {(ai?.support || ai?.resistance) && (
         <>
           <Sec>SUPPORT / RESISTANCE</Sec>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            {([["▼ SUPPORT", d.support, C.red], ["▲ RESISTANCE", d.resistance, C.green]] as const).map(([title, levels, color], idx) => (
+            {([["▼ SUPPORT", ai?.support, C.red], ["▲ RESISTANCE", ai?.resistance, C.green]] as [string, typeof ai.support, string][]).map(([title, levels, color], idx) => (
               <div key={idx} style={{ background: C.card, border: `1px solid ${C.border}`, padding: "14px" }}>
                 <div style={{ fontSize: 12, fontFamily: f, fontWeight: 700, color, letterSpacing: 1.5, marginBottom: 10 }}>{title}</div>
                 {(levels || []).map((s, i) => (
@@ -302,13 +340,32 @@ const AiAnalysisCards = memo(function AiAnalysisCards({ data }: { data: AiAnalys
         </>
       )}
 
-      {d.chartPattern && (
+      <Sec>30-DAY PRICE</Sec>
+      <ResponsiveContainer width="100%" height={160}>
+        <AreaChart data={priceHist}>
+          <defs><linearGradient id="pg" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.gold} stopOpacity={0.15} /><stop offset="95%" stopColor={C.gold} stopOpacity={0} /></linearGradient></defs>
+          <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
+          <XAxis dataKey="w" tick={{ fill: C.label, fontSize: 10, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
+          <YAxis tick={{ fill: C.label, fontSize: 10, fontFamily: f }} domain={["auto", "auto"]} axisLine={{ stroke: C.border }} tickLine={false} />
+          <Tooltip contentStyle={tt} />
+          <Area type="monotone" dataKey="p" stroke={C.gold} fill="url(#pg)" strokeWidth={2} dot={false} name="Price" />
+        </AreaChart>
+      </ResponsiveContainer>
+      <ResponsiveContainer width="100%" height={50}>
+        <BarChart data={volHist}>
+          <XAxis dataKey="d" tick={false} axisLine={{ stroke: C.border }} />
+          <YAxis tick={false} axisLine={false} />
+          <Bar dataKey="v" fill={C.dim} radius={[1, 1, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+
+      {ai?.chartPattern && (
         <>
           <Sec>CHART PATTERNS</Sec>
           <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: "16px 18px" }}>
-            {([["Recent Pattern", d.chartPattern.recent], ["Trading Range", d.chartPattern.range], ["Current Setup", d.chartPattern.setup]] as const).map(([l, v], i) => (
+            {([["Recent Pattern", ai.chartPattern.recent], ["Trading Range", ai.chartPattern.range], ["Current Setup", ai.chartPattern.setup]] as [string, string][]).map(([l, v], i) => (
               <div key={i} style={{ borderBottom: i < 2 ? `1px solid ${C.border}` : "none", paddingBottom: i < 2 ? 12 : 0, marginBottom: i < 2 ? 12 : 0 }}>
-                <div style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1.5, marginBottom: 4 }}>{String(l).toUpperCase()}</div>
+                <div style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1.5, marginBottom: 4 }}>{l.toUpperCase()}</div>
                 <div style={{ fontSize: 15, fontFamily: f, color: C.textSoft, lineHeight: 1.4 }}>{v}</div>
               </div>
             ))}
@@ -316,22 +373,22 @@ const AiAnalysisCards = memo(function AiAnalysisCards({ data }: { data: AiAnalys
         </>
       )}
 
-      {d.volumeAnalysis && (
+      {ai?.volumeAnalysis && (
         <>
           <Sec>VOLUME ANALYSIS</Sec>
           <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: "16px 18px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, paddingBottom: 12, borderBottom: `1px solid ${C.border}` }}>
               <div>
                 <div style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1.5 }}>TODAY</div>
-                <div style={{ fontSize: 22, fontFamily: f, fontWeight: 700, color: C.text, marginTop: 4 }}>{d.volumeAnalysis.today}</div>
+                <div style={{ fontSize: 22, fontFamily: f, fontWeight: 700, color: C.text, marginTop: 4 }}>{ai.volumeAnalysis.today}</div>
               </div>
-              <Tag color={d.volumeAnalysis.todayLabel === "elevated" || d.volumeAnalysis.todayLabel === "heavy" ? C.amber : C.label}>{d.volumeAnalysis.todayLabel?.toUpperCase()}</Tag>
+              <Tag color={ai.volumeAnalysis.todayLabel === "elevated" ? C.amber : C.label}>{ai.volumeAnalysis.todayLabel?.toUpperCase()}</Tag>
             </div>
-            {d.volumeAnalysis.elevated && d.volumeAnalysis.elevated.length > 0 && (
+            {ai.volumeAnalysis.elevated && ai.volumeAnalysis.elevated.length > 0 && (
               <>
                 <div style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1.5, marginBottom: 8 }}>ELEVATED EVENTS</div>
                 <div style={{ display: "flex", gap: 20, marginBottom: 14, paddingBottom: 14, borderBottom: `1px solid ${C.border}` }}>
-                  {d.volumeAnalysis.elevated.map((e, i) => (
+                  {ai.volumeAnalysis.elevated.map((e, i) => (
                     <div key={i}>
                       <div style={{ fontSize: 12, fontFamily: f, color: C.label }}>{e.date}</div>
                       <div style={{ fontSize: 16, fontFamily: f, fontWeight: 700, color: C.amber, marginTop: 2 }}>{e.vol}</div>
@@ -340,7 +397,7 @@ const AiAnalysisCards = memo(function AiAnalysisCards({ data }: { data: AiAnalys
                 </div>
               </>
             )}
-            {([["Pattern", d.volumeAnalysis.pattern], ["Signal", d.volumeAnalysis.signal]] as const).map(([l, v], i) => (
+            {([["Pattern", ai.volumeAnalysis.pattern], ["Signal", ai.volumeAnalysis.signal]] as [string, string][]).map(([l, v], i) => (
               <div key={i} style={{ marginBottom: i === 0 ? 8 : 0 }}>
                 <span style={{ fontSize: 14, fontFamily: f, fontWeight: 700, color: C.text }}>{l}: </span>
                 <span style={{ fontSize: 14, fontFamily: f, color: C.textSoft }}>{v}</span>
@@ -350,10 +407,10 @@ const AiAnalysisCards = memo(function AiAnalysisCards({ data }: { data: AiAnalys
         </>
       )}
 
-      {d.risks && d.risks.length > 0 && (
+      {ai?.risks && ai.risks.length > 0 && (
         <>
           <Sec>RISK ASSESSMENT</Sec>
-          {d.risks.map((r, i) => (
+          {ai.risks.map((r, i) => (
             <div key={i} style={{ padding: "10px 0", borderBottom: `1px solid ${C.border}`, display: "flex", gap: 12, alignItems: "flex-start" }}>
               <div style={{ width: 4, minHeight: 20, marginTop: 2, background: r.severity === "high" ? C.red : C.amber, flexShrink: 0, borderRadius: 2 }} />
               <div>
@@ -362,12 +419,12 @@ const AiAnalysisCards = memo(function AiAnalysisCards({ data }: { data: AiAnalys
               </div>
             </div>
           ))}
-          {d.criticalLevels && d.criticalLevels.length > 0 && (
+          {ai.criticalLevels && ai.criticalLevels.length > 0 && (
             <div style={{ marginTop: 10, padding: "10px 0" }}>
               <div style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1.5, marginBottom: 8 }}>CRITICAL LEVELS</div>
-              {d.criticalLevels.map((cl, i) => (
+              {ai.criticalLevels.map((cl, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0" }}>
-                  <span style={{ fontSize: 18, fontFamily: f, fontWeight: 700, color: cl.direction?.toLowerCase().includes("bearish") || cl.direction?.toLowerCase().includes("support") ? C.red : C.green }}>{cl.level}</span>
+                  <span style={{ fontSize: 18, fontFamily: f, fontWeight: 700, color: cl.direction?.includes("bearish") ? C.red : C.green }}>{cl.level}</span>
                   <span style={{ fontSize: 13, fontFamily: f, color: C.label }}>{cl.direction}</span>
                 </div>
               ))}
@@ -376,11 +433,11 @@ const AiAnalysisCards = memo(function AiAnalysisCards({ data }: { data: AiAnalys
         </>
       )}
 
-      {d.outlook && (
+      {ai?.outlook && (
         <>
           <Sec>TRADING OUTLOOK</Sec>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            {([["SHORT", d.outlook.shortTerm, C.cyan], ["MEDIUM", d.outlook.mediumTerm, C.purple]] as const).map(([title, data, color], idx) => (
+            {([["SHORT", ai.outlook.shortTerm, C.cyan], ["MEDIUM", ai.outlook.mediumTerm, C.purple]] as [string, typeof ai.outlook.shortTerm, string][]).map(([title, data, color], idx) => (
               data ? (
                 <div key={idx} style={{ background: C.card, border: `1px solid ${C.border}`, padding: "14px" }}>
                   <div style={{ fontSize: 12, fontFamily: f, fontWeight: 700, color, letterSpacing: 1.5, marginBottom: 4 }}>{title}</div>
@@ -393,11 +450,11 @@ const AiAnalysisCards = memo(function AiAnalysisCards({ data }: { data: AiAnalys
             ))}
           </div>
 
-          {d.outlook.targets && (
+          {ai.outlook.targets && (
             <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: "16px 18px", marginTop: 12 }}>
               <div style={{ fontSize: 12, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 1.5, marginBottom: 12 }}>PRICE TARGETS</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-                {([["▲ UPSIDE", d.outlook.targets.upside, C.green], ["▼ DOWNSIDE", d.outlook.targets.downside, C.red]] as const).map(([title, targets, color], idx) => (
+                {([["▲ UPSIDE", ai.outlook.targets.upside, C.green], ["▼ DOWNSIDE", ai.outlook.targets.downside, C.red]] as [string, string[], string][]).map(([title, targets, color], idx) => (
                   <div key={idx}>
                     <div style={{ fontSize: 12, fontFamily: f, color, fontWeight: 700, letterSpacing: 1, marginBottom: 6 }}>{title}</div>
                     {(targets || []).map((t, i) => (
@@ -406,154 +463,31 @@ const AiAnalysisCards = memo(function AiAnalysisCards({ data }: { data: AiAnalys
                   </div>
                 ))}
               </div>
-              {d.outlook.rangePosition && (
+              {ai.outlook.rangePosition && (
                 <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.border}`, fontSize: 13, fontFamily: f, color: C.label }}>
-                  52W: <span style={{ color: C.textSoft, fontWeight: 600 }}>{d.outlook.rangePosition.pctFromLow}%</span> from low, <span style={{ color: C.textSoft, fontWeight: 600 }}>{d.outlook.rangePosition.pctFromHigh}%</span> from high
+                  52W: <span style={{ color: C.textSoft, fontWeight: 600 }}>{ai.outlook.rangePosition.pctFromLow}%</span> from low, <span style={{ color: C.textSoft, fontWeight: 600 }}>{ai.outlook.rangePosition.pctFromHigh}%</span> from high
                 </div>
               )}
             </div>
           )}
         </>
       )}
-    </>
-  );
-});
-
-interface QuoteInfo {
-  symbol?: string;
-  last?: number;
-  fiftyTwoWeekHigh?: number;
-  fiftyTwoWeekLow?: number;
-  peRatio?: number;
-}
-
-function FundCard({ label, value, sub, color, accent }: { label: string; value: string; sub?: string; color?: string; accent?: string }) {
-  return (
-    <div style={{
-      background: C.card, border: `1px solid ${accent ? accent + "30" : C.border}`,
-      padding: "10px 12px", display: "flex", flexDirection: "column", gap: 2,
-      borderLeft: accent ? `3px solid ${accent}` : undefined,
-    }}>
-      <div style={{ fontSize: 9, fontFamily: f, fontWeight: 700, color: C.textDim, letterSpacing: 1.5, textTransform: "uppercase" }}>{label}</div>
-      <div style={{ fontSize: 18, fontFamily: f, fontWeight: 800, color: color || C.text, letterSpacing: -0.5 }}>{value}</div>
-      {sub && <div style={{ fontSize: 9, fontFamily: f, color: C.textDim }}>{sub}</div>}
-    </div>
-  );
-}
-
-const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, volHist }: {
-  fund: FundamentalData | null;
-  quoteData: QuoteInfo | null;
-  priceHist: { w: string; p: number }[];
-  volHist: { d: string; v: number }[];
-}) {
-  const currentPrice = quoteData?.last;
-  const high52 = fund?.high52 ?? quoteData?.fiftyTwoWeekHigh;
-  const low52 = fund?.low52 ?? quoteData?.fiftyTwoWeekLow;
-  const mock = useMemo(() => genMockData(quoteData?.symbol || "AAPL"), [quoteData?.symbol]);
-
-  const pe = fund?.peRatio ?? quoteData?.peRatio ?? null;
-  const eps = fund?.eps ?? null;
-  const beta = fund?.beta ?? null;
-  const divYield = fund?.dividendYield ?? null;
-  const betaColor = beta != null ? (beta > 1.3 ? C.red : beta > 0.8 ? C.gold : C.green) : C.text;
-
-  return (
-    <>
-      <Sec>FUNDAMENTALS</Sec>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-        <div style={{ gridColumn: "1 / -1" }}>
-          <FundCard
-            label="Market Cap"
-            value={fmtMarketCap(fund?.marketCap ?? null)}
-            sub={`${fmtShares(fund?.sharesOutstanding ?? null)} shares outstanding`}
-            accent={C.gold}
-          />
-        </div>
-        <FundCard
-          label="P/E Ratio"
-          value={pe != null ? pe.toFixed(2) : "—"}
-          sub={pe != null ? (pe > 30 ? "Premium" : pe > 15 ? "Fair Value" : "Value") : undefined}
-          color={pe != null ? (pe > 40 ? C.red : pe > 20 ? C.gold : C.green) : undefined}
-          accent={pe != null ? (pe > 40 ? C.red : pe > 20 ? C.gold : C.green) : undefined}
-        />
-        <FundCard
-          label="EPS (TTM)"
-          value={eps != null ? `$${eps.toFixed(2)}` : "—"}
-          color={eps != null ? (eps > 0 ? C.green : C.red) : undefined}
-          accent={eps != null ? (eps > 0 ? C.green : C.red) : undefined}
-        />
-        <FundCard
-          label="Beta"
-          value={beta != null ? beta.toFixed(2) : "—"}
-          sub={beta != null ? (beta > 1.3 ? "High Vol" : beta > 0.8 ? "Market" : "Low Vol") : undefined}
-          color={betaColor}
-          accent={betaColor}
-        />
-        <FundCard
-          label="Div Yield"
-          value={divYield != null ? `${divYield.toFixed(2)}%` : "—"}
-          sub={divYield != null && divYield > 0 ? "Paying" : divYield === 0 ? "None" : undefined}
-          color={divYield != null && divYield > 2 ? C.green : undefined}
-          accent={divYield != null && divYield > 0 ? C.green : undefined}
-        />
-      </div>
-
-      {high52 != null && low52 != null && currentPrice != null && (
-        <div style={{ marginTop: 8 }}>
-          <RangeBar lo={low52} hi={high52} current={currentPrice.toFixed(2)} />
-        </div>
-      )}
-
-      <Sec>52-WEEK PRICE</Sec>
-      <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: "12px 8px 8px" }}>
-        <ResponsiveContainer width="100%" height={180}>
-          <AreaChart data={priceHist}>
-            <defs>
-              <linearGradient id="pg" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={C.gold} stopOpacity={0.15} />
-                <stop offset="95%" stopColor={C.gold} stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
-            <XAxis dataKey="w" tick={{ fill: C.textDim, fontSize: 9, fontFamily: f }} interval={Math.max(1, Math.floor(priceHist.length / 5))} axisLine={{ stroke: C.border }} tickLine={false} />
-            <YAxis tick={{ fill: C.textDim, fontSize: 9, fontFamily: f }} domain={["auto", "auto"]} axisLine={{ stroke: C.border }} tickLine={false} />
-            <Tooltip contentStyle={tt} labelStyle={{ color: C.textDim }} />
-            <Area type="monotone" dataKey="p" stroke={C.gold} fill="url(#pg)" strokeWidth={1.5} dot={false} name="Price" />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
-
-      <Sec>VOLUME (20D)</Sec>
-      <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: "12px 8px 8px" }}>
-        <ResponsiveContainer width="100%" height={100}>
-          <BarChart data={volHist}>
-            <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
-            <XAxis dataKey="d" tick={{ fill: C.textDim, fontSize: 8, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
-            <YAxis tick={{ fill: C.textDim, fontSize: 8, fontFamily: f }} tickFormatter={(v: number) => `${(v / 1e6).toFixed(0)}M`} axisLine={{ stroke: C.border }} tickLine={false} />
-            <Tooltip contentStyle={tt} formatter={(v: number) => [`${(v / 1e6).toFixed(1)}M`, "Vol"]} />
-            <Bar dataKey="v" fill={C.textDim} radius={[1, 1, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
 
       <Sec>MARGINS</Sec>
-      <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: "12px 16px" }}>
-        {mock.margins.map((m, i) => {
-          const mc = m.v > 20 ? C.green : m.v > 10 ? C.gold : C.red;
-          return (
-            <div key={i} style={{ padding: "10px 0", borderBottom: i < mock.margins.length - 1 ? `1px solid ${C.border}` : "none" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                <span style={{ fontSize: 14, fontFamily: f, color: C.textSoft }}>{m.k}</span>
-                <span style={{ fontSize: 16, fontFamily: f, color: mc, fontWeight: 700 }}>{m.v}%</span>
-              </div>
-              <div style={{ height: 4, background: C.border, borderRadius: 2 }}>
-                <div style={{ height: 4, borderRadius: 2, width: `${Math.min(m.v, 100)}%`, background: mc, transition: "width 0.5s" }} />
-              </div>
+      {mock.margins.map((m, i) => {
+        const mc = m.v > 20 ? C.green : m.v > 10 ? C.gold : C.red;
+        return (
+          <div key={i} style={{ padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+              <span style={{ fontSize: 14, fontFamily: f, color: C.textSoft }}>{m.k}</span>
+              <span style={{ fontSize: 16, fontFamily: f, color: mc, fontWeight: 700 }}>{m.v}%</span>
             </div>
-          );
-        })}
-      </div>
+            <div style={{ height: 4, background: C.border, borderRadius: 2 }}>
+              <div style={{ height: 4, width: `${Math.min(m.v, 100)}%`, background: mc, borderRadius: 2 }} />
+            </div>
+          </div>
+        );
+      })}
     </>
   );
 });
@@ -913,21 +847,6 @@ const SubValuation = memo(function SubValuation({ ticker, fund }: { ticker: stri
   );
 });
 
-const MarkdownResult = memo(function MarkdownResult({ content }: { content: string }) {
-  return (
-    <div className="prose prose-invert prose-primary max-w-none font-sans text-gray-300
-      prose-headings:text-white prose-headings:font-bold prose-headings:tracking-wide prose-headings:mt-4 prose-headings:mb-2
-      prose-h2:text-base prose-h3:text-sm
-      prose-a:text-primary hover:prose-a:text-primary/80
-      prose-strong:text-white prose-strong:font-bold
-      prose-li:my-0.5
-      prose-code:text-primary prose-code:bg-primary/10 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-xs
-      prose-pre:bg-card prose-pre:border prose-pre:border-card-border prose-pre:text-xs"
-    >
-      <ReactMarkdown>{content}</ReactMarkdown>
-    </div>
-  );
-});
 
 interface CompanyResearchHubProps {
   candles?: CandleData[];
@@ -1199,60 +1118,29 @@ export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
                     <AiThinkingFeed texts={taThinkingTokens} isStreaming={true} />
                   </div>
                 ) : analysisResult ? (
-                  (() => {
-                    const parsed = parseAiAnalysis(analysisResult);
-                    return parsed ? (
-                      <>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <Activity style={{ width: 14, height: 14, color: C.gold }} />
-                            <span style={{ fontSize: 12, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 1 }}>AI ANALYSIS</span>
-                          </div>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleRunTA(); }}
-                            disabled={taStreaming || !quote || !history?.candles}
-                            style={{
-                              fontSize: 10, fontFamily: f, fontWeight: 600, color: C.textMuted,
-                              background: "transparent", border: "none",
-                              padding: 0, cursor: "pointer", letterSpacing: 0.5,
-                              display: "flex", alignItems: "center", gap: 5,
-                            }}
-                          >
-                            <RefreshCw style={{ width: 13, height: 13 }} />
-                            REFRESH
-                          </button>
-                        </div>
-                        <AiAnalysisCards data={parsed} />
-                      </>
-                    ) : (
-                      <div style={{ background: C.card, border: `1px solid ${C.gold}20`, padding: 16, marginBottom: 8 }}>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <Activity style={{ width: 14, height: 14, color: C.gold }} />
-                            <span style={{ fontSize: 12, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 1 }}>AI ANALYSIS</span>
-                          </div>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleRunTA(); }}
-                            disabled={taStreaming || !quote || !history?.candles}
-                            style={{
-                              fontSize: 10, fontFamily: f, fontWeight: 600, color: C.textMuted,
-                              background: "transparent", border: "none",
-                              padding: 0, cursor: "pointer", letterSpacing: 0.5,
-                              display: "flex", alignItems: "center", gap: 5,
-                            }}
-                          >
-                            <RefreshCw style={{ width: 13, height: 13 }} />
-                            REFRESH
-                          </button>
-                        </div>
-                        <MarkdownResult content={analysisResult} />
-                      </div>
-                    );
-                  })()
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <Activity style={{ width: 14, height: 14, color: C.gold }} />
+                      <span style={{ fontSize: 12, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 1 }}>AI ANALYSIS</span>
+                    </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleRunTA(); }}
+                      disabled={taStreaming || !quote || !history?.candles}
+                      style={{
+                        fontSize: 10, fontFamily: f, fontWeight: 600, color: C.textMuted,
+                        background: "transparent", border: "none",
+                        padding: 0, cursor: "pointer", letterSpacing: 0.5,
+                        display: "flex", alignItems: "center", gap: 5,
+                      }}
+                    >
+                      <RefreshCw style={{ width: 13, height: 13 }} />
+                      REFRESH
+                    </button>
+                  </div>
                 ) : null}
               </div>
 
-              <SubOverview fund={fundamentals} quoteData={quoteData} priceHist={priceHist} volHist={volHist} />
+              <SubOverview fund={fundamentals} quoteData={quoteData} priceHist={priceHist} volHist={volHist} ai={analysisResult ? parseAiAnalysis(analysisResult) : null} />
             </div>
 
             <div style={{ width: "100%", flexShrink: 0, padding: "0 16px 40px" }}>
