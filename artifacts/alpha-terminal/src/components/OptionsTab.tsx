@@ -659,7 +659,7 @@ function MetricsStrip({ groups, lastPrice, rawCalls, rawPuts, earningsDate, isFe
   }
 
   return (
-    <div className="flex gap-2 items-center shrink-0" style={{ fontSize: 10, fontVariantNumeric: "tabular-nums", fontFamily: MONO, fontWeight: FW_LIGHT }}>
+    <div className="flex gap-2 items-center shrink-0" style={{ fontSize: 12, fontVariantNumeric: "tabular-nums", fontFamily: MONO, fontWeight: FW_LIGHT }}>
       {isFetching && hasData && (
         <span className="w-2 h-2 border border-amber-400 border-t-transparent rounded-full animate-spin" />
       )}
@@ -1220,7 +1220,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
         style={{ top: stickyOffset, height: TOOLBAR_H, background: BG_EXP_BAR, borderBottom: `1px solid ${BORDER}`, fontFamily: MONO }}
       >
         <div className="flex items-center gap-1.5">
-          <span style={{ fontSize: 12, color: DIM, fontWeight: FW_NORMAL, fontFamily: MONO }}>STK</span>
+          <span style={{ fontSize: 14, color: DIM, fontWeight: FW_NORMAL, fontFamily: MONO }}>Strike</span>
           {isCustomMode ? (
             <div className="flex items-center gap-1">
               <Input
@@ -1229,7 +1229,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
                 onChange={e => handleCustomStrikeChange(e.target.value)}
                 onKeyDown={e => { if (e.key === "Escape") handleExitCustomMode(); }}
                 className="w-[52px] h-6 px-1.5 border rounded text-white"
-                style={{ fontSize: 12, background: "#111", borderColor: "#2a2a2a", fontFamily: MONO }}
+                style={{ fontSize: 14, background: "#111", borderColor: "#2a2a2a", fontFamily: MONO }}
                 placeholder="10"
               />
               <button onClick={handleExitCustomMode} className="p-0.5 rounded hover:bg-white/5 transition-colors" aria-label="Exit custom mode">
@@ -1238,7 +1238,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
             </div>
           ) : (
             <Select value={strikeMode} onValueChange={handleStrikeModeChange}>
-              <SelectTrigger className="w-[52px] h-6 px-1.5 border rounded text-white" style={{ fontSize: 12, background: "#111", borderColor: "#2a2a2a", fontFamily: MONO }}>
+              <SelectTrigger className="w-[52px] h-6 px-1.5 border rounded text-white" style={{ fontSize: 14, background: "#111", borderColor: "#2a2a2a", fontFamily: MONO }}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
