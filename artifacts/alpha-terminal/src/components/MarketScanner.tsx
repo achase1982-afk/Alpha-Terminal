@@ -488,13 +488,14 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol }: {
         )}
 
         <div className="px-4 pb-4 pt-3 bg-[#0c0c0c] border-t border-card-border">
-          <Button
+          <button
             onClick={handleScan}
             disabled={!accessToken || isScanning || currentSyms.length === 0}
-            className="font-bold font-mono tracking-wider mx-auto block"
+            className="font-bold font-mono tracking-wider mx-auto block rounded-lg disabled:opacity-30 disabled:cursor-not-allowed active:scale-95 active:brightness-110 transition-all"
             style={{
               fontSize: 13, padding: "10px",
               background: "#18181b", color: "#FFB800", border: "none",
+              cursor: "pointer",
             }}
           >
             {isScanning ? (
