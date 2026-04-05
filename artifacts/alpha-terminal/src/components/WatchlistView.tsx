@@ -449,7 +449,7 @@ export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sy
       try {
         const res = await fetchWithAuth(
           `/api/market/history?symbol=${encodeURIComponent(sym)}&accessToken=${encodeURIComponent(accessToken!)}&periodType=day&period=5&frequencyType=minute&frequency=30`,
-          { signal: controller.signal }
+          { signal: controller.signal, cache: "no-store" as RequestCache }
         );
         if (!res.ok) return false;
         const data = await res.json();
