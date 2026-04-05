@@ -415,7 +415,7 @@ export default function TerminalPage() {
                   <VolumeBar />
                   <MarketDataTabs activeTab={contextTab} setActiveTab={setContextTab} />
                 </div>
-                <div style={{ minHeight: "calc(100vh - 60px)" }}>
+                <div>
                   {contextTab === "news" && <NewsTab />}
                   {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={stickyH} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
                   {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles as any} stickyOffset={stickyH} />}
@@ -501,7 +501,7 @@ export default function TerminalPage() {
                 <div ref={stickyWrapRef} className="sticky top-0 z-40 bg-background">
                   <MarketDataTabs activeTab={contextTab} setActiveTab={setContextTab} />
                 </div>
-                <div style={{ minHeight: "calc(100vh - 60px)" }}>
+                <div>
                   {contextTab === "news" && <NewsTab />}
                   {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={stickyH} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
                   {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles as any} stickyOffset={stickyH} />}

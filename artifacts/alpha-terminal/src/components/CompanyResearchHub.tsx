@@ -1344,7 +1344,7 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
               willChange: "transform",
             }}
           >
-            <div style={{ width: "100%", flexShrink: 0, padding: "0 16px 40px" }}>
+            <div style={{ width: "100%", flexShrink: 0, padding: "0 16px 16px" }}>
               {!taShowResult ? (
                 <div>
                   <div className="flex items-center justify-between py-2 border-b border-card-border/30">
@@ -1462,19 +1462,19 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
               <SubOverview fund={fundamentals} quoteData={quoteData} priceHist={priceHist} volHist={volHist} ai={analysisResult ? parseAiAnalysis(analysisResult) : null} />
             </div>
 
-            <div style={{ width: "100%", flexShrink: 0, padding: "0 16px 40px" }}>
+            <div style={{ width: "100%", flexShrink: 0, padding: "0 16px 16px" }}>
               <SubFinancials ticker={symbol} />
             </div>
 
-            <div style={{ width: "100%", flexShrink: 0, padding: "0 16px 40px" }}>
+            <div style={{ width: "100%", flexShrink: 0, padding: "0 16px 16px" }}>
               <SubSEC ticker={symbol} />
             </div>
 
-            <div style={{ width: "100%", flexShrink: 0, padding: "0 16px 40px" }}>
+            <div style={{ width: "100%", flexShrink: 0, padding: "0 16px 16px" }}>
               <SubOwnership ticker={symbol} />
             </div>
 
-            <div style={{ width: "100%", flexShrink: 0, padding: "0 16px 40px" }}>
+            <div style={{ width: "100%", flexShrink: 0, padding: "0 16px 16px" }}>
               <SubValuation ticker={symbol} fund={fundamentals} />
             </div>
           </div>
