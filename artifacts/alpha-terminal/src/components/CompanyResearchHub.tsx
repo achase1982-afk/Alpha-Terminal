@@ -1334,9 +1334,9 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
                     className="inline-flex items-center justify-center rounded-lg font-mono font-bold tracking-wider transition-colors active:scale-95 active:brightness-110"
                     style={{
                       padding: "8px 12px", fontSize: 13, fontFamily: f, fontWeight: 700,
-                      color: "#000",
-                      background: C.gold,
-                      border: "none",
+                      color: C.gold,
+                      background: "#000",
+                      border: `1px solid ${C.gold}`,
                       cursor: "pointer",
                       letterSpacing: "0.08em",
                     }}

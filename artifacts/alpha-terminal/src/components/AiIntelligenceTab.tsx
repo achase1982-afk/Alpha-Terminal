@@ -642,9 +642,10 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
             className="py-2 px-3 rounded-lg font-mono text-[13px] font-bold tracking-widest shrink-0 transition-all duration-200 uppercase
               disabled:opacity-30 disabled:cursor-not-allowed"
             style={{
-              background: disabled ? "#2A2A2C" : "linear-gradient(135deg, #FFB800, #E5A600)",
-              color: disabled ? "#52525b" : "#0c0c0c",
-              boxShadow: disabled ? "none" : "0 2px 8px rgba(255,184,0,0.25)",
+              background: "#000",
+              color: disabled ? "#52525b" : "#FFB800",
+              border: disabled ? "1px solid #2A2A2C" : "1px solid #FFB800",
+              boxShadow: "none",
             }}
           >
             Analyze
