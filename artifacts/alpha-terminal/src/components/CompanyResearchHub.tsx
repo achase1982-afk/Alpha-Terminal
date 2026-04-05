@@ -528,14 +528,6 @@ const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, volH
 
   return (
     <>
-      <FundGrid items={[
-        { label: "Mkt Cap", value: fmtMarketCap(fund?.marketCap ?? null) },
-        { label: "Shares", value: fmtShares(fund?.sharesOutstanding ?? null) },
-        { label: "P/E", value: pe != null ? pe.toFixed(1) : "—" },
-        { label: "EPS", value: eps != null ? `$${eps.toFixed(2)}` : "—" },
-        { label: "Beta", value: beta != null ? beta.toFixed(2) : "—" },
-        { label: "Div Yld", value: divYield != null ? `${divYield.toFixed(2)}%` : "—" },
-      ]} />
 
 
 
