@@ -189,7 +189,9 @@ function WatchlistRow({
           {spark && spark.closes.length > 1 ? (
             <MiniSparkline data={spark.closes} color={cColor} width={52} height={24} />
           ) : (
-            <div style={{ width: 52, height: 24 }} />
+            <div className="shrink-0 rounded overflow-hidden" style={{ width: 52, height: 24, background: "#1a1a1a" }}>
+              <div className="w-full h-full animate-pulse" style={{ background: "linear-gradient(90deg, #1a1a1a 0%, #252525 50%, #1a1a1a 100%)", backgroundSize: "200% 100%" }} />
+            </div>
           )}
 
           <div className="flex-1 flex items-center justify-end gap-3">
@@ -418,6 +420,8 @@ export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sy
   const [sparkData, setSparkData] = useState<Record<string, SparkData>>({});
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const fetchedRef = useRef<Set<string>>(new Set());
+  const prevTokenRef = useRef<string | null>(null);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleSort = useCallback((key: SortKey) => {
     if (sortKey === key) {
@@ -430,9 +434,16 @@ export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sy
 
   useEffect(() => {
     if (!accessToken || watchlist.length === 0) return;
+
+    if (prevTokenRef.current && prevTokenRef.current !== accessToken) {
+      fetchedRef.current.clear();
+    }
+    prevTokenRef.current = accessToken;
+
     const toFetch = watchlist.filter((s) => !fetchedRef.current.has(s));
     if (toFetch.length === 0) return;
     const controller = new AbortController();
+    let retryCount = 0;
 
     async function fetchSpark(sym: string) {
       try {
@@ -440,29 +451,46 @@ export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sy
           `/api/market/history?symbol=${encodeURIComponent(sym)}&accessToken=${encodeURIComponent(accessToken!)}&periodType=day&period=5&frequencyType=minute&frequency=30`,
           { signal: controller.signal }
         );
-        if (!res.ok) return;
+        if (!res.ok) return false;
         const data = await res.json();
         const candles = data?.candles;
         if (Array.isArray(candles) && candles.length > 0) {
           const closes = candles.map((c: { close: number }) => c.close);
           fetchedRef.current.add(sym);
           setSparkData((prev) => ({ ...prev, [sym]: { closes, fetched: true } }));
+          return true;
         }
-      } catch {}
+        return false;
+      } catch {
+        return false;
+      }
     }
 
     const batchSize = 3;
     let i = 0;
     function nextBatch() {
       const batch = toFetch.slice(i, i + batchSize);
-      if (batch.length === 0) return;
+      if (batch.length === 0) {
+        const stillMissing = toFetch.filter((s) => !fetchedRef.current.has(s));
+        if (stillMissing.length > 0 && retryCount < 2 && !controller.signal.aborted) {
+          retryCount++;
+          i = 0;
+          toFetch.length = 0;
+          toFetch.push(...stillMissing);
+          retryTimerRef.current = setTimeout(nextBatch, 5000 * retryCount);
+        }
+        return;
+      }
       i += batchSize;
       Promise.all(batch.map(fetchSpark)).then(() => {
         if (!controller.signal.aborted) setTimeout(nextBatch, 200);
       });
     }
     nextBatch();
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    };
   }, [watchlist, accessToken]);
 
   const sorted = useMemo(() => {
