@@ -403,7 +403,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet, onTrade }: Metric
 
   return (
     <div
-      className="w-full border-b border-card-border px-3 sm:px-6 py-2 sm:py-3 overflow-hidden"
+      className="w-full border-b border-card-border px-3 sm:px-6 py-1 sm:py-1.5 overflow-hidden"
       style={{ background: HEADER_BG }}
     >
       <div className={`${GRID_CLS} ${GRID_COLS}`}>
