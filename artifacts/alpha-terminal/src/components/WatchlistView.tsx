@@ -278,7 +278,7 @@ function WatchlistSwitcherPanel({ open, onClose }: { open: boolean; onClose: () 
             return (
               <div
                 key={id}
-                className={`flex items-center justify-between px-5 py-4 transition-colors ${isActive ? "border-l-2 border-l-[#FFB800]" : "border-l-2 border-l-transparent hover:bg-white/[0.03]"}`}
+                className={`flex items-center justify-between px-5 py-2 transition-colors ${isActive ? "border-l-2 border-l-[#FFB800]" : "border-l-2 border-l-transparent hover:bg-white/[0.03]"}`}
                 style={{ borderBottom: "1px solid #2A2A2C" }}
               >
                 {isEditing ? (
