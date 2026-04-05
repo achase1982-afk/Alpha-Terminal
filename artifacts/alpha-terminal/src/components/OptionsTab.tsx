@@ -41,7 +41,6 @@ const MUTED = "#3f3f46";
 
 const ITM_OCEAN = "rgba(120,80,100,0.45)";
 const OTM_PURPLE = "rgba(168,130,255,0.04)";
-const SEL_BG = "rgba(251,191,36,0.09)";
 const SEL_BORDER_COLOR = "#fbbf2480";
 
 const MONO = "'SF Mono', 'Cascadia Code', 'Consolas', monospace";
@@ -276,8 +275,7 @@ function classifyMoneyness(strike: number, underlyingPrice: number | null, isCal
   return strike > underlyingPrice + EPS ? "itm" : "otm";
 }
 
-function getRowBg(moneyness: Moneyness, isSelected: boolean): string {
-  if (isSelected) return SEL_BG;
+function getRowBg(moneyness: Moneyness): string {
   if (moneyness === "itm") return ITM_OCEAN;
   if (moneyness === "otm") return OTM_PURPLE;
   return "transparent";
@@ -927,7 +925,7 @@ function OptionsGrid({
                 const callLeg = callKey ? selectedLegs.get(callKey) : undefined;
                 const isCallSelected = !!callLeg;
                 const moneyness = classifyMoneyness(row.strike, underlyingPrice, true);
-                const bg = getRowBg(moneyness, isCallSelected);
+                const bg = getRowBg(moneyness);
                 return (
                   <div
                     key={row.strike}
@@ -981,7 +979,7 @@ function OptionsGrid({
                 const putLeg = putKey ? selectedLegs.get(putKey) : undefined;
                 const isPutSelected = !!putLeg;
                 const moneyness = classifyMoneyness(row.strike, underlyingPrice, false);
-                const bg = getRowBg(moneyness, isPutSelected);
+                const bg = getRowBg(moneyness);
                 return (
                   <div
                     key={row.strike}
