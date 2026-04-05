@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo, type TouchEvent as ReactTouchEvent } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useQuote } from "@/hooks/useQuote";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
@@ -573,7 +573,13 @@ export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
 
   const [fundamentals, setFundamentals] = useState<FundamentalData | null>(null);
   const [fundLoading, setFundLoading] = useState(false);
-  const [sub, setSub] = useState("overview");
+  const [page, setPage] = useState(0);
+  const startX = useRef(0);
+  const startY = useRef(0);
+  const swiping = useRef(false);
+  const locked = useRef<"h" | "v" | null>(null);
+  const dragDelta = useRef(0);
+  const [dragOffset, setDragOffset] = useState(0);
 
   const [taStreaming, setTaStreaming] = useState(false);
   const [taStreamingText, setTaStreamingText] = useState("");
@@ -596,7 +602,7 @@ export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
     setTaShowResult(false);
     setTaStreamingText("");
     setTaThinkingTokens([]);
-    setSub("overview");
+    setPage(0);
   }, [symbol]);
 
   useEffect(() => {
@@ -694,13 +700,55 @@ export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
     }));
   }, [candles, history]);
 
-  const subs = [
-    { id: "overview", label: "Overview" },
-    { id: "financials", label: "Financials" },
-    { id: "sec", label: "SEC" },
-    { id: "ownership", label: "Ownership" },
-    { id: "valuation", label: "Valuation" },
-  ];
+  const SUB_LABELS = ["Overview", "Financials", "SEC", "Ownership", "Valuation"];
+
+  const handleTouchStart = useCallback((e: ReactTouchEvent) => {
+    startX.current = e.touches[0].clientX;
+    startY.current = e.touches[0].clientY;
+    swiping.current = true;
+    locked.current = null;
+    dragDelta.current = 0;
+    setDragOffset(0);
+  }, []);
+
+  const handleTouchMove = useCallback((e: ReactTouchEvent) => {
+    if (!swiping.current) return;
+    const dx = e.touches[0].clientX - startX.current;
+    const dy = e.touches[0].clientY - startY.current;
+
+    if (!locked.current) {
+      if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
+        locked.current = Math.abs(dx) > Math.abs(dy) ? "h" : "v";
+      }
+    }
+
+    if (locked.current === "h") {
+      e.preventDefault();
+      let clamped = dx;
+      if ((page === 0 && dx > 0) || (page === SUB_LABELS.length - 1 && dx < 0)) {
+        clamped = dx * 0.25;
+      }
+      dragDelta.current = clamped;
+      setDragOffset(clamped);
+    }
+  }, [page]);
+
+  const finishSwipe = useCallback(() => {
+    if (!swiping.current) return;
+    swiping.current = false;
+    const threshold = 50;
+    const delta = dragDelta.current;
+    if (locked.current === "h") {
+      if (delta < -threshold && page < SUB_LABELS.length - 1) {
+        setPage(p => p + 1);
+      } else if (delta > threshold && page > 0) {
+        setPage(p => p - 1);
+      }
+    }
+    locked.current = null;
+    dragDelta.current = 0;
+    setDragOffset(0);
+  }, [page]);
 
   if (!accessToken) {
     return (
@@ -714,87 +762,110 @@ export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
 
   return (
     <div style={{ background: C.bg, color: C.text, fontFamily: f }}>
-      <div style={{ display: "flex", gap: 6, padding: "10px 16px", overflowX: "auto" }}>
-        {subs.map(s => (
-          <button key={s.id} onClick={() => setSub(s.id)} style={{
+      <div style={{ display: "flex", gap: 6, padding: "10px 16px", overflowX: "auto", borderBottom: `1px solid ${C.border}` }}>
+        {SUB_LABELS.map((label, i) => (
+          <button key={label} onClick={() => setPage(i)} style={{
             padding: "5px 14px", fontSize: 11, fontFamily: f, fontWeight: 600,
-            color: sub === s.id ? "#000" : C.textMuted,
-            background: sub === s.id ? C.gold : "transparent",
-            border: `1px solid ${sub === s.id ? C.gold : C.borderHi}`,
+            color: page === i ? "#000" : C.textMuted,
+            background: page === i ? C.gold : "transparent",
+            border: `1px solid ${page === i ? C.gold : C.borderHi}`,
             borderRadius: 14, cursor: "pointer", letterSpacing: 0.3, whiteSpace: "nowrap",
-          }}>{s.label}</button>
+          }}>{label}</button>
         ))}
-        <div style={{ display: "flex", alignItems: "center", gap: 4, marginLeft: 4 }}>
-          {subs.map((s, i) => (
-            <div key={i} style={{ width: 5, height: 5, borderRadius: 3, background: sub === s.id ? C.gold : C.borderHi }} />
+        <div style={{ display: "flex", alignItems: "center", gap: 4, marginLeft: 4, flexShrink: 0 }}>
+          {SUB_LABELS.map((_, i) => (
+            <div key={i} style={{ width: 5, height: 5, borderRadius: 3, background: page === i ? C.gold : C.borderHi, transition: "background 0.2s" }} />
           ))}
         </div>
       </div>
 
-      <div style={{ padding: "0 16px 40px" }}>
-        {fundLoading ? (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 40 }}>
-            <Loader2 className="w-5 h-5 text-primary animate-spin" />
-          </div>
-        ) : (
-          <>
-            {sub === "overview" && (
-              <>
-                <SubOverview fund={fundamentals} quoteData={quoteData} priceHist={priceHist} volHist={volHist} />
+      {fundLoading ? (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 40 }}>
+          <Loader2 className="w-5 h-5 text-primary animate-spin" />
+        </div>
+      ) : (
+        <div
+          style={{ overflow: "hidden", touchAction: "pan-y" }}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={finishSwipe}
+          onTouchCancel={finishSwipe}
+        >
+          <div
+            style={{
+              display: "flex",
+              transform: `translateX(calc(${-page * 100}% + ${dragOffset}px))`,
+              transition: swiping.current ? "none" : "transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
+              willChange: "transform",
+            }}
+          >
+            <div style={{ width: "100%", flexShrink: 0, padding: "0 16px 40px" }}>
+              <SubOverview fund={fundamentals} quoteData={quoteData} priceHist={priceHist} volHist={volHist} />
 
-                <Sec>AI TECHNICAL ANALYSIS</Sec>
-                <button
-                  onClick={handleRunTA}
-                  disabled={taStreaming || !accessToken || !quote || !history?.candles}
-                  style={{
-                    width: "100%", padding: "10px 0", fontSize: 11, fontFamily: f, fontWeight: 700,
-                    color: taStreaming ? C.textDim : "#000",
-                    background: taStreaming ? "transparent" : C.gold,
-                    border: `1px solid ${taStreaming ? C.borderHi : C.gold}`,
-                    cursor: taStreaming ? "default" : "pointer",
-                    letterSpacing: 1.5, display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                  }}
-                >
-                  {taStreaming ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Activity className="w-3.5 h-3.5" />
-                  )}
-                  {taStreaming ? "ANALYZING..." : "RUN AI ANALYSIS"}
-                </button>
-
-                {taShowResult && (
-                  <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: 16, marginTop: 12 }}>
-                    {taStreaming ? (
-                      <>
-                        <AiThinkingFeed texts={taThinkingTokens} isStreaming={true} />
-                        {taStreamingText && (
-                          <div style={{ marginTop: 12 }}>
-                            <MarkdownResult content={taStreamingText} />
-                          </div>
-                        )}
-                      </>
-                    ) : analysisResult ? (
-                      <>
-                        {taThinkingTokens.length > 0 && (
-                          <div style={{ marginBottom: 12 }}>
-                            <AiThinkingFeed texts={taThinkingTokens} isStreaming={false} />
-                          </div>
-                        )}
-                        <MarkdownResult content={analysisResult} />
-                      </>
-                    ) : null}
-                  </div>
+              <Sec>AI TECHNICAL ANALYSIS</Sec>
+              <button
+                onClick={handleRunTA}
+                disabled={taStreaming || !accessToken || !quote || !history?.candles}
+                style={{
+                  width: "100%", padding: "10px 0", fontSize: 11, fontFamily: f, fontWeight: 700,
+                  color: taStreaming ? C.textDim : "#000",
+                  background: taStreaming ? "transparent" : C.gold,
+                  border: `1px solid ${taStreaming ? C.borderHi : C.gold}`,
+                  cursor: taStreaming ? "default" : "pointer",
+                  letterSpacing: 1.5, display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                }}
+              >
+                {taStreaming ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Activity className="w-3.5 h-3.5" />
                 )}
-              </>
-            )}
-            {sub === "financials" && <SubFinancials ticker={symbol} />}
-            {sub === "sec" && <SubSEC ticker={symbol} />}
-            {sub === "ownership" && <SubOwnership ticker={symbol} />}
-            {sub === "valuation" && <SubValuation ticker={symbol} fund={fundamentals} />}
-          </>
-        )}
-      </div>
+                {taStreaming ? "ANALYZING..." : "RUN AI ANALYSIS"}
+              </button>
+
+              {taShowResult && (
+                <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: 16, marginTop: 12 }}>
+                  {taStreaming ? (
+                    <>
+                      <AiThinkingFeed texts={taThinkingTokens} isStreaming={true} />
+                      {taStreamingText && (
+                        <div style={{ marginTop: 12 }}>
+                          <MarkdownResult content={taStreamingText} />
+                        </div>
+                      )}
+                    </>
+                  ) : analysisResult ? (
+                    <>
+                      {taThinkingTokens.length > 0 && (
+                        <div style={{ marginBottom: 12 }}>
+                          <AiThinkingFeed texts={taThinkingTokens} isStreaming={false} />
+                        </div>
+                      )}
+                      <MarkdownResult content={analysisResult} />
+                    </>
+                  ) : null}
+                </div>
+              )}
+            </div>
+
+            <div style={{ width: "100%", flexShrink: 0, padding: "0 16px 40px" }}>
+              <SubFinancials ticker={symbol} />
+            </div>
+
+            <div style={{ width: "100%", flexShrink: 0, padding: "0 16px 40px" }}>
+              <SubSEC ticker={symbol} />
+            </div>
+
+            <div style={{ width: "100%", flexShrink: 0, padding: "0 16px 40px" }}>
+              <SubOwnership ticker={symbol} />
+            </div>
+
+            <div style={{ width: "100%", flexShrink: 0, padding: "0 16px 40px" }}>
+              <SubValuation ticker={symbol} fund={fundamentals} />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
