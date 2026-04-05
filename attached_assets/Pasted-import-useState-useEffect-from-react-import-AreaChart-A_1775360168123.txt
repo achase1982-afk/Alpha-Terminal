@@ -1,0 +1,505 @@
+import { useState, useEffect } from “react”;
+import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from “recharts”;
+
+const C = {
+bg: “#000”,
+card: “#111”,
+border: “#1c1c1c”,
+borderHi: “#2a2a2a”,
+text: “#ffffff”,        // pure white for values
+textSoft: “#d4d4d4”,   // slightly softer white for secondary values
+label: “#808080”,       // labels - visible but recedes
+dim: “#4a4a4a”,         // structural elements, borders text
+gold: “#d4a843”,
+green: “#00e676”,       // slightly brighter green for mobile
+red: “#ff5252”,         // slightly brighter red for mobile
+cyan: “#4dd0e1”,
+amber: “#ffb74d”,
+purple: “#b388ff”,
+};
+
+const mono = `'SFMono-Regular','SF Mono',ui-monospace,'Cascadia Code','Fira Code','JetBrains Mono','Consolas',monospace`;
+
+function genAnalysis(ticker) {
+const s = ticker.split(””).reduce((a, c) => a + c.charCodeAt(0), 0);
+const r = (min, max) => { const x = Math.sin(s * 9301 + 49297) * 10000; return +(min + (x - Math.floor(x)) * (max - min)).toFixed(2); };
+const price = r(10, 400);
+const dayLo = +(price * 0.97).toFixed(2);
+const dayHi = +(price * 1.02).toFixed(2);
+const lo52 = +(price * 0.55).toFixed(2);
+const hi52 = +(price * 1.45).toFixed(2);
+const chg = +(price * (Math.random() * 0.06 - 0.02)).toFixed(2);
+const chgPct = +((chg / (price - chg)) * 100).toFixed(2);
+const priceHist = Array.from({ length: 30 }, (_, i) => ({
+d: i + 1,
+p: +(price * (0.9 + Math.random() * 0.15 + (i / 30) * 0.05)).toFixed(2),
+v: Math.floor(15e6 + Math.random() * 60e6),
+}));
+return {
+ticker,
+name: { RIVN: “RIVIAN AUTOMOTIVE”, AAPL: “APPLE INC”, NVDA: “NVIDIA CORP”, GOOGL: “ALPHABET INC”, UNH: “UNITEDHEALTH GROUP” }[ticker] || `${ticker} INC`,
+price, dayLo, dayHi, lo52, hi52, chg, chgPct,
+volume: `${r(5, 150).toFixed(1)}M`,
+mktCap: `$${r(10, 4000).toFixed(1)}B`, shares: `${r(1, 25).toFixed(2)}B`,
+pe: r(10, 60).toFixed(1), eps: r(1, 20).toFixed(2),
+beta: r(0.5, 2.5).toFixed(2), divYld: Math.random() > 0.5 ? `${r(0.3, 3).toFixed(2)}%` : “—”,
+cik: `000${Math.floor(r(1000000, 9999999))}`,
+priceAction: {
+status: `$${price.toFixed(2)} (${chgPct > 0 ? "+" : ""}${chgPct}% today)`,
+trend: chgPct > 1 ? “Short-term recovery from recent lows” : chgPct < -1 ? “Pullback from recent highs” : “Consolidation near key level”,
+momentum: chgPct > 0 ? “Positive intraday momentum” : “Negative intraday pressure”,
+bias: chgPct > 2 ? “Lean Bullish” : chgPct > 0 ? “Neutral-Bullish” : chgPct > -2 ? “Neutral” : “Lean Bearish”,
+},
+support: [
+{ level: `$${dayLo.toFixed(2)}`, label: “Immediate”, note: “today’s low” },
+{ level: `$${(dayLo * 0.97).toFixed(2)}`, label: “Strong”, note: “swing low” },
+{ level: `$${(dayLo * 0.94).toFixed(2)}`, label: “Critical”, note: “breakdown” },
+],
+resistance: [
+{ level: `$${dayHi.toFixed(2)}`, label: “Immediate”, note: “today’s high” },
+{ level: `$${(dayHi * 1.03).toFixed(2)}-$${(dayHi * 1.05).toFixed(2)}`, label: “Next”, note: “zone” },
+{ level: `$${(dayHi * 1.08).toFixed(2)}-$${(dayHi * 1.12).toFixed(2)}`, label: “Major”, note: “breakout” },
+],
+chartPattern: {
+recent: chgPct > 0 ? “Recovery bounce from recent lows” : “Pullback testing support”,
+range: `$${(dayLo * 0.94).toFixed(2)} - $${(dayHi * 1.05).toFixed(2)}`,
+setup: chgPct > 0 ? “Testing resistance after bounce” : “Approaching support after rejection”,
+},
+volumeAnalysis: {
+today: `${r(5, 150).toFixed(1)}M`,
+todayLabel: r(0, 1) > 0.5 ? “moderate” : “elevated”,
+elevated: [
+{ date: “Mar 19”, vol: `${r(50, 100).toFixed(1)}M` },
+{ date: “Mar 10”, vol: `${r(40, 80).toFixed(1)}M` },
+{ date: “Mar 20”, vol: `${r(40, 70).toFixed(1)}M` },
+],
+pattern: “Lower volume during recovery vs major moves”,
+signal: chgPct > 0 ? “Bounce lacks strong volume conviction” : “Selling with above-avg volume”,
+},
+risks: [
+{ type: “Downside”, desc: `Break below $${dayLo.toFixed(2)} targets $${(dayLo * 0.94).toFixed(2)}`, severity: “high” },
+{ type: “Upside”, desc: `Rejection at $${dayHi.toFixed(2)}-$${(dayHi * 1.05).toFixed(2)}`, severity: “medium” },
+{ type: “Volatility”, desc: “Daily ranges 3-5%”, severity: “medium” },
+],
+criticalLevels: [
+{ level: `$${dayLo.toFixed(2)}`, direction: “support fail = bearish” },
+{ level: `$${(dayHi * 1.05).toFixed(2)}`, direction: “break = bullish” },
+],
+outlook: {
+shortTerm: { timeframe: “1-5 days”, points: [`Test $${dayHi.toFixed(2)}-$${(dayHi * 1.05).toFixed(2)} resistance`, `Fail = retest $${dayLo.toFixed(2)}-$${(dayLo * 0.97).toFixed(2)}`] },
+mediumTerm: { timeframe: “1-4 weeks”, points: [`Range: $${(dayLo * 0.94).toFixed(2)}-$${(dayHi * 1.12).toFixed(2)}`, `Above $${(dayHi * 1.12).toFixed(2)} = bullish`, `Below $${(dayLo * 0.94).toFixed(2)} = downside`] },
+targets: { upside: [`$${(dayHi * 1.05).toFixed(2)}`, `$${(dayHi * 1.08).toFixed(2)}-$${(dayHi * 1.12).toFixed(2)}`], downside: [`$${(dayLo * 0.97).toFixed(2)}`, `$${(dayLo * 0.94).toFixed(2)}`] },
+rangePosition: { pctFromLow: Math.floor(((price - lo52) / (hi52 - lo52)) * 100), pctFromHigh: Math.floor(((hi52 - price) / (hi52 - lo52)) * 100) },
+},
+priceHist,
+margins: [{ k: “Gross”, v: +r(30, 75).toFixed(1) }, { k: “Operating”, v: +r(10, 40).toFixed(1) }, { k: “Net”, v: +r(5, 25).toFixed(1) }, { k: “FCF”, v: +r(8, 30).toFixed(1) }],
+rev: [{ yr: “FY21”, val: +r(20, 100).toFixed(1) }, { yr: “FY22”, val: +r(25, 120).toFixed(1) }, { yr: “FY23”, val: +r(30, 140).toFixed(1) }, { yr: “FY24”, val: +r(35, 160).toFixed(1) }, { yr: “FY25E”, val: +r(40, 180).toFixed(1) }],
+epsData: [{ yr: “FY21”, val: +r(1, 8).toFixed(2) }, { yr: “FY22”, val: +r(2, 10).toFixed(2) }, { yr: “FY23”, val: +r(3, 12).toFixed(2) }, { yr: “FY24”, val: +r(4, 15).toFixed(2) }, { yr: “FY25E”, val: +r(5, 18).toFixed(2) }],
+bs: { assets: +r(50, 500).toFixed(1), liab: +r(20, 250).toFixed(1), equity: +r(30, 250).toFixed(1), cash: +r(5, 80).toFixed(1), debt: +r(10, 150).toFixed(1), curRatio: +r(0.8, 3).toFixed(2), deRatio: +r(0.2, 2.5).toFixed(2) },
+cf: [{ yr: “FY22”, op: +r(5, 40).toFixed(1), inv: +(-r(3, 20)).toFixed(1), fin: +(-r(2, 15)).toFixed(1) }, { yr: “FY23”, op: +r(8, 50).toFixed(1), inv: +(-r(4, 25)).toFixed(1), fin: +(-r(3, 18)).toFixed(1) }, { yr: “FY24”, op: +r(10, 60).toFixed(1), inv: +(-r(5, 30)).toFixed(1), fin: +(-r(2, 20)).toFixed(1) }],
+filings: [
+{ type: “10-K”, date: “2025-02-15”, desc: “Annual Report”, acc: “0001234567-25-000123” },
+{ type: “10-Q”, date: “2024-11-05”, desc: “Quarterly Report”, acc: “0001234567-24-000456” },
+{ type: “8-K”, date: “2025-01-28”, desc: “Earnings Release”, acc: “0001234567-25-000089” },
+{ type: “DEF 14A”, date: “2025-03-20”, desc: “Proxy Statement”, acc: “0001234567-25-000234” },
+{ type: “4”, date: “2025-03-15”, desc: “Insider Tx - CEO”, acc: “0001234567-25-000345” },
+],
+holders: [
+{ name: “Vanguard”, pct: +r(5, 12).toFixed(2), chg: “+0.3%” },
+{ name: “BlackRock”, pct: +r(4, 10).toFixed(2), chg: “-0.1%” },
+{ name: “State Street”, pct: +r(2, 7).toFixed(2), chg: “+0.2%” },
+{ name: “Fidelity”, pct: +r(1.5, 5).toFixed(2), chg: “+0.5%” },
+{ name: “Capital Research”, pct: +r(1, 4).toFixed(2), chg: “-0.4%” },
+],
+insiders: [
+{ name: “J. Smith”, title: “CEO”, action: “SELL”, shares: “50K”, date: “03/15” },
+{ name: “J. Doe”, title: “CFO”, action: “BUY”, shares: “25K”, date: “03/01” },
+{ name: “B. Wilson”, title: “CTO”, action: “SELL”, shares: “15K”, date: “02/20” },
+],
+};
+}
+
+const ttip = { background: “#111”, border: `1px solid ${C.borderHi}`, borderRadius: 0, fontFamily: mono, fontSize: 13, color: C.text, padding: “8px 12px” };
+
+function Sec({ children }) {
+return <div style={{ fontSize: 14, fontFamily: mono, fontWeight: 700, color: C.gold, letterSpacing: 2, textTransform: “uppercase”, padding: “20px 0 12px” }}>{children}</div>;
+}
+
+function FundGrid({ items }) {
+return (
+<div style={{ background: C.card, border: `1px solid ${C.border}`, padding: “16px 18px”, display: “grid”, gridTemplateColumns: “repeat(3, 1fr)”, gap: “18px 0” }}>
+{items.map((it, i) => (
+<div key={i}>
+<div style={{ fontSize: 11, fontFamily: mono, fontWeight: 600, color: C.label, letterSpacing: 1.2, textTransform: “uppercase”, marginBottom: 4 }}>{it.label}</div>
+<div style={{ fontSize: 20, fontFamily: mono, fontWeight: 700, color: it.color || C.text }}>{it.value}</div>
+</div>
+))}
+</div>
+);
+}
+
+function RangeBar({ lo, hi, current }) {
+const pct = Math.max(0, Math.min(100, ((+current - +lo) / (+hi - +lo)) * 100));
+return (
+<div style={{ padding: “12px 0 6px” }}>
+<div style={{ display: “flex”, justifyContent: “space-between”, marginBottom: 8 }}>
+<span style={{ fontSize: 11, fontFamily: mono, color: C.label, letterSpacing: 1 }}>52W LOW <span style={{ color: C.textSoft }}>${lo}</span></span>
+<span style={{ fontSize: 11, fontFamily: mono, color: C.green, fontWeight: 700, letterSpacing: 1 }}>${current}</span>
+<span style={{ fontSize: 11, fontFamily: mono, color: C.label, letterSpacing: 1 }}>52W HIGH <span style={{ color: C.textSoft }}>${hi}</span></span>
+</div>
+<div style={{ height: 8, borderRadius: 4, background: `linear-gradient(to right, ${C.red}, ${C.gold} 50%, ${C.green})`, position: “relative” }}>
+<div style={{ position: “absolute”, top: -3, left: `${pct}%`, transform: “translateX(-50%)”, width: 14, height: 14, borderRadius: 7, background: C.text, border: `3px solid ${C.bg}` }} />
+</div>
+</div>
+);
+}
+
+function Tag({ children, color = C.label }) {
+return <span style={{ display: “inline-block”, padding: “2px 8px”, fontSize: 12, fontFamily: mono, fontWeight: 700, color, border: `1px solid ${color}55`, letterSpacing: 0.5 }}>{children}</span>;
+}
+
+// ═══ OVERVIEW ═══
+function TabOverview({ d }) {
+const biasColor = d.priceAction.bias.includes(“Bullish”) ? C.green : d.priceAction.bias.includes(“Bearish”) ? C.red : C.gold;
+return (
+<>
+<Sec>FUNDAMENTALS</Sec>
+<FundGrid items={[
+{ label: “Mkt Cap”, value: d.mktCap },
+{ label: “Shares”, value: d.shares },
+{ label: “P/E”, value: d.pe },
+{ label: “EPS”, value: d.eps },
+{ label: “Beta”, value: d.beta },
+{ label: “Div Yld”, value: d.divYld },
+]} />
+<RangeBar lo={d.lo52} hi={d.hi52} current={d.price.toFixed(2)} />
+
+```
+  {/* Price Action */}
+  <Sec>PRICE ACTION</Sec>
+  <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: "16px 18px" }}>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+      <div>
+        <div style={{ fontSize: 11, fontFamily: mono, color: C.label, letterSpacing: 1.5, marginBottom: 4 }}>STATUS</div>
+        <div style={{ fontSize: 20, fontFamily: mono, fontWeight: 700, color: C.text }}>{d.priceAction.status}</div>
+      </div>
+      <span style={{ padding: "4px 12px", fontSize: 13, fontFamily: mono, fontWeight: 700, color: biasColor, border: `1px solid ${biasColor}55`, borderRadius: 2 }}>
+        {d.priceAction.bias.includes("Bullish") ? "▲" : d.priceAction.bias.includes("Bearish") ? "▼" : "◆"} {d.priceAction.bias}
+      </span>
+    </div>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 18px" }}>
+      <div>
+        <div style={{ fontSize: 11, fontFamily: mono, color: C.label, letterSpacing: 1.5, marginBottom: 4 }}>TREND</div>
+        <div style={{ fontSize: 14, fontFamily: mono, color: C.textSoft, lineHeight: 1.4 }}>{d.priceAction.trend}</div>
+      </div>
+      <div>
+        <div style={{ fontSize: 11, fontFamily: mono, color: C.label, letterSpacing: 1.5, marginBottom: 4 }}>MOMENTUM</div>
+        <div style={{ fontSize: 14, fontFamily: mono, color: d.chg >= 0 ? C.green : C.red, lineHeight: 1.4 }}>{d.priceAction.momentum}</div>
+      </div>
+    </div>
+  </div>
+
+  {/* Support / Resistance */}
+  <Sec>SUPPORT / RESISTANCE</Sec>
+  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+    {[["▼ SUPPORT", d.support, C.red], ["▲ RESISTANCE", d.resistance, C.green]].map(([title, levels, color], idx) => (
+      <div key={idx} style={{ background: C.card, border: `1px solid ${C.border}`, padding: "14px" }}>
+        <div style={{ fontSize: 12, fontFamily: mono, fontWeight: 700, color, letterSpacing: 1.5, marginBottom: 10 }}>{title}</div>
+        {levels.map((s, i) => (
+          <div key={i} style={{ padding: "7px 0", borderBottom: i < levels.length - 1 ? `1px solid ${C.border}` : "none" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: 12, fontFamily: mono, color: C.label, textTransform: "uppercase", letterSpacing: 1 }}>{s.label}</span>
+              <span style={{ fontSize: 16, fontFamily: mono, fontWeight: 700, color }}>{s.level}</span>
+            </div>
+            <div style={{ fontSize: 11, fontFamily: mono, color: C.dim, marginTop: 2 }}>{s.note}</div>
+          </div>
+        ))}
+      </div>
+    ))}
+  </div>
+
+  {/* 30-Day Chart */}
+  <Sec>30-DAY PRICE</Sec>
+  <ResponsiveContainer width="100%" height={160}>
+    <AreaChart data={d.priceHist}>
+      <defs><linearGradient id="pg" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.gold} stopOpacity={0.15} /><stop offset="95%" stopColor={C.gold} stopOpacity={0} /></linearGradient></defs>
+      <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
+      <XAxis dataKey="d" tick={{ fill: C.label, fontSize: 10, fontFamily: mono }} axisLine={{ stroke: C.border }} tickLine={false} />
+      <YAxis tick={{ fill: C.label, fontSize: 10, fontFamily: mono }} domain={["auto", "auto"]} axisLine={{ stroke: C.border }} tickLine={false} />
+      <Tooltip contentStyle={ttip} />
+      <Area type="monotone" dataKey="p" stroke={C.gold} fill="url(#pg)" strokeWidth={2} dot={false} name="Price" />
+    </AreaChart>
+  </ResponsiveContainer>
+  <ResponsiveContainer width="100%" height={50}>
+    <BarChart data={d.priceHist}>
+      <XAxis dataKey="d" tick={false} axisLine={{ stroke: C.border }} />
+      <YAxis tick={false} axisLine={false} />
+      <Bar dataKey="v" fill={C.dim} radius={[1, 1, 0, 0]} />
+    </BarChart>
+  </ResponsiveContainer>
+
+  {/* Chart Patterns */}
+  <Sec>CHART PATTERNS</Sec>
+  <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: "16px 18px" }}>
+    {[["Recent Pattern", d.chartPattern.recent], ["Trading Range", d.chartPattern.range], ["Current Setup", d.chartPattern.setup]].map(([l, v], i) => (
+      <div key={i} style={{ borderBottom: i < 2 ? `1px solid ${C.border}` : "none", paddingBottom: i < 2 ? 12 : 0, marginBottom: i < 2 ? 12 : 0 }}>
+        <div style={{ fontSize: 11, fontFamily: mono, color: C.label, letterSpacing: 1.5, marginBottom: 4 }}>{l.toUpperCase()}</div>
+        <div style={{ fontSize: 15, fontFamily: mono, color: C.textSoft, lineHeight: 1.4 }}>{v}</div>
+      </div>
+    ))}
+  </div>
+
+  {/* Volume */}
+  <Sec>VOLUME ANALYSIS</Sec>
+  <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: "16px 18px" }}>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, paddingBottom: 12, borderBottom: `1px solid ${C.border}` }}>
+      <div>
+        <div style={{ fontSize: 11, fontFamily: mono, color: C.label, letterSpacing: 1.5 }}>TODAY</div>
+        <div style={{ fontSize: 22, fontFamily: mono, fontWeight: 700, color: C.text, marginTop: 4 }}>{d.volumeAnalysis.today}</div>
+      </div>
+      <Tag color={d.volumeAnalysis.todayLabel === "elevated" ? C.amber : C.label}>{d.volumeAnalysis.todayLabel.toUpperCase()}</Tag>
+    </div>
+    <div style={{ fontSize: 11, fontFamily: mono, color: C.label, letterSpacing: 1.5, marginBottom: 8 }}>ELEVATED EVENTS</div>
+    <div style={{ display: "flex", gap: 20, marginBottom: 14, paddingBottom: 14, borderBottom: `1px solid ${C.border}` }}>
+      {d.volumeAnalysis.elevated.map((e, i) => (
+        <div key={i}>
+          <div style={{ fontSize: 12, fontFamily: mono, color: C.label }}>{e.date}</div>
+          <div style={{ fontSize: 16, fontFamily: mono, fontWeight: 700, color: C.amber, marginTop: 2 }}>{e.vol}</div>
+        </div>
+      ))}
+    </div>
+    {[["Pattern", d.volumeAnalysis.pattern], ["Signal", d.volumeAnalysis.signal]].map(([l, v], i) => (
+      <div key={i} style={{ marginBottom: i === 0 ? 8 : 0 }}>
+        <span style={{ fontSize: 14, fontFamily: mono, fontWeight: 700, color: C.text }}>{l}: </span>
+        <span style={{ fontSize: 14, fontFamily: mono, color: C.textSoft }}>{v}</span>
+      </div>
+    ))}
+  </div>
+
+  {/* Risks */}
+  <Sec>RISK ASSESSMENT</Sec>
+  {d.risks.map((r, i) => (
+    <div key={i} style={{ padding: "10px 0", borderBottom: `1px solid ${C.border}`, display: "flex", gap: 12, alignItems: "flex-start" }}>
+      <div style={{ width: 4, minHeight: 20, marginTop: 2, background: r.severity === "high" ? C.red : C.amber, flexShrink: 0, borderRadius: 2 }} />
+      <div>
+        <span style={{ fontSize: 15, fontFamily: mono, fontWeight: 700, color: C.text }}>{r.type}: </span>
+        <span style={{ fontSize: 15, fontFamily: mono, color: C.textSoft }}>{r.desc}</span>
+      </div>
+    </div>
+  ))}
+  <div style={{ marginTop: 10, padding: "10px 0" }}>
+    <div style={{ fontSize: 11, fontFamily: mono, color: C.label, letterSpacing: 1.5, marginBottom: 8 }}>CRITICAL LEVELS</div>
+    {d.criticalLevels.map((cl, i) => (
+      <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0" }}>
+        <span style={{ fontSize: 18, fontFamily: mono, fontWeight: 700, color: cl.direction.includes("bearish") ? C.red : C.green }}>{cl.level}</span>
+        <span style={{ fontSize: 13, fontFamily: mono, color: C.label }}>{cl.direction}</span>
+      </div>
+    ))}
+  </div>
+
+  {/* Outlook */}
+  <Sec>TRADING OUTLOOK</Sec>
+  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+    {[["SHORT", d.outlook.shortTerm, C.cyan], ["MEDIUM", d.outlook.mediumTerm, C.purple]].map(([title, data, color], idx) => (
+      <div key={idx} style={{ background: C.card, border: `1px solid ${C.border}`, padding: "14px" }}>
+        <div style={{ fontSize: 12, fontFamily: mono, fontWeight: 700, color, letterSpacing: 1.5, marginBottom: 4 }}>{title}</div>
+        <div style={{ fontSize: 11, fontFamily: mono, color: C.label, marginBottom: 8 }}>{data.timeframe}</div>
+        {data.points.map((p, i) => (
+          <div key={i} style={{ fontSize: 14, fontFamily: mono, color: C.textSoft, padding: "4px 0 4px 10px", borderLeft: `3px solid ${C.border}`, marginBottom: 6, lineHeight: 1.4 }}>{p}</div>
+        ))}
+      </div>
+    ))}
+  </div>
+
+  {/* Targets */}
+  <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: "16px 18px", marginTop: 12 }}>
+    <div style={{ fontSize: 12, fontFamily: mono, fontWeight: 700, color: C.gold, letterSpacing: 1.5, marginBottom: 12 }}>PRICE TARGETS</div>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+      {[["▲ UPSIDE", d.outlook.targets.upside, C.green], ["▼ DOWNSIDE", d.outlook.targets.downside, C.red]].map(([title, targets, color], idx) => (
+        <div key={idx}>
+          <div style={{ fontSize: 12, fontFamily: mono, color, fontWeight: 700, letterSpacing: 1, marginBottom: 6 }}>{title}</div>
+          {targets.map((t, i) => (
+            <div key={i} style={{ fontSize: 17, fontFamily: mono, fontWeight: 700, color: C.text, padding: "3px 0" }}>{t}</div>
+          ))}
+        </div>
+      ))}
+    </div>
+    <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.border}`, fontSize: 13, fontFamily: mono, color: C.label }}>
+      52W: <span style={{ color: C.textSoft, fontWeight: 600 }}>{d.outlook.rangePosition.pctFromLow}%</span> from low, <span style={{ color: C.textSoft, fontWeight: 600 }}>{d.outlook.rangePosition.pctFromHigh}%</span> from high
+    </div>
+  </div>
+
+  {/* Margins */}
+  <Sec>MARGINS</Sec>
+  {d.margins.map((m, i) => {
+    const mc = m.v > 20 ? C.green : m.v > 10 ? C.gold : C.red;
+    return (
+      <div key={i} style={{ padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+          <span style={{ fontSize: 14, fontFamily: mono, color: C.textSoft }}>{m.k}</span>
+          <span style={{ fontSize: 16, fontFamily: mono, color: mc, fontWeight: 700 }}>{m.v}%</span>
+        </div>
+        <div style={{ height: 4, background: C.border, borderRadius: 2 }}>
+          <div style={{ height: 4, width: `${Math.min(m.v, 100)}%`, background: mc, borderRadius: 2 }} />
+        </div>
+      </div>
+    );
+  })}
+</>
+```
+
+);
+}
+
+// ═══ FINANCIALS ═══
+function TabFinancials({ d }) {
+const [view, setView] = useState(“income”);
+return (
+<>
+<div style={{ display: “flex”, gap: 8, padding: “16px 0 10px” }}>
+{[[“income”, “Income”], [“balance”, “Balance”], [“cashflow”, “Cash Flow”]].map(([id, label]) => (
+<button key={id} onClick={() => setView(id)} style={{ padding: “6px 16px”, fontSize: 13, fontFamily: mono, fontWeight: 600, color: view === id ? “#000” : C.label, background: view === id ? C.gold : “transparent”, border: `1px solid ${view === id ? C.gold : C.borderHi}`, borderRadius: 16, cursor: “pointer” }}>{label}</button>
+))}
+</div>
+{view === “income” && (<><Sec>REVENUE ($B)</Sec><ResponsiveContainer width="100%" height={180}><BarChart data={d.rev}><CartesianGrid stroke={C.border} strokeDasharray="3 3" /><XAxis dataKey=“yr” tick={{ fill: C.label, fontSize: 12, fontFamily: mono }} axisLine={{ stroke: C.border }} tickLine={false} /><YAxis tick={{ fill: C.label, fontSize: 12, fontFamily: mono }} axisLine={{ stroke: C.border }} tickLine={false} /><Tooltip contentStyle={ttip} /><Bar dataKey=“val” fill={C.gold} radius={[2, 2, 0, 0]} name=“Revenue” /></BarChart></ResponsiveContainer><Sec>EPS TREND</Sec><ResponsiveContainer width="100%" height={160}><LineChart data={d.epsData}><CartesianGrid stroke={C.border} strokeDasharray="3 3" /><XAxis dataKey=“yr” tick={{ fill: C.label, fontSize: 12, fontFamily: mono }} axisLine={{ stroke: C.border }} tickLine={false} /><YAxis tick={{ fill: C.label, fontSize: 12, fontFamily: mono }} axisLine={{ stroke: C.border }} tickLine={false} /><Tooltip contentStyle={ttip} /><Line type=“monotone” dataKey=“val” stroke={C.green} strokeWidth={2.5} dot={{ fill: C.green, r: 4, strokeWidth: 0 }} name=“EPS” /></LineChart></ResponsiveContainer></>)}
+{view === “balance” && (<><Sec>BALANCE SHEET ($B)</Sec><FundGrid items={[{ label: “Assets”, value: `$${d.bs.assets}B` }, { label: “Liabilities”, value: `$${d.bs.liab}B`, color: C.red }, { label: “Equity”, value: `$${d.bs.equity}B`, color: C.green }, { label: “Cash”, value: `$${d.bs.cash}B`, color: C.gold }, { label: “Debt”, value: `$${d.bs.debt}B`, color: C.red }, { label: “Cur Ratio”, value: d.bs.curRatio, color: +d.bs.curRatio >= 1.5 ? C.green : C.gold }]} /></>)}
+{view === “cashflow” && (<><Sec>CASH FLOW ($B)</Sec><ResponsiveContainer width="100%" height={220}><BarChart data={d.cf}><CartesianGrid stroke={C.border} strokeDasharray="3 3" /><XAxis dataKey=“yr” tick={{ fill: C.label, fontSize: 12, fontFamily: mono }} axisLine={{ stroke: C.border }} tickLine={false} /><YAxis tick={{ fill: C.label, fontSize: 12, fontFamily: mono }} axisLine={{ stroke: C.border }} tickLine={false} /><Tooltip contentStyle={ttip} /><Bar dataKey=“op” fill={C.green} name=“Operating” radius={[2, 2, 0, 0]} /><Bar dataKey=“inv” fill={C.gold} name=“Investing” radius={[2, 2, 0, 0]} /><Bar dataKey=“fin” fill={C.dim} name=“Financing” radius={[2, 2, 0, 0]} /></BarChart></ResponsiveContainer><div style={{ display: “flex”, gap: 16, padding: “8px 0” }}>{[[“Operating”, C.green], [“Investing”, C.gold], [“Financing”, C.dim]].map(([l, c]) => (<span key={l} style={{ fontSize: 12, fontFamily: mono, color: C.label }}><span style={{ color: c }}>■</span> {l}</span>))}</div></>)}
+</>
+);
+}
+
+// ═══ SEC ═══
+function TabSEC({ d }) {
+const [filter, setFilter] = useState(“ALL”);
+const [exp, setExp] = useState(null);
+const tc = { “10-K”: C.gold, “10-Q”: C.cyan, “8-K”: C.amber, “DEF 14A”: C.purple, “4”: C.green };
+const filtered = filter === “ALL” ? d.filings : d.filings.filter(fi => fi.type === filter);
+return (
+<>
+<div style={{ display: “flex”, justifyContent: “space-between”, alignItems: “center”, padding: “16px 0 10px” }}>
+<span style={{ fontSize: 14, fontFamily: mono, fontWeight: 700, color: C.gold, letterSpacing: 2 }}>SEC EDGAR</span>
+<a href={`https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company=${d.ticker}&CIK=&type=&dateb=&owner=include&count=40`} target=”_blank” rel=“noopener noreferrer” style={{ fontSize: 11, fontFamily: mono, fontWeight: 700, color: C.gold, textDecoration: “none”, padding: “4px 10px”, border: `1px solid ${C.gold}55` }}>EDGAR ↗</a>
+</div>
+<div style={{ display: “flex”, gap: 6, paddingBottom: 12, borderBottom: `1px solid ${C.border}`, flexWrap: “wrap” }}>
+{[“ALL”, “10-K”, “10-Q”, “8-K”, “DEF 14A”, “4”].map(t => (
+<button key={t} onClick={() => setFilter(t)} style={{ padding: “4px 10px”, fontSize: 11, fontFamily: mono, fontWeight: 600, color: filter === t ? “#000” : C.label, background: filter === t ? (tc[t] || C.gold) : “transparent”, border: `1px solid ${filter === t ? "transparent" : C.borderHi}`, cursor: “pointer” }}>{t}</button>
+))}
+</div>
+{filtered.map((fi, i) => {
+const isExp = exp === i; const c = tc[fi.type] || C.label;
+return (
+<div key={i} onClick={() => setExp(isExp ? null : i)} style={{ padding: “12px 0”, borderBottom: `1px solid ${C.border}`, cursor: “pointer” }}>
+<div style={{ display: “flex”, justifyContent: “space-between”, alignItems: “center” }}>
+<div style={{ display: “flex”, alignItems: “center”, gap: 10 }}><Tag color={c}>{fi.type}</Tag><span style={{ fontSize: 14, fontFamily: mono, color: C.text }}>{fi.desc}</span></div>
+<span style={{ fontSize: 12, fontFamily: mono, color: C.label }}>{fi.date}</span>
+</div>
+{isExp && (
+<div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.border}` }}>
+<div style={{ fontSize: 12, fontFamily: mono, color: C.label, marginBottom: 10 }}>ACC <span style={{ color: C.textSoft }}>{fi.acc}</span></div>
+<div style={{ display: “flex”, gap: 8 }}>
+<a href={`https://www.sec.gov/Archives/edgar/data/${d.cik}/${fi.acc.replace(/-/g, "")}`} target=”_blank” rel=“noopener noreferrer” onClick={e => e.stopPropagation()} style={{ fontSize: 11, fontFamily: mono, fontWeight: 700, color: c, textDecoration: “none”, padding: “4px 10px”, border: `1px solid ${c}55` }}>VIEW ↗</a>
+<a href={`https://efts.sec.gov/LATEST/search-index?q=%22${fi.acc}%22`} target=”_blank” rel=“noopener noreferrer” onClick={e => e.stopPropagation()} style={{ fontSize: 11, fontFamily: mono, fontWeight: 700, color: C.label, textDecoration: “none”, padding: “4px 10px”, border: `1px solid ${C.borderHi}` }}>FULL TEXT ↗</a>
+</div>
+</div>
+)}
+</div>
+);
+})}
+</>
+);
+}
+
+// ═══ OWNERSHIP ═══
+function TabOwnership({ d }) {
+return (
+<>
+<Sec>INSTITUTIONAL HOLDERS</Sec>
+<div style={{ display: “grid”, gridTemplateColumns: “2fr 1fr 1fr”, padding: “6px 0”, borderBottom: `1px solid ${C.borderHi}` }}>
+{[“INSTITUTION”, “% OUT”, “CHG”].map((h, i) => (<span key={i} style={{ fontSize: 11, fontFamily: mono, fontWeight: 700, color: C.label, letterSpacing: 1.5, textAlign: i > 0 ? “right” : “left” }}>{h}</span>))}
+</div>
+{d.holders.map((h, i) => (
+<div key={i} style={{ display: “grid”, gridTemplateColumns: “2fr 1fr 1fr”, padding: “10px 0”, borderBottom: `1px solid ${C.border}` }}>
+<span style={{ fontSize: 14, fontFamily: mono, color: C.text }}>{h.name}</span>
+<span style={{ fontSize: 14, fontFamily: mono, color: C.gold, textAlign: “right”, fontWeight: 700 }}>{h.pct}%</span>
+<span style={{ fontSize: 14, fontFamily: mono, textAlign: “right”, fontWeight: 600, color: h.chg.startsWith(”+”) ? C.green : h.chg.startsWith(”-”) ? C.red : C.label }}>{h.chg}</span>
+</div>
+))}
+<Sec>INSIDER TRANSACTIONS</Sec>
+<div style={{ display: “grid”, gridTemplateColumns: “1.2fr 0.8fr 0.6fr 0.8fr 0.6fr”, padding: “6px 0”, borderBottom: `1px solid ${C.borderHi}` }}>
+{[“NAME”, “TITLE”, “TYPE”, “SHARES”, “DATE”].map((h, i) => (<span key={i} style={{ fontSize: 11, fontFamily: mono, fontWeight: 700, color: C.label, letterSpacing: 1.2, textAlign: i >= 3 ? “right” : “left” }}>{h}</span>))}
+</div>
+{d.insiders.map((t, i) => (
+<div key={i} style={{ display: “grid”, gridTemplateColumns: “1.2fr 0.8fr 0.6fr 0.8fr 0.6fr”, padding: “10px 0”, borderBottom: `1px solid ${C.border}` }}>
+<span style={{ fontSize: 14, fontFamily: mono, color: C.text }}>{t.name}</span>
+<span style={{ fontSize: 14, fontFamily: mono, color: C.textSoft }}>{t.title}</span>
+<span style={{ fontSize: 14, fontFamily: mono, color: t.action === “BUY” ? C.green : C.red, fontWeight: 700 }}>{t.action}</span>
+<span style={{ fontSize: 14, fontFamily: mono, color: C.text, textAlign: “right” }}>{t.shares}</span>
+<span style={{ fontSize: 14, fontFamily: mono, color: C.label, textAlign: “right” }}>{t.date}</span>
+</div>
+))}
+</>
+);
+}
+
+// ═══ MAIN ═══
+export default function App() {
+const [ticker, setTicker] = useState(“RIVN”);
+const [input, setInput] = useState(“RIVN”);
+const [sub, setSub] = useState(“overview”);
+const [data, setData] = useState(null);
+useEffect(() => { setData(genAnalysis(ticker)); }, [ticker]);
+const go = () => { const t = input.trim().toUpperCase(); if (!t) return; setTicker(t); setSub(“overview”); };
+const subs = [{ id: “overview”, label: “Research” }, { id: “financials”, label: “Financials” }, { id: “sec”, label: “SEC” }, { id: “ownership”, label: “Ownership” }];
+if (!data) return null;
+const up = data.chg >= 0;
+
+return (
+<div style={{ minHeight: “100vh”, background: C.bg, color: C.text, fontFamily: mono }}>
+{/* Header */}
+<div style={{ padding: “14px 18px”, borderBottom: `1px solid ${C.border}` }}>
+<div style={{ display: “flex”, alignItems: “center”, gap: 10, marginBottom: 4 }}>
+<input value={input} onChange={e => setInput(e.target.value.toUpperCase())} onKeyDown={e => e.key === “Enter” && go()}
+style={{ fontSize: 26, fontWeight: 800, fontFamily: mono, color: C.text, background: “transparent”, border: “none”, outline: “none”, width: 140, padding: 0, letterSpacing: 1 }} />
+<span style={{ fontSize: 16, color: up ? C.green : C.red, fontWeight: 700 }}>{up ? “+” : “−”}</span>
+</div>
+<div style={{ fontSize: 13, fontFamily: mono, color: C.gold, fontWeight: 600, marginBottom: 10 }}>{data.name}</div>
+<div>
+<span style={{ fontSize: 28, fontWeight: 700, fontFamily: mono }}>${data.price.toFixed(2)}</span>
+<span style={{ fontSize: 15, fontFamily: mono, color: up ? C.green : C.red, marginLeft: 12, fontWeight: 700 }}>{up ? “+” : “”}${data.chg.toFixed(2)} ({up ? “+” : “”}{data.chgPct}%)</span>
+</div>
+<div style={{ display: “flex”, gap: 16, marginTop: 8 }}>
+<span style={{ fontSize: 12, fontFamily: mono, color: C.label }}>Vol <span style={{ color: C.textSoft, fontWeight: 600 }}>{data.volume}</span></span>
+<span style={{ fontSize: 12, fontFamily: mono, color: C.label }}>Day <span style={{ color: C.red }}>${data.dayLo}</span> — <span style={{ color: C.green }}>${data.dayHi}</span></span>
+<span style={{ fontSize: 12, fontFamily: mono, color: C.label }}>52W <span style={{ color: C.textSoft }}>${data.lo52}—${data.hi52}</span></span>
+</div>
+</div>
+
+```
+  {/* Pills */}
+  <div style={{ display: "flex", gap: 8, padding: "12px 18px", overflowX: "auto" }}>
+    {subs.map(s => (
+      <button key={s.id} onClick={() => setSub(s.id)} style={{
+        padding: "6px 16px", fontSize: 13, fontFamily: mono, fontWeight: 600,
+        color: sub === s.id ? "#000" : C.label,
+        background: sub === s.id ? C.gold : "transparent",
+        border: `1px solid ${sub === s.id ? C.gold : C.borderHi}`,
+        borderRadius: 16, cursor: "pointer", whiteSpace: "nowrap",
+      }}>{s.label}</button>
+    ))}
+    <div style={{ display: "flex", alignItems: "center", gap: 5, marginLeft: 6 }}>
+      {subs.map((s, i) => (<div key={i} style={{ width: 6, height: 6, borderRadius: 3, background: sub === s.id ? C.gold : C.borderHi }} />))}
+    </div>
+  </div>
+
+  {/* Content */}
+  <div style={{ padding: "0 18px 50px" }}>
+    {sub === "overview" && <TabOverview d={data} />}
+    {sub === "financials" && <TabFinancials d={data} />}
+    {sub === "sec" && <TabSEC d={data} />}
+    {sub === "ownership" && <TabOwnership d={data} />}
+  </div>
+</div>
+```
+
+);
+}

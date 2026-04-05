@@ -5,7 +5,7 @@ import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { consumeStream } from "@/lib/consumeStream";
 import { useTechnicalsCache } from "@/hooks/useTechnicalsCache";
 import { AiThinkingFeed } from "@/components/ai-shared/AiThinkingFeed";
-import { Loader2, Activity, RefreshCw, ChevronUp, ChevronDown } from "lucide-react";
+import { Loader2, Activity, RefreshCw } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import {
   useGetQuote, useGetPriceHistory,
@@ -22,19 +22,22 @@ const C = {
   card: "#111",
   border: "#1c1c1c",
   borderHi: "#2a2a2a",
-  text: "#e5e5e5",
+  text: "#ffffff",
+  textSoft: "#d4d4d4",
   textMuted: "#999",
   textDim: "#555",
+  label: "#808080",
+  dim: "#4a4a4a",
   gold: "#d4a843",
-  green: "#00c853",
-  red: "#ff1744",
+  green: "#00e676",
+  red: "#ff5252",
   cyan: "#4dd0e1",
-  amber: "#ffa726",
+  amber: "#ffb74d",
   purple: "#b388ff",
 };
 
 const f = `'SFMono-Regular', 'SF Mono', ui-monospace, 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace`;
-const tt: React.CSSProperties = { background: "#111", border: `1px solid ${C.borderHi}`, borderRadius: 0, fontFamily: f, fontSize: 11, color: C.text, padding: "6px 10px" };
+const tt: React.CSSProperties = { background: "#111", border: `1px solid ${C.borderHi}`, borderRadius: 0, fontFamily: f, fontSize: 13, color: C.text, padding: "8px 12px" };
 const SUB_LABELS = ["Overview", "Financials", "SEC", "Ownership", "Valuation"] as const;
 const FINANCIALS_TABS = [["income", "Income"], ["balance", "Balance"], ["cashflow", "Cash Flow"]] as const;
 const CF_LEGEND = [["Operating", C.green], ["Investing", C.gold], ["Financing", C.textDim]] as const;
@@ -156,16 +159,16 @@ function genMockData(ticker: string) {
 }
 
 function Sec({ children }: { children: React.ReactNode }) {
-  return <div style={{ fontSize: 12, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 1.5, textTransform: "uppercase", padding: "16px 0 10px" }}>{children}</div>;
+  return <div style={{ fontSize: 14, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 2, textTransform: "uppercase", padding: "20px 0 12px" }}>{children}</div>;
 }
 
 function FundGrid({ items }: { items: { label: string; value: string; color?: string }[] }) {
   return (
-    <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: "14px 16px", display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "14px 0" }}>
+    <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: "16px 18px", display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "18px 0" }}>
       {items.map((it, i) => (
         <div key={i}>
-          <div style={{ fontSize: 10, fontFamily: f, fontWeight: 600, color: C.textDim, letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 3 }}>{it.label}</div>
-          <div style={{ fontSize: 16, fontFamily: f, fontWeight: 700, color: it.color || C.text }}>{it.value}</div>
+          <div style={{ fontSize: 11, fontFamily: f, fontWeight: 600, color: C.label, letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 4 }}>{it.label}</div>
+          <div style={{ fontSize: 20, fontFamily: f, fontWeight: 700, color: it.color || C.text }}>{it.value}</div>
         </div>
       ))}
     </div>
@@ -175,16 +178,16 @@ function FundGrid({ items }: { items: { label: string; value: string; color?: st
 function RangeBar({ lo, hi, current }: { lo: number; hi: number; current: string }) {
   const pct = Math.max(0, Math.min(100, ((parseFloat(current) - lo) / (hi - lo)) * 100));
   return (
-    <div style={{ padding: "10px 0 4px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-        <span style={{ fontSize: 10, fontFamily: f, color: C.textDim, letterSpacing: 1 }}>52W LOW ${lo.toFixed(2)}</span>
-        <span style={{ fontSize: 10, fontFamily: f, color: C.green, letterSpacing: 1 }}>CURRENT ${current}</span>
-        <span style={{ fontSize: 10, fontFamily: f, color: C.textDim, letterSpacing: 1 }}>52W HIGH ${hi.toFixed(2)}</span>
+    <div style={{ padding: "12px 0 6px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+        <span style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1 }}>52W LOW <span style={{ color: C.textSoft }}>${lo.toFixed(2)}</span></span>
+        <span style={{ fontSize: 11, fontFamily: f, color: C.green, fontWeight: 700, letterSpacing: 1 }}>${current}</span>
+        <span style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1 }}>52W HIGH <span style={{ color: C.textSoft }}>${hi.toFixed(2)}</span></span>
       </div>
-      <div style={{ height: 6, borderRadius: 3, background: `linear-gradient(to right, ${C.red}, ${C.gold} 50%, ${C.green})`, position: "relative" }}>
+      <div style={{ height: 8, borderRadius: 4, background: `linear-gradient(to right, ${C.red}, ${C.gold} 50%, ${C.green})`, position: "relative" }}>
         <div style={{
-          position: "absolute", top: -2, left: `${pct}%`, transform: "translateX(-50%)",
-          width: 10, height: 10, borderRadius: 5, background: C.text, border: `2px solid ${C.bg}`,
+          position: "absolute", top: -3, left: `${pct}%`, transform: "translateX(-50%)",
+          width: 14, height: 14, borderRadius: 7, background: C.text, border: `3px solid ${C.bg}`,
         }} />
       </div>
     </div>
@@ -200,9 +203,221 @@ function MetricRow({ label, value, color }: { label: string; value: string; colo
   );
 }
 
-function Tag({ children, color = C.textDim }: { children: React.ReactNode; color?: string }) {
-  return <span style={{ display: "inline-block", padding: "1px 6px", fontSize: 10, fontFamily: f, fontWeight: 600, color, border: `1px solid ${color}44`, letterSpacing: 0.5 }}>{children}</span>;
+function Tag({ children, color = C.label }: { children: React.ReactNode; color?: string }) {
+  return <span style={{ display: "inline-block", padding: "2px 8px", fontSize: 12, fontFamily: f, fontWeight: 700, color, border: `1px solid ${color}55`, letterSpacing: 0.5 }}>{children}</span>;
 }
+
+interface AiAnalysis {
+  priceAction?: { status: string; trend: string; momentum: string; bias: string };
+  support?: { level: string; label: string; note: string }[];
+  resistance?: { level: string; label: string; note: string }[];
+  chartPattern?: { recent: string; range: string; setup: string };
+  volumeAnalysis?: { today: string; todayLabel: string; elevated?: { date: string; vol: string }[]; pattern: string; signal: string };
+  risks?: { type: string; desc: string; severity: string }[];
+  criticalLevels?: { level: string; direction: string }[];
+  outlook?: {
+    shortTerm?: { timeframe: string; points: string[] };
+    mediumTerm?: { timeframe: string; points: string[] };
+    targets?: { upside: string[]; downside: string[] };
+    rangePosition?: { pctFromLow: number; pctFromHigh: number };
+  };
+}
+
+function parseAiAnalysis(text: string): AiAnalysis | null {
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed === "object" && (parsed.priceAction || parsed.support || parsed.outlook)) return parsed;
+  } catch {
+    const match = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (match) {
+      try {
+        return JSON.parse(match[1]);
+      } catch { /* nope */ }
+    }
+    const braceStart = text.indexOf("{");
+    const braceEnd = text.lastIndexOf("}");
+    if (braceStart >= 0 && braceEnd > braceStart) {
+      try {
+        const sub = text.slice(braceStart, braceEnd + 1);
+        const p = JSON.parse(sub);
+        if (p && typeof p === "object") return p;
+      } catch { /* nope */ }
+    }
+  }
+  return null;
+}
+
+const AiAnalysisCards = memo(function AiAnalysisCards({ data }: { data: AiAnalysis }) {
+  const d = data;
+  const biasColor = d.priceAction?.bias?.includes("Bullish") ? C.green : d.priceAction?.bias?.includes("Bearish") ? C.red : C.gold;
+
+  return (
+    <>
+      {d.priceAction && (
+        <>
+          <Sec>PRICE ACTION</Sec>
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: "16px 18px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <div>
+                <div style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1.5, marginBottom: 4 }}>STATUS</div>
+                <div style={{ fontSize: 20, fontFamily: f, fontWeight: 700, color: C.text }}>{d.priceAction.status}</div>
+              </div>
+              <span style={{ padding: "4px 12px", fontSize: 13, fontFamily: f, fontWeight: 700, color: biasColor, border: `1px solid ${biasColor}55`, borderRadius: 2 }}>
+                {d.priceAction.bias?.includes("Bullish") ? "▲" : d.priceAction.bias?.includes("Bearish") ? "▼" : "◆"} {d.priceAction.bias}
+              </span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 18px" }}>
+              <div>
+                <div style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1.5, marginBottom: 4 }}>TREND</div>
+                <div style={{ fontSize: 14, fontFamily: f, color: C.textSoft, lineHeight: 1.4 }}>{d.priceAction.trend}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1.5, marginBottom: 4 }}>MOMENTUM</div>
+                <div style={{ fontSize: 14, fontFamily: f, color: d.priceAction.momentum?.toLowerCase().includes("positive") || d.priceAction.momentum?.toLowerCase().includes("bullish") ? C.green : d.priceAction.momentum?.toLowerCase().includes("negative") || d.priceAction.momentum?.toLowerCase().includes("bearish") ? C.red : C.textSoft, lineHeight: 1.4 }}>{d.priceAction.momentum}</div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {(d.support || d.resistance) && (
+        <>
+          <Sec>SUPPORT / RESISTANCE</Sec>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            {([["▼ SUPPORT", d.support, C.red], ["▲ RESISTANCE", d.resistance, C.green]] as const).map(([title, levels, color], idx) => (
+              <div key={idx} style={{ background: C.card, border: `1px solid ${C.border}`, padding: "14px" }}>
+                <div style={{ fontSize: 12, fontFamily: f, fontWeight: 700, color, letterSpacing: 1.5, marginBottom: 10 }}>{title}</div>
+                {(levels || []).map((s, i) => (
+                  <div key={i} style={{ padding: "7px 0", borderBottom: i < (levels?.length ?? 0) - 1 ? `1px solid ${C.border}` : "none" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: 12, fontFamily: f, color: C.label, textTransform: "uppercase", letterSpacing: 1 }}>{s.label}</span>
+                      <span style={{ fontSize: 16, fontFamily: f, fontWeight: 700, color }}>{s.level}</span>
+                    </div>
+                    <div style={{ fontSize: 11, fontFamily: f, color: C.dim, marginTop: 2 }}>{s.note}</div>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {d.chartPattern && (
+        <>
+          <Sec>CHART PATTERNS</Sec>
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: "16px 18px" }}>
+            {([["Recent Pattern", d.chartPattern.recent], ["Trading Range", d.chartPattern.range], ["Current Setup", d.chartPattern.setup]] as const).map(([l, v], i) => (
+              <div key={i} style={{ borderBottom: i < 2 ? `1px solid ${C.border}` : "none", paddingBottom: i < 2 ? 12 : 0, marginBottom: i < 2 ? 12 : 0 }}>
+                <div style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1.5, marginBottom: 4 }}>{String(l).toUpperCase()}</div>
+                <div style={{ fontSize: 15, fontFamily: f, color: C.textSoft, lineHeight: 1.4 }}>{v}</div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {d.volumeAnalysis && (
+        <>
+          <Sec>VOLUME ANALYSIS</Sec>
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: "16px 18px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, paddingBottom: 12, borderBottom: `1px solid ${C.border}` }}>
+              <div>
+                <div style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1.5 }}>TODAY</div>
+                <div style={{ fontSize: 22, fontFamily: f, fontWeight: 700, color: C.text, marginTop: 4 }}>{d.volumeAnalysis.today}</div>
+              </div>
+              <Tag color={d.volumeAnalysis.todayLabel === "elevated" || d.volumeAnalysis.todayLabel === "heavy" ? C.amber : C.label}>{d.volumeAnalysis.todayLabel?.toUpperCase()}</Tag>
+            </div>
+            {d.volumeAnalysis.elevated && d.volumeAnalysis.elevated.length > 0 && (
+              <>
+                <div style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1.5, marginBottom: 8 }}>ELEVATED EVENTS</div>
+                <div style={{ display: "flex", gap: 20, marginBottom: 14, paddingBottom: 14, borderBottom: `1px solid ${C.border}` }}>
+                  {d.volumeAnalysis.elevated.map((e, i) => (
+                    <div key={i}>
+                      <div style={{ fontSize: 12, fontFamily: f, color: C.label }}>{e.date}</div>
+                      <div style={{ fontSize: 16, fontFamily: f, fontWeight: 700, color: C.amber, marginTop: 2 }}>{e.vol}</div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+            {([["Pattern", d.volumeAnalysis.pattern], ["Signal", d.volumeAnalysis.signal]] as const).map(([l, v], i) => (
+              <div key={i} style={{ marginBottom: i === 0 ? 8 : 0 }}>
+                <span style={{ fontSize: 14, fontFamily: f, fontWeight: 700, color: C.text }}>{l}: </span>
+                <span style={{ fontSize: 14, fontFamily: f, color: C.textSoft }}>{v}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {d.risks && d.risks.length > 0 && (
+        <>
+          <Sec>RISK ASSESSMENT</Sec>
+          {d.risks.map((r, i) => (
+            <div key={i} style={{ padding: "10px 0", borderBottom: `1px solid ${C.border}`, display: "flex", gap: 12, alignItems: "flex-start" }}>
+              <div style={{ width: 4, minHeight: 20, marginTop: 2, background: r.severity === "high" ? C.red : C.amber, flexShrink: 0, borderRadius: 2 }} />
+              <div>
+                <span style={{ fontSize: 15, fontFamily: f, fontWeight: 700, color: C.text }}>{r.type}: </span>
+                <span style={{ fontSize: 15, fontFamily: f, color: C.textSoft }}>{r.desc}</span>
+              </div>
+            </div>
+          ))}
+          {d.criticalLevels && d.criticalLevels.length > 0 && (
+            <div style={{ marginTop: 10, padding: "10px 0" }}>
+              <div style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1.5, marginBottom: 8 }}>CRITICAL LEVELS</div>
+              {d.criticalLevels.map((cl, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0" }}>
+                  <span style={{ fontSize: 18, fontFamily: f, fontWeight: 700, color: cl.direction?.toLowerCase().includes("bearish") || cl.direction?.toLowerCase().includes("support") ? C.red : C.green }}>{cl.level}</span>
+                  <span style={{ fontSize: 13, fontFamily: f, color: C.label }}>{cl.direction}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {d.outlook && (
+        <>
+          <Sec>TRADING OUTLOOK</Sec>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            {([["SHORT", d.outlook.shortTerm, C.cyan], ["MEDIUM", d.outlook.mediumTerm, C.purple]] as const).map(([title, data, color], idx) => (
+              data ? (
+                <div key={idx} style={{ background: C.card, border: `1px solid ${C.border}`, padding: "14px" }}>
+                  <div style={{ fontSize: 12, fontFamily: f, fontWeight: 700, color, letterSpacing: 1.5, marginBottom: 4 }}>{title}</div>
+                  <div style={{ fontSize: 11, fontFamily: f, color: C.label, marginBottom: 8 }}>{data.timeframe}</div>
+                  {data.points?.map((p, i) => (
+                    <div key={i} style={{ fontSize: 14, fontFamily: f, color: C.textSoft, padding: "4px 0 4px 10px", borderLeft: `3px solid ${C.border}`, marginBottom: 6, lineHeight: 1.4 }}>{p}</div>
+                  ))}
+                </div>
+              ) : null
+            ))}
+          </div>
+
+          {d.outlook.targets && (
+            <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: "16px 18px", marginTop: 12 }}>
+              <div style={{ fontSize: 12, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 1.5, marginBottom: 12 }}>PRICE TARGETS</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                {([["▲ UPSIDE", d.outlook.targets.upside, C.green], ["▼ DOWNSIDE", d.outlook.targets.downside, C.red]] as const).map(([title, targets, color], idx) => (
+                  <div key={idx}>
+                    <div style={{ fontSize: 12, fontFamily: f, color, fontWeight: 700, letterSpacing: 1, marginBottom: 6 }}>{title}</div>
+                    {(targets || []).map((t, i) => (
+                      <div key={i} style={{ fontSize: 17, fontFamily: f, fontWeight: 700, color: C.text, padding: "3px 0" }}>{t}</div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+              {d.outlook.rangePosition && (
+                <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.border}`, fontSize: 13, fontFamily: f, color: C.label }}>
+                  52W: <span style={{ color: C.textSoft, fontWeight: 600 }}>{d.outlook.rangePosition.pctFromLow}%</span> from low, <span style={{ color: C.textSoft, fontWeight: 600 }}>{d.outlook.rangePosition.pctFromHigh}%</span> from high
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </>
+  );
+});
 
 interface QuoteInfo {
   symbol?: string;
@@ -322,19 +537,22 @@ const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, volH
         </ResponsiveContainer>
       </div>
 
-      <Sec>MARGIN PROFILE</Sec>
-      <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: "10px 14px" }}>
-        {mock.margins.map((m, i) => (
-          <div key={i} style={{ padding: "7px 0", borderBottom: i < mock.margins.length - 1 ? `1px solid ${C.border}` : "none" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-              <span style={{ fontSize: 11, fontFamily: f, color: C.textMuted }}>{m.k}</span>
-              <span style={{ fontSize: 11, fontFamily: f, color: m.v > 20 ? C.green : m.v > 10 ? C.gold : C.red, fontWeight: 600 }}>{m.v}%</span>
+      <Sec>MARGINS</Sec>
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: "12px 16px" }}>
+        {mock.margins.map((m, i) => {
+          const mc = m.v > 20 ? C.green : m.v > 10 ? C.gold : C.red;
+          return (
+            <div key={i} style={{ padding: "10px 0", borderBottom: i < mock.margins.length - 1 ? `1px solid ${C.border}` : "none" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                <span style={{ fontSize: 14, fontFamily: f, color: C.textSoft }}>{m.k}</span>
+                <span style={{ fontSize: 16, fontFamily: f, color: mc, fontWeight: 700 }}>{m.v}%</span>
+              </div>
+              <div style={{ height: 4, background: C.border, borderRadius: 2 }}>
+                <div style={{ height: 4, borderRadius: 2, width: `${Math.min(m.v, 100)}%`, background: mc, transition: "width 0.5s" }} />
+              </div>
             </div>
-            <div style={{ height: 4, background: C.border, borderRadius: 2 }}>
-              <div style={{ height: 4, borderRadius: 2, width: `${Math.min(m.v, 100)}%`, background: m.v > 20 ? C.green : m.v > 10 ? C.gold : C.red, transition: "width 0.5s" }} />
-            </div>
-          </div>
-      ))}
+          );
+        })}
       </div>
     </>
   );
@@ -736,7 +954,6 @@ export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
   const [taStreamingText, setTaStreamingText] = useState("");
   const [taThinkingTokens, setTaThinkingTokens] = useState<string[]>([]);
   const [taShowResult, setTaShowResult] = useState(false);
-  const [taCollapsed, setTaCollapsed] = useState(false);
   const taRunRef = useRef(0);
   const cacheRestoredRef = useRef(false);
 
@@ -754,7 +971,6 @@ export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
     setTaShowResult(false);
     setTaStreamingText("");
     setTaThinkingTokens([]);
-    setTaCollapsed(false);
     setPage(0);
   }, [symbol]);
 
@@ -958,87 +1174,82 @@ export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
           >
             <div style={{ width: "100%", flexShrink: 0, padding: "0 16px 40px" }}>
               <div style={{ paddingTop: 12, paddingBottom: 4 }}>
-                {taShowResult && !taStreaming && analysisResult ? (
-                  <div style={{ background: C.card, border: `1px solid ${C.gold}20`, marginBottom: 8 }}>
-                    <div style={{
-                      display: "flex", alignItems: "center", justifyContent: "space-between",
-                      padding: "12px 14px", borderBottom: taCollapsed ? "none" : `1px solid ${C.border}`,
-                    }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <Activity style={{ width: 14, height: 14, color: C.gold }} />
-                        <span style={{ fontSize: 12, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 1 }}>AI ANALYSIS</span>
-                      </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleRunTA(); }}
-                          disabled={taStreaming || !quote || !history?.candles}
-                          style={{
-                            fontSize: 10, fontFamily: f, fontWeight: 600, color: C.textMuted,
-                            background: "transparent", border: "none",
-                            padding: 0, cursor: "pointer", letterSpacing: 0.5,
-                            display: "flex", alignItems: "center", gap: 5,
-                          }}
-                        >
-                          <RefreshCw style={{ width: 13, height: 13 }} />
-                          REFRESH
-                        </button>
-                        <button
-                          onClick={() => setTaCollapsed(c => !c)}
-                          style={{
-                            background: "transparent", border: "none",
-                            padding: 0, cursor: "pointer",
-                            display: "flex", alignItems: "center",
-                            color: C.textMuted,
-                          }}
-                        >
-                          {taCollapsed
-                            ? <ChevronDown style={{ width: 20, height: 20 }} />
-                            : <ChevronUp style={{ width: 20, height: 20 }} />
-                          }
-                        </button>
-                      </div>
-                    </div>
-                    {!taCollapsed && (
-                      <div style={{ padding: 16 }}>
-                        {taThinkingTokens.length > 0 && (
-                          <div style={{ marginBottom: 12 }}>
-                            <AiThinkingFeed texts={taThinkingTokens} isStreaming={false} />
-                          </div>
-                        )}
-                        <MarkdownResult content={analysisResult} />
-                      </div>
-                    )}
-                  </div>
-                ) : taShowResult && taStreaming ? (
-                  <div style={{ background: C.card, border: `1px solid ${C.gold}25`, padding: 16, marginBottom: 8 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-                      <Loader2 style={{ width: 14, height: 14, color: C.gold }} className="animate-spin" />
-                      <span style={{ fontSize: 11, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 1 }}>ANALYZING...</span>
-                    </div>
-                    <AiThinkingFeed texts={taThinkingTokens} isStreaming={true} />
-                    {taStreamingText && (
-                      <div style={{ marginTop: 12 }}>
-                        <MarkdownResult content={taStreamingText} />
-                      </div>
-                    )}
-                  </div>
-                ) : (
+                {!taShowResult ? (
                   <button
-                    onClick={() => { setTaCollapsed(false); handleRunTA(); }}
+                    onClick={() => handleRunTA()}
                     disabled={taStreaming || !accessToken || !quote || !history?.candles}
                     style={{
                       width: "100%", padding: "10px 0", fontSize: 11, fontFamily: f, fontWeight: 700,
-                      color: taStreaming ? C.textDim : "#000",
-                      background: taStreaming ? "transparent" : C.gold,
-                      border: `1px solid ${taStreaming ? C.borderHi : C.gold}`,
-                      cursor: taStreaming ? "default" : "pointer",
+                      color: "#000",
+                      background: C.gold,
+                      border: `1px solid ${C.gold}`,
+                      cursor: "pointer",
                       letterSpacing: 1.5, display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
                     }}
                   >
                     <Activity style={{ width: 14, height: 14 }} />
                     RUN AI ANALYSIS
                   </button>
-                )}
+                ) : taStreaming ? (
+                  <div style={{ background: C.card, border: `1px solid ${C.gold}25`, padding: 16, marginBottom: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                      <Loader2 style={{ width: 14, height: 14, color: C.gold }} className="animate-spin" />
+                      <span style={{ fontSize: 11, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 1 }}>ANALYZING...</span>
+                    </div>
+                    <AiThinkingFeed texts={taThinkingTokens} isStreaming={true} />
+                  </div>
+                ) : analysisResult ? (
+                  (() => {
+                    const parsed = parseAiAnalysis(analysisResult);
+                    return parsed ? (
+                      <>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <Activity style={{ width: 14, height: 14, color: C.gold }} />
+                            <span style={{ fontSize: 12, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 1 }}>AI ANALYSIS</span>
+                          </div>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleRunTA(); }}
+                            disabled={taStreaming || !quote || !history?.candles}
+                            style={{
+                              fontSize: 10, fontFamily: f, fontWeight: 600, color: C.textMuted,
+                              background: "transparent", border: "none",
+                              padding: 0, cursor: "pointer", letterSpacing: 0.5,
+                              display: "flex", alignItems: "center", gap: 5,
+                            }}
+                          >
+                            <RefreshCw style={{ width: 13, height: 13 }} />
+                            REFRESH
+                          </button>
+                        </div>
+                        <AiAnalysisCards data={parsed} />
+                      </>
+                    ) : (
+                      <div style={{ background: C.card, border: `1px solid ${C.gold}20`, padding: 16, marginBottom: 8 }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <Activity style={{ width: 14, height: 14, color: C.gold }} />
+                            <span style={{ fontSize: 12, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 1 }}>AI ANALYSIS</span>
+                          </div>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleRunTA(); }}
+                            disabled={taStreaming || !quote || !history?.candles}
+                            style={{
+                              fontSize: 10, fontFamily: f, fontWeight: 600, color: C.textMuted,
+                              background: "transparent", border: "none",
+                              padding: 0, cursor: "pointer", letterSpacing: 0.5,
+                              display: "flex", alignItems: "center", gap: 5,
+                            }}
+                          >
+                            <RefreshCw style={{ width: 13, height: 13 }} />
+                            REFRESH
+                          </button>
+                        </div>
+                        <MarkdownResult content={analysisResult} />
+                      </div>
+                    );
+                  })()
+                ) : null}
               </div>
 
               <SubOverview fund={fundamentals} quoteData={quoteData} priceHist={priceHist} volHist={volHist} />

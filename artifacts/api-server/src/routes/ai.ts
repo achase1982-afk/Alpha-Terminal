@@ -347,15 +347,55 @@ ${formatCandles((candles ?? []) as Array<Record<string, unknown>>)}
 
 ${customPrompt ? `ADDITIONAL CONTEXT: ${customPrompt}` : ""}
 
-Analyze ONLY the above data and provide:
-1. **Price Action Summary** - Key levels, trend direction, momentum
-2. **Technical Indicators** - Analysis based on the price data (moving averages, support/resistance)
-3. **Chart Patterns** - Any notable patterns detected
-4. **Volume Analysis** - Volume trends and what they signal
-5. **Risk Assessment** - Key risks and levels to watch
-6. **Trading Outlook** - Short/medium term outlook with specific price targets
+Analyze ONLY the above data. Return ONLY valid JSON (no markdown, no code fences, no explanation outside the JSON). Use this exact structure:
+{
+  "priceAction": {
+    "status": "<current price with today's % change, e.g. $185.42 (+1.2% today)>",
+    "trend": "<one sentence describing the current trend>",
+    "momentum": "<one sentence on momentum>",
+    "bias": "<one of: Lean Bullish, Neutral-Bullish, Neutral, Neutral-Bearish, Lean Bearish>"
+  },
+  "support": [
+    { "level": "$XX.XX", "label": "Immediate", "note": "<brief note like today's low>" },
+    { "level": "$XX.XX", "label": "Strong", "note": "<brief note>" },
+    { "level": "$XX.XX", "label": "Critical", "note": "<brief note>" }
+  ],
+  "resistance": [
+    { "level": "$XX.XX", "label": "Immediate", "note": "<brief note like today's high>" },
+    { "level": "$XX.XX-$XX.XX", "label": "Next", "note": "<brief note>" },
+    { "level": "$XX.XX-$XX.XX", "label": "Major", "note": "<brief note>" }
+  ],
+  "chartPattern": {
+    "recent": "<describe recent pattern>",
+    "range": "$XX.XX - $XX.XX",
+    "setup": "<current setup description>"
+  },
+  "volumeAnalysis": {
+    "today": "<today's volume e.g. 45.2M>",
+    "todayLabel": "<one of: low, moderate, elevated, heavy>",
+    "elevated": [
+      { "date": "<recent date>", "vol": "<volume>" }
+    ],
+    "pattern": "<volume pattern description>",
+    "signal": "<what volume is telling us>"
+  },
+  "risks": [
+    { "type": "Downside", "desc": "<specific risk>", "severity": "high" },
+    { "type": "Upside", "desc": "<specific risk>", "severity": "medium" },
+    { "type": "Volatility", "desc": "<specific risk>", "severity": "medium" }
+  ],
+  "criticalLevels": [
+    { "level": "$XX.XX", "direction": "<what happens at this level>" }
+  ],
+  "outlook": {
+    "shortTerm": { "timeframe": "1-5 days", "points": ["<key point>", "<key point>"] },
+    "mediumTerm": { "timeframe": "1-4 weeks", "points": ["<key point>", "<key point>"] },
+    "targets": { "upside": ["$XX.XX", "$XX.XX"], "downside": ["$XX.XX", "$XX.XX"] },
+    "rangePosition": { "pctFromLow": <number 0-100>, "pctFromHigh": <number 0-100> }
+  }
+}
 
-Be specific, data-driven, and concise. Use markdown formatting.`;
+Every price level MUST come from the provided data. Be specific and data-driven.`;
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
