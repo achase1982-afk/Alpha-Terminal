@@ -94,6 +94,12 @@ function genMockData(ticker: string) {
     return min + x * (max - min);
   };
   const price = +rng(50, 500).toFixed(2);
+  const dayLo = +(price * 0.97).toFixed(2);
+  const dayHi = +(price * 1.02).toFixed(2);
+  const lo52 = +(price * 0.55).toFixed(2);
+  const hi52 = +(price * 1.45).toFixed(2);
+  const chgVal = +(price * (rng(-0.02, 0.06))).toFixed(2);
+  const chgPct = +((chgVal / (price - chgVal)) * 100).toFixed(2);
 
   const rev = [
     { yr: "FY21", val: +rng(20, 100).toFixed(1) },
@@ -104,11 +110,16 @@ function genMockData(ticker: string) {
   ];
   const epsData = rev.map(d => ({ yr: d.yr, val: +(d.val / rng(10, 25)).toFixed(2) }));
   const margins = [
-    { k: "Gross Margin", v: +rng(30, 75).toFixed(1) },
-    { k: "Op Margin", v: +rng(10, 40).toFixed(1) },
-    { k: "Net Margin", v: +rng(5, 25).toFixed(1) },
-    { k: "FCF Margin", v: +rng(8, 30).toFixed(1) },
+    { k: "Gross", v: +rng(30, 75).toFixed(1) },
+    { k: "Operating", v: +rng(10, 40).toFixed(1) },
+    { k: "Net", v: +rng(5, 25).toFixed(1) },
+    { k: "FCF", v: +rng(8, 30).toFixed(1) },
   ];
+  const priceHist = Array.from({ length: 30 }, (_, i) => ({
+    d: i + 1,
+    p: +(price * (0.9 + rng(0, 0.15) + (i / 30) * 0.05)).toFixed(2),
+    v: Math.floor(15e6 + rng(0, 1) * 60e6),
+  }));
   const bs = {
     assets: +rng(50, 500).toFixed(1), liab: +rng(20, 250).toFixed(1),
     equity: +rng(30, 250).toFixed(1), cash: +rng(5, 80).toFixed(1),
@@ -152,8 +163,57 @@ function genMockData(ticker: string) {
   ];
   const cik = `000${Math.floor(rng(1000000, 9999999))}`;
   const mktCapStr = `$${(price * rng(0.5, 5)).toFixed(1)}B`;
-  return { rev, epsData, margins, bs, cf, filings, holders, insiders, cik, mktCapStr, price,
-    pe: rng(15, 60).toFixed(1), fwdPe: rng(12, 45).toFixed(1),
+  const mockAnalysis: AiAnalysis = {
+    priceAction: {
+      status: `$${price.toFixed(2)} (${chgPct > 0 ? "+" : ""}${chgPct}% today)`,
+      trend: chgPct > 1 ? "Short-term recovery from recent lows" : chgPct < -1 ? "Pullback from recent highs" : "Consolidation near key level",
+      momentum: chgPct > 0 ? "Positive intraday momentum" : "Negative intraday pressure",
+      bias: chgPct > 2 ? "Lean Bullish" : chgPct > 0 ? "Neutral-Bullish" : chgPct > -2 ? "Neutral" : "Lean Bearish",
+    },
+    support: [
+      { level: `$${dayLo.toFixed(2)}`, label: "Immediate", note: "today's low" },
+      { level: `$${(dayLo * 0.97).toFixed(2)}`, label: "Strong", note: "swing low" },
+      { level: `$${(dayLo * 0.94).toFixed(2)}`, label: "Critical", note: "breakdown" },
+    ],
+    resistance: [
+      { level: `$${dayHi.toFixed(2)}`, label: "Immediate", note: "today's high" },
+      { level: `$${(dayHi * 1.03).toFixed(2)}-$${(dayHi * 1.05).toFixed(2)}`, label: "Next", note: "zone" },
+      { level: `$${(dayHi * 1.08).toFixed(2)}-$${(dayHi * 1.12).toFixed(2)}`, label: "Major", note: "breakout" },
+    ],
+    chartPattern: {
+      recent: chgPct > 0 ? "Recovery bounce from recent lows" : "Pullback testing support",
+      range: `$${(dayLo * 0.94).toFixed(2)} - $${(dayHi * 1.05).toFixed(2)}`,
+      setup: chgPct > 0 ? "Testing resistance after bounce" : "Approaching support after rejection",
+    },
+    volumeAnalysis: {
+      today: `${rng(5, 150).toFixed(1)}M`,
+      todayLabel: rng(0, 1) > 0.5 ? "moderate" : "elevated",
+      elevated: [
+        { date: "Mar 19", vol: `${rng(50, 100).toFixed(1)}M` },
+        { date: "Mar 10", vol: `${rng(40, 80).toFixed(1)}M` },
+        { date: "Mar 20", vol: `${rng(40, 70).toFixed(1)}M` },
+      ],
+      pattern: "Lower volume during recovery vs major moves",
+      signal: chgPct > 0 ? "Bounce lacks strong volume conviction" : "Selling with above-avg volume",
+    },
+    risks: [
+      { type: "Downside", desc: `Break below $${dayLo.toFixed(2)} targets $${(dayLo * 0.94).toFixed(2)}`, severity: "high" },
+      { type: "Upside", desc: `Rejection at $${dayHi.toFixed(2)}-$${(dayHi * 1.05).toFixed(2)}`, severity: "medium" },
+      { type: "Volatility", desc: "Daily ranges 3-5%", severity: "medium" },
+    ],
+    criticalLevels: [
+      { level: `$${dayLo.toFixed(2)}`, direction: "support fail = bearish" },
+      { level: `$${(dayHi * 1.05).toFixed(2)}`, direction: "break = bullish" },
+    ],
+    outlook: {
+      shortTerm: { timeframe: "1-5 days", points: [`Test $${dayHi.toFixed(2)}-$${(dayHi * 1.05).toFixed(2)} resistance`, `Fail = retest $${dayLo.toFixed(2)}-$${(dayLo * 0.97).toFixed(2)}`] },
+      mediumTerm: { timeframe: "1-4 weeks", points: [`Range: $${(dayLo * 0.94).toFixed(2)}-$${(dayHi * 1.12).toFixed(2)}`, `Above $${(dayHi * 1.12).toFixed(2)} = bullish`, `Below $${(dayLo * 0.94).toFixed(2)} = downside`] },
+      targets: { upside: [`$${(dayHi * 1.05).toFixed(2)}`, `$${(dayHi * 1.08).toFixed(2)}-$${(dayHi * 1.12).toFixed(2)}`], downside: [`$${(dayLo * 0.97).toFixed(2)}`, `$${(dayLo * 0.94).toFixed(2)}`] },
+      rangePosition: { pctFromLow: Math.floor(((price - lo52) / (hi52 - lo52)) * 100), pctFromHigh: Math.floor(((hi52 - price) / (hi52 - lo52)) * 100) },
+    },
+  };
+  return { rev, epsData, margins, bs, cf, filings, holders, insiders, cik, mktCapStr, price, priceHist,
+    pe: rng(15, 60).toFixed(1), fwdPe: rng(12, 45).toFixed(1), mockAnalysis,
   };
 }
 
@@ -256,11 +316,10 @@ interface QuoteInfo {
   netChange?: number;
 }
 
-const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, volHist, ai }: {
+const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, ai }: {
   fund: FundamentalData | null;
   quoteData: QuoteInfo | null;
-  priceHist: { w: string; p: number }[];
-  volHist: { d: string; v: number }[];
+  priceHist: { d: number; p: number; v: number }[];
   ai: AiAnalysis | null;
 }) {
   const currentPrice = quoteData?.last;
@@ -274,7 +333,10 @@ const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, volH
   const divYield = fund?.dividendYield ?? null;
   const chg = quoteData?.netChange ?? 0;
 
-  const biasColor = ai?.priceAction?.bias?.includes("Bullish") ? C.green : ai?.priceAction?.bias?.includes("Bearish") ? C.red : C.gold;
+  const d = ai ?? mock.mockAnalysis;
+  const chartData = priceHist.length > 0 ? priceHist : mock.priceHist;
+
+  const biasColor = d.priceAction?.bias?.includes("Bullish") ? C.green : d.priceAction?.bias?.includes("Bearish") ? C.red : C.gold;
 
   return (
     <>
@@ -291,187 +353,155 @@ const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, volH
         <RangeBar lo={low52} hi={high52} current={currentPrice.toFixed(2)} />
       )}
 
-      {ai?.priceAction && (
-        <>
-          <Sec>PRICE ACTION</Sec>
-          <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: "16px 18px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-              <div>
-                <div style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1.5, marginBottom: 4 }}>STATUS</div>
-                <div style={{ fontSize: 20, fontFamily: f, fontWeight: 700, color: C.text }}>{ai.priceAction.status}</div>
-              </div>
-              <span style={{ padding: "4px 12px", fontSize: 13, fontFamily: f, fontWeight: 700, color: biasColor, border: `1px solid ${biasColor}55`, borderRadius: 2 }}>
-                {ai.priceAction.bias?.includes("Bullish") ? "▲" : ai.priceAction.bias?.includes("Bearish") ? "▼" : "◆"} {ai.priceAction.bias}
-              </span>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 18px" }}>
-              <div>
-                <div style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1.5, marginBottom: 4 }}>TREND</div>
-                <div style={{ fontSize: 14, fontFamily: f, color: C.textSoft, lineHeight: 1.4 }}>{ai.priceAction.trend}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1.5, marginBottom: 4 }}>MOMENTUM</div>
-                <div style={{ fontSize: 14, fontFamily: f, color: chg >= 0 ? C.green : C.red, lineHeight: 1.4 }}>{ai.priceAction.momentum}</div>
-              </div>
-            </div>
+      <Sec>PRICE ACTION</Sec>
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: "16px 18px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+          <div>
+            <div style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1.5, marginBottom: 4 }}>STATUS</div>
+            <div style={{ fontSize: 20, fontFamily: f, fontWeight: 700, color: C.text }}>{d.priceAction?.status}</div>
           </div>
-        </>
-      )}
+          <span style={{ padding: "4px 12px", fontSize: 13, fontFamily: f, fontWeight: 700, color: biasColor, border: `1px solid ${biasColor}55`, borderRadius: 2 }}>
+            {d.priceAction?.bias?.includes("Bullish") ? "▲" : d.priceAction?.bias?.includes("Bearish") ? "▼" : "◆"} {d.priceAction?.bias}
+          </span>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 18px" }}>
+          <div>
+            <div style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1.5, marginBottom: 4 }}>TREND</div>
+            <div style={{ fontSize: 14, fontFamily: f, color: C.textSoft, lineHeight: 1.4 }}>{d.priceAction?.trend}</div>
+          </div>
+          <div>
+            <div style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1.5, marginBottom: 4 }}>MOMENTUM</div>
+            <div style={{ fontSize: 14, fontFamily: f, color: chg >= 0 ? C.green : C.red, lineHeight: 1.4 }}>{d.priceAction?.momentum}</div>
+          </div>
+        </div>
+      </div>
 
-      {(ai?.support || ai?.resistance) && (
-        <>
-          <Sec>SUPPORT / RESISTANCE</Sec>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            {([["▼ SUPPORT", ai?.support, C.red], ["▲ RESISTANCE", ai?.resistance, C.green]] as [string, typeof ai.support, string][]).map(([title, levels, color], idx) => (
-              <div key={idx} style={{ background: C.card, border: `1px solid ${C.border}`, padding: "14px" }}>
-                <div style={{ fontSize: 12, fontFamily: f, fontWeight: 700, color, letterSpacing: 1.5, marginBottom: 10 }}>{title}</div>
-                {(levels || []).map((s, i) => (
-                  <div key={i} style={{ padding: "7px 0", borderBottom: i < (levels?.length ?? 0) - 1 ? `1px solid ${C.border}` : "none" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span style={{ fontSize: 12, fontFamily: f, color: C.label, textTransform: "uppercase", letterSpacing: 1 }}>{s.label}</span>
-                      <span style={{ fontSize: 16, fontFamily: f, fontWeight: 700, color }}>{s.level}</span>
-                    </div>
-                    <div style={{ fontSize: 11, fontFamily: f, color: C.dim, marginTop: 2 }}>{s.note}</div>
-                  </div>
-                ))}
+      <Sec>SUPPORT / RESISTANCE</Sec>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        {([["▼ SUPPORT", d.support, C.red], ["▲ RESISTANCE", d.resistance, C.green]] as [string, { level: string; label: string; note: string }[] | undefined, string][]).map(([title, levels, color], idx) => (
+          <div key={idx} style={{ background: C.card, border: `1px solid ${C.border}`, padding: "14px" }}>
+            <div style={{ fontSize: 12, fontFamily: f, fontWeight: 700, color, letterSpacing: 1.5, marginBottom: 10 }}>{title}</div>
+            {(levels || []).map((s, i) => (
+              <div key={i} style={{ padding: "7px 0", borderBottom: i < (levels?.length ?? 0) - 1 ? `1px solid ${C.border}` : "none" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontSize: 12, fontFamily: f, color: C.label, textTransform: "uppercase", letterSpacing: 1 }}>{s.label}</span>
+                  <span style={{ fontSize: 16, fontFamily: f, fontWeight: 700, color }}>{s.level}</span>
+                </div>
+                <div style={{ fontSize: 11, fontFamily: f, color: C.dim, marginTop: 2 }}>{s.note}</div>
               </div>
             ))}
           </div>
-        </>
-      )}
+        ))}
+      </div>
 
       <Sec>30-DAY PRICE</Sec>
       <ResponsiveContainer width="100%" height={160}>
-        <AreaChart data={priceHist}>
+        <AreaChart data={chartData}>
           <defs><linearGradient id="pg" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.gold} stopOpacity={0.15} /><stop offset="95%" stopColor={C.gold} stopOpacity={0} /></linearGradient></defs>
           <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
-          <XAxis dataKey="w" tick={{ fill: C.label, fontSize: 10, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
+          <XAxis dataKey="d" tick={{ fill: C.label, fontSize: 10, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
           <YAxis tick={{ fill: C.label, fontSize: 10, fontFamily: f }} domain={["auto", "auto"]} axisLine={{ stroke: C.border }} tickLine={false} />
           <Tooltip contentStyle={tt} />
           <Area type="monotone" dataKey="p" stroke={C.gold} fill="url(#pg)" strokeWidth={2} dot={false} name="Price" />
         </AreaChart>
       </ResponsiveContainer>
       <ResponsiveContainer width="100%" height={50}>
-        <BarChart data={volHist}>
+        <BarChart data={chartData}>
           <XAxis dataKey="d" tick={false} axisLine={{ stroke: C.border }} />
           <YAxis tick={false} axisLine={false} />
           <Bar dataKey="v" fill={C.dim} radius={[1, 1, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
 
-      {ai?.chartPattern && (
-        <>
-          <Sec>CHART PATTERNS</Sec>
-          <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: "16px 18px" }}>
-            {([["Recent Pattern", ai.chartPattern.recent], ["Trading Range", ai.chartPattern.range], ["Current Setup", ai.chartPattern.setup]] as [string, string][]).map(([l, v], i) => (
-              <div key={i} style={{ borderBottom: i < 2 ? `1px solid ${C.border}` : "none", paddingBottom: i < 2 ? 12 : 0, marginBottom: i < 2 ? 12 : 0 }}>
-                <div style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1.5, marginBottom: 4 }}>{l.toUpperCase()}</div>
-                <div style={{ fontSize: 15, fontFamily: f, color: C.textSoft, lineHeight: 1.4 }}>{v}</div>
-              </div>
-            ))}
+      <Sec>CHART PATTERNS</Sec>
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: "16px 18px" }}>
+        {([["Recent Pattern", d.chartPattern?.recent], ["Trading Range", d.chartPattern?.range], ["Current Setup", d.chartPattern?.setup]] as [string, string | undefined][]).map(([l, v], i) => (
+          <div key={i} style={{ borderBottom: i < 2 ? `1px solid ${C.border}` : "none", paddingBottom: i < 2 ? 12 : 0, marginBottom: i < 2 ? 12 : 0 }}>
+            <div style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1.5, marginBottom: 4 }}>{l.toUpperCase()}</div>
+            <div style={{ fontSize: 15, fontFamily: f, color: C.textSoft, lineHeight: 1.4 }}>{v}</div>
           </div>
-        </>
-      )}
+        ))}
+      </div>
 
-      {ai?.volumeAnalysis && (
-        <>
-          <Sec>VOLUME ANALYSIS</Sec>
-          <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: "16px 18px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, paddingBottom: 12, borderBottom: `1px solid ${C.border}` }}>
-              <div>
-                <div style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1.5 }}>TODAY</div>
-                <div style={{ fontSize: 22, fontFamily: f, fontWeight: 700, color: C.text, marginTop: 4 }}>{ai.volumeAnalysis.today}</div>
-              </div>
-              <Tag color={ai.volumeAnalysis.todayLabel === "elevated" ? C.amber : C.label}>{ai.volumeAnalysis.todayLabel?.toUpperCase()}</Tag>
-            </div>
-            {ai.volumeAnalysis.elevated && ai.volumeAnalysis.elevated.length > 0 && (
-              <>
-                <div style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1.5, marginBottom: 8 }}>ELEVATED EVENTS</div>
-                <div style={{ display: "flex", gap: 20, marginBottom: 14, paddingBottom: 14, borderBottom: `1px solid ${C.border}` }}>
-                  {ai.volumeAnalysis.elevated.map((e, i) => (
-                    <div key={i}>
-                      <div style={{ fontSize: 12, fontFamily: f, color: C.label }}>{e.date}</div>
-                      <div style={{ fontSize: 16, fontFamily: f, fontWeight: 700, color: C.amber, marginTop: 2 }}>{e.vol}</div>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-            {([["Pattern", ai.volumeAnalysis.pattern], ["Signal", ai.volumeAnalysis.signal]] as [string, string][]).map(([l, v], i) => (
-              <div key={i} style={{ marginBottom: i === 0 ? 8 : 0 }}>
-                <span style={{ fontSize: 14, fontFamily: f, fontWeight: 700, color: C.text }}>{l}: </span>
-                <span style={{ fontSize: 14, fontFamily: f, color: C.textSoft }}>{v}</span>
-              </div>
-            ))}
+      <Sec>VOLUME ANALYSIS</Sec>
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: "16px 18px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, paddingBottom: 12, borderBottom: `1px solid ${C.border}` }}>
+          <div>
+            <div style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1.5 }}>TODAY</div>
+            <div style={{ fontSize: 22, fontFamily: f, fontWeight: 700, color: C.text, marginTop: 4 }}>{d.volumeAnalysis?.today}</div>
           </div>
-        </>
-      )}
-
-      {ai?.risks && ai.risks.length > 0 && (
-        <>
-          <Sec>RISK ASSESSMENT</Sec>
-          {ai.risks.map((r, i) => (
-            <div key={i} style={{ padding: "10px 0", borderBottom: `1px solid ${C.border}`, display: "flex", gap: 12, alignItems: "flex-start" }}>
-              <div style={{ width: 4, minHeight: 20, marginTop: 2, background: r.severity === "high" ? C.red : C.amber, flexShrink: 0, borderRadius: 2 }} />
-              <div>
-                <span style={{ fontSize: 15, fontFamily: f, fontWeight: 700, color: C.text }}>{r.type}: </span>
-                <span style={{ fontSize: 15, fontFamily: f, color: C.textSoft }}>{r.desc}</span>
-              </div>
+          <Tag color={d.volumeAnalysis?.todayLabel === "elevated" ? C.amber : C.label}>{d.volumeAnalysis?.todayLabel?.toUpperCase()}</Tag>
+        </div>
+        <div style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1.5, marginBottom: 8 }}>ELEVATED EVENTS</div>
+        <div style={{ display: "flex", gap: 20, marginBottom: 14, paddingBottom: 14, borderBottom: `1px solid ${C.border}` }}>
+          {(d.volumeAnalysis?.elevated || []).map((e, i) => (
+            <div key={i}>
+              <div style={{ fontSize: 12, fontFamily: f, color: C.label }}>{e.date}</div>
+              <div style={{ fontSize: 16, fontFamily: f, fontWeight: 700, color: C.amber, marginTop: 2 }}>{e.vol}</div>
             </div>
           ))}
-          {ai.criticalLevels && ai.criticalLevels.length > 0 && (
-            <div style={{ marginTop: 10, padding: "10px 0" }}>
-              <div style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1.5, marginBottom: 8 }}>CRITICAL LEVELS</div>
-              {ai.criticalLevels.map((cl, i) => (
-                <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0" }}>
-                  <span style={{ fontSize: 18, fontFamily: f, fontWeight: 700, color: cl.direction?.includes("bearish") ? C.red : C.green }}>{cl.level}</span>
-                  <span style={{ fontSize: 13, fontFamily: f, color: C.label }}>{cl.direction}</span>
-                </div>
+        </div>
+        {([["Pattern", d.volumeAnalysis?.pattern], ["Signal", d.volumeAnalysis?.signal]] as [string, string | undefined][]).map(([l, v], i) => (
+          <div key={i} style={{ marginBottom: i === 0 ? 8 : 0 }}>
+            <span style={{ fontSize: 14, fontFamily: f, fontWeight: 700, color: C.text }}>{l}: </span>
+            <span style={{ fontSize: 14, fontFamily: f, color: C.textSoft }}>{v}</span>
+          </div>
+        ))}
+      </div>
+
+      <Sec>RISK ASSESSMENT</Sec>
+      {(d.risks || []).map((r, i) => (
+        <div key={i} style={{ padding: "10px 0", borderBottom: `1px solid ${C.border}`, display: "flex", gap: 12, alignItems: "flex-start" }}>
+          <div style={{ width: 4, minHeight: 20, marginTop: 2, background: r.severity === "high" ? C.red : C.amber, flexShrink: 0, borderRadius: 2 }} />
+          <div>
+            <span style={{ fontSize: 15, fontFamily: f, fontWeight: 700, color: C.text }}>{r.type}: </span>
+            <span style={{ fontSize: 15, fontFamily: f, color: C.textSoft }}>{r.desc}</span>
+          </div>
+        </div>
+      ))}
+      <div style={{ marginTop: 10, padding: "10px 0" }}>
+        <div style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1.5, marginBottom: 8 }}>CRITICAL LEVELS</div>
+        {(d.criticalLevels || []).map((cl, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0" }}>
+            <span style={{ fontSize: 18, fontFamily: f, fontWeight: 700, color: cl.direction?.includes("bearish") ? C.red : C.green }}>{cl.level}</span>
+            <span style={{ fontSize: 13, fontFamily: f, color: C.label }}>{cl.direction}</span>
+          </div>
+        ))}
+      </div>
+
+      <Sec>TRADING OUTLOOK</Sec>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        {([["SHORT", d.outlook?.shortTerm, C.cyan], ["MEDIUM", d.outlook?.mediumTerm, C.purple]] as [string, { timeframe: string; points: string[] } | undefined, string][]).map(([title, data, color], idx) => (
+          data ? (
+            <div key={idx} style={{ background: C.card, border: `1px solid ${C.border}`, padding: "14px" }}>
+              <div style={{ fontSize: 12, fontFamily: f, fontWeight: 700, color, letterSpacing: 1.5, marginBottom: 4 }}>{title}</div>
+              <div style={{ fontSize: 11, fontFamily: f, color: C.label, marginBottom: 8 }}>{data.timeframe}</div>
+              {data.points?.map((p, i) => (
+                <div key={i} style={{ fontSize: 14, fontFamily: f, color: C.textSoft, padding: "4px 0 4px 10px", borderLeft: `3px solid ${C.border}`, marginBottom: 6, lineHeight: 1.4 }}>{p}</div>
               ))}
             </div>
-          )}
-        </>
-      )}
+          ) : null
+        ))}
+      </div>
 
-      {ai?.outlook && (
-        <>
-          <Sec>TRADING OUTLOOK</Sec>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            {([["SHORT", ai.outlook.shortTerm, C.cyan], ["MEDIUM", ai.outlook.mediumTerm, C.purple]] as [string, typeof ai.outlook.shortTerm, string][]).map(([title, data, color], idx) => (
-              data ? (
-                <div key={idx} style={{ background: C.card, border: `1px solid ${C.border}`, padding: "14px" }}>
-                  <div style={{ fontSize: 12, fontFamily: f, fontWeight: 700, color, letterSpacing: 1.5, marginBottom: 4 }}>{title}</div>
-                  <div style={{ fontSize: 11, fontFamily: f, color: C.label, marginBottom: 8 }}>{data.timeframe}</div>
-                  {data.points?.map((p, i) => (
-                    <div key={i} style={{ fontSize: 14, fontFamily: f, color: C.textSoft, padding: "4px 0 4px 10px", borderLeft: `3px solid ${C.border}`, marginBottom: 6, lineHeight: 1.4 }}>{p}</div>
-                  ))}
-                </div>
-              ) : null
-            ))}
-          </div>
-
-          {ai.outlook.targets && (
-            <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: "16px 18px", marginTop: 12 }}>
-              <div style={{ fontSize: 12, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 1.5, marginBottom: 12 }}>PRICE TARGETS</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-                {([["▲ UPSIDE", ai.outlook.targets.upside, C.green], ["▼ DOWNSIDE", ai.outlook.targets.downside, C.red]] as [string, string[], string][]).map(([title, targets, color], idx) => (
-                  <div key={idx}>
-                    <div style={{ fontSize: 12, fontFamily: f, color, fontWeight: 700, letterSpacing: 1, marginBottom: 6 }}>{title}</div>
-                    {(targets || []).map((t, i) => (
-                      <div key={i} style={{ fontSize: 17, fontFamily: f, fontWeight: 700, color: C.text, padding: "3px 0" }}>{t}</div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-              {ai.outlook.rangePosition && (
-                <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.border}`, fontSize: 13, fontFamily: f, color: C.label }}>
-                  52W: <span style={{ color: C.textSoft, fontWeight: 600 }}>{ai.outlook.rangePosition.pctFromLow}%</span> from low, <span style={{ color: C.textSoft, fontWeight: 600 }}>{ai.outlook.rangePosition.pctFromHigh}%</span> from high
-                </div>
-              )}
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: "16px 18px", marginTop: 12 }}>
+        <div style={{ fontSize: 12, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 1.5, marginBottom: 12 }}>PRICE TARGETS</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          {([["▲ UPSIDE", d.outlook?.targets?.upside, C.green], ["▼ DOWNSIDE", d.outlook?.targets?.downside, C.red]] as [string, string[] | undefined, string][]).map(([title, targets, color], idx) => (
+            <div key={idx}>
+              <div style={{ fontSize: 12, fontFamily: f, color, fontWeight: 700, letterSpacing: 1, marginBottom: 6 }}>{title}</div>
+              {(targets || []).map((t, i) => (
+                <div key={i} style={{ fontSize: 17, fontFamily: f, fontWeight: 700, color: C.text, padding: "3px 0" }}>{t}</div>
+              ))}
             </div>
-          )}
-        </>
-      )}
+          ))}
+        </div>
+        {d.outlook?.rangePosition && (
+          <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.border}`, fontSize: 13, fontFamily: f, color: C.label }}>
+            52W: <span style={{ color: C.textSoft, fontWeight: 600 }}>{d.outlook.rangePosition.pctFromLow}%</span> from low, <span style={{ color: C.textSoft, fontWeight: 600 }}>{d.outlook.rangePosition.pctFromHigh}%</span> from high
+          </div>
+        )}
+      </div>
 
       <Sec>MARGINS</Sec>
       {mock.margins.map((m, i) => {
@@ -969,24 +999,16 @@ export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
 
   const priceHist = useMemo(() => {
     const src = candles ?? history?.candles;
-    if (!Array.isArray(src) || src.length === 0) return [];
-    return (src as CandleData[]).map((c, i) => ({
-      w: i % Math.max(1, Math.floor(src.length / 8)) === 0
-        ? new Date(c.datetime).toLocaleDateString("en-US", { month: "short", day: "numeric" })
-        : "",
+    if (!Array.isArray(src) || src.length === 0) return [] as { d: number; p: number; v: number }[];
+    const last30 = (src as CandleData[]).slice(-30);
+    return last30.map((c, i) => ({
+      d: i + 1,
       p: c.close,
-    }));
-  }, [candles, history]);
-
-  const volHist = useMemo(() => {
-    const src = candles ?? history?.candles;
-    if (!Array.isArray(src) || src.length === 0) return [];
-    const last20 = (src as CandleData[]).slice(-20);
-    return last20.map((c, i) => ({
-      d: `${i + 1}`,
       v: c.volume,
     }));
   }, [candles, history]);
+
+  const volHist = priceHist;
 
   const setSliderOffset = useCallback((offset: number, animate: boolean) => {
     if (!sliderRef.current) return;
@@ -1140,7 +1162,7 @@ export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
                 ) : null}
               </div>
 
-              <SubOverview fund={fundamentals} quoteData={quoteData} priceHist={priceHist} volHist={volHist} ai={analysisResult ? parseAiAnalysis(analysisResult) : null} />
+              <SubOverview fund={fundamentals} quoteData={quoteData} priceHist={priceHist} ai={analysisResult ? parseAiAnalysis(analysisResult) : null} />
             </div>
 
             <div style={{ width: "100%", flexShrink: 0, padding: "0 16px 40px" }}>
