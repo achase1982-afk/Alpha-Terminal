@@ -276,21 +276,23 @@ const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, volH
 
   const biasColor = ai?.priceAction?.bias?.includes("Bullish") ? C.green : ai?.priceAction?.bias?.includes("Bearish") ? C.red : C.gold;
 
-  if (!ai) return null;
-
   return (
     <>
-      <Sec>FUNDAMENTALS</Sec>
-      <FundGrid items={[
-        { label: "Mkt Cap", value: fmtMarketCap(fund?.marketCap ?? null) },
-        { label: "Shares", value: fmtShares(fund?.sharesOutstanding ?? null) },
-        { label: "P/E", value: pe != null ? pe.toFixed(1) : "—" },
-        { label: "EPS", value: eps != null ? eps.toFixed(2) : "—" },
-        { label: "Beta", value: beta != null ? beta.toFixed(2) : "—" },
-        { label: "Div Yld", value: divYield != null ? `${divYield.toFixed(2)}%` : "—" },
-      ]} />
-      {high52 != null && low52 != null && currentPrice != null && (
-        <RangeBar lo={low52} hi={high52} current={currentPrice.toFixed(2)} />
+      {ai && (
+        <>
+          <Sec>FUNDAMENTALS</Sec>
+          <FundGrid items={[
+            { label: "Mkt Cap", value: fmtMarketCap(fund?.marketCap ?? null) },
+            { label: "Shares", value: fmtShares(fund?.sharesOutstanding ?? null) },
+            { label: "P/E", value: pe != null ? pe.toFixed(1) : "—" },
+            { label: "EPS", value: eps != null ? eps.toFixed(2) : "—" },
+            { label: "Beta", value: beta != null ? beta.toFixed(2) : "—" },
+            { label: "Div Yld", value: divYield != null ? `${divYield.toFixed(2)}%` : "—" },
+          ]} />
+          {high52 != null && low52 != null && currentPrice != null && (
+            <RangeBar lo={low52} hi={high52} current={currentPrice.toFixed(2)} />
+          )}
+        </>
       )}
 
       {ai?.priceAction && (
@@ -890,6 +892,7 @@ export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
   useEffect(() => {
     cacheRestoredRef.current = false;
     setTaShowResult(false);
+    setAnalysisResult(null);
     setTaStreamingText("");
     setTaThinkingTokens([]);
     setPage(0);
@@ -898,11 +901,6 @@ export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
   useEffect(() => {
     if (cacheRestoredRef.current) return;
     cacheRestoredRef.current = true;
-    if (technicalsCache) {
-      setAnalysisResult(technicalsCache.analysisResult);
-      setTaThinkingTokens(technicalsCache.thinkingTokens);
-      setTaShowResult(true);
-    }
   }, [symbol, technicalsCache]);
 
   const handleRunTA = useCallback(async () => {
