@@ -694,166 +694,66 @@ const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, volH
       </ResponsiveContainer>
 
       {ai?.priceAction && (
-        <>
-          <Sec>PRICE ACTION</Sec>
-          <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: "16px 18px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-              <div>
-                <div style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1.5, marginBottom: 4 }}>STATUS</div>
-                <div style={{ fontSize: 20, fontFamily: f, fontWeight: 700, color: C.text }}>{ai.priceAction.status}</div>
-              </div>
-              <span style={{ padding: "4px 12px", fontSize: 13, fontFamily: f, fontWeight: 700, color: biasColor, border: `1px solid ${biasColor}55`, borderRadius: 2 }}>
-                {ai.priceAction.bias?.includes("Bullish") ? "▲" : ai.priceAction.bias?.includes("Bearish") ? "▼" : "◆"} {ai.priceAction.bias}
-              </span>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 18px" }}>
-              <div>
-                <div style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1.5, marginBottom: 4 }}>TREND</div>
-                <div style={{ fontSize: 14, fontFamily: f, color: C.textSoft, lineHeight: 1.4 }}>{ai.priceAction.trend}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1.5, marginBottom: 4 }}>MOMENTUM</div>
-                <div style={{ fontSize: 14, fontFamily: f, color: chg >= 0 ? C.green : C.red, lineHeight: 1.4 }}>{ai.priceAction.momentum}</div>
-              </div>
-            </div>
-          </div>
-        </>
+        <CollapseSection label="Price Action">
+          <MGrid items={[
+            ["Status", ai.priceAction.status],
+            ["Bias", <Badge key="bias" color={biasColor}>{ai.priceAction.bias?.includes("Bullish") ? "▲" : ai.priceAction.bias?.includes("Bearish") ? "▼" : "◆"} {ai.priceAction.bias}</Badge>],
+            ["Trend", ai.priceAction.trend],
+            ["Momentum", <span key="mom" style={{ color: chg >= 0 ? C.green : C.red }}>{ai.priceAction.momentum}</span>],
+          ]} />
+        </CollapseSection>
       )}
 
       {(ai?.support || ai?.resistance) && (
-        <>
-          <Sec>SUPPORT / RESISTANCE</Sec>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            {([["▼ SUPPORT", ai?.support, C.red], ["▲ RESISTANCE", ai?.resistance, C.green]] as [string, typeof ai.support, string][]).map(([title, levels, color], idx) => (
-              <div key={idx} style={{ background: C.card, border: `1px solid ${C.border}`, padding: "14px" }}>
-                <div style={{ fontSize: 12, fontFamily: f, fontWeight: 700, color, letterSpacing: 1.5, marginBottom: 10 }}>{title}</div>
-                {(levels || []).map((s, i) => (
-                  <div key={i} style={{ padding: "7px 0", borderBottom: i < (levels?.length ?? 0) - 1 ? `1px solid ${C.border}` : "none" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span style={{ fontSize: 12, fontFamily: f, color: C.label, textTransform: "uppercase", letterSpacing: 1 }}>{s.label}</span>
-                      <span style={{ fontSize: 16, fontFamily: f, fontWeight: 700, color }}>{s.level}</span>
-                    </div>
-                    <div style={{ fontSize: 11, fontFamily: f, color: C.dim, marginTop: 2 }}>{s.note}</div>
-                  </div>
-                ))}
-              </div>
-            ))}
-          </div>
-        </>
+        <CollapseSection label="Support / Resistance">
+          <MGrid items={[
+            ...(ai?.support || []).map((s) => [`▼ ${s.label}`, <span key={s.label} style={{ color: C.red }}>{s.level}</span>, s.note] as MGridItem),
+            ...(ai?.resistance || []).map((s) => [`▲ ${s.label}`, <span key={s.label} style={{ color: C.green }}>{s.level}</span>, s.note] as MGridItem),
+          ]} />
+        </CollapseSection>
       )}
 
       {ai?.chartPattern && (
-        <>
-          <Sec>CHART PATTERNS</Sec>
-          <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: "16px 18px" }}>
-            {([["Recent Pattern", ai.chartPattern.recent], ["Trading Range", ai.chartPattern.range], ["Current Setup", ai.chartPattern.setup]] as [string, string][]).map(([l, v], i) => (
-              <div key={i} style={{ borderBottom: i < 2 ? `1px solid ${C.border}` : "none", paddingBottom: i < 2 ? 12 : 0, marginBottom: i < 2 ? 12 : 0 }}>
-                <div style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1.5, marginBottom: 4 }}>{l.toUpperCase()}</div>
-                <div style={{ fontSize: 15, fontFamily: f, color: C.textSoft, lineHeight: 1.4 }}>{v}</div>
-              </div>
-            ))}
-          </div>
-        </>
+        <CollapseSection label="Chart Patterns">
+          <MGrid items={[
+            ["Recent Pattern", ai.chartPattern.recent],
+            ["Trading Range", ai.chartPattern.range],
+            ["Current Setup", ai.chartPattern.setup],
+          ]} />
+        </CollapseSection>
       )}
 
       {ai?.volumeAnalysis && (
-        <>
-          <Sec>VOLUME ANALYSIS</Sec>
-          <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: "16px 18px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, paddingBottom: 12, borderBottom: `1px solid ${C.border}` }}>
-              <div>
-                <div style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1.5 }}>TODAY</div>
-                <div style={{ fontSize: 22, fontFamily: f, fontWeight: 700, color: C.text, marginTop: 4 }}>{ai.volumeAnalysis.today}</div>
-              </div>
-              <Tag color={ai.volumeAnalysis.todayLabel === "elevated" ? C.amber : C.label}>{ai.volumeAnalysis.todayLabel?.toUpperCase()}</Tag>
-            </div>
-            {ai.volumeAnalysis.elevated && ai.volumeAnalysis.elevated.length > 0 && (
-              <>
-                <div style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1.5, marginBottom: 8 }}>ELEVATED EVENTS</div>
-                <div style={{ display: "flex", gap: 20, marginBottom: 14, paddingBottom: 14, borderBottom: `1px solid ${C.border}` }}>
-                  {ai.volumeAnalysis.elevated.map((e, i) => (
-                    <div key={i}>
-                      <div style={{ fontSize: 12, fontFamily: f, color: C.label }}>{e.date}</div>
-                      <div style={{ fontSize: 16, fontFamily: f, fontWeight: 700, color: C.amber, marginTop: 2 }}>{e.vol}</div>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-            {([["Pattern", ai.volumeAnalysis.pattern], ["Signal", ai.volumeAnalysis.signal]] as [string, string][]).map(([l, v], i) => (
-              <div key={i} style={{ marginBottom: i === 0 ? 8 : 0 }}>
-                <span style={{ fontSize: 14, fontFamily: f, fontWeight: 700, color: C.text }}>{l}: </span>
-                <span style={{ fontSize: 14, fontFamily: f, color: C.textSoft }}>{v}</span>
-              </div>
-            ))}
-          </div>
-        </>
+        <CollapseSection label="Volume Analysis">
+          <MGrid items={[
+            ["Today", ai.volumeAnalysis.today],
+            ["Activity", <Badge key="vol-label" color={ai.volumeAnalysis.todayLabel === "elevated" || ai.volumeAnalysis.todayLabel === "heavy" ? C.amber : C.label}>{ai.volumeAnalysis.todayLabel?.toUpperCase()}</Badge>],
+            ["Pattern", ai.volumeAnalysis.pattern],
+            ["Signal", ai.volumeAnalysis.signal],
+            ...(ai.volumeAnalysis.elevated || []).map((e) => [e.date, <span key={e.date} style={{ color: C.amber }}>{e.vol}</span>, "Elevated"] as MGridItem),
+          ]} />
+        </CollapseSection>
       )}
 
       {ai?.risks && ai.risks.length > 0 && (
-        <>
-          <Sec>RISK ASSESSMENT</Sec>
-          {ai.risks.map((r, i) => (
-            <div key={i} style={{ padding: "10px 0", borderBottom: `1px solid ${C.border}`, display: "flex", gap: 12, alignItems: "flex-start" }}>
-              <div style={{ width: 4, minHeight: 20, marginTop: 2, background: r.severity === "high" ? C.red : C.amber, flexShrink: 0, borderRadius: 2 }} />
-              <div>
-                <span style={{ fontSize: 15, fontFamily: f, fontWeight: 700, color: C.text }}>{r.type}: </span>
-                <span style={{ fontSize: 15, fontFamily: f, color: C.textSoft }}>{r.desc}</span>
-              </div>
-            </div>
-          ))}
-          {ai.criticalLevels && ai.criticalLevels.length > 0 && (
-            <div style={{ marginTop: 10, padding: "10px 0" }}>
-              <div style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1.5, marginBottom: 8 }}>CRITICAL LEVELS</div>
-              {ai.criticalLevels.map((cl, i) => (
-                <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0" }}>
-                  <span style={{ fontSize: 18, fontFamily: f, fontWeight: 700, color: cl.direction?.includes("bearish") ? C.red : C.green }}>{cl.level}</span>
-                  <span style={{ fontSize: 13, fontFamily: f, color: C.label }}>{cl.direction}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </>
+        <CollapseSection label="Risk Assessment">
+          <MGrid items={[
+            ...ai.risks.map((r) => [r.type, r.desc, r.severity === "high" ? "HIGH" : "MEDIUM"] as MGridItem),
+            ...(ai.criticalLevels || []).map((cl) => ["Critical Level", <span key={cl.level} style={{ color: cl.direction?.includes("bearish") ? C.red : C.green }}>{cl.level}</span>, cl.direction] as MGridItem),
+          ]} />
+        </CollapseSection>
       )}
 
       {ai?.outlook && (
-        <>
-          <Sec>TRADING OUTLOOK</Sec>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            {([["SHORT", ai.outlook.shortTerm, C.cyan], ["MEDIUM", ai.outlook.mediumTerm, C.purple]] as [string, typeof ai.outlook.shortTerm, string][]).map(([title, data, color], idx) => (
-              data ? (
-                <div key={idx} style={{ background: C.card, border: `1px solid ${C.border}`, padding: "14px" }}>
-                  <div style={{ fontSize: 12, fontFamily: f, fontWeight: 700, color, letterSpacing: 1.5, marginBottom: 4 }}>{title}</div>
-                  <div style={{ fontSize: 11, fontFamily: f, color: C.label, marginBottom: 8 }}>{data.timeframe}</div>
-                  {data.points?.map((p, i) => (
-                    <div key={i} style={{ fontSize: 14, fontFamily: f, color: C.textSoft, padding: "4px 0 4px 10px", borderLeft: `3px solid ${C.border}`, marginBottom: 6, lineHeight: 1.4 }}>{p}</div>
-                  ))}
-                </div>
-              ) : null
-            ))}
-          </div>
-
-          {ai.outlook.targets && (
-            <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: "16px 18px", marginTop: 12 }}>
-              <div style={{ fontSize: 12, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 1.5, marginBottom: 12 }}>PRICE TARGETS</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-                {([["▲ UPSIDE", ai.outlook.targets.upside, C.green], ["▼ DOWNSIDE", ai.outlook.targets.downside, C.red]] as [string, string[], string][]).map(([title, targets, color], idx) => (
-                  <div key={idx}>
-                    <div style={{ fontSize: 12, fontFamily: f, color, fontWeight: 700, letterSpacing: 1, marginBottom: 6 }}>{title}</div>
-                    {(targets || []).map((t, i) => (
-                      <div key={i} style={{ fontSize: 17, fontFamily: f, fontWeight: 700, color: C.text, padding: "3px 0" }}>{t}</div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-              {ai.outlook.rangePosition && (
-                <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.border}`, fontSize: 13, fontFamily: f, color: C.label }}>
-                  52W: <span style={{ color: C.textSoft, fontWeight: 600 }}>{ai.outlook.rangePosition.pctFromLow}%</span> from low, <span style={{ color: C.textSoft, fontWeight: 600 }}>{ai.outlook.rangePosition.pctFromHigh}%</span> from high
-                </div>
-              )}
-            </div>
-          )}
-        </>
+        <CollapseSection label="Trading Outlook">
+          <MGrid items={[
+            ...(ai.outlook.shortTerm?.points || []).map((p, i) => [`Short (${ai.outlook!.shortTerm!.timeframe})`, p] as MGridItem).slice(0, 2),
+            ...(ai.outlook.mediumTerm?.points || []).map((p, i) => [`Medium (${ai.outlook!.mediumTerm!.timeframe})`, p] as MGridItem).slice(0, 2),
+            ...(ai.outlook.targets?.upside || []).map((t) => ["▲ Upside Target", <span key={t} style={{ color: C.green }}>{t}</span>] as MGridItem),
+            ...(ai.outlook.targets?.downside || []).map((t) => ["▼ Downside Target", <span key={t} style={{ color: C.red }}>{t}</span>] as MGridItem),
+            ...(ai.outlook.rangePosition ? [["52W From Low", `${ai.outlook.rangePosition.pctFromLow}%`] as MGridItem, ["52W From High", `${ai.outlook.rangePosition.pctFromHigh}%`] as MGridItem] : []),
+          ]} />
+        </CollapseSection>
       )}
     </>
   );
