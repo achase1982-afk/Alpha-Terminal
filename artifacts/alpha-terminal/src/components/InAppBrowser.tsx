@@ -4,7 +4,12 @@ import { useRef, useEffect, useState, useCallback } from "react";
 
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
 
+function isInternalUrl(url: string) {
+  return url.startsWith(API_BASE + "/") || url.startsWith("/api/");
+}
+
 function proxyUrl(url: string, title?: string | null, source?: string | null) {
+  if (isInternalUrl(url)) return url;
   let qs = `url=${encodeURIComponent(url)}`;
   if (title) qs += `&title=${encodeURIComponent(title)}`;
   if (source) qs += `&source=${encodeURIComponent(source)}`;

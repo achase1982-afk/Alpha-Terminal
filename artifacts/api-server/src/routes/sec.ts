@@ -180,10 +180,29 @@ router.get("/company", async (req, res) => {
   }
 });
 
+const SEC_DARK_CSS = `
+*{box-sizing:border-box;border-color:#27272a!important}
+html,body{background:#000!important;color:#d4d4d8!important;margin:0;padding:12px 16px;font-family:'SFMono-Regular','SF Mono',ui-monospace,'Cascadia Code','Fira Code','JetBrains Mono','Consolas',monospace!important;font-size:12px;line-height:1.6;overflow-x:hidden;word-break:break-word}
+table{border-collapse:collapse;width:100%;font-size:11px;margin:8px 0}
+td,th{padding:4px 8px;border:1px solid #27272a;vertical-align:top;color:#d4d4d8!important;background:transparent!important}
+th{color:#a1a1aa!important;font-weight:700;text-transform:uppercase;font-size:9px;letter-spacing:0.5px}
+tr:nth-child(even) td{background:#0a0a0a!important}
+a{color:#FFB800!important;text-decoration:none!important}
+h1,h2,h3,h4,h5,h6{color:#e4e4e7!important;font-weight:700;margin:16px 0 8px}
+p{margin:6px 0}
+hr{border:none;border-top:1px solid #27272a;margin:12px 0}
+pre,code{font-size:11px;background:#0a0a0a!important;padding:2px 4px}
+span,div,font,b,i,u,em,strong{color:inherit!important;background:transparent!important}
+ix\\:nonfraction,ix\\:nonnumeric{color:#FFB800!important;font-weight:600}
+.FormData,.FormDataR,.FormDataC,.smallFormData{color:#d4d4d8!important;font-size:11px}
+.FormName,.FormTitle{color:#e4e4e7!important;font-weight:700}
+.FormText,.SmallFormText{color:#a1a1aa!important;font-size:10px}
+`;
+
 router.get("/filing-content", async (req, res) => {
   const url = (req.query.url as string || "").trim();
   if (!url || !url.startsWith("https://www.sec.gov/")) {
-    return res.status(400).json({ error: "valid SEC url required" });
+    return res.status(400).send("<html><body style='background:#000;color:#f87171;padding:40px;font-family:monospace'>Invalid SEC URL</body></html>");
   }
 
   try {
@@ -195,31 +214,33 @@ router.get("/filing-content", async (req, res) => {
       signal: AbortSignal.timeout(15_000),
     });
     if (!resp.ok) {
-      return res.status(resp.status).json({ error: `SEC returned ${resp.status}` });
+      return res.status(resp.status).send(`<html><body style='background:#000;color:#f87171;padding:40px;font-family:monospace'>SEC returned ${resp.status}</body></html>`);
     }
 
     const contentType = resp.headers.get("content-type") || "";
     const raw = await resp.text();
 
+    let bodyContent: string;
     if (contentType.includes("html") || contentType.includes("xml") || raw.trimStart().startsWith("<")) {
-      let body = raw;
+      bodyContent = raw;
       const bodyMatch = raw.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-      if (bodyMatch) body = bodyMatch[1];
-
-      body = body
+      if (bodyMatch) bodyContent = bodyMatch[1];
+      bodyContent = bodyContent
         .replace(/<script[\s\S]*?<\/script>/gi, "")
         .replace(/<style[\s\S]*?<\/style>/gi, "")
         .replace(/<link[^>]*>/gi, "")
         .replace(/<img[^>]*>/gi, "")
         .replace(/<meta[^>]*>/gi, "");
-
-      return res.json({ html: body.trim(), type: "html" });
+    } else {
+      bodyContent = `<pre style="white-space:pre-wrap;word-break:break-word;margin:0">${raw.replace(/&/g,"&amp;").replace(/</g,"&lt;")}</pre>`;
     }
 
-    return res.json({ text: raw, type: "text" });
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${SEC_DARK_CSS}</style></head><body>${bodyContent.trim()}</body></html>`;
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    return res.send(html);
   } catch (err: any) {
     req.log?.error({ err }, "SEC filing content fetch error");
-    return res.status(502).json({ error: "Failed to fetch filing content" });
+    return res.status(502).send("<html><body style='background:#000;color:#f87171;padding:40px;font-family:monospace'>Failed to fetch filing content</body></html>");
   }
 });
 

@@ -822,117 +822,9 @@ interface SecFilingsResponse {
   error?: string;
 }
 
-function buildSrcdoc(body: string, isText: boolean): string {
-  const escaped = body.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
-  if (isText) {
-    return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
-      *{margin:0;padding:0;box-sizing:border-box}
-      html,body{background:#000;color:#d4d4d8;font-family:'SFMono-Regular','SF Mono',ui-monospace,'Cascadia Code','Fira Code','JetBrains Mono','Consolas',monospace;font-size:11px;line-height:1.6;padding:12px 16px;overflow-x:hidden;word-break:break-word;white-space:pre-wrap}
-    </style></head><body>${escaped}</body></html>`;
-  }
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
-    *{box-sizing:border-box;border-color:#27272a!important}
-    html,body{background:#000!important;color:#d4d4d8!important;margin:0;padding:12px 16px;font-family:'SFMono-Regular','SF Mono',ui-monospace,'Cascadia Code','Fira Code','JetBrains Mono','Consolas',monospace!important;font-size:12px;line-height:1.6;overflow-x:hidden;word-break:break-word}
-    table{border-collapse:collapse;width:100%;font-size:11px;margin:8px 0}
-    td,th{padding:4px 8px;border:1px solid #27272a;vertical-align:top;color:#d4d4d8!important;background:transparent!important}
-    th{color:#a1a1aa!important;font-weight:700;text-transform:uppercase;font-size:9px;letter-spacing:0.5px}
-    tr:nth-child(even) td{background:#0a0a0a!important}
-    a{color:#FFB800!important;text-decoration:none!important}
-    h1,h2,h3,h4,h5,h6{color:#e4e4e7!important;font-weight:700;margin:16px 0 8px}
-    p{margin:6px 0}
-    hr{border:none;border-top:1px solid #27272a;margin:12px 0}
-    pre,code{font-size:11px;background:#0a0a0a!important;padding:2px 4px}
-    span,div,font,b,i,u,em,strong{color:inherit!important;background:transparent!important}
-    ix\\:nonfraction,ix\\:nonnumeric{color:#FFB800!important;font-weight:600}
-    .FormData,.FormDataR,.FormDataC,.smallFormData{color:#d4d4d8!important;font-size:11px}
-    .FormName,.FormTitle{color:#e4e4e7!important;font-weight:700}
-    .FormText,.SmallFormText{color:#a1a1aa!important;font-size:10px}
-  </style></head><body>${body}</body></html>`;
-}
-
-function SecFilingViewer({ filing, onClose }: { filing: EdgarFiling; onClose: () => void }) {
-  const c = SEC_TYPE_COLORS[filing.formType] || SEC_TYPE_COLORS[filing.formType.split("/")[0]] || C.textDim;
-  const [srcdoc, setSrcdoc] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const res = await fetch(`${API_BASE}/sec/filing-content?url=${encodeURIComponent(filing.url)}`);
-        if (!res.ok) throw new Error(`Failed to fetch filing (${res.status})`);
-        const json = await res.json();
-        if (!cancelled) {
-          const doc = buildSrcdoc(json.html || json.text || "", json.type === "text");
-          setSrcdoc(doc);
-        }
-      } catch (err: any) {
-        if (!cancelled) setError(err.message || "Failed to load filing");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [filing.url]);
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", background: "#000000" }}>
-      <div style={{
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "8px 16px", background: "#0a0a0a", borderBottom: `1px solid ${C.border}`,
-        flexShrink: 0,
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
-          <Tag color={c}>{filing.formType}</Tag>
-          <span style={{ fontSize: 11, fontFamily: f, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {filing.description}
-          </span>
-          <span style={{ fontSize: 9, fontFamily: f, color: C.textDim, flexShrink: 0 }}>{filing.filedAt}</span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, marginLeft: 8 }}>
-          <a href={filing.url} target="_blank" rel="noopener noreferrer"
-            onClick={e => e.stopPropagation()}
-            style={{ color: C.gold, display: "flex", alignItems: "center" }}>
-            <ExternalLink className="w-4 h-4" />
-          </a>
-          <button onClick={onClose}
-            style={{ background: "transparent", border: "none", color: C.text, cursor: "pointer", padding: 4, display: "flex" }}>
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-      </div>
-      {loading && (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 40 }}>
-          <Loader2 className="w-5 h-5 animate-spin" style={{ color: C.gold }} />
-          <span style={{ fontSize: 11, fontFamily: f, color: C.textDim, marginLeft: 10 }}>Loading filing...</span>
-        </div>
-      )}
-      {error && (
-        <div style={{ padding: 20, textAlign: "center" }}>
-          <span style={{ fontSize: 11, fontFamily: f, color: C.red }}>{error}</span>
-        </div>
-      )}
-      {srcdoc && (
-        <iframe
-          srcDoc={srcdoc}
-          title={`${filing.formType} - ${filing.description}`}
-          style={{
-            width: "100%", height: "60vh", border: "none",
-            background: "#000000",
-          }}
-          sandbox="allow-same-origin"
-        />
-      )}
-    </div>
-  );
-}
-
 const SubSEC = memo(function SubSEC({ ticker }: { ticker: string }) {
+  const { openBrowser } = useTerminalStore();
   const [filter, setFilter] = useState("ALL");
-  const [viewFiling, setViewFiling] = useState<EdgarFiling | null>(null);
   const [data, setData] = useState<SecFilingsResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -946,7 +838,6 @@ const SubSEC = memo(function SubSEC({ ticker }: { ticker: string }) {
     (async () => {
       setLoading(true);
       setError(null);
-      setViewFiling(null);
       setFilter("ALL");
       try {
         const res = await fetch(`${API_BASE}/sec/filings?symbol=${encodeURIComponent(ticker)}`);
@@ -1040,7 +931,10 @@ const SubSEC = memo(function SubSEC({ ticker }: { ticker: string }) {
       {filtered.map((fi, i) => {
         const c = tc[fi.formType] || tc[fi.formType.split("/")[0]] || C.textDim;
         return (
-          <div key={fi.id || i} onClick={() => setViewFiling(fi)}
+          <div key={fi.id || i} onClick={() => {
+              const contentUrl = `${API_BASE}/sec/filing-content?url=${encodeURIComponent(fi.url)}`;
+              openBrowser(contentUrl, `${fi.formType} — ${fi.description}`, "SEC EDGAR");
+            }}
             style={{ padding: "9px 0", borderBottom: `1px solid ${C.border}`, cursor: "pointer" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
@@ -1054,8 +948,6 @@ const SubSEC = memo(function SubSEC({ ticker }: { ticker: string }) {
           </div>
         );
       })}
-
-      {viewFiling && <SecFilingViewer filing={viewFiling} onClose={() => setViewFiling(null)} />}
 
       <Sec>QUICK LINKS</Sec>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
