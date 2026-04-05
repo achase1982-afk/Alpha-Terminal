@@ -5,7 +5,7 @@ import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { consumeStream } from "@/lib/consumeStream";
 import { useTechnicalsCache } from "@/hooks/useTechnicalsCache";
 import { AiThinkingFeed } from "@/components/ai-shared/AiThinkingFeed";
-import { Loader2, Activity, RefreshCw } from "lucide-react";
+import { Loader2, Activity, RefreshCw, Clock } from "lucide-react";
 import {
   useGetQuote, useGetPriceHistory,
 } from "@workspace/api-client-react";
@@ -1107,6 +1107,8 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
   const [taElapsed, setTaElapsed] = useState(0);
   const taStartRef = useRef(Date.now());
   const thinkingScrollRef = useRef<HTMLDivElement>(null);
+  const [taCompletedAt, setTaCompletedAt] = useState<number | null>(null);
+  const [taAge, setTaAge] = useState("");
   const cacheRestoredRef = useRef(false);
 
   const { data: quote } = useGetQuote(
@@ -1129,6 +1131,17 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
   useEffect(() => {
     if (thinkingScrollRef.current) thinkingScrollRef.current.scrollTop = thinkingScrollRef.current.scrollHeight;
   }, [taThinkingTokens]);
+
+  useEffect(() => {
+    if (taCompletedAt == null) { setTaAge(""); return; }
+    const tick = () => {
+      const mins = Math.floor((Date.now() - taCompletedAt) / 60_000);
+      setTaAge(mins < 1 ? "Just now" : mins < 60 ? `${mins}m ago` : `${Math.floor(mins / 60)}h ${mins % 60}m ago`);
+    };
+    tick();
+    const id = setInterval(tick, 30_000);
+    return () => clearInterval(id);
+  }, [taCompletedAt]);
 
   useEffect(() => {
     cacheRestoredRef.current = false;
@@ -1170,6 +1183,7 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
         setAnalysisResult(accumulated);
         setTaStreamingText("");
         setTaStreaming(false);
+        setTaCompletedAt(Date.now());
         setTechnicalsCache({
           analysisResult: accumulated,
           thinkingTokens: collectedThinking,
@@ -1407,21 +1421,34 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
                   )}
                 </div>
               ) : analysisResult ? (
-                <div style={{ paddingTop: 12, paddingBottom: 4 }}>
-                  <div style={{ display: "flex", alignItems: "center", marginBottom: 8, gap: 8 }}>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleRunTA(); }}
-                      disabled={taStreaming || !quote || !history?.candles}
-                      style={{
-                        fontSize: 10, fontFamily: f, fontWeight: 600, color: C.textMuted,
-                        background: "transparent", border: "none",
-                        padding: 0, cursor: "pointer", letterSpacing: 0.5,
-                        display: "flex", alignItems: "center", gap: 5,
-                      }}
-                    >
-                      <RefreshCw style={{ width: 13, height: 13 }} />
-                      REFRESH
-                    </button>
+                <div style={{ paddingTop: 12, paddingBottom: 8 }}>
+                  <div className="flex items-center justify-between px-4 py-2.5 rounded-xl border border-[#2A2A2C]" style={{ background: "#111113" }}>
+                    <div>
+                      <h2 className="font-mono font-bold text-sm text-[#e4e4e7] tracking-wider">TECHNICAL ANALYSIS</h2>
+                      <p className="font-mono text-[9px] text-[#71717a] tracking-widest">AI-Powered Company Analysis</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {taAge && (
+                        <div className="flex items-center gap-1.5">
+                          <Clock className="w-3 h-3 text-[#71717a]" />
+                          <span className="font-mono text-[10px] tracking-wider text-[#71717a]">{taAge}</span>
+                        </div>
+                      )}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleRunTA(); }}
+                        disabled={taStreaming || !quote || !history?.candles}
+                        className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-mono text-[10px] font-bold uppercase tracking-wider transition-all duration-100 disabled:opacity-40 disabled:cursor-not-allowed active:translate-y-[1px]"
+                        style={{
+                          background: "linear-gradient(180deg, #2A2A2C 0%, #1E1E20 100%)",
+                          color: "#a1a1aa",
+                          border: "1px solid #3a3a3c",
+                          borderBottom: "2px solid #1a1a1c",
+                          boxShadow: "0 1px 3px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05)",
+                        }}
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               ) : null}
