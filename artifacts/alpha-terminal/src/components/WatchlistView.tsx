@@ -183,9 +183,7 @@ function WatchlistRow({
               {spark && spark.closes.length > 1 ? (
                 <MiniSparkline data={spark.closes} color={cColor} width={48} height={22} />
               ) : (
-                <div className="shrink-0 rounded overflow-hidden" style={{ width: 48, height: 22, background: "#1a1a1a" }}>
-                  <div className="w-full h-full animate-pulse" style={{ background: "linear-gradient(90deg, #1a1a1a 0%, #252525 50%, #1a1a1a 100%)", backgroundSize: "200% 100%" }} />
-                </div>
+                <div className="shrink-0" style={{ width: 48, height: 22 }} />
               )}
 
               {indicators.map((ind) => (
