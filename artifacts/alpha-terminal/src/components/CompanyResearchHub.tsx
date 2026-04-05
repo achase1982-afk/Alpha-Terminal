@@ -5,7 +5,7 @@ import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { consumeStream } from "@/lib/consumeStream";
 import { useTechnicalsCache } from "@/hooks/useTechnicalsCache";
 import { AiThinkingFeed } from "@/components/ai-shared/AiThinkingFeed";
-import { Loader2, Activity, RefreshCw } from "lucide-react";
+import { Loader2, Activity, RefreshCw, ChevronUp, ChevronDown } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import {
   useGetQuote, useGetPriceHistory,
@@ -959,24 +959,24 @@ export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
             <div style={{ width: "100%", flexShrink: 0, padding: "0 16px 40px" }}>
               <div style={{ paddingTop: 12, paddingBottom: 4 }}>
                 {taShowResult && !taStreaming && analysisResult ? (
-                  <div style={{ background: C.card, border: `1px solid ${C.gold}30`, marginBottom: 8 }}>
+                  <div style={{ background: C.card, border: `1px solid ${C.gold}20`, marginBottom: 8 }}>
                     <div style={{
                       display: "flex", alignItems: "center", justifyContent: "space-between",
-                      padding: "14px 16px", borderBottom: taCollapsed ? "none" : `1px solid ${C.border}`,
+                      padding: "12px 14px", borderBottom: taCollapsed ? "none" : `1px solid ${C.border}`,
                     }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <Activity style={{ width: 16, height: 16, color: C.gold }} />
-                        <span style={{ fontSize: 13, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 1.2 }}>AI ANALYSIS</span>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <Activity style={{ width: 14, height: 14, color: C.gold }} />
+                        <span style={{ fontSize: 12, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 1 }}>AI ANALYSIS</span>
                       </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                         <button
                           onClick={(e) => { e.stopPropagation(); handleRunTA(); }}
                           disabled={taStreaming || !quote || !history?.candles}
                           style={{
-                            fontSize: 12, fontFamily: f, fontWeight: 700, color: "#fff",
-                            background: C.borderHi, border: `1px solid ${C.textDim}`,
-                            padding: "6px 14px", cursor: "pointer", letterSpacing: 1,
-                            display: "flex", alignItems: "center", gap: 6,
+                            fontSize: 10, fontFamily: f, fontWeight: 600, color: C.textMuted,
+                            background: "transparent", border: "none",
+                            padding: 0, cursor: "pointer", letterSpacing: 0.5,
+                            display: "flex", alignItems: "center", gap: 5,
                           }}
                         >
                           <RefreshCw style={{ width: 13, height: 13 }} />
@@ -985,18 +985,16 @@ export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
                         <button
                           onClick={() => setTaCollapsed(c => !c)}
                           style={{
-                            fontSize: 12, fontFamily: f, fontWeight: 700, color: "#fff",
-                            background: C.borderHi, border: `1px solid ${C.textDim}`,
-                            padding: "6px 14px", cursor: "pointer", letterSpacing: 1,
-                            display: "flex", alignItems: "center", gap: 6,
+                            background: "transparent", border: "none",
+                            padding: 0, cursor: "pointer",
+                            display: "flex", alignItems: "center",
+                            color: C.textMuted,
                           }}
                         >
-                          {taCollapsed ? "EXPAND" : "COLLAPSE"}
-                          <span style={{
-                            display: "inline-block",
-                            transform: taCollapsed ? "rotate(0deg)" : "rotate(180deg)", transition: "transform 0.2s",
-                            fontSize: 14,
-                          }}>▾</span>
+                          {taCollapsed
+                            ? <ChevronDown style={{ width: 20, height: 20 }} />
+                            : <ChevronUp style={{ width: 20, height: 20 }} />
+                          }
                         </button>
                       </div>
                     </div>
