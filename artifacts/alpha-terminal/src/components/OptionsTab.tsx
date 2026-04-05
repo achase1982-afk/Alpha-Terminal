@@ -282,10 +282,15 @@ function classifyMoneyness(strike: number, underlyingPrice: number | null, isCal
   return strike > underlyingPrice + EPS ? "itm" : "otm";
 }
 
-function getRowBg(moneyness: Moneyness): string {
-  if (moneyness === "itm") return BG;
-  if (moneyness === "otm") return BG;
-  return "transparent";
+function isStrikeITM(strike: number, underlyingPrice: number | null, isCallSide: boolean): boolean {
+  if (underlyingPrice == null) return false;
+  if (isCallSide) return strike < underlyingPrice - EPS;
+  return strike > underlyingPrice + EPS;
+}
+
+function getRowBg(strike: number, underlyingPrice: number | null, isCallSide: boolean): string {
+  if (isStrikeITM(strike, underlyingPrice, isCallSide)) return ITM_OCEAN;
+  return OTM_PURPLE;
 }
 
 const OIBar = memo(function OIBar({ value, max }: { value: number; max: number }) {
@@ -810,7 +815,7 @@ function OptionsGrid({
                 const callLeg = callKey ? selectedLegs.get(callKey) : undefined;
                 const isCallSelected = !!callLeg;
                 const moneyness = classifyMoneyness(row.strike, underlyingPrice, true);
-                const bg = getRowBg(moneyness);
+                const bg = getRowBg(row.strike, underlyingPrice, true);
                 return (
                   <div
                     key={row.strike}
@@ -864,7 +869,7 @@ function OptionsGrid({
                 const putLeg = putKey ? selectedLegs.get(putKey) : undefined;
                 const isPutSelected = !!putLeg;
                 const moneyness = classifyMoneyness(row.strike, underlyingPrice, false);
-                const bg = getRowBg(moneyness);
+                const bg = getRowBg(row.strike, underlyingPrice, false);
                 return (
                   <div
                     key={row.strike}
