@@ -361,23 +361,24 @@ export default function TerminalPage() {
       {activeBottom === "ai" && (
         <div className="shrink-0 bg-background z-40">
           <div className="px-3 sm:px-4 lg:px-5 pt-1 pb-1">
-            <div
-              className="flex w-full rounded-full p-1"
-              style={{ background: "rgba(39,39,42,0.5)" }}
-            >
-              {(["pulse", "strategist"] as AiSubTab[]).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setAiSubTab(tab)}
-                  className="flex-1 font-mono text-xs font-bold tracking-wider py-2 rounded-full transition-all duration-200"
-                  style={{
-                    background: aiSubTab === tab ? "#3f3f46" : "transparent",
-                    color: aiSubTab === tab ? "#fafafa" : "#71717a",
-                  }}
-                >
-                  {tab.toUpperCase()}
-                </button>
-              ))}
+            <div className="flex w-full p-1">
+              {(["pulse", "strategist"] as AiSubTab[]).map((tab) => {
+                const label = tab === "pulse" ? "MARKET PULSE" : "OPTIONS STRATEGIST";
+                return (
+                  <button
+                    key={tab}
+                    onClick={() => setAiSubTab(tab)}
+                    className="flex-1 font-mono text-xs font-bold tracking-wider py-2 rounded-lg transition-all duration-200"
+                    style={{
+                      background: aiSubTab === tab ? "#1a1a1a" : "transparent",
+                      color: aiSubTab === tab ? "#fafafa" : "#71717a",
+                      border: "none",
+                    }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
             </div>
           </div>
 

@@ -1115,7 +1115,46 @@ interface AiIntelligenceTabProps {
   onPulseAutoGenConsumed?: () => void;
 }
 
+const AI_TABS: AiSubTab[] = ["pulse", "strategist"];
+
 export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, pulseAutoGen, onPulseAutoGenConsumed }: AiIntelligenceTabProps) {
+  const swipeStartX = useRef(0);
+  const swipeStartY = useRef(0);
+  const swipeLocked = useRef<"h" | "v" | null>(null);
+  const swipeDelta = useRef(0);
+
+  const handleSwipeStart = useCallback((e: React.TouchEvent) => {
+    swipeStartX.current = e.touches[0].clientX;
+    swipeStartY.current = e.touches[0].clientY;
+    swipeLocked.current = null;
+    swipeDelta.current = 0;
+  }, []);
+
+  const handleSwipeMove = useCallback((e: React.TouchEvent) => {
+    const dx = e.touches[0].clientX - swipeStartX.current;
+    const dy = e.touches[0].clientY - swipeStartY.current;
+    if (!swipeLocked.current) {
+      if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
+        swipeLocked.current = Math.abs(dx) > Math.abs(dy) ? "h" : "v";
+      }
+    }
+    if (swipeLocked.current === "h") {
+      swipeDelta.current = dx;
+    }
+  }, []);
+
+  const handleSwipeEnd = useCallback(() => {
+    if (swipeLocked.current === "h" && Math.abs(swipeDelta.current) > 60) {
+      const idx = AI_TABS.indexOf(subTab);
+      if (swipeDelta.current < 0 && idx < AI_TABS.length - 1) {
+        onSubTabChange(AI_TABS[idx + 1]);
+      } else if (swipeDelta.current > 0 && idx > 0) {
+        onSubTabChange(AI_TABS[idx - 1]);
+      }
+    }
+    swipeLocked.current = null;
+    swipeDelta.current = 0;
+  }, [subTab, onSubTabChange]);
   const {
     symbol, setSymbol, accessToken,
     aiFeatureSettings,
@@ -1451,61 +1490,79 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, pulseA
 
   const hasRealStrategies = realStrategies.length > 0;
 
+  const pageIdx = AI_TABS.indexOf(subTab);
+
   return (
-    <div className="flex flex-col gap-0 w-full max-w-5xl mx-auto pb-6 flex-1" style={{ minHeight: "calc(var(--vvh, 100vh) - 200px)" }}>
-      {subTab === "pulse" && (
-        <MarketPulseDashboard ref={pulseDashRef} autoGenerate={pulseAutoGen} onAutoGenConsumed={onPulseAutoGenConsumed} />
-      )}
-
-      {subTab === "strategist" && (
-        <div className="px-3 sm:px-4 lg:px-5 space-y-4 pt-3">
-          <StrategistCommandBar onRun={handleRunStrategistWithTicker} disabled={isPendingAny || !accessToken}
-            lastRunSymbol={lastRunSymbol} lastRunTime={lastRunTime} />
-
-          {activeResult === "strategist" && (
-            <div className="space-y-4">
-              {isStrategizing && (
-                <StrategistPipeline status={strategistStatus} thinkingTokens={thinkingTokens} />
-              )}
-              {!isStrategizing && (isStreaming || hasRealStrategies) && (
-                <>
-                  {(isStreaming || thinkingTokens.length > 0) && (
-                    <div className="rounded-xl overflow-hidden" style={{ background: "#111113", border: "1px solid #2A2A2C" }}>
-                      <AiThinkingFeed texts={thinkingTokens} isStreaming={isStreaming} />
-                    </div>
-                  )}
-                  {hasRealStrategies && (
-                    <StrategistResultView
-                      strategies={realStrategies}
-                      narrative={narrativeText}
-                      isStreaming={isStreaming}
-                      streamingText={streamingText}
-                      regime={regimeInfo}
-                      pulse={pulseSnapshot}
-                      overrideWarning={overrideWarning}
-                      preTradeResults={preTradeResults}
-                    />
-                  )}
-                </>
-              )}
-              {!isStrategizing && !isStreaming && !hasRealStrategies && currentResult && currentResult !== "done" && (
-                <div className="rounded-xl overflow-hidden p-4" style={{ background: "#111113", border: "1px solid #2A2A2C" }}>
-                  <MarkdownResult content={currentResult} />
-                </div>
-              )}
-            </div>
-          )}
-
-          {!activeResult && !isPendingAny && (
-            <StrategistEmptyState />
-          )}
-
-          {strategistAudit && activeResult === "strategist" && !isStreaming && !isStrategizing && (
-            <StrategistAuditPanel audit={strategistAudit} />
-          )}
+    <div
+      className="flex flex-col gap-0 w-full max-w-5xl mx-auto pb-6 flex-1"
+      style={{ minHeight: "calc(var(--vvh, 100vh) - 200px)", overflow: "hidden", touchAction: "pan-y" }}
+      onTouchStart={handleSwipeStart}
+      onTouchMove={handleSwipeMove}
+      onTouchEnd={handleSwipeEnd}
+      onTouchCancel={handleSwipeEnd}
+    >
+      <div
+        style={{
+          display: "flex",
+          transform: `translateX(${-pageIdx * 100}%)`,
+          transition: "transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
+          willChange: "transform",
+          minHeight: "100%",
+        }}
+      >
+        <div style={{ width: "100%", flexShrink: 0, minHeight: "100%" }}>
+          <MarketPulseDashboard ref={pulseDashRef} autoGenerate={pulseAutoGen} onAutoGenConsumed={onPulseAutoGenConsumed} />
         </div>
-      )}
 
+        <div style={{ width: "100%", flexShrink: 0 }}>
+          <div className="px-3 sm:px-4 lg:px-5 space-y-4 pt-3">
+            <StrategistCommandBar onRun={handleRunStrategistWithTicker} disabled={isPendingAny || !accessToken}
+              lastRunSymbol={lastRunSymbol} lastRunTime={lastRunTime} />
+
+            {activeResult === "strategist" && (
+              <div className="space-y-4">
+                {isStrategizing && (
+                  <StrategistPipeline status={strategistStatus} thinkingTokens={thinkingTokens} />
+                )}
+                {!isStrategizing && (isStreaming || hasRealStrategies) && (
+                  <>
+                    {(isStreaming || thinkingTokens.length > 0) && (
+                      <div className="rounded-xl overflow-hidden" style={{ background: "#111113", border: "1px solid #2A2A2C" }}>
+                        <AiThinkingFeed texts={thinkingTokens} isStreaming={isStreaming} />
+                      </div>
+                    )}
+                    {hasRealStrategies && (
+                      <StrategistResultView
+                        strategies={realStrategies}
+                        narrative={narrativeText}
+                        isStreaming={isStreaming}
+                        streamingText={streamingText}
+                        regime={regimeInfo}
+                        pulse={pulseSnapshot}
+                        overrideWarning={overrideWarning}
+                        preTradeResults={preTradeResults}
+                      />
+                    )}
+                  </>
+                )}
+                {!isStrategizing && !isStreaming && !hasRealStrategies && currentResult && currentResult !== "done" && (
+                  <div className="rounded-xl overflow-hidden p-4" style={{ background: "#111113", border: "1px solid #2A2A2C" }}>
+                    <MarkdownResult content={currentResult} />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!activeResult && !isPendingAny && (
+              <StrategistEmptyState />
+            )}
+
+            {strategistAudit && activeResult === "strategist" && !isStreaming && !isStrategizing && (
+              <StrategistAuditPanel audit={strategistAudit} />
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
