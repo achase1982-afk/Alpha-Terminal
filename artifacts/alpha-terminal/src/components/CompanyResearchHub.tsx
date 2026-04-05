@@ -536,9 +536,6 @@ const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, volH
         { label: "Beta", value: beta != null ? beta.toFixed(2) : "—" },
         { label: "Div Yld", value: divYield != null ? `${divYield.toFixed(2)}%` : "—" },
       ]} />
-      {high52 != null && low52 != null && currentPrice != null && (
-        <RangeBar lo={low52} hi={high52} current={currentPrice.toFixed(2)} />
-      )}
 
 
 
