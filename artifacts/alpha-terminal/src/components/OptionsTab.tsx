@@ -744,8 +744,6 @@ function OptionsGrid({
   showInlineGreeks,
   maxOI,
   accentHex,
-  onColumnsEditor,
-  onBuildStrategy,
 }: {
   rows: NormalizedRow[];
   underlyingPrice: number | null;
@@ -758,8 +756,6 @@ function OptionsGrid({
   showInlineGreeks: boolean;
   maxOI: number;
   accentHex: string;
-  onColumnsEditor: () => void;
-  onBuildStrategy?: () => void;
 }) {
   const sortedRows = useMemo(() => [...rows].sort((a, b) => a.strike - b.strike), [rows]);
 
@@ -775,32 +771,8 @@ function OptionsGrid({
 
   const wingWidth = columns.length * COL_W;
 
-  const callLabelRef = useRef<HTMLDivElement>(null);
-  const putLabelRef = useRef<HTMLDivElement>(null);
   const callWingRef = useRef<HTMLDivElement>(null);
   const putWingRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const cw = callWingRef.current;
-    const cl = callLabelRef.current;
-    if (cw && cl) {
-      cl.scrollLeft = cw.scrollLeft;
-      const h = () => { cl.scrollLeft = cw.scrollLeft; };
-      cw.addEventListener("scroll", h, { passive: true });
-      return () => cw.removeEventListener("scroll", h);
-    }
-  }, [showCalls, columns.length]);
-
-  useEffect(() => {
-    const pw = putWingRef.current;
-    const pl = putLabelRef.current;
-    if (pw && pl) {
-      pl.scrollLeft = pw.scrollLeft;
-      const h = () => { pl.scrollLeft = pw.scrollLeft; };
-      pw.addEventListener("scroll", h, { passive: true });
-      return () => pw.removeEventListener("scroll", h);
-    }
-  }, [showPuts, columns.length]);
 
   const atmLineTop = useMemo(() => {
     if (transitionIdx >= 0) return transitionIdx * ROW_H;
@@ -818,102 +790,7 @@ function OptionsGrid({
   };
 
   return (
-    <div
-      style={{
-        overflowY: "auto",
-        maxHeight: "calc(100dvh - 240px)",
-        scrollbarWidth: "none" as React.CSSProperties["scrollbarWidth"],
-        msOverflowStyle: "none",
-      } as React.CSSProperties}
-    >
-      <div
-        style={{
-          display: "flex",
-          height: HEADER_H,
-          background: BG_HEADER,
-          borderBottom: `1px solid ${BORDER}`,
-          alignItems: "center",
-          position: "sticky",
-          top: 0,
-          zIndex: 50,
-        }}
-      >
-        {showCalls && (
-          <div style={{ flex: 1, textAlign: "center" }}>
-            <span style={{ fontSize: 12, letterSpacing: "0.3em", color: GRAY, fontFamily: MONO, fontWeight: FW_PREMIUM }}>CALLS</span>
-          </div>
-        )}
-        <div style={{ width: STRIKE_W, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", borderLeft: `1px solid ${BORDER}`, borderRight: `1px solid ${BORDER}` }}>
-          {onBuildStrategy && (
-            <button
-              onClick={onBuildStrategy}
-              style={{ width: STRIKE_W / 2, height: HEADER_H, color: GRAY, display: "flex", alignItems: "center", justifyContent: "center" }}
-              aria-label="Strategy builder"
-            >
-              <Layers className="w-3.5 h-3.5" />
-            </button>
-          )}
-          <button
-            onClick={onColumnsEditor}
-            style={{ width: onBuildStrategy ? STRIKE_W / 2 : STRIKE_W, height: HEADER_H, color: GRAY, display: "flex", alignItems: "center", justifyContent: "center" }}
-            aria-label="Edit columns"
-          >
-            <Settings className="w-3.5 h-3.5" />
-          </button>
-        </div>
-        {showPuts && (
-          <div style={{ flex: 1, textAlign: "center" }}>
-            <span style={{ fontSize: 12, letterSpacing: "0.3em", color: GRAY, fontFamily: MONO, fontWeight: FW_PREMIUM }}>PUTS</span>
-          </div>
-        )}
-      </div>
-
-      <div
-        style={{
-          display: "flex",
-          height: SUB_HEADER_H,
-          background: "#111111",
-          borderBottom: `1px solid ${BORDER}`,
-          alignItems: "center",
-          position: "sticky",
-          top: HEADER_H,
-          zIndex: 45,
-          boxShadow: "0 2px 4px rgba(0,0,0,0.5)",
-        }}
-      >
-        {showCalls && (
-          <div
-            ref={callLabelRef}
-            style={{ flex: 1, overflow: "hidden", height: SUB_HEADER_H }}
-          >
-            <div style={{ display: "flex", alignItems: "center", minWidth: wingWidth, height: SUB_HEADER_H }}>
-              {columns.map(col => (
-                <div key={col.id} style={{ width: COL_W, flexShrink: 0, padding: "0 4px" }}>
-                  <span style={{ fontSize: 10, color: DIM, fontFamily: MONO, fontWeight: FW_LIGHT, textTransform: "uppercase", letterSpacing: "0.08em" }}>{col.topLabel}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-        <div style={{ width: STRIKE_W, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", borderLeft: `1px solid ${BORDER}`, borderRight: `1px solid ${BORDER}`, background: "#111111" }}>
-          <span style={{ fontSize: 9, color: WHITE, fontFamily: MONO, fontWeight: FW_PREMIUM, letterSpacing: "0.08em" }}>STRIKE</span>
-        </div>
-        {showPuts && (
-          <div
-            ref={putLabelRef}
-            style={{ flex: 1, overflow: "hidden", height: SUB_HEADER_H }}
-          >
-            <div style={{ display: "flex", alignItems: "center", minWidth: wingWidth, height: SUB_HEADER_H }}>
-              {columns.map(col => (
-                <div key={col.id} style={{ width: COL_W, flexShrink: 0, padding: "0 4px" }}>
-                  <span style={{ fontSize: 10, color: DIM, fontFamily: MONO, fontWeight: FW_LIGHT, textTransform: "uppercase", letterSpacing: "0.08em" }}>{col.topLabel}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
+    <div>
       <div style={{ display: "flex", fontVariantNumeric: "tabular-nums", fontFamily: MONO, position: "relative" }}>
         {atmLineTop >= 0 && (
           <div
@@ -1025,6 +902,110 @@ function OptionsGrid({
         )}
       </div>
     </div>
+  );
+}
+
+function OptionsChainHeader({
+  showCalls,
+  showPuts,
+  columns,
+  stickyTop,
+  onColumnsEditor,
+  onBuildStrategy,
+}: {
+  showCalls: boolean;
+  showPuts: boolean;
+  columns: ColumnDef[];
+  stickyTop: number;
+  onColumnsEditor: () => void;
+  onBuildStrategy?: () => void;
+}) {
+  const wingWidth = columns.length * COL_W;
+
+  return (
+    <>
+      <div
+        style={{
+          display: "flex",
+          height: HEADER_H,
+          background: BG_HEADER,
+          borderBottom: `1px solid ${BORDER}`,
+          alignItems: "center",
+          position: "sticky",
+          top: stickyTop,
+          zIndex: 50,
+        }}
+      >
+        {showCalls && (
+          <div style={{ flex: 1, textAlign: "center" }}>
+            <span style={{ fontSize: 12, letterSpacing: "0.3em", color: GRAY, fontFamily: MONO, fontWeight: FW_PREMIUM }}>C A L L S</span>
+          </div>
+        )}
+        <div style={{ width: STRIKE_W, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", borderLeft: `1px solid ${BORDER}`, borderRight: `1px solid ${BORDER}` }}>
+          {onBuildStrategy && (
+            <button
+              onClick={onBuildStrategy}
+              style={{ width: STRIKE_W / 2, height: HEADER_H, color: GRAY, display: "flex", alignItems: "center", justifyContent: "center" }}
+              aria-label="Strategy builder"
+            >
+              <Layers className="w-3.5 h-3.5" />
+            </button>
+          )}
+          <button
+            onClick={onColumnsEditor}
+            style={{ width: onBuildStrategy ? STRIKE_W / 2 : STRIKE_W, height: HEADER_H, color: GRAY, display: "flex", alignItems: "center", justifyContent: "center" }}
+            aria-label="Edit columns"
+          >
+            <Settings className="w-3.5 h-3.5" />
+          </button>
+        </div>
+        {showPuts && (
+          <div style={{ flex: 1, textAlign: "center" }}>
+            <span style={{ fontSize: 12, letterSpacing: "0.3em", color: GRAY, fontFamily: MONO, fontWeight: FW_PREMIUM }}>P U T S</span>
+          </div>
+        )}
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          height: SUB_HEADER_H,
+          background: "#111111",
+          borderBottom: `1px solid ${BORDER}`,
+          alignItems: "center",
+          position: "sticky",
+          top: stickyTop + HEADER_H,
+          zIndex: 45,
+          boxShadow: "0 2px 4px rgba(0,0,0,0.5)",
+        }}
+      >
+        {showCalls && (
+          <div style={{ flex: 1, overflow: "hidden", height: SUB_HEADER_H }}>
+            <div style={{ display: "flex", alignItems: "center", minWidth: wingWidth, height: SUB_HEADER_H }}>
+              {columns.map(col => (
+                <div key={col.id} style={{ width: COL_W, flexShrink: 0, padding: "0 4px" }}>
+                  <span style={{ fontSize: 10, color: DIM, fontFamily: MONO, fontWeight: FW_LIGHT, textTransform: "uppercase", letterSpacing: "0.08em" }}>{col.topLabel}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        <div style={{ width: STRIKE_W, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", borderLeft: `1px solid ${BORDER}`, borderRight: `1px solid ${BORDER}`, background: "#111111" }}>
+          <span style={{ fontSize: 9, color: WHITE, fontFamily: MONO, fontWeight: FW_PREMIUM, letterSpacing: "0.08em" }}>STRIKE</span>
+        </div>
+        {showPuts && (
+          <div style={{ flex: 1, overflow: "hidden", height: SUB_HEADER_H }}>
+            <div style={{ display: "flex", alignItems: "center", minWidth: wingWidth, height: SUB_HEADER_H }}>
+              {columns.map(col => (
+                <div key={col.id} style={{ width: COL_W, flexShrink: 0, padding: "0 4px" }}>
+                  <span style={{ fontSize: 10, color: DIM, fontFamily: MONO, fontWeight: FW_LIGHT, textTransform: "uppercase", letterSpacing: "0.08em" }}>{col.topLabel}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -1312,6 +1293,14 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
 
         {hasData && (
           <div>
+            <OptionsChainHeader
+              showCalls={showCalls}
+              showPuts={showPuts}
+              columns={activeColumns}
+              stickyTop={stickyOffset + TOOLBAR_H}
+              onColumnsEditor={() => setColumnsEditorOpen(true)}
+              onBuildStrategy={onOpenStrategyBuilder ? handleBuildStrategy : undefined}
+            />
             {groups.map(group => {
               const isOpen = expandedExps.has(group.expiration);
               const pcr = group.totalCallVol > 0 ? (group.totalPutVol / group.totalCallVol) : null;
@@ -1321,7 +1310,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
                     onClick={() => toggleExp(group.expiration)}
                     className="w-full flex items-center justify-between px-3 py-1 transition-colors sticky z-20"
                     style={{
-                      top: stickyOffset + TOOLBAR_H,
+                      top: stickyOffset + TOOLBAR_H + HEADER_H + SUB_HEADER_H,
                       background: BG_EXP_BAR,
                       borderBottom: `1px solid ${BORDER}`,
                       fontFamily: MONO,
@@ -1374,8 +1363,6 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
                       showInlineGreeks={showInlineGreeks}
                       maxOI={group.maxOI}
                       accentHex={accentHex}
-                      onColumnsEditor={() => setColumnsEditorOpen(true)}
-                      onBuildStrategy={onOpenStrategyBuilder ? handleBuildStrategy : undefined}
                     />
                   )}
                 </div>
