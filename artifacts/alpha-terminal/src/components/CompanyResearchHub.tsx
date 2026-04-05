@@ -988,16 +988,16 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
       <Sec>INSIDER TRANSACTIONS</Sec>
       <div style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr 0.6fr 1fr 0.6fr", padding: "5px 0", borderBottom: `1px solid ${C.borderHi}` }}>
         {["NAME", "TITLE", "TYPE", "SHARES", "DATE"].map((h, i) => (
-          <span key={i} style={{ fontSize: 9, fontFamily: f, fontWeight: 700, color: C.textDim, letterSpacing: 1.2, textAlign: i >= 3 ? "right" : "left" }}>{h}</span>
+          <span key={i} style={{ fontSize: 15, fontFamily: f, fontWeight: 700, color: C.textDim, letterSpacing: 1.2, textAlign: i >= 3 ? "right" : "left" }}>{h}</span>
         ))}
       </div>
       {mock.insiders.map((t, i) => (
         <div key={i} style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr 0.6fr 1fr 0.6fr", padding: "6px 0", borderBottom: `1px solid ${C.border}` }}>
-          <span style={{ fontSize: 11, fontFamily: f, color: C.text }}>{t.name}</span>
-          <span style={{ fontSize: 11, fontFamily: f, color: C.textMuted }}>{t.title}</span>
-          <span style={{ fontSize: 11, fontFamily: f, color: t.action === "BUY" ? C.green : C.red, fontWeight: 700 }}>{t.action}</span>
-          <span style={{ fontSize: 11, fontFamily: f, color: C.text, textAlign: "right" }}>{t.shares}</span>
-          <span style={{ fontSize: 11, fontFamily: f, color: C.textDim, textAlign: "right" }}>{t.date}</span>
+          <span style={{ fontSize: 15, fontFamily: f, color: C.text }}>{t.name}</span>
+          <span style={{ fontSize: 15, fontFamily: f, color: C.textMuted }}>{t.title}</span>
+          <span style={{ fontSize: 15, fontFamily: f, color: t.action === "BUY" ? C.green : C.red, fontWeight: 700 }}>{t.action}</span>
+          <span style={{ fontSize: 15, fontFamily: f, color: C.text, textAlign: "right" }}>{t.shares}</span>
+          <span style={{ fontSize: 15, fontFamily: f, color: C.textDim, textAlign: "right" }}>{t.date}</span>
         </div>
       ))}
     </>
