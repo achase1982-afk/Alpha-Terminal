@@ -1383,8 +1383,9 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
 
       {selCount > 0 && (
         <div
-          className="fixed bottom-0 left-0 right-0 z-[100] flex items-center justify-between px-4 pb-8 pt-3"
+          className="fixed left-0 right-0 z-[100] flex items-center justify-between px-4 py-3"
           style={{
+            bottom: 80,
             background: "linear-gradient(180deg, #0a0a0a 0%, #000000 100%)",
             borderTop: `1px solid ${GOLD}30`,
             boxShadow: `0 -4px 24px rgba(0,0,0,0.8), 0 -1px 0 ${GOLD}15`,
@@ -1419,7 +1420,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
           target={longPressTarget}
           onClose={() => setLongPressTarget(null)}
           onTradeSingle={() => handleQuickTrade(longPressTarget.contract, longPressTarget.side, longPressTarget.type)}
-          onAddToStrategy={() => handleToggleLeg(longPressTarget.contract, longPressTarget.type)}
+          onAddToStrategy={() => handleToggleLeg(longPressTarget.contract, longPressTarget.type, longPressTarget.side === "SELL" ? "bid" : "ask")}
         />
       )}
 
