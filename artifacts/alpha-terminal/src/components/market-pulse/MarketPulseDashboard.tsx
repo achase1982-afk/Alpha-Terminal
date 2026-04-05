@@ -219,7 +219,7 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
 
       {showEmptyBox && (
         <div className="flex-1 flex flex-col justify-center space-y-4">
-          <div className="rounded-xl border border-[#2A2A2C] p-8 text-center" style={{ background: "#111113" }}>
+          <div className="p-8 text-center" style={{ background: "#000000" }}>
             <div className="relative mx-auto mb-3 w-8 h-8">
               <Activity
                 className="w-8 h-8 text-[#FFB800] relative"
@@ -233,7 +233,7 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
               onClick={fetchPulse}
               disabled={!accessToken}
               className="inline-flex items-center p-[10px] rounded-lg font-mono text-[13px] font-bold tracking-wider transition-colors active:scale-95 active:brightness-110"
-              style={{ transition: "transform 0.1s, filter 0.1s", background: "#18181b", color: "#FFB800", border: "none" }}
+              style={{ transition: "transform 0.1s, filter 0.1s", background: "#000000", color: "#FFB800", border: "1px solid rgba(255,255,255,0.12)" }}
             >
               Market Pulse
             </button>
