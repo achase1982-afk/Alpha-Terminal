@@ -1,0 +1,594 @@
+import { useState, useEffect } from “react”;
+import { LineChart, Line, BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from “recharts”;
+
+const C = {
+bg: “#000”,
+card: “#111”,
+border: “#1c1c1c”,
+borderHi: “#2a2a2a”,
+text: “#e5e5e5”,
+textMuted: “#999”,
+textDim: “#555”,
+gold: “#d4a843”,
+green: “#00c853”,
+red: “#ff1744”,
+cyan: “#4dd0e1”,
+amber: “#ffa726”,
+purple: “#b388ff”,
+};
+
+const f = `'SFMono-Regular', 'SF Mono', ui-monospace, 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace`;
+
+function genData(ticker) {
+const s = ticker.split(””).reduce((a, c) => a + c.charCodeAt(0), 0);
+const rng = (min, max) => {
+const x = Math.sin(s * 9301 + 49297) * 10000;
+return min + (x - Math.floor(x)) * (max - min);
+};
+const price = +rng(50, 500).toFixed(2);
+const prev = +(price * (1 + (Math.random() - 0.5) * 0.03)).toFixed(2);
+const chg = +(price - prev).toFixed(2);
+const chgPct = +((chg / prev) * 100).toFixed(2);
+const hi52 = +(price * rng(1.1, 1.4)).toFixed(2);
+const lo52 = +(price * rng(0.55, 0.85)).toFixed(2);
+
+const priceHist = Array.from({ length: 52 }, (_, i) => ({
+w: `W${i + 1}`,
+p: +(price * 0.7 + (i / 52) * price * 0.3 + (Math.sin(i * 0.8) + Math.cos(i * 1.3)) * price * 0.05 + Math.random() * price * 0.03).toFixed(2),
+}));
+
+const volHist = Array.from({ length: 20 }, (_, i) => ({
+d: `${i + 1}`,
+v: Math.floor(rng(5, 80) * 1e6 + Math.random() * 20e6),
+}));
+
+const rev = [
+{ yr: “FY21”, val: +rng(20, 100).toFixed(1) },
+{ yr: “FY22”, val: +rng(25, 120).toFixed(1) },
+{ yr: “FY23”, val: +rng(30, 140).toFixed(1) },
+{ yr: “FY24”, val: +rng(35, 160).toFixed(1) },
+{ yr: “FY25E”, val: +rng(40, 180).toFixed(1) },
+];
+
+const eps = rev.map(d => ({ yr: d.yr, val: +(d.val / rng(10, 25)).toFixed(2) }));
+
+const margins = [
+{ k: “Gross Margin”, v: +rng(30, 75).toFixed(1) },
+{ k: “Op Margin”, v: +rng(10, 40).toFixed(1) },
+{ k: “Net Margin”, v: +rng(5, 25).toFixed(1) },
+{ k: “FCF Margin”, v: +rng(8, 30).toFixed(1) },
+];
+
+const bs = {
+assets: +rng(50, 500).toFixed(1), liab: +rng(20, 250).toFixed(1),
+equity: +rng(30, 250).toFixed(1), cash: +rng(5, 80).toFixed(1),
+debt: +rng(10, 150).toFixed(1), curRatio: +rng(0.8, 3).toFixed(2),
+deRatio: +rng(0.2, 2.5).toFixed(2),
+};
+
+const cf = [
+{ yr: “FY22”, op: +rng(5, 40).toFixed(1), inv: +(-rng(3, 20)).toFixed(1), fin: +(-rng(2, 15)).toFixed(1) },
+{ yr: “FY23”, op: +rng(8, 50).toFixed(1), inv: +(-rng(4, 25)).toFixed(1), fin: +(-rng(3, 18)).toFixed(1) },
+{ yr: “FY24”, op: +rng(10, 60).toFixed(1), inv: +(-rng(5, 30)).toFixed(1), fin: +(-rng(2, 20)).toFixed(1) },
+];
+
+const filings = [
+{ type: “10-K”, date: “2025-02-15”, desc: “Annual Report”, acc: “0001234567-25-000123”, period: “FY2024” },
+{ type: “10-Q”, date: “2024-11-05”, desc: “Quarterly Report”, acc: “0001234567-24-000456”, period: “Q3 2024” },
+{ type: “10-Q”, date: “2024-08-02”, desc: “Quarterly Report”, acc: “0001234567-24-000321”, period: “Q2 2024” },
+{ type: “10-Q”, date: “2024-05-03”, desc: “Quarterly Report”, acc: “0001234567-24-000111”, period: “Q1 2024” },
+{ type: “8-K”, date: “2025-01-28”, desc: “Earnings Release”, acc: “0001234567-25-000089”, period: “–” },
+{ type: “8-K”, date: “2024-12-10”, desc: “Material Event”, acc: “0001234567-24-000777”, period: “–” },
+{ type: “DEF 14A”, date: “2025-03-20”, desc: “Proxy Statement”, acc: “0001234567-25-000234”, period: “2025 Mtg” },
+{ type: “SC 13G/A”, date: “2025-02-14”, desc: “Ownership Amend”, acc: “0001234567-25-000100”, period: “–” },
+{ type: “4”, date: “2025-03-15”, desc: “Insider Tx - CEO”, acc: “0001234567-25-000345”, period: “–” },
+{ type: “4”, date: “2025-03-01”, desc: “Insider Tx - CFO”, acc: “0001234567-25-000300”, period: “–” },
+{ type: “S-3”, date: “2024-09-20”, desc: “Shelf Registration”, acc: “0001234567-24-000555”, period: “–” },
+{ type: “10-K”, date: “2024-02-16”, desc: “Annual Report”, acc: “0001234567-24-000012”, period: “FY2023” },
+];
+
+const holders = [
+{ name: “Vanguard Group”, pct: +rng(5, 12).toFixed(2), chg: “+0.3%” },
+{ name: “BlackRock”, pct: +rng(4, 10).toFixed(2), chg: “-0.1%” },
+{ name: “State Street”, pct: +rng(2, 7).toFixed(2), chg: “+0.2%” },
+{ name: “Fidelity Mgmt”, pct: +rng(1.5, 5).toFixed(2), chg: “+0.5%” },
+{ name: “Capital Research”, pct: +rng(1, 4).toFixed(2), chg: “-0.4%” },
+{ name: “T. Rowe Price”, pct: +rng(0.8, 3.5).toFixed(2), chg: “+0.1%” },
+{ name: “Wellington Mgmt”, pct: +rng(0.5, 3).toFixed(2), chg: “0.0%” },
+{ name: “Geode Capital”, pct: +rng(0.4, 2).toFixed(2), chg: “+0.2%” },
+];
+
+const insiders = [
+{ name: “J. Smith”, title: “CEO”, action: “SELL”, shares: “50,000”, date: “03/15”, price: `$${(price * 0.98).toFixed(2)}` },
+{ name: “J. Doe”, title: “CFO”, action: “BUY”, shares: “25,000”, date: “03/01”, price: `$${(price * 0.97).toFixed(2)}` },
+{ name: “B. Wilson”, title: “CTO”, action: “SELL”, shares: “15,000”, date: “02/20”, price: `$${(price * 0.95).toFixed(2)}` },
+{ name: “A. Chen”, title: “EVP”, action: “BUY”, shares: “10,000”, date: “02/10”, price: `$${(price * 1.01).toFixed(2)}` },
+];
+
+return {
+ticker, name: `${ticker} Inc.`, price, chg, chgPct, hi52, lo52,
+mktCap: `$${(price * rng(0.5, 5)).toFixed(1)}B`,
+shares: `${rng(1, 30).toFixed(2)}B`,
+pe: rng(15, 60).toFixed(1), fwdPe: rng(12, 45).toFixed(1),
+divYld: rng(0, 3).toFixed(2), beta: rng(0.6, 1.8).toFixed(2),
+epsVal: rng(3, 20).toFixed(2),
+avgVol: `${rng(5, 80).toFixed(1)}M`,
+cik: `000${Math.floor(rng(1000000, 9999999))}`,
+priceHist, volHist, rev, epsData: eps, margins, bs, cf, filings, holders, insiders,
+};
+}
+
+// ─── Shared ───
+const tt = { background: “#111”, border: `1px solid ${C.borderHi}`, borderRadius: 0, fontFamily: f, fontSize: 11, color: C.text, padding: “6px 10px” };
+
+function Sec({ children }) {
+return <div style={{ fontSize: 12, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 1.5, textTransform: “uppercase”, padding: “16px 0 10px” }}>{children}</div>;
+}
+
+function FundGrid({ items }) {
+return (
+<div style={{ background: C.card, border: `1px solid ${C.border}`, padding: “14px 16px”, display: “grid”, gridTemplateColumns: “repeat(3, 1fr)”, gap: “14px 0” }}>
+{items.map((it, i) => (
+<div key={i}>
+<div style={{ fontSize: 10, fontFamily: f, fontWeight: 600, color: C.textDim, letterSpacing: 1.2, textTransform: “uppercase”, marginBottom: 3 }}>{it.label}</div>
+<div style={{ fontSize: 16, fontFamily: f, fontWeight: 700, color: it.color || C.text }}>{it.value}</div>
+</div>
+))}
+</div>
+);
+}
+
+function RangeBar({ lo, hi, current }) {
+const pct = Math.max(0, Math.min(100, ((current - lo) / (hi - lo)) * 100));
+return (
+<div style={{ padding: “10px 0 4px” }}>
+<div style={{ display: “flex”, justifyContent: “space-between”, marginBottom: 6 }}>
+<span style={{ fontSize: 10, fontFamily: f, color: C.textDim, letterSpacing: 1 }}>52W LOW ${lo}</span>
+<span style={{ fontSize: 10, fontFamily: f, color: C.green, letterSpacing: 1 }}>CURRENT ${current}</span>
+<span style={{ fontSize: 10, fontFamily: f, color: C.textDim, letterSpacing: 1 }}>52W HIGH ${hi}</span>
+</div>
+<div style={{ height: 6, borderRadius: 3, background: `linear-gradient(to right, ${C.red}, ${C.gold} 50%, ${C.green})`, position: “relative” }}>
+<div style={{
+position: “absolute”, top: -2, left: `${pct}%`, transform: “translateX(-50%)”,
+width: 10, height: 10, borderRadius: 5, background: C.text, border: `2px solid ${C.bg}`,
+}} />
+</div>
+</div>
+);
+}
+
+function MetricRow({ label, value, color }) {
+return (
+<div style={{ display: “flex”, justifyContent: “space-between”, padding: “7px 0”, borderBottom: `1px solid ${C.border}` }}>
+<span style={{ fontSize: 12, color: C.textMuted, fontFamily: f }}>{label}</span>
+<span style={{ fontSize: 12, color: color || C.text, fontFamily: f, fontWeight: 600 }}>{value}</span>
+</div>
+);
+}
+
+function Tag({ children, color = C.textDim }) {
+return <span style={{ display: “inline-block”, padding: “1px 6px”, fontSize: 10, fontFamily: f, fontWeight: 600, color, border: `1px solid ${color}44`, letterSpacing: 0.5 }}>{children}</span>;
+}
+
+// ─── Sub-tab: Overview ───
+function SubOverview({ d }) {
+return (
+<>
+<Sec>FUNDAMENTALS</Sec>
+<FundGrid items={[
+{ label: “Mkt Cap”, value: d.mktCap },
+{ label: “Shares”, value: d.shares },
+{ label: “P/E Ratio”, value: d.pe },
+{ label: “EPS (TTM)”, value: d.epsVal },
+{ label: “Beta”, value: d.beta },
+{ label: “Div Yield”, value: d.divYld === “0.00” ? “—” : `${d.divYld}%` },
+]} />
+<RangeBar lo={d.lo52} hi={d.hi52} current={d.price.toFixed(2)} />
+
+```
+  <Sec>52-WEEK PRICE</Sec>
+  <ResponsiveContainer width="100%" height={180}>
+    <AreaChart data={d.priceHist}>
+      <defs>
+        <linearGradient id="pg" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="5%" stopColor={C.gold} stopOpacity={0.12} />
+          <stop offset="95%" stopColor={C.gold} stopOpacity={0} />
+        </linearGradient>
+      </defs>
+      <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
+      <XAxis dataKey="w" tick={{ fill: C.textDim, fontSize: 9, fontFamily: f }} interval={12} axisLine={{ stroke: C.border }} tickLine={false} />
+      <YAxis tick={{ fill: C.textDim, fontSize: 9, fontFamily: f }} domain={["auto", "auto"]} axisLine={{ stroke: C.border }} tickLine={false} />
+      <Tooltip contentStyle={tt} labelStyle={{ color: C.textDim }} />
+      <Area type="monotone" dataKey="p" stroke={C.gold} fill="url(#pg)" strokeWidth={1.5} dot={false} name="Price" />
+    </AreaChart>
+  </ResponsiveContainer>
+
+  <Sec>VOLUME (20D)</Sec>
+  <ResponsiveContainer width="100%" height={100}>
+    <BarChart data={d.volHist}>
+      <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
+      <XAxis dataKey="d" tick={{ fill: C.textDim, fontSize: 8, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
+      <YAxis tick={{ fill: C.textDim, fontSize: 8, fontFamily: f }} tickFormatter={v => `${(v / 1e6).toFixed(0)}M`} axisLine={{ stroke: C.border }} tickLine={false} />
+      <Tooltip contentStyle={tt} formatter={v => [`${(v / 1e6).toFixed(1)}M`, "Vol"]} />
+      <Bar dataKey="v" fill={C.textDim} radius={[1, 1, 0, 0]} />
+    </BarChart>
+  </ResponsiveContainer>
+
+  <Sec>MARGIN PROFILE</Sec>
+  {d.margins.map((m, i) => (
+    <div key={i} style={{ padding: "7px 0", borderBottom: `1px solid ${C.border}` }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+        <span style={{ fontSize: 11, fontFamily: f, color: C.textMuted }}>{m.k}</span>
+        <span style={{ fontSize: 11, fontFamily: f, color: m.v > 20 ? C.green : m.v > 10 ? C.gold : C.red, fontWeight: 600 }}>{m.v}%</span>
+      </div>
+      <div style={{ height: 3, background: C.border }}>
+        <div style={{ height: 3, width: `${Math.min(m.v, 100)}%`, background: m.v > 20 ? C.green : m.v > 10 ? C.gold : C.red }} />
+      </div>
+    </div>
+  ))}
+</>
+```
+
+);
+}
+
+// ─── Sub-tab: Financials ───
+function SubFinancials({ d }) {
+const [view, setView] = useState(“income”);
+return (
+<>
+<div style={{ display: “flex”, gap: 6, padding: “14px 0 8px” }}>
+{[[“income”, “Income”], [“balance”, “Balance”], [“cashflow”, “Cash Flow”]].map(([id, label]) => (
+<button key={id} onClick={() => setView(id)} style={{
+padding: “4px 12px”, fontSize: 10, fontFamily: f, fontWeight: 600,
+color: view === id ? “#000” : C.textMuted,
+background: view === id ? C.gold : “transparent”,
+border: `1px solid ${view === id ? C.gold : C.borderHi}`,
+borderRadius: 14, cursor: “pointer”, letterSpacing: 0.5,
+}}>{label}</button>
+))}
+</div>
+
+```
+  {view === "income" && (
+    <>
+      <Sec>REVENUE ($B)</Sec>
+      <ResponsiveContainer width="100%" height={160}>
+        <BarChart data={d.rev}>
+          <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
+          <XAxis dataKey="yr" tick={{ fill: C.textDim, fontSize: 10, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
+          <YAxis tick={{ fill: C.textDim, fontSize: 10, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
+          <Tooltip contentStyle={tt} />
+          <Bar dataKey="val" fill={C.gold} radius={[2, 2, 0, 0]} name="Revenue" />
+        </BarChart>
+      </ResponsiveContainer>
+      <Sec>EPS TREND</Sec>
+      <ResponsiveContainer width="100%" height={140}>
+        <LineChart data={d.epsData}>
+          <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
+          <XAxis dataKey="yr" tick={{ fill: C.textDim, fontSize: 10, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
+          <YAxis tick={{ fill: C.textDim, fontSize: 10, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
+          <Tooltip contentStyle={tt} />
+          <Line type="monotone" dataKey="val" stroke={C.green} strokeWidth={2} dot={{ fill: C.green, r: 3, strokeWidth: 0 }} name="EPS" />
+        </LineChart>
+      </ResponsiveContainer>
+    </>
+  )}
+
+  {view === "balance" && (
+    <>
+      <Sec>BALANCE SHEET ($B)</Sec>
+      <FundGrid items={[
+        { label: "Total Assets", value: `$${d.bs.assets}B` },
+        { label: "Liabilities", value: `$${d.bs.liab}B`, color: C.red },
+        { label: "Equity", value: `$${d.bs.equity}B`, color: C.green },
+        { label: "Cash", value: `$${d.bs.cash}B`, color: C.gold },
+        { label: "Debt", value: `$${d.bs.debt}B`, color: C.red },
+        { label: "Cur Ratio", value: d.bs.curRatio, color: +d.bs.curRatio >= 1.5 ? C.green : C.gold },
+      ]} />
+      <div style={{ marginTop: 12 }}>
+        <MetricRow label="Debt/Equity" value={d.bs.deRatio} color={+d.bs.deRatio <= 1 ? C.green : C.red} />
+      </div>
+    </>
+  )}
+
+  {view === "cashflow" && (
+    <>
+      <Sec>CASH FLOW ($B)</Sec>
+      <ResponsiveContainer width="100%" height={200}>
+        <BarChart data={d.cf}>
+          <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
+          <XAxis dataKey="yr" tick={{ fill: C.textDim, fontSize: 10, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
+          <YAxis tick={{ fill: C.textDim, fontSize: 10, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
+          <Tooltip contentStyle={tt} />
+          <Bar dataKey="op" fill={C.green} name="Operating" radius={[2, 2, 0, 0]} />
+          <Bar dataKey="inv" fill={C.gold} name="Investing" radius={[2, 2, 0, 0]} />
+          <Bar dataKey="fin" fill={C.textDim} name="Financing" radius={[2, 2, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+      <div style={{ display: "flex", gap: 14, padding: "6px 0" }}>
+        {[["Operating", C.green], ["Investing", C.gold], ["Financing", C.textDim]].map(([l, c]) => (
+          <span key={l} style={{ fontSize: 10, fontFamily: f, color: C.textDim }}><span style={{ color: c }}>■</span> {l}</span>
+        ))}
+      </div>
+    </>
+  )}
+</>
+```
+
+);
+}
+
+// ─── Sub-tab: SEC Filings ───
+function SubSEC({ d }) {
+const [filter, setFilter] = useState(“ALL”);
+const [exp, setExp] = useState(null);
+const types = [“ALL”, “10-K”, “10-Q”, “8-K”, “DEF 14A”, “4”];
+const tc = { “10-K”: C.gold, “10-Q”: C.cyan, “8-K”: C.amber, “DEF 14A”: C.purple, “4”: C.green, “SC 13G/A”: C.textMuted, “S-3”: C.textDim };
+const filtered = filter === “ALL” ? d.filings : d.filings.filter(fi => fi.type === filter);
+
+return (
+<>
+<div style={{ display: “flex”, justifyContent: “space-between”, alignItems: “center”, padding: “14px 0 8px” }}>
+<div>
+<span style={{ fontSize: 12, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 1.5 }}>SEC EDGAR</span>
+<span style={{ fontSize: 10, fontFamily: f, color: C.textDim, marginLeft: 10 }}>CIK {d.cik}</span>
+</div>
+<a href={`https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company=${d.ticker}&CIK=&type=&dateb=&owner=include&count=40`}
+target=”_blank” rel=“noopener noreferrer”
+style={{ fontSize: 9, fontFamily: f, fontWeight: 700, color: C.gold, textDecoration: “none”, letterSpacing: 1, padding: “3px 8px”, border: `1px solid ${C.gold}44` }}>
+EDGAR ↗
+</a>
+</div>
+
+```
+  <div style={{ display: "flex", gap: 5, paddingBottom: 10, borderBottom: `1px solid ${C.border}`, flexWrap: "wrap" }}>
+    {types.map(t => (
+      <button key={t} onClick={() => setFilter(t)} style={{
+        padding: "2px 8px", fontSize: 9, fontFamily: f, fontWeight: 600,
+        color: filter === t ? "#000" : C.textDim,
+        background: filter === t ? (tc[t] || C.gold) : "transparent",
+        border: `1px solid ${filter === t ? "transparent" : C.borderHi}`,
+        cursor: "pointer", letterSpacing: 0.5,
+      }}>{t}</button>
+    ))}
+  </div>
+
+  {filtered.map((fi, i) => {
+    const isExp = exp === i;
+    const c = tc[fi.type] || C.textDim;
+    return (
+      <div key={i} onClick={() => setExp(isExp ? null : i)}
+        style={{ padding: "9px 0", borderBottom: `1px solid ${C.border}`, cursor: "pointer", background: isExp ? "#060606" : "transparent" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Tag color={c}>{fi.type}</Tag>
+            <span style={{ fontSize: 11, fontFamily: f, color: C.text }}>{fi.desc}</span>
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <span style={{ fontSize: 9, fontFamily: f, color: C.textDim }}>{fi.date}</span>
+            <span style={{ fontSize: 9, color: C.textDim, display: "inline-block", transform: isExp ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>▾</span>
+          </div>
+        </div>
+        {isExp && (
+          <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${C.border}` }}>
+            <div style={{ fontSize: 10, fontFamily: f, color: C.textDim, marginBottom: 8 }}>
+              <span style={{ letterSpacing: 1 }}>ACC </span><span style={{ color: C.textMuted }}>{fi.acc}</span>
+              <span style={{ marginLeft: 12, letterSpacing: 1 }}>PERIOD </span><span style={{ color: C.textMuted }}>{fi.period}</span>
+            </div>
+            <div style={{ display: "flex", gap: 6 }}>
+              <a href={`https://www.sec.gov/Archives/edgar/data/${d.cik}/${fi.acc.replace(/-/g, "")}`}
+                target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
+                style={{ fontSize: 9, fontFamily: f, fontWeight: 700, color: c, textDecoration: "none", padding: "2px 7px", border: `1px solid ${c}44`, letterSpacing: 0.5 }}>VIEW ↗</a>
+              <a href={`https://efts.sec.gov/LATEST/search-index?q=%22${fi.acc}%22`}
+                target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
+                style={{ fontSize: 9, fontFamily: f, fontWeight: 700, color: C.textDim, textDecoration: "none", padding: "2px 7px", border: `1px solid ${C.borderHi}`, letterSpacing: 0.5 }}>FULL TEXT ↗</a>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  })}
+
+  <Sec>QUICK LINKS</Sec>
+  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+    {[
+      ["Full-Text Search", `https://efts.sec.gov/LATEST/search-index?q=${d.ticker}`],
+      ["Insider Filings", `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${d.cik}&type=4&count=40`],
+      ["Ownership (13F)", `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${d.cik}&type=SC%2013&count=40`],
+      ["Annual Reports", `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${d.cik}&type=10-K&count=10`],
+    ].map(([label, url], i) => (
+      <a key={i} href={url} target="_blank" rel="noopener noreferrer"
+        style={{ fontSize: 10, fontFamily: f, color: C.gold, textDecoration: "none", padding: "7px 8px", border: `1px solid ${C.border}`, display: "block" }}
+        onMouseEnter={e => e.currentTarget.style.borderColor = C.gold + "55"}
+        onMouseLeave={e => e.currentTarget.style.borderColor = C.border}>
+        {label} ↗
+      </a>
+    ))}
+  </div>
+</>
+```
+
+);
+}
+
+// ─── Sub-tab: Ownership ───
+function SubOwnership({ d }) {
+return (
+<>
+<Sec>INSTITUTIONAL HOLDERS</Sec>
+<div style={{ display: “grid”, gridTemplateColumns: “2fr 1fr 1fr”, padding: “5px 0”, borderBottom: `1px solid ${C.borderHi}` }}>
+{[“INSTITUTION”, “% OUT”, “CHG”].map((h, i) => (
+<span key={i} style={{ fontSize: 9, fontFamily: f, fontWeight: 700, color: C.textDim, letterSpacing: 1.5, textAlign: i > 0 ? “right” : “left” }}>{h}</span>
+))}
+</div>
+{d.holders.map((h, i) => (
+<div key={i} style={{ display: “grid”, gridTemplateColumns: “2fr 1fr 1fr”, padding: “6px 0”, borderBottom: `1px solid ${C.border}` }}>
+<span style={{ fontSize: 11, fontFamily: f, color: C.text }}>{h.name}</span>
+<span style={{ fontSize: 11, fontFamily: f, color: C.gold, textAlign: “right”, fontWeight: 600 }}>{h.pct}%</span>
+<span style={{ fontSize: 11, fontFamily: f, textAlign: “right”, color: h.chg.startsWith(”+”) ? C.green : h.chg.startsWith(”-”) ? C.red : C.textDim }}>{h.chg}</span>
+</div>
+))}
+
+```
+  <Sec>INSIDER TRANSACTIONS</Sec>
+  <div style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr 0.6fr 1fr 0.6fr", padding: "5px 0", borderBottom: `1px solid ${C.borderHi}` }}>
+    {["NAME", "TITLE", "TYPE", "SHARES", "DATE"].map((h, i) => (
+      <span key={i} style={{ fontSize: 9, fontFamily: f, fontWeight: 700, color: C.textDim, letterSpacing: 1.2, textAlign: i >= 3 ? "right" : "left" }}>{h}</span>
+    ))}
+  </div>
+  {d.insiders.map((t, i) => (
+    <div key={i} style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr 0.6fr 1fr 0.6fr", padding: "6px 0", borderBottom: `1px solid ${C.border}` }}>
+      <span style={{ fontSize: 11, fontFamily: f, color: C.text }}>{t.name}</span>
+      <span style={{ fontSize: 11, fontFamily: f, color: C.textMuted }}>{t.title}</span>
+      <span style={{ fontSize: 11, fontFamily: f, color: t.action === "BUY" ? C.green : C.red, fontWeight: 700 }}>{t.action}</span>
+      <span style={{ fontSize: 11, fontFamily: f, color: C.text, textAlign: "right" }}>{t.shares}</span>
+      <span style={{ fontSize: 11, fontFamily: f, color: C.textDim, textAlign: "right" }}>{t.date}</span>
+    </div>
+  ))}
+</>
+```
+
+);
+}
+
+// ─── Sub-tab: Valuation ───
+function SubValuation({ d }) {
+const multiples = [
+{ m: “P/E (TTM)”, co: +d.pe, sec: +(d.pe * 0.85).toFixed(1), sp: 22.5 },
+{ m: “Fwd P/E”, co: +d.fwdPe, sec: +(d.fwdPe * 0.9).toFixed(1), sp: 19.8 },
+{ m: “EV/Rev”, co: +(+d.mktCap.replace(/[$B]/g, “”) / d.rev[3]?.val).toFixed(1), sec: 6.2, sp: 3.1 },
+{ m: “EV/EBITDA”, co: +(d.pe * 0.65).toFixed(1), sec: +(d.pe * 0.55).toFixed(1), sp: 14.2 },
+{ m: “P/B”, co: +(+d.mktCap.replace(/[$B]/g, “”) / d.bs.equity).toFixed(1), sec: 5.8, sp: 4.2 },
+];
+
+return (
+<>
+<Sec>VALUATION MULTIPLES</Sec>
+<div style={{ display: “grid”, gridTemplateColumns: “1.4fr 1fr 1fr 1fr 1fr”, padding: “5px 0”, borderBottom: `1px solid ${C.borderHi}` }}>
+{[“METRIC”, d.ticker, “SECTOR”, “S&P”, “vs SEC”].map((h, i) => (
+<span key={i} style={{ fontSize: 9, fontFamily: f, fontWeight: 700, color: C.textDim, letterSpacing: 1.2, textAlign: i > 0 ? “right” : “left” }}>{h}</span>
+))}
+</div>
+{multiples.map((m, i) => {
+const diff = ((m.co - m.sec) / m.sec * 100).toFixed(0);
+const over = +diff > 0;
+return (
+<div key={i} style={{ display: “grid”, gridTemplateColumns: “1.4fr 1fr 1fr 1fr 1fr”, padding: “6px 0”, borderBottom: `1px solid ${C.border}` }}>
+<span style={{ fontSize: 11, fontFamily: f, color: C.textMuted, fontWeight: 600 }}>{m.m}</span>
+<span style={{ fontSize: 11, fontFamily: f, color: C.gold, textAlign: “right”, fontWeight: 600 }}>{m.co}</span>
+<span style={{ fontSize: 11, fontFamily: f, color: C.textDim, textAlign: “right” }}>{m.sec}</span>
+<span style={{ fontSize: 11, fontFamily: f, color: C.textDim, textAlign: “right” }}>{m.sp}</span>
+<span style={{ fontSize: 11, fontFamily: f, color: over ? C.red : C.green, textAlign: “right”, fontWeight: 600 }}>{over ? “+” : “”}{diff}%</span>
+</div>
+);
+})}
+
+```
+  <Sec>COMPARATIVE</Sec>
+  <ResponsiveContainer width="100%" height={200}>
+    <BarChart data={multiples}>
+      <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
+      <XAxis dataKey="m" tick={{ fill: C.textDim, fontSize: 8, fontFamily: f }} interval={0} angle={-15} textAnchor="end" height={40} axisLine={{ stroke: C.border }} tickLine={false} />
+      <YAxis tick={{ fill: C.textDim, fontSize: 9, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
+      <Tooltip contentStyle={tt} />
+      <Bar dataKey="co" fill={C.gold} name={d.ticker} radius={[2, 2, 0, 0]} />
+      <Bar dataKey="sec" fill={C.textDim} name="Sector" radius={[2, 2, 0, 0]} />
+      <Bar dataKey="sp" fill={C.borderHi} name="S&P 500" radius={[2, 2, 0, 0]} />
+    </BarChart>
+  </ResponsiveContainer>
+  <div style={{ display: "flex", gap: 14, padding: "6px 0" }}>
+    {[[d.ticker, C.gold], ["Sector", C.textDim], ["S&P 500", C.borderHi]].map(([l, c]) => (
+      <span key={l} style={{ fontSize: 10, fontFamily: f, color: C.textDim }}><span style={{ color: c }}>■</span> {l}</span>
+    ))}
+  </div>
+</>
+```
+
+);
+}
+
+// ─── Main ───
+export default function CompanyResearchTab() {
+const [ticker, setTicker] = useState(“NVDA”);
+const [input, setInput] = useState(“NVDA”);
+const [sub, setSub] = useState(“overview”);
+const [data, setData] = useState(null);
+
+useEffect(() => { setData(genData(ticker)); }, [ticker]);
+
+const go = () => {
+const t = input.trim().toUpperCase();
+if (!t) return;
+setTicker(t);
+setSub(“overview”);
+};
+
+const up = data ? data.chg >= 0 : true;
+const subs = [
+{ id: “overview”, label: “Overview” },
+{ id: “financials”, label: “Financials” },
+{ id: “sec”, label: “SEC” },
+{ id: “ownership”, label: “Ownership” },
+{ id: “valuation”, label: “Valuation” },
+];
+
+if (!data) return null;
+
+return (
+<div style={{ minHeight: “100vh”, background: C.bg, color: C.text, fontFamily: f }}>
+{/* Simulated stock header */}
+<div style={{ padding: “12px 16px”, borderBottom: `1px solid ${C.border}` }}>
+<div style={{ display: “flex”, alignItems: “center”, gap: 8, marginBottom: 4 }}>
+<input value={input} onChange={e => setInput(e.target.value.toUpperCase())}
+onKeyDown={e => e.key === “Enter” && go()}
+style={{ fontSize: 22, fontWeight: 800, fontFamily: f, color: C.text, background: “transparent”, border: “none”, outline: “none”, width: 120, padding: 0, letterSpacing: 1 }} />
+<span style={{ fontSize: 13, color: up ? C.green : C.red, fontFamily: f, fontWeight: 600 }}>{up ? “+” : “−”}</span>
+</div>
+<div style={{ fontSize: 11, fontFamily: f, color: C.gold, fontWeight: 600, marginBottom: 8 }}>{data.name.toUpperCase()}</div>
+<div style={{ display: “flex”, justifyContent: “space-between”, alignItems: “baseline” }}>
+<div>
+<span style={{ fontSize: 24, fontWeight: 700, fontFamily: f, color: C.text }}>${data.price.toFixed(2)}</span>
+<span style={{ fontSize: 12, fontFamily: f, color: up ? C.green : C.red, marginLeft: 10, fontWeight: 600 }}>
+{up ? “+” : “”}${data.chg.toFixed(2)} ({up ? “+” : “”}{data.chgPct}%)
+</span>
+</div>
+</div>
+<div style={{ display: “flex”, gap: 14, marginTop: 6 }}>
+<span style={{ fontSize: 10, fontFamily: f, color: C.textDim }}>Volume <span style={{ color: C.textMuted }}>{data.avgVol}</span></span>
+<span style={{ fontSize: 10, fontFamily: f, color: C.textDim }}>52W <span style={{ color: C.textMuted }}>${data.lo52} — ${data.hi52}</span></span>
+</div>
+</div>
+
+```
+  {/* Sub-tab pills */}
+  <div style={{ display: "flex", gap: 6, padding: "10px 16px", overflowX: "auto" }}>
+    {subs.map(s => (
+      <button key={s.id} onClick={() => setSub(s.id)} style={{
+        padding: "5px 14px", fontSize: 11, fontFamily: f, fontWeight: 600,
+        color: sub === s.id ? "#000" : C.textMuted,
+        background: sub === s.id ? C.gold : "transparent",
+        border: `1px solid ${sub === s.id ? C.gold : C.borderHi}`,
+        borderRadius: 14, cursor: "pointer", letterSpacing: 0.3, whiteSpace: "nowrap",
+      }}>{s.label}</button>
+    ))}
+    <div style={{ display: "flex", alignItems: "center", gap: 4, marginLeft: 4 }}>
+      {subs.map((s, i) => (
+        <div key={i} style={{ width: 5, height: 5, borderRadius: 3, background: sub === s.id ? C.gold : C.borderHi }} />
+      ))}
+    </div>
+  </div>
+
+  {/* Content */}
+  <div style={{ padding: "0 16px 40px" }}>
+    {sub === "overview" && <SubOverview d={data} />}
+    {sub === "financials" && <SubFinancials d={data} />}
+    {sub === "sec" && <SubSEC d={data} />}
+    {sub === "ownership" && <SubOwnership d={data} />}
+    {sub === "valuation" && <SubValuation d={data} />}
+  </div>
+</div>
+```
+
+);
+}

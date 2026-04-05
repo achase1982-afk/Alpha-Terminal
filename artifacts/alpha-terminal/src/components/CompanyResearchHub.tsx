@@ -1,18 +1,40 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useQuote } from "@/hooks/useQuote";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { consumeStream } from "@/lib/consumeStream";
 import { useTechnicalsCache } from "@/hooks/useTechnicalsCache";
 import { AiThinkingFeed } from "@/components/ai-shared/AiThinkingFeed";
-import { Button } from "@/components/ui/button";
 import { Loader2, Activity } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import {
   useGetQuote, useGetPriceHistory,
 } from "@workspace/api-client-react";
+import {
+  LineChart, Line, BarChart, Bar, AreaChart, Area,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+} from "recharts";
 
 const API_BASE = "/api";
+
+const C = {
+  bg: "#000",
+  card: "#111",
+  border: "#1c1c1c",
+  borderHi: "#2a2a2a",
+  text: "#e5e5e5",
+  textMuted: "#999",
+  textDim: "#555",
+  gold: "#d4a843",
+  green: "#00c853",
+  red: "#ff1744",
+  cyan: "#4dd0e1",
+  amber: "#ffa726",
+  purple: "#b388ff",
+};
+
+const f = `'SFMono-Regular', 'SF Mono', ui-monospace, 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace`;
+const tt: React.CSSProperties = { background: "#111", border: `1px solid ${C.borderHi}`, borderRadius: 0, fontFamily: f, fontSize: 11, color: C.text, padding: "6px 10px" };
 
 interface FundamentalData {
   symbol: string;
@@ -27,17 +49,13 @@ interface FundamentalData {
   error?: string;
 }
 
-interface TechnicalSnapshot {
-  trend: string | null;
-  trendSignal: "bullish" | "neutral" | "bearish" | null;
-  rsi: number | null;
-  rsiLabel: string | null;
-  resistance1: number | null;
-  support1: number | null;
-  resistance2: number | null;
-  support2: number | null;
-  shortTermOutlook: string | null;
-  error?: string;
+interface CandleData {
+  datetime: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
 }
 
 function fmtMarketCap(n: number | null): string {
@@ -52,7 +70,6 @@ function fmtShares(n: number | null): string {
   if (n == null) return "—";
   if (n >= 1e9) return `${(n / 1e9).toFixed(2)}B`;
   if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
-  if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
   return n.toLocaleString();
 }
 
@@ -61,22 +78,470 @@ function fmtNum(n: number | null, decimals = 2): string {
   return n.toFixed(decimals);
 }
 
-function fmtPct(n: number | null): string {
-  if (n == null) return "—";
-  return `${n.toFixed(2)}%`;
+function genMockData(ticker: string) {
+  const s = ticker.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
+  let seed = s;
+  const rng = (min: number, max: number) => {
+    seed = (seed * 9301 + 49297) % 233280;
+    const x = seed / 233280;
+    return min + x * (max - min);
+  };
+  const price = +rng(50, 500).toFixed(2);
+
+  const rev = [
+    { yr: "FY21", val: +rng(20, 100).toFixed(1) },
+    { yr: "FY22", val: +rng(25, 120).toFixed(1) },
+    { yr: "FY23", val: +rng(30, 140).toFixed(1) },
+    { yr: "FY24", val: +rng(35, 160).toFixed(1) },
+    { yr: "FY25E", val: +rng(40, 180).toFixed(1) },
+  ];
+  const epsData = rev.map(d => ({ yr: d.yr, val: +(d.val / rng(10, 25)).toFixed(2) }));
+  const margins = [
+    { k: "Gross Margin", v: +rng(30, 75).toFixed(1) },
+    { k: "Op Margin", v: +rng(10, 40).toFixed(1) },
+    { k: "Net Margin", v: +rng(5, 25).toFixed(1) },
+    { k: "FCF Margin", v: +rng(8, 30).toFixed(1) },
+  ];
+  const bs = {
+    assets: +rng(50, 500).toFixed(1), liab: +rng(20, 250).toFixed(1),
+    equity: +rng(30, 250).toFixed(1), cash: +rng(5, 80).toFixed(1),
+    debt: +rng(10, 150).toFixed(1), curRatio: +rng(0.8, 3).toFixed(2),
+    deRatio: +rng(0.2, 2.5).toFixed(2),
+  };
+  const cf = [
+    { yr: "FY22", op: +rng(5, 40).toFixed(1), inv: +(-rng(3, 20)).toFixed(1), fin: +(-rng(2, 15)).toFixed(1) },
+    { yr: "FY23", op: +rng(8, 50).toFixed(1), inv: +(-rng(4, 25)).toFixed(1), fin: +(-rng(3, 18)).toFixed(1) },
+    { yr: "FY24", op: +rng(10, 60).toFixed(1), inv: +(-rng(5, 30)).toFixed(1), fin: +(-rng(2, 20)).toFixed(1) },
+  ];
+  const filings = [
+    { type: "10-K", date: "2025-02-15", desc: "Annual Report", acc: "0001234567-25-000123", period: "FY2024" },
+    { type: "10-Q", date: "2024-11-05", desc: "Quarterly Report", acc: "0001234567-24-000456", period: "Q3 2024" },
+    { type: "10-Q", date: "2024-08-02", desc: "Quarterly Report", acc: "0001234567-24-000321", period: "Q2 2024" },
+    { type: "10-Q", date: "2024-05-03", desc: "Quarterly Report", acc: "0001234567-24-000111", period: "Q1 2024" },
+    { type: "8-K", date: "2025-01-28", desc: "Earnings Release", acc: "0001234567-25-000089", period: "–" },
+    { type: "8-K", date: "2024-12-10", desc: "Material Event", acc: "0001234567-24-000777", period: "–" },
+    { type: "DEF 14A", date: "2025-03-20", desc: "Proxy Statement", acc: "0001234567-25-000234", period: "2025 Mtg" },
+    { type: "SC 13G/A", date: "2025-02-14", desc: "Ownership Amend", acc: "0001234567-25-000100", period: "–" },
+    { type: "4", date: "2025-03-15", desc: "Insider Tx - CEO", acc: "0001234567-25-000345", period: "–" },
+    { type: "4", date: "2025-03-01", desc: "Insider Tx - CFO", acc: "0001234567-25-000300", period: "–" },
+    { type: "S-3", date: "2024-09-20", desc: "Shelf Registration", acc: "0001234567-24-000555", period: "–" },
+    { type: "10-K", date: "2024-02-16", desc: "Annual Report", acc: "0001234567-24-000012", period: "FY2023" },
+  ];
+  const holders = [
+    { name: "Vanguard Group", pct: +rng(5, 12).toFixed(2), chg: "+0.3%" },
+    { name: "BlackRock", pct: +rng(4, 10).toFixed(2), chg: "-0.1%" },
+    { name: "State Street", pct: +rng(2, 7).toFixed(2), chg: "+0.2%" },
+    { name: "Fidelity Mgmt", pct: +rng(1.5, 5).toFixed(2), chg: "+0.5%" },
+    { name: "Capital Research", pct: +rng(1, 4).toFixed(2), chg: "-0.4%" },
+    { name: "T. Rowe Price", pct: +rng(0.8, 3.5).toFixed(2), chg: "+0.1%" },
+    { name: "Wellington Mgmt", pct: +rng(0.5, 3).toFixed(2), chg: "0.0%" },
+    { name: "Geode Capital", pct: +rng(0.4, 2).toFixed(2), chg: "+0.2%" },
+  ];
+  const insiders = [
+    { name: "J. Smith", title: "CEO", action: "SELL", shares: "50,000", date: "03/15", price: `$${(price * 0.98).toFixed(2)}` },
+    { name: "J. Doe", title: "CFO", action: "BUY", shares: "25,000", date: "03/01", price: `$${(price * 0.97).toFixed(2)}` },
+    { name: "B. Wilson", title: "CTO", action: "SELL", shares: "15,000", date: "02/20", price: `$${(price * 0.95).toFixed(2)}` },
+    { name: "A. Chen", title: "EVP", action: "BUY", shares: "10,000", date: "02/10", price: `$${(price * 1.01).toFixed(2)}` },
+  ];
+  const cik = `000${Math.floor(rng(1000000, 9999999))}`;
+  const mktCapStr = `$${(price * rng(0.5, 5)).toFixed(1)}B`;
+  return { rev, epsData, margins, bs, cf, filings, holders, insiders, cik, mktCapStr, price,
+    pe: rng(15, 60).toFixed(1), fwdPe: rng(12, 45).toFixed(1),
+  };
 }
 
-function DataPoint({ label, value }: { label: string; value: string }) {
+function Sec({ children }: { children: React.ReactNode }) {
+  return <div style={{ fontSize: 12, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 1.5, textTransform: "uppercase", padding: "16px 0 10px" }}>{children}</div>;
+}
+
+function FundGrid({ items }: { items: { label: string; value: string; color?: string }[] }) {
   return (
-    <div className="flex flex-col">
-      <span className="text-[8px] text-muted-foreground font-bold tracking-tighter">{label}</span>
-      <span className="text-xs font-mono font-semibold text-white tabular-nums">{value}</span>
+    <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: "14px 16px", display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "14px 0" }}>
+      {items.map((it, i) => (
+        <div key={i}>
+          <div style={{ fontSize: 10, fontFamily: f, fontWeight: 600, color: C.textDim, letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 3 }}>{it.label}</div>
+          <div style={{ fontSize: 16, fontFamily: f, fontWeight: 700, color: it.color || C.text }}>{it.value}</div>
+        </div>
+      ))}
     </div>
   );
 }
 
-interface CompanyResearchHubProps {
-  candles?: Array<{ datetime: string; open: number; high: number; low: number; close: number; volume: number }>;
+function RangeBar({ lo, hi, current }: { lo: number; hi: number; current: string }) {
+  const pct = Math.max(0, Math.min(100, ((parseFloat(current) - lo) / (hi - lo)) * 100));
+  return (
+    <div style={{ padding: "10px 0 4px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+        <span style={{ fontSize: 10, fontFamily: f, color: C.textDim, letterSpacing: 1 }}>52W LOW ${lo.toFixed(2)}</span>
+        <span style={{ fontSize: 10, fontFamily: f, color: C.green, letterSpacing: 1 }}>CURRENT ${current}</span>
+        <span style={{ fontSize: 10, fontFamily: f, color: C.textDim, letterSpacing: 1 }}>52W HIGH ${hi.toFixed(2)}</span>
+      </div>
+      <div style={{ height: 6, borderRadius: 3, background: `linear-gradient(to right, ${C.red}, ${C.gold} 50%, ${C.green})`, position: "relative" }}>
+        <div style={{
+          position: "absolute", top: -2, left: `${pct}%`, transform: "translateX(-50%)",
+          width: 10, height: 10, borderRadius: 5, background: C.text, border: `2px solid ${C.bg}`,
+        }} />
+      </div>
+    </div>
+  );
+}
+
+function MetricRow({ label, value, color }: { label: string; value: string; color?: string }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: `1px solid ${C.border}` }}>
+      <span style={{ fontSize: 12, color: C.textMuted, fontFamily: f }}>{label}</span>
+      <span style={{ fontSize: 12, color: color || C.text, fontFamily: f, fontWeight: 600 }}>{value}</span>
+    </div>
+  );
+}
+
+function Tag({ children, color = C.textDim }: { children: React.ReactNode; color?: string }) {
+  return <span style={{ display: "inline-block", padding: "1px 6px", fontSize: 10, fontFamily: f, fontWeight: 600, color, border: `1px solid ${color}44`, letterSpacing: 0.5 }}>{children}</span>;
+}
+
+interface QuoteInfo {
+  symbol?: string;
+  last?: number;
+  fiftyTwoWeekHigh?: number;
+  fiftyTwoWeekLow?: number;
+  peRatio?: number;
+}
+
+function SubOverview({ fund, quoteData, priceHist, volHist }: {
+  fund: FundamentalData | null;
+  quoteData: QuoteInfo | null;
+  priceHist: { w: string; p: number }[];
+  volHist: { d: string; v: number }[];
+}) {
+  const currentPrice = quoteData?.last;
+  const high52 = fund?.high52 ?? quoteData?.fiftyTwoWeekHigh;
+  const low52 = fund?.low52 ?? quoteData?.fiftyTwoWeekLow;
+  const mock = useMemo(() => genMockData(quoteData?.symbol || "AAPL"), [quoteData?.symbol]);
+
+  return (
+    <>
+      <Sec>FUNDAMENTALS</Sec>
+      <FundGrid items={[
+        { label: "Mkt Cap", value: fmtMarketCap(fund?.marketCap ?? null) },
+        { label: "Shares", value: fmtShares(fund?.sharesOutstanding ?? null) },
+        { label: "P/E Ratio", value: fmtNum(fund?.peRatio ?? quoteData?.peRatio ?? null) },
+        { label: "EPS (TTM)", value: fmtNum(fund?.eps ?? null) },
+        { label: "Beta", value: fmtNum(fund?.beta ?? null) },
+        { label: "Div Yield", value: fund?.dividendYield != null ? `${fund.dividendYield.toFixed(2)}%` : "—" },
+      ]} />
+      {high52 != null && low52 != null && currentPrice != null && (
+        <RangeBar lo={low52} hi={high52} current={currentPrice.toFixed(2)} />
+      )}
+
+      <Sec>52-WEEK PRICE</Sec>
+      <ResponsiveContainer width="100%" height={180}>
+        <AreaChart data={priceHist}>
+          <defs>
+            <linearGradient id="pg" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor={C.gold} stopOpacity={0.12} />
+              <stop offset="95%" stopColor={C.gold} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
+          <XAxis dataKey="w" tick={{ fill: C.textDim, fontSize: 9, fontFamily: f }} interval={Math.max(1, Math.floor(priceHist.length / 5))} axisLine={{ stroke: C.border }} tickLine={false} />
+          <YAxis tick={{ fill: C.textDim, fontSize: 9, fontFamily: f }} domain={["auto", "auto"]} axisLine={{ stroke: C.border }} tickLine={false} />
+          <Tooltip contentStyle={tt} labelStyle={{ color: C.textDim }} />
+          <Area type="monotone" dataKey="p" stroke={C.gold} fill="url(#pg)" strokeWidth={1.5} dot={false} name="Price" />
+        </AreaChart>
+      </ResponsiveContainer>
+
+      <Sec>VOLUME (20D)</Sec>
+      <ResponsiveContainer width="100%" height={100}>
+        <BarChart data={volHist}>
+          <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
+          <XAxis dataKey="d" tick={{ fill: C.textDim, fontSize: 8, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
+          <YAxis tick={{ fill: C.textDim, fontSize: 8, fontFamily: f }} tickFormatter={(v: number) => `${(v / 1e6).toFixed(0)}M`} axisLine={{ stroke: C.border }} tickLine={false} />
+          <Tooltip contentStyle={tt} formatter={(v: number) => [`${(v / 1e6).toFixed(1)}M`, "Vol"]} />
+          <Bar dataKey="v" fill={C.textDim} radius={[1, 1, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+
+      <Sec>MARGIN PROFILE</Sec>
+      {mock.margins.map((m, i) => (
+        <div key={i} style={{ padding: "7px 0", borderBottom: `1px solid ${C.border}` }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+            <span style={{ fontSize: 11, fontFamily: f, color: C.textMuted }}>{m.k}</span>
+            <span style={{ fontSize: 11, fontFamily: f, color: m.v > 20 ? C.green : m.v > 10 ? C.gold : C.red, fontWeight: 600 }}>{m.v}%</span>
+          </div>
+          <div style={{ height: 3, background: C.border }}>
+            <div style={{ height: 3, width: `${Math.min(m.v, 100)}%`, background: m.v > 20 ? C.green : m.v > 10 ? C.gold : C.red }} />
+          </div>
+        </div>
+      ))}
+    </>
+  );
+}
+
+function SubFinancials({ ticker }: { ticker: string }) {
+  const [view, setView] = useState("income");
+  const mock = useMemo(() => genMockData(ticker), [ticker]);
+
+  return (
+    <>
+      <div style={{ display: "flex", gap: 6, padding: "14px 0 8px" }}>
+        {([["income", "Income"], ["balance", "Balance"], ["cashflow", "Cash Flow"]] as const).map(([id, label]) => (
+          <button key={id} onClick={() => setView(id)} style={{
+            padding: "4px 12px", fontSize: 10, fontFamily: f, fontWeight: 600,
+            color: view === id ? "#000" : C.textMuted,
+            background: view === id ? C.gold : "transparent",
+            border: `1px solid ${view === id ? C.gold : C.borderHi}`,
+            borderRadius: 14, cursor: "pointer", letterSpacing: 0.5,
+          }}>{label}</button>
+        ))}
+      </div>
+
+      {view === "income" && (
+        <>
+          <Sec>REVENUE ($B)</Sec>
+          <ResponsiveContainer width="100%" height={160}>
+            <BarChart data={mock.rev}>
+              <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
+              <XAxis dataKey="yr" tick={{ fill: C.textDim, fontSize: 10, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
+              <YAxis tick={{ fill: C.textDim, fontSize: 10, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
+              <Tooltip contentStyle={tt} />
+              <Bar dataKey="val" fill={C.gold} radius={[2, 2, 0, 0]} name="Revenue" />
+            </BarChart>
+          </ResponsiveContainer>
+          <Sec>EPS TREND</Sec>
+          <ResponsiveContainer width="100%" height={140}>
+            <LineChart data={mock.epsData}>
+              <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
+              <XAxis dataKey="yr" tick={{ fill: C.textDim, fontSize: 10, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
+              <YAxis tick={{ fill: C.textDim, fontSize: 10, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
+              <Tooltip contentStyle={tt} />
+              <Line type="monotone" dataKey="val" stroke={C.green} strokeWidth={2} dot={{ fill: C.green, r: 3, strokeWidth: 0 }} name="EPS" />
+            </LineChart>
+          </ResponsiveContainer>
+        </>
+      )}
+
+      {view === "balance" && (
+        <>
+          <Sec>BALANCE SHEET ($B)</Sec>
+          <FundGrid items={[
+            { label: "Total Assets", value: `$${mock.bs.assets}B` },
+            { label: "Liabilities", value: `$${mock.bs.liab}B`, color: C.red },
+            { label: "Equity", value: `$${mock.bs.equity}B`, color: C.green },
+            { label: "Cash", value: `$${mock.bs.cash}B`, color: C.gold },
+            { label: "Debt", value: `$${mock.bs.debt}B`, color: C.red },
+            { label: "Cur Ratio", value: String(mock.bs.curRatio), color: +mock.bs.curRatio >= 1.5 ? C.green : C.gold },
+          ]} />
+          <div style={{ marginTop: 12 }}>
+            <MetricRow label="Debt/Equity" value={String(mock.bs.deRatio)} color={+mock.bs.deRatio <= 1 ? C.green : C.red} />
+          </div>
+        </>
+      )}
+
+      {view === "cashflow" && (
+        <>
+          <Sec>CASH FLOW ($B)</Sec>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={mock.cf}>
+              <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
+              <XAxis dataKey="yr" tick={{ fill: C.textDim, fontSize: 10, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
+              <YAxis tick={{ fill: C.textDim, fontSize: 10, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
+              <Tooltip contentStyle={tt} />
+              <Bar dataKey="op" fill={C.green} name="Operating" radius={[2, 2, 0, 0]} />
+              <Bar dataKey="inv" fill={C.gold} name="Investing" radius={[2, 2, 0, 0]} />
+              <Bar dataKey="fin" fill={C.textDim} name="Financing" radius={[2, 2, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+          <div style={{ display: "flex", gap: 14, padding: "6px 0" }}>
+            {([["Operating", C.green], ["Investing", C.gold], ["Financing", C.textDim]] as const).map(([l, c]) => (
+              <span key={l} style={{ fontSize: 10, fontFamily: f, color: C.textDim }}><span style={{ color: c }}>■</span> {l}</span>
+            ))}
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
+function SubSEC({ ticker }: { ticker: string }) {
+  const [filter, setFilter] = useState("ALL");
+  const [exp, setExp] = useState<number | null>(null);
+  const mock = useMemo(() => genMockData(ticker), [ticker]);
+  const types = ["ALL", "10-K", "10-Q", "8-K", "DEF 14A", "4"];
+  const tc: Record<string, string> = { "10-K": C.gold, "10-Q": C.cyan, "8-K": C.amber, "DEF 14A": C.purple, "4": C.green, "SC 13G/A": C.textMuted, "S-3": C.textDim };
+  const filtered = filter === "ALL" ? mock.filings : mock.filings.filter(fi => fi.type === filter);
+
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 0 8px" }}>
+        <div>
+          <span style={{ fontSize: 12, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 1.5 }}>SEC EDGAR</span>
+          <span style={{ fontSize: 10, fontFamily: f, color: C.textDim, marginLeft: 10 }}>CIK {mock.cik}</span>
+        </div>
+        <a href={`https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company=${ticker}&CIK=&type=&dateb=&owner=include&count=40`}
+          target="_blank" rel="noopener noreferrer"
+          style={{ fontSize: 9, fontFamily: f, fontWeight: 700, color: C.gold, textDecoration: "none", letterSpacing: 1, padding: "3px 8px", border: `1px solid ${C.gold}44` }}>
+          EDGAR ↗
+        </a>
+      </div>
+
+      <div style={{ display: "flex", gap: 5, paddingBottom: 10, borderBottom: `1px solid ${C.border}`, flexWrap: "wrap" }}>
+        {types.map(t => (
+          <button key={t} onClick={() => setFilter(t)} style={{
+            padding: "2px 8px", fontSize: 9, fontFamily: f, fontWeight: 600,
+            color: filter === t ? "#000" : C.textDim,
+            background: filter === t ? (tc[t] || C.gold) : "transparent",
+            border: `1px solid ${filter === t ? "transparent" : C.borderHi}`,
+            cursor: "pointer", letterSpacing: 0.5,
+          }}>{t}</button>
+        ))}
+      </div>
+
+      {filtered.map((fi, i) => {
+        const isExp = exp === i;
+        const c = tc[fi.type] || C.textDim;
+        return (
+          <div key={i} onClick={() => setExp(isExp ? null : i)}
+            style={{ padding: "9px 0", borderBottom: `1px solid ${C.border}`, cursor: "pointer", background: isExp ? "#060606" : "transparent" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Tag color={c}>{fi.type}</Tag>
+                <span style={{ fontSize: 11, fontFamily: f, color: C.text }}>{fi.desc}</span>
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <span style={{ fontSize: 9, fontFamily: f, color: C.textDim }}>{fi.date}</span>
+                <span style={{ fontSize: 9, color: C.textDim, display: "inline-block", transform: isExp ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>▾</span>
+              </div>
+            </div>
+            {isExp && (
+              <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${C.border}` }}>
+                <div style={{ fontSize: 10, fontFamily: f, color: C.textDim, marginBottom: 8 }}>
+                  <span style={{ letterSpacing: 1 }}>ACC </span><span style={{ color: C.textMuted }}>{fi.acc}</span>
+                  <span style={{ marginLeft: 12, letterSpacing: 1 }}>PERIOD </span><span style={{ color: C.textMuted }}>{fi.period}</span>
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <a href={`https://www.sec.gov/Archives/edgar/data/${mock.cik}/${fi.acc.replace(/-/g, "")}`}
+                    target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
+                    style={{ fontSize: 9, fontFamily: f, fontWeight: 700, color: c, textDecoration: "none", padding: "2px 7px", border: `1px solid ${c}44`, letterSpacing: 0.5 }}>VIEW ↗</a>
+                  <a href={`https://efts.sec.gov/LATEST/search-index?q=%22${fi.acc}%22`}
+                    target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
+                    style={{ fontSize: 9, fontFamily: f, fontWeight: 700, color: C.textDim, textDecoration: "none", padding: "2px 7px", border: `1px solid ${C.borderHi}`, letterSpacing: 0.5 }}>FULL TEXT ↗</a>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      <Sec>QUICK LINKS</Sec>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+        {[
+          ["Full-Text Search", `https://efts.sec.gov/LATEST/search-index?q=${ticker}`],
+          ["Insider Filings", `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${mock.cik}&type=4&count=40`],
+          ["Ownership (13F)", `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${mock.cik}&type=SC%2013&count=40`],
+          ["Annual Reports", `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${mock.cik}&type=10-K&count=10`],
+        ].map(([label, url], i) => (
+          <a key={i} href={url} target="_blank" rel="noopener noreferrer"
+            style={{ fontSize: 10, fontFamily: f, color: C.gold, textDecoration: "none", padding: "7px 8px", border: `1px solid ${C.border}`, display: "block" }}>
+            {label} ↗
+          </a>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function SubOwnership({ ticker }: { ticker: string }) {
+  const mock = useMemo(() => genMockData(ticker), [ticker]);
+  return (
+    <>
+      <Sec>INSTITUTIONAL HOLDERS</Sec>
+      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", padding: "5px 0", borderBottom: `1px solid ${C.borderHi}` }}>
+        {["INSTITUTION", "% OUT", "CHG"].map((h, i) => (
+          <span key={i} style={{ fontSize: 9, fontFamily: f, fontWeight: 700, color: C.textDim, letterSpacing: 1.5, textAlign: i > 0 ? "right" : "left" }}>{h}</span>
+        ))}
+      </div>
+      {mock.holders.map((h, i) => (
+        <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", padding: "6px 0", borderBottom: `1px solid ${C.border}` }}>
+          <span style={{ fontSize: 11, fontFamily: f, color: C.text }}>{h.name}</span>
+          <span style={{ fontSize: 11, fontFamily: f, color: C.gold, textAlign: "right", fontWeight: 600 }}>{h.pct}%</span>
+          <span style={{ fontSize: 11, fontFamily: f, textAlign: "right", color: h.chg.startsWith("+") ? C.green : h.chg.startsWith("-") ? C.red : C.textDim }}>{h.chg}</span>
+        </div>
+      ))}
+
+      <Sec>INSIDER TRANSACTIONS</Sec>
+      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr 0.6fr 1fr 0.6fr", padding: "5px 0", borderBottom: `1px solid ${C.borderHi}` }}>
+        {["NAME", "TITLE", "TYPE", "SHARES", "DATE"].map((h, i) => (
+          <span key={i} style={{ fontSize: 9, fontFamily: f, fontWeight: 700, color: C.textDim, letterSpacing: 1.2, textAlign: i >= 3 ? "right" : "left" }}>{h}</span>
+        ))}
+      </div>
+      {mock.insiders.map((t, i) => (
+        <div key={i} style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr 0.6fr 1fr 0.6fr", padding: "6px 0", borderBottom: `1px solid ${C.border}` }}>
+          <span style={{ fontSize: 11, fontFamily: f, color: C.text }}>{t.name}</span>
+          <span style={{ fontSize: 11, fontFamily: f, color: C.textMuted }}>{t.title}</span>
+          <span style={{ fontSize: 11, fontFamily: f, color: t.action === "BUY" ? C.green : C.red, fontWeight: 700 }}>{t.action}</span>
+          <span style={{ fontSize: 11, fontFamily: f, color: C.text, textAlign: "right" }}>{t.shares}</span>
+          <span style={{ fontSize: 11, fontFamily: f, color: C.textDim, textAlign: "right" }}>{t.date}</span>
+        </div>
+      ))}
+    </>
+  );
+}
+
+function SubValuation({ ticker, fund }: { ticker: string; fund: FundamentalData | null }) {
+  const mock = useMemo(() => genMockData(ticker), [ticker]);
+  const pe = fund?.peRatio ?? +mock.pe;
+  const fwdPe = +mock.fwdPe;
+  const mktCapNum = fund?.marketCap ? fund.marketCap / 1e9 : parseFloat(mock.mktCapStr.replace(/[$B]/g, ""));
+
+  const multiples = [
+    { m: "P/E (TTM)", co: +pe.toFixed(1), sec: +(pe * 0.85).toFixed(1), sp: 22.5 },
+    { m: "Fwd P/E", co: +fwdPe.toFixed(1), sec: +(fwdPe * 0.9).toFixed(1), sp: 19.8 },
+    { m: "EV/Rev", co: +(mktCapNum / (mock.rev[3]?.val || 1)).toFixed(1), sec: 6.2, sp: 3.1 },
+    { m: "EV/EBITDA", co: +(pe * 0.65).toFixed(1), sec: +(pe * 0.55).toFixed(1), sp: 14.2 },
+    { m: "P/B", co: +(mktCapNum / (+mock.bs.equity || 1)).toFixed(1), sec: 5.8, sp: 4.2 },
+  ];
+
+  return (
+    <>
+      <Sec>VALUATION MULTIPLES</Sec>
+      <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr 1fr 1fr", padding: "5px 0", borderBottom: `1px solid ${C.borderHi}` }}>
+        {["METRIC", ticker, "SECTOR", "S&P", "vs SEC"].map((h, i) => (
+          <span key={i} style={{ fontSize: 9, fontFamily: f, fontWeight: 700, color: C.textDim, letterSpacing: 1.2, textAlign: i > 0 ? "right" : "left" }}>{h}</span>
+        ))}
+      </div>
+      {multiples.map((m, i) => {
+        const diff = ((m.co - m.sec) / m.sec * 100).toFixed(0);
+        const over = +diff > 0;
+        return (
+          <div key={i} style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr 1fr 1fr", padding: "6px 0", borderBottom: `1px solid ${C.border}` }}>
+            <span style={{ fontSize: 11, fontFamily: f, color: C.textMuted, fontWeight: 600 }}>{m.m}</span>
+            <span style={{ fontSize: 11, fontFamily: f, color: C.gold, textAlign: "right", fontWeight: 600 }}>{m.co}</span>
+            <span style={{ fontSize: 11, fontFamily: f, color: C.textDim, textAlign: "right" }}>{m.sec}</span>
+            <span style={{ fontSize: 11, fontFamily: f, color: C.textDim, textAlign: "right" }}>{m.sp}</span>
+            <span style={{ fontSize: 11, fontFamily: f, color: over ? C.red : C.green, textAlign: "right", fontWeight: 600 }}>{over ? "+" : ""}{diff}%</span>
+          </div>
+        );
+      })}
+
+      <Sec>COMPARATIVE</Sec>
+      <ResponsiveContainer width="100%" height={200}>
+        <BarChart data={multiples}>
+          <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
+          <XAxis dataKey="m" tick={{ fill: C.textDim, fontSize: 8, fontFamily: f }} interval={0} angle={-15} textAnchor="end" height={40} axisLine={{ stroke: C.border }} tickLine={false} />
+          <YAxis tick={{ fill: C.textDim, fontSize: 9, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
+          <Tooltip contentStyle={tt} />
+          <Bar dataKey="co" fill={C.gold} name={ticker} radius={[2, 2, 0, 0]} />
+          <Bar dataKey="sec" fill={C.textDim} name="Sector" radius={[2, 2, 0, 0]} />
+          <Bar dataKey="sp" fill={C.borderHi} name="S&P 500" radius={[2, 2, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+      <div style={{ display: "flex", gap: 14, padding: "6px 0" }}>
+        {([[ticker, C.gold], ["Sector", C.textDim], ["S&P 500", C.borderHi]] as const).map(([l, c]) => (
+          <span key={l} style={{ fontSize: 10, fontFamily: f, color: C.textDim }}><span style={{ color: c as string }}>■</span> {l}</span>
+        ))}
+      </div>
+    </>
+  );
 }
 
 function MarkdownResult({ content }: { content: string }) {
@@ -95,6 +560,10 @@ function MarkdownResult({ content }: { content: string }) {
   );
 }
 
+interface CompanyResearchHubProps {
+  candles?: CandleData[];
+}
+
 export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
   const { symbol, accessToken, aiFeatureSettings, analysisResult, setAnalysisResult } = useTerminalStore();
   const aiModel = aiFeatureSettings.technicals.model;
@@ -104,8 +573,7 @@ export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
 
   const [fundamentals, setFundamentals] = useState<FundamentalData | null>(null);
   const [fundLoading, setFundLoading] = useState(false);
-  const [technicals, setTechnicals] = useState<TechnicalSnapshot | null>(null);
-  const [techLoading, setTechLoading] = useState(false);
+  const [sub, setSub] = useState("overview");
 
   const [taStreaming, setTaStreaming] = useState(false);
   const [taStreamingText, setTaStreamingText] = useState("");
@@ -128,6 +596,7 @@ export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
     setTaShowResult(false);
     setTaStreamingText("");
     setTaThinkingTokens([]);
+    setSub("overview");
   }, [symbol]);
 
   useEffect(() => {
@@ -200,74 +669,38 @@ export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
     }
   }, [symbol, accessToken]);
 
-  const [techFetchedFor, setTechFetchedFor] = useState<string | null>(null);
-
   useEffect(() => {
     fetchFundamentals();
   }, [fetchFundamentals]);
 
-  useEffect(() => {
-    if (!symbol || !quoteData || techFetchedFor === symbol) return;
-    let cancelled = false;
+  const priceHist = useMemo(() => {
+    const src = candles ?? history?.candles;
+    if (!Array.isArray(src) || src.length === 0) return [];
+    return (src as CandleData[]).map((c, i) => ({
+      w: i % Math.max(1, Math.floor(src.length / 8)) === 0
+        ? new Date(c.datetime).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+        : "",
+      p: c.close,
+    }));
+  }, [candles, history]);
 
-    (async () => {
-      setTechLoading(true);
-      setTechFetchedFor(symbol);
-      try {
-        const quote = {
-          symbol: quoteData.symbol,
-          last: quoteData.last,
-          bid: quoteData.bid,
-          ask: quoteData.ask,
-          change: quoteData.change,
-          changePct: quoteData.changePct,
-          volume: quoteData.volume,
-          high: quoteData.high,
-          low: quoteData.low,
-          fiftyTwoWeekHigh: quoteData.fiftyTwoWeekHigh,
-          fiftyTwoWeekLow: quoteData.fiftyTwoWeekLow,
-          peRatio: quoteData.peRatio,
-        };
-        const res = await fetchWithAuth(`${API_BASE}/ai/technical-snapshot`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ quote, candles: candles ?? [] }),
-        });
-        if (cancelled) return;
-        const data = await res.json();
-        setTechnicals(data);
-      } catch {
-        if (!cancelled) {
-          setTechnicals({ trend: null, trendSignal: null, rsi: null, rsiLabel: null, resistance1: null, support1: null, resistance2: null, support2: null, shortTermOutlook: null, error: "Failed to load" });
-        }
-      } finally {
-        if (!cancelled) setTechLoading(false);
-      }
-    })();
+  const volHist = useMemo(() => {
+    const src = candles ?? history?.candles;
+    if (!Array.isArray(src) || src.length === 0) return [];
+    const last20 = (src as CandleData[]).slice(-20);
+    return last20.map((c, i) => ({
+      d: `${i + 1}`,
+      v: c.volume,
+    }));
+  }, [candles, history]);
 
-    return () => { cancelled = true; };
-  }, [symbol, quoteData]);
-
-  const currentPrice = quoteData?.last;
-  const high52 = fundamentals?.high52 ?? quoteData?.fiftyTwoWeekHigh;
-  const low52 = fundamentals?.low52 ?? quoteData?.fiftyTwoWeekLow;
-
-  const rangePosition = (() => {
-    if (currentPrice == null || high52 == null || low52 == null || high52 === low52) return 50;
-    return Math.max(0, Math.min(100, ((currentPrice - low52) / (high52 - low52)) * 100));
-  })();
-
-  const trendBorderColor = technicals?.trendSignal === "bullish"
-    ? "border-terminal-success/30"
-    : technicals?.trendSignal === "bearish"
-      ? "border-terminal-danger/30"
-      : "border-card-border";
-
-  const trendTextColor = technicals?.trendSignal === "bullish"
-    ? "text-terminal-success"
-    : technicals?.trendSignal === "bearish"
-      ? "text-terminal-danger"
-      : "text-white";
+  const subs = [
+    { id: "overview", label: "Overview" },
+    { id: "financials", label: "Financials" },
+    { id: "sec", label: "SEC" },
+    { id: "ownership", label: "Ownership" },
+    { id: "valuation", label: "Valuation" },
+  ];
 
   if (!accessToken) {
     return (
@@ -280,159 +713,88 @@ export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
   }
 
   return (
-    <div className="flex flex-col gap-6 p-4 animate-in fade-in duration-500">
-      <section>
-        <h3 className="text-primary text-[10px] font-black tracking-widest mb-3">FUNDAMENTALS</h3>
-        {fundLoading ? (
-          <div className="flex items-center justify-center p-6">
-            <Loader2 className="w-5 h-5 text-primary animate-spin" />
-          </div>
-        ) : fundamentals?.error ? (
-          <p className="text-xs text-terminal-danger font-mono">{fundamentals.error}</p>
-        ) : (
-          <div className="grid grid-cols-3 gap-y-4 gap-x-2 bg-card/30 p-3 rounded-lg border border-card-border">
-            <DataPoint label="MKT CAP" value={fmtMarketCap(fundamentals?.marketCap ?? null)} />
-            <DataPoint label="SHARES" value={fmtShares(fundamentals?.sharesOutstanding ?? null)} />
-            <DataPoint label="P/E RATIO" value={fmtNum(fundamentals?.peRatio ?? quoteData?.peRatio ?? null)} />
-            <DataPoint label="EPS (TTM)" value={fmtNum(fundamentals?.eps ?? null)} />
-            <DataPoint label="BETA" value={fmtNum(fundamentals?.beta ?? null)} />
-            <DataPoint label="DIV YIELD" value={fmtPct(fundamentals?.dividendYield ?? null)} />
-          </div>
-        )}
-
-        {(high52 != null || low52 != null) && (
-          <div className="mt-4 px-1">
-            <div className="flex justify-between text-[9px] text-muted-foreground mb-1">
-              <span>52W LOW {low52 != null ? `$${low52.toFixed(2)}` : "—"}</span>
-              {currentPrice != null && (
-                <span className="text-primary">CURRENT ${currentPrice.toFixed(2)}</span>
-              )}
-              <span>52W HIGH {high52 != null ? `$${high52.toFixed(2)}` : "—"}</span>
-            </div>
-            <div className="h-1.5 w-full bg-secondary rounded-full overflow-hidden relative">
-              <div className="absolute h-full bg-gradient-to-r from-red-500 via-yellow-500 to-green-500 w-full opacity-30" />
-              <div
-                className="absolute h-full w-1 bg-white shadow-[0_0_8px_white]"
-                style={{ left: `${rangePosition}%` }}
-              />
-            </div>
-          </div>
-        )}
-      </section>
-
-      <section>
-        <h3 className="text-primary text-[10px] font-black tracking-widest mb-3">TECHNICAL ANALYSIS</h3>
-        {techLoading ? (
-          <div className="flex items-center justify-center p-6">
-            <Loader2 className="w-5 h-5 text-primary animate-spin" />
-          </div>
-        ) : technicals?.error ? (
-          <p className="text-xs text-terminal-danger font-mono">{technicals.error}</p>
-        ) : technicals ? (
-          <>
-            <div className="grid grid-cols-2 gap-2 mb-3">
-              <div className={`bg-[#1a1a1a] p-3 rounded border ${trendBorderColor}`}>
-                <span className="text-[9px] text-muted-foreground block">TREND</span>
-                <span className={`${trendTextColor} font-bold text-sm`}>
-                  {technicals.trend ?? "—"}
-                </span>
-              </div>
-              <div className="bg-[#1a1a1a] p-3 rounded border border-card-border">
-                <span className="text-[9px] text-muted-foreground block">RSI (14)</span>
-                <span className="text-white font-bold text-sm tabular-nums">
-                  {technicals.rsi != null ? `${technicals.rsi.toFixed(1)}` : "—"}
-                  {technicals.rsiLabel && (
-                    <span className="text-muted-foreground text-xs ml-1">({technicals.rsiLabel})</span>
-                  )}
-                </span>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              {technicals.resistance1 != null && (
-                <div className="flex justify-between items-center p-2 bg-card border-l-2 border-l-terminal-danger">
-                  <span className="text-[10px] font-bold">RESISTANCE 1</span>
-                  <span className="font-mono text-xs tabular-nums">${technicals.resistance1.toFixed(2)}</span>
-                </div>
-              )}
-              {technicals.resistance2 != null && (
-                <div className="flex justify-between items-center p-2 bg-card border-l-2 border-l-terminal-danger/50">
-                  <span className="text-[10px] font-bold text-muted-foreground">RESISTANCE 2</span>
-                  <span className="font-mono text-xs tabular-nums text-muted-foreground">${technicals.resistance2.toFixed(2)}</span>
-                </div>
-              )}
-              {technicals.support1 != null && (
-                <div className="flex justify-between items-center p-2 bg-card border-l-2 border-l-terminal-success">
-                  <span className="text-[10px] font-bold">SUPPORT 1</span>
-                  <span className="font-mono text-xs tabular-nums">${technicals.support1.toFixed(2)}</span>
-                </div>
-              )}
-              {technicals.support2 != null && (
-                <div className="flex justify-between items-center p-2 bg-card border-l-2 border-l-terminal-success/50">
-                  <span className="text-[10px] font-bold text-muted-foreground">SUPPORT 2</span>
-                  <span className="font-mono text-xs tabular-nums text-muted-foreground">${technicals.support2.toFixed(2)}</span>
-                </div>
-              )}
-            </div>
-
-            {technicals.shortTermOutlook && (
-              <div className="mt-3 p-3 bg-[#1a1a1a] rounded border border-card-border">
-                <span className="text-[9px] text-muted-foreground block mb-1">SHORT-TERM OUTLOOK</span>
-                <span className="text-xs text-white/90 leading-relaxed">{technicals.shortTermOutlook}</span>
-              </div>
-            )}
-          </>
-        ) : (
-          <p className="text-xs text-muted-foreground font-mono">No data available</p>
-        )}
-      </section>
-
-      <section>
-        <div className="flex items-center gap-2 mb-3">
-          <Activity className="w-3.5 h-3.5 text-[#FFB800]" />
-          <h3 className="text-primary text-[10px] font-black tracking-widest">AI DEEP ANALYSIS</h3>
-          <span className="font-mono text-[10px] text-[#71717a] ml-1">
-            <span className="text-[#FFB800] font-bold">{symbol}</span>
-          </span>
+    <div style={{ background: C.bg, color: C.text, fontFamily: f }}>
+      <div style={{ display: "flex", gap: 6, padding: "10px 16px", overflowX: "auto" }}>
+        {subs.map(s => (
+          <button key={s.id} onClick={() => setSub(s.id)} style={{
+            padding: "5px 14px", fontSize: 11, fontFamily: f, fontWeight: 600,
+            color: sub === s.id ? "#000" : C.textMuted,
+            background: sub === s.id ? C.gold : "transparent",
+            border: `1px solid ${sub === s.id ? C.gold : C.borderHi}`,
+            borderRadius: 14, cursor: "pointer", letterSpacing: 0.3, whiteSpace: "nowrap",
+          }}>{s.label}</button>
+        ))}
+        <div style={{ display: "flex", alignItems: "center", gap: 4, marginLeft: 4 }}>
+          {subs.map((s, i) => (
+            <div key={i} style={{ width: 5, height: 5, borderRadius: 3, background: sub === s.id ? C.gold : C.borderHi }} />
+          ))}
         </div>
+      </div>
 
-        <Button
-          onClick={handleRunTA}
-          disabled={taStreaming || !accessToken || !quote}
-          className="w-full font-mono text-xs bg-primary text-primary-foreground hover:bg-primary/90 h-9"
-        >
-          {taStreaming ? (
-            <Loader2 className="w-3.5 h-3.5 mr-2 shrink-0 animate-spin" />
-          ) : (
-            <Activity className="w-3.5 h-3.5 mr-2 shrink-0" />
-          )}
-          {taStreaming ? "ANALYZING..." : "RUN TECHNICAL ANALYSIS"}
-        </Button>
-
-        {taShowResult && (
-          <div className="bg-card border border-card-border rounded-xl p-4 mt-3">
-            {taStreaming ? (
-              <>
-                <AiThinkingFeed texts={taThinkingTokens} isStreaming={true} />
-                {taStreamingText && (
-                  <div className="mt-3">
-                    <MarkdownResult content={taStreamingText} />
-                  </div>
-                )}
-              </>
-            ) : analysisResult ? (
-              <>
-                {taThinkingTokens.length > 0 && (
-                  <div className="mb-3">
-                    <AiThinkingFeed texts={taThinkingTokens} isStreaming={false} />
-                  </div>
-                )}
-                <MarkdownResult content={analysisResult} />
-              </>
-            ) : null}
+      <div style={{ padding: "0 16px 40px" }}>
+        {fundLoading ? (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 40 }}>
+            <Loader2 className="w-5 h-5 text-primary animate-spin" />
           </div>
+        ) : (
+          <>
+            {sub === "overview" && (
+              <>
+                <SubOverview fund={fundamentals} quoteData={quoteData} priceHist={priceHist} volHist={volHist} />
+
+                <Sec>AI TECHNICAL ANALYSIS</Sec>
+                <button
+                  onClick={handleRunTA}
+                  disabled={taStreaming || !accessToken || !quote || !history?.candles}
+                  style={{
+                    width: "100%", padding: "10px 0", fontSize: 11, fontFamily: f, fontWeight: 700,
+                    color: taStreaming ? C.textDim : "#000",
+                    background: taStreaming ? "transparent" : C.gold,
+                    border: `1px solid ${taStreaming ? C.borderHi : C.gold}`,
+                    cursor: taStreaming ? "default" : "pointer",
+                    letterSpacing: 1.5, display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                  }}
+                >
+                  {taStreaming ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Activity className="w-3.5 h-3.5" />
+                  )}
+                  {taStreaming ? "ANALYZING..." : "RUN AI ANALYSIS"}
+                </button>
+
+                {taShowResult && (
+                  <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: 16, marginTop: 12 }}>
+                    {taStreaming ? (
+                      <>
+                        <AiThinkingFeed texts={taThinkingTokens} isStreaming={true} />
+                        {taStreamingText && (
+                          <div style={{ marginTop: 12 }}>
+                            <MarkdownResult content={taStreamingText} />
+                          </div>
+                        )}
+                      </>
+                    ) : analysisResult ? (
+                      <>
+                        {taThinkingTokens.length > 0 && (
+                          <div style={{ marginBottom: 12 }}>
+                            <AiThinkingFeed texts={taThinkingTokens} isStreaming={false} />
+                          </div>
+                        )}
+                        <MarkdownResult content={analysisResult} />
+                      </>
+                    ) : null}
+                  </div>
+                )}
+              </>
+            )}
+            {sub === "financials" && <SubFinancials ticker={symbol} />}
+            {sub === "sec" && <SubSEC ticker={symbol} />}
+            {sub === "ownership" && <SubOwnership ticker={symbol} />}
+            {sub === "valuation" && <SubValuation ticker={symbol} fund={fundamentals} />}
+          </>
         )}
-      </section>
+      </div>
     </div>
   );
 }
