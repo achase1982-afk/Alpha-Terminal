@@ -5,7 +5,7 @@ import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { consumeStream } from "@/lib/consumeStream";
 import { useTechnicalsCache } from "@/hooks/useTechnicalsCache";
 import { AiThinkingFeed } from "@/components/ai-shared/AiThinkingFeed";
-import { Loader2, Activity, RefreshCw, Clock } from "lucide-react";
+import { Loader2, Activity, RefreshCw, Clock, X, ExternalLink } from "lucide-react";
 import {
   useGetQuote, useGetPriceHistory,
 } from "@workspace/api-client-react";
@@ -822,9 +822,56 @@ interface SecFilingsResponse {
   error?: string;
 }
 
+const SecFilingViewer = memo(function SecFilingViewer({ filing, onClose }: { filing: EdgarFiling; onClose: () => void }) {
+  const c = SEC_TYPE_COLORS[filing.formType] || SEC_TYPE_COLORS[filing.formType.split("/")[0]] || C.textDim;
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 9999, background: "#000000",
+      display: "flex", flexDirection: "column",
+    }}>
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "10px 16px", background: "#0a0a0a", borderBottom: `1px solid ${C.border}`,
+        shrink: 0,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
+          <Tag color={c}>{filing.formType}</Tag>
+          <span style={{ fontSize: 11, fontFamily: f, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {filing.description}
+          </span>
+          <span style={{ fontSize: 9, fontFamily: f, color: C.textDim, flexShrink: 0 }}>{filing.filedAt}</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, marginLeft: 8 }}>
+          <a href={filing.url} target="_blank" rel="noopener noreferrer"
+            onClick={e => e.stopPropagation()}
+            style={{ color: C.gold, display: "flex", alignItems: "center" }}>
+            <ExternalLink className="w-4 h-4" />
+          </a>
+          <button onClick={onClose}
+            style={{ background: "transparent", border: "none", color: C.text, cursor: "pointer", padding: 4, display: "flex" }}>
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+      </div>
+      <div style={{ flex: 1, minHeight: 0, background: "#000000" }}>
+        <iframe
+          src={filing.url}
+          title={`${filing.formType} - ${filing.description}`}
+          style={{
+            width: "100%", height: "100%", border: "none",
+            background: "#000000",
+            colorScheme: "dark",
+          }}
+          sandbox="allow-same-origin allow-scripts allow-popups"
+        />
+      </div>
+    </div>
+  );
+});
+
 const SubSEC = memo(function SubSEC({ ticker }: { ticker: string }) {
   const [filter, setFilter] = useState("ALL");
-  const [exp, setExp] = useState<number | null>(null);
+  const [viewFiling, setViewFiling] = useState<EdgarFiling | null>(null);
   const [data, setData] = useState<SecFilingsResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -838,7 +885,7 @@ const SubSEC = memo(function SubSEC({ ticker }: { ticker: string }) {
     (async () => {
       setLoading(true);
       setError(null);
-      setExp(null);
+      setViewFiling(null);
       setFilter("ALL");
       try {
         const res = await fetch(`${API_BASE}/sec/filings?symbol=${encodeURIComponent(ticker)}`);
@@ -911,7 +958,7 @@ const SubSEC = memo(function SubSEC({ ticker }: { ticker: string }) {
         {types.map(t => {
           const count = t === "ALL" ? filings.length : filings.filter(fi => fi.formType === t || fi.formType.startsWith(t + "/")).length;
           return (
-            <button key={t} onClick={() => { setFilter(t); setExp(null); }} style={{
+            <button key={t} onClick={() => { setFilter(t); }} style={{
               padding: "2px 8px", fontSize: 9, fontFamily: f, fontWeight: 600,
               color: filter === t ? "#000" : C.textDim,
               background: filter === t ? (tc[t] || C.gold) : "transparent",
@@ -930,11 +977,10 @@ const SubSEC = memo(function SubSEC({ ticker }: { ticker: string }) {
       )}
 
       {filtered.map((fi, i) => {
-        const isExp = exp === i;
         const c = tc[fi.formType] || tc[fi.formType.split("/")[0]] || C.textDim;
         return (
-          <div key={fi.id || i} onClick={() => setExp(isExp ? null : i)}
-            style={{ padding: "9px 0", borderBottom: `1px solid ${C.border}`, cursor: "pointer", background: isExp ? "#060606" : "transparent" }}>
+          <div key={fi.id || i} onClick={() => setViewFiling(fi)}
+            style={{ padding: "9px 0", borderBottom: `1px solid ${C.border}`, cursor: "pointer" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
                 <Tag color={c}>{fi.formType}</Tag>
@@ -942,27 +988,13 @@ const SubSEC = memo(function SubSEC({ ticker }: { ticker: string }) {
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0, marginLeft: 8 }}>
                 <span style={{ fontSize: 9, fontFamily: f, color: C.textDim }}>{fi.filedAt}</span>
-                <span style={{ fontSize: 9, color: C.textDim, display: "inline-block", transform: isExp ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>▾</span>
               </div>
             </div>
-            {isExp && (
-              <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${C.border}` }}>
-                <div style={{ fontSize: 10, fontFamily: f, color: C.textDim, marginBottom: 8, wordBreak: "break-all" }}>
-                  <span style={{ letterSpacing: 1 }}>ACC </span><span style={{ color: C.textMuted }}>{fi.accessionNo}</span>
-                </div>
-                <div style={{ display: "flex", gap: 6 }}>
-                  <a href={fi.url}
-                    target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
-                    style={{ fontSize: 9, fontFamily: f, fontWeight: 700, color: c, textDecoration: "none", padding: "2px 7px", border: `1px solid ${c}44`, letterSpacing: 0.5 }}>VIEW FILING ↗</a>
-                  <a href={`https://efts.sec.gov/LATEST/search-index?q=%22${fi.accessionNo}%22`}
-                    target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
-                    style={{ fontSize: 9, fontFamily: f, fontWeight: 700, color: C.textDim, textDecoration: "none", padding: "2px 7px", border: `1px solid ${C.borderHi}`, letterSpacing: 0.5 }}>FULL TEXT ↗</a>
-                </div>
-              </div>
-            )}
           </div>
         );
       })}
+
+      {viewFiling && <SecFilingViewer filing={viewFiling} onClose={() => setViewFiling(null)} />}
 
       <Sec>QUICK LINKS</Sec>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
