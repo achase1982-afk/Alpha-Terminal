@@ -1350,23 +1350,35 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
           >
             <div style={{ width: "100%", flexShrink: 0, padding: "0 16px 40px" }}>
               {!taShowResult ? (
-                <div style={{ paddingTop: 12, paddingBottom: 4 }}>
-                  <button
-                    onClick={() => handleRunTA()}
-                    disabled={taStreaming || !accessToken || !quote || !history?.candles}
-                    className="inline-flex items-center justify-center rounded-lg font-mono font-bold tracking-wider transition-colors active:scale-95 active:brightness-110"
-                    style={{
-                      padding: "10px 24px", fontSize: 13, fontFamily: f, fontWeight: 700,
-                      color: "#FFB800",
-                      background: "#000000",
-                      border: "1px solid rgba(255,255,255,0.12)",
-                      outline: "none",
-                      cursor: "pointer",
-                      letterSpacing: "0.08em",
-                    }}
-                  >
-                    RUN ANALYSIS
-                  </button>
+                <div>
+                  <div className="flex items-center justify-between py-2 border-b border-card-border/30">
+                    <div>
+                      <h2 className="font-mono font-bold text-sm text-[#e4e4e7] tracking-wider">TECHNICAL ANALYSIS</h2>
+                      <p className="font-mono text-[9px] text-[#71717a] tracking-widest">AI-Powered Company Analysis</p>
+                    </div>
+                  </div>
+                  <div className="p-8 text-center">
+                    <div className="relative mx-auto mb-3 w-8 h-8">
+                      <Activity className="w-8 h-8 text-[#FFB800] relative" style={{ opacity: 0.5 }} />
+                    </div>
+                    <p className="font-mono text-xs text-[#71717a] mb-4">No Technical Analysis generated yet</p>
+                    <button
+                      onClick={() => handleRunTA()}
+                      disabled={taStreaming || !accessToken || !quote || !history?.candles}
+                      className="inline-flex items-center justify-center rounded-lg font-mono font-bold tracking-wider transition-colors active:scale-95 active:brightness-110"
+                      style={{
+                        padding: "10px 24px", fontSize: 13, fontFamily: f, fontWeight: 700,
+                        color: "#FFB800",
+                        background: "#000000",
+                        border: "1px solid rgba(255,255,255,0.12)",
+                        outline: "none",
+                        cursor: "pointer",
+                        letterSpacing: "0.08em",
+                      }}
+                    >
+                      Run Analysis
+                    </button>
+                  </div>
                 </div>
               ) : taStreaming ? (
                 <div className="space-y-3" style={{ paddingTop: 12 }}>
