@@ -951,8 +951,11 @@ export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
               <div style={{ paddingTop: 12, paddingBottom: 4 }}>
                 {taShowResult && !taStreaming && analysisResult ? (
                   <div style={{ background: C.card, border: `1px solid ${C.gold}25`, marginBottom: 8 }}>
-                    <button
+                    <div
+                      role="button"
+                      tabIndex={0}
                       onClick={() => setTaCollapsed(c => !c)}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setTaCollapsed(c => !c); }}
                       style={{
                         width: "100%", padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between",
                         background: "transparent", border: "none", cursor: "pointer", borderBottom: taCollapsed ? "none" : `1px solid ${C.border}`,
@@ -977,7 +980,7 @@ export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
                           transform: taCollapsed ? "rotate(0deg)" : "rotate(180deg)", transition: "transform 0.2s",
                         }}>▾</span>
                       </div>
-                    </button>
+                    </div>
                     {!taCollapsed && (
                       <div style={{ padding: 16 }}>
                         {taThinkingTokens.length > 0 && (
