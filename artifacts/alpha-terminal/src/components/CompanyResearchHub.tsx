@@ -1310,21 +1310,17 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
 
   return (
     <div style={{ background: C.bg, color: C.text, fontFamily: f }}>
-      <div style={{ position: "sticky", top: stickyOffset, zIndex: 30, background: C.bg, display: "flex", gap: 6, padding: "10px 16px", overflowX: "auto", borderBottom: `1px solid ${C.border}` }}>
+      <div style={{ position: "sticky", top: stickyOffset, zIndex: 30, background: C.bg, display: "flex", gap: 4, padding: "8px 16px", overflowX: "auto", borderBottom: `1px solid ${C.border}` }}>
         {SUB_LABELS.map((label, i) => (
           <button key={label} onClick={() => setPage(i)} style={{
-            padding: "5px 14px", fontSize: 11, fontFamily: f, fontWeight: 500,
-            color: page === i ? C.text : C.textMuted,
-            background: "transparent",
-            border: `1px solid transparent`,
-            borderRadius: 14, cursor: "pointer", letterSpacing: 0.3, whiteSpace: "nowrap",
+            padding: "6px 12px", fontSize: 10, fontFamily: f, fontWeight: 700,
+            color: page === i ? "#fafafa" : "#71717a",
+            background: page === i ? "#3f3f46" : "transparent",
+            border: "none",
+            borderRadius: 9999, cursor: "pointer", letterSpacing: 0.5, whiteSpace: "nowrap",
+            transition: "all 0.2s",
           }}>{label}</button>
         ))}
-        <div style={{ display: "flex", alignItems: "center", gap: 4, marginLeft: 4, flexShrink: 0 }}>
-          {SUB_LABELS.map((_, i) => (
-            <div key={i} style={{ width: 5, height: 5, borderRadius: 3, background: page === i ? C.text : C.borderHi, transition: "background 0.2s" }} />
-          ))}
-        </div>
       </div>
 
       {fundLoading ? (
