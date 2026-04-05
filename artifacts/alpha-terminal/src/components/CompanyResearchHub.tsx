@@ -540,16 +540,7 @@ const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, volH
         <RangeBar lo={low52} hi={high52} current={currentPrice.toFixed(2)} />
       )}
 
-      {!ai && (
-        <div style={{ textAlign: "center", padding: "24px 16px", marginTop: 12 }}>
-          <div style={{ fontSize: 10, fontFamily: f, color: C.textMuted, letterSpacing: "0.15em", textTransform: "uppercase" }}>
-            Run AI Analysis for comprehensive metrics
-          </div>
-          <div style={{ fontSize: 9, fontFamily: f, color: C.textDim, marginTop: 6 }}>
-            Valuation · Profitability · Growth · Balance Sheet · Cash Flow · Earnings · Options
-          </div>
-        </div>
-      )}
+
 
       {ai?.valuation && (
         <CollapseSection label="Valuation">
