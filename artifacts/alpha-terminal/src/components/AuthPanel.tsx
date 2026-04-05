@@ -64,7 +64,7 @@ export function AuthPanel() {
     <div className="bg-card border border-card-border rounded-xl overflow-hidden shadow-sm">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between p-3 text-sm font-mono font-light hover:bg-secondary/50 transition-colors"
+        className="w-full flex items-center justify-between p-3 text-sm font-mono font-bold hover:bg-secondary/50 transition-colors"
       >
         <div className="flex items-center gap-2">
           <KeyRound className="w-4 h-4 text-primary" />

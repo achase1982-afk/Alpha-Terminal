@@ -141,7 +141,7 @@ function ReportViewer({ url, onClose, onCloseAll }: { url: string; onClose: () =
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            className="font-mono text-sm font-light px-4 py-2 rounded-lg"
+            className="font-mono text-sm font-bold px-4 py-2 rounded-lg"
             style={{ color: "#FFB800", border: "1px solid #FFB800" }}
           >
             Open Report on BLS.gov
@@ -325,7 +325,7 @@ export function MarketCalendar({ onClose }: Props) {
         <div className="relative">
           <button
             onClick={() => setFilterOpen(!filterOpen)}
-            className="font-mono font-light text-[13px] tracking-wider px-2 py-1 rounded-md transition-colors hover:bg-[#1a1a1c]"
+            className="font-mono font-bold text-[13px] tracking-wider px-2 py-1 rounded-md transition-colors hover:bg-[#1a1a1c]"
             style={{ color: activeFilters.size > 0 ? "#FFB800" : "#a1a1aa" }}
           >
             Filter{activeFilters.size > 0 ? ` (${activeFilters.size})` : ""}
@@ -361,7 +361,7 @@ export function MarketCalendar({ onClose }: Props) {
           <button onClick={prevMonth} className="p-1.5 rounded-lg hover:bg-[#1a1a1c] transition-colors">
             <ChevronLeft className="w-4 h-4 text-zinc-400" />
           </button>
-          <span className="font-mono font-light text-sm text-white tracking-wider mx-1">
+          <span className="font-mono font-bold text-sm text-white tracking-wider mx-1">
             {MONTHS[month]} {year}
           </span>
           <button onClick={nextMonth} className="p-1.5 rounded-lg hover:bg-[#1a1a1c] transition-colors">
@@ -477,11 +477,11 @@ export function MarketCalendar({ onClose }: Props) {
                   </div>
                   <div className="flex items-center gap-2">
                     {ev.ticker && (
-                      <span className="font-mono font-light text-sm" style={{ color: "#FFB800" }}>
+                      <span className="font-mono font-bold text-sm" style={{ color: "#FFB800" }}>
                         {ev.ticker}
                       </span>
                     )}
-                    <span className="font-mono text-[12px] text-white font-light">{ev.title}</span>
+                    <span className="font-mono text-[12px] text-white font-semibold">{ev.title}</span>
                   </div>
                 </button>
               ))}
@@ -496,7 +496,7 @@ export function MarketCalendar({ onClose }: Props) {
             <button onClick={() => setSelectedEvent(null)} className="p-1">
               <ChevronLeft className="w-4 h-4 text-zinc-500" />
             </button>
-            <span className="font-mono text-[12px] font-light text-white flex-1 text-center truncate px-2">{selectedEvent.title}</span>
+            <span className="font-mono text-[12px] font-bold text-white flex-1 text-center truncate px-2">{selectedEvent.title}</span>
             <button onClick={closeAll} className="p-1">
               <X className="w-4 h-4 text-zinc-500" />
             </button>
@@ -530,7 +530,7 @@ export function MarketCalendar({ onClose }: Props) {
                   const sign = d.unit === "thousands" && isPositive ? "+" : d.unit === "thousands" ? "-" : "";
                   return (
                     <div className="flex flex-col gap-2">
-                      <span className="font-mono text-[13px] font-light text-white">{selectedEvent.title}</span>
+                      <span className="font-mono text-[13px] font-bold text-white">{selectedEvent.title}</span>
                       <div className="flex items-baseline gap-2">
                         <span className="font-mono text-2xl font-extrabold" style={{ color }}>{sign}{fullNum}</span>
                         <span className="text-sm" style={{ color }}>{arrow}</span>
@@ -579,9 +579,9 @@ export function MarketCalendar({ onClose }: Props) {
           return (
             <div className="flex items-center py-1.5 border-b border-[#1a1a1c] gap-2">
               <span className="font-mono text-[15px] text-zinc-400 flex-1 min-w-0 truncate">{label}</span>
-              <span className="font-mono text-[15px] font-light tabular-nums w-[76px] text-right shrink-0" style={{ color: c }}>{data.unit === "thousands" ? data.change : data.actual}</span>
+              <span className="font-mono text-[15px] font-bold tabular-nums w-[76px] text-right shrink-0" style={{ color: c }}>{data.unit === "thousands" ? data.change : data.actual}</span>
               <span className="font-mono text-[15px] text-zinc-500 tabular-nums w-[76px] text-right shrink-0">{data.previous}</span>
-              <span className="font-mono text-[15px] font-light tabular-nums w-[76px] text-right shrink-0" style={{ color: c }}>{data.change}</span>
+              <span className="font-mono text-[15px] font-bold tabular-nums w-[76px] text-right shrink-0" style={{ color: c }}>{data.change}</span>
             </div>
           );
         };
@@ -592,10 +592,10 @@ export function MarketCalendar({ onClose }: Props) {
           return (
             <div className="flex items-center py-1 border-b border-[#1a1a1c] gap-1">
               <span className="font-mono text-[15px] text-zinc-400 flex-1 min-w-0 truncate">{label}</span>
-              <span className="font-mono text-[15px] font-light tabular-nums w-[72px] text-right shrink-0" style={{ color: c }}>{data.unit === "thousands" ? data.change : data.actual}</span>
+              <span className="font-mono text-[15px] font-bold tabular-nums w-[72px] text-right shrink-0" style={{ color: c }}>{data.unit === "thousands" ? data.change : data.actual}</span>
               <span className="font-mono text-[15px] text-zinc-500 tabular-nums w-[64px] text-right shrink-0">{data.previous}</span>
               <span className="font-mono text-[14px] text-zinc-600 tabular-nums w-[60px] text-right shrink-0">{data.threeMonthAvg || "—"}</span>
-              <span className="font-mono text-[15px] font-light tabular-nums w-[72px] text-right shrink-0" style={{ color: c }}>{data.change}</span>
+              <span className="font-mono text-[15px] font-bold tabular-nums w-[72px] text-right shrink-0" style={{ color: c }}>{data.change}</span>
             </div>
           );
         };
@@ -632,7 +632,7 @@ export function MarketCalendar({ onClose }: Props) {
               <button onClick={() => { if (showFullBreakdown) setShowFullBreakdown(false); else setSelectedEvent(null); }} className="p-1 shrink-0">
                 <ChevronLeft className="w-4 h-4 text-zinc-500" />
               </button>
-              <span className="font-mono text-[13px] font-light text-white flex-1 text-center truncate px-1">
+              <span className="font-mono text-[13px] font-bold text-white flex-1 text-center truncate px-1">
                 Jobs Report (NFP){meta ? ` — ${meta.month} ${meta.year}` : ""} 8:30 AM ET (BLS)
               </span>
               <button onClick={closeAll} className="p-1 shrink-0">
@@ -693,7 +693,7 @@ export function MarketCalendar({ onClose }: Props) {
                 <div className="flex items-center justify-end">
                   <button
                     onClick={() => setShowFullBreakdown(true)}
-                    className="font-mono text-[14px] font-light tracking-wider transition-opacity hover:opacity-70"
+                    className="font-mono text-[14px] font-bold tracking-wider transition-opacity hover:opacity-70"
                     style={{ color: "#FFB800" }}
                   >
                     Read More
@@ -738,13 +738,13 @@ export function MarketCalendar({ onClose }: Props) {
                         {meta.threeMonthNfpAvg && (
                           <div className="flex items-center gap-1">
                             <span className="font-mono text-[14px] text-zinc-600">3-Mo Avg:</span>
-                            <span className="font-mono text-[15px] font-light text-zinc-300 tabular-nums">{meta.threeMonthNfpAvg}</span>
+                            <span className="font-mono text-[15px] font-bold text-zinc-300 tabular-nums">{meta.threeMonthNfpAvg}</span>
                           </div>
                         )}
                         {meta.sixMonthNfpAvg && (
                           <div className="flex items-center gap-1">
                             <span className="font-mono text-[14px] text-zinc-600">6-Mo Avg:</span>
-                            <span className="font-mono text-[15px] font-light text-zinc-300 tabular-nums">{meta.sixMonthNfpAvg}</span>
+                            <span className="font-mono text-[15px] font-bold text-zinc-300 tabular-nums">{meta.sixMonthNfpAvg}</span>
                           </div>
                         )}
                       </div>
@@ -761,7 +761,7 @@ export function MarketCalendar({ onClose }: Props) {
                         return (
                           <div key={s.key} className="flex items-center justify-between py-1 border-b border-[#1a1a1c]">
                             <span className="font-mono text-[15px] text-zinc-400">{s.label}</span>
-                            <span className="font-mono text-[16px] font-light tabular-nums" style={{ color: mc(d.changeRaw) }}>{d.change}</span>
+                            <span className="font-mono text-[16px] font-bold tabular-nums" style={{ color: mc(d.changeRaw) }}>{d.change}</span>
                           </div>
                         );
                       })}
@@ -775,31 +775,31 @@ export function MarketCalendar({ onClose }: Props) {
                     {nfpData.employed && (
                       <div className="flex items-center justify-between py-1">
                         <span className="font-mono text-[15px] text-zinc-400">Employed</span>
-                        <span className="font-mono text-[15px] font-light tabular-nums" style={{ color: mc(nfpData.employed.changeRaw) }}>{nfpData.employed.change}</span>
+                        <span className="font-mono text-[15px] font-bold tabular-nums" style={{ color: mc(nfpData.employed.changeRaw) }}>{nfpData.employed.change}</span>
                       </div>
                     )}
                     {nfpData.unemployed && (
                       <div className="flex items-center justify-between py-1">
                         <span className="font-mono text-[15px] text-zinc-400">Unemployed</span>
-                        <span className="font-mono text-[15px] font-light tabular-nums" style={{ color: mc(nfpData.unemployed.changeRaw, true) }}>{nfpData.unemployed.change}</span>
+                        <span className="font-mono text-[15px] font-bold tabular-nums" style={{ color: mc(nfpData.unemployed.changeRaw, true) }}>{nfpData.unemployed.change}</span>
                       </div>
                     )}
                     {nfpData.laborForce && (
                       <div className="flex items-center justify-between py-1">
                         <span className="font-mono text-[15px] text-zinc-400">Labor Force</span>
-                        <span className="font-mono text-[15px] font-light tabular-nums" style={{ color: mc(nfpData.laborForce.changeRaw) }}>{nfpData.laborForce.change}</span>
+                        <span className="font-mono text-[15px] font-bold tabular-nums" style={{ color: mc(nfpData.laborForce.changeRaw) }}>{nfpData.laborForce.change}</span>
                       </div>
                     )}
                     {nfpData.empPopRatio && (
                       <div className="flex items-center justify-between py-1">
                         <span className="font-mono text-[15px] text-zinc-400">Emp-Pop Ratio</span>
-                        <span className="font-mono text-[15px] font-light text-zinc-300 tabular-nums">{nfpData.empPopRatio.actual}</span>
+                        <span className="font-mono text-[15px] font-bold text-zinc-300 tabular-nums">{nfpData.empPopRatio.actual}</span>
                       </div>
                     )}
                     {nfpData.u6 && (
                       <div className="flex items-center justify-between py-1">
                         <span className="font-mono text-[15px] text-zinc-400">U-6 Rate</span>
-                        <span className="font-mono text-[15px] font-light text-zinc-300 tabular-nums">{nfpData.u6.actual}</span>
+                        <span className="font-mono text-[15px] font-bold text-zinc-300 tabular-nums">{nfpData.u6.actual}</span>
                       </div>
                     )}
                   </div>
@@ -811,7 +811,7 @@ export function MarketCalendar({ onClose }: Props) {
                     {nfpData.weeklyHours && (
                       <div className="flex items-center gap-1">
                         <span className="font-mono text-[15px] text-zinc-400">Avg Workweek:</span>
-                        <span className="font-mono text-[15px] font-light text-zinc-300 tabular-nums">{nfpData.weeklyHours.actual}h</span>
+                        <span className="font-mono text-[15px] font-bold text-zinc-300 tabular-nums">{nfpData.weeklyHours.actual}h</span>
                         <span className="font-mono text-[14px] tabular-nums" style={{ color: mc(nfpData.weeklyHours.changeRaw) }}>({nfpData.weeklyHours.change})</span>
                       </div>
                     )}
@@ -829,7 +829,7 @@ export function MarketCalendar({ onClose }: Props) {
                 <div className="flex items-center justify-end pb-4 -mt-2">
                   <button
                     onClick={() => setReportIframeUrl(reportUrl)}
-                    className="flex items-center gap-1.5 font-mono text-[14px] font-light tracking-wider transition-opacity hover:opacity-70 pr-6 pl-2"
+                    className="flex items-center gap-1.5 font-mono text-[14px] font-bold tracking-wider transition-opacity hover:opacity-70 pr-6 pl-2"
                     style={{ color: "#FFB800" }}
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
@@ -864,7 +864,7 @@ export function MarketCalendar({ onClose }: Props) {
               <button onClick={() => setShowFullBreakdown(false)} className="p-1 shrink-0">
                 <ChevronLeft className="w-4 h-4 text-zinc-500" />
               </button>
-              <span className="font-mono text-[13px] font-light text-white flex-1 text-center truncate px-2">{selectedEvent.title}</span>
+              <span className="font-mono text-[13px] font-bold text-white flex-1 text-center truncate px-2">{selectedEvent.title}</span>
               <button onClick={closeAll} className="p-1 shrink-0">
                 <X className="w-4 h-4 text-zinc-500" />
               </button>
@@ -880,15 +880,15 @@ export function MarketCalendar({ onClose }: Props) {
               <div className="flex gap-6">
                 <div>
                   <span className="font-mono text-[9px] text-zinc-600 block tracking-wider mb-1">CURRENT</span>
-                  <span className="font-mono text-base font-light text-white">{c.currentLevel || d.latest.value}</span>
+                  <span className="font-mono text-base font-bold text-white">{c.currentLevel || d.latest.value}</span>
                 </div>
                 <div>
                   <span className="font-mono text-[9px] text-zinc-600 block tracking-wider mb-1">PREVIOUS</span>
-                  <span className="font-mono text-base font-light text-zinc-400">{c.previousLevel}</span>
+                  <span className="font-mono text-base font-semibold text-zinc-400">{c.previousLevel}</span>
                 </div>
                 <div>
                   <span className="font-mono text-[9px] text-zinc-600 block tracking-wider mb-1">CHANGE</span>
-                  <span className="font-mono text-base font-light" style={{ color: mainColor }}>{c.actual}</span>
+                  <span className="font-mono text-base font-bold" style={{ color: mainColor }}>{c.actual}</span>
                 </div>
               </div>
 
@@ -910,7 +910,7 @@ export function MarketCalendar({ onClose }: Props) {
                       }
                       return (
                         <div key={hi} className="flex flex-col items-center gap-1 flex-1">
-                          <span className="font-mono text-[10px] font-light tabular-nums" style={{ color: barColor }}>
+                          <span className="font-mono text-[10px] font-bold tabular-nums" style={{ color: barColor }}>
                             {d.unit === "thousands" ? `${((val - prevVal) * 1000) >= 0 ? "+" : ""}${Math.round((val - prevVal) * 1000).toLocaleString()}` : h.value}
                           </span>
                           <div className="w-full h-1 rounded-full" style={{ background: barColor }} />
@@ -959,7 +959,7 @@ export function MarketCalendar({ onClose }: Props) {
             {ev.ticker && (
               <span
                 onClick={(e) => { e.stopPropagation(); handleTickerClick(ev.ticker!); }}
-                className="font-mono font-light text-[13px] shrink-0"
+                className="font-mono font-bold text-[13px] shrink-0"
                 style={{ color: "#FFB800" }}
               >
                 {ev.ticker}

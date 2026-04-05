@@ -17,7 +17,7 @@ export function InvalidationBox({ conditions }: InvalidationBoxProps) {
         style={{ borderColor: "rgba(242,54,69,0.2)", background: "rgba(242,54,69,0.06)" }}
       >
         <AlertTriangle className="w-3.5 h-3.5 text-[#f23645]" />
-        <span className="font-mono text-xs font-light text-[#f23645] tracking-wider">INVALIDATION</span>
+        <span className="font-mono text-xs font-bold text-[#f23645] tracking-wider">INVALIDATION</span>
       </div>
       <div className="p-4 space-y-1.5">
         {conditions.map((c, i) => (

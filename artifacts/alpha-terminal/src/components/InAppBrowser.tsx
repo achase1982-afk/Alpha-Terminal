@@ -174,9 +174,9 @@ export function InAppBrowser() {
             {browserTitle && (
               <div className="text-center max-w-sm">
                 {browserSource && (
-                  <span className="text-[10px] uppercase tracking-wider font-mono font-light text-[#FFB800] mb-2 block">{browserSource}</span>
+                  <span className="text-[10px] uppercase tracking-wider font-mono font-semibold text-[#FFB800] mb-2 block">{browserSource}</span>
                 )}
-                <h2 className="text-base font-light text-zinc-200 leading-snug">{browserTitle}</h2>
+                <h2 className="text-base font-semibold text-zinc-200 leading-snug">{browserTitle}</h2>
               </div>
             )}
             <p className="text-xs text-zinc-500 text-center">Could not load this article.</p>
@@ -184,7 +184,7 @@ export function InAppBrowser() {
               href={currentUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-light transition-colors cursor-pointer active:scale-95"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors cursor-pointer active:scale-95"
               style={{ background: "#FFB800", color: "#0a0a0a", WebkitTapHighlightColor: "transparent" }}
             >
               <ExternalLink className="w-4 h-4" />

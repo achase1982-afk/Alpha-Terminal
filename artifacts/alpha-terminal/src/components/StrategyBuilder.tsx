@@ -512,13 +512,13 @@ export function StrategyBuilder({
       <header className="shrink-0 flex items-center h-12 px-4 border-b" style={{ borderColor: BORDER, background: "#111113" }}>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="font-mono font-light text-[15px] tracking-wide" style={{ color: WHITE }}>{symbol}</span>
+            <span className="font-mono font-bold text-[15px] tracking-wide" style={{ color: WHITE }}>{symbol}</span>
             <span className="font-mono text-[13px]" style={{ color: changeColor }}>
               {fmt(quote?.last)} {changePct != null ? `${changePct >= 0 ? "+" : ""}${fmt(changePct)}%` : ""}
             </span>
           </div>
         </div>
-        <span className="font-mono font-light text-[11px] tracking-widest mr-4" style={{ color: MUTED }}>STRATEGY BUILDER</span>
+        <span className="font-mono font-bold text-[11px] tracking-widest mr-4" style={{ color: MUTED }}>STRATEGY BUILDER</span>
         <button onClick={onClose} className="p-2 -mr-2 rounded-lg transition-colors active:text-white" style={{ color: MUTED }}>
           <X className="w-5 h-5" />
         </button>
@@ -531,7 +531,7 @@ export function StrategyBuilder({
               <button
                 key={m}
                 onClick={() => setMode(m)}
-                className="flex-1 py-2.5 font-mono text-[12px] font-light tracking-wider transition-all"
+                className="flex-1 py-2.5 font-mono text-[12px] font-bold tracking-wider transition-all"
                 style={{
                   color: mode === m ? GOLD : DIM,
                   background: mode === m ? "rgba(255,184,0,0.08)" : "transparent",
@@ -554,7 +554,7 @@ export function StrategyBuilder({
                 >
                   <div className="flex items-center gap-1.5 mb-1">
                     <div className="w-2 h-2 rounded-full" style={{ background: tmpl.color }} />
-                    <span className="font-mono text-[11px] font-light" style={{ color: WHITE }}>{tmpl.name}</span>
+                    <span className="font-mono text-[11px] font-bold" style={{ color: WHITE }}>{tmpl.name}</span>
                   </div>
                   <span className="font-mono text-[9px]" style={{ color: DIM }}>{tmpl.description}</span>
                 </button>
@@ -567,7 +567,7 @@ export function StrategyBuilder({
               {legs.map((leg, idx) => (
                 <div key={leg.id} className="rounded-xl p-3 space-y-2" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
                   <div className="flex items-center justify-between">
-                    <span className="font-mono text-[10px] font-light" style={{ color: GOLD }}>LEG {idx + 1}</span>
+                    <span className="font-mono text-[10px] font-bold" style={{ color: GOLD }}>LEG {idx + 1}</span>
                     <button onClick={() => removeLeg(leg.id)} className="p-1 rounded transition-colors" style={{ color: DOWN }}>
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -669,7 +669,7 @@ export function StrategyBuilder({
                         \u0394 <span style={{ color: TEXT }}>{fmt(leg.delta, 3)}</span>
                       </span>
                     </div>
-                    <span className="font-mono text-[9px] font-light" style={{ color: leg.direction.startsWith("BUY") ? UP : DOWN }}>
+                    <span className="font-mono text-[9px] font-bold" style={{ color: leg.direction.startsWith("BUY") ? UP : DOWN }}>
                       {leg.direction.replace(/_/g, " ")}
                     </span>
                   </div>
@@ -678,7 +678,7 @@ export function StrategyBuilder({
 
               <button
                 onClick={addLeg}
-                className="w-full py-2.5 rounded-xl font-mono text-[11px] font-light tracking-wider flex items-center justify-center gap-1.5 transition-colors active:opacity-70"
+                className="w-full py-2.5 rounded-xl font-mono text-[11px] font-bold tracking-wider flex items-center justify-center gap-1.5 transition-colors active:opacity-70"
                 style={{ color: GOLD, background: "rgba(255,184,0,0.06)", border: `1px solid rgba(255,184,0,0.2)` }}
               >
                 <Plus className="w-3.5 h-3.5" /> ADD LEG
@@ -689,29 +689,29 @@ export function StrategyBuilder({
           {legs.length > 0 && (
             <>
               <div className="rounded-xl p-4 space-y-2" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-                <span className="font-mono text-[10px] font-light tracking-wider" style={{ color: GOLD }}>STRATEGY PREVIEW</span>
+                <span className="font-mono text-[10px] font-bold tracking-wider" style={{ color: GOLD }}>STRATEGY PREVIEW</span>
                 <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 pt-1">
                   <div className="flex justify-between">
                     <span className="font-mono text-[10px]" style={{ color: MUTED }}>Net {metrics.isDebit ? "Debit" : "Credit"}</span>
-                    <span className="font-mono text-[11px] font-light" style={{ color: metrics.isDebit ? DOWN : UP }}>
+                    <span className="font-mono text-[11px] font-bold" style={{ color: metrics.isDebit ? DOWN : UP }}>
                       {fmtCurrency(Math.abs(metrics.netDebit))}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="font-mono text-[10px]" style={{ color: MUTED }}>R:R</span>
-                    <span className="font-mono text-[11px] font-light" style={{ color: TEXT }}>
+                    <span className="font-mono text-[11px] font-bold" style={{ color: TEXT }}>
                       {metrics.riskReward != null ? `${metrics.riskReward.toFixed(1)}:1` : "—"}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="font-mono text-[10px]" style={{ color: MUTED }}>Max Risk</span>
-                    <span className="font-mono text-[11px] font-light" style={{ color: DOWN }}>
+                    <span className="font-mono text-[11px] font-bold" style={{ color: DOWN }}>
                       {metrics.maxRisk != null ? fmtCurrency(metrics.maxRisk) : "Undefined"}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="font-mono text-[10px]" style={{ color: MUTED }}>Max Reward</span>
-                    <span className="font-mono text-[11px] font-light" style={{ color: UP }}>
+                    <span className="font-mono text-[11px] font-bold" style={{ color: UP }}>
                       {metrics.maxReward != null ? fmtCurrency(metrics.maxReward) : "Unlimited"}
                     </span>
                   </div>
@@ -726,7 +726,7 @@ export function StrategyBuilder({
                   {metrics.pop != null && (
                     <div className="flex justify-between">
                       <span className="font-mono text-[10px]" style={{ color: MUTED }}>Est. PoP</span>
-                      <span className="font-mono text-[11px] font-light" style={{ color: TEXT }}>{metrics.pop.toFixed(0)}%</span>
+                      <span className="font-mono text-[11px] font-bold" style={{ color: TEXT }}>{metrics.pop.toFixed(0)}%</span>
                     </div>
                   )}
                 </div>
@@ -734,19 +734,19 @@ export function StrategyBuilder({
                 <div className="grid grid-cols-4 gap-2">
                   <div className="text-center">
                     <span className="font-mono text-[8px] uppercase tracking-widest block" style={{ color: DIM }}>\u0394</span>
-                    <span className="font-mono text-[11px] font-light" style={{ color: TEXT }}>{fmt(metrics.totalDelta, 3)}</span>
+                    <span className="font-mono text-[11px] font-bold" style={{ color: TEXT }}>{fmt(metrics.totalDelta, 3)}</span>
                   </div>
                   <div className="text-center">
                     <span className="font-mono text-[8px] uppercase tracking-widest block" style={{ color: DIM }}>\u0393</span>
-                    <span className="font-mono text-[11px] font-light" style={{ color: TEXT }}>{fmt(metrics.totalGamma, 4)}</span>
+                    <span className="font-mono text-[11px] font-bold" style={{ color: TEXT }}>{fmt(metrics.totalGamma, 4)}</span>
                   </div>
                   <div className="text-center">
                     <span className="font-mono text-[8px] uppercase tracking-widest block" style={{ color: DIM }}>\u0398</span>
-                    <span className="font-mono text-[11px] font-light" style={{ color: metrics.totalTheta > 0 ? UP : DOWN }}>{fmt(metrics.totalTheta, 3)}</span>
+                    <span className="font-mono text-[11px] font-bold" style={{ color: metrics.totalTheta > 0 ? UP : DOWN }}>{fmt(metrics.totalTheta, 3)}</span>
                   </div>
                   <div className="text-center">
                     <span className="font-mono text-[8px] uppercase tracking-widest block" style={{ color: DIM }}>V</span>
-                    <span className="font-mono text-[11px] font-light" style={{ color: TEXT }}>{fmt(metrics.totalVega, 3)}</span>
+                    <span className="font-mono text-[11px] font-bold" style={{ color: TEXT }}>{fmt(metrics.totalVega, 3)}</span>
                   </div>
                 </div>
               </div>
@@ -756,7 +756,7 @@ export function StrategyBuilder({
                   <div className="flex items-center justify-between px-4 py-2" style={{ borderBottom: `1px solid ${BORDER}` }}>
                     <div className="flex items-center gap-2">
                       <Shield className="w-4 h-4" style={{ color: GOLD }} />
-                      <span className="font-mono text-[10px] font-light tracking-wider" style={{ color: GOLD }}>PRE-TRADE RISK CHECK</span>
+                      <span className="font-mono text-[10px] font-bold tracking-wider" style={{ color: GOLD }}>PRE-TRADE RISK CHECK</span>
                     </div>
                   </div>
                   <div className="w-full h-1" style={{ background: levelColor(overallRisk) }} />
@@ -764,7 +764,7 @@ export function StrategyBuilder({
                     {riskChecks.map(c => (
                       <div key={c.id} className="flex items-center gap-2 py-0.5">
                         <RiskIcon level={c.level} />
-                        <span className="font-mono text-[10px] font-light" style={{ color: TEXT, minWidth: 80 }}>{c.label}</span>
+                        <span className="font-mono text-[10px] font-medium" style={{ color: TEXT, minWidth: 80 }}>{c.label}</span>
                         <span className="font-mono text-[9px] flex-1 text-right truncate" style={{ color: levelColor(c.level) }}>{c.detail}</span>
                       </div>
                     ))}
@@ -787,7 +787,7 @@ export function StrategyBuilder({
           <button
             onClick={handleSend}
             disabled={blockedByRisk || legs.length === 0}
-            className="w-full py-4 rounded-xl font-mono text-[14px] font-light tracking-wider flex items-center justify-center gap-2 transition-all duration-150 disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.98]"
+            className="w-full py-4 rounded-xl font-mono text-[14px] font-bold tracking-wider flex items-center justify-center gap-2 transition-all duration-150 disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.98]"
             style={{
               background: !blockedByRisk ? `linear-gradient(180deg, ${GOLD} 0%, #d4a000 100%)` : BORDER2,
               color: !blockedByRisk ? "#000" : DIM,

@@ -164,7 +164,7 @@ function statusColor(status: string): string {
 function StatusBadge({ status }: { status: string }) {
   return (
     <span
-      className="text-[9px] font-light uppercase tracking-wider px-1.5 py-0.5 rounded"
+      className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
       style={{ color: statusColor(status), background: `${statusColor(status)}10` }}
     >
       {status}
@@ -192,14 +192,14 @@ function PositionRow({ pos, onSelect, onTrade }: { pos: Position; onSelect: (sym
       >
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
           {isOption ? (
-            <span className="text-[9px] font-light px-1 py-0.5 rounded shrink-0" style={{ color: pos.putCall === "CALL" ? UP : DOWN }}>
+            <span className="text-[9px] font-bold px-1 py-0.5 rounded shrink-0" style={{ color: pos.putCall === "CALL" ? UP : DOWN }}>
               {pos.putCall === "CALL" ? "C" : "P"}
             </span>
           ) : (
-            <span className="text-[9px] font-light px-1 py-0.5 rounded shrink-0" style={{ color: UP }}>EQ</span>
+            <span className="text-[9px] font-bold px-1 py-0.5 rounded shrink-0" style={{ color: UP }}>EQ</span>
           )}
           <div className="flex flex-col items-start min-w-0">
-            <span className="font-mono text-[11px] font-light text-white truncate max-w-[130px]">{displayLabel}</span>
+            <span className="font-mono text-[11px] font-bold text-white truncate max-w-[130px]">{displayLabel}</span>
             <div className="flex items-center gap-1">
               <span className="font-mono text-[9px] text-zinc-500">{fmtQty(pos.longQuantity, pos.shortQuantity)} @ {fmtCurrency(pos.averagePrice)}</span>
             </div>
@@ -207,7 +207,7 @@ function PositionRow({ pos, onSelect, onTrade }: { pos: Position; onSelect: (sym
         </div>
 
         <div className="flex flex-col items-end gap-0.5 shrink-0">
-          <span className="font-mono text-[11px] font-light text-white tabular-nums">{fmtCurrency(pos.marketValue)}</span>
+          <span className="font-mono text-[11px] font-medium text-white tabular-nums">{fmtCurrency(pos.marketValue)}</span>
           <div className="flex items-center gap-0.5">
             {totalPL !== 0 ? (
               totalPL > 0 ? <ArrowUpRight className="w-2.5 h-2.5" style={{ color: UP }} /> : <ArrowDownRight className="w-2.5 h-2.5" style={{ color: DOWN }} />
@@ -231,7 +231,7 @@ function PositionRow({ pos, onSelect, onTrade }: { pos: Position; onSelect: (sym
                 onTrade(displaySymbol, closeSide);
               }
             }}
-            className="ml-1 px-2 py-1 rounded font-mono text-[9px] font-light tracking-wider shrink-0 transition-colors active:opacity-70"
+            className="ml-1 px-2 py-1 rounded font-mono text-[9px] font-bold tracking-wider shrink-0 transition-colors active:opacity-70"
             style={{ color: GOLD, background: "rgba(255,184,0,0.08)", border: "1px solid rgba(255,184,0,0.2)" }}
           >
             TRADE
@@ -283,7 +283,7 @@ function PositionRow({ pos, onSelect, onTrade }: { pos: Position; onSelect: (sym
           <div className="pt-1 flex gap-2">
             <button
               onClick={(e) => { e.stopPropagation(); onSelect(displaySymbol); }}
-              className="text-[9px] font-mono font-light uppercase tracking-widest py-1 px-2 rounded transition-colors hover:bg-white/5 cursor-pointer"
+              className="text-[9px] font-mono font-bold uppercase tracking-widest py-1 px-2 rounded transition-colors hover:bg-white/5 cursor-pointer"
               style={{ color: GOLD }}
             >
               View {displaySymbol} →
@@ -315,14 +315,14 @@ function OrderRow({ order, onCancel }: { order: Order; onCancel?: (orderId: numb
       >
         <div className="flex flex-col items-start min-w-0 flex-1 gap-0.5">
           <div className="flex items-center gap-1.5">
-            <span className="text-[9px] font-light px-1 py-0.5 rounded shrink-0" style={{ color: isBuy ? UP : DOWN }}>
+            <span className="text-[9px] font-bold px-1 py-0.5 rounded shrink-0" style={{ color: isBuy ? UP : DOWN }}>
               {primaryLeg?.instruction?.replace(/_/g, " ") ?? "—"}
             </span>
             {isMultiLeg && (
               <span className="text-[9px] font-mono text-zinc-500">+{order.legs.length - 1} leg{order.legs.length > 2 ? "s" : ""}</span>
             )}
           </div>
-          <span className="font-mono text-[10px] font-light text-white truncate max-w-[180px]">{displaySymbol}</span>
+          <span className="font-mono text-[10px] font-medium text-white truncate max-w-[180px]">{displaySymbol}</span>
         </div>
 
         <div className="flex flex-col items-end gap-0.5 shrink-0">
@@ -384,7 +384,7 @@ function OrderRow({ order, onCancel }: { order: Order; onCancel?: (orderId: numb
               <span className="text-[8px] font-mono text-zinc-500 uppercase tracking-widest">Legs</span>
               {order.legs.map((leg, i) => (
                 <div key={i} className="flex items-center gap-2 pl-2">
-                  <span className="text-[8px] font-light px-1 rounded" style={{ color: leg.instruction?.includes("BUY") ? UP : DOWN }}>
+                  <span className="text-[8px] font-bold px-1 rounded" style={{ color: leg.instruction?.includes("BUY") ? UP : DOWN }}>
                     {leg.instruction?.replace(/_/g, " ")}
                   </span>
                   <span className="font-mono text-[10px] text-zinc-300 truncate">
@@ -416,7 +416,7 @@ function BalanceStat({ label, value, color }: { label: string; value: string; co
   return (
     <div className="flex items-center justify-between py-1.5 border-b" style={{ borderColor: CARD_BORDER }}>
       <span className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest">{label}</span>
-      <span className="font-mono text-[11px] font-light tabular-nums" style={{ color: color ?? "#fff" }}>{value}</span>
+      <span className="font-mono text-[11px] font-medium tabular-nums" style={{ color: color ?? "#fff" }}>{value}</span>
     </div>
   );
 }
@@ -428,7 +428,7 @@ function MarginBar({ used, total }: { used: number; total: number }) {
     <div className="rounded-xl p-3" style={{ background: CARD_BG, border: `1px solid ${CARD_BORDER}` }}>
       <div className="flex items-center justify-between mb-1.5">
         <span className="font-mono text-[9px] text-zinc-500 uppercase tracking-widest">Margin Utilization</span>
-        <span className="font-mono text-[11px] font-light tabular-nums" style={{ color: barColor }}>{pct.toFixed(1)}%</span>
+        <span className="font-mono text-[11px] font-bold tabular-nums" style={{ color: barColor }}>{pct.toFixed(1)}%</span>
       </div>
       <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "#1a1a1e" }}>
         <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, background: barColor }} />
@@ -608,7 +608,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Briefcase className="w-4 h-4" style={{ color: GOLD }} />
-            <span className="font-mono text-xs font-light text-white tracking-wider">PORTFOLIO</span>
+            <span className="font-mono text-xs font-bold text-white tracking-wider">PORTFOLIO</span>
           </div>
           <div className="flex items-center gap-2">
             {lastRefresh && (
@@ -627,25 +627,25 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
               {account?.type ?? ""} · {account?.accountNumber ?? ""}
             </span>
           </div>
-          <p className="font-mono text-2xl font-light text-white tabular-nums leading-tight">
+          <p className="font-mono text-2xl font-bold text-white tabular-nums leading-tight">
             {fmtCurrency(bal?.liquidationValue ?? 0)}
           </p>
           <div className="grid grid-cols-3 gap-2 pt-1">
             <div>
               <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest">Day P&L</span>
-              <p className="font-mono text-sm font-light tabular-nums" style={{ color: plColor(dayPL) }}>
+              <p className="font-mono text-sm font-bold tabular-nums" style={{ color: plColor(dayPL) }}>
                 {dayPL >= 0 ? "+" : ""}{fmtCurrency(dayPL)}
               </p>
             </div>
             <div>
               <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest">Total P&L</span>
-              <p className="font-mono text-sm font-light tabular-nums" style={{ color: plColor(totalPL) }}>
+              <p className="font-mono text-sm font-bold tabular-nums" style={{ color: plColor(totalPL) }}>
                 {totalPL >= 0 ? "+" : ""}{fmtCurrency(totalPL)}
               </p>
             </div>
             <div>
               <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest">Buying Power</span>
-              <p className="font-mono text-sm font-light text-white tabular-nums">
+              <p className="font-mono text-sm font-bold text-white tabular-nums">
                 {fmtCurrency(bal?.buyingPower ?? 0)}
               </p>
             </div>
@@ -657,7 +657,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
             <button
               key={tab}
               onClick={() => setSubTab(tab)}
-              className="flex-1 py-2 font-mono text-[10px] font-light uppercase tracking-widest transition-colors cursor-pointer relative"
+              className="flex-1 py-2 font-mono text-[10px] font-bold uppercase tracking-widest transition-colors cursor-pointer relative"
               style={{ color: subTab === tab ? GOLD : MUTED, background: "transparent" }}
             >
               {tab === "positions" && <BarChart3 className="w-3 h-3 mx-auto mb-0.5" />}
@@ -678,7 +678,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
             {(equityPositions.length > 0 || optionPositions.length > 0) && (
               <div className="px-3 py-2 flex items-center justify-between" style={{ background: CARD_BG, borderBottom: `1px solid ${CARD_BORDER}` }}>
                 <span className="font-mono text-[9px] text-zinc-500 uppercase tracking-widest">Unrealized P&L</span>
-                <span className="font-mono text-[12px] font-light tabular-nums" style={{ color: plColor(totalUnrealized) }}>
+                <span className="font-mono text-[12px] font-bold tabular-nums" style={{ color: plColor(totalUnrealized) }}>
                   {totalUnrealized >= 0 ? "+" : ""}{fmtCurrency(totalUnrealized)} ({fmtPct(unrealizedPct)})
                 </span>
               </div>
@@ -688,7 +688,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
               <div>
                 <div className="px-3 py-1.5 flex items-center gap-1.5" style={{ background: CARD_BG }}>
                   <TrendingUp className="w-3 h-3" style={{ color: UP }} />
-                  <span className="font-mono text-[9px] font-light uppercase tracking-widest" style={{ color: UP }}>Equities</span>
+                  <span className="font-mono text-[9px] font-bold uppercase tracking-widest" style={{ color: UP }}>Equities</span>
                   <span className="font-mono text-[9px] text-zinc-600 ml-auto">{equityPositions.length}</span>
                 </div>
                 {equityPositions.map((pos) => (
@@ -701,7 +701,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
               <div>
                 <div className="px-3 py-1.5 flex items-center gap-1.5" style={{ background: CARD_BG }}>
                   <BarChart3 className="w-3 h-3" style={{ color: "#22d3ee" }} />
-                  <span className="font-mono text-[9px] font-light uppercase tracking-widest" style={{ color: "#22d3ee" }}>Options</span>
+                  <span className="font-mono text-[9px] font-bold uppercase tracking-widest" style={{ color: "#22d3ee" }}>Options</span>
                   <span className="font-mono text-[9px] text-zinc-600 ml-auto">{optionPositions.length}</span>
                 </div>
                 {optionPositions.map((pos) => (
@@ -727,7 +727,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
                   <button
                     key={f.value}
                     onClick={() => setOrderFilter(f.value)}
-                    className="px-2.5 py-1.5 rounded-lg font-mono text-[10px] font-light tracking-wider whitespace-nowrap transition-colors shrink-0"
+                    className="px-2.5 py-1.5 rounded-lg font-mono text-[10px] font-bold tracking-wider whitespace-nowrap transition-colors shrink-0"
                     style={{
                       color: orderFilter === f.value ? GOLD : DIM,
                       background: orderFilter === f.value ? "rgba(255,184,0,0.08)" : "transparent",
@@ -777,7 +777,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
               <>
                 <div className="px-3 py-1.5 flex items-center gap-1.5" style={{ background: CARD_BG }}>
                   <Clock className="w-3 h-3" style={{ color: GOLD }} />
-                  <span className="font-mono text-[9px] font-light uppercase tracking-widest" style={{ color: GOLD }}>
+                  <span className="font-mono text-[9px] font-bold uppercase tracking-widest" style={{ color: GOLD }}>
                     {orderFilter === "ALL" ? "All" : orderFilter} Orders
                   </span>
                   <span className="font-mono text-[9px] text-zinc-600 ml-auto">{filteredOrders.length}</span>
@@ -797,7 +797,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
             <div>
               <div className="py-1.5 flex items-center gap-1.5 mb-1">
                 <DollarSign className="w-3 h-3" style={{ color: GOLD }} />
-                <span className="font-mono text-[9px] font-light uppercase tracking-widest" style={{ color: GOLD }}>Account Details</span>
+                <span className="font-mono text-[9px] font-bold uppercase tracking-widest" style={{ color: GOLD }}>Account Details</span>
               </div>
               <div className="rounded-xl overflow-hidden" style={{ background: CARD_BG, border: `1px solid ${CARD_BORDER}` }}>
                 <div className="px-3">
@@ -816,7 +816,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
             <div>
               <div className="py-1.5 flex items-center gap-1.5 mb-1">
                 <BarChart3 className="w-3 h-3" style={{ color: GOLD }} />
-                <span className="font-mono text-[9px] font-light uppercase tracking-widest" style={{ color: GOLD }}>Market Values</span>
+                <span className="font-mono text-[9px] font-bold uppercase tracking-widest" style={{ color: GOLD }}>Market Values</span>
               </div>
               <div className="rounded-xl overflow-hidden" style={{ background: CARD_BG, border: `1px solid ${CARD_BORDER}` }}>
                 <div className="px-3">
@@ -834,7 +834,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
               <div>
                 <div className="py-1.5 flex items-center gap-1.5 mb-1">
                   <ShieldCheck className="w-3 h-3" style={{ color: GOLD }} />
-                  <span className="font-mono text-[9px] font-light uppercase tracking-widest" style={{ color: GOLD }}>Risk Metrics</span>
+                  <span className="font-mono text-[9px] font-bold uppercase tracking-widest" style={{ color: GOLD }}>Risk Metrics</span>
                 </div>
                 <div className="rounded-xl overflow-hidden" style={{ background: CARD_BG, border: `1px solid ${CARD_BORDER}` }}>
                   <div className="px-3">

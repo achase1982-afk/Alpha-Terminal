@@ -68,7 +68,7 @@ function MenuRow({ icon, label, onClick }: { icon: React.ReactNode; label: strin
       <div className="text-white group-hover:text-primary transition-colors">
         {React.cloneElement(icon as React.ReactElement, { className: "w-5 h-5" })}
       </div>
-      <span className="font-light text-[15px] text-white tracking-wide">{label}</span>
+      <span className="font-bold text-[15px] text-white tracking-wide">{label}</span>
     </button>
   );
 }
@@ -93,7 +93,7 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
         >
           {activePage !== "Calendar" && (
             <div className="flex items-center justify-between p-3 border-b border-card-border bg-[#141414]">
-              <h2 className="font-light text-sm tracking-widest text-white uppercase ml-2">{activePage}</h2>
+              <h2 className="font-bold text-sm tracking-widest text-white uppercase ml-2">{activePage}</h2>
               <button
                 onClick={() => setActivePage(null)}
                 className="p-1.5 text-muted-foreground hover:text-white transition-colors"
@@ -182,7 +182,7 @@ function WatchlistPage({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="space-y-3 max-w-xl mx-auto">
-      <h3 className="text-xs font-light text-primary uppercase tracking-widest">Saved Symbols</h3>
+      <h3 className="text-xs font-bold text-primary uppercase tracking-widest">Saved Symbols</h3>
       {watchlist.length === 0 ? (
         <p className="font-mono text-[10px] text-muted-foreground/60 text-center leading-relaxed py-6">
           No symbols watched. Click the '+' next to a searched ticker to add it.
@@ -196,7 +196,7 @@ function WatchlistPage({ onClose }: { onClose: () => void }) {
               <div key={sym} className="flex items-center justify-between px-3 py-2.5 rounded-lg hover:bg-[#1a1a1a] transition-colors group">
                 <button
                   onClick={() => { setSymbol(sym); onClose(); }}
-                  className="flex items-center gap-3 font-mono text-sm text-foreground hover:text-primary transition-colors tracking-wider font-light"
+                  className="flex items-center gap-3 font-mono text-sm text-foreground hover:text-primary transition-colors tracking-wider font-bold"
                 >
                   <span>{sym}</span>
                   {q?.last != null && (
@@ -225,7 +225,7 @@ function WatchlistPage({ onClose }: { onClose: () => void }) {
 function LinkedBrokeragePage() {
   return (
     <div className="space-y-4 max-w-xl mx-auto">
-      <h3 className="text-xs font-light text-primary uppercase tracking-widest">Brokerage Connections</h3>
+      <h3 className="text-xs font-bold text-primary uppercase tracking-widest">Brokerage Connections</h3>
       <div className="bg-card border border-card-border rounded-xl p-4">
         <AuthPanel />
       </div>
@@ -287,7 +287,7 @@ function MarketPulsePage() {
 
       <div className="border-t border-card-border pt-4">
         <button onClick={() => setIndicatorsOpen(!indicatorsOpen)} className="w-full flex items-center justify-between mb-2">
-          <span className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-light flex items-center gap-1.5">
+          <span className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-bold flex items-center gap-1.5">
             <BarChart2 className="w-3 h-3" /> Indicators <span className="text-primary tabular-nums ml-1">{activeIndicators.length}</span>
           </span>
           <ChevronLeft className={`w-3 h-3 text-[#71717a] transition-transform duration-200 ${indicatorsOpen ? "-rotate-90" : "rotate-180"}`} />
@@ -305,7 +305,7 @@ function MarketPulsePage() {
               {activeIndicators.map((sym) => (
                 <div key={sym} className="flex items-center justify-between px-2 py-1.5 rounded-md group">
                   <div className="flex flex-col min-w-0">
-                    <span className="font-mono text-[10px] text-primary font-light tabular-nums leading-none">{sym.replace(/^\$/, "")}</span>
+                    <span className="font-mono text-[10px] text-primary font-bold tabular-nums leading-none">{sym.replace(/^\$/, "")}</span>
                     <span className="font-mono text-[9px] text-[#52525b] leading-tight truncate mt-0.5">{getLabel(sym)}</span>
                   </div>
                   <button onClick={() => toggleIndicator(sym)} className="flex-shrink-0 ml-2 p-1 rounded hover:bg-[#f23645]/10 text-[#3f3f46] hover:text-[#f23645] transition-colors">
@@ -333,7 +333,7 @@ function MarketPulsePage() {
                 <button
                   onClick={() => { if (suggestions.length > 0 && addQuery.length > 0) handleAdd(suggestions[0].symbol); else if (addQuery.length > 0) handleAdd(addQuery); }}
                   disabled={!addQuery.trim()}
-                  className="flex items-center gap-1 h-7 px-2.5 rounded-md font-mono text-[10px] font-light transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  className="flex items-center gap-1 h-7 px-2.5 rounded-md font-mono text-[10px] font-bold transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                   style={{ background: "#FFB800", color: "#000" }}
                 >
                   <Plus className="w-3 h-3" /> Add
@@ -343,7 +343,7 @@ function MarketPulsePage() {
                 <div className="absolute left-0 right-10 top-8 z-50 rounded-md border border-[#2A2A2C] overflow-y-auto max-h-[180px] shadow-xl" style={{ background: "#111113" }}>
                   {suggestions.map((ind) => (
                     <button key={ind.symbol} onMouseDown={() => handleAdd(ind.symbol)} className="w-full text-left px-3 py-2 flex flex-col hover:bg-[#1a1a1c] transition-colors border-b border-[#1a1a1c] last:border-0">
-                      <span className="font-mono text-[10px] text-primary font-light tabular-nums">{ind.symbol.replace(/^\$/, "")}</span>
+                      <span className="font-mono text-[10px] text-primary font-bold tabular-nums">{ind.symbol.replace(/^\$/, "")}</span>
                       <span className="font-mono text-[9px] text-[#52525b] leading-tight">{ind.label}</span>
                     </button>
                   ))}
@@ -355,7 +355,7 @@ function MarketPulsePage() {
       </div>
 
       <div className="border-t border-card-border pt-4">
-        <span className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-light block mb-2">Display Preferences</span>
+        <span className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-bold block mb-2">Display Preferences</span>
         <div className="space-y-2">
           <SidebarToggle label="Show Cluster Details" checked={settings.showClusterDetails} onChange={() => updateSetting("showClusterDetails", !settings.showClusterDetails)} />
           <SidebarToggle label="Show Action Plan" checked={settings.showActionPlan} onChange={() => updateSetting("showActionPlan", !settings.showActionPlan)} />
@@ -364,7 +364,7 @@ function MarketPulsePage() {
       </div>
 
       <div className="border-t border-card-border pt-4">
-        <span className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-light block mb-2">Allowed Strategies</span>
+        <span className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-bold block mb-2">Allowed Strategies</span>
         <div className="space-y-1.5 max-h-48 overflow-y-auto">
           {ALL_STRATEGIES.map((s) => (
             <label key={s} className="flex items-center gap-2 cursor-pointer group">
@@ -376,7 +376,7 @@ function MarketPulsePage() {
       </div>
 
       <div className="border-t border-card-border pt-4 space-y-3">
-        <span className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-light block">Strategy Preferences</span>
+        <span className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-bold block">Strategy Preferences</span>
         <SettingInput label="Default Spread Width" value={settings.defaultSpreadWidth} onChange={(v) => updateSetting("defaultSpreadWidth", v)} placeholder="e.g. $5" />
         <SettingInput label="Account Size Tier" value={settings.accountSizeTier} onChange={(v) => updateSetting("accountSizeTier", v)} placeholder="e.g. $10k, $25k, $100k+" />
         <SettingInput label="Preferred Tickers" value={settings.preferredTickers} onChange={(v) => updateSetting("preferredTickers", v)} placeholder="e.g. SPY, QQQ, AAPL" />
@@ -389,7 +389,7 @@ function MarketPulsePage() {
 function StrategistSettingsPage() {
   return (
     <div className="space-y-4">
-      <h2 className="font-mono text-sm font-light text-white tracking-wider uppercase">Options Strategist</h2>
+      <h2 className="font-mono text-sm font-bold text-white tracking-wider uppercase">Options Strategist</h2>
       <StrategySettings />
     </div>
   );
@@ -412,7 +412,7 @@ function ChartOptionsPage() {
             <button
               key={key}
               onClick={() => toggleOverlay(key)}
-              className={`px-3 py-1.5 rounded-full font-mono text-[10px] font-light border transition-all duration-200 ${active ? "bg-[#1a1a1a] text-[#FFB800] border-[#FFB800]" : "bg-[#1a1a1a] text-[#71717a] border-[#262626] hover:border-[#404040] hover:text-foreground"}`}
+              className={`px-3 py-1.5 rounded-full font-mono text-[10px] font-semibold border transition-all duration-200 ${active ? "bg-[#1a1a1a] text-[#FFB800] border-[#FFB800]" : "bg-[#1a1a1a] text-[#71717a] border-[#262626] hover:border-[#404040] hover:text-foreground"}`}
             >
               {OVERLAY_LABELS[key] ?? key.toUpperCase()}
             </button>
@@ -693,7 +693,7 @@ function UICustomizationPage() {
   return (
     <div className="space-y-6">
       <div className="space-y-3">
-        <Label className="text-[11px] font-light tracking-[0.15em] text-muted-foreground uppercase">Accent Color</Label>
+        <Label className="text-[11px] font-bold tracking-[0.15em] text-muted-foreground uppercase">Accent Color</Label>
         <div className="flex gap-2">
           {accents.map(a => (
             <button
@@ -716,7 +716,7 @@ function UICustomizationPage() {
       </div>
 
       <div className="space-y-3">
-        <Label className="text-[11px] font-light tracking-[0.15em] text-muted-foreground uppercase">Header Behavior</Label>
+        <Label className="text-[11px] font-bold tracking-[0.15em] text-muted-foreground uppercase">Header Behavior</Label>
         <div className="flex gap-1.5">
           {([
             { key: "auto" as HeaderMode, label: "Auto", desc: "Collapses on scroll" },
@@ -732,7 +732,7 @@ function UICustomizationPage() {
                 background: headerMode === opt.key ? "rgba(251,191,36,0.08)" : "transparent",
               }}
             >
-              <span className="text-[11px] font-light" style={{ color: headerMode === opt.key ? "#fbbf24" : "#fff" }}>{opt.label}</span>
+              <span className="text-[11px] font-bold" style={{ color: headerMode === opt.key ? "#fbbf24" : "#fff" }}>{opt.label}</span>
               <span className="text-[8px] leading-tight text-center" style={{ color: "#71717a" }}>{opt.desc}</span>
             </button>
           ))}
@@ -740,7 +740,7 @@ function UICustomizationPage() {
       </div>
 
       <div className="space-y-3">
-        <Label className="text-[11px] font-light tracking-[0.15em] text-muted-foreground uppercase">Font Size</Label>
+        <Label className="text-[11px] font-bold tracking-[0.15em] text-muted-foreground uppercase">Font Size</Label>
         <Select value={fontSize} onValueChange={(v) => setFontSize(v as FontSize)}>
           <SelectTrigger className="bg-card border-card-border">
             <SelectValue />
@@ -754,7 +754,7 @@ function UICustomizationPage() {
       </div>
 
       <div className="space-y-3">
-        <Label className="text-[11px] font-light tracking-[0.15em] text-muted-foreground uppercase">Default Chart Style</Label>
+        <Label className="text-[11px] font-bold tracking-[0.15em] text-muted-foreground uppercase">Default Chart Style</Label>
         <Select value={defaultChartStyle} onValueChange={(v) => setDefaultChartStyle(v as ChartStyle)}>
           <SelectTrigger className="bg-card border-card-border">
             <SelectValue />
@@ -769,7 +769,7 @@ function UICustomizationPage() {
       </div>
 
       <div className="space-y-3">
-        <Label className="text-[11px] font-light tracking-[0.15em] text-muted-foreground uppercase">Grid Density</Label>
+        <Label className="text-[11px] font-bold tracking-[0.15em] text-muted-foreground uppercase">Grid Density</Label>
         <Select value={gridDensity} onValueChange={(v) => setGridDensity(v as GridDensity)}>
           <SelectTrigger className="bg-card border-card-border">
             <SelectValue />
@@ -783,7 +783,7 @@ function UICustomizationPage() {
       </div>
 
       <div className="border-t border-card-border pt-4 space-y-4">
-        <Label className="text-[11px] font-light tracking-[0.15em] text-muted-foreground uppercase">Display</Label>
+        <Label className="text-[11px] font-bold tracking-[0.15em] text-muted-foreground uppercase">Display</Label>
 
         <div className="flex items-center justify-between">
           <span className="text-sm text-white">Ticker Tape</span>
@@ -807,7 +807,7 @@ function UICustomizationPage() {
       </div>
 
       <div className="border-t border-card-border pt-4 space-y-4">
-        <Label className="text-[11px] font-light tracking-[0.15em] text-muted-foreground uppercase">Accessibility</Label>
+        <Label className="text-[11px] font-bold tracking-[0.15em] text-muted-foreground uppercase">Accessibility</Label>
 
         <div className="flex items-center justify-between">
           <span className="text-sm text-white">Haptic Feedback</span>
@@ -826,7 +826,7 @@ function UICustomizationPage() {
       <div className="border-t border-card-border pt-4">
         <button
           onClick={resetDefaults}
-          className="flex items-center gap-2 text-sm font-light transition-colors hover:opacity-80"
+          className="flex items-center gap-2 text-sm font-semibold transition-colors hover:opacity-80"
           style={{ color: "#fbbf24" }}
         >
           <RotateCcw className="w-4 h-4" />
@@ -851,13 +851,13 @@ function SecurityPrivacyPage() {
   return (
     <div className="space-y-8 max-w-xl mx-auto">
       <div className="space-y-3">
-        <h3 className="text-xs font-light text-primary uppercase tracking-widest">Session Timeout</h3>
+        <h3 className="text-xs font-bold text-primary uppercase tracking-widest">Session Timeout</h3>
         <div className="flex flex-wrap gap-2">
           {TIMEOUT_OPTIONS.map((opt) => (
             <button
               key={opt.value}
               onClick={() => setAutoLock(opt.value as SessionTimeoutMinutes)}
-              className={`px-3 py-2 rounded text-xs font-light border transition-all ${autoLock === opt.value ? "bg-primary text-black border-primary" : "bg-card text-muted-foreground border-card-border hover:border-primary/30"}`}
+              className={`px-3 py-2 rounded text-xs font-bold border transition-all ${autoLock === opt.value ? "bg-primary text-black border-primary" : "bg-card text-muted-foreground border-card-border hover:border-primary/30"}`}
             >
               {opt.label}
             </button>
@@ -867,7 +867,7 @@ function SecurityPrivacyPage() {
       </div>
 
       <div className="border-t border-card-border pt-4 space-y-3">
-        <h3 className="text-xs font-light text-primary uppercase tracking-widest">Face ID / Biometrics</h3>
+        <h3 className="text-xs font-bold text-primary uppercase tracking-widest">Face ID / Biometrics</h3>
 
         {!webAuthnSupported && <p className="font-mono text-[9px] text-red-400/70 leading-relaxed">WebAuthn is not supported on this device.</p>}
 
@@ -875,7 +875,7 @@ function SecurityPrivacyPage() {
           <button
             onClick={() => void registerPasskey()}
             disabled={passkeyLoading || !clerkLoaded}
-            className="w-full flex items-center justify-center gap-2 p-2.5 rounded-lg font-mono text-[10px] font-light tracking-wide text-primary border border-primary/20 hover:border-primary/40 transition-all disabled:opacity-50"
+            className="w-full flex items-center justify-center gap-2 p-2.5 rounded-lg font-mono text-[10px] font-bold tracking-wide text-primary border border-primary/20 hover:border-primary/40 transition-all disabled:opacity-50"
           >
             <Fingerprint className="w-3.5 h-3.5" />
             {!clerkLoaded ? "LOADING SESSION..." : passkeyLoading ? "REGISTERING..." : "REGISTER FACE ID / PASSKEY"}

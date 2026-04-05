@@ -326,7 +326,7 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
             style={style}
           >
             {def.icon("w-[24px] h-[24px]")}
-            <span className="text-[9px] font-mono font-light tracking-tight">{def.label}</span>
+            <span className="text-[9px] font-mono font-bold tracking-tight">{def.label}</span>
           </button>
         );
       })}

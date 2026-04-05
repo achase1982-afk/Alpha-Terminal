@@ -26,16 +26,16 @@ const TapeItem = memo(function TapeItem({ symbol }: { symbol: string }) {
         hover:brightness-125 transition-all duration-150 group"
       style={{ fontSize: "13px" }}
     >
-      <span className="font-light tracking-wider text-gray-300 group-hover:text-white transition-colors">
+      <span className="font-semibold tracking-wider text-gray-300 group-hover:text-white transition-colors">
         {symbol}
       </span>
 
       {data?.last != null ? (
         <>
-          <span className="font-light tabular-nums" style={{ color: tickColor }}>
+          <span className="font-bold tabular-nums" style={{ color: tickColor }}>
             {data.last.toFixed(2)}
           </span>
-          <span className="font-light tabular-nums" style={{ color: changeColor }}>
+          <span className="font-bold tabular-nums" style={{ color: changeColor }}>
             {arrow} {pct ?? "—"}
           </span>
         </>

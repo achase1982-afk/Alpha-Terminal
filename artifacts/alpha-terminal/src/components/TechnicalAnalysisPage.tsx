@@ -167,7 +167,7 @@ function DataCell({ label, value, color, mono = true }: { label: string; value: 
     <div className="flex flex-col gap-0.5">
       <span className="text-[9px] font-mono tracking-wider text-zinc-500">{label}</span>
       <span
-        className={`text-[13px] font-light ${mono ? "font-mono" : ""}`}
+        className={`text-[13px] font-semibold ${mono ? "font-mono" : ""}`}
         style={{ color: color || "#e4e4e7" }}
       >
         {value}
@@ -273,11 +273,11 @@ export function TechnicalAnalysisPage({ candles }: Props) {
         <div className="flex items-baseline gap-3 mb-2">
           <span className="font-mono font-black text-xl tracking-wide text-white">{symbol}</span>
           {quote?.last != null && (
-            <span className="font-mono font-light text-lg text-white">{fmt(quote.last)}</span>
+            <span className="font-mono font-bold text-lg text-white">{fmt(quote.last)}</span>
           )}
           {quote?.change != null && (
             <span
-              className="font-mono font-light text-sm"
+              className="font-mono font-semibold text-sm"
               style={{ color: quote.change >= 0 ? "#00d166" : "#f23645" }}
             >
               {quote.change >= 0 ? "+" : ""}{fmt(quote.change)} ({fmtPct(quote.changePct)})
@@ -299,7 +299,7 @@ export function TechnicalAnalysisPage({ candles }: Props) {
         <button
           onClick={handleRunAnalysis}
           disabled={analysisRunning || !candles?.length}
-          className="w-full py-2 rounded-lg font-mono text-xs font-light tracking-wider transition-all"
+          className="w-full py-2 rounded-lg font-mono text-xs font-bold tracking-wider transition-all"
           style={{
             background: analysisRunning ? "#3a3a3c" : "linear-gradient(135deg, #FFB800, #FF8C00)",
             color: analysisRunning ? "#71717a" : "#000",
@@ -450,7 +450,7 @@ export function TechnicalAnalysisPage({ candles }: Props) {
                   </div>
                   <div className="flex items-baseline gap-2">
                     <span
-                      className="font-mono font-light text-2xl"
+                      className="font-mono font-bold text-2xl"
                       style={{ color: cvd >= 0 ? "#00d166" : "#f23645" }}
                     >
                       {cvd >= 0 ? "+" : ""}{fmtVol(cvd)}
@@ -504,7 +504,7 @@ export function TechnicalAnalysisPage({ candles }: Props) {
                       />
                     </div>
                     <span
-                      className="font-mono font-light text-sm"
+                      className="font-mono font-bold text-sm"
                       style={{ color: ofi >= 0 ? "#00d166" : "#f23645" }}
                     >
                       {ofi >= 0 ? "+" : ""}{ofi.toFixed(1)}%
@@ -519,7 +519,7 @@ export function TechnicalAnalysisPage({ candles }: Props) {
                 <div className="rounded-lg p-3" style={{ background: "#1a1a1c" }}>
                   <span className="font-mono text-[11px] tracking-wider text-zinc-400">Net Gamma Exposure (GEX)</span>
                   <div className="mt-2 flex items-baseline gap-2">
-                    <span className="font-mono font-light text-2xl text-[#FFB800]">—</span>
+                    <span className="font-mono font-bold text-2xl text-[#FFB800]">—</span>
                     <span className="text-[9px] font-mono text-zinc-600">Requires options chain</span>
                   </div>
                 </div>
@@ -529,11 +529,11 @@ export function TechnicalAnalysisPage({ candles }: Props) {
                   <div className="mt-2 grid grid-cols-2 gap-3">
                     <div className="flex flex-col gap-0.5">
                       <span className="text-[9px] font-mono text-zinc-600">Nearest Call Wall</span>
-                      <span className="font-mono font-light text-sm text-[#00d166]">—</span>
+                      <span className="font-mono font-semibold text-sm text-[#00d166]">—</span>
                     </div>
                     <div className="flex flex-col gap-0.5">
                       <span className="text-[9px] font-mono text-zinc-600">Nearest Put Wall</span>
-                      <span className="font-mono font-light text-sm text-[#f23645]">—</span>
+                      <span className="font-mono font-semibold text-sm text-[#f23645]">—</span>
                     </div>
                   </div>
                 </div>
@@ -559,7 +559,7 @@ export function TechnicalAnalysisPage({ candles }: Props) {
                       {Array.from({ length: 9 }, (_, i) => (
                         <div
                           key={i}
-                          className="w-5 h-5 rounded-sm flex items-center justify-center font-mono text-[9px] font-light"
+                          className="w-5 h-5 rounded-sm flex items-center justify-center font-mono text-[9px] font-bold"
                           style={{
                             background: i < sequential.count
                               ? sequential.direction === "up" ? "#00d166" : "#f23645"
@@ -577,7 +577,7 @@ export function TechnicalAnalysisPage({ candles }: Props) {
                       Count: {sequential.count} {sequential.direction === "up" ? "Buy" : "Sell"}
                     </span>
                     {sequential.count >= 9 && (
-                      <span className="text-[9px] font-mono font-light text-[#FFB800]">EXHAUSTION</span>
+                      <span className="text-[9px] font-mono font-bold text-[#FFB800]">EXHAUSTION</span>
                     )}
                   </div>
                 </div>
@@ -587,12 +587,12 @@ export function TechnicalAnalysisPage({ candles }: Props) {
                   <div className="mt-2 grid grid-cols-2 gap-4">
                     <div>
                       <span className="text-[9px] font-mono text-zinc-600">Std Dev (20)</span>
-                      <div className="font-mono font-light text-lg text-white">{fmt(zScore.stddev)}</div>
+                      <div className="font-mono font-bold text-lg text-white">{fmt(zScore.stddev)}</div>
                     </div>
                     <div>
                       <span className="text-[9px] font-mono text-zinc-600">Z-Score</span>
                       <div
-                        className="font-mono font-light text-lg"
+                        className="font-mono font-bold text-lg"
                         style={{
                           color: Math.abs(zScore.zscore) > 2
                             ? "#f23645"

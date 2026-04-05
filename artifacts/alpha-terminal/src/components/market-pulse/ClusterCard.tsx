@@ -57,7 +57,7 @@ export function ClusterCard({ clusterKey, cluster }: ClusterCardProps) {
     >
       <div className="px-3 py-2 border-b border-[#2A2A2C] flex items-center gap-2" style={{ background: "#151517" }}>
         <span style={{ color: sColor }}>{config.icon}</span>
-        <span className="font-mono text-[10px] font-light text-[#e4e4e7] flex-1 tracking-wider">{config.label}</span>
+        <span className="font-mono text-[10px] font-bold text-[#e4e4e7] flex-1 tracking-wider">{config.label}</span>
         <span
           className="font-mono text-sm font-black tabular-nums"
           style={{ color: sColor }}

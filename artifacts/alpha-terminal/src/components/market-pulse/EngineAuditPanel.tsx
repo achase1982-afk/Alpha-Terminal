@@ -88,7 +88,7 @@ export function EngineAuditPanel({ data }: { data: MarketPulseData }) {
       >
         <span className="flex items-center gap-2">
           <Database className="w-3.5 h-3.5 text-[#FFB800]" />
-          <span className="font-mono text-[10px] font-light text-[#a1a1aa] uppercase tracking-widest">Engine Audit</span>
+          <span className="font-mono text-[10px] font-bold text-[#a1a1aa] uppercase tracking-widest">Engine Audit</span>
           <span className="font-mono text-[9px] text-[#52525b]">{data.engineVersion}</span>
         </span>
         <ChevronDown
@@ -116,12 +116,12 @@ export function EngineAuditPanel({ data }: { data: MarketPulseData }) {
                     {rows.map((r) => (
                       <tr key={r.symbol} className="border-b border-[#2A2A2C]/50 hover:bg-[#1C1C1E]/50">
                         <td className="py-1 px-1.5">
-                          <span className="font-mono text-[10px] font-light text-[#e4e4e7]">{r.symbol.replace(/^\$/, '')}</span>
+                          <span className="font-mono text-[10px] font-bold text-[#e4e4e7]">{r.symbol.replace(/^\$/, '')}</span>
                           <span className="font-mono text-[9px] text-[#52525b] ml-1.5 hidden sm:inline">{r.label}</span>
                         </td>
                         <td className="py-1 px-1.5 text-right">
                           <span
-                            className="font-mono text-[10px] tabular-nums font-light"
+                            className="font-mono text-[10px] tabular-nums font-medium"
                             style={{ color: r.value !== null ? "#e4e4e7" : "#52525b" }}
                           >
                             {fmtVal(r.value)}
@@ -157,12 +157,12 @@ export function EngineAuditPanel({ data }: { data: MarketPulseData }) {
                 return (
                   <div key={key} className="rounded-lg border border-[#2A2A2C]/70 p-2.5" style={{ background: "#0c0c0c" }}>
                     <div className="flex items-center justify-between mb-1.5">
-                      <span className="font-mono text-[10px] font-light text-[#e4e4e7] uppercase tracking-wider">
+                      <span className="font-mono text-[10px] font-bold text-[#e4e4e7] uppercase tracking-wider">
                         {CLUSTER_LABELS[key]}
                       </span>
                       <div className="flex items-center gap-2">
                         <span
-                          className="font-mono text-[10px] tabular-nums font-light"
+                          className="font-mono text-[10px] tabular-nums font-bold"
                           style={{ color: cluster.score > 0 ? "#00d166" : cluster.score < 0 ? "#f23645" : "#71717a" }}
                         >
                           {cluster.score > 0 ? "+" : ""}{cluster.score.toFixed(2)}
@@ -206,10 +206,10 @@ export function EngineAuditPanel({ data }: { data: MarketPulseData }) {
 
           <div className="px-3 py-2 border-t border-[#2A2A2C] flex items-center gap-3 flex-wrap">
             <span className="font-mono text-[9px] text-[#52525b]">
-              Composite: <span className="text-[#e4e4e7] font-light">{data.compositeScore > 0 ? "+" : ""}{data.compositeScore.toFixed(2)}</span>
+              Composite: <span className="text-[#e4e4e7] font-bold">{data.compositeScore > 0 ? "+" : ""}{data.compositeScore.toFixed(2)}</span>
             </span>
             <span className="font-mono text-[9px] text-[#52525b]">
-              Confidence: <span className="text-[#e4e4e7] font-light">{data.confidenceScore}/{data.maxConfidence}</span>
+              Confidence: <span className="text-[#e4e4e7] font-bold">{data.confidenceScore}/{data.maxConfidence}</span>
             </span>
             <span className="font-mono text-[9px] text-[#52525b]">
               Weights: R20 C15 VL15 VT10 B15 RA15 M10

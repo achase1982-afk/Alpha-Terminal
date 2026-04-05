@@ -42,7 +42,7 @@ export function AiThinkingFeed({ texts, isStreaming, className = "" }: AiThinkin
           ) : (
             <span className="inline-flex rounded-full h-2 w-2 bg-emerald-500/50" />
           )}
-          <span className="font-mono text-[9px] font-light text-emerald-500/70 tracking-widest">
+          <span className="font-mono text-[9px] font-bold text-emerald-500/70 tracking-widest">
             AI Reasoning
           </span>
         </div>

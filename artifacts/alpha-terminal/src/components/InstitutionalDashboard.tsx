@@ -65,7 +65,7 @@ function Label({ children }: { children: React.ReactNode }) {
 function Val({ children, color = "#e4e4e7", mono = true }: { children: React.ReactNode; color?: string; mono?: boolean }) {
   return (
     <span
-      className={`text-[11px] font-light tabular-nums leading-tight ${mono ? "font-mono" : ""}`}
+      className={`text-[11px] font-semibold tabular-nums leading-tight ${mono ? "font-mono" : ""}`}
       style={{ color }}
     >
       {children}
@@ -90,7 +90,7 @@ function PanelBox({ title, icon, children, fullWidth = false }: { title: string;
     >
       <div className="flex items-center gap-1.5 mb-0.5">
         {icon}
-        <span className="font-mono text-[9px] font-light tracking-wider" style={{ color: GOLD }}>{title}</span>
+        <span className="font-mono text-[9px] font-bold tracking-wider" style={{ color: GOLD }}>{title}</span>
       </div>
       {children}
     </div>
@@ -214,7 +214,7 @@ function TrendBadge({ trend }: { trend: string }) {
   return (
     <div className="flex items-center gap-1 px-1.5 py-0.5 rounded" style={{ border: `1px solid ${color}40`, background: `${color}10` }}>
       <Icon className="w-3 h-3" style={{ color }} />
-      <span className="font-mono text-[9px] font-light" style={{ color }}>{trend}</span>
+      <span className="font-mono text-[9px] font-bold" style={{ color }}>{trend}</span>
     </div>
   );
 }
@@ -315,7 +315,7 @@ export function InstitutionalDashboard({ candles }: Props) {
             <span className="font-mono text-[16px] font-black tabular-nums" style={{ color: cColor }}>
               {fmtDollar(derived.last)}
             </span>
-            <span className="font-mono text-[10px] font-light" style={{ color: cColor }}>
+            <span className="font-mono text-[10px] font-bold" style={{ color: cColor }}>
               {(derived.changePct ?? 0) >= 0 ? "▲" : "▼"}
             </span>
           </div>
@@ -340,7 +340,7 @@ export function InstitutionalDashboard({ candles }: Props) {
           </div>
           <div className="flex flex-col gap-px mt-0.5">
             <Label>Shape</Label>
-            <span className="font-mono text-[9px] font-light" style={{ color: GOLD }}>
+            <span className="font-mono text-[9px] font-semibold" style={{ color: GOLD }}>
               {derived.volProfile?.shape ?? "—"}
             </span>
           </div>
