@@ -494,7 +494,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol }: {
             className="w-full font-bold font-mono tracking-wider"
             style={{
               fontSize: 13, padding: "10px",
-              background: "#FFB800", color: "#111", border: "none",
+              background: "#18181b", color: "#FFB800", border: "none",
             }}
           >
             {isScanning ? (
