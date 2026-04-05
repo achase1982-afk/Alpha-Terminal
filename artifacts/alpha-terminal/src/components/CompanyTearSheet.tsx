@@ -3,8 +3,7 @@ import { useTerminalStore } from "@/lib/store";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import {
   X, Building2, TrendingUp, Newspaper, ShieldAlert,
-  Loader2, Users, BarChart3, Landmark, DollarSign,
-  Activity, ChevronRight
+  Loader2, ChevronRight
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
@@ -35,37 +34,9 @@ interface CompanyTearSheetProps {
   onClose: () => void;
 }
 
-function fmtMarketCap(n: number | null): string {
-  if (n == null) return "—";
-  if (n >= 1e12) return `$${(n / 1e12).toFixed(2)}T`;
-  if (n >= 1e9) return `$${(n / 1e9).toFixed(2)}B`;
-  if (n >= 1e6) return `$${(n / 1e6).toFixed(1)}M`;
-  return `$${n.toLocaleString()}`;
-}
-
-function fmtShares(n: number | null): string {
-  if (n == null) return "—";
-  if (n >= 1e9) return `${(n / 1e9).toFixed(2)}B`;
-  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
-  if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
-  return n.toLocaleString();
-}
-
 function fmtNum(n: number | null, decimals = 2): string {
   if (n == null) return "—";
   return n.toFixed(decimals);
-}
-
-function MetricCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
-  return (
-    <div className="bg-[#0c0c0c] border border-card-border rounded-lg p-3 flex flex-col gap-1">
-      <div className="flex items-center gap-1.5">
-        {icon}
-        <span className="font-mono text-[9px] text-muted-foreground uppercase tracking-wider">{label}</span>
-      </div>
-      <span className="font-mono text-sm text-foreground font-semibold">{value}</span>
-    </div>
-  );
 }
 
 export function CompanyTearSheet({ isOpen, onClose }: CompanyTearSheetProps) {
@@ -171,38 +142,6 @@ export function CompanyTearSheet({ isOpen, onClose }: CompanyTearSheetProps) {
               )}
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              <MetricCard
-                icon={<DollarSign className="w-3 h-3 text-primary" />}
-                label="Market Cap"
-                value={fmtMarketCap(fundamentals.marketCap)}
-              />
-              <MetricCard
-                icon={<Users className="w-3 h-3 text-primary" />}
-                label="Shares Out"
-                value={fmtShares(fundamentals.sharesOutstanding)}
-              />
-              <MetricCard
-                icon={<BarChart3 className="w-3 h-3 text-primary" />}
-                label="P/E Ratio"
-                value={fmtNum(fundamentals.peRatio)}
-              />
-              <MetricCard
-                icon={<Activity className="w-3 h-3 text-primary" />}
-                label="EPS (TTM)"
-                value={fundamentals.eps != null ? `$${fmtNum(fundamentals.eps)}` : "—"}
-              />
-              <MetricCard
-                icon={<TrendingUp className="w-3 h-3 text-primary" />}
-                label="Beta"
-                value={fmtNum(fundamentals.beta)}
-              />
-              <MetricCard
-                icon={<Landmark className="w-3 h-3 text-primary" />}
-                label="Div Yield"
-                value={fundamentals.dividendYield != null ? `${fmtNum(fundamentals.dividendYield)}%` : "—"}
-              />
-            </div>
 
             {(fundamentals.high52 != null || fundamentals.low52 != null) && (
               <div className="bg-card border border-card-border rounded-xl p-4">
