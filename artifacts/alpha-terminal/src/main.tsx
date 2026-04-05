@@ -55,7 +55,7 @@ function PasskeySignInButton() {
           border: "1px solid rgba(255, 184, 0, 0.3)",
           background: "transparent",
           color: "#FFB800",
-          fontFamily: "'Inter', monospace",
+          fontFamily: "'SFMono-Regular', 'SF Mono', ui-monospace, 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace",
           fontSize: 12,
           fontWeight: 700,
           letterSpacing: "0.05em",
@@ -72,7 +72,7 @@ function PasskeySignInButton() {
         {loading ? "AUTHENTICATING..." : "SIGN IN WITH FACE ID"}
       </button>
       {error && (
-        <p style={{ color: "#ef4444", fontSize: 10, fontFamily: "monospace", marginTop: 8 }}>
+        <p style={{ color: "#ef4444", fontSize: 10, fontFamily: "'SFMono-Regular', 'SF Mono', ui-monospace, 'Cascadia Code', monospace", marginTop: 8 }}>
           {error}
         </p>
       )}

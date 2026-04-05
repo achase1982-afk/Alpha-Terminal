@@ -43,7 +43,7 @@ const ITM_OCEAN = "rgba(120,80,100,0.45)";
 const OTM_PURPLE = "rgba(168,130,255,0.04)";
 const SEL_BORDER_COLOR = "#fbbf2480";
 
-const MONO = "'SF Mono', 'Cascadia Code', 'Consolas', monospace";
+const MONO = "'SFMono-Regular', 'SF Mono', ui-monospace, 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace";
 const FW_LIGHT = 400;
 const FW_NORMAL = 450;
 const FW_PREMIUM = 600;
@@ -943,7 +943,7 @@ function OptionsChainHeader({
       >
         {showCalls && (
           <div style={{ flex: 1, textAlign: "center" }}>
-            <span style={{ fontSize: 12, letterSpacing: "0.3em", color: GRAY, fontFamily: MONO, fontWeight: FW_PREMIUM }}>C A L L S</span>
+            <span style={{ fontSize: 12, letterSpacing: "0.08em", color: GRAY, fontFamily: MONO, fontWeight: FW_PREMIUM }}>CALLS</span>
           </div>
         )}
         <div style={{ width: STRIKE_W, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", borderLeft: `1px solid ${BORDER}`, borderRight: `1px solid ${BORDER}` }}>
@@ -966,7 +966,7 @@ function OptionsChainHeader({
         </div>
         {showPuts && (
           <div style={{ flex: 1, textAlign: "center" }}>
-            <span style={{ fontSize: 12, letterSpacing: "0.3em", color: GRAY, fontFamily: MONO, fontWeight: FW_PREMIUM }}>P U T S</span>
+            <span style={{ fontSize: 12, letterSpacing: "0.08em", color: GRAY, fontFamily: MONO, fontWeight: FW_PREMIUM }}>PUTS</span>
           </div>
         )}
       </div>
