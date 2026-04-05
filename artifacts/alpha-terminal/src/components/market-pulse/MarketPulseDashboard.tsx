@@ -209,7 +209,7 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
   const showEmptyBox = showEmptyOrLoading && !isActive && !hasInitiatedRef.current;
 
   return (
-    <div className={`px-3 sm:px-4 lg:px-5 pt-1 ${showEmptyOrLoading ? "overflow-hidden h-full flex flex-col" : "space-y-4 overflow-x-hidden"}`}>
+    <div className={`px-3 sm:px-4 lg:px-5 pt-1 ${showEmptyOrLoading ? "overflow-hidden h-full flex flex-col" : "space-y-4 overflow-x-hidden"}`} style={{ background: "#000000" }}>
 
       {pulseData && isActive && (
         <div className="mt-4">
