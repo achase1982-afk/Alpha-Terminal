@@ -80,7 +80,7 @@ interface ExpirationGroup {
   dateLabel: string;
   rows: NormalizedRow[];
   totalStrikes: number;
-  isWeekly: boolean;
+  expType: "Weekly" | "EOM" | "Quarterly" | null;
   atmIV: number | null;
   expectedMove: number | null;
   maxOI: number;
@@ -124,12 +124,19 @@ function formatExpDate(expStr: string): string {
   return `${d.getDate()} ${MONTHS[d.getMonth()]} ${String(d.getFullYear()).slice(2)}`;
 }
 
-function isWeeklyExp(expStr: string): boolean {
+function getExpType(expStr: string): "Weekly" | "EOM" | "Quarterly" | null {
   const d = parseExpDate(expStr);
-  if (!d) return false;
-  if (d.getDay() !== 5) return true;
+  if (!d) return null;
   const date = d.getDate();
-  return !(date >= 15 && date <= 21);
+  const month = d.getMonth();
+  const dow = d.getDay();
+  const lastDayOfMonth = new Date(d.getFullYear(), month + 1, 0).getDate();
+  if (date >= lastDayOfMonth - 4) {
+    const isQuarterEnd = month === 2 || month === 5 || month === 8 || month === 11;
+    return isQuarterEnd ? "Quarterly" : "EOM";
+  }
+  if (dow === 5 && date >= 15 && date <= 21) return null;
+  return "Weekly";
 }
 
 function findATMIndex(strikes: number[], lastPrice: number): number {
@@ -214,7 +221,7 @@ function buildExpirationGroups(
     groups.push({
       expiration: exp, dte, dateLabel: formatExpDate(exp),
       rows: normalizedRows, totalStrikes,
-      isWeekly: isWeeklyExp(exp), atmIV, expectedMove,
+      expType: getExpType(exp), atmIV, expectedMove,
       maxOI, maxVol, totalCallOI, totalPutOI, totalCallVol, totalPutVol, ivSkew,
     });
   }
@@ -1331,9 +1338,12 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
                       <span className="text-[12px]" style={{ color: GRAY, fontWeight: FW_LIGHT }}>
                         {Math.round(group.dte)}d
                       </span>
-                      {group.isWeekly && (
-                        <span className="text-[13px]" style={{ color: "#FF6B2B", fontWeight: FW_NORMAL }}>
-                          Weekly
+                      {group.expType && (
+                        <span className="text-[13px]" style={{
+                          color: group.expType === "Quarterly" ? GOLD : group.expType === "EOM" ? "#60a5fa" : "#FF6B2B",
+                          fontWeight: FW_NORMAL,
+                        }}>
+                          {group.expType}
                         </span>
                       )}
                     </div>
