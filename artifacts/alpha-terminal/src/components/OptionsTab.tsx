@@ -1340,7 +1340,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
                       </span>
                       {group.expType && (
                         <span className="text-[13px]" style={{
-                          color: group.expType === "Quarterly" ? GOLD : group.expType === "EOM" ? "#60a5fa" : "#FF6B2B",
+                          color: group.expType === "Quarterly" ? "#22d3ee" : group.expType === "EOM" ? "#60a5fa" : "#FF6B2B",
                           fontWeight: FW_NORMAL,
                         }}>
                           {group.expType}
