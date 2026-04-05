@@ -1331,17 +1331,17 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
                   <button
                     onClick={() => handleRunTA()}
                     disabled={taStreaming || !accessToken || !quote || !history?.candles}
+                    className="inline-flex items-center justify-center gap-2 rounded-lg font-mono font-bold tracking-wider transition-colors active:scale-95 active:brightness-110"
                     style={{
                       width: "100%", padding: "10px 0", fontSize: 11, fontFamily: f, fontWeight: 700,
                       color: "#000",
                       background: C.gold,
-                      border: `1px solid ${C.gold}`,
+                      border: "none",
                       cursor: "pointer",
-                      letterSpacing: 1.5, display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                      letterSpacing: "0.08em",
                     }}
                   >
-                    <Activity style={{ width: 14, height: 14 }} />
-                    RUN AI ANALYSIS
+                    RUN ANALYSIS
                   </button>
                 ) : taStreaming ? (
                   <div style={{ background: C.card, border: `1px solid ${C.gold}25`, padding: 16, marginBottom: 8 }}>

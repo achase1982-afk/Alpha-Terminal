@@ -647,7 +647,7 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
               boxShadow: disabled ? "none" : "0 2px 8px rgba(255,184,0,0.25)",
             }}
           >
-            <BarChart2 className="w-3.5 h-3.5 inline mr-1.5 -mt-px" />Analyze
+            Analyze
           </button>
         </div>
       </div>
