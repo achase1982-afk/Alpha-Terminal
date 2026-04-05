@@ -65,7 +65,7 @@ function RecentRow({
           {sym}
         </span>
         {quoteData?.description && (
-          <span className="font-mono text-[13px] font-medium truncate mt-0.5" style={{ color: "#FFB800" }}>
+          <span className="font-mono text-[13px] font-bold tracking-wide truncate mt-0.5" style={{ color: "#FFB800" }}>
             {quoteData.description}
           </span>
         )}
