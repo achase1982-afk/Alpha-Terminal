@@ -822,29 +822,39 @@ interface SecFilingsResponse {
   error?: string;
 }
 
-const FILING_DARK_CSS = `
-  * { color: #d4d4d8 !important; background: transparent !important; border-color: #27272a !important; font-family: 'SFMono-Regular','SF Mono',ui-monospace,'Cascadia Code','Fira Code','JetBrains Mono','Consolas',monospace !important; }
-  body, html { background: #000000 !important; margin: 0; padding: 0; }
-  table { border-collapse: collapse; width: 100%; font-size: 11px; }
-  td, th { padding: 4px 8px; border: 1px solid #27272a; vertical-align: top; }
-  th { color: #a1a1aa !important; font-weight: 700; text-transform: uppercase; font-size: 9px; letter-spacing: 0.5px; }
-  tr:nth-child(even) td { background: #0a0a0a !important; }
-  a { color: #FFB800 !important; text-decoration: none !important; }
-  a:hover { text-decoration: underline !important; }
-  h1,h2,h3,h4,h5,h6 { color: #e4e4e7 !important; font-weight: 700; margin: 16px 0 8px; }
-  p { margin: 6px 0; line-height: 1.6; font-size: 12px; }
-  hr { border: none; border-top: 1px solid #27272a; margin: 12px 0; }
-  pre, code { font-size: 11px; background: #0a0a0a !important; padding: 2px 4px; }
-  .formGrouping { margin: 8px 0; }
-  ix\\:nonfraction, ix\\:nonnumeric { color: #FFB800 !important; font-weight: 600; }
-`;
+function buildSrcdoc(body: string, isText: boolean): string {
+  const escaped = body.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+  if (isText) {
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
+      *{margin:0;padding:0;box-sizing:border-box}
+      html,body{background:#000;color:#d4d4d8;font-family:'SFMono-Regular','SF Mono',ui-monospace,'Cascadia Code','Fira Code','JetBrains Mono','Consolas',monospace;font-size:11px;line-height:1.6;padding:12px 16px;overflow-x:hidden;word-break:break-word;white-space:pre-wrap}
+    </style></head><body>${escaped}</body></html>`;
+  }
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
+    *{box-sizing:border-box;border-color:#27272a!important}
+    html,body{background:#000!important;color:#d4d4d8!important;margin:0;padding:12px 16px;font-family:'SFMono-Regular','SF Mono',ui-monospace,'Cascadia Code','Fira Code','JetBrains Mono','Consolas',monospace!important;font-size:12px;line-height:1.6;overflow-x:hidden;word-break:break-word}
+    table{border-collapse:collapse;width:100%;font-size:11px;margin:8px 0}
+    td,th{padding:4px 8px;border:1px solid #27272a;vertical-align:top;color:#d4d4d8!important;background:transparent!important}
+    th{color:#a1a1aa!important;font-weight:700;text-transform:uppercase;font-size:9px;letter-spacing:0.5px}
+    tr:nth-child(even) td{background:#0a0a0a!important}
+    a{color:#FFB800!important;text-decoration:none!important}
+    h1,h2,h3,h4,h5,h6{color:#e4e4e7!important;font-weight:700;margin:16px 0 8px}
+    p{margin:6px 0}
+    hr{border:none;border-top:1px solid #27272a;margin:12px 0}
+    pre,code{font-size:11px;background:#0a0a0a!important;padding:2px 4px}
+    span,div,font,b,i,u,em,strong{color:inherit!important;background:transparent!important}
+    ix\\:nonfraction,ix\\:nonnumeric{color:#FFB800!important;font-weight:600}
+    .FormData,.FormDataR,.FormDataC,.smallFormData{color:#d4d4d8!important;font-size:11px}
+    .FormName,.FormTitle{color:#e4e4e7!important;font-weight:700}
+    .FormText,.SmallFormText{color:#a1a1aa!important;font-size:10px}
+  </style></head><body>${body}</body></html>`;
+}
 
 function SecFilingViewer({ filing, onClose }: { filing: EdgarFiling; onClose: () => void }) {
   const c = SEC_TYPE_COLORS[filing.formType] || SEC_TYPE_COLORS[filing.formType.split("/")[0]] || C.textDim;
-  const [content, setContent] = useState<{ html?: string; text?: string; type: string } | null>(null);
+  const [srcdoc, setSrcdoc] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -855,7 +865,10 @@ function SecFilingViewer({ filing, onClose }: { filing: EdgarFiling; onClose: ()
         const res = await fetch(`${API_BASE}/sec/filing-content?url=${encodeURIComponent(filing.url)}`);
         if (!res.ok) throw new Error(`Failed to fetch filing (${res.status})`);
         const json = await res.json();
-        if (!cancelled) setContent(json);
+        if (!cancelled) {
+          const doc = buildSrcdoc(json.html || json.text || "", json.type === "text");
+          setSrcdoc(doc);
+        }
       } catch (err: any) {
         if (!cancelled) setError(err.message || "Failed to load filing");
       } finally {
@@ -865,20 +878,11 @@ function SecFilingViewer({ filing, onClose }: { filing: EdgarFiling; onClose: ()
     return () => { cancelled = true; };
   }, [filing.url]);
 
-  useEffect(() => {
-    if (content?.html && contentRef.current) {
-      contentRef.current.innerHTML = content.html;
-    }
-  }, [content]);
-
   return (
-    <div style={{
-      position: "fixed", inset: 0, zIndex: 9999, background: "#000000",
-      display: "flex", flexDirection: "column",
-    }}>
+    <div style={{ display: "flex", flexDirection: "column", background: "#000000" }}>
       <div style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "10px 16px", background: "#0a0a0a", borderBottom: `1px solid ${C.border}`,
+        padding: "8px 16px", background: "#0a0a0a", borderBottom: `1px solid ${C.border}`,
         flexShrink: 0,
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
@@ -900,28 +904,28 @@ function SecFilingViewer({ filing, onClose }: { filing: EdgarFiling; onClose: ()
           </button>
         </div>
       </div>
-      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", WebkitOverflowScrolling: "touch", background: "#000000", padding: "12px 16px" }}>
-        <style>{FILING_DARK_CSS}</style>
-        {loading && (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 40 }}>
-            <Loader2 className="w-5 h-5 animate-spin" style={{ color: C.gold }} />
-            <span style={{ fontSize: 11, fontFamily: f, color: C.textDim, marginLeft: 10 }}>Loading filing...</span>
-          </div>
-        )}
-        {error && (
-          <div style={{ padding: 20, textAlign: "center" }}>
-            <span style={{ fontSize: 11, fontFamily: f, color: C.red }}>{error}</span>
-          </div>
-        )}
-        {content?.type === "html" && (
-          <div ref={contentRef} style={{ fontSize: 12, lineHeight: 1.6, wordBreak: "break-word" }} />
-        )}
-        {content?.type === "text" && (
-          <pre style={{ fontSize: 11, fontFamily: f, color: C.text, whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0, lineHeight: 1.6 }}>
-            {content.text}
-          </pre>
-        )}
-      </div>
+      {loading && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 40 }}>
+          <Loader2 className="w-5 h-5 animate-spin" style={{ color: C.gold }} />
+          <span style={{ fontSize: 11, fontFamily: f, color: C.textDim, marginLeft: 10 }}>Loading filing...</span>
+        </div>
+      )}
+      {error && (
+        <div style={{ padding: 20, textAlign: "center" }}>
+          <span style={{ fontSize: 11, fontFamily: f, color: C.red }}>{error}</span>
+        </div>
+      )}
+      {srcdoc && (
+        <iframe
+          srcDoc={srcdoc}
+          title={`${filing.formType} - ${filing.description}`}
+          style={{
+            width: "100%", height: "60vh", border: "none",
+            background: "#000000",
+          }}
+          sandbox="allow-same-origin"
+        />
+      )}
     </div>
   );
 }
