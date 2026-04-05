@@ -270,7 +270,11 @@ export default function TerminalPage() {
     const onTouchMove = (e: TouchEvent) => {
       const y = e.touches[0]?.clientY ?? 0;
       const pulling = y > lastTouchY.current;
-      if (el.scrollTop <= 0 && pulling) {
+      const pushing = y < lastTouchY.current;
+      const atTop = el.scrollTop <= 0;
+      const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
+      const noScroll = el.scrollHeight <= el.clientHeight + 1;
+      if (noScroll || (atTop && pulling) || (atBottom && pushing)) {
         e.preventDefault();
       }
     };
