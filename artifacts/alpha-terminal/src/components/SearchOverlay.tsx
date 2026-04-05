@@ -71,8 +71,8 @@ function RecentRow({
         )}
       </div>
 
-      <div className="flex items-center gap-4 shrink-0">
-        <div className="flex flex-col items-end w-[72px] shrink-0">
+      <div className="flex items-center gap-3 shrink-0">
+        <div className="flex flex-col items-end w-[80px] shrink-0">
           <span
             className="font-mono text-[14px] font-bold tabular-nums"
             style={{ color: quoteData?.last != null ? "#ffffff" : "#52525b" }}
@@ -89,7 +89,7 @@ function RecentRow({
 
         <span
           onClick={handleWatchlistToggle}
-          className={`font-mono text-[11px] font-semibold tracking-wide cursor-pointer transition-all duration-200 active:scale-95 ${
+          className={`font-mono text-[11px] font-semibold tracking-wide cursor-pointer transition-all duration-200 active:scale-95 text-right w-[80px] shrink-0 ${
             flash ? "scale-105" : ""
           }`}
           style={{ color: isInWatchlist ? "#f23645" : "#5b9cf6" }}
