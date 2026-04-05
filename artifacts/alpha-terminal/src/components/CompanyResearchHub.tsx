@@ -276,6 +276,8 @@ const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, volH
 
   const biasColor = ai?.priceAction?.bias?.includes("Bullish") ? C.green : ai?.priceAction?.bias?.includes("Bearish") ? C.red : C.gold;
 
+  if (!ai) return null;
+
   return (
     <>
       <Sec>FUNDAMENTALS</Sec>
