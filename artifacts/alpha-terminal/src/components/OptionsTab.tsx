@@ -283,8 +283,8 @@ function classifyMoneyness(strike: number, underlyingPrice: number | null, isCal
 }
 
 function getRowBg(moneyness: Moneyness): string {
-  if (moneyness === "itm") return ITM_OCEAN;
-  if (moneyness === "otm") return OTM_PURPLE;
+  if (moneyness === "itm") return BG;
+  if (moneyness === "otm") return BG;
   return "transparent";
 }
 
