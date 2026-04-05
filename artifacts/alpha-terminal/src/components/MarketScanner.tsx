@@ -491,23 +491,22 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol }: {
           <Button
             onClick={handleScan}
             disabled={!accessToken || isScanning || currentSyms.length === 0}
-            className="w-full text-xs font-bold h-10"
-            style={
-              !isScanning
-                ? { background: "#18181B", color: "#FFB800", border: "1px solid #27272A" }
-                : {}
-            }
+            className="w-full font-bold font-mono tracking-wider"
+            style={{
+              fontSize: 13, padding: "8px 12px",
+              background: "#000", color: "#FFB800", border: "1px solid #FFB800",
+            }}
           >
             {isScanning ? (
-              <span className="flex items-center gap-2">
-                <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                {mode === "ai" ? "RUNNING AI SCAN..." : "FILTERING MARKET..."}
+              <span className="flex items-center justify-center gap-2">
+                <span className="w-4 h-4 border-2 border-[#FFB800] border-t-transparent rounded-full animate-spin" />
+                {mode === "ai" ? "RUNNING SCAN..." : "FILTERING MARKET..."}
               </span>
             ) : (
-              <span className="flex items-center gap-2">
+              <span className="flex items-center justify-center">
                 {mode === "ai"
-                  ? <><Zap className="w-4 h-4" /> SCAN {currentSyms.length} STOCKS WITH AI</>
-                  : <><SlidersHorizontal className="w-4 h-4" /> APPLY FILTERS & SCAN</>}
+                  ? `SCAN ${currentSyms.length} STOCKS`
+                  : "APPLY FILTERS & SCAN"}
               </span>
             )}
           </Button>
