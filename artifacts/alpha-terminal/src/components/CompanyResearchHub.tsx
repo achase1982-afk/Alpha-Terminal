@@ -1318,7 +1318,7 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
             }}
           >
             <div style={{ width: "100%", flexShrink: 0, padding: "0 16px 40px" }}>
-              <div style={{ paddingTop: 12, paddingBottom: 4, display: "flex", justifyContent: "center" }}>
+              <div style={{ paddingTop: 12, paddingBottom: 4, display: "flex", justifyContent: "flex-start" }}>
                 {!taShowResult ? (
                   <button
                     onClick={() => handleRunTA()}
@@ -1337,7 +1337,7 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
                     RUN ANALYSIS
                   </button>
                 ) : taStreaming ? (
-                  <div style={{ background: C.card, border: `1px solid ${C.gold}25`, padding: 16, marginBottom: 8 }}>
+                  <div style={{ background: "#000000", border: "none", padding: 0, marginBottom: 8 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
                       <Loader2 style={{ width: 14, height: 14, color: C.gold }} className="animate-spin" />
                       <span style={{ fontSize: 11, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 1 }}>ANALYZING...</span>
