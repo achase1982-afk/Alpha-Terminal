@@ -51,7 +51,7 @@ function RecentRow({
 
   return (
     <div
-      className="flex items-center px-4 py-3 gap-3"
+      className="flex items-center px-4 py-1.5 gap-3"
       style={{ borderBottom: "1px solid #1a1a1c" }}
     >
       <div
@@ -72,7 +72,7 @@ function RecentRow({
       </div>
 
       <div className="flex items-center gap-4 shrink-0">
-        <div className="flex flex-col items-end">
+        <div className="flex flex-col items-end w-[72px] shrink-0">
           <span
             className="font-mono text-[14px] font-bold tabular-nums"
             style={{ color: quoteData?.last != null ? "#ffffff" : "#52525b" }}
