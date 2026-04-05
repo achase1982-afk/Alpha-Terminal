@@ -58,7 +58,7 @@ function DesktopContextTabs({ activeTab, setActiveTab }: { activeTab: MarketData
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className="flex-1 py-2 font-mono text-[11px] font-bold tracking-wider transition-colors border-b-2"
+            className="flex-1 py-2 font-mono text-[11px] font-light tracking-wider transition-colors border-b-2"
             style={{
               color: isActive ? "#FFB800" : "#71717a",
               borderColor: isActive ? "#FFB800" : "transparent",
@@ -81,7 +81,7 @@ function PulseHeader({ pulseData, onRefresh }: { pulseData: any; onRefresh: () =
     <div className="flex items-center justify-between px-3 sm:px-4 lg:px-5 py-2 border-b border-card-border/30">
       <div className="flex items-center gap-2.5">
         <div>
-          <h2 className="font-mono font-bold text-sm text-[#e4e4e7] tracking-wider">MARKET PULSE</h2>
+          <h2 className="font-mono font-light text-sm text-[#e4e4e7] tracking-wider">MARKET PULSE</h2>
           <p className="font-mono text-[9px] text-[#71717a] tracking-widest">Multi-Asset Macro Analysis</p>
         </div>
       </div>
@@ -342,7 +342,7 @@ export default function TerminalPage() {
           </button>
           <div className="flex flex-col leading-none mr-auto">
             <span className="font-sans font-black text-base tracking-wider text-foreground">ALPHA</span>
-            <span className="font-sans font-semibold text-[10px] tracking-[0.25em] text-primary">TERMINAL</span>
+            <span className="font-sans font-light text-[10px] tracking-[0.25em] text-primary">TERMINAL</span>
           </div>
           <MarketSessionClock />
           <div
@@ -369,7 +369,7 @@ export default function TerminalPage() {
                 <button
                   key={tab}
                   onClick={() => setAiSubTab(tab)}
-                  className="flex-1 font-mono text-xs font-bold tracking-wider py-2 rounded-full transition-all duration-200"
+                  className="flex-1 font-mono text-xs font-light tracking-wider py-2 rounded-full transition-all duration-200"
                   style={{
                     background: aiSubTab === tab ? "#3f3f46" : "transparent",
                     color: aiSubTab === tab ? "#fafafa" : "#71717a",
@@ -556,7 +556,7 @@ export default function TerminalPage() {
                   setSidebarOpen(false);
                   if (tab === "search") { setSearchOpen(true); } else { setActiveBottom(tab); }
                 }}
-                className="font-mono text-[10px] font-semibold tracking-wider px-3 py-1.5 rounded transition-colors"
+                className="font-mono text-[10px] font-light tracking-wider px-3 py-1.5 rounded transition-colors"
                 style={{
                   color: isActive ? "#FFB800" : "#52525b",
                   background: isActive ? "rgba(255,184,0,0.06)" : "transparent",

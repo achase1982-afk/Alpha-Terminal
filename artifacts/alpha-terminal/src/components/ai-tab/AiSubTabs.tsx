@@ -24,7 +24,7 @@ export function AiSubTabs({ active, onChange }: AiSubTabsProps) {
           <button
             key={tab.value}
             onClick={() => onChange(tab.value)}
-            className="flex-1 font-mono text-xs font-bold tracking-wider py-2 rounded-full transition-all duration-200"
+            className="flex-1 font-mono text-xs font-light tracking-wider py-2 rounded-full transition-all duration-200"
             style={{
               background: active === tab.value ? "#3f3f46" : "transparent",
               color: active === tab.value ? "#fafafa" : "#71717a",

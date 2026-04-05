@@ -194,7 +194,7 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
         <button
           onClick={handleConnectSchwab}
           disabled={isAuthNavigating}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-mono text-xs font-bold tracking-wider text-[#0c0c0c] bg-[#FFB800] hover:bg-[#FFB800]/90 transition-colors disabled:opacity-60"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-mono text-xs font-light tracking-wider text-[#0c0c0c] bg-[#FFB800] hover:bg-[#FFB800]/90 transition-colors disabled:opacity-60"
         >
           {isAuthNavigating ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
           Connect Brokerage →
@@ -232,7 +232,7 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
             <button
               onClick={fetchPulse}
               disabled={!accessToken}
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-mono text-xs font-bold tracking-wider transition-colors active:scale-95 active:brightness-110 text-[#0c0c0c] bg-[#FFB800] hover:bg-[#FFB800]/90"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-mono text-xs font-light tracking-wider transition-colors active:scale-95 active:brightness-110 text-[#0c0c0c] bg-[#FFB800] hover:bg-[#FFB800]/90"
               style={{ transition: "transform 0.1s, filter 0.1s" }}
             >
               <Zap className="w-3.5 h-3.5" />
@@ -273,7 +273,7 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
                 style={{ background: "rgba(16,185,129,0.04)" }}
               >
                 <span className="inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500/30" />
-                <span className="font-mono text-[11px] text-emerald-500/50 uppercase tracking-widest font-bold flex-1 text-left">Claude Reasoning</span>
+                <span className="font-mono text-[11px] text-emerald-500/50 uppercase tracking-widest font-light flex-1 text-left">Claude Reasoning</span>
                 <span className="font-mono text-[10px] text-emerald-500/40">{showTranscript ? "▲" : "▼"}</span>
               </button>
               {showTranscript && (
@@ -296,7 +296,7 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
             >
               <span className="text-[#FFB800] text-sm mt-0.5">⚠</span>
               <div>
-                <span className="font-mono text-[10px] font-bold text-[#FFB800] uppercase tracking-wider">Signal Conflict</span>
+                <span className="font-mono text-[10px] font-light text-[#FFB800] uppercase tracking-wider">Signal Conflict</span>
                 <p className="font-sans text-xs text-[#a1a1aa] mt-1">{pulseData.divergenceNote}</p>
               </div>
             </div>
@@ -380,7 +380,7 @@ function PulseLoadingStatus({ thinkingTokens, statusMessages }: { thinkingTokens
           </span>
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between">
-              <span className="font-mono text-xs font-bold text-[#FFB800] tracking-wider">
+              <span className="font-mono text-xs font-light text-[#FFB800] tracking-wider">
                 {stages[currentIdx].label}
               </span>
               <span className="font-mono text-xs tabular-nums text-[#71717a]">
@@ -437,7 +437,7 @@ function PulseLoadingStatus({ thinkingTokens, statusMessages }: { thinkingTokens
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
             <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
           </span>
-          <span className="font-mono text-[11px] text-emerald-400 uppercase tracking-widest font-bold">Live Claude Reasoning</span>
+          <span className="font-mono text-[11px] text-emerald-400 uppercase tracking-widest font-light">Live Claude Reasoning</span>
         </div>
         <div
           ref={thinkingRef}
@@ -495,7 +495,7 @@ function BiasHero({ data }: { data: MarketPulseData }) {
 
         <div className="flex items-center gap-2">
           <span className="font-mono text-[10px] text-[#71717a] uppercase tracking-wider">Confidence</span>
-          <span className="font-mono text-sm font-bold tabular-nums text-[#e4e4e7]">
+          <span className="font-mono text-sm font-light tabular-nums text-[#e4e4e7]">
             {Math.round(data.confidenceScore)}
           </span>
           <span className="font-mono text-[10px] text-[#71717a]">/</span>
@@ -514,19 +514,19 @@ function BiasHero({ data }: { data: MarketPulseData }) {
 
       <div className="flex items-center gap-2 flex-wrap">
         <span
-          className="px-2 py-0.5 rounded font-mono text-[9px] font-bold tracking-wider"
+          className="px-2 py-0.5 rounded font-mono text-[9px] font-light tracking-wider"
           style={{ color: regimeColor }}
         >
           REGIME: {data.structuralRegime?.label?.replace(/_/g, " ")} ({data.structuralRegime?.timeframe})
         </span>
         <span
-          className="px-2 py-0.5 rounded font-mono text-[9px] font-bold tracking-wider"
+          className="px-2 py-0.5 rounded font-mono text-[9px] font-light tracking-wider"
           style={{ background: `${BIAS_COLORS[data.sessionBias?.label]?.bg ?? "rgba(113,113,122,0.1)"}`, color: BIAS_COLORS[data.sessionBias?.label]?.text ?? "#71717a" }}
         >
           TODAY: {data.sessionBias?.label}
         </span>
         <span
-          className="px-2 py-0.5 rounded font-mono text-[9px] font-bold tracking-wider"
+          className="px-2 py-0.5 rounded font-mono text-[9px] font-light tracking-wider"
           style={{ color: riskColor }}
         >
           SIZE: {data.riskState?.label}

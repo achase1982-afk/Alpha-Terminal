@@ -158,7 +158,7 @@ function genMockData(ticker: string) {
 }
 
 function Sec({ children }: { children: React.ReactNode }) {
-  return <div style={{ fontSize: 14, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 2, textTransform: "uppercase", padding: "20px 0 12px" }}>{children}</div>;
+  return <div style={{ fontSize: 14, fontFamily: f, fontWeight: 300, color: C.gold, letterSpacing: 2, textTransform: "uppercase", padding: "20px 0 12px" }}>{children}</div>;
 }
 
 function FundGrid({ items }: { items: { label: string; value: string; color?: string }[] }) {
@@ -166,8 +166,8 @@ function FundGrid({ items }: { items: { label: string; value: string; color?: st
     <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: "16px 18px", display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "18px 0" }}>
       {items.map((it, i) => (
         <div key={i}>
-          <div style={{ fontSize: 11, fontFamily: f, fontWeight: 600, color: C.label, letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 4 }}>{it.label}</div>
-          <div style={{ fontSize: 20, fontFamily: f, fontWeight: 700, color: it.color || C.text }}>{it.value}</div>
+          <div style={{ fontSize: 11, fontFamily: f, fontWeight: 300, color: C.label, letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 4 }}>{it.label}</div>
+          <div style={{ fontSize: 20, fontFamily: f, fontWeight: 300, color: it.color || C.text }}>{it.value}</div>
         </div>
       ))}
     </div>
@@ -180,7 +180,7 @@ function RangeBar({ lo, hi, current }: { lo: number; hi: number; current: string
     <div style={{ padding: "12px 0 6px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
         <span style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1 }}>52W LOW <span style={{ color: C.textSoft }}>${lo.toFixed(2)}</span></span>
-        <span style={{ fontSize: 11, fontFamily: f, color: C.green, fontWeight: 700, letterSpacing: 1 }}>${current}</span>
+        <span style={{ fontSize: 11, fontFamily: f, color: C.green, fontWeight: 300, letterSpacing: 1 }}>${current}</span>
         <span style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1 }}>52W HIGH <span style={{ color: C.textSoft }}>${hi.toFixed(2)}</span></span>
       </div>
       <div style={{ height: 8, borderRadius: 4, background: `linear-gradient(to right, ${C.red}, ${C.gold} 50%, ${C.green})`, position: "relative" }}>
@@ -197,13 +197,13 @@ function MetricRow({ label, value, color }: { label: string; value: string; colo
   return (
     <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: `1px solid ${C.border}` }}>
       <span style={{ fontSize: 12, color: C.textMuted, fontFamily: f }}>{label}</span>
-      <span style={{ fontSize: 12, color: color || C.text, fontFamily: f, fontWeight: 600 }}>{value}</span>
+      <span style={{ fontSize: 12, color: color || C.text, fontFamily: f, fontWeight: 300 }}>{value}</span>
     </div>
   );
 }
 
 function Tag({ children, color = C.label }: { children: React.ReactNode; color?: string }) {
-  return <span style={{ display: "inline-block", padding: "2px 8px", fontSize: 12, fontFamily: f, fontWeight: 700, color, border: `1px solid ${color}55`, letterSpacing: 0.5 }}>{children}</span>;
+  return <span style={{ display: "inline-block", padding: "2px 8px", fontSize: 12, fontFamily: f, fontWeight: 300, color, border: `1px solid ${color}55`, letterSpacing: 0.5 }}>{children}</span>;
 }
 
 interface AiAnalysis {
@@ -298,9 +298,9 @@ const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, volH
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
               <div>
                 <div style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1.5, marginBottom: 4 }}>STATUS</div>
-                <div style={{ fontSize: 20, fontFamily: f, fontWeight: 700, color: C.text }}>{ai.priceAction.status}</div>
+                <div style={{ fontSize: 20, fontFamily: f, fontWeight: 300, color: C.text }}>{ai.priceAction.status}</div>
               </div>
-              <span style={{ padding: "4px 12px", fontSize: 13, fontFamily: f, fontWeight: 700, color: biasColor, border: `1px solid ${biasColor}55`, borderRadius: 2 }}>
+              <span style={{ padding: "4px 12px", fontSize: 13, fontFamily: f, fontWeight: 300, color: biasColor, border: `1px solid ${biasColor}55`, borderRadius: 2 }}>
                 {ai.priceAction.bias?.includes("Bullish") ? "▲" : ai.priceAction.bias?.includes("Bearish") ? "▼" : "◆"} {ai.priceAction.bias}
               </span>
             </div>
@@ -324,12 +324,12 @@ const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, volH
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             {([["▼ SUPPORT", ai?.support, C.red], ["▲ RESISTANCE", ai?.resistance, C.green]] as [string, typeof ai.support, string][]).map(([title, levels, color], idx) => (
               <div key={idx} style={{ background: C.card, border: `1px solid ${C.border}`, padding: "14px" }}>
-                <div style={{ fontSize: 12, fontFamily: f, fontWeight: 700, color, letterSpacing: 1.5, marginBottom: 10 }}>{title}</div>
+                <div style={{ fontSize: 12, fontFamily: f, fontWeight: 300, color, letterSpacing: 1.5, marginBottom: 10 }}>{title}</div>
                 {(levels || []).map((s, i) => (
                   <div key={i} style={{ padding: "7px 0", borderBottom: i < (levels?.length ?? 0) - 1 ? `1px solid ${C.border}` : "none" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <span style={{ fontSize: 12, fontFamily: f, color: C.label, textTransform: "uppercase", letterSpacing: 1 }}>{s.label}</span>
-                      <span style={{ fontSize: 16, fontFamily: f, fontWeight: 700, color }}>{s.level}</span>
+                      <span style={{ fontSize: 16, fontFamily: f, fontWeight: 300, color }}>{s.level}</span>
                     </div>
                     <div style={{ fontSize: 11, fontFamily: f, color: C.dim, marginTop: 2 }}>{s.note}</div>
                   </div>
@@ -380,7 +380,7 @@ const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, volH
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, paddingBottom: 12, borderBottom: `1px solid ${C.border}` }}>
               <div>
                 <div style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1.5 }}>TODAY</div>
-                <div style={{ fontSize: 22, fontFamily: f, fontWeight: 700, color: C.text, marginTop: 4 }}>{ai.volumeAnalysis.today}</div>
+                <div style={{ fontSize: 22, fontFamily: f, fontWeight: 300, color: C.text, marginTop: 4 }}>{ai.volumeAnalysis.today}</div>
               </div>
               <Tag color={ai.volumeAnalysis.todayLabel === "elevated" ? C.amber : C.label}>{ai.volumeAnalysis.todayLabel?.toUpperCase()}</Tag>
             </div>
@@ -391,7 +391,7 @@ const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, volH
                   {ai.volumeAnalysis.elevated.map((e, i) => (
                     <div key={i}>
                       <div style={{ fontSize: 12, fontFamily: f, color: C.label }}>{e.date}</div>
-                      <div style={{ fontSize: 16, fontFamily: f, fontWeight: 700, color: C.amber, marginTop: 2 }}>{e.vol}</div>
+                      <div style={{ fontSize: 16, fontFamily: f, fontWeight: 300, color: C.amber, marginTop: 2 }}>{e.vol}</div>
                     </div>
                   ))}
                 </div>
@@ -399,7 +399,7 @@ const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, volH
             )}
             {([["Pattern", ai.volumeAnalysis.pattern], ["Signal", ai.volumeAnalysis.signal]] as [string, string][]).map(([l, v], i) => (
               <div key={i} style={{ marginBottom: i === 0 ? 8 : 0 }}>
-                <span style={{ fontSize: 14, fontFamily: f, fontWeight: 700, color: C.text }}>{l}: </span>
+                <span style={{ fontSize: 14, fontFamily: f, fontWeight: 300, color: C.text }}>{l}: </span>
                 <span style={{ fontSize: 14, fontFamily: f, color: C.textSoft }}>{v}</span>
               </div>
             ))}
@@ -414,7 +414,7 @@ const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, volH
             <div key={i} style={{ padding: "10px 0", borderBottom: `1px solid ${C.border}`, display: "flex", gap: 12, alignItems: "flex-start" }}>
               <div style={{ width: 4, minHeight: 20, marginTop: 2, background: r.severity === "high" ? C.red : C.amber, flexShrink: 0, borderRadius: 2 }} />
               <div>
-                <span style={{ fontSize: 15, fontFamily: f, fontWeight: 700, color: C.text }}>{r.type}: </span>
+                <span style={{ fontSize: 15, fontFamily: f, fontWeight: 300, color: C.text }}>{r.type}: </span>
                 <span style={{ fontSize: 15, fontFamily: f, color: C.textSoft }}>{r.desc}</span>
               </div>
             </div>
@@ -424,7 +424,7 @@ const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, volH
               <div style={{ fontSize: 11, fontFamily: f, color: C.label, letterSpacing: 1.5, marginBottom: 8 }}>CRITICAL LEVELS</div>
               {ai.criticalLevels.map((cl, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0" }}>
-                  <span style={{ fontSize: 18, fontFamily: f, fontWeight: 700, color: cl.direction?.includes("bearish") ? C.red : C.green }}>{cl.level}</span>
+                  <span style={{ fontSize: 18, fontFamily: f, fontWeight: 300, color: cl.direction?.includes("bearish") ? C.red : C.green }}>{cl.level}</span>
                   <span style={{ fontSize: 13, fontFamily: f, color: C.label }}>{cl.direction}</span>
                 </div>
               ))}
@@ -440,7 +440,7 @@ const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, volH
             {([["SHORT", ai.outlook.shortTerm, C.cyan], ["MEDIUM", ai.outlook.mediumTerm, C.purple]] as [string, typeof ai.outlook.shortTerm, string][]).map(([title, data, color], idx) => (
               data ? (
                 <div key={idx} style={{ background: C.card, border: `1px solid ${C.border}`, padding: "14px" }}>
-                  <div style={{ fontSize: 12, fontFamily: f, fontWeight: 700, color, letterSpacing: 1.5, marginBottom: 4 }}>{title}</div>
+                  <div style={{ fontSize: 12, fontFamily: f, fontWeight: 300, color, letterSpacing: 1.5, marginBottom: 4 }}>{title}</div>
                   <div style={{ fontSize: 11, fontFamily: f, color: C.label, marginBottom: 8 }}>{data.timeframe}</div>
                   {data.points?.map((p, i) => (
                     <div key={i} style={{ fontSize: 14, fontFamily: f, color: C.textSoft, padding: "4px 0 4px 10px", borderLeft: `3px solid ${C.border}`, marginBottom: 6, lineHeight: 1.4 }}>{p}</div>
@@ -452,20 +452,20 @@ const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, volH
 
           {ai.outlook.targets && (
             <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: "16px 18px", marginTop: 12 }}>
-              <div style={{ fontSize: 12, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 1.5, marginBottom: 12 }}>PRICE TARGETS</div>
+              <div style={{ fontSize: 12, fontFamily: f, fontWeight: 300, color: C.gold, letterSpacing: 1.5, marginBottom: 12 }}>PRICE TARGETS</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                 {([["▲ UPSIDE", ai.outlook.targets.upside, C.green], ["▼ DOWNSIDE", ai.outlook.targets.downside, C.red]] as [string, string[], string][]).map(([title, targets, color], idx) => (
                   <div key={idx}>
-                    <div style={{ fontSize: 12, fontFamily: f, color, fontWeight: 700, letterSpacing: 1, marginBottom: 6 }}>{title}</div>
+                    <div style={{ fontSize: 12, fontFamily: f, color, fontWeight: 300, letterSpacing: 1, marginBottom: 6 }}>{title}</div>
                     {(targets || []).map((t, i) => (
-                      <div key={i} style={{ fontSize: 17, fontFamily: f, fontWeight: 700, color: C.text, padding: "3px 0" }}>{t}</div>
+                      <div key={i} style={{ fontSize: 17, fontFamily: f, fontWeight: 300, color: C.text, padding: "3px 0" }}>{t}</div>
                     ))}
                   </div>
                 ))}
               </div>
               {ai.outlook.rangePosition && (
                 <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.border}`, fontSize: 13, fontFamily: f, color: C.label }}>
-                  52W: <span style={{ color: C.textSoft, fontWeight: 600 }}>{ai.outlook.rangePosition.pctFromLow}%</span> from low, <span style={{ color: C.textSoft, fontWeight: 600 }}>{ai.outlook.rangePosition.pctFromHigh}%</span> from high
+                  52W: <span style={{ color: C.textSoft, fontWeight: 300 }}>{ai.outlook.rangePosition.pctFromLow}%</span> from low, <span style={{ color: C.textSoft, fontWeight: 300 }}>{ai.outlook.rangePosition.pctFromHigh}%</span> from high
                 </div>
               )}
             </div>
@@ -480,7 +480,7 @@ const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, volH
           <div key={i} style={{ padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
               <span style={{ fontSize: 14, fontFamily: f, color: C.textSoft }}>{m.k}</span>
-              <span style={{ fontSize: 16, fontFamily: f, color: mc, fontWeight: 700 }}>{m.v}%</span>
+              <span style={{ fontSize: 16, fontFamily: f, color: mc, fontWeight: 300 }}>{m.v}%</span>
             </div>
             <div style={{ height: 4, background: C.border, borderRadius: 2 }}>
               <div style={{ height: 4, width: `${Math.min(m.v, 100)}%`, background: mc, borderRadius: 2 }} />
@@ -501,7 +501,7 @@ const SubFinancials = memo(function SubFinancials({ ticker }: { ticker: string }
       <div style={{ display: "flex", gap: 6, padding: "14px 0 8px" }}>
         {FINANCIALS_TABS.map(([id, label]) => (
           <button key={id} onClick={() => setView(id)} style={{
-            padding: "4px 12px", fontSize: 10, fontFamily: f, fontWeight: 600,
+            padding: "4px 12px", fontSize: 10, fontFamily: f, fontWeight: 300,
             color: view === id ? "#000" : C.textMuted,
             background: view === id ? C.gold : "transparent",
             border: `1px solid ${view === id ? C.gold : C.borderHi}`,
@@ -662,14 +662,14 @@ const SubSEC = memo(function SubSEC({ ticker }: { ticker: string }) {
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 0 8px" }}>
         <div>
-          <span style={{ fontSize: 12, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 1.5 }}>SEC EDGAR</span>
+          <span style={{ fontSize: 12, fontFamily: f, fontWeight: 300, color: C.gold, letterSpacing: 1.5 }}>SEC EDGAR</span>
           {cik && <span style={{ fontSize: 10, fontFamily: f, color: C.textDim, marginLeft: 10 }}>CIK {cik}</span>}
         </div>
         <a href={cikNumeric
             ? `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${cikNumeric}&type=&dateb=&owner=include&count=40`
             : `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company=${ticker}&CIK=&type=&dateb=&owner=include&count=40`}
           target="_blank" rel="noopener noreferrer"
-          style={{ fontSize: 9, fontFamily: f, fontWeight: 700, color: C.gold, textDecoration: "none", letterSpacing: 1, padding: "3px 8px", border: `1px solid ${C.gold}44` }}>
+          style={{ fontSize: 9, fontFamily: f, fontWeight: 300, color: C.gold, textDecoration: "none", letterSpacing: 1, padding: "3px 8px", border: `1px solid ${C.gold}44` }}>
           EDGAR ↗
         </a>
       </div>
@@ -683,7 +683,7 @@ const SubSEC = memo(function SubSEC({ ticker }: { ticker: string }) {
           const count = t === "ALL" ? filings.length : filings.filter(fi => fi.formType === t || fi.formType.startsWith(t + "/")).length;
           return (
             <button key={t} onClick={() => { setFilter(t); setExp(null); }} style={{
-              padding: "2px 8px", fontSize: 9, fontFamily: f, fontWeight: 600,
+              padding: "2px 8px", fontSize: 9, fontFamily: f, fontWeight: 300,
               color: filter === t ? "#000" : C.textDim,
               background: filter === t ? (tc[t] || C.gold) : "transparent",
               border: `1px solid ${filter === t ? "transparent" : C.borderHi}`,
@@ -724,10 +724,10 @@ const SubSEC = memo(function SubSEC({ ticker }: { ticker: string }) {
                 <div style={{ display: "flex", gap: 6 }}>
                   <a href={fi.url}
                     target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
-                    style={{ fontSize: 9, fontFamily: f, fontWeight: 700, color: c, textDecoration: "none", padding: "2px 7px", border: `1px solid ${c}44`, letterSpacing: 0.5 }}>VIEW FILING ↗</a>
+                    style={{ fontSize: 9, fontFamily: f, fontWeight: 300, color: c, textDecoration: "none", padding: "2px 7px", border: `1px solid ${c}44`, letterSpacing: 0.5 }}>VIEW FILING ↗</a>
                   <a href={`https://efts.sec.gov/LATEST/search-index?q=%22${fi.accessionNo}%22`}
                     target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
-                    style={{ fontSize: 9, fontFamily: f, fontWeight: 700, color: C.textDim, textDecoration: "none", padding: "2px 7px", border: `1px solid ${C.borderHi}`, letterSpacing: 0.5 }}>FULL TEXT ↗</a>
+                    style={{ fontSize: 9, fontFamily: f, fontWeight: 300, color: C.textDim, textDecoration: "none", padding: "2px 7px", border: `1px solid ${C.borderHi}`, letterSpacing: 0.5 }}>FULL TEXT ↗</a>
                 </div>
               </div>
             )}
@@ -760,13 +760,13 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
       <Sec>INSTITUTIONAL HOLDERS</Sec>
       <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", padding: "5px 0", borderBottom: `1px solid ${C.borderHi}` }}>
         {["INSTITUTION", "% OUT", "CHG"].map((h, i) => (
-          <span key={i} style={{ fontSize: 9, fontFamily: f, fontWeight: 700, color: C.textDim, letterSpacing: 1.5, textAlign: i > 0 ? "right" : "left" }}>{h}</span>
+          <span key={i} style={{ fontSize: 9, fontFamily: f, fontWeight: 300, color: C.textDim, letterSpacing: 1.5, textAlign: i > 0 ? "right" : "left" }}>{h}</span>
         ))}
       </div>
       {mock.holders.map((h, i) => (
         <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", padding: "6px 0", borderBottom: `1px solid ${C.border}` }}>
           <span style={{ fontSize: 11, fontFamily: f, color: C.text }}>{h.name}</span>
-          <span style={{ fontSize: 11, fontFamily: f, color: C.gold, textAlign: "right", fontWeight: 600 }}>{h.pct}%</span>
+          <span style={{ fontSize: 11, fontFamily: f, color: C.gold, textAlign: "right", fontWeight: 300 }}>{h.pct}%</span>
           <span style={{ fontSize: 11, fontFamily: f, textAlign: "right", color: h.chg.startsWith("+") ? C.green : h.chg.startsWith("-") ? C.red : C.textDim }}>{h.chg}</span>
         </div>
       ))}
@@ -774,14 +774,14 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
       <Sec>INSIDER TRANSACTIONS</Sec>
       <div style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr 0.6fr 1fr 0.6fr", padding: "5px 0", borderBottom: `1px solid ${C.borderHi}` }}>
         {["NAME", "TITLE", "TYPE", "SHARES", "DATE"].map((h, i) => (
-          <span key={i} style={{ fontSize: 9, fontFamily: f, fontWeight: 700, color: C.textDim, letterSpacing: 1.2, textAlign: i >= 3 ? "right" : "left" }}>{h}</span>
+          <span key={i} style={{ fontSize: 9, fontFamily: f, fontWeight: 300, color: C.textDim, letterSpacing: 1.2, textAlign: i >= 3 ? "right" : "left" }}>{h}</span>
         ))}
       </div>
       {mock.insiders.map((t, i) => (
         <div key={i} style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr 0.6fr 1fr 0.6fr", padding: "6px 0", borderBottom: `1px solid ${C.border}` }}>
           <span style={{ fontSize: 11, fontFamily: f, color: C.text }}>{t.name}</span>
           <span style={{ fontSize: 11, fontFamily: f, color: C.textMuted }}>{t.title}</span>
-          <span style={{ fontSize: 11, fontFamily: f, color: t.action === "BUY" ? C.green : C.red, fontWeight: 700 }}>{t.action}</span>
+          <span style={{ fontSize: 11, fontFamily: f, color: t.action === "BUY" ? C.green : C.red, fontWeight: 300 }}>{t.action}</span>
           <span style={{ fontSize: 11, fontFamily: f, color: C.text, textAlign: "right" }}>{t.shares}</span>
           <span style={{ fontSize: 11, fontFamily: f, color: C.textDim, textAlign: "right" }}>{t.date}</span>
         </div>
@@ -809,7 +809,7 @@ const SubValuation = memo(function SubValuation({ ticker, fund }: { ticker: stri
       <Sec>VALUATION MULTIPLES</Sec>
       <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr 1fr 1fr", padding: "5px 0", borderBottom: `1px solid ${C.borderHi}` }}>
         {["METRIC", ticker, "SECTOR", "S&P", "vs SEC"].map((h, i) => (
-          <span key={i} style={{ fontSize: 9, fontFamily: f, fontWeight: 700, color: C.textDim, letterSpacing: 1.2, textAlign: i > 0 ? "right" : "left" }}>{h}</span>
+          <span key={i} style={{ fontSize: 9, fontFamily: f, fontWeight: 300, color: C.textDim, letterSpacing: 1.2, textAlign: i > 0 ? "right" : "left" }}>{h}</span>
         ))}
       </div>
       {multiples.map((m, i) => {
@@ -817,11 +817,11 @@ const SubValuation = memo(function SubValuation({ ticker, fund }: { ticker: stri
         const over = +diff > 0;
         return (
           <div key={i} style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr 1fr 1fr", padding: "6px 0", borderBottom: `1px solid ${C.border}` }}>
-            <span style={{ fontSize: 11, fontFamily: f, color: C.textMuted, fontWeight: 600 }}>{m.m}</span>
-            <span style={{ fontSize: 11, fontFamily: f, color: C.gold, textAlign: "right", fontWeight: 600 }}>{m.co}</span>
+            <span style={{ fontSize: 11, fontFamily: f, color: C.textMuted, fontWeight: 300 }}>{m.m}</span>
+            <span style={{ fontSize: 11, fontFamily: f, color: C.gold, textAlign: "right", fontWeight: 300 }}>{m.co}</span>
             <span style={{ fontSize: 11, fontFamily: f, color: C.textDim, textAlign: "right" }}>{m.sec}</span>
             <span style={{ fontSize: 11, fontFamily: f, color: C.textDim, textAlign: "right" }}>{m.sp}</span>
-            <span style={{ fontSize: 11, fontFamily: f, color: over ? C.red : C.green, textAlign: "right", fontWeight: 600 }}>{over ? "+" : ""}{diff}%</span>
+            <span style={{ fontSize: 11, fontFamily: f, color: over ? C.red : C.green, textAlign: "right", fontWeight: 300 }}>{over ? "+" : ""}{diff}%</span>
           </div>
         );
       })}
@@ -1056,7 +1056,7 @@ export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
       <div style={{ display: "flex", gap: 6, padding: "10px 16px", overflowX: "auto", borderBottom: `1px solid ${C.border}` }}>
         {SUB_LABELS.map((label, i) => (
           <button key={label} onClick={() => setPage(i)} style={{
-            padding: "5px 14px", fontSize: 11, fontFamily: f, fontWeight: 600,
+            padding: "5px 14px", fontSize: 11, fontFamily: f, fontWeight: 300,
             color: page === i ? "#000" : C.textMuted,
             background: page === i ? C.gold : "transparent",
             border: `1px solid ${page === i ? C.gold : C.borderHi}`,
@@ -1098,7 +1098,7 @@ export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
                     onClick={() => handleRunTA()}
                     disabled={taStreaming || !accessToken || !quote || !history?.candles}
                     style={{
-                      width: "100%", padding: "10px 0", fontSize: 11, fontFamily: f, fontWeight: 700,
+                      width: "100%", padding: "10px 0", fontSize: 11, fontFamily: f, fontWeight: 300,
                       color: "#000",
                       background: C.gold,
                       border: `1px solid ${C.gold}`,
@@ -1113,7 +1113,7 @@ export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
                   <div style={{ background: C.card, border: `1px solid ${C.gold}25`, padding: 16, marginBottom: 8 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
                       <Loader2 style={{ width: 14, height: 14, color: C.gold }} className="animate-spin" />
-                      <span style={{ fontSize: 11, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 1 }}>ANALYZING...</span>
+                      <span style={{ fontSize: 11, fontFamily: f, fontWeight: 300, color: C.gold, letterSpacing: 1 }}>ANALYZING...</span>
                     </div>
                     <AiThinkingFeed texts={taThinkingTokens} isStreaming={true} />
                   </div>
@@ -1121,13 +1121,13 @@ export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <Activity style={{ width: 14, height: 14, color: C.gold }} />
-                      <span style={{ fontSize: 12, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 1 }}>AI ANALYSIS</span>
+                      <span style={{ fontSize: 12, fontFamily: f, fontWeight: 300, color: C.gold, letterSpacing: 1 }}>AI ANALYSIS</span>
                     </div>
                     <button
                       onClick={(e) => { e.stopPropagation(); handleRunTA(); }}
                       disabled={taStreaming || !quote || !history?.candles}
                       style={{
-                        fontSize: 10, fontFamily: f, fontWeight: 600, color: C.textMuted,
+                        fontSize: 10, fontFamily: f, fontWeight: 300, color: C.textMuted,
                         background: "transparent", border: "none",
                         padding: 0, cursor: "pointer", letterSpacing: 0.5,
                         display: "flex", alignItems: "center", gap: 5,

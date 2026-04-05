@@ -263,14 +263,14 @@ export function NewsTab() {
             <div className="flex items-center gap-2 mb-0.5">
               {item.isFiling && <FileText className="w-3 h-3 text-[#FFB800] shrink-0" />}
               {item.isLive && !item.isFiling && <Zap className="w-3 h-3 text-[#FFB800] shrink-0" />}
-              <span className="text-[#FFB800] text-[10px] uppercase tracking-wider font-mono font-semibold shrink-0">
+              <span className="text-[#FFB800] text-[10px] uppercase tracking-wider font-mono font-light shrink-0">
                 {item.source}
               </span>
               <span className="text-zinc-500 text-xs font-mono">
                 {timeAgo(item.ts)}
               </span>
             </div>
-            <h3 className="text-sm font-semibold text-zinc-200 leading-snug group-hover:text-white transition-colors line-clamp-2">
+            <h3 className="text-sm font-light text-zinc-200 leading-snug group-hover:text-white transition-colors line-clamp-2">
               {item.headline}
             </h3>
           </button>

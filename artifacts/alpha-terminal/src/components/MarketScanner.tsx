@@ -98,7 +98,7 @@ const CONF_ORDER: Record<string, number> = { HIGH: 3, MILD: 2, LOW: 1 };
 function confBadge(conf: string) {
   const c = conf === "HIGH" ? "#ffb800" : conf === "MILD" ? "#ffb800" : "#6B7280";
   return (
-    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+    <span className="text-[10px] font-light px-2 py-0.5 rounded-full"
       style={{ color: c, border: `1px solid ${c}40` }}>
       {conf}
     </span>
@@ -112,7 +112,7 @@ function SortHeader({ label, sortKey, currentKey, currentDir, onSort }: {
   const active = currentKey === sortKey;
   return (
     <button onClick={() => onSort(sortKey)}
-      className="flex items-center gap-1 text-[10px] uppercase tracking-wider font-bold transition-colors hover:text-white"
+      className="flex items-center gap-1 text-[10px] uppercase tracking-wider font-light transition-colors hover:text-white"
       style={{ color: active ? "#ffb800" : "#6B7280" }}>
       {label}
       {active && (currentDir === "asc" ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
@@ -143,7 +143,7 @@ const LiveAiRow = memo(function LiveAiRow({ setup, index, onSelect }: {
       }}>
       <td className="px-3 py-2.5">
         <button onClick={handleTap}
-          className="font-bold text-sm tracking-wider transition-all active:scale-95"
+          className="font-light text-sm tracking-wider transition-all active:scale-95"
           style={{ color: tapped ? "#FFB800" : dc }}>
           {setup.symbol}
           <span className="text-[8px] ml-1 opacity-60">→</span>
@@ -151,7 +151,7 @@ const LiveAiRow = memo(function LiveAiRow({ setup, index, onSelect }: {
         <div className="text-[10px] text-gray-500 tabular-nums">${livePrice.toFixed(2)}</div>
       </td>
       <td className="px-3 py-2.5">
-        <div className="flex items-center gap-1.5 text-xs font-bold" style={{ color: dc }}>
+        <div className="flex items-center gap-1.5 text-xs font-light" style={{ color: dc }}>
           {dirIcon(setup.direction)}
           {setup.direction}
         </div>
@@ -180,7 +180,7 @@ const LiveAiRow = memo(function LiveAiRow({ setup, index, onSelect }: {
       </td>
       <td className="px-3 py-2.5">{confBadge(setup.confidence)}</td>
       <td className="px-3 py-2.5">
-        <span className="text-xs font-bold tabular-nums"
+        <span className="text-xs font-light tabular-nums"
           style={{ color: liveChangePct >= 0 ? "#00d166" : "#f23645" }}>
           {liveChangePct >= 0 ? "+" : ""}{liveChangePct.toFixed(2)}%
         </span>
@@ -222,9 +222,9 @@ const LiveManualRow = memo(function LiveManualRow({ q, onSelect }: {
       className="w-full flex items-center gap-3 px-3 py-2 rounded-lg border bg-card
         hover:border-primary/40 transition-all text-left group active:scale-[0.98]"
       style={{ borderColor: tapped ? "rgba(255,184,0,0.5)" : undefined }}>
-      <span className="font-bold text-sm w-16 shrink-0" style={{ color: tapped ? "#FFB800" : color }}>{q.symbol}</span>
-      <span className="text-sm font-bold text-gray-200 tabular-nums w-20 shrink-0">${livePrice.toFixed(2)}</span>
-      <span className="text-xs font-bold tabular-nums w-16 shrink-0" style={{ color }}>
+      <span className="font-light text-sm w-16 shrink-0" style={{ color: tapped ? "#FFB800" : color }}>{q.symbol}</span>
+      <span className="text-sm font-light text-gray-200 tabular-nums w-20 shrink-0">${livePrice.toFixed(2)}</span>
+      <span className="text-xs font-light tabular-nums w-16 shrink-0" style={{ color }}>
         {isUp ? "▲" : "▼"} {Math.abs(liveChangePct).toFixed(2)}%
       </span>
       <span className="text-[10px] text-gray-500 tabular-nums">Vol {(liveVolume / 1e6).toFixed(1)}M</span>
@@ -376,7 +376,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol }: {
             <button
               key={m}
               onClick={() => setMode(m)}
-              className={`flex-1 py-3 text-xs font-bold uppercase tracking-widest transition-all border-b-2 ${
+              className={`flex-1 py-3 text-xs font-light uppercase tracking-widest transition-all border-b-2 ${
                 mode === m
                   ? "bg-[#18181B] text-white border-b-[#FFB800]"
                   : "bg-transparent text-muted-foreground border-b-transparent hover:text-foreground hover:bg-secondary/20"
@@ -398,7 +398,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol }: {
         <div className="p-4 bg-[#0c0c0c] space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold flex items-center gap-1.5">
+              <Label className="text-[10px] text-muted-foreground uppercase tracking-wider font-light flex items-center gap-1.5">
                 <Search className="w-3 h-3" /> Scan Universe
               </Label>
               <select
@@ -415,7 +415,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol }: {
 
             {mode === "ai" && (
               <div className="space-y-1.5">
-                <Label className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold">
+                <Label className="text-[10px] text-muted-foreground uppercase tracking-wider font-light">
                   Max Results
                 </Label>
                 <input
@@ -432,7 +432,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol }: {
 
           {universe === "custom" && (
             <div className="space-y-1.5">
-              <Label className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold">
+              <Label className="text-[10px] text-muted-foreground uppercase tracking-wider font-light">
                 Custom Watchlist (comma-separated)
               </Label>
               <textarea
@@ -446,8 +446,8 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol }: {
           )}
 
           <div className="text-[10px] text-muted-foreground">
-            Scanning <span className="text-primary font-bold">{currentSyms.length} tickers</span>
-            {mode === "ai" && <> — AI will return up to <span className="font-bold" style={{ color: "#ffb800" }}>{maxResults} setups</span></>}
+            Scanning <span className="text-primary font-light">{currentSyms.length} tickers</span>
+            {mode === "ai" && <> — AI will return up to <span className="font-light" style={{ color: "#ffb800" }}>{maxResults} setups</span></>}
           </div>
         </div>
 
@@ -491,7 +491,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol }: {
           <Button
             onClick={handleScan}
             disabled={!accessToken || isScanning || currentSyms.length === 0}
-            className="w-full text-xs font-bold h-10"
+            className="w-full text-xs font-light h-10"
             style={
               !isScanning
                 ? { background: "#18181B", color: "#FFB800", border: "1px solid #27272A" }
@@ -526,7 +526,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol }: {
             <div className="absolute inset-0 border-4 border-t-primary border-r-transparent border-b-transparent border-l-transparent rounded-full animate-spin" />
           </div>
           <div className="text-center space-y-1">
-            <p className="text-sm text-primary animate-pulse font-bold">
+            <p className="text-sm text-primary animate-pulse font-light">
               SCANNING {scanCount ?? currentSyms.length} TICKERS...
             </p>
             <p className="text-[10px] text-muted-foreground">
@@ -538,7 +538,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol }: {
 
       {rawError && !isScanning && (
         <div className="bg-destructive/10 border border-destructive/30 rounded-xl p-4">
-          <p className="text-xs text-destructive font-bold mb-2">SCAN ERROR</p>
+          <p className="text-xs text-destructive font-light mb-2">SCAN ERROR</p>
           <p className="text-[10px] text-destructive/80">{rawError}</p>
         </div>
       )}
@@ -548,7 +548,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol }: {
           {marketSummary && (
             <div className="px-4 py-3 rounded-xl border text-sm text-gray-300 leading-relaxed"
               style={{ borderColor: "rgba(255,184,0,0.2)" }}>
-              <span className="text-[9px] font-bold" style={{ color: "#ffb800" }}>MARKET REGIME  </span>
+              <span className="text-[9px] font-light" style={{ color: "#ffb800" }}>MARKET REGIME  </span>
               {marketSummary}
             </div>
           )}
@@ -570,7 +570,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol }: {
                     <SortHeader label="Chg %" sortKey="changePct" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} />
                   </th>
                   <th className="px-3 py-2.5 hidden md:table-cell">
-                    <span className="text-[10px] uppercase tracking-wider font-bold text-gray-500">AI Thesis</span>
+                    <span className="text-[10px] uppercase tracking-wider font-light text-gray-500">AI Thesis</span>
                   </th>
                 </tr>
               </thead>

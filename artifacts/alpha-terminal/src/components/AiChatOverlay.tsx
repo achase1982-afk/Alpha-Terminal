@@ -203,7 +203,7 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
       <div className="flex items-center justify-between px-4 h-12 border-b border-card-border bg-[#0c0c0c] shrink-0">
         <div className="flex items-center gap-2">
           <Search className="w-4 h-4 text-primary" />
-          <span className="font-mono text-xs font-bold text-primary tracking-wider">SEARCH</span>
+          <span className="font-mono text-xs font-light text-primary tracking-wider">SEARCH</span>
           <span className="font-mono text-[10px] text-muted-foreground">— {symbol}</span>
         </div>
         <div className="flex items-center gap-2">
@@ -231,7 +231,7 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
             <div className="w-16 h-16 rounded-2xl border border-primary/20 flex items-center justify-center mb-4">
               <Search className="w-8 h-8 text-primary" />
             </div>
-            <h3 className="font-sans font-bold text-foreground text-lg mb-1">Ask anything</h3>
+            <h3 className="font-sans font-light text-foreground text-lg mb-1">Ask anything</h3>
             <p className="font-mono text-[11px] text-muted-foreground mb-6 leading-relaxed">
               Stocks, fundamentals, macro, earnings — or anything else.
             </p>

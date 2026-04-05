@@ -62,7 +62,7 @@ function MacroCard({ symbol }: { symbol: string }) {
       <span
         style={{
           fontSize: '1rem',
-          fontWeight: 700,
+          fontWeight: 300,
           color: isActive ? 'var(--color-primary, #ffb800)' : '#FFFFFF',
           letterSpacing: '0.04em',
           lineHeight: 1,

@@ -393,12 +393,12 @@ function PortfolioImpactCard({ cost, side, isOption, quantity }: {
     <div className="rounded-lg overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
       <div className="flex items-center gap-1.5 px-3 py-1.5" style={{ borderBottom: `1px solid ${BORDER}` }}>
         <TrendingUp className="w-3 h-3" style={{ color: GOLD }} />
-        <span className="font-mono text-[10px] font-bold tracking-wider" style={{ color: GOLD }}>AFTER THIS TRADE</span>
+        <span className="font-mono text-[10px] font-light tracking-wider" style={{ color: GOLD }}>AFTER THIS TRADE</span>
       </div>
       <div className="grid grid-cols-2 gap-x-3 gap-y-1 px-3 py-2">
         <div className="flex justify-between">
           <span className="font-mono text-[9px]" style={{ color: MUTED }}>Buying Power</span>
-          <span className="font-mono text-[10px] font-bold" style={{ color: newBP < 0 ? DOWN : TEXT }}>
+          <span className="font-mono text-[10px] font-light" style={{ color: newBP < 0 ? DOWN : TEXT }}>
             {fmtCompact(newBP)}
           </span>
         </div>
@@ -469,7 +469,7 @@ function AiCoPilotPanel({ side, symbol, limitPrice, bid, ask, quantity, isOption
     <div className="rounded-lg overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
       <div className="flex items-center gap-1.5 px-3 py-1.5" style={{ borderBottom: `1px solid ${BORDER}` }}>
         <Sparkles className="w-3 h-3" style={{ color: GOLD }} />
-        <span className="font-mono text-[10px] font-bold tracking-wider" style={{ color: GOLD }}>AI CO-PILOT</span>
+        <span className="font-mono text-[10px] font-light tracking-wider" style={{ color: GOLD }}>AI CO-PILOT</span>
       </div>
       <div className="px-3 py-2 space-y-1.5">
         {suggestions.map((s, i) => (
@@ -709,16 +709,16 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
     <div className="fixed inset-0 z-[210] flex flex-col" style={{ background: BG }}>
 
       <header className="shrink-0 flex items-center h-11 px-3" style={{ background: BG2, borderBottom: `1px solid ${BORDER}` }}>
-        <button onClick={onClose} className="font-mono text-[12px] font-medium px-1" style={{ color: GOLD }}>
+        <button onClick={onClose} className="font-mono text-[12px] font-light px-1" style={{ color: GOLD }}>
           Close
         </button>
         <div className="flex-1 text-center min-w-0">
           <div className="flex items-center justify-center gap-1.5">
             <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: sideColor }} />
-            <span className="font-mono text-[12px] font-bold" style={{ color: sideColor }}>
+            <span className="font-mono text-[12px] font-light" style={{ color: sideColor }}>
               {side}
             </span>
-            <span className="font-mono text-[13px] font-bold tracking-wide" style={{ color: WHITE }}>{symbol}</span>
+            <span className="font-mono text-[13px] font-light tracking-wide" style={{ color: WHITE }}>{symbol}</span>
             <span className="font-mono text-[12px]" style={{ color: changeColor }}>
               {fmt(quote?.last)}
             </span>
@@ -750,7 +750,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
             ].map((m, i) => (
               <div key={i} className="flex items-center gap-1 shrink-0">
                 <span className="font-mono text-[9px]" style={{ color: DIM }}>{m.label}</span>
-                <span className="font-mono text-[10px] font-medium" style={{ color: m.color || TEXT }}>{m.value}</span>
+                <span className="font-mono text-[10px] font-light" style={{ color: m.color || TEXT }}>{m.value}</span>
                 {i < 4 && <span className="font-mono text-[8px] mx-0.5" style={{ color: BORDER2 }}>|</span>}
               </div>
             ))}
@@ -761,14 +761,14 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
             {isMultiLeg && strategyLegs ? (
               <div className="rounded-lg overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
                 <div className="px-3 py-1.5 flex items-center justify-between" style={{ borderBottom: `1px solid ${BORDER}` }}>
-                  <span className="font-mono text-[10px] font-bold tracking-wider" style={{ color: GOLD }}>STRATEGY LEGS</span>
+                  <span className="font-mono text-[10px] font-light tracking-wider" style={{ color: GOLD }}>STRATEGY LEGS</span>
                   <span className="font-mono text-[9px]" style={{ color: MUTED }}>{strategyLegs.length} legs</span>
                 </div>
                 <div className="px-3 py-1.5 space-y-1">
                   {strategyLegs.map((leg, i) => (
                     <div key={i} className="flex items-center justify-between py-0.5">
                       <div className="flex items-center gap-1.5">
-                        <span className="font-mono text-[9px] font-bold w-[70px]" style={{ color: leg.instruction.startsWith("BUY") ? UP : DOWN }}>
+                        <span className="font-mono text-[9px] font-light w-[70px]" style={{ color: leg.instruction.startsWith("BUY") ? UP : DOWN }}>
                           {leg.instruction.replace(/_/g, " ")}
                         </span>
                         <span className="font-mono text-[10px]" style={{ color: TEXT }}>
@@ -784,7 +784,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                 </div>
                 <div className="px-3 py-1.5 flex justify-between" style={{ borderTop: `1px solid ${BORDER}`, background: `${strategyIsCredit ? UP : DOWN}08` }}>
                   <span className="font-mono text-[10px]" style={{ color: MUTED }}>Net {strategyIsCredit ? "Credit" : "Debit"}</span>
-                  <span className="font-mono text-[12px] font-bold" style={{ color: strategyIsCredit ? UP : DOWN }}>
+                  <span className="font-mono text-[12px] font-light" style={{ color: strategyIsCredit ? UP : DOWN }}>
                     ${strategyNetPrice?.toFixed(2) ?? "—"} / spread
                   </span>
                 </div>
@@ -797,7 +797,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                     <button
                       key={s}
                       onClick={() => setSide(s)}
-                      className="flex-1 font-mono font-bold text-[12px] tracking-wider transition-all duration-150"
+                      className="flex-1 font-mono font-light text-[12px] tracking-wider transition-all duration-150"
                       style={{
                         background: active ? (s === "BUY" ? "rgba(0,209,102,0.15)" : "rgba(242,54,69,0.15)") : "transparent",
                         color: active ? (s === "BUY" ? UP : DOWN) : DIM,
@@ -891,14 +891,14 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                     value={limitPrice}
                     onChange={(e) => { if (!priceLocked) setLimitPrice(e.target.value); }}
                     placeholder="0.00"
-                    className="flex-1 px-1.5 py-2 font-mono text-[14px] font-bold bg-transparent outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                    className="flex-1 px-1.5 py-2 font-mono text-[14px] font-light bg-transparent outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                     style={{ color: priceLocked ? GOLD : WHITE }}
                     readOnly={priceLocked}
                   />
                   <div className="flex items-center gap-1 pr-2">
                     <button
                       onClick={() => { if (!priceLocked && quote?.bid != null) setLimitPrice(quote.bid.toFixed(2)); }}
-                      className="px-1.5 py-1 rounded font-mono text-[9px] font-bold transition-colors"
+                      className="px-1.5 py-1 rounded font-mono text-[9px] font-light transition-colors"
                       style={{ color: UP, background: "rgba(0,209,102,0.08)", opacity: priceLocked ? 0.4 : 1 }}
                       disabled={priceLocked}
                     >
@@ -906,7 +906,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                     </button>
                     <button
                       onClick={() => { if (!priceLocked) setMidPrice(); }}
-                      className="px-1.5 py-1 rounded font-mono text-[9px] font-bold transition-colors"
+                      className="px-1.5 py-1 rounded font-mono text-[9px] font-light transition-colors"
                       style={{ color: GOLD, background: GOLD_DIM, opacity: priceLocked ? 0.4 : 1 }}
                       disabled={priceLocked}
                     >
@@ -914,7 +914,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                     </button>
                     <button
                       onClick={() => { if (!priceLocked) setNatPrice(); }}
-                      className="px-1.5 py-1 rounded font-mono text-[9px] font-bold transition-colors"
+                      className="px-1.5 py-1 rounded font-mono text-[9px] font-light transition-colors"
                       style={{ color: DOWN, background: "rgba(242,54,69,0.08)", opacity: priceLocked ? 0.4 : 1 }}
                       disabled={priceLocked}
                     >
@@ -1020,7 +1020,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                     const v = parseInt(e.target.value);
                     if (!isNaN(v) && v >= 0) setQuantity(v);
                   }}
-                  className="flex-1 text-center font-mono text-[16px] font-bold bg-transparent outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  className="flex-1 text-center font-mono text-[16px] font-light bg-transparent outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                   style={{ color: WHITE, minWidth: 0 }}
                 />
                 <button
@@ -1035,7 +1035,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                   <button
                     key={q}
                     onClick={() => setQuantity(q)}
-                    className="flex-1 py-1 rounded font-mono text-[10px] font-medium transition-colors"
+                    className="flex-1 py-1 rounded font-mono text-[10px] font-light transition-colors"
                     style={{
                       color: quantity === q ? GOLD : DIM,
                       background: quantity === q ? GOLD_DIM : CARD,
@@ -1051,18 +1051,18 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
             <div className="grid grid-cols-3 gap-1.5">
               <div className="rounded-lg px-2 py-1.5" style={{ background: FIELD, border: `1px solid ${BORDER2}` }}>
                 <span className="font-mono text-[8px] block" style={{ color: DIM }}>Effect</span>
-                <button onClick={() => setPosEffect(posEffect === "OPENING" ? "CLOSING" : posEffect === "CLOSING" ? "AUTO" : "OPENING")} className="font-mono text-[10px] font-medium" style={{ color: TEXT }}>
+                <button onClick={() => setPosEffect(posEffect === "OPENING" ? "CLOSING" : posEffect === "CLOSING" ? "AUTO" : "OPENING")} className="font-mono text-[10px] font-light" style={{ color: TEXT }}>
                   {posEffect === "AUTO" ? "Auto" : posEffect === "OPENING" ? "Open" : "Close"}
                 </button>
               </div>
               <div className="rounded-lg px-2 py-1.5" style={{ background: FIELD, border: `1px solid ${BORDER2}` }}>
                 <span className="font-mono text-[8px] block" style={{ color: DIM }}>Exchange</span>
-                <span className="font-mono text-[10px] font-medium" style={{ color: TEXT }}>BEST</span>
+                <span className="font-mono text-[10px] font-light" style={{ color: TEXT }}>BEST</span>
               </div>
               <div className="rounded-lg px-2 py-1.5 flex items-center justify-between" style={{ background: FIELD, border: `1px solid ${BORDER2}` }}>
                 <div>
                   <span className="font-mono text-[8px] block" style={{ color: DIM }}>Ext Hrs</span>
-                  <span className="font-mono text-[10px] font-medium" style={{ color: extendedHours ? GOLD : TEXT }}>
+                  <span className="font-mono text-[10px] font-light" style={{ color: extendedHours ? GOLD : TEXT }}>
                     {extendedHours ? "On" : "Off"}
                   </span>
                 </div>
@@ -1087,7 +1087,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                 <span className="font-mono text-[10px]" style={{ color: MUTED }}>
                   Est. {isMultiLeg ? (strategyIsCredit ? "Credit" : "Cost") : isBuy ? "Cost" : "Credit"}
                 </span>
-                <span className="font-mono text-[15px] font-bold" style={{ color: WHITE }}>
+                <span className="font-mono text-[15px] font-light" style={{ color: WHITE }}>
                   {fmtCurrency(Math.abs(estimatedCost))}
                 </span>
               </div>
@@ -1123,7 +1123,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
             {showBalances && (
               <div className="rounded-lg overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
                 <div className="flex items-center justify-between px-3 py-1.5" style={{ borderBottom: `1px solid ${BORDER}` }}>
-                  <span className="font-mono text-[10px] font-bold tracking-wider" style={{ color: GOLD }}>ACCOUNT BALANCES</span>
+                  <span className="font-mono text-[10px] font-light tracking-wider" style={{ color: GOLD }}>ACCOUNT BALANCES</span>
                   <button onClick={() => setBalancesHidden(!balancesHidden)} className="p-0.5" style={{ color: MUTED }}>
                     {balancesHidden ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
                   </button>
@@ -1162,7 +1162,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                 >
                   <div className="flex items-center gap-1.5">
                     <Shield className="w-3 h-3" style={{ color: GOLD }} />
-                    <span className="font-mono text-[10px] font-bold tracking-wider" style={{ color: GOLD }}>PRE-TRADE RISK</span>
+                    <span className="font-mono text-[10px] font-light tracking-wider" style={{ color: GOLD }}>PRE-TRADE RISK</span>
                     <div className="w-1.5 h-1.5 rounded-full" style={{ background: levelColor(overallRisk) }} />
                   </div>
                   <ChevronRight className="w-3 h-3 transition-transform" style={{ color: DIM, transform: showRiskPanel ? "rotate(90deg)" : "none" }} />
@@ -1175,7 +1175,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                       {riskChecks.map((c) => (
                         <div key={c.id} className="flex items-center gap-1.5 py-0.5">
                           <RiskIcon level={c.level} />
-                          <span className="font-mono text-[9px] font-medium" style={{ color: TEXT, minWidth: 75 }}>{c.label}</span>
+                          <span className="font-mono text-[9px] font-light" style={{ color: TEXT, minWidth: 75 }}>{c.label}</span>
                           <span className="font-mono text-[9px] flex-1 text-right truncate" style={{ color: levelColor(c.level) }}>{c.detail}</span>
                         </div>
                       ))}
@@ -1200,7 +1200,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
       ) : stage === "success" ? (
         <div className="flex-1 flex flex-col items-center justify-center gap-4 px-6">
           <CheckCircle2 className="w-14 h-14" style={{ color: UP }} />
-          <p className="font-mono text-[16px] font-bold" style={{ color: WHITE }}>Order Placed</p>
+          <p className="font-mono text-[16px] font-light" style={{ color: WHITE }}>Order Placed</p>
           <p className="font-mono text-[12px] text-center" style={{ color: MUTED }}>
             {side} {quantity} {isOption ? "contract(s)" : "share(s)"} of {displaySymbol}
           </p>
@@ -1209,7 +1209,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
           )}
           <button
             onClick={onClose}
-            className="mt-4 w-full max-w-xs py-3 rounded-lg font-mono text-[13px] font-bold tracking-wider transition-colors"
+            className="mt-4 w-full max-w-xs py-3 rounded-lg font-mono text-[13px] font-light tracking-wider transition-colors"
             style={{ background: FIELD, color: TEXT, border: `1px solid ${BORDER2}` }}
           >
             Done
@@ -1218,19 +1218,19 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
       ) : (
         <div className="flex-1 flex flex-col items-center justify-center gap-4 px-6">
           <AlertTriangle className="w-14 h-14" style={{ color: DOWN }} />
-          <p className="font-mono text-[16px] font-bold" style={{ color: WHITE }}>Order Failed</p>
+          <p className="font-mono text-[16px] font-light" style={{ color: WHITE }}>Order Failed</p>
           <p className="font-mono text-[12px] text-center max-w-sm" style={{ color: DOWN }}>{errorMsg}</p>
           <div className="flex gap-3 mt-4 w-full max-w-xs">
             <button
               onClick={() => setStage("form")}
-              className="flex-1 py-3 rounded-lg font-mono text-[13px] font-bold tracking-wider"
+              className="flex-1 py-3 rounded-lg font-mono text-[13px] font-light tracking-wider"
               style={{ background: FIELD, color: TEXT, border: `1px solid ${BORDER2}` }}
             >
               Edit Order
             </button>
             <button
               onClick={onClose}
-              className="flex-1 py-3 rounded-lg font-mono text-[13px] font-bold tracking-wider"
+              className="flex-1 py-3 rounded-lg font-mono text-[13px] font-light tracking-wider"
               style={{ background: FIELD, color: MUTED, border: `1px solid ${BORDER2}` }}
             >
               Close
@@ -1256,7 +1256,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
           <button
             onClick={() => setStage("review")}
             disabled={!isValid}
-            className="w-full py-3.5 rounded-lg font-mono text-[13px] font-bold tracking-wider transition-all duration-150 disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.98]"
+            className="w-full py-3.5 rounded-lg font-mono text-[13px] font-light tracking-wider transition-all duration-150 disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.98]"
             style={{
               background: isValid
                 ? `linear-gradient(180deg, ${isBuy ? UP : DOWN} 0%, ${isBuy ? "#00a854" : "#cc2d3a"} 100%)`
@@ -1277,7 +1277,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
             style={{ background: CARD, border: `1px solid ${BORDER2}`, borderBottom: "none" }}
           >
             <div className="flex items-center justify-between mb-1">
-              <h3 className="font-mono font-bold text-[14px] tracking-wider" style={{ color: WHITE }}>Confirm Order</h3>
+              <h3 className="font-mono font-light text-[14px] tracking-wider" style={{ color: WHITE }}>Confirm Order</h3>
               <button onClick={() => setStage("form")} className="p-1" style={{ color: MUTED }}>
                 <X className="w-4 h-4" />
               </button>
@@ -1288,7 +1288,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                 <>
                   <div className="flex justify-between">
                     <span className="font-mono text-[10px]" style={{ color: MUTED }}>Type</span>
-                    <span className="font-mono text-[12px] font-bold" style={{ color: GOLD }}>Multi-Leg Strategy</span>
+                    <span className="font-mono text-[12px] font-light" style={{ color: GOLD }}>Multi-Leg Strategy</span>
                   </div>
                   {strategyLegs.map((leg, i) => (
                     <div key={i} className="flex justify-between">
@@ -1313,7 +1313,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                 <>
                   <div className="flex justify-between">
                     <span className="font-mono text-[10px]" style={{ color: MUTED }}>Action</span>
-                    <span className="font-mono text-[12px] font-bold" style={{ color: sideColor }}>
+                    <span className="font-mono text-[12px] font-light" style={{ color: sideColor }}>
                       {isOption ? (optionInstruction ?? (side === "BUY" ? "BUY TO OPEN" : "SELL TO CLOSE")) : side}
                     </span>
                   </div>
@@ -1356,7 +1356,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
               <div className="border-t my-1.5" style={{ borderColor: BORDER }} />
               <div className="flex justify-between">
                 <span className="font-mono text-[11px]" style={{ color: "#a1a1aa" }}>Est. {isMultiLeg ? (strategyIsCredit ? "Credit" : "Cost") : side === "BUY" ? "Cost" : "Credit"}</span>
-                <span className="font-mono text-[15px] font-bold" style={{ color: WHITE }}>
+                <span className="font-mono text-[15px] font-light" style={{ color: WHITE }}>
                   {estimatedCost != null ? fmtCurrency(Math.abs(estimatedCost)) : "—"}
                 </span>
               </div>
@@ -1372,14 +1372,14 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
             <div className="flex gap-3 pt-1 pb-4">
               <button
                 onClick={() => setStage("form")}
-                className="flex-1 py-3 rounded-lg font-mono text-[12px] font-bold tracking-wider"
+                className="flex-1 py-3 rounded-lg font-mono text-[12px] font-light tracking-wider"
                 style={{ background: FIELD, color: "#a1a1aa", border: `1px solid ${BORDER2}` }}
               >
                 Back
               </button>
               <button
                 onClick={handleSubmit}
-                className="flex-[2] py-3 rounded-lg font-mono text-[13px] font-bold tracking-wider active:scale-[0.98] transition-transform"
+                className="flex-[2] py-3 rounded-lg font-mono text-[13px] font-light tracking-wider active:scale-[0.98] transition-transform"
                 style={{
                   background: `linear-gradient(180deg, ${isBuy ? UP : DOWN} 0%, ${isBuy ? "#00a854" : "#cc2d3a"} 100%)`,
                   color: "#fff",

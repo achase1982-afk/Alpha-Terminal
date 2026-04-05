@@ -161,7 +161,7 @@ function WatchlistRow({
             style={{ width: editMode ? 90 : 100 }}
           >
             <div className="min-w-0">
-              <span className="block font-mono text-[15px] font-bold tracking-wide truncate" style={{ color: cColor === "#71717a" ? "#fff" : cColor }}>{sym}</span>
+              <span className="block font-mono text-[15px] font-light tracking-wide truncate" style={{ color: cColor === "#71717a" ? "#fff" : cColor }}>{sym}</span>
               {description && (
                 <span className="block font-mono text-[11px] tracking-wide truncate" style={{ color: "#FFB800" }}>
                   {description}
@@ -228,7 +228,7 @@ function IndicatorSettingsPanel({
       />
       <div className="fixed left-4 right-4 z-[210] flex flex-col" style={{ top: "50%", transform: "translateY(-50%)", maxHeight: "70vh", background: "#111", border: "1px solid #2A2A2C", borderRadius: 12 }}>
         <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: "1px solid #2A2A2C" }}>
-          <span className="font-mono text-[14px] font-bold tracking-wider text-white">INDICATORS</span>
+          <span className="font-mono text-[14px] font-light tracking-wider text-white">INDICATORS</span>
           <button onClick={onClose} className="p-1 text-[#71717a] hover:text-white">
             <X className="w-5 h-5" />
           </button>
@@ -308,7 +308,7 @@ function WatchlistSwitcherPanel({ open, onClose }: { open: boolean; onClose: () 
         <div className="flex items-center justify-center px-4 py-4 border-b border-[#2A2A2C]">
           <div className="flex items-center gap-2">
             <Star className="w-5 h-5" style={{ color: "#FFB800" }} />
-            <span className="font-mono text-[16px] font-bold tracking-wider text-white">SWITCH WATCHLIST</span>
+            <span className="font-mono text-[16px] font-light tracking-wider text-white">SWITCH WATCHLIST</span>
           </div>
           <button
             onClick={onClose}
@@ -354,7 +354,7 @@ function WatchlistSwitcherPanel({ open, onClose }: { open: boolean; onClose: () 
                     >
                       <Star className="w-4 h-4" style={{ color: isActive ? "#FFB800" : "#3a3a3c" }} />
                       <div className="flex flex-col">
-                        <span className={`font-mono text-[14px] font-bold ${isActive ? "text-[#FFB800]" : "text-white"}`}>
+                        <span className={`font-mono text-[14px] font-light ${isActive ? "text-[#FFB800]" : "text-white"}`}>
                           {wl.name}
                         </span>
                         <span className="font-mono text-[11px] text-[#52525b]">
@@ -407,7 +407,7 @@ function WatchlistSwitcherPanel({ open, onClose }: { open: boolean; onClose: () 
               className="w-full flex items-center gap-3 px-5 py-4 text-[#FFB800] hover:bg-white/[0.04] transition-colors"
             >
               <Plus className="w-4 h-4" />
-              <span className="font-mono text-[13px] font-bold tracking-wider">NEW WATCHLIST</span>
+              <span className="font-mono text-[13px] font-light tracking-wider">NEW WATCHLIST</span>
             </button>
           )}
         </div>
@@ -425,7 +425,7 @@ function WatchlistSwitcherButton({ onOpen }: { onOpen: () => void }) {
       onClick={onOpen}
       className="flex items-center gap-2 px-3 py-2 rounded-lg transition-colors hover:bg-white/[0.04] active:bg-white/[0.08]"
     >
-      <span className="font-mono text-[14px] font-bold tracking-wider text-white">
+      <span className="font-mono text-[14px] font-light tracking-wider text-white">
         {activeList?.name ?? "Watchlist"}
       </span>
       <ChevronDown className="w-4 h-4 text-[#71717a]" />

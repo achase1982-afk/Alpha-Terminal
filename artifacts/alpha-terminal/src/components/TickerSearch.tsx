@@ -37,7 +37,7 @@ export function TickerSearch({ onNavigateToMarkets }: TickerSearchProps = {}) {
     <div className="px-3 sm:px-4 py-2 border-b border-card-border bg-[#0c0c0c]/95 shrink-0 flex flex-col sm:flex-row items-start sm:items-center gap-2">
       <div className="flex flex-col gap-1 flex-1 min-w-0">
         {recentSymbols.length > 0 && (
-          <span className="font-mono text-[9px] text-[#71717a] tracking-widest font-medium">
+          <span className="font-mono text-[9px] text-[#71717a] tracking-widest font-light">
             RECENTLY VIEWED
           </span>
         )}
@@ -80,7 +80,7 @@ export function TickerSearch({ onNavigateToMarkets }: TickerSearchProps = {}) {
         </div>
         <button
           type="submit"
-          className="h-7 px-3 rounded bg-[#18181B] border border-[#27272A] text-white font-mono text-[10px] font-bold hover:bg-[#27272A] transition-colors shrink-0"
+          className="h-7 px-3 rounded bg-[#18181B] border border-[#27272A] text-white font-mono text-[10px] font-light hover:bg-[#27272A] transition-colors shrink-0"
         >
           GO
         </button>

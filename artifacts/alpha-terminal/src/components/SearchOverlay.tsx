@@ -79,8 +79,8 @@ function SymbolLivePreview({ sym, onNavigate }: { sym: string; onNavigate: () =>
         onClick={onNavigate}
         className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer active:opacity-70 transition-opacity"
       >
-        <span className="font-mono text-[15px] font-bold text-white tracking-wide shrink-0">{sym}</span>
-        <span className="font-mono text-[12px] font-bold text-[#FFB800] tracking-wide truncate">
+        <span className="font-mono text-[15px] font-light text-white tracking-wide shrink-0">{sym}</span>
+        <span className="font-mono text-[12px] font-light text-[#FFB800] tracking-wide truncate">
           {data.description.toUpperCase()}
         </span>
       </div>
@@ -134,13 +134,13 @@ function RecentRow({
         className="flex flex-col min-w-0 flex-1 cursor-pointer active:opacity-70 transition-opacity"
       >
         <span
-          className="font-mono text-[16px] font-bold tracking-wide"
+          className="font-mono text-[16px] font-light tracking-wide"
           style={{ color: "#ffffff" }}
         >
           {sym}
         </span>
         {quoteData?.description && (
-          <span className="font-mono text-[13px] font-bold tracking-wide truncate mt-0.5" style={{ color: "#FFB800" }}>
+          <span className="font-mono text-[13px] font-light tracking-wide truncate mt-0.5" style={{ color: "#FFB800" }}>
             {quoteData.description.toUpperCase()}
           </span>
         )}
@@ -229,7 +229,7 @@ export function SearchOverlay({ isOpen, onClose, onSelectSymbol }: SearchOverlay
           className="flex items-center justify-between px-4 py-3 border-b shrink-0"
           style={{ borderColor: "#2A2A2C", background: "#111113" }}
         >
-          <span className="font-mono text-sm font-bold tracking-wider text-[#FFB800]">
+          <span className="font-mono text-sm font-light tracking-wider text-[#FFB800]">
             SEARCH
           </span>
           <button
@@ -260,7 +260,7 @@ export function SearchOverlay({ isOpen, onClose, onSelectSymbol }: SearchOverlay
             </div>
             <button
               type="submit"
-              className="h-10 px-5 rounded-lg font-mono text-xs font-bold tracking-wider transition-colors shrink-0"
+              className="h-10 px-5 rounded-lg font-mono text-xs font-light tracking-wider transition-colors shrink-0"
               style={{ background: "#FFB800", color: "#0c0c0c" }}
             >
               GO
@@ -285,7 +285,7 @@ export function SearchOverlay({ isOpen, onClose, onSelectSymbol }: SearchOverlay
           {recentSymbols.length > 0 && (
             <div>
               <div className="flex items-center justify-between px-4 pb-2">
-                <span className="font-mono text-[13px] text-zinc-400 uppercase tracking-widest font-bold">
+                <span className="font-mono text-[13px] text-zinc-400 uppercase tracking-widest font-light">
                   RECENTLY VIEWED
                 </span>
               </div>

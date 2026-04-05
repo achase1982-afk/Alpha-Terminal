@@ -50,7 +50,7 @@ export function PulseStatusHeader({ data, isRefreshing, onRefresh, disabled }: P
       <button
         onClick={onRefresh}
         disabled={disabled || isRefreshing}
-        className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-mono text-[10px] font-bold uppercase tracking-wider transition-all duration-100 disabled:opacity-40 disabled:cursor-not-allowed active:translate-y-[1px]"
+        className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-mono text-[10px] font-light uppercase tracking-wider transition-all duration-100 disabled:opacity-40 disabled:cursor-not-allowed active:translate-y-[1px]"
         style={{
           background: "linear-gradient(180deg, #2A2A2C 0%, #1E1E20 100%)",
           color: isRefreshing ? "#FFB800" : "#a1a1aa",

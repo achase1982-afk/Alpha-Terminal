@@ -33,7 +33,7 @@ export function AiBiasStrip({ onNavigateToPulse }: AiBiasStripProps) {
           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#FFB800] opacity-75" />
           <span className="relative inline-flex rounded-full h-2 w-2 bg-[#FFB800]" />
         </span>
-        <span className="font-mono text-[10px] font-medium uppercase tracking-wider text-[#FFB800]">
+        <span className="font-mono text-[10px] font-light uppercase tracking-wider text-[#FFB800]">
           AI PULSE: GENERATING…
         </span>
       </button>
@@ -48,7 +48,7 @@ export function AiBiasStrip({ onNavigateToPulse }: AiBiasStripProps) {
         style={{ height: 28, backgroundColor: '#1C1C1E' }}
       >
         <Zap className="w-3.5 h-3.5 text-zinc-500" />
-        <span className="font-mono text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+        <span className="font-mono text-[10px] font-light uppercase tracking-wider text-zinc-500">
           AI PULSE: TAP TO GENERATE
         </span>
       </button>
@@ -84,13 +84,13 @@ export function AiBiasStrip({ onNavigateToPulse }: AiBiasStripProps) {
     >
       <div className="flex items-center gap-2 shrink-0">
         <Zap className="w-4 h-4 text-amber-500" />
-        <span className="font-mono text-[9px] font-medium uppercase tracking-wider text-zinc-500">
+        <span className="font-mono text-[9px] font-light uppercase tracking-wider text-zinc-500">
           AI BIAS
         </span>
         <div className={colors.label}>
           {trendIcon}
         </div>
-        <span className={`text-sm font-semibold ${colors.label}`}>
+        <span className={`text-sm font-light ${colors.label}`}>
           {pulseData.bias.replace(/_/g, " ")}
         </span>
       </div>

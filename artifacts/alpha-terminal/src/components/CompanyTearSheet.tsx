@@ -63,7 +63,7 @@ function MetricCard({ icon, label, value }: { icon: React.ReactNode; label: stri
         {icon}
         <span className="font-mono text-[9px] text-muted-foreground uppercase tracking-wider">{label}</span>
       </div>
-      <span className="font-mono text-sm text-foreground font-semibold">{value}</span>
+      <span className="font-mono text-sm text-foreground font-light">{value}</span>
     </div>
   );
 }
@@ -124,7 +124,7 @@ export function CompanyTearSheet({ isOpen, onClose }: CompanyTearSheetProps) {
       <div className="flex items-center justify-between px-4 h-12 border-b border-card-border bg-[#0c0c0c] shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           <Building2 className="w-4 h-4 text-primary shrink-0" />
-          <span className="font-mono text-xs font-bold text-primary tracking-wider truncate">
+          <span className="font-mono text-xs font-light text-primary tracking-wider truncate">
             COMPANY PROFILE: {symbol}
           </span>
         </div>
@@ -152,7 +152,7 @@ export function CompanyTearSheet({ isOpen, onClose }: CompanyTearSheetProps) {
             <div className="bg-card border border-card-border rounded-xl overflow-hidden">
               <div className="px-4 py-3 border-b border-card-border flex items-center gap-2">
                 <Building2 className="w-4 h-4 text-primary" />
-                <span className="font-mono text-xs font-bold text-foreground tracking-wider">{symbol}</span>
+                <span className="font-mono text-xs font-light text-foreground tracking-wider">{symbol}</span>
                 {fundamentals.exchange && (
                   <span className="font-mono text-[9px] text-muted-foreground bg-card-border px-1.5 py-0.5 rounded">
                     {fundamentals.exchange}
@@ -222,7 +222,7 @@ export function CompanyTearSheet({ isOpen, onClose }: CompanyTearSheetProps) {
         <div className="bg-card border border-card-border rounded-xl overflow-hidden">
           <div className="px-4 py-3 border-b border-card-border flex items-center gap-2">
             <TrendingUp className="w-4 h-4 text-primary" />
-            <span className="font-mono text-xs font-bold text-foreground tracking-wider">SYMPATHY & COMPETITORS</span>
+            <span className="font-mono text-xs font-light text-foreground tracking-wider">SYMPATHY & COMPETITORS</span>
           </div>
           <div className="p-4 bg-[#0c0c0c]">
             {sympathyLoading ? (
@@ -246,7 +246,7 @@ export function CompanyTearSheet({ isOpen, onClose }: CompanyTearSheetProps) {
         <div className="bg-card border border-card-border rounded-xl overflow-hidden">
           <div className="px-4 py-3 border-b border-card-border flex items-center gap-2">
             <Newspaper className="w-4 h-4 text-primary" />
-            <span className="font-mono text-xs font-bold text-foreground tracking-wider">RECENT HEADLINES</span>
+            <span className="font-mono text-xs font-light text-foreground tracking-wider">RECENT HEADLINES</span>
           </div>
           <div className="p-4 bg-[#0c0c0c] flex flex-col items-center justify-center py-8 gap-2">
             <Newspaper className="w-6 h-6 text-muted-foreground/30" />
@@ -262,7 +262,7 @@ export function CompanyTearSheet({ isOpen, onClose }: CompanyTearSheetProps) {
         <div className="bg-card border border-card-border rounded-xl overflow-hidden">
           <div className="px-4 py-3 border-b border-card-border flex items-center gap-2">
             <ShieldAlert className="w-4 h-4 text-amber-500/70" />
-            <span className="font-mono text-xs font-bold text-foreground tracking-wider">INSTITUTIONAL FLOW</span>
+            <span className="font-mono text-xs font-light text-foreground tracking-wider">INSTITUTIONAL FLOW</span>
             <span className="font-mono text-[8px] text-amber-500/60 border border-amber-500/20 px-1.5 py-0.5 rounded-full ml-auto">
               PREMIUM
             </span>

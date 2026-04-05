@@ -245,7 +245,7 @@ export function TradingChart({ symbol, data, isLoading, error, timedOut, tokenEx
                 className="inline-block w-2.5 h-0.5 rounded-full shrink-0"
                 style={{ background: item.color }}
               />
-              <span className="text-[10px] text-zinc-400 font-medium tracking-wide">
+              <span className="text-[10px] text-zinc-400 font-light tracking-wide">
                 {item.label}
               </span>
             </div>
