@@ -389,6 +389,7 @@ const DataCell = memo(function DataCell({
 
   let textColor: string;
   if (topStr === "\u2014") textColor = MUTED;
+  else if (isBid) textColor = "#f23645";
   else textColor = WHITE;
 
   const oiValue = isOI ? topVal : undefined;
