@@ -1,0 +1,52 @@
+✅ This is gold-standard internal feedback on the TSLA COMPANY → Overview tab.
+It’s not just another “looks messy” comment — it’s a precise, quant-grade autopsy of why the current screen is actively dangerous for money managers, prop desks, or hedge funds. The author (likely one of your power users or a dev) nailed the root cause: “data vomit” from multiple un-reconciled API endpoints with zero single source of truth.
+The Four Fatal Bugs (exactly as called out)
+	1	P/E Paradox Fundamentals card: 333.9 Valuation section: 29.9x trailing Earnings Yield implies ~19x → The app is mixing raw GAAP EPS with adjusted/non-GAAP or even completely different share counts.
+	2	Phantom Shares Fundamentals: 3.75B shares (correct — $1.35T market cap ÷ $360.59 ≈ 3.74B) Share Structure: 7.19B outstanding → Classic “basic vs diluted vs fully diluted” mismatch that breaks every per-share metric.
+	3	Broken Upside Math Mean target $288.98 vs current $360.59 = –20% downside Yet the app shows +7.4% in green. → Pure frontend calculation error; no sanity check.
+	4	Margin Schizophrenia Profitability section: Gross 33.3% / Op 20.5% / Net 14.5% Bottom Margins section: Gross 49.2% / Op 21.3% / Net 12.3% → One is almost certainly TTM, the other MRQ, but neither is labeled.
+This is exactly why the video scroll looks like a jumbled mess: the UI is fine, but the backend is serving conflicting arrays with no reconciliation layer.
+The Complete Fix (Layout + Data Integrity)
+We solve both the visual mess and the data vomit in one go.
+1. Asset-Type-Aware Rendering (equity vs ETF)
+	•	On COMPANY tab load: if assetType === "equity" → Equity Pro Dashboard (below) if assetType === "etf" → ETF Structure & Exposure (my earlier proposal)
+2. Equity Overview – New Clean Dashboard (TSLA example)
+Top: Executive Summary (always visible, zero scroll)
+	•	AI Analysis row (keep your three boxes)
+	•	One-line Key Snapshot: MKT CAP $1.35T | Shares 3.75B (single source) | P/E 29.9x (T) / 28.1x (F) | EPS $1.08 | Short % 6.61% | Next Earnings Apr 25
+Three-Column Pro View (fits on first screen)
+Valuation
+Profitability & Efficiency
+Growth & Thesis
+P/E T 29.9x / F 28.1x
+PEG 1.85
+P/B 8.2x
+P/S 3.0x
+EV/EBITDA 13.0x
+Earnings Yield 5.26%
+Gross Margin 33.3% (TTM)
+Op Margin 20.5% (TTM)
+Net Margin 14.5% (TTM)
+ROE 35.1% ROIC 21.1%
+Rev Growth +21.1% YoY
+EPS Growth –7.1% YoY
+Fwd Rev +3.2%
+Price Action (bearish callout kept verbatim)
+3. Collapsible Cards Below (clean, labeled, deduplicated)
+	•	Balance Sheet
+	•	Cash Flow
+	•	Share Structure (use only the 3.75B share count everywhere)
+	•	Earnings & Analyst (with sanity-checked upside/downside coloring + label)
+	•	Options Profile
+	•	Technical & Risk (Support/Resistance, Patterns, Volume, Outlook)
+4. Backend / Data Layer Fixes (mandatory)
+	•	Single Source of Truth rule: Market Cap, Shares, P/E, EPS, and every derived metric must come from one reconciled endpoint (or one master object).
+	•	Label everything: (TTM) or (MRQ) on margins, growth, etc.
+	•	Frontend sanity checks (simple JS before render):
+	◦	If price target < current price → color red and label “Downside”
+	◦	If P/E from two sections differs by >5% → flag internally and default to the reconciled value
+	◦	Always use the same share count for market-cap math
+	•	Deduplicate: Delete the entire bottom “Margins” section. One source only.
+This turns the current “disaster” into a terminal that a hedge-fund PM or quant trader would actually trust and use daily.
+The pasted text is exactly the kind of feedback we needed — it’s not complaining about the UI, it’s diagnosing the data integrity problem that makes the UI feel broken. Implement the reconciliation layer + the new dashboard layout and the “jumbled mess” complaint disappears overnight.
+Want me to write the exact backend ticket + frontend component spec for the dev team right now? Or mock the new TSLA screen in text form? This is ship-ready.

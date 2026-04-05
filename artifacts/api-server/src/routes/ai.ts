@@ -333,21 +333,34 @@ router.post("/technical-analysis/stream", async (req, res) => {
     return res.status(400).json({ error: "Invalid request body." });
   }
 
-  const { quote, candles, model, temperature, customPrompt } = parsed.data;
+  const { quote, candles, model, temperature, customPrompt, fundamentals } = parsed.data;
 
-  const prompt = `You are an expert financial analyst and technical trader.
+  const fundBlock = fundamentals ? `
+FUNDAMENTALS DATA:
+Market Cap: ${fundamentals.marketCap != null ? `$${(fundamentals.marketCap / 1e9).toFixed(2)}B` : "N/A"}
+Shares Outstanding: ${fundamentals.sharesOutstanding != null ? `${(fundamentals.sharesOutstanding / 1e9).toFixed(2)}B` : "N/A"}
+P/E Ratio: ${fundamentals.peRatio != null ? fundamentals.peRatio.toFixed(2) : "N/A"}
+EPS: ${fundamentals.eps != null ? `$${fundamentals.eps.toFixed(2)}` : "N/A"}
+Beta: ${fundamentals.beta != null ? fundamentals.beta.toFixed(2) : "N/A"}
+Dividend Yield: ${fundamentals.dividendYield != null ? `${fundamentals.dividendYield.toFixed(2)}%` : "N/A"}
+52W High: ${fundamentals.high52 != null ? `$${fundamentals.high52.toFixed(2)}` : "N/A"}
+52W Low: ${fundamentals.low52 != null ? `$${fundamentals.low52.toFixed(2)}` : "N/A"}
+` : "";
 
-STRICT GROUNDING RULE: You must ONLY use the Context Data provided below for any claims about price levels, trends, momentum, support/resistance, or market direction. You are FORBIDDEN from using your internal training knowledge for market trends, price targets, or directional calls. If the data is insufficient for a conclusion, say "Insufficient data" — do NOT fabricate or supplement with internal knowledge.
+  const prompt = `You are an expert financial analyst and technical trader at a top-tier institutional desk.
+
+STRICT GROUNDING RULE: You must ONLY use the Context Data provided below for any claims about price levels, trends, momentum, support/resistance, or market direction. For fundamental metrics where specific data is provided, derive calculations from that data. For fundamental metrics where data is marked "N/A", you may use your knowledge of the company's most recently reported public financials (10-K, 10-Q). Always label time periods: (TTM), (MRQ), (FY24), etc. If you truly cannot determine a metric, use null.
 
 ═══ CONTEXT DATA ═══
 ${formatQuote(quote as Record<string, unknown>)}
 
 ${formatCandles((candles ?? []) as Array<Record<string, unknown>>)}
+${fundBlock}
 ═══ END CONTEXT DATA ═══
 
 ${customPrompt ? `ADDITIONAL CONTEXT: ${customPrompt}` : ""}
 
-Analyze ONLY the above data. Return ONLY valid JSON (no markdown, no code fences, no explanation outside the JSON). Use this exact structure:
+Analyze the above data. Return ONLY valid JSON (no markdown, no code fences, no explanation outside the JSON). Use this exact structure:
 {
   "priceAction": {
     "status": "<current price with today's % change, e.g. $185.42 (+1.2% today)>",
@@ -392,10 +405,80 @@ Analyze ONLY the above data. Return ONLY valid JSON (no markdown, no code fences
     "mediumTerm": { "timeframe": "1-4 weeks", "points": ["<key point>", "<key point>"] },
     "targets": { "upside": ["$XX.XX", "$XX.XX"], "downside": ["$XX.XX", "$XX.XX"] },
     "rangePosition": { "pctFromLow": <number 0-100>, "pctFromHigh": <number 0-100> }
+  },
+  "valuation": {
+    "peTrailing": "<P/E trailing with period label e.g. 29.9x (TTM)>",
+    "peForward": "<forward P/E e.g. 28.1x (FY25E)>",
+    "peg": "<PEG ratio e.g. 1.85>",
+    "priceBook": "<P/B e.g. 8.2x>",
+    "priceSales": "<P/S e.g. 3.0x>",
+    "evRevenue": "<EV/Revenue e.g. 5.2x>",
+    "evEbitda": "<EV/EBITDA e.g. 13.0x>",
+    "earningsYield": "<earnings yield e.g. 3.34%>"
+  },
+  "profitability": {
+    "grossMargin": "<e.g. 33.3% (TTM)>",
+    "opMargin": "<e.g. 20.5% (TTM)>",
+    "netMargin": "<e.g. 14.5% (TTM)>",
+    "ebitdaMargin": "<e.g. 22.1% (TTM)>",
+    "roe": "<e.g. 35.1%>",
+    "roa": "<e.g. 12.4%>",
+    "roic": "<e.g. 21.1%>"
+  },
+  "growth": {
+    "revYoY": "<e.g. +21.1% YoY>",
+    "epsYoY": "<e.g. -7.1% YoY>",
+    "fwdRevGrowth": "<e.g. +3.2% (consensus)>",
+    "fwdEpsGrowth": "<e.g. +12.5% (consensus)>"
+  },
+  "balanceSheet": {
+    "totalDebt": "<e.g. $12.5B>",
+    "netDebt": "<e.g. $-8.2B (net cash)>",
+    "debtEquity": "<e.g. 0.15x>",
+    "currentRatio": "<e.g. 1.84x>",
+    "quickRatio": "<e.g. 1.51x>",
+    "interestCoverage": "<e.g. 42.1x>"
+  },
+  "cashFlow": {
+    "fcfTTM": "<e.g. $3.6B>",
+    "fcfYield": "<e.g. 0.27%>",
+    "fcfPerShare": "<e.g. $1.12>",
+    "fcfMargin": "<e.g. 3.7% (TTM)>",
+    "capexRevenue": "<e.g. 8.2%>"
+  },
+  "dividends": {
+    "yield": "<e.g. 0.00% or 1.52%>",
+    "annualDiv": "<e.g. $0.00 or $3.28>",
+    "payoutRatio": "<e.g. N/A or 42.3%>",
+    "exDivDate": "<e.g. N/A or Feb 7, 2025>",
+    "frequency": "<e.g. None or Quarterly>"
+  },
+  "shareStructure": {
+    "sharesShort": "<e.g. 78.5M>",
+    "shortPctFloat": "<e.g. 2.45%>",
+    "daysToCover": "<e.g. 1.8>",
+    "instOwnership": "<e.g. 46.2%>",
+    "insiderOwnership": "<e.g. 12.9%>"
+  },
+  "earningsAnalyst": {
+    "nextEarnings": "<e.g. Apr 22, 2025>",
+    "lastEpsSurprise": "<e.g. +12.3%>",
+    "consensus": "<one of: STRONG BUY, BUY, HOLD, SELL, STRONG SELL>",
+    "meanTarget": "<e.g. $288.98>",
+    "numAnalysts": "<e.g. 42>",
+    "impliedMove": "<e.g. ±5.2%>"
+  },
+  "optionsProfile": {
+    "ivRank": "<e.g. 45 / 100>",
+    "ivPercentile": "<e.g. 52%>",
+    "iv30d": "<e.g. 28.5%>",
+    "putCallRatio": "<e.g. 0.85>",
+    "shortInterest": "<e.g. 2.45% float>",
+    "borrowRate": "<e.g. 0.32% ann.>"
   }
 }
 
-Every price level MUST come from the provided data. Be specific and data-driven.`;
+Every price level MUST come from the provided data. For fundamental sections, use the provided fundamentals data as the single source of truth for market cap, shares, P/E, and EPS. Derive other metrics from your knowledge of the company's latest public filings. Be specific, data-driven, and always label time periods.`;
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {

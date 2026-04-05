@@ -451,12 +451,21 @@ interface AiAnalysis {
     targets?: { upside: string[]; downside: string[] };
     rangePosition?: { pctFromLow: number; pctFromHigh: number };
   };
+  valuation?: { peTrailing?: string; peForward?: string; peg?: string; priceBook?: string; priceSales?: string; evRevenue?: string; evEbitda?: string; earningsYield?: string };
+  profitability?: { grossMargin?: string; opMargin?: string; netMargin?: string; ebitdaMargin?: string; roe?: string; roa?: string; roic?: string };
+  growth?: { revYoY?: string; epsYoY?: string; fwdRevGrowth?: string; fwdEpsGrowth?: string };
+  balanceSheet?: { totalDebt?: string; netDebt?: string; debtEquity?: string; currentRatio?: string; quickRatio?: string; interestCoverage?: string };
+  cashFlow?: { fcfTTM?: string; fcfYield?: string; fcfPerShare?: string; fcfMargin?: string; capexRevenue?: string };
+  dividends?: { yield?: string; annualDiv?: string; payoutRatio?: string; exDivDate?: string; frequency?: string };
+  shareStructure?: { sharesShort?: string; shortPctFloat?: string; daysToCover?: string; instOwnership?: string; insiderOwnership?: string };
+  earningsAnalyst?: { nextEarnings?: string; lastEpsSurprise?: string; consensus?: string; meanTarget?: string; numAnalysts?: string; impliedMove?: string };
+  optionsProfile?: { ivRank?: string; ivPercentile?: string; iv30d?: string; putCallRatio?: string; shortInterest?: string; borrowRate?: string };
 }
 
 function parseAiAnalysis(text: string): AiAnalysis | null {
   try {
     const parsed = JSON.parse(text);
-    if (parsed && typeof parsed === "object" && (parsed.priceAction || parsed.support || parsed.outlook)) return parsed;
+    if (parsed && typeof parsed === "object" && (parsed.priceAction || parsed.support || parsed.outlook || parsed.valuation)) return parsed;
   } catch {
     const match = text.match(/```(?:json)?\s*([\s\S]*?)```/);
     if (match) {
@@ -497,292 +506,172 @@ const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, volH
   const currentPrice = quoteData?.last;
   const high52 = fund?.high52 ?? quoteData?.fiftyTwoWeekHigh;
   const low52 = fund?.low52 ?? quoteData?.fiftyTwoWeekLow;
-  const sym = quoteData?.symbol || "AAPL";
-  const mock = useMemo(() => genMockData(sym), [sym]);
-  const etf = isETF(sym);
-
   const pe = fund?.peRatio ?? quoteData?.peRatio ?? null;
   const eps = fund?.eps ?? null;
   const beta = fund?.beta ?? null;
   const divYield = fund?.dividendYield ?? null;
   const chg = quoteData?.netChange ?? 0;
-
   const biasColor = ai?.priceAction?.bias?.includes("Bullish") ? C.green : ai?.priceAction?.bias?.includes("Bearish") ? C.red : C.gold;
-  const m = mock;
 
-  const realPE = pe != null ? pe : null;
-  const realEPS = eps != null ? eps : null;
-  const realPrice = currentPrice ?? m.price;
-  const realShares = fund?.sharesOutstanding ?? null;
-  const realMktCap = fund?.marketCap ?? null;
-  const realDivYield = divYield != null ? divYield : null;
+  const colorVal = (v: string | undefined | null) => {
+    if (!v) return <span style={{ color: C.textMuted }}>—</span>;
+    const s = String(v);
+    if (s.startsWith("+") || s.startsWith("$") && !s.includes("-")) return <span style={{ color: C.green }}>{s}</span>;
+    if (s.startsWith("-")) return <span style={{ color: C.red }}>{s}</span>;
+    return s;
+  };
 
-  const derivedFwdPE = realPE != null ? +(realPE * 0.82).toFixed(1) : +m.fwdPe;
-  const derivedEarningsYield = realPE != null && realPE > 0 ? (100 / realPE).toFixed(2) + "%" : m.valuation.earningsYield;
-  const derivedPEG = realPE != null ? (realPE / Math.max(+m.growth.epsYoY, 1)).toFixed(2) : m.valuation.peg;
-
-  const meanTarget = +m.earnings.meanTarget.replace("$", "");
-  const actualUpside = realPrice > 0 ? ((meanTarget - realPrice) / realPrice * 100) : 0;
-  const upsideIsPositive = actualUpside >= 0;
-
-  const realSharesFmt = realShares != null ? fmtShares(realShares) : m.shareStructure.sharesOut;
-  const realFloatFmt = realShares != null ? fmtShares(Math.round(realShares * 0.96)) : m.shareStructure.float;
+  const realPrice = currentPrice ?? 0;
+  const meanTargetStr = ai?.earningsAnalyst?.meanTarget;
+  const meanTarget = meanTargetStr ? +meanTargetStr.replace("$", "").replace(",", "") : null;
+  const actualUpside = meanTarget != null && realPrice > 0 ? ((meanTarget - realPrice) / realPrice * 100) : null;
 
   return (
     <>
-      {etf ? (
-        <>
-          <HeroMetrics items={[
-            ["Expense Ratio", m.etfData.expenseRatio, "Low cost proxy", C.gold],
-            ["AUM", m.etfData.aum, "Total assets", C.text],
-            ["Holdings", m.etfData.holdings, "Constituents", C.text],
+      <FundGrid items={[
+        { label: "Mkt Cap", value: fmtMarketCap(fund?.marketCap ?? null) },
+        { label: "Shares", value: fmtShares(fund?.sharesOutstanding ?? null) },
+        { label: "P/E", value: pe != null ? pe.toFixed(1) : "—" },
+        { label: "EPS", value: eps != null ? `$${eps.toFixed(2)}` : "—" },
+        { label: "Beta", value: beta != null ? beta.toFixed(2) : "—" },
+        { label: "Div Yld", value: divYield != null ? `${divYield.toFixed(2)}%` : "—" },
+      ]} />
+      {high52 != null && low52 != null && currentPrice != null && (
+        <RangeBar lo={low52} hi={high52} current={currentPrice.toFixed(2)} />
+      )}
+
+      {!ai && (
+        <div style={{ textAlign: "center", padding: "24px 16px", marginTop: 12 }}>
+          <div style={{ fontSize: 10, fontFamily: f, color: C.textMuted, letterSpacing: "0.15em", textTransform: "uppercase" }}>
+            Run AI Analysis for comprehensive metrics
+          </div>
+          <div style={{ fontSize: 9, fontFamily: f, color: C.textDim, marginTop: 6 }}>
+            Valuation · Profitability · Growth · Balance Sheet · Cash Flow · Earnings · Options
+          </div>
+        </div>
+      )}
+
+      {ai?.valuation && (
+        <CollapseSection label="Valuation">
+          <MGrid items={[
+            ["P/E Trailing", ai.valuation.peTrailing ?? "—"],
+            ["P/E Forward", ai.valuation.peForward ?? "—"],
+            ["PEG Ratio", ai.valuation.peg ?? "—"],
+            ["Price / Book", ai.valuation.priceBook ?? "—"],
+            ["Price / Sales", ai.valuation.priceSales ?? "—"],
+            ["EV / Revenue", ai.valuation.evRevenue ?? "—"],
+            ["EV / EBITDA", ai.valuation.evEbitda ?? "—"],
+            ["Earnings Yield", ai.valuation.earningsYield ?? "—"],
           ]} />
+        </CollapseSection>
+      )}
 
-          <CollapseSection label="Fund Overview">
-            <MGrid items={[
-              ["Index Tracked", m.etfData.indexTracked],
-              ["Issuer", m.etfData.issuer],
-              ["Inception", m.etfData.inception],
-              ["Replication", m.etfData.replication],
-            ]} />
-          </CollapseSection>
-
-          <CollapseSection label="Pricing & NAV">
-            <MGrid items={[
-              ["NAV", m.etfData.nav],
-              ["Premium/Discount", +m.etfData.premDiscount.replace("%","") >= 0 ? pos(m.etfData.premDiscount) : neg(m.etfData.premDiscount), "Near par"],
-              ["Bid/Ask Spread", m.etfData.bidAskSpread, "Highly liquid"],
-              ["Last NAV Update", "4:00 PM ET"],
-            ]} />
-          </CollapseSection>
-
-          <CollapseSection label="Basket Valuation (Weighted Avg)">
-            <MGrid items={[
-              ["P/E Trailing", m.etfData.peTrailing],
-              ["P/E Forward", m.etfData.peForward],
-              ["Price / Book", m.etfData.priceBook],
-              ["Wtd. Avg Mkt Cap", m.etfData.wtdAvgMktCap],
-            ]} />
-          </CollapseSection>
-
-          <CollapseSection label="Yield & Distributions">
-            <MGrid items={[
-              ["SEC 30-Day Yield", pos(m.etfData.sec30dayYield)],
-              ["Distribution (TTM)", pos(m.etfData.distTTM)],
-              ["Annual Dist./Share", m.etfData.annualDist],
-              ["Ex-Div Date", m.etfData.exDivDate],
-              ["Frequency", "Quarterly"],
-            ]} />
-          </CollapseSection>
-
-          <CollapseSection label="Liquidity">
-            <MGrid items={[
-              ["Volume Today", m.etfData.volToday],
-              ["30D Avg Volume", m.etfData.vol30dAvg],
-              ["Vol vs 30D Avg", +m.etfData.volVs30d >= 0 ? pos(`+${m.etfData.volVs30d}%`) : neg(`${m.etfData.volVs30d}%`)],
-              ["Turnover Ratio", m.etfData.turnoverRatio, "Tax efficient"],
-            ]} />
-          </CollapseSection>
-
-          <CollapseSection label="Fund Flows" defaultOpen={false}>
-            <div style={{ fontSize: 9, color: C.textMuted, fontFamily: f, marginBottom: 8, padding: "4px 8px", background: "#0D0D0D", borderRadius: 3 }}>
-              Institutional flow signal
-            </div>
-            <MGrid items={[
-              ["Daily Net Flow", +m.etfData.dailyNetFlow >= 0 ? pos(`+$${m.etfData.dailyNetFlow}M`) : neg(`-$${Math.abs(+m.etfData.dailyNetFlow)}M`)],
-              ["1-Week Flow", +m.etfData.weekFlow >= 0 ? pos(`+$${m.etfData.weekFlow}B`) : neg(`$${m.etfData.weekFlow}B`)],
-              ["1-Month Flow", +m.etfData.monthFlow >= 0 ? pos(`+$${m.etfData.monthFlow}B`) : neg(`$${m.etfData.monthFlow}B`)],
-              ["3-Month Flow", +m.etfData.threeMonthFlow >= 0 ? pos(`+$${m.etfData.threeMonthFlow}B`) : neg(`$${m.etfData.threeMonthFlow}B`)],
-            ]} />
-          </CollapseSection>
-
-          <CollapseSection label="Risk & Factor Metrics">
-            <MGrid items={[
-              ["Beta (S&P 500)", m.etfData.beta],
-              ["Std Dev 1Y Ann.", m.etfData.stdDev1y],
-              ["Sharpe Ratio 1Y", m.etfData.sharpe1y],
-              ["Max Drawdown 1Y", neg(`-${m.etfData.maxDrawdown1y}%`)],
-              ["Tracking Error 1Y", m.etfData.trackingError],
-              ["Tracking Diff 1Y", neg(m.etfData.trackingDiff), "Return vs index"],
-            ]} />
-          </CollapseSection>
-
-          <CollapseSection label="Sector Weights" defaultOpen={false}>
-            {m.etfData.sectorWeights.map(([s, w, c]) => <SectorBar key={s} sector={s} weight={w} color={c} />)}
-          </CollapseSection>
-
-          <CollapseSection label="Top 10 Holdings" defaultOpen={false}>
-            <div style={{ display: "grid", gridTemplateColumns: "20px 44px 1fr 48px", gap: "0 8px", marginBottom: 6 }}>
-              {["#", "TICK", "NAME", "WT"].map(h => (
-                <span key={h} style={{ fontSize: 8, color: C.textMuted, letterSpacing: "0.1em", fontFamily: f, textTransform: "uppercase" }}>{h}</span>
-              ))}
-            </div>
-            {m.etfData.topHoldings.map(([rank, ticker, name, wt]) => (
-              <div key={rank} style={{ display: "grid", gridTemplateColumns: "20px 44px 1fr 48px", gap: "0 8px", padding: "4px 0", borderBottom: `1px solid ${C.border}` }}>
-                <span style={{ fontSize: 10, color: C.textMuted, fontFamily: f }}>{rank}</span>
-                <span style={{ fontSize: 10, color: C.gold, fontFamily: f, fontWeight: 700 }}>{ticker}</span>
-                <span style={{ fontSize: 10, color: C.textDim, fontFamily: f, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{name}</span>
-                <span style={{ fontSize: 10, color: C.text, fontFamily: f, textAlign: "right" }}>{wt}</span>
-              </div>
-            ))}
-            <div style={{ marginTop: 8, padding: "6px 8px", background: "#161616", borderRadius: 4 }}>
-              <span style={{ fontSize: 10, color: C.textMuted, fontFamily: f }}>Top 10 Concentration: </span>
-              <span style={{ fontSize: 10, color: C.gold, fontFamily: f, fontWeight: 700 }}>
-                {m.etfData.topHoldings.reduce((s, h) => s + parseFloat(h[3]), 0).toFixed(2)}% of AUM
-              </span>
-            </div>
-          </CollapseSection>
-
-          <CollapseSection label="Options Profile">
-            <MGrid items={[
-              ["IV Rank", m.optionsProfile.ivRank],
-              ["IV Percentile", m.optionsProfile.ivPercentile],
-              ["30D Implied Vol", m.optionsProfile.iv30d],
-              ["Put/Call Ratio (OI)", +m.optionsProfile.putCallRatio > 1.2 ? neg(m.optionsProfile.putCallRatio) : m.optionsProfile.putCallRatio, +m.optionsProfile.putCallRatio > 1.2 ? "Elevated hedging" : undefined],
-              ["Short Interest", m.optionsProfile.shortInterest],
-              ["Borrow Rate", m.optionsProfile.borrowRate],
-            ]} />
-          </CollapseSection>
-        </>
-      ) : (
-        <>
-          <HeroMetrics items={[
-            ["EV / EBITDA", m.valuation.evEbitda, "Primary valuation", C.gold],
-            ["FCF Yield", m.cashFlow.fcfYield + "%", "Cash return", C.green],
-            ["ROIC", m.profitability.roic + "%", "Capital efficiency", C.text],
+      {ai?.profitability && (
+        <CollapseSection label="Profitability & Efficiency">
+          <MGrid items={[
+            ["Gross Margin", ai.profitability.grossMargin ?? "—"],
+            ["Operating Margin", ai.profitability.opMargin ?? "—"],
+            ["Net Margin", ai.profitability.netMargin ?? "—"],
+            ["EBITDA Margin", ai.profitability.ebitdaMargin ?? "—"],
+            ["ROE", ai.profitability.roe ?? "—"],
+            ["ROA", ai.profitability.roa ?? "—"],
+            ["ROIC", ai.profitability.roic ?? "—"],
           ]} />
+        </CollapseSection>
+      )}
 
-          {realPE != null && realPE > 100 && (
-            <div style={{ fontSize: 9, fontFamily: f, color: C.amber, padding: "4px 8px", background: "#1a1500", borderRadius: 3, marginBottom: 12, border: `1px solid ${C.amber}33` }}>
-              Note: P/E of {realPE.toFixed(1)}x indicates elevated valuation — forward estimates may diverge significantly
-            </div>
-          )}
+      {ai?.growth && (
+        <CollapseSection label="Growth & Thesis">
+          <MGrid items={[
+            ["Revenue Growth YoY", colorVal(ai.growth.revYoY)],
+            ["EPS Growth YoY", colorVal(ai.growth.epsYoY)],
+            ["Fwd Rev Growth", colorVal(ai.growth.fwdRevGrowth)],
+            ["Fwd EPS Growth", colorVal(ai.growth.fwdEpsGrowth)],
+          ]} />
+        </CollapseSection>
+      )}
 
-          <CollapseSection label="Fundamentals">
-            <FundGrid items={[
-              { label: "Mkt Cap", value: fmtMarketCap(fund?.marketCap ?? null) },
-              { label: "Shares", value: fmtShares(fund?.sharesOutstanding ?? null) },
-              { label: "P/E", value: pe != null ? pe.toFixed(1) : "—" },
-              { label: "EPS", value: eps != null ? eps.toFixed(2) : "—" },
-              { label: "Beta", value: beta != null ? beta.toFixed(2) : "—" },
-              { label: "Div Yld", value: divYield != null ? `${divYield.toFixed(2)}%` : "—" },
-            ]} />
-            {high52 != null && low52 != null && currentPrice != null && (
-              <RangeBar lo={low52} hi={high52} current={currentPrice.toFixed(2)} />
-            )}
-          </CollapseSection>
+      {ai?.balanceSheet && (
+        <CollapseSection label="Balance Sheet">
+          <MGrid items={[
+            ["Total Debt", ai.balanceSheet.totalDebt ?? "—"],
+            ["Net Debt", ai.balanceSheet.netDebt ?? "—"],
+            ["Debt / Equity", ai.balanceSheet.debtEquity ?? "—"],
+            ["Current Ratio", ai.balanceSheet.currentRatio ?? "—"],
+            ["Quick Ratio", ai.balanceSheet.quickRatio ?? "—"],
+            ["Interest Coverage", ai.balanceSheet.interestCoverage ?? "—"],
+          ]} />
+        </CollapseSection>
+      )}
 
-          <CollapseSection label="Valuation">
-            <MGrid items={[
-              ["P/E Trailing", realPE != null ? realPE.toFixed(1) + "x" : m.valuation.peTrailing],
-              ["P/E Forward", derivedFwdPE + "x"],
-              ["PEG Ratio", derivedPEG],
-              ["Price / Book", m.valuation.priceBook],
-              ["Price / Sales", m.valuation.priceSales],
-              ["EV / Revenue", m.valuation.evRevenue],
-              ["EV / EBITDA", m.valuation.evEbitda],
-              ["Earnings Yield", derivedEarningsYield],
-            ]} />
-          </CollapseSection>
+      {ai?.cashFlow && (
+        <CollapseSection label="Cash Flow">
+          <MGrid items={[
+            ["FCF (TTM)", ai.cashFlow.fcfTTM ?? "—"],
+            ["FCF Yield", ai.cashFlow.fcfYield ?? "—"],
+            ["FCF Per Share", ai.cashFlow.fcfPerShare ?? "—"],
+            ["FCF Margin", ai.cashFlow.fcfMargin ?? "—"],
+            ["CapEx / Revenue", ai.cashFlow.capexRevenue ?? "—"],
+          ]} />
+        </CollapseSection>
+      )}
 
-          <CollapseSection label="Profitability">
-            <MGrid items={[
-              ["Gross Margin", pos(m.profitability.grossMargin + "%")],
-              ["Operating Margin", pos(m.profitability.opMargin + "%")],
-              ["Net Margin", pos(m.profitability.netMargin + "%")],
-              ["EBITDA Margin", pos(m.profitability.ebitdaMargin + "%")],
-              ["ROE", pos(m.profitability.roe + "%")],
-              ["ROA", pos(m.profitability.roa + "%")],
-              ["ROIC", pos(m.profitability.roic + "%")],
-              ["FCF Margin", pos(m.profitability.fcfMargin + "%")],
-            ]} />
-          </CollapseSection>
+      {ai?.dividends && (
+        <CollapseSection label="Dividends" defaultOpen={false}>
+          <MGrid items={[
+            ["Dividend Yield", ai.dividends.yield ?? "—"],
+            ["Annual Div/Share", ai.dividends.annualDiv ?? "—"],
+            ["Payout Ratio", ai.dividends.payoutRatio ?? "—"],
+            ["Ex-Div Date", ai.dividends.exDivDate ?? "—"],
+            ["Frequency", ai.dividends.frequency ?? "—"],
+          ]} />
+        </CollapseSection>
+      )}
 
-          <CollapseSection label="Growth">
-            <MGrid items={[
-              ["Revenue Growth YoY", +m.growth.revYoY >= 0 ? pos(`+${m.growth.revYoY}%`) : neg(`${m.growth.revYoY}%`)],
-              ["EPS Growth YoY", +m.growth.epsYoY >= 0 ? pos(`+${m.growth.epsYoY}%`) : neg(`${m.growth.epsYoY}%`)],
-              ["Fwd Rev Growth", pos(`+${m.growth.fwdRevGrowth}%`), "Consensus est."],
-              ["Fwd EPS Growth", pos(`+${m.growth.fwdEpsGrowth}%`), "Consensus est."],
-            ]} />
-          </CollapseSection>
+      {ai?.shareStructure && (
+        <CollapseSection label="Share Structure">
+          <MGrid items={[
+            ["Market Cap", fmtMarketCap(fund?.marketCap ?? null)],
+            ["Shares Outstanding", fmtShares(fund?.sharesOutstanding ?? null)],
+            ["Shares Short", ai.shareStructure.sharesShort ?? "—"],
+            ["Short % Float", ai.shareStructure.shortPctFloat ?? "—"],
+            ["Days to Cover", ai.shareStructure.daysToCover ?? "—"],
+            ["Inst. Ownership", ai.shareStructure.instOwnership ?? "—"],
+            ["Insider Ownership", ai.shareStructure.insiderOwnership ?? "—"],
+          ]} />
+        </CollapseSection>
+      )}
 
-          <CollapseSection label="Balance Sheet">
-            <MGrid items={[
-              ["Total Debt", `$${m.bs.debt}B`],
-              ["Net Debt", `$${(+m.bs.debt - +m.bs.cash).toFixed(1)}B`],
-              ["Debt / Equity", m.bs.deRatio + "x"],
-              ["Current Ratio", m.bs.curRatio + "x"],
-              ["Quick Ratio", (+m.bs.curRatio * 0.82).toFixed(2) + "x"],
-              ["Interest Coverage", (+m.bs.curRatio * 8.5).toFixed(1) + "x"],
-              ["Net Debt / EBITDA", (+m.bs.debt / (+m.bs.equity * 0.34 || 1)).toFixed(2) + "x"],
-            ]} />
-          </CollapseSection>
+      {ai?.earningsAnalyst && (
+        <CollapseSection label="Earnings & Analyst">
+          <MGrid items={[
+            ["Next Earnings", ai.earningsAnalyst.nextEarnings ?? "—"],
+            ["Last EPS Surprise", colorVal(ai.earningsAnalyst.lastEpsSurprise)],
+            ["Consensus", ai.earningsAnalyst.consensus ? <Badge key="consensus" color={ai.earningsAnalyst.consensus.includes("BUY") ? C.green : ai.earningsAnalyst.consensus.includes("SELL") ? C.red : C.gold}>{ai.earningsAnalyst.consensus}</Badge> : "—"],
+            ["Mean Price Target", meanTargetStr ?? "—"],
+            ...(actualUpside != null ? [[
+              actualUpside >= 0 ? "Upside to Target" : "Downside to Target",
+              actualUpside >= 0
+                ? pos(`+${actualUpside.toFixed(1)}%`)
+                : neg(`${actualUpside.toFixed(1)}%`),
+            ] as MGridItem] : []),
+            ["# of Analysts", ai.earningsAnalyst.numAnalysts ?? "—"],
+            ["Implied Move", ai.earningsAnalyst.impliedMove ?? "—", "Next earnings"],
+          ]} />
+        </CollapseSection>
+      )}
 
-          <CollapseSection label="Cash Flow">
-            <MGrid items={[
-              ["FCF (TTM)", m.cashFlow.fcfTTM],
-              ["FCF Yield", pos(m.cashFlow.fcfYield + "%")],
-              ["FCF Per Share", m.cashFlow.fcfPerShare],
-              ["FCF Margin", pos(m.cashFlow.fcfMarginVal + "%")],
-              ["CapEx / Revenue", m.cashFlow.capexRevenue],
-            ]} />
-          </CollapseSection>
-
-          <CollapseSection label="Dividends" defaultOpen={false}>
-            <MGrid items={[
-              ["Dividend Yield", (() => {
-                const dy = realDivYield != null ? realDivYield : +m.dividends.divYield;
-                return dy > 0 ? pos(dy.toFixed(2) + "%") : dy.toFixed(2) + "%";
-              })()],
-              ["Annual Div/Share", m.dividends.annualDiv],
-              ["Payout Ratio", m.dividends.payoutRatio],
-              ["Ex-Div Date", m.dividends.exDivDate],
-              ["5Y Div Growth", pos(`+${m.dividends.div5yGrowth}%`)],
-              ["Frequency", m.dividends.frequency],
-            ]} />
-          </CollapseSection>
-
-          <CollapseSection label="Share Structure">
-            <MGrid items={[
-              ["Market Cap", fmtMarketCap(realMktCap)],
-              ["Shares Outstanding", realSharesFmt],
-              ["Float", realFloatFmt],
-              ["Shares Short", m.shareStructure.sharesShort],
-              ["Short % Float", m.shareStructure.shortPctFloat],
-              ["Days to Cover", m.shareStructure.daysToCover],
-              ["Inst. Ownership", pos(m.shareStructure.instOwnership)],
-              ["Insider Ownership", m.shareStructure.insiderOwnership],
-              ["13F Net Change", pos(`+$${m.shareStructure.netChange13F}`), "Last quarter"],
-            ]} />
-          </CollapseSection>
-
-          <CollapseSection label="Earnings & Analyst">
-            <MGrid items={[
-              ["Next Earnings", m.earnings.nextEarnings],
-              ["Last EPS Surprise", +m.earnings.lastEpsSurprise >= 0 ? pos(`+${m.earnings.lastEpsSurprise}%`) : neg(`${m.earnings.lastEpsSurprise}%`)],
-              ["Consensus", <Badge key="consensus" color={m.earnings.consensus === "STRONG BUY" ? C.green : m.earnings.consensus === "BUY" ? C.green : C.gold}>{m.earnings.consensus}</Badge>],
-              ["Mean Price Target", `$${meanTarget.toFixed(2)}`],
-              [upsideIsPositive ? "Upside to Target" : "Downside to Target",
-                upsideIsPositive
-                  ? pos(`+${actualUpside.toFixed(1)}%`)
-                  : neg(`${actualUpside.toFixed(1)}%`)],
-              ["# of Analysts", m.earnings.numAnalysts],
-              ["Implied Move", m.earnings.impliedMove, "Next earnings"],
-            ]} />
-          </CollapseSection>
-
-          <CollapseSection label="Options Profile">
-            <MGrid items={[
-              ["IV Rank", m.optionsProfile.ivRank],
-              ["IV Percentile", m.optionsProfile.ivPercentile],
-              ["30D Implied Vol", m.optionsProfile.iv30d],
-              ["Put/Call Ratio (OI)", m.optionsProfile.putCallRatio],
-              ["Short Interest", m.optionsProfile.shortInterest],
-              ["Borrow Rate", m.optionsProfile.borrowRate],
-            ]} />
-          </CollapseSection>
-        </>
+      {ai?.optionsProfile && (
+        <CollapseSection label="Options Profile">
+          <MGrid items={[
+            ["IV Rank", ai.optionsProfile.ivRank ?? "—"],
+            ["IV Percentile", ai.optionsProfile.ivPercentile ?? "—"],
+            ["30D Implied Vol", ai.optionsProfile.iv30d ?? "—"],
+            ["Put/Call Ratio (OI)", ai.optionsProfile.putCallRatio ?? "—"],
+            ["Short Interest", ai.optionsProfile.shortInterest ?? "—"],
+            ["Borrow Rate", ai.optionsProfile.borrowRate ?? "—"],
+          ]} />
+        </CollapseSection>
       )}
 
       <Sec>30-DAY PRICE</Sec>
@@ -1391,7 +1280,7 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
     const collectedThinking: string[] = [];
     await consumeStream(
       `${API_BASE}/ai/technical-analysis/stream`,
-      { quote, candles: history.candles, model: aiModel, temperature: aiTemp },
+      { quote, candles: history.candles, model: aiModel, temperature: aiTemp, fundamentals: fundamentals ? { marketCap: fundamentals.marketCap, sharesOutstanding: fundamentals.sharesOutstanding, peRatio: fundamentals.peRatio, eps: fundamentals.eps, beta: fundamentals.beta, dividendYield: fundamentals.dividendYield, high52: fundamentals.high52, low52: fundamentals.low52 } : undefined },
       (chunk) => {
         if (taRunRef.current !== runId) return;
         accumulated += chunk;
@@ -1420,7 +1309,7 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
         setTaThinkingTokens((prev) => [...prev, reasoning]);
       },
     );
-  }, [quote, history, aiModel, aiTemp, setAnalysisResult, setTechnicalsCache]);
+  }, [quote, history, aiModel, aiTemp, fundamentals, setAnalysisResult, setTechnicalsCache]);
 
   const fetchFundamentals = useCallback(async () => {
     if (!accessToken || !symbol) return;
