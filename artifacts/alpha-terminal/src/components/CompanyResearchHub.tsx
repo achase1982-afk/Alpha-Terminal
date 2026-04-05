@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo, type TouchEvent as ReactTouchEvent } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo, memo, type TouchEvent as ReactTouchEvent } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useQuote } from "@/hooks/useQuote";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
@@ -35,6 +35,11 @@ const C = {
 
 const f = `'SFMono-Regular', 'SF Mono', ui-monospace, 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace`;
 const tt: React.CSSProperties = { background: "#111", border: `1px solid ${C.borderHi}`, borderRadius: 0, fontFamily: f, fontSize: 11, color: C.text, padding: "6px 10px" };
+const SUB_LABELS = ["Overview", "Financials", "SEC", "Ownership", "Valuation"] as const;
+const FINANCIALS_TABS = [["income", "Income"], ["balance", "Balance"], ["cashflow", "Cash Flow"]] as const;
+const CF_LEGEND = [["Operating", C.green], ["Investing", C.gold], ["Financing", C.textDim]] as const;
+const SEC_FILTER_TYPES = ["ALL", "10-K", "10-Q", "8-K", "DEF 14A", "4", "SC 13G"] as const;
+const SEC_TYPE_COLORS: Record<string, string> = { "10-K": C.gold, "10-Q": C.cyan, "8-K": C.amber, "DEF 14A": C.purple, "4": C.green, "SC 13G": C.textMuted, "SC 13G/A": C.textMuted, "S-3": C.textDim, "S-1": C.textDim };
 
 interface FundamentalData {
   symbol: string;
@@ -221,7 +226,7 @@ function FundCard({ label, value, sub, color, accent }: { label: string; value: 
   );
 }
 
-function SubOverview({ fund, quoteData, priceHist, volHist }: {
+const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, volHist }: {
   fund: FundamentalData | null;
   quoteData: QuoteInfo | null;
   priceHist: { w: string; p: number }[];
@@ -333,16 +338,16 @@ function SubOverview({ fund, quoteData, priceHist, volHist }: {
       </div>
     </>
   );
-}
+});
 
-function SubFinancials({ ticker }: { ticker: string }) {
+const SubFinancials = memo(function SubFinancials({ ticker }: { ticker: string }) {
   const [view, setView] = useState("income");
   const mock = useMemo(() => genMockData(ticker), [ticker]);
 
   return (
     <>
       <div style={{ display: "flex", gap: 6, padding: "14px 0 8px" }}>
-        {([["income", "Income"], ["balance", "Balance"], ["cashflow", "Cash Flow"]] as const).map(([id, label]) => (
+        {FINANCIALS_TABS.map(([id, label]) => (
           <button key={id} onClick={() => setView(id)} style={{
             padding: "4px 12px", fontSize: 10, fontFamily: f, fontWeight: 600,
             color: view === id ? "#000" : C.textMuted,
@@ -410,7 +415,7 @@ function SubFinancials({ ticker }: { ticker: string }) {
             </BarChart>
           </ResponsiveContainer>
           <div style={{ display: "flex", gap: 14, padding: "6px 0" }}>
-            {([["Operating", C.green], ["Investing", C.gold], ["Financing", C.textDim]] as const).map(([l, c]) => (
+            {CF_LEGEND.map(([l, c]) => (
               <span key={l} style={{ fontSize: 10, fontFamily: f, color: C.textDim }}><span style={{ color: c }}>■</span> {l}</span>
             ))}
           </div>
@@ -418,7 +423,7 @@ function SubFinancials({ ticker }: { ticker: string }) {
       )}
     </>
   );
-}
+});
 
 interface EdgarFiling {
   id: string;
@@ -436,7 +441,7 @@ interface SecFilingsResponse {
   error?: string;
 }
 
-function SubSEC({ ticker }: { ticker: string }) {
+const SubSEC = memo(function SubSEC({ ticker }: { ticker: string }) {
   const [filter, setFilter] = useState("ALL");
   const [exp, setExp] = useState<number | null>(null);
   const [data, setData] = useState<SecFilingsResponse | null>(null);
@@ -469,8 +474,8 @@ function SubSEC({ ticker }: { ticker: string }) {
     return () => { cancelled = true; };
   }, [ticker]);
 
-  const types = ["ALL", "10-K", "10-Q", "8-K", "DEF 14A", "4", "SC 13G"];
-  const tc: Record<string, string> = { "10-K": C.gold, "10-Q": C.cyan, "8-K": C.amber, "DEF 14A": C.purple, "4": C.green, "SC 13G": C.textMuted, "SC 13G/A": C.textMuted, "S-3": C.textDim, "S-1": C.textDim };
+  const types = SEC_FILTER_TYPES;
+  const tc = SEC_TYPE_COLORS;
 
   const filings = data?.filings ?? [];
   const cik = data?.cik;
@@ -594,9 +599,9 @@ function SubSEC({ ticker }: { ticker: string }) {
       </div>
     </>
   );
-}
+});
 
-function SubOwnership({ ticker }: { ticker: string }) {
+const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) {
   const mock = useMemo(() => genMockData(ticker), [ticker]);
   return (
     <>
@@ -631,9 +636,9 @@ function SubOwnership({ ticker }: { ticker: string }) {
       ))}
     </>
   );
-}
+});
 
-function SubValuation({ ticker, fund }: { ticker: string; fund: FundamentalData | null }) {
+const SubValuation = memo(function SubValuation({ ticker, fund }: { ticker: string; fund: FundamentalData | null }) {
   const mock = useMemo(() => genMockData(ticker), [ticker]);
   const pe = fund?.peRatio ?? +mock.pe;
   const fwdPe = +mock.fwdPe;
@@ -688,9 +693,9 @@ function SubValuation({ ticker, fund }: { ticker: string; fund: FundamentalData 
       </div>
     </>
   );
-}
+});
 
-function MarkdownResult({ content }: { content: string }) {
+const MarkdownResult = memo(function MarkdownResult({ content }: { content: string }) {
   return (
     <div className="prose prose-invert prose-primary max-w-none font-sans text-gray-300
       prose-headings:text-white prose-headings:font-bold prose-headings:tracking-wide prose-headings:mt-4 prose-headings:mb-2
@@ -704,7 +709,7 @@ function MarkdownResult({ content }: { content: string }) {
       <ReactMarkdown>{content}</ReactMarkdown>
     </div>
   );
-}
+});
 
 interface CompanyResearchHubProps {
   candles?: CandleData[];
@@ -725,7 +730,7 @@ export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
   const swiping = useRef(false);
   const locked = useRef<"h" | "v" | null>(null);
   const dragDelta = useRef(0);
-  const [dragOffset, setDragOffset] = useState(0);
+  const sliderRef = useRef<HTMLDivElement>(null);
 
   const [taStreaming, setTaStreaming] = useState(false);
   const [taStreamingText, setTaStreamingText] = useState("");
@@ -848,7 +853,11 @@ export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
     }));
   }, [candles, history]);
 
-  const SUB_LABELS = ["Overview", "Financials", "SEC", "Ownership", "Valuation"];
+  const setSliderOffset = useCallback((offset: number, animate: boolean) => {
+    if (!sliderRef.current) return;
+    sliderRef.current.style.transition = animate ? "transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)" : "none";
+    sliderRef.current.style.transform = `translateX(calc(${-page * 100}% + ${offset}px))`;
+  }, [page]);
 
   const handleTouchStart = useCallback((e: ReactTouchEvent) => {
     startX.current = e.touches[0].clientX;
@@ -856,7 +865,6 @@ export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
     swiping.current = true;
     locked.current = null;
     dragDelta.current = 0;
-    setDragOffset(0);
   }, []);
 
   const handleTouchMove = useCallback((e: ReactTouchEvent) => {
@@ -877,9 +885,9 @@ export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
         clamped = dx * 0.25;
       }
       dragDelta.current = clamped;
-      setDragOffset(clamped);
+      setSliderOffset(clamped, false);
     }
-  }, [page]);
+  }, [page, setSliderOffset]);
 
   const finishSwipe = useCallback(() => {
     if (!swiping.current) return;
@@ -895,8 +903,8 @@ export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
     }
     locked.current = null;
     dragDelta.current = 0;
-    setDragOffset(0);
-  }, [page]);
+    setSliderOffset(0, true);
+  }, [page, setSliderOffset]);
 
   if (!accessToken) {
     return (
@@ -940,10 +948,11 @@ export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
           onTouchCancel={finishSwipe}
         >
           <div
+            ref={sliderRef}
             style={{
               display: "flex",
-              transform: `translateX(calc(${-page * 100}% + ${dragOffset}px))`,
-              transition: swiping.current ? "none" : "transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
+              transform: `translateX(${-page * 100}%)`,
+              transition: "transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
               willChange: "transform",
             }}
           >

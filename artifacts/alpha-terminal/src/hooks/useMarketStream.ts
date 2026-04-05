@@ -94,6 +94,7 @@ export function useMarketStream() {
     tickerTapeSymbols,
     macroSymbols,
     setStreamQuote,
+    setStreamQuotes,
     setStreamStatus,
     addLiveNews,
   } = useTerminalStore();
@@ -201,7 +202,8 @@ export function useMarketStream() {
           if (quotes.length > 0) {
             setStreamStatus("live");
             rejectedRetries.current = 0;
-            for (const q of quotes) setStreamQuote(q);
+            if (quotes.length === 1) setStreamQuote(quotes[0]);
+            else setStreamQuotes(quotes);
           } else if (status === "connecting") {
             setStreamStatus("connecting");
           } else if (status === "disconnected") {

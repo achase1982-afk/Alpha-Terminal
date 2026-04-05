@@ -138,6 +138,7 @@ interface TerminalState {
   streamConnected: boolean;
   streamStatus: "offline" | "connecting" | "live";
   setStreamQuote: (q: LiveQuote) => void;
+  setStreamQuotes: (quotes: LiveQuote[]) => void;
   setStreamConnected: (v: boolean) => void;
   setStreamStatus: (s: "offline" | "connecting" | "live") => void;
 
@@ -345,6 +346,11 @@ export const useTerminalStore = create<TerminalState>()(
       setStreamQuote: (q) => set((state) => ({
         streamPrices: { ...state.streamPrices, [q.symbol]: q },
       })),
+      setStreamQuotes: (quotes) => set((state) => {
+        const next = { ...state.streamPrices };
+        for (const q of quotes) next[q.symbol] = q;
+        return { streamPrices: next };
+      }),
       setStreamConnected: (v) => set({ streamConnected: v, streamStatus: v ? "live" : "offline" }),
       setStreamStatus: (s) => set({ streamStatus: s, streamConnected: s === "live" }),
     }),

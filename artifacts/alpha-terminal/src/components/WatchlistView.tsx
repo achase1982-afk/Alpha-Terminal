@@ -413,7 +413,8 @@ function SortButton({
 }
 
 export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sym: string) => void }) {
-  const { removeFromWatchlist, setSymbol, streamPrices, accessToken } = useTerminalStore();
+  const { removeFromWatchlist, setSymbol, accessToken } = useTerminalStore();
+  const streamPrices = useTerminalStore((s) => s.streamPrices);
   const watchlist = useActiveWatchlist();
   const [sortKey, setSortKey] = useState<SortKey>("symbol");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
