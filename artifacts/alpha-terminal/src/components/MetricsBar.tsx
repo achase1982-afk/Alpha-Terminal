@@ -1,7 +1,7 @@
 import { useTerminalStore, useActiveWatchlist } from "@/lib/store";
 import { useQuote }         from "@/hooks/useQuote";
 import { useTickColor }     from "@/hooks/useTickColor";
-import { RefreshCw, SearchX, FileText, PlusCircle, MinusCircle } from "lucide-react";
+import { RefreshCw, SearchX, Plus, Minus } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRef, useEffect, useState, useLayoutEffect, useCallback } from "react";
 
@@ -98,32 +98,17 @@ function WatchlistToggle({ symbol }: { symbol: string }) {
     setTimeout(() => setFlash(false), 300);
   }, [symbol, isInWatchlist, addToWatchlist, removeFromWatchlist]);
 
-  const BadgeIcon = isInWatchlist ? MinusCircle : PlusCircle;
-
   return (
     <button
       onClick={handleToggle}
-      className={`relative shrink-0 transition-all duration-200 active:scale-90 ${flash ? "scale-110" : ""}`}
-      style={{ width: 18, height: 20 }}
+      className={`flex items-center justify-center w-5 h-5 transition-all duration-200 active:scale-90 shrink-0
+        ${isInWatchlist
+          ? "text-primary"
+          : "text-zinc-400 hover:text-primary"}
+        ${flash ? "scale-110 text-primary" : ""}`}
       aria-label={isInWatchlist ? `Remove ${symbol} from watchlist` : `Add ${symbol} to watchlist`}
     >
-      <FileText
-        style={{ color: "#ffffff", position: "absolute", top: 0, left: 0 }}
-        strokeWidth={1.5}
-        size={16}
-      />
-      <BadgeIcon
-        style={{
-          color: "#ffffff",
-          position: "absolute",
-          bottom: -2,
-          right: -4,
-          background: "#000000",
-          borderRadius: "50%",
-        }}
-        strokeWidth={2}
-        size={9}
-      />
+      {isInWatchlist ? <Minus className="w-3.5 h-3.5" strokeWidth={2.5} /> : <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />}
     </button>
   );
 }
