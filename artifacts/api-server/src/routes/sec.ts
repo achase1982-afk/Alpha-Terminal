@@ -129,11 +129,54 @@ router.get("/filings", async (req, res) => {
   }
 
   try {
+    const map = await loadTickerMap(req.log);
+    const cik = map.get(symbol.toUpperCase().replace(/^\$/, "")) || null;
     const filings = await fetchEdgarFilings(symbol, req.log);
-    return res.json({ filings });
+    return res.json({ filings, cik, symbol: symbol.toUpperCase() });
   } catch (err: any) {
     req.log?.error({ err }, "SEC filings endpoint error");
-    return res.status(502).json({ error: "SEC upstream unavailable", filings: [] });
+    return res.status(502).json({ error: "SEC upstream unavailable", filings: [], cik: null });
+  }
+});
+
+router.get("/company", async (req, res) => {
+  const symbol = (req.query.symbol as string || "").trim();
+  if (!symbol) {
+    return res.status(400).json({ error: "symbol required" });
+  }
+
+  try {
+    const map = await loadTickerMap(req.log);
+    const tickerUpper = symbol.toUpperCase().replace(/^\$/, "");
+    const cik = map.get(tickerUpper);
+    if (!cik) {
+      return res.json({ cik: null, name: null, sic: null, sicDescription: null, stateOfIncorporation: null, fiscalYearEnd: null, category: null });
+    }
+
+    const submissionsRes = await fetch(
+      `https://data.sec.gov/submissions/CIK${cik}.json`,
+      { headers: HEADERS, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
+    );
+    if (!submissionsRes.ok) {
+      return res.json({ cik, name: null });
+    }
+    const data = (await submissionsRes.json()) as any;
+
+    return res.json({
+      cik,
+      name: data.name || null,
+      sic: data.sic || null,
+      sicDescription: data.sicDescription || null,
+      stateOfIncorporation: data.stateOfIncorporation || null,
+      fiscalYearEnd: data.fiscalYearEnd || null,
+      category: data.category || null,
+      ein: data.ein || null,
+      exchanges: data.exchanges || [],
+      tickers: data.tickers || [],
+    });
+  } catch (err: any) {
+    req.log?.error({ err }, "SEC company endpoint error");
+    return res.status(502).json({ error: "SEC upstream unavailable" });
   }
 });
 

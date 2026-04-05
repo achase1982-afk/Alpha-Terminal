@@ -362,67 +362,155 @@ function SubFinancials({ ticker }: { ticker: string }) {
   );
 }
 
+interface EdgarFiling {
+  id: string;
+  formType: string;
+  filedAt: string;
+  description: string;
+  url: string;
+  accessionNo: string;
+}
+
+interface SecFilingsResponse {
+  filings: EdgarFiling[];
+  cik: string | null;
+  symbol: string;
+  error?: string;
+}
+
 function SubSEC({ ticker }: { ticker: string }) {
   const [filter, setFilter] = useState("ALL");
   const [exp, setExp] = useState<number | null>(null);
-  const mock = useMemo(() => genMockData(ticker), [ticker]);
-  const types = ["ALL", "10-K", "10-Q", "8-K", "DEF 14A", "4"];
-  const tc: Record<string, string> = { "10-K": C.gold, "10-Q": C.cyan, "8-K": C.amber, "DEF 14A": C.purple, "4": C.green, "SC 13G/A": C.textMuted, "S-3": C.textDim };
-  const filtered = filter === "ALL" ? mock.filings : mock.filings.filter(fi => fi.type === filter);
+  const [data, setData] = useState<SecFilingsResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const fetchedRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!ticker || fetchedRef.current === ticker) return;
+    fetchedRef.current = ticker;
+    let cancelled = false;
+
+    (async () => {
+      setLoading(true);
+      setError(null);
+      setExp(null);
+      setFilter("ALL");
+      try {
+        const res = await fetch(`${API_BASE}/sec/filings?symbol=${encodeURIComponent(ticker)}`);
+        if (!res.ok) throw new Error(`SEC API returned ${res.status}`);
+        const json = await res.json();
+        if (!cancelled) setData(json);
+      } catch (err: any) {
+        if (!cancelled) setError(err.message || "Failed to load SEC filings");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [ticker]);
+
+  const types = ["ALL", "10-K", "10-Q", "8-K", "DEF 14A", "4", "SC 13G"];
+  const tc: Record<string, string> = { "10-K": C.gold, "10-Q": C.cyan, "8-K": C.amber, "DEF 14A": C.purple, "4": C.green, "SC 13G": C.textMuted, "SC 13G/A": C.textMuted, "S-3": C.textDim, "S-1": C.textDim };
+
+  const filings = data?.filings ?? [];
+  const cik = data?.cik;
+  const cikNumeric = cik ? String(parseInt(cik)) : null;
+
+  const filtered = filter === "ALL"
+    ? filings
+    : filings.filter(fi => fi.formType === filter || fi.formType.startsWith(filter + "/"));
+
+  if (loading) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 40 }}>
+        <Loader2 className="w-5 h-5 text-primary animate-spin" />
+        <span style={{ fontSize: 11, fontFamily: f, color: C.textDim, marginLeft: 10 }}>Loading SEC filings...</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={{ padding: "20px 0", textAlign: "center" }}>
+        <span style={{ fontSize: 11, fontFamily: f, color: C.red }}>{error}</span>
+        <button onClick={() => { fetchedRef.current = null; setData(null); setError(null); }}
+          style={{ display: "block", margin: "10px auto 0", fontSize: 10, fontFamily: f, color: C.gold, background: "transparent", border: `1px solid ${C.gold}44`, padding: "4px 12px", cursor: "pointer" }}>
+          RETRY
+        </button>
+      </div>
+    );
+  }
 
   return (
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 0 8px" }}>
         <div>
           <span style={{ fontSize: 12, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 1.5 }}>SEC EDGAR</span>
-          <span style={{ fontSize: 10, fontFamily: f, color: C.textDim, marginLeft: 10 }}>CIK {mock.cik}</span>
+          {cik && <span style={{ fontSize: 10, fontFamily: f, color: C.textDim, marginLeft: 10 }}>CIK {cik}</span>}
         </div>
-        <a href={`https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company=${ticker}&CIK=&type=&dateb=&owner=include&count=40`}
+        <a href={cikNumeric
+            ? `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${cikNumeric}&type=&dateb=&owner=include&count=40`
+            : `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company=${ticker}&CIK=&type=&dateb=&owner=include&count=40`}
           target="_blank" rel="noopener noreferrer"
           style={{ fontSize: 9, fontFamily: f, fontWeight: 700, color: C.gold, textDecoration: "none", letterSpacing: 1, padding: "3px 8px", border: `1px solid ${C.gold}44` }}>
           EDGAR ↗
         </a>
       </div>
 
-      <div style={{ display: "flex", gap: 5, paddingBottom: 10, borderBottom: `1px solid ${C.border}`, flexWrap: "wrap" }}>
-        {types.map(t => (
-          <button key={t} onClick={() => setFilter(t)} style={{
-            padding: "2px 8px", fontSize: 9, fontFamily: f, fontWeight: 600,
-            color: filter === t ? "#000" : C.textDim,
-            background: filter === t ? (tc[t] || C.gold) : "transparent",
-            border: `1px solid ${filter === t ? "transparent" : C.borderHi}`,
-            cursor: "pointer", letterSpacing: 0.5,
-          }}>{t}</button>
-        ))}
+      <div style={{ fontSize: 10, fontFamily: f, color: C.textDim, paddingBottom: 8 }}>
+        {filings.length} filings loaded • Real-time EDGAR data
       </div>
+
+      <div style={{ display: "flex", gap: 5, paddingBottom: 10, borderBottom: `1px solid ${C.border}`, flexWrap: "wrap" }}>
+        {types.map(t => {
+          const count = t === "ALL" ? filings.length : filings.filter(fi => fi.formType === t || fi.formType.startsWith(t + "/")).length;
+          return (
+            <button key={t} onClick={() => { setFilter(t); setExp(null); }} style={{
+              padding: "2px 8px", fontSize: 9, fontFamily: f, fontWeight: 600,
+              color: filter === t ? "#000" : C.textDim,
+              background: filter === t ? (tc[t] || C.gold) : "transparent",
+              border: `1px solid ${filter === t ? "transparent" : C.borderHi}`,
+              cursor: "pointer", letterSpacing: 0.5,
+              opacity: count === 0 && t !== "ALL" ? 0.35 : 1,
+            }}>{t} {count > 0 && t !== "ALL" ? `(${count})` : ""}</button>
+          );
+        })}
+      </div>
+
+      {filtered.length === 0 && (
+        <div style={{ padding: "20px 0", textAlign: "center", fontSize: 11, fontFamily: f, color: C.textDim }}>
+          No {filter === "ALL" ? "" : filter + " "}filings found
+        </div>
+      )}
 
       {filtered.map((fi, i) => {
         const isExp = exp === i;
-        const c = tc[fi.type] || C.textDim;
+        const c = tc[fi.formType] || tc[fi.formType.split("/")[0]] || C.textDim;
         return (
-          <div key={i} onClick={() => setExp(isExp ? null : i)}
+          <div key={fi.id || i} onClick={() => setExp(isExp ? null : i)}
             style={{ padding: "9px 0", borderBottom: `1px solid ${C.border}`, cursor: "pointer", background: isExp ? "#060606" : "transparent" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Tag color={c}>{fi.type}</Tag>
-                <span style={{ fontSize: 11, fontFamily: f, color: C.text }}>{fi.desc}</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
+                <Tag color={c}>{fi.formType}</Tag>
+                <span style={{ fontSize: 11, fontFamily: f, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{fi.description}</span>
               </div>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <span style={{ fontSize: 9, fontFamily: f, color: C.textDim }}>{fi.date}</span>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0, marginLeft: 8 }}>
+                <span style={{ fontSize: 9, fontFamily: f, color: C.textDim }}>{fi.filedAt}</span>
                 <span style={{ fontSize: 9, color: C.textDim, display: "inline-block", transform: isExp ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>▾</span>
               </div>
             </div>
             {isExp && (
               <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${C.border}` }}>
-                <div style={{ fontSize: 10, fontFamily: f, color: C.textDim, marginBottom: 8 }}>
-                  <span style={{ letterSpacing: 1 }}>ACC </span><span style={{ color: C.textMuted }}>{fi.acc}</span>
-                  <span style={{ marginLeft: 12, letterSpacing: 1 }}>PERIOD </span><span style={{ color: C.textMuted }}>{fi.period}</span>
+                <div style={{ fontSize: 10, fontFamily: f, color: C.textDim, marginBottom: 8, wordBreak: "break-all" }}>
+                  <span style={{ letterSpacing: 1 }}>ACC </span><span style={{ color: C.textMuted }}>{fi.accessionNo}</span>
                 </div>
                 <div style={{ display: "flex", gap: 6 }}>
-                  <a href={`https://www.sec.gov/Archives/edgar/data/${mock.cik}/${fi.acc.replace(/-/g, "")}`}
+                  <a href={fi.url}
                     target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
-                    style={{ fontSize: 9, fontFamily: f, fontWeight: 700, color: c, textDecoration: "none", padding: "2px 7px", border: `1px solid ${c}44`, letterSpacing: 0.5 }}>VIEW ↗</a>
-                  <a href={`https://efts.sec.gov/LATEST/search-index?q=%22${fi.acc}%22`}
+                    style={{ fontSize: 9, fontFamily: f, fontWeight: 700, color: c, textDecoration: "none", padding: "2px 7px", border: `1px solid ${c}44`, letterSpacing: 0.5 }}>VIEW FILING ↗</a>
+                  <a href={`https://efts.sec.gov/LATEST/search-index?q=%22${fi.accessionNo}%22`}
                     target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
                     style={{ fontSize: 9, fontFamily: f, fontWeight: 700, color: C.textDim, textDecoration: "none", padding: "2px 7px", border: `1px solid ${C.borderHi}`, letterSpacing: 0.5 }}>FULL TEXT ↗</a>
                 </div>
@@ -436,11 +524,11 @@ function SubSEC({ ticker }: { ticker: string }) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
         {[
           ["Full-Text Search", `https://efts.sec.gov/LATEST/search-index?q=${ticker}`],
-          ["Insider Filings", `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${mock.cik}&type=4&count=40`],
-          ["Ownership (13F)", `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${mock.cik}&type=SC%2013&count=40`],
-          ["Annual Reports", `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${mock.cik}&type=10-K&count=10`],
+          ["Insider Filings", cikNumeric ? `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${cikNumeric}&type=4&count=40` : `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company=${ticker}&type=4&count=40`],
+          ["Ownership (13F)", cikNumeric ? `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${cikNumeric}&type=SC%2013&count=40` : `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company=${ticker}&type=SC%2013&count=40`],
+          ["Annual Reports", cikNumeric ? `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${cikNumeric}&type=10-K&count=10` : `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company=${ticker}&type=10-K&count=10`],
         ].map(([label, url], i) => (
-          <a key={i} href={url} target="_blank" rel="noopener noreferrer"
+          <a key={i} href={url as string} target="_blank" rel="noopener noreferrer"
             style={{ fontSize: 10, fontFamily: f, color: C.gold, textDecoration: "none", padding: "7px 8px", border: `1px solid ${C.border}`, display: "block" }}>
             {label} ↗
           </a>
