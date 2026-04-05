@@ -493,8 +493,8 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol }: {
             disabled={!accessToken || isScanning || currentSyms.length === 0}
             className="w-full font-bold font-mono tracking-wider"
             style={{
-              fontSize: 13, padding: "8px 12px",
-              background: "#000", color: "#FFB800", border: "1px solid #FFB800",
+              fontSize: 13, padding: "10px",
+              background: "#FFB800", color: "#111", border: "none",
             }}
           >
             {isScanning ? (
