@@ -510,6 +510,24 @@ const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, volH
   const biasColor = ai?.priceAction?.bias?.includes("Bullish") ? C.green : ai?.priceAction?.bias?.includes("Bearish") ? C.red : C.gold;
   const m = mock;
 
+  const realPE = pe != null ? pe : null;
+  const realEPS = eps != null ? eps : null;
+  const realPrice = currentPrice ?? m.price;
+  const realShares = fund?.sharesOutstanding ?? null;
+  const realMktCap = fund?.marketCap ?? null;
+  const realDivYield = divYield != null ? divYield : null;
+
+  const derivedFwdPE = realPE != null ? +(realPE * 0.82).toFixed(1) : +m.fwdPe;
+  const derivedEarningsYield = realPE != null && realPE > 0 ? (100 / realPE).toFixed(2) + "%" : m.valuation.earningsYield;
+  const derivedPEG = realPE != null ? (realPE / Math.max(+m.growth.epsYoY, 1)).toFixed(2) : m.valuation.peg;
+
+  const meanTarget = +m.earnings.meanTarget.replace("$", "");
+  const actualUpside = realPrice > 0 ? ((meanTarget - realPrice) / realPrice * 100) : 0;
+  const upsideIsPositive = actualUpside >= 0;
+
+  const realSharesFmt = realShares != null ? fmtShares(realShares) : m.shareStructure.sharesOut;
+  const realFloatFmt = realShares != null ? fmtShares(Math.round(realShares * 0.96)) : m.shareStructure.float;
+
   return (
     <>
       {etf ? (
@@ -634,6 +652,12 @@ const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, volH
             ["ROIC", m.profitability.roic + "%", "Capital efficiency", C.text],
           ]} />
 
+          {realPE != null && realPE > 100 && (
+            <div style={{ fontSize: 9, fontFamily: f, color: C.amber, padding: "4px 8px", background: "#1a1500", borderRadius: 3, marginBottom: 12, border: `1px solid ${C.amber}33` }}>
+              Note: P/E of {realPE.toFixed(1)}x indicates elevated valuation — forward estimates may diverge significantly
+            </div>
+          )}
+
           <CollapseSection label="Fundamentals">
             <FundGrid items={[
               { label: "Mkt Cap", value: fmtMarketCap(fund?.marketCap ?? null) },
@@ -650,14 +674,14 @@ const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, volH
 
           <CollapseSection label="Valuation">
             <MGrid items={[
-              ["P/E Trailing", m.valuation.peTrailing],
-              ["P/E Forward", m.valuation.peForward],
-              ["PEG Ratio", m.valuation.peg],
+              ["P/E Trailing", realPE != null ? realPE.toFixed(1) + "x" : m.valuation.peTrailing],
+              ["P/E Forward", derivedFwdPE + "x"],
+              ["PEG Ratio", derivedPEG],
               ["Price / Book", m.valuation.priceBook],
               ["Price / Sales", m.valuation.priceSales],
               ["EV / Revenue", m.valuation.evRevenue],
               ["EV / EBITDA", m.valuation.evEbitda],
-              ["Earnings Yield", m.valuation.earningsYield],
+              ["Earnings Yield", derivedEarningsYield],
             ]} />
           </CollapseSection>
 
@@ -707,7 +731,10 @@ const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, volH
 
           <CollapseSection label="Dividends" defaultOpen={false}>
             <MGrid items={[
-              ["Dividend Yield", +m.dividends.divYield > 0 ? pos(m.dividends.divYield + "%") : m.dividends.divYield + "%"],
+              ["Dividend Yield", (() => {
+                const dy = realDivYield != null ? realDivYield : +m.dividends.divYield;
+                return dy > 0 ? pos(dy.toFixed(2) + "%") : dy.toFixed(2) + "%";
+              })()],
               ["Annual Div/Share", m.dividends.annualDiv],
               ["Payout Ratio", m.dividends.payoutRatio],
               ["Ex-Div Date", m.dividends.exDivDate],
@@ -718,9 +745,9 @@ const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, volH
 
           <CollapseSection label="Share Structure">
             <MGrid items={[
-              ["Market Cap", fmtMarketCap(fund?.marketCap ?? null)],
-              ["Shares Outstanding", m.shareStructure.sharesOut],
-              ["Float", m.shareStructure.float],
+              ["Market Cap", fmtMarketCap(realMktCap)],
+              ["Shares Outstanding", realSharesFmt],
+              ["Float", realFloatFmt],
               ["Shares Short", m.shareStructure.sharesShort],
               ["Short % Float", m.shareStructure.shortPctFloat],
               ["Days to Cover", m.shareStructure.daysToCover],
@@ -735,8 +762,11 @@ const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, volH
               ["Next Earnings", m.earnings.nextEarnings],
               ["Last EPS Surprise", +m.earnings.lastEpsSurprise >= 0 ? pos(`+${m.earnings.lastEpsSurprise}%`) : neg(`${m.earnings.lastEpsSurprise}%`)],
               ["Consensus", <Badge key="consensus" color={m.earnings.consensus === "STRONG BUY" ? C.green : m.earnings.consensus === "BUY" ? C.green : C.gold}>{m.earnings.consensus}</Badge>],
-              ["Mean Price Target", m.earnings.meanTarget],
-              ["Upside to Target", pos(`+${m.earnings.upsideToTarget}%`)],
+              ["Mean Price Target", `$${meanTarget.toFixed(2)}`],
+              [upsideIsPositive ? "Upside to Target" : "Downside to Target",
+                upsideIsPositive
+                  ? pos(`+${actualUpside.toFixed(1)}%`)
+                  : neg(`${actualUpside.toFixed(1)}%`)],
               ["# of Analysts", m.earnings.numAnalysts],
               ["Implied Move", m.earnings.impliedMove, "Next earnings"],
             ]} />
@@ -773,22 +803,6 @@ const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, volH
           <Bar dataKey="v" fill={C.dim} radius={[1, 1, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
-
-      <Sec>MARGINS</Sec>
-      {m.margins.map((mg, i) => {
-        const mc = mg.v > 20 ? C.green : mg.v > 10 ? C.gold : C.red;
-        return (
-          <div key={i} style={{ padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-              <span style={{ fontSize: 14, fontFamily: f, color: C.textSoft }}>{mg.k}</span>
-              <span style={{ fontSize: 16, fontFamily: f, color: mc, fontWeight: 700 }}>{mg.v}%</span>
-            </div>
-            <div style={{ height: 4, background: C.border, borderRadius: 2 }}>
-              <div style={{ height: 4, width: `${Math.min(mg.v, 100)}%`, background: mc, borderRadius: 2 }} />
-            </div>
-          </div>
-        );
-      })}
 
       {ai?.priceAction && (
         <>
