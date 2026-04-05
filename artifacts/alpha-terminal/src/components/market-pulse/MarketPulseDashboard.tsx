@@ -235,7 +235,7 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
               className="inline-flex items-center p-[10px] rounded-lg font-mono text-[13px] font-bold tracking-wider transition-colors active:scale-95 active:brightness-110"
               style={{ transition: "transform 0.1s, filter 0.1s", background: "#000000", color: "#FFB800", border: "1px solid rgba(255,255,255,0.12)" }}
             >
-              Market Pulse
+              Check Pulse
             </button>
           </div>
         </div>
