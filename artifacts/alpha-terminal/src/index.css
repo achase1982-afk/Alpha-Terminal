@@ -106,6 +106,7 @@
     overflow-x: hidden;
     overscroll-behavior: none;
     overscroll-behavior-x: none;
+    overscroll-behavior-y: none;
   }
 
   body {
@@ -118,6 +119,7 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     touch-action: pan-y;
+    overscroll-behavior: none;
   }
 
   #root {
@@ -146,7 +148,7 @@
     overflow-y: auto;
     overflow-x: hidden;
     -webkit-overflow-scrolling: touch;
-    overscroll-behavior-y: none;
+    overscroll-behavior-y: contain;
   }
 
   input, textarea, select {
