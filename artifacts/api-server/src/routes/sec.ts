@@ -180,4 +180,47 @@ router.get("/company", async (req, res) => {
   }
 });
 
+router.get("/filing-content", async (req, res) => {
+  const url = (req.query.url as string || "").trim();
+  if (!url || !url.startsWith("https://www.sec.gov/")) {
+    return res.status(400).json({ error: "valid SEC url required" });
+  }
+
+  try {
+    const resp = await fetch(url, {
+      headers: {
+        "User-Agent": "AlphaTerminal support@alphaterminal.app",
+        "Accept": "text/html, application/xhtml+xml, text/plain, */*",
+      },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!resp.ok) {
+      return res.status(resp.status).json({ error: `SEC returned ${resp.status}` });
+    }
+
+    const contentType = resp.headers.get("content-type") || "";
+    const raw = await resp.text();
+
+    if (contentType.includes("html") || contentType.includes("xml") || raw.trimStart().startsWith("<")) {
+      let body = raw;
+      const bodyMatch = raw.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+      if (bodyMatch) body = bodyMatch[1];
+
+      body = body
+        .replace(/<script[\s\S]*?<\/script>/gi, "")
+        .replace(/<style[\s\S]*?<\/style>/gi, "")
+        .replace(/<link[^>]*>/gi, "")
+        .replace(/<img[^>]*>/gi, "")
+        .replace(/<meta[^>]*>/gi, "");
+
+      return res.json({ html: body.trim(), type: "html" });
+    }
+
+    return res.json({ text: raw, type: "text" });
+  } catch (err: any) {
+    req.log?.error({ err }, "SEC filing content fetch error");
+    return res.status(502).json({ error: "Failed to fetch filing content" });
+  }
+});
+
 export default router;
