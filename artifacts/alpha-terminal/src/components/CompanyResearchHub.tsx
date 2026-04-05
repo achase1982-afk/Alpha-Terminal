@@ -152,8 +152,148 @@ function genMockData(ticker: string) {
   ];
   const cik = `000${Math.floor(rng(1000000, 9999999))}`;
   const mktCapStr = `$${(price * rng(0.5, 5)).toFixed(1)}B`;
+  const pe = +rng(15, 60).toFixed(1);
+  const fwdPe = +rng(12, 45).toFixed(1);
+
+  const valuation = {
+    peTrailing: pe.toFixed(1) + "x",
+    peForward: fwdPe.toFixed(1) + "x",
+    peg: rng(0.8, 3).toFixed(2),
+    priceBook: rng(2, 12).toFixed(1) + "x",
+    priceSales: rng(1, 8).toFixed(1) + "x",
+    evRevenue: rng(2, 10).toFixed(1) + "x",
+    evEbitda: rng(10, 30).toFixed(1) + "x",
+    earningsYield: rng(2, 6).toFixed(2) + "%",
+  };
+
+  const profitability = {
+    grossMargin: rng(30, 75).toFixed(1),
+    opMargin: rng(10, 40).toFixed(1),
+    netMargin: rng(5, 25).toFixed(1),
+    ebitdaMargin: rng(15, 45).toFixed(1),
+    roe: rng(10, 50).toFixed(1),
+    roa: rng(5, 20).toFixed(1),
+    roic: rng(8, 25).toFixed(1),
+    fcfMargin: rng(8, 30).toFixed(1),
+  };
+
+  const growth = {
+    revYoY: rng(-5, 25).toFixed(1),
+    epsYoY: rng(-10, 30).toFixed(1),
+    fwdRevGrowth: rng(2, 15).toFixed(1),
+    fwdEpsGrowth: rng(5, 20).toFixed(1),
+  };
+
+  const cashFlow = {
+    fcfTTM: `$${rng(5, 80).toFixed(1)}B`,
+    fcfYield: rng(1.5, 6).toFixed(2),
+    fcfPerShare: `$${rng(1, 10).toFixed(2)}`,
+    fcfMarginVal: rng(8, 30).toFixed(1),
+    capexRevenue: rng(3, 15).toFixed(1) + "%",
+  };
+
+  const dividends = {
+    divYield: rng(0, 4).toFixed(2),
+    annualDiv: `$${rng(0.5, 5).toFixed(2)}`,
+    payoutRatio: rng(15, 60).toFixed(1) + "%",
+    exDivDate: "Feb 7, 2025",
+    div5yGrowth: rng(2, 12).toFixed(1),
+    frequency: "Quarterly",
+  };
+
+  const shareStructure = {
+    mktCap: mktCapStr,
+    sharesOut: `${rng(0.5, 10).toFixed(2)}B`,
+    float: `${rng(0.4, 9.5).toFixed(2)}B`,
+    sharesShort: `${rng(10, 200).toFixed(1)}M`,
+    shortPctFloat: rng(1, 8).toFixed(2) + "%",
+    daysToCover: rng(1, 5).toFixed(1),
+    instOwnership: rng(60, 85).toFixed(1) + "%",
+    insiderOwnership: rng(0.5, 5).toFixed(1) + "%",
+    netChange13F: `${rng(0.5, 5).toFixed(1)}B`,
+  };
+
+  const earnings = {
+    nextEarnings: "Apr 25, 2025",
+    lastEpsSurprise: rng(-5, 12).toFixed(1),
+    consensus: rng(0, 1) > 0.3 ? "STRONG BUY" : rng(0, 1) > 0.5 ? "BUY" : "HOLD",
+    meanTarget: `$${(price * rng(1.02, 1.2)).toFixed(2)}`,
+    upsideToTarget: rng(2, 15).toFixed(1),
+    numAnalysts: Math.floor(rng(15, 50)).toString(),
+    impliedMove: `±${rng(2, 8).toFixed(1)}%`,
+  };
+
+  const optionsProfile = {
+    ivRank: `${Math.floor(rng(20, 80))} / 100`,
+    ivPercentile: `${Math.floor(rng(25, 85))}%`,
+    iv30d: rng(15, 40).toFixed(1) + "%",
+    putCallRatio: rng(0.6, 1.5).toFixed(2),
+    shortInterest: rng(1, 6).toFixed(2) + "% float",
+    borrowRate: rng(0.1, 2).toFixed(2) + "% ann.",
+  };
+
+  const etfData = {
+    expenseRatio: rng(0.03, 0.75).toFixed(4) + "%",
+    aum: `$${rng(10, 700).toFixed(1)}B`,
+    holdings: Math.floor(rng(30, 600)).toString(),
+    indexTracked: ["S&P 500", "NASDAQ-100", "Russell 2000", "Dow Jones"][Math.floor(rng(0, 4))],
+    issuer: ["State Street", "Vanguard", "BlackRock", "Invesco"][Math.floor(rng(0, 4))],
+    inception: ["Jan 22, 1993", "Sep 7, 2010", "Jun 15, 2006", "Mar 10, 1999"][Math.floor(rng(0, 4))],
+    replication: "Physical",
+    nav: `$${price.toFixed(2)}`,
+    premDiscount: (rng(-0.1, 0.1)).toFixed(2) + "%",
+    bidAskSpread: rng(0.01, 0.05).toFixed(2) + "%",
+    peTrailing: rng(18, 30).toFixed(1) + "x",
+    peForward: rng(16, 25).toFixed(1) + "x",
+    priceBook: rng(3, 6).toFixed(1) + "x",
+    wtdAvgMktCap: `$${rng(300, 900).toFixed(1)}B`,
+    sec30dayYield: rng(0.5, 3).toFixed(2) + "%",
+    distTTM: rng(0.8, 3).toFixed(2) + "%",
+    annualDist: `$${rng(3, 12).toFixed(2)}`,
+    exDivDate: "Mar 21, 2025",
+    volToday: `${rng(20, 100).toFixed(2)}M`,
+    vol30dAvg: `${rng(20, 90).toFixed(1)}M`,
+    volVs30d: rng(-10, 15).toFixed(1),
+    turnoverRatio: Math.floor(rng(2, 8)) + "%",
+    dailyNetFlow: rng(-500, 800).toFixed(0),
+    weekFlow: rng(-2, 5).toFixed(2),
+    monthFlow: rng(-5, 10).toFixed(2),
+    threeMonthFlow: rng(-8, 15).toFixed(2),
+    beta: rng(0.95, 1.05).toFixed(2),
+    stdDev1y: rng(10, 22).toFixed(1) + "%",
+    sharpe1y: rng(0.5, 1.5).toFixed(2),
+    maxDrawdown1y: rng(10, 25).toFixed(1),
+    trackingError: rng(0.01, 0.1).toFixed(2) + "%",
+    trackingDiff: rng(-0.1, 0.05).toFixed(2) + "%",
+    sectorWeights: [
+      ["Information Tech.", +rng(25, 35).toFixed(1), "#4FC3F7"],
+      ["Financials", +rng(10, 16).toFixed(1), "#81C784"],
+      ["Health Care", +rng(9, 14).toFixed(1), "#CE93D8"],
+      ["Consumer Discr.", +rng(8, 13).toFixed(1), "#FFB74D"],
+      ["Industrials", +rng(6, 11).toFixed(1), "#4DD0E1"],
+      ["Communication Svcs", +rng(5, 10).toFixed(1), "#F48FB1"],
+      ["Consumer Staples", +rng(4, 8).toFixed(1), "#A5D6A7"],
+      ["Energy", +rng(2, 5).toFixed(1), "#FFCC02"],
+      ["Utilities", +rng(1.5, 4).toFixed(1), "#80DEEA"],
+      ["Materials", +rng(1, 3.5).toFixed(1), "#BCAAA4"],
+    ] as [string, number, string][],
+    topHoldings: [
+      ["1", "AAPL", "Apple Inc.", rng(5, 8).toFixed(2) + "%"],
+      ["2", "MSFT", "Microsoft Corp.", rng(5, 7).toFixed(2) + "%"],
+      ["3", "NVDA", "NVIDIA Corp.", rng(4, 7).toFixed(2) + "%"],
+      ["4", "AMZN", "Amazon.com", rng(2, 5).toFixed(2) + "%"],
+      ["5", "META", "Meta Platforms", rng(1.5, 4).toFixed(2) + "%"],
+      ["6", "GOOGL", "Alphabet Cl A", rng(1, 3).toFixed(2) + "%"],
+      ["7", "GOOG", "Alphabet Cl C", rng(1, 2.5).toFixed(2) + "%"],
+      ["8", "BRK.B", "Berkshire Hath.", rng(1, 2.5).toFixed(2) + "%"],
+      ["9", "LLY", "Eli Lilly", rng(1, 2).toFixed(2) + "%"],
+      ["10", "JPM", "JPMorgan Chase", rng(1, 2).toFixed(2) + "%"],
+    ] as [string, string, string, string][],
+  };
+
   return { rev, epsData, margins, bs, cf, filings, holders, insiders, cik, mktCapStr, price,
-    pe: rng(15, 60).toFixed(1), fwdPe: rng(12, 45).toFixed(1),
+    pe: pe.toFixed(1), fwdPe: fwdPe.toFixed(1),
+    valuation, profitability, growth, cashFlow, dividends, shareStructure, earnings, optionsProfile, etfData,
   };
 }
 
@@ -205,6 +345,97 @@ function MetricRow({ label, value, color }: { label: string; value: string; colo
 function Tag({ children, color = C.label }: { children: React.ReactNode; color?: string }) {
   return <span style={{ display: "inline-block", padding: "2px 8px", fontSize: 12, fontFamily: f, fontWeight: 700, color, border: `1px solid ${color}55`, letterSpacing: 0.5 }}>{children}</span>;
 }
+
+function Badge({ children, color = C.gold }: { children: React.ReactNode; color?: string }) {
+  return (
+    <span style={{
+      background: color + "18",
+      border: `1px solid ${color}55`,
+      color: color,
+      fontSize: 9,
+      fontFamily: f,
+      letterSpacing: "0.12em",
+      padding: "2px 7px",
+      borderRadius: 3,
+      textTransform: "uppercase",
+      fontWeight: 700,
+    }}>{children}</span>
+  );
+}
+
+function CollapseSection({ label, children, defaultOpen = true }: { label: string; children: React.ReactNode; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div
+        onClick={() => setOpen(o => !o)}
+        style={{
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+          cursor: "pointer", paddingBottom: 8, marginBottom: 10,
+          borderBottom: `1px solid ${C.border}`, userSelect: "none",
+        }}
+      >
+        <span style={{ fontSize: 10, fontFamily: f, letterSpacing: "0.18em", color: C.gold, fontWeight: 700, textTransform: "uppercase" }}>{label}</span>
+        <span style={{ color: C.textMuted, fontSize: 11 }}>{open ? "▲" : "▼"}</span>
+      </div>
+      {open && children}
+    </div>
+  );
+}
+
+type MGridItem = [string, React.ReactNode, string?];
+function MGrid({ items }: { items: MGridItem[] }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 16px", marginBottom: 4 }}>
+      {items.map(([label, value, sub], i) => (
+        <div key={i}>
+          <div style={{ fontSize: 9, color: C.textMuted, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 2, fontFamily: f }}>{label}</div>
+          <div style={{ fontSize: 15, fontWeight: 600, color: C.text, fontFamily: f, lineHeight: 1.2 }}>{value ?? <span style={{ color: C.textMuted }}>—</span>}</div>
+          {sub && <div style={{ fontSize: 9, color: C.textDim, marginTop: 1, fontFamily: f }}>{sub}</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function HeroMetrics({ items }: { items: [string, string, string, string][] }) {
+  return (
+    <div style={{
+      display: "grid", gridTemplateColumns: `repeat(${items.length}, 1fr)`,
+      gap: 1, marginBottom: 16, background: C.border, borderRadius: 6, overflow: "hidden",
+    }}>
+      {items.map(([label, value, sub, color]) => (
+        <div key={label} style={{ background: C.card, padding: "12px 10px" }}>
+          <div style={{ fontSize: 9, color: C.textMuted, letterSpacing: "0.12em", fontFamily: f, textTransform: "uppercase", marginBottom: 4 }}>{label}</div>
+          <div style={{ fontSize: 18, fontWeight: 700, color, fontFamily: f }}>{value}</div>
+          <div style={{ fontSize: 9, color: C.textMuted, fontFamily: f, marginTop: 2 }}>{sub}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SectorBar({ sector, weight, color }: { sector: string; weight: number; color: string }) {
+  return (
+    <div style={{ marginBottom: 7 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+        <span style={{ fontSize: 10, color: C.textDim, fontFamily: f }}>{sector}</span>
+        <span style={{ fontSize: 10, color: C.text, fontFamily: f }}>{weight}%</span>
+      </div>
+      <div style={{ background: "#1A1A1A", borderRadius: 2, height: 4, overflow: "hidden" }}>
+        <div style={{ width: `${(weight / 35) * 100}%`, height: "100%", background: color, borderRadius: 2 }} />
+      </div>
+    </div>
+  );
+}
+
+const ETF_TICKERS = new Set(["SPY","QQQ","IWM","DIA","VOO","VTI","ARKK","XLF","XLE","XLK","XLV","XLY","XLP","XLI","XLB","XLU","XLRE","XLC","GLD","SLV","TLT","HYG","LQD","EEM","EFA","VEA","VWO","BND","AGG","SCHD","VIG","VYM","JEPI","JEPQ","IVV","VGT","SOXX","SMH","IBB","XBI","KWEB","ARKW","ARKG","ARKF","SQQQ","TQQQ","SPXL","SPXS","UVXY","VXX","USO","UNG"]);
+function isETF(symbol: string): boolean {
+  return ETF_TICKERS.has(symbol.toUpperCase());
+}
+
+const pos = (v: string) => <span style={{ color: C.green }}>{v}</span>;
+const neg = (v: string) => <span style={{ color: C.red }}>{v}</span>;
 
 interface AiAnalysis {
   priceAction?: { status: string; trend: string; momentum: string; bias: string };
@@ -266,7 +497,9 @@ const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, volH
   const currentPrice = quoteData?.last;
   const high52 = fund?.high52 ?? quoteData?.fiftyTwoWeekHigh;
   const low52 = fund?.low52 ?? quoteData?.fiftyTwoWeekLow;
-  const mock = useMemo(() => genMockData(quoteData?.symbol || "AAPL"), [quoteData?.symbol]);
+  const sym = quoteData?.symbol || "AAPL";
+  const mock = useMemo(() => genMockData(sym), [sym]);
+  const etf = isETF(sym);
 
   const pe = fund?.peRatio ?? quoteData?.peRatio ?? null;
   const eps = fund?.eps ?? null;
@@ -275,25 +508,287 @@ const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, volH
   const chg = quoteData?.netChange ?? 0;
 
   const biasColor = ai?.priceAction?.bias?.includes("Bullish") ? C.green : ai?.priceAction?.bias?.includes("Bearish") ? C.red : C.gold;
+  const m = mock;
 
   return (
     <>
-      {ai && (
+      {etf ? (
         <>
-          <Sec>FUNDAMENTALS</Sec>
-          <FundGrid items={[
-            { label: "Mkt Cap", value: fmtMarketCap(fund?.marketCap ?? null) },
-            { label: "Shares", value: fmtShares(fund?.sharesOutstanding ?? null) },
-            { label: "P/E", value: pe != null ? pe.toFixed(1) : "—" },
-            { label: "EPS", value: eps != null ? eps.toFixed(2) : "—" },
-            { label: "Beta", value: beta != null ? beta.toFixed(2) : "—" },
-            { label: "Div Yld", value: divYield != null ? `${divYield.toFixed(2)}%` : "—" },
+          <HeroMetrics items={[
+            ["Expense Ratio", m.etfData.expenseRatio, "Low cost proxy", C.gold],
+            ["AUM", m.etfData.aum, "Total assets", C.text],
+            ["Holdings", m.etfData.holdings, "Constituents", C.text],
           ]} />
-          {high52 != null && low52 != null && currentPrice != null && (
-            <RangeBar lo={low52} hi={high52} current={currentPrice.toFixed(2)} />
-          )}
+
+          <CollapseSection label="Fund Overview">
+            <MGrid items={[
+              ["Index Tracked", m.etfData.indexTracked],
+              ["Issuer", m.etfData.issuer],
+              ["Inception", m.etfData.inception],
+              ["Replication", m.etfData.replication],
+            ]} />
+          </CollapseSection>
+
+          <CollapseSection label="Pricing & NAV">
+            <MGrid items={[
+              ["NAV", m.etfData.nav],
+              ["Premium/Discount", +m.etfData.premDiscount.replace("%","") >= 0 ? pos(m.etfData.premDiscount) : neg(m.etfData.premDiscount), "Near par"],
+              ["Bid/Ask Spread", m.etfData.bidAskSpread, "Highly liquid"],
+              ["Last NAV Update", "4:00 PM ET"],
+            ]} />
+          </CollapseSection>
+
+          <CollapseSection label="Basket Valuation (Weighted Avg)">
+            <MGrid items={[
+              ["P/E Trailing", m.etfData.peTrailing],
+              ["P/E Forward", m.etfData.peForward],
+              ["Price / Book", m.etfData.priceBook],
+              ["Wtd. Avg Mkt Cap", m.etfData.wtdAvgMktCap],
+            ]} />
+          </CollapseSection>
+
+          <CollapseSection label="Yield & Distributions">
+            <MGrid items={[
+              ["SEC 30-Day Yield", pos(m.etfData.sec30dayYield)],
+              ["Distribution (TTM)", pos(m.etfData.distTTM)],
+              ["Annual Dist./Share", m.etfData.annualDist],
+              ["Ex-Div Date", m.etfData.exDivDate],
+              ["Frequency", "Quarterly"],
+            ]} />
+          </CollapseSection>
+
+          <CollapseSection label="Liquidity">
+            <MGrid items={[
+              ["Volume Today", m.etfData.volToday],
+              ["30D Avg Volume", m.etfData.vol30dAvg],
+              ["Vol vs 30D Avg", +m.etfData.volVs30d >= 0 ? pos(`+${m.etfData.volVs30d}%`) : neg(`${m.etfData.volVs30d}%`)],
+              ["Turnover Ratio", m.etfData.turnoverRatio, "Tax efficient"],
+            ]} />
+          </CollapseSection>
+
+          <CollapseSection label="Fund Flows" defaultOpen={false}>
+            <div style={{ fontSize: 9, color: C.textMuted, fontFamily: f, marginBottom: 8, padding: "4px 8px", background: "#0D0D0D", borderRadius: 3 }}>
+              Institutional flow signal
+            </div>
+            <MGrid items={[
+              ["Daily Net Flow", +m.etfData.dailyNetFlow >= 0 ? pos(`+$${m.etfData.dailyNetFlow}M`) : neg(`-$${Math.abs(+m.etfData.dailyNetFlow)}M`)],
+              ["1-Week Flow", +m.etfData.weekFlow >= 0 ? pos(`+$${m.etfData.weekFlow}B`) : neg(`$${m.etfData.weekFlow}B`)],
+              ["1-Month Flow", +m.etfData.monthFlow >= 0 ? pos(`+$${m.etfData.monthFlow}B`) : neg(`$${m.etfData.monthFlow}B`)],
+              ["3-Month Flow", +m.etfData.threeMonthFlow >= 0 ? pos(`+$${m.etfData.threeMonthFlow}B`) : neg(`$${m.etfData.threeMonthFlow}B`)],
+            ]} />
+          </CollapseSection>
+
+          <CollapseSection label="Risk & Factor Metrics">
+            <MGrid items={[
+              ["Beta (S&P 500)", m.etfData.beta],
+              ["Std Dev 1Y Ann.", m.etfData.stdDev1y],
+              ["Sharpe Ratio 1Y", m.etfData.sharpe1y],
+              ["Max Drawdown 1Y", neg(`-${m.etfData.maxDrawdown1y}%`)],
+              ["Tracking Error 1Y", m.etfData.trackingError],
+              ["Tracking Diff 1Y", neg(m.etfData.trackingDiff), "Return vs index"],
+            ]} />
+          </CollapseSection>
+
+          <CollapseSection label="Sector Weights" defaultOpen={false}>
+            {m.etfData.sectorWeights.map(([s, w, c]) => <SectorBar key={s} sector={s} weight={w} color={c} />)}
+          </CollapseSection>
+
+          <CollapseSection label="Top 10 Holdings" defaultOpen={false}>
+            <div style={{ display: "grid", gridTemplateColumns: "20px 44px 1fr 48px", gap: "0 8px", marginBottom: 6 }}>
+              {["#", "TICK", "NAME", "WT"].map(h => (
+                <span key={h} style={{ fontSize: 8, color: C.textMuted, letterSpacing: "0.1em", fontFamily: f, textTransform: "uppercase" }}>{h}</span>
+              ))}
+            </div>
+            {m.etfData.topHoldings.map(([rank, ticker, name, wt]) => (
+              <div key={rank} style={{ display: "grid", gridTemplateColumns: "20px 44px 1fr 48px", gap: "0 8px", padding: "4px 0", borderBottom: `1px solid ${C.border}` }}>
+                <span style={{ fontSize: 10, color: C.textMuted, fontFamily: f }}>{rank}</span>
+                <span style={{ fontSize: 10, color: C.gold, fontFamily: f, fontWeight: 700 }}>{ticker}</span>
+                <span style={{ fontSize: 10, color: C.textDim, fontFamily: f, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{name}</span>
+                <span style={{ fontSize: 10, color: C.text, fontFamily: f, textAlign: "right" }}>{wt}</span>
+              </div>
+            ))}
+            <div style={{ marginTop: 8, padding: "6px 8px", background: "#161616", borderRadius: 4 }}>
+              <span style={{ fontSize: 10, color: C.textMuted, fontFamily: f }}>Top 10 Concentration: </span>
+              <span style={{ fontSize: 10, color: C.gold, fontFamily: f, fontWeight: 700 }}>
+                {m.etfData.topHoldings.reduce((s, h) => s + parseFloat(h[3]), 0).toFixed(2)}% of AUM
+              </span>
+            </div>
+          </CollapseSection>
+
+          <CollapseSection label="Options Profile">
+            <MGrid items={[
+              ["IV Rank", m.optionsProfile.ivRank],
+              ["IV Percentile", m.optionsProfile.ivPercentile],
+              ["30D Implied Vol", m.optionsProfile.iv30d],
+              ["Put/Call Ratio (OI)", +m.optionsProfile.putCallRatio > 1.2 ? neg(m.optionsProfile.putCallRatio) : m.optionsProfile.putCallRatio, +m.optionsProfile.putCallRatio > 1.2 ? "Elevated hedging" : undefined],
+              ["Short Interest", m.optionsProfile.shortInterest],
+              ["Borrow Rate", m.optionsProfile.borrowRate],
+            ]} />
+          </CollapseSection>
+        </>
+      ) : (
+        <>
+          <HeroMetrics items={[
+            ["EV / EBITDA", m.valuation.evEbitda, "Primary valuation", C.gold],
+            ["FCF Yield", m.cashFlow.fcfYield + "%", "Cash return", C.green],
+            ["ROIC", m.profitability.roic + "%", "Capital efficiency", C.text],
+          ]} />
+
+          <CollapseSection label="Fundamentals">
+            <FundGrid items={[
+              { label: "Mkt Cap", value: fmtMarketCap(fund?.marketCap ?? null) },
+              { label: "Shares", value: fmtShares(fund?.sharesOutstanding ?? null) },
+              { label: "P/E", value: pe != null ? pe.toFixed(1) : "—" },
+              { label: "EPS", value: eps != null ? eps.toFixed(2) : "—" },
+              { label: "Beta", value: beta != null ? beta.toFixed(2) : "—" },
+              { label: "Div Yld", value: divYield != null ? `${divYield.toFixed(2)}%` : "—" },
+            ]} />
+            {high52 != null && low52 != null && currentPrice != null && (
+              <RangeBar lo={low52} hi={high52} current={currentPrice.toFixed(2)} />
+            )}
+          </CollapseSection>
+
+          <CollapseSection label="Valuation">
+            <MGrid items={[
+              ["P/E Trailing", m.valuation.peTrailing],
+              ["P/E Forward", m.valuation.peForward],
+              ["PEG Ratio", m.valuation.peg],
+              ["Price / Book", m.valuation.priceBook],
+              ["Price / Sales", m.valuation.priceSales],
+              ["EV / Revenue", m.valuation.evRevenue],
+              ["EV / EBITDA", m.valuation.evEbitda],
+              ["Earnings Yield", m.valuation.earningsYield],
+            ]} />
+          </CollapseSection>
+
+          <CollapseSection label="Profitability">
+            <MGrid items={[
+              ["Gross Margin", pos(m.profitability.grossMargin + "%")],
+              ["Operating Margin", pos(m.profitability.opMargin + "%")],
+              ["Net Margin", pos(m.profitability.netMargin + "%")],
+              ["EBITDA Margin", pos(m.profitability.ebitdaMargin + "%")],
+              ["ROE", pos(m.profitability.roe + "%")],
+              ["ROA", pos(m.profitability.roa + "%")],
+              ["ROIC", pos(m.profitability.roic + "%")],
+              ["FCF Margin", pos(m.profitability.fcfMargin + "%")],
+            ]} />
+          </CollapseSection>
+
+          <CollapseSection label="Growth">
+            <MGrid items={[
+              ["Revenue Growth YoY", +m.growth.revYoY >= 0 ? pos(`+${m.growth.revYoY}%`) : neg(`${m.growth.revYoY}%`)],
+              ["EPS Growth YoY", +m.growth.epsYoY >= 0 ? pos(`+${m.growth.epsYoY}%`) : neg(`${m.growth.epsYoY}%`)],
+              ["Fwd Rev Growth", pos(`+${m.growth.fwdRevGrowth}%`), "Consensus est."],
+              ["Fwd EPS Growth", pos(`+${m.growth.fwdEpsGrowth}%`), "Consensus est."],
+            ]} />
+          </CollapseSection>
+
+          <CollapseSection label="Balance Sheet">
+            <MGrid items={[
+              ["Total Debt", `$${m.bs.debt}B`],
+              ["Net Debt", `$${(+m.bs.debt - +m.bs.cash).toFixed(1)}B`],
+              ["Debt / Equity", m.bs.deRatio + "x"],
+              ["Current Ratio", m.bs.curRatio + "x"],
+              ["Quick Ratio", (+m.bs.curRatio * 0.82).toFixed(2) + "x"],
+              ["Interest Coverage", (+m.bs.curRatio * 8.5).toFixed(1) + "x"],
+              ["Net Debt / EBITDA", (+m.bs.debt / (+m.bs.equity * 0.34 || 1)).toFixed(2) + "x"],
+            ]} />
+          </CollapseSection>
+
+          <CollapseSection label="Cash Flow">
+            <MGrid items={[
+              ["FCF (TTM)", m.cashFlow.fcfTTM],
+              ["FCF Yield", pos(m.cashFlow.fcfYield + "%")],
+              ["FCF Per Share", m.cashFlow.fcfPerShare],
+              ["FCF Margin", pos(m.cashFlow.fcfMarginVal + "%")],
+              ["CapEx / Revenue", m.cashFlow.capexRevenue],
+            ]} />
+          </CollapseSection>
+
+          <CollapseSection label="Dividends" defaultOpen={false}>
+            <MGrid items={[
+              ["Dividend Yield", +m.dividends.divYield > 0 ? pos(m.dividends.divYield + "%") : m.dividends.divYield + "%"],
+              ["Annual Div/Share", m.dividends.annualDiv],
+              ["Payout Ratio", m.dividends.payoutRatio],
+              ["Ex-Div Date", m.dividends.exDivDate],
+              ["5Y Div Growth", pos(`+${m.dividends.div5yGrowth}%`)],
+              ["Frequency", m.dividends.frequency],
+            ]} />
+          </CollapseSection>
+
+          <CollapseSection label="Share Structure">
+            <MGrid items={[
+              ["Market Cap", fmtMarketCap(fund?.marketCap ?? null)],
+              ["Shares Outstanding", m.shareStructure.sharesOut],
+              ["Float", m.shareStructure.float],
+              ["Shares Short", m.shareStructure.sharesShort],
+              ["Short % Float", m.shareStructure.shortPctFloat],
+              ["Days to Cover", m.shareStructure.daysToCover],
+              ["Inst. Ownership", pos(m.shareStructure.instOwnership)],
+              ["Insider Ownership", m.shareStructure.insiderOwnership],
+              ["13F Net Change", pos(`+$${m.shareStructure.netChange13F}`), "Last quarter"],
+            ]} />
+          </CollapseSection>
+
+          <CollapseSection label="Earnings & Analyst">
+            <MGrid items={[
+              ["Next Earnings", m.earnings.nextEarnings],
+              ["Last EPS Surprise", +m.earnings.lastEpsSurprise >= 0 ? pos(`+${m.earnings.lastEpsSurprise}%`) : neg(`${m.earnings.lastEpsSurprise}%`)],
+              ["Consensus", <Badge key="consensus" color={m.earnings.consensus === "STRONG BUY" ? C.green : m.earnings.consensus === "BUY" ? C.green : C.gold}>{m.earnings.consensus}</Badge>],
+              ["Mean Price Target", m.earnings.meanTarget],
+              ["Upside to Target", pos(`+${m.earnings.upsideToTarget}%`)],
+              ["# of Analysts", m.earnings.numAnalysts],
+              ["Implied Move", m.earnings.impliedMove, "Next earnings"],
+            ]} />
+          </CollapseSection>
+
+          <CollapseSection label="Options Profile">
+            <MGrid items={[
+              ["IV Rank", m.optionsProfile.ivRank],
+              ["IV Percentile", m.optionsProfile.ivPercentile],
+              ["30D Implied Vol", m.optionsProfile.iv30d],
+              ["Put/Call Ratio (OI)", m.optionsProfile.putCallRatio],
+              ["Short Interest", m.optionsProfile.shortInterest],
+              ["Borrow Rate", m.optionsProfile.borrowRate],
+            ]} />
+          </CollapseSection>
         </>
       )}
+
+      <Sec>30-DAY PRICE</Sec>
+      <ResponsiveContainer width="100%" height={160}>
+        <AreaChart data={priceHist}>
+          <defs><linearGradient id="pg" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.gold} stopOpacity={0.15} /><stop offset="95%" stopColor={C.gold} stopOpacity={0} /></linearGradient></defs>
+          <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
+          <XAxis dataKey="w" tick={{ fill: C.label, fontSize: 10, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
+          <YAxis tick={{ fill: C.label, fontSize: 10, fontFamily: f }} domain={["auto", "auto"]} axisLine={{ stroke: C.border }} tickLine={false} />
+          <Tooltip contentStyle={tt} />
+          <Area type="monotone" dataKey="p" stroke={C.gold} fill="url(#pg)" strokeWidth={2} dot={false} name="Price" />
+        </AreaChart>
+      </ResponsiveContainer>
+      <ResponsiveContainer width="100%" height={50}>
+        <BarChart data={volHist}>
+          <XAxis dataKey="d" tick={false} axisLine={{ stroke: C.border }} />
+          <YAxis tick={false} axisLine={false} />
+          <Bar dataKey="v" fill={C.dim} radius={[1, 1, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+
+      <Sec>MARGINS</Sec>
+      {m.margins.map((mg, i) => {
+        const mc = mg.v > 20 ? C.green : mg.v > 10 ? C.gold : C.red;
+        return (
+          <div key={i} style={{ padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+              <span style={{ fontSize: 14, fontFamily: f, color: C.textSoft }}>{mg.k}</span>
+              <span style={{ fontSize: 16, fontFamily: f, color: mc, fontWeight: 700 }}>{mg.v}%</span>
+            </div>
+            <div style={{ height: 4, background: C.border, borderRadius: 2 }}>
+              <div style={{ height: 4, width: `${Math.min(mg.v, 100)}%`, background: mc, borderRadius: 2 }} />
+            </div>
+          </div>
+        );
+      })}
 
       {ai?.priceAction && (
         <>
@@ -343,25 +838,6 @@ const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, volH
           </div>
         </>
       )}
-
-      <Sec>30-DAY PRICE</Sec>
-      <ResponsiveContainer width="100%" height={160}>
-        <AreaChart data={priceHist}>
-          <defs><linearGradient id="pg" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.gold} stopOpacity={0.15} /><stop offset="95%" stopColor={C.gold} stopOpacity={0} /></linearGradient></defs>
-          <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
-          <XAxis dataKey="w" tick={{ fill: C.label, fontSize: 10, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
-          <YAxis tick={{ fill: C.label, fontSize: 10, fontFamily: f }} domain={["auto", "auto"]} axisLine={{ stroke: C.border }} tickLine={false} />
-          <Tooltip contentStyle={tt} />
-          <Area type="monotone" dataKey="p" stroke={C.gold} fill="url(#pg)" strokeWidth={2} dot={false} name="Price" />
-        </AreaChart>
-      </ResponsiveContainer>
-      <ResponsiveContainer width="100%" height={50}>
-        <BarChart data={volHist}>
-          <XAxis dataKey="d" tick={false} axisLine={{ stroke: C.border }} />
-          <YAxis tick={false} axisLine={false} />
-          <Bar dataKey="v" fill={C.dim} radius={[1, 1, 0, 0]} />
-        </BarChart>
-      </ResponsiveContainer>
 
       {ai?.chartPattern && (
         <>
@@ -476,22 +952,6 @@ const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, volH
           )}
         </>
       )}
-
-      <Sec>MARGINS</Sec>
-      {mock.margins.map((m, i) => {
-        const mc = m.v > 20 ? C.green : m.v > 10 ? C.gold : C.red;
-        return (
-          <div key={i} style={{ padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-              <span style={{ fontSize: 14, fontFamily: f, color: C.textSoft }}>{m.k}</span>
-              <span style={{ fontSize: 16, fontFamily: f, color: mc, fontWeight: 700 }}>{m.v}%</span>
-            </div>
-            <div style={{ height: 4, background: C.border, borderRadius: 2 }}>
-              <div style={{ height: 4, width: `${Math.min(m.v, 100)}%`, background: mc, borderRadius: 2 }} />
-            </div>
-          </div>
-        );
-      })}
     </>
   );
 });

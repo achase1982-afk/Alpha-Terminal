@@ -1,0 +1,582 @@
+import { useState } from “react”;
+
+const gold = “#D4AF37”;
+const goldDim = “#9A7D1A”;
+const bg = “#0A0A0A”;
+const cardBg = “#111111”;
+const cardBorder = “#1E1E1E”;
+const textPrimary = “#F0F0F0”;
+const textMuted = “#6B6B6B”;
+const textSub = “#9A9A9A”;
+const green = “#00C853”;
+const red = “#FF3D3D”;
+const blue = “#4FC3F7”;
+
+const pos = (v) => <span style={{ color: green }}>{v}</span>;
+const neg = (v) => <span style={{ color: red }}>{v}</span>;
+const neu = (v) => <span style={{ color: textMuted }}>{v}</span>;
+
+function Badge({ children, color = gold }) {
+return (
+<span style={{
+background: color + “18”,
+border: `1px solid ${color}55`,
+color: color,
+fontSize: 9,
+fontFamily: “monospace”,
+letterSpacing: “0.12em”,
+padding: “2px 7px”,
+borderRadius: 3,
+textTransform: “uppercase”,
+fontWeight: 700,
+}}>{children}</span>
+);
+}
+
+function SectionHeader({ label, onToggle, open }) {
+return (
+<div
+onClick={onToggle}
+style={{
+display: “flex”,
+justifyContent: “space-between”,
+alignItems: “center”,
+cursor: “pointer”,
+paddingBottom: 8,
+marginBottom: 10,
+borderBottom: `1px solid ${cardBorder}`,
+userSelect: “none”,
+}}
+>
+<span style={{
+fontSize: 10,
+fontFamily: “monospace”,
+letterSpacing: “0.18em”,
+color: gold,
+fontWeight: 700,
+textTransform: “uppercase”,
+}}>{label}</span>
+<span style={{ color: textMuted, fontSize: 11 }}>{open ? “▲” : “▼”}</span>
+</div>
+);
+}
+
+function Section({ label, children, defaultOpen = true }) {
+const [open, setOpen] = useState(defaultOpen);
+return (
+<div style={{ marginBottom: 18 }}>
+<SectionHeader label={label} onToggle={() => setOpen(o => !o)} open={open} />
+{open && children}
+</div>
+);
+}
+
+function MetricGrid({ items }) {
+return (
+<div style={{
+display: “grid”,
+gridTemplateColumns: “1fr 1fr”,
+gap: “10px 16px”,
+marginBottom: 4,
+}}>
+{items.map(([label, value, sub], i) => (
+<div key={i}>
+<div style={{ fontSize: 9, color: textMuted, letterSpacing: “0.1em”, textTransform: “uppercase”, marginBottom: 2, fontFamily: “monospace” }}>{label}</div>
+<div style={{ fontSize: 15, fontWeight: 600, color: textPrimary, fontFamily: “monospace”, lineHeight: 1.2 }}>{value ?? neu(”—”)}</div>
+{sub && <div style={{ fontSize: 9, color: textSub, marginTop: 1, fontFamily: “monospace” }}>{sub}</div>}
+</div>
+))}
+</div>
+);
+}
+
+function MetricRow({ label, value, highlight }) {
+return (
+<div style={{
+display: “flex”,
+justifyContent: “space-between”,
+alignItems: “center”,
+padding: “6px 0”,
+borderBottom: `1px solid ${cardBorder}`,
+}}>
+<span style={{ fontSize: 11, color: textSub, fontFamily: “monospace” }}>{label}</span>
+<span style={{ fontSize: 12, fontWeight: 600, color: highlight || textPrimary, fontFamily: “monospace” }}>{value}</span>
+</div>
+);
+}
+
+function SectorBar({ sector, weight, color }) {
+return (
+<div style={{ marginBottom: 7 }}>
+<div style={{ display: “flex”, justifyContent: “space-between”, marginBottom: 3 }}>
+<span style={{ fontSize: 10, color: textSub, fontFamily: “monospace” }}>{sector}</span>
+<span style={{ fontSize: 10, color: textPrimary, fontFamily: “monospace” }}>{weight}%</span>
+</div>
+<div style={{ background: “#1A1A1A”, borderRadius: 2, height: 4, overflow: “hidden” }}>
+<div style={{ width: `${(weight / 33) * 100}%`, height: “100%”, background: color, borderRadius: 2 }} />
+</div>
+</div>
+);
+}
+
+function HoldingsTable() {
+const holdings = [
+[“1”, “AAPL”, “Apple Inc.”, “7.12%”],
+[“2”, “MSFT”, “Microsoft Corp.”, “6.89%”],
+[“3”, “NVDA”, “NVIDIA Corp.”, “6.31%”],
+[“4”, “AMZN”, “Amazon.com”, “3.87%”],
+[“5”, “META”, “Meta Platforms”, “2.61%”],
+[“6”, “GOOGL”, “Alphabet Cl A”, “2.09%”],
+[“7”, “GOOG”, “Alphabet Cl C”, “1.77%”],
+[“8”, “BRK.B”, “Berkshire Hath.”, “1.72%”],
+[“9”, “LLY”, “Eli Lilly”, “1.58%”],
+[“10”, “JPM”, “JPMorgan Chase”, “1.51%”],
+];
+return (
+<div>
+<div style={{ display: “grid”, gridTemplateColumns: “20px 44px 1fr 48px”, gap: “0 8px”, marginBottom: 6 }}>
+{[”#”, “TICK”, “NAME”, “WT”].map(h => (
+<span key={h} style={{ fontSize: 8, color: textMuted, letterSpacing: “0.1em”, fontFamily: “monospace”, textTransform: “uppercase” }}>{h}</span>
+))}
+</div>
+{holdings.map(([rank, ticker, name, wt]) => (
+<div key={rank} style={{ display: “grid”, gridTemplateColumns: “20px 44px 1fr 48px”, gap: “0 8px”, padding: “4px 0”, borderBottom: `1px solid ${cardBorder}` }}>
+<span style={{ fontSize: 10, color: textMuted, fontFamily: “monospace” }}>{rank}</span>
+<span style={{ fontSize: 10, color: gold, fontFamily: “monospace”, fontWeight: 700 }}>{ticker}</span>
+<span style={{ fontSize: 10, color: textSub, fontFamily: “monospace”, overflow: “hidden”, whiteSpace: “nowrap”, textOverflow: “ellipsis” }}>{name}</span>
+<span style={{ fontSize: 10, color: textPrimary, fontFamily: “monospace”, textAlign: “right” }}>{wt}</span>
+</div>
+))}
+<div style={{ marginTop: 8, padding: “6px 8px”, background: “#161616”, borderRadius: 4 }}>
+<span style={{ fontSize: 10, color: textMuted, fontFamily: “monospace” }}>Top 10 Concentration: </span>
+<span style={{ fontSize: 10, color: gold, fontFamily: “monospace”, fontWeight: 700 }}>37.47% of AUM</span>
+</div>
+</div>
+);
+}
+
+function ETFCard() {
+return (
+<div>
+{/* Hero metrics */}
+<div style={{
+display: “grid”,
+gridTemplateColumns: “1fr 1fr 1fr”,
+gap: 1,
+marginBottom: 16,
+background: cardBorder,
+borderRadius: 6,
+overflow: “hidden”,
+}}>
+{[
+[“Expense Ratio”, “0.0945%”, “Lowest cost S&P proxy”, gold],
+[“AUM”, “$653.2B”, “Largest ETF by assets”, textPrimary],
+[“Holdings”, “503”, “S&P 500 constituents”, textPrimary],
+].map(([label, value, sub, color]) => (
+<div key={label} style={{ background: cardBg, padding: “12px 10px” }}>
+<div style={{ fontSize: 9, color: textMuted, letterSpacing: “0.12em”, fontFamily: “monospace”, textTransform: “uppercase”, marginBottom: 4 }}>{label}</div>
+<div style={{ fontSize: 18, fontWeight: 700, color: color, fontFamily: “monospace” }}>{value}</div>
+<div style={{ fontSize: 9, color: textMuted, fontFamily: “monospace”, marginTop: 2 }}>{sub}</div>
+</div>
+))}
+</div>
+
+```
+  <Section label="Fund Overview">
+    <MetricGrid items={[
+      ["Index Tracked", "S&P 500"],
+      ["Issuer", "State Street"],
+      ["Inception", "Jan 22, 1993"],
+      ["Replication", "Physical"],
+    ]} />
+  </Section>
+
+  <Section label="Pricing & NAV">
+    <MetricGrid items={[
+      ["NAV", "$655.61"],
+      ["Premium/Discount", pos("+0.03%"), "Near par"],
+      ["Bid/Ask Spread", "0.01%", "Highly liquid"],
+      ["Last NAV Update", "4:00 PM ET"],
+    ]} />
+  </Section>
+
+  <Section label="Basket Valuation (Weighted Avg)">
+    <MetricGrid items={[
+      ["P/E Trailing", "26.1x"],
+      ["P/E Forward", "21.8x"],
+      ["Price / Book", "4.6x"],
+      ["Wtd. Avg Mkt Cap", "$892.4B"],
+    ]} />
+  </Section>
+
+  <Section label="Yield & Distributions">
+    <MetricGrid items={[
+      ["SEC 30-Day Yield", pos("1.12%")],
+      ["Distribution (TTM)", pos("1.18%")],
+      ["Annual Dist./Share", "$7.71"],
+      ["Ex-Div Date", "Mar 21, 2025"],
+      ["Frequency", "Quarterly"],
+    ]} />
+  </Section>
+
+  <Section label="Liquidity">
+    <MetricGrid items={[
+      ["Volume Today", "68.36M"],
+      ["30D Avg Volume", "66.1M"],
+      ["Vol vs 30D Avg", pos("+3.4%")],
+      ["Turnover Ratio", "3%", "Tax efficient"],
+    ]} />
+  </Section>
+
+  <Section label="Fund Flows" defaultOpen={false}>
+    <div style={{ fontSize: 9, color: textMuted, fontFamily: "monospace", marginBottom: 8, padding: "4px 8px", background: "#0D0D0D", borderRadius: 3 }}>
+      ⚡ Institutional flow signal
+    </div>
+    <MetricGrid items={[
+      ["Daily Net Flow", pos("+$412M")],
+      ["1-Week Flow", pos("+$1.83B")],
+      ["1-Month Flow", pos("+$6.21B")],
+      ["3-Month Flow", neg("-$2.14B")],
+    ]} />
+  </Section>
+
+  <Section label="Risk & Factor Metrics">
+    <MetricGrid items={[
+      ["Beta (S&P 500)", "1.01"],
+      ["Std Dev 1Y Ann.", "14.8%"],
+      ["Sharpe Ratio 1Y", "0.94"],
+      ["Max Drawdown 1Y", neg("-19.2%")],
+      ["Tracking Error 1Y", "0.03%"],
+      ["Tracking Diff 1Y", neg("-0.01%"), "Return vs index"],
+    ]} />
+  </Section>
+
+  <Section label="Sector Weights" defaultOpen={false}>
+    {[
+      ["Information Tech.", 31.2, "#4FC3F7"],
+      ["Financials", 13.1, "#81C784"],
+      ["Health Care", 11.8, "#CE93D8"],
+      ["Consumer Discr.", 10.4, "#FFB74D"],
+      ["Industrials", 8.7, "#4DD0E1"],
+      ["Communication Svcs", 8.2, "#F48FB1"],
+      ["Consumer Staples", 6.0, "#A5D6A7"],
+      ["Energy", 3.4, "#FFCC02"],
+      ["Utilities", 2.5, "#80DEEA"],
+      ["Materials", 2.3, "#BCAAA4"],
+    ].map(([s, w, c]) => <SectorBar key={s} sector={s} weight={w} color={c} />)}
+  </Section>
+
+  <Section label="Top 10 Holdings" defaultOpen={false}>
+    <HoldingsTable />
+  </Section>
+
+  <Section label="Options Profile">
+    <MetricGrid items={[
+      ["IV Rank", "62 / 100"],
+      ["IV Percentile", "68%"],
+      ["30D Implied Vol", "18.4%"],
+      ["Put/Call Ratio (OI)", neg("1.42"), "Elevated hedging"],
+      ["Short Interest", "2.1% of float"],
+      ["Borrow Rate", "0.30% ann."],
+    ]} />
+  </Section>
+</div>
+```
+
+);
+}
+
+function EquityCard() {
+return (
+<div>
+{/* Hero metrics */}
+<div style={{
+display: “grid”,
+gridTemplateColumns: “1fr 1fr 1fr”,
+gap: 1,
+marginBottom: 16,
+background: cardBorder,
+borderRadius: 6,
+overflow: “hidden”,
+}}>
+{[
+[“EV / EBITDA”, “24.1x”, “Primary valuation”, gold],
+[“FCF Yield”, “3.82%”, “Cash return to equity”, green],
+[“ROIC”, “18.4%”, “Capital efficiency”, textPrimary],
+].map(([label, value, sub, color]) => (
+<div key={label} style={{ background: cardBg, padding: “12px 10px” }}>
+<div style={{ fontSize: 9, color: textMuted, letterSpacing: “0.12em”, fontFamily: “monospace”, textTransform: “uppercase”, marginBottom: 4 }}>{label}</div>
+<div style={{ fontSize: 18, fontWeight: 700, color: color, fontFamily: “monospace” }}>{value}</div>
+<div style={{ fontSize: 9, color: textMuted, fontFamily: “monospace”, marginTop: 2 }}>{sub}</div>
+</div>
+))}
+</div>
+
+```
+  <Section label="Valuation">
+    <MetricGrid items={[
+      ["P/E Trailing", "28.4x"],
+      ["P/E Forward", "23.1x"],
+      ["PEG Ratio", "1.82"],
+      ["Price / Book", "6.1x"],
+      ["Price / Sales", "3.4x"],
+      ["EV / Revenue", "3.9x"],
+      ["EV / EBITDA", "24.1x"],
+      ["Earnings Yield", "3.52%"],
+    ]} />
+  </Section>
+
+  <Section label="Profitability">
+    <MetricGrid items={[
+      ["Gross Margin", pos("45.8%")],
+      ["Operating Margin", pos("28.3%")],
+      ["Net Margin", pos("21.4%")],
+      ["EBITDA Margin", pos("34.1%")],
+      ["ROE", pos("41.2%")],
+      ["ROA", pos("14.7%")],
+      ["ROIC", pos("18.4%")],
+      ["FCF Margin", pos("22.6%")],
+    ]} />
+  </Section>
+
+  <Section label="Growth">
+    <MetricGrid items={[
+      ["Revenue Growth YoY", pos("+12.4%")],
+      ["EPS Growth YoY", pos("+18.7%")],
+      ["Fwd Rev Growth", pos("+9.8%"), "Consensus est."],
+      ["Fwd EPS Growth", pos("+14.2%"), "Consensus est."],
+    ]} />
+  </Section>
+
+  <Section label="Balance Sheet">
+    <MetricGrid items={[
+      ["Total Debt", "$89.4B"],
+      ["Net Debt", "$41.2B"],
+      ["Debt / Equity", "1.21x"],
+      ["Current Ratio", "1.44x"],
+      ["Quick Ratio", "1.18x"],
+      ["Interest Coverage", "12.3x"],
+      ["Net Debt / EBITDA", "0.81x"],
+    ]} />
+  </Section>
+
+  <Section label="Cash Flow">
+    <MetricGrid items={[
+      ["FCF (TTM)", "$48.2B"],
+      ["FCF Yield", pos("3.82%")],
+      ["FCF Per Share", "$3.18"],
+      ["FCF Margin", pos("22.6%")],
+      ["CapEx / Revenue", "8.4%"],
+    ]} />
+  </Section>
+
+  <Section label="Dividends" defaultOpen={false}>
+    <MetricGrid items={[
+      ["Dividend Yield", pos("0.82%")],
+      ["Annual Div/Share", "$0.96"],
+      ["Payout Ratio", "28.4%"],
+      ["Ex-Div Date", "Feb 7, 2025"],
+      ["5Y Div Growth", pos("+6.8%")],
+      ["Frequency", "Quarterly"],
+    ]} />
+  </Section>
+
+  <Section label="Share Structure">
+    <MetricGrid items={[
+      ["Market Cap", "$1.42T"],
+      ["Shares Outstanding", "4.48B"],
+      ["Float", "4.31B"],
+      ["Shares Short", "122.4M"],
+      ["Short % Float", "2.84%"],
+      ["Days to Cover", "1.8"],
+      ["Inst. Ownership", pos("72.4%")],
+      ["Insider Ownership", "1.2%"],
+      ["13F Net Change", pos("+$2.1B"), "Last quarter"],
+    ]} />
+  </Section>
+
+  <Section label="Earnings & Analyst">
+    <MetricGrid items={[
+      ["Next Earnings", "Apr 25, 2025"],
+      ["Last EPS Surprise", pos("+6.4%")],
+      ["Consensus", <Badge key="b" color={green}>STRONG BUY</Badge>],
+      ["Mean Price Target", "$198.40"],
+      ["Upside to Target", pos("+8.2%")],
+      ["# of Analysts", "42"],
+      ["Implied Move", "±4.8%", "Next earnings"],
+    ]} />
+  </Section>
+
+  <Section label="Options Profile">
+    <MetricGrid items={[
+      ["IV Rank", "44 / 100"],
+      ["IV Percentile", "51%"],
+      ["30D Implied Vol", "22.1%"],
+      ["Put/Call Ratio (OI)", "0.88"],
+      ["Short Interest", "2.84% float"],
+      ["Borrow Rate", "0.45% ann."],
+    ]} />
+  </Section>
+</div>
+```
+
+);
+}
+
+export default function App() {
+const [mode, setMode] = useState(“etf”);
+
+return (
+<div style={{
+background: bg,
+minHeight: “100vh”,
+fontFamily: “monospace”,
+color: textPrimary,
+maxWidth: 420,
+margin: “0 auto”,
+}}>
+{/* Header */}
+<div style={{
+padding: “14px 16px 0”,
+position: “sticky”,
+top: 0,
+background: bg,
+zIndex: 10,
+borderBottom: `1px solid ${cardBorder}`,
+paddingBottom: 12,
+}}>
+<div style={{ display: “flex”, alignItems: “center”, justifyContent: “space-between”, marginBottom: 10 }}>
+<div style={{ display: “flex”, alignItems: “center”, gap: 8 }}>
+<span style={{ fontSize: 22, fontWeight: 700, color: textPrimary, letterSpacing: “-0.02em” }}>
+{mode === “etf” ? “SPY” : “AAPL”}
+</span>
+{mode === “etf”
+? <Badge>ETF</Badge>
+: <Badge color={blue}>EQUITY</Badge>}
+</div>
+<div style={{
+display: “flex”,
+gap: 1,
+background: “#161616”,
+borderRadius: 6,
+padding: 2,
+border: `1px solid ${cardBorder}`,
+}}>
+{[“etf”, “equity”].map(m => (
+<button
+key={m}
+onClick={() => setMode(m)}
+style={{
+padding: “5px 12px”,
+borderRadius: 4,
+border: “none”,
+cursor: “pointer”,
+fontSize: 9,
+letterSpacing: “0.12em”,
+textTransform: “uppercase”,
+fontFamily: “monospace”,
+fontWeight: 700,
+background: mode === m ? gold : “transparent”,
+color: mode === m ? “#000” : textMuted,
+transition: “all 0.15s”,
+}}
+>{m === “etf” ? “SPY / ETF” : “AAPL / Equity”}</button>
+))}
+</div>
+</div>
+
+```
+    <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
+      <span style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.02em" }}>
+        {mode === "etf" ? "$655.83" : "$213.49"}
+      </span>
+      {mode === "etf"
+        ? <span style={{ fontSize: 13, color: green }}>+$0.59 (+0.09%)</span>
+        : <span style={{ fontSize: 13, color: red }}>-$2.31 (-1.07%)</span>}
+    </div>
+
+    <div style={{ display: "flex", gap: 12, fontSize: 10, color: textMuted }}>
+      <span>VOL <span style={{ color: textSub }}>68.36M</span></span>
+      <span>52W <span style={{ color: textSub }}>{mode === "etf" ? "$481 – $698" : "$164 – $237"}</span></span>
+      <span>DAY <span style={{ color: textSub }}>{mode === "etf" ? "$645 – $658" : "$211 – $215"}</span></span>
+    </div>
+  </div>
+
+  {/* Run AI button */}
+  <div style={{ padding: "12px 16px 0" }}>
+    <button style={{
+      width: "100%",
+      padding: "12px 0",
+      background: `linear-gradient(135deg, ${gold}DD, ${goldDim}CC)`,
+      border: "none",
+      borderRadius: 6,
+      color: "#000",
+      fontSize: 11,
+      fontWeight: 700,
+      letterSpacing: "0.14em",
+      textTransform: "uppercase",
+      fontFamily: "monospace",
+      cursor: "pointer",
+      marginBottom: 16,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 6,
+    }}>
+      <span>⚡</span>
+      Run AI Analysis {mode === "etf" ? "(ETF Mode)" : "(Equity Mode)"}
+    </button>
+
+    {mode === "etf" ? <ETFCard /> : <EquityCard />}
+  </div>
+
+  <div style={{ height: 80 }} />
+
+  {/* Bottom nav */}
+  <div style={{
+    position: "fixed",
+    bottom: 0,
+    left: "50%",
+    transform: "translateX(-50%)",
+    width: "100%",
+    maxWidth: 420,
+    background: "#0D0D0D",
+    borderTop: `1px solid ${cardBorder}`,
+    display: "grid",
+    gridTemplateColumns: "repeat(5, 1fr)",
+    padding: "8px 0 20px",
+  }}>
+    {[
+      ["⊙", "SCANNER"],
+      ["↗", "MARKETS"],
+      ["", ""],
+      ["≡", "WATCHLIST"],
+      ["◎", "SEARCH"],
+    ].map(([icon, label], i) => (
+      i === 2
+        ? <div key={i} style={{ display: "flex", justifyContent: "center", alignItems: "center" }}>
+            <div style={{
+              width: 46,
+              height: 46,
+              borderRadius: "50%",
+              background: gold,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 18,
+              color: "#000",
+              marginTop: -16,
+              boxShadow: `0 0 20px ${gold}44`,
+            }}>⚡</div>
+          </div>
+        : <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3, paddingTop: 4 }}>
+            <span style={{ fontSize: 14, color: label === "MARKETS" ? gold : textMuted }}>{icon}</span>
+            <span style={{ fontSize: 8, color: label === "MARKETS" ? gold : textMuted, letterSpacing: "0.08em", fontFamily: "monospace" }}>{label}</span>
+          </div>
+    ))}
+  </div>
+</div>
+```
+
+);
+}
