@@ -1104,6 +1104,9 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
   const [taThinkingTokens, setTaThinkingTokens] = useState<string[]>([]);
   const [taShowResult, setTaShowResult] = useState(false);
   const taRunRef = useRef(0);
+  const [taElapsed, setTaElapsed] = useState(0);
+  const taStartRef = useRef(Date.now());
+  const thinkingScrollRef = useRef<HTMLDivElement>(null);
   const cacheRestoredRef = useRef(false);
 
   const { data: quote } = useGetQuote(
@@ -1114,6 +1117,18 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
     { symbol, accessToken: accessToken || "", periodType: "month", period: 3, frequencyType: "daily", frequency: 1 },
     { query: { enabled: !!accessToken } }
   );
+
+  useEffect(() => {
+    if (!taStreaming) return;
+    const id = setInterval(() => {
+      setTaElapsed(Math.floor((Date.now() - taStartRef.current) / 1000));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [taStreaming]);
+
+  useEffect(() => {
+    if (thinkingScrollRef.current) thinkingScrollRef.current.scrollTop = thinkingScrollRef.current.scrollHeight;
+  }, [taThinkingTokens]);
 
   useEffect(() => {
     cacheRestoredRef.current = false;
@@ -1137,6 +1152,8 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
     setTaThinkingTokens([]);
     setTaShowResult(true);
     setTaStreaming(true);
+    setTaElapsed(0);
+    taStartRef.current = Date.now();
 
     let accumulated = "";
     const collectedThinking: string[] = [];
@@ -1318,8 +1335,8 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
             }}
           >
             <div style={{ width: "100%", flexShrink: 0, padding: "0 16px 40px" }}>
-              <div style={{ paddingTop: 12, paddingBottom: 4, display: "flex", justifyContent: "flex-start" }}>
-                {!taShowResult ? (
+              {!taShowResult ? (
+                <div style={{ paddingTop: 12, paddingBottom: 4 }}>
                   <button
                     onClick={() => handleRunTA()}
                     disabled={taStreaming || !accessToken || !quote || !history?.candles}
@@ -1336,20 +1353,62 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
                   >
                     RUN ANALYSIS
                   </button>
-                ) : taStreaming ? (
-                  <div style={{ background: "#000000", border: "none", padding: 0, marginBottom: 8 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-                      <Loader2 style={{ width: 14, height: 14, color: C.gold }} className="animate-spin" />
-                      <span style={{ fontSize: 11, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 1 }}>ANALYZING...</span>
+                </div>
+              ) : taStreaming ? (
+                <div className="space-y-3" style={{ paddingTop: 12 }}>
+                  <div className="rounded-xl border overflow-hidden" style={{ background: "#111113", borderColor: "rgba(255,184,0,0.3)" }}>
+                    <div className="px-4 py-2.5 flex items-center gap-3" style={{ background: "transparent" }}>
+                      <span className="relative flex h-3 w-3 shrink-0">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#FFB800] opacity-75" />
+                        <span className="relative inline-flex rounded-full h-3 w-3 bg-[#FFB800]" />
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between">
+                          <span className="font-mono text-xs font-bold text-[#FFB800] tracking-wider">CLAUDE AI REASONING</span>
+                          <span className="font-mono text-xs tabular-nums text-[#71717a]">{taElapsed}s</span>
+                        </div>
+                      </div>
                     </div>
-                    <AiThinkingFeed texts={taThinkingTokens} isStreaming={true} />
+                    <div className="h-1 bg-[#2A2A2C]">
+                      <div className="h-full transition-all duration-1000 ease-out" style={{ width: `${Math.min((taElapsed / 20) * 100, 95)}%`, background: "linear-gradient(90deg, #FFB800, #FF8C00)" }} />
+                    </div>
+                    <div className="px-4 py-3 space-y-1.5">
+                      {[
+                        { label: "LOADING MARKET DATA", done: true },
+                        { label: "CLAUDE AI REASONING", done: false, active: true },
+                      ].map((s) => (
+                        <div key={s.label} className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full shrink-0" style={{ background: s.done ? "#00d166" : s.active ? "#FFB800" : "#2A2A2C", boxShadow: s.active ? "0 0 6px rgba(255,184,0,0.5)" : "none" }} />
+                          <span className="font-mono text-[10px] tracking-wider" style={{ color: s.done ? "#00d166" : s.active ? "#FFB800" : "#52525b", fontWeight: s.active ? 700 : 400 }}>{s.label}</span>
+                          {s.done && <span className="font-mono text-[9px] text-[#00d166]">✓</span>}
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                ) : analysisResult ? (
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <Activity style={{ width: 14, height: 14, color: C.gold }} />
-                      <span style={{ fontSize: 12, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 1 }}>AI ANALYSIS</span>
+
+                  {taThinkingTokens.length > 0 && (
+                    <div className="rounded-xl border overflow-hidden" style={{ background: "#111113", borderColor: "rgba(16,185,129,0.3)" }}>
+                      <div className="px-4 py-2.5 flex items-center gap-2" style={{ background: "rgba(16,185,129,0.06)" }}>
+                        <span className="relative flex h-2.5 w-2.5 shrink-0">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+                        </span>
+                        <span className="font-mono text-[11px] text-emerald-400 uppercase tracking-widest font-bold">Live Claude Reasoning</span>
+                      </div>
+                      <div ref={thinkingScrollRef} className="max-h-[200px] overflow-y-auto px-4 py-3" style={{ scrollBehavior: "smooth" }}>
+                        <div className="border-l-2 border-emerald-500/40 pl-3">
+                          <p className="font-mono text-[11px] text-[#c4c4cc] leading-[1.7] whitespace-pre-wrap break-words">
+                            {taThinkingTokens.join("")}
+                            <span className="inline-block w-1.5 h-3.5 bg-emerald-500 ml-0.5 animate-pulse align-text-bottom" />
+                          </p>
+                        </div>
+                      </div>
                     </div>
+                  )}
+                </div>
+              ) : analysisResult ? (
+                <div style={{ paddingTop: 12, paddingBottom: 4 }}>
+                  <div style={{ display: "flex", alignItems: "center", marginBottom: 8, gap: 8 }}>
                     <button
                       onClick={(e) => { e.stopPropagation(); handleRunTA(); }}
                       disabled={taStreaming || !quote || !history?.candles}
@@ -1364,8 +1423,8 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
                       REFRESH
                     </button>
                   </div>
-                ) : null}
-              </div>
+                </div>
+              ) : null}
 
               <SubOverview fund={fundamentals} quoteData={quoteData} priceHist={priceHist} volHist={volHist} ai={analysisResult ? parseAiAnalysis(analysisResult) : null} />
             </div>
