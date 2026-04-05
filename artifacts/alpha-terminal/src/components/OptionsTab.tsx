@@ -97,6 +97,7 @@ interface SelectedLeg {
   contract: Contract;
   type: "CALL" | "PUT";
   expiration: string;
+  side: "bid" | "ask";
 }
 
 interface LongPressTarget {
@@ -746,7 +747,7 @@ function OptionsGrid({
   showCalls: boolean;
   showPuts: boolean;
   selectedLegs: Map<string, SelectedLeg>;
-  onToggleLeg: (contract: Contract, type: "CALL" | "PUT") => void;
+  onToggleLeg: (contract: Contract, type: "CALL" | "PUT", side: "bid" | "ask") => void;
   onLongPressCell: (target: LongPressTarget) => void;
   showInlineGreeks: boolean;
   maxOI: number;
@@ -923,7 +924,8 @@ function OptionsGrid({
             <div style={{ minWidth: wingWidth }}>
               {sortedRows.map((row) => {
                 const callKey = row.call ? makeLegKey(row.call, "CALL") : "";
-                const isCallSelected = callKey ? selectedLegs.has(callKey) : false;
+                const callLeg = callKey ? selectedLegs.get(callKey) : undefined;
+                const isCallSelected = !!callLeg;
                 const moneyness = classifyMoneyness(row.strike, underlyingPrice, true);
                 const bg = getRowBg(moneyness, isCallSelected);
                 return (
@@ -942,8 +944,8 @@ function OptionsGrid({
                         <DataCell
                           col={col}
                           contract={row.call}
-                          isSelected={isCallSelected && col.isPrice}
-                          onSelect={col.isPrice && row.call ? () => onToggleLeg(row.call!, "CALL") : undefined}
+                          isSelected={isCallSelected && col.isPrice && callLeg?.side === col.id}
+                          onSelect={col.isPrice && row.call ? () => onToggleLeg(row.call!, "CALL", col.id as "bid" | "ask") : undefined}
                           onLongPress={col.isPrice && row.call ? (e) => onLongPressCell({
                             contract: row.call!, type: "CALL",
                             side: col.id === "bid" ? "SELL" : "BUY",
@@ -976,7 +978,8 @@ function OptionsGrid({
             <div style={{ minWidth: wingWidth }}>
               {sortedRows.map((row) => {
                 const putKey = row.put ? makeLegKey(row.put, "PUT") : "";
-                const isPutSelected = putKey ? selectedLegs.has(putKey) : false;
+                const putLeg = putKey ? selectedLegs.get(putKey) : undefined;
+                const isPutSelected = !!putLeg;
                 const moneyness = classifyMoneyness(row.strike, underlyingPrice, false);
                 const bg = getRowBg(moneyness, isPutSelected);
                 return (
@@ -995,8 +998,8 @@ function OptionsGrid({
                         <DataCell
                           col={col}
                           contract={row.put}
-                          isSelected={isPutSelected && col.isPrice}
-                          onSelect={col.isPrice && row.put ? () => onToggleLeg(row.put!, "PUT") : undefined}
+                          isSelected={isPutSelected && col.isPrice && putLeg?.side === col.id}
+                          onSelect={col.isPrice && row.put ? () => onToggleLeg(row.put!, "PUT", col.id as "bid" | "ask") : undefined}
                           onLongPress={col.isPrice && row.put ? (e) => onLongPressCell({
                             contract: row.put!, type: "PUT",
                             side: col.id === "bid" ? "SELL" : "BUY",
@@ -1129,12 +1132,13 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
     });
   };
 
-  const handleToggleLeg = useCallback((contract: Contract, type: "CALL" | "PUT") => {
+  const handleToggleLeg = useCallback((contract: Contract, type: "CALL" | "PUT", side: "bid" | "ask") => {
     const key = makeLegKey(contract, type);
     setSelectedLegs(prev => {
       const next = new Map(prev);
-      if (next.has(key)) next.delete(key);
-      else next.set(key, { contract, type, expiration: contract.expiration });
+      const existing = next.get(key);
+      if (existing && existing.side === side) next.delete(key);
+      else next.set(key, { contract, type, expiration: contract.expiration, side });
       return next;
     });
   }, []);
