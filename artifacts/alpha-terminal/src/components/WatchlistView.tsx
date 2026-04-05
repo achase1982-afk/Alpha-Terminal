@@ -176,7 +176,7 @@ function WatchlistRow({
           transition: swiping ? "none" : "transform 0.25s ease-out, background 0.15s ease",
         }}
       >
-        <div className="flex items-center px-3 py-2 gap-2">
+        <div className="flex items-center px-3 py-1 gap-2">
           <div className="w-[80px] shrink-0 min-w-0">
             <span className="block font-mono text-[15px] font-bold tracking-wide truncate" style={{ color: cColor === "#71717a" ? "#fff" : cColor }}>{sym}</span>
             {description && (
