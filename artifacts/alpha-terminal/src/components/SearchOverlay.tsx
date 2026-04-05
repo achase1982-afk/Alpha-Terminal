@@ -23,7 +23,7 @@ function changeColor(v: number | null): string {
 
 function WatchlistIcon({ isInWatchlist, flash }: { isInWatchlist: boolean; flash: boolean }) {
   const BadgeIcon = isInWatchlist ? MinusCircle : PlusCircle;
-  const color = isInWatchlist ? "#f23645" : "#5b9cf6";
+  const color = "#ffffff";
   return (
     <div
       className={`relative shrink-0 transition-transform duration-200 ${flash ? "scale-110" : ""}`}
@@ -304,9 +304,6 @@ export function SearchOverlay({ isOpen, onClose, onSelectSymbol }: SearchOverlay
               <div className="flex items-center justify-between px-4 pb-2">
                 <span className="font-mono text-[13px] text-zinc-400 uppercase tracking-widest font-bold">
                   RECENTLY VIEWED
-                </span>
-                <span className="font-mono text-[13px] text-zinc-400 uppercase tracking-widest font-bold">
-                  WATCHLIST
                 </span>
               </div>
               {recentSymbols.map(sym => {
