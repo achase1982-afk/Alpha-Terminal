@@ -1327,7 +1327,7 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
                     style={{
                       padding: "10px 24px", fontSize: 13, fontFamily: f, fontWeight: 700,
                       color: "#FFB800",
-                      background: "#2a2a2d",
+                      background: "#000000",
                       border: "none",
                       outline: "none",
                       cursor: "pointer",
