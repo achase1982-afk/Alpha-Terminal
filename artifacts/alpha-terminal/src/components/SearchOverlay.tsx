@@ -146,30 +146,13 @@ function RecentRow({
         )}
       </div>
 
-      <div className="flex items-center gap-3 shrink-0">
-        <div className="flex flex-col items-end w-[80px] shrink-0">
-          <span
-            className="font-mono text-[14px] font-bold tabular-nums"
-            style={{ color: quoteData?.last != null ? "#ffffff" : "#52525b" }}
-          >
-            {fmtPrice(quoteData?.last ?? null)}
-          </span>
-          <span
-            className="font-mono text-[11px] tabular-nums"
-            style={{ color: cColor }}
-          >
-            {fmtPct(quoteData?.changePct ?? null)}
-          </span>
-        </div>
-
-        <div
-          onClick={handleWatchlistToggle}
-          className="cursor-pointer active:scale-90 transition-transform"
-          role="button"
-          aria-label={isInWatchlist ? "Remove from watchlist" : "Add to watchlist"}
-        >
-          <WatchlistIcon isInWatchlist={isInWatchlist} flash={flash} />
-        </div>
+      <div
+        onClick={handleWatchlistToggle}
+        className="cursor-pointer active:scale-90 transition-transform shrink-0"
+        role="button"
+        aria-label={isInWatchlist ? "Remove from watchlist" : "Add to watchlist"}
+      >
+        <WatchlistIcon isInWatchlist={isInWatchlist} flash={flash} />
       </div>
     </div>
   );
