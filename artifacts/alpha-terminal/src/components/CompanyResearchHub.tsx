@@ -888,52 +888,53 @@ export function CompanyResearchHub({ candles }: CompanyResearchHubProps) {
             }}
           >
             <div style={{ width: "100%", flexShrink: 0, padding: "0 16px 40px" }}>
-              <SubOverview fund={fundamentals} quoteData={quoteData} priceHist={priceHist} volHist={volHist} />
-
-              <Sec>AI TECHNICAL ANALYSIS</Sec>
-              <button
-                onClick={handleRunTA}
-                disabled={taStreaming || !accessToken || !quote || !history?.candles}
-                style={{
-                  width: "100%", padding: "10px 0", fontSize: 11, fontFamily: f, fontWeight: 700,
-                  color: taStreaming ? C.textDim : "#000",
-                  background: taStreaming ? "transparent" : C.gold,
-                  border: `1px solid ${taStreaming ? C.borderHi : C.gold}`,
-                  cursor: taStreaming ? "default" : "pointer",
-                  letterSpacing: 1.5, display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                }}
-              >
-                {taStreaming ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Activity className="w-3.5 h-3.5" />
-                )}
-                {taStreaming ? "ANALYZING..." : "RUN AI ANALYSIS"}
-              </button>
-
-              {taShowResult && (
-                <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: 16, marginTop: 12 }}>
+              <div style={{ paddingTop: 12, paddingBottom: 4 }}>
+                <button
+                  onClick={handleRunTA}
+                  disabled={taStreaming || !accessToken || !quote || !history?.candles}
+                  style={{
+                    width: "100%", padding: "10px 0", fontSize: 11, fontFamily: f, fontWeight: 700,
+                    color: taStreaming ? C.textDim : "#000",
+                    background: taStreaming ? "transparent" : C.gold,
+                    border: `1px solid ${taStreaming ? C.borderHi : C.gold}`,
+                    cursor: taStreaming ? "default" : "pointer",
+                    letterSpacing: 1.5, display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                  }}
+                >
                   {taStreaming ? (
-                    <>
-                      <AiThinkingFeed texts={taThinkingTokens} isStreaming={true} />
-                      {taStreamingText && (
-                        <div style={{ marginTop: 12 }}>
-                          <MarkdownResult content={taStreamingText} />
-                        </div>
-                      )}
-                    </>
-                  ) : analysisResult ? (
-                    <>
-                      {taThinkingTokens.length > 0 && (
-                        <div style={{ marginBottom: 12 }}>
-                          <AiThinkingFeed texts={taThinkingTokens} isStreaming={false} />
-                        </div>
-                      )}
-                      <MarkdownResult content={analysisResult} />
-                    </>
-                  ) : null}
-                </div>
-              )}
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Activity className="w-3.5 h-3.5" />
+                  )}
+                  {taStreaming ? "ANALYZING..." : "RUN AI ANALYSIS"}
+                </button>
+
+                {taShowResult && (
+                  <div style={{ background: C.card, border: `1px solid ${C.border}`, padding: 16, marginTop: 12 }}>
+                    {taStreaming ? (
+                      <>
+                        <AiThinkingFeed texts={taThinkingTokens} isStreaming={true} />
+                        {taStreamingText && (
+                          <div style={{ marginTop: 12 }}>
+                            <MarkdownResult content={taStreamingText} />
+                          </div>
+                        )}
+                      </>
+                    ) : analysisResult ? (
+                      <>
+                        {taThinkingTokens.length > 0 && (
+                          <div style={{ marginBottom: 12 }}>
+                            <AiThinkingFeed texts={taThinkingTokens} isStreaming={false} />
+                          </div>
+                        )}
+                        <MarkdownResult content={analysisResult} />
+                      </>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+
+              <SubOverview fund={fundamentals} quoteData={quoteData} priceHist={priceHist} volHist={volHist} />
             </div>
 
             <div style={{ width: "100%", flexShrink: 0, padding: "0 16px 40px" }}>
