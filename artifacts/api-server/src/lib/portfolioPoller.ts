@@ -2,8 +2,8 @@ import { getTokens } from "./tokenStore.js";
 import { logger } from "./logger.js";
 
 const SCHWAB_TRADER_BASE = "https://api.schwabapi.com/trader/v1";
-const ACCOUNT_POLL_MS = 2_000;
-const ORDERS_POLL_MS = 5_000;
+const ACCOUNT_POLL_MS = 1_000;
+const ORDERS_POLL_MS = 3_000;
 
 let broadcastFn: ((event: string, data: unknown) => void) | null = null;
 let accountTimer: ReturnType<typeof setInterval> | null = null;
