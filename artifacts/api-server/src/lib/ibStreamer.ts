@@ -174,9 +174,24 @@ function buildContract(def: IBSymbolDef): Contract {
 }
 
 function emitQuote(def: IBSymbolDef, state: IBQuoteState) {
-  // Breadth indices (ADVN, DECN, ADD, UVOL, DVOL) report their value as Bid price,
-  // not Last. Use bid (then ask) as the effective "last" when no last tick arrived.
-  const effectiveLast = state.last ?? state.bid ?? state.ask;
+  // valueMode controls how we derive the canonical "last" from IB tick data.
+  // AD-NYSE / VOL-NYSE / AD-NASD / VOL-NASD deliver their data as Bid (advancing/up)
+  // and Ask (declining/down) with no Last tick. Per-symbol valueMode tells us how to
+  // interpret those fields.
+  let effectiveLast: number | undefined;
+  const mode = def.valueMode ?? "last";
+  if (mode === "bid") {
+    effectiveLast = state.bid ?? state.last ?? state.ask;
+  } else if (mode === "ask") {
+    effectiveLast = state.ask ?? state.last ?? state.bid;
+  } else if (mode === "bid_minus_ask") {
+    effectiveLast = (state.bid != null && state.ask != null)
+      ? state.bid - state.ask
+      : state.last ?? state.bid ?? state.ask;
+  } else {
+    // "last" (default) — fall back to bid/ask if no last tick (original behaviour)
+    effectiveLast = state.last ?? state.bid ?? state.ask;
+  }
   const quote: LiveQuote = {
     symbol: def.displaySymbol,
     last: effectiveLast,

@@ -1,0 +1,150 @@
+Got it — you’re building in React + TypeScript. The IBKR TWS API is not directly callable from the browser (it’s a raw TCP socket to localhost:7496/7497), so the standard pattern for a React TS app is:
+	•	Node.js backend (or Electron main process) using a TypeScript-native TWS client like @stoqey/ib (full port of the official API).
+	•	React frontend talks to the backend via REST or WebSocket (Socket.io, etc.).
+If you’re using Electron, you can import @stoqey/ib directly in the renderer (with Node integration enabled).
+1. Install the TS Library (recommended)
+npm install @stoqey/ib
+# or
+yarn add @stoqey/ib
+2. Universal Breadth Contract Helper (TypeScript)
+// src/ibkr/contracts.ts  (share this between backend & any TS files)
+
+export interface IbkrContract {
+  symbol: string;
+  secType: string;
+  exchange: string;
+  currency: string;
+  localSymbol?: string;   // optional, usually same as symbol for IND
+}
+
+export const createBreadthContract = (
+  symbol: string,
+  exchange: 'NYSE' | 'NASDAQ' | 'AMEX' | 'ARCA' | 'BATS' = 'NYSE'
+): IbkrContract => ({
+  symbol,           // e.g. "TICK-NYSE", "AD-NASD", "VOL-NYSE"
+  secType: 'IND',
+  exchange,
+  currency: 'USD',
+});
+3. All Known Standard Breadth Indicators (Current as of 2026)
+IBKR does not have an official list of exactly “85” breadth tickers — that number most likely comes from TrendSpider or another platform. IBKR exposes a small, reliable set of IND (Index) contracts. Here they are with the exact contract you pass to the API:
+Breadth Indicator
+Symbol
+Exchange
+Data arrives as
+NYSE TICK
+TICK-NYSE
+NYSE
+Last price
+NYSE TRIN (Arms)
+TRIN-NYSE
+NYSE
+Last price
+NYSE Advance-Decline (net)
+AD-NYSE
+NYSE
+Bid = advancing, Ask = declining
+NYSE Up/Down Volume
+VOL-NYSE
+NYSE
+Bid = up vol, Ask = down vol
+NASDAQ TICK
+TICK-NASD
+NASDAQ
+Last price
+NASDAQ TRIN
+TRIN-NASD
+NASDAQ
+Last price
+NASDAQ Advance-Decline (net)
+AD-NASD
+NASDAQ
+Bid/Ask split
+NASDAQ Up/Down Volume
+VOL-NASD
+NASDAQ
+Bid/Ask split
+AMEX TICK
+TICK-AMEX
+AMEX
+Last price
+AMEX TRIN
+TRIN-AMEX
+AMEX
+Last price
+AMEX Advance-Decline
+AD-AMEX
+AMEX
+Bid/Ask
+AMEX Up/Down Volume
+VOL-AMEX
+AMEX
+Bid/Ask
+Variants you can also try (same format): TICK-ARCA, AD-ARCA, VOL-ARCA, TICK-BATS, etc.
+4. Discovery Script (find every IND breadth ticker your account can see)
+Run this once in your Node backend — it will print all available breadth-style contracts (this is how people originally discovered the full set).
+// src/ibkr/discoverBreadth.ts
+import { IBApi, Contract, ErrorCode } from '@stoqey/ib';
+
+const ib = new IBApi({
+  host: '127.0.0.1',
+  port: 7496,           // or 7497 for IB Gateway
+  clientId: 999,
+});
+
+const prefixes = ['TICK', 'TRIN', 'AD', 'VOL', 'ADVANCE', 'DECLINE'];
+const exchanges = ['NYSE', 'NASDAQ', 'AMEX', 'ARCA', 'BATS'];
+
+ib.on('connected', () => {
+  console.log('✅ Connected to TWS/IB Gateway');
+  let reqId = 1000;
+
+  exchanges.forEach((exch) => {
+    prefixes.forEach((pre) => {
+      const contract = new Contract();
+      contract.symbol = pre;
+      contract.secType = 'IND';
+      contract.exchange = exch;
+      contract.currency = 'USD';
+
+      ib.reqContractDetails(reqId++, contract);
+    });
+  });
+});
+
+ib.on('contractDetails', (reqId: number, contractDetails: any) => {
+  const c = contractDetails.contract;
+  console.log(
+    `${c.symbol.padEnd(15)} | ${c.exchange.padEnd(8)} | ${contractDetails.longName || '—'}`
+  );
+});
+
+ib.on('contractDetailsEnd', (reqId: number) => {
+  console.log(`✅ Finished reqId ${reqId}`);
+});
+
+ib.on('error', (err: Error, code: ErrorCode, reqId: number) => {
+  console.error(`❌ Error ${code} (reqId ${reqId}):`, err.message);
+});
+
+ib.connect();
+Run it with ts-node discoverBreadth.ts (or compile & run). It will give you the real, up-to-date list your TWS account can subscribe to — usually far fewer than 85, but everything that exists.
+5. Requesting Market Data (example in backend)
+const contract = createBreadthContract('TICK-NYSE', 'NYSE');
+
+// Subscribe
+ib.reqMktData(1001, contract as any, '', false, false, []);
+
+// Handle ticks (last price for TICK/TRIN, bid/ask for AD/VOL)
+ib.on('tickPrice', (reqId: number, tickType: number, price: number, attrib: any) => {
+  console.log(`Req ${reqId} TickType ${tickType} = ${price}`);
+});
+Next Steps for Your React App
+	1	Put the IB connection + discovery in a Node service (Express + Socket.io is popular).
+	2	Expose an endpoint like /api/breadth/subscribe?symbol=TICK-NYSE.
+	3	In React, use useEffect + WebSocket to receive live updates and render the indicators (charts, tick counters, etc.).
+Would you like:
+	•	The full backend service skeleton (Express + Socket.io + @stoqey/ib)?
+	•	A React hook example that consumes the backend?
+	•	Or the Client Portal Web API (REST/WS) version instead (no Node backend needed, but limited streaming)?
+Just let me know your exact setup (Electron? Vite + separate backend? etc.) and I’ll give you the exact copy-paste code.
