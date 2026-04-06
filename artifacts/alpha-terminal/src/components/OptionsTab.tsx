@@ -1405,7 +1405,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
         >
           <button
             onClick={handleBuildStrategy}
-            className="px-5 py-2.5 rounded-lg text-[13px] font-bold tracking-wider transition-all active:scale-[0.97]"
+            className="font-mono text-sm font-bold tracking-wider px-6 py-2.5 rounded-lg transition-all active:scale-95"
             style={{
               background: GOLD,
               color: "#000",
