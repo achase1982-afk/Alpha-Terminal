@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import {
@@ -17,16 +17,25 @@ import {
   Search,
   XCircle,
   ShieldCheck,
+  AlertTriangle,
 } from "lucide-react";
 
-const GOLD = "#FFB800";
-const UP = "#00d166";
-const DOWN = "#f23645";
-const MUTED = "#6b7280";
-const CARD_BG = "#0c0c0c";
-const CARD_BORDER = "#2a2a2e";
-const DIM = "#52525b";
-const TEXT = "#e4e4e7";
+const C = {
+  bg: "#0c0c0c",
+  card: "#18181b",
+  border: "#27272a80",
+  borderHi: "#3f3f46",
+  text: "#e4e4e7",
+  textMuted: "#a1a1aa",
+  textDim: "#71717a",
+  dim: "#52525b",
+  gold: "#FFB800",
+  green: "#00d166",
+  red: "#f23645",
+  cyan: "#22d3ee",
+};
+
+const f = `'SFMono-Regular','SF Mono',ui-monospace,'Cascadia Code','Fira Code','JetBrains Mono','Consolas',monospace`;
 
 type SubTab = "positions" | "orders" | "balance";
 type OrderFilter = "ALL" | "WORKING" | "FILLED" | "CANCELED" | "REJECTED";
@@ -108,6 +117,15 @@ interface Order {
   tag: string | null;
 }
 
+interface SymbolGroup {
+  underlying: string;
+  equity: Position | null;
+  options: Position[];
+  totalMarketValue: number;
+  totalDayPL: number;
+  totalPL: number;
+}
+
 function fmtCurrency(n: number): string {
   const abs = Math.abs(n);
   const str = abs.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -125,9 +143,9 @@ function fmtQty(long: number, short: number): string {
 }
 
 function plColor(n: number): string {
-  if (n > 0) return UP;
-  if (n < 0) return DOWN;
-  return MUTED;
+  if (n > 0) return C.green;
+  if (n < 0) return C.red;
+  return C.textDim;
 }
 
 function timeAgo(dateStr: string): string {
@@ -141,7 +159,7 @@ function timeAgo(dateStr: string): string {
   return `${days}d ago`;
 }
 
-function formatOptionSymbol(sym: string): string {
+function formatOptionSymbol(sym: string, includeUnderlying = true): string {
   const match = sym.trim().match(/^(\w+)\s+(\d{6})([CP])(\d{8})$/);
   if (!match) return sym.trim();
   const [, underlying, dateStr, pc, strikeRaw] = match;
@@ -149,146 +167,349 @@ function formatOptionSymbol(sym: string): string {
   const mm = dateStr.slice(0, 2);
   const dd = dateStr.slice(2, 4);
   const yy = dateStr.slice(4, 6);
-  return `${underlying} ${mm}/${dd}/${yy} $${strike} ${pc === "C" ? "Call" : "Put"}`;
+  const prefix = includeUnderlying ? `${underlying} ` : "";
+  return `${prefix}${mm}/${dd}/${yy} $${strike} ${pc === "C" ? "Call" : "Put"}`;
 }
 
 function statusColor(status: string): string {
   switch (status) {
-    case "FILLED": return UP;
-    case "CANCELED": case "REJECTED": case "EXPIRED": return DOWN;
-    case "WORKING": case "PENDING_ACTIVATION": return GOLD;
-    default: return MUTED;
+    case "FILLED": return C.green;
+    case "CANCELED": case "REJECTED": case "EXPIRED": return C.red;
+    case "WORKING": case "PENDING_ACTIVATION": return C.gold;
+    default: return C.textDim;
   }
+}
+
+const LIVE_REFRESH_MS = 30_000;
+
+function MarginCallBanner() {
+  const [pulse, setPulse] = useState(true);
+  useEffect(() => {
+    const t = setInterval(() => setPulse(p => !p), 1200);
+    return () => clearInterval(t);
+  }, []);
+
+  return (
+    <div
+      style={{
+        background: `linear-gradient(90deg, ${C.red}18, ${C.red}30, ${C.red}18)`,
+        border: `1px solid ${C.red}`,
+        borderRadius: 8,
+        padding: "10px 14px",
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        fontFamily: f,
+        transition: "opacity 0.3s",
+        opacity: pulse ? 1 : 0.85,
+      }}
+    >
+      <AlertTriangle style={{ color: C.red, width: 20, height: 20, flexShrink: 0 }} />
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: C.red, letterSpacing: 1.5, textTransform: "uppercase" }}>
+          MARGIN CALL
+        </div>
+        <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>
+          Equity below maintenance requirement. Deposit funds or close positions.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DayTradesIndicator({ roundTrips, isDayTrader }: { roundTrips: number; isDayTrader: boolean }) {
+  if (isDayTrader) return null;
+  const remaining = Math.max(0, 3 - roundTrips);
+  const color = remaining === 0 ? C.red : remaining === 1 ? C.gold : C.green;
+
+  return (
+    <div
+      style={{
+        background: C.card,
+        border: `1px solid ${C.border}`,
+        borderRadius: 8,
+        padding: "8px 12px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        fontFamily: f,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <Clock style={{ color: C.textDim, width: 14, height: 14 }} />
+        <span style={{ fontSize: 11, color: C.textMuted, letterSpacing: 0.8, textTransform: "uppercase", fontWeight: 600 }}>
+          Day Trades Left
+        </span>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <div style={{ display: "flex", gap: 3 }}>
+          {[0, 1, 2].map(i => (
+            <div
+              key={i}
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: 4,
+                background: i < remaining ? color : C.dim,
+                transition: "background 0.3s",
+              }}
+            />
+          ))}
+        </div>
+        <span style={{ fontSize: 13, fontWeight: 700, color, fontFamily: f, minWidth: 20, textAlign: "right" }}>
+          {remaining}/3
+        </span>
+      </div>
+    </div>
+  );
 }
 
 function StatusBadge({ status }: { status: string }) {
   return (
     <span
-      className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
-      style={{ color: statusColor(status), background: `${statusColor(status)}10` }}
+      style={{
+        fontSize: 11,
+        fontWeight: 700,
+        textTransform: "uppercase",
+        letterSpacing: 0.8,
+        padding: "2px 6px",
+        borderRadius: 4,
+        fontFamily: f,
+        color: statusColor(status),
+        background: `${statusColor(status)}15`,
+      }}
     >
       {status}
     </span>
   );
 }
 
-function PositionRow({ pos, onSelect, onTrade }: { pos: Position; onSelect: (sym: string) => void; onTrade?: (sym: string, side: "BUY" | "SELL", optionSymbol?: string, optionInstruction?: string) => void }) {
-  const [expanded, setExpanded] = useState(false);
-  const isOption = pos.assetType === "OPTION";
+function OptionRow({ pos, onTrade }: { pos: Position; onTrade?: (symbol: string, side: "BUY" | "SELL", optionSymbol?: string, optionInstruction?: string) => void }) {
   const isShort = pos.shortQuantity > 0;
   const qty = isShort ? pos.shortQuantity : pos.longQuantity;
-  const displaySymbol = isOption ? pos.underlyingSymbol : pos.symbol;
-  const displayLabel = isOption ? formatOptionSymbol(pos.symbol) : pos.symbol;
-  const closeSide: "BUY" | "SELL" = isShort ? "BUY" : "SELL";
   const totalPL = pos.longOpenProfitLoss;
-  const totalPLPct = pos.averagePrice > 0 ? (totalPL / (pos.averagePrice * qty * (isOption ? 100 : 1))) * 100 : 0;
-  const portfolioPct = 0;
+  const totalPLPct = pos.averagePrice > 0 ? (totalPL / (pos.averagePrice * qty * 100)) * 100 : 0;
+  const closeSide: "BUY" | "SELL" = isShort ? "BUY" : "SELL";
 
   return (
-    <div className="border-b" style={{ borderColor: CARD_BORDER }}>
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "5px 0 5px 20px",
+        borderBottom: `1px solid ${C.border}`,
+        fontFamily: f,
+      }}
+    >
+      <span
+        style={{
+          fontSize: 11,
+          fontWeight: 700,
+          color: pos.putCall === "CALL" ? C.green : C.red,
+          width: 14,
+          flexShrink: 0,
+        }}
+      >
+        {pos.putCall === "CALL" ? "C" : "P"}
+      </span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 11, color: C.text, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          {formatOptionSymbol(pos.symbol, false)}
+        </div>
+        <div style={{ fontSize: 11, color: C.textDim }}>
+          {fmtQty(pos.longQuantity, pos.shortQuantity)} @ {fmtCurrency(pos.averagePrice)}
+        </div>
+      </div>
+      <div style={{ textAlign: "right", flexShrink: 0 }}>
+        <div style={{ fontSize: 11, color: C.text, fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>
+          {fmtCurrency(pos.marketValue)}
+        </div>
+        <div style={{ fontSize: 11, color: plColor(totalPL), fontVariantNumeric: "tabular-nums" }}>
+          {fmtCurrency(totalPL)} ({fmtPct(totalPLPct)})
+        </div>
+      </div>
+      {onTrade && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            const instruction = isShort ? "BUY_TO_CLOSE" : "SELL_TO_CLOSE";
+            onTrade(pos.underlyingSymbol, closeSide, pos.symbol, instruction);
+          }}
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            fontFamily: f,
+            letterSpacing: 0.8,
+            color: C.gold,
+            background: `${C.gold}12`,
+            border: `1px solid ${C.gold}30`,
+            borderRadius: 6,
+            padding: "3px 8px",
+            cursor: "pointer",
+            flexShrink: 0,
+          }}
+        >
+          CLOSE
+        </button>
+      )}
+    </div>
+  );
+}
+
+function SymbolGroupRow({
+  group,
+  onSelect,
+  onTrade,
+}: {
+  group: SymbolGroup;
+  onSelect: (sym: string) => void;
+  onTrade?: (symbol: string, side: "BUY" | "SELL", optionSymbol?: string, optionInstruction?: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const hasOptions = group.options.length > 0;
+  const eq = group.equity;
+  const eqQty = eq ? (eq.shortQuantity > 0 ? eq.shortQuantity : eq.longQuantity) : 0;
+  const eqIsShort = eq ? eq.shortQuantity > 0 : false;
+  const eqPL = eq?.longOpenProfitLoss ?? 0;
+  const eqPLPct = eq && eq.averagePrice > 0 ? (eqPL / (eq.averagePrice * eqQty)) * 100 : 0;
+
+  return (
+    <div style={{ borderBottom: `1px solid ${C.borderHi}` }}>
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-white/[0.03] transition-colors cursor-pointer"
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "8px 12px",
+          background: "transparent",
+          border: "none",
+          cursor: "pointer",
+          fontFamily: f,
+          transition: "background 0.15s",
+        }}
+        onMouseEnter={e => (e.currentTarget.style.background = `${C.text}05`)}
+        onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
       >
-        <div className="flex items-center gap-1.5 min-w-0 flex-1">
-          {isOption ? (
-            <span className="text-[9px] font-bold px-1 py-0.5 rounded shrink-0" style={{ color: pos.putCall === "CALL" ? UP : DOWN }}>
-              {pos.putCall === "CALL" ? "C" : "P"}
-            </span>
-          ) : (
-            <span className="text-[9px] font-bold px-1 py-0.5 rounded shrink-0" style={{ color: UP }}>EQ</span>
-          )}
-          <div className="flex flex-col items-start min-w-0">
-            <span className="font-mono text-[11px] font-bold text-white truncate max-w-[130px]">{displayLabel}</span>
-            <div className="flex items-center gap-1">
-              <span className="font-mono text-[9px] text-zinc-500">{fmtQty(pos.longQuantity, pos.shortQuantity)} @ {fmtCurrency(pos.averagePrice)}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex flex-col items-end gap-0.5 shrink-0">
-          <span className="font-mono text-[11px] font-medium text-white tabular-nums">{fmtCurrency(pos.marketValue)}</span>
-          <div className="flex items-center gap-0.5">
-            {totalPL !== 0 ? (
-              totalPL > 0 ? <ArrowUpRight className="w-2.5 h-2.5" style={{ color: UP }} /> : <ArrowDownRight className="w-2.5 h-2.5" style={{ color: DOWN }} />
-            ) : (
-              <Minus className="w-2.5 h-2.5" style={{ color: MUTED }} />
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: C.text, letterSpacing: 0.5 }}>
+            {group.underlying}
+          </span>
+          <div style={{ display: "flex", gap: 4 }}>
+            {eq && (
+              <span style={{ fontSize: 11, fontWeight: 600, color: C.green, background: `${C.green}15`, padding: "1px 5px", borderRadius: 4 }}>
+                {fmtQty(eq.longQuantity, eq.shortQuantity)} SHR
+              </span>
             )}
-            <span className="font-mono text-[10px] tabular-nums" style={{ color: plColor(totalPL) }}>
-              {fmtCurrency(totalPL)} ({fmtPct(totalPLPct)})
-            </span>
+            {hasOptions && (
+              <span style={{ fontSize: 11, fontWeight: 600, color: C.cyan, background: `${C.cyan}15`, padding: "1px 5px", borderRadius: 4 }}>
+                {group.options.length} OPT
+              </span>
+            )}
           </div>
         </div>
 
-        {onTrade && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              if (isOption) {
-                const instruction = isShort ? "BUY_TO_CLOSE" : "SELL_TO_CLOSE";
-                onTrade(pos.underlyingSymbol, closeSide, pos.symbol, instruction);
-              } else {
-                onTrade(displaySymbol, closeSide);
-              }
-            }}
-            className="ml-1 px-2 py-1 rounded font-mono text-[9px] font-bold tracking-wider shrink-0 transition-colors active:opacity-70"
-            style={{ color: GOLD, background: "rgba(255,184,0,0.08)", border: "1px solid rgba(255,184,0,0.2)" }}
-          >
-            TRADE
-          </button>
-        )}
+        <div style={{ textAlign: "right", flexShrink: 0 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: C.text, fontVariantNumeric: "tabular-nums" }}>
+            {fmtCurrency(group.totalMarketValue)}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 3 }}>
+            {group.totalPL !== 0 ? (
+              group.totalPL > 0 ? <ArrowUpRight style={{ color: C.green, width: 11, height: 11 }} /> : <ArrowDownRight style={{ color: C.red, width: 11, height: 11 }} />
+            ) : (
+              <Minus style={{ color: C.textDim, width: 11, height: 11 }} />
+            )}
+            <span style={{ fontSize: 11, color: plColor(group.totalPL), fontVariantNumeric: "tabular-nums" }}>
+              {fmtCurrency(group.totalPL)}
+            </span>
+          </div>
+        </div>
 
         {expanded ? (
-          <ChevronDown className="w-3 h-3 text-zinc-500 shrink-0" />
+          <ChevronDown style={{ color: C.textDim, width: 14, height: 14, flexShrink: 0 }} />
         ) : (
-          <ChevronRight className="w-3 h-3 text-zinc-500 shrink-0" />
+          <ChevronRight style={{ color: C.textDim, width: 14, height: 14, flexShrink: 0 }} />
         )}
       </button>
 
       {expanded && (
-        <div className="px-3 pb-2.5 space-y-2 ml-6" style={{ borderTop: `1px solid ${CARD_BORDER}` }}>
-          <div className="grid grid-cols-3 gap-x-3 gap-y-1.5 pt-2">
-            <div>
-              <span className="text-[8px] font-mono text-zinc-500 uppercase tracking-widest">Qty</span>
-              <p className="font-mono text-[11px] text-white tabular-nums">
-                {fmtQty(pos.longQuantity, pos.shortQuantity)}
-                {isOption && <span className="text-zinc-500 ml-1">({isShort ? "short" : "long"})</span>}
-              </p>
+        <div style={{ background: `${C.card}80`, borderTop: `1px solid ${C.border}` }}>
+          {eq && (
+            <div style={{ padding: "8px 12px 8px 20px", borderBottom: `1px solid ${C.border}` }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: C.green }}>EQUITY</span>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "4px 12px" }}>
+                <div>
+                  <div style={{ fontSize: 11, color: C.textDim, letterSpacing: 0.8, textTransform: "uppercase" }}>Qty</div>
+                  <div style={{ fontSize: 12, color: C.text, fontVariantNumeric: "tabular-nums" }}>
+                    {fmtQty(eq.longQuantity, eq.shortQuantity)}{eqIsShort ? " (short)" : ""}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: C.textDim, letterSpacing: 0.8, textTransform: "uppercase" }}>Avg Price</div>
+                  <div style={{ fontSize: 12, color: C.text, fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(eq.averagePrice)}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: C.textDim, letterSpacing: 0.8, textTransform: "uppercase" }}>Mkt Value</div>
+                  <div style={{ fontSize: 12, color: C.text, fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(eq.marketValue)}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: C.textDim, letterSpacing: 0.8, textTransform: "uppercase" }}>Day P&L</div>
+                  <div style={{ fontSize: 12, color: plColor(eq.currentDayProfitLoss), fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(eq.currentDayProfitLoss)}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: C.textDim, letterSpacing: 0.8, textTransform: "uppercase" }}>Total P&L</div>
+                  <div style={{ fontSize: 12, color: plColor(eqPL), fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(eqPL)} ({fmtPct(eqPLPct)})</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: C.textDim, letterSpacing: 0.8, textTransform: "uppercase" }}>Maint Req</div>
+                  <div style={{ fontSize: 12, color: C.text, fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(eq.maintenanceRequirement)}</div>
+                </div>
+              </div>
+              <div style={{ marginTop: 6, display: "flex", gap: 8 }}>
+                <button
+                  onClick={() => onSelect(group.underlying)}
+                  style={{ fontSize: 11, fontWeight: 700, fontFamily: f, color: C.gold, background: "transparent", border: "none", cursor: "pointer", padding: 0, letterSpacing: 0.8 }}
+                >
+                  VIEW CHART →
+                </button>
+                {onTrade && (
+                  <button
+                    onClick={() => onTrade(group.underlying, eqIsShort ? "BUY" : "SELL")}
+                    style={{ fontSize: 11, fontWeight: 700, fontFamily: f, color: C.gold, background: `${C.gold}12`, border: `1px solid ${C.gold}30`, borderRadius: 6, padding: "3px 8px", cursor: "pointer", letterSpacing: 0.8 }}
+                  >
+                    TRADE
+                  </button>
+                )}
+              </div>
             </div>
+          )}
+
+          {hasOptions && (
             <div>
-              <span className="text-[8px] font-mono text-zinc-500 uppercase tracking-widest">Avg Price</span>
-              <p className="font-mono text-[11px] text-white tabular-nums">{fmtCurrency(pos.averagePrice)}</p>
+              <div style={{ padding: "6px 12px 4px 20px", display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: C.cyan, letterSpacing: 0.8 }}>OPTIONS</span>
+                <span style={{ fontSize: 11, color: C.textDim }}>{group.options.length}</span>
+              </div>
+              {group.options.map(opt => (
+                <OptionRow key={opt.cusip} pos={opt} onTrade={onTrade} />
+              ))}
             </div>
-            <div>
-              <span className="text-[8px] font-mono text-zinc-500 uppercase tracking-widest">Day P&L</span>
-              <p className="font-mono text-[11px] tabular-nums" style={{ color: plColor(pos.currentDayProfitLoss) }}>
-                {fmtCurrency(pos.currentDayProfitLoss)}
-              </p>
+          )}
+
+          {!eq && !hasOptions && (
+            <div style={{ padding: "6px 12px" }}>
+              <button
+                onClick={() => onSelect(group.underlying)}
+                style={{ fontSize: 11, fontWeight: 700, fontFamily: f, color: C.gold, background: "transparent", border: "none", cursor: "pointer", padding: 0, letterSpacing: 0.8 }}
+              >
+                VIEW CHART →
+              </button>
             </div>
-            <div>
-              <span className="text-[8px] font-mono text-zinc-500 uppercase tracking-widest">Total P&L</span>
-              <p className="font-mono text-[11px] tabular-nums" style={{ color: plColor(totalPL) }}>
-                {fmtCurrency(totalPL)}
-              </p>
-            </div>
-            <div>
-              <span className="text-[8px] font-mono text-zinc-500 uppercase tracking-widest">% Return</span>
-              <p className="font-mono text-[11px] tabular-nums" style={{ color: plColor(totalPLPct) }}>{fmtPct(totalPLPct)}</p>
-            </div>
-            <div>
-              <span className="text-[8px] font-mono text-zinc-500 uppercase tracking-widest">Maint. Req</span>
-              <p className="font-mono text-[11px] text-white tabular-nums">{fmtCurrency(pos.maintenanceRequirement)}</p>
-            </div>
-          </div>
-          <div className="pt-1 flex gap-2">
-            <button
-              onClick={(e) => { e.stopPropagation(); onSelect(displaySymbol); }}
-              className="text-[9px] font-mono font-bold uppercase tracking-widest py-1 px-2 rounded transition-colors hover:bg-white/5 cursor-pointer"
-              style={{ color: GOLD }}
-            >
-              View {displaySymbol} →
-            </button>
-          </div>
+          )}
         </div>
       )}
     </div>
@@ -308,86 +529,83 @@ function OrderRow({ order, onCancel }: { order: Order; onCancel?: (orderId: numb
   const isOpen = order.status === "WORKING" || order.status === "PENDING_ACTIVATION";
 
   return (
-    <div className="border-b" style={{ borderColor: CARD_BORDER }}>
+    <div style={{ borderBottom: `1px solid ${C.border}` }}>
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-white/[0.03] transition-colors cursor-pointer"
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "8px 12px",
+          background: "transparent",
+          border: "none",
+          cursor: "pointer",
+          fontFamily: f,
+        }}
       >
-        <div className="flex flex-col items-start min-w-0 flex-1 gap-0.5">
-          <div className="flex items-center gap-1.5">
-            <span className="text-[9px] font-bold px-1 py-0.5 rounded shrink-0" style={{ color: isBuy ? UP : DOWN }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", minWidth: 0, flex: 1, gap: 3 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: isBuy ? C.green : C.red }}>
               {primaryLeg?.instruction?.replace(/_/g, " ") ?? "—"}
             </span>
             {isMultiLeg && (
-              <span className="text-[9px] font-mono text-zinc-500">+{order.legs.length - 1} leg{order.legs.length > 2 ? "s" : ""}</span>
+              <span style={{ fontSize: 11, color: C.textDim }}>+{order.legs.length - 1} leg{order.legs.length > 2 ? "s" : ""}</span>
             )}
           </div>
-          <span className="font-mono text-[10px] font-medium text-white truncate max-w-[180px]">{displaySymbol}</span>
+          <span style={{ fontSize: 11, fontWeight: 500, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 180 }}>
+            {displaySymbol}
+          </span>
         </div>
 
-        <div className="flex flex-col items-end gap-0.5 shrink-0">
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3, flexShrink: 0 }}>
           <StatusBadge status={order.status} />
-          <span className="font-mono text-[9px] text-zinc-500">{timeAgo(order.enteredTime)}</span>
+          <span style={{ fontSize: 11, color: C.textDim }}>{timeAgo(order.enteredTime)}</span>
         </div>
 
         {isOpen && onCancel && (
           <button
             onClick={(e) => { e.stopPropagation(); onCancel(order.orderId); }}
-            className="ml-1 p-1 rounded transition-colors active:opacity-70"
-            style={{ color: DOWN }}
-            title="Cancel order"
+            style={{ marginLeft: 4, padding: 4, borderRadius: 4, background: "transparent", border: "none", cursor: "pointer", color: C.red }}
           >
-            <XCircle className="w-3.5 h-3.5" />
+            <XCircle style={{ width: 14, height: 14 }} />
           </button>
         )}
 
         {expanded ? (
-          <ChevronDown className="w-3 h-3 text-zinc-500 shrink-0" />
+          <ChevronDown style={{ color: C.textDim, width: 14, height: 14, flexShrink: 0 }} />
         ) : (
-          <ChevronRight className="w-3 h-3 text-zinc-500 shrink-0" />
+          <ChevronRight style={{ color: C.textDim, width: 14, height: 14, flexShrink: 0 }} />
         )}
       </button>
 
       {expanded && (
-        <div className="px-3 pb-2.5 space-y-2 ml-2" style={{ borderTop: `1px solid ${CARD_BORDER}` }}>
-          <div className="grid grid-cols-3 gap-x-3 gap-y-1.5 pt-2">
-            <div>
-              <span className="text-[8px] font-mono text-zinc-500 uppercase tracking-widest">Type</span>
-              <p className="font-mono text-[11px] text-white">{order.orderType.replace(/_/g, " ")}</p>
-            </div>
-            <div>
-              <span className="text-[8px] font-mono text-zinc-500 uppercase tracking-widest">Price</span>
-              <p className="font-mono text-[11px] text-white tabular-nums">{order.price != null ? fmtCurrency(order.price) : "MKT"}</p>
-            </div>
-            <div>
-              <span className="text-[8px] font-mono text-zinc-500 uppercase tracking-widest">Filled</span>
-              <p className="font-mono text-[11px] text-white tabular-nums">{order.filledQuantity} / {order.filledQuantity + order.remainingQuantity}</p>
-            </div>
-            <div>
-              <span className="text-[8px] font-mono text-zinc-500 uppercase tracking-widest">Duration</span>
-              <p className="font-mono text-[11px] text-white">{order.duration}</p>
-            </div>
-            <div>
-              <span className="text-[8px] font-mono text-zinc-500 uppercase tracking-widest">Session</span>
-              <p className="font-mono text-[11px] text-white">{order.session}</p>
-            </div>
-            {order.complexStrategy !== "NONE" && (
-              <div>
-                <span className="text-[8px] font-mono text-zinc-500 uppercase tracking-widest">Strategy</span>
-                <p className="font-mono text-[11px] text-white">{order.complexStrategy.replace(/_/g, " ")}</p>
+        <div style={{ padding: "8px 12px 10px 20px", borderTop: `1px solid ${C.border}` }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "4px 12px" }}>
+            {[
+              ["Type", order.orderType.replace(/_/g, " ")],
+              ["Price", order.price != null ? fmtCurrency(order.price) : "MKT"],
+              ["Filled", `${order.filledQuantity} / ${order.filledQuantity + order.remainingQuantity}`],
+              ["Duration", order.duration],
+              ["Session", order.session],
+              ...(order.complexStrategy !== "NONE" ? [["Strategy", order.complexStrategy.replace(/_/g, " ")]] : []),
+            ].map(([label, value]) => (
+              <div key={label}>
+                <div style={{ fontSize: 11, color: C.textDim, letterSpacing: 0.8, textTransform: "uppercase" }}>{label}</div>
+                <div style={{ fontSize: 12, color: C.text }}>{value}</div>
               </div>
-            )}
+            ))}
           </div>
 
           {order.legs.length > 1 && (
-            <div className="space-y-1 pt-1">
-              <span className="text-[8px] font-mono text-zinc-500 uppercase tracking-widest">Legs</span>
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontSize: 11, color: C.textDim, letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 4 }}>Legs</div>
               {order.legs.map((leg, i) => (
-                <div key={i} className="flex items-center gap-2 pl-2">
-                  <span className="text-[8px] font-bold px-1 rounded" style={{ color: leg.instruction?.includes("BUY") ? UP : DOWN }}>
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, paddingLeft: 8, marginBottom: 2 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: leg.instruction?.includes("BUY") ? C.green : C.red }}>
                     {leg.instruction?.replace(/_/g, " ")}
                   </span>
-                  <span className="font-mono text-[10px] text-zinc-300 truncate">
+                  <span style={{ fontSize: 11, color: C.textMuted }}>
                     {leg.quantity}x {leg.assetType === "OPTION" ? formatOptionSymbol(leg.symbol) : leg.symbol}
                   </span>
                 </div>
@@ -396,12 +614,12 @@ function OrderRow({ order, onCancel }: { order: Order; onCancel?: (orderId: numb
           )}
 
           {order.fills.length > 0 && (
-            <div className="space-y-1 pt-1">
-              <span className="text-[8px] font-mono text-zinc-500 uppercase tracking-widest">Fills</span>
-              {order.fills.map((f, i) => (
-                <div key={i} className="flex items-center gap-2 pl-2">
-                  <span className="font-mono text-[10px] text-zinc-300 tabular-nums">{f.quantity}x @ {fmtCurrency(f.price)}</span>
-                  <span className="font-mono text-[9px] text-zinc-500">{timeAgo(f.time)}</span>
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontSize: 11, color: C.textDim, letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 4 }}>Fills</div>
+              {order.fills.map((fill, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, paddingLeft: 8, marginBottom: 2 }}>
+                  <span style={{ fontSize: 11, color: C.textMuted, fontVariantNumeric: "tabular-nums" }}>{fill.quantity}x @ {fmtCurrency(fill.price)}</span>
+                  <span style={{ fontSize: 11, color: C.textDim }}>{timeAgo(fill.time)}</span>
                 </div>
               ))}
             </div>
@@ -414,28 +632,28 @@ function OrderRow({ order, onCancel }: { order: Order; onCancel?: (orderId: numb
 
 function BalanceStat({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
-    <div className="flex items-center justify-between py-1.5 border-b" style={{ borderColor: CARD_BORDER }}>
-      <span className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest">{label}</span>
-      <span className="font-mono text-[11px] font-medium tabular-nums" style={{ color: color ?? "#fff" }}>{value}</span>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 0", borderBottom: `1px solid ${C.border}`, fontFamily: f }}>
+      <span style={{ fontSize: 11, color: C.textDim, textTransform: "uppercase", letterSpacing: 0.8 }}>{label}</span>
+      <span style={{ fontSize: 12, fontWeight: 500, color: color ?? C.text, fontVariantNumeric: "tabular-nums" }}>{value}</span>
     </div>
   );
 }
 
 function MarginBar({ used, total }: { used: number; total: number }) {
   const pct = total > 0 ? Math.min((used / total) * 100, 100) : 0;
-  const barColor = pct > 80 ? DOWN : pct > 50 ? GOLD : UP;
+  const barColor = pct > 80 ? C.red : pct > 50 ? C.gold : C.green;
   return (
-    <div className="rounded-xl p-3" style={{ background: CARD_BG, border: `1px solid ${CARD_BORDER}` }}>
-      <div className="flex items-center justify-between mb-1.5">
-        <span className="font-mono text-[9px] text-zinc-500 uppercase tracking-widest">Margin Utilization</span>
-        <span className="font-mono text-[11px] font-bold tabular-nums" style={{ color: barColor }}>{pct.toFixed(1)}%</span>
+    <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: 12, fontFamily: f }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+        <span style={{ fontSize: 11, color: C.textDim, textTransform: "uppercase", letterSpacing: 0.8 }}>Margin Utilization</span>
+        <span style={{ fontSize: 12, fontWeight: 700, color: barColor, fontVariantNumeric: "tabular-nums" }}>{pct.toFixed(1)}%</span>
       </div>
-      <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "#1a1a1e" }}>
-        <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, background: barColor }} />
+      <div style={{ height: 6, borderRadius: 3, overflow: "hidden", background: C.dim }}>
+        <div style={{ height: "100%", borderRadius: 3, transition: "width 0.5s", width: `${pct}%`, background: barColor }} />
       </div>
-      <div className="flex justify-between mt-1">
-        <span className="font-mono text-[8px] text-zinc-600">{fmtCurrency(used)} used</span>
-        <span className="font-mono text-[8px] text-zinc-600">{fmtCurrency(total)} total</span>
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
+        <span style={{ fontSize: 11, color: C.textDim }}>{fmtCurrency(used)} used</span>
+        <span style={{ fontSize: 11, color: C.textDim }}>{fmtCurrency(total)} total</span>
       </div>
     </div>
   );
@@ -468,9 +686,11 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
   const [orderSearch, setOrderSearch] = useState("");
   const [cancellingId, setCancellingId] = useState<number | null>(null);
   const [accountHash, setAccountHash] = useState<string | null>(null);
+  const [ordersError, setOrdersError] = useState(false);
+  const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const fetchAccount = useCallback(async () => {
-    setLoading(true);
+  const fetchAccount = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     setError(null);
     try {
       const res = await fetchWithAuth("/api/portfolio/accounts");
@@ -479,13 +699,11 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
       if (data.length > 0) setAccount(data[0]);
       setLastRefresh(new Date());
     } catch (err) {
-      setError("Failed to load portfolio data");
+      if (!silent) setError("Failed to load portfolio data");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
-
-  const [ordersError, setOrdersError] = useState(false);
 
   const fetchOrders = useCallback(async () => {
     setOrdersLoading(true);
@@ -513,6 +731,17 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
     }
   }, [accessToken, fetchAccount, fetchOrders]);
 
+  useEffect(() => {
+    if (!accessToken) return;
+    refreshTimerRef.current = setInterval(() => {
+      fetchAccount(true);
+      fetchOrders();
+    }, LIVE_REFRESH_MS);
+    return () => {
+      if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
+    };
+  }, [accessToken, fetchAccount, fetchOrders]);
+
   const handleSelectSymbol = useCallback((sym: string) => {
     setSymbol(sym);
     onNavigateToSymbol?.(sym);
@@ -533,14 +762,28 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
     }
   }, [accountHash, fetchOrders]);
 
-  const equityPositions = useMemo(
-    () => (account?.positions ?? []).filter((p) => p.assetType === "EQUITY"),
-    [account]
-  );
-  const optionPositions = useMemo(
-    () => (account?.positions ?? []).filter((p) => p.assetType === "OPTION"),
-    [account]
-  );
+  const symbolGroups = useMemo(() => {
+    const positions = account?.positions ?? [];
+    const groupMap = new Map<string, SymbolGroup>();
+
+    for (const pos of positions) {
+      const key = (pos.assetType === "OPTION" ? pos.underlyingSymbol : pos.symbol).toUpperCase();
+      if (!groupMap.has(key)) {
+        groupMap.set(key, { underlying: key, equity: null, options: [], totalMarketValue: 0, totalDayPL: 0, totalPL: 0 });
+      }
+      const g = groupMap.get(key)!;
+      if (pos.assetType === "OPTION") {
+        g.options.push(pos);
+      } else {
+        g.equity = pos;
+      }
+      g.totalMarketValue += pos.marketValue;
+      g.totalDayPL += pos.currentDayProfitLoss;
+      g.totalPL += pos.longOpenProfitLoss;
+    }
+
+    return Array.from(groupMap.values()).sort((a, b) => Math.abs(b.totalMarketValue) - Math.abs(a.totalMarketValue));
+  }, [account]);
 
   const totalUnrealized = useMemo(() => {
     return (account?.positions ?? []).reduce((sum, p) => sum + p.longOpenProfitLoss, 0);
@@ -551,6 +794,12 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
   }, [account]);
 
   const unrealizedPct = totalMarketValue > 0 ? (totalUnrealized / (totalMarketValue - totalUnrealized)) * 100 : 0;
+
+  const isMarginCall = useMemo(() => {
+    if (!account?.balances) return false;
+    const bal = account.balances;
+    return bal.equity > 0 && bal.maintenanceRequirement > 0 && bal.equity < bal.maintenanceRequirement;
+  }, [account]);
 
   const filteredOrders = useMemo(() => {
     let filtered = orders;
@@ -568,29 +817,29 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
 
   if (!accessToken) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 min-h-[60vh]">
-        <Briefcase className="w-12 h-12 text-primary/30" />
-        <p className="font-mono text-sm text-muted-foreground text-center">CONNECT SCHWAB TO VIEW PORTFOLIO</p>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16, padding: 32, minHeight: "60vh", fontFamily: f }}>
+        <Briefcase style={{ width: 48, height: 48, color: C.dim }} />
+        <p style={{ fontSize: 12, color: C.textDim, letterSpacing: 1 }}>CONNECT SCHWAB TO VIEW PORTFOLIO</p>
       </div>
     );
   }
 
   if (loading && !account) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-3 p-8 min-h-[60vh]">
-        <RefreshCw className="w-6 h-6 animate-spin" style={{ color: GOLD }} />
-        <p className="font-mono text-xs text-zinc-500 tracking-wider">LOADING PORTFOLIO...</p>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 32, minHeight: "60vh", fontFamily: f }}>
+        <RefreshCw className="animate-spin" style={{ width: 24, height: 24, color: C.gold }} />
+        <p style={{ fontSize: 11, color: C.textDim, letterSpacing: 1 }}>LOADING PORTFOLIO...</p>
       </div>
     );
   }
 
   if (error && !account) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-3 p-8 min-h-[60vh]">
-        <AlertCircle className="w-8 h-8 text-red-500/50" />
-        <p className="font-mono text-xs text-red-500/70">{error}</p>
-        <button onClick={fetchAccount} className="font-mono text-[10px] uppercase tracking-widest px-3 py-1.5 rounded cursor-pointer hover:bg-white/5 transition-colors" style={{ color: GOLD }}>
-          Retry
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 32, minHeight: "60vh", fontFamily: f }}>
+        <AlertCircle style={{ width: 32, height: 32, color: `${C.red}80` }} />
+        <p style={{ fontSize: 12, color: `${C.red}aa` }}>{error}</p>
+        <button onClick={() => fetchAccount()} style={{ fontSize: 11, color: C.gold, background: "transparent", border: "none", cursor: "pointer", letterSpacing: 1, fontFamily: f }}>
+          RETRY
         </button>
       </div>
     );
@@ -599,121 +848,131 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
   const bal = account?.balances;
   const dayPL = account?.dayPL ?? 0;
   const totalPL = account?.totalPL ?? 0;
-  const marginUsed = (bal?.maintenanceRequirement ?? 0);
-  const marginTotal = (bal?.equity ?? 0);
+  const marginUsed = bal?.maintenanceRequirement ?? 0;
+  const marginTotal = bal?.equity ?? 0;
 
   return (
-    <div className="flex-1 flex flex-col min-h-0">
-      <div className="px-3 pt-3 pb-2 space-y-2.5">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Briefcase className="w-4 h-4" style={{ color: GOLD }} />
-            <span className="font-mono text-xs font-bold text-white tracking-wider">PORTFOLIO</span>
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, fontFamily: f }}>
+      <div style={{ padding: "12px 12px 8px", display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Briefcase style={{ width: 16, height: 16, color: C.gold }} />
+            <span style={{ fontSize: 12, fontWeight: 700, color: C.text, letterSpacing: 1.2 }}>PORTFOLIO</span>
+            <span style={{ width: 6, height: 6, borderRadius: 3, background: C.green, display: "inline-block" }} title="Live updates active" />
           </div>
-          <div className="flex items-center gap-2">
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             {lastRefresh && (
-              <span className="font-mono text-[9px] text-zinc-600">LAST UPDATED {timeAgo(lastRefresh.toISOString())}</span>
+              <span style={{ fontSize: 11, color: C.dim }}>{timeAgo(lastRefresh.toISOString())}</span>
             )}
-            <button onClick={() => { fetchAccount(); fetchOrders(); }} className="p-1.5 rounded hover:bg-white/5 transition-colors cursor-pointer" disabled={loading}>
-              <RefreshCw className={`w-3.5 h-3.5 text-zinc-500 ${loading ? "animate-spin" : ""}`} />
+            <button
+              onClick={() => { fetchAccount(); fetchOrders(); }}
+              disabled={loading}
+              style={{ padding: 6, borderRadius: 6, background: "transparent", border: "none", cursor: "pointer" }}
+            >
+              <RefreshCw className={loading ? "animate-spin" : ""} style={{ width: 14, height: 14, color: C.textDim }} />
             </button>
           </div>
         </div>
 
-        <div className="rounded-xl p-3 space-y-2" style={{ background: CARD_BG, border: `1px solid ${CARD_BORDER}` }}>
-          <div className="flex items-center justify-between">
-            <span className="font-mono text-[9px] text-zinc-500 uppercase tracking-widest">Net Liquidation</span>
-            <span className="font-mono text-[9px] text-zinc-600 uppercase">
+        {isMarginCall && <MarginCallBanner />}
+
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+            <span style={{ fontSize: 11, color: C.textDim, letterSpacing: 0.8, textTransform: "uppercase" }}>Net Liquidation</span>
+            <span style={{ fontSize: 11, color: C.dim }}>
               {account?.type ?? ""} · {account?.accountNumber ?? ""}
             </span>
           </div>
-          <p className="font-mono text-2xl font-bold text-white tabular-nums leading-tight">
+          <p style={{ fontSize: 24, fontWeight: 700, color: C.text, fontVariantNumeric: "tabular-nums", lineHeight: 1.2, margin: 0 }}>
             {fmtCurrency(bal?.liquidationValue ?? 0)}
           </p>
-          <div className="grid grid-cols-3 gap-2 pt-1">
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 8 }}>
             <div>
-              <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest">Day P&L</span>
-              <p className="font-mono text-sm font-bold tabular-nums" style={{ color: plColor(dayPL) }}>
+              <div style={{ fontSize: 11, color: C.textDim, letterSpacing: 0.8, textTransform: "uppercase" }}>Day P&L</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: plColor(dayPL), fontVariantNumeric: "tabular-nums" }}>
                 {dayPL >= 0 ? "+" : ""}{fmtCurrency(dayPL)}
-              </p>
+              </div>
             </div>
             <div>
-              <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest">Total P&L</span>
-              <p className="font-mono text-sm font-bold tabular-nums" style={{ color: plColor(totalPL) }}>
+              <div style={{ fontSize: 11, color: C.textDim, letterSpacing: 0.8, textTransform: "uppercase" }}>Total P&L</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: plColor(totalPL), fontVariantNumeric: "tabular-nums" }}>
                 {totalPL >= 0 ? "+" : ""}{fmtCurrency(totalPL)}
-              </p>
+              </div>
             </div>
             <div>
-              <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest">Buying Power</span>
-              <p className="font-mono text-sm font-bold text-white tabular-nums">
+              <div style={{ fontSize: 11, color: C.textDim, letterSpacing: 0.8, textTransform: "uppercase" }}>Buying Power</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: C.text, fontVariantNumeric: "tabular-nums" }}>
                 {fmtCurrency(bal?.buyingPower ?? 0)}
-              </p>
+              </div>
             </div>
           </div>
         </div>
 
-        <div className="flex gap-0 rounded-lg overflow-hidden" style={{ background: CARD_BG, border: `1px solid ${CARD_BORDER}` }}>
+        {account && <DayTradesIndicator roundTrips={account.roundTrips} isDayTrader={account.isDayTrader} />}
+
+        <div style={{ display: "flex", gap: 0, borderRadius: 8, overflow: "hidden", background: C.card, border: `1px solid ${C.border}` }}>
           {(["positions", "orders", "balance"] as SubTab[]).map((tab) => (
             <button
               key={tab}
               onClick={() => setSubTab(tab)}
-              className="flex-1 py-2 font-mono text-[10px] font-bold uppercase tracking-widest transition-colors cursor-pointer relative"
-              style={{ color: subTab === tab ? GOLD : MUTED, background: "transparent" }}
+              style={{
+                flex: 1,
+                padding: "8px 0",
+                fontSize: 11,
+                fontWeight: 700,
+                textTransform: "uppercase",
+                letterSpacing: 1,
+                fontFamily: f,
+                color: subTab === tab ? C.gold : C.textDim,
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                position: "relative",
+              }}
             >
-              {tab === "positions" && <BarChart3 className="w-3 h-3 mx-auto mb-0.5" />}
-              {tab === "orders" && <Clock className="w-3 h-3 mx-auto mb-0.5" />}
-              {tab === "balance" && <DollarSign className="w-3 h-3 mx-auto mb-0.5" />}
-              {tab}
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                {tab === "positions" && <BarChart3 style={{ width: 14, height: 14 }} />}
+                {tab === "orders" && <Clock style={{ width: 14, height: 14 }} />}
+                {tab === "balance" && <DollarSign style={{ width: 14, height: 14 }} />}
+                {tab}
+              </div>
               {subTab === tab && (
-                <div className="absolute bottom-0 left-2 right-2 h-[2px] rounded-full" style={{ background: GOLD }} />
+                <div style={{ position: "absolute", bottom: 0, left: 8, right: 8, height: 2, borderRadius: 1, background: C.gold }} />
               )}
             </button>
           ))}
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto min-h-0">
+      <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
         {subTab === "positions" && (
           <div>
-            {(equityPositions.length > 0 || optionPositions.length > 0) && (
-              <div className="px-3 py-2 flex items-center justify-between" style={{ background: CARD_BG, borderBottom: `1px solid ${CARD_BORDER}` }}>
-                <span className="font-mono text-[9px] text-zinc-500 uppercase tracking-widest">Unrealized P&L</span>
-                <span className="font-mono text-[12px] font-bold tabular-nums" style={{ color: plColor(totalUnrealized) }}>
+            {symbolGroups.length > 0 && (
+              <div style={{ padding: "6px 12px", display: "flex", alignItems: "center", justifyContent: "space-between", background: C.bg, borderBottom: `1px solid ${C.border}` }}>
+                <span style={{ fontSize: 11, color: C.textDim, letterSpacing: 0.8, textTransform: "uppercase" }}>Unrealized P&L</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: plColor(totalUnrealized), fontVariantNumeric: "tabular-nums" }}>
                   {totalUnrealized >= 0 ? "+" : ""}{fmtCurrency(totalUnrealized)} ({fmtPct(unrealizedPct)})
                 </span>
               </div>
             )}
 
-            {equityPositions.length > 0 && (
-              <div>
-                <div className="px-3 py-1.5 flex items-center gap-1.5" style={{ background: CARD_BG }}>
-                  <TrendingUp className="w-3 h-3" style={{ color: UP }} />
-                  <span className="font-mono text-[9px] font-bold uppercase tracking-widest" style={{ color: UP }}>Equities</span>
-                  <span className="font-mono text-[9px] text-zinc-600 ml-auto">{equityPositions.length}</span>
-                </div>
-                {equityPositions.map((pos) => (
-                  <PositionRow key={pos.cusip} pos={pos} onSelect={handleSelectSymbol} onTrade={onTrade} />
-                ))}
-              </div>
-            )}
+            <div style={{ padding: "4px 12px", display: "flex", alignItems: "center", justifyContent: "space-between", background: C.bg, borderBottom: `1px solid ${C.border}` }}>
+              <span style={{ fontSize: 11, color: C.textMuted, letterSpacing: 0.8, fontWeight: 600 }}>
+                {symbolGroups.length} SYMBOL{symbolGroups.length !== 1 ? "S" : ""}
+              </span>
+              <span style={{ fontSize: 11, color: C.textDim }}>
+                {(account?.positions ?? []).length} POSITION{(account?.positions ?? []).length !== 1 ? "S" : ""}
+              </span>
+            </div>
 
-            {optionPositions.length > 0 && (
-              <div>
-                <div className="px-3 py-1.5 flex items-center gap-1.5" style={{ background: CARD_BG }}>
-                  <BarChart3 className="w-3 h-3" style={{ color: "#22d3ee" }} />
-                  <span className="font-mono text-[9px] font-bold uppercase tracking-widest" style={{ color: "#22d3ee" }}>Options</span>
-                  <span className="font-mono text-[9px] text-zinc-600 ml-auto">{optionPositions.length}</span>
-                </div>
-                {optionPositions.map((pos) => (
-                  <PositionRow key={pos.cusip} pos={pos} onSelect={handleSelectSymbol} onTrade={onTrade} />
-                ))}
-              </div>
-            )}
+            {symbolGroups.map(group => (
+              <SymbolGroupRow key={group.underlying} group={group} onSelect={handleSelectSymbol} onTrade={onTrade} />
+            ))}
 
-            {equityPositions.length === 0 && optionPositions.length === 0 && (
-              <div className="flex flex-col items-center justify-center py-16 gap-3">
-                <Briefcase className="w-8 h-8 text-zinc-700" />
-                <p className="font-mono text-xs text-zinc-600">No open positions</p>
+            {symbolGroups.length === 0 && (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "64px 0", gap: 12 }}>
+                <Briefcase style={{ width: 32, height: 32, color: C.dim }} />
+                <p style={{ fontSize: 12, color: C.textDim }}>No open positions</p>
               </div>
             )}
           </div>
@@ -721,66 +980,74 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
 
         {subTab === "orders" && (
           <div>
-            <div className="px-3 py-2 space-y-2" style={{ borderBottom: `1px solid ${CARD_BORDER}` }}>
-              <div className="flex gap-1 overflow-x-auto">
-                {ORDER_FILTERS.map((f) => (
+            <div style={{ padding: "8px 12px", display: "flex", flexDirection: "column", gap: 8, borderBottom: `1px solid ${C.border}` }}>
+              <div style={{ display: "flex", gap: 4, overflowX: "auto" }}>
+                {ORDER_FILTERS.map((fil) => (
                   <button
-                    key={f.value}
-                    onClick={() => setOrderFilter(f.value)}
-                    className="px-2.5 py-1.5 rounded-lg font-mono text-[10px] font-bold tracking-wider whitespace-nowrap transition-colors shrink-0"
+                    key={fil.value}
+                    onClick={() => setOrderFilter(fil.value)}
                     style={{
-                      color: orderFilter === f.value ? GOLD : DIM,
-                      background: orderFilter === f.value ? "rgba(255,184,0,0.08)" : "transparent",
-                      border: `1px solid ${orderFilter === f.value ? "rgba(255,184,0,0.25)" : "transparent"}`,
+                      padding: "5px 10px",
+                      borderRadius: 6,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      letterSpacing: 0.8,
+                      fontFamily: f,
+                      whiteSpace: "nowrap",
+                      flexShrink: 0,
+                      cursor: "pointer",
+                      color: orderFilter === fil.value ? C.gold : C.dim,
+                      background: orderFilter === fil.value ? `${C.gold}12` : "transparent",
+                      border: `1px solid ${orderFilter === fil.value ? `${C.gold}40` : "transparent"}`,
                     }}
                   >
-                    {f.label}
+                    {fil.label}
                   </button>
                 ))}
               </div>
-              <div className="flex items-center rounded-lg overflow-hidden" style={{ background: "#141416", border: `1px solid ${CARD_BORDER}` }}>
-                <Search className="w-3.5 h-3.5 ml-2.5" style={{ color: DIM }} />
+              <div style={{ display: "flex", alignItems: "center", borderRadius: 6, overflow: "hidden", background: C.card, border: `1px solid ${C.border}` }}>
+                <Search style={{ width: 14, height: 14, marginLeft: 10, color: C.dim, flexShrink: 0 }} />
                 <input
                   type="text"
                   value={orderSearch}
                   onChange={(e) => setOrderSearch(e.target.value)}
                   placeholder="Search orders..."
-                  className="flex-1 px-2 py-1.5 font-mono text-[11px] bg-transparent outline-none text-white placeholder:text-zinc-600"
+                  style={{ flex: 1, padding: "6px 8px", fontSize: 11, fontFamily: f, background: "transparent", border: "none", outline: "none", color: C.text }}
                 />
                 {orderSearch && (
-                  <button onClick={() => setOrderSearch("")} className="pr-2" style={{ color: DIM }}>
-                    <XCircle className="w-3 h-3" />
+                  <button onClick={() => setOrderSearch("")} style={{ paddingRight: 8, background: "transparent", border: "none", cursor: "pointer", color: C.dim }}>
+                    <XCircle style={{ width: 12, height: 12 }} />
                   </button>
                 )}
               </div>
             </div>
 
             {ordersLoading && orders.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 gap-3">
-                <RefreshCw className="w-5 h-5 animate-spin" style={{ color: GOLD }} />
-                <p className="font-mono text-[10px] text-zinc-500 tracking-wider">LOADING ORDERS...</p>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "64px 0", gap: 12 }}>
+                <RefreshCw className="animate-spin" style={{ width: 20, height: 20, color: C.gold }} />
+                <p style={{ fontSize: 11, color: C.textDim, letterSpacing: 1 }}>LOADING ORDERS...</p>
               </div>
             ) : ordersError ? (
-              <div className="flex flex-col items-center justify-center py-16 gap-3">
-                <AlertCircle className="w-6 h-6 text-red-500/50" />
-                <p className="font-mono text-xs text-red-500/70">Failed to load orders</p>
-                <button onClick={fetchOrders} className="font-mono text-[10px] uppercase tracking-widest px-3 py-1.5 rounded cursor-pointer hover:bg-white/5 transition-colors" style={{ color: GOLD }}>
-                  Retry
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "64px 0", gap: 12 }}>
+                <AlertCircle style={{ width: 24, height: 24, color: `${C.red}80` }} />
+                <p style={{ fontSize: 12, color: `${C.red}aa` }}>Failed to load orders</p>
+                <button onClick={fetchOrders} style={{ fontSize: 11, color: C.gold, background: "transparent", border: "none", cursor: "pointer", letterSpacing: 1, fontFamily: f }}>
+                  RETRY
                 </button>
               </div>
             ) : filteredOrders.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 gap-3">
-                <Clock className="w-8 h-8 text-zinc-700" />
-                <p className="font-mono text-xs text-zinc-600">{orderFilter === "ALL" && !orderSearch ? "No recent orders" : "No matching orders"}</p>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "64px 0", gap: 12 }}>
+                <Clock style={{ width: 32, height: 32, color: C.dim }} />
+                <p style={{ fontSize: 12, color: C.textDim }}>{orderFilter === "ALL" && !orderSearch ? "No recent orders" : "No matching orders"}</p>
               </div>
             ) : (
               <>
-                <div className="px-3 py-1.5 flex items-center gap-1.5" style={{ background: CARD_BG }}>
-                  <Clock className="w-3 h-3" style={{ color: GOLD }} />
-                  <span className="font-mono text-[9px] font-bold uppercase tracking-widest" style={{ color: GOLD }}>
+                <div style={{ padding: "6px 12px", display: "flex", alignItems: "center", gap: 6, background: C.bg }}>
+                  <Clock style={{ width: 12, height: 12, color: C.gold }} />
+                  <span style={{ fontSize: 11, fontWeight: 700, color: C.gold, letterSpacing: 0.8, textTransform: "uppercase" }}>
                     {orderFilter === "ALL" ? "All" : orderFilter} Orders
                   </span>
-                  <span className="font-mono text-[9px] text-zinc-600 ml-auto">{filteredOrders.length}</span>
+                  <span style={{ fontSize: 11, color: C.textDim, marginLeft: "auto" }}>{filteredOrders.length}</span>
                 </div>
                 {filteredOrders.map((order) => (
                   <OrderRow key={order.orderId} order={order} onCancel={handleCancelOrder} />
@@ -791,61 +1058,59 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
         )}
 
         {subTab === "balance" && bal && (
-          <div className="px-3 pb-4 space-y-3">
+          <div style={{ padding: "8px 12px 16px", display: "flex", flexDirection: "column", gap: 12 }}>
             <MarginBar used={marginUsed} total={marginTotal} />
 
-            <div>
-              <div className="py-1.5 flex items-center gap-1.5 mb-1">
-                <DollarSign className="w-3 h-3" style={{ color: GOLD }} />
-                <span className="font-mono text-[9px] font-bold uppercase tracking-widest" style={{ color: GOLD }}>Account Details</span>
-              </div>
-              <div className="rounded-xl overflow-hidden" style={{ background: CARD_BG, border: `1px solid ${CARD_BORDER}` }}>
-                <div className="px-3">
-                  <BalanceStat label="Equity" value={fmtCurrency(bal.equity)} />
-                  <BalanceStat label="Cash Balance" value={fmtCurrency(bal.cashBalance)} />
-                  <BalanceStat label="Available Funds" value={fmtCurrency(bal.availableFunds)} />
-                  <BalanceStat label="Margin Balance" value={fmtCurrency(bal.marginBalance)} color={bal.marginBalance < 0 ? DOWN : undefined} />
-                  <BalanceStat label="Buying Power" value={fmtCurrency(bal.buyingPower)} />
-                  <BalanceStat label="DT Buying Power" value={fmtCurrency(bal.dayTradingBuyingPower)} />
-                  <BalanceStat label="Maintenance Req" value={fmtCurrency(bal.maintenanceRequirement)} />
-                  <BalanceStat label="SMA" value={fmtCurrency(bal.sma)} />
+            {[
+              {
+                icon: <DollarSign style={{ width: 14, height: 14, color: C.gold }} />,
+                title: "Account Details",
+                items: [
+                  ["Equity", fmtCurrency(bal.equity)],
+                  ["Cash Balance", fmtCurrency(bal.cashBalance)],
+                  ["Available Funds", fmtCurrency(bal.availableFunds)],
+                  ["Margin Balance", fmtCurrency(bal.marginBalance), bal.marginBalance < 0 ? C.red : undefined],
+                  ["Buying Power", fmtCurrency(bal.buyingPower)],
+                  ["DT Buying Power", fmtCurrency(bal.dayTradingBuyingPower)],
+                  ["Maintenance Req", fmtCurrency(bal.maintenanceRequirement)],
+                  ["SMA", fmtCurrency(bal.sma)],
+                ],
+              },
+              {
+                icon: <BarChart3 style={{ width: 14, height: 14, color: C.gold }} />,
+                title: "Market Values",
+                items: [
+                  ["Long Stock", fmtCurrency(bal.longMarketValue)],
+                  ["Short Stock", fmtCurrency(bal.shortMarketValue)],
+                  ["Long Options", fmtCurrency(bal.longOptionMarketValue)],
+                  ["Short Options", fmtCurrency(bal.shortOptionMarketValue), bal.shortOptionMarketValue < 0 ? C.red : undefined],
+                  ["Bond Value", fmtCurrency(bal.bondValue)],
+                  ["Pending Deposits", fmtCurrency(bal.pendingDeposits)],
+                ],
+              },
+              ...(account ? [{
+                icon: <ShieldCheck style={{ width: 14, height: 14, color: C.gold }} />,
+                title: "Risk Metrics",
+                items: [
+                  ["Account Type", account.type],
+                  ["Day Trader", account.isDayTrader ? "YES" : "NO", account.isDayTrader ? C.gold : undefined],
+                  ["Round Trips (5d)", String(account.roundTrips), account.roundTrips >= 3 ? C.red : undefined],
+                  ["Margin Usage", `${marginTotal > 0 ? ((marginUsed / marginTotal) * 100).toFixed(1) : "0"}%`, marginTotal > 0 && (marginUsed / marginTotal) > 0.8 ? C.red : undefined],
+                ],
+              }] : []),
+            ].map(section => (
+              <div key={section.title}>
+                <div style={{ padding: "6px 0", display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                  {section.icon}
+                  <span style={{ fontSize: 11, fontWeight: 700, color: C.gold, letterSpacing: 0.8, textTransform: "uppercase" }}>{section.title}</span>
+                </div>
+                <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden", padding: "0 12px" }}>
+                  {section.items.map(([label, value, color]) => (
+                    <BalanceStat key={label} label={label as string} value={value as string} color={color as string | undefined} />
+                  ))}
                 </div>
               </div>
-            </div>
-
-            <div>
-              <div className="py-1.5 flex items-center gap-1.5 mb-1">
-                <BarChart3 className="w-3 h-3" style={{ color: GOLD }} />
-                <span className="font-mono text-[9px] font-bold uppercase tracking-widest" style={{ color: GOLD }}>Market Values</span>
-              </div>
-              <div className="rounded-xl overflow-hidden" style={{ background: CARD_BG, border: `1px solid ${CARD_BORDER}` }}>
-                <div className="px-3">
-                  <BalanceStat label="Long Stock" value={fmtCurrency(bal.longMarketValue)} />
-                  <BalanceStat label="Short Stock" value={fmtCurrency(bal.shortMarketValue)} />
-                  <BalanceStat label="Long Options" value={fmtCurrency(bal.longOptionMarketValue)} />
-                  <BalanceStat label="Short Options" value={fmtCurrency(bal.shortOptionMarketValue)} color={bal.shortOptionMarketValue < 0 ? DOWN : undefined} />
-                  <BalanceStat label="Bond Value" value={fmtCurrency(bal.bondValue)} />
-                  <BalanceStat label="Pending Deposits" value={fmtCurrency(bal.pendingDeposits)} />
-                </div>
-              </div>
-            </div>
-
-            {account && (
-              <div>
-                <div className="py-1.5 flex items-center gap-1.5 mb-1">
-                  <ShieldCheck className="w-3 h-3" style={{ color: GOLD }} />
-                  <span className="font-mono text-[9px] font-bold uppercase tracking-widest" style={{ color: GOLD }}>Risk Metrics</span>
-                </div>
-                <div className="rounded-xl overflow-hidden" style={{ background: CARD_BG, border: `1px solid ${CARD_BORDER}` }}>
-                  <div className="px-3">
-                    <BalanceStat label="Account Type" value={account.type} />
-                    <BalanceStat label="Day Trader" value={account.isDayTrader ? "YES" : "NO"} color={account.isDayTrader ? GOLD : undefined} />
-                    <BalanceStat label="Round Trips" value={String(account.roundTrips)} color={account.roundTrips >= 3 ? DOWN : undefined} />
-                    <BalanceStat label="Margin Usage" value={`${marginTotal > 0 ? ((marginUsed / marginTotal) * 100).toFixed(1) : "0"}%`} color={marginTotal > 0 && (marginUsed / marginTotal) > 0.8 ? DOWN : undefined} />
-                  </div>
-                </div>
-              </div>
-            )}
+            ))}
           </div>
         )}
       </div>
