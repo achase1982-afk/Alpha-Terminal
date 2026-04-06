@@ -1289,7 +1289,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
         {!isLoading && !error && !data && !accessToken && (
           <div className="p-16 flex flex-col items-center justify-center font-mono">
             <Table2 className="w-7 h-7 mb-2" style={{ color: MUTED }} />
-            <span className="text-[10px] tracking-widest" style={{ color: DIM, fontWeight: FW_LIGHT }}>CONNECT SCHWAB TO VIEW OPTIONS</span>
+            <span className="text-[10px] tracking-widest" style={{ color: DIM, fontWeight: FW_LIGHT }}>CONNECT BROKER TO VIEW OPTIONS</span>
           </div>
         )}
 

@@ -1,18 +1,5 @@
-/**
- * /api/stream — real-time price streaming via Server-Sent Events (SSE).
- *
- * POST /api/stream/start      — start/update the Schwab Streamer WS connection
- * POST /api/stream/symbols    — add symbols to an existing subscription
- * GET  /api/stream/quotes     — SSE endpoint; browser connects here for live prices
- * GET  /api/stream/snapshot   — one-shot JSON snapshot of the current cache
- * GET  /api/stream/status     — connection health
- */
-
 import { Router, type IRouter } from "express";
 import {
-  startStreamer,
-  addSymbols,
-  addOptionSymbols,
   addSseClient,
   getSnapshot,
   getStreamerStatus,
@@ -21,67 +8,23 @@ import {
 
 const router: IRouter = Router();
 
-// ── POST /api/stream/start ────────────────────────────────────────────────────
-router.post("/start", async (req, res) => {
-  const { accessToken, traderAccessToken, symbols } = req.body as {
-    accessToken?: string;
-    traderAccessToken?: string;
-    symbols?: string[];
-  };
-
-  if (!accessToken) {
-    return res.status(400).json({ error: "accessToken is required" });
-  }
-
-  const userSyms = Array.isArray(symbols) && symbols.length > 0
-    ? symbols.map((s: string) => String(s).toUpperCase())
-    : ["SPY", "QQQ", "IWM", "DIA", "VIX", "TSLA", "NVDA", "AAPL", "META", "MSFT", "AMZN", "GOOGL"];
-
-  const pulseSymbols = [
-    "$VIX", "$VVIX", "$VIX9D", "$VIX3M", "$SKEW",
-    "$CPC", "$CPCE", "$CPCI", "$PCSPY", "$PCQQQ", "$PCIWM", "$SRVIX",
-    "$TICK", "$ADD", "$TRIN", "$ADVN", "$DECN",
-    "$TNX", "$TYX", "$DXY",
-    "HYG", "LQD", "IEF",
-    "/ES", "/NQ", "/YM", "/RTY",
-    "/ZB", "/ZT",
-    "/GC", "/CL", "/BZ", "/ZQ",
-  ];
-
-  const combined = new Set([...userSyms, ...pulseSymbols]);
-  const syms = [...combined];
-
-  const streamerToken = traderAccessToken || accessToken;
-  await startStreamer(streamerToken, syms);
-  res.json({ ok: true, subscribedCount: syms.length, usingTraderToken: !!traderAccessToken });
+router.post("/start", async (_req, res) => {
+  res.json({ ok: true, subscribedCount: 0, message: "Schwab streaming removed — IB only" });
 });
 
-// ── POST /api/stream/symbols ──────────────────────────────────────────────────
-router.post("/symbols", (req, res) => {
-  const { symbols } = req.body as { symbols?: string[] };
-  if (!Array.isArray(symbols) || symbols.length === 0) {
-    return res.status(400).json({ error: "symbols array is required" });
-  }
-  addSymbols(symbols.map((s: string) => String(s).toUpperCase()));
+router.post("/symbols", (_req, res) => {
   res.json({ ok: true });
 });
 
-// ── POST /api/stream/option-symbols ───────────────────────────────────────────
-router.post("/option-symbols", (req, res) => {
-  const { symbols } = req.body as { symbols?: string[] };
-  if (!Array.isArray(symbols) || symbols.length === 0) {
-    return res.status(400).json({ error: "symbols array is required" });
-  }
-  addOptionSymbols(symbols);
-  res.json({ ok: true, count: symbols.length });
+router.post("/option-symbols", (_req, res) => {
+  res.json({ ok: true, count: 0 });
 });
 
-// ── GET /api/stream/quotes  (SSE) ─────────────────────────────────────────────
 router.get("/quotes", (req, res) => {
   res.setHeader("Content-Type",  "text/event-stream");
   res.setHeader("Cache-Control", "no-cache, no-transform");
   res.setHeader("Connection",    "keep-alive");
-  res.setHeader("X-Accel-Buffering", "no");   // disable nginx buffering
+  res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders();
 
   try {
@@ -104,69 +47,15 @@ router.get("/quotes", (req, res) => {
   });
 });
 
-// ── GET /api/stream/snapshot ──────────────────────────────────────────────────
 router.get("/snapshot", (_req, res) => {
   res.json({ quotes: getSnapshot(), status: getStreamerStatus() });
 });
 
-// ── GET /api/stream/status ────────────────────────────────────────────────────
 router.get("/status", (_req, res) => {
   res.json({
     connected:    isConnected(),
     cachedSymbols: getSnapshot().map(q => q.symbol),
   });
-});
-
-// ── GET /api/stream/diag — diagnose why streaming might not work ─────────────
-router.get("/diag", async (req, res) => {
-  const token = req.query["token"] as string | undefined;
-  if (!token) {
-    return res.status(400).json({ error: "token query param required" });
-  }
-
-  const results: Record<string, unknown> = {};
-
-  try {
-    const prefRes = await fetch("https://api.schwabapi.com/trader/v1/userPreference", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const prefBody = await prefRes.text().catch(() => "");
-    results.userPreference = {
-      status: prefRes.status,
-      ok: prefRes.ok,
-      body: prefRes.ok ? JSON.parse(prefBody) : prefBody.slice(0, 500),
-    };
-  } catch (err) {
-    results.userPreference = { error: String(err) };
-  }
-
-  try {
-    const acctRes = await fetch("https://api.schwabapi.com/trader/v1/accounts", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const acctBody = await acctRes.text().catch(() => "");
-    results.accounts = {
-      status: acctRes.status,
-      ok: acctRes.ok,
-      bodyPreview: acctBody.slice(0, 300),
-    };
-  } catch (err) {
-    results.accounts = { error: String(err) };
-  }
-
-  try {
-    const quoteRes = await fetch("https://api.schwabapi.com/marketdata/v1/SPY/quotes", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    results.marketData = {
-      status: quoteRes.status,
-      ok: quoteRes.ok,
-    };
-  } catch (err) {
-    results.marketData = { error: String(err) };
-  }
-
-  res.json(results);
 });
 
 export default router;

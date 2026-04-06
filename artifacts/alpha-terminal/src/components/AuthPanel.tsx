@@ -48,7 +48,7 @@ export function AuthPanel() {
       >
         <div className="flex items-center gap-2">
           <KeyRound className="w-4 h-4 text-primary" />
-          <span className="text-foreground">SCHWAB</span>
+          <span className="text-foreground">BROKER</span>
         </div>
         <div className="flex items-center gap-3">
           {isConnected ? (
@@ -89,7 +89,7 @@ export function AuthPanel() {
                 {isLoading ? (
                   <><Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />REDIRECTING...</>
                 ) : (
-                  <>SIGN IN TO SCHWAB <ExternalLink className="ml-2 w-3.5 h-3.5" /></>
+                  <>SIGN IN <ExternalLink className="ml-2 w-3.5 h-3.5" /></>
                 )}
               </Button>
             </div>

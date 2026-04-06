@@ -1,11 +1,9 @@
 import app from "./app";
 import { logger } from "./lib/logger";
-import { initTokenStore, setTokenRefreshCallback, getAccessToken } from "./lib/tokenStore";
-import { startStreamer, isConnected, injectExternalQuote } from "./lib/schwabStreamer";
+import { injectExternalQuote } from "./lib/schwabStreamer";
 import { initWsServer, broadcastToClients } from "./lib/wsServer";
 import { connectIB, registerQuoteCacheInjector, registerIBBroadcast, getWsBridgeUrl } from "./lib/ibStreamer";
 import { startIBWsProxy } from "./lib/ibWsProxy";
-import { startPutCallPoller } from "./lib/putCallPoller";
 
 const rawPort = process.env["PORT"];
 
@@ -22,17 +20,6 @@ if (Number.isNaN(port) || port <= 0) {
 }
 
 async function boot() {
-  await initTokenStore();
-
-  setTokenRefreshCallback((kind, newAccessToken) => {
-    if (kind === "trader" || (kind === "market" && !getAccessToken("trader"))) {
-      if (isConnected()) {
-        logger.info("TokenStore: %s token refreshed — updating streamer", kind);
-        void startStreamer(newAccessToken, []);
-      }
-    }
-  });
-
   const server = app.listen(port, (err) => {
     if (err) {
       logger.error({ err }, "Error listening on port");
@@ -50,8 +37,6 @@ async function boot() {
 
   registerQuoteCacheInjector(injectExternalQuote);
   registerIBBroadcast(broadcastToClients);
-
-  startPutCallPoller(port);
 
   if (process.env.IBKR_GATEWAY_URL || process.env.IB_HOST) {
     const wsUrl = getWsBridgeUrl();

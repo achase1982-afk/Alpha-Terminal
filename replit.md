@@ -1,6 +1,6 @@
 # Overview
 
-"Alpha Terminal — Trading Command Center v2" is an institutional-grade trading platform designed as a pnpm workspace monorepo using TypeScript. It provides advanced trading tools, real-time market data, and AI-powered insights. The platform integrates with Schwab for data and authentication, offering features such as advanced charting, options analysis, AI-driven market scanning, and strategy generation. The core purpose is to deliver a comprehensive, high-performance trading environment with a focus on data accuracy and user experience, aiming to be a leader in AI-assisted trading solutions.
+"Alpha Terminal — Trading Command Center v2" is an institutional-grade trading platform designed as a pnpm workspace monorepo using TypeScript. It provides advanced trading tools, real-time market data, and AI-powered insights. The platform uses IB Gateway as its sole data source, streaming 83 symbols via WebSocket bridge (Cloudflare tunnel). Schwab API has been fully removed. Features include advanced charting, options analysis, AI-driven market scanning, and strategy generation. The core purpose is to deliver a comprehensive, high-performance trading environment with a focus on data accuracy and user experience, aiming to be a leader in AI-assisted trading solutions.
 
 # User Preferences
 
@@ -31,8 +31,7 @@ The monorepo structure supports shared libraries and consistent tooling, with Ty
 
 # External Dependencies
 
--   **Schwab Developer API**: OAuth, market data, and streaming.
--   **Claude**: `claude-3-5-sonnet-20241022` for AI capabilities.
+-   **Claude**: `claude-sonnet-4-6-20250620` for AI capabilities.
 -   **PostgreSQL**: Database.
 -   **Drizzle ORM**: TypeScript ORM.
 -   **Express**: API server framework.
@@ -43,5 +42,5 @@ The monorepo structure supports shared libraries and consistent tooling, with Ty
 -   **lightweight-charts**: Financial charting.
 -   **technicalindicators**: Technical analysis calculations.
 -   **Clerk**: App-level authentication.
--   **Interactive Brokers API** (`@stoqey/ib`): Secondary data source for streaming 83 symbols (futures, equities, breadth, volatility, rates, sectors). Connected via WebSocket bridge through Cloudflare Tunnel — `ibWsProxy.ts` (server-side local TCP→WS proxy) + `ib-bridge/bridge.mjs` (Mac-side WS→TCP bridge). User runs `node bridge.mjs` on Mac alongside IB Gateway. Tunnel route: `ibkr.nucolbyterminal.com` → `http://localhost:7497`. Env var: `IBKR_GATEWAY_URL=https://ibkr.nucolbyterminal.com`.
+-   **Interactive Brokers API** (`@stoqey/ib`): Sole data source for streaming 83 symbols (futures, equities, breadth, volatility, rates, sectors). Connected via WebSocket bridge through Cloudflare Tunnel — `ibWsProxy.ts` (server-side local TCP→WS proxy) + `ib-bridge/bridge.mjs` (Mac-side WS→TCP bridge). User runs `node bridge.mjs` on Mac alongside IB Gateway. Tunnel route: `ibkr.nucolbyterminal.com` → `http://localhost:7497`. Env var: `IBKR_GATEWAY_URL=https://ibkr.nucolbyterminal.com`. PUT_CALL category (8 symbols) disabled — IB returns "no security definition" for all.
 -   **SEC EDGAR API**: Public filings data (company_tickers.json + submissions endpoint).

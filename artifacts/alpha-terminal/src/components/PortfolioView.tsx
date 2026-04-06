@@ -761,7 +761,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
 
   if (!accessToken) return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: f }}>
-      <div style={{ fontSize: 13, color: C.textDim, letterSpacing: 1.5, textTransform: "uppercase" }}>CONNECT SCHWAB TO VIEW PORTFOLIO</div>
+      <div style={{ fontSize: 13, color: C.textDim, letterSpacing: 1.5, textTransform: "uppercase" }}>CONNECT BROKER TO VIEW PORTFOLIO</div>
     </div>
   );
   if (loading && !account) return (
