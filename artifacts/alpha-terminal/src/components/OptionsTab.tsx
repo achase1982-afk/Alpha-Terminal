@@ -39,8 +39,8 @@ const GRAY = "#a1a1aa";
 const DIM = "#52525b";
 const MUTED = "#3f3f46";
 
-const ITM_BG = "#1c1504";
-const OTM_BG = "#080808";
+const ITM_BG = "#16120a";
+const OTM_BG = "#070707";
 const SEL_BORDER_COLOR = "#fbbf2480";
 
 const MONO = "'SFMono-Regular', 'SF Mono', ui-monospace, 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace";
