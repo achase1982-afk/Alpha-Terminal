@@ -4,7 +4,6 @@ import { MetricsBar, VolumeBar } from "@/components/MetricsBar";
 import { TradingChart } from "@/components/TradingChart";
 import { OptionsTab } from "@/components/OptionsTab";
 import { AiIntelligenceTab } from "@/components/AiIntelligenceTab";
-import { MarketScanner } from "@/components/MarketScanner";
 import { MacroBar } from "@/components/MacroBar";
 import { TickerTape } from "@/components/TickerTape";
 import { SearchOverlay } from "@/components/SearchOverlay";
@@ -41,7 +40,7 @@ import {
 } from "lucide-react";
 import { useIsTablet, useIsDesktop } from "@/hooks/useMediaQuery";
 
-type BottomTab = "scanner" | "markets" | "ai" | "search" | "portfolio" | "watchlist";
+type BottomTab = "markets" | "ai" | "search" | "portfolio" | "watchlist";
 type ContextTab = MarketDataTab;
 
 const DESKTOP_CONTEXT_TABS: { id: MarketDataTab; label: string }[] = [
@@ -438,14 +437,8 @@ export default function TerminalPage() {
               </>
             )}
 
-            {activeBottom === "ai" && aiSubTab === "scanner" && (
-              <div style={{ display: "block" }}>
-                <MarketScanner subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToSymbol={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} />
-              </div>
-            )}
-
-            {activeBottom === "ai" && aiSubTab !== "scanner" && (
-              <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} pulseAutoGen={pulseAutoGen} onPulseAutoGenConsumed={() => setPulseAutoGen(false)} />
+            {activeBottom === "ai" && (
+              <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} pulseAutoGen={pulseAutoGen} onPulseAutoGenConsumed={() => setPulseAutoGen(false)} subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToMarkets={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} />
             )}
 
             {activeBottom === "portfolio" && (
@@ -488,11 +481,8 @@ export default function TerminalPage() {
               </>
             ) : (
               <main ref={scrollRef} onScroll={handleScroll} className="flex-1 app-content pb-4 overflow-y-auto">
-                {activeBottom === "ai" && aiSubTab === "scanner" && (
-                  <MarketScanner subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToSymbol={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} />
-                )}
-                {activeBottom === "ai" && aiSubTab !== "scanner" && (
-                  <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} pulseAutoGen={pulseAutoGen} onPulseAutoGenConsumed={() => setPulseAutoGen(false)} />
+                {activeBottom === "ai" && (
+                  <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} pulseAutoGen={pulseAutoGen} onPulseAutoGenConsumed={() => setPulseAutoGen(false)} subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToMarkets={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} />
                 )}
                 {activeBottom === "portfolio" && (
                   <PortfolioView onNavigateToSymbol={() => setActiveBottom("markets")} onTrade={openOrderForSymbol} />
@@ -528,12 +518,8 @@ export default function TerminalPage() {
               </>
             )}
 
-            {activeBottom === "ai" && aiSubTab === "scanner" && (
-              <MarketScanner subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToSymbol={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} />
-            )}
-
-            {activeBottom === "ai" && aiSubTab !== "scanner" && (
-              <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} pulseAutoGen={pulseAutoGen} onPulseAutoGenConsumed={() => setPulseAutoGen(false)} />
+            {activeBottom === "ai" && (
+              <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} pulseAutoGen={pulseAutoGen} onPulseAutoGenConsumed={() => setPulseAutoGen(false)} subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToMarkets={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} />
             )}
 
             {activeBottom === "portfolio" && (

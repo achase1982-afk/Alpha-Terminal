@@ -15,6 +15,7 @@ import { StrategistAuditPanel, type StrategistAuditData } from "@/components/mar
 import type { AiSubTab } from "@/components/ai-tab/AiSubTabs";
 import { AiThinkingFeed } from "@/components/ai-shared/AiThinkingFeed";
 import { useStrategistCache, type StrategistCacheData } from "@/hooks/useStrategistCache";
+import { MarketScanner } from "@/components/MarketScanner";
 
 const API_BASE = "/api";
 
@@ -1113,11 +1114,13 @@ interface AiIntelligenceTabProps {
   pulseDashRef?: React.RefObject<MarketPulseDashboardHandle | null>;
   pulseAutoGen?: boolean;
   onPulseAutoGenConsumed?: () => void;
+  subscribeEquitySymbols?: (syms: string[]) => void;
+  onNavigateToMarkets?: (sym: string) => void;
 }
 
-const AI_TABS: AiSubTab[] = ["pulse", "strategist"];
+const AI_TABS: AiSubTab[] = ["pulse", "strategist", "scanner"];
 
-export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, pulseAutoGen, onPulseAutoGenConsumed }: AiIntelligenceTabProps) {
+export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, pulseAutoGen, onPulseAutoGenConsumed, subscribeEquitySymbols, onNavigateToMarkets }: AiIntelligenceTabProps) {
   const swipeStartX = useRef(0);
   const swipeStartY = useRef(0);
   const swipeLocked = useRef<"h" | "v" | null>(null);
@@ -1514,7 +1517,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, pulseA
           <MarketPulseDashboard ref={pulseDashRef} autoGenerate={pulseAutoGen} onAutoGenConsumed={onPulseAutoGenConsumed} />
         </div>
 
-        <div style={{ width: "100%", flexShrink: 0 }}>
+        <div style={{ width: "100%", flexShrink: 0, overflowY: "auto" }}>
           <div className="px-3 sm:px-4 lg:px-5 space-y-4 pt-3">
             <StrategistCommandBar onRun={handleRunStrategistWithTicker} disabled={isPendingAny || !accessToken}
               lastRunSymbol={lastRunSymbol} lastRunTime={lastRunTime} />
@@ -1561,6 +1564,13 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, pulseA
               <StrategistAuditPanel audit={strategistAudit} />
             )}
           </div>
+        </div>
+
+        <div style={{ width: "100%", flexShrink: 0, overflowY: "auto", minHeight: "100%" }}>
+          <MarketScanner
+            subscribeEquitySymbols={subscribeEquitySymbols ?? (() => {})}
+            onNavigateToSymbol={onNavigateToMarkets ?? (() => {})}
+          />
         </div>
       </div>
     </div>
