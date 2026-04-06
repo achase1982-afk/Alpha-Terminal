@@ -95,7 +95,7 @@ export const ALL_BREADTH_SYMBOLS: IBSymbolDef[] = [
   { reqId: 5024, symbol: "/GC",     ibSymbol: "GC",         secType: "FUT", exchange: "COMEX",   displaySymbol: "/GC",     category: "COMMODITY", description: "Gold Future",                                                  enabled: true },
   { reqId: 5023, symbol: "/CL",     ibSymbol: "CL",         secType: "FUT", exchange: "NYMEX",   displaySymbol: "/CL",     category: "COMMODITY", description: "WTI Crude Oil Future",                                        enabled: true },
   { reqId: 5121, symbol: "/BZ",     ibSymbol: "COIL",       secType: "FUT", exchange: "IPE",     displaySymbol: "/BZ",     category: "COMMODITY", description: "Brent Crude Oil Future (ICE Futures Europe — symbol COIL at IPE)", enabled: true },
-  { reqId: 5022, symbol: "/DX",     ibSymbol: "DX",         secType: "FUT", exchange: "NYBOT",   displaySymbol: "/DX",     category: "CURRENCY", description: "US Dollar Index Future",                                       enabled: true },
+  { reqId: 5022, symbol: "/DX",     ibSymbol: "DX",         secType: "FUT", exchange: "ICEUS",   displaySymbol: "/DX",     category: "CURRENCY", description: "US Dollar Index Future (ICE Futures US — formerly NYBOT)",     enabled: true },
 
   // ═══════════════════════════════════════════════════════════
   // SENTIMENT / OPTIONS LAYER (2)
@@ -126,7 +126,7 @@ export const ALL_BREADTH_SYMBOLS: IBSymbolDef[] = [
   { reqId: 5061, symbol: "$VXN",    ibSymbol: "VXN",        secType: "IND", exchange: "CBOE",    displaySymbol: "$VXN",    category: "VOLATILITY", description: "CBOE NASDAQ-100 VIX — tech-heavy implied volatility",          enabled: true },
   { reqId: 5062, symbol: "$OVX",    ibSymbol: "OVX",        secType: "IND", exchange: "CBOE",    displaySymbol: "$OVX",    category: "VOLATILITY", description: "CBOE Crude Oil VIX — oil implied volatility",                  enabled: true },
   { reqId: 5063, symbol: "$GVZ",    ibSymbol: "GVZ",        secType: "IND", exchange: "CBOE",    displaySymbol: "$GVZ",    category: "VOLATILITY", description: "CBOE Gold VIX — gold implied volatility",                      enabled: true },
-  { reqId: 5064, symbol: "$TYVIX",  ibSymbol: "TYVIX",      secType: "IND", exchange: "CBOE",    displaySymbol: "$TYVIX",  category: "VOLATILITY", description: "CBOE Treasury VIX — DISCONTINUED by CBOE in 2020",            enabled: false },
+  { reqId: 5064, symbol: "$TYVIX",  ibSymbol: "TYVIX",      secType: "IND", exchange: "CBOE",    displaySymbol: "$TYVIX",  category: "VOLATILITY", description: "CBOE Treasury VIX — 10Y Treasury implied volatility",          enabled: true },
   { reqId: 5065, symbol: "$MOVE",   ibSymbol: "MOVE",       secType: "IND", exchange: "CBOE",    displaySymbol: "$MOVE",   category: "VOLATILITY", description: "ICE BofA MOVE Index — bond market volatility",                         enabled: true },
   { reqId: 5071, symbol: "/MES",    ibSymbol: "MES",        secType: "FUT", exchange: "CME",     displaySymbol: "/MES",    category: "FUTURES", description: "Micro E-mini S&P 500 Future",                                   enabled: true },
   { reqId: 5072, symbol: "/MNQ",    ibSymbol: "MNQ",        secType: "FUT", exchange: "CME",     displaySymbol: "/MNQ",    category: "FUTURES", description: "Micro E-mini NASDAQ-100 Future",                                enabled: true },
