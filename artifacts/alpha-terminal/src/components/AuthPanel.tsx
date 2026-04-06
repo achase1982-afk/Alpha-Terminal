@@ -48,7 +48,7 @@ export function AuthPanel() {
       >
         <div className="flex items-center gap-2">
           <KeyRound className="w-4 h-4 text-primary" />
-          <span className="text-foreground">BROKER</span>
+          <span className="text-foreground">SCHWAB</span>
         </div>
         <div className="flex items-center gap-3">
           {isConnected ? (
@@ -74,12 +74,12 @@ export function AuthPanel() {
           {isConnected ? (
             <div className="flex items-center gap-2 text-sm text-primary p-2.5 rounded-md border border-primary/20">
               <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-              <span className="font-mono text-[10px]">Quotes, streaming & trading active</span>
+              <span className="font-mono text-[10px]">P/C ratios, portfolio & trading active</span>
             </div>
           ) : (
             <div className="space-y-2">
               <p className="text-[9px] text-gray-400 font-mono leading-snug">
-                One login connects quotes, live streaming, portfolio and trading.
+                Connect Schwab for put/call ratios, portfolio and trading.
               </p>
               <Button
                 onClick={handleLogin}
@@ -89,7 +89,7 @@ export function AuthPanel() {
                 {isLoading ? (
                   <><Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />REDIRECTING...</>
                 ) : (
-                  <>SIGN IN <ExternalLink className="ml-2 w-3.5 h-3.5" /></>
+                  <>SIGN IN TO SCHWAB <ExternalLink className="ml-2 w-3.5 h-3.5" /></>
                 )}
               </Button>
             </div>
