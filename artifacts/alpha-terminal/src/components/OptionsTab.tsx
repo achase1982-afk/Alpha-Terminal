@@ -39,8 +39,8 @@ const GRAY = "#a1a1aa";
 const DIM = "#52525b";
 const MUTED = "#3f3f46";
 
-const ITM_BG = "#201808";
-const OTM_BG = "#070707";
+const ITM_OCEAN = "rgba(180,140,50,0.22)";
+const OTM_PURPLE = "rgba(168,130,255,0.04)";
 const SEL_BORDER_COLOR = "#fbbf2480";
 
 const MONO = "'SFMono-Regular', 'SF Mono', ui-monospace, 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace";
@@ -288,8 +288,8 @@ function isStrikeITM(strike: number, underlyingPrice: number | null, isCallSide:
 }
 
 function getRowBg(strike: number, underlyingPrice: number | null, isCallSide: boolean): string {
-  if (isStrikeITM(strike, underlyingPrice, isCallSide)) return ITM_BG;
-  return OTM_BG;
+  if (isStrikeITM(strike, underlyingPrice, isCallSide)) return ITM_OCEAN;
+  return OTM_PURPLE;
 }
 
 const OIBar = memo(function OIBar({ value, max }: { value: number; max: number }) {
@@ -819,18 +819,16 @@ function OptionsGrid({
                 const callLeg = callKey ? selectedLegs.get(callKey) : undefined;
                 const isCallSelected = !!callLeg;
                 const moneyness = classifyMoneyness(row.strike, underlyingPrice, true);
-                const isITM = isStrikeITM(row.strike, underlyingPrice, true);
+                const bg = getRowBg(row.strike, underlyingPrice, true);
                 return (
                   <div
                     key={row.strike}
                     className="flex"
-                    data-itm={isITM ? "true" : "false"}
                     style={{
                       height: ROW_H,
                       borderBottom: `1px solid ${BORDER_ROW}`,
-                      background: isITM ? ITM_BG : OTM_BG,
-                      borderLeft: isITM ? "3px solid #fbbf24" : "3px solid transparent",
-                      boxShadow: isCallSelected ? `inset 3px 0 0 ${SEL_BORDER_COLOR}` : undefined,
+                      background: bg,
+                      boxShadow: isCallSelected ? `inset 2px 0 0 ${SEL_BORDER_COLOR}` : undefined,
                     }}
                   >
                     {columns.map(col => (
@@ -875,18 +873,16 @@ function OptionsGrid({
                 const putLeg = putKey ? selectedLegs.get(putKey) : undefined;
                 const isPutSelected = !!putLeg;
                 const moneyness = classifyMoneyness(row.strike, underlyingPrice, false);
-                const isITM = isStrikeITM(row.strike, underlyingPrice, false);
+                const bg = getRowBg(row.strike, underlyingPrice, false);
                 return (
                   <div
                     key={row.strike}
                     className="flex"
-                    data-itm={isITM ? "true" : "false"}
                     style={{
                       height: ROW_H,
                       borderBottom: `1px solid ${BORDER_ROW}`,
-                      background: isITM ? ITM_BG : OTM_BG,
-                      borderRight: isITM ? "3px solid #fbbf24" : "3px solid transparent",
-                      boxShadow: isPutSelected ? `inset -3px 0 0 ${SEL_BORDER_COLOR}` : undefined,
+                      background: bg,
+                      boxShadow: isPutSelected ? `inset -2px 0 0 ${SEL_BORDER_COLOR}` : undefined,
                     }}
                   >
                     {columns.map(col => (
