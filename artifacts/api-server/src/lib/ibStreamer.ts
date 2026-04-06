@@ -64,6 +64,10 @@ const IB_CLIENT_ID = Number(process.env.IB_CLIENT_ID ?? "1");
 const RECONNECT_INTERVAL_MS = 5_000;
 const MAX_RECONNECT_DELAY_MS = 30_000;
 
+// Active client ID rotates when a 326 (already-in-use) conflict is detected.
+// Slots IB_CLIENT_ID through IB_CLIENT_ID+9 are available.
+let activeClientId = IB_CLIENT_ID;
+
 type ConnectionState = "DISCONNECTED" | "CONNECTING" | "CONNECTED";
 
 const BREADTH_SYMBOLS: IBSymbolDef[] = getEnabledSymbols();
@@ -367,7 +371,8 @@ export async function connectIB(): Promise<void> {
   teardownIB();
 
   try {
-    ib = new IBApi({ host: IB_HOST, port: IB_PORT, clientId: IB_CLIENT_ID });
+    ib = new IBApi({ host: IB_HOST, port: IB_PORT, clientId: activeClientId });
+    logger.info({ host: IB_HOST, port: IB_PORT, clientId: activeClientId }, "IB: connecting to gateway");
 
     let allEventCount = 0;
     ib.on(EventName.all, (...args: unknown[]) => {
@@ -382,6 +387,25 @@ export async function connectIB(): Promise<void> {
     });
 
     ib.on(EventName.info, (msg: string, code: number) => {
+      // 326 = client ID already in use — arrives here as an INFO event (not error).
+      // Rotate to the next slot and reconnect after a 3-second pause.
+      if (code === 326) {
+        const oldId = activeClientId;
+        activeClientId = ((activeClientId - IB_CLIENT_ID + 1) % 10) + IB_CLIENT_ID;
+        logger.warn({ oldId, newId: activeClientId }, "IB: client ID conflict (326) — rotating client ID, reconnecting in 3s");
+        // Prevent the imminent disconnected event from firing an immediate reconnect
+        intentionalDisconnect = true;
+        teardownIB();
+        connState = "DISCONNECTED";
+        emitStatus("disconnected");
+        intentionalDisconnect = false;
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null;
+          void connectIB();
+        }, 3_000);
+        return;
+      }
       logger.info({ msg, code }, "IB: info event");
     });
 
@@ -397,8 +421,9 @@ export async function connectIB(): Promise<void> {
     ib.on(EventName.connected, () => {
       connState = "CONNECTED";
       reconnectDelay = RECONNECT_INTERVAL_MS;
-      logger.info({ host: IB_HOST, port: IB_PORT, attempt: reconnectAttempt }, "IB: connected to gateway");
+      logger.info({ host: IB_HOST, port: IB_PORT, clientId: activeClientId, attempt: reconnectAttempt }, "IB: connected to gateway");
       reconnectAttempt = 0;
+      activeClientId = IB_CLIENT_ID; // reset to base slot on clean connect
       emitStatus("connected");
       subscribeAll();
       try {
@@ -428,6 +453,27 @@ export async function connectIB(): Promise<void> {
       if (code === 200 && reqId > 0) {
         const def = reqIdToSymbol.get(reqId);
         logger.warn({ code, reqId, symbol: def?.ibSymbol, msg: err.message }, "IB: no security definition");
+        return;
+      }
+
+      // 326 = client ID already in use (old process still registered with gateway).
+      // Rotate to the next client ID slot and reconnect after a short delay.
+      if (code === 326) {
+        const oldId = activeClientId;
+        activeClientId = ((activeClientId - IB_CLIENT_ID + 1) % 10) + IB_CLIENT_ID;
+        logger.warn({ oldId, newId: activeClientId }, "IB: client ID conflict (326) — rotating client ID, reconnecting in 3s");
+        // Block the disconnected event from spawning its own immediate reconnect
+        intentionalDisconnect = true;
+        teardownIB();
+        connState = "DISCONNECTED";
+        emitStatus("disconnected");
+        intentionalDisconnect = false;
+        // Schedule reconnect with new client ID
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null;
+          void connectIB();
+        }, 3_000);
         return;
       }
 
