@@ -1003,129 +1003,131 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
     return el.value;
   };
 
-  const fmtSharesCompact = (n: number) => {
-    if (n >= 1e6) return `${(n / 1e6).toFixed(2)}M`;
-    if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
-    return n.toLocaleString();
+  const hdrStyle: React.CSSProperties = {
+    fontSize: 10, fontFamily: f, fontWeight: 700, color: "#888",
+    letterSpacing: 1.2, textTransform: "uppercase", padding: "4px 0",
+    borderBottom: `1px solid #333`, whiteSpace: "nowrap",
   };
+  const cellStyle: React.CSSProperties = {
+    fontSize: 12, fontFamily: f, color: "#ff9800", padding: "5px 0",
+    borderBottom: `1px solid #1a1a1a`, lineHeight: 1.35,
+  };
+  const dimCell: React.CSSProperties = { ...cellStyle, color: "#777" };
 
   return (
-    <>
-      <Sec>INSTITUTIONAL HOLDERS</Sec>
+    <div style={{ padding: "2px 0" }}>
+      <div style={{ fontSize: 10, fontFamily: f, fontWeight: 700, color: "#ff9800", letterSpacing: 2, textTransform: "uppercase", padding: "14px 0 6px", borderBottom: `1px solid #333` }}>
+        INSTITUTIONAL HOLDERS
+      </div>
       {holders.length > 0 ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {holders.map((h, i) => (
-            <div key={i} style={{
-              background: C.card, border: `1px solid ${C.border}`, padding: "12px 14px",
-            }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontFamily: f, color: C.text, fontWeight: 600, lineHeight: 1.3 }}>
+        <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: f, tableLayout: "fixed" }}>
+            <colgroup>
+              <col style={{ width: "52%" }} />
+              <col style={{ width: "16%" }} />
+              <col style={{ width: "16%" }} />
+              <col style={{ width: "16%" }} />
+            </colgroup>
+            <thead>
+              <tr>
+                <th style={{ ...hdrStyle, textAlign: "left" }}>HOLDER</th>
+                <th style={{ ...hdrStyle, textAlign: "right" }}>% CLASS</th>
+                <th style={{ ...hdrStyle, textAlign: "right" }}>SHARES</th>
+                <th style={{ ...hdrStyle, textAlign: "right" }}>FILED</th>
+              </tr>
+            </thead>
+            <tbody>
+              {holders.map((h, i) => (
+                <tr key={i}>
+                  <td style={{ ...cellStyle, color: "#eee", whiteSpace: "normal", wordBreak: "break-word", paddingRight: 6 }}>
                     {decodeHtml(h.name)}
-                  </div>
-                  <div style={{ fontSize: 10, fontFamily: f, color: C.textDim, marginTop: 4, letterSpacing: 0.5 }}>
-                    {h.formType || "SC 13G"} filed {h.filingDate || "—"}
-                  </div>
-                </div>
-                <div style={{ textAlign: "right", flexShrink: 0 }}>
-                  {h.percentOfClass > 0 ? (
-                    <>
-                      <div style={{ fontSize: 18, fontFamily: f, color: C.gold, fontWeight: 700 }}>
-                        {h.percentOfClass.toFixed(1)}%
-                      </div>
-                      <div style={{ fontSize: 9, fontFamily: f, color: C.textDim, letterSpacing: 0.8, textTransform: "uppercase", marginTop: 2 }}>of class</div>
-                    </>
-                  ) : (
-                    <div style={{ fontSize: 14, fontFamily: f, color: C.textDim }}>—</div>
-                  )}
-                </div>
-              </div>
-              {h.shares > 0 && (
-                <div style={{ fontSize: 11, fontFamily: f, color: C.textMuted, marginTop: 6, borderTop: `1px solid ${C.border}`, paddingTop: 6 }}>
-                  {h.shares.toLocaleString()} shares
-                </div>
-              )}
-            </div>
-          ))}
+                  </td>
+                  <td style={{ ...cellStyle, textAlign: "right", fontWeight: 600 }}>
+                    {h.percentOfClass > 0 ? `${h.percentOfClass.toFixed(1)}%` : "—"}
+                  </td>
+                  <td style={{ ...dimCell, textAlign: "right", fontSize: 11 }}>
+                    {h.shares > 0 ? (h.shares >= 1e6 ? `${(h.shares / 1e6).toFixed(1)}M` : h.shares.toLocaleString()) : "—"}
+                  </td>
+                  <td style={{ ...dimCell, textAlign: "right", fontSize: 11 }}>
+                    {h.filingDate || "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       ) : (
-        <div style={{ padding: "16px 0", fontSize: 12, fontFamily: f, color: C.textDim, textAlign: "center" }}>
+        <div style={{ padding: "10px 0", fontSize: 11, fontFamily: f, color: "#555" }}>
           No SC 13G/D filings found
         </div>
       )}
 
-      <Sec>INSIDER TRANSACTIONS</Sec>
+      <div style={{ fontSize: 10, fontFamily: f, fontWeight: 700, color: "#ff9800", letterSpacing: 2, textTransform: "uppercase", padding: "18px 0 6px", borderBottom: `1px solid #333` }}>
+        INSIDER TRANSACTIONS
+      </div>
       {insiders.length > 0 ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          {insiders.slice(0, 20).map((t, i) => {
-            const isBuy = t.acquiredOrDisposed === "A";
-            const action = isBuy ? "BUY" : "SELL";
-            const actionColor = isBuy ? C.green : C.red;
-            const dateFormatted = t.transactionDate
-              ? new Date(t.transactionDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })
-              : "—";
-            const fullName = t.ownerName || "—";
-            const title = t.officerTitle || "";
-
-            return (
-              <div key={i} style={{
-                background: C.card, border: `1px solid ${C.border}`, padding: "10px 14px",
-              }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                      <span
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (t.filingUrl) {
-                            const contentUrl = `${API_BASE}/sec/filing-content?url=${encodeURIComponent(t.filingUrl)}`;
-                            openBrowser(contentUrl, `Form 4 — ${fullName}`, "SEC EDGAR");
-                          }
-                        }}
-                        style={{
-                          fontSize: 13, fontFamily: f, fontWeight: 600, lineHeight: 1.3,
-                          color: t.filingUrl ? "#fbbf24" : C.text,
-                          cursor: t.filingUrl ? "pointer" : "default",
-                        }}
-                      >{fullName}</span>
-                      <span style={{
-                        fontSize: 9, fontFamily: f, fontWeight: 700, letterSpacing: 0.8,
-                        color: actionColor,
-                        background: actionColor + "15",
-                        border: `1px solid ${actionColor}40`,
-                        padding: "1px 6px",
-                        borderRadius: 2,
-                      }}>{action}</span>
-                    </div>
-                    {title && (
-                      <div style={{ fontSize: 11, fontFamily: f, color: C.textDim, marginTop: 3 }}>{title}</div>
-                    )}
-                  </div>
-                  <div style={{ textAlign: "right", flexShrink: 0 }}>
-                    <div style={{ fontSize: 14, fontFamily: f, color: C.text, fontWeight: 600 }}>
-                      {fmtSharesCompact(t.shares)}
-                    </div>
-                    <div style={{ fontSize: 10, fontFamily: f, color: C.textDim, marginTop: 2 }}>{dateFormatted}</div>
-                  </div>
-                </div>
-                {t.pricePerShare != null && t.pricePerShare > 0 && (
-                  <div style={{ fontSize: 10, fontFamily: f, color: C.textMuted, marginTop: 5, borderTop: `1px solid ${C.border}`, paddingTop: 5 }}>
-                    @ ${t.pricePerShare.toFixed(2)}/share
-                    {t.shares > 0 && <span style={{ color: C.textDim, marginLeft: 8 }}>= ${(t.shares * t.pricePerShare).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+        <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: f, tableLayout: "fixed" }}>
+            <colgroup>
+              <col style={{ width: "30%" }} />
+              <col style={{ width: "22%" }} />
+              <col style={{ width: "10%" }} />
+              <col style={{ width: "20%" }} />
+              <col style={{ width: "18%" }} />
+            </colgroup>
+            <thead>
+              <tr>
+                <th style={{ ...hdrStyle, textAlign: "left" }}>NAME</th>
+                <th style={{ ...hdrStyle, textAlign: "left" }}>TITLE</th>
+                <th style={{ ...hdrStyle, textAlign: "center" }}>TYPE</th>
+                <th style={{ ...hdrStyle, textAlign: "right" }}>SHARES</th>
+                <th style={{ ...hdrStyle, textAlign: "right" }}>DATE</th>
+              </tr>
+            </thead>
+            <tbody>
+              {insiders.slice(0, 25).map((t, i) => {
+                const isBuy = t.acquiredOrDisposed === "A";
+                const action = isBuy ? "BUY" : "SELL";
+                return (
+                  <tr key={i}>
+                    <td style={{ ...cellStyle, color: t.filingUrl ? "#fbbf24" : "#eee", cursor: t.filingUrl ? "pointer" : "default", whiteSpace: "normal", wordBreak: "break-word", paddingRight: 4 }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (t.filingUrl) {
+                          const contentUrl = `${API_BASE}/sec/filing-content?url=${encodeURIComponent(t.filingUrl)}`;
+                          openBrowser(contentUrl, `Form 4 — ${t.ownerName}`, "SEC EDGAR");
+                        }
+                      }}
+                    >
+                      {t.ownerName || "—"}
+                    </td>
+                    <td style={{ ...dimCell, fontSize: 10, whiteSpace: "normal", wordBreak: "break-word", paddingRight: 4 }}>
+                      {t.officerTitle || "—"}
+                    </td>
+                    <td style={{ ...cellStyle, textAlign: "center", color: isBuy ? C.green : C.red, fontWeight: 700, fontSize: 11 }}>
+                      {action}
+                    </td>
+                    <td style={{ ...cellStyle, textAlign: "right" }}>
+                      {t.shares?.toLocaleString() || "—"}
+                    </td>
+                    <td style={{ ...dimCell, textAlign: "right", fontSize: 11 }}>
+                      {t.transactionDate || "—"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       ) : (
-        <div style={{ padding: "16px 0", fontSize: 12, fontFamily: f, color: C.textDim, textAlign: "center" }}>
+        <div style={{ padding: "10px 0", fontSize: 11, fontFamily: f, color: "#555" }}>
           No Form 4 insider transactions found
         </div>
       )}
-      <div style={{ fontSize: 9, fontFamily: f, color: C.textDim, padding: "10px 0 0", textAlign: "right" }}>
+      <div style={{ fontSize: 9, fontFamily: f, color: "#444", padding: "8px 0 0", textAlign: "right", letterSpacing: 0.5 }}>
         Source: SEC EDGAR Form 4 & SC 13G/D
       </div>
+    </div>
     </>
   );
 });
