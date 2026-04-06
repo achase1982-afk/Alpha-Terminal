@@ -33,7 +33,7 @@ function PendingSessionLoader() {
   const didInitialCheck = useRef(false);
 
   useEffect(() => {
-    if (accessToken && traderAccessToken) return;
+    if (accessToken || traderAccessToken) return;
 
     let cancelled = false;
 
@@ -45,11 +45,11 @@ function PendingSessionLoader() {
           market?: { accessToken: string; refreshToken: string } | null;
           trader?: { accessToken: string; refreshToken: string } | null;
         };
-        if (!cancelled && data.market?.accessToken && !accessToken) {
-          setTokens(data.market.accessToken, data.market.refreshToken || "");
-        }
-        if (!cancelled && data.trader?.accessToken && !traderAccessToken) {
-          setTraderTokens(data.trader.accessToken, data.trader.refreshToken || "");
+        // Use whichever token is available — both slots get the same token
+        const tok = data.trader ?? data.market;
+        if (!cancelled && tok?.accessToken) {
+          setTokens(tok.accessToken, tok.refreshToken || "");
+          setTraderTokens(tok.accessToken, tok.refreshToken || "");
         }
       } catch {}
     };
@@ -61,6 +61,7 @@ function PendingSessionLoader() {
         const data = await res.json();
         if (data.found && data.accessToken) {
           setTokens(data.accessToken, data.refreshToken || "");
+          setTraderTokens(data.accessToken, data.refreshToken || "");
         }
       } catch {}
     };
@@ -72,6 +73,7 @@ function PendingSessionLoader() {
         const data = await res.json();
         if (data.found && data.accessToken) {
           setTraderTokens(data.accessToken, data.refreshToken || "");
+          setTokens(data.accessToken, data.refreshToken || "");
         }
       } catch {}
     };

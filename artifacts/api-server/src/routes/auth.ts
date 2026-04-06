@@ -72,12 +72,13 @@ function errorPage(title: string, msg: string) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// MARKET DATA AUTH (existing)
+// PRIMARY AUTH — uses Accounts & Trading credentials for everything
 // ═══════════════════════════════════════════════════════════════════════════════
 
 router.get("/url", (_req, res) => {
-  const appKey = process.env.SCHWAB_APP_KEY;
-  const redirectUri = getSchwabRedirectUri();
+  // Prefer trader credentials (Accounts & Trading handles quotes + streaming)
+  const appKey = process.env.SCHWAB_TRADER_APP_KEY || process.env.SCHWAB_APP_KEY;
+  const redirectUri = getTraderRedirectUri() || getSchwabRedirectUri();
 
   if (!appKey || !redirectUri) {
     return res.json(GetAuthUrlResponse.parse({ url: "", configured: false }));
@@ -116,9 +117,9 @@ router.get("/callback", async (req, res) => {
   }
   pendingStates.delete(state);
 
-  const appKey = process.env.SCHWAB_APP_KEY;
-  const appSecret = process.env.SCHWAB_APP_SECRET;
-  const redirectUri = getSchwabRedirectUri();
+  const appKey = process.env.SCHWAB_TRADER_APP_KEY || process.env.SCHWAB_APP_KEY;
+  const appSecret = process.env.SCHWAB_TRADER_APP_SECRET || process.env.SCHWAB_APP_SECRET;
+  const redirectUri = getTraderRedirectUri() || getSchwabRedirectUri();
 
   if (!appKey || !appSecret || !redirectUri) {
     return res.status(400).send(errorPage("Not Configured", "Schwab credentials are not configured."));
@@ -168,36 +169,15 @@ router.get("/callback", async (req, res) => {
     }
 
     const rfTok = typeof refreshToken === "string" ? refreshToken : "";
-    pendingTokens.set("latest", {
-      accessToken,
-      refreshToken: rfTok,
-      ts: Date.now(),
-    });
-
     const expiresIn = typeof tokenData["expires_in"] === "number" ? tokenData["expires_in"] : 1800;
+
+    // Store as both market and trader — single login covers everything
     storeTokens("market", accessToken, rfTok, expiresIn);
+    storeTokens("trader", accessToken, rfTok, expiresIn);
+    pendingTokens.set("latest", { accessToken, refreshToken: rfTok, ts: Date.now() });
+    pendingTokens.set("trader_latest", { accessToken, refreshToken: rfTok, ts: Date.now() });
 
-    req.log.info("GET /callback — token exchange succeeded");
-
-    const traderAppKey = process.env.SCHWAB_TRADER_APP_KEY;
-    const traderRedirectUri = getTraderRedirectUri();
-    if (traderAppKey && traderRedirectUri) {
-      cleanExpired();
-      const traderState = "trader_" + crypto.randomBytes(24).toString("hex");
-      pendingStates.set(traderState, Date.now());
-
-      const traderParams = new URLSearchParams({
-        response_type: "code",
-        client_id: traderAppKey,
-        redirect_uri: traderRedirectUri,
-        state: traderState,
-      });
-
-      const traderUrl = `${SCHWAB_AUTH_BASE}?${traderParams.toString()}`;
-      req.log.info("GET /callback — chaining to Trader OAuth automatically");
-      return res.redirect(traderUrl);
-    }
-
+    req.log.info("GET /callback — token exchange succeeded (stored as market + trader)");
     res.redirect("/");
   } catch (err) {
     req.log.error({ err }, "GET /callback network error");
@@ -296,8 +276,8 @@ router.post("/refresh", async (req, res) => {
   }
 
   const { refreshToken } = parsed.data;
-  const appKey = process.env.SCHWAB_APP_KEY;
-  const appSecret = process.env.SCHWAB_APP_SECRET;
+  const appKey = process.env.SCHWAB_TRADER_APP_KEY || process.env.SCHWAB_APP_KEY;
+  const appSecret = process.env.SCHWAB_TRADER_APP_SECRET || process.env.SCHWAB_APP_SECRET;
 
   if (!appKey || !appSecret) {
     return res.status(400).json({ error: "not_configured", message: "Schwab credentials not configured" });
@@ -437,17 +417,15 @@ router.get("/trader-callback", async (req, res) => {
     }
 
     const trRfTok = typeof refreshToken === "string" ? refreshToken : "";
-    pendingTokens.set("trader_latest", {
-      accessToken,
-      refreshToken: trRfTok,
-      ts: Date.now(),
-    });
-
     const trExpiresIn = typeof tokenData["expires_in"] === "number" ? tokenData["expires_in"] : 1800;
+
+    // Store as both market and trader — single login covers everything
     storeTokens("trader", accessToken, trRfTok, trExpiresIn);
+    storeTokens("market", accessToken, trRfTok, trExpiresIn);
+    pendingTokens.set("trader_latest", { accessToken, refreshToken: trRfTok, ts: Date.now() });
+    pendingTokens.set("latest", { accessToken, refreshToken: trRfTok, ts: Date.now() });
 
-    req.log.info("GET /trader-callback — Trader token exchange succeeded");
-
+    req.log.info("GET /trader-callback — Trader token exchange succeeded (stored as market + trader)");
     res.redirect("/");
   } catch (err) {
     req.log.error({ err }, "GET /trader-callback network error");
@@ -547,8 +525,11 @@ router.get("/server-tokens", (_req, res) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 router.get("/status", (_req, res) => {
-  const configured = !!(process.env.SCHWAB_APP_KEY && process.env.SCHWAB_APP_SECRET && getSchwabRedirectUri());
-  const traderConfigured = !!(process.env.SCHWAB_TRADER_APP_KEY && process.env.SCHWAB_TRADER_APP_SECRET && getTraderRedirectUri());
+  // Configured if trader credentials are present (preferred) or legacy market data credentials
+  const configured = !!(
+    (process.env.SCHWAB_TRADER_APP_KEY && process.env.SCHWAB_TRADER_APP_SECRET && getTraderRedirectUri()) ||
+    (process.env.SCHWAB_APP_KEY && process.env.SCHWAB_APP_SECRET && getSchwabRedirectUri())
+  );
   const claudeConfigured = !!process.env.ANTHROPIC_API_KEY;
   res.json(GetAuthStatusResponse.parse({ configured, claudeConfigured }));
 });

@@ -285,14 +285,15 @@ export function useMarketStream() {
   }, [connectWs]);
 
   const streamKey = `${accessToken || ""}|${traderAccessToken || ""}`;
+  const effectiveToken = accessToken || traderAccessToken || "";
 
   useEffect(() => {
-    if (!accessToken) return;
+    if (!effectiveToken) return;
 
     if (startDebounceRef.current) clearTimeout(startDebounceRef.current);
     startDebounceRef.current = setTimeout(() => {
       startedRef.current = false;
-      void startServerStream(accessToken, traderAccessToken);
+      void startServerStream(effectiveToken, traderAccessToken || accessToken || null);
       void addServerSymbols(allSymbols());
     }, 300);
 
