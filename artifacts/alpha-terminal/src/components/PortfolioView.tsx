@@ -225,7 +225,9 @@ function PositionTableRow({
   const eqIsShort = eq ? eq.shortQuantity > 0 : false;
   const costBasis = group.totalMarketValue - group.totalPL;
   const totalPLPct = Math.abs(costBasis) > 0.01 ? (group.totalPL / Math.abs(costBasis)) * 100 : 0;
-  const someOptSelected = group.options.some(o => selectedKeys.has(`${group.underlying}:${o.cusip}`));
+  const eqKey = `${group.underlying}:EQ`;
+  const eqSelected = hasOptions && eq && selectedKeys.has(eqKey);
+  const someSelected = eqSelected || group.options.some(o => selectedKeys.has(`${group.underlying}:${o.cusip}`));
 
   const qtyStr = eq ? fmtQty(eq.longQuantity, eq.shortQuantity) : "";
   const optStr = hasOptions ? `${group.options.length}opt` : "";
@@ -238,29 +240,29 @@ function PositionTableRow({
           display: "grid",
           gridTemplateColumns: gridCols,
           alignItems: "center",
-          padding: "7px 10px",
-          background: someOptSelected ? `${C.gold}06` : "transparent",
+          padding: "8px 12px",
+          background: someSelected ? `${C.gold}06` : "transparent",
           borderBottom: `1px solid ${C.border}`,
           cursor: "pointer",
         }}
         onClick={() => setExpanded(!expanded)}
-        onMouseEnter={e => { if (!someOptSelected) (e.currentTarget as HTMLDivElement).style.background = "#ffffff05"; }}
-        onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = someOptSelected ? `${C.gold}06` : "transparent"; }}
+        onMouseEnter={e => { if (!someSelected) (e.currentTarget as HTMLDivElement).style.background = "#ffffff05"; }}
+        onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = someSelected ? `${C.gold}06` : "transparent"; }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
           {expanded
-            ? <ChevronDown style={{ width: 11, height: 11, color: C.dim, flexShrink: 0 }} />
-            : <ChevronRight style={{ width: 11, height: 11, color: C.dim, flexShrink: 0 }} />}
+            ? <ChevronDown style={{ width: 12, height: 12, color: C.dim, flexShrink: 0 }} />
+            : <ChevronRight style={{ width: 12, height: 12, color: C.dim, flexShrink: 0 }} />}
           <span style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{group.underlying}</span>
           <span style={{ fontSize: 12, color: C.dim, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{details}</span>
         </div>
-        <span style={{ fontSize: 13, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+        <span style={{ fontSize: 14, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
           {fmtCompact(group.totalMarketValue)}
         </span>
         <span style={{ fontSize: 13, color: plColor(group.totalPL), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
           {fmtPct(totalPLPct)}
         </span>
-        <span style={{ fontSize: 13, fontWeight: 500, color: plColor(group.totalDayPL), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+        <span style={{ fontSize: 14, fontWeight: 500, color: plColor(group.totalDayPL), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
           {fmtCurrency(group.totalDayPL)}
         </span>
       </div>
@@ -272,13 +274,16 @@ function PositionTableRow({
               ? (eq.longOpenProfitLoss / (eq.averagePrice * (eq.shortQuantity > 0 ? eq.shortQuantity : eq.longQuantity))) * 100
               : 0;
             return (
-              <div style={{ display: "grid", gridTemplateColumns: gridCols, alignItems: "center", padding: "5px 10px 5px 22px", borderBottom: `1px solid ${C.border}` }}>
-                <span style={{ fontSize: 12, color: C.textDim }}>
-                  {fmtQty(eq.longQuantity, eq.shortQuantity)} @ {fmtCurrency(eq.averagePrice)}
-                </span>
-                <span style={{ fontSize: 12, color: C.textMuted, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCompact(eq.marketValue)}</span>
-                <span style={{ fontSize: 12, color: plColor(eq.longOpenProfitLoss), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtPct(eqPLPct)}</span>
-                <span style={{ fontSize: 12, color: plColor(eq.currentDayProfitLoss), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(eq.currentDayProfitLoss)}</span>
+              <div style={{ display: "grid", gridTemplateColumns: gridCols, alignItems: "center", padding: "6px 12px 6px 24px", borderBottom: `1px solid ${C.border}`, background: eqSelected ? `${C.gold}08` : "transparent" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                  {hasOptions && <Checkbox checked={!!eqSelected} onToggle={e => { e.stopPropagation(); toggleKey(eqKey); }} />}
+                  <span style={{ fontSize: 13, color: C.textDim }}>
+                    {fmtQty(eq.longQuantity, eq.shortQuantity)} @ {fmtCurrency(eq.averagePrice)}
+                  </span>
+                </div>
+                <span style={{ fontSize: 13, color: C.textMuted, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCompact(eq.marketValue)}</span>
+                <span style={{ fontSize: 13, color: plColor(eq.longOpenProfitLoss), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtPct(eqPLPct)}</span>
+                <span style={{ fontSize: 13, color: plColor(eq.currentDayProfitLoss), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(eq.currentDayProfitLoss)}</span>
               </div>
             );
           })()}
@@ -298,38 +303,32 @@ function PositionTableRow({
                   display: "grid",
                   gridTemplateColumns: gridCols,
                   alignItems: "center",
-                  padding: "5px 10px 5px 22px",
+                  padding: "6px 12px 6px 24px",
                   borderBottom: `1px solid ${C.border}`,
                   background: isSelected ? `${C.gold}08` : "transparent",
                 }}
               >
-                <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
                   <Checkbox checked={isSelected} onToggle={e => { e.stopPropagation(); toggleKey(optKey); }} />
-                  <span style={{ fontSize: 12, fontWeight: 600, color: opt.putCall === "CALL" ? "#4ade80" : "#fb923c", flexShrink: 0 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: opt.putCall === "CALL" ? "#4ade80" : "#fb923c", flexShrink: 0 }}>
                     {opt.putCall === "CALL" ? "C" : "P"}
                   </span>
-                  <span style={{ fontSize: 12, color: C.textDim, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  <span style={{ fontSize: 13, color: C.textDim, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                     {formatOptionSymbol(opt.symbol, false)} ×{fmtQty(opt.longQuantity, opt.shortQuantity).replace("+", "")}
                   </span>
                 </div>
-                <span style={{ fontSize: 12, color: C.textMuted, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCompact(opt.marketValue)}</span>
-                <span style={{ fontSize: 12, color: plColor(totalPL), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtPct(totalPLPctOpt)}</span>
-                <span style={{ fontSize: 12, color: plColor(opt.currentDayProfitLoss), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(opt.currentDayProfitLoss)}</span>
+                <span style={{ fontSize: 13, color: C.textMuted, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCompact(opt.marketValue)}</span>
+                <span style={{ fontSize: 13, color: plColor(totalPL), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtPct(totalPLPctOpt)}</span>
+                <span style={{ fontSize: 13, color: plColor(opt.currentDayProfitLoss), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(opt.currentDayProfitLoss)}</span>
               </div>
             );
           })}
 
-          <div style={{ padding: "5px 10px 5px 22px", display: "flex", gap: 10, borderBottom: `1px solid ${C.border}` }}>
-            <button onClick={e => { e.stopPropagation(); onSelect(group.underlying); }} style={{ fontSize: 11, fontWeight: 500, fontFamily: f, color: C.gold, background: "transparent", border: "none", cursor: "pointer", padding: 0, letterSpacing: 0.5, textTransform: "uppercase" }}>Chart →</button>
-            {onTrade && eq && (
-              <button onClick={e => { e.stopPropagation(); onTrade(group.underlying, eqIsShort ? "BUY" : "SELL"); }} style={{ fontSize: 11, fontWeight: 500, fontFamily: f, color: C.gold, background: "transparent", border: "none", cursor: "pointer", padding: 0, letterSpacing: 0.5, textTransform: "uppercase" }}>Trade</button>
+          <div style={{ padding: "6px 12px 6px 24px", display: "flex", gap: 10, borderBottom: `1px solid ${C.border}` }}>
+            <button onClick={e => { e.stopPropagation(); onSelect(group.underlying); }} style={{ fontSize: 12, fontWeight: 500, fontFamily: f, color: C.gold, background: "transparent", border: "none", cursor: "pointer", padding: 0, letterSpacing: 0.3, textTransform: "uppercase" }}>Chart →</button>
+            {onTrade && eq && !hasOptions && (
+              <button onClick={e => { e.stopPropagation(); onTrade(group.underlying, eqIsShort ? "BUY" : "SELL"); }} style={{ fontSize: 12, fontWeight: 500, fontFamily: f, color: C.gold, background: "transparent", border: "none", cursor: "pointer", padding: 0, letterSpacing: 0.3, textTransform: "uppercase" }}>Sell</button>
             )}
-            {onTrade && hasOptions && group.options.map(opt => {
-              const os = opt.shortQuantity > 0;
-              return (
-                <button key={opt.cusip} onClick={e => { e.stopPropagation(); onTrade(opt.underlyingSymbol, os ? "BUY" : "SELL", opt.symbol, os ? "BUY_TO_CLOSE" : "SELL_TO_CLOSE"); }} style={{ fontSize: 11, fontWeight: 500, fontFamily: f, color: C.textDim, background: "transparent", border: "none", cursor: "pointer", padding: 0, letterSpacing: 0.5, textTransform: "uppercase" }}>Close {opt.putCall === "CALL" ? "C" : "P"}</button>
-              );
-            })}
           </div>
         </div>
       )}
@@ -583,20 +582,31 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
     return f2;
   }, [orders, orderFilter, orderSearch]);
 
+  const hasEqSelected = useMemo(() => [...selectedKeys].some(k => k.endsWith(":EQ")), [selectedKeys]);
+  const hasOptSelected = useMemo(() => [...selectedKeys].some(k => !k.endsWith(":EQ")), [selectedKeys]);
+
   const handleCloseSelected = useCallback(() => {
     if (!onTrade) return;
     for (const key of selectedKeys) {
       const [underlying, rest] = key.split(":");
-      for (const grp of symbolGroups) {
-        const opt = grp.options.find(o => o.cusip === rest);
-        if (opt) { onTrade(opt.underlyingSymbol, opt.shortQuantity > 0 ? "BUY" : "SELL", opt.symbol, opt.shortQuantity > 0 ? "BUY_TO_CLOSE" : "SELL_TO_CLOSE"); break; }
+      if (rest === "EQ") {
+        const grp = symbolGroups.find(g => g.underlying === underlying);
+        if (grp?.equity) {
+          const eq = grp.equity;
+          onTrade(underlying, eq.shortQuantity > 0 ? "BUY" : "SELL");
+        }
+      } else {
+        for (const grp of symbolGroups) {
+          const opt = grp.options.find(o => o.cusip === rest);
+          if (opt) { onTrade(opt.underlyingSymbol, opt.shortQuantity > 0 ? "BUY" : "SELL", opt.symbol, opt.shortQuantity > 0 ? "BUY_TO_CLOSE" : "SELL_TO_CLOSE"); break; }
+        }
       }
     }
     setSelectedKeys(new Set());
   }, [selectedKeys, symbolGroups, onTrade]);
 
   const handleRollSelected = useCallback(() => {
-    const first = [...selectedKeys][0];
+    const first = [...selectedKeys].find(k => !k.endsWith(":EQ"));
     if (!first) return;
     const underlying = first.split(":")[0];
     handleSelectSymbol(underlying);
@@ -682,11 +692,11 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
       )}
 
       <div style={{ borderBottom: `1px solid ${C.borderHi}` }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 10px 0" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px 2px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-            <span style={{ fontSize: 11, color: C.dim }}>····{(account?.accountNumber ?? "").slice(-4)}</span>
-            <span style={{ fontSize: 11, color: C.dim }}>·</span>
-            <span style={{ fontSize: 11, color: C.dim, textTransform: "uppercase" }}>{account?.type ?? ""}</span>
+            <span style={{ fontSize: 12, color: C.dim }}>····{(account?.accountNumber ?? "").slice(-4)}</span>
+            <span style={{ fontSize: 12, color: C.dim }}>·</span>
+            <span style={{ fontSize: 12, color: C.dim, textTransform: "uppercase" }}>{account?.type ?? ""}</span>
             <span style={{ width: 4, height: 4, borderRadius: 2, background: C.green, display: "inline-block" }} />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
@@ -700,45 +710,49 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
           </div>
         </div>
 
-        <div style={{ padding: "2px 10px 4px", display: "flex", alignItems: "baseline", gap: 6 }}>
-          <span style={{ fontSize: 22, fontWeight: 700, color: C.text, fontVariantNumeric: "tabular-nums", letterSpacing: -0.5 }}>
+        <div style={{ padding: "2px 12px 6px", display: "flex", alignItems: "baseline", gap: 8 }}>
+          <span style={{ fontSize: 24, fontWeight: 700, color: C.text, fontVariantNumeric: "tabular-nums", letterSpacing: -0.5 }}>
             {fmtCurrency(bal?.liquidationValue ?? 0)}
           </span>
-          <span style={{ fontSize: 13, fontWeight: 500, color: plColor(dayPL), fontVariantNumeric: "tabular-nums" }}>
+          <span style={{ fontSize: 14, fontWeight: 500, color: plColor(dayPL), fontVariantNumeric: "tabular-nums" }}>
             {dayPL >= 0 ? "+" : ""}{fmtCurrency(dayPL)}
           </span>
-          <span style={{ fontSize: 12, color: plColor(dayPL), fontVariantNumeric: "tabular-nums" }}>
+          <span style={{ fontSize: 13, color: plColor(dayPL), fontVariantNumeric: "tabular-nums" }}>
             ({dayReturnPct >= 0 ? "+" : ""}{dayReturnPct.toFixed(2)}%)
           </span>
           {dayTradesLeft !== null && (
-            <span style={{ fontSize: 11, color: dayTradesLeft === 0 ? C.red : dayTradesLeft === 1 ? C.gold : C.dim, marginLeft: "auto" }}>
+            <span style={{ fontSize: 12, color: dayTradesLeft === 0 ? C.red : dayTradesLeft === 1 ? C.gold : C.dim, marginLeft: "auto" }}>
               DT:{dayTradesLeft}
             </span>
           )}
         </div>
 
         {isMarginCall && (
-          <div style={{ margin: "0 10px 4px" }}>
+          <div style={{ margin: "2px 0 4px" }}>
             <button
               onClick={() => setMarginCallExpanded(x => !x)}
-              style={{ width: "100%", display: "flex", alignItems: "center", gap: 5, padding: "4px 8px", background: `${C.red}10`, borderLeft: `2px solid ${C.red}`, border: "none", cursor: "pointer", fontFamily: f }}
+              style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "7px 12px", background: C.red, border: "none", cursor: "pointer", fontFamily: f }}
             >
-              <AlertTriangle style={{ color: C.red, width: 12, height: 12, flexShrink: 0 }} />
-              <span style={{ fontSize: 12, fontWeight: 600, color: C.red, textTransform: "uppercase", letterSpacing: 0.5, flex: 1, textAlign: "left" }}>
-                CALL — DEPOSIT {fmtCurrency(marginDeficiency)}
+              <AlertTriangle style={{ color: "#000", width: 14, height: 14, flexShrink: 0 }} />
+              <span style={{ fontSize: 13, fontWeight: 700, color: "#000", textTransform: "uppercase", letterSpacing: 0.8 }}>
+                MARGIN CALL
               </span>
-              {marginCallExpanded ? <ChevronDown style={{ width: 11, height: 11, color: C.red }} /> : <ChevronRight style={{ width: 11, height: 11, color: C.red }} />}
+              <span style={{ fontSize: 12, fontWeight: 600, color: "#000" }}>·</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: "#000" }}>
+                Deposit {fmtCurrency(marginDeficiency)}
+              </span>
+              {marginCallExpanded ? <ChevronDown style={{ width: 12, height: 12, color: "#000", marginLeft: "auto" }} /> : <ChevronRight style={{ width: 12, height: 12, color: "#000", marginLeft: "auto" }} />}
             </button>
             {marginCallExpanded && (
-              <div style={{ background: `${C.red}08`, borderLeft: `2px solid ${C.red}50`, padding: "6px 10px", display: "flex", flexDirection: "column", gap: 3 }}>
+              <div style={{ background: `${C.red}15`, padding: "8px 12px", display: "flex", flexDirection: "column", gap: 4 }}>
                 {[
                   ["Margin Equity", fmtCurrency(marginTotal), C.text],
                   ["Maint. Requirement", fmtCurrency(marginUsed), C.text],
                   ["Deficiency", fmtCurrency(marginDeficiency), C.red],
                 ].map(([label, val, clr]) => (
                   <div key={label} style={{ display: "flex", justifyContent: "space-between" }}>
-                    <span style={{ fontSize: 12, color: C.textDim }}>{label}</span>
-                    <span style={{ fontSize: 12, fontWeight: 500, color: clr as string, fontVariantNumeric: "tabular-nums" }}>{val}</span>
+                    <span style={{ fontSize: 13, color: C.textDim }}>{label}</span>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: clr as string, fontVariantNumeric: "tabular-nums" }}>{val}</span>
                   </div>
                 ))}
               </div>
@@ -747,9 +761,9 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
         )}
 
         {shownMetrics.length > 0 && (
-          <div style={{ display: "flex", flexWrap: "wrap", padding: "0 10px 4px", gap: "0 14px" }}>
+          <div style={{ display: "flex", flexWrap: "wrap", padding: "0 12px 6px", gap: "2px 16px" }}>
             {shownMetrics.map(m => (
-              <span key={m.label} style={{ fontSize: 12, color: C.dim, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+              <span key={m.label} style={{ fontSize: 13, color: C.dim, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
                 {m.label} <span style={{ color: m.color, fontWeight: 500 }}>{m.value}</span>
               </span>
             ))}
@@ -777,14 +791,14 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
         {subTab === "positions" && (
           <div>
             <div style={{
-              display: "grid", gridTemplateColumns: gridCols, padding: "4px 10px",
+              display: "grid", gridTemplateColumns: gridCols, padding: "6px 12px",
               borderBottom: `1px solid ${C.borderHi}`, background: "#0e0e0e",
               position: "sticky", top: 0, zIndex: 1,
             }}>
-              <span style={{ fontSize: 11, fontWeight: 500, color: C.dim, textTransform: "uppercase", letterSpacing: 0.8 }}>Symbol</span>
-              <span style={{ fontSize: 11, fontWeight: 500, color: C.dim, textTransform: "uppercase", letterSpacing: 0.8, textAlign: "right" }}>Mkt Val</span>
-              <span style={{ fontSize: 11, fontWeight: 500, color: C.dim, textTransform: "uppercase", letterSpacing: 0.8, textAlign: "right" }}>P/L %</span>
-              <span style={{ fontSize: 11, fontWeight: 500, color: C.dim, textTransform: "uppercase", letterSpacing: 0.8, textAlign: "right" }}>P/L Day</span>
+              <span style={{ fontSize: 12, fontWeight: 500, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5 }}>Symbol</span>
+              <span style={{ fontSize: 12, fontWeight: 500, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>Mkt Val</span>
+              <span style={{ fontSize: 12, fontWeight: 500, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>P/L %</span>
+              <span style={{ fontSize: 12, fontWeight: 500, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>P/L Day</span>
             </div>
 
             {symbolGroups.map(group => (
@@ -800,18 +814,18 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
 
             {symbolGroups.length > 0 && (
               <div style={{
-                display: "grid", gridTemplateColumns: gridCols, padding: "7px 10px",
+                display: "grid", gridTemplateColumns: gridCols, padding: "8px 12px",
                 borderTop: `2px solid ${C.borderHi}`, background: "#0e0e0e",
               }}>
-                <span style={{ fontSize: 13, fontWeight: 500, color: C.textMuted }}>Overall Totals</span>
-                <span style={{ fontSize: 13, fontWeight: 500, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCompact(totalMarketValue)}</span>
-                <span style={{ fontSize: 13, fontWeight: 500, color: plColor(totalUnrealized), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtPct(unrealizedPct)}</span>
-                <span style={{ fontSize: 13, fontWeight: 600, color: plColor(totalDayPLPositions), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(totalDayPLPositions)}</span>
+                <span style={{ fontSize: 14, fontWeight: 500, color: C.textMuted }}>Overall Totals</span>
+                <span style={{ fontSize: 14, fontWeight: 500, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCompact(totalMarketValue)}</span>
+                <span style={{ fontSize: 14, fontWeight: 500, color: plColor(totalUnrealized), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtPct(unrealizedPct)}</span>
+                <span style={{ fontSize: 14, fontWeight: 600, color: plColor(totalDayPLPositions), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(totalDayPLPositions)}</span>
               </div>
             )}
 
             {symbolGroups.length > 0 && (
-              <div style={{ padding: "6px 10px", borderTop: `1px solid ${C.border}`, display: "flex", gap: 12, flexWrap: "wrap" }}>
+              <div style={{ padding: "8px 12px", borderTop: `1px solid ${C.border}`, display: "flex", gap: 16, flexWrap: "wrap" }}>
                 <span style={{ fontSize: 13, color: C.textDim, fontVariantNumeric: "tabular-nums" }}>
                   P/L Day <span style={{ fontWeight: 500, color: plColor(totalDayPLPositions) }}>{fmtCurrency(totalDayPLPositions)}</span>
                 </span>
@@ -940,32 +954,34 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
         <div style={{
           position: "sticky", bottom: 0, left: 0, right: 0,
           background: "#141414", borderTop: `1px solid ${C.borderHi}`,
-          padding: "8px 10px", display: "flex", alignItems: "center", gap: 8, zIndex: 20,
+          padding: "8px 12px", display: "flex", alignItems: "center", gap: 8, zIndex: 20,
         }}>
           <button
             onClick={() => setSelectedKeys(new Set())}
-            style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: C.dim, background: "transparent", border: "none", cursor: "pointer", fontFamily: f, padding: "4px 6px" }}
+            style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13, color: C.dim, background: "transparent", border: "none", cursor: "pointer", fontFamily: f, padding: "4px 6px" }}
           >
-            <X style={{ width: 12, height: 12 }} />
+            <X style={{ width: 13, height: 13 }} />
             <span>{selectedKeys.size}</span>
           </button>
           <div style={{ flex: 1 }} />
-          <button
-            onClick={handleRollSelected}
-            style={{
-              fontSize: 12, fontWeight: 500, fontFamily: f, color: C.gold, letterSpacing: 0.5,
-              background: "transparent", border: `1px solid ${C.gold}40`, cursor: "pointer",
-              padding: "5px 14px",
-            }}
-          >
-            Roll Selected
-          </button>
+          {hasOptSelected && (
+            <button
+              onClick={handleRollSelected}
+              style={{
+                fontSize: 13, fontWeight: 500, fontFamily: f, color: C.gold, letterSpacing: 0.3,
+                background: "transparent", border: `1px solid ${C.gold}40`, cursor: "pointer",
+                padding: "6px 16px",
+              }}
+            >
+              Roll Selected
+            </button>
+          )}
           <button
             onClick={handleCloseSelected}
             style={{
-              fontSize: 12, fontWeight: 500, fontFamily: f, color: C.text, letterSpacing: 0.5,
-              background: `${C.gold}15`, border: `1px solid ${C.gold}50`, cursor: "pointer",
-              padding: "5px 14px",
+              fontSize: 13, fontWeight: 500, fontFamily: f, color: "#000", letterSpacing: 0.3,
+              background: C.gold, border: "none", cursor: "pointer",
+              padding: "6px 16px",
             }}
           >
             Close Selected
