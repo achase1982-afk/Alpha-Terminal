@@ -35,4 +35,4 @@ DEV_BYPASS_AUTH = "true"
 
 [userenv.shared]
 IB_CLIENT_ID = "1"
-IBKR_GATEWAY_URL = "https://ibkr.nucolbyterminal.com:4001"
+IBKR_GATEWAY_URL = "tcp://74.88.163.11:4001"
