@@ -1,38 +1,29 @@
-import { TrendingUp, TrendingDown, Minus, BarChart2, Activity, Layers, GitBranch, Users, Flame, Globe } from "lucide-react";
 import type { ClusterData, ClusterKey } from "../../types/marketPulse";
 
-const CLUSTER_CONFIG: Record<ClusterKey, { label: string; icon: React.ReactNode }> = {
-  rates: { label: "RATES", icon: <BarChart2 className="w-3.5 h-3.5" /> },
-  credit: { label: "CREDIT", icon: <Activity className="w-3.5 h-3.5" /> },
-  volLevel: { label: "VOL LEVEL", icon: <Layers className="w-3.5 h-3.5" /> },
-  volTerm: { label: "VOL TERM", icon: <GitBranch className="w-3.5 h-3.5" /> },
-  breadth: { label: "BREADTH", icon: <Users className="w-3.5 h-3.5" /> },
-  riskAppetite: { label: "RISK APP", icon: <Flame className="w-3.5 h-3.5" /> },
-  macro: { label: "MACRO", icon: <Globe className="w-3.5 h-3.5" /> },
+const CLUSTER_LABELS: Record<ClusterKey, string> = {
+  rates: "RATES",
+  credit: "CREDIT",
+  volLevel: "VOL LVL",
+  volTerm: "VOL TERM",
+  breadth: "BREADTH",
+  riskAppetite: "RISK APP",
+  macro: "MACRO",
+};
+
+const CLUSTER_WEIGHTS: Record<ClusterKey, number> = {
+  rates: 18,
+  credit: 12,
+  volLevel: 15,
+  volTerm: 12,
+  breadth: 18,
+  riskAppetite: 15,
+  macro: 10,
 };
 
 function scoreColor(score: number): string {
-  if (score >= 1) return "#00d166";
-  if (score > 0) return "#00d166";
-  if (score <= -1) return "#f23645";
-  if (score < 0) return "#f23645";
+  if (score > 0) return "#22c55e";
+  if (score < 0) return "#ef4444";
   return "#71717a";
-}
-
-function DirectionArrow({ direction }: { direction: string }) {
-  if (direction === "UP" || direction === "POSITIVE" || direction === "COMPRESSING" || direction === "CONTANGO") {
-    return <TrendingUp className="w-3 h-3 text-[#00d166]" />;
-  }
-  if (direction === "DOWN" || direction === "NEGATIVE" || direction === "EXPANDING" || direction === "INVERTED") {
-    return <TrendingDown className="w-3 h-3 text-[#f23645]" />;
-  }
-  return <Minus className="w-3 h-3 text-[#71717a]" />;
-}
-
-function qualityDot(quality: string): string {
-  if (quality === "FRESH") return "#00d166";
-  if (quality === "STALE") return "#FFB800";
-  return "#f23645";
 }
 
 interface ClusterCardProps {
@@ -41,43 +32,53 @@ interface ClusterCardProps {
 }
 
 export function ClusterCard({ clusterKey, cluster }: ClusterCardProps) {
-  const config = CLUSTER_CONFIG[clusterKey];
-  const isDimmed = cluster.dataQuality !== "FRESH";
-  const sColor = scoreColor(cluster.score);
+  const label = CLUSTER_LABELS[clusterKey];
+  const weight = CLUSTER_WEIGHTS[clusterKey];
+  const sc = scoreColor(cluster.score);
+  const pct = Math.min(Math.abs(cluster.score) / 2 * 100, 100);
 
   return (
     <div
-      className="rounded-xl border border-[#2A2A2C] overflow-hidden shrink-0"
+      className="shrink-0 overflow-hidden"
       style={{
-        background: "#111113",
-        opacity: isDimmed ? 0.5 : 1,
-        width: 220,
-        minWidth: 220,
+        background: "#000",
+        border: "1px solid #1a1a1a",
+        width: 200,
+        minWidth: 200,
+        opacity: cluster.dataQuality === "MISSING" ? 0.35 : 1,
       }}
     >
-      <div className="px-3 py-2 border-b border-[#2A2A2C] flex items-center gap-2" style={{ background: "#151517" }}>
-        <span style={{ color: sColor }}>{config.icon}</span>
-        <span className="font-mono text-[10px] font-bold text-[#e4e4e7] flex-1 tracking-wider">{config.label}</span>
-        <span
-          className="font-mono text-sm font-black tabular-nums"
-          style={{ color: sColor }}
-        >
-          {cluster.score > 0 ? "+" : ""}{cluster.score.toFixed(1)}
-        </span>
-        <DirectionArrow direction={cluster.direction} />
-        <span
-          className="w-2 h-2 rounded-full shrink-0"
-          style={{ background: qualityDot(cluster.dataQuality) }}
-          title={`Data: ${cluster.dataQuality}`}
-        />
+      <div className="px-3 py-1.5 flex items-center justify-between" style={{ borderBottom: "1px solid #1a1a1a" }}>
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-[10px] font-bold text-[#d4d4d8] tracking-wider">{label}</span>
+          <span className="font-mono text-[8px] text-[#3f3f46]">{weight}%</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-[13px] font-black tabular-nums" style={{ color: sc }}>
+            {cluster.score > 0 ? "+" : ""}{cluster.score.toFixed(2)}
+          </span>
+          <span
+            className="font-mono text-[7px] font-bold px-1 py-px"
+            style={{
+              color: cluster.dataQuality === "FRESH" ? "#22c55e" : cluster.dataQuality === "STALE" ? "#fbbf24" : "#ef4444",
+              border: `1px solid ${cluster.dataQuality === "FRESH" ? "#14532d" : cluster.dataQuality === "STALE" ? "#422006" : "#450a0a"}`,
+            }}
+          >{cluster.dataQuality}</span>
+        </div>
       </div>
 
-      <div className="p-3 space-y-2">
-        <p className="font-sans text-[11px] text-[#a1a1aa] leading-snug line-clamp-2">{cluster.headline}</p>
+      <div className="px-3 py-0.5">
+        <div className="h-[3px] w-full" style={{ background: "#1a1a1a" }}>
+          <div className="h-full transition-all duration-300" style={{ width: `${pct}%`, background: sc }} />
+        </div>
+      </div>
+
+      <div className="px-3 py-2 space-y-1.5">
+        <p className="font-mono text-[10px] text-[#a1a1aa] leading-[1.5] line-clamp-2">{cluster.headline}</p>
         {cluster.keyDataPoints.length > 0 && (
-          <div className="space-y-0.5">
-            {cluster.keyDataPoints.map((dp, i) => (
-              <span key={i} className="block font-mono text-[10px] text-[#71717a] tabular-nums">{dp}</span>
+          <div className="space-y-px">
+            {cluster.keyDataPoints.slice(0, 4).map((dp, i) => (
+              <div key={i} className="font-mono text-[9px] text-[#52525b] tabular-nums truncate">{dp}</div>
             ))}
           </div>
         )}
