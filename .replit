@@ -34,6 +34,5 @@ channel = "stable-25_05"
 DEV_BYPASS_AUTH = "true"
 
 [userenv.shared]
-IB_HOST = "8.tcp.ngrok.io"
-IB_PORT = "19717"
 IB_CLIENT_ID = "1"
+IBKR_GATEWAY_URL = "https://ibkr.nucolbyterminal.com"

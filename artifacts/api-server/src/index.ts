@@ -49,8 +49,8 @@ async function boot() {
   registerQuoteCacheInjector(injectExternalQuote);
   registerIBBroadcast(broadcastToClients);
 
-  if (process.env.IB_HOST) {
-    logger.info("IB_HOST configured — auto-connecting to IB Gateway");
+  if (process.env.IBKR_GATEWAY_URL || process.env.IB_HOST) {
+    logger.info("IB Gateway configured — auto-connecting via Cloudflare Tunnel");
     connectIB().catch((err) => logger.warn({ err }, "IB auto-connect failed (will retry)"));
   }
 }

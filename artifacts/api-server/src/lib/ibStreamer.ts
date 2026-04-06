@@ -57,8 +57,20 @@ const TT = {
   DELAYED_HIGH: 72, DELAYED_LOW: 73, DELAYED_VOLUME: 74, DELAYED_CLOSE: 75,
 } as const;
 
-const IB_HOST = process.env.IB_HOST ?? "127.0.0.1";
-const IB_PORT = Number(process.env.IB_PORT ?? "4002");
+function parseGatewayUrl(): { host: string; port: number } {
+  const raw = process.env.IBKR_GATEWAY_URL || process.env.IB_HOST;
+  if (!raw) return { host: "127.0.0.1", port: 4002 };
+  try {
+    const url = new URL(raw.includes("://") ? raw : `tcp://${raw}`);
+    const host = url.hostname || "127.0.0.1";
+    const port = url.port ? Number(url.port) : (url.protocol === "https:" ? 443 : 4002);
+    return { host, port };
+  } catch {
+    return { host: raw, port: Number(process.env.IB_PORT ?? "4002") };
+  }
+}
+
+const { host: IB_HOST, port: IB_PORT } = parseGatewayUrl();
 const IB_CLIENT_ID = Number(process.env.IB_CLIENT_ID ?? "1");
 
 const RECONNECT_INTERVAL_MS = 5_000;
