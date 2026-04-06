@@ -181,16 +181,17 @@ router.get("/company", async (req, res) => {
 });
 
 const SEC_DARK_CSS = `
-*{box-sizing:border-box;border-color:#27272a!important}
-html,body{background:#000!important;color:#d4d4d8!important;margin:0;padding:12px 16px;font-family:'SFMono-Regular','SF Mono',ui-monospace,'Cascadia Code','Fira Code','JetBrains Mono','Consolas',monospace!important;font-size:12px;line-height:1.6;overflow-x:hidden;word-break:break-word}
-table{border-collapse:collapse;width:100%;font-size:11px;margin:8px 0}
-td,th{padding:4px 8px;border:1px solid #27272a;vertical-align:top;color:#d4d4d8!important;background:transparent!important}
+*{box-sizing:border-box}
+html,body{background:#000!important;color:#d4d4d8!important;margin:0;padding:0;font-family:'SFMono-Regular','SF Mono',ui-monospace,'Cascadia Code','Fira Code','JetBrains Mono','Consolas',monospace!important;font-size:12px;line-height:1.5}
+body{padding:10px;overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{border-collapse:collapse;font-size:11px;margin:6px 0;border-color:#333!important}
+td,th{padding:4px 6px;border:1px solid #333!important;vertical-align:top;color:#d4d4d8!important;background:transparent!important;word-wrap:break-word}
 th{color:#a1a1aa!important;font-weight:700;text-transform:uppercase;font-size:9px;letter-spacing:0.5px}
 tr:nth-child(even) td{background:#0a0a0a!important}
 a{color:#FFB800!important;text-decoration:none!important}
-h1,h2,h3,h4,h5,h6{color:#e4e4e7!important;font-weight:700;margin:16px 0 8px}
-p{margin:6px 0}
-hr{border:none;border-top:1px solid #27272a;margin:12px 0}
+h1,h2,h3,h4,h5,h6{color:#e4e4e7!important;font-weight:700;margin:14px 0 6px}
+p{margin:4px 0}
+hr{border:none;border-top:1px solid #333;margin:10px 0}
 pre,code{font-size:11px;background:#0a0a0a!important;padding:2px 4px}
 span,div,font,b,i,u,em,strong{color:inherit!important;background:transparent!important}
 ix\\:nonfraction,ix\\:nonnumeric{color:#FFB800!important;font-weight:600}
@@ -221,7 +222,14 @@ router.get("/filing-content", async (req, res) => {
     const raw = await resp.text();
 
     let bodyContent: string;
+    let originalStyles = "";
     if (contentType.includes("html") || contentType.includes("xml") || raw.trimStart().startsWith("<")) {
+      const styleMatches = raw.match(/<style[^>]*>([\s\S]*?)<\/style>/gi) || [];
+      originalStyles = styleMatches.map(s => {
+        const inner = s.replace(/<\/?style[^>]*>/gi, "");
+        return inner;
+      }).join("\n");
+
       bodyContent = raw;
       const bodyMatch = raw.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
       if (bodyMatch) bodyContent = bodyMatch[1];
@@ -235,7 +243,7 @@ router.get("/filing-content", async (req, res) => {
       bodyContent = `<pre style="white-space:pre-wrap;word-break:break-word;margin:0">${raw.replace(/&/g,"&amp;").replace(/</g,"&lt;")}</pre>`;
     }
 
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${SEC_DARK_CSS}</style></head><body>${bodyContent.trim()}</body></html>`;
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${originalStyles}</style><style>${SEC_DARK_CSS}</style></head><body>${bodyContent.trim()}</body></html>`;
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     return res.send(html);
   } catch (err: any) {
