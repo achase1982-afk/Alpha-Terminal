@@ -4,6 +4,7 @@ import { injectExternalQuote } from "./lib/schwabStreamer";
 import { initWsServer, broadcastToClients } from "./lib/wsServer";
 import { connectIB, registerQuoteCacheInjector, registerIBBroadcast, getWsBridgeUrl } from "./lib/ibStreamer";
 import { startIBWsProxy } from "./lib/ibWsProxy";
+import { initTokenStore } from "./lib/tokenStore";
 
 const rawPort = process.env["PORT"];
 
@@ -34,6 +35,8 @@ async function boot() {
   server.headersTimeout = 125_000;
 
   initWsServer(server);
+
+  await initTokenStore();
 
   registerQuoteCacheInjector(injectExternalQuote);
   registerIBBroadcast(broadcastToClients);
