@@ -180,7 +180,7 @@ function statusColor(status: string): string {
   }
 }
 
-const gridCols = "minmax(0,1fr) 72px 58px 72px";
+const gridCols = "minmax(0,1fr) 80px 62px 82px";
 
 function PositionTableRow({
   group,
@@ -213,7 +213,7 @@ function PositionTableRow({
           display: "grid",
           gridTemplateColumns: gridCols,
           alignItems: "center",
-          padding: "6px 10px",
+          padding: "8px 10px",
           background: "transparent",
           border: "none",
           borderBottom: `1px solid ${C.border}`,
@@ -225,18 +225,18 @@ function PositionTableRow({
       >
         <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
           {expanded
-            ? <ChevronDown style={{ width: 10, height: 10, color: C.dim, flexShrink: 0 }} />
-            : <ChevronRight style={{ width: 10, height: 10, color: C.dim, flexShrink: 0 }} />}
-          <span style={{ fontSize: 12, fontWeight: 600, color: C.text, letterSpacing: 0.3 }}>{group.underlying}</span>
-          <span style={{ fontSize: 10, color: C.textDim, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{details}</span>
+            ? <ChevronDown style={{ width: 12, height: 12, color: C.dim, flexShrink: 0 }} />
+            : <ChevronRight style={{ width: 12, height: 12, color: C.dim, flexShrink: 0 }} />}
+          <span style={{ fontSize: 14, fontWeight: 600, color: C.text, letterSpacing: 0.3 }}>{group.underlying}</span>
+          <span style={{ fontSize: 14, color: C.textDim, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{details}</span>
         </div>
-        <span style={{ fontSize: 11, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+        <span style={{ fontSize: 13, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
           {fmtCompact(group.totalMarketValue)}
         </span>
-        <span style={{ fontSize: 11, color: plColor(group.totalPL), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+        <span style={{ fontSize: 13, color: plColor(group.totalPL), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
           {fmtPct(totalPLPct)}
         </span>
-        <span style={{ fontSize: 11, color: plColor(group.totalDayPL), textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>
+        <span style={{ fontSize: 13, color: plColor(group.totalDayPL), textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>
           {fmtCurrency(group.totalDayPL)}
         </span>
       </button>
@@ -249,22 +249,22 @@ function PositionTableRow({
                 display: "grid",
                 gridTemplateColumns: gridCols,
                 alignItems: "center",
-                padding: "5px 10px 5px 27px",
+                padding: "6px 10px 6px 30px",
                 borderBottom: `1px solid ${C.border}`,
               }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
-                <span style={{ fontSize: 10, color: C.textDim }}>
+                <span style={{ fontSize: 14, color: C.textDim }}>
                   {fmtQty(eq.longQuantity, eq.shortQuantity)} @ {fmtCurrency(eq.averagePrice)}
                 </span>
               </div>
-              <span style={{ fontSize: 10, color: C.textMuted, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+              <span style={{ fontSize: 14, color: C.textMuted, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
                 {fmtCompact(eq.marketValue)}
               </span>
-              <span style={{ fontSize: 10, color: plColor(eq.longOpenProfitLoss), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+              <span style={{ fontSize: 14, color: plColor(eq.longOpenProfitLoss), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
                 {eq.averagePrice > 0 ? fmtPct((eq.longOpenProfitLoss / (eq.averagePrice * (eq.shortQuantity > 0 ? eq.shortQuantity : eq.longQuantity))) * 100) : "—"}
               </span>
-              <span style={{ fontSize: 10, color: plColor(eq.currentDayProfitLoss), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+              <span style={{ fontSize: 14, color: plColor(eq.currentDayProfitLoss), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
                 {fmtCurrency(eq.currentDayProfitLoss)}
               </span>
             </div>
@@ -284,42 +284,42 @@ function PositionTableRow({
                   display: "grid",
                   gridTemplateColumns: gridCols,
                   alignItems: "center",
-                  padding: "4px 10px 4px 27px",
+                  padding: "6px 10px 6px 30px",
                   borderBottom: `1px solid ${C.border}`,
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
-                  <span style={{ fontSize: 10, fontWeight: 600, color: opt.putCall === "CALL" ? "#4ade80" : "#fb923c", width: 8, flexShrink: 0 }}>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: opt.putCall === "CALL" ? "#4ade80" : "#fb923c", width: 8, flexShrink: 0 }}>
                     {opt.putCall === "CALL" ? "C" : "P"}
                   </span>
-                  <span style={{ fontSize: 10, color: C.textMuted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  <span style={{ fontSize: 14, color: C.textMuted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                     {formatOptionSymbol(opt.symbol, false)} ×{fmtQty(opt.longQuantity, opt.shortQuantity).replace("+", "")}
                   </span>
                 </div>
-                <span style={{ fontSize: 10, color: C.textMuted, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                <span style={{ fontSize: 14, color: C.textMuted, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
                   {fmtCompact(opt.marketValue)}
                 </span>
-                <span style={{ fontSize: 10, color: plColor(totalPL), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                <span style={{ fontSize: 14, color: plColor(totalPL), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
                   {fmtPct(totalPLPctOpt)}
                 </span>
-                <span style={{ fontSize: 10, color: plColor(opt.currentDayProfitLoss), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                <span style={{ fontSize: 14, color: plColor(opt.currentDayProfitLoss), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
                   {fmtCurrency(opt.currentDayProfitLoss)}
                 </span>
               </div>
             );
           })}
 
-          <div style={{ padding: "5px 10px 5px 27px", display: "flex", gap: 8 }}>
+          <div style={{ padding: "6px 10px 6px 30px", display: "flex", gap: 8 }}>
             <button
               onClick={() => onSelect(group.underlying)}
-              style={{ fontSize: 10, fontWeight: 600, fontFamily: f, color: C.gold, background: "transparent", border: "none", cursor: "pointer", padding: 0, letterSpacing: 0.5, textTransform: "uppercase" }}
+              style={{ fontSize: 14, fontWeight: 600, fontFamily: f, color: C.gold, background: "transparent", border: "none", cursor: "pointer", padding: 0, letterSpacing: 0.5, textTransform: "uppercase" }}
             >
               CHART →
             </button>
             {onTrade && eq && (
               <button
                 onClick={() => onTrade(group.underlying, eqIsShort ? "BUY" : "SELL")}
-                style={{ fontSize: 10, fontWeight: 600, fontFamily: f, color: C.gold, background: "transparent", border: "none", cursor: "pointer", padding: 0, letterSpacing: 0.5, textTransform: "uppercase" }}
+                style={{ fontSize: 14, fontWeight: 600, fontFamily: f, color: C.gold, background: "transparent", border: "none", cursor: "pointer", padding: 0, letterSpacing: 0.5, textTransform: "uppercase" }}
               >
                 TRADE
               </button>
@@ -330,7 +330,7 @@ function PositionTableRow({
                 <button
                   key={opt.cusip}
                   onClick={() => onTrade(opt.underlyingSymbol, isShort ? "BUY" : "SELL", opt.symbol, isShort ? "BUY_TO_CLOSE" : "SELL_TO_CLOSE")}
-                  style={{ fontSize: 10, fontWeight: 600, fontFamily: f, color: C.textDim, background: "transparent", border: "none", cursor: "pointer", padding: 0, letterSpacing: 0.5, textTransform: "uppercase" }}
+                  style={{ fontSize: 14, fontWeight: 600, fontFamily: f, color: C.textDim, background: "transparent", border: "none", cursor: "pointer", padding: 0, letterSpacing: 0.5, textTransform: "uppercase" }}
                 >
                   CLOSE {opt.putCall === "CALL" ? "C" : "P"}
                 </button>
@@ -364,7 +364,7 @@ function OrderRow({ order, onCancel }: { order: Order; onCancel?: (orderId: numb
           display: "flex",
           alignItems: "center",
           gap: 8,
-          padding: "6px 10px",
+          padding: "8px 10px",
           background: "transparent",
           border: "none",
           cursor: "pointer",
@@ -375,23 +375,23 @@ function OrderRow({ order, onCancel }: { order: Order; onCancel?: (orderId: numb
       >
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", minWidth: 0, flex: 1, gap: 2 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ fontSize: 10, fontWeight: 700, color: isBuy ? C.green : C.red, textTransform: "uppercase", letterSpacing: 0.5 }}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: isBuy ? C.green : C.red, textTransform: "uppercase", letterSpacing: 0.5 }}>
               {primaryLeg?.instruction?.replace(/_/g, " ") ?? "—"}
             </span>
             {isMultiLeg && (
-              <span style={{ fontSize: 10, color: C.textDim }}>+{order.legs.length - 1} leg{order.legs.length > 2 ? "s" : ""}</span>
+              <span style={{ fontSize: 14, color: C.textDim }}>+{order.legs.length - 1} leg{order.legs.length > 2 ? "s" : ""}</span>
             )}
           </div>
-          <span style={{ fontSize: 11, color: C.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200 }}>
+          <span style={{ fontSize: 13, color: C.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200 }}>
             {displaySymbol}
           </span>
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2, flexShrink: 0 }}>
-          <span style={{ fontSize: 10, fontWeight: 600, color: statusColor(order.status), textTransform: "uppercase", letterSpacing: 0.5 }}>
+          <span style={{ fontSize: 14, fontWeight: 600, color: statusColor(order.status), textTransform: "uppercase", letterSpacing: 0.5 }}>
             {order.status}
           </span>
-          <span style={{ fontSize: 10, color: C.dim }}>{timeAgo(order.enteredTime)}</span>
+          <span style={{ fontSize: 14, color: C.dim }}>{timeAgo(order.enteredTime)}</span>
         </div>
 
         {isOpen && onCancel && (
@@ -420,21 +420,21 @@ function OrderRow({ order, onCancel }: { order: Order; onCancel?: (orderId: numb
               ...(order.complexStrategy !== "NONE" ? [["Strategy", order.complexStrategy.replace(/_/g, " ")]] : []),
             ].map(([label, value]) => (
               <div key={label}>
-                <div style={{ fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
-                <div style={{ fontSize: 11, color: C.text }}>{value}</div>
+                <div style={{ fontSize: 14, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
+                <div style={{ fontSize: 13, color: C.text }}>{value}</div>
               </div>
             ))}
           </div>
 
           {order.legs.length > 1 && (
             <div style={{ marginTop: 6 }}>
-              <div style={{ fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Legs</div>
+              <div style={{ fontSize: 14, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Legs</div>
               {order.legs.map((leg, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, paddingLeft: 6, marginBottom: 1 }}>
-                  <span style={{ fontSize: 10, fontWeight: 600, color: leg.instruction?.includes("BUY") ? C.green : C.red }}>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: leg.instruction?.includes("BUY") ? C.green : C.red }}>
                     {leg.instruction?.replace(/_/g, " ")}
                   </span>
-                  <span style={{ fontSize: 10, color: C.textDim }}>
+                  <span style={{ fontSize: 14, color: C.textDim }}>
                     {leg.quantity}× {leg.assetType === "OPTION" ? formatOptionSymbol(leg.symbol) : leg.symbol}
                   </span>
                 </div>
@@ -444,11 +444,11 @@ function OrderRow({ order, onCancel }: { order: Order; onCancel?: (orderId: numb
 
           {order.fills.length > 0 && (
             <div style={{ marginTop: 6 }}>
-              <div style={{ fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Fills</div>
+              <div style={{ fontSize: 14, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Fills</div>
               {order.fills.map((fill, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, paddingLeft: 6, marginBottom: 1 }}>
-                  <span style={{ fontSize: 10, color: C.textDim, fontVariantNumeric: "tabular-nums" }}>{fill.quantity}× @ {fmtCurrency(fill.price)}</span>
-                  <span style={{ fontSize: 10, color: C.dim }}>{timeAgo(fill.time)}</span>
+                  <span style={{ fontSize: 14, color: C.textDim, fontVariantNumeric: "tabular-nums" }}>{fill.quantity}× @ {fmtCurrency(fill.price)}</span>
+                  <span style={{ fontSize: 14, color: C.dim }}>{timeAgo(fill.time)}</span>
                 </div>
               ))}
             </div>
@@ -668,7 +668,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
   if (!accessToken) {
     return (
       <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 32, minHeight: "60vh", fontFamily: f }}>
-        <div style={{ fontSize: 11, color: C.textDim, letterSpacing: 1.5, textTransform: "uppercase" }}>CONNECT SCHWAB TO VIEW PORTFOLIO</div>
+        <div style={{ fontSize: 13, color: C.textDim, letterSpacing: 1.5, textTransform: "uppercase" }}>CONNECT SCHWAB TO VIEW PORTFOLIO</div>
       </div>
     );
   }
@@ -677,7 +677,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
     return (
       <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, padding: 32, minHeight: "60vh", fontFamily: f }}>
         <RefreshCw className="animate-spin" style={{ width: 16, height: 16, color: C.gold }} />
-        <div style={{ fontSize: 11, color: C.textDim, letterSpacing: 1, textTransform: "uppercase" }}>LOADING PORTFOLIO</div>
+        <div style={{ fontSize: 13, color: C.textDim, letterSpacing: 1, textTransform: "uppercase" }}>LOADING PORTFOLIO</div>
       </div>
     );
   }
@@ -685,8 +685,8 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
   if (error && !account) {
     return (
       <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, padding: 32, minHeight: "60vh", fontFamily: f }}>
-        <div style={{ fontSize: 11, color: `${C.red}cc` }}>{error}</div>
-        <button onClick={() => fetchAccount()} style={{ fontSize: 10, color: C.gold, background: "transparent", border: "none", cursor: "pointer", letterSpacing: 1, fontFamily: f, textTransform: "uppercase" }}>
+        <div style={{ fontSize: 13, color: `${C.red}cc` }}>{error}</div>
+        <button onClick={() => fetchAccount()} style={{ fontSize: 14, color: C.gold, background: "transparent", border: "none", cursor: "pointer", letterSpacing: 1, fontFamily: f, textTransform: "uppercase" }}>
           RETRY
         </button>
       </div>
@@ -708,15 +708,15 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
       <div style={{ borderBottom: `1px solid ${C.borderHi}` }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 10px 0" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ fontSize: 11, color: C.textDim, letterSpacing: 0.5 }}>
+            <span style={{ fontSize: 13, color: C.textDim, letterSpacing: 0.5 }}>
               ····{(account?.accountNumber ?? "").slice(-4)}
             </span>
-            <span style={{ fontSize: 10, color: C.dim }}>·</span>
-            <span style={{ fontSize: 10, color: C.dim, textTransform: "uppercase" }}>{account?.type ?? ""}</span>
+            <span style={{ fontSize: 14, color: C.dim }}>·</span>
+            <span style={{ fontSize: 14, color: C.dim, textTransform: "uppercase" }}>{account?.type ?? ""}</span>
             <span style={{ width: 5, height: 5, borderRadius: 3, background: C.green, display: "inline-block" }} />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            {lastRefresh && <span style={{ fontSize: 10, color: C.dim }}>{timeAgo(lastRefresh.toISOString())}</span>}
+            {lastRefresh && <span style={{ fontSize: 14, color: C.dim }}>{timeAgo(lastRefresh.toISOString())}</span>}
             <button
               onClick={() => { fetchAccount(); fetchOrders(); }}
               disabled={loading}
@@ -728,15 +728,15 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
         </div>
 
         <div style={{ padding: "4px 10px 6px" }}>
-          <div style={{ fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1, marginBottom: 1 }}>Net Liquidating Value</div>
+          <div style={{ fontSize: 14, color: C.dim, textTransform: "uppercase", letterSpacing: 1, marginBottom: 1 }}>Net Liquidating Value</div>
           <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-            <span style={{ fontSize: 22, fontWeight: 700, color: C.text, fontVariantNumeric: "tabular-nums", letterSpacing: -0.5 }}>
+            <span style={{ fontSize: 26, fontWeight: 700, color: C.text, fontVariantNumeric: "tabular-nums", letterSpacing: -0.5 }}>
               {fmtCurrency(bal?.liquidationValue ?? 0)}
             </span>
-            <span style={{ fontSize: 11, fontWeight: 600, color: plColor(dayPL), fontVariantNumeric: "tabular-nums" }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: plColor(dayPL), fontVariantNumeric: "tabular-nums" }}>
               {dayPL >= 0 ? "+" : ""}{fmtCurrency(dayPL)}
             </span>
-            <span style={{ fontSize: 10, color: plColor(dayPL), fontVariantNumeric: "tabular-nums" }}>
+            <span style={{ fontSize: 14, color: plColor(dayPL), fontVariantNumeric: "tabular-nums" }}>
               ({dayReturnPct >= 0 ? "+" : ""}{dayReturnPct.toFixed(2)}%)
             </span>
           </div>
@@ -745,7 +745,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
         {isMarginCall && (
           <div style={{ margin: "0 10px 6px", padding: "5px 8px", background: `${C.red}12`, borderLeft: `2px solid ${C.red}`, display: "flex", alignItems: "center", gap: 6 }}>
             <AlertTriangle style={{ color: C.red, width: 12, height: 12, flexShrink: 0 }} />
-            <span style={{ fontSize: 10, fontWeight: 700, color: C.red, textTransform: "uppercase", letterSpacing: 1 }}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: C.red, textTransform: "uppercase", letterSpacing: 1 }}>
               MARGIN CALL — IMMEDIATE ACTION REQUIRED
             </span>
           </div>
@@ -759,8 +759,8 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
             ...(dayTradesLeft !== null ? [["Day Trades", `${dayTradesLeft} left`, dayTradesLeft === 0 ? C.red : dayTradesLeft === 1 ? C.gold : C.text]] : []),
           ].map(([label, value, color]) => (
             <div key={label as string} style={{ padding: "4px 0" }}>
-              <div style={{ fontSize: 9, color: C.dim, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 1 }}>{label}</div>
-              <div style={{ fontSize: 12, fontWeight: 600, color: color as string, fontVariantNumeric: "tabular-nums" }}>{value}</div>
+              <div style={{ fontSize: 13, color: C.dim, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 1 }}>{label}</div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: color as string, fontVariantNumeric: "tabular-nums" }}>{value}</div>
             </div>
           ))}
         </div>
@@ -773,7 +773,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
               style={{
                 flex: 1,
                 padding: "7px 0",
-                fontSize: 10,
+                fontSize: 14,
                 fontWeight: 600,
                 textTransform: "uppercase",
                 letterSpacing: 1.2,
@@ -806,10 +806,10 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
                 zIndex: 1,
               }}
             >
-              <span style={{ fontSize: 9, fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: 1 }}>Symbol</span>
-              <span style={{ fontSize: 9, fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: 0.8, textAlign: "right" }}>Mkt Val</span>
-              <span style={{ fontSize: 9, fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: 0.8, textAlign: "right" }}>P/L %</span>
-              <span style={{ fontSize: 9, fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: 0.8, textAlign: "right" }}>P/L Day</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: 1 }}>Symbol</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: 0.8, textAlign: "right" }}>Mkt Val</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: 0.8, textAlign: "right" }}>P/L %</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: 0.8, textAlign: "right" }}>P/L Day</span>
             </div>
 
             {symbolGroups.map(group => (
@@ -822,20 +822,20 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
                   style={{
                     display: "grid",
                     gridTemplateColumns: gridCols,
-                    padding: "6px 10px",
+                    padding: "8px 10px",
                     borderTop: `2px solid ${C.borderHi}`,
                     borderBottom: `1px solid ${C.border}`,
                     background: "#0e0e0e",
                   }}
                 >
-                  <span style={{ fontSize: 11, fontWeight: 700, color: C.textMuted, letterSpacing: 0.5 }}>TOTAL</span>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: C.textMuted, letterSpacing: 0.5 }}>TOTAL</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
                     {fmtCompact(totalMarketValue)}
                   </span>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: plColor(totalUnrealized), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: plColor(totalUnrealized), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
                     {fmtPct(unrealizedPct)}
                   </span>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: plColor(totalDayPLPositions), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: plColor(totalDayPLPositions), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
                     {fmtCurrency(totalDayPLPositions)}
                   </span>
                 </div>
@@ -847,8 +847,8 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
                     ["Net Liq:", bal?.liquidationValue ?? 0],
                   ].map(([label, val]) => (
                     <div key={label as string} style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span style={{ fontSize: 11, color: C.textDim }}>{label}</span>
-                      <span style={{ fontSize: 11, fontWeight: 600, color: typeof val === "number" && label !== "Net Liq:" ? plColor(val as number) : C.text, fontVariantNumeric: "tabular-nums" }}>
+                      <span style={{ fontSize: 13, color: C.textDim }}>{label}</span>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: typeof val === "number" && label !== "Net Liq:" ? plColor(val as number) : C.text, fontVariantNumeric: "tabular-nums" }}>
                         {fmtCurrency(val as number)}
                       </span>
                     </div>
@@ -859,7 +859,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
 
             {symbolGroups.length === 0 && (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 0", gap: 8 }}>
-                <div style={{ fontSize: 11, color: C.textDim, textTransform: "uppercase", letterSpacing: 1 }}>No open positions</div>
+                <div style={{ fontSize: 13, color: C.textDim, textTransform: "uppercase", letterSpacing: 1 }}>No open positions</div>
               </div>
             )}
           </div>
@@ -867,7 +867,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
 
         {subTab === "orders" && (
           <div>
-            <div style={{ padding: "6px 10px", display: "flex", flexDirection: "column", gap: 6, borderBottom: `1px solid ${C.border}` }}>
+            <div style={{ padding: "8px 10px", display: "flex", flexDirection: "column", gap: 6, borderBottom: `1px solid ${C.border}` }}>
               <div style={{ display: "flex", gap: 0 }}>
                 {ORDER_FILTERS.map((fil) => (
                   <button
@@ -875,7 +875,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
                     onClick={() => setOrderFilter(fil.value)}
                     style={{
                       padding: "4px 8px",
-                      fontSize: 10,
+                      fontSize: 14,
                       fontWeight: 600,
                       letterSpacing: 0.8,
                       fontFamily: f,
@@ -898,7 +898,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
                   value={orderSearch}
                   onChange={(e) => setOrderSearch(e.target.value)}
                   placeholder="Search orders..."
-                  style={{ flex: 1, padding: "5px 6px", fontSize: 10, fontFamily: f, background: "transparent", border: "none", outline: "none", color: C.text }}
+                  style={{ flex: 1, padding: "5px 6px", fontSize: 14, fontFamily: f, background: "transparent", border: "none", outline: "none", color: C.text }}
                 />
                 {orderSearch && (
                   <button onClick={() => setOrderSearch("")} style={{ paddingRight: 6, background: "transparent", border: "none", cursor: "pointer", color: C.dim }}>
@@ -911,26 +911,26 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
             {ordersLoading && orders.length === 0 ? (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 0", gap: 8 }}>
                 <RefreshCw className="animate-spin" style={{ width: 14, height: 14, color: C.gold }} />
-                <div style={{ fontSize: 10, color: C.textDim, letterSpacing: 1, textTransform: "uppercase" }}>Loading orders</div>
+                <div style={{ fontSize: 14, color: C.textDim, letterSpacing: 1, textTransform: "uppercase" }}>Loading orders</div>
               </div>
             ) : ordersError ? (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 0", gap: 8 }}>
-                <div style={{ fontSize: 10, color: `${C.red}cc` }}>Failed to load orders</div>
-                <button onClick={fetchOrders} style={{ fontSize: 10, color: C.gold, background: "transparent", border: "none", cursor: "pointer", letterSpacing: 1, fontFamily: f, textTransform: "uppercase" }}>
+                <div style={{ fontSize: 14, color: `${C.red}cc` }}>Failed to load orders</div>
+                <button onClick={fetchOrders} style={{ fontSize: 14, color: C.gold, background: "transparent", border: "none", cursor: "pointer", letterSpacing: 1, fontFamily: f, textTransform: "uppercase" }}>
                   RETRY
                 </button>
               </div>
             ) : filteredOrders.length === 0 ? (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 0", gap: 6 }}>
-                <div style={{ fontSize: 11, color: C.textDim }}>{orderFilter === "ALL" && !orderSearch ? "No recent orders" : "No matching orders"}</div>
+                <div style={{ fontSize: 13, color: C.textDim }}>{orderFilter === "ALL" && !orderSearch ? "No recent orders" : "No matching orders"}</div>
               </div>
             ) : (
               <>
                 <div style={{ padding: "4px 10px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: `1px solid ${C.border}`, background: "#0e0e0e" }}>
-                  <span style={{ fontSize: 9, fontWeight: 600, color: C.dim, letterSpacing: 1, textTransform: "uppercase" }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: C.dim, letterSpacing: 1, textTransform: "uppercase" }}>
                     {orderFilter === "ALL" ? "All" : orderFilter} Orders
                   </span>
-                  <span style={{ fontSize: 10, color: C.dim }}>{filteredOrders.length}</span>
+                  <span style={{ fontSize: 14, color: C.dim }}>{filteredOrders.length}</span>
                 </div>
                 {filteredOrders.map((order) => (
                   <OrderRow key={order.orderId} order={order} onCancel={handleCancelOrder} />
@@ -942,8 +942,8 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
 
         {subTab === "balance" && bal && (
           <div>
-            <div style={{ padding: "6px 10px", borderBottom: `1px solid ${C.borderHi}`, background: "#0e0e0e" }}>
-              <span style={{ fontSize: 9, fontWeight: 600, color: C.dim, letterSpacing: 1, textTransform: "uppercase" }}>Account Summary</span>
+            <div style={{ padding: "8px 10px", borderBottom: `1px solid ${C.borderHi}`, background: "#0e0e0e" }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: C.dim, letterSpacing: 1, textTransform: "uppercase" }}>Account Summary</span>
             </div>
 
             {[
@@ -976,15 +976,15 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
                   fontFamily: f,
                 }}
               >
-                <span style={{ fontSize: 11, color: C.textMuted }}>{label}:</span>
-                <span style={{ fontSize: 11, fontWeight: 500, color: (color as string) ?? C.text, fontVariantNumeric: "tabular-nums" }}>{value}</span>
+                <span style={{ fontSize: 13, color: C.textMuted }}>{label}:</span>
+                <span style={{ fontSize: 13, fontWeight: 500, color: (color as string) ?? C.text, fontVariantNumeric: "tabular-nums" }}>{value}</span>
               </div>
             ))}
 
             {account && (
               <>
                 <div style={{ padding: "8px 10px", borderBottom: `1px solid ${C.borderHi}`, background: "#0e0e0e", marginTop: 0 }}>
-                  <span style={{ fontSize: 9, fontWeight: 600, color: C.dim, letterSpacing: 1, textTransform: "uppercase" }}>Risk & Market Values</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: C.dim, letterSpacing: 1, textTransform: "uppercase" }}>Risk & Market Values</span>
                 </div>
                 {[
                   ["Account Type", account.type, undefined],
@@ -1008,8 +1008,8 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
                       fontFamily: f,
                     }}
                   >
-                    <span style={{ fontSize: 11, color: C.textMuted }}>{label}:</span>
-                    <span style={{ fontSize: 11, fontWeight: 500, color: (color as string) ?? C.text, fontVariantNumeric: "tabular-nums" }}>{value}</span>
+                    <span style={{ fontSize: 13, color: C.textMuted }}>{label}:</span>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: (color as string) ?? C.text, fontVariantNumeric: "tabular-nums" }}>{value}</span>
                   </div>
                 ))}
               </>
