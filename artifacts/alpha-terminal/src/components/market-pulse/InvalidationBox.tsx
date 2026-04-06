@@ -6,15 +6,15 @@ export function InvalidationBox({ conditions }: InvalidationBoxProps) {
   if (!conditions.length) return null;
 
   return (
-    <div style={{ background: "#000", border: "1px solid #1a1a1a" }}>
-      <div className="px-4 py-2" style={{ borderBottom: "1px solid #1a1a1a" }}>
-        <span className="font-mono text-[10px] font-bold text-[#ef4444] tracking-widest">INVALIDATION</span>
+    <div className="rounded-lg border border-zinc-800/50 overflow-hidden">
+      <div className="px-4 py-2.5 border-b border-zinc-800/50">
+        <span className="font-mono text-xs font-bold text-[#f23645] tracking-wider">INVALIDATION</span>
       </div>
-      <div className="px-4 py-2.5 space-y-1">
+      <div className="px-4 py-3 space-y-2">
         {conditions.map((c, i) => (
           <div key={i} className="flex items-start gap-2">
-            <span className="font-mono text-[10px] text-[#ef4444] mt-px shrink-0">x</span>
-            <span className="font-mono text-[10px] text-[#a1a1aa] leading-[1.5]">{c}</span>
+            <span className="font-mono text-xs text-[#f23645] mt-px shrink-0 font-bold">✕</span>
+            <span className="font-mono text-[12px] text-zinc-300 leading-snug">{c}</span>
           </div>
         ))}
       </div>

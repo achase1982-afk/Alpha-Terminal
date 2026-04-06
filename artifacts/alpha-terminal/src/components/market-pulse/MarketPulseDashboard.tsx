@@ -16,31 +16,31 @@ import { useGetAuthUrl } from "@workspace/api-client-react";
 const CLUSTER_ORDER: ClusterKey[] = ["rates", "credit", "volLevel", "volTerm", "breadth", "riskAppetite", "macro"];
 
 const BIAS_COLORS: Record<string, { text: string; border: string }> = {
-  STRONGLY_BULLISH: { text: "#22c55e", border: "#14532d" },
-  MODERATELY_BULLISH: { text: "#22c55e", border: "#14532d" },
-  SLIGHTLY_BULLISH: { text: "#4ade80", border: "#14532d" },
-  BULLISH: { text: "#22c55e", border: "#14532d" },
-  NEUTRAL: { text: "#fbbf24", border: "#422006" },
-  SLIGHTLY_BEARISH: { text: "#f87171", border: "#450a0a" },
-  MODERATELY_BEARISH: { text: "#ef4444", border: "#450a0a" },
-  BEARISH: { text: "#ef4444", border: "#450a0a" },
-  STRONGLY_BEARISH: { text: "#ef4444", border: "#450a0a" },
-  NO_EDGE: { text: "#71717a", border: "#27272a" },
-  ERROR: { text: "#ef4444", border: "#450a0a" },
+  STRONGLY_BULLISH: { text: "#00d166", border: "rgba(0,209,102,0.3)" },
+  MODERATELY_BULLISH: { text: "#00d166", border: "rgba(0,209,102,0.3)" },
+  SLIGHTLY_BULLISH: { text: "#4ade80", border: "rgba(0,209,102,0.2)" },
+  BULLISH: { text: "#00d166", border: "rgba(0,209,102,0.3)" },
+  NEUTRAL: { text: "#FFB800", border: "rgba(255,184,0,0.3)" },
+  SLIGHTLY_BEARISH: { text: "#f87171", border: "rgba(242,54,69,0.2)" },
+  MODERATELY_BEARISH: { text: "#f23645", border: "rgba(242,54,69,0.3)" },
+  BEARISH: { text: "#f23645", border: "rgba(242,54,69,0.3)" },
+  STRONGLY_BEARISH: { text: "#f23645", border: "rgba(242,54,69,0.3)" },
+  NO_EDGE: { text: "#9CA3AF", border: "rgba(63,63,70,0.5)" },
+  ERROR: { text: "#f23645", border: "rgba(242,54,69,0.3)" },
 };
 
 const REGIME_COLORS: Record<string, string> = {
-  RISK_ON: "#22c55e",
-  RISK_OFF: "#ef4444",
-  TRANSITION: "#fbbf24",
-  NO_READ: "#52525b",
+  RISK_ON: "#00d166",
+  RISK_OFF: "#f23645",
+  TRANSITION: "#FFB800",
+  NO_READ: "#71717a",
 };
 
 const RISK_COLORS: Record<string, string> = {
-  PRESS: "#22c55e",
-  NORMAL: "#d4d4d8",
-  REDUCED: "#fbbf24",
-  NO_TRADE: "#ef4444",
+  PRESS: "#00d166",
+  NORMAL: "#e4e4e7",
+  REDUCED: "#FFB800",
+  NO_TRADE: "#f23645",
 };
 
 interface MarketPulseDashboardProps {
@@ -177,15 +177,14 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
 
   if (!accessToken) {
     return (
-      <div className="p-8 text-center" style={{ background: "#000" }}>
-        <p className="font-mono text-[11px] text-[#52525b] mb-4 tracking-wider">CONNECT BROKERAGE FOR MARKET PULSE</p>
+      <div className="p-8 text-center">
+        <p className="font-mono text-sm text-zinc-500 mb-4 tracking-wider">CONNECT BROKERAGE FOR MARKET PULSE</p>
         <button
           onClick={handleConnectSchwab}
           disabled={isAuthNavigating}
-          className="inline-flex items-center gap-2 px-4 py-2 font-mono text-[11px] font-bold tracking-wider transition-colors"
-          style={{ background: "#000", color: "#fbbf24", border: "1px solid #fbbf24" }}
+          className="inline-flex items-center gap-2 px-5 py-2.5 font-mono text-sm font-bold tracking-wider transition-colors rounded-lg border border-[#FFB800] text-[#FFB800] hover:bg-[#FFB800]/10"
         >
-          {isAuthNavigating ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+          {isAuthNavigating ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
           CONNECT
         </button>
       </div>
@@ -197,7 +196,7 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
   const showEmptyBox = showEmptyOrLoading && !isActive && !hasInitiatedRef.current;
 
   return (
-    <div className={`px-3 sm:px-4 lg:px-5 pt-1 ${showEmptyOrLoading ? "overflow-hidden h-full flex flex-col" : "space-y-3 overflow-x-hidden"}`} style={{ background: "#000" }}>
+    <div className={`px-3 sm:px-4 lg:px-5 pt-1 ${showEmptyOrLoading ? "overflow-hidden h-full flex flex-col" : "space-y-3 overflow-x-hidden"}`}>
 
       {pulseData && isActive && (
         <div className="mt-3">
@@ -207,13 +206,12 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
 
       {showEmptyBox && (
         <div className="flex-1 flex flex-col justify-center">
-          <div className="p-8 text-center" style={{ background: "#000" }}>
-            <p className="font-mono text-[11px] text-[#3f3f46] mb-4 tracking-widest">NO PULSE GENERATED</p>
+          <div className="p-8 text-center">
+            <p className="font-mono text-sm text-zinc-500 mb-4 tracking-widest">NO PULSE GENERATED</p>
             <button
               onClick={fetchPulse}
               disabled={!accessToken}
-              className="font-mono text-[12px] font-bold tracking-wider px-5 py-2 transition-colors active:scale-95"
-              style={{ background: "#000", color: "#fbbf24", border: "1px solid #fbbf24" }}
+              className="font-mono text-sm font-bold tracking-wider px-6 py-2.5 transition-colors active:scale-95 rounded-lg border border-[#FFB800] text-[#FFB800] hover:bg-[#FFB800]/10"
             >
               CHECK PULSE
             </button>
@@ -228,9 +226,9 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
       )}
 
       {error && !isActive && !pulseData && (
-        <div className="mt-3 px-4 py-3" style={{ background: "#000", border: "1px solid #450a0a" }}>
-          <p className="font-mono text-[10px] text-[#ef4444]">{error}</p>
-          <button onClick={fetchPulse} className="mt-2 font-mono text-[10px] text-[#ef4444] hover:text-[#d4d4d8] uppercase tracking-wider">
+        <div className="mt-3 px-4 py-3 rounded-lg border border-red-900/50">
+          <p className="font-mono text-sm text-[#f23645]">{error}</p>
+          <button onClick={fetchPulse} className="mt-2 font-mono text-xs text-[#f23645] hover:text-zinc-200 uppercase tracking-wider">
             RETRY
           </button>
         </div>
@@ -240,19 +238,19 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
         <div className="space-y-3 animate-in fade-in duration-200 pb-4">
 
           {thinkingTokens.length > 0 && (
-            <div style={{ background: "#000", border: "1px solid #1a1a1a" }}>
+            <div className="rounded-lg border border-zinc-800/50 overflow-hidden">
               <button
                 onClick={() => setShowTranscript((v) => !v)}
-                className="w-full px-4 py-2 flex items-center gap-2 cursor-pointer hover:bg-[#0a0a0a] transition-colors"
+                className="w-full px-4 py-3 flex items-center gap-2 cursor-pointer hover:bg-zinc-800/30 transition-colors"
               >
-                <span className="w-1.5 h-1.5 bg-emerald-500" style={{ boxShadow: "0 0 4px #10b981" }} />
-                <span className="font-mono text-[10px] text-emerald-500/70 uppercase tracking-widest font-bold flex-1 text-left">AI REASONING</span>
-                <span className="font-mono text-[10px] text-[#3f3f46]">{showTranscript ? "HIDE" : "SHOW"}</span>
+                <span className="w-2 h-2 rounded-full bg-emerald-500" style={{ boxShadow: "0 0 6px #10b981" }} />
+                <span className="font-mono text-xs text-emerald-500 uppercase tracking-wider font-bold flex-1 text-left">AI REASONING</span>
+                <span className="font-mono text-xs text-zinc-500">{showTranscript ? "HIDE" : "SHOW"}</span>
               </button>
               {showTranscript && (
-                <div className="max-h-[220px] overflow-y-auto px-4 py-3" style={{ borderTop: "1px solid #1a1a1a", scrollBehavior: "smooth" }}>
-                  <div className="border-l border-emerald-500/30 pl-3">
-                    <p className="font-mono text-[10px] text-[#a1a1aa] leading-[1.7] whitespace-pre-wrap break-words">
+                <div className="max-h-[240px] overflow-y-auto px-4 py-3 border-t border-zinc-800/50" style={{ scrollBehavior: "smooth" }}>
+                  <div className="border-l-2 border-emerald-500/30 pl-3">
+                    <p className="font-mono text-[12px] text-zinc-300 leading-relaxed whitespace-pre-wrap break-words">
                       {thinkingTokens.join("")}
                     </p>
                   </div>
@@ -266,16 +264,16 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
           <BiasHero data={pulseData} />
 
           {pulseData.hasDivergence && pulseData.divergenceNote && (
-            <div className="px-4 py-2.5 flex items-start gap-2" style={{ background: "#000", border: "1px solid #422006" }}>
-              <span className="font-mono text-[10px] font-bold text-[#fbbf24] shrink-0">DIVERGENCE</span>
-              <span className="font-mono text-[10px] text-[#a1a1aa] leading-[1.5]">{pulseData.divergenceNote}</span>
+            <div className="px-4 py-3 flex items-start gap-3 rounded-lg border border-[#FFB800]/30">
+              <span className="font-mono text-xs font-bold text-[#FFB800] shrink-0">DIVERGENCE</span>
+              <span className="font-mono text-[12px] text-zinc-300 leading-snug">{pulseData.divergenceNote}</span>
             </div>
           )}
 
           {settings.showClusterDetails && !settings.compactMode && pulseData.clusters && (
             <>
-              <div className="font-mono text-[9px] text-[#3f3f46] uppercase tracking-widest px-1 pt-1">SIGNAL CLUSTERS</div>
-              <div className="flex gap-2 overflow-x-auto pb-1 -mx-3 px-3 sm:-mx-4 sm:px-4">
+              <div className="font-mono text-[11px] text-zinc-500 uppercase tracking-wider px-1 pt-1">SIGNAL CLUSTERS</div>
+              <div className="flex gap-2.5 overflow-x-auto pb-1 -mx-3 px-3 sm:-mx-4 sm:px-4">
                 {CLUSTER_ORDER.map((key) => pulseData.clusters[key] ? (
                   <ClusterCard key={key} clusterKey={key} cluster={pulseData.clusters[key]} />
                 ) : null)}
@@ -333,30 +331,30 @@ function PulseLoadingStatus({ thinkingTokens, statusMessages }: { thinkingTokens
 
   return (
     <div className="space-y-2">
-      <div style={{ background: "#000", border: "1px solid #1a1a1a" }}>
-        <div className="px-4 py-2 flex items-center gap-3">
-          <span className="relative flex h-2 w-2 shrink-0">
-            <span className="animate-ping absolute inline-flex h-full w-full bg-[#fbbf24] opacity-75" />
-            <span className="relative inline-flex h-2 w-2 bg-[#fbbf24]" />
+      <div className="rounded-lg border border-zinc-800/50 overflow-hidden">
+        <div className="px-4 py-3 flex items-center gap-3">
+          <span className="relative flex h-2.5 w-2.5 shrink-0">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#FFB800] opacity-75" />
+            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[#FFB800]" />
           </span>
-          <span className="font-mono text-[11px] font-bold text-[#fbbf24] tracking-wider flex-1">
+          <span className="font-mono text-sm font-bold text-[#FFB800] tracking-wider flex-1">
             {stages[currentIdx].label}
           </span>
-          <span className="font-mono text-[10px] tabular-nums text-[#3f3f46]">{elapsed}s</span>
+          <span className="font-mono text-xs tabular-nums text-zinc-500">{elapsed}s</span>
         </div>
 
-        <div className="h-[2px]" style={{ background: "#1a1a1a" }}>
-          <div className="h-full transition-all duration-1000 ease-out" style={{ width: `${progress}%`, background: "#fbbf24" }} />
+        <div className="h-[3px]" style={{ background: "rgba(63,63,70,0.3)" }}>
+          <div className="h-full rounded-full transition-all duration-1000 ease-out" style={{ width: `${progress}%`, background: "#FFB800" }} />
         </div>
 
-        <div className="px-4 py-2 space-y-1">
+        <div className="px-4 py-3 space-y-2">
           {stages.map((s, i) => (
-            <div key={s.label} className="flex items-center gap-2">
-              <div className="w-1.5 h-1.5 shrink-0" style={{
-                background: i < currentIdx ? "#22c55e" : i === currentIdx ? "#fbbf24" : "#1a1a1a",
+            <div key={s.label} className="flex items-center gap-2.5">
+              <div className="w-2 h-2 shrink-0 rounded-full" style={{
+                background: i < currentIdx ? "#00d166" : i === currentIdx ? "#FFB800" : "rgba(63,63,70,0.3)",
               }} />
-              <span className="font-mono text-[9px] tracking-wider" style={{
-                color: i < currentIdx ? "#22c55e" : i === currentIdx ? "#fbbf24" : "#3f3f46",
+              <span className="font-mono text-xs tracking-wider" style={{
+                color: i < currentIdx ? "#00d166" : i === currentIdx ? "#FFB800" : "#71717a",
                 fontWeight: i === currentIdx ? 700 : 400,
               }}>
                 {s.label}
@@ -366,25 +364,25 @@ function PulseLoadingStatus({ thinkingTokens, statusMessages }: { thinkingTokens
         </div>
       </div>
 
-      <div style={{ background: "#000", border: "1px solid #1a1a1a" }}>
-        <div className="px-4 py-2 flex items-center gap-2" style={{ borderBottom: "1px solid #1a1a1a" }}>
-          <span className="relative flex h-1.5 w-1.5 shrink-0">
-            <span className="animate-ping absolute inline-flex h-full w-full bg-emerald-400 opacity-75" />
-            <span className="relative inline-flex h-1.5 w-1.5 bg-emerald-500" />
+      <div className="rounded-lg border border-zinc-800/50 overflow-hidden">
+        <div className="px-4 py-3 flex items-center gap-2 border-b border-zinc-800/50">
+          <span className="relative flex h-2 w-2 shrink-0">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
           </span>
-          <span className="font-mono text-[10px] text-emerald-500/70 uppercase tracking-widest font-bold">LIVE REASONING</span>
+          <span className="font-mono text-xs text-emerald-500 uppercase tracking-wider font-bold">LIVE REASONING</span>
         </div>
-        <div ref={thinkingRef} className="max-h-[180px] overflow-y-auto px-4 py-2.5" style={{ scrollBehavior: "smooth" }}>
+        <div ref={thinkingRef} className="max-h-[200px] overflow-y-auto px-4 py-3" style={{ scrollBehavior: "smooth" }}>
           {thinkingTokens.length === 0 ? (
             <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 border border-emerald-500 border-t-transparent animate-spin" />
-              <span className="font-mono text-[10px] text-[#3f3f46]">Connecting...</span>
+              <span className="w-3 h-3 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+              <span className="font-mono text-xs text-zinc-500">Connecting...</span>
             </div>
           ) : (
-            <div className="border-l border-emerald-500/30 pl-3">
-              <p className="font-mono text-[10px] text-[#a1a1aa] leading-[1.7] whitespace-pre-wrap break-words">
+            <div className="border-l-2 border-emerald-500/30 pl-3">
+              <p className="font-mono text-[12px] text-zinc-300 leading-relaxed whitespace-pre-wrap break-words">
                 {thinkingTokens.join("")}
-                <span className="inline-block w-1 h-3 bg-emerald-500 ml-0.5 animate-pulse align-text-bottom" />
+                <span className="inline-block w-1.5 h-3.5 bg-emerald-500 ml-0.5 animate-pulse align-text-bottom rounded-sm" />
               </p>
             </div>
           )}
@@ -396,52 +394,52 @@ function PulseLoadingStatus({ thinkingTokens, statusMessages }: { thinkingTokens
 
 function BiasHero({ data }: { data: MarketPulseData }) {
   const biasStyle = BIAS_COLORS[data.bias] ?? BIAS_COLORS.NO_EDGE;
-  const regimeColor = REGIME_COLORS[data.structuralRegime?.label] ?? "#52525b";
-  const riskColor = RISK_COLORS[data.riskState?.label] ?? "#52525b";
+  const regimeColor = REGIME_COLORS[data.structuralRegime?.label] ?? "#71717a";
+  const riskColor = RISK_COLORS[data.riskState?.label] ?? "#71717a";
   const pct = data.maxConfidence > 0 ? (data.confidenceScore / data.maxConfidence) * 100 : 0;
 
   return (
-    <div style={{ background: "#000", border: `1px solid ${biasStyle.border}` }}>
-      <div className="px-4 py-3">
-        <div className="flex items-center gap-4 flex-wrap">
-          <span className="font-mono text-[14px] font-black tracking-wider" style={{ color: biasStyle.text }}>
+    <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${biasStyle.border}` }}>
+      <div className="px-4 py-4">
+        <div className="flex items-center gap-5 flex-wrap">
+          <span className="font-mono text-lg font-black tracking-wider" style={{ color: biasStyle.text }}>
             {data.bias.replace(/_/g, " ")}
           </span>
 
-          <div className="flex items-center gap-1.5">
-            <span className="font-mono text-[9px] text-[#3f3f46] uppercase tracking-wider">COMP</span>
-            <span className="font-mono text-[13px] font-black tabular-nums" style={{ color: biasStyle.text }}>
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-xs text-zinc-500 uppercase tracking-wider">COMP</span>
+            <span className="font-mono text-base font-black tabular-nums" style={{ color: biasStyle.text }}>
               {data.compositeScore > 0 ? "+" : ""}{data.compositeScore.toFixed(2)}
             </span>
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <span className="font-mono text-[9px] text-[#3f3f46] uppercase tracking-wider">CONF</span>
-            <span className="font-mono text-[13px] font-bold tabular-nums text-[#d4d4d8]">
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-xs text-zinc-500 uppercase tracking-wider">CONF</span>
+            <span className="font-mono text-base font-bold tabular-nums text-zinc-200">
               {Math.round(data.confidenceScore)}
             </span>
-            <span className="font-mono text-[10px] text-[#3f3f46]">/</span>
-            <span className="font-mono text-[11px] tabular-nums text-[#3f3f46]">
+            <span className="font-mono text-sm text-zinc-500">/</span>
+            <span className="font-mono text-sm tabular-nums text-zinc-400">
               {Math.round(data.maxConfidence)}
             </span>
           </div>
         </div>
 
-        <div className="mt-2 h-[2px] w-full" style={{ background: "#1a1a1a" }}>
-          <div className="h-full transition-all duration-500" style={{ width: `${Math.min(pct, 100)}%`, background: biasStyle.text }} />
+        <div className="mt-3 h-[3px] w-full rounded-full" style={{ background: "rgba(63,63,70,0.3)" }}>
+          <div className="h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(pct, 100)}%`, background: biasStyle.text }} />
         </div>
 
-        <div className="mt-2 flex items-center gap-4 flex-wrap">
-          <span className="font-mono text-[9px] font-bold tracking-wider" style={{ color: regimeColor }}>
+        <div className="mt-3 flex items-center gap-5 flex-wrap">
+          <span className="font-mono text-xs font-bold tracking-wider" style={{ color: regimeColor }}>
             REGIME {data.structuralRegime?.label?.replace(/_/g, " ")}
           </span>
-          <span className="font-mono text-[9px] font-bold tracking-wider" style={{ color: BIAS_COLORS[data.sessionBias?.label]?.text ?? "#52525b" }}>
+          <span className="font-mono text-xs font-bold tracking-wider" style={{ color: BIAS_COLORS[data.sessionBias?.label]?.text ?? "#71717a" }}>
             SESSION {data.sessionBias?.label?.replace(/_/g, " ")}
           </span>
-          <span className="font-mono text-[9px] font-bold tracking-wider" style={{ color: riskColor }}>
+          <span className="font-mono text-xs font-bold tracking-wider" style={{ color: riskColor }}>
             SIZE {data.riskState?.label?.replace(/_/g, " ")}
           </span>
-          <span className="font-mono text-[9px] text-[#3f3f46]">
+          <span className="font-mono text-xs text-zinc-500">
             {data.timeET} ET
           </span>
         </div>

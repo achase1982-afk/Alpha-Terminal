@@ -21,9 +21,9 @@ const CLUSTER_WEIGHTS: Record<ClusterKey, number> = {
 };
 
 function scoreColor(score: number): string {
-  if (score > 0) return "#22c55e";
-  if (score < 0) return "#ef4444";
-  return "#71717a";
+  if (score > 0) return "#00d166";
+  if (score < 0) return "#f23645";
+  return "#9CA3AF";
 }
 
 interface ClusterCardProps {
@@ -39,46 +39,46 @@ export function ClusterCard({ clusterKey, cluster }: ClusterCardProps) {
 
   return (
     <div
-      className="shrink-0 overflow-hidden"
+      className="shrink-0 overflow-hidden rounded-lg"
       style={{
-        background: "#000",
-        border: "1px solid #1a1a1a",
-        width: 200,
-        minWidth: 200,
-        opacity: cluster.dataQuality === "MISSING" ? 0.35 : 1,
+        background: "#0c0c0c",
+        border: "1px solid rgba(63,63,70,0.5)",
+        width: 220,
+        minWidth: 220,
+        opacity: cluster.dataQuality === "MISSING" ? 0.4 : 1,
       }}
     >
-      <div className="px-3 py-1.5 flex items-center justify-between" style={{ borderBottom: "1px solid #1a1a1a" }}>
+      <div className="px-3 py-2 flex items-center justify-between border-b border-zinc-800/50">
         <div className="flex items-center gap-2">
-          <span className="font-mono text-[10px] font-bold text-[#d4d4d8] tracking-wider">{label}</span>
-          <span className="font-mono text-[8px] text-[#3f3f46]">{weight}%</span>
+          <span className="font-mono text-xs font-bold text-zinc-200 tracking-wider">{label}</span>
+          <span className="font-mono text-[11px] text-zinc-500">{weight}%</span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="font-mono text-[13px] font-black tabular-nums" style={{ color: sc }}>
+          <span className="font-mono text-sm font-black tabular-nums" style={{ color: sc }}>
             {cluster.score > 0 ? "+" : ""}{cluster.score.toFixed(2)}
           </span>
           <span
-            className="font-mono text-[7px] font-bold px-1 py-px"
+            className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded"
             style={{
-              color: cluster.dataQuality === "FRESH" ? "#22c55e" : cluster.dataQuality === "STALE" ? "#fbbf24" : "#ef4444",
-              border: `1px solid ${cluster.dataQuality === "FRESH" ? "#14532d" : cluster.dataQuality === "STALE" ? "#422006" : "#450a0a"}`,
+              color: cluster.dataQuality === "FRESH" ? "#00d166" : cluster.dataQuality === "STALE" ? "#FFB800" : "#f23645",
+              border: `1px solid ${cluster.dataQuality === "FRESH" ? "rgba(0,209,102,0.3)" : cluster.dataQuality === "STALE" ? "rgba(255,184,0,0.3)" : "rgba(242,54,69,0.3)"}`,
             }}
           >{cluster.dataQuality}</span>
         </div>
       </div>
 
-      <div className="px-3 py-0.5">
-        <div className="h-[3px] w-full" style={{ background: "#1a1a1a" }}>
-          <div className="h-full transition-all duration-300" style={{ width: `${pct}%`, background: sc }} />
+      <div className="px-3 py-1">
+        <div className="h-[3px] w-full rounded-full" style={{ background: "rgba(63,63,70,0.3)" }}>
+          <div className="h-full rounded-full transition-all duration-300" style={{ width: `${pct}%`, background: sc }} />
         </div>
       </div>
 
-      <div className="px-3 py-2 space-y-1.5">
-        <p className="font-mono text-[10px] text-[#a1a1aa] leading-[1.5] line-clamp-2">{cluster.headline}</p>
+      <div className="px-3 py-2.5 space-y-2">
+        <p className="font-mono text-[12px] text-zinc-300 leading-snug line-clamp-2">{cluster.headline}</p>
         {cluster.keyDataPoints.length > 0 && (
-          <div className="space-y-px">
+          <div className="space-y-0.5">
             {cluster.keyDataPoints.slice(0, 4).map((dp, i) => (
-              <div key={i} className="font-mono text-[9px] text-[#52525b] tabular-nums truncate">{dp}</div>
+              <div key={i} className="font-mono text-[11px] text-zinc-500 tabular-nums truncate">{dp}</div>
             ))}
           </div>
         )}

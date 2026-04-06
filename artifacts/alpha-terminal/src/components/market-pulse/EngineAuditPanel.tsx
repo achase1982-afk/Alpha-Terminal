@@ -101,16 +101,16 @@ function fmtChg(v: number | null): string {
 }
 
 function chgColor(v: number | null): string {
-  if (v === null || v === undefined) return "#3f3f46";
-  if (v > 0) return "#22c55e";
-  if (v < 0) return "#ef4444";
-  return "#71717a";
+  if (v === null || v === undefined) return "#71717a";
+  if (v > 0) return "#00d166";
+  if (v < 0) return "#f23645";
+  return "#9CA3AF";
 }
 
 function scoreColor(s: number): string {
-  if (s > 0) return "#22c55e";
-  if (s < 0) return "#ef4444";
-  return "#71717a";
+  if (s > 0) return "#00d166";
+  if (s < 0) return "#f23645";
+  return "#9CA3AF";
 }
 
 const CLUSTER_ORDER: ClusterKey[] = ["rates", "credit", "volLevel", "volTerm", "breadth", "riskAppetite", "macro"];
@@ -129,40 +129,40 @@ export function EngineAuditPanel({ data }: { data: MarketPulseData }) {
   const liveCount = rows.filter(r => r.value !== null).length;
 
   return (
-    <div style={{ background: "#000", border: "1px solid #1a1a1a" }}>
+    <div className="rounded-lg border border-zinc-800/50 overflow-hidden">
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between px-4 py-2 hover:bg-[#0a0a0a] transition-colors"
+        className="w-full flex items-center justify-between px-4 py-3 hover:bg-zinc-800/30 transition-colors"
       >
         <div className="flex items-center gap-3">
           <ChevronRight
-            className="w-3 h-3 text-[#fbbf24] transition-transform duration-200"
+            className="w-4 h-4 text-[#FFB800] transition-transform duration-200"
             style={{ transform: open ? "rotate(90deg)" : "rotate(0deg)" }}
           />
-          <span className="font-mono text-[11px] font-bold text-[#fbbf24] tracking-wider">ENGINE AUDIT</span>
-          <span className="font-mono text-[10px] text-[#3f3f46]">{data.engineVersion}</span>
+          <span className="font-mono text-xs font-bold text-[#FFB800] tracking-wider">ENGINE AUDIT</span>
+          <span className="font-mono text-xs text-zinc-500">{data.engineVersion}</span>
         </div>
         <div className="flex items-center gap-4">
-          <span className="font-mono text-[10px] text-[#52525b]">{liveCount}<span className="text-[#3f3f46]">/{rows.length}</span> LIVE</span>
-          <span className="font-mono text-[10px] text-[#52525b]">COMP <span className="font-bold" style={{ color: scoreColor(data.compositeScore) }}>{data.compositeScore > 0 ? "+" : ""}{data.compositeScore.toFixed(4)}</span></span>
-          <span className="font-mono text-[10px] text-[#52525b]">CONF <span className="font-bold text-[#e4e4e7]">{data.confidenceScore}<span className="text-[#3f3f46]">/{data.maxConfidence}</span></span></span>
+          <span className="font-mono text-xs text-zinc-400">{liveCount}<span className="text-zinc-500">/{rows.length}</span> LIVE</span>
+          <span className="font-mono text-xs text-zinc-400">COMP <span className="font-bold" style={{ color: scoreColor(data.compositeScore) }}>{data.compositeScore > 0 ? "+" : ""}{data.compositeScore.toFixed(4)}</span></span>
+          <span className="font-mono text-xs text-zinc-400">CONF <span className="font-bold text-zinc-200">{data.confidenceScore}<span className="text-zinc-500">/{data.maxConfidence}</span></span></span>
         </div>
       </button>
 
       {open && (
         <>
-          <div className="flex border-t border-b border-[#1a1a1a]">
+          <div className="flex border-t border-b border-zinc-800/50">
             {(["indicators", "rules"] as const).map(tab => (
               <button
                 key={tab}
                 type="button"
                 onClick={() => setActiveTab(tab)}
-                className="flex-1 py-1.5 font-mono text-[10px] font-bold uppercase tracking-widest transition-colors"
+                className="flex-1 py-2 font-mono text-xs font-bold uppercase tracking-wider transition-colors"
                 style={{
-                  color: activeTab === tab ? "#fbbf24" : "#3f3f46",
-                  background: activeTab === tab ? "#0a0a0a" : "transparent",
-                  borderBottom: activeTab === tab ? "1px solid #fbbf24" : "1px solid transparent",
+                  color: activeTab === tab ? "#FFB800" : "#71717a",
+                  background: activeTab === tab ? "rgba(255,184,0,0.04)" : "transparent",
+                  borderBottom: activeTab === tab ? "2px solid #FFB800" : "2px solid transparent",
                 }}
               >
                 {tab === "indicators" ? `INDICATORS (${rows.length})` : "SCORING RULES"}
@@ -171,36 +171,36 @@ export function EngineAuditPanel({ data }: { data: MarketPulseData }) {
           </div>
 
           {activeTab === "indicators" && raw && (
-            <div className="max-h-[400px] overflow-y-auto">
+            <div className="max-h-[420px] overflow-y-auto">
               {ALL_CLUSTERS.map(cluster => {
                 const cr = grouped[cluster];
                 if (!cr.length) return null;
                 const live = cr.filter(r => r.value !== null).length;
                 return (
                   <div key={cluster}>
-                    <div className="px-4 py-1 flex items-center gap-2 sticky top-0 z-10" style={{ background: "#080808", borderBottom: "1px solid #1a1a1a" }}>
-                      <span className="font-mono text-[9px] font-bold text-[#fbbf24] tracking-widest">{CLUSTER_LABELS[cluster]}</span>
-                      <span className="font-mono text-[8px] text-[#3f3f46]">{live}/{cr.length}</span>
+                    <div className="px-4 py-2 flex items-center gap-2 sticky top-0 z-10 bg-zinc-900 border-b border-zinc-800/50">
+                      <span className="font-mono text-[11px] font-bold text-[#FFB800] tracking-wider">{CLUSTER_LABELS[cluster]}</span>
+                      <span className="font-mono text-[11px] text-zinc-500">{live}/{cr.length}</span>
                     </div>
                     <table className="w-full">
                       <tbody>
                         {cr.map(r => (
-                          <tr key={r.symbol} className="hover:bg-[#0a0a0a] border-b border-[#111]">
-                            <td className="pl-4 pr-1 py-[2px] w-[70px]">
-                              <span className="font-mono text-[10px] font-bold" style={{ color: r.value !== null ? "#d4d4d8" : "#27272a" }}>
+                          <tr key={r.symbol} className="hover:bg-zinc-800/30 border-b border-zinc-800/30">
+                            <td className="pl-4 pr-2 py-1.5 w-[80px]">
+                              <span className="font-mono text-[12px] font-bold" style={{ color: r.value !== null ? "#e4e4e7" : "#52525b" }}>
                                 {r.symbol.replace(/^\$/, "")}
                               </span>
                             </td>
-                            <td className="px-1 py-[2px]">
-                              <span className="font-mono text-[9px] text-[#52525b]">{r.label}</span>
+                            <td className="px-2 py-1.5">
+                              <span className="font-mono text-[11px] text-zinc-400">{r.label}</span>
                             </td>
-                            <td className="px-1 py-[2px] text-right w-[70px]">
-                              <span className="font-mono text-[10px] tabular-nums" style={{ color: r.value !== null ? "#e4e4e7" : "#27272a" }}>
+                            <td className="px-2 py-1.5 text-right w-[80px]">
+                              <span className="font-mono text-[12px] tabular-nums" style={{ color: r.value !== null ? "#e4e4e7" : "#52525b" }}>
                                 {fmtVal(r.value)}
                               </span>
                             </td>
-                            <td className="pr-4 pl-1 py-[2px] text-right w-[65px]">
-                              <span className="font-mono text-[10px] tabular-nums" style={{ color: chgColor(r.change) }}>
+                            <td className="pr-4 pl-2 py-1.5 text-right w-[75px]">
+                              <span className="font-mono text-[12px] tabular-nums" style={{ color: chgColor(r.change) }}>
                                 {fmtChg(r.change)}
                               </span>
                             </td>
@@ -215,40 +215,40 @@ export function EngineAuditPanel({ data }: { data: MarketPulseData }) {
           )}
 
           {activeTab === "rules" && (
-            <div className="max-h-[400px] overflow-y-auto">
+            <div className="max-h-[420px] overflow-y-auto">
               {CLUSTER_ORDER.map((key) => {
                 const cluster = data.clusters[key];
                 if (!cluster) return null;
                 const rules = cluster.rulesApplied ?? [];
                 const points = cluster.keyDataPoints ?? [];
                 return (
-                  <div key={key} className="border-b border-[#1a1a1a]">
-                    <div className="px-4 py-1.5 flex items-center justify-between" style={{ background: "#080808" }}>
-                      <span className="font-mono text-[10px] font-bold text-[#fbbf24] tracking-widest">
+                  <div key={key} className="border-b border-zinc-800/50">
+                    <div className="px-4 py-2 flex items-center justify-between bg-zinc-900">
+                      <span className="font-mono text-[11px] font-bold text-[#FFB800] tracking-wider">
                         {CLUSTER_LABELS[key as AuditCluster] ?? key}
                       </span>
                       <div className="flex items-center gap-3">
-                        <span className="font-mono text-[10px] tabular-nums font-bold" style={{ color: scoreColor(cluster.score) }}>
+                        <span className="font-mono text-xs tabular-nums font-bold" style={{ color: scoreColor(cluster.score) }}>
                           {cluster.score > 0 ? "+" : ""}{cluster.score.toFixed(4)}
                         </span>
-                        <span className="font-mono text-[8px] font-bold" style={{
-                          color: cluster.dataQuality === "FRESH" ? "#22c55e" : cluster.dataQuality === "STALE" ? "#fbbf24" : "#ef4444"
+                        <span className="font-mono text-[11px] font-bold" style={{
+                          color: cluster.dataQuality === "FRESH" ? "#00d166" : cluster.dataQuality === "STALE" ? "#FFB800" : "#f23645"
                         }}>
                           {cluster.dataQuality}
                         </span>
                       </div>
                     </div>
-                    <div className="px-4 py-1.5">
+                    <div className="px-4 py-2">
                       {points.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mb-1">
+                        <div className="flex flex-wrap gap-1.5 mb-2">
                           {points.map((pt, i) => (
-                            <span key={i} className="font-mono text-[9px] text-[#a1a1aa] bg-[#111] px-1.5 py-0.5">{pt}</span>
+                            <span key={i} className="font-mono text-[11px] text-zinc-300 bg-zinc-800/50 px-2 py-0.5 rounded">{pt}</span>
                           ))}
                         </div>
                       )}
                       {rules.map((rule, i) => (
-                        <div key={i} className="font-mono text-[9px] text-[#52525b] leading-[1.6]">
-                          <span className="text-[#fbbf24] mr-1">›</span>{rule}
+                        <div key={i} className="font-mono text-[11px] text-zinc-400 leading-relaxed">
+                          <span className="text-[#FFB800] mr-1.5">›</span>{rule}
                         </div>
                       ))}
                     </div>
@@ -256,42 +256,42 @@ export function EngineAuditPanel({ data }: { data: MarketPulseData }) {
                 );
               })}
 
-              <div className="px-4 py-2 flex items-center gap-4 flex-wrap" style={{ background: "#080808", borderTop: "1px solid #1a1a1a" }}>
-                <span className="font-mono text-[9px] text-[#3f3f46]">WT R18 C12 VL15 VT12 B18 RA15 M10</span>
+              <div className="px-4 py-3 flex items-center gap-4 flex-wrap bg-zinc-900 border-t border-zinc-800/50">
+                <span className="font-mono text-[11px] text-zinc-500">WT R18 C12 VL15 VT12 B18 RA15 M10</span>
                 {data.secondaryFlags && data.secondaryFlags.length > 0 && (
-                  <span className="font-mono text-[9px] text-[#fbbf24]">FLAGS: {data.secondaryFlags.join(", ")}</span>
+                  <span className="font-mono text-[11px] text-[#FFB800]">FLAGS: {data.secondaryFlags.join(", ")}</span>
                 )}
               </div>
 
               {data.riskStateReasoning && data.riskStateReasoning.length > 0 && (
-                <div className="px-4 py-1.5" style={{ background: "#080808" }}>
-                  <span className="font-mono text-[9px] text-[#52525b]">RISK: </span>
-                  <span className="font-mono text-[9px] text-[#71717a]">{data.riskStateReasoning.join(" | ")}</span>
+                <div className="px-4 py-2 bg-zinc-900">
+                  <span className="font-mono text-[11px] text-zinc-500">RISK: </span>
+                  <span className="font-mono text-[11px] text-zinc-400">{data.riskStateReasoning.join(" | ")}</span>
                 </div>
               )}
 
               {data.momentum && (
-                <div className="px-4 py-1.5 flex items-center gap-3" style={{ background: "#080808", borderTop: "1px solid #1a1a1a" }}>
-                  <span className="font-mono text-[9px] text-[#3f3f46]">MOMENTUM</span>
-                  <span className="font-mono text-[10px] font-bold" style={{
-                    color: data.momentum.label === "ACCELERATING" ? "#22c55e" :
-                           data.momentum.label === "DECELERATING" || data.momentum.label === "REVERSING" ? "#ef4444" : "#71717a"
+                <div className="px-4 py-2 flex items-center gap-3 bg-zinc-900 border-t border-zinc-800/50">
+                  <span className="font-mono text-[11px] text-zinc-500">MOMENTUM</span>
+                  <span className="font-mono text-xs font-bold" style={{
+                    color: data.momentum.label === "ACCELERATING" ? "#00d166" :
+                           data.momentum.label === "DECELERATING" || data.momentum.label === "REVERSING" ? "#f23645" : "#9CA3AF"
                   }}>{data.momentum.label}</span>
-                  <span className="font-mono text-[9px] tabular-nums text-[#52525b]">
+                  <span className="font-mono text-[11px] tabular-nums text-zinc-400">
                     {data.momentum.delta > 0 ? "+" : ""}{data.momentum.delta.toFixed(4)}
                   </span>
                 </div>
               )}
 
               {data.optionsLayer && (
-                <div className="px-4 py-1.5" style={{ background: "#080808", borderTop: "1px solid #1a1a1a" }}>
+                <div className="px-4 py-2 bg-zinc-900 border-t border-zinc-800/50">
                   <div className="flex items-center gap-2">
-                    <span className="font-mono text-[9px] text-[#3f3f46]">OPTIONS</span>
-                    <span className="font-mono text-[9px] font-bold" style={{ color: data.optionsLayer.isSafe ? "#22c55e" : "#ef4444" }}>
+                    <span className="font-mono text-[11px] text-zinc-500">OPTIONS</span>
+                    <span className="font-mono text-[11px] font-bold" style={{ color: data.optionsLayer.isSafe ? "#00d166" : "#f23645" }}>
                       {data.optionsLayer.isSafe ? "SAFE" : "UNSAFE"}
                     </span>
                   </div>
-                  <div className="font-mono text-[9px] text-[#52525b] mt-0.5">{data.optionsLayer.guidance}</div>
+                  <div className="font-mono text-[11px] text-zinc-400 mt-1">{data.optionsLayer.guidance}</div>
                 </div>
               )}
             </div>
