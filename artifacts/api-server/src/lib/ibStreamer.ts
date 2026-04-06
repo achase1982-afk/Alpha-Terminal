@@ -5,6 +5,37 @@ import { getEnabledSymbols, type IBSymbolDef } from "./ibBreadthSymbols.js";
 
 export type { IBSymbolDef } from "./ibBreadthSymbols.js";
 
+export interface DepthRow {
+  price: number;
+  size: number;
+  mm: string;
+}
+
+export interface DepthBook {
+  symbol: string;
+  bids: DepthRow[];
+  asks: DepthRow[];
+  ts: number;
+}
+
+const DEPTH_SYMBOLS = [
+  { symbol: "/ES",  ibSymbol: "ES",  secType: "FUT", exchange: "CME",   category: "FUTURES" },
+  { symbol: "/NQ",  ibSymbol: "NQ",  secType: "FUT", exchange: "CME",   category: "FUTURES" },
+  { symbol: "SPY",  ibSymbol: "SPY", secType: "STK", exchange: "SMART", category: "EQUITY" },
+];
+
+const DEPTH_NUM_ROWS = 10;
+const DEPTH_REQ_ID_BASE = 6000;
+const DEPTH_THROTTLE_MS = 250;
+
+const depthReqIdToSymbol = new Map<number, string>();
+const depthBooks = new Map<string, { bids: DepthRow[]; asks: DepthRow[] }>();
+const depthDirty = new Set<string>();
+let depthThrottleTimer: ReturnType<typeof setInterval> | null = null;
+
+const dynamicDepthSymbols = new Map<string, { reqId: number; contract: Contract; isSmartDepth: boolean }>();
+let dynamicDepthReqCounter = 6500;
+
 export interface IBNewsHeadline {
   time: string;
   providerCode: string;
@@ -194,6 +225,78 @@ function subscribeAll() {
       logger.error({ err, symbol: def.ibSymbol }, "IB: failed to subscribe");
     }
   }
+  subscribeDepth();
+}
+
+function subscribeDepth() {
+  if (!ib) return;
+  for (let i = 0; i < DEPTH_SYMBOLS.length; i++) {
+    const d = DEPTH_SYMBOLS[i];
+    const reqId = DEPTH_REQ_ID_BASE + i;
+    const contract: Contract = {
+      symbol: d.ibSymbol,
+      secType: d.secType as SecType,
+      exchange: d.exchange,
+      currency: "USD",
+    };
+    if (d.secType === "FUT") {
+      (contract as any).lastTradeDateOrContractMonth = getFrontMonth(d.ibSymbol);
+    }
+    const isSmartDepth = d.exchange === "SMART";
+    depthReqIdToSymbol.set(reqId, d.symbol);
+    depthBooks.set(d.symbol, { bids: [], asks: [] });
+    try {
+      ib.reqMktDepth(reqId, contract, DEPTH_NUM_ROWS, isSmartDepth);
+      logger.info({ symbol: d.symbol, reqId, isSmartDepth }, "IB: subscribed to market depth");
+    } catch (err) {
+      logger.error({ err, symbol: d.symbol }, "IB: failed to subscribe depth");
+    }
+  }
+
+  if (!depthThrottleTimer) {
+    depthThrottleTimer = setInterval(flushDepthUpdates, DEPTH_THROTTLE_MS);
+  }
+}
+
+function flushDepthUpdates() {
+  if (depthDirty.size === 0 || !broadcastFn) return;
+  for (const sym of depthDirty) {
+    const book = depthBooks.get(sym);
+    if (!book) continue;
+    broadcastFn("depth", {
+      symbol: sym,
+      bids: [...book.bids],
+      asks: [...book.asks],
+      ts: Date.now(),
+    });
+  }
+  depthDirty.clear();
+}
+
+function applyDepthUpdate(reqId: number, position: number, operation: number, side: number, price: number, size: number, mm: string) {
+  const sym = depthReqIdToSymbol.get(reqId);
+  if (!sym) return;
+  let book = depthBooks.get(sym);
+  if (!book) {
+    book = { bids: [], asks: [] };
+    depthBooks.set(sym, book);
+  }
+  const rows = side === 1 ? book.bids : book.asks;
+  const row: DepthRow = { price, size, mm };
+
+  switch (operation) {
+    case 0:
+      rows.splice(position, 0, row);
+      if (rows.length > DEPTH_NUM_ROWS) rows.length = DEPTH_NUM_ROWS;
+      break;
+    case 1:
+      if (position < rows.length) rows[position] = row;
+      break;
+    case 2:
+      if (position < rows.length) rows.splice(position, 1);
+      break;
+  }
+  depthDirty.add(sym);
 }
 
 function teardownIB() {
@@ -201,9 +304,25 @@ function teardownIB() {
     for (const def of BREADTH_SYMBOLS) {
       try { ib.cancelMktData(def.reqId); } catch { /* ignore */ }
     }
+    for (const [reqId] of depthReqIdToSymbol) {
+      const sym = depthReqIdToSymbol.get(reqId);
+      const isSmartDepth = sym ? !sym.startsWith("/") : false;
+      try { ib.cancelMktDepth(reqId, isSmartDepth); } catch { /* ignore */ }
+    }
+    for (const [, info] of dynamicDepthSymbols) {
+      try { ib.cancelMktDepth(info.reqId, info.isSmartDepth); } catch { /* ignore */ }
+    }
     try { ib.disconnect(); } catch { /* ignore */ }
     ib.removeAllListeners();
     ib = null;
+  }
+  depthReqIdToSymbol.clear();
+  depthBooks.clear();
+  depthDirty.clear();
+  dynamicDepthSymbols.clear();
+  if (depthThrottleTimer) {
+    clearInterval(depthThrottleTimer);
+    depthThrottleTimer = null;
   }
 }
 
@@ -428,6 +547,14 @@ export async function connectIB(): Promise<void> {
       if (cnt <= 2) {
         logger.info({ symbol: def.displaySymbol, tickType, value }, "IB: tickGeneric received");
       }
+    });
+
+    ib.on(EventName.updateMktDepth, (reqId: number, position: number, operation: number, side: number, price: number, size: number) => {
+      applyDepthUpdate(reqId, position, operation, side, price, size, "");
+    });
+
+    ib.on(EventName.updateMktDepthL2, (reqId: number, position: number, marketMaker: string, operation: number, side: number, price: number, size: number) => {
+      applyDepthUpdate(reqId, position, operation, side, price, size, marketMaker);
     });
 
     ib.on(EventName.newsProviders, (providers: any[]) => {
@@ -697,4 +824,75 @@ export async function fetchNewsForSymbol(symbol: string, maxResults = 30): Promi
   const providers = ibNewsProviders.join("+");
   if (!providers) return [];
   return fetchIBHistoricalNews(conId, providers, maxResults);
+}
+
+export function getDepthSnapshot(): DepthBook[] {
+  const out: DepthBook[] = [];
+  for (const [sym, book] of depthBooks) {
+    if (book.bids.length > 0 || book.asks.length > 0) {
+      out.push({ symbol: sym, bids: [...book.bids], asks: [...book.asks], ts: Date.now() });
+    }
+  }
+  return out;
+}
+
+export function getDepthForSymbol(symbol: string): DepthBook | null {
+  const book = depthBooks.get(symbol);
+  if (!book) return null;
+  return { symbol, bids: [...book.bids], asks: [...book.asks], ts: Date.now() };
+}
+
+export function getDepthSymbols(): string[] {
+  const static_ = DEPTH_SYMBOLS.map(d => d.symbol);
+  const dynamic = [...dynamicDepthSymbols.keys()];
+  return [...static_, ...dynamic];
+}
+
+export function subscribeDepthForSymbol(symbol: string): boolean {
+  if (!ib || connState !== "CONNECTED") return false;
+  const upper = symbol.toUpperCase();
+
+  if (DEPTH_SYMBOLS.some(d => d.symbol === upper)) return true;
+  if (dynamicDepthSymbols.has(upper)) return true;
+
+  const reqId = dynamicDepthReqCounter++;
+  const isFut = upper.startsWith("/");
+  const ibSym = upper.replace(/^[\/$]/, "");
+  const contract: Contract = {
+    symbol: ibSym,
+    secType: (isFut ? "FUT" : "STK") as SecType,
+    exchange: isFut ? "CME" : "SMART",
+    currency: "USD",
+  };
+  if (isFut) {
+    (contract as any).lastTradeDateOrContractMonth = getFrontMonth(ibSym);
+  }
+  const isSmartDepth = !isFut;
+
+  depthReqIdToSymbol.set(reqId, upper);
+  depthBooks.set(upper, { bids: [], asks: [] });
+  dynamicDepthSymbols.set(upper, { reqId, contract, isSmartDepth });
+
+  try {
+    ib.reqMktDepth(reqId, contract, DEPTH_NUM_ROWS, isSmartDepth);
+    logger.info({ symbol: upper, reqId, isSmartDepth }, "IB: subscribed dynamic depth");
+    return true;
+  } catch (err) {
+    logger.error({ err, symbol: upper }, "IB: failed to subscribe dynamic depth");
+    depthReqIdToSymbol.delete(reqId);
+    depthBooks.delete(upper);
+    dynamicDepthSymbols.delete(upper);
+    return false;
+  }
+}
+
+export function unsubscribeDepthForSymbol(symbol: string): void {
+  const upper = symbol.toUpperCase();
+  const info = dynamicDepthSymbols.get(upper);
+  if (!info || !ib) return;
+  try { ib.cancelMktDepth(info.reqId, info.isSmartDepth); } catch { /* ignore */ }
+  depthReqIdToSymbol.delete(info.reqId);
+  depthBooks.delete(upper);
+  dynamicDepthSymbols.delete(upper);
+  logger.info({ symbol: upper }, "IB: unsubscribed dynamic depth");
 }

@@ -11,6 +11,11 @@ import {
   fetchIBHistoricalNews,
   fetchIBNewsArticle,
   fetchNewsForSymbol,
+  getDepthSnapshot,
+  getDepthForSymbol,
+  getDepthSymbols,
+  subscribeDepthForSymbol,
+  unsubscribeDepthForSymbol,
 } from "../lib/ibStreamer.js";
 
 const router = Router();
@@ -118,6 +123,40 @@ router.get("/news/symbol", async (req: Request, res: Response) => {
   } catch (err: any) {
     res.status(500).json({ error: err.message ?? "Failed to fetch news", news: [] });
   }
+});
+
+router.get("/depth", (req: Request, res: Response) => {
+  const symbol = req.query["symbol"] as string | undefined;
+  if (symbol) {
+    const book = getDepthForSymbol(symbol.toUpperCase());
+    res.json(book ?? { symbol: symbol.toUpperCase(), bids: [], asks: [], ts: Date.now() });
+  } else {
+    res.json(getDepthSnapshot());
+  }
+});
+
+router.get("/depth/symbols", (_req: Request, res: Response) => {
+  res.json({ symbols: getDepthSymbols() });
+});
+
+router.post("/depth/subscribe", (req: Request, res: Response) => {
+  const { symbol } = req.body as { symbol?: string };
+  if (!symbol) {
+    res.status(400).json({ error: "symbol is required" });
+    return;
+  }
+  const ok = subscribeDepthForSymbol(symbol);
+  res.json({ symbol: symbol.toUpperCase(), subscribed: ok });
+});
+
+router.post("/depth/unsubscribe", (req: Request, res: Response) => {
+  const { symbol } = req.body as { symbol?: string };
+  if (!symbol) {
+    res.status(400).json({ error: "symbol is required" });
+    return;
+  }
+  unsubscribeDepthForSymbol(symbol);
+  res.json({ symbol: symbol.toUpperCase(), unsubscribed: true });
 });
 
 export default router;

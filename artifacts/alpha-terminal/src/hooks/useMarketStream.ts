@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useOptionsStreamStore } from "@/lib/options-stream-store";
+import { useDepthStore, type DepthBook } from "@/lib/depth-store";
 import { fetchWithAuth, getClerkToken } from "@/lib/fetchWithAuth";
 import type { LiveQuote, LiveNewsItem } from "@/lib/store";
 
@@ -100,6 +101,8 @@ export function useMarketStream() {
   } = useTerminalStore();
 
   const mergeTick = useOptionsStreamStore((s) => s.mergeTick);
+  const setDepthBook = useDepthStore((s) => s.setBook);
+  const setDepthBooks = useDepthStore((s) => s.setBooks);
   const rejectedRetries = useRef(0);
   const symDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startedRef = useRef(false);
@@ -215,6 +218,10 @@ export function useMarketStream() {
           setStreamQuote(msg.data as LiveQuote);
         } else if (msg.event === "optionQuote") {
           mergeTick(msg.data);
+        } else if (msg.event === "depth") {
+          setDepthBook(msg.data as DepthBook);
+        } else if (msg.event === "depthSnapshot") {
+          setDepthBooks(msg.data as DepthBook[]);
         } else if (msg.event === "ibNews") {
           addLiveNews(msg.data as LiveNewsItem);
         } else if (msg.event === "streamerStatus") {

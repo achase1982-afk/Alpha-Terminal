@@ -29,6 +29,7 @@ import { AiBiasStrip } from "@/components/market-pulse/AiBiasStrip";
 import { BottomNav } from "@/components/BottomNav";
 import { PortfolioView } from "@/components/PortfolioView";
 import { CompanySwipablePages } from "@/components/CompanySwipablePages";
+import DepthLadder from "@/components/DepthLadder";
 import { AiSubTabs, type AiSubTab } from "@/components/ai-tab/AiSubTabs";
 import type { MarketPulseDashboardHandle } from "@/components/market-pulse/MarketPulseDashboard";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
@@ -47,6 +48,7 @@ const DESKTOP_CONTEXT_TABS: { id: MarketDataTab; label: string }[] = [
   { id: "news", label: "News" },
   { id: "options", label: "Options" },
   { id: "company", label: "Company" },
+  { id: "depth", label: "Depth" },
 ];
 
 function DesktopContextTabs({ activeTab, setActiveTab }: { activeTab: MarketDataTab; setActiveTab: (t: MarketDataTab) => void }) {
@@ -423,6 +425,7 @@ export default function TerminalPage() {
                   {contextTab === "news" && <NewsTab />}
                   {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={stickyH} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
                   {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles as any} stickyOffset={stickyH} />}
+                  {contextTab === "depth" && <DepthLadder />}
                   {contextTab === "chart" && (
                     <>
                       <ChartControls />
@@ -477,6 +480,7 @@ export default function TerminalPage() {
                     {contextTab === "news" && <NewsTab />}
                     {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={0} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
                     {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles as any} stickyOffset={0} />}
+                    {contextTab === "depth" && <DepthLadder />}
                   </div>
                 </div>
               </>
@@ -509,6 +513,7 @@ export default function TerminalPage() {
                   {contextTab === "news" && <NewsTab />}
                   {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={stickyH} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
                   {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles as any} stickyOffset={stickyH} />}
+                  {contextTab === "depth" && <DepthLadder />}
                   {contextTab === "chart" && (
                     <>
                       <ChartControls />
