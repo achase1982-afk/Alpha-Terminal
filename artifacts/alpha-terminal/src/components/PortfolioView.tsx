@@ -21,12 +21,12 @@ const C = {
   border: "#27272a80",
   borderHi: "#3f3f46",
   text: "#e4e4e7",
-  textMuted: "#a1a1aa",
-  textDim: "#71717a",
-  dim: "#52525b",
+  textMuted: "#d4d4d8",
+  textDim: "#a1a1aa",
+  dim: "#71717a",
   gold: "#FFB800",
   green: "#00d166",
-  red: "#f23645",
+  red: "#dc2626",
   cyan: "#22d3ee",
 };
 
@@ -44,7 +44,7 @@ const ALL_METRICS: { key: MetricKey; label: string }[] = [
   { key: "cashBalance", label: "Cash Balance" },
   { key: "posEquity", label: "Position Equity" },
 ];
-const DEFAULT_METRICS: MetricKey[] = ["plOpen", "buyingPower", "margin"];
+const DEFAULT_METRICS: MetricKey[] = ["plOpen", "buyingPower", "availableFunds", "margin"];
 const METRICS_STORAGE_KEY = "alpha_visible_metrics";
 
 interface Position {
@@ -274,14 +274,14 @@ function PositionTableRow({
               ? (eq.longOpenProfitLoss / (eq.averagePrice * (eq.shortQuantity > 0 ? eq.shortQuantity : eq.longQuantity))) * 100
               : 0;
             return (
-              <div style={{ display: "grid", gridTemplateColumns: gridCols, alignItems: "center", padding: "6px 12px 6px 24px", borderBottom: `1px solid ${C.border}`, background: eqSelected ? `${C.gold}08` : "transparent" }}>
+              <div style={{ display: "grid", gridTemplateColumns: gridCols, alignItems: "center", padding: "7px 12px 7px 26px", borderBottom: `1px solid ${C.border}`, background: eqSelected ? `${C.gold}08` : "transparent" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
                   {hasOptions && <Checkbox checked={!!eqSelected} onToggle={e => { e.stopPropagation(); toggleKey(eqKey); }} />}
-                  <span style={{ fontSize: 13, color: C.textDim }}>
+                  <span style={{ fontSize: 13, color: C.text }}>
                     {fmtQty(eq.longQuantity, eq.shortQuantity)} @ {fmtCurrency(eq.averagePrice)}
                   </span>
                 </div>
-                <span style={{ fontSize: 13, color: C.textMuted, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCompact(eq.marketValue)}</span>
+                <span style={{ fontSize: 13, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCompact(eq.marketValue)}</span>
                 <span style={{ fontSize: 13, color: plColor(eq.longOpenProfitLoss), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtPct(eqPLPct)}</span>
                 <span style={{ fontSize: 13, color: plColor(eq.currentDayProfitLoss), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(eq.currentDayProfitLoss)}</span>
               </div>
@@ -303,7 +303,7 @@ function PositionTableRow({
                   display: "grid",
                   gridTemplateColumns: gridCols,
                   alignItems: "center",
-                  padding: "6px 12px 6px 24px",
+                  padding: "7px 12px 7px 26px",
                   borderBottom: `1px solid ${C.border}`,
                   background: isSelected ? `${C.gold}08` : "transparent",
                 }}
@@ -313,18 +313,18 @@ function PositionTableRow({
                   <span style={{ fontSize: 13, fontWeight: 600, color: opt.putCall === "CALL" ? "#4ade80" : "#fb923c", flexShrink: 0 }}>
                     {opt.putCall === "CALL" ? "C" : "P"}
                   </span>
-                  <span style={{ fontSize: 13, color: C.textDim, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  <span style={{ fontSize: 13, color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                     {formatOptionSymbol(opt.symbol, false)} ×{fmtQty(opt.longQuantity, opt.shortQuantity).replace("+", "")}
                   </span>
                 </div>
-                <span style={{ fontSize: 13, color: C.textMuted, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCompact(opt.marketValue)}</span>
+                <span style={{ fontSize: 13, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCompact(opt.marketValue)}</span>
                 <span style={{ fontSize: 13, color: plColor(totalPL), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtPct(totalPLPctOpt)}</span>
                 <span style={{ fontSize: 13, color: plColor(opt.currentDayProfitLoss), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(opt.currentDayProfitLoss)}</span>
               </div>
             );
           })}
 
-          <div style={{ padding: "6px 12px 6px 24px", display: "flex", gap: 10, borderBottom: `1px solid ${C.border}` }}>
+          <div style={{ padding: "7px 12px 7px 26px", display: "flex", gap: 12, borderBottom: `1px solid ${C.border}` }}>
             <button onClick={e => { e.stopPropagation(); onSelect(group.underlying); }} style={{ fontSize: 12, fontWeight: 500, fontFamily: f, color: C.gold, background: "transparent", border: "none", cursor: "pointer", padding: 0, letterSpacing: 0.3, textTransform: "uppercase" }}>Chart →</button>
             {onTrade && eq && !hasOptions && (
               <button onClick={e => { e.stopPropagation(); onTrade(group.underlying, eqIsShort ? "BUY" : "SELL"); }} style={{ fontSize: 12, fontWeight: 500, fontFamily: f, color: C.gold, background: "transparent", border: "none", cursor: "pointer", padding: 0, letterSpacing: 0.3, textTransform: "uppercase" }}>Sell</button>
@@ -728,31 +728,31 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
         </div>
 
         {isMarginCall && (
-          <div style={{ margin: "2px 0 4px" }}>
+          <div style={{ margin: "4px 0 6px" }}>
             <button
               onClick={() => setMarginCallExpanded(x => !x)}
-              style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "7px 12px", background: C.red, border: "none", cursor: "pointer", fontFamily: f }}
+              style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "8px 12px", background: C.gold, border: "none", cursor: "pointer", fontFamily: f }}
             >
-              <AlertTriangle style={{ color: "#000", width: 14, height: 14, flexShrink: 0 }} />
-              <span style={{ fontSize: 13, fontWeight: 700, color: "#000", textTransform: "uppercase", letterSpacing: 0.8 }}>
+              <AlertTriangle style={{ color: "#000", width: 15, height: 15, flexShrink: 0 }} />
+              <span style={{ fontSize: 14, fontWeight: 800, color: "#000", textTransform: "uppercase", letterSpacing: 1 }}>
                 MARGIN CALL
               </span>
-              <span style={{ fontSize: 12, fontWeight: 600, color: "#000" }}>·</span>
-              <span style={{ fontSize: 12, fontWeight: 600, color: "#000" }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: "#000" }}>—</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: "#000" }}>
                 Deposit {fmtCurrency(marginDeficiency)}
               </span>
-              {marginCallExpanded ? <ChevronDown style={{ width: 12, height: 12, color: "#000", marginLeft: "auto" }} /> : <ChevronRight style={{ width: 12, height: 12, color: "#000", marginLeft: "auto" }} />}
+              {marginCallExpanded ? <ChevronDown style={{ width: 13, height: 13, color: "#000", marginLeft: "auto" }} /> : <ChevronRight style={{ width: 13, height: 13, color: "#000", marginLeft: "auto" }} />}
             </button>
             {marginCallExpanded && (
-              <div style={{ background: `${C.red}15`, padding: "8px 12px", display: "flex", flexDirection: "column", gap: 4 }}>
+              <div style={{ background: `${C.gold}18`, padding: "10px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
                 {[
                   ["Margin Equity", fmtCurrency(marginTotal), C.text],
                   ["Maint. Requirement", fmtCurrency(marginUsed), C.text],
                   ["Deficiency", fmtCurrency(marginDeficiency), C.red],
                 ].map(([label, val, clr]) => (
                   <div key={label} style={{ display: "flex", justifyContent: "space-between" }}>
-                    <span style={{ fontSize: 13, color: C.textDim }}>{label}</span>
-                    <span style={{ fontSize: 13, fontWeight: 500, color: clr as string, fontVariantNumeric: "tabular-nums" }}>{val}</span>
+                    <span style={{ fontSize: 13, color: C.textMuted }}>{label}</span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: clr as string, fontVariantNumeric: "tabular-nums" }}>{val}</span>
                   </div>
                 ))}
               </div>
@@ -761,9 +761,9 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
         )}
 
         {shownMetrics.length > 0 && (
-          <div style={{ display: "flex", flexWrap: "wrap", padding: "0 12px 6px", gap: "2px 16px" }}>
+          <div style={{ display: "flex", flexWrap: "wrap", padding: "4px 12px 8px", gap: "4px 18px" }}>
             {shownMetrics.map(m => (
-              <span key={m.label} style={{ fontSize: 13, color: C.dim, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+              <span key={m.label} style={{ fontSize: 13, color: C.textDim, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
                 {m.label} <span style={{ color: m.color, fontWeight: 500 }}>{m.value}</span>
               </span>
             ))}
@@ -776,7 +776,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
               key={tab}
               onClick={() => setSubTab(tab)}
               style={{
-                flex: 1, padding: "6px 0", fontSize: 11, fontWeight: 500, textTransform: "uppercase", letterSpacing: 1,
+                flex: 1, padding: "8px 0", fontSize: 12, fontWeight: 500, textTransform: "uppercase", letterSpacing: 0.8,
                 fontFamily: f, color: subTab === tab ? C.gold : C.dim, background: "transparent", border: "none",
                 borderBottom: subTab === tab ? `2px solid ${C.gold}` : "2px solid transparent", cursor: "pointer",
               }}
@@ -826,13 +826,13 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
 
             {symbolGroups.length > 0 && (
               <div style={{ padding: "8px 12px", borderTop: `1px solid ${C.border}`, display: "flex", gap: 16, flexWrap: "wrap" }}>
-                <span style={{ fontSize: 13, color: C.textDim, fontVariantNumeric: "tabular-nums" }}>
+                <span style={{ fontSize: 13, color: C.textMuted, fontVariantNumeric: "tabular-nums" }}>
                   P/L Day <span style={{ fontWeight: 500, color: plColor(totalDayPLPositions) }}>{fmtCurrency(totalDayPLPositions)}</span>
                 </span>
-                <span style={{ fontSize: 13, color: C.textDim, fontVariantNumeric: "tabular-nums" }}>
+                <span style={{ fontSize: 13, color: C.textMuted, fontVariantNumeric: "tabular-nums" }}>
                   P/L Open <span style={{ fontWeight: 500, color: plColor(totalUnrealized) }}>{fmtCurrency(totalUnrealized)}</span>
                 </span>
-                <span style={{ fontSize: 13, color: C.textDim, fontVariantNumeric: "tabular-nums" }}>
+                <span style={{ fontSize: 13, color: C.textMuted, fontVariantNumeric: "tabular-nums" }}>
                   Net Liq <span style={{ fontWeight: 500, color: C.text }}>{fmtCurrency(bal?.liquidationValue ?? 0)}</span>
                 </span>
               </div>
