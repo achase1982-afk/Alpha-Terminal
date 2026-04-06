@@ -926,6 +926,7 @@ interface InsiderTxn {
   shares: number;
   pricePerShare: number | null;
   acquiredOrDisposed: string;
+  filingUrl: string;
 }
 
 interface InstHolder {
@@ -937,6 +938,7 @@ interface InstHolder {
 }
 
 const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) {
+  const { openBrowser } = useTerminalStore();
   const [insiders, setInsiders] = useState<InsiderTxn[]>([]);
   const [holders, setHolders] = useState<InstHolder[]>([]);
   const [loading, setLoading] = useState(false);
@@ -1031,7 +1033,16 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
             const dateShort = t.transactionDate ? t.transactionDate.slice(5).replace("-", "/") : "—";
             return (
               <div key={i} style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr 0.6fr 1fr 0.6fr", padding: "6px 0", borderBottom: `1px solid ${C.border}` }}>
-                <span style={{ fontSize: 15, fontFamily: f, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.ownerName?.split(" ").slice(0, 2).join(" ") || "—"}</span>
+                <span
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (t.filingUrl) {
+                      const contentUrl = `${API_BASE}/sec/filing-content?url=${encodeURIComponent(t.filingUrl)}`;
+                      openBrowser(contentUrl, `Form 4 — ${t.ownerName}`, "SEC EDGAR");
+                    }
+                  }}
+                  style={{ fontSize: 15, fontFamily: f, color: t.filingUrl ? "#fbbf24" : C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: t.filingUrl ? "pointer" : "default" }}
+                >{t.ownerName?.split(" ").slice(0, 2).join(" ") || "—"}</span>
                 <span style={{ fontSize: 15, fontFamily: f, color: C.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.officerTitle?.split(",")[0] || "—"}</span>
                 <span style={{ fontSize: 15, fontFamily: f, color: action === "BUY" ? C.green : C.red, fontWeight: 700 }}>{action}</span>
                 <span style={{ fontSize: 15, fontFamily: f, color: C.text, textAlign: "right" }}>{t.shares?.toLocaleString() || "—"}</span>

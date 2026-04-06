@@ -257,6 +257,7 @@ interface InsiderTransaction {
   pricePerShare: number | null;
   acquiredOrDisposed: string;
   sharesAfter: number | null;
+  filingUrl: string;
 }
 
 function xmlText(xml: string, tag: string): string {
@@ -265,7 +266,7 @@ function xmlText(xml: string, tag: string): string {
   return m ? m[1].trim() : "";
 }
 
-function parseForm4Xml(xml: string): InsiderTransaction[] {
+function parseForm4Xml(xml: string, filingUrl: string): InsiderTransaction[] {
   const results: InsiderTransaction[] = [];
 
   const ownerName = xmlText(xml, "rptOwnerName");
@@ -300,6 +301,7 @@ function parseForm4Xml(xml: string): InsiderTransaction[] {
       pricePerShare: price && price > 0 ? price : null,
       acquiredOrDisposed: adMatch?.[1] || "",
       sharesAfter: afterMatch ? parseInt(afterMatch[1]) : null,
+      filingUrl,
     });
   }
   return results;
@@ -331,24 +333,29 @@ router.get("/insider-transactions", async (req, res) => {
     if (!recent) return res.json({ transactions: [], symbol });
 
     const cikNum = parseInt(cik);
-    const form4Urls: string[] = [];
-    for (let i = 0; i < (recent.form?.length || 0) && form4Urls.length < 15; i++) {
+    const form4Entries: { xmlUrl: string; viewerUrl: string }[] = [];
+    for (let i = 0; i < (recent.form?.length || 0) && form4Entries.length < 15; i++) {
       if (recent.form[i] === "4" || recent.form[i] === "4/A") {
         const acc = recent.accessionNumber[i].replace(/-/g, "");
-        const rawDoc = (recent.primaryDocument[i] || "").replace(/^xsl[^/]*\//, "");
+        const primaryDoc = recent.primaryDocument[i] || "";
+        const rawDoc = primaryDoc.replace(/^xsl[^/]*\//, "");
         if (rawDoc) {
-          form4Urls.push(`https://www.sec.gov/Archives/edgar/data/${cikNum}/${acc}/${rawDoc}`);
+          const xmlUrl = `https://www.sec.gov/Archives/edgar/data/${cikNum}/${acc}/${rawDoc}`;
+          const viewerUrl = primaryDoc.startsWith("xsl")
+            ? `https://www.sec.gov/Archives/edgar/data/${cikNum}/${acc}/${primaryDoc}`
+            : xmlUrl;
+          form4Entries.push({ xmlUrl, viewerUrl });
         }
       }
     }
 
     const allTransactions: InsiderTransaction[] = [];
-    const fetches = form4Urls.map(async (url) => {
+    const fetches = form4Entries.map(async ({ xmlUrl, viewerUrl }) => {
       try {
-        const r = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(8000) });
+        const r = await fetch(xmlUrl, { headers: HEADERS, signal: AbortSignal.timeout(8000) });
         if (!r.ok) return;
         const xml = await r.text();
-        const txns = parseForm4Xml(xml);
+        const txns = parseForm4Xml(xml, viewerUrl);
         allTransactions.push(...txns);
       } catch { /* skip failed fetches */ }
     });
