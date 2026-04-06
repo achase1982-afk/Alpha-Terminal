@@ -1,0 +1,112 @@
+Got it — sorry for the repeated Python code! I was stuck in Replit/Python mode from your earlier messages. You’re building in React + TypeScript. Switching 100% to that now.
+The core problem you’re seeing (extreme delay + glitchy updates, despite Replit saying “every 1 second”) is not Schwab’s WebSocket. Schwab pushes updates in real time (often 10–50+ times per second on liquid stocks like MRVL — exactly the flickering you saw in the video). Replit’s dev preview / reverse proxy is notorious for buffering, throttling, and adding 500–2000 ms+ latency to long-lived WebSockets. The “1-second fetch” suggestion was them accidentally turning your true push stream into slow polling.
+Best fix for React + TypeScript
+Use the excellent unofficial but very well-maintained TypeScript library made specifically for Schwab/TD Ameritrade streaming in the browser:
+@allensarkisyan/schwab-td-ameritrade-streamer
+It handles login, subscriptions, and real-time events cleanly with zero manual JSON wrangling.
+1. Install it
+npm install @allensarkisyan/schwab-td-ameritrade-streamer
+# or yarn / pnpm
+2. Real-time React hook example (LEVELONE_EQUITIES)
+'use client'; // or remove if not Next.js
+
+import { useEffect, useState, useRef } from 'react';
+import { createTDAmeritradeStreamer, TDAmeritradeStreamer } from '@allensarkisyan/schwab-td-ameritrade-streamer';
+
+interface LevelOneQuote {
+  symbol: string;
+  lastPrice: number;
+  lastPriceTime?: number;
+  bidPrice?: number;
+  askPrice?: number;
+  volume?: number;
+  // add any other fields you need from the stream
+}
+
+export const useSchwabMarketData = (accessToken: string, accountId: string) => {
+  const [quotes, setQuotes] = useState>(new Map());
+  const streamerRef = useRef(null);
+
+  useEffect(() => {
+    let streamer: TDAmeritradeStreamer;
+
+    const initialize = async () => {
+      // Step A: Fetch user principals (REST call you probably already make)
+      const principalsResponse = await fetch('https://api.schwab.com/trader/v1/userPrincipals', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const principals = await principalsResponse.json();
+
+      // Step B: Create the streamer (browser-native WebSocket under the hood)
+      streamer = createTDAmeritradeStreamer({
+        streamerConnectionOptions: {
+          streamerSocketUrl: principals.streamerSocketUrl,
+          token: principals.token,           // streaming token from principals
+          accountId,
+          credential: accessToken,
+        },
+      });
+
+      streamerRef.current = streamer;
+
+      // Subscribe to real-time Level 1 quotes (this gives you the flickering updates)
+      await streamer.subscribeLevelOneEquities(['MRVL']);   // add more symbols as needed
+
+      // Listen for updates (fires instantly on every trade/quote change)
+      streamer.on('LEVELONE_EQUITIES', (data: any) => {
+        setQuotes(prev => {
+          const newMap = new Map(prev);
+          data.forEach((quote: any) => {
+            newMap.set(quote.symbol, {
+              symbol: quote.symbol,
+              lastPrice: quote.lastPrice,
+              bidPrice: quote.bidPrice,
+              askPrice: quote.askPrice,
+              volume: quote.volume,
+              // ...map whatever fields you want
+            });
+          });
+          return newMap;
+        });
+      });
+
+      // Optional: also subscribe to account activity if you need order/position flow
+      // streamer.subscribeAccountActivity();
+    };
+
+    initialize().catch(console.error);
+
+    // Cleanup on unmount
+    return () => {
+      if (streamerRef.current) {
+        streamerRef.current.close();
+      }
+    };
+  }, [accessToken, accountId]);
+
+  return { quotes, streamer: streamerRef.current };
+};
+Usage in a component
+const MarketPanel = ({ accessToken, accountId }: { accessToken: string; accountId: string }) => {
+  const { quotes } = useSchwabMarketData(accessToken, accountId);
+  const mrvl = quotes.get('MRVL');
+
+  return (
+    
+      
+MRVL
+      
+ 107 ? 'green' : 'red') : 'gray' }}>
+        {mrvl?.lastPrice?.toFixed(2) ?? '—'}
+      
+      {/* Bid/Ask will update instantly too */}
+    
+  );
+};
+This will give you the exact same real-time flickering behavior you saw in Alpha Terminal — no timers, no polling.
+Quick tips for Replit
+	•	The preview environment can still feel laggy because of Replit’s proxy. Test by deploying to Vercel/Netlify or running locally (npm run dev).
+	•	For production, strongly consider a tiny backend proxy (Node/Express or Next.js API routes) so your OAuth token never lives in the browser.
+	•	Keep the connection alive with the library’s built-in ping/pong.
+If you paste the relevant part of your current WebSocket code (the connection + subscription + onmessage handler), I can show you the exact changes needed to make it buttery smooth.
+Want me to also show the raw native WebSocket version (no extra library) or add account activity streaming? Just say the word.
