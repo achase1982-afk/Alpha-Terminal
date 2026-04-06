@@ -246,6 +246,17 @@ export function getAccessToken(kind: "market" | "trader"): string | null {
   return store[kind]?.accessToken ?? null;
 }
 
+export function getValidAccessToken(kind: "market" | "trader"): string | null {
+  const ts = store[kind];
+  if (!ts?.accessToken) return null;
+  if (ts.expiresAt && Date.now() >= ts.expiresAt) return null;
+  return ts.accessToken;
+}
+
+export function getBestAccessToken(): string | null {
+  return getValidAccessToken("market") ?? getValidAccessToken("trader") ?? getAccessToken("market") ?? getAccessToken("trader");
+}
+
 export function getRefreshToken(kind: "market" | "trader"): string | null {
   return store[kind]?.refreshToken ?? null;
 }

@@ -1,4 +1,4 @@
-import { getAccessToken } from "./tokenStore.js";
+import { getBestAccessToken } from "./tokenStore.js";
 import { injectExternalQuote, type LiveQuote } from "./schwabStreamer.js";
 import { logger } from "./logger.js";
 
@@ -40,7 +40,7 @@ async function fetchPcRatio(symbol: string, token: string): Promise<PcResult | n
     const port = serverPort ?? Number(process.env["PORT"]) ?? 8080;
     const resp = await fetch(
       `http://localhost:${port}/api/market/pc-ratio?symbol=${encodeURIComponent(symbol)}&accessToken=${encodeURIComponent(token)}`,
-      { signal: AbortSignal.timeout(30_000) }
+      { signal: AbortSignal.timeout(60_000) }
     );
 
     if (!resp.ok) return null;
@@ -59,7 +59,7 @@ async function fetchPcRatio(symbol: string, token: string): Promise<PcResult | n
 }
 
 async function pollPutCallRatios() {
-  const token = getAccessToken("market") ?? getAccessToken("trader");
+  const token = getBestAccessToken();
   if (!token) {
     logger.info("PutCallPoller: no access token yet — skipping");
     return;
@@ -83,8 +83,7 @@ async function pollPutCallRatios() {
 
   for (const r of results) {
     if (r.pcRatioVolume === null) continue;
-
-    const ratio = Math.round(r.pcRatioVolume * 1000) / 1000;
+    const ratio = Math.round(r.pcRatioVolume * 10000) / 10000;
 
     if (r.symbol === "SPY") {
       injectRatio("$PCSPY", ratio);
@@ -107,25 +106,24 @@ async function pollPutCallRatios() {
     totalPut += r.putVolume;
   }
   if (totalCall > 0) {
-    const cpce = Math.round((totalPut / totalCall) * 1000) / 1000;
+    const cpce = Math.round((totalPut / totalCall) * 10000) / 10000;
     injectRatio("$CPCE", cpce);
     injectRatio("$CPC", cpce);
     injected += 2;
-    logger.info({ cpce, totalPut, totalCall }, "PutCallPoller: CPCE/CPC computed from ETF basket");
 
-    const cpci = Math.round(cpce * 1.15 * 1000) / 1000;
+    const cpci = Math.round(cpce * 1.15 * 10000) / 10000;
     injectRatio("$CPCI", cpci);
     injected++;
-  }
 
-  logger.info({ injected }, "PutCallPoller: cycle complete");
+    logger.info({ cpce, totalPut, totalCall, injected }, "PutCallPoller: CPCE/CPC computed from ETF basket (ALL strikes)");
+  }
 }
 
 export function startPutCallPoller(port?: number) {
   if (timer) return;
   if (port) serverPort = port;
   logger.info({ interval: POLL_INTERVAL_MS, underlyings: PC_UNDERLYINGS }, "PutCallPoller: starting");
-  setTimeout(() => pollPutCallRatios(), 10_000);
+  setTimeout(() => pollPutCallRatios(), 15_000);
   timer = setInterval(pollPutCallRatios, POLL_INTERVAL_MS);
 }
 

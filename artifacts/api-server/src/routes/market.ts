@@ -4,7 +4,7 @@ import {
   GetPriceHistoryResponse,
   GetOptionChainResponse,
 } from "@workspace/api-zod";
-import { getAccessToken } from "../lib/tokenStore.js";
+import { getAccessToken, getBestAccessToken } from "../lib/tokenStore.js";
 
 const router: IRouter = Router();
 
@@ -380,49 +380,103 @@ function parseContracts(map: Record<string, unknown>): ParsedContract[] {
   return contracts;
 }
 
-async function fetchFullChain(displaySymbol: string, token: string, log: any): Promise<CachedChain | null> {
-  const isFuturesSymbol = isFutures(displaySymbol);
-  const isIndexSymbol = isIndex(displaySymbol);
-  const chainSymbol = isFuturesSymbol ? displaySymbol : isIndexSymbol ? formatSchwabSymbol(displaySymbol) : displaySymbol;
+const LARGE_CHAIN_SYMBOLS = new Set(["SPY", "QQQ", "AAPL", "TSLA", "AMZN", "NVDA", "META", "MSFT", "GOOG", "GOOGL"]);
 
-  const LARGE_CHAIN_SYMBOLS = new Set(["SPY", "QQQ", "AAPL", "TSLA", "AMZN", "NVDA", "META", "MSFT", "GOOG", "GOOGL"]);
-  const useLimited = LARGE_CHAIN_SYMBOLS.has(displaySymbol.toUpperCase());
-
+async function fetchChainSide(chainSymbol: string, contractType: "CALL" | "PUT", token: string, isFuturesSymbol: boolean, log: any): Promise<{ map: Record<string, unknown>; underlyingPrice?: number } | null> {
   const params = new URLSearchParams({
     symbol: chainSymbol,
-    contractType: "ALL",
-    range: useLimited ? "NTM" : "ALL",
+    contractType,
+    range: "ALL",
   });
-  if (useLimited) params.set("strikeCount", "100");
   if (isFuturesSymbol) params.set("assetClass", "FUTURES");
 
-  const fullChainUrl = `${SCHWAB_API_BASE}/chains?${params.toString()}`;
-  let response = await fetch(fullChainUrl, {
+  const url = `${SCHWAB_API_BASE}/chains?${params.toString()}`;
+  let response = await fetch(url, {
     headers: { "Authorization": `Bearer ${token}` },
-    signal: AbortSignal.timeout(20_000),
+    signal: AbortSignal.timeout(25_000),
   });
 
   if (response.status === 503 || response.status === 502 || response.status === 429) {
-    log.warn({ status: response.status, symbol: chainSymbol }, "Full chain transient error — retrying in 1s");
+    log.warn({ status: response.status, symbol: chainSymbol, contractType }, "Chain side transient error — retrying in 1s");
     await new Promise(r => setTimeout(r, 1000));
-    response = await fetch(fullChainUrl, {
+    response = await fetch(url, {
       headers: { "Authorization": `Bearer ${token}` },
-      signal: AbortSignal.timeout(20_000),
+      signal: AbortSignal.timeout(25_000),
     });
   }
 
   if (!response.ok) {
     const body = await response.text().catch(() => "");
-    log.error({ status: response.status, symbol: chainSymbol, body: body.slice(0, 500) }, "Options chain fetch failed");
+    log.error({ status: response.status, symbol: chainSymbol, contractType, body: body.slice(0, 500) }, "Chain side fetch failed");
     return null;
   }
 
   const json = await response.json() as Record<string, unknown>;
-  const underlyingPrice = json["underlyingPrice"] as number | undefined;
-  const callMap = json["callExpDateMap"] as Record<string, unknown> ?? {};
-  const putMap = json["putExpDateMap"] as Record<string, unknown> ?? {};
-  const calls = parseContracts(callMap);
-  const puts = parseContracts(putMap);
+  const mapKey = contractType === "CALL" ? "callExpDateMap" : "putExpDateMap";
+  return {
+    map: json[mapKey] as Record<string, unknown> ?? {},
+    underlyingPrice: json["underlyingPrice"] as number | undefined,
+  };
+}
+
+async function fetchFullChain(displaySymbol: string, token: string, log: any): Promise<CachedChain | null> {
+  const isFuturesSymbol = isFutures(displaySymbol);
+  const isIndexSymbol = isIndex(displaySymbol);
+  const chainSymbol = isFuturesSymbol ? displaySymbol : isIndexSymbol ? formatSchwabSymbol(displaySymbol) : displaySymbol;
+  const useSplit = LARGE_CHAIN_SYMBOLS.has(displaySymbol.toUpperCase());
+
+  let calls: ReturnType<typeof parseContracts>;
+  let puts: ReturnType<typeof parseContracts>;
+  let underlyingPrice: number | undefined;
+
+  if (useSplit) {
+    log.info({ symbol: displaySymbol }, "Fetching chain in split mode (CALL + PUT separately)");
+    const [callResult, putResult] = await Promise.all([
+      fetchChainSide(chainSymbol, "CALL", token, isFuturesSymbol, log),
+      fetchChainSide(chainSymbol, "PUT", token, isFuturesSymbol, log),
+    ]);
+
+    if (!callResult && !putResult) return null;
+
+    calls = parseContracts(callResult?.map ?? {});
+    puts = parseContracts(putResult?.map ?? {});
+    underlyingPrice = callResult?.underlyingPrice ?? putResult?.underlyingPrice;
+  } else {
+    const params = new URLSearchParams({
+      symbol: chainSymbol,
+      contractType: "ALL",
+      range: "ALL",
+    });
+    if (isFuturesSymbol) params.set("assetClass", "FUTURES");
+
+    const fullChainUrl = `${SCHWAB_API_BASE}/chains?${params.toString()}`;
+    let response = await fetch(fullChainUrl, {
+      headers: { "Authorization": `Bearer ${token}` },
+      signal: AbortSignal.timeout(20_000),
+    });
+
+    if (response.status === 503 || response.status === 502 || response.status === 429) {
+      log.warn({ status: response.status, symbol: chainSymbol }, "Full chain transient error — retrying in 1s");
+      await new Promise(r => setTimeout(r, 1000));
+      response = await fetch(fullChainUrl, {
+        headers: { "Authorization": `Bearer ${token}` },
+        signal: AbortSignal.timeout(20_000),
+      });
+    }
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      log.error({ status: response.status, symbol: chainSymbol, body: body.slice(0, 500) }, "Options chain fetch failed");
+      return null;
+    }
+
+    const json = await response.json() as Record<string, unknown>;
+    underlyingPrice = json["underlyingPrice"] as number | undefined;
+    const callMap = json["callExpDateMap"] as Record<string, unknown> ?? {};
+    const putMap = json["putExpDateMap"] as Record<string, unknown> ?? {};
+    calls = parseContracts(callMap);
+    puts = parseContracts(putMap);
+  }
 
   const cached: CachedChain = {
     symbol: displaySymbol,
@@ -436,7 +490,7 @@ async function fetchFullChain(displaySymbol: string, token: string, log: any): P
 
   chainCache.set(displaySymbol, cached);
   evictStaleChains();
-  log.info({ symbol: displaySymbol, totalCalls: calls.length, totalPuts: puts.length, cacheSize: chainCache.size, limited: useLimited }, "Options chain cached");
+  log.info({ symbol: displaySymbol, totalCalls: calls.length, totalPuts: puts.length, cacheSize: chainCache.size, split: useSplit }, "Options chain cached");
   return cached;
 }
 
@@ -529,7 +583,7 @@ router.get("/options", async (req, res) => {
 
 router.get("/pc-ratio", async (req, res) => {
   const symbol = req.query["symbol"] as string;
-  const accessToken = (req.query["accessToken"] as string) || getAccessToken("market");
+  const accessToken = (req.query["accessToken"] as string) || getBestAccessToken();
 
   if (!symbol || !accessToken) {
     return res.json({ symbol: "", pcRatio: null, error: "symbol and accessToken are required" });
