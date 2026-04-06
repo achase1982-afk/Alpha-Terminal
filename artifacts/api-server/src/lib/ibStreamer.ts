@@ -126,7 +126,7 @@ function getFrontMonth(symbol: string): string {
   const month = now.getMonth() + 1;
   const day = now.getDate();
 
-  if (symbol === "CL" || symbol === "BZ" || symbol === "HG") {
+  if (symbol === "CL" || symbol === "BZ" || symbol === "COIL" || symbol === "HG") {
     let m = month + 1;
     let y = year;
     if (m > 12) { m = 1; y++; }
@@ -174,10 +174,13 @@ function buildContract(def: IBSymbolDef): Contract {
 }
 
 function emitQuote(def: IBSymbolDef, state: IBQuoteState) {
+  // Breadth indices (ADVN, DECN, ADD, UVOL, DVOL) report their value as Bid price,
+  // not Last. Use bid (then ask) as the effective "last" when no last tick arrived.
+  const effectiveLast = state.last ?? state.bid ?? state.ask;
   const quote: LiveQuote = {
     symbol: def.displaySymbol,
-    last: state.last,
-    extendedLast: state.last,
+    last: effectiveLast,
+    extendedLast: effectiveLast,
     bid: state.bid,
     ask: state.ask,
     bidSize: state.bidSize,
@@ -214,8 +217,8 @@ const NEWS_TICK_SYMBOLS = new Set(["SPY", "QQQ"]);
 function subscribeAll() {
   if (!ib) return;
   try {
-    ib.reqMarketDataType(3);
-    logger.info("IB: requested DELAYED market data type (fallback from live)");
+    ib.reqMarketDataType(1);
+    logger.info("IB: requested LIVE market data type (type 1)");
   } catch (err) {
     logger.warn({ err }, "IB: failed to set market data type");
   }

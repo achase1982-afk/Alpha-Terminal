@@ -57,22 +57,22 @@ export const ALL_BREADTH_SYMBOLS: IBSymbolDef[] = [
   // ═══════════════════════════════════════════════════════════
   { reqId: 5001, symbol: "$TICK",   ibSymbol: "TICK-NYSE",  secType: "IND", exchange: "NYSE",    displaySymbol: "$TICK",   category: "BREADTH", description: "NYSE Tick Index — net uptick vs downtick stocks",                enabled: true },
   { reqId: 5002, symbol: "$TRIN",   ibSymbol: "TRIN-NYSE",  secType: "IND", exchange: "NYSE",    displaySymbol: "$TRIN",   category: "BREADTH", description: "NYSE Arms Index (TRIN) — advancing/declining volume ratio",     enabled: true },
-  { reqId: 5003, symbol: "$ADD",    ibSymbol: "ADD-NYSE",   secType: "IND", exchange: "NYSE",    displaySymbol: "$ADD",    category: "BREADTH", description: "NYSE Advance/Decline — RTH only",                               enabled: true },
-  { reqId: 5004, symbol: "$ADVN",   ibSymbol: "ADVN-NYSE",  secType: "IND", exchange: "NYSE",    displaySymbol: "$ADVN",   category: "BREADTH", description: "NYSE Advancing Issues — RTH only",                             enabled: true },
-  { reqId: 5006, symbol: "$DECN",   ibSymbol: "DECN-NYSE",  secType: "IND", exchange: "NYSE",    displaySymbol: "$DECN",   category: "BREADTH", description: "NYSE Declining Issues — RTH only",                             enabled: true },
-  { reqId: 5040, symbol: "$UVOL",   ibSymbol: "UVOL-NYSE",  secType: "IND", exchange: "NYSE",    displaySymbol: "$UVOL",   category: "BREADTH", description: "NYSE Up Volume — RTH only",                                    enabled: true },
-  { reqId: 5041, symbol: "$DVOL",   ibSymbol: "DVOL-NYSE",  secType: "IND", exchange: "NYSE",    displaySymbol: "$DVOL",   category: "BREADTH", description: "NYSE Down Volume — RTH only",                                  enabled: true },
+  { reqId: 5003, symbol: "$ADD",    ibSymbol: "ADD",        secType: "IND", exchange: "NYSE",    displaySymbol: "$ADD",    category: "BREADTH", description: "NYSE Advance/Decline — RTH only",                               enabled: true },
+  { reqId: 5004, symbol: "$ADVN",   ibSymbol: "ADVN",       secType: "IND", exchange: "NYSE",    displaySymbol: "$ADVN",   category: "BREADTH", description: "NYSE Advancing Issues — RTH only",                             enabled: true },
+  { reqId: 5006, symbol: "$DECN",   ibSymbol: "DECN",       secType: "IND", exchange: "NYSE",    displaySymbol: "$DECN",   category: "BREADTH", description: "NYSE Declining Issues — RTH only",                             enabled: true },
+  { reqId: 5040, symbol: "$UVOL",   ibSymbol: "UVOL",       secType: "IND", exchange: "NYSE",    displaySymbol: "$UVOL",   category: "BREADTH", description: "NYSE Up Volume — RTH only",                                    enabled: true },
+  { reqId: 5041, symbol: "$DVOL",   ibSymbol: "DVOL",       secType: "IND", exchange: "NYSE",    displaySymbol: "$DVOL",   category: "BREADTH", description: "NYSE Down Volume — RTH only",                                  enabled: true },
 
   // ═══════════════════════════════════════════════════════════
   // NASDAQ BREADTH (7)
   // ═══════════════════════════════════════════════════════════
   { reqId: 5005, symbol: "$TICKI",  ibSymbol: "TICK-NASD",  secType: "IND", exchange: "NASDAQ",  displaySymbol: "$TICKI",  category: "BREADTH", description: "NASDAQ Tick Index — net uptick vs downtick stocks",             enabled: true },
   { reqId: 5007, symbol: "$TRINQ",  ibSymbol: "TRIN-NASD",  secType: "IND", exchange: "NASDAQ",  displaySymbol: "$TRINQ",  category: "BREADTH", description: "NASDAQ Arms Index (TRIN) — advancing/declining volume ratio",  enabled: true },
-  { reqId: 5042, symbol: "$ADDQ",   ibSymbol: "ADD-NASD",   secType: "IND", exchange: "NASDAQ",  displaySymbol: "$ADDQ",   category: "BREADTH", description: "NASDAQ Advance/Decline — RTH only",                            enabled: true },
-  { reqId: 5043, symbol: "$ADVNQ",  ibSymbol: "ADVN-NASD",  secType: "IND", exchange: "NASDAQ",  displaySymbol: "$ADVNQ",  category: "BREADTH", description: "NASDAQ Advancing Issues — RTH only",                           enabled: true },
-  { reqId: 5044, symbol: "$DECNQ",  ibSymbol: "DECN-NASD",  secType: "IND", exchange: "NASDAQ",  displaySymbol: "$DECNQ",  category: "BREADTH", description: "NASDAQ Declining Issues — RTH only",                           enabled: true },
-  { reqId: 5045, symbol: "$UVOLQ",  ibSymbol: "UVOL-NASD",  secType: "IND", exchange: "NASDAQ",  displaySymbol: "$UVOLQ",  category: "BREADTH", description: "NASDAQ Up Volume — RTH only",                                  enabled: true },
-  { reqId: 5046, symbol: "$DVOLQ",  ibSymbol: "DVOL-NASD",  secType: "IND", exchange: "NASDAQ",  displaySymbol: "$DVOLQ",  category: "BREADTH", description: "NASDAQ Down Volume — RTH only",                                enabled: true },
+  { reqId: 5042, symbol: "$ADDQ",   ibSymbol: "ADD",        secType: "IND", exchange: "NASDAQ",  displaySymbol: "$ADDQ",   category: "BREADTH", description: "NASDAQ Advance/Decline — RTH only",                            enabled: true },
+  { reqId: 5043, symbol: "$ADVNQ",  ibSymbol: "ADVN",       secType: "IND", exchange: "NASDAQ",  displaySymbol: "$ADVNQ",  category: "BREADTH", description: "NASDAQ Advancing Issues — RTH only",                           enabled: true },
+  { reqId: 5044, symbol: "$DECNQ",  ibSymbol: "DECN",       secType: "IND", exchange: "NASDAQ",  displaySymbol: "$DECNQ",  category: "BREADTH", description: "NASDAQ Declining Issues — RTH only",                           enabled: true },
+  { reqId: 5045, symbol: "$UVOLQ",  ibSymbol: "UVOL",       secType: "IND", exchange: "NASDAQ",  displaySymbol: "$UVOLQ",  category: "BREADTH", description: "NASDAQ Up Volume — RTH only",                                  enabled: true },
+  { reqId: 5046, symbol: "$DVOLQ",  ibSymbol: "DVOL",       secType: "IND", exchange: "NASDAQ",  displaySymbol: "$DVOLQ",  category: "BREADTH", description: "NASDAQ Down Volume — RTH only",                                enabled: true },
 
   // ═══════════════════════════════════════════════════════════
   // RISK APPETITE (4)
@@ -87,7 +87,7 @@ export const ALL_BREADTH_SYMBOLS: IBSymbolDef[] = [
   // ═══════════════════════════════════════════════════════════
   { reqId: 5024, symbol: "/GC",     ibSymbol: "GC",         secType: "FUT", exchange: "COMEX",   displaySymbol: "/GC",     category: "COMMODITY", description: "Gold Future",                                                  enabled: true },
   { reqId: 5023, symbol: "/CL",     ibSymbol: "CL",         secType: "FUT", exchange: "NYMEX",   displaySymbol: "/CL",     category: "COMMODITY", description: "WTI Crude Oil Future",                                        enabled: true },
-  { reqId: 5121, symbol: "/BZ",     ibSymbol: "BZ",         secType: "FUT", exchange: "NYMEX",   displaySymbol: "/BZ",     category: "COMMODITY", description: "Brent Crude Oil Future — may need IPE exchange or COIL symbol", enabled: true },
+  { reqId: 5121, symbol: "/BZ",     ibSymbol: "COIL",       secType: "FUT", exchange: "IPE",     displaySymbol: "/BZ",     category: "COMMODITY", description: "Brent Crude Oil Future (ICE Futures Europe — symbol COIL at IPE)", enabled: true },
   { reqId: 5022, symbol: "/DX",     ibSymbol: "DX",         secType: "FUT", exchange: "NYBOT",   displaySymbol: "/DX",     category: "CURRENCY", description: "US Dollar Index Future",                                       enabled: true },
 
   // ═══════════════════════════════════════════════════════════
@@ -119,7 +119,7 @@ export const ALL_BREADTH_SYMBOLS: IBSymbolDef[] = [
   { reqId: 5061, symbol: "$VXN",    ibSymbol: "VXN",        secType: "IND", exchange: "CBOE",    displaySymbol: "$VXN",    category: "VOLATILITY", description: "CBOE NASDAQ-100 VIX — tech-heavy implied volatility",          enabled: true },
   { reqId: 5062, symbol: "$OVX",    ibSymbol: "OVX",        secType: "IND", exchange: "CBOE",    displaySymbol: "$OVX",    category: "VOLATILITY", description: "CBOE Crude Oil VIX — oil implied volatility",                  enabled: true },
   { reqId: 5063, symbol: "$GVZ",    ibSymbol: "GVZ",        secType: "IND", exchange: "CBOE",    displaySymbol: "$GVZ",    category: "VOLATILITY", description: "CBOE Gold VIX — gold implied volatility",                      enabled: true },
-  { reqId: 5064, symbol: "$TYVIX",  ibSymbol: "TYVIX",      secType: "IND", exchange: "CBOE",    displaySymbol: "$TYVIX",  category: "VOLATILITY", description: "CBOE Treasury VIX — 10Y Treasury implied volatility",          enabled: true },
+  { reqId: 5064, symbol: "$TYVIX",  ibSymbol: "TYVIX",      secType: "IND", exchange: "CBOE",    displaySymbol: "$TYVIX",  category: "VOLATILITY", description: "CBOE Treasury VIX — DISCONTINUED by CBOE in 2020",            enabled: false },
   { reqId: 5065, symbol: "$MOVE",   ibSymbol: "MOVE",       secType: "IND", exchange: "CBOE",    displaySymbol: "$MOVE",   category: "VOLATILITY", description: "ICE BofA MOVE Index — bond market volatility",                         enabled: true },
   { reqId: 5071, symbol: "/MES",    ibSymbol: "MES",        secType: "FUT", exchange: "CME",     displaySymbol: "/MES",    category: "FUTURES", description: "Micro E-mini S&P 500 Future",                                   enabled: true },
   { reqId: 5072, symbol: "/MNQ",    ibSymbol: "MNQ",        secType: "FUT", exchange: "CME",     displaySymbol: "/MNQ",    category: "FUTURES", description: "Micro E-mini NASDAQ-100 Future",                                enabled: true },
