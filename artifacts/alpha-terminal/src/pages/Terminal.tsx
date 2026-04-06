@@ -368,8 +368,8 @@ export default function TerminalPage() {
         <div className="shrink-0 bg-background z-40">
           <div className="px-3 sm:px-4 lg:px-5 pt-1 pb-1">
             <div className="flex w-full p-1">
-              {(["pulse", "strategist"] as AiSubTab[]).map((tab) => {
-                const label = tab === "pulse" ? "MARKET PULSE" : "OPTIONS STRATEGIST";
+              {(["pulse", "strategist", "scanner"] as AiSubTab[]).map((tab) => {
+                const label = tab === "pulse" ? "MARKET PULSE" : tab === "strategist" ? "STRATEGIST" : "SCANNER";
                 return (
                   <button
                     key={tab}
@@ -438,11 +438,13 @@ export default function TerminalPage() {
               </>
             )}
 
-            <div style={{ display: activeBottom === "scanner" ? "block" : "none" }}>
-              <MarketScanner subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToSymbol={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} />
-            </div>
+            {activeBottom === "ai" && aiSubTab === "scanner" && (
+              <div style={{ display: "block" }}>
+                <MarketScanner subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToSymbol={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} />
+              </div>
+            )}
 
-            {activeBottom === "ai" && (
+            {activeBottom === "ai" && aiSubTab !== "scanner" && (
               <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} pulseAutoGen={pulseAutoGen} onPulseAutoGenConsumed={() => setPulseAutoGen(false)} />
             )}
 
@@ -486,10 +488,10 @@ export default function TerminalPage() {
               </>
             ) : (
               <main ref={scrollRef} onScroll={handleScroll} className="flex-1 app-content pb-4 overflow-y-auto">
-                <div style={{ display: activeBottom === "scanner" ? "block" : "none" }}>
+                {activeBottom === "ai" && aiSubTab === "scanner" && (
                   <MarketScanner subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToSymbol={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} />
-                </div>
-                {activeBottom === "ai" && (
+                )}
+                {activeBottom === "ai" && aiSubTab !== "scanner" && (
                   <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} pulseAutoGen={pulseAutoGen} onPulseAutoGenConsumed={() => setPulseAutoGen(false)} />
                 )}
                 {activeBottom === "portfolio" && (
@@ -526,11 +528,11 @@ export default function TerminalPage() {
               </>
             )}
 
-            <div style={{ display: activeBottom === "scanner" ? "block" : "none" }}>
+            {activeBottom === "ai" && aiSubTab === "scanner" && (
               <MarketScanner subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToSymbol={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} />
-            </div>
+            )}
 
-            {activeBottom === "ai" && (
+            {activeBottom === "ai" && aiSubTab !== "scanner" && (
               <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} pulseAutoGen={pulseAutoGen} onPulseAutoGenConsumed={() => setPulseAutoGen(false)} />
             )}
 
@@ -555,8 +557,8 @@ export default function TerminalPage() {
 
       {isWide && (
         <nav className="hidden md:flex shrink-0 h-9 bg-[#080808] border-t border-zinc-800/40 items-center justify-center gap-0 px-2 z-50">
-          {(["scanner", "markets", "portfolio", "ai", "search"] as BottomTab[]).map((tab) => {
-            const labels: Record<string, string> = { scanner: "Scanner", markets: "Markets", portfolio: "Portfolio", ai: "AI", search: "Search" };
+          {(["portfolio", "markets", "ai", "search"] as BottomTab[]).map((tab) => {
+            const labels: Record<string, string> = { portfolio: "Portfolio", markets: "Markets", ai: "AI", search: "Search" };
             const isActive = activeBottom === tab || (tab === "search" && searchOpen);
             return (
               <button

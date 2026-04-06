@@ -1,24 +1,24 @@
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import {
   BrainCircuit,
-  Radar,
   Activity,
   Search,
   ListOrdered,
+  Briefcase,
 } from "lucide-react";
 
 type BottomTab = "scanner" | "markets" | "ai" | "search" | "portfolio" | "watchlist";
 
 const TAB_DEFS: Record<BottomTab, { label: string; icon: (cls: string) => React.ReactNode; isAi?: boolean }> = {
-  scanner:   { label: "SCANNER",   icon: (c) => <Radar className={c} /> },
+  scanner:   { label: "SCANNER",   icon: (c) => <BrainCircuit className={c} /> },
   markets:   { label: "MARKETS",   icon: (c) => <Activity className={c} /> },
   ai:        { label: "AI",        icon: (c) => <BrainCircuit className={c} />, isAi: true },
   search:    { label: "SEARCH",    icon: (c) => <Search className={c} /> },
-  portfolio: { label: "PORTFOLIO", icon: (c) => <Search className={c} /> },
+  portfolio: { label: "PORTFOLIO", icon: (c) => <Briefcase className={c} /> },
   watchlist: { label: "WATCHLIST", icon: (c) => <ListOrdered className={c} /> },
 };
 
-const DEFAULT_ORDER: BottomTab[] = ["scanner", "markets", "ai", "search", "watchlist"];
+const DEFAULT_ORDER: BottomTab[] = ["portfolio", "markets", "ai", "search", "watchlist"];
 const STORAGE_KEY = "alphaTerminalBottomNavOrder";
 const LONG_PRESS_MS = 450;
 
