@@ -600,7 +600,7 @@ const PULSE_SYMBOLS: PulseSymbol[] = [
   { display: "$RVX",    api: "$RVX",    category: "vol",       description: "CBOE Russell 2000 VIX — small-cap implied vol" },
   { display: "$OVX",    api: "$OVX",    category: "vol",       description: "CBOE Oil VIX — crude oil implied vol" },
   { display: "$GVZ",    api: "$GVZ",    category: "vol",       description: "CBOE Gold VIX — gold implied vol" },
-  { display: "$TYVIX",  api: "$TYVIX",  category: "vol",       description: "CBOE Treasury VIX — 10Y note implied vol" },
+  { display: "$SRVIX",  api: "$SRVIX",  category: "vol",       description: "CBOE SOFR Rate VIX — short-rate implied vol (replaces discontinued $TYVIX)" },
   { display: "/VIX",    api: "/VIX",    category: "vol",       description: "VIX Futures — front-month VIX contract" },
 
   { display: "$CPC",    api: "$CPC",    category: "vol",       description: "CBOE Total Put/Call Ratio" },
@@ -660,7 +660,7 @@ const INDEX_TO_SCHWAB: Record<string, string> = {
   "VIX": "$VIX", "VVIX": "$VVIX", "SPX": "$SPX", "NDX": "$NDX",
   "RUT": "$RUT", "DJI": "$DJI", "DJIA": "$DJI", "COMP": "$COMP",
   "DXY": "$DXY", "TNX": "$TNX", "TYX": "$TYX", "IRX": "$IRX",
-  "VXN": "$VXN", "RVX": "$RVX", "OVX": "$OVX", "GVZ": "$GVZ", "TYVIX": "$TYVIX",
+  "VXN": "$VXN", "RVX": "$RVX", "OVX": "$OVX", "GVZ": "$GVZ", "SRVIX": "$SRVIX",
   "TICK": "$TICK", "ADD": "$ADD", "TRIN": "$TRIN",
   "CPC": "$CPC", "CPCE": "$CPCE", "CPCI": "$CPCI",
   "PCSPY": "$PCSPY", "PCQQQ": "$PCQQQ", "PCIWM": "$PCIWM",
@@ -887,8 +887,8 @@ function extractMarketIndicators(dataMap: Map<string, Record<string, unknown>>):
     ovxChange: pctChange('$OVX'),
     gvz: lastOrMark('$GVZ'),
     gvzChange: pctChange('$GVZ'),
-    tyvix: lastOrMark('$TYVIX'),
-    tyvixChange: pctChange('$TYVIX'),
+    srvix: lastOrMark('$SRVIX'),
+    srvixChange: pctChange('$SRVIX'),
     move: null,
     vixFut: lastOrMark('/VIX'),
     vixFutChange: pctChange('/VIX'),
@@ -957,8 +957,8 @@ function extractMarketIndicators(dataMap: Map<string, Record<string, unknown>>):
     bzChange: pctChange('/BZ'),
     hg: lastOrMark('/HG'),
     hgChange: pctChange('/HG'),
-    dx: lastOrMark('/DX'),
-    dxChange: pctChange('/DX'),
+    dx: lastOrMark('/DX') ?? lastOrMark('$DXY'),
+    dxChange: pctChange('/DX') ?? pctChange('$DXY'),
     sixE: lastOrMark('/6E'),
     sixEChange: pctChange('/6E'),
     sixJ: lastOrMark('/6J'),
@@ -2657,11 +2657,22 @@ router.get("/market-pulse/data-check", (_req, res) => {
   const now = Date.now();
   const rows: Record<string, unknown>[] = [];
 
+  // Fallback aliases: if the primary symbol has no data, check these alternates
+  const FALLBACK_ALIAS: Record<string, string> = {
+    "/DX": "$DXY",
+  };
+  const snapshot = getSnapshot();
+
   for (const sym of PULSE_SYMBOLS) {
-    const d = dataMap.get(sym.display);
+    let d = dataMap.get(sym.display);
+    let cached = snapshot.find(q => q.symbol === sym.api || q.symbol === sym.display);
+
+    // Try fallback alias if primary has no data
+    const alias = FALLBACK_ALIAS[sym.display];
+    if (!d && alias) d = dataMap.get(alias);
+    if (!cached && alias) cached = snapshot.find(q => q.symbol === alias);
+
     const last = d ? (d["lastPrice"] ?? d["mark"] ?? d["close"] ?? null) : null;
-    const snapshot = getSnapshot();
-    const cached = snapshot.find(q => q.symbol === sym.api || q.symbol === sym.display);
     const ageMs = cached ? now - cached.ts : null;
     rows.push({
       symbol: sym.display,
@@ -2671,6 +2682,7 @@ router.get("/market-pulse/data-check", (_req, res) => {
       change: d?.["netChange"] ?? null,
       hasData: last !== null,
       ageSec: ageMs !== null ? Math.round(ageMs / 1000) : null,
+      ...(alias && { source: last !== null ? (dataMap.get(sym.display) ? sym.display : alias) : undefined }),
     });
   }
 

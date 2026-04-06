@@ -41,8 +41,8 @@ export interface MarketIndicators {
   ovxChange: number | null;
   gvz: number | null;
   gvzChange: number | null;
-  tyvix: number | null;
-  tyvixChange: number | null;
+  srvix: number | null;
+  srvixChange: number | null;
   move: number | null;
   vixFut: number | null;
   vixFutChange: number | null;
@@ -196,7 +196,7 @@ export interface EngineOutput {
     missingCount: number;
     missingClusters: string[];
     staleClusters: string[];
-    experimentalAvailable: { tyvix: boolean; move: boolean };
+    experimentalAvailable: { srvix: boolean; move: boolean };
   };
   weights: Record<ClusterName, number>;
 }
@@ -629,9 +629,9 @@ function scoreVolLevel(data: MarketIndicators): ClusterResult {
     else if (data.move < 80) { score += 0.25; rules.push(`$MOVE ${data.move.toFixed(2)} < 80: +0.25`); }
     points.push(`$MOVE ${data.move.toFixed(2)}`);
   }
-  if (data.tyvix !== null) {
-    if (data.tyvix >= 10) { score -= 0.25; rules.push(`$TYVIX ${data.tyvix.toFixed(2)} >= 10: -0.25`); }
-    points.push(`$TYVIX ${data.tyvix.toFixed(2)}`);
+  if (data.srvix !== null) {
+    if (data.srvix >= 10) { score -= 0.25; rules.push(`$SRVIX ${data.srvix.toFixed(2)} >= 10: -0.25`); }
+    points.push(`$SRVIX ${data.srvix.toFixed(2)}`);
   }
 
   const raw = score;
@@ -1595,7 +1595,7 @@ export function runMarketPulseEngine(
       missingClusters,
       staleClusters,
       experimentalAvailable: {
-        tyvix: data.tyvix !== null,
+        srvix: data.srvix !== null,
         move: data.move !== null,
       },
     },
@@ -1625,7 +1625,7 @@ export function verifyEngineScoring(): { passed: boolean; output: string } {
     rvx: null, rvxChange: null,
     ovx: null, ovxChange: null,
     gvz: null, gvzChange: null,
-    tyvix: null, tyvixChange: null,
+    srvix: null, srvixChange: null,
     move: null,
     vixFut: null, vixFutChange: null,
     tnx: 43.5, tnxChange: 0.19,

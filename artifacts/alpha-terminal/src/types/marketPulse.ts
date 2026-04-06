@@ -89,7 +89,7 @@ export interface DataQualitySummary {
   missingCount: number;
   missingClusters: string[];
   staleClusters: string[];
-  experimentalAvailable: { tyvix: boolean; move: boolean };
+  experimentalAvailable: { srvix: boolean; move: boolean };
 }
 
 export interface RawIndicators {
@@ -112,8 +112,8 @@ export interface RawIndicators {
   ovxChange: number | null;
   gvz: number | null;
   gvzChange: number | null;
-  tyvix: number | null;
-  tyvixChange: number | null;
+  srvix: number | null;
+  srvixChange: number | null;
   move: number | null;
   vixFut: number | null;
   vixFutChange: number | null;
@@ -302,7 +302,7 @@ export const ALL_PULSE_INDICATORS: PulseIndicator[] = [
   { symbol: "$RVX",    label: "RVX (Russell VIX)",             category: "volatility" },
   { symbol: "$OVX",    label: "OVX (Oil VIX)",                 category: "volatility" },
   { symbol: "$GVZ",    label: "GVZ (Gold VIX)",                category: "volatility" },
-  { symbol: "$TYVIX",  label: "TYVIX (Treasury VIX)",          category: "volatility" },
+  { symbol: "$SRVIX",  label: "SRVIX (SOFR Rate VIX)",          category: "volatility" },
   { symbol: "/VIX",    label: "/VIX (VIX Futures)",            category: "volatility" },
 
   { symbol: "$TICK",   label: "TICK (NYSE Tick)",               category: "breadth" },

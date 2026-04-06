@@ -173,7 +173,7 @@ const INDEX_MAP: Record<string, string> = {
   PCSPY: "$PCSPY", "$PCSPY": "$PCSPY",
   PCQQQ: "$PCQQQ", "$PCQQQ": "$PCQQQ",
   PCIWM: "$PCIWM", "$PCIWM": "$PCIWM",
-  TYVIX: "$TYVIX", "$TYVIX": "$TYVIX",
+  SRVIX: "$SRVIX", "$SRVIX": "$SRVIX",
   TNX: "$TNX", "$TNX": "$TNX",
   TYX: "$TYX", "$TYX": "$TYX",
   VXN: "$VXN", "$VXN": "$VXN",

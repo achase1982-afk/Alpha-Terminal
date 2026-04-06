@@ -45,7 +45,7 @@ function buildIndicatorRows(raw: RawIndicators): IndicatorRow[] {
     { symbol: "$RVX", label: "Russell Vol", value: raw.rvx, change: raw.rvxChange, cluster: "volLevel" },
     { symbol: "$OVX", label: "Oil Vol", value: raw.ovx, change: raw.ovxChange, cluster: "volLevel" },
     { symbol: "$GVZ", label: "Gold Vol", value: raw.gvz, change: raw.gvzChange, cluster: "volLevel" },
-    { symbol: "$TYVIX", label: "Tsy Vol", value: raw.tyvix, change: raw.tyvixChange, cluster: "volLevel" },
+    { symbol: "$SRVIX", label: "SOFR Vol", value: raw.srvix, change: raw.srvixChange, cluster: "volLevel" },
     { symbol: "$VIX9D", label: "9-Day VIX", value: raw.vix9d, change: raw.vix9dChange, cluster: "volTerm" },
     { symbol: "$VIX3M", label: "3-Month VIX", value: raw.vix3m, change: raw.vix3mChange, cluster: "volTerm" },
     { symbol: "$SKEW", label: "Tail Risk", value: raw.skew, change: null, cluster: "volTerm" },

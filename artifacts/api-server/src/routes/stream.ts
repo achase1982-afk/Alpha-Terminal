@@ -39,7 +39,7 @@ router.post("/start", async (req, res) => {
 
   const pulseSymbols = [
     "$VIX", "$VVIX", "$VIX9D", "$VIX3M", "$SKEW",
-    "$CPC", "$CPCE", "$CPCI", "$PCSPY", "$PCQQQ", "$PCIWM", "$TYVIX",
+    "$CPC", "$CPCE", "$CPCI", "$PCSPY", "$PCQQQ", "$PCIWM", "$SRVIX",
     "$TICK", "$ADD", "$TRIN", "$ADVN", "$DECN",
     "$TNX", "$TYX", "$DXY",
     "HYG", "LQD", "IEF",
