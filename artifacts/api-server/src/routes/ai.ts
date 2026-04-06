@@ -13,7 +13,7 @@ import {
   GetAvailableModelsResponse,
 } from "@workspace/api-zod";
 import { computeIndicators, formatTAContext, isDataStale, type Candle } from "../lib/ta.js";
-import { runMarketPulseEngine, formatClusterDebugLine, verifyEngineScoring, type MarketIndicators, type BiasLabel } from "../lib/marketPulseEngine.js";
+import { runMarketPulseEngine, formatClusterDebugLine, verifyEngineScoring, type MarketIndicators, type BiasLabel, type SessionType } from "../lib/marketPulseEngine.js";
 import { getSnapshot, type LiveQuote } from "../lib/schwabStreamer.js";
 import { selectStrategies, selectStrategiesByRegime, classifyRegime, checkOverrideConflict, classifyTicker, computeBeta, applyBetaToProfile, computeExpectedMove, computeIVR, STRATEGIST_SYSTEM_PROMPT, type OptionContract, type StrategyPayload, type RegimeClassification, type TickerProfile, type DailyCandle, type ConvictionParams } from "../lib/optionsStrategist.js";
 import { runPreTradeChecks, type PreTradeInput, type PreTradeResult } from "../lib/preTradeRiskEngine.js";
@@ -586,50 +586,91 @@ interface PulseSymbol {
 }
 
 const PULSE_SYMBOLS: PulseSymbol[] = [
-  { display: "SPY",    api: "SPY",    category: "equity",    description: "S&P 500 ETF — broad market barometer" },
-  { display: "QQQ",    api: "QQQ",    category: "equity",    description: "Nasdaq-100 ETF — tech/growth leadership" },
-  { display: "IWM",    api: "IWM",    category: "equity",    description: "Russell 2000 ETF — small-cap risk appetite" },
-  { display: "$VIX",   api: "$VIX",   category: "vol",       description: "CBOE VIX — S&P implied vol (30-day), fear gauge" },
-  { display: "$VVIX",  api: "$VVIX",  category: "vol",       description: "VVIX — vol-of-vol, tail risk premium indicator" },
-  { display: "$VIX9D", api: "$VIX9D", category: "vol",       description: "CBOE 9-Day VIX — near-term implied vol" },
-  { display: "$VIX3M", api: "$VIX3M", category: "vol",       description: "CBOE 3-Month VIX — medium-term implied vol" },
-  { display: "$SKEW",  api: "$SKEW",  category: "vol",       description: "CBOE SKEW — tail risk / crash hedging indicator" },
-  { display: "$CPC",   api: "$CPC",   category: "vol",       description: "CBOE Put/Call Ratio — >1.0 fear, <0.7 complacency" },
-  { display: "$TICK",  api: "$TICK",  category: "breadth",   description: "NYSE TICK — stocks upticking minus downticking (intraday flow)" },
-  { display: "$ADD",   api: "$ADD",   category: "breadth",   description: "NYSE A/D Line — advancers minus decliners (breadth)" },
-  { display: "$TRIN",  api: "$TRIN",  category: "breadth",   description: "TRIN/Arms Index — <1.0 bullish, >1.0 bearish distribution" },
-  { display: "$ADVN",  api: "$ADVN",  category: "breadth",   description: "NYSE Advancing Issues — breadth count" },
-  { display: "$DECN",  api: "$DECN",  category: "breadth",   description: "NYSE Declining Issues — breadth count" },
-  { display: "$TNX",   api: "$TNX",   category: "rates",     description: "10-Year Treasury Yield Index" },
-  { display: "$TYX",   api: "$TYX",   category: "rates",     description: "30-Year Treasury Yield Index" },
-  { display: "/ZB",    api: "/ZB",    category: "rates",     description: "30Y Treasury Bond Futures" },
-  { display: "/ZT",    api: "/ZT",    category: "rates",     description: "2Y Treasury Note Futures" },
-  { display: "HYG",    api: "HYG",    category: "credit",    description: "iShares High Yield Corporate Bond ETF — credit risk appetite" },
-  { display: "LQD",    api: "LQD",    category: "credit",    description: "iShares Investment Grade Corporate Bond ETF" },
-  { display: "IEF",    api: "IEF",    category: "credit",    description: "iShares 7-10 Year Treasury Bond ETF" },
-  { display: "/ES",    api: "/ES",    category: "futures",   description: "E-mini S&P 500 Futures" },
-  { display: "/NQ",    api: "/NQ",    category: "futures",   description: "E-mini Nasdaq-100 Futures" },
-  { display: "/YM",    api: "/YM",    category: "futures",   description: "Mini Dow Jones Futures" },
-  { display: "/RTY",   api: "/RTY",   category: "futures",   description: "E-mini Russell 2000 Futures" },
-  { display: "/GC",    api: "/GC",    category: "commodity", description: "Gold Futures — safe-haven / real rates proxy" },
-  { display: "/CL",    api: "/CL",    category: "commodity", description: "Crude Oil Futures — energy / risk appetite signal" },
-  { display: "/BZ",    api: "/BZ",    category: "commodity", description: "Brent Crude Oil Futures" },
-  { display: "/ZQ",    api: "/ZQ",    category: "commodity", description: "30-Day Fed Funds Futures" },
-  { display: "$DXY",   api: "$DXY",   category: "currency",  description: "US Dollar Index — dollar vs. major FX basket" },
-  { display: "$UVOL",  api: "$UVOL",  category: "breadth",   description: "NYSE Up Volume — volume in advancing issues" },
-  { display: "$DVOL",  api: "$DVOL",  category: "breadth",   description: "NYSE Down Volume — volume in declining issues" },
+  { display: "SPY",     api: "SPY",     category: "equity",    description: "S&P 500 ETF — broad market barometer" },
+  { display: "QQQ",     api: "QQQ",     category: "equity",    description: "Nasdaq-100 ETF — tech/growth leadership" },
+  { display: "IWM",     api: "IWM",     category: "equity",    description: "Russell 2000 ETF — small-cap risk appetite" },
+
+  { display: "$VIX",    api: "$VIX",    category: "vol",       description: "CBOE VIX — S&P implied vol (30-day), fear gauge" },
+  { display: "$VVIX",   api: "$VVIX",   category: "vol",       description: "VVIX — vol-of-vol, tail risk premium indicator" },
+  { display: "$VIX1D",  api: "$VIX1D",  category: "vol",       description: "CBOE 1-Day VIX — ultra-short implied vol" },
+  { display: "$VIX9D",  api: "$VIX9D",  category: "vol",       description: "CBOE 9-Day VIX — near-term implied vol" },
+  { display: "$VIX3M",  api: "$VIX3M",  category: "vol",       description: "CBOE 3-Month VIX — medium-term implied vol" },
+  { display: "$SKEW",   api: "$SKEW",   category: "vol",       description: "CBOE SKEW — tail risk / crash hedging indicator" },
+  { display: "$VXN",    api: "$VXN",    category: "vol",       description: "CBOE Nasdaq VIX — tech sector implied vol" },
+  { display: "$RVX",    api: "$RVX",    category: "vol",       description: "CBOE Russell 2000 VIX — small-cap implied vol" },
+  { display: "$OVX",    api: "$OVX",    category: "vol",       description: "CBOE Oil VIX — crude oil implied vol" },
+  { display: "$GVZ",    api: "$GVZ",    category: "vol",       description: "CBOE Gold VIX — gold implied vol" },
+  { display: "$TYVIX",  api: "$TYVIX",  category: "vol",       description: "CBOE Treasury VIX — 10Y note implied vol" },
+  { display: "/VIX",    api: "/VIX",    category: "vol",       description: "VIX Futures — front-month VIX contract" },
+
+  { display: "$CPC",    api: "$CPC",    category: "vol",       description: "CBOE Total Put/Call Ratio" },
+  { display: "$CPCE",   api: "$CPCE",   category: "vol",       description: "CBOE Equity Put/Call Ratio" },
+  { display: "$CPCI",   api: "$CPCI",   category: "vol",       description: "CBOE Index Put/Call Ratio — institutional hedging" },
+  { display: "$PCSPY",  api: "$PCSPY",  category: "vol",       description: "SPY Put/Call Ratio" },
+  { display: "$PCQQQ",  api: "$PCQQQ",  category: "vol",       description: "QQQ Put/Call Ratio" },
+  { display: "$PCIWM",  api: "$PCIWM",  category: "vol",       description: "IWM Put/Call Ratio" },
+
+  { display: "$TICK",   api: "$TICK",   category: "breadth",   description: "NYSE TICK — stocks upticking minus downticking" },
+  { display: "$ADD",    api: "$ADD",    category: "breadth",   description: "NYSE A/D Line — advancers minus decliners" },
+  { display: "$TRIN",   api: "$TRIN",   category: "breadth",   description: "NYSE TRIN/Arms Index — <1.0 bullish, >1.0 bearish" },
+  { display: "$ADVN",   api: "$ADVN",   category: "breadth",   description: "NYSE Advancing Issues" },
+  { display: "$DECN",   api: "$DECN",   category: "breadth",   description: "NYSE Declining Issues" },
+  { display: "$UVOL",   api: "$UVOL",   category: "breadth",   description: "NYSE Up Volume" },
+  { display: "$DVOL",   api: "$DVOL",   category: "breadth",   description: "NYSE Down Volume" },
+
+  { display: "$TICKI",  api: "$TICKI",  category: "breadth",   description: "NASDAQ TICK" },
+  { display: "$ADDQ",   api: "$ADDQ",   category: "breadth",   description: "NASDAQ A/D Line" },
+  { display: "$TRINQ",  api: "$TRINQ",  category: "breadth",   description: "NASDAQ TRIN" },
+  { display: "$ADVNQ",  api: "$ADVNQ",  category: "breadth",   description: "NASDAQ Advancing Issues" },
+  { display: "$DECNQ",  api: "$DECNQ",  category: "breadth",   description: "NASDAQ Declining Issues" },
+  { display: "$UVOLQ",  api: "$UVOLQ",  category: "breadth",   description: "NASDAQ Up Volume" },
+  { display: "$DVOLQ",  api: "$DVOLQ",  category: "breadth",   description: "NASDAQ Down Volume" },
+
+  { display: "$TNX",    api: "$TNX",    category: "rates",     description: "10-Year Treasury Yield Index" },
+  { display: "$TYX",    api: "$TYX",    category: "rates",     description: "30-Year Treasury Yield Index" },
+  { display: "$IRX",    api: "$IRX",    category: "rates",     description: "13-Week T-Bill Yield Index" },
+  { display: "/ZB",     api: "/ZB",     category: "rates",     description: "30Y Treasury Bond Futures" },
+  { display: "/ZT",     api: "/ZT",     category: "rates",     description: "2Y Treasury Note Futures" },
+  { display: "/ZF",     api: "/ZF",     category: "rates",     description: "5Y Treasury Note Futures" },
+  { display: "/ZN",     api: "/ZN",     category: "rates",     description: "10Y Treasury Note Futures" },
+  { display: "/ZQ",     api: "/ZQ",     category: "rates",     description: "30-Day Fed Funds Futures" },
+
+  { display: "HYG",     api: "HYG",     category: "credit",    description: "iShares High Yield Corporate Bond ETF" },
+  { display: "LQD",     api: "LQD",     category: "credit",    description: "iShares Investment Grade Corporate Bond ETF" },
+  { display: "IEF",     api: "IEF",     category: "credit",    description: "iShares 7-10 Year Treasury Bond ETF" },
+  { display: "TLT",     api: "TLT",     category: "credit",    description: "iShares 20+ Year Treasury Bond ETF" },
+
+  { display: "/ES",     api: "/ES",     category: "futures",   description: "E-mini S&P 500 Futures" },
+  { display: "/NQ",     api: "/NQ",     category: "futures",   description: "E-mini Nasdaq-100 Futures" },
+  { display: "/YM",     api: "/YM",     category: "futures",   description: "Mini Dow Jones Futures" },
+  { display: "/RTY",    api: "/RTY",    category: "futures",   description: "E-mini Russell 2000 Futures" },
+
+  { display: "/GC",     api: "/GC",     category: "commodity", description: "Gold Futures — safe-haven / real rates proxy" },
+  { display: "/CL",     api: "/CL",     category: "commodity", description: "Crude Oil Futures (WTI)" },
+  { display: "/BZ",     api: "/BZ",     category: "commodity", description: "Brent Crude Oil Futures" },
+  { display: "/HG",     api: "/HG",     category: "commodity", description: "Copper Futures — global growth proxy" },
+
+  { display: "/DX",     api: "/DX",     category: "currency",  description: "US Dollar Index Futures" },
+  { display: "/6E",     api: "/6E",     category: "currency",  description: "Euro FX Futures" },
+  { display: "/6J",     api: "/6J",     category: "currency",  description: "Japanese Yen Futures — risk-off proxy" },
 ];
 
 // Maps user-facing symbols to Schwab API format (adds $ prefix for known indices)
 const INDEX_TO_SCHWAB: Record<string, string> = {
   "VIX": "$VIX", "VVIX": "$VVIX", "SPX": "$SPX", "NDX": "$NDX",
   "RUT": "$RUT", "DJI": "$DJI", "DJIA": "$DJI", "COMP": "$COMP",
-  "DXY": "$DXY", "TNX": "$TNX", "TYX": "$TYX", "VXN": "$VXN",
-  "TICK": "$TICK", "ADD": "$ADD", "TRIN": "$TRIN", "CPC": "$CPC",
+  "DXY": "$DXY", "TNX": "$TNX", "TYX": "$TYX", "IRX": "$IRX",
+  "VXN": "$VXN", "RVX": "$RVX", "OVX": "$OVX", "GVZ": "$GVZ", "TYVIX": "$TYVIX",
+  "TICK": "$TICK", "ADD": "$ADD", "TRIN": "$TRIN",
+  "CPC": "$CPC", "CPCE": "$CPCE", "CPCI": "$CPCI",
+  "PCSPY": "$PCSPY", "PCQQQ": "$PCQQQ", "PCIWM": "$PCIWM",
   "OEX": "$OEX", "MNX": "$MNX", "XSP": "$XSP",
-  "VIX9D": "$VIX9D", "VIX3M": "$VIX3M", "SKEW": "$SKEW",
+  "VIX1D": "$VIX1D", "VIX9D": "$VIX9D", "VIX3M": "$VIX3M", "SKEW": "$SKEW",
   "ADVN": "$ADVN", "DECN": "$DECN",
   "UVOL": "$UVOL", "DVOL": "$DVOL",
+  "TICKI": "$TICKI", "ADDQ": "$ADDQ", "TRINQ": "$TRINQ",
+  "ADVNQ": "$ADVNQ", "DECNQ": "$DECNQ",
+  "UVOLQ": "$UVOLQ", "DVOLQ": "$DVOLQ",
 };
 
 function symbolToSchwabApi(userSymbol: string): string {
@@ -813,32 +854,61 @@ function extractMarketIndicators(dataMap: Map<string, Record<string, unknown>>):
   const advn = lastOrMark('$ADVN');
   const decn = lastOrMark('$DECN');
   const addRaw = lastOrMark('$ADD');
-  // $ADD = 0 is a valid reading (balanced market). Use ADVN-DECN only when $ADD is truly missing.
   const add = addRaw !== null
     ? addRaw
     : (advn !== null && decn !== null ? advn - decn : null);
   const tickVal = lastOrMark('$TICK');
   const trinVal = lastOrMark('$TRIN');
 
+  const advnq = lastOrMark('$ADVNQ');
+  const decnq = lastOrMark('$DECNQ');
+  const addqRaw = lastOrMark('$ADDQ');
+  const addq = addqRaw !== null
+    ? addqRaw
+    : (advnq !== null && decnq !== null ? advnq - decnq : null);
+
   return {
     vix: lastOrMark('$VIX'),
     vixChange: pctChange('$VIX'),
     vvix: lastOrMark('$VVIX'),
     vvixChange: pctChange('$VVIX'),
+    vix1d: lastOrMark('$VIX1D'),
+    vix1dChange: pctChange('$VIX1D'),
     vix3m: lastOrMark('$VIX3M'),
     vix3mChange: pctChange('$VIX3M'),
     vix9d: lastOrMark('$VIX9D'),
     vix9dChange: pctChange('$VIX9D'),
     skew: lastOrMark('$SKEW'),
+    vxn: lastOrMark('$VXN'),
+    vxnChange: pctChange('$VXN'),
+    rvx: lastOrMark('$RVX'),
+    rvxChange: pctChange('$RVX'),
+    ovx: lastOrMark('$OVX'),
+    ovxChange: pctChange('$OVX'),
+    gvz: lastOrMark('$GVZ'),
+    gvzChange: pctChange('$GVZ'),
+    tyvix: lastOrMark('$TYVIX'),
+    tyvixChange: pctChange('$TYVIX'),
+    move: null,
+    vixFut: lastOrMark('/VIX'),
+    vixFutChange: pctChange('/VIX'),
 
     tnx: yieldIndex('$TNX'),
     tnxChange: pctChange('$TNX'),
     tyx: yieldIndex('$TYX'),
     tyxChange: pctChange('$TYX'),
+    irx: yieldIndex('$IRX'),
+    irxChange: pctChange('$IRX'),
     zb: lastOrMark('/ZB'),
     zbChange: pctChange('/ZB'),
     zt: lastOrMark('/ZT'),
     ztChange: pctChange('/ZT'),
+    zf: lastOrMark('/ZF'),
+    zfChange: pctChange('/ZF'),
+    zn: lastOrMark('/ZN'),
+    znChange: pctChange('/ZN'),
+    zq: lastOrMark('/ZQ'),
+    zqChange: pctChange('/ZQ'),
 
     hyg: lastOrMark('HYG'),
     hygChange: pctChange('HYG'),
@@ -846,6 +916,8 @@ function extractMarketIndicators(dataMap: Map<string, Record<string, unknown>>):
     lqdChange: pctChange('LQD'),
     ief: lastOrMark('IEF'),
     iefChange: pctChange('IEF'),
+    tlt: lastOrMark('TLT'),
+    tltChange: pctChange('TLT'),
 
     advn,
     decn,
@@ -854,6 +926,13 @@ function extractMarketIndicators(dataMap: Map<string, Record<string, unknown>>):
     add,
     uvol: lastOrMark('$UVOL'),
     dvol: lastOrMark('$DVOL'),
+    ticki: lastOrMark('$TICKI'),
+    trinq: lastOrMark('$TRINQ'),
+    addq,
+    advnq,
+    decnq,
+    uvolq: lastOrMark('$UVOLQ'),
+    dvolq: lastOrMark('$DVOLQ'),
 
     es: lastOrMark('/ES'),
     esChange: pctChange('/ES'),
@@ -863,6 +942,12 @@ function extractMarketIndicators(dataMap: Map<string, Record<string, unknown>>):
     ymChange: pctChange('/YM'),
     rty: lastOrMark('/RTY'),
     rtyChange: pctChange('/RTY'),
+    spy: lastOrMark('SPY'),
+    spyChange: pctChange('SPY'),
+    qqq: lastOrMark('QQQ'),
+    qqqChange: pctChange('QQQ'),
+    iwm: lastOrMark('IWM'),
+    iwmChange: pctChange('IWM'),
 
     gc: lastOrMark('/GC'),
     gcChange: pctChange('/GC'),
@@ -870,12 +955,32 @@ function extractMarketIndicators(dataMap: Map<string, Record<string, unknown>>):
     clChange: pctChange('/CL'),
     bz: lastOrMark('/BZ'),
     bzChange: pctChange('/BZ'),
-    zq: lastOrMark('/ZQ'),
-    zqChange: pctChange('/ZQ'),
+    hg: lastOrMark('/HG'),
+    hgChange: pctChange('/HG'),
+    dx: lastOrMark('/DX'),
+    dxChange: pctChange('/DX'),
+    sixE: lastOrMark('/6E'),
+    sixEChange: pctChange('/6E'),
+    sixJ: lastOrMark('/6J'),
+    sixJChange: pctChange('/6J'),
+
+    cpc: lastOrMark('$CPC'),
+    cpce: lastOrMark('$CPCE'),
+    cpci: lastOrMark('$CPCI'),
+    pcspy: lastOrMark('$PCSPY'),
+    pcqqq: lastOrMark('$PCQQQ'),
+    pciwm: lastOrMark('$PCIWM'),
   };
 }
 
 // ── MARKET SESSION DETECTION ─────────────────────────────────────────────────
+
+function sessionToEngineType(session: string): SessionType {
+  if (session.includes('Pre-Market')) return 'PRE_MARKET';
+  if (session.includes('Regular')) return 'RTH';
+  if (session.includes('Weekend')) return 'WEEKEND';
+  return 'OVERNIGHT';
+}
 
 function getMarketSession(): { session: string; timeET: string; sessionGuidance: string } {
   const now = new Date();
@@ -1254,7 +1359,7 @@ router.post("/market-pulse/stream", async (req, res) => {
     breadthData: { tick: indicators.tick, trin: indicators.trin, add: indicators.add, advn: indicators.advn, decn: indicators.decn },
     volTermData: { vix: indicators.vix, vix9d: indicators.vix9d, vix3m: indicators.vix3m, skew: indicators.skew },
   }, "Market pulse engine input (breadth + volTerm)");
-  const engineResult = runMarketPulseEngine(indicators, previousBias);
+  const engineResult = runMarketPulseEngine(indicators, previousBias, sessionToEngineType(session));
   req.log.info({
     breadthScore: engineResult.clusters.breadth.score,
     breadthRules: engineResult.clusters.breadth.rulesApplied,
@@ -1379,6 +1484,7 @@ Write ONLY the narrative fields. Return this exact JSON structure:
         riskState: {
           label: engineResult.riskState,
           reason: engineResult.riskReason,
+          reasoning: engineResult.riskStateReasoning,
         },
         invalidation: {
           conditions: narrative.invalidationConditions || [],
@@ -1415,6 +1521,7 @@ Write ONLY the narrative fields. Return this exact JSON structure:
         riskState: {
           label: engineResult.riskState,
           reason: engineResult.riskReason,
+          reasoning: engineResult.riskStateReasoning,
         },
         invalidation: { conditions: [] },
         actionPlan: [],
@@ -1630,7 +1737,7 @@ router.post("/options-strategist", async (req, res) => {
 
   const wsResult = readFromWebSocketCache();
   const indicators = extractMarketIndicators(wsResult.dataMap);
-  const engineResult = runMarketPulseEngine(indicators);
+  const engineResult = runMarketPulseEngine(indicators, undefined, sessionToEngineType(getMarketSession().session));
   const regime = classifyRegime(engineResult, indicators);
 
   const userOverride = todayEdge && todayEdge !== "auto" && todayEdge !== engineResult.todayEdge ? todayEdge : null;
@@ -1763,7 +1870,7 @@ router.post("/options-strategist/stream", async (req, res) => {
 
   const wsResult = readFromWebSocketCache();
   const indicators = extractMarketIndicators(wsResult.dataMap);
-  const engineResult = runMarketPulseEngine(indicators);
+  const engineResult = runMarketPulseEngine(indicators, undefined, sessionToEngineType(getMarketSession().session));
   const regime = classifyRegime(engineResult, indicators);
 
   const userOverride = todayEdge && todayEdge !== "auto" && todayEdge !== engineResult.todayEdge ? todayEdge : null;
