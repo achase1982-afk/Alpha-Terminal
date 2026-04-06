@@ -734,14 +734,6 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
           </div>
         </div>
 
-        {dayTradesLeft !== null && (
-          <div style={{ padding: "0 12px 6px" }}>
-            <span style={{ fontSize: 12, color: dayTradesLeft === 0 ? C.red : dayTradesLeft === 1 ? C.gold : C.textDim }}>
-              Day Trades Remaining: {dayTradesLeft}
-            </span>
-          </div>
-        )}
-
         {isMarginCall && (
           <button
             onClick={() => setMarginCallExpanded(x => !x)}
@@ -831,6 +823,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
                   { label: "Net Liq:", value: fmtCurrency(bal?.liquidationValue ?? 0), color: C.text },
                   { label: "Available $:", value: fmtCurrency(bal?.availableFunds ?? 0), color: (bal?.availableFunds ?? 0) < 0 ? C.red : C.text },
                   { label: "Position Equity:", value: fmtCurrency(bal?.equity ?? 0), color: C.text },
+                  ...(dayTradesLeft !== null ? [{ label: "Day Trades Left:", value: String(dayTradesLeft), color: dayTradesLeft === 0 ? C.red : dayTradesLeft === 1 ? C.gold : C.text }] : []),
                 ].map(row => (
                   <div key={row.label} style={{ display: "flex", justifyContent: "space-between", padding: "5px 12px" }}>
                     <span style={{ fontSize: 13, color: C.textMuted }}>{row.label}</span>
