@@ -43,5 +43,5 @@ The monorepo structure supports shared libraries and consistent tooling, with Ty
 -   **lightweight-charts**: Financial charting.
 -   **technicalindicators**: Technical analysis calculations.
 -   **Clerk**: App-level authentication.
--   **Interactive Brokers API** (`@stoqey/ib`): Secondary data source for streaming breadth signals.
+-   **Interactive Brokers API** (`@stoqey/ib`): Secondary data source for streaming 83 symbols (futures, equities, breadth, volatility, rates, sectors). Connected via WebSocket bridge through Cloudflare Tunnel — `ibWsProxy.ts` (server-side local TCP→WS proxy) + `ib-bridge/bridge.mjs` (Mac-side WS→TCP bridge). User runs `node bridge.mjs` on Mac alongside IB Gateway. Tunnel route: `ibkr.nucolbyterminal.com` → `http://localhost:7497`. Env var: `IBKR_GATEWAY_URL=https://ibkr.nucolbyterminal.com`.
 -   **SEC EDGAR API**: Public filings data (company_tickers.json + submissions endpoint).
