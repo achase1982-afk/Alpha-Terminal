@@ -39,7 +39,7 @@ const GRAY = "#a1a1aa";
 const DIM = "#52525b";
 const MUTED = "#3f3f46";
 
-const ITM_OCEAN = "rgba(120,80,100,0.45)";
+const ITM_OCEAN = "rgba(180,140,50,0.22)";
 const OTM_PURPLE = "rgba(168,130,255,0.04)";
 const SEL_BORDER_COLOR = "#fbbf2480";
 
@@ -1027,7 +1027,7 @@ interface OptionsTabProps {
   subscribeOptionSymbols?: (symbols: string[]) => Promise<void>;
   stickyOffset?: number;
   onTradeSingle?: (contract: Contract, side: "BUY" | "SELL", type: "CALL" | "PUT") => void;
-  onOpenStrategyBuilder?: (strikes: number[], expirations: { label: string; value: string }[], chainData: Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number }>, preSelectedLegs?: { contract: Contract; type: "CALL" | "PUT" }[]) => void;
+  onOpenStrategyBuilder?: (strikes: number[], expirations: { label: string; value: string }[], chainData: Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number }>, preSelectedLegs?: { contract: Contract; type: "CALL" | "PUT"; side?: "bid" | "ask" }[]) => void;
 }
 
 export type { Contract as OptionsContract };
@@ -1165,7 +1165,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
       }
     }
     const preSelected = selectedLegs.size > 0
-      ? [...selectedLegs.values()].map(l => ({ contract: l.contract, type: l.type }))
+      ? [...selectedLegs.values()].map(l => ({ contract: l.contract, type: l.type, side: l.side }))
       : undefined;
     onOpenStrategyBuilder([...allStrikes].sort((a, b) => a - b), expLabels, cMap, preSelected);
     setSelectedLegs(new Map());

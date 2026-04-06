@@ -786,31 +786,35 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
 
             {isMultiLeg && strategyLegs ? (
               <div className="overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-                <div className="px-4 py-2 flex items-center justify-between" style={{ borderBottom: `1px solid ${BORDER}` }}>
-                  <span className="font-mono text-[11px] font-bold tracking-[0.12em]" style={{ color: GOLD }}>STRATEGY LEGS</span>
-                  <span className="font-mono text-[11px]" style={{ color: MUTED }}>{strategyLegs.length} legs</span>
+                <div className="px-3 py-1.5 flex items-center justify-between" style={{ borderBottom: `1px solid ${BORDER}`, background: "#0d0d0f" }}>
+                  <span className="font-mono text-[10px] font-bold tracking-[0.12em]" style={{ color: GOLD }}>STRATEGY LEGS</span>
+                  <span className="font-mono text-[10px]" style={{ color: MUTED }}>{strategyLegs.length} legs</span>
                 </div>
-                <div className="px-4 py-2 space-y-1">
-                  {strategyLegs.map((leg, i) => (
-                    <div key={i} className="flex items-center justify-between py-1" style={{ borderBottom: `1px solid ${BORDER}` }}>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-[11px] font-bold w-[80px]" style={{ color: leg.instruction.startsWith("BUY") ? UP : DOWN }}>
-                          {leg.instruction.replace(/_/g, " ")}
-                        </span>
-                        <span className="font-mono text-[12px]" style={{ color: TEXT }}>
-                          {leg.quantity}x {leg.strike} {leg.optionType}
-                        </span>
-                      </div>
-                      <div className="flex gap-2 font-mono text-[11px]" style={{ color: MUTED }}>
+                {strategyLegs.map((leg, i) => {
+                  const isBuyLeg = leg.instruction.startsWith("BUY");
+                  const dirColor = isBuyLeg ? UP : DOWN;
+                  const dirShort = isBuyLeg
+                    ? (leg.instruction === "BUY_TO_OPEN" ? "BTO" : "BTC")
+                    : (leg.instruction === "SELL_TO_OPEN" ? "STO" : "STC");
+                  const qtySign = isBuyLeg ? "+" : "-";
+                  return (
+                    <div key={i} className="flex items-center px-3" style={{ height: 32, borderBottom: `1px solid ${BORDER}` }}>
+                      <span className="font-mono text-[11px] font-bold" style={{ color: dirColor, width: 36 }}>{dirShort}</span>
+                      <span className="font-mono text-[12px] font-bold" style={{ color: dirColor, width: 30 }}>{qtySign}{leg.quantity}</span>
+                      <span className="font-mono text-[12px] font-bold flex-1" style={{ color: TEXT }}>
+                        {leg.strike} {leg.optionType === "CALL" ? "C" : "P"}
+                      </span>
+                      <div className="flex items-center gap-1 font-mono text-[11px]">
                         {leg.bid != null && <span style={{ color: UP }}>{leg.bid.toFixed(2)}</span>}
+                        {leg.bid != null && leg.ask != null && <span style={{ color: DIM }}>/</span>}
                         {leg.ask != null && <span style={{ color: DOWN }}>{leg.ask.toFixed(2)}</span>}
                       </div>
                     </div>
-                  ))}
-                </div>
-                <div className="px-4 py-2 flex justify-between" style={{ borderTop: `1px solid ${BORDER}`, background: `${strategyIsCredit ? UP : DOWN}08` }}>
-                  <span className="font-mono text-[12px]" style={{ color: MUTED }}>Net {strategyIsCredit ? "Credit" : "Debit"}</span>
-                  <span className="font-mono text-[14px] font-bold" style={{ color: strategyIsCredit ? UP : DOWN }}>
+                  );
+                })}
+                <div className="px-3 py-1.5 flex justify-between" style={{ background: `${strategyIsCredit ? UP : DOWN}08` }}>
+                  <span className="font-mono text-[11px]" style={{ color: MUTED }}>Net {strategyIsCredit ? "Credit" : "Debit"}</span>
+                  <span className="font-mono text-[13px] font-bold" style={{ color: strategyIsCredit ? UP : DOWN }}>
                     ${strategyNetPrice?.toFixed(2) ?? "—"} / spread
                   </span>
                 </div>
@@ -1272,25 +1276,28 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
             <div className="space-y-1.5 p-3" style={{ background: "#0a0a0c", border: `1px solid ${BORDER}` }}>
               {isMultiLeg && strategyLegs ? (
                 <>
-                  <div className="flex justify-between">
-                    <span className="font-mono text-[10px]" style={{ color: MUTED }}>Type</span>
-                    <span className="font-mono text-[12px] font-bold" style={{ color: GOLD }}>Multi-Leg Strategy</span>
+                  <div className="flex justify-between mb-1">
+                    <span className="font-mono text-[10px]" style={{ color: MUTED }}>Strategy</span>
+                    <span className="font-mono text-[11px] font-bold" style={{ color: GOLD }}>{strategyLegs.length}-Leg {strategyIsCredit ? "Credit" : "Debit"}</span>
                   </div>
-                  {strategyLegs.map((leg, i) => (
-                    <div key={i} className="flex justify-between">
-                      <span className="font-mono text-[11px]" style={{ color: leg.instruction.startsWith("BUY") ? UP : DOWN }}>
-                        {leg.instruction.replace(/_/g, " ")}
-                      </span>
-                      <span className="font-mono text-[12px]" style={{ color: TEXT }}>
-                        {leg.quantity * quantity}x {leg.strike} {leg.optionType}
-                      </span>
-                    </div>
-                  ))}
-                  <div className="flex justify-between">
-                    <span className="font-mono text-[10px]" style={{ color: MUTED }}>Price Type</span>
-                    <span className="font-mono text-[12px]" style={{ color: TEXT }}>{strategyIsCredit ? "Net Credit" : "Net Debit"}</span>
-                  </div>
-                  <div className="flex justify-between">
+                  {strategyLegs.map((leg, i) => {
+                    const isBuyLeg = leg.instruction.startsWith("BUY");
+                    const dirColor = isBuyLeg ? UP : DOWN;
+                    const dirShort = isBuyLeg
+                      ? (leg.instruction === "BUY_TO_OPEN" ? "BTO" : "BTC")
+                      : (leg.instruction === "SELL_TO_OPEN" ? "STO" : "STC");
+                    const qtySign = isBuyLeg ? "+" : "-";
+                    return (
+                      <div key={i} className="flex items-center" style={{ height: 22 }}>
+                        <span className="font-mono text-[11px] font-bold" style={{ color: dirColor, width: 32 }}>{dirShort}</span>
+                        <span className="font-mono text-[11px] font-bold" style={{ color: dirColor, width: 26 }}>{qtySign}{leg.quantity * quantity}</span>
+                        <span className="font-mono text-[11px] flex-1" style={{ color: TEXT }}>
+                          {leg.strike} {leg.optionType === "CALL" ? "C" : "P"}
+                        </span>
+                      </div>
+                    );
+                  })}
+                  <div className="flex justify-between mt-1">
                     <span className="font-mono text-[10px]" style={{ color: MUTED }}>Net Price</span>
                     <span className="font-mono text-[12px]" style={{ color: TEXT }}>${limitPrice}</span>
                   </div>

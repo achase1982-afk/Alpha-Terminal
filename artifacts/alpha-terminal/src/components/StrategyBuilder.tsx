@@ -367,9 +367,11 @@ export function StrategyBuilder({
 
   const [legs, setLegs] = useState<StrategyLeg[]>([]);
   const [mode, setMode] = useState<"templates" | "builder">("templates");
+  const [expandedLeg, setExpandedLeg] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
+      setExpandedLeg(null);
       if (initialLegs && initialLegs.length > 0) {
         setLegs(initialLegs);
         setMode("builder");
@@ -449,6 +451,7 @@ export function StrategyBuilder({
 
   const removeLeg = useCallback((id: string) => {
     setLegs(prev => prev.filter(l => l.id !== id));
+    setExpandedLeg(prev => prev === id ? null : prev);
   }, []);
 
   const updateLeg = useCallback((id: string, updates: Partial<StrategyLeg>) => {
@@ -598,124 +601,170 @@ export function StrategyBuilder({
 
           {mode === "builder" && (
             <div className="space-y-2">
-              {legs.map((leg, idx) => (
-                <div key={leg.id} className="p-3 space-y-2" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono text-[11px] font-bold tracking-wider" style={{ color: GOLD }}>LEG {idx + 1}</span>
-                    <div className="flex items-center gap-3">
-                      <span className="font-mono text-[11px] font-bold" style={{ color: leg.direction.startsWith("BUY") ? UP : DOWN }}>
-                        {leg.direction.replace(/_/g, " ")}
-                      </span>
-                      <button onClick={() => removeLeg(leg.id)} className="p-1 transition-colors" style={{ color: DOWN }}>
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="font-mono text-[10px] tracking-wider block mb-1" style={{ color: MUTED }}>DIRECTION</label>
-                      <select
-                        value={leg.direction}
-                        onChange={(e) => updateLeg(leg.id, { direction: e.target.value as LegDirection })}
-                        className="w-full px-2 py-2 font-mono outline-none"
-                        style={inputStyle}
-                      >
-                        <option value="BUY_TO_OPEN">Buy to Open</option>
-                        <option value="SELL_TO_OPEN">Sell to Open</option>
-                        <option value="BUY_TO_CLOSE">Buy to Close</option>
-                        <option value="SELL_TO_CLOSE">Sell to Close</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="font-mono text-[10px] tracking-wider block mb-1" style={{ color: MUTED }}>TYPE</label>
-                      <select
-                        value={leg.optionType}
-                        onChange={(e) => updateLeg(leg.id, { optionType: e.target.value as OptionType })}
-                        className="w-full px-2 py-2 font-mono outline-none"
-                        style={inputStyle}
-                      >
-                        <option value="CALL">Call</option>
-                        <option value="PUT">Put</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-2">
-                    <div>
-                      <label className="font-mono text-[10px] tracking-wider block mb-1" style={{ color: MUTED }}>STRIKE</label>
-                      {availableStrikes.length > 0 ? (
-                        <select
-                          value={leg.strike}
-                          onChange={(e) => updateLeg(leg.id, { strike: parseFloat(e.target.value) })}
-                          className="w-full px-2 py-2 font-mono outline-none"
-                          style={inputStyle}
-                        >
-                          {availableStrikes.map(s => (
-                            <option key={s} value={s}>{s}</option>
-                          ))}
-                        </select>
-                      ) : (
-                        <input
-                          type="number" step="0.5" value={leg.strike}
-                          onChange={(e) => updateLeg(leg.id, { strike: parseFloat(e.target.value) || 0 })}
-                          className="w-full px-2 py-2 font-mono outline-none"
-                          style={inputStyle}
-                        />
-                      )}
-                    </div>
-                    <div>
-                      <label className="font-mono text-[10px] tracking-wider block mb-1" style={{ color: MUTED }}>QTY</label>
-                      <input
-                        type="number" min={1} value={leg.quantity}
-                        onChange={(e) => updateLeg(leg.id, { quantity: Math.max(1, parseInt(e.target.value) || 1) })}
-                        className="w-full px-2 py-2 font-mono outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
-                        style={inputStyle}
-                      />
-                    </div>
-                    <div>
-                      <label className="font-mono text-[10px] tracking-wider block mb-1" style={{ color: MUTED }}>EXP</label>
-                      {availableExpirations.length > 0 ? (
-                        <select
-                          value={leg.expiration}
-                          onChange={(e) => updateLeg(leg.id, { expiration: e.target.value })}
-                          className="w-full px-2 py-2 font-mono outline-none"
-                          style={inputStyle}
-                        >
-                          {availableExpirations.map(e => (
-                            <option key={e.value} value={e.value}>{e.label}</option>
-                          ))}
-                        </select>
-                      ) : (
-                        <input
-                          type="text" value={leg.expiration} readOnly
-                          className="w-full px-2 py-2 font-mono outline-none"
-                          style={{ ...inputStyle, color: DIM }}
-                        />
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center pt-1 gap-4" style={{ borderTop: `1px solid ${BORDER}` }}>
-                    <span className="font-mono text-[11px]" style={{ color: MUTED }}>
-                      Bid <span style={{ color: leg.bid != null ? UP : DIM }}>{fmt(leg.bid)}</span>
-                    </span>
-                    <span className="font-mono text-[11px]" style={{ color: MUTED }}>
-                      Ask <span style={{ color: leg.ask != null ? DOWN : DIM }}>{fmt(leg.ask)}</span>
-                    </span>
-                    <span className="font-mono text-[11px]" style={{ color: MUTED }}>
-                      {"\u0394"} <span style={{ color: TEXT }}>{fmt(leg.delta, 3)}</span>
-                    </span>
-                  </div>
+              <div style={{ background: CARD, border: `1px solid ${BORDER}`, overflow: "hidden" }}>
+                <div className="flex items-center px-3 py-1.5" style={{ borderBottom: `1px solid ${BORDER}`, background: "#0d0d0f" }}>
+                  <span className="font-mono text-[10px] tracking-wider" style={{ color: MUTED, width: 44 }}>DIR</span>
+                  <span className="font-mono text-[10px] tracking-wider" style={{ color: MUTED, width: 36 }}>QTY</span>
+                  <span className="font-mono text-[10px] tracking-wider flex-1" style={{ color: MUTED }}>STRIKE / TYPE / EXP</span>
+                  <span className="font-mono text-[10px] tracking-wider text-right" style={{ color: MUTED, width: 80 }}>BID / ASK</span>
+                  <span style={{ width: 28 }} />
                 </div>
-              ))}
+                {legs.map((leg, idx) => {
+                  const isBuy = leg.direction.startsWith("BUY");
+                  const dirColor = isBuy ? UP : DOWN;
+                  const dirLabel = isBuy ? (leg.direction === "BUY_TO_OPEN" ? "BTO" : "BTC") : (leg.direction === "SELL_TO_OPEN" ? "STO" : "STC");
+                  const qtySign = isBuy ? "+" : "-";
+                  const expLabel = (() => {
+                    const clean = leg.expiration.split(":")[0].trim();
+                    const d = new Date(clean);
+                    if (isNaN(d.getTime())) return clean.slice(0, 9);
+                    const months = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
+                    return `${d.getDate()} ${months[d.getMonth()]} ${String(d.getFullYear()).slice(2)}`;
+                  })();
+                  return (
+                    <div key={leg.id}>
+                      <div
+                        className="flex items-center px-3 py-0 cursor-pointer active:opacity-80"
+                        style={{
+                          borderBottom: `1px solid ${BORDER}`,
+                          height: 38,
+                          background: expandedLeg === leg.id ? "#111113" : "transparent",
+                        }}
+                        onClick={() => setExpandedLeg(expandedLeg === leg.id ? null : leg.id)}
+                      >
+                        <span className="font-mono text-[11px] font-bold" style={{ color: dirColor, width: 44 }}>{dirLabel}</span>
+                        <span className="font-mono text-[13px] font-bold" style={{ color: dirColor, width: 36 }}>{qtySign}{leg.quantity}</span>
+                        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                          <span className="font-mono text-[13px] font-bold" style={{ color: WHITE }}>{leg.strike}</span>
+                          <span className="font-mono text-[11px] font-bold" style={{ color: leg.optionType === "CALL" ? "#60a5fa" : "#f472b6" }}>
+                            {leg.optionType === "CALL" ? "C" : "P"}
+                          </span>
+                          <span className="font-mono text-[10px]" style={{ color: MUTED }}>{expLabel}</span>
+                        </div>
+                        <div className="flex items-center gap-1 text-right" style={{ width: 80 }}>
+                          <span className="font-mono text-[11px]" style={{ color: leg.bid != null ? UP : DIM }}>{fmt(leg.bid)}</span>
+                          <span className="font-mono text-[9px]" style={{ color: DIM }}>/</span>
+                          <span className="font-mono text-[11px]" style={{ color: leg.ask != null ? DOWN : DIM }}>{fmt(leg.ask)}</span>
+                        </div>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); removeLeg(leg.id); }}
+                          className="p-1 ml-1 transition-colors"
+                          style={{ color: "#71717a" }}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      {expandedLeg === leg.id && (
+                        <div className="px-3 py-2 space-y-2" style={{ background: "#0d0d0f", borderBottom: `1px solid ${BORDER}` }}>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="font-mono text-[9px] tracking-wider block mb-0.5" style={{ color: MUTED }}>DIRECTION</label>
+                              <select
+                                value={leg.direction}
+                                onChange={(e) => updateLeg(leg.id, { direction: e.target.value as LegDirection })}
+                                className="w-full px-2 py-1.5 font-mono text-[12px] outline-none"
+                                style={inputStyle}
+                              >
+                                <option value="BUY_TO_OPEN">Buy to Open</option>
+                                <option value="SELL_TO_OPEN">Sell to Open</option>
+                                <option value="BUY_TO_CLOSE">Buy to Close</option>
+                                <option value="SELL_TO_CLOSE">Sell to Close</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="font-mono text-[9px] tracking-wider block mb-0.5" style={{ color: MUTED }}>TYPE</label>
+                              <select
+                                value={leg.optionType}
+                                onChange={(e) => updateLeg(leg.id, { optionType: e.target.value as OptionType })}
+                                className="w-full px-2 py-1.5 font-mono text-[12px] outline-none"
+                                style={inputStyle}
+                              >
+                                <option value="CALL">Call</option>
+                                <option value="PUT">Put</option>
+                              </select>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-3 gap-2">
+                            <div>
+                              <label className="font-mono text-[9px] tracking-wider block mb-0.5" style={{ color: MUTED }}>STRIKE</label>
+                              {availableStrikes.length > 0 ? (
+                                <select
+                                  value={leg.strike}
+                                  onChange={(e) => updateLeg(leg.id, { strike: parseFloat(e.target.value) })}
+                                  className="w-full px-2 py-1.5 font-mono text-[12px] outline-none"
+                                  style={inputStyle}
+                                >
+                                  {availableStrikes.map(s => (
+                                    <option key={s} value={s}>{s}</option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <input
+                                  type="number" step="0.5" value={leg.strike}
+                                  onChange={(e) => updateLeg(leg.id, { strike: parseFloat(e.target.value) || 0 })}
+                                  className="w-full px-2 py-1.5 font-mono text-[12px] outline-none"
+                                  style={inputStyle}
+                                />
+                              )}
+                            </div>
+                            <div>
+                              <label className="font-mono text-[9px] tracking-wider block mb-0.5" style={{ color: MUTED }}>QTY</label>
+                              <input
+                                type="number" min={1} value={leg.quantity}
+                                onChange={(e) => updateLeg(leg.id, { quantity: Math.max(1, parseInt(e.target.value) || 1) })}
+                                className="w-full px-2 py-1.5 font-mono text-[12px] outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
+                                style={inputStyle}
+                              />
+                            </div>
+                            <div>
+                              <label className="font-mono text-[9px] tracking-wider block mb-0.5" style={{ color: MUTED }}>EXP</label>
+                              {availableExpirations.length > 0 ? (
+                                <select
+                                  value={leg.expiration}
+                                  onChange={(e) => updateLeg(leg.id, { expiration: e.target.value })}
+                                  className="w-full px-2 py-1.5 font-mono text-[12px] outline-none"
+                                  style={inputStyle}
+                                >
+                                  {availableExpirations.map(e => (
+                                    <option key={e.value} value={e.value}>{e.label}</option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <input
+                                  type="text" value={leg.expiration} readOnly
+                                  className="w-full px-2 py-1.5 font-mono text-[12px] outline-none"
+                                  style={{ ...inputStyle, color: DIM }}
+                                />
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3 pt-1">
+                            <span className="font-mono text-[10px]" style={{ color: MUTED }}>
+                              {"\u0394"} <span style={{ color: TEXT }}>{fmt(leg.delta, 3)}</span>
+                            </span>
+                            <span className="font-mono text-[10px]" style={{ color: MUTED }}>
+                              {"\u0393"} <span style={{ color: TEXT }}>{fmt(leg.gamma, 4)}</span>
+                            </span>
+                            <span className="font-mono text-[10px]" style={{ color: MUTED }}>
+                              {"\u0398"} <span style={{ color: TEXT }}>{fmt(leg.theta, 3)}</span>
+                            </span>
+                            <span className="font-mono text-[10px]" style={{ color: MUTED }}>
+                              {"\u03BD"} <span style={{ color: TEXT }}>{fmt(leg.vega, 3)}</span>
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
 
               <button
                 onClick={addLeg}
-                className="w-full py-2.5 font-mono text-[12px] font-bold tracking-wider flex items-center justify-center gap-2 transition-colors active:opacity-70"
+                className="w-full py-2 font-mono text-[11px] font-bold tracking-wider flex items-center justify-center gap-2 transition-colors active:opacity-70"
                 style={{ color: GOLD, background: "rgba(255,184,0,0.04)", border: `1px solid ${BORDER2}` }}
               >
-                <Plus className="w-4 h-4" /> ADD LEG
+                <Plus className="w-3.5 h-3.5" /> ADD LEG
               </button>
             </div>
           )}
