@@ -57,17 +57,29 @@ const TT = {
   DELAYED_HIGH: 72, DELAYED_LOW: 73, DELAYED_VOLUME: 74, DELAYED_CLOSE: 75,
 } as const;
 
-function parseGatewayUrl(): { host: string; port: number } {
+function parseGatewayUrl(): { host: string; port: number; wsUrl: string | null } {
   const raw = process.env.IBKR_GATEWAY_URL || process.env.IB_HOST;
-  if (!raw) return { host: "127.0.0.1", port: 4002 };
+  if (!raw) return { host: "127.0.0.1", port: 4002, wsUrl: null };
   try {
     const url = new URL(raw.includes("://") ? raw : `tcp://${raw}`);
+    if (url.protocol === "https:" || url.protocol === "wss:") {
+      const wsTarget = `wss://${url.hostname}${url.port ? ":" + url.port : ""}${url.pathname || "/"}`;
+      return { host: "127.0.0.1", port: 4002, wsUrl: wsTarget };
+    }
+    if (url.protocol === "http:" || url.protocol === "ws:") {
+      const wsTarget = `ws://${url.hostname}${url.port ? ":" + url.port : ""}${url.pathname || "/"}`;
+      return { host: "127.0.0.1", port: 4002, wsUrl: wsTarget };
+    }
     const host = url.hostname || "127.0.0.1";
-    const port = url.port ? Number(url.port) : (url.protocol === "https:" ? 443 : 4002);
-    return { host, port };
+    const port = url.port ? Number(url.port) : 4002;
+    return { host, port, wsUrl: null };
   } catch {
-    return { host: raw, port: Number(process.env.IB_PORT ?? "4002") };
+    return { host: raw, port: Number(process.env.IB_PORT ?? "4002"), wsUrl: null };
   }
+}
+
+export function getWsBridgeUrl(): string | null {
+  return parseGatewayUrl().wsUrl;
 }
 
 const { host: IB_HOST, port: IB_PORT } = parseGatewayUrl();

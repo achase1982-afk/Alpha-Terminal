@@ -3,7 +3,8 @@ import { logger } from "./lib/logger";
 import { initTokenStore, setTokenRefreshCallback, getAccessToken } from "./lib/tokenStore";
 import { startStreamer, isConnected, injectExternalQuote } from "./lib/schwabStreamer";
 import { initWsServer, broadcastToClients } from "./lib/wsServer";
-import { connectIB, registerQuoteCacheInjector, registerIBBroadcast } from "./lib/ibStreamer";
+import { connectIB, registerQuoteCacheInjector, registerIBBroadcast, getWsBridgeUrl } from "./lib/ibStreamer";
+import { startIBWsProxy } from "./lib/ibWsProxy";
 
 const rawPort = process.env["PORT"];
 
@@ -50,8 +51,16 @@ async function boot() {
   registerIBBroadcast(broadcastToClients);
 
   if (process.env.IBKR_GATEWAY_URL || process.env.IB_HOST) {
-    logger.info("IB Gateway configured — auto-connecting via Cloudflare Tunnel");
-    connectIB().catch((err) => logger.warn({ err }, "IB auto-connect failed (will retry)"));
+    const wsUrl = getWsBridgeUrl();
+    if (wsUrl) {
+      logger.info({ wsUrl }, "IB Gateway configured via WebSocket bridge — starting local proxy");
+      startIBWsProxy(wsUrl)
+        .then(() => connectIB())
+        .catch((err) => logger.warn({ err }, "IB WS proxy/connect failed (will retry)"));
+    } else {
+      logger.info("IB Gateway configured — auto-connecting directly");
+      connectIB().catch((err) => logger.warn({ err }, "IB auto-connect failed (will retry)"));
+    }
   }
 }
 
