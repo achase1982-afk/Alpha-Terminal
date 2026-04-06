@@ -249,6 +249,7 @@ function PositionTableRow({
   const qtyStr = eq ? fmtQty(eq.longQuantity, eq.shortQuantity) : "";
   const optStr = hasOptions ? `${group.options.length}opt` : "";
   const details = [qtyStr, optStr].filter(Boolean).join(" ");
+  const gridCols = useMemo(() => getGridCols(visibleColumns), [visibleColumns]);
 
   return (
     <>
@@ -517,7 +518,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
   }, []);
 
   useEffect(() => {
-    if (wsAccount) { setAccount(wsAccount as Account); setLastRefresh(wsLastUpdate); setLoading(false); setError(null); }
+    if (wsAccount) { setAccount(wsAccount as unknown as Account); setLastRefresh(wsLastUpdate); setLoading(false); setError(null); }
   }, [wsAccount, wsLastUpdate]);
 
   useEffect(() => {
