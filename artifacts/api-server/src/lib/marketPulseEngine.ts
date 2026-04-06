@@ -223,6 +223,7 @@ const KNOWN_STALE_SYMBOLS = new Set([
   '$TICKI', '$TRINQ', '$ADDQ', '$ADVNQ', '$DECNQ',
   '$UVOL', '$DVOL', '$UVOLQ', '$DVOLQ',
   '$CPC', '$CPCE', '$CPCI', '$PCSPY', '$PCQQQ', '$PCIWM',
+  '$PCUSEQTR', '$PCUSINXR',
 ]);
 
 export type SessionType = 'RTH' | 'PRE_MARKET' | 'OVERNIGHT' | 'WEEKEND';

@@ -100,9 +100,10 @@ export const ALL_BREADTH_SYMBOLS: IBSymbolDef[] = [
   // ═══════════════════════════════════════════════════════════
   // SENTIMENT / OPTIONS LAYER (2)
   // ═══════════════════════════════════════════════════════════
-  { reqId: 5050, symbol: "$CPC",    ibSymbol: "CPC",        secType: "IND", exchange: "CBOE",    displaySymbol: "$CPC",    category: "PUT_CALL", description: "CBOE Total Put/Call Ratio",              enabled: true },
-  { reqId: 5051, symbol: "$CPCE",   ibSymbol: "CPCE",       secType: "IND", exchange: "CBOE",    displaySymbol: "$CPCE",   category: "PUT_CALL", description: "CBOE Equity Put/Call Ratio",             enabled: true },
-  { reqId: 5058, symbol: "$PCUSEQTR", ibSymbol: "PCUSEQTR", secType: "IND", exchange: "CBOE",    displaySymbol: "$PCUSEQTR", category: "PUT_CALL", description: "CBOE Put/Call US Equity Total Ratio",  enabled: true },
+  { reqId: 5050, symbol: "$CPC",    ibSymbol: "CPC",        secType: "IND", exchange: "CBOE",    displaySymbol: "$CPC",    category: "PUT_CALL", description: "CBOE Total Put/Call Ratio",              enabled: false },
+  { reqId: 5051, symbol: "$CPCE",   ibSymbol: "CPCE",       secType: "IND", exchange: "CBOE",    displaySymbol: "$CPCE",   category: "PUT_CALL", description: "CBOE Equity Put/Call Ratio",             enabled: false },
+  { reqId: 5058, symbol: "$PCUSEQTR", ibSymbol: "PCUSEQTR", secType: "IND", exchange: "CBOE",    displaySymbol: "$PCUSEQTR", category: "PUT_CALL", description: "CBOE Equity Put/Call Ratio",           enabled: true },
+  { reqId: 5059, symbol: "$PCUSINXR", ibSymbol: "PCUSINXR", secType: "IND", exchange: "CBOE",    displaySymbol: "$PCUSINXR", category: "PUT_CALL", description: "CBOE Index Put/Call Ratio",            enabled: true },
 
   // ═══════════════════════════════════════════════════════════
   // ADDITIONAL EQUITY (not in scoring but useful for streaming)
@@ -117,12 +118,12 @@ export const ALL_BREADTH_SYMBOLS: IBSymbolDef[] = [
   // ═══════════════════════════════════════════════════════════
   // EXTENDED INDICATORS — ALL ENABLED
   // ═══════════════════════════════════════════════════════════
-  { reqId: 5052, symbol: "$CPCI",   ibSymbol: "CPCI",       secType: "IND", exchange: "CBOE",    displaySymbol: "$CPCI",   category: "PUT_CALL", description: "CBOE Index Put/Call Ratio",              enabled: true },
-  { reqId: 5053, symbol: "$PCALL",  ibSymbol: "PCALL",      secType: "IND", exchange: "CBOE",    displaySymbol: "$PCALL",  category: "PUT_CALL", description: "CBOE Total Put/Call Volume",             enabled: true },
-  { reqId: 5054, symbol: "$PCSPY",  ibSymbol: "PCSPY",      secType: "IND", exchange: "CBOE",    displaySymbol: "$PCSPY",  category: "PUT_CALL", description: "SPY Put/Call Ratio",                     enabled: true },
-  { reqId: 5055, symbol: "$PCQQQ",  ibSymbol: "PCQQQ",      secType: "IND", exchange: "CBOE",    displaySymbol: "$PCQQQ",  category: "PUT_CALL", description: "QQQ Put/Call Ratio",                     enabled: true },
-  { reqId: 5056, symbol: "$PCIWM",  ibSymbol: "PCIWM",      secType: "IND", exchange: "CBOE",    displaySymbol: "$PCIWM",  category: "PUT_CALL", description: "IWM Put/Call Ratio",                     enabled: true },
-  { reqId: 5057, symbol: "$PCVIX",  ibSymbol: "PCVIX",      secType: "IND", exchange: "CBOE",    displaySymbol: "$PCVIX",  category: "PUT_CALL", description: "VIX Put/Call Ratio",                     enabled: true },
+  { reqId: 5052, symbol: "$CPCI",   ibSymbol: "CPCI",       secType: "IND", exchange: "CBOE",    displaySymbol: "$CPCI",   category: "PUT_CALL", description: "CBOE Index Put/Call Ratio",              enabled: false },
+  { reqId: 5053, symbol: "$PCALL",  ibSymbol: "PCALL",      secType: "IND", exchange: "CBOE",    displaySymbol: "$PCALL",  category: "PUT_CALL", description: "CBOE Total Put/Call Volume",             enabled: false },
+  { reqId: 5054, symbol: "$PCSPY",  ibSymbol: "PCSPY",      secType: "IND", exchange: "CBOE",    displaySymbol: "$PCSPY",  category: "PUT_CALL", description: "SPY Put/Call Ratio",                     enabled: false },
+  { reqId: 5055, symbol: "$PCQQQ",  ibSymbol: "PCQQQ",      secType: "IND", exchange: "CBOE",    displaySymbol: "$PCQQQ",  category: "PUT_CALL", description: "QQQ Put/Call Ratio",                     enabled: false },
+  { reqId: 5056, symbol: "$PCIWM",  ibSymbol: "PCIWM",      secType: "IND", exchange: "CBOE",    displaySymbol: "$PCIWM",  category: "PUT_CALL", description: "IWM Put/Call Ratio",                     enabled: false },
+  { reqId: 5057, symbol: "$PCVIX",  ibSymbol: "PCVIX",      secType: "IND", exchange: "CBOE",    displaySymbol: "$PCVIX",  category: "PUT_CALL", description: "VIX Put/Call Ratio",                     enabled: false },
   { reqId: 5060, symbol: "$RVX",    ibSymbol: "RVX",        secType: "IND", exchange: "CBOE",    displaySymbol: "$RVX",    category: "VOLATILITY", description: "CBOE Russell 2000 VIX — small-cap implied volatility",         enabled: true },
   { reqId: 5061, symbol: "$VXN",    ibSymbol: "VXN",        secType: "IND", exchange: "CBOE",    displaySymbol: "$VXN",    category: "VOLATILITY", description: "CBOE NASDAQ-100 VIX — tech-heavy implied volatility",          enabled: true },
   { reqId: 5062, symbol: "$OVX",    ibSymbol: "OVX",        secType: "IND", exchange: "CBOE",    displaySymbol: "$OVX",    category: "VOLATILITY", description: "CBOE Crude Oil VIX — oil implied volatility",                  enabled: true },

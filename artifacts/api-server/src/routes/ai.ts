@@ -982,9 +982,9 @@ function extractMarketIndicators(dataMap: Map<string, Record<string, unknown>>):
     sixJ: lastOrMark('/6J'),
     sixJChange: pctChange('/6J'),
 
-    cpc: lastOrMark('$CPC'),
-    cpce: lastOrMark('$CPCE'),
-    cpci: lastOrMark('$CPCI'),
+    cpc: lastOrMark('$CPC') ?? lastOrMark('$PCUSEQTR'),
+    cpce: lastOrMark('$CPCE') ?? lastOrMark('$PCUSEQTR'),
+    cpci: lastOrMark('$CPCI') ?? lastOrMark('$PCUSINXR'),
     pcspy: lastOrMark('$PCSPY'),
     pcqqq: lastOrMark('$PCQQQ'),
     pciwm: lastOrMark('$PCIWM'),
