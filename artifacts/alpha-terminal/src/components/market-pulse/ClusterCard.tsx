@@ -39,12 +39,10 @@ export function ClusterCard({ clusterKey, cluster }: ClusterCardProps) {
 
   return (
     <div
-      className="shrink-0 overflow-hidden rounded-lg"
+      className="overflow-hidden rounded-lg"
       style={{
         background: "#0c0c0c",
         border: "1px solid rgba(63,63,70,0.5)",
-        width: 220,
-        minWidth: 220,
       }}
     >
       <div className="px-3 py-2 flex items-center justify-between border-b border-zinc-800/50">

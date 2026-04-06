@@ -273,7 +273,7 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
           {settings.showClusterDetails && !settings.compactMode && pulseData.clusters && (
             <>
               <div className="font-mono text-[11px] text-zinc-500 uppercase tracking-wider px-1 pt-1">SIGNAL CLUSTERS</div>
-              <div className="flex gap-2.5 overflow-x-auto pb-1 -mx-3 px-3 sm:-mx-4 sm:px-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
                 {CLUSTER_ORDER.map((key) => pulseData.clusters[key] ? (
                   <ClusterCard key={key} clusterKey={key} cluster={pulseData.clusters[key]} />
                 ) : null)}
