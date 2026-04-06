@@ -15,10 +15,18 @@ export function startIBWsProxy(wsUrl: string): Promise<number> {
     proxyServer = createServer((tcpClient: Socket) => {
       logger.info("IB-WsProxy: IB library connected to local proxy");
 
+      const pendingData: Buffer[] = [];
+      let wsOpen = false;
+
       const ws = new WebSocket(wsUrl);
 
       ws.on("open", () => {
-        logger.info({ wsUrl }, "IB-WsProxy: WebSocket connected to bridge");
+        logger.info({ wsUrl, buffered: pendingData.length }, "IB-WsProxy: WebSocket connected to bridge");
+        wsOpen = true;
+        for (const chunk of pendingData) {
+          ws.send(chunk);
+        }
+        pendingData.length = 0;
       });
 
       ws.on("message", (data: Buffer | ArrayBuffer | Buffer[]) => {
@@ -31,8 +39,11 @@ export function startIBWsProxy(wsUrl: string): Promise<number> {
       });
 
       tcpClient.on("data", (chunk: Buffer) => {
-        if (ws.readyState === WebSocket.OPEN) {
+        if (wsOpen && ws.readyState === WebSocket.OPEN) {
           ws.send(chunk);
+        } else {
+          pendingData.push(Buffer.from(chunk));
+          logger.info({ bytes: chunk.length, queued: pendingData.length }, "IB-WsProxy: buffering data until WS open");
         }
       });
 
