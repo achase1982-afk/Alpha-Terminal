@@ -90,6 +90,10 @@ export function getSnapshot(): LiveQuote[] {
   return [...quoteCache.values()];
 }
 
+export function getQuoteBySymbol(symbol: string): LiveQuote | undefined {
+  return quoteCache.get(symbol);
+}
+
 export function getStreamerStatus(): string {
   return "ib_only";
 }

@@ -5,6 +5,7 @@ import {
   GetOptionChainResponse,
 } from "@workspace/api-zod";
 import { getAccessToken, getBestAccessToken } from "../lib/tokenStore.js";
+import { getQuoteBySymbol } from "../lib/schwabStreamer.js";
 
 const router: IRouter = Router();
 
@@ -581,77 +582,30 @@ router.get("/options", async (req, res) => {
   }
 });
 
-router.get("/pc-ratio", async (req, res) => {
-  const symbol = req.query["symbol"] as string;
-  const accessToken = (req.query["accessToken"] as string) || getBestAccessToken();
+router.get("/pc-ratio", async (_req, res) => {
+  const equityQuote = getQuoteBySymbol("$PCUSEQTR");
+  const indexQuote = getQuoteBySymbol("$PCUSINXR");
 
-  if (!symbol || !accessToken) {
-    return res.json({ symbol: "", pcRatio: null, error: "symbol and accessToken are required" });
-  }
+  const pick = (q: typeof equityQuote) => {
+    if (!q) return null;
+    if (typeof q.last === "number" && q.last > 0) return q.last;
+    if (typeof q.close === "number" && q.close > 0) return q.close;
+    return null;
+  };
 
-  const displaySymbol = symbol.toUpperCase().trim();
+  const cpce = pick(equityQuote);
+  const cpci = pick(indexQuote);
+  const cpc = cpce !== null && cpci !== null ? Math.round(((cpce + cpci) / 2) * 10000) / 10000 : cpce ?? cpci;
 
-  try {
-    const cached = await getOrFetchChain(displaySymbol, accessToken, req.log);
-
-    if (!cached) {
-      return res.json({ symbol: displaySymbol, pcRatio: null, error: "fetch_failed" });
-    }
-
-    let callVol = 0, putVol = 0, callOI = 0, putOI = 0;
-    for (const c of cached.calls) { callVol += c.volume || 0; callOI += c.openInterest || 0; }
-    for (const p of cached.puts) { putVol += p.volume || 0; putOI += p.openInterest || 0; }
-
-    const pcRatioVol = callVol > 0 ? putVol / callVol : null;
-    const pcRatioOI = callOI > 0 ? putOI / callOI : null;
-    const pcRatio = pcRatioVol ?? pcRatioOI;
-
-    let ivr: number | null = null;
-    let expectedMove: number | null = null;
-    const underlyingPrice = cached.underlyingPrice;
-    if (underlyingPrice && underlyingPrice > 0) {
-      const allContracts = [...cached.calls, ...cached.puts];
-      const withIV = allContracts.filter(c => typeof c.iv === "number" && c.iv > 0);
-      if (withIV.length >= 3) {
-        const exps = [...new Set(allContracts.map(c => c.expiration))].sort();
-        const frontExp = exps[0] ?? "";
-        const atmRange = underlyingPrice * 0.05;
-        const atmContracts = withIV.filter(c => Math.abs(c.strike - underlyingPrice) <= atmRange);
-        
-        if (atmContracts.length >= 3) {
-          let minIV = Infinity, maxIV = -Infinity;
-          for (const c of atmContracts) { if (c.iv! < minIV) minIV = c.iv!; if (c.iv! > maxIV) maxIV = c.iv!; }
-          if (maxIV > minIV) {
-            const atmFront = withIV.filter(c => c.expiration === frontExp && Math.abs(c.strike - underlyingPrice) <= underlyingPrice * 0.03)
-              .sort((a, b) => Math.abs(a.strike - underlyingPrice) - Math.abs(b.strike - underlyingPrice));
-            const currentIV = atmFront.length > 0 ? atmFront[0].iv! : atmContracts[0].iv!;
-            ivr = Math.round(Math.max(0, Math.min(100, ((currentIV - minIV) / (maxIV - minIV)) * 100)));
-          }
-        }
-      }
-
-      const nearExp = [...new Set(cached.calls.map(c => c.expiration))].sort()[0];
-      if (nearExp) {
-        const nearCalls = cached.calls.filter(c => c.expiration === nearExp && typeof c.bid === "number" && typeof c.ask === "number");
-        const nearPuts = cached.puts.filter(c => c.expiration === nearExp && typeof c.bid === "number" && typeof c.ask === "number");
-        let bestCall: ParsedContract | null = null, bestPut: ParsedContract | null = null;
-        let bestCallDist = Infinity, bestPutDist = Infinity;
-        for (const c of nearCalls) { const d = Math.abs(c.strike - underlyingPrice); if (d < bestCallDist) { bestCallDist = d; bestCall = c; } }
-        for (const p of nearPuts) { const d = Math.abs(p.strike - underlyingPrice); if (d < bestPutDist) { bestPutDist = d; bestPut = p; } }
-        if (bestCall && bestPut) {
-          const callMid = ((bestCall.bid ?? 0) + (bestCall.ask ?? 0)) / 2;
-          const putMid = ((bestPut.bid ?? 0) + (bestPut.ask ?? 0)) / 2;
-          expectedMove = Math.round((callMid + putMid) * 100) / 100;
-        }
-      }
-    }
-
-    req.log.info({ symbol: displaySymbol, callVol, putVol, callOI, putOI, pcRatioVol, pcRatioOI, ivr, expectedMove }, "P/C ratio + analytics calculated");
-    res.json({ symbol: displaySymbol, pcRatio, pcRatioVolume: pcRatioVol, pcRatioOI, callVolume: callVol, putVolume: putVol, callOI, putOI, ivr, expectedMove });
-  } catch (err) {
-    req.log.error({ err }, "P/C ratio fetch error");
-    res.json({ symbol: displaySymbol, pcRatio: null, error: "internal_error" });
-  }
+  res.json({
+    cpce,
+    cpceSource: "CBOE Equity Put/Call Ratio (PCUSEQTR via IB)",
+    cpci,
+    cpciSource: "CBOE Index Put/Call Ratio (PCUSINXR via IB)",
+    cpc,
+    cpcSource: "Average of CPCE + CPCI",
+    ts: equityQuote?.ts ?? indexQuote?.ts ?? null,
+  });
 });
 
 router.get("/fundamentals", async (req, res) => {
