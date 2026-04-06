@@ -39,7 +39,7 @@ const GRAY = "#a1a1aa";
 const DIM = "#52525b";
 const MUTED = "#3f3f46";
 
-const ITM_BG = "#16120a";
+const ITM_BG = "#201808";
 const OTM_BG = "#070707";
 const SEL_BORDER_COLOR = "#fbbf2480";
 
@@ -820,10 +820,6 @@ function OptionsGrid({
                 const isCallSelected = !!callLeg;
                 const moneyness = classifyMoneyness(row.strike, underlyingPrice, true);
                 const isITM = isStrikeITM(row.strike, underlyingPrice, true);
-                const bg = isITM ? ITM_BG : OTM_BG;
-                const itmShadow = isITM ? "inset 2px 0 0 #fbbf2450" : "";
-                const selShadow = isCallSelected ? `inset 3px 0 0 ${SEL_BORDER_COLOR}` : "";
-                const shadow = [selShadow, itmShadow].filter(Boolean).join(", ") || undefined;
                 return (
                   <div
                     key={row.strike}
@@ -832,8 +828,9 @@ function OptionsGrid({
                     style={{
                       height: ROW_H,
                       borderBottom: `1px solid ${BORDER_ROW}`,
-                      background: bg,
-                      boxShadow: shadow,
+                      background: isITM ? ITM_BG : OTM_BG,
+                      borderLeft: isITM ? "3px solid #fbbf24" : "3px solid transparent",
+                      boxShadow: isCallSelected ? `inset 3px 0 0 ${SEL_BORDER_COLOR}` : undefined,
                     }}
                   >
                     {columns.map(col => (
@@ -879,10 +876,6 @@ function OptionsGrid({
                 const isPutSelected = !!putLeg;
                 const moneyness = classifyMoneyness(row.strike, underlyingPrice, false);
                 const isITM = isStrikeITM(row.strike, underlyingPrice, false);
-                const bg = isITM ? ITM_BG : OTM_BG;
-                const itmShadow = isITM ? "inset -2px 0 0 #fbbf2450" : "";
-                const selShadow = isPutSelected ? `inset -3px 0 0 ${SEL_BORDER_COLOR}` : "";
-                const shadow = [selShadow, itmShadow].filter(Boolean).join(", ") || undefined;
                 return (
                   <div
                     key={row.strike}
@@ -891,8 +884,9 @@ function OptionsGrid({
                     style={{
                       height: ROW_H,
                       borderBottom: `1px solid ${BORDER_ROW}`,
-                      background: bg,
-                      boxShadow: shadow,
+                      background: isITM ? ITM_BG : OTM_BG,
+                      borderRight: isITM ? "3px solid #fbbf24" : "3px solid transparent",
+                      boxShadow: isPutSelected ? `inset -3px 0 0 ${SEL_BORDER_COLOR}` : undefined,
                     }}
                   >
                     {columns.map(col => (
