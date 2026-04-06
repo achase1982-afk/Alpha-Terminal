@@ -214,26 +214,8 @@ export default function TerminalPage() {
     setStrategyOpen(true);
   }, []);
 
-  const handleStrategyToOrderTicket = useCallback((legs: StrategyLeg[], netPrice: number, isCredit: boolean) => {
+  const handleStrategyToOrderTicket = useCallback((_legs: unknown[], _netPrice: number, _isCredit: boolean) => {
     setStrategyOpen(false);
-    const orderLegs: OrderLeg[] = legs.map(l => ({
-      schwabSymbol: l.schwabSymbol,
-      instruction: l.direction,
-      quantity: l.quantity,
-      optionType: l.optionType,
-      strike: l.strike,
-      expiration: l.expiration,
-      bid: l.bid,
-      ask: l.ask,
-      delta: l.delta,
-    }));
-    setOrderStrategyLegs(orderLegs);
-    setOrderStrategyNetPrice(netPrice);
-    setOrderStrategyIsCredit(isCredit);
-    setOrderOptionSymbol(undefined);
-    setOrderOptionInstruction(undefined);
-    setOrderSide("BUY");
-    setOrderOpen(true);
   }, []);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickyWrapRef = useRef<HTMLDivElement>(null);
@@ -577,7 +559,7 @@ export default function TerminalPage() {
       <StrategyBuilder
         isOpen={strategyOpen}
         onClose={() => setStrategyOpen(false)}
-        onSendToOrderTicket={handleStrategyToOrderTicket}
+        onBack={() => setStrategyOpen(false)}
         availableStrikes={strategyStrikes}
         availableExpirations={strategyExpirations}
         chainData={strategyChainData}
