@@ -1,26 +1,717 @@
 import { Router, type IRouter } from "express";
-import { logger } from "../lib/logger.js";
+import {
+  GetQuoteResponse,
+  GetPriceHistoryResponse,
+  GetOptionChainResponse,
+} from "@workspace/api-zod";
+import { getAccessToken, getBestAccessToken } from "../lib/tokenStore.js";
 
 const router: IRouter = Router();
 
-router.get("/quote", (_req, res) => {
-  res.json({ symbol: "", error: "not_configured" });
+const SCHWAB_API_BASE = "https://api.schwabapi.com/marketdata/v1";
+
+const INDEX_SYMBOL_MAP: Record<string, string> = {
+  "VIX":   "$VIX",
+  "$VIX":  "$VIX",
+  "SPX":   "$SPX",
+  "$SPX":  "$SPX",
+  "NDX":   "$NDX",
+  "$NDX":  "$NDX",
+  "RUT":   "$RUT",
+  "$RUT":  "$RUT",
+  "DJI":   "$DJI",
+  "$DJI":  "$DJI",
+  "DJIA":  "$DJI",
+  "COMP":  "$COMP",
+  "$COMP": "$COMP",
+  "DXY":   "$DXY",
+  "$DXY":  "$DXY",
+  "TNX":   "$TNX",
+  "$TNX":  "$TNX",
+  "TYX":   "$TYX",
+  "$TYX":  "$TYX",
+  "VXN":   "$VXN",
+  "$VXN":  "$VXN",
+  "OEX":   "$OEX",
+  "$OEX":  "$OEX",
+  "MNX":   "$MNX",
+  "$MNX":  "$MNX",
+  "XSP":   "$XSP",
+  "$XSP":  "$XSP",
+  "TICK":  "$TICK",
+  "$TICK": "$TICK",
+  "TRIN":  "$TRIN",
+  "$TRIN": "$TRIN",
+  "ADD":   "$ADD",
+  "$ADD":  "$ADD",
+  "ADVN":  "$ADVN",
+  "$ADVN": "$ADVN",
+  "DECN":  "$DECN",
+  "$DECN": "$DECN",
+  "CPC":   "$CPC",
+  "$CPC":  "$CPC",
+  "VVIX":  "$VVIX",
+  "$VVIX": "$VVIX",
+  "VIX9D": "$VIX9D",
+  "$VIX9D":"$VIX9D",
+  "VIX3M": "$VIX3M",
+  "$VIX3M":"$VIX3M",
+  "SKEW":  "$SKEW",
+  "$SKEW": "$SKEW",
+};
+
+function formatSchwabSymbol(symbol: string): string {
+  let upper = symbol.toUpperCase().trim();
+  if (upper.endsWith(".X") && upper.startsWith("$")) {
+    upper = upper.slice(0, -2);
+  }
+  return INDEX_SYMBOL_MAP[upper] ?? upper;
+}
+
+function isIndex(symbol: string): boolean {
+  const upper = symbol.toUpperCase().trim();
+  const bare = upper.endsWith(".X") && upper.startsWith("$") ? upper.slice(0, -2) : upper;
+  return bare in INDEX_SYMBOL_MAP;
+}
+
+function isFutures(symbol: string): boolean {
+  return symbol.trim().startsWith("/");
+}
+
+
+router.get("/quote", async (req, res) => {
+  const symbol = req.query["symbol"] as string;
+  const accessToken = req.query["accessToken"] as string;
+
+  if (!symbol || !accessToken) {
+    return res.status(400).json({ symbol: "", error: "symbol and accessToken are required" });
+  }
+
+  const displaySymbol = symbol.toUpperCase().trim();
+  const apiSymbol = formatSchwabSymbol(displaySymbol);
+
+  try {
+    const response = await fetch(`${SCHWAB_API_BASE}/quotes?symbols=${encodeURIComponent(apiSymbol)}&fields=quote,fundamental,reference`, {
+      headers: { "Authorization": `Bearer ${accessToken}` },
+    });
+
+    if (response.status === 401) {
+      const data = GetQuoteResponse.parse({ symbol: displaySymbol, error: "unauthorized" });
+      return res.json(data);
+    }
+
+    if (response.status === 429) {
+      req.log.warn({ symbol: displaySymbol }, "Schwab 429 rate limit hit — backing off");
+      const data = GetQuoteResponse.parse({ symbol: displaySymbol, error: "rate_limited" });
+      return res.status(200).json(data);
+    }
+
+    if (!response.ok) {
+      const data = GetQuoteResponse.parse({ symbol: displaySymbol, error: `api_error_${response.status}` });
+      return res.json(data);
+    }
+
+    const json = await response.json() as Record<string, unknown>;
+    const responseKeys = Object.keys(json);
+    const entry = (json[apiSymbol] ?? json[displaySymbol] ?? Object.values(json)[0]) as Record<string, unknown> | undefined;
+
+    if (!entry) {
+      req.log.warn({ symbol: displaySymbol, apiSymbol, responseKeys }, "No entry found in Schwab response");
+    }
+
+    const quote = entry?.["quote"] as Record<string, unknown> | undefined;
+    const fundamental = entry?.["fundamental"] as Record<string, unknown> | undefined;
+    const reference = entry?.["reference"] as Record<string, unknown> | undefined;
+
+    // Company name — robust multi-key extraction with stdout diagnostic
+    const description =
+      (reference?.["description"] as string | undefined) ||
+      (entry?.["description"] as string | undefined) ||
+      (quote?.["description"] as string | undefined) ||
+      (reference?.["companyName"] as string | undefined) ||
+      (entry?.["companyName"] as string | undefined) ||
+      (quote?.["companyName"] as string | undefined) ||
+      undefined;
+
+    if (!quote) {
+      const data = GetQuoteResponse.parse({ symbol: displaySymbol, error: "no_data" });
+      return res.json(data);
+    }
+
+    // ── DEBUG: log every key Schwab actually returned ──────────────────────
+    // This surfaces the real field names so we can extend the mapping below.
+    req.log.info({ symbol: displaySymbol, quoteKeys: Object.keys(quote) }, "Schwab raw quote keys");
+    if (fundamental) {
+      req.log.info({ symbol: displaySymbol, fundamentalKeys: Object.keys(fundamental) }, "Schwab raw fundamental keys");
+    }
+
+    // ── Robust number extractor ───────────────────────────────────────────────
+    // Returns the first key whose value is a finite, non-NaN number.
+    // Handles null, undefined, string "NaN", and zero correctly.
+    function pickNum(...keys: string[]): number | undefined {
+      for (const k of keys) {
+        const v = quote![k];
+        if (typeof v === "number" && isFinite(v) && !isNaN(v)) return v;
+      }
+      return undefined;
+    }
+
+    // ── Last / mark price ─────────────────────────────────────────────────────
+    const last = pickNum(
+      "lastPrice",
+      "last",
+      "mark",
+      "markPrice",
+      "regularMarketLastPrice",
+    );
+
+    // ── Previous close — used as fallback anchor for computed change ──────────
+    const prevClose = pickNum(
+      "closePrice",           // standard REST field
+      "close",
+      "previousClose",
+      "regularMarketPreviousClose",
+    );
+
+    // ── Net dollar change ─────────────────────────────────────────────────────
+    // Schwab field names vary by asset type and session:
+    //   Regular hours:  netChange, regularMarketNetChange
+    //   Extended hours: extendedChange, markChange, postMarketChange
+    let change = pickNum(
+      "netChange",
+      "regularMarketNetChange",
+      "markChange",
+      "extendedChange",
+      "postMarketChange",
+      "preMarketChange",
+    );
+
+    // Computed fallback: last − previous_close (always available)
+    if (change === undefined && last !== undefined && prevClose !== undefined && prevClose !== 0) {
+      change = parseFloat((last - prevClose).toFixed(4));
+    }
+
+    // ── Percent change ────────────────────────────────────────────────────────
+    let changePct = pickNum(
+      "netPercentChange",
+      "futurePercentChange",
+      "netPercentChangeInDouble",
+      "regularMarketPercentChangeInDouble",
+      "markPercentChange",
+      "extendedPercentChange",
+      "postMarketPercentChange",
+      "preMarketPercentChange",
+    );
+
+    // Computed fallback: (change / prevClose) × 100
+    if (changePct === undefined && change !== undefined && prevClose !== undefined && prevClose !== 0) {
+      changePct = parseFloat(((change / prevClose) * 100).toFixed(4));
+    }
+
+    req.log.info(
+      { symbol: displaySymbol, last, prevClose, change, changePct },
+      "Quote parsed"
+    );
+
+    const data = GetQuoteResponse.parse({
+      symbol: displaySymbol,
+      description,
+      last,
+      bid:   pickNum("bidPrice", "bid"),
+      ask:   pickNum("askPrice", "ask"),
+      change,
+      changePct,
+      volume: pickNum("totalVolume", "volume"),
+      high:   pickNum("highPrice",  "dayHigh",  "regularMarketHigh"),
+      low:    pickNum("lowPrice",   "dayLow",   "regularMarketLow"),
+      fiftyTwoWeekHigh: pickNum("52WeekHigh", "highPrice52Week", "52WkHigh", "fiftyTwoWeekHigh"),
+      fiftyTwoWeekLow:  pickNum("52WeekLow",  "lowPrice52Week",  "52WkLow",  "fiftyTwoWeekLow"),
+      peRatio: (fundamental?.["peRatio"] as number) ?? undefined,
+      nextEarningsDate: typeof fundamental?.["nextEarningsDate"] === "string" ? fundamental["nextEarningsDate"] : undefined,
+    });
+
+    res.json({
+      ...data,
+      bidSize: pickNum("bidSize") ?? undefined,
+      askSize: pickNum("askSize") ?? undefined,
+    });
+  } catch (err) {
+    req.log.error({ err }, "Quote fetch error");
+    const data = GetQuoteResponse.parse({ symbol: displaySymbol, error: "internal_error" });
+    res.json(data);
+  }
 });
 
-router.get("/history", (_req, res) => {
-  res.json({ symbol: "", candles: [], error: "not_configured" });
+const VALID_PERIOD_TYPES = ["day", "month", "year"] as const;
+const VALID_PERIODS: Record<string, number[]> = {
+  day: [1, 2, 3, 4, 5, 10],
+  month: [1, 2, 3, 6],
+  year: [1, 2, 3, 5, 10, 15, 20],
+};
+const VALID_FREQUENCY_TYPES = ["minute", "daily", "weekly", "monthly"] as const;
+const VALID_FREQUENCIES: Record<string, number[]> = {
+  minute: [1, 5, 10, 15, 30],
+  daily: [1],
+  weekly: [1],
+  monthly: [1],
+};
+
+router.get("/history", async (req, res) => {
+  const symbol = req.query["symbol"] as string;
+  const accessToken = req.query["accessToken"] as string;
+  let periodType = (req.query["periodType"] as string) ?? "month";
+  let period = parseInt((req.query["period"] as string) ?? "3", 10);
+  let frequencyType = (req.query["frequencyType"] as string) ?? "daily";
+  let frequency = parseInt((req.query["frequency"] as string) ?? "1", 10);
+
+  if (!symbol || !accessToken) {
+    return res.json({ symbol: "", candles: [], error: "symbol and accessToken are required" });
+  }
+
+  const displaySymbol = symbol.toUpperCase().trim();
+
+  if (!(VALID_PERIOD_TYPES as readonly string[]).includes(periodType)) periodType = "month";
+  if (!VALID_PERIODS[periodType]?.includes(period)) period = VALID_PERIODS[periodType]?.[0] ?? 1;
+  if (!(VALID_FREQUENCY_TYPES as readonly string[]).includes(frequencyType)) frequencyType = "daily";
+  if (!VALID_FREQUENCIES[frequencyType]?.includes(frequency)) frequency = VALID_FREQUENCIES[frequencyType]?.[0] ?? 1;
+
+  const apiSymbol = formatSchwabSymbol(displaySymbol);
+
+  try {
+    const params = new URLSearchParams({
+      symbol: apiSymbol,
+      periodType,
+      period: String(period),
+      frequencyType,
+      frequency: String(frequency),
+      needExtendedHoursData: "false",
+    });
+
+    const response = await fetch(`${SCHWAB_API_BASE}/pricehistory?${params.toString()}`, {
+      headers: { "Authorization": `Bearer ${accessToken}` },
+    });
+
+    if (response.status === 401) {
+      return res.json({ symbol: displaySymbol, candles: [], error: "unauthorized" });
+    }
+
+    if (!response.ok) {
+      return res.json({ symbol: displaySymbol, candles: [], error: `api_error_${response.status}` });
+    }
+
+    const json = await response.json() as { candles?: Array<Record<string, unknown>> };
+    const rawCandles = json.candles ?? [];
+
+    const candles = rawCandles.map((c) => ({
+      datetime: new Date(c["datetime"] as number).toISOString(),
+      open: c["open"] as number,
+      high: c["high"] as number,
+      low: c["low"] as number,
+      close: c["close"] as number,
+      volume: c["volume"] as number,
+    }));
+
+    const data = GetPriceHistoryResponse.parse({ symbol: displaySymbol, candles });
+    res.json(data);
+  } catch (err) {
+    req.log.error({ err }, "Price history fetch error");
+    res.json({ symbol: displaySymbol, candles: [], error: "internal_error" });
+  }
 });
 
-router.get("/options", (_req, res) => {
-  res.json({ symbol: "", calls: [], puts: [], error: "not_configured" });
+interface ParsedContract {
+  strike: number; expiration: string; schwabSymbol?: string; bid?: number; ask?: number; bidSize?: number; askSize?: number; last?: number;
+  volume?: number; openInterest?: number; iv?: number; delta?: number;
+  gamma?: number; theta?: number; vega?: number; dte?: number;
+}
+
+interface CachedChain {
+  symbol: string;
+  underlyingPrice?: number;
+  calls: ParsedContract[];
+  puts: ParsedContract[];
+  fetchedAt: number;
+  totalCalls: number;
+  totalPuts: number;
+}
+
+const chainCache = new Map<string, CachedChain>();
+const chainFetchInFlight = new Map<string, Promise<CachedChain | null>>();
+const CHAIN_CACHE_TTL = 30_000;
+const CHAIN_CACHE_MAX = 20;
+
+function evictStaleChains() {
+  if (chainCache.size <= CHAIN_CACHE_MAX) return;
+  const entries = [...chainCache.entries()].sort((a, b) => a[1].fetchedAt - b[1].fetchedAt);
+  while (chainCache.size > CHAIN_CACHE_MAX && entries.length > 0) {
+    const oldest = entries.shift()!;
+    chainCache.delete(oldest[0]);
+  }
+}
+
+function parseContracts(map: Record<string, unknown>): ParsedContract[] {
+  const contracts: ParsedContract[] = [];
+  for (const expDate of Object.values(map)) {
+    const strikeMap = expDate as Record<string, unknown>;
+    for (const [, options] of Object.entries(strikeMap)) {
+      const optionArr = options as Array<Record<string, unknown>>;
+      for (const opt of optionArr) {
+        contracts.push({
+          strike: opt["strikePrice"] as number,
+          expiration: opt["expirationDate"] as string,
+          schwabSymbol: opt["symbol"] as string | undefined,
+          bid: opt["bid"] as number | undefined,
+          ask: opt["ask"] as number | undefined,
+          bidSize: opt["bidSize"] as number | undefined,
+          askSize: opt["askSize"] as number | undefined,
+          last: opt["last"] as number | undefined,
+          volume: opt["totalVolume"] as number | undefined,
+          openInterest: opt["openInterest"] as number | undefined,
+          iv: opt["volatility"] as number | undefined,
+          delta: opt["delta"] as number | undefined,
+          gamma: opt["gamma"] as number | undefined,
+          theta: opt["theta"] as number | undefined,
+          vega: opt["vega"] as number | undefined,
+          dte: opt["daysToExpiration"] as number | undefined,
+        });
+      }
+    }
+  }
+  return contracts;
+}
+
+const LARGE_CHAIN_SYMBOLS = new Set(["SPY", "QQQ", "AAPL", "TSLA", "AMZN", "NVDA", "META", "MSFT", "GOOG", "GOOGL"]);
+
+async function fetchChainSide(chainSymbol: string, contractType: "CALL" | "PUT", token: string, isFuturesSymbol: boolean, log: any): Promise<{ map: Record<string, unknown>; underlyingPrice?: number } | null> {
+  const params = new URLSearchParams({
+    symbol: chainSymbol,
+    contractType,
+    range: "ALL",
+  });
+  if (isFuturesSymbol) params.set("assetClass", "FUTURES");
+
+  const url = `${SCHWAB_API_BASE}/chains?${params.toString()}`;
+  let response = await fetch(url, {
+    headers: { "Authorization": `Bearer ${token}` },
+    signal: AbortSignal.timeout(25_000),
+  });
+
+  if (response.status === 503 || response.status === 502 || response.status === 429) {
+    log.warn({ status: response.status, symbol: chainSymbol, contractType }, "Chain side transient error — retrying in 1s");
+    await new Promise(r => setTimeout(r, 1000));
+    response = await fetch(url, {
+      headers: { "Authorization": `Bearer ${token}` },
+      signal: AbortSignal.timeout(25_000),
+    });
+  }
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    log.error({ status: response.status, symbol: chainSymbol, contractType, body: body.slice(0, 500) }, "Chain side fetch failed");
+    return null;
+  }
+
+  const json = await response.json() as Record<string, unknown>;
+  const mapKey = contractType === "CALL" ? "callExpDateMap" : "putExpDateMap";
+  return {
+    map: json[mapKey] as Record<string, unknown> ?? {},
+    underlyingPrice: json["underlyingPrice"] as number | undefined,
+  };
+}
+
+async function fetchFullChain(displaySymbol: string, token: string, log: any): Promise<CachedChain | null> {
+  const isFuturesSymbol = isFutures(displaySymbol);
+  const isIndexSymbol = isIndex(displaySymbol);
+  const chainSymbol = isFuturesSymbol ? displaySymbol : isIndexSymbol ? formatSchwabSymbol(displaySymbol) : displaySymbol;
+  const useSplit = LARGE_CHAIN_SYMBOLS.has(displaySymbol.toUpperCase());
+
+  let calls: ReturnType<typeof parseContracts>;
+  let puts: ReturnType<typeof parseContracts>;
+  let underlyingPrice: number | undefined;
+
+  if (useSplit) {
+    log.info({ symbol: displaySymbol }, "Fetching chain in split mode (CALL + PUT separately)");
+    const [callResult, putResult] = await Promise.all([
+      fetchChainSide(chainSymbol, "CALL", token, isFuturesSymbol, log),
+      fetchChainSide(chainSymbol, "PUT", token, isFuturesSymbol, log),
+    ]);
+
+    if (!callResult && !putResult) return null;
+
+    calls = parseContracts(callResult?.map ?? {});
+    puts = parseContracts(putResult?.map ?? {});
+    underlyingPrice = callResult?.underlyingPrice ?? putResult?.underlyingPrice;
+  } else {
+    const params = new URLSearchParams({
+      symbol: chainSymbol,
+      contractType: "ALL",
+      range: "ALL",
+    });
+    if (isFuturesSymbol) params.set("assetClass", "FUTURES");
+
+    const fullChainUrl = `${SCHWAB_API_BASE}/chains?${params.toString()}`;
+    let response = await fetch(fullChainUrl, {
+      headers: { "Authorization": `Bearer ${token}` },
+      signal: AbortSignal.timeout(20_000),
+    });
+
+    if (response.status === 503 || response.status === 502 || response.status === 429) {
+      log.warn({ status: response.status, symbol: chainSymbol }, "Full chain transient error — retrying in 1s");
+      await new Promise(r => setTimeout(r, 1000));
+      response = await fetch(fullChainUrl, {
+        headers: { "Authorization": `Bearer ${token}` },
+        signal: AbortSignal.timeout(20_000),
+      });
+    }
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      log.error({ status: response.status, symbol: chainSymbol, body: body.slice(0, 500) }, "Options chain fetch failed");
+      return null;
+    }
+
+    const json = await response.json() as Record<string, unknown>;
+    underlyingPrice = json["underlyingPrice"] as number | undefined;
+    const callMap = json["callExpDateMap"] as Record<string, unknown> ?? {};
+    const putMap = json["putExpDateMap"] as Record<string, unknown> ?? {};
+    calls = parseContracts(callMap);
+    puts = parseContracts(putMap);
+  }
+
+  const cached: CachedChain = {
+    symbol: displaySymbol,
+    underlyingPrice,
+    calls,
+    puts,
+    fetchedAt: Date.now(),
+    totalCalls: calls.length,
+    totalPuts: puts.length,
+  };
+
+  chainCache.set(displaySymbol, cached);
+  evictStaleChains();
+  log.info({ symbol: displaySymbol, totalCalls: calls.length, totalPuts: puts.length, cacheSize: chainCache.size, split: useSplit }, "Options chain cached");
+  return cached;
+}
+
+async function getOrFetchChain(displaySymbol: string, token: string, log: any): Promise<CachedChain | null> {
+  const existing = chainCache.get(displaySymbol);
+  if (existing && (Date.now() - existing.fetchedAt) < CHAIN_CACHE_TTL) {
+    return existing;
+  }
+
+  const inFlight = chainFetchInFlight.get(displaySymbol);
+  if (inFlight) return inFlight;
+
+  const promise = fetchFullChain(displaySymbol, token, log).finally(() => {
+    chainFetchInFlight.delete(displaySymbol);
+  });
+  chainFetchInFlight.set(displaySymbol, promise);
+
+  if (existing) {
+    promise.catch(() => {});
+    return existing;
+  }
+
+  return promise;
+}
+
+router.get("/options", async (req, res) => {
+  const symbol = req.query["symbol"] as string;
+  const accessToken = (req.query["accessToken"] as string) || getAccessToken("market");
+  const contractType = (req.query["contractType"] as string) ?? "ALL";
+  const strikeCount = parseInt(req.query["strikeCount"] as string) || 10;
+
+  if (!symbol || !accessToken) {
+    return res.json({ symbol: "", calls: [], puts: [], error: "symbol and accessToken are required" });
+  }
+
+  const displaySymbol = symbol.toUpperCase().trim();
+
+  try {
+    const isFuturesSymbol = isFutures(displaySymbol);
+    const isIndexSymbol = isIndex(displaySymbol);
+    const chainSymbol = isFuturesSymbol ? displaySymbol : isIndexSymbol ? formatSchwabSymbol(displaySymbol) : displaySymbol;
+
+    const params = new URLSearchParams({
+      symbol: chainSymbol,
+      contractType: "ALL",
+      range: "NTM",
+      strikeCount: String(strikeCount),
+    });
+    if (isFuturesSymbol) params.set("assetClass", "FUTURES");
+
+    const chainUrl = `${SCHWAB_API_BASE}/chains?${params.toString()}`;
+    let response = await fetch(chainUrl, {
+      headers: { "Authorization": `Bearer ${accessToken}` },
+      signal: req.socket.destroyed ? AbortSignal.abort() : AbortSignal.timeout(15_000),
+    });
+
+    if (response.status === 503 || response.status === 502 || response.status === 429) {
+      req.log.warn({ status: response.status, symbol: chainSymbol }, "Options chain transient error — retrying in 1s");
+      await new Promise(r => setTimeout(r, 1000));
+      response = await fetch(chainUrl, {
+        headers: { "Authorization": `Bearer ${accessToken}` },
+        signal: AbortSignal.timeout(15_000),
+      });
+    }
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      req.log.error({ status: response.status, symbol: chainSymbol, body: body.slice(0, 500) }, "Options chain fetch failed");
+      return res.json({ symbol: displaySymbol, calls: [], puts: [], error: "fetch_failed" });
+    }
+
+    const json = await response.json() as Record<string, unknown>;
+    const underlyingPrice = json["underlyingPrice"] as number | undefined;
+    const callMap = json["callExpDateMap"] as Record<string, unknown> ?? {};
+    const putMap = json["putExpDateMap"] as Record<string, unknown> ?? {};
+    let calls = parseContracts(callMap);
+    let puts = parseContracts(putMap);
+
+    if (contractType === "CALL") puts = [];
+    else if (contractType === "PUT") calls = [];
+
+    req.log.info({ symbol: displaySymbol, strikeCount, calls: calls.length, puts: puts.length }, "Options chain (NTM)");
+    const data = GetOptionChainResponse.parse({ symbol: displaySymbol, underlyingPrice, calls, puts });
+    res.json(data);
+  } catch (err) {
+    req.log.error({ err }, "Options chain fetch error");
+    res.json({ symbol: displaySymbol, calls: [], puts: [], error: "internal_error" });
+  }
 });
 
-router.get("/pc-ratio", (_req, res) => {
-  res.json({ symbol: "", pcRatio: null, error: "not_configured" });
+router.get("/pc-ratio", async (req, res) => {
+  const symbol = req.query["symbol"] as string;
+  const accessToken = (req.query["accessToken"] as string) || getBestAccessToken();
+
+  if (!symbol || !accessToken) {
+    return res.json({ symbol: "", pcRatio: null, error: "symbol and accessToken are required" });
+  }
+
+  const displaySymbol = symbol.toUpperCase().trim();
+
+  try {
+    const cached = await getOrFetchChain(displaySymbol, accessToken, req.log);
+
+    if (!cached) {
+      return res.json({ symbol: displaySymbol, pcRatio: null, error: "fetch_failed" });
+    }
+
+    let callVol = 0, putVol = 0, callOI = 0, putOI = 0;
+    for (const c of cached.calls) { callVol += c.volume || 0; callOI += c.openInterest || 0; }
+    for (const p of cached.puts) { putVol += p.volume || 0; putOI += p.openInterest || 0; }
+
+    const pcRatioVol = callVol > 0 ? putVol / callVol : null;
+    const pcRatioOI = callOI > 0 ? putOI / callOI : null;
+    const pcRatio = pcRatioVol ?? pcRatioOI;
+
+    let ivr: number | null = null;
+    let expectedMove: number | null = null;
+    const underlyingPrice = cached.underlyingPrice;
+    if (underlyingPrice && underlyingPrice > 0) {
+      const allContracts = [...cached.calls, ...cached.puts];
+      const withIV = allContracts.filter(c => typeof c.iv === "number" && c.iv > 0);
+      if (withIV.length >= 3) {
+        const exps = [...new Set(allContracts.map(c => c.expiration))].sort();
+        const frontExp = exps[0] ?? "";
+        const atmRange = underlyingPrice * 0.05;
+        const atmContracts = withIV.filter(c => Math.abs(c.strike - underlyingPrice) <= atmRange);
+        
+        if (atmContracts.length >= 3) {
+          let minIV = Infinity, maxIV = -Infinity;
+          for (const c of atmContracts) { if (c.iv! < minIV) minIV = c.iv!; if (c.iv! > maxIV) maxIV = c.iv!; }
+          if (maxIV > minIV) {
+            const atmFront = withIV.filter(c => c.expiration === frontExp && Math.abs(c.strike - underlyingPrice) <= underlyingPrice * 0.03)
+              .sort((a, b) => Math.abs(a.strike - underlyingPrice) - Math.abs(b.strike - underlyingPrice));
+            const currentIV = atmFront.length > 0 ? atmFront[0].iv! : atmContracts[0].iv!;
+            ivr = Math.round(Math.max(0, Math.min(100, ((currentIV - minIV) / (maxIV - minIV)) * 100)));
+          }
+        }
+      }
+
+      const nearExp = [...new Set(cached.calls.map(c => c.expiration))].sort()[0];
+      if (nearExp) {
+        const nearCalls = cached.calls.filter(c => c.expiration === nearExp && typeof c.bid === "number" && typeof c.ask === "number");
+        const nearPuts = cached.puts.filter(c => c.expiration === nearExp && typeof c.bid === "number" && typeof c.ask === "number");
+        let bestCall: ParsedContract | null = null, bestPut: ParsedContract | null = null;
+        let bestCallDist = Infinity, bestPutDist = Infinity;
+        for (const c of nearCalls) { const d = Math.abs(c.strike - underlyingPrice); if (d < bestCallDist) { bestCallDist = d; bestCall = c; } }
+        for (const p of nearPuts) { const d = Math.abs(p.strike - underlyingPrice); if (d < bestPutDist) { bestPutDist = d; bestPut = p; } }
+        if (bestCall && bestPut) {
+          const callMid = ((bestCall.bid ?? 0) + (bestCall.ask ?? 0)) / 2;
+          const putMid = ((bestPut.bid ?? 0) + (bestPut.ask ?? 0)) / 2;
+          expectedMove = Math.round((callMid + putMid) * 100) / 100;
+        }
+      }
+    }
+
+    req.log.info({ symbol: displaySymbol, callVol, putVol, callOI, putOI, pcRatioVol, pcRatioOI, ivr, expectedMove }, "P/C ratio + analytics calculated");
+    res.json({ symbol: displaySymbol, pcRatio, pcRatioVolume: pcRatioVol, pcRatioOI, callVolume: callVol, putVolume: putVol, callOI, putOI, ivr, expectedMove });
+  } catch (err) {
+    req.log.error({ err }, "P/C ratio fetch error");
+    res.json({ symbol: displaySymbol, pcRatio: null, error: "internal_error" });
+  }
 });
 
-router.get("/fundamentals", (_req, res) => {
-  res.json({ symbol: "", error: "not_configured" });
+router.get("/fundamentals", async (req, res) => {
+  const symbol = req.query["symbol"] as string;
+  const accessToken = req.query["accessToken"] as string;
+
+  if (!symbol || !accessToken) {
+    return res.status(400).json({ symbol: "", error: "symbol and accessToken are required" });
+  }
+
+  const displaySymbol = symbol.toUpperCase().trim();
+  const apiSymbol = formatSchwabSymbol(displaySymbol);
+
+  try {
+    const response = await fetch(
+      `${SCHWAB_API_BASE}/instruments?symbol=${encodeURIComponent(apiSymbol)}&projection=fundamental`,
+      { headers: { "Authorization": `Bearer ${accessToken}` } }
+    );
+
+    if (response.status === 401) {
+      return res.json({ symbol: displaySymbol, error: "unauthorized" });
+    }
+    if (!response.ok) {
+      return res.json({ symbol: displaySymbol, error: `api_error_${response.status}` });
+    }
+
+    const json = await response.json() as Record<string, unknown>;
+    const instruments = (json["instruments"] ?? []) as Array<Record<string, unknown>>;
+    const entry = instruments[0] ?? {};
+
+    const fundamental = (entry["fundamental"] ?? {}) as Record<string, unknown>;
+
+    req.log.info({ symbol: displaySymbol, fundamentalKeys: Object.keys(fundamental) }, "Instruments fundamental keys");
+
+    const rawNextEarnings = fundamental["nextEarningsDate"] ?? fundamental["nextEarning"] ?? fundamental["earningsDate"];
+    const nextEarningsDate = typeof rawNextEarnings === "string" ? rawNextEarnings : null;
+
+    res.json({
+      symbol: displaySymbol,
+      description: (entry["description"] as string) ?? null,
+      exchange: (entry["exchange"] as string) ?? null,
+      assetType: (entry["assetType"] as string) ?? null,
+      marketCap: (fundamental["marketCap"] as number) ?? null,
+      sharesOutstanding: (fundamental["sharesOutstanding"] as number) ?? null,
+      peRatio: (fundamental["peRatio"] as number) ?? null,
+      pbRatio: (fundamental["pbRatio"] as number) ?? null,
+      dividendYield: (fundamental["divYield"] as number) ?? null,
+      dividendAmount: (fundamental["divAmount"] as number) ?? null,
+      eps: (fundamental["epsTTM"] as number) ?? null,
+      beta: (fundamental["beta"] as number) ?? null,
+      high52: (fundamental["high52"] as number) ?? null,
+      low52: (fundamental["low52"] as number) ?? null,
+      nextEarningsDate,
+      sector: null,
+      industry: null,
+    });
+  } catch (err) {
+    req.log.error({ err }, "Fundamentals fetch error");
+    res.json({ symbol: displaySymbol, error: "internal_error" });
+  }
 });
 
 router.get("/earnings-date", async (req, res) => {
