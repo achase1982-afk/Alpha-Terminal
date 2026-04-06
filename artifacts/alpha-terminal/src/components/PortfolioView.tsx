@@ -35,7 +35,7 @@ const f = `'Inter','SF Pro Text',-apple-system,BlinkMacSystemFont,'Segoe UI',Hel
 type SubTab = "positions" | "orders" | "balance";
 type OrderFilter = "ALL" | "WORKING" | "FILLED" | "CANCELED" | "REJECTED";
 type MetricKey = "plOpen" | "buyingPower" | "margin" | "availableFunds" | "cashBalance" | "posEquity";
-type ColumnKey = "mktVal" | "plPct" | "plDay";
+type ColumnKey = "mark" | "cost" | "qty" | "mktVal" | "plOpen" | "plPct" | "plDay" | "maint";
 
 const ALL_METRICS: { key: MetricKey; label: string }[] = [
   { key: "plOpen", label: "P/L Open" },
@@ -48,12 +48,17 @@ const ALL_METRICS: { key: MetricKey; label: string }[] = [
 const DEFAULT_METRICS: MetricKey[] = ["plOpen", "buyingPower", "availableFunds", "margin"];
 const METRICS_STORAGE_KEY = "alpha_visible_metrics";
 
-const ALL_COLUMNS: { key: ColumnKey; label: string }[] = [
-  { key: "mktVal", label: "Mkt Val" },
-  { key: "plPct", label: "P/L %" },
-  { key: "plDay", label: "P/L Day" },
+const ALL_COLUMNS: { key: ColumnKey; label: string; desc: string }[] = [
+  { key: "mark",   label: "Mark",    desc: "Current price per share / contract" },
+  { key: "cost",   label: "Cost",    desc: "Avg price paid per share / contract" },
+  { key: "qty",    label: "Qty",     desc: "Number of shares or contracts" },
+  { key: "mktVal", label: "Mkt Val", desc: "Total position market value" },
+  { key: "plOpen", label: "P/L $",   desc: "Unrealized P/L in dollars" },
+  { key: "plPct",  label: "P/L %",   desc: "Unrealized P/L as a percentage" },
+  { key: "plDay",  label: "P/L Day", desc: "Today's P/L in dollars" },
+  { key: "maint",  label: "Maint",   desc: "Maintenance margin requirement" },
 ];
-const DEFAULT_COLUMNS: ColumnKey[] = ["mktVal", "plPct", "plDay"];
+const DEFAULT_COLUMNS: ColumnKey[] = ["mark", "mktVal", "plPct", "plDay"];
 const COLUMNS_STORAGE_KEY = "alpha_visible_columns";
 
 interface Position {
@@ -140,6 +145,7 @@ interface SymbolGroup {
   totalMarketValue: number;
   totalDayPL: number;
   totalPL: number;
+  totalMaint: number;
 }
 
 function fmtCurrency(n: number): string {
@@ -193,9 +199,14 @@ function statusColor(status: string): string {
 
 const getGridCols = (visibleCols: ColumnKey[]): string => {
   let cols = "minmax(0,1fr)";
+  if (visibleCols.includes("mark"))   cols += " 65px";
+  if (visibleCols.includes("cost"))   cols += " 65px";
+  if (visibleCols.includes("qty"))    cols += " 50px";
   if (visibleCols.includes("mktVal")) cols += " 80px";
-  if (visibleCols.includes("plPct")) cols += " 60px";
-  if (visibleCols.includes("plDay")) cols += " 80px";
+  if (visibleCols.includes("plOpen")) cols += " 80px";
+  if (visibleCols.includes("plPct"))  cols += " 60px";
+  if (visibleCols.includes("plDay"))  cols += " 80px";
+  if (visibleCols.includes("maint"))  cols += " 70px";
   return cols;
 };
 
@@ -274,14 +285,33 @@ function PositionTableRow({
           <span style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{group.underlying}</span>
           <span style={{ fontSize: 12, color: C.dim, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{details}</span>
         </div>
+        {visibleColumns.includes("mark") && (() => {
+          const eqQty = eq ? (eq.longQuantity || eq.shortQuantity) : 0;
+          const markPx = eq && eqQty > 0 ? eq.marketValue / eqQty : null;
+          return <span style={{ fontSize: 13, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{markPx != null ? `$${markPx.toFixed(2)}` : "—"}</span>;
+        })()}
+        {visibleColumns.includes("cost") && (() => {
+          return <span style={{ fontSize: 13, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{eq ? `$${eq.averagePrice.toFixed(2)}` : "—"}</span>;
+        })()}
+        {visibleColumns.includes("qty") && (() => {
+          const eqQty = eq ? fmtQty(eq.longQuantity, eq.shortQuantity) : "";
+          const optQty = group.options.length > 0 ? `${group.options.length}c` : "";
+          return <span style={{ fontSize: 13, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{[eqQty, optQty].filter(Boolean).join(" ") || "—"}</span>;
+        })()}
         {visibleColumns.includes("mktVal") && <span style={{ fontSize: 14, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
           {fmtCompact(group.totalMarketValue)}
+        </span>}
+        {visibleColumns.includes("plOpen") && <span style={{ fontSize: 13, fontWeight: 500, color: plColor(group.totalPL), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+          {fmtCurrency(group.totalPL)}
         </span>}
         {visibleColumns.includes("plPct") && <span style={{ fontSize: 13, color: plColor(group.totalPL), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
           {fmtPct(totalPLPct)}
         </span>}
         {visibleColumns.includes("plDay") && <span style={{ fontSize: 14, fontWeight: 500, color: plColor(group.totalDayPL), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
           {fmtCurrency(group.totalDayPL)}
+        </span>}
+        {visibleColumns.includes("maint") && <span style={{ fontSize: 13, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+          {group.totalMaint > 0 ? fmtCompact(group.totalMaint) : "—"}
         </span>}
       </div>
 
@@ -299,9 +329,18 @@ function PositionTableRow({
                     {fmtQty(eq.longQuantity, eq.shortQuantity)} @ {fmtCurrency(eq.averagePrice)}
                   </span>
                 </div>
-                <span style={{ fontSize: 13, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCompact(eq.marketValue)}</span>
-                <span style={{ fontSize: 13, color: plColor(eq.longOpenProfitLoss), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtPct(eqPLPct)}</span>
-                <span style={{ fontSize: 13, color: plColor(eq.currentDayProfitLoss), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(eq.currentDayProfitLoss)}</span>
+                {visibleColumns.includes("mark") && (() => {
+                  const eqQty = eq.longQuantity || eq.shortQuantity;
+                  const markPx = eqQty > 0 ? eq.marketValue / eqQty : 0;
+                  return <span style={{ fontSize: 13, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>${markPx.toFixed(2)}</span>;
+                })()}
+                {visibleColumns.includes("cost") && <span style={{ fontSize: 13, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>${eq.averagePrice.toFixed(2)}</span>}
+                {visibleColumns.includes("qty") && <span style={{ fontSize: 13, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtQty(eq.longQuantity, eq.shortQuantity)}</span>}
+                {visibleColumns.includes("mktVal") && <span style={{ fontSize: 13, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCompact(eq.marketValue)}</span>}
+                {visibleColumns.includes("plOpen") && <span style={{ fontSize: 13, fontWeight: 500, color: plColor(eq.longOpenProfitLoss), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(eq.longOpenProfitLoss)}</span>}
+                {visibleColumns.includes("plPct") && <span style={{ fontSize: 13, color: plColor(eq.longOpenProfitLoss), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtPct(eqPLPct)}</span>}
+                {visibleColumns.includes("plDay") && <span style={{ fontSize: 13, color: plColor(eq.currentDayProfitLoss), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(eq.currentDayProfitLoss)}</span>}
+                {visibleColumns.includes("maint") && <span style={{ fontSize: 13, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{eq.maintenanceRequirement > 0 ? fmtCompact(eq.maintenanceRequirement) : "—"}</span>}
               </div>
             );
           })()}
@@ -335,9 +374,17 @@ function PositionTableRow({
                     {formatOptionSymbol(opt.symbol, false)} ×{fmtQty(opt.longQuantity, opt.shortQuantity).replace("+", "")}
                   </span>
                 </div>
-                <span style={{ fontSize: 13, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCompact(opt.marketValue)}</span>
-                <span style={{ fontSize: 13, color: plColor(totalPL), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtPct(totalPLPctOpt)}</span>
-                <span style={{ fontSize: 13, color: plColor(opt.currentDayProfitLoss), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(opt.currentDayProfitLoss)}</span>
+                {visibleColumns.includes("mark") && (() => {
+                  const markPx = qty > 0 ? opt.marketValue / (qty * 100) : 0;
+                  return <span style={{ fontSize: 13, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>${markPx.toFixed(2)}</span>;
+                })()}
+                {visibleColumns.includes("cost") && <span style={{ fontSize: 13, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>${opt.averagePrice.toFixed(2)}</span>}
+                {visibleColumns.includes("qty") && <span style={{ fontSize: 13, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{isShort ? `-${qty}` : `+${qty}`}</span>}
+                {visibleColumns.includes("mktVal") && <span style={{ fontSize: 13, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCompact(opt.marketValue)}</span>}
+                {visibleColumns.includes("plOpen") && <span style={{ fontSize: 13, fontWeight: 500, color: plColor(totalPL), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(totalPL)}</span>}
+                {visibleColumns.includes("plPct") && <span style={{ fontSize: 13, color: plColor(totalPL), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtPct(totalPLPctOpt)}</span>}
+                {visibleColumns.includes("plDay") && <span style={{ fontSize: 13, color: plColor(opt.currentDayProfitLoss), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(opt.currentDayProfitLoss)}</span>}
+                {visibleColumns.includes("maint") && <span style={{ fontSize: 13, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{opt.maintenanceRequirement > 0 ? fmtCompact(opt.maintenanceRequirement) : "—"}</span>}
               </div>
             );
           })}
@@ -587,12 +634,13 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
     const groupMap = new Map<string, SymbolGroup>();
     for (const pos of positions) {
       const key = (pos.assetType === "OPTION" ? pos.underlyingSymbol : pos.symbol).toUpperCase();
-      if (!groupMap.has(key)) groupMap.set(key, { underlying: key, equity: null, options: [], totalMarketValue: 0, totalDayPL: 0, totalPL: 0 });
+      if (!groupMap.has(key)) groupMap.set(key, { underlying: key, equity: null, options: [], totalMarketValue: 0, totalDayPL: 0, totalPL: 0, totalMaint: 0 });
       const g = groupMap.get(key)!;
       if (pos.assetType === "OPTION") g.options.push(pos); else g.equity = pos;
       g.totalMarketValue += pos.marketValue;
       g.totalDayPL += pos.currentDayProfitLoss;
       g.totalPL += pos.longOpenProfitLoss;
+      g.totalMaint += pos.maintenanceRequirement;
     }
     return Array.from(groupMap.values()).sort((a, b) => Math.abs(b.totalMarketValue) - Math.abs(a.totalMarketValue));
   }, [account]);
@@ -825,9 +873,9 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
                   <Settings style={{ width: 13, height: 13, color: showColumnSettings ? C.gold : C.dim }} />
                 </button>
               </div>
-              {visibleColumns.includes("mktVal") && <span style={{ fontSize: 12, fontWeight: 500, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>Mkt Val</span>}
-              {visibleColumns.includes("plPct") && <span style={{ fontSize: 12, fontWeight: 500, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>P/L %</span>}
-              {visibleColumns.includes("plDay") && <span style={{ fontSize: 12, fontWeight: 500, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>P/L Day</span>}
+              {ALL_COLUMNS.filter(c => visibleColumns.includes(c.key)).map(c => (
+                <span key={c.key} style={{ fontSize: 11, fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: 0.6, textAlign: "right" }}>{c.label}</span>
+              ))}
             </div>
 
             {showColumnSettings && (
@@ -835,23 +883,27 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
             )}
             {showColumnSettings && (
               <div
-                style={{ position: "absolute", top: "54px", left: "20px", zIndex: 50, background: "#1a1a1a", border: `1px solid ${C.borderHi}`, borderRadius: 4, width: 220, padding: 0, fontFamily: f }}
+                style={{ position: "absolute", top: "54px", left: "8px", zIndex: 50, background: "#161616", border: `1px solid ${C.borderHi}`, borderRadius: 6, width: 260, padding: 0, fontFamily: f, boxShadow: "0 8px 32px rgba(0,0,0,0.6)" }}
                 onClick={e => e.stopPropagation()}
               >
-                <div style={{ padding: "8px 12px", borderBottom: `1px solid ${C.border}` }}>
-                  <span style={{ fontSize: 12, fontWeight: 500, color: C.textDim, textTransform: "uppercase", letterSpacing: 0.8 }}>Column Visibility</span>
+                <div style={{ padding: "10px 14px 8px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: C.textDim, textTransform: "uppercase", letterSpacing: 1 }}>Columns</span>
+                  <span style={{ fontSize: 11, color: C.dim }}>{visibleColumns.length}/{ALL_COLUMNS.length} on</span>
                 </div>
-                {ALL_COLUMNS.map(col => {
+                {ALL_COLUMNS.map((col, i) => {
                   const on = visibleColumns.includes(col.key);
                   return (
                     <button
                       key={col.key}
                       onClick={() => toggleColumn(col.key)}
-                      style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", background: "transparent", border: "none", borderBottom: `1px solid ${C.border}`, cursor: "pointer", fontFamily: f }}
+                      style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", background: on ? `${C.gold}06` : "transparent", border: "none", borderBottom: i < ALL_COLUMNS.length - 1 ? `1px solid ${C.border}` : "none", cursor: "pointer", fontFamily: f, textAlign: "left" }}
                     >
-                      <span style={{ fontSize: 13, color: on ? C.text : C.dim }}>{col.label}</span>
-                      <div style={{ width: 16, height: 16, borderRadius: 3, border: `1px solid ${on ? C.gold : C.dim}`, background: on ? `${C.gold}22` : "transparent", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        {on && <Check style={{ width: 10, height: 10, color: C.gold }} />}
+                      <div style={{ width: 18, height: 18, borderRadius: 4, border: `1.5px solid ${on ? C.gold : C.dim}`, background: on ? `${C.gold}20` : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                        {on && <Check style={{ width: 11, height: 11, color: C.gold }} />}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: on ? 600 : 400, color: on ? C.text : C.dim }}>{col.label}</div>
+                        <div style={{ fontSize: 11, color: C.dim, marginTop: 1 }}>{col.desc}</div>
                       </div>
                     </button>
                   );
@@ -877,9 +929,17 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
                 borderTop: `2px solid ${C.borderHi}`, background: "#0e0e0e",
               }}>
                 <span style={{ fontSize: 14, fontWeight: 500, color: C.textMuted }}>Overall Totals</span>
+                {visibleColumns.includes("mark")   && <span style={{ fontSize: 13, color: C.dim, textAlign: "right" }}>—</span>}
+                {visibleColumns.includes("cost")   && <span style={{ fontSize: 13, color: C.dim, textAlign: "right" }}>—</span>}
+                {visibleColumns.includes("qty")    && <span style={{ fontSize: 13, color: C.dim, textAlign: "right" }}>—</span>}
                 {visibleColumns.includes("mktVal") && <span style={{ fontSize: 14, fontWeight: 500, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCompact(totalMarketValue)}</span>}
-                {visibleColumns.includes("plPct") && <span style={{ fontSize: 14, fontWeight: 500, color: plColor(totalUnrealized), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtPct(unrealizedPct)}</span>}
-                {visibleColumns.includes("plDay") && <span style={{ fontSize: 14, fontWeight: 600, color: plColor(totalDayPLPositions), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(totalDayPLPositions)}</span>}
+                {visibleColumns.includes("plOpen") && <span style={{ fontSize: 14, fontWeight: 500, color: plColor(totalUnrealized), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(totalUnrealized)}</span>}
+                {visibleColumns.includes("plPct")  && <span style={{ fontSize: 14, fontWeight: 500, color: plColor(totalUnrealized), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtPct(unrealizedPct)}</span>}
+                {visibleColumns.includes("plDay")  && <span style={{ fontSize: 14, fontWeight: 600, color: plColor(totalDayPLPositions), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(totalDayPLPositions)}</span>}
+                {visibleColumns.includes("maint")  && (() => {
+                  const totalMaint = (account?.positions ?? []).reduce((s, p) => s + p.maintenanceRequirement, 0);
+                  return <span style={{ fontSize: 13, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{totalMaint > 0 ? fmtCompact(totalMaint) : "—"}</span>;
+                })()}
               </div>
             )}
 
