@@ -95,10 +95,11 @@ export function useQuote(symbol: string) {
   };
 
   const hasAnyPrice = data.last !== null || data.bid !== null;
+  const hasAnyData = hasAnyPrice || description !== null;
 
   return {
-    data:      hasAnyPrice ? data : null,
-    isLoading: !hasAnyPrice && !!accessToken,
+    data:      hasAnyData ? data : null,
+    isLoading: !hasAnyData && !!accessToken,
     error:     null,
     source:    "stream" as const,
   };
