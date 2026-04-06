@@ -10,6 +10,9 @@ import {
   Search,
   XCircle,
   AlertTriangle,
+  Settings,
+  X,
+  Check,
 } from "lucide-react";
 
 const C = {
@@ -31,6 +34,18 @@ const f = `'Inter','SF Pro Text',-apple-system,BlinkMacSystemFont,'Segoe UI',Hel
 
 type SubTab = "positions" | "orders" | "balance";
 type OrderFilter = "ALL" | "WORKING" | "FILLED" | "CANCELED" | "REJECTED";
+type MetricKey = "plOpen" | "buyingPower" | "margin" | "availableFunds" | "cashBalance" | "posEquity";
+
+const ALL_METRICS: { key: MetricKey; label: string }[] = [
+  { key: "plOpen", label: "P/L Open" },
+  { key: "buyingPower", label: "Buying Power" },
+  { key: "margin", label: "Margin %" },
+  { key: "availableFunds", label: "Available Funds" },
+  { key: "cashBalance", label: "Cash Balance" },
+  { key: "posEquity", label: "Position Equity" },
+];
+const DEFAULT_METRICS: MetricKey[] = ["plOpen", "buyingPower", "margin"];
+const METRICS_STORAGE_KEY = "alpha_visible_metrics";
 
 interface Position {
   symbol: string;
@@ -123,30 +138,23 @@ function fmtCurrency(n: number): string {
   const str = abs.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return n < 0 ? `-$${str}` : `$${str}`;
 }
-
 function fmtCompact(n: number): string {
   const abs = Math.abs(n);
   if (abs >= 1e6) return `${n < 0 ? "-" : ""}$${(abs / 1e6).toFixed(2)}M`;
   if (abs >= 1e4) return `${n < 0 ? "-" : ""}$${(abs / 1e3).toFixed(1)}K`;
   return fmtCurrency(n);
 }
-
 function fmtPct(n: number): string {
-  const sign = n > 0 ? "+" : "";
-  return `${sign}${n.toFixed(2)}%`;
+  return `${n > 0 ? "+" : ""}${n.toFixed(2)}%`;
 }
-
 function fmtQty(long: number, short: number): string {
-  if (short > 0) return `-${short}`;
-  return `+${long}`;
+  return short > 0 ? `-${short}` : `+${long}`;
 }
-
 function plColor(n: number): string {
   if (n > 0) return C.green;
   if (n < 0) return C.red;
   return C.textDim;
 }
-
 function timeAgo(dateStr: string): string {
   const ms = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(ms / 60000);
@@ -154,23 +162,17 @@ function timeAgo(dateStr: string): string {
   if (mins < 60) return `${mins}m ago`;
   const hrs = Math.floor(mins / 60);
   if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
 }
-
 function formatOptionSymbol(sym: string, includeUnderlying = true): string {
   const match = sym.trim().match(/^(\w+)\s+(\d{6})([CP])(\d{8})$/);
   if (!match) return sym.trim();
   const [, underlying, dateStr, pc, strikeRaw] = match;
   const strike = parseInt(strikeRaw) / 1000;
-  const mm = dateStr.slice(0, 2);
-  const dd = dateStr.slice(2, 4);
-  const yy = dateStr.slice(4, 6);
   const strikeStr = strike % 1 === 0 ? String(strike) : strike.toFixed(1);
   const prefix = includeUnderlying ? `${underlying} ` : "";
-  return `${prefix}${mm}/${dd}/${yy} ${strikeStr}${pc === "C" ? "C" : "P"}`;
+  return `${prefix}${dateStr.slice(0, 2)}/${dateStr.slice(2, 4)}/${dateStr.slice(4, 6)} ${strikeStr}${pc}`;
 }
-
 function statusColor(status: string): string {
   switch (status) {
     case "FILLED": return C.green;
@@ -180,16 +182,42 @@ function statusColor(status: string): string {
   }
 }
 
-const gridCols = "minmax(0,1fr) 80px 62px 82px";
+const gridCols = "22px minmax(0,1fr) 80px 60px 80px";
+
+function Checkbox({ checked, onToggle }: { checked: boolean; onToggle: (e: React.MouseEvent) => void }) {
+  return (
+    <div
+      onClick={onToggle}
+      style={{
+        width: 15,
+        height: 15,
+        border: `1px solid ${checked ? C.gold : C.dim}`,
+        borderRadius: 3,
+        background: checked ? `${C.gold}22` : "transparent",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        flexShrink: 0,
+        cursor: "pointer",
+      }}
+    >
+      {checked && <div style={{ width: 7, height: 7, background: C.gold, borderRadius: 1 }} />}
+    </div>
+  );
+}
 
 function PositionTableRow({
   group,
   onSelect,
   onTrade,
+  selectedKeys,
+  toggleKey,
 }: {
   group: SymbolGroup;
   onSelect: (sym: string) => void;
   onTrade?: (symbol: string, side: "BUY" | "SELL", optionSymbol?: string, optionInstruction?: string) => void;
+  selectedKeys: Set<string>;
+  toggleKey: (key: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const eq = group.equity;
@@ -198,37 +226,57 @@ function PositionTableRow({
   const costBasis = group.totalMarketValue - group.totalPL;
   const totalPLPct = Math.abs(costBasis) > 0.01 ? (group.totalPL / Math.abs(costBasis)) * 100 : 0;
 
-  const qtyStr = eq
-    ? `${fmtQty(eq.longQuantity, eq.shortQuantity)}`
-    : "";
+  const eqKey = `${group.underlying}:EQ`;
+  const allKeys = [
+    ...(eq ? [eqKey] : []),
+    ...group.options.map(o => `${group.underlying}:${o.cusip}`),
+  ];
+  const allSelected = allKeys.length > 0 && allKeys.every(k => selectedKeys.has(k));
+  const someSelected = allKeys.some(k => selectedKeys.has(k));
+
+  const toggleAll = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    allKeys.forEach(k => {
+      if (allSelected) {
+        // deselect all
+        const s = new Set(selectedKeys);
+        allKeys.forEach(kk => s.delete(kk));
+        // can't mutate in loop - handled by toggleKey design; use custom approach
+      }
+    });
+    // simpler: use the parent's toggleKey but for all at once
+    allKeys.forEach(k => {
+      if (allSelected ? selectedKeys.has(k) : !selectedKeys.has(k)) toggleKey(k);
+    });
+  };
+
+  const qtyStr = eq ? fmtQty(eq.longQuantity, eq.shortQuantity) : "";
   const optStr = hasOptions ? `${group.options.length}opt` : "";
   const details = [qtyStr, optStr].filter(Boolean).join(" ");
 
   return (
     <>
-      <button
-        onClick={() => setExpanded(!expanded)}
+      <div
         style={{
-          width: "100%",
           display: "grid",
           gridTemplateColumns: gridCols,
           alignItems: "center",
-          padding: "8px 10px",
-          background: "transparent",
-          border: "none",
+          padding: "7px 10px",
+          background: someSelected ? `${C.gold}06` : "transparent",
           borderBottom: `1px solid ${C.border}`,
           cursor: "pointer",
-          fontFamily: f,
         }}
-        onMouseEnter={e => (e.currentTarget.style.background = "#ffffff04")}
-        onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+        onClick={() => setExpanded(!expanded)}
+        onMouseEnter={e => { if (!someSelected) (e.currentTarget as HTMLDivElement).style.background = "#ffffff05"; }}
+        onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = someSelected ? `${C.gold}06` : "transparent"; }}
       >
+        <Checkbox checked={allSelected} onToggle={e => { e.stopPropagation(); allKeys.forEach(k => toggleKey(k)); }} />
         <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
           {expanded
-            ? <ChevronDown style={{ width: 12, height: 12, color: C.dim, flexShrink: 0 }} />
-            : <ChevronRight style={{ width: 12, height: 12, color: C.dim, flexShrink: 0 }} />}
-          <span style={{ fontSize: 14, fontWeight: 600, color: C.text, letterSpacing: 0.3 }}>{group.underlying}</span>
-          <span style={{ fontSize: 14, color: C.textDim, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{details}</span>
+            ? <ChevronDown style={{ width: 11, height: 11, color: C.dim, flexShrink: 0 }} />
+            : <ChevronRight style={{ width: 11, height: 11, color: C.dim, flexShrink: 0 }} />}
+          <span style={{ fontSize: 15, fontWeight: 600, color: C.text }}>{group.underlying}</span>
+          <span style={{ fontSize: 12, color: C.dim, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{details}</span>
         </div>
         <span style={{ fontSize: 13, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
           {fmtCompact(group.totalMarketValue)}
@@ -236,46 +284,53 @@ function PositionTableRow({
         <span style={{ fontSize: 13, color: plColor(group.totalPL), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
           {fmtPct(totalPLPct)}
         </span>
-        <span style={{ fontSize: 13, color: plColor(group.totalDayPL), textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>
+        <span style={{ fontSize: 13, fontWeight: 500, color: plColor(group.totalDayPL), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
           {fmtCurrency(group.totalDayPL)}
         </span>
-      </button>
+      </div>
 
       {expanded && (
-        <div style={{ borderBottom: `1px solid ${C.border}`, background: "#0a0a0a" }}>
-          {eq && (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: gridCols,
-                alignItems: "center",
-                padding: "6px 10px 6px 30px",
-                borderBottom: `1px solid ${C.border}`,
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
-                <span style={{ fontSize: 14, color: C.textDim }}>
+        <div style={{ borderBottom: `1px solid ${C.borderHi}`, background: "#0a0a0a" }}>
+          {eq && (() => {
+            const isSelected = selectedKeys.has(eqKey);
+            const eqPLPct = eq.averagePrice > 0
+              ? (eq.longOpenProfitLoss / (eq.averagePrice * (eq.shortQuantity > 0 ? eq.shortQuantity : eq.longQuantity))) * 100
+              : 0;
+            return (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: gridCols,
+                  alignItems: "center",
+                  padding: "5px 10px 5px 12px",
+                  borderBottom: `1px solid ${C.border}`,
+                  background: isSelected ? `${C.gold}08` : "transparent",
+                }}
+              >
+                <Checkbox checked={isSelected} onToggle={e => { e.stopPropagation(); toggleKey(eqKey); }} />
+                <span style={{ fontSize: 12, color: C.textDim, paddingLeft: 4 }}>
                   {fmtQty(eq.longQuantity, eq.shortQuantity)} @ {fmtCurrency(eq.averagePrice)}
                 </span>
+                <span style={{ fontSize: 12, color: C.textMuted, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                  {fmtCompact(eq.marketValue)}
+                </span>
+                <span style={{ fontSize: 12, color: plColor(eq.longOpenProfitLoss), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                  {fmtPct(eqPLPct)}
+                </span>
+                <span style={{ fontSize: 12, color: plColor(eq.currentDayProfitLoss), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                  {fmtCurrency(eq.currentDayProfitLoss)}
+                </span>
               </div>
-              <span style={{ fontSize: 14, color: C.textMuted, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                {fmtCompact(eq.marketValue)}
-              </span>
-              <span style={{ fontSize: 14, color: plColor(eq.longOpenProfitLoss), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                {eq.averagePrice > 0 ? fmtPct((eq.longOpenProfitLoss / (eq.averagePrice * (eq.shortQuantity > 0 ? eq.shortQuantity : eq.longQuantity))) * 100) : "—"}
-              </span>
-              <span style={{ fontSize: 14, color: plColor(eq.currentDayProfitLoss), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                {fmtCurrency(eq.currentDayProfitLoss)}
-              </span>
-            </div>
-          )}
+            );
+          })()}
 
           {group.options.map(opt => {
             const isShort = opt.shortQuantity > 0;
             const qty = isShort ? opt.shortQuantity : opt.longQuantity;
+            const optKey = `${group.underlying}:${opt.cusip}`;
+            const isSelected = selectedKeys.has(optKey);
             const totalPL = opt.longOpenProfitLoss;
             const totalPLPctOpt = opt.averagePrice > 0 ? (totalPL / (opt.averagePrice * qty * 100)) * 100 : 0;
-            const closeSide: "BUY" | "SELL" = isShort ? "BUY" : "SELL";
 
             return (
               <div
@@ -284,44 +339,46 @@ function PositionTableRow({
                   display: "grid",
                   gridTemplateColumns: gridCols,
                   alignItems: "center",
-                  padding: "6px 10px 6px 30px",
+                  padding: "5px 10px 5px 12px",
                   borderBottom: `1px solid ${C.border}`,
+                  background: isSelected ? `${C.gold}08` : "transparent",
                 }}
               >
-                <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
-                  <span style={{ fontSize: 14, fontWeight: 600, color: opt.putCall === "CALL" ? "#4ade80" : "#fb923c", width: 8, flexShrink: 0 }}>
+                <Checkbox checked={isSelected} onToggle={e => { e.stopPropagation(); toggleKey(optKey); }} />
+                <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0, paddingLeft: 4 }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: opt.putCall === "CALL" ? "#4ade80" : "#fb923c", flexShrink: 0 }}>
                     {opt.putCall === "CALL" ? "C" : "P"}
                   </span>
-                  <span style={{ fontSize: 14, color: C.textMuted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  <span style={{ fontSize: 12, color: C.textDim, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                     {formatOptionSymbol(opt.symbol, false)} ×{fmtQty(opt.longQuantity, opt.shortQuantity).replace("+", "")}
                   </span>
                 </div>
-                <span style={{ fontSize: 14, color: C.textMuted, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                <span style={{ fontSize: 12, color: C.textMuted, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
                   {fmtCompact(opt.marketValue)}
                 </span>
-                <span style={{ fontSize: 14, color: plColor(totalPL), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                <span style={{ fontSize: 12, color: plColor(totalPL), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
                   {fmtPct(totalPLPctOpt)}
                 </span>
-                <span style={{ fontSize: 14, color: plColor(opt.currentDayProfitLoss), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                <span style={{ fontSize: 12, color: plColor(opt.currentDayProfitLoss), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
                   {fmtCurrency(opt.currentDayProfitLoss)}
                 </span>
               </div>
             );
           })}
 
-          <div style={{ padding: "6px 10px 6px 30px", display: "flex", gap: 8 }}>
+          <div style={{ padding: "5px 10px 5px 34px", display: "flex", gap: 10, borderBottom: `1px solid ${C.border}` }}>
             <button
-              onClick={() => onSelect(group.underlying)}
-              style={{ fontSize: 14, fontWeight: 600, fontFamily: f, color: C.gold, background: "transparent", border: "none", cursor: "pointer", padding: 0, letterSpacing: 0.5, textTransform: "uppercase" }}
+              onClick={e => { e.stopPropagation(); onSelect(group.underlying); }}
+              style={{ fontSize: 11, fontWeight: 500, fontFamily: f, color: C.gold, background: "transparent", border: "none", cursor: "pointer", padding: 0, letterSpacing: 0.5, textTransform: "uppercase" }}
             >
-              CHART →
+              Chart →
             </button>
             {onTrade && eq && (
               <button
-                onClick={() => onTrade(group.underlying, eqIsShort ? "BUY" : "SELL")}
-                style={{ fontSize: 14, fontWeight: 600, fontFamily: f, color: C.gold, background: "transparent", border: "none", cursor: "pointer", padding: 0, letterSpacing: 0.5, textTransform: "uppercase" }}
+                onClick={e => { e.stopPropagation(); onTrade(group.underlying, eqIsShort ? "BUY" : "SELL"); }}
+                style={{ fontSize: 11, fontWeight: 500, fontFamily: f, color: C.gold, background: "transparent", border: "none", cursor: "pointer", padding: 0, letterSpacing: 0.5, textTransform: "uppercase" }}
               >
-                TRADE
+                Trade
               </button>
             )}
             {onTrade && hasOptions && group.options.map(opt => {
@@ -329,10 +386,10 @@ function PositionTableRow({
               return (
                 <button
                   key={opt.cusip}
-                  onClick={() => onTrade(opt.underlyingSymbol, isShort ? "BUY" : "SELL", opt.symbol, isShort ? "BUY_TO_CLOSE" : "SELL_TO_CLOSE")}
-                  style={{ fontSize: 14, fontWeight: 600, fontFamily: f, color: C.textDim, background: "transparent", border: "none", cursor: "pointer", padding: 0, letterSpacing: 0.5, textTransform: "uppercase" }}
+                  onClick={e => { e.stopPropagation(); onTrade(opt.underlyingSymbol, isShort ? "BUY" : "SELL", opt.symbol, isShort ? "BUY_TO_CLOSE" : "SELL_TO_CLOSE"); }}
+                  style={{ fontSize: 11, fontWeight: 500, fontFamily: f, color: C.textDim, background: "transparent", border: "none", cursor: "pointer", padding: 0, letterSpacing: 0.5, textTransform: "uppercase" }}
                 >
-                  CLOSE {opt.putCall === "CALL" ? "C" : "P"}
+                  Close {opt.putCall === "CALL" ? "C" : "P"}
                 </button>
               );
             })}
@@ -348,9 +405,7 @@ function OrderRow({ order, onCancel }: { order: Order; onCancel?: (orderId: numb
   const primaryLeg = order.legs[0];
   const isMultiLeg = order.legs.length > 1;
   const displaySymbol = primaryLeg
-    ? primaryLeg.assetType === "OPTION"
-      ? formatOptionSymbol(primaryLeg.symbol)
-      : primaryLeg.symbol
+    ? primaryLeg.assetType === "OPTION" ? formatOptionSymbol(primaryLeg.symbol) : primaryLeg.symbol
     : "—";
   const isBuy = primaryLeg?.instruction?.includes("BUY");
   const isOpen = order.status === "WORKING" || order.status === "PENDING_ACTIVATION";
@@ -359,57 +414,35 @@ function OrderRow({ order, onCancel }: { order: Order; onCancel?: (orderId: numb
     <div style={{ borderBottom: `1px solid ${C.border}` }}>
       <button
         onClick={() => setExpanded(!expanded)}
-        style={{
-          width: "100%",
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          padding: "8px 10px",
-          background: "transparent",
-          border: "none",
-          cursor: "pointer",
-          fontFamily: f,
-        }}
+        style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: "transparent", border: "none", cursor: "pointer", fontFamily: f }}
         onMouseEnter={e => (e.currentTarget.style.background = "#ffffff04")}
         onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
       >
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", minWidth: 0, flex: 1, gap: 2 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ fontSize: 14, fontWeight: 700, color: isBuy ? C.green : C.red, textTransform: "uppercase", letterSpacing: 0.5 }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: isBuy ? C.green : C.red, textTransform: "uppercase", letterSpacing: 0.3 }}>
               {primaryLeg?.instruction?.replace(/_/g, " ") ?? "—"}
             </span>
-            {isMultiLeg && (
-              <span style={{ fontSize: 14, color: C.textDim }}>+{order.legs.length - 1} leg{order.legs.length > 2 ? "s" : ""}</span>
-            )}
+            {isMultiLeg && <span style={{ fontSize: 12, color: C.textDim }}>+{order.legs.length - 1} leg{order.legs.length > 2 ? "s" : ""}</span>}
           </div>
           <span style={{ fontSize: 13, color: C.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200 }}>
             {displaySymbol}
           </span>
         </div>
-
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2, flexShrink: 0 }}>
-          <span style={{ fontSize: 14, fontWeight: 600, color: statusColor(order.status), textTransform: "uppercase", letterSpacing: 0.5 }}>
-            {order.status}
-          </span>
-          <span style={{ fontSize: 14, color: C.dim }}>{timeAgo(order.enteredTime)}</span>
+          <span style={{ fontSize: 12, fontWeight: 500, color: statusColor(order.status), textTransform: "uppercase", letterSpacing: 0.3 }}>{order.status}</span>
+          <span style={{ fontSize: 12, color: C.dim }}>{timeAgo(order.enteredTime)}</span>
         </div>
-
         {isOpen && onCancel && (
-          <button
-            onClick={(e) => { e.stopPropagation(); onCancel(order.orderId); }}
-            style={{ marginLeft: 2, padding: 2, background: "transparent", border: "none", cursor: "pointer", color: C.red }}
-          >
-            <XCircle style={{ width: 12, height: 12 }} />
+          <button onClick={e => { e.stopPropagation(); onCancel(order.orderId); }} style={{ marginLeft: 2, padding: 2, background: "transparent", border: "none", cursor: "pointer", color: C.red }}>
+            <XCircle style={{ width: 13, height: 13 }} />
           </button>
         )}
-
-        {expanded
-          ? <ChevronDown style={{ color: C.dim, width: 10, height: 10, flexShrink: 0 }} />
-          : <ChevronRight style={{ color: C.dim, width: 10, height: 10, flexShrink: 0 }} />}
+        {expanded ? <ChevronDown style={{ color: C.dim, width: 11, height: 11, flexShrink: 0 }} /> : <ChevronRight style={{ color: C.dim, width: 11, height: 11, flexShrink: 0 }} />}
       </button>
 
       {expanded && (
-        <div style={{ padding: "6px 10px 8px 18px", borderTop: `1px solid ${C.border}`, background: "#0a0a0a" }}>
+        <div style={{ padding: "6px 10px 8px 20px", borderTop: `1px solid ${C.border}`, background: "#0a0a0a" }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "4px 12px" }}>
             {[
               ["Type", order.orderType.replace(/_/g, " ")],
@@ -420,35 +453,29 @@ function OrderRow({ order, onCancel }: { order: Order; onCancel?: (orderId: numb
               ...(order.complexStrategy !== "NONE" ? [["Strategy", order.complexStrategy.replace(/_/g, " ")]] : []),
             ].map(([label, value]) => (
               <div key={label}>
-                <div style={{ fontSize: 14, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
+                <div style={{ fontSize: 11, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
                 <div style={{ fontSize: 13, color: C.text }}>{value}</div>
               </div>
             ))}
           </div>
-
           {order.legs.length > 1 && (
             <div style={{ marginTop: 6 }}>
-              <div style={{ fontSize: 14, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Legs</div>
+              <div style={{ fontSize: 11, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Legs</div>
               {order.legs.map((leg, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, paddingLeft: 6, marginBottom: 1 }}>
-                  <span style={{ fontSize: 14, fontWeight: 600, color: leg.instruction?.includes("BUY") ? C.green : C.red }}>
-                    {leg.instruction?.replace(/_/g, " ")}
-                  </span>
-                  <span style={{ fontSize: 14, color: C.textDim }}>
-                    {leg.quantity}× {leg.assetType === "OPTION" ? formatOptionSymbol(leg.symbol) : leg.symbol}
-                  </span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: leg.instruction?.includes("BUY") ? C.green : C.red }}>{leg.instruction?.replace(/_/g, " ")}</span>
+                  <span style={{ fontSize: 12, color: C.textDim }}>{leg.quantity}× {leg.assetType === "OPTION" ? formatOptionSymbol(leg.symbol) : leg.symbol}</span>
                 </div>
               ))}
             </div>
           )}
-
           {order.fills.length > 0 && (
             <div style={{ marginTop: 6 }}>
-              <div style={{ fontSize: 14, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Fills</div>
+              <div style={{ fontSize: 11, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Fills</div>
               {order.fills.map((fill, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, paddingLeft: 6, marginBottom: 1 }}>
-                  <span style={{ fontSize: 14, color: C.textDim, fontVariantNumeric: "tabular-nums" }}>{fill.quantity}× @ {fmtCurrency(fill.price)}</span>
-                  <span style={{ fontSize: 14, color: C.dim }}>{timeAgo(fill.time)}</span>
+                  <span style={{ fontSize: 12, color: C.textDim, fontVariantNumeric: "tabular-nums" }}>{fill.quantity}× @ {fmtCurrency(fill.price)}</span>
+                  <span style={{ fontSize: 12, color: C.dim }}>{timeAgo(fill.time)}</span>
                 </div>
               ))}
             </div>
@@ -474,7 +501,6 @@ interface PortfolioViewProps {
 
 export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProps) {
   const { accessToken, setSymbol } = useTerminalStore();
-
   const wsAccount = usePortfolioStreamStore((s) => s.account);
   const wsOrders = usePortfolioStreamStore((s) => s.orders);
   const wsLastUpdate = usePortfolioStreamStore((s) => s.lastUpdate);
@@ -493,65 +519,61 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
   const [ordersError, setOrdersError] = useState(false);
   const wsSubSentRef = useRef(false);
 
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const [marginCallExpanded, setMarginCallExpanded] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [visibleMetrics, setVisibleMetrics] = useState<MetricKey[]>(() => {
+    try {
+      const stored = localStorage.getItem(METRICS_STORAGE_KEY);
+      if (stored) return JSON.parse(stored) as MetricKey[];
+    } catch {}
+    return DEFAULT_METRICS;
+  });
+
+  const toggleKey = useCallback((key: string) => {
+    setSelectedKeys(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const toggleMetric = useCallback((key: MetricKey) => {
+    setVisibleMetrics(prev => {
+      const next = prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key];
+      try { localStorage.setItem(METRICS_STORAGE_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
-    if (wsAccount) {
-      setAccount(wsAccount as Account);
-      setLastRefresh(wsLastUpdate);
-      setLoading(false);
-      setError(null);
-    }
+    if (wsAccount) { setAccount(wsAccount as Account); setLastRefresh(wsLastUpdate); setLoading(false); setError(null); }
   }, [wsAccount, wsLastUpdate]);
 
   useEffect(() => {
-    if (wsOrders && wsOrders.length > 0) {
-      setOrders(wsOrders as Order[]);
-      setOrdersLoading(false);
-      setOrdersError(false);
-    }
+    if (wsOrders && wsOrders.length > 0) { setOrders(wsOrders as Order[]); setOrdersLoading(false); setOrdersError(false); }
   }, [wsOrders]);
 
   useEffect(() => {
     if (!accessToken) return;
-
     const sendSubscribe = () => {
       const ws = (window as any).__alphaWs as WebSocket | undefined;
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ action: "subscribePortfolio" }));
-        wsSubSentRef.current = true;
-        return true;
-      }
+      if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ action: "subscribePortfolio" })); wsSubSentRef.current = true; return true; }
       return false;
     };
-
     if (!sendSubscribe()) {
-      const retry = setInterval(() => {
-        if (sendSubscribe()) clearInterval(retry);
-      }, 500);
+      const retry = setInterval(() => { if (sendSubscribe()) clearInterval(retry); }, 500);
       const timeout = setTimeout(() => clearInterval(retry), 10_000);
       var cleanup = () => { clearInterval(retry); clearTimeout(timeout); };
     }
-
-    fetchWithAuth("/api/portfolio/accounts")
-      .then(r => r.ok ? r.json() : Promise.reject())
-      .then(data => { if (data.length > 0 && !wsAccount) { setAccount(data[0]); setLastRefresh(new Date()); setLoading(false); } })
-      .catch(() => { if (!wsAccount) setError("Failed to load portfolio data"); setLoading(false); });
-
-    fetchWithAuth("/api/portfolio/orders?days=30")
-      .then(r => r.ok ? r.json() : Promise.reject())
-      .then(data => { if (!wsOrders?.length) setOrders(data); })
-      .catch(() => {});
-
-    fetchWithAuth("/api/portfolio/account-hash")
-      .then(r => r.json())
-      .then(d => { if (d.hashValue) setAccountHash(d.hashValue); })
-      .catch(() => {});
-
+    fetchWithAuth("/api/portfolio/accounts").then(r => r.ok ? r.json() : Promise.reject()).then(data => { if (data.length > 0 && !wsAccount) { setAccount(data[0]); setLastRefresh(new Date()); setLoading(false); } }).catch(() => { if (!wsAccount) setError("Failed to load portfolio data"); setLoading(false); });
+    fetchWithAuth("/api/portfolio/orders?days=30").then(r => r.ok ? r.json() : Promise.reject()).then(data => { if (!wsOrders?.length) setOrders(data); }).catch(() => {});
+    fetchWithAuth("/api/portfolio/account-hash").then(r => r.json()).then(d => { if (d.hashValue) setAccountHash(d.hashValue); }).catch(() => {});
     return () => {
       cleanup?.();
       const ws = (window as any).__alphaWs as WebSocket | undefined;
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ action: "unsubscribePortfolio" }));
-      }
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ action: "unsubscribePortfolio" }));
       wsSubSentRef.current = false;
     };
   }, [accessToken]);
@@ -561,89 +583,55 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
     setError(null);
     try {
       const res = await fetchWithAuth("/api/portfolio/accounts");
-      if (!res.ok) throw new Error(`${res.status}`);
+      if (!res.ok) throw new Error();
       const data = await res.json();
       if (data.length > 0) setAccount(data[0]);
       setLastRefresh(new Date());
-    } catch {
-      if (!silent) setError("Failed to load portfolio data");
-    } finally {
-      if (!silent) setLoading(false);
-    }
+    } catch { if (!silent) setError("Failed to load portfolio data"); }
+    finally { if (!silent) setLoading(false); }
   }, []);
 
   const fetchOrders = useCallback(async () => {
-    setOrdersLoading(true);
-    setOrdersError(false);
+    setOrdersLoading(true); setOrdersError(false);
     try {
       const res = await fetchWithAuth("/api/portfolio/orders?days=30");
-      if (!res.ok) throw new Error(`${res.status}`);
-      const data = await res.json();
-      setOrders(data);
-    } catch {
-      setOrdersError(true);
-    } finally {
-      setOrdersLoading(false);
-    }
+      if (!res.ok) throw new Error();
+      setOrders(await res.json());
+    } catch { setOrdersError(true); }
+    finally { setOrdersLoading(false); }
   }, []);
 
-  const handleSelectSymbol = useCallback((sym: string) => {
-    setSymbol(sym);
-    onNavigateToSymbol?.(sym);
-  }, [setSymbol, onNavigateToSymbol]);
+  const handleSelectSymbol = useCallback((sym: string) => { setSymbol(sym); onNavigateToSymbol?.(sym); }, [setSymbol, onNavigateToSymbol]);
 
   const handleCancelOrder = useCallback(async (orderId: number) => {
     if (!accountHash) return;
     setCancellingId(orderId);
-    try {
-      await fetchWithAuth("/api/portfolio/cancel-order", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accountHash, orderId: String(orderId) }),
-      });
-      fetchOrders();
-    } catch {} finally {
-      setCancellingId(null);
-    }
+    try { await fetchWithAuth("/api/portfolio/cancel-order", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountHash, orderId: String(orderId) }) }); fetchOrders(); }
+    catch {} finally { setCancellingId(null); }
   }, [accountHash, fetchOrders]);
 
   const symbolGroups = useMemo(() => {
     const positions = account?.positions ?? [];
     const groupMap = new Map<string, SymbolGroup>();
-
     for (const pos of positions) {
       const key = (pos.assetType === "OPTION" ? pos.underlyingSymbol : pos.symbol).toUpperCase();
-      if (!groupMap.has(key)) {
-        groupMap.set(key, { underlying: key, equity: null, options: [], totalMarketValue: 0, totalDayPL: 0, totalPL: 0 });
-      }
+      if (!groupMap.has(key)) groupMap.set(key, { underlying: key, equity: null, options: [], totalMarketValue: 0, totalDayPL: 0, totalPL: 0 });
       const g = groupMap.get(key)!;
-      if (pos.assetType === "OPTION") {
-        g.options.push(pos);
-      } else {
-        g.equity = pos;
-      }
+      if (pos.assetType === "OPTION") g.options.push(pos); else g.equity = pos;
       g.totalMarketValue += pos.marketValue;
       g.totalDayPL += pos.currentDayProfitLoss;
       g.totalPL += pos.longOpenProfitLoss;
     }
-
     return Array.from(groupMap.values()).sort((a, b) => Math.abs(b.totalMarketValue) - Math.abs(a.totalMarketValue));
   }, [account]);
 
-  const totalUnrealized = useMemo(() => {
-    return (account?.positions ?? []).reduce((sum, p) => sum + p.longOpenProfitLoss, 0);
-  }, [account]);
-
-  const totalMarketValue = useMemo(() => {
-    return (account?.positions ?? []).reduce((sum, p) => sum + p.marketValue, 0);
-  }, [account]);
-
-  const unrealizedPct = totalMarketValue > 0 ? (totalUnrealized / (totalMarketValue - totalUnrealized)) * 100 : 0;
-
+  const totalUnrealized = useMemo(() => (account?.positions ?? []).reduce((s, p) => s + p.longOpenProfitLoss, 0), [account]);
+  const totalMarketValue = useMemo(() => (account?.positions ?? []).reduce((s, p) => s + p.marketValue, 0), [account]);
+  const unrealizedPct = Math.abs(totalMarketValue - totalUnrealized) > 0.01 ? (totalUnrealized / (totalMarketValue - totalUnrealized)) * 100 : 0;
   const grossMarketValue = useMemo(() => symbolGroups.reduce((s, g) => s + Math.abs(g.totalMarketValue), 0), [symbolGroups]);
   const totalDayPLPositions = useMemo(() => symbolGroups.reduce((s, g) => s + g.totalDayPL, 0), [symbolGroups]);
-  const bestPerformer = useMemo(() => symbolGroups.length > 0 ? symbolGroups.reduce((best, g) => g.totalDayPL > best.totalDayPL ? g : best, symbolGroups[0]) : null, [symbolGroups]);
-  const worstPerformer = useMemo(() => symbolGroups.length > 0 ? symbolGroups.reduce((worst, g) => g.totalDayPL < worst.totalDayPL ? g : worst, symbolGroups[0]) : null, [symbolGroups]);
+  const bestPerformer = useMemo(() => symbolGroups.length > 0 ? symbolGroups.reduce((b, g) => g.totalDayPL > b.totalDayPL ? g : b, symbolGroups[0]) : null, [symbolGroups]);
+  const worstPerformer = useMemo(() => symbolGroups.length > 0 ? symbolGroups.reduce((w, g) => g.totalDayPL < w.totalDayPL ? g : w, symbolGroups[0]) : null, [symbolGroups]);
 
   const isMarginCall = useMemo(() => {
     if (!account?.balances) return false;
@@ -652,46 +640,57 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
   }, [account]);
 
   const filteredOrders = useMemo(() => {
-    let filtered = orders;
-    if (orderFilter !== "ALL") {
-      filtered = filtered.filter(o => o.status === orderFilter);
-    }
-    if (orderSearch.trim()) {
-      const q = orderSearch.trim().toUpperCase();
-      filtered = filtered.filter(o =>
-        o.legs.some(l => l.symbol.toUpperCase().includes(q) || l.underlyingSymbol?.toUpperCase().includes(q))
-      );
-    }
-    return filtered;
+    let f2 = orders;
+    if (orderFilter !== "ALL") f2 = f2.filter(o => o.status === orderFilter);
+    if (orderSearch.trim()) { const q = orderSearch.trim().toUpperCase(); f2 = f2.filter(o => o.legs.some(l => l.symbol.toUpperCase().includes(q) || l.underlyingSymbol?.toUpperCase().includes(q))); }
+    return f2;
   }, [orders, orderFilter, orderSearch]);
 
-  if (!accessToken) {
-    return (
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 32, minHeight: "60vh", fontFamily: f }}>
-        <div style={{ fontSize: 13, color: C.textDim, letterSpacing: 1.5, textTransform: "uppercase" }}>CONNECT SCHWAB TO VIEW PORTFOLIO</div>
-      </div>
-    );
-  }
+  const handleCloseSelected = useCallback(() => {
+    if (!onTrade) return;
+    for (const key of selectedKeys) {
+      const [underlying, rest] = key.split(":");
+      if (rest === "EQ") {
+        const grp = symbolGroups.find(g => g.underlying === underlying);
+        if (grp?.equity) {
+          const eq = grp.equity;
+          onTrade(underlying, eq.shortQuantity > 0 ? "BUY" : "SELL");
+        }
+      } else {
+        for (const grp of symbolGroups) {
+          const opt = grp.options.find(o => o.cusip === rest);
+          if (opt) { onTrade(opt.underlyingSymbol, opt.shortQuantity > 0 ? "BUY" : "SELL", opt.symbol, opt.shortQuantity > 0 ? "BUY_TO_CLOSE" : "SELL_TO_CLOSE"); break; }
+        }
+      }
+    }
+    setSelectedKeys(new Set());
+  }, [selectedKeys, symbolGroups, onTrade]);
 
-  if (loading && !account) {
-    return (
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, padding: 32, minHeight: "60vh", fontFamily: f }}>
-        <RefreshCw className="animate-spin" style={{ width: 16, height: 16, color: C.gold }} />
-        <div style={{ fontSize: 13, color: C.textDim, letterSpacing: 1, textTransform: "uppercase" }}>LOADING PORTFOLIO</div>
-      </div>
-    );
-  }
+  const handleRollSelected = useCallback(() => {
+    const first = [...selectedKeys][0];
+    if (!first) return;
+    const underlying = first.split(":")[0];
+    handleSelectSymbol(underlying);
+    setSelectedKeys(new Set());
+  }, [selectedKeys, handleSelectSymbol]);
 
-  if (error && !account) {
-    return (
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, padding: 32, minHeight: "60vh", fontFamily: f }}>
-        <div style={{ fontSize: 13, color: `${C.red}cc` }}>{error}</div>
-        <button onClick={() => fetchAccount()} style={{ fontSize: 14, color: C.gold, background: "transparent", border: "none", cursor: "pointer", letterSpacing: 1, fontFamily: f, textTransform: "uppercase" }}>
-          RETRY
-        </button>
-      </div>
-    );
-  }
+  if (!accessToken) return (
+    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: f }}>
+      <div style={{ fontSize: 13, color: C.textDim, letterSpacing: 1.5, textTransform: "uppercase" }}>CONNECT SCHWAB TO VIEW PORTFOLIO</div>
+    </div>
+  );
+  if (loading && !account) return (
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, fontFamily: f }}>
+      <RefreshCw className="animate-spin" style={{ width: 16, height: 16, color: C.gold }} />
+      <div style={{ fontSize: 13, color: C.textDim, letterSpacing: 1, textTransform: "uppercase" }}>LOADING PORTFOLIO</div>
+    </div>
+  );
+  if (error && !account) return (
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, fontFamily: f }}>
+      <div style={{ fontSize: 13, color: `${C.red}cc` }}>{error}</div>
+      <button onClick={() => fetchAccount()} style={{ fontSize: 13, color: C.gold, background: "transparent", border: "none", cursor: "pointer", fontFamily: f, textTransform: "uppercase" }}>RETRY</button>
+    </div>
+  );
 
   const bal = account?.balances;
   const dayPL = account?.dayPL ?? 0;
@@ -699,93 +698,157 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
   const marginUsed = bal?.maintenanceRequirement ?? 0;
   const marginTotal = bal?.equity ?? 0;
   const marginPct = marginTotal > 0 ? (marginUsed / marginTotal) * 100 : 0;
+  const marginDeficiency = Math.max(0, marginUsed - marginTotal);
   const prevDayValue = (bal?.liquidationValue ?? 0) - dayPL;
   const dayReturnPct = prevDayValue > 0 ? (dayPL / prevDayValue) * 100 : 0;
   const dayTradesLeft = account ? (account.isDayTrader ? null : Math.max(0, 3 - account.roundTrips)) : null;
 
+  const metricValues: Record<MetricKey, { label: string; value: string; color: string }> = {
+    plOpen: { label: "P/L Open", value: fmtCurrency(totalPL), color: plColor(totalPL) },
+    buyingPower: { label: "Buying Pwr", value: fmtCurrency(bal?.buyingPower ?? 0), color: (bal?.buyingPower ?? 0) < 0 ? C.red : C.text },
+    margin: { label: "Margin", value: `${marginPct.toFixed(0)}%`, color: marginPct > 80 ? C.red : marginPct > 50 ? C.gold : C.text },
+    availableFunds: { label: "Avail Funds", value: fmtCurrency(bal?.availableFunds ?? 0), color: (bal?.availableFunds ?? 0) < 0 ? C.red : C.text },
+    cashBalance: { label: "Cash Bal", value: fmtCurrency(bal?.cashBalance ?? 0), color: C.text },
+    posEquity: { label: "Pos Equity", value: fmtCurrency(bal?.equity ?? 0), color: C.text },
+  };
+
+  const shownMetrics = visibleMetrics
+    .filter(k => metricValues[k])
+    .map(k => metricValues[k]);
+
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, fontFamily: f }}>
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, fontFamily: f, position: "relative" }}>
+      {showSettings && (
+        <div
+          style={{ position: "absolute", inset: 0, zIndex: 50, background: "#000000cc", display: "flex", alignItems: "flex-start", justifyContent: "flex-end" }}
+          onClick={() => setShowSettings(false)}
+        >
+          <div
+            style={{ margin: "48px 8px 0", background: "#1a1a1a", border: `1px solid ${C.borderHi}`, width: 220, padding: 0, fontFamily: f }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", borderBottom: `1px solid ${C.border}` }}>
+              <span style={{ fontSize: 12, fontWeight: 500, color: C.textDim, textTransform: "uppercase", letterSpacing: 1 }}>Display Metrics</span>
+              <button onClick={() => setShowSettings(false)} style={{ background: "transparent", border: "none", cursor: "pointer", color: C.dim, padding: 0 }}>
+                <X style={{ width: 14, height: 14 }} />
+              </button>
+            </div>
+            {ALL_METRICS.map(m => {
+              const on = visibleMetrics.includes(m.key);
+              return (
+                <button
+                  key={m.key}
+                  onClick={() => toggleMetric(m.key)}
+                  style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 12px", background: "transparent", border: "none", borderBottom: `1px solid ${C.border}`, cursor: "pointer", fontFamily: f }}
+                >
+                  <span style={{ fontSize: 13, color: on ? C.text : C.dim }}>{m.label}</span>
+                  <div style={{ width: 16, height: 16, borderRadius: 3, border: `1px solid ${on ? C.gold : C.dim}`, background: on ? `${C.gold}22` : "transparent", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    {on && <Check style={{ width: 10, height: 10, color: C.gold }} />}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div style={{ borderBottom: `1px solid ${C.borderHi}` }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 10px 0" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 10px 2px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ fontSize: 13, color: C.textDim, letterSpacing: 0.5 }}>
-              ····{(account?.accountNumber ?? "").slice(-4)}
-            </span>
-            <span style={{ fontSize: 14, color: C.dim }}>·</span>
-            <span style={{ fontSize: 14, color: C.dim, textTransform: "uppercase" }}>{account?.type ?? ""}</span>
+            <span style={{ fontSize: 13, color: C.textDim }}>····{(account?.accountNumber ?? "").slice(-4)}</span>
+            <span style={{ fontSize: 12, color: C.dim }}>·</span>
+            <span style={{ fontSize: 12, color: C.dim, textTransform: "uppercase" }}>{account?.type ?? ""}</span>
             <span style={{ width: 5, height: 5, borderRadius: 3, background: C.green, display: "inline-block" }} />
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            {lastRefresh && <span style={{ fontSize: 14, color: C.dim }}>{timeAgo(lastRefresh.toISOString())}</span>}
-            <button
-              onClick={() => { fetchAccount(); fetchOrders(); }}
-              disabled={loading}
-              style={{ padding: 3, background: "transparent", border: "none", cursor: "pointer" }}
-            >
-              <RefreshCw className={loading ? "animate-spin" : ""} style={{ width: 12, height: 12, color: C.dim }} />
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            {lastRefresh && <span style={{ fontSize: 12, color: C.dim }}>{timeAgo(lastRefresh.toISOString())}</span>}
+            <button onClick={() => { fetchAccount(); fetchOrders(); }} disabled={loading} style={{ padding: 4, background: "transparent", border: "none", cursor: "pointer" }}>
+              <RefreshCw className={loading ? "animate-spin" : ""} style={{ width: 13, height: 13, color: C.dim }} />
+            </button>
+            <button onClick={() => setShowSettings(s => !s)} style={{ padding: 4, background: "transparent", border: "none", cursor: "pointer" }}>
+              <Settings style={{ width: 13, height: 13, color: showSettings ? C.gold : C.dim }} />
             </button>
           </div>
         </div>
 
-        <div style={{ padding: "4px 10px 6px" }}>
-          <div style={{ fontSize: 14, color: C.dim, textTransform: "uppercase", letterSpacing: 1, marginBottom: 1 }}>Net Liquidating Value</div>
+        <div style={{ padding: "2px 10px 6px" }}>
+          <div style={{ fontSize: 11, color: C.dim, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 1 }}>Net Liquidating Value</div>
           <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
             <span style={{ fontSize: 26, fontWeight: 700, color: C.text, fontVariantNumeric: "tabular-nums", letterSpacing: -0.5 }}>
               {fmtCurrency(bal?.liquidationValue ?? 0)}
             </span>
-            <span style={{ fontSize: 13, fontWeight: 600, color: plColor(dayPL), fontVariantNumeric: "tabular-nums" }}>
+            <span style={{ fontSize: 14, fontWeight: 500, color: plColor(dayPL), fontVariantNumeric: "tabular-nums" }}>
               {dayPL >= 0 ? "+" : ""}{fmtCurrency(dayPL)}
             </span>
-            <span style={{ fontSize: 14, color: plColor(dayPL), fontVariantNumeric: "tabular-nums" }}>
+            <span style={{ fontSize: 13, color: plColor(dayPL), fontVariantNumeric: "tabular-nums" }}>
               ({dayReturnPct >= 0 ? "+" : ""}{dayReturnPct.toFixed(2)}%)
             </span>
           </div>
         </div>
 
         {isMarginCall && (
-          <div style={{ margin: "0 10px 6px", padding: "5px 8px", background: `${C.red}12`, borderLeft: `2px solid ${C.red}`, display: "flex", alignItems: "center", gap: 6 }}>
-            <AlertTriangle style={{ color: C.red, width: 12, height: 12, flexShrink: 0 }} />
-            <span style={{ fontSize: 14, fontWeight: 700, color: C.red, textTransform: "uppercase", letterSpacing: 1 }}>
-              MARGIN CALL — IMMEDIATE ACTION REQUIRED
-            </span>
+          <div style={{ margin: "0 10px 6px" }}>
+            <button
+              onClick={() => setMarginCallExpanded(x => !x)}
+              style={{ width: "100%", display: "flex", alignItems: "center", gap: 6, padding: "6px 8px", background: `${C.red}10`, borderLeft: `2px solid ${C.red}`, border: "none", cursor: "pointer", fontFamily: f }}
+            >
+              <AlertTriangle style={{ color: C.red, width: 13, height: 13, flexShrink: 0 }} />
+              <span style={{ fontSize: 13, fontWeight: 600, color: C.red, textTransform: "uppercase", letterSpacing: 0.8, flex: 1, textAlign: "left" }}>
+                CALL ALERT — IMMEDIATE ACTION REQUIRED
+              </span>
+              {marginCallExpanded
+                ? <ChevronDown style={{ width: 12, height: 12, color: C.red }} />
+                : <ChevronRight style={{ width: 12, height: 12, color: C.red }} />}
+            </button>
+            {marginCallExpanded && (
+              <div style={{ background: `${C.red}08`, borderLeft: `2px solid ${C.red}50`, padding: "8px 10px", display: "flex", flexDirection: "column", gap: 4 }}>
+                {[
+                  ["Margin Equity", fmtCurrency(marginTotal)],
+                  ["Maintenance Requirement", fmtCurrency(marginUsed)],
+                  ["Deficiency", fmtCurrency(marginDeficiency)],
+                ].map(([label, val]) => (
+                  <div key={label} style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span style={{ fontSize: 12, color: C.textDim }}>{label}</span>
+                    <span style={{ fontSize: 12, fontWeight: 500, color: label === "Deficiency" ? C.red : C.text, fontVariantNumeric: "tabular-nums" }}>{val}</span>
+                  </div>
+                ))}
+                <div style={{ marginTop: 2, fontSize: 12, color: C.textDim }}>
+                  Deposit <span style={{ color: C.text, fontWeight: 500 }}>{fmtCurrency(marginDeficiency)}</span> or close equivalent positions to resolve.
+                </div>
+              </div>
+            )}
           </div>
         )}
 
-        <div style={{ display: "grid", gridTemplateColumns: dayTradesLeft !== null ? "1fr 1fr 1fr 1fr" : "1fr 1fr 1fr", padding: "0 10px 8px", gap: 0 }}>
-          {[
-            ["P/L Open", fmtCurrency(totalPL), plColor(totalPL)],
-            ["Buying Pwr", fmtCurrency(bal?.buyingPower ?? 0), (bal?.buyingPower ?? 0) < 0 ? C.red : C.text],
-            ["Margin", `${marginPct.toFixed(0)}%`, marginPct > 80 ? C.red : marginPct > 50 ? C.gold : C.text],
-            ...(dayTradesLeft !== null ? [["Day Trades", `${dayTradesLeft} left`, dayTradesLeft === 0 ? C.red : dayTradesLeft === 1 ? C.gold : C.text]] : []),
-          ].map(([label, value, color]) => (
-            <div key={label as string} style={{ padding: "4px 0" }}>
-              <div style={{ fontSize: 13, color: C.dim, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 1 }}>{label}</div>
-              <div style={{ fontSize: 14, fontWeight: 600, color: color as string, fontVariantNumeric: "tabular-nums" }}>{value}</div>
-            </div>
-          ))}
-        </div>
+        {shownMetrics.length > 0 && (
+          <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(shownMetrics.length, 4)}, 1fr)`, padding: "2px 10px 8px", gap: 0 }}>
+            {shownMetrics.map(m => (
+              <div key={m.label} style={{ padding: "3px 0" }}>
+                <div style={{ fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 1 }}>{m.label}</div>
+                <div style={{ fontSize: 13, fontWeight: 500, color: m.color, fontVariantNumeric: "tabular-nums" }}>{m.value}</div>
+              </div>
+            ))}
+            {dayTradesLeft !== null && (
+              <div style={{ padding: "3px 0" }}>
+                <div style={{ fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 1 }}>Day Trades</div>
+                <div style={{ fontSize: 13, fontWeight: 500, color: dayTradesLeft === 0 ? C.red : dayTradesLeft === 1 ? C.gold : C.text, fontVariantNumeric: "tabular-nums" }}>{dayTradesLeft} left</div>
+              </div>
+            )}
+          </div>
+        )}
 
         <div style={{ display: "flex", borderTop: `1px solid ${C.borderHi}` }}>
-          {(["positions", "orders", "balance"] as SubTab[]).map((tab) => (
+          {(["positions", "orders", "balance"] as SubTab[]).map(tab => (
             <button
               key={tab}
               onClick={() => setSubTab(tab)}
               style={{
-                flex: 1,
-                padding: "7px 0",
-                fontSize: 14,
-                fontWeight: 600,
-                textTransform: "uppercase",
-                letterSpacing: 1.2,
-                fontFamily: f,
-                color: subTab === tab ? C.gold : C.dim,
-                background: "transparent",
-                border: "none",
-                borderBottom: subTab === tab ? `2px solid ${C.gold}` : "2px solid transparent",
-                cursor: "pointer",
+                flex: 1, padding: "8px 0", fontSize: 12, fontWeight: 500, textTransform: "uppercase", letterSpacing: 1,
+                fontFamily: f, color: subTab === tab ? C.gold : C.dim, background: "transparent", border: "none",
+                borderBottom: subTab === tab ? `2px solid ${C.gold}` : "2px solid transparent", cursor: "pointer",
               }}
             >
-              {tab === "balance" ? "balances" : tab}
+              {tab === "balance" ? "Balances" : tab.charAt(0).toUpperCase() + tab.slice(1)}
             </button>
           ))}
         </div>
@@ -794,53 +857,42 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
       <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
         {subTab === "positions" && (
           <div>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: gridCols,
-                padding: "5px 10px",
-                borderBottom: `1px solid ${C.borderHi}`,
-                background: "#0e0e0e",
-                position: "sticky",
-                top: 0,
-                zIndex: 1,
-              }}
-            >
-              <span style={{ fontSize: 13, fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: 1 }}>Symbol</span>
-              <span style={{ fontSize: 13, fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: 0.8, textAlign: "right" }}>Mkt Val</span>
-              <span style={{ fontSize: 13, fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: 0.8, textAlign: "right" }}>P/L %</span>
-              <span style={{ fontSize: 13, fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: 0.8, textAlign: "right" }}>P/L Day</span>
+            <div style={{
+              display: "grid", gridTemplateColumns: gridCols, padding: "5px 10px",
+              borderBottom: `1px solid ${C.borderHi}`, background: "#0e0e0e",
+              position: "sticky", top: 0, zIndex: 1,
+            }}>
+              <div />
+              <span style={{ fontSize: 11, fontWeight: 500, color: C.dim, textTransform: "uppercase", letterSpacing: 0.8 }}>Symbol</span>
+              <span style={{ fontSize: 11, fontWeight: 500, color: C.dim, textTransform: "uppercase", letterSpacing: 0.8, textAlign: "right" }}>Mkt Val</span>
+              <span style={{ fontSize: 11, fontWeight: 500, color: C.dim, textTransform: "uppercase", letterSpacing: 0.8, textAlign: "right" }}>P/L %</span>
+              <span style={{ fontSize: 11, fontWeight: 500, color: C.dim, textTransform: "uppercase", letterSpacing: 0.8, textAlign: "right" }}>P/L Day</span>
             </div>
 
             {symbolGroups.map(group => (
-              <PositionTableRow key={group.underlying} group={group} onSelect={handleSelectSymbol} onTrade={onTrade} />
+              <PositionTableRow
+                key={group.underlying}
+                group={group}
+                onSelect={handleSelectSymbol}
+                onTrade={onTrade}
+                selectedKeys={selectedKeys}
+                toggleKey={toggleKey}
+              />
             ))}
 
             {symbolGroups.length > 0 && (
               <>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: gridCols,
-                    padding: "8px 10px",
-                    borderTop: `2px solid ${C.borderHi}`,
-                    borderBottom: `1px solid ${C.border}`,
-                    background: "#0e0e0e",
-                  }}
-                >
-                  <span style={{ fontSize: 13, fontWeight: 700, color: C.textMuted, letterSpacing: 0.5 }}>TOTAL</span>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                    {fmtCompact(totalMarketValue)}
-                  </span>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: plColor(totalUnrealized), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                    {fmtPct(unrealizedPct)}
-                  </span>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: plColor(totalDayPLPositions), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                    {fmtCurrency(totalDayPLPositions)}
-                  </span>
+                <div style={{
+                  display: "grid", gridTemplateColumns: gridCols, padding: "7px 10px",
+                  borderTop: `2px solid ${C.borderHi}`, borderBottom: `1px solid ${C.border}`, background: "#0e0e0e",
+                }}>
+                  <div />
+                  <span style={{ fontSize: 13, fontWeight: 500, color: C.textMuted }}>Overall Totals</span>
+                  <span style={{ fontSize: 13, fontWeight: 500, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCompact(totalMarketValue)}</span>
+                  <span style={{ fontSize: 13, fontWeight: 500, color: plColor(totalUnrealized), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtPct(unrealizedPct)}</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: plColor(totalDayPLPositions), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(totalDayPLPositions)}</span>
                 </div>
-
-                <div style={{ padding: "8px 10px", display: "flex", flexDirection: "column", gap: 3 }}>
+                <div style={{ padding: "8px 10px 12px", display: "flex", flexDirection: "column", gap: 4 }}>
                   {[
                     ["P/L Day:", totalDayPLPositions],
                     ["P/L Open:", totalUnrealized],
@@ -848,7 +900,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
                   ].map(([label, val]) => (
                     <div key={label as string} style={{ display: "flex", justifyContent: "space-between" }}>
                       <span style={{ fontSize: 13, color: C.textDim }}>{label}</span>
-                      <span style={{ fontSize: 13, fontWeight: 600, color: typeof val === "number" && label !== "Net Liq:" ? plColor(val as number) : C.text, fontVariantNumeric: "tabular-nums" }}>
+                      <span style={{ fontSize: 13, fontWeight: 500, color: typeof val === "number" && label !== "Net Liq:" ? plColor(val as number) : C.text, fontVariantNumeric: "tabular-nums" }}>
                         {fmtCurrency(val as number)}
                       </span>
                     </div>
@@ -858,7 +910,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
             )}
 
             {symbolGroups.length === 0 && (
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 0", gap: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "48px 0" }}>
                 <div style={{ fontSize: 13, color: C.textDim, textTransform: "uppercase", letterSpacing: 1 }}>No open positions</div>
               </div>
             )}
@@ -867,23 +919,16 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
 
         {subTab === "orders" && (
           <div>
-            <div style={{ padding: "8px 10px", display: "flex", flexDirection: "column", gap: 6, borderBottom: `1px solid ${C.border}` }}>
-              <div style={{ display: "flex", gap: 0 }}>
-                {ORDER_FILTERS.map((fil) => (
+            <div style={{ padding: "6px 10px", display: "flex", flexDirection: "column", gap: 6, borderBottom: `1px solid ${C.border}` }}>
+              <div style={{ display: "flex" }}>
+                {ORDER_FILTERS.map(fil => (
                   <button
                     key={fil.value}
                     onClick={() => setOrderFilter(fil.value)}
                     style={{
-                      padding: "4px 8px",
-                      fontSize: 14,
-                      fontWeight: 600,
-                      letterSpacing: 0.8,
-                      fontFamily: f,
-                      textTransform: "uppercase",
-                      cursor: "pointer",
-                      color: orderFilter === fil.value ? C.gold : C.dim,
-                      background: "transparent",
-                      border: "none",
+                      padding: "4px 10px", fontSize: 12, fontWeight: 500, letterSpacing: 0.5, fontFamily: f,
+                      textTransform: "uppercase", cursor: "pointer", color: orderFilter === fil.value ? C.gold : C.dim,
+                      background: "transparent", border: "none",
                       borderBottom: orderFilter === fil.value ? `1px solid ${C.gold}` : "1px solid transparent",
                     }}
                   >
@@ -891,50 +936,33 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
                   </button>
                 ))}
               </div>
-              <div style={{ display: "flex", alignItems: "center", border: `1px solid ${C.border}`, overflow: "hidden" }}>
-                <Search style={{ width: 12, height: 12, marginLeft: 8, color: C.dim, flexShrink: 0 }} />
-                <input
-                  type="text"
-                  value={orderSearch}
-                  onChange={(e) => setOrderSearch(e.target.value)}
-                  placeholder="Search orders..."
-                  style={{ flex: 1, padding: "5px 6px", fontSize: 14, fontFamily: f, background: "transparent", border: "none", outline: "none", color: C.text }}
-                />
-                {orderSearch && (
-                  <button onClick={() => setOrderSearch("")} style={{ paddingRight: 6, background: "transparent", border: "none", cursor: "pointer", color: C.dim }}>
-                    <XCircle style={{ width: 10, height: 10 }} />
-                  </button>
-                )}
+              <div style={{ display: "flex", alignItems: "center", border: `1px solid ${C.border}` }}>
+                <Search style={{ width: 13, height: 13, marginLeft: 8, color: C.dim, flexShrink: 0 }} />
+                <input type="text" value={orderSearch} onChange={e => setOrderSearch(e.target.value)} placeholder="Search orders..." style={{ flex: 1, padding: "5px 7px", fontSize: 13, fontFamily: f, background: "transparent", border: "none", outline: "none", color: C.text }} />
+                {orderSearch && <button onClick={() => setOrderSearch("")} style={{ paddingRight: 6, background: "transparent", border: "none", cursor: "pointer", color: C.dim }}><XCircle style={{ width: 12, height: 12 }} /></button>}
               </div>
             </div>
-
             {ordersLoading && orders.length === 0 ? (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 0", gap: 8 }}>
                 <RefreshCw className="animate-spin" style={{ width: 14, height: 14, color: C.gold }} />
-                <div style={{ fontSize: 14, color: C.textDim, letterSpacing: 1, textTransform: "uppercase" }}>Loading orders</div>
+                <div style={{ fontSize: 13, color: C.textDim, letterSpacing: 1, textTransform: "uppercase" }}>Loading orders</div>
               </div>
             ) : ordersError ? (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 0", gap: 8 }}>
-                <div style={{ fontSize: 14, color: `${C.red}cc` }}>Failed to load orders</div>
-                <button onClick={fetchOrders} style={{ fontSize: 14, color: C.gold, background: "transparent", border: "none", cursor: "pointer", letterSpacing: 1, fontFamily: f, textTransform: "uppercase" }}>
-                  RETRY
-                </button>
+                <div style={{ fontSize: 13, color: `${C.red}cc` }}>Failed to load orders</div>
+                <button onClick={fetchOrders} style={{ fontSize: 13, color: C.gold, background: "transparent", border: "none", cursor: "pointer", letterSpacing: 1, fontFamily: f, textTransform: "uppercase" }}>RETRY</button>
               </div>
             ) : filteredOrders.length === 0 ? (
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 0", gap: 6 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "48px 0" }}>
                 <div style={{ fontSize: 13, color: C.textDim }}>{orderFilter === "ALL" && !orderSearch ? "No recent orders" : "No matching orders"}</div>
               </div>
             ) : (
               <>
-                <div style={{ padding: "4px 10px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: `1px solid ${C.border}`, background: "#0e0e0e" }}>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: C.dim, letterSpacing: 1, textTransform: "uppercase" }}>
-                    {orderFilter === "ALL" ? "All" : orderFilter} Orders
-                  </span>
-                  <span style={{ fontSize: 14, color: C.dim }}>{filteredOrders.length}</span>
+                <div style={{ padding: "5px 10px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: `1px solid ${C.border}`, background: "#0e0e0e" }}>
+                  <span style={{ fontSize: 11, fontWeight: 500, color: C.dim, letterSpacing: 0.8, textTransform: "uppercase" }}>{orderFilter === "ALL" ? "All" : orderFilter} Orders</span>
+                  <span style={{ fontSize: 12, color: C.dim }}>{filteredOrders.length}</span>
                 </div>
-                {filteredOrders.map((order) => (
-                  <OrderRow key={order.orderId} order={order} onCancel={handleCancelOrder} />
-                ))}
+                {filteredOrders.map(order => <OrderRow key={order.orderId} order={order} onCancel={handleCancelOrder} />)}
               </>
             )}
           </div>
@@ -942,49 +970,34 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
 
         {subTab === "balance" && bal && (
           <div>
-            <div style={{ padding: "8px 10px", borderBottom: `1px solid ${C.borderHi}`, background: "#0e0e0e" }}>
-              <span style={{ fontSize: 13, fontWeight: 600, color: C.dim, letterSpacing: 1, textTransform: "uppercase" }}>Account Summary</span>
+            <div style={{ padding: "7px 10px", borderBottom: `1px solid ${C.borderHi}`, background: "#0e0e0e" }}>
+              <span style={{ fontSize: 11, fontWeight: 500, color: C.dim, letterSpacing: 1, textTransform: "uppercase" }}>Account Summary</span>
             </div>
-
             {[
               ["Net Liquidating Value", fmtCurrency(bal.liquidationValue), C.text],
               ...(dayTradesLeft !== null ? [["Day Trades Left", String(dayTradesLeft), dayTradesLeft === 0 ? C.red : C.text]] : []),
-              ["Stock Buying Power", fmtCurrency(bal.buyingPower), (bal.buyingPower) < 0 ? C.red : C.text],
+              ["Stock Buying Power", fmtCurrency(bal.buyingPower), bal.buyingPower < 0 ? C.red : C.text],
               ["Option Buying Power", fmtCurrency(bal.availableFunds), bal.availableFunds < 0 ? C.red : C.text],
               ["Available Funds For Trading", fmtCurrency(bal.availableFunds), bal.availableFunds < 0 ? C.red : C.text],
               ["Cash & Sweep Vehicle", fmtCurrency(bal.cashBalance), bal.cashBalance < 0 ? C.red : C.text],
               ["Cash Balance", fmtCurrency(bal.cashBalance), undefined],
-              ["Equity Percentage", `${marginTotal > 0 ? ((bal.equity / (bal.longMarketValue || 1)) * 100).toFixed(2) : "0.00"}%`, undefined],
-              ["Long Marginable Value", fmtCurrency(bal.longMarketValue), undefined],
-              ["Long Stock Value", fmtCurrency(bal.longMarketValue), undefined],
               ["Maintenance Requirement", fmtCurrency(bal.maintenanceRequirement), undefined],
               ["Margin Balance", fmtCurrency(bal.marginBalance), bal.marginBalance < 0 ? C.red : undefined],
               ["Margin Equity", fmtCurrency(bal.equity), undefined],
               ["Money Market Balance", fmtCurrency(bal.moneyMarketFund), undefined],
+              ["Long Stock Value", fmtCurrency(bal.longMarketValue), undefined],
               ["Short Balance", fmtCurrency(bal.shortMarketValue), undefined],
-              ["Short Marginable Value", fmtCurrency(bal.shortOptionMarketValue), undefined],
               ["SMA", fmtCurrency(bal.sma), undefined],
             ].map(([label, value, color]) => (
-              <div
-                key={label as string}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  padding: "7px 10px",
-                  borderBottom: `1px solid ${C.border}`,
-                  fontFamily: f,
-                }}
-              >
+              <div key={label as string} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "7px 10px", borderBottom: `1px solid ${C.border}`, fontFamily: f }}>
                 <span style={{ fontSize: 13, color: C.textMuted }}>{label}:</span>
-                <span style={{ fontSize: 13, fontWeight: 500, color: (color as string) ?? C.text, fontVariantNumeric: "tabular-nums" }}>{value}</span>
+                <span style={{ fontSize: 13, fontWeight: 400, color: (color as string) ?? C.text, fontVariantNumeric: "tabular-nums" }}>{value}</span>
               </div>
             ))}
-
             {account && (
               <>
-                <div style={{ padding: "8px 10px", borderBottom: `1px solid ${C.borderHi}`, background: "#0e0e0e", marginTop: 0 }}>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: C.dim, letterSpacing: 1, textTransform: "uppercase" }}>Risk & Market Values</span>
+                <div style={{ padding: "7px 10px", borderBottom: `1px solid ${C.borderHi}`, background: "#0e0e0e" }}>
+                  <span style={{ fontSize: 11, fontWeight: 500, color: C.dim, letterSpacing: 1, textTransform: "uppercase" }}>Risk & Market Values</span>
                 </div>
                 {[
                   ["Account Type", account.type, undefined],
@@ -997,19 +1010,9 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
                   ["Pending Deposits", fmtCurrency(bal.pendingDeposits), undefined],
                   ["DT Buying Power", fmtCurrency(bal.dayTradingBuyingPower), undefined],
                 ].map(([label, value, color]) => (
-                  <div
-                    key={label as string}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      padding: "7px 10px",
-                      borderBottom: `1px solid ${C.border}`,
-                      fontFamily: f,
-                    }}
-                  >
+                  <div key={label as string} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "7px 10px", borderBottom: `1px solid ${C.border}`, fontFamily: f }}>
                     <span style={{ fontSize: 13, color: C.textMuted }}>{label}:</span>
-                    <span style={{ fontSize: 13, fontWeight: 500, color: (color as string) ?? C.text, fontVariantNumeric: "tabular-nums" }}>{value}</span>
+                    <span style={{ fontSize: 13, fontWeight: 400, color: (color as string) ?? C.text, fontVariantNumeric: "tabular-nums" }}>{value}</span>
                   </div>
                 ))}
               </>
@@ -1017,6 +1020,43 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
           </div>
         )}
       </div>
+
+      {selectedKeys.size > 0 && (
+        <div style={{
+          position: "sticky", bottom: 0, left: 0, right: 0,
+          background: "#141414", borderTop: `1px solid ${C.borderHi}`,
+          padding: "8px 10px", display: "flex", alignItems: "center", gap: 8, zIndex: 20,
+        }}>
+          <button
+            onClick={() => setSelectedKeys(new Set())}
+            style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: C.dim, background: "transparent", border: "none", cursor: "pointer", fontFamily: f, padding: "4px 6px" }}
+          >
+            <X style={{ width: 12, height: 12 }} />
+            <span>{selectedKeys.size}</span>
+          </button>
+          <div style={{ flex: 1 }} />
+          <button
+            onClick={handleRollSelected}
+            style={{
+              fontSize: 12, fontWeight: 500, fontFamily: f, color: C.gold, letterSpacing: 0.5,
+              background: "transparent", border: `1px solid ${C.gold}40`, cursor: "pointer",
+              padding: "5px 14px",
+            }}
+          >
+            Roll Selected
+          </button>
+          <button
+            onClick={handleCloseSelected}
+            style={{
+              fontSize: 12, fontWeight: 500, fontFamily: f, color: C.text, letterSpacing: 0.5,
+              background: `${C.gold}15`, border: `1px solid ${C.gold}50`, cursor: "pointer",
+              padding: "5px 14px",
+            }}
+          >
+            Close Selected
+          </button>
+        </div>
+      )}
     </div>
   );
 }
