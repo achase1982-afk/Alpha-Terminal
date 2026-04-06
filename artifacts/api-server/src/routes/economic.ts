@@ -26,7 +26,7 @@ async function fetchBlsSeries(seriesId: string): Promise<BlsDataPoint[]> {
   const url = `${BLS_API_V1}/${seriesId}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`BLS API error: ${res.status}`);
-  const json = await res.json();
+  const json = await res.json() as Record<string, any>;
   if (json.status !== "REQUEST_SUCCEEDED") {
     throw new Error(`BLS API status: ${json.status} — ${JSON.stringify(json.message)}`);
   }
@@ -286,7 +286,7 @@ async function fetchBlsSeriesBatch(seriesIds: string[]): Promise<Record<string, 
     body: JSON.stringify({ seriesid: seriesIds }),
   });
   if (!res.ok) throw new Error(`BLS batch API error: ${res.status}`);
-  const json = await res.json();
+  const json = await res.json() as Record<string, any>;
   if (json.status !== "REQUEST_SUCCEEDED") {
     throw new Error(`BLS API status: ${json.status} — ${JSON.stringify(json.message)}`);
   }

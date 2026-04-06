@@ -16,6 +16,8 @@ import type {
   UseQueryResult,
 } from "@tanstack/react-query";
 
+type HookQueryOpts<T, E, D> = Omit<UseQueryOptions<T, E, D>, 'queryKey'> & { queryKey?: QueryKey };
+
 import type {
   AiAnalysisResponse,
   AuthStatusResponse,
@@ -70,7 +72,7 @@ export const getHealthCheckQueryOptions = <
   TData = Awaited<ReturnType<typeof healthCheck>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<
+  query?: HookQueryOpts<
     Awaited<ReturnType<typeof healthCheck>>,
     TError,
     TData
@@ -105,7 +107,7 @@ export function useHealthCheck<
   TData = Awaited<ReturnType<typeof healthCheck>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<
+  query?: HookQueryOpts<
     Awaited<ReturnType<typeof healthCheck>>,
     TError,
     TData
@@ -145,7 +147,7 @@ export const getGetAuthUrlQueryOptions = <
   TData = Awaited<ReturnType<typeof getAuthUrl>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<
+  query?: HookQueryOpts<
     Awaited<ReturnType<typeof getAuthUrl>>,
     TError,
     TData
@@ -180,7 +182,7 @@ export function useGetAuthUrl<
   TData = Awaited<ReturnType<typeof getAuthUrl>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<
+  query?: HookQueryOpts<
     Awaited<ReturnType<typeof getAuthUrl>>,
     TError,
     TData
@@ -392,7 +394,7 @@ export const getGetAuthStatusQueryOptions = <
   TData = Awaited<ReturnType<typeof getAuthStatus>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<
+  query?: HookQueryOpts<
     Awaited<ReturnType<typeof getAuthStatus>>,
     TError,
     TData
@@ -427,7 +429,7 @@ export function useGetAuthStatus<
   TData = Awaited<ReturnType<typeof getAuthStatus>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<
+  query?: HookQueryOpts<
     Awaited<ReturnType<typeof getAuthStatus>>,
     TError,
     TData
@@ -482,7 +484,7 @@ export const getGetQuoteQueryOptions = <
 >(
   params: GetQuoteParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: HookQueryOpts<
       Awaited<ReturnType<typeof getQuote>>,
       TError,
       TData
@@ -520,7 +522,7 @@ export function useGetQuote<
 >(
   params: GetQuoteParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: HookQueryOpts<
       Awaited<ReturnType<typeof getQuote>>,
       TError,
       TData
@@ -576,7 +578,7 @@ export const getGetPriceHistoryQueryOptions = <
 >(
   params: GetPriceHistoryParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: HookQueryOpts<
       Awaited<ReturnType<typeof getPriceHistory>>,
       TError,
       TData
@@ -614,7 +616,7 @@ export function useGetPriceHistory<
 >(
   params: GetPriceHistoryParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: HookQueryOpts<
       Awaited<ReturnType<typeof getPriceHistory>>,
       TError,
       TData
@@ -670,7 +672,7 @@ export const getGetOptionChainQueryOptions = <
 >(
   params: GetOptionChainParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: HookQueryOpts<
       Awaited<ReturnType<typeof getOptionChain>>,
       TError,
       TData
@@ -708,7 +710,7 @@ export function useGetOptionChain<
 >(
   params: GetOptionChainParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: HookQueryOpts<
       Awaited<ReturnType<typeof getOptionChain>>,
       TError,
       TData
@@ -1008,7 +1010,7 @@ export const getGetAvailableModelsQueryOptions = <
   TData = Awaited<ReturnType<typeof getAvailableModels>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<
+  query?: HookQueryOpts<
     Awaited<ReturnType<typeof getAvailableModels>>,
     TError,
     TData
@@ -1043,7 +1045,7 @@ export function useGetAvailableModels<
   TData = Awaited<ReturnType<typeof getAvailableModels>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<
+  query?: HookQueryOpts<
     Awaited<ReturnType<typeof getAvailableModels>>,
     TError,
     TData

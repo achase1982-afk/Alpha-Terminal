@@ -274,11 +274,11 @@ export function EngineAuditPanel({ data }: { data: MarketPulseData }) {
                 <div className="px-4 py-2 flex items-center gap-3 bg-zinc-900 border-t border-zinc-800/50">
                   <span className="font-mono text-[11px] text-zinc-500">MOMENTUM</span>
                   <span className="font-mono text-xs font-bold" style={{
-                    color: data.momentum.label === "ACCELERATING" ? "#00d166" :
-                           data.momentum.label === "DECELERATING" || data.momentum.label === "REVERSING" ? "#f23645" : "#9CA3AF"
+                    color: data.momentum.label === "ACCELERATING" || data.momentum.label === "IMPROVING" ? "#00d166" :
+                           data.momentum.label === "FADING" || data.momentum.label === "DETERIORATING" ? "#f23645" : "#9CA3AF"
                   }}>{data.momentum.label}</span>
                   <span className="font-mono text-[11px] tabular-nums text-zinc-400">
-                    {data.momentum.delta > 0 ? "+" : ""}{data.momentum.delta.toFixed(4)}
+                    {data.momentum.delta != null ? `${data.momentum.delta > 0 ? "+" : ""}${data.momentum.delta.toFixed(4)}` : "—"}
                   </span>
                 </div>
               )}
@@ -287,11 +287,13 @@ export function EngineAuditPanel({ data }: { data: MarketPulseData }) {
                 <div className="px-4 py-2 bg-zinc-900 border-t border-zinc-800/50">
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-[11px] text-zinc-500">OPTIONS</span>
-                    <span className="font-mono text-[11px] font-bold" style={{ color: data.optionsLayer.isSafe ? "#00d166" : "#f23645" }}>
-                      {data.optionsLayer.isSafe ? "SAFE" : "UNSAFE"}
+                    <span className="font-mono text-[11px] font-bold" style={{ color: !data.optionsLayer.avoidShortPremium ? "#00d166" : "#f23645" }}>
+                      {data.optionsLayer.avoidShortPremium ? "UNSAFE" : "SAFE"}
                     </span>
                   </div>
-                  <div className="font-mono text-[11px] text-zinc-400 mt-1">{data.optionsLayer.guidance}</div>
+                  <div className="font-mono text-[11px] text-zinc-400 mt-1">
+                    {data.optionsLayer.avoidReason ?? data.optionsLayer.tradeTypeRecommendation}
+                  </div>
                 </div>
               )}
             </div>

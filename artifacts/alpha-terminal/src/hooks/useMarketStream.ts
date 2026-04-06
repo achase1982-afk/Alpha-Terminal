@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback } from "react";
 import { useTerminalStore } from "@/lib/store";
-import { useOptionsStreamStore } from "@/lib/options-stream-store";
+import { useOptionsStreamStore, type OptionTick } from "@/lib/options-stream-store";
 import { useDepthStore, type DepthBook } from "@/lib/depth-store";
 import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
 import { fetchWithAuth, getClerkToken } from "@/lib/fetchWithAuth";
@@ -219,15 +219,15 @@ export function useMarketStream() {
         } else if (msg.event === "quote") {
           setStreamStatus("live");
           rejectedRetries.current = 0;
-          setStreamQuote(msg.data as LiveQuote);
+          setStreamQuote(msg.data as unknown as LiveQuote);
         } else if (msg.event === "optionQuote") {
-          mergeTick(msg.data);
+          mergeTick(msg.data as unknown as OptionTick);
         } else if (msg.event === "depth") {
-          setDepthBook(msg.data as DepthBook);
+          setDepthBook(msg.data as unknown as DepthBook);
         } else if (msg.event === "depthSnapshot") {
-          setDepthBooks(msg.data as DepthBook[]);
+          setDepthBooks(msg.data as unknown as DepthBook[]);
         } else if (msg.event === "ibNews") {
-          addLiveNews(msg.data as LiveNewsItem);
+          addLiveNews(msg.data as unknown as LiveNewsItem);
         } else if (msg.event === "portfolioAccount") {
           setPortfolioAccount(msg.data as any);
         } else if (msg.event === "portfolioOrders") {

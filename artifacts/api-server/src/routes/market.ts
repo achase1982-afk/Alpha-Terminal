@@ -150,7 +150,7 @@ router.get("/quote", async (req, res) => {
     // Handles null, undefined, string "NaN", and zero correctly.
     function pickNum(...keys: string[]): number | undefined {
       for (const k of keys) {
-        const v = quote[k];
+        const v = quote![k];
         if (typeof v === "number" && isFinite(v) && !isNaN(v)) return v;
       }
       return undefined;

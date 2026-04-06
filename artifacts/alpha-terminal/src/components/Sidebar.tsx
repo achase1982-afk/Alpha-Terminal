@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from "react";
 import { createPortal } from "react-dom";
-import { useTerminalStore, useActiveWatchlist } from "@/lib/store";
+import { useTerminalStore, useActiveWatchlist, type TerminalState } from "@/lib/store";
 import { useOptionsSettingsStore } from "@/lib/options-store";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import type { MarketPulseSettings, AllowedStrategy } from "@/types/marketPulse";
@@ -66,7 +66,7 @@ function MenuRow({ icon, label, onClick }: { icon: React.ReactNode; label: strin
       className="w-full flex items-center gap-4 px-5 py-3.5 hover:bg-card/50 transition-colors text-left group"
     >
       <div className="text-white group-hover:text-primary transition-colors">
-        {React.cloneElement(icon as React.ReactElement, { className: "w-5 h-5" })}
+        {React.cloneElement(icon as React.ReactElement<any>, { className: "w-5 h-5" })}
       </div>
       <span className="font-bold text-[15px] text-white tracking-wide">{label}</span>
     </button>
@@ -538,8 +538,10 @@ const ALL_MODELS = [
   "claude-3-5-sonnet-20241022",
 ];
 
+type AiFeatureKey = keyof TerminalState['aiFeatureSettings'];
+
 const AI_FEATURES: Array<{
-  key: keyof ReturnType<typeof useTerminalStore>['aiFeatureSettings'];
+  key: AiFeatureKey;
   label: string;
   icon: string;
 }> = [
@@ -551,7 +553,7 @@ const AI_FEATURES: Array<{
 ];
 
 function AiFeatureControl({ featureKey, label, icon }: {
-  featureKey: keyof ReturnType<typeof useTerminalStore>['aiFeatureSettings'];
+  featureKey: AiFeatureKey;
   label: string;
   icon: string;
 }) {

@@ -410,7 +410,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet, onTrade }: Metric
 
         <TickerBlock
           symbol={quote?.symbol}
-          description={quote?.description}
+          description={quote?.description ?? undefined}
           showData={showData}
           opacityCls={opacityCls}
           transitionCls={transitionCls}

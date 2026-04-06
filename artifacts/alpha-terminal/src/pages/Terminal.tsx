@@ -40,7 +40,7 @@ import {
 } from "lucide-react";
 import { useIsTablet, useIsDesktop } from "@/hooks/useMediaQuery";
 
-type BottomTab = "markets" | "ai" | "search" | "portfolio" | "watchlist";
+type BottomTab = "scanner" | "markets" | "ai" | "search" | "portfolio" | "watchlist";
 type ContextTab = MarketDataTab;
 
 const DESKTOP_CONTEXT_TABS: { id: MarketDataTab; label: string }[] = [
@@ -173,7 +173,7 @@ export default function TerminalPage() {
   }, []);
 
   const handleOptionTradeSingle = useCallback((contract: OptionsContract, side: "BUY" | "SELL", type: "CALL" | "PUT") => {
-    const c = contract as Record<string, unknown>;
+    const c = contract as unknown as Record<string, unknown>;
     const schwabSym = (typeof c.streamKey === "string" ? c.streamKey : typeof c.schwabSymbol === "string" ? c.schwabSymbol : "") as string;
     const instruction = side === "BUY" ? "BUY_TO_OPEN" : "SELL_TO_OPEN";
     setOrderSide(side);

@@ -170,7 +170,7 @@ async function pollOrders() {
 
   try {
     if (!lastAccountHash) {
-      const nums = await schwabGet("/accounts/accountNumbers", token);
+      const nums = await schwabGet("/accounts/accountNumbers", token) as Array<{ hashValue: string }>;
       if (nums.length > 0) lastAccountHash = nums[0].hashValue;
       else return;
     }

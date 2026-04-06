@@ -178,19 +178,19 @@ function emitQuote(def: IBSymbolDef, state: IBQuoteState) {
   // AD-NYSE / VOL-NYSE / AD-NASD / VOL-NASD deliver their data as Bid (advancing/up)
   // and Ask (declining/down) with no Last tick. Per-symbol valueMode tells us how to
   // interpret those fields.
-  let effectiveLast: number | undefined;
+  let effectiveLast: number | null;
   const mode = def.valueMode ?? "last";
   if (mode === "bid") {
-    effectiveLast = state.bid ?? state.last ?? state.ask;
+    effectiveLast = state.bid ?? state.last ?? state.ask ?? null;
   } else if (mode === "ask") {
-    effectiveLast = state.ask ?? state.last ?? state.bid;
+    effectiveLast = state.ask ?? state.last ?? state.bid ?? null;
   } else if (mode === "bid_minus_ask") {
     effectiveLast = (state.bid != null && state.ask != null)
       ? state.bid - state.ask
-      : state.last ?? state.bid ?? state.ask;
+      : state.last ?? state.bid ?? state.ask ?? null;
   } else {
     // "last" (default) — fall back to bid/ask if no last tick (original behaviour)
-    effectiveLast = state.last ?? state.bid ?? state.ask;
+    effectiveLast = state.last ?? state.bid ?? state.ask ?? null;
   }
   const quote: LiveQuote = {
     symbol: def.displaySymbol,
@@ -851,7 +851,7 @@ export async function resolveConId(symbol: string): Promise<number | null> {
   const reqId = conIdReqCounter++;
   const contract: Contract = {
     symbol: symbol.replace(/^\$/, "").replace(/^\//, ""),
-    secType: symbol.startsWith("/") ? "FUT" : "STK",
+    secType: (symbol.startsWith("/") ? "FUT" : "STK") as SecType,
     exchange: "SMART",
     currency: "USD",
   };

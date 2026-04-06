@@ -11,7 +11,7 @@ function getTraderToken(): string | null {
   return trader?.accessToken ?? null;
 }
 
-async function schwabGet(path: string, token: string) {
+async function schwabGet(path: string, token: string): Promise<any> {
   const res = await fetch(`${SCHWAB_TRADER_BASE}${path}`, {
     headers: { Authorization: `Bearer ${token}` },
   });

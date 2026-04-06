@@ -1644,7 +1644,7 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
                 </div>
               ) : null}
 
-              <SubOverview fund={fundamentals} quoteData={quoteData} priceHist={priceHist} volHist={volHist} ai={analysisResult ? parseAiAnalysis(analysisResult) : null} />
+              <SubOverview fund={fundamentals} quoteData={(quoteData as unknown as QuoteInfo) ?? null} priceHist={priceHist} volHist={volHist} ai={analysisResult ? parseAiAnalysis(analysisResult) : null} />
             </div>
 
             <div style={{ width: "100%", flexShrink: 0, padding: "0 16px 16px" }}>

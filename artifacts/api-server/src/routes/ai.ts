@@ -1743,7 +1743,7 @@ function buildChainAnalytics(
 function getVixFromCache(): number | null {
   const snap = getSnapshot().find((q) => q.symbol === "$VIX" || q.symbol === "VIX");
   if (!snap) return null;
-  return (snap as Record<string, unknown>)["lastPrice"] as number ?? null;
+  return snap.last ?? null;
 }
 
 router.post("/options-strategist", async (req, res) => {

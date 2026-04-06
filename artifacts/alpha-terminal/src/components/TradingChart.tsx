@@ -37,7 +37,7 @@ function isNotFoundError(error?: string): boolean {
 export function TradingChart({ symbol, data, isLoading, error, timedOut, tokenExpired, intraday }: TradingChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
-  const candleSeriesRef = useRef<ISeriesApi<typeof CandlestickSeries> | null>(null);
+  const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const lastCandleTimeRef = useRef<number>(0);
   const { overlays } = useTerminalStore();
 
