@@ -35,6 +35,7 @@ const f = `'Inter','SF Pro Text',-apple-system,BlinkMacSystemFont,'Segoe UI',Hel
 type SubTab = "positions" | "orders" | "balance";
 type OrderFilter = "ALL" | "WORKING" | "FILLED" | "CANCELED" | "REJECTED";
 type MetricKey = "plOpen" | "buyingPower" | "margin" | "availableFunds" | "cashBalance" | "posEquity";
+type ColumnKey = "mktVal" | "plPct" | "plDay";
 
 const ALL_METRICS: { key: MetricKey; label: string }[] = [
   { key: "plOpen", label: "P/L Open" },
@@ -46,6 +47,14 @@ const ALL_METRICS: { key: MetricKey; label: string }[] = [
 ];
 const DEFAULT_METRICS: MetricKey[] = ["plOpen", "buyingPower", "availableFunds", "margin"];
 const METRICS_STORAGE_KEY = "alpha_visible_metrics";
+
+const ALL_COLUMNS: { key: ColumnKey; label: string }[] = [
+  { key: "mktVal", label: "Mkt Val" },
+  { key: "plPct", label: "P/L %" },
+  { key: "plDay", label: "P/L Day" },
+];
+const DEFAULT_COLUMNS: ColumnKey[] = ["mktVal", "plPct", "plDay"];
+const COLUMNS_STORAGE_KEY = "alpha_visible_columns";
 
 interface Position {
   symbol: string;
@@ -182,7 +191,13 @@ function statusColor(status: string): string {
   }
 }
 
-const gridCols = "minmax(0,1fr) 80px 60px 80px";
+const getGridCols = (visibleCols: ColumnKey[]): string => {
+  let cols = "minmax(0,1fr)";
+  if (visibleCols.includes("mktVal")) cols += " 80px";
+  if (visibleCols.includes("plPct")) cols += " 60px";
+  if (visibleCols.includes("plDay")) cols += " 80px";
+  return cols;
+};
 
 function Checkbox({ checked, onToggle }: { checked: boolean; onToggle: (e: React.MouseEvent) => void }) {
   return (
@@ -212,12 +227,14 @@ function PositionTableRow({
   onTrade,
   selectedKeys,
   toggleKey,
+  visibleColumns,
 }: {
   group: SymbolGroup;
   onSelect: (sym: string) => void;
   onTrade?: (symbol: string, side: "BUY" | "SELL", optionSymbol?: string, optionInstruction?: string) => void;
   selectedKeys: Set<string>;
   toggleKey: (key: string) => void;
+  visibleColumns: ColumnKey[];
 }) {
   const [expanded, setExpanded] = useState(false);
   const eq = group.equity;
@@ -256,15 +273,15 @@ function PositionTableRow({
           <span style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{group.underlying}</span>
           <span style={{ fontSize: 12, color: C.dim, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{details}</span>
         </div>
-        <span style={{ fontSize: 14, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+        {visibleColumns.includes("mktVal") && <span style={{ fontSize: 14, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
           {fmtCompact(group.totalMarketValue)}
-        </span>
-        <span style={{ fontSize: 13, color: plColor(group.totalPL), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+        </span>}
+        {visibleColumns.includes("plPct") && <span style={{ fontSize: 13, color: plColor(group.totalPL), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
           {fmtPct(totalPLPct)}
-        </span>
-        <span style={{ fontSize: 14, fontWeight: 500, color: plColor(group.totalDayPL), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+        </span>}
+        {visibleColumns.includes("plDay") && <span style={{ fontSize: 14, fontWeight: 500, color: plColor(group.totalDayPL), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
           {fmtCurrency(group.totalDayPL)}
-        </span>
+        </span>}
       </div>
 
       {expanded && (
@@ -458,12 +475,20 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [marginCallExpanded, setMarginCallExpanded] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showColumnSettings, setShowColumnSettings] = useState(false);
   const [visibleMetrics, setVisibleMetrics] = useState<MetricKey[]>(() => {
     try {
       const stored = localStorage.getItem(METRICS_STORAGE_KEY);
       if (stored) return JSON.parse(stored) as MetricKey[];
     } catch {}
     return DEFAULT_METRICS;
+  });
+  const [visibleColumns, setVisibleColumns] = useState<ColumnKey[]>(() => {
+    try {
+      const stored = localStorage.getItem(COLUMNS_STORAGE_KEY);
+      if (stored) return JSON.parse(stored) as ColumnKey[];
+    } catch {}
+    return DEFAULT_COLUMNS;
   });
 
   const toggleKey = useCallback((key: string) => {
@@ -479,6 +504,14 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
     setVisibleMetrics(prev => {
       const next = prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key];
       try { localStorage.setItem(METRICS_STORAGE_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, []);
+
+  const toggleColumn = useCallback((key: ColumnKey) => {
+    setVisibleColumns(prev => {
+      const next = prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key];
+      try { localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify(next)); } catch {}
       return next;
     });
   }, []);
@@ -545,6 +578,8 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
     try { await fetchWithAuth("/api/portfolio/cancel-order", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountHash, orderId: String(orderId) }) }); fetchOrders(); }
     catch {} finally { setCancellingId(null); }
   }, [accountHash, fetchOrders]);
+
+  const gridCols = useMemo(() => getGridCols(visibleColumns), [visibleColumns]);
 
   const symbolGroups = useMemo(() => {
     const positions = account?.positions ?? [];
@@ -783,11 +818,45 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
               borderBottom: `1px solid ${C.borderHi}`, background: "#0e0e0e",
               position: "sticky", top: 0, zIndex: 1,
             }}>
-              <span style={{ fontSize: 12, fontWeight: 500, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5 }}>Symbol</span>
-              <span style={{ fontSize: 12, fontWeight: 500, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>Mkt Val</span>
-              <span style={{ fontSize: 12, fontWeight: 500, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>P/L %</span>
-              <span style={{ fontSize: 12, fontWeight: 500, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>P/L Day</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ fontSize: 12, fontWeight: 500, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5 }}>Symbol</span>
+                <button onClick={() => setShowColumnSettings(x => !x)} style={{ padding: 2, background: "transparent", border: "none", cursor: "pointer" }}>
+                  <Settings style={{ width: 13, height: 13, color: showColumnSettings ? C.gold : C.dim }} />
+                </button>
+              </div>
+              {visibleColumns.includes("mktVal") && <span style={{ fontSize: 12, fontWeight: 500, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>Mkt Val</span>}
+              {visibleColumns.includes("plPct") && <span style={{ fontSize: 12, fontWeight: 500, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>P/L %</span>}
+              {visibleColumns.includes("plDay") && <span style={{ fontSize: 12, fontWeight: 500, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>P/L Day</span>}
             </div>
+
+            {showColumnSettings && (
+              <div style={{ position: "fixed", inset: 0, zIndex: 49, background: "transparent" }} onClick={() => setShowColumnSettings(false)} />
+            )}
+            {showColumnSettings && (
+              <div
+                style={{ position: "absolute", top: "54px", left: "20px", zIndex: 50, background: "#1a1a1a", border: `1px solid ${C.borderHi}`, borderRadius: 4, width: 220, padding: 0, fontFamily: f }}
+                onClick={e => e.stopPropagation()}
+              >
+                <div style={{ padding: "8px 12px", borderBottom: `1px solid ${C.border}` }}>
+                  <span style={{ fontSize: 12, fontWeight: 500, color: C.textDim, textTransform: "uppercase", letterSpacing: 0.8 }}>Column Visibility</span>
+                </div>
+                {ALL_COLUMNS.map(col => {
+                  const on = visibleColumns.includes(col.key);
+                  return (
+                    <button
+                      key={col.key}
+                      onClick={() => toggleColumn(col.key)}
+                      style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", background: "transparent", border: "none", borderBottom: `1px solid ${C.border}`, cursor: "pointer", fontFamily: f }}
+                    >
+                      <span style={{ fontSize: 13, color: on ? C.text : C.dim }}>{col.label}</span>
+                      <div style={{ width: 16, height: 16, borderRadius: 3, border: `1px solid ${on ? C.gold : C.dim}`, background: on ? `${C.gold}22` : "transparent", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        {on && <Check style={{ width: 10, height: 10, color: C.gold }} />}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
             {symbolGroups.map(group => (
               <PositionTableRow
@@ -797,6 +866,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
                 onTrade={onTrade}
                 selectedKeys={selectedKeys}
                 toggleKey={toggleKey}
+                visibleColumns={visibleColumns}
               />
             ))}
 
@@ -806,9 +876,9 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
                 borderTop: `2px solid ${C.borderHi}`, background: "#0e0e0e",
               }}>
                 <span style={{ fontSize: 14, fontWeight: 500, color: C.textMuted }}>Overall Totals</span>
-                <span style={{ fontSize: 14, fontWeight: 500, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCompact(totalMarketValue)}</span>
-                <span style={{ fontSize: 14, fontWeight: 500, color: plColor(totalUnrealized), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtPct(unrealizedPct)}</span>
-                <span style={{ fontSize: 14, fontWeight: 600, color: plColor(totalDayPLPositions), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(totalDayPLPositions)}</span>
+                {visibleColumns.includes("mktVal") && <span style={{ fontSize: 14, fontWeight: 500, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCompact(totalMarketValue)}</span>}
+                {visibleColumns.includes("plPct") && <span style={{ fontSize: 14, fontWeight: 500, color: plColor(totalUnrealized), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtPct(unrealizedPct)}</span>}
+                {visibleColumns.includes("plDay") && <span style={{ fontSize: 14, fontWeight: 600, color: plColor(totalDayPLPositions), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(totalDayPLPositions)}</span>}
               </div>
             )}
 
