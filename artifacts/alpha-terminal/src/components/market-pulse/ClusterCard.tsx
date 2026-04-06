@@ -45,7 +45,6 @@ export function ClusterCard({ clusterKey, cluster }: ClusterCardProps) {
         border: "1px solid rgba(63,63,70,0.5)",
         width: 220,
         minWidth: 220,
-        opacity: cluster.dataQuality === "MISSING" ? 0.4 : 1,
       }}
     >
       <div className="px-3 py-2 flex items-center justify-between border-b border-zinc-800/50">
