@@ -603,12 +603,12 @@ const PULSE_SYMBOLS: PulseSymbol[] = [
   { display: "$SRVIX",  api: "$SRVIX",  category: "vol",       description: "CBOE SOFR Rate VIX — short-rate implied vol (replaces discontinued $TYVIX)" },
   { display: "/VIX",    api: "/VIX",    category: "vol",       description: "VIX Futures — front-month VIX contract" },
 
-  { display: "$CPC",    api: "$CPC",    category: "vol",       description: "CBOE Total Put/Call Ratio" },
-  { display: "$CPCE",   api: "$CPCE",   category: "vol",       description: "CBOE Equity Put/Call Ratio" },
-  { display: "$CPCI",   api: "$CPCI",   category: "vol",       description: "CBOE Index Put/Call Ratio — institutional hedging" },
-  { display: "$PCSPY",  api: "$PCSPY",  category: "vol",       description: "SPY Put/Call Ratio" },
-  { display: "$PCQQQ",  api: "$PCQQQ",  category: "vol",       description: "QQQ Put/Call Ratio" },
-  { display: "$PCIWM",  api: "$PCIWM",  category: "vol",       description: "IWM Put/Call Ratio" },
+  { display: "$CPCE",   api: "$CPCE",   category: "vol",       description: "CBOE Equity Put/Call Ratio — IBKR symbol PCUSEQTR (not available from Schwab API)" },
+  { display: "$CPCI",   api: "$CPCI",   category: "vol",       description: "CBOE Index Put/Call Ratio — IBKR symbol PCUSINXR (not available from Schwab API)" },
+  { display: "$CPC",    api: "$CPC",    category: "vol",       description: "CBOE Total Put/Call Ratio — computed avg of CPCE + CPCI (not available from Schwab API)" },
+  { display: "$PCSPY",  api: "$PCSPY",  category: "vol",       description: "SPY Per-Ticker Put/Call Ratio — computed from Schwab NTM options chain" },
+  { display: "$PCQQQ",  api: "$PCQQQ",  category: "vol",       description: "QQQ Per-Ticker Put/Call Ratio — computed from Schwab NTM options chain" },
+  { display: "$PCIWM",  api: "$PCIWM",  category: "vol",       description: "IWM Per-Ticker Put/Call Ratio — computed from Schwab NTM options chain" },
 
   { display: "$TICK",   api: "$TICK",   category: "breadth",   description: "NYSE TICK — stocks upticking minus downticking" },
   { display: "$ADD",    api: "$ADD",    category: "breadth",   description: "NYSE A/D Line — advancers minus decliners" },
@@ -683,6 +683,8 @@ function symbolToSchwabApi(userSymbol: string): string {
 // Schwab streams Dollar Index as $DXY).
 const CACHE_ALIASES: Record<string, string[]> = {
   "/DX": ["$DXY"],
+  "$CPCE": ["$PCUSEQTR"],
+  "$CPCI": ["$PCUSINXR"],
 };
 
 function readFromWebSocketCache(
@@ -747,6 +749,28 @@ function readFromWebSocketCache(
         bidPrice: q.bid,
         askPrice: q.ask,
       });
+    }
+  }
+
+  if (!dataMap.has("$CPC")) {
+    const cpceData = dataMap.get("$CPCE");
+    const cpciData = dataMap.get("$CPCI");
+    const cpceVal = cpceData ? (cpceData["lastPrice"] as number ?? null) : null;
+    const cpciVal = cpciData ? (cpciData["lastPrice"] as number ?? null) : null;
+    if (cpceVal !== null && cpciVal !== null) {
+      const avg = Math.round(((cpceVal + cpciVal) / 2) * 10000) / 10000;
+      dataMap.set("$CPC", { lastPrice: avg, mark: avg, close: null, closePrice: null,
+        netChange: null, markChange: null, netPercentChange: null, markPercentChange: null,
+        highPrice: null, high: null, lowPrice: null, low: null, totalVolume: null, volume: null,
+        bidPrice: null, askPrice: null });
+      hitCount++;
+    } else if (cpceVal !== null || cpciVal !== null) {
+      const v = cpceVal ?? cpciVal;
+      dataMap.set("$CPC", { lastPrice: v, mark: v, close: null, closePrice: null,
+        netChange: null, markChange: null, netPercentChange: null, markPercentChange: null,
+        highPrice: null, high: null, lowPrice: null, low: null, totalVolume: null, volume: null,
+        bidPrice: null, askPrice: null });
+      hitCount++;
     }
   }
 
@@ -982,9 +1006,14 @@ function extractMarketIndicators(dataMap: Map<string, Record<string, unknown>>):
     sixJ: lastOrMark('/6J'),
     sixJChange: pctChange('/6J'),
 
-    cpc: lastOrMark('$CPC') ?? lastOrMark('$PCUSEQTR'),
     cpce: lastOrMark('$CPCE') ?? lastOrMark('$PCUSEQTR'),
     cpci: lastOrMark('$CPCI') ?? lastOrMark('$PCUSINXR'),
+    cpc: (() => {
+      const e = lastOrMark('$CPCE') ?? lastOrMark('$PCUSEQTR');
+      const i = lastOrMark('$CPCI') ?? lastOrMark('$PCUSINXR');
+      if (e !== null && i !== null) return Math.round(((e + i) / 2) * 10000) / 10000;
+      return e ?? i;
+    })(),
     pcspy: lastOrMark('$PCSPY'),
     pcqqq: lastOrMark('$PCQQQ'),
     pciwm: lastOrMark('$PCIWM'),
