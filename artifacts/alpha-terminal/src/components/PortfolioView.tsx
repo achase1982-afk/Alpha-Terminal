@@ -889,6 +889,11 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
 
   const unrealizedPct = totalMarketValue > 0 ? (totalUnrealized / (totalMarketValue - totalUnrealized)) * 100 : 0;
 
+  const grossMarketValue = useMemo(() => symbolGroups.reduce((s, g) => s + Math.abs(g.totalMarketValue), 0), [symbolGroups]);
+  const totalDayPLPositions = useMemo(() => symbolGroups.reduce((s, g) => s + g.totalDayPL, 0), [symbolGroups]);
+  const bestPerformer = useMemo(() => symbolGroups.length > 0 ? symbolGroups.reduce((best, g) => g.totalDayPL > best.totalDayPL ? g : best, symbolGroups[0]) : null, [symbolGroups]);
+  const worstPerformer = useMemo(() => symbolGroups.length > 0 ? symbolGroups.reduce((worst, g) => g.totalDayPL < worst.totalDayPL ? g : worst, symbolGroups[0]) : null, [symbolGroups]);
+
   const isMarginCall = useMemo(() => {
     if (!account?.balances) return false;
     const bal = account.balances;
@@ -946,11 +951,6 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
   const marginTotal = bal?.equity ?? 0;
   const prevDayValue = (bal?.liquidationValue ?? 0) - dayPL;
   const dayReturnPct = prevDayValue > 0 ? (dayPL / prevDayValue) * 100 : 0;
-  const grossMarketValue = useMemo(() => symbolGroups.reduce((s, g) => s + Math.abs(g.totalMarketValue), 0), [symbolGroups]);
-  const totalDayPLPositions = useMemo(() => symbolGroups.reduce((s, g) => s + g.totalDayPL, 0), [symbolGroups]);
-  const bestPerformer = useMemo(() => symbolGroups.length > 0 ? symbolGroups.reduce((best, g) => g.totalDayPL > best.totalDayPL ? g : best, symbolGroups[0]) : null, [symbolGroups]);
-  const worstPerformer = useMemo(() => symbolGroups.length > 0 ? symbolGroups.reduce((worst, g) => g.totalDayPL < worst.totalDayPL ? g : worst, symbolGroups[0]) : null, [symbolGroups]);
-
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, fontFamily: f }}>
       <div style={{ padding: "12px 12px 8px", display: "flex", flexDirection: "column", gap: 10 }}>
