@@ -60,10 +60,14 @@ function successPage(label: string) {
 
 function errorPage(title: string, msg: string) {
   return `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-    <body style="background:#0A0F16;color:#fff;font-family:-apple-system,system-ui,sans-serif;padding:40px 20px;text-align:center">
-      <h2 style="color:#FF1744;font-size:18px">${escapeHtml(title)}</h2>
-      <p style="color:#ccc;font-size:14px;line-height:1.5">${escapeHtml(msg)}</p>
-      <p style="margin-top:30px;font-size:13px;color:#666">Close this tab and return to Alpha Terminal to try again.</p>
+    <body style="background:#0A0F16;color:#fff;font-family:-apple-system,system-ui,sans-serif;padding:60px 20px;text-align:center">
+      <h2 style="color:#FF1744;font-size:18px;margin-bottom:12px">${escapeHtml(title)}</h2>
+      <p style="color:#ccc;font-size:14px;line-height:1.5;margin-bottom:32px">${escapeHtml(msg)}</p>
+      <button
+        onclick="window.close(); setTimeout(function(){ history.back(); }, 300);"
+        style="display:inline-block;background:#FFB800;color:#000;font-size:14px;font-weight:700;letter-spacing:0.05em;padding:12px 32px;border:none;border-radius:8px;cursor:pointer;font-family:-apple-system,system-ui,sans-serif"
+      >Close &amp; Return</button>
+      <p style="margin-top:24px;font-size:12px;color:#555">If the button doesn&#39;t close this tab, you can close it manually and return to Alpha Terminal.</p>
     </body></html>`;
 }
 
