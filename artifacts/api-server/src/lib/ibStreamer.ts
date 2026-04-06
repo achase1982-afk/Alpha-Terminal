@@ -519,7 +519,12 @@ export async function connectIB(): Promise<void> {
         return;
       }
 
-      const isImmediateReconnect = code === 504 || code === 2110;
+      const isImmediateReconnect = code === 2110;
+      if (code === 504) {
+        logger.warn({ code, msg: err.message }, "IB: transport/connectivity error — delayed reconnect");
+        handleDisconnectOrError(false);
+        return;
+      }
       if (isImmediateReconnect) {
         logger.warn({ code, msg: err.message }, "IB: transport/connectivity error — immediate reconnect");
         handleDisconnectOrError(true);
