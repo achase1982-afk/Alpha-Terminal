@@ -39,8 +39,8 @@ const GRAY = "#a1a1aa";
 const DIM = "#52525b";
 const MUTED = "#3f3f46";
 
-const ITM_OCEAN = "rgba(180,140,50,0.22)";
-const OTM_PURPLE = "rgba(168,130,255,0.04)";
+const ITM_BG = "rgba(200,150,30,0.18)";
+const OTM_BG = "transparent";
 const SEL_BORDER_COLOR = "#fbbf2480";
 
 const MONO = "'SFMono-Regular', 'SF Mono', ui-monospace, 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace";
@@ -288,8 +288,8 @@ function isStrikeITM(strike: number, underlyingPrice: number | null, isCallSide:
 }
 
 function getRowBg(strike: number, underlyingPrice: number | null, isCallSide: boolean): string {
-  if (isStrikeITM(strike, underlyingPrice, isCallSide)) return ITM_OCEAN;
-  return OTM_PURPLE;
+  if (isStrikeITM(strike, underlyingPrice, isCallSide)) return ITM_BG;
+  return OTM_BG;
 }
 
 const OIBar = memo(function OIBar({ value, max }: { value: number; max: number }) {
