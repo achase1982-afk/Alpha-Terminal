@@ -716,9 +716,6 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
             <div style={{ fontSize: 20, fontWeight: 700, color: C.text, fontVariantNumeric: "tabular-nums", letterSpacing: -0.5 }}>
               {fmtCurrency(bal?.liquidationValue ?? 0)}
             </div>
-            <div style={{ fontSize: 13, fontWeight: 500, color: plColor(dayPL), fontVariantNumeric: "tabular-nums", marginTop: 1 }}>
-              {dayPL >= 0 ? "+" : ""}{fmtCurrency(dayPL)} ({dayReturnPct >= 0 ? "+" : ""}{dayReturnPct.toFixed(2)}%)
-            </div>
           </div>
           <div>
             <div style={{ fontSize: 11, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>Available $</div>
@@ -818,7 +815,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
             {symbolGroups.length > 0 && (
               <div style={{ borderTop: `1px solid ${C.border}`, padding: "4px 0" }}>
                 {[
-                  { label: "P/L Day:", value: fmtCurrency(totalDayPLPositions), color: plColor(totalDayPLPositions) },
+                  { label: "P/L Day:", value: `${fmtCurrency(totalDayPLPositions)} (${dayReturnPct >= 0 ? "+" : ""}${dayReturnPct.toFixed(1)}%)`, color: plColor(totalDayPLPositions) },
                   { label: "P/L Open:", value: fmtCurrency(totalUnrealized), color: plColor(totalUnrealized) },
                   { label: "Net Liq:", value: fmtCurrency(bal?.liquidationValue ?? 0), color: C.text },
                   { label: "Available $:", value: fmtCurrency(bal?.availableFunds ?? 0), color: (bal?.availableFunds ?? 0) < 0 ? C.red : C.text },
