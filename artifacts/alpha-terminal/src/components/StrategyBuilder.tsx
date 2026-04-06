@@ -507,38 +507,72 @@ export function StrategyBuilder({
   const changePct = quote?.changePct;
   const changeColor = (changePct ?? 0) >= 0 ? UP : DOWN;
 
+  const inputStyle = {
+    color: WHITE,
+    background: "#111113",
+    border: `1px solid ${BORDER2}`,
+    fontSize: 13,
+    fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace",
+  } as const;
+
   return (
     <div className="fixed inset-0 z-[210] flex flex-col" style={{ background: BG }}>
-      <header className="shrink-0 flex items-center h-12 px-4 border-b" style={{ borderColor: BORDER, background: "#111113" }}>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="font-mono font-bold text-[15px] tracking-wide" style={{ color: WHITE }}>{symbol}</span>
-            <span className="font-mono text-[13px]" style={{ color: changeColor }}>
-              {fmt(quote?.last)} {changePct != null ? `${changePct >= 0 ? "+" : ""}${fmt(changePct)}%` : ""}
-            </span>
-          </div>
+      <header className="shrink-0 flex items-center justify-between h-11 px-4" style={{ background: "#111113", borderBottom: `1px solid ${BORDER}` }}>
+        <div className="flex items-center gap-3">
+          <span className="font-mono font-bold text-[15px] tracking-wide" style={{ color: WHITE }}>{symbol}</span>
+          <span className="font-mono text-[13px] font-semibold" style={{ color: changeColor }}>
+            {fmt(quote?.last)} {changePct != null ? `${changePct >= 0 ? "+" : ""}${fmt(changePct)}%` : ""}
+          </span>
         </div>
-        <span className="font-mono font-bold text-[11px] tracking-widest mr-4" style={{ color: MUTED }}>STRATEGY BUILDER</span>
-        <button onClick={onClose} className="p-2 -mr-2 rounded-lg transition-colors active:text-white" style={{ color: MUTED }}>
-          <X className="w-5 h-5" />
-        </button>
+        <div className="flex items-center gap-3">
+          <span className="font-mono font-bold text-[11px] tracking-[0.15em]" style={{ color: MUTED }}>STRATEGY BUILDER</span>
+          <button onClick={onClose} className="p-1.5 transition-colors active:text-white" style={{ color: MUTED }}>
+            <X className="w-5 h-5" />
+          </button>
+        </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto pb-32">
-        <div className="p-4 space-y-4">
-          <div className="flex rounded-xl overflow-hidden" style={{ border: `1px solid ${BORDER2}` }}>
+      <div className="flex-1 overflow-y-auto pb-28">
+        {preTradeEnabled && riskChecks.length > 0 && legs.length > 0 && (
+          <div style={{ background: "#0d0d0f", borderBottom: `1px solid ${BORDER}` }}>
+            <div className="flex items-center gap-2 px-4 py-2" style={{ borderBottom: `1px solid ${BORDER}` }}>
+              <Shield className="w-4 h-4" style={{ color: levelColor(overallRisk) }} />
+              <span className="font-mono text-[12px] font-bold tracking-[0.12em]" style={{ color: WHITE }}>PRE-TRADE RISK CHECK</span>
+              <div className="flex-1" />
+              <span className="font-mono text-[11px] font-bold px-2 py-0.5 rounded" style={{
+                color: overallRisk === "GREEN" ? "#000" : overallRisk === "YELLOW" ? "#000" : "#fff",
+                background: levelColor(overallRisk),
+              }}>
+                {overallRisk === "GREEN" ? "PASS" : overallRisk === "YELLOW" ? "WARN" : "FAIL"}
+              </span>
+            </div>
+            <div className="w-full h-[2px]" style={{ background: levelColor(overallRisk) }} />
+            <div className="px-4 py-2">
+              {riskChecks.map(c => (
+                <div key={c.id} className="flex items-center py-[5px]" style={{ borderBottom: `1px solid ${BORDER}` }}>
+                  <RiskIcon level={c.level} />
+                  <span className="font-mono text-[12px] font-medium ml-2.5" style={{ color: TEXT, width: 120, flexShrink: 0 }}>{c.label}</span>
+                  <span className="font-mono text-[11px] flex-1 text-right" style={{ color: levelColor(c.level) }}>{c.detail}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="p-4 space-y-3">
+          <div className="flex" style={{ border: `1px solid ${BORDER2}` }}>
             {(["templates", "builder"] as const).map((m) => (
               <button
                 key={m}
                 onClick={() => setMode(m)}
-                className="flex-1 py-2.5 font-mono text-[12px] font-bold tracking-wider transition-all"
+                className="flex-1 py-2 font-mono text-[12px] font-bold tracking-[0.1em] transition-all"
                 style={{
                   color: mode === m ? GOLD : DIM,
-                  background: mode === m ? "rgba(255,184,0,0.08)" : "transparent",
-                  borderBottom: `2px solid ${mode === m ? GOLD : "transparent"}`,
+                  background: mode === m ? "rgba(255,184,0,0.06)" : "transparent",
+                  borderBottom: mode === m ? `2px solid ${GOLD}` : `2px solid transparent`,
                 }}
               >
-                {m === "templates" ? "QUICK STRATEGIES" : "LEG BUILDER"}
+                {m === "templates" ? "STRATEGIES" : "LEG BUILDER"}
               </button>
             ))}
           </div>
@@ -549,38 +583,43 @@ export function StrategyBuilder({
                 <button
                   key={tmpl.id}
                   onClick={() => applyTemplate(tmpl)}
-                  className="rounded-xl p-3 text-left transition-all active:scale-[0.97]"
+                  className="p-3 text-left transition-all active:scale-[0.97]"
                   style={{ background: CARD, border: `1px solid ${BORDER}` }}
                 >
-                  <div className="flex items-center gap-1.5 mb-1">
+                  <div className="flex items-center gap-2 mb-1">
                     <div className="w-2 h-2 rounded-full" style={{ background: tmpl.color }} />
-                    <span className="font-mono text-[11px] font-bold" style={{ color: WHITE }}>{tmpl.name}</span>
+                    <span className="font-mono text-[12px] font-bold" style={{ color: WHITE }}>{tmpl.name}</span>
                   </div>
-                  <span className="font-mono text-[9px]" style={{ color: DIM }}>{tmpl.description}</span>
+                  <span className="font-mono text-[10px] leading-tight" style={{ color: MUTED }}>{tmpl.description}</span>
                 </button>
               ))}
             </div>
           )}
 
           {mode === "builder" && (
-            <div className="space-y-3">
+            <div className="space-y-2">
               {legs.map((leg, idx) => (
-                <div key={leg.id} className="rounded-xl p-3 space-y-2" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                <div key={leg.id} className="p-3 space-y-2" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
                   <div className="flex items-center justify-between">
-                    <span className="font-mono text-[10px] font-bold" style={{ color: GOLD }}>LEG {idx + 1}</span>
-                    <button onClick={() => removeLeg(leg.id)} className="p-1 rounded transition-colors" style={{ color: DOWN }}>
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    <span className="font-mono text-[11px] font-bold tracking-wider" style={{ color: GOLD }}>LEG {idx + 1}</span>
+                    <div className="flex items-center gap-3">
+                      <span className="font-mono text-[11px] font-bold" style={{ color: leg.direction.startsWith("BUY") ? UP : DOWN }}>
+                        {leg.direction.replace(/_/g, " ")}
+                      </span>
+                      <button onClick={() => removeLeg(leg.id)} className="p-1 transition-colors" style={{ color: DOWN }}>
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="font-mono text-[9px] tracking-wider block mb-1" style={{ color: DIM }}>DIRECTION</label>
+                      <label className="font-mono text-[10px] tracking-wider block mb-1" style={{ color: MUTED }}>DIRECTION</label>
                       <select
                         value={leg.direction}
                         onChange={(e) => updateLeg(leg.id, { direction: e.target.value as LegDirection })}
-                        className="w-full px-2 py-1.5 rounded-lg font-mono text-[11px] bg-transparent outline-none"
-                        style={{ color: TEXT, background: "#1a1a1e", border: `1px solid ${BORDER2}` }}
+                        className="w-full px-2 py-2 font-mono outline-none"
+                        style={inputStyle}
                       >
                         <option value="BUY_TO_OPEN">Buy to Open</option>
                         <option value="SELL_TO_OPEN">Sell to Open</option>
@@ -589,12 +628,12 @@ export function StrategyBuilder({
                       </select>
                     </div>
                     <div>
-                      <label className="font-mono text-[9px] tracking-wider block mb-1" style={{ color: DIM }}>TYPE</label>
+                      <label className="font-mono text-[10px] tracking-wider block mb-1" style={{ color: MUTED }}>TYPE</label>
                       <select
                         value={leg.optionType}
                         onChange={(e) => updateLeg(leg.id, { optionType: e.target.value as OptionType })}
-                        className="w-full px-2 py-1.5 rounded-lg font-mono text-[11px] bg-transparent outline-none"
-                        style={{ color: TEXT, background: "#1a1a1e", border: `1px solid ${BORDER2}` }}
+                        className="w-full px-2 py-2 font-mono outline-none"
+                        style={inputStyle}
                       >
                         <option value="CALL">Call</option>
                         <option value="PUT">Put</option>
@@ -604,13 +643,13 @@ export function StrategyBuilder({
 
                   <div className="grid grid-cols-3 gap-2">
                     <div>
-                      <label className="font-mono text-[9px] tracking-wider block mb-1" style={{ color: DIM }}>STRIKE</label>
+                      <label className="font-mono text-[10px] tracking-wider block mb-1" style={{ color: MUTED }}>STRIKE</label>
                       {availableStrikes.length > 0 ? (
                         <select
                           value={leg.strike}
                           onChange={(e) => updateLeg(leg.id, { strike: parseFloat(e.target.value) })}
-                          className="w-full px-2 py-1.5 rounded-lg font-mono text-[11px] bg-transparent outline-none"
-                          style={{ color: TEXT, background: "#1a1a1e", border: `1px solid ${BORDER2}` }}
+                          className="w-full px-2 py-2 font-mono outline-none"
+                          style={inputStyle}
                         >
                           {availableStrikes.map(s => (
                             <option key={s} value={s}>{s}</option>
@@ -620,28 +659,28 @@ export function StrategyBuilder({
                         <input
                           type="number" step="0.5" value={leg.strike}
                           onChange={(e) => updateLeg(leg.id, { strike: parseFloat(e.target.value) || 0 })}
-                          className="w-full px-2 py-1.5 rounded-lg font-mono text-[11px] bg-transparent outline-none"
-                          style={{ color: TEXT, background: "#1a1a1e", border: `1px solid ${BORDER2}` }}
+                          className="w-full px-2 py-2 font-mono outline-none"
+                          style={inputStyle}
                         />
                       )}
                     </div>
                     <div>
-                      <label className="font-mono text-[9px] tracking-wider block mb-1" style={{ color: DIM }}>QTY</label>
+                      <label className="font-mono text-[10px] tracking-wider block mb-1" style={{ color: MUTED }}>QTY</label>
                       <input
                         type="number" min={1} value={leg.quantity}
                         onChange={(e) => updateLeg(leg.id, { quantity: Math.max(1, parseInt(e.target.value) || 1) })}
-                        className="w-full px-2 py-1.5 rounded-lg font-mono text-[11px] bg-transparent outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
-                        style={{ color: TEXT, background: "#1a1a1e", border: `1px solid ${BORDER2}` }}
+                        className="w-full px-2 py-2 font-mono outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
+                        style={inputStyle}
                       />
                     </div>
                     <div>
-                      <label className="font-mono text-[9px] tracking-wider block mb-1" style={{ color: DIM }}>EXP</label>
+                      <label className="font-mono text-[10px] tracking-wider block mb-1" style={{ color: MUTED }}>EXP</label>
                       {availableExpirations.length > 0 ? (
                         <select
                           value={leg.expiration}
                           onChange={(e) => updateLeg(leg.id, { expiration: e.target.value })}
-                          className="w-full px-2 py-1.5 rounded-lg font-mono text-[11px] bg-transparent outline-none"
-                          style={{ color: TEXT, background: "#1a1a1e", border: `1px solid ${BORDER2}` }}
+                          className="w-full px-2 py-2 font-mono outline-none"
+                          style={inputStyle}
                         >
                           {availableExpirations.map(e => (
                             <option key={e.value} value={e.value}>{e.label}</option>
@@ -650,27 +689,22 @@ export function StrategyBuilder({
                       ) : (
                         <input
                           type="text" value={leg.expiration} readOnly
-                          className="w-full px-2 py-1.5 rounded-lg font-mono text-[11px] bg-transparent outline-none"
-                          style={{ color: DIM, background: "#1a1a1e", border: `1px solid ${BORDER2}` }}
+                          className="w-full px-2 py-2 font-mono outline-none"
+                          style={{ ...inputStyle, color: DIM }}
                         />
                       )}
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between pt-1">
-                    <div className="flex gap-3">
-                      <span className="font-mono text-[9px]" style={{ color: DIM }}>
-                        Bid <span style={{ color: leg.bid != null ? UP : DIM }}>{fmt(leg.bid)}</span>
-                      </span>
-                      <span className="font-mono text-[9px]" style={{ color: DIM }}>
-                        Ask <span style={{ color: leg.ask != null ? DOWN : DIM }}>{fmt(leg.ask)}</span>
-                      </span>
-                      <span className="font-mono text-[9px]" style={{ color: DIM }}>
-                        \u0394 <span style={{ color: TEXT }}>{fmt(leg.delta, 3)}</span>
-                      </span>
-                    </div>
-                    <span className="font-mono text-[9px] font-bold" style={{ color: leg.direction.startsWith("BUY") ? UP : DOWN }}>
-                      {leg.direction.replace(/_/g, " ")}
+                  <div className="flex items-center pt-1 gap-4" style={{ borderTop: `1px solid ${BORDER}` }}>
+                    <span className="font-mono text-[11px]" style={{ color: MUTED }}>
+                      Bid <span style={{ color: leg.bid != null ? UP : DIM }}>{fmt(leg.bid)}</span>
+                    </span>
+                    <span className="font-mono text-[11px]" style={{ color: MUTED }}>
+                      Ask <span style={{ color: leg.ask != null ? DOWN : DIM }}>{fmt(leg.ask)}</span>
+                    </span>
+                    <span className="font-mono text-[11px]" style={{ color: MUTED }}>
+                      {"\u0394"} <span style={{ color: TEXT }}>{fmt(leg.delta, 3)}</span>
                     </span>
                   </div>
                 </div>
@@ -678,120 +712,97 @@ export function StrategyBuilder({
 
               <button
                 onClick={addLeg}
-                className="w-full py-2.5 rounded-xl font-mono text-[11px] font-bold tracking-wider flex items-center justify-center gap-1.5 transition-colors active:opacity-70"
-                style={{ color: GOLD, background: "rgba(255,184,0,0.06)", border: `1px solid rgba(255,184,0,0.2)` }}
+                className="w-full py-2.5 font-mono text-[12px] font-bold tracking-wider flex items-center justify-center gap-2 transition-colors active:opacity-70"
+                style={{ color: GOLD, background: "rgba(255,184,0,0.04)", border: `1px solid ${BORDER2}` }}
               >
-                <Plus className="w-3.5 h-3.5" /> ADD LEG
+                <Plus className="w-4 h-4" /> ADD LEG
               </button>
             </div>
           )}
 
           {legs.length > 0 && (
-            <>
-              <div className="rounded-xl p-4 space-y-2" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-                <span className="font-mono text-[10px] font-bold tracking-wider" style={{ color: GOLD }}>STRATEGY PREVIEW</span>
-                <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 pt-1">
-                  <div className="flex justify-between">
-                    <span className="font-mono text-[10px]" style={{ color: MUTED }}>Net {metrics.isDebit ? "Debit" : "Credit"}</span>
-                    <span className="font-mono text-[11px] font-bold" style={{ color: metrics.isDebit ? DOWN : UP }}>
+            <div style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <div className="px-4 py-2" style={{ borderBottom: `1px solid ${BORDER}` }}>
+                <span className="font-mono text-[11px] font-bold tracking-[0.12em]" style={{ color: GOLD }}>STRATEGY PREVIEW</span>
+              </div>
+              <div className="px-4 py-3">
+                <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+                  <div className="flex justify-between items-baseline">
+                    <span className="font-mono text-[12px]" style={{ color: MUTED }}>Net {metrics.isDebit ? "Debit" : "Credit"}</span>
+                    <span className="font-mono text-[14px] font-bold" style={{ color: metrics.isDebit ? DOWN : UP }}>
                       {fmtCurrency(Math.abs(metrics.netDebit))}
                     </span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="font-mono text-[10px]" style={{ color: MUTED }}>R:R</span>
-                    <span className="font-mono text-[11px] font-bold" style={{ color: TEXT }}>
-                      {metrics.riskReward != null ? `${metrics.riskReward.toFixed(1)}:1` : "—"}
+                  <div className="flex justify-between items-baseline">
+                    <span className="font-mono text-[12px]" style={{ color: MUTED }}>R:R</span>
+                    <span className="font-mono text-[14px] font-bold" style={{ color: TEXT }}>
+                      {metrics.riskReward != null ? `${metrics.riskReward.toFixed(1)}:1` : "\u2014"}
                     </span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="font-mono text-[10px]" style={{ color: MUTED }}>Max Risk</span>
-                    <span className="font-mono text-[11px] font-bold" style={{ color: DOWN }}>
+                  <div className="flex justify-between items-baseline">
+                    <span className="font-mono text-[12px]" style={{ color: MUTED }}>Max Risk</span>
+                    <span className="font-mono text-[14px] font-bold" style={{ color: DOWN }}>
                       {metrics.maxRisk != null ? fmtCurrency(metrics.maxRisk) : "Undefined"}
                     </span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="font-mono text-[10px]" style={{ color: MUTED }}>Max Reward</span>
-                    <span className="font-mono text-[11px] font-bold" style={{ color: UP }}>
+                  <div className="flex justify-between items-baseline">
+                    <span className="font-mono text-[12px]" style={{ color: MUTED }}>Max Reward</span>
+                    <span className="font-mono text-[14px] font-bold" style={{ color: UP }}>
                       {metrics.maxReward != null ? fmtCurrency(metrics.maxReward) : "Unlimited"}
                     </span>
                   </div>
                   {metrics.breakevens.length > 0 && (
-                    <div className="flex justify-between col-span-2">
-                      <span className="font-mono text-[10px]" style={{ color: MUTED }}>Breakeven{metrics.breakevens.length > 1 ? "s" : ""}</span>
-                      <span className="font-mono text-[11px]" style={{ color: TEXT }}>
+                    <div className="flex justify-between items-baseline col-span-2">
+                      <span className="font-mono text-[12px]" style={{ color: MUTED }}>Breakeven{metrics.breakevens.length > 1 ? "s" : ""}</span>
+                      <span className="font-mono text-[13px] font-semibold" style={{ color: TEXT }}>
                         {metrics.breakevens.map(b => `$${b.toFixed(2)}`).join(" / ")}
                       </span>
                     </div>
                   )}
                   {metrics.pop != null && (
-                    <div className="flex justify-between">
-                      <span className="font-mono text-[10px]" style={{ color: MUTED }}>Est. PoP</span>
-                      <span className="font-mono text-[11px] font-bold" style={{ color: TEXT }}>{metrics.pop.toFixed(0)}%</span>
+                    <div className="flex justify-between items-baseline">
+                      <span className="font-mono text-[12px]" style={{ color: MUTED }}>Est. PoP</span>
+                      <span className="font-mono text-[14px] font-bold" style={{ color: TEXT }}>{metrics.pop.toFixed(0)}%</span>
                     </div>
                   )}
                 </div>
-                <div className="border-t my-2" style={{ borderColor: BORDER }} />
-                <div className="grid grid-cols-4 gap-2">
-                  <div className="text-center">
-                    <span className="font-mono text-[8px] uppercase tracking-widest block" style={{ color: DIM }}>\u0394</span>
-                    <span className="font-mono text-[11px] font-bold" style={{ color: TEXT }}>{fmt(metrics.totalDelta, 3)}</span>
-                  </div>
-                  <div className="text-center">
-                    <span className="font-mono text-[8px] uppercase tracking-widest block" style={{ color: DIM }}>\u0393</span>
-                    <span className="font-mono text-[11px] font-bold" style={{ color: TEXT }}>{fmt(metrics.totalGamma, 4)}</span>
-                  </div>
-                  <div className="text-center">
-                    <span className="font-mono text-[8px] uppercase tracking-widest block" style={{ color: DIM }}>\u0398</span>
-                    <span className="font-mono text-[11px] font-bold" style={{ color: metrics.totalTheta > 0 ? UP : DOWN }}>{fmt(metrics.totalTheta, 3)}</span>
-                  </div>
-                  <div className="text-center">
-                    <span className="font-mono text-[8px] uppercase tracking-widest block" style={{ color: DIM }}>V</span>
-                    <span className="font-mono text-[11px] font-bold" style={{ color: TEXT }}>{fmt(metrics.totalVega, 3)}</span>
-                  </div>
-                </div>
-              </div>
 
-              {preTradeEnabled && riskChecks.length > 0 && (
-                <div className="rounded-xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-                  <div className="flex items-center justify-between px-4 py-2" style={{ borderBottom: `1px solid ${BORDER}` }}>
-                    <div className="flex items-center gap-2">
-                      <Shield className="w-4 h-4" style={{ color: GOLD }} />
-                      <span className="font-mono text-[10px] font-bold tracking-wider" style={{ color: GOLD }}>PRE-TRADE RISK CHECK</span>
-                    </div>
-                  </div>
-                  <div className="w-full h-1" style={{ background: levelColor(overallRisk) }} />
-                  <div className="px-4 py-2 space-y-1">
-                    {riskChecks.map(c => (
-                      <div key={c.id} className="flex items-center gap-2 py-0.5">
-                        <RiskIcon level={c.level} />
-                        <span className="font-mono text-[10px] font-medium" style={{ color: TEXT, minWidth: 80 }}>{c.label}</span>
-                        <span className="font-mono text-[9px] flex-1 text-right truncate" style={{ color: levelColor(c.level) }}>{c.detail}</span>
+                <div className="mt-3 pt-2" style={{ borderTop: `1px solid ${BORDER}` }}>
+                  <div className="grid grid-cols-4 gap-2">
+                    {([
+                      ["\u0394", metrics.totalDelta, 3, null],
+                      ["\u0393", metrics.totalGamma, 4, null],
+                      ["\u0398", metrics.totalTheta, 3, metrics.totalTheta > 0 ? UP : DOWN],
+                      ["V", metrics.totalVega, 3, null],
+                    ] as [string, number, number, string | null][]).map(([label, val, dec, clr]) => (
+                      <div key={label} className="text-center">
+                        <span className="font-mono text-[10px] tracking-widest block mb-0.5" style={{ color: DIM }}>{label}</span>
+                        <span className="font-mono text-[13px] font-bold" style={{ color: clr ?? TEXT }}>{fmt(val, dec)}</span>
                       </div>
                     ))}
                   </div>
                 </div>
-              )}
-            </>
+              </div>
+            </div>
           )}
         </div>
       </div>
 
       {legs.length > 0 && (
-        <div className="absolute bottom-0 left-0 right-0 p-4 pb-8" style={{ background: `linear-gradient(transparent, ${BG} 20%)` }}>
+        <div className="absolute bottom-0 left-0 right-0 p-4 pb-8" style={{ background: `linear-gradient(transparent, ${BG} 30%)` }}>
           {blockedByRisk && (
-            <div className="mb-2 rounded-xl px-3 py-2 flex items-center gap-2" style={{ background: "rgba(242,54,69,0.08)", border: "1px solid rgba(242,54,69,0.2)" }}>
+            <div className="mb-2 px-3 py-2 flex items-center gap-2" style={{ background: "rgba(242,54,69,0.08)", border: `1px solid rgba(242,54,69,0.3)` }}>
               <ShieldX className="w-4 h-4 shrink-0" style={{ color: DOWN }} />
-              <span className="font-mono text-[10px]" style={{ color: DOWN }}>Risk check failed — order blocked</span>
+              <span className="font-mono text-[12px] font-medium" style={{ color: DOWN }}>Risk check failed — order blocked</span>
             </div>
           )}
           <button
             onClick={handleSend}
             disabled={blockedByRisk || legs.length === 0}
-            className="w-full py-4 rounded-xl font-mono text-[14px] font-bold tracking-wider flex items-center justify-center gap-2 transition-all duration-150 disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.98]"
+            className="w-full py-3.5 font-mono text-[14px] font-bold tracking-[0.15em] flex items-center justify-center gap-2 transition-all duration-150 disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.98]"
             style={{
-              background: !blockedByRisk ? `linear-gradient(180deg, ${GOLD} 0%, #d4a000 100%)` : BORDER2,
+              background: !blockedByRisk ? GOLD : BORDER2,
               color: !blockedByRisk ? "#000" : DIM,
-              boxShadow: !blockedByRisk ? "0 4px 20px rgba(255,184,0,0.3)" : "none",
             }}
           >
             SEND TO ORDER TICKET <ArrowRight className="w-4 h-4" />

@@ -6,7 +6,7 @@ import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import {
   X, Minus, Plus, Loader2, CheckCircle2, AlertTriangle, ChevronDown,
   Shield, ShieldAlert, ShieldCheck, ShieldX, Settings2, Lock, Unlock,
-  Eye, EyeOff, ChevronRight, Sparkles, TrendingUp,
+  Eye, EyeOff, Sparkles, TrendingUp,
 } from "lucide-react";
 
 type OrderSide = "BUY" | "SELL";
@@ -209,9 +209,9 @@ function getRiskSummary(checks: RiskCheck[], side: OrderSide, overall: RiskLevel
 }
 
 function RiskIcon({ level }: { level: RiskLevel }) {
-  if (level === "GREEN") return <ShieldCheck className="w-3 h-3" style={{ color: UP }} />;
-  if (level === "YELLOW") return <ShieldAlert className="w-3 h-3" style={{ color: GOLD }} />;
-  return <ShieldX className="w-3 h-3" style={{ color: DOWN }} />;
+  if (level === "GREEN") return <ShieldCheck className="w-3.5 h-3.5" style={{ color: UP }} />;
+  if (level === "YELLOW") return <ShieldAlert className="w-3.5 h-3.5" style={{ color: GOLD }} />;
+  return <ShieldX className="w-3.5 h-3.5" style={{ color: DOWN }} />;
 }
 
 function levelColor(l: RiskLevel): string {
@@ -369,7 +369,7 @@ function MiniPayoffChart({ legs, isMultiLeg, side, quantity, limitPrice, isOptio
       <path d={profitFillD} fill="url(#payoffGrad)" />
       <path d={pathD} fill="none" stroke={UP} strokeWidth={1.5} />
       {zeroY != null && (
-        <text x={W - PAD + 2} y={zeroY + 3} fill={MUTED} fontSize={8} fontFamily="monospace">0</text>
+        <text x={W - PAD + 2} y={zeroY + 3} fill={MUTED} fontSize={10} fontFamily="monospace">0</text>
       )}
     </svg>
   );
@@ -390,33 +390,33 @@ function PortfolioImpactCard({ cost, side, isOption, quantity }: {
   const marginImpact = isOption ? Math.abs(cost) * 0.2 : Math.abs(cost) * 0.5;
 
   return (
-    <div className="rounded-lg overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-      <div className="flex items-center gap-1.5 px-3 py-1.5" style={{ borderBottom: `1px solid ${BORDER}` }}>
-        <TrendingUp className="w-3 h-3" style={{ color: GOLD }} />
-        <span className="font-mono text-[10px] font-bold tracking-wider" style={{ color: GOLD }}>AFTER THIS TRADE</span>
+    <div className="overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+      <div className="flex items-center gap-2 px-4 py-2" style={{ borderBottom: `1px solid ${BORDER}` }}>
+        <TrendingUp className="w-3.5 h-3.5" style={{ color: GOLD }} />
+        <span className="font-mono text-[11px] font-bold tracking-[0.12em]" style={{ color: GOLD }}>AFTER THIS TRADE</span>
       </div>
-      <div className="grid grid-cols-2 gap-x-3 gap-y-1 px-3 py-2">
+      <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 px-4 py-2.5">
         <div className="flex justify-between">
-          <span className="font-mono text-[9px]" style={{ color: MUTED }}>Buying Power</span>
-          <span className="font-mono text-[10px] font-bold" style={{ color: newBP < 0 ? DOWN : TEXT }}>
+          <span className="font-mono text-[11px]" style={{ color: MUTED }}>Buying Power</span>
+          <span className="font-mono text-[12px] font-bold" style={{ color: newBP < 0 ? DOWN : TEXT }}>
             {fmtCompact(newBP)}
           </span>
         </div>
         <div className="flex justify-between">
-          <span className="font-mono text-[9px]" style={{ color: MUTED }}>Margin Req</span>
-          <span className="font-mono text-[10px]" style={{ color: TEXT }}>
+          <span className="font-mono text-[11px]" style={{ color: MUTED }}>Margin Req</span>
+          <span className="font-mono text-[12px]" style={{ color: TEXT }}>
             {fmtCompact(marginImpact)}
           </span>
         </div>
         <div className="flex justify-between">
-          <span className="font-mono text-[9px]" style={{ color: MUTED }}>Concentration</span>
-          <span className="font-mono text-[10px]" style={{ color: concentrationPct > 10 ? DOWN : concentrationPct > 5 ? GOLD : TEXT }}>
+          <span className="font-mono text-[11px]" style={{ color: MUTED }}>Concentration</span>
+          <span className="font-mono text-[12px]" style={{ color: concentrationPct > 10 ? DOWN : concentrationPct > 5 ? GOLD : TEXT }}>
             {concentrationPct.toFixed(1)}%
           </span>
         </div>
         <div className="flex justify-between">
-          <span className="font-mono text-[9px]" style={{ color: MUTED }}>Net Liq</span>
-          <span className="font-mono text-[10px]" style={{ color: TEXT }}>
+          <span className="font-mono text-[11px]" style={{ color: MUTED }}>Net Liq</span>
+          <span className="font-mono text-[12px]" style={{ color: TEXT }}>
             {fmtCompact(accountSize)}
           </span>
         </div>
@@ -466,18 +466,18 @@ function AiCoPilotPanel({ side, symbol, limitPrice, bid, ask, quantity, isOption
   }, [side, symbol, limitPrice, bid, ask, quantity, isOption, mid]);
 
   return (
-    <div className="rounded-lg overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-      <div className="flex items-center gap-1.5 px-3 py-1.5" style={{ borderBottom: `1px solid ${BORDER}` }}>
-        <Sparkles className="w-3 h-3" style={{ color: GOLD }} />
-        <span className="font-mono text-[10px] font-bold tracking-wider" style={{ color: GOLD }}>AI CO-PILOT</span>
+    <div className="overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+      <div className="flex items-center gap-2 px-4 py-2" style={{ borderBottom: `1px solid ${BORDER}` }}>
+        <Sparkles className="w-3.5 h-3.5" style={{ color: GOLD }} />
+        <span className="font-mono text-[11px] font-bold tracking-[0.12em]" style={{ color: GOLD }}>AI CO-PILOT</span>
       </div>
-      <div className="px-3 py-2 space-y-1.5">
+      <div className="px-4 py-2.5 space-y-2">
         {suggestions.map((s, i) => (
-          <div key={i} className="flex items-start gap-1.5">
-            <div className="w-1 h-1 rounded-full mt-1.5 shrink-0" style={{
+          <div key={i} className="flex items-start gap-2">
+            <div className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{
               background: s.type === "warn" ? DOWN : s.type === "tip" ? GOLD : UP
             }} />
-            <span className="font-mono text-[10px] leading-tight" style={{
+            <span className="font-mono text-[11px] leading-snug" style={{
               color: s.type === "warn" ? DOWN : s.type === "tip" ? GOLD : TEXT
             }}>{s.text}</span>
           </div>
@@ -517,8 +517,6 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
   const [showBalances, setShowBalances] = useState(false);
   const [balancesHidden, setBalancesHidden] = useState(false);
   const [posEffect, setPosEffect] = useState<PositionEffect>("AUTO");
-  const [showRiskPanel, setShowRiskPanel] = useState(true);
-  const [showCoPilot, setShowCoPilot] = useState(true);
   const qtyInputRef = useRef<HTMLInputElement>(null);
 
   const isMultiLeg = !!strategyLegs && strategyLegs.length >= 1;
@@ -543,8 +541,6 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
     setPriceLocked(false);
     setShowBalances(false);
     setPosEffect("AUTO");
-    setShowRiskPanel(true);
-    setShowCoPilot(true);
   }, [isOpen, initialSide, isMultiLeg, strategyNetPrice]);
 
   useEffect(() => {
@@ -706,30 +702,29 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
   const volume = (quoteAny?.totalVolume ?? quoteAny?.volume) as number | undefined;
 
   return (
-    <div className="fixed inset-0 z-[210] flex flex-col" style={{ background: BG }}>
+    <div className="fixed inset-0 z-[210] flex flex-col" style={{ background: "#0a0a0a" }}>
 
-      <header className="shrink-0 flex items-center h-11 px-3" style={{ background: BG2, borderBottom: `1px solid ${BORDER}` }}>
-        <button onClick={onClose} className="font-mono text-[12px] font-medium px-1" style={{ color: GOLD }}>
+      <header className="shrink-0 flex items-center h-11 px-4" style={{ background: BG2, borderBottom: `1px solid ${BORDER}` }}>
+        <button onClick={onClose} className="font-mono text-[13px] font-medium" style={{ color: GOLD }}>
           Close
         </button>
         <div className="flex-1 text-center min-w-0">
-          <div className="flex items-center justify-center gap-1.5">
-            <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: sideColor }} />
-            <span className="font-mono text-[12px] font-bold" style={{ color: sideColor }}>
+          <div className="flex items-center justify-center gap-2">
+            <span className="font-mono text-[13px] font-bold" style={{ color: sideColor }}>
               {side}
             </span>
-            <span className="font-mono text-[13px] font-bold tracking-wide" style={{ color: WHITE }}>{symbol}</span>
-            <span className="font-mono text-[12px]" style={{ color: changeColor }}>
+            <span className="font-mono text-[14px] font-bold tracking-wide" style={{ color: WHITE }}>{symbol}</span>
+            <span className="font-mono text-[13px] font-semibold" style={{ color: changeColor }}>
               {fmt(quote?.last)}
             </span>
             {changePct != null && (
-              <span className="font-mono text-[10px]" style={{ color: changeColor }}>
+              <span className="font-mono text-[11px]" style={{ color: changeColor }}>
                 {changePct >= 0 ? "+" : ""}{fmt(changePct)}%
               </span>
             )}
           </div>
           {isOption && !isMultiLeg && (
-            <p className="font-mono text-[9px] truncate" style={{ color: MUTED }}>{optionSymbol}</p>
+            <p className="font-mono text-[10px] truncate" style={{ color: MUTED }}>{optionSymbol}</p>
           )}
         </div>
         <button className="p-1.5" style={{ color: MUTED }}>
@@ -740,7 +735,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
       {stage === "form" || stage === "review" ? (
         <div className="flex-1 overflow-y-auto pb-28">
 
-          <div className="flex items-center gap-2 px-3 py-1.5 overflow-x-auto" style={{ borderBottom: `1px solid ${BORDER}`, background: BG2 }}>
+          <div className="flex items-center gap-3 px-4 py-2 overflow-x-auto" style={{ borderBottom: `1px solid ${BORDER}`, background: BG2 }}>
             {[
               { label: "Vol", value: volume != null ? fmtCompact(volume) : "—" },
               { label: "Range", value: dayLow != null && dayHigh != null ? `${fmt(dayLow)}-${fmt(dayHigh)}` : "—" },
@@ -749,55 +744,86 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
               { label: "Sprd", value: quote?.bid != null && quote?.ask != null ? fmt(quote.ask - quote.bid) : "—" },
             ].map((m, i) => (
               <div key={i} className="flex items-center gap-1 shrink-0">
-                <span className="font-mono text-[9px]" style={{ color: DIM }}>{m.label}</span>
-                <span className="font-mono text-[10px] font-medium" style={{ color: m.color || TEXT }}>{m.value}</span>
-                {i < 4 && <span className="font-mono text-[8px] mx-0.5" style={{ color: BORDER2 }}>|</span>}
+                <span className="font-mono text-[10px]" style={{ color: MUTED }}>{m.label}</span>
+                <span className="font-mono text-[12px] font-medium" style={{ color: m.color || TEXT }}>{m.value}</span>
+                {i < 4 && <span className="font-mono text-[10px] mx-0.5" style={{ color: BORDER2 }}>|</span>}
               </div>
             ))}
           </div>
 
-          <div className="px-3 pt-3 space-y-3">
+          {preTradeEnabled && riskChecks.length > 0 && (
+            <div style={{ background: "#0d0d0f", borderBottom: `1px solid ${BORDER}` }}>
+              <div className="flex items-center gap-2 px-4 py-2" style={{ borderBottom: `1px solid ${BORDER}` }}>
+                <Shield className="w-4 h-4" style={{ color: levelColor(overallRisk) }} />
+                <span className="font-mono text-[12px] font-bold tracking-[0.12em]" style={{ color: WHITE }}>PRE-TRADE RISK CHECK</span>
+                <div className="flex-1" />
+                <span className="font-mono text-[11px] font-bold px-2 py-0.5 rounded" style={{
+                  color: overallRisk === "GREEN" ? "#000" : overallRisk === "YELLOW" ? "#000" : "#fff",
+                  background: levelColor(overallRisk),
+                }}>
+                  {overallRisk === "GREEN" ? "PASS" : overallRisk === "YELLOW" ? "WARN" : "FAIL"}
+                </span>
+              </div>
+              <div className="w-full h-[2px]" style={{ background: levelColor(overallRisk) }} />
+              <div className="px-4 py-2">
+                {riskChecks.map(c => (
+                  <div key={c.id} className="flex items-center py-[5px]" style={{ borderBottom: `1px solid ${BORDER}` }}>
+                    <RiskIcon level={c.level} />
+                    <span className="font-mono text-[12px] font-medium ml-2.5" style={{ color: TEXT, width: 120, flexShrink: 0 }}>{c.label}</span>
+                    <span className="font-mono text-[11px] flex-1 text-right" style={{ color: levelColor(c.level) }}>{c.detail}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="px-4 py-2" style={{ borderTop: `1px solid ${BORDER}`, background: `${levelColor(overallRisk)}08` }}>
+                <p className="font-mono text-[11px] leading-relaxed" style={{ color: levelColor(overallRisk) }}>
+                  {riskSummary}
+                </p>
+              </div>
+            </div>
+          )}
+
+          <div className="px-4 pt-3 space-y-3">
 
             {isMultiLeg && strategyLegs ? (
-              <div className="rounded-lg overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-                <div className="px-3 py-1.5 flex items-center justify-between" style={{ borderBottom: `1px solid ${BORDER}` }}>
-                  <span className="font-mono text-[10px] font-bold tracking-wider" style={{ color: GOLD }}>STRATEGY LEGS</span>
-                  <span className="font-mono text-[9px]" style={{ color: MUTED }}>{strategyLegs.length} legs</span>
+              <div className="overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                <div className="px-4 py-2 flex items-center justify-between" style={{ borderBottom: `1px solid ${BORDER}` }}>
+                  <span className="font-mono text-[11px] font-bold tracking-[0.12em]" style={{ color: GOLD }}>STRATEGY LEGS</span>
+                  <span className="font-mono text-[11px]" style={{ color: MUTED }}>{strategyLegs.length} legs</span>
                 </div>
-                <div className="px-3 py-1.5 space-y-1">
+                <div className="px-4 py-2 space-y-1">
                   {strategyLegs.map((leg, i) => (
-                    <div key={i} className="flex items-center justify-between py-0.5">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-mono text-[9px] font-bold w-[70px]" style={{ color: leg.instruction.startsWith("BUY") ? UP : DOWN }}>
+                    <div key={i} className="flex items-center justify-between py-1" style={{ borderBottom: `1px solid ${BORDER}` }}>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-[11px] font-bold w-[80px]" style={{ color: leg.instruction.startsWith("BUY") ? UP : DOWN }}>
                           {leg.instruction.replace(/_/g, " ")}
                         </span>
-                        <span className="font-mono text-[10px]" style={{ color: TEXT }}>
+                        <span className="font-mono text-[12px]" style={{ color: TEXT }}>
                           {leg.quantity}x {leg.strike} {leg.optionType}
                         </span>
                       </div>
-                      <div className="flex gap-1.5 font-mono text-[9px]" style={{ color: MUTED }}>
+                      <div className="flex gap-2 font-mono text-[11px]" style={{ color: MUTED }}>
                         {leg.bid != null && <span style={{ color: UP }}>{leg.bid.toFixed(2)}</span>}
                         {leg.ask != null && <span style={{ color: DOWN }}>{leg.ask.toFixed(2)}</span>}
                       </div>
                     </div>
                   ))}
                 </div>
-                <div className="px-3 py-1.5 flex justify-between" style={{ borderTop: `1px solid ${BORDER}`, background: `${strategyIsCredit ? UP : DOWN}08` }}>
-                  <span className="font-mono text-[10px]" style={{ color: MUTED }}>Net {strategyIsCredit ? "Credit" : "Debit"}</span>
-                  <span className="font-mono text-[12px] font-bold" style={{ color: strategyIsCredit ? UP : DOWN }}>
+                <div className="px-4 py-2 flex justify-between" style={{ borderTop: `1px solid ${BORDER}`, background: `${strategyIsCredit ? UP : DOWN}08` }}>
+                  <span className="font-mono text-[12px]" style={{ color: MUTED }}>Net {strategyIsCredit ? "Credit" : "Debit"}</span>
+                  <span className="font-mono text-[14px] font-bold" style={{ color: strategyIsCredit ? UP : DOWN }}>
                     ${strategyNetPrice?.toFixed(2) ?? "—"} / spread
                   </span>
                 </div>
               </div>
             ) : (
-              <div className="flex rounded-lg overflow-hidden h-9" style={{ border: `1px solid ${BORDER2}` }}>
+              <div className="flex overflow-hidden h-10" style={{ border: `1px solid ${BORDER2}` }}>
                 {(["BUY", "SELL"] as OrderSide[]).map((s) => {
                   const active = side === s;
                   return (
                     <button
                       key={s}
                       onClick={() => setSide(s)}
-                      className="flex-1 font-mono font-bold text-[12px] tracking-wider transition-all duration-150"
+                      className="flex-1 font-mono font-bold text-[13px] tracking-wider transition-all duration-150"
                       style={{
                         background: active ? (s === "BUY" ? "rgba(0,209,102,0.15)" : "rgba(242,54,69,0.15)") : "transparent",
                         color: active ? (s === "BUY" ? UP : DOWN) : DIM,
@@ -816,20 +842,20 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                 <div className="flex-1 relative">
                   <button
                     onClick={() => { setShowOrderType(!showOrderType); setShowTifDropdown(false); }}
-                    className="w-full flex items-center justify-between px-3 py-2 rounded-lg font-mono text-[11px] transition-colors"
+                    className="w-full flex items-center justify-between px-3 py-2.5 font-mono text-[13px] transition-colors"
                     style={{ background: FIELD, border: `1px solid ${BORDER2}`, color: TEXT }}
                   >
-                    <span style={{ color: DIM }} className="text-[9px] mr-1">Type</span>
+                    <span style={{ color: MUTED }} className="text-[10px] mr-1.5">Type</span>
                     {ORDER_TYPES.find((t) => t.value === orderType)?.short}
-                    <ChevronDown className="w-3 h-3 ml-1" style={{ color: DIM }} />
+                    <ChevronDown className="w-3.5 h-3.5 ml-1" style={{ color: DIM }} />
                   </button>
                   {showOrderType && (
-                    <div className="absolute top-full left-0 right-0 mt-1 z-10 rounded-lg overflow-hidden shadow-xl" style={{ background: FIELD, border: `1px solid ${BORDER2}` }}>
+                    <div className="absolute top-full left-0 right-0 mt-1 z-10 overflow-hidden shadow-xl" style={{ background: FIELD, border: `1px solid ${BORDER2}` }}>
                       {ORDER_TYPES.map((t) => (
                         <button
                           key={t.value}
                           onClick={() => { setOrderType(t.value); setShowOrderType(false); }}
-                          className="w-full text-left px-3 py-2 font-mono text-[11px] transition-colors"
+                          className="w-full text-left px-3 py-2.5 font-mono text-[13px] transition-colors"
                           style={{
                             color: orderType === t.value ? GOLD : "#a1a1aa",
                             background: orderType === t.value ? GOLD_DIM : "transparent",
@@ -844,20 +870,20 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                 <div className="flex-1 relative">
                   <button
                     onClick={() => { setShowTifDropdown(!showTifDropdown); setShowOrderType(false); }}
-                    className="w-full flex items-center justify-between px-3 py-2 rounded-lg font-mono text-[11px] transition-colors"
+                    className="w-full flex items-center justify-between px-3 py-2.5 font-mono text-[13px] transition-colors"
                     style={{ background: FIELD, border: `1px solid ${BORDER2}`, color: TEXT }}
                   >
-                    <span style={{ color: DIM }} className="text-[9px] mr-1">TIF</span>
+                    <span style={{ color: MUTED }} className="text-[10px] mr-1.5">TIF</span>
                     {DURATIONS.find((d) => d.value === duration)?.label}
-                    <ChevronDown className="w-3 h-3 ml-1" style={{ color: DIM }} />
+                    <ChevronDown className="w-3.5 h-3.5 ml-1" style={{ color: DIM }} />
                   </button>
                   {showTifDropdown && (
-                    <div className="absolute top-full left-0 right-0 mt-1 z-10 rounded-lg overflow-hidden shadow-xl" style={{ background: FIELD, border: `1px solid ${BORDER2}` }}>
+                    <div className="absolute top-full left-0 right-0 mt-1 z-10 overflow-hidden shadow-xl" style={{ background: FIELD, border: `1px solid ${BORDER2}` }}>
                       {DURATIONS.map((d) => (
                         <button
                           key={d.value}
                           onClick={() => { setDuration(d.value); setShowTifDropdown(false); }}
-                          className="w-full text-left px-3 py-2 font-mono text-[11px] transition-colors"
+                          className="w-full text-left px-3 py-2.5 font-mono text-[13px] transition-colors"
                           style={{
                             color: duration === d.value ? GOLD : "#a1a1aa",
                             background: duration === d.value ? GOLD_DIM : "transparent",
@@ -875,14 +901,14 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
             {(needsLimit || isMultiLeg) && (
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="font-mono text-[9px] tracking-wider" style={{ color: MUTED }}>
+                  <label className="font-mono text-[10px] tracking-wider" style={{ color: MUTED }}>
                     {isMultiLeg ? (strategyIsCredit ? "NET CREDIT PRICE" : "NET DEBIT PRICE") : "LIMIT PRICE"}
                   </label>
                   <button onClick={() => setPriceLocked(!priceLocked)} className="p-0.5" style={{ color: priceLocked ? GOLD : DIM }}>
                     {priceLocked ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
                   </button>
                 </div>
-                <div className="flex items-center rounded-lg overflow-hidden" style={{ background: FIELD, border: `1px solid ${priceLocked ? "rgba(251,191,36,0.3)" : BORDER2}` }}>
+                <div className="flex items-center overflow-hidden" style={{ background: FIELD, border: `1px solid ${priceLocked ? "rgba(251,191,36,0.3)" : BORDER2}` }}>
                   <span className="pl-3 font-mono text-[12px]" style={{ color: DIM }}>$</span>
                   <input
                     type="number"
@@ -898,7 +924,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                   <div className="flex items-center gap-1 pr-2">
                     <button
                       onClick={() => { if (!priceLocked && quote?.bid != null) setLimitPrice(quote.bid.toFixed(2)); }}
-                      className="px-1.5 py-1 rounded font-mono text-[9px] font-bold transition-colors"
+                      className="px-2 py-1 rounded font-mono text-[10px] font-bold transition-colors"
                       style={{ color: UP, background: "rgba(0,209,102,0.08)", opacity: priceLocked ? 0.4 : 1 }}
                       disabled={priceLocked}
                     >
@@ -906,7 +932,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                     </button>
                     <button
                       onClick={() => { if (!priceLocked) setMidPrice(); }}
-                      className="px-1.5 py-1 rounded font-mono text-[9px] font-bold transition-colors"
+                      className="px-2 py-1 rounded font-mono text-[10px] font-bold transition-colors"
                       style={{ color: GOLD, background: GOLD_DIM, opacity: priceLocked ? 0.4 : 1 }}
                       disabled={priceLocked}
                     >
@@ -914,7 +940,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                     </button>
                     <button
                       onClick={() => { if (!priceLocked) setNatPrice(); }}
-                      className="px-1.5 py-1 rounded font-mono text-[9px] font-bold transition-colors"
+                      className="px-2 py-1 rounded font-mono text-[10px] font-bold transition-colors"
                       style={{ color: DOWN, background: "rgba(242,54,69,0.08)", opacity: priceLocked ? 0.4 : 1 }}
                       disabled={priceLocked}
                     >
@@ -926,7 +952,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                 {quote?.bid != null && quote?.ask != null && (
                   <div className="mt-1.5 px-1">
                     <div className="flex items-center gap-2">
-                      <span className="font-mono text-[8px]" style={{ color: UP }}>Bid</span>
+                      <span className="font-mono text-[10px]" style={{ color: UP }}>Bid</span>
                       <div className="flex-1 relative h-3">
                         <div className="absolute inset-0 rounded-full overflow-hidden" style={{ background: BORDER2 }}>
                           <div className="absolute inset-0 rounded-full" style={{
@@ -958,12 +984,12 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                           }}
                         />
                       </div>
-                      <span className="font-mono text-[8px]" style={{ color: DOWN }}>Ask</span>
+                      <span className="font-mono text-[10px]" style={{ color: DOWN }}>Ask</span>
                     </div>
                     <div className="flex justify-between mt-0.5">
-                      <span className="font-mono text-[8px]" style={{ color: UP }}>{fmt(quote.bid)}</span>
-                      {midPrice != null && <span className="font-mono text-[8px]" style={{ color: GOLD }}>Mid {fmt(midPrice)}</span>}
-                      <span className="font-mono text-[8px]" style={{ color: DOWN }}>{fmt(quote.ask)}</span>
+                      <span className="font-mono text-[10px]" style={{ color: UP }}>{fmt(quote.bid)}</span>
+                      {midPrice != null && <span className="font-mono text-[10px]" style={{ color: GOLD }}>Mid {fmt(midPrice)}</span>}
+                      <span className="font-mono text-[10px]" style={{ color: DOWN }}>{fmt(quote.ask)}</span>
                     </div>
                   </div>
                 )}
@@ -972,8 +998,8 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
 
             {!isMultiLeg && needsStop && (
               <div>
-                <label className="font-mono text-[9px] tracking-wider block mb-1" style={{ color: MUTED }}>STOP PRICE</label>
-                <div className="flex items-center rounded-lg overflow-hidden" style={{ background: FIELD, border: `1px solid ${BORDER2}` }}>
+                <label className="font-mono text-[10px] tracking-wider block mb-1" style={{ color: MUTED }}>STOP PRICE</label>
+                <div className="flex items-center overflow-hidden" style={{ background: FIELD, border: `1px solid ${BORDER2}` }}>
                   <span className="pl-3 font-mono text-[12px]" style={{ color: DIM }}>$</span>
                   <input
                     type="number" inputMode="decimal" step="0.01" value={stopPrice}
@@ -987,8 +1013,8 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
 
             {!isMultiLeg && needsTrail && (
               <div>
-                <label className="font-mono text-[9px] tracking-wider block mb-1" style={{ color: MUTED }}>TRAIL AMOUNT ($)</label>
-                <div className="flex items-center rounded-lg overflow-hidden" style={{ background: FIELD, border: `1px solid ${BORDER2}` }}>
+                <label className="font-mono text-[10px] tracking-wider block mb-1" style={{ color: MUTED }}>TRAIL AMOUNT ($)</label>
+                <div className="flex items-center overflow-hidden" style={{ background: FIELD, border: `1px solid ${BORDER2}` }}>
                   <span className="pl-3 font-mono text-[12px]" style={{ color: DIM }}>$</span>
                   <input
                     type="number" inputMode="decimal" step="0.01" value={trailOffset}
@@ -1001,15 +1027,15 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
             )}
 
             <div>
-              <label className="font-mono text-[9px] tracking-wider block mb-1" style={{ color: MUTED }}>
+              <label className="font-mono text-[10px] tracking-wider block mb-1" style={{ color: MUTED }}>
                 {isMultiLeg ? "QUANTITY (SPREADS)" : `QUANTITY ${isOption ? "(CONTRACTS)" : "(SHARES)"}`}
               </label>
-              <div className="flex items-center rounded-lg overflow-hidden h-10" style={{ background: FIELD, border: `1px solid ${BORDER2}` }}>
+              <div className="flex items-center overflow-hidden h-11" style={{ background: FIELD, border: `1px solid ${BORDER2}` }}>
                 <button
                   onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                  className="px-3 h-full transition-colors active:text-white" style={{ color: "#a1a1aa" }}
+                  className="px-4 h-full transition-colors active:text-white" style={{ color: "#a1a1aa" }}
                 >
-                  <Minus className="w-3.5 h-3.5" />
+                  <Minus className="w-4 h-4" />
                 </button>
                 <input
                   ref={qtyInputRef}
@@ -1025,9 +1051,9 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                 />
                 <button
                   onClick={() => setQuantity(quantity + 1)}
-                  className="px-3 h-full transition-colors active:text-white" style={{ color: "#a1a1aa" }}
+                  className="px-4 h-full transition-colors active:text-white" style={{ color: "#a1a1aa" }}
                 >
-                  <Plus className="w-3.5 h-3.5" />
+                  <Plus className="w-4 h-4" />
                 </button>
               </div>
               <div className="flex gap-1.5 mt-1.5">
@@ -1035,7 +1061,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                   <button
                     key={q}
                     onClick={() => setQuantity(q)}
-                    className="flex-1 py-1 rounded font-mono text-[10px] font-medium transition-colors"
+                    className="flex-1 py-1.5 font-mono text-[11px] font-medium transition-colors"
                     style={{
                       color: quantity === q ? GOLD : DIM,
                       background: quantity === q ? GOLD_DIM : CARD,
@@ -1049,20 +1075,20 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
             </div>
 
             <div className="grid grid-cols-3 gap-1.5">
-              <div className="rounded-lg px-2 py-1.5" style={{ background: FIELD, border: `1px solid ${BORDER2}` }}>
-                <span className="font-mono text-[8px] block" style={{ color: DIM }}>Effect</span>
-                <button onClick={() => setPosEffect(posEffect === "OPENING" ? "CLOSING" : posEffect === "CLOSING" ? "AUTO" : "OPENING")} className="font-mono text-[10px] font-medium" style={{ color: TEXT }}>
+              <div className="px-3 py-2" style={{ background: FIELD, border: `1px solid ${BORDER2}` }}>
+                <span className="font-mono text-[10px] block mb-0.5" style={{ color: MUTED }}>Effect</span>
+                <button onClick={() => setPosEffect(posEffect === "OPENING" ? "CLOSING" : posEffect === "CLOSING" ? "AUTO" : "OPENING")} className="font-mono text-[12px] font-medium" style={{ color: TEXT }}>
                   {posEffect === "AUTO" ? "Auto" : posEffect === "OPENING" ? "Open" : "Close"}
                 </button>
               </div>
-              <div className="rounded-lg px-2 py-1.5" style={{ background: FIELD, border: `1px solid ${BORDER2}` }}>
-                <span className="font-mono text-[8px] block" style={{ color: DIM }}>Exchange</span>
-                <span className="font-mono text-[10px] font-medium" style={{ color: TEXT }}>BEST</span>
+              <div className="px-3 py-2" style={{ background: FIELD, border: `1px solid ${BORDER2}` }}>
+                <span className="font-mono text-[10px] block mb-0.5" style={{ color: MUTED }}>Exchange</span>
+                <span className="font-mono text-[12px] font-medium" style={{ color: TEXT }}>BEST</span>
               </div>
-              <div className="rounded-lg px-2 py-1.5 flex items-center justify-between" style={{ background: FIELD, border: `1px solid ${BORDER2}` }}>
+              <div className="px-3 py-2 flex items-center justify-between" style={{ background: FIELD, border: `1px solid ${BORDER2}` }}>
                 <div>
-                  <span className="font-mono text-[8px] block" style={{ color: DIM }}>Ext Hrs</span>
-                  <span className="font-mono text-[10px] font-medium" style={{ color: extendedHours ? GOLD : TEXT }}>
+                  <span className="font-mono text-[10px] block mb-0.5" style={{ color: MUTED }}>Ext Hrs</span>
+                  <span className="font-mono text-[12px] font-medium" style={{ color: extendedHours ? GOLD : TEXT }}>
                     {extendedHours ? "On" : "Off"}
                   </span>
                 </div>
@@ -1083,11 +1109,11 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
             </div>
 
             {estimatedCost != null && (
-              <div className="rounded-lg px-3 py-2 flex items-center justify-between" style={{ background: `${sideColor}08`, border: `1px solid ${sideColor}20` }}>
-                <span className="font-mono text-[10px]" style={{ color: MUTED }}>
+              <div className="px-4 py-2.5 flex items-center justify-between" style={{ background: `${sideColor}08`, border: `1px solid ${sideColor}20` }}>
+                <span className="font-mono text-[12px]" style={{ color: MUTED }}>
                   Est. {isMultiLeg ? (strategyIsCredit ? "Credit" : "Cost") : isBuy ? "Cost" : "Credit"}
                 </span>
-                <span className="font-mono text-[15px] font-bold" style={{ color: WHITE }}>
+                <span className="font-mono text-[16px] font-bold" style={{ color: WHITE }}>
                   {fmtCurrency(Math.abs(estimatedCost))}
                 </span>
               </div>
@@ -1121,14 +1147,14 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
             />
 
             {showBalances && (
-              <div className="rounded-lg overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-                <div className="flex items-center justify-between px-3 py-1.5" style={{ borderBottom: `1px solid ${BORDER}` }}>
-                  <span className="font-mono text-[10px] font-bold tracking-wider" style={{ color: GOLD }}>ACCOUNT BALANCES</span>
+              <div className="overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                <div className="flex items-center justify-between px-4 py-2" style={{ borderBottom: `1px solid ${BORDER}` }}>
+                  <span className="font-mono text-[11px] font-bold tracking-[0.12em]" style={{ color: GOLD }}>ACCOUNT BALANCES</span>
                   <button onClick={() => setBalancesHidden(!balancesHidden)} className="p-0.5" style={{ color: MUTED }}>
-                    {balancesHidden ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                    {balancesHidden ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                   </button>
                 </div>
-                <div className="grid grid-cols-2 gap-x-3 gap-y-1 px-3 py-2">
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 px-4 py-2.5">
                   {[
                     { label: "Net Liq", value: balancesHidden ? "****" : fmtCurrency(accountSize) },
                     { label: "Buying Power", value: balancesHidden ? "****" : fmtCurrency(accountSize) },
@@ -1136,8 +1162,8 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                     { label: "Margin Used", value: balancesHidden ? "****" : "$0.00" },
                   ].map((b, i) => (
                     <div key={i} className="flex justify-between">
-                      <span className="font-mono text-[9px]" style={{ color: MUTED }}>{b.label}</span>
-                      <span className="font-mono text-[10px]" style={{ color: TEXT }}>{b.value}</span>
+                      <span className="font-mono text-[11px]" style={{ color: MUTED }}>{b.label}</span>
+                      <span className="font-mono text-[12px] font-medium" style={{ color: TEXT }}>{b.value}</span>
                     </div>
                   ))}
                 </div>
@@ -1146,49 +1172,12 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
 
             <button
               onClick={() => setShowBalances(!showBalances)}
-              className="w-full flex items-center justify-center gap-1 py-1"
+              className="w-full flex items-center justify-center gap-1 py-1.5"
               style={{ color: MUTED }}
             >
-              <span className="font-mono text-[9px]">{showBalances ? "Hide" : "Show"} Balances</span>
-              <ChevronDown className="w-3 h-3" style={{ transform: showBalances ? "rotate(180deg)" : "none", transition: "transform 150ms" }} />
+              <span className="font-mono text-[11px]">{showBalances ? "Hide" : "Show"} Balances</span>
+              <ChevronDown className="w-3.5 h-3.5" style={{ transform: showBalances ? "rotate(180deg)" : "none", transition: "transform 150ms" }} />
             </button>
-
-            {preTradeEnabled && riskChecks.length > 0 && (
-              <div className="rounded-lg overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-                <button
-                  onClick={() => setShowRiskPanel(!showRiskPanel)}
-                  className="w-full flex items-center justify-between px-3 py-1.5"
-                  style={{ borderBottom: showRiskPanel ? `1px solid ${BORDER}` : "none" }}
-                >
-                  <div className="flex items-center gap-1.5">
-                    <Shield className="w-3 h-3" style={{ color: GOLD }} />
-                    <span className="font-mono text-[10px] font-bold tracking-wider" style={{ color: GOLD }}>PRE-TRADE RISK</span>
-                    <div className="w-1.5 h-1.5 rounded-full" style={{ background: levelColor(overallRisk) }} />
-                  </div>
-                  <ChevronRight className="w-3 h-3 transition-transform" style={{ color: DIM, transform: showRiskPanel ? "rotate(90deg)" : "none" }} />
-                </button>
-
-                {showRiskPanel && (
-                  <>
-                    <div className="w-full h-0.5" style={{ background: levelColor(overallRisk) }} />
-                    <div className="px-3 py-1.5 space-y-1">
-                      {riskChecks.map((c) => (
-                        <div key={c.id} className="flex items-center gap-1.5 py-0.5">
-                          <RiskIcon level={c.level} />
-                          <span className="font-mono text-[9px] font-medium" style={{ color: TEXT, minWidth: 75 }}>{c.label}</span>
-                          <span className="font-mono text-[9px] flex-1 text-right truncate" style={{ color: levelColor(c.level) }}>{c.detail}</span>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="px-3 py-2" style={{ borderTop: `1px solid ${BORDER}`, background: `${levelColor(overallRisk)}08` }}>
-                      <p className="font-mono text-[9px] leading-relaxed" style={{ color: levelColor(overallRisk) }}>
-                        {riskSummary}
-                      </p>
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
 
           </div>
         </div>
@@ -1209,7 +1198,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
           )}
           <button
             onClick={onClose}
-            className="mt-4 w-full max-w-xs py-3 rounded-lg font-mono text-[13px] font-bold tracking-wider transition-colors"
+            className="mt-4 w-full max-w-xs py-3 font-mono text-[13px] font-bold tracking-wider transition-colors"
             style={{ background: FIELD, color: TEXT, border: `1px solid ${BORDER2}` }}
           >
             Done
@@ -1223,14 +1212,14 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
           <div className="flex gap-3 mt-4 w-full max-w-xs">
             <button
               onClick={() => setStage("form")}
-              className="flex-1 py-3 rounded-lg font-mono text-[13px] font-bold tracking-wider"
+              className="flex-1 py-3 font-mono text-[13px] font-bold tracking-wider"
               style={{ background: FIELD, color: TEXT, border: `1px solid ${BORDER2}` }}
             >
               Edit Order
             </button>
             <button
               onClick={onClose}
-              className="flex-1 py-3 rounded-lg font-mono text-[13px] font-bold tracking-wider"
+              className="flex-1 py-3 font-mono text-[13px] font-bold tracking-wider"
               style={{ background: FIELD, color: MUTED, border: `1px solid ${BORDER2}` }}
             >
               Close
@@ -1240,32 +1229,29 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
       )}
 
       {stage === "form" && (
-        <div className="absolute bottom-0 left-0 right-0 px-3 pb-6 pt-3" style={{ background: `linear-gradient(transparent, ${BG} 25%)` }}>
+        <div className="absolute bottom-0 left-0 right-0 px-4 pb-8 pt-3" style={{ background: `linear-gradient(transparent, #0a0a0a 30%)` }}>
           {blockedByRisk && (
-            <div className="mb-2 rounded-lg px-3 py-1.5 flex items-center gap-1.5" style={{ background: "rgba(242,54,69,0.08)", border: `1px solid rgba(242,54,69,0.2)` }}>
-              <ShieldX className="w-3.5 h-3.5 shrink-0" style={{ color: DOWN }} />
-              <span className="font-mono text-[9px]" style={{ color: DOWN }}>Risk check failed — review blocked</span>
+            <div className="mb-2 px-3 py-2 flex items-center gap-2" style={{ background: "rgba(242,54,69,0.08)", border: `1px solid rgba(242,54,69,0.3)` }}>
+              <ShieldX className="w-4 h-4 shrink-0" style={{ color: DOWN }} />
+              <span className="font-mono text-[12px] font-medium" style={{ color: DOWN }}>Risk check failed — review blocked</span>
             </div>
           )}
           {!blockedByRisk && overallRisk === "YELLOW" && preTradeEnabled && (
-            <div className="mb-2 rounded-lg px-3 py-1.5 flex items-center gap-1.5" style={{ background: "rgba(251,191,36,0.06)", border: `1px solid rgba(251,191,36,0.15)` }}>
-              <ShieldAlert className="w-3.5 h-3.5 shrink-0" style={{ color: GOLD }} />
-              <span className="font-mono text-[9px]" style={{ color: GOLD }}>Proceed with caution — risk warnings active</span>
+            <div className="mb-2 px-3 py-2 flex items-center gap-2" style={{ background: "rgba(251,191,36,0.06)", border: `1px solid rgba(251,191,36,0.2)` }}>
+              <ShieldAlert className="w-4 h-4 shrink-0" style={{ color: GOLD }} />
+              <span className="font-mono text-[12px] font-medium" style={{ color: GOLD }}>Proceed with caution — risk warnings active</span>
             </div>
           )}
           <button
             onClick={() => setStage("review")}
             disabled={!isValid}
-            className="w-full py-3.5 rounded-lg font-mono text-[13px] font-bold tracking-wider transition-all duration-150 disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.98]"
+            className="w-full py-3.5 font-mono text-[14px] font-bold tracking-[0.15em] transition-all duration-150 disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.98]"
             style={{
-              background: isValid
-                ? `linear-gradient(180deg, ${isBuy ? UP : DOWN} 0%, ${isBuy ? "#00a854" : "#cc2d3a"} 100%)`
-                : BORDER2,
+              background: isValid ? (isBuy ? UP : DOWN) : BORDER2,
               color: isValid ? "#fff" : DIM,
-              boxShadow: isValid ? `0 4px 20px ${isBuy ? "rgba(0,209,102,0.3)" : "rgba(242,54,69,0.3)"}` : "none",
             }}
           >
-            {isMultiLeg ? "Review Strategy Order" : `Review ${side} Order`}
+            {isMultiLeg ? "REVIEW STRATEGY ORDER" : `REVIEW ${side} ORDER`}
           </button>
         </div>
       )}
@@ -1273,7 +1259,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
       {stage === "review" && (
         <div className="fixed inset-0 z-[220] flex items-end justify-center" style={{ background: "rgba(0,0,0,0.7)" }}>
           <div
-            className="w-full max-w-lg rounded-t-2xl p-5 space-y-3 animate-in slide-in-from-bottom duration-300"
+            className="w-full max-w-lg p-5 space-y-3 animate-in slide-in-from-bottom duration-300"
             style={{ background: CARD, border: `1px solid ${BORDER2}`, borderBottom: "none" }}
           >
             <div className="flex items-center justify-between mb-1">
@@ -1283,7 +1269,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
               </button>
             </div>
 
-            <div className="space-y-1.5 rounded-lg p-3" style={{ background: "#0a0a0c", border: `1px solid ${BORDER}` }}>
+            <div className="space-y-1.5 p-3" style={{ background: "#0a0a0c", border: `1px solid ${BORDER}` }}>
               {isMultiLeg && strategyLegs ? (
                 <>
                   <div className="flex justify-between">
@@ -1292,10 +1278,10 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                   </div>
                   {strategyLegs.map((leg, i) => (
                     <div key={i} className="flex justify-between">
-                      <span className="font-mono text-[9px]" style={{ color: leg.instruction.startsWith("BUY") ? UP : DOWN }}>
+                      <span className="font-mono text-[11px]" style={{ color: leg.instruction.startsWith("BUY") ? UP : DOWN }}>
                         {leg.instruction.replace(/_/g, " ")}
                       </span>
-                      <span className="font-mono text-[10px]" style={{ color: TEXT }}>
+                      <span className="font-mono text-[12px]" style={{ color: TEXT }}>
                         {leg.quantity * quantity}x {leg.strike} {leg.optionType}
                       </span>
                     </div>
@@ -1362,9 +1348,9 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
               </div>
             </div>
 
-            <div className="rounded-lg p-2.5 flex items-start gap-2" style={{ background: "rgba(251,191,36,0.06)", border: "1px solid rgba(251,191,36,0.15)" }}>
-              <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: GOLD }} />
-              <p className="font-mono text-[9px] leading-relaxed" style={{ color: GOLD }}>
+            <div className="p-3 flex items-start gap-2" style={{ background: "rgba(251,191,36,0.06)", border: "1px solid rgba(251,191,36,0.15)" }}>
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" style={{ color: GOLD }} />
+              <p className="font-mono text-[11px] leading-relaxed" style={{ color: GOLD }}>
                 This will place a live order with Schwab. Verify all details before confirming.
               </p>
             </div>
@@ -1372,14 +1358,14 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
             <div className="flex gap-3 pt-1 pb-4">
               <button
                 onClick={() => setStage("form")}
-                className="flex-1 py-3 rounded-lg font-mono text-[12px] font-bold tracking-wider"
+                className="flex-1 py-3 font-mono text-[12px] font-bold tracking-wider"
                 style={{ background: FIELD, color: "#a1a1aa", border: `1px solid ${BORDER2}` }}
               >
                 Back
               </button>
               <button
                 onClick={handleSubmit}
-                className="flex-[2] py-3 rounded-lg font-mono text-[13px] font-bold tracking-wider active:scale-[0.98] transition-transform"
+                className="flex-[2] py-3 font-mono text-[13px] font-bold tracking-wider active:scale-[0.98] transition-transform"
                 style={{
                   background: `linear-gradient(180deg, ${isBuy ? UP : DOWN} 0%, ${isBuy ? "#00a854" : "#cc2d3a"} 100%)`,
                   color: "#fff",
