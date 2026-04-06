@@ -39,8 +39,8 @@ const GRAY = "#a1a1aa";
 const DIM = "#52525b";
 const MUTED = "#3f3f46";
 
-const ITM_BG = "rgba(200,150,30,0.18)";
-const OTM_BG = "transparent";
+const ITM_BG = "#1c1504";
+const OTM_BG = "#080808";
 const SEL_BORDER_COLOR = "#fbbf2480";
 
 const MONO = "'SFMono-Regular', 'SF Mono', ui-monospace, 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace";
@@ -661,7 +661,13 @@ function MetricsStrip({ groups, lastPrice, rawCalls, rawPuts, earningsDate, isFe
 
   const totalCallVol = rawCalls.reduce((sum, c) => sum + (c.volume ?? 0), 0);
   const totalPutVol = rawPuts.reduce((sum, p) => sum + (p.volume ?? 0), 0);
-  const pcr = totalCallVol > 0 ? (totalPutVol / totalCallVol).toFixed(2) : "\u2014";
+  const totalCallOI = rawCalls.reduce((sum, c) => sum + (c.openInterest ?? 0), 0);
+  const totalPutOI = rawPuts.reduce((sum, p) => sum + (p.openInterest ?? 0), 0);
+  const pcr = totalCallVol > 0
+    ? (totalPutVol / totalCallVol).toFixed(2)
+    : totalCallOI > 0
+      ? (totalPutOI / totalCallOI).toFixed(2)
+      : "\u2014";
 
   let earnDisplay = "\u2014";
   if (earningsDate) {
@@ -813,16 +819,21 @@ function OptionsGrid({
                 const callLeg = callKey ? selectedLegs.get(callKey) : undefined;
                 const isCallSelected = !!callLeg;
                 const moneyness = classifyMoneyness(row.strike, underlyingPrice, true);
-                const bg = getRowBg(row.strike, underlyingPrice, true);
+                const isITM = isStrikeITM(row.strike, underlyingPrice, true);
+                const bg = isITM ? ITM_BG : OTM_BG;
+                const itmShadow = isITM ? "inset 2px 0 0 #fbbf2450" : "";
+                const selShadow = isCallSelected ? `inset 3px 0 0 ${SEL_BORDER_COLOR}` : "";
+                const shadow = [selShadow, itmShadow].filter(Boolean).join(", ") || undefined;
                 return (
                   <div
                     key={row.strike}
                     className="flex"
+                    data-itm={isITM ? "true" : "false"}
                     style={{
                       height: ROW_H,
                       borderBottom: `1px solid ${BORDER_ROW}`,
                       background: bg,
-                      boxShadow: isCallSelected ? `inset 2px 0 0 ${SEL_BORDER_COLOR}` : undefined,
+                      boxShadow: shadow,
                     }}
                   >
                     {columns.map(col => (
@@ -867,16 +878,21 @@ function OptionsGrid({
                 const putLeg = putKey ? selectedLegs.get(putKey) : undefined;
                 const isPutSelected = !!putLeg;
                 const moneyness = classifyMoneyness(row.strike, underlyingPrice, false);
-                const bg = getRowBg(row.strike, underlyingPrice, false);
+                const isITM = isStrikeITM(row.strike, underlyingPrice, false);
+                const bg = isITM ? ITM_BG : OTM_BG;
+                const itmShadow = isITM ? "inset -2px 0 0 #fbbf2450" : "";
+                const selShadow = isPutSelected ? `inset -3px 0 0 ${SEL_BORDER_COLOR}` : "";
+                const shadow = [selShadow, itmShadow].filter(Boolean).join(", ") || undefined;
                 return (
                   <div
                     key={row.strike}
                     className="flex"
+                    data-itm={isITM ? "true" : "false"}
                     style={{
                       height: ROW_H,
                       borderBottom: `1px solid ${BORDER_ROW}`,
                       background: bg,
-                      boxShadow: isPutSelected ? `inset -2px 0 0 ${SEL_BORDER_COLOR}` : undefined,
+                      boxShadow: shadow,
                     }}
                   >
                     {columns.map(col => (
@@ -1306,7 +1322,11 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
             />
             {groups.map(group => {
               const isOpen = expandedExps.has(group.expiration);
-              const pcr = group.totalCallVol > 0 ? (group.totalPutVol / group.totalCallVol) : null;
+              const pcr = group.totalCallVol > 0
+                ? (group.totalPutVol / group.totalCallVol)
+                : group.totalCallOI > 0
+                  ? (group.totalPutOI / group.totalCallOI)
+                  : null;
               return (
                 <div key={group.expiration}>
                   <button
