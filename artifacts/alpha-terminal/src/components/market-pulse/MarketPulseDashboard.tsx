@@ -286,6 +286,8 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
               )}
             </div>
           )}
+          <EngineAuditPanel data={pulseData} />
+
           <BiasHero data={pulseData} />
 
           {pulseData.hasDivergence && pulseData.divergenceNote && (
@@ -323,8 +325,6 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
           {!settings.compactMode && pulseData.levelsToWatch && (
             <LevelsToWatch levels={pulseData.levelsToWatch} />
           )}
-
-          <EngineAuditPanel data={pulseData} />
         </div>
       )}
     </div>

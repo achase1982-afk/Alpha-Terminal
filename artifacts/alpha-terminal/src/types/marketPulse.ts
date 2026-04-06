@@ -238,6 +238,7 @@ export interface MarketPulseData {
   breadthDetail?: BreadthDetail;
   momentum?: MomentumData;
   optionsLayer?: OptionsLayer;
+  riskStateReasoning?: string[];
   dataQuality?: DataQualitySummary;
   weights?: Record<string, number>;
   session: string;
