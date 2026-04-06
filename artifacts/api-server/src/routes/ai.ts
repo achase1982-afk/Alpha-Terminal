@@ -1349,8 +1349,12 @@ router.post("/market-pulse/stream", async (req, res) => {
   let dataMap: Map<string, Record<string, unknown>>;
   let dataBlock: string;
   try {
-    const wsResult = readFromWebSocketCache(symbols);
-    const expectedCount = symbols && symbols.length > 0 ? symbols.length : PULSE_SYMBOLS.length;
+    // Always read the full PULSE_SYMBOLS from cache so all 59 rawIndicator fields
+    // can be populated by extractMarketIndicators.  The user's `symbols` selection
+    // only controls which indicators are sent to the AI in the dataBlock — it must
+    // not limit which cache entries are available.
+    const wsResult = readFromWebSocketCache();
+    const expectedCount = PULSE_SYMBOLS.length;
     const minRequired = Math.max(5, Math.ceil(expectedCount * 0.4));
     req.log.info({ source: "websocket", hits: wsResult.hitCount, expected: expectedCount, minRequired }, "Pulse stream data from WebSocket cache");
     if (wsResult.hitCount < minRequired) {
