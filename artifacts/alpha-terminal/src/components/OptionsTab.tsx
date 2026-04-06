@@ -249,7 +249,6 @@ function fmtCompact(val: number | undefined): string {
 const noScrollbar: React.CSSProperties = {
   scrollbarWidth: "none",
   msOverflowStyle: "none",
-  WebkitOverflowScrolling: "touch",
   scrollSnapType: "none",
 };
 
@@ -790,7 +789,6 @@ function OptionsGrid({
     overflowY: "hidden",
     scrollbarWidth: "none" as React.CSSProperties["scrollbarWidth"],
     msOverflowStyle: "none",
-    WebkitOverflowScrolling: "touch" as React.CSSProperties["WebkitOverflowScrolling"],
     willChange: "transform",
   };
 

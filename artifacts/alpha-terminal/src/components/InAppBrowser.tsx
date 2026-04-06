@@ -98,7 +98,6 @@ export function InAppBrowser() {
       style={{
         top: `${headerH}px`,
         background: "#1C1C1E",
-        WebkitOverflowScrolling: "touch",
       }}
     >
       <div
@@ -160,8 +159,7 @@ export function InAppBrowser() {
         className="flex-1 relative"
         style={{
           overflow: "hidden",
-          WebkitOverflowScrolling: "touch",
-          overscrollBehavior: "contain",
+          overscrollBehavior: "none",
         }}
       >
         {loading && (
@@ -217,8 +215,7 @@ export function InAppBrowser() {
             title="Secure article reader"
             style={{
               colorScheme: "dark",
-              WebkitOverflowScrolling: "touch",
-              overscrollBehavior: "contain",
+              overscrollBehavior: "none",
             }}
           />
         )}

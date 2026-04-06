@@ -176,7 +176,7 @@ function WatchlistRow({
             ref={scrollRef}
             onClick={handleTap}
             className="flex-1 overflow-x-auto cursor-pointer"
-            style={{ scrollbarWidth: "none", msOverflowStyle: "none", WebkitOverflowScrolling: "touch" }}
+            style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
           >
             <style>{`.wl-scroll::-webkit-scrollbar { display: none; }`}</style>
             <div className="wl-scroll flex items-center gap-1 px-2 py-2" style={{ minWidth: "max-content" }}>

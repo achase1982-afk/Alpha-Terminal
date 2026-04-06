@@ -1020,7 +1020,7 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
         INSTITUTIONAL HOLDERS
       </div>
       {holders.length > 0 ? (
-        <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+        <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: f, tableLayout: "fixed" }}>
             <colgroup>
               <col style={{ width: "52%" }} />
@@ -1066,7 +1066,7 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
         INSIDER TRANSACTIONS
       </div>
       {insiders.length > 0 ? (
-        <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+        <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: f, tableLayout: "fixed" }}>
             <colgroup>
               <col style={{ width: "30%" }} />
