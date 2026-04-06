@@ -179,8 +179,8 @@ const NEWS_TICK_SYMBOLS = new Set(["SPY", "QQQ"]);
 function subscribeAll() {
   if (!ib) return;
   try {
-    ib.reqMarketDataType(1);
-    logger.info("IB: requested LIVE market data type");
+    ib.reqMarketDataType(3);
+    logger.info("IB: requested DELAYED market data type (fallback from live)");
   } catch (err) {
     logger.warn({ err }, "IB: failed to set market data type");
   }

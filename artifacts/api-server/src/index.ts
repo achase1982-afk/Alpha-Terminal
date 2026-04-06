@@ -48,6 +48,11 @@ async function boot() {
 
   registerQuoteCacheInjector(injectExternalQuote);
   registerIBBroadcast(broadcastToClients);
+
+  if (process.env.IB_HOST) {
+    logger.info("IB_HOST configured — auto-connecting to IB Gateway");
+    connectIB().catch((err) => logger.warn({ err }, "IB auto-connect failed (will retry)"));
+  }
 }
 
 boot().catch((err) => {
