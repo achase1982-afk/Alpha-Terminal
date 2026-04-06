@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useOptionsStreamStore } from "@/lib/options-stream-store";
 import { useDepthStore, type DepthBook } from "@/lib/depth-store";
+import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
 import { fetchWithAuth, getClerkToken } from "@/lib/fetchWithAuth";
 import type { LiveQuote, LiveNewsItem } from "@/lib/store";
 
@@ -103,6 +104,8 @@ export function useMarketStream() {
   const mergeTick = useOptionsStreamStore((s) => s.mergeTick);
   const setDepthBook = useDepthStore((s) => s.setBook);
   const setDepthBooks = useDepthStore((s) => s.setBooks);
+  const setPortfolioAccount = usePortfolioStreamStore((s) => s.setAccount);
+  const setPortfolioOrders = usePortfolioStreamStore((s) => s.setOrders);
   const rejectedRetries = useRef(0);
   const symDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startedRef = useRef(false);
@@ -179,6 +182,7 @@ export function useMarketStream() {
     socket.onopen = () => {
       clearTimeout(openTimeout);
       reconnectDelayRef.current = WS_RECONNECT_BASE;
+      (window as any).__alphaWs = socket;
       console.log("[ws] connected to /api/ws/prices");
     };
 
@@ -224,6 +228,10 @@ export function useMarketStream() {
           setDepthBooks(msg.data as DepthBook[]);
         } else if (msg.event === "ibNews") {
           addLiveNews(msg.data as LiveNewsItem);
+        } else if (msg.event === "portfolioAccount") {
+          setPortfolioAccount(msg.data as any);
+        } else if (msg.event === "portfolioOrders") {
+          setPortfolioOrders(msg.data as any);
         } else if (msg.event === "streamerStatus") {
           const s = (msg.data as { status?: string }).status;
           if (s === "connected") setStreamStatus("live");
@@ -327,5 +335,11 @@ export function useMarketStream() {
     []
   );
 
-  return { subscribeOptionSymbols, subscribeEquitySymbols };
+  const sendWsMessage = useCallback((msg: Record<string, unknown>) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify(msg));
+    }
+  }, []);
+
+  return { subscribeOptionSymbols, subscribeEquitySymbols, sendWsMessage };
 }

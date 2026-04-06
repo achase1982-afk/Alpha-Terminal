@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useTerminalStore } from "@/lib/store";
+import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import {
   Briefcase,
@@ -180,7 +181,6 @@ function statusColor(status: string): string {
   }
 }
 
-const LIVE_REFRESH_MS = 30_000;
 
 function MarginCallBanner() {
   const [pulse, setPulse] = useState(true);
@@ -675,6 +675,10 @@ interface PortfolioViewProps {
 export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProps) {
   const { accessToken, setSymbol } = useTerminalStore();
 
+  const wsAccount = usePortfolioStreamStore((s) => s.account);
+  const wsOrders = usePortfolioStreamStore((s) => s.orders);
+  const wsLastUpdate = usePortfolioStreamStore((s) => s.lastUpdate);
+
   const [subTab, setSubTab] = useState<SubTab>("positions");
   const [account, setAccount] = useState<Account | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -687,7 +691,70 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
   const [cancellingId, setCancellingId] = useState<number | null>(null);
   const [accountHash, setAccountHash] = useState<string | null>(null);
   const [ordersError, setOrdersError] = useState(false);
-  const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const wsSubSentRef = useRef(false);
+
+  useEffect(() => {
+    if (wsAccount) {
+      setAccount(wsAccount as Account);
+      setLastRefresh(wsLastUpdate);
+      setLoading(false);
+      setError(null);
+    }
+  }, [wsAccount, wsLastUpdate]);
+
+  useEffect(() => {
+    if (wsOrders && wsOrders.length > 0) {
+      setOrders(wsOrders as Order[]);
+      setOrdersLoading(false);
+      setOrdersError(false);
+    }
+  }, [wsOrders]);
+
+  useEffect(() => {
+    if (!accessToken) return;
+
+    const sendSubscribe = () => {
+      const ws = (window as any).__alphaWs as WebSocket | undefined;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ action: "subscribePortfolio" }));
+        wsSubSentRef.current = true;
+        return true;
+      }
+      return false;
+    };
+
+    if (!sendSubscribe()) {
+      const retry = setInterval(() => {
+        if (sendSubscribe()) clearInterval(retry);
+      }, 500);
+      const timeout = setTimeout(() => clearInterval(retry), 10_000);
+      var cleanup = () => { clearInterval(retry); clearTimeout(timeout); };
+    }
+
+    fetchWithAuth("/api/portfolio/accounts")
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(data => { if (data.length > 0 && !wsAccount) { setAccount(data[0]); setLastRefresh(new Date()); setLoading(false); } })
+      .catch(() => { if (!wsAccount) setError("Failed to load portfolio data"); setLoading(false); });
+
+    fetchWithAuth("/api/portfolio/orders?days=30")
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(data => { if (!wsOrders?.length) setOrders(data); })
+      .catch(() => {});
+
+    fetchWithAuth("/api/portfolio/account-hash")
+      .then(r => r.json())
+      .then(d => { if (d.hashValue) setAccountHash(d.hashValue); })
+      .catch(() => {});
+
+    return () => {
+      cleanup?.();
+      const ws = (window as any).__alphaWs as WebSocket | undefined;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ action: "unsubscribePortfolio" }));
+      }
+      wsSubSentRef.current = false;
+    };
+  }, [accessToken]);
 
   const fetchAccount = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -698,7 +765,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
       const data = await res.json();
       if (data.length > 0) setAccount(data[0]);
       setLastRefresh(new Date());
-    } catch (err) {
+    } catch {
       if (!silent) setError("Failed to load portfolio data");
     } finally {
       if (!silent) setLoading(false);
@@ -719,28 +786,6 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
       setOrdersLoading(false);
     }
   }, []);
-
-  useEffect(() => {
-    if (accessToken) {
-      fetchAccount();
-      fetchOrders();
-      fetchWithAuth("/api/portfolio/account-hash")
-        .then(r => r.json())
-        .then(d => { if (d.hashValue) setAccountHash(d.hashValue); })
-        .catch(() => {});
-    }
-  }, [accessToken, fetchAccount, fetchOrders]);
-
-  useEffect(() => {
-    if (!accessToken) return;
-    refreshTimerRef.current = setInterval(() => {
-      fetchAccount(true);
-      fetchOrders();
-    }, LIVE_REFRESH_MS);
-    return () => {
-      if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
-    };
-  }, [accessToken, fetchAccount, fetchOrders]);
 
   const handleSelectSymbol = useCallback((sym: string) => {
     setSymbol(sym);
