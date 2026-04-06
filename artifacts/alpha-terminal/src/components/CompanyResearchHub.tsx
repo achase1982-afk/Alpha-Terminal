@@ -996,67 +996,134 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
     );
   }
 
+  const decodeHtml = (s: string) => {
+    if (!s) return s;
+    const el = document.createElement("textarea");
+    el.innerHTML = s;
+    return el.value;
+  };
+
+  const fmtSharesCompact = (n: number) => {
+    if (n >= 1e6) return `${(n / 1e6).toFixed(2)}M`;
+    if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
+    return n.toLocaleString();
+  };
+
   return (
     <>
       <Sec>INSTITUTIONAL HOLDERS</Sec>
       {holders.length > 0 ? (
-        <>
-          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", padding: "5px 0", borderBottom: `1px solid ${C.borderHi}` }}>
-            {["INSTITUTION", "% CLASS", "FILED"].map((h, i) => (
-              <span key={i} style={{ fontSize: 15, fontFamily: f, fontWeight: 700, color: C.textDim, letterSpacing: 1.5, textAlign: i > 0 ? "right" : "left" }}>{h}</span>
-            ))}
-          </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {holders.map((h, i) => (
-            <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", padding: "6px 0", borderBottom: `1px solid ${C.border}` }}>
-              <span style={{ fontSize: 15, fontFamily: f, color: C.text }}>{h.name}</span>
-              <span style={{ fontSize: 15, fontFamily: f, color: C.gold, textAlign: "right", fontWeight: 600 }}>{h.percentOfClass > 0 ? `${h.percentOfClass.toFixed(1)}%` : "—"}</span>
-              <span style={{ fontSize: 15, fontFamily: f, color: C.textDim, textAlign: "right" }}>{h.filingDate?.slice(5) || "—"}</span>
+            <div key={i} style={{
+              background: C.card, border: `1px solid ${C.border}`, padding: "12px 14px",
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontFamily: f, color: C.text, fontWeight: 600, lineHeight: 1.3 }}>
+                    {decodeHtml(h.name)}
+                  </div>
+                  <div style={{ fontSize: 10, fontFamily: f, color: C.textDim, marginTop: 4, letterSpacing: 0.5 }}>
+                    {h.formType || "SC 13G"} filed {h.filingDate || "—"}
+                  </div>
+                </div>
+                <div style={{ textAlign: "right", flexShrink: 0 }}>
+                  {h.percentOfClass > 0 ? (
+                    <>
+                      <div style={{ fontSize: 18, fontFamily: f, color: C.gold, fontWeight: 700 }}>
+                        {h.percentOfClass.toFixed(1)}%
+                      </div>
+                      <div style={{ fontSize: 9, fontFamily: f, color: C.textDim, letterSpacing: 0.8, textTransform: "uppercase", marginTop: 2 }}>of class</div>
+                    </>
+                  ) : (
+                    <div style={{ fontSize: 14, fontFamily: f, color: C.textDim }}>—</div>
+                  )}
+                </div>
+              </div>
+              {h.shares > 0 && (
+                <div style={{ fontSize: 11, fontFamily: f, color: C.textMuted, marginTop: 6, borderTop: `1px solid ${C.border}`, paddingTop: 6 }}>
+                  {h.shares.toLocaleString()} shares
+                </div>
+              )}
             </div>
           ))}
-        </>
+        </div>
       ) : (
-        <div style={{ padding: "12px 0", fontSize: 11, fontFamily: f, color: C.textDim }}>
+        <div style={{ padding: "16px 0", fontSize: 12, fontFamily: f, color: C.textDim, textAlign: "center" }}>
           No SC 13G/D filings found
         </div>
       )}
 
       <Sec>INSIDER TRANSACTIONS</Sec>
       {insiders.length > 0 ? (
-        <>
-          <div style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr 0.6fr 1fr 0.6fr", padding: "5px 0", borderBottom: `1px solid ${C.borderHi}` }}>
-            {["NAME", "TITLE", "TYPE", "SHARES", "DATE"].map((h, i) => (
-              <span key={i} style={{ fontSize: 15, fontFamily: f, fontWeight: 700, color: C.textDim, letterSpacing: 1.2, textAlign: i >= 3 ? "right" : "left" }}>{h}</span>
-            ))}
-          </div>
-          {insiders.slice(0, 15).map((t, i) => {
-            const action = t.acquiredOrDisposed === "A" ? "BUY" : "SELL";
-            const dateShort = t.transactionDate ? t.transactionDate.slice(5).replace("-", "/") : "—";
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          {insiders.slice(0, 20).map((t, i) => {
+            const isBuy = t.acquiredOrDisposed === "A";
+            const action = isBuy ? "BUY" : "SELL";
+            const actionColor = isBuy ? C.green : C.red;
+            const dateFormatted = t.transactionDate
+              ? new Date(t.transactionDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })
+              : "—";
+            const fullName = t.ownerName || "—";
+            const title = t.officerTitle || "";
+
             return (
-              <div key={i} style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr 0.6fr 1fr 0.6fr", padding: "6px 0", borderBottom: `1px solid ${C.border}` }}>
-                <span
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (t.filingUrl) {
-                      const contentUrl = `${API_BASE}/sec/filing-content?url=${encodeURIComponent(t.filingUrl)}`;
-                      openBrowser(contentUrl, `Form 4 — ${t.ownerName}`, "SEC EDGAR");
-                    }
-                  }}
-                  style={{ fontSize: 15, fontFamily: f, color: t.filingUrl ? "#fbbf24" : C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: t.filingUrl ? "pointer" : "default" }}
-                >{t.ownerName?.split(" ").slice(0, 2).join(" ") || "—"}</span>
-                <span style={{ fontSize: 15, fontFamily: f, color: C.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.officerTitle?.split(",")[0] || "—"}</span>
-                <span style={{ fontSize: 15, fontFamily: f, color: action === "BUY" ? C.green : C.red, fontWeight: 700 }}>{action}</span>
-                <span style={{ fontSize: 15, fontFamily: f, color: C.text, textAlign: "right" }}>{t.shares?.toLocaleString() || "—"}</span>
-                <span style={{ fontSize: 15, fontFamily: f, color: C.textDim, textAlign: "right" }}>{dateShort}</span>
+              <div key={i} style={{
+                background: C.card, border: `1px solid ${C.border}`, padding: "10px 14px",
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <span
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (t.filingUrl) {
+                            const contentUrl = `${API_BASE}/sec/filing-content?url=${encodeURIComponent(t.filingUrl)}`;
+                            openBrowser(contentUrl, `Form 4 — ${fullName}`, "SEC EDGAR");
+                          }
+                        }}
+                        style={{
+                          fontSize: 13, fontFamily: f, fontWeight: 600, lineHeight: 1.3,
+                          color: t.filingUrl ? "#fbbf24" : C.text,
+                          cursor: t.filingUrl ? "pointer" : "default",
+                        }}
+                      >{fullName}</span>
+                      <span style={{
+                        fontSize: 9, fontFamily: f, fontWeight: 700, letterSpacing: 0.8,
+                        color: actionColor,
+                        background: actionColor + "15",
+                        border: `1px solid ${actionColor}40`,
+                        padding: "1px 6px",
+                        borderRadius: 2,
+                      }}>{action}</span>
+                    </div>
+                    {title && (
+                      <div style={{ fontSize: 11, fontFamily: f, color: C.textDim, marginTop: 3 }}>{title}</div>
+                    )}
+                  </div>
+                  <div style={{ textAlign: "right", flexShrink: 0 }}>
+                    <div style={{ fontSize: 14, fontFamily: f, color: C.text, fontWeight: 600 }}>
+                      {fmtSharesCompact(t.shares)}
+                    </div>
+                    <div style={{ fontSize: 10, fontFamily: f, color: C.textDim, marginTop: 2 }}>{dateFormatted}</div>
+                  </div>
+                </div>
+                {t.pricePerShare != null && t.pricePerShare > 0 && (
+                  <div style={{ fontSize: 10, fontFamily: f, color: C.textMuted, marginTop: 5, borderTop: `1px solid ${C.border}`, paddingTop: 5 }}>
+                    @ ${t.pricePerShare.toFixed(2)}/share
+                    {t.shares > 0 && <span style={{ color: C.textDim, marginLeft: 8 }}>= ${(t.shares * t.pricePerShare).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>}
+                  </div>
+                )}
               </div>
             );
           })}
-        </>
+        </div>
       ) : (
-        <div style={{ padding: "12px 0", fontSize: 11, fontFamily: f, color: C.textDim }}>
+        <div style={{ padding: "16px 0", fontSize: 12, fontFamily: f, color: C.textDim, textAlign: "center" }}>
           No Form 4 insider transactions found
         </div>
       )}
-      <div style={{ fontSize: 9, fontFamily: f, color: C.textDim, padding: "8px 0 0", textAlign: "right" }}>
+      <div style={{ fontSize: 9, fontFamily: f, color: C.textDim, padding: "10px 0 0", textAlign: "right" }}>
         Source: SEC EDGAR Form 4 & SC 13G/D
       </div>
     </>
