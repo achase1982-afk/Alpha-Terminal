@@ -1128,7 +1128,6 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
         Source: SEC EDGAR Form 4 & SC 13G/D
       </div>
     </div>
-    </>
   );
 });
 
