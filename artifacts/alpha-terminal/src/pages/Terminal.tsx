@@ -16,7 +16,6 @@ import { ChartControls, chartParamsFromStore, isIntradayInterval } from "@/compo
 import { useAutoRefreshToken } from "@/hooks/useAutoRefreshToken";
 import { useMarketStream } from "@/hooks/useMarketStream";
 import { useViewportShell } from "@/hooks/useViewportShell";
-import { AiChatOverlay } from "@/components/AiChatOverlay";
 
 import { InAppBrowser } from "@/components/InAppBrowser";
 import { OrderTicket, type OrderLeg } from "@/components/OrderTicket";
@@ -116,7 +115,6 @@ function PulseHeader({ pulseData, onRefresh }: { pulseData: any; onRefresh: () =
 export default function TerminalPage() {
   const { symbol, accessToken, chartPeriod, chartInterval, streamStatus } = useTerminalStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [chatOpen, setChatOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
 
   const [historyTimedOut, setHistoryTimedOut] = useState(false);
@@ -381,7 +379,7 @@ export default function TerminalPage() {
           ref={sidebarRef}
           isOpen={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
-          onOpenChat={() => setChatOpen(true)}
+          onOpenChat={() => {}}
           onNavigate={(dest) => { if (dest === "markets") setActiveBottom("markets"); else if (dest === "portfolio") setActiveBottom("portfolio"); }}
         />
 
@@ -554,7 +552,6 @@ export default function TerminalPage() {
         onClose={() => setSearchOpen(false)}
         onSelectSymbol={() => { setSearchOpen(false); setActiveBottom("markets"); }}
       />
-      <AiChatOverlay isOpen={chatOpen} onClose={() => setChatOpen(false)} />
       <InAppBrowser />
       <StrategyBuilder
         isOpen={strategyOpen}

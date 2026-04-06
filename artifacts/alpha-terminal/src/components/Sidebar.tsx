@@ -11,6 +11,7 @@ import { readSecurityPrefs, updateSecurityPref, type SecurityPrefs } from "@/lib
 import { useBiometricRegistration, useWebAuthnSupported } from "@/hooks/useBiometric";
 import { AuthPanel } from "./AuthPanel";
 import { StrategySettings } from "./AiIntelligenceTab";
+import { SidebarChat } from "./SidebarChat";
 import { queryClient } from "@/App";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,7 +20,7 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import {
   X, Shield, Link, Fingerprint, Power, Menu,
-  Star, Activity, Briefcase, MessageCircle,
+  Star, Activity, Briefcase,
   Zap, LineChart, LayoutDashboard, BrainCircuit,
   ChevronLeft, ChevronRight, Trash2, Plus, RotateCcw, BarChart2,
   SlidersHorizontal, Gauge, ListOrdered, CalendarDays, Palette,
@@ -153,7 +154,6 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
               <div className="flex flex-col pb-2">
                 <MenuRow icon={<CalendarDays />} label="Calendar" onClick={() => { setActivePage("Calendar"); onClose(); }} />
                 <MenuRow icon={<Briefcase />} label="Portfolio" onClick={() => { onNavigate?.("portfolio"); handleCloseAll(); }} />
-                <MenuRow icon={<MessageCircle />} label="AI Search" onClick={() => { handleCloseAll(); onOpenChat?.(); }} />
               </div>
 
               <div className="mx-5 border-b border-card-border/50" />
@@ -169,7 +169,13 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
                 <MenuRow icon={<Shield />} label="Security & Privacy" onClick={() => { setActivePage("Security & Privacy"); onClose(); }} />
               </div>
 
-              <div className="pt-8 pb-10 pl-5">
+              <div className="mx-5 border-b border-card-border/50 mt-2" />
+
+              <div className="px-3 pt-3">
+                <SidebarChat />
+              </div>
+
+              <div className="pt-6 pb-10 pl-5">
                 <button
                   onClick={() => { queryClient.clear(); void signOut(); }}
                   className="flex items-center gap-3 transition-opacity hover:opacity-70 active:opacity-50"
