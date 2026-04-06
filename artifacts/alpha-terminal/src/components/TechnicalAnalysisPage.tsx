@@ -165,7 +165,7 @@ function computeOrderFlowImbalance(candles: Candle[]): number {
 function DataCell({ label, value, color, mono = true }: { label: string; value: string; color?: string; mono?: boolean }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="text-[9px] font-mono tracking-wider text-zinc-500">{label}</span>
+      <span className="text-[11px] font-mono tracking-wider text-zinc-500">{label}</span>
       <span
         className={`text-[13px] font-semibold ${mono ? "font-mono" : ""}`}
         style={{ color: color || "#e4e4e7" }}
@@ -391,9 +391,9 @@ export function TechnicalAnalysisPage({ candles }: Props) {
                   );
                 })}
                 <div className="flex flex-col gap-0.5 mt-1 px-0.5">
-                  <span className="text-[7px] font-mono text-[#FFB800]">POC {fmt(poc, 1)}</span>
-                  <span className="text-[7px] font-mono text-[#3b82f6]">VAH {fmt(vah, 1)}</span>
-                  <span className="text-[7px] font-mono text-[#3b82f6]">VAL {fmt(val, 1)}</span>
+                  <span className="text-[11px] font-mono text-[#FFB800]">POC {fmt(poc, 1)}</span>
+                  <span className="text-[11px] font-mono text-[#3b82f6]">VAH {fmt(vah, 1)}</span>
+                  <span className="text-[11px] font-mono text-[#3b82f6]">VAL {fmt(val, 1)}</span>
                 </div>
               </div>
             )}
@@ -413,7 +413,7 @@ export function TechnicalAnalysisPage({ candles }: Props) {
               <button
                 key={tab}
                 onClick={() => { setActiveDeepTab(tab); setDeepPage(i); }}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 font-mono text-[10px] tracking-wider transition-all border-b-2"
+                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 font-mono text-[11px] tracking-wider transition-all border-b-2"
                 style={{
                   borderColor: activeDeepTab === tab ? "#FFB800" : "transparent",
                   color: activeDeepTab === tab ? "#FFB800" : "#71717a",
@@ -461,7 +461,7 @@ export function TechnicalAnalysisPage({ candles }: Props) {
                       <TrendingDown className="w-4 h-4 text-[#f23645]" />
                     )}
                   </div>
-                  <span className="text-[9px] font-mono text-zinc-600">50-bar rolling delta</span>
+                  <span className="text-[11px] font-mono text-zinc-500">50-bar rolling delta</span>
                 </div>
 
                 <div className="rounded-lg p-3" style={{ background: "#1a1a1c" }}>
@@ -484,7 +484,7 @@ export function TechnicalAnalysisPage({ candles }: Props) {
                       );
                     })}
                     {(!candles || candles.length === 0) && (
-                      <span className="text-zinc-600 text-[10px]">No data</span>
+                      <span className="text-zinc-500 text-[11px]">No data</span>
                     )}
                   </div>
                 </div>
@@ -520,7 +520,7 @@ export function TechnicalAnalysisPage({ candles }: Props) {
                   <span className="font-mono text-[11px] tracking-wider text-zinc-400">Net Gamma Exposure (GEX)</span>
                   <div className="mt-2 flex items-baseline gap-2">
                     <span className="font-mono font-bold text-2xl text-[#FFB800]">—</span>
-                    <span className="text-[9px] font-mono text-zinc-600">Requires options chain</span>
+                    <span className="text-[11px] font-mono text-zinc-500">Requires options chain</span>
                   </div>
                 </div>
 
@@ -528,11 +528,11 @@ export function TechnicalAnalysisPage({ candles }: Props) {
                   <span className="font-mono text-[11px] tracking-wider text-zinc-400">Call / Put Walls</span>
                   <div className="mt-2 grid grid-cols-2 gap-3">
                     <div className="flex flex-col gap-0.5">
-                      <span className="text-[9px] font-mono text-zinc-600">Nearest Call Wall</span>
+                      <span className="text-[11px] font-mono text-zinc-500">Nearest Call Wall</span>
                       <span className="font-mono font-semibold text-sm text-[#00d166]">—</span>
                     </div>
                     <div className="flex flex-col gap-0.5">
-                      <span className="text-[9px] font-mono text-zinc-600">Nearest Put Wall</span>
+                      <span className="text-[11px] font-mono text-zinc-500">Nearest Put Wall</span>
                       <span className="font-mono font-semibold text-sm text-[#f23645]">—</span>
                     </div>
                   </div>
@@ -573,11 +573,11 @@ export function TechnicalAnalysisPage({ candles }: Props) {
                     </div>
                   </div>
                   <div className="mt-1 flex items-center gap-2">
-                    <span className="text-[9px] font-mono text-zinc-500">
+                    <span className="text-[11px] font-mono text-zinc-500">
                       Count: {sequential.count} {sequential.direction === "up" ? "Buy" : "Sell"}
                     </span>
                     {sequential.count >= 9 && (
-                      <span className="text-[9px] font-mono font-bold text-[#FFB800]">EXHAUSTION</span>
+                      <span className="text-[11px] font-mono font-bold text-[#FFB800]">EXHAUSTION</span>
                     )}
                   </div>
                 </div>
@@ -586,11 +586,11 @@ export function TechnicalAnalysisPage({ candles }: Props) {
                   <span className="font-mono text-[11px] tracking-wider text-zinc-400">Standard Deviation / Z-Score</span>
                   <div className="mt-2 grid grid-cols-2 gap-4">
                     <div>
-                      <span className="text-[9px] font-mono text-zinc-600">Std Dev (20)</span>
+                      <span className="text-[11px] font-mono text-zinc-500">Std Dev (20)</span>
                       <div className="font-mono font-bold text-lg text-white">{fmt(zScore.stddev)}</div>
                     </div>
                     <div>
-                      <span className="text-[9px] font-mono text-zinc-600">Z-Score</span>
+                      <span className="text-[11px] font-mono text-zinc-500">Z-Score</span>
                       <div
                         className="font-mono font-bold text-lg"
                         style={{
@@ -630,11 +630,11 @@ export function TechnicalAnalysisPage({ candles }: Props) {
                       />
                     </div>
                     <div className="flex justify-between mt-1">
-                      <span className="text-[7px] font-mono text-zinc-600">-3σ</span>
-                      <span className="text-[7px] font-mono text-zinc-600">-1σ</span>
-                      <span className="text-[7px] font-mono text-zinc-600">μ</span>
-                      <span className="text-[7px] font-mono text-zinc-600">+1σ</span>
-                      <span className="text-[7px] font-mono text-zinc-600">+3σ</span>
+                      <span className="text-[11px] font-mono text-zinc-500">-3σ</span>
+                      <span className="text-[11px] font-mono text-zinc-500">-1σ</span>
+                      <span className="text-[11px] font-mono text-zinc-500">μ</span>
+                      <span className="text-[11px] font-mono text-zinc-500">+1σ</span>
+                      <span className="text-[11px] font-mono text-zinc-500">+3σ</span>
                     </div>
                   </div>
                 </div>

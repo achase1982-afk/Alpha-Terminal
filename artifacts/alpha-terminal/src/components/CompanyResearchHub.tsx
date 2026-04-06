@@ -17,26 +17,26 @@ import {
 const API_BASE = "/api";
 
 const C = {
-  bg: "#000",
-  card: "#111",
-  border: "#1c1c1c",
-  borderHi: "#2a2a2a",
-  text: "#ffffff",
-  textSoft: "#d4d4d4",
-  textMuted: "#999",
-  textDim: "#555",
-  label: "#808080",
-  dim: "#4a4a4a",
-  gold: "#d4a843",
-  green: "#00e676",
-  red: "#ff5252",
+  bg: "#0c0c0c",
+  card: "#18181b",
+  border: "#27272a80",
+  borderHi: "#3f3f46",
+  text: "#e4e4e7",
+  textSoft: "#d4d4d8",
+  textMuted: "#a1a1aa",
+  textDim: "#71717a",
+  label: "#a1a1aa",
+  dim: "#52525b",
+  gold: "#FFB800",
+  green: "#00d166",
+  red: "#f23645",
   cyan: "#4dd0e1",
   amber: "#ffb74d",
   purple: "#b388ff",
 };
 
 const f = `'SFMono-Regular', 'SF Mono', ui-monospace, 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace`;
-const tt: React.CSSProperties = { background: "#111", border: `1px solid ${C.borderHi}`, borderRadius: 0, fontFamily: f, fontSize: 13, color: C.text, padding: "8px 12px" };
+const tt: React.CSSProperties = { background: C.card, border: `1px solid ${C.borderHi}`, borderRadius: 8, fontFamily: f, fontSize: 13, color: C.text, padding: "8px 12px" };
 const SUB_LABELS = ["Overview", "Financials", "SEC", "Ownership", "Valuation"] as const;
 const FINANCIALS_TABS = [["income", "Income"], ["balance", "Balance"], ["cashflow", "Cash Flow"]] as const;
 const CF_LEGEND = [["Operating", C.green], ["Investing", C.gold], ["Financing", C.textDim]] as const;
@@ -141,11 +141,11 @@ function Badge({ children, color = C.gold }: { children: React.ReactNode; color?
       background: color + "18",
       border: `1px solid ${color}55`,
       color: color,
-      fontSize: 9,
+      fontSize: 11,
       fontFamily: f,
       letterSpacing: "0.12em",
       padding: "2px 7px",
-      borderRadius: 3,
+      borderRadius: 6,
       textTransform: "uppercase",
       fontWeight: 700,
     }}>{children}</span>
@@ -164,7 +164,7 @@ function CollapseSection({ label, children, defaultOpen = true }: { label: strin
           borderBottom: `1px solid ${C.border}`, userSelect: "none",
         }}
       >
-        <span style={{ fontSize: 10, fontFamily: f, letterSpacing: "0.18em", color: C.gold, fontWeight: 700, textTransform: "uppercase" }}>{label}</span>
+        <span style={{ fontSize: 11, fontFamily: f, letterSpacing: "0.18em", color: C.gold, fontWeight: 700, textTransform: "uppercase" }}>{label}</span>
         <span style={{ color: C.textMuted, fontSize: 11 }}>{open ? "▲" : "▼"}</span>
       </div>
       {open && children}
@@ -178,9 +178,9 @@ function MGrid({ items }: { items: MGridItem[] }) {
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 16px", marginBottom: 4 }}>
       {items.map(([label, value, sub], i) => (
         <div key={i}>
-          <div style={{ fontSize: 9, color: C.textMuted, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 2, fontFamily: f }}>{label}</div>
+          <div style={{ fontSize: 11, color: C.textMuted, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 2, fontFamily: f }}>{label}</div>
           <div style={{ fontSize: 15, fontWeight: 600, color: C.text, fontFamily: f, lineHeight: 1.2 }}>{value ?? <span style={{ color: C.textMuted }}>—</span>}</div>
-          {sub && <div style={{ fontSize: 9, color: C.textDim, marginTop: 1, fontFamily: f }}>{sub}</div>}
+          {sub && <div style={{ fontSize: 11, color: C.textDim, marginTop: 1, fontFamily: f }}>{sub}</div>}
         </div>
       ))}
     </div>
@@ -195,9 +195,9 @@ function HeroMetrics({ items }: { items: [string, string, string, string][] }) {
     }}>
       {items.map(([label, value, sub, color]) => (
         <div key={label} style={{ background: C.card, padding: "12px 10px" }}>
-          <div style={{ fontSize: 9, color: C.textMuted, letterSpacing: "0.12em", fontFamily: f, textTransform: "uppercase", marginBottom: 4 }}>{label}</div>
+          <div style={{ fontSize: 11, color: C.textMuted, letterSpacing: "0.12em", fontFamily: f, textTransform: "uppercase", marginBottom: 4 }}>{label}</div>
           <div style={{ fontSize: 18, fontWeight: 700, color, fontFamily: f }}>{value}</div>
-          <div style={{ fontSize: 9, color: C.textMuted, fontFamily: f, marginTop: 2 }}>{sub}</div>
+          <div style={{ fontSize: 11, color: C.textMuted, fontFamily: f, marginTop: 2 }}>{sub}</div>
         </div>
       ))}
     </div>
@@ -208,10 +208,10 @@ function SectorBar({ sector, weight, color }: { sector: string; weight: number; 
   return (
     <div style={{ marginBottom: 7 }}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-        <span style={{ fontSize: 10, color: C.textDim, fontFamily: f }}>{sector}</span>
-        <span style={{ fontSize: 10, color: C.text, fontFamily: f }}>{weight}%</span>
+        <span style={{ fontSize: 11, color: C.textDim, fontFamily: f }}>{sector}</span>
+        <span style={{ fontSize: 11, color: C.text, fontFamily: f }}>{weight}%</span>
       </div>
-      <div style={{ background: "#1A1A1A", borderRadius: 2, height: 4, overflow: "hidden" }}>
+      <div style={{ background: C.border, borderRadius: 2, height: 4, overflow: "hidden" }}>
         <div style={{ width: `${(weight / 35) * 100}%`, height: "100%", background: color, borderRadius: 2 }} />
       </div>
     </div>
@@ -634,7 +634,7 @@ const SubFinancials = memo(function SubFinancials({ ticker }: { ticker: string }
       <div style={{ padding: "20px 0", textAlign: "center" }}>
         <span style={{ fontSize: 11, fontFamily: f, color: C.red }}>{error}</span>
         <button onClick={retry}
-          style={{ display: "block", margin: "10px auto 0", fontSize: 10, fontFamily: f, color: C.gold, background: "transparent", border: `1px solid ${C.gold}44`, padding: "4px 12px", cursor: "pointer" }}>
+          style={{ display: "block", margin: "10px auto 0", fontSize: 11, fontFamily: f, color: C.gold, background: "transparent", border: `1px solid ${C.gold}44`, padding: "4px 12px", cursor: "pointer" }}>
           RETRY
         </button>
       </div>
@@ -655,15 +655,15 @@ const SubFinancials = memo(function SubFinancials({ ticker }: { ticker: string }
         <div style={{ display: "flex", gap: 6 }}>
           {FINANCIALS_TABS.map(([id, label]) => (
             <button key={id} onClick={() => setView(id)} style={{
-              padding: "4px 12px", fontSize: 10, fontFamily: f, fontWeight: 600,
-              color: view === id ? "#000" : C.textMuted,
+              padding: "4px 12px", fontSize: 11, fontFamily: f, fontWeight: 600,
+              color: view === id ? C.bg : C.textMuted,
               background: view === id ? C.gold : "transparent",
               border: `1px solid ${view === id ? C.gold : C.borderHi}`,
               borderRadius: 14, cursor: "pointer", letterSpacing: 0.5,
             }}>{label}</button>
           ))}
         </div>
-        <span style={{ fontSize: 9, fontFamily: f, color: C.textDim }}>SEC XBRL</span>
+        <span style={{ fontSize: 11, fontFamily: f, color: C.textDim }}>SEC XBRL</span>
       </div>
 
       {view === "income" && (
@@ -674,8 +674,8 @@ const SubFinancials = memo(function SubFinancials({ ticker }: { ticker: string }
               <ResponsiveContainer width="100%" height={160}>
                 <BarChart data={revChart}>
                   <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
-                  <XAxis dataKey="yr" tick={{ fill: C.textDim, fontSize: 10, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
-                  <YAxis tick={{ fill: C.textDim, fontSize: 10, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
+                  <XAxis dataKey="yr" tick={{ fill: C.textDim, fontSize: 11, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
+                  <YAxis tick={{ fill: C.textDim, fontSize: 11, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
                   <Tooltip contentStyle={tt} />
                   <Bar dataKey="val" fill={C.gold} radius={[2, 2, 0, 0]} name="Revenue" />
                 </BarChart>
@@ -688,8 +688,8 @@ const SubFinancials = memo(function SubFinancials({ ticker }: { ticker: string }
               <ResponsiveContainer width="100%" height={140}>
                 <LineChart data={epsChart}>
                   <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
-                  <XAxis dataKey="yr" tick={{ fill: C.textDim, fontSize: 10, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
-                  <YAxis tick={{ fill: C.textDim, fontSize: 10, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
+                  <XAxis dataKey="yr" tick={{ fill: C.textDim, fontSize: 11, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
+                  <YAxis tick={{ fill: C.textDim, fontSize: 11, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
                   <Tooltip contentStyle={tt} />
                   <Line type="monotone" dataKey="val" stroke={C.green} strokeWidth={2} dot={{ fill: C.green, r: 3, strokeWidth: 0 }} name="EPS" />
                 </LineChart>
@@ -734,8 +734,8 @@ const SubFinancials = memo(function SubFinancials({ ticker }: { ticker: string }
               <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={cfChart}>
                   <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
-                  <XAxis dataKey="yr" tick={{ fill: C.textDim, fontSize: 10, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
-                  <YAxis tick={{ fill: C.textDim, fontSize: 10, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
+                  <XAxis dataKey="yr" tick={{ fill: C.textDim, fontSize: 11, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
+                  <YAxis tick={{ fill: C.textDim, fontSize: 11, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
                   <Tooltip contentStyle={tt} />
                   <Bar dataKey="op" fill={C.green} name="Operating Income" radius={[2, 2, 0, 0]} />
                   <Bar dataKey="fin" fill={C.gold} name="Net Income" radius={[2, 2, 0, 0]} />
@@ -743,7 +743,7 @@ const SubFinancials = memo(function SubFinancials({ ticker }: { ticker: string }
               </ResponsiveContainer>
               <div style={{ display: "flex", gap: 14, padding: "6px 0" }}>
                 {[["Operating", C.green], ["Net Income", C.gold]].map(([l, c]) => (
-                  <span key={l} style={{ fontSize: 10, fontFamily: f, color: C.textDim }}><span style={{ color: c as string }}>■</span> {l}</span>
+                  <span key={l} style={{ fontSize: 11, fontFamily: f, color: C.textDim }}><span style={{ color: c as string }}>■</span> {l}</span>
                 ))}
               </div>
             </>
@@ -831,7 +831,7 @@ const SubSEC = memo(function SubSEC({ ticker }: { ticker: string }) {
       <div style={{ padding: "20px 0", textAlign: "center" }}>
         <span style={{ fontSize: 11, fontFamily: f, color: C.red }}>{error}</span>
         <button onClick={() => { fetchedRef.current = null; setData(null); setError(null); }}
-          style={{ display: "block", margin: "10px auto 0", fontSize: 10, fontFamily: f, color: C.gold, background: "transparent", border: `1px solid ${C.gold}44`, padding: "4px 12px", cursor: "pointer" }}>
+          style={{ display: "block", margin: "10px auto 0", fontSize: 11, fontFamily: f, color: C.gold, background: "transparent", border: `1px solid ${C.gold}44`, padding: "4px 12px", cursor: "pointer" }}>
           RETRY
         </button>
       </div>
@@ -843,18 +843,18 @@ const SubSEC = memo(function SubSEC({ ticker }: { ticker: string }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 0 8px" }}>
         <div>
           <span style={{ fontSize: 12, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 1.5 }}>SEC EDGAR</span>
-          {cik && <span style={{ fontSize: 10, fontFamily: f, color: C.textDim, marginLeft: 10 }}>CIK {cik}</span>}
+          {cik && <span style={{ fontSize: 11, fontFamily: f, color: C.textDim, marginLeft: 10 }}>CIK {cik}</span>}
         </div>
         <a href={cikNumeric
             ? `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${cikNumeric}&type=&dateb=&owner=include&count=40`
             : `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company=${ticker}&CIK=&type=&dateb=&owner=include&count=40`}
           target="_blank" rel="noopener noreferrer"
-          style={{ fontSize: 9, fontFamily: f, fontWeight: 700, color: C.gold, textDecoration: "none", letterSpacing: 1, padding: "3px 8px", border: `1px solid ${C.gold}44` }}>
+          style={{ fontSize: 11, fontFamily: f, fontWeight: 700, color: C.gold, textDecoration: "none", letterSpacing: 1, padding: "3px 8px", border: `1px solid ${C.gold}44` }}>
           EDGAR ↗
         </a>
       </div>
 
-      <div style={{ fontSize: 10, fontFamily: f, color: C.textDim, paddingBottom: 8 }}>
+      <div style={{ fontSize: 11, fontFamily: f, color: C.textDim, paddingBottom: 8 }}>
         {filings.length} filings loaded • Real-time EDGAR data
       </div>
 
@@ -863,8 +863,8 @@ const SubSEC = memo(function SubSEC({ ticker }: { ticker: string }) {
           const count = t === "ALL" ? filings.length : filings.filter(fi => fi.formType === t || fi.formType.startsWith(t + "/")).length;
           return (
             <button key={t} onClick={() => { setFilter(t); }} style={{
-              padding: "2px 8px", fontSize: 9, fontFamily: f, fontWeight: 600,
-              color: filter === t ? "#000" : C.textDim,
+              padding: "2px 8px", fontSize: 11, fontFamily: f, fontWeight: 600,
+              color: filter === t ? C.bg : C.textDim,
               background: filter === t ? (tc[t] || C.gold) : "transparent",
               border: `1px solid ${filter === t ? "transparent" : C.borderHi}`,
               cursor: "pointer", letterSpacing: 0.5,
@@ -894,7 +894,7 @@ const SubSEC = memo(function SubSEC({ ticker }: { ticker: string }) {
                 <span style={{ fontSize: 11, fontFamily: f, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{fi.description}</span>
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0, marginLeft: 8 }}>
-                <span style={{ fontSize: 9, fontFamily: f, color: C.textDim }}>{fi.filedAt}</span>
+                <span style={{ fontSize: 11, fontFamily: f, color: C.textDim }}>{fi.filedAt}</span>
               </div>
             </div>
           </div>
@@ -910,7 +910,7 @@ const SubSEC = memo(function SubSEC({ ticker }: { ticker: string }) {
           ["Annual Reports", cikNumeric ? `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${cikNumeric}&type=10-K&count=10` : `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company=${ticker}&type=10-K&count=10`],
         ].map(([label, url], i) => (
           <a key={i} href={url as string} target="_blank" rel="noopener noreferrer"
-            style={{ fontSize: 10, fontFamily: f, color: C.gold, textDecoration: "none", padding: "7px 8px", border: `1px solid ${C.border}`, display: "block" }}>
+            style={{ fontSize: 11, fontFamily: f, color: C.gold, textDecoration: "none", padding: "7px 8px", border: `1px solid ${C.border}`, display: "block" }}>
             {label} ↗
           </a>
         ))}
@@ -989,7 +989,7 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
       <div style={{ padding: "20px 0", textAlign: "center" }}>
         <span style={{ fontSize: 11, fontFamily: f, color: C.red }}>{error}</span>
         <button onClick={() => { setRetryCount(c => c + 1); }}
-          style={{ display: "block", margin: "10px auto 0", fontSize: 10, fontFamily: f, color: C.gold, background: "transparent", border: `1px solid ${C.gold}44`, padding: "4px 12px", cursor: "pointer" }}>
+          style={{ display: "block", margin: "10px auto 0", fontSize: 11, fontFamily: f, color: C.gold, background: "transparent", border: `1px solid ${C.gold}44`, padding: "4px 12px", cursor: "pointer" }}>
           RETRY
         </button>
       </div>
@@ -1004,19 +1004,19 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
   };
 
   const hdrStyle: React.CSSProperties = {
-    fontSize: 10, fontFamily: f, fontWeight: 700, color: "#888",
+    fontSize: 11, fontFamily: f, fontWeight: 700, color: C.textMuted,
     letterSpacing: 1.2, textTransform: "uppercase", padding: "4px 0",
-    borderBottom: `1px solid #333`, whiteSpace: "nowrap",
+    borderBottom: `1px solid ${C.borderHi}`, whiteSpace: "nowrap",
   };
   const cellStyle: React.CSSProperties = {
-    fontSize: 12, fontFamily: f, color: "#ff9800", padding: "5px 0",
-    borderBottom: `1px solid #1a1a1a`, lineHeight: 1.35,
+    fontSize: 12, fontFamily: f, color: C.gold, padding: "5px 0",
+    borderBottom: `1px solid ${C.border}`, lineHeight: 1.35,
   };
-  const dimCell: React.CSSProperties = { ...cellStyle, color: "#777" };
+  const dimCell: React.CSSProperties = { ...cellStyle, color: C.textDim };
 
   return (
     <div style={{ padding: "2px 0" }}>
-      <div style={{ fontSize: 10, fontFamily: f, fontWeight: 700, color: "#ff9800", letterSpacing: 2, textTransform: "uppercase", padding: "14px 0 6px", borderBottom: `1px solid #333` }}>
+      <div style={{ fontSize: 11, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 2, textTransform: "uppercase", padding: "14px 0 6px", borderBottom: `1px solid ${C.borderHi}` }}>
         INSTITUTIONAL HOLDERS
       </div>
       {holders.length > 0 ? (
@@ -1039,7 +1039,7 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
             <tbody>
               {holders.map((h, i) => (
                 <tr key={i}>
-                  <td style={{ ...cellStyle, color: "#eee", whiteSpace: "normal", wordBreak: "break-word", paddingRight: 6 }}>
+                  <td style={{ ...cellStyle, color: C.text, whiteSpace: "normal", wordBreak: "break-word", paddingRight: 6 }}>
                     {decodeHtml(h.name)}
                   </td>
                   <td style={{ ...cellStyle, textAlign: "right", fontWeight: 600 }}>
@@ -1057,12 +1057,12 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
           </table>
         </div>
       ) : (
-        <div style={{ padding: "10px 0", fontSize: 11, fontFamily: f, color: "#555" }}>
+        <div style={{ padding: "10px 0", fontSize: 11, fontFamily: f, color: C.textDim }}>
           No SC 13G/D filings found
         </div>
       )}
 
-      <div style={{ fontSize: 10, fontFamily: f, fontWeight: 700, color: "#ff9800", letterSpacing: 2, textTransform: "uppercase", padding: "18px 0 6px", borderBottom: `1px solid #333` }}>
+      <div style={{ fontSize: 11, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 2, textTransform: "uppercase", padding: "18px 0 6px", borderBottom: `1px solid ${C.borderHi}` }}>
         INSIDER TRANSACTIONS
       </div>
       {insiders.length > 0 ? (
@@ -1090,7 +1090,7 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
                 const action = isBuy ? "BUY" : "SELL";
                 return (
                   <tr key={i}>
-                    <td style={{ ...cellStyle, color: t.filingUrl ? "#fbbf24" : "#eee", cursor: t.filingUrl ? "pointer" : "default", whiteSpace: "normal", wordBreak: "break-word", paddingRight: 4 }}
+                    <td style={{ ...cellStyle, color: t.filingUrl ? C.gold : C.text, cursor: t.filingUrl ? "pointer" : "default", whiteSpace: "normal", wordBreak: "break-word", paddingRight: 4 }}
                       onClick={(e) => {
                         e.stopPropagation();
                         if (t.filingUrl) {
@@ -1101,7 +1101,7 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
                     >
                       {t.ownerName || "—"}
                     </td>
-                    <td style={{ ...dimCell, fontSize: 10, whiteSpace: "normal", wordBreak: "break-word", paddingRight: 4 }}>
+                    <td style={{ ...dimCell, fontSize: 11, whiteSpace: "normal", wordBreak: "break-word", paddingRight: 4 }}>
                       {t.officerTitle || "—"}
                     </td>
                     <td style={{ ...cellStyle, textAlign: "center", color: isBuy ? C.green : C.red, fontWeight: 700, fontSize: 11 }}>
@@ -1120,11 +1120,11 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
           </table>
         </div>
       ) : (
-        <div style={{ padding: "10px 0", fontSize: 11, fontFamily: f, color: "#555" }}>
+        <div style={{ padding: "10px 0", fontSize: 11, fontFamily: f, color: C.textDim }}>
           No Form 4 insider transactions found
         </div>
       )}
-      <div style={{ fontSize: 9, fontFamily: f, color: "#444", padding: "8px 0 0", textAlign: "right", letterSpacing: 0.5 }}>
+      <div style={{ fontSize: 11, fontFamily: f, color: C.dim, padding: "8px 0 0", textAlign: "right", letterSpacing: 0.5 }}>
         Source: SEC EDGAR Form 4 & SC 13G/D
       </div>
     </div>
@@ -1206,7 +1206,7 @@ const SubValuation = memo(function SubValuation({ ticker, fund }: { ticker: stri
         <>
           <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr 1fr", padding: "5px 0", borderBottom: `1px solid ${C.borderHi}` }}>
             {["METRIC", ticker, "S&P 500", "vs S&P"].map((h, i) => (
-              <span key={i} style={{ fontSize: 9, fontFamily: f, fontWeight: 700, color: C.textDim, letterSpacing: 1.2, textAlign: i > 0 ? "right" : "left" }}>{h}</span>
+              <span key={i} style={{ fontSize: 11, fontFamily: f, fontWeight: 700, color: C.textDim, letterSpacing: 1.2, textAlign: i > 0 ? "right" : "left" }}>{h}</span>
             ))}
           </div>
           {multiples.map((m, i) => {
@@ -1227,8 +1227,8 @@ const SubValuation = memo(function SubValuation({ ticker, fund }: { ticker: stri
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={multiples}>
               <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
-              <XAxis dataKey="m" tick={{ fill: C.textDim, fontSize: 8, fontFamily: f }} interval={0} angle={-15} textAnchor="end" height={40} axisLine={{ stroke: C.border }} tickLine={false} />
-              <YAxis tick={{ fill: C.textDim, fontSize: 9, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
+              <XAxis dataKey="m" tick={{ fill: C.textDim, fontSize: 11, fontFamily: f }} interval={0} angle={-15} textAnchor="end" height={40} axisLine={{ stroke: C.border }} tickLine={false} />
+              <YAxis tick={{ fill: C.textDim, fontSize: 11, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
               <Tooltip contentStyle={tt} />
               <Bar dataKey="co" fill={C.gold} name={ticker} radius={[2, 2, 0, 0]} />
               <Bar dataKey="sp" fill={C.borderHi} name="S&P 500" radius={[2, 2, 0, 0]} />
@@ -1236,7 +1236,7 @@ const SubValuation = memo(function SubValuation({ ticker, fund }: { ticker: stri
           </ResponsiveContainer>
           <div style={{ display: "flex", gap: 14, padding: "6px 0" }}>
             {([[ticker, C.gold], ["S&P 500", C.borderHi]] as const).map(([l, c]) => (
-              <span key={l} style={{ fontSize: 10, fontFamily: f, color: C.textDim }}><span style={{ color: c as string }}>■</span> {l}</span>
+              <span key={l} style={{ fontSize: 11, fontFamily: f, color: C.textDim }}><span style={{ color: c as string }}>■</span> {l}</span>
             ))}
           </div>
         </>
@@ -1254,7 +1254,7 @@ const SubValuation = memo(function SubValuation({ ticker, fund }: { ticker: stri
         { label: "Rev Growth", value: metrics.revGrowth != null ? `${metrics.revGrowth > 0 ? "+" : ""}${metrics.revGrowth.toFixed(1)}%` : "—", color: metrics.revGrowth != null ? (metrics.revGrowth >= 0 ? C.green : C.red) : undefined },
       ]} />
 
-      <div style={{ fontSize: 9, fontFamily: f, color: C.textDim, padding: "8px 0 0", textAlign: "right" }}>
+      <div style={{ fontSize: 11, fontFamily: f, color: C.textDim, padding: "8px 0 0", textAlign: "right" }}>
         Source: SEC XBRL + Schwab
       </div>
     </>
@@ -1499,8 +1499,8 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
         {SUB_LABELS.map((label, i) => (
           <button key={label} onClick={() => setPage(i)} style={{
             padding: "6px 12px", fontSize: 12, fontFamily: f, fontWeight: 700,
-            color: page === i ? "#fafafa" : "#71717a",
-            background: page === i ? "#3f3f46" : "transparent",
+            color: page === i ? C.text : C.textDim,
+            background: page === i ? C.borderHi : "transparent",
             border: "none",
             borderRadius: 9999, cursor: "pointer", letterSpacing: 0.5, whiteSpace: "nowrap",
             transition: "all 0.2s",
@@ -1535,7 +1535,7 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
                   <div className="flex items-center justify-between py-2 border-b border-card-border/30">
                     <div>
                       <h2 className="font-mono font-bold text-sm text-[#e4e4e7] tracking-wider">TECHNICAL ANALYSIS</h2>
-                      <p className="font-mono text-[9px] text-[#71717a] tracking-widest">AI-Powered Company Analysis</p>
+                      <p className="font-mono text-[11px] text-[#71717a] tracking-widest">AI-Powered Company Analysis</p>
                     </div>
                   </div>
                   <div className="p-8 text-center">
@@ -1549,9 +1549,9 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
                       className="inline-flex items-center justify-center rounded-lg font-mono font-bold tracking-wider transition-colors active:scale-95 active:brightness-110"
                       style={{
                         padding: "10px 24px", fontSize: 13, fontFamily: f, fontWeight: 700,
-                        color: "#FFB800",
-                        background: "#000000",
-                        border: "1px solid rgba(255,255,255,0.12)",
+                        color: C.gold,
+                        background: C.bg,
+                        border: `1px solid ${C.borderHi}`,
                         outline: "none",
                         cursor: "pointer",
                         letterSpacing: "0.08em",
@@ -1586,8 +1586,8 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
                       ].map((s) => (
                         <div key={s.label} className="flex items-center gap-2">
                           <div className="w-2 h-2 rounded-full shrink-0" style={{ background: s.done ? "#00d166" : s.active ? "#FFB800" : "#2A2A2C", boxShadow: s.active ? "0 0 6px rgba(255,184,0,0.5)" : "none" }} />
-                          <span className="font-mono text-[10px] tracking-wider" style={{ color: s.done ? "#00d166" : s.active ? "#FFB800" : "#52525b", fontWeight: s.active ? 700 : 400 }}>{s.label}</span>
-                          {s.done && <span className="font-mono text-[9px] text-[#00d166]">✓</span>}
+                          <span className="font-mono text-[11px] tracking-wider" style={{ color: s.done ? C.green : s.active ? C.gold : C.dim, fontWeight: s.active ? 700 : 400 }}>{s.label}</span>
+                          {s.done && <span className="font-mono text-[11px] text-[#00d166]">✓</span>}
                         </div>
                       ))}
                     </div>
@@ -1617,19 +1617,19 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
                 <div className="flex items-center justify-between py-2.5" style={{ paddingTop: 12, paddingBottom: 8 }}>
                   <div>
                     <h2 className="font-mono font-bold text-sm text-[#e4e4e7] tracking-wider">TECHNICAL ANALYSIS</h2>
-                    <p className="font-mono text-[9px] text-[#71717a] tracking-widest">AI-Powered Company Analysis</p>
+                    <p className="font-mono text-[11px] text-[#71717a] tracking-widest">AI-Powered Company Analysis</p>
                   </div>
                   <div className="flex items-center gap-3">
                     {taAge && (
                       <div className="flex items-center gap-1.5">
                         <Clock className="w-3 h-3 text-[#71717a]" />
-                        <span className="font-mono text-[10px] tracking-wider text-[#71717a]">{taAge}</span>
+                        <span className="font-mono text-[11px] tracking-wider text-[#71717a]">{taAge}</span>
                       </div>
                     )}
                     <button
                       onClick={(e) => { e.stopPropagation(); handleRunTA(); }}
                       disabled={taStreaming || !quote || !history?.candles}
-                      className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-mono text-[10px] font-bold uppercase tracking-wider transition-all duration-100 disabled:opacity-40 disabled:cursor-not-allowed active:translate-y-[1px]"
+                      className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-mono text-[11px] font-bold uppercase tracking-wider transition-all duration-100 disabled:opacity-40 disabled:cursor-not-allowed active:translate-y-[1px]"
                       style={{
                         background: "linear-gradient(180deg, #2A2A2C 0%, #1E1E20 100%)",
                         color: "#a1a1aa",

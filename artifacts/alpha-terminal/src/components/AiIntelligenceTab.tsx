@@ -160,10 +160,10 @@ function MiniGauge({ value, max, color, label, display }: { value: number; max: 
             style={{ transition: "stroke-dasharray 0.6s ease" }} />
         </svg>
         <div className="absolute inset-0 flex items-center justify-center">
-          <span className="font-mono text-[10px] font-bold text-white">{display ?? `${value}%`}</span>
+          <span className="font-mono text-[11px] font-bold text-white">{display ?? `${value}%`}</span>
         </div>
       </div>
-      <span className="font-mono text-[8px] text-[#71717a] uppercase tracking-wider">{label}</span>
+      <span className="font-mono text-[11px] text-[#71717a] uppercase tracking-wider">{label}</span>
     </div>
   );
 }
@@ -182,16 +182,16 @@ function LegRow({ leg, label, even }: { leg: LegPayload; label: string; even: bo
   return (
     <div className="flex items-center justify-between py-2 px-3" style={{ background: even ? "rgba(255,255,255,0.015)" : "transparent" }}>
       <div className="flex items-center gap-2">
-        <span className="font-mono text-[9px] w-10 text-center py-0.5 rounded font-bold" style={{ color: actionColor }}>
+        <span className="font-mono text-[11px] w-10 text-center py-0.5 rounded font-bold" style={{ color: actionColor }}>
           {leg.action}
         </span>
-        <span className="font-mono text-[10px] text-[#71717a] uppercase w-14">{label}</span>
+        <span className="font-mono text-[11px] text-[#71717a] uppercase w-14">{label}</span>
       </div>
       <div className="flex items-center gap-3">
         <span className="font-mono text-xs text-white font-bold tabular-nums">{leg.strike}</span>
-        <span className="font-mono text-[10px] text-white/60">{leg.type}</span>
-        <span className="font-mono text-[10px] text-[#52525b] tabular-nums">{'\u0394'}{leg.delta.toFixed(2)}</span>
-        <span className="font-mono text-[10px] text-[#52525b] tabular-nums">{leg.bid}/{leg.ask}</span>
+        <span className="font-mono text-[11px] text-white/60">{leg.type}</span>
+        <span className="font-mono text-[11px] text-[#52525b] tabular-nums">{'\u0394'}{leg.delta.toFixed(2)}</span>
+        <span className="font-mono text-[11px] text-[#52525b] tabular-nums">{leg.bid}/{leg.ask}</span>
       </div>
     </div>
   );
@@ -216,7 +216,7 @@ function RegimeDisplayBanner({ regime, pulse }: { regime: RegimeInfo; pulse?: Pu
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-0.5">
-              <span className="font-mono text-[10px] font-bold uppercase tracking-widest" style={{ color: regimeColor }}>Market Regime</span>
+              <span className="font-mono text-[11px] font-bold uppercase tracking-widest" style={{ color: regimeColor }}>Market Regime</span>
             </div>
             <div className="font-mono text-sm font-bold text-white mb-1">{regimeFormatted}</div>
             <div className="font-mono text-[11px] text-[#a1a1aa] leading-relaxed">{regime.description}</div>
@@ -225,7 +225,7 @@ function RegimeDisplayBanner({ regime, pulse }: { regime: RegimeInfo; pulse?: Pu
 
         <div className="flex flex-wrap gap-1.5 mt-3">
           {strategies.map(s => (
-            <span key={s} className="font-mono text-[9px] px-2 py-1 rounded-full font-bold uppercase tracking-wider"
+            <span key={s} className="font-mono text-[11px] px-2 py-1 rounded-full font-bold uppercase tracking-wider"
               style={{ color: regimeColor, border: `1px solid ${regimeColor}25` }}>
               {s}
             </span>
@@ -235,8 +235,8 @@ function RegimeDisplayBanner({ regime, pulse }: { regime: RegimeInfo; pulse?: Pu
         {pulse && (
           <div className="mt-3 pt-2 border-t" style={{ borderColor: `${regimeColor}15` }}>
             <div className="flex items-center justify-between mb-1.5">
-              <span className="font-mono text-[9px] text-[#3f3f46] uppercase tracking-wider">Confidence</span>
-              <span className="font-mono text-[10px] font-bold" style={{ color: regimeColor }}>{pulse.confidence}%</span>
+              <span className="font-mono text-[11px] text-[#3f3f46] uppercase tracking-wider">Confidence</span>
+              <span className="font-mono text-[11px] font-bold" style={{ color: regimeColor }}>{pulse.confidence}%</span>
             </div>
             <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "#1f1f22" }}>
               <div className="h-full rounded-full transition-all duration-700"
@@ -246,14 +246,14 @@ function RegimeDisplayBanner({ regime, pulse }: { regime: RegimeInfo; pulse?: Pu
         )}
 
         <div className="flex items-center gap-4 mt-2.5">
-          <span className="font-mono text-[10px] text-[#52525b]">
+          <span className="font-mono text-[11px] text-[#52525b]">
             <Clock className="w-3 h-3 inline mr-1 -mt-px" />{regime.dteRange.min}–{regime.dteRange.max} DTE
           </span>
-          <span className="font-mono text-[10px] text-[#52525b]">
+          <span className="font-mono text-[11px] text-[#52525b]">
             <Crosshair className="w-3 h-3 inline mr-1 -mt-px" />{'\u0394'}{regime.deltaTargets.shortStrike}
           </span>
           {pulse?.timestamp && (
-            <span className="font-mono text-[9px] text-[#3f3f46] ml-auto">
+            <span className="font-mono text-[11px] text-[#3f3f46] ml-auto">
               {new Date(pulse.timestamp).toLocaleTimeString()}
             </span>
           )}
@@ -278,7 +278,7 @@ function UndefinedRiskWarning() {
   return (
     <div className="rounded-lg border border-red-500/30 px-3 py-2 flex items-start gap-2 mx-4 mb-3" style={{ background: "rgba(239,68,68,0.06)" }}>
       <AlertTriangle className="w-3.5 h-3.5 text-red-500 shrink-0 mt-0.5" />
-      <span className="font-mono text-[10px] text-red-400/80 leading-relaxed">
+      <span className="font-mono text-[11px] text-red-400/80 leading-relaxed">
         Undefined/unlimited risk. Requires margin and active management.
       </span>
     </div>
@@ -300,11 +300,11 @@ function PreTradeCheckPanel({ result }: { result: PreTradeResult }) {
       <div className="px-3 py-2 flex items-center justify-between" style={{ borderBottom: `1px solid ${overallColor}20` }}>
         <div className="flex items-center gap-2">
           {STATUS_ICONS[result.overall]}
-          <span className="font-mono text-[10px] font-bold uppercase tracking-widest" style={{ color: overallColor }}>
+          <span className="font-mono text-[11px] font-bold uppercase tracking-widest" style={{ color: overallColor }}>
             Pre-Trade: {overallLabel}
           </span>
         </div>
-        <span className="font-mono text-[9px] text-[#52525b]">
+        <span className="font-mono text-[11px] text-[#52525b]">
           {result.passCount}P / {result.warnCount}W / {result.failCount}F
         </span>
       </div>
@@ -313,15 +313,15 @@ function PreTradeCheckPanel({ result }: { result: PreTradeResult }) {
           <div key={c.id} className="flex items-center justify-between py-1 border-b border-[#2A2A2C]/30 last:border-0">
             <div className="flex items-center gap-1.5">
               {STATUS_ICONS[c.status]}
-              <span className="font-mono text-[10px] text-[#a1a1aa]">{c.label}</span>
+              <span className="font-mono text-[11px] text-[#a1a1aa]">{c.label}</span>
             </div>
-            <span className="font-mono text-[10px] font-bold text-white tabular-nums">{c.value}</span>
+            <span className="font-mono text-[11px] font-bold text-white tabular-nums">{c.value}</span>
           </div>
         ))}
       </div>
       {result.aiOneLiner && (
         <div className="px-3 py-2 border-t" style={{ borderColor: `${overallColor}15` }}>
-          <span className="font-mono text-[10px] text-[#a1a1aa] italic">{result.aiOneLiner}</span>
+          <span className="font-mono text-[11px] text-[#a1a1aa] italic">{result.aiOneLiner}</span>
         </div>
       )}
     </div>
@@ -335,7 +335,7 @@ function RiskCategoryBadge({ evaluation }: { evaluation?: RiskEvaluation }) {
   const label = evaluation.category === "DEFINED" ? "DEFINED"
     : evaluation.category === "CASH_SECURED" ? "CASH SECURED" : "MARGIN";
   return (
-    <span className="font-mono text-[8px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider"
+    <span className="font-mono text-[11px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider"
       style={{ color: badgeColor, border: `1px solid ${badgeColor}25` }}>
       {label}
     </span>
@@ -380,7 +380,7 @@ function RealStrategyCard({ s, idx, preTradeResult }: { s: StrategyPayload; idx:
                   <span className="font-mono text-sm font-bold text-white">{s.strategy_type}</span>
                   <RiskCategoryBadge evaluation={re} />
                 </div>
-                <span className="font-mono text-[10px] text-[#52525b]">{s.days_to_expiration} DTE · Exp {s.expiration_date}</span>
+                <span className="font-mono text-[11px] text-[#52525b]">{s.days_to_expiration} DTE · Exp {s.expiration_date}</span>
               </div>
             </div>
           </div>
@@ -390,13 +390,13 @@ function RealStrategyCard({ s, idx, preTradeResult }: { s: StrategyPayload; idx:
 
           {s.risk_reward_display && (
             <div className="mx-4 mt-3 px-3 py-1.5 rounded-lg" style={{ background: "rgba(255,107,43,0.06)", border: "1px solid rgba(255,107,43,0.2)" }}>
-              <span className="font-mono text-[10px] text-[#FF6B2B] font-bold">{s.risk_reward_display}</span>
+              <span className="font-mono text-[11px] text-[#FF6B2B] font-bold">{s.risk_reward_display}</span>
             </div>
           )}
 
           <div className="mx-4 mt-3 rounded-lg overflow-hidden" style={{ border: "1px solid #2A2A2C" }}>
             <div className="px-3 py-1.5" style={{ background: "#0c0c0c", borderBottom: "1px solid #2A2A2C" }}>
-              <span className="font-mono text-[9px] text-[#3f3f46] uppercase tracking-widest">Contract Legs</span>
+              <span className="font-mono text-[11px] text-[#3f3f46] uppercase tracking-widest">Contract Legs</span>
             </div>
             <div style={{ background: "#0a0a0a" }}>
               {allLegs.map((l, i) => (
@@ -410,7 +410,7 @@ function RealStrategyCard({ s, idx, preTradeResult }: { s: StrategyPayload; idx:
               <div key={m.label} className="rounded-lg p-3 flex flex-col gap-1" style={{ background: "#0a0a0b", border: "1px solid #1f1f22" }}>
                 <div className="flex items-center gap-1.5">
                   <span style={{ color: m.color }}>{m.icon}</span>
-                  <span className="font-mono text-[9px] uppercase tracking-wider text-[#52525b]">{m.label}</span>
+                  <span className="font-mono text-[11px] uppercase tracking-wider text-[#52525b]">{m.label}</span>
                 </div>
                 <span className="font-mono text-sm font-bold text-white tabular-nums">{m.value}</span>
               </div>
@@ -422,11 +422,11 @@ function RealStrategyCard({ s, idx, preTradeResult }: { s: StrategyPayload; idx:
             <MiniGauge value={parseRRValue(s.risk_reward_ratio)} max={5} color="#FF6B2B" label="R/R" display={s.risk_reward_ratio} />
             <div className="flex-1 space-y-1.5">
               <div className="flex items-center justify-between">
-                <span className="font-mono text-[9px] text-[#52525b] uppercase tracking-wider">Breakeven</span>
+                <span className="font-mono text-[11px] text-[#52525b] uppercase tracking-wider">Breakeven</span>
                 <span className="font-mono text-[11px] text-white tabular-nums">{fmtDollar(s.breakeven)}{s.breakeven_upper ? ` / ${fmtDollar(s.breakeven_upper)}` : ""}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="font-mono text-[9px] text-[#52525b] uppercase tracking-wider">Size</span>
+                <span className="font-mono text-[11px] text-[#52525b] uppercase tracking-wider">Size</span>
                 <span className="font-mono text-[11px] text-white">{s.contracts} contract{s.contracts > 1 ? "s" : ""}</span>
               </div>
             </div>
@@ -436,7 +436,7 @@ function RealStrategyCard({ s, idx, preTradeResult }: { s: StrategyPayload; idx:
             <button
               type="button"
               onClick={() => setShowTradePlan(!showTradePlan)}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-lg font-mono text-[10px] text-[#52525b] uppercase tracking-widest hover:text-[#a1a1aa] transition-colors"
+              className="w-full flex items-center justify-between px-3 py-2 rounded-lg font-mono text-[11px] text-[#52525b] uppercase tracking-widest hover:text-[#a1a1aa] transition-colors"
               style={{ background: "#0a0a0b", border: "1px solid #1f1f22" }}
             >
               <span className="flex items-center gap-1.5">
@@ -448,16 +448,16 @@ function RealStrategyCard({ s, idx, preTradeResult }: { s: StrategyPayload; idx:
             {showTradePlan && (
               <div className="mt-1.5 px-3 py-2.5 rounded-lg space-y-1.5" style={{ background: "#0a0a0b", border: "1px solid #1f1f22" }}>
                 <div className="flex items-center justify-between">
-                  <span className="font-mono text-[9px] text-[#52525b] uppercase">Profit Target</span>
-                  <span className="font-mono text-[10px] text-[#00d166] font-bold">{s.exit_rules.profit_target_pct}% ({fmtDollar(s.exit_rules.profit_target_amount)})</span>
+                  <span className="font-mono text-[11px] text-[#52525b] uppercase">Profit Target</span>
+                  <span className="font-mono text-[11px] text-[#00d166] font-bold">{s.exit_rules.profit_target_pct}% ({fmtDollar(s.exit_rules.profit_target_amount)})</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="font-mono text-[9px] text-[#52525b] uppercase">Stop Loss</span>
-                  <span className="font-mono text-[10px] text-[#f23645] font-bold">{fmtDollar(s.exit_rules.stop_loss_amount)}</span>
+                  <span className="font-mono text-[11px] text-[#52525b] uppercase">Stop Loss</span>
+                  <span className="font-mono text-[11px] text-[#f23645] font-bold">{fmtDollar(s.exit_rules.stop_loss_amount)}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="font-mono text-[9px] text-[#52525b] uppercase">Time Exit</span>
-                  <span className="font-mono text-[10px] text-[#a1a1aa]">{s.exit_rules.time_exit}</span>
+                  <span className="font-mono text-[11px] text-[#52525b] uppercase">Time Exit</span>
+                  <span className="font-mono text-[11px] text-[#a1a1aa]">{s.exit_rules.time_exit}</span>
                 </div>
               </div>
             )}
@@ -688,10 +688,10 @@ function StrategistPipeline({ status, thinkingTokens }: { status: string; thinki
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <span className="w-4 h-4 border-2 border-[#FFB800] border-t-transparent rounded-full animate-spin" />
-            <span className="font-mono text-[10px] font-bold text-[#FFB800] uppercase tracking-widest">Analyzing</span>
-            <span className="font-mono text-[10px] text-[#FFB800]/60 tabular-nums">{Math.round(((currentIdx + (currentIdx < 2 ? 0.6 : 0.3)) / 3) * 100)}%</span>
+            <span className="font-mono text-[11px] font-bold text-[#FFB800] uppercase tracking-widest">Analyzing</span>
+            <span className="font-mono text-[11px] text-[#FFB800]/60 tabular-nums">{Math.round(((currentIdx + (currentIdx < 2 ? 0.6 : 0.3)) / 3) * 100)}%</span>
           </div>
-          <span className="font-mono text-[10px] text-[#52525b] tabular-nums">
+          <span className="font-mono text-[11px] text-[#52525b] tabular-nums">
             <Clock className="w-3 h-3 inline mr-1 -mt-px" />{fmtTime(elapsed)}
           </span>
         </div>
@@ -704,7 +704,7 @@ function StrategistPipeline({ status, thinkingTokens }: { status: string; thinki
                   <span style={{ color: i < currentIdx ? "#00d166" : i === currentIdx ? "#FFB800" : "#2A2A2C" }}>
                     {i < currentIdx ? <CheckCircle2 className="w-3 h-3" /> : s.icon}
                   </span>
-                  <span className="font-mono text-[8px] tracking-wider"
+                  <span className="font-mono text-[11px] tracking-wider"
                     style={{
                       color: i < currentIdx ? "#00d166" : i === currentIdx ? "#FFB800" : "#3f3f46",
                       fontWeight: i === currentIdx ? 700 : 400,
@@ -737,14 +737,14 @@ function StrategistPipeline({ status, thinkingTokens }: { status: string; thinki
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
             <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
           </span>
-          <span className="font-mono text-[9px] text-emerald-500 uppercase tracking-widest font-bold">Terminal Output</span>
+          <span className="font-mono text-[11px] text-emerald-500 uppercase tracking-widest font-bold">Terminal Output</span>
         </div>
         <div
           ref={scrollRef}
           className="max-h-[160px] overflow-y-auto px-4 pb-3 relative"
           style={{ scrollBehavior: "smooth" }}
         >
-          <div className="font-mono text-[10px] leading-relaxed whitespace-pre-wrap"
+          <div className="font-mono text-[11px] leading-relaxed whitespace-pre-wrap"
             style={{ color: "#4ade80" }}>
             {thinkingTokens.length === 0 ? (
               <span style={{ color: "#2A2A2C" }}>Awaiting AI output...</span>
@@ -781,12 +781,12 @@ function StrategistResultView({ strategies, narrative, isStreaming, streamingTex
           <div style={{ height: 2, background: "linear-gradient(90deg, #FFB800, #E5A600, #FFB800)" }} />
           <div className="px-4 py-3">
             <div className="flex items-center gap-2 mb-3">
-              <span className="font-mono text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-widest"
+              <span className="font-mono text-[11px] font-bold px-2 py-0.5 rounded-full uppercase tracking-widest"
                 style={{ color: "#FFB800", border: "1px solid rgba(255,184,0,0.2)" }}>
                 Thesis
               </span>
               {isStreaming && (
-                <span className="font-mono text-[9px] text-[#52525b] animate-pulse">Streaming...</span>
+                <span className="font-mono text-[11px] text-[#52525b] animate-pulse">Streaming...</span>
               )}
             </div>
             <MarkdownResult content={isStreaming ? streamingText : narrative} />
@@ -864,7 +864,7 @@ function SegmentControl({ value, options, onChange, disabled }: {
           key={o.value}
           type="button"
           onClick={() => !disabled && onChange(o.value)}
-          className="flex-1 font-mono text-[10px] py-1.5 px-2 transition-colors"
+          className="flex-1 font-mono text-[11px] py-1.5 px-2 transition-colors"
           style={{
             background: value === o.value ? "#FFB800" : "transparent",
             color: value === o.value ? "#0c0c0c" : "#9ca3af",
@@ -900,7 +900,7 @@ export function StrategySettings() {
   return (
     <div className="rounded-xl border border-card-border overflow-hidden" style={{ background: "#111113" }}>
       <div className="px-4 py-2.5 border-b border-card-border flex items-center justify-between" style={{ background: "#151517" }}>
-        <span className="font-mono text-[11px] font-bold text-gray-400 uppercase tracking-wider">Strategy Settings</span>
+        <span className="font-mono text-[11px] font-bold text-zinc-400 uppercase tracking-wider">Strategy Settings</span>
       </div>
 
       <div className="p-4 space-y-4">
@@ -914,7 +914,7 @@ export function StrategySettings() {
 
         <div>
           <div className="flex items-center justify-between mb-1.5">
-            <span className="font-mono text-[10px] text-gray-400 uppercase tracking-wider">Max Risk Per Trade</span>
+            <span className="font-mono text-[11px] text-zinc-400 uppercase tracking-wider">Max Risk Per Trade</span>
             <span className="font-mono text-xs text-white font-bold">${stratMaxRisk.toLocaleString()}</span>
           </div>
           <input
@@ -928,14 +928,14 @@ export function StrategySettings() {
             style={{ accentColor: "#FFB800", background: "#2A2A2C" }}
           />
           <div className="flex justify-between mt-0.5">
-            <span className="font-mono text-[9px] text-gray-600">$50</span>
-            <span className="font-mono text-[9px] text-gray-600">$10,000</span>
+            <span className="font-mono text-[11px] text-zinc-500">$50</span>
+            <span className="font-mono text-[11px] text-zinc-500">$10,000</span>
           </div>
         </div>
 
         <div style={{ opacity: locked ? 0.35 : 1 }}>
           <div className="flex items-center justify-between mb-1.5">
-            <span className="font-mono text-[10px] text-gray-400 uppercase tracking-wider">Min Probability of Profit</span>
+            <span className="font-mono text-[11px] text-zinc-400 uppercase tracking-wider">Min Probability of Profit</span>
             <span className="font-mono text-xs text-white font-bold">{stratMinPoP}%</span>
           </div>
           <input
@@ -950,13 +950,13 @@ export function StrategySettings() {
             style={{ accentColor: "#00d166", background: "#2A2A2C", cursor: locked ? "not-allowed" : "pointer" }}
           />
           <div className="flex justify-between mt-0.5">
-            <span className="font-mono text-[9px] text-gray-600">60%</span>
-            <span className="font-mono text-[9px] text-gray-600">95%</span>
+            <span className="font-mono text-[11px] text-zinc-500">60%</span>
+            <span className="font-mono text-[11px] text-zinc-500">95%</span>
           </div>
         </div>
 
         <div className="flex items-center justify-between" style={{ opacity: locked ? 0.35 : 1 }}>
-          <span className="font-mono text-[10px] text-gray-400 uppercase tracking-wider">Min R/R Ratio</span>
+          <span className="font-mono text-[11px] text-zinc-400 uppercase tracking-wider">Min R/R Ratio</span>
           <div className="relative">
             <select
               value={stratMinRR}
@@ -969,12 +969,12 @@ export function StrategySettings() {
               <option value="1:2">1:2</option>
               <option value="1:3">1:3</option>
             </select>
-            <ChevronDown className="w-3 h-3 text-gray-500 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <ChevronDown className="w-3 h-3 text-zinc-500 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           </div>
         </div>
 
         <div style={{ opacity: locked ? 0.35 : 1 }}>
-          <span className="font-mono text-[10px] text-gray-400 uppercase tracking-wider block mb-1.5">Directional Bias</span>
+          <span className="font-mono text-[11px] text-zinc-400 uppercase tracking-wider block mb-1.5">Directional Bias</span>
           <SegmentControl
             value={stratBias}
             options={[
@@ -989,7 +989,7 @@ export function StrategySettings() {
         </div>
 
         <div style={{ opacity: locked ? 0.35 : 1 }}>
-          <span className="font-mono text-[10px] text-gray-400 uppercase tracking-wider block mb-1.5">Premium Type</span>
+          <span className="font-mono text-[11px] text-zinc-400 uppercase tracking-wider block mb-1.5">Premium Type</span>
           <SegmentControl
             value={stratPremium}
             options={[
@@ -1005,7 +1005,7 @@ export function StrategySettings() {
         <div className="flex items-center justify-between" style={{ opacity: locked ? 0.35 : 1 }}>
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-3.5 h-3.5 text-yellow-500" />
-            <span className="font-mono text-[10px] text-gray-400 uppercase tracking-wider">Avoid Earnings / Catalyst</span>
+            <span className="font-mono text-[11px] text-zinc-400 uppercase tracking-wider">Avoid Earnings / Catalyst</span>
           </div>
           <ToggleSwitch checked={stratAvoidEarnings} onChange={setStratAvoidEarnings} disabled={locked} />
         </div>
@@ -1013,22 +1013,22 @@ export function StrategySettings() {
         <div className="border-t border-card-border pt-4 mt-4">
           <div className="flex items-center gap-2 mb-3">
             <Shield className="w-3.5 h-3.5 text-[#FFB800]" />
-            <span className="font-mono text-[11px] font-bold text-gray-400 uppercase tracking-wider">Pre-Trade Risk Manager</span>
+            <span className="font-mono text-[11px] font-bold text-zinc-400 uppercase tracking-wider">Pre-Trade Risk Manager</span>
           </div>
 
           <div className="flex items-center justify-between mb-3">
-            <span className="font-mono text-[10px] text-gray-400 uppercase tracking-wider">Enable Risk Checks</span>
+            <span className="font-mono text-[11px] text-zinc-400 uppercase tracking-wider">Enable Risk Checks</span>
             <ToggleSwitch checked={preTradeEnabled} onChange={setPreTradeEnabled} />
           </div>
 
           <div className="flex items-center justify-between mb-3" style={{ opacity: preTradeEnabled ? 1 : 0.35 }}>
-            <span className="font-mono text-[10px] text-gray-400 uppercase tracking-wider">Block on RED</span>
+            <span className="font-mono text-[11px] text-zinc-400 uppercase tracking-wider">Block on RED</span>
             <ToggleSwitch checked={preTradeBlockOnRed} onChange={setPreTradeBlockOnRed} disabled={!preTradeEnabled} />
           </div>
 
           <div className="mb-3" style={{ opacity: preTradeEnabled ? 1 : 0.35 }}>
             <div className="flex items-center justify-between mb-1">
-              <span className="font-mono text-[10px] text-gray-400 uppercase tracking-wider">Account Size</span>
+              <span className="font-mono text-[11px] text-zinc-400 uppercase tracking-wider">Account Size</span>
               <span className="font-mono text-xs text-white font-bold">${accountSize.toLocaleString()}</span>
             </div>
             <input
@@ -1043,14 +1043,14 @@ export function StrategySettings() {
               style={{ accentColor: "#FFB800", background: "#2A2A2C", cursor: preTradeEnabled ? "pointer" : "not-allowed" }}
             />
             <div className="flex justify-between mt-0.5">
-              <span className="font-mono text-[9px] text-gray-600">$5K</span>
-              <span className="font-mono text-[9px] text-gray-600">$500K</span>
+              <span className="font-mono text-[11px] text-zinc-500">$5K</span>
+              <span className="font-mono text-[11px] text-zinc-500">$500K</span>
             </div>
           </div>
 
           <div className="mb-3" style={{ opacity: preTradeEnabled ? 1 : 0.35 }}>
             <div className="flex items-center justify-between mb-1">
-              <span className="font-mono text-[10px] text-gray-400 uppercase tracking-wider">Min R/R</span>
+              <span className="font-mono text-[11px] text-zinc-400 uppercase tracking-wider">Min R/R</span>
               <span className="font-mono text-xs text-white font-bold">{preTradeMinRR.toFixed(2)}:1</span>
             </div>
             <input
@@ -1068,7 +1068,7 @@ export function StrategySettings() {
 
           <div className="mb-3" style={{ opacity: preTradeEnabled ? 1 : 0.35 }}>
             <div className="flex items-center justify-between mb-1">
-              <span className="font-mono text-[10px] text-gray-400 uppercase tracking-wider">Max Position %</span>
+              <span className="font-mono text-[11px] text-zinc-400 uppercase tracking-wider">Max Position %</span>
               <span className="font-mono text-xs text-white font-bold">{preTradeMaxPositionPct}%</span>
             </div>
             <input
@@ -1086,7 +1086,7 @@ export function StrategySettings() {
 
           <div className="mb-3" style={{ opacity: preTradeEnabled ? 1 : 0.35 }}>
             <div className="flex items-center justify-between mb-1">
-              <span className="font-mono text-[10px] text-gray-400 uppercase tracking-wider">Min DTE</span>
+              <span className="font-mono text-[11px] text-zinc-400 uppercase tracking-wider">Min DTE</span>
               <span className="font-mono text-xs text-white font-bold">{preTradeMinDTE} days</span>
             </div>
             <input
