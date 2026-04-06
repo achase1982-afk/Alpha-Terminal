@@ -678,6 +678,13 @@ function symbolToSchwabApi(userSymbol: string): string {
   return INDEX_TO_SCHWAB[upper] ?? upper;
 }
 
+// Cache-level aliases: when a PULSE_SYMBOL isn't found in the quoteCache under its
+// primary key, try these alternates in order.  Used for /DX → $DXY (IB disabled,
+// Schwab streams Dollar Index as $DXY).
+const CACHE_ALIASES: Record<string, string[]> = {
+  "/DX": ["$DXY"],
+};
+
 function readFromWebSocketCache(
   userSymbols?: string[]
 ): { dataMap: Map<string, Record<string, unknown>>; displayToApi: Map<string, string>; hitCount: number } {
@@ -702,10 +709,21 @@ function readFromWebSocketCache(
   let hitCount = 0;
 
   for (const pair of pairs) {
-    const q = cacheBySymbol.get(pair.api)
-           ?? cacheBySymbol.get(pair.display)
-           ?? cacheBySymbol.get(pair.api.replace(/^\$/, ''))
-           ?? cacheBySymbol.get(pair.display.replace(/^\$/, ''));
+    // Primary lookup: api key, display key, and $ stripped variants
+    let q = cacheBySymbol.get(pair.api)
+         ?? cacheBySymbol.get(pair.display)
+         ?? cacheBySymbol.get(pair.api.replace(/^\$/, ''))
+         ?? cacheBySymbol.get(pair.display.replace(/^\$/, ''));
+
+    // Fallback alias lookup: e.g. /DX → $DXY
+    if (!q || q.last === null) {
+      const aliases = CACHE_ALIASES[pair.display] ?? CACHE_ALIASES[pair.api] ?? [];
+      for (const alias of aliases) {
+        const aliasQ = cacheBySymbol.get(alias);
+        if (aliasQ && aliasQ.last !== null) { q = aliasQ; break; }
+      }
+    }
+
     if (q && q.last !== null) {
       hitCount++;
       const closeVal = q.close ?? q.last;
@@ -2650,6 +2668,24 @@ router.post("/pre-trade-check", async (req, res) => {
 router.get("/market-pulse/verify", (_req, res) => {
   const { passed, output } = verifyEngineScoring();
   res.json({ passed, output });
+});
+
+router.get("/market-pulse/raw-debug", (_req, res) => {
+  const { dataMap, hitCount } = readFromWebSocketCache();
+  const indicators = extractMarketIndicators(dataMap);
+  const nullFields: string[] = [];
+  const presentFields: Record<string, number> = {};
+  for (const [k, v] of Object.entries(indicators)) {
+    if (k.endsWith('Change') || k.endsWith('change')) continue;
+    if (v === null || v === undefined) nullFields.push(k);
+    else presentFields[k] = v as number;
+  }
+  // also dump the raw dataMap keys and their lastPrice
+  const dmSample: Record<string, unknown> = {};
+  for (const [sym, entry] of dataMap.entries()) {
+    dmSample[sym] = { lastPrice: entry.lastPrice, closePrice: entry.closePrice, close: entry.close };
+  }
+  res.json({ hitCount, presentCount: Object.keys(presentFields).length, nullCount: nullFields.length, presentFields, nullFields, dataMapSample: dmSample });
 });
 
 router.get("/market-pulse/data-check", (_req, res) => {
