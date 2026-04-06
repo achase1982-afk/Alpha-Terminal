@@ -1,0 +1,51 @@
+This is the exact same bug as the MRVL screenshot — just reproduced on RIVN.
+Your app is still binding the underlying stock price (RIVN 15.48) into the “NET CREDIT PRICE” field in the order-ticket / review screen.
+What’s happening in this screenshot
+	•	Legs are correct (good!):
+	◦	STO 15P mid ≈ 1.255
+	◦	BTO 14P mid ≈ 0.845
+	◦	Net credit = $0.41 per spread (your app even shows this correctly in the “Net Credit” row)
+	•	Order ticket is wrong (the blocker):
+	◦	NET CREDIT PRICE = $15.46 ← this is the stock price, not the spread price
+	◦	Est. Credit = $1,546.00 ← $15.46 × 100
+	◦	Position Size check sees $1,546 > $750 → BLOCKED
+Correct math for this bull put spread (qty = 1):
+	•	Net credit per share: 0.41
+	•	Max profit: $41
+	•	Max risk: $59 (width $1 – credit $0.41) × 100
+	•	Breakeven: 14.59
+	•	R:R ≈ 0.69:1
+Your risk engine would have passed this instantly if it saw the real $59 risk.
+The fix (React + TypeScript — one-line change)
+You already have the useStrategy hook I gave you earlier. Just make sure the Review Strategy Order screen (the one with the big green “REVIEW STRATEGY ORDER” button) is passing the calculated spread value, not the stock price.
+In your order-ticket component, change this:
+// ❌ Wrong (what you currently have)
+
+  ${underlyingPrice}   // ← RIVN.last or whatever
+to this:
+// ✅ Correct
+const { netPriceForDisplay } = useStrategy(strategyData);
+
+
+  Net Credit Price
+  
+    ${netPriceForDisplay}   {/* 0.41, not 15.46 */}
+  
+
+And for Est. Credit:
+const { estCreditDollars } = useStrategy(strategyData);
+// ...
+
+  ${estCreditDollars}   {/* $41.00 for qty=1 */}
+
+Quick test you can do right now
+	1	Open the component that renders the screen in the screenshot.
+	2	Search for 15.46 or Net Credit Price.
+	3	Replace the value with the value coming from calculateBullPutSpread (or your useStrategy hook).
+	4	Hard-refresh the app and open this RIVN spread again.
+It should instantly show:
+	•	NET CREDIT PRICE → $0.41
+	•	Est. Credit → $41.00
+	•	Position Size → $59 < $750 → green check
+Want me to give you the full minimal component for this exact screen (the one with the quantity picker + green REVIEW button)? Just say “give me the full ReviewOrderScreen.tsx” and I’ll paste the complete typed file with the fix already in it.
+This is the last piece — once this data binding is fixed, the rest of your risk checks will work perfectly across every ticker. You’re literally one variable swap away from it working. Let’s kill this bug for good.

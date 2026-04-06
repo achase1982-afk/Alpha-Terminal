@@ -86,6 +86,7 @@ function runPreTradeChecks(params: {
   dte?: number | null;
   delta?: number | null;
   iv?: number | null;
+  spreadMaxRisk?: number | null;
 }): RiskCheck[] {
   const checks: RiskCheck[] = [];
   const { side, quantity, limitPrice, bid, ask, last, regime, sessionBias, preTradeMinRR, preTradeMaxPositionPct, preTradeMinDTE, accountSize, stratMinPoP, isOption, dte, delta, iv } = params;
@@ -143,16 +144,17 @@ function runPreTradeChecks(params: {
     checks.push({ id: "pop", label: "Prob. of Profit", level: "GREEN", detail: isOption ? "No delta data" : "Equity — n/a" });
   }
 
-  const price = limitPrice ?? last ?? 0;
-  const maxRisk = accountSize * (preTradeMaxPositionPct / 100);
-  const positionRisk = price * quantity * (isOption ? 100 : 1);
-  if (positionRisk > 0 && maxRisk > 0) {
-    if (positionRisk <= maxRisk) {
-      checks.push({ id: "size", label: "Position Size", level: "GREEN", detail: `${fmtCurrency(positionRisk)} <= ${fmtCurrency(maxRisk)} max` });
-    } else if (positionRisk <= maxRisk * 1.5) {
-      checks.push({ id: "size", label: "Position Size", level: "YELLOW", detail: `${fmtCurrency(positionRisk)} near ${fmtCurrency(maxRisk)} max` });
+  const maxRiskAllowed = accountSize * (preTradeMaxPositionPct / 100);
+  const positionRisk = params.spreadMaxRisk != null
+    ? params.spreadMaxRisk * quantity
+    : (limitPrice ?? last ?? 0) * quantity * (isOption ? 100 : 1);
+  if (positionRisk > 0 && maxRiskAllowed > 0) {
+    if (positionRisk <= maxRiskAllowed) {
+      checks.push({ id: "size", label: "Position Size", level: "GREEN", detail: `${fmtCurrency(positionRisk)} <= ${fmtCurrency(maxRiskAllowed)} max` });
+    } else if (positionRisk <= maxRiskAllowed * 1.5) {
+      checks.push({ id: "size", label: "Position Size", level: "YELLOW", detail: `${fmtCurrency(positionRisk)} near ${fmtCurrency(maxRiskAllowed)} max` });
     } else {
-      checks.push({ id: "size", label: "Position Size", level: "RED", detail: `${fmtCurrency(positionRisk)} > ${fmtCurrency(maxRisk)} max` });
+      checks.push({ id: "size", label: "Position Size", level: "RED", detail: `${fmtCurrency(positionRisk)} > ${fmtCurrency(maxRiskAllowed)} max` });
     }
   } else {
     checks.push({ id: "size", label: "Position Size", level: "YELLOW", detail: "Enter price for size check" });
@@ -523,6 +525,33 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
   const isOption = !!optionSymbol || isMultiLeg;
   const displaySymbol = isMultiLeg ? `${symbol} Strategy (${strategyLegs!.length} legs)` : optionSymbol ?? symbol;
 
+  const spreadPrices = useMemo(() => {
+    if (!isMultiLeg || !strategyLegs || strategyLegs.length === 0) return null;
+    let spreadBid = 0;
+    let spreadAsk = 0;
+    for (const leg of strategyLegs) {
+      const isSell = leg.instruction.startsWith("SELL");
+      if (isSell) {
+        spreadBid += leg.bid ?? 0;
+        spreadAsk += leg.ask ?? 0;
+      } else {
+        spreadBid -= leg.ask ?? 0;
+        spreadAsk -= leg.bid ?? 0;
+      }
+    }
+    if (strategyIsCredit) {
+      spreadBid = Math.abs(spreadBid);
+      spreadAsk = Math.abs(spreadAsk);
+      if (spreadBid > spreadAsk) {
+        const tmp = spreadBid;
+        spreadBid = spreadAsk;
+        spreadAsk = tmp;
+      }
+    }
+    const spreadMid = (spreadBid + spreadAsk) / 2;
+    return { spreadBid, spreadMid, spreadAsk };
+  }, [isMultiLeg, strategyLegs, strategyIsCredit]);
+
   useEffect(() => {
     if (!isOpen) return;
     setSide(initialSide ?? "BUY");
@@ -552,11 +581,13 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
   }, [isOpen]);
 
   useEffect(() => {
-    if (isOpen && quote?.ask != null && !limitPrice && !priceLocked) {
+    if (!isOpen || priceLocked || limitPrice) return;
+    if (isMultiLeg) return;
+    if (quote?.ask != null) {
       const mid = quote.bid != null && quote.ask != null ? ((quote.bid + quote.ask) / 2) : quote.ask;
       setLimitPrice(mid.toFixed(2));
     }
-  }, [isOpen, quote?.ask, quote?.bid]);
+  }, [isOpen, quote?.ask, quote?.bid, isMultiLeg]);
 
   const needsLimit = orderType === "LIMIT" || orderType === "STOP_LIMIT";
   const needsStop = orderType === "STOP" || orderType === "STOP_LIMIT";
@@ -583,15 +614,26 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
 
   const riskChecks = useMemo(() => {
     if (!preTradeEnabled) return [];
+    let spreadMaxRisk: number | null = null;
+    if (isMultiLeg && strategyLegs && strategyLegs.length >= 2) {
+      const strikes = strategyLegs.map(l => l.strike).sort((a, b) => a - b);
+      const strikeWidth = strikes[strikes.length - 1] - strikes[0];
+      const netCredit = parseFloat(limitPrice) || strategyNetPrice || 0;
+      spreadMaxRisk = (strikeWidth - netCredit) * 100;
+      if (spreadMaxRisk < 0) spreadMaxRisk = 0;
+    }
     return runPreTradeChecks({
       side, quantity,
       limitPrice: parseFloat(limitPrice) || null,
-      bid: quote?.bid ?? null, ask: quote?.ask ?? null, last: quote?.last ?? null,
+      bid: isMultiLeg && spreadPrices ? spreadPrices.spreadBid : (quote?.bid ?? null),
+      ask: isMultiLeg && spreadPrices ? spreadPrices.spreadAsk : (quote?.ask ?? null),
+      last: quote?.last ?? null,
       regime: pulseData?.structuralRegime?.label ?? null,
       sessionBias: pulseData?.sessionBias?.label ?? null,
       preTradeMinRR, preTradeMaxPositionPct, preTradeMinDTE, accountSize, stratMinPoP, isOption,
+      spreadMaxRisk,
     });
-  }, [side, quantity, limitPrice, quote?.bid, quote?.ask, quote?.last, pulseData, preTradeMinRR, preTradeMaxPositionPct, preTradeMinDTE, accountSize, stratMinPoP, isOption, preTradeEnabled]);
+  }, [side, quantity, limitPrice, quote?.bid, quote?.ask, quote?.last, pulseData, preTradeMinRR, preTradeMaxPositionPct, preTradeMinDTE, accountSize, stratMinPoP, isOption, preTradeEnabled, isMultiLeg, strategyLegs, strategyNetPrice, spreadPrices]);
 
   const overallRisk = useMemo(() => getOverallLevel(riskChecks), [riskChecks]);
   const riskSummary = useMemo(() => getRiskSummary(riskChecks, side, overallRisk), [riskChecks, side, overallRisk]);
@@ -670,25 +712,35 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
   }, [accountHash, buildSchwabOrder]);
 
   const setMidPrice = useCallback(() => {
+    if (isMultiLeg && spreadPrices) {
+      setLimitPrice(spreadPrices.spreadMid.toFixed(2));
+      return;
+    }
     if (quote?.bid != null && quote?.ask != null) {
       setLimitPrice(((quote.bid + quote.ask) / 2).toFixed(2));
     }
-  }, [quote?.bid, quote?.ask]);
+  }, [quote?.bid, quote?.ask, isMultiLeg, spreadPrices]);
 
   const setNatPrice = useCallback(() => {
+    if (isMultiLeg && spreadPrices) {
+      setLimitPrice(strategyIsCredit ? spreadPrices.spreadBid.toFixed(2) : spreadPrices.spreadAsk.toFixed(2));
+      return;
+    }
     if (side === "BUY" && quote?.ask != null) setLimitPrice(quote.ask.toFixed(2));
     else if (side === "SELL" && quote?.bid != null) setLimitPrice(quote.bid.toFixed(2));
-  }, [side, quote?.ask, quote?.bid]);
+  }, [side, quote?.ask, quote?.bid, isMultiLeg, spreadPrices, strategyIsCredit]);
 
-  const midPrice = quote?.bid != null && quote?.ask != null ? (quote.bid + quote.ask) / 2 : null;
+  const effectiveBid = isMultiLeg && spreadPrices ? spreadPrices.spreadBid : quote?.bid ?? null;
+  const effectiveAsk = isMultiLeg && spreadPrices ? spreadPrices.spreadAsk : quote?.ask ?? null;
+  const midPrice = effectiveBid != null && effectiveAsk != null ? (effectiveBid + effectiveAsk) / 2 : null;
   const sliderValue = useMemo(() => {
-    if (!midPrice || !quote?.bid || !quote?.ask) return 50;
+    if (effectiveBid == null || effectiveAsk == null) return 50;
     const lp = parseFloat(limitPrice);
     if (!lp) return 50;
-    const range = quote.ask - quote.bid;
+    const range = effectiveAsk - effectiveBid;
     if (range <= 0) return 50;
-    return Math.max(0, Math.min(100, ((lp - quote.bid) / range) * 100));
-  }, [limitPrice, quote?.bid, quote?.ask, midPrice]);
+    return Math.max(0, Math.min(100, ((lp - effectiveBid) / range) * 100));
+  }, [limitPrice, effectiveBid, effectiveAsk]);
 
   if (!isOpen) return null;
 
@@ -927,7 +979,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                   />
                   <div className="flex items-center gap-1 pr-2">
                     <button
-                      onClick={() => { if (!priceLocked && quote?.bid != null) setLimitPrice(quote.bid.toFixed(2)); }}
+                      onClick={() => { if (!priceLocked && effectiveBid != null) setLimitPrice(effectiveBid.toFixed(2)); }}
                       className="px-2 py-1 rounded font-mono text-[10px] font-bold transition-colors"
                       style={{ color: UP, background: "rgba(0,209,102,0.08)", opacity: priceLocked ? 0.4 : 1 }}
                       disabled={priceLocked}
@@ -953,7 +1005,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                   </div>
                 </div>
 
-                {quote?.bid != null && quote?.ask != null && (
+                {effectiveBid != null && effectiveAsk != null && (
                   <div className="mt-1.5 px-1">
                     <div className="flex items-center gap-2">
                       <span className="font-mono text-[10px]" style={{ color: UP }}>Bid</span>
@@ -971,9 +1023,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                           onChange={(e) => {
                             if (priceLocked) return;
                             const pct = parseInt(e.target.value) / 100;
-                            const bid = quote.bid!;
-                            const ask = quote.ask!;
-                            const price = bid + (ask - bid) * pct;
+                            const price = effectiveBid + (effectiveAsk - effectiveBid) * pct;
                             setLimitPrice(price.toFixed(2));
                           }}
                           className="absolute inset-0 w-full opacity-0 cursor-pointer"
@@ -991,9 +1041,9 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                       <span className="font-mono text-[10px]" style={{ color: DOWN }}>Ask</span>
                     </div>
                     <div className="flex justify-between mt-0.5">
-                      <span className="font-mono text-[10px]" style={{ color: UP }}>{fmt(quote.bid)}</span>
+                      <span className="font-mono text-[10px]" style={{ color: UP }}>{fmt(effectiveBid)}</span>
                       {midPrice != null && <span className="font-mono text-[10px]" style={{ color: GOLD }}>Mid {fmt(midPrice)}</span>}
-                      <span className="font-mono text-[10px]" style={{ color: DOWN }}>{fmt(quote.ask)}</span>
+                      <span className="font-mono text-[10px]" style={{ color: DOWN }}>{fmt(effectiveAsk)}</span>
                     </div>
                   </div>
                 )}
