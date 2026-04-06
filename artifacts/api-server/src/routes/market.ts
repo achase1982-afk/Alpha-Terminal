@@ -385,11 +385,15 @@ async function fetchFullChain(displaySymbol: string, token: string, log: any): P
   const isIndexSymbol = isIndex(displaySymbol);
   const chainSymbol = isFuturesSymbol ? displaySymbol : isIndexSymbol ? formatSchwabSymbol(displaySymbol) : displaySymbol;
 
+  const LARGE_CHAIN_SYMBOLS = new Set(["SPY", "QQQ", "AAPL", "TSLA", "AMZN", "NVDA", "META", "MSFT", "GOOG", "GOOGL"]);
+  const useLimited = LARGE_CHAIN_SYMBOLS.has(displaySymbol.toUpperCase());
+
   const params = new URLSearchParams({
     symbol: chainSymbol,
     contractType: "ALL",
-    range: "ALL",
+    range: useLimited ? "NTM" : "ALL",
   });
+  if (useLimited) params.set("strikeCount", "100");
   if (isFuturesSymbol) params.set("assetClass", "FUTURES");
 
   const fullChainUrl = `${SCHWAB_API_BASE}/chains?${params.toString()}`;
@@ -432,7 +436,7 @@ async function fetchFullChain(displaySymbol: string, token: string, log: any): P
 
   chainCache.set(displaySymbol, cached);
   evictStaleChains();
-  log.info({ symbol: displaySymbol, totalCalls: calls.length, totalPuts: puts.length, cacheSize: chainCache.size }, "Options chain cached (ALL strikes)");
+  log.info({ symbol: displaySymbol, totalCalls: calls.length, totalPuts: puts.length, cacheSize: chainCache.size, limited: useLimited }, "Options chain cached");
   return cached;
 }
 

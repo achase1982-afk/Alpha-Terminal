@@ -5,6 +5,7 @@ import { startStreamer, isConnected, injectExternalQuote } from "./lib/schwabStr
 import { initWsServer, broadcastToClients } from "./lib/wsServer";
 import { connectIB, registerQuoteCacheInjector, registerIBBroadcast, getWsBridgeUrl } from "./lib/ibStreamer";
 import { startIBWsProxy } from "./lib/ibWsProxy";
+import { startPutCallPoller } from "./lib/putCallPoller";
 
 const rawPort = process.env["PORT"];
 
@@ -49,6 +50,8 @@ async function boot() {
 
   registerQuoteCacheInjector(injectExternalQuote);
   registerIBBroadcast(broadcastToClients);
+
+  startPutCallPoller(port);
 
   if (process.env.IBKR_GATEWAY_URL || process.env.IB_HOST) {
     const wsUrl = getWsBridgeUrl();
