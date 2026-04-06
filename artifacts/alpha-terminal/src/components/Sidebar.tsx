@@ -1,4 +1,4 @@
-import React, { useState, useEffect, forwardRef, useImperativeHandle } from "react";
+import React, { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from "react";
 import { createPortal } from "react-dom";
 import { useTerminalStore, useActiveWatchlist } from "@/lib/store";
 import { useOptionsSettingsStore } from "@/lib/options-store";
@@ -84,12 +84,23 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
     onClose();
   };
 
+  const [headerHeight, setHeaderHeight] = useState(80);
+  useEffect(() => {
+    const el = document.getElementById("terminal-header");
+    if (!el) return;
+    const measure = () => setHeaderHeight(el.getBoundingClientRect().bottom);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   return (
     <>
       {activePage && createPortal(
         <div
           className="fixed left-0 right-0 z-[100] bg-background animate-in slide-in-from-bottom-8 duration-300 flex flex-col shadow-2xl border-t border-card-border"
-          style={{ top: "80px", bottom: "80px" }}
+          style={{ top: `${headerHeight}px`, bottom: "80px" }}
         >
           {activePage !== "Calendar" && (
             <div className="flex items-center justify-between p-3 border-b border-card-border bg-[#141414]">
