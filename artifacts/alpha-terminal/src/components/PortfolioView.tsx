@@ -210,6 +210,26 @@ const getGridCols = (visibleCols: ColumnKey[]): string => {
   return cols;
 };
 
+function useTickFlash(symbol: string): "up" | "down" | null {
+  const price = useTerminalStore(s => (s.streamPrices[symbol.toUpperCase()] as { last?: number } | undefined)?.last);
+  const prevRef = useRef<number | undefined>(undefined);
+  const [dir, setDir] = useState<"up" | "down" | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (price == null) return;
+    if (prevRef.current != null && price !== prevRef.current) {
+      setDir(price > prevRef.current ? "up" : "down");
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => setDir(null), 700);
+    }
+    prevRef.current = price;
+  }, [price]);
+
+  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
+  return dir;
+}
+
 function Checkbox({ checked, onToggle }: { checked: boolean; onToggle: (e: React.MouseEvent) => void }) {
   return (
     <div
@@ -228,6 +248,77 @@ function Checkbox({ checked, onToggle }: { checked: boolean; onToggle: (e: React
       }}
     >
       {checked && <div style={{ width: 7, height: 7, background: C.gold, borderRadius: 1 }} />}
+    </div>
+  );
+}
+
+function useValueFlash(value: number): "up" | "down" | null {
+  const prevRef = useRef<number | undefined>(undefined);
+  const [dir, setDir] = useState<"up" | "down" | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (prevRef.current != null && value !== prevRef.current) {
+      setDir(value > prevRef.current ? "up" : "down");
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => setDir(null), 700);
+    }
+    prevRef.current = value;
+  }, [value]);
+
+  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
+  return dir;
+}
+
+function OptionRow({
+  opt, underlying, selectedKeys, toggleKey, visibleColumns, gridCols,
+}: {
+  opt: Position;
+  underlying: string;
+  selectedKeys: Set<string>;
+  toggleKey: (key: string) => void;
+  visibleColumns: ColumnKey[];
+  gridCols: string;
+}) {
+  const isShort = opt.shortQuantity > 0;
+  const qty = isShort ? opt.shortQuantity : opt.longQuantity;
+  const optKey = `${underlying}:${opt.cusip}`;
+  const isSelected = selectedKeys.has(optKey);
+  const totalPL = opt.longOpenProfitLoss;
+  const totalPLPctOpt = opt.averagePrice > 0 ? (totalPL / (opt.averagePrice * qty * 100)) * 100 : 0;
+  const markPx = qty > 0 ? opt.marketValue / (qty * 100) : 0;
+
+  const tickDir = useValueFlash(markPx);
+  const markColor = tickDir === "up" ? C.green : tickDir === "down" ? C.red : C.text;
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: gridCols,
+        alignItems: "center",
+        padding: "7px 12px 7px 26px",
+        borderBottom: `1px solid ${C.border}`,
+        background: isSelected ? `${C.gold}08` : "transparent",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+        <Checkbox checked={isSelected} onToggle={e => { e.stopPropagation(); toggleKey(optKey); }} />
+        <span style={{ fontSize: 13, fontWeight: 600, color: opt.putCall === "CALL" ? "#4ade80" : "#fb923c", flexShrink: 0 }}>
+          {opt.putCall === "CALL" ? "C" : "P"}
+        </span>
+        <span style={{ fontSize: 13, color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          {formatOptionSymbol(opt.symbol, false)} ×{fmtQty(opt.longQuantity, opt.shortQuantity).replace("+", "")}
+        </span>
+      </div>
+      {visibleColumns.includes("mark") && <span style={{ fontSize: 13, color: markColor, textAlign: "right", fontVariantNumeric: "tabular-nums", transition: "color 0.15s" }}>${markPx.toFixed(2)}</span>}
+      {visibleColumns.includes("cost") && <span style={{ fontSize: 13, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>${opt.averagePrice.toFixed(2)}</span>}
+      {visibleColumns.includes("qty") && <span style={{ fontSize: 13, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{isShort ? `-${qty}` : `+${qty}`}</span>}
+      {visibleColumns.includes("mktVal") && <span style={{ fontSize: 13, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCompact(opt.marketValue)}</span>}
+      {visibleColumns.includes("plOpen") && <span style={{ fontSize: 13, fontWeight: 500, color: plColor(totalPL), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(totalPL)}</span>}
+      {visibleColumns.includes("plPct") && <span style={{ fontSize: 13, color: plColor(totalPL), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtPct(totalPLPctOpt)}</span>}
+      {visibleColumns.includes("plDay") && <span style={{ fontSize: 13, color: plColor(opt.currentDayProfitLoss), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(opt.currentDayProfitLoss)}</span>}
+      {visibleColumns.includes("maint") && <span style={{ fontSize: 13, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{opt.maintenanceRequirement > 0 ? fmtCompact(opt.maintenanceRequirement) : "—"}</span>}
     </div>
   );
 }
@@ -262,6 +353,9 @@ function PositionTableRow({
   const details = [qtyStr, optStr].filter(Boolean).join(" ");
   const gridCols = useMemo(() => getGridCols(visibleColumns), [visibleColumns]);
 
+  const eqTickDir = useTickFlash(group.underlying);
+  const markColor = eqTickDir === "up" ? C.green : eqTickDir === "down" ? C.red : C.text;
+
   return (
     <>
       <div
@@ -288,7 +382,7 @@ function PositionTableRow({
         {visibleColumns.includes("mark") && (() => {
           const eqQty = eq ? (eq.longQuantity || eq.shortQuantity) : 0;
           const markPx = eq && eqQty > 0 ? eq.marketValue / eqQty : null;
-          return <span style={{ fontSize: 13, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{markPx != null ? `$${markPx.toFixed(2)}` : "—"}</span>;
+          return <span style={{ fontSize: 13, color: markPx != null ? markColor : C.dim, textAlign: "right", fontVariantNumeric: "tabular-nums", transition: "color 0.15s" }}>{markPx != null ? `$${markPx.toFixed(2)}` : "—"}</span>;
         })()}
         {visibleColumns.includes("cost") && (() => {
           return <span style={{ fontSize: 13, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{eq ? `$${eq.averagePrice.toFixed(2)}` : "—"}</span>;
@@ -332,7 +426,7 @@ function PositionTableRow({
                 {visibleColumns.includes("mark") && (() => {
                   const eqQty = eq.longQuantity || eq.shortQuantity;
                   const markPx = eqQty > 0 ? eq.marketValue / eqQty : 0;
-                  return <span style={{ fontSize: 13, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>${markPx.toFixed(2)}</span>;
+                  return <span style={{ fontSize: 13, color: markColor, textAlign: "right", fontVariantNumeric: "tabular-nums", transition: "color 0.15s" }}>${markPx.toFixed(2)}</span>;
                 })()}
                 {visibleColumns.includes("cost") && <span style={{ fontSize: 13, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>${eq.averagePrice.toFixed(2)}</span>}
                 {visibleColumns.includes("qty") && <span style={{ fontSize: 13, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtQty(eq.longQuantity, eq.shortQuantity)}</span>}
@@ -345,49 +439,17 @@ function PositionTableRow({
             );
           })()}
 
-          {group.options.map(opt => {
-            const isShort = opt.shortQuantity > 0;
-            const qty = isShort ? opt.shortQuantity : opt.longQuantity;
-            const optKey = `${group.underlying}:${opt.cusip}`;
-            const isSelected = selectedKeys.has(optKey);
-            const totalPL = opt.longOpenProfitLoss;
-            const totalPLPctOpt = opt.averagePrice > 0 ? (totalPL / (opt.averagePrice * qty * 100)) * 100 : 0;
-
-            return (
-              <div
-                key={opt.cusip}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: gridCols,
-                  alignItems: "center",
-                  padding: "7px 12px 7px 26px",
-                  borderBottom: `1px solid ${C.border}`,
-                  background: isSelected ? `${C.gold}08` : "transparent",
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-                  <Checkbox checked={isSelected} onToggle={e => { e.stopPropagation(); toggleKey(optKey); }} />
-                  <span style={{ fontSize: 13, fontWeight: 600, color: opt.putCall === "CALL" ? "#4ade80" : "#fb923c", flexShrink: 0 }}>
-                    {opt.putCall === "CALL" ? "C" : "P"}
-                  </span>
-                  <span style={{ fontSize: 13, color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {formatOptionSymbol(opt.symbol, false)} ×{fmtQty(opt.longQuantity, opt.shortQuantity).replace("+", "")}
-                  </span>
-                </div>
-                {visibleColumns.includes("mark") && (() => {
-                  const markPx = qty > 0 ? opt.marketValue / (qty * 100) : 0;
-                  return <span style={{ fontSize: 13, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>${markPx.toFixed(2)}</span>;
-                })()}
-                {visibleColumns.includes("cost") && <span style={{ fontSize: 13, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>${opt.averagePrice.toFixed(2)}</span>}
-                {visibleColumns.includes("qty") && <span style={{ fontSize: 13, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{isShort ? `-${qty}` : `+${qty}`}</span>}
-                {visibleColumns.includes("mktVal") && <span style={{ fontSize: 13, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCompact(opt.marketValue)}</span>}
-                {visibleColumns.includes("plOpen") && <span style={{ fontSize: 13, fontWeight: 500, color: plColor(totalPL), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(totalPL)}</span>}
-                {visibleColumns.includes("plPct") && <span style={{ fontSize: 13, color: plColor(totalPL), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtPct(totalPLPctOpt)}</span>}
-                {visibleColumns.includes("plDay") && <span style={{ fontSize: 13, color: plColor(opt.currentDayProfitLoss), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(opt.currentDayProfitLoss)}</span>}
-                {visibleColumns.includes("maint") && <span style={{ fontSize: 13, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{opt.maintenanceRequirement > 0 ? fmtCompact(opt.maintenanceRequirement) : "—"}</span>}
-              </div>
-            );
-          })}
+          {group.options.map(opt => (
+            <OptionRow
+              key={opt.cusip}
+              opt={opt}
+              underlying={group.underlying}
+              selectedKeys={selectedKeys}
+              toggleKey={toggleKey}
+              visibleColumns={visibleColumns}
+              gridCols={gridCols}
+            />
+          ))}
 
           <div style={{ padding: "7px 12px 7px 26px", display: "flex", gap: 12, borderBottom: `1px solid ${C.border}` }}>
             <button onClick={e => { e.stopPropagation(); onSelect(group.underlying); }} style={{ fontSize: 12, fontWeight: 500, fontFamily: f, color: C.gold, background: "transparent", border: "none", cursor: "pointer", padding: 0, letterSpacing: 0.3, textTransform: "uppercase" }}>Chart →</button>
