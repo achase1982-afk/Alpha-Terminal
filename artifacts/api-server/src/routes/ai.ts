@@ -16,6 +16,7 @@ import { computeIndicators, formatTAContext, isDataStale, type Candle } from "..
 import { runMarketPulseEngine, formatClusterDebugLine, verifyEngineScoring, type MarketIndicators, type BiasLabel, type SessionType } from "../lib/marketPulseEngine.js";
 import { getSnapshot, type LiveQuote } from "../lib/schwabStreamer.js";
 import { getIBSnapshot, getIBCachedQuote, subscribeQuoteForSymbol as ibSubscribe, isIBConnected } from "../lib/ibStreamer.js";
+import { getBestAccessToken } from "../lib/tokenStore.js";
 import { selectStrategies, selectStrategiesByRegime, classifyRegime, checkOverrideConflict, classifyTicker, computeBeta, applyBetaToProfile, computeExpectedMove, computeIVR, STRATEGIST_SYSTEM_PROMPT, type OptionContract, type StrategyPayload, type RegimeClassification, type TickerProfile, type DailyCandle, type ConvictionParams } from "../lib/optionsStrategist.js";
 import { runPreTradeChecks, type PreTradeInput, type PreTradeResult } from "../lib/preTradeRiskEngine.js";
 
@@ -679,23 +680,141 @@ function symbolToSchwabApi(userSymbol: string): string {
   return INDEX_TO_SCHWAB[upper] ?? upper;
 }
 
-// Cache-level aliases: when a PULSE_SYMBOL isn't found in the quoteCache under its
-// primary key, try these alternates in order.  Used for /DX → $DXY (IB disabled,
-// Schwab streams Dollar Index as $DXY).
 const CACHE_ALIASES: Record<string, string[]> = {
   "/DX": ["$DXY"],
   "$CPCE": ["$PCUSEQTR"],
   "$CPCI": ["$PCUSINXR"],
 };
 
+const PULSE_TO_IB_NATIVE: Record<string, string> = {
+  "$CPCE": "$PCUSEQTR",
+  "$CPCI": "$PCUSINXR",
+};
+
+const IB_UNSUPPORTED = new Set(["$CPC", "$PCSPY", "$PCQQQ", "$PCIWM", "$SRVIX", "/BZ", "/DX"]);
+
 let pulseSubsTriggered = false;
 function ensurePulseSubscriptions() {
+  if (!pulseSubsTriggered) {
+    startSchwabFallbackPolling();
+  }
   if (pulseSubsTriggered || !isIBConnected()) return;
   pulseSubsTriggered = true;
-  for (let i = 0; i < PULSE_SYMBOLS.length; i++) {
-    const sym = PULSE_SYMBOLS[i];
-    setTimeout(() => ibSubscribe(sym.display), i * 50);
+  let delay = 0;
+  for (const sym of PULSE_SYMBOLS) {
+    if (IB_UNSUPPORTED.has(sym.display)) continue;
+    const ibName = PULSE_TO_IB_NATIVE[sym.display] ?? sym.display;
+    setTimeout(() => ibSubscribe(ibName), delay);
+    delay += 50;
   }
+}
+
+const schwabRestCache = new Map<string, { data: Record<string, unknown>; ts: number }>();
+const SCHWAB_REST_STALE_MS = 30_000;
+const SCHWAB_REST_SYMBOLS = ["$SRVIX", "/BZ", "/DX"];
+const SCHWAB_API = "https://api.schwabapi.com/marketdata/v1";
+
+async function fetchSchwabRestQuotes(): Promise<void> {
+  const token = getBestAccessToken();
+  if (!token) return;
+  const symbols = SCHWAB_REST_SYMBOLS.map(s => {
+    if (s === "/DX") return "$DXY";
+    return s;
+  }).join(",");
+  try {
+    const resp = await fetch(`${SCHWAB_API}/quotes?symbols=${encodeURIComponent(symbols)}&fields=quote`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!resp.ok) return;
+    const json = await resp.json() as Record<string, unknown>;
+    for (const [apiSym, entry] of Object.entries(json)) {
+      const q = (entry as Record<string, unknown>)["quote"] as Record<string, unknown> | undefined;
+      if (!q) continue;
+      const last = q["lastPrice"] as number | undefined ?? q["mark"] as number | undefined ?? null;
+      if (last === null || last === 0) continue;
+      let displaySym = apiSym;
+      if (apiSym === "$DXY") displaySym = "/DX";
+      schwabRestCache.set(displaySym, {
+        data: {
+          lastPrice: last,
+          mark: last,
+          closePrice: q["closePrice"] ?? null,
+          close: q["closePrice"] ?? null,
+          netChange: q["netChange"] ?? null,
+          markChange: q["netChange"] ?? null,
+          netPercentChange: q["netPercentChangeInDouble"] ?? q["netPercentChange"] ?? null,
+          markPercentChange: q["netPercentChangeInDouble"] ?? q["netPercentChange"] ?? null,
+          highPrice: q["highPrice"] ?? null,
+          high: q["highPrice"] ?? null,
+          lowPrice: q["lowPrice"] ?? null,
+          low: q["lowPrice"] ?? null,
+          totalVolume: q["totalVolume"] ?? null,
+          volume: q["totalVolume"] ?? null,
+          bidPrice: q["bidPrice"] ?? null,
+          askPrice: q["askPrice"] ?? null,
+        },
+        ts: Date.now(),
+      });
+    }
+  } catch { /* silent */ }
+}
+
+const pcRatioCache = new Map<string, { value: number; ts: number }>();
+const PC_RATIO_STALE_MS = 60_000;
+const PC_SYMBOLS = ["SPY", "QQQ", "IWM"];
+const PC_DISPLAY = ["$PCSPY", "$PCQQQ", "$PCIWM"];
+
+async function fetchPCRatios(): Promise<void> {
+  const token = getBestAccessToken();
+  if (!token) return;
+  for (let i = 0; i < PC_SYMBOLS.length; i++) {
+    const underlying = PC_SYMBOLS[i];
+    const display = PC_DISPLAY[i];
+    try {
+      const params = new URLSearchParams({
+        symbol: underlying,
+        contractType: "ALL",
+        strikeCount: "20",
+        strategy: "SINGLE",
+      });
+      const resp = await fetch(`${SCHWAB_API}/chains?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!resp.ok) continue;
+      const chain = await resp.json() as Record<string, unknown>;
+      const callMap = chain["callExpDateMap"] as Record<string, Record<string, unknown[]>> | undefined;
+      const putMap = chain["putExpDateMap"] as Record<string, Record<string, unknown[]>> | undefined;
+      if (!callMap || !putMap) continue;
+      let callVol = 0, putVol = 0;
+      const firstCallExp = Object.keys(callMap)[0];
+      const firstPutExp = Object.keys(putMap)[0];
+      if (firstCallExp) {
+        for (const strikes of Object.values(callMap[firstCallExp])) {
+          for (const s of strikes) { callVol += ((s as Record<string, unknown>)["totalVolume"] as number) ?? 0; }
+        }
+      }
+      if (firstPutExp) {
+        for (const strikes of Object.values(putMap[firstPutExp])) {
+          for (const s of strikes) { putVol += ((s as Record<string, unknown>)["totalVolume"] as number) ?? 0; }
+        }
+      }
+      if (callVol > 0) {
+        const ratio = Math.round((putVol / callVol) * 10000) / 10000;
+        pcRatioCache.set(display, { value: ratio, ts: Date.now() });
+      }
+    } catch { /* silent */ }
+  }
+}
+
+let schwabFallbackTimer: ReturnType<typeof setInterval> | null = null;
+function startSchwabFallbackPolling() {
+  if (schwabFallbackTimer) return;
+  fetchSchwabRestQuotes();
+  fetchPCRatios();
+  schwabFallbackTimer = setInterval(() => {
+    fetchSchwabRestQuotes();
+    fetchPCRatios();
+  }, 30_000);
 }
 
 function readFromWebSocketCache(
@@ -730,10 +849,17 @@ function readFromWebSocketCache(
   for (const pair of pairs) {
     let q: LiveQuote | null | undefined = null;
 
-    q = ibCacheBySymbol.get(pair.display)
-      ?? ibCacheBySymbol.get(pair.api)
-      ?? ibCacheBySymbol.get(pair.display.replace(/^\$/, ''))
-      ?? ibCacheBySymbol.get(pair.api.replace(/^\$/, ''));
+    const ibNative = PULSE_TO_IB_NATIVE[pair.display];
+    if (ibNative) {
+      q = ibCacheBySymbol.get(ibNative) ?? getIBCachedQuote(ibNative);
+    }
+
+    if (!q || q.last === null) {
+      q = ibCacheBySymbol.get(pair.display)
+        ?? ibCacheBySymbol.get(pair.api)
+        ?? ibCacheBySymbol.get(pair.display.replace(/^\$/, ''))
+        ?? ibCacheBySymbol.get(pair.api.replace(/^\$/, ''));
+    }
 
     if (!q || q.last === null) {
       const ibDirect = getIBCachedQuote(pair.display) ?? getIBCachedQuote(pair.api);
@@ -750,8 +876,32 @@ function readFromWebSocketCache(
     if (!q || q.last === null) {
       const aliases = CACHE_ALIASES[pair.display] ?? CACHE_ALIASES[pair.api] ?? [];
       for (const alias of aliases) {
-        const aliasQ = ibCacheBySymbol.get(alias) ?? schwabCacheBySymbol.get(alias);
+        const aliasQ = ibCacheBySymbol.get(alias) ?? getIBCachedQuote(alias) ?? schwabCacheBySymbol.get(alias);
         if (aliasQ && aliasQ.last !== null) { q = aliasQ; break; }
+      }
+    }
+
+    if (!q || q.last === null) {
+      const restEntry = schwabRestCache.get(pair.display) ?? schwabRestCache.get(pair.api);
+      if (restEntry && (Date.now() - restEntry.ts) < SCHWAB_REST_STALE_MS * 4) {
+        dataMap.set(pair.display, restEntry.data);
+        hitCount++;
+        continue;
+      }
+    }
+
+    if (!q || q.last === null) {
+      const pcEntry = pcRatioCache.get(pair.display);
+      if (pcEntry && (Date.now() - pcEntry.ts) < PC_RATIO_STALE_MS * 4) {
+        dataMap.set(pair.display, {
+          lastPrice: pcEntry.value, mark: pcEntry.value,
+          closePrice: null, close: null, netChange: null, markChange: null,
+          netPercentChange: null, markPercentChange: null,
+          highPrice: null, high: null, lowPrice: null, low: null,
+          totalVolume: null, volume: null, bidPrice: null, askPrice: null,
+        });
+        hitCount++;
+        continue;
       }
     }
 

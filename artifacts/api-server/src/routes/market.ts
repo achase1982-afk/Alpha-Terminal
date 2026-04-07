@@ -616,8 +616,12 @@ router.get("/options", async (req, res) => {
 });
 
 router.get("/pc-ratio", async (_req, res) => {
-  const equityQuote = getQuoteBySymbol("$PCUSEQTR");
-  const indexQuote = getQuoteBySymbol("$PCUSINXR");
+  if (isIBConnected()) {
+    subscribeQuoteForSymbol("$PCUSEQTR");
+    subscribeQuoteForSymbol("$PCUSINXR");
+  }
+  const equityQuote = getIBCachedQuote("$PCUSEQTR") ?? getQuoteBySymbol("$PCUSEQTR");
+  const indexQuote = getIBCachedQuote("$PCUSINXR") ?? getQuoteBySymbol("$PCUSINXR");
 
   const pick = (q: typeof equityQuote) => {
     if (!q) return null;
