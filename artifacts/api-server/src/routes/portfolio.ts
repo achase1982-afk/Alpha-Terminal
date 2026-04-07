@@ -283,12 +283,12 @@ router.post("/place-order", async (req, res) => {
     const qty = firstLeg?.quantity ?? "";
 
     broadcastToClients("orderAlert", {
-      type: "OrderPlaced",
+      type: "OrderCreated",
       symbol: sym,
       side,
       quantity: String(qty),
       orderId,
-      status: "PLACED",
+      status: "CREATED",
       timestamp: Date.now(),
       raw: "",
     });
@@ -335,7 +335,7 @@ router.delete("/cancel-order", async (req, res) => {
     }
 
     broadcastToClients("orderAlert", {
-      type: "OrderCancel",
+      type: "CancelAccepted",
       symbol: null,
       side: null,
       quantity: null,

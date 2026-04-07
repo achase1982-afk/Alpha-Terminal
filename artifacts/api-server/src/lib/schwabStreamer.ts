@@ -289,86 +289,121 @@ function processAcctActivity(content: Record<string, unknown>[]) {
     const msgType = item["2"] as string | undefined;
     const msgData = item["3"] as string | undefined;
 
-    logger.info({ seqNum, msgType, msgData: msgData?.slice(0, 200) }, "Schwab ACCT_ACTIVITY event");
+    if (msgType === "SUBSCRIBED" || (!msgType && !msgData)) {
+      logger.debug({ seqNum, msgType }, "Schwab ACCT_ACTIVITY heartbeat");
+      return;
+    }
 
-    let alertPayload: Record<string, unknown> = {
+    logger.info({ seqNum, msgType, rawLength: msgData?.length ?? 0 },
+      "Schwab ACCT_ACTIVITY event");
+
+    if (msgData) {
+      logger.info(msgData, "Schwab ACCT_ACTIVITY raw payload");
+    }
+
+    let parsed: Record<string, unknown> = {};
+    if (msgData) {
+      try { parsed = JSON.parse(msgData); } catch { /* non-JSON fallback below */ }
+    }
+
+    const orderId = (parsed.SchwabOrderID as string) ?? null;
+    const extracted = extractAcctFields(parsed);
+
+    const alertPayload: Record<string, unknown> = {
       type: msgType ?? "UNKNOWN",
       timestamp: Date.now(),
+      orderId,
+      symbol: extracted.symbol,
+      side: extracted.side,
+      quantity: extracted.quantity,
+      price: extracted.price,
+      orderType: extracted.orderType,
       raw: msgData ?? "",
     };
 
-    let pushTitle = "ALPHA TERMINAL";
+    const sym = extracted.symbol ?? "";
+    const qty = extracted.quantity ?? "";
+    const price = extracted.price ?? "";
+    const side = extracted.side ?? "";
+
     let pushBody = "";
     let pushTag = "acct-activity";
 
-    if (msgData) {
-      try {
-        const parsed = JSON.parse(msgData);
-        alertPayload = { ...alertPayload, ...parsed };
-      } catch {
-        // Schwab sends XML for ACCT_ACTIVITY — parse key fields
-        const orderIdMatch = msgData.match(/<OrderId>(\d+)<\/OrderId>/i) ??
-                             msgData.match(/<OrderKey>(\d+)<\/OrderKey>/i);
-        const symbolMatch = msgData.match(/<Symbol>([^<]+)<\/Symbol>/i);
-        const statusMatch = msgData.match(/<OrderStatus>([^<]+)<\/OrderStatus>/i) ??
-                            msgData.match(/<Status>([^<]+)<\/Status>/i);
-        const qtyMatch = msgData.match(/<(?:Filled)?Quantity>([^<]+)<\/(?:Filled)?Quantity>/i) ??
-                         msgData.match(/<OriginalQuantity>([^<]+)<\/OriginalQuantity>/i);
-        const priceMatch = msgData.match(/<(?:Execution)?Price>([^<]+)<\/(?:Execution)?Price>/i) ??
-                           msgData.match(/<AveragePrice>([^<]+)<\/AveragePrice>/i);
-        const sideMatch = msgData.match(/<(?:Order)?Instruction>([^<]+)<\/(?:Order)?Instruction>/i) ??
-                          msgData.match(/<OrderSide>([^<]+)<\/OrderSide>/i);
-
-        alertPayload.orderId = orderIdMatch?.[1] ?? null;
-        alertPayload.symbol = symbolMatch?.[1] ?? null;
-        alertPayload.status = statusMatch?.[1] ?? null;
-        alertPayload.quantity = qtyMatch?.[1] ?? null;
-        alertPayload.price = priceMatch?.[1] ?? null;
-        alertPayload.side = sideMatch?.[1] ?? null;
-      }
-    }
-
-    const sym = (alertPayload.symbol as string) ?? "";
-    const status = (alertPayload.status as string) ?? msgType ?? "";
-    const qty = alertPayload.quantity ?? "";
-    const price = alertPayload.price ?? "";
-    const side = (alertPayload.side as string) ?? "";
-
-    const statusUpper = status.toUpperCase();
-
-    if (statusUpper.includes("FILL") || msgType === "OrderFill" || msgType === "UROUT") {
-      pushBody = `${side} ${qty} ${sym} FILLED @ $${price}`.trim();
-      pushTag = "order-fill";
-    } else if (statusUpper.includes("CANCEL") || msgType === "OrderCancel") {
-      pushBody = `${sym} order CANCELED`.trim();
-      pushTag = "order-cancel";
-    } else if (statusUpper.includes("REJECT") || msgType === "OrderReject") {
-      pushBody = `${sym} order REJECTED`.trim();
-      pushTag = "order-reject";
-    } else if (statusUpper.includes("ENTRY") || msgType === "OrderEntryRequest" || msgType === "OrderEntry") {
-      pushBody = `${side} ${qty} ${sym} order PLACED`.trim();
-      pushTag = "order-placed";
-    } else if (statusUpper.includes("PARTIAL") || msgType === "OrderPartialFill") {
-      pushBody = `${side} ${qty} ${sym} PARTIAL FILL @ $${price}`.trim();
-      pushTag = "order-partial";
-    } else if (statusUpper.includes("EXPIRE") || msgType === "OrderExpire") {
-      pushBody = `${sym} order EXPIRED`.trim();
-      pushTag = "order-expire";
-    } else {
-      pushBody = `Account activity: ${msgType ?? status} ${sym}`.trim();
+    switch (msgType) {
+      case "OrderCreated":
+        pushBody = `${side} ${qty} ${sym} order CREATED`.trim();
+        pushTag = "OrderCreated";
+        break;
+      case "OrderAccepted":
+        pushTag = "OrderAccepted";
+        break;
+      case "ExecutionCreated":
+        pushBody = `${side} ${qty} ${sym} FILLED @ $${price}`.trim();
+        pushTag = "ExecutionCreated";
+        break;
+      case "OrderUROutCompleted":
+        pushTag = "OrderUROutCompleted";
+        break;
+      case "CancelAccepted":
+        pushBody = `${sym} order CANCELED`.trim();
+        pushTag = "CancelAccepted";
+        break;
+      case "CancelRejected":
+        pushBody = `${sym} cancel REJECTED`.trim();
+        pushTag = "CancelRejected";
+        break;
+      case "OrderRejected":
+        pushBody = `${sym} order REJECTED`.trim();
+        pushTag = "OrderRejected";
+        break;
+      case "OrderExpired":
+        pushBody = `${sym} order EXPIRED`.trim();
+        pushTag = "OrderExpired";
+        break;
+      case "OrderModified":
+        pushBody = `${sym} order MODIFIED`.trim();
+        pushTag = "OrderModified";
+        break;
+      default:
+        pushBody = `Account activity: ${msgType ?? "unknown"} ${sym}`.trim();
+        break;
     }
 
     broadcast("orderAlert", alertPayload);
 
     if (pushBody) {
       void sendPushToAll({
-        title: pushTitle,
+        title: "ALPHA TERMINAL",
         body: pushBody,
         tag: pushTag,
-        data: { orderId: alertPayload.orderId, symbol: sym },
+        data: { orderId, symbol: sym },
       });
     }
   }
+}
+
+function extractAcctFields(obj: Record<string, unknown>): {
+  symbol: string | null; side: string | null; quantity: string | null;
+  price: string | null; orderType: string | null;
+} {
+  const result = { symbol: null as string | null, side: null as string | null,
+    quantity: null as string | null, price: null as string | null,
+    orderType: null as string | null };
+
+  const json = JSON.stringify(obj);
+  const symMatch = json.match(/"Symbol"\s*:\s*"([^"]+)"/);
+  const sideMatch = json.match(/"(?:Instruction|Side|OrderSide)"\s*:\s*"([^"]+)"/);
+  const qtyMatch = json.match(/"(?:Quantity|FilledQuantity|OriginalQuantity)"\s*:\s*"?(\d+(?:\.\d+)?)"?/);
+  const priceMatch = json.match(/"(?:ExecutionPrice|Price|LimitPrice|AveragePrice)"\s*:\s*"?(\d+(?:\.\d+)?)"?/);
+  const typeMatch = json.match(/"(?:OrderType)"\s*:\s*"([^"]+)"/);
+
+  if (symMatch) result.symbol = symMatch[1];
+  if (sideMatch) result.side = sideMatch[1];
+  if (qtyMatch) result.quantity = qtyMatch[1];
+  if (priceMatch) result.price = priceMatch[1];
+  if (typeMatch) result.orderType = typeMatch[1];
+
+  return result;
 }
 
 function processEquityTick(content: Record<string, unknown>[]) {
