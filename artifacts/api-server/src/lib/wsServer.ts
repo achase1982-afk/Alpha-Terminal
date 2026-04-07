@@ -11,6 +11,10 @@ const DEV_BYPASS = process.env.DEV_BYPASS_AUTH === "true";
 const clients = new Set<WebSocket>();
 
 export function broadcastToClients(event: string, data: unknown) {
+  if (event === "orderAlert") {
+    const openCount = [...clients].filter(ws => ws.readyState === WebSocket.OPEN).length;
+    logger.info({ event, totalClients: clients.size, openClients: openCount }, "broadcastToClients orderAlert");
+  }
   if (clients.size === 0) return;
 
   const msg = JSON.stringify({ event, data });

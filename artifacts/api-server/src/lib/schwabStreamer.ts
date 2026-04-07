@@ -305,7 +305,7 @@ function processAcctActivity(content: Record<string, unknown>[]) {
 
     if (msgType === "SUBSCRIBED" || (!msgType && !msgData)) {
       logger.debug({ seqNum, msgType }, "Schwab ACCT_ACTIVITY heartbeat");
-      return;
+      continue;
     }
 
     logger.info({ seqNum, msgType, rawLength: msgData?.length ?? 0 },
@@ -403,6 +403,8 @@ function processAcctActivity(content: Record<string, unknown>[]) {
       markAlertSeen(orderId, msgType);
     }
 
+    logger.info({ orderId, msgType, symbol, wsClients: wsBroadcast ? "registered" : "null" },
+      "ACCT_ACTIVITY broadcasting orderAlert");
     broadcast("orderAlert", alertPayload);
 
     if (pushBody) {
