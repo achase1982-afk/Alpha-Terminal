@@ -88,8 +88,8 @@ export const ALL_BREADTH_SYMBOLS: IBSymbolDef[] = [
   // ═══════════════════════════════════════════════════════════
   { reqId: 5024, symbol: "/GC",     ibSymbol: "GC",         secType: "FUT", exchange: "COMEX",   displaySymbol: "/GC",     category: "COMMODITY", description: "Gold Future",                                                  enabled: true },
   { reqId: 5023, symbol: "/CL",     ibSymbol: "CL",         secType: "FUT", exchange: "NYMEX",   displaySymbol: "/CL",     category: "COMMODITY", description: "WTI Crude Oil Future",                                        enabled: true },
-  { reqId: 5121, symbol: "/BZ",     ibSymbol: "COIL",       secType: "FUT", exchange: "IPE",     displaySymbol: "/BZ",     category: "COMMODITY", description: "Brent Crude Oil Future (ICE Futures Europe — symbol COIL at IPE)", enabled: true },
-  { reqId: 5022, symbol: "/DX",     ibSymbol: "DX",         secType: "FUT", exchange: "ICEUS",   displaySymbol: "/DX",     category: "CURRENCY", description: "US Dollar Index Future (ICE Futures US)", enabled: true },
+  { reqId: 5121, symbol: "/BZ",     ibSymbol: "COIL",       secType: "FUT", exchange: "IPE",     displaySymbol: "/BZ",     category: "COMMODITY", description: "Brent Crude Oil Future (ICE Futures Europe — needs ICE subscription; use Schwab WS instead)", enabled: false },
+  { reqId: 5022, symbol: "/DX",     ibSymbol: "DX",         secType: "FUT", exchange: "ICEUS",   displaySymbol: "/DX",     category: "CURRENCY", description: "US Dollar Index Future (ICE Futures US — needs ICE subscription; derived from /6E instead)", enabled: false },
 
   // ═══════════════════════════════════════════════════════════
   // SENTIMENT / OPTIONS LAYER (2)

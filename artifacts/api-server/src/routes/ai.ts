@@ -1009,6 +1009,28 @@ function readFromWebSocketCache(
     }
   }
 
+  if (!dataMap.has("$DXY") || !(dataMap.get("$DXY")?.["lastPrice"])) {
+    const sixE = schwabCacheBySymbol.get("/6E") ?? ibCacheBySymbol.get("/6E");
+    if (sixE && sixE.last && sixE.close && sixE.close > 0) {
+      const eurChangePct = ((sixE.last - sixE.close) / sixE.close) * 100;
+      const DXY_PREV_CLOSE = 99.00;
+      const dxyChangePct = -eurChangePct * 0.576;
+      const syntheticDxy = Math.round((DXY_PREV_CLOSE * (1 + dxyChangePct / 100)) * 1000) / 1000;
+      const dxyChange = Math.round((syntheticDxy - DXY_PREV_CLOSE) * 1000) / 1000;
+      dataMap.set("$DXY", {
+        lastPrice: syntheticDxy, mark: syntheticDxy,
+        closePrice: DXY_PREV_CLOSE, close: DXY_PREV_CLOSE,
+        netChange: dxyChange, markChange: dxyChange,
+        netPercentChange: Math.round(dxyChangePct * 10000) / 10000,
+        markPercentChange: Math.round(dxyChangePct * 10000) / 10000,
+        highPrice: null, high: null, lowPrice: null, low: null,
+        totalVolume: null, volume: null, bidPrice: null, askPrice: null,
+        synthetic: true, derivedFrom: "/6E",
+      });
+      hitCount++;
+    }
+  }
+
   return { dataMap, displayToApi, hitCount };
 }
 
@@ -1420,17 +1442,13 @@ Keep the entire output under 500 words. Be technically precise, data-driven, and
 
 router.post("/market-pulse", async (req, res) => {
   ensurePulseSubscriptions();
-  const { accessToken, symbols, model, temperature, riskTolerance } = req.body as {
+  const { symbols, model, temperature, riskTolerance } = req.body as {
     accessToken?: string;
     symbols?: string[];
     model?: string;
     temperature?: number;
     riskTolerance?: string;
   };
-
-  if (!accessToken) {
-    return res.status(400).json({ error: "Schwab access token required." });
-  }
 
   const { session, timeET, sessionGuidance } = getMarketSession();
 
@@ -1579,7 +1597,7 @@ router.get("/market-pulse/latest", (_req, res) => {
 
 router.post("/market-pulse/stream", async (req, res) => {
   ensurePulseSubscriptions();
-  const { accessToken, symbols, model, temperature, preferences, previousBias } = req.body as {
+  const { symbols, model, temperature, preferences, previousBias } = req.body as {
     accessToken?: string;
     symbols?: string[];
     model?: string;
@@ -1594,10 +1612,6 @@ router.post("/market-pulse/stream", async (req, res) => {
       maxRiskPerTrade?: string;
     };
   };
-
-  if (!accessToken) {
-    return res.status(400).json({ error: "Schwab access token required." });
-  }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
