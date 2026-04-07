@@ -5,14 +5,29 @@ import {
   getStreamerStatus,
   isConnected,
 } from "../lib/schwabStreamer.js";
+import { subscribeQuoteForSymbol, isIBConnected } from "../lib/ibStreamer.js";
 
 const router: IRouter = Router();
 
-router.post("/start", async (_req, res) => {
-  res.json({ ok: true, subscribedCount: 0, message: "Schwab streaming removed — IB only" });
+function subscribeSymbolsToIB(symbols: unknown) {
+  if (!isIBConnected()) return;
+  if (!Array.isArray(symbols)) return;
+  for (const sym of symbols) {
+    if (typeof sym === "string" && sym.trim()) {
+      subscribeQuoteForSymbol(sym.trim().toUpperCase());
+    }
+  }
+}
+
+router.post("/start", async (req, res) => {
+  const { symbols } = req.body as { symbols?: unknown };
+  subscribeSymbolsToIB(symbols);
+  res.json({ ok: true, subscribedCount: 0, message: "IB only" });
 });
 
-router.post("/symbols", (_req, res) => {
+router.post("/symbols", (req, res) => {
+  const { symbols } = req.body as { symbols?: unknown };
+  subscribeSymbolsToIB(symbols);
   res.json({ ok: true });
 });
 
