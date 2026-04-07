@@ -1,10 +1,10 @@
 import app from "./app";
 import { logger } from "./lib/logger";
-import { injectExternalQuote } from "./lib/schwabStreamer";
+import { injectExternalQuote, startStreamer as startSchwabStreamer, onTokenRefreshed as schwabTokenRefreshed } from "./lib/schwabStreamer";
 import { initWsServer, broadcastToClients } from "./lib/wsServer";
 import { connectIB, registerQuoteCacheInjector, registerIBBroadcast, getWsBridgeUrl } from "./lib/ibStreamer";
 import { startIBWsProxy } from "./lib/ibWsProxy";
-import { initTokenStore } from "./lib/tokenStore";
+import { initTokenStore, setTokenRefreshCallback, hasValidTokens } from "./lib/tokenStore";
 
 const rawPort = process.env["PORT"];
 
@@ -38,8 +38,21 @@ async function boot() {
 
   await initTokenStore();
 
+  setTokenRefreshCallback((kind, _accessToken) => {
+    if (kind === "trader" || kind === "market") {
+      schwabTokenRefreshed();
+    }
+  });
+
   registerQuoteCacheInjector(injectExternalQuote);
   registerIBBroadcast(broadcastToClients);
+
+  if (hasValidTokens("trader")) {
+    logger.info("Schwab tokens available — starting Schwab streamer");
+    startSchwabStreamer().catch((err) => logger.warn({ err }, "Schwab streamer start failed"));
+  } else {
+    logger.info("Schwab tokens not yet available — streamer will start on token refresh");
+  }
 
   if (process.env.IBKR_GATEWAY_URL || process.env.IB_HOST) {
     const wsUrl = getWsBridgeUrl();

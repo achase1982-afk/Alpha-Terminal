@@ -4,8 +4,12 @@ import {
   getSnapshot,
   getStreamerStatus,
   isConnected,
+  addSymbols as addSchwabSymbols,
+  addOptionSymbols as addSchwabOptionSymbols,
+  startStreamer,
 } from "../lib/schwabStreamer.js";
 import { subscribeQuoteForSymbol, isIBConnected } from "../lib/ibStreamer.js";
+import { hasValidTokens } from "../lib/tokenStore.js";
 
 const router: IRouter = Router();
 
@@ -26,20 +30,40 @@ function subscribeSymbolsToIB(symbols: unknown) {
   }
 }
 
+function subscribeSymbolsToSchwab(symbols: unknown) {
+  if (!Array.isArray(symbols)) return;
+  const cleaned = symbols
+    .filter((s): s is string => typeof s === "string" && s.trim().length > 0)
+    .map(s => s.trim().toUpperCase());
+  if (!cleaned.length) return;
+
+  if (!isConnected() && hasValidTokens("trader")) {
+    void startStreamer(undefined, cleaned);
+  } else {
+    addSchwabSymbols(cleaned);
+  }
+}
+
 router.post("/start", async (req, res) => {
   const { symbols } = req.body as { symbols?: unknown };
-  subscribeSymbolsToIB(symbols);
-  res.json({ ok: true, subscribedCount: 0, message: "IB only" });
-});
-
-router.post("/symbols", (req, res) => {
-  const { symbols } = req.body as { symbols?: unknown };
+  subscribeSymbolsToSchwab(symbols);
   subscribeSymbolsToIB(symbols);
   res.json({ ok: true });
 });
 
-router.post("/option-symbols", (_req, res) => {
-  res.json({ ok: true, count: 0 });
+router.post("/symbols", (req, res) => {
+  const { symbols } = req.body as { symbols?: unknown };
+  subscribeSymbolsToSchwab(symbols);
+  subscribeSymbolsToIB(symbols);
+  res.json({ ok: true });
+});
+
+router.post("/option-symbols", (req, res) => {
+  const { symbols } = req.body as { symbols?: unknown };
+  if (Array.isArray(symbols)) {
+    addSchwabOptionSymbols(symbols.filter((s): s is string => typeof s === "string"));
+  }
+  res.json({ ok: true });
 });
 
 router.get("/quotes", (req, res) => {
