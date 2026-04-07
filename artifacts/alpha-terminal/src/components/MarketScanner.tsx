@@ -283,36 +283,36 @@ function UniverseDropdown({ value, onChange }: { value: string; onChange: (v: st
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="w-full h-9 rounded-md border border-card-border bg-card text-foreground text-xs px-3 flex items-center justify-between gap-2 focus:outline-none focus:ring-1 focus:ring-primary/50 transition-colors hover:border-zinc-600"
+        className="w-full h-10 rounded-md border border-card-border bg-card text-foreground text-sm px-3 flex items-center justify-between gap-2 focus:outline-none focus:ring-1 focus:ring-primary/50 transition-colors hover:border-zinc-600"
       >
         <span className="truncate font-medium">{selectedLabel} <span className="text-zinc-500 font-normal">({selectedCount})</span></span>
-        <ChevronDown className={`w-3.5 h-3.5 text-zinc-500 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+        <ChevronDown className={`w-4 h-4 text-zinc-500 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
 
       {open && (
-        <div className="absolute z-50 mt-1 left-0 right-0 rounded-lg border border-zinc-700/80 bg-[#141414] shadow-2xl shadow-black/60 overflow-hidden" style={{ maxHeight: 340, overflowY: "auto" }}>
-          <div className="px-3 pt-2.5 pb-1.5">
-            <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Markets</span>
+        <div className="absolute z-50 mt-1 left-0 right-0 rounded-lg border border-zinc-700/80 bg-[#141414] shadow-2xl shadow-black/60 overflow-hidden" style={{ maxHeight: 440, overflowY: "auto" }}>
+          <div className="px-3 pt-3 pb-1.5">
+            <span className="text-[11px] font-bold uppercase tracking-widest text-zinc-500">Markets</span>
           </div>
           {Object.entries(UNIVERSES).map(([key, u]) => (
             <button
               key={key}
               onClick={() => { onChange(key); setOpen(false); }}
-              className={`w-full text-left px-3 py-2 flex items-center justify-between text-xs transition-colors ${
+              className={`w-full text-left px-3 py-2.5 flex items-center justify-between text-sm transition-colors ${
                 value === key ? "bg-[#FFB800]/10 text-[#FFB800]" : "text-zinc-300 hover:bg-zinc-800/60 hover:text-white"
               }`}
             >
               <span className="font-medium">{u.label}</span>
-              <span className={`text-[10px] tabular-nums ${value === key ? "text-[#FFB800]/60" : "text-zinc-600"}`}>{u.symbols.length}</span>
+              <span className={`text-xs tabular-nums ${value === key ? "text-[#FFB800]/60" : "text-zinc-600"}`}>{u.symbols.length}</span>
             </button>
           ))}
 
           {Object.keys(watchlists).length > 0 && (
             <>
-              <div className="mx-3 my-1 border-t border-zinc-700/50" />
-              <div className="px-3 pt-1.5 pb-1 flex items-center gap-1.5">
-                <List className="w-3 h-3 text-zinc-500" />
-                <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Watchlists</span>
+              <div className="mx-3 my-1.5 border-t border-zinc-700/50" />
+              <div className="px-3 pt-2 pb-1.5 flex items-center gap-1.5">
+                <List className="w-3.5 h-3.5 text-zinc-500" />
+                <span className="text-[11px] font-bold uppercase tracking-widest text-zinc-500">Watchlists</span>
               </div>
               {Object.entries(watchlists).map(([id, wl]) => {
                 const wlKey = `wl:${id}`;
@@ -320,12 +320,12 @@ function UniverseDropdown({ value, onChange }: { value: string; onChange: (v: st
                   <button
                     key={id}
                     onClick={() => { onChange(wlKey); setOpen(false); }}
-                    className={`w-full text-left px-3 py-2 flex items-center justify-between text-xs transition-colors ${
+                    className={`w-full text-left px-3 py-2.5 flex items-center justify-between text-sm transition-colors ${
                       value === wlKey ? "bg-[#FFB800]/10 text-[#FFB800]" : "text-zinc-300 hover:bg-zinc-800/60 hover:text-white"
                     }`}
                   >
                     <span className="font-medium">{wl.name}</span>
-                    <span className={`text-[10px] tabular-nums ${value === wlKey ? "text-[#FFB800]/60" : "text-zinc-600"}`}>{wl.symbols.length}</span>
+                    <span className={`text-xs tabular-nums ${value === wlKey ? "text-[#FFB800]/60" : "text-zinc-600"}`}>{wl.symbols.length}</span>
                   </button>
                 );
               })}
@@ -480,7 +480,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol }: {
             <button
               key={m}
               onClick={() => setMode(m)}
-              className={`flex-1 py-3 text-xs font-bold uppercase tracking-widest transition-all border-b-2 ${
+              className={`flex-1 py-3 text-sm font-bold uppercase tracking-widest transition-all border-b-2 ${
                 mode === m
                   ? "bg-[#18181B] text-white border-b-[#FFB800]"
                   : "bg-transparent text-muted-foreground border-b-transparent hover:text-foreground hover:bg-secondary/20"
@@ -502,15 +502,15 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol }: {
         <div className="p-4 bg-[#0c0c0c] space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="text-[11px] text-muted-foreground uppercase tracking-wider font-bold flex items-center gap-1.5">
-                <Search className="w-3 h-3" /> Scan Universe
+              <Label className="text-xs text-muted-foreground uppercase tracking-wider font-bold flex items-center gap-1.5">
+                <Search className="w-3.5 h-3.5" /> Scan Universe
               </Label>
               <UniverseDropdown value={universe} onChange={setUniverse} />
             </div>
 
             {mode === "ai" && (
               <div className="space-y-1.5">
-                <Label className="text-[11px] text-muted-foreground uppercase tracking-wider font-bold">
+                <Label className="text-xs text-muted-foreground uppercase tracking-wider font-bold">
                   Max Results
                 </Label>
                 <input
@@ -519,13 +519,13 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol }: {
                   max={20}
                   value={maxResults}
                   onChange={e => setMaxResults(Math.min(20, Math.max(1, Number(e.target.value) || 1)))}
-                  className="w-full h-9 rounded-md border border-card-border bg-card text-foreground text-xs px-3 tabular-nums focus:outline-none focus:ring-1 focus:ring-primary/50"
+                  className="w-full h-10 rounded-md border border-card-border bg-card text-foreground text-sm px-3 tabular-nums focus:outline-none focus:ring-1 focus:ring-primary/50"
                 />
               </div>
             )}
           </div>
 
-          <div className="text-[11px] text-muted-foreground">
+          <div className="text-xs text-muted-foreground">
             Scanning <span className="text-primary font-bold">{currentSyms.length} tickers</span>
             {mode === "ai" && <> — AI will return up to <span className="font-bold" style={{ color: "#ffb800" }}>{maxResults} setups</span></>}
           </div>

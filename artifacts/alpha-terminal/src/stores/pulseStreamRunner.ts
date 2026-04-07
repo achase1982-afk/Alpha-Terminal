@@ -34,10 +34,15 @@ async function tryRecoverFromCache(): Promise<boolean> {
     if (!resp.ok) return false;
     const data = await resp.json();
 
+    const store = useMarketPulseStore.getState();
+    if (data.thinkingTokens && Array.isArray(data.thinkingTokens) && data.thinkingTokens.length > 0) {
+      store.replaceThinking(data.thinkingTokens.join(""));
+    }
+
     if (data.status === "ready" && data.pulse) {
-      console.log("[pulseStreamRunner] Recovery successful — got cached result");
+      console.log("[pulseStreamRunner] Recovery successful — got cached result with", data.thinkingTokens?.length ?? 0, "thinking chunks");
       const enriched = { ...data.pulse, generatedAt: Date.now() };
-      useMarketPulseStore.getState().setPulseData(enriched);
+      store.setPulseData(enriched);
       return true;
     }
 

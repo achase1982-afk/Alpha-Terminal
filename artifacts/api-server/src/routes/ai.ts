@@ -22,8 +22,9 @@ import { runPreTradeChecks, type PreTradeInput, type PreTradeResult } from "../l
 
 const router: IRouter = Router();
 
-let lastPulseResult: { pulse: Record<string, unknown>; generatedAt: number } | null = null;
+let lastPulseResult: { pulse: Record<string, unknown>; generatedAt: number; thinkingTokens: string[] } | null = null;
 let pulseGenerationInFlight = false;
+let pulseThinkingBuffer: string[] = [];
 
 function safeSseWrite(res: import("express").Response, data: string) {
   try {
@@ -1511,10 +1512,10 @@ RULES:
 
 router.get("/market-pulse/latest", (_req, res) => {
   if (pulseGenerationInFlight) {
-    return res.json({ status: "in_flight" });
+    return res.json({ status: "in_flight", thinkingTokens: pulseThinkingBuffer });
   }
   if (lastPulseResult && (Date.now() - lastPulseResult.generatedAt) < 2 * 60 * 60 * 1000) {
-    return res.json({ status: "ready", pulse: lastPulseResult.pulse });
+    return res.json({ status: "ready", pulse: lastPulseResult.pulse, thinkingTokens: lastPulseResult.thinkingTokens });
   }
   return res.json({ status: "none" });
 });
@@ -1547,6 +1548,7 @@ router.post("/market-pulse/stream", async (req, res) => {
   }
 
   pulseGenerationInFlight = true;
+  pulseThinkingBuffer = [];
   let clientConnected = true;
 
   res.writeHead(200, {
@@ -1702,13 +1704,17 @@ Write ONLY the narrative fields. Return this exact JSON structure:
       thinkingBudget: 4096,
       onThinking: (text) => {
         hasEmittedThinking = true;
+        pulseThinkingBuffer.push(text);
         if (clientConnected) {
           safeSseWrite(res, `event: thinking\ndata: ${JSON.stringify({ type: "thinking", text })}\n\n`);
         }
       },
       onText: (text) => {
-        if (!hasEmittedThinking && clientConnected) {
-          safeSseWrite(res, `event: thinking\ndata: ${JSON.stringify({ type: "thinking", text })}\n\n`);
+        if (!hasEmittedThinking) {
+          pulseThinkingBuffer.push(text);
+          if (clientConnected) {
+            safeSseWrite(res, `event: thinking\ndata: ${JSON.stringify({ type: "thinking", text })}\n\n`);
+          }
         }
       },
     });
@@ -1788,9 +1794,9 @@ Write ONLY the narrative fields. Return this exact JSON structure:
       };
     }
 
-    lastPulseResult = { pulse: finalPulse, generatedAt: Date.now() };
+    lastPulseResult = { pulse: finalPulse, generatedAt: Date.now(), thinkingTokens: [...pulseThinkingBuffer] };
     pulseGenerationInFlight = false;
-    req.log.info({ clientConnected, bias: (finalPulse as any).bias }, "Pulse generation complete — result cached");
+    req.log.info({ clientConnected, bias: (finalPulse as any).bias, thinkingTokenCount: pulseThinkingBuffer.length }, "Pulse generation complete — result cached");
 
     safeSseWrite(res, `event: result\ndata: ${JSON.stringify({ type: "complete", pulse: finalPulse })}\n\n`);
     if (!res.writableEnded) res.end();
