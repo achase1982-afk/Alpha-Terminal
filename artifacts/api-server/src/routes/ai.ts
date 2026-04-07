@@ -31,10 +31,18 @@ function safeSseWrite(res: import("express").Response, data: string) {
     if (!res.writableEnded && !res.destroyed) {
       res.write(data);
       if (typeof (res as any).flush === "function") (res as any).flush();
+      if ((res as any).socket && typeof (res as any).socket.write === "function") {
+        (res as any).socket.uncork?.();
+      }
       return true;
     }
   } catch {}
   return false;
+}
+
+function sseFlushPadding(res: import("express").Response) {
+  const pad = ": " + " ".repeat(2048) + "\n\n";
+  safeSseWrite(res, pad);
 }
 
 const AVAILABLE_MODELS = [
@@ -1553,9 +1561,10 @@ router.post("/market-pulse/stream", async (req, res) => {
 
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
-    "Cache-Control": "no-cache",
+    "Cache-Control": "no-cache, no-transform",
     Connection: "keep-alive",
     "X-Accel-Buffering": "no",
+    "Transfer-Encoding": "chunked",
   });
 
   req.socket?.setKeepAlive(true);
@@ -1572,6 +1581,7 @@ router.post("/market-pulse/stream", async (req, res) => {
 
   safeSseWrite(res, ": ok\n\n");
   res.flushHeaders();
+  sseFlushPadding(res);
   safeSseWrite(res, `event: status\ndata: ${JSON.stringify({ type: "status", text: "Fetching live market data..." })}\n\n`);
 
   const heartbeat = setInterval(() => {

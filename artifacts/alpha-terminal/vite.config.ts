@@ -77,6 +77,17 @@ export default defineConfig({
         ws: true,
         timeout: 0,
         proxyTimeout: 0,
+        configure: (proxy) => {
+          proxy.on("proxyRes", (proxyRes, _req, res) => {
+            if (proxyRes.headers["content-type"]?.includes("text/event-stream")) {
+              (res as any).flushHeaders?.();
+              proxyRes.on("data", () => {
+                if (typeof (res as any).flush === "function") (res as any).flush();
+                (res as any).socket?.uncork?.();
+              });
+            }
+          });
+        },
       },
     },
     fs: {

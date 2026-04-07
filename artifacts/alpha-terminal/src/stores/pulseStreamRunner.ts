@@ -166,6 +166,9 @@ export async function runPulseStream(payload: Record<string, unknown>) {
       const events = buffer.split("\n\n");
       buffer = events.pop() || "";
 
+      interface ParsedEvent { eventType: string; parsed: Record<string, unknown> }
+      const parsedEvents: ParsedEvent[] = [];
+
       for (const event of events) {
         if (!event.trim()) continue;
 
@@ -185,29 +188,47 @@ export async function runPulseStream(payload: Record<string, unknown>) {
 
         try {
           const parsed = JSON.parse(eventData);
-          console.log(`[pulseStreamRunner] SSE event: "${eventType}"`, eventType === "thinking" ? `text="${(parsed.text || parsed.content || "").substring(0, 80)}"` : parsed);
-
-          if (eventType === "thinking") {
-            const text = parsed.text || parsed.content || "";
-            if (text) {
-              useMarketPulseStore.getState().appendThinking(text);
-            }
-          } else if (eventType === "status") {
-            const text = parsed.text || "";
-            if (text) {
-              useMarketPulseStore.getState().appendStatus(text);
-            }
-          } else if (eventType === "result") {
-            gotResult = true;
-            const resultData = parsed.pulse || parsed.data || parsed;
-            const enriched = { ...resultData, generatedAt: Date.now() };
-            useMarketPulseStore.getState().setPulseData(enriched);
-          } else if (eventType === "error") {
-            const msg = parsed.message || "An error occurred";
-            useMarketPulseStore.getState().setError(msg);
-          }
+          parsedEvents.push({ eventType, parsed });
         } catch {
           console.warn("[pulseStreamRunner] Failed to parse SSE data:", eventData);
+        }
+      }
+
+      const hasThinking = parsedEvents.some(e => e.eventType === "thinking");
+      const hasResult = parsedEvents.some(e => e.eventType === "result");
+
+      for (const { eventType, parsed } of parsedEvents) {
+        if (eventType === "result" && hasThinking && hasResult) continue;
+
+        if (eventType === "thinking") {
+          const text = (parsed.text || parsed.content || "") as string;
+          if (text) {
+            useMarketPulseStore.getState().appendThinking(text);
+          }
+        } else if (eventType === "status") {
+          const text = (parsed.text || "") as string;
+          if (text) {
+            useMarketPulseStore.getState().appendStatus(text);
+          }
+        } else if (eventType === "result") {
+          gotResult = true;
+          const resultData = parsed.pulse || parsed.data || parsed;
+          const enriched = { ...(resultData as Record<string, unknown>), generatedAt: Date.now() };
+          useMarketPulseStore.getState().setPulseData(enriched as any);
+        } else if (eventType === "error") {
+          const msg = (parsed.message || "An error occurred") as string;
+          useMarketPulseStore.getState().setError(msg);
+        }
+      }
+
+      if (hasThinking && hasResult) {
+        await new Promise(r => setTimeout(r, 50));
+        const deferred = parsedEvents.filter(e => e.eventType === "result");
+        for (const { parsed } of deferred) {
+          gotResult = true;
+          const resultData = parsed.pulse || parsed.data || parsed;
+          const enriched = { ...(resultData as Record<string, unknown>), generatedAt: Date.now() };
+          useMarketPulseStore.getState().setPulseData(enriched as any);
         }
       }
     }
