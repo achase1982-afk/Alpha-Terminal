@@ -1588,7 +1588,7 @@ RULES:
 
 router.get("/market-pulse/latest", (_req, res) => {
   if (pulseGenerationInFlight) {
-    return res.json({ status: "in_flight", thinkingTokens: pulseThinkingBuffer });
+    return res.json({ status: "in_flight", thinkingTokens: pulseThinkingBuffer, statusText: "Generating AI analysis..." });
   }
   if (lastPulseResult && (Date.now() - lastPulseResult.generatedAt) < 2 * 60 * 60 * 1000) {
     return res.json({ status: "ready", pulse: lastPulseResult.pulse, thinkingTokens: lastPulseResult.thinkingTokens });
