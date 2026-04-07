@@ -15,6 +15,7 @@ import {
 import { computeIndicators, formatTAContext, isDataStale, type Candle } from "../lib/ta.js";
 import { runMarketPulseEngine, formatClusterDebugLine, verifyEngineScoring, type MarketIndicators, type BiasLabel, type SessionType } from "../lib/marketPulseEngine.js";
 import { getSnapshot, type LiveQuote } from "../lib/schwabStreamer.js";
+import { getIBSnapshot, getIBCachedQuote, subscribeQuoteForSymbol as ibSubscribe, isIBConnected } from "../lib/ibStreamer.js";
 import { selectStrategies, selectStrategiesByRegime, classifyRegime, checkOverrideConflict, classifyTicker, computeBeta, applyBetaToProfile, computeExpectedMove, computeIVR, STRATEGIST_SYSTEM_PROMPT, type OptionContract, type StrategyPayload, type RegimeClassification, type TickerProfile, type DailyCandle, type ConvictionParams } from "../lib/optionsStrategist.js";
 import { runPreTradeChecks, type PreTradeInput, type PreTradeResult } from "../lib/preTradeRiskEngine.js";
 
@@ -687,13 +688,29 @@ const CACHE_ALIASES: Record<string, string[]> = {
   "$CPCI": ["$PCUSINXR"],
 };
 
+let pulseSubsTriggered = false;
+function ensurePulseSubscriptions() {
+  if (pulseSubsTriggered || !isIBConnected()) return;
+  pulseSubsTriggered = true;
+  for (let i = 0; i < PULSE_SYMBOLS.length; i++) {
+    const sym = PULSE_SYMBOLS[i];
+    setTimeout(() => ibSubscribe(sym.display), i * 50);
+  }
+}
+
 function readFromWebSocketCache(
   userSymbols?: string[]
 ): { dataMap: Map<string, Record<string, unknown>>; displayToApi: Map<string, string>; hitCount: number } {
-  const snapshot = getSnapshot();
-  const cacheBySymbol = new Map<string, LiveQuote>();
-  for (const q of snapshot) {
-    cacheBySymbol.set(q.symbol, q);
+  const ibSnapshot = getIBSnapshot();
+  const ibCacheBySymbol = new Map<string, LiveQuote>();
+  for (const q of ibSnapshot) {
+    ibCacheBySymbol.set(q.symbol, q);
+  }
+
+  const schwabSnapshot = getSnapshot();
+  const schwabCacheBySymbol = new Map<string, LiveQuote>();
+  for (const q of schwabSnapshot) {
+    schwabCacheBySymbol.set(q.symbol, q);
   }
 
   let pairs: Array<{ display: string; api: string }>;
@@ -711,17 +728,29 @@ function readFromWebSocketCache(
   let hitCount = 0;
 
   for (const pair of pairs) {
-    // Primary lookup: api key, display key, and $ stripped variants
-    let q = cacheBySymbol.get(pair.api)
-         ?? cacheBySymbol.get(pair.display)
-         ?? cacheBySymbol.get(pair.api.replace(/^\$/, ''))
-         ?? cacheBySymbol.get(pair.display.replace(/^\$/, ''));
+    let q: LiveQuote | null | undefined = null;
 
-    // Fallback alias lookup: e.g. /DX → $DXY
+    q = ibCacheBySymbol.get(pair.display)
+      ?? ibCacheBySymbol.get(pair.api)
+      ?? ibCacheBySymbol.get(pair.display.replace(/^\$/, ''))
+      ?? ibCacheBySymbol.get(pair.api.replace(/^\$/, ''));
+
+    if (!q || q.last === null) {
+      const ibDirect = getIBCachedQuote(pair.display) ?? getIBCachedQuote(pair.api);
+      if (ibDirect && ibDirect.last !== null) q = ibDirect;
+    }
+
+    if (!q || q.last === null) {
+      q = schwabCacheBySymbol.get(pair.api)
+        ?? schwabCacheBySymbol.get(pair.display)
+        ?? schwabCacheBySymbol.get(pair.api.replace(/^\$/, ''))
+        ?? schwabCacheBySymbol.get(pair.display.replace(/^\$/, ''));
+    }
+
     if (!q || q.last === null) {
       const aliases = CACHE_ALIASES[pair.display] ?? CACHE_ALIASES[pair.api] ?? [];
       for (const alias of aliases) {
-        const aliasQ = cacheBySymbol.get(alias);
+        const aliasQ = ibCacheBySymbol.get(alias) ?? schwabCacheBySymbol.get(alias);
         if (aliasQ && aliasQ.last !== null) { q = aliasQ; break; }
       }
     }
@@ -1070,6 +1099,7 @@ function getMarketSession(): { session: string; timeET: string; sessionGuidance:
 }
 
 router.post("/market-briefing", async (req, res) => {
+  ensurePulseSubscriptions();
   const { accessToken, symbols, model, temperature } = req.body as {
     accessToken?: string;
     symbols?: string[];
@@ -1088,7 +1118,7 @@ router.post("/market-briefing", async (req, res) => {
     const wsResult = readFromWebSocketCache(symbols);
     const expectedCount = symbols && symbols.length > 0 ? symbols.length : PULSE_SYMBOLS.length;
     const minRequired = Math.max(5, Math.ceil(expectedCount * 0.4));
-    req.log.info({ source: "websocket", hits: wsResult.hitCount, expected: expectedCount, minRequired }, "Pulse data from WebSocket cache");
+    req.log.info({ source: "ib+schwab", hits: wsResult.hitCount, expected: expectedCount, minRequired }, "Pulse data from IB/Schwab cache");
     if (wsResult.hitCount < minRequired) {
       return res.json({ response: `**Waiting for WebSocket data.** Only ${wsResult.hitCount}/${expectedCount} symbols available (need ${minRequired}). Ensure the live streamer is connected.`, error: "insufficient_ws_data" });
     }
@@ -1171,6 +1201,7 @@ Keep the entire output under 500 words. Be technically precise, data-driven, and
 });
 
 router.post("/market-pulse", async (req, res) => {
+  ensurePulseSubscriptions();
   const { accessToken, symbols, model, temperature, riskTolerance } = req.body as {
     accessToken?: string;
     symbols?: string[];
@@ -1190,7 +1221,7 @@ router.post("/market-pulse", async (req, res) => {
     const wsResult = readFromWebSocketCache(symbols);
     const expectedCount = symbols && symbols.length > 0 ? symbols.length : PULSE_SYMBOLS.length;
     const minRequired = Math.max(5, Math.ceil(expectedCount * 0.4));
-    req.log.info({ source: "websocket", hits: wsResult.hitCount, expected: expectedCount, minRequired }, "Analysis data from WebSocket cache");
+    req.log.info({ source: "ib+schwab", hits: wsResult.hitCount, expected: expectedCount, minRequired }, "Analysis data from IB/Schwab cache");
     if (wsResult.hitCount < minRequired) {
       return res.status(503).json({ error: `Insufficient WebSocket data: ${wsResult.hitCount}/${expectedCount} symbols (need ${minRequired}). Ensure the live streamer is connected.` });
     }
@@ -1319,6 +1350,7 @@ RULES:
 });
 
 router.post("/market-pulse/stream", async (req, res) => {
+  ensurePulseSubscriptions();
   const { accessToken, symbols, model, temperature, preferences, previousBias } = req.body as {
     accessToken?: string;
     symbols?: string[];
@@ -1385,7 +1417,7 @@ router.post("/market-pulse/stream", async (req, res) => {
     const wsResult = readFromWebSocketCache();
     const expectedCount = PULSE_SYMBOLS.length;
     const minRequired = Math.max(5, Math.ceil(expectedCount * 0.4));
-    req.log.info({ source: "websocket", hits: wsResult.hitCount, expected: expectedCount, minRequired }, "Pulse stream data from WebSocket cache");
+    req.log.info({ source: "ib+schwab", hits: wsResult.hitCount, expected: expectedCount, minRequired }, "Pulse stream data from IB/Schwab cache");
     if (wsResult.hitCount < minRequired) {
       clearInterval(heartbeat);
       res.write(`event: error\ndata: ${JSON.stringify({ type: "error", message: `Insufficient WebSocket data: ${wsResult.hitCount}/${expectedCount} symbols (need ${minRequired}). Ensure the live streamer is connected.` })}\n\n`);
