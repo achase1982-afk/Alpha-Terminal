@@ -11,6 +11,7 @@ import { useAutoLock, AutoLockProvider } from "@/hooks/useAutoLock";
 import TerminalPage from "@/pages/Terminal";
 import NotFound from "@/pages/not-found";
 import PushNotificationBanner from "@/components/PushNotificationBanner";
+import OrderAlertWatcher from "@/components/OrderAlertWatcher";
 import { registerServiceWorker } from "@/lib/pushNotifications";
 
 export const queryClient = new QueryClient({
@@ -167,6 +168,7 @@ function App() {
             <Router />
           </WouterRouter>
           <Toaster />
+          <OrderAlertWatcher />
           <PushNotificationBanner />
         </AutoLockProvider>
       </TooltipProvider>
