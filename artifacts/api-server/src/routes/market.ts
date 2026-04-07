@@ -6,6 +6,7 @@ import {
 } from "@workspace/api-zod";
 import { getAccessToken, getBestAccessToken } from "../lib/tokenStore.js";
 import { getQuoteBySymbol } from "../lib/schwabStreamer.js";
+import { getIBCachedQuote, subscribeQuoteForSymbol, isIBConnected } from "../lib/ibStreamer.js";
 
 const router: IRouter = Router();
 
@@ -91,6 +92,36 @@ router.get("/quote", async (req, res) => {
   const displaySymbol = symbol.toUpperCase().trim();
   const apiSymbol = formatSchwabSymbol(displaySymbol);
 
+  // ── IB FIRST: check cache, subscribe on-demand if needed ─────────────────
+  if (isIBConnected()) {
+    let ibQuote = getIBCachedQuote(displaySymbol);
+    if (!ibQuote) {
+      // Not cached yet — subscribe and wait briefly for first tick
+      const subscribed = subscribeQuoteForSymbol(displaySymbol);
+      if (subscribed) {
+        await new Promise(r => setTimeout(r, 600));
+        ibQuote = getIBCachedQuote(displaySymbol);
+      }
+    }
+    if (ibQuote && ibQuote.last !== null) {
+      const data = GetQuoteResponse.parse({
+        symbol: displaySymbol,
+        last: ibQuote.last ?? undefined,
+        bid: ibQuote.bid ?? undefined,
+        ask: ibQuote.ask ?? undefined,
+        change: ibQuote.change ?? undefined,
+        changePct: ibQuote.changePct ?? undefined,
+        volume: ibQuote.volume ?? undefined,
+        high: ibQuote.high ?? undefined,
+        low: ibQuote.low ?? undefined,
+        bidSize: ibQuote.bidSize ?? undefined,
+        askSize: ibQuote.askSize ?? undefined,
+      });
+      return res.json(data);
+    }
+  }
+
+  // ── SCHWAB FALLBACK ───────────────────────────────────────────────────────
   try {
     const response = await fetch(`${SCHWAB_API_BASE}/quotes?symbols=${encodeURIComponent(apiSymbol)}&fields=quote,fundamental,reference`, {
       headers: { "Authorization": `Bearer ${accessToken}` },

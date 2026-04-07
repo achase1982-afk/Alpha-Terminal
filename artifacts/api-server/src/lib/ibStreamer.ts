@@ -36,6 +36,10 @@ let depthThrottleTimer: ReturnType<typeof setInterval> | null = null;
 const dynamicDepthSymbols = new Map<string, { reqId: number; contract: Contract; isSmartDepth: boolean }>();
 let dynamicDepthReqCounter = 6500;
 
+const dynamicQuoteSymbols = new Map<string, number>(); // symbol → reqId
+const dynamicQuoteReqIdToSymbol = new Map<number, string>(); // reqId → symbol
+let dynamicQuoteReqCounter = 7000;
+
 export interface IBNewsHeadline {
   time: string;
   providerCode: string;
@@ -238,6 +242,27 @@ function emitQuote(def: IBSymbolDef, state: IBQuoteState) {
   }
 }
 
+function emitRawQuote(displaySymbol: string, state: IBQuoteState) {
+  const effectiveLast = state.last ?? state.bid ?? state.ask ?? null;
+  const quote: LiveQuote = {
+    symbol: displaySymbol,
+    last: effectiveLast,
+    extendedLast: effectiveLast,
+    bid: state.bid,
+    ask: state.ask,
+    bidSize: state.bidSize,
+    askSize: state.askSize,
+    change: state.change,
+    changePct: state.changePct,
+    volume: state.volume,
+    high: state.high,
+    low: state.low,
+    close: state.close,
+    ts: state.ts,
+  };
+  if (quoteCacheInjector) quoteCacheInjector(displaySymbol, quote);
+}
+
 function getOrCreateState(sym: string): IBQuoteState {
   let s = ibQuoteCache.get(sym);
   if (!s) {
@@ -269,6 +294,25 @@ function subscribeAll() {
       logger.info({ symbol: def.ibSymbol, reqId: def.reqId, news: genericTicks === "292" }, "IB: subscribed to market data");
     } catch (err) {
       logger.error({ err, symbol: def.ibSymbol }, "IB: failed to subscribe");
+    }
+  }
+  // Resubscribe any on-demand quote symbols that were active before reconnect
+  for (const [symbol, reqId] of dynamicQuoteSymbols) {
+    const isFut = symbol.startsWith("/");
+    const isIdx = symbol.startsWith("$");
+    const ibSym = symbol.replace(/^[\/$]/, "");
+    const contract: Contract = {
+      symbol: ibSym,
+      secType: (isFut ? "FUT" : isIdx ? "IND" : "STK") as SecType,
+      exchange: isFut ? "CME" : isIdx ? "SMART" : "SMART",
+      currency: "USD",
+    };
+    if (isFut) (contract as any).lastTradeDateOrContractMonth = getFrontMonth(ibSym);
+    try {
+      ib.reqMktData(reqId, contract, "", false, false);
+      logger.info({ symbol, reqId }, "IB: resubscribed dynamic quote after reconnect");
+    } catch (err) {
+      logger.warn({ err, symbol }, "IB: failed to resubscribe dynamic quote");
     }
   }
   subscribeDepth();
@@ -358,6 +402,9 @@ function teardownIB() {
     for (const [, info] of dynamicDepthSymbols) {
       try { ib.cancelMktDepth(info.reqId, info.isSmartDepth); } catch { /* ignore */ }
     }
+    for (const [, reqId] of dynamicQuoteSymbols) {
+      try { ib.cancelMktData(reqId); } catch { /* ignore */ }
+    }
     try { ib.disconnect(); } catch { /* ignore */ }
     ib.removeAllListeners();
     ib = null;
@@ -366,6 +413,8 @@ function teardownIB() {
   depthBooks.clear();
   depthDirty.clear();
   dynamicDepthSymbols.clear();
+  dynamicQuoteSymbols.clear();
+  dynamicQuoteReqIdToSymbol.clear();
   if (depthThrottleTimer) {
     clearInterval(depthThrottleTimer);
     depthThrottleTimer = null;
@@ -543,16 +592,19 @@ export async function connectIB(): Promise<void> {
 
     const tickLogCounts = new Map<string, number>();
     ib.on(EventName.tickPrice, (reqId: number, tickType: number, price: number, _attribs: unknown) => {
+      if (price === -1) return;
       const def = reqIdToSymbol.get(reqId);
-      if (!def || price === -1) return;
+      const dynSym = def ? null : dynamicQuoteReqIdToSymbol.get(reqId);
+      if (!def && !dynSym) return;
 
-      const cnt = (tickLogCounts.get(def.displaySymbol) ?? 0) + 1;
-      tickLogCounts.set(def.displaySymbol, cnt);
+      const displaySymbol = def ? def.displaySymbol : dynSym!;
+      const cnt = (tickLogCounts.get(displaySymbol) ?? 0) + 1;
+      tickLogCounts.set(displaySymbol, cnt);
       if (cnt <= 3) {
-        logger.info({ symbol: def.displaySymbol, tickType, price }, "IB: tickPrice received");
+        logger.info({ symbol: displaySymbol, tickType, price }, "IB: tickPrice received");
       }
 
-      const state = getOrCreateState(def.displaySymbol);
+      const state = getOrCreateState(displaySymbol);
       state.ts = Date.now();
 
       switch (tickType) {
@@ -592,14 +644,21 @@ export async function connectIB(): Promise<void> {
           return;
       }
 
-      emitQuote(def, state);
+      if (def) {
+        emitQuote(def, state);
+      } else {
+        emitRawQuote(displaySymbol, state);
+      }
     });
 
     ib.on(EventName.tickSize, (reqId: number, tickType: number, size: number) => {
+      if (size === -1) return;
       const def = reqIdToSymbol.get(reqId);
-      if (!def || size === -1) return;
+      const dynSym = def ? null : dynamicQuoteReqIdToSymbol.get(reqId);
+      if (!def && !dynSym) return;
 
-      const state = getOrCreateState(def.displaySymbol);
+      const displaySymbol = def ? def.displaySymbol : dynSym!;
+      const state = getOrCreateState(displaySymbol);
       state.ts = Date.now();
 
       switch (tickType) {
@@ -619,7 +678,11 @@ export async function connectIB(): Promise<void> {
           return;
       }
 
-      emitQuote(def, state);
+      if (def) {
+        emitQuote(def, state);
+      } else {
+        emitRawQuote(displaySymbol, state);
+      }
     });
 
     ib.on(EventName.tickString, (reqId: number, tickType: number, value: string) => {
@@ -988,4 +1051,65 @@ export function unsubscribeDepthForSymbol(symbol: string): void {
   depthBooks.delete(upper);
   dynamicDepthSymbols.delete(upper);
   logger.info({ symbol: upper }, "IB: unsubscribed dynamic depth");
+}
+
+export function getIBCachedQuote(symbol: string): LiveQuote | null {
+  const state = ibQuoteCache.get(symbol.toUpperCase());
+  if (!state) return null;
+  const effectiveLast = state.last ?? state.bid ?? state.ask ?? null;
+  if (effectiveLast === null && state.close === null) return null;
+  return {
+    symbol: symbol.toUpperCase(),
+    last: effectiveLast,
+    extendedLast: effectiveLast,
+    bid: state.bid,
+    ask: state.ask,
+    bidSize: state.bidSize,
+    askSize: state.askSize,
+    change: state.change,
+    changePct: state.changePct,
+    volume: state.volume,
+    high: state.high,
+    low: state.low,
+    close: state.close,
+    ts: state.ts,
+  };
+}
+
+export function subscribeQuoteForSymbol(symbol: string): boolean {
+  if (!ib || connState !== "CONNECTED") return false;
+  const upper = symbol.toUpperCase();
+
+  // Already subscribed as a breadth symbol or dynamically
+  if (ibQuoteCache.has(upper) && dynamicQuoteSymbols.has(upper)) return true;
+  if (dynamicQuoteSymbols.has(upper)) return true;
+  // Check if it's already a breadth symbol
+  if (BREADTH_SYMBOLS.some(d => d.displaySymbol === upper)) return true;
+
+  const reqId = dynamicQuoteReqCounter++;
+  const isFut = upper.startsWith("/");
+  const isIdx = upper.startsWith("$");
+  const ibSym = upper.replace(/^[\/$]/, "");
+
+  const contract: Contract = {
+    symbol: ibSym,
+    secType: (isFut ? "FUT" : isIdx ? "IND" : "STK") as SecType,
+    exchange: isFut ? "CME" : "SMART",
+    currency: "USD",
+  };
+  if (isFut) (contract as any).lastTradeDateOrContractMonth = getFrontMonth(ibSym);
+
+  dynamicQuoteSymbols.set(upper, reqId);
+  dynamicQuoteReqIdToSymbol.set(reqId, upper);
+
+  try {
+    ib.reqMktData(reqId, contract, "", false, false);
+    logger.info({ symbol: upper, reqId }, "IB: subscribed on-demand quote");
+    return true;
+  } catch (err) {
+    logger.error({ err, symbol: upper }, "IB: failed to subscribe on-demand quote");
+    dynamicQuoteSymbols.delete(upper);
+    dynamicQuoteReqIdToSymbol.delete(reqId);
+    return false;
+  }
 }
