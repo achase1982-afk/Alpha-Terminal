@@ -15,7 +15,7 @@ import {
 import { computeIndicators, formatTAContext, isDataStale, type Candle } from "../lib/ta.js";
 import { runMarketPulseEngine, formatClusterDebugLine, verifyEngineScoring, type MarketIndicators, type BiasLabel, type SessionType } from "../lib/marketPulseEngine.js";
 import { getSnapshot, type LiveQuote } from "../lib/schwabStreamer.js";
-import { getIBSnapshot, getIBCachedQuote, subscribeQuoteForSymbol as ibSubscribe, isIBConnected } from "../lib/ibStreamer.js";
+import { getIBSnapshot, getIBCachedQuote, subscribeQuoteForSymbol as ibSubscribe, isIBConnected, onIBConnected } from "../lib/ibStreamer.js";
 import { getBestAccessToken } from "../lib/tokenStore.js";
 import { selectStrategies, selectStrategiesByRegime, classifyRegime, checkOverrideConflict, classifyTicker, computeBeta, applyBetaToProfile, computeExpectedMove, computeIVR, STRATEGIST_SYSTEM_PROMPT, type OptionContract, type StrategyPayload, type RegimeClassification, type TickerProfile, type DailyCandle, type ConvictionParams } from "../lib/optionsStrategist.js";
 import { runPreTradeChecks, type PreTradeInput, type PreTradeResult } from "../lib/preTradeRiskEngine.js";
@@ -694,10 +694,7 @@ const PULSE_TO_IB_NATIVE: Record<string, string> = {
 const IB_UNSUPPORTED = new Set(["$CPC", "$PCSPY", "$PCQQQ", "$PCIWM", "$SRVIX", "/BZ", "/DX"]);
 
 let pulseSubsTriggered = false;
-function ensurePulseSubscriptions() {
-  if (!pulseSubsTriggered) {
-    startSchwabFallbackPolling();
-  }
+function subscribePulseSymbolsViaIB() {
   if (pulseSubsTriggered || !isIBConnected()) return;
   pulseSubsTriggered = true;
   let delay = 0;
@@ -707,6 +704,15 @@ function ensurePulseSubscriptions() {
     setTimeout(() => ibSubscribe(ibName), delay);
     delay += 50;
   }
+}
+
+onIBConnected(() => {
+  pulseSubsTriggered = false;
+  subscribePulseSymbolsViaIB();
+});
+
+function ensurePulseSubscriptions() {
+  subscribePulseSymbolsViaIB();
 }
 
 const schwabRestCache = new Map<string, { data: Record<string, unknown>; ts: number }>();
@@ -719,6 +725,7 @@ async function fetchSchwabRestQuotes(): Promise<void> {
   if (!token) return;
   const symbols = SCHWAB_REST_SYMBOLS.map(s => {
     if (s === "/DX") return "$DXY";
+    if (s === "/BZ") return "/BZK";
     return s;
   }).join(",");
   try {
@@ -734,6 +741,7 @@ async function fetchSchwabRestQuotes(): Promise<void> {
       if (last === null || last === 0) continue;
       let displaySym = apiSym;
       if (apiSym === "$DXY") displaySym = "/DX";
+      if (apiSym === "/BZK") displaySym = "/BZ";
       schwabRestCache.set(displaySym, {
         data: {
           lastPrice: last,
@@ -816,6 +824,7 @@ function startSchwabFallbackPolling() {
     fetchPCRatios();
   }, 30_000);
 }
+startSchwabFallbackPolling();
 
 function readFromWebSocketCache(
   userSymbols?: string[]

@@ -507,6 +507,9 @@ export async function connectIB(): Promise<void> {
       activeClientId = IB_CLIENT_ID; // reset to base slot on clean connect
       emitStatus("connected");
       subscribeAll();
+      for (const cb of ibConnectedCallbacks) {
+        try { cb(); } catch {}
+      }
       try {
         ib!.reqNewsProviders();
         logger.info("IB: requested news providers");
@@ -1112,6 +1115,12 @@ function fetchContractLongName(symbol: string, contract: Contract) {
     clearTimeout(timeout);
     ib!.off(EventName.contractDetails, handler);
   }
+}
+
+const ibConnectedCallbacks: Array<() => void> = [];
+export function onIBConnected(cb: () => void): void {
+  ibConnectedCallbacks.push(cb);
+  if (connState === "CONNECTED") cb();
 }
 
 export function subscribeQuoteForSymbol(symbol: string): boolean {
