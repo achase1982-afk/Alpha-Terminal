@@ -248,15 +248,9 @@ export async function runPulseStream(payload: Record<string, unknown>) {
 
     if (currentEpoch !== runEpoch) return;
 
-    const elapsed = Date.now() - streamStartedAt;
-    if (elapsed > 3000) {
-      console.log("[pulseStreamRunner] Stream broke after", elapsed, "ms — trying recovery");
-      startRecoveryPolling(currentEpoch);
-      return;
-    }
-
-    const msg = err.message || "Generation failed. Please try again.";
-    useMarketPulseStore.getState().setError(msg);
+    console.log("[pulseStreamRunner] Stream error — starting recovery polling");
+    startRecoveryPolling(currentEpoch);
+    return;
   } finally {
     if (activeAbort === abort) {
       activeAbort = null;

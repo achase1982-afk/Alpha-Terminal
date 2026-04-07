@@ -1311,10 +1311,10 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
       )}
 
       {stage === "review" && (
-        <div className="fixed inset-0 z-[220] flex items-end justify-center" style={{ background: "rgba(0,0,0,0.7)" }}>
+        <div className="fixed inset-0 z-[220] flex flex-col" style={{ background: "#0a0a0a" }}>
           <div
-            className="w-full max-w-lg p-5 space-y-3 animate-in slide-in-from-bottom duration-300"
-            style={{ background: CARD, border: `1px solid ${BORDER2}`, borderBottom: "none" }}
+            className="w-full h-full flex flex-col p-5 space-y-3 overflow-y-auto animate-in fade-in duration-200"
+            style={{ background: CARD }}
           >
             <div className="flex items-center justify-between mb-1">
               <h3 className="font-mono font-bold text-[14px] tracking-wider" style={{ color: WHITE }}>Confirm Order</h3>
@@ -1412,7 +1412,9 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
               </p>
             </div>
 
-            <div className="flex gap-3 pt-1 pb-4">
+            <div className="flex-1" />
+
+            <div className="flex gap-3 pt-1 pb-4 shrink-0">
               <button
                 onClick={() => setStage("form")}
                 className="flex-1 py-3 font-mono text-[12px] font-bold tracking-wider"
