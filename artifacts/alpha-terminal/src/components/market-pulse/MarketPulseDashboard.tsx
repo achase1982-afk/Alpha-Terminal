@@ -43,16 +43,11 @@ const RISK_COLORS: Record<string, string> = {
   NO_TRADE: "#f23645",
 };
 
-interface MarketPulseDashboardProps {
-  autoGenerate?: boolean;
-  onAutoGenConsumed?: () => void;
-}
-
 export interface MarketPulseDashboardHandle {
   fetchPulse: () => void;
 }
 
-export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, MarketPulseDashboardProps>(function MarketPulseDashboard({ autoGenerate, onAutoGenConsumed }, ref) {
+export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, object>(function MarketPulseDashboard(_props, ref) {
   const { accessToken, aiFeatureSettings } = useTerminalStore();
   const { model: aiModel, temperature: aiTemp } = aiFeatureSettings.marketPulse;
   const {
@@ -101,7 +96,13 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
     query: { enabled: !accessToken },
   });
 
-  const hasInitiatedRef = useRef(!!pulseData);
+  const hasInitiatedRef = useRef(!!pulseData || isPulseStreamActive());
+
+  useEffect(() => {
+    if (isPulseStreamActive() && !pulseData) {
+      hasInitiatedRef.current = true;
+    }
+  }, []);
 
   const [isAuthNavigating, setIsAuthNavigating] = useState(false);
   const handleConnectSchwab = useCallback(async () => {
@@ -154,13 +155,6 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, Marke
   }, [setError]);
 
   useImperativeHandle(ref, () => ({ fetchPulse }), [fetchPulse]);
-
-  useEffect(() => {
-    if (autoGenerate && !isLoading && !isStreaming && accessToken) {
-      fetchPulse();
-      onAutoGenConsumed?.();
-    }
-  }, [autoGenerate, isLoading, isStreaming, accessToken]);
 
   useEffect(() => {
     if (intervalRef.current) {

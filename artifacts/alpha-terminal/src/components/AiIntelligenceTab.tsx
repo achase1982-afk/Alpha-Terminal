@@ -1112,15 +1112,13 @@ interface AiIntelligenceTabProps {
   subTab: AiSubTab;
   onSubTabChange: (tab: AiSubTab) => void;
   pulseDashRef?: React.RefObject<MarketPulseDashboardHandle | null>;
-  pulseAutoGen?: boolean;
-  onPulseAutoGenConsumed?: () => void;
   subscribeEquitySymbols?: (syms: string[]) => void;
   onNavigateToMarkets?: (sym: string) => void;
 }
 
 const AI_TABS: AiSubTab[] = ["pulse", "strategist", "scanner"];
 
-export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, pulseAutoGen, onPulseAutoGenConsumed, subscribeEquitySymbols, onNavigateToMarkets }: AiIntelligenceTabProps) {
+export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscribeEquitySymbols, onNavigateToMarkets }: AiIntelligenceTabProps) {
   const swipeStartX = useRef(0);
   const swipeStartY = useRef(0);
   const swipeLocked = useRef<"h" | "v" | null>(null);
@@ -1514,7 +1512,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, pulseA
         }}
       >
         <div style={{ width: "100%", flexShrink: 0, minHeight: "100%" }}>
-          <MarketPulseDashboard ref={pulseDashRef} autoGenerate={pulseAutoGen} onAutoGenConsumed={onPulseAutoGenConsumed} />
+          <MarketPulseDashboard ref={pulseDashRef} />
         </div>
 
         <div style={{ width: "100%", flexShrink: 0, overflowY: "auto" }}>

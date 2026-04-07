@@ -73,7 +73,7 @@ export const useMarketPulseStore = create<MarketPulseState>()(
       appendStatus: (text) =>
         set((s) => ({ statusMessages: [...s.statusMessages, text] })),
       clearThinking: () => set({ thinkingTokens: [], statusMessages: [] }),
-      setError: (error) => set({ error, isLoading: false, isStreaming: false }),
+      setError: (error) => set(error ? { error, isLoading: false, isStreaming: false } : { error }),
       clearPulse: () => set({ pulseData: null, error: null, lastFetchedAt: null }),
 
       updateSetting: (key, value) =>
