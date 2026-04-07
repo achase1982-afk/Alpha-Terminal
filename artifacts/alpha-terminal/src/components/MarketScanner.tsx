@@ -283,54 +283,60 @@ function UniverseDropdown({ value, onChange }: { value: string; onChange: (v: st
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="w-full h-10 rounded-md border border-card-border bg-card text-foreground text-sm px-3 flex items-center justify-between gap-2 focus:outline-none focus:ring-1 focus:ring-primary/50 transition-colors hover:border-zinc-600"
+        className="w-full min-h-[44px] rounded-md border border-card-border bg-card text-foreground text-sm px-3 py-2 flex items-center justify-between gap-2 focus:outline-none focus:ring-1 focus:ring-primary/50 transition-colors hover:border-zinc-600"
       >
-        <span className="truncate font-medium">{selectedLabel} <span className="text-zinc-500 font-normal">({selectedCount})</span></span>
+        <span className="font-medium leading-snug">{selectedLabel} <span className="text-zinc-500 font-normal">({selectedCount})</span></span>
         <ChevronDown className={`w-4 h-4 text-zinc-500 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
 
       {open && (
-        <div className="absolute z-50 mt-1 left-0 right-0 rounded-lg border border-zinc-700/80 bg-[#141414] shadow-2xl shadow-black/60 overflow-hidden" style={{ maxHeight: 440, overflowY: "auto" }}>
-          <div className="px-3 pt-3 pb-1.5">
-            <span className="text-[11px] font-bold uppercase tracking-widest text-zinc-500">Markets</span>
-          </div>
-          {Object.entries(UNIVERSES).map(([key, u]) => (
-            <button
-              key={key}
-              onClick={() => { onChange(key); setOpen(false); }}
-              className={`w-full text-left px-3 py-2.5 flex items-center justify-between text-sm transition-colors ${
-                value === key ? "bg-[#FFB800]/10 text-[#FFB800]" : "text-zinc-300 hover:bg-zinc-800/60 hover:text-white"
-              }`}
-            >
-              <span className="font-medium">{u.label}</span>
-              <span className={`text-xs tabular-nums ${value === key ? "text-[#FFB800]/60" : "text-zinc-600"}`}>{u.symbols.length}</span>
-            </button>
-          ))}
+        <div
+          className="absolute z-50 mt-1 left-0 right-0 rounded-lg border border-zinc-700/80 bg-[#141414] shadow-2xl shadow-black/60 overflow-hidden"
+          style={{ maxHeight: "min(500px, 60vh)" }}
+        >
+          <div className="overflow-y-auto overscroll-contain" style={{ maxHeight: "min(500px, 60vh)", WebkitOverflowScrolling: "touch" as any }}>
+            <div className="px-3 pt-3 pb-1.5">
+              <span className="text-[11px] font-bold uppercase tracking-widest text-zinc-500">Markets</span>
+            </div>
+            {Object.entries(UNIVERSES).map(([key, u]) => (
+              <button
+                key={key}
+                onClick={() => { onChange(key); setOpen(false); }}
+                className={`w-full text-left px-3 py-3 flex items-center justify-between gap-3 text-sm transition-colors ${
+                  value === key ? "bg-[#FFB800]/10 text-[#FFB800]" : "text-zinc-300 hover:bg-zinc-800/60 hover:text-white"
+                }`}
+              >
+                <span className="font-medium leading-snug">{u.label}</span>
+                <span className={`text-xs tabular-nums shrink-0 ${value === key ? "text-[#FFB800]/60" : "text-zinc-600"}`}>{u.symbols.length}</span>
+              </button>
+            ))}
 
-          {Object.keys(watchlists).length > 0 && (
-            <>
-              <div className="mx-3 my-1.5 border-t border-zinc-700/50" />
-              <div className="px-3 pt-2 pb-1.5 flex items-center gap-1.5">
-                <List className="w-3.5 h-3.5 text-zinc-500" />
-                <span className="text-[11px] font-bold uppercase tracking-widest text-zinc-500">Watchlists</span>
-              </div>
-              {Object.entries(watchlists).map(([id, wl]) => {
-                const wlKey = `wl:${id}`;
-                return (
-                  <button
-                    key={id}
-                    onClick={() => { onChange(wlKey); setOpen(false); }}
-                    className={`w-full text-left px-3 py-2.5 flex items-center justify-between text-sm transition-colors ${
-                      value === wlKey ? "bg-[#FFB800]/10 text-[#FFB800]" : "text-zinc-300 hover:bg-zinc-800/60 hover:text-white"
-                    }`}
-                  >
-                    <span className="font-medium">{wl.name}</span>
-                    <span className={`text-xs tabular-nums ${value === wlKey ? "text-[#FFB800]/60" : "text-zinc-600"}`}>{wl.symbols.length}</span>
-                  </button>
-                );
-              })}
-            </>
-          )}
+            {Object.keys(watchlists).length > 0 && (
+              <>
+                <div className="mx-3 my-1.5 border-t border-zinc-700/50" />
+                <div className="px-3 pt-2 pb-1.5 flex items-center gap-1.5">
+                  <List className="w-3.5 h-3.5 text-zinc-500" />
+                  <span className="text-[11px] font-bold uppercase tracking-widest text-zinc-500">Watchlists</span>
+                </div>
+                {Object.entries(watchlists).map(([id, wl]) => {
+                  const wlKey = `wl:${id}`;
+                  return (
+                    <button
+                      key={id}
+                      onClick={() => { onChange(wlKey); setOpen(false); }}
+                      className={`w-full text-left px-3 py-3 flex items-center justify-between gap-3 text-sm transition-colors ${
+                        value === wlKey ? "bg-[#FFB800]/10 text-[#FFB800]" : "text-zinc-300 hover:bg-zinc-800/60 hover:text-white"
+                      }`}
+                    >
+                      <span className="font-medium leading-snug">{wl.name}</span>
+                      <span className={`text-xs tabular-nums shrink-0 ${value === wlKey ? "text-[#FFB800]/60" : "text-zinc-600"}`}>{wl.symbols.length}</span>
+                    </button>
+                  );
+                })}
+              </>
+            )}
+            <div className="h-2" />
+          </div>
         </div>
       )}
     </div>
