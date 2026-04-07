@@ -92,6 +92,25 @@ router.get("/quote", async (req, res) => {
   const displaySymbol = symbol.toUpperCase().trim();
   const apiSymbol = formatSchwabSymbol(displaySymbol);
 
+  const schwabCached = getQuoteBySymbol(apiSymbol);
+  if (schwabCached && schwabCached.last !== null) {
+    const data = GetQuoteResponse.parse({
+      symbol: displaySymbol,
+      description: apiSymbol === "$DXY" ? "Dollar Index (Synthetic)" : undefined,
+      last: schwabCached.last ?? undefined,
+      bid: schwabCached.bid ?? undefined,
+      ask: schwabCached.ask ?? undefined,
+      change: schwabCached.change ?? undefined,
+      changePct: schwabCached.changePct ?? undefined,
+      volume: schwabCached.volume ?? undefined,
+      high: schwabCached.high ?? undefined,
+      low: schwabCached.low ?? undefined,
+      bidSize: schwabCached.bidSize ?? undefined,
+      askSize: schwabCached.askSize ?? undefined,
+    });
+    return res.json(data);
+  }
+
   // ── IB FIRST: check cache, subscribe on-demand if needed ─────────────────
   if (isIBConnected()) {
     let ibQuote = getIBCachedQuote(displaySymbol);

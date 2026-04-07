@@ -5,6 +5,7 @@ import { initWsServer, broadcastToClients } from "./lib/wsServer";
 import { connectIB, registerQuoteCacheInjector, registerIBBroadcast, getWsBridgeUrl } from "./lib/ibStreamer";
 import { startIBWsProxy } from "./lib/ibWsProxy";
 import { initTokenStore, setTokenRefreshCallback, hasValidTokens } from "./lib/tokenStore";
+import { initSyntheticDxy } from "./lib/syntheticDxy";
 
 const rawPort = process.env["PORT"];
 
@@ -41,6 +42,7 @@ async function boot() {
   setTokenRefreshCallback((kind, _accessToken) => {
     if (kind === "trader" || kind === "market") {
       schwabTokenRefreshed();
+      initSyntheticDxy();
     }
   });
 
@@ -58,7 +60,7 @@ async function boot() {
   ];
 
   const SCHWAB_FUTURES_INDEX_SYMS = [
-    "$DXY", "$CPCE", "$CPCI", "$CPC", "$SKEW",
+    "$CPCE", "$CPCI", "$CPC", "$SKEW",
   ];
 
   const SCHWAB_EQUITY_SYMS = [
@@ -74,6 +76,7 @@ async function boot() {
     startSchwabStreamer().then(() => {
       addFuturesSymbols([...SCHWAB_FUTURES_SYMS, ...SCHWAB_FUTURES_INDEX_SYMS]);
       if (SCHWAB_EQUITY_SYMS.length > 0) addSchwabSymbols(SCHWAB_EQUITY_SYMS);
+      initSyntheticDxy();
     }).catch((err) => logger.warn({ err }, "Schwab streamer start failed"));
   } else {
     logger.info("Schwab tokens not yet available — streamer will start on token refresh");

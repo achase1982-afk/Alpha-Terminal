@@ -29,6 +29,8 @@ Key features include SEC EDGAR integration (per-ticker filings via `/api/sec/fil
 
 The monorepo structure supports shared libraries and consistent tooling, with TypeScript Composite Projects ensuring robust type-checking. Clear separation of concerns is maintained across UI, API, database, and streaming logic. Real-time data is optimized through streamed data and performant state management. Strict AI grounding ensures responses are based on fresh market data. The Market Pulse system uses a two-layer architecture: a deterministic scoring engine for composite scores and bias, and Claude for narrative generation based on these scores. Market Pulse settings are persisted in Zustand.
 
+**Synthetic DXY**: The Dollar Index ($DXY) is synthetically derived from /6E (Euro FX Futures) since Schwab/IB don't provide a direct $DXY feed. Formula: `dxyChangePct = -eurChangePct * 0.576` (EUR weight in DXY basket). The `syntheticDxy.ts` module polls /6E every 2s, computes the synthetic DXY price, and injects it into the quote cache via `injectExternalQuote("$DXY", ...)` so it appears in the MacroBar, WebSocket stream, and REST quote endpoint. Previous close is auto-persisted to `.data/dxy_prev_close.json` at 4pm ET daily and loaded on startup — no manual `DXY_PREV_CLOSE` update needed. The engine's macro cluster consumes `$DXY` (synthetic) first, falling back to `/DX` only if synthetic is unavailable. /DX is disabled in IB (`ibBreadthSymbols.ts`) and removed from Schwab subscriptions.
+
 # External Dependencies
 
 -   **Claude**: `claude-sonnet-4-6-20250620` for AI capabilities.

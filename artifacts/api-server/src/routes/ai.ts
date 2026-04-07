@@ -17,6 +17,7 @@ import { runMarketPulseEngine, formatClusterDebugLine, verifyEngineScoring, type
 import { getSnapshot, schwabFuturesKey, type LiveQuote } from "../lib/schwabStreamer.js";
 import { getIBSnapshot, getIBCachedQuote, registerPermanentSymbols } from "../lib/ibStreamer.js";
 import { getBestAccessToken } from "../lib/tokenStore.js";
+import { getSyntheticDxyPrevClose } from "../lib/syntheticDxy.js";
 import { selectStrategies, selectStrategiesByRegime, classifyRegime, checkOverrideConflict, classifyTicker, computeBeta, applyBetaToProfile, computeExpectedMove, computeIVR, STRATEGIST_SYSTEM_PROMPT, type OptionContract, type StrategyPayload, type RegimeClassification, type TickerProfile, type DailyCandle, type ConvictionParams } from "../lib/optionsStrategist.js";
 import { runPreTradeChecks, type PreTradeInput, type PreTradeResult } from "../lib/preTradeRiskEngine.js";
 
@@ -1013,7 +1014,7 @@ function readFromWebSocketCache(
     const sixE = schwabCacheBySymbol.get("/6E") ?? ibCacheBySymbol.get("/6E");
     if (sixE && sixE.last && sixE.close && sixE.close > 0) {
       const eurChangePct = ((sixE.last - sixE.close) / sixE.close) * 100;
-      const DXY_PREV_CLOSE = 99.981;
+      const DXY_PREV_CLOSE = getSyntheticDxyPrevClose();
       const dxyChangePct = -eurChangePct * 0.576;
       const syntheticDxy = Math.round((DXY_PREV_CLOSE * (1 + dxyChangePct / 100)) * 1000) / 1000;
       const dxyChange = Math.round((syntheticDxy - DXY_PREV_CLOSE) * 1000) / 1000;
@@ -1268,8 +1269,8 @@ function extractMarketIndicators(dataMap: Map<string, Record<string, unknown>>):
     })(),
     hg: lastOrMark('/HG'),
     hgChange: pctChange('/HG'),
-    dx: lastOrMark('/DX') ?? lastOrMark('$DXY'),
-    dxChange: pctChange('/DX') ?? pctChange('$DXY'),
+    dx: lastOrMark('$DXY') ?? lastOrMark('/DX'),
+    dxChange: pctChange('$DXY') ?? pctChange('/DX'),
     sixE: lastOrMark('/6E'),
     sixEChange: pctChange('/6E'),
     sixJ: lastOrMark('/6J'),
