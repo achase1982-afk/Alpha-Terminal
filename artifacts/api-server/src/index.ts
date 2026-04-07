@@ -1,6 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
-import { injectExternalQuote, startStreamer as startSchwabStreamer, onTokenRefreshed as schwabTokenRefreshed } from "./lib/schwabStreamer";
+import { injectExternalQuote, startStreamer as startSchwabStreamer, onTokenRefreshed as schwabTokenRefreshed, addFuturesSymbols, addSymbols as addSchwabSymbols } from "./lib/schwabStreamer";
 import { initWsServer, broadcastToClients } from "./lib/wsServer";
 import { connectIB, registerQuoteCacheInjector, registerIBBroadcast, getWsBridgeUrl } from "./lib/ibStreamer";
 import { startIBWsProxy } from "./lib/ibWsProxy";
@@ -47,9 +47,24 @@ async function boot() {
   registerQuoteCacheInjector(injectExternalQuote);
   registerIBBroadcast(broadcastToClients);
 
+  const SCHWAB_FUTURES_SYMS = [
+    "/ES", "/NQ", "/YM", "/RTY",
+    "/GC", "/CL", "/BZ", "/HG", "/SI", "/NG", "/RB", "/PL",
+    "/ZB", "/ZN", "/ZF", "/ZT", "/ZQ",
+    "/6E", "/6J", "/6B", "/6A", "/6C",
+    "/VIX", "/BTC", "/ETH",
+    "/UB", "/ZC", "/ZS", "/ZW",
+    "/MES", "/MNQ", "/M2K",
+  ];
+
+  const SCHWAB_EQUITY_SYMS: string[] = [];
+
   if (hasValidTokens("trader")) {
-    logger.info("Schwab tokens available — starting Schwab streamer");
-    startSchwabStreamer().catch((err) => logger.warn({ err }, "Schwab streamer start failed"));
+    logger.info("Schwab tokens available — starting Schwab streamer with futures + indices");
+    startSchwabStreamer().then(() => {
+      addFuturesSymbols(SCHWAB_FUTURES_SYMS);
+      if (SCHWAB_EQUITY_SYMS.length > 0) addSchwabSymbols(SCHWAB_EQUITY_SYMS);
+    }).catch((err) => logger.warn({ err }, "Schwab streamer start failed"));
   } else {
     logger.info("Schwab tokens not yet available — streamer will start on token refresh");
   }

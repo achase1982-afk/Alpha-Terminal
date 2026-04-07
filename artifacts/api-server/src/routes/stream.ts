@@ -5,6 +5,7 @@ import {
   getStreamerStatus,
   isConnected,
   addSymbols as addSchwabSymbols,
+  addFuturesSymbols as addSchwabFuturesSymbols,
   addOptionSymbols as addSchwabOptionSymbols,
   startStreamer,
 } from "../lib/schwabStreamer.js";
@@ -37,10 +38,17 @@ function subscribeSymbolsToSchwab(symbols: unknown) {
     .map(s => s.trim().toUpperCase());
   if (!cleaned.length) return;
 
+  const futures = cleaned.filter(s => s.startsWith("/"));
+  const equities = cleaned.filter(s => !s.startsWith("/"));
+
   if (!isConnected() && hasValidTokens("trader")) {
-    void startStreamer(undefined, cleaned);
-  } else {
-    addSchwabSymbols(cleaned);
+    void startStreamer(undefined, equities);
+  } else if (equities.length > 0) {
+    addSchwabSymbols(equities);
+  }
+
+  if (futures.length > 0) {
+    addSchwabFuturesSymbols(futures);
   }
 }
 

@@ -216,7 +216,23 @@ function buildContract(def: IBSymbolDef): Contract {
 }
 
 function emitQuote(def: IBSymbolDef, state: IBQuoteState) {
-  const effectiveLast = state.last ?? state.bid ?? state.ask ?? null;
+  let effectiveLast: number | null;
+  switch (def.sourceField) {
+    case "bid":
+      effectiveLast = state.bid;
+      break;
+    case "ask":
+      effectiveLast = state.ask;
+      break;
+    case "net_bid_ask":
+      effectiveLast = (state.bid !== null && state.ask !== null)
+        ? state.bid - state.ask
+        : state.last ?? null;
+      break;
+    default:
+      effectiveLast = state.last ?? state.bid ?? state.ask ?? null;
+      break;
+  }
   const quote: LiveQuote = {
     symbol: def.displaySymbol,
     last: effectiveLast,

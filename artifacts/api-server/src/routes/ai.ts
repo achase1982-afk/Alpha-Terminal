@@ -727,17 +727,32 @@ function ensurePulseSubscriptions() {
 
 const schwabRestCache = new Map<string, { data: Record<string, unknown>; ts: number }>();
 const SCHWAB_REST_STALE_MS = 30_000;
-const SCHWAB_REST_SYMBOLS = ["$SRVIX", "/BZ", "/DX"];
+
+const SCHWAB_REST_SYMBOL_MAP: Record<string, string> = {
+  "/DX": "$DXY",
+  "/BZ": "/BZK",
+};
+const SCHWAB_REST_REVERSE_MAP: Record<string, string> = {
+  "$DXY": "/DX",
+  "/BZK": "/BZ",
+};
+
+const SCHWAB_REST_SYMBOLS = [
+  "$TICK", "$ADD", "$TRIN", "$ADVN", "$DECN", "$UVOL", "$DVOL",
+  "$TICKI", "$ADDQ", "$TRINQ", "$ADVNQ", "$DECNQ", "$UVOLQ", "$DVOLQ",
+  "$CPC", "$CPCE", "$CPCI",
+  "$VIX", "$VVIX", "$VIX1D", "$VIX9D", "$VIX3M", "$SKEW",
+  "$VXN", "$RVX", "$OVX", "$GVZ", "$SRVIX",
+  "$TNX", "$TYX", "$IRX",
+  "/DX", "/BZ",
+];
+
 const SCHWAB_API = "https://api.schwabapi.com/marketdata/v1";
 
 async function fetchSchwabRestQuotes(): Promise<void> {
   const token = getBestAccessToken();
   if (!token) return;
-  const symbols = SCHWAB_REST_SYMBOLS.map(s => {
-    if (s === "/DX") return "$DXY";
-    if (s === "/BZ") return "/BZK";
-    return s;
-  }).join(",");
+  const symbols = SCHWAB_REST_SYMBOLS.map(s => SCHWAB_REST_SYMBOL_MAP[s] ?? s).join(",");
   try {
     const resp = await fetch(`${SCHWAB_API}/quotes?symbols=${encodeURIComponent(symbols)}&fields=quote`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -748,10 +763,8 @@ async function fetchSchwabRestQuotes(): Promise<void> {
       const q = (entry as Record<string, unknown>)["quote"] as Record<string, unknown> | undefined;
       if (!q) continue;
       const last = q["lastPrice"] as number | undefined ?? q["mark"] as number | undefined ?? null;
-      if (last === null || last === 0) continue;
-      let displaySym = apiSym;
-      if (apiSym === "$DXY") displaySym = "/DX";
-      if (apiSym === "/BZK") displaySym = "/BZ";
+      if (last === null) continue;
+      const displaySym = SCHWAB_REST_REVERSE_MAP[apiSym] ?? apiSym;
       schwabRestCache.set(displaySym, {
         data: {
           lastPrice: last,
@@ -868,9 +881,33 @@ function readFromWebSocketCache(
   for (const pair of pairs) {
     let q: LiveQuote | null | undefined = null;
 
-    const ibNative = PULSE_TO_IB_NATIVE[pair.display];
-    if (ibNative) {
-      q = ibCacheBySymbol.get(ibNative) ?? getIBCachedQuote(ibNative);
+    q = schwabCacheBySymbol.get(pair.display)
+      ?? schwabCacheBySymbol.get(pair.api)
+      ?? schwabCacheBySymbol.get(pair.display.replace(/^\$/, ''))
+      ?? schwabCacheBySymbol.get(pair.api.replace(/^\$/, ''));
+
+    if (!q || q.last === null) {
+      const restEntry = schwabRestCache.get(pair.display) ?? schwabRestCache.get(pair.api);
+      if (restEntry && (Date.now() - restEntry.ts) < SCHWAB_REST_STALE_MS * 4) {
+        dataMap.set(pair.display, restEntry.data);
+        hitCount++;
+        continue;
+      }
+    }
+
+    if (!q || q.last === null) {
+      const aliases = CACHE_ALIASES[pair.display] ?? CACHE_ALIASES[pair.api] ?? [];
+      for (const alias of aliases) {
+        const aliasQ = schwabCacheBySymbol.get(alias);
+        if (aliasQ && aliasQ.last !== null) { q = aliasQ; break; }
+      }
+    }
+
+    if (!q || q.last === null) {
+      const ibNative = PULSE_TO_IB_NATIVE[pair.display];
+      if (ibNative) {
+        q = ibCacheBySymbol.get(ibNative) ?? getIBCachedQuote(ibNative);
+      }
     }
 
     if (!q || q.last === null) {
@@ -886,26 +923,10 @@ function readFromWebSocketCache(
     }
 
     if (!q || q.last === null) {
-      q = schwabCacheBySymbol.get(pair.api)
-        ?? schwabCacheBySymbol.get(pair.display)
-        ?? schwabCacheBySymbol.get(pair.api.replace(/^\$/, ''))
-        ?? schwabCacheBySymbol.get(pair.display.replace(/^\$/, ''));
-    }
-
-    if (!q || q.last === null) {
       const aliases = CACHE_ALIASES[pair.display] ?? CACHE_ALIASES[pair.api] ?? [];
       for (const alias of aliases) {
-        const aliasQ = ibCacheBySymbol.get(alias) ?? getIBCachedQuote(alias) ?? schwabCacheBySymbol.get(alias);
+        const aliasQ = ibCacheBySymbol.get(alias) ?? getIBCachedQuote(alias);
         if (aliasQ && aliasQ.last !== null) { q = aliasQ; break; }
-      }
-    }
-
-    if (!q || q.last === null) {
-      const restEntry = schwabRestCache.get(pair.display) ?? schwabRestCache.get(pair.api);
-      if (restEntry && (Date.now() - restEntry.ts) < SCHWAB_REST_STALE_MS * 4) {
-        dataMap.set(pair.display, restEntry.data);
-        hitCount++;
-        continue;
       }
     }
 
@@ -1118,7 +1139,11 @@ function extractMarketIndicators(dataMap: Map<string, Record<string, unknown>>):
     vix3mChange: pctChange('$VIX3M'),
     vix9d: lastOrMark('$VIX9D'),
     vix9dChange: pctChange('$VIX9D'),
-    skew: lastOrMark('$SKEW'),
+    skew: (() => {
+      const raw = lastOrMark('$SKEW');
+      if (raw === null || raw === 0) return null;
+      return raw;
+    })(),
     vxn: lastOrMark('$VXN'),
     vxnChange: pctChange('$VXN'),
     rvx: lastOrMark('$RVX'),
@@ -1193,8 +1218,16 @@ function extractMarketIndicators(dataMap: Map<string, Record<string, unknown>>):
     gcChange: pctChange('/GC'),
     cl: lastOrMark('/CL'),
     clChange: pctChange('/CL'),
-    bz: lastOrMark('/BZ'),
-    bzChange: pctChange('/BZ'),
+    bz: (() => {
+      const raw = lastOrMark('/BZ');
+      if (raw === 0 && lastOrMark('/CL') !== null && lastOrMark('/CL')! > 10) return null;
+      return raw;
+    })(),
+    bzChange: (() => {
+      const raw = lastOrMark('/BZ');
+      if (raw === 0 && lastOrMark('/CL') !== null && lastOrMark('/CL')! > 10) return null;
+      return pctChange('/BZ');
+    })(),
     hg: lastOrMark('/HG'),
     hgChange: pctChange('/HG'),
     dx: lastOrMark('/DX') ?? lastOrMark('$DXY'),

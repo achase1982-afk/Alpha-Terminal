@@ -40,6 +40,38 @@ export interface OptionTick {
 }
 
 const EQ_FIELDS = "0,1,2,3,4,5,8,10,11,12,15,28,29";
+const FUT_FIELDS = "0,1,2,3,4,5,8,12,13,14,19,24";
+
+const MONTH_CODES = "FGHJKMNQUVXZ";
+const QUARTERLY_ROOTS = new Set([
+  "ES","NQ","RTY","YM","MES","MNQ","M2K",
+  "6E","6J","6B","6A","6C","EMD",
+]);
+
+export function schwabFuturesKey(displaySymbol: string): string {
+  const bare = displaySymbol.replace(/^\//, "");
+  const now = new Date();
+  const y2 = now.getFullYear() % 100;
+  const month = now.getMonth();
+  const day = now.getDate();
+
+  if (QUARTERLY_ROOTS.has(bare)) {
+    const quarters = [2, 5, 8, 11];
+    for (const q of quarters) {
+      if (month < q || (month === q && day <= 20)) {
+        return `/${bare}${MONTH_CODES[q]}${y2}`;
+      }
+    }
+    return `/${bare}${MONTH_CODES[2]}${y2 + 1}`;
+  }
+  let fm = month + 1;
+  let fy = y2;
+  if (day > 20) { fm++; }
+  if (fm > 11) { fm -= 12; fy++; }
+  return `/${bare}${MONTH_CODES[fm]}${fy}`;
+}
+
+const futuresKeyToDisplay = new Map<string, string>();
 
 const quoteCache = new Map<string, LiveQuote>();
 const optionCache = new Map<string, OptionTick>();
@@ -49,6 +81,7 @@ let wsBroadcast: ((event: string, data: unknown) => void) | null = null;
 let schwabWs: WebSocket | null = null;
 let streamerInfo: StreamerInfo | null = null;
 let subscribedSymbols = new Set<string>();
+let subscribedFuturesSymbols = new Set<string>();
 let subscribedOptionSymbols = new Set<string>();
 let requestCounter = 0;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -202,6 +235,20 @@ function sendEquitySubscription(symbols: string[]) {
   }
 }
 
+function sendFuturesSubscription(symbols: string[]) {
+  if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN || !streamerInfo || !symbols.length) return;
+
+  const req = buildRequest("LEVELONE_FUTURES", "SUBS", {
+    keys: symbols.join(","),
+    fields: FUT_FIELDS,
+  });
+
+  if (req) {
+    schwabWs.send(JSON.stringify({ requests: [req] }));
+    logger.info({ count: symbols.length, sample: symbols.slice(0, 5).join(",") }, "Schwab streamer: LEVELONE_FUTURES SUBS sent");
+  }
+}
+
 function sendOptionSubscription(symbols: string[]) {
   if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN || !streamerInfo || !symbols.length) return;
 
@@ -285,6 +332,47 @@ function processOptionTick(content: Record<string, unknown>[]) {
   }
 }
 
+function processFuturesTick(content: Record<string, unknown>[]) {
+  const now = Date.now();
+  for (const item of content) {
+    const rawKey = item["key"] as string;
+    if (!rawKey) continue;
+
+    const displaySymbol = futuresKeyToDisplay.get(rawKey) ?? rawKey;
+
+    const existing = quoteCache.get(displaySymbol);
+    const last = numOrNull(item["3"]) ?? existing?.last ?? null;
+    const close = numOrNull(item["14"]) ?? existing?.close ?? null;
+
+    let change: number | null = numOrNull(item["19"]) ?? existing?.change ?? null;
+    let changePct: number | null = existing?.changePct ?? null;
+    if (last !== null && close !== null && close !== 0) {
+      change = last - close;
+      changePct = (change / close) * 100;
+    }
+
+    const quote: LiveQuote = {
+      symbol: displaySymbol,
+      last,
+      extendedLast: last,
+      bid: numOrNull(item["1"]) ?? existing?.bid ?? null,
+      ask: numOrNull(item["2"]) ?? existing?.ask ?? null,
+      bidSize: numOrNull(item["4"]) ?? existing?.bidSize ?? null,
+      askSize: numOrNull(item["5"]) ?? existing?.askSize ?? null,
+      change,
+      changePct,
+      volume: numOrNull(item["8"]) ?? existing?.volume ?? null,
+      high: numOrNull(item["12"]) ?? existing?.high ?? null,
+      low: numOrNull(item["13"]) ?? existing?.low ?? null,
+      close,
+      ts: now,
+    };
+
+    quoteCache.set(displaySymbol, quote);
+    broadcast("quote", quote);
+  }
+}
+
 function numOrNull(val: unknown): number | null {
   if (val === undefined || val === null) return null;
   const n = Number(val);
@@ -318,6 +406,9 @@ function handleMessage(raw: string) {
 
           if (subscribedSymbols.size > 0) {
             sendEquitySubscription([...subscribedSymbols]);
+          }
+          if (subscribedFuturesSymbols.size > 0) {
+            sendFuturesSubscription([...subscribedFuturesSymbols]);
           }
           if (subscribedOptionSymbols.size > 0) {
             sendOptionSubscription([...subscribedOptionSymbols]);
@@ -355,6 +446,8 @@ function handleMessage(raw: string) {
       if (!item.content) continue;
       if (item.service === "LEVELONE_EQUITIES") {
         processEquityTick(item.content);
+      } else if (item.service === "LEVELONE_FUTURES") {
+        processFuturesTick(item.content);
       } else if (item.service === "LEVELONE_OPTIONS") {
         processOptionTick(item.content);
       }
@@ -456,6 +549,7 @@ export function stopStreamer() {
   }
   connectionState = "disconnected";
   subscribedSymbols.clear();
+  subscribedFuturesSymbols.clear();
   subscribedOptionSymbols.clear();
 }
 
@@ -471,6 +565,25 @@ export function addSymbols(symbols: string[]) {
 
   if (newSyms.length > 0 && connectionState === "connected") {
     sendEquitySubscription([...subscribedSymbols]);
+  }
+}
+
+export function addFuturesSymbols(displaySymbols: string[]) {
+  const newKeys: string[] = [];
+  for (const ds of displaySymbols) {
+    const key = schwabFuturesKey(ds);
+    futuresKeyToDisplay.set(key, ds.toUpperCase());
+    if (!subscribedFuturesSymbols.has(key)) {
+      subscribedFuturesSymbols.add(key);
+      newKeys.push(key);
+    }
+  }
+
+  if (newKeys.length > 0) {
+    logger.info({ count: newKeys.length, sample: newKeys.slice(0, 5).join(",") }, "Schwab streamer: futures display→key mapping built");
+    if (connectionState === "connected") {
+      sendFuturesSubscription([...subscribedFuturesSymbols]);
+    }
   }
 }
 
