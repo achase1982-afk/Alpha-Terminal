@@ -210,24 +210,7 @@ function buildContract(def: IBSymbolDef): Contract {
 }
 
 function emitQuote(def: IBSymbolDef, state: IBQuoteState) {
-  // valueMode controls how we derive the canonical "last" from IB tick data.
-  // AD-NYSE / VOL-NYSE / AD-NASD / VOL-NASD deliver their data as Bid (advancing/up)
-  // and Ask (declining/down) with no Last tick. Per-symbol valueMode tells us how to
-  // interpret those fields.
-  let effectiveLast: number | null;
-  const mode = def.valueMode ?? "last";
-  if (mode === "bid") {
-    effectiveLast = state.bid ?? state.last ?? state.ask ?? null;
-  } else if (mode === "ask") {
-    effectiveLast = state.ask ?? state.last ?? state.bid ?? null;
-  } else if (mode === "bid_minus_ask") {
-    effectiveLast = (state.bid != null && state.ask != null)
-      ? state.bid - state.ask
-      : state.last ?? state.bid ?? state.ask ?? null;
-  } else {
-    // "last" (default) — fall back to bid/ask if no last tick (original behaviour)
-    effectiveLast = state.last ?? state.bid ?? state.ask ?? null;
-  }
+  const effectiveLast = state.last ?? state.bid ?? state.ask ?? null;
   const quote: LiveQuote = {
     symbol: def.displaySymbol,
     last: effectiveLast,
@@ -244,27 +227,13 @@ function emitQuote(def: IBSymbolDef, state: IBQuoteState) {
     close: state.close,
     ts: state.ts,
   };
-
   if (quoteCacheInjector) {
     quoteCacheInjector(def.displaySymbol, quote);
   }
 }
 
 function emitRawQuote(displaySymbol: string, state: IBQuoteState) {
-  const def = BREADTH_SYMBOLS.find(d => d.displaySymbol === displaySymbol);
-  const mode = def?.valueMode ?? "last";
-  let effectiveLast: number | null;
-  if (mode === "bid") {
-    effectiveLast = state.bid ?? state.last ?? state.ask ?? null;
-  } else if (mode === "ask") {
-    effectiveLast = state.ask ?? state.last ?? state.bid ?? null;
-  } else if (mode === "bid_minus_ask") {
-    effectiveLast = (state.bid != null && state.ask != null)
-      ? state.bid - state.ask
-      : state.last ?? state.bid ?? state.ask ?? null;
-  } else {
-    effectiveLast = state.last ?? state.bid ?? state.ask ?? null;
-  }
+  const effectiveLast = state.last ?? state.bid ?? state.ask ?? null;
   const quote: LiveQuote = {
     symbol: displaySymbol,
     last: effectiveLast,

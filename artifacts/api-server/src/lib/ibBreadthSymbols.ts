@@ -8,13 +8,6 @@ export interface IBSymbolDef {
   category: string;
   description: string;
   enabled: boolean;
-  /** How to derive the quoted "last" value from tick data.
-   *  "last"          — use Last price (default for TICK, TRIN, indices)
-   *  "bid"           — use Bid  (advancing count, up-volume)
-   *  "ask"           — use Ask  (declining count, down-volume)
-   *  "bid_minus_ask" — compute Bid − Ask (net A/D line)
-   */
-  valueMode?: "last" | "bid" | "ask" | "bid_minus_ask";
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -64,22 +57,22 @@ export const ALL_BREADTH_SYMBOLS: IBSymbolDef[] = [
   // ═══════════════════════════════════════════════════════════
   { reqId: 5001, symbol: "$TICK",   ibSymbol: "TICK-NYSE",  secType: "IND", exchange: "NYSE",    displaySymbol: "$TICK",   category: "BREADTH", description: "NYSE Tick Index — net uptick vs downtick stocks",                enabled: true },
   { reqId: 5002, symbol: "$TRIN",   ibSymbol: "TRIN-NYSE",  secType: "IND", exchange: "NYSE",    displaySymbol: "$TRIN",   category: "BREADTH", description: "NYSE Arms Index (TRIN) — advancing/declining volume ratio",     enabled: true },
-  { reqId: 5003, symbol: "$ADD",    ibSymbol: "AD-NYSE",    secType: "IND", exchange: "NYSE",    displaySymbol: "$ADD",    category: "BREADTH", description: "NYSE Net Advance/Decline (bid−ask of AD-NYSE)",                 enabled: true,  valueMode: "bid_minus_ask" },
-  { reqId: 5004, symbol: "$ADVN",   ibSymbol: "AD-NYSE",    secType: "IND", exchange: "NYSE",    displaySymbol: "$ADVN",   category: "BREADTH", description: "NYSE Advancing Issues (bid of AD-NYSE)",                       enabled: true,  valueMode: "bid" },
-  { reqId: 5006, symbol: "$DECN",   ibSymbol: "AD-NYSE",    secType: "IND", exchange: "NYSE",    displaySymbol: "$DECN",   category: "BREADTH", description: "NYSE Declining Issues (ask of AD-NYSE)",                       enabled: true,  valueMode: "ask" },
-  { reqId: 5040, symbol: "$UVOL",   ibSymbol: "VOL-NYSE",   secType: "IND", exchange: "NYSE",    displaySymbol: "$UVOL",   category: "BREADTH", description: "NYSE Up Volume (bid of VOL-NYSE)",                             enabled: true,  valueMode: "bid" },
-  { reqId: 5041, symbol: "$DVOL",   ibSymbol: "VOL-NYSE",   secType: "IND", exchange: "NYSE",    displaySymbol: "$DVOL",   category: "BREADTH", description: "NYSE Down Volume (ask of VOL-NYSE)",                           enabled: true,  valueMode: "ask" },
+  { reqId: 5003, symbol: "$ADD",    ibSymbol: "AD-NYSE",    secType: "IND", exchange: "NYSE",    displaySymbol: "$ADD",    category: "BREADTH", description: "NYSE Net Advance/Decline (bid−ask of AD-NYSE)",                 enabled: true},
+  { reqId: 5004, symbol: "$ADVN",   ibSymbol: "AD-NYSE",    secType: "IND", exchange: "NYSE",    displaySymbol: "$ADVN",   category: "BREADTH", description: "NYSE Advancing Issues (bid of AD-NYSE)",                       enabled: true},
+  { reqId: 5006, symbol: "$DECN",   ibSymbol: "AD-NYSE",    secType: "IND", exchange: "NYSE",    displaySymbol: "$DECN",   category: "BREADTH", description: "NYSE Declining Issues (ask of AD-NYSE)",                       enabled: true},
+  { reqId: 5040, symbol: "$UVOL",   ibSymbol: "VOL-NYSE",   secType: "IND", exchange: "NYSE",    displaySymbol: "$UVOL",   category: "BREADTH", description: "NYSE Up Volume (bid of VOL-NYSE)",                             enabled: true},
+  { reqId: 5041, symbol: "$DVOL",   ibSymbol: "VOL-NYSE",   secType: "IND", exchange: "NYSE",    displaySymbol: "$DVOL",   category: "BREADTH", description: "NYSE Down Volume (ask of VOL-NYSE)",                           enabled: true},
 
   // ═══════════════════════════════════════════════════════════
   // NASDAQ BREADTH (7)
   // ═══════════════════════════════════════════════════════════
   { reqId: 5005, symbol: "$TICKI",  ibSymbol: "TICK-NASD",  secType: "IND", exchange: "NASDAQ",  displaySymbol: "$TICKI",  category: "BREADTH", description: "NASDAQ Tick Index — net uptick vs downtick stocks",             enabled: true },
   { reqId: 5007, symbol: "$TRINQ",  ibSymbol: "TRIN-NASD",  secType: "IND", exchange: "NASDAQ",  displaySymbol: "$TRINQ",  category: "BREADTH", description: "NASDAQ Arms Index (TRIN) — advancing/declining volume ratio",  enabled: true },
-  { reqId: 5042, symbol: "$ADDQ",   ibSymbol: "AD-NASD",    secType: "IND", exchange: "NASDAQ",  displaySymbol: "$ADDQ",   category: "BREADTH", description: "NASDAQ Net Advance/Decline (bid−ask of AD-NASD)",              enabled: true,  valueMode: "bid_minus_ask" },
-  { reqId: 5043, symbol: "$ADVNQ",  ibSymbol: "AD-NASD",    secType: "IND", exchange: "NASDAQ",  displaySymbol: "$ADVNQ",  category: "BREADTH", description: "NASDAQ Advancing Issues (bid of AD-NASD)",                     enabled: true,  valueMode: "bid" },
-  { reqId: 5044, symbol: "$DECNQ",  ibSymbol: "AD-NASD",    secType: "IND", exchange: "NASDAQ",  displaySymbol: "$DECNQ",  category: "BREADTH", description: "NASDAQ Declining Issues (ask of AD-NASD)",                     enabled: true,  valueMode: "ask" },
-  { reqId: 5045, symbol: "$UVOLQ",  ibSymbol: "VOL-NASD",   secType: "IND", exchange: "NASDAQ",  displaySymbol: "$UVOLQ",  category: "BREADTH", description: "NASDAQ Up Volume (bid of VOL-NASD)",                           enabled: true,  valueMode: "bid" },
-  { reqId: 5046, symbol: "$DVOLQ",  ibSymbol: "VOL-NASD",   secType: "IND", exchange: "NASDAQ",  displaySymbol: "$DVOLQ",  category: "BREADTH", description: "NASDAQ Down Volume (ask of VOL-NASD)",                         enabled: true,  valueMode: "ask" },
+  { reqId: 5042, symbol: "$ADDQ",   ibSymbol: "AD-NASD",    secType: "IND", exchange: "NASDAQ",  displaySymbol: "$ADDQ",   category: "BREADTH", description: "NASDAQ Net Advance/Decline (bid−ask of AD-NASD)",              enabled: true},
+  { reqId: 5043, symbol: "$ADVNQ",  ibSymbol: "AD-NASD",    secType: "IND", exchange: "NASDAQ",  displaySymbol: "$ADVNQ",  category: "BREADTH", description: "NASDAQ Advancing Issues (bid of AD-NASD)",                     enabled: true},
+  { reqId: 5044, symbol: "$DECNQ",  ibSymbol: "AD-NASD",    secType: "IND", exchange: "NASDAQ",  displaySymbol: "$DECNQ",  category: "BREADTH", description: "NASDAQ Declining Issues (ask of AD-NASD)",                     enabled: true},
+  { reqId: 5045, symbol: "$UVOLQ",  ibSymbol: "VOL-NASD",   secType: "IND", exchange: "NASDAQ",  displaySymbol: "$UVOLQ",  category: "BREADTH", description: "NASDAQ Up Volume (bid of VOL-NASD)",                           enabled: true},
+  { reqId: 5046, symbol: "$DVOLQ",  ibSymbol: "VOL-NASD",   secType: "IND", exchange: "NASDAQ",  displaySymbol: "$DVOLQ",  category: "BREADTH", description: "NASDAQ Down Volume (ask of VOL-NASD)",                         enabled: true},
 
   // ═══════════════════════════════════════════════════════════
   // RISK APPETITE (4)
