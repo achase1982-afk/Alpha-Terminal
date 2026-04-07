@@ -18,10 +18,6 @@ const SCHWAB_TOKEN_URL = "https://api.schwabapi.com/v1/oauth/token";
 
 const isProd = process.env.NODE_ENV === "production";
 
-function getSchwabRedirectUri(): string {
-  return (isProd ? process.env.SCHWAB_REDIRECT_URI_PROD : process.env.SCHWAB_REDIRECT_URI) || "";
-}
-
 function getTraderRedirectUri(): string {
   return (isProd ? process.env.SCHWAB_TRADER_REDIRECT_URI_PROD : process.env.SCHWAB_TRADER_REDIRECT_URI) || "";
 }
@@ -72,8 +68,8 @@ function errorPage(title: string, msg: string) {
 }
 
 router.get("/url", (_req, res) => {
-  const appKey = process.env.SCHWAB_TRADER_APP_KEY || process.env.SCHWAB_APP_KEY;
-  const redirectUri = getTraderRedirectUri() || getSchwabRedirectUri();
+  const appKey = process.env.SCHWAB_TRADER_APP_KEY;
+  const redirectUri = getTraderRedirectUri();
 
   if (!appKey || !redirectUri) {
     return res.json(GetAuthUrlResponse.parse({ url: "", configured: false }));
@@ -95,7 +91,7 @@ router.get("/url", (_req, res) => {
 });
 
 router.get("/redirect-uri", (_req, res) => {
-  res.json({ redirectUri: getSchwabRedirectUri() });
+  res.json({ redirectUri: getTraderRedirectUri() });
 });
 
 router.get("/callback", async (req, res) => {
@@ -112,12 +108,12 @@ router.get("/callback", async (req, res) => {
   }
   pendingStates.delete(state);
 
-  const appKey = process.env.SCHWAB_TRADER_APP_KEY || process.env.SCHWAB_APP_KEY;
-  const appSecret = process.env.SCHWAB_TRADER_APP_SECRET || process.env.SCHWAB_APP_SECRET;
-  const redirectUri = getTraderRedirectUri() || getSchwabRedirectUri();
+  const appKey = process.env.SCHWAB_TRADER_APP_KEY;
+  const appSecret = process.env.SCHWAB_TRADER_APP_SECRET;
+  const redirectUri = getTraderRedirectUri();
 
   if (!appKey || !appSecret || !redirectUri) {
-    return res.status(400).send(errorPage("Not Configured", "Schwab credentials are not configured."));
+    return res.status(400).send(errorPage("Not Configured", "Schwab Trader API credentials are not configured."));
   }
 
   const body = new URLSearchParams();
@@ -199,12 +195,12 @@ router.post("/callback", async (req, res) => {
   }
 
   const { code } = parsed.data;
-  const appKey = process.env.SCHWAB_APP_KEY;
-  const appSecret = process.env.SCHWAB_APP_SECRET;
-  const redirectUri = getSchwabRedirectUri();
+  const appKey = process.env.SCHWAB_TRADER_APP_KEY;
+  const appSecret = process.env.SCHWAB_TRADER_APP_SECRET;
+  const redirectUri = getTraderRedirectUri();
 
   if (!appKey || !appSecret || !redirectUri) {
-    return res.status(400).json({ error: "not_configured", message: "Schwab credentials not configured in environment" });
+    return res.status(400).json({ error: "not_configured", message: "Schwab Trader API credentials not configured" });
   }
 
   const body = new URLSearchParams();
@@ -270,11 +266,11 @@ router.post("/refresh", async (req, res) => {
   }
 
   const { refreshToken } = parsed.data;
-  const appKey = process.env.SCHWAB_TRADER_APP_KEY || process.env.SCHWAB_APP_KEY;
-  const appSecret = process.env.SCHWAB_TRADER_APP_SECRET || process.env.SCHWAB_APP_SECRET;
+  const appKey = process.env.SCHWAB_TRADER_APP_KEY;
+  const appSecret = process.env.SCHWAB_TRADER_APP_SECRET;
 
   if (!appKey || !appSecret) {
-    return res.status(400).json({ error: "not_configured", message: "Schwab credentials not configured" });
+    return res.status(400).json({ error: "not_configured", message: "Schwab Trader API credentials not configured" });
   }
 
   const body = new URLSearchParams();
@@ -503,8 +499,7 @@ router.get("/server-tokens", (_req, res) => {
 
 router.get("/status", (_req, res) => {
   const configured = !!(
-    (process.env.SCHWAB_TRADER_APP_KEY && process.env.SCHWAB_TRADER_APP_SECRET && getTraderRedirectUri()) ||
-    (process.env.SCHWAB_APP_KEY && process.env.SCHWAB_APP_SECRET && getSchwabRedirectUri())
+    process.env.SCHWAB_TRADER_APP_KEY && process.env.SCHWAB_TRADER_APP_SECRET && getTraderRedirectUri()
   );
   const claudeConfigured = !!process.env.ANTHROPIC_API_KEY;
   res.json(GetAuthStatusResponse.parse({ configured, claudeConfigured }));

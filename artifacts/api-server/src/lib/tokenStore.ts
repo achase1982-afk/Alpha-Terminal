@@ -74,9 +74,8 @@ async function doRefresh(
 
   const generationBefore = tokenSet.generation ?? 0;
 
-  const isMarket = kind === "market";
-  const appKey = process.env[isMarket ? "SCHWAB_APP_KEY" : "SCHWAB_TRADER_APP_KEY"];
-  const appSecret = process.env[isMarket ? "SCHWAB_APP_SECRET" : "SCHWAB_TRADER_APP_SECRET"];
+  const appKey = process.env.SCHWAB_TRADER_APP_KEY;
+  const appSecret = process.env.SCHWAB_TRADER_APP_SECRET;
 
   if (!appKey || !appSecret) {
     logger.error("TokenStore: missing credentials for %s refresh", kind);
