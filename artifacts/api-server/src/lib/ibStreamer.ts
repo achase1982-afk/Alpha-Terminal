@@ -40,7 +40,13 @@ const dynamicQuoteSymbols = new Map<string, number>(); // symbol → reqId
 const dynamicQuoteReqIdToSymbol = new Map<number, string>(); // reqId → symbol
 const dynamicQuoteInsertOrder: string[] = []; // LRU order (oldest first)
 let dynamicQuoteReqCounter = 7000;
-const MAX_DYNAMIC_QUOTE_SLOTS = 95; // IB ~100 line limit; all on-demand now
+const MAX_DYNAMIC_QUOTE_SLOTS = 95;
+
+const permanentSymbolSet = new Set<string>();
+
+export function registerPermanentSymbols(symbols: string[]): void {
+  for (const s of symbols) permanentSymbolSet.add(s.toUpperCase());
+}
 
 const ibCompanyNames = new Map<string, string>(); // symbol → long name
 
@@ -279,6 +285,7 @@ function subscribeAll() {
 
   let permCount = 0;
   for (const def of BREADTH_SYMBOLS) {
+    if (!permanentSymbolSet.has(def.displaySymbol)) continue;
     const contract = buildContract(def);
     try {
       ib.reqMktData(def.reqId, contract, "", false, false);
@@ -287,7 +294,7 @@ function subscribeAll() {
       logger.warn({ err, symbol: def.displaySymbol }, "IB: failed to subscribe breadth symbol");
     }
   }
-  logger.info({ count: permCount, total: BREADTH_SYMBOLS.length }, "IB: permanently subscribed all breadth symbols at connect");
+  logger.info({ permanent: permCount, registered: permanentSymbolSet.size }, "IB: permanently subscribed indicator symbols at connect");
 
   for (const [symbol, reqId] of dynamicQuoteSymbols) {
     const contract = buildDynamicContract(symbol);
@@ -1138,8 +1145,7 @@ export function subscribeQuoteForSymbol(symbol: string): boolean {
   if (!ib || connState !== "CONNECTED") return false;
   const upper = symbol.toUpperCase();
 
-  const isPermanent = BREADTH_SYMBOLS.some(d => d.displaySymbol === upper);
-  if (isPermanent) return true;
+  if (permanentSymbolSet.has(upper)) return true;
 
   if (dynamicQuoteSymbols.has(upper)) {
     const idx = dynamicQuoteInsertOrder.indexOf(upper);

@@ -15,7 +15,7 @@ import {
 import { computeIndicators, formatTAContext, isDataStale, type Candle } from "../lib/ta.js";
 import { runMarketPulseEngine, formatClusterDebugLine, verifyEngineScoring, type MarketIndicators, type BiasLabel, type SessionType } from "../lib/marketPulseEngine.js";
 import { getSnapshot, type LiveQuote } from "../lib/schwabStreamer.js";
-import { getIBSnapshot, getIBCachedQuote } from "../lib/ibStreamer.js";
+import { getIBSnapshot, getIBCachedQuote, registerPermanentSymbols } from "../lib/ibStreamer.js";
 import { getBestAccessToken } from "../lib/tokenStore.js";
 import { selectStrategies, selectStrategiesByRegime, classifyRegime, checkOverrideConflict, classifyTicker, computeBeta, applyBetaToProfile, computeExpectedMove, computeIVR, STRATEGIST_SYSTEM_PROMPT, type OptionContract, type StrategyPayload, type RegimeClassification, type TickerProfile, type DailyCandle, type ConvictionParams } from "../lib/optionsStrategist.js";
 import { runPreTradeChecks, type PreTradeInput, type PreTradeResult } from "../lib/preTradeRiskEngine.js";
@@ -692,6 +692,12 @@ const PULSE_TO_IB_NATIVE: Record<string, string> = {
 };
 
 const IB_UNSUPPORTED = new Set(["$CPC", "$PCSPY", "$PCQQQ", "$PCIWM", "$SRVIX", "/BZ", "/DX"]);
+
+registerPermanentSymbols(
+  PULSE_SYMBOLS
+    .filter(s => !IB_UNSUPPORTED.has(s.display))
+    .map(s => PULSE_TO_IB_NATIVE[s.display] ?? s.display)
+);
 
 function ensurePulseSubscriptions() {
 }
