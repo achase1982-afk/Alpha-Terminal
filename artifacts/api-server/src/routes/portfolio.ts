@@ -1,6 +1,8 @@
 import { Router, type IRouter } from "express";
 import { getTokens } from "../lib/tokenStore.js";
 import { logger } from "../lib/logger.js";
+import { broadcastToClients } from "../lib/wsServer.js";
+import { sendPushToAll } from "../lib/pushService.js";
 
 const router: IRouter = Router();
 
@@ -274,6 +276,30 @@ router.post("/place-order", async (req, res) => {
     const orderIdMatch = locationHeader.match(/orders\/(\d+)/);
     const orderId = orderIdMatch ? orderIdMatch[1] : null;
 
+    const legs = (order as any).orderLegCollection ?? [];
+    const firstLeg = legs[0] ?? {};
+    const sym = firstLeg?.instrument?.symbol ?? "";
+    const side = firstLeg?.instruction ?? "";
+    const qty = firstLeg?.quantity ?? "";
+
+    broadcastToClients("orderAlert", {
+      type: "OrderPlaced",
+      symbol: sym,
+      side,
+      quantity: String(qty),
+      orderId,
+      status: "PLACED",
+      timestamp: Date.now(),
+      raw: "",
+    });
+
+    void sendPushToAll({
+      title: "ALPHA TERMINAL",
+      body: `${side} ${qty} ${sym} order PLACED`.trim(),
+      tag: "order-placed",
+      data: { orderId, symbol: sym },
+    });
+
     res.json({ success: true, orderId });
   } catch (err) {
     logger.error({ err }, "Order placement error");
@@ -307,6 +333,24 @@ router.delete("/cancel-order", async (req, res) => {
       const body = await schwabRes.text().catch(() => "");
       return res.status(schwabRes.status).json({ error: "cancel_failed", message: body.slice(0, 500) });
     }
+
+    broadcastToClients("orderAlert", {
+      type: "OrderCancel",
+      symbol: null,
+      side: null,
+      quantity: null,
+      orderId,
+      status: "CANCELED",
+      timestamp: Date.now(),
+      raw: "",
+    });
+
+    void sendPushToAll({
+      title: "ALPHA TERMINAL",
+      body: `Order ${orderId} CANCELED`,
+      tag: "order-cancel",
+      data: { orderId },
+    });
 
     res.json({ success: true });
   } catch (err) {

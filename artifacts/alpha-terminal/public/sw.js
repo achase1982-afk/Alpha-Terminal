@@ -1,0 +1,48 @@
+self.addEventListener("install", (e) => {
+  self.skipWaiting();
+});
+
+self.addEventListener("activate", (e) => {
+  e.waitUntil(self.clients.claim());
+});
+
+self.addEventListener("push", (e) => {
+  if (!e.data) return;
+
+  let payload;
+  try {
+    payload = e.data.json();
+  } catch {
+    payload = { title: "Alpha Terminal", body: e.data.text() };
+  }
+
+  const title = payload.title || "Alpha Terminal";
+  const options = {
+    body: payload.body || "",
+    icon: "/favicon.svg",
+    badge: "/favicon.svg",
+    tag: payload.tag || "order-alert",
+    renotify: true,
+    vibrate: [200, 100, 200],
+    data: payload.data || {},
+    requireInteraction: true,
+    actions: [{ action: "open", title: "Open Terminal" }],
+  };
+
+  e.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+
+  e.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      for (const client of clients) {
+        if (client.url.includes(self.location.origin)) {
+          return client.focus();
+        }
+      }
+      return self.clients.openWindow("/");
+    })
+  );
+});

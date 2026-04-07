@@ -10,6 +10,8 @@ import { fetchWithAuth, setClerkTokenGetter } from "@/lib/fetchWithAuth";
 import { useAutoLock, AutoLockProvider } from "@/hooks/useAutoLock";
 import TerminalPage from "@/pages/Terminal";
 import NotFound from "@/pages/not-found";
+import PushNotificationBanner from "@/components/PushNotificationBanner";
+import { registerServiceWorker } from "@/lib/pushNotifications";
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -150,6 +152,10 @@ function Router() {
 }
 
 function App() {
+  useEffect(() => {
+    registerServiceWorker();
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
@@ -161,6 +167,7 @@ function App() {
             <Router />
           </WouterRouter>
           <Toaster />
+          <PushNotificationBanner />
         </AutoLockProvider>
       </TooltipProvider>
     </QueryClientProvider>

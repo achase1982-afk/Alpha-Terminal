@@ -45,4 +45,26 @@ The monorepo structure supports shared libraries and consistent tooling, with Ty
 -   **technicalindicators**: Technical analysis calculations.
 -   **Clerk**: App-level authentication.
 -   **Interactive Brokers API** (`@stoqey/ib`): Market Pulse breadth/indicator source — 95 enabled breadth symbols permanently subscribed at IB connect (no LRU, no stagger). Connected via WebSocket bridge through Cloudflare Tunnel — `ibWsProxy.ts` (server-side local TCP→WS proxy) + `ib-bridge/bridge.mjs` (Mac-side WS→TCP bridge). User runs `node bridge.mjs` on Mac alongside IB Gateway. Tunnel route: `ibkr.nucolbyterminal.com` → `http://localhost:7497`. Env var: `IBKR_GATEWAY_URL=https://ibkr.nucolbyterminal.com`. Schwab WebSocket handles ALL live equity prices (no symbol limit). IB handles ~95 breadth symbols for Market Pulse (permanent at connect) + depth for /ES, /NQ, SPY. Dynamic LRU (95 slots) available for scanner/ad-hoc symbols separate from permanent breadth subscriptions.
+-   **web-push**: Server-side Web Push notifications for order execution alerts.
 -   **SEC EDGAR API**: Public filings data (company_tickers.json + submissions endpoint).
+
+## Push Notifications & Order Alerts
+
+Real-time order execution alerts via Schwab's `ACCT_ACTIVITY` streaming service + Web Push API.
+
+**Server-side:**
+- `schwabStreamer.ts` subscribes to `ACCT_ACTIVITY` service on login — Schwab pushes order events (fills, cancels, rejects, placements, partial fills, expirations) over the existing WebSocket in real-time (same speed as ThinkOrSwim).
+- `processAcctActivity()` parses Schwab's XML payloads for order details (symbol, side, quantity, price, status, orderId).
+- Events broadcast to frontend via WebSocket (`orderAlert` event) AND sent as Web Push notifications via `pushService.ts`.
+- `pushService.ts` manages VAPID keys, push subscriptions (in-memory), and `sendPushToAll()`.
+- `/api/push/subscribe`, `/api/push/unsubscribe`, `/api/push/vapid-key`, `/api/push/test` routes for push subscription management.
+- `portfolio.ts` also broadcasts orderAlert + push on `/place-order` and `/cancel-order` for immediate feedback.
+
+**Frontend:**
+- PWA manifest (`manifest.json`) + service worker (`sw.js`) in `public/` for push notification support.
+- `pushNotifications.ts` handles service worker registration, push subscription, VAPID key exchange.
+- `PushNotificationBanner.tsx` shows a prompt to enable push notifications (bottom-right, Bloomberg-style).
+- `orderAlertStore.ts` Zustand store maintains alert history (last 100 alerts).
+- `useMarketStream.ts` handles `orderAlert` WebSocket events and stores them.
+- iOS: Requires "Add to Home Screen" (PWA) + iOS 16.4+ for push notification support.
+- VAPID keys stored in env vars: `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`.

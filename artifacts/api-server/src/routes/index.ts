@@ -7,6 +7,7 @@ import portfolioRouter from "./portfolio";
 import ibRouter from "./ib";
 import economicRouter from "./economic";
 import secRouter from "./sec";
+import pushRouter from "./push";
 const router: IRouter = Router();
 
 router.use("/auth", authRouter);
@@ -17,5 +18,6 @@ router.use("/portfolio", portfolioRouter);
 router.use("/ib", ibRouter);
 router.use("/economic", economicRouter);
 router.use("/sec", secRouter);
+router.use("/push", pushRouter);
 
 export default router;

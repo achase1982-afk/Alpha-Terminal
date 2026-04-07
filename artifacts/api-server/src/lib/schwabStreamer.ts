@@ -2,6 +2,7 @@ import type { Response } from "express";
 import WebSocket from "ws";
 import { logger } from "./logger.js";
 import { getValidAccessToken, forceRefresh } from "./tokenStore.js";
+import { sendPushToAll } from "./pushService.js";
 
 export interface LiveQuote {
   symbol:       string;
@@ -267,6 +268,109 @@ function sendOptionSubscription(symbols: string[]) {
   }
 }
 
+function sendAcctActivitySubscription() {
+  if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN || !streamerInfo) return;
+  if (acctActivitySubscribed) return;
+
+  const req = buildRequest("ACCT_ACTIVITY", "SUBS", {
+    keys: streamerInfo.schwabClientCorrelId,
+    fields: "0,1,2,3",
+  });
+
+  if (req) {
+    schwabWs.send(JSON.stringify({ requests: [req] }));
+    logger.info("Schwab streamer: ACCT_ACTIVITY SUBS sent (awaiting confirmation)");
+  }
+}
+
+function processAcctActivity(content: Record<string, unknown>[]) {
+  for (const item of content) {
+    const seqNum = item["1"] as string | undefined;
+    const msgType = item["2"] as string | undefined;
+    const msgData = item["3"] as string | undefined;
+
+    logger.info({ seqNum, msgType, msgData: msgData?.slice(0, 200) }, "Schwab ACCT_ACTIVITY event");
+
+    let alertPayload: Record<string, unknown> = {
+      type: msgType ?? "UNKNOWN",
+      timestamp: Date.now(),
+      raw: msgData ?? "",
+    };
+
+    let pushTitle = "ALPHA TERMINAL";
+    let pushBody = "";
+    let pushTag = "acct-activity";
+
+    if (msgData) {
+      try {
+        const parsed = JSON.parse(msgData);
+        alertPayload = { ...alertPayload, ...parsed };
+      } catch {
+        // Schwab sends XML for ACCT_ACTIVITY — parse key fields
+        const orderIdMatch = msgData.match(/<OrderId>(\d+)<\/OrderId>/i) ??
+                             msgData.match(/<OrderKey>(\d+)<\/OrderKey>/i);
+        const symbolMatch = msgData.match(/<Symbol>([^<]+)<\/Symbol>/i);
+        const statusMatch = msgData.match(/<OrderStatus>([^<]+)<\/OrderStatus>/i) ??
+                            msgData.match(/<Status>([^<]+)<\/Status>/i);
+        const qtyMatch = msgData.match(/<(?:Filled)?Quantity>([^<]+)<\/(?:Filled)?Quantity>/i) ??
+                         msgData.match(/<OriginalQuantity>([^<]+)<\/OriginalQuantity>/i);
+        const priceMatch = msgData.match(/<(?:Execution)?Price>([^<]+)<\/(?:Execution)?Price>/i) ??
+                           msgData.match(/<AveragePrice>([^<]+)<\/AveragePrice>/i);
+        const sideMatch = msgData.match(/<(?:Order)?Instruction>([^<]+)<\/(?:Order)?Instruction>/i) ??
+                          msgData.match(/<OrderSide>([^<]+)<\/OrderSide>/i);
+
+        alertPayload.orderId = orderIdMatch?.[1] ?? null;
+        alertPayload.symbol = symbolMatch?.[1] ?? null;
+        alertPayload.status = statusMatch?.[1] ?? null;
+        alertPayload.quantity = qtyMatch?.[1] ?? null;
+        alertPayload.price = priceMatch?.[1] ?? null;
+        alertPayload.side = sideMatch?.[1] ?? null;
+      }
+    }
+
+    const sym = (alertPayload.symbol as string) ?? "";
+    const status = (alertPayload.status as string) ?? msgType ?? "";
+    const qty = alertPayload.quantity ?? "";
+    const price = alertPayload.price ?? "";
+    const side = (alertPayload.side as string) ?? "";
+
+    const statusUpper = status.toUpperCase();
+
+    if (statusUpper.includes("FILL") || msgType === "OrderFill" || msgType === "UROUT") {
+      pushBody = `${side} ${qty} ${sym} FILLED @ $${price}`.trim();
+      pushTag = "order-fill";
+    } else if (statusUpper.includes("CANCEL") || msgType === "OrderCancel") {
+      pushBody = `${sym} order CANCELED`.trim();
+      pushTag = "order-cancel";
+    } else if (statusUpper.includes("REJECT") || msgType === "OrderReject") {
+      pushBody = `${sym} order REJECTED`.trim();
+      pushTag = "order-reject";
+    } else if (statusUpper.includes("ENTRY") || msgType === "OrderEntryRequest" || msgType === "OrderEntry") {
+      pushBody = `${side} ${qty} ${sym} order PLACED`.trim();
+      pushTag = "order-placed";
+    } else if (statusUpper.includes("PARTIAL") || msgType === "OrderPartialFill") {
+      pushBody = `${side} ${qty} ${sym} PARTIAL FILL @ $${price}`.trim();
+      pushTag = "order-partial";
+    } else if (statusUpper.includes("EXPIRE") || msgType === "OrderExpire") {
+      pushBody = `${sym} order EXPIRED`.trim();
+      pushTag = "order-expire";
+    } else {
+      pushBody = `Account activity: ${msgType ?? status} ${sym}`.trim();
+    }
+
+    broadcast("orderAlert", alertPayload);
+
+    if (pushBody) {
+      void sendPushToAll({
+        title: pushTitle,
+        body: pushBody,
+        tag: pushTag,
+        data: { orderId: alertPayload.orderId, symbol: sym },
+      });
+    }
+  }
+}
+
 function processEquityTick(content: Record<string, unknown>[]) {
   const now = Date.now();
   for (const item of content) {
@@ -406,6 +510,15 @@ function handleMessage(raw: string) {
       if (service !== "ADMIN") {
         logger.info({ service, command, code, msg: msgText }, "Schwab streamer: subscription response");
       }
+      if (service === "ACCT_ACTIVITY" && command === "SUBS") {
+        if (code === 0) {
+          acctActivitySubscribed = true;
+          logger.info("Schwab streamer: ACCT_ACTIVITY subscription confirmed");
+        } else {
+          acctActivitySubscribed = false;
+          logger.error({ code, msg: msgText }, "Schwab streamer: ACCT_ACTIVITY subscription failed — will retry on next reconnect");
+        }
+      }
       if (service === "ADMIN" && command === "LOGIN") {
         if (code === 0) {
           logger.info("Schwab streamer: LOGIN successful");
@@ -423,6 +536,7 @@ function handleMessage(raw: string) {
           if (subscribedOptionSymbols.size > 0) {
             sendOptionSubscription([...subscribedOptionSymbols]);
           }
+          sendAcctActivitySubscription();
         } else {
           logger.error({ code, msg: msgText }, "Schwab streamer: LOGIN failed");
           connectionState = "disconnected";
@@ -460,6 +574,8 @@ function handleMessage(raw: string) {
         processFuturesTick(item.content);
       } else if (item.service === "LEVELONE_OPTIONS") {
         processOptionTick(item.content);
+      } else if (item.service === "ACCT_ACTIVITY") {
+        processAcctActivity(item.content);
       } else {
         const keys = item.content?.map((c: Record<string, unknown>) => c["key"]).slice(0, 3);
         logger.info({ service: item.service, sampleKeys: keys }, "Schwab streamer: unhandled data service");
@@ -528,6 +644,7 @@ async function connectSchwabStreamer() {
     logger.warn({ code, reason: reason?.toString() }, "Schwab streamer: WebSocket closed");
     schwabWs = null;
     connectionState = "disconnected";
+    acctActivitySubscribed = false;
     broadcast("streamerStatus", { status: "disconnected" });
     scheduleReconnect();
   });
@@ -564,6 +681,7 @@ export function stopStreamer() {
   subscribedSymbols.clear();
   subscribedFuturesSymbols.clear();
   subscribedOptionSymbols.clear();
+  acctActivitySubscribed = false;
 }
 
 export function addSymbols(symbols: string[]) {

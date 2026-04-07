@@ -3,6 +3,7 @@ import { useTerminalStore } from "@/lib/store";
 import { useOptionsStreamStore, type OptionTick } from "@/lib/options-stream-store";
 import { useDepthStore, type DepthBook } from "@/lib/depth-store";
 import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
+import { useOrderAlertStore, type OrderAlert } from "@/stores/orderAlertStore";
 import { fetchWithAuth, getClerkToken } from "@/lib/fetchWithAuth";
 import type { LiveQuote, LiveNewsItem } from "@/lib/store";
 
@@ -232,6 +233,21 @@ export function useMarketStream() {
           setPortfolioAccount(msg.data as any);
         } else if (msg.event === "portfolioOrders") {
           setPortfolioOrders(msg.data as any);
+        } else if (msg.event === "orderAlert") {
+          const d = msg.data as Record<string, unknown>;
+          const alert: OrderAlert = {
+            id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            type: (d.type as string) ?? "UNKNOWN",
+            symbol: (d.symbol as string) ?? null,
+            status: (d.status as string) ?? null,
+            side: (d.side as string) ?? null,
+            quantity: (d.quantity as string) ?? null,
+            price: (d.price as string) ?? null,
+            orderId: (d.orderId as string) ?? null,
+            timestamp: (d.timestamp as number) ?? Date.now(),
+            raw: (d.raw as string) ?? "",
+          };
+          useOrderAlertStore.getState().addAlert(alert);
         } else if (msg.event === "streamerStatus") {
           const s = (msg.data as { status?: string }).status;
           if (s === "connected") setStreamStatus("live");
