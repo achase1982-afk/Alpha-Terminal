@@ -3,6 +3,7 @@ import { getTokens } from "../lib/tokenStore.js";
 import { logger } from "../lib/logger.js";
 import { broadcastToClients } from "../lib/wsServer.js";
 import { sendPushToAll } from "../lib/pushService.js";
+import { markAlertSeen } from "../lib/schwabStreamer.js";
 
 const router: IRouter = Router();
 
@@ -282,6 +283,11 @@ router.post("/place-order", async (req, res) => {
     const side = firstLeg?.instruction ?? "";
     const qty = firstLeg?.quantity ?? "";
 
+    if (orderId) {
+      markAlertSeen(orderId, "OrderCreated");
+      markAlertSeen(orderId, "OrderAccepted");
+    }
+
     broadcastToClients("orderAlert", {
       type: "OrderCreated",
       symbol: sym,
@@ -296,7 +302,7 @@ router.post("/place-order", async (req, res) => {
     void sendPushToAll({
       title: "ALPHA TERMINAL",
       body: `${side} ${qty} ${sym} order PLACED`.trim(),
-      tag: "order-placed",
+      tag: "OrderCreated",
       data: { orderId, symbol: sym },
     });
 
@@ -334,6 +340,11 @@ router.delete("/cancel-order", async (req, res) => {
       return res.status(schwabRes.status).json({ error: "cancel_failed", message: body.slice(0, 500) });
     }
 
+    if (orderId) {
+      markAlertSeen(orderId, "CancelAccepted");
+      markAlertSeen(orderId, "OrderUROutCompleted");
+    }
+
     broadcastToClients("orderAlert", {
       type: "CancelAccepted",
       symbol: null,
@@ -348,7 +359,7 @@ router.delete("/cancel-order", async (req, res) => {
     void sendPushToAll({
       title: "ALPHA TERMINAL",
       body: `Order ${orderId} CANCELED`,
-      tag: "order-cancel",
+      tag: "CancelAccepted",
       data: { orderId },
     });
 

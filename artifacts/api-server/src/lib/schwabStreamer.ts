@@ -78,6 +78,20 @@ export function schwabFuturesKey(displaySymbol: string): string {
 
 const futuresKeyToDisplay = new Map<string, string>();
 
+const alertSeenSet = new Map<string, number>();
+const ALERT_DEDUP_TTL_MS = 60_000;
+
+export function markAlertSeen(orderId: string, eventType: string): void {
+  const key = `${orderId}:${eventType}`;
+  alertSeenSet.set(key, Date.now());
+  setTimeout(() => alertSeenSet.delete(key), ALERT_DEDUP_TTL_MS);
+}
+
+function isAlertSeen(orderId: string | null, eventType: string | null): boolean {
+  if (!orderId || !eventType) return false;
+  return alertSeenSet.has(`${orderId}:${eventType}`);
+}
+
 const quoteCache = new Map<string, LiveQuote>();
 const optionCache = new Map<string, OptionTick>();
 const sseClients = new Set<Response>();
@@ -307,38 +321,54 @@ function processAcctActivity(content: Record<string, unknown>[]) {
     }
 
     const orderId = (parsed.SchwabOrderID as string) ?? null;
-    const extracted = extractAcctFields(parsed);
+
+    if (isAlertSeen(orderId, msgType ?? null)) {
+      logger.info({ orderId, msgType }, "Schwab ACCT_ACTIVITY dedup — skipping (already broadcast via REST)");
+      return;
+    }
+
+    const found = findKeysDeep(parsed, [
+      "Symbol", "Instruction", "Side", "OrderSide",
+      "Quantity", "FilledQuantity", "OriginalQuantity",
+      "ExecutionPrice", "Price", "LimitPrice", "AveragePrice",
+      "OrderType",
+    ]);
+
+    const symbol = (found["Symbol"] as string) ?? null;
+    const side = (found["Instruction"] ?? found["Side"] ?? found["OrderSide"]) as string | undefined ?? null;
+    const quantity = String(found["Quantity"] ?? found["FilledQuantity"] ?? found["OriginalQuantity"] ?? "");
+    const price = String(found["ExecutionPrice"] ?? found["Price"] ?? found["LimitPrice"] ?? found["AveragePrice"] ?? "");
+    const orderType = (found["OrderType"] as string) ?? null;
 
     const alertPayload: Record<string, unknown> = {
       type: msgType ?? "UNKNOWN",
       timestamp: Date.now(),
       orderId,
-      symbol: extracted.symbol,
-      side: extracted.side,
-      quantity: extracted.quantity,
-      price: extracted.price,
-      orderType: extracted.orderType,
+      symbol,
+      side,
+      quantity: quantity || null,
+      price: price || null,
+      orderType,
       raw: msgData ?? "",
     };
 
-    const sym = extracted.symbol ?? "";
-    const qty = extracted.quantity ?? "";
-    const price = extracted.price ?? "";
-    const side = extracted.side ?? "";
+    const sym = symbol ?? "";
+    const qty = quantity;
+    const prc = price;
 
     let pushBody = "";
     let pushTag = "acct-activity";
 
     switch (msgType) {
       case "OrderCreated":
-        pushBody = `${side} ${qty} ${sym} order CREATED`.trim();
+        pushBody = `${side ?? ""} ${qty} ${sym} order CREATED`.trim();
         pushTag = "OrderCreated";
         break;
       case "OrderAccepted":
         pushTag = "OrderAccepted";
         break;
       case "ExecutionCreated":
-        pushBody = `${side} ${qty} ${sym} FILLED @ $${price}`.trim();
+        pushBody = `${side ?? ""} ${qty} ${sym} FILLED @ $${prc}`.trim();
         pushTag = "ExecutionCreated";
         break;
       case "OrderUROutCompleted":
@@ -369,6 +399,10 @@ function processAcctActivity(content: Record<string, unknown>[]) {
         break;
     }
 
+    if (orderId && msgType) {
+      markAlertSeen(orderId, msgType);
+    }
+
     broadcast("orderAlert", alertPayload);
 
     if (pushBody) {
@@ -382,27 +416,35 @@ function processAcctActivity(content: Record<string, unknown>[]) {
   }
 }
 
-function extractAcctFields(obj: Record<string, unknown>): {
-  symbol: string | null; side: string | null; quantity: string | null;
-  price: string | null; orderType: string | null;
-} {
-  const result = { symbol: null as string | null, side: null as string | null,
-    quantity: null as string | null, price: null as string | null,
-    orderType: null as string | null };
+function findKeysDeep(
+  obj: unknown,
+  targetKeys: string[],
+): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  const remaining = new Set(targetKeys);
 
-  const json = JSON.stringify(obj);
-  const symMatch = json.match(/"Symbol"\s*:\s*"([^"]+)"/);
-  const sideMatch = json.match(/"(?:Instruction|Side|OrderSide)"\s*:\s*"([^"]+)"/);
-  const qtyMatch = json.match(/"(?:Quantity|FilledQuantity|OriginalQuantity)"\s*:\s*"?(\d+(?:\.\d+)?)"?/);
-  const priceMatch = json.match(/"(?:ExecutionPrice|Price|LimitPrice|AveragePrice)"\s*:\s*"?(\d+(?:\.\d+)?)"?/);
-  const typeMatch = json.match(/"(?:OrderType)"\s*:\s*"([^"]+)"/);
+  function walk(node: unknown): void {
+    if (remaining.size === 0) return;
+    if (node === null || node === undefined) return;
 
-  if (symMatch) result.symbol = symMatch[1];
-  if (sideMatch) result.side = sideMatch[1];
-  if (qtyMatch) result.quantity = qtyMatch[1];
-  if (priceMatch) result.price = priceMatch[1];
-  if (typeMatch) result.orderType = typeMatch[1];
+    if (Array.isArray(node)) {
+      for (const el of node) walk(el);
+      return;
+    }
 
+    if (typeof node === "object") {
+      for (const [key, val] of Object.entries(node as Record<string, unknown>)) {
+        if (remaining.has(key) && val !== undefined && val !== null) {
+          result[key] = val;
+          remaining.delete(key);
+        }
+        if (remaining.size === 0) return;
+        if (typeof val === "object" && val !== null) walk(val);
+      }
+    }
+  }
+
+  walk(obj);
   return result;
 }
 
