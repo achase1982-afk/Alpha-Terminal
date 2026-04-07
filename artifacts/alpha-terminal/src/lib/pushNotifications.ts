@@ -115,6 +115,26 @@ export async function isSubscribed(): Promise<boolean> {
   return !!sub;
 }
 
+export async function reRegisterIfNeeded(): Promise<void> {
+  if (!isPushSupported()) return;
+  if (Notification.permission !== "granted") return;
+
+  const reg = swRegistration ?? (await navigator.serviceWorker?.getRegistration());
+  if (!reg) return;
+
+  const sub = await reg.pushManager.getSubscription();
+  if (!sub) return;
+
+  try {
+    const ok = await sendSubscriptionToServer(sub);
+    if (ok) {
+      console.log("[push] Re-registered existing subscription with server");
+    }
+  } catch (err) {
+    console.warn("[push] Re-registration failed:", err);
+  }
+}
+
 async function sendSubscriptionToServer(sub: PushSubscription): Promise<boolean> {
   const raw = sub.toJSON();
   const res = await fetchWithAuth("/api/push/subscribe", {

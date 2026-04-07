@@ -6,6 +6,7 @@ import {
   subscribeToPush,
   unsubscribeFromPush,
   isSubscribed as checkIsSubscribed,
+  reRegisterIfNeeded,
 } from "@/lib/pushNotifications";
 
 const GOLD = "#FFB800";
@@ -29,6 +30,7 @@ export default function PushNotificationBanner() {
     if (sup) {
       setPermission(getNotificationPermission());
       checkIsSubscribed().then(setSubscribed);
+      reRegisterIfNeeded();
     }
   }, []);
 

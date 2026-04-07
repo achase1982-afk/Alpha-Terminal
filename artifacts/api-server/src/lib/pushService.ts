@@ -47,8 +47,15 @@ export async function sendPushToAll(payload: {
   tag?: string;
   data?: Record<string, unknown>;
 }) {
-  if (!VAPID_PUBLIC || !VAPID_PRIVATE) return;
-  if (subscriptions.size === 0) return;
+  if (!VAPID_PUBLIC || !VAPID_PRIVATE) {
+    logger.debug("sendPushToAll skipped — VAPID not configured");
+    return;
+  }
+  if (subscriptions.size === 0) {
+    logger.info({ title: payload.title, body: payload.body }, "sendPushToAll skipped — 0 subscribers");
+    return;
+  }
+  logger.info({ subscribers: subscriptions.size, body: payload.body }, "sendPushToAll sending");
 
   const message = JSON.stringify(payload);
   const stale: string[] = [];
