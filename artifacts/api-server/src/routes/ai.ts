@@ -14,7 +14,7 @@ import {
 } from "@workspace/api-zod";
 import { computeIndicators, formatTAContext, isDataStale, type Candle } from "../lib/ta.js";
 import { runMarketPulseEngine, formatClusterDebugLine, verifyEngineScoring, type MarketIndicators, type BiasLabel, type SessionType } from "../lib/marketPulseEngine.js";
-import { getSnapshot, type LiveQuote } from "../lib/schwabStreamer.js";
+import { getSnapshot, schwabFuturesKey, type LiveQuote } from "../lib/schwabStreamer.js";
 import { getIBSnapshot, getIBCachedQuote, registerPermanentSymbols } from "../lib/ibStreamer.js";
 import { getBestAccessToken } from "../lib/tokenStore.js";
 import { selectStrategies, selectStrategiesByRegime, classifyRegime, checkOverrideConflict, classifyTicker, computeBeta, applyBetaToProfile, computeExpectedMove, computeIVR, STRATEGIST_SYSTEM_PROMPT, type OptionContract, type StrategyPayload, type RegimeClassification, type TickerProfile, type DailyCandle, type ConvictionParams } from "../lib/optionsStrategist.js";
@@ -714,7 +714,7 @@ const PULSE_TO_IB_NATIVE: Record<string, string> = {
   "$CPCI": "$PCUSINXR",
 };
 
-const IB_UNSUPPORTED = new Set(["$CPC", "$PCSPY", "$PCQQQ", "$PCIWM", "$SRVIX", "/BZ", "/DX"]);
+const IB_UNSUPPORTED = new Set(["$CPC", "$PCSPY", "$PCQQQ", "$PCIWM", "$SRVIX"]);
 
 registerPermanentSymbols(
   PULSE_SYMBOLS
@@ -728,14 +728,14 @@ function ensurePulseSubscriptions() {
 const schwabRestCache = new Map<string, { data: Record<string, unknown>; ts: number }>();
 const SCHWAB_REST_STALE_MS = 30_000;
 
-const SCHWAB_REST_SYMBOL_MAP: Record<string, string> = {
-  "/DX": "$DXY",
-  "/BZ": "/BZK",
-};
-const SCHWAB_REST_REVERSE_MAP: Record<string, string> = {
-  "$DXY": "/DX",
-  "/BZK": "/BZ",
-};
+function buildRestSymbolMaps() {
+  const bzKey = schwabFuturesKey("/BZ");
+  return {
+    forward: { "/DX": "$DXY", "/BZ": bzKey } as Record<string, string>,
+    reverse: { "$DXY": "/DX", [bzKey]: "/BZ" } as Record<string, string>,
+  };
+}
+const REST_MAPS = buildRestSymbolMaps();
 
 const SCHWAB_REST_SYMBOLS = [
   "$TICK", "$ADD", "$TRIN", "$ADVN", "$DECN", "$UVOL", "$DVOL",
@@ -751,20 +751,33 @@ const SCHWAB_API = "https://api.schwabapi.com/marketdata/v1";
 
 async function fetchSchwabRestQuotes(): Promise<void> {
   const token = getBestAccessToken();
-  if (!token) return;
-  const symbols = SCHWAB_REST_SYMBOLS.map(s => SCHWAB_REST_SYMBOL_MAP[s] ?? s).join(",");
+  if (!token) { console.warn("Schwab REST: no token available, skipping"); return; }
+  const symbols = SCHWAB_REST_SYMBOLS.map(s => REST_MAPS.forward[s] ?? s).join(",");
+  console.log(`Schwab REST: fetching ${SCHWAB_REST_SYMBOLS.length} symbols, sample: ${symbols.slice(0, 120)}`);
   try {
     const resp = await fetch(`${SCHWAB_API}/quotes?symbols=${encodeURIComponent(symbols)}&fields=quote`, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    if (!resp.ok) return;
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => "");
+      console.warn(`Schwab REST: non-OK response status=${resp.status} body=${body.slice(0, 200)}`);
+      return;
+    }
     const json = await resp.json() as Record<string, unknown>;
+    const returnedKeys = Object.keys(json);
+    const wanted = ["$DXY", "$CPCE", "$CPCI", "$CPC", REST_MAPS.forward["/BZ"]];
+    const found: string[] = [];
+    const missing: string[] = [];
+    for (const w of wanted) {
+      if (returnedKeys.includes(w)) found.push(w); else missing.push(w);
+    }
+    console.log(`Schwab REST: returned ${returnedKeys.length} symbols | found=[${found}] missing=[${missing}]`);
     for (const [apiSym, entry] of Object.entries(json)) {
       const q = (entry as Record<string, unknown>)["quote"] as Record<string, unknown> | undefined;
       if (!q) continue;
       const last = q["lastPrice"] as number | undefined ?? q["mark"] as number | undefined ?? null;
       if (last === null) continue;
-      const displaySym = SCHWAB_REST_REVERSE_MAP[apiSym] ?? apiSym;
+      const displaySym = REST_MAPS.reverse[apiSym] ?? apiSym;
       schwabRestCache.set(displaySym, {
         data: {
           lastPrice: last,
@@ -787,7 +800,8 @@ async function fetchSchwabRestQuotes(): Promise<void> {
         ts: Date.now(),
       });
     }
-  } catch { /* silent */ }
+    console.log(`Schwab REST: cache updated, size=${schwabRestCache.size}`);
+  } catch (err) { console.warn("Schwab REST: fetch error", err); }
 }
 
 const pcRatioCache = new Map<string, { value: number; ts: number }>();
@@ -840,8 +854,10 @@ async function fetchPCRatios(): Promise<void> {
 let schwabFallbackTimer: ReturnType<typeof setInterval> | null = null;
 function startSchwabFallbackPolling() {
   if (schwabFallbackTimer) return;
-  fetchSchwabRestQuotes();
-  fetchPCRatios();
+  setTimeout(() => {
+    fetchSchwabRestQuotes();
+    fetchPCRatios();
+  }, 5_000);
   schwabFallbackTimer = setInterval(() => {
     fetchSchwabRestQuotes();
     fetchPCRatios();

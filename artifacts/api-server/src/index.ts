@@ -57,12 +57,22 @@ async function boot() {
     "/MES", "/MNQ", "/M2K",
   ];
 
-  const SCHWAB_EQUITY_SYMS: string[] = [];
+  const SCHWAB_FUTURES_INDEX_SYMS = [
+    "$DXY", "$CPCE", "$CPCI", "$CPC", "$SKEW",
+  ];
+
+  const SCHWAB_EQUITY_SYMS = [
+    "$VIX", "$VVIX", "$VIX1D", "$VIX9D", "$VIX3M",
+    "$SPX", "$NDX", "$RUT", "$DJI", "$SOX",
+    "$TNX", "$TYX", "$IRX",
+    "$VXN", "$RVX", "$OVX", "$GVZ", "$SRVIX",
+    "$TICK", "$TICKI", "$TRIN", "$TRINQ",
+  ];
 
   if (hasValidTokens("trader")) {
     logger.info("Schwab tokens available — starting Schwab streamer with futures + indices");
     startSchwabStreamer().then(() => {
-      addFuturesSymbols(SCHWAB_FUTURES_SYMS);
+      addFuturesSymbols([...SCHWAB_FUTURES_SYMS, ...SCHWAB_FUTURES_INDEX_SYMS]);
       if (SCHWAB_EQUITY_SYMS.length > 0) addSchwabSymbols(SCHWAB_EQUITY_SYMS);
     }).catch((err) => logger.warn({ err }, "Schwab streamer start failed"));
   } else {

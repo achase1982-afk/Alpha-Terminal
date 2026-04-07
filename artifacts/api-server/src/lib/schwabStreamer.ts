@@ -48,6 +48,8 @@ const QUARTERLY_ROOTS = new Set([
   "6E","6J","6B","6A","6C","EMD",
 ]);
 
+const EARLY_ROLL_ROOTS = new Set(["BZ"]);
+
 export function schwabFuturesKey(displaySymbol: string): string {
   const bare = displaySymbol.replace(/^\//, "");
   const now = new Date();
@@ -64,7 +66,8 @@ export function schwabFuturesKey(displaySymbol: string): string {
     }
     return `/${bare}${MONTH_CODES[2]}${y2 + 1}`;
   }
-  let fm = month + 1;
+  const rollAhead = EARLY_ROLL_ROOTS.has(bare) ? 2 : 1;
+  let fm = month + rollAhead;
   let fy = y2;
   if (day > 20) { fm++; }
   if (fm > 11) { fm -= 12; fy++; }
@@ -339,6 +342,9 @@ function processFuturesTick(content: Record<string, unknown>[]) {
     if (!rawKey) continue;
 
     const displaySymbol = futuresKeyToDisplay.get(rawKey) ?? rawKey;
+    if (!futuresKeyToDisplay.has(rawKey)) {
+      logger.info({ rawKey, displaySymbol, knownKeys: [...futuresKeyToDisplay.keys()].slice(0, 5) }, "Schwab futures: unmapped key received");
+    }
 
     const existing = quoteCache.get(displaySymbol);
     const last = numOrNull(item["3"]) ?? existing?.last ?? null;
@@ -396,6 +402,9 @@ function handleMessage(raw: string) {
       const code = content?.["code"] as number;
       const msgText = content?.["msg"] as string;
 
+      if (service !== "ADMIN") {
+        logger.info({ service, command, code, msg: msgText }, "Schwab streamer: subscription response");
+      }
       if (service === "ADMIN" && command === "LOGIN") {
         if (code === 0) {
           logger.info("Schwab streamer: LOGIN successful");
@@ -450,6 +459,9 @@ function handleMessage(raw: string) {
         processFuturesTick(item.content);
       } else if (item.service === "LEVELONE_OPTIONS") {
         processOptionTick(item.content);
+      } else {
+        const keys = item.content?.map((c: Record<string, unknown>) => c["key"]).slice(0, 3);
+        logger.info({ service: item.service, sampleKeys: keys }, "Schwab streamer: unhandled data service");
       }
     }
   }
@@ -571,7 +583,8 @@ export function addSymbols(symbols: string[]) {
 export function addFuturesSymbols(displaySymbols: string[]) {
   const newKeys: string[] = [];
   for (const ds of displaySymbols) {
-    const key = schwabFuturesKey(ds);
+    const isFuture = ds.startsWith("/");
+    const key = isFuture ? schwabFuturesKey(ds) : ds;
     futuresKeyToDisplay.set(key, ds.toUpperCase());
     if (!subscribedFuturesSymbols.has(key)) {
       subscribedFuturesSymbols.add(key);
