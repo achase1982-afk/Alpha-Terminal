@@ -5,16 +5,102 @@ const API_BASE = "/api";
 
 let activeAbort: AbortController | null = null;
 let streamStartedAt = 0;
+let recoveryPollTimer: ReturnType<typeof setTimeout> | null = null;
+let runEpoch = 0;
 
 export function isPulseStreamActive(): boolean {
-  return activeAbort !== null;
+  return activeAbort !== null || recoveryPollTimer !== null;
 }
 
 export function abortPulseStream() {
+  runEpoch++;
   if (activeAbort) {
     activeAbort.abort();
     activeAbort = null;
   }
+  if (recoveryPollTimer) {
+    clearTimeout(recoveryPollTimer);
+    recoveryPollTimer = null;
+  }
+  const s = useMarketPulseStore.getState();
+  s.setStreaming(false);
+  s.setLoading(false);
+}
+
+async function tryRecoverFromCache(): Promise<boolean> {
+  try {
+    console.log("[pulseStreamRunner] Attempting recovery from server cache...");
+    const resp = await fetchWithAuth(`${API_BASE}/ai/market-pulse/latest`);
+    if (!resp.ok) return false;
+    const data = await resp.json();
+
+    if (data.status === "ready" && data.pulse) {
+      console.log("[pulseStreamRunner] Recovery successful — got cached result");
+      const enriched = { ...data.pulse, generatedAt: Date.now() };
+      useMarketPulseStore.getState().setPulseData(enriched);
+      return true;
+    }
+
+    if (data.status === "in_flight") {
+      console.log("[pulseStreamRunner] Generation still in flight — will poll again");
+      return false;
+    }
+
+    return false;
+  } catch (err) {
+    console.warn("[pulseStreamRunner] Recovery fetch failed:", err);
+    return false;
+  }
+}
+
+function startRecoveryPolling(epoch: number) {
+  if (recoveryPollTimer) return;
+
+  const store = useMarketPulseStore.getState();
+  store.appendStatus("Connection interrupted — waiting for server to finish...");
+
+  let attempts = 0;
+  const maxAttempts = 30;
+  const intervalMs = 2000;
+
+  const poll = async () => {
+    if (epoch !== runEpoch) {
+      console.log("[pulseStreamRunner] Recovery polling cancelled — epoch mismatch");
+      return;
+    }
+
+    attempts++;
+    if (attempts > maxAttempts) {
+      console.log("[pulseStreamRunner] Recovery polling timed out after", maxAttempts, "attempts");
+      recoveryPollTimer = null;
+      const s = useMarketPulseStore.getState();
+      if (!s.pulseData) {
+        s.setError("Generation timed out. Please try again.");
+      }
+      s.setStreaming(false);
+      s.setLoading(false);
+      return;
+    }
+
+    const recovered = await tryRecoverFromCache();
+
+    if (epoch !== runEpoch) {
+      console.log("[pulseStreamRunner] Recovery polling cancelled after fetch — epoch mismatch");
+      return;
+    }
+
+    if (recovered) {
+      recoveryPollTimer = null;
+      const s = useMarketPulseStore.getState();
+      s.setStreaming(false);
+      s.setLoading(false);
+      return;
+    }
+
+    recoveryPollTimer = setTimeout(poll, intervalMs);
+  };
+
+  recoveryPollTimer = setTimeout(poll, intervalMs);
 }
 
 export async function runPulseStream(payload: Record<string, unknown>) {
@@ -29,6 +115,8 @@ export async function runPulseStream(payload: Record<string, unknown>) {
 
   abortPulseStream();
 
+  const currentEpoch = ++runEpoch;
+
   const store = useMarketPulseStore.getState();
   store.clearPulse();
   store.setLoading(true);
@@ -40,7 +128,7 @@ export async function runPulseStream(payload: Record<string, unknown>) {
   const abort = new AbortController();
   activeAbort = abort;
 
-  console.log("[pulseStreamRunner] Starting stream request...");
+  console.log("[pulseStreamRunner] Starting stream request... (epoch", currentEpoch, ")");
 
   try {
     const response = await fetchWithAuth(`${API_BASE}/ai/market-pulse/stream`, {
@@ -61,10 +149,12 @@ export async function runPulseStream(payload: Record<string, unknown>) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
+    let gotResult = false;
 
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
+      if (currentEpoch !== runEpoch) return;
 
       buffer += decoder.decode(value, { stream: true });
 
@@ -103,6 +193,7 @@ export async function runPulseStream(payload: Record<string, unknown>) {
               useMarketPulseStore.getState().appendStatus(text);
             }
           } else if (eventType === "result") {
+            gotResult = true;
             const resultData = parsed.pulse || parsed.data || parsed;
             const enriched = { ...resultData, generatedAt: Date.now() };
             useMarketPulseStore.getState().setPulseData(enriched);
@@ -116,17 +207,38 @@ export async function runPulseStream(payload: Record<string, unknown>) {
       }
     }
 
+    if (!gotResult && currentEpoch === runEpoch) {
+      console.log("[pulseStreamRunner] Stream ended without result — starting recovery polling");
+      startRecoveryPolling(currentEpoch);
+      return;
+    }
+
   } catch (err: any) {
-    if (err.name === "AbortError") return;
+    if (err.name === "AbortError") {
+      console.log("[pulseStreamRunner] Stream aborted");
+      return;
+    }
     console.error("[pulseStreamRunner] Stream error:", err);
+
+    if (currentEpoch !== runEpoch) return;
+
+    const elapsed = Date.now() - streamStartedAt;
+    if (elapsed > 3000) {
+      console.log("[pulseStreamRunner] Stream broke after", elapsed, "ms — trying recovery");
+      startRecoveryPolling(currentEpoch);
+      return;
+    }
+
     const msg = err.message || "Generation failed. Please try again.";
     useMarketPulseStore.getState().setError(msg);
   } finally {
     if (activeAbort === abort) {
       activeAbort = null;
     }
-    const s = useMarketPulseStore.getState();
-    s.setStreaming(false);
-    s.setLoading(false);
+    if (!recoveryPollTimer && currentEpoch === runEpoch) {
+      const s = useMarketPulseStore.getState();
+      s.setStreaming(false);
+      s.setLoading(false);
+    }
   }
 }

@@ -22,6 +22,20 @@ import { runPreTradeChecks, type PreTradeInput, type PreTradeResult } from "../l
 
 const router: IRouter = Router();
 
+let lastPulseResult: { pulse: Record<string, unknown>; generatedAt: number } | null = null;
+let pulseGenerationInFlight = false;
+
+function safeSseWrite(res: import("express").Response, data: string) {
+  try {
+    if (!res.writableEnded && !res.destroyed) {
+      res.write(data);
+      if (typeof (res as any).flush === "function") (res as any).flush();
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
 const AVAILABLE_MODELS = [
   "claude-sonnet-4-20250514",
   "claude-opus-4-20250514",
@@ -1495,6 +1509,16 @@ RULES:
   }
 });
 
+router.get("/market-pulse/latest", (_req, res) => {
+  if (pulseGenerationInFlight) {
+    return res.json({ status: "in_flight" });
+  }
+  if (lastPulseResult && (Date.now() - lastPulseResult.generatedAt) < 2 * 60 * 60 * 1000) {
+    return res.json({ status: "ready", pulse: lastPulseResult.pulse });
+  }
+  return res.json({ status: "none" });
+});
+
 router.post("/market-pulse/stream", async (req, res) => {
   ensurePulseSubscriptions();
   const { accessToken, symbols, model, temperature, preferences, previousBias } = req.body as {
@@ -1522,6 +1546,9 @@ router.post("/market-pulse/stream", async (req, res) => {
     return res.status(500).json({ error: "ANTHROPIC_API_KEY not configured." });
   }
 
+  pulseGenerationInFlight = true;
+  let clientConnected = true;
+
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache",
@@ -1536,19 +1563,21 @@ router.post("/market-pulse/stream", async (req, res) => {
   if (req.socket) req.socket.setTimeout(0);
   (res as any).socket?.setNoDelay?.(true);
 
-  const sseFlush = () => {
-    if (typeof (res as any).flush === "function") (res as any).flush();
-  };
+  req.on("close", () => {
+    clientConnected = false;
+    req.log.info("Pulse stream client disconnected — generation will continue in background");
+  });
 
-  res.write(": ok\n\n");
+  safeSseWrite(res, ": ok\n\n");
   res.flushHeaders();
-  res.write(`event: status\ndata: ${JSON.stringify({ type: "status", text: "Fetching live market data..." })}\n\n`);
-  sseFlush();
+  safeSseWrite(res, `event: status\ndata: ${JSON.stringify({ type: "status", text: "Fetching live market data..." })}\n\n`);
 
   const heartbeat = setInterval(() => {
-    if (!res.writableEnded) {
-      res.write(": ping\n\n");
+    if (!clientConnected || res.writableEnded) {
+      clearInterval(heartbeat);
+      return;
     }
+    safeSseWrite(res, ": ping\n\n");
   }, 5000);
 
   const { session, timeET, sessionGuidance } = getMarketSession();
@@ -1566,20 +1595,21 @@ router.post("/market-pulse/stream", async (req, res) => {
     req.log.info({ source: "ib+schwab", hits: wsResult.hitCount, expected: expectedCount, minRequired }, "Pulse stream data from IB/Schwab cache");
     if (wsResult.hitCount < minRequired) {
       clearInterval(heartbeat);
-      res.write(`event: error\ndata: ${JSON.stringify({ type: "error", message: `Insufficient WebSocket data: ${wsResult.hitCount}/${expectedCount} symbols (need ${minRequired}). Ensure the live streamer is connected.` })}\n\n`);
-      res.end();
+      pulseGenerationInFlight = false;
+      safeSseWrite(res, `event: error\ndata: ${JSON.stringify({ type: "error", message: `Insufficient WebSocket data: ${wsResult.hitCount}/${expectedCount} symbols (need ${minRequired}). Ensure the live streamer is connected.` })}\n\n`);
+      if (!res.writableEnded) res.end();
       return;
     }
     dataMap = wsResult.dataMap;
     dataBlock = buildPulseDataBlock(dataMap, symbols && symbols.length > 0 ? symbols : undefined);
-    res.write(`event: status\ndata: ${JSON.stringify({ type: "status", text: "Market data loaded. Running scoring engine..." })}\n\n`);
-    sseFlush();
+    safeSseWrite(res, `event: status\ndata: ${JSON.stringify({ type: "status", text: "Market data loaded. Running scoring engine..." })}\n\n`);
   } catch (fetchErr: unknown) {
     clearInterval(heartbeat);
+    pulseGenerationInFlight = false;
     const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
     req.log.error({ err: fetchErr }, "Market pulse stream data fetch error");
-    res.write(`event: error\ndata: ${JSON.stringify({ type: "error", message: msg })}\n\n`);
-    res.end();
+    safeSseWrite(res, `event: error\ndata: ${JSON.stringify({ type: "error", message: msg })}\n\n`);
+    if (!res.writableEnded) res.end();
     return;
   }
 
@@ -1615,8 +1645,7 @@ router.post("/market-pulse/stream", async (req, res) => {
   })();
 
   const clusterDebug = formatClusterDebugLine(engineResult);
-  res.write(`event: status\ndata: ${JSON.stringify({ type: "status", text: `Engine scored: ${engineResult.bias} (composite ${engineResult.compositeScore >= 0 ? '+' : ''}${engineResult.compositeScore.toFixed(2)}, confidence ${engineResult.confidenceScore}%). ${clusterDebug}. Generating AI narrative...` })}\n\n`);
-  sseFlush();
+  safeSseWrite(res, `event: status\ndata: ${JSON.stringify({ type: "status", text: `Engine scored: ${engineResult.bias} (composite ${engineResult.compositeScore >= 0 ? '+' : ''}${engineResult.compositeScore.toFixed(2)}, confidence ${engineResult.confidenceScore}%). ${clusterDebug}. Generating AI narrative...` })}\n\n`);
 
   const instrumentCount = (symbols && symbols.length > 0 ? symbols : PULSE_SYMBOLS.map(s => s.display)).length;
 
@@ -1673,13 +1702,13 @@ Write ONLY the narrative fields. Return this exact JSON structure:
       thinkingBudget: 4096,
       onThinking: (text) => {
         hasEmittedThinking = true;
-        res.write(`event: thinking\ndata: ${JSON.stringify({ type: "thinking", text })}\n\n`);
-        sseFlush();
+        if (clientConnected) {
+          safeSseWrite(res, `event: thinking\ndata: ${JSON.stringify({ type: "thinking", text })}\n\n`);
+        }
       },
       onText: (text) => {
-        if (!hasEmittedThinking) {
-          res.write(`event: thinking\ndata: ${JSON.stringify({ type: "thinking", text })}\n\n`);
-          sseFlush();
+        if (!hasEmittedThinking && clientConnected) {
+          safeSseWrite(res, `event: thinking\ndata: ${JSON.stringify({ type: "thinking", text })}\n\n`);
         }
       },
     });
@@ -1692,10 +1721,11 @@ Write ONLY the narrative fields. Return this exact JSON structure:
     if (cleaned.endsWith("```")) cleaned = cleaned.slice(0, -3);
     cleaned = cleaned.trim();
 
+    let finalPulse: Record<string, unknown>;
     try {
       const narrative = JSON.parse(cleaned);
 
-      const finalPulse = {
+      finalPulse = {
         ...engineResult,
         rawIndicators: indicators,
         dataAge: { oldestSource: "schwab-batch", oldestSourceAge: 0 },
@@ -1724,15 +1754,12 @@ Write ONLY the narrative fields. Return this exact JSON structure:
         instrumentCount,
         generatedAt: Date.now(),
       };
-
-      res.write(`event: result\ndata: ${JSON.stringify({ type: "complete", pulse: finalPulse })}\n\n`);
-      if (typeof (res as any).flush === "function") (res as any).flush();
     } catch (parseErr) {
       console.error("[PULSE STREAM] Narrative JSON parse failed:", parseErr);
       console.error("[PULSE STREAM] Raw narrative:", cleaned.substring(0, 500));
       req.log.error({ err: parseErr, rawLength: responseBuffer.length }, "Market pulse narrative parse error");
 
-      const fallbackPulse = {
+      finalPulse = {
         ...engineResult,
         rawIndicators: indicators,
         dataAge: { oldestSource: "schwab-batch", oldestSourceAge: 0 },
@@ -1759,18 +1786,22 @@ Write ONLY the narrative fields. Return this exact JSON structure:
         instrumentCount,
         generatedAt: Date.now(),
       };
-      res.write(`event: result\ndata: ${JSON.stringify({ type: "complete", pulse: fallbackPulse })}\n\n`);
-      if (typeof (res as any).flush === "function") (res as any).flush();
     }
 
-    res.end();
+    lastPulseResult = { pulse: finalPulse, generatedAt: Date.now() };
+    pulseGenerationInFlight = false;
+    req.log.info({ clientConnected, bias: (finalPulse as any).bias }, "Pulse generation complete — result cached");
+
+    safeSseWrite(res, `event: result\ndata: ${JSON.stringify({ type: "complete", pulse: finalPulse })}\n\n`);
+    if (!res.writableEnded) res.end();
   } catch (err: unknown) {
     clearInterval(heartbeat);
+    pulseGenerationInFlight = false;
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[PULSE STREAM] Error:", err);
     req.log.error({ err }, "Market pulse stream error");
-    res.write(`event: error\ndata: ${JSON.stringify({ type: "error", message: "Generation failed. Please try again." })}\n\n`);
-    res.end();
+    safeSseWrite(res, `event: error\ndata: ${JSON.stringify({ type: "error", message: "Generation failed. Please try again." })}\n\n`);
+    if (!res.writableEnded) res.end();
   }
 });
 
