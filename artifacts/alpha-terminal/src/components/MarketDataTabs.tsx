@@ -1,17 +1,16 @@
 import React, { useState, useRef, useCallback, useEffect } from "react";
-import { Newspaper, BarChart2, Building2, LineChart, Layers } from "lucide-react";
+import { Newspaper, BarChart2, Building2, LineChart } from "lucide-react";
 
-export type MarketDataTab = "news" | "options" | "company" | "chart" | "depth";
+export type MarketDataTab = "news" | "options" | "company" | "chart";
 
 const TAB_DEFS: Record<MarketDataTab, { label: string; icon: React.ReactNode }> = {
   news:    { label: "NEWS",    icon: <Newspaper className="w-4 h-4" /> },
   options: { label: "OPTIONS", icon: <BarChart2 className="w-4 h-4" /> },
   company: { label: "COMPANY", icon: <Building2 className="w-4 h-4" /> },
   chart:   { label: "CHART",   icon: <LineChart className="w-4 h-4" /> },
-  depth:   { label: "DEPTH",   icon: <Layers className="w-4 h-4" /> },
 };
 
-const DEFAULT_ORDER: MarketDataTab[] = ["news", "options", "company", "chart", "depth"];
+const DEFAULT_ORDER: MarketDataTab[] = ["news", "options", "company", "chart"];
 const STORAGE_KEY = "alphaTerminalTabOrder";
 const LONG_PRESS_MS = 450;
 
@@ -19,14 +18,17 @@ function loadOrder(): MarketDataTab[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
-      const parsed = JSON.parse(raw) as MarketDataTab[];
-      if (
-        Array.isArray(parsed) &&
-        parsed.length === DEFAULT_ORDER.length &&
-        DEFAULT_ORDER.every((t) => parsed.includes(t))
-      ) return parsed;
+      const parsed = JSON.parse(raw) as string[];
+      if (Array.isArray(parsed)) {
+        const filtered = parsed.filter((t): t is MarketDataTab => t in TAB_DEFS);
+        if (
+          filtered.length === DEFAULT_ORDER.length &&
+          DEFAULT_ORDER.every((t) => filtered.includes(t))
+        ) return filtered;
+      }
     }
   } catch {}
+  localStorage.removeItem(STORAGE_KEY);
   return [...DEFAULT_ORDER];
 }
 
@@ -312,7 +314,7 @@ export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps)
                 }}
                 onTouchStart={(e) => handleTouchStart(i, e)}
                 className={[
-                  "flex flex-1 items-center justify-center gap-2 py-1.5 border-b-2 select-none",
+                  "flex flex-1 items-center justify-center gap-2 py-2.5 border-b-2 select-none",
                   isActive ? "border-primary text-white" : "border-transparent text-zinc-500",
                   jiggling && !isBeingDragged ? "tab-jiggle tab-slot-shift" : "",
                   isBeingDragged ? "tab-dragging" : "",
