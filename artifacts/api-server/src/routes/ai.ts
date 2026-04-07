@@ -1013,7 +1013,7 @@ function readFromWebSocketCache(
     const sixE = schwabCacheBySymbol.get("/6E") ?? ibCacheBySymbol.get("/6E");
     if (sixE && sixE.last && sixE.close && sixE.close > 0) {
       const eurChangePct = ((sixE.last - sixE.close) / sixE.close) * 100;
-      const DXY_PREV_CLOSE = 99.00;
+      const DXY_PREV_CLOSE = 99.981;
       const dxyChangePct = -eurChangePct * 0.576;
       const syntheticDxy = Math.round((DXY_PREV_CLOSE * (1 + dxyChangePct / 100)) * 1000) / 1000;
       const dxyChange = Math.round((syntheticDxy - DXY_PREV_CLOSE) * 1000) / 1000;
