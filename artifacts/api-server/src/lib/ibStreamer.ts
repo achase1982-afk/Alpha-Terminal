@@ -276,10 +276,21 @@ function subscribeAll() {
   } catch (err) {
     logger.warn({ err }, "IB: failed to set market data type");
   }
-  logger.info({ breadthCount: BREADTH_SYMBOLS.length }, "IB: breadth symbols available for on-demand subscription (none permanently subscribed)");
+
+  let permCount = 0;
+  for (const def of BREADTH_SYMBOLS) {
+    const contract = buildContract(def);
+    try {
+      ib.reqMktData(def.reqId, contract, "", false, false);
+      permCount++;
+    } catch (err) {
+      logger.warn({ err, symbol: def.displaySymbol }, "IB: failed to subscribe breadth symbol");
+    }
+  }
+  logger.info({ count: permCount, total: BREADTH_SYMBOLS.length }, "IB: permanently subscribed all breadth symbols at connect");
+
   for (const [symbol, reqId] of dynamicQuoteSymbols) {
-    const breadthDef = BREADTH_SYMBOLS.find(d => d.displaySymbol === symbol);
-    const contract = breadthDef ? buildContract(breadthDef) : buildDynamicContract(symbol);
+    const contract = buildDynamicContract(symbol);
     try {
       ib.reqMktData(reqId, contract, "", false, false);
       logger.info({ symbol, reqId }, "IB: resubscribed dynamic quote after reconnect");
@@ -1126,6 +1137,9 @@ export function onIBConnected(cb: () => void): void {
 export function subscribeQuoteForSymbol(symbol: string): boolean {
   if (!ib || connState !== "CONNECTED") return false;
   const upper = symbol.toUpperCase();
+
+  const isPermanent = BREADTH_SYMBOLS.some(d => d.displaySymbol === upper);
+  if (isPermanent) return true;
 
   if (dynamicQuoteSymbols.has(upper)) {
     const idx = dynamicQuoteInsertOrder.indexOf(upper);

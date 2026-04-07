@@ -15,7 +15,7 @@ import {
 import { computeIndicators, formatTAContext, isDataStale, type Candle } from "../lib/ta.js";
 import { runMarketPulseEngine, formatClusterDebugLine, verifyEngineScoring, type MarketIndicators, type BiasLabel, type SessionType } from "../lib/marketPulseEngine.js";
 import { getSnapshot, type LiveQuote } from "../lib/schwabStreamer.js";
-import { getIBSnapshot, getIBCachedQuote, subscribeQuoteForSymbol as ibSubscribe, isIBConnected, onIBConnected } from "../lib/ibStreamer.js";
+import { getIBSnapshot, getIBCachedQuote } from "../lib/ibStreamer.js";
 import { getBestAccessToken } from "../lib/tokenStore.js";
 import { selectStrategies, selectStrategiesByRegime, classifyRegime, checkOverrideConflict, classifyTicker, computeBeta, applyBetaToProfile, computeExpectedMove, computeIVR, STRATEGIST_SYSTEM_PROMPT, type OptionContract, type StrategyPayload, type RegimeClassification, type TickerProfile, type DailyCandle, type ConvictionParams } from "../lib/optionsStrategist.js";
 import { runPreTradeChecks, type PreTradeInput, type PreTradeResult } from "../lib/preTradeRiskEngine.js";
@@ -693,26 +693,7 @@ const PULSE_TO_IB_NATIVE: Record<string, string> = {
 
 const IB_UNSUPPORTED = new Set(["$CPC", "$PCSPY", "$PCQQQ", "$PCIWM", "$SRVIX", "/BZ", "/DX"]);
 
-let pulseSubsTriggered = false;
-function subscribePulseSymbolsViaIB() {
-  if (pulseSubsTriggered || !isIBConnected()) return;
-  pulseSubsTriggered = true;
-  let delay = 0;
-  for (const sym of PULSE_SYMBOLS) {
-    if (IB_UNSUPPORTED.has(sym.display)) continue;
-    const ibName = PULSE_TO_IB_NATIVE[sym.display] ?? sym.display;
-    setTimeout(() => ibSubscribe(ibName), delay);
-    delay += 50;
-  }
-}
-
-onIBConnected(() => {
-  pulseSubsTriggered = false;
-  subscribePulseSymbolsViaIB();
-});
-
 function ensurePulseSubscriptions() {
-  subscribePulseSymbolsViaIB();
 }
 
 const schwabRestCache = new Map<string, { data: Record<string, unknown>; ts: number }>();
