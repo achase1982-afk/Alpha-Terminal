@@ -41,6 +41,7 @@ export interface OptionTick {
 
 const EQ_FIELDS = "0,1,2,3,4,5,8,10,11,12,15,28,29";
 const FUT_FIELDS = "0,1,2,3,4,5,8,12,13,14,19,24";
+let acctActivitySubscribed = false;
 
 const MONTH_CODES = "FGHJKMNQUVXZ";
 const QUARTERLY_ROOTS = new Set([
