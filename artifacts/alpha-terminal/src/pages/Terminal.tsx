@@ -125,9 +125,21 @@ export default function TerminalPage() {
   const showMiniCards = useUICustomizationStore((s) => s.showMiniCards);
   const isCompact = headerMode === "collapsed";
   const isScrolled = isCompact ? true : headerMode === "expanded" ? false : isScrolledRaw;
-  const [activeBottom, setActiveBottom] = useState<BottomTab>("markets");
+  const [activeBottom, setActiveBottom] = useState<BottomTab>(() => {
+    try {
+      const saved = sessionStorage.getItem("alpha_session_tab") as BottomTab | null;
+      const valid: BottomTab[] = ["portfolio", "markets", "ai", "search", "watchlist"];
+      return saved && valid.includes(saved) ? saved : "markets";
+    } catch { return "markets"; }
+  });
   const [contextTab, setContextTab] = useState<ContextTab>("news");
-  const [aiSubTab, setAiSubTab] = useState<AiSubTab>("pulse");
+  const [aiSubTab, setAiSubTab] = useState<AiSubTab>(() => {
+    try {
+      const saved = sessionStorage.getItem("alpha_session_ai_tab") as AiSubTab | null;
+      const valid: AiSubTab[] = ["pulse", "strategist", "scanner"];
+      return saved && valid.includes(saved) ? saved : "pulse";
+    } catch { return "pulse"; }
+  });
   const [pulseAutoGen, setPulseAutoGen] = useState(false);
   const [orderOpen, setOrderOpen] = useState(false);
   const [orderSide, setOrderSide] = useState<"BUY" | "SELL">("BUY");
@@ -232,6 +244,14 @@ export default function TerminalPage() {
       setActiveBottom("markets");
     }
   }, [isWide, activeBottom]);
+
+  useEffect(() => {
+    try { sessionStorage.setItem("alpha_session_tab", activeBottom); } catch {}
+  }, [activeBottom]);
+
+  useEffect(() => {
+    try { sessionStorage.setItem("alpha_session_ai_tab", aiSubTab); } catch {}
+  }, [aiSubTab]);
 
   useEffect(() => {
     if (isThreePanel && contextTab === "chart") {
@@ -340,7 +360,7 @@ export default function TerminalPage() {
           />
         </div>
         {showTickerTape && !isCompact && <TickerTape />}
-        {showAiBiasStrip && !isCompact && <AiBiasStrip onNavigateToPulse={() => { setActiveBottom("ai"); setAiSubTab("pulse"); setPulseAutoGen(true); }} />}
+        {showAiBiasStrip && !isCompact && <AiBiasStrip onNavigateToPulse={() => { setActiveBottom("ai"); setAiSubTab("pulse"); }} />}
       </header>
 
       {activeBottom === "ai" && (
