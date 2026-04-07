@@ -2,17 +2,17 @@ import { useState, useEffect, memo, useRef, useCallback } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useQuote } from "@/hooks/useQuote";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
-import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
-import { Zap, SlidersHorizontal, TrendingUp, TrendingDown, Minus, ChevronUp, ChevronDown, AlertTriangle, Search } from "lucide-react";
+import { Zap, SlidersHorizontal, TrendingUp, TrendingDown, Minus, ChevronUp, ChevronDown, AlertTriangle, Search, List } from "lucide-react";
 import { useScanCache } from "@/hooks/useScanCache";
 
 const API_BASE = "/api";
 
-const UNIVERSES: Record<string, { label: string; symbols: string[] }> = {
+const UNIVERSES: Record<string, { label: string; count: number; symbols: string[] }> = {
   sp100: {
     label: "S&P 500 Top 100",
+    count: 100,
     symbols: [
       "AAPL","MSFT","NVDA","AMZN","META","GOOGL","GOOG","BRK.B","LLY","AVGO",
       "JPM","TSLA","UNH","XOM","V","MA","PG","COST","JNJ","HD",
@@ -28,6 +28,7 @@ const UNIVERSES: Record<string, { label: string; symbols: string[] }> = {
   },
   ndx100: {
     label: "Nasdaq 100",
+    count: 100,
     symbols: [
       "AAPL","MSFT","NVDA","AMZN","META","GOOGL","GOOG","AVGO","TSLA","COST",
       "NFLX","AMD","ADBE","QCOM","PEP","LIN","CSCO","INTU","TXN","CMCSA",
@@ -41,8 +42,17 @@ const UNIVERSES: Record<string, { label: string; symbols: string[] }> = {
       "SPLK","PDD","RIVN","LCID","ENPH","SEDG","FSLR","MRNA","ZM","ROKU",
     ],
   },
+  megacap: {
+    label: "Mega Cap Tech",
+    count: 20,
+    symbols: [
+      "AAPL","MSFT","NVDA","AMZN","META","GOOGL","TSLA","AVGO","NFLX","AMD",
+      "CRM","ORCL","ADBE","INTU","NOW","QCOM","TXN","AMAT","MU","LRCX",
+    ],
+  },
   highbeta: {
     label: "High Volatility / Beta",
+    count: 60,
     symbols: [
       "TSLA","NVDA","AMD","SMCI","COIN","MSTR","PLTR","RIVN","LCID","NIO",
       "SOFI","HOOD","RBLX","SNAP","SQ","SHOP","ROKU","ENPH","SEDG","FSLR",
@@ -50,6 +60,15 @@ const UNIVERSES: Record<string, { label: string; symbols: string[] }> = {
       "SNOW","U","ABNB","DASH","MELI","SE","GRAB","BABA","JD","PDD",
       "RIOT","MARA","CLSK","HUT","GME","AMC","BBBY","CVNA","LAZR","IONQ",
       "RGTI","QBTS","SOUN","JOBY","ACHR","LUNR","RKLB","SPCE","PLUG","FCEL",
+    ],
+  },
+  lowbeta: {
+    label: "Low Beta / Defensive",
+    count: 30,
+    symbols: [
+      "JNJ","PG","KO","PEP","CL","WMT","COST","MCD","ABT","TMO",
+      "UNH","LLY","ABBV","MRK","PFE","AMGN","VRTX","SO","DUK","NEE",
+      "AEP","XEL","EXC","WM","RSG","MMC","CB","PGR","TRV","ALL",
     ],
   },
 };
@@ -233,18 +252,102 @@ const LiveManualRow = memo(function LiveManualRow({ q, onSelect }: {
   );
 });
 
+function UniverseDropdown({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const watchlists = useTerminalStore(s => s.watchlists);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    document.addEventListener("touchstart", handleClick as any);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("touchstart", handleClick as any);
+    };
+  }, [open]);
+
+  const isWatchlist = value.startsWith("wl:");
+  const selectedLabel = isWatchlist
+    ? watchlists[value.slice(3)]?.name ?? "Watchlist"
+    : UNIVERSES[value]?.label ?? value;
+  const selectedCount = isWatchlist
+    ? watchlists[value.slice(3)]?.symbols?.length ?? 0
+    : UNIVERSES[value]?.symbols?.length ?? 0;
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="w-full h-9 rounded-md border border-card-border bg-card text-foreground text-xs px-3 flex items-center justify-between gap-2 focus:outline-none focus:ring-1 focus:ring-primary/50 transition-colors hover:border-zinc-600"
+      >
+        <span className="truncate font-medium">{selectedLabel} <span className="text-zinc-500 font-normal">({selectedCount})</span></span>
+        <ChevronDown className={`w-3.5 h-3.5 text-zinc-500 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div className="absolute z-50 mt-1 left-0 right-0 rounded-lg border border-zinc-700/80 bg-[#141414] shadow-2xl shadow-black/60 overflow-hidden" style={{ maxHeight: 340, overflowY: "auto" }}>
+          <div className="px-3 pt-2.5 pb-1.5">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Markets</span>
+          </div>
+          {Object.entries(UNIVERSES).map(([key, u]) => (
+            <button
+              key={key}
+              onClick={() => { onChange(key); setOpen(false); }}
+              className={`w-full text-left px-3 py-2 flex items-center justify-between text-xs transition-colors ${
+                value === key ? "bg-[#FFB800]/10 text-[#FFB800]" : "text-zinc-300 hover:bg-zinc-800/60 hover:text-white"
+              }`}
+            >
+              <span className="font-medium">{u.label}</span>
+              <span className={`text-[10px] tabular-nums ${value === key ? "text-[#FFB800]/60" : "text-zinc-600"}`}>{u.symbols.length}</span>
+            </button>
+          ))}
+
+          {Object.keys(watchlists).length > 0 && (
+            <>
+              <div className="mx-3 my-1 border-t border-zinc-700/50" />
+              <div className="px-3 pt-1.5 pb-1 flex items-center gap-1.5">
+                <List className="w-3 h-3 text-zinc-500" />
+                <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Watchlists</span>
+              </div>
+              {Object.entries(watchlists).map(([id, wl]) => {
+                const wlKey = `wl:${id}`;
+                return (
+                  <button
+                    key={id}
+                    onClick={() => { onChange(wlKey); setOpen(false); }}
+                    className={`w-full text-left px-3 py-2 flex items-center justify-between text-xs transition-colors ${
+                      value === wlKey ? "bg-[#FFB800]/10 text-[#FFB800]" : "text-zinc-300 hover:bg-zinc-800/60 hover:text-white"
+                    }`}
+                  >
+                    <span className="font-medium">{wl.name}</span>
+                    <span className={`text-[10px] tabular-nums ${value === wlKey ? "text-[#FFB800]/60" : "text-zinc-600"}`}>{wl.symbols.length}</span>
+                  </button>
+                );
+              })}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol }: {
   subscribeEquitySymbols?: (symbols: string[]) => void;
   onNavigateToSymbol?: (sym: string) => void;
 }) {
-  const { accessToken, aiFeatureSettings, setSymbol } = useTerminalStore();
+  const { accessToken, aiFeatureSettings, setSymbol, watchlists } = useTerminalStore();
   const aiModel = aiFeatureSettings.scanner.model;
   const aiTemp = aiFeatureSettings.scanner.temperature;
   const { cachedData: scanCache, setCachedData: setScanCache } = useScanCache();
 
   const [mode, setMode] = useState<"ai" | "manual">("ai");
   const [universe, setUniverse] = useState("sp100");
-  const [customTickers, setCustomTickers] = useState("");
   const [maxResults, setMaxResults] = useState(10);
   const [isScanning, setIsScanning] = useState(false);
   const [aiSetups, setAiSetups] = useState<ScannerSetup[]>([]);
@@ -274,8 +377,9 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol }: {
   const [maxPrice, setMaxPrice] = useState(1000);
 
   const getSymbols = (): string[] => {
-    if (universe === "custom") {
-      return customTickers.split(/[,\s]+/).map(s => s.trim().toUpperCase()).filter(Boolean);
+    if (universe.startsWith("wl:")) {
+      const wlId = universe.slice(3);
+      return watchlists[wlId]?.symbols ?? [];
     }
     return UNIVERSES[universe]?.symbols ?? [];
   };
@@ -301,7 +405,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol }: {
   const handleScan = async () => {
     if (!accessToken) return;
     const syms = getSymbols();
-    if (!syms.length) { setRawError("No symbols to scan. Add tickers to your Custom Watchlist."); return; }
+    if (!syms.length) { setRawError("No symbols to scan. Select a market universe or a watchlist with symbols."); return; }
 
     setIsScanning(true);
     setRawError(null);
@@ -401,16 +505,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol }: {
               <Label className="text-[11px] text-muted-foreground uppercase tracking-wider font-bold flex items-center gap-1.5">
                 <Search className="w-3 h-3" /> Scan Universe
               </Label>
-              <select
-                value={universe}
-                onChange={e => setUniverse(e.target.value)}
-                className="w-full h-8 rounded-md border border-card-border bg-card text-foreground text-xs px-2 focus:outline-none focus:ring-1 focus:ring-primary/50"
-              >
-                {Object.entries(UNIVERSES).map(([k, v]) => (
-                  <option key={k} value={k}>{v.label} ({v.symbols.length})</option>
-                ))}
-                <option value="custom">Custom Watchlist</option>
-              </select>
+              <UniverseDropdown value={universe} onChange={setUniverse} />
             </div>
 
             {mode === "ai" && (
@@ -424,26 +519,11 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol }: {
                   max={20}
                   value={maxResults}
                   onChange={e => setMaxResults(Math.min(20, Math.max(1, Number(e.target.value) || 1)))}
-                  className="w-full h-8 rounded-md border border-card-border bg-card text-foreground text-xs px-2 tabular-nums focus:outline-none focus:ring-1 focus:ring-primary/50"
+                  className="w-full h-9 rounded-md border border-card-border bg-card text-foreground text-xs px-3 tabular-nums focus:outline-none focus:ring-1 focus:ring-primary/50"
                 />
               </div>
             )}
           </div>
-
-          {universe === "custom" && (
-            <div className="space-y-1.5">
-              <Label className="text-[11px] text-muted-foreground uppercase tracking-wider font-bold">
-                Custom Watchlist (comma-separated)
-              </Label>
-              <textarea
-                value={customTickers}
-                onChange={e => setCustomTickers(e.target.value.toUpperCase())}
-                placeholder="AAPL, MSFT, NVDA, TSLA, AMD..."
-                rows={2}
-                className="w-full rounded-md border border-card-border bg-card text-foreground text-xs px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-primary/50 uppercase"
-              />
-            </div>
-          )}
 
           <div className="text-[11px] text-muted-foreground">
             Scanning <span className="text-primary font-bold">{currentSyms.length} tickers</span>
