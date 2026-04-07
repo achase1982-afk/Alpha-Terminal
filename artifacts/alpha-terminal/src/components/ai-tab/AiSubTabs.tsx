@@ -6,9 +6,9 @@ interface AiSubTabsProps {
 }
 
 const TABS: { value: AiSubTab; label: string }[] = [
-  { value: "pulse", label: "PULSE" },
-  { value: "strategist", label: "STRATEGIST" },
+  { value: "pulse", label: "MARKET PULSE" },
   { value: "scanner", label: "SCANNER" },
+  { value: "strategist", label: "STRATEGIST" },
 ];
 
 export function AiSubTabs({ active, onChange }: AiSubTabsProps) {

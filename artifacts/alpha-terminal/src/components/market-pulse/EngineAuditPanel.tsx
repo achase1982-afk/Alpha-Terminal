@@ -171,7 +171,7 @@ export function EngineAuditPanel({ data }: { data: MarketPulseData }) {
           </div>
 
           {activeTab === "indicators" && raw && (
-            <div className="max-h-[420px] overflow-y-auto">
+            <div className="overflow-y-auto" style={{ maxHeight: "calc(100vh - 200px)" }}>
               {ALL_CLUSTERS.map(cluster => {
                 const cr = grouped[cluster];
                 if (!cr.length) return null;
@@ -215,7 +215,7 @@ export function EngineAuditPanel({ data }: { data: MarketPulseData }) {
           )}
 
           {activeTab === "rules" && (
-            <div className="max-h-[420px] overflow-y-auto">
+            <div className="overflow-y-auto" style={{ maxHeight: "calc(100vh - 200px)" }}>
               {CLUSTER_ORDER.map((key) => {
                 const cluster = data.clusters[key];
                 if (!cluster) return null;
