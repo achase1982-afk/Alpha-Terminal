@@ -40,7 +40,7 @@ const dynamicQuoteSymbols = new Map<string, number>(); // symbol → reqId
 const dynamicQuoteReqIdToSymbol = new Map<number, string>(); // reqId → symbol
 const dynamicQuoteInsertOrder: string[] = []; // LRU order (oldest first)
 let dynamicQuoteReqCounter = 7000;
-const MAX_DYNAMIC_QUOTE_SLOTS = 6; // IB has ~100 lines total; breadth uses ~85-90
+const MAX_DYNAMIC_QUOTE_SLOTS = 95; // IB ~100 line limit; all on-demand now
 
 const ibCompanyNames = new Map<string, string>(); // symbol → long name
 
@@ -251,7 +251,20 @@ function emitQuote(def: IBSymbolDef, state: IBQuoteState) {
 }
 
 function emitRawQuote(displaySymbol: string, state: IBQuoteState) {
-  const effectiveLast = state.last ?? state.bid ?? state.ask ?? null;
+  const def = BREADTH_SYMBOLS.find(d => d.displaySymbol === displaySymbol);
+  const mode = def?.valueMode ?? "last";
+  let effectiveLast: number | null;
+  if (mode === "bid") {
+    effectiveLast = state.bid ?? state.last ?? state.ask ?? null;
+  } else if (mode === "ask") {
+    effectiveLast = state.ask ?? state.last ?? state.bid ?? null;
+  } else if (mode === "bid_minus_ask") {
+    effectiveLast = (state.bid != null && state.ask != null)
+      ? state.bid - state.ask
+      : state.last ?? state.bid ?? state.ask ?? null;
+  } else {
+    effectiveLast = state.last ?? state.bid ?? state.ask ?? null;
+  }
   const quote: LiveQuote = {
     symbol: displaySymbol,
     last: effectiveLast,
@@ -294,28 +307,10 @@ function subscribeAll() {
   } catch (err) {
     logger.warn({ err }, "IB: failed to set market data type");
   }
-  for (const def of BREADTH_SYMBOLS) {
-    const contract = buildContract(def);
-    const genericTicks = NEWS_TICK_SYMBOLS.has(def.ibSymbol) ? "292" : "";
-    try {
-      ib.reqMktData(def.reqId, contract, genericTicks, false, false);
-      logger.info({ symbol: def.ibSymbol, reqId: def.reqId, news: genericTicks === "292" }, "IB: subscribed to market data");
-    } catch (err) {
-      logger.error({ err, symbol: def.ibSymbol }, "IB: failed to subscribe");
-    }
-  }
-  // Resubscribe any on-demand quote symbols that were active before reconnect
+  logger.info({ breadthCount: BREADTH_SYMBOLS.length }, "IB: breadth symbols available for on-demand subscription (none permanently subscribed)");
   for (const [symbol, reqId] of dynamicQuoteSymbols) {
-    const isFut = symbol.startsWith("/");
-    const isIdx = symbol.startsWith("$");
-    const ibSym = symbol.replace(/^[\/$]/, "");
-    const contract: Contract = {
-      symbol: ibSym,
-      secType: (isFut ? "FUT" : isIdx ? "IND" : "STK") as SecType,
-      exchange: isFut ? "CME" : isIdx ? "SMART" : "SMART",
-      currency: "USD",
-    };
-    if (isFut) (contract as any).lastTradeDateOrContractMonth = getFrontMonth(ibSym);
+    const breadthDef = BREADTH_SYMBOLS.find(d => d.displaySymbol === symbol);
+    const contract = breadthDef ? buildContract(breadthDef) : buildDynamicContract(symbol);
     try {
       ib.reqMktData(reqId, contract, "", false, false);
       logger.info({ symbol, reqId }, "IB: resubscribed dynamic quote after reconnect");
@@ -324,6 +319,23 @@ function subscribeAll() {
     }
   }
   subscribeDepth();
+}
+
+function buildDynamicContract(symbol: string): Contract {
+  const breadthDef = BREADTH_SYMBOLS.find(d => d.displaySymbol === symbol);
+  if (breadthDef) return buildContract(breadthDef);
+
+  const isFut = symbol.startsWith("/");
+  const isIdx = symbol.startsWith("$");
+  const ibSym = symbol.replace(/^[\/$]/, "");
+  const contract: Contract = {
+    symbol: ibSym,
+    secType: (isFut ? "FUT" : isIdx ? "IND" : "STK") as SecType,
+    exchange: isFut ? "CME" : "SMART",
+    currency: "USD",
+  };
+  if (isFut) (contract as any).lastTradeDateOrContractMonth = getFrontMonth(ibSym);
+  return contract;
 }
 
 function subscribeDepth() {
@@ -1137,8 +1149,6 @@ export function subscribeQuoteForSymbol(symbol: string): boolean {
   if (!ib || connState !== "CONNECTED") return false;
   const upper = symbol.toUpperCase();
 
-  if (BREADTH_SYMBOLS.some(d => d.displaySymbol === upper)) return true;
-
   if (dynamicQuoteSymbols.has(upper)) {
     const idx = dynamicQuoteInsertOrder.indexOf(upper);
     if (idx !== -1) {
@@ -1153,17 +1163,7 @@ export function subscribeQuoteForSymbol(symbol: string): boolean {
   }
 
   const reqId = dynamicQuoteReqCounter++;
-  const isFut = upper.startsWith("/");
-  const isIdx = upper.startsWith("$");
-  const ibSym = upper.replace(/^[\/$]/, "");
-
-  const contract: Contract = {
-    symbol: ibSym,
-    secType: (isFut ? "FUT" : isIdx ? "IND" : "STK") as SecType,
-    exchange: isFut ? "CME" : "SMART",
-    currency: "USD",
-  };
-  if (isFut) (contract as any).lastTradeDateOrContractMonth = getFrontMonth(ibSym);
+  const contract = buildDynamicContract(upper);
 
   dynamicQuoteSymbols.set(upper, reqId);
   dynamicQuoteReqIdToSymbol.set(reqId, upper);
@@ -1172,7 +1172,9 @@ export function subscribeQuoteForSymbol(symbol: string): boolean {
   try {
     ib.reqMktData(reqId, contract, "", false, false);
     logger.info({ symbol: upper, reqId, slots: `${dynamicQuoteSymbols.size}/${MAX_DYNAMIC_QUOTE_SLOTS}` }, "IB: subscribed on-demand quote");
-    void fetchContractLongName(upper, contract);
+    if (!upper.startsWith("$") && !upper.startsWith("/")) {
+      void fetchContractLongName(upper, contract);
+    }
     return true;
   } catch (err) {
     logger.error({ err, symbol: upper }, "IB: failed to subscribe on-demand quote");
