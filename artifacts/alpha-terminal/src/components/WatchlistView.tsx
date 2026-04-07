@@ -259,22 +259,31 @@ function IndicatorSettingsPanel({
   );
 }
 
-function WatchlistSwitcherPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
+function WatchlistDropdown({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { watchlists, activeWatchlistId, setActiveWatchlist, createWatchlist, deleteWatchlist, renameWatchlist } = useTerminalStore();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [showNew, setShowNew] = useState(false);
   const [newName, setNewName] = useState("");
-  const [headerH, setHeaderH] = useState(0);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const el = document.getElementById("terminal-header");
-    if (!el) return;
-    const ro = new ResizeObserver(() => setHeaderH(el.offsetHeight));
-    ro.observe(el);
-    setHeaderH(el.offsetHeight);
-    return () => ro.disconnect();
-  }, []);
+    if (!open) {
+      setEditingId(null);
+      setShowNew(false);
+      setNewName("");
+      return;
+    }
+    function handleClickOutside(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [open, onClose]);
+
+  if (!open) return null;
 
   const ids = Object.keys(watchlists);
 
@@ -294,141 +303,120 @@ function WatchlistSwitcherPanel({ open, onClose }: { open: boolean; onClose: () 
   };
 
   return (
-    <>
-      <div
-        className={`fixed left-0 right-0 bottom-0 bg-black/60 z-40 transition-opacity duration-300 ${open ? "opacity-100" : "opacity-0 pointer-events-none"}`}
-        style={{ top: headerH }}
-        onClick={onClose}
-      />
-
-      <div
-        className={`fixed left-0 right-0 bottom-0 z-50 transform transition-transform duration-300 flex flex-col ${open ? "translate-x-0" : "-translate-x-full"}`}
-        style={{ background: "#000000", top: headerH }}
-      >
-        <div className="flex items-center justify-center px-4 py-4 border-b border-[#2A2A2C]">
-          <div className="flex items-center gap-2">
-            <Star className="w-5 h-5" style={{ color: "#FFB800" }} />
-            <span className="font-mono text-[16px] font-bold tracking-wider text-white">SWITCH WATCHLIST</span>
-          </div>
-          <button
-            onClick={onClose}
-            className="absolute right-4 p-2 rounded-lg text-[#71717a] hover:text-white transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto">
-          {ids.map((id) => {
-            const wl = watchlists[id];
-            const isActive = id === activeWatchlistId;
-            const isEditing = editingId === id;
-
-            return (
-              <div
-                key={id}
-                className={`flex items-center justify-between px-5 py-2 transition-colors ${isActive ? "border-l-2 border-l-[#FFB800]" : "border-l-2 border-l-transparent hover:bg-white/[0.03]"}`}
-                style={{ borderBottom: "1px solid #2A2A2C" }}
-              >
-                {isEditing ? (
-                  <div className="flex items-center gap-2 flex-1">
-                    <input
-                      value={editName}
-                      onChange={(e) => setEditName(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === "Enter") handleRename(id); if (e.key === "Escape") setEditingId(null); }}
-                      className="flex-1 font-mono text-[14px] bg-transparent text-white outline-none border-b border-[#FFB800]"
-                      autoFocus
-                    />
-                    <button onClick={() => handleRename(id)} className="p-1.5 text-[#22c55e] rounded">
-                      <Check className="w-4 h-4" />
-                    </button>
-                    <button onClick={() => setEditingId(null)} className="p-1.5 text-[#71717a] rounded">
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                    <button
-                      onClick={() => { setActiveWatchlist(id); onClose(); }}
-                      className="flex-1 text-left flex items-center gap-3"
-                    >
-                      <Star className="w-4 h-4" style={{ color: isActive ? "#FFB800" : "#3a3a3c" }} />
-                      <div className="flex flex-col">
-                        <span className={`font-mono text-[14px] font-bold ${isActive ? "text-[#FFB800]" : "text-white"}`}>
-                          {wl.name}
-                        </span>
-                        <span className="font-mono text-[11px] text-[#52525b]">
-                          {wl.symbols.length} {wl.symbols.length === 1 ? "symbol" : "symbols"}
-                        </span>
-                      </div>
-                    </button>
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setEditingId(id); setEditName(wl.name); }}
-                        className="p-2 text-[#52525b] hover:text-white rounded-lg transition-colors"
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </button>
-                      {id !== "default" && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); deleteWatchlist(id); }}
-                          className="p-2 text-[#52525b] hover:text-red-400 rounded-lg transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
-                  </>
-                )}
-              </div>
-            );
-          })}
-
-          {showNew ? (
-            <div className="flex items-center gap-2 px-5 py-4" style={{ borderBottom: "1px solid #2A2A2C" }}>
-              <input
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); if (e.key === "Escape") { setShowNew(false); setNewName(""); } }}
-                placeholder="Watchlist name..."
-                className="flex-1 font-mono text-[14px] bg-transparent text-white outline-none border-b border-[#FFB800] placeholder:text-[#52525b]"
-                autoFocus
-              />
-              <button onClick={handleCreate} className="p-1.5 text-[#22c55e] rounded">
-                <Check className="w-4 h-4" />
-              </button>
-              <button onClick={() => { setShowNew(false); setNewName(""); }} className="p-1.5 text-[#71717a] rounded">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => setShowNew(true)}
-              className="w-full flex items-center gap-3 px-5 py-4 text-[#FFB800] hover:bg-white/[0.04] transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              <span className="font-mono text-[13px] font-bold tracking-wider">NEW WATCHLIST</span>
+    <div
+      ref={dropdownRef}
+      className="absolute left-1/2 -translate-x-1/2 top-full mt-1 z-50 rounded-xl overflow-hidden shadow-2xl"
+      style={{ background: "#111", border: "1px solid #2A2A2C", width: "min(320px, calc(100vw - 32px))", maxHeight: 400 }}
+    >
+      <div className="overflow-y-auto" style={{ maxHeight: 340 }}>
+        {showNew ? (
+          <div className="flex items-center gap-2 px-4 py-3" style={{ borderBottom: "1px solid #2A2A2C" }}>
+            <input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); if (e.key === "Escape") { setShowNew(false); setNewName(""); } }}
+              placeholder="Watchlist name..."
+              className="flex-1 font-mono text-sm bg-transparent text-white outline-none border-b border-[#FFB800] placeholder:text-[#52525b] pb-0.5"
+              autoFocus
+            />
+            <button onClick={handleCreate} className="p-1 text-[#22c55e]">
+              <Check className="w-4 h-4" />
             </button>
-          )}
-        </div>
+            <button onClick={() => { setShowNew(false); setNewName(""); }} className="p-1 text-[#71717a]">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowNew(true)}
+            className="w-full flex items-center gap-2.5 px-4 py-3 text-[#FFB800] hover:bg-white/[0.04] transition-colors"
+            style={{ borderBottom: "1px solid #2A2A2C" }}
+          >
+            <Plus className="w-4 h-4" />
+            <span className="font-mono text-sm font-bold tracking-wider">CREATE NEW WATCHLIST</span>
+          </button>
+        )}
+
+        {ids.map((id) => {
+          const wl = watchlists[id];
+          const isActive = id === activeWatchlistId;
+          const isEditing = editingId === id;
+
+          return (
+            <div
+              key={id}
+              className="flex items-center px-4 py-2.5 transition-colors hover:bg-white/[0.04]"
+              style={{ borderBottom: "1px solid #1c1c1c", background: isActive ? "rgba(255,184,0,0.06)" : undefined }}
+            >
+              {isEditing ? (
+                <div className="flex items-center gap-2 flex-1">
+                  <input
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") handleRename(id); if (e.key === "Escape") setEditingId(null); }}
+                    className="flex-1 font-mono text-sm bg-transparent text-white outline-none border-b border-[#FFB800]"
+                    autoFocus
+                  />
+                  <button onClick={() => handleRename(id)} className="p-1 text-[#22c55e]">
+                    <Check className="w-3.5 h-3.5" />
+                  </button>
+                  <button onClick={() => setEditingId(null)} className="p-1 text-[#71717a]">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <button
+                    onClick={() => { setActiveWatchlist(id); onClose(); }}
+                    className="flex-1 text-left flex items-center gap-2.5 min-w-0"
+                  >
+                    <Star className="w-3.5 h-3.5 shrink-0" style={{ color: isActive ? "#FFB800" : "#3a3a3c" }} />
+                    <span className={`font-mono text-sm font-bold truncate ${isActive ? "text-[#FFB800]" : "text-white"}`}>
+                      {wl.name}
+                    </span>
+                    <span className="font-mono text-xs text-[#52525b] shrink-0 ml-auto">
+                      {wl.symbols.length}
+                    </span>
+                  </button>
+                  <div className="flex items-center gap-0.5 ml-2 shrink-0">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setEditingId(id); setEditName(wl.name); }}
+                      className="p-1.5 text-[#52525b] hover:text-white rounded transition-colors"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    {id !== "default" && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); deleteWatchlist(id); }}
+                        className="p-1.5 text-[#52525b] hover:text-red-400 rounded transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        })}
       </div>
-    </>
+    </div>
   );
 }
 
-function WatchlistSwitcherButton({ onOpen }: { onOpen: () => void }) {
+function WatchlistSwitcherButton({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   const { watchlists, activeWatchlistId } = useTerminalStore();
   const activeList = watchlists[activeWatchlistId];
 
   return (
     <button
-      onClick={onOpen}
+      onClick={onToggle}
       className="flex items-center gap-2 px-3 py-2 rounded-lg transition-colors hover:bg-white/[0.04] active:bg-white/[0.08]"
     >
       <span className="font-mono text-[14px] font-bold tracking-wider text-white">
         {activeList?.name ?? "Watchlist"}
       </span>
-      <ChevronDown className="w-4 h-4 text-[#71717a]" />
+      <ChevronDown className={`w-4 h-4 text-[#71717a] transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
     </button>
   );
 }
@@ -592,12 +580,12 @@ export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sy
 
   return (
     <div className="flex-1 flex flex-col" style={{ background: "#000000" }}>
-      <WatchlistSwitcherPanel open={switcherOpen} onClose={() => setSwitcherOpen(false)} />
       <IndicatorSettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} activeIndicators={activeIndicators} onToggle={toggleIndicator} />
 
       <div className="px-4 pt-4 pb-2">
         <div className="flex items-center justify-center mb-3 relative">
-          <WatchlistSwitcherButton onOpen={() => setSwitcherOpen(true)} />
+          <WatchlistSwitcherButton open={switcherOpen} onToggle={() => setSwitcherOpen((p) => !p)} />
+          <WatchlistDropdown open={switcherOpen} onClose={() => setSwitcherOpen(false)} />
           <div className="absolute right-0 flex items-center gap-1">
             <button
               onClick={() => setSettingsOpen(true)}
