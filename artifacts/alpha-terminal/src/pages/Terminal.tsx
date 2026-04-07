@@ -516,6 +516,7 @@ export default function TerminalPage() {
           if (tab === "search") {
             setSearchOpen(true);
           } else {
+            if (tab === "ai") setAiSubTab("pulse");
             setActiveBottom(tab);
           }
         }} />
@@ -532,7 +533,7 @@ export default function TerminalPage() {
                 onClick={() => {
                   sidebarRef.current?.clearActivePage();
                   setSidebarOpen(false);
-                  if (tab === "search") { setSearchOpen(true); } else { setActiveBottom(tab); }
+                  if (tab === "search") { setSearchOpen(true); } else { if (tab === "ai") setAiSubTab("pulse"); setActiveBottom(tab); }
                 }}
                 className="font-mono text-[10px] font-semibold tracking-wider px-3 py-1.5 rounded transition-colors"
                 style={{
