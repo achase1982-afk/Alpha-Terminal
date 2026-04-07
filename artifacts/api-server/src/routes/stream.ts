@@ -9,13 +9,20 @@ import { subscribeQuoteForSymbol, isIBConnected } from "../lib/ibStreamer.js";
 
 const router: IRouter = Router();
 
+const STAGGER_MS = 300;
+
 function subscribeSymbolsToIB(symbols: unknown) {
   if (!isIBConnected()) return;
   if (!Array.isArray(symbols)) return;
-  for (const sym of symbols) {
-    if (typeof sym === "string" && sym.trim()) {
-      subscribeQuoteForSymbol(sym.trim().toUpperCase());
-    }
+  const cleaned = symbols
+    .filter((s): s is string => typeof s === "string" && s.trim().length > 0)
+    .map(s => s.trim().toUpperCase());
+  if (!cleaned.length) return;
+
+  subscribeQuoteForSymbol(cleaned[0]);
+  for (let i = 1; i < cleaned.length; i++) {
+    const sym = cleaned[i];
+    setTimeout(() => subscribeQuoteForSymbol(sym), STAGGER_MS * i);
   }
 }
 

@@ -38,7 +38,15 @@ let dynamicDepthReqCounter = 6500;
 
 const dynamicQuoteSymbols = new Map<string, number>(); // symbol → reqId
 const dynamicQuoteReqIdToSymbol = new Map<number, string>(); // reqId → symbol
+const dynamicQuoteInsertOrder: string[] = []; // LRU order (oldest first)
 let dynamicQuoteReqCounter = 7000;
+const MAX_DYNAMIC_QUOTE_SLOTS = 6; // IB has ~100 lines total; breadth uses ~85-90
+
+const ibCompanyNames = new Map<string, string>(); // symbol → long name
+
+export function getIBCompanyName(symbol: string): string | null {
+  return ibCompanyNames.get(symbol.toUpperCase()) ?? null;
+}
 
 export interface IBNewsHeadline {
   time: string;
@@ -415,6 +423,7 @@ function teardownIB() {
   dynamicDepthSymbols.clear();
   dynamicQuoteSymbols.clear();
   dynamicQuoteReqIdToSymbol.clear();
+  dynamicQuoteInsertOrder.length = 0;
   if (depthThrottleTimer) {
     clearInterval(depthThrottleTimer);
     depthThrottleTimer = null;
@@ -544,6 +553,18 @@ export async function connectIB(): Promise<void> {
       if (code === 200 && reqId > 0) {
         const def = reqIdToSymbol.get(reqId);
         logger.warn({ code, reqId, symbol: def?.ibSymbol, msg: err.message }, "IB: no security definition");
+        return;
+      }
+
+      if (code === 101 && reqId >= 7000) {
+        const sym = dynamicQuoteReqIdToSymbol.get(reqId);
+        if (sym) {
+          dynamicQuoteSymbols.delete(sym);
+          dynamicQuoteReqIdToSymbol.delete(reqId);
+          const idx = dynamicQuoteInsertOrder.indexOf(sym);
+          if (idx !== -1) dynamicQuoteInsertOrder.splice(idx, 1);
+          logger.warn({ reqId, symbol: sym }, "IB: max tickers — cleaned up failed dynamic sub");
+        }
         return;
       }
 
@@ -1076,15 +1097,60 @@ export function getIBCachedQuote(symbol: string): LiveQuote | null {
   };
 }
 
+function evictOldestDynamicQuote() {
+  if (!ib || dynamicQuoteInsertOrder.length === 0) return;
+  const evictSym = dynamicQuoteInsertOrder.shift()!;
+  const evictReqId = dynamicQuoteSymbols.get(evictSym);
+  if (evictReqId !== undefined) {
+    try { ib.cancelMktData(evictReqId); } catch {}
+    dynamicQuoteSymbols.delete(evictSym);
+    dynamicQuoteReqIdToSymbol.delete(evictReqId);
+    logger.info({ symbol: evictSym, reqId: evictReqId }, "IB: evicted dynamic quote (LRU)");
+  }
+}
+
+function fetchContractLongName(symbol: string, contract: Contract) {
+  if (ibCompanyNames.has(symbol) || !ib) return;
+  const reqId = conIdReqCounter++;
+  const timeout = setTimeout(() => {
+    ib!.off(EventName.contractDetails, handler);
+  }, 5_000);
+  const handler = (_rId: number, details: any) => {
+    if (_rId !== reqId) return;
+    clearTimeout(timeout);
+    ib!.off(EventName.contractDetails, handler);
+    if (details?.longName) {
+      ibCompanyNames.set(symbol, details.longName);
+      logger.info({ symbol, longName: details.longName }, "IB: cached company name");
+    }
+  };
+  ib!.on(EventName.contractDetails, handler);
+  try {
+    ib!.reqContractDetails(reqId, contract);
+  } catch {
+    clearTimeout(timeout);
+    ib!.off(EventName.contractDetails, handler);
+  }
+}
+
 export function subscribeQuoteForSymbol(symbol: string): boolean {
   if (!ib || connState !== "CONNECTED") return false;
   const upper = symbol.toUpperCase();
 
-  // Already subscribed as a breadth symbol or dynamically
-  if (ibQuoteCache.has(upper) && dynamicQuoteSymbols.has(upper)) return true;
-  if (dynamicQuoteSymbols.has(upper)) return true;
-  // Check if it's already a breadth symbol
   if (BREADTH_SYMBOLS.some(d => d.displaySymbol === upper)) return true;
+
+  if (dynamicQuoteSymbols.has(upper)) {
+    const idx = dynamicQuoteInsertOrder.indexOf(upper);
+    if (idx !== -1) {
+      dynamicQuoteInsertOrder.splice(idx, 1);
+      dynamicQuoteInsertOrder.push(upper);
+    }
+    return true;
+  }
+
+  while (dynamicQuoteSymbols.size >= MAX_DYNAMIC_QUOTE_SLOTS) {
+    evictOldestDynamicQuote();
+  }
 
   const reqId = dynamicQuoteReqCounter++;
   const isFut = upper.startsWith("/");
@@ -1101,15 +1167,18 @@ export function subscribeQuoteForSymbol(symbol: string): boolean {
 
   dynamicQuoteSymbols.set(upper, reqId);
   dynamicQuoteReqIdToSymbol.set(reqId, upper);
+  dynamicQuoteInsertOrder.push(upper);
 
   try {
     ib.reqMktData(reqId, contract, "", false, false);
-    logger.info({ symbol: upper, reqId }, "IB: subscribed on-demand quote");
+    logger.info({ symbol: upper, reqId, slots: `${dynamicQuoteSymbols.size}/${MAX_DYNAMIC_QUOTE_SLOTS}` }, "IB: subscribed on-demand quote");
+    void fetchContractLongName(upper, contract);
     return true;
   } catch (err) {
     logger.error({ err, symbol: upper }, "IB: failed to subscribe on-demand quote");
     dynamicQuoteSymbols.delete(upper);
     dynamicQuoteReqIdToSymbol.delete(reqId);
+    dynamicQuoteInsertOrder.pop();
     return false;
   }
 }

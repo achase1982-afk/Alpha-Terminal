@@ -6,7 +6,7 @@ import {
 } from "@workspace/api-zod";
 import { getAccessToken, getBestAccessToken } from "../lib/tokenStore.js";
 import { getQuoteBySymbol } from "../lib/schwabStreamer.js";
-import { getIBCachedQuote, subscribeQuoteForSymbol, isIBConnected } from "../lib/ibStreamer.js";
+import { getIBCachedQuote, subscribeQuoteForSymbol, isIBConnected, getIBCompanyName } from "../lib/ibStreamer.js";
 
 const router: IRouter = Router();
 
@@ -104,8 +104,10 @@ router.get("/quote", async (req, res) => {
       }
     }
     if (ibQuote && ibQuote.last !== null) {
+      const ibDesc = getIBCompanyName(displaySymbol) ?? undefined;
       const data = GetQuoteResponse.parse({
         symbol: displaySymbol,
+        description: ibDesc,
         last: ibQuote.last ?? undefined,
         bid: ibQuote.bid ?? undefined,
         ask: ibQuote.ask ?? undefined,
