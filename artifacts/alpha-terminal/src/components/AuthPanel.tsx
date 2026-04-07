@@ -3,19 +3,17 @@ import { useTerminalStore } from "@/lib/store";
 import { useGetAuthUrl } from "@workspace/api-client-react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { queryClient } from "@/App";
-import { Button } from "@/components/ui/button";
-import { ChevronRight, KeyRound, ExternalLink, CheckCircle2, Loader2 } from "lucide-react";
+import { ExternalLink, CheckCircle2, Loader2, XCircle } from "lucide-react";
 
 export function AuthPanel() {
   const { accessToken, traderAccessToken, clearTokens, clearTraderTokens } = useTerminalStore();
-  const [isOpen, setIsOpen] = useState(false);
   const [isNavigating, setIsNavigating] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
 
   const isConnected = !!(accessToken || traderAccessToken);
 
   const { data: authUrlData, refetch: refetchAuthUrl, isFetching: isUrlFetching } = useGetAuthUrl({
-    query: { enabled: isOpen && !isConnected },
+    query: { enabled: !isConnected },
   });
 
   const handleLogin = useCallback(async () => {
@@ -40,78 +38,55 @@ export function AuthPanel() {
 
   const isLoading = isUrlFetching || isNavigating;
 
+  if (isConnected) {
+    return (
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#00d166] opacity-75" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-[#00d166]" />
+          </span>
+          <span className="font-mono text-xs font-bold text-[#e4e4e7] tracking-wider">SCHWAB</span>
+          <span className="font-mono text-[10px] text-[#00d166] tracking-wider">CONNECTED</span>
+        </div>
+        <button
+          onClick={handleDisconnect}
+          disabled={isDisconnecting}
+          className="font-mono text-[10px] text-zinc-500 hover:text-red-400 transition-colors tracking-wider"
+        >
+          {isDisconnecting ? (
+            <Loader2 className="w-3 h-3 animate-spin" />
+          ) : (
+            "DISCONNECT"
+          )}
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <div className="bg-card border border-card-border rounded-xl overflow-hidden shadow-sm">
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <XCircle className="w-3.5 h-3.5 text-red-500" />
+          <span className="font-mono text-xs font-bold text-[#e4e4e7] tracking-wider">SCHWAB</span>
+          <span className="font-mono text-[10px] text-red-500 tracking-wider">DISCONNECTED</span>
+        </div>
+      </div>
+      <p className="font-mono text-[10px] text-zinc-500 leading-relaxed">
+        Connect for put/call ratios, portfolio syncing, and order execution.
+      </p>
       <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between p-3 text-sm font-mono font-bold hover:bg-secondary/50 transition-colors"
+        onClick={handleLogin}
+        disabled={isLoading}
+        className="flex items-center justify-center gap-2 w-full py-2 rounded border border-zinc-700 hover:border-[#FFB800]/50 hover:bg-[#FFB800]/5 transition-all font-mono text-xs text-zinc-300 hover:text-[#FFB800] tracking-wider disabled:opacity-50"
       >
-        <div className="flex items-center gap-2">
-          <KeyRound className="w-4 h-4 text-primary" />
-          <span className="text-foreground">SCHWAB</span>
-        </div>
-        <div className="flex items-center gap-3">
-          {isConnected ? (
-            <span className="flex items-center gap-1.5 text-xs text-primary">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
-              </span>
-              CONNECTED
-            </span>
-          ) : (
-            <span className="flex items-center gap-1.5 text-xs text-destructive">
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-destructive" />
-              DISCONNECTED
-            </span>
-          )}
-          <ChevronRight className={`w-4 h-4 transition-transform duration-300 ${isOpen ? "rotate-90" : ""}`} />
-        </div>
+        {isLoading ? (
+          <><Loader2 className="w-3 h-3 animate-spin" />REDIRECTING...</>
+        ) : (
+          <>CONNECT SCHWAB <ExternalLink className="w-3 h-3" /></>
+        )}
       </button>
-
-      {isOpen && (
-        <div className="p-3 sm:p-4 border-t border-card-border bg-[#0c0c0c] space-y-3 animate-in fade-in slide-in-from-top-2">
-          {isConnected ? (
-            <div className="flex items-center gap-2 text-sm text-primary p-2.5 rounded-md border border-primary/20">
-              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-              <span className="font-mono text-[10px]">P/C ratios, portfolio & trading active</span>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <p className="text-[9px] text-gray-400 font-mono leading-snug">
-                Connect Schwab for put/call ratios, portfolio and trading.
-              </p>
-              <Button
-                onClick={handleLogin}
-                disabled={isLoading}
-                className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-mono text-xs h-9"
-              >
-                {isLoading ? (
-                  <><Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />REDIRECTING...</>
-                ) : (
-                  <>SIGN IN TO SCHWAB <ExternalLink className="ml-2 w-3.5 h-3.5" /></>
-                )}
-              </Button>
-            </div>
-          )}
-
-          {isConnected && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full font-mono border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive text-xs"
-              disabled={isDisconnecting}
-              onClick={handleDisconnect}
-            >
-              {isDisconnecting ? (
-                <><Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />DISCONNECTING...</>
-              ) : (
-                "DISCONNECT"
-              )}
-            </Button>
-          )}
-        </div>
-      )}
     </div>
   );
 }

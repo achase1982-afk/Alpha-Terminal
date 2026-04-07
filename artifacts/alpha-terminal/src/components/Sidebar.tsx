@@ -241,14 +241,10 @@ function WatchlistPage({ onClose }: { onClose: () => void }) {
 
 function LinkedBrokeragePage() {
   return (
-    <div className="space-y-4 max-w-xl mx-auto">
-      <h3 className="text-xs font-bold text-primary uppercase tracking-widest">Brokerage Connections</h3>
-      <div className="bg-card border border-card-border rounded-xl p-4">
+    <div className="max-w-xl mx-auto">
+      <div className="rounded-lg border border-zinc-800/50 bg-[#0c0c0c] p-4">
         <AuthPanel />
       </div>
-      <p className="text-[10px] text-muted-foreground leading-relaxed">
-        Connect your brokerage to enable one-tap execution and live portfolio syncing.
-      </p>
     </div>
   );
 }
