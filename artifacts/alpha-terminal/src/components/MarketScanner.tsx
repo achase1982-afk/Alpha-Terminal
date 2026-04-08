@@ -1,6 +1,7 @@
 import { useState, useEffect, memo, useRef, useCallback } from "react";
 import ReactDOM from "react-dom";
 import { useTerminalStore } from "@/lib/store";
+import { ConnectBrokerPrompt } from "./ConnectBrokerPrompt";
 import { useQuote } from "@/hooks/useQuote";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { Slider } from "@/components/ui/slider";
@@ -655,9 +656,9 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
             )}
           </button>
           {!accessToken && (
-            <p className="text-[11px] text-destructive mt-2 text-center">
-              Connect Brokerage For Market Scanner
-            </p>
+            <div className="mt-2 flex justify-center">
+              <ConnectBrokerPrompt label="Connect Brokerage For Market Scanner" compact />
+            </div>
           )}
         </div>
       </div>

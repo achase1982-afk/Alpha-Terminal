@@ -1,5 +1,6 @@
 import { useTerminalStore, useActiveWatchlist } from "@/lib/store";
 import { useQuote }         from "@/hooks/useQuote";
+import { ConnectBrokerPrompt } from "./ConnectBrokerPrompt";
 import { useTickColor }     from "@/hooks/useTickColor";
 import { RefreshCw, SearchX, Plus, Minus } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -270,12 +271,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet, onTrade }: Metric
           transition: "height 500ms ease, min-height 500ms ease",
         }}
       >
-        <p
-          className="text-muted-foreground animate-pulse text-center tracking-wider font-mono whitespace-nowrap"
-          style={{ fontSize: compact ? 11 : 12, transition: "font-size 500ms ease" }}
-        >
-          Connect Brokerage For Market Data
-        </p>
+        <ConnectBrokerPrompt label="Connect Brokerage For Market Data" compact={compact} />
       </div>
     );
   }

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import ReactDOM from "react-dom";
 import { useTerminalStore } from "@/lib/store";
+import { ConnectBrokerPrompt } from "./ConnectBrokerPrompt";
 import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import {
@@ -910,7 +911,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
 
   if (!accessToken) return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: f }}>
-      <div style={{ fontSize: 14, color: C.textDim, letterSpacing: 1.5, textTransform: "uppercase" }}>CONNECT SCHWAB TO VIEW PORTFOLIO</div>
+      <ConnectBrokerPrompt label="Connect Brokerage To View Portfolio" />
     </div>
   );
   if (loading && !account) return (

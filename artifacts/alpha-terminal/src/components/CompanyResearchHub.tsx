@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo, memo, type TouchEvent as ReactTouchEvent } from "react";
 import { useTerminalStore } from "@/lib/store";
+import { ConnectBrokerPrompt } from "./ConnectBrokerPrompt";
 import { useQuote } from "@/hooks/useQuote";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { consumeStream } from "@/lib/consumeStream";
@@ -1484,10 +1485,8 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
 
   if (!accessToken) {
     return (
-      <div className="p-6 text-center">
-        <p className="font-mono text-xs text-muted-foreground tracking-widest">
-          Connect Brokerage For Company Data
-        </p>
+      <div className="p-6 flex justify-center">
+        <ConnectBrokerPrompt label="Connect Brokerage For Company Data" />
       </div>
     );
   }

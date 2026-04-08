@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useLayoutEffect } from "react";
 import { useTerminalStore } from "@/lib/store";
+import { ConnectBrokerPrompt } from "./ConnectBrokerPrompt";
 import {
   useGetQuote, useGetPriceHistory, useGetOptionChain,
 } from "@workspace/api-client-react";
@@ -589,7 +590,9 @@ function OrderReviewPanel({ strategy, symbol, onClose }: { strategy: StrategyPay
         </div>
 
         {!accountHash && (
-          <p className="font-mono text-[10px] text-[#f23645] text-center">Connect brokerage to submit orders</p>
+          <div className="flex justify-center">
+            <ConnectBrokerPrompt label="Connect Brokerage To Submit Orders" compact />
+          </div>
         )}
       </div>
     </div>
