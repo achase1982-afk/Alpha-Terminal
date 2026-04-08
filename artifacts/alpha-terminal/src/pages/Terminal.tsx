@@ -285,6 +285,10 @@ export default function TerminalPage() {
     return () => ro.disconnect();
   }, [activeBottom]);
 
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: 0 });
+  }, [aiSubTab]);
+
   const { subscribeOptionSymbols, subscribeEquitySymbols } = useMarketStream();
 
   const chartParams = chartParamsFromStore(chartPeriod, chartInterval);
