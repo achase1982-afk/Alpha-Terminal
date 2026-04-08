@@ -7,7 +7,7 @@ import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import {
   BarChart2, DollarSign, Shield, TrendingUp, Scale,
   Zap, ChevronDown, AlertTriangle, CheckCircle2, XCircle, AlertCircle, Search,
-  Target, Activity, Clock, Crosshair,
+  Target, Activity, Clock, Crosshair, Send, X, Minus, Plus,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { MarketPulseDashboard, type MarketPulseDashboardHandle } from "@/components/market-pulse/MarketPulseDashboard";
@@ -146,6 +146,36 @@ function fmtDollar(v: number): string {
   return `$${Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+function formatExpiration(dateStr: string, dte: number): string {
+  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  try {
+    const parts = dateStr.slice(0, 10).split("-");
+    if (parts.length === 3) {
+      const month = parseInt(parts[1], 10) - 1;
+      const day = parseInt(parts[2], 10);
+      if (month >= 0 && month <= 11 && day >= 1 && day <= 31) {
+        return `${MONTHS[month]} ${day} (${dte} DTE)`;
+      }
+    }
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return `${dateStr} (${dte} DTE)`;
+    return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()} (${dte} DTE)`;
+  } catch {
+    return `${dateStr} (${dte} DTE)`;
+  }
+}
+
+function buildSchwabOptionSymbol(underlying: string, expirationDate: string, strike: number, type: "CALL" | "PUT"): string {
+  const parts = expirationDate.slice(0, 10).split("-");
+  if (parts.length !== 3) return "";
+  const yy = parts[0].slice(2);
+  const mm = parts[1];
+  const dd = parts[2];
+  const strikePadded = String(Math.round(strike * 1000)).padStart(8, "0");
+  const sym = underlying.toUpperCase().padEnd(6, " ");
+  return `${sym}${yy}${mm}${dd}${type === "CALL" ? "C" : "P"}${strikePadded}`;
+}
+
 function MiniGauge({ value, max, color, label, display }: { value: number; max: number; color: string; label: string; display?: string }) {
   const pct = Math.min(100, Math.max(0, (value / max) * 100));
   const r = 20;
@@ -193,7 +223,7 @@ function LegRow({ leg, label, even }: { leg: LegPayload; label: string; even: bo
         <span className="font-mono text-xs text-white font-bold tabular-nums">{leg.strike}</span>
         <span className="font-mono text-[11px] text-white/60">{leg.type}</span>
         <span className="font-mono text-[11px] text-[#52525b] tabular-nums">{'\u0394'}{leg.delta.toFixed(2)}</span>
-        <span className="font-mono text-[11px] text-[#52525b] tabular-nums">{leg.bid}/{leg.ask}</span>
+        <span className="font-mono text-[11px] tabular-nums" style={{ color: "#71717a" }}>{leg.bid.toFixed(2)}/{leg.mark.toFixed(2)}/{leg.ask.toFixed(2)}</span>
       </div>
     </div>
   );
@@ -344,8 +374,231 @@ function RiskCategoryBadge({ evaluation }: { evaluation?: RiskEvaluation }) {
   );
 }
 
-function RealStrategyCard({ s, idx, preTradeResult }: { s: StrategyPayload; idx: number; preTradeResult?: PreTradeResult | null }) {
+function OrderReviewPanel({ strategy, symbol, onClose }: { strategy: StrategyPayload; symbol: string; onClose: () => void }) {
+  const [quantity, setQuantity] = useState(strategy.contracts);
+  const [limitPrice, setLimitPrice] = useState(Math.abs(strategy.net_credit));
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [accountHash, setAccountHash] = useState<string | null>(null);
+
+  const isCredit = strategy.net_credit > 0;
+  const stratType = strategy.strategy_type.toLowerCase().replace(/\s+/g, "_").toUpperCase();
+
+  useEffect(() => {
+    fetchWithAuth("/api/portfolio/account-hash")
+      .then(r => r.json())
+      .then(d => { if (d.hashValue) setAccountHash(d.hashValue); })
+      .catch(() => {});
+  }, []);
+
+  const allLegs = [
+    { leg: strategy.short_leg, label: "Short" },
+    { leg: strategy.long_leg, label: strategy.long_leg.action === "SELL" ? "Short 2" : "Long" },
+    ...(strategy.short_leg_2 ? [{ leg: strategy.short_leg_2, label: "Short Call" }] : []),
+    ...(strategy.long_leg_2 ? [{ leg: strategy.long_leg_2, label: "Long Call" }] : []),
+  ].filter(({ leg }) => leg.strike > 0);
+
+  const handleSubmit = async () => {
+    if (!accountHash) { setError("No account connected"); return; }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const orderLegCollection = allLegs.map(({ leg }) => ({
+        instruction: leg.action === "SELL" ? "SELL_TO_OPEN" : "BUY_TO_OPEN",
+        quantity,
+        instrument: {
+          symbol: buildSchwabOptionSymbol(symbol, strategy.expiration_date, leg.strike, leg.type),
+          assetType: "OPTION",
+        },
+      }));
+
+      const order = {
+        orderType: isCredit ? "NET_CREDIT" : "NET_DEBIT",
+        session: "NORMAL",
+        duration: "DAY",
+        price: limitPrice,
+        complexOrderStrategyType: "NONE",
+        orderStrategyType: "SINGLE",
+        orderLegCollection,
+      };
+
+      const res = await fetchWithAuth("/api/portfolio/place-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountHash,
+          order,
+          journalContext: {
+            symbol,
+            strategyType: stratType,
+            direction: isCredit ? "SELL" : "BUY",
+            entryPrice: limitPrice,
+            isCredit,
+            maxLoss: strategy.max_loss,
+            maxGain: strategy.max_profit,
+            quantity,
+            legs: allLegs.map(({ leg }) => ({
+              action: leg.action,
+              strike: leg.strike,
+              type: leg.type,
+            })),
+          },
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.message || data.error || `Order rejected (${res.status})`);
+        return;
+      }
+      const data = await res.json().catch(() => ({}));
+      if (data.error) {
+        setError(data.message || data.error);
+      } else {
+        setSubmitted(true);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Order failed");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (submitted) {
+    return (
+      <div className="mx-4 mb-4 rounded-lg overflow-hidden" style={{ border: "1px solid rgba(0,209,102,0.3)", background: "rgba(0,209,102,0.06)" }}>
+        <div className="px-4 py-6 flex flex-col items-center gap-3">
+          <CheckCircle2 className="w-8 h-8 text-[#00d166]" />
+          <span className="font-mono text-sm font-bold text-[#00d166]">ORDER SUBMITTED</span>
+          <span className="font-mono text-[11px] text-[#a1a1aa]">Check Portfolio tab for status</span>
+          <button onClick={onClose}
+            className="font-mono text-[11px] font-bold px-4 py-2 rounded-lg mt-2"
+            style={{ color: "#FFB800", border: "1px solid rgba(255,184,0,0.3)" }}>
+            CLOSE
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-4 mb-4 rounded-lg overflow-hidden" style={{ border: "1px solid rgba(255,184,0,0.3)", background: "#0c0c0c" }}>
+      <div className="px-4 py-2.5 flex items-center justify-between" style={{ borderBottom: "1px solid rgba(255,184,0,0.15)" }}>
+        <span className="font-mono text-[11px] font-bold text-[#FFB800] uppercase tracking-widest">Order Review</span>
+        <button onClick={onClose} className="text-zinc-500 hover:text-white transition-colors"><X className="w-4 h-4" /></button>
+      </div>
+
+      <div className="p-4 space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <span className="font-mono text-[10px] text-zinc-600 uppercase">Symbol</span>
+            <p className="font-mono text-sm font-bold text-white">{symbol}</p>
+          </div>
+          <div>
+            <span className="font-mono text-[10px] text-zinc-600 uppercase">Strategy</span>
+            <p className="font-mono text-sm font-bold text-white">{strategy.strategy_type}</p>
+          </div>
+          <div>
+            <span className="font-mono text-[10px] text-zinc-600 uppercase">Expiration</span>
+            <p className="font-mono text-sm font-bold text-white">{formatExpiration(strategy.expiration_date, strategy.days_to_expiration)}</p>
+          </div>
+          <div>
+            <span className="font-mono text-[10px] text-zinc-600 uppercase">Order Type</span>
+            <p className="font-mono text-sm font-bold text-white">Limit · Day</p>
+          </div>
+        </div>
+
+        <div className="rounded-lg overflow-hidden" style={{ border: "1px solid #2A2A2C" }}>
+          <div className="px-3 py-1.5" style={{ background: "#0a0a0a", borderBottom: "1px solid #2A2A2C" }}>
+            <span className="font-mono text-[10px] text-zinc-600 uppercase tracking-widest">Legs</span>
+          </div>
+          {allLegs.map(({ leg, label }, i) => (
+            <div key={i} className="flex items-center justify-between py-1.5 px-3" style={{ background: i % 2 === 0 ? "rgba(255,255,255,0.015)" : "transparent" }}>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-[11px] font-bold" style={{ color: leg.action === "SELL" ? "#f23645" : "#00d166" }}>{leg.action}</span>
+                <span className="font-mono text-[11px] text-zinc-500">{label}</span>
+              </div>
+              <span className="font-mono text-xs text-white tabular-nums">{leg.strike} {leg.type}</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <span className="font-mono text-[10px] text-zinc-600 uppercase mb-1 block">Quantity</span>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                className="w-7 h-7 rounded flex items-center justify-center border border-zinc-700 hover:border-zinc-500 transition-colors">
+                <Minus className="w-3 h-3 text-zinc-400" />
+              </button>
+              <input type="number" min={1} value={quantity} onChange={e => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                className="w-14 text-center font-mono text-sm font-bold bg-transparent border border-zinc-700 rounded py-1 text-white tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              />
+              <button onClick={() => setQuantity(quantity + 1)}
+                className="w-7 h-7 rounded flex items-center justify-center border border-zinc-700 hover:border-zinc-500 transition-colors">
+                <Plus className="w-3 h-3 text-zinc-400" />
+              </button>
+            </div>
+          </div>
+          <div>
+            <span className="font-mono text-[10px] text-zinc-600 uppercase mb-1 block">Limit Price</span>
+            <div className="flex items-center gap-1">
+              <span className="font-mono text-sm text-zinc-500">$</span>
+              <input type="number" step={0.01} min={0.01} value={limitPrice.toFixed(2)}
+                onChange={e => setLimitPrice(Math.max(0.01, parseFloat(e.target.value) || 0.01))}
+                className="w-20 font-mono text-sm font-bold bg-transparent border border-zinc-700 rounded py-1 px-2 text-white tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between pt-1">
+          <div className="font-mono text-[11px] text-zinc-500">
+            {isCredit ? "Net Credit" : "Net Debit"}: <span className="text-white font-bold">${(limitPrice * quantity * 100).toFixed(2)}</span>
+          </div>
+          <div className="font-mono text-[11px] text-zinc-500">
+            Max Risk: <span className="text-[#f23645] font-bold">{fmtDollar(Math.abs(strategy.max_loss) * quantity)}</span>
+          </div>
+        </div>
+
+        {error && (
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: "rgba(242,54,69,0.08)", border: "1px solid rgba(242,54,69,0.3)" }}>
+            <XCircle className="w-3.5 h-3.5 text-[#f23645] shrink-0" />
+            <span className="font-mono text-[11px] text-[#f23645]">{error}</span>
+          </div>
+        )}
+
+        <div className="flex gap-3 pt-1">
+          <button onClick={onClose}
+            className="flex-1 font-mono text-[11px] font-bold py-2.5 rounded-lg uppercase tracking-wider transition-colors hover:bg-zinc-800"
+            style={{ color: "#a1a1aa", border: "1px solid #2A2A2C" }}>
+            Cancel
+          </button>
+          <button onClick={handleSubmit}
+            disabled={submitting || !accountHash}
+            className="flex-1 font-mono text-[11px] font-bold py-2.5 rounded-lg uppercase tracking-wider transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+            style={{ background: "#FFB800", color: "#0c0c0c" }}>
+            {submitting ? (
+              <span className="flex items-center justify-center gap-2">
+                <span className="w-3 h-3 border-2 border-[#0c0c0c] border-t-transparent rounded-full animate-spin" />
+                Submitting...
+              </span>
+            ) : "Submit Order"}
+          </button>
+        </div>
+
+        {!accountHash && (
+          <p className="font-mono text-[10px] text-[#f23645] text-center">Connect brokerage to submit orders</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RealStrategyCard({ s, idx, preTradeResult, symbol }: { s: StrategyPayload; idx: number; preTradeResult?: PreTradeResult | null; symbol: string }) {
   const [showTradePlan, setShowTradePlan] = useState(false);
+  const [showOrderReview, setShowOrderReview] = useState(false);
   const isCredit = s.net_credit > 0;
   const re = s.risk_evaluation;
   const riskLabel = re ? re.risk_label : "Max Risk";
@@ -371,18 +624,24 @@ function RealStrategyCard({ s, idx, preTradeResult }: { s: StrategyPayload; idx:
       <div className="flex">
         <div className="w-1 shrink-0" style={{ background: accentColor }} />
         <div className="flex-1">
-          <div className="px-4 py-3 flex items-center justify-between" style={{ background: "#151517", borderBottom: "1px solid #2A2A2C" }}>
-            <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded-lg flex items-center justify-center font-mono text-xs font-bold"
+          <div className="px-4 py-3 flex items-center justify-between gap-2" style={{ background: "#151517", borderBottom: "1px solid #2A2A2C" }}>
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-7 h-7 rounded-lg flex items-center justify-center font-mono text-xs font-bold shrink-0"
                 style={{ color: accentColor }}>
                 {idx + 1}
               </div>
-              <div>
-                <div className="flex items-center gap-2">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-mono text-sm font-bold text-white">{s.strategy_type}</span>
+                  <span className="font-mono text-[11px] text-white/60 tabular-nums">{
+                    [s.short_leg, s.long_leg, s.short_leg_2, s.long_leg_2]
+                      .filter(l => l && l.strike > 0)
+                      .map(l => l!.strike)
+                      .join("/")
+                  } {s.short_leg.type === s.long_leg.type ? s.short_leg.type : ""}</span>
                   <RiskCategoryBadge evaluation={re} />
                 </div>
-                <span className="font-mono text-[11px] text-[#52525b]">{s.days_to_expiration} DTE · Exp {s.expiration_date}</span>
+                <span className="font-mono text-[11px] text-[#52525b]">{formatExpiration(s.expiration_date, s.days_to_expiration)}</span>
               </div>
             </div>
           </div>
@@ -434,7 +693,7 @@ function RealStrategyCard({ s, idx, preTradeResult }: { s: StrategyPayload; idx:
             </div>
           </div>
 
-          <div className="mx-4 mb-4">
+          <div className="mx-4 mb-3">
             <button
               type="button"
               onClick={() => setShowTradePlan(!showTradePlan)}
@@ -464,6 +723,22 @@ function RealStrategyCard({ s, idx, preTradeResult }: { s: StrategyPayload; idx:
               </div>
             )}
           </div>
+
+          {showOrderReview ? (
+            <OrderReviewPanel strategy={s} symbol={symbol} onClose={() => setShowOrderReview(false)} />
+          ) : (
+            <div className="mx-4 mb-4">
+              <button
+                type="button"
+                onClick={() => setShowOrderReview(true)}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg font-mono text-[11px] font-bold uppercase tracking-wider transition-all hover:brightness-110 active:scale-[0.98]"
+                style={{ background: "#FFB800", color: "#0c0c0c" }}
+              >
+                <Send className="w-3.5 h-3.5" />
+                Send Order
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -761,7 +1036,7 @@ function StrategistPipeline({ status, thinkingTokens }: { status: string; thinki
   );
 }
 
-function StrategistResultView({ strategies, narrative, isStreaming, streamingText, regime, pulse, overrideWarning, preTradeResults }: {
+function StrategistResultView({ strategies, narrative, isStreaming, streamingText, regime, pulse, overrideWarning, preTradeResults, symbol }: {
   strategies: StrategyPayload[];
   narrative: string;
   isStreaming: boolean;
@@ -770,13 +1045,14 @@ function StrategistResultView({ strategies, narrative, isStreaming, streamingTex
   pulse?: PulseSnapshot | null;
   overrideWarning?: string | null;
   preTradeResults?: Record<number, PreTradeResult>;
+  symbol: string;
 }) {
   return (
     <div className="space-y-4">
       {regime && <RegimeDisplayBanner regime={regime} pulse={pulse ?? undefined} />}
       {overrideWarning && <OverrideWarningBanner message={overrideWarning} />}
       {strategies.map((s, i) => (
-        <RealStrategyCard key={i} s={s} idx={i} preTradeResult={preTradeResults?.[i]} />
+        <RealStrategyCard key={i} s={s} idx={i} preTradeResult={preTradeResults?.[i]} symbol={symbol} />
       ))}
       {(narrative || streamingText) && (
         <div className="rounded-xl overflow-hidden" style={{ background: "#111113", border: "1px solid #2A2A2C" }}>
@@ -1993,6 +2269,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
                         pulse={pulseSnapshot}
                         overrideWarning={overrideWarning}
                         preTradeResults={preTradeResults}
+                        symbol={lastRunSymbol ?? ""}
                       />
                     )}
                   </>

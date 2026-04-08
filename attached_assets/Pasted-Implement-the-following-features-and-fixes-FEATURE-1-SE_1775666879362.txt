@@ -1,0 +1,23 @@
+Implement the following features and fixes:
+
+FEATURE 1 - SEND ORDER FLOW:
+Add a "Send Order" button to the bottom of every strategist trade card (below the Trade Plan section). When tapped, it should navigate to a new Order Review screen that pre-fills:
+- Symbol from the trade card
+- Strategy type (bull call spread, bull put spread, bear call spread, bear put spread, iron condor)
+- Long strike and short strike from the contract legs
+- Expiration date from the trade card
+- Quantity from the size calculation (default 1)
+- Limit price set to the mid price shown on the card
+- Order type: Limit, Day
+The Order Review screen should display all of these fields clearly with an editable quantity and limit price. Include a final "Submit Order" button that sends the order to the Schwab API order endpoint. Also include a "Cancel" button that returns to the strategist. Do not auto-submit. The user must explicitly tap Submit after reviewing.
+
+FEATURE 2 - STRATEGIST CARD LAYOUT CLEANUP:
+The expiration date on trade cards currently shows as an ISO timestamp string like "Exp 2026-04-17T20:00:00.000+00:00" which is hard to read. Replace this with a human readable format showing the date and DTE together, for example: "May 15 (37 DTE)". Place the expiration and DTE on the same visual line as the strategy name and strike information so the user can see symbol, strikes, expiration, and DTE at a glance without scanning the full card. The contract legs section should show strikes, expiration, and DTE in one cohesive block rather than spreading DTE to a separate area of the card.
+
+FEATURE 3 - CONFIGURABLE SCANNER UNIVERSE:
+In the scanner settings or the scanner page itself, add a dropdown or selector that lets the user choose which stock universe to scan. Default options should include:
+- "Top 100 Large Cap" (current default)
+- "Custom Watchlist" (pulls from the user's saved watchlist)
+When "Custom Watchlist" is selected, the scanner runs against the user's watchlist symbols instead of the default 100. This replaces the need for a separate watchlist generator feature. The scanner scoring and filtering logic stays exactly the same regardless of which universe is selected.
+
+Do not change any scoring weights, cluster definitions, indicator thresholds, or the deterministic scoring engine. These are UI flow and display improvements only.
