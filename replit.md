@@ -52,6 +52,8 @@ The Deterministic Strategist (`artifacts/api-server/src/lib/deterministicStrateg
 
 **6 Premium Selling Gates** (all must pass for credit spreads): IVR >= 50, range-bound (within 1 ATR of SMA20), no events within DTE, Pulse not AVOID_SHORT_PREMIUM, VIX < 22, adequate options liquidity. If any gate fails, the system falls back to debit spreads.
 
+**Volume Scoring:** The VOL cluster (0–20 pts) uses time-of-day–normalized volume. `getSessionElapsedFraction()` computes the fraction of the regular session (9:30–16:00 ET) elapsed, then projects today's partial-day volume to a full-day equivalent before comparing to the 20-day historical average. Weekend/pre-market/post-market scans use fraction = 1.0 (raw volume, no projection). Elapsed fraction is computed once per scan for deterministic consistency across all symbols.
+
 **Endpoint:** POST `/api/ai/deterministic-strategist` -- accepts { symbol, accessToken, scannerData? }. Returns SSE stream with criteria object + Claude narrative. Non-criteria results (rejection/no-edge) return JSON.
 
 **Frontend:** "Send to Strategist" button on scanner cards passes full candidate data to the deterministic strategist. The recommendation card shows mode badge, strategy criteria grid, premium gate pass/fail panel, event warnings, and streaming Claude narrative. A disabled "Check Live Pricing" button indicates Risk Gate is coming soon.

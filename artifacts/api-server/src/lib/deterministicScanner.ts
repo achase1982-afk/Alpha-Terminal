@@ -356,9 +356,36 @@ function scoreRelativeStrength(
   return { score, confirmed };
 }
 
-function scoreVolumeConfirmation(todayVolume: number, avgVolume: number | null): { score: number; ratio: number } {
+function getSessionElapsedFraction(): number {
+  const now = new Date();
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    hour: "numeric", minute: "numeric", weekday: "short",
+    hour12: false,
+  });
+  const parts = fmt.formatToParts(now);
+  const weekday = parts.find(p => p.type === "weekday")?.value ?? "";
+  const hours = parseInt(parts.find(p => p.type === "hour")?.value ?? "0", 10);
+  const minutes = parseInt(parts.find(p => p.type === "minute")?.value ?? "0", 10);
+
+  if (weekday === "Sat" || weekday === "Sun") return 1.0;
+
+  const totalMinutes = hours * 60 + minutes;
+  const marketOpen = 9 * 60 + 30;
+  const marketClose = 16 * 60;
+  const sessionLength = marketClose - marketOpen;
+
+  if (totalMinutes >= marketClose) return 1.0;
+  if (totalMinutes <= marketOpen) return 1.0;
+
+  const elapsed = totalMinutes - marketOpen;
+  return Math.max(0.05, elapsed / sessionLength);
+}
+
+function scoreVolumeConfirmation(todayVolume: number, avgVolume: number | null, elapsedFraction: number): { score: number; ratio: number } {
   if (!avgVolume || avgVolume <= 0) return { score: 0, ratio: 0 };
-  const ratio = todayVolume / avgVolume;
+  const projectedVolume = todayVolume / elapsedFraction;
+  const ratio = projectedVolume / avgVolume;
   if (ratio >= 1.5) return { score: 20, ratio };
   if (ratio >= 1.0) return { score: Math.round(((ratio - 1.0) / 0.5) * 20), ratio };
   return { score: 0, ratio };
@@ -401,6 +428,7 @@ export async function runDeterministicScan(
   log: { info: (...args: any[]) => void; warn: (...args: any[]) => void; error: (...args: any[]) => void },
 ): Promise<ScanResult> {
   const scanStart = Date.now();
+  const sessionElapsed = getSessionElapsedFraction();
 
   const quoteMap = await fetchQuotesBatch(symbols, accessToken);
 
@@ -500,7 +528,7 @@ export async function runDeterministicScan(
 
         const trendAlignment = scoreTrendAlignment(quote.lastPrice, sma20, sma50, pulse);
         const { score: relativeStrength, confirmed: rsConfirmed } = scoreRelativeStrength(tickerChange5d, spyChange5d, pulse);
-        const { score: volumeConfirmation, ratio: volumeRatio } = scoreVolumeConfirmation(quote.totalVolume, avgVol20);
+        const { score: volumeConfirmation, ratio: volumeRatio } = scoreVolumeConfirmation(quote.totalVolume, avgVol20, sessionElapsed);
         const ivrScore = scoreIVR(chain?.ivr ?? 50, pulse);
         const optionsLiquidity = scoreOptionsLiquidity(chain);
 
