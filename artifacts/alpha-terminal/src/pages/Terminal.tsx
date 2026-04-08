@@ -141,6 +141,7 @@ export default function TerminalPage() {
   const [orderStrategyLegs, setOrderStrategyLegs] = useState<OrderLeg[] | undefined>();
   const [orderStrategyNetPrice, setOrderStrategyNetPrice] = useState<number | undefined>();
   const [orderStrategyIsCredit, setOrderStrategyIsCredit] = useState(false);
+  const [orderIsClose, setOrderIsClose] = useState(false);
 
   const [strategyOpen, setStrategyOpen] = useState(false);
   const [strategyStrikes, setStrategyStrikes] = useState<number[]>([]);
@@ -156,13 +157,24 @@ export default function TerminalPage() {
     setOrderOpen(true);
   }, []);
 
-  const openOrderForSymbol = useCallback((sym: string, side: "BUY" | "SELL", optionSymbol?: string, optionInstruction?: string) => {
+  const openOrderForSymbol = useCallback((
+    sym: string,
+    side: "BUY" | "SELL",
+    optionSymbol?: string,
+    optionInstruction?: string,
+    strategyLegs?: OrderLeg[],
+    strategyNetPrice?: number,
+    strategyIsCredit?: boolean,
+    isClose?: boolean,
+  ) => {
     useTerminalStore.getState().setSymbol(sym);
     setOrderSide(side);
     setOrderOptionSymbol(optionSymbol);
     setOrderOptionInstruction(optionInstruction);
-    setOrderStrategyLegs(undefined);
-    setOrderStrategyNetPrice(undefined);
+    setOrderStrategyLegs(strategyLegs);
+    setOrderStrategyNetPrice(strategyNetPrice);
+    setOrderStrategyIsCredit(strategyIsCredit ?? false);
+    setOrderIsClose(isClose ?? false);
     setOrderOpen(true);
   }, []);
 
@@ -173,6 +185,7 @@ export default function TerminalPage() {
     setOrderStrategyIsCredit(false);
     setOrderOptionSymbol(undefined);
     setOrderOptionInstruction(undefined);
+    setOrderIsClose(false);
   }, []);
 
   const handleOptionTradeSingle = useCallback((contract: OptionsContract, side: "BUY" | "SELL", type: "CALL" | "PUT") => {
@@ -559,6 +572,7 @@ export default function TerminalPage() {
         strategyLegs={orderStrategyLegs}
         strategyNetPrice={orderStrategyNetPrice}
         strategyIsCredit={orderStrategyIsCredit}
+        isCloseOrder={orderIsClose}
       />
     </div>
   );

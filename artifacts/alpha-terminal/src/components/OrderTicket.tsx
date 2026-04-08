@@ -243,6 +243,7 @@ interface OrderTicketProps {
   strategyLegs?: OrderLeg[];
   strategyNetPrice?: number;
   strategyIsCredit?: boolean;
+  isCloseOrder?: boolean;
 }
 
 function MiniPayoffChart({ legs, isMultiLeg, side, quantity, limitPrice, isOption, last }: {
@@ -489,7 +490,7 @@ function AiCoPilotPanel({ side, symbol, limitPrice, bid, ask, quantity, isOption
   );
 }
 
-export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, optionInstruction, strategyLegs, strategyNetPrice, strategyIsCredit }: OrderTicketProps) {
+export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, optionInstruction, strategyLegs, strategyNetPrice, strategyIsCredit, isCloseOrder }: OrderTicketProps) {
   const symbol = useTerminalStore((s) => s.symbol);
   const { data: quote } = useQuote(symbol);
   const pulseData = useMarketPulseStore((s) => s.pulseData);
@@ -583,11 +584,15 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
   useEffect(() => {
     if (!isOpen || priceLocked || limitPrice) return;
     if (isMultiLeg) return;
+    if (isCloseOrder && strategyNetPrice != null && strategyNetPrice > 0) {
+      setLimitPrice(strategyNetPrice.toFixed(2));
+      return;
+    }
     if (quote?.ask != null) {
       const mid = quote.bid != null && quote.ask != null ? ((quote.bid + quote.ask) / 2) : quote.ask;
       setLimitPrice(mid.toFixed(2));
     }
-  }, [isOpen, quote?.ask, quote?.bid, isMultiLeg]);
+  }, [isOpen, quote?.ask, quote?.bid, isMultiLeg, isCloseOrder, strategyNetPrice]);
 
   const needsLimit = orderType === "LIMIT" || orderType === "STOP_LIMIT";
   const needsStop = orderType === "STOP" || orderType === "STOP_LIMIT";
@@ -622,18 +627,22 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
       spreadMaxRisk = (strikeWidth - netCredit) * 100;
       if (spreadMaxRisk < 0) spreadMaxRisk = 0;
     }
-    return runPreTradeChecks({
+    const allChecks = runPreTradeChecks({
       side, quantity,
       limitPrice: parseFloat(limitPrice) || null,
-      bid: isMultiLeg && spreadPrices ? spreadPrices.spreadBid : (quote?.bid ?? null),
-      ask: isMultiLeg && spreadPrices ? spreadPrices.spreadAsk : (quote?.ask ?? null),
+      bid: isMultiLeg && spreadPrices ? spreadPrices.spreadBid : (effectiveBid ?? null),
+      ask: isMultiLeg && spreadPrices ? spreadPrices.spreadAsk : (effectiveAsk ?? null),
       last: quote?.last ?? null,
       regime: pulseData?.structuralRegime?.label ?? null,
       sessionBias: pulseData?.sessionBias?.label ?? null,
       preTradeMinRR, preTradeMaxPositionPct, preTradeMinDTE, accountSize, stratMinPoP, isOption,
       spreadMaxRisk,
     });
-  }, [side, quantity, limitPrice, quote?.bid, quote?.ask, quote?.last, pulseData, preTradeMinRR, preTradeMaxPositionPct, preTradeMinDTE, accountSize, stratMinPoP, isOption, preTradeEnabled, isMultiLeg, strategyLegs, strategyNetPrice, spreadPrices]);
+    if (isCloseOrder) {
+      return allChecks.filter(c => !["pulse", "rr", "size"].includes(c.id));
+    }
+    return allChecks;
+  }, [side, quantity, limitPrice, effectiveBid, effectiveAsk, quote?.last, pulseData, preTradeMinRR, preTradeMaxPositionPct, preTradeMinDTE, accountSize, stratMinPoP, isOption, preTradeEnabled, isMultiLeg, strategyLegs, strategyNetPrice, spreadPrices, isCloseOrder]);
 
   const overallRisk = useMemo(() => getOverallLevel(riskChecks), [riskChecks]);
   const riskSummary = useMemo(() => getRiskSummary(riskChecks, side, overallRisk), [riskChecks, side, overallRisk]);
@@ -780,8 +789,13 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
     else if (side === "SELL" && quote?.bid != null) setLimitPrice(quote.bid.toFixed(2));
   }, [side, quote?.ask, quote?.bid, isMultiLeg, spreadPrices, strategyIsCredit]);
 
-  const effectiveBid = isMultiLeg && spreadPrices ? spreadPrices.spreadBid : quote?.bid ?? null;
-  const effectiveAsk = isMultiLeg && spreadPrices ? spreadPrices.spreadAsk : quote?.ask ?? null;
+  const optionMarkEstimate = isCloseOrder && isOption && !isMultiLeg && strategyNetPrice != null && strategyNetPrice > 0 ? strategyNetPrice : null;
+  const effectiveBid = isMultiLeg && spreadPrices
+    ? spreadPrices.spreadBid
+    : optionMarkEstimate != null ? optionMarkEstimate * 0.97 : quote?.bid ?? null;
+  const effectiveAsk = isMultiLeg && spreadPrices
+    ? spreadPrices.spreadAsk
+    : optionMarkEstimate != null ? optionMarkEstimate * 1.03 : quote?.ask ?? null;
   const midPrice = effectiveBid != null && effectiveAsk != null ? (effectiveBid + effectiveAsk) / 2 : null;
   const sliderValue = useMemo(() => {
     if (effectiveBid == null || effectiveAsk == null) return 50;
@@ -808,31 +822,55 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
 
       <header className="shrink-0 flex items-center h-11 px-4" style={{ background: BG2, borderBottom: `1px solid ${BORDER}` }}>
         <button onClick={onClose} className="font-mono text-[13px] font-medium" style={{ color: GOLD }}>
-          Close
+          ← Back
         </button>
         <div className="flex-1 text-center min-w-0">
           <div className="flex items-center justify-center gap-2">
-            <span className="font-mono text-[13px] font-bold" style={{ color: sideColor }}>
-              {side}
-            </span>
-            <span className="font-mono text-[14px] font-bold tracking-wide" style={{ color: WHITE }}>{symbol}</span>
-            <span className="font-mono text-[13px] font-semibold" style={{ color: changeColor }}>
-              {fmt(quote?.last)}
-            </span>
-            {changePct != null && (
-              <span className="font-mono text-[11px]" style={{ color: changeColor }}>
-                {changePct >= 0 ? "+" : ""}{fmt(changePct)}%
+            {isCloseOrder ? (
+              <span className="font-mono text-[11px] font-bold px-2 py-0.5 rounded" style={{ background: "#f23645", color: "#fff", letterSpacing: "0.08em" }}>
+                CLOSE
               </span>
+            ) : (
+              <span className="font-mono text-[13px] font-bold" style={{ color: sideColor }}>{side}</span>
+            )}
+            <span className="font-mono text-[14px] font-bold tracking-wide" style={{ color: WHITE }}>{symbol}</span>
+            {!isCloseOrder && (
+              <>
+                <span className="font-mono text-[13px] font-semibold" style={{ color: changeColor }}>
+                  {fmt(quote?.last)}
+                </span>
+                {changePct != null && (
+                  <span className="font-mono text-[11px]" style={{ color: changeColor }}>
+                    {changePct >= 0 ? "+" : ""}{fmt(changePct)}%
+                  </span>
+                )}
+              </>
             )}
           </div>
-          {isOption && !isMultiLeg && (
-            <p className="font-mono text-[10px] truncate" style={{ color: MUTED }}>{optionSymbol}</p>
+          {isOption && !isMultiLeg && optionSymbol && (
+            <p className="font-mono text-[10px] truncate" style={{ color: isCloseOrder ? "#f23645" : MUTED }}>
+              {isCloseOrder ? `${optionInstruction?.replace(/_/g, " ")} · ` : ""}{optionSymbol}
+            </p>
+          )}
+          {isCloseOrder && isMultiLeg && strategyLegs && (
+            <p className="font-mono text-[10px]" style={{ color: "#f23645" }}>
+              CLOSE {strategyLegs.length}-LEG SPREAD
+            </p>
           )}
         </div>
         <button className="p-1.5" style={{ color: MUTED }}>
           <Settings2 className="w-4 h-4" />
         </button>
       </header>
+
+      {isCloseOrder && (
+        <div className="flex items-center gap-2 px-4 py-2 shrink-0" style={{ background: "#1a0a0a", borderBottom: `1px solid #f2364530` }}>
+          <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: "#f23645" }} />
+          <span className="font-mono text-[11px]" style={{ color: "#f23645cc" }}>
+            Closing existing position — risk checks for opening trades do not apply
+          </span>
+        </div>
+      )}
 
       {stage === "form" || stage === "review" ? (
         <div className="flex-1 overflow-y-auto pb-28">
@@ -1355,7 +1393,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
               color: isValid ? "#fff" : DIM,
             }}
           >
-            {isMultiLeg ? "REVIEW STRATEGY ORDER" : `REVIEW ${side} ORDER`}
+            {isCloseOrder && isMultiLeg ? "REVIEW SPREAD CLOSE" : isCloseOrder ? "REVIEW CLOSE ORDER" : isMultiLeg ? "REVIEW STRATEGY ORDER" : `REVIEW ${side} ORDER`}
           </button>
         </div>
       )}
