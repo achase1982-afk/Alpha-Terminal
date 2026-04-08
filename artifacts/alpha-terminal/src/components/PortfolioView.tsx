@@ -334,7 +334,7 @@ function OptionRow({
         background: isSelected ? `${C.gold}08` : "transparent",
       }}
     >
-      <div className="pf-sticky-col" style={{ width: symW, background: isSelected ? "#1a1700" : "#0a0a0a", display: "flex", flexDirection: "column", gap: 1, padding: "5px 6px 5px 20px", borderRight: "2px solid #3f3f46", minWidth: 0 }}>
+      <div className="pf-sticky-col" style={{ width: symW, background: isSelected ? "#1a1700" : "#000", display: "flex", flexDirection: "column", gap: 1, padding: "5px 6px 5px 20px", borderRight: "2px solid #3f3f46", minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
           <Checkbox checked={isSelected} onToggle={e => { e.stopPropagation(); toggleKey(optKey); }} />
           <span style={{ fontSize: 12, fontWeight: 700, color: opt.putCall === "CALL" ? "#4ade80" : "#fb923c", flexShrink: 0 }}>
@@ -417,7 +417,7 @@ function PositionTableRow({
           {expanded
             ? <ChevronDown style={{ width: 12, height: 12, color: C.dim, flexShrink: 0 }} />
             : <ChevronRight style={{ width: 12, height: 12, color: C.dim, flexShrink: 0 }} />}
-          <span style={{ fontSize: 14, fontWeight: 600, color: C.text, whiteSpace: "nowrap" }}>{group.underlying}</span>
+          <span onClick={e => { e.stopPropagation(); onSelect(group.underlying); }} style={{ fontSize: 14, fontWeight: 600, color: C.text, whiteSpace: "nowrap", cursor: "pointer" }}>{group.underlying}</span>
           <span style={{ fontSize: 11, color: C.dim, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{details}</span>
         </div>
         {visibleColumns.includes("mark") && (() => {
@@ -456,14 +456,14 @@ function PositionTableRow({
       </div>
 
       {expanded && (
-        <div style={{ borderBottom: `1px solid ${C.borderHi}`, background: "#0a0a0a" }}>
+        <div style={{ borderBottom: `1px solid ${C.borderHi}`, background: "#000" }}>
           {eq && (() => {
             const eqPLPct = eq.averagePrice > 0
               ? (eq.longOpenProfitLoss / (eq.averagePrice * (eq.shortQuantity > 0 ? eq.shortQuantity : eq.longQuantity))) * 100
               : 0;
             return (
               <div style={{ display: "grid", gridTemplateColumns: gridCols, alignItems: "center", minWidth: minW, borderBottom: `1px solid ${C.border}`, background: eqSelected ? `${C.gold}08` : "transparent" }}>
-                <div className="pf-sticky-col" style={{ width: symW, background: eqSelected ? "#1a1700" : "#0a0a0a", display: "flex", alignItems: "center", gap: 6, padding: "7px 6px 7px 20px", borderRight: "2px solid #3f3f46", minWidth: 0 }}>
+                <div className="pf-sticky-col" style={{ width: symW, background: eqSelected ? "#1a1700" : "#000", display: "flex", alignItems: "center", gap: 6, padding: "7px 6px 7px 20px", borderRight: "2px solid #3f3f46", minWidth: 0 }}>
                   {hasOptions && <Checkbox checked={!!eqSelected} onToggle={e => { e.stopPropagation(); toggleKey(eqKey); }} />}
                   <span style={{ fontSize: 12, color: C.text, whiteSpace: "nowrap" }}>
                     {fmtQty(eq.longQuantity, eq.shortQuantity)} shares
@@ -499,14 +499,6 @@ function PositionTableRow({
             />
           ))}
 
-          <div style={{ display: "grid", gridTemplateColumns: gridCols, minWidth: minW, borderBottom: `1px solid ${C.border}` }}>
-            <div className="pf-sticky-col" style={{ width: symW, padding: "7px 12px 7px 26px", display: "flex", gap: 12, background: "#0a0a0a", borderRight: "2px solid #3f3f46", minWidth: 0 }}>
-              <button onClick={e => { e.stopPropagation(); onSelect(group.underlying); }} style={{ fontSize: 12, fontWeight: 500, fontFamily: f, color: C.gold, background: "transparent", border: "none", cursor: "pointer", padding: 0, letterSpacing: 0.3, textTransform: "uppercase" }}>Chart →</button>
-              {onTrade && eq && !hasOptions && (
-                <button onClick={e => { e.stopPropagation(); onTrade(group.underlying, eqIsShort ? "BUY" : "SELL"); }} style={{ fontSize: 12, fontWeight: 500, fontFamily: f, color: C.gold, background: "transparent", border: "none", cursor: "pointer", padding: 0, letterSpacing: 0.3, textTransform: "uppercase" }}>Sell</button>
-              )}
-            </div>
-          </div>
         </div>
       )}
     </>
@@ -555,7 +547,7 @@ function OrderRow({ order, onCancel }: { order: Order; onCancel?: (orderId: numb
       </button>
 
       {expanded && (
-        <div style={{ padding: "6px 10px 8px 20px", borderTop: `1px solid ${C.border}`, background: "#0a0a0a" }}>
+        <div style={{ padding: "6px 10px 8px 20px", borderTop: `1px solid ${C.border}`, background: "#000" }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "4px 12px" }}>
             {[
               ["Type", order.orderType.replace(/_/g, " ")],
