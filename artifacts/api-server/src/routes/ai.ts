@@ -21,6 +21,7 @@ import { getSyntheticDxyPrevClose } from "../lib/syntheticDxy.js";
 import { selectStrategies, selectStrategiesByRegime, classifyRegime, checkOverrideConflict, classifyTicker, computeBeta, applyBetaToProfile, computeExpectedMove, computeIVR, STRATEGIST_SYSTEM_PROMPT, type OptionContract, type StrategyPayload, type RegimeClassification, type TickerProfile, type DailyCandle, type ConvictionParams } from "../lib/optionsStrategist.js";
 import { runPreTradeChecks, type PreTradeInput, type PreTradeResult } from "../lib/preTradeRiskEngine.js";
 import { evaluateRegimeShock, type ShockDetectorOutput } from "../lib/regimeShockDetector.js";
+import { getDeltaHealth, getSnapshotsForAI, triggerManualSnapshot, triggerEventSnapshot, type DeltaHealthPayload } from "../lib/deltaEngine.js";
 import { sendPushToAll } from "../lib/pushService.js";
 import { checkEventConflicts, getUpcomingEvents, type EventCheckResult } from "../lib/calendarEventChecker.js";
 import { chainCache, getOrFetchChain, CHAIN_CACHE_TTL } from "./market.js";
@@ -1479,6 +1480,23 @@ RULES:
   }
 });
 
+router.get("/delta-health", (_req, res) => {
+  const health = getDeltaHealth();
+  if (!health) return res.json({ status: "awaiting_baseline" });
+  return res.json(health);
+});
+
+router.post("/delta-snapshot", (req, res) => {
+  const { triggerType, eventMeta } = req.body as { triggerType?: string; eventMeta?: Record<string, unknown> };
+  if (triggerType === "event") {
+    triggerEventSnapshot(eventMeta);
+  } else {
+    triggerManualSnapshot();
+  }
+  const health = getDeltaHealth();
+  return res.json({ ok: true, deltaHealth: health });
+});
+
 router.get("/market-pulse/latest", (_req, res) => {
   if (pulseGenerationInFlight) {
     return res.json({ status: "in_flight", thinkingTokens: pulseThinkingBuffer, statusText: "Generating AI analysis..." });
@@ -1741,8 +1759,15 @@ Write ONLY the narrative fields. Return this exact JSON structure:
     try {
       const narrative = JSON.parse(cleaned);
 
+      const deltaHealth = getDeltaHealth();
+      const rawConfidence = engineResult.confidenceScore;
+      const deltaAdj = deltaHealth?.confidenceAdjustment ?? 0;
+      const displayedConfidence = Math.min(100, Math.max(0, rawConfidence + deltaAdj));
+
       finalPulse = {
         ...engineResult,
+        confidenceScore: displayedConfidence,
+        rawConfidenceScore: rawConfidence,
         rawIndicators: indicators,
         dataAge: { oldestSource: "schwab-batch", oldestSourceAge: 0 },
         sessionBias: {
@@ -1769,6 +1794,7 @@ Write ONLY the narrative fields. Return this exact JSON structure:
         activeTriggers: shockResult.activeTriggers,
         shockActivatedAt: shockResult.shockActivatedAt,
         shockActive: shockResult.shockActive,
+        deltaHealth: deltaHealth ?? undefined,
         upcomingEvents,
         session,
         timeET,
@@ -1780,8 +1806,15 @@ Write ONLY the narrative fields. Return this exact JSON structure:
       console.error("[PULSE STREAM] Raw narrative:", cleaned.substring(0, 500));
       req.log.error({ err: parseErr, rawLength: responseBuffer.length }, "Market pulse narrative parse error");
 
+      const deltaHealthFb = getDeltaHealth();
+      const rawConfFb = engineResult.confidenceScore;
+      const deltaAdjFb = deltaHealthFb?.confidenceAdjustment ?? 0;
+      const displayedConfFb = Math.min(100, Math.max(0, rawConfFb + deltaAdjFb));
+
       finalPulse = {
         ...engineResult,
+        confidenceScore: displayedConfFb,
+        rawConfidenceScore: rawConfFb,
         rawIndicators: indicators,
         dataAge: { oldestSource: "schwab-batch", oldestSourceAge: 0 },
         sessionBias: {
@@ -1806,6 +1839,7 @@ Write ONLY the narrative fields. Return this exact JSON structure:
         activeTriggers: shockResult.activeTriggers,
         shockActivatedAt: shockResult.shockActivatedAt,
         shockActive: shockResult.shockActive,
+        deltaHealth: deltaHealthFb ?? undefined,
         upcomingEvents,
         session,
         timeET,

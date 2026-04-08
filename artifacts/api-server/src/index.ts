@@ -8,6 +8,7 @@ import { initTokenStore, setTokenRefreshCallback, hasValidTokens } from "./lib/t
 import { initSyntheticDxy } from "./lib/syntheticDxy";
 import { startExitMonitor } from "./lib/exitStaging";
 import { startTelemetryCleanup } from "./lib/telemetry";
+import { initDeltaEngine } from "./lib/deltaEngine";
 
 const rawPort = process.env["PORT"];
 
@@ -42,6 +43,7 @@ async function boot() {
   await initTokenStore();
   startExitMonitor();
   startTelemetryCleanup();
+  initDeltaEngine();
 
   setTokenRefreshCallback((kind, _accessToken) => {
     if (kind === "trader" || kind === "market") {

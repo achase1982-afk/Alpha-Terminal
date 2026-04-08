@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, useImperativeHandle, forwardR
 import { Loader2 } from "lucide-react";
 import { useTerminalStore } from "../../lib/store";
 import { useMarketPulseStore } from "../../stores/marketPulseStore";
-import type { MarketPulseData, ClusterKey } from "../../types/marketPulse";
+import type { MarketPulseData, ClusterKey, DeltaHealth } from "../../types/marketPulse";
 import { STRATEGY_LABELS } from "../../types/marketPulse";
 import { ClusterCard } from "./ClusterCard";
 import { ActionPlanCard } from "./ActionPlanCard";
@@ -386,6 +386,49 @@ function PulseLoadingStatus({ thinkingTokens, statusMessages }: { thinkingTokens
   );
 }
 
+const DELTA_STATE_COLORS: Record<string, string> = {
+  SOFTENING: "#eab308",
+  FADING: "#f97316",
+  REVERSING: "#ef4444",
+  DEGRADED: "#71717a",
+};
+
+function DeltaTrendLine({ deltaHealth, baselineReset }: { deltaHealth: DeltaHealth; baselineReset: boolean }) {
+  const color = DELTA_STATE_COLORS[deltaHealth.state] ?? "#71717a";
+  const sinceTime = deltaHealth.stateEnteredAt
+    ? new Date(deltaHealth.stateEnteredAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "America/New_York" })
+    : "";
+  const deltaPDisplay = deltaHealth.delta_p_session >= 0
+    ? `+${deltaHealth.delta_p_session.toFixed(3)}`
+    : deltaHealth.delta_p_session.toFixed(3);
+
+  return (
+    <div className="mt-2 flex items-center gap-2 flex-wrap">
+      <span className="font-mono text-[10px] font-bold tracking-wider" style={{ color }}>
+        TREND: {deltaHealth.state}
+      </span>
+      {sinceTime && (
+        <span className="font-mono text-[10px] text-zinc-500">
+          since {sinceTime}
+        </span>
+      )}
+      <span className="font-mono text-[10px] text-zinc-400">
+        participation {deltaPDisplay} from baseline
+      </span>
+      {baselineReset && (
+        <span className="font-mono text-[9px] text-zinc-600 italic">
+          Baseline shifted to 10:45 AM
+        </span>
+      )}
+      {deltaHealth.flags.length > 0 && (
+        <span className="font-mono text-[9px] font-bold text-red-400">
+          {deltaHealth.flags.join(" | ")}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function BiasHero({ data }: { data: MarketPulseData }) {
   const biasStyle = BIAS_COLORS[data.bias] ?? BIAS_COLORS.NO_EDGE;
   const regimeColor = REGIME_COLORS[data.structuralRegime?.label] ?? "#71717a";
@@ -437,6 +480,10 @@ function BiasHero({ data }: { data: MarketPulseData }) {
             {data.timeET}
           </span>
         </div>
+
+        {data.deltaHealth && data.deltaHealth.state !== "HEALTHY" && data.deltaHealth.state !== "AWAITING_BASELINE" && (
+          <DeltaTrendLine deltaHealth={data.deltaHealth} baselineReset={data.deltaHealth.baselineType === "effective"} />
+        )}
       </div>
     </div>
   );

@@ -189,6 +189,30 @@ export interface RawIndicators {
   cpci: number | null;
 }
 
+export type DeltaHealthState = "AWAITING_BASELINE" | "HEALTHY" | "SOFTENING" | "FADING" | "REVERSING" | "DEGRADED";
+
+export interface DeltaHealth {
+  state: DeltaHealthState;
+  triggeredBy: "composite" | "participation" | null;
+  D_final: number;
+  D_scaled: number;
+  B_interval: number;
+  B_session: number;
+  delta_p_session: number;
+  delta_p_scaled_session: number;
+  delta_x_session_pct: number;
+  confidenceAdjustment: number;
+  flags: string[];
+  baselineTimestamp: string;
+  baselineType: "primary" | "effective";
+  primaryBaselineTimestamp: string;
+  lastSnapshotTimestamp: string;
+  snapshotsThisSession: number;
+  todMultiplier: number;
+  consecutiveNegativeIntervals: number;
+  stateEnteredAt: string | null;
+}
+
 export interface MarketPulseData {
   timestamp: string;
   engineVersion?: string;
@@ -242,6 +266,8 @@ export interface MarketPulseData {
   riskStateReasoning?: string[];
   dataQuality?: DataQualitySummary;
   weights?: Record<string, number>;
+  deltaHealth?: DeltaHealth;
+  rawConfidenceScore?: number;
   session: string;
   timeET: string;
   instrumentCount: number;

@@ -107,6 +107,19 @@ export function AiBiasStrip({ onNavigateToPulse }: AiBiasStripProps) {
             {isShockActive ? "SHOCK" : "WARN"}
           </span>
         )}
+        {pulseData.deltaHealth && pulseData.deltaHealth.state !== "HEALTHY" && pulseData.deltaHealth.state !== "AWAITING_BASELINE" && (
+          <span className={`ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
+            pulseData.deltaHealth.state === "REVERSING"
+              ? "bg-red-500/20 text-red-400 border border-red-500/40"
+              : pulseData.deltaHealth.state === "FADING"
+              ? "bg-orange-500/20 text-orange-400 border border-orange-500/40"
+              : pulseData.deltaHealth.state === "DEGRADED"
+              ? "bg-zinc-500/20 text-zinc-400 border border-zinc-500/40"
+              : "bg-yellow-500/20 text-yellow-400 border border-yellow-500/40"
+          }`}>
+            {pulseData.deltaHealth.state}
+          </span>
+        )}
       </div>
 
       <div className="flex items-center gap-1 mx-4">

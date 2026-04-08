@@ -87,6 +87,26 @@ The Deterministic Strategist (`artifacts/api-server/src/lib/deterministicStrateg
 
 **Frontend:** "Send to Strategist" button on scanner cards passes full candidate data to the deterministic strategist. The recommendation card shows mode badge, strategy criteria grid, premium gate pass/fail panel, event warnings, and streaming Claude narrative. A disabled "Check Live Pricing" button indicates Risk Gate is coming soon.
 
+## Pulse Delta Scoring Engine
+
+The Pulse Delta Scoring Engine (`artifacts/api-server/src/lib/deltaEngine.ts`) is a secondary scoring system that runs alongside the existing Market Pulse. It measures whether market conditions are improving or deteriorating within the current trading session by comparing snapshots of breadth indicators (ADVN, DECN, UVOL, DVOL, TRIN, VIX) taken every 30 minutes.
+
+**Snapshot Scheduler:** Fires at scheduled times on trading days (ET): 9:15 AM (PRE_MARKET, raw only), 10:15 AM (BASELINE), 10:45 AM (BASELINE_CONFIRM with material change detection), then every 30 min from 11:15 AM through 3:15 PM (INTRADAY), and 3:45 PM (PRE_CLOSE). Half-day support with session-relative anchors. Schedule rebuilds every 6 hours.
+
+**Normalization:** Participation ratio p(t) = (ADVN-DECN)/(ADVN+DECN), Volume breadth v(t) = ln((UVOL+1)/(DVOL+1)), Smoothed TRIN r(t) = -ln(EMA of 5-min TRIN buffer), VIX x(t) = raw level. NYSE/NASDAQ averaged 50/50 when available.
+
+**Dual Baseline:** Primary baseline always = 10:15 snapshot. Effective baseline may shift to 10:45 if material change detected (p > 0.05, v > 0.10, VIX > 3%). State machine uses effective baseline; UI trend line references primary.
+
+**State Machine:** 6 states: AWAITING_BASELINE → HEALTHY → SOFTENING (yellow, -10 conf) → FADING (orange, -20 conf) → REVERSING (red, -35 conf) / DEGRADED (gray). Two independent trigger paths: composite D_scaled (Path A) and participation delta_p_scaled (Path B). Time-of-day multiplier scales thresholds (0.55 early → 1.25 close).
+
+**SSE Integration:** `deltaHealth` object added to Pulse SSE payload. Displayed confidence = raw confidence + deltaAdj (floor 0, cap 100).
+
+**Frontend:** Colored badge in bias strip (SOFTENING=yellow, FADING=orange, REVERSING=red, DEGRADED=gray). Trend line in BiasHero showing state, since-time, and participation delta from baseline.
+
+**Flags:** RISK_INCREASING (FADING/REVERSING + VIX up), BROAD_DETERIORATION (+ ES down >0.5%).
+
+**API:** GET `/api/ai/delta-health` returns current state. POST `/api/ai/delta-snapshot` triggers manual/event snapshot.
+
 ## Regime Shock Detector
 
 The Regime Shock Detector (`artifacts/api-server/src/lib/regimeShockDetector.ts`) monitors 6 triggers: VIX ±20%, /ES ±2%, HYG-IEF credit spread widening >1.5σ (20-day rolling, min 5 days), SKEW drop >10pts from prior reading, ADD+ADDQ simultaneous breadth flip, and PCSPY >2σ (20-day rolling). It uses a 4-state machine: NORMAL → WARNING (2 triggers/30min) → ACTIVE (3 triggers/30min) → COOLING → NORMAL (triggers must clear for 60 continuous minutes). The detector is called after the Market Pulse engine runs and its output is included in the SSE pulse result (`shockState`, `activeTriggers`, `shockActivatedAt`, `shockActive`). When ACTIVE, the AI narrative is prepended with a shock warning, the Scanner is paused, and the Strategist forces hedging-only mode. Push notifications fire on ACTIVE entry and COOLING→NORMAL transition.
