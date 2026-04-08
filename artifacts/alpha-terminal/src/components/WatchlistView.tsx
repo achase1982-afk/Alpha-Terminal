@@ -202,7 +202,7 @@ function WatchlistRow({
 
       <div className="shrink-0 flex items-center justify-center" style={{ padding: "0 2px" }}>
         {spark && spark.closes.length > 1 ? (
-          <MiniSparkline data={spark.closes} color={cColor} width={48} height={22} />
+          <MiniSparkline data={spark.closes} color={cColor} width={60} height={24} />
         ) : (
           <div style={{ width: 48, height: 22 }} />
         )}
@@ -601,7 +601,7 @@ export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sy
   const unchanged = watchlist.length - gainers - losers;
 
   const stickyW = editMode ? 126 : 100;
-  const sparkW = 54;
+  const sparkW = 68;
   const gridCols = useMemo(() => {
     let cols = `${stickyW}px ${sparkW}px`;
     for (const ind of visibleIndicators) cols += ` ${ind.width}px`;
