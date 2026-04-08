@@ -435,6 +435,57 @@ function parseContracts(map: Record<string, unknown>): ParsedContract[] {
   return contracts;
 }
 
+function centerStrikesAroundATM(
+  calls: ParsedContract[],
+  puts: ParsedContract[],
+  underlyingPrice: number,
+  desiredCount: number
+): { calls: ParsedContract[]; puts: ParsedContract[] } {
+  const expMap = new Map<string, Set<number>>();
+  for (const c of calls) {
+    if (!expMap.has(c.expiration)) expMap.set(c.expiration, new Set());
+    expMap.get(c.expiration)!.add(c.strike);
+  }
+  for (const p of puts) {
+    if (!expMap.has(p.expiration)) expMap.set(p.expiration, new Set());
+    expMap.get(p.expiration)!.add(p.strike);
+  }
+
+  const allowedStrikes = new Map<string, Set<number>>();
+
+  for (const [exp, strikeSet] of expMap) {
+    const sorted = [...strikeSet].sort((a, b) => a - b);
+    if (sorted.length <= desiredCount) {
+      allowedStrikes.set(exp, strikeSet);
+      continue;
+    }
+
+    const belowOrAt = sorted.filter(s => s <= underlyingPrice);
+    const above = sorted.filter(s => s > underlyingPrice);
+
+    const halfBelow = Math.floor(desiredCount / 2);
+    const halfAbove = desiredCount - halfBelow;
+
+    let selectedBelow = belowOrAt.slice(-halfBelow);
+    let selectedAbove = above.slice(0, halfAbove);
+
+    if (selectedBelow.length < halfBelow) {
+      const extra = halfBelow - selectedBelow.length;
+      selectedAbove = above.slice(0, halfAbove + extra);
+    } else if (selectedAbove.length < halfAbove) {
+      const extra = halfAbove - selectedAbove.length;
+      selectedBelow = belowOrAt.slice(-(halfBelow + extra));
+    }
+
+    const kept = new Set([...selectedBelow, ...selectedAbove]);
+    allowedStrikes.set(exp, kept);
+  }
+
+  const filteredCalls = calls.filter(c => allowedStrikes.get(c.expiration)?.has(c.strike));
+  const filteredPuts = puts.filter(p => allowedStrikes.get(p.expiration)?.has(p.strike));
+  return { calls: filteredCalls, puts: filteredPuts };
+}
+
 const LARGE_CHAIN_SYMBOLS = new Set(["SPY", "QQQ", "AAPL", "TSLA", "AMZN", "NVDA", "META", "MSFT", "GOOG", "GOOGL"]);
 
 async function fetchChainSide(chainSymbol: string, contractType: "CALL" | "PUT", token: string, isFuturesSymbol: boolean, log: any): Promise<{ map: Record<string, unknown>; underlyingPrice?: number } | null> {
@@ -590,11 +641,12 @@ router.get("/options", async (req, res) => {
     const isIndexSymbol = isIndex(displaySymbol);
     const chainSymbol = isFuturesSymbol ? displaySymbol : isIndexSymbol ? formatSchwabSymbol(displaySymbol) : displaySymbol;
 
+    const fetchBuffer = Math.max(strikeCount * 3, strikeCount + 20);
     const params = new URLSearchParams({
       symbol: chainSymbol,
       contractType: "ALL",
       range: "NTM",
-      strikeCount: String(strikeCount),
+      strikeCount: String(fetchBuffer),
     });
     if (isFuturesSymbol) params.set("assetClass", "FUTURES");
 
@@ -626,10 +678,16 @@ router.get("/options", async (req, res) => {
     let calls = parseContracts(callMap);
     let puts = parseContracts(putMap);
 
+    if (underlyingPrice != null && strikeCount < 100) {
+      const centered = centerStrikesAroundATM(calls, puts, underlyingPrice, strikeCount);
+      calls = centered.calls;
+      puts = centered.puts;
+    }
+
     if (contractType === "CALL") puts = [];
     else if (contractType === "PUT") calls = [];
 
-    req.log.info({ symbol: displaySymbol, strikeCount, calls: calls.length, puts: puts.length }, "Options chain (NTM)");
+    req.log.info({ symbol: displaySymbol, strikeCount, calls: calls.length, puts: puts.length }, "Options chain (NTM, centered)");
     const data = GetOptionChainResponse.parse({ symbol: displaySymbol, underlyingPrice, calls, puts });
     res.json(data);
   } catch (err) {

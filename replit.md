@@ -46,6 +46,10 @@ The `/ticker-stats` endpoint uses `getBestAccessToken()` to try both market and 
 
 All market data endpoints (`/quote`, `/history`, `/options`, `/ticker-stats`) and AI endpoints (`/options-strategist`, `/options-strategist/stream`, `/deterministic-strategist`, `/deterministic-scan`, `/market-scanner`) use server-side token fallback via `getAccessToken("market")` or `getBestAccessToken()`. The client sends `accessToken || ""` — if empty, the server uses its own stored Schwab tokens from the OAuth flow. Frontend `useEffect` hooks for quote/stats fetching use `useRef` for the token to avoid re-fetch loops when the token loads asynchronously.
 
+## Options Chain Strike Centering
+
+The `/options` endpoint fetches a large buffer of strikes from Schwab (3x the requested count) and then re-centers them around the underlying price server-side via `centerStrikesAroundATM()`. This ensures an equal number of strikes above and below the current price regardless of what Schwab's NTM range returns. The centering splits strikes into `belowOrAt` (≤ price) and `above` (> price), then takes `floor(count/2)` from each side. If one side has fewer strikes, the deficit is filled from the other side.
+
 ## Chain Cache Architecture
 
 The options chain cache (`chainCache` in `market.ts`, TTL=60s, max 20 entries) is shared across all endpoints:
