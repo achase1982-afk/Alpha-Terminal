@@ -171,14 +171,14 @@ export function EngineAuditPanel({ data }: { data: MarketPulseData }) {
           </div>
 
           {activeTab === "indicators" && raw && (
-            <div className="overflow-y-auto" style={{ maxHeight: "calc(100vh - 200px)" }}>
+            <div>
               {ALL_CLUSTERS.map(cluster => {
                 const cr = grouped[cluster];
                 if (!cr.length) return null;
                 const live = cr.filter(r => r.value !== null).length;
                 return (
                   <div key={cluster}>
-                    <div className="px-4 py-2 flex items-center gap-2 sticky top-0 z-10 bg-zinc-900 border-b border-zinc-800/50">
+                    <div className="px-4 py-2 flex items-center gap-2 bg-zinc-900 border-b border-zinc-800/50">
                       <span className="font-mono text-[11px] font-bold text-[#FFB800] tracking-wider">{CLUSTER_LABELS[cluster]}</span>
                       <span className="font-mono text-[11px] text-zinc-500">{live}/{cr.length}</span>
                     </div>
@@ -215,7 +215,7 @@ export function EngineAuditPanel({ data }: { data: MarketPulseData }) {
           )}
 
           {activeTab === "rules" && (
-            <div className="overflow-y-auto" style={{ maxHeight: "calc(100vh - 200px)" }}>
+            <div>
               {CLUSTER_ORDER.map((key) => {
                 const cluster = data.clusters[key];
                 if (!cluster) return null;
