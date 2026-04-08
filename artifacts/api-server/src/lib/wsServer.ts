@@ -8,7 +8,7 @@ import { getTokens } from "./tokenStore.js";
 
 const WS_PATH = "/api/ws/prices";
 const HEARTBEAT_MS = 25_000;
-const PORTFOLIO_POLL_MS = 2_000;
+const PORTFOLIO_POLL_MS = 1_000;
 const DEV_BYPASS = process.env.DEV_BYPASS_AUTH === "true";
 const SCHWAB_TRADER_BASE = "https://api.schwabapi.com/trader/v1";
 
