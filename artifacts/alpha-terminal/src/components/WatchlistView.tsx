@@ -109,6 +109,8 @@ function WatchlistRow({
   onRemove,
   editMode,
   indicators,
+  gridCols,
+  minW,
 }: {
   sym: string;
   quote: LiveQuote | undefined;
@@ -117,6 +119,8 @@ function WatchlistRow({
   onRemove: () => void;
   editMode: boolean;
   indicators: IndicatorDef[];
+  gridCols: string;
+  minW: number;
 }) {
   const change = quote?.change ?? null;
   const cColor = changeColor(change);
@@ -124,9 +128,8 @@ function WatchlistRow({
   const description = restQuote?.description ?? null;
 
   const [tapped, setTapped] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
 
-  const handleTap = useCallback(() => {
+  const handleTickerTap = useCallback(() => {
     if (editMode) return;
     setTapped(true);
     setTimeout(() => {
@@ -135,74 +138,80 @@ function WatchlistRow({
     }, 150);
   }, [editMode, onTap]);
 
+  const stickyW = editMode ? 126 : 100;
+
   return (
-    <div style={{ borderBottom: "1px solid #2A2A2C" }}>
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: gridCols,
+        minWidth: minW,
+        borderBottom: "1px solid #2A2A2C",
+        background: tapped ? "#1a1a1a" : "#000000",
+        transition: "background 0.15s ease",
+        alignItems: "center",
+      }}
+    >
       <div
-        className="relative"
         style={{
+          position: "sticky",
+          left: 0,
+          zIndex: 1,
           background: tapped ? "#1a1a1a" : "#000000",
-          transition: "background 0.15s ease",
+          display: "flex",
+          alignItems: "center",
+          borderRight: "1px solid rgba(255,255,255,0.08)",
+          minHeight: 52,
+          width: stickyW,
         }}
       >
-        <div className="flex items-center" style={{ minHeight: 52 }}>
-          {editMode && (
-            <button
-              onClick={(e) => { e.stopPropagation(); onRemove(); }}
-              className="shrink-0 flex items-center justify-center pl-2"
-              style={{ width: 36 }}
-            >
-              <MinusCircle className="w-5 h-5" style={{ color: "#ef4444" }} />
-            </button>
-          )}
-
-          <div
-            onClick={handleTap}
-            className="shrink-0 flex items-center px-3 py-2 cursor-pointer"
-            style={{ width: editMode ? 90 : 100 }}
+        {editMode && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onRemove(); }}
+            className="shrink-0 flex items-center justify-center pl-2"
+            style={{ width: 36 }}
           >
-            <div className="min-w-0">
-              <span className="block font-mono text-[15px] font-bold tracking-wide truncate" style={{ color: cColor === "#71717a" ? "#fff" : cColor }}>{sym}</span>
-              {description && (
-                <span className="block font-mono text-[11px] tracking-wide truncate" style={{ color: "#FFB800" }}>
-                  {description}
-                </span>
-              )}
-            </div>
+            <MinusCircle className="w-5 h-5" style={{ color: "#ef4444" }} />
+          </button>
+        )}
+
+        <div
+          onClick={handleTickerTap}
+          className="shrink-0 flex items-center px-3 py-2 cursor-pointer"
+          style={{ flex: 1, minWidth: 0 }}
+        >
+          <div className="min-w-0">
+            <span className="block font-mono text-[15px] font-bold tracking-wide truncate" style={{ color: cColor === "#71717a" ? "#fff" : cColor }}>{sym}</span>
+            {description && (
+              <span className="block font-mono text-[11px] tracking-wide truncate" style={{ color: "#FFB800" }}>
+                {description}
+              </span>
+            )}
           </div>
-
-          <div className="shrink-0" style={{ width: 1, height: 32, background: "rgba(255,255,255,0.08)" }} />
-
-          <div
-            ref={scrollRef}
-            onClick={handleTap}
-            className="flex-1 overflow-x-auto cursor-pointer"
-            style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
-          >
-            <style>{`.wl-scroll::-webkit-scrollbar { display: none; }`}</style>
-            <div className="wl-scroll flex items-center gap-1 px-2 py-2" style={{ minWidth: "max-content" }}>
-              {spark && spark.closes.length > 1 ? (
-                <MiniSparkline data={spark.closes} color={cColor} width={48} height={22} />
-              ) : (
-                <div className="shrink-0" style={{ width: 48, height: 22 }} />
-              )}
-
-              {indicators.map((ind) => (
-                <span
-                  key={ind.key}
-                  className="font-mono text-[13px] tabular-nums text-right shrink-0"
-                  style={{ color: ind.color(quote), width: ind.width, fontWeight: ind.key === "price" ? 700 : 400 }}
-                >
-                  {ind.format(quote)}
-                </span>
-              ))}
-            </div>
-          </div>
-
-          {!editMode && (
-            <ChevronRight className="w-3.5 h-3.5 text-[#3a3a3c] shrink-0 mr-2" />
-          )}
         </div>
+
+        {!editMode && (
+          <ChevronRight className="w-3.5 h-3.5 text-[#3a3a3c] shrink-0 mr-2" />
+        )}
       </div>
+
+      <div className="shrink-0 flex items-center justify-center" style={{ padding: "0 2px" }}>
+        {spark && spark.closes.length > 1 ? (
+          <MiniSparkline data={spark.closes} color={cColor} width={48} height={22} />
+        ) : (
+          <div style={{ width: 48, height: 22 }} />
+        )}
+      </div>
+
+      {indicators.map((ind) => (
+        <span
+          key={ind.key}
+          className="font-mono text-[13px] tabular-nums text-right"
+          style={{ color: ind.color(quote), padding: "0 6px", fontWeight: ind.key === "price" ? 700 : 400 }}
+        >
+          {ind.format(quote)}
+        </span>
+      ))}
     </div>
   );
 }
@@ -436,8 +445,8 @@ function ColumnHeader({
   return (
     <button
       onClick={() => onSort(indicator.sortKey)}
-      className="font-mono text-[11px] tracking-wider text-right shrink-0 flex items-center justify-end gap-0.5 transition-colors"
-      style={{ color: active ? "#FFB800" : "#52525b", width: indicator.width }}
+      className="font-mono text-[11px] tracking-wider text-right flex items-center justify-end gap-0.5 transition-colors"
+      style={{ color: active ? "#FFB800" : "#52525b", padding: "4px 6px" }}
     >
       <span>{indicator.label}</span>
       <span className="text-[8px]">{active ? (sortDir === "asc" ? "▲" : "▼") : "↕"}</span>
@@ -578,6 +587,15 @@ export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sy
   const losers = watchlist.filter((s) => (streamPrices[s]?.changePct ?? 0) < 0).length;
   const unchanged = watchlist.length - gainers - losers;
 
+  const stickyW = editMode ? 126 : 100;
+  const sparkW = 54;
+  const gridCols = useMemo(() => {
+    let cols = `${stickyW}px ${sparkW}px`;
+    for (const ind of visibleIndicators) cols += ` ${ind.width}px`;
+    return cols;
+  }, [stickyW, visibleIndicators]);
+  const minRowW = useMemo(() => stickyW + sparkW + visibleIndicators.reduce((s, i) => s + i.width, 0), [stickyW, visibleIndicators]);
+
   return (
     <div className="flex-1 flex flex-col" style={{ background: "#000000" }}>
       <IndicatorSettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} activeIndicators={activeIndicators} onToggle={toggleIndicator} />
@@ -624,35 +642,7 @@ export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sy
         )}
       </div>
 
-      {watchlist.length > 0 && (
-        <div className="flex items-center px-3 pb-2" style={{ borderBottom: "1px solid #2A2A2C" }}>
-          <div style={{ width: editMode ? 126 : 100 }} className="shrink-0">
-            <button
-              onClick={() => handleSort("symbol")}
-              className="font-mono text-[11px] tracking-wider flex items-center gap-0.5 transition-colors"
-              style={{ color: sortKey === "symbol" ? "#FFB800" : "#52525b" }}
-            >
-              Symbol
-              <span className="text-[8px]">{sortKey === "symbol" ? (sortDir === "asc" ? "▲" : "▼") : "↕"}</span>
-            </button>
-          </div>
-
-          <div className="shrink-0" style={{ width: 1, height: 14, background: "rgba(255,255,255,0.08)", marginRight: 4 }} />
-
-          <div className="flex-1 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
-            <div className="flex items-center gap-1 px-2" style={{ minWidth: "max-content" }}>
-              <div style={{ width: 48 }} className="shrink-0" />
-              {visibleIndicators.map((ind) => (
-                <ColumnHeader key={ind.key} indicator={ind} sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
-              ))}
-            </div>
-          </div>
-
-          {!editMode && <div style={{ width: 18 }} className="shrink-0" />}
-        </div>
-      )}
-
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto" style={{ minHeight: 0 }}>
         {watchlist.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center gap-4 py-20">
             <div className="relative">
@@ -677,18 +667,54 @@ export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sy
             </div>
           </div>
         ) : (
-          sorted.map((sym) => (
-            <WatchlistRow
-              key={sym}
-              sym={sym}
-              quote={streamPrices[sym]}
-              spark={sparkData[sym]}
-              onTap={() => { setSymbol(sym); onNavigateToSymbol?.(sym); }}
-              onRemove={() => removeFromWatchlist(sym)}
-              editMode={editMode}
-              indicators={visibleIndicators}
-            />
-          ))
+          <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" as any, scrollbarWidth: "none" as any }}>
+            <style>{`.wl-sheet::-webkit-scrollbar { display: none; }`}</style>
+            <div className="wl-sheet">
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: gridCols,
+                  minWidth: minRowW,
+                  borderBottom: "1px solid #2A2A2C",
+                  position: "sticky",
+                  top: 0,
+                  zIndex: 2,
+                  background: "#000000",
+                  alignItems: "center",
+                }}
+              >
+                <div style={{ position: "sticky", left: 0, zIndex: 3, background: "#000000", padding: "4px 12px", borderRight: "1px solid rgba(255,255,255,0.08)" }}>
+                  <button
+                    onClick={() => handleSort("symbol")}
+                    className="font-mono text-[11px] tracking-wider flex items-center gap-0.5 transition-colors"
+                    style={{ color: sortKey === "symbol" ? "#FFB800" : "#52525b" }}
+                  >
+                    Symbol
+                    <span className="text-[8px]">{sortKey === "symbol" ? (sortDir === "asc" ? "▲" : "▼") : "↕"}</span>
+                  </button>
+                </div>
+                <div />
+                {visibleIndicators.map((ind) => (
+                  <ColumnHeader key={ind.key} indicator={ind} sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                ))}
+              </div>
+
+              {sorted.map((sym) => (
+                <WatchlistRow
+                  key={sym}
+                  sym={sym}
+                  quote={streamPrices[sym]}
+                  spark={sparkData[sym]}
+                  onTap={() => { setSymbol(sym); onNavigateToSymbol?.(sym); }}
+                  onRemove={() => removeFromWatchlist(sym)}
+                  editMode={editMode}
+                  indicators={visibleIndicators}
+                  gridCols={gridCols}
+                  minW={minRowW}
+                />
+              ))}
+            </div>
+          </div>
         )}
       </div>
     </div>
