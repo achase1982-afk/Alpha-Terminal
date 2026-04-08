@@ -82,6 +82,20 @@ The Exit Order Staging system (`artifacts/api-server/src/lib/exitStaging.ts`) au
 
 **Account correctness:** The entry account hash is persisted in the journal entry and used for exit order placement, ensuring exits go to the correct account.
 
+## Failure Telemetry System
+
+The Failure Telemetry system (`artifacts/api-server/src/lib/telemetry.ts`) provides internal diagnostic logging for errors, failures, and anomalies across all server-side systems.
+
+**Schema:** `failure_log` table (id, timestamp, system, severity, message, details JSONB, resolved bool, resolvedAt). 30-day auto-cleanup runs daily.
+
+**Utility:** `logFailure(system, severity, message, details?)` — fire-and-forget (`void logFailure(...)`) writes to DB + Pino logger. If severity=CRITICAL, auto-sends push notification via `sendPushToAll()`.
+
+**Instrumented systems:** SCHWAB_API (rate limits, non-200, options chain fails), SCHWAB_STREAM (disconnect, LOGIN fail, ACCT_ACTIVITY timeout, 5-min market-hours CRITICAL), IBKR (disconnect, breadth stale 60s market hours CRITICAL, connection failures), YAHOO (earnings fetch failures), SEC_EDGAR (insider transaction failures), SCANNER (quote batch failures, zero candidates), STRATEGIST (no mode qualified), EXIT_STAGING (order placement failures, monitor errors, stop loss errors), PUSH_NOTIFICATION (delivery failures, 410 Gone), MARKET_PULSE (Claude API failures across all AI endpoints).
+
+**API:** GET `/api/telemetry` (filterable by system, severity, since, limit), GET `/api/telemetry/counts` (unresolved ERROR+CRITICAL count), PATCH `/api/telemetry/:id/resolve`, DELETE `/api/telemetry/clear-resolved`.
+
+**Frontend:** TelemetryPage in Settings sidebar with AlertTriangle icon and red badge showing unresolved ERROR+CRITICAL count (polls every 30s). Table with color-coded rows (gray INFO, yellow WARN, red ERROR, pulsing red CRITICAL), system/severity filter buttons, resolve per-row, clear resolved, expandable JSON details.
+
 # External Dependencies
 
 -   **Claude**: `claude-sonnet-4-6-20250620` (default) and `claude-opus-4-6-20250620` for AI.

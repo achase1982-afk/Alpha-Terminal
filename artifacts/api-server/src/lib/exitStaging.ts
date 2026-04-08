@@ -5,6 +5,7 @@ import { getTokens } from "./tokenStore.js";
 import { logger } from "./logger.js";
 import { sendPushToAll } from "./pushService.js";
 import { broadcastToClients } from "./wsServer.js";
+import { logFailure } from "./telemetry.js";
 
 const SCHWAB_TRADER_BASE = "https://api.schwabapi.com/trader/v1";
 
@@ -95,6 +96,7 @@ export async function handleFillForExitStaging(params: {
     const token = getTraderToken();
     if (!token) {
       logger.error("No trader token for exit order placement");
+      void logFailure("EXIT_STAGING", "ERROR", `No trader token for exit order placement`, { schwabOrderId, symbol });
       return;
     }
 
@@ -124,6 +126,7 @@ export async function handleFillForExitStaging(params: {
     } else {
       const body = await schwabRes.text().catch(() => "");
       logger.error({ status: schwabRes.status, body: body.slice(0, 300) }, "Exit order placement failed");
+      void logFailure("EXIT_STAGING", "ERROR", `Exit order placement failed: HTTP ${schwabRes.status}`, { schwabOrderId, symbol, status: schwabRes.status, body: body.slice(0, 300) });
     }
 
     const dte = journalEntry.legs ? estimateDTE(legs) : null;
@@ -160,6 +163,7 @@ export async function handleFillForExitStaging(params: {
     }
   } catch (err) {
     logger.error({ err, schwabOrderId }, "Exit staging error");
+    void logFailure("EXIT_STAGING", "ERROR", `Exit staging error for ${symbol}: ${String(err)}`, { schwabOrderId, symbol, error: String(err) });
   }
 }
 
@@ -250,6 +254,7 @@ async function runExitMonitorCycle() {
     }
   } catch (err) {
     logger.error({ err }, "Exit monitor cycle error");
+    void logFailure("EXIT_STAGING", "ERROR", `Exit monitor cycle error: ${String(err)}`, { error: String(err) });
   }
 }
 
@@ -285,5 +290,6 @@ export async function checkStopLoss(symbol: string, currentSpreadValue: number) 
     }
   } catch (err) {
     logger.error({ err, symbol }, "Stop loss check error");
+    void logFailure("EXIT_STAGING", "ERROR", `Stop loss check error for ${symbol}: ${String(err)}`, { symbol, error: String(err) });
   }
 }

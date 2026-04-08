@@ -24,8 +24,10 @@ import {
   Zap, LineChart, LayoutDashboard, BrainCircuit,
   ChevronLeft, ChevronRight, Trash2, Plus, RotateCcw, BarChart2,
   SlidersHorizontal, Gauge, ListOrdered, CalendarDays, Palette,
+  AlertTriangle,
 } from "lucide-react";
 import { MarketCalendar } from "@/components/MarketCalendar";
+import { TelemetryPage, useTelemetryCount } from "@/components/TelemetryPage";
 import { useClerk } from "@clerk/clerk-react";
 
 const devBypass = import.meta.env.VITE_DEV_BYPASS_AUTH === "true";
@@ -46,7 +48,8 @@ type SidebarPage =
   | "Display & Marquee"
   | "AI Parameters"
   | "UI Customization"
-  | "Security & Privacy";
+  | "Security & Privacy"
+  | "Telemetry";
 
 export interface SidebarHandle {
   clearActivePage: () => void;
@@ -60,7 +63,7 @@ interface SidebarProps {
   onToggle?: () => void;
 }
 
-function MenuRow({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) {
+function MenuRow({ icon, label, onClick, badge }: { icon: React.ReactNode; label: string; onClick: () => void; badge?: number }) {
   return (
     <button
       onClick={onClick}
@@ -70,6 +73,22 @@ function MenuRow({ icon, label, onClick }: { icon: React.ReactNode; label: strin
         {React.cloneElement(icon as React.ReactElement<any>, { className: "w-5 h-5" })}
       </div>
       <span className="font-bold text-[15px] text-white tracking-wide">{label}</span>
+      {badge != null && badge > 0 && (
+        <span style={{
+          marginLeft: "auto",
+          background: "#f23645",
+          color: "#fff",
+          fontSize: 10,
+          fontWeight: 800,
+          padding: "1px 6px",
+          borderRadius: 8,
+          minWidth: 18,
+          textAlign: "center",
+          lineHeight: "16px",
+        }}>
+          {badge > 99 ? "99+" : badge}
+        </span>
+      )}
     </button>
   );
 }
@@ -77,6 +96,7 @@ function MenuRow({ icon, label, onClick }: { icon: React.ReactNode; label: strin
 export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar({ isOpen, onClose, onOpenChat, onNavigate }, ref) {
   const { signOut } = useClerkSafe();
   const [activePage, setActivePage] = useState<SidebarPage>(null);
+  const telemetryCount = useTelemetryCount();
 
   useImperativeHandle(ref, () => ({ clearActivePage: () => setActivePage(null) }), []);
 
@@ -126,6 +146,7 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
             {activePage === "AI Parameters" && <AiParametersPage />}
             {activePage === "UI Customization" && <UICustomizationPage />}
             {activePage === "Security & Privacy" && <SecurityPrivacyPage />}
+            {activePage === "Telemetry" && <TelemetryPage />}
           </div>
         </div>,
         document.body
@@ -166,6 +187,7 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
                 <MenuRow icon={<LayoutDashboard />} label="Display & Marquee" onClick={() => { setActivePage("Display & Marquee"); onClose(); }} />
                 <MenuRow icon={<BrainCircuit />} label="AI Parameters" onClick={() => { setActivePage("AI Parameters"); onClose(); }} />
                 <MenuRow icon={<Palette />} label="UI Customization" onClick={() => { setActivePage("UI Customization"); onClose(); }} />
+                <MenuRow icon={<AlertTriangle />} label="Telemetry" badge={telemetryCount} onClick={() => { setActivePage("Telemetry"); onClose(); }} />
                 <MenuRow icon={<Shield />} label="Security & Privacy" onClick={() => { setActivePage("Security & Privacy"); onClose(); }} />
               </div>
 

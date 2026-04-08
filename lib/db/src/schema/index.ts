@@ -59,3 +59,16 @@ export const stagedExitsTable = pgTable("staged_exits", {
 export const insertStagedExitSchema = createInsertSchema(stagedExitsTable).omit({ id: true });
 export type InsertStagedExit = z.infer<typeof insertStagedExitSchema>;
 export type StagedExit = typeof stagedExitsTable.$inferSelect;
+
+export const failureLogTable = pgTable("failure_log", {
+  id: serial("id").primaryKey(),
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
+  system: text("system").notNull(),
+  severity: text("severity").notNull(),
+  message: text("message").notNull(),
+  details: jsonb("details"),
+  resolved: boolean("resolved").default(false).notNull(),
+  resolvedAt: timestamp("resolved_at"),
+});
+
+export type FailureLog = typeof failureLogTable.$inferSelect;

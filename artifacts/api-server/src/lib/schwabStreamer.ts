@@ -4,6 +4,7 @@ import { logger } from "./logger.js";
 import { getValidAccessToken, forceRefresh } from "./tokenStore.js";
 import { sendPushToAll } from "./pushService.js";
 import { handleFillForExitStaging } from "./exitStaging.js";
+import { logFailure } from "./telemetry.js";
 
 export interface LiveQuote {
   symbol:       string;
@@ -109,6 +110,10 @@ let reconnectDelay = 2000;
 const MAX_RECONNECT_DELAY = 60_000;
 let connectionState: "disconnected" | "connecting" | "connected" = "disconnected";
 let loginRetried = false;
+let lastConnectedAt: number | null = null;
+let disconnectedAt: number | null = null;
+let fiveMinCriticalSent = false;
+let acctActivitySubTimeout: ReturnType<typeof setTimeout> | null = null;
 
 interface StreamerInfo {
   streamerSocketUrl: string;
@@ -295,6 +300,12 @@ function sendAcctActivitySubscription() {
   if (req) {
     schwabWs.send(JSON.stringify({ requests: [req] }));
     logger.info("Schwab streamer: ACCT_ACTIVITY SUBS sent (awaiting confirmation)");
+    if (acctActivitySubTimeout) clearTimeout(acctActivitySubTimeout);
+    acctActivitySubTimeout = setTimeout(() => {
+      if (!acctActivitySubscribed) {
+        void logFailure("SCHWAB_STREAM", "ERROR", "ACCT_ACTIVITY subscription not confirmed within 10 seconds", {});
+      }
+    }, 10_000);
   }
 }
 
@@ -325,6 +336,7 @@ function processAcctActivity(content: Record<string, unknown>[]) {
 
     if (isAlertSeen(orderId, msgType ?? null)) {
       logger.info({ orderId, msgType }, "Schwab ACCT_ACTIVITY dedup — skipping (already broadcast via REST)");
+      void logFailure("SCHWAB_STREAM", "INFO", `ACCT_ACTIVITY dedup blocked event: ${msgType} for order ${orderId}`, { orderId, msgType });
       return;
     }
 
@@ -606,6 +618,7 @@ function handleMessage(raw: string) {
         } else {
           acctActivitySubscribed = false;
           logger.error({ code, msg: msgText }, "Schwab streamer: ACCT_ACTIVITY subscription failed — will retry on next reconnect");
+          void logFailure("SCHWAB_STREAM", "ERROR", `ACCT_ACTIVITY subscription failed (code ${code})`, { code, msg: msgText });
         }
       }
       if (service === "ADMIN" && command === "LOGIN") {
@@ -613,6 +626,9 @@ function handleMessage(raw: string) {
           logger.info("Schwab streamer: LOGIN successful");
           connectionState = "connected";
           loginRetried = false;
+          lastConnectedAt = Date.now();
+          disconnectedAt = null;
+          fiveMinCriticalSent = false;
           broadcast("streamerStatus", { status: "connected" });
           reconnectDelay = 2000;
 
@@ -628,6 +644,7 @@ function handleMessage(raw: string) {
           sendAcctActivitySubscription();
         } else {
           logger.error({ code, msg: msgText }, "Schwab streamer: LOGIN failed");
+          void logFailure("SCHWAB_STREAM", "ERROR", `Schwab WebSocket LOGIN failed (code ${code})`, { code, msg: msgText });
           connectionState = "disconnected";
 
           if (!loginRetried && (code === 3 || (msgText && msgText.toLowerCase().includes("expired")))) {
@@ -685,6 +702,19 @@ function handleMessage(raw: string) {
 function scheduleReconnect() {
   if (reconnectTimer) return;
   logger.info({ delayMs: reconnectDelay }, "Schwab streamer: scheduling reconnect");
+  if (disconnectedAt && !fiveMinCriticalSent) {
+    const downMs = Date.now() - disconnectedAt;
+    if (downMs > 5 * 60 * 1000) {
+      const now = new Date();
+      const etHour = parseInt(now.toLocaleString("en-US", { timeZone: "America/New_York", hour: "numeric", hour12: false }));
+      const dayOfWeek = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" })).getDay();
+      if (dayOfWeek >= 1 && dayOfWeek <= 5 && etHour >= 9 && etHour < 16) {
+        void logFailure("SCHWAB_STREAM", "CRITICAL", `Schwab WebSocket down for ${Math.round(downMs / 60000)} minutes during market hours`, { downMs });
+        fiveMinCriticalSent = true;
+      }
+    }
+  }
+  void logFailure("SCHWAB_STREAM", "WARN", "Schwab WebSocket reconnect attempt scheduled", { delayMs: reconnectDelay });
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
     void connectSchwabStreamer();
@@ -730,10 +760,14 @@ async function connectSchwabStreamer() {
   });
 
   schwabWs.on("close", (code, reason) => {
-    logger.warn({ code, reason: reason?.toString() }, "Schwab streamer: WebSocket closed");
+    const sessionDuration = lastConnectedAt ? Date.now() - lastConnectedAt : null;
+    logger.warn({ code, reason: reason?.toString(), sessionDurationMs: sessionDuration }, "Schwab streamer: WebSocket closed");
+    void logFailure("SCHWAB_STREAM", "WARN", `Schwab WebSocket disconnected (code ${code})`, { code, reason: reason?.toString(), sessionDurationMs: sessionDuration });
     schwabWs = null;
     connectionState = "disconnected";
     acctActivitySubscribed = false;
+    disconnectedAt = Date.now();
+    fiveMinCriticalSent = false;
     broadcast("streamerStatus", { status: "disconnected" });
     scheduleReconnect();
   });

@@ -1,5 +1,6 @@
 import { IBApi, EventName, Contract, SecType } from "@stoqey/ib";
 import { logger } from "./logger.js";
+import { logFailure } from "./telemetry.js";
 import type { LiveQuote } from "./schwabStreamer.js";
 import { getEnabledSymbols, type IBSymbolDef } from "./ibBreadthSymbols.js";
 
@@ -560,6 +561,7 @@ export async function connectIB(): Promise<void> {
 
     ib.on(EventName.disconnected, () => {
       logger.warn("IB: disconnected from gateway — triggering immediate reconnect");
+      void logFailure("IBKR", "WARN", "IBKR Gateway disconnected", { host: IB_HOST, port: IB_PORT });
       handleDisconnectOrError(true);
     });
 
@@ -610,11 +612,13 @@ export async function connectIB(): Promise<void> {
       const isImmediateReconnect = code === 2110;
       if (code === 504) {
         logger.warn({ code, msg: err.message }, "IB: transport/connectivity error — delayed reconnect");
+        void logFailure("IBKR", "ERROR", `IBKR connection error (code ${code}): ${err.message}`, { code, message: err.message });
         handleDisconnectOrError(false);
         return;
       }
       if (isImmediateReconnect) {
         logger.warn({ code, msg: err.message }, "IB: transport/connectivity error — immediate reconnect");
+        void logFailure("IBKR", "ERROR", `IBKR connection error (code ${code}): ${err.message}`, { code, message: err.message });
         handleDisconnectOrError(true);
         return;
       }
@@ -625,6 +629,7 @@ export async function connectIB(): Promise<void> {
         (err.message && (err.message.includes("ECONNREFUSED") || err.message.includes("ECONNRESET") || err.message.includes("ETIMEDOUT")));
 
       if (isTransportError) {
+        void logFailure("IBKR", "ERROR", `IBKR transport error (code ${code}): ${err.message}`, { code, message: err.message });
         handleDisconnectOrError(false);
       }
     });
@@ -827,6 +832,9 @@ export async function connectIB(): Promise<void> {
       }
     });
 
+    let lastBreadthTickAt = Date.now();
+    const breadthSymSet = new Set(BREADTH_SYMBOLS.map(d => d.displaySymbol));
+
     setInterval(() => {
       if (connState !== "CONNECTED") return;
       const symsWithData: string[] = [];
@@ -834,13 +842,25 @@ export async function connectIB(): Promise<void> {
         if (state.last !== null || state.bid !== null || state.close !== null) {
           symsWithData.push(sym);
         }
+        if (breadthSymSet.has(sym) && state.ts > lastBreadthTickAt) {
+          lastBreadthTickAt = state.ts;
+        }
       }
       logger.info({ total: ibQuoteCache.size, withData: symsWithData.length, symbols: symsWithData }, "IB: quote cache summary");
+
+      const now = new Date();
+      const etHour = parseInt(now.toLocaleString("en-US", { timeZone: "America/New_York", hour: "numeric", hour12: false }));
+      const dayOfWeek = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" })).getDay();
+      const isMarketHours = dayOfWeek >= 1 && dayOfWeek <= 5 && etHour >= 9 && etHour < 16;
+      if (isMarketHours && Date.now() - lastBreadthTickAt > 60_000) {
+        void logFailure("IBKR", "CRITICAL", `Breadth/PCR data stale for ${Math.round((Date.now() - lastBreadthTickAt) / 1000)}s during market hours`, { lastBreadthTickAt, staleSec: Math.round((Date.now() - lastBreadthTickAt) / 1000) });
+      }
     }, 30_000);
 
     ib.connect();
   } catch (err) {
     logger.warn({ err }, "IB: connection attempt failed");
+    void logFailure("IBKR", "ERROR", `IBKR connection attempt failed: ${String(err)}`, { error: String(err) });
     connState = "DISCONNECTED";
     emitStatus("disconnected");
     scheduleReconnect();

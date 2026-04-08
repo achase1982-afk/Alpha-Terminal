@@ -7,6 +7,7 @@ import { startIBWsProxy } from "./lib/ibWsProxy";
 import { initTokenStore, setTokenRefreshCallback, hasValidTokens } from "./lib/tokenStore";
 import { initSyntheticDxy } from "./lib/syntheticDxy";
 import { startExitMonitor } from "./lib/exitStaging";
+import { startTelemetryCleanup } from "./lib/telemetry";
 
 const rawPort = process.env["PORT"];
 
@@ -40,6 +41,7 @@ async function boot() {
 
   await initTokenStore();
   startExitMonitor();
+  startTelemetryCleanup();
 
   setTokenRefreshCallback((kind, _accessToken) => {
     if (kind === "trader" || kind === "market") {

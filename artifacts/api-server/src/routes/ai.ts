@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-
+import { logFailure } from "../lib/telemetry.js";
 import Anthropic from "@anthropic-ai/sdk";
 import { streamText } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
@@ -323,6 +323,7 @@ If data is insufficient for any field, use null. Base RSI on 14-period calculati
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     req.log.error({ err }, "Technical snapshot error");
+    void logFailure("MARKET_PULSE", "ERROR", `Claude technical snapshot failed: ${msg}`, { endpoint: "/technical-snapshot", error: msg });
     res.json({ error: msg });
   }
 });
@@ -363,6 +364,7 @@ Be specific, data-driven, and concise. Use markdown formatting.`;
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     req.log.error({ err }, "Technical analysis error");
+    void logFailure("MARKET_PULSE", "ERROR", `Claude technical analysis failed: ${msg}`, { endpoint: "/technical-analysis", error: msg });
     res.json(RunTechnicalAnalysisResponse.parse({ response: `**Analysis failed:** ${msg}`, error: msg }));
   }
 });
@@ -568,6 +570,7 @@ Every price level MUST come from the provided data. For fundamental sections, us
     clearInterval(heartbeat);
     const msg = err instanceof Error ? err.message : String(err);
     req.log.error({ err }, "Technical analysis stream error");
+    void logFailure("MARKET_PULSE", "ERROR", `Claude streaming analysis failed: ${msg}`, { endpoint: "/technical-analysis/stream", error: msg });
     res.write(`data: ${JSON.stringify({ error: msg })}\n\n`);
     res.end();
   }
@@ -611,6 +614,7 @@ Be specific with strikes, expirations, and premium estimates. Use markdown forma
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     req.log.error({ err }, "Options analysis error");
+    void logFailure("MARKET_PULSE", "ERROR", `Claude options analysis failed: ${msg}`, { endpoint: "/options-analysis", error: msg });
     res.json(RunOptionsAnalysisResponse.parse({ response: `**Analysis failed:** ${msg}`, error: msg }));
   }
 });

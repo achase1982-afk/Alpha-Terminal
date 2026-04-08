@@ -9,6 +9,7 @@ import economicRouter from "./economic";
 import secRouter from "./sec";
 import pushRouter from "./push";
 import journalRouter from "./journal";
+import telemetryRouter from "./telemetry";
 const router: IRouter = Router();
 
 router.use("/auth", authRouter);
@@ -21,5 +22,6 @@ router.use("/economic", economicRouter);
 router.use("/sec", secRouter);
 router.use("/push", pushRouter);
 router.use("/journal", journalRouter);
+router.use("/telemetry", telemetryRouter);
 
 export default router;

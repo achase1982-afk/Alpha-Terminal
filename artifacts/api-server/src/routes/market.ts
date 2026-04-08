@@ -7,6 +7,7 @@ import {
 import { getAccessToken, getBestAccessToken } from "../lib/tokenStore.js";
 import { getQuoteBySymbol } from "../lib/schwabStreamer.js";
 import { getIBCachedQuote, subscribeQuoteForSymbol, isIBConnected, getIBCompanyName } from "../lib/ibStreamer.js";
+import { logFailure } from "../lib/telemetry.js";
 
 const router: IRouter = Router();
 
@@ -155,12 +156,15 @@ router.get("/quote", async (req, res) => {
     }
 
     if (response.status === 429) {
+      const retryAfter = response.headers.get("retry-after") ?? "unknown";
       req.log.warn({ symbol: displaySymbol }, "Schwab 429 rate limit hit — backing off");
+      void logFailure("SCHWAB_API", "WARN", `Schwab rate limit (429) on /quotes for ${displaySymbol}`, { endpoint: "/quotes", symbol: displaySymbol, retryAfter });
       const data = GetQuoteResponse.parse({ symbol: displaySymbol, error: "rate_limited" });
       return res.status(200).json(data);
     }
 
     if (!response.ok) {
+      void logFailure("SCHWAB_API", "ERROR", `Schwab API non-200 on /quotes: HTTP ${response.status}`, { endpoint: "/quotes", symbol: displaySymbol, status: response.status });
       const data = GetQuoteResponse.parse({ symbol: displaySymbol, error: `api_error_${response.status}` });
       return res.json(data);
     }
@@ -462,6 +466,7 @@ async function fetchChainSide(chainSymbol: string, contractType: "CALL" | "PUT",
   if (!response.ok) {
     const body = await response.text().catch(() => "");
     log.error({ status: response.status, symbol: chainSymbol, contractType, body: body.slice(0, 500) }, "Chain side fetch failed");
+    void logFailure("SCHWAB_API", "ERROR", `Schwab options chain fetch failed: HTTP ${response.status}`, { endpoint: "/chains", symbol: chainSymbol, contractType, status: response.status });
     return null;
   }
 
@@ -521,6 +526,7 @@ async function fetchFullChain(displaySymbol: string, token: string, log: any): P
     if (!response.ok) {
       const body = await response.text().catch(() => "");
       log.error({ status: response.status, symbol: chainSymbol, body: body.slice(0, 500) }, "Options chain fetch failed");
+      void logFailure("SCHWAB_API", "ERROR", `Schwab full options chain fetch failed: HTTP ${response.status}`, { endpoint: "/chains", symbol: chainSymbol, status: response.status });
       return null;
     }
 
@@ -744,6 +750,7 @@ router.get("/earnings-date", async (req, res) => {
 
     if (!response.ok) {
       req.log.warn({ status: response.status, symbol }, "Yahoo earnings fetch failed, trying scrape fallback");
+      void logFailure("YAHOO", "WARN", `Yahoo earnings calendar fetch failed: HTTP ${response.status}`, { symbol: cleanSymbol, status: response.status });
 
       const pageUrl = `https://finance.yahoo.com/quote/${encodeURIComponent(cleanSymbol)}/`;
       const pageRes = await fetch(pageUrl, {
@@ -788,6 +795,7 @@ router.get("/earnings-date", async (req, res) => {
     res.json({ symbol: cleanSymbol, earningsDate: null });
   } catch (err) {
     req.log.error({ err, symbol }, "Earnings date fetch error");
+    void logFailure("YAHOO", "ERROR", `Yahoo earnings date fetch error for ${cleanSymbol}`, { symbol: cleanSymbol, error: String(err) });
     res.json({ symbol: cleanSymbol, earningsDate: null });
   }
 });

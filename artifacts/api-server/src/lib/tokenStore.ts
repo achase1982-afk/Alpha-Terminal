@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { logger } from "./logger.js";
+import { logFailure } from "./telemetry.js";
 
 const TOKEN_FILE = path.join(process.cwd(), ".data", "schwab-tokens.json");
 const SCHWAB_TOKEN_URL = "https://api.schwabapi.com/v1/oauth/token";
@@ -102,6 +103,7 @@ async function doRefresh(
 
     if (!res.ok) {
       logger.error({ status: res.status, body: text.slice(0, 300) }, "TokenStore: %s refresh failed", kind);
+      void logFailure("SCHWAB_API", "CRITICAL", `OAuth ${kind} token refresh failed (HTTP ${res.status})`, { kind, status: res.status, body: text.slice(0, 300) });
 
       const currentGen = store[kind]?.generation ?? 0;
       if (currentGen > generationBefore) {
@@ -120,6 +122,7 @@ async function doRefresh(
           errorBody.includes("failed refresh token authentication")
         ) {
           logger.warn("TokenStore: %s refresh token expired/revoked — clearing", kind);
+          void logFailure("SCHWAB_API", "CRITICAL", `OAuth ${kind} refresh token expired/revoked — clearing`, { kind, errorBody: text.slice(0, 300) });
           store[kind] = undefined;
           saveToDisk();
           return false;
@@ -157,6 +160,7 @@ async function doRefresh(
     return true;
   } catch (err) {
     logger.error({ err }, "TokenStore: %s refresh network error", kind);
+    void logFailure("SCHWAB_API", "ERROR", `OAuth ${kind} token refresh network error`, { kind, error: String(err) });
     if (retryCount < MAX_RETRIES) {
       logger.info("TokenStore: will retry %s refresh in %ds", kind, RETRY_DELAY_MS / 1000);
       scheduleRefreshWithDelay(kind, RETRY_DELAY_MS);

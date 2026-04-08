@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { logFailure } from "../lib/telemetry.js";
 
 const router: IRouter = Router();
 
@@ -376,6 +377,7 @@ router.get("/insider-transactions", async (req, res) => {
     return res.json({ transactions: allTransactions, symbol });
   } catch (err: any) {
     req.log?.error({ err }, "Insider transactions endpoint error");
+    void logFailure("SEC_EDGAR", "ERROR", `SEC insider transaction fetch failed for ${symbol}`, { symbol, error: String(err) });
     return res.status(502).json({ error: "SEC upstream unavailable", transactions: [] });
   }
 });

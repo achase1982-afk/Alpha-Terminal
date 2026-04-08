@@ -1,5 +1,6 @@
 import webpush from "web-push";
 import { logger } from "./logger.js";
+import { logFailure } from "./telemetry.js";
 
 const VAPID_PUBLIC = process.env.VAPID_PUBLIC_KEY ?? "";
 const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY ?? "";
@@ -66,8 +67,10 @@ export async function sendPushToAll(payload: {
     } catch (err: any) {
       if (err?.statusCode === 410 || err?.statusCode === 404) {
         stale.push(endpoint);
+        void logFailure("PUSH_NOTIFICATION", "INFO", `Push subscription gone (${err.statusCode}) — removing`, { endpoint: endpoint.slice(-40), statusCode: err.statusCode });
       } else {
         logger.warn({ err, endpoint: endpoint.slice(-20) }, "Push send failed");
+        void logFailure("PUSH_NOTIFICATION", "ERROR", "Push delivery failed", { endpoint: endpoint.slice(-40), error: String(err), statusCode: err?.statusCode });
       }
     }
   }

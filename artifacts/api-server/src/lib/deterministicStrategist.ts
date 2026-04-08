@@ -1,4 +1,5 @@
 import { checkEventConflicts, type EventCheckResult, type EventConflict } from "./calendarEventChecker.js";
+import { logFailure } from "./telemetry.js";
 
 const SCHWAB_TRADER = "https://api.schwabapi.com/trader/v1";
 
@@ -171,6 +172,7 @@ function selectMode(input: StrategistInput): { mode: TradingMode; reason: string
     };
   }
 
+  void logFailure("STRATEGIST", "INFO", `No trading mode qualified — composite ${pulse.composite.toFixed(2)}, confidence ${pulse.confidence}`, { composite: pulse.composite, confidence: pulse.confidence });
   return {
     mode: "NO_EDGE",
     reason: "No actionable edge. Cash is a position.",

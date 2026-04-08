@@ -1,4 +1,5 @@
 import { checkEventConflicts, getUpcomingEvents } from "./calendarEventChecker.js";
+import { logFailure } from "./telemetry.js";
 
 const SCHWAB_API = "https://api.schwabapi.com/marketdata/v1";
 const SCHWAB_TRADER = "https://api.schwabapi.com/trader/v1";
@@ -125,7 +126,10 @@ async function fetchQuotesBatch(symbols: string[], accessToken: string): Promise
         `${SCHWAB_API}/quotes?symbols=${encodeURIComponent(symbolList)}&fields=quote`,
         { headers: { Authorization: `Bearer ${accessToken}` } }
       );
-      if (!res.ok) continue;
+      if (!res.ok) {
+        void logFailure("SCANNER", "WARN", `Scanner quote batch fetch failed: HTTP ${res.status}`, { endpoint: "/quotes", batchIndex: i, status: res.status });
+        continue;
+      }
       const json = await res.json() as Record<string, unknown>;
       for (const sym of batch) {
         const entry = json[sym] as Record<string, unknown> | undefined;
@@ -598,6 +602,10 @@ export async function runDeterministicScan(
   });
 
   log.info({ candidates: candidates.length, scanMs: Date.now() - scanStart }, "Scanner Stage 4: Enrichment complete");
+
+  if (candidates.length === 0 && symbols.length > 0) {
+    void logFailure("SCANNER", "INFO", `Scanner returned 0 candidates from ${symbols.length} symbols`, { totalScanned: symbols.length, passedFilters: scoredResults.length, aboveThreshold: aboveThreshold.length });
+  }
 
   const passedCount = filterResults.filter(f => f.passed).length;
   const actualPassedAfterChainFilter = scoredResults.length;
