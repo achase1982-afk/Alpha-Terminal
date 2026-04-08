@@ -266,9 +266,8 @@ export default function TerminalPage() {
       const pulling = y > lastTouchY.current;
       const pushing = y < lastTouchY.current;
       const atTop = el.scrollTop <= 0;
-      const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
-      const noScroll = el.scrollHeight <= el.clientHeight + 1;
-      if (noScroll || (atTop && pulling) || (atBottom && pushing)) {
+      const atBottom = el.scrollTop > 0 && el.scrollTop + el.clientHeight >= el.scrollHeight - 2;
+      if ((atTop && pulling) || (atBottom && pushing)) {
         e.preventDefault();
       }
     };

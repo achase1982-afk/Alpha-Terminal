@@ -118,7 +118,7 @@
     letter-spacing: -0.025em;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    touch-action: pan-y;
+    touch-action: pan-x pan-y;
     overscroll-behavior: none;
   }
 
@@ -156,7 +156,7 @@
     position: relative;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: none;
-    touch-action: pan-x pan-y;
+    touch-action: pan-x;
   }
 
   .pf-sticky-col {
