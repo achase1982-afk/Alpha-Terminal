@@ -209,14 +209,10 @@ function statusColor(status: string): string {
   }
 }
 
-const SYMBOL_COL_W = 80;
+const SYMBOL_COL_W = 110;
 const COL_WIDTHS_DEFAULT: Record<string, number> = {
   symbol: SYMBOL_COL_W,
-  mark: 72, cost: 72, qty: 56, mktVal: 84, plOpen: 88, plPct: 68, plDay: 84, maint: 76,
-};
-const COL_WIDTHS_STORAGE_KEY = "alpha_col_widths_v3";
-const COL_MIN_W: Record<string, number> = {
-  symbol: 56, mark: 50, cost: 50, qty: 40, mktVal: 56, plOpen: 60, plPct: 52, plDay: 60, maint: 52,
+  mark: 76, cost: 76, qty: 52, mktVal: 80, plOpen: 84, plPct: 68, plDay: 80, maint: 76,
 };
 
 const getGridCols = (visibleCols: ColumnKey[], widths: Record<string, number>): string => {
@@ -288,56 +284,6 @@ function useValueFlash(value: number): "up" | "down" | null {
   return dir;
 }
 
-function ColResizeHandle({ colKey, onResize }: { colKey: string; onResize: (colKey: string, dx: number) => void }) {
-  const dragging = useRef(false);
-  const startX = useRef(0);
-  const [hovered, setHovered] = useState(false);
-  const [active, setActive] = useState(false);
-
-  const onPointerDown = (e: React.PointerEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dragging.current = true;
-    startX.current = e.clientX;
-    setActive(true);
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  };
-  const onPointerMove = (e: React.PointerEvent) => {
-    if (!dragging.current) return;
-    const dx = e.clientX - startX.current;
-    startX.current = e.clientX;
-    onResize(colKey, dx);
-  };
-  const onPointerUp = () => {
-    dragging.current = false;
-    setActive(false);
-  };
-
-  return (
-    <div
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerUp}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        position: "absolute", right: 0, top: 0, bottom: 0,
-        width: 22, cursor: "col-resize",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        zIndex: 10, touchAction: "none",
-      }}
-    >
-      <div style={{
-        width: active ? 3 : 2,
-        height: active ? "90%" : hovered ? "80%" : "65%",
-        background: active ? C.gold : hovered ? "#71717a" : "#52525b",
-        transition: "height 0.1s, background 0.1s, width 0.1s",
-        borderRadius: 2,
-      }} />
-    </div>
-  );
-}
 
 function OptionRow({
   opt, underlying, selectedKeys, toggleKey, visibleColumns, gridCols, minW, symW,
@@ -533,11 +479,13 @@ function PositionTableRow({
             />
           ))}
 
-          <div className="pf-sticky-col" style={{ padding: "7px 12px 7px 26px", display: "flex", gap: 12, borderBottom: `1px solid ${C.border}`, background: "#0a0a0a" }}>
-            <button onClick={e => { e.stopPropagation(); onSelect(group.underlying); }} style={{ fontSize: 12, fontWeight: 500, fontFamily: f, color: C.gold, background: "transparent", border: "none", cursor: "pointer", padding: 0, letterSpacing: 0.3, textTransform: "uppercase" }}>Chart →</button>
-            {onTrade && eq && !hasOptions && (
-              <button onClick={e => { e.stopPropagation(); onTrade(group.underlying, eqIsShort ? "BUY" : "SELL"); }} style={{ fontSize: 12, fontWeight: 500, fontFamily: f, color: C.gold, background: "transparent", border: "none", cursor: "pointer", padding: 0, letterSpacing: 0.3, textTransform: "uppercase" }}>Sell</button>
-            )}
+          <div style={{ display: "grid", gridTemplateColumns: gridCols, minWidth: minW, borderBottom: `1px solid ${C.border}` }}>
+            <div className="pf-sticky-col" style={{ width: symW, padding: "7px 12px 7px 26px", display: "flex", gap: 12, background: "#0a0a0a", borderRight: "2px solid #3f3f46", minWidth: 0 }}>
+              <button onClick={e => { e.stopPropagation(); onSelect(group.underlying); }} style={{ fontSize: 12, fontWeight: 500, fontFamily: f, color: C.gold, background: "transparent", border: "none", cursor: "pointer", padding: 0, letterSpacing: 0.3, textTransform: "uppercase" }}>Chart →</button>
+              {onTrade && eq && !hasOptions && (
+                <button onClick={e => { e.stopPropagation(); onTrade(group.underlying, eqIsShort ? "BUY" : "SELL"); }} style={{ fontSize: 12, fontWeight: 500, fontFamily: f, color: C.gold, background: "transparent", border: "none", cursor: "pointer", padding: 0, letterSpacing: 0.3, textTransform: "uppercase" }}>Sell</button>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -717,23 +665,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
     });
   }, []);
 
-  const [colWidths, setColWidths] = useState<Record<string, number>>(() => {
-    try {
-      const stored = localStorage.getItem(COL_WIDTHS_STORAGE_KEY);
-      if (stored) return { ...COL_WIDTHS_DEFAULT, ...JSON.parse(stored) };
-    } catch {}
-    return { ...COL_WIDTHS_DEFAULT };
-  });
-
-  const resizeCol = useCallback((colKey: string, dx: number) => {
-    setColWidths(prev => {
-      const current = prev[colKey] ?? COL_WIDTHS_DEFAULT[colKey] ?? 72;
-      const min = COL_MIN_W[colKey] ?? 40;
-      const next = { ...prev, [colKey]: Math.max(min, current + dx) };
-      try { localStorage.setItem(COL_WIDTHS_STORAGE_KEY, JSON.stringify(next)); } catch {}
-      return next;
-    });
-  }, []);
+  const colWidths = COL_WIDTHS_DEFAULT;
 
   useEffect(() => {
     if (wsAccount) { setAccount(wsAccount as unknown as Account); setLastRefresh(wsLastUpdate); setLoading(false); setError(null); }
@@ -1101,17 +1033,15 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
                 display: "grid", gridTemplateColumns: gridCols, minWidth: minRowWidth,
                 borderBottom: `1px solid ${C.borderHi}`, background: "#0e0e0e",
               }}>
-                <div className="pf-sticky-col" style={{ position: "relative", width: colWidths["symbol"] ?? SYMBOL_COL_W, zIndex: 3, background: "#0e0e0e", display: "flex", alignItems: "center", gap: 6, padding: "6px 8px 6px 12px", borderRight: "2px solid #3f3f46" }}>
+                <div className="pf-sticky-col" style={{ width: colWidths["symbol"] ?? SYMBOL_COL_W, zIndex: 3, background: "#0e0e0e", display: "flex", alignItems: "center", gap: 6, padding: "6px 8px 6px 12px", borderRight: "2px solid #3f3f46" }}>
                   <span style={{ fontSize: 12, fontWeight: 500, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5 }}>Symbol</span>
                   <button onClick={() => setShowColumnSettings(x => !x)} style={{ padding: 2, background: "transparent", border: "none", cursor: "pointer" }}>
                     <Settings style={{ width: 13, height: 13, color: showColumnSettings ? C.gold : C.dim }} />
                   </button>
-                  <ColResizeHandle colKey="symbol" onResize={resizeCol} />
                 </div>
                 {ALL_COLUMNS.filter(c => visibleColumns.includes(c.key)).map(c => (
-                  <div key={c.key} style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", padding: "6px 26px 6px 4px" }}>
+                  <div key={c.key} style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "6px 8px" }}>
                     <span style={{ fontSize: 11, fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: 0.6, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.label}</span>
-                    <ColResizeHandle colKey={c.key} onResize={resizeCol} />
                   </div>
                 ))}
               </div>
