@@ -998,9 +998,8 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
 
   const decodeHtml = (s: string) => {
     if (!s) return s;
-    const el = document.createElement("textarea");
-    el.innerHTML = s;
-    return el.value;
+    const doc = new DOMParser().parseFromString(s, "text/html");
+    return doc.documentElement.textContent ?? s;
   };
 
   const hdrStyle: React.CSSProperties = {
