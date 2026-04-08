@@ -529,8 +529,8 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
           </div>
         </div>
       )}
-      <div className="bg-card border border-card-border rounded-xl overflow-hidden">
-        <div className="flex border-b border-card-border">
+      <div className="bg-card border border-card-border rounded-xl overflow-visible">
+        <div className="flex border-b border-card-border rounded-t-xl overflow-hidden">
           {(["deterministic", "manual"] as const).map(m => (
             <button
               key={m}
@@ -607,7 +607,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
           </div>
         )}
 
-        <div className="px-4 pb-4 pt-3 bg-[#0c0c0c] border-t border-card-border">
+        <div className="px-4 pb-4 pt-3 bg-[#0c0c0c] border-t border-card-border rounded-b-xl">
           <button
             onClick={mode === "deterministic" ? handleDeterministicScan : handleManualScan}
             disabled={!accessToken || isScanning || currentSyms.length === 0 || shockActive}
