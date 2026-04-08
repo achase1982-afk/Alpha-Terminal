@@ -934,7 +934,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
 
       <div style={{ flex: 1, overflow: "auto", minHeight: 0, WebkitOverflowScrolling: "touch" as any }}>
         {subTab === "positions" && (
-          <div>
+          <div style={{ minWidth: minRowWidth }}>
             <div style={{
               display: "grid", gridTemplateColumns: gridCols, minWidth: minRowWidth,
               borderBottom: `1px solid ${C.borderHi}`, background: "#0e0e0e",

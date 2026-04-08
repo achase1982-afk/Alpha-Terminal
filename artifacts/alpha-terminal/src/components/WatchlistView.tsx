@@ -53,6 +53,11 @@ interface SparkData {
 
 const FMT_COMPACT = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
 
+// Module-level cache — survives tab navigation (component unmount/remount)
+const _sparkCache: Record<string, SparkData> = {};
+const _fetchedSymbols = new Set<string>();
+let _cacheToken: string | null = null;
+
 function fmtPrice(v: number | null): string {
   if (v == null) return "—";
   return v >= 1000 ? v.toFixed(0) : v.toFixed(2);
@@ -460,7 +465,7 @@ export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sy
   const watchlist = useActiveWatchlist();
   const [sortKey, setSortKey] = useState<SortKey>("symbol");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
-  const [sparkData, setSparkData] = useState<Record<string, SparkData>>({});
+  const [sparkData, setSparkData] = useState<Record<string, SparkData>>(() => ({ ..._sparkCache }));
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -471,8 +476,6 @@ export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sy
     } catch {}
     return DEFAULT_INDICATORS;
   });
-  const fetchedRef = useRef<Set<string>>(new Set());
-  const prevTokenRef = useRef<string | null>(null);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const visibleIndicators = useMemo(() =>
@@ -501,12 +504,15 @@ export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sy
   useEffect(() => {
     if (!accessToken || watchlist.length === 0) return;
 
-    if (prevTokenRef.current && prevTokenRef.current !== accessToken) {
-      fetchedRef.current.clear();
+    // If token changed, clear the module-level cache
+    if (_cacheToken && _cacheToken !== accessToken) {
+      _fetchedSymbols.clear();
+      Object.keys(_sparkCache).forEach(k => delete _sparkCache[k]);
+      setSparkData({});
     }
-    prevTokenRef.current = accessToken;
+    _cacheToken = accessToken;
 
-    const toFetch = watchlist.filter((s) => !fetchedRef.current.has(s));
+    const toFetch = watchlist.filter((s) => !_fetchedSymbols.has(s));
     if (toFetch.length === 0) return;
     const controller = new AbortController();
     let retryCount = 0;
@@ -522,7 +528,8 @@ export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sy
         const candles = data?.candles;
         if (Array.isArray(candles) && candles.length > 0) {
           const closes = candles.map((c: { close: number }) => c.close);
-          fetchedRef.current.add(sym);
+          _fetchedSymbols.add(sym);
+          _sparkCache[sym] = { closes, fetched: true };
           setSparkData((prev) => ({ ...prev, [sym]: { closes, fetched: true } }));
           return true;
         }
