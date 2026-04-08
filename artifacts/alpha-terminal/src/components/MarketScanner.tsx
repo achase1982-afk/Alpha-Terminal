@@ -4,7 +4,7 @@ import { useQuote } from "@/hooks/useQuote";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
-import { Zap, SlidersHorizontal, TrendingUp, TrendingDown, Minus, ChevronUp, ChevronDown, AlertTriangle, Search, List, Crosshair, Send, Shield, BarChart3 } from "lucide-react";
+import { SlidersHorizontal, ChevronDown, AlertTriangle, Search, List, Crosshair, Send, Shield, BarChart3 } from "lucide-react";
 import { useScanCache } from "@/hooks/useScanCache";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 
@@ -74,22 +74,6 @@ const UNIVERSES: Record<string, { label: string; count: number; symbols: string[
   },
 };
 
-type SortKey = "symbol" | "direction" | "confidence" | "changePct";
-type SortDir = "asc" | "desc";
-
-interface ScannerSetup {
-  symbol: string;
-  direction: "BULLISH" | "BEARISH" | "NEUTRAL";
-  confidence: "HIGH" | "MILD" | "LOW";
-  strategy: string;
-  price: number;
-  changePct: number;
-  rationale: string;
-  riskNote: string;
-  ivr?: number | null;
-  pcRatio?: number | null;
-  expectedMove?: number | null;
-}
 
 interface ScannerQuote {
   symbol: string;
@@ -267,124 +251,6 @@ const DeterministicCard = memo(function DeterministicCard({
   );
 });
 
-function dirColor(dir: string) {
-  if (dir === "BULLISH") return "#00d166";
-  if (dir === "BEARISH") return "#f23645";
-  return "#ffb800";
-}
-
-function dirIcon(dir: string) {
-  if (dir === "BULLISH") return <TrendingUp className="w-3 h-3" />;
-  if (dir === "BEARISH") return <TrendingDown className="w-3 h-3" />;
-  return <Minus className="w-3 h-3" />;
-}
-
-const CONF_ORDER: Record<string, number> = { HIGH: 3, MILD: 2, LOW: 1 };
-
-function confBadge(conf: string) {
-  const c = conf === "HIGH" ? "#ffb800" : conf === "MILD" ? "#ffb800" : "#6B7280";
-  return (
-    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full"
-      style={{ color: c, border: `1px solid ${c}40` }}>
-      {conf}
-    </span>
-  );
-}
-
-function SortHeader({ label, sortKey, currentKey, currentDir, onSort }: {
-  label: string; sortKey: SortKey; currentKey: SortKey; currentDir: SortDir;
-  onSort: (k: SortKey) => void;
-}) {
-  const active = currentKey === sortKey;
-  return (
-    <button onClick={() => onSort(sortKey)}
-      className="flex items-center gap-1 text-[11px] uppercase tracking-wider font-bold transition-colors hover:text-white"
-      style={{ color: active ? "#ffb800" : "#6B7280" }}>
-      {label}
-      {active && (currentDir === "asc" ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
-    </button>
-  );
-}
-
-const LiveAiRow = memo(function LiveAiRow({ setup, index, onSelect }: {
-  setup: ScannerSetup; index: number; onSelect: (sym: string) => void;
-}) {
-  const { data } = useQuote(setup.symbol);
-  const livePrice = data?.last ?? setup.price;
-  const liveChangePct = data?.changePct ?? setup.changePct;
-  const dc = dirColor(setup.direction);
-  const [tapped, setTapped] = useState(false);
-
-  const handleTap = useCallback(() => {
-    setTapped(true);
-    setTimeout(() => setTapped(false), 400);
-    onSelect(setup.symbol);
-  }, [onSelect, setup.symbol]);
-
-  return (
-    <tr className="border-b border-card-border/50 transition-colors"
-      style={{
-        ...(index % 2 === 0 ? { background: "rgba(13,17,23,0.4)" } : {}),
-        ...(tapped ? { background: "transparent" } : {}),
-      }}>
-      <td className="px-3 py-2.5">
-        <button onClick={handleTap}
-          className="font-bold text-sm tracking-wider transition-all active:scale-95"
-          style={{ color: tapped ? "#FFB800" : dc }}>
-          {setup.symbol}
-          <span className="text-[11px] ml-1 opacity-60">→</span>
-        </button>
-        <div className="text-[11px] text-zinc-500 tabular-nums">${livePrice.toFixed(2)}</div>
-      </td>
-      <td className="px-3 py-2.5">
-        <div className="flex items-center gap-1.5 text-xs font-bold" style={{ color: dc }}>
-          {dirIcon(setup.direction)}
-          {setup.direction}
-        </div>
-        <div className="text-[11px] text-zinc-400 mt-0.5 max-w-[140px] truncate" title={setup.strategy}>
-          {setup.strategy}
-        </div>
-        {(setup.ivr != null || setup.expectedMove != null) && (
-          <div className="flex items-center gap-2 mt-0.5">
-            {setup.ivr != null && (
-              <span className="text-[11px] font-mono tabular-nums" style={{ color: setup.ivr > 50 ? "#FFB800" : setup.ivr < 30 ? "#00d166" : "#6B7280" }}>
-                IVR:{setup.ivr}%
-              </span>
-            )}
-            {setup.expectedMove != null && (
-              <span className="text-[11px] font-mono tabular-nums text-zinc-500">
-                EM:±${setup.expectedMove.toFixed(2)}
-              </span>
-            )}
-            {setup.pcRatio != null && (
-              <span className="text-[11px] font-mono tabular-nums text-zinc-500">
-                P/C:{setup.pcRatio.toFixed(2)}
-              </span>
-            )}
-          </div>
-        )}
-      </td>
-      <td className="px-3 py-2.5">{confBadge(setup.confidence)}</td>
-      <td className="px-3 py-2.5">
-        <span className="text-xs font-bold tabular-nums"
-          style={{ color: liveChangePct >= 0 ? "#00d166" : "#f23645" }}>
-          {liveChangePct >= 0 ? "+" : ""}{liveChangePct.toFixed(2)}%
-        </span>
-      </td>
-      <td className="px-3 py-2.5 hidden md:table-cell">
-        <p className="text-[11px] text-zinc-300 leading-snug max-w-xs">
-          {setup.rationale}
-        </p>
-        {setup.riskNote && (
-          <p className="text-[11px] text-[#FFB800]/70 mt-1 flex items-center gap-1">
-            <AlertTriangle className="w-2.5 h-2.5 shrink-0" />
-            {setup.riskNote}
-          </p>
-        )}
-      </td>
-    </tr>
-  );
-});
 
 const LiveManualRow = memo(function LiveManualRow({ q, onSelect }: {
   q: ScannerQuote; onSelect: (sym: string) => void;
@@ -515,19 +381,14 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
   onNavigateToSymbol?: (sym: string) => void;
   onSendToStrategist?: (sym: string) => void;
 }) {
-  const { accessToken, aiFeatureSettings, setSymbol, watchlists } = useTerminalStore();
+  const { accessToken, setSymbol, watchlists } = useTerminalStore();
   const { pulseData } = useMarketPulseStore();
   const shockActive = pulseData?.shockState === "ACTIVE";
-  const aiModel = aiFeatureSettings.scanner.model;
-  const aiTemp = aiFeatureSettings.scanner.temperature;
   const { cachedData: scanCache, setCachedData: setScanCache } = useScanCache();
 
-  const [mode, setMode] = useState<"ai" | "manual" | "deterministic">("deterministic");
+  const [mode, setMode] = useState<"manual" | "deterministic">("deterministic");
   const [universe, setUniverse] = useState("sp100");
-  const [maxResults, setMaxResults] = useState(10);
   const [isScanning, setIsScanning] = useState(false);
-  const [aiSetups, setAiSetups] = useState<ScannerSetup[]>([]);
-  const [marketSummary, setMarketSummary] = useState("");
   const [rawError, setRawError] = useState<string | null>(null);
   const [manualQuotes, setManualQuotes] = useState<ScannerQuote[]>([]);
   const [scanCount, setScanCount] = useState<number | null>(null);
@@ -540,15 +401,10 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
     if (scanCacheRestoredRef.current || !scanCache) return;
     scanCacheRestoredRef.current = true;
     const r = scanCache.results;
-    if (r?.aiSetups) setAiSetups(r.aiSetups);
-    if (r?.marketSummary) setMarketSummary(r.marketSummary);
     if (r?.manualQuotes) setManualQuotes(r.manualQuotes);
     if (r?.scanCount != null) setScanCount(r.scanCount);
     if (r?.detResult) setDetResult(r.detResult as DetScanResult);
   }, [scanCache]);
-
-  const [sortKey, setSortKey] = useState<SortKey>("confidence");
-  const [sortDir, setSortDir] = useState<SortDir>("desc");
 
   const [minChangePct, setMinChangePct] = useState(0);
   const [maxChangePct, setMaxChangePct] = useState(15);
@@ -564,44 +420,21 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
     return UNIVERSES[universe]?.symbols ?? [];
   };
 
-  const handleSort = (key: SortKey) => {
-    if (sortKey === key) {
-      setSortDir(d => d === "asc" ? "desc" : "asc");
-    } else {
-      setSortKey(key);
-      setSortDir("desc");
-    }
-  };
-
-  const sortedSetups = [...aiSetups].sort((a, b) => {
-    let cmp = 0;
-    if (sortKey === "symbol") cmp = a.symbol.localeCompare(b.symbol);
-    else if (sortKey === "direction") cmp = a.direction.localeCompare(b.direction);
-    else if (sortKey === "confidence") cmp = (CONF_ORDER[a.confidence] ?? 0) - (CONF_ORDER[b.confidence] ?? 0);
-    else if (sortKey === "changePct") cmp = a.changePct - b.changePct;
-    return sortDir === "desc" ? -cmp : cmp;
-  });
-
-  const handleScan = async () => {
+  const handleManualScan = async () => {
     if (!accessToken) return;
     const syms = getSymbols();
     if (!syms.length) { setRawError("No symbols to scan. Select a market universe or a watchlist with symbols."); return; }
 
     setIsScanning(true);
     setRawError(null);
-    setAiSetups([]);
     setManualQuotes([]);
-    setMarketSummary("");
     setScanCount(syms.length);
 
     try {
-      const payload =
-        mode === "ai"
-          ? { symbols: syms, accessToken, mode: "ai", model: aiModel, temperature: aiTemp, maxResults }
-          : {
-              symbols: syms, accessToken, mode: "manual",
-              filters: { minChangePct, maxChangePct, minVolume, minPrice, maxPrice },
-            };
+      const payload = {
+        symbols: syms, accessToken, mode: "manual",
+        filters: { minChangePct, maxChangePct, minVolume, minPrice, maxPrice },
+      };
 
       const res = await fetchWithAuth(`${API_BASE}/ai/market-scanner`, {
         method: "POST",
@@ -610,27 +443,12 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
       });
 
       const data = await res.json() as {
-        setups?: ScannerSetup[];
         quotes?: ScannerQuote[];
-        marketSummary?: string;
-        rawResponse?: string;
         error?: string;
       };
 
       if (data.error && data.error !== "no_data") {
         setRawError(data.error);
-      } else if (mode === "ai") {
-        const setups = data.setups ?? [];
-        setAiSetups(setups);
-        setMarketSummary(data.marketSummary ?? "");
-        if (!setups.length && data.rawResponse) setRawError(data.rawResponse);
-        if (setups.length && subscribeEquitySymbols) {
-          subscribeEquitySymbols(setups.map(s => s.symbol));
-        }
-        setScanCache({
-          results: { aiSetups: setups, marketSummary: data.marketSummary ?? "", manualQuotes: [], scanCount: syms.length },
-          timestamp: Date.now(),
-        });
       } else {
         const quotes = data.quotes ?? [];
         setManualQuotes(quotes);
@@ -638,7 +456,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
           subscribeEquitySymbols(quotes.map(q => q.symbol));
         }
         setScanCache({
-          results: { aiSetups: [], marketSummary: "", manualQuotes: quotes, scanCount: syms.length },
+          results: { manualQuotes: quotes, scanCount: syms.length },
           timestamp: Date.now(),
         });
       }
@@ -678,7 +496,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
           subscribeEquitySymbols(data.candidates.map(c => c.symbol));
         }
         setScanCache({
-          results: { aiSetups: [], marketSummary: "", manualQuotes: [], scanCount: syms.length, detResult: data },
+          results: { manualQuotes: [], scanCount: syms.length, detResult: data },
           timestamp: Date.now(),
         });
       }
@@ -689,7 +507,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
     }
   };
 
-  const hasResults = mode === "ai" ? aiSetups.length > 0 : mode === "manual" ? manualQuotes.length > 0 : (detResult?.candidates?.length ?? 0) > 0;
+  const hasResults = mode === "manual" ? manualQuotes.length > 0 : (detResult?.candidates?.length ?? 0) > 0;
   const currentSyms = getSymbols();
 
   return (
@@ -707,7 +525,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
       )}
       <div className="bg-card border border-card-border rounded-xl overflow-hidden">
         <div className="flex border-b border-card-border">
-          {(["deterministic", "ai", "manual"] as const).map(m => (
+          {(["deterministic", "manual"] as const).map(m => (
             <button
               key={m}
               onClick={() => setMode(m)}
@@ -720,10 +538,6 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
               {m === "deterministic" ? (
                 <span className="flex items-center justify-center gap-2">
                   <Crosshair className="w-3.5 h-3.5" /> DETERMINISTIC
-                </span>
-              ) : m === "ai" ? (
-                <span className="flex items-center justify-center gap-2">
-                  <Zap className="w-3.5 h-3.5" /> AI DISCOVERY
                 </span>
               ) : (
                 <span className="flex items-center justify-center gap-2">
@@ -743,26 +557,10 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
               <UniverseDropdown value={universe} onChange={setUniverse} />
             </div>
 
-            {mode === "ai" && (
-              <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground uppercase tracking-wider font-bold">
-                  Max Results
-                </Label>
-                <input
-                  type="number"
-                  min={1}
-                  max={20}
-                  value={maxResults}
-                  onChange={e => setMaxResults(Math.min(20, Math.max(1, Number(e.target.value) || 1)))}
-                  className="w-full h-10 rounded-md border border-card-border bg-card text-foreground text-sm px-3 tabular-nums focus:outline-none focus:ring-1 focus:ring-primary/50"
-                />
-              </div>
-            )}
           </div>
 
           <div className="text-xs text-muted-foreground">
             Scanning <span className="text-primary font-bold">{currentSyms.length} tickers</span>
-            {mode === "ai" && <> — AI will return up to <span className="font-bold" style={{ color: "#ffb800" }}>{maxResults} setups</span></>}
             {mode === "deterministic" && <> — Hard scoring: Trend + RS + Volume + IVR + Options Liquidity (top 5, min 60)</>}
           </div>
         </div>
@@ -805,7 +603,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
 
         <div className="px-4 pb-4 pt-3 bg-[#0c0c0c] border-t border-card-border">
           <button
-            onClick={mode === "deterministic" ? handleDeterministicScan : handleScan}
+            onClick={mode === "deterministic" ? handleDeterministicScan : handleManualScan}
             disabled={!accessToken || isScanning || currentSyms.length === 0 || shockActive}
             className="font-bold font-mono tracking-wider mx-auto block rounded-lg disabled:opacity-30 disabled:cursor-not-allowed active:scale-95 active:brightness-110 transition-all"
             style={{
@@ -817,15 +615,13 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
             {isScanning ? (
               <span className="flex items-center justify-center gap-2">
                 <span className="w-4 h-4 border-2 border-[#FFB800] border-t-transparent rounded-full animate-spin" />
-                {mode === "deterministic" ? "SCORING CANDIDATES..." : mode === "ai" ? "RUNNING SCAN..." : "FILTERING MARKET..."}
+                {mode === "deterministic" ? "SCORING CANDIDATES..." : "FILTERING MARKET..."}
               </span>
             ) : (
               <span className="flex items-center justify-center">
                 {mode === "deterministic"
                   ? `SCAN ${currentSyms.length} STOCKS`
-                  : mode === "ai"
-                    ? `SCAN ${currentSyms.length} STOCKS`
-                    : "APPLY FILTERS & SCAN"}
+                  : "APPLY FILTERS & SCAN"}
               </span>
             )}
           </button>
@@ -848,7 +644,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
               SCANNING {scanCount ?? currentSyms.length} TICKERS...
             </p>
             <p className="text-[11px] text-muted-foreground">
-              {mode === "deterministic" ? "Filtering universe → Scoring → Ranking → Enriching" : mode === "ai" ? "Fetching L1 quotes → AI analysis → ranking setups" : "Fetching market data..."}
+              {mode === "deterministic" ? "Filtering universe → Scoring → Ranking → Enriching" : "Fetching market data..."}
             </p>
           </div>
         </div>
@@ -858,51 +654,6 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
         <div className="bg-destructive/10 border border-destructive/30 rounded-xl p-4">
           <p className="text-xs text-destructive font-bold mb-2">SCAN ERROR</p>
           <p className="text-[11px] text-destructive/80">{rawError}</p>
-        </div>
-      )}
-
-      {mode === "ai" && !isScanning && aiSetups.length > 0 && (
-        <div className="space-y-3">
-          {marketSummary && (
-            <div className="px-4 py-3 rounded-xl border text-sm text-zinc-300 leading-relaxed"
-              style={{ borderColor: "rgba(255,184,0,0.2)" }}>
-              <span className="text-[11px] font-bold" style={{ color: "#ffb800" }}>MARKET REGIME  </span>
-              {marketSummary}
-            </div>
-          )}
-
-          <div className="rounded-xl border border-card-border overflow-hidden bg-card">
-            <table className="w-full text-left" style={{ borderCollapse: "collapse" }}>
-              <thead>
-                <tr className="border-b border-card-border" style={{ background: "#0c0c0c" }}>
-                  <th className="px-3 py-2.5">
-                    <SortHeader label="Ticker" sortKey="symbol" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} />
-                  </th>
-                  <th className="px-3 py-2.5">
-                    <SortHeader label="Strategy" sortKey="direction" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} />
-                  </th>
-                  <th className="px-3 py-2.5">
-                    <SortHeader label="Confidence" sortKey="confidence" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} />
-                  </th>
-                  <th className="px-3 py-2.5">
-                    <SortHeader label="Chg %" sortKey="changePct" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} />
-                  </th>
-                  <th className="px-3 py-2.5 hidden md:table-cell">
-                    <span className="text-[11px] uppercase tracking-wider font-bold text-zinc-500">AI Thesis</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedSetups.map((s, i) => (
-                  <LiveAiRow key={s.symbol} setup={s} index={i} onSelect={onNavigateToSymbol ?? setSymbol} />
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <p className="text-[11px] text-muted-foreground/50 text-center">
-            AI-generated. Not financial advice. Always verify independently.
-          </p>
         </div>
       )}
 
