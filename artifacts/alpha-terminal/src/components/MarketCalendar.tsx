@@ -1296,7 +1296,10 @@ export function MarketCalendar({ onClose }: Props) {
                 <ChevronLeft className="w-4 h-4 text-zinc-500" />
               </button>
               <span className="font-mono text-[13px] font-bold text-white flex-1 text-center truncate px-1">
-                {isDecision ? "FOMC Decision" : "FOMC Minutes"}{meeting ? ` — ${meeting.meetingRange}` : ""} {isDecision ? "2:00 PM ET" : "2:00 PM ET"}
+                {isDecision
+                  ? `FOMC Decision${meeting ? ` — ${meeting.meetingRange}` : ""} 2:00 PM ET`
+                  : `FOMC Minutes${selectedEvent?.date ? ` — ${new Date(selectedEvent.date + "T12:00:00").toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}` : ""} 2:00 PM ET`
+                }
               </span>
               <button onClick={closeAll} className="p-1 shrink-0">
                 <X className="w-4 h-4 text-zinc-500" />
@@ -1427,9 +1430,15 @@ export function MarketCalendar({ onClose }: Props) {
               <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
                 <div className="flex flex-col items-center gap-3">
                   <span className="font-mono text-[18px] font-extrabold text-white text-center">FOMC Minutes</span>
-                  <span className="font-mono text-[14px] text-zinc-400 text-center">{meeting.meetingRange} Meeting</span>
+                  <span className="font-mono text-[11px] text-zinc-500 text-center tracking-wider">
+                    RELEASED {selectedEvent?.date ? new Date(selectedEvent.date + "T12:00:00").toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }).toUpperCase() : ""}
+                  </span>
+                  <div className="rounded-md border border-[#2a2a2c] px-3 py-2 w-full mt-1">
+                    <span className="font-mono text-[11px] text-zinc-600 tracking-wider block mb-1">MEETING COVERED</span>
+                    <span className="font-mono text-[14px] text-zinc-300">{meeting.meetingRange}</span>
+                  </div>
                   {rate && (
-                    <div className="flex items-center gap-3 mt-2">
+                    <div className="flex items-center gap-3 mt-1">
                       <span className="font-mono text-[13px] text-zinc-500">Rate at meeting:</span>
                       <span className="font-mono text-[16px] font-bold text-white">{rate.display}</span>
                       {rate.changeDisplay && (
