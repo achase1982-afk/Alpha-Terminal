@@ -89,7 +89,7 @@ export interface DataQualitySummary {
   missingCount: number;
   missingClusters: string[];
   staleClusters: string[];
-  experimentalAvailable: { srvix: boolean; move: boolean };
+  experimentalAvailable: Record<string, boolean>;
 }
 
 export interface RawIndicators {
@@ -103,7 +103,6 @@ export interface RawIndicators {
   vix3mChange: number | null;
   vix9d: number | null;
   vix9dChange: number | null;
-  skew: number | null;
   vxn: number | null;
   vxnChange: number | null;
   rvx: number | null;
@@ -112,9 +111,6 @@ export interface RawIndicators {
   ovxChange: number | null;
   gvz: number | null;
   gvzChange: number | null;
-  srvix: number | null;
-  srvixChange: number | null;
-  move: number | null;
   vixFut: number | null;
   vixFutChange: number | null;
 
@@ -178,8 +174,6 @@ export interface RawIndicators {
   gcChange: number | null;
   cl: number | null;
   clChange: number | null;
-  bz: number | null;
-  bzChange: number | null;
   hg: number | null;
   hgChange: number | null;
   dx: number | null;
@@ -189,12 +183,8 @@ export interface RawIndicators {
   sixJ: number | null;
   sixJChange: number | null;
 
-  cpc: number | null;
   cpce: number | null;
   cpci: number | null;
-  pcspy: number | null;
-  pcqqq: number | null;
-  pciwm: number | null;
 }
 
 export interface MarketPulseData {
@@ -306,12 +296,10 @@ export const ALL_PULSE_INDICATORS: PulseIndicator[] = [
   { symbol: "$VIX1D",  label: "VIX1D (1-Day VIX)",             category: "volatility" },
   { symbol: "$VIX9D",  label: "VIX9D (9-Day VIX)",             category: "volatility" },
   { symbol: "$VIX3M",  label: "VIX3M (3-Month VIX)",           category: "volatility" },
-  { symbol: "$SKEW",   label: "SKEW (Tail Risk)",              category: "volatility" },
   { symbol: "$VXN",    label: "VXN (Nasdaq VIX)",              category: "volatility" },
   { symbol: "$RVX",    label: "RVX (Russell VIX)",             category: "volatility" },
   { symbol: "$OVX",    label: "OVX (Oil VIX)",                 category: "volatility" },
   { symbol: "$GVZ",    label: "GVZ (Gold VIX)",                category: "volatility" },
-  { symbol: "$SRVIX",  label: "SRVIX (SOFR Rate VIX)",          category: "volatility" },
   { symbol: "/VIX",    label: "/VIX (VIX Futures)",            category: "volatility" },
 
   { symbol: "$TICK",   label: "TICK (NYSE Tick)",               category: "breadth" },
@@ -350,19 +338,14 @@ export const ALL_PULSE_INDICATORS: PulseIndicator[] = [
 
   { symbol: "/GC",     label: "/GC (Gold Futures)",            category: "commodities" },
   { symbol: "/CL",     label: "/CL (Crude Oil Futures)",       category: "commodities" },
-  { symbol: "/BZ",     label: "/BZ (Brent Crude Futures)",     category: "commodities" },
   { symbol: "/HG",     label: "/HG (Copper Futures)",          category: "commodities" },
 
   { symbol: "/DX",     label: "/DX (Dollar Index Futures)",    category: "currency" },
   { symbol: "/6E",     label: "/6E (Euro FX Futures)",         category: "currency" },
   { symbol: "/6J",     label: "/6J (Yen Futures)",             category: "currency" },
 
-  { symbol: "$CPC",    label: "CPC (Total Put/Call)",          category: "options" },
-  { symbol: "$CPCE",   label: "CPCE (Equity Put/Call)",        category: "options" },
-  { symbol: "$CPCI",   label: "CPCI (Index Put/Call)",         category: "options" },
-  { symbol: "$PCSPY",  label: "PCSPY (SPY Put/Call)",          category: "options" },
-  { symbol: "$PCQQQ",  label: "PCQQQ (QQQ Put/Call)",          category: "options" },
-  { symbol: "$PCIWM",  label: "PCIWM (IWM Put/Call)",          category: "options" },
+  { symbol: "$PCUSEQTR", label: "Equity Put/Call (PCUSEQTR)",  category: "options" },
+  { symbol: "$PCUSINXR", label: "Index Put/Call (PCUSINXR)",   category: "options" },
 ];
 
 export interface MarketPulseSettings {

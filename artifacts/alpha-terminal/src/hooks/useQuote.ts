@@ -34,8 +34,8 @@ export interface QuoteData {
 }
 
 const INDEX_PREFIXES = new Set([
-  "VIX","SPX","NDX","RUT","DJI","DJIA","COMP","DXY","CPC","TNX","TYX","VXN",
-  "OEX","MNX","XSP","ADVN","DECN","TICK","ADD","TRIN","VVIX","VIX9D","VIX3M","SKEW",
+  "VIX","SPX","NDX","RUT","DJI","DJIA","COMP","DXY","TNX","TYX","VXN",
+  "OEX","MNX","XSP","ADVN","DECN","TICK","ADD","TRIN","VVIX","VIX9D","VIX3M",
 ]);
 
 export function useQuote(symbol: string) {

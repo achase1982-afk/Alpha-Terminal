@@ -55,7 +55,7 @@ async function boot() {
 
   const SCHWAB_FUTURES_SYMS = [
     "/ES", "/NQ", "/YM", "/RTY",
-    "/GC", "/CL", "/BZ", "/HG", "/SI", "/NG", "/RB", "/PL",
+    "/GC", "/CL", "/HG", "/SI", "/NG", "/RB", "/PL",
     "/ZB", "/ZN", "/ZF", "/ZT", "/ZQ",
     "/6E", "/6J", "/6B", "/6A", "/6C",
     "/VIX", "/BTC", "/ETH",
@@ -63,15 +63,13 @@ async function boot() {
     "/MES", "/MNQ", "/M2K",
   ];
 
-  const SCHWAB_FUTURES_INDEX_SYMS = [
-    "$CPCE", "$CPCI", "$CPC", "$SKEW",
-  ];
+  const SCHWAB_FUTURES_INDEX_SYMS: string[] = [];
 
   const SCHWAB_EQUITY_SYMS = [
     "$VIX", "$VVIX", "$VIX1D", "$VIX9D", "$VIX3M",
     "$SPX", "$NDX", "$RUT", "$DJI", "$SOX",
     "$TNX", "$TYX", "$IRX",
-    "$VXN", "$RVX", "$OVX", "$GVZ", "$SRVIX",
+    "$VXN", "$RVX", "$OVX", "$GVZ",
     "$TICK", "$TICKI",
   ];
 

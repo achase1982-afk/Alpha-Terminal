@@ -32,7 +32,6 @@ export interface MarketIndicators {
   vix3mChange: number | null;
   vix9d: number | null;
   vix9dChange: number | null;
-  skew: number | null;
   vxn: number | null;
   vxnChange: number | null;
   rvx: number | null;
@@ -41,9 +40,6 @@ export interface MarketIndicators {
   ovxChange: number | null;
   gvz: number | null;
   gvzChange: number | null;
-  srvix: number | null;
-  srvixChange: number | null;
-  move: number | null;
   vixFut: number | null;
   vixFutChange: number | null;
 
@@ -107,8 +103,6 @@ export interface MarketIndicators {
   gcChange: number | null;
   cl: number | null;
   clChange: number | null;
-  bz: number | null;
-  bzChange: number | null;
   hg: number | null;
   hgChange: number | null;
   dx: number | null;
@@ -118,12 +112,8 @@ export interface MarketIndicators {
   sixJ: number | null;
   sixJChange: number | null;
 
-  cpc: number | null;
   cpce: number | null;
   cpci: number | null;
-  pcspy: number | null;
-  pcqqq: number | null;
-  pciwm: number | null;
 
   dataTimestamps?: Record<string, number>;
 }
@@ -196,7 +186,7 @@ export interface EngineOutput {
     missingCount: number;
     missingClusters: string[];
     staleClusters: string[];
-    experimentalAvailable: { srvix: boolean; move: boolean };
+    experimentalAvailable: Record<string, boolean>;
   };
   weights: Record<ClusterName, number>;
 }
@@ -219,10 +209,9 @@ const CLUSTER_WEIGHTS: Record<ClusterName, number> = {
 
 const KNOWN_STALE_SYMBOLS = new Set([
   '$TNX', '$TYX', '$IRX', '$ADVN', '$DECN', '$TICK', '$TRIN', '$ADD',
-  '$VVIX', '$VIX9D', '$VIX1D', '$VIX3M', '$SKEW', '$VXN', '$RVX',
+  '$VVIX', '$VIX9D', '$VIX1D', '$VIX3M', '$VXN', '$RVX',
   '$TICKI', '$TRINQ', '$ADDQ', '$ADVNQ', '$DECNQ',
   '$UVOL', '$DVOL', '$UVOLQ', '$DVOLQ',
-  '$CPC', '$CPCE', '$CPCI', '$PCSPY', '$PCQQQ', '$PCIWM',
   '$PCUSEQTR', '$PCUSINXR',
 ]);
 
@@ -624,17 +613,6 @@ function scoreVolLevel(data: MarketIndicators): ClusterResult {
     points.push(`/VIX ${data.vixFut.toFixed(2)} vs $VIX ${data.vix.toFixed(2)}`);
   }
 
-  // STEP 7 — EXPERIMENTAL
-  if (data.move !== null) {
-    if (data.move >= 130) { score -= 0.25; rules.push(`$MOVE ${data.move.toFixed(2)} >= 130: -0.25`); }
-    else if (data.move < 80) { score += 0.25; rules.push(`$MOVE ${data.move.toFixed(2)} < 80: +0.25`); }
-    points.push(`$MOVE ${data.move.toFixed(2)}`);
-  }
-  if (data.srvix !== null) {
-    if (data.srvix >= 10) { score -= 0.25; rules.push(`$SRVIX ${data.srvix.toFixed(2)} >= 10: -0.25`); }
-    points.push(`$SRVIX ${data.srvix.toFixed(2)}`);
-  }
-
   const raw = score;
   const finalScore = clamp(score, -2.0, 2.0);
   let direction: Direction;
@@ -702,20 +680,7 @@ function scoreVolTerm(data: MarketIndicators): ClusterResult {
     points.push(`$VIX ${data.vix.toFixed(2)} / $VIX3M ${data.vix3m.toFixed(2)} = ${ratio.toFixed(3)}`);
   }
 
-  // Component D — $SKEW absolute
-  if (data.skew !== null) {
-    let s = 0;
-    if (data.skew >= 150) { s = -2.0; rules.push(`D: SKEW ${data.skew.toFixed(2)} >= 150: -2.0`); }
-    else if (data.skew >= 140) { s = -1.0; rules.push(`D: SKEW ${data.skew.toFixed(2)} >= 140: -1.0`); }
-    else if (data.skew >= 130) { s = 0; rules.push(`D: SKEW ${data.skew.toFixed(2)} 130-140: 0`); }
-    else if (data.skew >= 115) { s = 1.0; rules.push(`D: SKEW ${data.skew.toFixed(2)} 115-130: +1.0`); }
-    else { s = 2.0; rules.push(`D: SKEW ${data.skew.toFixed(2)} < 115: +2.0`); }
-    componentScores.push(s);
-    componentNames.push('D');
-    points.push(`$SKEW ${data.skew.toFixed(2)}`);
-  }
-
-  // Component E — /VIX vs $VIX
+  // Component D — /VIX vs $VIX
   if (data.vixFut !== null && data.vix !== null) {
     const spread = data.vixFut - data.vix;
     let s = 0;
@@ -746,9 +711,7 @@ function scoreVolTerm(data: MarketIndicators): ClusterResult {
   // FULL_TERM_INVERSION flag
   const abcActive = componentNames.includes('A') && componentNames.includes('B') && componentNames.includes('C');
   const abcNeg = abcActive && componentScores[componentNames.indexOf('A')] < 0 && componentScores[componentNames.indexOf('B')] < 0 && componentScores[componentNames.indexOf('C')] < 0;
-  const dActive = componentNames.includes('D');
-  const dNeg = dActive && componentScores[componentNames.indexOf('D')] < 0;
-  if (abcNeg && dNeg) {
+  if (abcNeg) {
     rules.push('FLAG: FULL_TERM_INVERSION');
   }
 
@@ -1023,18 +986,16 @@ function scoreMacro(data: MarketIndicators): ClusterResult {
     points.push(fmt(data.hgChange, '/HG', '%'));
   }
 
-  // Oil avg
-  const oilChanges = [data.clChange, data.bzChange].filter(c => c !== null) as number[];
-  if (oilChanges.length > 0) {
-    const oilAvg = oilChanges.reduce((a, b) => a + b, 0) / oilChanges.length;
-    if (oilAvg >= 3.0) { score -= 0.5; rules.push(`Oil avg >= +3.0%: -0.5`); }
-    else if (oilAvg >= 1.5) { score -= 0.25; rules.push(`Oil avg >= +1.5%: -0.25`); }
-    else if (oilAvg >= 0) { score += 0.25; rules.push(`Oil avg flat/mild up: +0.25`); }
-    else if (oilAvg >= -1.5) { score += 0.25; rules.push(`Oil avg mild down: +0.25`); }
-    else if (oilAvg >= -3.0) { score -= 0.25; rules.push(`Oil avg <= -1.5%: -0.25`); }
-    else { score -= 0.5; rules.push(`Oil avg < -3.0%: -0.5`); }
-    if (data.clChange !== null) points.push(fmt(data.clChange, '/CL', '%'));
-    if (data.bzChange !== null) points.push(fmt(data.bzChange, '/BZ', '%'));
+  // Oil (/CL only — /BZ removed, no data source)
+  if (data.clChange !== null) {
+    const c = data.clChange;
+    if (c >= 3.0) { score -= 0.5; rules.push(`Oil >= +3.0%: -0.5`); }
+    else if (c >= 1.5) { score -= 0.25; rules.push(`Oil >= +1.5%: -0.25`); }
+    else if (c >= 0) { score += 0.25; rules.push(`Oil flat/mild up: +0.25`); }
+    else if (c >= -1.5) { score += 0.25; rules.push(`Oil mild down: +0.25`); }
+    else if (c >= -3.0) { score -= 0.25; rules.push(`Oil <= -1.5%: -0.25`); }
+    else { score -= 0.5; rules.push(`Oil < -3.0%: -0.5`); }
+    points.push(fmt(data.clChange, '/CL', '%'));
   }
 
   // /DX Dollar
@@ -1072,9 +1033,8 @@ function scoreMacro(data: MarketIndicators): ClusterResult {
   if (data.gcChange !== null && data.gcChange >= 0.5 && data.dxChange !== null && data.dxChange >= 0.3) {
     flags.push('GOLD_DOLLAR_SPIKE');
   }
-  if (data.hgChange !== null && data.hgChange <= -0.5 && oilChanges.length > 0) {
-    const oilAvg = oilChanges.reduce((a, b) => a + b, 0) / oilChanges.length;
-    if (oilAvg <= -0.5 && data.sixJChange !== null && data.sixJChange >= 0.2) {
+  if (data.hgChange !== null && data.hgChange <= -0.5 && data.clChange !== null && data.clChange <= -0.5) {
+    if (data.sixJChange !== null && data.sixJChange >= 0.2) {
       flags.push('GLOBAL_GROWTH_SCARE');
     }
   }
@@ -1320,18 +1280,7 @@ function computeOptionsLayer(
     else institutionalHedging = 'INSTITUTIONS_COMPLACENT';
   }
 
-  // STEP 4 — Ticker flags
-  if (data.pcspy !== null) {
-    if (data.pcspy >= 1.0) tickerFlags.push('SPY_FEAR_ELEVATED');
-    else if (data.pcspy < 0.6) tickerFlags.push('SPY_COMPLACENT');
-  }
-  if (data.pcqqq !== null) {
-    if (data.pcqqq >= 1.0) tickerFlags.push('QQQ_FEAR_ELEVATED');
-    else if (data.pcqqq < 0.5) tickerFlags.push('QQQ_COMPLACENT');
-  }
-  if (data.pciwm !== null) {
-    if (data.pciwm >= 1.2) tickerFlags.push('IWM_FEAR_ELEVATED');
-  }
+  // STEP 4 — (Ticker-specific PCR flags removed — no data sources for PCSPY/PCQQQ/PCIWM)
 
   // STEP 5 — AVOID_SHORT_PREMIUM
   let avoidShortPremium = false;
@@ -1595,10 +1544,7 @@ export function runMarketPulseEngine(
       missingCount,
       missingClusters,
       staleClusters,
-      experimentalAvailable: {
-        srvix: data.srvix !== null,
-        move: data.move !== null,
-      },
+      experimentalAvailable: {},
     },
     weights: CLUSTER_WEIGHTS,
   };
@@ -1621,13 +1567,10 @@ export function verifyEngineScoring(): { passed: boolean; output: string } {
     vix1d: null, vix1dChange: null,
     vix3m: 25.51, vix3mChange: null,
     vix9d: 24.19, vix9dChange: null,
-    skew: 145.45,
     vxn: null, vxnChange: null,
     rvx: null, rvxChange: null,
     ovx: null, ovxChange: null,
     gvz: null, gvzChange: null,
-    srvix: null, srvixChange: null,
-    move: null,
     vixFut: null, vixFutChange: null,
     tnx: 43.5, tnxChange: 0.19,
     tyx: 47.0, tyxChange: 0.27,
@@ -1656,13 +1599,11 @@ export function verifyEngineScoring(): { passed: boolean; output: string } {
     iwm: 210, iwmChange: 1.10,
     gc: null, gcChange: null,
     cl: null, clChange: null,
-    bz: null, bzChange: null,
     hg: null, hgChange: null,
     dx: null, dxChange: null,
     sixE: null, sixEChange: null,
     sixJ: null, sixJChange: null,
-    cpc: null, cpce: null, cpci: null,
-    pcspy: null, pcqqq: null, pciwm: null,
+    cpce: null, cpci: null,
   };
 
   const result = runMarketPulseEngine(testData, undefined, 'RTH');

@@ -51,16 +51,12 @@ const INDEX_SYMBOL_MAP: Record<string, string> = {
   "$ADVN": "$ADVN",
   "DECN":  "$DECN",
   "$DECN": "$DECN",
-  "CPC":   "$CPC",
-  "$CPC":  "$CPC",
   "VVIX":  "$VVIX",
   "$VVIX": "$VVIX",
   "VIX9D": "$VIX9D",
   "$VIX9D":"$VIX9D",
   "VIX3M": "$VIX3M",
   "$VIX3M":"$VIX3M",
-  "SKEW":  "$SKEW",
-  "$SKEW": "$SKEW",
 };
 
 function formatSchwabSymbol(symbol: string): string {

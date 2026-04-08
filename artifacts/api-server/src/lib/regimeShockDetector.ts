@@ -7,9 +7,7 @@ export type TriggerName =
   | "VIX_SPIKE"
   | "ES_CRASH"
   | "CREDIT_SPREAD_BLOW"
-  | "SKEW_COLLAPSE"
-  | "BREADTH_FLIP"
-  | "PCSPY_EXTREME";
+  | "BREADTH_FLIP";
 
 export interface ShockTriggerEvent {
   trigger: TriggerName;
@@ -35,7 +33,6 @@ const ROLLING_DAYS = 20;
 const MIN_ROLLING_DAYS = 5;
 const BOOTSTRAP_SIGMA = 2.0;
 const CREDIT_SIGMA = 1.5;
-const PCSPY_SIGMA = 2.0;
 
 interface RollingBuffer {
   values: number[];
@@ -66,13 +63,9 @@ let lastTransitionAt: number | null = null;
 
 let prevAdd: number | null = null;
 let prevAddq: number | null = null;
-let prevSkew: number | null = null;
-
 const creditSpreadBuffer: RollingBuffer = { values: [], maxSize: ROLLING_DAYS };
-const pcspyBuffer: RollingBuffer = { values: [], maxSize: ROLLING_DAYS };
 
 let lastCreditPushDay: string | null = null;
-let lastPcspyPushDay: string | null = null;
 
 function todayKey(): string {
   return new Date().toISOString().slice(0, 10);
@@ -129,16 +122,6 @@ function evaluateTriggers(data: MarketIndicators, now: number) {
     }
   }
 
-  if (data.skew !== null) {
-    if (prevSkew !== null) {
-      const drop = prevSkew - data.skew;
-      if (drop >= 10) {
-        fireTrigger("SKEW_COLLAPSE", data.skew, prevSkew - 10, now);
-      }
-    }
-    prevSkew = data.skew;
-  }
-
   let addFlipped = false;
   let addqFlipped = false;
   if (data.add !== null) {
@@ -165,21 +148,6 @@ function evaluateTriggers(data: MarketIndicators, now: number) {
     fireTrigger("BREADTH_FLIP", data.add ?? 0, 0, now);
   }
 
-  if (data.pcspy !== null) {
-    const dk = todayKey();
-    if (dk !== lastPcspyPushDay) {
-      pushRolling(pcspyBuffer, data.pcspy);
-      lastPcspyPushDay = dk;
-    }
-    const stats = rollingStats(pcspyBuffer);
-    if (stats) {
-      const sigma = pcspyBuffer.values.length < ROLLING_DAYS ? BOOTSTRAP_SIGMA : PCSPY_SIGMA;
-      const zScore = (data.pcspy - stats.mean) / stats.std;
-      if (zScore > sigma) {
-        fireTrigger("PCSPY_EXTREME", zScore, sigma, now);
-      }
-    }
-  }
 }
 
 function transitionState(now: number): { newState: ShockState; transitioned: boolean } {

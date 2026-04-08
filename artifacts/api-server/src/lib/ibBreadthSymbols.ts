@@ -51,7 +51,7 @@ export const ALL_BREADTH_SYMBOLS: IBSymbolDef[] = [
   { reqId: 5012, symbol: "$VIX1D",  ibSymbol: "VIX1D",      secType: "IND", exchange: "CBOE",    displaySymbol: "$VIX1D",  category: "VOLATILITY", description: "CBOE VIX 1-Day — 1-day expected move implied vol",             enabled: true },
   { reqId: 5009, symbol: "$VIX9D",  ibSymbol: "VIX9D",      secType: "IND", exchange: "CBOE",    displaySymbol: "$VIX9D",  category: "VOLATILITY", description: "CBOE VIX 9-Day — short-term implied volatility",              enabled: true },
   { reqId: 5010, symbol: "$VIX3M",  ibSymbol: "VIX3M",      secType: "IND", exchange: "CBOE",    displaySymbol: "$VIX3M",  category: "VOLATILITY", description: "CBOE VIX 3-Month — medium-term implied volatility",            enabled: true },
-  { reqId: 5013, symbol: "$SKEW",   ibSymbol: "SKEW",       secType: "IND", exchange: "CBOE",    displaySymbol: "$SKEW",   category: "VOLATILITY", description: "CBOE SKEW — tail risk / out-of-money put skew",               enabled: true },
+  { reqId: 5013, symbol: "$SKEW",   ibSymbol: "SKEW",       secType: "IND", exchange: "CBOE",    displaySymbol: "$SKEW",   category: "VOLATILITY", description: "CBOE SKEW — tail risk / out-of-money put skew (dead indicator)",               enabled: false },
 
   // ═══════════════════════════════════════════════════════════
   // NYSE BREADTH (7)
@@ -122,8 +122,8 @@ export const ALL_BREADTH_SYMBOLS: IBSymbolDef[] = [
   { reqId: 5061, symbol: "$VXN",    ibSymbol: "VXN",        secType: "IND", exchange: "CBOE",    displaySymbol: "$VXN",    category: "VOLATILITY", description: "CBOE NASDAQ-100 VIX — tech-heavy implied volatility",          enabled: true },
   { reqId: 5062, symbol: "$OVX",    ibSymbol: "OVX",        secType: "IND", exchange: "CBOE",    displaySymbol: "$OVX",    category: "VOLATILITY", description: "CBOE Crude Oil VIX — oil implied volatility",                  enabled: true },
   { reqId: 5063, symbol: "$GVZ",    ibSymbol: "GVZ",        secType: "IND", exchange: "CBOE",    displaySymbol: "$GVZ",    category: "VOLATILITY", description: "CBOE Gold VIX — gold implied volatility",                      enabled: true },
-  { reqId: 5064, symbol: "$SRVIX",  ibSymbol: "SRVIX",      secType: "IND", exchange: "CBOE",    displaySymbol: "$SRVIX",  category: "VOLATILITY", description: "CBOE SOFR Rate VIX — short-rate implied volatility (replaces discontinued $TYVIX)", enabled: true },
-  { reqId: 5065, symbol: "$MOVE",   ibSymbol: "MOVE",       secType: "IND", exchange: "CBOE",    displaySymbol: "$MOVE",   category: "VOLATILITY", description: "ICE BofA MOVE Index — bond market volatility",                         enabled: true },
+  { reqId: 5064, symbol: "$SRVIX",  ibSymbol: "SRVIX",      secType: "IND", exchange: "CBOE",    displaySymbol: "$SRVIX",  category: "VOLATILITY", description: "CBOE SOFR Rate VIX (dead indicator)", enabled: false },
+  { reqId: 5065, symbol: "$MOVE",   ibSymbol: "MOVE",       secType: "IND", exchange: "CBOE",    displaySymbol: "$MOVE",   category: "VOLATILITY", description: "ICE BofA MOVE Index (dead indicator)",                         enabled: false },
   { reqId: 5071, symbol: "/MES",    ibSymbol: "MES",        secType: "FUT", exchange: "CME",     displaySymbol: "/MES",    category: "FUTURES", description: "Micro E-mini S&P 500 Future",                                   enabled: true },
   { reqId: 5072, symbol: "/MNQ",    ibSymbol: "MNQ",        secType: "FUT", exchange: "CME",     displaySymbol: "/MNQ",    category: "FUTURES", description: "Micro E-mini NASDAQ-100 Future",                                enabled: true },
   { reqId: 5073, symbol: "/M2K",    ibSymbol: "M2K",        secType: "FUT", exchange: "CME",     displaySymbol: "/M2K",    category: "FUTURES", description: "Micro E-mini Russell 2000 Future",                              enabled: true },

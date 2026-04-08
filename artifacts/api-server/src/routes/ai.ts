@@ -639,20 +639,14 @@ const PULSE_SYMBOLS: PulseSymbol[] = [
   { display: "$VIX1D",  api: "$VIX1D",  category: "vol",       description: "CBOE 1-Day VIX — ultra-short implied vol" },
   { display: "$VIX9D",  api: "$VIX9D",  category: "vol",       description: "CBOE 9-Day VIX — near-term implied vol" },
   { display: "$VIX3M",  api: "$VIX3M",  category: "vol",       description: "CBOE 3-Month VIX — medium-term implied vol" },
-  { display: "$SKEW",   api: "$SKEW",   category: "vol",       description: "CBOE SKEW — tail risk / crash hedging indicator" },
   { display: "$VXN",    api: "$VXN",    category: "vol",       description: "CBOE Nasdaq VIX — tech sector implied vol" },
   { display: "$RVX",    api: "$RVX",    category: "vol",       description: "CBOE Russell 2000 VIX — small-cap implied vol" },
   { display: "$OVX",    api: "$OVX",    category: "vol",       description: "CBOE Oil VIX — crude oil implied vol" },
   { display: "$GVZ",    api: "$GVZ",    category: "vol",       description: "CBOE Gold VIX — gold implied vol" },
-  { display: "$SRVIX",  api: "$SRVIX",  category: "vol",       description: "CBOE SOFR Rate VIX — short-rate implied vol (replaces discontinued $TYVIX)" },
   { display: "/VIX",    api: "/VIX",    category: "vol",       description: "VIX Futures — front-month VIX contract" },
 
-  { display: "$CPCE",   api: "$CPCE",   category: "vol",       description: "CBOE Equity Put/Call Ratio — IBKR symbol PCUSEQTR (not available from Schwab API)" },
-  { display: "$CPCI",   api: "$CPCI",   category: "vol",       description: "CBOE Index Put/Call Ratio — IBKR symbol PCUSINXR (not available from Schwab API)" },
-  { display: "$CPC",    api: "$CPC",    category: "vol",       description: "CBOE Total Put/Call Ratio — computed avg of CPCE + CPCI (not available from Schwab API)" },
-  { display: "$PCSPY",  api: "$PCSPY",  category: "vol",       description: "SPY Per-Ticker Put/Call Ratio — computed from Schwab NTM options chain" },
-  { display: "$PCQQQ",  api: "$PCQQQ",  category: "vol",       description: "QQQ Per-Ticker Put/Call Ratio — computed from Schwab NTM options chain" },
-  { display: "$PCIWM",  api: "$PCIWM",  category: "vol",       description: "IWM Per-Ticker Put/Call Ratio — computed from Schwab NTM options chain" },
+  { display: "$PCUSEQTR", api: "$PCUSEQTR", category: "vol",   description: "CBOE Equity Put/Call Ratio (IBKR PCUSEQTR)" },
+  { display: "$PCUSINXR", api: "$PCUSINXR", category: "vol",   description: "CBOE Index Put/Call Ratio (IBKR PCUSINXR)" },
 
   { display: "$TICK",   api: "$TICK",   category: "breadth",   description: "NYSE TICK — stocks upticking minus downticking" },
   { display: "$ADD",    api: "$ADD",    category: "breadth",   description: "NYSE A/D Line — advancers minus decliners" },
@@ -691,7 +685,6 @@ const PULSE_SYMBOLS: PulseSymbol[] = [
 
   { display: "/GC",     api: "/GC",     category: "commodity", description: "Gold Futures — safe-haven / real rates proxy" },
   { display: "/CL",     api: "/CL",     category: "commodity", description: "Crude Oil Futures (WTI)" },
-  { display: "/BZ",     api: "/BZ",     category: "commodity", description: "Brent Crude Oil Futures" },
   { display: "/HG",     api: "/HG",     category: "commodity", description: "Copper Futures — global growth proxy" },
 
   { display: "/DX",     api: "/DX",     category: "currency",  description: "US Dollar Index Futures" },
@@ -704,12 +697,10 @@ const INDEX_TO_SCHWAB: Record<string, string> = {
   "VIX": "$VIX", "VVIX": "$VVIX", "SPX": "$SPX", "NDX": "$NDX",
   "RUT": "$RUT", "DJI": "$DJI", "DJIA": "$DJI", "COMP": "$COMP",
   "DXY": "$DXY", "TNX": "$TNX", "TYX": "$TYX", "IRX": "$IRX",
-  "VXN": "$VXN", "RVX": "$RVX", "OVX": "$OVX", "GVZ": "$GVZ", "SRVIX": "$SRVIX",
+  "VXN": "$VXN", "RVX": "$RVX", "OVX": "$OVX", "GVZ": "$GVZ",
   "TICK": "$TICK", "ADD": "$ADD", "TRIN": "$TRIN",
-  "CPC": "$CPC", "CPCE": "$CPCE", "CPCI": "$CPCI",
-  "PCSPY": "$PCSPY", "PCQQQ": "$PCQQQ", "PCIWM": "$PCIWM",
   "OEX": "$OEX", "MNX": "$MNX", "XSP": "$XSP",
-  "VIX1D": "$VIX1D", "VIX9D": "$VIX9D", "VIX3M": "$VIX3M", "SKEW": "$SKEW",
+  "VIX1D": "$VIX1D", "VIX9D": "$VIX9D", "VIX3M": "$VIX3M",
   "ADVN": "$ADVN", "DECN": "$DECN",
   "UVOL": "$UVOL", "DVOL": "$DVOL",
   "TICKI": "$TICKI", "ADDQ": "$ADDQ", "TRINQ": "$TRINQ",
@@ -724,16 +715,11 @@ function symbolToSchwabApi(userSymbol: string): string {
 
 const CACHE_ALIASES: Record<string, string[]> = {
   "/DX": ["$DXY"],
-  "$CPCE": ["$PCUSEQTR"],
-  "$CPCI": ["$PCUSINXR"],
 };
 
-const PULSE_TO_IB_NATIVE: Record<string, string> = {
-  "$CPCE": "$PCUSEQTR",
-  "$CPCI": "$PCUSINXR",
-};
+const PULSE_TO_IB_NATIVE: Record<string, string> = {};
 
-const IB_UNSUPPORTED = new Set(["$CPC", "$PCSPY", "$PCQQQ", "$PCIWM", "$SRVIX"]);
+const IB_UNSUPPORTED = new Set<string>();
 
 registerPermanentSymbols(
   PULSE_SYMBOLS
@@ -748,10 +734,9 @@ const schwabRestCache = new Map<string, { data: Record<string, unknown>; ts: num
 const SCHWAB_REST_STALE_MS = 30_000;
 
 function buildRestSymbolMaps() {
-  const bzKey = schwabFuturesKey("/BZ");
   return {
-    forward: { "/DX": "$DXY", "/BZ": bzKey } as Record<string, string>,
-    reverse: { "$DXY": "/DX", [bzKey]: "/BZ" } as Record<string, string>,
+    forward: { "/DX": "$DXY" } as Record<string, string>,
+    reverse: { "$DXY": "/DX" } as Record<string, string>,
   };
 }
 const REST_MAPS = buildRestSymbolMaps();
@@ -759,11 +744,10 @@ const REST_MAPS = buildRestSymbolMaps();
 const SCHWAB_REST_SYMBOLS = [
   "$TICK", "$ADD", "$TRIN", "$ADVN", "$DECN", "$UVOL", "$DVOL",
   "$TICKI", "$ADDQ", "$TRINQ", "$ADVNQ", "$DECNQ", "$UVOLQ", "$DVOLQ",
-  "$CPC", "$CPCE", "$CPCI",
-  "$VIX", "$VVIX", "$VIX1D", "$VIX9D", "$VIX3M", "$SKEW",
-  "$VXN", "$RVX", "$OVX", "$GVZ", "$SRVIX",
+  "$VIX", "$VVIX", "$VIX1D", "$VIX9D", "$VIX3M",
+  "$VXN", "$RVX", "$OVX", "$GVZ",
   "$TNX", "$TYX", "$IRX",
-  "/DX", "/BZ",
+  "/DX",
 ];
 
 const SCHWAB_API = "https://api.schwabapi.com/marketdata/v1";
@@ -784,7 +768,7 @@ async function fetchSchwabRestQuotes(): Promise<void> {
     }
     const json = await resp.json() as Record<string, unknown>;
     const returnedKeys = Object.keys(json);
-    const wanted = ["$DXY", "$CPCE", "$CPCI", "$CPC", REST_MAPS.forward["/BZ"]];
+    const wanted = ["$DXY"];
     const found: string[] = [];
     const missing: string[] = [];
     for (const w of wanted) {
@@ -823,63 +807,14 @@ async function fetchSchwabRestQuotes(): Promise<void> {
   } catch (err) { console.warn("Schwab REST: fetch error", err); }
 }
 
-const pcRatioCache = new Map<string, { value: number; ts: number }>();
-const PC_RATIO_STALE_MS = 60_000;
-const PC_SYMBOLS = ["SPY", "QQQ", "IWM"];
-const PC_DISPLAY = ["$PCSPY", "$PCQQQ", "$PCIWM"];
-
-async function fetchPCRatios(): Promise<void> {
-  const token = getBestAccessToken();
-  if (!token) return;
-  for (let i = 0; i < PC_SYMBOLS.length; i++) {
-    const underlying = PC_SYMBOLS[i];
-    const display = PC_DISPLAY[i];
-    try {
-      const params = new URLSearchParams({
-        symbol: underlying,
-        contractType: "ALL",
-        strikeCount: "20",
-        strategy: "SINGLE",
-      });
-      const resp = await fetch(`${SCHWAB_API}/chains?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!resp.ok) continue;
-      const chain = await resp.json() as Record<string, unknown>;
-      const callMap = chain["callExpDateMap"] as Record<string, Record<string, unknown[]>> | undefined;
-      const putMap = chain["putExpDateMap"] as Record<string, Record<string, unknown[]>> | undefined;
-      if (!callMap || !putMap) continue;
-      let callVol = 0, putVol = 0;
-      const firstCallExp = Object.keys(callMap)[0];
-      const firstPutExp = Object.keys(putMap)[0];
-      if (firstCallExp) {
-        for (const strikes of Object.values(callMap[firstCallExp])) {
-          for (const s of strikes) { callVol += ((s as Record<string, unknown>)["totalVolume"] as number) ?? 0; }
-        }
-      }
-      if (firstPutExp) {
-        for (const strikes of Object.values(putMap[firstPutExp])) {
-          for (const s of strikes) { putVol += ((s as Record<string, unknown>)["totalVolume"] as number) ?? 0; }
-        }
-      }
-      if (callVol > 0) {
-        const ratio = Math.round((putVol / callVol) * 10000) / 10000;
-        pcRatioCache.set(display, { value: ratio, ts: Date.now() });
-      }
-    } catch { /* silent */ }
-  }
-}
-
 let schwabFallbackTimer: ReturnType<typeof setInterval> | null = null;
 function startSchwabFallbackPolling() {
   if (schwabFallbackTimer) return;
   setTimeout(() => {
     fetchSchwabRestQuotes();
-    fetchPCRatios();
   }, 5_000);
   schwabFallbackTimer = setInterval(() => {
     fetchSchwabRestQuotes();
-    fetchPCRatios();
   }, 30_000);
 }
 startSchwabFallbackPolling();
@@ -965,21 +900,6 @@ function readFromWebSocketCache(
       }
     }
 
-    if (!q || q.last === null) {
-      const pcEntry = pcRatioCache.get(pair.display);
-      if (pcEntry && (Date.now() - pcEntry.ts) < PC_RATIO_STALE_MS * 4) {
-        dataMap.set(pair.display, {
-          lastPrice: pcEntry.value, mark: pcEntry.value,
-          closePrice: null, close: null, netChange: null, markChange: null,
-          netPercentChange: null, markPercentChange: null,
-          highPrice: null, high: null, lowPrice: null, low: null,
-          totalVolume: null, volume: null, bidPrice: null, askPrice: null,
-        });
-        hitCount++;
-        continue;
-      }
-    }
-
     if (q && q.last !== null) {
       hitCount++;
       const closeVal = q.close ?? q.last;
@@ -1003,28 +923,6 @@ function readFromWebSocketCache(
         bidPrice: q.bid,
         askPrice: q.ask,
       });
-    }
-  }
-
-  if (!dataMap.has("$CPC")) {
-    const cpceData = dataMap.get("$CPCE");
-    const cpciData = dataMap.get("$CPCI");
-    const cpceVal = cpceData ? (cpceData["lastPrice"] as number ?? null) : null;
-    const cpciVal = cpciData ? (cpciData["lastPrice"] as number ?? null) : null;
-    if (cpceVal !== null && cpciVal !== null) {
-      const avg = Math.round(((cpceVal + cpciVal) / 2) * 10000) / 10000;
-      dataMap.set("$CPC", { lastPrice: avg, mark: avg, close: null, closePrice: null,
-        netChange: null, markChange: null, netPercentChange: null, markPercentChange: null,
-        highPrice: null, high: null, lowPrice: null, low: null, totalVolume: null, volume: null,
-        bidPrice: null, askPrice: null });
-      hitCount++;
-    } else if (cpceVal !== null || cpciVal !== null) {
-      const v = cpceVal ?? cpciVal;
-      dataMap.set("$CPC", { lastPrice: v, mark: v, close: null, closePrice: null,
-        netChange: null, markChange: null, netPercentChange: null, markPercentChange: null,
-        highPrice: null, high: null, lowPrice: null, low: null, totalVolume: null, volume: null,
-        bidPrice: null, askPrice: null });
-      hitCount++;
     }
   }
 
@@ -1196,11 +1094,6 @@ function extractMarketIndicators(dataMap: Map<string, Record<string, unknown>>):
     vix3mChange: pctChange('$VIX3M'),
     vix9d: lastOrMark('$VIX9D'),
     vix9dChange: pctChange('$VIX9D'),
-    skew: (() => {
-      const raw = lastOrMark('$SKEW');
-      if (raw === null || raw === 0) return null;
-      return raw;
-    })(),
     vxn: lastOrMark('$VXN'),
     vxnChange: pctChange('$VXN'),
     rvx: lastOrMark('$RVX'),
@@ -1209,9 +1102,6 @@ function extractMarketIndicators(dataMap: Map<string, Record<string, unknown>>):
     ovxChange: pctChange('$OVX'),
     gvz: lastOrMark('$GVZ'),
     gvzChange: pctChange('$GVZ'),
-    srvix: lastOrMark('$SRVIX'),
-    srvixChange: pctChange('$SRVIX'),
-    move: null,
     vixFut: lastOrMark('/VIX'),
     vixFutChange: pctChange('/VIX'),
 
@@ -1275,16 +1165,6 @@ function extractMarketIndicators(dataMap: Map<string, Record<string, unknown>>):
     gcChange: pctChange('/GC'),
     cl: lastOrMark('/CL'),
     clChange: pctChange('/CL'),
-    bz: (() => {
-      const raw = lastOrMark('/BZ');
-      if (raw === 0 && lastOrMark('/CL') !== null && lastOrMark('/CL')! > 10) return null;
-      return raw;
-    })(),
-    bzChange: (() => {
-      const raw = lastOrMark('/BZ');
-      if (raw === 0 && lastOrMark('/CL') !== null && lastOrMark('/CL')! > 10) return null;
-      return pctChange('/BZ');
-    })(),
     hg: lastOrMark('/HG'),
     hgChange: pctChange('/HG'),
     dx: lastOrMark('$DXY') ?? lastOrMark('/DX'),
@@ -1294,17 +1174,8 @@ function extractMarketIndicators(dataMap: Map<string, Record<string, unknown>>):
     sixJ: lastOrMark('/6J'),
     sixJChange: pctChange('/6J'),
 
-    cpce: lastOrMark('$CPCE') ?? lastOrMark('$PCUSEQTR'),
-    cpci: lastOrMark('$CPCI') ?? lastOrMark('$PCUSINXR'),
-    cpc: (() => {
-      const e = lastOrMark('$CPCE') ?? lastOrMark('$PCUSEQTR');
-      const i = lastOrMark('$CPCI') ?? lastOrMark('$PCUSINXR');
-      if (e !== null && i !== null) return Math.round(((e + i) / 2) * 10000) / 10000;
-      return e ?? i;
-    })(),
-    pcspy: lastOrMark('$PCSPY'),
-    pcqqq: lastOrMark('$PCQQQ'),
-    pciwm: lastOrMark('$PCIWM'),
+    cpce: lastOrMark('$PCUSEQTR'),
+    cpci: lastOrMark('$PCUSINXR'),
   };
 }
 
@@ -1710,7 +1581,7 @@ router.post("/market-pulse/stream", async (req, res) => {
   const indicators = extractMarketIndicators(dataMap);
   req.log.info({
     breadthData: { tick: indicators.tick, trin: indicators.trin, add: indicators.add, advn: indicators.advn, decn: indicators.decn },
-    volTermData: { vix: indicators.vix, vix9d: indicators.vix9d, vix3m: indicators.vix3m, skew: indicators.skew },
+    volTermData: { vix: indicators.vix, vix9d: indicators.vix9d, vix3m: indicators.vix3m },
   }, "Market pulse engine input (breadth + volTerm)");
   const engineResult = runMarketPulseEngine(indicators, previousBias, sessionToEngineType(session));
   req.log.info({
