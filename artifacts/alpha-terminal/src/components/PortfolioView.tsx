@@ -398,7 +398,7 @@ function PositionTableRow({
   const eqTickDir = useTickFlash(group.underlying);
   const markColor = eqTickDir === "up" ? C.green : eqTickDir === "down" ? C.red : C.text;
 
-  const stickyBg = someSelected ? "#121008" : C.bg;
+  const stickyBg = someSelected ? "#121008" : "#000";
 
   return (
     <>
@@ -423,7 +423,7 @@ function PositionTableRow({
               <span onClick={e => { e.stopPropagation(); onSelect(group.underlying); }} style={{ fontSize: 14, fontWeight: 600, color: C.text, whiteSpace: "nowrap", cursor: "pointer" }}>{group.underlying}</span>
               <span style={{ fontSize: 11, color: C.dim, whiteSpace: "nowrap" }}>{details}</span>
             </div>
-            {group.description && <span style={{ fontSize: 10, color: C.dim, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{group.description}</span>}
+            {group.description && <span style={{ fontSize: 10, color: C.gold, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{group.description}</span>}
           </div>
         </div>
         {visibleColumns.includes("mark") && (() => {
