@@ -6,6 +6,7 @@ import { connectIB, registerQuoteCacheInjector, registerIBBroadcast, getWsBridge
 import { startIBWsProxy } from "./lib/ibWsProxy";
 import { initTokenStore, setTokenRefreshCallback, hasValidTokens } from "./lib/tokenStore";
 import { initSyntheticDxy } from "./lib/syntheticDxy";
+import { startExitMonitor } from "./lib/exitStaging";
 
 const rawPort = process.env["PORT"];
 
@@ -38,6 +39,7 @@ async function boot() {
   initWsServer(server);
 
   await initTokenStore();
+  startExitMonitor();
 
   setTokenRefreshCallback((kind, _accessToken) => {
     if (kind === "trader" || kind === "market") {

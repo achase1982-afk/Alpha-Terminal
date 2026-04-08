@@ -15,6 +15,7 @@ import {
   X,
   Check,
 } from "lucide-react";
+import { JournalTab } from "./JournalTab";
 
 const C = {
   bg: "#0c0c0c",
@@ -33,7 +34,7 @@ const C = {
 
 const f = `'Inter','SF Pro Text',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif`;
 
-type SubTab = "positions" | "orders" | "balance";
+type SubTab = "positions" | "orders" | "balance" | "journal";
 type OrderFilter = "ALL" | "WORKING" | "FILLED" | "CANCELED" | "REJECTED";
 type MetricKey = "plOpen" | "buyingPower" | "margin" | "availableFunds" | "cashBalance" | "posEquity";
 type ColumnKey = "mark" | "cost" | "qty" | "mktVal" | "plOpen" | "plPct" | "plDay" | "maint";
@@ -916,7 +917,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
         )}
 
         <div style={{ display: "flex", borderTop: `1px solid ${C.borderHi}` }}>
-          {(["positions", "orders", "balance"] as SubTab[]).map(tab => (
+          {(["positions", "orders", "balance", "journal"] as SubTab[]).map(tab => (
             <button
               key={tab}
               onClick={() => setSubTab(tab)}
@@ -1148,6 +1149,10 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
               </>
             )}
           </div>
+        )}
+
+        {subTab === "journal" && (
+          <JournalTab />
         )}
       </div>
 

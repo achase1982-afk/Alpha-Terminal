@@ -692,10 +692,60 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
     setStage("submitting");
     try {
       const order = buildSchwabOrder();
+
+      let strategistParsed: any = null;
+      try {
+        const raw = useTerminalStore.getState().strategistResult;
+        if (raw) strategistParsed = JSON.parse(raw);
+      } catch {}
+
+      const journalContext: Record<string, unknown> = {
+        symbol,
+        strategyType: strategistParsed?.criteria?.strategyType ?? (isMultiLeg ? "SPREAD" : isOption ? "SINGLE_OPTION" : "EQUITY"),
+        direction: side,
+        pulseComposite: pulseData?.compositeScore ?? null,
+        pulseConfidence: pulseData?.confidenceScore ?? null,
+        pulseBias: pulseData?.sessionBias?.label ?? null,
+        scannerScore: strategistParsed?.tickerData?.ivr ?? null,
+        tradingMode: strategistParsed?.mode != null ? parseInt(strategistParsed.mode) : null,
+        tradingModeLabel: strategistParsed?.modeReason ?? null,
+        eventConflicts: strategistParsed?.criteria?.eventConflicts ?? null,
+        ivr: strategistParsed?.tickerData?.ivr ?? null,
+        entryPrice: parseFloat(limitPrice) || null,
+        isCredit: isMultiLeg ? (strategyIsCredit ?? false) : false,
+        maxLoss: (() => {
+          if (!isMultiLeg || !strategyLegs || strategyLegs.length < 2) return null;
+          const strikes = strategyLegs.map(l => l.strike).sort((a, b) => a - b);
+          const width = strikes[strikes.length - 1] - strikes[0];
+          const credit = parseFloat(limitPrice) || 0;
+          if (strategyIsCredit) return (width - credit) * 100 * (parseInt(String(quantity)) || 1);
+          return credit * 100 * (parseInt(String(quantity)) || 1);
+        })(),
+        maxGain: (() => {
+          if (!isMultiLeg || !strategyLegs || strategyLegs.length < 2) return null;
+          const strikes = strategyLegs.map(l => l.strike).sort((a, b) => a - b);
+          const width = strikes[strikes.length - 1] - strikes[0];
+          const credit = parseFloat(limitPrice) || 0;
+          if (strategyIsCredit) return credit * 100 * (parseInt(String(quantity)) || 1);
+          return (width - credit) * 100 * (parseInt(String(quantity)) || 1);
+        })(),
+        thesis: strategistParsed?.narrative ?? null,
+        legs: strategyLegs ? strategyLegs.map(l => ({
+          symbol: l.schwabSymbol,
+          instruction: l.instruction,
+          quantity: l.quantity ?? parseInt(String(quantity)) ?? 1,
+          strike: l.strike,
+          putCall: l.optionType,
+          assetType: "OPTION",
+          expiration: l.expiration,
+        })) : null,
+        quantity: parseInt(String(quantity)) || null,
+      };
+
       const res = await fetchWithAuth("/api/portfolio/place-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accountHash, order }),
+        body: JSON.stringify({ accountHash, order, journalContext }),
       });
       const data = await res.json();
       if (!res.ok || data.error) {
@@ -709,7 +759,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
       setErrorMsg(err.message || "Network error");
       setStage("error");
     }
-  }, [accountHash, buildSchwabOrder]);
+  }, [accountHash, buildSchwabOrder, symbol, side, pulseData, limitPrice, isMultiLeg, strategyIsCredit, strategyLegs, quantity, isOption]);
 
   const setMidPrice = useCallback(() => {
     if (isMultiLeg && spreadPrices) {

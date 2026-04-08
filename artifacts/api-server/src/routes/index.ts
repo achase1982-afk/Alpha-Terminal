@@ -8,6 +8,7 @@ import ibRouter from "./ib";
 import economicRouter from "./economic";
 import secRouter from "./sec";
 import pushRouter from "./push";
+import journalRouter from "./journal";
 const router: IRouter = Router();
 
 router.use("/auth", authRouter);
@@ -19,5 +20,6 @@ router.use("/ib", ibRouter);
 router.use("/economic", economicRouter);
 router.use("/sec", secRouter);
 router.use("/push", pushRouter);
+router.use("/journal", journalRouter);
 
 export default router;

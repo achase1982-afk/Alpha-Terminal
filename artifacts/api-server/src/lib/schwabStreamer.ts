@@ -3,6 +3,7 @@ import WebSocket from "ws";
 import { logger } from "./logger.js";
 import { getValidAccessToken, forceRefresh } from "./tokenStore.js";
 import { sendPushToAll } from "./pushService.js";
+import { handleFillForExitStaging } from "./exitStaging.js";
 
 export interface LiveQuote {
   symbol:       string;
@@ -370,6 +371,15 @@ function processAcctActivity(content: Record<string, unknown>[]) {
       case "ExecutionCreated":
         pushBody = `${side ?? ""} ${qty} ${sym} FILLED @ $${prc}`.trim();
         pushTag = "ExecutionCreated";
+        if (orderId && symbol) {
+          void handleFillForExitStaging({
+            schwabOrderId: orderId,
+            symbol: symbol,
+            side: side ?? "",
+            quantity: qty,
+            executionPrice: prc,
+          });
+        }
         break;
       case "OrderUROutCompleted":
         pushTag = "OrderUROutCompleted";

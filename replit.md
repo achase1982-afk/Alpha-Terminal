@@ -60,6 +60,28 @@ The Deterministic Strategist (`artifacts/api-server/src/lib/deterministicStrateg
 
 The Regime Shock Detector (`artifacts/api-server/src/lib/regimeShockDetector.ts`) monitors 6 triggers: VIX ±20%, /ES ±2%, HYG-IEF credit spread widening >1.5σ (20-day rolling, min 5 days), SKEW drop >10pts from prior reading, ADD+ADDQ simultaneous breadth flip, and PCSPY >2σ (20-day rolling). It uses a 4-state machine: NORMAL → WARNING (2 triggers/30min) → ACTIVE (3 triggers/30min) → COOLING → NORMAL (triggers must clear for 60 continuous minutes). The detector is called after the Market Pulse engine runs and its output is included in the SSE pulse result (`shockState`, `activeTriggers`, `shockActivatedAt`, `shockActive`). When ACTIVE, the AI narrative is prepended with a shock warning, the Scanner is paused, and the Strategist forces hedging-only mode. Push notifications fire on ACTIVE entry and COOLING→NORMAL transition.
 
+## Trade Context Journal
+
+The Trade Context Journal (`lib/db/src/schema/index.ts` → `tradeJournal` table, `artifacts/api-server/src/routes/journal.ts`) automatically captures full market context at order entry time. When a trade is placed via the Order Ticket, `journalContext` is sent alongside the Schwab order payload and persisted to PostgreSQL with the Schwab order ID.
+
+**Captured context:** symbol, strategy type, direction, Pulse composite/confidence/bias, IVR, scanner score, trading mode, event conflicts, entry price, credit/debit flag, max loss/gain (calculated from spread width), thesis (from Strategist narrative), and full leg data.
+
+**Frontend:** A "Journal" tab in the Portfolio section shows all entries with stats (win rate, avg P/L, mode breakdown). Entry detail view shows full context. A "Log Result" form allows recording exit price, realized P/L, whether the plan was followed, and notes.
+
+**API routes:** `GET /api/journal/entries`, `GET /api/journal/entries/:id`, `POST /api/journal/entries`, `PATCH /api/journal/entries/:id/result`, `GET /api/journal/stats`, `GET /api/journal/staged-exits`.
+
+## Exit Order Staging
+
+The Exit Order Staging system (`artifacts/api-server/src/lib/exitStaging.ts`) automatically manages exit orders for credit spread trades.
+
+**On fill (ExecutionCreated):** When a credit spread order fills, the system looks up the journal entry, calculates a 50% profit target (buy-to-close at half the entry credit), and places a GTC exit order via Schwab API. The exit is recorded in the `staged_exits` table with idempotency guard (no duplicate exits for same entry order).
+
+**Time stop monitoring (60s interval):** Monitors active staged exits for DTE elapsed percentage. Sends push notifications at 50% time elapsed, 75% time elapsed, and DTE-1 (expiration tomorrow).
+
+**Stop loss alerts:** `checkStopLoss()` function sends push notification when current spread value reaches 2x entry credit. Called on demand when spread pricing is available.
+
+**Account correctness:** The entry account hash is persisted in the journal entry and used for exit order placement, ensuring exits go to the correct account.
+
 # External Dependencies
 
 -   **Claude**: `claude-sonnet-4-6-20250620` (default) and `claude-opus-4-6-20250620` for AI.

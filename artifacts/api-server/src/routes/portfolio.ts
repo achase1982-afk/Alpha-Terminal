@@ -4,6 +4,8 @@ import { logger } from "../lib/logger.js";
 import { broadcastToClients } from "../lib/wsServer.js";
 import { sendPushToAll } from "../lib/pushService.js";
 import { markAlertSeen } from "../lib/schwabStreamer.js";
+import { db } from "@workspace/db";
+import { tradeJournalTable } from "@workspace/db/schema";
 
 const router: IRouter = Router();
 
@@ -242,9 +244,10 @@ router.post("/place-order", async (req, res) => {
   const token = getTraderToken();
   if (!token) return res.status(401).json({ error: "no_trader_token" });
 
-  const { accountHash, order } = req.body as {
+  const { accountHash, order, journalContext } = req.body as {
     accountHash: string;
     order: Record<string, unknown>;
+    journalContext?: Record<string, unknown>;
   };
 
   if (!accountHash || !order) {
@@ -305,6 +308,37 @@ router.post("/place-order", async (req, res) => {
       tag: "OrderCreated",
       data: { orderId, symbol: sym },
     });
+
+    if (journalContext && orderId) {
+      try {
+        const jc = journalContext as any;
+        await db.insert(tradeJournalTable).values({
+          schwabOrderId: orderId,
+          symbol: jc.symbol ?? sym,
+          strategyType: jc.strategyType ?? null,
+          direction: jc.direction ?? side,
+          pulseComposite: jc.pulseComposite ?? null,
+          pulseConfidence: jc.pulseConfidence ?? null,
+          pulseBias: jc.pulseBias ?? null,
+          scannerScore: jc.scannerScore ?? null,
+          tradingMode: jc.tradingMode ?? null,
+          tradingModeLabel: jc.tradingModeLabel ?? null,
+          eventConflicts: jc.eventConflicts ?? null,
+          ivr: jc.ivr ?? null,
+          entryPrice: jc.entryPrice ?? null,
+          isCredit: jc.isCredit ?? null,
+          maxLoss: jc.maxLoss ?? null,
+          maxGain: jc.maxGain ?? null,
+          thesis: jc.thesis ?? null,
+          legs: jc.legs ?? null,
+          quantity: jc.quantity ?? (parseInt(String(qty)) || null),
+          accountHash,
+        });
+        logger.info({ orderId, symbol: sym }, "Trade journal entry created");
+      } catch (journalErr) {
+        logger.error({ journalErr }, "Failed to create journal entry (non-blocking)");
+      }
+    }
 
     res.json({ success: true, orderId });
   } catch (err) {
