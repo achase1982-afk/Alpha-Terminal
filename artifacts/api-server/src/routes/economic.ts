@@ -5,7 +5,7 @@ import * as path from "path";
 
 const router = Router();
 
-const BLS_API_KEY = process.env.BLS_API_KEY || "";
+const BLS_API_KEY = process.env.DATA_BLS || "";
 const BLS_API_BASE = BLS_API_KEY
   ? "https://api.bls.gov/publicAPI/v2/timeseries/data"
   : "https://api.bls.gov/publicAPI/v1/timeseries/data";
