@@ -457,7 +457,7 @@ function PositionTableRow({
               <span onClick={e => { e.stopPropagation(); onSelect(group.underlying); }} style={{ fontSize: 14, fontWeight: 600, color: C.text, whiteSpace: "nowrap", cursor: "pointer" }}>{group.underlying}</span>
               <span style={{ fontSize: 11, color: C.dim, whiteSpace: "nowrap" }}>{details}</span>
             </div>
-            {(COMPANY_NAMES[group.underlying] ?? group.description) && <span style={{ fontSize: 10, color: C.gold, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{COMPANY_NAMES[group.underlying] ?? group.description}</span>}
+            {(COMPANY_NAMES[group.underlying] ?? group.description) && <span style={{ fontSize: 12, color: C.gold, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{COMPANY_NAMES[group.underlying] ?? group.description}</span>}
           </div>
         </div>
         {visibleColumns.includes("mark") && (() => {
