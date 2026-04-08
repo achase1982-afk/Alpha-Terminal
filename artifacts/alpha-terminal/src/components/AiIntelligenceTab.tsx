@@ -15,7 +15,7 @@ import { StrategistAuditPanel, type StrategistAuditData } from "@/components/mar
 import type { AiSubTab } from "@/components/ai-tab/AiSubTabs";
 import { AiThinkingFeed } from "@/components/ai-shared/AiThinkingFeed";
 import { useStrategistCache, type StrategistCacheData } from "@/hooks/useStrategistCache";
-import { MarketScanner } from "@/components/MarketScanner";
+import { MarketScanner, type DetCandidate } from "@/components/MarketScanner";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 
 const API_BASE = "/api";
@@ -860,6 +860,250 @@ function StrategistEmptyState() {
   );
 }
 
+interface DetPremiumGate {
+  gate: string;
+  passed: boolean;
+  detail: string;
+}
+
+interface DetEventConflict {
+  eventType: string;
+  eventTitle: string;
+  date: string;
+  dateFormatted: string;
+  time?: string;
+  importance: "HIGH" | "MEDIUM" | "LOW";
+  ticker?: string;
+}
+
+interface DetStrategyCriteria {
+  strategyType: string;
+  direction: string;
+  ticker: string;
+  dteRange: { min: number; max: number };
+  deltaTargets: { shortStrike: number; longStrike: number };
+  spreadWidth: number;
+  positionSize: string;
+  profitTargetPct: number;
+  stopLossMultiple: number;
+  maxContracts: number;
+  eventConflicts: DetEventConflict[];
+  hardBlocks: string[];
+  warnings: string[];
+  mode: string;
+  modeReason: string;
+  premiumGates: DetPremiumGate[];
+  premiumSellingApproved: boolean;
+}
+
+interface DetStrategistResult {
+  criteria: DetStrategyCriteria | null;
+  rejection: string | null;
+  mode: string;
+  modeReason: string;
+  pulse: { composite: number; confidence: number; bias: string };
+  shockActive: boolean;
+  portfolio: { microOverrideCount: number };
+  tickerData?: { price: number; sma20: number | null; atr14: number | null; ivr: number; optionsLiquidity: string };
+  narrative: string;
+}
+
+const MODE_LABELS: Record<string, { label: string; color: string }> = {
+  HIGH_CONVICTION_DIRECTIONAL: { label: "MODE 1: HIGH CONVICTION", color: "#26a69a" },
+  LOW_CONVICTION_DIRECTIONAL: { label: "MODE 2: LOW CONVICTION", color: "#FFB800" },
+  MICRO_OVERRIDE: { label: "MODE 3: MICRO-OVERRIDE", color: "#7c3aed" },
+  HEDGING_DEFENSIVE: { label: "MODE 4: HEDGING", color: "#f23645" },
+  NO_EDGE: { label: "NO EDGE", color: "#71717a" },
+};
+
+const STRATEGY_LABELS: Record<string, string> = {
+  BULL_PUT_SPREAD: "Bull Put Spread",
+  BEAR_CALL_SPREAD: "Bear Call Spread",
+  BULL_CALL_SPREAD: "Bull Call Spread",
+  BEAR_PUT_SPREAD: "Bear Put Spread",
+  IRON_CONDOR: "Iron Condor",
+  PROTECTIVE_PUT: "Protective Put",
+};
+
+function DetModeBadge({ mode }: { mode: string }) {
+  const cfg = MODE_LABELS[mode] ?? MODE_LABELS["NO_EDGE"];
+  return (
+    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded font-mono text-[11px] font-bold uppercase tracking-wider"
+      style={{ background: `${cfg.color}20`, color: cfg.color, border: `1px solid ${cfg.color}40` }}>
+      <span className="w-1.5 h-1.5 rounded-full" style={{ background: cfg.color }} />
+      {cfg.label}
+    </span>
+  );
+}
+
+function DetPremiumGatesPanel({ gates }: { gates: DetPremiumGate[] }) {
+  return (
+    <div className="space-y-1.5">
+      <p className="font-mono text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Premium Selling Gates</p>
+      {gates.map((g, i) => (
+        <div key={i} className="flex items-center gap-2 font-mono text-[11px]">
+          {g.passed
+            ? <CheckCircle2 className="w-3.5 h-3.5 text-[#26a69a] shrink-0" />
+            : <XCircle className="w-3.5 h-3.5 text-[#f23645] shrink-0" />}
+          <span className={g.passed ? "text-zinc-300" : "text-zinc-400"}>{g.gate}</span>
+          <span className="text-zinc-600 ml-auto text-[10px] max-w-[200px] text-right truncate">{g.detail}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DetCriteriaCard({ result, narrativeText, isStreaming, streamingText }: {
+  result: DetStrategistResult;
+  narrativeText: string;
+  isStreaming: boolean;
+  streamingText: string;
+}) {
+  const { criteria } = result;
+  if (!criteria) return null;
+
+  const dirColor = criteria.direction === "BULLISH" ? "#26a69a" : criteria.direction === "BEARISH" ? "#f23645" : "#FFB800";
+
+  return (
+    <div className="rounded-xl overflow-hidden" style={{ background: "#111113", border: "1px solid #2A2A2C" }}>
+      {criteria.hardBlocks.length > 0 && (
+        <div className="px-4 py-2.5 flex items-start gap-2 border-b" style={{ background: "rgba(242,54,69,0.08)", borderColor: "rgba(242,54,69,0.2)" }}>
+          <AlertTriangle className="w-4 h-4 text-[#f23645] shrink-0 mt-0.5" />
+          <div>
+            <p className="font-mono text-[11px] font-bold text-[#f23645] uppercase">Event Block</p>
+            {criteria.hardBlocks.map((b, i) => (
+              <p key={i} className="font-mono text-[10px] text-[#f23645]/80 mt-0.5">{b}</p>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {criteria.warnings.length > 0 && (
+        <div className="px-4 py-2.5 flex items-start gap-2 border-b" style={{ background: "rgba(255,184,0,0.06)", borderColor: "rgba(255,184,0,0.15)" }}>
+          <AlertCircle className="w-4 h-4 text-[#FFB800] shrink-0 mt-0.5" />
+          <div>
+            <p className="font-mono text-[11px] font-bold text-[#FFB800] uppercase">Warnings</p>
+            {criteria.warnings.map((w, i) => (
+              <p key={i} className="font-mono text-[10px] text-[#FFB800]/80 mt-0.5">{w}</p>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {criteria.eventConflicts.length > 0 && criteria.hardBlocks.length === 0 && (
+        <div className="px-4 py-2 flex items-center gap-2 border-b" style={{ background: "rgba(255,184,0,0.04)", borderColor: "rgba(255,184,0,0.1)" }}>
+          <Clock className="w-3.5 h-3.5 text-amber-400/70 shrink-0" />
+          <p className="font-mono text-[10px] text-amber-400/70">
+            Events in DTE window: {criteria.eventConflicts.map(e => `${e.eventTitle} (${e.dateFormatted})`).join(", ")}
+          </p>
+        </div>
+      )}
+
+      <div className="px-4 py-4 space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="font-mono text-lg font-bold text-white">{criteria.ticker}</span>
+            <span className="font-mono text-sm font-bold" style={{ color: dirColor }}>{criteria.direction}</span>
+          </div>
+          <DetModeBadge mode={criteria.mode} />
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="bg-[#0a0a0a] rounded-lg px-3 py-2.5 border border-[#1a1a1c]">
+            <p className="font-mono text-[10px] text-zinc-600 uppercase">Strategy</p>
+            <p className="font-mono text-sm font-bold text-white mt-0.5">{STRATEGY_LABELS[criteria.strategyType] ?? criteria.strategyType}</p>
+          </div>
+          <div className="bg-[#0a0a0a] rounded-lg px-3 py-2.5 border border-[#1a1a1c]">
+            <p className="font-mono text-[10px] text-zinc-600 uppercase">DTE Range</p>
+            <p className="font-mono text-sm font-bold text-white mt-0.5">{criteria.dteRange.min}-{criteria.dteRange.max}d</p>
+          </div>
+          <div className="bg-[#0a0a0a] rounded-lg px-3 py-2.5 border border-[#1a1a1c]">
+            <p className="font-mono text-[10px] text-zinc-600 uppercase">Deltas</p>
+            <p className="font-mono text-sm font-bold text-white mt-0.5">{criteria.deltaTargets.shortStrike}/{criteria.deltaTargets.longStrike}</p>
+          </div>
+          <div className="bg-[#0a0a0a] rounded-lg px-3 py-2.5 border border-[#1a1a1c]">
+            <p className="font-mono text-[10px] text-zinc-600 uppercase">Width</p>
+            <p className="font-mono text-sm font-bold text-white mt-0.5">${criteria.spreadWidth}</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="bg-[#0a0a0a] rounded-lg px-3 py-2.5 border border-[#1a1a1c]">
+            <p className="font-mono text-[10px] text-zinc-600 uppercase">Size</p>
+            <p className="font-mono text-sm font-bold text-white mt-0.5">{criteria.positionSize}</p>
+          </div>
+          <div className="bg-[#0a0a0a] rounded-lg px-3 py-2.5 border border-[#1a1a1c]">
+            <p className="font-mono text-[10px] text-zinc-600 uppercase">Max Contracts</p>
+            <p className="font-mono text-sm font-bold text-white mt-0.5">{criteria.maxContracts}</p>
+          </div>
+          <div className="bg-[#0a0a0a] rounded-lg px-3 py-2.5 border border-[#1a1a1c]">
+            <p className="font-mono text-[10px] text-zinc-600 uppercase">Profit Target</p>
+            <p className="font-mono text-sm font-bold text-[#26a69a] mt-0.5">{criteria.profitTargetPct}%</p>
+          </div>
+          <div className="bg-[#0a0a0a] rounded-lg px-3 py-2.5 border border-[#1a1a1c]">
+            <p className="font-mono text-[10px] text-zinc-600 uppercase">Stop Loss</p>
+            <p className="font-mono text-sm font-bold text-[#f23645] mt-0.5">{criteria.stopLossMultiple}x credit</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-[10px] text-zinc-600 uppercase">Premium Selling:</span>
+          {criteria.premiumSellingApproved
+            ? <span className="font-mono text-[11px] font-bold text-[#26a69a]">APPROVED</span>
+            : <span className="font-mono text-[11px] font-bold text-[#f23645]">DENIED (using debit spread)</span>}
+        </div>
+
+        <DetPremiumGatesPanel gates={criteria.premiumGates} />
+
+        <div className="pt-2 border-t border-[#1a1a1c]">
+          <p className="font-mono text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Mode Reason</p>
+          <p className="font-mono text-[11px] text-zinc-400 leading-relaxed">{criteria.modeReason}</p>
+        </div>
+
+        {(narrativeText || isStreaming) && (
+          <div className="pt-3 border-t border-[#1a1a1c]">
+            <p className="font-mono text-[10px] text-zinc-500 uppercase tracking-wider mb-2">AI Narrative</p>
+            <div className="font-mono text-[12px] text-zinc-300 leading-relaxed space-y-2">
+              <ReactMarkdown>{isStreaming ? streamingText : narrativeText}</ReactMarkdown>
+              {isStreaming && <span className="inline-block w-2 h-4 bg-[#FFB800] animate-pulse" />}
+            </div>
+          </div>
+        )}
+
+        <div className="pt-3 border-t border-[#1a1a1c]">
+          <button disabled className="flex items-center gap-2 px-4 py-2.5 rounded-lg font-mono text-[11px] font-bold uppercase tracking-wider cursor-not-allowed opacity-40"
+            style={{ background: "#1a1a1c", color: "#71717a", border: "1px solid #2A2A2C" }}>
+            <Shield className="w-4 h-4" />
+            Check Live Pricing
+            <span className="text-[9px] font-normal normal-case tracking-normal ml-1">(Risk Gate coming soon)</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DetRejectionCard({ result }: { result: DetStrategistResult }) {
+  const modeInfo = MODE_LABELS[result.mode] ?? MODE_LABELS["NO_EDGE"];
+  return (
+    <div className="rounded-xl overflow-hidden" style={{ background: "#111113", border: "1px solid #2A2A2C" }}>
+      <div className="px-4 py-6 flex flex-col items-center text-center gap-3">
+        <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: `${modeInfo.color}15`, border: `1px solid ${modeInfo.color}30` }}>
+          <Scale className="w-5 h-5" style={{ color: modeInfo.color }} />
+        </div>
+        <DetModeBadge mode={result.mode} />
+        <p className="font-mono text-sm text-zinc-300 leading-relaxed max-w-md">{result.rejection ?? result.modeReason}</p>
+        <p className="font-mono text-[11px] text-zinc-600 mt-1">No actionable edge. Cash is a position.</p>
+        {result.mode === "NO_EDGE" && result.portfolio.microOverrideCount >= 2 && (
+          <p className="font-mono text-[10px] text-amber-400/70 mt-1">
+            Micro-Override limit: {result.portfolio.microOverrideCount}/2 positions open
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ToggleSwitch({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
     <button
@@ -1216,6 +1460,14 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
   const prevSymbolRef = useRef(symbol);
   const strategistRunRef = useRef(0);
 
+  const [detResult, setDetResult] = useState<DetStrategistResult | null>(null);
+  const [detNarrative, setDetNarrative] = useState("");
+  const [detStreamingText, setDetStreamingText] = useState("");
+  const [isDetStreaming, setIsDetStreaming] = useState(false);
+  const [isDetRunning, setIsDetRunning] = useState(false);
+  const [detThinking, setDetThinking] = useState<string[]>([]);
+  const detRunRef = useRef(0);
+
   useEffect(() => {
     if (prevSymbolRef.current !== symbol) {
       prevSymbolRef.current = symbol;
@@ -1335,6 +1587,10 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
     setOverrideWarning(null);
     setThinkingTokens([]);
     setPreTradeResults({});
+    setDetResult(null);
+    setDetNarrative("");
+    setDetStreamingText("");
+    setDetThinking([]);
     setStrategistStatus("Running market pulse engine...");
     setLastRunSymbol(runSymbol);
     setLastRunTime(Date.now());
@@ -1510,7 +1766,155 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
     handleRunStrategist(ticker);
   }, [handleRunStrategist]);
 
-  const isPendingAny = isStreaming || isStrategizing;
+  const handleRunDetStrategist = useCallback(async (sym: string, candidate?: DetCandidate) => {
+    if (!accessToken) return;
+    const runId = ++detRunRef.current;
+
+    setDetResult(null);
+    setDetNarrative("");
+    setDetStreamingText("");
+    setDetThinking([]);
+    setIsDetRunning(true);
+    setIsDetStreaming(false);
+    setActiveResult("strategist");
+    setRealStrategies([]);
+    setNarrativeText("");
+    setStrategistResult(null);
+    setStrategistStatus("Running deterministic strategist...");
+    setLastRunSymbol(sym);
+    setLastRunTime(Date.now());
+
+    if (sym.toUpperCase() !== symbol) {
+      setSymbol(sym.toUpperCase());
+    }
+
+    const scannerPayload = candidate ? {
+      symbol: candidate.symbol,
+      totalScore: candidate.totalScore,
+      components: candidate.components,
+      microOverrideEligible: candidate.microOverrideEligible,
+      ivr: candidate.ivr,
+      atmSpreadPct: candidate.atmSpreadPct,
+      changePct: candidate.changePct,
+      sector: candidate.sector,
+      scanTimestamp: candidate.scanTimestamp ?? Date.now(),
+    } : undefined;
+
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/ai/deterministic-strategist`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          symbol: sym.toUpperCase(),
+          accessToken,
+          scannerData: scannerPayload,
+        }),
+      });
+
+      if (detRunRef.current !== runId) return;
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "Unknown error");
+        setDetResult({ criteria: null, rejection: errText, mode: "NO_EDGE", modeReason: errText, pulse: { composite: 0, confidence: 0, bias: "NO_EDGE" }, shockActive: false, portfolio: { microOverrideCount: 0 }, narrative: "" });
+        setIsDetRunning(false);
+        setStrategistStatus("");
+        return;
+      }
+
+      const contentType = res.headers.get("content-type") ?? "";
+
+      if (contentType.includes("application/json")) {
+        const json = await res.json() as DetStrategistResult;
+        json.narrative = "";
+        setDetResult(json);
+        setIsDetRunning(false);
+        setStrategistStatus("");
+        return;
+      }
+
+      setIsDetRunning(false);
+      setIsDetStreaming(true);
+      setStrategistStatus("Building AI thesis...");
+
+      const reader = res.body?.getReader();
+      if (!reader) { setIsDetStreaming(false); setStrategistStatus(""); return; }
+
+      const decoder = new TextDecoder();
+      let buf = "";
+      let accumulated = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (detRunRef.current !== runId) { reader.cancel(); return; }
+        buf += decoder.decode(value, { stream: true });
+
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const payload = line.slice(6).trim();
+          if (payload === "[DONE]") break;
+          try {
+            const parsed = JSON.parse(payload) as {
+              criteria?: DetStrategyCriteria;
+              mode?: string;
+              modeReason?: string;
+              pulse?: { composite: number; confidence: number; bias: string };
+              shockActive?: boolean;
+              portfolio?: { microOverrideCount: number };
+              tickerData?: DetStrategistResult["tickerData"];
+              text?: string;
+              reasoning?: string;
+              error?: string;
+            };
+            if (parsed.error) {
+              setDetResult({ criteria: null, rejection: parsed.error, mode: "NO_EDGE", modeReason: parsed.error, pulse: { composite: 0, confidence: 0, bias: "NO_EDGE" }, shockActive: false, portfolio: { microOverrideCount: 0 }, narrative: "" });
+              setIsDetStreaming(false);
+              setStrategistStatus("");
+              return;
+            }
+            if (parsed.criteria) {
+              setDetResult({
+                criteria: parsed.criteria,
+                rejection: null,
+                mode: parsed.mode ?? "NO_EDGE",
+                modeReason: parsed.modeReason ?? "",
+                pulse: parsed.pulse ?? { composite: 0, confidence: 0, bias: "NO_EDGE" },
+                shockActive: parsed.shockActive ?? false,
+                portfolio: parsed.portfolio ?? { microOverrideCount: 0 },
+                tickerData: parsed.tickerData,
+                narrative: "",
+              });
+            }
+            if (parsed.reasoning) {
+              setDetThinking(prev => [...prev, parsed.reasoning!]);
+            }
+            if (parsed.text) {
+              accumulated += parsed.text;
+              setDetStreamingText(accumulated);
+            }
+          } catch {}
+        }
+      }
+      if (detRunRef.current !== runId) return;
+      setDetNarrative(accumulated);
+      if (detRunRef.current === runId) {
+        setDetResult(prev => prev ? { ...prev, narrative: accumulated } : prev);
+      }
+      setDetStreamingText("");
+      setIsDetStreaming(false);
+      setStrategistStatus("");
+    } catch (err) {
+      setDetResult({ criteria: null, rejection: err instanceof Error ? err.message : String(err), mode: "NO_EDGE", modeReason: "Request failed", pulse: { composite: 0, confidence: 0, bias: "NO_EDGE" }, shockActive: false, portfolio: { microOverrideCount: 0 }, narrative: "" });
+      setIsDetRunning(false);
+      setIsDetStreaming(false);
+      setStrategistStatus("");
+    }
+  }, [accessToken, symbol, setSymbol, setStrategistResult]);
+
+  const isPendingAny = isStreaming || isStrategizing || isDetRunning || isDetStreaming;
 
   const currentResult = activeResult === "strategist" ? strategistResult : null;
 
@@ -1548,10 +1952,31 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
 
             {activeResult === "strategist" && (
               <div className="space-y-4">
-                {isStrategizing && (
-                  <StrategistPipeline status={strategistStatus} thinkingTokens={thinkingTokens} />
+                {(isDetRunning || isStrategizing) && (
+                  <StrategistPipeline status={strategistStatus} thinkingTokens={isDetRunning ? detThinking : thinkingTokens} />
                 )}
-                {!isStrategizing && (isStreaming || hasRealStrategies) && (
+
+                {detResult && !isDetRunning && (
+                  <>
+                    {(isDetStreaming || detThinking.length > 0) && (
+                      <div className="rounded-xl overflow-hidden" style={{ background: "#111113", border: "1px solid #2A2A2C" }}>
+                        <AiThinkingFeed texts={detThinking} isStreaming={isDetStreaming} />
+                      </div>
+                    )}
+                    {detResult.criteria ? (
+                      <DetCriteriaCard
+                        result={detResult}
+                        narrativeText={detNarrative}
+                        isStreaming={isDetStreaming}
+                        streamingText={detStreamingText}
+                      />
+                    ) : (
+                      <DetRejectionCard result={detResult} />
+                    )}
+                  </>
+                )}
+
+                {!detResult && !isDetRunning && !isStrategizing && (isStreaming || hasRealStrategies) && (
                   <>
                     {(isStreaming || thinkingTokens.length > 0) && (
                       <div className="rounded-xl overflow-hidden" style={{ background: "#111113", border: "1px solid #2A2A2C" }}>
@@ -1572,7 +1997,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
                     )}
                   </>
                 )}
-                {!isStrategizing && !isStreaming && !hasRealStrategies && currentResult && currentResult !== "done" && (
+                {!detResult && !isDetRunning && !isStrategizing && !isStreaming && !hasRealStrategies && currentResult && currentResult !== "done" && (
                   <div className="rounded-xl overflow-hidden p-4" style={{ background: "#111113", border: "1px solid #2A2A2C" }}>
                     <MarkdownResult content={currentResult} />
                   </div>
@@ -1584,7 +2009,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
               <StrategistEmptyState />
             )}
 
-            {strategistAudit && activeResult === "strategist" && !isStreaming && !isStrategizing && (
+            {strategistAudit && activeResult === "strategist" && !isStreaming && !isStrategizing && !detResult && (
               <StrategistAuditPanel audit={strategistAudit} />
             )}
           </div>
@@ -1594,9 +2019,10 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
           <MarketScanner
             subscribeEquitySymbols={subscribeEquitySymbols ?? (() => {})}
             onNavigateToSymbol={onNavigateToMarkets ?? (() => {})}
-            onSendToStrategist={(sym: string) => {
+            onSendToStrategist={(sym: string, candidate: DetCandidate) => {
               useTerminalStore.getState().setSymbol(sym);
               onSubTabChange("strategist");
+              handleRunDetStrategist(sym, candidate);
             }}
           />
         </div>

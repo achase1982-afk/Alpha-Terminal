@@ -93,7 +93,7 @@ interface DetComponentScores {
   optionsLiquidity: number;
 }
 
-interface DetCandidate {
+export interface DetCandidate {
   symbol: string;
   totalScore: number;
   components: DetComponentScores;
@@ -111,6 +111,7 @@ interface DetCandidate {
   pulseComposite: number;
   pulseConfidence: number;
   pulseBias: string;
+  scanTimestamp?: number;
 }
 
 interface DetScanResult {
@@ -137,7 +138,7 @@ const DeterministicCard = memo(function DeterministicCard({
 }: {
   candidate: DetCandidate; rank: number;
   onSelect: (sym: string) => void;
-  onSendToStrategist?: (sym: string) => void;
+  onSendToStrategist?: (sym: string, candidate: DetCandidate) => void;
 }) {
   const { data } = useQuote(candidate.symbol);
   const livePrice = data?.last ?? candidate.price;
@@ -240,7 +241,7 @@ const DeterministicCard = memo(function DeterministicCard({
           Bias: {candidate.pulseBias} · Composite: {candidate.pulseComposite}
         </span>
         {onSendToStrategist && (
-          <button onClick={() => onSendToStrategist(candidate.symbol)}
+          <button onClick={() => onSendToStrategist(candidate.symbol, candidate)}
             className="flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded transition-all hover:bg-[#FFB800]/15 active:scale-95"
             style={{ color: "#FFB800", border: "1px solid rgba(255,184,0,0.3)" }}>
             <Send className="w-3 h-3" /> SEND TO STRATEGIST
@@ -379,7 +380,7 @@ function UniverseDropdown({ value, onChange }: { value: string; onChange: (v: st
 export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSendToStrategist }: {
   subscribeEquitySymbols?: (symbols: string[]) => void;
   onNavigateToSymbol?: (sym: string) => void;
-  onSendToStrategist?: (sym: string) => void;
+  onSendToStrategist?: (sym: string, candidate: DetCandidate) => void;
 }) {
   const { accessToken, setSymbol, watchlists } = useTerminalStore();
   const { pulseData } = useMarketPulseStore();
@@ -491,6 +492,11 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
       } else if (data.error) {
         setDetError(data.error);
       } else {
+        if (data.scanTimestamp && data.candidates) {
+          for (const c of data.candidates) {
+            c.scanTimestamp = data.scanTimestamp;
+          }
+        }
         setDetResult(data);
         if (data.candidates?.length && subscribeEquitySymbols) {
           subscribeEquitySymbols(data.candidates.map(c => c.symbol));

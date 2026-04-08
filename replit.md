@@ -40,6 +40,22 @@ The Calendar Event Checker (`artifacts/api-server/src/lib/calendarEventChecker.t
 
 The checker runs after `selectStrategiesByRegime` in both `/options-strategist` and `/options-strategist/stream` endpoints. Strategies with hard blocks are removed; warnings are passed to the Claude narrative prompt via an `EVENT GUARD SYSTEM` block. The `eventGuard` payload (blockedStrategies, eventConflicts, hardBlocks, warnings) is included in all strategist responses. Holiday-aware trading day calculations ensure accurate event proximity checks. Upcoming events (next 2 trading days) are also injected into the Market Pulse narrative prompt and included in the pulse SSE data.
 
+## Deterministic Strategist
+
+The Deterministic Strategist (`artifacts/api-server/src/lib/deterministicStrategist.ts`) replaces the old AI-driven strategy selection with a fully deterministic, criteria-based system. It consumes scanner output, Market Pulse regime data, and the event calendar, then outputs a strategy criteria object (not contracts) plus a Claude narrative for human-readable explanation.
+
+**4 Trading Modes:**
+1. **HIGH_CONVICTION_DIRECTIONAL** (Mode 1) -- |composite| >= 0.75, confidence >= 60; full size, 21-45 DTE
+2. **LOW_CONVICTION_DIRECTIONAL** (Mode 2) -- |composite| 0.30-0.75, confidence 30-60; half size, 14-21 DTE
+3. **MICRO_OVERRIDE** (Mode 3) -- composite near-neutral but scanner score >= 90 with micro-override eligibility; half size, 7-21 DTE, max 2 positions
+4. **HEDGING_DEFENSIVE** (Mode 4) -- shock active; defensive only, protective puts
+
+**6 Premium Selling Gates** (all must pass for credit spreads): IVR >= 50, range-bound (within 1 ATR of SMA20), no events within DTE, Pulse not AVOID_SHORT_PREMIUM, VIX < 22, adequate options liquidity. If any gate fails, the system falls back to debit spreads.
+
+**Endpoint:** POST `/api/ai/deterministic-strategist` -- accepts { symbol, accessToken, scannerData? }. Returns SSE stream with criteria object + Claude narrative. Non-criteria results (rejection/no-edge) return JSON.
+
+**Frontend:** "Send to Strategist" button on scanner cards passes full candidate data to the deterministic strategist. The recommendation card shows mode badge, strategy criteria grid, premium gate pass/fail panel, event warnings, and streaming Claude narrative. A disabled "Check Live Pricing" button indicates Risk Gate is coming soon.
+
 ## Regime Shock Detector
 
 The Regime Shock Detector (`artifacts/api-server/src/lib/regimeShockDetector.ts`) monitors 6 triggers: VIX ±20%, /ES ±2%, HYG-IEF credit spread widening >1.5σ (20-day rolling, min 5 days), SKEW drop >10pts from prior reading, ADD+ADDQ simultaneous breadth flip, and PCSPY >2σ (20-day rolling). It uses a 4-state machine: NORMAL → WARNING (2 triggers/30min) → ACTIVE (3 triggers/30min) → COOLING → NORMAL (triggers must clear for 60 continuous minutes). The detector is called after the Market Pulse engine runs and its output is included in the SSE pulse result (`shockState`, `activeTriggers`, `shockActivatedAt`, `shockActive`). When ACTIVE, the AI narrative is prepended with a shock warning, the Scanner is paused, and the Strategist forces hedging-only mode. Push notifications fire on ACTIVE entry and COOLING→NORMAL transition.

@@ -24,6 +24,16 @@ import { evaluateRegimeShock, type ShockDetectorOutput } from "../lib/regimeShoc
 import { sendPushToAll } from "../lib/pushService.js";
 import { checkEventConflicts, getUpcomingEvents, type EventCheckResult } from "../lib/calendarEventChecker.js";
 import { runDeterministicScan } from "../lib/deterministicScanner.js";
+import {
+  runDeterministicStrategist,
+  fetchPortfolioContext,
+  fetchTickerMarketData,
+  buildNarrativePrompt,
+  type ScannerInput,
+  type PulseInput,
+  type StrategistInput,
+  type StrategistOutput,
+} from "../lib/deterministicStrategist.js";
 
 const router: IRouter = Router();
 
@@ -2739,6 +2749,170 @@ router.post("/deterministic-scan", async (req, res) => {
     req.log.error({ err }, "Deterministic scan error");
     res.status(500).json({ error: msg });
   }
+});
+
+router.post("/deterministic-strategist", async (req, res) => {
+  const { symbol, accessToken, scannerData, model, temperature } = req.body as {
+    symbol?: string;
+    accessToken?: string;
+    scannerData?: ScannerInput;
+    model?: string;
+    temperature?: number;
+  };
+
+  if (!symbol || !accessToken) {
+    return res.status(400).json({ error: "symbol and accessToken are required" });
+  }
+
+  const { dataMap } = readFromWebSocketCache();
+  const indicators = extractMarketIndicators(dataMap);
+  const engineResult = runMarketPulseEngine(indicators, undefined, sessionToEngineType(getMarketSession().session));
+  const shockResult = evaluateRegimeShock(indicators);
+  const vix = getVixFromCache();
+
+  const pulse: PulseInput = {
+    composite: engineResult.compositeScore,
+    confidence: engineResult.confidenceScore,
+    bias: engineResult.bias,
+    avoidShortPremium: engineResult.avoidShortPremium,
+    vix,
+  };
+
+  req.log.info({
+    symbol,
+    composite: pulse.composite,
+    confidence: pulse.confidence,
+    bias: pulse.bias,
+    shockActive: shockResult.shockActive,
+    avoidShortPremium: pulse.avoidShortPremium,
+    vix,
+  }, "Deterministic strategist: starting");
+
+  const traderTokenSet = getTokens("trader");
+  const traderToken = traderTokenSet?.accessToken ?? null;
+
+  const [portfolio, tickerData, eventCheck] = await Promise.all([
+    fetchPortfolioContext(traderToken),
+    fetchTickerMarketData(
+      symbol,
+      accessToken,
+      scannerData?.ivr,
+      scannerData ? (scannerData.atmSpreadPct <= 1.5 ? "ADEQUATE" : "THIN") : undefined,
+    ),
+    Promise.resolve(checkEventConflicts(
+      symbol,
+      scannerData ? 45 : 30,
+      "SPREAD",
+      null,
+    )),
+  ]);
+
+  const strategistInput: StrategistInput = {
+    symbol: symbol.toUpperCase(),
+    pulse,
+    scannerData: scannerData ?? null,
+    tickerData,
+    portfolio,
+    shockActive: shockResult.shockActive,
+    eventCheck,
+  };
+
+  const result: StrategistOutput = runDeterministicStrategist(strategistInput);
+
+  req.log.info({
+    symbol,
+    mode: result.mode,
+    rejection: result.rejection,
+    strategyType: result.criteria?.strategyType,
+    premiumApproved: result.criteria?.premiumSellingApproved,
+  }, "Deterministic strategist: result");
+
+  if (!result.criteria) {
+    return res.json({
+      criteria: null,
+      rejection: result.rejection,
+      mode: result.mode,
+      modeReason: result.modeReason,
+      pulse: {
+        composite: pulse.composite,
+        confidence: pulse.confidence,
+        bias: pulse.bias,
+      },
+      shockActive: shockResult.shockActive,
+      portfolio: { microOverrideCount: portfolio.microOverrideCount },
+    });
+  }
+
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+  });
+
+  req.socket?.setKeepAlive(true);
+  req.setTimeout(0);
+  res.setTimeout(0);
+  if (req.socket) req.socket.setTimeout(0);
+  res.write(": ok\n\n");
+  res.flushHeaders();
+
+  res.write(`data: ${JSON.stringify({
+    criteria: result.criteria,
+    mode: result.mode,
+    modeReason: result.modeReason,
+    pulse: { composite: pulse.composite, confidence: pulse.confidence, bias: pulse.bias },
+    shockActive: shockResult.shockActive,
+    portfolio: { microOverrideCount: portfolio.microOverrideCount },
+    tickerData,
+  })}\n\n`);
+
+  const heartbeat = setInterval(() => {
+    if (!res.writableEnded) res.write(": ping\n\n");
+  }, 5000);
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    clearInterval(heartbeat);
+    res.write(`data: ${JSON.stringify({ error: "ANTHROPIC_API_KEY not configured" })}\n\n`);
+    res.write("data: [DONE]\n\n");
+    res.end();
+    return;
+  }
+
+  const pulseSummary = `Composite: ${pulse.composite.toFixed(2)}, Confidence: ${pulse.confidence}, Bias: ${pulse.bias}, VIX: ${vix?.toFixed(2) ?? "N/A"}, Avoid Short Premium: ${pulse.avoidShortPremium}`;
+
+  let scannerBreakdown: string | null = null;
+  if (scannerData) {
+    scannerBreakdown = `Total Score: ${scannerData.totalScore}/100, Trend: ${scannerData.components.trendAlignment}, RS: ${scannerData.components.relativeStrength}, Volume: ${scannerData.components.volumeConfirmation}, IVR: ${scannerData.components.ivrScore}, Liquidity: ${scannerData.components.optionsLiquidity}, Micro-Override: ${scannerData.microOverrideEligible}`;
+  }
+
+  const narrativePrompt = buildNarrativePrompt(result.criteria, pulseSummary, scannerBreakdown);
+
+  try {
+    await nativeStreamClaude({
+      prompt: narrativePrompt,
+      modelName: model ?? "claude-sonnet-4-20250514",
+      temperature: temperature ?? 0.2,
+      thinkingBudget: 2048,
+      onThinking: (text) => {
+        res.write(`data: ${JSON.stringify({ reasoning: text })}\n\n`);
+        if (typeof (res as any).flush === "function") (res as any).flush();
+      },
+      onText: (text) => {
+        res.write(`data: ${JSON.stringify({ text })}\n\n`);
+        if (typeof (res as any).flush === "function") (res as any).flush();
+      },
+    });
+  } catch (aiErr: unknown) {
+    const msg = aiErr instanceof Error ? aiErr.message : String(aiErr);
+    req.log.error({ err: aiErr }, "Deterministic strategist narrative error");
+    res.write(`data: ${JSON.stringify({ error: `Narrative failed: ${msg}` })}\n\n`);
+  }
+
+  clearInterval(heartbeat);
+  res.write("data: [DONE]\n\n");
+  res.end();
 });
 
 router.post("/market-scanner", async (req, res) => {
