@@ -176,6 +176,21 @@ function refMonthKey(eventDate: string): string {
   return `${refY}-${String(refM).padStart(2, "0")}`;
 }
 
+function refMonthLabel(eventDate: string): string {
+  const d = new Date(eventDate + "T12:00:00");
+  let refM = d.getMonth();
+  let refY = d.getFullYear();
+  if (refM === 0) { refM = 12; refY -= 1; }
+  return `${MONTHS[refM - 1]} ${refY}`;
+}
+
+function refMonthName(eventDate: string): string {
+  const d = new Date(eventDate + "T12:00:00");
+  let refM = d.getMonth();
+  if (refM === 0) refM = 12;
+  return MONTHS[refM - 1];
+}
+
 interface Props {
   onClose: () => void;
 }
@@ -729,9 +744,12 @@ export function MarketCalendar({ onClose }: Props) {
         const neutralColor = "#a1a1aa";
         const reportUrl = "https://www.bls.gov/news.release/empsit.nr0.htm";
         const nfpMonthKey = selectedEvent.date ? refMonthKey(selectedEvent.date) : "";
-        const nfpMonthData: NfpMonthData | undefined = (nfpMonthKey && nfpData?.byMonth?.[nfpMonthKey]) || nfpData;
+        const hasNfpMonth = !!(nfpMonthKey && nfpData?.byMonth?.[nfpMonthKey]);
+        const nfpMonthData: NfpMonthData | undefined = hasNfpMonth ? nfpData!.byMonth![nfpMonthKey] : nfpData;
+        const nfpMonthNotAvailable = !!(nfpData && nfpMonthKey && !hasNfpMonth && nfpData?._meta?.month !== refMonthName(selectedEvent.date));
         const meta = nfpMonthData?._meta ? { ...nfpData?._meta, ...nfpMonthData._meta } : nfpData?._meta;
-        const nfp = nfpMonthData?.nfp;
+        const nfp = nfpMonthNotAvailable ? undefined : nfpMonthData?.nfp;
+        const nfpRefLabel = selectedEvent.date ? refMonthLabel(selectedEvent.date) : (meta ? `${meta.month} ${meta.year}` : "");
 
         const mc = (val: number, invert = false) => {
           if (val === 0) return neutralColor;
@@ -798,7 +816,7 @@ export function MarketCalendar({ onClose }: Props) {
                 <ChevronLeft className="w-4 h-4 text-zinc-500" />
               </button>
               <span className="font-mono text-[13px] font-bold text-white flex-1 text-center truncate px-1">
-                Jobs Report (NFP){meta ? ` — ${meta.month} ${meta.year}` : ""} 8:30 AM ET (BLS)
+                Jobs Report (NFP){nfpRefLabel ? ` — ${nfpRefLabel}` : (meta ? ` — ${meta.month} ${meta.year}` : "")} 8:30 AM ET (BLS)
               </span>
               <button onClick={closeAll} className="p-1 shrink-0">
                 <X className="w-4 h-4 text-zinc-500" />
@@ -813,13 +831,28 @@ export function MarketCalendar({ onClose }: Props) {
               </div>
             )}
 
-            {!nfpLoading && !nfp && nfpData && (
+            {!nfpLoading && !nfp && nfpMonthNotAvailable && (
+              <div className="flex flex-col items-center justify-center py-8 gap-3 px-4">
+                <span className="font-mono text-[13px] text-zinc-400 text-center">{nfpRefLabel} data not yet available from BLS.</span>
+                <span className="font-mono text-[11px] text-zinc-600 text-center">The BLS API typically updates within a few hours of the official release.</span>
+                <button
+                  onClick={() => setReportIframeUrl(reportUrl)}
+                  className="flex items-center gap-1.5 font-mono text-[13px] font-bold tracking-wider transition-opacity hover:opacity-70 mt-2"
+                  style={{ color: "#FFB800" }}
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  View BLS Report
+                </button>
+              </div>
+            )}
+
+            {!nfpLoading && !nfp && !nfpMonthNotAvailable && nfpData && (
               <div className="flex items-center justify-center py-8">
                 <span className="font-mono text-[11px] text-zinc-500">Unable to load NFP data. Please try again later.</span>
               </div>
             )}
 
-            {!nfpLoading && !nfp && !nfpData && !nfpLoading && (
+            {!nfpLoading && !nfp && !nfpMonthNotAvailable && !nfpData && (
               <div className="flex items-center justify-center py-8">
                 <span className="font-mono text-[11px] text-zinc-500">No jobs report data available.</span>
               </div>
@@ -1015,10 +1048,13 @@ export function MarketCalendar({ onClose }: Props) {
         const inflDataFull = isPpi ? ppiData : cpiData;
         const inflLoading = isPpi ? ppiLoading : cpiLoading;
         const monthKey = selectedEvent.date ? refMonthKey(selectedEvent.date) : "";
-        const inflData: InflationMonthData | undefined = (monthKey && inflDataFull?.byMonth?.[monthKey]) || inflDataFull;
-        const headline = inflData?.headline;
+        const hasMonthData = !!(monthKey && inflDataFull?.byMonth?.[monthKey]);
+        const inflData: InflationMonthData | undefined = hasMonthData ? inflDataFull!.byMonth![monthKey] : inflDataFull;
+        const monthNotYetAvailable = !!(inflDataFull && monthKey && !hasMonthData && inflData?._meta?.month !== refMonthName(selectedEvent.date));
+        const headline = monthNotYetAvailable ? undefined : inflData?.headline;
         const meta = inflData?._meta;
-        const reportUrl = meta?.reportUrl || (isPpi ? "https://www.bls.gov/news.release/ppi.nr0.htm" : "https://www.bls.gov/news.release/cpi.nr0.htm");
+        const reportUrl = isPpi ? "https://www.bls.gov/news.release/ppi.nr0.htm" : "https://www.bls.gov/news.release/cpi.nr0.htm";
+        const refLabel = selectedEvent.date ? refMonthLabel(selectedEvent.date) : (meta ? `${meta.month} ${meta.year}` : "");
         const titleLabel = isPpi ? "PPI Report" : "CPI Report";
         const timeStr = isPpi ? "8:30 AM ET (BLS)" : "8:30 AM ET (BLS)";
 
@@ -1077,7 +1113,7 @@ export function MarketCalendar({ onClose }: Props) {
                 <ChevronLeft className="w-4 h-4 text-zinc-500" />
               </button>
               <span className="font-mono text-[13px] font-bold text-white flex-1 text-center truncate px-1">
-                {titleLabel}{meta ? ` — ${meta.month} ${meta.year}` : ""} {timeStr}
+                {titleLabel}{refLabel ? ` — ${refLabel}` : (meta ? ` — ${meta.month} ${meta.year}` : "")} {timeStr}
               </span>
               <button onClick={closeAll} className="p-1 shrink-0">
                 <X className="w-4 h-4 text-zinc-500" />
@@ -1092,7 +1128,22 @@ export function MarketCalendar({ onClose }: Props) {
               </div>
             )}
 
-            {!inflLoading && !headline && (
+            {!inflLoading && !headline && monthNotYetAvailable && (
+              <div className="flex flex-col items-center justify-center py-8 gap-3 px-4">
+                <span className="font-mono text-[13px] text-zinc-400 text-center">{refLabel} data not yet available from BLS.</span>
+                <span className="font-mono text-[11px] text-zinc-600 text-center">The BLS API typically updates within a few hours of the official release.</span>
+                <button
+                  onClick={() => setReportIframeUrl(reportUrl)}
+                  className="flex items-center gap-1.5 font-mono text-[13px] font-bold tracking-wider transition-opacity hover:opacity-70 mt-2"
+                  style={{ color: "#FFB800" }}
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  View BLS Report
+                </button>
+              </div>
+            )}
+
+            {!inflLoading && !headline && !monthNotYetAvailable && (
               <div className="flex items-center justify-center py-8">
                 <span className="font-mono text-[11px] text-zinc-500">No {isPpi ? "PPI" : "CPI"} data available.</span>
               </div>
