@@ -814,7 +814,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
     .map(k => metricValues[k]);
 
   return (
-    <div style={{ fontFamily: f, position: "relative", width: "100%", minWidth: 0, overflow: "clip" }}>
+    <div style={{ fontFamily: f, position: "relative", width: "100%", minWidth: 0, paddingBottom: 16 }}>
       {showSettings && (
         <div
           style={{ position: "fixed", inset: 0, zIndex: 50, background: "#000000cc", display: "flex", alignItems: "flex-start", justifyContent: "flex-end" }}
