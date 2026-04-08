@@ -1,9 +1,35 @@
 import { Router } from "express";
 import { logger } from "../lib/logger";
+import * as fs from "fs";
+import * as path from "path";
 
 const router = Router();
 
-const BLS_API_V1 = "https://api.bls.gov/publicAPI/v1/timeseries/data";
+const BLS_API_KEY = process.env.BLS_API_KEY || "";
+const BLS_API_BASE = BLS_API_KEY
+  ? "https://api.bls.gov/publicAPI/v2/timeseries/data"
+  : "https://api.bls.gov/publicAPI/v1/timeseries/data";
+
+const CACHE_DIR = path.join(process.cwd(), ".cache");
+try { fs.mkdirSync(CACHE_DIR, { recursive: true }); } catch {}
+
+function loadDiskCache(key: string): any | null {
+  try {
+    const fp = path.join(CACHE_DIR, `${key}.json`);
+    if (fs.existsSync(fp)) {
+      const raw = JSON.parse(fs.readFileSync(fp, "utf-8"));
+      return raw;
+    }
+  } catch {}
+  return null;
+}
+
+function saveDiskCache(key: string, data: any): void {
+  try {
+    const fp = path.join(CACHE_DIR, `${key}.json`);
+    fs.writeFileSync(fp, JSON.stringify(data));
+  } catch {}
+}
 
 const SERIES_MAP: Record<string, { id: string; label: string; unit: string }> = {
   nfp: { id: "CES0000000001", label: "Total Nonfarm Payrolls", unit: "thousands" },
@@ -23,7 +49,7 @@ interface BlsDataPoint {
 }
 
 async function fetchBlsSeries(seriesId: string): Promise<BlsDataPoint[]> {
-  const url = `${BLS_API_V1}/${seriesId}`;
+  const url = `${BLS_API_BASE}/${seriesId}${BLS_API_KEY ? `?registrationkey=${BLS_API_KEY}` : ""}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`BLS API error: ${res.status}`);
   const json = await res.json() as Record<string, any>;
@@ -229,7 +255,8 @@ interface NfpSeriesResult {
   error?: string;
 }
 
-const nfpCache: { data: any | null; ts: number } = { data: null, ts: 0 };
+const nfpCacheDisk = loadDiskCache("nfp-full");
+const nfpCache: { data: any | null; ts: number } = { data: nfpCacheDisk?.data || null, ts: nfpCacheDisk?.ts || 0 };
 const NFP_CACHE_TTL = 5 * 60 * 1000;
 
 const nfpExpectedCache: { expected: string | null; ts: number } = { expected: null, ts: 0 };
@@ -293,10 +320,12 @@ async function fetchTradingEconomicsForecast(indicator: string = "nfp"): Promise
 }
 
 async function fetchBlsSeriesBatch(seriesIds: string[]): Promise<Record<string, BlsDataPoint[]>> {
-  const res = await fetch("https://api.bls.gov/publicAPI/v1/timeseries/data/", {
+  const body: Record<string, any> = { seriesid: seriesIds };
+  if (BLS_API_KEY) body.registrationkey = BLS_API_KEY;
+  const res = await fetch(BLS_API_BASE + "/", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ seriesid: seriesIds }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`BLS batch API error: ${res.status}`);
   const json = await res.json() as Record<string, any>;
@@ -476,10 +505,17 @@ router.get("/nfp-full", async (req, res) => {
 
     let expected: string | null = null;
     if (!nfpExpectedCache.expected || Date.now() - nfpExpectedCache.ts > NFP_EXPECTED_CACHE_TTL) {
-      expected = await fetchTradingEconomicsForecast("nfp");
+      const [nfpForecast, unempForecast] = await Promise.all([
+        fetchTradingEconomicsForecast("nfp"),
+        fetchTradingEconomicsForecast("unemployment"),
+      ]);
+      expected = nfpForecast;
       if (expected) {
         nfpExpectedCache.expected = expected;
         nfpExpectedCache.ts = Date.now();
+      }
+      if (unempForecast && results.unemployment && !results.unemployment.error) {
+        results.unemployment.expected = unempForecast;
       }
     } else {
       expected = nfpExpectedCache.expected;
@@ -506,9 +542,14 @@ router.get("/nfp-full", async (req, res) => {
       const dp = nfpMonthly[offset];
       const key = periodToKey(dp);
       const monthData = computeNfpAtOffset(allData, offset);
+      if (offset === 0 && expected && monthData.nfp && !monthData.nfp.error) {
+        monthData.nfp.expected = expected;
+      }
       monthData._meta = {
         month: dp.periodName,
         year: dp.year,
+        threeMonthNfpAvg: computeNMonthAvg(nfpMonthly.slice(offset), 3, "thousands"),
+        sixMonthNfpAvg: computeNMonthAvg(nfpMonthly.slice(offset), 6, "thousands"),
         narrative: generateNfpNarrative(monthData),
       };
       byMonth[key] = monthData;
@@ -517,10 +558,15 @@ router.get("/nfp-full", async (req, res) => {
 
     nfpCache.data = results;
     nfpCache.ts = Date.now();
+    saveDiskCache("nfp-full", { data: results, ts: nfpCache.ts });
 
     return res.json(results);
   } catch (err: any) {
     logger.error({ err }, "NFP full report fetch failed");
+    if (nfpCache.data) {
+      logger.info("Returning stale NFP cache after fetch failure");
+      return res.json(nfpCache.data);
+    }
     return res.status(500).json({ error: err.message });
   }
 });
@@ -542,8 +588,10 @@ const CPI_FULL_SERIES: Record<string, { id: string; label: string }> = {
   usedCars: { id: "CUSR0000SETA02", label: "Used Cars & Trucks" },
 };
 
-const ppiFullCache: { data: any | null; ts: number } = { data: null, ts: 0 };
-const cpiFullCache: { data: any | null; ts: number } = { data: null, ts: 0 };
+const ppiCacheDisk = loadDiskCache("ppi-full");
+const ppiFullCache: { data: any | null; ts: number } = { data: ppiCacheDisk?.data || null, ts: ppiCacheDisk?.ts || 0 };
+const cpiCacheDisk = loadDiskCache("cpi-full");
+const cpiFullCache: { data: any | null; ts: number } = { data: cpiCacheDisk?.data || null, ts: cpiCacheDisk?.ts || 0 };
 const INFLATION_CACHE_TTL = 30 * 60 * 1000;
 
 function computeInflationResult(
@@ -686,6 +734,10 @@ router.get("/ppi-full", async (req, res) => {
       const expNum = parseFloat(expected.replace(/[+%]/g, ""));
       if (Number.isFinite(expNum) && Math.abs(expNum - results.headline.momRaw) < 2) {
         results.headline.expected = expected;
+        const latestKey = results._meta ? `${results._meta.year}-${String(new Date(`${results._meta.month} 1, ${results._meta.year}`).getMonth() + 1).padStart(2, "0")}` : null;
+        if (latestKey && results.byMonth?.[latestKey]?.headline) {
+          results.byMonth[latestKey].headline.expected = expected;
+        }
       } else {
         logger.info({ expected, momRaw: results.headline.momRaw }, "PPI TE forecast skipped — likely YoY, not MoM");
       }
@@ -693,9 +745,14 @@ router.get("/ppi-full", async (req, res) => {
 
     ppiFullCache.data = results;
     ppiFullCache.ts = Date.now();
+    saveDiskCache("ppi-full", { data: results, ts: ppiFullCache.ts });
     return res.json(results);
   } catch (err: any) {
     logger.error({ err }, "PPI full report fetch failed");
+    if (ppiFullCache.data) {
+      logger.info("Returning stale PPI cache after fetch failure");
+      return res.json(ppiFullCache.data);
+    }
     return res.status(500).json({ error: err.message });
   }
 });
@@ -719,6 +776,10 @@ router.get("/cpi-full", async (req, res) => {
       const expNum = parseFloat(expected.replace(/[+%]/g, ""));
       if (Number.isFinite(expNum) && Math.abs(expNum - results.headline.momRaw) < 2) {
         results.headline.expected = expected;
+        const latestKey = results._meta ? `${results._meta.year}-${String(new Date(`${results._meta.month} 1, ${results._meta.year}`).getMonth() + 1).padStart(2, "0")}` : null;
+        if (latestKey && results.byMonth?.[latestKey]?.headline) {
+          results.byMonth[latestKey].headline.expected = expected;
+        }
       } else {
         logger.info({ expected, momRaw: results.headline.momRaw }, "CPI TE forecast skipped — likely YoY, not MoM");
       }
@@ -726,9 +787,14 @@ router.get("/cpi-full", async (req, res) => {
 
     cpiFullCache.data = results;
     cpiFullCache.ts = Date.now();
+    saveDiskCache("cpi-full", { data: results, ts: cpiFullCache.ts });
     return res.json(results);
   } catch (err: any) {
     logger.error({ err }, "CPI full report fetch failed");
+    if (cpiFullCache.data) {
+      logger.info("Returning stale CPI cache after fetch failure");
+      return res.json(cpiFullCache.data);
+    }
     return res.status(500).json({ error: err.message });
   }
 });
@@ -972,18 +1038,19 @@ router.get("/fomc-data", async (req, res) => {
     }
 
     for (let i = 1; i < results.length; i++) {
-      if (!results[i].rate) continue;
+      const curRate = results[i].rate;
+      if (!curRate) continue;
       const prev = results.slice(0, i).reverse().find(r => r.rate);
       if (prev && prev.rate) {
-        const changeBps = Math.round((results[i].rate.upper - prev.rate.upper) * 100);
+        const changeBps = Math.round((curRate.upper - prev.rate.upper) * 100);
         if (changeBps === 0) {
-          results[i].rate.changeDisplay = "UNCHANGED";
+          curRate.changeDisplay = "UNCHANGED";
         } else if (changeBps < 0) {
-          results[i].rate.changeDisplay = `CUT ${Math.abs(changeBps)}bps`;
+          curRate.changeDisplay = `CUT ${Math.abs(changeBps)}bps`;
         } else {
-          results[i].rate.changeDisplay = `HIKE ${changeBps}bps`;
+          curRate.changeDisplay = `HIKE ${changeBps}bps`;
         }
-        results[i].rate.changeBps = changeBps;
+        curRate.changeBps = changeBps;
       }
     }
 

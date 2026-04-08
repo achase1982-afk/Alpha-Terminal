@@ -745,7 +745,7 @@ export function MarketCalendar({ onClose }: Props) {
         const reportUrl = "https://www.bls.gov/news.release/empsit.nr0.htm";
         const nfpMonthKey = selectedEvent.date ? refMonthKey(selectedEvent.date) : "";
         const hasNfpMonth = !!(nfpMonthKey && nfpData?.byMonth?.[nfpMonthKey]);
-        const nfpMonthData: NfpMonthData | undefined = hasNfpMonth ? nfpData!.byMonth![nfpMonthKey] : nfpData;
+        const nfpMonthData: NfpMonthData | undefined = hasNfpMonth ? nfpData!.byMonth![nfpMonthKey] : (nfpData || undefined);
         const nfpMonthNotAvailable = !!(nfpData && nfpMonthKey && !hasNfpMonth && nfpData?._meta?.month !== refMonthName(selectedEvent.date));
         const meta = nfpMonthData?._meta ? { ...nfpData?._meta, ...nfpMonthData._meta } : nfpData?._meta;
         const nfp = nfpMonthNotAvailable ? undefined : nfpMonthData?.nfp;
@@ -762,9 +762,10 @@ export function MarketCalendar({ onClose }: Props) {
           return (
             <div className="flex items-center py-1.5 border-b border-[#1a1a1c] gap-2">
               <span className="font-mono text-[15px] text-zinc-400 flex-1 min-w-0 truncate">{label}</span>
-              <span className="font-mono text-[15px] font-bold tabular-nums w-[76px] text-right shrink-0" style={{ color: c }}>{data.unit === "thousands" ? data.change : data.actual}</span>
-              <span className="font-mono text-[15px] text-zinc-500 tabular-nums w-[76px] text-right shrink-0">{data.previous}</span>
-              <span className="font-mono text-[15px] font-bold tabular-nums w-[76px] text-right shrink-0" style={{ color: c }}>{data.change}</span>
+              <span className="font-mono text-[15px] font-bold tabular-nums w-[66px] text-right shrink-0" style={{ color: c }}>{data.unit === "thousands" ? data.change : data.actual}</span>
+              <span className="font-mono text-[15px] text-zinc-500 tabular-nums w-[66px] text-right shrink-0">{data.expected || "—"}</span>
+              <span className="font-mono text-[15px] text-zinc-500 tabular-nums w-[66px] text-right shrink-0">{data.previous}</span>
+              <span className="font-mono text-[15px] font-bold tabular-nums w-[66px] text-right shrink-0" style={{ color: c }}>{data.change}</span>
             </div>
           );
         };
@@ -858,47 +859,63 @@ export function MarketCalendar({ onClose }: Props) {
               </div>
             )}
 
-            {nfp && !showFullBreakdown && (
-              <div className="flex-1 overflow-y-auto px-2 py-1 space-y-1">
-                <div className="flex items-end justify-center gap-6 pb-5">
-                  <div className="flex flex-col items-center">
-                    <span className="font-mono text-[12px] text-zinc-500 tracking-wider">ACTUAL</span>
-                    <span className="font-mono text-[30px] font-extrabold tabular-nums leading-none" style={{ color: mc(nfp.changeRaw) }}>{nfp.change}</span>
-                  </div>
-                  <span className="text-[18px] mb-0.5" style={{ color: mc(nfp.changeRaw) }}>{nfp.changeRaw >= 0 ? "↑" : "↓"}</span>
-                  {nfp.expected && (
+            {nfp && !showFullBreakdown && (() => {
+              const expectedRaw = nfp.expected ? parseInt(nfp.expected.replace(/[+,K]/g, ""), 10) * 1000 : null;
+              const beatMiss = expectedRaw !== null ? (nfp.changeRaw > expectedRaw ? "BEAT" : nfp.changeRaw < expectedRaw ? "MISS" : "IN LINE") : null;
+              const beatColor = beatMiss === "BEAT" ? upColor : beatMiss === "MISS" ? downColor : neutralColor;
+
+              return (
+                <div className="flex-1 overflow-y-auto px-2 py-1 space-y-1">
+                  <div className="flex items-end justify-center gap-6 pb-1">
                     <div className="flex flex-col items-center">
-                      <span className="font-mono text-[12px] text-zinc-500 tracking-wider">CONSENSUS</span>
-                      <span className="font-mono text-[30px] font-extrabold tabular-nums leading-none text-zinc-200">{nfp.expected}</span>
+                      <span className="font-mono text-[12px] text-zinc-500 tracking-wider">ACTUAL</span>
+                      <span className="font-mono text-[30px] font-extrabold tabular-nums leading-none" style={{ color: mc(nfp.changeRaw) }}>{nfp.change}</span>
+                    </div>
+                    {nfp.expected && (
+                      <>
+                        <span className="text-[18px] mb-0.5" style={{ color: beatColor }}>{beatMiss === "BEAT" ? "▶" : beatMiss === "MISS" ? "◀" : "="}</span>
+                        <div className="flex flex-col items-center">
+                          <span className="font-mono text-[12px] text-zinc-500 tracking-wider">CONSENSUS</span>
+                          <span className="font-mono text-[30px] font-extrabold tabular-nums leading-none text-zinc-200">{nfp.expected}</span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  {beatMiss && (
+                    <div className="flex justify-center pb-3">
+                      <span className="font-mono text-[11px] font-bold tracking-widest px-2 py-0.5 rounded" style={{ color: beatColor, background: `${beatColor}15` }}>
+                        {beatMiss === "BEAT" ? "BEAT CONSENSUS" : beatMiss === "MISS" ? "MISSED CONSENSUS" : "IN LINE WITH CONSENSUS"}
+                      </span>
                     </div>
                   )}
-                </div>
 
-                <div>
-                  <div className="flex items-center pb-0.5 border-b border-[#2a2a2c] gap-2">
-                    <span className="font-mono text-[11px] text-zinc-600 flex-1">METRIC</span>
-                    <span className="font-mono text-[11px] text-zinc-600 w-[76px] text-right shrink-0">ACTUAL</span>
-                    <span className="font-mono text-[11px] text-zinc-600 w-[76px] text-right shrink-0">PRIOR</span>
-                    <span className="font-mono text-[11px] text-zinc-600 w-[76px] text-right shrink-0">CHANGE</span>
+                  <div>
+                    <div className="flex items-center pb-0.5 border-b border-[#2a2a2c] gap-2">
+                      <span className="font-mono text-[11px] text-zinc-600 flex-1">METRIC</span>
+                      <span className="font-mono text-[11px] text-zinc-600 w-[66px] text-right shrink-0">ACTUAL</span>
+                      <span className="font-mono text-[11px] text-zinc-600 w-[66px] text-right shrink-0">EST</span>
+                      <span className="font-mono text-[11px] text-zinc-600 w-[66px] text-right shrink-0">PRIOR</span>
+                      <span className="font-mono text-[11px] text-zinc-600 w-[66px] text-right shrink-0">CHG</span>
+                    </div>
+                    <SummaryRow label="Unemployment Rate" data={nfpMonthData?.unemployment} invertColor />
+                    <SummaryRow label="Avg Hourly Earnings MoM" data={nfpMonthData?.earningsMom} />
+                    {nfpMonthData?.earningsYoy && <SummaryRow label="Avg Hourly Earnings YoY" data={nfpMonthData.earningsYoy} />}
+                    <SummaryRow label="Private Payrolls" data={nfpMonthData?.privatePayroll} />
+                    <SummaryRow label="Labor Force Part." data={nfpMonthData?.lfpr} />
                   </div>
-                  <SummaryRow label="Unemployment Rate" data={nfpMonthData?.unemployment} invertColor />
-                  <SummaryRow label="Avg Hourly Earnings MoM" data={nfpMonthData?.earningsMom} />
-                  {nfpMonthData?.earningsYoy && <SummaryRow label="Avg Hourly Earnings YoY" data={nfpMonthData.earningsYoy} />}
-                  <SummaryRow label="Private Payrolls" data={nfpMonthData?.privatePayroll} />
-                  <SummaryRow label="Labor Force Part." data={nfpMonthData?.lfpr} />
-                </div>
 
-                <div className="flex items-center justify-end">
-                  <button
-                    onClick={() => setShowFullBreakdown(true)}
-                    className="font-mono text-[14px] font-bold tracking-wider transition-opacity hover:opacity-70"
-                    style={{ color: "#FFB800" }}
-                  >
-                    Read More
-                  </button>
+                  <div className="flex items-center justify-end">
+                    <button
+                      onClick={() => setShowFullBreakdown(true)}
+                      className="font-mono text-[14px] font-bold tracking-wider transition-opacity hover:opacity-70"
+                      style={{ color: "#FFB800" }}
+                    >
+                      Read More
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {nfp && showFullBreakdown && (
               <div className="flex-1 overflow-y-auto px-2 py-2 space-y-4">
@@ -1049,7 +1066,7 @@ export function MarketCalendar({ onClose }: Props) {
         const inflLoading = isPpi ? ppiLoading : cpiLoading;
         const monthKey = selectedEvent.date ? refMonthKey(selectedEvent.date) : "";
         const hasMonthData = !!(monthKey && inflDataFull?.byMonth?.[monthKey]);
-        const inflData: InflationMonthData | undefined = hasMonthData ? inflDataFull!.byMonth![monthKey] : inflDataFull;
+        const inflData: InflationMonthData | undefined = hasMonthData ? inflDataFull!.byMonth![monthKey] : (inflDataFull || undefined);
         const monthNotYetAvailable = !!(inflDataFull && monthKey && !hasMonthData && inflData?._meta?.month !== refMonthName(selectedEvent.date));
         const headline = monthNotYetAvailable ? undefined : inflData?.headline;
         const meta = inflData?._meta;
@@ -1149,47 +1166,63 @@ export function MarketCalendar({ onClose }: Props) {
               </div>
             )}
 
-            {headline && !showFullBreakdown && (
-              <div className="flex-1 overflow-y-auto px-2 py-1 space-y-1">
-                <div className="flex items-end justify-center gap-6 pb-5">
-                  <div className="flex flex-col items-center">
-                    <span className="font-mono text-[12px] text-zinc-500 tracking-wider">ACTUAL</span>
-                    <span className="font-mono text-[30px] font-extrabold tabular-nums leading-none" style={{ color: mc(headline.momRaw) }}>{headline.actual}</span>
-                  </div>
-                  <span className="text-[18px] mb-0.5" style={{ color: mc(headline.momRaw) }}>{headline.momRaw >= 0 ? "↑" : "↓"}</span>
-                  {headline.expected && (
+            {headline && !showFullBreakdown && (() => {
+              const expNum = headline.expected ? parseFloat(headline.expected.replace(/[+%]/g, "")) : null;
+              const actNum = headline.momRaw;
+              const beatMiss = expNum !== null ? (actNum < expNum ? "BEAT" : actNum > expNum ? "MISS" : "IN LINE") : null;
+              const beatColor = beatMiss === "BEAT" ? upColor : beatMiss === "MISS" ? downColor : neutralColor;
+
+              return (
+                <div className="flex-1 overflow-y-auto px-2 py-1 space-y-1">
+                  <div className="flex items-end justify-center gap-6 pb-1">
                     <div className="flex flex-col items-center">
-                      <span className="font-mono text-[12px] text-zinc-500 tracking-wider">CONSENSUS</span>
-                      <span className="font-mono text-[30px] font-extrabold tabular-nums leading-none text-zinc-200">{headline.expected}</span>
+                      <span className="font-mono text-[12px] text-zinc-500 tracking-wider">ACTUAL</span>
+                      <span className="font-mono text-[30px] font-extrabold tabular-nums leading-none" style={{ color: mc(headline.momRaw) }}>{headline.actual}</span>
+                    </div>
+                    {headline.expected && (
+                      <>
+                        <span className="text-[18px] mb-0.5" style={{ color: beatColor }}>{beatMiss === "BEAT" ? "◀" : beatMiss === "MISS" ? "▶" : "="}</span>
+                        <div className="flex flex-col items-center">
+                          <span className="font-mono text-[12px] text-zinc-500 tracking-wider">CONSENSUS</span>
+                          <span className="font-mono text-[30px] font-extrabold tabular-nums leading-none text-zinc-200">{headline.expected}</span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  {beatMiss && (
+                    <div className="flex justify-center pb-3">
+                      <span className="font-mono text-[11px] font-bold tracking-widest px-2 py-0.5 rounded" style={{ color: beatColor, background: `${beatColor}15` }}>
+                        {beatMiss === "BEAT" ? "COOLER THAN EXPECTED" : beatMiss === "MISS" ? "HOTTER THAN EXPECTED" : "IN LINE WITH CONSENSUS"}
+                      </span>
                     </div>
                   )}
-                </div>
 
-                <div>
-                  <div className="flex items-center pb-0.5 border-b border-[#2a2a2c] gap-2">
-                    <span className="font-mono text-[11px] text-zinc-600 flex-1">METRIC</span>
-                    <span className="font-mono text-[11px] text-zinc-600 w-[76px] text-right shrink-0">ACTUAL</span>
-                    <span className="font-mono text-[11px] text-zinc-600 w-[76px] text-right shrink-0">PRIOR</span>
-                    <span className="font-mono text-[11px] text-zinc-600 w-[76px] text-right shrink-0">CHANGE</span>
+                  <div>
+                    <div className="flex items-center pb-0.5 border-b border-[#2a2a2c] gap-2">
+                      <span className="font-mono text-[11px] text-zinc-600 flex-1">METRIC</span>
+                      <span className="font-mono text-[11px] text-zinc-600 w-[76px] text-right shrink-0">ACTUAL</span>
+                      <span className="font-mono text-[11px] text-zinc-600 w-[76px] text-right shrink-0">PRIOR</span>
+                      <span className="font-mono text-[11px] text-zinc-600 w-[76px] text-right shrink-0">CHANGE</span>
+                    </div>
+                    <InflRow label={isPpi ? "Core PPI MoM" : "Core CPI MoM"} data={inflData?.core} />
+                    <YoyRow label={isPpi ? "PPI YoY" : "CPI YoY"} data={headline} />
+                    <YoyRow label={isPpi ? "Core PPI YoY" : "Core CPI YoY"} data={inflData?.core} />
+                    {!isPpi && <InflRow label="Food MoM" data={inflData?.food} />}
+                    {!isPpi && <InflRow label="Energy MoM" data={inflData?.energy} />}
                   </div>
-                  <InflRow label={isPpi ? "Core PPI MoM" : "Core CPI MoM"} data={inflData?.core} />
-                  <YoyRow label={isPpi ? "PPI YoY" : "CPI YoY"} data={headline} />
-                  <YoyRow label={isPpi ? "Core PPI YoY" : "Core CPI YoY"} data={inflData?.core} />
-                  {!isPpi && <InflRow label="Food MoM" data={inflData?.food} />}
-                  {!isPpi && <InflRow label="Energy MoM" data={inflData?.energy} />}
-                </div>
 
-                <div className="flex items-center justify-end">
-                  <button
-                    onClick={() => setShowFullBreakdown(true)}
-                    className="font-mono text-[14px] font-bold tracking-wider transition-opacity hover:opacity-70"
-                    style={{ color: "#FFB800" }}
-                  >
-                    Read More
-                  </button>
+                  <div className="flex items-center justify-end">
+                    <button
+                      onClick={() => setShowFullBreakdown(true)}
+                      className="font-mono text-[14px] font-bold tracking-wider transition-opacity hover:opacity-70"
+                      style={{ color: "#FFB800" }}
+                    >
+                      Read More
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {headline && showFullBreakdown && (
               <div className="flex-1 overflow-y-auto px-2 py-2 space-y-4">
