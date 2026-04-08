@@ -2806,7 +2806,7 @@ router.post("/deterministic-strategist", async (req, res) => {
 });
 
 router.post("/market-scanner", async (req, res) => {
-  const { symbols, accessToken, mode, filters, model, temperature, maxResults } = req.body as {
+  const { symbols, accessToken: bodyToken4, mode, filters, model, temperature, maxResults } = req.body as {
     symbols: string[];
     accessToken: string;
     mode: "ai" | "manual";
@@ -2821,6 +2821,7 @@ router.post("/market-scanner", async (req, res) => {
     temperature?: number;
     maxResults?: number;
   };
+  const accessToken = bodyToken4 || getBestAccessToken();
 
   const resultCount = Math.min(Math.max(maxResults ?? 10, 1), 20);
 

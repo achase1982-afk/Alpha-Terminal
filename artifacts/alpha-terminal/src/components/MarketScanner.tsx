@@ -447,7 +447,6 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
   };
 
   const handleManualScan = async () => {
-    if (!accessToken) return;
     const syms = getSymbols();
     if (!syms.length) { setRawError("No symbols to scan. Select a market universe or a watchlist with symbols."); return; }
 
@@ -458,7 +457,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
 
     try {
       const payload = {
-        symbols: syms, accessToken, mode: "manual",
+        symbols: syms, accessToken: accessToken || "", mode: "manual",
         filters: { minChangePct, maxChangePct, minVolume, minPrice, maxPrice },
       };
 
@@ -494,7 +493,6 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
   };
 
   const handleDeterministicScan = async () => {
-    if (!accessToken) return;
     const syms = getSymbols();
     if (!syms.length) { setDetError("No symbols to scan. Select a market universe or a watchlist with symbols."); return; }
 
@@ -507,7 +505,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
       const res = await fetchWithAuth(`${API_BASE}/ai/deterministic-scan`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ symbols: syms, accessToken }),
+        body: JSON.stringify({ symbols: syms, accessToken: accessToken || "" }),
       });
 
       const data = await res.json() as DetScanResult & { error?: string; message?: string };

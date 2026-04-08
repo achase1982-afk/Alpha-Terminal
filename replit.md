@@ -29,6 +29,10 @@ Core features include SEC EDGAR integration for filings and financial data, a dy
 
 The monorepo structure ensures shared libraries and consistent tooling. A clear separation of concerns is maintained across all layers. Real-time data processing is optimized through streaming and efficient state management. AI responses are strictly grounded in fresh market data, with a two-layer architecture for the Market Pulse system combining deterministic scoring with AI narrative generation.
 
+## Server-Side Token Fallback
+
+All market data endpoints (`/quote`, `/history`, `/options`, `/ticker-stats`) and AI endpoints (`/options-strategist`, `/options-strategist/stream`, `/deterministic-strategist`, `/deterministic-scan`, `/market-scanner`) use server-side token fallback via `getAccessToken("market")` or `getBestAccessToken()`. The client sends `accessToken || ""` — if empty, the server uses its own stored Schwab tokens from the OAuth flow. Frontend `useEffect` hooks for quote/stats fetching use `useRef` for the token to avoid re-fetch loops when the token loads asynchronously. The `/ticker-stats` endpoint is non-blocking: it returns cached chain data immediately and fires a background fetch if the cache is stale/missing, with the client retrying once after 3 seconds if IVR/EM come back null.
+
 ## Calendar-to-Strategist Event Guard System
 
 The Calendar Event Checker (`artifacts/api-server/src/lib/calendarEventChecker.ts`) ports the frontend calendar event generation logic to the server and implements 5 event guard rules:

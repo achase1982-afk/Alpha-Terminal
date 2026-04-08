@@ -767,6 +767,9 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
   const displaySymbol = previewTicker || symbol;
   const liveQuote = streamPrices[displaySymbol];
 
+  const accessTokenRef = useRef(accessToken);
+  accessTokenRef.current = accessToken;
+
   useEffect(() => {
     const typed = inputVal.trim().toUpperCase();
     if (!typed) {
@@ -784,9 +787,9 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
     setFetchingTicker(true);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
-      if (!accessToken) { setFetchingTicker(false); return; }
       try {
-        const res = await fetch(`/api/market/quote?symbol=${encodeURIComponent(typed)}&accessToken=${encodeURIComponent(accessToken)}`);
+        const tok = accessTokenRef.current || "";
+        const res = await fetch(`/api/market/quote?symbol=${encodeURIComponent(typed)}&accessToken=${encodeURIComponent(tok)}`);
         if (!res.ok) { setFetchingTicker(false); return; }
         const data = await res.json();
         if (data?.last != null) {
@@ -800,27 +803,34 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
       setFetchingTicker(false);
     }, 250);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [inputVal, accessToken]);
+  }, [inputVal]);
 
   useEffect(() => {
     const ticker = (inputVal.trim().toUpperCase()) || symbol;
     if (!ticker) { setTickerPcRatio(null); setTickerIvr(null); setTickerExpectedMove(null); return; }
     setTickerPcRatio(null); setTickerIvr(null); setTickerExpectedMove(null);
     if (pcDebounceRef.current) clearTimeout(pcDebounceRef.current);
-    pcDebounceRef.current = setTimeout(async () => {
+    const retryRef = { cancelled: false };
+    const fetchStats = async (isRetry = false) => {
       try {
+        const tok = accessTokenRef.current || "";
         const params = new URLSearchParams({ symbol: ticker });
-        if (accessToken) params.set("accessToken", accessToken);
+        if (tok) params.set("accessToken", tok);
         const res = await fetch(`/api/market/ticker-stats?${params.toString()}`);
-        if (!res.ok) return;
+        if (!res.ok || retryRef.cancelled) return;
         const data = await res.json();
+        if (retryRef.cancelled) return;
         if (data?.pcRatio != null) setTickerPcRatio(data.pcRatio);
         if (data?.ivr != null) setTickerIvr(data.ivr);
         if (data?.expectedMove != null) setTickerExpectedMove(data.expectedMove);
+        if (!isRetry && data?.ivr == null && data?.expectedMove == null) {
+          setTimeout(() => { if (!retryRef.cancelled) fetchStats(true); }, 3000);
+        }
       } catch { /* ignore */ }
-    }, 400);
-    return () => { if (pcDebounceRef.current) clearTimeout(pcDebounceRef.current); };
-  }, [inputVal, accessToken, symbol]);
+    };
+    pcDebounceRef.current = setTimeout(() => fetchStats(), 400);
+    return () => { retryRef.cancelled = true; if (pcDebounceRef.current) clearTimeout(pcDebounceRef.current); };
+  }, [inputVal, symbol]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1791,15 +1801,15 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
 
   const { data: quote } = useGetQuote(
     { symbol, accessToken: accessToken || "" },
-    { query: { enabled: !!accessToken } }
+    { query: { enabled: !!symbol } }
   );
   const { data: history } = useGetPriceHistory(
     { symbol, accessToken: accessToken || "", periodType: "month", period: 3, frequencyType: "daily", frequency: 1 },
-    { query: { enabled: !!accessToken } }
+    { query: { enabled: !!symbol } }
   );
   const { data: chain, isLoading: chainLoading } = useGetOptionChain(
     { symbol, accessToken: accessToken || "", contractType: "ALL", daysToExpiration: 45, strikeCount: 20 },
-    { query: { enabled: !!accessToken && chainEnabled } }
+    { query: { enabled: !!symbol && chainEnabled } }
   );
 
   useEffect(() => {
