@@ -1,4 +1,5 @@
 import type { MarketIndicators } from "./marketPulseEngine.js";
+import { logFailure } from "./telemetry.js";
 
 export type ShockState = "NORMAL" | "WARNING" | "ACTIVE" | "COOLING";
 
@@ -254,6 +255,23 @@ export function evaluateRegimeShock(data: MarketIndicators): ShockDetectorOutput
   pruneWindow(now);
   evaluateTriggers(data, now);
   const { transitioned } = transitionState(now);
+
+  if (transitioned && previousState !== currentState) {
+    const triggers = [...triggerHistory].map(t => t.trigger);
+    if (currentState === "ACTIVE") {
+      void logFailure("MARKET_PULSE", "CRITICAL", `Regime shock ACTIVE — ${triggers.join(", ")}`, {
+        previousState, newState: currentState, activeTriggers: triggers,
+      });
+    } else if (currentState === "WARNING") {
+      void logFailure("MARKET_PULSE", "WARN", `Regime shock WARNING — ${triggers.join(", ")}`, {
+        previousState, newState: currentState, activeTriggers: triggers,
+      });
+    } else if (currentState === "NORMAL" && previousState === "COOLING") {
+      void logFailure("MARKET_PULSE", "INFO", "Regime shock resolved — back to NORMAL", {
+        previousState, newState: currentState,
+      });
+    }
+  }
 
   return {
     shockState: currentState,

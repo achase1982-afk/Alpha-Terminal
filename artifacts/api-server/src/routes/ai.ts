@@ -1723,6 +1723,14 @@ router.post("/market-pulse/stream", async (req, res) => {
     bias: engineResult.bias,
   }, "Market pulse engine output (breadth + volTerm scores)");
 
+  if (engineResult.confidenceScore < 20) {
+    void logFailure("MARKET_PULSE", "WARN", `Low pulse confidence: ${engineResult.confidenceScore}% — data may be insufficient`, {
+      confidence: engineResult.confidenceScore,
+      bias: engineResult.bias,
+      composite: engineResult.compositeScore,
+    });
+  }
+
   const shockResult = evaluateRegimeShock(indicators);
   req.log.info({
     shockState: shockResult.shockState,
