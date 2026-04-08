@@ -143,6 +143,7 @@ interface Order {
 
 interface SymbolGroup {
   underlying: string;
+  description: string;
   equity: Position | null;
   options: Position[];
   totalMarketValue: number;
@@ -334,7 +335,7 @@ function OptionRow({
         background: isSelected ? `${C.gold}08` : "transparent",
       }}
     >
-      <div className="pf-sticky-col" style={{ width: symW, background: isSelected ? "#1a1700" : "#000", display: "flex", flexDirection: "column", gap: 1, padding: "5px 6px 5px 20px", borderRight: "2px solid #3f3f46", minWidth: 0 }}>
+      <div className="pf-sticky-col" style={{ width: symW, background: isSelected ? "#1a1700" : "#000", display: "flex", flexDirection: "column", gap: 1, padding: "5px 6px 5px 20px", minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
           <Checkbox checked={isSelected} onToggle={e => { e.stopPropagation(); toggleKey(optKey); }} />
           <span style={{ fontSize: 12, fontWeight: 700, color: opt.putCall === "CALL" ? "#4ade80" : "#fb923c", flexShrink: 0 }}>
@@ -413,12 +414,17 @@ function PositionTableRow({
         }}
         onClick={() => setExpanded(!expanded)}
       >
-        <div className="pf-sticky-col" style={{ width: symW, background: stickyBg, display: "flex", alignItems: "center", gap: 6, padding: "8px 8px 8px 12px", borderRight: "2px solid #3f3f46", minWidth: 0 }}>
+        <div className="pf-sticky-col" style={{ width: symW, background: stickyBg, display: "flex", alignItems: "center", gap: 6, padding: "6px 8px 6px 12px", minWidth: 0 }}>
           {expanded
             ? <ChevronDown style={{ width: 12, height: 12, color: C.dim, flexShrink: 0 }} />
             : <ChevronRight style={{ width: 12, height: 12, color: C.dim, flexShrink: 0 }} />}
-          <span onClick={e => { e.stopPropagation(); onSelect(group.underlying); }} style={{ fontSize: 14, fontWeight: 600, color: C.text, whiteSpace: "nowrap", cursor: "pointer" }}>{group.underlying}</span>
-          <span style={{ fontSize: 11, color: C.dim, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{details}</span>
+          <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <span onClick={e => { e.stopPropagation(); onSelect(group.underlying); }} style={{ fontSize: 14, fontWeight: 600, color: C.text, whiteSpace: "nowrap", cursor: "pointer" }}>{group.underlying}</span>
+              <span style={{ fontSize: 11, color: C.dim, whiteSpace: "nowrap" }}>{details}</span>
+            </div>
+            {group.description && <span style={{ fontSize: 10, color: C.dim, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{group.description}</span>}
+          </div>
         </div>
         {visibleColumns.includes("mark") && (() => {
           const eqQty = eq ? (eq.longQuantity || eq.shortQuantity) : 0;
@@ -463,10 +469,10 @@ function PositionTableRow({
               : 0;
             return (
               <div style={{ display: "grid", gridTemplateColumns: gridCols, alignItems: "center", minWidth: minW, borderBottom: `1px solid ${C.border}`, background: eqSelected ? `${C.gold}08` : "transparent" }}>
-                <div className="pf-sticky-col" style={{ width: symW, background: eqSelected ? "#1a1700" : "#000", display: "flex", alignItems: "center", gap: 6, padding: "7px 6px 7px 20px", borderRight: "2px solid #3f3f46", minWidth: 0 }}>
+                <div className="pf-sticky-col" style={{ width: symW, background: eqSelected ? "#1a1700" : "#000", display: "flex", alignItems: "center", gap: 6, padding: "7px 6px 7px 20px", minWidth: 0 }}>
                   {hasOptions && <Checkbox checked={!!eqSelected} onToggle={e => { e.stopPropagation(); toggleKey(eqKey); }} />}
                   <span style={{ fontSize: 12, color: C.text, whiteSpace: "nowrap" }}>
-                    {fmtQty(eq.longQuantity, eq.shortQuantity)} shares
+                    {fmtQty(eq.longQuantity, eq.shortQuantity)}
                   </span>
                 </div>
                 {visibleColumns.includes("mark") && (() => {
@@ -750,9 +756,9 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
     const groupMap = new Map<string, SymbolGroup>();
     for (const pos of positions) {
       const key = (pos.assetType === "OPTION" ? pos.underlyingSymbol : pos.symbol).toUpperCase();
-      if (!groupMap.has(key)) groupMap.set(key, { underlying: key, equity: null, options: [], totalMarketValue: 0, totalDayPL: 0, totalPL: 0, totalMaint: 0 });
+      if (!groupMap.has(key)) groupMap.set(key, { underlying: key, description: "", equity: null, options: [], totalMarketValue: 0, totalDayPL: 0, totalPL: 0, totalMaint: 0 });
       const g = groupMap.get(key)!;
-      if (pos.assetType === "OPTION") g.options.push(pos); else g.equity = pos;
+      if (pos.assetType === "OPTION") g.options.push(pos); else { g.equity = pos; if (pos.description) g.description = pos.description; }
       g.totalMarketValue += pos.marketValue;
       g.totalDayPL += pos.currentDayProfitLoss;
       g.totalPL += pos.longOpenProfitLoss;
@@ -1045,7 +1051,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
                 display: "grid", gridTemplateColumns: gridCols, minWidth: minRowWidth,
                 borderBottom: `1px solid ${C.borderHi}`, background: "#0e0e0e",
               }}>
-                <div className="pf-sticky-col" style={{ width: symW, zIndex: 3, background: "#0e0e0e", display: "flex", alignItems: "center", gap: 6, padding: "6px 8px 6px 12px", borderRight: "2px solid #3f3f46" }}>
+                <div className="pf-sticky-col" style={{ width: symW, zIndex: 3, background: "#0e0e0e", display: "flex", alignItems: "center", gap: 6, padding: "6px 8px 6px 12px" }}>
                   <span style={{ fontSize: 12, fontWeight: 500, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5 }}>Symbol</span>
                   <button onClick={() => setShowColumnSettings(x => !x)} style={{ padding: 2, background: "transparent", border: "none", cursor: "pointer" }}>
                     <Settings style={{ width: 13, height: 13, color: showColumnSettings ? C.gold : C.dim }} />
@@ -1110,7 +1116,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
                   display: "grid", gridTemplateColumns: gridCols, minWidth: minRowWidth,
                   borderTop: `2px solid ${C.borderHi}`, background: "#0e0e0e",
                 }}>
-                  <div className="pf-sticky-col" style={{ width: symW, background: "#0e0e0e", padding: "8px 8px 8px 12px", borderRight: "2px solid #3f3f46" }}>
+                  <div className="pf-sticky-col" style={{ width: symW, background: "#0e0e0e", padding: "8px 8px 8px 12px" }}>
                     <span style={{ fontSize: 14, fontWeight: 500, color: C.textMuted, whiteSpace: "nowrap" }}>Totals</span>
                   </div>
                   {visibleColumns.includes("mark")   && <span style={{ fontSize: 14, color: C.dim, textAlign: "right", padding: "8px" }}>—</span>}
