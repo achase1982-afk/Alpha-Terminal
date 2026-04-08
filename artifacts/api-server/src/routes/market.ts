@@ -392,7 +392,7 @@ interface CachedChain {
 
 const chainCache = new Map<string, CachedChain>();
 const chainFetchInFlight = new Map<string, Promise<CachedChain | null>>();
-const CHAIN_CACHE_TTL = 30_000;
+const CHAIN_CACHE_TTL = 60_000;
 const CHAIN_CACHE_MAX = 20;
 
 function evictStaleChains() {
@@ -670,11 +670,14 @@ router.get("/ticker-stats", async (req, res) => {
   result.pcRatio = cpce !== null && cpci !== null ? Math.round(((cpce + cpci) / 2) * 10000) / 10000 : cpce ?? cpci;
 
   if (accessToken) {
-    const cached = chainCache.get(symbol);
-    const hasCached = cached && cached.underlyingPrice;
+    let cached = chainCache.get(symbol);
+    if (!cached || !cached.underlyingPrice || (Date.now() - cached.fetchedAt) >= CHAIN_CACHE_TTL) {
+      const fresh = await getOrFetchChain(symbol, accessToken, req.log);
+      if (fresh) cached = fresh;
+    }
 
-    if (hasCached) {
-      const price = cached.underlyingPrice!;
+    if (cached && cached.underlyingPrice) {
+      const price = cached.underlyingPrice;
       const allContracts: OptionContract[] = [...cached.calls, ...cached.puts];
       const now = Date.now();
       const exps = [...new Set(cached.calls.map((c) => c.expiration))]
@@ -694,10 +697,6 @@ router.get("/ticker-stats", async (req, res) => {
         }
       }
       result.ivr = computeIVR(allContracts, price, exps);
-    }
-
-    if (!hasCached || (Date.now() - cached!.fetchedAt) >= CHAIN_CACHE_TTL) {
-      getOrFetchChain(symbol, accessToken, req.log).catch(() => {});
     }
   }
 
@@ -1315,4 +1314,6 @@ ${rawSource ? `<div class="s">${escH(rawSource)}</div>` : ""}
   }
 });
 
+export { chainCache, getOrFetchChain, CHAIN_CACHE_TTL };
+export type { CachedChain, ParsedContract };
 export default router;

@@ -23,6 +23,7 @@ import { runPreTradeChecks, type PreTradeInput, type PreTradeResult } from "../l
 import { evaluateRegimeShock, type ShockDetectorOutput } from "../lib/regimeShockDetector.js";
 import { sendPushToAll } from "../lib/pushService.js";
 import { checkEventConflicts, getUpcomingEvents, type EventCheckResult } from "../lib/calendarEventChecker.js";
+import { chainCache, getOrFetchChain, CHAIN_CACHE_TTL } from "./market.js";
 import { runDeterministicScan } from "../lib/deterministicScanner.js";
 import {
   runDeterministicStrategist,
@@ -2053,32 +2054,54 @@ router.post("/options-strategist", async (req, res) => {
 
   try {
     const chainSymbol = symbol.toUpperCase().trim();
-    const dteForChain = Math.max(regime.dteRange.max, 45);
-    const params = new URLSearchParams({
-      symbol: chainSymbol,
-      contractType: "ALL",
-      strikeCount: "30",
-      range: "ALL",
-      daysToExpiration: String(dteForChain),
-    });
-    if (chainSymbol.startsWith("/")) params.set("assetClass", "FUTURES");
 
-    const chainRes = await fetch(`${SCHWAB_CHAIN_BASE}/chains?${params.toString()}`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    const cachedChain = chainCache.get(chainSymbol);
+    const cacheIsFresh = cachedChain && cachedChain.underlyingPrice && (Date.now() - cachedChain.fetchedAt) < CHAIN_CACHE_TTL;
 
-    if (!chainRes.ok) {
-      const errBody = await chainRes.text().catch(() => "");
-      req.log.error({ status: chainRes.status, body: errBody }, "Strategist chain fetch failed");
-      return res.json({ strategies: [], narrative: "", error: `Chain fetch failed (${chainRes.status})` });
+    let calls: OptionContract[];
+    let puts: OptionContract[];
+    let underlyingPrice: number;
+
+    if (cacheIsFresh) {
+      calls = cachedChain.calls as OptionContract[];
+      puts = cachedChain.puts as OptionContract[];
+      underlyingPrice = cachedChain.underlyingPrice!;
+      req.log.info({ symbol, cacheAge: Date.now() - cachedChain.fetchedAt }, "Strategist: using cached chain");
+    } else {
+      const freshChain = await getOrFetchChain(chainSymbol, accessToken, req.log);
+      if (freshChain && freshChain.underlyingPrice) {
+        calls = freshChain.calls as OptionContract[];
+        puts = freshChain.puts as OptionContract[];
+        underlyingPrice = freshChain.underlyingPrice;
+      } else {
+        const dteForChain = Math.max(regime.dteRange.max, 45);
+        const params = new URLSearchParams({
+          symbol: chainSymbol,
+          contractType: "ALL",
+          strikeCount: "30",
+          range: "ALL",
+          daysToExpiration: String(dteForChain),
+        });
+        if (chainSymbol.startsWith("/")) params.set("assetClass", "FUTURES");
+
+        const chainRes = await fetch(`${SCHWAB_CHAIN_BASE}/chains?${params.toString()}`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+
+        if (!chainRes.ok) {
+          const errBody = await chainRes.text().catch(() => "");
+          req.log.error({ status: chainRes.status, body: errBody }, "Strategist chain fetch failed");
+          return res.json({ strategies: [], narrative: "", error: `Chain fetch failed (${chainRes.status})` });
+        }
+
+        const chainJson = await chainRes.json() as Record<string, unknown>;
+        underlyingPrice = (chainJson["underlyingPrice"] as number) ?? 0;
+        const callMap = (chainJson["callExpDateMap"] as Record<string, unknown>) ?? {};
+        const putMap = (chainJson["putExpDateMap"] as Record<string, unknown>) ?? {};
+        calls = parseChainContracts(callMap);
+        puts = parseChainContracts(putMap);
+      }
     }
-
-    const chainJson = await chainRes.json() as Record<string, unknown>;
-    const underlyingPrice = (chainJson["underlyingPrice"] as number) ?? 0;
-    const callMap = (chainJson["callExpDateMap"] as Record<string, unknown>) ?? {};
-    const putMap = (chainJson["putExpDateMap"] as Record<string, unknown>) ?? {};
-    const calls = parseChainContracts(callMap);
-    const puts = parseChainContracts(putMap);
 
     req.log.info({ symbol, regime: regime.regime, edge, callCount: calls.length, putCount: puts.length, underlyingPrice, dteRange: regime.dteRange }, "Strategist scanning chain with regime params");
 
@@ -2230,32 +2253,54 @@ router.post("/options-strategist/stream", async (req, res) => {
 
   try {
     const chainSymbol = symbol.toUpperCase().trim();
-    const dteForChain = Math.max(regime.dteRange.max, 45);
-    const params = new URLSearchParams({
-      symbol: chainSymbol,
-      contractType: "ALL",
-      strikeCount: "30",
-      range: "ALL",
-      daysToExpiration: String(dteForChain),
-    });
-    if (chainSymbol.startsWith("/")) params.set("assetClass", "FUTURES");
 
-    const chainRes = await fetch(`${SCHWAB_CHAIN_BASE}/chains?${params.toString()}`, {
-      headers: { Authorization: `Bearer ${resolvedToken}` },
-    });
+    const cachedChain = chainCache.get(chainSymbol);
+    const cacheIsFresh = cachedChain && cachedChain.underlyingPrice && (Date.now() - cachedChain.fetchedAt) < CHAIN_CACHE_TTL;
 
-    if (!chainRes.ok) {
-      const errBody = await chainRes.text().catch(() => "");
-      req.log.error({ status: chainRes.status, body: errBody }, "Strategist chain fetch failed");
-      return res.status(502).json({ error: `Chain fetch failed (${chainRes.status})` });
+    let calls: OptionContract[];
+    let puts: OptionContract[];
+    let underlyingPrice: number;
+
+    if (cacheIsFresh) {
+      calls = cachedChain.calls as OptionContract[];
+      puts = cachedChain.puts as OptionContract[];
+      underlyingPrice = cachedChain.underlyingPrice!;
+      req.log.info({ symbol, cacheAge: Date.now() - cachedChain.fetchedAt }, "Strategist stream: using cached chain");
+    } else {
+      const freshChain = await getOrFetchChain(chainSymbol, resolvedToken, req.log);
+      if (freshChain && freshChain.underlyingPrice) {
+        calls = freshChain.calls as OptionContract[];
+        puts = freshChain.puts as OptionContract[];
+        underlyingPrice = freshChain.underlyingPrice;
+      } else {
+        const dteForChain = Math.max(regime.dteRange.max, 45);
+        const params = new URLSearchParams({
+          symbol: chainSymbol,
+          contractType: "ALL",
+          strikeCount: "30",
+          range: "ALL",
+          daysToExpiration: String(dteForChain),
+        });
+        if (chainSymbol.startsWith("/")) params.set("assetClass", "FUTURES");
+
+        const chainRes = await fetch(`${SCHWAB_CHAIN_BASE}/chains?${params.toString()}`, {
+          headers: { Authorization: `Bearer ${resolvedToken}` },
+        });
+
+        if (!chainRes.ok) {
+          const errBody = await chainRes.text().catch(() => "");
+          req.log.error({ status: chainRes.status, body: errBody }, "Strategist chain fetch failed");
+          return res.status(502).json({ error: `Chain fetch failed (${chainRes.status})` });
+        }
+
+        const chainJson = await chainRes.json() as Record<string, unknown>;
+        underlyingPrice = (chainJson["underlyingPrice"] as number) ?? 0;
+        const callMap = (chainJson["callExpDateMap"] as Record<string, unknown>) ?? {};
+        const putMap = (chainJson["putExpDateMap"] as Record<string, unknown>) ?? {};
+        calls = parseChainContracts(callMap);
+        puts = parseChainContracts(putMap);
+      }
     }
-
-    const chainJson = await chainRes.json() as Record<string, unknown>;
-    const underlyingPrice = (chainJson["underlyingPrice"] as number) ?? 0;
-    const callMap = (chainJson["callExpDateMap"] as Record<string, unknown>) ?? {};
-    const putMap = (chainJson["putExpDateMap"] as Record<string, unknown>) ?? {};
-    const calls = parseChainContracts(callMap);
-    const puts = parseChainContracts(putMap);
 
     req.log.info({ symbol, regime: regime.regime, edge, callCount: calls.length, putCount: puts.length, underlyingPrice, dteRange: regime.dteRange }, "Strategist scanning chain with regime params");
 

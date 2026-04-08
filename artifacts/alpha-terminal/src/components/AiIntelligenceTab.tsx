@@ -810,26 +810,22 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
     if (!ticker) { setTickerPcRatio(null); setTickerIvr(null); setTickerExpectedMove(null); return; }
     setTickerPcRatio(null); setTickerIvr(null); setTickerExpectedMove(null);
     if (pcDebounceRef.current) clearTimeout(pcDebounceRef.current);
-    const retryRef = { cancelled: false };
-    const fetchStats = async (isRetry = false) => {
+    let cancelled = false;
+    pcDebounceRef.current = setTimeout(async () => {
       try {
         const tok = accessTokenRef.current || "";
         const params = new URLSearchParams({ symbol: ticker });
         if (tok) params.set("accessToken", tok);
         const res = await fetch(`/api/market/ticker-stats?${params.toString()}`);
-        if (!res.ok || retryRef.cancelled) return;
+        if (!res.ok || cancelled) return;
         const data = await res.json();
-        if (retryRef.cancelled) return;
+        if (cancelled) return;
         if (data?.pcRatio != null) setTickerPcRatio(data.pcRatio);
         if (data?.ivr != null) setTickerIvr(data.ivr);
         if (data?.expectedMove != null) setTickerExpectedMove(data.expectedMove);
-        if (!isRetry && data?.ivr == null && data?.expectedMove == null) {
-          setTimeout(() => { if (!retryRef.cancelled) fetchStats(true); }, 3000);
-        }
       } catch { /* ignore */ }
-    };
-    pcDebounceRef.current = setTimeout(() => fetchStats(), 400);
-    return () => { retryRef.cancelled = true; if (pcDebounceRef.current) clearTimeout(pcDebounceRef.current); };
+    }, 300);
+    return () => { cancelled = true; if (pcDebounceRef.current) clearTimeout(pcDebounceRef.current); };
   }, [inputVal, symbol]);
 
   const handleSubmit = (e: React.FormEvent) => {

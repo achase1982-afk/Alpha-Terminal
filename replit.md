@@ -35,7 +35,15 @@ All IVR calculations (scanner, strategist command bar, ticker-stats endpoint) us
 
 ## Server-Side Token Fallback
 
-All market data endpoints (`/quote`, `/history`, `/options`, `/ticker-stats`) and AI endpoints (`/options-strategist`, `/options-strategist/stream`, `/deterministic-strategist`, `/deterministic-scan`, `/market-scanner`) use server-side token fallback via `getAccessToken("market")` or `getBestAccessToken()`. The client sends `accessToken || ""` — if empty, the server uses its own stored Schwab tokens from the OAuth flow. Frontend `useEffect` hooks for quote/stats fetching use `useRef` for the token to avoid re-fetch loops when the token loads asynchronously. The `/ticker-stats` endpoint is non-blocking: it returns cached chain data immediately and fires a background fetch if the cache is stale/missing, with the client retrying once after 3 seconds if IVR/EM come back null.
+All market data endpoints (`/quote`, `/history`, `/options`, `/ticker-stats`) and AI endpoints (`/options-strategist`, `/options-strategist/stream`, `/deterministic-strategist`, `/deterministic-scan`, `/market-scanner`) use server-side token fallback via `getAccessToken("market")` or `getBestAccessToken()`. The client sends `accessToken || ""` — if empty, the server uses its own stored Schwab tokens from the OAuth flow. Frontend `useEffect` hooks for quote/stats fetching use `useRef` for the token to avoid re-fetch loops when the token loads asynchronously.
+
+## Chain Cache Architecture
+
+The options chain cache (`chainCache` in `market.ts`, TTL=60s, max 20 entries) is shared across all endpoints:
+- `/ticker-stats` **synchronously awaits** `getOrFetchChain()` — no more fire-and-forget. IVR/EM are always computed if a Schwab token is available.
+- `/options-strategist` and `/options-strategist/stream` check the cache first. If a fresh chain exists (within 60s TTL), it's reused instantly, eliminating the duplicate Schwab API call that was the main source of analyze-button lag.
+- The `getOrFetchChain()` function deduplicates in-flight requests via `chainFetchInFlight` map, and returns stale data immediately when available (while refreshing in background).
+- `chainCache`, `getOrFetchChain`, and `CHAIN_CACHE_TTL` are exported from `market.ts` and imported by `ai.ts`.
 
 ## Calendar-to-Strategist Event Guard System
 
