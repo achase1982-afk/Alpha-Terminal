@@ -182,6 +182,7 @@ function timeAgo(dateStr: string): string {
   if (hrs < 24) return `${hrs}h ago`;
   return `${Math.floor(hrs / 24)}d ago`;
 }
+const MONTH_ABBR = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
 function formatOptionSymbol(sym: string, includeUnderlying = true): string {
   const match = sym.trim().match(/^(\w+)\s+(\d{6})([CP])(\d{8})$/);
   if (!match) return sym.trim();
@@ -190,6 +191,15 @@ function formatOptionSymbol(sym: string, includeUnderlying = true): string {
   const strikeStr = strike % 1 === 0 ? String(strike) : strike.toFixed(1);
   const prefix = includeUnderlying ? `${underlying} ` : "";
   return `${prefix}${dateStr.slice(0, 2)}/${dateStr.slice(2, 4)}/${dateStr.slice(4, 6)} ${strikeStr}${pc}`;
+}
+function formatOptionExpiry(sym: string): { day: string; mon: string; yr: string; strike: string; pc: "C" | "P" } | null {
+  const match = sym.trim().match(/^(\w+)\s+(\d{6})([CP])(\d{8})$/);
+  if (!match) return null;
+  const [, , dateStr, pc, strikeRaw] = match;
+  const strike = parseInt(strikeRaw) / 1000;
+  const strikeStr = strike % 1 === 0 ? String(strike) : strike.toFixed(1);
+  const mo = parseInt(dateStr.slice(2, 4)) - 1;
+  return { day: String(parseInt(dateStr.slice(4, 6))), mon: MONTH_ABBR[mo] ?? dateStr.slice(2, 4), yr: dateStr.slice(0, 2), strike: strikeStr, pc: pc as "C" | "P" };
 }
 function parseOptionSymbolDetails(sym: string): { putCall: "CALL" | "PUT"; strike: number; expiration: string } | null {
   const match = sym.trim().match(/^(\w+)\s+(\d{6})([CP])(\d{8})$/);
@@ -209,20 +219,25 @@ function statusColor(status: string): string {
   }
 }
 
-const SYMBOL_COL_W = 100;
 const COL_WIDTHS_DEFAULT: Record<string, number> = {
-  symbol: SYMBOL_COL_W,
   mark: 80, cost: 72, qty: 48, mktVal: 76, plOpen: 80, plPct: 72, plDay: 76, maint: 72,
 };
 
-const getGridCols = (visibleCols: ColumnKey[], widths: Record<string, number>): string => {
-  let cols = `${widths["symbol"] ?? SYMBOL_COL_W}px`;
-  for (const c of visibleCols) cols += ` ${widths[c] ?? COL_WIDTHS_DEFAULT[c]}px`;
+function useSymbolColumnWidth() {
+  const calc = () => Math.min(Math.floor(window.innerWidth * 0.25), 130);
+  const [w, setW] = useState(calc);
+  useEffect(() => { const h = () => setW(calc()); window.addEventListener("resize", h); return () => window.removeEventListener("resize", h); }, []);
+  return w;
+}
+
+const getGridCols = (visibleCols: ColumnKey[], symW: number): string => {
+  let cols = `${symW}px`;
+  for (const c of visibleCols) cols += ` ${COL_WIDTHS_DEFAULT[c] ?? 76}px`;
   return cols;
 };
 
-const getMinRowWidth = (visibleCols: ColumnKey[], widths: Record<string, number>): number =>
-  (widths["symbol"] ?? SYMBOL_COL_W) + visibleCols.reduce((s, c) => s + (widths[c] ?? COL_WIDTHS_DEFAULT[c]), 0);
+const getMinRowWidth = (visibleCols: ColumnKey[], symW: number): number =>
+  symW + visibleCols.reduce((s, c) => s + (COL_WIDTHS_DEFAULT[c] ?? 76), 0);
 
 function useTickFlash(symbol: string): "up" | "down" | null {
   const price = useTerminalStore(s => (s.streamPrices[symbol.toUpperCase()] as { last?: number } | undefined)?.last);
@@ -319,14 +334,20 @@ function OptionRow({
         background: isSelected ? `${C.gold}08` : "transparent",
       }}
     >
-      <div className="pf-sticky-col" style={{ width: symW, background: isSelected ? "#1a1700" : "#0a0a0a", display: "flex", alignItems: "center", gap: 4, padding: "7px 8px 7px 26px", borderRight: "2px solid #3f3f46", minWidth: 0 }}>
-        <Checkbox checked={isSelected} onToggle={e => { e.stopPropagation(); toggleKey(optKey); }} />
-        <span style={{ fontSize: 12, fontWeight: 600, color: opt.putCall === "CALL" ? "#4ade80" : "#fb923c", flexShrink: 0 }}>
-          {opt.putCall === "CALL" ? "C" : "P"}
-        </span>
-        <span style={{ fontSize: 11, color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-          {formatOptionSymbol(opt.symbol, false)}
-        </span>
+      <div className="pf-sticky-col" style={{ width: symW, background: isSelected ? "#1a1700" : "#0a0a0a", display: "flex", flexDirection: "column", gap: 1, padding: "5px 6px 5px 20px", borderRight: "2px solid #3f3f46", minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <Checkbox checked={isSelected} onToggle={e => { e.stopPropagation(); toggleKey(optKey); }} />
+          <span style={{ fontSize: 12, fontWeight: 700, color: opt.putCall === "CALL" ? "#4ade80" : "#fb923c", flexShrink: 0 }}>
+            {opt.putCall === "CALL" ? "C" : "P"}
+          </span>
+          <span style={{ fontSize: 11, color: C.dim, whiteSpace: "nowrap" }}>
+            {(() => { const d = formatOptionExpiry(opt.symbol); return d ? `${d.day} ${d.mon} ${d.yr}` : ""; })()}
+          </span>
+        </div>
+        <div style={{ fontSize: 11, color: C.text, paddingLeft: 22 }}>
+          {(() => { const d = formatOptionExpiry(opt.symbol); return d ? d.strike : ""; })()}{" "}
+          <span style={{ color: C.dim }}>{isShort ? `-${qty}` : `+${qty}`}</span>
+        </div>
       </div>
       {visibleColumns.includes("mark") && <span style={{ fontSize: 14, color: markColor, textAlign: "right", fontVariantNumeric: "tabular-nums", transition: "color 0.15s", padding: "7px 8px" }}>${markPx.toFixed(2)}</span>}
       {visibleColumns.includes("cost") && <span style={{ fontSize: 14, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "7px 8px" }}>${opt.averagePrice.toFixed(2)}</span>}
@@ -347,7 +368,7 @@ function PositionTableRow({
   selectedKeys,
   toggleKey,
   visibleColumns,
-  colWidths,
+  symW,
 }: {
   group: SymbolGroup;
   onSelect: (sym: string) => void;
@@ -355,7 +376,7 @@ function PositionTableRow({
   selectedKeys: Set<string>;
   toggleKey: (key: string) => void;
   visibleColumns: ColumnKey[];
-  colWidths: Record<string, number>;
+  symW: number;
 }) {
   const [expanded, setExpanded] = useState(false);
   const eq = group.equity;
@@ -370,9 +391,8 @@ function PositionTableRow({
   const qtyStr = eq ? fmtQty(eq.longQuantity, eq.shortQuantity) : "";
   const optStr = hasOptions ? `${group.options.length}c` : "";
   const details = [qtyStr, optStr].filter(Boolean).join(" ");
-  const symW = colWidths["symbol"] ?? SYMBOL_COL_W;
-  const gridCols = useMemo(() => getGridCols(visibleColumns, colWidths), [visibleColumns, colWidths]);
-  const minW = useMemo(() => getMinRowWidth(visibleColumns, colWidths), [visibleColumns, colWidths]);
+  const gridCols = useMemo(() => getGridCols(visibleColumns, symW), [visibleColumns, symW]);
+  const minW = useMemo(() => getMinRowWidth(visibleColumns, symW), [visibleColumns, symW]);
 
   const eqTickDir = useTickFlash(group.underlying);
   const markColor = eqTickDir === "up" ? C.green : eqTickDir === "down" ? C.red : C.text;
@@ -443,10 +463,10 @@ function PositionTableRow({
               : 0;
             return (
               <div style={{ display: "grid", gridTemplateColumns: gridCols, alignItems: "center", minWidth: minW, borderBottom: `1px solid ${C.border}`, background: eqSelected ? `${C.gold}08` : "transparent" }}>
-                <div className="pf-sticky-col" style={{ width: symW, background: eqSelected ? "#1a1700" : "#0a0a0a", display: "flex", alignItems: "center", gap: 6, padding: "7px 8px 7px 26px", borderRight: "2px solid #3f3f46", minWidth: 0 }}>
+                <div className="pf-sticky-col" style={{ width: symW, background: eqSelected ? "#1a1700" : "#0a0a0a", display: "flex", alignItems: "center", gap: 6, padding: "7px 6px 7px 20px", borderRight: "2px solid #3f3f46", minWidth: 0 }}>
                   {hasOptions && <Checkbox checked={!!eqSelected} onToggle={e => { e.stopPropagation(); toggleKey(eqKey); }} />}
-                  <span style={{ fontSize: 14, color: C.text, whiteSpace: "nowrap" }}>
-                    {fmtQty(eq.longQuantity, eq.shortQuantity)} @ {fmtCurrency(eq.averagePrice)}
+                  <span style={{ fontSize: 12, color: C.text, whiteSpace: "nowrap" }}>
+                    {fmtQty(eq.longQuantity, eq.shortQuantity)} shares
                   </span>
                 </div>
                 {visibleColumns.includes("mark") && (() => {
@@ -665,7 +685,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
     });
   }, []);
 
-  const colWidths = COL_WIDTHS_DEFAULT;
+  const symW = useSymbolColumnWidth();
 
   useEffect(() => {
     if (wsAccount) { setAccount(wsAccount as unknown as Account); setLastRefresh(wsLastUpdate); setLoading(false); setError(null); }
@@ -730,8 +750,8 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
     catch {} finally { setCancellingId(null); }
   }, [accountHash, fetchOrders]);
 
-  const gridCols = useMemo(() => getGridCols(visibleColumns, colWidths), [visibleColumns, colWidths]);
-  const minRowWidth = useMemo(() => getMinRowWidth(visibleColumns, colWidths), [visibleColumns, colWidths]);
+  const gridCols = useMemo(() => getGridCols(visibleColumns, symW), [visibleColumns, symW]);
+  const minRowWidth = useMemo(() => getMinRowWidth(visibleColumns, symW), [visibleColumns, symW]);
 
   const symbolGroups = useMemo(() => {
     const positions = account?.positions ?? [];
@@ -1033,7 +1053,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
                 display: "grid", gridTemplateColumns: gridCols, minWidth: minRowWidth,
                 borderBottom: `1px solid ${C.borderHi}`, background: "#0e0e0e",
               }}>
-                <div className="pf-sticky-col" style={{ width: colWidths["symbol"] ?? SYMBOL_COL_W, zIndex: 3, background: "#0e0e0e", display: "flex", alignItems: "center", gap: 6, padding: "6px 8px 6px 12px", borderRight: "2px solid #3f3f46" }}>
+                <div className="pf-sticky-col" style={{ width: symW, zIndex: 3, background: "#0e0e0e", display: "flex", alignItems: "center", gap: 6, padding: "6px 8px 6px 12px", borderRight: "2px solid #3f3f46" }}>
                   <span style={{ fontSize: 12, fontWeight: 500, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5 }}>Symbol</span>
                   <button onClick={() => setShowColumnSettings(x => !x)} style={{ padding: 2, background: "transparent", border: "none", cursor: "pointer" }}>
                     <Settings style={{ width: 13, height: 13, color: showColumnSettings ? C.gold : C.dim }} />
@@ -1089,7 +1109,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
                   selectedKeys={selectedKeys}
                   toggleKey={toggleKey}
                   visibleColumns={visibleColumns}
-                  colWidths={colWidths}
+                  symW={symW}
                 />
               ))}
 
@@ -1098,7 +1118,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
                   display: "grid", gridTemplateColumns: gridCols, minWidth: minRowWidth,
                   borderTop: `2px solid ${C.borderHi}`, background: "#0e0e0e",
                 }}>
-                  <div className="pf-sticky-col" style={{ width: colWidths["symbol"] ?? SYMBOL_COL_W, background: "#0e0e0e", padding: "8px 8px 8px 12px", borderRight: "2px solid #3f3f46" }}>
+                  <div className="pf-sticky-col" style={{ width: symW, background: "#0e0e0e", padding: "8px 8px 8px 12px", borderRight: "2px solid #3f3f46" }}>
                     <span style={{ fontSize: 14, fontWeight: 500, color: C.textMuted, whiteSpace: "nowrap" }}>Totals</span>
                   </div>
                   {visibleColumns.includes("mark")   && <span style={{ fontSize: 14, color: C.dim, textAlign: "right", padding: "8px" }}>—</span>}
