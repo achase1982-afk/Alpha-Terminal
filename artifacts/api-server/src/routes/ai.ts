@@ -22,6 +22,7 @@ import { selectStrategies, selectStrategiesByRegime, classifyRegime, checkOverri
 import { runPreTradeChecks, type PreTradeInput, type PreTradeResult } from "../lib/preTradeRiskEngine.js";
 import { evaluateRegimeShock, type ShockDetectorOutput } from "../lib/regimeShockDetector.js";
 import { sendPushToAll } from "../lib/pushService.js";
+import { checkEventConflicts, getUpcomingEvents, type EventCheckResult } from "../lib/calendarEventChecker.js";
 
 const router: IRouter = Router();
 
@@ -1758,6 +1759,11 @@ router.post("/market-pulse/stream", async (req, res) => {
 - Preferred tickers: ${preferences.preferredTickers || "Any"}`
     : "";
 
+  const upcomingEvents = getUpcomingEvents(2);
+  const upcomingEventsBlock = upcomingEvents.length > 0
+    ? `\nUPCOMING MARKET EVENTS (next 2 trading days):\n${upcomingEvents.map(e => `- ${e.dateFormatted}${e.time ? ` ${e.time}` : ""}: ${e.title} [${e.importance}]`).join("\n")}\nFactor these events into your action plan. If a HIGH-importance event is imminent, mention it in your synthesis and adjust conviction accordingly.`
+    : "";
+
   const shockWarningBlock = shockResult.shockState === "ACTIVE"
     ? `\n⚠️ REGIME SHOCK ACTIVE — ${shockResult.activeTriggers.length} triggers fired (${shockResult.activeTriggers.map(t => t.trigger).join(", ")}). Your narrative MUST lead with a shock warning. Emphasize capital preservation. Recommend hedging only. Do NOT recommend directional entries.\n`
     : shockResult.shockState === "WARNING"
@@ -1783,7 +1789,7 @@ ${dataBlock}
 
 SESSION: ${session} | TIME: ${timeET}
 SESSION DIRECTIVE: ${sessionGuidance}
-${spyDivergenceBlock}${strategyPrefsBlock}
+${spyDivergenceBlock}${strategyPrefsBlock}${upcomingEventsBlock}
 
 Write ONLY the narrative fields. Return this exact JSON structure:
 {
@@ -1865,6 +1871,7 @@ Write ONLY the narrative fields. Return this exact JSON structure:
         activeTriggers: shockResult.activeTriggers,
         shockActivatedAt: shockResult.shockActivatedAt,
         shockActive: shockResult.shockActive,
+        upcomingEvents,
         session,
         timeET,
         instrumentCount,
@@ -1901,6 +1908,7 @@ Write ONLY the narrative fields. Return this exact JSON structure:
         activeTriggers: shockResult.activeTriggers,
         shockActivatedAt: shockResult.shockActivatedAt,
         shockActive: shockResult.shockActive,
+        upcomingEvents,
         session,
         timeET,
         instrumentCount,
@@ -2190,7 +2198,7 @@ router.post("/options-strategist", async (req, res) => {
       earningsDaysAway,
       confidence: resolvedPulse.confidence,
     };
-    const strategies = selectStrategiesByRegime(regime, calls, puts, tickerProfile, convictionParams);
+    let strategies = selectStrategiesByRegime(regime, calls, puts, tickerProfile, convictionParams);
 
     for (const s of strategies) {
       if (s.convictionSizing) {
@@ -2198,14 +2206,41 @@ router.post("/options-strategist", async (req, res) => {
       }
     }
 
+    const eventCheckResults: EventCheckResult[] = [];
+    const blockedIndices = new Set<number>();
+    for (let i = 0; i < strategies.length; i++) {
+      const s = strategies[i];
+      const maxDTE = s.dte ?? regime.dteRange.max;
+      const evCheck = checkEventConflicts(symbol, maxDTE, s.strategy_type, earningsDaysAway);
+      eventCheckResults.push(evCheck);
+      if (evCheck.hardBlocks.length > 0) {
+        blockedIndices.add(i);
+        req.log.info({ strategy: s.strategy_type, dte: maxDTE, hardBlocks: evCheck.hardBlocks }, "Strategist: strategy blocked by event guard");
+      }
+    }
+
+    const blockedStrategyNames = strategies.filter((_, i) => blockedIndices.has(i)).map(s => s.strategy_type);
+    strategies = strategies.filter((_, i) => !blockedIndices.has(i));
+
+    const eventGuardSummary = {
+      blockedStrategies: [...new Set(blockedStrategyNames)],
+      eventConflicts: eventCheckResults.flatMap(r => r.eventConflicts).filter((v, i, a) => a.findIndex(e => e.date === v.date && e.eventTitle === v.eventTitle) === i),
+      hardBlocks: eventCheckResults.flatMap(r => r.hardBlocks).filter((v, i, a) => a.indexOf(v) === i),
+      warnings: eventCheckResults.flatMap(r => r.warnings).filter((v, i, a) => a.indexOf(v) === i),
+    };
+
     if (strategies.length === 0) {
+      const blockReason = eventGuardSummary.hardBlocks.length > 0
+        ? `All strategies blocked by event guards:\n${eventGuardSummary.hardBlocks.join("\n")}`
+        : `No viable setups found for the ${regime.regime} regime in the current chain. The available premium does not support a favorable risk/reward (minimum 0.20:1). Consider: waiting for better conditions, trying a different expiration range, or switching strategy direction.`;
       return res.json({
         strategies: [],
-        narrative: `No viable setups found for the ${regime.regime} regime in the current chain. The available premium does not support a favorable risk/reward (minimum 0.20:1). Consider: waiting for better conditions, trying a different expiration range, or switching strategy direction.`,
+        narrative: blockReason,
         edge,
         regime,
         pulse: resolvedPulse,
         tickerProfile,
+        eventGuard: eventGuardSummary,
       });
     }
 
@@ -2222,12 +2257,17 @@ router.post("/options-strategist", async (req, res) => {
       strategies,
       tickerProfile,
       chainAnalytics,
+      eventGuard: eventGuardSummary,
     };
 
-    const narrativePrompt = `${STRATEGIST_SYSTEM_PROMPT}\n\nHere is the payload:\n\n${JSON.stringify(payload, null, 2)}`;
+    const eventGuardPromptBlock = eventGuardSummary.warnings.length > 0 || eventGuardSummary.blockedStrategies.length > 0
+      ? `\n\nEVENT GUARD SYSTEM:\n${eventGuardSummary.blockedStrategies.length > 0 ? `Blocked strategies (removed): ${eventGuardSummary.blockedStrategies.join(", ")}\n` : ""}${eventGuardSummary.warnings.length > 0 ? `Warnings:\n${eventGuardSummary.warnings.map(w => `- ${w}`).join("\n")}\n` : ""}You MUST mention relevant event risks in your narrative. Explain why blocked strategies were removed if any.`
+      : "";
+
+    const narrativePrompt = `${STRATEGIST_SYSTEM_PROMPT}${eventGuardPromptBlock}\n\nHere is the payload:\n\n${JSON.stringify(payload, null, 2)}`;
     const narrative = await callClaude(narrativePrompt, "claude-sonnet-4-20250514", 0.2);
 
-    res.json({ strategies, narrative, edge, underlyingPrice, regime, pulse: resolvedPulse, overrideWarning, tickerProfile, chainAnalytics });
+    res.json({ strategies, narrative, edge, underlyingPrice, regime, pulse: resolvedPulse, overrideWarning, tickerProfile, chainAnalytics, eventGuard: eventGuardSummary });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     req.log.error({ err }, "Options strategist error");
@@ -2334,7 +2374,7 @@ router.post("/options-strategist/stream", async (req, res) => {
       earningsDaysAway,
       confidence: resolvedPulse.confidence,
     };
-    const strategies = selectStrategiesByRegime(regime, calls, puts, tickerProfile, convictionParams);
+    let strategies = selectStrategiesByRegime(regime, calls, puts, tickerProfile, convictionParams);
 
     for (const s of strategies) {
       if (s.convictionSizing) {
@@ -2342,14 +2382,41 @@ router.post("/options-strategist/stream", async (req, res) => {
       }
     }
 
+    const streamCheckResults: EventCheckResult[] = [];
+    const streamBlockedIdx = new Set<number>();
+    for (let i = 0; i < strategies.length; i++) {
+      const s = strategies[i];
+      const maxDTE = s.dte ?? regime.dteRange.max;
+      const evCheck = checkEventConflicts(symbol, maxDTE, s.strategy_type, earningsDaysAway);
+      streamCheckResults.push(evCheck);
+      if (evCheck.hardBlocks.length > 0) {
+        streamBlockedIdx.add(i);
+        req.log.info({ strategy: s.strategy_type, dte: maxDTE, hardBlocks: evCheck.hardBlocks }, "Strategist stream: strategy blocked by event guard");
+      }
+    }
+
+    const streamBlockedNames = strategies.filter((_, i) => streamBlockedIdx.has(i)).map(s => s.strategy_type);
+    strategies = strategies.filter((_, i) => !streamBlockedIdx.has(i));
+
+    const streamEventGuard = {
+      blockedStrategies: [...new Set(streamBlockedNames)],
+      eventConflicts: streamCheckResults.flatMap(r => r.eventConflicts).filter((v, i, a) => a.findIndex(e => e.date === v.date && e.eventTitle === v.eventTitle) === i),
+      hardBlocks: streamCheckResults.flatMap(r => r.hardBlocks).filter((v, i, a) => a.indexOf(v) === i),
+      warnings: streamCheckResults.flatMap(r => r.warnings).filter((v, i, a) => a.indexOf(v) === i),
+    };
+
     if (strategies.length === 0) {
+      const blockReason = streamEventGuard.hardBlocks.length > 0
+        ? `All strategies blocked by event guards:\n${streamEventGuard.hardBlocks.join("\n")}`
+        : `No viable setups found for the ${regime.regime} regime in the current chain. The available premium does not support a favorable risk/reward (minimum 0.20:1). Consider: waiting for better conditions, trying a different expiration range, or switching strategy direction.`;
       return res.json({
         strategies: [],
-        narrative: `No viable setups found for the ${regime.regime} regime in the current chain. The available premium does not support a favorable risk/reward (minimum 0.20:1). Consider: waiting for better conditions, trying a different expiration range, or switching strategy direction.`,
+        narrative: blockReason,
         edge,
         regime,
         pulse: resolvedPulse,
         tickerProfile,
+        eventGuard: streamEventGuard,
       });
     }
 
@@ -2366,6 +2433,7 @@ router.post("/options-strategist/stream", async (req, res) => {
       strategies,
       tickerProfile,
       chainAnalytics,
+      eventGuard: streamEventGuard,
     };
 
     res.writeHead(200, {
@@ -2382,7 +2450,7 @@ router.post("/options-strategist/stream", async (req, res) => {
     res.write(": ok\n\n");
     res.flushHeaders();
 
-    res.write(`data: ${JSON.stringify({ strategies, edge, underlyingPrice, regime, pulse: resolvedPulse, overrideWarning, tickerProfile, chainAnalytics })}\n\n`);
+    res.write(`data: ${JSON.stringify({ strategies, edge, underlyingPrice, regime, pulse: resolvedPulse, overrideWarning, tickerProfile, chainAnalytics, eventGuard: streamEventGuard })}\n\n`);
 
     const heartbeat = setInterval(() => {
       if (!res.writableEnded) res.write(": ping\n\n");
@@ -2397,8 +2465,12 @@ router.post("/options-strategist/stream", async (req, res) => {
       return;
     }
 
+    const streamEventGuardPrompt = streamEventGuard.warnings.length > 0 || streamEventGuard.blockedStrategies.length > 0
+      ? `\n\nEVENT GUARD SYSTEM:\n${streamEventGuard.blockedStrategies.length > 0 ? `Blocked strategies (removed): ${streamEventGuard.blockedStrategies.join(", ")}\n` : ""}${streamEventGuard.warnings.length > 0 ? `Warnings:\n${streamEventGuard.warnings.map(w => `- ${w}`).join("\n")}\n` : ""}You MUST mention relevant event risks in your narrative. Explain why blocked strategies were removed if any.`
+      : "";
+
     try {
-      const narrativePrompt = `${STRATEGIST_SYSTEM_PROMPT}\n\nHere is the payload:\n\n${JSON.stringify(strategistPayload, null, 2)}`;
+      const narrativePrompt = `${STRATEGIST_SYSTEM_PROMPT}${streamEventGuardPrompt}\n\nHere is the payload:\n\n${JSON.stringify(strategistPayload, null, 2)}`;
 
       await nativeStreamClaude({
         prompt: narrativePrompt,
