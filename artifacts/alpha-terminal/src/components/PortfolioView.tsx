@@ -423,9 +423,6 @@ function PositionTableRow({
   const eqSelected = hasOptions && eq && selectedKeys.has(eqKey);
   const someSelected = eqSelected || group.options.some(o => selectedKeys.has(`${group.underlying}:${o.cusip}`));
 
-  const qtyStr = eq ? fmtQty(eq.longQuantity, eq.shortQuantity) : "";
-  const optStr = hasOptions ? `${group.options.length}c` : "";
-  const details = [qtyStr, optStr].filter(Boolean).join(" ");
   const gridCols = useMemo(() => getGridCols(visibleColumns, symW), [visibleColumns, symW]);
   const minW = useMemo(() => getMinRowWidth(visibleColumns, symW), [visibleColumns, symW]);
 
@@ -453,10 +450,7 @@ function PositionTableRow({
             ? <ChevronDown style={{ width: 12, height: 12, color: C.dim, flexShrink: 0 }} />
             : <ChevronRight style={{ width: 12, height: 12, color: C.dim, flexShrink: 0 }} />}
           <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <span onClick={e => { e.stopPropagation(); onSelect(group.underlying); }} style={{ fontSize: 14, fontWeight: 600, color: C.text, whiteSpace: "nowrap", cursor: "pointer" }}>{group.underlying}</span>
-              <span style={{ fontSize: 11, color: C.dim, whiteSpace: "nowrap" }}>{details}</span>
-            </div>
+            <span onClick={e => { e.stopPropagation(); onSelect(group.underlying); }} style={{ fontSize: 14, fontWeight: 600, color: C.text, whiteSpace: "nowrap", cursor: "pointer" }}>{group.underlying}</span>
             {(COMPANY_NAMES[group.underlying] ?? group.description) && <span style={{ fontSize: 12, color: C.gold, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{COMPANY_NAMES[group.underlying] ?? group.description}</span>}
           </div>
         </div>
