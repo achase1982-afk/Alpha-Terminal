@@ -7,6 +7,8 @@ export interface CalendarEvent {
   time?: string;
   blsType?: string;
   reportUrl?: string;
+  fomcType?: "decision" | "minutes";
+  meetingDate?: string;
 }
 
 function pad2(n: number): string {
@@ -88,8 +90,9 @@ function easter(y: number): [number, number] {
 const MONTH_NAMES = ["", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
 const FOMC_KNOWN: Record<number, string[]> = {
-  2025: ["01-29", "03-19", "05-07", "06-18", "07-30", "09-17", "10-29", "12-17"],
-  2026: ["01-28", "03-18", "05-06", "06-17", "07-29", "09-16", "10-28", "12-16"],
+  2024: ["01-31", "03-20", "05-01", "06-12", "07-31", "09-18", "11-07", "12-18"],
+  2025: ["01-29", "03-19", "05-07", "06-18", "07-30", "09-17", "10-29", "12-10"],
+  2026: ["01-28", "03-18", "04-29", "06-17", "07-29", "09-16", "10-28", "12-09"],
   2027: ["01-27", "03-17", "05-05", "06-16", "07-28", "09-22", "10-27", "12-15"],
 };
 
@@ -164,23 +167,33 @@ function generateFomc(y: number): CalendarEvent[] {
   const dates = fomcDates(y);
   dates.forEach((md, idx) => {
     const isSep = SEP_INDICES.has(idx);
-    ev.push({
-      date: `${y}-${md}`,
-      type: "fomc",
-      title: "FOMC Decision",
-      detail: isSep ? "Rate decision + dot plot + projections." : "Rate decision and statement.",
-      time: "2:00 PM ET",
-    });
-
     const mNum = parseInt(md.split("-")[0]);
     const dNum = parseInt(md.split("-")[1]);
+    const startDay = dNum - 1;
+    const statementDate = `${y}-${md}`;
+    const meetingLabel = `${MONTH_NAMES[mNum]} ${startDay}-${dNum}, ${y}`;
+
+    ev.push({
+      date: statementDate,
+      type: "fomc",
+      title: "FOMC Decision",
+      detail: isSep
+        ? `${meetingLabel} — Rate decision + Summary of Economic Projections (dot plot).`
+        : `${meetingLabel} — Rate decision and statement.`,
+      time: "2:00 PM ET",
+      fomcType: "decision",
+      meetingDate: statementDate,
+    });
+
     const [minY, minM, minD] = addDays(y, mNum, dNum, 21);
     ev.push({
       date: ds(minY, minM, minD),
       type: "fomc",
       title: "FOMC Minutes",
-      detail: `Minutes from the ${MONTH_NAMES[mNum]} FOMC meeting.`,
+      detail: `Minutes from the ${meetingLabel} FOMC meeting.`,
       time: "2:00 PM ET",
+      fomcType: "minutes",
+      meetingDate: statementDate,
     });
   });
   return ev;

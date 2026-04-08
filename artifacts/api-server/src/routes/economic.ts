@@ -9,7 +9,7 @@ const SERIES_MAP: Record<string, { id: string; label: string; unit: string }> = 
   nfp: { id: "CES0000000001", label: "Total Nonfarm Payrolls", unit: "thousands" },
   unemployment: { id: "LNS14000000", label: "Unemployment Rate", unit: "percent" },
   cpi: { id: "CUSR0000SA0", label: "CPI All Urban Consumers", unit: "index" },
-  ppi: { id: "WPUFD49104", label: "PPI Final Demand", unit: "index" },
+  ppi: { id: "WPSFD49104", label: "PPI Final Demand", unit: "index" },
   earnings: { id: "CES0500000003", label: "Avg Hourly Earnings (Private)", unit: "dollars" },
 };
 
@@ -238,7 +238,8 @@ const NFP_EXPECTED_CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
 const TE_INDICATOR_URLS: Record<string, string> = {
   nfp: "https://tradingeconomics.com/united-states/non-farm-payrolls",
   unemployment: "https://tradingeconomics.com/united-states/unemployment-rate",
-  cpi: "https://tradingeconomics.com/united-states/consumer-price-index-cpi",
+  cpi: "https://tradingeconomics.com/united-states/inflation-rate-mom",
+  ppi: "https://tradingeconomics.com/united-states/producer-prices-change-mom",
 };
 
 async function fetchTradingEconomicsForecast(indicator: string = "nfp"): Promise<string | null> {
@@ -259,19 +260,31 @@ async function fetchTradingEconomicsForecast(indicator: string = "nfp"): Promise
     
     const html = await res.text();
     
-    const forecastMatch = html.match(/Forecast[^<]*?(-?\d+[\d,.]*)\s*K/i);
-    if (forecastMatch) {
-      const forecastStr = forecastMatch[1].replace(/,/g, "");
-      const forecastNum = parseFloat(forecastStr);
-      if (Number.isFinite(forecastNum)) {
-        const forecastJobs = Math.round(forecastNum * 1000);
-        const formatted = `${forecastJobs >= 0 ? "+" : ""}${forecastJobs.toLocaleString()}`;
-        logger.info({ forecast: formatted, raw: forecastNum }, "Trading Economics NFP forecast extracted");
-        return formatted;
+    if (indicator === "nfp") {
+      const forecastMatch = html.match(/Forecast[^<]*?(-?\d+[\d,.]*)\s*K/i);
+      if (forecastMatch) {
+        const forecastStr = forecastMatch[1].replace(/,/g, "");
+        const forecastNum = parseFloat(forecastStr);
+        if (Number.isFinite(forecastNum)) {
+          const forecastJobs = Math.round(forecastNum * 1000);
+          const formatted = `${forecastJobs >= 0 ? "+" : ""}${forecastJobs.toLocaleString()}`;
+          logger.info({ forecast: formatted, raw: forecastNum }, "Trading Economics NFP forecast extracted");
+          return formatted;
+        }
+      }
+    } else {
+      const pctMatch = html.match(/Forecast[^<]*?(-?\d+\.?\d*)\s*%/i);
+      if (pctMatch) {
+        const pct = parseFloat(pctMatch[1]);
+        if (Number.isFinite(pct)) {
+          const formatted = `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%`;
+          logger.info({ forecast: formatted, indicator }, "Trading Economics forecast extracted");
+          return formatted;
+        }
       }
     }
     
-    logger.warn("Could not extract forecast from Trading Economics HTML");
+    logger.warn({ indicator }, "Could not extract forecast from Trading Economics HTML");
     return null;
   } catch (err: any) {
     logger.warn({ err }, "Failed to fetch Trading Economics forecast");
@@ -367,6 +380,71 @@ function generateNfpNarrative(data: Record<string, any>): string {
   return parts.join("; ") + ".";
 }
 
+function computeNfpAtOffset(
+  allData: Record<string, BlsDataPoint[]>,
+  offset: number
+): Record<string, any> {
+  const monthResults: Record<string, any> = {};
+  for (const [key, series] of Object.entries(NFP_SERIES)) {
+    try {
+      const data = allData[series.id] ?? [];
+      const monthly = data.filter((d) => d.period.startsWith("M"));
+      if (monthly.length < offset + 2) {
+        monthResults[key] = { label: series.label, unit: series.unit, actual: "N/A", previous: "N/A", change: "N/A", changeRaw: 0, month: "", year: "", error: "insufficient data" };
+        continue;
+      }
+      const cur = parseFloat(monthly[offset].value);
+      const prev = parseFloat(monthly[offset + 1].value);
+      if (!Number.isFinite(cur) || !Number.isFinite(prev)) {
+        monthResults[key] = { label: series.label, unit: series.unit, actual: "N/A", previous: "N/A", change: "N/A", changeRaw: 0, month: monthly[offset].periodName, year: monthly[offset].year, error: "invalid data" };
+        continue;
+      }
+      const { change, changeRaw } = computeNfpChange(cur, prev, series.unit);
+      monthResults[key] = {
+        label: series.label,
+        unit: series.unit,
+        actual: formatNfpValue(cur, series.unit),
+        previous: formatNfpValue(prev, series.unit),
+        change,
+        changeRaw,
+        month: monthly[offset].periodName,
+        year: monthly[offset].year,
+        threeMonthAvg: (offset === 0) ? computeNMonthAvg(monthly, 3, series.unit) : undefined,
+      };
+    } catch (err: any) {
+      monthResults[key] = { label: series.label, unit: series.unit, actual: "N/A", previous: "N/A", change: "N/A", changeRaw: 0, month: "", year: "", error: err.message };
+    }
+  }
+
+  const earningsData = allData[NFP_SERIES.earningsMom.id] ?? [];
+  const earningsMonthly = earningsData.filter(d => d.period.startsWith("M"));
+  if (earningsMonthly.length >= offset + 13) {
+    const cur = parseFloat(earningsMonthly[offset].value);
+    const yearAgo = parseFloat(earningsMonthly[offset + 12].value);
+    const prevCur = earningsMonthly.length >= offset + 14 ? parseFloat(earningsMonthly[offset + 1].value) : NaN;
+    const prevYearAgo = earningsMonthly.length >= offset + 14 ? parseFloat(earningsMonthly[offset + 13].value) : NaN;
+    if (Number.isFinite(cur) && Number.isFinite(yearAgo) && yearAgo > 0) {
+      const yoyPct = ((cur - yearAgo) / yearAgo) * 100;
+      let prevYoyStr = "N/A";
+      if (Number.isFinite(prevCur) && Number.isFinite(prevYearAgo) && prevYearAgo > 0) {
+        prevYoyStr = `${(((prevCur - prevYearAgo) / prevYearAgo) * 100).toFixed(1)}%`;
+      }
+      monthResults.earningsYoy = {
+        label: "Avg Hourly Earnings YoY",
+        unit: "percent",
+        actual: `${yoyPct.toFixed(1)}%`,
+        previous: prevYoyStr,
+        change: `${yoyPct >= 0 ? "+" : ""}${yoyPct.toFixed(1)}%`,
+        changeRaw: yoyPct,
+        month: earningsMonthly[offset].periodName,
+        year: earningsMonthly[offset].year,
+      };
+    }
+  }
+
+  return monthResults;
+}
+
 router.get("/nfp-full", async (req, res) => {
   try {
     if (nfpCache.data && Date.now() - nfpCache.ts < NFP_CACHE_TTL) {
@@ -376,64 +454,7 @@ router.get("/nfp-full", async (req, res) => {
     const allSeriesIds = Object.values(NFP_SERIES).map(s => s.id);
     const allData = await fetchBlsSeriesBatch(allSeriesIds);
 
-    const results: Record<string, any> = {};
-
-    for (const [key, series] of Object.entries(NFP_SERIES)) {
-      try {
-        const data = allData[series.id] ?? [];
-        const monthly = data.filter((d) => d.period.startsWith("M"));
-        if (monthly.length < 2) {
-          results[key] = { label: series.label, unit: series.unit, actual: "N/A", previous: "N/A", change: "N/A", changeRaw: 0, month: "", year: "", error: "insufficient data" };
-          continue;
-        }
-        const cur = parseFloat(monthly[0].value);
-        const prev = parseFloat(monthly[1].value);
-        if (!Number.isFinite(cur) || !Number.isFinite(prev)) {
-          results[key] = { label: series.label, unit: series.unit, actual: "N/A", previous: "N/A", change: "N/A", changeRaw: 0, month: monthly[0].periodName, year: monthly[0].year, error: "invalid data" };
-          continue;
-        }
-        const { change, changeRaw } = computeNfpChange(cur, prev, series.unit);
-        results[key] = {
-          label: series.label,
-          unit: series.unit,
-          actual: formatNfpValue(cur, series.unit),
-          previous: formatNfpValue(prev, series.unit),
-          change,
-          changeRaw,
-          month: monthly[0].periodName,
-          year: monthly[0].year,
-          threeMonthAvg: computeNMonthAvg(monthly, 3, series.unit),
-        };
-      } catch (err: any) {
-        results[key] = { label: series.label, unit: series.unit, actual: "N/A", previous: "N/A", change: "N/A", changeRaw: 0, month: "", year: "", error: err.message };
-      }
-    }
-
-    const earningsData = allData[NFP_SERIES.earningsMom.id] ?? [];
-    const earningsMonthly = earningsData.filter(d => d.period.startsWith("M"));
-    if (earningsMonthly.length >= 13) {
-      const cur = parseFloat(earningsMonthly[0].value);
-      const yearAgo = parseFloat(earningsMonthly[12].value);
-      const prevCur = earningsMonthly.length >= 14 ? parseFloat(earningsMonthly[1].value) : NaN;
-      const prevYearAgo = earningsMonthly.length >= 14 ? parseFloat(earningsMonthly[13].value) : NaN;
-      if (Number.isFinite(cur) && Number.isFinite(yearAgo) && yearAgo > 0) {
-        const yoyPct = ((cur - yearAgo) / yearAgo) * 100;
-        let prevYoyStr = "N/A";
-        if (Number.isFinite(prevCur) && Number.isFinite(prevYearAgo) && prevYearAgo > 0) {
-          prevYoyStr = `${(((prevCur - prevYearAgo) / prevYearAgo) * 100).toFixed(1)}%`;
-        }
-        results.earningsYoy = {
-          label: "Avg Hourly Earnings YoY",
-          unit: "percent",
-          actual: `${yoyPct.toFixed(1)}%`,
-          previous: prevYoyStr,
-          change: `${yoyPct >= 0 ? "+" : ""}${yoyPct.toFixed(1)}%`,
-          changeRaw: yoyPct,
-          month: earningsMonthly[0].periodName,
-          year: earningsMonthly[0].year,
-        };
-      }
-    }
+    const results = computeNfpAtOffset(allData, 0);
 
     const nfpRawData = allData[NFP_SERIES.nfp.id] ?? [];
     const nfpMonthly = nfpRawData.filter(d => d.period.startsWith("M"));
@@ -453,7 +474,6 @@ router.get("/nfp-full", async (req, res) => {
       }
     }
 
-    // Fetch Trading Economics expected value (cached for 6 hours)
     let expected: string | null = null;
     if (!nfpExpectedCache.expected || Date.now() - nfpExpectedCache.ts > NFP_EXPECTED_CACHE_TTL) {
       expected = await fetchTradingEconomicsForecast("nfp");
@@ -465,7 +485,6 @@ router.get("/nfp-full", async (req, res) => {
       expected = nfpExpectedCache.expected;
     }
 
-    // Add expected to nfp result
     if (expected && results.nfp && !results.nfp.error) {
       results.nfp.expected = expected;
     }
@@ -481,12 +500,498 @@ router.get("/nfp-full", async (req, res) => {
       expectedNfp: expected,
     };
 
+    const byMonth: Record<string, Record<string, any>> = {};
+    const maxMonths = Math.min(nfpMonthly.length - 1, 18);
+    for (let offset = 0; offset < maxMonths; offset++) {
+      const dp = nfpMonthly[offset];
+      const key = periodToKey(dp);
+      const monthData = computeNfpAtOffset(allData, offset);
+      monthData._meta = {
+        month: dp.periodName,
+        year: dp.year,
+        narrative: generateNfpNarrative(monthData),
+      };
+      byMonth[key] = monthData;
+    }
+    results.byMonth = byMonth;
+
     nfpCache.data = results;
     nfpCache.ts = Date.now();
 
     return res.json(results);
   } catch (err: any) {
     logger.error({ err }, "NFP full report fetch failed");
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+const PPI_FULL_SERIES: Record<string, { id: string; label: string }> = {
+  headline: { id: "WPSFD49104", label: "PPI Final Demand" },
+  core: { id: "WPSFD49116", label: "PPI ex Food/Energy/Trade" },
+};
+
+const CPI_FULL_SERIES: Record<string, { id: string; label: string }> = {
+  headline: { id: "CUSR0000SA0", label: "CPI All Items" },
+  core: { id: "CUSR0000SA0L1E", label: "Core CPI (ex Food & Energy)" },
+  food: { id: "CUSR0000SAF1", label: "Food" },
+  energy: { id: "CUSR0000SA0E", label: "Energy" },
+  shelter: { id: "CUSR0000SAH1", label: "Shelter" },
+  medical: { id: "CUSR0000SAM", label: "Medical Care" },
+  transport: { id: "CUSR0000SAT", label: "Transportation" },
+  apparel: { id: "CUSR0000SAA", label: "Apparel" },
+  usedCars: { id: "CUSR0000SETA02", label: "Used Cars & Trucks" },
+};
+
+const ppiFullCache: { data: any | null; ts: number } = { data: null, ts: 0 };
+const cpiFullCache: { data: any | null; ts: number } = { data: null, ts: 0 };
+const INFLATION_CACHE_TTL = 30 * 60 * 1000;
+
+function computeInflationResult(
+  label: string,
+  monthly: BlsDataPoint[],
+  offset: number = 0
+): Record<string, any> {
+  if (monthly.length < offset + 3) return { label, error: "insufficient data" };
+
+  const vals = monthly.map((d) => parseFloat(d.value));
+  if (vals.slice(offset, offset + 3).some((v) => !Number.isFinite(v)))
+    return { label, error: "invalid data" };
+
+  const cur = vals[offset];
+  const prev = vals[offset + 1];
+  const prevPrev = vals[offset + 2];
+
+  const mom = ((cur - prev) / prev) * 100;
+  const prevMom = ((prev - prevPrev) / prevPrev) * 100;
+  const diff = mom - prevMom;
+
+  const result: Record<string, any> = {
+    label,
+    unit: "percent",
+    actual: `${mom >= 0 ? "+" : ""}${mom.toFixed(1)}%`,
+    previous: `${prevMom >= 0 ? "+" : ""}${prevMom.toFixed(1)}%`,
+    change: `${diff >= 0 ? "+" : ""}${diff.toFixed(1)} pts`,
+    changeRaw: diff,
+    momRaw: mom,
+    prevMomRaw: prevMom,
+    month: monthly[offset].periodName,
+    year: monthly[offset].year,
+    level: cur.toFixed(1),
+    prevLevel: prev.toFixed(1),
+  };
+
+  if (monthly.length >= offset + 13) {
+    const yearAgo = vals[offset + 12];
+    if (Number.isFinite(yearAgo) && yearAgo > 0) {
+      const yoy = ((cur - yearAgo) / yearAgo) * 100;
+      result.yoy = `${yoy >= 0 ? "+" : ""}${yoy.toFixed(1)}%`;
+      result.yoyRaw = yoy;
+    }
+  }
+  if (monthly.length >= offset + 14) {
+    const prevYearAgo = vals[offset + 13];
+    if (Number.isFinite(prev) && Number.isFinite(prevYearAgo) && prevYearAgo > 0) {
+      const prevYoy = ((prev - prevYearAgo) / prevYearAgo) * 100;
+      result.prevYoy = `${prevYoy >= 0 ? "+" : ""}${prevYoy.toFixed(1)}%`;
+      result.prevYoyRaw = prevYoy;
+    }
+  }
+
+  return result;
+}
+
+function periodToKey(dp: BlsDataPoint): string {
+  const m = parseInt(dp.period.replace("M", ""), 10);
+  return `${dp.year}-${String(m).padStart(2, "0")}`;
+}
+
+function buildInflationByMonth(
+  seriesEntries: [string, { id: string; label: string }][],
+  allData: Record<string, BlsDataPoint[]>,
+  headlineKey: string,
+  reportUrl: string,
+  reportType: string
+): Record<string, any> {
+  const results: Record<string, any> = {};
+
+  for (const [key, series] of seriesEntries) {
+    const data = allData[series.id] ?? [];
+    const monthly = data.filter((d) => d.period.startsWith("M"));
+    results[key] = computeInflationResult(series.label, monthly, 0);
+  }
+
+  const headlineRaw = allData[headlineKey] ?? [];
+  const headlineMonthly = headlineRaw.filter((d) => d.period.startsWith("M"));
+  const recentMom: Array<{ month: string; value: string; raw: number }> = [];
+  for (let i = 0; i + 1 < Math.min(7, headlineMonthly.length); i++) {
+    const c = parseFloat(headlineMonthly[i].value);
+    const p = parseFloat(headlineMonthly[i + 1].value);
+    if (Number.isFinite(c) && Number.isFinite(p) && p > 0) {
+      const m = ((c - p) / p) * 100;
+      recentMom.push({
+        month: headlineMonthly[i].periodName,
+        value: `${m >= 0 ? "+" : ""}${m.toFixed(1)}%`,
+        raw: m,
+      });
+    }
+  }
+
+  results._meta = {
+    month: results.headline?.month || "",
+    year: results.headline?.year || "",
+    recentMom,
+    reportUrl,
+  };
+
+  const byMonth: Record<string, Record<string, any>> = {};
+  const sampleMonthly = headlineMonthly;
+  const maxMonths = Math.min(sampleMonthly.length - 2, 18);
+  for (let offset = 0; offset < maxMonths; offset++) {
+    const dp = sampleMonthly[offset];
+    const key = periodToKey(dp);
+    const monthData: Record<string, any> = {};
+    for (const [seriesKey, series] of seriesEntries) {
+      const data = allData[series.id] ?? [];
+      const monthly = data.filter((d) => d.period.startsWith("M"));
+      monthData[seriesKey] = computeInflationResult(series.label, monthly, offset);
+    }
+    monthData._meta = {
+      month: dp.periodName,
+      year: dp.year,
+      reportUrl,
+    };
+    byMonth[key] = monthData;
+  }
+  results.byMonth = byMonth;
+
+  return results;
+}
+
+router.get("/ppi-full", async (req, res) => {
+  try {
+    if (ppiFullCache.data && Date.now() - ppiFullCache.ts < INFLATION_CACHE_TTL) {
+      return res.json(ppiFullCache.data);
+    }
+
+    const allIds = Object.values(PPI_FULL_SERIES).map((s) => s.id);
+    const allData = await fetchBlsSeriesBatch(allIds);
+    const seriesEntries = Object.entries(PPI_FULL_SERIES) as [string, { id: string; label: string }][];
+    const results = buildInflationByMonth(seriesEntries, allData, PPI_FULL_SERIES.headline.id, "https://www.bls.gov/news.release/ppi.nr0.htm", "ppi");
+
+    let expected: string | null = null;
+    try {
+      expected = await fetchTradingEconomicsForecast("ppi");
+    } catch {}
+    if (expected && results.headline && !results.headline.error) {
+      const expNum = parseFloat(expected.replace(/[+%]/g, ""));
+      if (Number.isFinite(expNum) && Math.abs(expNum - results.headline.momRaw) < 2) {
+        results.headline.expected = expected;
+      } else {
+        logger.info({ expected, momRaw: results.headline.momRaw }, "PPI TE forecast skipped — likely YoY, not MoM");
+      }
+    }
+
+    ppiFullCache.data = results;
+    ppiFullCache.ts = Date.now();
+    return res.json(results);
+  } catch (err: any) {
+    logger.error({ err }, "PPI full report fetch failed");
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/cpi-full", async (req, res) => {
+  try {
+    if (cpiFullCache.data && Date.now() - cpiFullCache.ts < INFLATION_CACHE_TTL) {
+      return res.json(cpiFullCache.data);
+    }
+
+    const allIds = Object.values(CPI_FULL_SERIES).map((s) => s.id);
+    const allData = await fetchBlsSeriesBatch(allIds);
+    const seriesEntries = Object.entries(CPI_FULL_SERIES) as [string, { id: string; label: string }][];
+    const results = buildInflationByMonth(seriesEntries, allData, CPI_FULL_SERIES.headline.id, "https://www.bls.gov/news.release/cpi.nr0.htm", "cpi");
+
+    let expected: string | null = null;
+    try {
+      expected = await fetchTradingEconomicsForecast("cpi");
+    } catch {}
+    if (expected && results.headline && !results.headline.error) {
+      const expNum = parseFloat(expected.replace(/[+%]/g, ""));
+      if (Number.isFinite(expNum) && Math.abs(expNum - results.headline.momRaw) < 2) {
+        results.headline.expected = expected;
+      } else {
+        logger.info({ expected, momRaw: results.headline.momRaw }, "CPI TE forecast skipped — likely YoY, not MoM");
+      }
+    }
+
+    cpiFullCache.data = results;
+    cpiFullCache.ts = Date.now();
+    return res.json(results);
+  } catch (err: any) {
+    logger.error({ err }, "CPI full report fetch failed");
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+const FOMC_SCHEDULE: Array<{
+  year: number;
+  month: number;
+  startDay: number;
+  endDay: number;
+  hasSEP: boolean;
+}> = [
+  { year: 2024, month: 1, startDay: 30, endDay: 31, hasSEP: false },
+  { year: 2024, month: 3, startDay: 19, endDay: 20, hasSEP: true },
+  { year: 2024, month: 4, startDay: 30, endDay: 1, hasSEP: false },
+  { year: 2024, month: 6, startDay: 11, endDay: 12, hasSEP: true },
+  { year: 2024, month: 7, startDay: 30, endDay: 31, hasSEP: false },
+  { year: 2024, month: 9, startDay: 17, endDay: 18, hasSEP: true },
+  { year: 2024, month: 11, startDay: 6, endDay: 7, hasSEP: false },
+  { year: 2024, month: 12, startDay: 17, endDay: 18, hasSEP: true },
+  { year: 2025, month: 1, startDay: 28, endDay: 29, hasSEP: false },
+  { year: 2025, month: 3, startDay: 18, endDay: 19, hasSEP: true },
+  { year: 2025, month: 5, startDay: 6, endDay: 7, hasSEP: false },
+  { year: 2025, month: 6, startDay: 17, endDay: 18, hasSEP: true },
+  { year: 2025, month: 7, startDay: 29, endDay: 30, hasSEP: false },
+  { year: 2025, month: 9, startDay: 16, endDay: 17, hasSEP: true },
+  { year: 2025, month: 10, startDay: 28, endDay: 29, hasSEP: false },
+  { year: 2025, month: 12, startDay: 9, endDay: 10, hasSEP: true },
+  { year: 2026, month: 1, startDay: 27, endDay: 28, hasSEP: false },
+  { year: 2026, month: 3, startDay: 17, endDay: 18, hasSEP: true },
+  { year: 2026, month: 4, startDay: 28, endDay: 29, hasSEP: false },
+  { year: 2026, month: 6, startDay: 16, endDay: 17, hasSEP: true },
+  { year: 2026, month: 7, startDay: 28, endDay: 29, hasSEP: false },
+  { year: 2026, month: 9, startDay: 15, endDay: 16, hasSEP: true },
+  { year: 2026, month: 10, startDay: 27, endDay: 28, hasSEP: false },
+  { year: 2026, month: 12, startDay: 8, endDay: 9, hasSEP: true },
+  { year: 2027, month: 1, startDay: 26, endDay: 27, hasSEP: false },
+  { year: 2027, month: 3, startDay: 16, endDay: 17, hasSEP: true },
+  { year: 2027, month: 5, startDay: 4, endDay: 5, hasSEP: false },
+  { year: 2027, month: 6, startDay: 15, endDay: 16, hasSEP: true },
+  { year: 2027, month: 7, startDay: 27, endDay: 28, hasSEP: false },
+  { year: 2027, month: 9, startDay: 21, endDay: 22, hasSEP: true },
+  { year: 2027, month: 10, startDay: 26, endDay: 27, hasSEP: false },
+  { year: 2027, month: 12, startDay: 14, endDay: 15, hasSEP: true },
+];
+
+const MONTH_NAMES_FOMC = ["", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+function parseFedFraction(s: string): number {
+  s = s.replace(/\u2011/g, "-").replace(/\u2010/g, "-").trim();
+  const m = s.match(/^(\d+)\s*[-–]\s*(\d+)\s*\/\s*(\d+)$/);
+  if (m) return parseInt(m[1]) + parseInt(m[2]) / parseInt(m[3]);
+  const m2 = s.match(/^(\d+)\s*\/\s*(\d+)$/);
+  if (m2) return parseInt(m2[1]) / parseInt(m2[2]);
+  const n = parseFloat(s);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+function fmtStatementDate(y: number, m: number, d: number): string {
+  return `${y}${m.toString().padStart(2, "0")}${d.toString().padStart(2, "0")}`;
+}
+
+interface FomcParsedStatement {
+  rateLower: number;
+  rateUpper: number;
+  rateDisplay: string;
+  action: string;
+  vote: string;
+  dissenters: string;
+  keyExcerpt: string;
+}
+
+async function fetchAndParseStatement(dateStr: string): Promise<FomcParsedStatement | null> {
+  try {
+    const url = `https://www.federalreserve.gov/newsevents/pressreleases/monetary${dateStr}a.htm`;
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+        "Accept": "text/html",
+      },
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+
+    const rateMatch = html.match(/target\s+range\s+for\s+the\s+federal\s+funds\s+rate\s+(?:at\s+)?([\d\u2011\u2010\-/]+)\s+to\s+([\d\u2011\u2010\-/]+)\s+percent/i);
+    if (!rateMatch) return null;
+
+    const lower = parseFedFraction(rateMatch[1]);
+    const upper = parseFedFraction(rateMatch[2]);
+    if (isNaN(lower) || isNaN(upper)) return null;
+
+    let action = "maintained";
+    if (html.match(/decided\s+to\s+lower/i)) action = "lowered";
+    else if (html.match(/decided\s+to\s+raise/i)) action = "raised";
+
+    let vote = "";
+    let dissenters = "";
+    const voteSection = html.match(/Voting\s+for\s+the\s+monetary\s+policy\s+action\s+were\s+([\s\S]*?)(?=<\/p>|Voting\s+against)/i);
+    if (voteSection) {
+      const text = voteSection[1].replace(/<[^>]*>/g, "");
+      const voterCount = (text.match(/;/g) || []).length + 1;
+
+      const againstSection = html.match(/Voting\s+against\s+(?:the\s+)?(?:this\s+)?action\s+(?:was|were)\s+([\s\S]*?)(?:<\/p>)/i);
+      if (againstSection) {
+        const againstText = againstSection[1].replace(/<[^>]*>/g, "").replace(/\.\s*$/, "");
+        const againstNames = againstText.split(/;/).map(s => s.replace(/^and\s+/i, "").trim()).filter(Boolean);
+        vote = `${voterCount}-${againstNames.length}`;
+        dissenters = againstNames.join(", ");
+      } else {
+        vote = `${voterCount}-0`;
+      }
+    }
+
+    let keyExcerpt = "";
+    const excerptMatch = html.match(/(?:economic\s+activity|economy)\s+(?:has\s+)?(?:continued\s+to\s+|appeared\s+to\s+)?(?:expand|grow|contract|slow|moderate)[^.]*\./i);
+    if (excerptMatch) keyExcerpt = excerptMatch[0].trim();
+
+    return {
+      rateLower: lower,
+      rateUpper: upper,
+      rateDisplay: `${lower.toFixed(2)}-${upper.toFixed(2)}%`,
+      action,
+      vote,
+      dissenters,
+      keyExcerpt,
+    };
+  } catch (err: any) {
+    logger.warn({ err, dateStr }, "Failed to fetch/parse Fed statement");
+    return null;
+  }
+}
+
+interface FomcMeetingResult {
+  statementDate: string;
+  meetingRange: string;
+  year: number;
+  month: number;
+  hasSEP: boolean;
+  statementUrl: string;
+  minutesUrl: string;
+  sepUrl: string | null;
+  pressConferenceUrl: string;
+  status: "upcoming" | "completed";
+  rate: {
+    lower: number;
+    upper: number;
+    display: string;
+    action: string;
+    changeBps: number;
+    changeDisplay: string;
+    vote: string;
+    dissenters: string;
+  } | null;
+  keyExcerpt: string;
+}
+
+const fomcCache: { data: FomcMeetingResult[] | null; ts: number } = { data: null, ts: 0 };
+const FOMC_CACHE_TTL = 60 * 60 * 1000;
+
+router.get("/fomc-data", async (req, res) => {
+  try {
+    if (fomcCache.data && Date.now() - fomcCache.ts < FOMC_CACHE_TTL) {
+      return res.json({ meetings: fomcCache.data });
+    }
+
+    const now = new Date();
+    const results: FomcMeetingResult[] = [];
+
+    const pastMeetings: Array<typeof FOMC_SCHEDULE[0] & { dateStr: string; statementDate: string }> = [];
+    const allMeetings: Array<typeof FOMC_SCHEDULE[0] & { dateStr: string; statementDate: string }> = [];
+
+    for (const mtg of FOMC_SCHEDULE) {
+      const endMonth = mtg.endDay < mtg.startDay ? (mtg.month % 12) + 1 : mtg.month;
+      const endYear = mtg.endDay < mtg.startDay && mtg.month === 12 ? mtg.year + 1 : mtg.year;
+      const dateStr = fmtStatementDate(endYear, endMonth, mtg.endDay);
+      const sd = `${endYear}-${endMonth.toString().padStart(2, "0")}-${mtg.endDay.toString().padStart(2, "0")}`;
+      const entry = { ...mtg, dateStr, statementDate: sd };
+      allMeetings.push(entry);
+      const meetingDate = new Date(endYear, endMonth - 1, mtg.endDay);
+      if (meetingDate <= now) pastMeetings.push(entry);
+    }
+
+    const recentPast = pastMeetings.slice(-12);
+    const statementResults = new Map<string, FomcParsedStatement | null>();
+
+    const fetchPromises = recentPast.map(async (mtg) => {
+      const parsed = await fetchAndParseStatement(mtg.dateStr);
+      statementResults.set(mtg.dateStr, parsed);
+    });
+    await Promise.all(fetchPromises);
+
+    for (const mtg of allMeetings) {
+      const endMonth = mtg.endDay < mtg.startDay ? (mtg.month % 12) + 1 : mtg.month;
+      const endYear = mtg.endDay < mtg.startDay && mtg.month === 12 ? mtg.year + 1 : mtg.year;
+      const meetingDate = new Date(endYear, endMonth - 1, mtg.endDay);
+      const isPast = meetingDate <= now;
+
+      const monthName = MONTH_NAMES_FOMC[mtg.month];
+      const meetingRange = mtg.endDay < mtg.startDay
+        ? `${monthName} ${mtg.startDay}-${MONTH_NAMES_FOMC[(mtg.month % 12) + 1]} ${mtg.endDay}, ${endYear}`
+        : `${monthName} ${mtg.startDay}-${mtg.endDay}, ${mtg.year}`;
+
+      const statementUrl = `https://www.federalreserve.gov/newsevents/pressreleases/monetary${mtg.dateStr}a.htm`;
+      const minutesUrl = `https://www.federalreserve.gov/monetarypolicy/fomcminutes${mtg.dateStr}.htm`;
+      const sepUrl = mtg.hasSEP ? `https://www.federalreserve.gov/monetarypolicy/fomcprojtabl${mtg.dateStr}.htm` : null;
+      const pressConferenceUrl = `https://www.federalreserve.gov/monetarypolicy/fomcpresconf${mtg.dateStr}.htm`;
+
+      let rate: FomcMeetingResult["rate"] = null;
+      let keyExcerpt = "";
+
+      if (isPast && statementResults.has(mtg.dateStr)) {
+        const parsed = statementResults.get(mtg.dateStr);
+        if (parsed) {
+          rate = {
+            lower: parsed.rateLower,
+            upper: parsed.rateUpper,
+            display: parsed.rateDisplay,
+            action: parsed.action,
+            changeBps: 0,
+            changeDisplay: "",
+            vote: parsed.vote,
+            dissenters: parsed.dissenters,
+          };
+          keyExcerpt = parsed.keyExcerpt;
+        }
+      }
+
+      results.push({
+        statementDate: mtg.statementDate,
+        meetingRange,
+        year: mtg.year,
+        month: mtg.month,
+        hasSEP: mtg.hasSEP,
+        statementUrl,
+        minutesUrl,
+        sepUrl,
+        pressConferenceUrl,
+        status: isPast ? "completed" : "upcoming",
+        rate,
+        keyExcerpt,
+      });
+    }
+
+    for (let i = 1; i < results.length; i++) {
+      if (!results[i].rate) continue;
+      const prev = results.slice(0, i).reverse().find(r => r.rate);
+      if (prev && prev.rate) {
+        const changeBps = Math.round((results[i].rate.upper - prev.rate.upper) * 100);
+        if (changeBps === 0) {
+          results[i].rate.changeDisplay = "UNCHANGED";
+        } else if (changeBps < 0) {
+          results[i].rate.changeDisplay = `CUT ${Math.abs(changeBps)}bps`;
+        } else {
+          results[i].rate.changeDisplay = `HIKE ${changeBps}bps`;
+        }
+        results[i].rate.changeBps = changeBps;
+      }
+    }
+
+    fomcCache.data = results;
+    fomcCache.ts = Date.now();
+    return res.json({ meetings: results });
+  } catch (err: any) {
+    logger.error({ err }, "FOMC data fetch failed");
     return res.status(500).json({ error: err.message });
   }
 });
