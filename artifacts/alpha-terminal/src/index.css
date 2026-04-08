@@ -155,6 +155,8 @@
   .pf-hscroll {
     position: relative;
     -webkit-overflow-scrolling: touch;
+    overscroll-behavior: none;
+    touch-action: pan-x pan-y;
   }
 
   .pf-sticky-col {
