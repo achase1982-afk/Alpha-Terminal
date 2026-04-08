@@ -403,7 +403,7 @@ export default function TerminalPage() {
         )}
 
         {!isWide ? (
-          <main ref={scrollRef} onScroll={handleScroll} className={`flex-1 min-h-0 app-content ${activeBottom === "ai" && aiSubTab === "pulse" && !pulseData && !pulseLoading && !pulseStreaming ? "overflow-hidden" : "overflow-y-auto"}`}>
+          <main ref={scrollRef} onScroll={handleScroll} className={`flex-1 min-h-0 app-content overflow-x-hidden ${activeBottom === "ai" && aiSubTab === "pulse" && !pulseData && !pulseLoading && !pulseStreaming ? "overflow-hidden" : "overflow-y-auto"}`}>
 
             {activeBottom === "markets" && (
               <>

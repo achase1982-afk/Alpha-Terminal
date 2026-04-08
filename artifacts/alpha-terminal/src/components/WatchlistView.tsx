@@ -450,11 +450,11 @@ function ColumnHeader({
   return (
     <button
       onClick={() => onSort(indicator.sortKey)}
-      className="font-mono text-[11px] tracking-wider text-right flex items-center justify-end gap-0.5 transition-colors"
-      style={{ color: active ? "#FFB800" : "#52525b", padding: "4px 6px" }}
+      className="font-mono tracking-wider text-right flex items-center justify-end gap-0.5 transition-colors"
+      style={{ color: active ? "#FFB800" : "#71717a", padding: "4px 6px", fontSize: 12 }}
     >
       <span>{indicator.label}</span>
-      <span className="text-[8px]">{active ? (sortDir === "asc" ? "▲" : "▼") : "↕"}</span>
+      {active && <span style={{ fontSize: 8 }}>{sortDir === "asc" ? "▲" : "▼"}</span>}
     </button>
   );
 }
@@ -463,7 +463,7 @@ export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sy
   const { removeFromWatchlist, setSymbol, accessToken } = useTerminalStore();
   const streamPrices = useTerminalStore((s) => s.streamPrices);
   const watchlist = useActiveWatchlist();
-  const [sortKey, setSortKey] = useState<SortKey>("symbol");
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [sparkData, setSparkData] = useState<Record<string, SparkData>>(() => ({ ..._sparkCache }));
   const [switcherOpen, setSwitcherOpen] = useState(false);
@@ -494,12 +494,17 @@ export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sy
 
   const handleSort = useCallback((key: SortKey) => {
     if (sortKey === key) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+      if (sortDir === "asc") {
+        setSortDir("desc");
+      } else {
+        setSortKey(null);
+        setSortDir("asc");
+      }
     } else {
       setSortKey(key);
-      setSortDir(key === "symbol" ? "asc" : "desc");
+      setSortDir("asc");
     }
-  }, [sortKey]);
+  }, [sortKey, sortDir]);
 
   useEffect(() => {
     if (!accessToken || watchlist.length === 0) return;
@@ -567,6 +572,7 @@ export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sy
   }, [watchlist, accessToken]);
 
   const sorted = useMemo(() => {
+    if (!sortKey) return watchlist;
     const items = [...watchlist];
     items.sort((a, b) => {
       const qa = streamPrices[a];
@@ -689,11 +695,11 @@ export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sy
                 <div style={{ position: "sticky", left: 0, zIndex: 3, background: "#000000", padding: "4px 12px", borderRight: "1px solid rgba(255,255,255,0.08)" }}>
                   <button
                     onClick={() => handleSort("symbol")}
-                    className="font-mono text-[11px] tracking-wider flex items-center gap-0.5 transition-colors"
-                    style={{ color: sortKey === "symbol" ? "#FFB800" : "#52525b" }}
+                    className="font-mono tracking-wider flex items-center gap-0.5 transition-colors"
+                    style={{ color: sortKey === "symbol" ? "#FFB800" : "#71717a", fontSize: 12 }}
                   >
                     Symbol
-                    <span className="text-[8px]">{sortKey === "symbol" ? (sortDir === "asc" ? "▲" : "▼") : "↕"}</span>
+                    {sortKey === "symbol" && <span style={{ fontSize: 8 }}>{sortDir === "asc" ? "▲" : "▼"}</span>}
                   </button>
                 </div>
                 <div />
