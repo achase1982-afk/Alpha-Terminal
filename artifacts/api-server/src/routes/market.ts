@@ -640,38 +640,23 @@ router.get("/options", async (req, res) => {
 
 router.get("/ticker-stats", async (req, res) => {
   const symbol = (req.query["symbol"] as string || "").toUpperCase().trim();
-  const accessToken = (req.query["accessToken"] as string) || getAccessToken("market");
+  const accessToken = (req.query["accessToken"] as string) || getBestAccessToken();
 
   if (!symbol) {
-    return res.json({ symbol: "", pcRatio: null, ivr: null, expectedMove: null });
+    return res.json({ symbol: "", pcRatio: null, ivr: null, mmm: null });
   }
 
-  const result: { symbol: string; pcRatio: number | null; ivr: number | null; expectedMove: number | null } = {
+  const result: { symbol: string; pcRatio: number | null; ivr: number | null; mmm: number | null } = {
     symbol,
     pcRatio: null,
     ivr: null,
-    expectedMove: null,
+    mmm: null,
   };
-
-  if (isIBConnected()) {
-    subscribeQuoteForSymbol("$PCUSEQTR");
-    subscribeQuoteForSymbol("$PCUSINXR");
-  }
-  const eqQ = getIBCachedQuote("$PCUSEQTR") ?? getQuoteBySymbol("$PCUSEQTR");
-  const ixQ = getIBCachedQuote("$PCUSINXR") ?? getQuoteBySymbol("$PCUSINXR");
-  const pickPc = (q: typeof eqQ) => {
-    if (!q) return null;
-    if (typeof q.last === "number" && q.last > 0) return q.last;
-    if (typeof q.close === "number" && q.close > 0) return q.close;
-    return null;
-  };
-  const cpce = pickPc(eqQ);
-  const cpci = pickPc(ixQ);
-  result.pcRatio = cpce !== null && cpci !== null ? Math.round(((cpce + cpci) / 2) * 10000) / 10000 : cpce ?? cpci;
 
   if (accessToken) {
     let cached = chainCache.get(symbol);
     if (!cached || !cached.underlyingPrice || (Date.now() - cached.fetchedAt) >= CHAIN_CACHE_TTL) {
+      req.log.info({ symbol, hadCache: !!cached, tokenAvailable: !!accessToken }, "ticker-stats: fetching chain");
       const fresh = await getOrFetchChain(symbol, accessToken, req.log);
       if (fresh) cached = fresh;
     }
@@ -693,11 +678,21 @@ router.get("/ticker-stats", async (req, res) => {
           const callMid = ((atmCall.bid ?? 0) + (atmCall.ask ?? 0)) / 2;
           const putMid = ((atmPut.bid ?? 0) + (atmPut.ask ?? 0)) / 2;
           const straddle = callMid + putMid;
-          if (straddle > 0) result.expectedMove = Math.round(straddle * 100) / 100;
+          if (straddle > 0) result.mmm = Math.round(straddle * 100) / 100;
         }
       }
       result.ivr = computeIVR(allContracts, price, exps);
+
+      let totalPutVol = 0;
+      let totalCallVol = 0;
+      for (const c of cached.puts) totalPutVol += (c.volume ?? 0);
+      for (const c of cached.calls) totalCallVol += (c.volume ?? 0);
+      if (totalCallVol > 0) {
+        result.pcRatio = Math.round((totalPutVol / totalCallVol) * 100) / 100;
+      }
     }
+  } else {
+    req.log.warn({ symbol }, "ticker-stats: no access token available — skipping chain");
   }
 
   res.json(result);

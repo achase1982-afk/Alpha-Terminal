@@ -33,6 +33,15 @@ The monorepo structure ensures shared libraries and consistent tooling. A clear 
 
 All IVR calculations (scanner, strategist command bar, ticker-stats endpoint) use the same `computeIVR()` function from `optionsStrategist.ts`. This function computes IVR as `(currentIV - minIV) / (maxIV - minIV) * 100` using the absolute min/max of the chain. The ATM IV is taken from the front expiration (within 3% of price), with a fallback to the closest ATM across all expirations. Minimum 3 IV data points required; defaults to 50 otherwise.
 
+## Strategist Command Bar Stats (IVR / P/C / MMM)
+
+All three stats in the strategist command bar come from the **Schwab options chain** via `/ticker-stats`:
+- **IVR**: Computed via `computeIVR()` from the chain's IV data across all contracts.
+- **P/C**: Ticker-specific put/call volume ratio from the chain (total put volume / total call volume). NOT the CBOE market-wide P/C ratio.
+- **MMM (Market Maker Move)**: ATM straddle price (ATM call mid + ATM put mid) from the nearest expiration. Previously labeled "EM" (Expected Move).
+
+The `/ticker-stats` endpoint uses `getBestAccessToken()` to try both market and trader Schwab tokens.
+
 ## Server-Side Token Fallback
 
 All market data endpoints (`/quote`, `/history`, `/options`, `/ticker-stats`) and AI endpoints (`/options-strategist`, `/options-strategist/stream`, `/deterministic-strategist`, `/deterministic-scan`, `/market-scanner`) use server-side token fallback via `getAccessToken("market")` or `getBestAccessToken()`. The client sends `accessToken || ""` — if empty, the server uses its own stored Schwab tokens from the OAuth flow. Frontend `useEffect` hooks for quote/stats fetching use `useRef` for the token to avoid re-fetch loops when the token loads asynchronously.
