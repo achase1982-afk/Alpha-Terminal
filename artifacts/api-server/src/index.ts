@@ -72,7 +72,7 @@ async function boot() {
     "$SPX", "$NDX", "$RUT", "$DJI", "$SOX",
     "$TNX", "$TYX", "$IRX",
     "$VXN", "$RVX", "$OVX", "$GVZ", "$SRVIX",
-    "$TICK", "$TICKI", "$TRIN", "$TRINQ",
+    "$TICK", "$TICKI",
   ];
 
   if (hasValidTokens("trader")) {
