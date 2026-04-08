@@ -228,6 +228,15 @@ export interface MarketPulseData {
     reason: string;
     reasoning?: string[];
   };
+  shockState?: "NORMAL" | "WARNING" | "ACTIVE" | "COOLING";
+  activeTriggers?: Array<{
+    trigger: string;
+    value: number;
+    threshold: number;
+    firedAt: number;
+  }>;
+  shockActivatedAt?: number | null;
+  shockActive?: boolean;
   todayEdge?: TodayEdge;
   sizeRecommendation?: SizeRecommendation;
   invalidation: string[] | {

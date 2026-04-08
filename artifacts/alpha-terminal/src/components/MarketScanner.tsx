@@ -6,6 +6,7 @@ import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
 import { Zap, SlidersHorizontal, TrendingUp, TrendingDown, Minus, ChevronUp, ChevronDown, AlertTriangle, Search, List } from "lucide-react";
 import { useScanCache } from "@/hooks/useScanCache";
+import { useMarketPulseStore } from "@/stores/marketPulseStore";
 
 const API_BASE = "/api";
 
@@ -348,6 +349,8 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol }: {
   onNavigateToSymbol?: (sym: string) => void;
 }) {
   const { accessToken, aiFeatureSettings, setSymbol, watchlists } = useTerminalStore();
+  const { pulseData } = useMarketPulseStore();
+  const shockActive = pulseData?.shockState === "ACTIVE";
   const aiModel = aiFeatureSettings.scanner.model;
   const aiTemp = aiFeatureSettings.scanner.temperature;
   const { cachedData: scanCache, setCachedData: setScanCache } = useScanCache();
@@ -480,6 +483,17 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol }: {
 
   return (
     <div className="flex flex-col gap-4 max-w-4xl mx-auto pb-6">
+      {shockActive && (
+        <div className="flex items-center gap-3 px-4 py-3 rounded-lg border bg-red-500/10 border-red-500/30">
+          <AlertTriangle className="w-5 h-5 text-red-400 shrink-0" />
+          <div>
+            <p className="font-mono text-xs font-bold text-red-400 uppercase tracking-wider">Scanning Paused — Regime Shock Active</p>
+            <p className="font-mono text-[10px] text-red-400/70 mt-0.5">
+              {(pulseData?.activeTriggers?.length ?? 0)} trigger{(pulseData?.activeTriggers?.length ?? 0) !== 1 ? "s" : ""} fired. New scans disabled until shock clears.
+            </p>
+          </div>
+        </div>
+      )}
       <div className="bg-card border border-card-border rounded-xl overflow-hidden">
         <div className="flex border-b border-card-border">
           {(["ai", "manual"] as const).map(m => (
@@ -576,7 +590,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol }: {
         <div className="px-4 pb-4 pt-3 bg-[#0c0c0c] border-t border-card-border">
           <button
             onClick={handleScan}
-            disabled={!accessToken || isScanning || currentSyms.length === 0}
+            disabled={!accessToken || isScanning || currentSyms.length === 0 || shockActive}
             className="font-bold font-mono tracking-wider mx-auto block rounded-lg disabled:opacity-30 disabled:cursor-not-allowed active:scale-95 active:brightness-110 transition-all"
             style={{
               fontSize: 13, padding: "10px",

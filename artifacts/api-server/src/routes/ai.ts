@@ -20,6 +20,8 @@ import { getBestAccessToken } from "../lib/tokenStore.js";
 import { getSyntheticDxyPrevClose } from "../lib/syntheticDxy.js";
 import { selectStrategies, selectStrategiesByRegime, classifyRegime, checkOverrideConflict, classifyTicker, computeBeta, applyBetaToProfile, computeExpectedMove, computeIVR, STRATEGIST_SYSTEM_PROMPT, type OptionContract, type StrategyPayload, type RegimeClassification, type TickerProfile, type DailyCandle, type ConvictionParams } from "../lib/optionsStrategist.js";
 import { runPreTradeChecks, type PreTradeInput, type PreTradeResult } from "../lib/preTradeRiskEngine.js";
+import { evaluateRegimeShock, type ShockDetectorOutput } from "../lib/regimeShockDetector.js";
+import { sendPushToAll } from "../lib/pushService.js";
 
 const router: IRouter = Router();
 
@@ -1705,6 +1707,30 @@ router.post("/market-pulse/stream", async (req, res) => {
     bias: engineResult.bias,
   }, "Market pulse engine output (breadth + volTerm scores)");
 
+  const shockResult = evaluateRegimeShock(indicators);
+  req.log.info({
+    shockState: shockResult.shockState,
+    activeTriggers: shockResult.activeTriggers.map(t => t.trigger),
+    previousState: shockResult.previousState,
+  }, "Regime shock detector output");
+
+  if (shockResult.shockState === "ACTIVE" && shockResult.previousState !== "ACTIVE") {
+    sendPushToAll({
+      title: "⚠️ REGIME SHOCK ACTIVE",
+      body: `${shockResult.activeTriggers.length} triggers fired: ${shockResult.activeTriggers.map(t => t.trigger).join(", ")}`,
+      tag: "regime-shock",
+      data: { shockState: "ACTIVE" },
+    }).catch(() => {});
+  }
+  if (shockResult.shockState === "NORMAL" && shockResult.previousState === "COOLING") {
+    sendPushToAll({
+      title: "✅ REGIME SHOCK CLEARED",
+      body: "Market shock has fully cooled down. Normal operations resumed.",
+      tag: "regime-shock-clear",
+      data: { shockState: "NORMAL" },
+    }).catch(() => {});
+  }
+
   const spyRaw = dataMap.get("SPY");
   const spyChangePct: number | null = typeof spyRaw?.netPercentChange === "number" ? spyRaw.netPercentChange : null;
   const spyDivergenceBlock = (() => {
@@ -1732,8 +1758,14 @@ router.post("/market-pulse/stream", async (req, res) => {
 - Preferred tickers: ${preferences.preferredTickers || "Any"}`
     : "";
 
-  const narrativePrompt = `You are a senior market strategist writing institutional-grade analysis. You receive pre-calculated market scores from a deterministic scoring engine. Your job is to INTERPRET the scores, NOT recalculate them.
+  const shockWarningBlock = shockResult.shockState === "ACTIVE"
+    ? `\n⚠️ REGIME SHOCK ACTIVE — ${shockResult.activeTriggers.length} triggers fired (${shockResult.activeTriggers.map(t => t.trigger).join(", ")}). Your narrative MUST lead with a shock warning. Emphasize capital preservation. Recommend hedging only. Do NOT recommend directional entries.\n`
+    : shockResult.shockState === "WARNING"
+    ? `\n⚠️ REGIME SHOCK WARNING — ${shockResult.activeTriggers.length} triggers fired (${shockResult.activeTriggers.map(t => t.trigger).join(", ")}). Your narrative should note elevated regime stress and recommend caution. Suggest reduced position sizes.\n`
+    : "";
 
+  const narrativePrompt = `You are a senior market strategist writing institutional-grade analysis. You receive pre-calculated market scores from a deterministic scoring engine. Your job is to INTERPRET the scores, NOT recalculate them.
+${shockWarningBlock}
 RULES:
 - DO NOT change, override, or recalculate any cluster scores, composite score, bias label, or confidence values. They are final.
 - Write a concise 1-2 sentence synthesis explaining WHY this combination of cluster scores produces the given bias.
@@ -1829,6 +1861,10 @@ Write ONLY the narrative fields. Return this exact JSON structure:
           conditions: narrative.invalidationConditions || [],
         },
         actionPlan: narrative.actionPlan || [],
+        shockState: shockResult.shockState,
+        activeTriggers: shockResult.activeTriggers,
+        shockActivatedAt: shockResult.shockActivatedAt,
+        shockActive: shockResult.shockActive,
         session,
         timeET,
         instrumentCount,
@@ -1861,6 +1897,10 @@ Write ONLY the narrative fields. Return this exact JSON structure:
         },
         invalidation: { conditions: [] },
         actionPlan: [],
+        shockState: shockResult.shockState,
+        activeTriggers: shockResult.activeTriggers,
+        shockActivatedAt: shockResult.shockActivatedAt,
+        shockActive: shockResult.shockActive,
         session,
         timeET,
         instrumentCount,
@@ -2211,11 +2251,20 @@ router.post("/options-strategist/stream", async (req, res) => {
   const wsResult = readFromWebSocketCache();
   const indicators = extractMarketIndicators(wsResult.dataMap);
   const engineResult = runMarketPulseEngine(indicators, undefined, sessionToEngineType(getMarketSession().session));
+  const shockCheck = evaluateRegimeShock(indicators);
   const regime = classifyRegime(engineResult, indicators);
+
+  const isShockActive = shockCheck.shockState === "ACTIVE";
+  if (isShockActive) {
+    regime.regime = "RISK-OFF" as any;
+    regime.direction = "BEARISH" as any;
+    regime.dteRange = { min: 7, max: 21 };
+    req.log.info({ shockState: shockCheck.shockState, triggers: shockCheck.activeTriggers.map(t => t.trigger) }, "Strategist: shock active — forcing hedging-only mode");
+  }
 
   const userOverride = todayEdge && todayEdge !== "auto" && todayEdge !== engineResult.todayEdge ? todayEdge : null;
   const overrideWarning = userOverride ? checkOverrideConflict(userOverride, engineResult.compositeScore, engineResult.bias) : null;
-  const edge = userOverride ?? engineResult.todayEdge;
+  const edge = isShockActive ? "BEARISH_EDGE" : (userOverride ?? engineResult.todayEdge);
 
   const resolvedPulse = {
     composite: engineResult.compositeScore,
@@ -2224,11 +2273,13 @@ router.post("/options-strategist/stream", async (req, res) => {
     todayEdge: engineResult.todayEdge,
     size: engineResult.sizeRecommendation,
     timestamp: Date.now(),
+    shockState: shockCheck.shockState,
+    shockActive: shockCheck.shockActive,
   };
 
-  req.log.info({ regime: regime.regime, edge, composite: engineResult.compositeScore, userOverride }, "Strategist stream: auto-pulse + regime classified");
+  req.log.info({ regime: regime.regime, edge, composite: engineResult.compositeScore, userOverride, shockActive: shockCheck.shockActive }, "Strategist stream: auto-pulse + regime classified");
 
-  if (regime.regime === "NO_REGIME" && !userOverride) {
+  if (regime.regime === "NO_REGIME" && !userOverride && !isShockActive) {
     return res.json({
       strategies: [],
       narrative: "No actionable regime detected. The scoring engine shows insufficient conviction to recommend a trade. Sit this one out.",

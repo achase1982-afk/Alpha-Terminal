@@ -1,4 +1,4 @@
-import { Zap, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { Zap, TrendingUp, TrendingDown, Minus, AlertTriangle } from "lucide-react";
 import { useMarketPulseStore } from "../../stores/marketPulseStore";
 
 const BIAS_COLORS: Record<string, { label: string; accent: string }> = {
@@ -55,6 +55,10 @@ export function AiBiasStrip({ onNavigateToPulse }: AiBiasStripProps) {
     );
   }
 
+  const shockState = pulseData.shockState ?? "NORMAL";
+  const isShockWarning = shockState === "WARNING";
+  const isShockActive = shockState === "ACTIVE";
+
   const colors = BIAS_COLORS[pulseData.bias] ?? BIAS_COLORS.NO_EDGE;
   const isBullish = pulseData.bias === "STRONGLY_BULLISH" || pulseData.bias === "MODERATELY_BULLISH" || pulseData.bias === "SLIGHTLY_BULLISH";
   const isBearish = pulseData.bias === "STRONGLY_BEARISH" || pulseData.bias === "MODERATELY_BEARISH" || pulseData.bias === "SLIGHTLY_BEARISH";
@@ -93,6 +97,16 @@ export function AiBiasStrip({ onNavigateToPulse }: AiBiasStripProps) {
         <span className={`text-sm font-semibold ${colors.label}`}>
           {pulseData.bias.replace(/_/g, " ")}
         </span>
+        {(isShockWarning || isShockActive) && (
+          <span className={`ml-2 flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
+            isShockActive
+              ? "bg-red-500/20 text-red-400 border border-red-500/40"
+              : "bg-amber-500/20 text-amber-400 border border-amber-500/40"
+          }`}>
+            <AlertTriangle className="w-3 h-3" />
+            {isShockActive ? "SHOCK" : "WARN"}
+          </span>
+        )}
       </div>
 
       <div className="flex items-center gap-1 mx-4">

@@ -16,6 +16,7 @@ import type { AiSubTab } from "@/components/ai-tab/AiSubTabs";
 import { AiThinkingFeed } from "@/components/ai-shared/AiThinkingFeed";
 import { useStrategistCache, type StrategistCacheData } from "@/hooks/useStrategistCache";
 import { MarketScanner } from "@/components/MarketScanner";
+import { useMarketPulseStore } from "@/stores/marketPulseStore";
 
 const API_BASE = "/api";
 
@@ -814,6 +815,30 @@ function MarkdownResult({ content }: { content: string }) {
   );
 }
 
+function StrategistShockBanner() {
+  const { pulseData } = useMarketPulseStore();
+  const shockState = pulseData?.shockState ?? "NORMAL";
+  if (shockState !== "ACTIVE" && shockState !== "WARNING") return null;
+  const isActive = shockState === "ACTIVE";
+  return (
+    <div className={`flex items-center gap-3 px-4 py-3 rounded-lg border ${
+      isActive ? "bg-red-500/10 border-red-500/30" : "bg-amber-500/10 border-amber-500/30"
+    }`}>
+      <AlertTriangle className={`w-5 h-5 shrink-0 ${isActive ? "text-red-400" : "text-amber-400"}`} />
+      <div>
+        <p className={`font-mono text-xs font-bold uppercase tracking-wider ${isActive ? "text-red-400" : "text-amber-400"}`}>
+          {isActive ? "Regime Shock Active — Hedging Only" : "Regime Shock Warning — Reduced Size"}
+        </p>
+        <p className={`font-mono text-[10px] mt-0.5 ${isActive ? "text-red-400/70" : "text-amber-400/70"}`}>
+          {isActive
+            ? "Strategist locked to protective hedges only. No directional entries."
+            : "Elevated regime stress detected. Position sizes will be reduced."}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function StrategistEmptyState() {
   return (
     <div className="flex flex-col items-center justify-center py-16 px-6 relative">
@@ -1517,6 +1542,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
 
         <div style={{ width: "100%", flexShrink: 0, overflowY: "auto" }}>
           <div className="px-3 sm:px-4 lg:px-5 space-y-4 pt-3">
+            <StrategistShockBanner />
             <StrategistCommandBar onRun={handleRunStrategistWithTicker} disabled={isPendingAny || !accessToken}
               lastRunSymbol={lastRunSymbol} lastRunTime={lastRunTime} />
 
