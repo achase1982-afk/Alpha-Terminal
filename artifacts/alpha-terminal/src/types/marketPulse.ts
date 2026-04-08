@@ -174,6 +174,8 @@ export interface RawIndicators {
   gcChange: number | null;
   cl: number | null;
   clChange: number | null;
+  bz: number | null;
+  bzChange: number | null;
   hg: number | null;
   hgChange: number | null;
   dx: number | null;
@@ -338,6 +340,7 @@ export const ALL_PULSE_INDICATORS: PulseIndicator[] = [
 
   { symbol: "/GC",     label: "/GC (Gold Futures)",            category: "commodities" },
   { symbol: "/CL",     label: "/CL (Crude Oil Futures)",       category: "commodities" },
+  { symbol: "/BZ",     label: "/BZ (Brent Crude Futures)",     category: "commodities" },
   { symbol: "/HG",     label: "/HG (Copper Futures)",          category: "commodities" },
 
   { symbol: "/DX",     label: "/DX (Dollar Index Futures)",    category: "currency" },

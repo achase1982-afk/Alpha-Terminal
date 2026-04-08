@@ -71,6 +71,7 @@ function buildIndicatorRows(raw: RawIndicators): IndicatorRow[] {
     { symbol: "IWM", label: "Russell ETF", value: raw.iwm, change: raw.iwmChange, cluster: "riskAppetite" },
     { symbol: "/GC", label: "Gold", value: raw.gc, change: raw.gcChange, cluster: "macro" },
     { symbol: "/CL", label: "WTI Crude", value: raw.cl, change: raw.clChange, cluster: "macro" },
+    { symbol: "/BZ", label: "Brent", value: raw.bz, change: raw.bzChange, cluster: "macro" },
     { symbol: "/HG", label: "Copper", value: raw.hg, change: raw.hgChange, cluster: "macro" },
     { symbol: "DXY", label: "Dollar Idx (Synth)", value: raw.dx, change: raw.dxChange, cluster: "currency" },
     { symbol: "/6E", label: "Euro FX", value: raw.sixE, change: raw.sixEChange, cluster: "currency" },

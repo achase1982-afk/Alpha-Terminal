@@ -685,6 +685,7 @@ const PULSE_SYMBOLS: PulseSymbol[] = [
 
   { display: "/GC",     api: "/GC",     category: "commodity", description: "Gold Futures — safe-haven / real rates proxy" },
   { display: "/CL",     api: "/CL",     category: "commodity", description: "Crude Oil Futures (WTI)" },
+  { display: "/BZ",     api: "/BZ",     category: "commodity", description: "Brent Crude Oil Futures (Schwab WS)" },
   { display: "/HG",     api: "/HG",     category: "commodity", description: "Copper Futures — global growth proxy" },
 
   { display: "/DX",     api: "/DX",     category: "currency",  description: "US Dollar Index Futures" },
@@ -1165,6 +1166,8 @@ function extractMarketIndicators(dataMap: Map<string, Record<string, unknown>>):
     gcChange: pctChange('/GC'),
     cl: lastOrMark('/CL'),
     clChange: pctChange('/CL'),
+    bz: lastOrMark('/BZ'),
+    bzChange: pctChange('/BZ'),
     hg: lastOrMark('/HG'),
     hgChange: pctChange('/HG'),
     dx: lastOrMark('$DXY') ?? lastOrMark('/DX'),

@@ -103,6 +103,8 @@ export interface MarketIndicators {
   gcChange: number | null;
   cl: number | null;
   clChange: number | null;
+  bz: number | null;
+  bzChange: number | null;
   hg: number | null;
   hgChange: number | null;
   dx: number | null;
@@ -961,7 +963,7 @@ function scoreMacro(data: MarketIndicators): ClusterResult {
   const points: string[] = [];
   const flags: string[] = [];
 
-  const hasAny = data.gc !== null || data.cl !== null || data.hg !== null || data.dx !== null || data.sixJ !== null;
+  const hasAny = data.gc !== null || data.cl !== null || data.bz !== null || data.hg !== null || data.dx !== null || data.sixJ !== null;
   if (!hasAny) {
     return { score: 0, raw: 0, dataQuality: 'MISSING', direction: 'FLAT', headline: 'Macro data unavailable', keyDataPoints: [], rulesApplied: ['All macro data missing'] };
   }
@@ -986,16 +988,20 @@ function scoreMacro(data: MarketIndicators): ClusterResult {
     points.push(fmt(data.hgChange, '/HG', '%'));
   }
 
-  // Oil (/CL only — /BZ removed, no data source)
-  if (data.clChange !== null) {
-    const c = data.clChange;
+  // Oil (/CL WTI + /BZ Brent — average if both available)
+  const oilChange = data.clChange !== null && data.bzChange !== null
+    ? (data.clChange + data.bzChange) / 2
+    : data.clChange ?? data.bzChange;
+  if (oilChange !== null) {
+    const c = oilChange;
     if (c >= 3.0) { score -= 0.5; rules.push(`Oil >= +3.0%: -0.5`); }
     else if (c >= 1.5) { score -= 0.25; rules.push(`Oil >= +1.5%: -0.25`); }
     else if (c >= 0) { score += 0.25; rules.push(`Oil flat/mild up: +0.25`); }
     else if (c >= -1.5) { score += 0.25; rules.push(`Oil mild down: +0.25`); }
     else if (c >= -3.0) { score -= 0.25; rules.push(`Oil <= -1.5%: -0.25`); }
     else { score -= 0.5; rules.push(`Oil < -3.0%: -0.5`); }
-    points.push(fmt(data.clChange, '/CL', '%'));
+    if (data.clChange !== null) points.push(fmt(data.clChange, '/CL', '%'));
+    if (data.bzChange !== null) points.push(fmt(data.bzChange, '/BZ', '%'));
   }
 
   // /DX Dollar
@@ -1599,6 +1605,7 @@ export function verifyEngineScoring(): { passed: boolean; output: string } {
     iwm: 210, iwmChange: 1.10,
     gc: null, gcChange: null,
     cl: null, clChange: null,
+    bz: null, bzChange: null,
     hg: null, hgChange: null,
     dx: null, dxChange: null,
     sixE: null, sixEChange: null,
