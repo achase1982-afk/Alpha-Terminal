@@ -2010,14 +2010,15 @@ function getVixFromCache(): number | null {
 }
 
 router.post("/options-strategist", async (req, res) => {
-  const { symbol, accessToken, todayEdge } = req.body as {
+  const { symbol, accessToken: bodyToken, todayEdge } = req.body as {
     symbol?: string;
     accessToken?: string;
     todayEdge?: string;
   };
+  const accessToken = bodyToken || getBestAccessToken();
 
   if (!symbol || !accessToken) {
-    return res.json({ strategies: [], narrative: "", error: "Symbol and accessToken are required." });
+    return res.json({ strategies: [], narrative: "", error: "Symbol is required and no access token available." });
   }
 
   const wsResult = readFromWebSocketCache();
@@ -2181,8 +2182,9 @@ router.post("/options-strategist/stream", async (req, res) => {
     temperature?: number;
   };
 
-  if (!symbol || !accessToken) {
-    return res.status(400).json({ error: "Symbol and accessToken are required." });
+  const resolvedToken = accessToken || getBestAccessToken();
+  if (!symbol || !resolvedToken) {
+    return res.status(400).json({ error: "Symbol is required and no access token available." });
   }
 
   const wsResult = readFromWebSocketCache();
@@ -2239,7 +2241,7 @@ router.post("/options-strategist/stream", async (req, res) => {
     if (chainSymbol.startsWith("/")) params.set("assetClass", "FUTURES");
 
     const chainRes = await fetch(`${SCHWAB_CHAIN_BASE}/chains?${params.toString()}`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
+      headers: { Authorization: `Bearer ${resolvedToken}` },
     });
 
     if (!chainRes.ok) {
@@ -2262,8 +2264,8 @@ router.post("/options-strategist/stream", async (req, res) => {
     }
 
     const [tickerProfile, earningsDaysAway] = await Promise.all([
-      buildTickerProfile(calls, puts, underlyingPrice, symbol, accessToken, req.log),
-      fetchEarningsDaysAway(symbol, accessToken),
+      buildTickerProfile(calls, puts, underlyingPrice, symbol, resolvedToken, req.log),
+      fetchEarningsDaysAway(symbol, resolvedToken),
     ]);
     const expectedMove = computeExpectedMove(calls, puts, underlyingPrice);
     req.log.info({ symbol, underlyingPrice, expectedMove, earningsDaysAway }, "Strategist stream: expectedMove computed");
@@ -2585,13 +2587,14 @@ interface ScannerAiResult {
 }
 
 router.post("/deterministic-scan", async (req, res) => {
-  const { symbols, accessToken } = req.body as {
+  const { symbols, accessToken: bodyToken3 } = req.body as {
     symbols: string[];
     accessToken: string;
   };
+  const accessToken = bodyToken3 || getBestAccessToken();
 
   if (!symbols?.length || !accessToken) {
-    return res.status(400).json({ error: "symbols and accessToken are required" });
+    return res.status(400).json({ error: "symbols are required and no access token available" });
   }
 
   const { dataMap } = readFromWebSocketCache();
@@ -2638,16 +2641,17 @@ router.post("/deterministic-scan", async (req, res) => {
 });
 
 router.post("/deterministic-strategist", async (req, res) => {
-  const { symbol, accessToken, scannerData, model, temperature } = req.body as {
+  const { symbol, accessToken: bodyToken2, scannerData, model, temperature } = req.body as {
     symbol?: string;
     accessToken?: string;
     scannerData?: ScannerInput;
     model?: string;
     temperature?: number;
   };
+  const accessToken = bodyToken2 || getBestAccessToken();
 
   if (!symbol || !accessToken) {
-    return res.status(400).json({ error: "symbol and accessToken are required" });
+    return res.status(400).json({ error: "symbol is required and no access token available" });
   }
 
   const { dataMap } = readFromWebSocketCache();

@@ -1844,8 +1844,6 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
   }, [realStrategies, pulseSnapshot, preTradeEnabled, preTradeMinRR, preTradeMaxPositionPct, preTradeMinDTE, preTradeBlockOnRed, accountSize, isStreaming, isStrategizing]);
 
   const handleRunStrategist = useCallback(async (targetTicker?: string) => {
-    if (!accessToken) return;
-
     const runSymbol = targetTicker?.toUpperCase() || symbol;
     if (targetTicker && targetTicker.toUpperCase() !== symbol) {
       setSymbol(targetTicker.toUpperCase());
@@ -1897,7 +1895,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           symbol: runSymbol,
-          accessToken,
+          accessToken: accessToken || "",
           model: currentAiModel,
           temperature: currentAiTemp,
           todayEdge: currentBias === "auto" ? undefined : currentBias === "bullish" ? "BULLISH_EDGE" : currentBias === "bearish" ? "BEARISH_EDGE" : "NEUTRAL_EDGE",
@@ -2045,7 +2043,6 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
   }, [handleRunStrategist]);
 
   const handleRunDetStrategist = useCallback(async (sym: string, candidate?: DetCandidate) => {
-    if (!accessToken) return;
     const runId = ++detRunRef.current;
 
     setDetResult(null);
@@ -2084,7 +2081,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           symbol: sym.toUpperCase(),
-          accessToken,
+          accessToken: accessToken || "",
           scannerData: scannerPayload,
         }),
       });
