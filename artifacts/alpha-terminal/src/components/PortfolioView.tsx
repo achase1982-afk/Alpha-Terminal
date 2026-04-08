@@ -1109,8 +1109,8 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
                   <ColResizeHandle colKey="symbol" onResize={resizeCol} />
                 </div>
                 {ALL_COLUMNS.filter(c => visibleColumns.includes(c.key)).map(c => (
-                  <div key={c.key} style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "flex-end", padding: "6px 8px" }}>
-                    <span style={{ fontSize: 11, fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: 0.6 }}>{c.label}</span>
+                  <div key={c.key} style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", padding: "6px 26px 6px 4px" }}>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: 0.6, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.label}</span>
                     <ColResizeHandle colKey={c.key} onResize={resizeCol} />
                   </div>
                 ))}
