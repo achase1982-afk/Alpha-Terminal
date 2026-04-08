@@ -397,7 +397,7 @@ export default function TerminalPage() {
         />
 
         {isWide && (
-          <aside className="hidden md:flex flex-col border-r border-card-border shrink-0" style={{ width: 280, background: "#000000" }}>
+          <aside className="hidden md:flex flex-col border-r border-card-border shrink-0 overflow-y-auto" style={{ width: 280, background: "#000000" }}>
             <WatchlistView onNavigateToSymbol={() => setActiveBottom("markets")} />
           </aside>
         )}

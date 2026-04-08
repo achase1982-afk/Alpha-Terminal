@@ -813,10 +813,10 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
     .map(k => metricValues[k]);
 
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, fontFamily: f, position: "relative" }}>
+    <div style={{ fontFamily: f, position: "relative" }}>
       {showSettings && (
         <div
-          style={{ position: "absolute", inset: 0, zIndex: 50, background: "#000000cc", display: "flex", alignItems: "flex-start", justifyContent: "flex-end" }}
+          style={{ position: "fixed", inset: 0, zIndex: 50, background: "#000000cc", display: "flex", alignItems: "flex-start", justifyContent: "flex-end" }}
           onClick={() => setShowSettings(false)}
         >
           <div
@@ -932,13 +932,13 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
         </div>
       </div>
 
-      <div style={{ flex: 1, overflow: "auto", minHeight: 0, WebkitOverflowScrolling: "touch" as any }}>
+      <div>
         {subTab === "positions" && (
-          <div style={{ minWidth: minRowWidth }}>
+          <div className="pf-hscroll" style={{ overflowX: "scroll", WebkitOverflowScrolling: "touch" as any }}>
+            <style>{`.pf-hscroll::-webkit-scrollbar { display: none; } .pf-hscroll { scrollbar-width: none; -ms-overflow-style: none; }`}</style>
             <div style={{
               display: "grid", gridTemplateColumns: gridCols, minWidth: minRowWidth,
               borderBottom: `1px solid ${C.borderHi}`, background: "#0e0e0e",
-              position: "sticky", top: 0, zIndex: 2,
             }}>
               <div style={{ position: "sticky", left: 0, zIndex: 3, background: "#0e0e0e", display: "flex", alignItems: "center", gap: 6, padding: "6px 8px 6px 12px", borderRight: `1px solid ${C.border}` }}>
                 <span style={{ fontSize: 12, fontWeight: 500, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5 }}>Symbol</span>

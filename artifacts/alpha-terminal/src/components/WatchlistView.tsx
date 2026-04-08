@@ -649,9 +649,9 @@ export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sy
         )}
       </div>
 
-      <div className="flex-1" style={{ minHeight: 0, overflow: "auto", WebkitOverflowScrolling: "touch" as any }}>
+      <div>
         {watchlist.length === 0 ? (
-          <div className="flex-1 flex flex-col items-center justify-center gap-4 py-20">
+          <div className="flex flex-col items-center justify-center gap-4 py-20">
             <div className="relative">
               <div
                 className="w-20 h-20 rounded-2xl flex items-center justify-center"
@@ -674,16 +674,14 @@ export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sy
             </div>
           </div>
         ) : (
-          <div>
+          <div className="wl-hscroll" style={{ overflowX: "scroll", WebkitOverflowScrolling: "touch" as any }}>
+            <style>{`.wl-hscroll::-webkit-scrollbar { display: none; } .wl-hscroll { scrollbar-width: none; -ms-overflow-style: none; }`}</style>
               <div
                 style={{
                   display: "grid",
                   gridTemplateColumns: gridCols,
                   minWidth: minRowW,
                   borderBottom: "1px solid #2A2A2C",
-                  position: "sticky",
-                  top: 0,
-                  zIndex: 2,
                   background: "#000000",
                   alignItems: "center",
                 }}
