@@ -617,6 +617,15 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
     return price * quantity * multiplier;
   }, [orderType, side, quote?.ask, quote?.bid, quote?.last, limitPrice, stopPrice, quantity, needsLimit, needsStop, isOption, isMultiLeg, strategyNetPrice]);
 
+  const optionMarkEstimate = isCloseOrder && isOption && !isMultiLeg && strategyNetPrice != null && strategyNetPrice > 0 ? strategyNetPrice : null;
+  const effectiveBid = isMultiLeg && spreadPrices
+    ? spreadPrices.spreadBid
+    : optionMarkEstimate != null ? optionMarkEstimate * 0.97 : quote?.bid ?? null;
+  const effectiveAsk = isMultiLeg && spreadPrices
+    ? spreadPrices.spreadAsk
+    : optionMarkEstimate != null ? optionMarkEstimate * 1.03 : quote?.ask ?? null;
+  const midPrice = effectiveBid != null && effectiveAsk != null ? (effectiveBid + effectiveAsk) / 2 : null;
+
   const riskChecks = useMemo(() => {
     if (!preTradeEnabled) return [];
     let spreadMaxRisk: number | null = null;
@@ -789,14 +798,6 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
     else if (side === "SELL" && quote?.bid != null) setLimitPrice(quote.bid.toFixed(2));
   }, [side, quote?.ask, quote?.bid, isMultiLeg, spreadPrices, strategyIsCredit]);
 
-  const optionMarkEstimate = isCloseOrder && isOption && !isMultiLeg && strategyNetPrice != null && strategyNetPrice > 0 ? strategyNetPrice : null;
-  const effectiveBid = isMultiLeg && spreadPrices
-    ? spreadPrices.spreadBid
-    : optionMarkEstimate != null ? optionMarkEstimate * 0.97 : quote?.bid ?? null;
-  const effectiveAsk = isMultiLeg && spreadPrices
-    ? spreadPrices.spreadAsk
-    : optionMarkEstimate != null ? optionMarkEstimate * 1.03 : quote?.ask ?? null;
-  const midPrice = effectiveBid != null && effectiveAsk != null ? (effectiveBid + effectiveAsk) / 2 : null;
   const sliderValue = useMemo(() => {
     if (effectiveBid == null || effectiveAsk == null) return 50;
     const lp = parseFloat(limitPrice);
