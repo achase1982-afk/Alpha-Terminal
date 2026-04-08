@@ -152,6 +152,19 @@
     overscroll-behavior-x: none;
   }
 
+  .pf-hscroll {
+    position: relative;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .pf-sticky-col {
+    position: -webkit-sticky;
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    box-sizing: border-box;
+  }
+
   input, textarea, select {
     font-size: 16px !important;
   }
