@@ -794,8 +794,8 @@ function scoreSingleExchangeBreadth(
     else if (trin < 1.20) { s = -1.0; }
     else { s = -2.0; }
     componentScores.push(s);
-    rules.push(`${prefix}TRIN ${trin.toFixed(4)}: ${s >= 0 ? '+' : ''}${s}`);
-    points.push(`${prefix}TRIN ${trin.toFixed(4)}`);
+    rules.push(`${prefix}TRIN ${trin.toFixed(2)}: ${s >= 0 ? '+' : ''}${s}`);
+    points.push(`${prefix}TRIN ${trin.toFixed(2)}`);
   }
 
   // ADD

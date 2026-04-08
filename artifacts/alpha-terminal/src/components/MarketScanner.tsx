@@ -183,7 +183,7 @@ const DeterministicCard = memo(function DeterministicCard({
                   <div className="flex-1 h-[6px] rounded-full overflow-hidden" style={{ background: "#1a1a1a" }}>
                     <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: bar.color }} />
                   </div>
-                  <span className="text-[10px] font-mono tabular-nums text-zinc-400 w-8 text-right">{val}/{bar.max}</span>
+                  <span className="text-[10px] font-mono tabular-nums text-zinc-400 w-8 text-right">{Math.round(val)}/{bar.max}</span>
                 </div>
               );
             })}
@@ -203,7 +203,7 @@ const DeterministicCard = memo(function DeterministicCard({
             <span className="text-[11px] text-zinc-500">IVR</span>
             <span className="text-sm font-mono tabular-nums"
               style={{ color: candidate.ivr > 50 ? "#FFB800" : candidate.ivr < 30 ? "#26a69a" : "#6B7280" }}>
-              {candidate.ivr}%
+              {candidate.ivr.toFixed(1)}%
             </span>
           </div>
           <div className="flex justify-between">
@@ -239,7 +239,7 @@ const DeterministicCard = memo(function DeterministicCard({
 
       <div className="px-4 py-2.5 border-t border-card-border/50 flex items-center justify-between" style={{ background: "#0a0a0a" }}>
         <span className="text-[10px] text-zinc-600">
-          Bias: {candidate.pulseBias} · Composite: {candidate.pulseComposite}
+          Bias: {candidate.pulseBias} · Composite: {typeof candidate.pulseComposite === 'number' ? candidate.pulseComposite.toFixed(1) : candidate.pulseComposite}
         </span>
         {onSendToStrategist && (
           <button onClick={() => onSendToStrategist(candidate.symbol, candidate)}

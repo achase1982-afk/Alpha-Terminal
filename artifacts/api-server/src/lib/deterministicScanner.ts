@@ -329,7 +329,7 @@ function scoreTrendAlignment(
   }
 
   if (aligned === 2) return 25;
-  if (aligned === 1) return 12.5;
+  if (aligned === 1) return 13;
   return 0;
 }
 
@@ -352,7 +352,7 @@ function scoreRelativeStrength(
   }
 
   const confirmed = outperformance > 0;
-  const score = Math.max(0, Math.min(20, outperformance * 4));
+  const score = Math.round(Math.max(0, Math.min(20, outperformance * 4)));
   return { score, confirmed };
 }
 
@@ -360,7 +360,7 @@ function scoreVolumeConfirmation(todayVolume: number, avgVolume: number | null):
   if (!avgVolume || avgVolume <= 0) return { score: 0, ratio: 0 };
   const ratio = todayVolume / avgVolume;
   if (ratio >= 1.5) return { score: 20, ratio };
-  if (ratio >= 1.0) return { score: Math.round(((ratio - 1.0) / 0.5) * 20 * 100) / 100, ratio };
+  if (ratio >= 1.0) return { score: Math.round(((ratio - 1.0) / 0.5) * 20), ratio };
   return { score: 0, ratio };
 }
 
@@ -373,9 +373,9 @@ function scoreIVR(ivr: number, pulse: PulseContext): number {
     : ivr >= 50;
 
   if (premiumSelling) {
-    return Math.min(20, (ivr / 100) * 20);
+    return Math.round(Math.min(20, (ivr / 100) * 20));
   } else {
-    return Math.min(20, ((100 - ivr) / 100) * 20);
+    return Math.round(Math.min(20, ((100 - ivr) / 100) * 20));
   }
 }
 
@@ -384,11 +384,11 @@ function scoreOptionsLiquidity(chain: OptionsChainSummary | null): number {
   let score = 0;
   const optionsVol = chain.totalCallVolume + chain.totalPutVolume;
   if (optionsVol >= 10000) score += 8;
-  else if (optionsVol >= 1000) score += Math.round((optionsVol / 10000) * 8 * 100) / 100;
+  else if (optionsVol >= 1000) score += Math.round((optionsVol / 10000) * 8);
 
   if (chain.atmSpreadPct <= 2) score += 7;
-  else if (chain.atmSpreadPct <= 5) score += Math.round(((5 - chain.atmSpreadPct) / 3) * 7 * 100) / 100;
-  else if (chain.atmSpreadPct <= 10) score += Math.round(((10 - chain.atmSpreadPct) / 5) * 3 * 100) / 100;
+  else if (chain.atmSpreadPct <= 5) score += Math.round(((5 - chain.atmSpreadPct) / 3) * 7);
+  else if (chain.atmSpreadPct <= 10) score += Math.round(((10 - chain.atmSpreadPct) / 5) * 3);
 
   return Math.min(15, score);
 }
@@ -504,7 +504,7 @@ export async function runDeterministicScan(
         const ivrScore = scoreIVR(chain?.ivr ?? 50, pulse);
         const optionsLiquidity = scoreOptionsLiquidity(chain);
 
-        const totalScore = Math.round((trendAlignment + relativeStrength + volumeConfirmation + ivrScore + optionsLiquidity) * 100) / 100;
+        const totalScore = Math.round(trendAlignment + relativeStrength + volumeConfirmation + ivrScore + optionsLiquidity);
 
         return {
           symbol: sym,
@@ -557,7 +557,7 @@ export async function runDeterministicScan(
       keyStatValue = `${r.volumeRatio.toFixed(1)}x avg`;
     } else if (maxComponent[0] === "ivrScore" && r.chain) {
       keyStatLabel = "IVR";
-      keyStatValue = `${r.chain.ivr}%`;
+      keyStatValue = `${r.chain.ivr.toFixed(1)}%`;
     } else if (maxComponent[0] === "trendAlignment") {
       keyStatLabel = "Trend";
       keyStatValue = "Aligned";
@@ -566,7 +566,7 @@ export async function runDeterministicScan(
       keyStatValue = `vs SPY`;
     } else {
       keyStatLabel = "Score";
-      keyStatValue = `${r.totalScore}`;
+      keyStatValue = `${Math.round(r.totalScore)}`;
     }
 
     const isBullishSetup = r.quote.netPercentChange > 0;
@@ -589,7 +589,7 @@ export async function runDeterministicScan(
       sector: getSector(r.symbol),
       keyStatLabel,
       keyStatValue,
-      ivr: r.chain?.ivr ?? 0,
+      ivr: Math.round((r.chain?.ivr ?? 0) * 10) / 10,
       atmIV: r.chain?.atmIV ?? 0,
       atmSpreadPct: r.chain?.atmSpreadPct ?? 0,
       hasWeeklyOptions: r.chain?.hasWeeklyOptions ?? false,

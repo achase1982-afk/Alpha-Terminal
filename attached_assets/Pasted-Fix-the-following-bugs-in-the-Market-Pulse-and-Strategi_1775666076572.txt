@@ -1,0 +1,17 @@
+Fix the following bugs in the Market Pulse and Strategist:
+
+1. PCR GUARD: CPC, CPCE, and CPCI are returning 0.00 from the data source. A real put/call ratio is never exactly 0. In the scoring engine, treat any PCR value of exactly 0 as missing/stale data. Exclude it from scoring and mark the indicator as unavailable in the UI (show dash instead of 0.00). Apply the same logic to PCSPY, PCQQQ, PCIWM if their value is exactly 0 or null.
+
+2. BREADTH PERCENT CHANGE: All 14 breadth indicators show absolute values correctly but the percent change column shows a dash for every single one. These indicators (ADVN, DECN, ADD, UVOL, DVOL, TICK, TRIN, and their NASD equivalents) use absolute value thresholds for scoring, not percent change. Confirm the scoring engine is using the absolute values directly for these indicators and not depending on percent change. If the UI is just missing the display, that is cosmetic and lower priority than confirming scoring works off absolute values.
+
+3. FLOATING POINT DISPLAY: Several scanner card values show unrounded floating point numbers. Examples: RS showing "19.519382289280465/20", IVR showing "13.799999999999999/20", IVR showing "11.2000000000000001/20". Apply toFixed(1) or Math.round to all score breakdown values in scanner cards before display.
+
+4. VOLUME DECIMAL: GOOGL in the strategist header shows volume as 16,650,085.506. Volume should never have decimals. Apply Math.round() to all volume display values throughout the app.
+
+5. DUPLICATE TIMEZONE: The Market Pulse footer shows "12:23 ET ET". Remove the duplicate timezone label. Should display "12:23 ET" only.
+
+6. COMPOSITE PER STOCK: Every scanner card shows the same Composite 1.0855. This is the market-level pulse composite being repeated on every card. Either show a stock-specific composite or remove the composite line from individual scanner cards entirely since it is not stock-specific.
+
+7. VOL CLUSTER ZERO: Every stock in the scanner shows VOL 0/20. Investigate why the volume scoring cluster returns 0 for all scanned symbols. This is likely a broken data fetch or a scoring calculation that is not receiving the volume data it expects.
+
+Do not change any scoring weights, cluster definitions, or indicator thresholds. These are display and data guard fixes only.

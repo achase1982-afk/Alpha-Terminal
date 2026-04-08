@@ -434,7 +434,7 @@ function BiasHero({ data }: { data: MarketPulseData }) {
             SIZE {data.riskState?.label?.replace(/_/g, " ")}
           </span>
           <span className="font-mono text-xs text-zinc-500">
-            {data.timeET} ET
+            {data.timeET}
           </span>
         </div>
       </div>
