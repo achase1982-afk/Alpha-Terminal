@@ -253,31 +253,6 @@ export default function TerminalPage() {
   }, [isThreePanel, contextTab]);
 
   const COLLAPSE_PX = 80;
-  const lastTouchY = useRef(0);
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const onTouchStart = (e: TouchEvent) => {
-      lastTouchY.current = e.touches[0]?.clientY ?? 0;
-    };
-    const onTouchMove = (e: TouchEvent) => {
-      const y = e.touches[0]?.clientY ?? 0;
-      const pulling = y > lastTouchY.current;
-      const pushing = y < lastTouchY.current;
-      const atTop = el.scrollTop <= 0;
-      const atBottom = el.scrollTop > 0 && el.scrollTop + el.clientHeight >= el.scrollHeight - 2;
-      if ((atTop && pulling) || (atBottom && pushing)) {
-        e.preventDefault();
-      }
-    };
-    el.addEventListener("touchstart", onTouchStart, { passive: true });
-    el.addEventListener("touchmove", onTouchMove, { passive: false });
-    return () => {
-      el.removeEventListener("touchstart", onTouchStart);
-      el.removeEventListener("touchmove", onTouchMove);
-    };
-  }, []);
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
