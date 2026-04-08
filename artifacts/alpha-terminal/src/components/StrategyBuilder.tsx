@@ -543,19 +543,23 @@ export function StrategyBuilder({
 
   const isValid = legs.length > 0 && !blockedByRisk && !!limitPrice && parseFloat(limitPrice) > 0 && quantity > 0 && !!accountHash;
 
-  const buildSchwabOrder = useCallback(() => ({
-    orderType: isCredit ? "NET_CREDIT" : "NET_DEBIT",
-    session: extendedHours ? "SEAMLESS" : "NORMAL",
-    duration: "DAY",
-    price: limitPrice,
-    complexOrderStrategyType: "NONE",
-    orderStrategyType: "SINGLE",
-    orderLegCollection: legs.map(leg => ({
-      instruction: leg.direction,
-      quantity: leg.quantity * quantity,
-      instrument: { symbol: leg.schwabSymbol, assetType: "OPTION" },
-    })),
-  }), [isCredit, extendedHours, legs, quantity, limitPrice]);
+  const buildSchwabOrder = useCallback(() => {
+    const parsed = parseFloat(limitPrice || "0");
+    const o: Record<string, unknown> = {
+      orderType: isCredit ? "NET_CREDIT" : "NET_DEBIT",
+      session: extendedHours ? "SEAMLESS" : "NORMAL",
+      duration: "DAY",
+      complexOrderStrategyType: "NONE",
+      orderStrategyType: "SINGLE",
+      orderLegCollection: legs.map(leg => ({
+        instruction: leg.direction,
+        quantity: leg.quantity * quantity,
+        instrument: { symbol: leg.schwabSymbol, assetType: "OPTION" },
+      })),
+    };
+    if (parsed > 0) o.price = parsed;
+    return o;
+  }, [isCredit, extendedHours, legs, quantity, limitPrice]);
 
   const handleSubmit = useCallback(async () => {
     if (!accountHash) return;

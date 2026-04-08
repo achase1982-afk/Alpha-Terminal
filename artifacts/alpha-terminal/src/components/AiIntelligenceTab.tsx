@@ -414,15 +414,15 @@ function OrderReviewPanel({ strategy, symbol, onClose }: { strategy: StrategyPay
         },
       }));
 
-      const order = {
+      const order: Record<string, unknown> = {
         orderType: isCredit ? "NET_CREDIT" : "NET_DEBIT",
         session: "NORMAL",
         duration: "DAY",
-        price: limitPrice,
         complexOrderStrategyType: "NONE",
         orderStrategyType: "SINGLE",
         orderLegCollection,
       };
+      if (limitPrice > 0) order.price = parseFloat(limitPrice.toFixed(2));
 
       const res = await fetchWithAuth("/api/portfolio/place-order", {
         method: "POST",

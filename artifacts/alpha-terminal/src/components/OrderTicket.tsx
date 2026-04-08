@@ -670,11 +670,11 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
 
   const buildSchwabOrder = useCallback(() => {
     if (isMultiLeg && strategyLegs) {
-      return {
+      const parsed = parseFloat(limitPrice || "0");
+      const o: Record<string, unknown> = {
         orderType: strategyIsCredit ? "NET_CREDIT" : "NET_DEBIT",
         session: extendedHours ? "SEAMLESS" : "NORMAL",
         duration,
-        price: limitPrice,
         complexOrderStrategyType: "NONE",
         orderStrategyType: "SINGLE",
         orderLegCollection: strategyLegs.map(leg => ({
@@ -683,6 +683,8 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
           instrument: { symbol: leg.schwabSymbol, assetType: "OPTION" },
         })),
       };
+      if (parsed > 0) o.price = parsed;
+      return o;
     }
     const order: Record<string, unknown> = {
       orderType,
@@ -695,12 +697,12 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
         instrument: { symbol: optionSymbol ?? symbol, assetType: isOption ? "OPTION" : "EQUITY" },
       }],
     };
-    if (needsLimit) order.price = limitPrice;
-    if (needsStop) order.stopPrice = stopPrice;
+    if (needsLimit) order.price = parseFloat(limitPrice || "0");
+    if (needsStop) order.stopPrice = parseFloat(stopPrice || "0");
     if (needsTrail) {
       order.stopPriceLinkBasis = "LAST";
       order.stopPriceLinkType = "VALUE";
-      order.stopPriceOffset = trailOffset;
+      order.stopPriceOffset = parseFloat(trailOffset || "0");
     }
     return order;
   }, [orderType, extendedHours, duration, side, quantity, symbol, optionSymbol, isOption, isMultiLeg, strategyLegs, strategyIsCredit, optionInstruction, needsLimit, limitPrice, needsStop, stopPrice, needsTrail, trailOffset]);
