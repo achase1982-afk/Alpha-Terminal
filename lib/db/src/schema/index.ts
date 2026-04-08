@@ -72,3 +72,41 @@ export const failureLogTable = pgTable("failure_log", {
 });
 
 export type FailureLog = typeof failureLogTable.$inferSelect;
+
+export const scannerWatchlistsTable = pgTable("scanner_watchlists", {
+  id: serial("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  name: text("name").notNull(),
+  symbols: jsonb("symbols").$type<string[]>().notNull().default([]),
+  isProtected: boolean("is_protected").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type ScannerWatchlist = typeof scannerWatchlistsTable.$inferSelect;
+
+export const scannerScreensTable = pgTable("scanner_screens", {
+  id: serial("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  name: text("name").notNull(),
+  filters: jsonb("filters").$type<{
+    marketCapMin?: number;
+    marketCapMax?: number;
+    volumeMin?: number;
+    priceMin?: number;
+    priceMax?: number;
+    sectors?: string[];
+    sectorsExclude?: string[];
+    exchange?: string;
+    optionsVolumeMin?: number;
+    country?: string;
+    maxResults?: number;
+  }>().notNull(),
+  isDefault: boolean("is_default").default(false).notNull(),
+  cachedSymbols: jsonb("cached_symbols").$type<string[]>(),
+  cachedAt: timestamp("cached_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type ScannerScreen = typeof scannerScreensTable.$inferSelect;

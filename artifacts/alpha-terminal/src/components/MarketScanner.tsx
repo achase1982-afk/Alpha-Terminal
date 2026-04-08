@@ -6,75 +6,14 @@ import { useQuote } from "@/hooks/useQuote";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
-import { SlidersHorizontal, ChevronDown, AlertTriangle, Search, List, Crosshair, Send, Shield, BarChart3 } from "lucide-react";
+import { SlidersHorizontal, ChevronDown, AlertTriangle, Search, List, Crosshair, Send, Shield, BarChart3, Plus, Filter, RefreshCw, Pencil, Trash2, Loader2 } from "lucide-react";
 import { useScanCache } from "@/hooks/useScanCache";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
+import { useScannerUniverses } from "@/hooks/useScannerUniverses";
+import { ScreenBuilder } from "./ScreenBuilder";
+import { WatchlistEditor } from "./WatchlistEditor";
 
 const API_BASE = "/api";
-
-const UNIVERSES: Record<string, { label: string; count: number; symbols: string[] }> = {
-  sp100: {
-    label: "S&P 500 Top 100",
-    count: 100,
-    symbols: [
-      "AAPL","MSFT","NVDA","AMZN","META","GOOGL","GOOG","BRK.B","LLY","AVGO",
-      "JPM","TSLA","UNH","XOM","V","MA","PG","COST","JNJ","HD",
-      "ABBV","WMT","NFLX","BAC","CRM","ORCL","CVX","MRK","AMD","KO",
-      "PEP","LIN","TMO","ACN","CSCO","MCD","ADBE","WFC","ABT","IBM",
-      "GE","DHR","PM","ISRG","CAT","INTU","QCOM","VZ","TXN","CMCSA",
-      "NOW","AMGN","PFE","AXP","GS","BKNG","SPGI","MS","LOW","NEE",
-      "T","BLK","RTX","UNP","DE","AMAT","SYK","VRTX","MDLZ","SCHW",
-      "ETN","LRCX","CB","PGR","C","REGN","BSX","ADI","MU","PANW",
-      "FI","KLAC","SO","MMC","SBUX","DUK","SNPS","TMUS","CL","CDNS",
-      "HCA","CME","TGT","WM","ICE","MCO","PYPL","ZTS","PH","SLB",
-    ],
-  },
-  ndx100: {
-    label: "Nasdaq 100",
-    count: 100,
-    symbols: [
-      "AAPL","MSFT","NVDA","AMZN","META","GOOGL","GOOG","AVGO","TSLA","COST",
-      "NFLX","AMD","ADBE","QCOM","PEP","LIN","CSCO","INTU","TXN","CMCSA",
-      "AMGN","ISRG","BKNG","AMAT","VRTX","LRCX","PANW","ADI","MU","KLAC",
-      "SNPS","CDNS","REGN","MELI","PYPL","MDLZ","MAR","FTNT","ORLY","CHTR",
-      "CTAS","MNST","DASH","ABNB","KDP","PCAR","MRVL","AEP","NXPI","KHC",
-      "DXCM","ODFL","CPRT","FANG","PAYX","EXC","ROST","FAST","IDXX","CTSH",
-      "GEHC","VRSK","AZN","CCEP","CSGP","EA","BKR","GFS","ON","BIIB",
-      "TTD","XEL","TEAM","ANSS","ZS","CDW","ILMN","MDB","DDOG","WBD",
-      "SMCI","COIN","ARM","CEG","CRWD","MSTR","APP","PLTR","HOOD","WDAY",
-      "SPLK","PDD","RIVN","LCID","ENPH","SEDG","FSLR","MRNA","ZM","ROKU",
-    ],
-  },
-  megacap: {
-    label: "Mega Cap Tech",
-    count: 20,
-    symbols: [
-      "AAPL","MSFT","NVDA","AMZN","META","GOOGL","TSLA","AVGO","NFLX","AMD",
-      "CRM","ORCL","ADBE","INTU","NOW","QCOM","TXN","AMAT","MU","LRCX",
-    ],
-  },
-  highbeta: {
-    label: "High Volatility / Beta",
-    count: 60,
-    symbols: [
-      "TSLA","NVDA","AMD","SMCI","COIN","MSTR","PLTR","RIVN","LCID","NIO",
-      "SOFI","HOOD","RBLX","SNAP","SQ","SHOP","ROKU","ENPH","SEDG","FSLR",
-      "MRNA","BNTX","ARKK","UPST","AFRM","DKNG","PENN","CRWD","NET","DDOG",
-      "SNOW","U","ABNB","DASH","MELI","SE","GRAB","BABA","JD","PDD",
-      "RIOT","MARA","CLSK","HUT","GME","AMC","BBBY","CVNA","LAZR","IONQ",
-      "RGTI","QBTS","SOUN","JOBY","ACHR","LUNR","RKLB","SPCE","PLUG","FCEL",
-    ],
-  },
-  lowbeta: {
-    label: "Low Beta / Defensive",
-    count: 30,
-    symbols: [
-      "JNJ","PG","KO","PEP","CL","WMT","COST","MCD","ABT","TMO",
-      "UNH","LLY","ABBV","MRK","PFE","AMGN","VRTX","SO","DUK","NEE",
-      "AEP","XEL","EXC","WM","RSG","MMC","CB","PGR","TRV","ALL",
-    ],
-  },
-};
 
 
 interface ScannerQuote {
@@ -288,11 +227,24 @@ const LiveManualRow = memo(function LiveManualRow({ q, onSelect }: {
   );
 });
 
-function UniverseDropdown({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function UniverseDropdown({ value, onChange, presets, watchlists, screens, onCreateScreen, onEditScreen, onDeleteScreen, onRefreshScreen, refreshingScreenId, onCreateWatchlist, onEditWatchlist, onDeleteWatchlist }: {
+  value: string;
+  onChange: (v: string) => void;
+  presets: Record<string, { label: string; description: string; count: number }>;
+  watchlists: Array<{ id: number; name: string; symbols: string[]; isProtected?: boolean }>;
+  screens: Array<{ id: number; name: string; cachedCount: number | null; cachedAt: string | null; isDefault: boolean }>;
+  onCreateScreen: () => void;
+  onEditScreen?: (id: number) => void;
+  onDeleteScreen?: (id: number) => void;
+  onRefreshScreen?: (id: number) => void;
+  refreshingScreenId?: number | null;
+  onCreateWatchlist?: () => void;
+  onEditWatchlist?: (id: number) => void;
+  onDeleteWatchlist?: (id: number) => void;
+}) {
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
-  const watchlists = useTerminalStore(s => s.watchlists);
   const [pos, setPos] = useState<{ top: number; left: number; width: number }>({ top: 0, left: 0, width: 0 });
 
   useEffect(() => {
@@ -321,15 +273,23 @@ function UniverseDropdown({ value, onChange }: { value: string; onChange: (v: st
     return () => window.removeEventListener("resize", update);
   }, [open]);
 
-  const isWatchlist = value.startsWith("wl:");
-  const selectedLabel = isWatchlist
-    ? watchlists[value.slice(3)]?.name ?? "Watchlist"
-    : UNIVERSES[value]?.label ?? value;
-  const selectedCount = isWatchlist
-    ? watchlists[value.slice(3)]?.symbols?.length ?? 0
-    : UNIVERSES[value]?.symbols?.length ?? 0;
+  let selectedLabel = value;
+  let selectedCount: number | string = 0;
+  if (value.startsWith("preset:")) {
+    const p = presets[value.slice(7)];
+    selectedLabel = p?.label ?? value;
+    selectedCount = p?.count ?? 0;
+  } else if (value.startsWith("watchlist:")) {
+    const wl = watchlists.find(w => w.id === parseInt(value.slice(10)));
+    selectedLabel = wl?.name ?? "Watchlist";
+    selectedCount = wl?.symbols?.length ?? 0;
+  } else if (value.startsWith("screen:")) {
+    const sc = screens.find(s => s.id === parseInt(value.slice(7)));
+    selectedLabel = sc?.name ?? "Screen";
+    selectedCount = sc?.cachedCount ?? "—";
+  }
 
-  const maxH = typeof window !== "undefined" ? Math.min(500, window.innerHeight - pos.top - 16) : 400;
+  const maxH = typeof window !== "undefined" ? Math.min(560, window.innerHeight - pos.top - 16) : 400;
 
   return (
     <div className="relative">
@@ -355,45 +315,136 @@ function UniverseDropdown({ value, onChange }: { value: string; onChange: (v: st
             onTouchMove={e => e.stopPropagation()}
           >
             <div className="px-3 pt-3 pb-1.5">
-              <span className="text-[11px] font-bold uppercase tracking-widest text-zinc-500">Markets</span>
+              <span className="text-[11px] font-bold uppercase tracking-widest text-zinc-500">Presets</span>
             </div>
-            {Object.entries(UNIVERSES).map(([key, u]) => (
-              <button
-                key={key}
-                onClick={() => { onChange(key); setOpen(false); }}
-                className={`w-full text-left px-3 py-3 flex items-center justify-between gap-3 text-sm transition-colors ${
-                  value === key ? "bg-[#FFB800]/10 text-[#FFB800]" : "text-zinc-300 hover:bg-zinc-800/60 hover:text-white"
-                }`}
-              >
-                <span className="font-medium leading-snug">{u.label}</span>
-                <span className={`text-xs tabular-nums shrink-0 ${value === key ? "text-[#FFB800]/60" : "text-zinc-600"}`}>{u.symbols.length}</span>
-              </button>
-            ))}
+            {Object.entries(presets).map(([key, p]) => {
+              const pKey = `preset:${key}`;
+              return (
+                <button
+                  key={key}
+                  onClick={() => { onChange(pKey); setOpen(false); }}
+                  className={`w-full text-left px-3 py-2.5 flex items-center justify-between gap-3 text-sm transition-colors ${
+                    value === pKey ? "bg-[#FFB800]/10 text-[#FFB800]" : "text-zinc-300 hover:bg-zinc-800/60 hover:text-white"
+                  }`}
+                >
+                  <span className="font-medium leading-snug">{p.label}</span>
+                  <span className={`text-xs tabular-nums shrink-0 ${value === pKey ? "text-[#FFB800]/60" : "text-zinc-600"}`}>{p.count}</span>
+                </button>
+              );
+            })}
 
-            {Object.keys(watchlists).length > 0 && (
+            {screens.length > 0 && (
               <>
                 <div className="mx-3 my-1.5 border-t border-zinc-700/50" />
                 <div className="px-3 pt-2 pb-1.5 flex items-center gap-1.5">
-                  <List className="w-3.5 h-3.5 text-zinc-500" />
-                  <span className="text-[11px] font-bold uppercase tracking-widest text-zinc-500">Watchlists</span>
+                  <Filter className="w-3.5 h-3.5 text-zinc-500" />
+                  <span className="text-[11px] font-bold uppercase tracking-widest text-zinc-500">Dynamic Screens</span>
                 </div>
-                {Object.entries(watchlists).map(([id, wl]) => {
-                  const wlKey = `wl:${id}`;
+                {screens.map(sc => {
+                  const scKey = `screen:${sc.id}`;
+                  const isActive = value === scKey;
                   return (
-                    <button
-                      key={id}
-                      onClick={() => { onChange(wlKey); setOpen(false); }}
-                      className={`w-full text-left px-3 py-3 flex items-center justify-between gap-3 text-sm transition-colors ${
-                        value === wlKey ? "bg-[#FFB800]/10 text-[#FFB800]" : "text-zinc-300 hover:bg-zinc-800/60 hover:text-white"
+                    <div key={sc.id}
+                      className={`w-full flex items-center gap-2 px-3 py-2.5 text-sm transition-colors ${
+                        isActive ? "bg-[#FFB800]/10 text-[#FFB800]" : "text-zinc-300 hover:bg-zinc-800/60"
                       }`}
                     >
-                      <span className="font-medium leading-snug">{wl.name}</span>
-                      <span className={`text-xs tabular-nums shrink-0 ${value === wlKey ? "text-[#FFB800]/60" : "text-zinc-600"}`}>{wl.symbols.length}</span>
-                    </button>
+                      <button onClick={() => { onChange(scKey); setOpen(false); }} className="flex-1 text-left">
+                        <span className="font-medium leading-snug">{sc.name}</span>
+                        {sc.cachedAt && (
+                          <span className="text-[9px] text-zinc-600 ml-1.5">
+                            {new Date(sc.cachedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                          </span>
+                        )}
+                      </button>
+                      <span className={`text-xs tabular-nums shrink-0 ${isActive ? "text-[#FFB800]/60" : "text-zinc-600"}`}>
+                        {sc.cachedCount ?? "—"}
+                      </span>
+                      <div className="flex items-center gap-0.5">
+                        {onRefreshScreen && (
+                          <button onClick={(e) => { e.stopPropagation(); onRefreshScreen(sc.id); }}
+                            className="p-1 text-zinc-600 hover:text-zinc-300 transition-colors"
+                            title="Refresh screen">
+                            {refreshingScreenId === sc.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                          </button>
+                        )}
+                        {onEditScreen && (
+                          <button onClick={(e) => { e.stopPropagation(); onEditScreen(sc.id); setOpen(false); }}
+                            className="p-1 text-zinc-600 hover:text-zinc-300 transition-colors"
+                            title="Edit screen">
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                        )}
+                        {onDeleteScreen && !sc.isDefault && (
+                          <button onClick={(e) => { e.stopPropagation(); onDeleteScreen(sc.id); }}
+                            className="p-1 text-zinc-600 hover:text-red-400 transition-colors"
+                            title="Delete screen">
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   );
                 })}
               </>
             )}
+
+            <div className="mx-3 my-1.5 border-t border-zinc-700/50" />
+            <div className="px-3 pt-2 pb-1.5 flex items-center gap-1.5">
+              <List className="w-3.5 h-3.5 text-zinc-500" />
+              <span className="text-[11px] font-bold uppercase tracking-widest text-zinc-500">Custom Watchlists</span>
+            </div>
+            {watchlists.map(wl => {
+              const wlKey = `watchlist:${wl.id}`;
+              const isActive = value === wlKey;
+              return (
+                <div key={wl.id}
+                  className={`w-full flex items-center gap-2 px-3 py-2.5 text-sm transition-colors ${
+                    isActive ? "bg-[#FFB800]/10 text-[#FFB800]" : "text-zinc-300 hover:bg-zinc-800/60"
+                  }`}
+                >
+                  <button onClick={() => { onChange(wlKey); setOpen(false); }} className="flex-1 text-left">
+                    <span className="font-medium leading-snug">{wl.name}</span>
+                  </button>
+                  <span className={`text-xs tabular-nums shrink-0 ${isActive ? "text-[#FFB800]/60" : "text-zinc-600"}`}>{wl.symbols.length}</span>
+                  <div className="flex items-center gap-0.5">
+                    {onEditWatchlist && (
+                      <button onClick={(e) => { e.stopPropagation(); onEditWatchlist(wl.id); setOpen(false); }}
+                        className="p-1 text-zinc-600 hover:text-zinc-300 transition-colors"
+                        title="Edit watchlist">
+                        <Pencil className="w-3 h-3" />
+                      </button>
+                    )}
+                    {onDeleteWatchlist && !wl.isProtected && (
+                      <button onClick={(e) => { e.stopPropagation(); onDeleteWatchlist(wl.id); }}
+                        className="p-1 text-zinc-600 hover:text-red-400 transition-colors"
+                        title="Delete watchlist">
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            {onCreateWatchlist && (
+              <button
+                onClick={() => { onCreateWatchlist(); setOpen(false); }}
+                className="w-full text-left px-3 py-2 flex items-center gap-2 text-xs text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/60 transition-colors"
+              >
+                <Plus className="w-3 h-3" />
+                <span className="font-medium">New Watchlist</span>
+              </button>
+            )}
+
+            <div className="mx-3 my-1.5 border-t border-zinc-700/50" />
+            <button
+              onClick={() => { onCreateScreen(); setOpen(false); }}
+              className="w-full text-left px-3 py-2.5 flex items-center gap-2 text-sm text-zinc-400 hover:text-[#FFB800] hover:bg-zinc-800/60 transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span className="font-medium">Create Dynamic Screen</span>
+            </button>
+
             <div className="h-2" />
           </div>
         </div>,
@@ -408,20 +459,28 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
   onNavigateToSymbol?: (sym: string) => void;
   onSendToStrategist?: (sym: string, candidate: DetCandidate) => void;
 }) {
-  const { accessToken, setSymbol, watchlists } = useTerminalStore();
+  const { accessToken, setSymbol } = useTerminalStore();
   const { pulseData } = useMarketPulseStore();
   const shockActive = pulseData?.shockState === "ACTIVE";
   const { cachedData: scanCache, setCachedData: setScanCache } = useScanCache();
+  const universeData = useScannerUniverses();
 
   const [mode, setMode] = useState<"manual" | "deterministic">("deterministic");
-  const [universe, setUniverse] = useState("sp100");
+  const [universe, setUniverse] = useState("preset:sp100");
   const [isScanning, setIsScanning] = useState(false);
   const [rawError, setRawError] = useState<string | null>(null);
   const [manualQuotes, setManualQuotes] = useState<ScannerQuote[]>([]);
   const [scanCount, setScanCount] = useState<number | null>(null);
+  const [resolvedSymbols, setResolvedSymbols] = useState<string[]>([]);
 
   const [detResult, setDetResult] = useState<DetScanResult | null>(null);
   const [detError, setDetError] = useState<string | null>(null);
+
+  const [showScreenBuilder, setShowScreenBuilder] = useState(false);
+  const [editingScreen, setEditingScreen] = useState<number | null>(null);
+  const [refreshingScreenId, setRefreshingScreenId] = useState<number | null>(null);
+  const [showWatchlistEditor, setShowWatchlistEditor] = useState(false);
+  const [editingWatchlistId, setEditingWatchlistId] = useState<number | null>(null);
 
   const scanCacheRestoredRef = useRef(false);
   useEffect(() => {
@@ -431,6 +490,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
     if (r?.manualQuotes) setManualQuotes(r.manualQuotes);
     if (r?.scanCount != null) setScanCount(r.scanCount);
     if (r?.detResult) setDetResult(r.detResult as DetScanResult);
+    if (r?.universe) setUniverse(r.universe);
   }, [scanCache]);
 
   const [minChangePct, setMinChangePct] = useState(0);
@@ -439,16 +499,16 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
   const [minPrice, setMinPrice] = useState(5);
   const [maxPrice, setMaxPrice] = useState(1000);
 
-  const getSymbols = (): string[] => {
-    if (universe.startsWith("wl:")) {
-      const wlId = universe.slice(3);
-      return watchlists[wlId]?.symbols ?? [];
-    }
-    return UNIVERSES[universe]?.symbols ?? [];
-  };
+  useEffect(() => {
+    let cancelled = false;
+    universeData.getSymbols(universe).then(syms => {
+      if (!cancelled) setResolvedSymbols(syms);
+    });
+    return () => { cancelled = true; };
+  }, [universe, universeData.getSymbols, universeData.watchlists]);
 
   const handleManualScan = async () => {
-    const syms = getSymbols();
+    const syms = resolvedSymbols.length > 0 ? resolvedSymbols : await universeData.getSymbols(universe);
     if (!syms.length) { setRawError("No symbols to scan. Select a market universe or a watchlist with symbols."); return; }
 
     setIsScanning(true);
@@ -482,7 +542,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
           subscribeEquitySymbols(quotes.map(q => q.symbol));
         }
         setScanCache({
-          results: { manualQuotes: quotes, scanCount: syms.length },
+          results: { manualQuotes: quotes, scanCount: syms.length, universe },
           timestamp: Date.now(),
         });
       }
@@ -494,7 +554,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
   };
 
   const handleDeterministicScan = async () => {
-    const syms = getSymbols();
+    const syms = resolvedSymbols.length > 0 ? resolvedSymbols : await universeData.getSymbols(universe);
     if (!syms.length) { setDetError("No symbols to scan. Select a market universe or a watchlist with symbols."); return; }
 
     setIsScanning(true);
@@ -526,7 +586,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
           subscribeEquitySymbols(data.candidates.map(c => c.symbol));
         }
         setScanCache({
-          results: { manualQuotes: [], scanCount: syms.length, detResult: data },
+          results: { manualQuotes: [], scanCount: syms.length, detResult: data, universe },
           timestamp: Date.now(),
         });
       }
@@ -537,8 +597,20 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
     }
   };
 
+  const handleRefreshScreen = async (id: number) => {
+    setRefreshingScreenId(id);
+    await universeData.runScreen(id);
+    if (universe === `screen:${id}`) {
+      const syms = await universeData.getSymbols(`screen:${id}`);
+      setResolvedSymbols(syms);
+    }
+    setRefreshingScreenId(null);
+  };
+
   const hasResults = mode === "manual" ? manualQuotes.length > 0 : (detResult?.candidates?.length ?? 0) > 0;
-  const currentSyms = getSymbols();
+  const currentSymCount = resolvedSymbols.length;
+
+  const editScreenObj = editingScreen != null ? universeData.screens.find(s => s.id === editingScreen) ?? null : null;
 
   return (
     <div className="flex flex-col gap-4 max-w-4xl mx-auto pb-6">
@@ -584,14 +656,40 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
               <Label className="text-xs text-muted-foreground uppercase tracking-wider font-bold flex items-center gap-1.5">
                 <Search className="w-3.5 h-3.5" /> Scan Universe
               </Label>
-              <UniverseDropdown value={universe} onChange={setUniverse} />
+              <UniverseDropdown
+                value={universe}
+                onChange={setUniverse}
+                presets={universeData.presets}
+                watchlists={universeData.watchlists}
+                screens={universeData.screens}
+                onCreateScreen={() => { setEditingScreen(null); setShowScreenBuilder(true); }}
+                onEditScreen={(id) => { setEditingScreen(id); setShowScreenBuilder(true); }}
+                onDeleteScreen={async (id) => {
+                  await universeData.deleteScreen(id);
+                  if (universe === `screen:${id}`) setUniverse("preset:sp100");
+                }}
+                onRefreshScreen={handleRefreshScreen}
+                refreshingScreenId={refreshingScreenId}
+                onCreateWatchlist={() => { setEditingWatchlistId(null); setShowWatchlistEditor(true); }}
+                onEditWatchlist={(id) => { setEditingWatchlistId(id); setShowWatchlistEditor(true); }}
+                onDeleteWatchlist={async (id) => {
+                  await universeData.deleteWatchlist(id);
+                  if (universe === `watchlist:${id}`) setUniverse("preset:sp100");
+                }}
+              />
             </div>
 
           </div>
 
           <div className="text-xs text-muted-foreground">
-            Scanning <span className="text-primary font-bold">{currentSyms.length} tickers</span>
-            {mode === "deterministic" && <> — Hard scoring: Trend + RS + Volume + IVR + Options Liquidity (top 5, min 60)</>}
+            {universeData.loading ? (
+              <span className="text-zinc-500">Loading universes...</span>
+            ) : (
+              <>
+                Scanning <span className="text-primary font-bold">{currentSymCount} tickers</span>
+                {mode === "deterministic" && <> — Hard scoring: Trend + RS + Volume + IVR + Options Liquidity (top 5, min 60)</>}
+              </>
+            )}
           </div>
         </div>
 
@@ -634,7 +732,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
         <div className="px-4 pb-4 pt-3 bg-[#0c0c0c] border-t border-card-border">
           <button
             onClick={mode === "deterministic" ? handleDeterministicScan : handleManualScan}
-            disabled={!accessToken || isScanning || currentSyms.length === 0 || shockActive}
+            disabled={!accessToken || isScanning || currentSymCount === 0 || shockActive}
             className="font-bold font-mono tracking-wider mx-auto block rounded-lg disabled:opacity-30 disabled:cursor-not-allowed active:scale-95 active:brightness-110 transition-all"
             style={{
               fontSize: 13, padding: "10px",
@@ -650,7 +748,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
             ) : (
               <span className="flex items-center justify-center">
                 {mode === "deterministic"
-                  ? `SCAN ${currentSyms.length} STOCKS`
+                  ? `SCAN ${currentSymCount} STOCKS`
                   : "APPLY FILTERS & SCAN"}
               </span>
             )}
@@ -671,7 +769,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
           </div>
           <div className="text-center space-y-1">
             <p className="text-sm text-primary animate-pulse font-bold">
-              SCANNING {scanCount ?? currentSyms.length} TICKERS...
+              SCANNING {scanCount ?? currentSymCount} TICKERS...
             </p>
             <p className="text-[11px] text-muted-foreground">
               {mode === "deterministic" ? "Filtering universe → Scoring → Ranking → Enriching" : "Fetching market data..."}
@@ -759,6 +857,35 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
         <div className="py-16 text-center text-xs text-muted-foreground/40 bg-card border border-card-border rounded-xl">
           Select a universe and run a deterministic scan to find trade candidates.
         </div>
+      )}
+
+      {showScreenBuilder && (
+        <ScreenBuilder
+          onClose={() => { setShowScreenBuilder(false); setEditingScreen(null); }}
+          onSave={async (name, filters) => {
+            const screen = await universeData.createScreen(name, filters);
+            if (screen) setUniverse(`screen:${screen.id}`);
+          }}
+          onPreview={universeData.previewScreen}
+          editScreen={editScreenObj as any}
+          onUpdate={universeData.updateScreen}
+        />
+      )}
+
+      {showWatchlistEditor && (
+        <WatchlistEditor
+          watchlist={editingWatchlistId != null ? universeData.watchlists.find(w => w.id === editingWatchlistId) ?? null : null}
+          onClose={() => { setShowWatchlistEditor(false); setEditingWatchlistId(null); }}
+          onCreate={async (name, symbols) => {
+            const wl = await universeData.createWatchlist(name, symbols);
+            if (wl) setUniverse(`watchlist:${wl.id}`);
+          }}
+          onUpdate={async (id, data) => {
+            await universeData.updateWatchlist(id, data);
+          }}
+          onAddSymbol={universeData.addSymbolToWatchlist}
+          onRemoveSymbol={universeData.removeSymbolFromWatchlist}
+        />
       )}
     </div>
   );

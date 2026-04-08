@@ -9,6 +9,7 @@ import { initSyntheticDxy } from "./lib/syntheticDxy";
 import { startExitMonitor } from "./lib/exitStaging";
 import { startTelemetryCleanup } from "./lib/telemetry";
 import { initDeltaEngine } from "./lib/deltaEngine";
+import { runDailyScreenRefresh } from "./routes/scanner";
 
 const rawPort = process.env["PORT"];
 
@@ -44,6 +45,23 @@ async function boot() {
   startExitMonitor();
   startTelemetryCleanup();
   initDeltaEngine();
+
+  function scheduleDailyScreenRefresh() {
+    const now = new Date();
+    const etOffset = -5;
+    const utcTarget = new Date(now);
+    utcTarget.setUTCHours(8 - etOffset, 0, 0, 0);
+    if (utcTarget.getTime() <= now.getTime()) {
+      utcTarget.setUTCDate(utcTarget.getUTCDate() + 1);
+    }
+    const msUntil = utcTarget.getTime() - now.getTime();
+    logger.info({ msUntil, targetUTC: utcTarget.toISOString() }, "Scheduling daily screen refresh");
+    setTimeout(() => {
+      void runDailyScreenRefresh();
+      setInterval(() => void runDailyScreenRefresh(), 24 * 60 * 60 * 1000);
+    }, msUntil);
+  }
+  scheduleDailyScreenRefresh();
 
   setTokenRefreshCallback((kind, _accessToken) => {
     if (kind === "trader" || kind === "market") {

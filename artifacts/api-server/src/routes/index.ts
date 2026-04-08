@@ -10,6 +10,7 @@ import secRouter from "./sec";
 import pushRouter from "./push";
 import journalRouter from "./journal";
 import telemetryRouter from "./telemetry";
+import scannerRouter from "./scanner";
 const router: IRouter = Router();
 
 router.use("/auth", authRouter);
@@ -23,5 +24,6 @@ router.use("/sec", secRouter);
 router.use("/push", pushRouter);
 router.use("/journal", journalRouter);
 router.use("/telemetry", telemetryRouter);
+router.use("/scanner", scannerRouter);
 
 export default router;
