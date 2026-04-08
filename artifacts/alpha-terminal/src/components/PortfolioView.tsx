@@ -183,6 +183,40 @@ function timeAgo(dateStr: string): string {
   if (hrs < 24) return `${hrs}h ago`;
   return `${Math.floor(hrs / 24)}d ago`;
 }
+const COMPANY_NAMES: Record<string, string> = {
+  AAPL: "Apple Inc.", MSFT: "Microsoft Corp.", GOOGL: "Alphabet Inc.", GOOG: "Alphabet Inc.",
+  AMZN: "Amazon.com Inc.", META: "Meta Platforms Inc.", NVDA: "NVIDIA Corp.", TSLA: "Tesla Inc.",
+  SPY: "SPDR S&P 500 ETF", QQQ: "Invesco QQQ Trust", IWM: "iShares Russell 2000",
+  DIA: "SPDR Dow Jones ETF", HYG: "iShares High Yield Corp", LQD: "iShares Invest Grade Corp",
+  AMD: "Advanced Micro Devices", NFLX: "Netflix Inc.", CRM: "Salesforce Inc.", MRVL: "Marvell Technology",
+  MU: "Micron Technology", AVGO: "Broadcom Inc.", QCOM: "Qualcomm Inc.", ARM: "Arm Holdings",
+  SMCI: "Super Micro Computer", TSM: "Taiwan Semiconductor",
+  INTC: "Intel Corp.", BA: "Boeing Co.", JPM: "JPMorgan Chase", GS: "Goldman Sachs",
+  V: "Visa Inc.", MA: "Mastercard Inc.", WMT: "Walmart Inc.", DIS: "Walt Disney Co.",
+  PYPL: "PayPal Holdings", SQ: "Block Inc.", COIN: "Coinbase Global",
+  PLTR: "Palantir Technologies", SOFI: "SoFi Technologies", UBER: "Uber Technologies",
+  SNOW: "Snowflake Inc.", NET: "Cloudflare Inc.", SHOP: "Shopify Inc.",
+  ROKU: "Roku Inc.", RIVN: "Rivian Automotive", LCID: "Lucid Group Inc.",
+  PANW: "Palo Alto Networks", CRWD: "CrowdStrike Holdings", ZS: "Zscaler Inc.",
+  DDOG: "Datadog Inc.", MDB: "MongoDB Inc.", TTD: "The Trade Desk",
+  ENPH: "Enphase Energy", FSLR: "First Solar Inc.", ON: "ON Semiconductor",
+  ANET: "Arista Networks", NOW: "ServiceNow Inc.", ADBE: "Adobe Inc.",
+  ORCL: "Oracle Corp.", IBM: "IBM Corp.", DELL: "Dell Technologies",
+  GM: "General Motors", F: "Ford Motor Co.", SNAP: "Snap Inc.",
+  PINS: "Pinterest Inc.", HOOD: "Robinhood Markets",
+  COF: "Capital One Financial", PG: "Procter & Gamble", MDLN: "Medallion Financial",
+  DJT: "Trump Media & Tech", MO: "Altria Group Inc.",
+  SOXX: "iShares Semiconductor", XLF: "Financial Select SPDR", XLE: "Energy Select SPDR",
+  GLD: "SPDR Gold Trust", SLV: "iShares Silver Trust", TLT: "iShares 20+ Year Treasury",
+  USO: "United States Oil Fund", ARKK: "ARK Innovation ETF",
+  NIO: "NIO Inc.", BABA: "Alibaba Group", JD: "JD.com Inc.",
+  XOM: "Exxon Mobil Corp.", CVX: "Chevron Corp.", PFE: "Pfizer Inc.",
+  MRNA: "Moderna Inc.", UNH: "UnitedHealth Group", LLY: "Eli Lilly & Co.",
+  COST: "Costco Wholesale", HD: "Home Depot Inc.", LOW: "Lowe's Companies",
+  TGT: "Target Corp.", KO: "Coca-Cola Co.", PEP: "PepsiCo Inc.",
+  MCD: "McDonald's Corp.", SBUX: "Starbucks Corp.", NKE: "Nike Inc.",
+  ABNB: "Airbnb Inc.", DASH: "DoorDash Inc.", LYFT: "Lyft Inc.",
+};
 const MONTH_ABBR = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
 function formatOptionSymbol(sym: string, includeUnderlying = true): string {
   const match = sym.trim().match(/^(\w+)\s+(\d{6})([CP])(\d{8})$/);
@@ -423,7 +457,7 @@ function PositionTableRow({
               <span onClick={e => { e.stopPropagation(); onSelect(group.underlying); }} style={{ fontSize: 14, fontWeight: 600, color: C.text, whiteSpace: "nowrap", cursor: "pointer" }}>{group.underlying}</span>
               <span style={{ fontSize: 11, color: C.dim, whiteSpace: "nowrap" }}>{details}</span>
             </div>
-            {group.description && <span style={{ fontSize: 10, color: C.gold, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{group.description}</span>}
+            {(COMPANY_NAMES[group.underlying] ?? group.description) && <span style={{ fontSize: 10, color: C.gold, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{COMPANY_NAMES[group.underlying] ?? group.description}</span>}
           </div>
         </div>
         {visibleColumns.includes("mark") && (() => {
