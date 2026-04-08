@@ -813,7 +813,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
     .map(k => metricValues[k]);
 
   return (
-    <div style={{ fontFamily: f, position: "relative" }}>
+    <div style={{ fontFamily: f, position: "relative", minWidth: 0, overflow: "hidden" }}>
       {showSettings && (
         <div
           style={{ position: "fixed", inset: 0, zIndex: 50, background: "#000000cc", display: "flex", alignItems: "flex-start", justifyContent: "flex-end" }}
@@ -932,95 +932,103 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
         </div>
       </div>
 
-      <div>
+      <div style={{ minWidth: 0 }}>
         {subTab === "positions" && (
-          <div className="pf-hscroll" style={{ overflowX: "scroll", WebkitOverflowScrolling: "touch" as any }}>
-            <style>{`.pf-hscroll::-webkit-scrollbar { display: none; } .pf-hscroll { scrollbar-width: none; -ms-overflow-style: none; }`}</style>
-            <div style={{
-              display: "grid", gridTemplateColumns: gridCols, minWidth: minRowWidth,
-              borderBottom: `1px solid ${C.borderHi}`, background: "#0e0e0e",
-            }}>
-              <div style={{ position: "sticky", left: 0, zIndex: 3, background: "#0e0e0e", display: "flex", alignItems: "center", gap: 6, padding: "6px 8px 6px 12px", borderRight: `1px solid ${C.border}` }}>
-                <span style={{ fontSize: 12, fontWeight: 500, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5 }}>Symbol</span>
-                <button onClick={() => setShowColumnSettings(x => !x)} style={{ padding: 2, background: "transparent", border: "none", cursor: "pointer" }}>
-                  <Settings style={{ width: 13, height: 13, color: showColumnSettings ? C.gold : C.dim }} />
-                </button>
-              </div>
-              {ALL_COLUMNS.filter(c => visibleColumns.includes(c.key)).map(c => (
-                <span key={c.key} style={{ fontSize: 11, fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: 0.6, textAlign: "right", padding: "6px 8px" }}>{c.label}</span>
-              ))}
-            </div>
-
-            {showColumnSettings && ReactDOM.createPortal(
-              <>
-                <div style={{ position: "fixed", inset: 0, zIndex: 49 }} onClick={() => setShowColumnSettings(false)} />
-                <div
-                  style={{ position: "fixed", top: "120px", left: "8px", zIndex: 50, background: "#161616", border: `1px solid ${C.borderHi}`, borderRadius: 6, width: 260, padding: 0, fontFamily: f, boxShadow: "0 8px 32px rgba(0,0,0,0.6)" }}
-                  onClick={e => e.stopPropagation()}
-                >
-                  <div style={{ padding: "10px 14px 8px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <span style={{ fontSize: 11, fontWeight: 600, color: C.textDim, textTransform: "uppercase", letterSpacing: 1 }}>Columns</span>
-                    <span style={{ fontSize: 11, color: C.dim }}>{visibleColumns.length}/{ALL_COLUMNS.length} on</span>
-                  </div>
-                  {ALL_COLUMNS.map((col, i) => {
-                    const on = visibleColumns.includes(col.key);
-                    return (
-                      <button
-                        key={col.key}
-                        onClick={() => toggleColumn(col.key)}
-                        style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", background: on ? `${C.gold}06` : "transparent", border: "none", borderBottom: i < ALL_COLUMNS.length - 1 ? `1px solid ${C.border}` : "none", cursor: "pointer", fontFamily: f, textAlign: "left" }}
-                      >
-                        <div style={{ width: 18, height: 18, borderRadius: 4, border: `1.5px solid ${on ? C.gold : C.dim}`, background: on ? `${C.gold}20` : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                          {on && <Check style={{ width: 11, height: 11, color: C.gold }} />}
-                        </div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 13, fontWeight: on ? 600 : 400, color: on ? C.text : C.dim }}>{col.label}</div>
-                          <div style={{ fontSize: 11, color: C.dim, marginTop: 1 }}>{col.desc}</div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </>,
-              document.body
-            )}
-
-            {symbolGroups.map(group => (
-              <PositionTableRow
-                key={group.underlying}
-                group={group}
-                onSelect={handleSelectSymbol}
-                onTrade={onTrade}
-                selectedKeys={selectedKeys}
-                toggleKey={toggleKey}
-                visibleColumns={visibleColumns}
-              />
-            ))}
-
-            {symbolGroups.length > 0 && (
+          <>
+            <div className="pf-hscroll" style={{ overflowX: "scroll", width: "100%", WebkitOverflowScrolling: "touch" as any }}>
+              <style>{`.pf-hscroll::-webkit-scrollbar { display: none; } .pf-hscroll { scrollbar-width: none; -ms-overflow-style: none; }`}</style>
               <div style={{
                 display: "grid", gridTemplateColumns: gridCols, minWidth: minRowWidth,
-                borderTop: `2px solid ${C.borderHi}`, background: "#0e0e0e",
+                borderBottom: `1px solid ${C.borderHi}`, background: "#0e0e0e",
               }}>
-                <div style={{ position: "sticky", left: 0, zIndex: 1, background: "#0e0e0e", padding: "8px 8px 8px 12px", borderRight: `1px solid ${C.border}` }}>
-                  <span style={{ fontSize: 13, fontWeight: 500, color: C.textMuted, whiteSpace: "nowrap" }}>Totals</span>
+                <div style={{ position: "sticky", left: 0, zIndex: 3, background: "#0e0e0e", display: "flex", alignItems: "center", gap: 6, padding: "6px 8px 6px 12px", borderRight: `1px solid ${C.border}` }}>
+                  <span style={{ fontSize: 12, fontWeight: 500, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5 }}>Symbol</span>
+                  <button onClick={() => setShowColumnSettings(x => !x)} style={{ padding: 2, background: "transparent", border: "none", cursor: "pointer" }}>
+                    <Settings style={{ width: 13, height: 13, color: showColumnSettings ? C.gold : C.dim }} />
+                  </button>
                 </div>
-                {visibleColumns.includes("mark")   && <span style={{ fontSize: 13, color: C.dim, textAlign: "right", padding: "8px" }}>—</span>}
-                {visibleColumns.includes("cost")   && <span style={{ fontSize: 13, color: C.dim, textAlign: "right", padding: "8px" }}>—</span>}
-                {visibleColumns.includes("qty")    && <span style={{ fontSize: 13, color: C.dim, textAlign: "right", padding: "8px" }}>—</span>}
-                {visibleColumns.includes("mktVal") && <span style={{ fontSize: 13, fontWeight: 500, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px" }}>{fmtCompact(totalMarketValue)}</span>}
-                {visibleColumns.includes("plOpen") && <span style={{ fontSize: 13, fontWeight: 500, color: plColor(totalUnrealized), textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px" }}>{fmtCurrency(totalUnrealized)}</span>}
-                {visibleColumns.includes("plPct")  && <span style={{ fontSize: 13, fontWeight: 500, color: plColor(totalUnrealized), textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px" }}>{fmtPct(unrealizedPct)}</span>}
-                {visibleColumns.includes("plDay")  && <span style={{ fontSize: 13, fontWeight: 600, color: plColor(totalDayPLPositions), textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px" }}>{fmtCurrency(totalDayPLPositions)}</span>}
-                {visibleColumns.includes("maint")  && (() => {
-                  const totalMaint = (account?.positions ?? []).reduce((s, p) => s + p.maintenanceRequirement, 0);
-                  return <span style={{ fontSize: 13, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px" }}>{totalMaint > 0 ? fmtCompact(totalMaint) : "—"}</span>;
-                })()}
+                {ALL_COLUMNS.filter(c => visibleColumns.includes(c.key)).map(c => (
+                  <span key={c.key} style={{ fontSize: 11, fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: 0.6, textAlign: "right", padding: "6px 8px" }}>{c.label}</span>
+                ))}
               </div>
-            )}
+
+              {showColumnSettings && ReactDOM.createPortal(
+                <>
+                  <div style={{ position: "fixed", inset: 0, zIndex: 49 }} onClick={() => setShowColumnSettings(false)} />
+                  <div
+                    style={{ position: "fixed", top: "120px", left: "8px", zIndex: 50, background: "#161616", border: `1px solid ${C.borderHi}`, borderRadius: 6, width: 260, padding: 0, fontFamily: f, boxShadow: "0 8px 32px rgba(0,0,0,0.6)" }}
+                    onClick={e => e.stopPropagation()}
+                  >
+                    <div style={{ padding: "10px 14px 8px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: C.textDim, textTransform: "uppercase", letterSpacing: 1 }}>Columns</span>
+                      <span style={{ fontSize: 11, color: C.dim }}>{visibleColumns.length}/{ALL_COLUMNS.length} on</span>
+                    </div>
+                    {ALL_COLUMNS.map((col, i) => {
+                      const on = visibleColumns.includes(col.key);
+                      return (
+                        <button
+                          key={col.key}
+                          onClick={() => toggleColumn(col.key)}
+                          style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", background: on ? `${C.gold}06` : "transparent", border: "none", borderBottom: i < ALL_COLUMNS.length - 1 ? `1px solid ${C.border}` : "none", cursor: "pointer", fontFamily: f, textAlign: "left" }}
+                        >
+                          <div style={{ width: 18, height: 18, borderRadius: 4, border: `1.5px solid ${on ? C.gold : C.dim}`, background: on ? `${C.gold}20` : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                            {on && <Check style={{ width: 11, height: 11, color: C.gold }} />}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 13, fontWeight: on ? 600 : 400, color: on ? C.text : C.dim }}>{col.label}</div>
+                            <div style={{ fontSize: 11, color: C.dim, marginTop: 1 }}>{col.desc}</div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>,
+                document.body
+              )}
+
+              {symbolGroups.map(group => (
+                <PositionTableRow
+                  key={group.underlying}
+                  group={group}
+                  onSelect={handleSelectSymbol}
+                  onTrade={onTrade}
+                  selectedKeys={selectedKeys}
+                  toggleKey={toggleKey}
+                  visibleColumns={visibleColumns}
+                />
+              ))}
+
+              {symbolGroups.length > 0 && (
+                <div style={{
+                  display: "grid", gridTemplateColumns: gridCols, minWidth: minRowWidth,
+                  borderTop: `2px solid ${C.borderHi}`, background: "#0e0e0e",
+                }}>
+                  <div style={{ position: "sticky", left: 0, zIndex: 1, background: "#0e0e0e", padding: "8px 8px 8px 12px", borderRight: `1px solid ${C.border}` }}>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: C.textMuted, whiteSpace: "nowrap" }}>Totals</span>
+                  </div>
+                  {visibleColumns.includes("mark")   && <span style={{ fontSize: 13, color: C.dim, textAlign: "right", padding: "8px" }}>—</span>}
+                  {visibleColumns.includes("cost")   && <span style={{ fontSize: 13, color: C.dim, textAlign: "right", padding: "8px" }}>—</span>}
+                  {visibleColumns.includes("qty")    && <span style={{ fontSize: 13, color: C.dim, textAlign: "right", padding: "8px" }}>—</span>}
+                  {visibleColumns.includes("mktVal") && <span style={{ fontSize: 13, fontWeight: 500, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px" }}>{fmtCompact(totalMarketValue)}</span>}
+                  {visibleColumns.includes("plOpen") && <span style={{ fontSize: 13, fontWeight: 500, color: plColor(totalUnrealized), textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px" }}>{fmtCurrency(totalUnrealized)}</span>}
+                  {visibleColumns.includes("plPct")  && <span style={{ fontSize: 13, fontWeight: 500, color: plColor(totalUnrealized), textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px" }}>{fmtPct(unrealizedPct)}</span>}
+                  {visibleColumns.includes("plDay")  && <span style={{ fontSize: 13, fontWeight: 600, color: plColor(totalDayPLPositions), textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px" }}>{fmtCurrency(totalDayPLPositions)}</span>}
+                  {visibleColumns.includes("maint")  && (() => {
+                    const totalMaint = (account?.positions ?? []).reduce((s, p) => s + p.maintenanceRequirement, 0);
+                    return <span style={{ fontSize: 13, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px" }}>{totalMaint > 0 ? fmtCompact(totalMaint) : "—"}</span>;
+                  })()}
+                </div>
+              )}
+
+              {symbolGroups.length === 0 && (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "48px 0" }}>
+                  <div style={{ fontSize: 13, color: C.textDim, textTransform: "uppercase", letterSpacing: 1 }}>No open positions</div>
+                </div>
+              )}
+            </div>
 
             {symbolGroups.length > 0 && (
-              <div style={{ borderTop: `1px solid ${C.border}`, padding: "4px 0" }}>
+              <div style={{ borderTop: `1px solid ${C.border}`, padding: "4px 0", background: "#000" }}>
                 {[
                   { label: "P/L Day:", value: `${fmtCurrency(totalDayPLPositions)} (${dayReturnPct >= 0 ? "+" : ""}${dayReturnPct.toFixed(1)}%)`, color: plColor(totalDayPLPositions) },
                   { label: "P/L Open:", value: fmtCurrency(totalUnrealized), color: plColor(totalUnrealized) },
@@ -1036,13 +1044,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
                 ))}
               </div>
             )}
-
-            {symbolGroups.length === 0 && (
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "48px 0" }}>
-                <div style={{ fontSize: 13, color: C.textDim, textTransform: "uppercase", letterSpacing: 1 }}>No open positions</div>
-              </div>
-            )}
-          </div>
+          </>
         )}
 
         {subTab === "orders" && (
