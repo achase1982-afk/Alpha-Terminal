@@ -94,9 +94,10 @@ router.get("/quote", async (req, res) => {
 
   const schwabCached = getQuoteBySymbol(apiSymbol);
   if (schwabCached && schwabCached.last !== null) {
+    const cachedDesc = apiSymbol === "$DXY" ? "Dollar Index (Synthetic)" : (isIBConnected() ? getIBCompanyName(displaySymbol) ?? undefined : undefined);
     const data = GetQuoteResponse.parse({
       symbol: displaySymbol,
-      description: apiSymbol === "$DXY" ? "Dollar Index (Synthetic)" : undefined,
+      description: cachedDesc,
       last: schwabCached.last ?? undefined,
       bid: schwabCached.bid ?? undefined,
       ask: schwabCached.ask ?? undefined,
