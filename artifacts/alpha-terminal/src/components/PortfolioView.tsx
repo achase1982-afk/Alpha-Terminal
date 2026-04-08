@@ -61,7 +61,7 @@ const ALL_COLUMNS: { key: ColumnKey; label: string; desc: string }[] = [
   { key: "plDay",  label: "P/L Day", desc: "Today's P/L in dollars" },
   { key: "maint",  label: "Maint",   desc: "Maintenance margin requirement" },
 ];
-const DEFAULT_COLUMNS: ColumnKey[] = ["mark", "mktVal", "plPct", "plDay"];
+const DEFAULT_COLUMNS: ColumnKey[] = ["mark", "plPct", "plDay", "mktVal"];
 const COLUMNS_STORAGE_KEY = "alpha_visible_columns";
 
 interface Position {
@@ -209,10 +209,10 @@ function statusColor(status: string): string {
   }
 }
 
-const SYMBOL_COL_W = 110;
+const SYMBOL_COL_W = 100;
 const COL_WIDTHS_DEFAULT: Record<string, number> = {
   symbol: SYMBOL_COL_W,
-  mark: 76, cost: 76, qty: 52, mktVal: 80, plOpen: 84, plPct: 68, plDay: 80, maint: 76,
+  mark: 80, cost: 72, qty: 48, mktVal: 76, plOpen: 80, plPct: 72, plDay: 76, maint: 72,
 };
 
 const getGridCols = (visibleCols: ColumnKey[], widths: Record<string, number>): string => {
