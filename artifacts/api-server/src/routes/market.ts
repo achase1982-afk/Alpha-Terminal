@@ -637,6 +637,89 @@ router.get("/options", async (req, res) => {
   }
 });
 
+router.get("/ticker-stats", async (req, res) => {
+  const symbol = (req.query["symbol"] as string || "").toUpperCase().trim();
+  const accessToken = (req.query["accessToken"] as string) || getAccessToken("market");
+
+  if (!symbol) {
+    return res.json({ symbol: "", pcRatio: null, ivr: null, expectedMove: null });
+  }
+
+  const result: { symbol: string; pcRatio: number | null; ivr: number | null; expectedMove: number | null } = {
+    symbol,
+    pcRatio: null,
+    ivr: null,
+    expectedMove: null,
+  };
+
+  if (isIBConnected()) {
+    subscribeQuoteForSymbol("$PCUSEQTR");
+    subscribeQuoteForSymbol("$PCUSINXR");
+  }
+  const eqQ = getIBCachedQuote("$PCUSEQTR") ?? getQuoteBySymbol("$PCUSEQTR");
+  const ixQ = getIBCachedQuote("$PCUSINXR") ?? getQuoteBySymbol("$PCUSINXR");
+  const pickPc = (q: typeof eqQ) => {
+    if (!q) return null;
+    if (typeof q.last === "number" && q.last > 0) return q.last;
+    if (typeof q.close === "number" && q.close > 0) return q.close;
+    return null;
+  };
+  const cpce = pickPc(eqQ);
+  const cpci = pickPc(ixQ);
+  result.pcRatio = cpce !== null && cpci !== null ? Math.round(((cpce + cpci) / 2) * 10000) / 10000 : cpce ?? cpci;
+
+  if (accessToken) {
+    try {
+      const chain = await getOrFetchChain(symbol, accessToken, req.log);
+      if (chain && chain.underlyingPrice) {
+        const price = chain.underlyingPrice;
+        const allContracts = [...chain.calls, ...chain.puts];
+
+        const now = Date.now();
+        const nearestExp = [...new Set(chain.calls.map((c: any) => c.expiration))]
+          .filter((e: any) => new Date(e).getTime() > now)
+          .sort((a: any, b: any) => new Date(a).getTime() - new Date(b).getTime())[0] as string | undefined;
+
+        if (nearestExp) {
+          const nearCalls = chain.calls.filter((c: any) => c.expiration === nearestExp);
+          const nearPuts = chain.puts.filter((p: any) => p.expiration === nearestExp);
+          const atmCall = nearCalls.sort((a: any, b: any) => Math.abs(a.strike - price) - Math.abs(b.strike - price))[0] as any;
+          const atmPut = nearPuts.sort((a: any, b: any) => Math.abs(a.strike - price) - Math.abs(b.strike - price))[0] as any;
+
+          if (atmCall && atmPut) {
+            const callMid = ((atmCall.bid ?? 0) + (atmCall.ask ?? 0)) / 2;
+            const putMid = ((atmPut.bid ?? 0) + (atmPut.ask ?? 0)) / 2;
+            const straddle = callMid + putMid;
+            if (straddle > 0) {
+              result.expectedMove = Math.round(straddle * 100) / 100;
+            }
+          }
+
+          const atmIv = atmCall?.iv ?? atmPut?.iv;
+          if (typeof atmIv === "number" && atmIv > 0) {
+            const ivs = allContracts
+              .filter((c: any) => typeof c.iv === "number" && c.iv > 0 && c.iv < 500)
+              .map((c: any) => c.iv as number);
+            if (ivs.length >= 10) {
+              const sorted = [...ivs].sort((a, b) => a - b);
+              const low = sorted[Math.floor(sorted.length * 0.05)];
+              const high = sorted[Math.floor(sorted.length * 0.95)];
+              if (high > low) {
+                const ivr = Math.round(((atmIv - low) / (high - low)) * 100);
+                result.ivr = Math.max(0, Math.min(100, ivr));
+              }
+            }
+          }
+        }
+      }
+    } catch (err) {
+      req.log.warn({ err, symbol }, "ticker-stats: chain fetch error");
+    }
+  }
+
+  res.json(result);
+});
+
 router.get("/pc-ratio", async (_req, res) => {
   if (isIBConnected()) {
     subscribeQuoteForSymbol("$PCUSEQTR");

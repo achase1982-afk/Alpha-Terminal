@@ -804,12 +804,14 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
 
   useEffect(() => {
     const ticker = (inputVal.trim().toUpperCase()) || symbol;
-    if (!ticker || !accessToken) { setTickerPcRatio(null); setTickerIvr(null); setTickerExpectedMove(null); return; }
+    if (!ticker) { setTickerPcRatio(null); setTickerIvr(null); setTickerExpectedMove(null); return; }
     setTickerPcRatio(null); setTickerIvr(null); setTickerExpectedMove(null);
     if (pcDebounceRef.current) clearTimeout(pcDebounceRef.current);
     pcDebounceRef.current = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/market/pc-ratio?symbol=${encodeURIComponent(ticker)}&accessToken=${encodeURIComponent(accessToken)}`);
+        const params = new URLSearchParams({ symbol: ticker });
+        if (accessToken) params.set("accessToken", accessToken);
+        const res = await fetch(`/api/market/ticker-stats?${params.toString()}`);
         if (!res.ok) return;
         const data = await res.json();
         if (data?.pcRatio != null) setTickerPcRatio(data.pcRatio);
@@ -2223,7 +2225,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
         <div style={{ width: "100%", flexShrink: 0, overflowY: "auto" }}>
           <div className="px-3 sm:px-4 lg:px-5 space-y-4 pt-3">
             <StrategistShockBanner />
-            <StrategistCommandBar onRun={handleRunStrategistWithTicker} disabled={isPendingAny || !accessToken}
+            <StrategistCommandBar onRun={handleRunStrategistWithTicker} disabled={isPendingAny}
               lastRunSymbol={lastRunSymbol} lastRunTime={lastRunTime} />
 
             {activeResult === "strategist" && (
