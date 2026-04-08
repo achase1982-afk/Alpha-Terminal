@@ -1594,6 +1594,10 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
           <MarketScanner
             subscribeEquitySymbols={subscribeEquitySymbols ?? (() => {})}
             onNavigateToSymbol={onNavigateToMarkets ?? (() => {})}
+            onSendToStrategist={(sym: string) => {
+              useTerminalStore.getState().setSymbol(sym);
+              onSubTabChange("strategist");
+            }}
           />
         </div>
       </div>

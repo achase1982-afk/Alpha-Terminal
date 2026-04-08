@@ -16,13 +16,14 @@ import { computeIndicators, formatTAContext, isDataStale, type Candle } from "..
 import { runMarketPulseEngine, formatClusterDebugLine, verifyEngineScoring, type MarketIndicators, type BiasLabel, type SessionType } from "../lib/marketPulseEngine.js";
 import { getSnapshot, schwabFuturesKey, type LiveQuote } from "../lib/schwabStreamer.js";
 import { getIBSnapshot, getIBCachedQuote, registerPermanentSymbols } from "../lib/ibStreamer.js";
-import { getBestAccessToken } from "../lib/tokenStore.js";
+import { getBestAccessToken, getTokens } from "../lib/tokenStore.js";
 import { getSyntheticDxyPrevClose } from "../lib/syntheticDxy.js";
 import { selectStrategies, selectStrategiesByRegime, classifyRegime, checkOverrideConflict, classifyTicker, computeBeta, applyBetaToProfile, computeExpectedMove, computeIVR, STRATEGIST_SYSTEM_PROMPT, type OptionContract, type StrategyPayload, type RegimeClassification, type TickerProfile, type DailyCandle, type ConvictionParams } from "../lib/optionsStrategist.js";
 import { runPreTradeChecks, type PreTradeInput, type PreTradeResult } from "../lib/preTradeRiskEngine.js";
 import { evaluateRegimeShock, type ShockDetectorOutput } from "../lib/regimeShockDetector.js";
 import { sendPushToAll } from "../lib/pushService.js";
 import { checkEventConflicts, getUpcomingEvents, type EventCheckResult } from "../lib/calendarEventChecker.js";
+import { runDeterministicScan } from "../lib/deterministicScanner.js";
 
 const router: IRouter = Router();
 
@@ -2686,6 +2687,59 @@ interface ScannerAiResult {
   setups: ScannerSetup[];
   marketSummary: string;
 }
+
+router.post("/deterministic-scan", async (req, res) => {
+  const { symbols, accessToken } = req.body as {
+    symbols: string[];
+    accessToken: string;
+  };
+
+  if (!symbols?.length || !accessToken) {
+    return res.status(400).json({ error: "symbols and accessToken are required" });
+  }
+
+  const { dataMap } = readFromWebSocketCache();
+  const shockResult = evaluateRegimeShock(extractMarketIndicators(dataMap));
+  if (shockResult.shockActive) {
+    return res.json({
+      error: "shock_active",
+      message: "Scanning paused — regime shock active",
+      shockState: shockResult.shockState,
+    });
+  }
+
+  let pulseComposite = 0;
+  let pulseConfidence = 0;
+  let pulseBias = "NO_EDGE";
+
+  if (lastPulseResult) {
+    const p = lastPulseResult.pulse as Record<string, unknown>;
+    pulseComposite = (p["compositeScore"] as number) ?? 0;
+    pulseConfidence = (p["confidenceScore"] as number) ?? 0;
+    pulseBias = (p["bias"] as string) ?? "NO_EDGE";
+  }
+
+  const traderTokenSet = getTokens("trader");
+  const traderToken = traderTokenSet?.accessToken ?? null;
+  if (!traderToken) {
+    req.log.warn("Deterministic scan: no trader token — portfolio position filter will be skipped");
+  }
+
+  try {
+    const result = await runDeterministicScan(
+      symbols,
+      accessToken,
+      traderToken,
+      { composite: pulseComposite, confidence: pulseConfidence, bias: pulseBias },
+      req.log,
+    );
+    res.json(result);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    req.log.error({ err }, "Deterministic scan error");
+    res.status(500).json({ error: msg });
+  }
+});
 
 router.post("/market-scanner", async (req, res) => {
   const { symbols, accessToken, mode, filters, model, temperature, maxResults } = req.body as {

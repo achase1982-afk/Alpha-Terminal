@@ -4,7 +4,7 @@ import { useQuote } from "@/hooks/useQuote";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
-import { Zap, SlidersHorizontal, TrendingUp, TrendingDown, Minus, ChevronUp, ChevronDown, AlertTriangle, Search, List } from "lucide-react";
+import { Zap, SlidersHorizontal, TrendingUp, TrendingDown, Minus, ChevronUp, ChevronDown, AlertTriangle, Search, List, Crosshair, Send, Shield, BarChart3 } from "lucide-react";
 import { useScanCache } from "@/hooks/useScanCache";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 
@@ -100,6 +100,172 @@ interface ScannerQuote {
   high: number;
   low: number;
 }
+
+interface DetComponentScores {
+  trendAlignment: number;
+  relativeStrength: number;
+  volumeConfirmation: number;
+  ivrScore: number;
+  optionsLiquidity: number;
+}
+
+interface DetCandidate {
+  symbol: string;
+  totalScore: number;
+  components: DetComponentScores;
+  price: number;
+  changePct: number;
+  sector: string;
+  keyStatLabel: string;
+  keyStatValue: string;
+  ivr: number;
+  atmIV: number;
+  atmSpreadPct: number;
+  hasWeeklyOptions: boolean;
+  upcomingEvents: Array<{ date: string; title: string; importance: string }>;
+  microOverrideEligible: boolean;
+  pulseComposite: number;
+  pulseConfidence: number;
+  pulseBias: string;
+}
+
+interface DetScanResult {
+  candidates: DetCandidate[];
+  filterSummary: {
+    totalScanned: number;
+    passedFilters: number;
+    scoredAboveThreshold: number;
+  };
+  scanTimestamp: number;
+  pulseBias: string;
+}
+
+const SCORE_BARS: { key: keyof DetComponentScores; label: string; max: number; color: string }[] = [
+  { key: "trendAlignment", label: "TREND", max: 25, color: "#26a69a" },
+  { key: "relativeStrength", label: "RS", max: 20, color: "#42a5f5" },
+  { key: "volumeConfirmation", label: "VOL", max: 20, color: "#ab47bc" },
+  { key: "ivrScore", label: "IVR", max: 20, color: "#ffb800" },
+  { key: "optionsLiquidity", label: "OPT LIQ", max: 15, color: "#ef5350" },
+];
+
+const DeterministicCard = memo(function DeterministicCard({
+  candidate, rank, onSelect, onSendToStrategist,
+}: {
+  candidate: DetCandidate; rank: number;
+  onSelect: (sym: string) => void;
+  onSendToStrategist?: (sym: string) => void;
+}) {
+  const { data } = useQuote(candidate.symbol);
+  const livePrice = data?.last ?? candidate.price;
+  const liveChangePct = data?.changePct ?? candidate.changePct;
+  const isUp = liveChangePct >= 0;
+
+  return (
+    <div className="bg-card border border-card-border rounded-lg overflow-hidden hover:border-zinc-600 transition-colors">
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-card-border/50" style={{ background: "#0c0c0c" }}>
+        <span className="text-[11px] font-bold tabular-nums w-5 text-zinc-600">#{rank}</span>
+        <button onClick={() => onSelect(candidate.symbol)}
+          className="font-bold text-sm tracking-wider hover:text-[#FFB800] transition-colors active:scale-95"
+          style={{ color: isUp ? "#26a69a" : "#f23645" }}>
+          {candidate.symbol}
+        </button>
+        <span className="text-[11px] text-zinc-500 font-medium">{candidate.sector}</span>
+        <div className="ml-auto flex items-center gap-3">
+          {candidate.microOverrideEligible && (
+            <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full"
+              style={{ color: "#FFB800", background: "rgba(255,184,0,0.12)", border: "1px solid rgba(255,184,0,0.3)" }}>
+              <Shield className="w-3 h-3" /> MICRO-OVERRIDE
+            </span>
+          )}
+          <span className="text-lg font-bold font-mono tabular-nums"
+            style={{ color: candidate.totalScore >= 80 ? "#26a69a" : candidate.totalScore >= 60 ? "#FFB800" : "#6B7280" }}>
+            {candidate.totalScore}
+          </span>
+        </div>
+      </div>
+
+      <div className="px-4 py-3 grid grid-cols-2 gap-x-6 gap-y-2">
+        <div>
+          <div className="text-[11px] text-zinc-500 uppercase mb-1.5">Score Breakdown</div>
+          <div className="space-y-1.5">
+            {SCORE_BARS.map(bar => {
+              const val = candidate.components[bar.key];
+              const pct = Math.round((val / bar.max) * 100);
+              return (
+                <div key={bar.key} className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold text-zinc-500 w-[52px] text-right shrink-0">{bar.label}</span>
+                  <div className="flex-1 h-[6px] rounded-full overflow-hidden" style={{ background: "#1a1a1a" }}>
+                    <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: bar.color }} />
+                  </div>
+                  <span className="text-[10px] font-mono tabular-nums text-zinc-400 w-8 text-right">{val}/{bar.max}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex justify-between">
+            <span className="text-[11px] text-zinc-500">Price</span>
+            <span className="text-sm font-bold text-zinc-200 tabular-nums">${livePrice.toFixed(2)}
+              <span className="text-[11px] ml-1 font-normal" style={{ color: isUp ? "#26a69a" : "#f23645" }}>
+                {isUp ? "+" : ""}{liveChangePct.toFixed(2)}%
+              </span>
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-[11px] text-zinc-500">IVR</span>
+            <span className="text-sm font-mono tabular-nums"
+              style={{ color: candidate.ivr > 50 ? "#FFB800" : candidate.ivr < 30 ? "#26a69a" : "#6B7280" }}>
+              {candidate.ivr}%
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-[11px] text-zinc-500">ATM Spread</span>
+            <span className="text-sm font-mono tabular-nums text-zinc-300">{candidate.atmSpreadPct.toFixed(1)}%</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-[11px] text-zinc-500">{candidate.keyStatLabel}</span>
+            <span className="text-sm font-mono tabular-nums text-zinc-300">{candidate.keyStatValue}</span>
+          </div>
+          {candidate.hasWeeklyOptions && (
+            <span className="text-[10px] text-zinc-500 border border-zinc-700 rounded px-1.5 py-0.5 inline-block">WEEKLYS</span>
+          )}
+        </div>
+      </div>
+
+      {candidate.upcomingEvents.length > 0 && (
+        <div className="px-4 pb-2">
+          <div className="flex flex-wrap gap-1.5">
+            {candidate.upcomingEvents.map((ev, i) => (
+              <span key={i} className="text-[10px] px-1.5 py-0.5 rounded border"
+                style={{
+                  color: ev.importance?.toUpperCase() === "HIGH" ? "#f23645" : "#FFB800",
+                  borderColor: ev.importance?.toUpperCase() === "HIGH" ? "rgba(242,54,69,0.3)" : "rgba(255,184,0,0.2)",
+                  background: ev.importance?.toUpperCase() === "HIGH" ? "rgba(242,54,69,0.08)" : "rgba(255,184,0,0.05)",
+                }}>
+                {ev.title} {ev.date}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="px-4 py-2.5 border-t border-card-border/50 flex items-center justify-between" style={{ background: "#0a0a0a" }}>
+        <span className="text-[10px] text-zinc-600">
+          Bias: {candidate.pulseBias} · Composite: {candidate.pulseComposite}
+        </span>
+        {onSendToStrategist && (
+          <button onClick={() => onSendToStrategist(candidate.symbol)}
+            className="flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded transition-all hover:bg-[#FFB800]/15 active:scale-95"
+            style={{ color: "#FFB800", border: "1px solid rgba(255,184,0,0.3)" }}>
+            <Send className="w-3 h-3" /> SEND TO STRATEGIST
+          </button>
+        )}
+      </div>
+    </div>
+  );
+});
 
 function dirColor(dir: string) {
   if (dir === "BULLISH") return "#00d166";
@@ -344,9 +510,10 @@ function UniverseDropdown({ value, onChange }: { value: string; onChange: (v: st
   );
 }
 
-export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol }: {
+export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSendToStrategist }: {
   subscribeEquitySymbols?: (symbols: string[]) => void;
   onNavigateToSymbol?: (sym: string) => void;
+  onSendToStrategist?: (sym: string) => void;
 }) {
   const { accessToken, aiFeatureSettings, setSymbol, watchlists } = useTerminalStore();
   const { pulseData } = useMarketPulseStore();
@@ -355,7 +522,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol }: {
   const aiTemp = aiFeatureSettings.scanner.temperature;
   const { cachedData: scanCache, setCachedData: setScanCache } = useScanCache();
 
-  const [mode, setMode] = useState<"ai" | "manual">("ai");
+  const [mode, setMode] = useState<"ai" | "manual" | "deterministic">("deterministic");
   const [universe, setUniverse] = useState("sp100");
   const [maxResults, setMaxResults] = useState(10);
   const [isScanning, setIsScanning] = useState(false);
@@ -364,6 +531,9 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol }: {
   const [rawError, setRawError] = useState<string | null>(null);
   const [manualQuotes, setManualQuotes] = useState<ScannerQuote[]>([]);
   const [scanCount, setScanCount] = useState<number | null>(null);
+
+  const [detResult, setDetResult] = useState<DetScanResult | null>(null);
+  const [detError, setDetError] = useState<string | null>(null);
 
   const scanCacheRestoredRef = useRef(false);
   useEffect(() => {
@@ -374,6 +544,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol }: {
     if (r?.marketSummary) setMarketSummary(r.marketSummary);
     if (r?.manualQuotes) setManualQuotes(r.manualQuotes);
     if (r?.scanCount != null) setScanCount(r.scanCount);
+    if (r?.detResult) setDetResult(r.detResult as DetScanResult);
   }, [scanCache]);
 
   const [sortKey, setSortKey] = useState<SortKey>("confidence");
@@ -478,7 +649,47 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol }: {
     }
   };
 
-  const hasResults = mode === "ai" ? aiSetups.length > 0 : manualQuotes.length > 0;
+  const handleDeterministicScan = async () => {
+    if (!accessToken) return;
+    const syms = getSymbols();
+    if (!syms.length) { setDetError("No symbols to scan. Select a market universe or a watchlist with symbols."); return; }
+
+    setIsScanning(true);
+    setDetError(null);
+    setDetResult(null);
+    setScanCount(syms.length);
+
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/ai/deterministic-scan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbols: syms, accessToken }),
+      });
+
+      const data = await res.json() as DetScanResult & { error?: string; message?: string };
+
+      if (data.error === "shock_active") {
+        setDetError(data.message ?? "Scanning paused — regime shock active");
+      } else if (data.error) {
+        setDetError(data.error);
+      } else {
+        setDetResult(data);
+        if (data.candidates?.length && subscribeEquitySymbols) {
+          subscribeEquitySymbols(data.candidates.map(c => c.symbol));
+        }
+        setScanCache({
+          results: { aiSetups: [], marketSummary: "", manualQuotes: [], scanCount: syms.length, detResult: data },
+          timestamp: Date.now(),
+        });
+      }
+    } catch (err) {
+      setDetError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
+  const hasResults = mode === "ai" ? aiSetups.length > 0 : mode === "manual" ? manualQuotes.length > 0 : (detResult?.candidates?.length ?? 0) > 0;
   const currentSyms = getSymbols();
 
   return (
@@ -496,7 +707,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol }: {
       )}
       <div className="bg-card border border-card-border rounded-xl overflow-hidden">
         <div className="flex border-b border-card-border">
-          {(["ai", "manual"] as const).map(m => (
+          {(["deterministic", "ai", "manual"] as const).map(m => (
             <button
               key={m}
               onClick={() => setMode(m)}
@@ -506,7 +717,11 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol }: {
                   : "bg-transparent text-muted-foreground border-b-transparent hover:text-foreground hover:bg-secondary/20"
               }`}
             >
-              {m === "ai" ? (
+              {m === "deterministic" ? (
+                <span className="flex items-center justify-center gap-2">
+                  <Crosshair className="w-3.5 h-3.5" /> DETERMINISTIC
+                </span>
+              ) : m === "ai" ? (
                 <span className="flex items-center justify-center gap-2">
                   <Zap className="w-3.5 h-3.5" /> AI DISCOVERY
                 </span>
@@ -548,6 +763,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol }: {
           <div className="text-xs text-muted-foreground">
             Scanning <span className="text-primary font-bold">{currentSyms.length} tickers</span>
             {mode === "ai" && <> — AI will return up to <span className="font-bold" style={{ color: "#ffb800" }}>{maxResults} setups</span></>}
+            {mode === "deterministic" && <> — Hard scoring: Trend + RS + Volume + IVR + Options Liquidity (top 5, min 60)</>}
           </div>
         </div>
 
@@ -589,7 +805,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol }: {
 
         <div className="px-4 pb-4 pt-3 bg-[#0c0c0c] border-t border-card-border">
           <button
-            onClick={handleScan}
+            onClick={mode === "deterministic" ? handleDeterministicScan : handleScan}
             disabled={!accessToken || isScanning || currentSyms.length === 0 || shockActive}
             className="font-bold font-mono tracking-wider mx-auto block rounded-lg disabled:opacity-30 disabled:cursor-not-allowed active:scale-95 active:brightness-110 transition-all"
             style={{
@@ -601,13 +817,15 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol }: {
             {isScanning ? (
               <span className="flex items-center justify-center gap-2">
                 <span className="w-4 h-4 border-2 border-[#FFB800] border-t-transparent rounded-full animate-spin" />
-                {mode === "ai" ? "RUNNING SCAN..." : "FILTERING MARKET..."}
+                {mode === "deterministic" ? "SCORING CANDIDATES..." : mode === "ai" ? "RUNNING SCAN..." : "FILTERING MARKET..."}
               </span>
             ) : (
               <span className="flex items-center justify-center">
-                {mode === "ai"
+                {mode === "deterministic"
                   ? `SCAN ${currentSyms.length} STOCKS`
-                  : "APPLY FILTERS & SCAN"}
+                  : mode === "ai"
+                    ? `SCAN ${currentSyms.length} STOCKS`
+                    : "APPLY FILTERS & SCAN"}
               </span>
             )}
           </button>
@@ -630,7 +848,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol }: {
               SCANNING {scanCount ?? currentSyms.length} TICKERS...
             </p>
             <p className="text-[11px] text-muted-foreground">
-              {mode === "ai" ? "Fetching L1 quotes → AI analysis → ranking setups" : "Fetching market data..."}
+              {mode === "deterministic" ? "Filtering universe → Scoring → Ranking → Enriching" : mode === "ai" ? "Fetching L1 quotes → AI analysis → ranking setups" : "Fetching market data..."}
             </p>
           </div>
         </div>
@@ -707,6 +925,58 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol }: {
       {mode === "manual" && !isScanning && manualQuotes.length === 0 && !hasResults && !rawError && (
         <div className="py-16 text-center text-xs text-muted-foreground/40 bg-card border border-card-border rounded-xl">
           No stocks matched your filters. Try widening the ranges.
+        </div>
+      )}
+
+      {mode === "deterministic" && detError && !isScanning && (
+        <div className="bg-destructive/10 border border-destructive/30 rounded-xl p-4">
+          <p className="text-xs text-destructive font-bold mb-2">SCAN ERROR</p>
+          <p className="text-[11px] text-destructive/80">{detError}</p>
+        </div>
+      )}
+
+      {mode === "deterministic" && !isScanning && detResult && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between px-1">
+            <div className="flex items-center gap-3">
+              <BarChart3 className="w-4 h-4 text-zinc-500" />
+              <span className="text-[11px] text-zinc-400 font-bold uppercase tracking-wider">
+                {detResult.filterSummary.totalScanned} scanned
+                <span className="text-zinc-600 mx-1">|</span>
+                {detResult.filterSummary.passedFilters} passed filters
+                <span className="text-zinc-600 mx-1">|</span>
+                <span style={{ color: "#FFB800" }}>{detResult.filterSummary.scoredAboveThreshold} above threshold</span>
+              </span>
+            </div>
+            <span className="text-[10px] text-zinc-600 tabular-nums">
+              {new Date(detResult.scanTimestamp).toLocaleTimeString()}
+            </span>
+          </div>
+
+          {detResult.candidates.length > 0 ? (
+            <div className="space-y-2">
+              {detResult.candidates.map((c, i) => (
+                <DeterministicCard
+                  key={c.symbol}
+                  candidate={c}
+                  rank={i + 1}
+                  onSelect={onNavigateToSymbol ?? setSymbol}
+                  onSendToStrategist={onSendToStrategist}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="py-16 text-center bg-card border border-card-border rounded-xl">
+              <p className="text-sm font-bold text-zinc-400 mb-1">Cash Is a Position</p>
+              <p className="text-[11px] text-zinc-600">No candidates scored above threshold. Stand aside or re-evaluate universe.</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {mode === "deterministic" && !isScanning && !detResult && !detError && (
+        <div className="py-16 text-center text-xs text-muted-foreground/40 bg-card border border-card-border rounded-xl">
+          Select a universe and run a deterministic scan to find trade candidates.
         </div>
       )}
     </div>
