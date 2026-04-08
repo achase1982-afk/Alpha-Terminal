@@ -642,7 +642,7 @@ export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sy
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto" style={{ minHeight: 0 }}>
+      <div className="flex-1" style={{ minHeight: 0, overflow: "auto", WebkitOverflowScrolling: "touch" as any }}>
         {watchlist.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center gap-4 py-20">
             <div className="relative">
@@ -667,9 +667,7 @@ export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sy
             </div>
           </div>
         ) : (
-          <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" as any, scrollbarWidth: "none" as any }}>
-            <style>{`.wl-sheet::-webkit-scrollbar { display: none; }`}</style>
-            <div className="wl-sheet">
+          <div>
               <div
                 style={{
                   display: "grid",
@@ -713,7 +711,6 @@ export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sy
                   minW={minRowW}
                 />
               ))}
-            </div>
           </div>
         )}
       </div>
