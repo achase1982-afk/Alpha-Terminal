@@ -200,18 +200,23 @@ function statusColor(status: string): string {
 }
 
 const SYMBOL_COL_W = 80;
-const COL_WIDTHS: Record<ColumnKey, number> = {
+const COL_WIDTHS_DEFAULT: Record<string, number> = {
+  symbol: SYMBOL_COL_W,
   mark: 72, cost: 72, qty: 56, mktVal: 84, plOpen: 88, plPct: 68, plDay: 84, maint: 76,
 };
+const COL_WIDTHS_STORAGE_KEY = "alpha_col_widths_v3";
+const COL_MIN_W: Record<string, number> = {
+  symbol: 56, mark: 50, cost: 50, qty: 40, mktVal: 56, plOpen: 60, plPct: 52, plDay: 60, maint: 52,
+};
 
-const getGridCols = (visibleCols: ColumnKey[]): string => {
-  let cols = `${SYMBOL_COL_W}px`;
-  for (const c of visibleCols) cols += ` ${COL_WIDTHS[c]}px`;
+const getGridCols = (visibleCols: ColumnKey[], widths: Record<string, number>): string => {
+  let cols = `${widths["symbol"] ?? SYMBOL_COL_W}px`;
+  for (const c of visibleCols) cols += ` ${widths[c] ?? COL_WIDTHS_DEFAULT[c]}px`;
   return cols;
 };
 
-const getMinRowWidth = (visibleCols: ColumnKey[]): number =>
-  SYMBOL_COL_W + visibleCols.reduce((s, c) => s + COL_WIDTHS[c], 0);
+const getMinRowWidth = (visibleCols: ColumnKey[], widths: Record<string, number>): number =>
+  (widths["symbol"] ?? SYMBOL_COL_W) + visibleCols.reduce((s, c) => s + (widths[c] ?? COL_WIDTHS_DEFAULT[c]), 0);
 
 function useTickFlash(symbol: string): "up" | "down" | null {
   const price = useTerminalStore(s => (s.streamPrices[symbol.toUpperCase()] as { last?: number } | undefined)?.last);
@@ -273,8 +278,59 @@ function useValueFlash(value: number): "up" | "down" | null {
   return dir;
 }
 
+function ColResizeHandle({ colKey, onResize }: { colKey: string; onResize: (colKey: string, dx: number) => void }) {
+  const dragging = useRef(false);
+  const startX = useRef(0);
+  const [hovered, setHovered] = useState(false);
+  const [active, setActive] = useState(false);
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragging.current = true;
+    startX.current = e.clientX;
+    setActive(true);
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (!dragging.current) return;
+    const dx = e.clientX - startX.current;
+    startX.current = e.clientX;
+    onResize(colKey, dx);
+  };
+  const onPointerUp = () => {
+    dragging.current = false;
+    setActive(false);
+  };
+
+  return (
+    <div
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        position: "absolute", right: 0, top: 0, bottom: 0,
+        width: 12, cursor: "col-resize",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        zIndex: 10, touchAction: "none",
+      }}
+    >
+      <div style={{
+        width: 1.5,
+        height: (hovered || active) ? "70%" : "40%",
+        background: active ? C.gold : hovered ? "#9ca3af" : "#3f3f4680",
+        transition: "height 0.1s, background 0.1s",
+        borderRadius: 1,
+      }} />
+    </div>
+  );
+}
+
 function OptionRow({
-  opt, underlying, selectedKeys, toggleKey, visibleColumns, gridCols, minW,
+  opt, underlying, selectedKeys, toggleKey, visibleColumns, gridCols, minW, symW,
 }: {
   opt: Position;
   underlying: string;
@@ -283,6 +339,7 @@ function OptionRow({
   visibleColumns: ColumnKey[];
   gridCols: string;
   minW: number;
+  symW: number;
 }) {
   const isShort = opt.shortQuantity > 0;
   const qty = isShort ? opt.shortQuantity : opt.longQuantity;
@@ -306,7 +363,7 @@ function OptionRow({
         background: isSelected ? `${C.gold}08` : "transparent",
       }}
     >
-      <div className="pf-sticky-col" style={{ width: SYMBOL_COL_W, background: isSelected ? "#1a1700" : "#0a0a0a", display: "flex", alignItems: "center", gap: 4, padding: "7px 8px 7px 26px", borderRight: `1px solid ${C.border}`, minWidth: 0 }}>
+      <div className="pf-sticky-col" style={{ width: symW, background: isSelected ? "#1a1700" : "#0a0a0a", display: "flex", alignItems: "center", gap: 4, padding: "7px 8px 7px 26px", borderRight: `1px solid ${C.border}`, minWidth: 0 }}>
         <Checkbox checked={isSelected} onToggle={e => { e.stopPropagation(); toggleKey(optKey); }} />
         <span style={{ fontSize: 12, fontWeight: 600, color: opt.putCall === "CALL" ? "#4ade80" : "#fb923c", flexShrink: 0 }}>
           {opt.putCall === "CALL" ? "C" : "P"}
@@ -334,6 +391,7 @@ function PositionTableRow({
   selectedKeys,
   toggleKey,
   visibleColumns,
+  colWidths,
 }: {
   group: SymbolGroup;
   onSelect: (sym: string) => void;
@@ -341,6 +399,7 @@ function PositionTableRow({
   selectedKeys: Set<string>;
   toggleKey: (key: string) => void;
   visibleColumns: ColumnKey[];
+  colWidths: Record<string, number>;
 }) {
   const [expanded, setExpanded] = useState(false);
   const eq = group.equity;
@@ -355,8 +414,9 @@ function PositionTableRow({
   const qtyStr = eq ? fmtQty(eq.longQuantity, eq.shortQuantity) : "";
   const optStr = hasOptions ? `${group.options.length}c` : "";
   const details = [qtyStr, optStr].filter(Boolean).join(" ");
-  const gridCols = useMemo(() => getGridCols(visibleColumns), [visibleColumns]);
-  const minW = useMemo(() => getMinRowWidth(visibleColumns), [visibleColumns]);
+  const symW = colWidths["symbol"] ?? SYMBOL_COL_W;
+  const gridCols = useMemo(() => getGridCols(visibleColumns, colWidths), [visibleColumns, colWidths]);
+  const minW = useMemo(() => getMinRowWidth(visibleColumns, colWidths), [visibleColumns, colWidths]);
 
   const eqTickDir = useTickFlash(group.underlying);
   const markColor = eqTickDir === "up" ? C.green : eqTickDir === "down" ? C.red : C.text;
@@ -377,7 +437,7 @@ function PositionTableRow({
         }}
         onClick={() => setExpanded(!expanded)}
       >
-        <div className="pf-sticky-col" style={{ width: SYMBOL_COL_W, background: stickyBg, display: "flex", alignItems: "center", gap: 6, padding: "8px 8px 8px 12px", borderRight: `1px solid ${C.border}`, minWidth: 0 }}>
+        <div className="pf-sticky-col" style={{ width: symW, background: stickyBg, display: "flex", alignItems: "center", gap: 6, padding: "8px 8px 8px 12px", borderRight: `1px solid ${C.border}`, minWidth: 0 }}>
           {expanded
             ? <ChevronDown style={{ width: 12, height: 12, color: C.dim, flexShrink: 0 }} />
             : <ChevronRight style={{ width: 12, height: 12, color: C.dim, flexShrink: 0 }} />}
@@ -427,7 +487,7 @@ function PositionTableRow({
               : 0;
             return (
               <div style={{ display: "grid", gridTemplateColumns: gridCols, alignItems: "center", minWidth: minW, borderBottom: `1px solid ${C.border}`, background: eqSelected ? `${C.gold}08` : "transparent" }}>
-                <div className="pf-sticky-col" style={{ width: SYMBOL_COL_W, background: eqSelected ? "#1a1700" : "#0a0a0a", display: "flex", alignItems: "center", gap: 6, padding: "7px 8px 7px 26px", borderRight: `1px solid ${C.border}`, minWidth: 0 }}>
+                <div className="pf-sticky-col" style={{ width: symW, background: eqSelected ? "#1a1700" : "#0a0a0a", display: "flex", alignItems: "center", gap: 6, padding: "7px 8px 7px 26px", borderRight: `1px solid ${C.border}`, minWidth: 0 }}>
                   {hasOptions && <Checkbox checked={!!eqSelected} onToggle={e => { e.stopPropagation(); toggleKey(eqKey); }} />}
                   <span style={{ fontSize: 13, color: C.text, whiteSpace: "nowrap" }}>
                     {fmtQty(eq.longQuantity, eq.shortQuantity)} @ {fmtCurrency(eq.averagePrice)}
@@ -459,6 +519,7 @@ function PositionTableRow({
               visibleColumns={visibleColumns}
               gridCols={gridCols}
               minW={minW}
+              symW={symW}
             />
           ))}
 
@@ -637,6 +698,24 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
     });
   }, []);
 
+  const [colWidths, setColWidths] = useState<Record<string, number>>(() => {
+    try {
+      const stored = localStorage.getItem(COL_WIDTHS_STORAGE_KEY);
+      if (stored) return { ...COL_WIDTHS_DEFAULT, ...JSON.parse(stored) };
+    } catch {}
+    return { ...COL_WIDTHS_DEFAULT };
+  });
+
+  const resizeCol = useCallback((colKey: string, dx: number) => {
+    setColWidths(prev => {
+      const current = prev[colKey] ?? COL_WIDTHS_DEFAULT[colKey] ?? 72;
+      const min = COL_MIN_W[colKey] ?? 40;
+      const next = { ...prev, [colKey]: Math.max(min, current + dx) };
+      try { localStorage.setItem(COL_WIDTHS_STORAGE_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
     if (wsAccount) { setAccount(wsAccount as unknown as Account); setLastRefresh(wsLastUpdate); setLoading(false); setError(null); }
   }, [wsAccount, wsLastUpdate]);
@@ -700,8 +779,8 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
     catch {} finally { setCancellingId(null); }
   }, [accountHash, fetchOrders]);
 
-  const gridCols = useMemo(() => getGridCols(visibleColumns), [visibleColumns]);
-  const minRowWidth = useMemo(() => getMinRowWidth(visibleColumns), [visibleColumns]);
+  const gridCols = useMemo(() => getGridCols(visibleColumns, colWidths), [visibleColumns, colWidths]);
+  const minRowWidth = useMemo(() => getMinRowWidth(visibleColumns, colWidths), [visibleColumns, colWidths]);
 
   const symbolGroups = useMemo(() => {
     const positions = account?.positions ?? [];
@@ -942,14 +1021,18 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
                 display: "grid", gridTemplateColumns: gridCols, minWidth: minRowWidth,
                 borderBottom: `1px solid ${C.borderHi}`, background: "#0e0e0e",
               }}>
-                <div className="pf-sticky-col" style={{ width: SYMBOL_COL_W, zIndex: 3, background: "#0e0e0e", display: "flex", alignItems: "center", gap: 6, padding: "6px 8px 6px 12px", borderRight: `1px solid ${C.border}` }}>
+                <div className="pf-sticky-col" style={{ position: "relative", width: colWidths["symbol"] ?? SYMBOL_COL_W, zIndex: 3, background: "#0e0e0e", display: "flex", alignItems: "center", gap: 6, padding: "6px 8px 6px 12px", borderRight: `1px solid ${C.border}` }}>
                   <span style={{ fontSize: 12, fontWeight: 500, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5 }}>Symbol</span>
                   <button onClick={() => setShowColumnSettings(x => !x)} style={{ padding: 2, background: "transparent", border: "none", cursor: "pointer" }}>
                     <Settings style={{ width: 13, height: 13, color: showColumnSettings ? C.gold : C.dim }} />
                   </button>
+                  <ColResizeHandle colKey="symbol" onResize={resizeCol} />
                 </div>
                 {ALL_COLUMNS.filter(c => visibleColumns.includes(c.key)).map(c => (
-                  <span key={c.key} style={{ fontSize: 11, fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: 0.6, textAlign: "right", padding: "6px 8px" }}>{c.label}</span>
+                  <div key={c.key} style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "flex-end", padding: "6px 8px" }}>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: 0.6 }}>{c.label}</span>
+                    <ColResizeHandle colKey={c.key} onResize={resizeCol} />
+                  </div>
                 ))}
               </div>
 
@@ -996,6 +1079,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
                   selectedKeys={selectedKeys}
                   toggleKey={toggleKey}
                   visibleColumns={visibleColumns}
+                  colWidths={colWidths}
                 />
               ))}
 
@@ -1004,7 +1088,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
                   display: "grid", gridTemplateColumns: gridCols, minWidth: minRowWidth,
                   borderTop: `2px solid ${C.borderHi}`, background: "#0e0e0e",
                 }}>
-                  <div className="pf-sticky-col" style={{ width: SYMBOL_COL_W, background: "#0e0e0e", padding: "8px 8px 8px 12px", borderRight: `1px solid ${C.border}` }}>
+                  <div className="pf-sticky-col" style={{ width: colWidths["symbol"] ?? SYMBOL_COL_W, background: "#0e0e0e", padding: "8px 8px 8px 12px", borderRight: `1px solid ${C.border}` }}>
                     <span style={{ fontSize: 13, fontWeight: 500, color: C.textMuted, whiteSpace: "nowrap" }}>Totals</span>
                   </div>
                   {visibleColumns.includes("mark")   && <span style={{ fontSize: 13, color: C.dim, textAlign: "right", padding: "8px" }}>—</span>}
