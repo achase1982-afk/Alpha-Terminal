@@ -1,4 +1,5 @@
 import { useState, useEffect, memo, useRef, useCallback } from "react";
+import ReactDOM from "react-dom";
 import { useTerminalStore } from "@/lib/store";
 import { useQuote } from "@/hooks/useQuote";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
@@ -288,13 +289,17 @@ const LiveManualRow = memo(function LiveManualRow({ q, onSelect }: {
 
 function UniverseDropdown({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const watchlists = useTerminalStore(s => s.watchlists);
+  const [pos, setPos] = useState<{ top: number; left: number; width: number }>({ top: 0, left: 0, width: 0 });
 
   useEffect(() => {
     if (!open) return;
-    function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    function handleClick(e: MouseEvent | TouchEvent) {
+      const t = e.target as Node;
+      if (btnRef.current?.contains(t) || panelRef.current?.contains(t)) return;
+      setOpen(false);
     }
     document.addEventListener("mousedown", handleClick);
     document.addEventListener("touchstart", handleClick as any);
@@ -302,6 +307,17 @@ function UniverseDropdown({ value, onChange }: { value: string; onChange: (v: st
       document.removeEventListener("mousedown", handleClick);
       document.removeEventListener("touchstart", handleClick as any);
     };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || !btnRef.current) return;
+    const update = () => {
+      const r = btnRef.current!.getBoundingClientRect();
+      setPos({ top: r.bottom + 4, left: r.left, width: r.width });
+    };
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
   }, [open]);
 
   const isWatchlist = value.startsWith("wl:");
@@ -312,9 +328,12 @@ function UniverseDropdown({ value, onChange }: { value: string; onChange: (v: st
     ? watchlists[value.slice(3)]?.symbols?.length ?? 0
     : UNIVERSES[value]?.symbols?.length ?? 0;
 
+  const maxH = typeof window !== "undefined" ? Math.min(500, window.innerHeight - pos.top - 16) : 400;
+
   return (
-    <div ref={ref} className="relative">
+    <div className="relative">
       <button
+        ref={btnRef}
         type="button"
         onClick={() => setOpen(o => !o)}
         className="w-full min-h-[44px] rounded-md border border-card-border bg-card text-foreground text-sm px-3 py-2 flex items-center justify-between gap-2 focus:outline-none focus:ring-1 focus:ring-primary/50 transition-colors hover:border-zinc-600"
@@ -323,12 +342,17 @@ function UniverseDropdown({ value, onChange }: { value: string; onChange: (v: st
         <ChevronDown className={`w-4 h-4 text-zinc-500 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
 
-      {open && (
+      {open && ReactDOM.createPortal(
         <div
-          className="absolute z-50 mt-1 left-0 right-0 rounded-lg border border-zinc-700/80 bg-[#141414] shadow-2xl shadow-black/60 overflow-hidden"
-          style={{ maxHeight: "min(500px, 60vh)" }}
+          ref={panelRef}
+          className="rounded-lg border border-zinc-700/80 bg-[#141414] shadow-2xl shadow-black/60 overflow-hidden"
+          style={{ position: "fixed", zIndex: 9999, top: pos.top, left: pos.left, width: pos.width, maxHeight: maxH }}
         >
-          <div className="overflow-y-auto overscroll-contain" style={{ maxHeight: "min(500px, 60vh)", WebkitOverflowScrolling: "touch" as any }}>
+          <div
+            className="overflow-y-auto overscroll-contain"
+            style={{ maxHeight: maxH, WebkitOverflowScrolling: "touch" as any }}
+            onTouchMove={e => e.stopPropagation()}
+          >
             <div className="px-3 pt-3 pb-1.5">
               <span className="text-[11px] font-bold uppercase tracking-widest text-zinc-500">Markets</span>
             </div>
@@ -371,7 +395,8 @@ function UniverseDropdown({ value, onChange }: { value: string; onChange: (v: st
             )}
             <div className="h-2" />
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -529,8 +554,8 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
           </div>
         </div>
       )}
-      <div className="bg-card border border-card-border rounded-xl overflow-visible">
-        <div className="flex border-b border-card-border rounded-t-xl overflow-hidden">
+      <div className="bg-card border border-card-border rounded-xl overflow-hidden">
+        <div className="flex border-b border-card-border">
           {(["deterministic", "manual"] as const).map(m => (
             <button
               key={m}
@@ -607,7 +632,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
           </div>
         )}
 
-        <div className="px-4 pb-4 pt-3 bg-[#0c0c0c] border-t border-card-border rounded-b-xl">
+        <div className="px-4 pb-4 pt-3 bg-[#0c0c0c] border-t border-card-border">
           <button
             onClick={mode === "deterministic" ? handleDeterministicScan : handleManualScan}
             disabled={!accessToken || isScanning || currentSyms.length === 0 || shockActive}
