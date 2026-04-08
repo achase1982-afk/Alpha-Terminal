@@ -887,7 +887,7 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
           <div className="flex items-center gap-2">
             <span className="font-mono text-sm text-white/40 uppercase tracking-wider">Vol</span>
             <span className="font-mono text-sm text-white/70 tabular-nums">
-              {volume != null ? volume.toLocaleString() : "—"}
+              {volume != null ? Math.round(volume).toLocaleString() : "—"}
             </span>
           </div>
           <div className="flex items-center gap-2">

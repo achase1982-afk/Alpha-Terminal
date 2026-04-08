@@ -706,8 +706,8 @@ export function classifyRegime(
       return {
         regime: "LOW_VOL_TRENDING_UP",
         description: "Bull grind. Low vol, broad participation. Premium selling sweet spot.",
-        strategyUniverse: ["BULL_PUT_SPREAD", "BEAR_CALL_SPREAD", "IRON_CONDOR", "SHORT_PUT"],
-        dteRange: { min: 1, max: 14 },
+        strategyUniverse: ["BULL_PUT_SPREAD", "BULL_CALL_SPREAD", "IRON_CONDOR", "BEAR_CALL_SPREAD", "SHORT_PUT"],
+        dteRange: { min: 1, max: 30 },
         deltaTargets: { shortStrike: 0.15 },
         sizeMultiplier: 1.0,
       };
@@ -1430,48 +1430,60 @@ export function selectStrategiesByRegime(
     ? { ...regime.deltaTargets, shortStrike: tickerProfile.adjustedDelta }
     : regime.deltaTargets;
 
-  const results: StrategyPayload[] = [];
+  const dteExpansions = [
+    { min: regime.dteRange.min, max: regime.dteRange.max },
+    { min: Math.max(1, regime.dteRange.min), max: Math.max(regime.dteRange.max, 45) },
+    { min: 1, max: 90 },
+  ];
 
-  for (const stratType of regime.strategyUniverse) {
-    let sizeMul: number;
-    let sizing: ConvictionSizing | undefined;
+  for (const dte of dteExpansions) {
+    const results: StrategyPayload[] = [];
 
-    if (convictionParams) {
-      const isCredit = isCreditStrategy(stratType);
-      sizing = computeConvictionSize(
-        regime.sizeMultiplier,
-        tickerProfile?.sizeMultiplierOverride ?? 1.0,
-        tickerProfile?.ivr ?? 50,
-        isCredit,
-        convictionParams.earningsDaysAway,
-        convictionParams.confidence,
-      );
-      if (sizing.blocked || sizing.finalSize === 0) continue;
-      sizeMul = sizing.finalSize;
-    } else {
-      sizeMul = regime.sizeMultiplier * (tickerProfile?.sizeMultiplierOverride ?? 1.0);
+    for (const stratType of regime.strategyUniverse) {
+      let sizeMul: number;
+      let sizing: ConvictionSizing | undefined;
+
+      if (convictionParams) {
+        const isCredit = isCreditStrategy(stratType);
+        sizing = computeConvictionSize(
+          regime.sizeMultiplier,
+          tickerProfile?.sizeMultiplierOverride ?? 1.0,
+          tickerProfile?.ivr ?? 50,
+          isCredit,
+          convictionParams.earningsDaysAway,
+          convictionParams.confidence,
+        );
+        if (sizing.blocked || sizing.finalSize === 0) continue;
+        sizeMul = sizing.finalSize;
+      } else {
+        sizeMul = regime.sizeMultiplier * (tickerProfile?.sizeMultiplierOverride ?? 1.0);
+      }
+
+      const effectiveRegime: RegimeClassification = {
+        ...regime,
+        deltaTargets: adjustedDelta,
+        sizeMultiplier: sizeMul,
+        dteRange: dte,
+      };
+
+      const setup = findBestSetupForStrategy(stratType, calls, puts, effectiveRegime, tier);
+      if (setup) {
+        if (sizing) setup.convictionSizing = sizing;
+        results.push(setup);
+      }
     }
 
-    const effectiveRegime: RegimeClassification = {
-      ...regime,
-      deltaTargets: adjustedDelta,
-      sizeMultiplier: sizeMul,
-    };
-
-    const setup = findBestSetupForStrategy(stratType, calls, puts, effectiveRegime, tier);
-    if (setup) {
-      if (sizing) setup.convictionSizing = sizing;
-      results.push(setup);
+    if (results.length > 0) {
+      results.sort((a, b) => {
+        const rrA = a.max_loss > 0 ? a.max_profit / a.max_loss : 0;
+        const rrB = b.max_loss > 0 ? b.max_profit / b.max_loss : 0;
+        return rrB - rrA;
+      });
+      return results.slice(0, 4);
     }
   }
 
-  results.sort((a, b) => {
-    const rrA = a.max_loss > 0 ? a.max_profit / a.max_loss : 0;
-    const rrB = b.max_loss > 0 ? b.max_profit / b.max_loss : 0;
-    return rrB - rrA;
-  });
-
-  return results.slice(0, 4);
+  return [];
 }
 
 export function selectStrategies(
