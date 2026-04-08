@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import ReactDOM from "react-dom";
 import { useTerminalStore } from "@/lib/store";
 import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
@@ -391,9 +392,14 @@ function PositionTableRow({
           return <span style={{ fontSize: 13, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px" }}>{eq ? `$${eq.averagePrice.toFixed(2)}` : "—"}</span>;
         })()}
         {visibleColumns.includes("qty") && (() => {
-          const eqQty = eq ? fmtQty(eq.longQuantity, eq.shortQuantity) : "";
-          const optQty = group.options.length > 0 ? `${group.options.length}c` : "";
-          return <span style={{ fontSize: 13, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px" }}>{[eqQty, optQty].filter(Boolean).join(" ") || "—"}</span>;
+          const hasEq = !!eq;
+          const hasOpts = group.options.length > 0;
+          if (hasEq && hasOpts) {
+            return <span style={{ fontSize: 13, color: C.dim, textAlign: "right", padding: "8px" }}>—</span>;
+          }
+          const eqQty = hasEq ? fmtQty(eq!.longQuantity, eq!.shortQuantity) : "";
+          const optQty = hasOpts ? `${group.options.length}c` : "";
+          return <span style={{ fontSize: 13, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px" }}>{eqQty || optQty || "—"}</span>;
         })()}
         {visibleColumns.includes("mktVal") && <span style={{ fontSize: 13, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px" }}>
           {fmtCompact(group.totalMarketValue)}
@@ -926,9 +932,9 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
         </div>
       </div>
 
-      <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+      <div style={{ flex: 1, overflow: "auto", minHeight: 0, WebkitOverflowScrolling: "touch" as any }}>
         {subTab === "positions" && (
-          <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" as any }}>
+          <div>
             <div style={{
               display: "grid", gridTemplateColumns: gridCols, minWidth: minRowWidth,
               borderBottom: `1px solid ${C.borderHi}`, background: "#0e0e0e",
@@ -945,37 +951,38 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
               ))}
             </div>
 
-            {showColumnSettings && (
-              <div style={{ position: "fixed", inset: 0, zIndex: 49, background: "transparent" }} onClick={() => setShowColumnSettings(false)} />
-            )}
-            {showColumnSettings && (
-              <div
-                style={{ position: "fixed", top: "120px", left: "8px", zIndex: 50, background: "#161616", border: `1px solid ${C.borderHi}`, borderRadius: 6, width: 260, padding: 0, fontFamily: f, boxShadow: "0 8px 32px rgba(0,0,0,0.6)" }}
-                onClick={e => e.stopPropagation()}
-              >
-                <div style={{ padding: "10px 14px 8px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: C.textDim, textTransform: "uppercase", letterSpacing: 1 }}>Columns</span>
-                  <span style={{ fontSize: 11, color: C.dim }}>{visibleColumns.length}/{ALL_COLUMNS.length} on</span>
+            {showColumnSettings && ReactDOM.createPortal(
+              <>
+                <div style={{ position: "fixed", inset: 0, zIndex: 49 }} onClick={() => setShowColumnSettings(false)} />
+                <div
+                  style={{ position: "fixed", top: "120px", left: "8px", zIndex: 50, background: "#161616", border: `1px solid ${C.borderHi}`, borderRadius: 6, width: 260, padding: 0, fontFamily: f, boxShadow: "0 8px 32px rgba(0,0,0,0.6)" }}
+                  onClick={e => e.stopPropagation()}
+                >
+                  <div style={{ padding: "10px 14px 8px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: C.textDim, textTransform: "uppercase", letterSpacing: 1 }}>Columns</span>
+                    <span style={{ fontSize: 11, color: C.dim }}>{visibleColumns.length}/{ALL_COLUMNS.length} on</span>
+                  </div>
+                  {ALL_COLUMNS.map((col, i) => {
+                    const on = visibleColumns.includes(col.key);
+                    return (
+                      <button
+                        key={col.key}
+                        onClick={() => toggleColumn(col.key)}
+                        style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", background: on ? `${C.gold}06` : "transparent", border: "none", borderBottom: i < ALL_COLUMNS.length - 1 ? `1px solid ${C.border}` : "none", cursor: "pointer", fontFamily: f, textAlign: "left" }}
+                      >
+                        <div style={{ width: 18, height: 18, borderRadius: 4, border: `1.5px solid ${on ? C.gold : C.dim}`, background: on ? `${C.gold}20` : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                          {on && <Check style={{ width: 11, height: 11, color: C.gold }} />}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: on ? 600 : 400, color: on ? C.text : C.dim }}>{col.label}</div>
+                          <div style={{ fontSize: 11, color: C.dim, marginTop: 1 }}>{col.desc}</div>
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
-                {ALL_COLUMNS.map((col, i) => {
-                  const on = visibleColumns.includes(col.key);
-                  return (
-                    <button
-                      key={col.key}
-                      onClick={() => toggleColumn(col.key)}
-                      style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", background: on ? `${C.gold}06` : "transparent", border: "none", borderBottom: i < ALL_COLUMNS.length - 1 ? `1px solid ${C.border}` : "none", cursor: "pointer", fontFamily: f, textAlign: "left" }}
-                    >
-                      <div style={{ width: 18, height: 18, borderRadius: 4, border: `1.5px solid ${on ? C.gold : C.dim}`, background: on ? `${C.gold}20` : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                        {on && <Check style={{ width: 11, height: 11, color: C.gold }} />}
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: on ? 600 : 400, color: on ? C.text : C.dim }}>{col.label}</div>
-                        <div style={{ fontSize: 11, color: C.dim, marginTop: 1 }}>{col.desc}</div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
+              </>,
+              document.body
             )}
 
             {symbolGroups.map(group => (
