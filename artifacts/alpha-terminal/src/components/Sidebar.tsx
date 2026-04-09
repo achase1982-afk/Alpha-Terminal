@@ -877,9 +877,6 @@ function UICustomizationPage() {
 function SecurityPrivacyPage() {
   const { minutes: autoLock, setMinutes: setAutoLock } = useAutoLock();
   const [secPrefs, setSecPrefs] = useState<SecurityPrefs>(readSecurityPrefs);
-  const { registerPasskey, loading: passkeyLoading, error: passkeyError, hasPasskey, clerkLoaded } = useBiometricRegistration();
-  const webAuthnSupported = useWebAuthnSupported();
-
   const handleToggle = (key: keyof SecurityPrefs, value: boolean) => {
     const updated = updateSecurityPref(key, value);
     setSecPrefs(updated);
@@ -903,41 +900,6 @@ function SecurityPrivacyPage() {
         <p className="font-mono text-[9px] text-muted-foreground/50 leading-relaxed">Signs you out after inactivity.</p>
       </div>
 
-      <div className="border-t border-card-border pt-4 space-y-3">
-        <h3 className="text-xs font-bold text-primary uppercase tracking-widest">Face ID / Biometrics</h3>
-
-        {!webAuthnSupported && <p className="font-mono text-[9px] text-red-400/70 leading-relaxed">WebAuthn is not supported on this device.</p>}
-
-        {webAuthnSupported && !hasPasskey && (
-          <button
-            onClick={() => void registerPasskey()}
-            disabled={passkeyLoading || !clerkLoaded}
-            className="w-full flex items-center justify-center gap-2 p-2.5 rounded-lg font-mono text-[10px] font-bold tracking-wide text-primary border border-primary/20 hover:border-primary/40 transition-all disabled:opacity-50"
-          >
-            <Fingerprint className="w-3.5 h-3.5" />
-            {!clerkLoaded ? "LOADING SESSION..." : passkeyLoading ? "REGISTERING..." : "REGISTER FACE ID / PASSKEY"}
-          </button>
-        )}
-
-        {passkeyError && <p className="font-mono text-[9px] text-red-400 leading-relaxed">{passkeyError}</p>}
-        {webAuthnSupported && hasPasskey && <p className="font-mono text-[9px] text-green-400/70 leading-relaxed flex items-center gap-1">✓ Passkey registered</p>}
-
-        <div className="space-y-2.5">
-          <div className="flex items-center justify-between">
-            <span className="font-mono text-[10px] text-foreground/80">App Login</span>
-            <Switch checked={secPrefs.biometricLogin} onCheckedChange={(v) => handleToggle("biometricLogin", v)} disabled={!webAuthnSupported || !hasPasskey} />
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="font-mono text-[10px] text-foreground/80">Sensitive Data</span>
-            <Switch checked={secPrefs.biometricSensitiveData} onCheckedChange={(v) => handleToggle("biometricSensitiveData", v)} disabled={!webAuthnSupported || !hasPasskey} />
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="font-mono text-[10px] text-foreground/80">Trade Confirmation</span>
-            <Switch checked={secPrefs.biometricTradeConfirmation} onCheckedChange={(v) => handleToggle("biometricTradeConfirmation", v)} disabled={!webAuthnSupported || !hasPasskey} />
-          </div>
-        </div>
-        <p className="font-mono text-[9px] text-muted-foreground/50 leading-relaxed">Requires a registered passkey. Toggles disabled until one is set up.</p>
-      </div>
     </div>
   );
 }
