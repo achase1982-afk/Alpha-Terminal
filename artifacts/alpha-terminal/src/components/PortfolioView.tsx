@@ -519,12 +519,24 @@ function PositionTableRow({
           </div>
         </div>
         {visibleColumns.includes("mark") && (() => {
-          const eqQty = eq ? (eq.longQuantity || eq.shortQuantity) : 0;
-          const markPx = eq && eqQty > 0 ? eq.marketValue / eqQty : null;
+          let markPx: number | null = null;
+          if (eq) {
+            const eqQty = eq.longQuantity || eq.shortQuantity;
+            if (eqQty > 0) markPx = eq.marketValue / eqQty;
+          } else if (hasOptions) {
+            const totalContracts = group.options.reduce((s, o) => s + (o.longQuantity || o.shortQuantity), 0);
+            if (totalContracts > 0) markPx = group.totalMarketValue / (totalContracts * 100);
+          }
           return <span style={{ fontSize: 14, color: markPx != null ? markColor : C.dim, textAlign: "right", fontVariantNumeric: "tabular-nums", transition: "color 0.15s", padding: "8px" }}>{markPx != null ? `$${markPx.toFixed(2)}` : "—"}</span>;
         })()}
         {visibleColumns.includes("cost") && (() => {
-          return <span style={{ fontSize: 14, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px" }}>{eq ? `$${eq.averagePrice.toFixed(2)}` : "—"}</span>;
+          if (eq) return <span style={{ fontSize: 14, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px" }}>${eq.averagePrice.toFixed(2)}</span>;
+          if (hasOptions) {
+            const totalContracts = group.options.reduce((s, o) => s + (o.longQuantity || o.shortQuantity), 0);
+            const avgCost = totalContracts > 0 ? group.options.reduce((s, o) => s + o.averagePrice * (o.longQuantity || o.shortQuantity), 0) / totalContracts : null;
+            return <span style={{ fontSize: 14, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px" }}>{avgCost != null ? `$${avgCost.toFixed(2)}` : "—"}</span>;
+          }
+          return <span style={{ fontSize: 14, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px" }}>—</span>;
         })()}
         {visibleColumns.includes("qty") && (() => {
           const hasEq = !!eq;
