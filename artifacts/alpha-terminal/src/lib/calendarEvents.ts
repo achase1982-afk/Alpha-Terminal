@@ -346,61 +346,60 @@ function generateEconomic(y: number): CalendarEvent[] {
   return ev;
 }
 
-function generateEarnings(y: number): CalendarEvent[] {
-  const ev: CalendarEvent[] = [];
-
-  const companies: Array<{ ticker: string; name: string; qs: Array<{ m: number; w: number }> }> = [
-    { ticker: "AAPL", name: "Apple", qs: [
-      { m: 1, w: 4 }, { m: 4, w: 5 }, { m: 7, w: 5 }, { m: 10, w: 5 },
-    ]},
-    { ticker: "MSFT", name: "Microsoft", qs: [
-      { m: 1, w: 4 }, { m: 4, w: 4 }, { m: 7, w: 4 }, { m: 10, w: 4 },
-    ]},
-    { ticker: "GOOG", name: "Alphabet", qs: [
-      { m: 2, w: 1 }, { m: 4, w: 4 }, { m: 7, w: 4 }, { m: 10, w: 4 },
-    ]},
-    { ticker: "AMZN", name: "Amazon", qs: [
-      { m: 2, w: 1 }, { m: 5, w: 1 }, { m: 8, w: 1 }, { m: 10, w: 5 },
-    ]},
-    { ticker: "META", name: "Meta", qs: [
-      { m: 2, w: 1 }, { m: 4, w: 4 }, { m: 7, w: 4 }, { m: 10, w: 4 },
-    ]},
-    { ticker: "TSLA", name: "Tesla", qs: [
-      { m: 1, w: 4 }, { m: 4, w: 4 }, { m: 7, w: 4 }, { m: 10, w: 4 },
-    ]},
-    { ticker: "NVDA", name: "NVIDIA", qs: [
-      { m: 2, w: 4 }, { m: 5, w: 4 }, { m: 8, w: 4 }, { m: 11, w: 3 },
-    ]},
-  ];
-
-  const qLabels = ["Q4", "Q1", "Q2", "Q3"];
-
-  for (const co of companies) {
-    co.qs.forEach((q, idx) => {
-      const day = q.w <= 4 ? nthDow(y, q.m, q.w, 4) : lastDow(y, q.m, 4);
-      const validDay = Math.min(day, dim(y, q.m));
-      ev.push({
-        date: ds(y, q.m, validDay),
-        type: "earnings",
-        title: "Earnings",
-        ticker: co.ticker,
-        detail: `${co.name} ${qLabels[idx]} ${y} earnings report.`,
-        time: "After Close",
-      });
-    });
-  }
-
-  return ev;
+export interface BenzingaEarning {
+  date: string;
+  ticker: string;
+  name: string;
+  time: string | null;
+  confirmed: boolean;
+  period: string | null;
+  periodYear: number | null;
+  epsEstimate: string | null;
+  epsPrior: string | null;
+  revenueEstimate: string | null;
+  revenuePrior: string | null;
 }
 
-export function generateMarketEvents(startYear: number, endYear: number): CalendarEvent[] {
+export function benzingaEarningsToEvents(earnings: BenzingaEarning[]): CalendarEvent[] {
+  return earnings.map(e => {
+    const parts: string[] = [];
+    parts.push(`${e.name} (${e.ticker})`);
+    if (e.period && e.periodYear) parts.push(`${e.period} ${e.periodYear}`);
+    parts.push("earnings report.");
+    if (e.confirmed) parts.push("Date confirmed.");
+    else parts.push("Date estimated.");
+    if (e.epsEstimate) parts.push(`EPS Est: $${e.epsEstimate}`);
+    if (e.epsPrior) parts.push(`Prior EPS: $${e.epsPrior}`);
+    if (e.revenueEstimate) {
+      const revB = (parseFloat(e.revenueEstimate) / 1e9).toFixed(1);
+      parts.push(`Rev Est: $${revB}B`);
+    }
+    if (e.revenuePrior) {
+      const revPB = (parseFloat(e.revenuePrior) / 1e9).toFixed(1);
+      parts.push(`Prior Rev: $${revPB}B`);
+    }
+
+    return {
+      date: e.date,
+      type: "earnings" as const,
+      title: "Earnings",
+      ticker: e.ticker,
+      detail: parts.join(" "),
+      time: e.time || undefined,
+    };
+  });
+}
+
+export function generateMarketEvents(startYear: number, endYear: number, apiEarnings?: CalendarEvent[]): CalendarEvent[] {
   const events: CalendarEvent[] = [];
   for (let y = startYear; y <= endYear; y++) {
     events.push(...generateHolidays(y));
     events.push(...generateEarlyCloses(y));
     events.push(...generateFomc(y));
     events.push(...generateEconomic(y));
-    events.push(...generateEarnings(y));
+  }
+  if (apiEarnings && apiEarnings.length > 0) {
+    events.push(...apiEarnings);
   }
   return events.sort((a, b) => a.date.localeCompare(b.date));
 }

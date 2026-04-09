@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { ChevronLeft, ChevronRight, X, ExternalLink, Loader2 } from "lucide-react";
-import { generateMarketEvents, type CalendarEvent } from "@/lib/calendarEvents";
+import { generateMarketEvents, benzingaEarningsToEvents, type CalendarEvent, type BenzingaEarning } from "@/lib/calendarEvents";
 
 interface BlsReportData {
   reportType: string;
@@ -356,6 +356,20 @@ export function MarketCalendar({ onClose }: Props) {
   const [cpiLoading, setCpiLoading] = useState(false);
   const [fomcMeetings, setFomcMeetings] = useState<FomcMeetingData[]>([]);
   const [fomcLoading, setFomcLoading] = useState(false);
+  const [apiEarnings, setApiEarnings] = useState<CalendarEvent[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${apiBase}/market/earnings-calendar`)
+      .then(r => r.json())
+      .then((data: { earnings?: BenzingaEarning[] }) => {
+        if (!cancelled && data.earnings && data.earnings.length > 0) {
+          setApiEarnings(benzingaEarningsToEvents(data.earnings));
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   const toggleFilter = useCallback((type: string) => {
     setActiveFilters((prev) => {
@@ -366,7 +380,7 @@ export function MarketCalendar({ onClose }: Props) {
     });
   }, []);
 
-  const allEvents = useMemo(() => generateMarketEvents(year - 1, year + 2), [year]);
+  const allEvents = useMemo(() => generateMarketEvents(year - 1, year + 2, apiEarnings), [year, apiEarnings]);
 
   const eventMap = useMemo(() => {
     const map: Record<string, CalendarEvent[]> = {};
