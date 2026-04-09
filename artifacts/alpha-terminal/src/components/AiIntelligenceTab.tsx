@@ -2059,10 +2059,6 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
     }
   }, [quote, accessToken, symbol, setSymbol, setStrategistResult, setStrategistCache]);
 
-  const handleRunStrategistWithTicker = useCallback((ticker: string) => {
-    handleRunStrategist(ticker);
-  }, [handleRunStrategist]);
-
   const handleRunDetStrategist = useCallback(async (sym: string, candidate?: DetCandidate) => {
     const runId = ++detRunRef.current;
 
@@ -2210,6 +2206,10 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
     }
   }, [accessToken, symbol, setSymbol, setStrategistResult]);
 
+  const handleRunStrategistWithTicker = useCallback((ticker: string) => {
+    handleRunDetStrategist(ticker);
+  }, [handleRunDetStrategist]);
+
   // Auto-fire analysis when user navigates to the Strategist tab and no result/cache exists yet.
   // Skip if a det run is already in progress (e.g., Scanner's onSendToStrategist already fired one).
   const handleRunDetRef = useRef(handleRunDetStrategist);
@@ -2259,7 +2259,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
         <div style={{ width: "100%", flexShrink: 0, height: "100%", overflowY: "auto" }}>
           <div className="px-3 sm:px-4 lg:px-5 space-y-4 pt-3">
             <StrategistShockBanner />
-            <StrategistCommandBar onRun={handleRunStrategistWithTicker} disabled={isPendingAny}
+            <StrategistCommandBar onRun={handleRunStrategistWithTicker} disabled={false}
               lastRunSymbol={lastRunSymbol} lastRunTime={lastRunTime} />
 
             {activeResult === "strategist" && (
