@@ -99,6 +99,23 @@ const quoteCache = new Map<string, LiveQuote>();
 const optionCache = new Map<string, OptionTick>();
 const sseClients = new Set<Response>();
 
+const SCHWAB_INDEX_NORM: Record<string, string> = {
+  "SPX": "$SPX", "VIX": "$VIX", "NDX": "$NDX", "RUT": "$RUT",
+  "DJI": "$DJI", "DJIA": "$DJI", "COMP": "$COMP", "DXY": "$DXY",
+  "TNX": "$TNX", "TYX": "$TYX", "VXN": "$VXN", "OEX": "$OEX",
+  "MNX": "$MNX", "XSP": "$XSP", "TICK": "$TICK", "TRIN": "$TRIN",
+  "ADD": "$ADD", "ADVN": "$ADVN", "DECN": "$DECN", "VVIX": "$VVIX",
+  "VIX9D": "$VIX9D", "VIX3M": "$VIX3M", "RVX": "$RVX", "VXD": "$VXD",
+  "UVOL": "$UVOL", "DVOL": "$DVOL", "UVOLQ": "$UVOLQ", "DVOLQ": "$DVOLQ",
+  "ADDQ": "$ADDQ", "ADVNQ": "$ADVNQ", "DECNQ": "$DECNQ",
+  "TRINQ": "$TRINQ", "TICKI": "$TICKI",
+};
+
+function normalizeEquityKey(sym: string): string {
+  const upper = sym.toUpperCase();
+  return SCHWAB_INDEX_NORM[upper] ?? upper;
+}
+
 let wsBroadcast: ((event: string, data: unknown) => void) | null = null;
 let schwabWs: WebSocket | null = null;
 let streamerInfo: StreamerInfo | null = null;
@@ -476,8 +493,9 @@ function findKeysDeep(
 function processEquityTick(content: Record<string, unknown>[]) {
   const now = Date.now();
   for (const item of content) {
-    const symbol = item["key"] as string;
-    if (!symbol) continue;
+    const rawKey = item["key"] as string;
+    if (!rawKey) continue;
+    const symbol = normalizeEquityKey(rawKey);
 
     const existing = quoteCache.get(symbol);
     const last = numOrNull(item["3"]) ?? existing?.last ?? null;
@@ -781,7 +799,7 @@ async function connectSchwabStreamer() {
 
 export async function startStreamer(_token?: string, symbols?: string[]): Promise<void> {
   if (symbols?.length) {
-    for (const s of symbols) subscribedSymbols.add(s.toUpperCase());
+    for (const s of symbols) subscribedSymbols.add(normalizeEquityKey(s));
   }
 
   if (!getValidAccessToken("trader")) {
@@ -812,10 +830,10 @@ export function stopStreamer() {
 export function addSymbols(symbols: string[]) {
   const newSyms: string[] = [];
   for (const s of symbols) {
-    const upper = s.toUpperCase();
-    if (!subscribedSymbols.has(upper)) {
-      subscribedSymbols.add(upper);
-      newSyms.push(upper);
+    const normalized = normalizeEquityKey(s);
+    if (!subscribedSymbols.has(normalized)) {
+      subscribedSymbols.add(normalized);
+      newSyms.push(normalized);
     }
   }
 
