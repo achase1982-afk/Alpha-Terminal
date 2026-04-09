@@ -1045,6 +1045,30 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
     }, 300);
   }, [selectedKeys, symbolGroups, onTrade, onRoll]);
 
+  const portfolioRootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = portfolioRootRef.current;
+    if (!el) return;
+    const scrollParent = el.closest(".app-content") as HTMLElement | null;
+    if (!scrollParent) return;
+    let startY = 0;
+    const onTouchStart = (e: TouchEvent) => { startY = e.touches[0].clientY; };
+    const onTouchMove = (e: TouchEvent) => {
+      const dy = e.touches[0].clientY - startY;
+      const atTop = scrollParent.scrollTop <= 0;
+      const atBottom = scrollParent.scrollTop + scrollParent.clientHeight >= scrollParent.scrollHeight - 1;
+      if ((atTop && dy > 0) || (atBottom && dy < 0)) {
+        e.preventDefault();
+      }
+    };
+    scrollParent.addEventListener("touchstart", onTouchStart, { passive: true });
+    scrollParent.addEventListener("touchmove", onTouchMove, { passive: false });
+    return () => {
+      scrollParent.removeEventListener("touchstart", onTouchStart);
+      scrollParent.removeEventListener("touchmove", onTouchMove);
+    };
+  }, []);
+
   if (!accessToken) return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: f }}>
       <ConnectBrokerPrompt label="Connect Brokerage To View Portfolio" />
@@ -1086,30 +1110,6 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
   const shownMetrics = visibleMetrics
     .filter(k => metricValues[k])
     .map(k => metricValues[k]);
-
-  const portfolioRootRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const el = portfolioRootRef.current;
-    if (!el) return;
-    const scrollParent = el.closest(".app-content") as HTMLElement | null;
-    if (!scrollParent) return;
-    let startY = 0;
-    const onTouchStart = (e: TouchEvent) => { startY = e.touches[0].clientY; };
-    const onTouchMove = (e: TouchEvent) => {
-      const dy = e.touches[0].clientY - startY;
-      const atTop = scrollParent.scrollTop <= 0;
-      const atBottom = scrollParent.scrollTop + scrollParent.clientHeight >= scrollParent.scrollHeight - 1;
-      if ((atTop && dy > 0) || (atBottom && dy < 0)) {
-        e.preventDefault();
-      }
-    };
-    scrollParent.addEventListener("touchstart", onTouchStart, { passive: true });
-    scrollParent.addEventListener("touchmove", onTouchMove, { passive: false });
-    return () => {
-      scrollParent.removeEventListener("touchstart", onTouchStart);
-      scrollParent.removeEventListener("touchmove", onTouchMove);
-    };
-  }, []);
 
   return (
     <div ref={portfolioRootRef} style={{ fontFamily: f, position: "relative", width: "100%", minWidth: 0, paddingBottom: 16 }}>
