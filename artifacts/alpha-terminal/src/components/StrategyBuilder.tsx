@@ -120,6 +120,91 @@ function fmtCurrency(n: number): string {
 let legIdCounter = 0;
 function nextLegId() { return `leg_${++legIdCounter}_${Date.now()}`; }
 
+interface StrategyIdentity {
+  name: string;
+  color: string;
+  warning?: string;
+}
+
+function detectStrategyType(legs: StrategyLeg[], netDebit: number): StrategyIdentity {
+  if (legs.length === 0) return { name: "No Legs", color: MUTED };
+
+  const calls = legs.filter(l => l.optionType === "CALL");
+  const puts = legs.filter(l => l.optionType === "PUT");
+  const buys = legs.filter(l => l.direction.startsWith("BUY"));
+  const sells = legs.filter(l => l.direction.startsWith("SELL"));
+  const buyC = calls.filter(l => l.direction.startsWith("BUY"));
+  const sellC = calls.filter(l => l.direction.startsWith("SELL"));
+  const buyP = puts.filter(l => l.direction.startsWith("BUY"));
+  const sellP = puts.filter(l => l.direction.startsWith("SELL"));
+  const expirations = [...new Set(legs.map(l => l.expiration.split(":")[0].trim()))];
+  const sameExp = expirations.length === 1;
+  const strikes = [...new Set(legs.map(l => l.strike))];
+
+  if (legs.length === 1) {
+    const leg = legs[0];
+    const isBuy = leg.direction.startsWith("BUY");
+    if (isBuy && leg.optionType === "CALL") return { name: "Long Call", color: UP };
+    if (isBuy && leg.optionType === "PUT") return { name: "Long Put", color: DOWN };
+    if (!isBuy && leg.optionType === "CALL") return { name: "Naked Short Call", color: DOWN, warning: "WARNING: This is a naked short position with undefined risk. Max loss is theoretically unlimited. Consider adding a protective leg to define your risk." };
+    if (!isBuy && leg.optionType === "PUT") return { name: "Naked Short Put", color: DOWN, warning: "WARNING: This is a naked short position with substantial risk. Consider adding a protective leg to define your risk." };
+  }
+
+  if (legs.length === 2 && sameExp) {
+    if (puts.length === 2 && calls.length === 0 && sellP.length === 1 && buyP.length === 1) {
+      const shortStrike = sellP[0].strike;
+      const longStrike = buyP[0].strike;
+      if (shortStrike > longStrike) return { name: "Bull Put Spread", color: UP };
+      if (shortStrike < longStrike) return { name: "Bear Put Spread", color: DOWN };
+    }
+
+    if (calls.length === 2 && puts.length === 0 && sellC.length === 1 && buyC.length === 1) {
+      const shortStrike = sellC[0].strike;
+      const longStrike = buyC[0].strike;
+      if (shortStrike > longStrike) return { name: "Bull Call Spread", color: UP };
+      if (shortStrike < longStrike) return { name: "Bear Call Spread", color: DOWN };
+    }
+
+    if (buys.length === 2 && sells.length === 0 && calls.length === 1 && puts.length === 1 && strikes.length === 1) {
+      return { name: "Straddle", color: "#a78bfa" };
+    }
+    if (buys.length === 2 && sells.length === 0 && calls.length === 1 && puts.length === 1) {
+      return { name: "Strangle", color: "#22d3ee" };
+    }
+  }
+
+  if (legs.length === 2 && !sameExp && calls.length + puts.length === 2) {
+    const sameType = (calls.length === 2 || puts.length === 2);
+    if (sameType && strikes.length === 1) return { name: "Calendar Spread", color: "#fb923c" };
+    if (sameType && strikes.length === 2) return { name: "Diagonal Spread", color: "#fb923c" };
+  }
+
+  if (legs.length === 4 && sameExp && buyP.length === 1 && sellP.length === 1 && buyC.length === 1 && sellC.length === 1) {
+    const putStrikes = [sellP[0].strike, buyP[0].strike].sort((a, b) => a - b);
+    const callStrikes = [sellC[0].strike, buyC[0].strike].sort((a, b) => a - b);
+    if (sellP[0].strike === sellC[0].strike && buyP[0].strike === buyC[0].strike) {
+      return { name: "Iron Butterfly", color: GOLD };
+    }
+    if (putStrikes[1] <= callStrikes[0]) {
+      return { name: "Iron Condor", color: GOLD };
+    }
+  }
+
+  if (legs.length === 3 && sameExp) {
+    const strikeCounts: Record<number, number> = {};
+    for (const l of legs) strikeCounts[l.strike] = (strikeCounts[l.strike] || 0) + 1;
+    const hasDouble = Object.values(strikeCounts).some(c => c >= 2);
+    if (hasDouble) return { name: "Butterfly", color: "#f472b6" };
+  }
+
+  if (sells.length > 0 && buys.length === 0) {
+    return { name: "Naked Position", color: DOWN, warning: "WARNING: This is a naked short position with undefined risk. Max loss is theoretically unlimited for calls and substantial for puts. Consider adding a protective leg to define your risk." };
+  }
+
+  const creditOrDebit = netDebit < 0 ? "Credit" : "Debit";
+  return { name: `Custom ${legs.length}-Leg (${creditOrDebit})`, color: TEXT };
+}
+
 function computeStrategyMetrics(legs: StrategyLeg[]) {
   let netDebit = 0;
   let totalDelta = 0, totalGamma = 0, totalTheta = 0, totalVega = 0;
@@ -271,24 +356,46 @@ function runStrategyRiskChecks(params: {
 
   const hasIV = legs.some(l => l.iv != null);
   if (hasIV) {
-    const avgIV = legs.reduce((s, l) => s + (l.iv ?? 0), 0) / legs.length;
+    const rawAvgIV = legs.reduce((s, l) => s + (l.iv ?? 0), 0) / legs.length;
+    const avgIVPct = rawAvgIV > 5 ? rawAvgIV : rawAvgIV * 100;
+    const ivDisplay = `${avgIVPct.toFixed(2)}%`;
+    const ivWarning = avgIVPct > 500 ? " — unusually high, verify data" : "";
     const selling = legs.filter(l => l.direction.startsWith("SELL")).length >= legs.filter(l => l.direction.startsWith("BUY")).length;
-    if (avgIV > 0.5 && selling) {
-      checks.push({ id: "vol", label: "Vol Environment", level: "GREEN", detail: `Avg IV ${(avgIV * 100).toFixed(0)}% — selling premium` });
-    } else if (avgIV > 0.5 && !selling) {
-      checks.push({ id: "vol", label: "Vol Environment", level: "YELLOW", detail: `Avg IV ${(avgIV * 100).toFixed(0)}% — buying expensive` });
+    const isHighIV = rawAvgIV > 5 ? rawAvgIV > 50 : rawAvgIV > 0.5;
+    if (isHighIV && selling) {
+      checks.push({ id: "vol", label: "Vol Environment", level: "GREEN", detail: `Avg IV ${ivDisplay} — selling premium${ivWarning}` });
+    } else if (isHighIV && !selling) {
+      checks.push({ id: "vol", label: "Vol Environment", level: "YELLOW", detail: `Avg IV ${ivDisplay} — buying expensive${ivWarning}` });
     } else {
-      checks.push({ id: "vol", label: "Vol Environment", level: "GREEN", detail: `Avg IV ${(avgIV * 100).toFixed(0)}%` });
+      checks.push({ id: "vol", label: "Vol Environment", level: "GREEN", detail: `Avg IV ${ivDisplay}${ivWarning}` });
     }
   } else {
     checks.push({ id: "vol", label: "Vol Environment", level: "GREEN", detail: "No IV data" });
   }
 
-  const minDTE = Math.min(...legs.map(l => {
-    const d = new Date(l.expiration.split(":")[0]);
-    return Math.max(0, Math.ceil((d.getTime() - Date.now()) / 86400000));
-  }));
-  if (minDTE < 3) {
+  const parseDTE = (exp: string): number | null => {
+    const clean = exp.split(":")[0].trim();
+    const parts = clean.split("-");
+    let d: Date;
+    if (parts.length === 3) {
+      d = new Date(Date.UTC(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2])));
+    } else {
+      d = new Date(clean);
+    }
+    if (isNaN(d.getTime())) return null;
+    const now = new Date();
+    const todayUTC = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+    const expUTC = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+    return Math.max(0, Math.ceil((expUTC - todayUTC) / 86400000));
+  };
+
+  const dteValues = legs.map(l => parseDTE(l.expiration));
+  const validDTEs = dteValues.filter((d): d is number => d !== null);
+  const minDTE = validDTEs.length > 0 ? Math.min(...validDTEs) : null;
+
+  if (minDTE === null) {
+    checks.push({ id: "dte", label: "DTE / Gamma Risk", level: "YELLOW", detail: "DTE unavailable" });
+  } else if (minDTE < 3) {
     checks.push({ id: "dte", label: "DTE / Gamma Risk", level: "RED", detail: `${minDTE} DTE — extreme gamma risk` });
   } else if (minDTE < 7) {
     checks.push({ id: "dte", label: "DTE / Gamma Risk", level: "YELLOW", detail: `${minDTE} DTE — elevated gamma` });
@@ -359,7 +466,8 @@ export function StrategyBuilder({
   const [legs, setLegs] = useState<StrategyLeg[]>([]);
   const [mode, setMode] = useState<"templates" | "builder">("templates");
   const [expandedLeg, setExpandedLeg] = useState<string | null>(null);
-  const [riskCollapsed, setRiskCollapsed] = useState(false);
+  const [riskCollapsed, setRiskCollapsed] = useState(true);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const [limitPrice, setLimitPrice] = useState("");
   const [quantity, setQuantity] = useState(1);
@@ -369,6 +477,7 @@ export function StrategyBuilder({
   const [accountHash, setAccountHash] = useState<string | null>(null);
   const [orderId, setOrderId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
+  const [priceError, setPriceError] = useState("");
 
   useEffect(() => {
     if (isOpen) {
@@ -381,6 +490,7 @@ export function StrategyBuilder({
       setStage("form");
       setOrderId(null);
       setErrorMsg("");
+      setPriceError("");
       if (initialLegs && initialLegs.length > 0) {
         setLegs(initialLegs);
         setMode("builder");
@@ -475,6 +585,20 @@ export function StrategyBuilder({
 
   const metrics = useMemo(() => computeStrategyMetrics(legs), [legs]);
   const isCredit = metrics.netDebit < 0;
+  const strategyId = useMemo(() => detectStrategyType(legs, metrics.netDebit), [legs, metrics.netDebit]);
+
+  const inlineWarnings = useMemo(() => {
+    const warnings: { text: string; color: string; level: "red" | "yellow" | "orange" | "gray" }[] = [];
+
+    const hasInsufficientGreeks = legs.some(l =>
+      (l.delta == null || l.delta === 0) && (l.gamma == null || l.gamma === 0)
+    );
+    if (legs.length > 0 && hasInsufficientGreeks) {
+      warnings.push({ text: "Greeks unavailable for one or more legs. Position-level risk metrics may be incomplete.", color: MUTED, level: "gray" });
+    }
+
+    return warnings;
+  }, [legs]);
 
   const riskChecks = useMemo(() => {
     if (!preTradeEnabled || legs.length === 0) return [];
@@ -556,13 +680,29 @@ export function StrategyBuilder({
         quantity: leg.quantity * quantity,
         instrument: { symbol: leg.schwabSymbol, assetType: "OPTION" },
       })),
+      price: parsed,
     };
-    if (parsed > 0) o.price = parsed;
     return o;
   }, [isCredit, extendedHours, legs, quantity, limitPrice]);
 
+  const validateAndReview = useCallback(() => {
+    const parsed = parseFloat(limitPrice || "0");
+    if (!parsed || parsed <= 0) {
+      setPriceError("A limit price is required. Set a price using BID / MID / NAT or enter manually.");
+      return;
+    }
+    setPriceError("");
+    setStage("review");
+  }, [limitPrice]);
+
   const handleSubmit = useCallback(async () => {
     if (!accountHash) return;
+    const parsed = parseFloat(limitPrice || "0");
+    if (!parsed || parsed <= 0) {
+      setPriceError("A limit price is required.");
+      setStage("form");
+      return;
+    }
     setStage("submitting");
     try {
       const order = buildSchwabOrder();
@@ -657,41 +797,26 @@ export function StrategyBuilder({
         <>
           <div className="flex-1 overflow-y-auto pb-28">
 
-            {preTradeEnabled && riskChecks.length > 0 && legs.length > 0 && (
-              <div style={{ background: "#0d0d0f", borderBottom: `1px solid ${BORDER}` }}>
-                <button
-                  className="w-full flex items-center gap-2 px-4 py-2 transition-colors"
-                  style={{ borderBottom: riskCollapsed ? "none" : `1px solid ${BORDER}` }}
-                  onClick={() => setRiskCollapsed(v => !v)}
-                >
-                  <Shield className="w-4 h-4 shrink-0" style={{ color: levelColor(overallRisk) }} />
-                  <span className="font-mono text-[12px] font-bold tracking-[0.12em]" style={{ color: WHITE }}>PRE-TRADE RISK CHECK</span>
-                  <div className="flex-1" />
-                  <span className="font-mono text-[11px] font-bold px-2 py-0.5 rounded" style={{
-                    color: overallRisk === "GREEN" ? "#000" : overallRisk === "YELLOW" ? "#000" : "#fff",
-                    background: levelColor(overallRisk),
-                  }}>
-                    {overallRisk === "GREEN" ? "PASS" : overallRisk === "YELLOW" ? "WARN" : "FAIL"}
-                  </span>
-                  {riskCollapsed
-                    ? <ChevronDown className="w-4 h-4 ml-1 shrink-0" style={{ color: MUTED }} />
-                    : <ChevronUp className="w-4 h-4 ml-1 shrink-0" style={{ color: MUTED }} />
-                  }
-                </button>
-                {!riskCollapsed && (
-                  <>
-                    <div className="w-full h-[2px]" style={{ background: levelColor(overallRisk) }} />
-                    <div className="px-4 py-2">
-                      {riskChecks.map(c => (
-                        <div key={c.id} className="flex items-center py-[5px]" style={{ borderBottom: `1px solid ${BORDER}` }}>
-                          <RiskIcon level={c.level} />
-                          <span className="font-mono text-[12px] font-medium ml-2.5" style={{ color: TEXT, width: 120, flexShrink: 0 }}>{c.label}</span>
-                          <span className="font-mono text-[11px] flex-1 text-right" style={{ color: levelColor(c.level) }}>{c.detail}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </>
+            {legs.length > 0 && (
+              <div className="px-4 pt-3 pb-2">
+                <span className="font-mono text-[18px] font-bold tracking-wider" style={{ color: strategyId.color }}>
+                  {strategyId.name}
+                </span>
+                {strategyId.warning && (
+                  <div className="mt-2 px-3 py-2 flex items-start gap-2" style={{ background: "rgba(242,54,69,0.08)", border: `1px solid rgba(242,54,69,0.3)` }}>
+                    <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" style={{ color: DOWN }} />
+                    <span className="font-mono text-[11px] leading-relaxed" style={{ color: DOWN }}>{strategyId.warning}</span>
+                  </div>
                 )}
+                {inlineWarnings.map((w, i) => (
+                  <div key={i} className="mt-2 px-3 py-2 flex items-start gap-2" style={{
+                    background: w.level === "red" ? "rgba(242,54,69,0.08)" : w.level === "yellow" ? "rgba(251,191,36,0.08)" : w.level === "orange" ? "rgba(249,115,22,0.08)" : "rgba(113,113,122,0.08)",
+                    border: `1px solid ${w.level === "red" ? "rgba(242,54,69,0.3)" : w.level === "yellow" ? "rgba(251,191,36,0.3)" : w.level === "orange" ? "rgba(249,115,22,0.3)" : "rgba(113,113,122,0.3)"}`,
+                  }}>
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: w.color }} />
+                    <span className="font-mono text-[10px] leading-relaxed" style={{ color: w.color }}>{w.text}</span>
+                  </div>
+                ))}
               </div>
             )}
 
@@ -771,6 +896,12 @@ export function StrategyBuilder({
                               <span className="font-mono text-[11px]" style={{ color: MUTED }}>{expLabel}</span>
                             </div>
                             <div className="flex items-center gap-1 text-right" style={{ width: 86 }}>
+                              {(() => {
+                                const mid = (leg.bid != null && leg.ask != null && leg.bid > 0) ? (leg.bid + leg.ask) / 2 : null;
+                                const spread = (leg.bid != null && leg.ask != null) ? leg.ask - leg.bid : 0;
+                                const isWide = mid != null && mid > 0 && (spread / mid) > 2;
+                                return isWide ? <AlertTriangle className="w-3 h-3 shrink-0" style={{ color: "#f59e0b" }} title="Wide bid-ask spread on this leg" /> : null;
+                              })()}
                               <span className="font-mono text-[12px]" style={{ color: leg.bid != null ? UP : DIM }}>{fmt(leg.bid)}</span>
                               <span className="font-mono text-[10px]" style={{ color: DIM }}>/</span>
                               <span className="font-mono text-[12px]" style={{ color: leg.ask != null ? DOWN : DIM }}>{fmt(leg.ask)}</span>
@@ -860,22 +991,24 @@ export function StrategyBuilder({
                       <span className="font-mono text-[11px] font-bold tracking-[0.12em]" style={{ color: GOLD }}>STRATEGY PREVIEW</span>
                     </div>
                     <div className="px-4 py-3">
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 mb-2">
+                        <div className="flex flex-col items-start">
+                          <span className="font-mono text-[10px] tracking-wider uppercase" style={{ color: MUTED }}>Net {metrics.isDebit ? "Debit" : "Credit"}</span>
+                          <span className="font-mono text-[18px] font-bold" style={{ color: metrics.isDebit ? DOWN : UP }}>{fmtCurrency(Math.abs(metrics.netDebit))}</span>
+                        </div>
+                        <div className="flex flex-col items-end">
+                          <span className="font-mono text-[10px] tracking-wider uppercase" style={{ color: MUTED }}>Max Risk</span>
+                          <span className="font-mono text-[18px] font-bold" style={{ color: DOWN }}>{metrics.maxRisk != null ? fmtCurrency(metrics.maxRisk) : "Undefined"}</span>
+                        </div>
+                      </div>
                       <div className="grid grid-cols-2 gap-x-6 gap-y-2">
                         <div className="flex justify-between items-baseline">
-                          <span className="font-mono text-[12px]" style={{ color: MUTED }}>Net {metrics.isDebit ? "Debit" : "Credit"}</span>
-                          <span className="font-mono text-[14px] font-bold" style={{ color: metrics.isDebit ? DOWN : UP }}>{fmtCurrency(Math.abs(metrics.netDebit))}</span>
+                          <span className="font-mono text-[12px]" style={{ color: MUTED }}>Max Reward</span>
+                          <span className="font-mono text-[14px] font-bold" style={{ color: UP }}>{metrics.maxReward != null ? fmtCurrency(metrics.maxReward) : "Unlimited"}</span>
                         </div>
                         <div className="flex justify-between items-baseline">
                           <span className="font-mono text-[12px]" style={{ color: MUTED }}>R:R</span>
                           <span className="font-mono text-[14px] font-bold" style={{ color: TEXT }}>{metrics.riskReward != null ? `${metrics.riskReward.toFixed(1)}:1` : "—"}</span>
-                        </div>
-                        <div className="flex justify-between items-baseline">
-                          <span className="font-mono text-[12px]" style={{ color: MUTED }}>Max Risk</span>
-                          <span className="font-mono text-[14px] font-bold" style={{ color: DOWN }}>{metrics.maxRisk != null ? fmtCurrency(metrics.maxRisk) : "Undefined"}</span>
-                        </div>
-                        <div className="flex justify-between items-baseline">
-                          <span className="font-mono text-[12px]" style={{ color: MUTED }}>Max Reward</span>
-                          <span className="font-mono text-[14px] font-bold" style={{ color: UP }}>{metrics.maxReward != null ? fmtCurrency(metrics.maxReward) : "Unlimited"}</span>
                         </div>
                         {metrics.breakevens.length > 0 && (
                           <div className="flex justify-between items-baseline col-span-2">
@@ -893,13 +1026,13 @@ export function StrategyBuilder({
                       <div className="mt-3 pt-2" style={{ borderTop: `1px solid ${BORDER}` }}>
                         <div className="grid grid-cols-4 gap-2">
                           {([
-                            ["Δ", metrics.totalDelta, 3, null],
-                            ["Γ", metrics.totalGamma, 4, null],
-                            ["Θ", metrics.totalTheta, 3, metrics.totalTheta > 0 ? UP : DOWN],
-                            ["V", metrics.totalVega, 3, null],
+                            ["Delta", metrics.totalDelta, 3, null],
+                            ["Gamma", metrics.totalGamma, 4, null],
+                            ["Theta", metrics.totalTheta, 3, metrics.totalTheta > 0 ? UP : DOWN],
+                            ["Vega", metrics.totalVega, 3, null],
                           ] as [string, number, number, string | null][]).map(([label, val, dec, clr]) => (
                             <div key={label} className="text-center">
-                              <span className="font-mono text-[10px] tracking-widest block mb-0.5" style={{ color: DIM }}>{label}</span>
+                              <span className="font-mono text-[9px] tracking-wider block mb-0.5 uppercase" style={{ color: DIM }}>{label}</span>
                               <span className="font-mono text-[13px] font-bold" style={{ color: clr ?? TEXT }}>{fmt(val, dec)}</span>
                             </div>
                           ))}
@@ -921,7 +1054,7 @@ export function StrategyBuilder({
                       <span className="pl-3 font-mono text-[12px]" style={{ color: DIM }}>$</span>
                       <input
                         type="number" inputMode="decimal" step="0.01" value={limitPrice}
-                        onChange={(e) => { if (!priceLocked) setLimitPrice(e.target.value); }}
+                        onChange={(e) => { if (!priceLocked) { setLimitPrice(e.target.value); setPriceError(""); } }}
                         placeholder="0.00"
                         className="flex-1 px-1.5 py-2 font-mono text-[14px] font-bold bg-transparent outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                         style={{ color: priceLocked ? GOLD : WHITE }}
@@ -981,7 +1114,7 @@ export function StrategyBuilder({
                       </button>
                     </div>
                     <div className="flex gap-1.5 mt-1.5">
-                      {[1, 5, 10, 25, 50, 100].map((q) => (
+                      {[1, 5, 10, 25].map((q) => (
                         <button key={q} onClick={() => setQuantity(q)} className="flex-1 py-1.5 font-mono text-[11px] font-medium transition-colors"
                           style={{ color: quantity === q ? GOLD : DIM, background: quantity === q ? GOLD_DIM : CARD, border: `1px solid ${quantity === q ? "rgba(251,191,36,0.3)" : BORDER2}` }}>
                           {q}
@@ -990,28 +1123,44 @@ export function StrategyBuilder({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-1.5">
-                    <div className="px-3 py-2" style={{ background: FIELD, border: `1px solid ${BORDER2}` }}>
-                      <span className="font-mono text-[10px] block mb-0.5" style={{ color: MUTED }}>Exchange</span>
-                      <span className="font-mono text-[12px] font-medium" style={{ color: TEXT }}>BEST</span>
-                    </div>
-                    <div className="px-3 py-2" style={{ background: FIELD, border: `1px solid ${BORDER2}` }}>
-                      <span className="font-mono text-[10px] block mb-0.5" style={{ color: MUTED }}>Duration</span>
-                      <span className="font-mono text-[12px] font-medium" style={{ color: TEXT }}>DAY</span>
-                    </div>
-                    <div className="px-3 py-2 flex items-center justify-between" style={{ background: FIELD, border: `1px solid ${BORDER2}` }}>
-                      <div>
-                        <span className="font-mono text-[10px] block mb-0.5" style={{ color: MUTED }}>Ext Hrs</span>
-                        <span className="font-mono text-[12px] font-medium" style={{ color: extendedHours ? GOLD : TEXT }}>{extendedHours ? "On" : "Off"}</span>
+                  <div style={{ border: `1px solid ${BORDER2}` }}>
+                    <button
+                      className="w-full flex items-center justify-between px-3 py-2"
+                      onClick={() => setAdvancedOpen(v => !v)}
+                    >
+                      <span className="font-mono text-[10px] tracking-wider uppercase" style={{ color: MUTED }}>Advanced Settings</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-[10px]" style={{ color: DIM }}>BEST · DAY · {extendedHours ? "Ext On" : "Ext Off"}</span>
+                        {advancedOpen
+                          ? <ChevronUp className="w-3.5 h-3.5" style={{ color: MUTED }} />
+                          : <ChevronDown className="w-3.5 h-3.5" style={{ color: MUTED }} />}
                       </div>
-                      <button
-                        onClick={() => setExtendedHours(!extendedHours)}
-                        className="relative w-8 h-4 rounded-full transition-colors duration-200"
-                        style={{ background: extendedHours ? GOLD : BORDER2 }}
-                      >
-                        <div className="absolute top-0.5 w-3 h-3 rounded-full transition-transform duration-200" style={{ background: extendedHours ? BG : DIM, transform: extendedHours ? "translateX(16px)" : "translateX(2px)" }} />
-                      </button>
-                    </div>
+                    </button>
+                    {advancedOpen && (
+                      <div className="grid grid-cols-3 gap-1.5 px-3 pb-2">
+                        <div className="px-3 py-2" style={{ background: FIELD, border: `1px solid ${BORDER2}` }}>
+                          <span className="font-mono text-[10px] block mb-0.5" style={{ color: MUTED }}>Exchange</span>
+                          <span className="font-mono text-[12px] font-medium" style={{ color: TEXT }}>BEST</span>
+                        </div>
+                        <div className="px-3 py-2" style={{ background: FIELD, border: `1px solid ${BORDER2}` }}>
+                          <span className="font-mono text-[10px] block mb-0.5" style={{ color: MUTED }}>Duration</span>
+                          <span className="font-mono text-[12px] font-medium" style={{ color: TEXT }}>DAY</span>
+                        </div>
+                        <div className="px-3 py-2 flex items-center justify-between" style={{ background: FIELD, border: `1px solid ${BORDER2}` }}>
+                          <div>
+                            <span className="font-mono text-[10px] block mb-0.5" style={{ color: MUTED }}>Ext Hrs</span>
+                            <span className="font-mono text-[12px] font-medium" style={{ color: extendedHours ? GOLD : TEXT }}>{extendedHours ? "On" : "Off"}</span>
+                          </div>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setExtendedHours(!extendedHours); }}
+                            className="relative w-8 h-4 rounded-full transition-colors duration-200"
+                            style={{ background: extendedHours ? GOLD : BORDER2 }}
+                          >
+                            <div className="absolute top-0.5 w-3 h-3 rounded-full transition-transform duration-200" style={{ background: extendedHours ? BG : DIM, transform: extendedHours ? "translateX(16px)" : "translateX(2px)" }} />
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {estimatedCost != null && (
@@ -1055,6 +1204,43 @@ export function StrategyBuilder({
                       })()}
                     </div>
                   </div>
+
+                  {preTradeEnabled && riskChecks.length > 0 && (
+                    <div className="overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                      <button
+                        className="w-full flex items-center gap-2 px-4 py-2 transition-colors"
+                        onClick={() => setRiskCollapsed(v => !v)}
+                      >
+                        <Shield className="w-4 h-4 shrink-0" style={{ color: levelColor(overallRisk) }} />
+                        <span className="font-mono text-[11px] font-bold tracking-[0.12em]" style={{ color: WHITE }}>PRE-TRADE RISK CHECK</span>
+                        <div className="flex-1" />
+                        <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded" style={{
+                          color: overallRisk === "GREEN" ? "#000" : overallRisk === "YELLOW" ? "#000" : "#fff",
+                          background: levelColor(overallRisk),
+                        }}>
+                          {overallRisk === "GREEN" ? "PASS" : overallRisk === "YELLOW" ? "WARN" : "FAIL"}
+                        </span>
+                        {riskCollapsed
+                          ? <ChevronDown className="w-3.5 h-3.5 ml-1 shrink-0" style={{ color: MUTED }} />
+                          : <ChevronUp className="w-3.5 h-3.5 ml-1 shrink-0" style={{ color: MUTED }} />
+                        }
+                      </button>
+                      {!riskCollapsed && (
+                        <>
+                          <div className="w-full h-[2px]" style={{ background: levelColor(overallRisk) }} />
+                          <div className="px-4 py-2">
+                            {riskChecks.map(c => (
+                              <div key={c.id} className="flex items-center py-[5px]" style={{ borderBottom: `1px solid ${BORDER}` }}>
+                                <RiskIcon level={c.level} />
+                                <span className="font-mono text-[12px] font-medium ml-2.5" style={{ color: TEXT, width: 120, flexShrink: 0 }}>{c.label}</span>
+                                <span className="font-mono text-[11px] flex-1 text-right" style={{ color: levelColor(c.level) }}>{c.detail}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </>
               )}
             </div>
@@ -1068,8 +1254,14 @@ export function StrategyBuilder({
                   <span className="font-mono text-[12px] font-medium" style={{ color: DOWN }}>Risk check failed — order blocked</span>
                 </div>
               )}
+              {priceError && (
+                <div className="mb-2 px-3 py-2 flex items-center gap-2" style={{ background: "rgba(242,54,69,0.08)", border: `1px solid rgba(242,54,69,0.3)` }}>
+                  <AlertTriangle className="w-4 h-4 shrink-0" style={{ color: DOWN }} />
+                  <span className="font-mono text-[11px] font-medium" style={{ color: DOWN }}>{priceError}</span>
+                </div>
+              )}
               <button
-                onClick={() => setStage("review")}
+                onClick={validateAndReview}
                 disabled={!isValid}
                 className="w-full py-3.5 font-mono text-[14px] font-bold tracking-[0.15em] transition-all duration-150 disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.98]"
                 style={{ background: isValid ? UP : BORDER2, color: isValid ? "#fff" : DIM }}
@@ -1089,7 +1281,11 @@ export function StrategyBuilder({
                 <div className="space-y-1.5 p-3" style={{ background: "#0a0a0c", border: `1px solid ${BORDER}` }}>
                   <div className="flex justify-between mb-1">
                     <span className="font-mono text-[10px]" style={{ color: MUTED }}>Strategy</span>
-                    <span className="font-mono text-[11px] font-bold" style={{ color: GOLD }}>{legs.length}-Leg {isCredit ? "Credit" : "Debit"}</span>
+                    <span className="font-mono text-[12px] font-bold" style={{ color: strategyId.color }}>{strategyId.name}</span>
+                  </div>
+                  <div className="flex justify-between mb-1">
+                    <span className="font-mono text-[10px]" style={{ color: MUTED }}>Order Type</span>
+                    <span className="font-mono text-[11px] font-bold" style={{ color: TEXT }}>LIMIT ORDER</span>
                   </div>
                   {legs.map((leg, i) => {
                     const isBuy = leg.direction.startsWith("BUY");

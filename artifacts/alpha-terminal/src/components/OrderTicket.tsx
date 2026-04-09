@@ -1408,7 +1408,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
             style={{ background: CARD }}
           >
             <div className="flex items-center justify-between mb-1">
-              <h3 className="font-mono font-bold text-[14px] tracking-wider" style={{ color: WHITE }}>Confirm Order</h3>
+              <h3 className="font-mono font-bold text-[14px] tracking-wider" style={{ color: WHITE }}>{isCloseOrder ? "Confirm Close" : "Confirm Order"}</h3>
               <button onClick={() => setStage("form")} className="p-1" style={{ color: MUTED }}>
                 <X className="w-4 h-4" />
               </button>
@@ -1418,8 +1418,10 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
               {isMultiLeg && strategyLegs ? (
                 <>
                   <div className="flex justify-between mb-1">
-                    <span className="font-mono text-[10px]" style={{ color: MUTED }}>Strategy</span>
-                    <span className="font-mono text-[11px] font-bold" style={{ color: GOLD }}>{strategyLegs.length}-Leg {strategyIsCredit ? "Credit" : "Debit"}</span>
+                    <span className="font-mono text-[10px]" style={{ color: MUTED }}>{isCloseOrder ? "Close" : "Strategy"}</span>
+                    <span className="font-mono text-[11px] font-bold" style={{ color: isCloseOrder ? DOWN : GOLD }}>
+                      {isCloseOrder ? `CLOSE ${strategyLegs.length}-LEG` : `${strategyLegs.length}-Leg ${strategyIsCredit ? "Credit" : "Debit"}`}
+                    </span>
                   </div>
                   {strategyLegs.map((leg, i) => {
                     const isBuyLeg = leg.instruction.startsWith("BUY");
@@ -1522,7 +1524,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                   boxShadow: `0 4px 20px ${isBuy ? "rgba(0,209,102,0.3)" : "rgba(242,54,69,0.3)"}`,
                 }}
               >
-                {isMultiLeg ? "Confirm Strategy" : `Confirm ${side}`}
+                {isCloseOrder && isMultiLeg ? "Confirm Close" : isCloseOrder ? "Confirm Close" : isMultiLeg ? "Confirm Strategy" : `Confirm ${side}`}
               </button>
             </div>
           </div>

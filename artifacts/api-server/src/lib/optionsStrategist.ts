@@ -25,6 +25,9 @@ export interface LegPayload {
   ask: number;
   mark: number;
   delta: number;
+  gamma: number | null;
+  theta: number | null;
+  vega: number | null;
   volume: number;
   openInterest: number;
 }
@@ -527,7 +530,10 @@ function toLeg(c: OptionContract, type: "CALL" | "PUT", action: "BUY" | "SELL"):
     bid: c.bid ?? 0,
     ask: c.ask ?? 0,
     mark: r2(mid(c)),
-    delta: c.delta ?? 0,
+    delta: typeof c.delta === "number" ? c.delta : 0,
+    gamma: typeof c.gamma === "number" ? c.gamma : null,
+    theta: typeof c.theta === "number" ? c.theta : null,
+    vega: typeof c.vega === "number" ? c.vega : null,
     volume: c.volume ?? 0,
     openInterest: c.openInterest ?? 0,
   };
@@ -1566,9 +1572,24 @@ Incorporate the ticker profile and chain analytics into your narrative:
 - Reference any WARN or FAIL pre-trade checks and explain their impact
 - If expected move check is WARN or FAIL, explain that breakevens are too close to the implied move
 
+DELTA-BASED STRIKE SELECTION RULES (you must reference these when explaining why specific strikes were chosen):
+- Credit spreads (bull put, bear call): short strike targets ~30 delta. If IVR > 50, the engine shifts to 25 delta for higher probability. If scanner gave very strong directional conviction, short strike moves to 35 delta for more premium.
+- Iron condors: both short strikes target ~16 delta (one standard deviation). Long wings 1-2 strikes further out.
+- Debit spreads: long leg at 45-50 delta (near the money), short leg 1-2 strikes further out.
+- Calendars: same strike on both legs targeting 50 delta (at the money).
+- Butterflies: center strikes at 50 delta with wings at equal distances.
+- If no strike has a delta within 0.05 of the target, mention it: "Nearest available delta to [target] was [actual] at the [strike] strike. Strike spacing is wide on this name."
+- Prefer monthly expiration cycles over weeklies for credit spreads (better liquidity, more stable Greeks). Use weeklies only when target DTE falls between monthlies and weekly has OI > 100 on target strikes.
+
+Each leg in the payload includes delta, gamma, theta, and vega. When presenting a trade:
+- State the delta of each leg explicitly. Example: "Sell the 405 put (delta -0.30) and buy the 400 put (delta -0.22) for a net credit of $1.20."
+- Explain why that delta was chosen: "Selected 30-delta short strike for a balance of premium and probability" or "Shifted to 25-delta short strike due to elevated IV Rank of 72%."
+- After individual legs, state the net position Greeks for the whole strategy (net delta, net theta, net vega at minimum).
+- If any leg has null Greeks, note: "Greeks unavailable on [strike] — likely illiquid or far OTM."
+
 For each strategy, explain:
 - Why this strategy fits the current market regime (connect regime to strategy choice)
-- The specific entry: which strikes to sell, which to buy, what expiration
+- The specific entry: which strikes to sell, which to buy, what expiration, with delta for each leg
 - The risk/reward profile in plain English
 - The exit rules
 - Any conditions that would invalidate the trade thesis

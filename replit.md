@@ -25,6 +25,16 @@ The project is a pnpm monorepo built with TypeScript. The backend utilizes Expre
 
 Key features include SEC EDGAR integration, a dynamic Market Calendar with economic events and earnings, a MacroBar, an Institutional Tear Sheet, and Multi-Watchlist support. The Institutional Dashboard provides a 6-panel grid for advanced trading metrics. An AI Strategy Endpoint generates strategies with confidence levels. A Pre-Trade Risk Manager performs 11 deterministic checks on strategies, and Conviction Sizing adjusts position sizes. Security features include Session Timeout and Biometric Authentication. Synthetic DXY is derived from /6E futures.
 
+### Order Page Overhaul (7 Parts Complete)
+The StrategyBuilder order page was overhauled across 7 parts:
+1. **Bug Fixes**: Limit order always includes price, DTE uses UTC midnight parsing with fallback, IV normalized to percentage with >500% warning.
+2. **Strategy Name Detection**: `detectStrategyType()` covers all major strategies (bull put, bear call, iron condor, calendar, diagonal, butterfly, straddle, strangle, naked, custom). Displayed prominently with color coding.
+3. **Risk Warnings**: Wide bid-ask per-leg inline warning (>200% of mid), insufficient Greeks warning, naked position red banner.
+4. **Visual Hierarchy**: Greek symbols → words (Delta/Gamma/Theta/Vega), Net Credit/Max Risk prominent (18px), quantity presets [1,5,10,25], Advanced Settings collapsible, Pre-Trade Risk below AI Co-Pilot (collapsed by default).
+5. **Real-Time Greeks/Metrics**: All metrics recalculate reactively via useMemo when legs/strikes/quantity change.
+6. **Roll & Close Position Flows**: Close populates inverse legs with mid price. Roll opens close order then navigates to options chain for new position. Confirmation modal shows "Confirm Close" with CLOSE labels.
+7. **Strategist Greeks Integration**: `LegPayload` includes gamma/theta/vega alongside delta. System prompt has delta-based strike selection rules (30Δ credit spreads, 16Δ iron condors, 45-50Δ debit spreads, 50Δ calendars). Strategist card shows all Greeks per leg.
+
 ### Dynamic Scanner Universe System
 Three-layer universe system for the Market Scanner replacing hardcoded stock lists:
 - **Presets**: Hardcoded S&P 100, S&P 500, Nasdaq 100 symbol lists served from `scanner.ts` (no JSON files to avoid bundler issues). Keys: `preset:sp100`, `preset:sp500`, `preset:ndx100`.

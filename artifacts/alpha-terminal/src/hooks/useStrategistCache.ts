@@ -11,6 +11,9 @@ interface LegPayload {
   ask: number;
   mark: number;
   delta: number;
+  gamma: number | null;
+  theta: number | null;
+  vega: number | null;
   volume: number;
   openInterest: number;
 }

@@ -63,6 +63,9 @@ interface LegPayload {
   ask: number;
   mark: number;
   delta: number;
+  gamma: number | null;
+  theta: number | null;
+  vega: number | null;
   volume: number;
   openInterest: number;
 }
@@ -212,19 +215,27 @@ function parseRRValue(rr: string): number {
 
 function LegRow({ leg, label, even }: { leg: LegPayload; label: string; even: boolean }) {
   const actionColor = leg.action === "SELL" ? "#f23645" : "#00d166";
+  const fmtG = (v: number | null) => v != null ? v.toFixed(3) : "—";
   return (
-    <div className="flex items-center justify-between py-2 px-3" style={{ background: even ? "rgba(255,255,255,0.015)" : "transparent" }}>
-      <div className="flex items-center gap-2">
-        <span className="font-mono text-[11px] w-10 text-center py-0.5 rounded font-bold" style={{ color: actionColor }}>
-          {leg.action}
-        </span>
-        <span className="font-mono text-[11px] text-[#71717a] uppercase w-14">{label}</span>
+    <div className="py-2 px-3" style={{ background: even ? "rgba(255,255,255,0.015)" : "transparent" }}>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-[11px] w-10 text-center py-0.5 rounded font-bold" style={{ color: actionColor }}>
+            {leg.action}
+          </span>
+          <span className="font-mono text-[11px] text-[#71717a] uppercase w-14">{label}</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="font-mono text-xs text-white font-bold tabular-nums">{leg.strike}</span>
+          <span className="font-mono text-[11px] text-white/60">{leg.type}</span>
+          <span className="font-mono text-[11px] tabular-nums" style={{ color: "#71717a" }}>{leg.bid.toFixed(2)}/{leg.mark.toFixed(2)}/{leg.ask.toFixed(2)}</span>
+        </div>
       </div>
-      <div className="flex items-center gap-3">
-        <span className="font-mono text-xs text-white font-bold tabular-nums">{leg.strike}</span>
-        <span className="font-mono text-[11px] text-white/60">{leg.type}</span>
-        <span className="font-mono text-[11px] text-[#52525b] tabular-nums">{'\u0394'}{leg.delta.toFixed(2)}</span>
-        <span className="font-mono text-[11px] tabular-nums" style={{ color: "#71717a" }}>{leg.bid.toFixed(2)}/{leg.mark.toFixed(2)}/{leg.ask.toFixed(2)}</span>
+      <div className="flex items-center gap-3 mt-0.5 pl-[72px]">
+        <span className="font-mono text-[10px] tabular-nums" style={{ color: "#a1a1aa" }}>{'\u0394'}{leg.delta.toFixed(2)}</span>
+        <span className="font-mono text-[10px] tabular-nums" style={{ color: "#52525b" }}>{'\u0393'}{fmtG(leg.gamma)}</span>
+        <span className="font-mono text-[10px] tabular-nums" style={{ color: "#52525b" }}>{'\u0398'}{leg.theta != null ? leg.theta.toFixed(2) : "—"}</span>
+        <span className="font-mono text-[10px] tabular-nums" style={{ color: "#52525b" }}>{'\u03BD'}{leg.vega != null ? leg.vega.toFixed(2) : "—"}</span>
       </div>
     </div>
   );

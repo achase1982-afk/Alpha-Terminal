@@ -646,9 +646,10 @@ interface PortfolioViewProps {
     strategyIsCredit?: boolean,
     isClose?: boolean,
   ) => void;
+  onRoll?: (symbol: string) => void;
 }
 
-export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProps) {
+export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: PortfolioViewProps) {
   const { accessToken, setSymbol } = useTerminalStore();
   const wsAccount = usePortfolioStreamStore((s) => s.account);
   const wsOrders = usePortfolioStreamStore((s) => s.orders);
@@ -872,7 +873,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
         const legs: OrderLeg[] = opts.map(opt => {
           const isShort = opt.shortQuantity > 0;
           const qty = isShort ? opt.shortQuantity : opt.longQuantity;
-          const markPx = qty > 0 ? opt.marketValue / (qty * 100) : 0;
+          const markPx = Math.abs(qty > 0 ? opt.marketValue / (qty * 100) : 0);
           const details = parseOptionSymbolDetails(opt.symbol);
           return {
             schwabSymbol: opt.symbol.trim(),
@@ -902,12 +903,72 @@ export function PortfolioView({ onNavigateToSymbol, onTrade }: PortfolioViewProp
   }, [selectedKeys, symbolGroups, onTrade]);
 
   const handleRollSelected = useCallback(() => {
-    const first = [...selectedKeys].find(k => !k.endsWith(":EQ"));
-    if (!first) return;
-    const underlying = first.split(":")[0];
-    handleSelectSymbol(underlying);
+    if (!onTrade) return;
+    const optKeys = [...selectedKeys].filter(k => !k.endsWith(":EQ"));
+    if (optKeys.length === 0) return;
+
+    const underlying = optKeys[0].split(":")[0];
+
+    const sameUnderlying = optKeys.filter(k => k.split(":")[0] === underlying);
+
+    const opts: Position[] = [];
+    for (const key of sameUnderlying) {
+      const [, cusip] = key.split(":");
+      for (const grp of symbolGroups) {
+        const opt = grp.options.find(o => o.cusip === cusip);
+        if (opt) { opts.push(opt); break; }
+      }
+    }
+
+    if (opts.length === 1) {
+      const opt = opts[0];
+      const isShort = opt.shortQuantity > 0;
+      const qty = isShort ? opt.shortQuantity : opt.longQuantity;
+      const markPx = Math.abs(qty > 0 ? opt.marketValue / (qty * 100) : 0);
+      onTrade(
+        opt.underlyingSymbol,
+        isShort ? "BUY" : "SELL",
+        opt.symbol.trim(),
+        isShort ? "BUY_TO_CLOSE" : "SELL_TO_CLOSE",
+        undefined,
+        markPx,
+        undefined,
+        true,
+      );
+    } else if (opts.length > 1) {
+      const legs: OrderLeg[] = opts.map(opt => {
+        const isShort = opt.shortQuantity > 0;
+        const qty = isShort ? opt.shortQuantity : opt.longQuantity;
+        const markPx = Math.abs(qty > 0 ? opt.marketValue / (qty * 100) : 0);
+        const details = parseOptionSymbolDetails(opt.symbol);
+        return {
+          schwabSymbol: opt.symbol.trim(),
+          instruction: isShort ? "BUY_TO_CLOSE" : "SELL_TO_CLOSE",
+          quantity: qty,
+          optionType: opt.putCall ?? details?.putCall ?? "CALL",
+          strike: details?.strike ?? 0,
+          expiration: details?.expiration ?? "",
+          bid: Math.max(0, markPx * 0.97),
+          ask: markPx * 1.03,
+        };
+      });
+
+      let netPrice = 0;
+      for (const leg of legs) {
+        const isSell = leg.instruction.startsWith("SELL");
+        const mid = ((leg.bid ?? 0) + (leg.ask ?? 0)) / 2;
+        netPrice += isSell ? mid : -mid;
+      }
+      const isCredit = netPrice > 0;
+      onTrade(underlying, isCredit ? "SELL" : "BUY", undefined, undefined, legs, Math.abs(netPrice), isCredit, true);
+    }
+
     setSelectedKeys(new Set());
-  }, [selectedKeys, handleSelectSymbol]);
+
+    setTimeout(() => {
+      if (onRoll) onRoll(underlying);
+    }, 300);
+  }, [selectedKeys, symbolGroups, onTrade, onRoll]);
 
   if (!accessToken) return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: f }}>
