@@ -464,7 +464,7 @@ export default function TerminalPage() {
                 </div>
               </>
             ) : (
-              <main ref={scrollRef} onScroll={handleScroll} className="flex-1 min-w-0 app-content pb-4 overflow-y-auto">
+              <main ref={scrollRef} onScroll={handleScroll} className="flex-1 min-w-0 app-content pb-4 overflow-y-auto" style={activeBottom === "portfolio" ? { overscrollBehaviorY: "none" } : undefined}>
                 {activeBottom === "ai" && (
                   <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToMarkets={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} />
                 )}
@@ -475,7 +475,7 @@ export default function TerminalPage() {
             )}
           </>
         ) : (
-          <main ref={scrollRef} onScroll={handleScroll} className="flex-1 min-w-0 app-content pb-4 overflow-y-auto">
+          <main ref={scrollRef} onScroll={handleScroll} className="flex-1 min-w-0 app-content pb-4 overflow-y-auto" style={activeBottom === "portfolio" ? { overscrollBehaviorY: "none" } : undefined}>
             {activeBottom === "markets" && (
               <>
                 <div className="shrink-0 border-b border-zinc-800/60" style={{ background: "#0a0a0a" }}>
