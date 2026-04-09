@@ -18,11 +18,13 @@ export function useBrokerConnect() {
         url = result.data?.url || "";
       }
       if (!url) return;
-      window.location.href = url;
+      setTimeout(() => {
+        window.location.href = url;
+      }, 120);
     } catch {
       // silently reset on failure
     } finally {
-      setIsNavigating(false);
+      setTimeout(() => setIsNavigating(false), 120);
     }
   }, [authUrlData, refetchAuthUrl]);
 
