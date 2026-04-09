@@ -5,8 +5,8 @@ import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import {
   X, Minus, Plus, Loader2, CheckCircle2, AlertTriangle, ChevronDown, ChevronUp,
-  Shield, ShieldAlert, ShieldCheck, ShieldX, Lock, Unlock,
-  Eye, EyeOff, Sparkles, TrendingUp, ArrowLeft,
+  ShieldX, Lock, Unlock,
+  Sparkles, ArrowLeft,
 } from "lucide-react";
 
 type OrderSide = "BUY" | "SELL";
@@ -202,25 +202,6 @@ function getOverallLevel(checks: RiskCheck[]): RiskLevel {
   return "GREEN";
 }
 
-function getRiskSummary(checks: RiskCheck[], side: OrderSide, overall: RiskLevel): string {
-  const reds = checks.filter(c => c.level === "RED");
-  const yellows = checks.filter(c => c.level === "YELLOW");
-
-  if (overall === "GREEN") return `All ${checks.length} checks passed — clear to ${side.toLowerCase()}.`;
-  if (overall === "RED") {
-    const issues = reds.map(r => r.label.toLowerCase()).join(", ");
-    return `BLOCKED: ${issues} ${reds.length === 1 ? "fails" : "fail"} risk threshold${yellows.length > 0 ? ` + ${yellows.length} caution${yellows.length > 1 ? "s" : ""}` : ""}.`;
-  }
-  const cautions = yellows.map(y => y.label.toLowerCase()).join(", ");
-  return `CAUTION: ${cautions} ${yellows.length === 1 ? "needs" : "need"} attention — proceed with awareness.`;
-}
-
-function RiskIcon({ level }: { level: RiskLevel }) {
-  if (level === "GREEN") return <ShieldCheck className="w-3.5 h-3.5" style={{ color: UP }} />;
-  if (level === "YELLOW") return <ShieldAlert className="w-3.5 h-3.5" style={{ color: GOLD }} />;
-  return <ShieldX className="w-3.5 h-3.5" style={{ color: DOWN }} />;
-}
-
 function levelColor(l: RiskLevel): string {
   if (l === "GREEN") return UP;
   if (l === "YELLOW") return GOLD;
@@ -249,188 +230,6 @@ interface OrderTicketProps {
   strategyNetPrice?: number;
   strategyIsCredit?: boolean;
   isCloseOrder?: boolean;
-}
-
-function MiniPayoffChart({ legs, isMultiLeg, side, quantity, limitPrice, isOption, last }: {
-  legs?: OrderLeg[];
-  isMultiLeg: boolean;
-  side: OrderSide;
-  quantity: number;
-  limitPrice: number;
-  isOption: boolean;
-  last: number;
-}) {
-  const W = 280;
-  const H = 100;
-  const PAD = 20;
-
-  const points = useMemo(() => {
-    if (!last || last <= 0) return null;
-
-    if (isMultiLeg && legs && legs.length > 0) {
-      const strikes = legs.map(l => l.strike).sort((a, b) => a - b);
-      const minS = strikes[0];
-      const maxS = strikes[strikes.length - 1];
-      const range = Math.max(maxS - minS, last * 0.1);
-      const lo = minS - range * 0.5;
-      const hi = maxS + range * 0.5;
-
-      const pts: { x: number; y: number }[] = [];
-      const steps = 60;
-      let minPl = Infinity, maxPl = -Infinity;
-      const plVals: number[] = [];
-
-      for (let i = 0; i <= steps; i++) {
-        const px = lo + (hi - lo) * (i / steps);
-        let pl = 0;
-        for (const leg of legs) {
-          const isCall = leg.optionType === "CALL";
-          const isBuy = leg.instruction.startsWith("BUY");
-          const mid = ((leg.bid ?? 0) + (leg.ask ?? 0)) / 2 || limitPrice / legs.length;
-          const intrinsic = isCall ? Math.max(0, px - leg.strike) : Math.max(0, leg.strike - px);
-          const legPl = isBuy ? (intrinsic - mid) * leg.quantity * 100 : (mid - intrinsic) * leg.quantity * 100;
-          pl += legPl;
-        }
-        plVals.push(pl);
-        minPl = Math.min(minPl, pl);
-        maxPl = Math.max(maxPl, pl);
-      }
-
-      const plRange = maxPl - minPl || 1;
-      for (let i = 0; i <= steps; i++) {
-        pts.push({
-          x: PAD + (i / steps) * (W - 2 * PAD),
-          y: PAD + (1 - (plVals[i] - minPl) / plRange) * (H - 2 * PAD),
-        });
-      }
-
-      const zeroY = maxPl > 0 && minPl < 0
-        ? PAD + (1 - (0 - minPl) / plRange) * (H - 2 * PAD)
-        : null;
-
-      const lastX = PAD + ((last - lo) / (hi - lo)) * (W - 2 * PAD);
-
-      return { pts, zeroY, lastX, minPl, maxPl };
-    }
-
-    const price = limitPrice || last;
-    const spread = last * 0.08;
-    const lo = last - spread;
-    const hi = last + spread;
-    const cost = price * quantity * (isOption ? 100 : 1);
-    const isBuy = side === "BUY";
-
-    const pts: { x: number; y: number }[] = [];
-    const steps = 60;
-    let minPl = Infinity, maxPl = -Infinity;
-    const plVals: number[] = [];
-
-    for (let i = 0; i <= steps; i++) {
-      const px = lo + (hi - lo) * (i / steps);
-      const val = px * quantity * (isOption ? 100 : 1);
-      const pl = isBuy ? val - cost : cost - val;
-      plVals.push(pl);
-      minPl = Math.min(minPl, pl);
-      maxPl = Math.max(maxPl, pl);
-    }
-
-    const plRange = maxPl - minPl || 1;
-    for (let i = 0; i <= steps; i++) {
-      pts.push({
-        x: PAD + (i / steps) * (W - 2 * PAD),
-        y: PAD + (1 - (plVals[i] - minPl) / plRange) * (H - 2 * PAD),
-      });
-    }
-
-    const zeroY = maxPl > 0 && minPl < 0
-      ? PAD + (1 - (0 - minPl) / plRange) * (H - 2 * PAD)
-      : null;
-
-    const lastX = PAD + ((last - lo) / (hi - lo)) * (W - 2 * PAD);
-
-    return { pts, zeroY, lastX, minPl, maxPl };
-  }, [legs, isMultiLeg, side, quantity, limitPrice, isOption, last]);
-
-  if (!points) return null;
-
-  const { pts, zeroY, lastX, maxPl } = points;
-  const pathD = pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
-
-  const profitFillD = zeroY != null
-    ? `${pathD} L${pts[pts.length - 1].x},${zeroY} L${pts[0].x},${zeroY} Z`
-    : pathD;
-
-  return (
-    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ maxHeight: 100 }}>
-      {zeroY != null && (
-        <line x1={PAD} y1={zeroY} x2={W - PAD} y2={zeroY} stroke={MUTED} strokeWidth={0.5} strokeDasharray="3,3" />
-      )}
-      {lastX > PAD && lastX < W - PAD && (
-        <line x1={lastX} y1={PAD} x2={lastX} y2={H - PAD} stroke={GOLD} strokeWidth={0.5} strokeDasharray="2,2" opacity={0.5} />
-      )}
-      <defs>
-        <linearGradient id="payoffGrad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={maxPl > 0 ? UP : DOWN} stopOpacity={0.3} />
-          <stop offset="100%" stopColor={maxPl > 0 ? UP : DOWN} stopOpacity={0.02} />
-        </linearGradient>
-      </defs>
-      <path d={profitFillD} fill="url(#payoffGrad)" />
-      <path d={pathD} fill="none" stroke={UP} strokeWidth={1.5} />
-      {zeroY != null && (
-        <text x={W - PAD + 2} y={zeroY + 3} fill={MUTED} fontSize={10} fontFamily="monospace">0</text>
-      )}
-    </svg>
-  );
-}
-
-function PortfolioImpactCard({ cost, side, isOption, quantity }: {
-  cost: number | null;
-  side: OrderSide;
-  isOption: boolean;
-  quantity: number;
-}) {
-  const accountSize = useTerminalStore(s => s.accountSize);
-  if (!cost || !accountSize) return null;
-
-  const impact = side === "BUY" ? -cost : cost;
-  const newBP = accountSize + impact;
-  const concentrationPct = Math.abs(cost) / accountSize * 100;
-  const marginImpact = isOption ? Math.abs(cost) * 0.2 : Math.abs(cost) * 0.5;
-
-  return (
-    <div className="overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-      <div className="flex items-center gap-2 px-4 py-2" style={{ borderBottom: `1px solid ${BORDER}` }}>
-        <TrendingUp className="w-3.5 h-3.5" style={{ color: GOLD }} />
-        <span className="text-[11px] uppercase tracking-[0.06em]" style={{ color: TEXT }}>After this trade</span>
-      </div>
-      <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 px-4 py-2.5">
-        <div className="flex justify-between">
-          <span className="text-[11px]" style={{ color: MUTED }}>Buying Power</span>
-          <span className="text-[12px]" style={{ color: newBP < 0 ? DOWN : TEXT }}>
-            {fmtCompact(newBP)}
-          </span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-[11px]" style={{ color: MUTED }}>Margin Req</span>
-          <span className="text-[12px]" style={{ color: TEXT }}>
-            {fmtCompact(marginImpact)}
-          </span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-[11px]" style={{ color: MUTED }}>Concentration</span>
-          <span className="text-[12px]" style={{ color: concentrationPct > 10 ? DOWN : concentrationPct > 5 ? GOLD : TEXT }}>
-            {concentrationPct.toFixed(1)}%
-          </span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-[11px]" style={{ color: MUTED }}>Net Liq</span>
-          <span className="text-[12px]" style={{ color: TEXT }}>
-            {fmtCompact(accountSize)}
-          </span>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 function AiCoPilotPanel({ side, symbol, limitPrice, bid, ask, quantity, isOption }: {
@@ -522,10 +321,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
   const [showOrderType, setShowOrderType] = useState(false);
   const [showTifDropdown, setShowTifDropdown] = useState(false);
   const [priceLocked, setPriceLocked] = useState(false);
-  const [showBalances, setShowBalances] = useState(false);
-  const [balancesHidden, setBalancesHidden] = useState(false);
   const [posEffect, setPosEffect] = useState<PositionEffect>("AUTO");
-  const [riskCollapsed, setRiskCollapsed] = useState(true);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const qtyInputRef = useRef<HTMLInputElement>(null);
 
@@ -576,7 +372,6 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
     setShowOrderType(false);
     setShowTifDropdown(false);
     setPriceLocked(false);
-    setShowBalances(false);
     setPosEffect("AUTO");
   }, [isOpen, initialSide, isMultiLeg, strategyNetPrice]);
 
@@ -661,7 +456,6 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
   }, [side, quantity, limitPrice, effectiveBid, effectiveAsk, quote?.last, pulseData, preTradeMinRR, preTradeMaxPositionPct, preTradeMinDTE, accountSize, stratMinPoP, isOption, preTradeEnabled, isMultiLeg, strategyLegs, strategyNetPrice, spreadPrices, isCloseOrder]);
 
   const overallRisk = useMemo(() => getOverallLevel(riskChecks), [riskChecks]);
-  const riskSummary = useMemo(() => getRiskSummary(riskChecks, side, overallRisk), [riskChecks, side, overallRisk]);
   const blockedByRisk = preTradeEnabled && preTradeBlockOnRed && overallRisk === "RED";
 
   const isValid = useMemo(() => {
@@ -848,13 +642,19 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {isMultiLeg && strategyLegs && (
+          {isMultiLeg && strategyLegs ? (
             <span className="text-[10px]" style={{ color: MUTED }}>
               {strategyLegs.length}-leg {strategyIsCredit ? "credit" : "debit"}
             </span>
+          ) : (
+            <div className="inline-flex p-0.5" style={{ borderRadius: 999, border: `1px solid ${BORDER}`, background: "rgba(0,0,0,0.05)" }}>
+              <button className="px-2 py-0.5 text-[11px]" style={{ borderRadius: isOption ? 999 : 0, background: isOption ? `${GOLD}18` : "transparent", color: isOption ? GOLD : TEXT }}>Options</button>
+              <button className="px-2 py-0.5 text-[11px]" style={{ borderRadius: !isOption ? 999 : 0, background: !isOption ? `${GOLD}18` : "transparent", color: !isOption ? GOLD : TEXT }}>Stock</button>
+            </div>
           )}
           <button
             onClick={onClose}
+            aria-label="Close"
             className="flex items-center justify-center transition-colors active:opacity-70"
             style={{ width: 26, height: 26, borderRadius: 999, border: `1px solid ${BORDER}`, color: TEXT }}
           >
@@ -902,252 +702,247 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
             </div>
 
             {isMultiLeg && strategyLegs ? (
-              <div style={{ background: CARD_GRAD, borderRadius: R_CARD, border: `1px solid ${BORDER}`, padding: "10px 12px" }}>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[13px] uppercase tracking-[0.06em]" style={{ color: TEXT }}>Legs</span>
-                  <span className="text-[11px]" style={{ color: MUTED }}>{strategyLegs.length} legs</span>
-                </div>
-                <div className="flex flex-col gap-2">
-                {strategyLegs.map((leg, i) => {
-                  const isBuyLeg = leg.instruction.startsWith("BUY");
-                  const dirColor = isBuyLeg ? UP : DOWN;
-                  const isOpen = leg.instruction.includes("OPEN");
-                  const dirLabel = isOpen ? (isBuyLeg ? "OPEN" : "OPEN") : "CLOSE";
-                  const qtySign = isBuyLeg ? "+" : "-";
-                  return (
-                    <div key={i} className="flex justify-between items-center px-2 py-1.5" style={{ borderRadius: 10, background: "rgba(255,255,255,0.01)", border: `1px solid ${BORDER}70` }}>
-                      <div className="flex flex-col gap-0.5">
-                        <div className="flex items-center gap-1.5 text-[12px]">
-                          <span className="uppercase tracking-[0.09em] text-[11px]" style={{ color: dirColor }}>{dirLabel}</span>
-                          <span style={{ color: WHITE }}>{qtySign}{leg.quantity} · {leg.strike} {leg.optionType === "CALL" ? "Call" : "Put"}</span>
+              <>
+                <div style={{ background: CARD_GRAD, borderRadius: R_CARD, border: `1px solid ${BORDER}`, padding: "10px 12px" }}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[13px] uppercase tracking-[0.06em]" style={{ color: TEXT }}>Legs</span>
+                    <span className="text-[11px]" style={{ color: MUTED }}>{strategyLegs.length} legs</span>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                  {strategyLegs.map((leg, i) => {
+                    const isBuyLeg = leg.instruction.startsWith("BUY");
+                    const dirColor = isBuyLeg ? UP : DOWN;
+                    const isOpenLeg = leg.instruction.includes("OPEN");
+                    const dirLabel = isOpenLeg ? "OPEN" : "CLOSE";
+                    const qtySign = isBuyLeg ? "+" : "-";
+                    return (
+                      <div key={i} className="flex justify-between items-center px-2 py-1.5" style={{ borderRadius: 10, background: "rgba(255,255,255,0.01)", border: `1px solid ${BORDER}70` }}>
+                        <div className="flex flex-col gap-0.5">
+                          <div className="flex items-center gap-1.5 text-[12px]">
+                            <span className="uppercase tracking-[0.09em] text-[11px]" style={{ color: dirColor }}>{dirLabel}</span>
+                            <span style={{ color: WHITE }}>{qtySign}{leg.quantity} · {leg.strike} {leg.optionType === "CALL" ? "Call" : "Put"}</span>
+                          </div>
+                          <span className="text-[11px]" style={{ color: TEXT }}>{isBuyLeg ? "Buy" : "Sell"} leg</span>
                         </div>
-                        <span className="text-[11px]" style={{ color: TEXT }}>{isBuyLeg ? "Buy" : "Sell"} leg</span>
+                        <div className="text-right text-[11px]" style={{ color: TEXT }}>
+                          {leg.bid != null && <span>Bid {leg.bid.toFixed(2)}</span>}
+                          {leg.bid != null && leg.ask != null && <span> / </span>}
+                          {leg.ask != null && <span>Ask {leg.ask.toFixed(2)}</span>}
+                        </div>
                       </div>
-                      <div className="text-right text-[11px]" style={{ color: TEXT }}>
-                        {leg.bid != null && <span>Bid {leg.bid.toFixed(2)}</span>}
-                        {leg.bid != null && leg.ask != null && <span> / </span>}
-                        {leg.ask != null && <span>Ask {leg.ask.toFixed(2)}</span>}
-                      </div>
+                    );
+                  })}
+                  </div>
+                  <div className="flex justify-between items-center pt-1 mt-1 text-[11px]" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
+                    <span style={{ color: TEXT }}>Net {strategyIsCredit ? "Credit" : "Debit"}</span>
+                    <span className="text-[14px]" style={{ color: strategyIsCredit ? UP : DOWN }}>
+                      ${strategyNetPrice?.toFixed(2) ?? "—"} / spread
+                    </span>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[11px]" style={{ color: MUTED }}>
+                      {strategyIsCredit ? "Net credit price" : "Net debit price"}
+                    </label>
+                    <button onClick={() => setPriceLocked(!priceLocked)} className="p-0.5" style={{ color: priceLocked ? GOLD : DIM }}>
+                      {priceLocked ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-1.5" style={{ background: FIELD, border: `1px solid ${priceLocked ? `${GOLD}4d` : BORDER}`, height: 32, borderRadius: 9, padding: "0 10px" }}>
+                    <input type="number" inputMode="decimal" step="0.01" value={limitPrice}
+                      onChange={(e) => { if (!priceLocked) setLimitPrice(e.target.value); }} placeholder="0.00"
+                      className="flex-1 text-[14px] bg-transparent outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                      style={{ color: priceLocked ? GOLD : WHITE, border: "none", fontFamily: SYS_FONT }}
+                      readOnly={priceLocked}
+                    />
+                    <span className="text-[11px]" style={{ color: MUTED }}>USD</span>
+                  </div>
+                  <div className="flex justify-between mt-1 text-[10px]" style={{ color: TEXT }}>
+                    <button onClick={() => { if (!priceLocked && effectiveBid != null) setLimitPrice(effectiveBid.toFixed(2)); }} disabled={priceLocked} className="px-1.5 py-0.5" style={{ borderRadius: 999, border: sliderValue < 20 ? `1px solid ${GOLD}bf` : "1px solid transparent", color: sliderValue < 20 ? GOLD : TEXT, background: sliderValue < 20 ? GOLD_DIM : "transparent", opacity: priceLocked ? 0.4 : 1 }}>Bid {effectiveBid != null ? fmt(effectiveBid) : "—"}</button>
+                    <button onClick={() => { if (!priceLocked) setMidPrice(); }} disabled={priceLocked} className="px-1.5 py-0.5" style={{ borderRadius: 999, border: sliderValue >= 40 && sliderValue <= 60 ? `1px solid ${GOLD}bf` : "1px solid transparent", color: sliderValue >= 40 && sliderValue <= 60 ? GOLD : TEXT, background: sliderValue >= 40 && sliderValue <= 60 ? GOLD_DIM : "transparent", opacity: priceLocked ? 0.4 : 1 }}>Mid {midPrice != null ? fmt(midPrice) : "—"}</button>
+                    <button onClick={() => { if (!priceLocked) setNatPrice(); }} disabled={priceLocked} className="px-1.5 py-0.5" style={{ borderRadius: 999, border: sliderValue > 80 ? `1px solid ${GOLD}bf` : "1px solid transparent", color: sliderValue > 80 ? GOLD : TEXT, background: sliderValue > 80 ? GOLD_DIM : "transparent", opacity: priceLocked ? 0.4 : 1 }}>Ask {effectiveAsk != null ? fmt(effectiveAsk) : "—"}</button>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between mt-1.5">
+                  <div>
+                    <div className="text-[11px]" style={{ color: MUTED }}>Quantity</div>
+                    <div className="text-[12px]" style={{ color: TEXT }}>
+                      Spreads · {estimatedCost != null ? `≈ ${fmtCurrency(Math.abs(estimatedCost))} notional` : ""}
                     </div>
-                  );
-                })}
+                  </div>
+                  <div className="inline-flex items-center" style={{ borderRadius: 20, border: `1px solid ${BORDER}`, overflow: "hidden" }}>
+                    <button onClick={() => setQuantity(Math.max(1, quantity - 1))} className="flex items-center justify-center" style={{ width: 28, height: 26, color: TEXT, background: "transparent", border: "none" }} aria-label="Decrease quantity">
+                      <Minus className="w-3.5 h-3.5" />
+                    </button>
+                    <input ref={qtyInputRef} type="number" inputMode="numeric" value={quantity}
+                      onChange={(e) => { const v = parseInt(e.target.value); if (!isNaN(v) && v >= 0) setQuantity(v); }}
+                      className="text-center text-[13px] bg-transparent outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                      style={{ color: WHITE, minWidth: 32, width: 32, border: "none", fontFamily: SYS_FONT }}
+                    />
+                    <button onClick={() => setQuantity(quantity + 1)} className="flex items-center justify-center" style={{ width: 28, height: 26, color: TEXT, background: "transparent", border: "none" }} aria-label="Increase quantity">
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
-                <div className="flex justify-between items-center pt-1 mt-1 text-[11px]" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
-                  <span style={{ color: TEXT }}>Net {strategyIsCredit ? "Credit" : "Debit"}</span>
-                  <span className="text-[14px]" style={{ color: strategyIsCredit ? UP : DOWN }}>
-                    ${strategyNetPrice?.toFixed(2) ?? "—"} / spread
-                  </span>
+
+                <div className="flex justify-between flex-wrap gap-1 text-[11px] pt-1" style={{ borderTop: `1px dashed ${DIVIDER}`, color: TEXT }}>
+                  {estimatedCost != null && <span>{strategyIsCredit ? "Credit" : "Total cost"} {fmtCurrency(Math.abs(estimatedCost))}</span>}
+                  <span>BP after trade {fmtCurrency(Math.max(0, (accountSize || 0) - Math.abs(estimatedCost ?? 0)))}</span>
                 </div>
-              </div>
+              </>
             ) : (
               <div style={{ background: CARD_SOFT, borderRadius: R_CARD, border: `1px solid ${BORDER}`, padding: "10px 12px" }}>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[13px] uppercase tracking-[0.06em]" style={{ color: TEXT }}>Side</span>
+                <div className="flex items-center justify-between text-[13px]" style={{ color: TEXT }}>
+                  <span className="uppercase tracking-[0.06em]">Side</span>
                 </div>
-                <div className="inline-flex p-0.5 mb-3" style={{ borderRadius: 999, border: `1px solid ${BORDER}`, background: "rgba(255,255,255,0.01)" }}>
+                <div className="inline-flex p-0.5 mt-2" style={{ borderRadius: 999, border: `1px solid ${BORDER}`, background: "rgba(0,0,0,0.05)" }}>
                   {(["BUY", "SELL"] as OrderSide[]).map((s) => {
                     const active = side === s;
                     return (
-                      <button
-                        key={s}
-                        onClick={() => setSide(s)}
-                        className="px-3 py-1 text-[11px] transition-all"
-                        style={{
-                          borderRadius: 999, border: "none",
-                          color: active ? (s === "BUY" ? UP : DOWN) : TEXT,
-                          background: active ? (s === "BUY" ? `${UP}16` : `${DOWN}16`) : "transparent",
-                        }}
-                      >
-                        {s}
+                      <button key={s} onClick={() => setSide(s)} className="px-3 py-1 text-[11px] transition-all"
+                        style={{ borderRadius: 999, border: "none", color: active ? (s === "BUY" ? UP : DOWN) : TEXT, background: active ? (s === "BUY" ? `${UP}16` : `${DOWN}16`) : "transparent" }}>
+                        {s === "BUY" ? "Buy" : "Sell"}
                       </button>
                     );
                   })}
                 </div>
 
-                <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[12px]">
-                  {[
-                    { label: "Bid", value: fmt(quote?.bid), color: UP },
-                    { label: "Ask", value: fmt(quote?.ask), color: DOWN },
-                    { label: "Spread", value: quote?.bid != null && quote?.ask != null ? fmt(quote.ask - quote.bid) : "—" },
-                    { label: "Volume", value: volume != null ? fmtCompact(volume) : "—" },
-                  ].map((m, i) => (
-                    <div key={i} className="flex justify-between items-baseline">
-                      <span className="text-[11px]" style={{ color: MUTED }}>{m.label}</span>
-                      <span className="text-[14px]" style={{ color: m.color || WHITE }}>{m.value}</span>
+                <div className="mt-3 flex flex-col gap-1 text-[12px]">
+                  <span className="text-[11px]" style={{ color: MUTED }}>Quantity</span>
+                  <div className="flex items-center justify-between">
+                    <div className="text-[13px]" style={{ color: TEXT }}>{isOption ? "Contracts" : "Shares"}</div>
+                    <div className="inline-flex items-center" style={{ borderRadius: 999, border: `1px solid ${BORDER}`, overflow: "hidden" }}>
+                      <button onClick={() => setQuantity(Math.max(1, quantity - 1))} className="flex items-center justify-center" style={{ width: 28, height: 26, color: TEXT, background: "transparent", border: "none" }} aria-label="Decrease quantity">
+                        <Minus className="w-3.5 h-3.5" />
+                      </button>
+                      <input ref={qtyInputRef} type="number" inputMode="numeric" value={quantity}
+                        onChange={(e) => { const v = parseInt(e.target.value); if (!isNaN(v) && v >= 0) setQuantity(v); }}
+                        className="text-center text-[13px] bg-transparent outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                        style={{ color: WHITE, minWidth: 32, width: 32, border: "none", fontFamily: SYS_FONT }}
+                      />
+                      <button onClick={() => setQuantity(quantity + 1)} className="flex items-center justify-center" style={{ width: 28, height: 26, color: TEXT, background: "transparent", border: "none" }} aria-label="Increase quantity">
+                        <Plus className="w-3.5 h-3.5" />
+                      </button>
                     </div>
-                  ))}
+                  </div>
+                  {estimatedCost != null && <div className="text-[11px]" style={{ color: MUTED }}>≈ {fmtCurrency(Math.abs(estimatedCost))}</div>}
                 </div>
-              </div>
-            )}
 
-            {!isMultiLeg && (
-              <div className="grid grid-cols-2 gap-2">
-                <div className="flex-1 relative">
-                  <div className="text-[11px] mb-1" style={{ color: MUTED }}>Order type</div>
-                  <button
-                    onClick={() => { setShowOrderType(!showOrderType); setShowTifDropdown(false); }}
-                    className="w-full flex items-center justify-between px-2.5 text-[14px] transition-colors"
-                    style={{ background: FIELD, border: `1px solid ${BORDER}`, color: WHITE, height: 32, borderRadius: 9 }}
-                  >
-                    <span>{ORDER_TYPES.find((t) => t.value === orderType)?.label}</span>
-                    <ChevronDown className="w-3 h-3" style={{ color: MUTED }} />
-                  </button>
-                  {showOrderType && (
-                    <div className="absolute top-full left-0 right-0 mt-1 z-10 overflow-hidden shadow-xl" style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 9 }}>
-                      {ORDER_TYPES.map((t) => (
-                        <button
-                          key={t.value}
-                          onClick={() => { setOrderType(t.value); setShowOrderType(false); }}
-                          className="w-full text-left px-2.5 py-2 text-[13px] transition-colors"
-                          style={{
-                            color: orderType === t.value ? GOLD : TEXT,
-                            background: orderType === t.value ? GOLD_DIM : "transparent",
-                          }}
-                        >
-                          {t.label}
-                        </button>
-                      ))}
+                <div className="mt-3 grid grid-cols-2 gap-2 text-[12px]">
+                  <div className="flex flex-col gap-1 relative">
+                    <span className="text-[11px]" style={{ color: MUTED }}>Order type</span>
+                    <button onClick={() => { setShowOrderType(!showOrderType); setShowTifDropdown(false); }}
+                      className="flex items-center justify-between px-2 text-[13px]"
+                      style={{ background: "rgba(0,0,0,0.4)", border: `1px solid ${BORDER}`, color: WHITE, height: 32, borderRadius: 8 }}>
+                      <span>{ORDER_TYPES.find((t) => t.value === orderType)?.label}</span>
+                      <span className="text-[11px]" style={{ color: MUTED }}>▾</span>
+                    </button>
+                    {showOrderType && (
+                      <div className="absolute top-full left-0 right-0 mt-1 z-10 overflow-hidden shadow-xl" style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 9 }}>
+                        {ORDER_TYPES.map((t) => (
+                          <button key={t.value} onClick={() => { setOrderType(t.value); setShowOrderType(false); }}
+                            className="w-full text-left px-2.5 py-2 text-[13px] transition-colors"
+                            style={{ color: orderType === t.value ? GOLD : TEXT, background: orderType === t.value ? GOLD_DIM : "transparent" }}>
+                            {t.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-1 relative">
+                    <span className="text-[11px]" style={{ color: MUTED }}>Time in force</span>
+                    <button onClick={() => { setShowTifDropdown(!showTifDropdown); setShowOrderType(false); }}
+                      className="flex items-center justify-between px-2 text-[13px]"
+                      style={{ background: "rgba(0,0,0,0.4)", border: `1px solid ${BORDER}`, color: WHITE, height: 32, borderRadius: 8 }}>
+                      <span>{DURATIONS.find((d) => d.value === duration)?.label}</span>
+                      <span className="text-[11px]" style={{ color: MUTED }}>▾</span>
+                    </button>
+                    {showTifDropdown && (
+                      <div className="absolute top-full left-0 right-0 mt-1 z-10 overflow-hidden shadow-xl" style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 9 }}>
+                        {DURATIONS.map((d) => (
+                          <button key={d.value} onClick={() => { setDuration(d.value); setShowTifDropdown(false); }}
+                            className="w-full text-left px-2.5 py-2 text-[13px] transition-colors"
+                            style={{ color: duration === d.value ? GOLD : TEXT, background: duration === d.value ? GOLD_DIM : "transparent" }}>
+                            {d.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {needsLimit && (
+                  <div className="mt-3 flex flex-col gap-1 text-[12px]">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px]" style={{ color: MUTED }}>Limit price</span>
+                      <button onClick={() => setPriceLocked(!priceLocked)} className="p-0.5" style={{ color: priceLocked ? GOLD : DIM }}>
+                        {priceLocked ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
+                      </button>
                     </div>
-                  )}
-                </div>
-                <div className="flex-1 relative">
-                  <div className="text-[11px] mb-1" style={{ color: MUTED }}>Time in force</div>
-                  <button
-                    onClick={() => { setShowTifDropdown(!showTifDropdown); setShowOrderType(false); }}
-                    className="w-full flex items-center justify-between px-2.5 text-[14px] transition-colors"
-                    style={{ background: FIELD, border: `1px solid ${BORDER}`, color: WHITE, height: 32, borderRadius: 9 }}
-                  >
-                    <span>{DURATIONS.find((d) => d.value === duration)?.label}</span>
-                    <ChevronDown className="w-3 h-3" style={{ color: MUTED }} />
-                  </button>
-                  {showTifDropdown && (
-                    <div className="absolute top-full left-0 right-0 mt-1 z-10 overflow-hidden shadow-xl" style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 9 }}>
-                      {DURATIONS.map((d) => (
-                        <button
-                          key={d.value}
-                          onClick={() => { setDuration(d.value); setShowTifDropdown(false); }}
-                          className="w-full text-left px-2.5 py-2 text-[13px] transition-colors"
-                          style={{
-                            color: duration === d.value ? GOLD : TEXT,
-                            background: duration === d.value ? GOLD_DIM : "transparent",
-                          }}
-                        >
-                          {d.label}
-                        </button>
-                      ))}
+                    <div className="flex items-center" style={{ background: "rgba(0,0,0,0.4)", border: `1px solid ${priceLocked ? `${GOLD}4d` : BORDER}`, height: 32, borderRadius: 8, padding: "0 8px" }}>
+                      <input type="number" inputMode="decimal" step="0.01" value={limitPrice}
+                        onChange={(e) => { if (!priceLocked) setLimitPrice(e.target.value); }} placeholder="0.00"
+                        className="flex-1 text-[13px] bg-transparent outline-none text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                        style={{ color: priceLocked ? GOLD : WHITE, border: "none", fontFamily: SYS_FONT }}
+                        readOnly={priceLocked}
+                      />
+                      <span className="ml-2 text-[11px]" style={{ color: MUTED }}>USD</span>
                     </div>
-                  )}
+                    <div className="mt-1 flex items-center justify-between text-[10px]" style={{ color: TEXT }}>
+                      <button onClick={() => { if (!priceLocked && effectiveBid != null) setLimitPrice(effectiveBid.toFixed(2)); }} disabled={priceLocked} className="px-2 py-0.5"
+                        style={{ borderRadius: 999, border: sliderValue < 20 ? `1px solid ${GOLD}bf` : "1px solid transparent", color: sliderValue < 20 ? GOLD : TEXT, background: sliderValue < 20 ? GOLD_DIM : "transparent", opacity: priceLocked ? 0.4 : 1 }}>
+                        Bid {effectiveBid != null ? fmt(effectiveBid) : "—"}
+                      </button>
+                      <button onClick={() => { if (!priceLocked) setMidPrice(); }} disabled={priceLocked} className="px-2 py-0.5"
+                        style={{ borderRadius: 999, border: sliderValue >= 40 && sliderValue <= 60 ? `1px solid ${GOLD}bf` : "1px solid transparent", color: sliderValue >= 40 && sliderValue <= 60 ? GOLD : TEXT, background: sliderValue >= 40 && sliderValue <= 60 ? GOLD_DIM : "transparent", opacity: priceLocked ? 0.4 : 1 }}>
+                        Mid {midPrice != null ? fmt(midPrice) : "—"}
+                      </button>
+                      <button onClick={() => { if (!priceLocked) setNatPrice(); }} disabled={priceLocked} className="px-2 py-0.5"
+                        style={{ borderRadius: 999, border: sliderValue > 80 ? `1px solid ${GOLD}bf` : "1px solid transparent", color: sliderValue > 80 ? GOLD : TEXT, background: sliderValue > 80 ? GOLD_DIM : "transparent", opacity: priceLocked ? 0.4 : 1 }}>
+                        Ask {effectiveAsk != null ? fmt(effectiveAsk) : "—"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {needsStop && (
+                  <div className="mt-3 flex flex-col gap-1 text-[12px]">
+                    <span className="text-[11px]" style={{ color: MUTED }}>Stop price</span>
+                    <div className="flex items-center" style={{ background: "rgba(0,0,0,0.4)", border: `1px solid ${BORDER}`, height: 32, borderRadius: 8, padding: "0 8px" }}>
+                      <input type="number" inputMode="decimal" step="0.01" value={stopPrice}
+                        onChange={(e) => setStopPrice(e.target.value)} placeholder="0.00"
+                        className="flex-1 text-[13px] bg-transparent outline-none text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                        style={{ color: WHITE, border: "none", fontFamily: SYS_FONT }}
+                      />
+                      <span className="ml-2 text-[11px]" style={{ color: MUTED }}>USD</span>
+                    </div>
+                  </div>
+                )}
+
+                {needsTrail && (
+                  <div className="mt-3 flex flex-col gap-1 text-[12px]">
+                    <span className="text-[11px]" style={{ color: MUTED }}>Trail amount</span>
+                    <div className="flex items-center" style={{ background: "rgba(0,0,0,0.4)", border: `1px solid ${BORDER}`, height: 32, borderRadius: 8, padding: "0 8px" }}>
+                      <input type="number" inputMode="decimal" step="0.01" value={trailOffset}
+                        onChange={(e) => setTrailOffset(e.target.value)} placeholder="0.00"
+                        className="flex-1 text-[13px] bg-transparent outline-none text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                        style={{ color: WHITE, border: "none", fontFamily: SYS_FONT }}
+                      />
+                      <span className="ml-2 text-[11px]" style={{ color: MUTED }}>USD</span>
+                    </div>
+                  </div>
+                )}
+
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-2 pt-1.5 text-[11px]" style={{ borderTop: `1px dashed ${DIVIDER}`, color: TEXT }}>
+                  {estimatedCost != null && <span>Notional {fmtCurrency(Math.abs(estimatedCost))}</span>}
+                  <span>Est. fees —</span>
+                  <span>BP after trade {fmtCurrency(Math.max(0, (accountSize || 0) - Math.abs(estimatedCost ?? 0)))}</span>
                 </div>
               </div>
             )}
-
-            {(needsLimit || isMultiLeg) && (
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-[11px]" style={{ color: MUTED }}>
-                    {isMultiLeg ? (strategyIsCredit ? "Net credit price" : "Net debit price") : "Limit price"}
-                  </label>
-                  <button onClick={() => setPriceLocked(!priceLocked)} className="p-0.5" style={{ color: priceLocked ? GOLD : DIM }}>
-                    {priceLocked ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
-                  </button>
-                </div>
-                <div className="flex items-center gap-1.5" style={{ background: FIELD, border: `1px solid ${priceLocked ? `${GOLD}4d` : BORDER}`, height: 32, borderRadius: 9, padding: "0 10px" }}>
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    step="0.01"
-                    value={limitPrice}
-                    onChange={(e) => { if (!priceLocked) setLimitPrice(e.target.value); }}
-                    placeholder="0.00"
-                    className="flex-1 text-[14px] bg-transparent outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                    style={{ color: priceLocked ? GOLD : WHITE, border: "none", fontFamily: SYS_FONT }}
-                    readOnly={priceLocked}
-                  />
-                  <span className="text-[11px]" style={{ color: MUTED }}>USD</span>
-                </div>
-
-                <div className="flex justify-between mt-1 text-[10px]" style={{ color: TEXT }}>
-                  <button
-                    onClick={() => { if (!priceLocked && effectiveBid != null) setLimitPrice(effectiveBid.toFixed(2)); }}
-                    disabled={priceLocked}
-                    className="px-1.5 py-0.5"
-                    style={{ borderRadius: 999, border: sliderValue < 20 ? `1px solid ${GOLD}bf` : "1px solid transparent", color: sliderValue < 20 ? GOLD : TEXT, background: sliderValue < 20 ? GOLD_DIM : "transparent", opacity: priceLocked ? 0.4 : 1 }}
-                  >Bid {effectiveBid != null ? fmt(effectiveBid) : "—"}</button>
-                  <button
-                    onClick={() => { if (!priceLocked) setMidPrice(); }}
-                    disabled={priceLocked}
-                    className="px-1.5 py-0.5"
-                    style={{ borderRadius: 999, border: sliderValue >= 40 && sliderValue <= 60 ? `1px solid ${GOLD}bf` : "1px solid transparent", color: sliderValue >= 40 && sliderValue <= 60 ? GOLD : TEXT, background: sliderValue >= 40 && sliderValue <= 60 ? GOLD_DIM : "transparent", opacity: priceLocked ? 0.4 : 1 }}
-                  >Mid {midPrice != null ? fmt(midPrice) : "—"}</button>
-                  <button
-                    onClick={() => { if (!priceLocked) setNatPrice(); }}
-                    disabled={priceLocked}
-                    className="px-1.5 py-0.5"
-                    style={{ borderRadius: 999, border: sliderValue > 80 ? `1px solid ${GOLD}bf` : "1px solid transparent", color: sliderValue > 80 ? GOLD : TEXT, background: sliderValue > 80 ? GOLD_DIM : "transparent", opacity: priceLocked ? 0.4 : 1 }}
-                  >Ask {effectiveAsk != null ? fmt(effectiveAsk) : "—"}</button>
-                </div>
-              </div>
-            )}
-
-            {!isMultiLeg && needsStop && (
-              <div>
-                <label className="text-[11px] block mb-1" style={{ color: MUTED }}>Stop price</label>
-                <div className="flex items-center gap-1.5" style={{ background: FIELD, border: `1px solid ${BORDER}`, height: 32, borderRadius: 9, padding: "0 10px" }}>
-                  <input
-                    type="number" inputMode="decimal" step="0.01" value={stopPrice}
-                    onChange={(e) => setStopPrice(e.target.value)} placeholder="0.00"
-                    className="flex-1 text-[14px] bg-transparent outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                    style={{ color: WHITE, border: "none", fontFamily: SYS_FONT }}
-                  />
-                  <span className="text-[11px]" style={{ color: MUTED }}>USD</span>
-                </div>
-              </div>
-            )}
-
-            {!isMultiLeg && needsTrail && (
-              <div>
-                <label className="text-[11px] block mb-1" style={{ color: MUTED }}>Trail amount</label>
-                <div className="flex items-center gap-1.5" style={{ background: FIELD, border: `1px solid ${BORDER}`, height: 32, borderRadius: 9, padding: "0 10px" }}>
-                  <input
-                    type="number" inputMode="decimal" step="0.01" value={trailOffset}
-                    onChange={(e) => setTrailOffset(e.target.value)} placeholder="0.00"
-                    className="flex-1 text-[14px] bg-transparent outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                    style={{ color: WHITE, border: "none", fontFamily: SYS_FONT }}
-                  />
-                  <span className="text-[11px]" style={{ color: MUTED }}>USD</span>
-                </div>
-              </div>
-            )}
-
-            <div className="flex items-center justify-between mt-1.5">
-              <div>
-                <div className="text-[11px]" style={{ color: MUTED }}>Quantity</div>
-                <div className="text-[12px]" style={{ color: TEXT }}>
-                  {isMultiLeg ? "Spreads" : isOption ? "Contracts" : "Shares"} · {estimatedCost != null ? `≈ ${fmtCurrency(Math.abs(estimatedCost))} notional` : ""}
-                </div>
-              </div>
-              <div className="inline-flex items-center" style={{ borderRadius: 20, border: `1px solid ${BORDER}`, overflow: "hidden" }}>
-                <button onClick={() => setQuantity(Math.max(1, quantity - 1))} className="flex items-center justify-center transition-colors active:opacity-70" style={{ width: 28, height: 26, color: TEXT, background: "transparent", border: "none" }}>
-                  <Minus className="w-3.5 h-3.5" />
-                </button>
-                <input
-                  ref={qtyInputRef}
-                  type="number" inputMode="numeric" value={quantity}
-                  onChange={(e) => { const v = parseInt(e.target.value); if (!isNaN(v) && v >= 0) setQuantity(v); }}
-                  className="text-center text-[13px] bg-transparent outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                  style={{ color: WHITE, minWidth: 32, width: 32, border: "none", fontFamily: SYS_FONT }}
-                />
-                <button onClick={() => setQuantity(quantity + 1)} className="flex items-center justify-center transition-colors active:opacity-70" style={{ width: 28, height: 26, color: TEXT, background: "transparent", border: "none" }}>
-                  <Plus className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-
-            <div className="flex justify-between flex-wrap gap-1 text-[11px] pt-1" style={{ borderTop: `1px dashed ${DIVIDER}`, color: TEXT }}>
-              {estimatedCost != null && <span>{isMultiLeg ? (strategyIsCredit ? "Credit" : "Total cost") : isBuy ? "Notional" : "Credit"} {fmtCurrency(Math.abs(estimatedCost))}</span>}
-              <span>BP after trade {fmtCurrency(Math.max(0, (useTerminalStore.getState().accountSize || 0) - Math.abs(estimatedCost ?? 0)))}</span>
-              {!isMultiLeg && <span>{posEffect === "AUTO" ? "Auto" : posEffect === "OPENING" ? "Open" : "Close"} · {extendedHours ? "Ext" : "Reg"}</span>}
-            </div>
 
             <button
               className="w-full flex items-center justify-between px-3 py-1.5 text-[12px] mt-1"
@@ -1201,49 +996,30 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                 )}
               </div>
 
-              <div className="flex justify-between flex-wrap gap-1 text-[11px] mt-2" style={{ color: TEXT }}>
-                {riskSummary && <span>{riskSummary.split("—")[0].trim()}</span>}
-              </div>
+              {(() => {
+                const spreadPct = quote?.bid != null && quote?.ask != null && quote.bid > 0
+                  ? (((quote.ask - quote.bid) / quote.bid) * 100).toFixed(1) + "%"
+                  : "—";
+                return (
+                  <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 pt-1.5 text-[11px]" style={{ borderTop: `1px dashed ${DIVIDER}`, color: TEXT }}>
+                    <span>Order vs account size</span>
+                    <span>Spread {spreadPct}</span>
+                  </div>
+                );
+              })()}
 
               {preTradeEnabled && riskChecks.length > 0 && (
-                <>
-                  <button
-                    className="w-full flex items-center gap-1.5 mt-2 text-[12px]"
-                    onClick={() => setRiskCollapsed(v => !v)}
-                    style={{ color: TEXT, background: "none", border: "none", padding: 0, cursor: "pointer" }}
-                  >
-                    {riskCollapsed ? <ChevronDown className="w-3 h-3" style={{ color: MUTED }} /> : <ChevronUp className="w-3 h-3" style={{ color: MUTED }} />}
-                    <span>View full risk details</span>
-                  </button>
-                  {!riskCollapsed && (
-                    <div className="mt-2 space-y-1">
-                      {riskChecks.map(c => (
-                        <div key={c.id} className="flex items-center py-1" style={{ borderBottom: `1px solid ${DIVIDER}` }}>
-                          <RiskIcon level={c.level} />
-                          <span className="text-[12px] ml-2" style={{ color: TEXT, width: 110, flexShrink: 0 }}>{c.label}</span>
-                          <span className="text-[11px] flex-1 text-right" style={{ color: levelColor(c.level) }}>{c.detail}</span>
-                        </div>
-                      ))}
-
-                      <MiniPayoffChart
-                        legs={strategyLegs}
-                        isMultiLeg={isMultiLeg}
-                        side={side}
-                        quantity={quantity}
-                        limitPrice={parseFloat(limitPrice) || 0}
-                        isOption={isOption}
-                        last={quote?.last ?? 0}
-                      />
-
-                      <PortfolioImpactCard
-                        cost={estimatedCost}
-                        side={side}
-                        isOption={isOption}
-                        quantity={quantity}
-                      />
+                <div className="mt-1.5 space-y-1.5 text-[11px]">
+                  {riskChecks.map(c => (
+                    <div key={c.id} className="flex gap-2">
+                      <span className="mt-1 h-2 w-2 rounded-full shrink-0" style={{ background: levelColor(c.level) }} />
+                      <div>
+                        <div style={{ color: TEXT }}>{c.label}</div>
+                        <div style={{ color: MUTED }}>{c.detail}</div>
+                      </div>
                     </div>
-                  )}
-                </>
+                  ))}
+                </div>
               )}
 
               <AiCoPilotPanel
