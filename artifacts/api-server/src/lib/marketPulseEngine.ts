@@ -249,7 +249,8 @@ function pushComposite(composite: number, session: SessionType) {
 
 function computeMomentum(currentComposite: number, currentSession: SessionType): MomentumData {
   if (compositeHistory.length === 0) {
-    return { delta: null, label: 'FIRST_READ', previousComposite: null, previousTimestamp: null, timeDeltaMinutes: null };
+    pushComposite(currentComposite, currentSession);
+    return { delta: 0, label: 'STABLE', previousComposite: currentComposite, previousTimestamp: new Date().toISOString(), timeDeltaMinutes: 0 };
   }
   const prev = compositeHistory[compositeHistory.length - 1];
   const timeDeltaMinutes = Math.round((Date.now() - prev.epochMs) / 60000);
