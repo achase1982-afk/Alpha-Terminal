@@ -18,6 +18,7 @@ import {
   Settings,
   MinusCircle,
   Crosshair,
+  RefreshCw,
 } from "lucide-react";
 
 type IndicatorKey = "change" | "changePct" | "volume" | "price" | "dayHigh" | "dayLow" | "open" | "bid" | "ask" | "marketCap";
@@ -291,6 +292,8 @@ function WatchlistDropdown({ open, onClose }: { open: boolean; onClose: () => vo
   const [showNew, setShowNew] = useState(false);
   const [newName, setNewName] = useState("");
   const [scannerWatchlists, setScannerWatchlists] = useState<ScannerWatchlist[]>(_scannerWlCache ?? []);
+  const [autoRefreshing, setAutoRefreshing] = useState(false);
+  const [autoRefreshMsg, setAutoRefreshMsg] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -337,6 +340,33 @@ function WatchlistDropdown({ open, onClose }: { open: boolean; onClose: () => vo
     if (!name) return;
     renameWatchlist(id, name);
     setEditingId(null);
+  };
+
+  const handleAutoRefresh = async () => {
+    setAutoRefreshing(true);
+    setAutoRefreshMsg(null);
+    try {
+      const res = await fetchWithAuth("/api/scanner/refresh-auto-watchlists", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setAutoRefreshMsg(data.error ?? "Refresh failed");
+        return;
+      }
+      const wls = (data.watchlists ?? []) as ScannerWatchlist[];
+      _scannerWlCache = wls;
+      _scannerWlFetchTs = Date.now();
+      setScannerWatchlists(wls);
+      const updated = (data.updated ?? []) as Array<{ name: string; count: number }>;
+      if (updated.length > 0) {
+        setAutoRefreshMsg(`Updated: ${updated.map((u: { name: string; count: number }) => `${u.name} (${u.count})`).join(", ")}`);
+      } else {
+        setAutoRefreshMsg("No data available — try during market hours");
+      }
+    } catch {
+      setAutoRefreshMsg("Refresh failed — check connection");
+    } finally {
+      setAutoRefreshing(false);
+    }
   };
 
   const handleSelectScannerWl = (swl: ScannerWatchlist) => {
@@ -455,12 +485,34 @@ function WatchlistDropdown({ open, onClose }: { open: boolean; onClose: () => vo
           );
         })}
 
+        <div style={{ borderTop: "1px solid #2A2A2C" }}>
+          <div className="px-4 py-2 flex items-center gap-2" style={{ borderBottom: "1px solid #1c1c1c" }}>
+            <ListOrdered className="w-3.5 h-3.5 text-[#52525b]" />
+            <span className="font-mono text-[10px] text-[#52525b] uppercase tracking-widest font-bold">Dynamic Watchlists</span>
+            <button
+              onClick={handleAutoRefresh}
+              disabled={autoRefreshing}
+              title="Refresh dynamic lists from live market data"
+              className="ml-auto flex items-center gap-1 px-2 py-1 rounded text-[10px] font-mono font-bold transition-colors"
+              style={{
+                color: autoRefreshing ? "#52525b" : "#FFB800",
+                background: autoRefreshing ? "transparent" : "rgba(255,184,0,0.08)",
+                border: "1px solid " + (autoRefreshing ? "#2A2A2C" : "#FFB800"),
+                cursor: autoRefreshing ? "not-allowed" : "pointer",
+              }}
+            >
+              <RefreshCw className={`w-3 h-3 ${autoRefreshing ? "animate-spin" : ""}`} />
+              {autoRefreshing ? "SCANNING..." : "REFRESH"}
+            </button>
+          </div>
+          {autoRefreshMsg && (
+            <div className="px-4 py-1.5 font-mono text-[10px]" style={{ color: autoRefreshMsg.startsWith("Updated") ? "#22c55e" : "#ef4444", borderBottom: "1px solid #1c1c1c", background: "rgba(0,0,0,0.3)" }}>
+              {autoRefreshMsg}
+            </div>
+          )}
+        </div>
         {scannerWatchlists.length > 0 && (
           <>
-            <div className="px-4 py-2 flex items-center gap-2" style={{ borderTop: "1px solid #2A2A2C", borderBottom: "1px solid #1c1c1c" }}>
-              <ListOrdered className="w-3.5 h-3.5 text-[#52525b]" />
-              <span className="font-mono text-[10px] text-[#52525b] uppercase tracking-widest font-bold">Scanner Watchlists</span>
-            </div>
             {scannerWatchlists.map((swl) => {
               const localId = `scanner_${swl.id}`;
               const isActive = activeWatchlistId === localId;

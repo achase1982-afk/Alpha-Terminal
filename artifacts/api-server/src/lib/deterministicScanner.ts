@@ -452,7 +452,7 @@ export async function runDeterministicScan(
 
     if (!quote) {
       filterResults.push({ symbol: sym, passed: false, reason: "No quote data available" });
-      emitTelemetry("SCANNER", "INFO", `${sym} skipped — no quote data`, { ticker: sym, reason: "No quote data" });
+      emitTelemetry("SCANNER", "WARN", `${sym} — SKIP: no quote data from Schwab`, { ticker: sym, stage: 1, reason: "No quote data" });
       continue;
     }
 
@@ -460,16 +460,23 @@ export async function runDeterministicScan(
     const hasNearEarnings = evCheck.eventConflicts.some(c => c.eventType === "earnings");
     if (hasNearEarnings) {
       filterResults.push({ symbol: sym, passed: false, reason: "Earnings within 5 trading days" });
-      emitTelemetry("SCANNER", "INFO", `${sym} skipped — earnings within 5 days`, { ticker: sym, reason: "Earnings proximity" });
+      emitTelemetry("SCANNER", "INFO", `${sym} — SKIP: earnings within 5 days`, { ticker: sym, stage: 1, reason: "Earnings proximity" });
       continue;
     }
 
     if (portfolioSymbols.has(sym.toUpperCase())) {
       filterResults.push({ symbol: sym, passed: false, reason: "Open position in portfolio" });
-      emitTelemetry("SCANNER", "INFO", `${sym} skipped — open position in portfolio`, { ticker: sym, reason: "Already held" });
+      emitTelemetry("SCANNER", "INFO", `${sym} — SKIP: open position held`, { ticker: sym, stage: 1, reason: "Already held" });
       continue;
     }
 
+    emitTelemetry("SCANNER", "INFO", `${sym} — PASS Stage 1 | price $${quote.lastPrice.toFixed(2)} chg ${quote.netPercentChange >= 0 ? "+" : ""}${quote.netPercentChange.toFixed(2)}% vol ${(quote.totalVolume / 1_000_000).toFixed(1)}M`, {
+      ticker: sym,
+      stage: 1,
+      price: quote.lastPrice,
+      changePct: quote.netPercentChange,
+      volume: quote.totalVolume,
+    });
     filterResults.push({ symbol: sym, passed: true });
     passedSymbols.push(sym);
   }
@@ -515,6 +522,7 @@ export async function runDeterministicScan(
           if (idx >= 0) {
             filterResults[idx] = { symbol: sym, passed: false, reason: "Options chain unavailable — cannot validate liquidity" };
           }
+          emitTelemetry("SCANNER", "WARN", `${sym} — SKIP Stage 2: no options chain from Schwab`, { ticker: sym, stage: 2, reason: "No options chain" });
           return null;
         }
 
@@ -523,6 +531,7 @@ export async function runDeterministicScan(
           if (idx >= 0) {
             filterResults[idx] = { symbol: sym, passed: false, reason: `ATM spread too wide (${chain.atmSpreadPct.toFixed(1)}%)` };
           }
+          emitTelemetry("SCANNER", "WARN", `${sym} — SKIP Stage 2: ATM spread too wide (${chain.atmSpreadPct.toFixed(1)}%)`, { ticker: sym, stage: 2, reason: "Wide spread", spreadPct: chain.atmSpreadPct });
           return null;
         }
 
@@ -534,6 +543,7 @@ export async function runDeterministicScan(
           if (idx >= 0) {
             filterResults[idx] = { symbol: sym, passed: false, reason: "Insufficient price history (<50 days)" };
           }
+          emitTelemetry("SCANNER", "WARN", `${sym} — SKIP Stage 2: only ${closes.length} days of history (need 50)`, { ticker: sym, stage: 2, reason: "Insufficient history", days: closes.length });
           return null;
         }
 

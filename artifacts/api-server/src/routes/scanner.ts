@@ -4,6 +4,8 @@ import { scannerWatchlistsTable, scannerScreensTable } from "@workspace/db/schem
 import { eq, and } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
 import { runFmpScreen, type ScreenFilters } from "../lib/fmpScreener.js";
+import { runDynamicScreener } from "../lib/schwabDynamicScreener.js";
+import { getBestAccessToken } from "../lib/tokenStore.js";
 import { getAuth } from "@clerk/express";
 
 const router: IRouter = Router();
@@ -477,6 +479,78 @@ router.get("/screens/:id/symbols", async (req, res) => {
   } catch (err) {
     logger.error({ err }, "Failed to get screen symbols");
     res.status(500).json({ error: "Failed to get screen symbols" });
+  }
+});
+
+const AUTO_WATCHLIST_NAMES = {
+  topMovers: "Top Movers Today",
+  volumeSurge: "Volume Surge",
+  highVolatility: "High Volatility",
+} as const;
+
+const AUTO_UNIVERSE_KEY = "sp100";
+
+router.post("/refresh-auto-watchlists", async (req, res) => {
+  const userId = getUserId(req);
+  const accessToken = getBestAccessToken();
+  if (!accessToken) {
+    return res.status(503).json({ error: "No Schwab access token available" });
+  }
+
+  const preset = PRESET_UNIVERSES[AUTO_UNIVERSE_KEY];
+  if (!preset) {
+    return res.status(500).json({ error: "Universe not found" });
+  }
+
+  try {
+    logger.info({ universe: AUTO_UNIVERSE_KEY, count: preset.symbols.length }, "Running dynamic screener for auto-watchlists");
+    const result = await runDynamicScreener(preset.symbols, accessToken, 20);
+
+    if (result.error && !result.topMovers.length && !result.volumeSurge.length && !result.highVolatility.length) {
+      return res.status(500).json({ error: result.error });
+    }
+
+    const categories: Array<{ key: keyof typeof AUTO_WATCHLIST_NAMES; symbols: string[] }> = [
+      { key: "topMovers", symbols: result.topMovers },
+      { key: "volumeSurge", symbols: result.volumeSurge },
+      { key: "highVolatility", symbols: result.highVolatility },
+    ];
+
+    const updated: Array<{ name: string; count: number }> = [];
+
+    for (const cat of categories) {
+      const name = AUTO_WATCHLIST_NAMES[cat.key];
+      if (cat.symbols.length === 0) continue;
+
+      const [existing] = await db
+        .select()
+        .from(scannerWatchlistsTable)
+        .where(and(eq(scannerWatchlistsTable.userId, userId), eq(scannerWatchlistsTable.name, name)));
+
+      if (existing) {
+        await db
+          .update(scannerWatchlistsTable)
+          .set({ symbols: cat.symbols, updatedAt: new Date() })
+          .where(eq(scannerWatchlistsTable.id, existing.id));
+        updated.push({ name, count: cat.symbols.length });
+      } else {
+        await db.insert(scannerWatchlistsTable).values({
+          userId,
+          name,
+          symbols: cat.symbols,
+          isProtected: false,
+        });
+        updated.push({ name, count: cat.symbols.length });
+      }
+
+      logger.info({ name, count: cat.symbols.length, symbols: cat.symbols.slice(0, 5) }, "Auto-watchlist updated");
+    }
+
+    const rows = await db.select().from(scannerWatchlistsTable).where(eq(scannerWatchlistsTable.userId, userId));
+    res.json({ updated, watchlists: rows });
+  } catch (err) {
+    logger.error({ err }, "Failed to refresh auto-watchlists");
+    res.status(500).json({ error: "Failed to refresh auto-watchlists" });
   }
 });
 
