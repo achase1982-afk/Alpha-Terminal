@@ -435,7 +435,7 @@ export default function TerminalPage() {
                     className="flex-1 font-mono text-xs font-bold tracking-wider py-2 rounded-lg transition-all duration-200"
                     style={{
                       background: aiSubTab === tab ? "#1a1a1a" : "transparent",
-                      color: aiSubTab === tab ? (tab === "flow" ? "#FFB800" : "#fafafa") : "#71717a",
+                      color: aiSubTab === tab ? "#fafafa" : "#71717a",
                       border: "none",
                     }}
                   >
