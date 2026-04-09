@@ -290,22 +290,22 @@ export function TelemetryPage() {
                     isExpanded ? <ChevronDown style={{ width: 12, height: 12, color: "#555", flexShrink: 0 }} /> : <ChevronRight style={{ width: 12, height: 12, color: "#555", flexShrink: 0 }} />
                   ) : <span style={{ width: 12, flexShrink: 0 }} />}
                   <span style={{
-                    fontSize: 11, fontWeight: 800, letterSpacing: "0.5px",
+                    fontSize: 12, fontWeight: 800, letterSpacing: "0.5px",
                     color: c.text, width: 42,
                   }}>
                     {entry.severity}
                   </span>
-                  <span style={{ fontSize: 11, color: "#555", fontFamily: "monospace", width: 66, flexShrink: 0 }}>
+                  <span style={{ fontSize: 13, color: "#fff", fontFamily: "monospace", width: 72, flexShrink: 0 }}>
                     {formatTime(entry.timestamp)}
                   </span>
                   <span style={{
-                    fontSize: 11, fontWeight: 600, color: "#f5a623",
+                    fontSize: 12, fontWeight: 600, color: "#f5a623",
                     background: "rgba(245,166,35,0.06)", padding: "0px 5px", borderRadius: 3,
                     flexShrink: 0,
                   }}>
                     {entry.system}
                   </span>
-                  <span style={{ fontSize: 13, color: "#ccc", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <span style={{ fontSize: 14, color: "#ccc", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {entry.message}
                   </span>
                   {!entry.resolved && entry.severity !== "INFO" && (
@@ -329,12 +329,12 @@ export function TelemetryPage() {
 
                 {isExpanded && (
                   <div style={{ marginTop: 4, marginLeft: 18 }}>
-                    <div style={{ fontSize: 12, color: "#666", marginBottom: 2 }}>
+                    <div style={{ fontSize: 14, color: "#888", marginBottom: 2 }}>
                       {formatFullTime(entry.timestamp)}
                     </div>
                     {entry.details && (
                       <pre style={{
-                        fontSize: 12, color: "#aaa", fontFamily: "monospace",
+                        fontSize: 14, color: "#bbb", fontFamily: "monospace",
                         background: "#0a0a0a", padding: 6, borderRadius: 3, overflow: "auto",
                         maxHeight: 200, whiteSpace: "pre-wrap", wordBreak: "break-all",
                         margin: 0, lineHeight: 1.5,

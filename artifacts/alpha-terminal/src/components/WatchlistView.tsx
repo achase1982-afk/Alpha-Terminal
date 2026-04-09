@@ -552,6 +552,33 @@ export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sy
   });
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  useEffect(() => {
+    const RESTORE_KEY = "scanner_wl_restored";
+    if (localStorage.getItem(RESTORE_KEY)) return;
+    const store = useTerminalStore.getState();
+    const localWls = store.watchlists;
+    const localIds = Object.keys(localWls);
+    const isOnlyEmptyDefault = localIds.length === 1 && localIds[0] === "default" && localWls.default.symbols.length === 0;
+    if (!isOnlyEmptyDefault) { localStorage.setItem(RESTORE_KEY, "1"); return; }
+    fetchWithAuth("/api/scanner/watchlists")
+      .then(r => r.json())
+      .then((d) => {
+        const wls = (d.watchlists ?? []) as { id: number; name: string; symbols: string[]; isProtected: boolean }[];
+        const nonEmpty = wls.filter(w => w.symbols.length > 0);
+        if (nonEmpty.length === 0) { localStorage.setItem(RESTORE_KEY, "1"); return; }
+        const restored: Record<string, { name: string; symbols: string[] }> = {};
+        for (const wl of nonEmpty) {
+          restored[`scanner_${wl.id}`] = { name: wl.name, symbols: wl.symbols };
+        }
+        useTerminalStore.setState((s) => ({
+          watchlists: { ...s.watchlists, ...restored },
+          activeWatchlistId: `scanner_${nonEmpty[0].id}`,
+        }));
+        localStorage.setItem(RESTORE_KEY, "1");
+      })
+      .catch(() => {});
+  }, []);
+
   const visibleIndicators = useMemo(() =>
     activeIndicators.map((k) => ALL_INDICATORS.find((i) => i.key === k)!).filter(Boolean),
     [activeIndicators]

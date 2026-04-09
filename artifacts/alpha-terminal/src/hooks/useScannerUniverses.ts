@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
+import { useTerminalStore } from "@/lib/store";
 
 const API_BASE = "/api";
 
@@ -109,6 +110,28 @@ export function useScannerUniverses(): UniverseData {
       });
     } catch {
     }
+  }, [loading, watchlists]);
+
+  useEffect(() => {
+    if (loading || watchlists.length === 0) return;
+    const RESTORE_KEY = "scanner_wl_restored";
+    if (localStorage.getItem(RESTORE_KEY)) return;
+    const store = useTerminalStore.getState();
+    const localWls = store.watchlists;
+    const localIds = Object.keys(localWls);
+    const isOnlyEmptyDefault = localIds.length === 1 && localIds[0] === "default" && localWls.default.symbols.length === 0;
+    if (!isOnlyEmptyDefault) { localStorage.setItem(RESTORE_KEY, "1"); return; }
+    const nonEmptyWls = watchlists.filter(w => w.symbols.length > 0);
+    if (nonEmptyWls.length === 0) { localStorage.setItem(RESTORE_KEY, "1"); return; }
+    const restoredWls: Record<string, { name: string; symbols: string[] }> = { default: { name: "My Watchlist", symbols: [] } };
+    for (const wl of nonEmptyWls) {
+      restoredWls[`scanner_${wl.id}`] = { name: wl.name, symbols: wl.symbols };
+    }
+    useTerminalStore.setState((s) => ({
+      watchlists: { ...s.watchlists, ...restoredWls },
+      activeWatchlistId: `scanner_${nonEmptyWls[0].id}`,
+    }));
+    localStorage.setItem(RESTORE_KEY, "1");
   }, [loading, watchlists]);
 
   const getSymbols = useCallback(async (universeKey: string): Promise<string[]> => {

@@ -1095,7 +1095,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
 
   const { data: rawData, isLoading, error, isFetching } = useGetOptionChain(
     { symbol, accessToken: accessToken || "", contractType: "ALL", strikeCount },
-    { query: { enabled: !!accessToken && !!symbol, staleTime: 25_000, gcTime: 60_000 } }
+    { query: { enabled: !!accessToken && !!symbol, staleTime: 30_000, gcTime: 10 * 60_000 } }
   );
 
   const data = useMemo(() => {

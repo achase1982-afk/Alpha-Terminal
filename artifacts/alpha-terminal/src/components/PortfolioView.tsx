@@ -731,9 +731,9 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
   const wsLastUpdate = usePortfolioStreamStore((s) => s.lastUpdate);
 
   const [subTab, setSubTab] = useState<SubTab>("positions");
-  const [account, setAccount] = useState<Account | null>(null);
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [account, setAccount] = useState<Account | null>(() => usePortfolioStreamStore.getState().account as Account | null);
+  const [orders, setOrders] = useState<Order[]>(() => usePortfolioStreamStore.getState().orders as Order[]);
+  const [loading, setLoading] = useState(() => !usePortfolioStreamStore.getState().account);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
@@ -810,8 +810,8 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
       const timeout = setTimeout(() => clearInterval(retry), 10_000);
       var cleanup = () => { clearInterval(retry); clearTimeout(timeout); };
     }
-    fetchWithAuth("/api/portfolio/accounts").then(r => r.ok ? r.json() : Promise.reject()).then(data => { if (data.length > 0 && !wsAccount) { setAccount(data[0]); setLastRefresh(new Date()); setLoading(false); } }).catch(() => { if (!wsAccount) setError("Failed to load portfolio data"); setLoading(false); });
-    fetchWithAuth("/api/portfolio/orders?days=30").then(r => r.ok ? r.json() : Promise.reject()).then(data => { if (!wsOrders?.length) setOrders(data); }).catch(() => {});
+    fetchWithAuth("/api/portfolio/accounts").then(r => r.ok ? r.json() : Promise.reject()).then(data => { if (data.length > 0) { setAccount(data[0]); setLastRefresh(new Date()); } setLoading(false); }).catch(() => { if (!usePortfolioStreamStore.getState().account) setError("Failed to load portfolio data"); setLoading(false); });
+    fetchWithAuth("/api/portfolio/orders?days=30").then(r => r.ok ? r.json() : Promise.reject()).then(data => { setOrders(data); }).catch(() => {});
     fetchWithAuth("/api/portfolio/account-hash").then(r => r.json()).then(d => { if (d.hashValue) setAccountHash(d.hashValue); }).catch(() => {});
     return () => {
       cleanup?.();
