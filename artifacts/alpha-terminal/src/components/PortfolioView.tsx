@@ -5,14 +5,12 @@ import { ConnectBrokerPrompt } from "./ConnectBrokerPrompt";
 import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import {
-  RefreshCw,
   ChevronRight,
   ChevronDown,
   AlertCircle,
   Search,
   XCircle,
   AlertTriangle,
-  Settings,
   X,
   Check,
 } from "lucide-react";
@@ -1123,26 +1121,16 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
         </div>
       )}
 
-      <div style={{ borderBottom: `1px solid ${C.borderHi}` }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px 4px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-            <span style={{ fontSize: 12, color: C.dim }}>····{(account?.accountNumber ?? "").slice(-4)}</span>
-            <span style={{ fontSize: 12, color: C.dim }}>·</span>
-            <span style={{ fontSize: 12, color: C.dim, textTransform: "uppercase" }}>{account?.type ?? ""}</span>
-            <span style={{ width: 5, height: 5, borderRadius: 3, background: C.green, display: "inline-block" }} />
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-            {lastRefresh && <span style={{ fontSize: 11, color: C.dim }}>{timeAgo(lastRefresh.toISOString())}</span>}
-            <button onClick={() => { fetchAccount(); fetchOrders(); }} disabled={loading} style={{ padding: 3, background: "transparent", border: "none", cursor: "pointer" }}>
-              <RefreshCw className={loading ? "animate-spin" : ""} style={{ width: 12, height: 12, color: C.dim }} />
-            </button>
-            <button onClick={() => setShowSettings(s => !s)} style={{ padding: 3, background: "transparent", border: "none", cursor: "pointer" }}>
-              <Settings style={{ width: 12, height: 12, color: showSettings ? C.gold : C.dim }} />
-            </button>
-          </div>
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", padding: "0 12px 8px", gap: 4 }}>
+      <div
+        style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 30,
+          background: C.bg,
+          borderBottom: `1px solid ${C.borderHi}`,
+        }}
+      >
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", padding: "8px 12px 10px", gap: 4 }}>
           <div>
             <div style={{ fontSize: 11, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>Net Liq Value</div>
             <div style={{ fontSize: 20, fontWeight: 700, color: C.text, fontVariantNumeric: "tabular-nums", letterSpacing: -0.5 }}>
