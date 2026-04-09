@@ -115,22 +115,9 @@ function selectMode(input: StrategistInput): { mode: TradingMode; reason: string
     };
   }
 
-  const absComposite = Math.abs(pulse.composite);
-
-  if (absComposite >= 0.75 && pulse.confidence >= 60) {
-    return {
-      mode: "HIGH_CONVICTION_DIRECTIONAL",
-      reason: `Pulse composite ${pulse.composite.toFixed(2)} (|${absComposite.toFixed(2)}| >= 0.75) with confidence ${pulse.confidence} >= 60.`,
-    };
-  }
-
-  if (absComposite >= 0.30 && absComposite < 0.75 && pulse.confidence >= 30 && pulse.confidence < 60) {
-    return {
-      mode: "LOW_CONVICTION_DIRECTIONAL",
-      reason: `Pulse composite ${pulse.composite.toFixed(2)} (|${absComposite.toFixed(2)}| in 0.30-0.75) with confidence ${pulse.confidence} in 30-60.`,
-    };
-  }
-
+  // Micro-Override bypass: scanner pre-validated this ticker through hard scoring
+  // (Trend, RS, Volume, IVR, Liquidity). Skip the regime gate entirely — only
+  // enforce age staleness and portfolio count limits.
   if (scannerData && scannerData.microOverrideEligible) {
     const scanAge = Date.now() - scannerData.scanTimestamp;
     const fiveMinMs = 5 * 60 * 1000;
@@ -149,19 +136,25 @@ function selectMode(input: StrategistInput): { mode: TradingMode; reason: string
       };
     }
 
-    const pulseBullish = pulse.composite > 0.30;
-    const pulseBearish = pulse.composite < -0.30;
-    const scanBullish = scannerData.changePct > 0;
-    if ((pulseBullish && !scanBullish) || (pulseBearish && scanBullish)) {
-      return {
-        mode: "NO_EDGE",
-        reason: "Micro-Override blocked: scanner direction is inverse to clear macro bias.",
-      };
-    }
-
     return {
       mode: "MICRO_OVERRIDE",
-      reason: `Scanner score ${scannerData.totalScore} >= 90 with Micro-Override eligibility confirmed. Pulse is near-neutral (${pulse.composite.toFixed(2)}).`,
+      reason: `Scanner score ${scannerData.totalScore} with Micro-Override eligibility confirmed. Bypassing regime gate — scanner pre-screened (pulse: ${pulse.composite.toFixed(2)}).`,
+    };
+  }
+
+  const absComposite = Math.abs(pulse.composite);
+
+  if (absComposite >= 0.75 && pulse.confidence >= 60) {
+    return {
+      mode: "HIGH_CONVICTION_DIRECTIONAL",
+      reason: `Pulse composite ${pulse.composite.toFixed(2)} (|${absComposite.toFixed(2)}| >= 0.75) with confidence ${pulse.confidence} >= 60.`,
+    };
+  }
+
+  if (absComposite >= 0.30 && absComposite < 0.75 && pulse.confidence >= 30 && pulse.confidence < 60) {
+    return {
+      mode: "LOW_CONVICTION_DIRECTIONAL",
+      reason: `Pulse composite ${pulse.composite.toFixed(2)} (|${absComposite.toFixed(2)}| in 0.30-0.75) with confidence ${pulse.confidence} in 30-60.`,
     };
   }
 
