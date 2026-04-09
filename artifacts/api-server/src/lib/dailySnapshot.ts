@@ -11,6 +11,7 @@ import {
 } from "@workspace/db";
 import { eq, sql, and, gte, lte, desc } from "drizzle-orm";
 import { logger } from "../lib/logger";
+import { logFailure } from "../lib/telemetry";
 
 const SCHWAB_API = "https://api.schwabapi.com/marketdata/v1";
 const POLYGON_API = "https://api.polygon.io";
@@ -462,7 +463,10 @@ async function collectPolygonIVData(
       `${POLYGON_API}/v3/snapshot/options/${encodeURIComponent(sym)}?${params}`,
       {},
     );
-    if (!resp.ok) return 0;
+    if (!resp.ok) {
+      void logFailure("POLYGON_API", "WARN", `IV enrichment HTTP ${resp.status}`, { symbol: sym, status: resp.status, date });
+      return 0;
+    }
     const json = await resp.json() as { results?: Array<Record<string, unknown>>; status?: string };
     if (json.status !== "OK" || !json.results?.length) return 0;
 
@@ -510,9 +514,12 @@ export async function collectPolygonFlowFromAPI(
   if (!apiKey) return { strikeRows: 0, tradeRows: 0 };
 
   logger.info({ count: symbols.length, date }, "Snapshot: collecting Polygon flow data");
+  void logFailure("POLYGON_API", "INFO", "Flow scan started", { symbols: symbols.length, date });
 
   let strikeRows = 0;
   let tradeRows = 0;
+  let apiCalls = 0;
+  let apiErrors = 0;
 
   for (const sym of symbols) {
     try {
@@ -523,11 +530,16 @@ export async function collectPolygonFlowFromAPI(
         apiKey,
       });
 
+      apiCalls++;
       const resp = await fetchWithRetry(
         `${POLYGON_API}/v3/snapshot/options/${encodeURIComponent(sym)}?${params}`,
         {},
       );
-      if (!resp.ok) continue;
+      if (!resp.ok) {
+        apiErrors++;
+        void logFailure("POLYGON_API", "WARN", `Options snapshot HTTP ${resp.status}`, { symbol: sym, status: resp.status, date });
+        continue;
+      }
       const json = await resp.json() as { results?: Array<Record<string, unknown>>; status?: string };
       if (json.status !== "OK" || !json.results?.length) continue;
 
@@ -581,10 +593,18 @@ export async function collectPolygonFlowFromAPI(
         strikeRows += flowRows.length;
       }
     } catch (e) {
+      apiErrors++;
       logger.warn({ sym, error: (e as Error).message }, "Snapshot: Polygon flow failed");
+      void logFailure("POLYGON_API", "WARN", `Flow scan failed for ${sym}`, { symbol: sym, error: (e as Error).message, date });
     }
     await sleep(300);
   }
+
+  const severity = apiErrors > 0 && apiErrors === symbols.length ? "ERROR" : apiErrors > 0 ? "WARN" : "INFO";
+  void logFailure("POLYGON_API", severity, `Flow scan complete — ${strikeRows} strikes from ${apiCalls} calls`, {
+    strikeRows, tradeRows, apiCalls, apiErrors, date,
+    successRate: apiCalls > 0 ? `${Math.round(((apiCalls - apiErrors) / apiCalls) * 100)}%` : "N/A",
+  });
 
   logger.info({ strikeRows, tradeRows, date }, "Snapshot: Polygon flow collection complete");
   return { strikeRows, tradeRows };
@@ -786,6 +806,7 @@ export async function runFullSnapshot(
       })
       .where(eq(snapshotCollectionLogTable.date, date));
 
+    void logFailure("POLYGON_API", "INFO", "Full snapshot complete", { equityRows, chainRows, flowRows, aggregateRows, date });
     logger.info({ equityRows, chainRows, flowRows, aggregateRows, date }, "Snapshot: full collection complete");
     return { equityRows, chainRows, flowRows, aggregateRows };
   } catch (e) {
@@ -793,6 +814,7 @@ export async function runFullSnapshot(
     await db.update(snapshotCollectionLogTable)
       .set({ status: "failed", errorMsg: msg })
       .where(eq(snapshotCollectionLogTable.date, date));
+    void logFailure("POLYGON_API", "ERROR", "Full snapshot failed", { error: msg, date });
     logger.error({ error: msg, date }, "Snapshot: full collection failed");
     throw e;
   }

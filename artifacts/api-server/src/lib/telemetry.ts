@@ -16,7 +16,8 @@ export type TelemetrySystem =
   | "RISK_GATE"
   | "EXIT_STAGING"
   | "PUSH_NOTIFICATION"
-  | "MARKET_PULSE";
+  | "MARKET_PULSE"
+  | "POLYGON_API";
 
 export type TelemetrySeverity = "INFO" | "WARN" | "ERROR" | "CRITICAL";
 
