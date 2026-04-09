@@ -4,9 +4,9 @@ import { useQuote } from "@/hooks/useQuote";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import {
-  X, Minus, Plus, Loader2, CheckCircle2, AlertTriangle, ChevronDown,
-  Shield, ShieldAlert, ShieldCheck, ShieldX, Settings2, Lock, Unlock,
-  Eye, EyeOff, Sparkles, TrendingUp,
+  X, Minus, Plus, Loader2, CheckCircle2, AlertTriangle, ChevronDown, ChevronUp,
+  Shield, ShieldAlert, ShieldCheck, ShieldX, Lock, Unlock,
+  Eye, EyeOff, Sparkles, TrendingUp, ArrowLeft,
 } from "lucide-react";
 
 type OrderSide = "BUY" | "SELL";
@@ -30,14 +30,13 @@ const DURATIONS: { value: Duration; label: string }[] = [
   { value: "FILL_OR_KILL", label: "FOK" },
 ];
 
-const GOLD = "#fbbf24";
-const GOLD_DIM = "rgba(251,191,36,0.12)";
+const GOLD = "#FFB800";
+const GOLD_DIM = "rgba(251,191,36,0.08)";
 const UP = "#00d166";
 const DOWN = "#f23645";
-const BG = "#1C1C1E";
-const BG2 = "#111113";
+const BG = "#0a0a0a";
 const CARD = "#141416";
-const FIELD = "#1a1a1e";
+const FIELD = "#111113";
 const BORDER = "#1f1f23";
 const BORDER2 = "#27272a";
 const MUTED = "#71717a";
@@ -520,6 +519,8 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
   const [showBalances, setShowBalances] = useState(false);
   const [balancesHidden, setBalancesHidden] = useState(false);
   const [posEffect, setPosEffect] = useState<PositionEffect>("AUTO");
+  const [riskCollapsed, setRiskCollapsed] = useState(true);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const qtyInputRef = useRef<HTMLInputElement>(null);
 
   const isMultiLeg = !!strategyLegs && strategyLegs.length >= 1;
@@ -823,46 +824,42 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
   return (
     <div className="fixed inset-0 z-[210] flex flex-col" style={{ background: "#0a0a0a" }}>
 
-      <header className="shrink-0 flex items-center h-11 px-4" style={{ background: BG2, borderBottom: `1px solid ${BORDER}` }}>
-        <button onClick={onClose} className="font-mono text-[13px] font-medium" style={{ color: GOLD }}>
-          ← Back
+      <header className="shrink-0 flex items-center h-11 px-4" style={{ background: FIELD, borderBottom: `1px solid ${BORDER}` }}>
+        <button
+          onClick={onClose}
+          className="flex items-center gap-1.5 font-mono text-[13px] font-medium transition-colors active:opacity-70"
+          style={{ color: MUTED, minWidth: 56 }}
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back
         </button>
-        <div className="flex-1 text-center min-w-0">
-          <div className="flex items-center justify-center gap-2">
-            {isCloseOrder ? (
-              <span className="font-mono text-[11px] font-bold px-2 py-0.5 rounded" style={{ background: "#f23645", color: "#fff", letterSpacing: "0.08em" }}>
-                CLOSE
-              </span>
-            ) : (
-              <span className="font-mono text-[13px] font-bold" style={{ color: sideColor }}>{side}</span>
-            )}
-            <span className="font-mono text-[14px] font-bold tracking-wide" style={{ color: WHITE }}>{symbol}</span>
-            {!isCloseOrder && (
-              <>
-                <span className="font-mono text-[13px] font-semibold" style={{ color: changeColor }}>
-                  {fmt(quote?.last)}
-                </span>
-                {changePct != null && (
-                  <span className="font-mono text-[11px]" style={{ color: changeColor }}>
-                    {changePct >= 0 ? "+" : ""}{fmt(changePct)}%
-                  </span>
-                )}
-              </>
-            )}
-          </div>
+        <div className="flex-1 flex items-center justify-center gap-2 min-w-0">
+          {isCloseOrder && (
+            <span className="font-mono text-[11px] font-bold px-2 py-0.5 rounded" style={{ background: DOWN, color: "#fff", letterSpacing: "0.08em" }}>
+              CLOSE
+            </span>
+          )}
+          <span className="font-mono font-bold text-[15px] tracking-wide" style={{ color: WHITE }}>{symbol}</span>
+          <span className="font-mono text-[13px] font-semibold" style={{ color: changeColor }}>
+            {fmt(quote?.last)}{changePct != null ? ` ${changePct >= 0 ? "+" : ""}${fmt(changePct)}%` : ""}
+          </span>
           {isOption && !isMultiLeg && optionSymbol && (
-            <p className="font-mono text-[10px] truncate" style={{ color: isCloseOrder ? "#f23645" : MUTED }}>
+            <span className="font-mono text-[10px] truncate" style={{ color: isCloseOrder ? DOWN : MUTED }}>
               {isCloseOrder ? `${optionInstruction?.replace(/_/g, " ")} · ` : ""}{optionSymbol}
-            </p>
+            </span>
           )}
           {isCloseOrder && isMultiLeg && strategyLegs && (
-            <p className="font-mono text-[10px]" style={{ color: "#f23645" }}>
+            <span className="font-mono text-[10px]" style={{ color: DOWN }}>
               CLOSE {strategyLegs.length}-LEG SPREAD
-            </p>
+            </span>
           )}
         </div>
-        <button className="p-1.5" style={{ color: MUTED }}>
-          <Settings2 className="w-4 h-4" />
+        <button
+          onClick={onClose}
+          className="font-mono text-[13px] font-medium transition-colors active:opacity-70"
+          style={{ color: MUTED, minWidth: 56, textAlign: "right" }}
+        >
+          Close
         </button>
       </header>
 
@@ -878,54 +875,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
       {stage === "form" || stage === "review" ? (
         <div className="flex-1 overflow-y-auto pb-28">
 
-          <div className="flex items-center gap-3 px-4 py-2 overflow-x-auto" style={{ borderBottom: `1px solid ${BORDER}`, background: BG2 }}>
-            {[
-              { label: "Vol", value: volume != null ? fmtCompact(volume) : "—" },
-              { label: "Range", value: dayLow != null && dayHigh != null ? `${fmt(dayLow)}-${fmt(dayHigh)}` : "—" },
-              { label: "Bid", value: fmt(quote?.bid), color: UP },
-              { label: "Ask", value: fmt(quote?.ask), color: DOWN },
-              { label: "Sprd", value: quote?.bid != null && quote?.ask != null ? fmt(quote.ask - quote.bid) : "—" },
-            ].map((m, i) => (
-              <div key={i} className="flex items-center gap-1 shrink-0">
-                <span className="font-mono text-[10px]" style={{ color: MUTED }}>{m.label}</span>
-                <span className="font-mono text-[12px] font-medium" style={{ color: m.color || TEXT }}>{m.value}</span>
-                {i < 4 && <span className="font-mono text-[10px] mx-0.5" style={{ color: BORDER2 }}>|</span>}
-              </div>
-            ))}
-          </div>
-
-          {preTradeEnabled && riskChecks.length > 0 && (
-            <div style={{ background: "#0d0d0f", borderBottom: `1px solid ${BORDER}` }}>
-              <div className="flex items-center gap-2 px-4 py-2" style={{ borderBottom: `1px solid ${BORDER}` }}>
-                <Shield className="w-4 h-4" style={{ color: levelColor(overallRisk) }} />
-                <span className="font-mono text-[12px] font-bold tracking-[0.12em]" style={{ color: WHITE }}>PRE-TRADE RISK CHECK</span>
-                <div className="flex-1" />
-                <span className="font-mono text-[11px] font-bold px-2 py-0.5 rounded" style={{
-                  color: overallRisk === "GREEN" ? "#000" : overallRisk === "YELLOW" ? "#000" : "#fff",
-                  background: levelColor(overallRisk),
-                }}>
-                  {overallRisk === "GREEN" ? "PASS" : overallRisk === "YELLOW" ? "WARN" : "FAIL"}
-                </span>
-              </div>
-              <div className="w-full h-[2px]" style={{ background: levelColor(overallRisk) }} />
-              <div className="px-4 py-2">
-                {riskChecks.map(c => (
-                  <div key={c.id} className="flex items-center py-[5px]" style={{ borderBottom: `1px solid ${BORDER}` }}>
-                    <RiskIcon level={c.level} />
-                    <span className="font-mono text-[12px] font-medium ml-2.5" style={{ color: TEXT, width: 120, flexShrink: 0 }}>{c.label}</span>
-                    <span className="font-mono text-[11px] flex-1 text-right" style={{ color: levelColor(c.level) }}>{c.detail}</span>
-                  </div>
-                ))}
-              </div>
-              <div className="px-4 py-2" style={{ borderTop: `1px solid ${BORDER}`, background: `${levelColor(overallRisk)}08` }}>
-                <p className="font-mono text-[11px] leading-relaxed" style={{ color: levelColor(overallRisk) }}>
-                  {riskSummary}
-                </p>
-              </div>
-            </div>
-          )}
-
-          <div className="px-4 pt-3 space-y-3">
+          <div className="p-4 space-y-3">
 
             {isMultiLeg && strategyLegs ? (
               <div className="overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
@@ -963,25 +913,50 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                 </div>
               </div>
             ) : (
-              <div className="flex overflow-hidden h-10" style={{ border: `1px solid ${BORDER2}` }}>
-                {(["BUY", "SELL"] as OrderSide[]).map((s) => {
-                  const active = side === s;
-                  return (
-                    <button
-                      key={s}
-                      onClick={() => setSide(s)}
-                      className="flex-1 font-mono font-bold text-[13px] tracking-wider transition-all duration-150"
-                      style={{
-                        background: active ? (s === "BUY" ? "rgba(0,209,102,0.15)" : "rgba(242,54,69,0.15)") : "transparent",
-                        color: active ? (s === "BUY" ? UP : DOWN) : DIM,
-                        borderBottom: `2px solid ${active ? (s === "BUY" ? UP : DOWN) : "transparent"}`,
-                      }}
-                    >
-                      {s}
-                    </button>
-                  );
-                })}
-              </div>
+              <>
+                <div className="flex" style={{ border: `1px solid ${BORDER2}` }}>
+                  {(["BUY", "SELL"] as OrderSide[]).map((s) => {
+                    const active = side === s;
+                    return (
+                      <button
+                        key={s}
+                        onClick={() => setSide(s)}
+                        className="flex-1 py-2 font-mono text-[12px] font-bold tracking-[0.1em] transition-all"
+                        style={{
+                          color: active ? (s === "BUY" ? UP : DOWN) : DIM,
+                          background: active ? (s === "BUY" ? "rgba(0,209,102,0.06)" : "rgba(242,54,69,0.06)") : "transparent",
+                          borderBottom: active ? `2px solid ${s === "BUY" ? UP : DOWN}` : `2px solid transparent`,
+                        }}
+                      >
+                        {s}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                  <div className="px-4 py-2" style={{ borderBottom: `1px solid ${BORDER}` }}>
+                    <span className="font-mono text-[11px] font-bold tracking-[0.12em]" style={{ color: GOLD }}>MARKET DATA</span>
+                  </div>
+                  <div className="px-4 py-2.5">
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-1.5">
+                      {[
+                        { label: "Bid", value: fmt(quote?.bid), color: UP },
+                        { label: "Ask", value: fmt(quote?.ask), color: DOWN },
+                        { label: "Spread", value: quote?.bid != null && quote?.ask != null ? fmt(quote.ask - quote.bid) : "—" },
+                        { label: "Volume", value: volume != null ? fmtCompact(volume) : "—" },
+                        { label: "Day Low", value: dayLow != null ? fmt(dayLow) : "—" },
+                        { label: "Day High", value: dayHigh != null ? fmt(dayHigh) : "—" },
+                      ].map((m, i) => (
+                        <div key={i} className="flex justify-between items-baseline">
+                          <span className="font-mono text-[12px]" style={{ color: MUTED }}>{m.label}</span>
+                          <span className="font-mono text-[14px] font-bold" style={{ color: m.color || TEXT }}>{m.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </>
             )}
 
             {!isMultiLeg && (
@@ -1069,30 +1044,9 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                     readOnly={priceLocked}
                   />
                   <div className="flex items-center gap-1 pr-2">
-                    <button
-                      onClick={() => { if (!priceLocked && effectiveBid != null) setLimitPrice(effectiveBid.toFixed(2)); }}
-                      className="px-2 py-1 rounded font-mono text-[10px] font-bold transition-colors"
-                      style={{ color: UP, background: "rgba(0,209,102,0.08)", opacity: priceLocked ? 0.4 : 1 }}
-                      disabled={priceLocked}
-                    >
-                      BID
-                    </button>
-                    <button
-                      onClick={() => { if (!priceLocked) setMidPrice(); }}
-                      className="px-2 py-1 rounded font-mono text-[10px] font-bold transition-colors"
-                      style={{ color: GOLD, background: GOLD_DIM, opacity: priceLocked ? 0.4 : 1 }}
-                      disabled={priceLocked}
-                    >
-                      MID
-                    </button>
-                    <button
-                      onClick={() => { if (!priceLocked) setNatPrice(); }}
-                      className="px-2 py-1 rounded font-mono text-[10px] font-bold transition-colors"
-                      style={{ color: DOWN, background: "rgba(242,54,69,0.08)", opacity: priceLocked ? 0.4 : 1 }}
-                      disabled={priceLocked}
-                    >
-                      NAT
-                    </button>
+                    <button onClick={() => { if (!priceLocked && effectiveBid != null) setLimitPrice(effectiveBid.toFixed(2)); }} disabled={priceLocked} className="px-2 py-1 rounded font-mono text-[10px] font-bold" style={{ color: UP, background: "rgba(0,209,102,0.08)", opacity: priceLocked ? 0.4 : 1 }}>BID</button>
+                    <button onClick={() => { if (!priceLocked) setMidPrice(); }} disabled={priceLocked} className="px-2 py-1 rounded font-mono text-[10px] font-bold" style={{ color: GOLD, background: GOLD_DIM, opacity: priceLocked ? 0.4 : 1 }}>MID</button>
+                    <button onClick={() => { if (!priceLocked) setNatPrice(); }} disabled={priceLocked} className="px-2 py-1 rounded font-mono text-[10px] font-bold" style={{ color: DOWN, background: "rgba(242,54,69,0.08)", opacity: priceLocked ? 0.4 : 1 }}>NAT</button>
                   </div>
                 </div>
 
@@ -1102,32 +1056,19 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                       <span className="font-mono text-[10px]" style={{ color: UP }}>Bid</span>
                       <div className="flex-1 relative h-3">
                         <div className="absolute inset-0 rounded-full overflow-hidden" style={{ background: BORDER2 }}>
-                          <div className="absolute inset-0 rounded-full" style={{
-                            background: `linear-gradient(90deg, ${UP}30, ${GOLD}40, ${DOWN}30)`,
-                          }} />
+                          <div className="absolute inset-0 rounded-full" style={{ background: `linear-gradient(90deg, ${UP}30, ${GOLD}40, ${DOWN}30)` }} />
                         </div>
                         <input
-                          type="range"
-                          min={0}
-                          max={100}
-                          value={sliderValue}
+                          type="range" min={0} max={100} value={sliderValue}
                           onChange={(e) => {
                             if (priceLocked) return;
                             const pct = parseInt(e.target.value) / 100;
-                            const price = effectiveBid + (effectiveAsk - effectiveBid) * pct;
-                            setLimitPrice(price.toFixed(2));
+                            setLimitPrice((effectiveBid + (effectiveAsk - effectiveBid) * pct).toFixed(2));
                           }}
                           className="absolute inset-0 w-full opacity-0 cursor-pointer"
                           style={{ height: 12 }}
                         />
-                        <div
-                          className="absolute top-0 w-2.5 h-3 rounded-sm"
-                          style={{
-                            background: GOLD,
-                            left: `calc(${sliderValue}% - 5px)`,
-                            boxShadow: `0 0 6px ${GOLD}60`,
-                          }}
-                        />
+                        <div className="absolute top-0 w-2.5 h-3 rounded-sm" style={{ background: GOLD, left: `calc(${sliderValue}% - 5px)`, boxShadow: `0 0 6px ${GOLD}60` }} />
                       </div>
                       <span className="font-mono text-[10px]" style={{ color: DOWN }}>Ask</span>
                     </div>
@@ -1176,81 +1117,72 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                 {isMultiLeg ? "QUANTITY (SPREADS)" : `QUANTITY ${isOption ? "(CONTRACTS)" : "(SHARES)"}`}
               </label>
               <div className="flex items-center overflow-hidden h-11" style={{ background: FIELD, border: `1px solid ${BORDER2}` }}>
-                <button
-                  onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                  className="px-4 h-full transition-colors active:text-white" style={{ color: "#a1a1aa" }}
-                >
+                <button onClick={() => setQuantity(Math.max(1, quantity - 1))} className="px-4 h-full transition-colors active:text-white" style={{ color: "#a1a1aa" }}>
                   <Minus className="w-4 h-4" />
                 </button>
                 <input
                   ref={qtyInputRef}
-                  type="number"
-                  inputMode="numeric"
-                  value={quantity}
-                  onChange={(e) => {
-                    const v = parseInt(e.target.value);
-                    if (!isNaN(v) && v >= 0) setQuantity(v);
-                  }}
+                  type="number" inputMode="numeric" value={quantity}
+                  onChange={(e) => { const v = parseInt(e.target.value); if (!isNaN(v) && v >= 0) setQuantity(v); }}
                   className="flex-1 text-center font-mono text-[16px] font-bold bg-transparent outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                   style={{ color: WHITE, minWidth: 0 }}
                 />
-                <button
-                  onClick={() => setQuantity(quantity + 1)}
-                  className="px-4 h-full transition-colors active:text-white" style={{ color: "#a1a1aa" }}
-                >
+                <button onClick={() => setQuantity(quantity + 1)} className="px-4 h-full transition-colors active:text-white" style={{ color: "#a1a1aa" }}>
                   <Plus className="w-4 h-4" />
                 </button>
               </div>
               <div className="flex gap-1.5 mt-1.5">
                 {[1, 5, 10, 25, 50, 100].map((q) => (
-                  <button
-                    key={q}
-                    onClick={() => setQuantity(q)}
-                    className="flex-1 py-1.5 font-mono text-[11px] font-medium transition-colors"
-                    style={{
-                      color: quantity === q ? GOLD : DIM,
-                      background: quantity === q ? GOLD_DIM : CARD,
-                      border: `1px solid ${quantity === q ? "rgba(251,191,36,0.3)" : BORDER2}`,
-                    }}
-                  >
+                  <button key={q} onClick={() => setQuantity(q)} className="flex-1 py-1.5 font-mono text-[11px] font-medium transition-colors"
+                    style={{ color: quantity === q ? GOLD : DIM, background: quantity === q ? GOLD_DIM : CARD, border: `1px solid ${quantity === q ? "rgba(251,191,36,0.3)" : BORDER2}` }}>
                     {q}
                   </button>
                 ))}
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-1.5">
-              <div className="px-3 py-2" style={{ background: FIELD, border: `1px solid ${BORDER2}` }}>
-                <span className="font-mono text-[10px] block mb-0.5" style={{ color: MUTED }}>Effect</span>
-                <button onClick={() => setPosEffect(posEffect === "OPENING" ? "CLOSING" : posEffect === "CLOSING" ? "AUTO" : "OPENING")} className="font-mono text-[12px] font-medium" style={{ color: TEXT }}>
-                  {posEffect === "AUTO" ? "Auto" : posEffect === "OPENING" ? "Open" : "Close"}
-                </button>
-              </div>
-              <div className="px-3 py-2" style={{ background: FIELD, border: `1px solid ${BORDER2}` }}>
-                <span className="font-mono text-[10px] block mb-0.5" style={{ color: MUTED }}>Exchange</span>
-                <span className="font-mono text-[12px] font-medium" style={{ color: TEXT }}>BEST</span>
-              </div>
-              <div className="px-3 py-2 flex items-center justify-between" style={{ background: FIELD, border: `1px solid ${BORDER2}` }}>
-                <div>
-                  <span className="font-mono text-[10px] block mb-0.5" style={{ color: MUTED }}>Ext Hrs</span>
-                  <span className="font-mono text-[12px] font-medium" style={{ color: extendedHours ? GOLD : TEXT }}>
-                    {extendedHours ? "On" : "Off"}
+            <div style={{ border: `1px solid ${BORDER2}` }}>
+              <button
+                className="w-full flex items-center justify-between px-3 py-2"
+                onClick={() => setAdvancedOpen(v => !v)}
+              >
+                <span className="font-mono text-[10px] tracking-wider uppercase" style={{ color: MUTED }}>Advanced Settings</span>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-[10px]" style={{ color: DIM }}>
+                    {posEffect === "AUTO" ? "Auto" : posEffect === "OPENING" ? "Open" : "Close"} · BEST · {DURATIONS.find(d => d.value === duration)?.label} · {extendedHours ? "Ext On" : "Ext Off"}
                   </span>
+                  {advancedOpen
+                    ? <ChevronUp className="w-3.5 h-3.5" style={{ color: MUTED }} />
+                    : <ChevronDown className="w-3.5 h-3.5" style={{ color: MUTED }} />}
                 </div>
-                <button
-                  onClick={() => setExtendedHours(!extendedHours)}
-                  className="relative w-8 h-4 rounded-full transition-colors duration-200"
-                  style={{ background: extendedHours ? GOLD : BORDER2 }}
-                >
-                  <div
-                    className="absolute top-0.5 w-3 h-3 rounded-full transition-transform duration-200"
-                    style={{
-                      background: extendedHours ? BG : DIM,
-                      transform: extendedHours ? "translateX(16px)" : "translateX(2px)",
-                    }}
-                  />
-                </button>
-              </div>
+              </button>
+              {advancedOpen && (
+                <div className="grid grid-cols-3 gap-1.5 px-3 pb-2">
+                  <div className="px-3 py-2" style={{ background: FIELD, border: `1px solid ${BORDER2}` }}>
+                    <span className="font-mono text-[10px] block mb-0.5" style={{ color: MUTED }}>Effect</span>
+                    <button onClick={() => setPosEffect(posEffect === "OPENING" ? "CLOSING" : posEffect === "CLOSING" ? "AUTO" : "OPENING")} className="font-mono text-[12px] font-medium" style={{ color: TEXT }}>
+                      {posEffect === "AUTO" ? "Auto" : posEffect === "OPENING" ? "Open" : "Close"}
+                    </button>
+                  </div>
+                  <div className="px-3 py-2" style={{ background: FIELD, border: `1px solid ${BORDER2}` }}>
+                    <span className="font-mono text-[10px] block mb-0.5" style={{ color: MUTED }}>Exchange</span>
+                    <span className="font-mono text-[12px] font-medium" style={{ color: TEXT }}>BEST</span>
+                  </div>
+                  <div className="px-3 py-2 flex items-center justify-between" style={{ background: FIELD, border: `1px solid ${BORDER2}` }}>
+                    <div>
+                      <span className="font-mono text-[10px] block mb-0.5" style={{ color: MUTED }}>Ext Hrs</span>
+                      <span className="font-mono text-[12px] font-medium" style={{ color: extendedHours ? GOLD : TEXT }}>{extendedHours ? "On" : "Off"}</span>
+                    </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setExtendedHours(!extendedHours); }}
+                      className="relative w-8 h-4 rounded-full transition-colors duration-200"
+                      style={{ background: extendedHours ? GOLD : BORDER2 }}
+                    >
+                      <div className="absolute top-0.5 w-3 h-3 rounded-full transition-transform duration-200" style={{ background: extendedHours ? BG : DIM, transform: extendedHours ? "translateX(16px)" : "translateX(2px)" }} />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {estimatedCost != null && (
@@ -1290,6 +1222,43 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
               quantity={quantity}
               isOption={isOption}
             />
+
+            {preTradeEnabled && riskChecks.length > 0 && (
+              <div className="overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                <button
+                  className="w-full flex items-center gap-2 px-4 py-2 transition-colors"
+                  onClick={() => setRiskCollapsed(v => !v)}
+                >
+                  <Shield className="w-4 h-4 shrink-0" style={{ color: levelColor(overallRisk) }} />
+                  <span className="font-mono text-[11px] font-bold tracking-[0.12em]" style={{ color: WHITE }}>PRE-TRADE RISK CHECK</span>
+                  <div className="flex-1" />
+                  <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded" style={{
+                    color: overallRisk === "GREEN" ? "#000" : overallRisk === "YELLOW" ? "#000" : "#fff",
+                    background: levelColor(overallRisk),
+                  }}>
+                    {overallRisk === "GREEN" ? "PASS" : overallRisk === "YELLOW" ? "WARN" : "FAIL"}
+                  </span>
+                  {riskCollapsed
+                    ? <ChevronDown className="w-3.5 h-3.5 ml-1 shrink-0" style={{ color: MUTED }} />
+                    : <ChevronUp className="w-3.5 h-3.5 ml-1 shrink-0" style={{ color: MUTED }} />
+                  }
+                </button>
+                {!riskCollapsed && (
+                  <>
+                    <div className="w-full h-[2px]" style={{ background: levelColor(overallRisk) }} />
+                    <div className="px-4 py-2">
+                      {riskChecks.map(c => (
+                        <div key={c.id} className="flex items-center py-[5px]" style={{ borderBottom: `1px solid ${BORDER}` }}>
+                          <RiskIcon level={c.level} />
+                          <span className="font-mono text-[12px] font-medium ml-2.5" style={{ color: TEXT, width: 120, flexShrink: 0 }}>{c.label}</span>
+                          <span className="font-mono text-[11px] flex-1 text-right" style={{ color: levelColor(c.level) }}>{c.detail}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
 
             {showBalances && (
               <div className="overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
@@ -1402,10 +1371,10 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
       )}
 
       {stage === "review" && (
-        <div className="fixed inset-0 z-[220] flex flex-col" style={{ background: "#0a0a0a" }}>
+        <div className="fixed inset-0 z-[220] flex items-end justify-center" style={{ background: "rgba(0,0,0,0.7)" }}>
           <div
-            className="w-full h-full flex flex-col p-5 space-y-3 overflow-y-auto animate-in fade-in duration-200"
-            style={{ background: CARD }}
+            className="w-full max-w-lg p-5 space-y-3 animate-in slide-in-from-bottom duration-300"
+            style={{ background: CARD, border: `1px solid ${BORDER2}`, borderBottom: "none" }}
           >
             <div className="flex items-center justify-between mb-1">
               <h3 className="font-mono font-bold text-[14px] tracking-wider" style={{ color: WHITE }}>{isCloseOrder ? "Confirm Close" : "Confirm Order"}</h3>
@@ -1505,16 +1474,8 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
               </p>
             </div>
 
-            <div className="flex-1" />
-
-            <div className="flex gap-3 pt-1 pb-4 shrink-0">
-              <button
-                onClick={() => setStage("form")}
-                className="flex-1 py-3 font-mono text-[12px] font-bold tracking-wider"
-                style={{ background: FIELD, color: "#a1a1aa", border: `1px solid ${BORDER2}` }}
-              >
-                Back
-              </button>
+            <div className="flex gap-3 pt-1 pb-4">
+              <button onClick={() => setStage("form")} className="flex-1 py-3 font-mono text-[12px] font-bold tracking-wider" style={{ background: FIELD, color: "#a1a1aa", border: `1px solid ${BORDER2}` }}>Back</button>
               <button
                 onClick={handleSubmit}
                 className="flex-[2] py-3 font-mono text-[13px] font-bold tracking-wider active:scale-[0.98] transition-transform"
