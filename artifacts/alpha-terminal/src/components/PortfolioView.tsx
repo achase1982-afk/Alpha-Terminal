@@ -448,21 +448,20 @@ function PositionTableRow({
             cursor: "default",
           }}
         >
-          <div className="pf-sticky-col" style={{ width: symW, background: eqSelected ? "#121008" : "#000", display: "flex", alignItems: "center", gap: 10, padding: "6px 8px 6px 16px", minWidth: 0 }}>
-            {/* Large tap-target checkbox area */}
+          <div className="pf-sticky-col" style={{ width: symW, background: eqSelected ? "#121008" : "#000", display: "flex", alignItems: "center", padding: "6px 8px 6px 10px", minWidth: 0 }}>
             <div
               onClick={e => { e.stopPropagation(); toggleKey(eqKey); }}
               style={{
-                width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center",
-                flexShrink: 0, cursor: "pointer", margin: "-4px -4px -4px -4px",
+                width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center",
+                flexShrink: 0, cursor: "pointer",
               }}
             >
               <div style={{
-                width: 16, height: 16, border: `1.5px solid ${eqSelected ? C.gold : C.dim}`,
-                borderRadius: 4, background: eqSelected ? `${C.gold}22` : "transparent",
+                width: 15, height: 15, border: `1.5px solid ${eqSelected ? C.gold : C.dim}`,
+                borderRadius: 3, background: eqSelected ? `${C.gold}22` : "transparent",
                 display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.12s",
               }}>
-                {eqSelected && <div style={{ width: 8, height: 8, background: C.gold, borderRadius: 2 }} />}
+                {eqSelected && <div style={{ width: 7, height: 7, background: C.gold, borderRadius: 1 }} />}
               </div>
             </div>
             <div
@@ -508,10 +507,12 @@ function PositionTableRow({
         }}
         onClick={() => setExpanded(!expanded)}
       >
-        <div className="pf-sticky-col" style={{ width: symW, background: stickyBg, display: "flex", alignItems: "center", gap: 6, padding: "6px 8px 6px 16px", minWidth: 0 }}>
-          {expanded
-            ? <ChevronDown style={{ width: 12, height: 12, color: C.dim, flexShrink: 0 }} />
-            : <ChevronRight style={{ width: 12, height: 12, color: C.dim, flexShrink: 0 }} />}
+        <div className="pf-sticky-col" style={{ width: symW, background: stickyBg, display: "flex", alignItems: "center", padding: "6px 8px 6px 10px", minWidth: 0 }}>
+          <div style={{ width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            {expanded
+              ? <ChevronDown style={{ width: 15, height: 15, color: C.dim }} />
+              : <ChevronRight style={{ width: 15, height: 15, color: C.dim }} />}
+          </div>
           <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
             <span onClick={e => { e.stopPropagation(); onSelect(group.underlying); }} style={{ fontSize: 14, fontWeight: 600, color: C.text, whiteSpace: "nowrap", cursor: "pointer" }}>{group.underlying}</span>
             {(COMPANY_NAMES[group.underlying] ?? group.description) && <span style={{ fontSize: 12, color: C.gold, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{COMPANY_NAMES[group.underlying] ?? group.description}</span>}
