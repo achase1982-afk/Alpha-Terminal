@@ -27,6 +27,7 @@ import { sendPushToAll } from "../lib/pushService.js";
 import { checkEventConflicts, getUpcomingEvents, type EventCheckResult } from "../lib/calendarEventChecker.js";
 import { chainCache, getOrFetchChain, CHAIN_CACHE_TTL, getCachedEconEvents, getCachedRatings } from "./market.js";
 import { runDeterministicScan } from "../lib/deterministicScanner.js";
+import { runDiscoveryScan } from "../lib/deterministicScanner.v2.js";
 import {
   runDeterministicStrategist,
   fetchPortfolioContext,
@@ -2758,11 +2759,13 @@ interface ScannerAiResult {
 }
 
 router.post("/deterministic-scan", async (req, res) => {
-  const { symbols, accessToken: bodyToken3 } = req.body as {
+  const { symbols, accessToken: bodyToken3, scanMode: reqScanMode } = req.body as {
     symbols: string[];
     accessToken: string;
+    scanMode?: "DISCOVERY" | "MOMENTUM";
   };
   const accessToken = bodyToken3 || getBestAccessToken();
+  const scanMode: "DISCOVERY" | "MOMENTUM" = reqScanMode === "MOMENTUM" ? "MOMENTUM" : "DISCOVERY";
 
   if (!symbols?.length || !accessToken) {
     return res.status(400).json({ error: "symbols are required and no access token available" });
@@ -2796,14 +2799,11 @@ router.post("/deterministic-scan", async (req, res) => {
   }
 
   try {
-    const result = await runDeterministicScan(
-      symbols,
-      accessToken,
-      traderToken,
-      { composite: pulseComposite, confidence: pulseConfidence, bias: pulseBias },
-      req.log,
-    );
-    res.json(result);
+    const pulseCtx = { composite: pulseComposite, confidence: pulseConfidence, bias: pulseBias };
+    const result = scanMode === "DISCOVERY"
+      ? await runDiscoveryScan(symbols, accessToken, traderToken, pulseCtx, req.log)
+      : await runDeterministicScan(symbols, accessToken, traderToken, pulseCtx, req.log);
+    res.json({ ...result, scanMode });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     req.log.error({ err }, "Deterministic scan error");

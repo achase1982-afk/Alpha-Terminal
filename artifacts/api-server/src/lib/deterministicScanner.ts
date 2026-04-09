@@ -65,6 +65,16 @@ export interface ScanCandidate {
   pulseComposite: number;
   pulseConfidence: number;
   pulseBias: string;
+  directionalLean?: "BULLISH" | "BEARISH" | "MIXED";
+  scanMode?: "DISCOVERY" | "MOMENTUM";
+  flowDataAvailable?: boolean;
+  discoveryComponents?: {
+    setupQuality: number;
+    accumulation: number;
+    ivSetup: number;
+    flowDivergence: number;
+    emergingRS: number;
+  };
 }
 
 export interface ScanResult {

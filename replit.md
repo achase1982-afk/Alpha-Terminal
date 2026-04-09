@@ -35,6 +35,38 @@ The StrategyBuilder order page was overhauled across 7 parts:
 6. **Roll & Close Position Flows**: Close populates inverse legs with mid price. Roll opens close order then navigates to options chain for new position. Confirmation modal shows "Confirm Close" with CLOSE labels.
 7. **Strategist Greeks Integration**: `LegPayload` includes gamma/theta/vega alongside delta. System prompt has delta-based strike selection rules (30Δ credit spreads, 16Δ iron condors, 45-50Δ debit spreads, 50Δ calendars). Strategist card shows all Greeks per leg.
 
+### Scanner V2 — Discovery Mode (BETA)
+
+New scoring engine in `deterministicScanner.v2.ts` implementing the Discovery Mode spec. Runs alongside the original Momentum preset (v1 preserved in `deterministicScanner.ts`).
+
+**5 scoring categories (100 pts total, threshold: 55):**
+- **Setup Quality** (20 pts): 1A=proximity to SMA20 (7pt), 1B=ATR5/ATR20 compression ratio (7pt), 1C=Pulse bias vs price position (6pt)
+- **Accumulation Pattern** (15 pts): 2A=vol5d/vol20d ratio 1.2-2.0x (6pt), 2B=VR + price range flat (5pt), 2C=OBV 10d slope normalized vs price (4pt)
+- **IV Setup** (25 pts): 3A=IVR level (7pt), 3B=IVR 5-day change — tracked via rolling cache (10pt), 3C=IV30d/HV20d ratio — earnings capped (8pt)
+- **Flow Divergence** (25 pts): 4A=notional-weighted vol/OI (8pt), 4B=abs(call-put)/total skew (5pt), 4C=block trade count (5pt), 4D=flow direction vs price direction (7pt)
+- **Emerging RS** (15 pts): 5A=RS ratio 5d vs 20d slope (8pt), 5B=ticker 5d vs sector ETF 5d (7pt)
+
+**Key features:**
+- Polygon options snapshot used for flow data (IV30d, vol/OI, call/put split, block trades)
+- OBV computed from daily candles via linear regression slope
+- HV20d from stdev of log returns × √252
+- IVR estimated from rolling IV30d percentile cache (improves accuracy over time)
+- IVR 5-day change tracked via module-level timestamp cache
+- 11 GICS sector ETFs subscribed for RS comparison (XLK, XLF, XLE, XLV, XLI, XLC, XLY, XLP, XLU, XLRE, XLB)
+- Directional lean (BULLISH/BEARISH/MIXED) shown per candidate card
+- Flow N/A renormalization: `(SQ+ACC+IV+RS)/75*100` when Polygon data unavailable
+- Earnings within 14d: caps 3B (max 4) and 3C (max 3)
+- IPO < 60 trading days and price < $10 excluded
+- Micro-override still fires at score >= 90
+
+**Migration:**
+- `/api/ai/deterministic-scan` accepts `scanMode: "DISCOVERY" | "MOMENTUM"` (default: "DISCOVERY")
+- MarketScanner UI shows DISCOVERY BETA / MOMENTUM toggle above scan button
+- Score bars dynamically switch to show correct V2 categories (SETUP/ACCUM/IV SET/FLOW/RS)
+- Directional lean badge (green BULLISH / red BEARISH / gold MIXED) shown next to score
+- "Flow data unavailable" notice when Polygon data missing (score renormalized)
+- Results header shows "DISCOVERY BETA" or "MOMENTUM" badge
+
 ### Dynamic Scanner Universe System
 Three-layer universe system for the Market Scanner replacing hardcoded stock lists:
 - **Presets**: Hardcoded S&P 100, S&P 500, Nasdaq 100 symbol lists served from `scanner.ts` (no JSON files to avoid bundler issues). Keys: `preset:sp100`, `preset:sp500`, `preset:ndx100`.

@@ -53,6 +53,16 @@ export interface DetCandidate {
   pulseConfidence: number;
   pulseBias: string;
   scanTimestamp?: number;
+  directionalLean?: "BULLISH" | "BEARISH" | "MIXED";
+  scanMode?: "DISCOVERY" | "MOMENTUM";
+  flowDataAvailable?: boolean;
+  discoveryComponents?: {
+    setupQuality: number;
+    accumulation: number;
+    ivSetup: number;
+    flowDivergence: number;
+    emergingRS: number;
+  };
 }
 
 interface DetScanResult {
@@ -64,15 +74,30 @@ interface DetScanResult {
   };
   scanTimestamp: number;
   pulseBias: string;
+  scanMode?: "DISCOVERY" | "MOMENTUM";
 }
 
-const SCORE_BARS: { key: keyof DetComponentScores; label: string; max: number; color: string }[] = [
+const MOMENTUM_BARS: { key: keyof DetComponentScores; label: string; max: number; color: string }[] = [
   { key: "trendAlignment", label: "TREND", max: 25, color: "#26a69a" },
   { key: "relativeStrength", label: "RS", max: 20, color: "#42a5f5" },
   { key: "volumeConfirmation", label: "VOL", max: 20, color: "#ab47bc" },
   { key: "ivrScore", label: "IVR", max: 20, color: "#ffb800" },
   { key: "optionsLiquidity", label: "OPT LIQ", max: 15, color: "#ef5350" },
 ];
+
+const DISCOVERY_BARS: { key: keyof NonNullable<DetCandidate["discoveryComponents"]>; label: string; max: number; color: string }[] = [
+  { key: "setupQuality", label: "SETUP", max: 20, color: "#26a69a" },
+  { key: "accumulation", label: "ACCUM", max: 15, color: "#ab47bc" },
+  { key: "ivSetup", label: "IV SET", max: 25, color: "#ffb800" },
+  { key: "flowDivergence", label: "FLOW", max: 25, color: "#42a5f5" },
+  { key: "emergingRS", label: "RS", max: 15, color: "#ef5350" },
+];
+
+const LEAN_COLORS: Record<string, string> = {
+  BULLISH: "#2ecc71",
+  BEARISH: "#ff4b5c",
+  MIXED: "#FFB800",
+};
 
 const DeterministicCard = memo(function DeterministicCard({
   candidate, rank, onSelect, onSendToStrategist,
@@ -85,6 +110,22 @@ const DeterministicCard = memo(function DeterministicCard({
   const livePrice = data?.last ?? candidate.price;
   const liveChangePct = data?.changePct ?? candidate.changePct;
   const isUp = liveChangePct >= 0;
+  const isDiscovery = candidate.scanMode === "DISCOVERY";
+  const lean = candidate.directionalLean;
+
+  const scoreBars = isDiscovery && candidate.discoveryComponents
+    ? DISCOVERY_BARS.map(bar => ({
+        label: bar.label,
+        max: bar.max,
+        color: bar.color,
+        val: candidate.discoveryComponents![bar.key as keyof NonNullable<DetCandidate["discoveryComponents"]>] ?? 0,
+      }))
+    : MOMENTUM_BARS.map(bar => ({
+        label: bar.label,
+        max: bar.max,
+        color: bar.color,
+        val: candidate.components[bar.key as keyof DetComponentScores] ?? 0,
+      }));
 
   return (
     <div className="bg-card border border-card-border rounded-lg overflow-hidden hover:border-zinc-600 transition-colors">
@@ -96,7 +137,13 @@ const DeterministicCard = memo(function DeterministicCard({
           {candidate.symbol}
         </button>
         <span className="text-[11px] text-zinc-500 font-medium">{candidate.sector}</span>
-        <div className="ml-auto flex items-center gap-3">
+        <div className="ml-auto flex items-center gap-2">
+          {lean && (
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full tabular-nums"
+              style={{ color: LEAN_COLORS[lean], background: `${LEAN_COLORS[lean]}18`, border: `1px solid ${LEAN_COLORS[lean]}40` }}>
+              {lean}
+            </span>
+          )}
           {candidate.microOverrideEligible && (
             <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full"
               style={{ color: "#FFB800", background: "rgba(255,184,0,0.12)", border: "1px solid rgba(255,184,0,0.3)" }}>
@@ -114,20 +161,25 @@ const DeterministicCard = memo(function DeterministicCard({
         <div>
           <div className="text-[11px] text-zinc-500 uppercase mb-1.5">Score Breakdown</div>
           <div className="space-y-1.5">
-            {SCORE_BARS.map(bar => {
-              const val = candidate.components[bar.key];
-              const pct = Math.round((val / bar.max) * 100);
+            {scoreBars.map(bar => {
+              const pct = Math.round((bar.val / bar.max) * 100);
               return (
-                <div key={bar.key} className="flex items-center gap-2">
+                <div key={bar.label} className="flex items-center gap-2">
                   <span className="text-[10px] font-bold text-zinc-500 w-[52px] text-right shrink-0">{bar.label}</span>
                   <div className="flex-1 h-[6px] rounded-full overflow-hidden" style={{ background: "#1a1a1a" }}>
                     <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: bar.color }} />
                   </div>
-                  <span className="text-[10px] font-mono tabular-nums text-zinc-400 w-8 text-right">{Math.round(val)}/{bar.max}</span>
+                  <span className="text-[10px] font-mono tabular-nums text-zinc-400 w-8 text-right">{Math.round(bar.val)}/{bar.max}</span>
                 </div>
               );
             })}
           </div>
+          {isDiscovery && candidate.flowDataAvailable === false && (
+            <div className="mt-2 flex items-center gap-1 text-[10px]" style={{ color: "#6B7280" }}>
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-zinc-600" />
+              Flow data unavailable — score renormalized
+            </div>
+          )}
         </div>
 
         <div className="space-y-2">
@@ -466,6 +518,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
   const universeData = useScannerUniverses();
 
   const [mode, setMode] = useState<"manual" | "deterministic">("deterministic");
+  const [scanMode, setScanMode] = useState<"DISCOVERY" | "MOMENTUM">("DISCOVERY");
   const [universe, setUniverse] = useState("preset:sp100");
   const [isScanning, setIsScanning] = useState(false);
   const [rawError, setRawError] = useState<string | null>(null);
@@ -566,7 +619,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
       const res = await fetchWithAuth(`${API_BASE}/ai/deterministic-scan`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ symbols: syms, accessToken: accessToken || "" }),
+        body: JSON.stringify({ symbols: syms, accessToken: accessToken || "", scanMode }),
       });
 
       const data = await res.json() as DetScanResult & { error?: string; message?: string };
@@ -681,13 +734,34 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
 
           </div>
 
+          {mode === "deterministic" && (
+            <div className="flex items-center gap-2 mt-1">
+              <button
+                onClick={() => setScanMode("DISCOVERY")}
+                className={`text-[11px] font-bold px-3 py-1.5 rounded transition-all ${scanMode === "DISCOVERY" ? "text-white" : "text-zinc-500 hover:text-zinc-300"}`}
+                style={scanMode === "DISCOVERY" ? { background: "#18181b", border: "1px solid #FFB800", color: "#FFB800" } : { background: "transparent", border: "1px solid #2a2a2a" }}
+              >
+                DISCOVERY
+                <span className="ml-1.5 text-[9px] px-1 py-0.5 rounded font-bold" style={{ background: "rgba(255,184,0,0.15)", color: "#FFB800", border: "1px solid rgba(255,184,0,0.3)" }}>BETA</span>
+              </button>
+              <button
+                onClick={() => setScanMode("MOMENTUM")}
+                className={`text-[11px] font-bold px-3 py-1.5 rounded transition-all ${scanMode === "MOMENTUM" ? "text-white" : "text-zinc-500 hover:text-zinc-300"}`}
+                style={scanMode === "MOMENTUM" ? { background: "#18181b", border: "1px solid #6B7280", color: "#b8bcc8" } : { background: "transparent", border: "1px solid #2a2a2a" }}
+              >
+                MOMENTUM
+              </button>
+            </div>
+          )}
+
           <div className="text-xs text-muted-foreground">
             {universeData.loading ? (
               <span className="text-zinc-500">Loading universes...</span>
             ) : (
               <>
                 Scanning <span className="text-primary font-bold">{currentSymCount} tickers</span>
-                {mode === "deterministic" && <> — Hard scoring: Trend + RS + Volume + IVR + Options Liquidity (top 5, min 60)</>}
+                {mode === "deterministic" && scanMode === "DISCOVERY" && <> — Setup Quality + Accumulation + IV Setup + Flow + Emerging RS (top 5, min 55)</>}
+                {mode === "deterministic" && scanMode === "MOMENTUM" && <> — Trend + RS + Volume + IVR + Options Liquidity (top 5, min 60)</>}
               </>
             )}
           </div>
@@ -772,7 +846,11 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
               SCANNING {scanCount ?? currentSymCount} TICKERS...
             </p>
             <p className="text-[11px] text-muted-foreground">
-              {mode === "deterministic" ? "Filtering universe → Scoring → Ranking → Enriching" : "Fetching market data..."}
+              {mode === "deterministic"
+                ? scanMode === "DISCOVERY"
+                  ? "Filtering → OBV + HV + IV + Polygon flow → Discovery scoring → Ranking"
+                  : "Filtering universe → Scoring → Ranking → Enriching"
+                : "Fetching market data..."}
             </p>
           </div>
         </div>
@@ -827,9 +905,20 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
                 <span style={{ color: "#FFB800" }}>{detResult.filterSummary.scoredAboveThreshold} above threshold</span>
               </span>
             </div>
-            <span className="text-[10px] text-zinc-600 tabular-nums">
-              {new Date(detResult.scanTimestamp).toLocaleTimeString()}
-            </span>
+            <div className="flex items-center gap-2">
+              {detResult.scanMode === "DISCOVERY" || !detResult.scanMode ? (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded" style={{ color: "#FFB800", background: "rgba(255,184,0,0.1)", border: "1px solid rgba(255,184,0,0.3)" }}>
+                  DISCOVERY BETA
+                </span>
+              ) : (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded" style={{ color: "#6B7280", background: "#18181b", border: "1px solid #2a2a2a" }}>
+                  MOMENTUM
+                </span>
+              )}
+              <span className="text-[10px] text-zinc-600 tabular-nums">
+                {new Date(detResult.scanTimestamp).toLocaleTimeString()}
+              </span>
+            </div>
           </div>
 
           {detResult.candidates.length > 0 ? (
