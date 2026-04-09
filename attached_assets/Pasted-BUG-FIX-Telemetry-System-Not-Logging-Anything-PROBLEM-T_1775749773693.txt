@@ -1,0 +1,91 @@
+BUG FIX: Telemetry System Not Logging Anything
+
+PROBLEM: The Telemetry panel exists in the sidebar with filters for All Systems, SCHWAB_API, SCHWAB_STREAM, IBKR, YAHOO, SEC_EDGAR, SCANNER, STRATEGIST, RISK_GATE, EXIT_STAGING, PUSH_NOTIFICATION, and MARKET_PULSE. However, when opened it just shows “Loading” indefinitely regardless of which filter is selected, including All Systems. Nothing is being logged or displayed. The entire telemetry system is non-functional.
+
+This is a development and debugging tool. It needs to work so we can audit what the app is actually doing under the hood. Fix whatever is broken (event emission, storage, retrieval, or display) and ensure every system below is logging the events described.
+
+WHAT EACH SYSTEM SHOULD LOG:
+
+SCANNER:
+
+- Scan initiated: timestamp, universe selected (e.g. S&P 500), total tickers in universe
+- Scan progress: tickers scanned so far / total (optional but useful)
+- Scan complete: timestamp, duration, total scanned, total passed filters, total above threshold
+- Every ticker scanned: ticker symbol, raw score, individual category scores (Trend, RS, Volume, IVR, Opt Liquidity), pass/fail status, micro-override triggered yes/no
+- Tickers skipped: ticker symbol, reason (no data, timeout, delisted, chain unavailable, etc.)
+- This is the most important log. We need to verify the scanner is actually hitting every ticker in the universe and see why specific tickers scored the way they did.
+
+MARKET_PULSE:
+
+- Pulse refresh initiated: timestamp
+- Each indicator fetched: indicator name, cluster, raw value, normalized score, data source, fresh/stale/frozen status
+- Indicators that failed to fetch: indicator name, reason (timeout, API error, unavailable, etc.)
+- Composite calculation: all cluster scores, weights, final composite, confidence score
+- Bias determination: bias output, regime, any flags (TRANSITION, DIVERGENCE, etc.)
+- Pulse refresh complete: timestamp, duration, indicators live vs total
+
+STRATEGIST:
+
+- Analysis initiated: timestamp, ticker, source (scanner or manual), micro-override status
+- Regime gate check: pass/fail, composite score, confidence, bypass reason if applicable
+- Strategy selection: strategy type chosen, parameters (deltas, width, DTE range, size modifier)
+- Strike resolution (once built): expiration selected, strikes selected, pricing, sizing, warnings
+- AI narrative request: prompt sent, response received, duration
+- Analysis complete: timestamp, duration, final output summary
+
+SCHWAB_API:
+
+- Every API call: endpoint, request timestamp, response timestamp, latency, HTTP status, success/failure
+- Auth events: token refresh, token expiration, auth failures
+- Rate limit events: approaching limit, limit hit, backoff duration
+
+SCHWAB_STREAM:
+
+- Connection events: connected, disconnected, reconnecting, reconnected
+- Subscription changes: symbols added/removed, data types subscribed
+- Data flow: heartbeat received (periodic, not every tick), errors, stale data detection
+
+IBKR:
+
+- Gateway connection status: connected, disconnected, reconnecting
+- Data requests: indicator requested, response received, latency
+- Errors: connection failures, data unavailable, timeout
+
+RISK_GATE:
+
+- Every risk check performed: ticker, strategy, check name, pass/fail, details
+- Pre-trade risk summary: all checks, overall pass/fail, warnings
+
+EXIT_STAGING:
+
+- Position monitored: ticker, strategy, current P/L, target/stop levels
+- Alert triggered: ticker, reason (profit target hit, stop loss hit, time-based, etc.)
+
+PUSH_NOTIFICATION:
+
+- Notification sent: timestamp, type, content summary, delivery status
+- Notification failed: reason
+
+GENERAL REQUIREMENTS:
+
+1. Every log entry must have a timestamp (ISO 8601 with timezone).
+1. Every log entry must have a system tag (SCANNER, MARKET_PULSE, etc.) so filtering works.
+1. Every log entry must have a severity level: INFO for normal operations, WARN for degraded behavior, ERROR for failures.
+1. Logs should be stored in memory or a lightweight local store. They do not need to persist across app restarts. This is a development tool, not a production analytics pipeline.
+1. The Telemetry panel must display logs in reverse chronological order (newest first).
+1. Each system filter must show only logs from that system. All Systems shows everything.
+1. The “Show resolved” checkbox should filter for entries that have been manually marked as resolved/acknowledged (useful for tracking known issues).
+1. Logs should be human-readable. Do not dump raw JSON blobs. Format them as structured rows: timestamp, system, severity, short summary, expandable details.
+1. Add a “Clear logs” button to flush the in-memory store.
+1. Add a count badge on each system filter showing how many unread/new entries exist since last viewed.
+
+PERFORMANCE: Do not let logging slow down the app. Log entries should be fire-and-forget (async, non-blocking). If the log store exceeds 1000 entries, drop the oldest entries first. The telemetry panel is for development auditing, not long-term storage.
+
+PRIORITY: Get SCANNER and MARKET_PULSE logging working first. These are the two systems we need to audit most urgently. The other systems can follow but Scanner and Pulse are the priority.
+
+SUCCESS CRITERIA:
+
+1. Open Telemetry panel, select SCANNER filter, run a scan. See real-time log entries showing every ticker scanned with scores.
+1. Open Telemetry panel, select MARKET_PULSE filter, refresh pulse. See every indicator fetched with values and cluster scores.
+1. Select All Systems, see interleaved logs from all active systems in chronological order.
+1. No more “Loading” state. If there are no logs yet, show “No events logged” instead of an infinite loading spinner.

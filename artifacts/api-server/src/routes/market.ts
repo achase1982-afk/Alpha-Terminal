@@ -8,6 +8,7 @@ import { getAccessToken, getBestAccessToken } from "../lib/tokenStore.js";
 import { getQuoteBySymbol } from "../lib/schwabStreamer.js";
 import { getIBCachedQuote, subscribeQuoteForSymbol, isIBConnected, getIBCompanyName } from "../lib/ibStreamer.js";
 import { logFailure } from "../lib/telemetry.js";
+import { emitTelemetry } from "../lib/telemetryStore.js";
 import { computeIVR, type OptionContract } from "../lib/optionsStrategist.js";
 
 const router: IRouter = Router();

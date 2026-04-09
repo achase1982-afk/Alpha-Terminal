@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { logFailure } from "../lib/telemetry.js";
+import { emitTelemetry } from "../lib/telemetryStore.js";
 import Anthropic from "@anthropic-ai/sdk";
 import { streamText } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
@@ -1602,11 +1603,54 @@ router.post("/market-pulse/stream", async (req, res) => {
   }
 
   const indicators = extractMarketIndicators(dataMap);
+
+  emitTelemetry("MARKET_PULSE", "INFO", "Pulse refresh initiated — extracting indicators", {
+    dataSymbols: dataMap.size,
+    session,
+    timeET,
+  });
+
+  const indNames = ["vix", "vix9d", "vix3m", "vix1d", "tick", "trin", "add", "advn", "decn", "dvol", "uvol",
+    "tickiQ", "trinQ", "addQ", "advnQ", "decnQ", "dvolQ", "uvolQ",
+    "spy", "qqq", "iwm", "dia", "tlt", "hyg", "lqd",
+    "tnx", "tyx", "irx", "dxy", "gc", "cl", "hg",
+    "es", "nq", "ym", "rty", "vvix", "rvx", "vxn", "ovx", "gvz",
+    "pcEquity", "pcIndex"] as const;
+  for (const name of indNames) {
+    const val = (indicators as any)[name];
+    if (val !== undefined && val !== null) {
+      emitTelemetry("MARKET_PULSE", "INFO", `Indicator ${name.toUpperCase()} = ${typeof val === "number" ? val.toFixed(4) : val}`, {
+        indicator: name,
+        value: val,
+        source: "cache",
+        status: "live",
+      });
+    }
+  }
+
   req.log.info({
     breadthData: { tick: indicators.tick, trin: indicators.trin, add: indicators.add, advn: indicators.advn, decn: indicators.decn },
     volTermData: { vix: indicators.vix, vix9d: indicators.vix9d, vix3m: indicators.vix3m },
   }, "Market pulse engine input (breadth + volTerm)");
   const engineResult = runMarketPulseEngine(indicators, previousBias, sessionToEngineType(session));
+
+  const clusterNames = Object.keys(engineResult.clusters) as Array<keyof typeof engineResult.clusters>;
+  for (const cn of clusterNames) {
+    const cl = engineResult.clusters[cn];
+    emitTelemetry("MARKET_PULSE", "INFO", `Cluster ${cn}: score ${cl.score.toFixed(2)}, weight ${cl.weight.toFixed(2)}, rules [${cl.rulesApplied.join(", ")}]`, {
+      cluster: cn,
+      score: cl.score,
+      weight: cl.weight,
+      rulesApplied: cl.rulesApplied,
+    });
+  }
+
+  emitTelemetry("MARKET_PULSE", "INFO", `Pulse scored: ${engineResult.bias} — composite ${engineResult.compositeScore >= 0 ? "+" : ""}${engineResult.compositeScore.toFixed(2)}, confidence ${engineResult.confidenceScore}%`, {
+    bias: engineResult.bias,
+    composite: engineResult.compositeScore,
+    confidence: engineResult.confidenceScore,
+  });
+
   req.log.info({
     breadthScore: engineResult.clusters.breadth.score,
     breadthRules: engineResult.clusters.breadth.rulesApplied,
@@ -1618,6 +1662,11 @@ router.post("/market-pulse/stream", async (req, res) => {
   }, "Market pulse engine output (breadth + volTerm scores)");
 
   if (engineResult.confidenceScore < 20) {
+    emitTelemetry("MARKET_PULSE", "WARN", `Low pulse confidence: ${engineResult.confidenceScore}% — data may be insufficient`, {
+      confidence: engineResult.confidenceScore,
+      bias: engineResult.bias,
+      composite: engineResult.compositeScore,
+    });
     void logFailure("MARKET_PULSE", "WARN", `Low pulse confidence: ${engineResult.confidenceScore}% — data may be insufficient`, {
       confidence: engineResult.confidenceScore,
       bias: engineResult.bias,
@@ -2866,7 +2915,30 @@ router.post("/deterministic-strategist", async (req, res) => {
     eventCheck,
   };
 
+  emitTelemetry("STRATEGIST", "INFO", `Analysis initiated for ${symbol} (source: ${scannerData ? "scanner" : "manual"})`, {
+    ticker: symbol,
+    source: scannerData ? "scanner" : "manual",
+    pulseComposite: pulse.composite,
+    pulseConfidence: pulse.confidence,
+    pulseBias: pulse.bias,
+    shockActive: shockResult.shockActive,
+  });
+
   const result: StrategistOutput = runDeterministicStrategist(strategistInput);
+
+  emitTelemetry("STRATEGIST", result.criteria ? "INFO" : "WARN",
+    result.criteria
+      ? `${symbol}: ${result.mode} → ${result.criteria.strategyType} (delta ${result.criteria.idealDelta}, DTE ${result.criteria.idealDTE})`
+      : `${symbol}: rejected — ${result.rejection ?? "no qualifying mode"}`,
+    {
+      ticker: symbol,
+      mode: result.mode,
+      rejection: result.rejection,
+      strategyType: result.criteria?.strategyType,
+      idealDelta: result.criteria?.idealDelta,
+      idealDTE: result.criteria?.idealDTE,
+    },
+  );
 
   req.log.info({
     symbol,

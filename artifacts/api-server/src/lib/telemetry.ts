@@ -3,6 +3,7 @@ import { failureLogTable } from "@workspace/db/schema";
 import { lt } from "drizzle-orm";
 import { logger } from "./logger.js";
 import { sendPushToAll } from "./pushService.js";
+import { emitTelemetry, type TelemetrySystem as StoreSystem, type TelemetrySeverity as StoreSeverity } from "./telemetryStore.js";
 
 export type TelemetrySystem =
   | "SCHWAB_API"
@@ -27,6 +28,9 @@ export async function logFailure(
 ): Promise<void> {
   const pinoLevel = severity === "CRITICAL" ? "error" : severity.toLowerCase() as "info" | "warn" | "error";
   logger[pinoLevel]({ system, severity, ...details }, `[TELEMETRY] ${message}`);
+
+  const storeSev: StoreSeverity = severity === "CRITICAL" ? "ERROR" : severity as StoreSeverity;
+  emitTelemetry(system as StoreSystem, storeSev, severity === "CRITICAL" ? `[CRITICAL] ${message}` : message, details);
 
   try {
     await db.insert(failureLogTable).values({

@@ -1,5 +1,6 @@
 import { checkEventConflicts, getUpcomingEvents } from "./calendarEventChecker.js";
 import { logFailure } from "./telemetry.js";
+import { emitTelemetry } from "./telemetryStore.js";
 
 const SCHWAB_API = "https://api.schwabapi.com/marketdata/v1";
 const SCHWAB_TRADER = "https://api.schwabapi.com/trader/v1";
@@ -430,6 +431,13 @@ export async function runDeterministicScan(
   const scanStart = Date.now();
   const sessionElapsed = getSessionElapsedFraction();
 
+  emitTelemetry("SCANNER", "INFO", `Scan initiated — ${symbols.length} tickers in universe`, {
+    totalTickers: symbols.length,
+    pulseBias: pulse.bias,
+    pulseComposite: pulse.composite,
+    pulseConfidence: pulse.confidence,
+  });
+
   const quoteMap = await fetchQuotesBatch(symbols, accessToken);
 
   const portfolioSymbols = traderToken
@@ -444,6 +452,7 @@ export async function runDeterministicScan(
 
     if (!quote) {
       filterResults.push({ symbol: sym, passed: false, reason: "No quote data available" });
+      emitTelemetry("SCANNER", "INFO", `${sym} skipped — no quote data`, { ticker: sym, reason: "No quote data" });
       continue;
     }
 
@@ -451,11 +460,13 @@ export async function runDeterministicScan(
     const hasNearEarnings = evCheck.eventConflicts.some(c => c.eventType === "earnings");
     if (hasNearEarnings) {
       filterResults.push({ symbol: sym, passed: false, reason: "Earnings within 5 trading days" });
+      emitTelemetry("SCANNER", "INFO", `${sym} skipped — earnings within 5 days`, { ticker: sym, reason: "Earnings proximity" });
       continue;
     }
 
     if (portfolioSymbols.has(sym.toUpperCase())) {
       filterResults.push({ symbol: sym, passed: false, reason: "Open position in portfolio" });
+      emitTelemetry("SCANNER", "INFO", `${sym} skipped — open position in portfolio`, { ticker: sym, reason: "Already held" });
       continue;
     }
 
@@ -463,6 +474,11 @@ export async function runDeterministicScan(
     passedSymbols.push(sym);
   }
 
+  emitTelemetry("SCANNER", "INFO", `Stage 1 complete — ${passedSymbols.length}/${symbols.length} passed universe filter`, {
+    totalScanned: symbols.length,
+    passed: passedSymbols.length,
+    filtered: symbols.length - passedSymbols.length,
+  });
   log.info({ total: symbols.length, passed: passedSymbols.length, filtered: symbols.length - passedSymbols.length }, "Scanner Stage 1: Universe filter complete");
 
   let spyCandles: Candle[] = [];
@@ -534,6 +550,17 @@ export async function runDeterministicScan(
 
         const totalScore = Math.round(trendAlignment + relativeStrength + volumeConfirmation + ivrScore + optionsLiquidity);
 
+        emitTelemetry("SCANNER", "INFO", `${sym} scored ${totalScore} — Trend ${trendAlignment} RS ${relativeStrength} Vol ${volumeConfirmation} IVR ${ivrScore} OptLiq ${optionsLiquidity}`, {
+          ticker: sym,
+          totalScore,
+          trend: trendAlignment,
+          relativeStrength,
+          volume: volumeConfirmation,
+          ivr: ivrScore,
+          optionsLiquidity,
+          pass: totalScore >= 60,
+        });
+
         return {
           symbol: sym,
           totalScore,
@@ -554,6 +581,7 @@ export async function runDeterministicScan(
     }
   }
 
+  emitTelemetry("SCANNER", "INFO", `Stage 2 complete — ${scoredResults.length} tickers scored`, { scored: scoredResults.length });
   log.info({ scored: scoredResults.length }, "Scanner Stage 2: Technical scoring complete");
 
   scoredResults.sort((a, b) => b.totalScore - a.totalScore);
@@ -629,9 +657,19 @@ export async function runDeterministicScan(
     };
   });
 
-  log.info({ candidates: candidates.length, scanMs: Date.now() - scanStart }, "Scanner Stage 4: Enrichment complete");
+  const scanDuration = Date.now() - scanStart;
+  emitTelemetry("SCANNER", "INFO", `Scan complete — ${candidates.length} candidates from ${symbols.length} symbols in ${(scanDuration / 1000).toFixed(1)}s`, {
+    candidates: candidates.length,
+    totalScanned: symbols.length,
+    passedFilters: scoredResults.length,
+    aboveThreshold: aboveThreshold.length,
+    durationMs: scanDuration,
+    topSymbols: candidates.map(c => `${c.symbol} (${c.totalScore})`).join(", "),
+  });
+  log.info({ candidates: candidates.length, scanMs: scanDuration }, "Scanner Stage 4: Enrichment complete");
 
   if (candidates.length === 0 && symbols.length > 0) {
+    emitTelemetry("SCANNER", "WARN", `Scanner returned 0 candidates from ${symbols.length} symbols`, { totalScanned: symbols.length, passedFilters: scoredResults.length, aboveThreshold: aboveThreshold.length });
     void logFailure("SCANNER", "INFO", `Scanner returned 0 candidates from ${symbols.length} symbols`, { totalScanned: symbols.length, passedFilters: scoredResults.length, aboveThreshold: aboveThreshold.length });
   }
 

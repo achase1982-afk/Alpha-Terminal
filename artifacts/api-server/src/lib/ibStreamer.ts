@@ -1,6 +1,7 @@
 import { IBApi, EventName, Contract, SecType } from "@stoqey/ib";
 import { logger } from "./logger.js";
 import { logFailure } from "./telemetry.js";
+import { emitTelemetry } from "./telemetryStore.js";
 import type { LiveQuote } from "./schwabStreamer.js";
 import { getEnabledSymbols, type IBSymbolDef } from "./ibBreadthSymbols.js";
 
@@ -539,6 +540,7 @@ export async function connectIB(): Promise<void> {
       connState = "CONNECTED";
       reconnectDelay = RECONNECT_INTERVAL_MS;
       logger.info({ host: IB_HOST, port: IB_PORT, clientId: activeClientId, attempt: reconnectAttempt }, "IB: connected to gateway");
+      emitTelemetry("IBKR", "INFO", "IBKR Gateway connected", { host: IB_HOST, port: IB_PORT, clientId: activeClientId });
       reconnectAttempt = 0;
       activeClientId = IB_CLIENT_ID; // reset to base slot on clean connect
       emitStatus("connected");

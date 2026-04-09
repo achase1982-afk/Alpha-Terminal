@@ -5,6 +5,7 @@ import { getValidAccessToken, forceRefresh } from "./tokenStore.js";
 import { sendPushToAll } from "./pushService.js";
 import { handleFillForExitStaging } from "./exitStaging.js";
 import { logFailure } from "./telemetry.js";
+import { emitTelemetry } from "./telemetryStore.js";
 
 export interface LiveQuote {
   symbol:       string;
@@ -751,6 +752,7 @@ async function connectSchwabStreamer() {
 
   schwabWs.on("open", () => {
     logger.info("Schwab streamer: WebSocket connected");
+    emitTelemetry("SCHWAB_STREAM", "INFO", "Schwab WebSocket connected", { url: streamerInfo.streamerSocketUrl });
     sendLogin();
   });
 
