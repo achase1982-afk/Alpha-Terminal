@@ -11,6 +11,7 @@ import {
   Search,
   XCircle,
   AlertTriangle,
+  Settings,
   X,
   Check,
 } from "lucide-react";
