@@ -828,6 +828,284 @@ export async function runFullSnapshot(
   }
 }
 
+export async function backfillEquityHistory(
+  symbols: string[],
+  token: string,
+): Promise<{ totalRows: number; symbolsDone: number; tradingDays: number }> {
+  const allSymbols = [...new Set([...symbols, ...SECTOR_ETF_SYMBOLS])];
+  logger.info({ count: allSymbols.length }, "Backfill: starting equity history backfill");
+  void logFailure("DATABASE", "INFO", `Backfill started — ${allSymbols.length} symbols`, { symbols: allSymbols.length });
+
+  const spyCandles = await fetchPriceHistory("SPY", token);
+  const spyCloses = spyCandles.map(c => c.close);
+
+  const sectorHistories = new Map<string, Candle[]>();
+  for (const etf of SECTOR_ETF_SYMBOLS) {
+    const c = await fetchPriceHistory(etf, token);
+    if (c.length > 0) sectorHistories.set(etf, c);
+    await sleep(200);
+  }
+
+  let totalRows = 0;
+  let symbolsDone = 0;
+  let tradingDays = 0;
+
+  for (const sym of allSymbols) {
+    try {
+      const candles = await fetchPriceHistory(sym, token);
+      if (candles.length < 5) {
+        logger.warn({ sym, candleCount: candles.length }, "Backfill: insufficient candles, skipping");
+        continue;
+      }
+
+      const sectorEtf = SECTOR_MAP[sym.toUpperCase()] ?? "SPY";
+      const sectorCandles = sectorHistories.get(sectorEtf) ?? sectorHistories.get("SPY") ?? spyCandles;
+      const sectorCloses = sectorCandles.map(c => c.close);
+
+      const rows: Array<typeof equityDailyTable.$inferInsert> = [];
+
+      for (let dayIdx = 0; dayIdx < candles.length; dayIdx++) {
+        const c = candles[dayIdx];
+        const dateStr = new Date(c.datetime).toISOString().slice(0, 10);
+        const closesUpTo = candles.slice(0, dayIdx + 1).map(x => x.close);
+        const candlesUpTo = candles.slice(0, dayIdx + 1);
+        const volumesUpTo = candles.slice(0, dayIdx + 1).map(x => x.volume);
+
+        const sma20 = computeSMA(closesUpTo, 20);
+        const atr5 = computeATR(candlesUpTo, 5);
+        const atr20 = computeATR(candlesUpTo, 20);
+        const hv20d = computeHV20(closesUpTo);
+        const obv = computeOBV(candlesUpTo);
+
+        const vol5 = volumesUpTo.length >= 5 ? medianOf(volumesUpTo.slice(-5)) : null;
+        const vol20 = volumesUpTo.length >= 20 ? medianOf(volumesUpTo.slice(-20)) : null;
+
+        let rsRatio: number | null = null;
+        if (spyCloses.length > 20 && closesUpTo.length > 20) {
+          const stockPct = (closesUpTo[closesUpTo.length - 1] - closesUpTo[closesUpTo.length - 21]) / closesUpTo[closesUpTo.length - 21];
+          const spyEndIdx = Math.min(dayIdx, spyCloses.length - 1);
+          const spyStartIdx = Math.max(0, spyEndIdx - 20);
+          if (spyCloses[spyStartIdx] > 0) {
+            const spyPct = (spyCloses[spyEndIdx] - spyCloses[spyStartIdx]) / spyCloses[spyStartIdx];
+            rsRatio = spyPct !== 0 ? stockPct / spyPct : null;
+          }
+        }
+
+        const pct5d = closesUpTo.length > 5 ? ((closesUpTo[closesUpTo.length - 1] - closesUpTo[closesUpTo.length - 6]) / closesUpTo[closesUpTo.length - 6]) * 100 : null;
+        const pct10d = closesUpTo.length > 10 ? ((closesUpTo[closesUpTo.length - 1] - closesUpTo[closesUpTo.length - 11]) / closesUpTo[closesUpTo.length - 11]) * 100 : null;
+
+        rows.push({
+          symbol: sym.toUpperCase(),
+          date: dateStr,
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close,
+          adjustedClose: c.close,
+          volume: c.volume,
+          marketCap: null,
+          haltStatus: false,
+          ivr: null,
+          iv30d: null,
+          hv20d: hv20d ?? null,
+          putCallRatio: null,
+          sma20,
+          atr5,
+          atr20,
+          medianVolume5d: vol5 ? Math.round(vol5) : null,
+          medianVolume20d: vol20 ? Math.round(vol20) : null,
+          obv,
+          rsRatio,
+          priceChangePct5d: pct5d,
+          priceChangePct10d: pct10d,
+        });
+      }
+
+      if (rows.length > 0) {
+        tradingDays = Math.max(tradingDays, rows.length);
+        const batchSize = 50;
+        for (let b = 0; b < rows.length; b += batchSize) {
+          await db.insert(equityDailyTable)
+            .values(rows.slice(b, b + batchSize))
+            .onConflictDoUpdate({
+              target: [equityDailyTable.symbol, equityDailyTable.date],
+              set: {
+                open: sql`excluded.open`,
+                high: sql`excluded.high`,
+                low: sql`excluded.low`,
+                close: sql`excluded.close`,
+                volume: sql`excluded.volume`,
+                hv20d: sql`excluded.hv_20d`,
+                sma20: sql`excluded.sma_20`,
+                atr5: sql`excluded.atr_5`,
+                atr20: sql`excluded.atr_20`,
+                medianVolume5d: sql`excluded.median_volume_5d`,
+                medianVolume20d: sql`excluded.median_volume_20d`,
+                obv: sql`excluded.obv`,
+                rsRatio: sql`excluded.rs_ratio`,
+                priceChangePct5d: sql`excluded.price_change_pct_5d`,
+                priceChangePct10d: sql`excluded.price_change_pct_10d`,
+              },
+            });
+        }
+        totalRows += rows.length;
+        symbolsDone++;
+      }
+    } catch (e) {
+      logger.warn({ sym, error: (e as Error).message }, "Backfill: symbol failed");
+    }
+    await sleep(300);
+
+    if (symbolsDone % 10 === 0 && symbolsDone > 0) {
+      void logFailure("DATABASE", "INFO", `Backfill progress: ${symbolsDone}/${allSymbols.length} symbols, ${totalRows} rows`, {
+        symbolsDone, totalSymbols: allSymbols.length, totalRows,
+      });
+    }
+  }
+
+  void logFailure("DATABASE", "INFO", `Backfill complete — ${totalRows} rows across ${symbolsDone} symbols, ~${tradingDays} trading days`, {
+    totalRows, symbolsDone, tradingDays,
+  });
+  logger.info({ totalRows, symbolsDone, tradingDays }, "Backfill: equity history complete");
+  return { totalRows, symbolsDone, tradingDays };
+}
+
+export async function backfillPolygonFlow(
+  symbols: string[],
+  daysBack = 60,
+): Promise<{ totalStrikeRows: number; symbolsDone: number; datesProcessed: number }> {
+  const apiKey = process.env["POLYGON_API_KEY"];
+  if (!apiKey) {
+    logger.warn("Backfill: no POLYGON_API_KEY, skipping flow backfill");
+    return { totalStrikeRows: 0, symbolsDone: 0, datesProcessed: 0 };
+  }
+
+  logger.info({ symbols: symbols.length, daysBack }, "Backfill: starting Polygon flow history");
+  void logFailure("POLYGON_API", "INFO", `Flow backfill started — ${symbols.length} symbols, ${daysBack} days`, { symbols: symbols.length, daysBack });
+
+  const now = new Date();
+  const fromDate = new Date(now.getTime() - daysBack * 86_400_000).toISOString().slice(0, 10);
+  const toDate = now.toISOString().slice(0, 10);
+
+  let totalStrikeRows = 0;
+  let symbolsDone = 0;
+  const allDates = new Set<string>();
+
+  for (const sym of symbols) {
+    try {
+      const contractsUrl = `${POLYGON_API}/v3/reference/options/contracts?underlying_ticker=${encodeURIComponent(sym)}&expiration_date.gte=${fromDate}&limit=250&apiKey=${apiKey}`;
+      const contractsResp = await fetchWithRetry(contractsUrl, {});
+      if (!contractsResp.ok) {
+        logger.warn({ sym, status: contractsResp.status }, "Backfill: contracts listing failed");
+        continue;
+      }
+      const contractsJson = await contractsResp.json() as { results?: Array<Record<string, unknown>> };
+      const contracts = contractsJson.results ?? [];
+      if (contracts.length === 0) continue;
+
+      const rowsByDate = new Map<string, Array<typeof optionsFlowPerStrikeTable.$inferInsert>>();
+
+      for (const contract of contracts) {
+        const ticker = contract["ticker"] as string | undefined;
+        const contractType = contract["contract_type"] as string | undefined;
+        const strikePrice = contract["strike_price"] as number | undefined;
+        const expDate = contract["expiration_date"] as string | undefined;
+        if (!ticker || !contractType || !strikePrice || !expDate) continue;
+
+        try {
+          const aggsUrl = `${POLYGON_API}/v2/aggs/ticker/${encodeURIComponent(ticker)}/range/1/day/${fromDate}/${toDate}?adjusted=true&sort=asc&limit=120&apiKey=${apiKey}`;
+          const aggsResp = await fetchWithRetry(aggsUrl, {});
+          if (!aggsResp.ok) continue;
+          const aggsJson = await aggsResp.json() as { results?: Array<Record<string, unknown>> };
+          const bars = aggsJson.results ?? [];
+
+          for (const bar of bars) {
+            const ts = bar["t"] as number;
+            const dateStr = new Date(ts).toISOString().slice(0, 10);
+            allDates.add(dateStr);
+
+            const vol = (bar["v"] ?? 0) as number;
+            const vwap = (bar["vw"] ?? 0) as number;
+            const barClose = (bar["c"] ?? 0) as number;
+
+            if (vol < 1) continue;
+
+            const nowMs = Date.now();
+            const dte = Math.max(0, Math.round((new Date(`${expDate}T20:00:00Z`).getTime() - new Date(`${dateStr}T20:00:00Z`).getTime()) / 86_400_000));
+
+            const row: typeof optionsFlowPerStrikeTable.$inferInsert = {
+              underlyingSymbol: sym.toUpperCase(),
+              date: dateStr,
+              optionType: contractType === "call" ? "call" : "put",
+              strike: strikePrice,
+              expiration: expDate,
+              dte,
+              dailyVolume: Math.round(vol),
+              openInterest: null,
+              bid: null,
+              ask: null,
+              mid: barClose > 0 ? barClose : null,
+              impliedVolatility: null,
+              delta: null,
+              gamma: null,
+              theta: null,
+              vega: null,
+              avgTradePrice: vwap > 0 ? vwap : null,
+            };
+
+            if (!rowsByDate.has(dateStr)) rowsByDate.set(dateStr, []);
+            rowsByDate.get(dateStr)!.push(row);
+          }
+        } catch {
+          continue;
+        }
+        await sleep(150);
+      }
+
+      let symRows = 0;
+      for (const [, rows] of rowsByDate) {
+        if (rows.length === 0) continue;
+        const batchSize = 200;
+        for (let b = 0; b < rows.length; b += batchSize) {
+          await db.insert(optionsFlowPerStrikeTable)
+            .values(rows.slice(b, b + batchSize))
+            .onConflictDoNothing();
+        }
+        symRows += rows.length;
+      }
+
+      totalStrikeRows += symRows;
+      symbolsDone++;
+
+      if (symbolsDone % 5 === 0) {
+        void logFailure("POLYGON_API", "INFO", `Flow backfill progress: ${symbolsDone}/${symbols.length} symbols, ${totalStrikeRows} strike rows`, {
+          symbolsDone, totalSymbols: symbols.length, totalStrikeRows,
+        });
+        logger.info({ symbolsDone, totalSymbols: symbols.length, totalStrikeRows }, "Backfill: Polygon flow progress");
+      }
+    } catch (e) {
+      logger.warn({ sym, error: (e as Error).message }, "Backfill: Polygon flow symbol failed");
+    }
+    await sleep(300);
+  }
+
+  const datesProcessed = allDates.size;
+
+  if (datesProcessed > 0) {
+    logger.info({ symbols: symbols.length, datesProcessed }, "Backfill: computing flow aggregates for historical dates");
+    const sortedDates = [...allDates].sort();
+    for (const d of sortedDates) {
+      await computeFlowAggregates(symbols, d);
+    }
+  }
+
+  void logFailure("DATABASE", "INFO", `Flow backfill complete — ${totalStrikeRows} strike rows across ${symbolsDone} symbols, ${datesProcessed} dates`, {
+    totalStrikeRows, symbolsDone, datesProcessed,
+  });
+  logger.info({ totalStrikeRows, symbolsDone, datesProcessed }, "Backfill: Polygon flow history complete");
+  return { totalStrikeRows, symbolsDone, datesProcessed };
+}
+
 export async function getSnapshotStatus() {
   const latest = await db
     .select()
