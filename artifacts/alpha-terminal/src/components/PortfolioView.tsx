@@ -260,7 +260,7 @@ const COL_WIDTHS_DEFAULT: Record<string, number> = {
 };
 
 function useSymbolColumnWidth() {
-  const calc = () => Math.min(Math.floor(window.innerWidth * 0.25), 130);
+  const calc = () => Math.min(Math.floor(window.innerWidth * 0.33), 160);
   const [w, setW] = useState(calc);
   useEffect(() => { const h = () => setW(calc()); window.addEventListener("resize", h); return () => window.removeEventListener("resize", h); }, []);
   return w;
