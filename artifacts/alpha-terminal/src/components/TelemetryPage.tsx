@@ -134,13 +134,13 @@ export function TelemetryPage() {
   };
 
   return (
-    <div style={{ color: "#ccc", fontSize: 13 }}>
+    <div style={{ color: "#ccc", fontSize: 15 }}>
       {/* System filter tabs */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
         <button
           onClick={() => setFilterSystem(null)}
           style={{
-            padding: "3px 8px", borderRadius: 4, fontSize: 11, fontWeight: 600,
+            padding: "3px 8px", borderRadius: 4, fontSize: 13, fontWeight: 600,
             background: !filterSystem ? "rgba(245,166,35,0.12)" : "transparent",
             border: `1px solid ${!filterSystem ? "#f5a623" : "#333"}`,
             color: !filterSystem ? "#f5a623" : "#666",
@@ -157,7 +157,7 @@ export function TelemetryPage() {
               key={sys}
               onClick={() => setFilterSystem(active ? null : sys)}
               style={{
-                padding: "3px 8px", borderRadius: 4, fontSize: 10, fontWeight: 600,
+                padding: "3px 8px", borderRadius: 4, fontSize: 12, fontWeight: 600,
                 background: active ? "rgba(245,166,35,0.12)" : "transparent",
                 border: `1px solid ${active ? "#f5a623" : "#333"}`,
                 color: active ? "#f5a623" : "#666",
@@ -168,7 +168,7 @@ export function TelemetryPage() {
               {sys.replace(/_/g, " ")}
               {count > 0 && (
                 <span style={{
-                  fontSize: 9, fontWeight: 800, color: "#fff",
+                  fontSize: 11, fontWeight: 800, color: "#fff",
                   background: "#f23645", borderRadius: 6,
                   padding: "0 4px", minWidth: 14, textAlign: "center",
                   lineHeight: "14px",
@@ -192,7 +192,7 @@ export function TelemetryPage() {
                 key={sev}
                 onClick={() => setFilterSeverity(active ? null : sev)}
                 style={{
-                  padding: "2px 8px", borderRadius: 4, fontSize: 10, fontWeight: 700,
+                  padding: "2px 8px", borderRadius: 4, fontSize: 12, fontWeight: 700,
                   background: active ? c.bg : "transparent",
                   border: `1px solid ${active ? c.border : "#333"}`,
                   color: active ? c.text : "#555",
@@ -205,7 +205,7 @@ export function TelemetryPage() {
           })}
         </div>
 
-        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, color: "#666", cursor: "pointer" }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "#666", cursor: "pointer" }}>
           <input
             type="checkbox"
             checked={showResolved}
@@ -215,7 +215,7 @@ export function TelemetryPage() {
           Show resolved
         </label>
 
-        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, color: "#666", cursor: "pointer" }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "#666", cursor: "pointer" }}>
           <input
             type="checkbox"
             checked={autoRefresh}
@@ -229,29 +229,29 @@ export function TelemetryPage() {
           <button
             onClick={() => { fetchEntries(); fetchCounts(); }}
             style={{
-              padding: "3px 8px", borderRadius: 4, fontSize: 10,
+              padding: "3px 8px", borderRadius: 4, fontSize: 12,
               background: "transparent", border: "1px solid #333", color: "#888",
               cursor: "pointer", display: "flex", alignItems: "center", gap: 3,
             }}
           >
-            <RotateCcw style={{ width: 10, height: 10 }} /> Refresh
+            <RotateCcw style={{ width: 12, height: 12 }} /> Refresh
           </button>
 
           <button
             onClick={handleClear}
             style={{
-              padding: "3px 8px", borderRadius: 4, fontSize: 10,
+              padding: "3px 8px", borderRadius: 4, fontSize: 12,
               background: "rgba(242,54,69,0.06)", border: "1px solid #f2364530", color: "#f23645",
               cursor: "pointer", display: "flex", alignItems: "center", gap: 3,
             }}
           >
-            <Trash2 style={{ width: 10, height: 10 }} /> Clear logs
+            <Trash2 style={{ width: 12, height: 12 }} /> Clear logs
           </button>
         </div>
       </div>
 
       {/* Event count summary */}
-      <div style={{ fontSize: 10, color: "#555", marginBottom: 6 }}>
+      <div style={{ fontSize: 12, color: "#555", marginBottom: 6 }}>
         {entries.length} event{entries.length !== 1 ? "s" : ""}
         {filterSystem ? ` in ${filterSystem}` : ""}
         {filterSeverity ? ` (${filterSeverity})` : ""}
@@ -260,11 +260,11 @@ export function TelemetryPage() {
 
       {/* Log entries */}
       {loading ? (
-        <div style={{ textAlign: "center", color: "#555", padding: 40, fontSize: 12 }}>
+        <div style={{ textAlign: "center", color: "#555", padding: 40, fontSize: 14 }}>
           No events logged yet
         </div>
       ) : entries.length === 0 ? (
-        <div style={{ textAlign: "center", color: "#444", padding: 40, fontSize: 12 }}>
+        <div style={{ textAlign: "center", color: "#444", padding: 40, fontSize: 14 }}>
           No events logged {filterSystem || filterSeverity ? "matching filters" : ""}
         </div>
       ) : (
@@ -287,25 +287,25 @@ export function TelemetryPage() {
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   {entry.details ? (
-                    isExpanded ? <ChevronDown style={{ width: 10, height: 10, color: "#555", flexShrink: 0 }} /> : <ChevronRight style={{ width: 10, height: 10, color: "#555", flexShrink: 0 }} />
-                  ) : <span style={{ width: 10, flexShrink: 0 }} />}
+                    isExpanded ? <ChevronDown style={{ width: 12, height: 12, color: "#555", flexShrink: 0 }} /> : <ChevronRight style={{ width: 12, height: 12, color: "#555", flexShrink: 0 }} />
+                  ) : <span style={{ width: 12, flexShrink: 0 }} />}
                   <span style={{
-                    fontSize: 9, fontWeight: 800, letterSpacing: "0.5px",
-                    color: c.text, width: 38,
+                    fontSize: 11, fontWeight: 800, letterSpacing: "0.5px",
+                    color: c.text, width: 42,
                   }}>
                     {entry.severity}
                   </span>
-                  <span style={{ fontSize: 9, color: "#555", fontFamily: "monospace", width: 60, flexShrink: 0 }}>
+                  <span style={{ fontSize: 11, color: "#555", fontFamily: "monospace", width: 66, flexShrink: 0 }}>
                     {formatTime(entry.timestamp)}
                   </span>
                   <span style={{
-                    fontSize: 9, fontWeight: 600, color: "#f5a623",
+                    fontSize: 11, fontWeight: 600, color: "#f5a623",
                     background: "rgba(245,166,35,0.06)", padding: "0px 5px", borderRadius: 3,
                     flexShrink: 0,
                   }}>
                     {entry.system}
                   </span>
-                  <span style={{ fontSize: 11, color: "#ccc", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <span style={{ fontSize: 13, color: "#ccc", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {entry.message}
                   </span>
                   {!entry.resolved && entry.severity !== "INFO" && (
@@ -313,28 +313,28 @@ export function TelemetryPage() {
                       onClick={e => { e.stopPropagation(); handleResolve(entry.id); }}
                       title="Mark resolved"
                       style={{
-                        padding: "1px 6px", borderRadius: 3, fontSize: 9,
+                        padding: "1px 6px", borderRadius: 3, fontSize: 11,
                         background: "rgba(0,209,102,0.08)", border: "1px solid #00d16630",
                         color: "#00d166", cursor: "pointer", display: "flex", alignItems: "center", gap: 2,
                         flexShrink: 0,
                       }}
                     >
-                      <Check style={{ width: 8, height: 8 }} /> Resolve
+                      <Check style={{ width: 10, height: 10 }} /> Resolve
                     </button>
                   )}
                   {entry.resolved && (
-                    <span style={{ fontSize: 9, color: "#00d166", fontWeight: 600, flexShrink: 0 }}>✓</span>
+                    <span style={{ fontSize: 11, color: "#00d166", fontWeight: 600, flexShrink: 0 }}>✓</span>
                   )}
                 </div>
 
                 {isExpanded && (
-                  <div style={{ marginTop: 4, marginLeft: 16 }}>
-                    <div style={{ fontSize: 10, color: "#666", marginBottom: 2 }}>
+                  <div style={{ marginTop: 4, marginLeft: 18 }}>
+                    <div style={{ fontSize: 12, color: "#666", marginBottom: 2 }}>
                       {formatFullTime(entry.timestamp)}
                     </div>
                     {entry.details && (
                       <pre style={{
-                        fontSize: 10, color: "#aaa", fontFamily: "monospace",
+                        fontSize: 12, color: "#aaa", fontFamily: "monospace",
                         background: "#0a0a0a", padding: 6, borderRadius: 3, overflow: "auto",
                         maxHeight: 200, whiteSpace: "pre-wrap", wordBreak: "break-all",
                         margin: 0, lineHeight: 1.5,
