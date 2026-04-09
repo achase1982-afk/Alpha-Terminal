@@ -421,7 +421,8 @@ function PositionTableRow({
   const costBasis = group.totalMarketValue - group.totalPL;
   const totalPLPct = Math.abs(costBasis) > 0.01 ? (group.totalPL / Math.abs(costBasis)) * 100 : 0;
   const eqKey = `${group.underlying}:EQ`;
-  const eqSelected = hasOptions && eq && selectedKeys.has(eqKey);
+  // Allow equity-only rows to be selected too (no longer gated on hasOptions)
+  const eqSelected = eq != null && selectedKeys.has(eqKey);
   const someSelected = eqSelected || group.options.some(o => selectedKeys.has(`${group.underlying}:${o.cusip}`));
 
   const gridCols = useMemo(() => getGridCols(visibleColumns, symW), [visibleColumns, symW]);
@@ -431,6 +432,67 @@ function PositionTableRow({
   const markColor = eqTickDir === "up" ? C.green : eqTickDir === "down" ? C.red : C.text;
 
   const stickyBg = someSelected ? "#121008" : "#000";
+
+  // Equity-only row: no expand — checkbox selects for close, ticker tap navigates
+  if (!hasOptions) {
+    return (
+      <>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: gridCols,
+            alignItems: "center",
+            minWidth: minW,
+            background: eqSelected ? `${C.gold}06` : "transparent",
+            borderBottom: `1px solid ${C.border}`,
+            cursor: "default",
+          }}
+        >
+          <div className="pf-sticky-col" style={{ width: symW, background: eqSelected ? "#121008" : "#000", display: "flex", alignItems: "center", gap: 10, padding: "6px 8px 6px 16px", minWidth: 0 }}>
+            {/* Large tap-target checkbox area */}
+            <div
+              onClick={e => { e.stopPropagation(); toggleKey(eqKey); }}
+              style={{
+                width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center",
+                flexShrink: 0, cursor: "pointer", margin: "-4px -4px -4px -4px",
+              }}
+            >
+              <div style={{
+                width: 16, height: 16, border: `1.5px solid ${eqSelected ? C.gold : C.dim}`,
+                borderRadius: 4, background: eqSelected ? `${C.gold}22` : "transparent",
+                display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.12s",
+              }}>
+                {eqSelected && <div style={{ width: 8, height: 8, background: C.gold, borderRadius: 2 }} />}
+              </div>
+            </div>
+            <div
+              onClick={e => { e.stopPropagation(); onSelect(group.underlying); }}
+              style={{ display: "flex", flexDirection: "column", minWidth: 0, cursor: "pointer", flex: 1 }}
+            >
+              <span style={{ fontSize: 14, fontWeight: 600, color: C.text, whiteSpace: "nowrap" }}>{group.underlying}</span>
+              {(COMPANY_NAMES[group.underlying] ?? group.description) && (
+                <span style={{ fontSize: 12, color: C.gold, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {COMPANY_NAMES[group.underlying] ?? group.description}
+                </span>
+              )}
+            </div>
+          </div>
+          {visibleColumns.includes("mark") && (() => {
+            const eqQty = eq ? (eq.longQuantity || eq.shortQuantity) : 0;
+            const markPx = eq && eqQty > 0 ? eq.marketValue / eqQty : null;
+            return <span style={{ fontSize: 14, color: markPx != null ? markColor : C.dim, textAlign: "right", fontVariantNumeric: "tabular-nums", transition: "color 0.15s", padding: "8px" }}>{markPx != null ? `$${markPx.toFixed(2)}` : "—"}</span>;
+          })()}
+          {visibleColumns.includes("cost") && <span style={{ fontSize: 14, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px" }}>{eq ? `$${eq.averagePrice.toFixed(2)}` : "—"}</span>}
+          {visibleColumns.includes("qty") && <span style={{ fontSize: 14, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px" }}>{eq ? fmtQty(eq.longQuantity, eq.shortQuantity) : "—"}</span>}
+          {visibleColumns.includes("mktVal") && <span style={{ fontSize: 14, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px" }}>{fmtCompact(group.totalMarketValue)}</span>}
+          {visibleColumns.includes("plOpen") && <span style={{ fontSize: 14, fontWeight: 500, color: plColor(group.totalPL), textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px" }}>{fmtCurrency(group.totalPL)}</span>}
+          {visibleColumns.includes("plPct") && <span style={{ fontSize: 14, color: plColor(group.totalPL), textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px" }}>{fmtPct(totalPLPct)}</span>}
+          {visibleColumns.includes("plDay") && <span style={{ fontSize: 14, fontWeight: 500, color: plColor(group.totalDayPL), textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px" }}>{fmtCurrency(group.totalDayPL)}</span>}
+          {visibleColumns.includes("maint") && <span style={{ fontSize: 14, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px" }}>{group.totalMaint > 0 ? fmtCompact(group.totalMaint) : "—"}</span>}
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
@@ -446,7 +508,7 @@ function PositionTableRow({
         }}
         onClick={() => setExpanded(!expanded)}
       >
-        <div className="pf-sticky-col" style={{ width: symW, background: stickyBg, display: "flex", alignItems: "center", gap: 6, padding: "6px 8px 6px 12px", minWidth: 0 }}>
+        <div className="pf-sticky-col" style={{ width: symW, background: stickyBg, display: "flex", alignItems: "center", gap: 6, padding: "6px 8px 6px 16px", minWidth: 0 }}>
           {expanded
             ? <ChevronDown style={{ width: 12, height: 12, color: C.dim, flexShrink: 0 }} />
             : <ChevronRight style={{ width: 12, height: 12, color: C.dim, flexShrink: 0 }} />}
