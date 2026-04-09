@@ -2232,14 +2232,14 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
           transform: `translateX(${-pageIdx * 100}%)`,
           transition: "transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
           willChange: "transform",
-          minHeight: "100%",
+          height: "100%",
         }}
       >
-        <div style={{ width: "100%", flexShrink: 0, minHeight: "100%" }}>
+        <div style={{ width: "100%", flexShrink: 0, height: "100%", overflowY: "auto" }}>
           <MarketPulseDashboard ref={pulseDashRef} />
         </div>
 
-        <div style={{ width: "100%", flexShrink: 0, overflowY: "auto" }}>
+        <div style={{ width: "100%", flexShrink: 0, height: "100%", overflowY: "auto" }}>
           <div className="px-3 sm:px-4 lg:px-5 space-y-4 pt-3">
             <StrategistShockBanner />
             <StrategistCommandBar onRun={handleRunStrategistWithTicker} disabled={isPendingAny}
@@ -2311,7 +2311,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
           </div>
         </div>
 
-        <div style={{ width: "100%", flexShrink: 0, overflowY: "auto", minHeight: "100%" }}>
+        <div style={{ width: "100%", flexShrink: 0, height: "100%", overflowY: "auto" }}>
           <MarketScanner
             subscribeEquitySymbols={subscribeEquitySymbols ?? (() => {})}
             onNavigateToSymbol={onNavigateToMarkets ?? (() => {})}

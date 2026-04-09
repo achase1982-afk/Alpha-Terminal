@@ -41,6 +41,7 @@ Three-layer universe system for the Market Scanner replacing hardcoded stock lis
 - **Custom Watchlists**: DB-backed (`scanner_watchlists` table) with full CRUD. "Favorites" auto-created per user. Keys: `watchlist:{id}`. WatchlistEditor modal for managing symbols with ticker search/autocomplete via `/api/scanner/search`.
 - **Dynamic Screens**: DB-backed (`scanner_screens` table) with FMP screener integration. Filter criteria: market cap, volume, price, sectors, exchange, options volume. Three default screens seeded per user. 8 AM ET daily refresh scheduler. Keys: `screen:{id}`. ScreenBuilder modal for creating/editing screens.
 - Frontend hook `useScannerUniverses.ts` manages all three layers with caching. localStorage watchlists are auto-synced to DB on first load.
+- Scanner watchlists are surfaced in the regular WatchlistView dropdown (under "Scanner Watchlists" section). When selected, symbols are synced to a local watchlist keyed as `scanner_{id}` with `[S]` prefix in name.
 - Routes: `/api/scanner/universes`, `/api/scanner/watchlists`, `/api/scanner/screens`, `/api/scanner/search`.
 
 ### Schwab LEVELONE_OPTIONS Streaming Field Map

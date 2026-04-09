@@ -17,6 +17,7 @@ import {
   X,
   Settings,
   MinusCircle,
+  Crosshair,
 } from "lucide-react";
 
 type IndicatorKey = "change" | "changePct" | "volume" | "price" | "dayHigh" | "dayLow" | "open" | "bid" | "ask" | "marketCap";
@@ -273,12 +274,23 @@ function IndicatorSettingsPanel({
   );
 }
 
+interface ScannerWatchlist {
+  id: number;
+  name: string;
+  symbols: string[];
+  isProtected: boolean;
+}
+
+let _scannerWlCache: ScannerWatchlist[] | null = null;
+let _scannerWlFetchTs = 0;
+
 function WatchlistDropdown({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { watchlists, activeWatchlistId, setActiveWatchlist, createWatchlist, deleteWatchlist, renameWatchlist } = useTerminalStore();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [showNew, setShowNew] = useState(false);
   const [newName, setNewName] = useState("");
+  const [scannerWatchlists, setScannerWatchlists] = useState<ScannerWatchlist[]>(_scannerWlCache ?? []);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -287,6 +299,17 @@ function WatchlistDropdown({ open, onClose }: { open: boolean; onClose: () => vo
       setShowNew(false);
       setNewName("");
       return;
+    }
+    if (Date.now() - _scannerWlFetchTs > 30_000) {
+      fetchWithAuth("/api/scanner/watchlists")
+        .then(r => r.json())
+        .then(d => {
+          const wls = (d.watchlists ?? []) as ScannerWatchlist[];
+          _scannerWlCache = wls;
+          _scannerWlFetchTs = Date.now();
+          setScannerWatchlists(wls);
+        })
+        .catch(() => {});
     }
     function handleClickOutside(e: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
@@ -314,6 +337,24 @@ function WatchlistDropdown({ open, onClose }: { open: boolean; onClose: () => vo
     if (!name) return;
     renameWatchlist(id, name);
     setEditingId(null);
+  };
+
+  const handleSelectScannerWl = (swl: ScannerWatchlist) => {
+    const localId = `scanner_${swl.id}`;
+    const store = useTerminalStore.getState();
+    const existing = store.watchlists[localId];
+    if (!existing) {
+      useTerminalStore.setState((s) => ({
+        watchlists: { ...s.watchlists, [localId]: { name: `[S] ${swl.name}`, symbols: swl.symbols } },
+        activeWatchlistId: localId,
+      }));
+    } else {
+      useTerminalStore.setState((s) => ({
+        watchlists: { ...s.watchlists, [localId]: { ...existing, symbols: swl.symbols } },
+        activeWatchlistId: localId,
+      }));
+    }
+    onClose();
   };
 
   return (
@@ -399,7 +440,7 @@ function WatchlistDropdown({ open, onClose }: { open: boolean; onClose: () => vo
                     >
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
-                    {id !== "default" && (
+                    {id !== "default" && !id.startsWith("scanner_") && (
                       <button
                         onClick={(e) => { e.stopPropagation(); deleteWatchlist(id); }}
                         className="p-1.5 text-[#52525b] hover:text-red-400 rounded transition-colors"
@@ -413,6 +454,39 @@ function WatchlistDropdown({ open, onClose }: { open: boolean; onClose: () => vo
             </div>
           );
         })}
+
+        {scannerWatchlists.length > 0 && (
+          <>
+            <div className="px-4 py-2 flex items-center gap-2" style={{ borderTop: "1px solid #2A2A2C", borderBottom: "1px solid #1c1c1c" }}>
+              <ListOrdered className="w-3.5 h-3.5 text-[#52525b]" />
+              <span className="font-mono text-[10px] text-[#52525b] uppercase tracking-widest font-bold">Scanner Watchlists</span>
+            </div>
+            {scannerWatchlists.map((swl) => {
+              const localId = `scanner_${swl.id}`;
+              const isActive = activeWatchlistId === localId;
+              return (
+                <div
+                  key={localId}
+                  className="flex items-center px-4 py-2.5 transition-colors hover:bg-white/[0.04]"
+                  style={{ borderBottom: "1px solid #1c1c1c", background: isActive ? "rgba(255,184,0,0.06)" : undefined }}
+                >
+                  <button
+                    onClick={() => handleSelectScannerWl(swl)}
+                    className="flex-1 text-left flex items-center gap-2.5 min-w-0"
+                  >
+                    <Crosshair className="w-3.5 h-3.5 shrink-0" style={{ color: isActive ? "#FFB800" : "#52525b" }} />
+                    <span className={`font-mono text-sm font-bold truncate ${isActive ? "text-[#FFB800]" : "text-white"}`}>
+                      {swl.name}
+                    </span>
+                    <span className="font-mono text-xs text-[#52525b] shrink-0 ml-auto">
+                      {swl.symbols.length}
+                    </span>
+                  </button>
+                </div>
+              );
+            })}
+          </>
+        )}
       </div>
     </div>
   );
