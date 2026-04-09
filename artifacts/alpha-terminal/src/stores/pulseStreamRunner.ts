@@ -53,35 +53,29 @@ export async function runPulseStream(payload: Record<string, unknown>) {
 
   console.log("[pulse] Starting generation (epoch", currentEpoch, ")");
 
-  try {
-    const postTimeout = AbortSignal.timeout(8000);
-    const combined = AbortSignal.any([abort.signal, postTimeout]);
-
-    const response = await fetchWithAuth(`${API_BASE}/ai/market-pulse/stream`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      signal: combined,
-    });
-
+  // Fire the POST without awaiting — proxy buffering can delay header delivery by 10-15s
+  // which would freeze the UI at step 0. Polling starts immediately instead.
+  fetchWithAuth(`${API_BASE}/ai/market-pulse/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    signal: abort.signal,
+  }).then(response => {
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      console.warn("[pulse] POST returned non-OK:", response.status, response.statusText);
+    } else {
+      console.log("[pulse] POST accepted (status", response.status, ")");
     }
-
-    console.log("[pulse] POST accepted (status", response.status, ") — starting result polling");
-
-  } catch (err: any) {
-    if (abort.signal.aborted) {
-      console.log("[pulse] Aborted");
-      return;
+  }).catch(err => {
+    if (!abort.signal.aborted) {
+      console.warn("[pulse] POST error:", err.message);
     }
-    console.warn("[pulse] POST finished/timed out:", err.message, "— will poll for result");
+  });
+
+  // Start polling immediately — don't wait for SSE headers
+  if (currentEpoch === runEpoch) {
+    startResultPolling(currentEpoch);
   }
-
-  if (currentEpoch !== runEpoch) return;
-
-  store.appendStatus("Generating AI analysis...");
-  startResultPolling(currentEpoch);
 }
 
 function startResultPolling(epoch: number) {
@@ -91,6 +85,7 @@ function startResultPolling(epoch: number) {
   const maxAttempts = 60;
   const intervalMs = 2000;
   let lastThinkingLen = 0;
+  let consecutiveNone = 0;
 
   const poll = async () => {
     if (epoch !== runEpoch) {
@@ -153,8 +148,31 @@ function startResultPolling(epoch: number) {
         return;
       }
 
-      if (data.statusText) {
-        useMarketPulseStore.getState().appendStatus(data.statusText);
+      if (data.status === "none") {
+        consecutiveNone++;
+        // If server hasn't received the POST after 10 polls (20s), the request was lost
+        if (consecutiveNone >= 10) {
+          console.warn("[pulse] Server has no active generation after 20s — request may have been lost");
+          pollTimer = null;
+          activeAbort = null;
+          const s = useMarketPulseStore.getState();
+          s.setError("Request did not reach the server. Please try again.");
+          s.setStreaming(false);
+          s.setLoading(false);
+          return;
+        }
+        // Show early connecting status so user sees something is happening
+        if (consecutiveNone === 1) {
+          useMarketPulseStore.getState().appendStatus("Connecting to AI engine...");
+        }
+      } else {
+        consecutiveNone = 0;
+      }
+
+      if (data.status === "in_flight") {
+        if (data.statusText) {
+          useMarketPulseStore.getState().appendStatus(data.statusText);
+        }
       }
 
     } catch (err) {

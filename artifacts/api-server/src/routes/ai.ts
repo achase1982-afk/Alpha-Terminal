@@ -45,6 +45,7 @@ let lastPulseResult: { pulse: Record<string, unknown>; generatedAt: number; thin
 let lastPulseError: string | null = null;
 let pulseGenerationInFlight = false;
 let pulseThinkingBuffer: string[] = [];
+let pulseStatusText = "Generating AI analysis...";
 
 function safeSseWrite(res: import("express").Response, data: string) {
   try {
@@ -1502,7 +1503,7 @@ router.post("/delta-snapshot", (req, res) => {
 
 router.get("/market-pulse/latest", (_req, res) => {
   if (pulseGenerationInFlight) {
-    return res.json({ status: "in_flight", thinkingTokens: pulseThinkingBuffer, statusText: "Generating AI analysis..." });
+    return res.json({ status: "in_flight", thinkingTokens: pulseThinkingBuffer, statusText: pulseStatusText });
   }
   if (lastPulseError) {
     const err = lastPulseError;
@@ -1541,6 +1542,7 @@ router.post("/market-pulse/stream", async (req, res) => {
   pulseGenerationInFlight = true;
   lastPulseError = null;
   pulseThinkingBuffer = [];
+  pulseStatusText = "Fetching market data...";
   let clientConnected = true;
 
   res.writeHead(200, {
@@ -1599,6 +1601,7 @@ router.post("/market-pulse/stream", async (req, res) => {
     }
     dataMap = wsResult.dataMap;
     dataBlock = buildPulseDataBlock(dataMap, symbols && symbols.length > 0 ? symbols : undefined);
+    pulseStatusText = "Market data loaded. Running scoring engine...";
     safeSseWrite(res, `event: status\ndata: ${JSON.stringify({ type: "status", text: "Market data loaded. Running scoring engine..." })}\n\n`);
   } catch (fetchErr: unknown) {
     clearInterval(heartbeat);
@@ -1724,7 +1727,8 @@ router.post("/market-pulse/stream", async (req, res) => {
   })();
 
   const clusterDebug = formatClusterDebugLine(engineResult);
-  safeSseWrite(res, `event: status\ndata: ${JSON.stringify({ type: "status", text: `Engine scored: ${engineResult.bias} (composite ${engineResult.compositeScore >= 0 ? '+' : ''}${engineResult.compositeScore.toFixed(2)}, confidence ${engineResult.confidenceScore}%). ${clusterDebug}. Generating AI narrative...` })}\n\n`);
+  pulseStatusText = `Engine scored: ${engineResult.bias} (composite ${engineResult.compositeScore >= 0 ? '+' : ''}${engineResult.compositeScore.toFixed(2)}, confidence ${engineResult.confidenceScore}%). Generating AI narrative...`;
+  safeSseWrite(res, `event: status\ndata: ${JSON.stringify({ type: "status", text: `${pulseStatusText} ${clusterDebug}.` })}\n\n`);
 
   const instrumentCount = (symbols && symbols.length > 0 ? symbols : PULSE_SYMBOLS.map(s => s.display)).length;
 
