@@ -11,6 +11,9 @@ const router: IRouter = Router();
 
 const SCHWAB_TRADER_BASE = "https://api.schwabapi.com/trader/v1";
 
+let accountsCache: { data: any; fetchedAt: number } | null = null;
+const ACCOUNTS_CACHE_TTL = 20_000;
+
 function getTraderToken(): string | null {
   const trader = getTokens("trader");
   return trader?.accessToken ?? null;
@@ -30,6 +33,10 @@ async function schwabGet(path: string, token: string): Promise<any> {
 router.get("/accounts", async (_req, res) => {
   const token = getTraderToken();
   if (!token) return res.status(401).json({ error: "no_trader_token" });
+
+  if (accountsCache && (Date.now() - accountsCache.fetchedAt) < ACCOUNTS_CACHE_TTL) {
+    return res.json(accountsCache.data);
+  }
 
   try {
     const accounts = await schwabGet("/accounts?fields=positions", token);
@@ -106,9 +113,11 @@ router.get("/accounts", async (_req, res) => {
       };
     });
 
+    accountsCache = { data: mapped, fetchedAt: Date.now() };
     res.json(mapped);
   } catch (err) {
     logger.error({ err }, "Portfolio accounts fetch failed");
+    if (accountsCache) return res.json(accountsCache.data);
     res.status(502).json({ error: "schwab_api_error" });
   }
 });

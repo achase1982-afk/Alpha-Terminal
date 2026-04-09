@@ -118,7 +118,7 @@ router.get("/quote", async (req, res) => {
       // Not cached yet — subscribe and wait briefly for first tick
       const subscribed = subscribeQuoteForSymbol(displaySymbol);
       if (subscribed) {
-        await new Promise(r => setTimeout(r, 600));
+        await new Promise(r => setTimeout(r, 200));
         ibQuote = getIBCachedQuote(displaySymbol);
       }
     }
@@ -394,6 +394,9 @@ interface CachedChain {
 const chainCache = new Map<string, CachedChain>();
 const chainFetchInFlight = new Map<string, Promise<CachedChain | null>>();
 const CHAIN_CACHE_TTL = 60_000;
+
+const optionsNtmCache = new Map<string, { calls: OptionContract[]; puts: OptionContract[]; underlyingPrice?: number; fetchedAt: number }>();
+const OPTIONS_NTM_TTL = 25_000;
 const CHAIN_CACHE_MAX = 20;
 
 function evictStaleChains() {
@@ -637,17 +640,35 @@ router.get("/options", async (req, res) => {
 
   const displaySymbol = symbol.toUpperCase().trim();
 
+  function sliceAndReturn(entry: { calls: OptionContract[]; puts: OptionContract[]; underlyingPrice?: number }, source: string) {
+    let calls = entry.calls;
+    let puts = entry.puts;
+    if (entry.underlyingPrice != null && strikeCount < 100) {
+      const centered = centerStrikesAroundATM(calls, puts, entry.underlyingPrice, strikeCount);
+      calls = centered.calls;
+      puts = centered.puts;
+    }
+    if (contractType === "CALL") puts = [];
+    else if (contractType === "PUT") calls = [];
+    req.log.info({ symbol: displaySymbol, strikeCount, calls: calls.length, puts: puts.length, source }, "Options chain (NTM, centered)");
+    return GetOptionChainResponse.parse({ symbol: displaySymbol, underlyingPrice: entry.underlyingPrice, calls, puts });
+  }
+
   try {
+    const ntmCached = optionsNtmCache.get(displaySymbol);
+    if (ntmCached && (Date.now() - ntmCached.fetchedAt) < OPTIONS_NTM_TTL) {
+      return res.json(sliceAndReturn(ntmCached, "ntm-cache"));
+    }
+
     const isFuturesSymbol = isFutures(displaySymbol);
     const isIndexSymbol = isIndex(displaySymbol);
     const chainSymbol = isFuturesSymbol ? displaySymbol : isIndexSymbol ? formatSchwabSymbol(displaySymbol) : displaySymbol;
 
-    const fetchBuffer = Math.max(strikeCount * 3, strikeCount + 20);
     const params = new URLSearchParams({
       symbol: chainSymbol,
       contractType: "ALL",
       range: "NTM",
-      strikeCount: String(fetchBuffer),
+      strikeCount: "60",
     });
     if (isFuturesSymbol) params.set("assetClass", "FUTURES");
 
@@ -676,21 +697,17 @@ router.get("/options", async (req, res) => {
     const underlyingPrice = json["underlyingPrice"] as number | undefined;
     const callMap = json["callExpDateMap"] as Record<string, unknown> ?? {};
     const putMap = json["putExpDateMap"] as Record<string, unknown> ?? {};
-    let calls = parseContracts(callMap);
-    let puts = parseContracts(putMap);
+    const allCalls = parseContracts(callMap);
+    const allPuts = parseContracts(putMap);
 
-    if (underlyingPrice != null && strikeCount < 100) {
-      const centered = centerStrikesAroundATM(calls, puts, underlyingPrice, strikeCount);
-      calls = centered.calls;
-      puts = centered.puts;
+    const entry = { calls: allCalls, puts: allPuts, underlyingPrice, fetchedAt: Date.now() };
+    optionsNtmCache.set(displaySymbol, entry);
+    if (optionsNtmCache.size > 100) {
+      const oldest = [...optionsNtmCache.entries()].sort((a, b) => a[1].fetchedAt - b[1].fetchedAt)[0];
+      optionsNtmCache.delete(oldest[0]);
     }
 
-    if (contractType === "CALL") puts = [];
-    else if (contractType === "PUT") calls = [];
-
-    req.log.info({ symbol: displaySymbol, strikeCount, calls: calls.length, puts: puts.length }, "Options chain (NTM, centered)");
-    const data = GetOptionChainResponse.parse({ symbol: displaySymbol, underlyingPrice, calls, puts });
-    res.json(data);
+    return res.json(sliceAndReturn(entry, "schwab"));
   } catch (err) {
     req.log.error({ err }, "Options chain fetch error");
     res.json({ symbol: displaySymbol, calls: [], puts: [], error: "internal_error" });
