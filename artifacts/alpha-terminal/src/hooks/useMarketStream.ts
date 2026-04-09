@@ -103,6 +103,7 @@ export function useMarketStream() {
   } = useTerminalStore();
 
   const mergeTick = useOptionsStreamStore((s) => s.mergeTick);
+  const clearOptionTicks = useOptionsStreamStore((s) => s.clearTicks);
   const setDepthBook = useDepthStore((s) => s.setBook);
   const setDepthBooks = useDepthStore((s) => s.setBooks);
   const setPortfolioAccount = usePortfolioStreamStore((s) => s.setAccount);
@@ -184,6 +185,7 @@ export function useMarketStream() {
       clearTimeout(openTimeout);
       reconnectDelayRef.current = WS_RECONNECT_BASE;
       (window as any).__alphaWs = socket;
+      clearOptionTicks();
       console.log("[ws] connected to /api/ws/prices");
     };
 

@@ -511,11 +511,17 @@ function processEquityTick(content: Record<string, unknown>[]) {
   }
 }
 
+let optionTickDebugCount = 0;
 function processOptionTick(content: Record<string, unknown>[]) {
   const now = Date.now();
   for (const item of content) {
     const key = item["key"] as string;
     if (!key) continue;
+
+    if (optionTickDebugCount < 3) {
+      optionTickDebugCount++;
+      logger.info({ key, rawFields: Object.keys(item).sort().join(","), sample: { "2": item["2"], "3": item["3"], "28": item["28"], "29": item["29"], "30": item["30"], "31": item["31"], "37": item["37"] } }, "DEBUG: raw LEVELONE_OPTIONS tick");
+    }
 
     const tick: OptionTick = {
       key,
