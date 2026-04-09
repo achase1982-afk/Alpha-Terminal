@@ -142,6 +142,13 @@ export default function TerminalPage() {
   const [orderStrategyNetPrice, setOrderStrategyNetPrice] = useState<number | undefined>();
   const [orderStrategyIsCredit, setOrderStrategyIsCredit] = useState(false);
   const [orderIsClose, setOrderIsClose] = useState(false);
+  const savedOptionsCtxRef = useRef<{
+    legs?: OrderLeg[];
+    netPrice?: number;
+    isCredit?: boolean;
+    optionSymbol?: string;
+    optionInstruction?: string;
+  } | null>(null);
 
   const [strategyOpen, setStrategyOpen] = useState(false);
   const [strategyStrikes, setStrategyStrikes] = useState<number[]>([]);
@@ -186,6 +193,36 @@ export default function TerminalPage() {
     setOrderOptionSymbol(undefined);
     setOrderOptionInstruction(undefined);
     setOrderIsClose(false);
+  }, []);
+
+  const handleSwitchToStock = useCallback(() => {
+    savedOptionsCtxRef.current = {
+      legs: orderStrategyLegs,
+      netPrice: orderStrategyNetPrice,
+      isCredit: orderStrategyIsCredit,
+      optionSymbol: orderOptionSymbol,
+      optionInstruction: orderOptionInstruction,
+    };
+    setOrderOptionSymbol(undefined);
+    setOrderOptionInstruction(undefined);
+    setOrderStrategyLegs(undefined);
+    setOrderStrategyNetPrice(undefined);
+    setOrderStrategyIsCredit(false);
+    setOrderIsClose(false);
+  }, [orderStrategyLegs, orderStrategyNetPrice, orderStrategyIsCredit, orderOptionSymbol, orderOptionInstruction]);
+
+  const handleSwitchToOptions = useCallback(() => {
+    const saved = savedOptionsCtxRef.current;
+    if (saved) {
+      if (saved.legs && saved.legs.length > 0) {
+        setOrderStrategyLegs(saved.legs);
+        setOrderStrategyNetPrice(saved.netPrice);
+        setOrderStrategyIsCredit(saved.isCredit ?? false);
+      } else if (saved.optionSymbol) {
+        setOrderOptionSymbol(saved.optionSymbol);
+        setOrderOptionInstruction(saved.optionInstruction);
+      }
+    }
   }, []);
 
   const handleOptionTradeSingle = useCallback((contract: OptionsContract, side: "BUY" | "SELL", type: "CALL" | "PUT") => {
@@ -615,6 +652,8 @@ export default function TerminalPage() {
         strategyNetPrice={orderStrategyNetPrice}
         strategyIsCredit={orderStrategyIsCredit}
         isCloseOrder={orderIsClose}
+        onSwitchToStock={handleSwitchToStock}
+        onSwitchToOptions={handleSwitchToOptions}
       />
     </div>
   );
