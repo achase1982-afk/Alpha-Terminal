@@ -332,11 +332,12 @@ function buildDynamicContract(symbol: string): Contract {
   const isFut = symbol.startsWith("/");
   const isIdx = symbol.startsWith("$");
   const ibSym = symbol.replace(/^[\/$]/, "");
+  const FUT_EXCHANGE: Record<string, string> = { BZ: "IPE" };
   const contract: Contract = {
     symbol: ibSym,
     secType: (isFut ? "FUT" : isIdx ? "IND" : "STK") as SecType,
-    exchange: isFut ? "CME" : "SMART",
-    currency: "USD",
+    exchange: isFut ? (FUT_EXCHANGE[ibSym] ?? "CME") : "SMART",
+    currency: isFut && FUT_EXCHANGE[ibSym] === "IPE" ? "USD" : "USD",
   };
   if (isFut) (contract as any).lastTradeDateOrContractMonth = getFrontMonth(ibSym);
   return contract;
