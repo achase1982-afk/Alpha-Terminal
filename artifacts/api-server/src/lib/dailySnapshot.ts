@@ -301,6 +301,7 @@ export async function collectEquitySnapshots(
     await sleep(300);
   }
 
+  void logFailure("DATABASE", "INFO", `equity_daily: ${rowCount} rows upserted`, { table: "equity_daily", rows: rowCount, date });
   logger.info({ rows: rowCount, date }, "Snapshot: equity collection complete");
   return rowCount;
 }
@@ -434,6 +435,7 @@ export async function collectOptionsChainSnapshots(
     await sleep(500);
   }
 
+  void logFailure("DATABASE", "INFO", `options_chain_daily: ${rowCount} rows upserted`, { table: "options_chain_daily", rows: rowCount, date });
   logger.info({ rows: rowCount, date }, "Snapshot: chain collection complete");
   return rowCount;
 }
@@ -606,6 +608,9 @@ export async function collectPolygonFlowFromAPI(
     successRate: apiCalls > 0 ? `${Math.round(((apiCalls - apiErrors) / apiCalls) * 100)}%` : "N/A",
   });
 
+  if (strikeRows > 0) {
+    void logFailure("DATABASE", "INFO", `options_flow_per_strike: ${strikeRows} rows inserted`, { table: "options_flow_per_strike", rows: strikeRows, date });
+  }
   logger.info({ strikeRows, tradeRows, date }, "Snapshot: Polygon flow collection complete");
   return { strikeRows, tradeRows };
 }
@@ -750,6 +755,9 @@ export async function computeFlowAggregates(
     }
   }
 
+  if (count > 0) {
+    void logFailure("DATABASE", "INFO", `flow_daily_aggregates: ${count} rows upserted`, { table: "flow_daily_aggregates", rows: count, date });
+  }
   logger.info({ count, date }, "Snapshot: flow aggregates complete");
   return count;
 }

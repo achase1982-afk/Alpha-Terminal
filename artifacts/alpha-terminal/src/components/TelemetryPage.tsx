@@ -15,7 +15,7 @@ interface TelemetryEntry {
 const SYSTEMS = [
   "SCHWAB_API", "SCHWAB_STREAM", "IBKR", "YAHOO", "SEC_EDGAR",
   "SCANNER", "STRATEGIST", "RISK_GATE", "EXIT_STAGING",
-  "PUSH_NOTIFICATION", "MARKET_PULSE", "POLYGON_API",
+  "PUSH_NOTIFICATION", "MARKET_PULSE", "POLYGON_API", "DATABASE",
 ];
 
 const SEVERITIES = ["ERROR", "WARN", "INFO"] as const;
@@ -39,6 +39,7 @@ const SYSTEM_DESCRIPTIONS: Record<string, string> = {
   PUSH_NOTIFICATION: "Push notification delivery and VAPID messaging",
   MARKET_PULSE: "Market regime engine composite scoring and bias reads",
   POLYGON_API: "Polygon.io options snapshots, IV enrichment, and flow scans",
+  DATABASE: "PostgreSQL reads and writes — snapshot tables, scanner data, and aggregates",
 };
 
 function formatTime(ts: string) {
@@ -255,6 +256,8 @@ export function TelemetryPage() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [perSystemCounts, setPerSystemCounts] = useState<Record<string, number>>({});
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastRefreshed, setLastRefreshed] = useState<number | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchEntries = useCallback(async () => {
@@ -417,16 +420,35 @@ export function TelemetryPage() {
           Auto-refresh
         </label>
 
-        <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 4, alignItems: "center" }}>
+          {lastRefreshed && (
+            <span style={{ fontSize: 11, color: "#26a69a", fontWeight: 600, transition: "opacity 0.3s", opacity: Date.now() - lastRefreshed < 2000 ? 1 : 0 }}>
+              ✓ Updated
+            </span>
+          )}
           <button
-            onClick={() => { fetchEntries(); fetchCounts(); }}
+            onClick={async () => {
+              setIsRefreshing(true);
+              await Promise.all([fetchEntries(), fetchCounts()]);
+              setIsRefreshing(false);
+              setLastRefreshed(Date.now());
+            }}
+            disabled={isRefreshing}
             style={{
-              padding: "3px 8px", borderRadius: 4, fontSize: 12,
-              background: "transparent", border: "1px solid #333", color: "#888",
-              cursor: "pointer", display: "flex", alignItems: "center", gap: 3,
+              padding: "3px 10px", borderRadius: 4, fontSize: 12,
+              background: isRefreshing ? "rgba(38,166,154,0.12)" : "transparent",
+              border: `1px solid ${isRefreshing ? "#26a69a" : "#333"}`,
+              color: isRefreshing ? "#26a69a" : "#888",
+              cursor: isRefreshing ? "wait" : "pointer",
+              display: "flex", alignItems: "center", gap: 4,
+              transition: "all 0.15s ease",
             }}
           >
-            <RotateCcw style={{ width: 12, height: 12 }} /> Refresh
+            <RotateCcw
+              className={isRefreshing ? "animate-spin" : ""}
+              style={{ width: 12, height: 12 }}
+            />
+            {isRefreshing ? "Refreshing..." : "Refresh"}
           </button>
 
           <button

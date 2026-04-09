@@ -636,8 +636,9 @@ export async function runDiscoveryScan(
     totalTickers: symbols.length, pulseBias: pulse.bias, mode: "DISCOVERY",
   });
 
-  // ── Fetch quotes in bulk ──
+  emitTelemetry("SCHWAB_API", "INFO", `Scanner: fetching quotes for ${symbols.length} symbols`, { endpoint: "/quotes", symbols: symbols.length });
   const quoteMap = await fetchQuotesBatch(symbols, accessToken);
+  emitTelemetry("SCHWAB_API", "INFO", `Scanner: received ${quoteMap.size}/${symbols.length} quotes`, { endpoint: "/quotes", received: quoteMap.size, requested: symbols.length });
   const portfolioSymbols = traderToken ? await fetchPortfolioSymbols(traderToken) : new Set<string>();
 
   const filterResults: FilterResult[] = [];
