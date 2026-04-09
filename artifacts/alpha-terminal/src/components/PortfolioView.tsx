@@ -1200,8 +1200,8 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
       <div style={{ minWidth: 0 }}>
         {subTab === "positions" && (
           <>
-            <div className="pf-hscroll" style={{ overflowX: "scroll", width: "100%", WebkitOverflowScrolling: "touch" as any }}>
-              <style>{`.pf-hscroll::-webkit-scrollbar { display: none; } .pf-hscroll { scrollbar-width: none; -ms-overflow-style: none; }`}</style>
+            <div className="pf-hscroll" style={{ overflowX: "auto", width: "100%", overscrollBehavior: "auto" }}>
+              <style>{`.pf-hscroll::-webkit-scrollbar { display: none; } .pf-hscroll { scrollbar-width: none; -ms-overflow-style: none; touch-action: pan-x pan-y; }`}</style>
               <div style={{
                 display: "grid", gridTemplateColumns: gridCols, minWidth: minRowWidth,
                 borderBottom: `1px solid ${C.borderHi}`, background: "#0e0e0e",
