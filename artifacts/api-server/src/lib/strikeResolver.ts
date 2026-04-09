@@ -170,7 +170,7 @@ function selectExpiration(
   const now = new Date();
   const earningsDates = earningsDatesFromCriteria(criteria);
 
-  function filterAndRank(dteMin: number, dteMax: number): string | null {
+  function filterAndRank(dteMin: number, dteMax: number, allowEarningsCrossing = false): string | null {
     const candidates: { exp: string; dte: number; midDist: number }[] = [];
     const midpoint = (dteMin + dteMax) / 2;
 
@@ -181,7 +181,7 @@ function selectExpiration(
       if (dte < dteMin || dte > dteMax) continue;
 
       const crossesEarnings = earningsDates.some(ed => ed >= now && ed <= expDate);
-      if (crossesEarnings) continue;
+      if (crossesEarnings && !allowEarningsCrossing) continue;
 
       candidates.push({ exp, dte, midDist: Math.abs(dte - midpoint) });
     }
@@ -204,7 +204,21 @@ function selectExpiration(
   });
 
   if (allInRangeCrossEarnings) {
-    return null;
+    const earningsCrossingResult = filterAndRank(dteMin, dteMax, true);
+    if (earningsCrossingResult) {
+      const expDate = new Date(earningsCrossingResult);
+      const crossedDate = earningsDates.find(ed => ed >= now && ed <= expDate);
+      if (crossedDate) {
+        const matchingEvent = criteria.eventConflicts.find(ec => {
+          const d = new Date(ec.date);
+          return Math.abs(d.getTime() - crossedDate.getTime()) < 86400000 * 2;
+        });
+        const dateStr = crossedDate.toISOString().slice(0, 10);
+        const title = matchingEvent ? ` — ${matchingEvent.eventTitle}` : "";
+        warnings.push(`EARNINGS: ${criteria.ticker} reports on ${dateStr}${title}. This position expires after earnings. Expect elevated IV and potential gap risk.`);
+      }
+      return earningsCrossingResult;
+    }
   }
 
   result = filterAndRank(dteMin - 5, dteMax + 5);
@@ -216,6 +230,23 @@ function selectExpiration(
   result = filterAndRank(dteMin - 10, dteMax + 10);
   if (result) {
     warnings.push(`DTE window expanded by ±10 days (original ${dteMin}-${dteMax}d).`);
+    return result;
+  }
+
+  result = filterAndRank(dteMin - 10, dteMax + 10, true);
+  if (result) {
+    const expDate = new Date(result);
+    const crossedDate = earningsDates.find(ed => ed >= now && ed <= expDate);
+    if (crossedDate) {
+      const matchingEvent = criteria.eventConflicts.find(ec => {
+        const d = new Date(ec.date);
+        return Math.abs(d.getTime() - crossedDate.getTime()) < 86400000 * 2;
+      });
+      const dateStr = crossedDate.toISOString().slice(0, 10);
+      const title = matchingEvent ? ` — ${matchingEvent.eventTitle}` : "";
+      warnings.push(`DTE window expanded by ±10 days (original ${dteMin}-${dteMax}d).`);
+      warnings.push(`EARNINGS: ${criteria.ticker} reports on ${dateStr}${title}. This position expires after earnings. Expect elevated IV and potential gap risk.`);
+    }
     return result;
   }
 

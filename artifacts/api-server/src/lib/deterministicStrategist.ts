@@ -264,12 +264,12 @@ function computeMaxContracts(
   const availableRiskPct = Math.max(0, maxRiskPct - portfolio.aggregateRiskPct);
   const maxRiskDollars = portfolio.totalEquity * availableRiskPct;
   const riskPerContract = spreadWidth * 100;
-  if (availableRiskPct <= 0) return 0;
+  if (availableRiskPct <= 0) return 1;
   let contracts = Math.floor(maxRiskDollars / riskPerContract);
   if (positionSize === "HALF") {
     contracts = Math.floor(contracts / 2);
   }
-  return Math.min(contracts, 50);
+  return Math.max(1, Math.min(contracts, 50));
 }
 
 export function runDeterministicStrategist(input: StrategistInput): StrategistOutput {

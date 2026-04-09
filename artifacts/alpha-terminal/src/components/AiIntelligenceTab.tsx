@@ -1347,20 +1347,40 @@ function DetCriteriaCard({ result, narrativeText, isStreaming, streamingText, on
         </div>
       )}
 
-      {(criteria.warnings.length > 0 || (resolvedTrade?.warnings?.length ?? 0) > 0) && (
-        <div className="px-4 py-2.5 flex items-start gap-2 border-b" style={{ background: "rgba(255,184,0,0.06)", borderColor: "rgba(255,184,0,0.15)" }}>
-          <AlertCircle className="w-4 h-4 text-[#FFB800] shrink-0 mt-0.5" />
-          <div>
-            <p className="font-mono text-[11px] font-bold text-[#FFB800] uppercase">Warnings</p>
-            {criteria.warnings.map((w, i) => (
-              <p key={i} className="font-mono text-[10px] text-[#FFB800]/80 mt-0.5">{w}</p>
-            ))}
-            {resolvedTrade?.warnings?.map((w, i) => (
-              <p key={`rt-${i}`} className="font-mono text-[10px] text-[#FFB800]/80 mt-0.5">{w}</p>
-            ))}
-          </div>
-        </div>
-      )}
+      {(() => {
+        const allWarnings = [
+          ...criteria.warnings,
+          ...(resolvedTrade?.warnings ?? []),
+        ];
+        const earningsWarnings = allWarnings.filter(w => w.startsWith("EARNINGS:"));
+        const otherWarnings = allWarnings.filter(w => !w.startsWith("EARNINGS:"));
+        return (
+          <>
+            {earningsWarnings.length > 0 && (
+              <div className="px-4 py-2.5 flex items-start gap-2 border-b" style={{ background: "rgba(251,146,60,0.08)", borderColor: "rgba(251,146,60,0.25)" }}>
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" style={{ color: "#fb923c" }} />
+                <div>
+                  <p className="font-mono text-[11px] font-bold uppercase" style={{ color: "#fb923c" }}>Earnings Risk</p>
+                  {earningsWarnings.map((w, i) => (
+                    <p key={i} className="font-mono text-[10px] mt-0.5" style={{ color: "rgba(251,146,60,0.85)" }}>{w.replace(/^EARNINGS:\s*/, "")}</p>
+                  ))}
+                </div>
+              </div>
+            )}
+            {otherWarnings.length > 0 && (
+              <div className="px-4 py-2.5 flex items-start gap-2 border-b" style={{ background: "rgba(255,184,0,0.06)", borderColor: "rgba(255,184,0,0.15)" }}>
+                <AlertCircle className="w-4 h-4 text-[#FFB800] shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-mono text-[11px] font-bold text-[#FFB800] uppercase">Warnings</p>
+                  {otherWarnings.map((w, i) => (
+                    <p key={i} className="font-mono text-[10px] text-[#FFB800]/80 mt-0.5">{w}</p>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        );
+      })()}
 
       {criteria.eventConflicts.length > 0 && criteria.hardBlocks.length === 0 && (
         <div className="px-4 py-2 flex items-center gap-2 border-b" style={{ background: "rgba(255,184,0,0.04)", borderColor: "rgba(255,184,0,0.1)" }}>
@@ -2234,6 +2254,23 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
       setStrategistStatus("");
     }
   }, [quote, accessToken, symbol, setSymbol, setStrategistResult, setStrategistCache]);
+
+  const prevSubTabForAutoRef = useRef<AiSubTab | null>(null);
+  useEffect(() => {
+    const prev = prevSubTabForAutoRef.current;
+    prevSubTabForAutoRef.current = subTab;
+    if (
+      subTab === "strategist" &&
+      prev !== "strategist" &&
+      symbol &&
+      !isStreaming &&
+      !isStrategizing &&
+      !isDetRunning &&
+      !strategistCache
+    ) {
+      handleRunStrategist();
+    }
+  }, [subTab, symbol]);
 
   const handleRunDetStrategist = useCallback(async (sym: string, candidate?: DetCandidate) => {
     const runId = ++detRunRef.current;

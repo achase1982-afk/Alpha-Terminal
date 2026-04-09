@@ -409,7 +409,7 @@ export function computeConvictionSize(
   if (earningsDaysAway === null || earningsDaysAway === undefined) {
     earningsModifier = 1.0;
   } else if (earningsDaysAway <= 7 && isCredit) {
-    earningsModifier = 0.0;
+    earningsModifier = 0.5;
   } else if (earningsDaysAway <= 14 && earningsDaysAway > 7) {
     earningsModifier = 0.5;
   } else {
@@ -426,8 +426,8 @@ export function computeConvictionSize(
   }
 
   const rawProduct = baseSize * regimeMultiplier * tierMultiplier * ivrModifier * earningsModifier * confidenceWeight;
-  const blocked = earningsModifier === 0.0;
-  const finalSize = blocked ? 0 : Math.max(0.25, Math.min(1.0, rawProduct));
+  const blocked = false;
+  const finalSize = rawProduct > 0 ? Math.max(0.25, Math.min(1.0, rawProduct)) : 0.25;
 
   return {
     baseSize,
@@ -439,7 +439,9 @@ export function computeConvictionSize(
     rawProduct: r2(rawProduct),
     finalSize: r2(finalSize),
     blocked,
-    blockReason: blocked ? "Earnings within 7 days — credit strategy blocked" : null,
+    blockReason: earningsModifier < 1.0 && earningsDaysAway != null && earningsDaysAway <= 14
+      ? `Earnings within ${earningsDaysAway} days — size reduced 50%`
+      : null,
   };
 }
 

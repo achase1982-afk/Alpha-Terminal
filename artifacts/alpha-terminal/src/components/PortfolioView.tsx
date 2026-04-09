@@ -405,6 +405,7 @@ function PositionTableRow({
   toggleKey,
   visibleColumns,
   symW,
+  earningsAlert,
 }: {
   group: SymbolGroup;
   onSelect: (sym: string) => void;
@@ -413,6 +414,7 @@ function PositionTableRow({
   toggleKey: (key: string) => void;
   visibleColumns: ColumnKey[];
   symW: number;
+  earningsAlert?: { date: string; time: string };
 }) {
   const [expanded, setExpanded] = useState(false);
   const eq = group.equity;
@@ -468,7 +470,14 @@ function PositionTableRow({
               onClick={e => { e.stopPropagation(); onSelect(group.underlying); }}
               style={{ display: "flex", flexDirection: "column", minWidth: 0, cursor: "pointer", flex: 1 }}
             >
-              <span style={{ fontSize: 14, fontWeight: 600, color: C.text, whiteSpace: "nowrap" }}>{group.underlying}</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                <span style={{ fontSize: 14, fontWeight: 600, color: C.text, whiteSpace: "nowrap" }}>{group.underlying}</span>
+                {earningsAlert && (
+                  <span title={`Earnings ${earningsAlert.date}${earningsAlert.time === "bmo" ? " BMO" : earningsAlert.time === "amc" ? " AMC" : ""}`} style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.5, color: "#fb923c", border: "1px solid rgba(251,146,60,0.4)", background: "rgba(251,146,60,0.1)", borderRadius: 3, padding: "1px 4px", whiteSpace: "nowrap" }}>
+                    EARN {earningsAlert.date.slice(5)}
+                  </span>
+                )}
+              </div>
               {(COMPANY_NAMES[group.underlying] ?? group.description) && (
                 <span style={{ fontSize: 12, color: C.gold, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                   {COMPANY_NAMES[group.underlying] ?? group.description}
@@ -743,6 +752,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
   const [accountHash, setAccountHash] = useState<string | null>(null);
   const [ordersError, setOrdersError] = useState(false);
   const wsSubSentRef = useRef(false);
+  const [upcomingEarnings, setUpcomingEarnings] = useState<Map<string, { date: string; time: string }>>(new Map());
 
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [marginCallExpanded, setMarginCallExpanded] = useState(false);
@@ -879,6 +889,32 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
   const totalDayPLPositions = useMemo(() => symbolGroups.reduce((s, g) => s + g.totalDayPL, 0), [symbolGroups]);
   const bestPerformer = useMemo(() => symbolGroups.length > 0 ? symbolGroups.reduce((b, g) => g.totalDayPL > b.totalDayPL ? g : b, symbolGroups[0]) : null, [symbolGroups]);
   const worstPerformer = useMemo(() => symbolGroups.length > 0 ? symbolGroups.reduce((w, g) => g.totalDayPL < w.totalDayPL ? g : w, symbolGroups[0]) : null, [symbolGroups]);
+
+  useEffect(() => {
+    const optionUnderlyings = new Set<string>();
+    for (const g of symbolGroups) {
+      if (g.options.length > 0) optionUnderlyings.add(g.underlying);
+    }
+    if (optionUnderlyings.size === 0) { setUpcomingEarnings(new Map()); return; }
+    fetchWithAuth("/api/market/earnings-calendar")
+      .then(r => r.ok ? r.json() : null)
+      .then((data: { earnings?: Array<{ date: string; ticker: string; time: string }> } | null) => {
+        if (!data?.earnings) return;
+        const now = new Date();
+        const sevenDaysOut = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+        const map = new Map<string, { date: string; time: string }>();
+        for (const e of data.earnings) {
+          const sym = e.ticker?.toUpperCase();
+          if (!sym || !optionUnderlyings.has(sym)) continue;
+          const d = new Date(e.date);
+          if (d >= now && d <= sevenDaysOut) {
+            if (!map.has(sym)) map.set(sym, { date: e.date, time: e.time ?? "" });
+          }
+        }
+        setUpcomingEarnings(map);
+      })
+      .catch(() => {});
+  }, [symbolGroups]);
 
   const isMarginCall = useMemo(() => {
     if (!account?.balances) return false;
@@ -1224,6 +1260,18 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
       <div style={{ minWidth: 0 }}>
         {subTab === "positions" && (
           <>
+            {upcomingEarnings.size > 0 && (
+              <div style={{ padding: "8px 12px", background: "rgba(251,146,60,0.07)", borderBottom: "1px solid rgba(251,146,60,0.2)", display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                <AlertTriangle style={{ width: 13, height: 13, color: "#fb923c", flexShrink: 0 }} />
+                <span style={{ fontSize: 11, fontWeight: 700, color: "#fb923c", textTransform: "uppercase", letterSpacing: 0.5, flexShrink: 0 }}>Earnings Alert:</span>
+                {Array.from(upcomingEarnings.entries()).map(([sym, info]) => (
+                  <span key={sym} style={{ fontSize: 11, color: "rgba(251,146,60,0.85)", background: "rgba(251,146,60,0.1)", border: "1px solid rgba(251,146,60,0.25)", borderRadius: 3, padding: "1px 6px" }}>
+                    {sym} {info.date.slice(5)}{info.time === "bmo" ? " BMO" : info.time === "amc" ? " AMC" : ""}
+                  </span>
+                ))}
+                <span style={{ fontSize: 10, color: C.dim }}>— open options positions with earnings this week. Review your positions.</span>
+              </div>
+            )}
             <div className="pf-hscroll" style={{ overflowX: "auto", width: "100%", overscrollBehavior: "auto" }}>
               <style>{`.pf-hscroll::-webkit-scrollbar { display: none; } .pf-hscroll { scrollbar-width: none; -ms-overflow-style: none; touch-action: pan-x pan-y; }`}</style>
               <div style={{
@@ -1287,6 +1335,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
                   toggleKey={toggleKey}
                   visibleColumns={visibleColumns}
                   symW={symW}
+                  earningsAlert={upcomingEarnings.get(group.underlying)}
                 />
               ))}
 
