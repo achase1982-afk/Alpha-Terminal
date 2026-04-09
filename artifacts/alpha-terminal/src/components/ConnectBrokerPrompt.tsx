@@ -19,7 +19,7 @@ export function ConnectBrokerPrompt({ label, compact }: { label: string; compact
         padding: compact ? "10px 14px" : "14px 18px",
         borderRadius: 12,
         minWidth: compact ? 220 : 280,
-        marginTop: compact ? 88 : 112,
+        marginTop: compact ? 136 : 160,
         boxShadow: "none",
       }}
     >
