@@ -1765,6 +1765,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
   const [isDetRunning, setIsDetRunning] = useState(false);
   const [detThinking, setDetThinking] = useState<string[]>([]);
   const detRunRef = useRef(0);
+  const prevSubTabRef = useRef<AiSubTab>(subTab);
 
   useEffect(() => {
     if (prevSymbolRef.current !== symbol) {
@@ -2208,6 +2209,17 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
       setStrategistStatus("");
     }
   }, [accessToken, symbol, setSymbol, setStrategistResult]);
+
+  // Auto-fire analysis when user navigates to the Strategist tab and no result/cache exists yet
+  const handleRunDetRef = useRef(handleRunDetStrategist);
+  handleRunDetRef.current = handleRunDetStrategist;
+  useEffect(() => {
+    const prevTab = prevSubTabRef.current;
+    prevSubTabRef.current = subTab;
+    if (subTab === "strategist" && prevTab !== "strategist" && symbol && !strategistCache) {
+      handleRunDetRef.current(symbol);
+    }
+  }, [subTab, symbol, strategistCache]);
 
   const isPendingAny = isStreaming || isStrategizing || isDetRunning || isDetStreaming;
 
