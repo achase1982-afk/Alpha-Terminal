@@ -10,8 +10,8 @@ import {
 } from "lucide-react";
 
 type OrderSide = "BUY" | "SELL";
-type OrderType = "MARKET" | "LIMIT" | "STOP" | "STOP_LIMIT" | "TRAILING_STOP";
-type Duration = "DAY" | "GOOD_TILL_CANCEL" | "FILL_OR_KILL";
+type OrderType = "MARKET" | "LIMIT" | "STOP" | "STOP_LIMIT" | "TRAILING_STOP" | "TRAILING_STOP_LIMIT" | "MARKET_ON_CLOSE" | "LIMIT_ON_CLOSE";
+type Duration = "DAY" | "GOOD_TILL_CANCEL" | "FILL_OR_KILL" | "SEAMLESS" | "GOOD_TILL_CANCEL_EXT" | "AM" | "PM";
 type ConfirmStage = "form" | "review" | "submitting" | "success" | "error";
 type RiskLevel = "GREEN" | "YELLOW" | "RED";
 type PositionEffect = "OPENING" | "CLOSING" | "AUTO";
@@ -22,12 +22,19 @@ const ORDER_TYPES: { value: OrderType; label: string; short: string }[] = [
   { value: "STOP", label: "Stop", short: "STP" },
   { value: "STOP_LIMIT", label: "Stop Limit", short: "STP LMT" },
   { value: "TRAILING_STOP", label: "Trail Stop", short: "TRAIL" },
+  { value: "TRAILING_STOP_LIMIT", label: "Trail Stop Limit", short: "TRAIL LMT" },
+  { value: "MARKET_ON_CLOSE", label: "MOC", short: "MOC" },
+  { value: "LIMIT_ON_CLOSE", label: "LOC", short: "LOC" },
 ];
 
 const DURATIONS: { value: Duration; label: string }[] = [
   { value: "DAY", label: "Day" },
   { value: "GOOD_TILL_CANCEL", label: "GTC" },
   { value: "FILL_OR_KILL", label: "FOK" },
+  { value: "SEAMLESS", label: "EXT" },
+  { value: "GOOD_TILL_CANCEL_EXT", label: "GTC+EXT" },
+  { value: "AM", label: "AM" },
+  { value: "PM", label: "PM" },
 ];
 
 const GOLD = "#f5a623";
@@ -323,6 +330,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
   const [priceLocked, setPriceLocked] = useState(false);
   const [posEffect, setPosEffect] = useState<PositionEffect>("AUTO");
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [riskOpen, setRiskOpen] = useState(false);
   const qtyInputRef = useRef<HTMLInputElement>(null);
 
   const isMultiLeg = !!strategyLegs && strategyLegs.length >= 1;
@@ -396,9 +404,9 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
     }
   }, [isOpen, quote?.ask, quote?.bid, isMultiLeg, isCloseOrder, strategyNetPrice]);
 
-  const needsLimit = orderType === "LIMIT" || orderType === "STOP_LIMIT";
-  const needsStop = orderType === "STOP" || orderType === "STOP_LIMIT";
-  const needsTrail = orderType === "TRAILING_STOP";
+  const needsLimit = orderType === "LIMIT" || orderType === "STOP_LIMIT" || orderType === "TRAILING_STOP_LIMIT" || orderType === "LIMIT_ON_CLOSE";
+  const needsStop = orderType === "STOP" || orderType === "STOP_LIMIT" || orderType === "TRAILING_STOP_LIMIT";
+  const needsTrail = orderType === "TRAILING_STOP" || orderType === "TRAILING_STOP_LIMIT";
 
   const estimatedCost = useMemo(() => {
     if (isMultiLeg) {
@@ -474,7 +482,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
       const parsed = parseFloat(limitPrice || "0");
       const o: Record<string, unknown> = {
         orderType: strategyIsCredit ? "NET_CREDIT" : "NET_DEBIT",
-        session: extendedHours ? "SEAMLESS" : "NORMAL",
+        session: extendedHours || duration === "SEAMLESS" || duration === "GOOD_TILL_CANCEL_EXT" ? "SEAMLESS" : "NORMAL",
         duration,
         complexOrderStrategyType: "NONE",
         orderStrategyType: "SINGLE",
@@ -489,7 +497,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
     }
     const order: Record<string, unknown> = {
       orderType,
-      session: extendedHours ? "SEAMLESS" : "NORMAL",
+      session: extendedHours || duration === "SEAMLESS" || duration === "GOOD_TILL_CANCEL_EXT" ? "SEAMLESS" : "NORMAL",
       duration,
       orderStrategyType: "SINGLE",
       orderLegCollection: [{
@@ -673,7 +681,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
       )}
 
       {stage === "form" || stage === "review" ? (
-        <div className="flex-1 overflow-y-auto pb-28">
+        <div className="flex-1 overflow-y-auto pb-36">
 
           <div className="px-3 pt-2.5 space-y-2.5" style={{ display: "flex", flexDirection: "column", gap: 10, padding: "10px 12px 12px" }}>
 
@@ -955,28 +963,33 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
               </span>
             </button>
             {advancedOpen && (
-              <div className="grid grid-cols-3 gap-1.5">
-                <div className="px-2.5 py-1.5" style={{ background: FIELD, border: `1px solid ${BORDER}`, borderRadius: 9 }}>
-                  <span className="text-[12px] block mb-0.5" style={{ color: MUTED }}>Effect</span>
-                  <button onClick={() => setPosEffect(posEffect === "OPENING" ? "CLOSING" : posEffect === "CLOSING" ? "AUTO" : "OPENING")} className="text-[14px]" style={{ color: WHITE, background: "none", border: "none", padding: 0 }}>
-                    {posEffect === "AUTO" ? "Auto" : posEffect === "OPENING" ? "Open" : "Close"}
+              <div className="space-y-0">
+                <div className="flex items-center justify-between py-2.5" style={{ borderBottom: `1px solid ${DIVIDER}` }}>
+                  <span className="text-[15px]" style={{ color: TEXT }}>Effect</span>
+                  <button onClick={() => setPosEffect(posEffect === "OPENING" ? "CLOSING" : posEffect === "CLOSING" ? "AUTO" : "OPENING")} className="text-[15px]" style={{ color: WHITE, background: "none", border: "none", padding: 0 }}>
+                    {posEffect === "AUTO" ? "Auto" : posEffect === "OPENING" ? "To Open" : "To Close"}
                   </button>
                 </div>
-                <div className="px-2.5 py-1.5" style={{ background: FIELD, border: `1px solid ${BORDER}`, borderRadius: 9 }}>
-                  <span className="text-[12px] block mb-0.5" style={{ color: MUTED }}>Exchange</span>
-                  <span className="text-[14px]" style={{ color: WHITE }}>BEST</span>
+                <div className="flex items-center justify-between py-2.5" style={{ borderBottom: `1px solid ${DIVIDER}` }}>
+                  <span className="text-[15px]" style={{ color: TEXT }}>Instruction</span>
+                  <span className="text-[15px]" style={{ color: WHITE }}>None</span>
                 </div>
-                <div className="px-2.5 py-1.5 flex items-center justify-between" style={{ background: FIELD, border: `1px solid ${BORDER}`, borderRadius: 9 }}>
-                  <div>
-                    <span className="text-[12px] block mb-0.5" style={{ color: MUTED }}>Ext Hrs</span>
-                    <span className="text-[14px]" style={{ color: extendedHours ? GOLD : WHITE }}>{extendedHours ? "On" : "Off"}</span>
-                  </div>
+                <div className="flex items-center justify-between py-2.5" style={{ borderBottom: `1px solid ${DIVIDER}` }}>
+                  <span className="text-[15px]" style={{ color: TEXT }}>Exchange</span>
+                  <span className="text-[15px]" style={{ color: WHITE }}>BEST</span>
+                </div>
+                <div className="flex items-center justify-between py-2.5" style={{ borderBottom: `1px solid ${DIVIDER}` }}>
+                  <span className="text-[15px]" style={{ color: TEXT }}>Tax Lot Method</span>
+                  <span className="text-[15px]" style={{ color: WHITE }}>Default</span>
+                </div>
+                <div className="flex items-center justify-between py-2.5">
+                  <span className="text-[15px]" style={{ color: TEXT }}>Ext Hours</span>
                   <button
                     onClick={(e) => { e.stopPropagation(); setExtendedHours(!extendedHours); }}
-                    className="relative w-8 h-4 rounded-full transition-colors duration-200"
+                    className="relative w-9 h-5 rounded-full transition-colors duration-200"
                     style={{ background: extendedHours ? GOLD : BORDER, border: "none" }}
                   >
-                    <div className="absolute top-0.5 w-3 h-3 rounded-full transition-transform duration-200" style={{ background: extendedHours ? BG : DIM, transform: extendedHours ? "translateX(16px)" : "translateX(2px)" }} />
+                    <div className="absolute top-0.5 w-4 h-4 rounded-full transition-transform duration-200" style={{ background: extendedHours ? BG : DIM, transform: extendedHours ? "translateX(16px)" : "translateX(2px)" }} />
                   </button>
                 </div>
               </div>
@@ -1008,29 +1021,73 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                 );
               })()}
 
-              {preTradeEnabled && riskChecks.length > 0 && (
-                <div className="mt-1.5 space-y-1.5 text-[13px]">
-                  {riskChecks.map(c => (
-                    <div key={c.id} className="flex gap-2">
-                      <span className="mt-1 h-2 w-2 rounded-full shrink-0" style={{ background: levelColor(c.level) }} />
-                      <div>
-                        <div style={{ color: TEXT }}>{c.label}</div>
-                        <div style={{ color: MUTED }}>{c.detail}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <button
+                onClick={() => setRiskOpen(!riskOpen)}
+                className="w-full flex items-center justify-between mt-1.5 pt-1.5 text-[15px]"
+                style={{ borderTop: `1px dashed ${DIVIDER}`, color: TEXT, background: "none", border: "none", cursor: "pointer", padding: 0, paddingTop: 6 }}
+              >
+                <span>{riskOpen ? "Hide details" : "View full risk details"}</span>
+                <span style={{ color: MUTED, fontSize: 14 }}>{riskOpen ? "▴" : "▾"}</span>
+              </button>
 
-              <AiCoPilotPanel
-                side={side}
-                symbol={symbol}
-                limitPrice={parseFloat(limitPrice) || 0}
-                bid={quote?.bid ?? null}
-                ask={quote?.ask ?? null}
-                quantity={quantity}
-                isOption={isOption}
-              />
+              {riskOpen && (
+                <>
+                  {preTradeEnabled && riskChecks.length > 0 && (
+                    <div className="mt-1.5 space-y-1.5 text-[15px]">
+                      {riskChecks.map(c => (
+                        <div key={c.id} className="flex gap-2">
+                          <span className="mt-1 h-2 w-2 rounded-full shrink-0" style={{ background: levelColor(c.level) }} />
+                          <div>
+                            <div style={{ color: TEXT }}>{c.label}</div>
+                            <div style={{ color: MUTED }}>{c.detail}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <AiCoPilotPanel
+                    side={side}
+                    symbol={symbol}
+                    limitPrice={parseFloat(limitPrice) || 0}
+                    bid={quote?.bid ?? null}
+                    ask={quote?.ask ?? null}
+                    quantity={quantity}
+                    isOption={isOption}
+                  />
+                </>
+              )}
+            </div>
+
+            <div style={{ background: CARD_GRAD, borderRadius: R_CARD, border: `1px solid ${BORDER}`, padding: "10px 12px" }}>
+              <div className="text-[15px] mb-1" style={{ color: TEXT }}>Order Description</div>
+              <div className="text-[16px] leading-relaxed" style={{ color: WHITE }}>
+                {(() => {
+                  const action = isMultiLeg
+                    ? `${strategyIsCredit ? "SELL" : "BUY"} ${strategyLegs!.length}-leg strategy`
+                    : `${side} ${quantity} ${isOption ? "contract" : "share"}${quantity > 1 ? "s" : ""}`;
+                  const sym = isMultiLeg ? symbol : displaySymbol;
+                  const priceStr = needsLimit && limitPrice ? ` at ${limitPrice} Limit` : needsStop && stopPrice ? ` at ${stopPrice} Stop` : needsTrail && trailOffset ? ` Trail ${trailOffset}` : orderType === "MARKET" ? " at Market" : "";
+                  const dur = DURATIONS.find(d => d.value === duration)?.label ?? duration;
+                  return `${action} ${sym}${priceStr}, ${dur}${extendedHours ? " + Ext" : ""}`;
+                })()}
+              </div>
+            </div>
+
+            <div style={{ background: CARD_GRAD, borderRadius: R_CARD, border: `1px solid ${BORDER}`, padding: "10px 12px" }}>
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[15px]" style={{ color: TEXT }}>Balances</span>
+              </div>
+              <div className="space-y-0">
+                {[
+                  { label: "Buying Power", value: fmtCurrency(accountSize || 0) },
+                  { label: "BP After Trade", value: fmtCurrency(Math.max(0, (accountSize || 0) - Math.abs(estimatedCost ?? 0))) },
+                ].map((row, i) => (
+                  <div key={i} className="flex items-center justify-between py-1.5" style={{ borderBottom: i === 0 ? `1px solid ${DIVIDER}` : "none" }}>
+                    <span className="text-[15px]" style={{ color: TEXT }}>{row.label}</span>
+                    <span className="text-[16px]" style={{ color: WHITE }}>{row.value}</span>
+                  </div>
+                ))}
+              </div>
             </div>
 
           </div>
@@ -1087,7 +1144,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
       )}
 
       {stage === "form" && (
-        <div className="absolute bottom-0 left-0 right-0 px-3 pb-6 pt-2" style={{ background: `linear-gradient(to top, rgba(5,6,7,0.97), rgba(5,6,7,0.8), transparent)` }}>
+        <div className="absolute bottom-0 left-0 right-0 px-3 pb-6 pt-2" style={{ background: `linear-gradient(to top, rgba(5,6,7,1), rgba(5,6,7,0.95), transparent)` }}>
           <div className="flex justify-between flex-wrap gap-1 mb-1.5 text-[13px]" style={{ color: TEXT }}>
             <span>{isBuy ? "Buy" : "Sell"} {quantity} {isMultiLeg ? "spread" : isOption ? "contract" : "share"}{quantity > 1 ? "s" : ""} · {needsLimit || isMultiLeg ? `Limit ${limitPrice || "—"}` : ORDER_TYPES.find(t => t.value === orderType)?.label}</span>
             {estimatedCost != null && <span>{isMultiLeg ? (strategyIsCredit ? "Credit" : "Cost") : "Notional"} {fmtCurrency(Math.abs(estimatedCost))}</span>}
