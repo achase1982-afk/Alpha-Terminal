@@ -1765,6 +1765,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
   const [isDetRunning, setIsDetRunning] = useState(false);
   const [detThinking, setDetThinking] = useState<string[]>([]);
   const detRunRef = useRef(0);
+  const scannerCandidateCache = useRef<Record<string, DetCandidate>>({});
   const prevSubTabRef = useRef<AiSubTab>(subTab);
 
   useEffect(() => {
@@ -2061,6 +2062,12 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
 
   const handleRunDetStrategist = useCallback(async (sym: string, candidate?: DetCandidate) => {
     const runId = ++detRunRef.current;
+    const upperSym = sym.toUpperCase();
+
+    if (candidate) {
+      scannerCandidateCache.current[upperSym] = candidate;
+    }
+    const resolvedCandidate = candidate || scannerCandidateCache.current[upperSym];
 
     setDetResult(null);
     setDetNarrative("");
@@ -2076,20 +2083,20 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
     setLastRunSymbol(sym);
     setLastRunTime(Date.now());
 
-    if (sym.toUpperCase() !== symbol) {
-      setSymbol(sym.toUpperCase());
+    if (upperSym !== symbol) {
+      setSymbol(upperSym);
     }
 
-    const scannerPayload = candidate ? {
-      symbol: candidate.symbol,
-      totalScore: candidate.totalScore,
-      components: candidate.components,
-      microOverrideEligible: candidate.microOverrideEligible,
-      ivr: candidate.ivr,
-      atmSpreadPct: candidate.atmSpreadPct,
-      changePct: candidate.changePct,
-      sector: candidate.sector,
-      scanTimestamp: candidate.scanTimestamp ?? Date.now(),
+    const scannerPayload = resolvedCandidate ? {
+      symbol: resolvedCandidate.symbol,
+      totalScore: resolvedCandidate.totalScore,
+      components: resolvedCandidate.components,
+      microOverrideEligible: resolvedCandidate.microOverrideEligible,
+      ivr: resolvedCandidate.ivr,
+      atmSpreadPct: resolvedCandidate.atmSpreadPct,
+      changePct: resolvedCandidate.changePct,
+      sector: resolvedCandidate.sector,
+      scanTimestamp: resolvedCandidate.scanTimestamp ?? Date.now(),
     } : undefined;
 
     try {
