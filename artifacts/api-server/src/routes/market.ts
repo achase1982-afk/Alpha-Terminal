@@ -1028,6 +1028,66 @@ async function fetchPolygonNews(symbol: string, apiKey: string, log: any): Promi
   }
 }
 
+function benzingaTicker(symbol: string): string {
+  if (symbol.startsWith("/")) {
+    const base = symbol.replace(/[FGHJKMNQUVXZ]\d{1,2}$/, "").replace(/^\//, "");
+    return base;
+  }
+  if (symbol.startsWith("$")) {
+    const indexMap: Record<string, string> = {
+      "$SPX": "SPY", "$NDX": "QQQ", "$DJI": "DIA", "$RUT": "IWM", "$VIX": "VIX",
+    };
+    return indexMap[symbol] || symbol.replace(/^\$/, "");
+  }
+  return symbol;
+}
+
+async function fetchBenzingaNews(symbol: string, apiKey: string, log: any): Promise<NormalizedArticle[]> {
+  const ticker = benzingaTicker(symbol);
+  const url = `https://api.benzinga.com/api/v2/news?token=${apiKey}&pageSize=50&displayOutput=full&tickers=${encodeURIComponent(ticker)}`;
+
+  try {
+    const response = await fetch(url, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (!response.ok) {
+      log.warn({ status: response.status, symbol }, "Benzinga news API error");
+      return [];
+    }
+
+    const raw = await response.json() as Array<{
+      id: number;
+      author: string;
+      created: string;
+      updated: string;
+      title: string;
+      teaser: string;
+      url: string;
+      image?: Array<{ url: string }>;
+      stocks?: Array<{ name: string }>;
+    }>;
+
+    const articles = Array.isArray(raw) ? raw : [];
+    log.info({ symbol, count: articles.length }, "Benzinga news fetched");
+
+    return articles.map(a => ({
+      id: Math.abs(a.id || hashString(a.url || a.title)),
+      source: "BENZINGA",
+      headline: a.title || "",
+      summary: (a.teaser || "").replace(/&#\d+;/g, "").slice(0, 300),
+      url: a.url || "",
+      image: (a.image && a.image.length > 0 ? a.image[0].url : "") || "",
+      datetime: a.created ? Math.floor(new Date(a.created).getTime() / 1000) : Math.floor(Date.now() / 1000),
+      related: ticker,
+    }));
+  } catch (err) {
+    log.warn({ err, symbol }, "Benzinga news fetch failed");
+    return [];
+  }
+}
+
 async function fetchFinnhubNews(cleanSymbol: string, apiKey: string, log: any): Promise<NormalizedArticle[]> {
   const now = new Date();
   const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -1082,28 +1142,24 @@ router.get("/news", async (req, res) => {
   const finnhubSymbol = isFuturesNews ? futuresNewsSymbol(symbol) : symbol.replace(/^\$/, "");
   const finnhubKey = process.env["FINNHUB_API_KEY"];
   const polygonKey = process.env["POLYGON_API_KEY"];
+  const benzingaKey = process.env["BENZINGA_API_KEY"];
 
-  const [finnhubArticles, polygonArticles] = await Promise.all([
+  const [finnhubArticles, polygonArticles, benzingaArticles] = await Promise.all([
     finnhubKey ? fetchFinnhubNews(finnhubSymbol, finnhubKey, req.log) : Promise.resolve([]),
     polygonKey ? fetchPolygonNews(symbol, polygonKey, req.log) : Promise.resolve([]),
+    benzingaKey ? fetchBenzingaNews(symbol, benzingaKey, req.log) : Promise.resolve([]),
   ]);
 
   const seenHeadlines = new Set<string>();
   const merged: NormalizedArticle[] = [];
 
-  for (const a of finnhubArticles) {
-    const key = a.headline.toLowerCase().slice(0, 60);
-    if (!seenHeadlines.has(key)) {
-      seenHeadlines.add(key);
-      merged.push(a);
-    }
-  }
-
-  for (const a of polygonArticles) {
-    const key = a.headline.toLowerCase().slice(0, 60);
-    if (!seenHeadlines.has(key)) {
-      seenHeadlines.add(key);
-      merged.push(a);
+  for (const source of [benzingaArticles, finnhubArticles, polygonArticles]) {
+    for (const a of source) {
+      const key = a.headline.toLowerCase().slice(0, 60);
+      if (!seenHeadlines.has(key)) {
+        seenHeadlines.add(key);
+        merged.push(a);
+      }
     }
   }
 
