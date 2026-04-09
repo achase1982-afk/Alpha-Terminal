@@ -1109,6 +1109,278 @@ router.get("/earnings-calendar", async (req, res) => {
   res.json({ earnings, source: "benzinga" });
 });
 
+let cachedEconEvents: Array<{
+  id: string;
+  date: string;
+  time: string | null;
+  eventName: string;
+  eventCategory: string;
+  country: string;
+  importance: number;
+  consensus: string | null;
+  prior: string | null;
+  actual: string | null;
+  description: string;
+}> = [];
+let econEventsLastFetch = 0;
+
+async function fetchBenzingaEconCalendar(apiKey: string, log: any) {
+  const now = Date.now();
+  if (cachedEconEvents.length > 0 && now - econEventsLastFetch < 4 * 60 * 60 * 1000) {
+    return cachedEconEvents;
+  }
+  try {
+    const today = new Date();
+    const threeMonthsAgo = new Date(today);
+    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 1);
+    const dateFrom = threeMonthsAgo.toISOString().slice(0, 10);
+    const endDate = new Date(today);
+    endDate.setMonth(endDate.getMonth() + 6);
+    const dateTo = endDate.toISOString().slice(0, 10);
+
+    const url = `https://api.benzinga.com/api/v2.1/calendar/economics?token=${apiKey}&pageSize=200&parameters%5Bdate_from%5D=${dateFrom}&parameters%5Bdate_to%5D=${dateTo}&parameters%5Bimportance%5D=3&parameters%5Bcountry%5D=USA`;
+    const response = await fetch(url, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!response.ok) {
+      log.warn({ status: response.status }, "Benzinga economic calendar fetch failed");
+      return cachedEconEvents;
+    }
+    const data = await response.json() as {
+      economics?: Array<{
+        id: string;
+        date: string;
+        time: string;
+        event_name: string;
+        event_category: string;
+        country: string;
+        importance: number;
+        consensus: string;
+        consensus_t: string;
+        prior: string;
+        prior_t: string;
+        actual: string;
+        actual_t: string;
+        description: string;
+      }>;
+    };
+    const items = data.economics || [];
+    log.info({ count: items.length }, "Benzinga economic calendar fetched");
+    cachedEconEvents = items.map(e => ({
+      id: e.id,
+      date: e.date,
+      time: e.time && e.time !== "00:00:00" ? e.time.slice(0, 5) : null,
+      eventName: e.event_name,
+      eventCategory: e.event_category,
+      country: e.country,
+      importance: e.importance,
+      consensus: e.consensus || e.consensus_t || null,
+      prior: e.prior || e.prior_t || null,
+      actual: e.actual || e.actual_t || null,
+      description: e.description || "",
+    }));
+    econEventsLastFetch = now;
+    return cachedEconEvents;
+  } catch (err) {
+    log.warn({ err }, "Benzinga econ calendar error");
+    return cachedEconEvents;
+  }
+}
+
+router.get("/economic-calendar", async (req, res) => {
+  const benzingaKey = process.env["BENZINGA_API_KEY"];
+  if (!benzingaKey) return res.json({ events: [], source: null });
+  const events = await fetchBenzingaEconCalendar(benzingaKey, req.log);
+  res.json({ events, source: "benzinga" });
+});
+
+export function getCachedEconEvents() { return cachedEconEvents; }
+export function getCachedRatings() { return cachedRatings; }
+
+let cachedRatings: Array<{
+  id: string;
+  date: string;
+  ticker: string;
+  name: string;
+  analyst: string;
+  analystName: string;
+  actionCompany: string;
+  ratingCurrent: string;
+  ratingPrior: string;
+  ptCurrent: string | null;
+  ptPrior: string | null;
+  ptPctChange: string | null;
+  importance: number;
+  url: string;
+}> = [];
+let ratingsLastFetch = 0;
+
+async function fetchBenzingaRatings(apiKey: string, log: any) {
+  const now = Date.now();
+  if (cachedRatings.length > 0 && now - ratingsLastFetch < 2 * 60 * 60 * 1000) {
+    return cachedRatings;
+  }
+  try {
+    const url = `https://api.benzinga.com/api/v2.1/calendar/ratings?token=${apiKey}&pageSize=100`;
+    const response = await fetch(url, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!response.ok) {
+      log.warn({ status: response.status }, "Benzinga ratings fetch failed");
+      return cachedRatings;
+    }
+    const data = await response.json() as {
+      ratings?: Array<{
+        id: string;
+        date: string;
+        ticker: string;
+        name: string;
+        analyst: string;
+        analyst_name: string;
+        action_company: string;
+        action_pt: string;
+        rating_current: string;
+        rating_prior: string;
+        pt_current: string;
+        pt_prior: string;
+        pt_pct_change: string;
+        importance: number;
+        url: string;
+      }>;
+    };
+    const items = data.ratings || [];
+    log.info({ count: items.length }, "Benzinga ratings fetched");
+    cachedRatings = items.map(r => ({
+      id: r.id,
+      date: r.date,
+      ticker: r.ticker,
+      name: r.name,
+      analyst: r.analyst,
+      analystName: r.analyst_name,
+      actionCompany: r.action_company,
+      ratingCurrent: r.rating_current,
+      ratingPrior: r.rating_prior,
+      ptCurrent: r.pt_current || null,
+      ptPrior: r.pt_prior || null,
+      ptPctChange: r.pt_pct_change || null,
+      importance: r.importance,
+      url: r.url || "",
+    }));
+    ratingsLastFetch = now;
+    return cachedRatings;
+  } catch (err) {
+    log.warn({ err }, "Benzinga ratings error");
+    return cachedRatings;
+  }
+}
+
+router.get("/analyst-ratings", async (req, res) => {
+  const benzingaKey = process.env["BENZINGA_API_KEY"];
+  if (!benzingaKey) return res.json({ ratings: [], source: null });
+  const symbol = (req.query["symbol"] as string || "").toUpperCase().trim();
+  const allRatings = await fetchBenzingaRatings(benzingaKey, req.log);
+  const ratings = symbol
+    ? allRatings.filter(r => r.ticker === symbol)
+    : allRatings;
+  res.json({ ratings, source: "benzinga" });
+});
+
+router.get("/analyst-insights", async (req, res) => {
+  const benzingaKey = process.env["BENZINGA_API_KEY"];
+  const symbol = (req.query["symbol"] as string || "").toUpperCase().trim();
+  if (!benzingaKey || !symbol) return res.json({ insights: [], source: null });
+  try {
+    const url = `https://api.benzinga.com/api/v1/analyst/insights?token=${benzingaKey}&pageSize=10&symbols=${encodeURIComponent(symbol)}`;
+    const response = await fetch(url, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!response.ok) return res.json({ insights: [], source: null });
+    const data = await response.json() as {
+      "analyst-insights"?: Array<{
+        id: string;
+        date: string;
+        firm: string;
+        action: string;
+        rating: string;
+        pt: string;
+        analyst_insights: string;
+        security: { symbol: string; name: string };
+      }>;
+    };
+    const items = data["analyst-insights"] || [];
+    req.log.info({ symbol, count: items.length }, "Benzinga analyst insights fetched");
+    res.json({
+      insights: items.map(i => ({
+        id: i.id,
+        date: i.date,
+        firm: i.firm,
+        action: i.action,
+        rating: i.rating,
+        priceTarget: i.pt || null,
+        summary: i.analyst_insights || "",
+        ticker: i.security?.symbol || symbol,
+        name: i.security?.name || "",
+      })),
+      source: "benzinga",
+    });
+  } catch (err) {
+    req.log.warn({ err, symbol }, "Benzinga insights error");
+    res.json({ insights: [], source: null });
+  }
+});
+
+router.get("/conference-calls", async (req, res) => {
+  const benzingaKey = process.env["BENZINGA_API_KEY"];
+  if (!benzingaKey) return res.json({ calls: [], source: null });
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const endDate = new Date();
+    endDate.setMonth(endDate.getMonth() + 3);
+    const dateTo = endDate.toISOString().slice(0, 10);
+    const url = `https://api.benzinga.com/api/v2.1/calendar/conference-calls?token=${benzingaKey}&pageSize=100&parameters%5Bdate_from%5D=${today}&parameters%5Bdate_to%5D=${dateTo}`;
+    const response = await fetch(url, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!response.ok) return res.json({ calls: [], source: null });
+    const data = await response.json() as {
+      conference?: Array<{
+        ticker: string;
+        name: string;
+        date: string;
+        start_time: string;
+        period: string;
+        period_year: number;
+        phone_num: string;
+        webcast_url: string;
+        importance: number;
+      }>;
+    };
+    const items = data.conference || [];
+    req.log.info({ count: items.length }, "Benzinga conference calls fetched");
+    res.json({
+      calls: items.map(c => ({
+        ticker: c.ticker,
+        name: c.name,
+        date: c.date,
+        time: c.start_time?.slice(0, 5) || null,
+        period: c.period || null,
+        periodYear: c.period_year || null,
+        phoneNumber: c.phone_num || null,
+        webcastUrl: c.webcast_url || null,
+        importance: c.importance,
+      })),
+      source: "benzinga",
+    });
+  } catch (err) {
+    req.log.warn({ err }, "Benzinga conference calls error");
+    res.json({ calls: [], source: null });
+  }
+});
+
 const FUTURES_NEWS_MAP: Record<string, string> = {
   "/ES": "SPY",
   "/MES": "SPY",

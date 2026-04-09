@@ -390,16 +390,83 @@ export function benzingaEarningsToEvents(earnings: BenzingaEarning[]): CalendarE
   });
 }
 
-export function generateMarketEvents(startYear: number, endYear: number, apiEarnings?: CalendarEvent[]): CalendarEvent[] {
+export interface BenzingaEconEvent {
+  id: string;
+  date: string;
+  time: string | null;
+  eventName: string;
+  eventCategory: string;
+  country: string;
+  importance: number;
+  consensus: string | null;
+  prior: string | null;
+  actual: string | null;
+  description: string;
+}
+
+const ECON_NAME_MAP: Record<string, { blsType?: string; fomcType?: "decision" | "minutes" }> = {
+  "Fed Interest Rate Decision": { fomcType: "decision" },
+  "CPI (MoM)": { blsType: "cpi" },
+  "CPI (YoY)": { blsType: "cpi" },
+  "Core CPI (MoM)": { blsType: "cpi" },
+  "PPI (MoM)": { blsType: "ppi" },
+  "Core PCE - Price Index (MoM)": {},
+  "Core PCE - Price Index (YoY)": {},
+  "ISM Services PMI": {},
+  "Initial Jobless Claims": {},
+  "Philadelphia Fed Manufacturing Survey": {},
+};
+
+export function benzingaEconToEvents(events: BenzingaEconEvent[]): CalendarEvent[] {
+  return events.map(e => {
+    const mapped = ECON_NAME_MAP[e.eventName];
+    const parts: string[] = [e.eventName];
+    if (e.consensus) parts.push(`Consensus: ${e.consensus}`);
+    if (e.prior) parts.push(`Prior: ${e.prior}`);
+    if (e.actual) parts.push(`Actual: ${e.actual}`);
+    if (e.description) parts.push(e.description.slice(0, 200));
+
+    return {
+      date: e.date,
+      type: (mapped?.fomcType ? "fomc" : "economic") as CalendarEvent["type"],
+      title: e.eventName,
+      detail: parts.join(" — "),
+      time: e.time ? `${e.time} ET` : undefined,
+      blsType: mapped?.blsType,
+      fomcType: mapped?.fomcType,
+    };
+  });
+}
+
+export function generateMarketEvents(startYear: number, endYear: number, apiEarnings?: CalendarEvent[], apiEcon?: CalendarEvent[]): CalendarEvent[] {
   const events: CalendarEvent[] = [];
+  const apiEconDates = new Set((apiEcon || []).map(e => e.date));
+
   for (let y = startYear; y <= endYear; y++) {
     events.push(...generateHolidays(y));
     events.push(...generateEarlyCloses(y));
-    events.push(...generateFomc(y));
-    events.push(...generateEconomic(y));
+
+    const econEvents = generateEconomic(y);
+    for (const ev of econEvents) {
+      if (ev.type === "opex" || ev.type === "witching") {
+        events.push(ev);
+      } else if (!apiEconDates.has(ev.date)) {
+        events.push(ev);
+      }
+    }
+
+    const fomcEvents = generateFomc(y);
+    for (const ev of fomcEvents) {
+      if (!apiEconDates.has(ev.date)) {
+        events.push(ev);
+      }
+    }
   }
   if (apiEarnings && apiEarnings.length > 0) {
     events.push(...apiEarnings);
+  }
+  if (apiEcon && apiEcon.length > 0) {
+    events.push(...apiEcon);
   }
   return events.sort((a, b) => a.date.localeCompare(b.date));
 }

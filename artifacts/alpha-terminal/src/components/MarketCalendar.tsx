@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { ChevronLeft, ChevronRight, X, ExternalLink, Loader2 } from "lucide-react";
-import { generateMarketEvents, benzingaEarningsToEvents, type CalendarEvent, type BenzingaEarning } from "@/lib/calendarEvents";
+import { generateMarketEvents, benzingaEarningsToEvents, benzingaEconToEvents, type CalendarEvent, type BenzingaEarning, type BenzingaEconEvent } from "@/lib/calendarEvents";
 
 interface BlsReportData {
   reportType: string;
@@ -357,6 +357,7 @@ export function MarketCalendar({ onClose }: Props) {
   const [fomcMeetings, setFomcMeetings] = useState<FomcMeetingData[]>([]);
   const [fomcLoading, setFomcLoading] = useState(false);
   const [apiEarnings, setApiEarnings] = useState<CalendarEvent[]>([]);
+  const [apiEcon, setApiEcon] = useState<CalendarEvent[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -365,6 +366,14 @@ export function MarketCalendar({ onClose }: Props) {
       .then((data: { earnings?: BenzingaEarning[] }) => {
         if (!cancelled && data.earnings && data.earnings.length > 0) {
           setApiEarnings(benzingaEarningsToEvents(data.earnings));
+        }
+      })
+      .catch(() => {});
+    fetch(`${apiBase}/market/economic-calendar`)
+      .then(r => r.json())
+      .then((data: { events?: BenzingaEconEvent[] }) => {
+        if (!cancelled && data.events && data.events.length > 0) {
+          setApiEcon(benzingaEconToEvents(data.events));
         }
       })
       .catch(() => {});
@@ -380,7 +389,7 @@ export function MarketCalendar({ onClose }: Props) {
     });
   }, []);
 
-  const allEvents = useMemo(() => generateMarketEvents(year - 1, year + 2, apiEarnings), [year, apiEarnings]);
+  const allEvents = useMemo(() => generateMarketEvents(year - 1, year + 2, apiEarnings, apiEcon), [year, apiEarnings, apiEcon]);
 
   const eventMap = useMemo(() => {
     const map: Record<string, CalendarEvent[]> = {};

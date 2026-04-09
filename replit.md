@@ -63,4 +63,11 @@ The monorepo structure facilitates shared libraries and consistent tooling. A cl
 -   **Interactive Brokers API** (`@stoqey/ib`): Market breadth and depth data.
 -   **web-push**: Server-side Web Push notifications.
 -   **SEC EDGAR API**: Public company filings data.
--   **Benzinga API**: News articles and earnings calendar data. Provides full news with ticker associations, analyst ratings, and earnings dates/EPS estimates. Used as primary source for news feed and earnings-date endpoint (Yahoo as fallback). Key: `BENZINGA_API_KEY`.
+-   **Benzinga API**: Comprehensive market data provider. Key: `BENZINGA_API_KEY`. Endpoints integrated:
+    - **News**: Primary news source with ticker associations; dedup priority over Finnhub/Polygon.
+    - **Earnings Calendar**: Bulk earnings with date/timing/EPS/revenue for 29 major tickers. Yahoo fallback.
+    - **Economic Calendar**: Importance≥3 US macro events (CPI, FOMC, NFP, etc.) with 6hr cache. Replaces hardcoded FOMC/economic events in MarketCalendar when available.
+    - **Analyst Ratings**: Recent upgrades/downgrades/initiations with price targets (2hr cache, symbol-filterable). Displayed in CompanyResearchHub.
+    - **Analyst Insights**: Per-symbol AI-generated analyst sentiment summaries. Shown alongside ratings.
+    - **Conference Calls**: 3-month lookahead with webcast URLs.
+    - **Strategist Integration**: Upcoming economic catalysts (14-day window) and recent analyst ratings for the target symbol are injected into both the regular and streaming strategist prompts, so the AI factors macro events and analyst sentiment into trade recommendations.

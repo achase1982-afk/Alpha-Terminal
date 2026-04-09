@@ -566,6 +566,157 @@ function useCompanyFinancials(ticker: string) {
 }
 
 
+interface AnalystRating {
+  id: string;
+  date: string;
+  ticker: string;
+  name: string;
+  analyst: string;
+  analystName: string;
+  actionCompany: string;
+  ratingCurrent: string;
+  ratingPrior: string;
+  ptCurrent: string | null;
+  ptPrior: string | null;
+  ptPctChange: string | null;
+  importance: number;
+  url: string;
+}
+
+const actionColors: Record<string, string> = {
+  Upgrades: C.green,
+  Downgrades: C.red,
+  Initiates: C.gold,
+  Maintains: C.textMuted,
+  Reiterates: C.textMuted,
+};
+
+interface AnalystInsight {
+  id: string;
+  date: string;
+  firm: string;
+  action: string;
+  rating: string;
+  priceTarget: string | null;
+  summary: string;
+  ticker: string;
+  name: string;
+}
+
+const SubAnalystRatings = memo(function SubAnalystRatings({ ticker }: { ticker: string }) {
+  const [ratings, setRatings] = useState<AnalystRating[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [insightsList, setInsightsList] = useState<AnalystInsight[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setRatings([]);
+    setInsightsList([]);
+    Promise.all([
+      fetch(`${API_BASE}/market/analyst-ratings?symbol=${ticker}`).then(r => r.json()).catch(() => ({ ratings: [] })),
+      fetch(`${API_BASE}/market/analyst-insights?symbol=${ticker}`).then(r => r.json()).catch(() => ({ insights: [] })),
+    ]).then(([ratingsData, insightsData]) => {
+      if (cancelled) return;
+      setRatings(ratingsData.ratings || []);
+      setInsightsList(insightsData.insights || []);
+      setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [ticker]);
+
+  if (loading) {
+    return (
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 20, textAlign: "center" }}>
+        <Loader2 className="w-5 h-5 animate-spin mx-auto" style={{ color: C.gold }} />
+        <p className="font-mono text-xs mt-2" style={{ color: C.textDim }}>Loading analyst data...</p>
+      </div>
+    );
+  }
+
+  if (ratings.length === 0 && insightsList.length === 0) return null;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <h3 className="font-mono font-bold text-xs tracking-widest" style={{ color: C.gold }}>ANALYST RATINGS</h3>
+
+      {insightsList.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {insightsList.slice(0, 3).map(ins => (
+            <div key={ins.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px 14px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                <span className="font-mono text-[11px] font-bold" style={{ color: C.gold }}>{ins.firm}</span>
+                <span className="font-mono text-[10px]" style={{ color: C.textDim }}>{ins.rating}</span>
+                {ins.priceTarget && <span className="font-mono text-[10px] font-bold" style={{ color: C.text }}>PT ${parseFloat(ins.priceTarget).toFixed(0)}</span>}
+                <span className="font-mono text-[10px]" style={{ color: C.textDim }}>{ins.date}</span>
+              </div>
+              <p className="font-mono text-[11px] leading-relaxed" style={{ color: C.textSoft }}>{ins.summary}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {ratings.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {ratings.slice(0, 10).map(r => {
+            const actionColor = actionColors[r.actionCompany] || C.textMuted;
+            const ptChange = r.ptPrior && r.ptCurrent
+              ? parseFloat(r.ptCurrent) - parseFloat(r.ptPrior)
+              : null;
+
+            return (
+              <div
+                key={r.id}
+                style={{
+                  background: C.card,
+                  border: `1px solid ${C.border}`,
+                  borderRadius: 8,
+                  padding: "8px 12px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                    <span className="font-mono text-[11px] font-bold" style={{ color: actionColor }}>
+                      {r.actionCompany.toUpperCase()}
+                    </span>
+                    <span className="font-mono text-[11px]" style={{ color: C.textMuted }}>
+                      {r.analystName || r.analyst}
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2, flexWrap: "wrap" }}>
+                    <span className="font-mono text-[11px]" style={{ color: C.text }}>{r.ratingCurrent}</span>
+                    {r.ratingPrior && r.ratingPrior !== r.ratingCurrent && (
+                      <span className="font-mono text-[10px]" style={{ color: C.textDim }}>
+                        (was {r.ratingPrior})
+                      </span>
+                    )}
+                    {r.ptCurrent && (
+                      <span className="font-mono text-[11px] font-bold" style={{ color: C.text }}>
+                        PT ${parseFloat(r.ptCurrent).toFixed(0)}
+                      </span>
+                    )}
+                    {ptChange !== null && ptChange !== 0 && (
+                      <span className="font-mono text-[10px]" style={{ color: ptChange > 0 ? C.green : C.red }}>
+                        {ptChange > 0 ? "▲" : "▼"} ${Math.abs(ptChange).toFixed(0)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <span className="font-mono text-[10px] shrink-0" style={{ color: C.textDim }}>
+                  {r.date}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+});
+
 const SubFinancials = memo(function SubFinancials({ ticker }: { ticker: string }) {
   const [view, setView] = useState("income");
   const { data: fin, loading, error, retry } = useCompanyFinancials(ticker);
@@ -1643,6 +1794,10 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
               ) : null}
 
               <SubOverview fund={fundamentals} quoteData={(quoteData as unknown as QuoteInfo) ?? null} priceHist={priceHist} volHist={volHist} ai={analysisResult ? parseAiAnalysis(analysisResult) : null} />
+            </div>
+
+            <div style={{ width: "100%", flexShrink: 0, padding: "0 16px 16px" }}>
+              <SubAnalystRatings ticker={symbol} />
             </div>
 
             <div style={{ width: "100%", flexShrink: 0, padding: "0 16px 16px" }}>
