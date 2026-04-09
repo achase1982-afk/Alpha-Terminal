@@ -8,20 +8,26 @@ import {
   ArrowLeft, Lock, Unlock, Minus, Sparkles, AlertTriangle, CheckCircle2, Loader2,
 } from "lucide-react";
 
-const GOLD = "#FFB800";
-const UP = "#00d166";
-const DOWN = "#f23645";
-const BG = "#0a0a0a";
-const CARD = "#141416";
-const BORDER = "#1f1f23";
-const BORDER2 = "#27272a";
-const MUTED = "#71717a";
-const DIM = "#52525b";
-const TEXT = "#e4e4e7";
-const WHITE = "#fafafa";
-const FIELD = "#111113";
-const GOLD_DIM = "rgba(251,191,36,0.08)";
-const MONO = "'SF Mono', 'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace";
+const GOLD = "#f5a623";
+const UP = "#2ecc71";
+const DOWN = "#ff4b5c";
+const BG = "#050607";
+const CARD = "#101215";
+const CARD_SOFT = "#14161a";
+const BORDER = "#23262c";
+const BORDER2 = "#23262c";
+const MUTED = "#6b7184";
+const DIM = "#6b7184";
+const TEXT = "#9ba1b5";
+const WHITE = "#f7f8fa";
+const FIELD = "rgba(10,12,16,0.95)";
+const GOLD_DIM = "rgba(245,166,35,0.08)";
+const DIVIDER = "#1c1f26";
+const R_CARD = 14;
+const CARD_GRAD = "linear-gradient(145deg, #111319, #080a0f)";
+const CTA_GRAD = "linear-gradient(135deg, #f5a623, #ffce73)";
+const SYS_FONT = "-apple-system, BlinkMacSystemFont, system-ui, 'Segoe UI', sans-serif";
+const MONO = SYS_FONT;
 
 type OptionType = "CALL" | "PUT";
 type LegDirection = "BUY_TO_OPEN" | "SELL_TO_OPEN" | "BUY_TO_CLOSE" | "SELL_TO_CLOSE";

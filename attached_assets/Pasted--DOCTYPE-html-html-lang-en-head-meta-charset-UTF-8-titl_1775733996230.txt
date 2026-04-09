@@ -1,0 +1,1122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Order Ticket Master</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      --bg: #050607;
+      --card-bg: #101215;
+      --card-bg-soft: #14161a;
+      --border-soft: #23262c;
+      --text-primary: #f7f8fa;
+      --text-secondary: #9ba1b5;
+      --text-muted: #6b7184;
+      --accent: #f5a623;
+      --success: #2ecc71;
+      --danger: #ff4b5c;
+      --warning: #f5a623;
+      --divider: #1c1f26;
+      --radius-card: 14px;
+      --radius-pill: 16px;
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      background: radial-gradient(circle at top, #141821 0, #050607 55%);
+      color: var(--text-primary);
+      font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+      font-weight: 300;
+    }
+
+    .app {
+      max-width: 430px;
+      margin: 0 auto;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .screen {
+      display: none;
+      flex: 1;
+      flex-direction: column;
+      padding: 10px 12px 12px;
+      gap: 10px;
+    }
+
+    .screen.active {
+      display: flex;
+    }
+
+    .top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 4px 0 8px;
+      color: var(--text-secondary);
+      font-size: 13px;
+    }
+
+    .top-bar-left,
+    .top-bar-right {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .icon-btn {
+      width: 26px;
+      height: 26px;
+      border-radius: 999px;
+      border: 1px solid var(--border-soft);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      color: var(--text-secondary);
+    }
+
+    .top-title-main {
+      font-size: 13px;
+      color: var(--text-primary);
+      letter-spacing: 0.04em;
+    }
+
+    .top-title-sub {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .segmented-toggle {
+      display: inline-flex;
+      border-radius: 999px;
+      border: 1px solid var(--border-soft);
+      padding: 2px;
+      background: rgba(255,255,255,0.01);
+      font-size: 11px;
+    }
+
+    .segmented-toggle button {
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 300;
+    }
+
+    .segmented-toggle button.active {
+      background: rgba(245,166,35,0.16);
+      color: var(--accent);
+    }
+
+    .card {
+      background: linear-gradient(145deg, #111319, #080a0f);
+      border-radius: var(--radius-card);
+      border: 1px solid var(--border-soft);
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .card-soft {
+      background: var(--card-bg-soft);
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    .card-title {
+      font-size: 13px;
+      color: var(--text-secondary);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .pill {
+      border-radius: var(--radius-pill);
+      padding: 3px 9px;
+      font-size: 11px;
+      border: 1px solid var(--border-soft);
+      color: var(--text-secondary);
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .pill-accent {
+      border-color: rgba(245,166,35,0.4);
+      color: var(--accent);
+      background: rgba(245,166,35,0.06);
+    }
+
+    .pill-success {
+      border-color: rgba(46,204,113,0.4);
+      color: var(--success);
+      background: rgba(46,204,113,0.04);
+    }
+
+    .pill-danger {
+      border-color: rgba(255,75,92,0.5);
+      color: var(--danger);
+      background: rgba(255,75,92,0.04);
+    }
+
+    .instrument-main {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .instrument-symbol {
+      font-size: 18px;
+      letter-spacing: 0.08em;
+    }
+
+    .instrument-name {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .instrument-price {
+      text-align: right;
+    }
+
+    .instrument-price-main {
+      font-size: 17px;
+    }
+
+    .instrument-price-change {
+      font-size: 11px;
+      color: #ff4b5c;
+    }
+
+    .instrument-meta {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 6px;
+      font-size: 11px;
+      color: var(--text-secondary);
+      align-items: center;
+    }
+
+    .meta-left,
+    .meta-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .meta-tag {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+    }
+
+    .strategy-main {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+    }
+
+    .strategy-name {
+      font-size: 13px;
+      color: var(--text-primary);
+    }
+
+    .strategy-sub {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-top: 2px;
+    }
+
+    .strategy-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px 14px;
+      font-size: 12px;
+    }
+
+    .label {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .value {
+      font-size: 14px;
+      color: var(--text-primary);
+    }
+
+    .value-quiet {
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    .strip {
+      font-size: 11px;
+      color: var(--text-secondary);
+      padding-top: 4px;
+      border-top: 1px dashed var(--divider);
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 4px 10px;
+    }
+
+    .legs-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 4px;
+    }
+
+    .leg-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 8px;
+      border-radius: 10px;
+      background: rgba(255,255,255,0.01);
+      border: 1px solid rgba(35,38,44,0.7);
+    }
+
+    .leg-main {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      font-size: 12px;
+    }
+
+    .leg-top {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .leg-side-sell,
+    .leg-side-buy {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
+    }
+
+    .leg-side-sell {
+      color: var(--danger);
+    }
+
+    .leg-side-buy {
+      color: var(--success);
+    }
+
+    .leg-sub {
+      color: var(--text-secondary);
+      font-size: 11px;
+    }
+
+    .leg-right {
+      text-align: right;
+      font-size: 11px;
+      color: var(--text-secondary);
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .inline-link {
+      font-size: 11px;
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .order-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px 8px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      font-size: 12px;
+    }
+
+    .field-input {
+      height: 32px;
+      border-radius: 9px;
+      border: 1px solid var(--border-soft);
+      background: rgba(10,12,16,0.95);
+      padding: 0 10px;
+      color: var(--text-primary);
+      font-size: 14px;
+      font-weight: 300;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+    }
+
+    .field-input span {
+      opacity: 0.9;
+    }
+
+    .dropdown-arrow {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    input[type="number"],
+    input[type="text"] {
+      background: transparent;
+      border: none;
+      outline: none;
+      color: inherit;
+      font: inherit;
+      width: 100%;
+    }
+
+    input[type="number"]::-webkit-outer-spin-button,
+    input[type="number"]::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+
+    .price-pills {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 4px;
+      font-size: 10px;
+      color: var(--text-secondary);
+    }
+
+    .price-pill {
+      padding: 2px 6px;
+      border-radius: 999px;
+      border: 1px solid transparent;
+    }
+
+    .price-pill.active {
+      border-color: rgba(245,166,35,0.75);
+      color: var(--accent);
+      background: rgba(245,166,35,0.08);
+    }
+
+    .quantity-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 6px;
+      font-size: 12px;
+    }
+
+    .stepper {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 20px;
+      border: 1px solid var(--border-soft);
+      overflow: hidden;
+    }
+
+    .stepper button {
+      width: 28px;
+      height: 26px;
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      font-size: 14px;
+    }
+
+    .stepper span {
+      min-width: 32px;
+      text-align: center;
+      font-size: 13px;
+      color: var(--text-primary);
+    }
+
+    .payoff-diagram {
+      margin-top: 4px;
+      height: 130px;
+      border-radius: 10px;
+      border: 1px dashed var(--divider);
+      background: radial-gradient(circle at top, #1d222e 0, #090b10 60%);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .payoff-axes {
+      position: absolute;
+      inset: 10px 10px 10px 10px;
+      border-bottom: 1px solid rgba(116,124,146,0.7);
+      border-left: 1px solid rgba(116,124,146,0.7);
+    }
+
+    .payoff-line {
+      position: absolute;
+      inset: 18px 14px 16px 28px;
+      border-radius: 20px;
+      background: linear-gradient(135deg, rgba(46,204,113,0.2), rgba(245,166,35,0.3));
+      clip-path: polygon(0% 55%, 30% 55%, 70% 18%, 100% 18%, 100% 100%, 0% 100%);
+      opacity: 0.9;
+    }
+
+    .payoff-label {
+      position: absolute;
+      bottom: 6px;
+      right: 10px;
+      font-size: 9px;
+      color: var(--text-muted);
+    }
+
+    .risk-text {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-top: 4px;
+      line-height: 1.4;
+    }
+
+    .metrics-grid {
+      margin-top: 6px;
+      padding-top: 6px;
+      border-top: 1px dashed var(--divider);
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px 10px;
+      font-size: 11px;
+    }
+
+    .accordion-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-top: 4px;
+    }
+
+    .accordion-header span {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .ai-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 2px;
+      font-size: 11px;
+    }
+
+    .ai-row {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+    }
+
+    .ai-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      margin-top: 4px;
+    }
+
+    .ai-dot-danger {
+      background: var(--danger);
+    }
+
+    .ai-dot-warning {
+      background: var(--warning);
+    }
+
+    .ai-dot-success {
+      background: var(--success);
+    }
+
+    .ai-text-main {
+      color: var(--text-secondary);
+    }
+
+    .ai-text-sub {
+      color: var(--text-muted);
+      margin-top: 1px;
+    }
+
+    .bottom-bar {
+      position: sticky;
+      bottom: 0;
+      padding-top: 6px;
+      background: linear-gradient(to top, rgba(5,6,7,0.97), rgba(5,6,7,0.8), transparent);
+      margin-top: 6px;
+    }
+
+    .bottom-summary {
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+      display: flex;
+      justify-content: space-between;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .cta-btn {
+      width: 100%;
+      height: 42px;
+      border-radius: 999px;
+      border: none;
+      background: linear-gradient(135deg, #f5a623, #ffce73);
+      color: #050607;
+      font-size: 14px;
+      font-weight: 400;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .btn-row {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      padding: 4px 12px 8px;
+    }
+
+    .btn-tab {
+      border-radius: 999px;
+      border: 1px solid var(--border-soft);
+      padding: 4px 10px;
+      background: rgba(255,255,255,0.01);
+      color: var(--text-secondary);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .btn-tab.active {
+      border-color: rgba(245,166,35,0.6);
+      color: var(--accent);
+      background: rgba(245,166,35,0.07);
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+
+    <!-- quick toggle just for previewing both pages -->
+    <div class="btn-row">
+      <button class="btn-tab active" onclick="showScreen('options')">Options</button>
+      <button class="btn-tab" onclick="showScreen('stock')">Stock</button>
+    </div>
+
+    <!-- ================= OPTIONS ORDER TICKET ================= -->
+    <div class="screen active" id="screen-options">
+      <div class="top-bar">
+        <div class="top-bar-left">
+          <div class="icon-btn">&#x2039;</div>
+          <div>
+            <div class="top-title-main">ORDER TICKET</div>
+            <div class="top-title-sub">Options · MDLN</div>
+          </div>
+        </div>
+        <div class="top-bar-right">
+          <div class="segmented-toggle">
+            <button class="active">Options</button>
+            <button onclick="showScreen('stock')">Stock</button>
+          </div>
+          <div class="icon-btn">&#x2715;</div>
+        </div>
+      </div>
+
+      <!-- instrument header -->
+      <div class="card">
+        <div class="instrument-main">
+          <div>
+            <div class="instrument-symbol">MDLN</div>
+            <div class="instrument-name">MedImmune Ltd</div>
+          </div>
+          <div class="instrument-price">
+            <div class="instrument-price-main">43.96</div>
+            <div class="instrument-price-change">−0.86%</div>
+          </div>
+        </div>
+        <div class="instrument-meta">
+          <div class="meta-left">
+            <span class="meta-tag">OPTIONS</span>
+            <span>Exp Nov 2, 2026</span>
+          </div>
+          <div class="meta-right">
+            <span class="pill">Margin · BP $25,400</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- strategy summary: supports rolls / covered / futures -->
+      <div class="card card-soft">
+        <div class="strategy-main">
+          <div>
+            <div class="strategy-name">Roll vertical spread · 45/40 P · 1×</div>
+            <div class="strategy-sub">
+              Closing Nov 2026 45/40 put spread, opening Dec 2026 45/40 put spread
+            </div>
+          </div>
+          <div class="pill-accent pill">Credit</div>
+        </div>
+        <div class="strip">
+          <!-- example: equity + options covered call; tweak text per order -->
+          <span>Type: Equity + options · Covered call</span>
+          <span>Action: Roll position</span>
+        </div>
+        <div class="strategy-grid">
+          <div>
+            <div class="label">Net credit / spread</div>
+            <div class="value">$0.80</div>
+          </div>
+          <div>
+            <div class="label">Total credit</div>
+            <div class="value">$80.00</div>
+          </div>
+          <div>
+            <div class="label">Max risk</div>
+            <div class="value">$420.00</div>
+          </div>
+          <div>
+            <div class="label">Prob. of profit</div>
+            <div class="value-quiet">63%</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- legs: labels for OPEN / CLOSE / EQUITY / FUT ROLL -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Legs</div>
+          <a class="inline-link" href="#">+ Add leg</a>
+        </div>
+
+        <div class="legs-list">
+
+          <!-- closing legs (example data) -->
+          <div class="leg-row">
+            <div class="leg-main">
+              <div class="leg-top">
+                <div class="leg-side-buy">CLOSE</div>
+                <div>1 · 45 Put · Nov 2026</div>
+              </div>
+              <div class="leg-sub">Current short leg · Equity: none</div>
+            </div>
+            <div class="leg-right">
+              <div>To buy back · Mark 3.20</div>
+              <a class="inline-link" href="#">Edit</a>
+            </div>
+          </div>
+
+          <div class="leg-row">
+            <div class="leg-main">
+              <div class="leg-top">
+                <div class="leg-side-sell">CLOSE</div>
+                <div>1 · 40 Put · Nov 2026</div>
+              </div>
+              <div class="leg-sub">Current long leg · Equity: none</div>
+            </div>
+            <div class="leg-right">
+              <div>To sell · Mark 1.10</div>
+              <a class="inline-link" href="#">Edit</a>
+            </div>
+          </div>
+
+          <!-- opening legs (new position in the roll) -->
+          <div class="leg-row">
+            <div class="leg-main">
+              <div class="leg-top">
+                <div class="leg-side-sell">OPEN</div>
+                <div>1 · 45 Put · Dec 2026</div>
+              </div>
+              <div class="leg-sub">New short leg · Futures: no</div>
+            </div>
+            <div class="leg-right">
+              <div>To sell · Mark 4.00</div>
+              <a class="inline-link" href="#">Edit</a>
+            </div>
+          </div>
+
+          <div class="leg-row">
+            <div class="leg-main">
+              <div class="leg-top">
+                <div class="leg-side-buy">OPEN</div>
+                <div>1 · 40 Put · Dec 2026</div>
+              </div>
+              <div class="leg-sub">New long leg · Futures: no</div>
+            </div>
+            <div class="leg-right">
+              <div>To buy · Mark 2.00</div>
+              <a class="inline-link" href="#">Edit</a>
+            </div>
+          </div>
+
+          <!-- equity leg for covered call (optional) -->
+          <div class="leg-row">
+            <div class="leg-main">
+              <div class="leg-top">
+                <div class="leg-side-sell">EQUITY</div>
+                <div>100 · MDLN Shares</div>
+              </div>
+              <div class="leg-sub">Shares deliver against covered call</div>
+            </div>
+            <div class="leg-right">
+              <div>To sell · Mark 43.96</div>
+              <a class="inline-link" href="#">Edit</a>
+            </div>
+          </div>
+
+          <!-- futures roll leg (optional example) -->
+          <div class="leg-row">
+            <div class="leg-main">
+              <div class="leg-top">
+                <div class="leg-side-sell">FUT ROLL</div>
+                <div>1 · ES Dec / Mar</div>
+              </div>
+              <div class="leg-sub">Closing Dec future, opening Mar future</div>
+            </div>
+            <div class="leg-right">
+              <div>Net price · Mark 4.25</div>
+              <a class="inline-link" href="#">Edit</a>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- order controls -->
+      <div class="card card-soft">
+        <div class="card-header">
+          <div class="card-title">Order</div>
+        </div>
+        <div class="order-grid">
+          <div class="field">
+            <div class="label">Order type</div>
+            <div class="field-input">
+              <span>Limit</span>
+              <span class="dropdown-arrow">&#9662;</span>
+            </div>
+          </div>
+          <div class="field">
+            <div class="label">Time in force</div>
+            <div class="field-input">
+              <span>Day</span>
+              <span class="dropdown-arrow">&#9662;</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="field" style="margin-top:6px;">
+          <div class="label">Net credit price</div>
+          <div class="field-input">
+            <input type="number" value="0.80" />
+            <span class="label">USD</span>
+          </div>
+          <div class="price-pills">
+            <span class="price-pill">Bid 0.70</span>
+            <span class="price-pill active">Mid 0.80</span>
+            <span class="price-pill">Ask 0.90</span>
+          </div>
+        </div>
+
+        <div class="quantity-row">
+          <div>
+            <div class="label">Quantity</div>
+            <div class="value-quiet">Spreads · 100 shares / contract</div>
+          </div>
+          <div class="stepper">
+            <button>-</button>
+            <span>1</span>
+            <button>+</button>
+          </div>
+        </div>
+
+        <div class="strip">
+          <span>Total credit $80</span>
+          <span>Max risk $420</span>
+          <span>Est. fees $1.50</span>
+        </div>
+      </div>
+
+      <!-- unified risk block with collapsible details + AI -->
+      <div class="card card-soft">
+        <div class="card-header">
+          <div class="card-title">Risk overview</div>
+          <span class="pill-danger pill" id="risk-pill">Pre‑trade risk · FAIL</span>
+        </div>
+
+        <div class="strip">
+          <span>Max loss $420</span>
+          <span>POP 63%</span>
+          <span>Margin required $420</span>
+        </div>
+
+        <div class="accordion-header" onclick="toggleRiskDetails()" style="cursor:pointer;">
+          <span>
+            <span id="risk-chevron">&#9662;</span>
+            <span>View full risk details</span>
+          </span>
+          <span class="label">Tap to expand</span>
+        </div>
+
+        <div id="risk-details" style="display:none; margin-top:6px;">
+
+          <div class="payoff-diagram">
+            <div class="payoff-axes"></div>
+            <div class="payoff-line"></div>
+            <div class="payoff-label">P/L at expiration vs underlying price</div>
+          </div>
+
+          <div class="risk-text">
+            Max profit $80 if MDLN stays at or above 45 at expiration.
+            Max loss $420 if MDLN is at or below 40. Breakeven is near 44.20.
+          </div>
+
+          <div class="metrics-grid">
+            <div>
+              <div class="label">Breakeven</div>
+              <div class="value-quiet">44.20</div>
+            </div>
+            <div>
+              <div class="label">Delta</div>
+              <div class="value-quiet">0.18</div>
+            </div>
+            <div>
+              <div class="label">Gamma</div>
+              <div class="value-quiet">−0.01</div>
+            </div>
+            <div>
+              <div class="label">Theta</div>
+              <div class="value-quiet">0.02</div>
+            </div>
+            <div>
+              <div class="label">Vega</div>
+              <div class="value-quiet">−0.03</div>
+            </div>
+            <div>
+              <div class="label">Buying power</div>
+              <div class="value-quiet">−$420</div>
+            </div>
+          </div>
+
+          <div class="ai-list" style="margin-top:8px;">
+            <div class="ai-row">
+              <div class="ai-dot ai-dot-danger"></div>
+              <div>
+                <div class="ai-text-main">Very wide bid–ask spread. Use limit orders.</div>
+                <div class="ai-text-sub">Consider pricing closer to mid for a higher fill rate.</div>
+              </div>
+            </div>
+            <div class="ai-row">
+              <div class="ai-dot ai-dot-warning"></div>
+              <div>
+                <div class="ai-text-main">Estimated fill probability at 0.80: ~45%.</div>
+                <div class="ai-text-sub">Adjusting price by 5–10% can significantly improve odds.</div>
+              </div>
+            </div>
+            <div class="ai-row">
+              <div class="ai-dot ai-dot-success"></div>
+              <div>
+                <div class="ai-text-main">Order fits within account risk parameters.</div>
+                <div class="ai-text-sub">Exposure stays inside your configured per‑trade limit.</div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="bottom-bar">
+        <div class="bottom-summary">
+          <span>1 spread · Credit $80</span>
+          <span>Max risk $420</span>
+          <span>POP 63%</span>
+          <span>Risk: FAIL</span>
+        </div>
+        <button class="cta-btn">Review options order</button>
+      </div>
+    </div>
+
+    <!-- ================= STOCK ORDER TICKET ================= -->
+    <div class="screen" id="screen-stock">
+      <div class="top-bar">
+        <div class="top-bar-left">
+          <div class="icon-btn">&#x2039;</div>
+          <div>
+            <div class="top-title-main">ORDER TICKET</div>
+            <div class="top-title-sub">Stock · MDLN</div>
+          </div>
+        </div>
+        <div class="top-bar-right">
+          <div class="segmented-toggle">
+            <button onclick="showScreen('options')">Options</button>
+            <button class="active">Stock</button>
+          </div>
+          <div class="icon-btn">&#x2715;</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="instrument-main">
+          <div>
+            <div class="instrument-symbol">MDLN</div>
+            <div class="instrument-name">MedImmune Ltd</div>
+          </div>
+          <div class="instrument-price">
+            <div class="instrument-price-main">43.96</div>
+            <div class="instrument-price-change">−0.86%</div>
+          </div>
+        </div>
+        <div class="instrument-meta">
+          <div class="meta-left">
+            <span class="meta-tag">STOCK</span>
+            <span>Today’s range 41.8 – 45.5</span>
+          </div>
+          <div class="meta-right">
+            <span class="pill">Margin · BP $25,400</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card card-soft">
+        <div class="card-header">
+          <div class="card-title">Side</div>
+        </div>
+        <div class="segmented-toggle" style="margin-top:4px;">
+          <button class="active">Buy</button>
+          <button>Sell</button>
+        </div>
+
+        <div class="field" style="margin-top:10px;">
+          <div class="label">Quantity</div>
+          <div class="quantity-row">
+            <div class="value-quiet">Shares</div>
+            <div class="stepper">
+              <button>-</button>
+              <span>1</span>
+              <button>+</button>
+            </div>
+          </div>
+          <div class="label" style="margin-top:3px;">≈ $43.96 notional at current price</div>
+        </div>
+
+        <div class="order-grid" style="margin-top:8px;">
+          <div class="field">
+            <div class="label">Order type</div>
+            <div class="field-input">
+              <span>Limit</span>
+              <span class="dropdown-arrow">&#9662;</span>
+            </div>
+          </div>
+          <div class="field">
+            <div class="label">Time in force</div>
+            <div class="field-input">
+              <span>Day</span>
+              <span class="dropdown-arrow">&#9662;</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="field" style="margin-top:6px;">
+          <div class="label">Limit price</div>
+          <div class="field-input">
+            <input type="number" value="43.69" />
+            <span class="label">USD</span>
+          </div>
+          <div class="price-pills">
+            <span class="price-pill">Bid 41.88</span>
+            <span class="price-pill active">Mid 43.69</span>
+            <span class="price-pill">Ask 45.50</span>
+          </div>
+        </div>
+
+        <div class="strip">
+          <span>Notional $43.69</span>
+          <span>Est. fees $0.00</span>
+          <span>BP after trade $25,356</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Risk &amp; insights</div>
+          <span class="pill-success pill">Pre‑trade risk · PASS</span>
+        </div>
+        <div class="strip">
+          <span>Small order vs account</span>
+          <span>Spread 8.6%</span>
+        </div>
+        <div class="ai-list" style="margin-top:6px;">
+          <div class="ai-row">
+            <div class="ai-dot ai-dot-warning"></div>
+            <div>
+              <div class="ai-text-main">Wide spread (8.6%). Prefer limit orders over market.</div>
+              <div class="ai-text-sub">Current bid 41.88, ask 45.50, mid 43.69.</div>
+            </div>
+          </div>
+          <div class="ai-row">
+            <div class="ai-dot ai-dot-success"></div>
+            <div>
+              <div class="ai-text-main">Order size is small relative to account.</div>
+              <div class="ai-text-sub">Impact on buying power and risk is limited.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bottom-bar">
+        <div class="bottom-summary">
+          <span>Buy 1 share · Limit 43.69</span>
+          <span>Notional $43.69</span>
+          <span>Risk: PASS</span>
+        </div>
+        <button class="cta-btn">Review stock order</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function showScreen(type) {
+      const opt = document.getElementById('screen-options');
+      const stk = document.getElementById('screen-stock');
+      const tabs = document.querySelectorAll('.btn-tab');
+      if (type === 'options') {
+        opt.classList.add('active');
+        stk.classList.remove('active');
+        tabs[0].classList.add('active');
+        tabs[1].classList.remove('active');
+      } else {
+        stk.classList.add('active');
+        opt.classList.remove('active');
+        tabs[1].classList.add('active');
+        tabs[0].classList.remove('active');
+      }
+    }
+
+    function toggleRiskDetails() {
+      const panel = document.getElementById('risk-details');
+      const chev = document.getElementById('risk-chevron');
+      const isOpen = panel.style.display === 'block';
+      panel.style.display = isOpen ? 'none' : 'block';
+      chev.innerHTML = isOpen ? '&#9662;' : '&#9652;';
+    }
+  </script>
+</body>
+</html>
