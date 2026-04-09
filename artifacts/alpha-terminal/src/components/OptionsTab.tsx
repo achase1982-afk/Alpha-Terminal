@@ -1107,6 +1107,8 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
     return { ...rawData, calls, puts };
   }, [rawData, contractType]);
 
+  const streamQuote = useTerminalStore((s) => s.streamPrices[symbol.toUpperCase()]);
+
   const { data: quote } = useGetQuote(
     { symbol, accessToken: accessToken || "" },
     { query: { enabled: !!accessToken } }
@@ -1133,7 +1135,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
     staleTime: 30 * 60 * 1000,
   });
 
-  const underlyingPrice = quote?.last ?? (data as unknown as { underlyingPrice?: number })?.underlyingPrice ?? null;
+  const underlyingPrice = streamQuote?.last ?? quote?.last ?? (data as unknown as { underlyingPrice?: number })?.underlyingPrice ?? null;
 
   const groups = useMemo(() => {
     if (!data) return [];

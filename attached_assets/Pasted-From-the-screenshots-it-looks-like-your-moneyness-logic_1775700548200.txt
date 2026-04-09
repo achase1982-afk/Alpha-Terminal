@@ -1,0 +1,33 @@
+From the screenshots it looks like your “moneyness” logic or ATM anchor is wrong, not the raw chain itself.
+
+## What I can see
+
+- The option rows themselves look like a normal chain: expirations grouped, strikes ascending, and individual bid/ask/size values all plausible.
+- The highlight band (yellow) that should mark the at‑the‑money strike seems offset: you’ve got MRVL around 114, but the highlighted strikes and the “OTM/ITM” background break don’t line up cleanly with that price.
+- IV% and P/C rows per expiry look fine; nothing there suggests bad data, so the bug is almost certainly in your UI logic that decides “which row is ATM and where to split ITM vs OTM.”
+
+## Likely failure points to check
+
+1. **Using the wrong reference price**  
+   - Verify you’re using the last trade or mid price for MRVL (114.17) and not the bid, open, or some cached value when you compute ATM.  
+   - If you pre‑round or floor the underlying price before finding the closest strike, that can easily shift your ATM one or two strikes.
+
+2. **Separate logic for calls vs puts**  
+   - For calls, ITM = strike < underlying; for puts, ITM = strike > underlying.  
+   - If you reused the same condition or inverted one side, your “ITM background” and “OTM background” will be flipped or off by a row on one side.
+
+3. **Strike comparison vs display price**  
+   - If MRVL is trading with a different tick size (e.g., 0.5 or 1.0) and you’re normalizing/rounding strikes, the index you mark as ATM might be based on the normalized value, not the actual sorted strike array.
+
+4. **Chain filtering / paging**  
+   - If you’re slicing the chain (e.g., “show 6 strikes around money”) before you compute ATM/ITM labels, your logic might be using indices from the full chain on a sliced subset.
+
+***
+
+To debug quickly, I’d log for one symbol (MRVL here): underlying price you’re using, the full list of strikes you get back from the API, the index you choose as ATM, and the condition you use to mark each row as ITM/OTM on both calls and puts, then compare that to what’s drawn.
+
+Can you paste or describe the exact function where you pick the ATM strike and set the ITM/OTM flags for calls and puts?
+
+Sources
+[1] IMG_8110.jpeg https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/images/50504156/795fb523-1b03-4241-9579-c5eacf48ce43/IMG_8110.jpeg?AWSAccessKeyId=ASIA2F3EMEYEY3CGWCD3&Signature=NuCWeCbdoB4ZOPpIMly0FzX15LA%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEEIaCXVzLWVhc3QtMSJGMEQCIAJSl9aEFch8%2Fhlo3DItRB1CHXY39rzGKxv0O4hEYVUMAiAK7BwfrAWQ8D5zE9bxlxWCG9O8NyHUVd%2BLqIYtcxkCKirzBAgLEAEaDDY5OTc1MzMwOTcwNSIMEXMr%2B1NArClp8S0nKtAEsesWSDaGhaeW61nKDYZTR62fObyF67M9yGFISvwTlvrsz4pI0Tfbp2TOpryq9VaaweAGy%2BLw3kJUVaPl%2Byuqo4bEHv2IPbE7HQV9dofchDcfRlBhgDYwn%2FZJEzngt1veoFggACGEmgVwDswTBFx6TpZ9LvVDos5hJONHv03QjhKU%2B1yV4IAK%2F3FncukTG6yTcWuBfAlSxnXyrHpowxGsuU2SibAbvervFyAtTzywHnPpcbKOAAYVqitbILcEqqciUnpkt1jpO3%2Fw1WIHy4tuMNRWeRwx0VGiTfSUyy5v9GuWVw1GnLiu6nESoYdzHNBM2CfxMw3sfN%2FsX%2FiJ%2BWHnd7w%2BzmHB9rIn60bFsdMbkAAL8QGCXHC4FPXBIt0m%2BT%2BMBXNjB3mFPKS%2F7iLNv4bX1G1T6ZeU%2BuZWG4Z%2FagfsI8wkcSxOgMl7T0W8kidkHUu1yKJY82Ng5lJYmfLkeWxlTvUC%2ByKTmP8uZL73EbgGZKuliLrDhz4LZt%2BSZMSdi9Qgr9QrMonReClB7XITmxcLRHjVMhsj2U19lDhZ5AyYoEW%2FHXXQQKIb1CQ5HtZ8tH7uqyx%2FeKulOM%2B6%2BqtsJvhbMk%2BG9wkkjNkmwgPhlQ68OXHLCcOOaivpBOgccLTrHdDgD2qbE4JP4QhJ1KkjGaZPr%2FrUYDpngA4eANqX3wO8my8OgqOwHDAYSV%2B5%2Fq4jV%2Fk67rpUhb4InzXy2Inlp%2FXF%2BFFzYpEGXsjJY2NZmUNWODFfZNLDr3ZEIno1hEwfscaMCb0xDfKX5lPnNWmzc0DK8DDVhNzOBjqZAQPmCEItZ5eUrVc6TqCyujIB8YucyGwoXUixOpQYXIdDdZqzRbmN6osqNCtaVRCZKopCqK5yc%2B6N6LL2jte9vuqrUISrouxY3Fk78Yv1dE%2FOne3dytc1GzM5CEHhBBXvLgPKJTghD52Iouqra0xbhMY9xqbx7GB1OcgmGzSn8I9aGevg%2FRE%2F9Xn9Jf7ev8GVDInswNIRRHV50w%3D%3D&Expires=1775701032
+[2] IMG_8109.jpeg https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/images/50504156/aef79240-7319-45e9-89d0-c05d234e0945/IMG_8109.jpeg?AWSAccessKeyId=ASIA2F3EMEYEY3CGWCD3&Signature=lM73UXO51LoTpNz7DBvfM%2BE9WKY%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEEIaCXVzLWVhc3QtMSJGMEQCIAJSl9aEFch8%2Fhlo3DItRB1CHXY39rzGKxv0O4hEYVUMAiAK7BwfrAWQ8D5zE9bxlxWCG9O8NyHUVd%2BLqIYtcxkCKirzBAgLEAEaDDY5OTc1MzMwOTcwNSIMEXMr%2B1NArClp8S0nKtAEsesWSDaGhaeW61nKDYZTR62fObyF67M9yGFISvwTlvrsz4pI0Tfbp2TOpryq9VaaweAGy%2BLw3kJUVaPl%2Byuqo4bEHv2IPbE7HQV9dofchDcfRlBhgDYwn%2FZJEzngt1veoFggACGEmgVwDswTBFx6TpZ9LvVDos5hJONHv03QjhKU%2B1yV4IAK%2F3FncukTG6yTcWuBfAlSxnXyrHpowxGsuU2SibAbvervFyAtTzywHnPpcbKOAAYVqitbILcEqqciUnpkt1jpO3%2Fw1WIHy4tuMNRWeRwx0VGiTfSUyy5v9GuWVw1GnLiu6nESoYdzHNBM2CfxMw3sfN%2FsX%2FiJ%2BWHnd7w%2BzmHB9rIn60bFsdMbkAAL8QGCXHC4FPXBIt0m%2BT%2BMBXNjB3mFPKS%2F7iLNv4bX1G1T6ZeU%2BuZWG4Z%2FagfsI8wkcSxOgMl7T0W8kidkHUu1yKJY82Ng5lJYmfLkeWxlTvUC%2ByKTmP8uZL73EbgGZKuliLrDhz4LZt%2BSZMSdi9Qgr9QrMonReClB7XITmxcLRHjVMhsj2U19lDhZ5AyYoEW%2FHXXQQKIb1CQ5HtZ8tH7uqyx%2FeKulOM%2B6%2BqtsJvhbMk%2BG9wkkjNkmwgPhlQ68OXHLCcOOaivpBOgccLTrHdDgD2qbE4JP4QhJ1KkjGaZPr%2FrUYDpngA4eANqX3wO8my8OgqOwHDAYSV%2B5%2Fq4jV%2Fk67rpUhb4InzXy2Inlp%2FXF%2BFFzYpEGXsjJY2NZmUNWODFfZNLDr3ZEIno1hEwfscaMCb0xDfKX5lPnNWmzc0DK8DDVhNzOBjqZAQPmCEItZ5eUrVc6TqCyujIB8YucyGwoXUixOpQYXIdDdZqzRbmN6osqNCtaVRCZKopCqK5yc%2B6N6LL2jte9vuqrUISrouxY3Fk78Yv1dE%2FOne3dytc1GzM5CEHhBBXvLgPKJTghD52Iouqra0xbhMY9xqbx7GB1OcgmGzSn8I9aGevg%2FRE%2F9Xn9Jf7ev8GVDInswNIRRHV50w%3D%3D&Expires=1775701032
