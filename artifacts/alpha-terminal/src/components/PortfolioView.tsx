@@ -14,6 +14,7 @@ import {
   Settings,
   X,
   Check,
+  Loader2,
 } from "lucide-react";
 import { JournalTab } from "./JournalTab";
 import type { OrderLeg } from "./OrderTicket";
@@ -1051,7 +1052,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
   );
   if (loading && !account) return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, fontFamily: f }}>
-      <RefreshCw className="animate-spin" style={{ width: 16, height: 16, color: C.gold }} />
+      <Loader2 className="animate-spin" style={{ width: 16, height: 16, color: C.gold }} />
       <div style={{ fontSize: 14, color: C.textDim, letterSpacing: 1, textTransform: "uppercase" }}>LOADING PORTFOLIO</div>
     </div>
   );
@@ -1341,7 +1342,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
             </div>
             {ordersLoading && orders.length === 0 ? (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 0", gap: 8 }}>
-                <RefreshCw className="animate-spin" style={{ width: 14, height: 14, color: C.gold }} />
+                <Loader2 className="animate-spin" style={{ width: 14, height: 14, color: C.gold }} />
                 <div style={{ fontSize: 14, color: C.textDim, letterSpacing: 1, textTransform: "uppercase" }}>Loading orders</div>
               </div>
             ) : ordersError ? (
