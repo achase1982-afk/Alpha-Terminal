@@ -1,0 +1,435 @@
+// OptionsOrderTicket.tsx
+import React from "react";
+
+type LegRole = "OPEN" | "CLOSE" | "EQUITY" | "FUT_ROLL";
+
+interface OptionLeg {
+  id: string;
+  role: LegRole;            // OPEN | CLOSE | EQUITY | FUT_ROLL
+  side: "BUY" | "SELL";
+  quantity: number;
+  description: string;      // "1 · 45 Put · Nov 2026"
+  subLabel: string;         // "Current short leg · Equity: none"
+  markText: string;         // "To buy back · Mark 3.20"
+}
+
+interface RiskMessage {
+  id: string;
+  severity: "critical" | "warning" | "info";
+  title: string;
+  detail?: string;
+}
+
+export interface OptionsOrderTicketProps {
+  symbol: string;
+  companyName: string;
+  lastPrice: string;
+  changeText: string;
+  accountLabel: string;
+  expirationText: string;
+
+  strategyTitle: string;
+  strategySubtitle: string;
+  strategyTypeLabel: string;
+  strategyActionLabel: string;
+  creditPerSpread: string;
+  totalCredit: string;
+  maxRisk: string;
+  popText: string;
+  rrText: string;
+  breakevenText: string;
+  bpEffectText: string;
+
+  legs: OptionLeg[];
+
+  orderType: string;
+  tif: string;
+  netPrice: string;
+  priceBid: string;
+  priceMid: string;
+  priceAsk: string;
+  quantity: number;
+  feesText: string;
+
+  riskStatus: "PASS" | "FAIL";
+  riskMaxLoss: string;
+  riskPop: string;
+  riskMargin: string;
+  payoffSummary: string;
+  breakevenDetail: string;
+  delta: string;
+  gamma: string;
+  theta: string;
+  vega: string;
+
+  riskMessages: RiskMessage[];
+}
+
+export const OptionsOrderTicket: React.FC<OptionsOrderTicketProps> = ({
+  symbol,
+  companyName,
+  lastPrice,
+  changeText,
+  accountLabel,
+  expirationText,
+  strategyTitle,
+  strategySubtitle,
+  strategyTypeLabel,
+  strategyActionLabel,
+  creditPerSpread,
+  totalCredit,
+  maxRisk,
+  popText,
+  rrText,
+  breakevenText,
+  bpEffectText,
+  legs,
+  orderType,
+  tif,
+  netPrice,
+  priceBid,
+  priceMid,
+  priceAsk,
+  quantity,
+  feesText,
+  riskStatus,
+  riskMaxLoss,
+  riskPop,
+  riskMargin,
+  payoffSummary,
+  breakevenDetail,
+  delta,
+  gamma,
+  theta,
+  vega,
+  riskMessages,
+}) => {
+  const [isRiskOpen, setRiskOpen] = React.useState(false);
+
+  const riskPillClasses =
+    riskStatus === "PASS"
+      ? "border-success/40 bg-success/5 text-success"
+      : "border-danger/60 bg-danger/5 text-danger";
+
+  const roleLabelClass = (role: LegRole) => {
+    switch (role) {
+      case "OPEN":
+        return "text-success";
+      case "CLOSE":
+        return "text-danger";
+      case "EQUITY":
+        return "text-accent";
+      case "FUT_ROLL":
+        return "text-secondary";
+      default:
+        return "text-secondary";
+    }
+  };
+
+  const severityDotClass = (severity: RiskMessage["severity"]) => {
+    if (severity === "critical") return "bg-danger";
+    if (severity === "warning") return "bg-warning";
+    return "bg-success";
+  };
+
+  return (
+    <div className="mx-auto flex min-h-screen max-w-[430px] flex-col bg-app px-3 pb-3 pt-2 text-primary">
+      {/* top bar */}
+      <div className="mb-1 flex items-center justify-between text-xs text-muted">
+        <div className="flex items-center gap-1.5">
+          <button className="flex h-7 w-7 items-center justify-center rounded-full border border-border-soft">
+            ‹
+          </button>
+          <div className="leading-tight">
+            <div className="text-[13px] tracking-[0.04em] text-primary">
+              ORDER TICKET
+            </div>
+            <div className="text-[11px] text-muted">Options · {symbol}</div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="inline-flex rounded-full border border-border-soft bg-black/5 px-1 py-0.5 text-[11px]">
+            <button className="rounded-full bg-accent/15 px-2 py-0.5 text-accent">
+              Options
+            </button>
+            <button className="px-2 py-0.5 text-secondary">Stock</button>
+          </div>
+          <button className="flex h-7 w-7 items-center justify-center rounded-full border border-border-soft">
+            ✕
+          </button>
+        </div>
+      </div>
+
+      {/* instrument header */}
+      <div className="mb-2 rounded-card border border-border-soft bg-card px-3 py-2.5">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-[18px] tracking-[0.08em]">{symbol}</div>
+            <div className="text-[11px] text-muted">{companyName}</div>
+          </div>
+          <div className="text-right">
+            <div className="text-[17px]">{lastPrice}</div>
+            <div className="text-[11px] text-danger">{changeText}</div>
+          </div>
+        </div>
+        <div className="mt-1.5 flex items-center justify-between text-[11px] text-secondary">
+          <div className="flex items-center gap-2">
+            <span className="tracking-[0.08em] text-muted">OPTIONS</span>
+            <span>{expirationText}</span>
+          </div>
+          <span className="rounded-full border border-border-soft px-2 py-0.5 text-[11px]">
+            {accountLabel}
+          </span>
+        </div>
+      </div>
+
+      {/* strategy summary */}
+      <div className="mb-2 rounded-card border border-border-soft bg-card-soft px-3 py-2.5">
+        <div className="flex items-start justify-between">
+          <div>
+            <div className="text-[13px] text-primary">{strategyTitle}</div>
+            <div className="mt-0.5 text-[12px] text-secondary">
+              {strategySubtitle}
+            </div>
+          </div>
+          <div className="rounded-full border border-accent/40 bg-accent/10 px-2 py-0.5 text-[11px] text-accent">
+            Credit
+          </div>
+        </div>
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-dashed border-border-soft pt-2 text-[11px] text-secondary">
+          <span>Type: {strategyTypeLabel}</span>
+          <span>Action: {strategyActionLabel}</span>
+        </div>
+        <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[12px]">
+          <div>
+            <div className="text-[11px] text-muted">Net credit / spread</div>
+            <div className="text-[14px] text-primary">{creditPerSpread}</div>
+          </div>
+          <div>
+            <div className="text-[11px] text-muted">Total credit</div>
+            <div className="text-[14px] text-primary">{totalCredit}</div>
+          </div>
+          <div>
+            <div className="text-[11px] text-muted">Max risk</div>
+            <div className="text-[14px] text-primary">{maxRisk}</div>
+          </div>
+          <div>
+            <div className="text-[11px] text-muted">Prob. of profit</div>
+            <div className="text-[13px] text-secondary">{popText}</div>
+          </div>
+        </div>
+        <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 border-t border-dashed border-border-soft pt-1.5 text-[11px] text-secondary">
+          <span>R:R {rrText}</span>
+          <span>Breakeven {breakevenText}</span>
+          <span>Buying power {bpEffectText}</span>
+        </div>
+      </div>
+
+      {/* legs */}
+      <div className="mb-2 rounded-card border border-border-soft bg-card px-3 py-2.5">
+        <div className="flex items-center justify-between text-[13px] text-secondary">
+          <div className="tracking-[0.06em] uppercase">Legs</div>
+          <button className="text-[11px] text-accent">+ Add leg</button>
+        </div>
+        <div className="mt-2 flex flex-col gap-2">
+          {legs.map((leg) => (
+            <div
+              key={leg.id}
+              className="flex items-center justify-between rounded-xl border border-border-soft/80 bg-white/5 px-2.5 py-1.5 text-[12px]"
+            >
+              <div className="flex flex-col gap-0.5">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`text-[11px] tracking-[0.09em] ${roleLabelClass(
+                      leg.role
+                    )}`}
+                  >
+                    {leg.role}
+                  </span>
+                  <span>{leg.description}</span>
+                </div>
+                <div className="text-[11px] text-secondary">{leg.subLabel}</div>
+              </div>
+              <div className="flex flex-col items-end gap-0.5 text-[11px] text-secondary">
+                <span>{leg.markText}</span>
+                <button className="text-accent">Edit</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* order controls */}
+      <div className="mb-2 rounded-card border border-border-soft bg-card-soft px-3 py-2.5">
+        <div className="flex items-center justify-between text-[13px] text-secondary">
+          <div className="tracking-[0.06em] uppercase">Order</div>
+        </div>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <div className="flex flex-col gap-1 text-[12px]">
+            <span className="text-[11px] text-muted">Order type</span>
+            <button className="flex h-8 items-center justify-between rounded-lg border border-border-soft bg-black/40 px-2 text-[13px]">
+              <span>{orderType}</span>
+              <span className="text-[11px] text-muted">▾</span>
+            </button>
+          </div>
+          <div className="flex flex-col gap-1 text-[12px]">
+            <span className="text-[11px] text-muted">Time in force</span>
+            <button className="flex h-8 items-center justify-between rounded-lg border border-border-soft bg-black/40 px-2 text-[13px]">
+              <span>{tif}</span>
+              <span className="text-[11px] text-muted">▾</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-2 flex flex-col gap-1 text-[12px]">
+          <span className="text-[11px] text-muted">Net credit price</span>
+          <div className="flex h-8 items-center justify-between rounded-lg border border-border-soft bg-black/40 px-2 text-[13px]">
+            <input
+              className="w-full bg-transparent text-right outline-none"
+              value={netPrice}
+              readOnly
+            />
+            <span className="ml-2 text-[11px] text-muted">USD</span>
+          </div>
+          <div className="mt-1 flex items-center justify-between text-[10px] text-secondary">
+            <span className="rounded-full border border-transparent px-2 py-0.5">
+              Bid {priceBid}
+            </span>
+            <span className="rounded-full border border-accent/70 bg-accent/10 px-2 py-0.5 text-accent">
+              Mid {priceMid}
+            </span>
+            <span className="rounded-full border border-transparent px-2 py-0.5">
+              Ask {priceAsk}
+            </span>
+          </div>
+        </div>
+
+        <div className="mt-2 flex items-center justify-between text-[12px]">
+          <div>
+            <div className="text-[11px] text-muted">Quantity</div>
+            <div className="text-[13px] text-secondary">
+              Spreads · 100 shares / contract
+            </div>
+          </div>
+          <div className="inline-flex items-center overflow-hidden rounded-full border border-border-soft">
+            <button className="h-7 w-7 text-secondary">−</button>
+            <span className="min-w-[32px] text-center text-[13px]">
+              {quantity}
+            </span>
+            <button className="h-7 w-7 text-secondary">+</button>
+          </div>
+        </div>
+
+        <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 border-t border-dashed border-border-soft pt-1.5 text-[11px] text-secondary">
+          <span>Total credit {totalCredit}</span>
+          <span>Max risk {maxRisk}</span>
+          <span>Est. fees {feesText}</span>
+        </div>
+      </div>
+
+      {/* risk overview */}
+      <div className="mb-2 rounded-card border border-border-soft bg-card-soft px-3 py-2.5">
+        <div className="flex items-center justify-between text-[13px] text-secondary">
+          <div className="tracking-[0.06em] uppercase">Risk overview</div>
+          <span
+            className={`rounded-full border px-2 py-0.5 text-[11px] ${riskPillClasses}`}
+          >
+            Pre‑trade risk · {riskStatus}
+          </span>
+        </div>
+
+        <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 border-t border-dashed border-border-soft pt-1.5 text-[11px] text-secondary">
+          <span>Max loss {riskMaxLoss}</span>
+          <span>POP {riskPop}</span>
+          <span>Margin required {riskMargin}</span>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setRiskOpen((v) => !v)}
+          className="mt-1.5 flex w-full items-center justify-between text-[12px] text-secondary"
+        >
+          <span className="inline-flex items-center gap-1.5">
+            <span className="text-[11px]">
+              {isRiskOpen ? "▴" : "▾"}
+            </span>
+            <span>View full risk details</span>
+          </span>
+          <span className="text-[11px] text-muted">
+            {isRiskOpen ? "Tap to collapse" : "Tap to expand"}
+          </span>
+        </button>
+
+        {isRiskOpen && (
+          <div className="mt-2 space-y-2">
+            {/* payoff diagram placeholder */}
+            <div className="relative h-32 overflow-hidden rounded-xl border border-dashed border-border-soft bg-gradient-to-b from-[#1d222e] to-[#090b10]">
+              <div className="absolute inset-2 border-b border-l border-secondary/60" />
+              <div className="absolute inset-3 rounded-2xl bg-gradient-to-tr from-success/25 to-accent/30 clip-path-payoff" />
+              <div className="absolute bottom-1 right-2 text-[9px] text-muted">
+                P/L at expiration vs underlying price
+              </div>
+            </div>
+
+            <div className="text-[12px] text-secondary">{payoffSummary}</div>
+            <div className="text-[11px] text-secondary">{breakevenDetail}</div>
+
+            <div className="mt-1 grid grid-cols-2 gap-x-4 gap-y-1 border-t border-dashed border-border-soft pt-1.5 text-[11px]">
+              <div>
+                <div className="text-muted">Delta</div>
+                <div className="text-secondary">{delta}</div>
+              </div>
+              <div>
+                <div className="text-muted">Gamma</div>
+                <div className="text-secondary">{gamma}</div>
+              </div>
+              <div>
+                <div className="text-muted">Theta</div>
+                <div className="text-secondary">{theta}</div>
+              </div>
+              <div>
+                <div className="text-muted">Vega</div>
+                <div className="text-secondary">{vega}</div>
+              </div>
+            </div>
+
+            <div className="mt-1 border-t border-dashed border-border-soft pt-1.5">
+              <div className="space-y-1.5 text-[11px]">
+                {riskMessages.map((msg) => (
+                  <div key={msg.id} className="flex gap-2">
+                    <span
+                      className={`mt-1 h-2 w-2 rounded-full ${severityDotClass(
+                        msg.severity
+                      )}`}
+                    />
+                    <div>
+                      <div className="text-secondary">{msg.title}</div>
+                      {msg.detail && (
+                        <div className="text-muted">{msg.detail}</div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* bottom summary */}
+      <div className="mt-auto pt-2">
+        <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 text-[11px] text-secondary">
+          <span>
+            {quantity} spread{quantity !== 1 ? "s" : ""} · Credit {totalCredit}
+          </span>
+          <span>Max risk {maxRisk}</span>
+          <span>POP {popText}</span>
+          <span>Risk: {riskStatus}</span>
+        </div>
+        <button className="h-10 w-full rounded-full bg-gradient-to-r from-accent to-accent/60 text-[14px] uppercase tracking-[0.06em] text-black">
+          Review options order
+        </button>
+      </div>
+    </div>
+  );
+};

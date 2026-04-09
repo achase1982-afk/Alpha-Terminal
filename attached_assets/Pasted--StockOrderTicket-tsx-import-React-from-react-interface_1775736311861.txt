@@ -1,0 +1,261 @@
+// StockOrderTicket.tsx
+import React from "react";
+
+interface StockRiskMessage {
+  id: string;
+  severity: "critical" | "warning" | "info";
+  title: string;
+  detail?: string;
+}
+
+export interface StockOrderTicketProps {
+  symbol: string;
+  companyName: string;
+  lastPrice: string;
+  changeText: string;
+  accountLabel: string;
+  dayRangeText: string;
+
+  side: "BUY" | "SELL";
+  quantity: number;
+  notionalText: string;
+
+  orderType: string;
+  tif: string;
+  limitPrice: string;
+  priceBid: string;
+  priceMid: string;
+  priceAsk: string;
+
+  feesText: string;
+  bpAfterText: string;
+
+  riskStatus: "PASS" | "FAIL";
+  spreadText: string;
+  riskMessages: StockRiskMessage[];
+}
+
+export const StockOrderTicket: React.FC<StockOrderTicketProps> = ({
+  symbol,
+  companyName,
+  lastPrice,
+  changeText,
+  accountLabel,
+  dayRangeText,
+  side,
+  quantity,
+  notionalText,
+  orderType,
+  tif,
+  limitPrice,
+  priceBid,
+  priceMid,
+  priceAsk,
+  feesText,
+  bpAfterText,
+  riskStatus,
+  spreadText,
+  riskMessages,
+}) => {
+  const riskPillClasses =
+    riskStatus === "PASS"
+      ? "border-success/40 bg-success/5 text-success"
+      : "border-danger/60 bg-danger/5 text-danger";
+
+  const severityDotClass = (severity: StockRiskMessage["severity"]) => {
+    if (severity === "critical") return "bg-danger";
+    if (severity === "warning") return "bg-warning";
+    return "bg-success";
+  };
+
+  return (
+    <div className="mx-auto flex min-h-screen max-w-[430px] flex-col bg-app px-3 pb-3 pt-2 text-primary">
+      {/* top bar */}
+      <div className="mb-1 flex items-center justify-between text-xs text-muted">
+        <div className="flex items-center gap-1.5">
+          <button className="flex h-7 w-7 items-center justify-center rounded-full border border-border-soft">
+            ‹
+          </button>
+          <div className="leading-tight">
+            <div className="text-[13px] tracking-[0.04em] text-primary">
+              ORDER TICKET
+            </div>
+            <div className="text-[11px] text-muted">Stock · {symbol}</div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="inline-flex rounded-full border border-border-soft bg-black/5 px-1 py-0.5 text-[11px]">
+            <button className="px-2 py-0.5 text-secondary">Options</button>
+            <button className="rounded-full bg-accent/15 px-2 py-0.5 text-accent">
+              Stock
+            </button>
+          </div>
+          <button className="flex h-7 w-7 items-center justify-center rounded-full border border-border-soft">
+            ✕
+          </button>
+        </div>
+      </div>
+
+      {/* instrument header */}
+      <div className="mb-2 rounded-card border border-border-soft bg-card px-3 py-2.5">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-[18px] tracking-[0.08em]">{symbol}</div>
+            <div className="text-[11px] text-muted">{companyName}</div>
+          </div>
+          <div className="text-right">
+            <div className="text-[17px]">{lastPrice}</div>
+            <div className="text-[11px] text-danger">{changeText}</div>
+          </div>
+        </div>
+        <div className="mt-1.5 flex items-center justify-between text-[11px] text-secondary">
+          <div className="flex items-center gap-2">
+            <span className="tracking-[0.08em] text-muted">STOCK</span>
+            <span>{dayRangeText}</span>
+          </div>
+          <span className="rounded-full border border-border-soft px-2 py-0.5 text-[11px]">
+            {accountLabel}
+          </span>
+        </div>
+      </div>
+
+      {/* side + quantity + price */}
+      <div className="mb-2 rounded-card border border-border-soft bg-card-soft px-3 py-2.5">
+        <div className="flex items-center justify-between text-[13px] text-secondary">
+          <div className="tracking-[0.06em] uppercase">Side</div>
+        </div>
+        <div className="mt-2 inline-flex rounded-full border border-border-soft bg-black/5 text-[11px]">
+          <button
+            className={`px-3 py-1 ${
+              side === "BUY"
+                ? "rounded-full bg-success/15 text-success"
+                : "text-secondary"
+            }`}
+          >
+            Buy
+          </button>
+          <button
+            className={`px-3 py-1 ${
+              side === "SELL"
+                ? "rounded-full bg-danger/15 text-danger"
+                : "text-secondary"
+            }`}
+          >
+            Sell
+          </button>
+        </div>
+
+        <div className="mt-3 flex flex-col gap-1 text-[12px]">
+          <span className="text-[11px] text-muted">Quantity</span>
+          <div className="flex items-center justify-between">
+            <div className="text-[13px] text-secondary">Shares</div>
+            <div className="inline-flex items-center overflow-hidden rounded-full border border-border-soft">
+              <button className="h-7 w-7 text-secondary">−</button>
+              <span className="min-w-[32px] text-center text-[13px]">
+                {quantity}
+              </span>
+              <button className="h-7 w-7 text-secondary">+</button>
+            </div>
+          </div>
+          <div className="text-[11px] text-muted">≈ {notionalText}</div>
+        </div>
+
+        <div className="mt-3 grid grid-cols-2 gap-2 text-[12px]">
+          <div className="flex flex-col gap-1">
+            <span className="text-[11px] text-muted">Order type</span>
+            <button className="flex h-8 items-center justify-between rounded-lg border border-border-soft bg-black/40 px-2 text-[13px]">
+              <span>{orderType}</span>
+              <span className="text-[11px] text-muted">▾</span>
+            </button>
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className="text-[11px] text-muted">Time in force</span>
+            <button className="flex h-8 items-center justify-between rounded-lg border border-border-soft bg-black/40 px-2 text-[13px]">
+              <span>{tif}</span>
+              <span className="text-[11px] text-muted">▾</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-3 flex flex-col gap-1 text-[12px]">
+          <span className="text-[11px] text-muted">Limit price</span>
+          <div className="flex h-8 items-center justify-between rounded-lg border border-border-soft bg-black/40 px-2 text-[13px]">
+            <input
+              className="w-full bg-transparent text-right outline-none"
+              value={limitPrice}
+              readOnly
+            />
+            <span className="ml-2 text-[11px] text-muted">USD</span>
+          </div>
+          <div className="mt-1 flex items-center justify-between text-[10px] text-secondary">
+            <span className="rounded-full border border-transparent px-2 py-0.5">
+              Bid {priceBid}
+            </span>
+            <span className="rounded-full border border-accent/70 bg-accent/10 px-2 py-0.5 text-accent">
+              Mid {priceMid}
+            </span>
+            <span className="rounded-full border border-transparent px-2 py-0.5">
+              Ask {priceAsk}
+            </span>
+          </div>
+        </div>
+
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-dashed border-border-soft pt-1.5 text-[11px] text-secondary">
+          <span>Notional {notionalText}</span>
+          <span>Est. fees {feesText}</span>
+          <span>BP after trade {bpAfterText}</span>
+        </div>
+      </div>
+
+      {/* risk & insights */}
+      <div className="mb-2 rounded-card border border-border-soft bg-card px-3 py-2.5">
+        <div className="flex items-center justify-between text-[13px] text-secondary">
+          <div className="tracking-[0.06em] uppercase">Risk &amp; insights</div>
+          <span
+            className={`rounded-full border px-2 py-0.5 text-[11px] ${riskPillClasses}`}
+          >
+            Pre‑trade risk · {riskStatus}
+          </span>
+        </div>
+
+        <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 border-t border-dashed border-border-soft pt-1.5 text-[11px] text-secondary">
+          <span>Order vs account size</span>
+          <span>{spreadText}</span>
+        </div>
+
+        <div className="mt-1.5 space-y-1.5 text-[11px]">
+          {riskMessages.map((msg) => (
+            <div key={msg.id} className="flex gap-2">
+              <span
+                className={`mt-1 h-2 w-2 rounded-full ${severityDotClass(
+                  msg.severity
+                )}`}
+              />
+              <div>
+                <div className="text-secondary">{msg.title}</div>
+                {msg.detail && (
+                  <div className="text-muted">{msg.detail}</div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* bottom summary */}
+      <div className="mt-auto pt-2">
+        <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 text-[11px] text-secondary">
+          <span>
+            {side === "BUY" ? "Buy" : "Sell"} {quantity} share
+            {quantity !== 1 ? "s" : ""} · Limit {limitPrice}
+          </span>
+          <span>{notionalText}</span>
+          <span>Risk: {riskStatus}</span>
+        </div>
+        <button className="h-10 w-full rounded-full bg-gradient-to-r from-accent to-accent/60 text-[14px] uppercase tracking-[0.06em] text-black">
+          Review stock order
+        </button>
+      </div>
+    </div>
+  );
+};
