@@ -2210,16 +2210,21 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
     }
   }, [accessToken, symbol, setSymbol, setStrategistResult]);
 
-  // Auto-fire analysis when user navigates to the Strategist tab and no result/cache exists yet
+  // Auto-fire analysis when user navigates to the Strategist tab and no result/cache exists yet.
+  // Skip if a det run is already in progress (e.g., Scanner's onSendToStrategist already fired one).
   const handleRunDetRef = useRef(handleRunDetStrategist);
   handleRunDetRef.current = handleRunDetStrategist;
   useEffect(() => {
     const prevTab = prevSubTabRef.current;
     prevSubTabRef.current = subTab;
-    if (subTab === "strategist" && prevTab !== "strategist" && symbol && !strategistCache) {
+    if (
+      subTab === "strategist" && prevTab !== "strategist" &&
+      symbol && !strategistCache &&
+      !isDetRunning && !isDetStreaming && !isStrategizing && !isStreaming
+    ) {
       handleRunDetRef.current(symbol);
     }
-  }, [subTab, symbol, strategistCache]);
+  }, [subTab, symbol, strategistCache, isDetRunning, isDetStreaming, isStrategizing, isStreaming]);
 
   const isPendingAny = isStreaming || isStrategizing || isDetRunning || isDetStreaming;
 
