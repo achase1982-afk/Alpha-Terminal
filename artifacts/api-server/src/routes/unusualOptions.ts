@@ -1,0 +1,153 @@
+import { Router } from "express";
+import { db, polygonOptionsHistoryTable } from "@workspace/db";
+import { sql, gte, desc } from "drizzle-orm";
+import { syncDateRange, syncDate, getSyncStatus } from "../lib/polygonFlatFiles";
+import { logger } from "../lib/logger";
+
+const router = Router();
+
+router.get("/status", async (req, res) => {
+  try {
+    const status = await getSyncStatus();
+    res.json(status);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/sync", async (req, res) => {
+  const { tickers = [], days = 30, date } = req.body as {
+    tickers?: string[];
+    days?: number;
+    date?: string;
+  };
+
+  if (!process.env.POLYGON_S3_ACCESS_KEY) {
+    return res.status(503).json({ error: "Polygon S3 credentials not configured" });
+  }
+
+  const boundedDays = Math.min(Math.max(1, days), 90);
+
+  res.json({ status: "started", tickers, days: boundedDays });
+
+  setImmediate(async () => {
+    try {
+      if (date) {
+        const d = new Date(date);
+        await syncDate(d, tickers);
+        logger.info({ date, tickers }, "Polygon flat-file sync complete (single date)");
+      } else {
+        const endDate = new Date();
+        endDate.setUTCDate(endDate.getUTCDate() - 1);
+        const startDate = new Date();
+        startDate.setUTCDate(startDate.getUTCDate() - boundedDays);
+        const results = await syncDateRange(startDate, endDate, tickers);
+        const totalRows = results.reduce((s, r) => s + r.rows, 0);
+        logger.info({ days: boundedDays, tickers, totalRows }, "Polygon flat-file sync complete");
+      }
+    } catch (err) {
+      logger.error(err, "Polygon flat-file sync error");
+    }
+  });
+});
+
+router.get("/activity", async (req, res) => {
+  try {
+    const {
+      tickers,
+      minRatio = "2.5",
+      minVolume = "200",
+      limit = "200",
+    } = req.query as Record<string, string>;
+
+    const tickerFilter = tickers
+      ? tickers.split(",").map(t => t.trim().toUpperCase()).filter(Boolean)
+      : [];
+
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+
+    const latestDateRes = await db
+      .select({ d: sql<string>`MAX(${polygonOptionsHistoryTable.tradeDate})` })
+      .from(polygonOptionsHistoryTable);
+    const latestDate = latestDateRes[0]?.d ?? null;
+
+    if (!latestDate) {
+      return res.json({ unusual: [], latestDate: null, count: 0, message: "No data synced yet" });
+    }
+
+    const rows = await db
+      .select({
+        optionSymbol: polygonOptionsHistoryTable.optionSymbol,
+        ticker: polygonOptionsHistoryTable.ticker,
+        strike: polygonOptionsHistoryTable.strike,
+        expiry: polygonOptionsHistoryTable.expiry,
+        putCall: polygonOptionsHistoryTable.putCall,
+        avgVolume: sql<number>`ROUND(AVG(CASE WHEN trade_date < ${latestDate} THEN volume ELSE NULL END))`,
+        dataPoints: sql<number>`COUNT(CASE WHEN trade_date < ${latestDate} THEN 1 ELSE NULL END)`,
+        todayVolume: sql<number>`MAX(CASE WHEN trade_date = ${latestDate} THEN volume ELSE NULL END)`,
+        todayClose: sql<number>`MAX(CASE WHEN trade_date = ${latestDate} THEN close_price ELSE NULL END)`,
+        todayOI: sql<number>`MAX(CASE WHEN trade_date = ${latestDate} THEN open_interest ELSE NULL END)`,
+      })
+      .from(polygonOptionsHistoryTable)
+      .where(gte(polygonOptionsHistoryTable.tradeDate, thirtyDaysAgo))
+      .groupBy(
+        polygonOptionsHistoryTable.optionSymbol,
+        polygonOptionsHistoryTable.ticker,
+        polygonOptionsHistoryTable.strike,
+        polygonOptionsHistoryTable.expiry,
+        polygonOptionsHistoryTable.putCall,
+      )
+      .having(sql`MAX(CASE WHEN trade_date = ${latestDate} THEN volume ELSE NULL END) IS NOT NULL`)
+      .limit(5000);
+
+    const minRatioNum = parseFloat(minRatio);
+    const minVolumeNum = parseInt(minVolume);
+    const limitNum = parseInt(limit);
+
+    const unusual = rows
+      .filter(r => {
+        const vol = Number(r.todayVolume ?? 0);
+        const avg = Number(r.avgVolume ?? 0);
+        if (vol < minVolumeNum) return false;
+        if (tickerFilter.length > 0 && !tickerFilter.includes(r.ticker)) return false;
+        if (Number(r.dataPoints) < 3 && avg > 0) return true;
+        if (avg === 0) return vol >= minVolumeNum * 3;
+        return vol / avg >= minRatioNum;
+      })
+      .map(r => {
+        const vol = Number(r.todayVolume ?? 0);
+        const avg = Number(r.avgVolume ?? 0);
+        const price = Number(r.todayClose ?? 0);
+        return {
+          ticker: r.ticker,
+          optionSymbol: r.optionSymbol,
+          strike: r.strike,
+          expiry: r.expiry,
+          putCall: r.putCall,
+          todayVolume: vol,
+          avgVolume30d: avg,
+          volumeRatio: avg > 0 ? Math.round((vol / avg) * 10) / 10 : null,
+          closePrice: price || null,
+          premiumFlow: price ? Math.round(vol * price * 100) : null,
+          openInterest: Number(r.todayOI ?? 0) || null,
+          voiRatio: r.todayOI ? Math.round((vol / Number(r.todayOI)) * 100) / 100 : null,
+          dataPoints: Number(r.dataPoints),
+          latestDate,
+          type: r.putCall === "C" ? "CALL" : "PUT",
+        };
+      })
+      .sort((a, b) => {
+        const ra = a.volumeRatio ?? 999;
+        const rb = b.volumeRatio ?? 999;
+        return rb - ra;
+      })
+      .slice(0, limitNum);
+
+    res.json({ unusual, latestDate, count: unusual.length });
+  } catch (err: any) {
+    logger.error(err, "unusual-options activity error");
+    res.status(500).json({ error: err.message });
+  }
+});
+
+export default router;

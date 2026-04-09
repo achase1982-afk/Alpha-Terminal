@@ -1,4 +1,4 @@
-export type AiSubTab = "pulse" | "strategist" | "scanner";
+export type AiSubTab = "pulse" | "strategist" | "scanner" | "flow";
 
 interface AiSubTabsProps {
   active: AiSubTab;
@@ -6,9 +6,10 @@ interface AiSubTabsProps {
 }
 
 const TABS: { value: AiSubTab; label: string }[] = [
-  { value: "pulse", label: "MARKET PULSE" },
+  { value: "pulse", label: "PULSE" },
   { value: "scanner", label: "SCANNER" },
   { value: "strategist", label: "STRATEGIST" },
+  { value: "flow", label: "FLOW" },
 ];
 
 export function AiSubTabs({ active, onChange }: AiSubTabsProps) {
@@ -28,7 +29,9 @@ export function AiSubTabs({ active, onChange }: AiSubTabsProps) {
             className="flex-1 font-mono text-xs font-bold tracking-wider py-2 rounded-full transition-all duration-200"
             style={{
               background: active === tab.value ? "#3f3f46" : "transparent",
-              color: active === tab.value ? "#fafafa" : "#71717a",
+              color: active === tab.value
+                ? tab.value === "flow" ? "#FFB800" : "#fafafa"
+                : "#71717a",
             }}
           >
             {tab.label}

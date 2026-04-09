@@ -12,6 +12,8 @@
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.66",
     "@anthropic-ai/sdk": "^0.82.0",
+    "@aws-sdk/client-s3": "^3.1027.0",
+    "@aws-sdk/lib-storage": "^3.1027.0",
     "@clerk/express": "^2.0.7",
     "@mozilla/readability": "^0.6.0",
     "@opentelemetry/api": "^1.9.1",

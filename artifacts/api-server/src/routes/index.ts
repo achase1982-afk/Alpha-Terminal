@@ -11,6 +11,7 @@ import pushRouter from "./push";
 import journalRouter from "./journal";
 import telemetryRouter from "./telemetry";
 import scannerRouter from "./scanner";
+import unusualOptionsRouter from "./unusualOptions";
 const router: IRouter = Router();
 
 router.use("/auth", authRouter);
@@ -25,5 +26,6 @@ router.use("/push", pushRouter);
 router.use("/journal", journalRouter);
 router.use("/telemetry", telemetryRouter);
 router.use("/scanner", scannerRouter);
+router.use("/unusual-options", unusualOptionsRouter);
 
 export default router;

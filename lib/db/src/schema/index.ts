@@ -1,4 +1,4 @@
-import { pgTable, text, serial, real, integer, boolean, timestamp, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, real, integer, boolean, timestamp, jsonb, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -110,3 +110,34 @@ export const scannerScreensTable = pgTable("scanner_screens", {
 });
 
 export type ScannerScreen = typeof scannerScreensTable.$inferSelect;
+
+export const polygonOptionsHistoryTable = pgTable("polygon_options_history", {
+  id: serial("id").primaryKey(),
+  ticker: text("ticker").notNull(),
+  optionSymbol: text("option_symbol").notNull(),
+  tradeDate: text("trade_date").notNull(),
+  volume: integer("volume").default(0),
+  openInterest: integer("open_interest"),
+  closePrice: real("close_price"),
+  vwap: real("vwap"),
+  strike: real("strike"),
+  expiry: text("expiry"),
+  putCall: text("put_call"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("pol_opt_unique").on(t.optionSymbol, t.tradeDate),
+]);
+
+export type PolygonOptionsHistory = typeof polygonOptionsHistoryTable.$inferSelect;
+
+export const polygonSyncLogTable = pgTable("polygon_sync_log", {
+  id: serial("id").primaryKey(),
+  tradeDate: text("trade_date").notNull().unique(),
+  status: text("status").notNull().default("pending"),
+  rowsInserted: integer("rows_inserted").default(0),
+  tickers: jsonb("tickers").$type<string[]>(),
+  syncedAt: timestamp("synced_at").defaultNow().notNull(),
+  errorMsg: text("error_msg"),
+});
+
+export type PolygonSyncLog = typeof polygonSyncLogTable.$inferSelect;
