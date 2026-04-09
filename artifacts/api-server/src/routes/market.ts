@@ -806,7 +806,7 @@ router.get("/pc-ratio", async (_req, res) => {
 
 router.get("/fundamentals", async (req, res) => {
   const symbol = req.query["symbol"] as string;
-  const accessToken = req.query["accessToken"] as string;
+  const accessToken = (req.query["accessToken"] as string) || getAccessToken("market");
 
   if (!symbol || !accessToken) {
     return res.status(400).json({ symbol: "", error: "symbol and accessToken are required" });
