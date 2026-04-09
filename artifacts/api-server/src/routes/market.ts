@@ -10,6 +10,7 @@ import { getIBCachedQuote, subscribeQuoteForSymbol, isIBConnected, getIBCompanyN
 import { logFailure } from "../lib/telemetry.js";
 import { emitTelemetry } from "../lib/telemetryStore.js";
 import { computeIVR, type OptionContract } from "../lib/optionsStrategist.js";
+import { fetchPolygonChain } from "../lib/polygonChain.js";
 
 const router: IRouter = Router();
 
@@ -533,6 +534,42 @@ async function fetchChainSide(chainSymbol: string, contractType: "CALL" | "PUT",
 async function fetchFullChain(displaySymbol: string, token: string, log: any): Promise<CachedChain | null> {
   const isFuturesSymbol = isFutures(displaySymbol);
   const isIndexSymbol = isIndex(displaySymbol);
+
+  const polygonKey = process.env["POLYGON_API_KEY"];
+  if (polygonKey && !isFuturesSymbol && !isIndexSymbol) {
+    const liveQuote = getIBCachedQuote(displaySymbol) ?? getQuoteBySymbol(displaySymbol);
+    const livePrice = liveQuote?.last ?? liveQuote?.close;
+    const strikeOpts = livePrice
+      ? { strikeMin: Math.floor(livePrice * 0.70), strikeMax: Math.ceil(livePrice * 1.30) }
+      : {};
+    const poly = await fetchPolygonChain(displaySymbol, polygonKey, {
+      maxDte: 60,
+      ...strikeOpts,
+      maxPages: 12,
+      log,
+    });
+    if (poly && (poly.calls.length + poly.puts.length) > 0) {
+      const underlyingPrice = poly.underlyingPrice ?? livePrice;
+      const cached: CachedChain = {
+        symbol: displaySymbol,
+        underlyingPrice,
+        calls: poly.calls,
+        puts: poly.puts,
+        fetchedAt: Date.now(),
+        totalCalls: poly.calls.length,
+        totalPuts: poly.puts.length,
+      };
+      chainCache.set(displaySymbol, cached);
+      evictStaleChains();
+      log.info(
+        { symbol: displaySymbol, totalCalls: poly.calls.length, totalPuts: poly.puts.length, source: "polygon" },
+        "Options chain cached (Polygon)"
+      );
+      return cached;
+    }
+    log.warn({ symbol: displaySymbol }, "Polygon full chain empty — falling back to Schwab");
+  }
+
   const chainSymbol = isFuturesSymbol ? displaySymbol : isIndexSymbol ? formatSchwabSymbol(displaySymbol) : displaySymbol;
   const useSplit = LARGE_CHAIN_SYMBOLS.has(displaySymbol.toUpperCase());
 
@@ -662,6 +699,37 @@ router.get("/options", async (req, res) => {
 
     const isFuturesSymbol = isFutures(displaySymbol);
     const isIndexSymbol = isIndex(displaySymbol);
+
+    const polygonKey = process.env["POLYGON_API_KEY"];
+    if (polygonKey && !isFuturesSymbol && !isIndexSymbol) {
+      const liveQuote = getIBCachedQuote(displaySymbol) ?? getQuoteBySymbol(displaySymbol);
+      const livePrice = liveQuote?.last ?? liveQuote?.close;
+      const strikeOpts = livePrice
+        ? { strikeMin: Math.floor(livePrice * 0.75), strikeMax: Math.ceil(livePrice * 1.25) }
+        : {};
+      const poly = await fetchPolygonChain(displaySymbol, polygonKey, {
+        maxDte: 30,
+        ...strikeOpts,
+        maxPages: 6,
+        log: req.log,
+      });
+      if (poly && (poly.calls.length + poly.puts.length) > 0) {
+        const underlyingPrice = poly.underlyingPrice ?? livePrice;
+        const entry = { calls: poly.calls, puts: poly.puts, underlyingPrice, fetchedAt: Date.now() };
+        optionsNtmCache.set(displaySymbol, entry);
+        if (optionsNtmCache.size > 100) {
+          const oldest = [...optionsNtmCache.entries()].sort((a, b) => a[1].fetchedAt - b[1].fetchedAt)[0];
+          optionsNtmCache.delete(oldest[0]);
+        }
+        return res.json(sliceAndReturn(entry, "polygon"));
+      }
+      req.log.warn({ symbol: displaySymbol }, "Polygon NTM chain empty — falling back to Schwab");
+    }
+
+    if (!accessToken) {
+      return res.json({ symbol: displaySymbol, calls: [], puts: [], error: "no_token" });
+    }
+
     const chainSymbol = isFuturesSymbol ? displaySymbol : isIndexSymbol ? formatSchwabSymbol(displaySymbol) : displaySymbol;
 
     const params = new URLSearchParams({
