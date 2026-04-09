@@ -1238,15 +1238,14 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
           </div>
           <button
             onClick={() => setStage("review")}
-            disabled={!isValid}
-            className="w-full tracking-[0.06em] uppercase transition-all duration-150 disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.98]"
+            className="w-full tracking-[0.06em] uppercase transition-all duration-150 active:scale-[0.98]"
             style={{
               fontSize: 16,
               height: 42,
               borderRadius: 999,
               border: "none",
-              background: isValid ? CTA_GRAD : BORDER,
-              color: isValid ? BG : DIM,
+              background: CTA_GRAD,
+              color: BG,
               fontWeight: 400,
               fontFamily: SYS_FONT,
             }}

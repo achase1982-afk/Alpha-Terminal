@@ -1314,30 +1314,197 @@ function DetPremiumGatesPanel({ gates }: { gates: DetPremiumGate[] }) {
   );
 }
 
-function DetCriteriaCard({ result, narrativeText, isStreaming, streamingText, onSendToOrder }: {
+function AiNarrativePanel({ text, streamingText, isStreaming }: {
+  text: string; streamingText: string; isStreaming: boolean;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+  const prevStreamingRef = useRef(isStreaming);
+
+  useEffect(() => {
+    if (isStreaming) { setCollapsed(false); }
+  }, [isStreaming]);
+
+  useEffect(() => {
+    if (prevStreamingRef.current && !isStreaming && (text || streamingText)) {
+      const timer = setTimeout(() => setCollapsed(true), 900);
+      prevStreamingRef.current = false;
+      return () => clearTimeout(timer);
+    }
+    if (isStreaming) prevStreamingRef.current = true;
+  }, [isStreaming, text, streamingText]);
+
+  const displayText = isStreaming ? streamingText : text;
+  if (!displayText && !isStreaming) return null;
+
+  if (collapsed && !isStreaming) {
+    return (
+      <button
+        onClick={() => setCollapsed(false)}
+        className="w-full flex items-center justify-between px-4 py-2.5 rounded-xl transition-colors hover:opacity-80"
+        style={{ background: "#111113", border: "1px solid #2A2A2C" }}
+      >
+        <div className="flex items-center gap-2">
+          <span className="inline-flex rounded-full h-2 w-2 bg-[#FFB800]/50" />
+          <span className="font-mono text-[11px] font-bold text-[#FFB800]/70 tracking-widest">AI NARRATIVE</span>
+        </div>
+        <span className="font-mono text-[10px] text-zinc-600 tracking-wider">tap to expand</span>
+      </button>
+    );
+  }
+
+  return (
+    <div className="rounded-xl overflow-hidden" style={{ background: "#111113", border: "1px solid #2A2A2C" }}>
+      <div className="flex items-center justify-between px-4 py-2.5" style={{ borderBottom: "1px solid #1a1a1c" }}>
+        <div className="flex items-center gap-2">
+          {isStreaming ? (
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#FFB800] opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-[#FFB800]" />
+            </span>
+          ) : (
+            <span className="inline-flex rounded-full h-2 w-2 bg-[#FFB800]/50" />
+          )}
+          <span className="font-mono text-[11px] font-bold text-[#FFB800]/70 tracking-widest">
+            AI NARRATIVE
+            {isStreaming && <span className="ml-2 text-[#52525b] font-normal animate-pulse">streaming...</span>}
+          </span>
+        </div>
+        {!isStreaming && (
+          <button
+            onClick={() => setCollapsed(true)}
+            className="font-mono text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors tracking-wider"
+          >
+            collapse
+          </button>
+        )}
+      </div>
+      <div className="px-4 py-3">
+        <div className="font-mono text-[12px] text-zinc-300 leading-relaxed">
+          <ReactMarkdown>{displayText}</ReactMarkdown>
+          {isStreaming && <span className="inline-block w-2 h-4 bg-[#FFB800] animate-pulse ml-0.5" />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DetRiskOverviewCard({ result }: { result: DetStrategistResult }) {
+  const [expanded, setExpanded] = useState(false);
+  const { resolvedTrade, criteria } = result;
+  if (!resolvedTrade) return null;
+
+  const allWarnings = [
+    ...(criteria?.warnings ?? []),
+    ...(resolvedTrade.warnings ?? []),
+  ].filter(w => !w.startsWith("EARNINGS:"));
+
+  const hasBlocks = (criteria?.hardBlocks?.length ?? 0) > 0;
+  const overallStatus = hasBlocks ? "FAIL" : allWarnings.length > 0 ? "WARN" : "PASS";
+  const statusColor = overallStatus === "PASS" ? "#00d166" : overallStatus === "WARN" ? "#FFB800" : "#f23645";
+
+  const totalLoss = resolvedTrade.sizing.total_risk;
+  const rrRatio = resolvedTrade.risk.max_loss_per_contract > 0
+    ? (resolvedTrade.risk.max_gain_per_contract / resolvedTrade.risk.max_loss_per_contract).toFixed(1)
+    : "—";
+
+  return (
+    <div className="rounded-xl overflow-hidden" style={{ background: "#111113", border: `1px solid ${statusColor}20` }}>
+      <button
+        onClick={() => setExpanded(e => !e)}
+        className="w-full flex items-center justify-between px-4 py-2.5 hover:opacity-80 transition-opacity"
+      >
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-mono text-[11px] font-bold uppercase tracking-widest text-zinc-400">RISK OVERVIEW</span>
+          <span className="font-mono text-[11px] text-zinc-600">·</span>
+          <span className="font-mono text-[11px] text-[#f23645]">Loss ${totalLoss.toLocaleString()}</span>
+          <span className="font-mono text-[11px] text-zinc-600">·</span>
+          <span className="font-mono text-[11px] text-zinc-400">R:R {rrRatio}:1</span>
+          <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded"
+            style={{ color: statusColor, background: `${statusColor}15`, border: `1px solid ${statusColor}30` }}>
+            {overallStatus}
+          </span>
+        </div>
+        <ChevronDown className="w-4 h-4 text-zinc-600 shrink-0 transition-transform"
+          style={{ transform: expanded ? "rotate(180deg)" : "rotate(0deg)" }} />
+      </button>
+
+      {expanded && (
+        <div className="px-4 pb-4 space-y-3" style={{ borderTop: "1px solid #1a1a1c" }}>
+          <div className="pt-3">
+            {criteria?.premiumGates && criteria.premiumGates.length > 0 && (
+              <div className="mb-3">
+                <DetPremiumGatesPanel gates={criteria.premiumGates} />
+              </div>
+            )}
+
+            {allWarnings.length > 0 && (
+              <div className="space-y-1.5 mb-3">
+                <p className="font-mono text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Warnings</p>
+                {allWarnings.map((w, i) => (
+                  <div key={i} className="flex items-start gap-2 font-mono text-[11px] text-zinc-400">
+                    <AlertCircle className="w-3.5 h-3.5 text-[#FFB800] shrink-0 mt-0.5" />
+                    <span>{w}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {criteria?.modeReason && (
+              <div className="mb-3">
+                <p className="font-mono text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Mode Reason</p>
+                <p className="font-mono text-[11px] text-zinc-400 leading-relaxed">{criteria.modeReason}</p>
+              </div>
+            )}
+
+            {(criteria?.eventConflicts?.length ?? 0) > 0 && !hasBlocks && (
+              <div>
+                <p className="font-mono text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Events in DTE Window</p>
+                {criteria!.eventConflicts.map((e, i) => (
+                  <p key={i} className="font-mono text-[11px] text-amber-400/70">{e.eventTitle} ({e.dateFormatted})</p>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DetCriteriaCard({ result, onSendToOrder }: {
   result: DetStrategistResult;
-  narrativeText: string;
-  isStreaming: boolean;
-  streamingText: string;
   onSendToOrder?: (trade: ResolvedTrade) => void;
 }) {
+  const [warningsExpanded, setWarningsExpanded] = useState(false);
   const { criteria, resolvedTrade, resolutionError } = result;
   if (!criteria) return null;
 
   const dirColor = criteria.direction === "BULLISH" ? "#26a69a" : criteria.direction === "BEARISH" ? "#f23645" : "#FFB800";
 
+  const allWarnings = [
+    ...criteria.warnings,
+    ...(resolvedTrade?.warnings ?? []),
+  ];
+  const earningsWarnings = allWarnings.filter(w => w.startsWith("EARNINGS:"));
+  const otherWarnings = allWarnings.filter(w => !w.startsWith("EARNINGS:"));
+
+  const earningsConflict = criteria.eventConflicts.find(e =>
+    e.eventType?.toLowerCase().includes("earn") || e.eventTitle?.toLowerCase().includes("earn")
+  );
+  const earningsLabel = earningsConflict?.dateFormatted
+    ?? (earningsWarnings.length > 0 ? earningsWarnings[0].replace(/^EARNINGS:\s*/i, "") : null);
+
   return (
     <div className="rounded-xl overflow-hidden" style={{ background: "#111113", border: "1px solid #2A2A2C" }}>
       {resolvedTrade?.chain_source === "previous_close" && (
-        <div className="px-4 py-2.5 flex items-center gap-2 border-b" style={{ background: "rgba(255,184,0,0.08)", borderColor: "rgba(255,184,0,0.2)" }}>
-          <Clock className="w-4 h-4 text-[#FFB800] shrink-0" />
-          <p className="font-mono text-[11px] text-[#FFB800] font-bold">Market closed. Prices shown are from last session. Review carefully before submitting orders at open.</p>
+        <div className="px-4 py-2 flex items-center gap-2 border-b" style={{ background: "rgba(255,184,0,0.08)", borderColor: "rgba(255,184,0,0.2)" }}>
+          <Clock className="w-3.5 h-3.5 text-[#FFB800] shrink-0" />
+          <p className="font-mono text-[11px] text-[#FFB800] font-bold">Market closed — prices from last session</p>
         </div>
       )}
-
       {criteria.hardBlocks.length > 0 && (
-        <div className="px-4 py-2.5 flex items-start gap-2 border-b" style={{ background: "rgba(242,54,69,0.08)", borderColor: "rgba(242,54,69,0.2)" }}>
-          <AlertTriangle className="w-4 h-4 text-[#f23645] shrink-0 mt-0.5" />
+        <div className="px-4 py-2 flex items-start gap-2 border-b" style={{ background: "rgba(242,54,69,0.08)", borderColor: "rgba(242,54,69,0.2)" }}>
+          <AlertTriangle className="w-3.5 h-3.5 text-[#f23645] shrink-0 mt-0.5" />
           <div>
             <p className="font-mono text-[11px] font-bold text-[#f23645] uppercase">Event Block</p>
             {criteria.hardBlocks.map((b, i) => (
@@ -1347,51 +1514,7 @@ function DetCriteriaCard({ result, narrativeText, isStreaming, streamingText, on
         </div>
       )}
 
-      {(() => {
-        const allWarnings = [
-          ...criteria.warnings,
-          ...(resolvedTrade?.warnings ?? []),
-        ];
-        const earningsWarnings = allWarnings.filter(w => w.startsWith("EARNINGS:"));
-        const otherWarnings = allWarnings.filter(w => !w.startsWith("EARNINGS:"));
-        return (
-          <>
-            {earningsWarnings.length > 0 && (
-              <div className="px-4 py-2.5 flex items-start gap-2 border-b" style={{ background: "rgba(251,146,60,0.08)", borderColor: "rgba(251,146,60,0.25)" }}>
-                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" style={{ color: "#fb923c" }} />
-                <div>
-                  <p className="font-mono text-[11px] font-bold uppercase" style={{ color: "#fb923c" }}>Earnings Risk</p>
-                  {earningsWarnings.map((w, i) => (
-                    <p key={i} className="font-mono text-[10px] mt-0.5" style={{ color: "rgba(251,146,60,0.85)" }}>{w.replace(/^EARNINGS:\s*/, "")}</p>
-                  ))}
-                </div>
-              </div>
-            )}
-            {otherWarnings.length > 0 && (
-              <div className="px-4 py-2.5 flex items-start gap-2 border-b" style={{ background: "rgba(255,184,0,0.06)", borderColor: "rgba(255,184,0,0.15)" }}>
-                <AlertCircle className="w-4 h-4 text-[#FFB800] shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-mono text-[11px] font-bold text-[#FFB800] uppercase">Warnings</p>
-                  {otherWarnings.map((w, i) => (
-                    <p key={i} className="font-mono text-[10px] text-[#FFB800]/80 mt-0.5">{w}</p>
-                  ))}
-                </div>
-              </div>
-            )}
-          </>
-        );
-      })()}
-
-      {criteria.eventConflicts.length > 0 && criteria.hardBlocks.length === 0 && (
-        <div className="px-4 py-2 flex items-center gap-2 border-b" style={{ background: "rgba(255,184,0,0.04)", borderColor: "rgba(255,184,0,0.1)" }}>
-          <Clock className="w-3.5 h-3.5 text-amber-400/70 shrink-0" />
-          <p className="font-mono text-[10px] text-amber-400/70">
-            Events in DTE window: {criteria.eventConflicts.map(e => `${e.eventTitle} (${e.dateFormatted})`).join(", ")}
-          </p>
-        </div>
-      )}
-
-      <div className="px-4 py-4 space-y-4">
+      <div className="px-4 py-3 space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className="font-mono text-lg font-bold text-white">{criteria.ticker}</span>
@@ -1402,174 +1525,167 @@ function DetCriteriaCard({ result, narrativeText, isStreaming, streamingText, on
 
         {resolvedTrade ? (
           <>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="bg-[#0a0a0a] rounded-lg px-3 py-2.5 border border-[#1a1a1c]">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="bg-[#0a0a0a] rounded-lg px-3 py-1.5 border border-[#1a1a1c]">
                 <p className="font-mono text-[10px] text-zinc-600 uppercase">Strategy</p>
                 <p className="font-mono text-sm font-bold text-white mt-0.5">{resolvedTrade.strategy}</p>
               </div>
-              <div className="bg-[#0a0a0a] rounded-lg px-3 py-2.5 border border-[#1a1a1c]">
+              <div className="bg-[#0a0a0a] rounded-lg px-3 py-1.5 border border-[#1a1a1c]">
                 <p className="font-mono text-[10px] text-zinc-600 uppercase">Expiration</p>
-                <p className="font-mono text-sm font-bold text-white mt-0.5">{resolvedTrade.expiration}</p>
-                <p className="font-mono text-[9px] text-zinc-500 mt-0.5">{resolvedTrade.dte} DTE</p>
+                <p className="font-mono text-sm font-bold text-white mt-0.5">{resolvedTrade.expiration} / {resolvedTrade.dte} DTE</p>
+                {earningsLabel && (
+                  <p className="font-mono text-[10px] font-bold mt-0.5" style={{ color: "#fb923c" }}>⚠ EARNINGS {earningsLabel.toUpperCase()}</p>
+                )}
               </div>
-              <div className="bg-[#0a0a0a] rounded-lg px-3 py-2.5 border border-[#1a1a1c]">
+              <div className="bg-[#0a0a0a] rounded-lg px-3 py-1.5 border border-[#1a1a1c]">
                 <p className="font-mono text-[10px] text-zinc-600 uppercase">Contracts</p>
                 <p className="font-mono text-sm font-bold text-white mt-0.5">{resolvedTrade.sizing.recommended_contracts}</p>
                 <p className="font-mono text-[9px] text-zinc-500 mt-0.5">{resolvedTrade.sizing.size_modifier} size</p>
               </div>
-              <div className="bg-[#0a0a0a] rounded-lg px-3 py-2.5 border border-[#1a1a1c]">
+              <div className="bg-[#0a0a0a] rounded-lg px-3 py-1.5 border border-[#1a1a1c]">
                 <p className="font-mono text-[10px] text-zinc-600 uppercase">{resolvedTrade.pricing.type === "debit" ? "Net Debit" : "Net Credit"}</p>
                 <p className="font-mono text-sm font-bold text-white mt-0.5">${resolvedTrade.pricing.executable_amount.toFixed(2)}</p>
                 <p className="font-mono text-[9px] text-zinc-500 mt-0.5">mid: ${resolvedTrade.pricing.mid_amount.toFixed(2)}</p>
               </div>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {resolvedTrade.legs.map((leg, i) => (
-                <div key={i} className="flex items-center gap-3 bg-[#0a0a0a] rounded-lg px-3 py-2.5 border border-[#1a1a1c]">
+                <div key={i} className="flex items-center gap-3 bg-[#0a0a0a] rounded-lg px-3 py-2 border border-[#1a1a1c]">
                   <span className={`font-mono text-[11px] font-bold uppercase px-2 py-0.5 rounded ${leg.action === "buy" ? "bg-[#26a69a]/15 text-[#26a69a]" : "bg-[#f23645]/15 text-[#f23645]"}`}>
                     {leg.action}
                   </span>
                   <span className="font-mono text-sm font-bold text-white">${leg.strike}</span>
                   <span className="font-mono text-[11px] text-zinc-400 uppercase">{leg.type}</span>
-                  <span className="font-mono text-[11px] text-zinc-500 ml-auto">
-                    ${leg.executable_price.toFixed(2)}
-                  </span>
-                  <span className="font-mono text-[10px] text-zinc-600">
-                    {"\u0394"}{Math.abs(leg.delta).toFixed(2)}
-                  </span>
-                  <span className="font-mono text-[10px] text-zinc-600">
-                    OI:{leg.open_interest.toLocaleString()}
-                  </span>
+                  <span className="font-mono text-[11px] text-zinc-500 ml-auto">${leg.executable_price.toFixed(2)}</span>
+                  <span className="font-mono text-[10px] text-zinc-600">{"\u0394"}{Math.abs(leg.delta).toFixed(2)}</span>
+                  <span className="font-mono text-[10px] text-zinc-600">OI:{leg.open_interest.toLocaleString()}</span>
                 </div>
               ))}
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="bg-[#0a0a0a] rounded-lg px-3 py-2.5 border border-[#1a1a1c]">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="bg-[#0a0a0a] rounded-lg px-3 py-1.5 border border-[#1a1a1c]">
                 <p className="font-mono text-[10px] text-zinc-600 uppercase">Max Risk</p>
                 <p className="font-mono text-sm font-bold text-[#f23645] mt-0.5">${resolvedTrade.sizing.total_risk.toLocaleString()}</p>
                 <p className="font-mono text-[9px] text-zinc-500 mt-0.5">${resolvedTrade.risk.max_loss_per_contract}/contract</p>
               </div>
-              <div className="bg-[#0a0a0a] rounded-lg px-3 py-2.5 border border-[#1a1a1c]">
+              <div className="bg-[#0a0a0a] rounded-lg px-3 py-1.5 border border-[#1a1a1c]">
                 <p className="font-mono text-[10px] text-zinc-600 uppercase">Max Gain</p>
                 <p className="font-mono text-sm font-bold text-[#26a69a] mt-0.5">${resolvedTrade.sizing.total_max_gain.toLocaleString()}</p>
                 <p className="font-mono text-[9px] text-zinc-500 mt-0.5">${resolvedTrade.risk.max_gain_per_contract}/contract</p>
               </div>
-              <div className="bg-[#0a0a0a] rounded-lg px-3 py-2.5 border border-[#1a1a1c]">
+              <div className="bg-[#0a0a0a] rounded-lg px-3 py-1.5 border border-[#1a1a1c]">
                 <p className="font-mono text-[10px] text-zinc-600 uppercase">Breakeven</p>
                 <p className="font-mono text-sm font-bold text-white mt-0.5">${resolvedTrade.risk.breakeven.toFixed(2)}</p>
               </div>
-              <div className="bg-[#0a0a0a] rounded-lg px-3 py-2.5 border border-[#1a1a1c]">
+              <div className="bg-[#0a0a0a] rounded-lg px-3 py-1.5 border border-[#1a1a1c]">
                 <p className="font-mono text-[10px] text-zinc-600 uppercase">R:R Ratio</p>
                 <p className="font-mono text-sm font-bold text-white mt-0.5">
-                  1:{(resolvedTrade.risk.max_gain_per_contract / resolvedTrade.risk.max_loss_per_contract).toFixed(1)}
+                  1:{resolvedTrade.risk.max_loss_per_contract > 0 ? (resolvedTrade.risk.max_gain_per_contract / resolvedTrade.risk.max_loss_per_contract).toFixed(1) : "—"}
                 </p>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="bg-[#0a0a0a] rounded-lg px-3 py-2.5 border border-[#1a1a1c]">
-                <p className="font-mono text-[10px] text-[#26a69a] uppercase">Profit Target</p>
-                <p className="font-mono text-[11px] text-zinc-300 mt-0.5">{resolvedTrade.risk.profit_target_display}</p>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-lg px-3 py-2 border" style={{ background: "rgba(38,166,154,0.06)", borderColor: "rgba(38,166,154,0.35)" }}>
+                <p className="font-mono text-[10px] text-[#26a69a] uppercase font-bold">Profit Target</p>
+                <p className="font-mono text-sm font-bold text-[#26a69a] mt-0.5">{resolvedTrade.risk.profit_target_display}</p>
               </div>
-              <div className="bg-[#0a0a0a] rounded-lg px-3 py-2.5 border border-[#1a1a1c]">
-                <p className="font-mono text-[10px] text-[#f23645] uppercase">Stop Loss</p>
-                <p className="font-mono text-[11px] text-zinc-300 mt-0.5">{resolvedTrade.risk.stop_loss_display}</p>
+              <div className="rounded-lg px-3 py-2 border" style={{ background: "rgba(242,54,69,0.06)", borderColor: "rgba(242,54,69,0.35)" }}>
+                <p className="font-mono text-[10px] text-[#f23645] uppercase font-bold">Stop Loss</p>
+                <p className="font-mono text-sm font-bold text-[#f23645] mt-0.5">{resolvedTrade.risk.stop_loss_display}</p>
               </div>
             </div>
+
+            {otherWarnings.length > 0 && (
+              <div className="rounded-lg overflow-hidden">
+                <button
+                  onClick={() => setWarningsExpanded(e => !e)}
+                  className="w-full flex items-center justify-between px-3 py-2"
+                  style={{ background: "#f5c518" }}
+                >
+                  <span className="font-mono text-[12px] font-bold text-black">⚠ {otherWarnings.length} warning{otherWarnings.length !== 1 ? "s" : ""}</span>
+                  <span className="font-mono text-[10px] text-black/70 font-bold">{warningsExpanded ? "collapse" : "tap to view"}</span>
+                </button>
+                {warningsExpanded && (
+                  <div className="px-3 pb-2 pt-1.5 space-y-1" style={{ background: "#f5c518", borderTop: "1px solid rgba(0,0,0,0.1)" }}>
+                    {otherWarnings.map((w, i) => (
+                      <p key={i} className="font-mono text-[11px] text-black leading-relaxed">• {w}</p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </>
         ) : (
           <>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="bg-[#0a0a0a] rounded-lg px-3 py-2.5 border border-[#1a1a1c]">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="bg-[#0a0a0a] rounded-lg px-3 py-1.5 border border-[#1a1a1c]">
                 <p className="font-mono text-[10px] text-zinc-600 uppercase">Strategy</p>
                 <p className="font-mono text-sm font-bold text-white mt-0.5">{STRATEGY_LABELS[criteria.strategyType] ?? criteria.strategyType}</p>
               </div>
-              <div className="bg-[#0a0a0a] rounded-lg px-3 py-2.5 border border-[#1a1a1c]">
+              <div className="bg-[#0a0a0a] rounded-lg px-3 py-1.5 border border-[#1a1a1c]">
                 <p className="font-mono text-[10px] text-zinc-600 uppercase">DTE Range</p>
                 <p className="font-mono text-sm font-bold text-white mt-0.5">{criteria.dteRange.min}-{criteria.dteRange.max}d</p>
               </div>
-              <div className="bg-[#0a0a0a] rounded-lg px-3 py-2.5 border border-[#1a1a1c]">
+              <div className="bg-[#0a0a0a] rounded-lg px-3 py-1.5 border border-[#1a1a1c]">
                 <p className="font-mono text-[10px] text-zinc-600 uppercase">Deltas</p>
                 <p className="font-mono text-sm font-bold text-white mt-0.5">{criteria.deltaTargets.shortStrike}/{criteria.deltaTargets.longStrike}</p>
               </div>
-              <div className="bg-[#0a0a0a] rounded-lg px-3 py-2.5 border border-[#1a1a1c]">
+              <div className="bg-[#0a0a0a] rounded-lg px-3 py-1.5 border border-[#1a1a1c]">
                 <p className="font-mono text-[10px] text-zinc-600 uppercase">Width</p>
                 <p className="font-mono text-sm font-bold text-white mt-0.5">${criteria.spreadWidth}</p>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="bg-[#0a0a0a] rounded-lg px-3 py-2.5 border border-[#1a1a1c]">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="bg-[#0a0a0a] rounded-lg px-3 py-1.5 border border-[#1a1a1c]">
                 <p className="font-mono text-[10px] text-zinc-600 uppercase">Size</p>
                 <p className="font-mono text-sm font-bold text-white mt-0.5">{criteria.positionSize}</p>
               </div>
-              <div className="bg-[#0a0a0a] rounded-lg px-3 py-2.5 border border-[#1a1a1c]">
+              <div className="bg-[#0a0a0a] rounded-lg px-3 py-1.5 border border-[#1a1a1c]">
                 <p className="font-mono text-[10px] text-zinc-600 uppercase">Max Contracts</p>
                 <p className="font-mono text-sm font-bold text-white mt-0.5">{criteria.maxContracts}</p>
               </div>
-              <div className="bg-[#0a0a0a] rounded-lg px-3 py-2.5 border border-[#1a1a1c]">
-                <p className="font-mono text-[10px] text-zinc-600 uppercase">Profit Target</p>
+              <div className="rounded-lg px-3 py-1.5 border" style={{ background: "rgba(38,166,154,0.06)", borderColor: "rgba(38,166,154,0.35)" }}>
+                <p className="font-mono text-[10px] text-[#26a69a] uppercase font-bold">Profit Target</p>
                 <p className="font-mono text-sm font-bold text-[#26a69a] mt-0.5">{criteria.profitTargetPct}%</p>
               </div>
-              <div className="bg-[#0a0a0a] rounded-lg px-3 py-2.5 border border-[#1a1a1c]">
-                <p className="font-mono text-[10px] text-zinc-600 uppercase">Stop Loss</p>
+              <div className="rounded-lg px-3 py-1.5 border" style={{ background: "rgba(242,54,69,0.06)", borderColor: "rgba(242,54,69,0.35)" }}>
+                <p className="font-mono text-[10px] text-[#f23645] uppercase font-bold">Stop Loss</p>
                 <p className="font-mono text-sm font-bold text-[#f23645] mt-0.5">{criteria.stopLossMultiple}x credit</p>
               </div>
             </div>
 
             {resolutionError && (
-              <div className="bg-[#0a0a0a] rounded-lg px-3 py-3 border border-[#f23645]/30">
+              <div className="bg-[#0a0a0a] rounded-lg px-3 py-2.5 border border-[#f23645]/30">
                 <p className="font-mono text-[10px] text-[#f23645] uppercase font-bold mb-1">Strike Resolution Failed</p>
                 <p className="font-mono text-[11px] text-zinc-300">{resolutionError.user_message}</p>
               </div>
             )}
+
+            {otherWarnings.length > 0 && (
+              <div className="rounded-lg overflow-hidden">
+                <button
+                  onClick={() => setWarningsExpanded(e => !e)}
+                  className="w-full flex items-center justify-between px-3 py-2"
+                  style={{ background: "#f5c518" }}
+                >
+                  <span className="font-mono text-[12px] font-bold text-black">⚠ {otherWarnings.length} warning{otherWarnings.length !== 1 ? "s" : ""}</span>
+                  <span className="font-mono text-[10px] text-black/70 font-bold">{warningsExpanded ? "collapse" : "tap to view"}</span>
+                </button>
+                {warningsExpanded && (
+                  <div className="px-3 pb-2 pt-1.5 space-y-1" style={{ background: "#f5c518", borderTop: "1px solid rgba(0,0,0,0.1)" }}>
+                    {otherWarnings.map((w, i) => (
+                      <p key={i} className="font-mono text-[11px] text-black leading-relaxed">• {w}</p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </>
         )}
-
-        <div className="flex items-center gap-2">
-          <span className="font-mono text-[10px] text-zinc-600 uppercase">Premium Selling:</span>
-          {criteria.premiumSellingApproved
-            ? <span className="font-mono text-[11px] font-bold text-[#26a69a]">APPROVED</span>
-            : <span className="font-mono text-[11px] font-bold text-[#f23645]">DENIED (using debit spread)</span>}
-        </div>
-
-        <DetPremiumGatesPanel gates={criteria.premiumGates} />
-
-        <div className="pt-2 border-t border-[#1a1a1c]">
-          <p className="font-mono text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Mode Reason</p>
-          <p className="font-mono text-[11px] text-zinc-400 leading-relaxed">{criteria.modeReason}</p>
-        </div>
-
-        {(narrativeText || isStreaming) && (
-          <div className="pt-3 border-t border-[#1a1a1c]">
-            <p className="font-mono text-[10px] text-zinc-500 uppercase tracking-wider mb-2">AI Narrative</p>
-            <div className="font-mono text-[12px] text-zinc-300 leading-relaxed space-y-2">
-              <ReactMarkdown>{isStreaming ? streamingText : narrativeText}</ReactMarkdown>
-              {isStreaming && <span className="inline-block w-2 h-4 bg-[#FFB800] animate-pulse" />}
-            </div>
-          </div>
-        )}
-
-        <div className="pt-3 border-t border-[#1a1a1c]">
-          {resolvedTrade && onSendToOrder ? (
-            <button
-              onClick={() => onSendToOrder(resolvedTrade)}
-              className="flex items-center justify-center gap-2 w-full px-4 py-3 rounded-lg font-mono text-[13px] font-bold uppercase tracking-wider transition-all active:scale-[0.98]"
-              style={{ background: "linear-gradient(135deg, #f5a623, #ffce73)", color: "#050607" }}
-            >
-              <ArrowRight className="w-4 h-4" />
-              Send to Order
-            </button>
-          ) : (
-            <button disabled className="flex items-center gap-2 px-4 py-2.5 rounded-lg font-mono text-[11px] font-bold uppercase tracking-wider cursor-not-allowed opacity-40"
-              style={{ background: "#1a1a1c", color: "#71717a", border: "1px solid #2A2A2C" }}>
-              <Shield className="w-4 h-4" />
-              {resolutionError ? "Strike Resolution Failed" : "Resolving Strikes..."}
-            </button>
-          )}
-        </div>
       </div>
     </div>
   );
@@ -2499,18 +2615,39 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
                 {detResult && !isDetRunning && (
                   <>
                     {(isDetStreaming || detThinking.length > 0) && (
-                      <div className="rounded-xl overflow-hidden" style={{ background: "#111113", border: "1px solid #2A2A2C" }}>
-                        <AiThinkingFeed texts={detThinking} isStreaming={isDetStreaming} />
-                      </div>
+                      <AiThinkingFeed texts={detThinking} isStreaming={isDetStreaming} />
                     )}
+                    <AiNarrativePanel
+                      text={detNarrative}
+                      streamingText={detStreamingText}
+                      isStreaming={isDetStreaming}
+                    />
                     {detResult.criteria ? (
-                      <DetCriteriaCard
-                        result={detResult}
-                        narrativeText={detNarrative}
-                        isStreaming={isDetStreaming}
-                        streamingText={detStreamingText}
-                        onSendToOrder={onSendToOrder}
-                      />
+                      <>
+                        <DetCriteriaCard
+                          result={detResult}
+                          onSendToOrder={onSendToOrder}
+                        />
+                        {detResult.resolvedTrade && onSendToOrder ? (
+                          <button
+                            onClick={() => onSendToOrder(detResult.resolvedTrade!)}
+                            className="flex items-center justify-center gap-2 w-full px-4 py-3.5 rounded-xl font-mono text-[14px] font-bold uppercase tracking-wider transition-all active:scale-[0.98]"
+                            style={{ background: "linear-gradient(135deg, #f5a623, #ffce73)", color: "#050607" }}
+                          >
+                            <ArrowRight className="w-4 h-4" />
+                            SEND TO ORDER
+                          </button>
+                        ) : detResult.criteria && (
+                          <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl"
+                            style={{ background: "#111113", border: "1px solid #2A2A2C" }}>
+                            <Shield className="w-4 h-4 text-zinc-600" />
+                            <span className="font-mono text-[11px] text-zinc-600">
+                              {detResult.resolutionError ? "Strike resolution failed — cannot place order" : "Resolving strikes..."}
+                            </span>
+                          </div>
+                        )}
+                        <DetRiskOverviewCard result={detResult} />
+                      </>
                     ) : (
                       <DetRejectionCard result={detResult} />
                     )}

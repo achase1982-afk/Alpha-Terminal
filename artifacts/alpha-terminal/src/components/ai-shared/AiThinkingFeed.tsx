@@ -8,7 +8,23 @@ interface AiThinkingFeedProps {
 
 export function AiThinkingFeed({ texts, isStreaming, className = "" }: AiThinkingFeedProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [collapsed, setCollapsed] = useState(false);
+  const prevStreamingRef = useRef(isStreaming);
+
+  useEffect(() => {
+    if (isStreaming) {
+      setCollapsed(false);
+    }
+  }, [isStreaming]);
+
+  useEffect(() => {
+    if (prevStreamingRef.current && !isStreaming && texts.length > 0) {
+      const timer = setTimeout(() => setCollapsed(true), 900);
+      prevStreamingRef.current = false;
+      return () => clearTimeout(timer);
+    }
+    if (isStreaming) prevStreamingRef.current = true;
+  }, [isStreaming, texts.length]);
 
   useEffect(() => {
     if (scrollRef.current && isStreaming) {
@@ -18,21 +34,25 @@ export function AiThinkingFeed({ texts, isStreaming, className = "" }: AiThinkin
 
   if (!isStreaming && texts.length === 0) return null;
 
-  if (!isStreaming && texts.length > 0 && !isExpanded) {
+  if (collapsed && !isStreaming) {
     return (
       <button
-        onClick={() => setIsExpanded(true)}
-        className="flex items-center gap-2 text-xs text-[#52525b] hover:text-[#a1a1aa] transition-colors py-2 px-3"
+        onClick={() => setCollapsed(false)}
+        className="w-full flex items-center justify-between px-4 py-2.5 rounded-xl transition-colors hover:opacity-80"
+        style={{ background: "#111113", border: "1px solid #2A2A2C" }}
       >
-        <span className="inline-flex rounded-full h-2 w-2 bg-emerald-500/50" />
-        <span className="font-mono text-[11px] tracking-wider">View Ai Reasoning</span>
+        <div className="flex items-center gap-2">
+          <span className="inline-flex rounded-full h-2 w-2 bg-emerald-500/50" />
+          <span className="font-mono text-[11px] font-bold text-emerald-500/70 tracking-widest">AI REASONING</span>
+        </div>
+        <span className="font-mono text-[10px] text-zinc-600 tracking-wider">tap to expand</span>
       </button>
     );
   }
 
   return (
-    <div className={`relative ${className}`}>
-      <div className="flex items-center justify-between px-4 py-2.5">
+    <div className={`relative rounded-xl overflow-hidden ${className}`} style={{ background: "#111113", border: "1px solid #2A2A2C" }}>
+      <div className="flex items-center justify-between px-4 py-2.5" style={{ borderBottom: "1px solid #1a1a1c" }}>
         <div className="flex items-center gap-2">
           {isStreaming ? (
             <span className="relative flex h-2 w-2">
@@ -43,26 +63,26 @@ export function AiThinkingFeed({ texts, isStreaming, className = "" }: AiThinkin
             <span className="inline-flex rounded-full h-2 w-2 bg-emerald-500/50" />
           )}
           <span className="font-mono text-[11px] font-bold text-emerald-500/70 tracking-widest">
-            AI Reasoning
+            AI REASONING
+            {isStreaming && <span className="ml-2 text-[#52525b] font-normal animate-pulse">thinking...</span>}
           </span>
         </div>
         {!isStreaming && texts.length > 0 && (
           <button
-            onClick={() => setIsExpanded(false)}
-            className="font-mono text-[11px] text-[#3f3f46] hover:text-[#71717a] transition-colors tracking-wider"
+            onClick={() => setCollapsed(true)}
+            className="font-mono text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors tracking-wider"
           >
-            Hide
+            collapse
           </button>
         )}
       </div>
 
       <div
         ref={scrollRef}
-        className="max-h-[150px] overflow-y-auto px-4 pb-3 relative"
+        className="max-h-[150px] overflow-y-auto px-4 py-3 relative"
         style={{ scrollBehavior: "smooth" }}
       >
-        <div className="font-mono text-xs leading-relaxed whitespace-pre-wrap break-words"
-          style={{ color: "#4ade80" }}>
+        <div className="font-mono text-xs leading-relaxed whitespace-pre-wrap break-words" style={{ color: "#4ade80" }}>
           {texts.length === 0 && isStreaming && (
             <span style={{ color: "#2A2A2C" }}>Awaiting AI output...</span>
           )}
