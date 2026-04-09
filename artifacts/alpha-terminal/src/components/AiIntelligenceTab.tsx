@@ -15,7 +15,6 @@ import { MarketPulseDashboard, type MarketPulseDashboardHandle } from "@/compone
 import { StrategistAuditPanel, type StrategistAuditData } from "@/components/market-pulse/StrategistAuditPanel";
 import type { AiSubTab } from "@/components/ai-tab/AiSubTabs";
 import { AiThinkingFeed } from "@/components/ai-shared/AiThinkingFeed";
-import { UnusualOptionsFlow } from "@/components/ai-tab/UnusualOptionsFlow";
 import { useStrategistCache, type StrategistCacheData } from "@/hooks/useStrategistCache";
 import { MarketScanner, type DetCandidate } from "@/components/MarketScanner";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
@@ -1995,7 +1994,7 @@ interface AiIntelligenceTabProps {
   onSendToOrder?: (trade: ResolvedTrade) => void;
 }
 
-const AI_TABS: AiSubTab[] = ["pulse", "strategist", "scanner", "flow"];
+const AI_TABS: AiSubTab[] = ["pulse", "strategist", "scanner"];
 
 export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscribeEquitySymbols, onNavigateToMarkets, onSendToOrder }: AiIntelligenceTabProps) {
   const swipeStartX = useRef(0);
@@ -2707,11 +2706,6 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
           />
         </div>
 
-        <div style={{ width: "100%", flexShrink: 0, height: "100%", overflowY: "auto" }}>
-          <div className="px-3 sm:px-4 lg:px-5 pt-3">
-            <UnusualOptionsFlow />
-          </div>
-        </div>
       </div>
     </div>
   );

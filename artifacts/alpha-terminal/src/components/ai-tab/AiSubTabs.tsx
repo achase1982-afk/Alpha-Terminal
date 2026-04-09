@@ -1,4 +1,4 @@
-export type AiSubTab = "pulse" | "strategist" | "scanner" | "flow";
+export type AiSubTab = "pulse" | "strategist" | "scanner";
 
 interface AiSubTabsProps {
   active: AiSubTab;
@@ -9,7 +9,6 @@ const TABS: { value: AiSubTab; label: string }[] = [
   { value: "pulse", label: "PULSE" },
   { value: "scanner", label: "SCANNER" },
   { value: "strategist", label: "STRATEGIST" },
-  { value: "flow", label: "FLOW" },
 ];
 
 export function AiSubTabs({ active, onChange }: AiSubTabsProps) {

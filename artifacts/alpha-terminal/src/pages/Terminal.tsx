@@ -426,8 +426,8 @@ export default function TerminalPage() {
         <div className="shrink-0 bg-background z-40">
           <div className="px-3 sm:px-4 lg:px-5 pt-1 pb-1">
             <div className="flex w-full p-1">
-              {(["pulse", "scanner", "strategist", "flow"] as AiSubTab[]).map((tab) => {
-                const label = tab === "pulse" ? "MARKET PULSE" : tab === "scanner" ? "SCANNER" : tab === "strategist" ? "STRATEGIST" : "FLOW";
+              {(["pulse", "scanner", "strategist"] as AiSubTab[]).map((tab) => {
+                const label = tab === "pulse" ? "MARKET PULSE" : tab === "scanner" ? "SCANNER" : "STRATEGIST";
                 return (
                   <button
                     key={tab}
