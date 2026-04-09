@@ -63,3 +63,4 @@ The monorepo structure facilitates shared libraries and consistent tooling. A cl
 -   **Interactive Brokers API** (`@stoqey/ib`): Market breadth and depth data.
 -   **web-push**: Server-side Web Push notifications.
 -   **SEC EDGAR API**: Public company filings data.
+-   **Benzinga API**: News articles and earnings calendar data. Provides full news with ticker associations, analyst ratings, and earnings dates/EPS estimates. Used as primary source for news feed and earnings-date endpoint (Yahoo as fallback). Key: `BENZINGA_API_KEY`.

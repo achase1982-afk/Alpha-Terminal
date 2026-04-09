@@ -846,47 +846,100 @@ router.get("/fundamentals", async (req, res) => {
   }
 });
 
-router.get("/earnings-date", async (req, res) => {
-  const symbol = (req.query["symbol"] as string || "").toUpperCase().trim();
+async function fetchBenzingaEarnings(ticker: string, apiKey: string, log: any): Promise<{
+  earningsDate: string | null;
+  confirmed: boolean;
+  time: string | null;
+  epsEstimate: string | null;
+  epsPrior: string | null;
+  revenueEstimate: string | null;
+  revenuePrior: string | null;
+  period: string | null;
+  periodYear: number | null;
+} | null> {
+  try {
+    const url = `https://api.benzinga.com/api/v2.1/calendar/earnings?token=${apiKey}&pageSize=5&parameters%5Btickers%5D=${encodeURIComponent(ticker)}`;
+    const response = await fetch(url, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!response.ok) {
+      log.warn({ status: response.status, ticker }, "Benzinga earnings API error");
+      return null;
+    }
+    const data = await response.json() as {
+      earnings?: Array<{
+        date: string;
+        date_confirmed: number;
+        time: string;
+        ticker: string;
+        eps_est: string;
+        eps_prior: string;
+        revenue_est: string;
+        revenue_prior: string;
+        period: string;
+        period_year: number;
+      }>;
+    };
+    const items = data.earnings || [];
+    const now = new Date().toISOString().slice(0, 10);
+    const upcoming = items.find(e => e.date >= now) || items[0];
+    if (!upcoming) return null;
 
-  if (!symbol) {
-    return res.status(400).json({ symbol: "", earningsDate: null });
+    log.info({ ticker, date: upcoming.date }, "Benzinga earnings fetched");
+    const timeStr = upcoming.time && upcoming.time !== "00:00:00" ? upcoming.time : null;
+    let timingLabel: string | null = null;
+    if (timeStr) {
+      const hour = parseInt(timeStr.split(":")[0], 10);
+      if (hour < 10) timingLabel = "BMO";
+      else if (hour >= 16) timingLabel = "AMC";
+      else timingLabel = timeStr.slice(0, 5);
+    }
+    return {
+      earningsDate: upcoming.date,
+      confirmed: upcoming.date_confirmed === 1,
+      time: timingLabel,
+      epsEstimate: upcoming.eps_est || null,
+      epsPrior: upcoming.eps_prior || null,
+      revenueEstimate: upcoming.revenue_est || null,
+      revenuePrior: upcoming.revenue_prior || null,
+      period: upcoming.period || null,
+      periodYear: upcoming.period_year || null,
+    };
+  } catch (err) {
+    log.warn({ err, ticker }, "Benzinga earnings fetch failed");
+    return null;
   }
+}
 
-  const cleanSymbol = symbol.replace(/^\$/, "");
-
+async function fetchYahooEarningsDate(cleanSymbol: string, log: any): Promise<string | null> {
   try {
     const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(cleanSymbol)}?modules=calendarEvents`;
     const response = await fetch(url, {
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
       },
+      signal: AbortSignal.timeout(8000),
     });
 
     if (!response.ok) {
-      req.log.warn({ status: response.status, symbol }, "Yahoo earnings fetch failed, trying scrape fallback");
+      log.warn({ status: response.status, symbol: cleanSymbol }, "Yahoo earnings fetch failed, trying scrape");
       void logFailure("YAHOO", "WARN", `Yahoo earnings calendar fetch failed: HTTP ${response.status}`, { symbol: cleanSymbol, status: response.status });
 
       const pageUrl = `https://finance.yahoo.com/quote/${encodeURIComponent(cleanSymbol)}/`;
       const pageRes = await fetch(pageUrl, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        },
+        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
+        signal: AbortSignal.timeout(8000),
       });
-
       if (pageRes.ok) {
         const html = await pageRes.text();
         const dateMatch = html.match(/Earnings Date.*?(\w{3} \d{1,2}, \d{4})/s);
         if (dateMatch) {
           const parsed = new Date(dateMatch[1]);
-          if (!isNaN(parsed.getTime())) {
-            const iso = parsed.toISOString().slice(0, 10);
-            return res.json({ symbol: cleanSymbol, earningsDate: iso });
-          }
+          if (!isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10);
         }
       }
-
-      return res.json({ symbol: cleanSymbol, earningsDate: null });
+      return null;
     }
 
     const json = await response.json() as Record<string, unknown>;
@@ -897,22 +950,61 @@ router.get("/earnings-date", async (req, res) => {
     if (Array.isArray(earningsDateArr) && earningsDateArr.length > 0) {
       const rawTs = earningsDateArr[0]?.raw;
       if (typeof rawTs === "number") {
-        const d = new Date(rawTs * 1000);
-        const iso = d.toISOString().slice(0, 10);
-        return res.json({ symbol: cleanSymbol, earningsDate: iso });
+        return new Date(rawTs * 1000).toISOString().slice(0, 10);
       }
       const fmt = earningsDateArr[0]?.fmt;
-      if (typeof fmt === "string") {
-        return res.json({ symbol: cleanSymbol, earningsDate: fmt });
-      }
+      if (typeof fmt === "string") return fmt;
     }
-
-    res.json({ symbol: cleanSymbol, earningsDate: null });
+    return null;
   } catch (err) {
-    req.log.error({ err, symbol }, "Earnings date fetch error");
+    log.error({ err, symbol: cleanSymbol }, "Yahoo earnings date fetch error");
     void logFailure("YAHOO", "ERROR", `Yahoo earnings date fetch error for ${cleanSymbol}`, { symbol: cleanSymbol, error: String(err) });
-    res.json({ symbol: cleanSymbol, earningsDate: null });
+    return null;
   }
+}
+
+router.get("/earnings-date", async (req, res) => {
+  const symbol = (req.query["symbol"] as string || "").toUpperCase().trim();
+  if (!symbol) {
+    return res.status(400).json({ symbol: "", earningsDate: null });
+  }
+  const cleanSymbol = symbol.replace(/^\$/, "");
+  const benzingaKey = process.env["BENZINGA_API_KEY"];
+
+  const benzingaResult = benzingaKey
+    ? await fetchBenzingaEarnings(cleanSymbol, benzingaKey, req.log)
+    : null;
+
+  if (benzingaResult?.earningsDate) {
+    return res.json({
+      symbol: cleanSymbol,
+      earningsDate: benzingaResult.earningsDate,
+      confirmed: benzingaResult.confirmed,
+      time: benzingaResult.time,
+      epsEstimate: benzingaResult.epsEstimate,
+      epsPrior: benzingaResult.epsPrior,
+      revenueEstimate: benzingaResult.revenueEstimate,
+      revenuePrior: benzingaResult.revenuePrior,
+      period: benzingaResult.period,
+      periodYear: benzingaResult.periodYear,
+      source: "benzinga",
+    });
+  }
+
+  const yahooDate = await fetchYahooEarningsDate(cleanSymbol, req.log);
+  res.json({
+    symbol: cleanSymbol,
+    earningsDate: yahooDate,
+    confirmed: false,
+    time: null,
+    epsEstimate: null,
+    epsPrior: null,
+    revenueEstimate: null,
+    revenuePrior: null,
+    period: null,
+    periodYear: null,
+    source: yahooDate ? "yahoo" : null,
+  });
 });
 
 const FUTURES_NEWS_MAP: Record<string, string> = {

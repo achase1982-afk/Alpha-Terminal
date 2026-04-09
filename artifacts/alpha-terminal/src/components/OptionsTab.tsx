@@ -647,12 +647,20 @@ function ColumnsEditorModal({ open, onClose }: { open: boolean; onClose: () => v
   );
 }
 
-function MetricsStrip({ groups, lastPrice, rawCalls, rawPuts, earningsDate, isFetching, hasData }: {
+function MetricsStrip({ groups, lastPrice, rawCalls, rawPuts, earningsInfo, isFetching, hasData }: {
   groups: ExpirationGroup[];
   lastPrice: number | null;
   rawCalls: Contract[];
   rawPuts: Contract[];
-  earningsDate?: string | null;
+  earningsInfo?: {
+    earningsDate?: string | null;
+    confirmed?: boolean;
+    time?: string | null;
+    epsEstimate?: string | null;
+    epsPrior?: string | null;
+    period?: string | null;
+    periodYear?: number | null;
+  };
   isFetching: boolean;
   hasData: boolean;
 }) {
@@ -670,10 +678,30 @@ function MetricsStrip({ groups, lastPrice, rawCalls, rawPuts, earningsDate, isFe
       ? (totalPutOI / totalCallOI).toFixed(2)
       : "\u2014";
 
+  const eDate = earningsInfo?.earningsDate;
   let earnDisplay = "\u2014";
-  if (earningsDate) {
-    const d = new Date(earningsDate);
-    if (!isNaN(d.getTime())) earnDisplay = `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}`;
+  let earnColor = MUTED;
+  let earnTooltip = "";
+  if (eDate) {
+    const d = new Date(eDate + "T00:00:00");
+    if (!isNaN(d.getTime())) {
+      const mmdd = `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}`;
+      const timeSuffix = earningsInfo?.time ? ` ${earningsInfo.time}` : "";
+      earnDisplay = mmdd + timeSuffix;
+      const now = new Date();
+      const daysUntil = Math.ceil((d.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+      if (daysUntil <= 7 && daysUntil >= 0) earnColor = GOLD;
+      else if (daysUntil < 0) earnColor = DIM;
+      else earnColor = WHITE;
+      const parts: string[] = [];
+      if (earningsInfo?.period && earningsInfo?.periodYear) parts.push(`${earningsInfo.period} ${earningsInfo.periodYear}`);
+      if (earningsInfo?.confirmed) parts.push("Confirmed");
+      else parts.push("Estimated");
+      if (earningsInfo?.epsEstimate) parts.push(`EPS Est: $${earningsInfo.epsEstimate}`);
+      if (earningsInfo?.epsPrior) parts.push(`EPS Prior: $${earningsInfo.epsPrior}`);
+      if (daysUntil >= 0) parts.push(`${daysUntil}d away`);
+      earnTooltip = parts.join(" \u2022 ");
+    }
   }
 
   return (
@@ -697,9 +725,9 @@ function MetricsStrip({ groups, lastPrice, rawCalls, rawPuts, earningsDate, isFe
         <span style={{ color: DIM }}>P/C </span>
         <span style={{ color: pcr !== "\u2014" ? (Number(pcr) > 1 ? DOWN : UP) : MUTED, fontWeight: FW_LIGHT }}>{pcr}</span>
       </span>
-      <span>
+      <span title={earnTooltip}>
         <span style={{ color: DIM }}>ERN </span>
-        <span style={{ color: WHITE, fontWeight: FW_LIGHT }}>{earnDisplay}</span>
+        <span style={{ color: earnColor, fontWeight: FW_LIGHT }}>{earnDisplay}</span>
       </span>
     </div>
   );
@@ -1088,7 +1116,18 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
     queryKey: ["earnings-date", symbol],
     queryFn: async () => {
       const res = await fetchWithAuth(`/api/market/earnings-date?symbol=${encodeURIComponent(symbol)}`);
-      return res.json() as Promise<{ earningsDate?: string | null }>;
+      return res.json() as Promise<{
+        earningsDate?: string | null;
+        confirmed?: boolean;
+        time?: string | null;
+        epsEstimate?: string | null;
+        epsPrior?: string | null;
+        revenueEstimate?: string | null;
+        revenuePrior?: string | null;
+        period?: string | null;
+        periodYear?: number | null;
+        source?: string | null;
+      }>;
     },
     enabled: !!symbol,
     staleTime: 30 * 60 * 1000,
@@ -1253,7 +1292,15 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
           lastPrice={underlyingPrice}
           rawCalls={(data?.calls ?? []) as Contract[]}
           rawPuts={(data?.puts ?? []) as Contract[]}
-          earningsDate={earningsData?.earningsDate ?? quote?.nextEarningsDate}
+          earningsInfo={{
+            earningsDate: earningsData?.earningsDate ?? quote?.nextEarningsDate,
+            confirmed: earningsData?.confirmed,
+            time: earningsData?.time,
+            epsEstimate: earningsData?.epsEstimate,
+            epsPrior: earningsData?.epsPrior,
+            period: earningsData?.period,
+            periodYear: earningsData?.periodYear,
+          }}
           isFetching={isFetching}
           hasData={!!data}
         />
