@@ -279,7 +279,7 @@ function sendOptionSubscription(symbols: string[]) {
 
   const req = buildRequest("LEVELONE_OPTIONS", "SUBS", {
     keys: symbols.join(","),
-    fields: "0,1,2,3,4,5,6,7,8,12,20,21,22,23,24,29",
+    fields: "0,2,3,4,8,9,10,16,17,19,28,29,30,31,37",
   });
 
   if (req) {
@@ -519,20 +519,20 @@ function processOptionTick(content: Record<string, unknown>[]) {
 
     const tick: OptionTick = {
       key,
-      bid: numOrNull(item["1"]),
-      ask: numOrNull(item["2"]),
-      last: numOrNull(item["3"]),
-      bidSize: numOrNull(item["4"]),
-      askSize: numOrNull(item["5"]),
-      volume: numOrNull(item["6"]),
-      openInterest: numOrNull(item["7"]),
-      iv: numOrNull(item["8"]),
-      delta: numOrNull(item["12"]),
-      gamma: numOrNull(item["20"]),
-      theta: numOrNull(item["21"]),
-      vega: numOrNull(item["22"]),
-      mark: numOrNull(item["23"]),
-      change: numOrNull(item["24"]),
+      bid: numOrNull(item["2"]),
+      ask: numOrNull(item["3"]),
+      last: numOrNull(item["4"]),
+      bidSize: numOrNull(item["16"]),
+      askSize: numOrNull(item["17"]),
+      volume: numOrNull(item["8"]),
+      openInterest: numOrNull(item["9"]),
+      iv: numOrNull(item["10"]),
+      delta: numOrNull(item["28"]),
+      gamma: numOrNull(item["29"]),
+      theta: numOrNull(item["30"]),
+      vega: numOrNull(item["31"]),
+      mark: numOrNull(item["37"]),
+      change: numOrNull(item["19"]),
       ts: now,
     };
 
