@@ -113,6 +113,40 @@ const PRESET_UNIVERSES: Record<string, { label: string; description: string; sym
       "WBD","WDAY","XEL","ZM","ZS",
     ],
   },
+  midcap200: {
+    label: "Mid-Cap 200",
+    description: "~200 options-liquid mid-cap stocks ($2B–$10B market cap)",
+    symbols: [
+      // Tech / SaaS / Growth
+      "AFRM","ALTR","AMBA","ASAN","BILL","BRZE","CFLT","DOCN","DOMO","DUOL",
+      "ESTC","FROG","GTLB","HIMS","INST","JAMF","MNDY","NCNO","PCOR","QLYS",
+      "Q2","RELY","ROKU","RAMP","SNAP","SOFI","STEP","TOST","WK","WIX",
+      "ZI","ALKT","LMND","OPEN","SEMR","SITM","SMTC","YEXT","PEGA","EVBG",
+      // Healthcare / Biotech
+      "ACAD","ALNY","ARWR","AXSM","BHVN","BMRN","CLDX","DNLI","EXAS","EXEL",
+      "GKOS","HALO","IMVT","INSP","INSM","IRTC","KRTX","LGND","MGNX","NBIX",
+      "NTRA","NVCR","PCVX","PRCT","RARE","RCUS","RXRX","SMMT","SRPT","TMDX",
+      "VKTX","VRDN","VERV","NKTR","CGEM","ROIV","SNDX","KRYS","LIVN","OMCL",
+      // Consumer / Retail / Leisure
+      "BROS","CAVA","CHEF","DKNG","ELF","ETSY","FNKO","GO","JACK","LEVI",
+      "SFM","XPOF","ARKO","CAKE","DENN","FIVE","HRB","PTON","DKS","RCII",
+      "MODV","SHLS","NCLH","WINGSTOP","PRKS","BJRI","EXPR","COUR","PLBY","ACMR",
+      // Finance / Insurance / Fintech
+      "CBSH","FNB","SNV","WBS","ESNT","RDN","MTG","PFSI","CADE","CFR",
+      "PNFP","WSFS","NBHC","BANR","ONB","HWC","BOKF","BXMT","HCI","KNSL",
+      // Industrials / Defense / Aerospace
+      "KTOS","BWXT","DRS","MOOG","TGI","VSE","IRDM","ITRI","GNTX","ITT",
+      "NOVT","TREX","EXPO","STRL","IESC","ICFI","AAON","GFF","BEPC","SKYW",
+      // Energy / Materials
+      "ARCH","CHRD","CIVI","MNRL","NOG","RRC","SM","WTTR","WFRD","VTLE",
+      "WHD","REPX","PTEN","DINO","GPOR","CRK","MGY","CC","CMC","OLN",
+      // Real Estate
+      "COLD","NNN","SKT","APLE","CTRE","INN","PDM","PEB","SAFE","SVC",
+      // Additional options-liquid mid-caps
+      "NVST","GMED","IDCC","MSA","MEDP","MHO","LGIH","CWH","MGNI","RSKD",
+      "IPGP","IOVA","TRS","KWR","TROX","BCO","TMHC","MTH","CARG","KVYO",
+    ],
+  },
 };
 
 function loadPresets() {
@@ -307,6 +341,34 @@ const DEFAULT_SCREENS: Array<{ name: string; filters: ScreenFilters }> = [
   },
 ];
 
+function getPresetSymbolsForFilters(filters: ScreenFilters): string[] {
+  const marketCapMax = filters.marketCapMax ?? Infinity;
+  const marketCapMin = filters.marketCapMin ?? 0;
+  if (marketCapMax <= 12_000_000_000 && marketCapMin <= 10_000_000_000) {
+    return PRESET_UNIVERSES.midcap200?.symbols ?? [];
+  }
+  return PRESET_UNIVERSES.sp500?.symbols ?? [];
+}
+
+async function runScreenWithFallback(
+  filters: ScreenFilters,
+): Promise<{ symbols: string[]; error?: string; usedFallback?: boolean }> {
+  const fmpResult = await runFmpScreen(filters);
+  if (fmpResult.error === "FMP_API_KEY not configured") {
+    const accessToken = getBestAccessToken();
+    if (!accessToken) {
+      return { symbols: [], error: "FMP_API_KEY not configured and no Schwab access token available" };
+    }
+    const baseSymbols = getPresetSymbolsForFilters(filters);
+    const maxResults = filters.maxResults ?? 100;
+    const dynResult = await runDynamicScreener(baseSymbols, accessToken, maxResults);
+    const combined = [...new Set([...dynResult.topMovers, ...dynResult.volumeSurge, ...dynResult.highVolatility])];
+    logger.info({ count: combined.length, baseCount: baseSymbols.length }, "Dynamic screen used Schwab fallback (FMP_API_KEY not set)");
+    return { symbols: combined.slice(0, maxResults), usedFallback: true };
+  }
+  return fmpResult;
+}
+
 async function ensureDefaultScreens(userId: string) {
   const existing = await db.select().from(scannerScreensTable)
     .where(and(eq(scannerScreensTable.userId, userId), eq(scannerScreensTable.isDefault, true)));
@@ -414,7 +476,7 @@ router.post("/screens/:id/run", async (req, res) => {
       .where(and(eq(scannerScreensTable.id, id), eq(scannerScreensTable.userId, userId)));
     if (!screen) return res.status(404).json({ error: "Screen not found" });
 
-    const result = await runFmpScreen(screen.filters as ScreenFilters);
+    const result = await runScreenWithFallback(screen.filters as ScreenFilters);
     if (result.error) {
       return res.json({ symbols: result.symbols, error: result.error, cachedAt: null });
     }
@@ -424,7 +486,7 @@ router.post("/screens/:id/run", async (req, res) => {
       .set({ cachedSymbols: result.symbols, cachedAt: now, updatedAt: now })
       .where(eq(scannerScreensTable.id, id));
 
-    res.json({ symbols: result.symbols, count: result.symbols.length, cachedAt: now.toISOString() });
+    res.json({ symbols: result.symbols, count: result.symbols.length, cachedAt: now.toISOString(), usedFallback: result.usedFallback ?? false });
   } catch (err) {
     logger.error({ err }, "Failed to run screen");
     res.status(500).json({ error: "Failed to run screen" });
@@ -462,7 +524,7 @@ router.get("/screens/:id/symbols", async (req, res) => {
       });
     }
 
-    const result = await runFmpScreen(screen.filters as ScreenFilters);
+    const result = await runScreenWithFallback(screen.filters as ScreenFilters);
     if (result.symbols.length > 0) {
       const now = new Date();
       await db.update(scannerScreensTable)
@@ -475,6 +537,7 @@ router.get("/screens/:id/symbols", async (req, res) => {
       count: result.symbols.length,
       cachedAt: result.symbols.length > 0 ? new Date().toISOString() : null,
       error: result.error,
+      usedFallback: result.usedFallback ?? false,
     });
   } catch (err) {
     logger.error({ err }, "Failed to get screen symbols");
@@ -488,7 +551,7 @@ const AUTO_WATCHLIST_NAMES = {
   highVolatility: "High Volatility",
 } as const;
 
-const AUTO_UNIVERSE_KEY = "sp100";
+const AUTO_UNIVERSE_KEY = "sp500";
 
 router.post("/refresh-auto-watchlists", async (req, res) => {
   const userId = getUserId(req);
@@ -504,7 +567,7 @@ router.post("/refresh-auto-watchlists", async (req, res) => {
 
   try {
     logger.info({ universe: AUTO_UNIVERSE_KEY, count: preset.symbols.length }, "Running dynamic screener for auto-watchlists");
-    const result = await runDynamicScreener(preset.symbols, accessToken, 20);
+    const result = await runDynamicScreener(preset.symbols, accessToken, 50);
 
     if (result.error && !result.topMovers.length && !result.volumeSurge.length && !result.highVolatility.length) {
       return res.status(500).json({ error: result.error });
@@ -587,7 +650,7 @@ export async function runDailyScreenRefresh() {
     const screens = await db.select().from(scannerScreensTable);
     for (const screen of screens) {
       try {
-        const result = await runFmpScreen(screen.filters as ScreenFilters);
+        const result = await runScreenWithFallback(screen.filters as ScreenFilters);
         if (result.symbols.length > 0) {
           const now = new Date();
           await db.update(scannerScreensTable)

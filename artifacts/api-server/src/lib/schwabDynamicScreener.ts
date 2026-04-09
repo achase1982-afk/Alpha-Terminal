@@ -60,7 +60,7 @@ async function fetchQuotesForScreening(
 export async function runDynamicScreener(
   symbols: string[],
   accessToken: string,
-  topN = 20,
+  topN = 50,
 ): Promise<DynamicWatchlists> {
   if (!accessToken) {
     return { topMovers: [], volumeSurge: [], highVolatility: [], error: "No access token" };

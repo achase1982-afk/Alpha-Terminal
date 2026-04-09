@@ -35,6 +35,15 @@ The StrategyBuilder order page was overhauled across 7 parts:
 6. **Roll & Close Position Flows**: Close populates inverse legs with mid price. Roll opens close order then navigates to options chain for new position. Confirmation modal shows "Confirm Close" with CLOSE labels.
 7. **Strategist Greeks Integration**: `LegPayload` includes gamma/theta/vega alongside delta. System prompt has delta-based strike selection rules (30Δ credit spreads, 16Δ iron condors, 45-50Δ debit spreads, 50Δ calendars). Strategist card shows all Greeks per leg.
 
+### Scanner Universe & Watchlist Overhaul (April 2026)
+
+- **Mid-Cap 200 preset** added to `PRESET_UNIVERSES` in `scanner.ts` — ~200 options-liquid US mid-cap stocks ($2B–$10B) across tech, healthcare, consumer, finance, industrials, energy/materials, and real estate.
+- **Auto-watchlist universe** changed from `sp100` → `sp500` — Top Movers Today, Volume Surge, and High Volatility now screen the full S&P 500 (493 symbols) instead of just S&P 100.
+- **topN** increased from 20 → 50 in `schwabDynamicScreener.ts` (default) and in the refresh-auto-watchlists route.
+- **FMP screener fallback** added via `runScreenWithFallback()` in `scanner.ts` — when `FMP_API_KEY` is not configured, dynamic screens (Mid Cap Movers, Large Cap Liquid, High IV Opportunity) automatically use a Schwab-based screener on the appropriate preset universe (midcap200 for cap-constrained screens, sp500 otherwise). Logged with `usedFallback: true`.
+- **Default scanner universe** in MarketScanner.tsx changed from `preset:sp100` → `preset:sp500`.
+- **Jumpiness fix**: `setDetResult(null)` and `setManualQuotes([])` removed from scan initiation — previous results remain visible while rescanning. A slim "RESCANNING N TICKERS" banner shows instead of the full spinner overlay.
+
 ### Scanner V2 — Discovery Mode (BETA)
 
 New scoring engine in `deterministicScanner.v2.ts` implementing the Discovery Mode spec. Runs alongside the original Momentum preset (v1 preserved in `deterministicScanner.ts`).

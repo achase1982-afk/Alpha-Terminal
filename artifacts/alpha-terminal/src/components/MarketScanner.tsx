@@ -519,7 +519,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
 
   const [mode, setMode] = useState<"manual" | "deterministic">("deterministic");
   const [scanMode, setScanMode] = useState<"DISCOVERY" | "MOMENTUM">("DISCOVERY");
-  const [universe, setUniverse] = useState("preset:sp100");
+  const [universe, setUniverse] = useState("preset:sp500");
   const [isScanning, setIsScanning] = useState(false);
   const [rawError, setRawError] = useState<string | null>(null);
   const [manualQuotes, setManualQuotes] = useState<ScannerQuote[]>([]);
@@ -566,7 +566,6 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
 
     setIsScanning(true);
     setRawError(null);
-    setManualQuotes([]);
     setScanCount(syms.length);
 
     try {
@@ -612,7 +611,6 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
 
     setIsScanning(true);
     setDetError(null);
-    setDetResult(null);
     setScanCount(syms.length);
 
     try {
@@ -719,7 +717,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
                 onEditScreen={(id) => { setEditingScreen(id); setShowScreenBuilder(true); }}
                 onDeleteScreen={async (id) => {
                   await universeData.deleteScreen(id);
-                  if (universe === `screen:${id}`) setUniverse("preset:sp100");
+                  if (universe === `screen:${id}`) setUniverse("preset:sp500");
                 }}
                 onRefreshScreen={handleRefreshScreen}
                 refreshingScreenId={refreshingScreenId}
@@ -727,7 +725,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
                 onEditWatchlist={(id) => { setEditingWatchlistId(id); setShowWatchlistEditor(true); }}
                 onDeleteWatchlist={async (id) => {
                   await universeData.deleteWatchlist(id);
-                  if (universe === `watchlist:${id}`) setUniverse("preset:sp100");
+                  if (universe === `watchlist:${id}`) setUniverse("preset:sp500");
                 }}
               />
             </div>
@@ -835,7 +833,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
         </div>
       </div>
 
-      {isScanning && (
+      {isScanning && !(mode === "deterministic" && detResult) && (
         <div className="flex flex-col items-center justify-center py-16 gap-4 bg-card rounded-xl border border-card-border">
           <div className="relative w-16 h-16">
             <div className="absolute inset-0 border-4 border-primary/20 rounded-full" />
@@ -853,6 +851,15 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
                 : "Fetching market data..."}
             </p>
           </div>
+        </div>
+      )}
+
+      {isScanning && mode === "deterministic" && detResult && (
+        <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg border border-primary/20 bg-primary/5">
+          <span className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin shrink-0" />
+          <span className="text-[11px] font-mono text-primary/80 animate-pulse">
+            RESCANNING {scanCount ?? currentSymCount} TICKERS — results will update when complete
+          </span>
         </div>
       )}
 
