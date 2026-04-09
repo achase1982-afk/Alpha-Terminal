@@ -426,8 +426,8 @@ export default function TerminalPage() {
         <div className="shrink-0 bg-background z-40">
           <div className="px-3 sm:px-4 lg:px-5 pt-1 pb-1">
             <div className="flex w-full p-1">
-              {(["pulse", "scanner", "strategist"] as AiSubTab[]).map((tab) => {
-                const label = tab === "pulse" ? "MARKET PULSE" : tab === "scanner" ? "SCANNER" : "STRATEGIST";
+              {(["pulse", "scanner", "strategist", "flow"] as AiSubTab[]).map((tab) => {
+                const label = tab === "pulse" ? "MARKET PULSE" : tab === "scanner" ? "SCANNER" : tab === "strategist" ? "STRATEGIST" : "FLOW";
                 return (
                   <button
                     key={tab}
@@ -435,7 +435,7 @@ export default function TerminalPage() {
                     className="flex-1 font-mono text-xs font-bold tracking-wider py-2 rounded-lg transition-all duration-200"
                     style={{
                       background: aiSubTab === tab ? "#1a1a1a" : "transparent",
-                      color: aiSubTab === tab ? "#fafafa" : "#71717a",
+                      color: aiSubTab === tab ? (tab === "flow" ? "#FFB800" : "#fafafa") : "#71717a",
                       border: "none",
                     }}
                   >
