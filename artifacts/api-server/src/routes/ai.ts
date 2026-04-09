@@ -42,6 +42,7 @@ import { resolveStrikes, type AccountSnapshot, type ChainData, type ResolvedTrad
 const router: IRouter = Router();
 
 let lastPulseResult: { pulse: Record<string, unknown>; generatedAt: number; thinkingTokens: string[] } | null = null;
+let lastPulseError: string | null = null;
 let pulseGenerationInFlight = false;
 let pulseThinkingBuffer: string[] = [];
 
@@ -1503,6 +1504,11 @@ router.get("/market-pulse/latest", (_req, res) => {
   if (pulseGenerationInFlight) {
     return res.json({ status: "in_flight", thinkingTokens: pulseThinkingBuffer, statusText: "Generating AI analysis..." });
   }
+  if (lastPulseError) {
+    const err = lastPulseError;
+    lastPulseError = null;
+    return res.json({ status: "error", error: err });
+  }
   if (lastPulseResult && (Date.now() - lastPulseResult.generatedAt) < 2 * 60 * 60 * 1000) {
     return res.json({ status: "ready", pulse: lastPulseResult.pulse, thinkingTokens: lastPulseResult.thinkingTokens });
   }
@@ -1533,6 +1539,7 @@ router.post("/market-pulse/stream", async (req, res) => {
   }
 
   pulseGenerationInFlight = true;
+  lastPulseError = null;
   pulseThinkingBuffer = [];
   let clientConnected = true;
 
@@ -1585,7 +1592,8 @@ router.post("/market-pulse/stream", async (req, res) => {
     if (wsResult.hitCount < minRequired) {
       clearInterval(heartbeat);
       pulseGenerationInFlight = false;
-      safeSseWrite(res, `event: error\ndata: ${JSON.stringify({ type: "error", message: `Insufficient WebSocket data: ${wsResult.hitCount}/${expectedCount} symbols (need ${minRequired}). Ensure the live streamer is connected.` })}\n\n`);
+      lastPulseError = `Insufficient market data: ${wsResult.hitCount}/${expectedCount} symbols available (need ${minRequired}). Ensure the live streamer is connected.`;
+      safeSseWrite(res, `event: error\ndata: ${JSON.stringify({ type: "error", message: lastPulseError })}\n\n`);
       if (!res.writableEnded) res.end();
       return;
     }
@@ -1596,8 +1604,9 @@ router.post("/market-pulse/stream", async (req, res) => {
     clearInterval(heartbeat);
     pulseGenerationInFlight = false;
     const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+    lastPulseError = `Market data fetch failed: ${msg}`;
     req.log.error({ err: fetchErr }, "Market pulse stream data fetch error");
-    safeSseWrite(res, `event: error\ndata: ${JSON.stringify({ type: "error", message: msg })}\n\n`);
+    safeSseWrite(res, `event: error\ndata: ${JSON.stringify({ type: "error", message: lastPulseError })}\n\n`);
     if (!res.writableEnded) res.end();
     return;
   }
@@ -1637,11 +1646,12 @@ router.post("/market-pulse/stream", async (req, res) => {
   const clusterNames = Object.keys(engineResult.clusters) as Array<keyof typeof engineResult.clusters>;
   for (const cn of clusterNames) {
     const cl = engineResult.clusters[cn];
-    emitTelemetry("MARKET_PULSE", "INFO", `Cluster ${cn}: score ${(cl?.score ?? 0).toFixed(2)}, weight ${(cl?.weight ?? 0).toFixed(2)}, rules [${(cl?.rulesApplied ?? []).join(", ")}]`, {
+    if (!cl) continue;
+    emitTelemetry("MARKET_PULSE", "INFO", `Cluster ${cn}: score ${(cl.score ?? 0).toFixed(2)}, weight ${(cl.weight ?? 0).toFixed(2)}, rules [${(cl.rulesApplied ?? []).join(", ")}]`, {
       cluster: cn,
-      score: cl.score,
-      weight: cl.weight,
-      rulesApplied: cl.rulesApplied,
+      score: cl.score ?? 0,
+      weight: cl.weight ?? 0,
+      rulesApplied: cl.rulesApplied ?? [],
     });
   }
 
@@ -1908,9 +1918,10 @@ Write ONLY the narrative fields. Return this exact JSON structure:
     clearInterval(heartbeat);
     pulseGenerationInFlight = false;
     const msg = err instanceof Error ? err.message : String(err);
+    lastPulseError = `Generation failed: ${msg}`;
     console.error("[PULSE STREAM] Error:", err);
     req.log.error({ err }, "Market pulse stream error");
-    safeSseWrite(res, `event: error\ndata: ${JSON.stringify({ type: "error", message: "Generation failed. Please try again." })}\n\n`);
+    safeSseWrite(res, `event: error\ndata: ${JSON.stringify({ type: "error", message: lastPulseError })}\n\n`);
     if (!res.writableEnded) res.end();
   }
 });

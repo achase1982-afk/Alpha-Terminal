@@ -130,6 +130,17 @@ function startResultPolling(epoch: number) {
         }
       }
 
+      if (data.status === "error") {
+        console.warn("[pulse] Server reported generation error:", data.error);
+        pollTimer = null;
+        activeAbort = null;
+        const s = useMarketPulseStore.getState();
+        s.setError(data.error || "Generation failed. Please try again.");
+        s.setStreaming(false);
+        s.setLoading(false);
+        return;
+      }
+
       if (data.status === "ready" && data.pulse) {
         console.log("[pulse] Got result — thinking chunks:", data.thinkingTokens?.length ?? 0);
         pollTimer = null;
