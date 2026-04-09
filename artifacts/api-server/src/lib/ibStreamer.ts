@@ -170,7 +170,7 @@ function getFrontMonth(symbol: string): string {
   const month = now.getMonth() + 1;
   const day = now.getDate();
 
-  if (symbol === "CL" || symbol === "BZ" || symbol === "COIL" || symbol === "HG") {
+  if (symbol === "CL" || symbol === "COIL" || symbol === "HG") {
     let m = month + 1;
     let y = year;
     if (m > 12) { m = 1; y++; }
@@ -333,7 +333,7 @@ function buildDynamicContract(symbol: string): Contract {
   const isFut = symbol.startsWith("/");
   const isIdx = symbol.startsWith("$");
   const ibSym = symbol.replace(/^[\/$]/, "");
-  const FUT_EXCHANGE: Record<string, string> = { BZ: "IPE" };
+  const FUT_EXCHANGE: Record<string, string> = {};
   const contract: Contract = {
     symbol: ibSym,
     secType: (isFut ? "FUT" : isIdx ? "IND" : "STK") as SecType,
@@ -1180,9 +1180,13 @@ export function onIBConnected(cb: () => void): void {
   if (connState === "CONNECTED") cb();
 }
 
+const SCHWAB_ONLY_FUTURES = new Set(["/BZ"]);
+
 export function subscribeQuoteForSymbol(symbol: string): boolean {
   if (!ib || connState !== "CONNECTED") return false;
   const upper = symbol.toUpperCase();
+
+  if (SCHWAB_ONLY_FUTURES.has(upper)) return false;
 
   if (permanentSymbolSet.has(upper)) return true;
 

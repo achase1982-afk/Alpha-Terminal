@@ -53,7 +53,7 @@ const QUARTERLY_ROOTS = new Set([
   "6E","6J","6B","6A","6C","EMD",
 ]);
 
-const EARLY_ROLL_ROOTS = new Set<string>();
+const EARLY_ROLL_ROOTS = new Set<string>(["BZ"]);
 
 export function schwabFuturesKey(displaySymbol: string): string {
   const bare = displaySymbol.replace(/^\//, "");
