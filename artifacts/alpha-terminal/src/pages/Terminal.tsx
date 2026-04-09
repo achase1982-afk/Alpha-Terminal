@@ -233,6 +233,44 @@ export default function TerminalPage() {
   const handleStrategyToOrderTicket = useCallback((_legs: unknown[], _netPrice: number, _isCredit: boolean) => {
     setStrategyOpen(false);
   }, []);
+
+  const handleSendToOrder = useCallback((trade: {
+    ticker: string;
+    strategy: string;
+    expiration: string;
+    legs: Array<{ type: string; action: string; strike: number; bid: number; ask: number; delta: number; schwabSymbol?: string }>;
+    pricing: { type: string; executable_amount: number };
+    sizing: { recommended_contracts: number };
+  }) => {
+    useTerminalStore.getState().setSymbol(trade.ticker);
+
+    const mapped: StrategyLeg[] = trade.legs.map((leg, i) => ({
+      id: `resolved-${Date.now()}-${i}`,
+      optionType: leg.type === "call" ? "CALL" as const : "PUT" as const,
+      direction: leg.action === "buy" ? "BUY_TO_OPEN" as const : "SELL_TO_OPEN" as const,
+      strike: leg.strike,
+      expiration: trade.expiration,
+      quantity: trade.sizing.recommended_contracts,
+      bid: leg.bid,
+      ask: leg.ask,
+      delta: leg.delta,
+      schwabSymbol: leg.schwabSymbol || "",
+    }));
+
+    const strikes = mapped.map(l => l.strike);
+    const exp = trade.expiration;
+    const chainMap = new Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number }>();
+    for (const leg of trade.legs) {
+      const key = `${leg.strike}_${exp}_${leg.type === "call" ? "CALL" : "PUT"}`;
+      chainMap.set(key, { bid: leg.bid, ask: leg.ask, delta: leg.delta });
+    }
+
+    setStrategyStrikes(strikes);
+    setStrategyExpirations([{ label: exp, value: exp }]);
+    setStrategyChainData(chainMap);
+    setStrategyInitialLegs(mapped);
+    setStrategyOpen(true);
+  }, []);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickyWrapRef = useRef<HTMLDivElement>(null);
   const [stickyH, setStickyH] = useState(0);
@@ -422,7 +460,7 @@ export default function TerminalPage() {
             )}
 
             {activeBottom === "ai" && (
-              <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToMarkets={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} />
+              <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToMarkets={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} onSendToOrder={handleSendToOrder} />
             )}
 
             {activeBottom === "portfolio" && (
@@ -466,7 +504,7 @@ export default function TerminalPage() {
             ) : (
               <main ref={scrollRef} onScroll={handleScroll} className="flex-1 min-w-0 app-content pb-4 overflow-y-auto" style={activeBottom === "portfolio" ? { overscrollBehaviorY: "none" } : undefined}>
                 {activeBottom === "ai" && (
-                  <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToMarkets={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} />
+                  <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToMarkets={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} onSendToOrder={handleSendToOrder} />
                 )}
                 {activeBottom === "portfolio" && (
                   <PortfolioView onNavigateToSymbol={() => setActiveBottom("markets")} onTrade={openOrderForSymbol} onRoll={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); setContextTab("options"); }} />
@@ -503,7 +541,7 @@ export default function TerminalPage() {
             )}
 
             {activeBottom === "ai" && (
-              <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToMarkets={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} />
+              <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToMarkets={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} onSendToOrder={handleSendToOrder} />
             )}
 
             {activeBottom === "portfolio" && (

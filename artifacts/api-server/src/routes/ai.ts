@@ -36,6 +36,7 @@ import {
   type StrategistInput,
   type StrategistOutput,
 } from "../lib/deterministicStrategist.js";
+import { resolveStrikes, type AccountSnapshot, type ChainData, type ResolvedTrade, type StrikeResolutionError } from "../lib/strikeResolver.js";
 
 const router: IRouter = Router();
 
@@ -2746,6 +2747,58 @@ router.post("/deterministic-scan", async (req, res) => {
   }
 });
 
+function buildResolvedNarrativePrompt(
+  criteria: import("../lib/deterministicStrategist.js").StrategyCriteria,
+  trade: ResolvedTrade,
+  pulseSummary: string,
+  scannerBreakdown: string | null,
+): string {
+  const lines: string[] = [];
+  lines.push("You are a senior options strategist. The system has selected and fully resolved a vertical spread trade with specific strikes, prices, and sizing. Your job is to write 2-3 paragraphs presenting this trade recommendation clearly.");
+  lines.push("");
+  lines.push("RULES:");
+  lines.push("- Do NOT modify any numbers from the resolved trade. Present them exactly as given.");
+  lines.push("- Do NOT suggest alternatives or override the trade selection.");
+  lines.push("- Do NOT use em dashes.");
+  lines.push("- Mention any warnings from the resolution process.");
+  lines.push("- Be specific about the dollar amounts, risk, and profit targets.");
+  lines.push("- If chain_source is 'previous_close', emphasize that prices are from the last session.");
+  lines.push("");
+  lines.push("RESOLVED TRADE:");
+  lines.push(`Strategy: ${trade.strategy} (${trade.direction})`);
+  lines.push(`Ticker: ${trade.ticker}`);
+  lines.push(`Expiration: ${trade.expiration} (${trade.dte} DTE)`);
+  lines.push(`Long Leg: ${trade.legs[0].action.toUpperCase()} ${trade.legs[0].strike} ${trade.legs[0].type} at $${trade.legs[0].executable_price.toFixed(2)} (delta ${trade.legs[0].delta.toFixed(2)})`);
+  lines.push(`Short Leg: ${trade.legs[1].action.toUpperCase()} ${trade.legs[1].strike} ${trade.legs[1].type} at $${trade.legs[1].executable_price.toFixed(2)} (delta ${trade.legs[1].delta.toFixed(2)})`);
+  lines.push(`${trade.pricing.display}`);
+  lines.push(`Max Risk: $${trade.risk.max_loss_per_contract} per contract ($${trade.sizing.total_risk} total)`);
+  lines.push(`Max Gain: $${trade.risk.max_gain_per_contract} per contract ($${trade.sizing.total_max_gain} total)`);
+  lines.push(`Breakeven: $${trade.risk.breakeven}`);
+  lines.push(`${trade.risk.profit_target_display}`);
+  lines.push(`${trade.risk.stop_loss_display}`);
+  lines.push(`Recommended: ${trade.sizing.recommended_contracts} contract(s) (${trade.sizing.size_modifier} size)`);
+  lines.push(`Chain Source: ${trade.chain_source}`);
+  if (trade.scanner_score != null) lines.push(`Scanner Score: ${trade.scanner_score}`);
+  lines.push("");
+  if (trade.warnings.length > 0) {
+    lines.push("WARNINGS:");
+    for (const w of trade.warnings) lines.push(`  - ${w}`);
+    lines.push("");
+  }
+  lines.push("STRATEGY CRITERIA (for context):");
+  lines.push(`Mode: ${criteria.mode} - ${criteria.modeReason}`);
+  lines.push(`Premium Selling: ${criteria.premiumSellingApproved ? "APPROVED" : "DENIED"}`);
+  lines.push("");
+  lines.push("MARKET PULSE SUMMARY:");
+  lines.push(pulseSummary);
+  if (scannerBreakdown) {
+    lines.push("");
+    lines.push("SCANNER BREAKDOWN:");
+    lines.push(scannerBreakdown);
+  }
+  return lines.join("\n");
+}
+
 router.post("/deterministic-strategist", async (req, res) => {
   const { symbol, accessToken: bodyToken2, scannerData, model, temperature } = req.body as {
     symbol?: string;
@@ -2863,6 +2916,98 @@ router.post("/deterministic-strategist", async (req, res) => {
     tickerData,
   })}\n\n`);
 
+  let resolvedTrade: ResolvedTrade | null = null;
+  let resolutionError: StrikeResolutionError | null = null;
+
+  try {
+    const chainSymbol = symbol.toUpperCase();
+    const chainData = await getOrFetchChain(chainSymbol, accessToken, req.log);
+
+    if (chainData) {
+      let accountNetLiq = portfolio.totalEquity;
+      let accountBP = portfolio.totalEquity * 0.5;
+
+      if (traderToken) {
+        try {
+          const acctRes = await fetch("https://api.schwabapi.com/trader/v1/accounts?fields=positions", {
+            headers: { Authorization: `Bearer ${traderToken}` },
+          });
+          if (acctRes.ok) {
+            const accts = await acctRes.json() as Array<Record<string, unknown>>;
+            for (const acct of accts) {
+              const sa = acct["securitiesAccount"] as Record<string, unknown> | undefined;
+              if (!sa) continue;
+              const balances = (sa["currentBalances"] ?? sa["projectedBalances"]) as Record<string, unknown> | undefined;
+              if (balances) {
+                accountNetLiq = (balances["liquidationValue"] as number) ?? (balances["equity"] as number) ?? accountNetLiq;
+                accountBP = (balances["buyingPower"] as number) ?? (balances["availableFunds"] as number) ?? accountBP;
+                break;
+              }
+            }
+          }
+        } catch { /* use portfolio defaults */ }
+      }
+
+      const accountSnapshot: AccountSnapshot = {
+        netLiquidatingValue: accountNetLiq,
+        availableBuyingPower: accountBP,
+      };
+
+      const chainForResolver: ChainData = {
+        symbol: chainData.symbol,
+        underlyingPrice: chainData.underlyingPrice,
+        calls: chainData.calls,
+        puts: chainData.puts,
+        fetchedAt: chainData.fetchedAt,
+      };
+
+      const resolution = resolveStrikes(result.criteria, chainForResolver, accountSnapshot, scannerData ?? null);
+
+      if (resolution.resolved) {
+        resolvedTrade = resolution.trade;
+        req.log.info({
+          symbol,
+          strategy: resolvedTrade.strategy,
+          expiration: resolvedTrade.expiration,
+          longStrike: resolvedTrade.legs[0].strike,
+          shortStrike: resolvedTrade.legs[1].strike,
+          contracts: resolvedTrade.sizing.recommended_contracts,
+          chainSource: resolvedTrade.chain_source,
+        }, "Strike resolution: success");
+
+        res.write(`data: ${JSON.stringify({ resolvedTrade })}\n\n`);
+      } else {
+        resolutionError = resolution.error;
+        req.log.warn({
+          symbol,
+          errorCode: resolutionError.error_code,
+          message: resolutionError.user_message,
+        }, "Strike resolution: failed");
+
+        res.write(`data: ${JSON.stringify({ resolutionError })}\n\n`);
+      }
+    } else {
+      req.log.warn({ symbol }, "Strike resolution: no chain data available");
+      resolutionError = {
+        error: true,
+        error_code: "NO_VALID_STRIKES",
+        user_message: `Options chain data unavailable for ${symbol}. Cannot resolve strikes.`,
+        fallback_params: result.criteria,
+      };
+      res.write(`data: ${JSON.stringify({ resolutionError })}\n\n`);
+    }
+  } catch (srErr: unknown) {
+    const msg = srErr instanceof Error ? srErr.message : String(srErr);
+    req.log.error({ err: srErr }, "Strike resolution: unexpected error");
+    resolutionError = {
+      error: true,
+      error_code: "NO_VALID_STRIKES",
+      user_message: `Strike resolution failed: ${msg}`,
+      fallback_params: result.criteria,
+    };
+    res.write(`data: ${JSON.stringify({ resolutionError })}\n\n`);
+  }
+
   const heartbeat = setInterval(() => {
     if (!res.writableEnded) res.write(": ping\n\n");
   }, 5000);
@@ -2883,7 +3028,12 @@ router.post("/deterministic-strategist", async (req, res) => {
     scannerBreakdown = `Total Score: ${scannerData.totalScore}/100, Trend: ${scannerData.components.trendAlignment}, RS: ${scannerData.components.relativeStrength}, Volume: ${scannerData.components.volumeConfirmation}, IVR: ${scannerData.components.ivrScore}, Liquidity: ${scannerData.components.optionsLiquidity}, Micro-Override: ${scannerData.microOverrideEligible}`;
   }
 
-  const narrativePrompt = buildNarrativePrompt(result.criteria, pulseSummary, scannerBreakdown);
+  let narrativePrompt: string;
+  if (resolvedTrade) {
+    narrativePrompt = buildResolvedNarrativePrompt(result.criteria, resolvedTrade, pulseSummary, scannerBreakdown);
+  } else {
+    narrativePrompt = buildNarrativePrompt(result.criteria, pulseSummary, scannerBreakdown);
+  }
 
   try {
     await nativeStreamClaude({

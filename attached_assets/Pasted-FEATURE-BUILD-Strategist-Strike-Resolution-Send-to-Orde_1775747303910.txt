@@ -1,0 +1,353 @@
+FEATURE BUILD: Strategist Strike Resolution + Send to Order Flow (V1 – Vertical Spreads Only)
+
+OVERVIEW
+
+The Strategist currently outputs abstract strategy parameters (strategy type, delta targets, width, DTE range) but does not resolve them to actual strikes, prices, or contract counts. This makes the output useless to the user. Instead of “Bull Call Spread, deltas 0.4/0.3, width $5, DTE 7-21d,” the Strategist must output: “Buy the INTC May 16 $59 call at $3.30, sell the INTC May 16 $64 call at $1.30. Net debit $2.00. Max risk $400 on 2 contracts.”
+
+This build adds a Strike Resolution module between the deterministic strategy selection engine and the AI narrative layer. It also adds a Send to Order button on the Strategist output that flows the resolved trade into the Strategy Builder/order ticket.
+
+This applies to ALL Strategist output. Every time the Strategist recommends a trade, it must resolve to specific strikes, a specific expiration, real prices, and a contract count.
+
+V1 SCOPE: This build covers vertical spreads only. Bull Call Spread, Bear Put Spread, Bull Put Spread, Bear Call Spread. Iron condors, calendars, butterflies, and diagonals are out of scope for this build. If the deterministic engine outputs a non-vertical strategy, show a message: “Multi-leg strategy resolution coming soon. Here are the abstract parameters:” and display the old-style output as a fallback.
+
+ALSO FIX IN THIS BUILD:
+
+1. Regime gate bypass: when source is scanner AND microOverride is true, skip the Pulse regime gate entirely. The Scanner already validated edge. The regime gate still applies to manually navigated tickers.
+1. Max contracts floor: position sizing must never output zero. Floor is 1 contract with a warning if risk is exceeded.
+
+THE PIPELINE
+
+Current flow:
+Deterministic engine selects strategy and params -> AI narrative presents abstract params
+
+New flow:
+Deterministic engine selects strategy and params -> INPUT VALIDATION -> EXPIRATION SELECTION -> STRIKE SELECTION -> PRICING -> POSITION SIZING -> P/L CALCULATION -> OUTPUT ASSEMBLY -> SCHEMA VALIDATION -> AI narrative presents resolved trade -> SEND TO ORDER button
+
+STEP 0: INPUT VALIDATION
+
+Before anything runs, validate the inputs from the deterministic engine.
+
+Required inputs beyond what the engine already provides:
+
+- account_snapshot: net liquidating value and available buying power. Pull from the Schwab account data already used on the Portfolio page.
+- chain_timestamp: when the options chain data was last fetched.
+
+Validation checks:
+
+- Confirm strategy is one of the four supported verticals. If not, fall back to abstract output with “coming soon” message.
+- Confirm all numeric params are within sane ranges (deltas between 0 and 1, width > 0, DTE range min < max).
+- If long_delta and short_delta are reversed for the given strategy type (e.g. long_delta 0.30 and short_delta 0.40 for a bull call spread), do NOT auto-correct. Return a structured error: “Deterministic engine output invalid: delta ordering reversed for [strategy type]. Flag for review.” This catches engine bugs instead of masking them.
+- If chain_timestamp is older than 15 minutes during market hours (9:30 AM to 4:00 PM ET), re-fetch the chain before proceeding. If re-fetch fails, retry once. If still fails, proceed with stale data but add warning.
+
+STEP 1: EXPIRATION SELECTION
+
+Take the DTE range from the engine (e.g. 7-21 days). Filter available expirations using this priority order:
+
+Priority 1: REJECT any expiration where an earnings event falls between now and that expiration date. The earnings calendar data is already available in the system (shown in the Strategist event tags). Use it. If every available expiration in the DTE range crosses an earnings date, return: “No trade recommended. All expirations in the DTE window include an earnings event. Earnings trades are excluded from automated recommendations.” Make this clearly a policy message, not an error message, so the user understands it is intentional.
+
+Priority 2: Respect the WEEKLYS flag from the scanner output. If set, include weekly expirations. If not set, prefer monthlies but do not hard-exclude weeklies if no monthlies qualify.
+
+Priority 3: Must fall within the DTE range window.
+
+Priority 4: Among qualifying expirations, prefer the one closest to the midpoint of the DTE range.
+
+Priority 5: If tied on midpoint distance, prefer the expiration with higher open interest on ATM strikes.
+
+Priority 6: Final tiebreaker: pick the earliest expiration.
+
+If zero expirations qualify after filtering, expand the DTE window by 5 days in each direction and re-run through the same priorities. If still zero, expand by 10 days. If still zero, return structured error.
+
+STEP 2: STRIKE SELECTION
+
+Using the selected expiration’s chain data, resolve strikes for each leg.
+
+For vertical spreads, there is an anchor leg and a width leg:
+
+- Debit spreads (bull call, bear put): anchor = long leg (selected by delta), width leg = long_strike + width (calls) or long_strike - width (puts)
+- Credit spreads (bull put, bear call): anchor = short leg (selected by delta), width leg = short_strike - width (puts) or short_strike + width (calls)
+
+Selecting the anchor strike:
+Find the strike whose delta is closest to the target delta. If multiple strikes are within 0.03 of the target, pick the one with the highest open interest. If still tied, pick the one with the tightest bid-ask spread.
+
+Minimum strike quality gates:
+
+- Open interest >= 100
+- Bid must be > $0.00 (zero bid means no real market exists, skip the strike)
+- If a strike fails these gates, move to the next nearest strike that passes
+
+Width snapping (critical):
+After selecting the anchor strike, calculate the theoretical width leg strike (anchor + width or anchor - width). This exact strike may not exist on the chain because strike intervals vary ($1, $2.50, $5, $10 depending on ticker and expiration). Snap to the nearest available strike on the chain that is in the correct direction (further OTM for the width leg).
+
+Width tolerance: accept any available strike within 10% of the target width or $0.50, whichever is larger. If no strike exists within tolerance, widen the tolerance to 20% and retry. If still nothing, return structured error.
+
+After snapping, verify the spread is not inverted:
+
+- For call debit spreads: short_strike must be > long_strike
+- For put debit spreads: long_strike must be > short_strike
+- For call credit spreads: long_strike must be > short_strike
+- For put credit spreads: short_strike must be > long_strike
+  If inverted after snapping, try the next nearest valid strike. If no valid configuration exists, return structured error.
+
+Delta fallback: If broker-provided greeks are missing or clearly invalid (delta = 0.00 on a strike that is near ATM, or delta ordering contradicts moneyness ordering), return a structured error for this ticker. Do not guess. V1 requires broker greeks to function. The error message should say: “Greeks unavailable or unreliable for [ticker] [expiration]. Cannot resolve strikes.”
+
+STEP 3: PRICING
+
+For each resolved leg, pull bid and ask prices from the chain.
+
+Conservative (executable) pricing:
+
+- Long legs (buying): use the ask price
+- Short legs (selling): use the bid price
+- This gives the worst-case fill price, which is what the user should plan around
+
+Also calculate mid pricing for reference:
+
+- Mid = (bid + ask) / 2
+
+Net calculation:
+
+- For debit spreads: net_debit = long_ask - short_bid
+- For credit spreads: net_credit = short_bid - long_ask
+
+Display both: “Estimated fill: $2.00 debit (mid: $1.80)”
+
+Liquidity warning: flag if (ask - bid) > 20% of mid AND (ask - bid) > $0.15. Both conditions must be true. This prevents false warnings on cheap options where percentage is high but absolute spread is normal. If triggered, add to warnings array but do not reject.
+
+Validation:
+
+- If any leg has bid = 0 and ask = 0, reject (no market).
+- If any leg has bid > ask, reject (corrupt data).
+- If net debit or credit calculates to zero or negative in the wrong direction, reject.
+
+STEP 4: POSITION SIZING
+
+Inputs:
+
+- max_loss_per_contract from P/L calculation (next step, but sizing needs it, so calculate max loss first or do sizing and P/L together)
+- account_net_liq from Schwab account snapshot
+- available_buying_power from Schwab account snapshot
+- size_modifier from the deterministic engine (FULL or HALF)
+
+Ordering note: max_loss_per_contract is needed here but comes from P/L math. Either calculate max loss before sizing, or combine steps 4 and 5 in implementation. The spec separates them for clarity but they can be a single function.
+
+Calculate max_risk_per_trade:
+
+- FULL: 2% of account_net_liq
+- HALF: 1% of account_net_liq
+
+Validate max_loss_per_contract:
+
+- If max_loss_per_contract <= 0, reject trade with structured error. Something is wrong with the pricing.
+
+Calculate buying_power_reduction (BPR) per contract:
+
+- Debit spreads: BPR = net debit x 100
+- Credit spreads: BPR = (width - net credit) x 100
+
+Subtract a commission buffer before sizing: reduce available_buying_power by $2.00 per contract estimate (covers standard per-leg fees). This prevents the broker from rejecting orders that technically exceed buying power by a few dollars in fees.
+
+Calculate contracts:
+
+- risk_based = floor(max_risk_per_trade / max_loss_per_contract)
+- bp_based = floor((available_buying_power - commission_buffer) / bpr_per_contract)
+- recommended_contracts = min(risk_based, bp_based)
+
+Floor: if recommended_contracts = 0 and the engine recommended a trade, set to 1.
+
+- If max_loss_per_contract > max_risk_per_trade, add warning: “Trade risk ($X per contract) exceeds your per-trade risk limit ($Y). Showing minimum 1 contract.”
+- If bpr_per_contract > available_buying_power, add warning: “Insufficient buying power for this trade. Available: $X, Required: $Y.” Still show 1 contract so user can see the trade, but make warning prominent.
+
+STEP 5: P/L CALCULATION
+
+Each vertical type has its own math. All dollar amounts are per-contract (multiply by 100 for standard equity option multiplier).
+
+Bull Call Spread:
+
+- Max loss = net debit x 100
+- Max gain = (width - net debit) x 100
+- Breakeven = long strike + net debit
+- Profit target value = net debit + (max gain per $1 x 0.50). Display as spread value.
+- Stop loss value = net debit x 0.50. Display as spread value.
+- Profit target display: “Take profit when spread reaches $X (50% of max gain)”
+- Stop loss display: “Stop loss when spread drops to $X (50% loss of debit)”
+
+Bear Put Spread:
+
+- Max loss = net debit x 100
+- Max gain = (width - net debit) x 100
+- Breakeven = long strike - net debit
+- Same profit/stop logic as bull call
+
+Bull Put Spread (credit):
+
+- Max loss = (width - net credit) x 100
+- Max gain = net credit x 100
+- Breakeven = short strike - net credit
+- Profit target display: “Take profit when spread drops to $X (50% of credit received)”
+- Stop loss display: “Stop loss when spread rises to $X (2x credit received)”
+
+Bear Call Spread (credit):
+
+- Max loss = (width - net credit) x 100
+- Max gain = net credit x 100
+- Breakeven = short strike + net credit
+- Same profit/stop logic as bull put
+
+Total risk = max_loss_per_contract x recommended_contracts
+Total max gain = max_gain_per_contract x recommended_contracts
+
+STEP 6: OUTPUT ASSEMBLY
+
+The resolved trade output object:
+
+{
+schema_version: “1.0.0”,
+ticker: “INTC”,
+strategy: “Bull Call Spread”,
+direction: “BULLISH”,
+expiration: “2026-05-16”,
+dte: 37,
+legs: [
+{
+type: “call”,
+action: “buy”,
+strike: 59,
+bid: 3.10,
+ask: 3.30,
+mid: 3.20,
+executable_price: 3.30,
+delta: 0.41,
+open_interest: 2450,
+volume: 380
+},
+{
+type: “call”,
+action: “sell”,
+strike: 64,
+bid: 1.30,
+ask: 1.50,
+mid: 1.40,
+executable_price: 1.30,
+delta: 0.22,
+open_interest: 1800,
+volume: 210
+}
+],
+pricing: {
+type: “debit”,
+executable_amount: 2.00,
+mid_amount: 1.80,
+display: “Estimated fill: $2.00 debit (mid: $1.80)”
+},
+risk: {
+max_loss_per_contract: 200,
+max_gain_per_contract: 300,
+breakeven: 61.00,
+profit_target_spread_value: 2.50,
+profit_target_display: “Take profit when spread reaches $2.50 (50% of max gain)”,
+stop_loss_spread_value: 1.00,
+stop_loss_display: “Stop loss when spread drops to $1.00 (50% loss of debit)”
+},
+sizing: {
+recommended_contracts: 2,
+total_risk: 400,
+total_max_gain: 600,
+size_modifier: “HALF”,
+account_net_liq: 25000,
+available_buying_power: 12000,
+max_risk_per_trade: 250
+},
+warnings: [],
+as_of_timestamp: “2026-04-09T10:30:00-04:00”,
+chain_source: “live”,
+source: “scanner”,
+micro_override: true,
+scanner_score: 94
+}
+
+The direction field is derived from the strategy type:
+
+- Bull Call Spread, Bull Put Spread = “BULLISH”
+- Bear Call Spread, Bear Put Spread = “BEARISH”
+
+STEP 7: SCHEMA VALIDATION
+
+Before passing to the AI narrative layer, validate every required field:
+
+- ticker: non-empty string
+- strategy: one of the four supported verticals
+- expiration: valid future date
+- legs: array with exactly 2 entries, each with type, action, strike, executable_price, delta
+- pricing: executable_amount > 0 and type is either “debit” or “credit”
+- risk: max_loss_per_contract > 0, max_gain_per_contract > 0
+- sizing: recommended_contracts >= 1
+
+If any field fails, DO NOT pass to Claude. Show the user a structured error with the specific reason and fall back to abstract parameter display. This prevents Claude from hallucinating missing numbers.
+
+AI NARRATIVE LAYER UPDATE
+
+Update the Claude prompt to use the resolved trade object. Claude receives the full output object and produces a plain-English trade recommendation including:
+
+- The specific trade: buy X strike, sell Y strike, expiration
+- Dollar amounts: cost to enter, max risk total, max gain total
+- Profit target and stop loss in dollar terms
+- Any warnings from the resolution process
+- Context: earnings nearby, macro conditions, scanner score if from scanner
+
+Claude must NOT invent or modify any numbers from the resolved trade object. It presents and contextualizes, it does not recalculate. If the output has warnings, Claude must mention them.
+
+SEND TO ORDER FLOW
+
+After the Strategist displays the resolved trade recommendation, add a SEND TO ORDER button at the bottom of the recommendation card. This mirrors the Scanner’s SEND TO STRATEGIST button.
+
+When tapped, SEND TO ORDER:
+
+1. Takes the full resolved trade output object
+1. Navigates to the Strategy Builder / order ticket screen
+1. Pre-populates: legs (strikes, type, action), expiration, quantity (recommended_contracts), limit price (executable_amount)
+1. User reviews, adjusts if desired, and submits
+
+The user flow is now: Scanner -> Send to Strategist -> Strategist resolves trade -> Send to Order -> Review and submit. Three taps from scan to order ticket.
+
+Do NOT auto-submit the order. The order ticket is always a review screen.
+
+CHAIN DATA CACHING
+
+Cache options chain data by ticker + expiration for 60 seconds. If the Strategist is called and valid cached data exists, use it. This prevents hitting Schwab API rate limits during rapid Scanner to Strategist flows.
+
+If cached data is used, set chain_source to “cache” in the output object. If fresh fetch, set to “live”.
+
+PRE-MARKET AND AFTER-HOURS
+
+If market is closed:
+
+- Use the most recent chain data available
+- Add a persistent banner on the Strategist output: “Market closed. Prices shown are from last session. Review carefully before submitting orders at open.”
+- Set chain_source to “previous_close”
+
+STRUCTURED ERRORS
+
+When any step fails, return a consistent error object:
+
+{
+error: true,
+error_code: “NO_VALID_EXPIRATION” | “GREEKS_UNAVAILABLE” | “INVALID_ENGINE_OUTPUT” | “NO_VALID_STRIKES” | “PRICING_INVALID” | “UNSUPPORTED_STRATEGY”,
+user_message: “Human-readable explanation of what went wrong”,
+fallback_params: { the original abstract parameters from the engine, if available }
+}
+
+The UI should display the user_message and, if fallback_params exist, show them in the old abstract format so the user at least sees something.
+
+The AI narrative layer should NOT receive error objects. Errors go straight to the UI.
+
+SUCCESS CRITERIA
+
+1. The Strategist produces a complete vertical spread trade with specific strikes, expiration, dollar amounts, and contract count for every recommendation.
+1. No more abstract-only output for vertical spreads. Every vertical recommendation is fully resolved.
+1. Max contracts is never zero. Minimum is 1 with appropriate warnings.
+1. Scanner micro-override tickers are not rejected by the regime gate.
+1. SEND TO ORDER button appears on every resolved recommendation and pre-populates the order ticket.
+1. Earnings are excluded by policy with a clear user-facing message.
+1. Non-vertical strategies fall back gracefully to abstract output with a “coming soon” message.
+1. Reversed deltas from the engine produce an error, not a silent correction.
+1. All warnings (liquidity, size, stale data, buying power) are visible in both the output card and the AI narrative.
