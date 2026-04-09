@@ -482,7 +482,7 @@ export function StrategyBuilder({
   useEffect(() => {
     if (isOpen) {
       setExpandedLeg(null);
-      setRiskCollapsed(false);
+      setRiskCollapsed(true);
       setLimitPrice("");
       setQuantity(1);
       setPriceLocked(false);
@@ -732,7 +732,7 @@ export function StrategyBuilder({
 
   const inputStyle = {
     color: WHITE, background: FIELD, border: `1px solid ${BORDER}`,
-    fontSize: 17, fontFamily: SYS_FONT, borderRadius: 9,
+    fontSize: 13, fontFamily: SYS_FONT, borderRadius: 7,
   } as const;
 
   const companyName = (quote as any)?.companyName ?? "";
@@ -758,14 +758,14 @@ export function StrategyBuilder({
             <ArrowLeft className="w-3.5 h-3.5" />
           </button>
           <div className="leading-tight">
-            <div className="text-[17px] tracking-[0.04em]" style={{ color: WHITE }}>ORDER TICKET</div>
-            <div className="text-[15px]" style={{ color: MUTED }}>Options · {symbol}</div>
+            <div className="text-[13px] tracking-[0.04em] font-medium" style={{ color: WHITE }}>ORDER TICKET</div>
+            <div className="text-[11px]" style={{ color: MUTED }}>Options · {symbol}</div>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <div className="inline-flex p-0.5" style={{ borderRadius: 999, border: `1px solid ${BORDER}`, background: "rgba(0,0,0,0.05)" }}>
-            <span className="px-2 py-0.5 text-[15px]" style={{ borderRadius: 999, background: `${GOLD}18`, color: GOLD }}>Options</span>
-            <span className="px-2 py-0.5 text-[15px]" style={{ color: TEXT }}>Stock</span>
+            <span className="px-2 py-0.5 text-[11px]" style={{ borderRadius: 999, background: `${GOLD}18`, color: GOLD }}>Options</span>
+            <span className="px-2 py-0.5 text-[11px]" style={{ color: TEXT }}>Stock</span>
           </div>
           <button
             onClick={onClose}
@@ -812,93 +812,79 @@ export function StrategyBuilder({
       ) : (
         <>
           <div className="flex-1 overflow-y-auto pb-40">
-            <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "10px 12px 12px" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "6px 10px 10px" }}>
 
               {/* instrument header */}
-              <div style={{ background: CARD_GRAD, borderRadius: R_CARD, border: `1px solid ${BORDER}`, padding: "10px 12px" }}>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-[18px] tracking-[0.08em]" style={{ color: WHITE }}>{symbol}</div>
-                    <div className="text-[15px]" style={{ color: MUTED }}>{companyName}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-[18px]" style={{ color: WHITE }}>{fmt(quote?.last)}</div>
-                    <div className="text-[15px]" style={{ color: changeColor }}>
-                      {changePct != null ? `${changePct >= 0 ? "+" : ""}${fmt(changePct)}%` : ""}
-                    </div>
-                  </div>
+              <div className="flex items-center justify-between" style={{ background: CARD_GRAD, borderRadius: 10, border: `1px solid ${BORDER}`, padding: "5px 10px" }}>
+                <div className="flex items-center gap-2">
+                  <span className="text-[13px] font-semibold tracking-[0.06em]" style={{ color: GOLD }}>{symbol}</span>
+                  <span className="text-[13px]" style={{ color: WHITE }}>{fmt(quote?.last)}</span>
+                  <span className="text-[11px]" style={{ color: changeColor }}>
+                    {changePct != null ? `${changePct >= 0 ? "+" : ""}${fmt(changePct)}%` : ""}
+                  </span>
                 </div>
-                <div className="flex items-center justify-between mt-1.5 text-[15px]" style={{ color: TEXT }}>
-                  <div className="flex items-center gap-2">
-                    <span className="tracking-[0.08em]" style={{ color: MUTED }}>OPTIONS</span>
-                    {expLabel0 && <span>{expLabel0}</span>}
-                  </div>
-                  <span className="px-2 py-0.5 text-[15px]" style={{ borderRadius: 16, border: `1px solid ${BORDER}`, color: TEXT }}>
-                    {accountHash ? "Schwab" : "No account"}
+                <div className="flex items-center gap-2 text-[11px]" style={{ color: MUTED }}>
+                  {expLabel0 && <span>{expLabel0}</span>}
+                  <span className="px-1.5 py-px" style={{ borderRadius: 10, border: `1px solid ${BORDER}`, color: TEXT, fontSize: 10 }}>
+                    {accountHash ? "Schwab" : "No acct"}
                   </span>
                 </div>
               </div>
 
               {/* strategy summary */}
               {legs.length > 0 && (
-                <div style={{ background: CARD_SOFT, borderRadius: R_CARD, border: `1px solid ${BORDER}`, padding: "10px 12px" }}>
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <div className="text-[17px]" style={{ color: WHITE }}>{strategyId.name}</div>
-                      <div className="mt-0.5 text-[16px]" style={{ color: TEXT }}>
-                        {legs.length}-leg {isCredit ? "credit" : "debit"} spread
-                      </div>
+                <div style={{ background: CARD_SOFT, borderRadius: 10, border: `1px solid ${BORDER}`, padding: "6px 10px" }}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[13px] font-medium" style={{ color: WHITE }}>{strategyId.name}</span>
+                      <span className="text-[11px]" style={{ color: TEXT }}>
+                        {legs.length}-leg {isCredit ? "credit" : "debit"}
+                      </span>
                     </div>
-                    <span className="text-[15px] px-2 py-0.5" style={{ borderRadius: 999, border: `1px solid ${isCredit ? `${UP}66` : `${DOWN}66`}`, background: isCredit ? `${UP}0a` : `${DOWN}0a`, color: isCredit ? UP : DOWN }}>
+                    <span className="text-[10px] px-1.5 py-px" style={{ borderRadius: 999, border: `1px solid ${isCredit ? `${UP}66` : `${DOWN}66`}`, background: isCredit ? `${UP}0a` : `${DOWN}0a`, color: isCredit ? UP : DOWN }}>
                       {isCredit ? "Credit" : "Debit"}
                     </span>
                   </div>
 
                   {strategyId.warning && (
-                    <div className="mt-2 px-2.5 py-1.5 flex items-start gap-2" style={{ background: `${DOWN}08`, borderRadius: 10, border: `1px solid ${DOWN}30` }}>
-                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: DOWN }} />
-                      <span className="text-[15px] leading-relaxed" style={{ color: DOWN }}>{strategyId.warning}</span>
+                    <div className="mt-1 px-2 py-1 flex items-center gap-1.5" style={{ background: `${DOWN}20`, borderRadius: 6, border: `1px solid ${DOWN}50` }}>
+                      <AlertTriangle className="w-3 h-3 shrink-0" style={{ color: "#fff" }} />
+                      <span className="text-[11px] leading-tight font-medium" style={{ color: "#fff" }}>Naked short — undefined risk. Add a protective leg.</span>
                     </div>
                   )}
 
                   {inlineWarnings.map((w, i) => (
-                    <div key={i} className="mt-2 px-2.5 py-1.5 flex items-start gap-2" style={{
+                    <div key={i} className="mt-1 px-2 py-1 flex items-center gap-1.5" style={{
                       background: w.level === "red" ? `${DOWN}08` : w.level === "yellow" ? `${GOLD}08` : `${MUTED}08`,
-                      borderRadius: 10,
+                      borderRadius: 6,
                       border: `1px solid ${w.level === "red" ? `${DOWN}30` : w.level === "yellow" ? `${GOLD}30` : `${MUTED}30`}`,
                     }}>
-                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: w.color }} />
-                      <span className="text-[14px] leading-relaxed" style={{ color: w.color }}>{w.text}</span>
+                      <AlertTriangle className="w-3 h-3 shrink-0" style={{ color: w.color }} />
+                      <span className="text-[11px] leading-tight" style={{ color: w.color }}>{w.text}</span>
                     </div>
                   ))}
 
-                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2 pt-2 text-[15px]" style={{ borderTop: `1px dashed ${DIVIDER}`, color: TEXT }}>
-                    <span>Type: {isCredit ? "Credit" : "Debit"} spread</span>
-                    <span>Action: {legs.some(l => l.direction.includes("CLOSE")) ? "Close" : "Open"}</span>
-                  </div>
-
-                  <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[16px]">
+                  <div className="mt-1 grid grid-cols-4 gap-x-2 pt-1 text-[11px]" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
                     <div>
-                      <div className="text-[15px]" style={{ color: MUTED }}>Net {isCredit ? "credit" : "debit"} / spread</div>
-                      <div className="text-[18px]" style={{ color: WHITE }}>{fmtCurrency(Math.abs(metrics.netDebit))}</div>
+                      <div style={{ color: MUTED }}>Net {isCredit ? "cr" : "dr"}</div>
+                      <div className="text-[13px]" style={{ color: WHITE }}>{fmtCurrency(Math.abs(metrics.netDebit))}</div>
                     </div>
                     <div>
-                      <div className="text-[15px]" style={{ color: MUTED }}>Total {isCredit ? "credit" : "cost"} ({quantity}x)</div>
-                      <div className="text-[18px]" style={{ color: WHITE }}>{fmtCurrency(Math.abs(metrics.netDebit * quantity))}</div>
+                      <div style={{ color: MUTED }}>Max risk</div>
+                      <div className="text-[13px]" style={{ color: WHITE }}>{metrics.maxRisk != null ? fmtCurrency(metrics.maxRisk) : "—"}</div>
                     </div>
                     <div>
-                      <div className="text-[15px]" style={{ color: MUTED }}>Max risk</div>
-                      <div className="text-[18px]" style={{ color: WHITE }}>{metrics.maxRisk != null ? fmtCurrency(metrics.maxRisk) : "Undefined"}</div>
+                      <div style={{ color: MUTED }}>POP</div>
+                      <div className="text-[13px]" style={{ color: TEXT }}>{metrics.pop != null ? `${metrics.pop.toFixed(0)}%` : "—"}</div>
                     </div>
                     <div>
-                      <div className="text-[15px]" style={{ color: MUTED }}>Prob. of profit</div>
-                      <div className="text-[17px]" style={{ color: TEXT }}>{metrics.pop != null ? `${metrics.pop.toFixed(0)}%` : "—"}</div>
+                      <div style={{ color: MUTED }}>R:R</div>
+                      <div className="text-[13px]" style={{ color: TEXT }}>{metrics.riskReward != null ? `${metrics.riskReward.toFixed(1)}:1` : "—"}</div>
                     </div>
                   </div>
 
-                  <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 pt-1.5 text-[15px]" style={{ borderTop: `1px dashed ${DIVIDER}`, color: TEXT }}>
-                    <span>R:R {metrics.riskReward != null ? `${metrics.riskReward.toFixed(1)}:1` : "—"}</span>
-                    <span>Breakeven {metrics.breakevens.length > 0 ? metrics.breakevens.map(b => `$${b.toFixed(2)}`).join(" / ") : "—"}</span>
+                  <div className="mt-1 flex flex-wrap items-center justify-between gap-1 pt-1 text-[11px]" style={{ borderTop: `1px dashed ${DIVIDER}`, color: MUTED }}>
+                    <span>BE {metrics.breakevens.length > 0 ? metrics.breakevens.map(b => `$${b.toFixed(2)}`).join(" / ") : "—"}</span>
                     <span>BP {estimatedCost != null ? `−${fmtCurrency(Math.abs(estimatedCost))}` : "—"}</span>
                   </div>
                 </div>
@@ -910,7 +896,7 @@ export function StrategyBuilder({
                   <button
                     key={m}
                     onClick={() => setMode(m)}
-                    className="px-3 py-1 text-[15px] transition-all"
+                    className="px-3 py-0.5 text-[12px] transition-all"
                     style={{
                       borderRadius: 999, border: "none",
                       color: mode === m ? GOLD : TEXT,
@@ -932,11 +918,11 @@ export function StrategyBuilder({
                       className="p-3 text-left transition-all active:scale-[0.97]"
                       style={{ background: CARD_GRAD, borderRadius: R_CARD, border: `1px solid ${BORDER}` }}
                     >
-                      <div className="flex items-center gap-2 mb-1">
-                        <div className="w-2 h-2 rounded-full" style={{ background: tmpl.color }} />
-                        <span className="text-[16px]" style={{ color: WHITE }}>{tmpl.name}</span>
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <div className="w-1.5 h-1.5 rounded-full" style={{ background: tmpl.color }} />
+                        <span className="text-[12px]" style={{ color: WHITE }}>{tmpl.name}</span>
                       </div>
-                      <span className="text-[14px] leading-tight" style={{ color: MUTED }}>{tmpl.description}</span>
+                      <span className="text-[10px] leading-tight" style={{ color: MUTED }}>{tmpl.description}</span>
                     </button>
                   ))}
                 </div>
@@ -944,12 +930,12 @@ export function StrategyBuilder({
 
               {/* leg builder */}
               {mode === "builder" && (
-                <div style={{ background: CARD_GRAD, borderRadius: R_CARD, border: `1px solid ${BORDER}`, padding: "10px 12px" }}>
-                  <div className="flex items-center justify-between text-[17px]" style={{ color: TEXT }}>
+                <div style={{ background: CARD_GRAD, borderRadius: 10, border: `1px solid ${BORDER}`, padding: "6px 10px" }}>
+                  <div className="flex items-center justify-between text-[13px]" style={{ color: TEXT }}>
                     <span className="uppercase tracking-[0.06em]">Legs</span>
-                    <button onClick={addLeg} className="text-[15px]" style={{ color: GOLD, background: "none", border: "none", cursor: "pointer" }}>+ Add leg</button>
+                    <button onClick={addLeg} className="text-[11px]" style={{ color: GOLD, background: "none", border: "none", cursor: "pointer" }}>+ Add leg</button>
                   </div>
-                  <div className="mt-2 flex flex-col gap-2">
+                  <div className="mt-1 flex flex-col gap-1">
                     {legs.map((leg) => {
                       const isBuy = leg.direction.startsWith("BUY");
                       const dirColor = isBuy ? UP : DOWN;
@@ -967,33 +953,31 @@ export function StrategyBuilder({
                       return (
                         <div key={leg.id}>
                           <div
-                            className="flex items-center justify-between px-2.5 py-1.5 cursor-pointer active:opacity-80"
-                            style={{ borderRadius: 10, background: expandedLeg === leg.id ? "rgba(255,255,255,0.03)" : "rgba(255,255,255,0.01)", border: `1px solid ${BORDER}70` }}
+                            className="flex items-center justify-between px-2 py-1 cursor-pointer active:opacity-80"
+                            style={{ borderRadius: 8, background: expandedLeg === leg.id ? "rgba(255,255,255,0.03)" : "rgba(255,255,255,0.01)", border: `1px solid ${BORDER}70` }}
                             onClick={() => setExpandedLeg(expandedLeg === leg.id ? null : leg.id)}
                           >
-                            <div className="flex flex-col gap-0.5">
-                              <div className="flex items-center gap-2 text-[16px]">
-                                <span className="text-[15px] tracking-[0.09em]" style={{ color: dirColor }}>{roleLabel}</span>
+                            <div className="flex flex-col">
+                              <div className="flex items-center gap-1.5 text-[12px]">
+                                <span className="text-[10px] tracking-[0.09em]" style={{ color: dirColor }}>{roleLabel}</span>
                                 <span style={{ color: WHITE }}>{qtySign}{leg.quantity} · {leg.strike} {leg.optionType === "CALL" ? "Call" : "Put"} · {expLabel}</span>
                               </div>
-                              <div className="text-[15px]" style={{ color: TEXT }}>{isBuy ? "Buy" : "Sell"} leg · {mid != null ? `Mark ${mid.toFixed(2)}` : "No data"}</div>
+                              <div className="text-[10px]" style={{ color: TEXT }}>{isBuy ? "Buy" : "Sell"} · {mid != null ? `Mark ${mid.toFixed(2)}` : "No data"}</div>
                             </div>
-                            <div className="flex flex-col items-end gap-0.5 text-[15px]" style={{ color: TEXT }}>
-                              <span>Bid {fmt(leg.bid)} / Ask {fmt(leg.ask)}</span>
-                              <div className="flex items-center gap-2">
-                                <button onClick={(e) => { e.stopPropagation(); setExpandedLeg(expandedLeg === leg.id ? null : leg.id); }} className="text-[15px]" style={{ color: GOLD, background: "none", border: "none", cursor: "pointer" }}>Edit</button>
-                                <button onClick={(e) => { e.stopPropagation(); removeLeg(leg.id); }} style={{ color: MUTED, background: "none", border: "none", cursor: "pointer" }} aria-label="Remove leg">
-                                  <Trash2 className="w-3 h-3" />
-                                </button>
-                              </div>
+                            <div className="flex items-center gap-2 text-[10px]" style={{ color: TEXT }}>
+                              <span>B {fmt(leg.bid)} / A {fmt(leg.ask)}</span>
+                              <button onClick={(e) => { e.stopPropagation(); setExpandedLeg(expandedLeg === leg.id ? null : leg.id); }} className="text-[10px]" style={{ color: GOLD, background: "none", border: "none", cursor: "pointer" }}>Edit</button>
+                              <button onClick={(e) => { e.stopPropagation(); removeLeg(leg.id); }} style={{ color: MUTED, background: "none", border: "none", cursor: "pointer" }} aria-label="Remove leg">
+                                <Trash2 className="w-2.5 h-2.5" />
+                              </button>
                             </div>
                           </div>
                           {expandedLeg === leg.id && (
-                            <div className="px-2.5 py-2 mt-1 space-y-2" style={{ background: "rgba(255,255,255,0.02)", borderRadius: 10, border: `1px solid ${BORDER}50` }}>
-                              <div className="grid grid-cols-2 gap-2">
+                            <div className="px-2 py-1.5 mt-0.5 space-y-1.5" style={{ background: "rgba(255,255,255,0.02)", borderRadius: 8, border: `1px solid ${BORDER}50` }}>
+                              <div className="grid grid-cols-2 gap-1.5">
                                 <div>
-                                  <label className="text-[14px] block mb-0.5" style={{ color: MUTED }}>Direction</label>
-                                  <select value={leg.direction} onChange={(e) => updateLeg(leg.id, { direction: e.target.value as LegDirection })} className="w-full px-2 py-1.5 text-[16px] outline-none" style={inputStyle}>
+                                  <label className="text-[10px] block mb-px" style={{ color: MUTED }}>Direction</label>
+                                  <select value={leg.direction} onChange={(e) => updateLeg(leg.id, { direction: e.target.value as LegDirection })} className="w-full px-1.5 py-1 text-[12px] outline-none" style={inputStyle}>
                                     <option value="BUY_TO_OPEN">Buy to Open</option>
                                     <option value="SELL_TO_OPEN">Sell to Open</option>
                                     <option value="BUY_TO_CLOSE">Buy to Close</option>
@@ -1001,40 +985,40 @@ export function StrategyBuilder({
                                   </select>
                                 </div>
                                 <div>
-                                  <label className="text-[14px] block mb-0.5" style={{ color: MUTED }}>Type</label>
-                                  <select value={leg.optionType} onChange={(e) => updateLeg(leg.id, { optionType: e.target.value as OptionType })} className="w-full px-2 py-1.5 text-[16px] outline-none" style={inputStyle}>
+                                  <label className="text-[10px] block mb-px" style={{ color: MUTED }}>Type</label>
+                                  <select value={leg.optionType} onChange={(e) => updateLeg(leg.id, { optionType: e.target.value as OptionType })} className="w-full px-1.5 py-1 text-[12px] outline-none" style={inputStyle}>
                                     <option value="CALL">Call</option>
                                     <option value="PUT">Put</option>
                                   </select>
                                 </div>
                               </div>
-                              <div className="grid grid-cols-3 gap-2">
+                              <div className="grid grid-cols-3 gap-1.5">
                                 <div>
-                                  <label className="text-[14px] block mb-0.5" style={{ color: MUTED }}>Strike</label>
+                                  <label className="text-[10px] block mb-px" style={{ color: MUTED }}>Strike</label>
                                   {availableStrikes.length > 0 ? (
-                                    <select value={leg.strike} onChange={(e) => updateLeg(leg.id, { strike: parseFloat(e.target.value) })} className="w-full px-2 py-1.5 text-[16px] outline-none" style={inputStyle}>
+                                    <select value={leg.strike} onChange={(e) => updateLeg(leg.id, { strike: parseFloat(e.target.value) })} className="w-full px-1.5 py-1 text-[12px] outline-none" style={inputStyle}>
                                       {availableStrikes.map(s => <option key={s} value={s}>{s}</option>)}
                                     </select>
                                   ) : (
-                                    <input type="number" step="0.5" value={leg.strike} onChange={(e) => updateLeg(leg.id, { strike: parseFloat(e.target.value) || 0 })} className="w-full px-2 py-1.5 text-[16px] outline-none" style={inputStyle} />
+                                    <input type="number" step="0.5" value={leg.strike} onChange={(e) => updateLeg(leg.id, { strike: parseFloat(e.target.value) || 0 })} className="w-full px-1.5 py-1 text-[12px] outline-none" style={inputStyle} />
                                   )}
                                 </div>
                                 <div>
-                                  <label className="text-[14px] block mb-0.5" style={{ color: MUTED }}>Qty</label>
-                                  <input type="number" min={1} value={leg.quantity} onChange={(e) => updateLeg(leg.id, { quantity: Math.max(1, parseInt(e.target.value) || 1) })} className="w-full px-2 py-1.5 text-[16px] outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none" style={inputStyle} />
+                                  <label className="text-[10px] block mb-px" style={{ color: MUTED }}>Qty</label>
+                                  <input type="number" min={1} value={leg.quantity} onChange={(e) => updateLeg(leg.id, { quantity: Math.max(1, parseInt(e.target.value) || 1) })} className="w-full px-1.5 py-1 text-[12px] outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none" style={inputStyle} />
                                 </div>
                                 <div>
-                                  <label className="text-[14px] block mb-0.5" style={{ color: MUTED }}>Exp</label>
+                                  <label className="text-[10px] block mb-px" style={{ color: MUTED }}>Exp</label>
                                   {availableExpirations.length > 0 ? (
-                                    <select value={leg.expiration} onChange={(e) => updateLeg(leg.id, { expiration: e.target.value })} className="w-full px-2 py-1.5 text-[16px] outline-none" style={inputStyle}>
+                                    <select value={leg.expiration} onChange={(e) => updateLeg(leg.id, { expiration: e.target.value })} className="w-full px-1.5 py-1 text-[12px] outline-none" style={inputStyle}>
                                       {availableExpirations.map(e => <option key={e.value} value={e.value}>{e.label}</option>)}
                                     </select>
                                   ) : (
-                                    <input type="text" value={leg.expiration} readOnly className="w-full px-2 py-1.5 text-[16px] outline-none" style={{ ...inputStyle, color: DIM }} />
+                                    <input type="text" value={leg.expiration} readOnly className="w-full px-1.5 py-1 text-[12px] outline-none" style={{ ...inputStyle, color: DIM }} />
                                   )}
                                 </div>
                               </div>
-                              <div className="flex items-center gap-3 pt-1 text-[14px]">
+                              <div className="flex items-center gap-3 text-[11px]">
                                 {[["Δ", leg.delta, 3], ["Γ", leg.gamma, 4], ["Θ", leg.theta, 3], ["V", leg.vega, 3]].map(([l, v, d]) => (
                                   <span key={l as string} style={{ color: MUTED }}>
                                     {l as string} <span style={{ color: TEXT }}>{fmt(v as number | null, d as number)}</span>
@@ -1052,91 +1036,91 @@ export function StrategyBuilder({
 
               {/* order controls */}
               {legs.length > 0 && (
-                <div style={{ background: CARD_SOFT, borderRadius: R_CARD, border: `1px solid ${BORDER}`, padding: "10px 12px" }}>
-                  <div className="text-[17px] uppercase tracking-[0.06em] mb-2" style={{ color: TEXT }}>Order</div>
+                <div style={{ background: CARD_SOFT, borderRadius: 10, border: `1px solid ${BORDER}`, padding: "6px 10px" }}>
+                  <div className="text-[13px] uppercase tracking-[0.06em] mb-1" style={{ color: TEXT }}>Order</div>
 
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="flex flex-col gap-1 text-[16px]">
-                      <span className="text-[15px]" style={{ color: MUTED }}>Order type</span>
-                      <div className="flex items-center justify-between px-2 text-[17px]" style={{ height: 32, borderRadius: 9, border: `1px solid ${BORDER}`, background: "rgba(0,0,0,0.4)", color: WHITE }}>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <div className="flex flex-col gap-px">
+                      <span className="text-[10px]" style={{ color: MUTED }}>Order type</span>
+                      <div className="flex items-center justify-between px-2 text-[12px]" style={{ height: 26, borderRadius: 7, border: `1px solid ${BORDER}`, background: "rgba(0,0,0,0.4)", color: WHITE }}>
                         <span>Limit</span>
-                        <span className="text-[15px]" style={{ color: MUTED }}>▾</span>
+                        <span className="text-[10px]" style={{ color: MUTED }}>▾</span>
                       </div>
                     </div>
-                    <div className="flex flex-col gap-1 text-[16px]">
-                      <span className="text-[15px]" style={{ color: MUTED }}>Time in force</span>
-                      <div className="flex items-center justify-between px-2 text-[17px]" style={{ height: 32, borderRadius: 9, border: `1px solid ${BORDER}`, background: "rgba(0,0,0,0.4)", color: WHITE }}>
+                    <div className="flex flex-col gap-px">
+                      <span className="text-[10px]" style={{ color: MUTED }}>Time in force</span>
+                      <div className="flex items-center justify-between px-2 text-[12px]" style={{ height: 26, borderRadius: 7, border: `1px solid ${BORDER}`, background: "rgba(0,0,0,0.4)", color: WHITE }}>
                         <span>DAY</span>
-                        <span className="text-[15px]" style={{ color: MUTED }}>▾</span>
+                        <span className="text-[10px]" style={{ color: MUTED }}>▾</span>
                       </div>
                     </div>
                   </div>
 
-                  <div className="mt-2 flex flex-col gap-1 text-[16px]">
+                  <div className="mt-1.5 flex flex-col gap-px">
                     <div className="flex items-center justify-between">
-                      <span className="text-[15px]" style={{ color: MUTED }}>Net {isCredit ? "credit" : "debit"} price</span>
+                      <span className="text-[10px]" style={{ color: MUTED }}>Net {isCredit ? "credit" : "debit"} price</span>
                       <button onClick={() => setPriceLocked(!priceLocked)} className="p-0.5" style={{ color: priceLocked ? GOLD : DIM, background: "none", border: "none", cursor: "pointer" }} aria-label={priceLocked ? "Unlock price" : "Lock price"}>
-                        {priceLocked ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
+                        {priceLocked ? <Lock className="w-2.5 h-2.5" /> : <Unlock className="w-2.5 h-2.5" />}
                       </button>
                     </div>
-                    <div className="flex items-center gap-1.5" style={{ height: 32, borderRadius: 9, border: `1px solid ${priceLocked ? `${GOLD}4d` : BORDER}`, background: "rgba(0,0,0,0.4)", padding: "0 10px" }}>
+                    <div className="flex items-center gap-1" style={{ height: 28, borderRadius: 7, border: `1px solid ${priceLocked ? `${GOLD}4d` : BORDER}`, background: "rgba(0,0,0,0.4)", padding: "0 8px" }}>
                       <input
                         type="number" inputMode="decimal" step="0.01" value={limitPrice}
                         onChange={(e) => { if (!priceLocked) { setLimitPrice(e.target.value); setPriceError(""); } }}
                         placeholder="0.00"
-                        className="flex-1 text-[18px] bg-transparent outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none text-right"
+                        className="flex-1 text-[13px] bg-transparent outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none text-right"
                         style={{ color: priceLocked ? GOLD : WHITE, border: "none", fontFamily: SYS_FONT }}
                         readOnly={priceLocked}
                       />
-                      <span className="text-[15px]" style={{ color: MUTED }}>USD</span>
+                      <span className="text-[10px]" style={{ color: MUTED }}>USD</span>
                     </div>
-                    <div className="mt-1 flex items-center justify-between text-[14px]" style={{ color: TEXT }}>
+                    <div className="mt-0.5 flex items-center justify-between text-[11px]" style={{ color: TEXT }}>
                       <button
                         onClick={() => { if (!priceLocked && effectiveBid != null) setLimitPrice(effectiveBid.toFixed(2)); }}
                         disabled={priceLocked}
-                        className="px-2 py-0.5"
+                        className="px-1.5 py-px"
                         style={{ borderRadius: 999, border: "1px solid transparent", opacity: priceLocked ? 0.4 : 1 }}
                       >Bid {effectiveBid != null ? fmt(effectiveBid) : "—"}</button>
                       <button
                         onClick={() => { if (!priceLocked) setMidPrice(); }}
                         disabled={priceLocked}
-                        className="px-2 py-0.5"
+                        className="px-1.5 py-px"
                         style={{ borderRadius: 999, border: `1px solid ${GOLD}70`, background: `${GOLD}0a`, color: GOLD, opacity: priceLocked ? 0.4 : 1 }}
                       >Mid {midPrice != null ? fmt(midPrice) : "—"}</button>
                       <button
                         onClick={() => { if (!priceLocked) setNatPrice(); }}
                         disabled={priceLocked}
-                        className="px-2 py-0.5"
+                        className="px-1.5 py-px"
                         style={{ borderRadius: 999, border: "1px solid transparent", opacity: priceLocked ? 0.4 : 1 }}
                       >Ask {effectiveAsk != null ? fmt(effectiveAsk) : "—"}</button>
                     </div>
                   </div>
 
-                  <div className="mt-2 flex items-center justify-between text-[16px]">
+                  <div className="mt-1 flex items-center justify-between text-[12px]">
                     <div>
-                      <div className="text-[15px]" style={{ color: MUTED }}>Quantity</div>
-                      <div className="text-[17px]" style={{ color: TEXT }}>Spreads · 100 shares / contract</div>
+                      <span className="text-[10px]" style={{ color: MUTED }}>Qty</span>
+                      <span className="ml-1 text-[10px]" style={{ color: TEXT }}>Spreads · 100sh/ct</span>
                     </div>
-                    <div className="inline-flex items-center" style={{ borderRadius: 20, border: `1px solid ${BORDER}`, overflow: "hidden" }}>
-                      <button onClick={() => setQuantity(Math.max(1, quantity - 1))} className="flex items-center justify-center transition-colors active:opacity-70" style={{ width: 28, height: 26, color: TEXT, background: "transparent", border: "none" }}>
-                        <Minus className="w-3.5 h-3.5" />
+                    <div className="inline-flex items-center" style={{ borderRadius: 14, border: `1px solid ${BORDER}`, overflow: "hidden" }}>
+                      <button onClick={() => setQuantity(Math.max(1, quantity - 1))} className="flex items-center justify-center transition-colors active:opacity-70" style={{ width: 24, height: 22, color: TEXT, background: "transparent", border: "none" }}>
+                        <Minus className="w-3 h-3" />
                       </button>
                       <input
                         type="number" inputMode="numeric" value={quantity}
                         onChange={(e) => { const v = parseInt(e.target.value); if (!isNaN(v) && v >= 0) setQuantity(v); }}
-                        className="text-center text-[17px] bg-transparent outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                        style={{ color: WHITE, minWidth: 32, width: 32, border: "none", fontFamily: SYS_FONT }}
+                        className="text-center text-[12px] bg-transparent outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                        style={{ color: WHITE, minWidth: 26, width: 26, border: "none", fontFamily: SYS_FONT }}
                       />
-                      <button onClick={() => setQuantity(quantity + 1)} className="flex items-center justify-center transition-colors active:opacity-70" style={{ width: 28, height: 26, color: TEXT, background: "transparent", border: "none" }}>
-                        <Plus className="w-3.5 h-3.5" />
+                      <button onClick={() => setQuantity(quantity + 1)} className="flex items-center justify-center transition-colors active:opacity-70" style={{ width: 24, height: 22, color: TEXT, background: "transparent", border: "none" }}>
+                        <Plus className="w-3 h-3" />
                       </button>
                     </div>
                   </div>
 
-                  <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 pt-1.5 text-[15px]" style={{ borderTop: `1px dashed ${DIVIDER}`, color: TEXT }}>
-                    <span>Total {isCredit ? "credit" : "cost"} {estimatedCost != null ? fmtCurrency(Math.abs(estimatedCost)) : "—"}</span>
+                  <div className="mt-1 flex flex-wrap items-center justify-between gap-1 pt-1 text-[11px]" style={{ borderTop: `1px dashed ${DIVIDER}`, color: MUTED }}>
+                    <span>Total {isCredit ? "cr" : "cost"} {estimatedCost != null ? fmtCurrency(Math.abs(estimatedCost)) : "—"}</span>
                     <span>Max risk {metrics.maxRisk != null ? fmtCurrency(metrics.maxRisk) : "—"}</span>
-                    <span>Est. fees $0.65/contract</span>
+                    <span>Fees $0.65/ct</span>
                   </div>
                 </div>
               )}
@@ -1145,36 +1129,36 @@ export function StrategyBuilder({
               {legs.length > 0 && (
                 <>
                   <button
-                    className="w-full flex items-center justify-between px-3 py-1.5 text-[16px]"
+                    className="w-full flex items-center justify-between px-2 py-1 text-[11px]"
                     onClick={() => setAdvancedOpen(v => !v)}
-                    style={{ color: TEXT, borderRadius: 8, background: "none", border: "none", cursor: "pointer" }}
+                    style={{ color: TEXT, borderRadius: 6, background: "none", border: "none", cursor: "pointer" }}
                   >
-                    <span className="flex items-center gap-1.5">
-                      {advancedOpen ? <ChevronUp className="w-3 h-3" style={{ color: MUTED }} /> : <ChevronDown className="w-3 h-3" style={{ color: MUTED }} />}
+                    <span className="flex items-center gap-1">
+                      {advancedOpen ? <ChevronUp className="w-2.5 h-2.5" style={{ color: MUTED }} /> : <ChevronDown className="w-2.5 h-2.5" style={{ color: MUTED }} />}
                       Advanced settings
                     </span>
                   </button>
                   {advancedOpen && (
-                    <div className="grid grid-cols-3 gap-1.5">
-                      <div className="px-2.5 py-1.5" style={{ background: FIELD, border: `1px solid ${BORDER}`, borderRadius: 9 }}>
-                        <span className="text-[14px] block mb-0.5" style={{ color: MUTED }}>Exchange</span>
-                        <span className="text-[16px]" style={{ color: WHITE }}>BEST</span>
+                    <div className="grid grid-cols-3 gap-1">
+                      <div className="px-2 py-1" style={{ background: FIELD, border: `1px solid ${BORDER}`, borderRadius: 7 }}>
+                        <span className="text-[10px] block" style={{ color: MUTED }}>Exchange</span>
+                        <span className="text-[12px]" style={{ color: WHITE }}>BEST</span>
                       </div>
-                      <div className="px-2.5 py-1.5" style={{ background: FIELD, border: `1px solid ${BORDER}`, borderRadius: 9 }}>
-                        <span className="text-[14px] block mb-0.5" style={{ color: MUTED }}>Duration</span>
-                        <span className="text-[16px]" style={{ color: WHITE }}>DAY</span>
+                      <div className="px-2 py-1" style={{ background: FIELD, border: `1px solid ${BORDER}`, borderRadius: 7 }}>
+                        <span className="text-[10px] block" style={{ color: MUTED }}>Duration</span>
+                        <span className="text-[12px]" style={{ color: WHITE }}>DAY</span>
                       </div>
-                      <div className="px-2.5 py-1.5 flex items-center justify-between" style={{ background: FIELD, border: `1px solid ${BORDER}`, borderRadius: 9 }}>
+                      <div className="px-2 py-1 flex items-center justify-between" style={{ background: FIELD, border: `1px solid ${BORDER}`, borderRadius: 7 }}>
                         <div>
-                          <span className="text-[14px] block mb-0.5" style={{ color: MUTED }}>Ext Hrs</span>
-                          <span className="text-[16px]" style={{ color: extendedHours ? GOLD : WHITE }}>{extendedHours ? "On" : "Off"}</span>
+                          <span className="text-[10px] block" style={{ color: MUTED }}>Ext Hrs</span>
+                          <span className="text-[12px]" style={{ color: extendedHours ? GOLD : WHITE }}>{extendedHours ? "On" : "Off"}</span>
                         </div>
                         <button
                           onClick={(e) => { e.stopPropagation(); setExtendedHours(!extendedHours); }}
-                          className="relative w-8 h-4 rounded-full transition-colors duration-200"
+                          className="relative w-7 h-3.5 rounded-full transition-colors duration-200"
                           style={{ background: extendedHours ? GOLD : BORDER, border: "none" }}
                         >
-                          <div className="absolute top-0.5 w-3 h-3 rounded-full transition-transform duration-200" style={{ background: extendedHours ? BG : DIM, transform: extendedHours ? "translateX(16px)" : "translateX(2px)" }} />
+                          <div className="absolute top-0.5 w-2.5 h-2.5 rounded-full transition-transform duration-200" style={{ background: extendedHours ? BG : DIM, transform: extendedHours ? "translateX(14px)" : "translateX(2px)" }} />
                         </button>
                       </div>
                     </div>
@@ -1184,44 +1168,36 @@ export function StrategyBuilder({
 
               {/* risk overview */}
               {legs.length > 0 && (
-                <div style={{ background: CARD_SOFT, borderRadius: R_CARD, border: `1px solid ${BORDER}`, padding: "10px 12px" }}>
-                  <div className="flex items-center justify-between text-[17px]" style={{ color: TEXT }}>
-                    <span className="uppercase tracking-[0.06em]">Risk overview</span>
-                    {preTradeEnabled && riskChecks.length > 0 && (
-                      <span className="text-[15px] px-2 py-0.5" style={{
-                        borderRadius: 16,
-                        border: `1px solid ${overallRisk === "GREEN" ? `${UP}66` : overallRisk === "YELLOW" ? `${GOLD}66` : `${DOWN}80`}`,
-                        color: levelColor(overallRisk),
-                        background: overallRisk === "GREEN" ? `${UP}0a` : overallRisk === "YELLOW" ? `${GOLD}0a` : `${DOWN}0a`,
-                      }}>
-                        Pre-trade risk · {overallRisk === "GREEN" ? "PASS" : overallRisk === "YELLOW" ? "WARN" : "FAIL"}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 pt-1.5 text-[15px]" style={{ borderTop: `1px dashed ${DIVIDER}`, color: TEXT }}>
-                    <span>Max loss {metrics.maxRisk != null ? fmtCurrency(metrics.maxRisk) : "—"}</span>
-                    <span>POP {metrics.pop != null ? `${metrics.pop.toFixed(0)}%` : "—"}</span>
-                    <span>Margin {metrics.maxRisk != null ? fmtCurrency(metrics.maxRisk * 0.2) : "—"}</span>
-                  </div>
-
+                <div style={{ background: CARD_SOFT, borderRadius: 10, border: `1px solid ${BORDER}`, padding: "6px 10px" }}>
                   <button
                     type="button"
                     onClick={() => setRiskCollapsed(v => !v)}
-                    className="mt-1.5 flex w-full items-center justify-between text-[16px]"
+                    className="flex w-full items-center justify-between text-[13px]"
                     style={{ color: TEXT, background: "none", border: "none", cursor: "pointer", padding: 0 }}
                   >
-                    <span className="inline-flex items-center gap-1.5">
-                      <span className="text-[15px]">{riskCollapsed ? "▾" : "▴"}</span>
-                      <span>View full risk details</span>
-                    </span>
-                    <span className="text-[15px]" style={{ color: MUTED }}>{riskCollapsed ? "Tap to expand" : "Tap to collapse"}</span>
+                    <span className="uppercase tracking-[0.06em]">Risk overview</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px]" style={{ color: MUTED }}>
+                        Loss {metrics.maxRisk != null ? fmtCurrency(metrics.maxRisk) : "—"} · POP {metrics.pop != null ? `${metrics.pop.toFixed(0)}%` : "—"} · Mgn {metrics.maxRisk != null ? fmtCurrency(metrics.maxRisk * 0.2) : "—"}
+                      </span>
+                      {preTradeEnabled && riskChecks.length > 0 && (
+                        <span className="text-[10px] px-1.5 py-px" style={{
+                          borderRadius: 10,
+                          border: `1px solid ${overallRisk === "GREEN" ? `${UP}66` : overallRisk === "YELLOW" ? `${GOLD}66` : `${DOWN}80`}`,
+                          color: levelColor(overallRisk),
+                          background: overallRisk === "GREEN" ? `${UP}0a` : overallRisk === "YELLOW" ? `${GOLD}0a` : `${DOWN}0a`,
+                        }}>
+                          {overallRisk === "GREEN" ? "PASS" : overallRisk === "YELLOW" ? "WARN" : "FAIL"}
+                        </span>
+                      )}
+                      <span className="text-[10px]" style={{ color: MUTED }}>{riskCollapsed ? "▾" : "▴"}</span>
+                    </div>
                   </button>
 
                   {!riskCollapsed && (
-                    <div className="mt-2 space-y-2">
-                      <div className="relative h-32 overflow-hidden" style={{ borderRadius: 12, border: `1px dashed ${BORDER}`, background: `linear-gradient(to bottom, #1d222e, #090b10)` }}>
-                        <div className="absolute inset-2" style={{ borderBottom: `1px solid ${TEXT}60`, borderLeft: `1px solid ${TEXT}60` }} />
+                    <div className="mt-1.5 space-y-1.5">
+                      <div className="relative h-20 overflow-hidden" style={{ borderRadius: 8, border: `1px dashed ${BORDER}`, background: `linear-gradient(to bottom, #1d222e, #090b10)` }}>
+                        <div className="absolute inset-1.5" style={{ borderBottom: `1px solid ${TEXT}60`, borderLeft: `1px solid ${TEXT}60` }} />
                         {(() => {
                           const strikes = legs.map(l => l.strike).sort((a, b) => a - b);
                           const lo = strikes[0] - (strikes[strikes.length - 1] - strikes[0]) * 0.8;
@@ -1275,54 +1251,48 @@ export function StrategyBuilder({
                             </svg>
                           );
                         })()}
-                        <div className="absolute bottom-1 right-2 text-[11px]" style={{ color: MUTED }}>P/L at expiration vs underlying price</div>
+                        <div className="absolute bottom-0.5 right-1.5 text-[9px]" style={{ color: MUTED }}>P/L at exp</div>
                       </div>
 
-                      <div className="text-[16px]" style={{ color: TEXT }}>
-                        {isCredit ? "Max profit if underlying stays between strikes at expiration" : "Max profit if underlying moves past breakeven"}.
-                        Max risk: {metrics.maxRisk != null ? fmtCurrency(metrics.maxRisk) : "undefined"}.
+                      <div className="text-[11px]" style={{ color: TEXT }}>
+                        {isCredit ? "Max profit if price stays between strikes" : "Max profit past breakeven"}.
+                        Risk: {metrics.maxRisk != null ? fmtCurrency(metrics.maxRisk) : "undef"}.
+                        {metrics.breakevens.length > 0 && ` BE: ${metrics.breakevens.map(b => `$${b.toFixed(2)}`).join(" / ")}`}
                       </div>
-                      {metrics.breakevens.length > 0 && (
-                        <div className="text-[15px]" style={{ color: TEXT }}>Breakeven{metrics.breakevens.length > 1 ? "s" : ""}: {metrics.breakevens.map(b => `$${b.toFixed(2)}`).join(" / ")}</div>
-                      )}
 
-                      <div className="mt-1 grid grid-cols-2 gap-x-4 gap-y-1 pt-1.5 text-[15px]" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
+                      <div className="flex items-center gap-3 pt-1 text-[11px]" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
                         {([
-                          ["Delta", metrics.totalDelta, 3],
-                          ["Gamma", metrics.totalGamma, 4],
-                          ["Theta", metrics.totalTheta, 3],
-                          ["Vega", metrics.totalVega, 3],
+                          ["D", metrics.totalDelta, 3],
+                          ["G", metrics.totalGamma, 4],
+                          ["T", metrics.totalTheta, 3],
+                          ["V", metrics.totalVega, 3],
                         ] as [string, number, number][]).map(([label, val, dec]) => (
-                          <div key={label}>
-                            <div style={{ color: MUTED }}>{label}</div>
-                            <div style={{ color: TEXT }}>{fmt(val, dec)}</div>
-                          </div>
+                          <span key={label} style={{ color: MUTED }}>
+                            {label} <span style={{ color: TEXT }}>{fmt(val, dec)}</span>
+                          </span>
                         ))}
                       </div>
 
                       {preTradeEnabled && riskChecks.length > 0 && (
-                        <div className="mt-1 pt-1.5" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
-                          <div className="space-y-1.5 text-[15px]">
+                        <div className="mt-1 pt-1" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
+                          <div className="space-y-0.5 text-[11px]">
                             {riskChecks.map(c => (
-                              <div key={c.id} className="flex gap-2">
-                                <span className="mt-1 w-2 h-2 rounded-full shrink-0" style={{ background: levelColor(c.level) }} />
-                                <div>
-                                  <div style={{ color: TEXT }}>{c.label}</div>
-                                  <div style={{ color: MUTED }}>{c.detail}</div>
-                                </div>
+                              <div key={c.id} className="flex items-center gap-1.5">
+                                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: levelColor(c.level) }} />
+                                <span style={{ color: TEXT }}>{c.label}</span>
+                                <span style={{ color: MUTED }}>{c.detail}</span>
                               </div>
                             ))}
                           </div>
                         </div>
                       )}
 
-                      {/* AI co-pilot inline */}
-                      <div className="mt-1 pt-1.5" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
-                        <div className="flex items-center gap-1.5 mb-1.5">
-                          <Sparkles className="w-3 h-3" style={{ color: GOLD }} />
-                          <span className="text-[15px]" style={{ color: TEXT }}>AI co-pilot</span>
+                      <div className="mt-1 pt-1" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
+                        <div className="flex items-center gap-1 mb-0.5">
+                          <Sparkles className="w-2.5 h-2.5" style={{ color: GOLD }} />
+                          <span className="text-[11px]" style={{ color: TEXT }}>AI co-pilot</span>
                         </div>
-                        <div className="space-y-1.5">
+                        <div className="space-y-0.5">
                           {(() => {
                             const tips: { text: string; type: "info" | "warn" | "tip" }[] = [];
                             const lp = parseFloat(limitPrice) || 0;
@@ -1334,18 +1304,18 @@ export function StrategyBuilder({
                               }
                               if (effectiveBid != null && effectiveAsk != null) {
                                 const spreadPct = effectiveBid > 0 ? ((effectiveAsk - effectiveBid) / effectiveBid) * 100 : 0;
-                                if (spreadPct > 5) tips.push({ text: `Wide bid-ask spread (${spreadPct.toFixed(1)}%) — use limit orders`, type: "warn" });
+                                if (spreadPct > 5) tips.push({ text: `Wide b/a (${spreadPct.toFixed(1)}%) — use limits`, type: "warn" });
                                 const fillProb = lp >= effectiveAsk ? 99 : lp >= spreadPrices.spreadMid ? 78 : lp >= effectiveBid ? 45 : 15;
-                                tips.push({ text: `Fill probability at $${lp.toFixed(2)}: ~${fillProb}%`, type: "info" });
+                                tips.push({ text: `Fill prob ~${fillProb}% at $${lp.toFixed(2)}`, type: "info" });
                               }
                             }
                             if (tips.length === 0) {
-                              tips.push({ text: `${legs.length}-leg ${isCredit ? "credit" : "debit"} spread on ${symbol} — review risk before submitting`, type: "info" });
+                              tips.push({ text: `${legs.length}-leg ${isCredit ? "credit" : "debit"} on ${symbol} — review before submit`, type: "info" });
                             }
                             return tips.map((s, i) => (
-                              <div key={i} className="flex items-start gap-2">
-                                <div className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{ background: s.type === "warn" ? DOWN : s.type === "tip" ? GOLD : UP }} />
-                                <span className="text-[15px] leading-snug" style={{ color: s.type === "warn" ? DOWN : s.type === "tip" ? GOLD : TEXT }}>{s.text}</span>
+                              <div key={i} className="flex items-center gap-1.5">
+                                <div className="w-1 h-1 rounded-full shrink-0" style={{ background: s.type === "warn" ? DOWN : s.type === "tip" ? GOLD : UP }} />
+                                <span className="text-[11px] leading-snug" style={{ color: s.type === "warn" ? DOWN : s.type === "tip" ? GOLD : TEXT }}>{s.text}</span>
                               </div>
                             ));
                           })()}
@@ -1362,21 +1332,21 @@ export function StrategyBuilder({
           {/* bottom CTA */}
           {legs.length > 0 && (
             <div className="absolute bottom-0 left-0 right-0 px-3 pb-6 pt-2" style={{ background: `linear-gradient(to top, rgba(5,6,7,1), rgba(5,6,7,0.95), transparent)` }}>
-              <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 text-[15px]" style={{ color: TEXT }}>
-                <span>{quantity} spread{quantity !== 1 ? "s" : ""} · {isCredit ? "Credit" : "Cost"} {estimatedCost != null ? fmtCurrency(Math.abs(estimatedCost)) : "—"}</span>
-                <span>Max risk {metrics.maxRisk != null ? fmtCurrency(metrics.maxRisk) : "—"}</span>
+              <div className="mb-1 flex flex-wrap items-center justify-between gap-1 text-[11px]" style={{ color: TEXT }}>
+                <span>{quantity} spread{quantity !== 1 ? "s" : ""} · {isCredit ? "Cr" : "Cost"} {estimatedCost != null ? fmtCurrency(Math.abs(estimatedCost)) : "—"}</span>
+                <span>Risk {metrics.maxRisk != null ? fmtCurrency(metrics.maxRisk) : "—"}</span>
                 <span>POP {metrics.pop != null ? `${metrics.pop.toFixed(0)}%` : "—"}</span>
-                {preTradeEnabled && <span>Risk: {overallRisk === "GREEN" ? "PASS" : overallRisk === "YELLOW" ? "WARN" : "FAIL"}</span>}
+                {preTradeEnabled && <span style={{ color: levelColor(overallRisk) }}>{overallRisk === "GREEN" ? "PASS" : overallRisk === "YELLOW" ? "WARN" : "FAIL"}</span>}
               </div>
               {blockedByRisk && (
-                <div className="mb-1.5 px-3 py-1.5 flex items-center gap-2 text-[15px]" style={{ background: `${DOWN}08`, border: `1px solid ${DOWN}4d`, borderRadius: 10 }}>
-                  <ShieldX className="w-3.5 h-3.5 shrink-0" style={{ color: DOWN }} />
+                <div className="mb-1 px-2 py-1 flex items-center gap-1.5 text-[11px]" style={{ background: `${DOWN}08`, border: `1px solid ${DOWN}4d`, borderRadius: 8 }}>
+                  <ShieldX className="w-3 h-3 shrink-0" style={{ color: DOWN }} />
                   <span style={{ color: DOWN }}>Risk check failed — order blocked</span>
                 </div>
               )}
               {priceError && (
-                <div className="mb-1.5 px-3 py-1.5 flex items-center gap-2 text-[15px]" style={{ background: `${DOWN}08`, border: `1px solid ${DOWN}4d`, borderRadius: 10 }}>
-                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" style={{ color: DOWN }} />
+                <div className="mb-1 px-2 py-1 flex items-center gap-1.5 text-[11px]" style={{ background: `${DOWN}08`, border: `1px solid ${DOWN}4d`, borderRadius: 8 }}>
+                  <AlertTriangle className="w-3 h-3 shrink-0" style={{ color: DOWN }} />
                   <span style={{ color: DOWN }}>{priceError}</span>
                 </div>
               )}
@@ -1402,56 +1372,56 @@ export function StrategyBuilder({
           {/* review modal */}
           {stage === "review" && (
             <div className="fixed inset-0 z-[220] flex items-end justify-center" style={{ background: "rgba(0,0,0,0.6)" }}>
-              <div className="w-full max-w-lg p-4 space-y-3 animate-in slide-in-from-bottom duration-300" style={{ background: BG, borderRadius: "20px 20px 0 0", border: `1px solid ${BORDER}`, borderBottom: "none" }}>
+              <div className="w-full max-w-lg p-3 space-y-2 animate-in slide-in-from-bottom duration-300" style={{ background: BG, borderRadius: "16px 16px 0 0", border: `1px solid ${BORDER}`, borderBottom: "none" }}>
                 <div className="flex items-center justify-between">
-                  <h3 className="text-[18px]" style={{ color: WHITE }}>Confirm options order</h3>
-                  <button onClick={() => setStage("form")} className="w-7 h-7 flex items-center justify-center" style={{ borderRadius: "50%", border: `1px solid ${BORDER}`, background: "transparent", color: MUTED }} aria-label="Close review">
-                    <X className="w-3.5 h-3.5" />
+                  <h3 className="text-[14px] font-medium" style={{ color: WHITE }}>Confirm options order</h3>
+                  <button onClick={() => setStage("form")} className="w-6 h-6 flex items-center justify-center" style={{ borderRadius: "50%", border: `1px solid ${BORDER}`, background: "transparent", color: MUTED }} aria-label="Close review">
+                    <X className="w-3 h-3" />
                   </button>
                 </div>
-                <div className="space-y-1.5 p-3" style={{ background: CARD_GRAD, borderRadius: R_CARD, border: `1px solid ${BORDER}` }}>
-                  <div className="flex justify-between mb-1 text-[16px]">
+                <div className="space-y-1 p-2.5" style={{ background: CARD_GRAD, borderRadius: 10, border: `1px solid ${BORDER}` }}>
+                  <div className="flex justify-between text-[12px]">
                     <span style={{ color: MUTED }}>Strategy</span>
                     <span style={{ color: strategyId.color }}>{strategyId.name}</span>
                   </div>
-                  <div className="flex justify-between mb-1 text-[16px]">
+                  <div className="flex justify-between text-[12px]">
                     <span style={{ color: MUTED }}>Order type</span>
-                    <span style={{ color: WHITE }}>Limit order</span>
+                    <span style={{ color: WHITE }}>Limit</span>
                   </div>
                   {legs.map((leg, i) => {
                     const isBuy = leg.direction.startsWith("BUY");
                     const dirLabel = isBuy ? (leg.direction === "BUY_TO_OPEN" ? "BTO" : "BTC") : (leg.direction === "SELL_TO_OPEN" ? "STO" : "STC");
                     return (
-                      <div key={i} className="flex items-center text-[16px]" style={{ height: 22 }}>
-                        <span style={{ color: isBuy ? UP : DOWN, width: 32 }}>{dirLabel}</span>
-                        <span style={{ color: isBuy ? UP : DOWN, width: 26 }}>{isBuy ? "+" : "-"}{leg.quantity * quantity}</span>
+                      <div key={i} className="flex items-center text-[12px]" style={{ height: 18 }}>
+                        <span style={{ color: isBuy ? UP : DOWN, width: 28 }}>{dirLabel}</span>
+                        <span style={{ color: isBuy ? UP : DOWN, width: 22 }}>{isBuy ? "+" : "-"}{leg.quantity * quantity}</span>
                         <span className="flex-1" style={{ color: TEXT }}>{leg.strike} {leg.optionType === "CALL" ? "Call" : "Put"}</span>
                       </div>
                     );
                   })}
-                  <div className="flex justify-between mt-1 pt-1 text-[16px]" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
+                  <div className="flex justify-between pt-1 text-[12px]" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
                     <span style={{ color: MUTED }}>Net price</span>
                     <span style={{ color: WHITE }}>${limitPrice}</span>
                   </div>
-                  <div className="flex justify-between text-[16px]">
+                  <div className="flex justify-between text-[12px]">
                     <span style={{ color: MUTED }}>Duration</span>
                     <span style={{ color: WHITE }}>DAY{extendedHours ? " + Ext" : ""}</span>
                   </div>
-                  <div className="pt-1.5 mt-1.5" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
+                  <div className="pt-1 mt-0.5" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
                     <div className="flex justify-between">
-                      <span className="text-[16px]" style={{ color: TEXT }}>Est. {isCredit ? "credit" : "cost"}</span>
-                      <span className="text-[18px]" style={{ color: WHITE }}>{estimatedCost != null ? fmtCurrency(Math.abs(estimatedCost)) : "—"}</span>
+                      <span className="text-[12px]" style={{ color: TEXT }}>Est. {isCredit ? "credit" : "cost"}</span>
+                      <span className="text-[14px] font-medium" style={{ color: WHITE }}>{estimatedCost != null ? fmtCurrency(Math.abs(estimatedCost)) : "—"}</span>
                     </div>
                   </div>
                 </div>
-                <div className="px-3 py-2 flex items-start gap-2" style={{ background: `${GOLD}08`, borderRadius: 10, border: `1px solid ${GOLD}1a` }}>
-                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: GOLD }} />
-                  <p className="text-[15px] leading-relaxed" style={{ color: `${GOLD}cc` }}>
-                    This will place a live order with Schwab. Verify all details before confirming.
+                <div className="px-2 py-1.5 flex items-center gap-1.5" style={{ background: `${GOLD}08`, borderRadius: 8, border: `1px solid ${GOLD}1a` }}>
+                  <AlertTriangle className="w-3 h-3 shrink-0" style={{ color: GOLD }} />
+                  <p className="text-[11px] leading-tight" style={{ color: `${GOLD}cc` }}>
+                    Live order via Schwab. Verify all details.
                   </p>
                 </div>
-                <div className="flex gap-2 pt-1 pb-4">
-                  <button onClick={() => setStage("form")} className="flex-1 text-[17px]" style={{ height: 40, background: "transparent", color: TEXT, border: `1px solid ${BORDER}`, borderRadius: 999 }}>Back</button>
+                <div className="flex gap-2 pt-0.5 pb-3">
+                  <button onClick={() => setStage("form")} className="flex-1 text-[13px]" style={{ height: 36, background: "transparent", color: TEXT, border: `1px solid ${BORDER}`, borderRadius: 999 }}>Back</button>
                   <button
                     onClick={handleSubmit}
                     className="flex-[2] text-[18px] tracking-[0.04em] active:scale-[0.98] transition-transform"
