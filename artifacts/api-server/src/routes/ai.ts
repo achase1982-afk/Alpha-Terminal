@@ -1637,7 +1637,7 @@ router.post("/market-pulse/stream", async (req, res) => {
   const clusterNames = Object.keys(engineResult.clusters) as Array<keyof typeof engineResult.clusters>;
   for (const cn of clusterNames) {
     const cl = engineResult.clusters[cn];
-    emitTelemetry("MARKET_PULSE", "INFO", `Cluster ${cn}: score ${cl.score.toFixed(2)}, weight ${cl.weight.toFixed(2)}, rules [${cl.rulesApplied.join(", ")}]`, {
+    emitTelemetry("MARKET_PULSE", "INFO", `Cluster ${cn}: score ${(cl?.score ?? 0).toFixed(2)}, weight ${(cl?.weight ?? 0).toFixed(2)}, rules [${(cl?.rulesApplied ?? []).join(", ")}]`, {
       cluster: cn,
       score: cl.score,
       weight: cl.weight,
