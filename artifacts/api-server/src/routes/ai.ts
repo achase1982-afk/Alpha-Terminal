@@ -2045,11 +2045,10 @@ function getVixFromCache(): number | null {
 }
 
 router.post("/options-strategist", async (req, res) => {
-  const { symbol, accessToken: bodyToken, todayEdge, scannerData: bodyScannerData } = req.body as {
+  const { symbol, accessToken: bodyToken, todayEdge } = req.body as {
     symbol?: string;
     accessToken?: string;
     todayEdge?: string;
-    scannerData?: { microOverrideEligible?: boolean };
   };
   const accessToken = bodyToken || getBestAccessToken();
 
@@ -2077,8 +2076,7 @@ router.post("/options-strategist", async (req, res) => {
 
   req.log.info({ regime: regime.regime, edge, composite: engineResult.compositeScore, userOverride }, "Strategist auto-pulse + regime classified");
 
-  const isScannerMicroOverride = !!(bodyScannerData?.microOverrideEligible);
-  if (regime.regime === "NO_REGIME" && !userOverride && !isScannerMicroOverride) {
+  if (regime.regime === "NO_REGIME" && !userOverride) {
     return res.json({
       strategies: [],
       narrative: "No actionable regime detected. The scoring engine shows insufficient conviction to recommend a trade. Sit this one out.",
@@ -2246,13 +2244,12 @@ router.post("/options-strategist", async (req, res) => {
 });
 
 router.post("/options-strategist/stream", async (req, res) => {
-  const { symbol, accessToken, todayEdge, model, temperature, scannerData: streamScannerData } = req.body as {
+  const { symbol, accessToken, todayEdge, model, temperature } = req.body as {
     symbol?: string;
     accessToken?: string;
     todayEdge?: string;
     model?: string;
     temperature?: number;
-    scannerData?: { microOverrideEligible?: boolean };
   };
 
   const resolvedToken = accessToken || getBestAccessToken();
@@ -2291,8 +2288,7 @@ router.post("/options-strategist/stream", async (req, res) => {
 
   req.log.info({ regime: regime.regime, edge, composite: engineResult.compositeScore, userOverride, shockActive: shockCheck.shockActive }, "Strategist stream: auto-pulse + regime classified");
 
-  const isStreamMicroOverride = !!(streamScannerData?.microOverrideEligible);
-  if (regime.regime === "NO_REGIME" && !userOverride && !isShockActive && !isStreamMicroOverride) {
+  if (regime.regime === "NO_REGIME" && !userOverride && !isShockActive) {
     return res.json({
       strategies: [],
       narrative: "No actionable regime detected. The scoring engine shows insufficient conviction to recommend a trade. Sit this one out.",
