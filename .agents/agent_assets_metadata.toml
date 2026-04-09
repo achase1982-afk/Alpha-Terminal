@@ -6,3 +6,15 @@ id = "WSNKvbLuz6-493Uep5w7H"
 uri = "file://ALPHA_TERMINAL_DEVELOPER_BRIEF.md"
 type = "text"
 title = "Alpha Terminal — Developer Brief"
+
+[[outputs]]
+id = "ifLJ3uYFH7XWwNJS3c9Md"
+uri = "file://OrderTicket.txt"
+type = "text"
+title = "OrderTicket.tsx — Stock Checkout Page (1,242 lines)"
+
+[[outputs]]
+id = "6Jlpn56UPD95PWae-bQzK"
+uri = "file://StrategyBuilder.txt"
+type = "text"
+title = "StrategyBuilder.tsx — Options Checkout Page (1,418 lines)"
