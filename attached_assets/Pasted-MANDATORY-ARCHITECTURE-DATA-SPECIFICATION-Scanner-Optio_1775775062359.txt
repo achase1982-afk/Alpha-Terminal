@@ -1,0 +1,315 @@
+MANDATORY ARCHITECTURE + DATA SPECIFICATION: Scanner + Options/Flow Data
+
+This is the required architecture AND the exact field-by-field data specification for Discovery Mode V2. Implement this as written. No workarounds, no shortcuts, no interpretation.
+
+# ==================================================
+PART 1: ARCHITECTURE REQUIREMENTS
+
+1. Real-time feed alone is NOT acceptable
+
+Discovery Mode relies on historical context to determine whether today’s options activity is unusual or meaningful. Without persisted history, the scanner is effectively blind.
+
+Concrete examples:
+
+- IVR is defined as current implied volatility ranked vs the last 52 weeks.
+- IVR change is IVR_today minus IVR_5d_ago.
+- HV_20d is realized volatility over the last 20 trading days.
+- Volume/OI ratio and “unusual flow” rely on open interest and typical volume behavior by strike and expiry.
+
+If you only see “today’s” options data, you have no idea what’s normal for that ticker. You MUST persist historical equity + options + flow data. Real-time streaming alone is not acceptable for Discovery scoring.
+
+1. Daily snapshots are REQUIRED for scoring
+
+At the end of each trading day, persist a complete snapshot that includes:
+
+- Equity data (price, volume, SMA inputs, ATR inputs, sector ETFs, SPY).
+- Options chain data from Schwab (IV, IVR, HV or data to compute HV, OI, etc.).
+- Options flow data from Polygon (per symbol, strike, expiry: volume, OI, notional, block trades).
+
+The Discovery scanner job runs off those snapshots, not ad-hoc real-time queries. It needs consistent, point-in-time data to compute 5d/20d/52w metrics.
+
+Real-time feeds are used only for:
+
+- Updating UI in real time (quotes, chains, last trades).
+- The Strategist building or adjusting specific trades after the scanner has already picked symbols.
+
+If you are not persisting these daily snapshots, you are not implementing the spec. Fix that first.
+
+1. The Scanner MUST use options + flow data in scoring
+
+There should NOT be a separate “Flow” or “Options” scan mode. The Scanner itself is the only symbol-selection surface.
+
+Discovery scoring uses both equity and options signals:
+
+- Equity: price vs SMA, ATR compression, volume trends, OBV, RS vs SPY/sector.
+- Options: IVR level, IVR change, IV vs HV, Polygon flow (volume/OI, skew, block trades, flow vs price).
+
+The Scanner’s composite score includes: Setup Quality, Accumulation Pattern, IV Setup, Flow Divergence, Emerging Relative Strength.
+
+A separate “Flow” tab or “Options” tab that runs its own symbol selection logic is explicitly not desired. Flow is a category inside the same scanner, not a third scan mode. The proper UX is: one Scanner view, with an “Unusual Flow” badge/column and a directional tag derived from the same data.
+
+If the current implementation is picking stocks strictly off fundamentals or equity-only signals and leaving options/flow to the Strategist, it is architecturally wrong. Fix it to match the spec.
+
+1. Scanner vs Strategist responsibilities
+
+Scanner (Discovery / Momentum modes):
+
+- Input: historical equity data + historical options/flow data from daily snapshots.
+- Output: ranked list of symbols with scores, directional tags, and indicators like “Unusual Flow”.
+
+Strategist:
+
+- Input: a single symbol + directional tag from the Scanner.
+- Output: an actual trade (stock or options structure).
+- Uses real-time chain and flow to choose strikes, expirations, and structure.
+
+The Scanner decides “this ticker is interesting.” The Strategist refines the trade. The Strategist does not redo symbol selection.
+
+1. What must change if this isn’t already how it works
+
+- No persistent storage of historical options/flow data: implement daily snapshots ASAP.
+- Scanner currently reads only real-time data without historical context: change it to consume persisted snapshots.
+- Scanner currently ignores options/flow in scoring: modify to match Discovery V2 scoring spec.
+- Separate “Flow” or “Options” tabs that run their own scans: remove them. Replace with a single Scanner tab, a Flow/Unusual-Flow badge/column, and a directional lean tag.
+
+# ==================================================
+PART 2: FIELD-BY-FIELD DATA SPECIFICATION
+
+Below is every field to persist, from which source, what it’s used for, and how long to keep it.
+
+-----
+
+## TABLE 1: EQUITY DAILY (Source: Schwab)
+
+One row per ticker per trading day. Persist for all tickers in scan universe + SPY + sector ETFs.
+
+RAW FIELDS (persist directly from Schwab):
+
+|Field         |Type   |Description                                                                                                                                                  |
+|--------------|-------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|
+|symbol        |string |Ticker symbol                                                                                                                                                |
+|date          |date   |Trading date                                                                                                                                                 |
+|open          |decimal|Daily open price                                                                                                                                             |
+|high          |decimal|Daily high price                                                                                                                                             |
+|low           |decimal|Daily low price                                                                                                                                              |
+|close         |decimal|Daily close price                                                                                                                                            |
+|adjusted_close|decimal|Split-adjusted close (if available from Schwab; if not, document split handling separately)                                                                  |
+|volume        |bigint |Daily share volume                                                                                                                                           |
+|market_cap    |bigint |Market capitalization                                                                                                                                        |
+|halt_status   |boolean|Whether stock was halted during session (if available; otherwise track in separate halts table)                                                              |
+|ivr           |decimal|Implied volatility rank (52-week), from Schwab options data                                                                                                  |
+|iv_30d        |decimal|30-day implied volatility (nearest monthly expiration with 20-40 DTE)                                                                                        |
+|hv_20d        |decimal|20-day historical volatility. If Schwab provides it, use it. If not, compute as: stdev(ln(close_t / close_t-1)) over 20 trading days, multiplied by sqrt(252)|
+|put_call_ratio|decimal|Daily put/call volume ratio for the underlying                                                                                                               |
+
+DERIVED FIELDS (compute at snapshot time or at scan time from raw history):
+
+|Field               |Formula                                                                                                                            |Lookback Needed             |
+|--------------------|-----------------------------------------------------------------------------------------------------------------------------------|----------------------------|
+|sma_20              |20-day simple moving average of close                                                                                              |20 days                     |
+|atr_5               |5-day average true range (from high, low, close)                                                                                   |5 days                      |
+|atr_20              |20-day average true range                                                                                                          |20 days                     |
+|median_volume_5d    |Median of daily volume over last 5 trading days                                                                                    |5 days                      |
+|median_volume_20d   |Median of daily volume over last 20 trading days                                                                                   |20 days                     |
+|obv                 |Running cumulative on-balance volume. If close > prior close, add volume. If close < prior close, subtract volume. If equal, add 0.|Full history (running total)|
+|rs_ratio            |close / SPY_close for that day                                                                                                     |Current day + SPY row       |
+|5d_price_change_pct |(close_today - close_5d_ago) / close_5d_ago * 100                                                                                  |5 days                      |
+|10d_price_change_pct|Same formula, 10-day lookback                                                                                                      |10 days                     |
+
+SECTOR ETFs AND SPY: Store the same raw fields (symbol, date, open, high, low, close, volume) for these 12 symbols every day: SPY, XLK, XLF, XLE, XLV, XLI, XLC, XLY, XLP, XLU, XLRE, XLB.
+
+-----
+
+## TABLE 2: OPTIONS CHAIN DAILY (Source: Schwab)
+
+One row per underlying per strike per expiration per day. This is the full chain snapshot.
+
+|Field             |Type   |Description                                                |
+|------------------|-------|-----------------------------------------------------------|
+|underlying_symbol |string |Underlying ticker                                          |
+|date              |date   |Trading date                                               |
+|option_symbol     |string |Full OCC option symbol (if available)                      |
+|option_type       |string |“call” or “put”                                            |
+|strike            |decimal|Strike price                                               |
+|expiration        |date   |Option expiration date                                     |
+|dte               |int    |Days to expiration (can be computed from expiration - date)|
+|bid               |decimal|End of day bid                                             |
+|ask               |decimal|End of day ask                                             |
+|mid               |decimal|(bid + ask) / 2                                            |
+|last              |decimal|Last trade price                                           |
+|volume            |int    |Contracts traded that day on this strike                   |
+|open_interest     |int    |Open interest at end of day                                |
+|implied_volatility|decimal|IV for this specific contract                              |
+|delta             |decimal|Greek: delta                                               |
+|gamma             |decimal|Greek: gamma                                               |
+|theta             |decimal|Greek: theta                                               |
+|vega              |decimal|Greek: vega                                                |
+
+Used for:
+
+- Liquidity gate: compute avg_spread_pct from near-ATM strikes (within 10% of spot), 20-60 DTE
+- IVR/IV/HV scoring in IV Setup category
+- Strategist strike resolution (real-time version used for actual trade construction)
+
+-----
+
+## TABLE 3: OPTIONS FLOW PER-STRIKE (Source: Polygon flat files)
+
+One row per underlying per strike per expiration per day.
+
+|Field             |Type   |Description                                                                            |
+|------------------|-------|---------------------------------------------------------------------------------------|
+|underlying_symbol |string |Underlying ticker                                                                      |
+|date              |date   |Trading date                                                                           |
+|option_type       |string |“call” or “put”                                                                        |
+|strike            |decimal|Strike price                                                                           |
+|expiration        |date   |Option expiration date                                                                 |
+|dte               |int    |Days to expiration                                                                     |
+|daily_volume      |int    |Contracts traded that day on this strike                                               |
+|open_interest     |int    |Open interest at end of day                                                            |
+|bid               |decimal|End of day bid                                                                         |
+|ask               |decimal|End of day ask                                                                         |
+|mid               |decimal|(bid + ask) / 2                                                                        |
+|implied_volatility|decimal|IV for this contract                                                                   |
+|delta             |decimal|Greek: delta                                                                           |
+|gamma             |decimal|Greek: gamma                                                                           |
+|theta             |decimal|Greek: theta                                                                           |
+|vega              |decimal|Greek: vega                                                                            |
+|avg_trade_price   |decimal|VWAP or average price of trades on this contract for the day (for notional calculation)|
+
+“Qualifying strikes” for scoring means: strike within 20% of the underlying’s close price AND expiration within 60 calendar days AND open_interest >= 200.
+
+-----
+
+## TABLE 4: OPTIONS FLOW RAW TRADES (Source: Polygon flat files)
+
+Individual trade prints. One row per trade. Used for block detection and future refinement of flow analysis.
+
+|Field            |Type    |Description                                                     |
+|-----------------|--------|----------------------------------------------------------------|
+|underlying_symbol|string  |Underlying ticker                                               |
+|date             |date    |Trading date                                                    |
+|timestamp        |datetime|Time of trade                                                   |
+|option_symbol    |string  |Full option contract identifier                                 |
+|option_type      |string  |“call” or “put”                                                 |
+|strike           |decimal |Strike price                                                    |
+|expiration       |date    |Option expiration date                                          |
+|trade_price      |decimal |Price of this trade                                             |
+|size             |int     |Number of contracts in this trade                               |
+|notional         |decimal |trade_price * size * 100                                        |
+|side             |string  |“buy” / “sell” / “unknown” (if Polygon provides trade direction)|
+|is_block         |boolean |Flag if Polygon identifies as block trade                       |
+|is_sweep         |boolean |Flag if Polygon identifies as sweep (multi-exchange execution)  |
+
+This table can be large. Retention: 20 trading days minimum. Prune older data. The aggregated table (Table 5) retains the summary longer.
+
+-----
+
+## TABLE 5: OPTIONS FLOW DAILY AGGREGATES (Computed from Tables 3 and 4)
+
+One row per underlying per day. This is what the scanner actually queries during scoring. Compute at snapshot time from the per-strike and raw trade data.
+
+|Field                         |Type   |Description                                                                                                                         |Used By                       |
+|------------------------------|-------|------------------------------------------------------------------------------------------------------------------------------------|------------------------------|
+|underlying_symbol             |string |Underlying ticker                                                                                                                   |All flow scoring              |
+|date                          |date   |Trading date                                                                                                                        |All flow scoring              |
+|total_call_volume             |int    |Sum of daily_volume across all qualifying call strikes                                                                              |Skew (4B), flow direction (4D)|
+|total_put_volume              |int    |Sum of daily_volume across all qualifying put strikes                                                                               |Skew (4B), flow direction (4D)|
+|total_oi                      |int    |Sum of open_interest across all qualifying strikes                                                                                  |Reference                     |
+|total_options_notional        |decimal|Sum of (daily_volume * mid * 100) across all qualifying strikes                                                                     |Block threshold baseline      |
+|avg_vol_oi_ratio              |decimal|Notional-weighted average of (daily_volume / open_interest) across qualifying strikes with OI >= 200                                |Volume/OI (4A)                |
+|pc_skew                       |decimal|abs(total_call_volume - total_put_volume) / (total_call_volume + total_put_volume). If denominator is 0, store 0.                   |Skew (4B)                     |
+|block_count                   |int    |Number of trades from Table 4 where notional > 0.5% of avg_daily_options_notional_20d AND size > 500                                |Blocks (4C)                   |
+|block_notional_total          |decimal|Sum of notional from qualifying block trades                                                                                        |Reference / future use        |
+|avg_daily_options_notional_20d|decimal|20-day rolling average of total_options_notional for this ticker                                                                    |Block threshold (4C)          |
+|flow_direction                |string |“BULLISH” if total_call_volume > 1.5 * total_put_volume, “BEARISH” if inverse, “NEUTRAL” otherwise. If total volume is 0, “NEUTRAL”.|Flow vs price (4D)            |
+|num_sweeps                    |int    |Count of trades from Table 4 where is_sweep is true                                                                                 |Future refinement             |
+
+-----
+
+## TABLE 6: REFERENCE DATA (Static, updated quarterly)
+
+|Field     |Type   |Description                               |Used By                                     |
+|----------|-------|------------------------------------------|--------------------------------------------|
+|symbol    |string |Ticker                                    |All                                         |
+|sector_etf|string |GICS sector ETF mapping (e.g. AAPL -> XLK)|Emerging RS (5B)                            |
+|is_adr    |boolean|Whether ticker is an ADR                  |Guardrail filter                            |
+|ipo_date  |date   |Date of IPO                               |Guardrail filter (exclude < 60 trading days)|
+
+-----
+
+## TABLE 7: CORPORATE EVENTS (Updated daily from existing calendar)
+
+|Field          |Type  |Description                                             |Used By                                                     |
+|---------------|------|--------------------------------------------------------|------------------------------------------------------------|
+|symbol         |string|Ticker                                                  |Earnings suppression, exclusions                            |
+|earnings_date  |date  |Next or most recent earnings date                       |IV Setup earnings suppression (cap scores if within 14 days)|
+|earnings_timing|string|“BMO” (before market open) or “AMC” (after market close)|Earnings warning display                                    |
+|split_date     |date  |Date of stock split (if within last 30 days)            |Guardrail filter (exclude if < 10 trading days)             |
+|split_ratio    |string|Split ratio (e.g. “4:1”)                                |Adjusted close handling                                     |
+
+# ==================================================
+PART 3: RETENTION AND STORAGE
+
+|Table                           |Minimum Retention                     |Notes                                                        |
+|--------------------------------|--------------------------------------|-------------------------------------------------------------|
+|Table 1: Equity Daily           |60 trading days                       |Supports 52-week IVR (from Schwab), 20-day rolling calcs, OBV|
+|Table 2: Options Chain Daily    |20 trading days                       |Supports liquidity gate calculations                         |
+|Table 3: Options Flow Per-Strike|20 trading days                       |Supports per-ticker baseline calculations                    |
+|Table 4: Options Flow Raw Trades|20 trading days                       |Supports block detection. Prune older data.                  |
+|Table 5: Flow Daily Aggregates  |60 trading days                       |Supports 20-day rolling averages for block thresholds        |
+|Table 6: Reference Data         |Permanent                             |Static lookup, refreshed quarterly                           |
+|Table 7: Corporate Events       |Rolling (keep upcoming + last 90 days)|Calendar data                                                |
+
+Storage format: Database tables or structured flat files. Either works. What matters is that the scanner job can efficiently query “give me the last N days of data for ticker X.”
+
+Update cadence: Once per day after market close (4:00 PM ET). The scanner runs off these snapshots, not real-time data.
+
+# ==================================================
+PART 4: WHAT REAL-TIME DATA IS USED FOR
+
+Real-time Polygon API:
+
+- Powers the Strategist (strike resolution, live bid/ask for order ticket)
+- Live options chain display on the Markets page
+- Intraday price updates in the UI
+
+Real-time Schwab stream:
+
+- Equity price display
+- Portfolio page
+- Order execution
+
+Real-time data is NOT used for scanner scoring. The scanner reads exclusively from daily snapshots.
+
+# ==================================================
+PART 5: SCANNER SCORING CATEGORIES (Reference)
+
+The Discovery V2 scoring spec is provided separately. For reference, here is what each snapshot table feeds:
+
+|Scoring Category                                                  |Weight|Data Source Tables                                        |
+|------------------------------------------------------------------|------|----------------------------------------------------------|
+|Setup Quality (price vs SMA, ATR compression, Pulse alignment)    |20 pts|Table 1 (Equity Daily)                                    |
+|Accumulation Pattern (volume trends, volume-price divergence, OBV)|15 pts|Table 1 (Equity Daily)                                    |
+|IV Setup (IVR level, IVR change, IV vs HV)                        |25 pts|Table 1 (Equity Daily – IVR, IV, HV fields)               |
+|Flow Divergence (vol/OI, skew, blocks, flow vs price)             |25 pts|Table 5 (Flow Aggregates), Table 4 (Raw Trades for blocks)|
+|Emerging RS (RS momentum, sector divergence)                      |15 pts|Table 1 (Equity Daily – rs_ratio), Table 1 sector ETF rows|
+
+Liquidity Gate (pre-filter): Table 2 (Options Chain Daily)
+Guardrails (pre-filter): Table 1 (market_cap, volume), Table 6 (is_adr, ipo_date), Table 7 (split_date)
+
+# ==================================================
+PART 6: VERIFICATION
+
+After implementation, run these checks:
+
+1. Query Table 1 for AAPL for yesterday. Confirm all raw fields populated: close, volume, ivr, iv_30d, hv_20d, market_cap.
+1. Query Table 1 derived fields for AAPL: sma_20, atr_5, atr_20, median_volume_5d, median_volume_20d, obv, rs_ratio. All must be non-null.
+1. Query Table 5 for AAPL for yesterday. Confirm: total_call_volume, total_put_volume, avg_vol_oi_ratio, pc_skew, block_count, flow_direction. All must be populated.
+1. Query Table 1 for AAPL for 20 consecutive trading days. Confirm all 20 rows exist with no gaps.
+1. Query Table 5 for AAPL for 20 consecutive trading days. Confirm all 20 rows exist.
+1. Run the Discovery scoring formula manually on one ticker using the snapshot data. Confirm the composite score matches expected bucket values from the spec.
+1. Confirm SPY and all 11 sector ETFs have daily rows in Table 1 for the same date range.
+1. If any field returns null for more than 5% of the S&P 500 on any given day, there is a data quality issue that must be resolved before Discovery mode goes live.
+
+Do not ship Discovery mode until all 8 verification checks pass.

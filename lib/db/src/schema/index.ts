@@ -1,4 +1,4 @@
-import { pgTable, text, serial, real, integer, boolean, timestamp, jsonb, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, real, integer, boolean, timestamp, jsonb, uniqueIndex, date, doublePrecision, bigint } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -141,3 +141,168 @@ export const polygonSyncLogTable = pgTable("polygon_sync_log", {
 });
 
 export type PolygonSyncLog = typeof polygonSyncLogTable.$inferSelect;
+
+export const equityDailyTable = pgTable("equity_daily", {
+  id: serial("id").primaryKey(),
+  symbol: text("symbol").notNull(),
+  date: date("date").notNull(),
+  open: real("open"),
+  high: real("high"),
+  low: real("low"),
+  close: real("close").notNull(),
+  adjustedClose: real("adjusted_close"),
+  volume: bigint("volume", { mode: "number" }),
+  marketCap: bigint("market_cap", { mode: "number" }),
+  haltStatus: boolean("halt_status").default(false),
+  ivr: real("ivr"),
+  iv30d: real("iv_30d"),
+  hv20d: real("hv_20d"),
+  putCallRatio: real("put_call_ratio"),
+  sma20: real("sma_20"),
+  atr5: real("atr_5"),
+  atr20: real("atr_20"),
+  medianVolume5d: bigint("median_volume_5d", { mode: "number" }),
+  medianVolume20d: bigint("median_volume_20d", { mode: "number" }),
+  obv: bigint("obv", { mode: "number" }),
+  rsRatio: real("rs_ratio"),
+  priceChangePct5d: real("price_change_pct_5d"),
+  priceChangePct10d: real("price_change_pct_10d"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("eq_daily_sym_date").on(t.symbol, t.date),
+]);
+
+export type EquityDaily = typeof equityDailyTable.$inferSelect;
+
+export const optionsChainDailyTable = pgTable("options_chain_daily", {
+  id: serial("id").primaryKey(),
+  underlyingSymbol: text("underlying_symbol").notNull(),
+  date: date("date").notNull(),
+  optionSymbol: text("option_symbol"),
+  optionType: text("option_type").notNull(),
+  strike: real("strike").notNull(),
+  expiration: date("expiration").notNull(),
+  dte: integer("dte"),
+  bid: real("bid"),
+  ask: real("ask"),
+  mid: real("mid"),
+  last: real("last"),
+  volume: integer("volume"),
+  openInterest: integer("open_interest"),
+  impliedVolatility: real("implied_volatility"),
+  delta: real("delta"),
+  gamma: real("gamma"),
+  theta: real("theta"),
+  vega: real("vega"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("opt_chain_unique").on(t.underlyingSymbol, t.date, t.optionType, t.strike, t.expiration),
+]);
+
+export type OptionsChainDaily = typeof optionsChainDailyTable.$inferSelect;
+
+export const optionsFlowPerStrikeTable = pgTable("options_flow_per_strike", {
+  id: serial("id").primaryKey(),
+  underlyingSymbol: text("underlying_symbol").notNull(),
+  date: date("date").notNull(),
+  optionType: text("option_type").notNull(),
+  strike: real("strike").notNull(),
+  expiration: date("expiration").notNull(),
+  dte: integer("dte"),
+  dailyVolume: integer("daily_volume"),
+  openInterest: integer("open_interest"),
+  bid: real("bid"),
+  ask: real("ask"),
+  mid: real("mid"),
+  impliedVolatility: real("implied_volatility"),
+  delta: real("delta"),
+  gamma: real("gamma"),
+  theta: real("theta"),
+  vega: real("vega"),
+  avgTradePrice: real("avg_trade_price"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("flow_strike_unique").on(t.underlyingSymbol, t.date, t.optionType, t.strike, t.expiration),
+]);
+
+export type OptionsFlowPerStrike = typeof optionsFlowPerStrikeTable.$inferSelect;
+
+export const optionsFlowRawTradesTable = pgTable("options_flow_raw_trades", {
+  id: serial("id").primaryKey(),
+  underlyingSymbol: text("underlying_symbol").notNull(),
+  date: date("date").notNull(),
+  timestamp: timestamp("timestamp"),
+  optionSymbol: text("option_symbol"),
+  optionType: text("option_type").notNull(),
+  strike: real("strike").notNull(),
+  expiration: date("expiration").notNull(),
+  tradePrice: real("trade_price"),
+  size: integer("size"),
+  notional: doublePrecision("notional"),
+  side: text("side"),
+  isBlock: boolean("is_block").default(false),
+  isSweep: boolean("is_sweep").default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type OptionsFlowRawTrade = typeof optionsFlowRawTradesTable.$inferSelect;
+
+export const flowDailyAggregatesTable = pgTable("flow_daily_aggregates", {
+  id: serial("id").primaryKey(),
+  underlyingSymbol: text("underlying_symbol").notNull(),
+  date: date("date").notNull(),
+  totalCallVolume: integer("total_call_volume"),
+  totalPutVolume: integer("total_put_volume"),
+  totalOi: integer("total_oi"),
+  totalOptionsNotional: doublePrecision("total_options_notional"),
+  avgVolOiRatio: real("avg_vol_oi_ratio"),
+  pcSkew: real("pc_skew"),
+  blockCount: integer("block_count"),
+  blockNotionalTotal: doublePrecision("block_notional_total"),
+  avgDailyOptionsNotional20d: doublePrecision("avg_daily_options_notional_20d"),
+  flowDirection: text("flow_direction"),
+  numSweeps: integer("num_sweeps"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("flow_agg_unique").on(t.underlyingSymbol, t.date),
+]);
+
+export type FlowDailyAggregate = typeof flowDailyAggregatesTable.$inferSelect;
+
+export const referenceDataTable = pgTable("reference_data", {
+  id: serial("id").primaryKey(),
+  symbol: text("symbol").notNull().unique(),
+  sectorEtf: text("sector_etf"),
+  isAdr: boolean("is_adr").default(false),
+  ipoDate: date("ipo_date"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type ReferenceData = typeof referenceDataTable.$inferSelect;
+
+export const corporateEventsTable = pgTable("corporate_events", {
+  id: serial("id").primaryKey(),
+  symbol: text("symbol").notNull(),
+  earningsDate: date("earnings_date"),
+  earningsTiming: text("earnings_timing"),
+  splitDate: date("split_date"),
+  splitRatio: text("split_ratio"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("corp_events_sym").on(t.symbol),
+]);
+
+export type CorporateEvent = typeof corporateEventsTable.$inferSelect;
+
+export const snapshotCollectionLogTable = pgTable("snapshot_collection_log", {
+  id: serial("id").primaryKey(),
+  date: date("date").notNull().unique(),
+  status: text("status").notNull().default("pending"),
+  equityRows: integer("equity_rows").default(0),
+  chainRows: integer("chain_rows").default(0),
+  flowRows: integer("flow_rows").default(0),
+  aggregateRows: integer("aggregate_rows").default(0),
+  errorMsg: text("error_msg"),
+  startedAt: timestamp("started_at").defaultNow().notNull(),
+  completedAt: timestamp("completed_at"),
+});

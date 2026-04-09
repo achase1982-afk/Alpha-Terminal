@@ -85,6 +85,35 @@ Three-layer universe system for the Market Scanner replacing hardcoded stock lis
 - Scanner watchlists are surfaced in the regular WatchlistView dropdown (under "Scanner Watchlists" section). When selected, symbols are synced to a local watchlist keyed as `scanner_{id}` with `[S]` prefix in name.
 - Routes: `/api/scanner/universes`, `/api/scanner/watchlists`, `/api/scanner/screens`, `/api/scanner/search`.
 
+### Discovery V2 Snapshot Pipeline (April 2026)
+
+Daily snapshot-based data architecture for Discovery scanner scoring. Scanner reads from persisted snapshots, NOT real-time API calls.
+
+**7 Database Tables:**
+1. `equity_daily` — OHLCV + IVR/IV/HV + derived fields (SMA20, ATR5/20, OBV, RS ratio, median volumes, price change %) per symbol per day. 60-day retention. Unique on (symbol, date).
+2. `options_chain_daily` — Full Schwab chain per strike/expiry/day (bid/ask/mid/last/volume/OI/IV/greeks). 20-day retention. Unique on (underlying, date, type, strike, expiration).
+3. `options_flow_per_strike` — Polygon flow per strike/expiry/day (volume, OI, avg trade price). 20-day retention.
+4. `options_flow_raw_trades` — Individual Polygon trade prints for block/sweep detection. 20-day retention.
+5. `flow_daily_aggregates` — Computed per symbol per day: call/put volume, vol/OI ratio, PC skew, block count, flow direction (BULLISH/BEARISH/NEUTRAL), 20d rolling notional avg. 60-day retention.
+6. `reference_data` — Sector ETF mapping, ADR flag, IPO date. Permanent.
+7. `corporate_events` — Earnings dates/timing, split dates. Rolling 90 days.
+8. `snapshot_collection_log` — Tracks collection runs (status, row counts, errors).
+
+**Collection Pipeline (`dailySnapshot.ts`):**
+- `collectEquitySnapshots()` — Schwab quotes + price history → Table 1 with all derived fields
+- `collectOptionsChainSnapshots()` — Schwab chains + Polygon IV enrichment → Table 2
+- `collectPolygonFlowFromAPI()` — Polygon options snapshots → Table 3
+- `computeFlowAggregates()` — Aggregates from Table 3 → Table 5
+- `runFullSnapshot()` — Orchestrates all above, logs to Table 8
+
+**API Routes (`/api/snapshot/`):**
+- `GET /status` — Latest 5 collection runs
+- `POST /collect` — Full snapshot (async background), requires `x-access-token` header
+- `POST /equity-only` — Equity data only
+- `POST /flow-only` — Polygon flow + aggregates only
+
+**Scanner reads from snapshots** — Discovery scoring categories (Setup Quality 20pt, Accumulation 15pt, IV Setup 25pt, Flow Divergence 25pt, Emerging RS 15pt) consume Tables 1+5 instead of live API calls.
+
 ### Schwab LEVELONE_OPTIONS Streaming Field Map
 The Schwab `LEVELONE_OPTIONS` service uses different field indices than `LEVELONE_EQUITIES`. Correct mapping (verified against schwab-py):
 - 2=Bid, 3=Ask, 4=Last, 8=Volume, 9=OI, 10=IV, 16=BidSize, 17=AskSize, 19=NetChange, 28=Delta, 29=Gamma, 30=Theta, 31=Vega, 37=Mark.
