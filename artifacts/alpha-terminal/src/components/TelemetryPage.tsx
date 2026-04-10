@@ -58,7 +58,7 @@ const SEV = {
 const SYSTEMS = [
   "SCHWAB_API", "SCHWAB_STREAM", "IBKR", "YAHOO", "SEC_EDGAR",
   "SCANNER", "STRATEGIST", "RISK_GATE", "EXIT_STAGING",
-  "PUSH_NOTIFICATION", "MARKET_PULSE", "POLYGON_API", "DATABASE",
+  "PUSH_NOTIFICATION", "MARKET_PULSE", "POLYGON_API", "DATABASE", "API",
 ];
 
 function fmtSystem(sys: string): string {
@@ -359,7 +359,8 @@ function SystemDropdown({
   }, [open]);
 
   const systemsWithData = new Set(entries.map(e => e.system));
-  const activeSystemsList = SYSTEMS.filter(s => systemsWithData.has(s) || (perSystemCounts[s] ?? 0) > 0);
+  const extraSystems = [...systemsWithData].filter(s => !SYSTEMS.includes(s));
+  const activeSystemsList = [...SYSTEMS, ...extraSystems];
 
   const getSystemBadges = (sys: string) => {
     const errs = entries.filter(e => e.system === sys && e.severity === "ERROR" && !e.resolved).length;
