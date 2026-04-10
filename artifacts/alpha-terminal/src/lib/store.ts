@@ -254,7 +254,7 @@ export const useTerminalStore = create<TerminalState>()(
         skepticModelName: 'gemini-2.5-flash',
         skepticTemperature: 0,
         enabled: false,
-        mode: 'SHADOW',
+        mode: 'LIVE',
       },
       setAiLabStrategistConfig: (key, value) =>
         set((state) => ({
@@ -476,7 +476,7 @@ export const useTerminalStore = create<TerminalState>()(
               skepticModelName: 'gemini-2.5-flash',
               skepticTemperature: 0,
               enabled: false,
-              mode: 'SHADOW',
+              mode: 'LIVE',
             };
           }
         }

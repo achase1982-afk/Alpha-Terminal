@@ -31,7 +31,7 @@ const DEFAULT_CONFIG: AiLabStrategistConfig = {
   skepticTemperature: 0,
 
   enabled: false,
-  mode: "SHADOW",
+  mode: "LIVE",
 };
 
 let currentConfig: AiLabStrategistConfig = { ...DEFAULT_CONFIG };
