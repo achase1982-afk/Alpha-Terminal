@@ -387,14 +387,14 @@ function OptionRow({
           <span style={{ color: C.dim }}>{isShort ? `-${qty}` : `+${qty}`}</span>
         </div>
       </div>
-      {visibleColumns.includes("mark") && <span style={{ fontSize: 14, color: markColor, textAlign: "right", fontVariantNumeric: "tabular-nums", transition: "color 0.15s", padding: "7px 8px" }}>${markPx.toFixed(2)}</span>}
-      {visibleColumns.includes("cost") && <span style={{ fontSize: 14, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "7px 8px" }}>${opt.averagePrice.toFixed(2)}</span>}
-      {visibleColumns.includes("qty") && <span style={{ fontSize: 14, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "7px 8px" }}>{isShort ? `-${qty}` : `+${qty}`}</span>}
-      {visibleColumns.includes("mktVal") && <span style={{ fontSize: 14, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "7px 8px" }}>{fmtCompact(opt.marketValue)}</span>}
-      {visibleColumns.includes("plOpen") && <span style={{ fontSize: 14, fontWeight: 500, color: plColor(totalPL), textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "7px 8px", overflow: "hidden", whiteSpace: "nowrap" }}>{fmtCurrency(totalPL)}</span>}
-      {visibleColumns.includes("plPct") && <span style={{ fontSize: 14, color: plColor(totalPL), textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "7px 8px", overflow: "hidden", whiteSpace: "nowrap" }}>{fmtPct(totalPLPctOpt)}</span>}
-      {visibleColumns.includes("plDay") && <span style={{ fontSize: 14, color: plColor(opt.currentDayProfitLoss), textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "7px 8px", overflow: "hidden", whiteSpace: "nowrap" }}>{fmtCurrency(opt.currentDayProfitLoss)}</span>}
-      {visibleColumns.includes("maint") && <span style={{ fontSize: 14, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "7px 8px" }}>{opt.maintenanceRequirement > 0 ? fmtCompact(opt.maintenanceRequirement) : "—"}</span>}
+      {visibleColumns.includes("mark") && <span style={{ fontSize: 14, color: markColor, textAlign: "center", fontVariantNumeric: "tabular-nums", transition: "color 0.15s", padding: "7px 8px" }}>${markPx.toFixed(2)}</span>}
+      {visibleColumns.includes("cost") && <span style={{ fontSize: 14, color: C.textDim, textAlign: "center", fontVariantNumeric: "tabular-nums", padding: "7px 8px" }}>${opt.averagePrice.toFixed(2)}</span>}
+      {visibleColumns.includes("qty") && <span style={{ fontSize: 14, color: C.text, textAlign: "center", fontVariantNumeric: "tabular-nums", padding: "7px 8px" }}>{isShort ? `-${qty}` : `+${qty}`}</span>}
+      {visibleColumns.includes("mktVal") && <span style={{ fontSize: 14, color: C.text, textAlign: "center", fontVariantNumeric: "tabular-nums", padding: "7px 8px" }}>{fmtCompact(opt.marketValue)}</span>}
+      {visibleColumns.includes("plOpen") && <span style={{ fontSize: 14, fontWeight: 500, color: plColor(totalPL), textAlign: "center", fontVariantNumeric: "tabular-nums", padding: "7px 8px", overflow: "hidden", whiteSpace: "nowrap" }}>{fmtCurrency(totalPL)}</span>}
+      {visibleColumns.includes("plPct") && <span style={{ fontSize: 14, color: plColor(totalPL), textAlign: "center", fontVariantNumeric: "tabular-nums", padding: "7px 8px", overflow: "hidden", whiteSpace: "nowrap" }}>{fmtPct(totalPLPctOpt)}</span>}
+      {visibleColumns.includes("plDay") && <span style={{ fontSize: 14, color: plColor(opt.currentDayProfitLoss), textAlign: "center", fontVariantNumeric: "tabular-nums", padding: "7px 8px", overflow: "hidden", whiteSpace: "nowrap" }}>{fmtCurrency(opt.currentDayProfitLoss)}</span>}
+      {visibleColumns.includes("maint") && <span style={{ fontSize: 14, color: C.textDim, textAlign: "center", fontVariantNumeric: "tabular-nums", padding: "7px 8px" }}>{opt.maintenanceRequirement > 0 ? fmtCompact(opt.maintenanceRequirement) : "—"}</span>}
     </div>
   );
 }
@@ -491,15 +491,15 @@ function PositionTableRow({
           {visibleColumns.includes("mark") && (() => {
             const eqQty = eq ? (eq.longQuantity || eq.shortQuantity) : 0;
             const markPx = eq && eqQty > 0 ? eq.marketValue / eqQty : null;
-            return <span style={{ fontSize: 14, color: markPx != null ? markColor : C.dim, textAlign: "right", fontVariantNumeric: "tabular-nums", transition: "color 0.15s", padding: "8px" }}>{markPx != null ? `$${markPx.toFixed(2)}` : "—"}</span>;
+            return <span style={{ fontSize: 14, color: markPx != null ? markColor : C.dim, textAlign: "center", fontVariantNumeric: "tabular-nums", transition: "color 0.15s", padding: "8px" }}>{markPx != null ? `$${markPx.toFixed(2)}` : "—"}</span>;
           })()}
-          {visibleColumns.includes("cost") && <span style={{ fontSize: 14, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px" }}>{eq ? `$${eq.averagePrice.toFixed(2)}` : "—"}</span>}
-          {visibleColumns.includes("qty") && <span style={{ fontSize: 14, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px" }}>{eq ? fmtQty(eq.longQuantity, eq.shortQuantity) : "—"}</span>}
-          {visibleColumns.includes("mktVal") && <span style={{ fontSize: 14, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px" }}>{fmtCompact(group.totalMarketValue)}</span>}
-          {visibleColumns.includes("plOpen") && <span style={{ fontSize: 14, fontWeight: 500, color: plColor(group.totalPL), textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px", overflow: "hidden", whiteSpace: "nowrap" }}>{fmtCurrency(group.totalPL)}</span>}
-          {visibleColumns.includes("plPct") && <span style={{ fontSize: 14, color: plColor(group.totalPL), textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px", overflow: "hidden", whiteSpace: "nowrap" }}>{fmtPct(totalPLPct)}</span>}
-          {visibleColumns.includes("plDay") && <span style={{ fontSize: 14, fontWeight: 500, color: plColor(group.totalDayPL), textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px", overflow: "hidden", whiteSpace: "nowrap" }}>{fmtCurrency(group.totalDayPL)}</span>}
-          {visibleColumns.includes("maint") && <span style={{ fontSize: 14, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px", overflow: "hidden", whiteSpace: "nowrap" }}>{group.totalMaint > 0 ? fmtCompact(group.totalMaint) : "—"}</span>}
+          {visibleColumns.includes("cost") && <span style={{ fontSize: 14, color: C.textDim, textAlign: "center", fontVariantNumeric: "tabular-nums", padding: "8px" }}>{eq ? `$${eq.averagePrice.toFixed(2)}` : "—"}</span>}
+          {visibleColumns.includes("qty") && <span style={{ fontSize: 14, color: C.textDim, textAlign: "center", fontVariantNumeric: "tabular-nums", padding: "8px" }}>{eq ? fmtQty(eq.longQuantity, eq.shortQuantity) : "—"}</span>}
+          {visibleColumns.includes("mktVal") && <span style={{ fontSize: 14, color: C.text, textAlign: "center", fontVariantNumeric: "tabular-nums", padding: "8px" }}>{fmtCompact(group.totalMarketValue)}</span>}
+          {visibleColumns.includes("plOpen") && <span style={{ fontSize: 14, fontWeight: 500, color: plColor(group.totalPL), textAlign: "center", fontVariantNumeric: "tabular-nums", padding: "8px", overflow: "hidden", whiteSpace: "nowrap" }}>{fmtCurrency(group.totalPL)}</span>}
+          {visibleColumns.includes("plPct") && <span style={{ fontSize: 14, color: plColor(group.totalPL), textAlign: "center", fontVariantNumeric: "tabular-nums", padding: "8px", overflow: "hidden", whiteSpace: "nowrap" }}>{fmtPct(totalPLPct)}</span>}
+          {visibleColumns.includes("plDay") && <span style={{ fontSize: 14, fontWeight: 500, color: plColor(group.totalDayPL), textAlign: "center", fontVariantNumeric: "tabular-nums", padding: "8px", overflow: "hidden", whiteSpace: "nowrap" }}>{fmtCurrency(group.totalDayPL)}</span>}
+          {visibleColumns.includes("maint") && <span style={{ fontSize: 14, color: C.textDim, textAlign: "center", fontVariantNumeric: "tabular-nums", padding: "8px", overflow: "hidden", whiteSpace: "nowrap" }}>{group.totalMaint > 0 ? fmtCompact(group.totalMaint) : "—"}</span>}
         </div>
       </>
     );
@@ -539,40 +539,40 @@ function PositionTableRow({
           if (markPx == null && streamPrice != null) {
             markPx = streamPrice;
           }
-          return <span style={{ fontSize: 14, color: markPx != null ? markColor : C.dim, textAlign: "right", fontVariantNumeric: "tabular-nums", transition: "color 0.15s", padding: "8px" }}>{markPx != null ? `$${markPx.toFixed(2)}` : "—"}</span>;
+          return <span style={{ fontSize: 14, color: markPx != null ? markColor : C.dim, textAlign: "center", fontVariantNumeric: "tabular-nums", transition: "color 0.15s", padding: "8px" }}>{markPx != null ? `$${markPx.toFixed(2)}` : "—"}</span>;
         })()}
         {visibleColumns.includes("cost") && (() => {
-          if (eq) return <span style={{ fontSize: 14, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px" }}>${eq.averagePrice.toFixed(2)}</span>;
+          if (eq) return <span style={{ fontSize: 14, color: C.textDim, textAlign: "center", fontVariantNumeric: "tabular-nums", padding: "8px" }}>${eq.averagePrice.toFixed(2)}</span>;
           if (hasOptions) {
             const totalContracts = group.options.reduce((s, o) => s + (o.longQuantity || o.shortQuantity), 0);
             const avgCost = totalContracts > 0 ? group.options.reduce((s, o) => s + o.averagePrice * (o.longQuantity || o.shortQuantity), 0) / totalContracts : null;
-            return <span style={{ fontSize: 14, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px" }}>{avgCost != null ? `$${avgCost.toFixed(2)}` : "—"}</span>;
+            return <span style={{ fontSize: 14, color: C.textDim, textAlign: "center", fontVariantNumeric: "tabular-nums", padding: "8px" }}>{avgCost != null ? `$${avgCost.toFixed(2)}` : "—"}</span>;
           }
-          return <span style={{ fontSize: 14, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px" }}>—</span>;
+          return <span style={{ fontSize: 14, color: C.textDim, textAlign: "center", fontVariantNumeric: "tabular-nums", padding: "8px" }}>—</span>;
         })()}
         {visibleColumns.includes("qty") && (() => {
           const hasEq = !!eq;
           const hasOpts = group.options.length > 0;
           if (hasEq && hasOpts) {
-            return <span style={{ fontSize: 14, color: C.dim, textAlign: "right", padding: "8px" }}>—</span>;
+            return <span style={{ fontSize: 14, color: C.dim, textAlign: "center", padding: "8px" }}>—</span>;
           }
           const eqQty = hasEq ? fmtQty(eq!.longQuantity, eq!.shortQuantity) : "";
           const optQty = hasOpts ? `${group.options.length}c` : "";
-          return <span style={{ fontSize: 14, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px" }}>{eqQty || optQty || "—"}</span>;
+          return <span style={{ fontSize: 14, color: C.textDim, textAlign: "center", fontVariantNumeric: "tabular-nums", padding: "8px" }}>{eqQty || optQty || "—"}</span>;
         })()}
-        {visibleColumns.includes("mktVal") && <span style={{ fontSize: 14, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px" }}>
+        {visibleColumns.includes("mktVal") && <span style={{ fontSize: 14, color: C.text, textAlign: "center", fontVariantNumeric: "tabular-nums", padding: "8px" }}>
           {fmtCompact(group.totalMarketValue)}
         </span>}
-        {visibleColumns.includes("plOpen") && <span style={{ fontSize: 14, fontWeight: 500, color: plColor(group.totalPL), textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px", overflow: "hidden", whiteSpace: "nowrap" }}>
+        {visibleColumns.includes("plOpen") && <span style={{ fontSize: 14, fontWeight: 500, color: plColor(group.totalPL), textAlign: "center", fontVariantNumeric: "tabular-nums", padding: "8px", overflow: "hidden", whiteSpace: "nowrap" }}>
           {fmtCurrency(group.totalPL)}
         </span>}
-        {visibleColumns.includes("plPct") && <span style={{ fontSize: 14, color: plColor(group.totalPL), textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px", overflow: "hidden", whiteSpace: "nowrap" }}>
+        {visibleColumns.includes("plPct") && <span style={{ fontSize: 14, color: plColor(group.totalPL), textAlign: "center", fontVariantNumeric: "tabular-nums", padding: "8px", overflow: "hidden", whiteSpace: "nowrap" }}>
           {fmtPct(totalPLPct)}
         </span>}
-        {visibleColumns.includes("plDay") && <span style={{ fontSize: 14, fontWeight: 500, color: plColor(group.totalDayPL), textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px", overflow: "hidden", whiteSpace: "nowrap" }}>
+        {visibleColumns.includes("plDay") && <span style={{ fontSize: 14, fontWeight: 500, color: plColor(group.totalDayPL), textAlign: "center", fontVariantNumeric: "tabular-nums", padding: "8px", overflow: "hidden", whiteSpace: "nowrap" }}>
           {fmtCurrency(group.totalDayPL)}
         </span>}
-        {visibleColumns.includes("maint") && <span style={{ fontSize: 14, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px", overflow: "hidden", whiteSpace: "nowrap" }}>
+        {visibleColumns.includes("maint") && <span style={{ fontSize: 14, color: C.textDim, textAlign: "center", fontVariantNumeric: "tabular-nums", padding: "8px", overflow: "hidden", whiteSpace: "nowrap" }}>
           {group.totalMaint > 0 ? fmtCompact(group.totalMaint) : "—"}
         </span>}
       </div>
@@ -594,15 +594,15 @@ function PositionTableRow({
                 {visibleColumns.includes("mark") && (() => {
                   const eqQty = eq.longQuantity || eq.shortQuantity;
                   const markPx = eqQty > 0 ? eq.marketValue / eqQty : 0;
-                  return <span style={{ fontSize: 14, color: markColor, textAlign: "right", fontVariantNumeric: "tabular-nums", transition: "color 0.15s", padding: "7px 8px" }}>${markPx.toFixed(2)}</span>;
+                  return <span style={{ fontSize: 14, color: markColor, textAlign: "center", fontVariantNumeric: "tabular-nums", transition: "color 0.15s", padding: "7px 8px" }}>${markPx.toFixed(2)}</span>;
                 })()}
-                {visibleColumns.includes("cost") && <span style={{ fontSize: 14, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "7px 8px" }}>${eq.averagePrice.toFixed(2)}</span>}
-                {visibleColumns.includes("qty") && <span style={{ fontSize: 14, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "7px 8px" }}>{fmtQty(eq.longQuantity, eq.shortQuantity)}</span>}
-                {visibleColumns.includes("mktVal") && <span style={{ fontSize: 14, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "7px 8px" }}>{fmtCompact(eq.marketValue)}</span>}
-                {visibleColumns.includes("plOpen") && <span style={{ fontSize: 14, fontWeight: 500, color: plColor(eq.longOpenProfitLoss), textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "7px 8px", overflow: "hidden", whiteSpace: "nowrap" }}>{fmtCurrency(eq.longOpenProfitLoss)}</span>}
-                {visibleColumns.includes("plPct") && <span style={{ fontSize: 14, color: plColor(eq.longOpenProfitLoss), textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "7px 8px", overflow: "hidden", whiteSpace: "nowrap" }}>{fmtPct(eqPLPct)}</span>}
-                {visibleColumns.includes("plDay") && <span style={{ fontSize: 14, color: plColor(eq.currentDayProfitLoss), textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "7px 8px", overflow: "hidden", whiteSpace: "nowrap" }}>{fmtCurrency(eq.currentDayProfitLoss)}</span>}
-                {visibleColumns.includes("maint") && <span style={{ fontSize: 14, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "7px 8px" }}>{eq.maintenanceRequirement > 0 ? fmtCompact(eq.maintenanceRequirement) : "—"}</span>}
+                {visibleColumns.includes("cost") && <span style={{ fontSize: 14, color: C.textDim, textAlign: "center", fontVariantNumeric: "tabular-nums", padding: "7px 8px" }}>${eq.averagePrice.toFixed(2)}</span>}
+                {visibleColumns.includes("qty") && <span style={{ fontSize: 14, color: C.text, textAlign: "center", fontVariantNumeric: "tabular-nums", padding: "7px 8px" }}>{fmtQty(eq.longQuantity, eq.shortQuantity)}</span>}
+                {visibleColumns.includes("mktVal") && <span style={{ fontSize: 14, color: C.text, textAlign: "center", fontVariantNumeric: "tabular-nums", padding: "7px 8px" }}>{fmtCompact(eq.marketValue)}</span>}
+                {visibleColumns.includes("plOpen") && <span style={{ fontSize: 14, fontWeight: 500, color: plColor(eq.longOpenProfitLoss), textAlign: "center", fontVariantNumeric: "tabular-nums", padding: "7px 8px", overflow: "hidden", whiteSpace: "nowrap" }}>{fmtCurrency(eq.longOpenProfitLoss)}</span>}
+                {visibleColumns.includes("plPct") && <span style={{ fontSize: 14, color: plColor(eq.longOpenProfitLoss), textAlign: "center", fontVariantNumeric: "tabular-nums", padding: "7px 8px", overflow: "hidden", whiteSpace: "nowrap" }}>{fmtPct(eqPLPct)}</span>}
+                {visibleColumns.includes("plDay") && <span style={{ fontSize: 14, color: plColor(eq.currentDayProfitLoss), textAlign: "center", fontVariantNumeric: "tabular-nums", padding: "7px 8px", overflow: "hidden", whiteSpace: "nowrap" }}>{fmtCurrency(eq.currentDayProfitLoss)}</span>}
+                {visibleColumns.includes("maint") && <span style={{ fontSize: 14, color: C.textDim, textAlign: "center", fontVariantNumeric: "tabular-nums", padding: "7px 8px" }}>{eq.maintenanceRequirement > 0 ? fmtCompact(eq.maintenanceRequirement) : "—"}</span>}
               </div>
             );
           })()}
@@ -1382,16 +1382,16 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
                   <div className="pf-sticky-col" style={{ width: symW, background: "#0e0e0e", padding: "8px 8px 8px 12px" }}>
                     <span style={{ fontSize: 14, fontWeight: 500, color: C.textMuted, whiteSpace: "nowrap" }}>Totals</span>
                   </div>
-                  {visibleColumns.includes("mark")   && <span style={{ fontSize: 14, color: C.dim, textAlign: "right", padding: "8px" }}>—</span>}
-                  {visibleColumns.includes("cost")   && <span style={{ fontSize: 14, color: C.dim, textAlign: "right", padding: "8px" }}>—</span>}
-                  {visibleColumns.includes("qty")    && <span style={{ fontSize: 14, color: C.dim, textAlign: "right", padding: "8px" }}>—</span>}
-                  {visibleColumns.includes("mktVal") && <span style={{ fontSize: 14, fontWeight: 500, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px" }}>{fmtCompact(totalMarketValue)}</span>}
-                  {visibleColumns.includes("plOpen") && <span style={{ fontSize: 14, fontWeight: 500, color: plColor(totalUnrealized), textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px", overflow: "hidden", whiteSpace: "nowrap" }}>{fmtCurrency(totalUnrealized)}</span>}
-                  {visibleColumns.includes("plPct")  && <span style={{ fontSize: 14, fontWeight: 500, color: plColor(totalUnrealized), textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px", overflow: "hidden", whiteSpace: "nowrap" }}>{fmtPct(unrealizedPct)}</span>}
-                  {visibleColumns.includes("plDay")  && <span style={{ fontSize: 14, fontWeight: 600, color: plColor(totalDayPLPositions), textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px", overflow: "hidden", whiteSpace: "nowrap" }}>{fmtCurrency(totalDayPLPositions)}</span>}
+                  {visibleColumns.includes("mark")   && <span style={{ fontSize: 14, color: C.dim, textAlign: "center", padding: "8px" }}>—</span>}
+                  {visibleColumns.includes("cost")   && <span style={{ fontSize: 14, color: C.dim, textAlign: "center", padding: "8px" }}>—</span>}
+                  {visibleColumns.includes("qty")    && <span style={{ fontSize: 14, color: C.dim, textAlign: "center", padding: "8px" }}>—</span>}
+                  {visibleColumns.includes("mktVal") && <span style={{ fontSize: 14, fontWeight: 500, color: C.text, textAlign: "center", fontVariantNumeric: "tabular-nums", padding: "8px" }}>{fmtCompact(totalMarketValue)}</span>}
+                  {visibleColumns.includes("plOpen") && <span style={{ fontSize: 14, fontWeight: 500, color: plColor(totalUnrealized), textAlign: "center", fontVariantNumeric: "tabular-nums", padding: "8px", overflow: "hidden", whiteSpace: "nowrap" }}>{fmtCurrency(totalUnrealized)}</span>}
+                  {visibleColumns.includes("plPct")  && <span style={{ fontSize: 14, fontWeight: 500, color: plColor(totalUnrealized), textAlign: "center", fontVariantNumeric: "tabular-nums", padding: "8px", overflow: "hidden", whiteSpace: "nowrap" }}>{fmtPct(unrealizedPct)}</span>}
+                  {visibleColumns.includes("plDay")  && <span style={{ fontSize: 14, fontWeight: 600, color: plColor(totalDayPLPositions), textAlign: "center", fontVariantNumeric: "tabular-nums", padding: "8px", overflow: "hidden", whiteSpace: "nowrap" }}>{fmtCurrency(totalDayPLPositions)}</span>}
                   {visibleColumns.includes("maint")  && (() => {
                     const totalMaint = (account?.positions ?? []).reduce((s, p) => s + p.maintenanceRequirement, 0);
-                    return <span style={{ fontSize: 14, color: C.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "8px" }}>{totalMaint > 0 ? fmtCompact(totalMaint) : "—"}</span>;
+                    return <span style={{ fontSize: 14, color: C.textDim, textAlign: "center", fontVariantNumeric: "tabular-nums", padding: "8px" }}>{totalMaint > 0 ? fmtCompact(totalMaint) : "—"}</span>;
                   })()}
                 </div>
               )}
