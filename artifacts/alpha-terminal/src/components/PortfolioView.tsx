@@ -258,9 +258,7 @@ function statusColor(status: string): string {
 }
 
 const CP = "8px 16px";
-
-const getOuterGridCols = (n: number): string =>
-  `minmax(140px, max-content) repeat(${n}, max-content)`;
+const SYM_COL_W = 150;
 
 function useTickFlash(symbol: string): "up" | "down" | null {
   const price = useTerminalStore(s => (s.streamPrices[symbol.toUpperCase()] as { last?: number } | undefined)?.last);
@@ -345,11 +343,16 @@ function OptionRow({
 
   const rowBg = isSelected ? `${C.gold}08` : "transparent";
   const stickyBg = isSelected ? "#1a1700" : "#000";
-  const bd = `1px solid ${C.border}`;
+
+  const td = (color: string, val: string, bold?: boolean): React.CSSProperties => ({
+    fontSize: 14, fontWeight: bold ? 500 : undefined, color,
+    textAlign: "center", fontVariantNumeric: "tabular-nums",
+    padding: CP, background: rowBg, whiteSpace: "nowrap",
+  });
 
   return (
-    <div style={{ display: "contents" }}>
-      <div className="pf-sticky-col" style={{ position: "sticky" as const, left: 0, zIndex: 2, background: stickyBg, borderBottom: bd, display: "flex", flexDirection: "column", gap: 1, padding: "5px 6px 5px 20px", minWidth: 0, alignSelf: "stretch" }}>
+    <tr>
+      <td className="pf-sticky-col" style={{ background: stickyBg, padding: "5px 6px 5px 20px", minWidth: SYM_COL_W }}>
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
           <Checkbox checked={isSelected} onToggle={e => { e.stopPropagation(); toggleKey(optKey); }} />
           <span style={{ fontSize: 12, fontWeight: 700, color: opt.putCall === "CALL" ? "#4ade80" : "#fb923c", flexShrink: 0 }}>
@@ -363,16 +366,16 @@ function OptionRow({
           {(() => { const d = formatOptionExpiry(opt.symbol); return d ? d.strike : ""; })()}{" "}
           <span style={{ color: C.dim }}>{isShort ? `-${qty}` : `+${qty}`}</span>
         </div>
-      </div>
-      {visibleColumns.includes("mark") && <span style={{ fontSize: 14, color: markColor, textAlign: "center", fontVariantNumeric: "tabular-nums", transition: "color 0.15s", padding: CP, background: rowBg, borderBottom: bd, whiteSpace: "nowrap" }}>${markPx.toFixed(2)}</span>}
-      {visibleColumns.includes("cost") && <span style={{ fontSize: 14, color: C.textDim, textAlign: "center", fontVariantNumeric: "tabular-nums", padding: CP, background: rowBg, borderBottom: bd, whiteSpace: "nowrap" }}>${opt.averagePrice.toFixed(2)}</span>}
-      {visibleColumns.includes("qty") && <span style={{ fontSize: 14, color: C.text, textAlign: "center", fontVariantNumeric: "tabular-nums", padding: CP, background: rowBg, borderBottom: bd, whiteSpace: "nowrap" }}>{isShort ? `-${qty}` : `+${qty}`}</span>}
-      {visibleColumns.includes("mktVal") && <span style={{ fontSize: 14, color: C.text, textAlign: "center", fontVariantNumeric: "tabular-nums", padding: CP, background: rowBg, borderBottom: bd, whiteSpace: "nowrap" }}>{fmtCompact(opt.marketValue)}</span>}
-      {visibleColumns.includes("plOpen") && <span style={{ fontSize: 14, fontWeight: 500, color: plColor(totalPL), textAlign: "center", fontVariantNumeric: "tabular-nums", padding: CP, background: rowBg, borderBottom: bd, whiteSpace: "nowrap" }}>{fmtCurrency(totalPL)}</span>}
-      {visibleColumns.includes("plPct") && <span style={{ fontSize: 14, color: plColor(totalPL), textAlign: "center", fontVariantNumeric: "tabular-nums", padding: CP, background: rowBg, borderBottom: bd, whiteSpace: "nowrap" }}>{fmtPct(totalPLPctOpt)}</span>}
-      {visibleColumns.includes("plDay") && <span style={{ fontSize: 14, color: plColor(opt.currentDayProfitLoss), textAlign: "center", fontVariantNumeric: "tabular-nums", padding: CP, background: rowBg, borderBottom: bd, whiteSpace: "nowrap" }}>{fmtCurrency(opt.currentDayProfitLoss)}</span>}
-      {visibleColumns.includes("maint") && <span style={{ fontSize: 14, color: C.textDim, textAlign: "center", fontVariantNumeric: "tabular-nums", padding: CP, background: rowBg, borderBottom: bd, whiteSpace: "nowrap" }}>{opt.maintenanceRequirement > 0 ? fmtCompact(opt.maintenanceRequirement) : "—"}</span>}
-    </div>
+      </td>
+      {visibleColumns.includes("mark") && <td style={{ ...td(markColor, ""), transition: "color 0.15s" }}>${markPx.toFixed(2)}</td>}
+      {visibleColumns.includes("cost") && <td style={td(C.textDim, "")}>${opt.averagePrice.toFixed(2)}</td>}
+      {visibleColumns.includes("qty") && <td style={td(C.text, "")}>{isShort ? `-${qty}` : `+${qty}`}</td>}
+      {visibleColumns.includes("mktVal") && <td style={td(C.text, "")}>{fmtCompact(opt.marketValue)}</td>}
+      {visibleColumns.includes("plOpen") && <td style={td(plColor(totalPL), "", true)}>{fmtCurrency(totalPL)}</td>}
+      {visibleColumns.includes("plPct") && <td style={td(plColor(totalPL), "")}>{fmtPct(totalPLPctOpt)}</td>}
+      {visibleColumns.includes("plDay") && <td style={td(plColor(opt.currentDayProfitLoss), "")}>{fmtCurrency(opt.currentDayProfitLoss)}</td>}
+      {visibleColumns.includes("maint") && <td style={td(C.textDim, "")}>{opt.maintenanceRequirement > 0 ? fmtCompact(opt.maintenanceRequirement) : "—"}</td>}
+    </tr>
   );
 }
 
@@ -406,89 +409,92 @@ function PositionTableRow({
   const markColor = eqTickDir === "up" ? C.green : eqTickDir === "down" ? C.red : C.text;
   const streamPrice = useTerminalStore(s => (s.streamPrices[group.underlying.toUpperCase()] as { last?: number } | undefined)?.last ?? null);
 
-  const bd = `1px solid ${C.border}`;
   const rowBg = someSelected ? `${C.gold}06` : "transparent";
   const stickyBg = someSelected ? "#121008" : "#000";
 
   const dataCellStyle = (color: string, bold?: boolean): React.CSSProperties => ({
     fontSize: 14, fontWeight: bold ? 500 : undefined, color,
     textAlign: "center", fontVariantNumeric: "tabular-nums",
-    padding: CP, background: rowBg, borderBottom: bd, whiteSpace: "nowrap",
+    padding: CP, background: rowBg, whiteSpace: "nowrap",
   });
 
   if (!hasOptions) {
     return (
-      <div style={{ display: "contents" }}>
-        <div className="pf-sticky-col" style={{ position: "sticky" as const, left: 0, zIndex: 2, background: eqSelected ? "#121008" : "#000", borderBottom: bd, display: "flex", alignItems: "center", padding: "6px 8px 6px 10px", minWidth: 0, alignSelf: "stretch" }}>
-          <div onClick={e => { e.stopPropagation(); toggleKey(eqKey); }} style={{ width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, cursor: "pointer" }}>
-            <div style={{ width: 15, height: 15, border: `1.5px solid ${eqSelected ? C.gold : C.dim}`, borderRadius: 3, background: eqSelected ? `${C.gold}22` : "transparent", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.12s" }}>
-              {eqSelected && <div style={{ width: 7, height: 7, background: C.gold, borderRadius: 1 }} />}
+      <tr>
+        <td className="pf-sticky-col" style={{ background: eqSelected ? "#121008" : "#000", padding: "6px 8px 6px 10px", minWidth: SYM_COL_W }}>
+          <div style={{ display: "flex", alignItems: "center" }}>
+            <div onClick={e => { e.stopPropagation(); toggleKey(eqKey); }} style={{ width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, cursor: "pointer" }}>
+              <div style={{ width: 15, height: 15, border: `1.5px solid ${eqSelected ? C.gold : C.dim}`, borderRadius: 3, background: eqSelected ? `${C.gold}22` : "transparent", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.12s" }}>
+                {eqSelected && <div style={{ width: 7, height: 7, background: C.gold, borderRadius: 1 }} />}
+              </div>
+            </div>
+            <div onClick={e => { e.stopPropagation(); onSelect(group.underlying); }} style={{ display: "flex", flexDirection: "column", minWidth: 0, cursor: "pointer", flex: 1 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                <span style={{ fontSize: 14, fontWeight: 600, color: C.text, whiteSpace: "nowrap" }}>{group.underlying}</span>
+                {earningsAlert && <span title={`Earnings ${earningsAlert.date}${earningsAlert.time === "bmo" ? " BMO" : earningsAlert.time === "amc" ? " AMC" : ""}`} style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.5, color: "#fb923c", border: "1px solid rgba(251,146,60,0.4)", background: "rgba(251,146,60,0.1)", borderRadius: 3, padding: "1px 4px", whiteSpace: "nowrap" }}>EARN {earningsAlert.date.slice(5)}</span>}
+              </div>
+              {(COMPANY_NAMES[group.underlying] ?? group.description) && <span style={{ fontSize: 12, color: C.gold, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{COMPANY_NAMES[group.underlying] ?? group.description}</span>}
             </div>
           </div>
-          <div onClick={e => { e.stopPropagation(); onSelect(group.underlying); }} style={{ display: "flex", flexDirection: "column", minWidth: 0, cursor: "pointer", flex: 1 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-              <span style={{ fontSize: 14, fontWeight: 600, color: C.text, whiteSpace: "nowrap" }}>{group.underlying}</span>
-              {earningsAlert && <span title={`Earnings ${earningsAlert.date}${earningsAlert.time === "bmo" ? " BMO" : earningsAlert.time === "amc" ? " AMC" : ""}`} style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.5, color: "#fb923c", border: "1px solid rgba(251,146,60,0.4)", background: "rgba(251,146,60,0.1)", borderRadius: 3, padding: "1px 4px", whiteSpace: "nowrap" }}>EARN {earningsAlert.date.slice(5)}</span>}
-            </div>
-            {(COMPANY_NAMES[group.underlying] ?? group.description) && <span style={{ fontSize: 12, color: C.gold, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{COMPANY_NAMES[group.underlying] ?? group.description}</span>}
-          </div>
-        </div>
+        </td>
         {visibleColumns.includes("mark") && (() => {
           const eqQty = eq ? (eq.longQuantity || eq.shortQuantity) : 0;
           const markPx = eq && eqQty > 0 ? eq.marketValue / eqQty : null;
-          return <span style={{ ...dataCellStyle(markPx != null ? markColor : C.dim), transition: "color 0.15s" }}>{markPx != null ? `$${markPx.toFixed(2)}` : "—"}</span>;
+          return <td style={{ ...dataCellStyle(markPx != null ? markColor : C.dim), transition: "color 0.15s" }}>{markPx != null ? `$${markPx.toFixed(2)}` : "—"}</td>;
         })()}
-        {visibleColumns.includes("cost") && <span style={dataCellStyle(C.textDim)}>{eq ? `$${eq.averagePrice.toFixed(2)}` : "—"}</span>}
-        {visibleColumns.includes("qty") && <span style={dataCellStyle(C.textDim)}>{eq ? fmtQty(eq.longQuantity, eq.shortQuantity) : "—"}</span>}
-        {visibleColumns.includes("mktVal") && <span style={dataCellStyle(C.text)}>{fmtCompact(group.totalMarketValue)}</span>}
-        {visibleColumns.includes("plOpen") && <span style={dataCellStyle(plColor(group.totalPL), true)}>{fmtCurrency(group.totalPL)}</span>}
-        {visibleColumns.includes("plPct") && <span style={dataCellStyle(plColor(group.totalPL))}>{fmtPct(totalPLPct)}</span>}
-        {visibleColumns.includes("plDay") && <span style={dataCellStyle(plColor(group.totalDayPL), true)}>{fmtCurrency(group.totalDayPL)}</span>}
-        {visibleColumns.includes("maint") && <span style={dataCellStyle(C.textDim)}>{group.totalMaint > 0 ? fmtCompact(group.totalMaint) : "—"}</span>}
-      </div>
+        {visibleColumns.includes("cost") && <td style={dataCellStyle(C.textDim)}>{eq ? `$${eq.averagePrice.toFixed(2)}` : "—"}</td>}
+        {visibleColumns.includes("qty") && <td style={dataCellStyle(C.textDim)}>{eq ? fmtQty(eq.longQuantity, eq.shortQuantity) : "—"}</td>}
+        {visibleColumns.includes("mktVal") && <td style={dataCellStyle(C.text)}>{fmtCompact(group.totalMarketValue)}</td>}
+        {visibleColumns.includes("plOpen") && <td style={dataCellStyle(plColor(group.totalPL), true)}>{fmtCurrency(group.totalPL)}</td>}
+        {visibleColumns.includes("plPct") && <td style={dataCellStyle(plColor(group.totalPL))}>{fmtPct(totalPLPct)}</td>}
+        {visibleColumns.includes("plDay") && <td style={dataCellStyle(plColor(group.totalDayPL), true)}>{fmtCurrency(group.totalDayPL)}</td>}
+        {visibleColumns.includes("maint") && <td style={dataCellStyle(C.textDim)}>{group.totalMaint > 0 ? fmtCompact(group.totalMaint) : "—"}</td>}
+      </tr>
     );
   }
 
   const groupDataCell = (color: string, bold?: boolean): React.CSSProperties => ({
     fontSize: 14, fontWeight: bold ? 500 : undefined, color,
     textAlign: "center", fontVariantNumeric: "tabular-nums",
-    padding: CP, background: rowBg, borderBottom: bd, whiteSpace: "nowrap", cursor: "pointer",
+    padding: CP, background: rowBg, whiteSpace: "nowrap", cursor: "pointer",
   });
 
   return (
     <>
-      <div style={{ display: "contents" }} onClick={() => setExpanded(!expanded)}>
-        <div className="pf-sticky-col" style={{ position: "sticky" as const, left: 0, zIndex: 2, background: stickyBg, borderBottom: bd, display: "flex", alignItems: "center", padding: "6px 8px 6px 10px", minWidth: 0, cursor: "pointer", alignSelf: "stretch" }}>
-          <div style={{ width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            {expanded ? <ChevronDown style={{ width: 15, height: 15, color: C.dim }} /> : <ChevronRight style={{ width: 15, height: 15, color: C.dim }} />}
+      <tr onClick={() => setExpanded(!expanded)} style={{ cursor: "pointer" }}>
+        <td className="pf-sticky-col" style={{ background: stickyBg, padding: "6px 8px 6px 10px", minWidth: SYM_COL_W }}>
+          <div style={{ display: "flex", alignItems: "center" }}>
+            <div style={{ width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              {expanded ? <ChevronDown style={{ width: 15, height: 15, color: C.dim }} /> : <ChevronRight style={{ width: 15, height: 15, color: C.dim }} />}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+              <span onClick={e => { e.stopPropagation(); onSelect(group.underlying); }} style={{ fontSize: 14, fontWeight: 600, color: C.text, whiteSpace: "nowrap", cursor: "pointer" }}>{group.underlying}</span>
+              {(COMPANY_NAMES[group.underlying] ?? group.description) && <span style={{ fontSize: 12, color: C.gold, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{COMPANY_NAMES[group.underlying] ?? group.description}</span>}
+            </div>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
-            <span onClick={e => { e.stopPropagation(); onSelect(group.underlying); }} style={{ fontSize: 14, fontWeight: 600, color: C.text, whiteSpace: "nowrap", cursor: "pointer" }}>{group.underlying}</span>
-            {(COMPANY_NAMES[group.underlying] ?? group.description) && <span style={{ fontSize: 12, color: C.gold, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{COMPANY_NAMES[group.underlying] ?? group.description}</span>}
-          </div>
-        </div>
+        </td>
         {visibleColumns.includes("mark") && (() => {
           let markPx: number | null = null;
           if (eq) { const eqQty = eq.longQuantity || eq.shortQuantity; if (eqQty > 0) markPx = eq.marketValue / eqQty; }
           if (markPx == null && streamPrice != null) markPx = streamPrice;
-          return <span style={{ ...groupDataCell(markPx != null ? markColor : C.dim), transition: "color 0.15s" }}>{markPx != null ? `$${markPx.toFixed(2)}` : "—"}</span>;
+          return <td style={{ ...groupDataCell(markPx != null ? markColor : C.dim), transition: "color 0.15s" }}>{markPx != null ? `$${markPx.toFixed(2)}` : "—"}</td>;
         })()}
         {visibleColumns.includes("cost") && (() => {
-          if (eq) return <span style={groupDataCell(C.textDim)}>${eq.averagePrice.toFixed(2)}</span>;
+          if (eq) return <td style={groupDataCell(C.textDim)}>${eq.averagePrice.toFixed(2)}</td>;
           const tc = group.options.reduce((s, o) => s + (o.longQuantity || o.shortQuantity), 0);
           const avg = tc > 0 ? group.options.reduce((s, o) => s + o.averagePrice * (o.longQuantity || o.shortQuantity), 0) / tc : null;
-          return <span style={groupDataCell(C.textDim)}>{avg != null ? `$${avg.toFixed(2)}` : "—"}</span>;
+          return <td style={groupDataCell(C.textDim)}>{avg != null ? `$${avg.toFixed(2)}` : "—"}</td>;
         })()}
         {visibleColumns.includes("qty") && (() => {
-          if (eq && hasOptions) return <span style={groupDataCell(C.dim)}>—</span>;
-          return <span style={groupDataCell(C.textDim)}>{eq ? fmtQty(eq.longQuantity, eq.shortQuantity) : hasOptions ? `${group.options.length}c` : "—"}</span>;
+          if (eq && hasOptions) return <td style={groupDataCell(C.dim)}>—</td>;
+          return <td style={groupDataCell(C.textDim)}>{eq ? fmtQty(eq.longQuantity, eq.shortQuantity) : hasOptions ? `${group.options.length}c` : "—"}</td>;
         })()}
-        {visibleColumns.includes("mktVal") && <span style={groupDataCell(C.text)}>{fmtCompact(group.totalMarketValue)}</span>}
-        {visibleColumns.includes("plOpen") && <span style={groupDataCell(plColor(group.totalPL), true)}>{fmtCurrency(group.totalPL)}</span>}
-        {visibleColumns.includes("plPct") && <span style={groupDataCell(plColor(group.totalPL))}>{fmtPct(totalPLPct)}</span>}
-        {visibleColumns.includes("plDay") && <span style={groupDataCell(plColor(group.totalDayPL), true)}>{fmtCurrency(group.totalDayPL)}</span>}
-        {visibleColumns.includes("maint") && <span style={groupDataCell(C.textDim)}>{group.totalMaint > 0 ? fmtCompact(group.totalMaint) : "—"}</span>}
-      </div>
+        {visibleColumns.includes("mktVal") && <td style={groupDataCell(C.text)}>{fmtCompact(group.totalMarketValue)}</td>}
+        {visibleColumns.includes("plOpen") && <td style={groupDataCell(plColor(group.totalPL), true)}>{fmtCurrency(group.totalPL)}</td>}
+        {visibleColumns.includes("plPct") && <td style={groupDataCell(plColor(group.totalPL))}>{fmtPct(totalPLPct)}</td>}
+        {visibleColumns.includes("plDay") && <td style={groupDataCell(plColor(group.totalDayPL), true)}>{fmtCurrency(group.totalDayPL)}</td>}
+        {visibleColumns.includes("maint") && <td style={groupDataCell(C.textDim)}>{group.totalMaint > 0 ? fmtCompact(group.totalMaint) : "—"}</td>}
+      </tr>
 
       {expanded && (
         <>
@@ -496,22 +502,24 @@ function PositionTableRow({
             const eqPLPct = eq.averagePrice > 0 ? (eq.longOpenProfitLoss / (eq.averagePrice * (eq.shortQuantity > 0 ? eq.shortQuantity : eq.longQuantity))) * 100 : 0;
             const subBg = eqSelected ? `${C.gold}08` : "transparent";
             const subStickyBg = eqSelected ? "#1a1700" : "#000";
-            const subCell = (color: string, bold?: boolean): React.CSSProperties => ({ fontSize: 14, fontWeight: bold ? 500 : undefined, color, textAlign: "center", fontVariantNumeric: "tabular-nums", padding: CP, background: subBg, borderBottom: bd, whiteSpace: "nowrap" });
+            const subCell = (color: string, bold?: boolean): React.CSSProperties => ({ fontSize: 14, fontWeight: bold ? 500 : undefined, color, textAlign: "center", fontVariantNumeric: "tabular-nums", padding: CP, background: subBg, whiteSpace: "nowrap" });
             return (
-              <div style={{ display: "contents" }}>
-                <div className="pf-sticky-col" style={{ position: "sticky" as const, left: 0, zIndex: 2, background: subStickyBg, borderBottom: bd, display: "flex", alignItems: "center", gap: 6, padding: "7px 6px 7px 20px", minWidth: 0, alignSelf: "stretch" }}>
-                  {hasOptions && <Checkbox checked={!!eqSelected} onToggle={e => { e.stopPropagation(); toggleKey(eqKey); }} />}
-                  <span style={{ fontSize: 12, color: C.text, whiteSpace: "nowrap" }}>{fmtQty(eq.longQuantity, eq.shortQuantity)}</span>
-                </div>
-                {visibleColumns.includes("mark") && (() => { const eqQty = eq.longQuantity || eq.shortQuantity; const markPx = eqQty > 0 ? eq.marketValue / eqQty : 0; return <span style={{ ...subCell(markColor), transition: "color 0.15s" }}>${markPx.toFixed(2)}</span>; })()}
-                {visibleColumns.includes("cost") && <span style={subCell(C.textDim)}>${eq.averagePrice.toFixed(2)}</span>}
-                {visibleColumns.includes("qty") && <span style={subCell(C.text)}>{fmtQty(eq.longQuantity, eq.shortQuantity)}</span>}
-                {visibleColumns.includes("mktVal") && <span style={subCell(C.text)}>{fmtCompact(eq.marketValue)}</span>}
-                {visibleColumns.includes("plOpen") && <span style={subCell(plColor(eq.longOpenProfitLoss), true)}>{fmtCurrency(eq.longOpenProfitLoss)}</span>}
-                {visibleColumns.includes("plPct") && <span style={subCell(plColor(eq.longOpenProfitLoss))}>{fmtPct(eqPLPct)}</span>}
-                {visibleColumns.includes("plDay") && <span style={subCell(plColor(eq.currentDayProfitLoss))}>{fmtCurrency(eq.currentDayProfitLoss)}</span>}
-                {visibleColumns.includes("maint") && <span style={subCell(C.textDim)}>{eq.maintenanceRequirement > 0 ? fmtCompact(eq.maintenanceRequirement) : "—"}</span>}
-              </div>
+              <tr>
+                <td className="pf-sticky-col" style={{ background: subStickyBg, padding: "7px 6px 7px 20px", minWidth: SYM_COL_W }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    {hasOptions && <Checkbox checked={!!eqSelected} onToggle={e => { e.stopPropagation(); toggleKey(eqKey); }} />}
+                    <span style={{ fontSize: 12, color: C.text, whiteSpace: "nowrap" }}>{fmtQty(eq.longQuantity, eq.shortQuantity)}</span>
+                  </div>
+                </td>
+                {visibleColumns.includes("mark") && (() => { const eqQty = eq.longQuantity || eq.shortQuantity; const markPx = eqQty > 0 ? eq.marketValue / eqQty : 0; return <td style={{ ...subCell(markColor), transition: "color 0.15s" }}>${markPx.toFixed(2)}</td>; })()}
+                {visibleColumns.includes("cost") && <td style={subCell(C.textDim)}>${eq.averagePrice.toFixed(2)}</td>}
+                {visibleColumns.includes("qty") && <td style={subCell(C.text)}>{fmtQty(eq.longQuantity, eq.shortQuantity)}</td>}
+                {visibleColumns.includes("mktVal") && <td style={subCell(C.text)}>{fmtCompact(eq.marketValue)}</td>}
+                {visibleColumns.includes("plOpen") && <td style={subCell(plColor(eq.longOpenProfitLoss), true)}>{fmtCurrency(eq.longOpenProfitLoss)}</td>}
+                {visibleColumns.includes("plPct") && <td style={subCell(plColor(eq.longOpenProfitLoss))}>{fmtPct(eqPLPct)}</td>}
+                {visibleColumns.includes("plDay") && <td style={subCell(plColor(eq.currentDayProfitLoss))}>{fmtCurrency(eq.currentDayProfitLoss)}</td>}
+                {visibleColumns.includes("maint") && <td style={subCell(C.textDim)}>{eq.maintenanceRequirement > 0 ? fmtCompact(eq.maintenanceRequirement) : "—"}</td>}
+              </tr>
             );
           })()}
           {group.options.map(opt => (
@@ -786,7 +794,6 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
     catch {} finally { setCancellingId(null); }
   }, [accountHash, fetchOrders]);
 
-  const outerGridCols = useMemo(() => getOuterGridCols(visibleColumns.length), [visibleColumns.length]);
 
   const symbolGroups = useMemo(() => {
     const positions = account?.positions ?? [];
@@ -1177,7 +1184,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
               style={{
                 flex: 1, padding: "8px 0", fontSize: 12, fontWeight: 500, textTransform: "uppercase", letterSpacing: 0.8,
                 fontFamily: f, color: subTab === tab ? C.gold : C.dim, background: "transparent", border: "none",
-                borderBottom: subTab === tab ? `2px solid ${C.gold}` : "2px solid transparent", cursor: "pointer",
+                borderBottom: "2px solid transparent", cursor: "pointer",
               }}
             >
               {tab === "balance" ? "Balances" : tab.charAt(0).toUpperCase() + tab.slice(1)}
@@ -1202,7 +1209,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
               </div>
             )}
             <div className="pf-hscroll" style={{ overflowX: "auto", width: "100%", overscrollBehavior: "auto" }}>
-              <style>{`.pf-hscroll::-webkit-scrollbar { display: none; } .pf-hscroll { scrollbar-width: none; -ms-overflow-style: none; -webkit-overflow-scrolling: touch; } .pf-sticky-col { position: -webkit-sticky; position: sticky; left: 0; z-index: 2; transform: translate3d(0,0,0); }`}</style>
+              <style>{`.pf-hscroll::-webkit-scrollbar { display: none; } .pf-hscroll { scrollbar-width: none; -ms-overflow-style: none; -webkit-overflow-scrolling: touch; } .pf-hscroll table { border-collapse: separate; border-spacing: 0; } .pf-sticky-col { position: -webkit-sticky !important; position: sticky !important; left: 0 !important; z-index: 2 !important; } .pf-hscroll tr { border-bottom: 1px solid ${C.border}; } .pf-hscroll tbody td, .pf-hscroll tbody th { border-bottom: 1px solid ${C.border}; }`}</style>
 
               {showColumnSettings && ReactDOM.createPortal(
                 <>
@@ -1231,51 +1238,59 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
                 document.body
               )}
 
-              <div style={{ display: "grid", gridTemplateColumns: outerGridCols, alignItems: "center" }}>
-                <div className="pf-sticky-col" style={{ position: "sticky" as const, left: 0, zIndex: 3, background: "#0e0e0e", display: "flex", alignItems: "center", gap: 6, padding: "6px 8px 6px 12px", borderBottom: `1px solid ${C.borderHi}`, alignSelf: "stretch" }}>
-                  <span style={{ fontSize: 12, fontWeight: 500, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5 }}>Symbol</span>
-                  <button onClick={() => setShowColumnSettings(x => !x)} style={{ padding: 2, background: "transparent", border: "none", cursor: "pointer" }}>
-                    <Settings style={{ width: 13, height: 13, color: showColumnSettings ? C.gold : C.dim }} />
-                  </button>
-                </div>
-                {ALL_COLUMNS.filter(c => visibleColumns.includes(c.key)).map(c => (
-                  <div key={c.key} style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "6px 8px", background: "#0e0e0e", borderBottom: `1px solid ${C.borderHi}`, whiteSpace: "nowrap" }}>
-                    <span style={{ fontSize: 11, fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: 0.6 }}>{c.label}</span>
-                  </div>
-                ))}
-
-                {symbolGroups.map(group => (
-                  <PositionTableRow
-                    key={group.underlying}
-                    group={group}
-                    onSelect={handleSelectSymbol}
-                    onTrade={onTrade}
-                    selectedKeys={selectedKeys}
-                    toggleKey={toggleKey}
-                    visibleColumns={visibleColumns}
-                    earningsAlert={upcomingEarnings.get(group.underlying)}
-                  />
-                ))}
-
+              <table style={{ borderCollapse: "separate", borderSpacing: 0, width: "max-content", minWidth: "100%" }}>
+                <thead>
+                  <tr>
+                    <th className="pf-sticky-col" style={{ background: "#0e0e0e", padding: "6px 8px 6px 12px", borderBottom: `1px solid ${C.borderHi}`, minWidth: SYM_COL_W, textAlign: "left" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ fontSize: 12, fontWeight: 500, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5 }}>Symbol</span>
+                        <button onClick={() => setShowColumnSettings(x => !x)} style={{ padding: 2, background: "transparent", border: "none", cursor: "pointer" }}>
+                          <Settings style={{ width: 13, height: 13, color: showColumnSettings ? C.gold : C.dim }} />
+                        </button>
+                      </div>
+                    </th>
+                    {ALL_COLUMNS.filter(c => visibleColumns.includes(c.key)).map(c => (
+                      <th key={c.key} style={{ padding: "6px 8px", background: "#0e0e0e", borderBottom: `1px solid ${C.borderHi}`, whiteSpace: "nowrap", textAlign: "center", fontWeight: 600 }}>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: 0.6 }}>{c.label}</span>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {symbolGroups.map(group => (
+                    <PositionTableRow
+                      key={group.underlying}
+                      group={group}
+                      onSelect={handleSelectSymbol}
+                      onTrade={onTrade}
+                      selectedKeys={selectedKeys}
+                      toggleKey={toggleKey}
+                      visibleColumns={visibleColumns}
+                      earningsAlert={upcomingEarnings.get(group.underlying)}
+                    />
+                  ))}
+                </tbody>
                 {symbolGroups.length > 0 && (
-                  <>
-                    <div className="pf-sticky-col" style={{ position: "sticky" as const, left: 0, zIndex: 2, background: "#0e0e0e", borderTop: `2px solid ${C.borderHi}`, padding: "8px 8px 8px 12px", alignSelf: "stretch" }}>
-                      <span style={{ fontSize: 14, fontWeight: 500, color: C.textMuted, whiteSpace: "nowrap" }}>Totals</span>
-                    </div>
-                    {visibleColumns.includes("mark")   && <span style={{ fontSize: 14, color: C.dim, textAlign: "center", padding: CP, background: "#0e0e0e", borderTop: `2px solid ${C.borderHi}`, whiteSpace: "nowrap" }}>—</span>}
-                    {visibleColumns.includes("cost")   && <span style={{ fontSize: 14, color: C.dim, textAlign: "center", padding: CP, background: "#0e0e0e", borderTop: `2px solid ${C.borderHi}`, whiteSpace: "nowrap" }}>—</span>}
-                    {visibleColumns.includes("qty")    && <span style={{ fontSize: 14, color: C.dim, textAlign: "center", padding: CP, background: "#0e0e0e", borderTop: `2px solid ${C.borderHi}`, whiteSpace: "nowrap" }}>—</span>}
-                    {visibleColumns.includes("mktVal") && <span style={{ fontSize: 14, fontWeight: 500, color: C.text, textAlign: "center", fontVariantNumeric: "tabular-nums", padding: CP, background: "#0e0e0e", borderTop: `2px solid ${C.borderHi}`, whiteSpace: "nowrap" }}>{fmtCompact(totalMarketValue)}</span>}
-                    {visibleColumns.includes("plOpen") && <span style={{ fontSize: 14, fontWeight: 500, color: plColor(totalUnrealized), textAlign: "center", fontVariantNumeric: "tabular-nums", padding: CP, background: "#0e0e0e", borderTop: `2px solid ${C.borderHi}`, whiteSpace: "nowrap" }}>{fmtCurrency(totalUnrealized)}</span>}
-                    {visibleColumns.includes("plPct")  && <span style={{ fontSize: 14, fontWeight: 500, color: plColor(totalUnrealized), textAlign: "center", fontVariantNumeric: "tabular-nums", padding: CP, background: "#0e0e0e", borderTop: `2px solid ${C.borderHi}`, whiteSpace: "nowrap" }}>{fmtPct(unrealizedPct)}</span>}
-                    {visibleColumns.includes("plDay")  && <span style={{ fontSize: 14, fontWeight: 600, color: plColor(totalDayPLPositions), textAlign: "center", fontVariantNumeric: "tabular-nums", padding: CP, background: "#0e0e0e", borderTop: `2px solid ${C.borderHi}`, whiteSpace: "nowrap" }}>{fmtCurrency(totalDayPLPositions)}</span>}
-                    {visibleColumns.includes("maint")  && (() => {
-                      const totalMaint = (account?.positions ?? []).reduce((s, p) => s + p.maintenanceRequirement, 0);
-                      return <span style={{ fontSize: 14, color: C.textDim, textAlign: "center", fontVariantNumeric: "tabular-nums", padding: CP, background: "#0e0e0e", borderTop: `2px solid ${C.borderHi}`, whiteSpace: "nowrap" }}>{totalMaint > 0 ? fmtCompact(totalMaint) : "—"}</span>;
-                    })()}
-                  </>
+                  <tfoot>
+                    <tr>
+                      <td className="pf-sticky-col" style={{ background: "#0e0e0e", borderTop: `2px solid ${C.borderHi}`, padding: "8px 8px 8px 12px", minWidth: SYM_COL_W }}>
+                        <span style={{ fontSize: 14, fontWeight: 500, color: C.textMuted, whiteSpace: "nowrap" }}>Totals</span>
+                      </td>
+                      {visibleColumns.includes("mark")   && <td style={{ fontSize: 14, color: C.dim, textAlign: "center", padding: CP, background: "#0e0e0e", borderTop: `2px solid ${C.borderHi}`, whiteSpace: "nowrap" }}>—</td>}
+                      {visibleColumns.includes("cost")   && <td style={{ fontSize: 14, color: C.dim, textAlign: "center", padding: CP, background: "#0e0e0e", borderTop: `2px solid ${C.borderHi}`, whiteSpace: "nowrap" }}>—</td>}
+                      {visibleColumns.includes("qty")    && <td style={{ fontSize: 14, color: C.dim, textAlign: "center", padding: CP, background: "#0e0e0e", borderTop: `2px solid ${C.borderHi}`, whiteSpace: "nowrap" }}>—</td>}
+                      {visibleColumns.includes("mktVal") && <td style={{ fontSize: 14, fontWeight: 500, color: C.text, textAlign: "center", fontVariantNumeric: "tabular-nums", padding: CP, background: "#0e0e0e", borderTop: `2px solid ${C.borderHi}`, whiteSpace: "nowrap" }}>{fmtCompact(totalMarketValue)}</td>}
+                      {visibleColumns.includes("plOpen") && <td style={{ fontSize: 14, fontWeight: 500, color: plColor(totalUnrealized), textAlign: "center", fontVariantNumeric: "tabular-nums", padding: CP, background: "#0e0e0e", borderTop: `2px solid ${C.borderHi}`, whiteSpace: "nowrap" }}>{fmtCurrency(totalUnrealized)}</td>}
+                      {visibleColumns.includes("plPct")  && <td style={{ fontSize: 14, fontWeight: 500, color: plColor(totalUnrealized), textAlign: "center", fontVariantNumeric: "tabular-nums", padding: CP, background: "#0e0e0e", borderTop: `2px solid ${C.borderHi}`, whiteSpace: "nowrap" }}>{fmtPct(unrealizedPct)}</td>}
+                      {visibleColumns.includes("plDay")  && <td style={{ fontSize: 14, fontWeight: 600, color: plColor(totalDayPLPositions), textAlign: "center", fontVariantNumeric: "tabular-nums", padding: CP, background: "#0e0e0e", borderTop: `2px solid ${C.borderHi}`, whiteSpace: "nowrap" }}>{fmtCurrency(totalDayPLPositions)}</td>}
+                      {visibleColumns.includes("maint")  && (() => {
+                        const totalMaint = (account?.positions ?? []).reduce((s, p) => s + p.maintenanceRequirement, 0);
+                        return <td style={{ fontSize: 14, color: C.textDim, textAlign: "center", fontVariantNumeric: "tabular-nums", padding: CP, background: "#0e0e0e", borderTop: `2px solid ${C.borderHi}`, whiteSpace: "nowrap" }}>{totalMaint > 0 ? fmtCompact(totalMaint) : "—"}</td>;
+                      })()}
+                    </tr>
+                  </tfoot>
                 )}
-              </div>
+              </table>
 
               {symbolGroups.length === 0 && (
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "48px 0" }}>
