@@ -1,4 +1,4 @@
-import { db, aiLabIdeasTable, aiLabWatchlistTable } from "@workspace/db";
+import { db, aiLabIdeasTable, aiLabWatchlistTable, aiLabEmbeddingsTable } from "@workspace/db";
 import { eq, inArray, desc, sql } from "drizzle-orm";
 import { emitTelemetry, createTelemetryBatch } from "./telemetryStore.js";
 import {
@@ -16,6 +16,17 @@ import {
   type MarketDataSnapshot,
 } from "./aiLabValidator.js";
 import { logger } from "./logger.js";
+import { createAnalystClient } from "./aiLabAnalystClient.js";
+import { createSkepticClient } from "./aiLabSkepticClient.js";
+import { buildCandidateIdeaFromLlms } from "./aiLabLlmMerger.js";
+import type {
+  AiLabAnalystClient,
+  AiLabSkepticClient,
+  AnalystRequest,
+  SkepticRequest,
+  AnalystResponse,
+  SkepticResponse,
+} from "./aiLabLlmTypes.js";
 
 // ─── CONFIGURATION ──────────────────────────────────────────────────────────
 
@@ -86,31 +97,10 @@ function logAiLabEvent(
   emitTelemetry("STRATEGIST", severity, message, { type, ...payload }, "AI_LAB", batch);
 }
 
-// ─── DUMMY IDEA GENERATOR ────────────────────────────────────────────────────
-// Placeholder — will be replaced with LLM Analyst output in a later phase.
+// ─── LLM CLIENT SINGLETONS ──────────────────────────────────────────────────
 
-function buildDummyCandidate(
-  symbol: string,
-  snapshot: TickerSnapshot,
-  regime: RegimeState,
-): TradeIdeaCandidate {
-  const price = snapshot.recentPriceSummary.high20d;
-  const low = snapshot.recentPriceSummary.low20d;
-  const direction = snapshot.recentPriceSummary.return5d >= 0 ? "LONG" : "SHORT";
-
-  return {
-    symbol: symbol.toUpperCase(),
-    direction: direction as "LONG" | "SHORT",
-    instrumentType: "STOCK",
-    optionStructureType: null,
-    legs: null,
-    entrySpreadPct: null,
-    oiAtEntry: null,
-    volumeAtEntry: Math.round(snapshot.volumeSummary.median20d),
-    volumeToOiRatio: null,
-    sector: null,
-  };
-}
+const analystClient: AiLabAnalystClient = createAnalystClient();
+const skepticClient: AiLabSkepticClient = createSkepticClient();
 
 // ─── CORE PIPELINE ──────────────────────────────────────────────────────────
 
@@ -129,58 +119,173 @@ async function runPipeline(
   batch: string,
   source: string,
 ): Promise<PipelineResult> {
-  const candidate = buildDummyCandidate(symbol, snapshot, regime);
-
   const activeIdeas = await db
     .select()
     .from(aiLabIdeasTable)
     .where(inArray(aiLabIdeasTable.status, ["NEW", "ACTIVE"]));
+
+  const runContext = { passName: source, timestamp: new Date().toISOString() };
+
+  const analystRequest: AnalystRequest = {
+    symbol,
+    runContext,
+    tickerSnapshot: snapshot as unknown as Record<string, unknown>,
+    regimeState: regime as unknown as Record<string, unknown>,
+    patternPerformance: null,
+    activeIdeasSummary: {
+      activeCount: activeIdeas.length,
+      symbols: activeIdeas.map((i) => i.symbol),
+      sectors: activeIdeas.map((i) => i.sector).filter(Boolean) as string[],
+    },
+    baselinesSummary: null,
+  };
+
+  logAiLabEvent("ANALYST_REQUEST", { symbol, passName: source }, batch);
+
+  let analystResponse: AnalystResponse;
+  try {
+    analystResponse = await analystClient.generateIdea(analystRequest);
+  } catch (err: any) {
+    logAiLabEvent("ANALYST_PARSE_ERROR", {
+      symbol,
+      passName: source,
+      errorMessage: err.message,
+      rawSnippet: String(err.message).slice(0, 200),
+    }, batch, "ERROR");
+    return { symbol, approved: false, rejectionReason: "ANALYST_LLM_FAILURE" };
+  }
+
+  logAiLabEvent("ANALYST_RESPONSE", {
+    symbol,
+    signalStrength: analystResponse.confidence.signalStrength,
+    convictionLevel: analystResponse.confidence.convictionLevel,
+    mainSignals: analystResponse.rationale.mainSignals,
+    direction: analystResponse.tradeIdeaCore.direction,
+  }, batch);
+
+  const skepticRequest: SkepticRequest = {
+    symbol,
+    runContext,
+    tickerSnapshot: snapshot as unknown as Record<string, unknown>,
+    regimeState: regime as unknown as Record<string, unknown>,
+    candidateIdea: analystResponse,
+  };
+
+  let skepticResponse: SkepticResponse | null = null;
+  try {
+    skepticResponse = await skepticClient.critiqueIdea(skepticRequest);
+
+    logAiLabEvent("SKEPTIC_RESPONSE", {
+      symbol,
+      critiqueScore: skepticResponse.critiqueScore,
+      flags: skepticResponse.flags,
+    }, batch);
+  } catch (err: any) {
+    logAiLabEvent("SKEPTIC_PARSE_ERROR", {
+      symbol,
+      passName: source,
+      errorMessage: err.message,
+      rawSnippet: String(err.message).slice(0, 200),
+    }, batch, "WARN");
+  }
+
+  const merged = buildCandidateIdeaFromLlms(
+    symbol,
+    analystResponse,
+    skepticResponse,
+    regime,
+    analystClient.modelName,
+    skepticClient.modelName,
+  );
 
   const marketData: MarketDataSnapshot = {
     avgVolume20d: snapshot.volumeSummary.median20d,
     dataFreshnessMinutes: computeDataFreshnessMinutes(),
   };
 
-  const validation = await validateAiLabIdea(candidate, activeIdeas, marketData);
+  const validation = await validateAiLabIdea(merged.candidate, activeIdeas, marketData);
 
   if (!validation.approved) {
-    logAiLabEvent("IDEA_VALIDATION", {
+    logAiLabEvent("IDEA_REJECTED", {
       symbol,
-      approved: false,
       rejectionReason: validation.rejectionReason,
+      signalStrength: merged.signalStrength,
       source,
     }, batch, "WARN");
 
     return { symbol, approved: false, rejectionReason: validation.rejectionReason };
   }
 
-  const regimeStr = `${regime.trendState}|${regime.volState}|${regime.breadthState}`;
-
   const [inserted] = await db
     .insert(aiLabIdeasTable)
     .values({
-      symbol: candidate.symbol,
-      direction: candidate.direction,
-      instrumentType: candidate.instrumentType,
-      thesis: `DUMMY IDEA FOR PIPELINE TEST — ${source}`,
-      catalyst: `Auto-generated by ${source}`,
-      invalidation: `Pipeline test — no real invalidation`,
-      regimeFit: "NEUTRAL",
-      signalStrength: 50,
-      convictionLevel: "LOW",
-      regimeAtCreation: regimeStr,
-      scannerAlignmentAtCreation: snapshot.scannerAlignment,
+      symbol: merged.candidate.symbol,
+      direction: merged.candidate.direction,
+      instrumentType: merged.candidate.instrumentType,
+      optionStructureType: merged.optionStructureType,
+      legs: merged.legs,
+      entryZone: merged.entryZone,
+      softStop: merged.softStop,
+      targetZone: merged.targetZone,
+      timeHorizon: merged.timeHorizon,
+      thesis: merged.thesis,
+      catalyst: merged.catalyst,
+      invalidation: merged.invalidation,
+      regimeFit: merged.regimeFit,
+      mainSignals: merged.mainSignals,
+      signalStrength: merged.signalStrength,
+      convictionLevel: merged.convictionLevel,
+      uncertainty: merged.uncertainty,
+      entrySpreadPct: merged.candidate.entrySpreadPct,
+      oiAtEntry: merged.candidate.oiAtEntry,
+      volumeAtEntry: merged.candidate.volumeAtEntry,
+      volumeToOiRatio: merged.candidate.volumeToOiRatio,
+      regimeAtCreation: merged.regimeAtCreation,
+      scannerAlignmentAtCreation: merged.scannerAlignmentAtCreation,
+      analystModelName: merged.analystModelName,
+      criticModelName: merged.criticModelName,
+      analystNote: merged.analystNote,
+      criticNote: merged.criticNote,
       status: "ACTIVE",
     })
     .returning();
 
-  logAiLabEvent("IDEA_VALIDATION", {
+  logAiLabEvent("IDEA_APPROVED", {
     symbol,
-    approved: true,
     ideaId: inserted.id,
-    direction: candidate.direction,
+    signalStrength: merged.signalStrength,
+    direction: merged.candidate.direction,
+    analystModelName: merged.analystModelName,
+    criticModelName: merged.criticModelName,
     source,
   }, batch);
+
+  const embeddingText = [
+    symbol,
+    merged.candidate.direction,
+    merged.catalyst,
+    merged.regimeAtCreation,
+    `THESIS: ${merged.thesis}`,
+    `ANALYST: ${merged.analystNote}`,
+    `CRITIC: ${merged.criticNote}`,
+  ].join(" | ");
+
+  try {
+    await db.insert(aiLabEmbeddingsTable).values({
+      ideaId: inserted.id,
+      embedding: null,
+      tags: {
+        text: embeddingText,
+        symbol,
+        direction: merged.candidate.direction,
+        catalyst: merged.catalyst,
+        regimeAtCreation: merged.regimeAtCreation,
+        signalStrength: merged.signalStrength,
+      },
+    });
+  } catch (embErr: any) {
+    logger.warn({ err: embErr, ideaId: inserted.id }, "AI Lab: failed to write embedding stub");
+  }
 
   return { symbol, approved: true, ideaId: inserted.id };
 }
@@ -631,5 +736,4 @@ export {
   postMarketReflection,
   logAiLabEvent,
   runPipeline,
-  buildDummyCandidate,
 };

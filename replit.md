@@ -226,11 +226,11 @@ Backend data layer for AI-driven trade idea generation and evaluation.
 
 ### AI Lab Orchestrator — Pipeline Skeleton (April 2026)
 
-Orchestration layer that schedules daily passes, handles event-driven triggers, and runs dummy ideas through the full pipeline (data tools → rejection layer → DB).
+Orchestration layer that schedules daily passes, handles event-driven triggers, and runs ideas through the full LLM pipeline (Analyst → Skeptic → Merger → Validator → DB).
 
 **Scheduled Passes (7 jobs, ET times):**
 1. `OVERNIGHT_DIGEST` (03:30 ET) — Scans universe anomalies, populates `ai_lab_watchlist` table with top 50 ranked symbols.
-2. `PREMARKET_PLAN` (08:00 ET) — Loads overnight watchlist, builds ticker snapshots for top 10, creates dummy candidate ideas, runs validator, saves approved ideas.
+2. `PREMARKET_PLAN` (08:00 ET) — Loads overnight watchlist, builds ticker snapshots for top 10, runs LLM Analyst+Skeptic pipeline, validates, saves approved ideas.
 3. `POST_OPEN_CHECK` (09:45 ET) — Stub: counts active ideas.
 4. `MID_MORNING_SCAN` (10:30 ET) — Stub: logs active idea count.
 5. `MIDDAY_ROTATION` (12:00 ET) — Stub: checks rotation signals.
@@ -238,13 +238,20 @@ Orchestration layer that schedules daily passes, handles event-driven triggers, 
 7. `POST_MARKET_REFLECTION` (16:15 ET) — Stub: EOD P&L evaluation.
 
 **Event-Driven Triggers (3 handlers):**
-1. `priceShockTrigger(symbol, movePct, windowMinutes, volumeSpikeRatio)` — Fires on large price moves (≥3%). Checks liquidity → snapshot → validate → save.
+1. `priceShockTrigger(symbol, movePct, windowMinutes, volumeSpikeRatio)` — Fires on large price moves (≥3%). Checks liquidity → LLM pipeline → validate → save.
 2. `blockFlowTrigger(symbol, blockNotional, blockPctOfADV)` — Fires on large block trades (≥$500K). Same pipeline.
 3. `scannerScoreJumpTrigger(symbol, deltaDiscovery, deltaMomentum)` — Fires on scanner score jumps (≥15 delta). Same pipeline.
 
-**Pipeline:** Each trigger/pass runs: `getRegimeState()` → `getTickerSnapshot()` → `buildDummyCandidate()` → `validateAiLabIdea()` → DB insert (if approved). Dummy ideas tagged with source pass/trigger name in thesis field.
+**LLM Pipeline (replaces dummy ideas):**
+Each trigger/pass runs: `getTickerSnapshot()` → `getRegimeState()` → `AiLabAnalystClient.generateIdea()` (Claude Sonnet) → `AiLabSkepticClient.critiqueIdea()` (Gemini Flash) → `buildCandidateIdeaFromLlms()` → `validateAiLabIdea()` → DB insert + embedding stub.
 
-**Telemetry:** `logAiLabEvent(type, payload)` helper logs all orchestrator activity under `AI_LAB` feature. Event types: SCHEDULE_RUN, TRIGGER_FIRED, TRIGGER_FILTERED, IDEA_VALIDATION.
+- **Analyst** (Claude `claude-sonnet-4-20250514`): Proposes trade idea with direction, entry/exit zones, thesis, catalyst, regime fit, confidence, liquidity snapshot, scanner alignment, and narrative note. Strict JSON response with 10+ validation checks.
+- **Skeptic** (Gemini `gemini-2.5-flash`): Critiques the analyst's idea with critiqueScore (0-100), 4 boolean flags (liquidityConcern, regimeMismatch, overfitWarning, redundancy), and narrative critique. Uses `responseMimeType: "application/json"`.
+- **Merger**: Combines analyst signal strength with skeptic dampening (factor 0.3). Downgrades conviction on regime mismatch or low effective signal. Constructs full `TradeIdeaCandidate` for validator.
+- **Failure modes**: Analyst failure → skip symbol entirely. Skeptic failure → use analyst-only with default neutral critique score (50).
+- **Embedding stub**: Writes concatenated text (symbol|direction|catalyst|regime|thesis|notes) to `ai_lab_embeddings.tags` for future vector search.
+
+**Telemetry:** `logAiLabEvent(type, payload)` helper logs all orchestrator activity under `AI_LAB` feature. Event types: SCHEDULE_RUN, TRIGGER_FIRED, TRIGGER_FILTERED, ANALYST_REQUEST, ANALYST_RESPONSE, SKEPTIC_RESPONSE, ANALYST_PARSE_ERROR, SKEPTIC_PARSE_ERROR, IDEA_APPROVED, IDEA_REJECTED.
 
 **DB Table:** `ai_lab_watchlist` — Caches overnight anomaly scan results (symbol, anomaly types/scores, composite score, pass name, expiry). Unique on (symbol, pass_name).
 
@@ -255,4 +262,11 @@ Orchestration layer that schedules daily passes, handles event-driven triggers, 
 - `POST /trigger/scanner-score` — Manual scanner score trigger
 - `GET /watchlist` — Current overnight watchlist
 
-**Files:** `aiLabOrchestrator.ts` (orchestrator + scheduler), `aiLab.ts` (routes expanded with orchestrator endpoints).
+**Files:**
+- `aiLabOrchestrator.ts` — Orchestrator + scheduler, LLM pipeline integration
+- `aiLabLlmTypes.ts` — All type definitions (AnalystRequest/Response, SkepticRequest/Response, client interfaces)
+- `aiLabAnalystClient.ts` — Claude Analyst client with strict JSON parsing + validation
+- `aiLabSkepticClient.ts` — Gemini Skeptic client with JSON mode
+- `aiLabLlmMerger.ts` — Merges Analyst + Skeptic outputs into TradeIdeaCandidate
+- `aiLab.ts` — Routes (8 CRUD + 5 orchestrator)
+- `lib/integrations-gemini-ai/` — Gemini AI integration workspace package (Replit AI Integrations proxy)

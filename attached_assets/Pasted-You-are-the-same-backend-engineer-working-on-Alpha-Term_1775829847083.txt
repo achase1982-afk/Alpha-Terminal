@@ -1,0 +1,308 @@
+You are the same backend engineer working on Alpha Terminal’s **AI Lab Strategist**.
+
+ASSUMED DONE FROM PREVIOUS PROMPTS
+- DB schemas:
+  - TradeIdea
+  - Outcome/PnL (or outcome fields on TradeIdea)
+  - Embeddings/Memory
+- Backend tools:
+  - get_universe_anomalies(...)
+  - get_ticker_snapshot(symbol, lookbackDays)
+  - get_regime_state()
+  - get_pattern_performance(patternTags[])
+  - get_scanner_alignment(symbol)
+- Deterministic logic:
+  - validateAiLabIdea(candidateIdea, activeIdeas, marketSnapshot) → { approved, rejectionReason }
+  - Portfolio constraints embedded in validation.
+- Orchestrator:
+  - Scheduled passes wired (overnightDigest, preMarketPlan, etc.).
+  - Trigger handlers:
+    - priceShockTrigger(...)
+    - blockFlowTrigger(...)
+    - scannerScoreJumpTrigger(...)
+  - Telemetry via logAiLabEvent(...), source `ai_lab_strategist`.
+  - Currently uses DUMMY ideas to exercise the pipeline (no LLMs yet).
+
+GOAL OF THIS PROMPT
+
+Replace the dummy idea generator with **real LLM integration** in a clean, pluggable way:
+
+1) Call the **Analyst LLM** (Claude) to propose an idea + Analyst Note in strict JSON.
+2) Call the **Skeptic LLM** (Gemini Fast) to critique the idea and produce a Critic Note + critique_score.
+3) Merge Analyst + Skeptic outputs into a candidate TradeIdea.
+4) Run the candidate through validateAiLabIdea and portfolio checks.
+5) Save APPROVED ideas, log everything via telemetry, and write to the Embeddings/Memory store.
+
+IMPORTANT:
+- You do NOT need to wire actual HTTP calls to Claude/Gemini if the repo doesn’t have clients yet.
+  - If clients exist, use them; otherwise, create clear client interfaces and stub implementations.
+- Focus on:
+  - Data contracts (input/output shapes).
+  - Prompt payload structures.
+  - Integration points in the orchestrator.
+
+We want a clean boundary so I can plug in real LLM clients later if needed.
+
+--------------------------------------------------
+1. ANALYST LLM CLIENT INTERFACE
+--------------------------------------------------
+
+Define a client/service interface, e.g.:
+
+- TypeScript:
+  - `AiLabAnalystClient.generateIdea(request: AnalystRequest): Promise<AnalystResponse>`
+- Python:
+  - `AiLabAnalystClient.generate_idea(request: AnalystRequest) -> AnalystResponse`
+
+AnalystRequest should include:
+
+- symbol: string
+- runContext: {
+    passName: string // "PREMARKET_PLAN" | "PRICE_SHOCK_TRIGGER" | etc.
+    timestamp: string
+  }
+- tickerSnapshot: (the full output of get_ticker_snapshot for this symbol)
+- regimeState: (output of get_regime_state)
+- patternPerformance: (output of get_pattern_performance for relevant tags, can be empty initially)
+- activeIdeasSummary: {
+    activeCount: number
+    symbols: string[]
+    sectors: string[]
+  }
+- baselinesSummary: optional, can be stubbed now
+
+AnalystResponse must be STRICT JSON with:
+
+- tradeIdeaCore: {
+    direction: "LONG" | "SHORT"
+    instrumentType: "STOCK" | "OPTIONS" | "STOCK+OPTIONS"
+    optionStructureType?: string | null
+    legs?: array of {
+      legType: "CALL" | "PUT"
+      side: "BUY" | "SELL"
+      strike: number
+      expiration: string
+      quantity: number
+    }
+    entryZone: { min: number; max: number } | null
+    softStop: number | null
+    targetZone: { min: number; max: number } | null
+    timeHorizon: "INTRADAY" | "1-3D" | "3-10D" | "10+D"
+  }
+- rationale: {
+    thesis: string
+    catalyst: "FLOW" | "EARNINGS" | "TECHNICAL" | "MACRO" | "OTHER"
+    invalidation: string
+    regimeFit: "GOOD" | "NEUTRAL" | "POOR"
+    mainSignals: string[]
+  }
+- confidence: {
+    signalStrength: number   // 0–100
+    convictionLevel: "LOW" | "MEDIUM" | "HIGH"
+    uncertainty: {
+      dataQuality: "HIGH" | "MEDIUM" | "LOW"
+      patternReliability?: number | null
+      regimeFitScore?: number | null
+    }
+  }
+- liquiditySnapshot: {
+    entrySpreadPct?: number | null
+    oiAtEntry?: number | null
+    volumeAtEntry?: number | null
+    volumeToOiRatio?: number | null
+  }
+- scannerAlignmentAtCreation: {
+    discoveryScore: number | null
+    momentumScore: number | null
+    modeAlignment: "AGREE" | "DISAGREE" | "NO_SIGNAL" | null
+  }
+- analystNote: string   // free-form narrative
+
+IMPLEMENTATION NOTES:
+- Create a helper that:
+  - Builds the AnalystRequest from existing tool outputs.
+  - Sends it to the Analyst LLM (or stub).
+  - Parses and validates the AnalystResponse (type guards/schema validation).
+- On parsing errors:
+  - Log telemetry `ANALYST_PARSE_ERROR`.
+  - Skip idea creation for this symbol.
+
+--------------------------------------------------
+2. SKEPTIC LLM CLIENT INTERFACE
+--------------------------------------------------
+
+Define a client/service interface, e.g.:
+
+- `AiLabSkepticClient.critiqueIdea(request: SkepticRequest): Promise<SkepticResponse>`
+
+SkepticRequest should include:
+
+- symbol: string
+- runContext: { passName: string; timestamp: string }
+- tickerSnapshot: same as Analyst
+- regimeState
+- candidateIdea: everything from AnalystResponse (tradeIdeaCore, rationale, confidence, scannerAlignment, liquiditySnapshot, analystNote)
+
+SkepticResponse must be STRICT JSON:
+
+- critiqueScore: number   // 0–100 (higher = stronger bear case / more concern)
+- flags: {
+    liquidityConcern: boolean
+    regimeMismatch: boolean
+    overfitWarning: boolean
+    redundancyWithActiveIdeas: boolean
+  }
+- criticNote: string  // short narrative
+
+IMPLEMENTATION NOTES:
+- Similar pattern: build request, call client, parse response.
+- On errors, log `SKEPTIC_PARSE_ERROR` and continue using Analyst-only idea (with a default critiqueScore, e.g. 50).
+
+--------------------------------------------------
+3. MERGING ANALYST + SKEPTIC → CANDIDATE IDEA
+--------------------------------------------------
+
+Create a helper function, e.g.:
+
+- `buildCandidateIdeaFromLlms(symbol, analystResponse, skepticResponse, regimeState, scannerAlignment): TradeIdea`
+
+Responsibilities:
+
+- Map all fields from AnalystResponse into TradeIdea fields.
+- Attach:
+  - analystModelName
+  - criticModelName
+  - analystNote
+  - criticNote
+  - regimeAtCreation
+  - scannerAlignmentAtCreation
+  - signalStrength (possibly adjusted based on critiqueScore/flags)
+- Simple example for combining confidence:
+  - effectiveSignal = analyst.signalStrength - (skeptic.critiqueScore * someFactor)
+  - Clamp to [0, 100].
+- Do NOT perform validation here; just construct the object.
+
+--------------------------------------------------
+4. INTEGRATE INTO ORCHESTRATOR (REPLACE DUMMY IDEAS)
+--------------------------------------------------
+
+Update the orchestrator so that:
+
+- In **preMarketPlan()** and any trigger handlers that currently build dummy ideas:
+
+Instead of:
+
+- createDummyIdea(symbol) → validateAiLabIdea → save
+
+Do:
+
+1) Get 
+   - tickerSnapshot = get_ticker_snapshot(symbol, ...)
+   - regimeState = get_regime_state()
+   - scannerAlign = get_scanner_alignment(symbol)
+2) Build AnalystRequest and call AiLabAnalystClient.generateIdea(...).
+3) Build SkepticRequest (using AnalystResponse) and call AiLabSkepticClient.critiqueIdea(...).
+4) Build candidate TradeIdea via buildCandidateIdeaFromLlms(...).
+5) Fetch ACTIVE ideas from DB for portfolio context.
+6) Call validateAiLabIdea(candidate, activeIdeas, marketSnapshot).
+7) If NOT approved:
+   - Log telemetry:
+     - type: "IDEA_REJECTED"
+     - symbol
+     - reason: rejectionReason
+     - signalStrength
+   - Stop for this candidate.
+8) If approved:
+   - Save candidate as TradeIdea with status "ACTIVE".
+   - Log telemetry:
+     - type: "IDEA_APPROVED"
+     - symbol
+     - signalStrength
+     - analystModelName
+     - criticModelName
+9) Write to Embeddings/Memory:
+   - Build a concise text like:
+     - `${symbol} | ${direction} | ${catalyst} | ${regimeAtCreation} | THESIS: ${thesis} | ANALYST: ${analystNote} | CRITIC: ${criticNote}`
+   - Call a helper to embed + store it (if embeddings infra exists; otherwise, stub with TODO).
+
+IMPORTANT:
+- Keep the orchestrator *agnostic* to LLM vendor details.
+  - It just calls AiLabAnalystClient and AiLabSkepticClient.
+- All vendor-specific logic (Claude vs Gemini) lives inside those clients.
+
+--------------------------------------------------
+5. TELEMETRY EXTENSIONS
+--------------------------------------------------
+
+Add more telemetry events:
+
+- When Analyst call is made:
+  - type: "ANALYST_REQUEST"
+  - symbol, passName, timestamp
+
+- When Analyst response parsed:
+  - type: "ANALYST_RESPONSE"
+  - symbol
+  - signalStrength
+  - convictionLevel
+  - mainSignals[]
+
+- When Skeptic response parsed:
+  - type: "SKEPTIC_RESPONSE"
+  - symbol
+  - critiqueScore
+  - flags
+
+- On parse/validation errors:
+  - type: "ANALYST_PARSE_ERROR" / "SKEPTIC_PARSE_ERROR"
+  - symbol
+  - rawSnippet (truncated)
+  - errorMessage
+
+Ensure all telemetry uses the `ai_lab_strategist` source/category.
+
+--------------------------------------------------
+6. SAFETY / FAILURE MODES
+--------------------------------------------------
+
+Implement defensive behavior:
+
+- If Analyst call fails or returns invalid JSON:
+  - Log error telemetry.
+  - Do NOT create any idea for that symbol in this run.
+
+- If Skeptic call fails or returns invalid JSON:
+  - Log error telemetry.
+  - Use AnalystResponse only, with a default neutral critiqueScore (e.g., 50).
+
+- If any critical field needed for validation (e.g., liquidity metrics) is missing:
+  - Treat as `dataQuality: LOW` and let validateAiLabIdea decide (likely reject).
+
+--------------------------------------------------
+7. DELIVERABLES FOR THIS PROMPT
+--------------------------------------------------
+
+1) Analyst client interface + implementation stub:
+   - AiLabAnalystClient.generateIdea(request): Promise<AnalystResponse>
+
+2) Skeptic client interface + implementation stub:
+   - AiLabSkepticClient.critiqueIdea(request): Promise<SkepticResponse>
+
+3) Type definitions / schemas for:
+   - AnalystRequest / AnalystResponse
+   - SkepticRequest / SkepticResponse
+
+4) Helper:
+   - buildCandidateIdeaFromLlms(...): TradeIdea
+
+5) Orchestrator updates:
+   - Replace dummy idea generation in:
+     - preMarketPlan()
+     - relevant trigger handlers (priceShockTrigger, blockFlowTrigger, scannerScoreJumpTrigger)
+   - Integrate validateAiLabIdea + DB writes + telemetry.
+
+6) Telemetry extensions for LLM interactions.
+
+Do NOT build prompt strings themselves in this prompt unless you see a clear place to put them; if you do include them, keep them minimal and clearly marked so I can refine later.
+
+The key goal: structured, testable LLM integration points that plug into the existing pipeline, without breaking any of the deterministic Rejection/Portfolio logic.
