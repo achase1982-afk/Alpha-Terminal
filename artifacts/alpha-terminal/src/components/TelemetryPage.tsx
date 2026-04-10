@@ -2,6 +2,26 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { Check, Trash2, ChevronDown, ChevronRight, RotateCcw } from "lucide-react";
 
+export function useTelemetryCount(): number {
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    let active = true;
+    const poll = async () => {
+      try {
+        const res = await fetchWithAuth("/api/telemetry/counts");
+        if (res.ok && active) {
+          const data = await res.json();
+          setCount(data.unresolvedCount ?? 0);
+        }
+      } catch {}
+    };
+    poll();
+    const id = setInterval(poll, 5000);
+    return () => { active = false; clearInterval(id); };
+  }, []);
+  return count;
+}
+
 interface TelemetryEntry {
   id: number;
   timestamp: string;
