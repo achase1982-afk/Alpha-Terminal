@@ -259,8 +259,10 @@ function statusColor(status: string): string {
 
 const CP = "8px 16px";
 
-const getOuterGridCols = (n: number): string =>
-  `minmax(140px, max-content) repeat(${n}, max-content)`;
+const getDataGridCols = (n: number): string =>
+  `repeat(${n}, max-content)`;
+
+const SYM_COL_W = 150;
 
 function useTickFlash(symbol: string): "up" | "down" | null {
   const price = useTerminalStore(s => (s.streamPrices[symbol.toUpperCase()] as { last?: number } | undefined)?.last);
@@ -323,13 +325,46 @@ function useValueFlash(value: number): "up" | "down" | null {
 }
 
 
-function OptionRow({
-  opt, underlying, selectedKeys, toggleKey, visibleColumns,
+function OptionRowSymbol({
+  opt, underlying, selectedKeys, toggleKey,
 }: {
   opt: Position;
   underlying: string;
   selectedKeys: Set<string>;
   toggleKey: (key: string) => void;
+}) {
+  const isShort = opt.shortQuantity > 0;
+  const qty = isShort ? opt.shortQuantity : opt.longQuantity;
+  const optKey = `${underlying}:${opt.cusip}`;
+  const isSelected = selectedKeys.has(optKey);
+  const stickyBg = isSelected ? "#1a1700" : "#000";
+  const bd = `1px solid ${C.border}`;
+
+  return (
+    <div style={{ background: stickyBg, borderBottom: bd, display: "flex", flexDirection: "column", gap: 1, padding: "5px 6px 5px 20px", minWidth: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+        <Checkbox checked={isSelected} onToggle={e => { e.stopPropagation(); toggleKey(optKey); }} />
+        <span style={{ fontSize: 12, fontWeight: 700, color: opt.putCall === "CALL" ? "#4ade80" : "#fb923c", flexShrink: 0 }}>
+          {opt.putCall === "CALL" ? "C" : "P"}
+        </span>
+        <span style={{ fontSize: 11, color: C.dim, whiteSpace: "nowrap" }}>
+          {(() => { const d = formatOptionExpiry(opt.symbol); return d ? `${d.day} ${d.mon} ${d.yr}` : ""; })()}
+        </span>
+      </div>
+      <div style={{ fontSize: 11, color: C.text, paddingLeft: 22 }}>
+        {(() => { const d = formatOptionExpiry(opt.symbol); return d ? d.strike : ""; })()}{" "}
+        <span style={{ color: C.dim }}>{isShort ? `-${qty}` : `+${qty}`}</span>
+      </div>
+    </div>
+  );
+}
+
+function OptionRowData({
+  opt, underlying, selectedKeys, visibleColumns,
+}: {
+  opt: Position;
+  underlying: string;
+  selectedKeys: Set<string>;
   visibleColumns: ColumnKey[];
 }) {
   const isShort = opt.shortQuantity > 0;
@@ -344,26 +379,10 @@ function OptionRow({
   const markColor = tickDir === "up" ? C.green : tickDir === "down" ? C.red : C.text;
 
   const rowBg = isSelected ? `${C.gold}08` : "transparent";
-  const stickyBg = isSelected ? "#1a1700" : "#000";
   const bd = `1px solid ${C.border}`;
 
   return (
     <div style={{ display: "contents" }}>
-      <div className="pf-sticky-col" style={{ position: "sticky" as const, left: 0, zIndex: 2, background: stickyBg, borderBottom: bd, display: "flex", flexDirection: "column", gap: 1, padding: "5px 6px 5px 20px", minWidth: 0, alignSelf: "stretch" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <Checkbox checked={isSelected} onToggle={e => { e.stopPropagation(); toggleKey(optKey); }} />
-          <span style={{ fontSize: 12, fontWeight: 700, color: opt.putCall === "CALL" ? "#4ade80" : "#fb923c", flexShrink: 0 }}>
-            {opt.putCall === "CALL" ? "C" : "P"}
-          </span>
-          <span style={{ fontSize: 11, color: C.dim, whiteSpace: "nowrap" }}>
-            {(() => { const d = formatOptionExpiry(opt.symbol); return d ? `${d.day} ${d.mon} ${d.yr}` : ""; })()}
-          </span>
-        </div>
-        <div style={{ fontSize: 11, color: C.text, paddingLeft: 22 }}>
-          {(() => { const d = formatOptionExpiry(opt.symbol); return d ? d.strike : ""; })()}{" "}
-          <span style={{ color: C.dim }}>{isShort ? `-${qty}` : `+${qty}`}</span>
-        </div>
-      </div>
       {visibleColumns.includes("mark") && <span style={{ fontSize: 14, color: markColor, textAlign: "center", fontVariantNumeric: "tabular-nums", transition: "color 0.15s", padding: CP, background: rowBg, borderBottom: bd, whiteSpace: "nowrap" }}>${markPx.toFixed(2)}</span>}
       {visibleColumns.includes("cost") && <span style={{ fontSize: 14, color: C.textDim, textAlign: "center", fontVariantNumeric: "tabular-nums", padding: CP, background: rowBg, borderBottom: bd, whiteSpace: "nowrap" }}>${opt.averagePrice.toFixed(2)}</span>}
       {visibleColumns.includes("qty") && <span style={{ fontSize: 14, color: C.text, textAlign: "center", fontVariantNumeric: "tabular-nums", padding: CP, background: rowBg, borderBottom: bd, whiteSpace: "nowrap" }}>{isShort ? `-${qty}` : `+${qty}`}</span>}
@@ -786,7 +805,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
     catch {} finally { setCancellingId(null); }
   }, [accountHash, fetchOrders]);
 
-  const outerGridCols = useMemo(() => getOuterGridCols(visibleColumns.length), [visibleColumns.length]);
+  const dataGridCols = useMemo(() => getDataGridCols(visibleColumns.length), [visibleColumns.length]);
 
   const symbolGroups = useMemo(() => {
     const positions = account?.positions ?? [];
