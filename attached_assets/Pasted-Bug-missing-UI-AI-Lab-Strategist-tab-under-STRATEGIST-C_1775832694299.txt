@@ -1,0 +1,78 @@
+Bug / missing UI: AI Lab Strategist tab under STRATEGIST
+
+Current state:
+- In AI PARAMETERS, I can see the new **AI LAB STRATEGIST** block.
+  - I can choose Analyst/Skeptic models.
+  - I can toggle Enabled and Shadow/Live.
+- Backend/orchestrator/telemetry for AI Lab Strategist are implemented.
+
+Problem:
+- On the main AI screen, under **STRATEGIST**, there is still ONLY the existing options strategist view.
+- There is NO visible way in the UI to switch to the AI Lab Strategist.
+- Toggling Shadow/Live in AI PARAMETERS does not change this; the tab/entry itself is missing.
+
+What I need you to implement:
+
+1) Add an “AI Lab Strategist” sub‑tab under STRATEGIST
+
+When I tap the AI icon and then tap **STRATEGIST**, I want:
+
+- A small tab/segmented control at the top of the Strategist area with TWO options:
+  - “Options Strategist”   (current behavior)
+  - “AI Lab Strategist”    (new)
+
+Use the SAME component/style we use for:
+- “DETERMINISTIC / MANUAL FILTER” under SCANNER.
+
+Default selection:
+- Keep “Options Strategist” selected by default for now.
+
+2) Wire the AI Lab Strategist tab to the backend
+
+When “AI Lab Strategist” is selected:
+
+- Call the backend endpoint that returns ACTIVE AI Lab ideas
+  - e.g., GET `/ai-lab/ideas/active` (or whatever you named it).
+- For now, a simple list is fine:
+  - Each card should show at least:
+    - Symbol
+    - Direction (Bullish/Bearish)
+    - Strategy / structure (e.g., Bull Call Spread)
+    - Time horizon
+    - Confidence (LOW/MED/HIGH)
+  - You can add Analyst/Critic note expansion later; v1 can be minimal.
+
+3) Respect Enabled / Mode in DATA, not in whether the tab appears
+
+The **AI Lab Strategist sub‑tab must always be visible** once this is implemented.
+
+Inside that view:
+
+- If `enabled = false` in AI PARAMETERS:
+  - Show a centered message:
+    - “AI Lab Strategist is disabled in AI Parameters.”
+  - Do not show any ideas.
+
+- If `enabled = true` AND `mode = "SHADOW"`:
+  - Orchestrator still runs, but the active ideas API should return an empty list (or flag ideas as shadow and the UI hides them).
+  - Show a message:
+    - “AI Lab Strategist is running in Shadow Mode. No ideas are currently surfaced.”
+
+- If `enabled = true` AND `mode = "LIVE"`:
+  - Show the actual list of ACTIVE AI Lab ideas from the API, up to the active cap.
+
+Key point:
+- Do NOT hide the AI Lab Strategist tab based on config.
+- Only the contents of the tab change (message vs list) depending on Enabled/Mode.
+
+4) Telemetry
+
+When the user taps the “AI Lab Strategist” tab:
+- Log a telemetry event with source `ai_lab_strategist`, e.g.:
+  - type: "AI_LAB_UI_OPEN"
+  - timestamp, etc.
+
+Summary:
+- Add visible “AI Lab Strategist” sub‑tab under STRATEGIST.
+- Wire it to the existing AI Lab active‑ideas API.
+- Use Enabled/Mode only to decide what content to show inside the tab, not whether the tab exists.

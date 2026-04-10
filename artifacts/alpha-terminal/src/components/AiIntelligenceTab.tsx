@@ -8,7 +8,7 @@ import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import {
   BarChart2, DollarSign, Shield, TrendingUp, Scale,
   Zap, ChevronDown, AlertTriangle, CheckCircle2, XCircle, AlertCircle, Search,
-  Target, Activity, Clock, Crosshair, Send, X, Minus, Plus, ArrowRight,
+  Target, Activity, Clock, Crosshair, Send, X, Minus, Plus, ArrowRight, Beaker,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { MarketPulseDashboard, type MarketPulseDashboardHandle } from "@/components/market-pulse/MarketPulseDashboard";
@@ -18,6 +18,7 @@ import { AiThinkingFeed } from "@/components/ai-shared/AiThinkingFeed";
 import { useStrategistCache, type StrategistCacheData } from "@/hooks/useStrategistCache";
 import { MarketScanner, type DetCandidate } from "@/components/MarketScanner";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
+import { AiLabStrategistView } from "@/components/AiLabStrategistView";
 
 const API_BASE = "/api";
 
@@ -1996,7 +1997,10 @@ interface AiIntelligenceTabProps {
 
 const AI_TABS: AiSubTab[] = ["pulse", "strategist", "scanner"];
 
+type StrategistMode = "options" | "ailab";
+
 export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscribeEquitySymbols, onNavigateToMarkets, onSendToOrder }: AiIntelligenceTabProps) {
+  const [strategistMode, setStrategistMode] = useState<StrategistMode>("options");
   const swipeStartX = useRef(0);
   const swipeStartY = useRef(0);
   const swipeLocked = useRef<"h" | "v" | null>(null);
@@ -2563,12 +2567,13 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
     prevSubTabRef.current = subTab;
     if (
       subTab === "strategist" && prevTab !== "strategist" &&
+      strategistMode === "options" &&
       symbol && !strategistCache &&
       !isDetRunning && !isDetStreaming && !isStrategizing && !isStreaming
     ) {
       handleRunDetRef.current(symbol);
     }
-  }, [subTab, symbol, strategistCache, isDetRunning, isDetStreaming, isStrategizing, isStreaming]);
+  }, [subTab, symbol, strategistCache, isDetRunning, isDetStreaming, isStrategizing, isStreaming, strategistMode]);
 
   const isPendingAny = isStreaming || isStrategizing || isDetRunning || isDetStreaming;
 
@@ -2602,6 +2607,31 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
 
         <div style={{ width: "100%", flexShrink: 0, height: "100%", overflowY: "auto" }}>
           <div className="px-3 sm:px-4 lg:px-5 space-y-4 pt-3">
+            <div className="bg-card border border-card-border rounded-xl overflow-hidden">
+            <div className="flex border-b border-card-border">
+              {([["options", "OPTIONS STRATEGIST"], ["ailab", "AI LAB"]] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setStrategistMode(key)}
+                  className={`flex-1 py-3 text-sm font-bold uppercase tracking-widest transition-all border-b-2 ${
+                    strategistMode === key
+                      ? "bg-[#18181B] text-white border-b-[#FFB800]"
+                      : "bg-transparent text-muted-foreground border-b-transparent hover:text-foreground hover:bg-secondary/20"
+                  }`}
+                >
+                  <span className="flex items-center justify-center gap-2">
+                    {key === "options" ? <Crosshair className="w-3.5 h-3.5" /> : <Beaker className="w-3.5 h-3.5" />}
+                    {label}
+                  </span>
+                </button>
+              ))}
+            </div>
+            </div>
+
+            {strategistMode === "ailab" && <AiLabStrategistView />}
+
+            {strategistMode === "options" && (
+            <>
             <StrategistShockBanner />
             <StrategistCommandBar onRun={handleRunStrategistWithTicker} disabled={false}
               lastRunSymbol={lastRunSymbol} lastRunTime={lastRunTime} />
@@ -2690,6 +2720,8 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
 
             {strategistAudit && activeResult === "strategist" && !isStreaming && !isStrategizing && !detResult && (
               <StrategistAuditPanel audit={strategistAudit} />
+            )}
+            </>
             )}
           </div>
         </div>

@@ -80,3 +80,10 @@ The AI Lab Strategist has a dedicated configuration block on the AI Parameters s
 **Zustand Store (`store.ts`):**
 - `aiLabStrategistConfig` field added (version 11 migration).
 - Default: Analyst=anthropic/claude-sonnet-4-20250514/0.0, Skeptic=google/gemini-2.5-flash/0.0, enabled=false, mode=SHADOW.
+
+**AI Lab Sub-Tab (`AiIntelligenceTab.tsx` + `AiLabStrategistView.tsx`):**
+- Inside the STRATEGIST panel, a segmented control toggles between OPTIONS STRATEGIST and AI LAB views.
+- Styling matches the Scanner's DETERMINISTIC/MANUAL FILTER pattern (gold border-bottom, `bg-card` wrapper).
+- AI Lab view (`AiLabStrategistView.tsx`) fetches `GET /api/ai-lab/ideas?status=NEW,ACTIVE` every 30s and renders expandable idea cards.
+- Handles disabled, shadow mode, loading, error, and empty states with appropriate messaging.
+- Auto-run strategist effects are gated behind `strategistMode === "options"` to prevent background runs when viewing AI Lab.
