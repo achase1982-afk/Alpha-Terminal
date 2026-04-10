@@ -1,6 +1,6 @@
 import { checkEventConflicts, getUpcomingEvents } from "./calendarEventChecker.js";
 import { logFailure } from "./telemetry.js";
-import { emitTelemetry } from "./telemetryStore.js";
+import { emitTelemetry, createTelemetryBatch } from "./telemetryStore.js";
 
 const SCHWAB_API = "https://api.schwabapi.com/marketdata/v1";
 const SCHWAB_TRADER = "https://api.schwabapi.com/trader/v1";
@@ -439,6 +439,7 @@ export async function runDeterministicScan(
   log: { info: (...args: any[]) => void; warn: (...args: any[]) => void; error: (...args: any[]) => void },
 ): Promise<ScanResult> {
   const scanStart = Date.now();
+  const scanBatch = createTelemetryBatch("SCANNER");
   const sessionElapsed = getSessionElapsedFraction();
 
   emitTelemetry("SCANNER", "INFO", `Scan initiated — ${symbols.length} tickers in universe`, {
@@ -446,7 +447,7 @@ export async function runDeterministicScan(
     pulseBias: pulse.bias,
     pulseComposite: pulse.composite,
     pulseConfidence: pulse.confidence,
-  });
+  }, "SCANNER", scanBatch);
 
   const quoteMap = await fetchQuotesBatch(symbols, accessToken);
 
@@ -462,7 +463,7 @@ export async function runDeterministicScan(
 
     if (!quote) {
       filterResults.push({ symbol: sym, passed: false, reason: "No quote data available" });
-      emitTelemetry("SCANNER", "WARN", `${sym} — SKIP: no quote data from Schwab`, { ticker: sym, stage: 1, reason: "No quote data" });
+      emitTelemetry("SCANNER", "WARN", `${sym} — SKIP: no quote data from Schwab`, { ticker: sym, stage: 1, reason: "No quote data" }, "SCANNER", scanBatch);
       continue;
     }
 
@@ -470,13 +471,13 @@ export async function runDeterministicScan(
     const hasNearEarnings = evCheck.eventConflicts.some(c => c.eventType === "earnings");
     if (hasNearEarnings) {
       filterResults.push({ symbol: sym, passed: false, reason: "Earnings within 5 trading days" });
-      emitTelemetry("SCANNER", "INFO", `${sym} — SKIP: earnings within 5 days`, { ticker: sym, stage: 1, reason: "Earnings proximity" });
+      emitTelemetry("SCANNER", "INFO", `${sym} — SKIP: earnings within 5 days`, { ticker: sym, stage: 1, reason: "Earnings proximity" }, "SCANNER", scanBatch);
       continue;
     }
 
     if (portfolioSymbols.has(sym.toUpperCase())) {
       filterResults.push({ symbol: sym, passed: false, reason: "Open position in portfolio" });
-      emitTelemetry("SCANNER", "INFO", `${sym} — SKIP: open position held`, { ticker: sym, stage: 1, reason: "Already held" });
+      emitTelemetry("SCANNER", "INFO", `${sym} — SKIP: open position held`, { ticker: sym, stage: 1, reason: "Already held" }, "SCANNER", scanBatch);
       continue;
     }
 
@@ -486,7 +487,7 @@ export async function runDeterministicScan(
       price: quote.lastPrice,
       changePct: quote.netPercentChange,
       volume: quote.totalVolume,
-    });
+    }, "SCANNER", scanBatch);
     filterResults.push({ symbol: sym, passed: true });
     passedSymbols.push(sym);
   }
@@ -495,7 +496,7 @@ export async function runDeterministicScan(
     totalScanned: symbols.length,
     passed: passedSymbols.length,
     filtered: symbols.length - passedSymbols.length,
-  });
+  }, "SCANNER", scanBatch);
   log.info({ total: symbols.length, passed: passedSymbols.length, filtered: symbols.length - passedSymbols.length }, "Scanner Stage 1: Universe filter complete");
 
   let spyCandles: Candle[] = [];
@@ -532,7 +533,7 @@ export async function runDeterministicScan(
           if (idx >= 0) {
             filterResults[idx] = { symbol: sym, passed: false, reason: "Options chain unavailable — cannot validate liquidity" };
           }
-          emitTelemetry("SCANNER", "WARN", `${sym} — SKIP Stage 2: no options chain from Schwab`, { ticker: sym, stage: 2, reason: "No options chain" });
+          emitTelemetry("SCANNER", "WARN", `${sym} — SKIP Stage 2: no options chain from Schwab`, { ticker: sym, stage: 2, reason: "No options chain" }, "SCANNER", scanBatch);
           return null;
         }
 
@@ -541,7 +542,7 @@ export async function runDeterministicScan(
           if (idx >= 0) {
             filterResults[idx] = { symbol: sym, passed: false, reason: `ATM spread too wide (${chain.atmSpreadPct.toFixed(1)}%)` };
           }
-          emitTelemetry("SCANNER", "WARN", `${sym} — SKIP Stage 2: ATM spread too wide (${chain.atmSpreadPct.toFixed(1)}%)`, { ticker: sym, stage: 2, reason: "Wide spread", spreadPct: chain.atmSpreadPct });
+          emitTelemetry("SCANNER", "WARN", `${sym} — SKIP Stage 2: ATM spread too wide (${chain.atmSpreadPct.toFixed(1)}%)`, { ticker: sym, stage: 2, reason: "Wide spread", spreadPct: chain.atmSpreadPct }, "SCANNER", scanBatch);
           return null;
         }
 
@@ -553,7 +554,7 @@ export async function runDeterministicScan(
           if (idx >= 0) {
             filterResults[idx] = { symbol: sym, passed: false, reason: "Insufficient price history (<50 days)" };
           }
-          emitTelemetry("SCANNER", "WARN", `${sym} — SKIP Stage 2: only ${closes.length} days of history (need 50)`, { ticker: sym, stage: 2, reason: "Insufficient history", days: closes.length });
+          emitTelemetry("SCANNER", "WARN", `${sym} — SKIP Stage 2: only ${closes.length} days of history (need 50)`, { ticker: sym, stage: 2, reason: "Insufficient history", days: closes.length }, "SCANNER", scanBatch);
           return null;
         }
 
@@ -579,7 +580,7 @@ export async function runDeterministicScan(
           ivr: ivrScore,
           optionsLiquidity,
           pass: totalScore >= 60,
-        });
+        }, "SCANNER", scanBatch);
 
         return {
           symbol: sym,
@@ -601,7 +602,7 @@ export async function runDeterministicScan(
     }
   }
 
-  emitTelemetry("SCANNER", "INFO", `Stage 2 complete — ${scoredResults.length} tickers scored`, { scored: scoredResults.length });
+  emitTelemetry("SCANNER", "INFO", `Stage 2 complete — ${scoredResults.length} tickers scored`, { scored: scoredResults.length }, "SCANNER", scanBatch);
   log.info({ scored: scoredResults.length }, "Scanner Stage 2: Technical scoring complete");
 
   scoredResults.sort((a, b) => b.totalScore - a.totalScore);
@@ -685,11 +686,11 @@ export async function runDeterministicScan(
     aboveThreshold: aboveThreshold.length,
     durationMs: scanDuration,
     topSymbols: candidates.map(c => `${c.symbol} (${c.totalScore})`).join(", "),
-  });
+  }, "SCANNER", scanBatch);
   log.info({ candidates: candidates.length, scanMs: scanDuration }, "Scanner Stage 4: Enrichment complete");
 
   if (candidates.length === 0 && symbols.length > 0) {
-    emitTelemetry("SCANNER", "WARN", `Scanner returned 0 candidates from ${symbols.length} symbols`, { totalScanned: symbols.length, passedFilters: scoredResults.length, aboveThreshold: aboveThreshold.length });
+    emitTelemetry("SCANNER", "WARN", `Scanner returned 0 candidates from ${symbols.length} symbols`, { totalScanned: symbols.length, passedFilters: scoredResults.length, aboveThreshold: aboveThreshold.length }, "SCANNER", scanBatch);
     void logFailure("SCANNER", "INFO", `Scanner returned 0 candidates from ${symbols.length} symbols`, { totalScanned: symbols.length, passedFilters: scoredResults.length, aboveThreshold: aboveThreshold.length });
   }
 

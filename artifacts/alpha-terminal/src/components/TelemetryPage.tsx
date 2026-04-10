@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
-import { RotateCcw, Check, Trash2, ChevronDown, ChevronRight } from "lucide-react";
+import { RotateCcw, Check, Trash2, ChevronDown, ChevronRight, AlertTriangle } from "lucide-react";
 
 interface TelemetryEntry {
   id: number;
@@ -10,6 +10,16 @@ interface TelemetryEntry {
   message: string;
   details: Record<string, unknown> | null;
   resolved: boolean;
+  feature: string | null;
+  batchId: string | null;
+}
+
+interface TelemetryGroup {
+  batchId: string;
+  feature: string;
+  timestamp: string;
+  entries: TelemetryEntry[];
+  systemSummary: string[];
 }
 
 const SYSTEMS = [
@@ -26,20 +36,14 @@ const SEV_COLORS: Record<string, { bg: string; text: string; border: string }> =
   INFO: { bg: "rgba(255,255,255,0.03)", text: "#888", border: "#333" },
 };
 
-const SYSTEM_DESCRIPTIONS: Record<string, string> = {
-  SCHWAB_API: "REST API calls to Charles Schwab for quotes, chains, and account data",
-  SCHWAB_STREAM: "WebSocket streaming connection for real-time market data",
-  IBKR: "Interactive Brokers gateway connection and order routing",
-  YAHOO: "Yahoo Finance data fallback for supplementary quotes",
-  SEC_EDGAR: "SEC EDGAR filings and institutional holdings lookups",
-  SCANNER: "Deterministic stock scanner runs and candidate discovery",
-  STRATEGIST: "Options strategy generation and trade recommendations",
-  RISK_GATE: "Pre-trade risk checks and position sizing validation",
-  EXIT_STAGING: "Exit signal monitoring and trade management",
-  PUSH_NOTIFICATION: "Push notification delivery and VAPID messaging",
-  MARKET_PULSE: "Market regime engine composite scoring and bias reads",
-  POLYGON_API: "Polygon.io options snapshots, IV enrichment, and flow scans",
-  DATABASE: "PostgreSQL reads and writes — snapshot tables, scanner data, and aggregates",
+const FEATURE_LABELS: Record<string, { label: string; color: string }> = {
+  MARKET_PULSE: { label: "MARKET PULSE", color: "#26a69a" },
+  SCANNER: { label: "SCANNER", color: "#FFB800" },
+  STRATEGIST: { label: "STRATEGIST", color: "#7c3aed" },
+  STREAMER: { label: "STREAMER", color: "#3b82f6" },
+  SNAPSHOT: { label: "SNAPSHOT", color: "#06b6d4" },
+  ORDER: { label: "ORDER", color: "#f43f5e" },
+  SYSTEM: { label: "SYSTEM", color: "#555" },
 };
 
 function formatTime(ts: string) {
@@ -62,7 +66,7 @@ function formatDetails(details: Record<string, unknown>): string {
   for (const [key, val] of Object.entries(details)) {
     if (val === null || val === undefined) continue;
     if (typeof val === "object") {
-      lines.push(`${key}: ${JSON.stringify(val)}`);
+      lines.push(`${key}: ${JSON.stringify(val, null, 2)}`);
     } else {
       lines.push(`${key}: ${val}`);
     }
@@ -70,141 +74,243 @@ function formatDetails(details: Record<string, unknown>): string {
   return lines.join("\n");
 }
 
-function SystemHeader({ system, entries }: { system: string; entries: TelemetryEntry[] }) {
-  const errors = entries.filter(e => e.severity === "ERROR" && !e.resolved).length;
-  const warns = entries.filter(e => e.severity === "WARN" && !e.resolved).length;
-  const infos = entries.filter(e => e.severity === "INFO" && !e.resolved).length;
-  const lastEvent = entries[0];
-  const desc = SYSTEM_DESCRIPTIONS[system] ?? "";
+function GroupedBatchRow({ group, filterSystem, onResolve }: {
+  group: TelemetryGroup;
+  filterSystem: string | null;
+  onResolve: (id: number) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [expandedEntryIds, setExpandedEntryIds] = useState<Set<number>>(new Set());
+
+  const feat = FEATURE_LABELS[group.feature] ?? FEATURE_LABELS.SYSTEM;
+  const errorCount = group.entries.filter(e => e.severity === "ERROR" && !e.resolved).length;
+  const warnCount = group.entries.filter(e => e.severity === "WARN" && !e.resolved).length;
+  const entryCount = group.entries.length;
+
+  const summaryParts: string[] = [];
+  for (const e of group.entries) {
+    const msg = e.message;
+    if (msg.includes("scan initiated") || msg.includes("Scan initiated")) {
+      const m = msg.match(/(\d+)\s+tickers/);
+      if (m) summaryParts.push(`${m[1]} symbols`);
+    }
+    if (msg.includes("candidates") && msg.includes("complete")) {
+      const m = msg.match(/(\d+)\s+candidates/);
+      if (m) summaryParts.push(`${m[1]} results`);
+    }
+    if (msg.includes("Pulse scored")) {
+      const m = msg.match(/(BULLISH|BEARISH|NEUTRAL|MIXED)/);
+      if (m) summaryParts.push(m[1]);
+    }
+  }
+  const summaryText = summaryParts.length > 0 ? ` — ${summaryParts.join(", ")}` : "";
+
+  const toggleEntry = (id: number) => {
+    setExpandedEntryIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const borderColor = errorCount > 0 ? "#f2364560" : warnCount > 0 ? "#FFB80040" : "#1f1f22";
 
   return (
     <div style={{
-      padding: "10px 14px", borderRadius: 8, marginBottom: 10,
-      background: "rgba(255,255,255,0.02)", border: "1px solid #1f1f22",
+      border: `1px solid ${borderColor}`,
+      borderRadius: 8, overflow: "hidden",
+      background: "rgba(255,255,255,0.01)",
     }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-        <span style={{ fontSize: 15, fontWeight: 700, color: "#FFB800", fontFamily: "monospace", letterSpacing: "0.5px" }}>
-          {system.replace(/_/g, " ")}
+      <div
+        onClick={() => setExpanded(e => !e)}
+        style={{
+          display: "flex", alignItems: "center", gap: 8,
+          padding: "10px 12px", cursor: "pointer",
+          background: expanded ? "rgba(255,255,255,0.03)" : "transparent",
+          flexWrap: "wrap",
+        }}
+      >
+        {expanded
+          ? <ChevronDown style={{ width: 14, height: 14, color: "#666", flexShrink: 0 }} />
+          : <ChevronRight style={{ width: 14, height: 14, color: "#666", flexShrink: 0 }} />
+        }
+        <span style={{
+          fontSize: 13, fontWeight: 800, letterSpacing: "0.5px",
+          color: feat.color, fontFamily: "monospace",
+        }}>
+          {feat.label}
         </span>
-        <div style={{ display: "flex", gap: 8, fontSize: 12, fontWeight: 600 }}>
-          {errors > 0 && <span style={{ color: "#f23645" }}>{errors} ERROR{errors !== 1 ? "S" : ""}</span>}
-          {warns > 0 && <span style={{ color: "#FFB800" }}>{warns} WARN{warns !== 1 ? "S" : ""}</span>}
-          <span style={{ color: "#555" }}>{infos} INFO</span>
+        <span style={{ fontSize: 13, color: "#999", fontFamily: "monospace", fontWeight: 600 }}>
+          {formatTime(group.timestamp)}
+        </span>
+        <span style={{ fontSize: 12, color: "#666" }}>
+          {entryCount} log{entryCount !== 1 ? "s" : ""}{summaryText}
+        </span>
+
+        <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
+          {errorCount > 0 && (
+            <span style={{ fontSize: 11, fontWeight: 700, color: "#f23645", padding: "1px 6px", borderRadius: 4, background: "rgba(242,54,69,0.12)" }}>
+              {errorCount} ERR
+            </span>
+          )}
+          {warnCount > 0 && (
+            <span style={{ fontSize: 11, fontWeight: 700, color: "#FFB800", padding: "1px 6px", borderRadius: 4, background: "rgba(255,184,0,0.10)" }}>
+              {warnCount} WARN
+            </span>
+          )}
+          <div style={{ display: "flex", gap: 2 }}>
+            {group.systemSummary.map(sys => (
+              <span key={sys} style={{
+                fontSize: 9, fontWeight: 600, color: "#666",
+                padding: "1px 4px", borderRadius: 3,
+                background: "rgba(255,255,255,0.04)", border: "1px solid #222",
+                fontFamily: "monospace",
+              }}>
+                {sys.replace(/_/g, " ").slice(0, 8)}
+              </span>
+            ))}
+          </div>
         </div>
       </div>
-      {desc && <div style={{ fontSize: 12, color: "#555", marginBottom: 4 }}>{desc}</div>}
-      {lastEvent && (
-        <div style={{ fontSize: 11, color: "#444" }}>
-          Last event: {formatFullTime(lastEvent.timestamp)}
+
+      {expanded && (
+        <div style={{ borderTop: "1px solid #1a1a1a" }}>
+          {group.entries.map(entry => {
+            const c = SEV_COLORS[entry.severity] ?? SEV_COLORS.INFO;
+            const isEntryExpanded = expandedEntryIds.has(entry.id);
+            return (
+              <div key={entry.id} style={{
+                borderBottom: "1px solid #111",
+                opacity: entry.resolved ? 0.4 : 1,
+              }}>
+                <div
+                  onClick={() => toggleEntry(entry.id)}
+                  style={{
+                    display: "flex", alignItems: "flex-start", gap: 6,
+                    padding: "6px 12px 6px 28px", cursor: "pointer",
+                    background: c.bg,
+                    borderLeft: `3px solid ${c.border}`,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  {entry.details ? (
+                    isEntryExpanded
+                      ? <ChevronDown style={{ width: 11, height: 11, color: "#555", flexShrink: 0, marginTop: 3 }} />
+                      : <ChevronRight style={{ width: 11, height: 11, color: "#555", flexShrink: 0, marginTop: 3 }} />
+                  ) : <span style={{ width: 11, flexShrink: 0 }} />}
+                  <span style={{
+                    fontSize: 11, fontWeight: 800, letterSpacing: "0.5px",
+                    color: c.text, width: 40, flexShrink: 0,
+                  }}>
+                    {entry.severity}
+                  </span>
+                  <span style={{ fontSize: 12, color: "#777", fontFamily: "monospace", flexShrink: 0 }}>
+                    {formatTime(entry.timestamp)}
+                  </span>
+                  {filterSystem === null && (
+                    <span style={{
+                      fontSize: 10, fontWeight: 600, color: "#f5a623",
+                      background: "rgba(245,166,35,0.06)", padding: "0 4px", borderRadius: 3,
+                      flexShrink: 0,
+                    }}>
+                      {entry.system}
+                    </span>
+                  )}
+                  <span style={{
+                    fontSize: 13, color: "#ccc", wordBreak: "break-word",
+                    whiteSpace: "pre-wrap", flex: 1, minWidth: 0,
+                  }}>
+                    {entry.message}
+                  </span>
+                  {!entry.resolved && entry.severity !== "INFO" && (
+                    <button
+                      onClick={e => { e.stopPropagation(); onResolve(entry.id); }}
+                      title="Mark resolved"
+                      style={{
+                        padding: "1px 6px", borderRadius: 3, fontSize: 10,
+                        background: "rgba(0,209,102,0.08)", border: "1px solid #00d16630",
+                        color: "#00d166", cursor: "pointer", display: "flex", alignItems: "center", gap: 2,
+                        flexShrink: 0,
+                      }}
+                    >
+                      <Check style={{ width: 10, height: 10 }} /> Resolve
+                    </button>
+                  )}
+                </div>
+
+                {isEntryExpanded && entry.details && (
+                  <div style={{ padding: "4px 12px 8px 42px" }}>
+                    <div style={{ fontSize: 11, color: "#555", marginBottom: 2 }}>
+                      {formatFullTime(entry.timestamp)}
+                    </div>
+                    <pre style={{
+                      fontSize: 13, color: "#bbb", fontFamily: "monospace",
+                      background: "#0a0a0a", padding: 8, borderRadius: 4,
+                      overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-word",
+                      margin: 0, lineHeight: 1.5,
+                    }}>
+                      {formatDetails(entry.details)}
+                    </pre>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
   );
 }
 
-function AllSystemsSummary({ entries, perSystemCounts }: { entries: TelemetryEntry[]; perSystemCounts: Record<string, number> }) {
-  const systemGroups: Record<string, { errors: number; warns: number; total: number; lastTs: string }> = {};
-  for (const sys of SYSTEMS) {
-    systemGroups[sys] = { errors: 0, warns: 0, total: 0, lastTs: "" };
-  }
-  for (const e of entries) {
-    if (!systemGroups[e.system]) systemGroups[e.system] = { errors: 0, warns: 0, total: 0, lastTs: "" };
-    const g = systemGroups[e.system];
-    g.total++;
-    if (!e.resolved) {
-      if (e.severity === "ERROR") g.errors++;
-      if (e.severity === "WARN") g.warns++;
-    }
-    if (!g.lastTs || e.timestamp > g.lastTs) g.lastTs = e.timestamp;
-  }
-
-  const activeSystems = SYSTEMS.filter(s => systemGroups[s].total > 0);
-  const inactiveSystems = SYSTEMS.filter(s => systemGroups[s].total === 0);
-
-  return (
-    <div>
-      <div style={{
-        display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 6, marginBottom: 12,
-      }}>
-        {activeSystems.map(sys => {
-          const g = systemGroups[sys];
-          const hasIssues = g.errors > 0 || g.warns > 0;
-          const borderColor = g.errors > 0 ? "#f2364540" : g.warns > 0 ? "#FFB80030" : "#1f1f22";
-          return (
-            <div key={sys} style={{
-              padding: "8px 12px", borderRadius: 6,
-              background: hasIssues ? "rgba(255,255,255,0.02)" : "rgba(255,255,255,0.01)",
-              border: `1px solid ${borderColor}`,
-            }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2 }}>
-                <span style={{ fontSize: 12, fontWeight: 700, color: "#ccc", fontFamily: "monospace" }}>
-                  {sys.replace(/_/g, " ")}
-                </span>
-                <span style={{ fontSize: 11, color: "#444" }}>{g.total} events</span>
-              </div>
-              <div style={{ display: "flex", gap: 8, fontSize: 11 }}>
-                {g.errors > 0 && <span style={{ color: "#f23645", fontWeight: 600 }}>{g.errors} errors</span>}
-                {g.warns > 0 && <span style={{ color: "#FFB800", fontWeight: 600 }}>{g.warns} warns</span>}
-                {g.lastTs && <span style={{ color: "#444", marginLeft: "auto" }}>{formatTime(g.lastTs)}</span>}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      {inactiveSystems.length > 0 && (
-        <div style={{ fontSize: 11, color: "#333", marginBottom: 8 }}>
-          No events: {inactiveSystems.map(s => s.replace(/_/g, " ")).join(", ")}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function EventRow({ entry, isExpanded, onToggle, onResolve, showSystem }: {
+function UngroupedEventRow({ entry, onResolve, showSystem }: {
   entry: TelemetryEntry;
-  isExpanded: boolean;
-  onToggle: () => void;
   onResolve: () => void;
   showSystem: boolean;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const c = SEV_COLORS[entry.severity] ?? SEV_COLORS.INFO;
   return (
-    <div
-      onClick={onToggle}
-      style={{
-        background: c.bg,
-        borderLeft: `2px solid ${c.border}`,
-        padding: "5px 10px",
-        borderRadius: 3,
-        cursor: "pointer",
-        opacity: entry.resolved ? 0.4 : 1,
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+    <div style={{
+      background: c.bg,
+      borderLeft: `3px solid ${c.border}`,
+      borderRadius: 4,
+      opacity: entry.resolved ? 0.4 : 1,
+    }}>
+      <div
+        onClick={() => setExpanded(e => !e)}
+        style={{
+          display: "flex", alignItems: "flex-start", gap: 6,
+          padding: "6px 10px", cursor: "pointer",
+          flexWrap: "wrap",
+        }}
+      >
         {entry.details ? (
-          isExpanded
-            ? <ChevronDown style={{ width: 12, height: 12, color: "#555", flexShrink: 0 }} />
-            : <ChevronRight style={{ width: 12, height: 12, color: "#555", flexShrink: 0 }} />
+          expanded
+            ? <ChevronDown style={{ width: 12, height: 12, color: "#555", flexShrink: 0, marginTop: 2 }} />
+            : <ChevronRight style={{ width: 12, height: 12, color: "#555", flexShrink: 0, marginTop: 2 }} />
         ) : <span style={{ width: 12, flexShrink: 0 }} />}
         <span style={{
-          fontSize: 12, fontWeight: 800, letterSpacing: "0.5px",
-          color: c.text, width: 42,
+          fontSize: 11, fontWeight: 800, letterSpacing: "0.5px",
+          color: c.text, width: 40, flexShrink: 0,
         }}>
           {entry.severity}
         </span>
-        <span style={{ fontSize: 13, color: "#fff", fontFamily: "monospace", width: 72, flexShrink: 0 }}>
+        <span style={{ fontSize: 12, color: "#777", fontFamily: "monospace", flexShrink: 0 }}>
           {formatTime(entry.timestamp)}
         </span>
         {showSystem && (
           <span style={{
-            fontSize: 12, fontWeight: 600, color: "#f5a623",
-            background: "rgba(245,166,35,0.06)", padding: "0px 5px", borderRadius: 3,
+            fontSize: 10, fontWeight: 600, color: "#f5a623",
+            background: "rgba(245,166,35,0.06)", padding: "0 4px", borderRadius: 3,
             flexShrink: 0,
           }}>
             {entry.system}
           </span>
         )}
-        <span style={{ fontSize: 14, color: "#ccc", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <span style={{
+          fontSize: 13, color: "#ccc", wordBreak: "break-word",
+          whiteSpace: "pre-wrap", flex: 1, minWidth: 0,
+        }}>
           {entry.message}
         </span>
         {!entry.resolved && entry.severity !== "INFO" && (
@@ -212,7 +318,7 @@ function EventRow({ entry, isExpanded, onToggle, onResolve, showSystem }: {
             onClick={e => { e.stopPropagation(); onResolve(); }}
             title="Mark resolved"
             style={{
-              padding: "1px 6px", borderRadius: 3, fontSize: 11,
+              padding: "1px 6px", borderRadius: 3, fontSize: 10,
               background: "rgba(0,209,102,0.08)", border: "1px solid #00d16630",
               color: "#00d166", cursor: "pointer", display: "flex", alignItems: "center", gap: 2,
               flexShrink: 0,
@@ -221,26 +327,21 @@ function EventRow({ entry, isExpanded, onToggle, onResolve, showSystem }: {
             <Check style={{ width: 10, height: 10 }} /> Resolve
           </button>
         )}
-        {entry.resolved && (
-          <span style={{ fontSize: 11, color: "#00d166", fontWeight: 600, flexShrink: 0 }}>✓</span>
-        )}
       </div>
 
-      {isExpanded && (
-        <div style={{ marginTop: 4, marginLeft: 18 }}>
-          <div style={{ fontSize: 14, color: "#888", marginBottom: 2 }}>
+      {expanded && entry.details && (
+        <div style={{ padding: "4px 10px 8px 24px" }}>
+          <div style={{ fontSize: 11, color: "#555", marginBottom: 2 }}>
             {formatFullTime(entry.timestamp)}
           </div>
-          {entry.details && (
-            <pre style={{
-              fontSize: 14, color: "#bbb", fontFamily: "monospace",
-              background: "#0a0a0a", padding: 6, borderRadius: 3, overflow: "auto",
-              maxHeight: 200, whiteSpace: "pre-wrap", wordBreak: "break-all",
-              margin: 0, lineHeight: 1.5,
-            }}>
-              {formatDetails(entry.details)}
-            </pre>
-          )}
+          <pre style={{
+            fontSize: 13, color: "#bbb", fontFamily: "monospace",
+            background: "#0a0a0a", padding: 8, borderRadius: 4,
+            overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-word",
+            margin: 0, lineHeight: 1.5,
+          }}>
+            {formatDetails(entry.details)}
+          </pre>
         </div>
       )}
     </div>
@@ -248,12 +349,12 @@ function EventRow({ entry, isExpanded, onToggle, onResolve, showSystem }: {
 }
 
 export function TelemetryPage() {
-  const [entries, setEntries] = useState<TelemetryEntry[]>([]);
+  const [groups, setGroups] = useState<TelemetryGroup[]>([]);
+  const [ungrouped, setUngrouped] = useState<TelemetryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterSystem, setFilterSystem] = useState<string | null>(null);
   const [filterSeverity, setFilterSeverity] = useState<string | null>(null);
   const [showResolved, setShowResolved] = useState(false);
-  const [expandedId, setExpandedId] = useState<number | null>(null);
   const [perSystemCounts, setPerSystemCounts] = useState<Record<string, number>>({});
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -263,6 +364,7 @@ export function TelemetryPage() {
   const fetchEntries = useCallback(async () => {
     try {
       const params = new URLSearchParams();
+      params.set("grouped", "true");
       if (filterSystem) params.set("system", filterSystem);
       if (filterSeverity) params.set("severity", filterSeverity);
       if (showResolved) params.set("showResolved", "true");
@@ -270,7 +372,8 @@ export function TelemetryPage() {
       const res = await fetchWithAuth(`/api/telemetry?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
-        setEntries(data.entries ?? []);
+        setGroups(data.groups ?? []);
+        setUngrouped(data.ungrouped ?? []);
       }
     } catch {
     } finally {
@@ -314,24 +417,27 @@ export function TelemetryPage() {
   const handleResolve = async (id: number) => {
     const res = await fetchWithAuth(`/api/telemetry/${id}/resolve`, { method: "PATCH" });
     if (res.ok) {
-      setEntries(prev => prev.map(e => e.id === id ? { ...e, resolved: true } : e));
+      setGroups(prev => prev.map(g => ({
+        ...g,
+        entries: g.entries.map(e => e.id === id ? { ...e, resolved: true } : e),
+      })));
+      setUngrouped(prev => prev.map(e => e.id === id ? { ...e, resolved: true } : e));
     }
   };
 
   const handleClear = async () => {
     const res = await fetchWithAuth(`/api/telemetry/clear`, { method: "DELETE" });
     if (res.ok) {
-      setEntries([]);
+      setGroups([]);
+      setUngrouped([]);
       setPerSystemCounts({});
     }
   };
 
-  const filteredForDisplay = filterSeverity
-    ? entries.filter(e => e.severity === filterSeverity)
-    : entries;
+  const totalEntries = groups.reduce((sum, g) => sum + g.entries.length, 0) + ungrouped.length;
 
   return (
-    <div style={{ color: "#ccc", fontSize: 15 }}>
+    <div style={{ color: "#ccc", fontSize: 14 }}>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 10 }}>
         <button
           onClick={() => setFilterSystem(null)}
@@ -420,10 +526,10 @@ export function TelemetryPage() {
           Auto-refresh
         </label>
 
-        <div style={{ marginLeft: "auto", display: "flex", gap: 4, alignItems: "center" }}>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
           {lastRefreshed && (
             <span style={{ fontSize: 11, color: "#26a69a", fontWeight: 600, transition: "opacity 0.3s", opacity: Date.now() - lastRefreshed < 2000 ? 1 : 0 }}>
-              ✓ Updated
+              Updated
             </span>
           )}
           <button
@@ -464,17 +570,10 @@ export function TelemetryPage() {
         </div>
       </div>
 
-      {!filterSystem && (
-        <AllSystemsSummary entries={entries} perSystemCounts={perSystemCounts} />
-      )}
-
-      {filterSystem && filteredForDisplay.length > 0 && (
-        <SystemHeader system={filterSystem} entries={filteredForDisplay} />
-      )}
-
-      <div style={{ fontSize: 12, color: "#555", marginBottom: 6 }}>
-        {filteredForDisplay.length} event{filteredForDisplay.length !== 1 ? "s" : ""}
-        {filterSystem ? ` in ${filterSystem.replace(/_/g, " ")}` : ""}
+      <div style={{ fontSize: 12, color: "#555", marginBottom: 8 }}>
+        {groups.length} batch{groups.length !== 1 ? "es" : ""} · {totalEntries} total event{totalEntries !== 1 ? "s" : ""}
+        {ungrouped.length > 0 && ` · ${ungrouped.length} ungrouped`}
+        {filterSystem ? ` · ${filterSystem.replace(/_/g, " ")}` : ""}
         {filterSeverity ? ` · ${filterSeverity} only` : ""}
         {autoRefresh && <span style={{ color: "#26a69a", marginLeft: 8 }}>● live</span>}
       </div>
@@ -483,18 +582,30 @@ export function TelemetryPage() {
         <div style={{ textAlign: "center", color: "#555", padding: 40, fontSize: 14 }}>
           Loading...
         </div>
-      ) : filteredForDisplay.length === 0 ? (
+      ) : groups.length === 0 && ungrouped.length === 0 ? (
         <div style={{ textAlign: "center", color: "#444", padding: 40, fontSize: 14 }}>
           No events logged {filterSystem || filterSeverity ? "matching filters" : ""}
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
-          {filteredForDisplay.map(entry => (
-            <EventRow
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {groups.map(group => (
+            <GroupedBatchRow
+              key={group.batchId}
+              group={group}
+              filterSystem={filterSystem}
+              onResolve={handleResolve}
+            />
+          ))}
+
+          {ungrouped.length > 0 && groups.length > 0 && (
+            <div style={{ fontSize: 11, color: "#444", padding: "8px 0 4px", fontWeight: 600, fontFamily: "monospace" }}>
+              UNGROUPED EVENTS
+            </div>
+          )}
+          {ungrouped.map(entry => (
+            <UngroupedEventRow
               key={entry.id}
               entry={entry}
-              isExpanded={expandedId === entry.id}
-              onToggle={() => setExpandedId(expandedId === entry.id ? null : entry.id)}
               onResolve={() => handleResolve(entry.id)}
               showSystem={!filterSystem}
             />

@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import {
   getEvents,
+  getGroupedEvents,
   getSystemCounts,
   resetSystemCount,
   resolveEvent,
@@ -15,10 +16,16 @@ router.get("/", async (req, res) => {
     const system = req.query.system as string | undefined;
     const severity = req.query.severity as string | undefined;
     const showResolved = req.query.showResolved === "true";
-    const limit = Math.max(1, Math.min(parseInt(req.query.limit as string) || 500, 1000));
+    const limit = Math.max(1, Math.min(parseInt(req.query.limit as string) || 500, 2000));
+    const grouped = req.query.grouped === "true";
 
-    const entries = getEvents({ system, severity, showResolved, limit });
-    res.json({ entries });
+    if (grouped) {
+      const result = getGroupedEvents({ system, severity, showResolved, limit });
+      res.json(result);
+    } else {
+      const entries = getEvents({ system, severity, showResolved, limit });
+      res.json({ entries });
+    }
   } catch (err: any) {
     req.log.error({ err }, "Telemetry fetch error");
     res.status(500).json({ error: "Failed to fetch telemetry" });

@@ -81,8 +81,13 @@ New scoring engine in `deterministicScanner.v2.ts` implementing the Discovery Mo
 ### Collapsed Scanner Cards & ETF Filtering (April 2026)
 - **Collapsed by default**: `DeterministicCard` renders as a single-row summary showing rank, ticker (clickable to navigate), sector, micro-override shield icon, directional lean badge, price/change%, IVR, score, and expand chevron. Clicking anywhere on the row expands to reveal score breakdown bars, detailed stats, upcoming events, and "Send to Strategist" button.
 - **Scan reset**: Cards auto-collapse when `scanTimestamp` changes (new scan results), preventing stale expanded state.
-- **ETF exclusion**: `EXCLUDED_ETFS` set in `deterministicScanner.v2.ts` guardrails filters out ~80 common ETFs (SPY, QQQ, sector ETFs, leveraged ETFs, bond ETFs, etc.) from discovery scan results.
+- **ETF exclusion**: `EXCLUDED_ETFS` set in `deterministicScanner.v2.ts` reduced to ~30 leveraged/inverse ETFs only (SQQQ, TQQQ, SOXL, LABU, etc.). Liquid index/sector ETFs (SPY, QQQ, IWM, SOXX, XLF, GLD, etc.) now pass through the scanner.
 - **Universe deduplication**: `getDefaultUniverse()` in `snapshot.ts` uses a Set-based dedup filter to prevent duplicate symbols causing redundant API calls and DB writes.
+
+### Telemetry Overhaul — Feature-Grouped Collapsible Logs (April 2026)
+- **Backend**: `TelemetryEvent` now has `feature` and `batchId` fields. `createTelemetryBatch(feature)` generates unique batch IDs per feature run. `getGroupedEvents()` groups entries by batchId and returns `{ groups, ungrouped }`. API route supports `?grouped=true`.
+- **Callers updated**: Market Pulse (`ai.ts`), Strategist (`ai.ts`), Discovery Scanner v2 (`deterministicScanner.v2.ts`), and Momentum Scanner v1 (`deterministicScanner.ts`) all emit telemetry with feature + batchId tags.
+- **Frontend**: `TelemetryPage.tsx` fully redesigned with collapsible batch rows showing feature label (MARKET PULSE, SCANNER, STRATEGIST), timestamp, entry count, summary, error/warn badges, and system tags. Expandable to individual entries with severity-colored left borders, full message text (no truncation), and expandable JSON details. Mobile-first: `whiteSpace: pre-wrap`, `wordBreak: break-word`, no `maxHeight` or `textOverflow ellipsis`. Filters: system buttons with unread badges, severity toggles, show-resolved checkbox, auto-refresh toggle (3s interval). Batch timestamp uses latest event for recency sorting.
 
 ### Dynamic Scanner Universe System
 Three-layer universe system for the Market Scanner replacing hardcoded stock lists:

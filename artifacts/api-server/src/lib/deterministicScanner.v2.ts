@@ -1,5 +1,5 @@
 import { checkEventConflicts } from "./calendarEventChecker.js";
-import { emitTelemetry } from "./telemetryStore.js";
+import { emitTelemetry, createTelemetryBatch } from "./telemetryStore.js";
 import type { FilterResult, ScanResult, ScanCandidate } from "./deterministicScanner.js";
 import { db, equityDailyTable, flowDailyAggregatesTable, optionsFlowPerStrikeTable } from "@workspace/db";
 import { desc, eq, inArray, and, gte, lte, sql } from "drizzle-orm";
@@ -786,12 +786,9 @@ function computeDirectionalLean(
 
 // ─── Guardrail filter ──────────────────────────────────────────────────────
 const EXCLUDED_ETFS = new Set([
-  "SPY","QQQ","IWM","DIA","XLF","XLK","XLE","XLV","XLY","XLP","XLI","XLB","XLU","XLRE","XLC",
-  "VTI","VOO","VEA","VWO","VIG","VYM","VGT","VNQ","BND","AGG","TLT","IEF","SHY","HYG","LQD",
-  "GLD","SLV","USO","UNG","ARKK","ARKW","ARKF","ARKG","ARKQ","SOXX","SMH","XBI","IBB","KRE",
-  "XOP","OIH","GDX","GDXJ","KWEB","EEM","EFA","FXI","INDA","EWZ","EWJ",
   "SQQQ","TQQQ","SPXU","SPXL","SOXL","SOXS","LABU","LABD","TNA","TZA","UVXY","SVXY",
-  "RSP","MDY","IJR","VB","VO","IVV","SCHD","JEPI","JEPQ",
+  "UPRO","SDOW","UDOW","FNGU","FNGD","NUGT","DUST","JNUG","JDST","BOIL","KOLD",
+  "YANG","YINN","WEBL","WEBS","BULZ","BERZ","TECS","TECL","FAS","FAZ",
 ]);
 
 function passesGuardrails(sym: string, price: number, avgVol?: number): { passes: boolean; reason?: string } {
@@ -810,14 +807,15 @@ export async function runDiscoveryScan(
   log: { info: (...args: any[]) => void; warn: (...args: any[]) => void; error: (...args: any[]) => void },
 ): Promise<ScanResult> {
   const scanStart = Date.now();
+  const scanBatch = createTelemetryBatch("SCANNER");
 
   emitTelemetry("SCANNER", "INFO", `Discovery scan initiated — ${symbols.length} tickers`, {
     totalTickers: symbols.length, pulseBias: pulse.bias, mode: "DISCOVERY",
-  });
+  }, "SCANNER", scanBatch);
 
-  emitTelemetry("SCHWAB_API", "INFO", `Scanner: fetching quotes for ${symbols.length} symbols`, { endpoint: "/quotes", symbols: symbols.length });
+  emitTelemetry("SCHWAB_API", "INFO", `Scanner: fetching quotes for ${symbols.length} symbols`, { endpoint: "/quotes", symbols: symbols.length }, "SCANNER", scanBatch);
   const quoteMap = await fetchQuotesBatch(symbols, accessToken);
-  emitTelemetry("SCHWAB_API", "INFO", `Scanner: received ${quoteMap.size}/${symbols.length} quotes`, { endpoint: "/quotes", received: quoteMap.size, requested: symbols.length });
+  emitTelemetry("SCHWAB_API", "INFO", `Scanner: received ${quoteMap.size}/${symbols.length} quotes`, { endpoint: "/quotes", received: quoteMap.size, requested: symbols.length }, "SCANNER", scanBatch);
   const portfolioSymbols = traderToken ? await fetchPortfolioSymbols(traderToken) : new Set<string>();
 
   const filterResults: FilterResult[] = [];
@@ -842,14 +840,14 @@ export async function runDiscoveryScan(
   const neededEtfs = [...new Set(passedSymbols.map(s => getSectorEtf(s)).concat(["SPY"]))];
   const allSymbolsForDB = [...new Set([...passedSymbols, ...neededEtfs])];
 
-  emitTelemetry("DATABASE", "INFO", `Scanner: loading equity history for ${allSymbolsForDB.length} symbols from DB`, { symbols: allSymbolsForDB.length });
+  emitTelemetry("DATABASE", "INFO", `Scanner: loading equity history for ${allSymbolsForDB.length} symbols from DB`, { symbols: allSymbolsForDB.length }, "SCANNER", scanBatch);
   const [equityHistoryMap, flowDataMap] = await Promise.all([
     fetchEquityHistoryFromDB(allSymbolsForDB),
     fetchFlowDataFromDB(passedSymbols),
   ]);
   emitTelemetry("DATABASE", "INFO", `Scanner: loaded ${equityHistoryMap.size} equity histories, ${flowDataMap.size} flow records from DB`, {
     equitySymbols: equityHistoryMap.size, flowSymbols: flowDataMap.size,
-  });
+  }, "SCANNER", scanBatch);
 
   const etfHistories = new Map<string, Candle[]>();
   for (const etf of neededEtfs) {
@@ -889,7 +887,7 @@ export async function runDiscoveryScan(
       if (polyData && liqScore < CFG.liquidityGateMinScore) {
         const idx = filterResults.findIndex(f => f.symbol === sym);
         if (idx >= 0) filterResults[idx] = { symbol: sym, passed: false, reason: `Liquidity gate failed (score ${liqScore} < 8, spread ${atmSpreadPct.toFixed(1)}%)` };
-        emitTelemetry("SCANNER", "WARN", `${sym} — SKIP: liquidity gate (score ${liqScore})`, { ticker: sym, liqScore, spread: atmSpreadPct });
+        emitTelemetry("SCANNER", "WARN", `${sym} — SKIP: liquidity gate (score ${liqScore})`, { ticker: sym, liqScore, spread: atmSpreadPct }, "SCANNER", scanBatch);
         continue;
       }
 
@@ -996,7 +994,7 @@ export async function runDiscoveryScan(
       emitTelemetry("SCANNER", "INFO",
         `${sym} DISCOVERY ${totalScore} — SQ ${setupQuality} ACC ${accumulation} IV ${ivSetup} FLOW ${flowDivergence} RS ${emergingRS} | ${directionalLean}`, {
         ticker: sym, totalScore, setupQuality, accumulation, ivSetup, flowDivergence, emergingRS, directionalLean, flowDataAvailable, pass: totalScore >= CFG.minScore,
-      });
+      }, "SCANNER", scanBatch);
 
       scoredResults.push({
         symbol: sym, totalScore,
@@ -1076,7 +1074,7 @@ export async function runDiscoveryScan(
     `Discovery scan complete — ${candidates.length} candidates in ${(scanDuration / 1000).toFixed(1)}s`, {
     candidates: candidates.length, totalScanned: symbols.length, durationMs: scanDuration,
     topSymbols: candidates.map(c => `${c.symbol}(${c.totalScore} ${c.directionalLean})`).join(", "),
-  });
+  }, "SCANNER", scanBatch);
 
   return {
     candidates,

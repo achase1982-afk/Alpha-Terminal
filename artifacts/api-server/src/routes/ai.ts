@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { logFailure } from "../lib/telemetry.js";
-import { emitTelemetry } from "../lib/telemetryStore.js";
+import { emitTelemetry, createTelemetryBatch } from "../lib/telemetryStore.js";
 import Anthropic from "@anthropic-ai/sdk";
 import { streamText } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
@@ -1617,11 +1617,12 @@ router.post("/market-pulse/stream", async (req, res) => {
 
   const indicators = extractMarketIndicators(dataMap);
 
+  const pulseBatch = createTelemetryBatch("MARKET_PULSE");
   emitTelemetry("MARKET_PULSE", "INFO", "Pulse refresh initiated — extracting indicators", {
     dataSymbols: dataMap.size,
     session,
     timeET,
-  });
+  }, "MARKET_PULSE", pulseBatch);
 
   const indNames = ["vix", "vix9d", "vix3m", "vix1d", "tick", "trin", "add", "advn", "decn", "dvol", "uvol",
     "tickiQ", "trinQ", "addQ", "advnQ", "decnQ", "dvolQ", "uvolQ",
@@ -1637,7 +1638,7 @@ router.post("/market-pulse/stream", async (req, res) => {
         value: val,
         source: "cache",
         status: "live",
-      });
+      }, "MARKET_PULSE", pulseBatch);
     }
   }
 
@@ -1656,14 +1657,14 @@ router.post("/market-pulse/stream", async (req, res) => {
       score: cl.score ?? 0,
       weight: cl.weight ?? 0,
       rulesApplied: cl.rulesApplied ?? [],
-    });
+    }, "MARKET_PULSE", pulseBatch);
   }
 
   emitTelemetry("MARKET_PULSE", "INFO", `Pulse scored: ${engineResult.bias} — composite ${engineResult.compositeScore >= 0 ? "+" : ""}${engineResult.compositeScore.toFixed(2)}, confidence ${engineResult.confidenceScore}%`, {
     bias: engineResult.bias,
     composite: engineResult.compositeScore,
     confidence: engineResult.confidenceScore,
-  });
+  }, "MARKET_PULSE", pulseBatch);
 
   req.log.info({
     breadthScore: engineResult.clusters.breadth.score,
@@ -1680,7 +1681,7 @@ router.post("/market-pulse/stream", async (req, res) => {
       confidence: engineResult.confidenceScore,
       bias: engineResult.bias,
       composite: engineResult.compositeScore,
-    });
+    }, "MARKET_PULSE", pulseBatch);
     void logFailure("MARKET_PULSE", "WARN", `Low pulse confidence: ${engineResult.confidenceScore}% — data may be insufficient`, {
       confidence: engineResult.confidenceScore,
       bias: engineResult.bias,
@@ -2930,6 +2931,7 @@ router.post("/deterministic-strategist", async (req, res) => {
     eventCheck,
   };
 
+  const strategistBatch = createTelemetryBatch("STRATEGIST");
   emitTelemetry("STRATEGIST", "INFO", `Analysis initiated for ${symbol} (source: ${scannerData ? "scanner" : "manual"})`, {
     ticker: symbol,
     source: scannerData ? "scanner" : "manual",
@@ -2937,7 +2939,7 @@ router.post("/deterministic-strategist", async (req, res) => {
     pulseConfidence: pulse.confidence,
     pulseBias: pulse.bias,
     shockActive: shockResult.shockActive,
-  });
+  }, "STRATEGIST", strategistBatch);
 
   const result: StrategistOutput = runDeterministicStrategist(strategistInput);
 
@@ -2953,6 +2955,7 @@ router.post("/deterministic-strategist", async (req, res) => {
       idealDelta: result.criteria?.idealDelta,
       idealDTE: result.criteria?.idealDTE,
     },
+    "STRATEGIST", strategistBatch,
   );
 
   req.log.info({
