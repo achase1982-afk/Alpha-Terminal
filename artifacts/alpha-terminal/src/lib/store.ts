@@ -70,7 +70,22 @@ export interface TerminalState {
     key: 'model' | 'temperature',
     value: string | number,
   ) => void;
-  
+
+  aiLabStrategistConfig: {
+    analystModelProvider: 'anthropic' | 'google';
+    analystModelName: string;
+    analystTemperature: number;
+    skepticModelProvider: 'anthropic' | 'google';
+    skepticModelName: string;
+    skepticTemperature: number;
+    enabled: boolean;
+    mode: 'SHADOW' | 'LIVE';
+  };
+  setAiLabStrategistConfig: (
+    key: string,
+    value: string | number | boolean,
+  ) => void;
+
   tickerTapeSymbols: string[];
   setTickerTapeSymbols: (symbols: string[]) => void;
   tapeSpeed: number;
@@ -231,6 +246,24 @@ export const useTerminalStore = create<TerminalState>()(
           },
         })),
 
+      aiLabStrategistConfig: {
+        analystModelProvider: 'anthropic',
+        analystModelName: 'claude-sonnet-4-20250514',
+        analystTemperature: 0,
+        skepticModelProvider: 'google',
+        skepticModelName: 'gemini-2.5-flash',
+        skepticTemperature: 0,
+        enabled: false,
+        mode: 'SHADOW',
+      },
+      setAiLabStrategistConfig: (key, value) =>
+        set((state) => ({
+          aiLabStrategistConfig: {
+            ...state.aiLabStrategistConfig,
+            [key]: value,
+          },
+        })),
+
       tickerTapeSymbols: ['SPY', 'QQQ', 'IWM', 'DIA', 'VIX', 'TSLA', 'NVDA', 'AAPL', 'META', 'MSFT', 'AMZN', 'GOOGL'],
       setTickerTapeSymbols: (tickerTapeSymbols) => set({ tickerTapeSymbols }),
       tapeSpeed: 25,
@@ -356,7 +389,7 @@ export const useTerminalStore = create<TerminalState>()(
     }),
     {
       name: 'alpha-terminal-storage',
-      version: 10,
+      version: 11,
       migrate: (persistedState: unknown, version: number) => {
         const s = persistedState as Record<string, unknown>;
         if (version < 2) {
@@ -431,6 +464,20 @@ export const useTerminalStore = create<TerminalState>()(
                 features[key].model = 'claude-sonnet-4-20250514';
               }
             }
+          }
+        }
+        if (version < 11) {
+          if (!s['aiLabStrategistConfig']) {
+            s['aiLabStrategistConfig'] = {
+              analystModelProvider: 'anthropic',
+              analystModelName: 'claude-sonnet-4-20250514',
+              analystTemperature: 0,
+              skepticModelProvider: 'google',
+              skepticModelName: 'gemini-2.5-flash',
+              skepticTemperature: 0,
+              enabled: false,
+              mode: 'SHADOW',
+            };
           }
         }
         return s;

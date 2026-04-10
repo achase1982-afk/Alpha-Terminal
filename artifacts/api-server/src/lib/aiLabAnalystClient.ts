@@ -1,12 +1,14 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenAI } from "@google/genai";
 import { logger } from "./logger.js";
 import type {
   AiLabAnalystClient,
   AnalystRequest,
   AnalystResponse,
 } from "./aiLabLlmTypes.js";
+import type { AiLabModelProvider } from "./aiLabConfig.js";
 
-const ANALYST_MODEL = "claude-sonnet-4-20250514";
+const DEFAULT_ANALYST_MODEL = "claude-sonnet-4-20250514";
 
 const ANALYST_SYSTEM_PROMPT = `You are an institutional-grade equity/options Analyst for a quantitative trading desk.
 Given a ticker's snapshot data, market regime state, and portfolio context, propose a single trade idea.
@@ -126,41 +128,87 @@ function validateAnalystResponse(parsed: any): AnalystResponse {
   return parsed as AnalystResponse;
 }
 
-export class ClaudeAnalystClient implements AiLabAnalystClient {
-  readonly modelName = ANALYST_MODEL;
-  private client: Anthropic | null = null;
+async function callAnthropic(model: string, temperature: number, prompt: string): Promise<string> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
+  const client = new Anthropic({ apiKey });
 
-  private getClient(): Anthropic {
-    if (!this.client) {
-      const apiKey = process.env.ANTHROPIC_API_KEY;
-      if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
-      this.client = new Anthropic({ apiKey });
-    }
-    return this.client;
+  const message = await client.messages.create({
+    model,
+    max_tokens: 8192,
+    temperature,
+    system: ANALYST_SYSTEM_PROMPT,
+    messages: [{ role: "user", content: prompt }],
+  });
+
+  const textBlock = message.content.find((b) => b.type === "text");
+  if (!textBlock || textBlock.type !== "text") {
+    throw new Error("No text content in Analyst LLM response");
+  }
+  return textBlock.text.trim();
+}
+
+async function callGemini(model: string, temperature: number, prompt: string): Promise<string> {
+  const baseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL;
+  const apiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
+  if (!baseUrl || !apiKey) throw new Error("Gemini AI integration env vars not configured");
+  const ai = new GoogleGenAI({ apiKey, httpOptions: { apiVersion: "", baseUrl } });
+
+  const response = await ai.models.generateContent({
+    model,
+    contents: [
+      { role: "user", parts: [{ text: ANALYST_SYSTEM_PROMPT + "\n\n" + prompt }] },
+    ],
+    config: {
+      responseMimeType: "application/json",
+      maxOutputTokens: 8192,
+      temperature,
+    },
+  });
+
+  const rawText = (response.text ?? "").trim();
+  if (!rawText) throw new Error("No text content in Analyst LLM response (Gemini)");
+  return rawText;
+}
+
+function extractJson(rawText: string): string {
+  let text = rawText;
+  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenceMatch) text = fenceMatch[1].trim();
+  return text;
+}
+
+export class ConfigurableAnalystClient implements AiLabAnalystClient {
+  readonly modelName: string;
+  private provider: AiLabModelProvider;
+  private temperature: number;
+
+  constructor(provider: AiLabModelProvider, modelName: string, temperature: number) {
+    this.provider = provider;
+    this.modelName = modelName;
+    this.temperature = temperature;
   }
 
   async generateIdea(request: AnalystRequest): Promise<AnalystResponse> {
     const prompt = buildAnalystPrompt(request);
 
-    const message = await this.getClient().messages.create({
-      model: this.modelName,
-      max_tokens: 8192,
-      system: ANALYST_SYSTEM_PROMPT,
-      messages: [{ role: "user", content: prompt }],
-    });
-
-    const textBlock = message.content.find((b) => b.type === "text");
-    if (!textBlock || textBlock.type !== "text") {
-      throw new Error("No text content in Analyst LLM response");
+    let rawText: string;
+    switch (this.provider) {
+      case "anthropic":
+        rawText = await callAnthropic(this.modelName, this.temperature, prompt);
+        break;
+      case "google":
+        rawText = await callGemini(this.modelName, this.temperature, prompt);
+        break;
+      default:
+        throw new Error(`Unsupported analyst provider: ${this.provider}`);
     }
 
-    let rawText = textBlock.text.trim();
-    const fenceMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (fenceMatch) rawText = fenceMatch[1].trim();
+    const cleanText = extractJson(rawText);
 
     let parsed: unknown;
     try {
-      parsed = JSON.parse(rawText);
+      parsed = JSON.parse(cleanText);
     } catch {
       logger.error({ rawSnippet: rawText.slice(0, 500) }, "AI Lab Analyst: JSON parse failure");
       throw new Error("Analyst response is not valid JSON");
@@ -170,6 +218,10 @@ export class ClaudeAnalystClient implements AiLabAnalystClient {
   }
 }
 
-export function createAnalystClient(): AiLabAnalystClient {
-  return new ClaudeAnalystClient();
+export function createAnalystClient(
+  provider: AiLabModelProvider = "anthropic",
+  modelName: string = DEFAULT_ANALYST_MODEL,
+  temperature: number = 0,
+): AiLabAnalystClient {
+  return new ConfigurableAnalystClient(provider, modelName, temperature);
 }

@@ -19,6 +19,7 @@ import { logger } from "./logger.js";
 import { createAnalystClient } from "./aiLabAnalystClient.js";
 import { createSkepticClient } from "./aiLabSkepticClient.js";
 import { buildCandidateIdeaFromLlms } from "./aiLabLlmMerger.js";
+import { getAiLabStrategistConfig } from "./aiLabConfig.js";
 import type {
   AiLabAnalystClient,
   AiLabSkepticClient,
@@ -97,10 +98,15 @@ function logAiLabEvent(
   emitTelemetry("STRATEGIST", severity, message, { type, ...payload }, "AI_LAB", batch);
 }
 
-// ─── LLM CLIENT SINGLETONS ──────────────────────────────────────────────────
+// ─── LLM CLIENT FACTORY (reads from config each run) ────────────────────────
 
-const analystClient: AiLabAnalystClient = createAnalystClient();
-const skepticClient: AiLabSkepticClient = createSkepticClient();
+function buildClients(): { analyst: AiLabAnalystClient; skeptic: AiLabSkepticClient } {
+  const cfg = getAiLabStrategistConfig();
+  return {
+    analyst: createAnalystClient(cfg.analystModelProvider, cfg.analystModelName, cfg.analystTemperature),
+    skeptic: createSkepticClient(cfg.skepticModelProvider, cfg.skepticModelName, cfg.skepticTemperature),
+  };
+}
 
 // ─── CORE PIPELINE ──────────────────────────────────────────────────────────
 
@@ -119,6 +125,15 @@ async function runPipeline(
   batch: string,
   source: string,
 ): Promise<PipelineResult> {
+  const cfg = getAiLabStrategistConfig();
+
+  if (!cfg.enabled) {
+    logAiLabEvent("AI_LAB_DISABLED", { symbol, passName: source }, batch);
+    return { symbol, approved: false, rejectionReason: "AI_LAB_DISABLED" };
+  }
+
+  const { analyst: analystClient, skeptic: skepticClient } = buildClients();
+
   const activeIdeas = await db
     .select()
     .from(aiLabIdeasTable)
@@ -140,7 +155,13 @@ async function runPipeline(
     baselinesSummary: null,
   };
 
-  logAiLabEvent("ANALYST_REQUEST", { symbol, passName: source }, batch);
+  logAiLabEvent("ANALYST_REQUEST", {
+    symbol,
+    passName: source,
+    provider: cfg.analystModelProvider,
+    model: cfg.analystModelName,
+    temperature: cfg.analystTemperature,
+  }, batch);
 
   let analystResponse: AnalystResponse;
   try {

@@ -1,12 +1,14 @@
 import { GoogleGenAI } from "@google/genai";
+import Anthropic from "@anthropic-ai/sdk";
 import { logger } from "./logger.js";
 import type {
   AiLabSkepticClient,
   SkepticRequest,
   SkepticResponse,
 } from "./aiLabLlmTypes.js";
+import type { AiLabModelProvider } from "./aiLabConfig.js";
 
-const SKEPTIC_MODEL = "gemini-2.5-flash";
+const DEFAULT_SKEPTIC_MODEL = "gemini-2.5-flash";
 
 const SKEPTIC_SYSTEM_PROMPT = `You are the Devil's Advocate on a quantitative trading desk.
 Given a candidate trade idea produced by the Analyst, your job is to find weaknesses, risks, and reasons it could fail.
@@ -65,43 +67,83 @@ function validateSkepticResponse(parsed: any): SkepticResponse {
   return parsed as SkepticResponse;
 }
 
-export class GeminiSkepticClient implements AiLabSkepticClient {
-  readonly modelName = SKEPTIC_MODEL;
-  private ai: GoogleGenAI | null = null;
+async function callGeminiSkeptic(model: string, temperature: number, prompt: string): Promise<string> {
+  const baseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL;
+  const apiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
+  if (!baseUrl || !apiKey) throw new Error("Gemini AI integration env vars not configured");
+  const ai = new GoogleGenAI({ apiKey, httpOptions: { apiVersion: "", baseUrl } });
 
-  private getAi(): GoogleGenAI {
-    if (!this.ai) {
-      const baseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL;
-      const apiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
-      if (!baseUrl || !apiKey) throw new Error("Gemini AI integration env vars not configured");
-      this.ai = new GoogleGenAI({ apiKey, httpOptions: { apiVersion: "", baseUrl } });
-    }
-    return this.ai;
+  const response = await ai.models.generateContent({
+    model,
+    contents: [
+      { role: "user", parts: [{ text: SKEPTIC_SYSTEM_PROMPT + "\n\n" + prompt }] },
+    ],
+    config: {
+      responseMimeType: "application/json",
+      maxOutputTokens: 8192,
+      temperature,
+    },
+  });
+
+  const rawText = (response.text ?? "").trim();
+  if (!rawText) throw new Error("No text content in Skeptic LLM response");
+  return rawText;
+}
+
+async function callAnthropicSkeptic(model: string, temperature: number, prompt: string): Promise<string> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
+  const client = new Anthropic({ apiKey });
+
+  const message = await client.messages.create({
+    model,
+    max_tokens: 8192,
+    temperature,
+    system: SKEPTIC_SYSTEM_PROMPT,
+    messages: [{ role: "user", content: prompt }],
+  });
+
+  const textBlock = message.content.find((b) => b.type === "text");
+  if (!textBlock || textBlock.type !== "text") {
+    throw new Error("No text content in Skeptic LLM response (Anthropic)");
+  }
+  return textBlock.text.trim();
+}
+
+function extractJson(rawText: string): string {
+  let text = rawText;
+  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenceMatch) text = fenceMatch[1].trim();
+  return text;
+}
+
+export class ConfigurableSkepticClient implements AiLabSkepticClient {
+  readonly modelName: string;
+  private provider: AiLabModelProvider;
+  private temperature: number;
+
+  constructor(provider: AiLabModelProvider, modelName: string, temperature: number) {
+    this.provider = provider;
+    this.modelName = modelName;
+    this.temperature = temperature;
   }
 
   async critiqueIdea(request: SkepticRequest): Promise<SkepticResponse> {
     const prompt = buildSkepticPrompt(request);
-    const ai = this.getAi();
 
-    const response = await ai.models.generateContent({
-      model: this.modelName,
-      contents: [
-        { role: "user", parts: [{ text: SKEPTIC_SYSTEM_PROMPT + "\n\n" + prompt }] },
-      ],
-      config: {
-        responseMimeType: "application/json",
-        maxOutputTokens: 8192,
-      },
-    });
-
-    const rawText = (response.text ?? "").trim();
-    if (!rawText) {
-      throw new Error("No text content in Skeptic LLM response");
+    let rawText: string;
+    switch (this.provider) {
+      case "google":
+        rawText = await callGeminiSkeptic(this.modelName, this.temperature, prompt);
+        break;
+      case "anthropic":
+        rawText = await callAnthropicSkeptic(this.modelName, this.temperature, prompt);
+        break;
+      default:
+        throw new Error(`Unsupported skeptic provider: ${this.provider}`);
     }
 
-    let cleanText = rawText;
-    const fenceMatch = cleanText.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (fenceMatch) cleanText = fenceMatch[1].trim();
+    const cleanText = extractJson(rawText);
 
     let parsed: unknown;
     try {
@@ -115,6 +157,10 @@ export class GeminiSkepticClient implements AiLabSkepticClient {
   }
 }
 
-export function createSkepticClient(): AiLabSkepticClient {
-  return new GeminiSkepticClient();
+export function createSkepticClient(
+  provider: AiLabModelProvider = "google",
+  modelName: string = DEFAULT_SKEPTIC_MODEL,
+  temperature: number = 0,
+): AiLabSkepticClient {
+  return new ConfigurableSkepticClient(provider, modelName, temperature);
 }

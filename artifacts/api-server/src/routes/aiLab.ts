@@ -22,6 +22,10 @@ import {
   blockFlowTrigger,
   scannerScoreJumpTrigger,
 } from "../lib/aiLabOrchestrator.js";
+import {
+  getAiLabStrategistConfig,
+  updateAiLabStrategistConfig,
+} from "../lib/aiLabConfig.js";
 
 const router: IRouter = Router();
 
@@ -202,9 +206,38 @@ router.post("/ideas", async (req, res) => {
   }
 });
 
+router.get("/config", (_req, res) => {
+  res.json({ config: getAiLabStrategistConfig() });
+});
+
+router.put("/config", async (req, res) => {
+  const batch = createTelemetryBatch("AI_LAB");
+  try {
+    const oldConfig = getAiLabStrategistConfig();
+    const updated = updateAiLabStrategistConfig(req.body);
+
+    if (oldConfig.mode !== updated.mode) {
+      emitTelemetry("STRATEGIST", "INFO", `AI Lab: mode changed ${oldConfig.mode} → ${updated.mode}`, { oldMode: oldConfig.mode, newMode: updated.mode }, "AI_LAB", batch);
+    }
+    if (oldConfig.enabled !== updated.enabled) {
+      emitTelemetry("STRATEGIST", "INFO", `AI Lab: enabled changed ${oldConfig.enabled} → ${updated.enabled}`, { enabled: updated.enabled }, "AI_LAB", batch);
+    }
+
+    res.json({ config: updated });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 router.get("/ideas", async (req, res) => {
   const batch = createTelemetryBatch("AI_LAB");
   try {
+    const cfg = getAiLabStrategistConfig();
+    if (cfg.mode === "SHADOW") {
+      emitTelemetry("API", "INFO", "GET /ai-lab/ideas — SHADOW mode, returning empty", {}, "AI_LAB", batch);
+      return res.json({ ideas: [], shadow: true });
+    }
+
     const statusFilter = (req.query.status as string || "").split(",").filter(Boolean);
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
 

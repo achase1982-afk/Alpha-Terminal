@@ -1,0 +1,224 @@
+You are the same engineer working on Alpha Terminal’s **AI Lab Strategist**.
+
+REFERENCE UI (IMPORTANT)
+
+In the sidebar, when the user taps **AI PARAMETERS**, they see a screen like this (you know this from the project):
+
+- A title: “AI PARAMETERS”
+- A “Set all models” section at the top.
+- Then a vertical list of collapsible blocks, for example:
+  - MARKET PULSE
+  - TECHNICAL ANALYSIS
+  - OPTIONS STRATEGIST
+  - AI CHAT
+  - MARKET SCANNER
+
+Each block, when EXPANDED, shows at least:
+- A MODEL dropdown (e.g., “CLAUDE-OPUS-4-20250514”)
+- A TEMPERATURE slider
+
+You MUST follow this exact visual/structural pattern. Do not invent a new layout.
+
+GOAL OF THIS PROMPT
+
+1) Add a new block to the AI PARAMETERS screen for **“AI LAB STRATEGIST”**, visually and behaviorally consistent with the existing blocks.
+2) Inside that block, expose **two separate model selectors** (Analyst + Skeptic) and their temperatures.
+3) Add simple controls for:
+   - Enabling/disabling AI Lab Strategist.
+   - Choosing SHADOW vs LIVE mode.
+4) Wire these settings into a typed AiLabStrategistConfig object and make the LLM clients read from it.
+5) Ensure telemetry is wired and the orchestrator respects these settings.
+
+--------------------------------------------------
+1. AI LAB STRATEGIST BLOCK IN AI PARAMETERS UI
+--------------------------------------------------
+
+Add a new collapsible section to the AI PARAMETERS screen:
+
+- Block title: **AI LAB STRATEGIST**
+- It should appear alongside the existing blocks:
+  - MARKET PULSE
+  - TECHNICAL ANALYSIS
+  - OPTIONS STRATEGIST
+  - AI CHAT
+  - MARKET SCANNER
+- Use the SAME component style, padding, fonts, and expand/collapse behavior as those blocks.
+- Do NOT redesign the screen; just add one more block in the list.
+
+When the AI LAB STRATEGIST block is EXPANDED, it should contain:
+
+1) SECTION: ANALYST MODEL
+   - Label: “Analyst model”
+   - A MODEL dropdown identical to the existing model selectors (same component), but bound to:
+     - aiLabStrategistConfig.analystModelProvider
+     - aiLabStrategistConfig.analystModelName
+   - A TEMPERATURE slider identical to the others, bound to:
+     - aiLabStrategistConfig.analystTemperature (number 0.0–1.0)
+
+2) SECTION: SKEPTIC MODEL
+   - Label: “Skeptic model”
+   - A MODEL dropdown identical to above, bound to:
+     - aiLabStrategistConfig.skepticModelProvider
+     - aiLabStrategistConfig.skepticModelName
+   - A TEMPERATURE slider identical to others, bound to:
+     - aiLabStrategistConfig.skepticTemperature (0.0–1.0)
+
+3) SECTION: MODE & ENABLE
+   - A toggle switch labeled “Enabled”
+     - Bound to aiLabStrategistConfig.enabled (boolean)
+   - A segmented control or dropdown labeled “Mode”
+     - Options: “Shadow” and “Live”
+     - Bound to aiLabStrategistConfig.mode ("SHADOW" | "LIVE")
+
+VISUAL CONSTRAINTS:
+- Reuse existing UI components for:
+  - Model dropdown
+  - Temperature slider
+  - Toggle switches
+  - Segmented controls or dropdowns
+- Do NOT change existing blocks or global styling.
+
+--------------------------------------------------
+2. CONFIG OBJECT & PERSISTENCE
+--------------------------------------------------
+
+Define a typed configuration object, e.g.:
+
+AiLabStrategistConfig {
+  analystModelProvider: "anthropic" | "openai" | "google" | "other";
+  analystModelName: string;
+  analystTemperature: number; // 0–1
+
+  skepticModelProvider: "anthropic" | "openai" | "google" | "other";
+  skepticModelName: string;
+  skepticTemperature: number; // 0–1
+
+  enabled: boolean;
+  mode: "SHADOW" | "LIVE";
+}
+
+Tasks:
+
+- Integrate this into the same settings system used for:
+  - MARKET PULSE
+  - OPTIONS STRATEGIST
+  - etc.
+- Provide get/set helpers, e.g.:
+  - getAiLabStrategistConfig(): AiLabStrategistConfig
+  - updateAiLabStrategistConfig(partial: Partial<AiLabStrategistConfig>): void
+
+Default values:
+
+- analystModelProvider: "anthropic"
+- analystModelName: a sensible Claude default (e.g., "claude-3-sonnet")
+- analystTemperature: 0.0
+
+- skepticModelProvider: "google"
+- skepticModelName: a sensible Gemini Fast default
+- skepticTemperature: 0.0
+
+- enabled: false
+- mode: "SHADOW"
+
+--------------------------------------------------
+3. WIRE CONFIG → ANALYST/SKEPTIC CLIENTS
+--------------------------------------------------
+
+Update **AiLabAnalystClient** and **AiLabSkepticClient** so they:
+
+- Load current AiLabStrategistConfig via getAiLabStrategistConfig().
+- Use:
+  - provider + modelName + temperature
+  - to choose the correct underlying LLM client and parameters.
+
+Pseudo-logic for Analyst:
+
+const cfg = getAiLabStrategistConfig();
+if (!cfg.enabled) {
+  // optionally log telemetry and short-circuit
+}
+const provider = cfg.analystModelProvider;
+const model = cfg.analystModelName;
+const temperature = cfg.analystTemperature;
+
+switch (provider) {
+  case "anthropic":
+    return anthropicClient.call({ model, temperature, ...payload });
+  case "google":
+    return geminiClient.call({ model, temperature, ...payload });
+  // etc.
+}
+
+Same pattern for Skeptic, but using skepticModelProvider/Name/Temperature.
+
+IMPORTANT:
+- Do NOT hardcode provider/model names in the orchestrator.
+- All model selection must flow through AiLabStrategistConfig.
+- Provide clear TODO comments where actual API keys / client construction goes, if those utilities don’t exist yet.
+
+--------------------------------------------------
+4. ORCHESTRATOR RESPECTING ENABLED + MODE
+--------------------------------------------------
+
+Update the orchestrator so that **before** generating ideas in any run:
+
+- Read cfg = getAiLabStrategistConfig().
+
+Behavior:
+
+- If cfg.enabled === false:
+  - Do NOT call Analyst/Skeptic.
+  - Do NOT create AI Lab ideas.
+  - Optionally log telemetry:
+    - type: "AI_LAB_DISABLED"
+
+- If cfg.enabled === true AND cfg.mode === "SHADOW":
+  - Run the full pipeline:
+    - Tools → Analyst → Skeptic → validate → save → telemetry.
+  - BUT ensure that the API endpoint that feeds the **AI Lab Strategist** UI tab returns:
+    - Either an empty list, OR
+    - Only ideas flagged shadow = true so the front end can decide to hide them.
+  - Easiest: have the endpoint check cfg.mode and just return `[]` when SHADOW.
+
+- If cfg.enabled === true AND cfg.mode === "LIVE":
+  - Run the full pipeline.
+  - The active ideas API must return AI Lab ideas normally (subject to existing caps/filters).
+
+--------------------------------------------------
+5. TELEMETRY CHECK
+--------------------------------------------------
+
+Verify that for AI Lab Strategist you are logging at least:
+
+- SCHEDULE_RUN, TRIGGER_FIRED
+- ANALYST_CALL, ANALYST_RESPONSE, ANALYST_PARSE_ERROR
+- SKEPTIC_CALL, SKEPTIC_RESPONSE, SKEPTIC_PARSE_ERROR
+- IDEA_VALIDATION, IDEA_APPROVED, IDEA_REJECTED
+- AI_LAB_DISABLED (when cfg.enabled is false)
+- AI_LAB_MODE_CHANGE (when mode is toggled in UI, log new mode)
+
+All telemetry events should:
+- Use the same logging backbone as existing features.
+- Be tagged with a source/category like `ai_lab_strategist` so they show up correctly in the existing Telemetry section.
+
+--------------------------------------------------
+6. DELIVERABLES FOR THIS PROMPT
+
+1) A new **AI LAB STRATEGIST** block on the AI PARAMETERS screen that visually matches the existing blocks and:
+   - Shows Analyst Model + Temperature.
+   - Shows Skeptic Model + Temperature.
+   - Has Enabled toggle and Mode (Shadow/Live) selector.
+
+2) AiLabStrategistConfig type + persistence + get/set helpers.
+
+3) Updated AiLabAnalystClient and AiLabSkepticClient that:
+   - Read config.
+   - Route to proper provider + model + temperature.
+
+4) Orchestrator updated to:
+   - Respect enabled/mode.
+   - Hide ideas from UI when in SHADOW mode.
+
+5) Telemetry extended/verified for AI Lab Strategist lifecycle.
+
+Do NOT alter the appearance or behavior of existing blocks (Market Pulse, Options Strategist, etc.). Only add the AI Lab Strategist block and wire it consistently.

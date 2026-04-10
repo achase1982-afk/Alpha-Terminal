@@ -562,6 +562,21 @@ const ALL_MODELS = [
   "claude-3-5-sonnet-20241022",
 ];
 
+const ANALYST_MODELS: Record<string, string[]> = {
+  anthropic: ["claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-3-7-sonnet-20250219", "claude-3-5-sonnet-20241022"],
+  google: ["gemini-2.5-flash", "gemini-2.5-pro"],
+};
+
+const SKEPTIC_MODELS: Record<string, string[]> = {
+  google: ["gemini-2.5-flash", "gemini-2.5-pro"],
+  anthropic: ["claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-3-7-sonnet-20250219", "claude-3-5-sonnet-20241022"],
+};
+
+const PROVIDER_LABELS: Record<string, string> = {
+  anthropic: "ANTHROPIC (CLAUDE)",
+  google: "GOOGLE (GEMINI)",
+};
+
 type AiFeatureKey = keyof TerminalState['aiFeatureSettings'];
 
 const AI_FEATURES: Array<{
@@ -642,6 +657,222 @@ function AiFeatureControl({ featureKey, label, icon }: {
   );
 }
 
+function AiLabStrategistControl() {
+  const { aiLabStrategistConfig, setAiLabStrategistConfig } = useTerminalStore();
+  const [expanded, setExpanded] = useState(false);
+  const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const didSyncRef = useRef(false);
+
+  useEffect(() => {
+    if (didSyncRef.current) return;
+    didSyncRef.current = true;
+    fetch("/api/ai-lab/config", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(aiLabStrategistConfig),
+    }).catch(() => {});
+  }, []);
+
+  const syncToBackend = useCallback((cfg: typeof aiLabStrategistConfig) => {
+    if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+    syncTimeoutRef.current = setTimeout(() => {
+      fetch("/api/ai-lab/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(cfg),
+      }).catch(() => {});
+    }, 300);
+  }, []);
+
+  const update = useCallback((key: string, value: string | number | boolean) => {
+    setAiLabStrategistConfig(key, value);
+    const next = { ...aiLabStrategistConfig, [key]: value };
+
+    if (key === "analystModelProvider") {
+      const models = ANALYST_MODELS[value as string] ?? [];
+      if (models.length > 0 && !models.includes(aiLabStrategistConfig.analystModelName)) {
+        setAiLabStrategistConfig("analystModelName", models[0]);
+        next.analystModelName = models[0];
+      }
+    }
+    if (key === "skepticModelProvider") {
+      const models = SKEPTIC_MODELS[value as string] ?? [];
+      if (models.length > 0 && !models.includes(aiLabStrategistConfig.skepticModelName)) {
+        setAiLabStrategistConfig("skepticModelName", models[0]);
+        next.skepticModelName = models[0];
+      }
+    }
+
+    syncToBackend(next);
+  }, [aiLabStrategistConfig, setAiLabStrategistConfig, syncToBackend]);
+
+  const analystModels = ANALYST_MODELS[aiLabStrategistConfig.analystModelProvider] ?? [];
+  const skepticModels = SKEPTIC_MODELS[aiLabStrategistConfig.skepticModelProvider] ?? [];
+
+  const selectStyle = {
+    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
+    backgroundRepeat: 'no-repeat' as const,
+    backgroundPosition: 'right 8px center',
+  };
+
+  return (
+    <div className="border border-card-border rounded-lg overflow-hidden">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between px-3 py-2.5 bg-card cursor-pointer active:bg-zinc-800/60 transition-colors"
+      >
+        <span className="flex items-center gap-2 font-mono text-[10px] text-white tracking-wide">
+          <span>🧪</span>
+          AI LAB STRATEGIST
+        </span>
+        <span className="flex items-center gap-2">
+          <span className={`font-mono text-[8px] tracking-wider ${aiLabStrategistConfig.enabled ? 'text-[#2ecc71]' : 'text-zinc-500'}`}>
+            {aiLabStrategistConfig.enabled ? aiLabStrategistConfig.mode : 'OFF'}
+          </span>
+          <ChevronRight className={`w-3 h-3 text-zinc-500 transition-transform ${expanded ? 'rotate-90' : ''}`} />
+        </span>
+      </button>
+
+      {expanded && (
+        <div className="px-3 py-3 space-y-4 bg-[#0a0a0a] border-t border-card-border">
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest">Enabled</span>
+            <Switch
+              checked={aiLabStrategistConfig.enabled}
+              onCheckedChange={(v) => update('enabled', v)}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest">Mode</span>
+            <div className="flex gap-1">
+              {(['SHADOW', 'LIVE'] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => update('mode', m)}
+                  className={`flex-1 py-1.5 rounded-md font-mono text-[9px] tracking-wider transition-colors cursor-pointer ${
+                    aiLabStrategistConfig.mode === m
+                      ? m === 'LIVE'
+                        ? 'bg-[#2ecc71]/20 text-[#2ecc71] border border-[#2ecc71]/30'
+                        : 'bg-primary/20 text-primary border border-primary/30'
+                      : 'bg-card text-zinc-500 border border-card-border'
+                  }`}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="h-px bg-zinc-800" />
+
+          <div className="space-y-2">
+            <span className="font-mono text-[9px] text-zinc-400 uppercase tracking-widest font-medium">Analyst Model</span>
+
+            <div className="space-y-1.5">
+              <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest">Provider</span>
+              <select
+                value={aiLabStrategistConfig.analystModelProvider}
+                onChange={(e) => update('analystModelProvider', e.target.value)}
+                className="w-full bg-card border border-card-border rounded-md px-2 py-2 font-mono text-[10px] text-white focus:outline-none focus:border-primary/50 appearance-none cursor-pointer"
+                style={selectStyle}
+              >
+                {Object.entries(PROVIDER_LABELS).map(([k, label]) => (
+                  <option key={k} value={k}>{label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest">Model</span>
+              <select
+                value={aiLabStrategistConfig.analystModelName}
+                onChange={(e) => update('analystModelName', e.target.value)}
+                className="w-full bg-card border border-card-border rounded-md px-2 py-2 font-mono text-[10px] text-white focus:outline-none focus:border-primary/50 appearance-none cursor-pointer"
+                style={selectStyle}
+              >
+                {analystModels.map((m) => (
+                  <option key={m} value={m}>{m.toUpperCase()}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest">Temperature</span>
+                <span className="font-mono text-[10px] text-primary tabular-nums">{aiLabStrategistConfig.analystTemperature.toFixed(1)}</span>
+              </div>
+              <Slider
+                value={[aiLabStrategistConfig.analystTemperature]}
+                onValueChange={(v) => update('analystTemperature', v[0])}
+                max={1}
+                step={0.1}
+                className="py-1"
+              />
+              <div className="flex justify-between">
+                <span className="font-mono text-[8px] text-zinc-600">Precise</span>
+                <span className="font-mono text-[8px] text-zinc-600">Creative</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="h-px bg-zinc-800" />
+
+          <div className="space-y-2">
+            <span className="font-mono text-[9px] text-zinc-400 uppercase tracking-widest font-medium">Skeptic Model</span>
+
+            <div className="space-y-1.5">
+              <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest">Provider</span>
+              <select
+                value={aiLabStrategistConfig.skepticModelProvider}
+                onChange={(e) => update('skepticModelProvider', e.target.value)}
+                className="w-full bg-card border border-card-border rounded-md px-2 py-2 font-mono text-[10px] text-white focus:outline-none focus:border-primary/50 appearance-none cursor-pointer"
+                style={selectStyle}
+              >
+                {Object.entries(PROVIDER_LABELS).map(([k, label]) => (
+                  <option key={k} value={k}>{label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest">Model</span>
+              <select
+                value={aiLabStrategistConfig.skepticModelName}
+                onChange={(e) => update('skepticModelName', e.target.value)}
+                className="w-full bg-card border border-card-border rounded-md px-2 py-2 font-mono text-[10px] text-white focus:outline-none focus:border-primary/50 appearance-none cursor-pointer"
+                style={selectStyle}
+              >
+                {skepticModels.map((m) => (
+                  <option key={m} value={m}>{m.toUpperCase()}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest">Temperature</span>
+                <span className="font-mono text-[10px] text-primary tabular-nums">{aiLabStrategistConfig.skepticTemperature.toFixed(1)}</span>
+              </div>
+              <Slider
+                value={[aiLabStrategistConfig.skepticTemperature]}
+                onValueChange={(v) => update('skepticTemperature', v[0])}
+                max={1}
+                step={0.1}
+                className="py-1"
+              />
+              <div className="flex justify-between">
+                <span className="font-mono text-[8px] text-zinc-600">Precise</span>
+                <span className="font-mono text-[8px] text-zinc-600">Creative</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AiParametersPage() {
   const { aiFeatureSettings, setAiFeatureSetting } = useTerminalStore();
 
@@ -703,6 +934,7 @@ function AiParametersPage() {
         {AI_FEATURES.map((f) => (
           <AiFeatureControl key={f.key} featureKey={f.key} label={f.label} icon={f.icon} />
         ))}
+        <AiLabStrategistControl />
       </div>
     </div>
   );
