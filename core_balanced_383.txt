@@ -1,0 +1,82 @@
+CORE BALANCED 383 UNIVERSE — FULL LIST
+========================================
+Total: 383 symbols
+========================================
+
+  1. AAL         2. AAOI        3. AAPL        4. ABBV        5. ABT     
+  6. ADBE        7. ADI         8. ADP         9. ADSK       10. AEP     
+ 11. AFL        12. AJG        13. ALAB       14. ALL        15. ALNY    
+ 16. AMAT       17. AMD        18. AMGN       19. AMP        20. AMT     
+ 21. AMZN       22. ANET       23. AON        24. APA        25. APD     
+ 26. APLD       27. APLS       28. APO        29. APP        30. ARES    
+ 31. ATO        32. AVAV       33. AVGO       34. AWK        35. AXON    
+ 36. AXP        37. AXSM       38. AXTI       39. BA         40. BAC     
+ 41. BBIO       42. BDX        43. BIIB       44. BK         45. BKLN    
+ 46. BKR        47. BLK        48. BMNR       49. BMY        50. BNS     
+ 51. BSX        52. BURL       53. BX         54. C          55. CASY    
+ 56. CAT        57. CB         58. CCI        59. CDNS       60. CDW     
+ 61. CEG        62. CF         63. CFG        64. CHD        65. CHTR    
+ 66. CI         67. CIEN       68. CIFR       69. CL         70. CLS     
+ 71. CLSK       72. CMCSA      73. CME        74. CMG        75. CNH     
+ 76. CNP        77. COF        78. COIN       79. COP        80. COST    
+ 81. CP         82. CPNG       83. CPRT       84. CRCL       85. CRDO    
+ 86. CRH        87. CRM        88. CROX       89. CRS        90. CRWD    
+ 91. CRWV       92. CSCO       93. CSX        94. CTRA       95. CTSH    
+ 96. CVNA       97. CVS        98. CVX        99. D         100. DAL     
+101. DBD       102. DDOG      103. DE        104. DELL      105. DG      
+106. DIS       107. DKNG      108. DLR       109. DLTR      110. DOCN    
+111. DOCU      112. DOV       113. DRI       114. DUOL      115. DVN     
+116. DXCM      117. EA        118. ECL       119. EIX       120. EL      
+121. ELV       122. ENB       123. ENTG      124. EOG       125. EPAM    
+126. EQIX      127. EQT       128. ES        129. ET        130. ETR     
+131. EW        132. EXE       133. EXR       134. F         135. FANG    
+136. FAST      137. FCX       138. FDS       139. FFIV      140. FIG     
+141. FITB      142. FIVE      143. FLEX      144. FLUT      145. FLY     
+146. FN        147. FSLY      148. FTI       149. FTNT      150. GEHC    
+151. GILD      152. GIS       153. GM        154. GOOG      155. GOOGL   
+156. GPC       157. GRMN      158. GS        159. GTLB      160. GWRE    
+161. HAL       162. HBAN      163. HCA       164. HL        165. HLT     
+166. HON       167. HOOD      168. HST       169. HSY       170. HUBB    
+171. HUBS      172. HUM       173. HUT       174. IBKR      175. ICE     
+176. IDXX      177. INSM      178. INTC      179. INTU      180. INVH    
+181. IONQ      182. IP        183. IQV       184. IR        185. IREN    
+186. ISRG      187. ITW       188. JAZZ      189. JBHT      190. JBL     
+191. JNJ       192. JPM       193. KDP       194. KHC       195. KKR     
+196. KMI       197. KNX       198. KO        199. KR        200. KTOS    
+201. KVUE      202. LHX       203. LIN       204. LLY       205. LMT     
+206. LNG       207. LRCX      208. LUNR      209. LUV       210. LVS     
+211. LYB       212. LYV       213. MAR       214. MARA      215. MCD     
+216. MCHP      217. MDB       218. MDLN      219. MDT       220. MEDP    
+221. MET       222. META      223. MLM       224. MMM       225. MOS     
+226. MP        227. MPC       228. MPWR      229. MRK       230. MRNA    
+231. MRSH      232. MRVL      233. MS        234. MSFT      235. MSI     
+236. MSTR      237. MTZ       238. MU        239. NDAQ      240. NEE     
+241. NET       242. NKE       243. NOC       244. NOW       245. NRG     
+246. NSC       247. NTAP      248. NTRA      249. NUE       250. NVDA    
+251. NXPI      252. NYT       253. O         254. ODFL      255. OKE     
+256. OKLO      257. OKTA      258. ON        259. ONDS      260. ORCL    
+261. OVV       262. OXY       263. PANW      264. PATH      265. PAYX    
+266. PCAR      267. PEP       268. PFE       269. PG        270. PGR     
+271. PINS      272. PL        273. PLD       274. PLTR      275. PNC     
+276. PPG       277. PPL       278. PR        279. PSA       280. PSX     
+281. QBTS      282. QCOM      283. QQQM      284. QSR       285. RBLX    
+286. RBRK      287. RDDT      288. REGN      289. RF        290. RGTI    
+291. RIOT      292. RIVN      293. RKLB      294. RKT       295. RMBS    
+296. RMD       297. ROK       298. ROKU      299. ROST      300. RPM     
+301. RSG       302. RTX       303. SBAC      304. SCCO      305. SCHW    
+306. SGI       307. SHOP      308. SHW       309. SLB       310. SLNO    
+311. SMCI      312. SNDK      313. SNOW      314. SNPS      315. SO      
+316. SOFI      317. SPG       318. SPMO      319. STRC      320. STT     
+321. STX       322. STZ       323. SYK       324. TDG       325. TEAM    
+326. TEM       327. TERN      328. TFC       329. TGT       330. TJX     
+331. TLN       332. TMO       333. TOST      334. TRGP      335. TRV     
+336. TSCO      337. TSLA      338. TTD       339. TTWO      340. TWLO    
+341. TXN       342. U         343. UAL       344. ULTA      345. UNH     
+346. UNP       347. UPS       348. USB       349. UTHR      350. VEEV    
+351. VG        352. VIAV      353. VICI      354. VLO       355. VMC     
+356. VRSK      357. VRT       358. VRTX      359. VST       360. VTR     
+361. WAB       362. WBD       363. WBS       364. WCN       365. WDAY    
+366. WDC       367. WELL      368. WFC       369. WING      370. WM      
+371. WMB       372. WMT       373. WSM       374. WST       375. WULF    
+376. XLF       377. XOM       378. XYZ       379. YSS       380. YUM     
+381. ZM        382. ZS        383. ZTS       
