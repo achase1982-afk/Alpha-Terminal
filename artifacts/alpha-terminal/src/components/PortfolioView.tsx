@@ -24,7 +24,7 @@ import type { OrderLeg } from "./OrderTicket";
 const C = {
   bg: "#0c0c0c",
   card: "#18181b",
-  border: "#27272a80",
+  border: "#27272a",
   borderHi: "#3f3f46",
   text: "#e4e4e7",
   textMuted: "#d4d4d8",
