@@ -258,7 +258,7 @@ function statusColor(status: string): string {
 }
 
 const COL_WIDTHS_DEFAULT: Record<string, number> = {
-  mark: 80, cost: 72, qty: 48, mktVal: 76, plOpen: 80, plPct: 72, plDay: 76, maint: 72,
+  mark: 88, cost: 80, qty: 52, mktVal: 88, plOpen: 96, plPct: 80, plDay: 96, maint: 80,
 };
 
 function useSymbolColumnWidth() {
@@ -434,6 +434,7 @@ function PositionTableRow({
 
   const eqTickDir = useTickFlash(group.underlying);
   const markColor = eqTickDir === "up" ? C.green : eqTickDir === "down" ? C.red : C.text;
+  const streamPrice = useTerminalStore(s => (s.streamPrices[group.underlying.toUpperCase()] as { last?: number } | undefined)?.last ?? null);
 
   const stickyBg = someSelected ? "#121008" : "#000";
 
@@ -534,9 +535,9 @@ function PositionTableRow({
           if (eq) {
             const eqQty = eq.longQuantity || eq.shortQuantity;
             if (eqQty > 0) markPx = eq.marketValue / eqQty;
-          } else if (hasOptions) {
-            const totalContracts = group.options.reduce((s, o) => s + (o.longQuantity || o.shortQuantity), 0);
-            if (totalContracts > 0) markPx = group.totalMarketValue / (totalContracts * 100);
+          }
+          if (markPx == null && streamPrice != null) {
+            markPx = streamPrice;
           }
           return <span style={{ fontSize: 14, color: markPx != null ? markColor : C.dim, textAlign: "right", fontVariantNumeric: "tabular-nums", transition: "color 0.15s", padding: "8px" }}>{markPx != null ? `$${markPx.toFixed(2)}` : "—"}</span>;
         })()}
