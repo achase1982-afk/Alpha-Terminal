@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import ReactDOM from "react-dom";
 import { useTerminalStore } from "@/lib/store";
 import { ConnectBrokerPrompt } from "./ConnectBrokerPrompt";
+import { useBrokerConnect } from "@/hooks/useBrokerConnect";
 import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import {
@@ -15,6 +16,7 @@ import {
   X,
   Check,
   Loader2,
+  ExternalLink,
 } from "lucide-react";
 import { JournalTab } from "./JournalTab";
 import type { OrderLeg } from "./OrderTicket";
@@ -733,6 +735,30 @@ interface PortfolioViewProps {
   onRoll?: (symbol: string) => void;
 }
 
+function ReconnectSchwabButton() {
+  const { connect, isNavigating } = useBrokerConnect();
+  return (
+    <button
+      onClick={connect}
+      disabled={isNavigating}
+      style={{
+        display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+        padding: "10px 24px", borderRadius: 8,
+        border: `1px solid ${C.gold}4d`, background: `${C.gold}0d`,
+        color: C.gold, fontSize: 12, fontFamily: f,
+        letterSpacing: 1, textTransform: "uppercase" as const,
+        cursor: "pointer", transition: "all 0.15s",
+      }}
+    >
+      {isNavigating ? (
+        <><Loader2 className="animate-spin" style={{ width: 14, height: 14 }} />REDIRECTING...</>
+      ) : (
+        <><ExternalLink style={{ width: 14, height: 14 }} />RECONNECT SCHWAB</>
+      )}
+    </button>
+  );
+}
+
 export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: PortfolioViewProps) {
   const { accessToken, setSymbol } = useTerminalStore();
   const wsAccount = usePortfolioStreamStore((s) => s.account);
@@ -1112,9 +1138,10 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
     </div>
   );
   if (portfolioStatus.status === "no_token" && !account) return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, fontFamily: f }}>
-      <div style={{ fontSize: 14, color: C.gold, letterSpacing: 1, textTransform: "uppercase" }}>SCHWAB AUTHENTICATION REQUIRED</div>
-      <div style={{ fontSize: 12, color: C.textDim, maxWidth: 320, textAlign: "center", lineHeight: 1.5 }}>Your Schwab session has expired. Re-authenticate to resume live portfolio updates.</div>
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, fontFamily: f }}>
+      <div style={{ fontSize: 14, color: C.gold, letterSpacing: 1, textTransform: "uppercase" }}>SCHWAB SESSION EXPIRED</div>
+      <div style={{ fontSize: 12, color: C.textDim, maxWidth: 320, textAlign: "center", lineHeight: 1.5 }}>Your Schwab session has expired. Reconnect to resume live portfolio updates.</div>
+      <ReconnectSchwabButton />
     </div>
   );
   if (loading && !account) return (

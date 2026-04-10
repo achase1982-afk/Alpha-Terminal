@@ -3,17 +3,20 @@ import { useTerminalStore } from "@/lib/store";
 import { useGetAuthUrl } from "@workspace/api-client-react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { queryClient } from "@/App";
-import { ExternalLink, CheckCircle2, Loader2, XCircle } from "lucide-react";
+import { ExternalLink, CheckCircle2, Loader2, XCircle, AlertTriangle } from "lucide-react";
+import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
 
 export function AuthPanel() {
   const { accessToken, traderAccessToken, clearTokens, clearTraderTokens } = useTerminalStore();
+  const portfolioStatus = usePortfolioStreamStore((s) => s.portfolioStatus);
   const [isNavigating, setIsNavigating] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
 
   const isConnected = !!(accessToken || traderAccessToken);
+  const serverTokenExpired = portfolioStatus.status === "no_token";
 
   const { data: authUrlData, refetch: refetchAuthUrl, isFetching: isUrlFetching } = useGetAuthUrl({
-    query: { enabled: !isConnected },
+    query: { enabled: !isConnected || serverTokenExpired },
   });
 
   const handleLogin = useCallback(async () => {
@@ -37,6 +40,34 @@ export function AuthPanel() {
   }, [clearTokens, clearTraderTokens]);
 
   const isLoading = isUrlFetching || isNavigating;
+
+  if (isConnected && serverTokenExpired) {
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle className="w-3.5 h-3.5 text-[#FFB800]" />
+            <span className="font-mono text-xs font-bold text-[#e4e4e7] tracking-wider">SCHWAB</span>
+            <span className="font-mono text-[10px] text-[#FFB800] tracking-wider">SESSION EXPIRED</span>
+          </div>
+        </div>
+        <p className="font-mono text-[10px] text-zinc-500 leading-relaxed">
+          Your Schwab session has expired. Reconnect to resume portfolio updates and order execution.
+        </p>
+        <button
+          onClick={handleLogin}
+          disabled={isLoading}
+          className="flex items-center justify-center gap-2 w-full py-2 rounded border border-[#FFB800]/30 hover:border-[#FFB800]/60 bg-[#FFB800]/5 hover:bg-[#FFB800]/10 transition-all font-mono text-xs text-[#FFB800] tracking-wider disabled:opacity-50"
+        >
+          {isLoading ? (
+            <><Loader2 className="w-3 h-3 animate-spin" />REDIRECTING...</>
+          ) : (
+            <>RECONNECT SCHWAB <ExternalLink className="w-3 h-3" /></>
+          )}
+        </button>
+      </div>
+    );
+  }
 
   if (isConnected) {
     return (
