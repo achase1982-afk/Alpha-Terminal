@@ -669,9 +669,9 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
   const canToggle = !isMultiLeg;
 
   const S = ticketMode === "options" ? {
-    body: 14, label: 13, section: 15, price: 17, heading: 16, badge: 14, detail: 14, tiny: 12,
+    body: 15, label: 14, section: 16, price: 18, heading: 17, badge: 15, detail: 15, tiny: 13,
   } : {
-    body: 13, label: 12, section: 14, price: 16, heading: 15, badge: 13, detail: 13, tiny: 11,
+    body: 14, label: 13, section: 15, price: 17, heading: 16, badge: 14, detail: 14, tiny: 12,
   };
 
   return (
@@ -687,7 +687,6 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
             <ArrowLeft className="w-3.5 h-3.5" />
           </button>
           <div>
-            <div className="tracking-[0.04em]" style={{ fontSize: S.heading, color: WHITE }}>ORDER TICKET</div>
             <div style={{ fontSize: S.label, color: MUTED }}>
               {isOption ? "Options" : "Stock"} · {symbol}
               {isCloseOrder && <span className="ml-1.5 font-medium px-1.5 py-0.5" style={{ fontSize: S.tiny, background: `${DOWN}18`, color: DOWN, borderRadius: 999, border: `1px solid ${DOWN}40` }}>CLOSE</span>}
@@ -734,7 +733,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
       )}
 
       {stage === "form" || stage === "review" ? (
-        <div className="flex-1 overflow-y-auto pb-36">
+        <div className="flex-1 overflow-y-auto pb-4">
 
           <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "8px 10px 10px" }}>
 
@@ -1230,7 +1229,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
 
       {/* CTA BAR — ALWAYS ACTIVE (never disabled by risk) */}
       {stage === "form" && (
-        <div className="absolute bottom-0 left-0 right-0 px-3 pb-5 pt-2" style={{ background: `linear-gradient(to top, rgba(5,6,7,1), rgba(5,6,7,0.95), transparent)` }}>
+        <div className="shrink-0 px-3 pt-2" style={{ paddingBottom: "max(env(safe-area-inset-bottom, 20px), 20px)", background: BG, borderTop: `1px solid ${BORDER}`, zIndex: 215 }}>
           <div className="flex justify-between flex-wrap gap-1 mb-1" style={{ fontSize: S.label, color: TEXT }}>
             <span>{isBuy ? "Buy" : "Sell"} {quantity} {isMultiLeg ? "spread" : isOption ? "contract" : "share"}{quantity > 1 ? "s" : ""} · {needsLimit || isMultiLeg ? `Limit ${limitPrice || "—"}` : ORDER_TYPES.find(t => t.value === orderType)?.label}</span>
             {estimatedCost != null && <span>{isMultiLeg ? (strategyIsCredit ? "Credit" : "Cost") : "Notional"} {fmtCurrency(Math.abs(estimatedCost))}</span>}
@@ -1240,13 +1239,13 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
             onClick={() => setStage("review")}
             className="w-full tracking-[0.06em] uppercase transition-all duration-150 active:scale-[0.98]"
             style={{
-              fontSize: 16,
-              height: 42,
+              fontSize: 17,
+              height: 48,
               borderRadius: 999,
               border: "none",
               background: CTA_GRAD,
               color: BG,
-              fontWeight: 400,
+              fontWeight: 500,
               fontFamily: SYS_FONT,
             }}
           >
