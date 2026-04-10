@@ -1,0 +1,367 @@
+You are a senior backend engineer working on my trading app, Alpha Terminal.
+
+CONTEXT
+
+Alpha Terminal already has:
+- MARKET PULSE (market overview)
+- SCANNER (Discovery/Momentum, deterministic scans)
+- STRATEGIST (options strategist that builds specific trades for a given ticker)
+
+We are adding a NEW module called **AI Lab Strategist**.
+
+UX placement (for context only, you do NOT build UI here):
+- Under the existing “Strategist” tab, there will be TWO sub-modes:
+  1) “Options Strategist” (existing)
+  2) “AI Lab Strategist” (new, this spec)
+
+AI Lab Strategist:
+- Is an experimental, non-executing research analyst.
+- It will eventually call LLMs (Claude as Analyst, Gemini Fast as Critic) to propose trade ideas.
+- It NEVER places orders; it only stores ideas + rationales + P&L.
+
+YOUR JOB IN THIS PROMPT
+
+Backend only, PHASE 1:
+
+1) Define data models / DB schemas:
+   - Trade Idea Store
+   - P&L / Outcome Store
+   - Embeddings / Memory Store (for RAG, write-path only for now)
+
+2) Implement backend services / functions (or HTTP endpoints, depending on our stack) for:
+   - get_universe_anomalies(filters, limit)
+   - get_ticker_snapshot(symbol, lookback_days)
+   - get_regime_state()
+   - get_pattern_performance(pattern_tags[])
+   - get_scanner_alignment(symbol)
+
+3) Implement the **Deterministic Rejection Layer + Portfolio Constraints** as pure backend logic:
+   - Given a candidate idea object (from an LLM later), validate it and either:
+     - Accept it (return status APPROVED), or
+     - Reject it with a clear rejection_reason.
+
+IMPORTANT:
+- DO NOT attempt to integrate LLMs, prompts, or UI in this phase.
+- Do NOT implement orchestrator/scheduling in this prompt.
+- Focus on clean types, schemas, and deterministic logic.
+- I’d rather you stub data sources than hallucinate LLM wiring.
+
+Stack assumptions (adjust to my repo as needed):
+- Backend: TypeScript/Node (Express or similar) OR Python (FastAPI), depending on what you detect from my project.
+- DB: Use whatever ORM / query layer the repo already uses (Prisma/SQLAlchemy/etc.). If unclear, propose schemas in a way that’s easy to translate.
+
+--------------------------------------------------
+1. DATA MODELS / SCHEMAS
+--------------------------------------------------
+
+Define schemas/types for:
+
+A) TradeIdea (AI Lab only)
+
+Fields (names flexible but semantics must match):
+
+- id: UUID
+- createdAt: timestamp
+- originType: "AI_LAB"
+- analystModelName: string
+- criticModelName: string | null
+
+- symbol: string
+- direction: "LONG" | "SHORT"
+- instrumentType: "STOCK" | "OPTIONS" | "STOCK+OPTIONS"
+
+- optionStructureType: string | null
+- legs: array of:
+  - legType: "CALL" | "PUT"
+  - side: "BUY" | "SELL"
+  - strike: number
+  - expiration: date
+  - quantity: number
+
+- entryZone: { min: number; max: number } | null
+- softStop: number | null
+- targetZone: { min: number; max: number } | null
+- timeHorizon: "INTRADAY" | "1-3D" | "3-10D" | "10+D"
+
+Rationale (structured):
+- thesis: string
+- catalyst: "FLOW" | "EARNINGS" | "TECHNICAL" | "MACRO" | "OTHER"
+- invalidation: string
+- regimeFit: "GOOD" | "NEUTRAL" | "POOR"
+- mainSignals: string[]  // e.g. ["UNUSUAL_FLOW","IVR_SPIKE"]
+- scannerAlignmentAtCreation: {
+    discoveryScore: number | null
+    momentumScore: number | null
+    modeAlignment: "AGREE" | "DISAGREE" | "NO_SIGNAL" | null
+  }
+
+Confidence:
+- signalStrength: number   // 0–100
+- convictionLevel: "LOW" | "MEDIUM" | "HIGH"
+- uncertainty: {
+    dataQuality: "HIGH" | "MEDIUM" | "LOW"
+    patternReliability: number | null // 0–1
+    regimeFitScore: number | null     // 0–1
+  }
+
+Liquidity snapshot:
+- entrySpreadPct: number | null      // % of mid
+- oiAtEntry: number | null
+- volumeAtEntry: number | null
+- volumeToOiRatio: number | null
+
+Regime:
+- regimeAtCreation: string // e.g. "TRENDING_UP|LOW_VOL|BULLISH"
+
+Notes:
+- analystNote: string | null
+- criticNote: string | null
+
+Lifecycle:
+- status: "NEW" | "ACTIVE" | "STALE" | "INVALIDATED" | "CLOSED"
+- invalidatedReason: string | null
+- closedAt: timestamp | null
+
+Outcome:
+- entryPrice: number | null
+- exitPrice: number | null
+- maxFavorableExcursion: number | null
+- maxAdverseExcursion: number | null
+- pnlPct: number | null
+- pnlMultiple: number | null
+- hitTarget: boolean | null
+- hitStop: boolean | null
+- wentNowhere: boolean | null
+- evaluationCompletedAt: timestamp | null
+
+B) Outcome / PnL tables
+
+You can put outcome fields directly on TradeIdea or in a separate table (TradeIdeaOutcome). I’m fine either way, as long as:
+
+- We can query:
+  - P&L over time
+  - MFE/MAE
+  - hit/stop/nowhere
+- We can compute baselines later.
+
+C) Embeddings / Memory table
+
+Schema:
+
+- id: UUID
+- ideaId: UUID (FK to TradeIdea)
+- embedding: vector / array<number> (however our DB/stack supports it)
+- tags: string[] // e.g., ["UNUSUAL_FLOW","TRENDING_UP","NVDA"]
+- createdAt: timestamp
+
+For now, we just need the table/type; you can stub the actual embedding content as text or placeholder.
+
+--------------------------------------------------
+2. TOOL / API IMPLEMENTATIONS (BACKEND)
+--------------------------------------------------
+
+Implement backend functions or endpoints for:
+
+A) get_universe_anomalies(filters, limit)
+
+Input:
+- filters: {
+    minPrice?: number
+    maxPrice?: number
+    minAvgVolume20d?: number
+    sectors?: string[]
+    excludeEtfs?: boolean
+  }
+- limit: number (e.g., 50)
+
+Output (array of objects):
+- symbol: string
+- anomalyTypes: string[]          // e.g. ["UNUSUAL_FLOW","IVR_SPIKE"]
+- anomalyScores: { [key: string]: number } // 0–100 per type
+- sector: string | null
+- marketCapBucket: "SMALL" | "MID" | "LARGE" | "MEGA" | null
+- basicLiquidity: {
+    avgVolume20d: number
+    avgSpreadPct: number
+    minOiMainStrikes: number | null
+  }
+
+IMPORTANT:
+- Filter out junk:
+  - avgVolume20d < some threshold (e.g., 500k) → do NOT return.
+  - price < some threshold (e.g., 3 or 5) → do NOT return.
+- DO NOT rank by pure percent change.
+- Rank by a composite anomaly score that emphasizes:
+  - volume spikes
+  - options flow strength
+  - IV/IVR changes
+  - RS changes
+- It’s okay to stub the exact scoring formula, but it MUST be volume/flow/IV/RS-driven, not % change only.
+
+B) get_ticker_snapshot(symbol, lookbackDays)
+
+Input:
+- symbol: string
+- lookbackDays: number (e.g., 20–60)
+
+Output:
+- symbol
+- recentPriceSummary: {
+    return5d: number
+    return20d: number
+    high20d: number
+    low20d: number
+  }
+- volumeSummary: {
+    median5d: number
+    median20d: number
+    volumeRatio: number // today volume / median20d
+  }
+- ivSummary: {
+    iv30d: number | null
+    ivr: number | null
+    hv20d: number | null
+    ivHvRatio: number | null
+  }
+- flowSummary: {
+    totalCallVol: number | null
+    totalPutVol: number | null
+    callPutSkew: number | null
+    avgVolOi: number | null
+    blockCount: number | null
+    biggestBlockNotional: number | null
+  }
+- rsSummary: {
+    rsVsSpy5d: number | null
+    rsVsSpy20d: number | null
+    sectorVsEtf20d: number | null
+  }
+- scannerAlignment: {
+    discoveryScore: number | null
+    momentumScore: number | null
+    modeAlignment: "AGREE" | "DISAGREE" | "NO_SIGNAL" | null
+  }
+- regimeAtCreation: string  // you can compute with get_regime_state or stub for now
+- pulseSnapshot: any        // placeholder object, shape not critical in this phase
+- liquidityMetrics: {
+    avgSpreadPct: number | null
+    minOiMainStrikes: number | null
+    volumeToOiRatio: number | null
+  }
+
+Use our existing market data sources (or stub interfaces) to fill these.
+
+C) get_regime_state()
+
+Output:
+- date: string
+- trendState: "TRENDING_UP" | "TRENDING_DOWN" | "CHOPPY"
+- volState: "LOW_VOL" | "NORMAL_VOL" | "HIGH_VOL"
+- breadthState: "BULLISH" | "BEARISH"
+- macroFlags: string[]  // e.g. ["EARNINGS_SEASON","FED_DAY"]
+- pulseSummary: any
+
+You can implement basic logic:
+- trendState: based on SPY vs 20d MA and 20d slope.
+- volState: based on VIX bands (e.g., <15 low, 15–20 normal, >20 high).
+- breadthState: simple advancers/decliners or use our Pulse if available.
+
+D) get_pattern_performance(patternTags[])
+
+Input:
+- patternTags: string[]
+
+Output:
+- patternId: string       // sorted tags joined, e.g., "EMERGING_RS+UNUSUAL_FLOW"
+- recentWinRate: number   // 0–1
+- avgPnl: number
+- bestRegimes: string[]   // regime labels where it worked
+- worstRegimes: string[]
+- sampleSize: number
+
+For now you can stub this as reading from P&L tables or returning placeholder values, but structure must be correct.
+
+E) get_scanner_alignment(symbol)
+
+Input:
+- symbol
+
+Output:
+- symbol
+- discoveryScore: number | null
+- momentumScore: number | null
+- modeAlignment: "UP" | "NEUTRAL" | "DOWN" | null
+
+You can map to whatever scores Discovery/Momentum currently output.
+
+--------------------------------------------------
+3. DETERMINISTIC REJECTION LAYER & PORTFOLIO LOGIC
+--------------------------------------------------
+
+Implement a pure backend function, something like:
+
+validateAiLabIdea(candidate: TradeIdea, activeIdeas: TradeIdea[], marketDataSnapshot: {...}): {
+  approved: boolean
+  rejectionReason?: string
+}
+
+Rules (hard constraints):
+
+Liquidity / tradability (for options):
+
+- If instrumentType includes OPTIONS:
+  - If entrySpreadPct > 0.10 (10%), reject with "WIDE_SPREAD".
+  - If oiAtEntry < 500 on any primary leg, reject with "LOW_OI".
+  - If volumeToOiRatio < 0.10, reject with "LOW_ACTIVITY".
+  - If dte < 5 (for non-index weeklies), reject with "DTE_TOO_SHORT" (configurable).
+
+For stock-only ideas:
+- If avgVolume20d < some threshold (e.g., 500k), reject "LOW_LIQUIDITY".
+
+Portfolio constraints (using activeIdeas):
+
+- If activeIdeas.length >= 5 → reject with "MAX_ACTIVE_REACHED" (for now; in later phases we may replace weakest idea).
+- Count by sector:
+  - If adding this idea would make >3 active ideas in same sector → reject "SECTOR_CONCENTRATION".
+- Count by direction:
+  - If adding this idea would make >4 active longs or >4 active shorts → reject "DIRECTION_SKEW".
+- Correlation check:
+  - Assume we have a daily 20d correlation matrix service (you can stub a function getCorrelation(symbolA, symbolB)).
+  - If new idea has correlation > 0.8 with an existing ACTIVE idea in same direction, reject "HIGH_CORRELATION_DUPLICATE".
+
+Idea duplication/contradiction:
+
+- If an ACTIVE idea already exists on same symbol & same direction & similar structure, reject "DUPLICATE_IDEA".
+- If an ACTIVE idea exists on same symbol & opposite direction, reject "CONTRADICTORY_IDEA".
+
+Data sanity:
+
+- If marketDataSnapshot shows stale data (e.g., dataFreshnessMinutes > some threshold) for key inputs, reject "STALE_DATA".
+
+This function should NOT:
+- Call any LLMs.
+- Touch UI.
+- It should be deterministic and fully testable in isolation.
+
+--------------------------------------------------
+DELIVERABLES FOR THIS PROMPT
+
+1) DB schema / model definitions for:
+   - TradeIdea
+   - Outcome (if separate)
+   - Embedding/Memory
+
+2) Backend implementations for:
+   - get_universe_anomalies
+   - get_ticker_snapshot
+   - get_regime_state
+   - get_pattern_performance
+   - get_scanner_alignment
+
+3) A validateAiLabIdea(...) function (or equivalent service) that enforces the Rejection Layer + portfolio constraints exactly as described.
+
+4) Brief inline comments or a short README section explaining:
+   - Where thresholds are configurable (volume, spread, OI, etc.).
+   - Where I need to plug in real market data sources vs stubs.
+
+Do not move on to orchestrator/scheduling or LLM integration in this prompt. Focus on making these data structures and validation rules correct and clean.
