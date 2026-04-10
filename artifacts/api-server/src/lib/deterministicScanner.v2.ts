@@ -1,6 +1,8 @@
 import { checkEventConflicts } from "./calendarEventChecker.js";
 import { emitTelemetry } from "./telemetryStore.js";
 import type { FilterResult, ScanResult, ScanCandidate } from "./deterministicScanner.js";
+import { db, equityDailyTable, flowDailyAggregatesTable, optionsFlowPerStrikeTable } from "@workspace/db";
+import { desc, eq, inArray, and, gte, lte, sql } from "drizzle-orm";
 
 const SCHWAB_API = "https://api.schwabapi.com/marketdata/v1";
 const SCHWAB_TRADER = "https://api.schwabapi.com/trader/v1";
@@ -230,11 +232,11 @@ async function fetchPortfolioSymbols(token: string): Promise<Set<string>> {
   } catch { return new Set(); }
 }
 
-// ─── Polygon flow data for Category 4 ─────────────────────────────────────
+// ─── Flow/Liquidity types (used by both API and DB fetchers) ──────────────
 interface FlowMetrics {
   callVolume: number;
   putVolume: number;
-  weightedVolOiRatio: number; // notional-weighted avg vol/OI for strikes with OI >= 200
+  weightedVolOiRatio: number;
   blockCount: number;
   totalNotional: number;
   dataAvailable: boolean;
@@ -243,7 +245,7 @@ interface FlowMetrics {
 interface LiqMetrics {
   avgSpreadPct: number;
   totalOI: number;
-  score: number; // 0-15, hard gate >= 8
+  score: number;
 }
 
 interface PolygonFlowResult {
@@ -251,6 +253,167 @@ interface PolygonFlowResult {
   flow: FlowMetrics;
   iv30d: number | null;
 }
+
+// ─── DB-backed data fetchers (T003 refactor) ──────────────────────────────
+
+async function fetchEquityHistoryFromDB(symbols: string[]): Promise<Map<string, Candle[]>> {
+  const map = new Map<string, Candle[]>();
+  if (symbols.length === 0) return map;
+
+  const rows = await db
+    .select({
+      symbol: equityDailyTable.symbol,
+      date: equityDailyTable.date,
+      close: equityDailyTable.close,
+      volume: equityDailyTable.volume,
+    })
+    .from(equityDailyTable)
+    .where(inArray(equityDailyTable.symbol, symbols))
+    .orderBy(equityDailyTable.symbol, equityDailyTable.date);
+
+  for (const row of rows) {
+    if (!map.has(row.symbol)) map.set(row.symbol, []);
+    map.get(row.symbol)!.push({
+      close: row.close,
+      volume: row.volume ?? 0,
+      datetime: new Date(row.date).getTime(),
+    });
+  }
+  return map;
+}
+
+interface DBFlowData {
+  flow: FlowMetrics;
+  strikes: Array<{ strike: number; dte: number | null; bid: number; ask: number; openInterest: number }>;
+  totalOI: number;
+  iv30d: number | null;
+}
+
+async function fetchFlowDataFromDB(symbols: string[]): Promise<Map<string, DBFlowData>> {
+  const map = new Map<string, DBFlowData>();
+  if (symbols.length === 0) return map;
+
+  const perSymbolDates = await db
+    .select({
+      sym: flowDailyAggregatesTable.underlyingSymbol,
+      maxDate: sql<string>`max(${flowDailyAggregatesTable.date})`,
+    })
+    .from(flowDailyAggregatesTable)
+    .where(inArray(flowDailyAggregatesTable.underlyingSymbol, symbols))
+    .groupBy(flowDailyAggregatesTable.underlyingSymbol);
+
+  if (perSymbolDates.length === 0) return map;
+
+  const symDatePairs = new Map<string, string>();
+  const allDates = new Set<string>();
+  for (const row of perSymbolDates) {
+    if (row.maxDate) {
+      symDatePairs.set(row.sym, row.maxDate);
+      allDates.add(row.maxDate);
+    }
+  }
+  if (symDatePairs.size === 0) return map;
+
+  const symsWithDates = [...symDatePairs.keys()];
+
+  const aggRows = await db
+    .select()
+    .from(flowDailyAggregatesTable)
+    .where(and(
+      inArray(flowDailyAggregatesTable.underlyingSymbol, symsWithDates),
+      inArray(flowDailyAggregatesTable.date, [...allDates]),
+    ));
+  const filteredAggs = aggRows.filter(a => symDatePairs.get(a.underlyingSymbol) === a.date);
+
+  const strikeRows = await db
+    .select()
+    .from(optionsFlowPerStrikeTable)
+    .where(and(
+      inArray(optionsFlowPerStrikeTable.underlyingSymbol, symsWithDates),
+      inArray(optionsFlowPerStrikeTable.date, [...allDates]),
+    ));
+  const filteredStrikes = strikeRows.filter(s => symDatePairs.get(s.underlyingSymbol) === s.date);
+
+  const strikesBySymbol = new Map<string, typeof filteredStrikes>();
+  for (const s of filteredStrikes) {
+    if (!strikesBySymbol.has(s.underlyingSymbol)) strikesBySymbol.set(s.underlyingSymbol, []);
+    strikesBySymbol.get(s.underlyingSymbol)!.push(s);
+  }
+
+  const eqRows = await db
+    .select({ symbol: equityDailyTable.symbol, iv30d: equityDailyTable.iv30d, date: equityDailyTable.date })
+    .from(equityDailyTable)
+    .where(and(
+      inArray(equityDailyTable.symbol, symsWithDates),
+      inArray(equityDailyTable.date, [...allDates]),
+    ));
+  const iv30dMap = new Map<string, number | null>();
+  for (const row of eqRows) {
+    if (symDatePairs.get(row.symbol) === row.date) iv30dMap.set(row.symbol, row.iv30d);
+  }
+
+  for (const agg of filteredAggs) {
+    const sym = agg.underlyingSymbol;
+    const rawStrikes = strikesBySymbol.get(sym) ?? [];
+
+    const strikesOut = rawStrikes.map(s => ({
+      strike: s.strike,
+      dte: s.dte,
+      bid: s.bid ?? 0,
+      ask: s.ask ?? 0,
+      openInterest: s.openInterest ?? 0,
+    }));
+
+    map.set(sym, {
+      flow: {
+        callVolume: agg.totalCallVolume ?? 0,
+        putVolume: agg.totalPutVolume ?? 0,
+        weightedVolOiRatio: agg.avgVolOiRatio ?? 0,
+        blockCount: agg.blockCount ?? 0,
+        totalNotional: agg.totalOptionsNotional ?? 0,
+        dataAvailable: true,
+      },
+      strikes: strikesOut,
+      totalOI: agg.totalOi ?? 0,
+      iv30d: iv30dMap.get(sym) ?? null,
+    });
+  }
+
+  return map;
+}
+
+function computeLiqFromStrikes(
+  strikes: DBFlowData["strikes"],
+  spot: number,
+): LiqMetrics {
+  const liqStrikes = strikes.filter(s => {
+    const inStrikeRange = s.strike >= spot * (1 - CFG.liqStrikePct) && s.strike <= spot * (1 + CFG.liqStrikePct);
+    const inDteRange = (s.dte ?? 0) >= CFG.liqDteMin && (s.dte ?? 0) <= CFG.liqDteMax;
+    return inStrikeRange && inDteRange && s.bid > 0 && s.ask > 0;
+  });
+
+  let avgSpreadPct = 99;
+  let totalOI = 0;
+  let liqScore = 0;
+
+  if (liqStrikes.length > 0) {
+    const spreads: number[] = [];
+    for (const s of liqStrikes) {
+      const mid = (s.bid + s.ask) / 2;
+      if (mid > 0) spreads.push(((s.ask - s.bid) / mid) * 100);
+      totalOI += s.openInterest;
+    }
+    avgSpreadPct = spreads.length > 0 ? spreads.reduce((a, b) => a + b, 0) / spreads.length : 99;
+    if (avgSpreadPct <= 2) liqScore = 15;
+    else if (avgSpreadPct <= 5) liqScore = 12;
+    else if (avgSpreadPct <= 10) liqScore = 9;
+    else if (avgSpreadPct <= 15) liqScore = 6;
+  }
+
+  return { avgSpreadPct, totalOI, score: liqScore };
+}
+
+// ─── Polygon flow data for Category 4 (legacy — kept for fallback) ────────
 
 async function fetchPolygonOptionsData(sym: string, apiKey: string, spot: number): Promise<PolygonFlowResult | null> {
   const today = new Date();
@@ -630,7 +793,6 @@ export async function runDiscoveryScan(
   log: { info: (...args: any[]) => void; warn: (...args: any[]) => void; error: (...args: any[]) => void },
 ): Promise<ScanResult> {
   const scanStart = Date.now();
-  const polygonKey = process.env["POLYGON_API_KEY"];
 
   emitTelemetry("SCANNER", "INFO", `Discovery scan initiated — ${symbols.length} tickers`, {
     totalTickers: symbols.length, pulseBias: pulse.bias, mode: "DISCOVERY",
@@ -659,13 +821,24 @@ export async function runDiscoveryScan(
 
   log.info({ total: symbols.length, passed: passedSymbols.length }, "Discovery Stage 1: pre-filter complete");
 
-  // ── Fetch SPY + sector ETFs for RS ──
+  // ── Batch-load historical data from DB (T003 refactor) ──
   const neededEtfs = [...new Set(passedSymbols.map(s => getSectorEtf(s)).concat(["SPY"]))];
+  const allSymbolsForDB = [...new Set([...passedSymbols, ...neededEtfs])];
+
+  emitTelemetry("DATABASE", "INFO", `Scanner: loading equity history for ${allSymbolsForDB.length} symbols from DB`, { symbols: allSymbolsForDB.length });
+  const [equityHistoryMap, flowDataMap] = await Promise.all([
+    fetchEquityHistoryFromDB(allSymbolsForDB),
+    fetchFlowDataFromDB(passedSymbols),
+  ]);
+  emitTelemetry("DATABASE", "INFO", `Scanner: loaded ${equityHistoryMap.size} equity histories, ${flowDataMap.size} flow records from DB`, {
+    equitySymbols: equityHistoryMap.size, flowSymbols: flowDataMap.size,
+  });
+
   const etfHistories = new Map<string, Candle[]>();
-  await Promise.allSettled(neededEtfs.map(async etf => {
-    const c = await fetchPriceHistory(etf, accessToken);
-    if (c.length > 0) etfHistories.set(etf, c);
-  }));
+  for (const etf of neededEtfs) {
+    const c = equityHistoryMap.get(etf);
+    if (c && c.length > 0) etfHistories.set(etf, c);
+  }
   const spyCandles = etfHistories.get("SPY") ?? [];
   const spyCloses = spyCandles.map(c => c.close);
 
@@ -679,31 +852,28 @@ export async function runDiscoveryScan(
     ivr: number; iv30d: number | null; atmSpreadPct: number;
   }> = [];
 
-  for (let i = 0; i < passedSymbols.length; i += CFG.maxScanConcurrency) {
-    const batch = passedSymbols.slice(i, i + CFG.maxScanConcurrency);
-    const results = await Promise.allSettled(batch.map(async sym => {
+  for (const sym of passedSymbols) {
+    try {
       const quote = quoteMap.get(sym.toUpperCase())!;
       const spot = quote.lastPrice;
 
-      const [candles, polyData] = await Promise.all([
-        fetchPriceHistory(sym, accessToken),
-        polygonKey ? fetchPolygonOptionsData(sym, polygonKey, spot) : Promise.resolve(null),
-      ]);
+      const candles = equityHistoryMap.get(sym) ?? [];
+      const polyData = flowDataMap.get(sym) ?? null;
 
       if (candles.length < CFG.ipoMinDays) {
         const idx = filterResults.findIndex(f => f.symbol === sym);
         if (idx >= 0) filterResults[idx] = { symbol: sym, passed: false, reason: `Insufficient history (${candles.length}d < ${CFG.ipoMinDays}d)` };
-        return null;
+        continue;
       }
 
-      // Liquidity gate
-      const liqScore = polyData?.liq.score ?? 0;
-      const atmSpreadPct = polyData?.liq.avgSpreadPct ?? 99;
-      if (liqScore < CFG.liquidityGateMinScore) {
+      const liqMetrics = polyData ? computeLiqFromStrikes(polyData.strikes, spot) : { avgSpreadPct: 99, totalOI: 0, score: 0 };
+      const liqScore = liqMetrics.score;
+      const atmSpreadPct = liqMetrics.avgSpreadPct;
+      if (polyData && liqScore < CFG.liquidityGateMinScore) {
         const idx = filterResults.findIndex(f => f.symbol === sym);
         if (idx >= 0) filterResults[idx] = { symbol: sym, passed: false, reason: `Liquidity gate failed (score ${liqScore} < 8, spread ${atmSpreadPct.toFixed(1)}%)` };
         emitTelemetry("SCANNER", "WARN", `${sym} — SKIP: liquidity gate (score ${liqScore})`, { ticker: sym, liqScore, spread: atmSpreadPct });
-        return null;
+        continue;
       }
 
       const closes = candles.map(c => c.close);
@@ -729,7 +899,7 @@ export async function runDiscoveryScan(
       const setupQuality = s1a + s1b + s1c;
 
       // ── Category 2 ──
-      if (volumes.length < 20) return null;
+      if (volumes.length < 20) continue;
       const { score: s2a, vr } = score2A(volumes);
       const s2b = score2B(vr, pct5d);
       const { score: s2c, obvSlopeSign } = score2C(candles);
@@ -811,18 +981,16 @@ export async function runDiscoveryScan(
         ticker: sym, totalScore, setupQuality, accumulation, ivSetup, flowDivergence, emergingRS, directionalLean, flowDataAvailable, pass: totalScore >= CFG.minScore,
       });
 
-      return {
+      scoredResults.push({
         symbol: sym, totalScore,
         rawScores: { s1a, s1b, s1c, s2a, s2b, s2c, s3a, s3b, s3c, s4a, s4b, s4c, s4d, s5a, s5b },
         setupQuality, accumulation, ivSetup, flowDivergence, emergingRS,
         liqScore, flowDataAvailable, directionalLean,
         quote: { lastPrice: spot, totalVolume: quote.totalVolume, netPercentChange: quote.netPercentChange },
         candles, ivr, iv30d, atmSpreadPct,
-      };
-    }));
-
-    for (const r of results) {
-      if (r.status === "fulfilled" && r.value) scoredResults.push(r.value);
+      });
+    } catch (err) {
+      log.warn({ symbol: sym, error: err instanceof Error ? err.message : String(err) }, "Discovery: error scoring symbol");
     }
   }
 

@@ -56,14 +56,16 @@ New scoring engine in `deterministicScanner.v2.ts` implementing the Discovery Mo
 - **Emerging RS** (15 pts): 5A=RS ratio 5d vs 20d slope (8pt), 5B=ticker 5d vs sector ETF 5d (7pt)
 
 **Key features:**
-- Polygon options snapshot used for flow data (IV30d, vol/OI, call/put split, block trades)
+- **DB-backed data (T003 refactor):** Scanner reads equity history from `equity_daily` table and flow data from `flow_daily_aggregates` + `options_flow_per_strike` tables in batch SQL queries. Only live Schwab quotes used for current prices. Eliminates per-symbol API calls — 30-symbol scan completes in ~400ms.
+- Backfill endpoints populate snapshot tables: `/api/snapshot/backfill` (equity, 62 trading days) and `/api/snapshot/backfill-flow` (Polygon options, configurable days).
+- Universe expanded to 370 symbols via `getDefaultUniverse()` in `snapshot.ts`.
 - OBV computed from daily candles via linear regression slope
 - HV20d from stdev of log returns × √252
 - IVR estimated from rolling IV30d percentile cache (improves accuracy over time)
 - IVR 5-day change tracked via module-level timestamp cache
 - 11 GICS sector ETFs subscribed for RS comparison (XLK, XLF, XLE, XLV, XLI, XLC, XLY, XLP, XLU, XLRE, XLB)
 - Directional lean (BULLISH/BEARISH/MIXED) shown per candidate card
-- Flow N/A renormalization: `(SQ+ACC+IV+RS)/75*100` when Polygon data unavailable
+- Flow N/A renormalization: `(SQ+ACC+IV+RS)/75*100` when flow data unavailable from DB
 - Earnings within 14d: caps 3B (max 4) and 3C (max 3)
 - IPO < 60 trading days and price < $10 excluded
 - Micro-override still fires at score >= 90
