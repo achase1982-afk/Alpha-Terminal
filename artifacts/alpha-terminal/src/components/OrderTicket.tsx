@@ -505,17 +505,34 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
   const buildSchwabOrder = useCallback(() => {
     if (isMultiLeg && strategyLegs) {
       const parsed = parseFloat(limitPrice || "0");
+      const isTrueMultiLeg = strategyLegs.length >= 2;
+      if (isTrueMultiLeg) {
+        const o: Record<string, unknown> = {
+          orderType: strategyIsCredit ? "NET_CREDIT" : "NET_DEBIT",
+          session: extendedHours || duration === "SEAMLESS" || duration === "GOOD_TILL_CANCEL_EXT" ? "SEAMLESS" : "NORMAL",
+          duration,
+          complexOrderStrategyType: "NONE",
+          orderStrategyType: "SINGLE",
+          orderLegCollection: strategyLegs.map(leg => ({
+            instruction: leg.instruction,
+            quantity: leg.quantity * quantity,
+            instrument: { symbol: leg.schwabSymbol, assetType: "OPTION" },
+          })),
+        };
+        if (parsed > 0) o.price = parsed;
+        return o;
+      }
+      const singleLeg = strategyLegs[0];
       const o: Record<string, unknown> = {
-        orderType: strategyIsCredit ? "NET_CREDIT" : "NET_DEBIT",
+        orderType: "LIMIT",
         session: extendedHours || duration === "SEAMLESS" || duration === "GOOD_TILL_CANCEL_EXT" ? "SEAMLESS" : "NORMAL",
         duration,
-        complexOrderStrategyType: "NONE",
         orderStrategyType: "SINGLE",
-        orderLegCollection: strategyLegs.map(leg => ({
-          instruction: leg.instruction,
-          quantity: leg.quantity * quantity,
-          instrument: { symbol: leg.schwabSymbol, assetType: "OPTION" },
-        })),
+        orderLegCollection: [{
+          instruction: singleLeg.instruction,
+          quantity: singleLeg.quantity * quantity,
+          instrument: { symbol: singleLeg.schwabSymbol, assetType: "OPTION" },
+        }],
       };
       if (parsed > 0) o.price = parsed;
       return o;
