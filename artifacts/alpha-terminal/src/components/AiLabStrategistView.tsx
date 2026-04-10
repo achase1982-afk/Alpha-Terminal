@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import {
@@ -189,8 +189,10 @@ export function AiLabStrategistView() {
   const { aiLabStrategistConfig } = useTerminalStore();
   const [ideas, setIdeas] = useState<AiLabIdea[]>([]);
   const [loading, setLoading] = useState(false);
-  const [shadow, setShadow] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const syncedRef = useRef(false);
+
+  const shadow = aiLabStrategistConfig.mode === "SHADOW";
 
   const fetchIdeas = useCallback(async () => {
     setLoading(true);
@@ -200,7 +202,6 @@ export function AiLabStrategistView() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setIdeas(data.ideas ?? []);
-      setShadow(data.shadow === true);
     } catch (err: any) {
       setError(err.message);
       setIdeas([]);
@@ -210,6 +211,14 @@ export function AiLabStrategistView() {
   }, []);
 
   useEffect(() => {
+    if (!syncedRef.current) {
+      syncedRef.current = true;
+      fetchWithAuth(`${API_BASE}/ai-lab/strategist-config`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(aiLabStrategistConfig),
+      }).catch(() => {});
+    }
     fetchIdeas();
     const interval = setInterval(fetchIdeas, 30_000);
     return () => clearInterval(interval);
