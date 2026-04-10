@@ -855,8 +855,8 @@ export async function connectIB(): Promise<void> {
       const etHour = parseInt(now.toLocaleString("en-US", { timeZone: "America/New_York", hour: "numeric", hour12: false }));
       const dayOfWeek = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" })).getDay();
       const isMarketHours = dayOfWeek >= 1 && dayOfWeek <= 5 && etHour >= 9 && etHour < 16;
-      if (isMarketHours && Date.now() - lastBreadthTickAt > 60_000) {
-        void logFailure("IBKR", "CRITICAL", `Breadth/PCR data stale for ${Math.round((Date.now() - lastBreadthTickAt) / 1000)}s during market hours`, { lastBreadthTickAt, staleSec: Math.round((Date.now() - lastBreadthTickAt) / 1000) });
+      if (isMarketHours && Date.now() - lastBreadthTickAt > 120_000) {
+        void logFailure("IBKR", "WARN", `Breadth/PCR data stale for ${Math.round((Date.now() - lastBreadthTickAt) / 1000)}s during market hours`, { lastBreadthTickAt, staleSec: Math.round((Date.now() - lastBreadthTickAt) / 1000) });
       }
     }, 30_000);
 
