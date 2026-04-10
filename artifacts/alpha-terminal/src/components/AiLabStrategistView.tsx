@@ -186,13 +186,14 @@ function IdeaCard({ idea }: { idea: AiLabIdea }) {
 }
 
 export function AiLabStrategistView() {
-  const { aiLabStrategistConfig } = useTerminalStore();
+  const { aiLabStrategistConfig, setAiLabStrategistConfig } = useTerminalStore();
   const [ideas, setIdeas] = useState<AiLabIdea[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [serverShadow, setServerShadow] = useState(false);
   const syncedRef = useRef(false);
 
-  const shadow = aiLabStrategistConfig.mode === "SHADOW";
+  const shadow = aiLabStrategistConfig.mode === "SHADOW" || serverShadow;
 
   const fetchIdeas = useCallback(async () => {
     setLoading(true);
@@ -201,6 +202,8 @@ export function AiLabStrategistView() {
       const res = await fetchWithAuth(`${API_BASE}/ai-lab/ideas?status=NEW,ACTIVE&limit=50`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
+      if (data.shadow) setServerShadow(true);
+      else setServerShadow(false);
       setIdeas(data.ideas ?? []);
     } catch (err: any) {
       setError(err.message);
@@ -213,16 +216,25 @@ export function AiLabStrategistView() {
   useEffect(() => {
     if (!syncedRef.current) {
       syncedRef.current = true;
-      fetchWithAuth(`${API_BASE}/ai-lab/strategist-config`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(aiLabStrategistConfig),
-      }).catch(() => {});
+      // Pull server config first so the frontend always reflects server state
+      fetchWithAuth(`${API_BASE}/ai-lab/config`)
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (!data?.config) return;
+          const cfg = data.config;
+          if (cfg.mode) setAiLabStrategistConfig("mode", cfg.mode);
+          if (cfg.enabled !== undefined) setAiLabStrategistConfig("enabled", cfg.enabled);
+          if (cfg.analystModelProvider) setAiLabStrategistConfig("analystModelProvider", cfg.analystModelProvider);
+          if (cfg.analystModelName) setAiLabStrategistConfig("analystModelName", cfg.analystModelName);
+          if (cfg.skepticModelProvider) setAiLabStrategistConfig("skepticModelProvider", cfg.skepticModelProvider);
+          if (cfg.skepticModelName) setAiLabStrategistConfig("skepticModelName", cfg.skepticModelName);
+        })
+        .catch(() => {});
     }
     fetchIdeas();
     const interval = setInterval(fetchIdeas, 30_000);
     return () => clearInterval(interval);
-  }, [fetchIdeas]);
+  }, [fetchIdeas, setAiLabStrategistConfig]);
 
   if (!aiLabStrategistConfig.enabled) {
     return (
