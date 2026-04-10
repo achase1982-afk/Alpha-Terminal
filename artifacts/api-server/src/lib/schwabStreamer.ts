@@ -122,6 +122,7 @@ let streamerInfo: StreamerInfo | null = null;
 let subscribedSymbols = new Set<string>();
 let subscribedFuturesSymbols = new Set<string>();
 let subscribedOptionSymbols = new Set<string>();
+let subscribedFuturesOptionSymbols = new Set<string>();
 let requestCounter = 0;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectDelay = 2000;
@@ -303,6 +304,20 @@ function sendOptionSubscription(symbols: string[]) {
   if (req) {
     schwabWs.send(JSON.stringify({ requests: [req] }));
     logger.info({ count: symbols.length }, "Schwab streamer: LEVELONE_OPTIONS SUBS sent");
+  }
+}
+
+function sendFuturesOptionSubscription(symbols: string[]) {
+  if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN || !streamerInfo || !symbols.length) return;
+
+  const req = buildRequest("LEVELONE_FUTURES_OPTIONS", "SUBS", {
+    keys: symbols.join(","),
+    fields: "0,2,3,4,8,9,10,16,17,19,28,29,30,31,37",
+  });
+
+  if (req) {
+    schwabWs.send(JSON.stringify({ requests: [req] }));
+    logger.info({ count: symbols.length, sample: symbols.slice(0, 5).join(",") }, "Schwab streamer: LEVELONE_FUTURES_OPTIONS SUBS sent");
   }
 }
 
@@ -660,6 +675,9 @@ function handleMessage(raw: string) {
           if (subscribedOptionSymbols.size > 0) {
             sendOptionSubscription([...subscribedOptionSymbols]);
           }
+          if (subscribedFuturesOptionSymbols.size > 0) {
+            sendFuturesOptionSubscription([...subscribedFuturesOptionSymbols]);
+          }
           sendAcctActivitySubscription();
         } else {
           logger.error({ code, msg: msgText }, "Schwab streamer: LOGIN failed");
@@ -698,6 +716,8 @@ function handleMessage(raw: string) {
       } else if (item.service === "LEVELONE_FUTURES") {
         processFuturesTick(item.content);
       } else if (item.service === "LEVELONE_OPTIONS") {
+        processOptionTick(item.content);
+      } else if (item.service === "LEVELONE_FUTURES_OPTIONS") {
         processOptionTick(item.content);
       } else if (item.service === "ACCT_ACTIVITY") {
         processAcctActivity(item.content);
@@ -824,6 +844,7 @@ export function stopStreamer() {
   subscribedSymbols.clear();
   subscribedFuturesSymbols.clear();
   subscribedOptionSymbols.clear();
+  subscribedFuturesOptionSymbols.clear();
   acctActivitySubscribed = false;
 }
 
@@ -873,6 +894,20 @@ export function addOptionSymbols(symbols: string[]) {
 
   if (newSyms.length > 0 && connectionState === "connected") {
     sendOptionSubscription([...subscribedOptionSymbols]);
+  }
+}
+
+export function addFuturesOptionSymbols(symbols: string[]) {
+  const newSyms: string[] = [];
+  for (const s of symbols) {
+    if (!subscribedFuturesOptionSymbols.has(s)) {
+      subscribedFuturesOptionSymbols.add(s);
+      newSyms.push(s);
+    }
+  }
+
+  if (newSyms.length > 0 && connectionState === "connected") {
+    sendFuturesOptionSubscription([...subscribedFuturesOptionSymbols]);
   }
 }
 

@@ -7,6 +7,7 @@ import {
   addSymbols as addSchwabSymbols,
   addFuturesSymbols as addSchwabFuturesSymbols,
   addOptionSymbols as addSchwabOptionSymbols,
+  addFuturesOptionSymbols as addSchwabFuturesOptionSymbols,
   startStreamer,
 } from "../lib/schwabStreamer.js";
 import { subscribeQuoteForSymbol, isIBConnected } from "../lib/ibStreamer.js";
@@ -69,7 +70,11 @@ router.post("/symbols", (req, res) => {
 router.post("/option-symbols", (req, res) => {
   const { symbols } = req.body as { symbols?: unknown };
   if (Array.isArray(symbols)) {
-    addSchwabOptionSymbols(symbols.filter((s): s is string => typeof s === "string"));
+    const all = symbols.filter((s): s is string => typeof s === "string");
+    const futOpt = all.filter(s => s.startsWith("./"));
+    const eqOpt = all.filter(s => !s.startsWith("./"));
+    if (eqOpt.length > 0) addSchwabOptionSymbols(eqOpt);
+    if (futOpt.length > 0) addSchwabFuturesOptionSymbols(futOpt);
   }
   res.json({ ok: true });
 });
