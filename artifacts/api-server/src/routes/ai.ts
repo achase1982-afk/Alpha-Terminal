@@ -1923,10 +1923,18 @@ Write ONLY the narrative fields. Return this exact JSON structure:
   } catch (err: unknown) {
     clearInterval(heartbeat);
     pulseGenerationInFlight = false;
-    const msg = err instanceof Error ? err.message : String(err);
-    lastPulseError = `Generation failed: ${msg}`;
+    const rawMsg = err instanceof Error ? err.message : String(err);
     console.error("[PULSE STREAM] Error:", err);
     req.log.error({ err }, "Market pulse stream error");
+    let cleanMsg = rawMsg;
+    try {
+      const parsed = JSON.parse(rawMsg);
+      if (parsed?.error?.message) cleanMsg = parsed.error.message;
+      else if (parsed?.message) cleanMsg = parsed.message;
+    } catch {
+      // not JSON, use raw message as-is
+    }
+    lastPulseError = `Generation failed — ${cleanMsg}. Please retry.`;
     safeSseWrite(res, `event: error\ndata: ${JSON.stringify({ type: "error", message: lastPulseError })}\n\n`);
     if (!res.writableEnded) res.end();
   }

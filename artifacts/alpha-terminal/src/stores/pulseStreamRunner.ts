@@ -130,7 +130,15 @@ function startResultPolling(epoch: number) {
         pollTimer = null;
         activeAbort = null;
         const s = useMarketPulseStore.getState();
-        s.setError(data.error || "Generation failed. Please try again.");
+        let errMsg = "Generation failed. Please try again.";
+        if (typeof data.error === "string") {
+          errMsg = data.error;
+        } else if (data.error && typeof data.error === "object") {
+          const e = data.error as Record<string, unknown>;
+          const inner = e.error as Record<string, unknown> | undefined;
+          errMsg = (inner?.message as string) || (e.message as string) || "Generation failed — AI service temporarily unavailable. Please retry.";
+        }
+        s.setError(errMsg);
         s.setStreaming(false);
         s.setLoading(false);
         return;
