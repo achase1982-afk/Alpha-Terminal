@@ -182,3 +182,44 @@ The monorepo structure facilitates shared libraries and consistent tooling. A cl
     - **Analyst Insights**: Per-symbol AI-generated analyst sentiment summaries. Shown alongside ratings.
     - **Conference Calls**: 3-month lookahead with webcast URLs.
     - **Strategist Integration**: Upcoming economic catalysts (14-day window) and recent analyst ratings for the target symbol are injected into both the regular and streaming strategist prompts, so the AI factors macro events and analyst sentiment into trade recommendations.
+
+### AI Lab Strategist Phase 1 — Backend (April 2026)
+
+Backend data layer for AI-driven trade idea generation and evaluation.
+
+**3 Database Tables:**
+1. `ai_lab_ideas` — Trade ideas with symbol, direction, instrument type, option legs, entry/target/stop zones, thesis/catalyst/invalidation, signal strength, conviction, regime at creation, scanner alignment snapshot. Status lifecycle: NEW → ACTIVE → CLOSED/INVALIDATED/EXPIRED. Unique on (symbol, status).
+2. `ai_lab_idea_outcomes` — P&L tracking per idea: entry/exit prices, MFE/MAE, hit target/stop flags, regime at exit.
+3. `ai_lab_embeddings` — JSONB embedding vectors + tags per idea for similarity search.
+
+**5 Tool Functions (`aiLabService.ts`):**
+1. `getUniverseAnomalies()` — Scans equity_daily + flow_daily_aggregates for volume spikes, IVR spikes, unusual flow, block activity, RS divergence. Ranked by composite anomaly score.
+2. `getTickerSnapshot()` — Comprehensive single-symbol snapshot: price returns, volume medians, IV/IVR/HV, flow summary, RS vs SPY, regime, liquidity metrics.
+3. `getRegimeState()` — Market regime from SPY price vs SMA20, VIX level, breadth. Returns trend/vol/breadth states + macro flags.
+4. `getPatternPerformance()` — Historical win rate by pattern tags (stub until sufficient data).
+5. `getScannerAlignment()` — Scanner discovery/momentum scores for a symbol (stub until cache exposed).
+- `getCorrelation()` — 20-day price correlation between two symbols from equity_daily.
+
+**Deterministic Rejection Layer (`aiLabValidator.ts`):**
+- `validateAiLabIdea()` — 10 rejection checks before any idea persists:
+  1. STALE_DATA (>30 min old)
+  2. WIDE_SPREAD (>10% for options)
+  3. LOW_OI (<500 per leg)
+  4. LOW_ACTIVITY (vol/OI <0.10)
+  5. DTE_TOO_SHORT (<5 days)
+  6. LOW_LIQUIDITY (stock avg vol <500K)
+  7. MAX_ACTIVE_REACHED (>5 active ideas)
+  8. SECTOR_CONCENTRATION (>3 same sector)
+  9. DIRECTION_SKEW (>4 same direction)
+  10. DUPLICATE_IDEA / CONTRADICTORY_IDEA / HIGH_CORRELATION_DUPLICATE (>0.80 corr)
+
+**API Routes (`/api/ai-lab/`):**
+- `GET /anomalies` — Universe anomaly scan with filters
+- `GET /ticker/:symbol` — Full ticker snapshot
+- `GET /regime` — Current market regime
+- `GET /pattern-performance?tags=` — Pattern win rates
+- `GET /scanner-alignment/:symbol` — Scanner scores
+- `POST /ideas` — Create idea (runs validator first)
+- `GET /ideas` — List ideas with status filter
+- `GET /ideas/:id` — Single idea + outcomes
+- `PATCH /ideas/:id/status` — Update idea lifecycle status

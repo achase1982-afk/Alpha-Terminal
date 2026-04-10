@@ -13,6 +13,7 @@ import telemetryRouter from "./telemetry";
 import scannerRouter from "./scanner";
 import unusualOptionsRouter from "./unusualOptions";
 import snapshotRouter from "./snapshot";
+import aiLabRouter from "./aiLab";
 const router: IRouter = Router();
 
 router.use("/auth", authRouter);
@@ -29,5 +30,6 @@ router.use("/telemetry", telemetryRouter);
 router.use("/scanner", scannerRouter);
 router.use("/unusual-options", unusualOptionsRouter);
 router.use("/snapshot", snapshotRouter);
+router.use("/ai-lab", aiLabRouter);
 
 export default router;

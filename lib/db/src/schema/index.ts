@@ -294,6 +294,89 @@ export const corporateEventsTable = pgTable("corporate_events", {
 
 export type CorporateEvent = typeof corporateEventsTable.$inferSelect;
 
+export const aiLabIdeasTable = pgTable("ai_lab_ideas", {
+  id: serial("id").primaryKey(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  originType: text("origin_type").notNull().default("AI_LAB"),
+  analystModelName: text("analyst_model_name").notNull().default("claude-sonnet"),
+  criticModelName: text("critic_model_name"),
+
+  symbol: text("symbol").notNull(),
+  direction: text("direction").notNull(),
+  instrumentType: text("instrument_type").notNull(),
+
+  optionStructureType: text("option_structure_type"),
+  legs: jsonb("legs"),
+
+  entryZone: jsonb("entry_zone"),
+  softStop: doublePrecision("soft_stop"),
+  targetZone: jsonb("target_zone"),
+  timeHorizon: text("time_horizon").notNull().default("3-10D"),
+
+  thesis: text("thesis").notNull(),
+  catalyst: text("catalyst").notNull(),
+  invalidation: text("invalidation").notNull(),
+  regimeFit: text("regime_fit").notNull().default("NEUTRAL"),
+  mainSignals: jsonb("main_signals"),
+  scannerAlignmentAtCreation: jsonb("scanner_alignment_at_creation"),
+
+  signalStrength: integer("signal_strength").notNull().default(50),
+  convictionLevel: text("conviction_level").notNull().default("MEDIUM"),
+  uncertainty: jsonb("uncertainty"),
+
+  entrySpreadPct: doublePrecision("entry_spread_pct"),
+  oiAtEntry: integer("oi_at_entry"),
+  volumeAtEntry: integer("volume_at_entry"),
+  volumeToOiRatio: doublePrecision("volume_to_oi_ratio"),
+
+  regimeAtCreation: text("regime_at_creation"),
+
+  analystNote: text("analyst_note"),
+  criticNote: text("critic_note"),
+
+  status: text("status").notNull().default("NEW"),
+  invalidatedReason: text("invalidated_reason"),
+  closedAt: timestamp("closed_at"),
+
+  sector: text("sector"),
+}, (t) => [
+  uniqueIndex("ai_lab_ideas_sym_status").on(t.symbol, t.status),
+]);
+
+export type AiLabIdea = typeof aiLabIdeasTable.$inferSelect;
+export type AiLabIdeaInsert = typeof aiLabIdeasTable.$inferInsert;
+
+export const aiLabIdeaOutcomesTable = pgTable("ai_lab_idea_outcomes", {
+  id: serial("id").primaryKey(),
+  ideaId: integer("idea_id").notNull(),
+  evaluatedAt: timestamp("evaluated_at").defaultNow().notNull(),
+
+  entryPrice: doublePrecision("entry_price"),
+  exitPrice: doublePrecision("exit_price"),
+  maxFavorableExcursion: doublePrecision("max_favorable_excursion"),
+  maxAdverseExcursion: doublePrecision("max_adverse_excursion"),
+  pnlPct: doublePrecision("pnl_pct"),
+  pnlMultiple: doublePrecision("pnl_multiple"),
+  hitTarget: boolean("hit_target"),
+  hitStop: boolean("hit_stop"),
+  wentNowhere: boolean("went_nowhere"),
+  evaluationCompletedAt: timestamp("evaluation_completed_at"),
+  regimeAtExit: text("regime_at_exit"),
+  notes: text("notes"),
+});
+
+export type AiLabIdeaOutcome = typeof aiLabIdeaOutcomesTable.$inferSelect;
+
+export const aiLabEmbeddingsTable = pgTable("ai_lab_embeddings", {
+  id: serial("id").primaryKey(),
+  ideaId: integer("idea_id").notNull(),
+  embedding: jsonb("embedding"),
+  tags: jsonb("tags"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type AiLabEmbedding = typeof aiLabEmbeddingsTable.$inferSelect;
+
 export const snapshotCollectionLogTable = pgTable("snapshot_collection_log", {
   id: serial("id").primaryKey(),
   date: date("date").notNull().unique(),

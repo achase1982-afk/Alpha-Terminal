@@ -11,7 +11,8 @@ export type TelemetrySystem =
   | "PUSH_NOTIFICATION"
   | "MARKET_PULSE"
   | "POLYGON_API"
-  | "DATABASE";
+  | "DATABASE"
+  | "API";
 
 export type TelemetryFeature =
   | "MARKET_PULSE"
@@ -20,7 +21,8 @@ export type TelemetryFeature =
   | "STREAMER"
   | "SNAPSHOT"
   | "ORDER"
-  | "SYSTEM";
+  | "SYSTEM"
+  | "AI_LAB";
 
 export type TelemetrySeverity = "INFO" | "WARN" | "ERROR";
 
