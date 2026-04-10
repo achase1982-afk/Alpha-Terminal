@@ -108,6 +108,7 @@ export function useMarketStream() {
   const setDepthBooks = useDepthStore((s) => s.setBooks);
   const setPortfolioAccount = usePortfolioStreamStore((s) => s.setAccount);
   const setPortfolioOrders = usePortfolioStreamStore((s) => s.setOrders);
+  const setPortfolioStatus = usePortfolioStreamStore((s) => s.setPortfolioStatus);
   const rejectedRetries = useRef(0);
   const symDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startedRef = useRef(false);
@@ -235,6 +236,8 @@ export function useMarketStream() {
           setPortfolioAccount(msg.data as any);
         } else if (msg.event === "portfolioOrders") {
           setPortfolioOrders(msg.data as any);
+        } else if (msg.event === "portfolioStatus") {
+          setPortfolioStatus(msg.data as any);
         } else if (msg.event === "orderAlert") {
           const d = msg.data as Record<string, unknown>;
           const alert: OrderAlert = {

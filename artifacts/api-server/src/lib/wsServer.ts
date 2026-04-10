@@ -151,12 +151,22 @@ function mapOrders(orders: any[]) {
   );
 }
 
+let lastPortfolioAuthWarn = 0;
+
 async function fetchAndPushPortfolio(ws: WebSocket) {
   if (ws.readyState !== WebSocket.OPEN) return;
 
   const trader = getTokens("trader");
   const token = trader?.accessToken;
-  if (!token) return;
+  if (!token) {
+    const now = Date.now();
+    if (now - lastPortfolioAuthWarn > 30_000) {
+      lastPortfolioAuthWarn = now;
+      logger.warn("Portfolio poll: no Schwab trader token available — portfolio cannot update");
+    }
+    ws.send(JSON.stringify({ event: "portfolioStatus", data: { status: "no_token", message: "Schwab authentication required" } }));
+    return;
+  }
 
   try {
     const accounts = await schwabTraderGet("/accounts?fields=positions", token);
@@ -166,6 +176,7 @@ async function fetchAndPushPortfolio(ws: WebSocket) {
     }
   } catch (err) {
     logger.debug({ err }, "Portfolio WS account poll failed");
+    ws.send(JSON.stringify({ event: "portfolioStatus", data: { status: "error", message: "Failed to fetch account data" } }));
   }
 
   try {

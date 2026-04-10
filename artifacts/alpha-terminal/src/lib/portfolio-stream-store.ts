@@ -29,18 +29,27 @@ interface PortfolioOrder {
   tag: string | null;
 }
 
+interface PortfolioStatus {
+  status: "ok" | "no_token" | "error";
+  message?: string;
+}
+
 interface PortfolioStreamState {
   account: PortfolioAccount | null;
   orders: PortfolioOrder[];
   lastUpdate: Date | null;
+  portfolioStatus: PortfolioStatus;
   setAccount: (account: PortfolioAccount) => void;
   setOrders: (orders: PortfolioOrder[]) => void;
+  setPortfolioStatus: (status: PortfolioStatus) => void;
 }
 
 export const usePortfolioStreamStore = create<PortfolioStreamState>((set) => ({
   account: null,
   orders: [],
   lastUpdate: null,
-  setAccount: (account) => set({ account, lastUpdate: new Date() }),
+  portfolioStatus: { status: "ok" },
+  setAccount: (account) => set({ account, lastUpdate: new Date(), portfolioStatus: { status: "ok" } }),
   setOrders: (orders) => set({ orders, lastUpdate: new Date() }),
+  setPortfolioStatus: (status) => set({ portfolioStatus: status }),
 }));

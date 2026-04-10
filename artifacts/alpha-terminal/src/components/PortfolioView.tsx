@@ -738,6 +738,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
   const wsAccount = usePortfolioStreamStore((s) => s.account);
   const wsOrders = usePortfolioStreamStore((s) => s.orders);
   const wsLastUpdate = usePortfolioStreamStore((s) => s.lastUpdate);
+  const portfolioStatus = usePortfolioStreamStore((s) => s.portfolioStatus);
 
   const [subTab, setSubTab] = useState<SubTab>("positions");
   const [account, setAccount] = useState<Account | null>(() => usePortfolioStreamStore.getState().account as Account | null);
@@ -1108,6 +1109,12 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
   if (!accessToken) return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: f }}>
       <ConnectBrokerPrompt label="Connect Brokerage To View Portfolio" />
+    </div>
+  );
+  if (portfolioStatus.status === "no_token" && !account) return (
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, fontFamily: f }}>
+      <div style={{ fontSize: 14, color: C.gold, letterSpacing: 1, textTransform: "uppercase" }}>SCHWAB AUTHENTICATION REQUIRED</div>
+      <div style={{ fontSize: 12, color: C.textDim, maxWidth: 320, textAlign: "center", lineHeight: 1.5 }}>Your Schwab session has expired. Re-authenticate to resume live portfolio updates.</div>
     </div>
   );
   if (loading && !account) return (
