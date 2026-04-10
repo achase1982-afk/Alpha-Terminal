@@ -833,8 +833,8 @@ export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sy
             </div>
           </div>
         ) : (
-          <div className="wl-hscroll" style={{ overflowX: "scroll", WebkitOverflowScrolling: "touch" as any }}>
-            <style>{`.wl-hscroll::-webkit-scrollbar { display: none; } .wl-hscroll { scrollbar-width: none; -ms-overflow-style: none; }`}</style>
+          <div className="wl-hscroll" style={{ overflowX: "scroll", overscrollBehaviorX: "none", touchAction: "pan-x pan-y" }}>
+            <style>{`.wl-hscroll::-webkit-scrollbar{display:none}.wl-hscroll{scrollbar-width:none;-ms-overflow-style:none;overscroll-behavior-x:none;touch-action:pan-x pan-y}`}</style>
               <div
                 style={{
                   display: "grid",
