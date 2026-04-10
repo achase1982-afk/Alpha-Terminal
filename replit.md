@@ -81,6 +81,15 @@ The AI Lab Strategist has a dedicated configuration block on the AI Parameters s
 - `aiLabStrategistConfig` field added (version 11 migration).
 - Default: Analyst=anthropic/claude-sonnet-4-20250514/0.0, Skeptic=google/gemini-2.5-flash/0.0, enabled=false, mode=SHADOW.
 
+**Core Balanced 383 Universe Builder (`universeBuilder.ts`):**
+- Builds a 383-symbol options-tradable universe using Polygon API data.
+- Pipeline: grouped daily bars (price/volume) → ticker reference names → individual ticker details (market cap, SIC description) → options chain validation → SIC-to-GICS sector classification → sector-balanced selection.
+- 11 GICS sectors with per-sector targets/caps/floors; 6 sub-sector buckets (Semis, Defense, Biotech, Banks, Software, Oil & Gas).
+- Auto-builds on server start; weekly rebuild schedule; manual rebuild via POST `/api/scanner/universe/rebuild` (admin-key protected).
+- Dynamic presets injected into scanner: `core383` + 11 sector slices + 6 sub-sector slices (22 total universe presets).
+- Snapshot endpoint: GET `/api/scanner/universe/snapshot` returns sector counts, build timestamp, candidate totals.
+- 429-aware retry with exponential backoff on Polygon API calls.
+
 **AI Lab Sub-Tab (`AiIntelligenceTab.tsx` + `AiLabStrategistView.tsx`):**
 - Inside the STRATEGIST panel, a segmented control toggles between OPTIONS STRATEGIST and AI LAB views.
 - Styling matches the Scanner's DETERMINISTIC/MANUAL FILTER pattern (gold border-bottom, `bg-card` wrapper).

@@ -7,6 +7,7 @@ import { runFmpScreen, type ScreenFilters } from "../lib/fmpScreener.js";
 import { runDynamicScreener } from "../lib/schwabDynamicScreener.js";
 import { getBestAccessToken } from "../lib/tokenStore.js";
 import { getAuth } from "@clerk/express";
+import { getUniverseSnapshot, buildCoreOptionsUniverse, type UniverseSnapshot } from "../lib/universeBuilder.js";
 
 const router: IRouter = Router();
 
@@ -146,8 +147,69 @@ const PRESET_UNIVERSES: Record<string, { label: string; description: string; sym
   },
 };
 
-function loadPresets() {
-  return PRESET_UNIVERSES;
+const SECTOR_SHORTHAND_REVERSE: Record<string, string> = {
+  "Information Technology": "TOP_TECH",
+  "Health Care": "TOP_HEALTHCARE",
+  "Financials": "TOP_FINANCIALS",
+  "Industrials": "TOP_INDUSTRIALS",
+  "Energy": "TOP_ENERGY",
+  "Consumer Discretionary": "TOP_CONS_DISC",
+  "Consumer Staples": "TOP_CONS_STAPLES",
+  "Communication Services": "TOP_COMM_SVCS",
+  "Materials": "TOP_MATERIALS",
+  "Utilities": "TOP_UTILITIES",
+  "Real Estate": "TOP_REAL_ESTATE",
+};
+
+const SECTOR_LABELS: Record<string, string> = {
+  "Information Technology": "Top Tech",
+  "Health Care": "Top Healthcare",
+  "Financials": "Top Financials",
+  "Industrials": "Top Industrials",
+  "Energy": "Top Energy",
+  "Consumer Discretionary": "Top Consumer Disc.",
+  "Consumer Staples": "Top Consumer Staples",
+  "Communication Services": "Top Comm. Services",
+  "Materials": "Top Materials",
+  "Utilities": "Top Utilities",
+  "Real Estate": "Top Real Estate",
+};
+
+function loadPresets(): Record<string, { label: string; description: string; symbols: string[] }> {
+  const combined: Record<string, { label: string; description: string; symbols: string[] }> = { ...PRESET_UNIVERSES };
+
+  const snap = getUniverseSnapshot();
+  if (snap && snap.symbols.length > 0) {
+    combined.core383 = {
+      label: "Core Balanced 383",
+      description: `${snap.symbols.length} sector-balanced, options-liquid stocks (built ${new Date(snap.buildTimestamp).toLocaleDateString()})`,
+      symbols: snap.symbols,
+    };
+
+    for (const [sector, syms] of Object.entries(snap.bySector)) {
+      const key = SECTOR_SHORTHAND_REVERSE[sector];
+      if (key && syms.length > 0) {
+        combined[key.toLowerCase()] = {
+          label: SECTOR_LABELS[sector] ?? sector,
+          description: `${syms.length} top options-liquid ${sector} stocks`,
+          symbols: syms,
+        };
+      }
+    }
+
+    for (const [key, syms] of Object.entries(snap.subSectorBuckets)) {
+      if (syms.length > 0) {
+        const label = key.replace("TOP_", "Top ").replace(/_/g, " ");
+        combined[key.toLowerCase()] = {
+          label,
+          description: `${syms.length} top ${label.toLowerCase()} stocks by market cap`,
+          symbols: syms,
+        };
+      }
+    }
+  }
+
+  return combined;
 }
 
 router.get("/universes", (_req, res) => {
@@ -164,6 +226,38 @@ router.get("/universes/:key/symbols", (req, res) => {
   const preset = presets[req.params.key];
   if (!preset) return res.status(404).json({ error: "Preset not found" });
   res.json({ key: req.params.key, label: preset.label, symbols: preset.symbols });
+});
+
+router.get("/universe/snapshot", (_req, res) => {
+  const snap = getUniverseSnapshot();
+  if (!snap) return res.json({ built: false, message: "Universe not yet built" });
+  res.json({
+    built: true,
+    totalSymbols: snap.symbols.length,
+    sectorCounts: snap.sectorCounts,
+    subSectorCounts: Object.fromEntries(Object.entries(snap.subSectorBuckets).map(([k, v]) => [k, v.length])),
+    buildTimestamp: snap.buildTimestamp,
+    totalCandidates: snap.totalCandidates,
+    changesFromPrevious: snap.changesFromPrevious,
+  });
+});
+
+router.post("/universe/rebuild", async (req, res) => {
+  const adminKey = process.env.ADMIN_API_KEY;
+  if (adminKey && req.headers["x-admin-key"] !== adminKey) {
+    return res.status(403).json({ error: "Unauthorized" });
+  }
+  try {
+    const snap = await buildCoreOptionsUniverse();
+    res.json({
+      ok: true,
+      totalSymbols: snap.symbols.length,
+      sectorCounts: snap.sectorCounts,
+      buildTimestamp: snap.buildTimestamp,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 
@@ -614,22 +708,29 @@ router.post("/refresh-auto-watchlists", async (req, res) => {
   }
 });
 
-const ALL_SYMBOLS_SET = new Set<string>();
-for (const preset of Object.values(PRESET_UNIVERSES)) {
-  for (const sym of preset.symbols) ALL_SYMBOLS_SET.add(sym);
+function getAllSymbolsSorted(): string[] {
+  const set = new Set<string>();
+  for (const preset of Object.values(PRESET_UNIVERSES)) {
+    for (const sym of preset.symbols) set.add(sym);
+  }
+  const snap = getUniverseSnapshot();
+  if (snap) {
+    for (const sym of snap.symbols) set.add(sym);
+  }
+  return [...set].sort();
 }
-const ALL_SYMBOLS_SORTED = [...ALL_SYMBOLS_SET].sort();
 
 router.get("/search", (req, res) => {
   const q = (req.query.q as string ?? "").trim().toUpperCase();
   const limit = Math.min(parseInt(req.query.limit as string) || 10, 50);
   if (!q) return res.json({ results: [] });
 
+  const allSymbols = getAllSymbolsSorted();
   const exact: Array<{ symbol: string; name: string }> = [];
   const prefix: Array<{ symbol: string; name: string }> = [];
   const contains: Array<{ symbol: string; name: string }> = [];
 
-  for (const sym of ALL_SYMBOLS_SORTED) {
+  for (const sym of allSymbols) {
     if (sym === q) exact.push({ symbol: sym, name: sym });
     else if (sym.startsWith(q)) prefix.push({ symbol: sym, name: sym });
     else if (sym.includes(q)) contains.push({ symbol: sym, name: sym });

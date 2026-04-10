@@ -1,0 +1,232 @@
+ALPHA TERMINAL – CORE BALANCED 383 OPTIONS UNIVERSE (FINAL SPEC)
+
+GOAL
+
+Build a stable, sector-balanced, options‑rich universe of ~383 symbols that:
+- Stays very liquid (stock + options).
+- Covers all 11 GICS sectors.
+- Avoids MAG7/mega‑cap tech dominating everything.
+- Exposes per‑sector and sub‑sector buckets (e.g., Top Tech, Top Financials, Semis, Defense) for scanners and AI tools.
+
+This universe feeds:
+- Discovery / Momentum scanner
+- Market Scanner views
+- AI Lab Strategist (get_universe_anomalies, etc.)
+
+Do NOT touch AI Lab logic in this spec. This is only about universe construction.
+
+==================================================
+1. BASE FILTERS (STOCK + OPTIONS LIQUIDITY)
+==================================================
+
+Universe starts from all U.S.-listed equities + ADRs, then apply filters:
+
+Include:
+- U.S.-listed common stocks AND major liquid ADRs.
+Exclude:
+- ETFs, ETNs, preferreds, closed‑end funds, OTC.
+
+Base liquidity filters (configurable constants):
+
+1) Average Daily Dollar Volume (ADDV)
+   - Use 20‑day average: ADDV = price * volume.
+   - Require ADDV ≥ 20,000,000 USD (suggested default).
+   - This avoids low‑price junk even if volume is high.
+
+2) Options availability AND options liquidity
+   - Must have listed options.
+   - AND satisfy at least one of:
+     - Average Daily Options Volume (ADOV) ≥ 1,000 contracts (across all strikes/expiries).
+     - Total options Open Interest (total OI) ≥ 10,000 contracts.
+   - These thresholds must be configurable.
+
+3) Price filter
+   - Last price ≥ 5 USD (configurable).
+
+If a symbol fails any base filter → excluded.
+
+==================================================
+2. SECTOR & SUB-SECTOR DATA
+==================================================
+
+Use official GICS classifications from Polygon or our chosen data provider.
+
+- Sector field: the standard 11 GICS sectors:
+  - Information Technology
+  - Health Care
+  - Financials
+  - Industrials
+  - Energy
+  - Consumer Discretionary
+  - Consumer Staples
+  - Communication Services
+  - Materials
+  - Utilities
+  - Real Estate
+
+Also pull GICS **industry group / sub‑industry** for sub‑sector buckets (e.g., Semiconductors, Aerospace & Defense).
+
+Map internal shorthand:
+
+- TECH → Information Technology
+- HEALTHCARE → Health Care
+- FINANCIALS → Financials
+- INDUSTRIALS → Industrials (includes Defense/Aerospace)
+- ENERGY → Energy
+- CONS_DISCRETIONARY → Consumer Discretionary
+- CONS_STAPLES → Consumer Staples
+- COMM_SERVICES → Communication Services
+- MATERIALS → Materials
+- UTILITIES → Utilities
+- REAL_ESTATE → Real Estate
+
+==================================================
+3. SECTOR-AWARE CONSTRUCTION
+==================================================
+
+Target size and constraints (configurable):
+
+- TARGET_UNIVERSE_SIZE ≈ 383
+- MIN_PER_SECTOR = 25   // hard floor per sector
+- MAX_SECTOR_PCT = 0.28 // no sector > 28% of final universe
+
+Tiered sector targets (example defaults; make this a dictionary):
+
+SECTOR_TARGETS = {
+  "Information Technology": 50,
+  "Health Care": 45,
+  "Financials": 45,
+  "Industrials": 40,
+  "Consumer Discretionary": 35,
+  "Communication Services": 30,
+  "Energy": 30,
+  "Consumer Staples": 20,
+  "Materials": 20,
+  "Utilities": 15,
+  "Real Estate": 15
+}
+
+Algorithm:
+
+1) For each sector:
+   - Start from symbols that passed base filters.
+   - Sort primarily by market cap DESC, secondarily by 20‑day ADDV DESC.
+   - Take up to SECTOR_TARGETS[sector] names.
+   - If a sector has fewer than SECTOR_TARGETS[sector] names, include all of them (do not force N).
+
+2) Combine all sector lists into a preliminary universe.
+
+3) If preliminary total > TARGET_UNIVERSE_SIZE:
+   - Trim down while preserving:
+     - At least MIN_PER_SECTOR per sector.
+   - Trimming order:
+     - Start with sectors that exceed MAX_SECTOR_PCT of current total.
+     - Within each sector, drop lowest‑liquidity names first (lowest ADDV, then lowest market cap).
+   - Continue until total ≈ TARGET_UNIVERSE_SIZE and all sectors ≥ MIN_PER_SECTOR and ≤ MAX_SECTOR_PCT.
+
+4) If preliminary total < TARGET_UNIVERSE_SIZE:
+   - Build a global “remainder pool” of symbols that passed base filters but weren’t selected yet.
+   - Sort remainder by a simple liquidity score:
+     - liquidityScore = marketCap * ADDV (or ADDV first, then marketCap).
+   - Add from top of remainder while:
+     - Not letting any sector exceed MAX_SECTOR_PCT.
+     - Stop when we hit TARGET_UNIVERSE_SIZE or run out of candidates.
+
+Result is the **Core Balanced 383** universe.
+
+==================================================
+4. SUB-SECTOR / SPECIALTY BUCKETS
+==================================================
+
+In addition to sector slices, expose important sub‑sector buckets using GICS industry group / sub‑industry:
+
+Examples (configurable):
+
+- “Top Semiconductors”
+  - Industry group = Semiconductors & Semiconductor Equipment.
+  - Apply same base filters.
+  - Take top N (e.g., 25–30) by market cap/ADDV.
+
+- “Top Defense / Aerospace”
+  - Industry group(s) under Industrials related to Aerospace & Defense.
+  - Same filtering/selection approach.
+
+These are separate named universes used in Scanner and AI Lab filters (not necessarily constrained to the 383 core, but can be intersected with it if desired).
+
+==================================================
+5. REBUILD / REBALANCE FREQUENCY
+==================================================
+
+Universe should not flicker daily from small changes, but should stay current with liquidity and listings.
+
+- Rebuild frequency: **weekly**, e.g., Sunday night or pre‑market Monday.
+- On each rebuild:
+  - Recompute base filters and sector allocations.
+  - Re-save:
+    - Core Balanced 383 list (with sector counts).
+    - Per‑sector slices.
+    - Sub‑sector slices.
+
+Optionally:
+- Log changes vs previous week (symbols added/removed) for debugging.
+
+==================================================
+6. INTEGRATION & EXPOSURE
+==================================================
+
+Builder service:
+
+- Encapsulate all logic in something like:
+  - `buildCoreOptionsUniverse(): UniverseSnapshot`
+
+UniverseSnapshot structure:
+
+- `symbols: string[]` // length ≈ 383
+- `bySector: { [sectorName: string]: string[] }`
+- `sectorCounts: { [sectorName: string]: number }`
+- `subSectorBuckets: { [bucketName: string]: string[] }`
+- `buildTimestamp: string`
+
+Expose universes:
+
+- Core Balanced 383: name it e.g. `"CORE_383_BALANCED"`.
+- Per‑sector slices:
+  - `"TOP_TECH"`, `"TOP_HEALTHCARE"`, `"TOP_FINANCIALS"`, etc.
+- Sub‑sector slices:
+  - `"TOP_SEMIS"`, `"TOP_DEFENSE"`, etc.
+
+These names should be selectable:
+- In Scanner “Scan Universe” dropdown.
+- In get_universe_anomalies(filters, limit) (via sector/sub‑sector filters).
+
+==================================================
+7. TELEMETRY & VALIDATION
+==================================================
+
+On each rebuild:
+
+- Log telemetry event:
+  - type: "UNIVERSE_BUILD"
+  - name: "CORE_383_BALANCED"
+  - totalCount
+  - sectorCounts
+  - buildTimestamp
+
+Also:
+- Dump or log a simple JSON snapshot (for initial validation) that groups symbols by sector with counts so I can eyeball:
+  - “Tech = 50, Financials = 45, Healthcare = 45, …, total ≈ 383”
+
+==================================================
+8. KEY POINTS / NON-GOALS
+==================================================
+
+- Do NOT:
+  - Use raw % price change as a selection criterion.
+  - Overweight mega‑cap tech just because of size.
+- DO:
+  - Enforce base liquidity (ADDV + options liquidity).
+  - Enforce per‑sector targets and caps.
+  - Allow liquid ADRs.
+  - Provide sector + sub‑sector buckets for targeted scans.
+
+END OF SPEC
