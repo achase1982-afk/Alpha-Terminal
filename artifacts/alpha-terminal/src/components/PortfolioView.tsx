@@ -1208,8 +1208,8 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
                 <span style={{ fontSize: 10, color: C.dim }}>— open options positions with earnings this week. Review your positions.</span>
               </div>
             )}
-            <div className="pf-hscroll" onScroll={e => { (e.currentTarget as HTMLElement).style.setProperty("--pf-sx", e.currentTarget.scrollLeft + "px"); }} style={{ overflowX: "auto", width: "100%", overscrollBehaviorX: "none", touchAction: "pan-x pan-y" }}>
-              <style>{`.pf-hscroll::-webkit-scrollbar { display: none; } .pf-hscroll { scrollbar-width: none; -ms-overflow-style: none; overscroll-behavior-x: none; touch-action: pan-x pan-y; } .pf-hscroll table { border-collapse: separate; border-spacing: 0; } .pf-sticky-col { position: relative; z-index: 2; transform: translateX(var(--pf-sx, 0px)); will-change: transform; } .pf-hscroll tbody td, .pf-hscroll tbody th, .pf-hscroll thead th { border-bottom: 1px solid ${C.border}; }`}</style>
+            <div className="pf-hscroll" style={{ overflowX: "auto", width: "100%", overscrollBehaviorX: "none", touchAction: "pan-x pan-y" }}>
+              <style>{`.pf-hscroll::-webkit-scrollbar{display:none}.pf-hscroll{scrollbar-width:none;-ms-overflow-style:none;overscroll-behavior-x:none;touch-action:pan-x pan-y}.pf-hscroll table{border-collapse:separate;border-spacing:0}.pf-sticky-col{position:-webkit-sticky;position:sticky;left:0;z-index:2}.pf-hscroll tbody td,.pf-hscroll tbody th,.pf-hscroll thead th{border-bottom:1px solid ${C.border}}`}</style>
 
               {showColumnSettings && ReactDOM.createPortal(
                 <>
