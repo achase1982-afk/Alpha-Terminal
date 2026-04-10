@@ -742,10 +742,17 @@ const schwabRestCache = new Map<string, { data: Record<string, unknown>; ts: num
 const SCHWAB_REST_STALE_MS = 30_000;
 
 function buildRestSymbolMaps() {
-  return {
-    forward: { "/DX": "$DXY" } as Record<string, string>,
-    reverse: { "$DXY": "/DX" } as Record<string, string>,
-  };
+  const forward: Record<string, string> = { "/DX": "$DXY" };
+  const reverse: Record<string, string> = { "$DXY": "/DX" };
+
+  const futuresNeedingKey = ["/BZ"];
+  for (const sym of futuresNeedingKey) {
+    const apiKey = schwabFuturesKey(sym);
+    forward[sym] = apiKey;
+    reverse[apiKey] = sym;
+  }
+
+  return { forward, reverse };
 }
 const REST_MAPS = buildRestSymbolMaps();
 
@@ -755,7 +762,7 @@ const SCHWAB_REST_SYMBOLS = [
   "$VIX", "$VVIX", "$VIX1D", "$VIX9D", "$VIX3M",
   "$VXN", "$RVX", "$OVX", "$GVZ",
   "$TNX", "$TYX", "$IRX",
-  "/DX",
+  "/DX", "/BZ",
 ];
 
 const SCHWAB_API = "https://api.schwabapi.com/marketdata/v1";

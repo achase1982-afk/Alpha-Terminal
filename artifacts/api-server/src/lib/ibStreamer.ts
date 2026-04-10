@@ -170,7 +170,7 @@ function getFrontMonth(symbol: string): string {
   const month = now.getMonth() + 1;
   const day = now.getDate();
 
-  if (symbol === "CL" || symbol === "COIL" || symbol === "HG") {
+  if (symbol === "CL" || symbol === "HG") {
     let m = month + 1;
     let y = year;
     if (m > 12) { m = 1; y++; }
