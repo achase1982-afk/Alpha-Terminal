@@ -1202,7 +1202,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
               </div>
             )}
             <div className="pf-hscroll" style={{ overflowX: "auto", width: "100%", overscrollBehavior: "auto" }}>
-              <style>{`.pf-hscroll::-webkit-scrollbar { display: none; } .pf-hscroll { scrollbar-width: none; -ms-overflow-style: none; touch-action: pan-x pan-y; } .pf-sticky-col { position: sticky; left: 0; z-index: 2; }`}</style>
+              <style>{`.pf-hscroll::-webkit-scrollbar { display: none; } .pf-hscroll { scrollbar-width: none; -ms-overflow-style: none; -webkit-overflow-scrolling: touch; } .pf-sticky-col { position: -webkit-sticky; position: sticky; left: 0; z-index: 2; transform: translate3d(0,0,0); }`}</style>
 
               {showColumnSettings && ReactDOM.createPortal(
                 <>
