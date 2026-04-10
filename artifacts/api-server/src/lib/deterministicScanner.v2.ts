@@ -385,7 +385,14 @@ async function fetchFlowDataFromDB(symbols: string[]): Promise<Map<string, DBFlo
 function computeLiqFromStrikes(
   strikes: DBFlowData["strikes"],
   spot: number,
-): LiqMetrics {
+): LiqMetrics & { quoteDataAvailable: boolean } {
+  const hasBidAsk = strikes.some(s => s.bid > 0 && s.ask > 0);
+
+  if (!hasBidAsk) {
+    const totalOI = strikes.reduce((sum, s) => sum + s.openInterest, 0);
+    return { avgSpreadPct: 0, totalOI, score: 15, quoteDataAvailable: false };
+  }
+
   const liqStrikes = strikes.filter(s => {
     const inStrikeRange = s.strike >= spot * (1 - CFG.liqStrikePct) && s.strike <= spot * (1 + CFG.liqStrikePct);
     const inDteRange = (s.dte ?? 0) >= CFG.liqDteMin && (s.dte ?? 0) <= CFG.liqDteMax;
@@ -410,7 +417,7 @@ function computeLiqFromStrikes(
     else if (avgSpreadPct <= 15) liqScore = 6;
   }
 
-  return { avgSpreadPct, totalOI, score: liqScore };
+  return { avgSpreadPct, totalOI, score: liqScore, quoteDataAvailable: true };
 }
 
 // ─── Polygon flow data for Category 4 (legacy — kept for fallback) ────────
@@ -998,7 +1005,8 @@ export async function runDiscoveryScan(
   const aboveThreshold = scoredResults.filter(r => r.totalScore >= CFG.minScore);
   const top5 = aboveThreshold.slice(0, 5);
 
-  log.info({ scored: scoredResults.length, above: aboveThreshold.length, top5: top5.length }, "Discovery scoring complete");
+  const scoreDistrib = scoredResults.slice(0, 10).map(r => `${r.symbol}=${r.totalScore}(SQ${r.setupQuality}/ACC${r.accumulation}/IV${r.ivSetup}/FL${r.flowDivergence}/RS${r.emergingRS})`);
+  log.info({ scored: scoredResults.length, above: aboveThreshold.length, top5: top5.length, distribution: scoreDistrib }, "Discovery scoring complete");
 
   const { getUpcomingEvents } = await import("./calendarEventChecker.js");
 

@@ -647,10 +647,14 @@ export async function computeFlowAggregates(
 
       const spotClose = equityRow[0]?.close ?? 0;
 
+      const hasOiData = strikes.some(s => s.openInterest != null && s.openInterest > 0);
       const qualifying = strikes.filter(s => {
-        if (spotClose <= 0) return s.openInterest != null && s.openInterest >= 200;
+        const vol = s.dailyVolume ?? 0;
+        if (vol < 1) return false;
+        if (spotClose <= 0) return hasOiData ? (s.openInterest ?? 0) >= 200 : true;
         const strikePct = Math.abs(s.strike - spotClose) / spotClose;
-        return strikePct <= 0.2 && (s.dte ?? 999) <= 60 && (s.openInterest ?? 0) >= 200;
+        const inRange = strikePct <= 0.2 && (s.dte ?? 999) <= 60;
+        return inRange && (hasOiData ? (s.openInterest ?? 0) >= 200 : true);
       });
 
       let totalCallVol = 0;

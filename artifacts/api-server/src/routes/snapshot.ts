@@ -2,6 +2,9 @@ import { Router } from "express";
 import { runFullSnapshot, getSnapshotStatus, collectEquitySnapshots, collectPolygonFlowFromAPI, computeFlowAggregates, backfillEquityHistory, backfillPolygonFlow } from "../lib/dailySnapshot";
 import { getBestAccessToken } from "../lib/tokenStore";
 import { logger } from "../lib/logger";
+import { db } from "@workspace/db";
+import { optionsFlowPerStrikeTable } from "@workspace/db";
+import { sql } from "drizzle-orm";
 
 const router = Router();
 
@@ -83,6 +86,37 @@ router.post("/backfill", async (req, res) => {
   backfillEquityHistory(scanSymbols, accessToken).catch(e => {
     logger.error({ error: (e as Error).message }, "Background backfill failed");
   });
+});
+
+router.post("/recompute-aggregates", async (req, res) => {
+  try {
+    const dateRows = await db
+      .selectDistinct({ date: optionsFlowPerStrikeTable.date })
+      .from(optionsFlowPerStrikeTable)
+      .orderBy(optionsFlowPerStrikeTable.date);
+    const dates = dateRows.map(r => r.date);
+
+    const symRows = await db
+      .selectDistinct({ sym: optionsFlowPerStrikeTable.underlyingSymbol })
+      .from(optionsFlowPerStrikeTable);
+    const symbols = symRows.map(r => r.sym);
+
+    res.json({ ok: true, message: `Recomputing aggregates for ${dates.length} dates, ${symbols.length} symbols`, dates: dates.length, symbols: symbols.length });
+
+    (async () => {
+      let processed = 0;
+      for (const d of dates) {
+        await computeFlowAggregates(symbols, d);
+        processed++;
+        if (processed % 10 === 0) {
+          logger.info({ processed, total: dates.length }, "Recompute aggregates progress");
+        }
+      }
+      logger.info({ processed, symbols: symbols.length }, "Recompute aggregates complete");
+    })().catch(e => logger.error({ error: (e as Error).message }, "Recompute aggregates failed"));
+  } catch (e) {
+    res.status(500).json({ ok: false, error: (e as Error).message });
+  }
 });
 
 router.post("/backfill-flow", async (req, res) => {
