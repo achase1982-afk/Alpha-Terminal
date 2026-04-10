@@ -617,6 +617,7 @@ export async function buildCoreOptionsUniverse(): Promise<UniverseSnapshot> {
       sectorCounts,
       buildTimestamp: snapshot.buildTimestamp,
       elapsedMs: elapsed,
+      symbols: symbols.slice().sort(),
     });
 
     return snapshot;

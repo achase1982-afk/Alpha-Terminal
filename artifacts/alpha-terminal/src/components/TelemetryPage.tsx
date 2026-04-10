@@ -166,41 +166,82 @@ function sortedMetaKeys(details: Record<string, unknown>): string[] {
   return ordered;
 }
 
-function ScannerAudit({ details }: { details: Record<string, unknown> }) {
-  const queued = Number(details.queued ?? details.totalQueued ?? 0);
-  const scanned = Number(details.scanned ?? details.totalScanned ?? 0);
-  const passed = Number(details.passed ?? details.totalPassed ?? details.candidates ?? 0);
-  const missed = queued - scanned;
-
-  const passedTickers = (details.passedTickers ?? details.passed_tickers ?? details.results ?? []) as string[];
-  const scannedTickers = (details.scannedTickers ?? details.scanned_tickers ?? details.universe ?? []) as string[];
-  const passedSet = new Set(passedTickers.map((t: string) => t.toUpperCase()));
-
-  if (scannedTickers.length === 0 && passedTickers.length === 0) return null;
-
+function TickerGrid({ tickers, highlightSet, label }: { tickers: string[]; highlightSet?: Set<string>; label?: string }) {
+  if (tickers.length === 0) return null;
   return (
-    <div style={{ marginTop: 8 }}>
-      <div style={{ display: "flex", gap: 12, marginBottom: 6 }}>
-        <span style={{ fontSize: 10, fontFamily: f, color: C.muted }}>QUEUED <span style={{ color: C.text }}>{queued}</span></span>
-        <span style={{ fontSize: 10, fontFamily: f, color: C.muted }}>SCANNED <span style={{ color: queued !== scanned ? C.orange : C.text }}>{scanned}</span></span>
-        <span style={{ fontSize: 10, fontFamily: f, color: C.muted }}>PASSED <span style={{ color: "#2ecc71" }}>{passed}</span></span>
-      </div>
+    <div style={{ marginTop: 6 }}>
+      {label && (
+        <div style={{ fontSize: 9, fontFamily: f, color: C.muted, letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>
+          {label} — {tickers.length} TICKERS
+        </div>
+      )}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 3 }}>
-        {scannedTickers.map((t: string) => {
+        {tickers.map((t: string) => {
           const up = t.toUpperCase();
-          const isPassed = passedSet.has(up);
+          const isHighlighted = highlightSet?.has(up);
           return (
             <span key={t} style={{
               fontSize: 9, fontFamily: f, fontWeight: 600, padding: "2px 5px", borderRadius: 3,
-              background: isPassed ? "rgba(46,204,113,0.12)" : "rgba(255,255,255,0.03)",
-              color: isPassed ? "#2ecc71" : "#555",
-              border: `1px solid ${isPassed ? "rgba(46,204,113,0.3)" : "#222"}`,
+              background: isHighlighted ? "rgba(46,204,113,0.12)" : "rgba(255,255,255,0.03)",
+              color: isHighlighted ? "#2ecc71" : "#888",
+              border: `1px solid ${isHighlighted ? "rgba(46,204,113,0.3)" : "#222"}`,
             }}>
               {up}
             </span>
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function ScannerAudit({ details }: { details: Record<string, unknown> }) {
+  const isUniverseBuild = details.type === "UNIVERSE_BUILD";
+  const allSymbols = (details.symbols ?? []) as string[];
+
+  if (isUniverseBuild && allSymbols.length > 0) {
+    const totalCount = Number(details.totalCount ?? allSymbols.length);
+    const match = totalCount === allSymbols.length;
+    return (
+      <div style={{ marginTop: 8 }}>
+        <div style={{ display: "flex", gap: 12, marginBottom: 6 }}>
+          <span style={{ fontSize: 10, fontFamily: f, color: C.muted }}>
+            CLAIMED <span style={{ color: C.text }}>{totalCount}</span>
+          </span>
+          <span style={{ fontSize: 10, fontFamily: f, color: C.muted }}>
+            ACTUAL <span style={{ color: match ? "#2ecc71" : C.orange }}>{allSymbols.length}</span>
+          </span>
+          {match
+            ? <span style={{ fontSize: 10, fontFamily: f, color: "#2ecc71", fontWeight: 700 }}>✓ VERIFIED</span>
+            : <span style={{ fontSize: 10, fontFamily: f, color: C.orange, fontWeight: 700 }}>⚠ MISMATCH</span>
+          }
+        </div>
+        <TickerGrid tickers={allSymbols} label="UNIVERSE SYMBOLS" />
+      </div>
+    );
+  }
+
+  const queued = Number(details.queued ?? details.totalQueued ?? details.totalScanned ?? 0);
+  const scanned = Number(details.scanned ?? details.totalScanned ?? 0);
+  const passed = Number(details.passed ?? details.totalPassed ?? details.candidates ?? details.passedFilters ?? 0);
+  const missed = queued > 0 && scanned > 0 ? queued - scanned : 0;
+
+  const passedTickers = (details.passedTickers ?? details.passed_tickers ?? details.results ?? []) as string[];
+  const scannedTickers = (details.scannedTickers ?? details.scanned_tickers ?? details.universe ?? allSymbols) as string[];
+  const passedSet = new Set(passedTickers.map((t: string) => t.toUpperCase()));
+
+  if (scannedTickers.length === 0 && passedTickers.length === 0 && queued === 0) return null;
+
+  return (
+    <div style={{ marginTop: 8 }}>
+      <div style={{ display: "flex", gap: 12, marginBottom: 6, flexWrap: "wrap" }}>
+        {queued > 0 && <span style={{ fontSize: 10, fontFamily: f, color: C.muted }}>QUEUED <span style={{ color: C.text }}>{queued}</span></span>}
+        {scanned > 0 && <span style={{ fontSize: 10, fontFamily: f, color: C.muted }}>SCANNED <span style={{ color: queued > 0 && queued !== scanned ? C.orange : C.text }}>{scanned}</span></span>}
+        {passed > 0 && <span style={{ fontSize: 10, fontFamily: f, color: C.muted }}>PASSED <span style={{ color: "#2ecc71" }}>{passed}</span></span>}
+      </div>
+      {scannedTickers.length > 0 && (
+        <TickerGrid tickers={scannedTickers} highlightSet={passedSet} label={passedTickers.length > 0 ? "SCANNED (GREEN = PASSED)" : "SCANNED"} />
+      )}
       {missed > 0 && (
         <div style={{ fontSize: 10, fontStyle: "italic", color: C.orange, marginTop: 4, fontFamily: f }}>
           {missed} ticker{missed !== 1 ? "s" : ""} queued but not scanned (timeout/rate limit)
@@ -210,8 +251,10 @@ function ScannerAudit({ details }: { details: Record<string, unknown> }) {
   );
 }
 
+const HIDE_FROM_META = new Set(["symbols", "passedTickers", "scannedTickers", "passed_tickers", "scanned_tickers", "universe", "results"]);
+
 function MetadataGrid({ details, severity }: { details: Record<string, unknown>; severity: string }) {
-  const keys = sortedMetaKeys(details);
+  const keys = sortedMetaKeys(details).filter(k => !HIDE_FROM_META.has(k));
   const simpleKeys = keys.filter(k => typeof details[k] !== "object" || details[k] === null);
   const complexKeys = keys.filter(k => typeof details[k] === "object" && details[k] !== null);
 
