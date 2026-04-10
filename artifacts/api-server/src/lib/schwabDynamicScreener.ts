@@ -4,10 +4,12 @@ interface QuoteResult {
   symbol: string;
   lastPrice: number;
   netPercentChange: number;
+  netChange: number;
   totalVolume: number;
   averageVolume10Day: number;
   highPrice: number;
   lowPrice: number;
+  closePrice: number;
 }
 
 export interface DynamicWatchlists {
@@ -39,14 +41,23 @@ async function fetchQuotesForScreening(
         if (!q) continue;
         const lastPrice = (q["lastPrice"] as number) ?? 0;
         if (lastPrice <= 0) continue;
+        const closePrice = (q["closePrice"] as number) ?? (q["regularMarketLastPrice"] as number) ?? lastPrice;
+        let netPctChange = (q["netPercentChangeInDouble"] as number) ?? 0;
+        let netChange = (q["netChange"] as number) ?? 0;
+        if (netPctChange === 0 && closePrice > 0 && lastPrice !== closePrice) {
+          netChange = lastPrice - closePrice;
+          netPctChange = (netChange / closePrice) * 100;
+        }
         results.push({
           symbol: sym,
           lastPrice,
-          netPercentChange: (q["netPercentChangeInDouble"] as number) ?? 0,
+          netPercentChange: netPctChange,
+          netChange,
           totalVolume: (q["totalVolume"] as number) ?? 0,
           averageVolume10Day: (q["averageVolume10Day"] as number) ?? (q["averageVolume"] as number) ?? 0,
           highPrice: (q["highPrice"] as number) ?? lastPrice,
           lowPrice: (q["lowPrice"] as number) ?? lastPrice,
+          closePrice,
         });
       }
     } catch {
@@ -73,7 +84,7 @@ export async function runDynamicScreener(
     }
 
     const topMovers = [...quotes]
-      .sort((a, b) => Math.abs(b.netPercentChange) - Math.abs(a.netPercentChange))
+      .sort((a, b) => b.totalVolume - a.totalVolume)
       .slice(0, topN)
       .map(q => q.symbol);
 
@@ -92,7 +103,11 @@ export async function runDynamicScreener(
     const withRange = [...quotes]
       .filter(q => q.lowPrice > 0 && q.lastPrice > 0)
       .map(q => ({ ...q, rangePct: ((q.highPrice - q.lowPrice) / q.lastPrice) * 100 }))
-      .sort((a, b) => b.rangePct - a.rangePct);
+      .sort((a, b) => {
+        const diff = b.rangePct - a.rangePct;
+        if (Math.abs(diff) > 0.001) return diff;
+        return b.totalVolume - a.totalVolume;
+      });
 
     const highVolatility = (withRange.length >= topN
       ? withRange.slice(0, topN)
