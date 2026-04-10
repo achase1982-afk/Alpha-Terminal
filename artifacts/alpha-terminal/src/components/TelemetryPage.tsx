@@ -296,26 +296,26 @@ function LogCard({ entry, onResolve }: { entry: TelemetryEntry; onResolve: (id: 
     <div style={{
       background: C.card,
       borderRadius: 6,
-      borderLeft: `3px solid ${sev.border}`,
       border: `1px solid ${C.cardBorder}`,
-      borderLeftWidth: 3,
-      borderLeftColor: sev.border,
+      borderLeft: `3px solid ${sev.border}`,
       opacity: entry.resolved ? 0.4 : 1,
-      overflow: "hidden",
     }}>
       <div
         onClick={() => setExpanded(e => !e)}
         style={{
-          display: "flex", alignItems: "center", gap: 8,
-          padding: "10px 10px 10px 12px", cursor: "pointer",
-          minWidth: 0,
+          display: "grid",
+          gridTemplateColumns: "7px 1fr auto 14px",
+          alignItems: "center",
+          gap: 8,
+          padding: "10px 10px 10px 12px",
+          cursor: "pointer",
         }}
       >
-        <div style={{ width: 7, height: 7, borderRadius: "50%", background: sev.dot, flexShrink: 0 }} />
+        <div style={{ width: 7, height: 7, borderRadius: "50%", background: sev.dot }} />
 
-        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
+        <div>
           <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-            <span style={{ fontSize: 12, fontWeight: 800, color: C.amber, fontFamily: f, letterSpacing: 0.5, flexShrink: 0 }}>
+            <span style={{ fontSize: 12, fontWeight: 800, color: C.amber, fontFamily: f, letterSpacing: 0.5 }}>
               {fmtSystem(entry.system)}
             </span>
             {sub && (
@@ -324,16 +324,16 @@ function LogCard({ entry, onResolve }: { entry: TelemetryEntry; onResolve: (id: 
               </span>
             )}
           </div>
-          <div style={{ fontSize: 12, color: "#aaa", fontFamily: f, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <div style={{ fontSize: 12, color: "#aaa", fontFamily: f, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 }}>
             {truncateMessage(entry.message, 80)}
           </div>
         </div>
 
-        <span style={{ fontSize: 11, color: C.dim, fontFamily: f, flexShrink: 0, whiteSpace: "nowrap" }}>
+        <span style={{ fontSize: 11, color: C.dim, fontFamily: f, whiteSpace: "nowrap" }}>
           {formatTime(entry.timestamp)}
         </span>
 
-        <div style={{ flexShrink: 0, width: 14 }}>
+        <div>
           {expanded
             ? <ChevronDown style={{ width: 12, height: 12, color: C.dim }} />
             : <ChevronRight style={{ width: 12, height: 12, color: C.dim }} />
