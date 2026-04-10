@@ -118,6 +118,14 @@ Daily snapshot-based data architecture for Discovery scanner scoring. Scanner re
 - `collectPolygonFlowFromAPI()` — Polygon options snapshots → Table 3
 - `computeFlowAggregates()` — Aggregates from Table 3 → Table 5
 - `runFullSnapshot()` — Orchestrates all above, logs to Table 8
+- `backfillPolygonFlow()` — Historical flow backfill via Polygon REST API (slow, per-contract)
+
+**Polygon Flat Files (`polygonFlatFiles.ts`):**
+- **Source**: Polygon S3 flat files (`us_options_opra/day_aggs_v1`). One bulk download per trading day covers ALL symbols.
+- **Requires**: `POLYGON_S3_ACCESS_KEY` + `POLYGON_S3_SECRET_KEY` (separate from `POLYGON_API_KEY`).
+- **Writes to**: `polygon_options_history` table (separate from `options_flow_per_strike`).
+- **Functions**: `syncDate()`, `syncDateRange()`, `getSyncStatus()`.
+- **Important**: Options flow backfill data comes from Polygon, NOT Schwab. The backfill endpoint `/api/snapshot/backfill-flow` uses only `POLYGON_API_KEY`.
 
 **API Routes (`/api/snapshot/`):**
 - `GET /status` — Latest 5 collection runs
