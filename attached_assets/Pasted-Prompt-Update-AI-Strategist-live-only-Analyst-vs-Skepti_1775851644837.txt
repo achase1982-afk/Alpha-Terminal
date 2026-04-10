@@ -1,0 +1,146 @@
+Prompt: Update AI Strategist – live-only, Analyst vs Skeptic, full logging, options-first
+
+Please update the AI Strategist implementation and UI with the following requirements. Treat this as the current source of truth for the strategist service.
+
+1) Modes – remove Shadow, live-only
+
+- Remove any concept of “Shadow Mode” in the AI Strategist backend and UI.
+- There is only one mode: LIVE.
+- In LIVE mode, all ideas that survive the final decision step are stored and visible in the Alpha Terminal UI.
+- No ideas should be hidden from the UI purely due to a “mode” flag.
+
+2) Universe of symbols
+
+- The Strategist may only evaluate / generate ideas for:
+  - Symbols in the defined stock universe (the same universe the scanner runs on, e.g. the ~380-name list), or
+  - Symbols explicitly submitted by the user (for example “Send to Strategist” from the scanner or a manually entered symbol).
+- Do not generate trade ideas for symbols outside that combined set.
+
+3) Two-model reasoning pipeline: Analyst (heavy) and Skeptic (light)
+
+For every candidate trade evaluation (even if it ends up rejected), the strategist must run both:
+
+- PrimaryStrategist (heavy model, e.g. Claude) – acts as the Analyst.
+- SkepticModel (lighter/faster model, e.g. Gemini) – acts as the Skeptic.
+
+Both models receive the same core context:
+- Symbol and current price.
+- Scanner scores and factor breakdown (setup quality, accumulation, IV setup, flow divergence, emerging relative strength, options liquidity gate result).
+- Pulse / regime information and any basic macro context available.
+- Key market  IV/IVR, basic vol metrics, simple flow summary.
+- Any relevant recent news/events summary that is already available in the system.
+
+4) Structured reasoning object (must be built for EVERY evaluation)
+
+For each evaluation, you must create a structured reasoning object with three sections:
+
+A) primary_proposal (from PrimaryStrategist / Analyst)
+- thesis: string – why this trade, why now.
+- structure: string – what the Analyst thinks is the best expression of the idea (may be stock or options; see “Options-first policy” below).
+- risk_notes: string – main risks, what invalidates the trade, key conditions under which it should not be entered or should be exited.
+
+B) skeptic_critique (from SkepticModel)
+- objections: string – concrete critiques of the Analyst’s idea (fundamental, technical, vol, event risk, sizing, timing, etc.).
+- evidence: string – references to data or context supporting those objections (for example, upcoming earnings, SEC filing issues, stretched chart, IV crush risk, conflicting flow).
+- suggested_changes: string – explicit suggestions, such as “kill this idea”, “reduce size”, “switch to defined-risk spread”, “wait until after event”, or “change target/stop”.
+
+C) final_decision (Resolution step)
+- decision: enum string – one of: PROCEED, MODIFIED, REJECT.
+- final_structure: string – the structure actually recommended to the user after considering the Skeptic. This must be a complete description of the trade expression (stock or options), not just a vague note.
+- resolution_rationale: string – a brief explanation of how the conflict was resolved, explicitly referencing at least one point from skeptic_critique (for example: “We rejected this trade due to earnings-gap risk raised by the Skeptic,” or “We kept the trade but moved to a defined-risk spread due to volatility concerns the Skeptic highlighted.”).
+
+Rules for the Resolution step:
+- The Resolution logic must not silently ignore strong Skeptic objections.
+- For every evaluation, it must:
+  - Reject the idea, OR
+  - Modify the idea and explain how that addresses the objections, OR
+  - Explicitly justify proceeding unchanged despite the objections.
+- decision, final_structure, and resolution_rationale are REQUIRED for every evaluation executed.
+
+5) Options-first recommendation policy (but equity still allowed)
+
+Alpha Terminal is primarily an options-focused platform. Express this in the strategist behavior as follows:
+
+- By default, the strategist SHOULD express its directional views as options trades, not just stock trades, when a clean, liquid options structure exists.
+
+- For most ideas, the final_structure should therefore specify:
+  - expiry (exact date or a relative description that can be mapped to a date),
+  - options type and structure (long call/put, vertical debit spread, credit spread, iron condor, etc.),
+  - strikes (or a clear description of where the strikes should sit relative to price and the entry/target/stop),
+  - basic sizing guidance (for example “small”, “medium”, “large” or similar relative sizing).
+
+- The strategist MAY recommend a pure equity long/short instead of options only when:
+  - Options liquidity is poor (wide spreads, very low OI/volume), or
+  - There is no clean, risk-defined options structure that matches the thesis, or
+  - A direct stock long/short is clearly the simplest, most appropriate expression for the idea.
+
+- When it chooses equity instead of options, the resolution_rationale should briefly explain why options were not used (e.g. “options spreads too wide”, “no liquid strikes near the desired levels”, or “equity short is simpler and cleaner for this setup”).
+
+- It is acceptable to show both the underlying stock view (entry / target / stop) and the preferred options expression of that view. When options are viable, treat the options trade as the primary recommendation.
+
+6) Position size and structure guidance
+
+- The strategist is allowed to output any options structure (including naked short options, spreads, condors, etc.) and any notional contract size (including large sizes), subject to existing risk rules (liquidity gate, etc.).
+- Treat the suggested contract size as a conviction / risk signal from the model, NOT as something tied to a particular account balance.
+- Do not try to infer or cap contract size based on the user’s account size; generate whatever size the model believes is appropriate given the current rules. If size constraints are needed later, they will be added explicitly as separate requirements.
+
+7) Persistence: ideas vs deliberations
+
+Implement / enforce two levels of persistence:
+
+A) Ideas store (what appears as ideas in the main Strategist list)
+- Contains entries where final_decision is PROCEED or MODIFIED.
+- Each idea record must include the full reasoning object (primary_proposal, skeptic_critique, final_decision) or a pointer to it.
+
+B) Deliberations store (every Analyst/Skeptic evaluation, including rejected trades)
+- For EVERY evaluation, even if final_decision is REJECT and no idea card is created, persist a deliberation record that includes:
+  - symbol, timestamp, and a snapshot of key inputs (scanner scores, basic vol/flow summary, Pulse),
+  - the full structured reasoning object (primary_proposal, skeptic_critique, final_decision).
+
+- This deliberations store must be queryable (via an internal API or directly by the UI) so the user can later review rejected trades and see why tokens were spent and why no idea was shown.
+
+8) UI – Analyst vs Critic and Final Decision on the card
+
+In the AI Strategist section of Alpha Terminal:
+
+- Keep the main idea list compact; do not add large side panels that eat screen real estate.
+- When the user expands a Strategist idea card, show a collapsible “Analyst Report” section that includes:
+
+  Analyst (Primary) view
+  - Thesis
+  - Proposed structure
+  - Risk notes
+
+  Skeptic (Light model) view
+  - Objections
+  - Evidence
+  - Suggested changes
+
+  Final Decision
+  - Decision enum (PROCEED / MODIFIED)
+  - Final structure (stock or options, per options-first rules above)
+  - Resolution rationale
+
+- This Analyst Report section should be clean, minimal, and easy to scan (short labels, stacked text), and it should read directly from the structured reasoning fields described earlier.
+
+9) UI – lightweight access to rejected trades
+
+- Add a small, unobtrusive control in the AI Strategist section (for example, a dropdown or pill-style filter) to switch between:
+  - Shown ideas (default; final_decision = PROCEED or MODIFIED),
+  - Rejected ideas (final_decision = REJECT, read from deliberations store),
+  - (Optionally) All evaluations.
+
+- When “Rejected ideas” is selected:
+  - Render a minimal list of rejected evaluations (symbol, timestamp, and a short summary).
+  - When the user expands one, show the same Analyst Report structure (Analyst, Skeptic, Final Decision) so they can see why the trade was rejected.
+
+10) Telemetry and consistency
+
+- Continue logging low-level telemetry (requests, responses, timings) as currently implemented.
+- The deliberations store should be considered the primary surface for auditing all Analyst/Skeptic interactions, including rejected trades.
+- Make sure each idea record is linked to its deliberation record, so navigation between “idea” and “full back-and-forth” is straightforward.
+
+If any existing behavior conflicts with this prompt, please refactor toward this behavior. Priority:
+1) No Shadow mode.
+2) All Analyst + Skeptic interactions logged with the structured reasoning object.
+3) Options-first recommendations when viable, with clear Analyst/Skeptic/Final Decision views on expanded cards and a way to inspect rejected trades.

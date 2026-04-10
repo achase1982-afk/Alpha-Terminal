@@ -64,10 +64,15 @@ The AI Lab Strategist has a dedicated configuration block on the AI Parameters s
 - Strict validation: allowed keys only, finite numeric bounds, provider enum (`anthropic` | `google`).
 - API routes: `GET /api/ai-lab/config`, `PUT /api/ai-lab/config`.
 
-**Structured Two-Step Deliberation Pipeline:**
-- Step 1 — Claude Analyst: produces `PrimaryProposal` (direction, legs, thesis, signals, conviction).
-- Step 2 — Gemini Skeptic: produces `SkepticCritique` (verdict PASS|CONDITIONAL|REJECT, concerns, risk assessment).
-- Merger: `buildFinalDecision()` combines both into `FinalDecision` (decision PROCEED|MODIFIED|REJECT, reasoning).
+**Structured Two-Step Deliberation Pipeline (Options-First):**
+- Step 1 — Claude Analyst: produces `PrimaryProposal` with options-first policy. Prefers options structures (spreads, naked, condors, etc.) when liquid; equity only when justified. Prompt uses ivSummary, flowSummary, scannerAlignment, liquidityMetrics, rsSummary for grounded analysis.
+- Step 2 — Gemini Skeptic: produces `SkepticCritique` with options-aware critiques (IV crush, spread widths, OI/volume, event risk vs expiry, sizing vs conviction, equity-vs-options justification challenge).
+- Merger: `buildFinalDecision()` — tightened state machine:
+  - REJECT: validation fail, OR skepticKillSignal + critiqueScore ≥ 75, OR ≥ 3 severe flags (liquidity + regime + overfit).
+  - MODIFIED: only on material change (conviction downgrade, combined regime+liquidity flags, or overfit + critiqueScore ≥ 50).
+  - PROCEED: critiqueScore ≥ 55 without material change → proceeds with skeptic objections explicitly noted but assessed as non-blocking.
+  - `finalStructure`: renders full trade expression with leg details (Buy/Sell qty × strike type expiry); completeness guard falls back to primaryProposal.structure.
+  - `resolutionRationale`: weaves skeptic objections, evidence, and suggestedChanges into all decision paths.
 - Orchestrator always writes a `ai_lab_deliberations` record; only persists to `ai_lab_ideas` on PROCEED/MODIFIED.
 - New endpoint: `GET /api/ai-lab/deliberations?decision=REJECT|PROCEED|MODIFIED&limit=N`.
 

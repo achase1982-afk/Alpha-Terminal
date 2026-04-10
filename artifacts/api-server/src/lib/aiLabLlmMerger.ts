@@ -42,48 +42,126 @@ export interface MergedIdeaFields {
   skepticFlags: SkepticResponse["flags"] | null;
 }
 
+function buildFinalStructureDescription(merged: MergedIdeaFields): string {
+  const { candidate, optionStructureType, legs, primaryProposal } = merged;
+
+  if (candidate.instrumentType === "STOCK") {
+    const detail = primaryProposal.structure || "equity position";
+    return `Equity ${candidate.direction} — ${detail}`;
+  }
+
+  const parts: string[] = [];
+  if (optionStructureType) parts.push(optionStructureType);
+  parts.push(candidate.direction);
+
+  if (legs && legs.length > 0) {
+    const legDescs = legs.map((l) => {
+      const sideStr = l.side === "BUY" ? "Buy" : "Sell";
+      return `${sideStr} ${l.quantity}x ${l.strike} ${l.legType} ${l.expiration}`;
+    });
+    parts.push(`(${legDescs.join(" / ")})`);
+  } else if (primaryProposal.structure) {
+    parts.push(`— ${primaryProposal.structure}`);
+  }
+
+  const result = parts.join(" ").trim();
+  if (!result || result === candidate.direction) {
+    return primaryProposal.structure || `${candidate.instrumentType} ${candidate.direction}`;
+  }
+  return result;
+}
+
 export function buildFinalDecision(
   merged: MergedIdeaFields,
   approved: boolean,
   rejectionReason: string | undefined,
 ): FinalDecision {
-  const { optionStructureType, candidate, critiqueScore, skepticFlags, originalConviction, convictionLevel, signalStrength } = merged;
+  const { critiqueScore, skepticFlags, originalConviction, convictionLevel } = merged;
+  const sc = merged.skepticCritique;
 
-  const finalStructure = optionStructureType
-    ? `${optionStructureType} ${candidate.direction}`
-    : `${candidate.instrumentType} ${candidate.direction}`;
+  const finalStructure = buildFinalStructureDescription(merged);
 
   let decision: FinalDecisionEnum;
   let resolutionRationale: string;
 
-  if (!approved) {
+  const skepticKillSignal = sc.suggestedChanges?.toLowerCase().includes("kill this") ?? false;
+  const severeFlags = [
+    skepticFlags?.liquidityConcern,
+    skepticFlags?.regimeMismatch,
+    skepticFlags?.overfitWarning,
+  ].filter(Boolean).length;
+
+  const hasSkepticContent = sc.objections && sc.objections !== "Skeptic unavailable.";
+  const hasSkepticSuggestion = sc.suggestedChanges && sc.suggestedChanges !== "N/A" && sc.suggestedChanges !== "Proceed with standard risk management.";
+
+  if (!approved || (critiqueScore >= 75 && skepticKillSignal) || severeFlags >= 3) {
     decision = "REJECT";
+    const parts: string[] = [];
+    if (!approved) {
+      parts.push(`Rejected: ${rejectionReason ?? "validation failed"}.`);
+    } else {
+      parts.push("Rejected due to overwhelming Skeptic concerns.");
+    }
+    if (hasSkepticContent) {
+      parts.push(`Skeptic objections: ${sc.objections}`);
+    }
     const flagList: string[] = [];
     if (skepticFlags?.liquidityConcern) flagList.push("liquidity concern");
     if (skepticFlags?.regimeMismatch) flagList.push("regime mismatch");
     if (skepticFlags?.overfitWarning) flagList.push("overfit warning");
     if (skepticFlags?.redundancyWithActiveIdeas) flagList.push("redundancy with active ideas");
-    const flagStr = flagList.length > 0 ? ` Skeptic raised: ${flagList.join(", ")}.` : "";
-    resolutionRationale = `Rejected: ${rejectionReason ?? "validation failed"}.${flagStr}`;
-  } else if (
-    critiqueScore >= 55 ||
-    originalConviction !== convictionLevel ||
-    (skepticFlags?.regimeMismatch && skepticFlags?.liquidityConcern)
-  ) {
-    decision = "MODIFIED";
-    const mods: string[] = [];
-    if (originalConviction !== convictionLevel) mods.push(`conviction downgraded from ${originalConviction} to ${convictionLevel}`);
-    if (skepticFlags?.regimeMismatch) mods.push("regime mismatch noted");
-    if (skepticFlags?.liquidityConcern) mods.push("liquidity concern noted");
-    const modStr = mods.length > 0 ? ` Modifications: ${mods.join("; ")}.` : "";
-    const suggestedStr = merged.skepticCritique.suggestedChanges !== "N/A"
-      ? ` Skeptic suggested: ${merged.skepticCritique.suggestedChanges}`
-      : "";
-    resolutionRationale = `Proceeding with modifications. Skeptic score: ${critiqueScore}.${modStr}${suggestedStr}`.trim();
+    if (flagList.length > 0) parts.push(`Flags: ${flagList.join(", ")}.`);
+    if (hasSkepticSuggestion) {
+      parts.push(`Skeptic suggested: ${sc.suggestedChanges}`);
+    }
+    resolutionRationale = parts.join(" ");
   } else {
-    decision = "PROCEED";
-    const redundancyNote = skepticFlags?.redundancyWithActiveIdeas ? " Minor redundancy flag noted but not blocking." : "";
-    resolutionRationale = `Proceeding as proposed. Skeptic found no blocking concerns (score: ${critiqueScore}).${redundancyNote}`.trim();
+    const hasMaterialChange =
+      originalConviction !== convictionLevel ||
+      (skepticFlags?.regimeMismatch && skepticFlags?.liquidityConcern) ||
+      (skepticFlags?.overfitWarning && critiqueScore >= 50);
+
+    if (hasMaterialChange) {
+      decision = "MODIFIED";
+      const parts: string[] = [`Proceeding with modifications (Skeptic score: ${critiqueScore}).`];
+      if (originalConviction !== convictionLevel) {
+        parts.push(`Conviction downgraded from ${originalConviction} to ${convictionLevel}.`);
+      }
+      if (skepticFlags?.overfitWarning) {
+        parts.push("Overfit warning acknowledged — reducing confidence in pattern reliability.");
+      }
+      if (hasSkepticContent) {
+        parts.push(`Addressing Skeptic concerns: ${sc.objections}`);
+      }
+      if (hasSkepticSuggestion) {
+        parts.push(`Skeptic suggested: ${sc.suggestedChanges}`);
+      }
+      const flagNotes: string[] = [];
+      if (skepticFlags?.regimeMismatch) flagNotes.push("regime mismatch acknowledged");
+      if (skepticFlags?.liquidityConcern) flagNotes.push("liquidity concern acknowledged");
+      if (flagNotes.length > 0) parts.push(`Flags: ${flagNotes.join("; ")}.`);
+      resolutionRationale = parts.join(" ");
+    } else if (critiqueScore >= 55) {
+      decision = "PROCEED";
+      const parts: string[] = [`Proceeding despite elevated Skeptic score (${critiqueScore}).`];
+      if (hasSkepticContent) {
+        parts.push(`Skeptic raised: ${sc.objections} — assessed as non-blocking given the strength of the thesis.`);
+      }
+      if (hasSkepticSuggestion) {
+        parts.push(`Skeptic suggested: ${sc.suggestedChanges} — noted but not implemented.`);
+      }
+      resolutionRationale = parts.join(" ");
+    } else {
+      decision = "PROCEED";
+      const parts: string[] = [`Proceeding as proposed. Skeptic score: ${critiqueScore} (no blocking concerns).`];
+      if (hasSkepticContent) {
+        parts.push(`Skeptic noted: ${sc.objections} — assessed as non-blocking.`);
+      }
+      if (skepticFlags?.redundancyWithActiveIdeas) {
+        parts.push("Minor redundancy flag noted but not blocking.");
+      }
+      resolutionRationale = parts.join(" ");
+    }
   }
 
   return { decision, finalStructure, resolutionRationale };
