@@ -785,7 +785,17 @@ function computeDirectionalLean(
 }
 
 // ─── Guardrail filter ──────────────────────────────────────────────────────
+const EXCLUDED_ETFS = new Set([
+  "SPY","QQQ","IWM","DIA","XLF","XLK","XLE","XLV","XLY","XLP","XLI","XLB","XLU","XLRE","XLC",
+  "VTI","VOO","VEA","VWO","VIG","VYM","VGT","VNQ","BND","AGG","TLT","IEF","SHY","HYG","LQD",
+  "GLD","SLV","USO","UNG","ARKK","ARKW","ARKF","ARKG","ARKQ","SOXX","SMH","XBI","IBB","KRE",
+  "XOP","OIH","GDX","GDXJ","KWEB","EEM","EFA","FXI","INDA","EWZ","EWJ",
+  "SQQQ","TQQQ","SPXU","SPXL","SOXL","SOXS","LABU","LABD","TNA","TZA","UVXY","SVXY",
+  "RSP","MDY","IJR","VB","VO","IVV","SCHD","JEPI","JEPQ",
+]);
+
 function passesGuardrails(sym: string, price: number, avgVol?: number): { passes: boolean; reason?: string } {
+  if (EXCLUDED_ETFS.has(sym.toUpperCase())) return { passes: false, reason: "ETF excluded from scan" };
   if (price < CFG.minPrice) return { passes: false, reason: `Price $${price.toFixed(2)} below $${CFG.minPrice}` };
   if (avgVol != null && avgVol < CFG.minAvgVol) return { passes: false, reason: `Avg vol ${avgVol.toLocaleString()} below 500k` };
   return { passes: true };

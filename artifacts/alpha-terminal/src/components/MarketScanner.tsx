@@ -106,12 +106,20 @@ const DeterministicCard = memo(function DeterministicCard({
   onSelect: (sym: string) => void;
   onSendToStrategist?: (sym: string, candidate: DetCandidate) => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const lastScanTs = useRef(candidate.scanTimestamp);
+  if (candidate.scanTimestamp !== lastScanTs.current) {
+    lastScanTs.current = candidate.scanTimestamp;
+    if (expanded) setExpanded(false);
+  }
   const { data } = useQuote(candidate.symbol);
   const livePrice = data?.last ?? candidate.price;
   const liveChangePct = data?.changePct ?? candidate.changePct;
   const isUp = liveChangePct >= 0;
   const isDiscovery = candidate.scanMode === "DISCOVERY";
   const lean = candidate.directionalLean;
+
+  const scoreColor = candidate.totalScore >= 80 ? "#26a69a" : candidate.totalScore >= 60 ? "#FFB800" : "#6B7280";
 
   const scoreBars = isDiscovery && candidate.discoveryComponents
     ? DISCOVERY_BARS.map(bar => ({
@@ -129,118 +137,121 @@ const DeterministicCard = memo(function DeterministicCard({
 
   return (
     <div className="bg-card border border-card-border rounded-lg overflow-hidden hover:border-zinc-600 transition-colors">
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-card-border/50" style={{ background: "#0c0c0c" }}>
-        <span className="text-[11px] font-bold tabular-nums w-5 text-zinc-600">#{rank}</span>
-        <button onClick={() => onSelect(candidate.symbol)}
-          className="font-bold text-sm tracking-wider hover:text-[#FFB800] transition-colors active:scale-95"
+      <div
+        onClick={() => setExpanded(e => !e)}
+        className="w-full flex items-center gap-2 px-3 py-2.5 text-left cursor-pointer active:bg-white/[0.02] transition-colors"
+        style={{ background: "#0c0c0c" }}
+      >
+        <span className="text-[11px] font-bold tabular-nums w-5 text-zinc-600 shrink-0">#{rank}</span>
+        <button onClick={(e) => { e.stopPropagation(); onSelect(candidate.symbol); }}
+          className="font-bold text-[13px] tracking-wider hover:text-[#FFB800] transition-colors active:scale-95 shrink-0"
           style={{ color: isUp ? "#26a69a" : "#f23645" }}>
           {candidate.symbol}
         </button>
-        <span className="text-[11px] text-zinc-500 font-medium">{candidate.sector}</span>
-        <div className="ml-auto flex items-center gap-2">
-          {lean && (
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full tabular-nums"
-              style={{ color: LEAN_COLORS[lean], background: `${LEAN_COLORS[lean]}18`, border: `1px solid ${LEAN_COLORS[lean]}40` }}>
-              {lean}
-            </span>
-          )}
-          {candidate.microOverrideEligible && (
-            <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full"
-              style={{ color: "#FFB800", background: "rgba(255,184,0,0.12)", border: "1px solid rgba(255,184,0,0.3)" }}>
-              <Shield className="w-3 h-3" /> MICRO-OVERRIDE
-            </span>
-          )}
-          <span className="text-lg font-bold font-mono tabular-nums"
-            style={{ color: candidate.totalScore >= 80 ? "#26a69a" : candidate.totalScore >= 60 ? "#FFB800" : "#6B7280" }}>
+        <span className="text-[10px] text-zinc-500 shrink-0 max-w-[50px] truncate">{candidate.sector}</span>
+
+        {candidate.microOverrideEligible && (
+          <Shield className="w-3 h-3 shrink-0" style={{ color: "#FFB800" }} />
+        )}
+        {lean && (
+          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0"
+            style={{ color: LEAN_COLORS[lean], background: `${LEAN_COLORS[lean]}18` }}>
+            {lean}
+          </span>
+        )}
+
+        <div className="ml-auto flex items-center gap-2 shrink-0">
+          <span className="text-[11px] font-mono tabular-nums text-zinc-400">${livePrice.toFixed(2)}</span>
+          <span className="text-[11px] font-mono tabular-nums" style={{ color: isUp ? "#26a69a" : "#f23645" }}>
+            {isUp ? "+" : ""}{liveChangePct.toFixed(2)}%
+          </span>
+          <span className="text-[11px] font-mono tabular-nums text-zinc-500">IVR {candidate.ivr.toFixed(0)}</span>
+          <span className="text-lg font-bold font-mono tabular-nums" style={{ color: scoreColor }}>
             {candidate.totalScore}
           </span>
+          <ChevronDown className="w-3.5 h-3.5 text-zinc-500 transition-transform" style={{ transform: expanded ? "rotate(180deg)" : "none" }} />
         </div>
       </div>
 
-      <div className="px-4 py-3 grid grid-cols-2 gap-x-6 gap-y-2">
-        <div>
-          <div className="text-[11px] text-zinc-500 uppercase mb-1.5">Score Breakdown</div>
-          <div className="space-y-1.5">
-            {scoreBars.map(bar => {
-              const pct = Math.round((bar.val / bar.max) * 100);
-              return (
-                <div key={bar.label} className="flex items-center gap-2">
-                  <span className="text-[10px] font-bold text-zinc-500 w-[52px] text-right shrink-0">{bar.label}</span>
-                  <div className="flex-1 h-[6px] rounded-full overflow-hidden" style={{ background: "#1a1a1a" }}>
-                    <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: bar.color }} />
-                  </div>
-                  <span className="text-[10px] font-mono tabular-nums text-zinc-400 w-8 text-right">{Math.round(bar.val)}/{bar.max}</span>
+      {expanded && (
+        <>
+          <div className="px-4 py-3 grid grid-cols-2 gap-x-6 gap-y-2 border-t border-card-border/50">
+            <div>
+              <div className="text-[11px] text-zinc-500 uppercase mb-1.5">Score Breakdown</div>
+              <div className="space-y-1.5">
+                {scoreBars.map(bar => {
+                  const pct = Math.round((bar.val / bar.max) * 100);
+                  return (
+                    <div key={bar.label} className="flex items-center gap-2">
+                      <span className="text-[10px] font-bold text-zinc-500 w-[52px] text-right shrink-0">{bar.label}</span>
+                      <div className="flex-1 h-[6px] rounded-full overflow-hidden" style={{ background: "#1a1a1a" }}>
+                        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: bar.color }} />
+                      </div>
+                      <span className="text-[10px] font-mono tabular-nums text-zinc-400 w-8 text-right">{Math.round(bar.val)}/{bar.max}</span>
+                    </div>
+                  );
+                })}
+              </div>
+              {isDiscovery && candidate.flowDataAvailable === false && (
+                <div className="mt-2 flex items-center gap-1 text-[10px]" style={{ color: "#6B7280" }}>
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-zinc-600" />
+                  Flow data unavailable — score renormalized
                 </div>
-              );
-            })}
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex justify-between">
+                <span className="text-[11px] text-zinc-500">ATM Spread</span>
+                <span className="text-sm font-mono tabular-nums text-zinc-300">{candidate.atmSpreadPct.toFixed(1)}%</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[11px] text-zinc-500">{candidate.keyStatLabel}</span>
+                <span className="text-sm font-mono tabular-nums text-zinc-300">{candidate.keyStatValue}</span>
+              </div>
+              {candidate.hasWeeklyOptions && (
+                <span className="text-[10px] text-zinc-500 border border-zinc-700 rounded px-1.5 py-0.5 inline-block">WEEKLYS</span>
+              )}
+              {candidate.microOverrideEligible && (
+                <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full w-fit"
+                  style={{ color: "#FFB800", background: "rgba(255,184,0,0.12)", border: "1px solid rgba(255,184,0,0.3)" }}>
+                  <Shield className="w-3 h-3" /> MICRO-OVERRIDE
+                </span>
+              )}
+            </div>
           </div>
-          {isDiscovery && candidate.flowDataAvailable === false && (
-            <div className="mt-2 flex items-center gap-1 text-[10px]" style={{ color: "#6B7280" }}>
-              <span className="inline-block w-1.5 h-1.5 rounded-full bg-zinc-600" />
-              Flow data unavailable — score renormalized
+
+          {candidate.upcomingEvents.length > 0 && (
+            <div className="px-4 pb-2">
+              <div className="flex flex-wrap gap-1.5">
+                {candidate.upcomingEvents.map((ev, i) => (
+                  <span key={i} className="text-[10px] px-1.5 py-0.5 rounded border"
+                    style={{
+                      color: ev.importance?.toUpperCase() === "HIGH" ? "#f23645" : "#FFB800",
+                      borderColor: ev.importance?.toUpperCase() === "HIGH" ? "rgba(242,54,69,0.3)" : "rgba(255,184,0,0.2)",
+                      background: ev.importance?.toUpperCase() === "HIGH" ? "rgba(242,54,69,0.08)" : "rgba(255,184,0,0.05)",
+                    }}>
+                    {ev.title} {ev.date}
+                  </span>
+                ))}
+              </div>
             </div>
           )}
-        </div>
 
-        <div className="space-y-2">
-          <div className="flex justify-between">
-            <span className="text-[11px] text-zinc-500">Price</span>
-            <span className="text-sm font-bold text-zinc-200 tabular-nums">${livePrice.toFixed(2)}
-              <span className="text-[11px] ml-1 font-normal" style={{ color: isUp ? "#26a69a" : "#f23645" }}>
-                {isUp ? "+" : ""}{liveChangePct.toFixed(2)}%
-              </span>
+          <div className="px-4 py-2.5 border-t border-card-border/50 flex items-center justify-between" style={{ background: "#0a0a0a" }}>
+            <span className="text-[10px] text-zinc-600">
+              Bias: {candidate.pulseBias} · Composite: {typeof candidate.pulseComposite === 'number' ? candidate.pulseComposite.toFixed(1) : candidate.pulseComposite}
             </span>
+            {onSendToStrategist && (
+              <button onClick={() => onSendToStrategist(candidate.symbol, candidate)}
+                className="flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded transition-all hover:bg-[#FFB800]/15 active:scale-95"
+                style={{ color: "#FFB800", border: "1px solid rgba(255,184,0,0.3)" }}>
+                <Send className="w-3 h-3" /> SEND TO STRATEGIST
+              </button>
+            )}
           </div>
-          <div className="flex justify-between">
-            <span className="text-[11px] text-zinc-500">IVR</span>
-            <span className="text-sm font-mono tabular-nums"
-              style={{ color: candidate.ivr > 50 ? "#FFB800" : candidate.ivr < 30 ? "#26a69a" : "#6B7280" }}>
-              {candidate.ivr.toFixed(1)}%
-            </span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-[11px] text-zinc-500">ATM Spread</span>
-            <span className="text-sm font-mono tabular-nums text-zinc-300">{candidate.atmSpreadPct.toFixed(1)}%</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-[11px] text-zinc-500">{candidate.keyStatLabel}</span>
-            <span className="text-sm font-mono tabular-nums text-zinc-300">{candidate.keyStatValue}</span>
-          </div>
-          {candidate.hasWeeklyOptions && (
-            <span className="text-[10px] text-zinc-500 border border-zinc-700 rounded px-1.5 py-0.5 inline-block">WEEKLYS</span>
-          )}
-        </div>
-      </div>
-
-      {candidate.upcomingEvents.length > 0 && (
-        <div className="px-4 pb-2">
-          <div className="flex flex-wrap gap-1.5">
-            {candidate.upcomingEvents.map((ev, i) => (
-              <span key={i} className="text-[10px] px-1.5 py-0.5 rounded border"
-                style={{
-                  color: ev.importance?.toUpperCase() === "HIGH" ? "#f23645" : "#FFB800",
-                  borderColor: ev.importance?.toUpperCase() === "HIGH" ? "rgba(242,54,69,0.3)" : "rgba(255,184,0,0.2)",
-                  background: ev.importance?.toUpperCase() === "HIGH" ? "rgba(242,54,69,0.08)" : "rgba(255,184,0,0.05)",
-                }}>
-                {ev.title} {ev.date}
-              </span>
-            ))}
-          </div>
-        </div>
+        </>
       )}
-
-      <div className="px-4 py-2.5 border-t border-card-border/50 flex items-center justify-between" style={{ background: "#0a0a0a" }}>
-        <span className="text-[10px] text-zinc-600">
-          Bias: {candidate.pulseBias} · Composite: {typeof candidate.pulseComposite === 'number' ? candidate.pulseComposite.toFixed(1) : candidate.pulseComposite}
-        </span>
-        {onSendToStrategist && (
-          <button onClick={() => onSendToStrategist(candidate.symbol, candidate)}
-            className="flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded transition-all hover:bg-[#FFB800]/15 active:scale-95"
-            style={{ color: "#FFB800", border: "1px solid rgba(255,184,0,0.3)" }}>
-            <Send className="w-3 h-3" /> SEND TO STRATEGIST
-          </button>
-        )}
-      </div>
     </div>
   );
 });

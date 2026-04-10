@@ -78,6 +78,12 @@ New scoring engine in `deterministicScanner.v2.ts` implementing the Discovery Mo
 - "Flow data unavailable" notice when Polygon data missing (score renormalized)
 - Results header shows "DISCOVERY BETA" or "MOMENTUM" badge
 
+### Collapsed Scanner Cards & ETF Filtering (April 2026)
+- **Collapsed by default**: `DeterministicCard` renders as a single-row summary showing rank, ticker (clickable to navigate), sector, micro-override shield icon, directional lean badge, price/change%, IVR, score, and expand chevron. Clicking anywhere on the row expands to reveal score breakdown bars, detailed stats, upcoming events, and "Send to Strategist" button.
+- **Scan reset**: Cards auto-collapse when `scanTimestamp` changes (new scan results), preventing stale expanded state.
+- **ETF exclusion**: `EXCLUDED_ETFS` set in `deterministicScanner.v2.ts` guardrails filters out ~80 common ETFs (SPY, QQQ, sector ETFs, leveraged ETFs, bond ETFs, etc.) from discovery scan results.
+- **Universe deduplication**: `getDefaultUniverse()` in `snapshot.ts` uses a Set-based dedup filter to prevent duplicate symbols causing redundant API calls and DB writes.
+
 ### Dynamic Scanner Universe System
 Three-layer universe system for the Market Scanner replacing hardcoded stock lists:
 - **Presets**: Hardcoded S&P 100, S&P 500, Nasdaq 100 symbol lists served from `scanner.ts` (no JSON files to avoid bundler issues). Keys: `preset:sp100`, `preset:sp500`, `preset:ndx100`.
