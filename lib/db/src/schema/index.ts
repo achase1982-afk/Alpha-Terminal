@@ -377,6 +377,21 @@ export const aiLabEmbeddingsTable = pgTable("ai_lab_embeddings", {
 
 export type AiLabEmbedding = typeof aiLabEmbeddingsTable.$inferSelect;
 
+export const aiLabWatchlistTable = pgTable("ai_lab_watchlist", {
+  id: serial("id").primaryKey(),
+  symbol: text("symbol").notNull(),
+  anomalyTypes: jsonb("anomaly_types"),
+  anomalyScores: jsonb("anomaly_scores"),
+  compositeScore: integer("composite_score").notNull().default(0),
+  passName: text("pass_name").notNull().default("OVERNIGHT_DIGEST"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  expiresAt: timestamp("expires_at"),
+}, (t) => [
+  uniqueIndex("ai_lab_wl_sym_pass").on(t.symbol, t.passName),
+]);
+
+export type AiLabWatchlistEntry = typeof aiLabWatchlistTable.$inferSelect;
+
 export const snapshotCollectionLogTable = pgTable("snapshot_collection_log", {
   id: serial("id").primaryKey(),
   date: date("date").notNull().unique(),

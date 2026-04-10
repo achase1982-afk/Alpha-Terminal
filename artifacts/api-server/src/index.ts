@@ -10,6 +10,7 @@ import { startExitMonitor } from "./lib/exitStaging";
 import { startTelemetryCleanup } from "./lib/telemetry";
 import { initDeltaEngine } from "./lib/deltaEngine";
 import { runDailyScreenRefresh } from "./routes/scanner";
+import { initAiLabOrchestrator } from "./lib/aiLabOrchestrator";
 
 const rawPort = process.env["PORT"];
 
@@ -62,6 +63,7 @@ async function boot() {
     }, msUntil);
   }
   scheduleDailyScreenRefresh();
+  initAiLabOrchestrator();
 
   setTokenRefreshCallback((kind, _accessToken) => {
     if (kind === "trader" || kind === "market") {

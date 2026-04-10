@@ -1,0 +1,218 @@
+You are the same backend engineer working on Alpha Terminal’s **AI Lab Strategist**.
+
+ASSUMED DONE FROM PREVIOUS WORK
+- DB schemas for:
+  - TradeIdea (AI Lab ideas)
+  - Outcome/PnL (or outcome fields on TradeIdea)
+  - Embeddings/Memory
+- Backend functions for:
+  - get_universe_anomalies(filters, limit)
+  - get_ticker_snapshot(symbol, lookbackDays)
+  - get_regime_state()
+  - get_pattern_performance(patternTags[])
+  - get_scanner_alignment(symbol)
+- Deterministic validation logic:
+  - validateAiLabIdea(candidateIdea, activeIdeas, marketSnapshot) → { approved, rejectionReason }
+
+In this prompt, you will NOT integrate LLMs yet.
+You are building the **Orchestrator skeleton**: schedules, triggers, and pipeline plumbing.
+
+GOAL OF THIS PROMPT
+
+Implement the backend orchestration layer that:
+
+1) Runs the daily **scheduled passes** (overnight, pre‑market, post‑open, etc.).
+2) Handles **event-driven triggers** (price shock, block flow, scanner score jump).
+3) For now, generates **placeholder/dummy ideas** (no LLM) and pushes them through:
+   - Data tools
+   - Rejection Layer
+   - Portfolio constraints
+   - TradeIdea Store
+4) Logs all activity to the existing **telemetry** system under a new category `ai_lab_strategist`.
+
+This gives us a fully testable pipeline BEFORE we plug in Analyst/Skeptic LLMs in a later prompt.
+
+--------------------------------------------------
+1. ORCHESTRATOR DESIGN
+--------------------------------------------------
+
+Create an `AiLabOrchestrator` module/service with responsibilities:
+
+- Register and run scheduled tasks at specific times (or cron-like expressions).
+- Listen for event triggers (these can be implemented as function calls for now).
+- For each run (scheduled or triggered), do the following steps:
+
+Core pipeline (for each symbol chosen in that run):
+
+1) Collect 
+   - Call get_regime_state() once per run.
+   - Call get_universe_anomalies(...) or get_ticker_snapshot(symbol, lookbackDays) depending on pass type.
+2) Build a **candidate TradeIdea** object (placeholder, without LLM):
+   - For now, generate a simple dummy idea:
+     - direction: LONG
+     - instrumentType: "STOCK"
+     - basic entry/stop/target using recentPriceSummary.
+     - simple THESIS string like "DUMMY IDEA FOR PIPELINE TEST".
+     - Fill required fields with reasonable defaults.
+3) Fetch currently ACTIVE AI Lab ideas from DB.
+4) Call validateAiLabIdea(candidate, activeIdeas, marketSnapshot).
+5) If NOT approved:
+   - Log a telemetry event with reason and stop for that candidate.
+6) If approved:
+   - Save TradeIdea (status = "ACTIVE") to DB.
+   - Log a telemetry event for idea creation.
+
+Make everything parameterized so that in a later prompt we can replace the “dummy idea generator” with actual LLM output.
+
+--------------------------------------------------
+2. SCHEDULED PASSES
+--------------------------------------------------
+
+Implement scheduled jobs (you can abstract actual timing; use cron or equivalent):
+
+A) Overnight Digest (e.g., 03:30 ET)
+- Purpose now:
+  - Call get_universe_anomalies(...) with broad filters (e.g., S&P universe).
+  - Store results in a small “ai_lab_watchlist” table or cache (symbol + anomalyTypes + scores).
+- For now:
+  - No ideas created; just log telemetry: how many anomalies found.
+
+B) Pre-Market Plan (e.g., 08:00 ET)
+- Steps:
+  - Load overnight watchlist.
+  - For top N symbols (e.g., 10) from watchlist:
+    - Call get_ticker_snapshot(symbol, lookbackDays).
+    - Build dummy candidate ideas (as above).
+    - Run validateAiLabIdea + save APPROVED ideas.
+  - Log telemetry:
+    - Count of candidates
+    - Count approved / rejected.
+
+C) Post-Open Check (e.g., 09:45 ET)
+- Steps:
+  - For all ACTIVE ideas:
+    - Optionally update some “intraday status” field (you can stub this).
+  - For this prompt, keep it simple:
+    - Just log that the pass ran and how many ACTIVE ideas exist.
+
+D) Mid-Morning, Midday, Power Hour, Post-Market
+- Implement as stubs that:
+  - Run, log telemetry, and maybe touch ACTIVE ideas for now.
+  - Do NOT generate new ideas yet (we’ll plug in LLM later).
+
+Ensure the schedule is centralized (e.g., a function that registers all jobs with the app’s scheduler).
+
+--------------------------------------------------
+3. EVENT-DRIVEN TRIGGERS (SKELETON)
+--------------------------------------------------
+
+Define trigger handlers that can be called by other services later (for now, you can expose them as functions):
+
+A) priceShockTrigger(symbol, movePct, windowMinutes, volumeSpikeRatio)
+
+- Before doing anything:
+  - Check basic liquidity + data freshness:
+    - If avgVolume20d < threshold OR data is stale, ignore trigger.
+- Steps:
+  - Call get_ticker_snapshot(symbol, lookbackDays).
+  - Build a dummy candidate idea.
+  - Run validateAiLabIdea + save if approved.
+  - Log telemetry event:
+    - type: "PRICE_SHOCK_TRIGGER"
+    - symbol, movePct, volumeSpikeRatio
+    - approved or rejected, rejectionReason if any.
+
+B) blockFlowTrigger(symbol, blockNotional, blockPctOfADV)
+
+- Same pattern as priceShockTrigger:
+  - Liquidity/freshness check first.
+  - get_ticker_snapshot → candidate → validate → save/log.
+  - Telemetry type: "BLOCK_FLOW_TRIGGER".
+
+C) scannerScoreJumpTrigger(symbol, deltaDiscovery, deltaMomentum)
+
+- Only triggers if:
+  - abs(deltaDiscovery) or abs(deltaMomentum) ≥ configurable thresholds.
+  - Symbol passes liquidity/freshness checks.
+- Same pipeline, telemetry type: "SCANNER_SCORE_TRIGGER".
+
+NOTE:
+- In this prompt, do NOT worry about the source of these triggers (they can be called manually or wired later).
+- Focus on writing robust, testable handler functions that exercise the pipeline.
+
+--------------------------------------------------
+4. TELEMETRY INTEGRATION
+--------------------------------------------------
+
+We already have a telemetry system and sidebar that logs scanner runs, errors, etc.
+
+Add a new category or source key: `ai_lab_strategist`.
+
+For every important action in the orchestrator, log an event, for example:
+
+- When a scheduled pass starts/finishes:
+  - type: "SCHEDULE_RUN"
+  - passName: "OVERNIGHT_DIGEST" | "PREMARKET_PLAN" | ...
+  - timestamp
+  - counts (anomaliesFound, candidatesGenerated, ideasApproved, ideasRejected)
+
+- When a trigger fires:
+  - type: "TRIGGER_FIRED"
+  - triggerType: "PRICE_SHOCK" | "BLOCK_FLOW" | "SCANNER_SCORE"
+  - symbol
+  - params (movePct, volumeSpikeRatio, etc.)
+  - approved/rejected counts
+
+- When an idea is validated:
+  - type: "IDEA_VALIDATION"
+  - ideaId (if created)
+  - symbol
+  - approved: boolean
+  - rejectionReason (if any)
+  - signalStrength (if available, for later)
+
+Make sure telemetry logging is done in a simple helper (e.g., logAiLabEvent(...)) so we can later adjust format without touching business logic.
+
+--------------------------------------------------
+5. TESTABILITY & STUBS
+--------------------------------------------------
+
+- Where real market data is not available in this environment, create clear stubs with TODOs so I can plug in real providers later.
+- Provide a small unit/integration test plan or minimal tests:
+  - Example: calling priceShockTrigger on an illiquid symbol should log a trigger but NOT create any idea.
+  - Example: preMarketPlan run with a fake anomaly list should:
+    - Attempt N candidate ideas,
+    - Approve only those passing validateAiLabIdea,
+    - Log telemetry correctly.
+
+--------------------------------------------------
+DELIVERABLES FOR THIS PROMPT
+
+1) An `AiLabOrchestrator` module/service that:
+   - Registers scheduled jobs.
+   - Exposes trigger handler functions:
+     - priceShockTrigger(...)
+     - blockFlowTrigger(...)
+     - scannerScoreJumpTrigger(...)
+
+2) For scheduled passes:
+   - Working implementation of:
+     - overnightDigest()
+     - preMarketPlan()
+     - postOpenCheck()
+     - midMorningScan()
+     - middayRotationCheck()
+     - powerHourPrep()
+     - postMarketReflection()
+   - For now, only overnight + preMarket actually create dummy ideas.
+
+3) Telemetry helper:
+   - logAiLabEvent(type, payload)
+   - Integrated into all orchestrator operations with source/category `ai_lab_strategist`.
+
+4) No LLM calls yet.
+   - Candidate ideas can be simple placeholders.
+   - The key is that the data tools + rejection layer + portfolio constraints are exercised end-to-end.
+
+After this is working and tested, the NEXT prompt will be about:
+- Plugging in the Analyst LLM and Skeptic LLM to replace the dummy idea generator, using the same orchestrator pipeline.

@@ -223,3 +223,36 @@ Backend data layer for AI-driven trade idea generation and evaluation.
 - `GET /ideas` — List ideas with status filter
 - `GET /ideas/:id` — Single idea + outcomes
 - `PATCH /ideas/:id/status` — Update idea lifecycle status
+
+### AI Lab Orchestrator — Pipeline Skeleton (April 2026)
+
+Orchestration layer that schedules daily passes, handles event-driven triggers, and runs dummy ideas through the full pipeline (data tools → rejection layer → DB).
+
+**Scheduled Passes (7 jobs, ET times):**
+1. `OVERNIGHT_DIGEST` (03:30 ET) — Scans universe anomalies, populates `ai_lab_watchlist` table with top 50 ranked symbols.
+2. `PREMARKET_PLAN` (08:00 ET) — Loads overnight watchlist, builds ticker snapshots for top 10, creates dummy candidate ideas, runs validator, saves approved ideas.
+3. `POST_OPEN_CHECK` (09:45 ET) — Stub: counts active ideas.
+4. `MID_MORNING_SCAN` (10:30 ET) — Stub: logs active idea count.
+5. `MIDDAY_ROTATION` (12:00 ET) — Stub: checks rotation signals.
+6. `POWER_HOUR_PREP` (15:00 ET) — Stub: EOD positioning.
+7. `POST_MARKET_REFLECTION` (16:15 ET) — Stub: EOD P&L evaluation.
+
+**Event-Driven Triggers (3 handlers):**
+1. `priceShockTrigger(symbol, movePct, windowMinutes, volumeSpikeRatio)` — Fires on large price moves (≥3%). Checks liquidity → snapshot → validate → save.
+2. `blockFlowTrigger(symbol, blockNotional, blockPctOfADV)` — Fires on large block trades (≥$500K). Same pipeline.
+3. `scannerScoreJumpTrigger(symbol, deltaDiscovery, deltaMomentum)` — Fires on scanner score jumps (≥15 delta). Same pipeline.
+
+**Pipeline:** Each trigger/pass runs: `getRegimeState()` → `getTickerSnapshot()` → `buildDummyCandidate()` → `validateAiLabIdea()` → DB insert (if approved). Dummy ideas tagged with source pass/trigger name in thesis field.
+
+**Telemetry:** `logAiLabEvent(type, payload)` helper logs all orchestrator activity under `AI_LAB` feature. Event types: SCHEDULE_RUN, TRIGGER_FIRED, TRIGGER_FILTERED, IDEA_VALIDATION.
+
+**DB Table:** `ai_lab_watchlist` — Caches overnight anomaly scan results (symbol, anomaly types/scores, composite score, pass name, expiry). Unique on (symbol, pass_name).
+
+**API Routes (`/api/ai-lab/orchestrator/`):**
+- `POST /run-pass` — Manual pass invocation (async fire)
+- `POST /trigger/price-shock` — Manual price shock trigger
+- `POST /trigger/block-flow` — Manual block flow trigger
+- `POST /trigger/scanner-score` — Manual scanner score trigger
+- `GET /watchlist` — Current overnight watchlist
+
+**Files:** `aiLabOrchestrator.ts` (orchestrator + scheduler), `aiLab.ts` (routes expanded with orchestrator endpoints).

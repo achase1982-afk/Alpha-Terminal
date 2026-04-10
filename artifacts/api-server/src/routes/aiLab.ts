@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, aiLabIdeasTable, aiLabIdeaOutcomesTable } from "@workspace/db";
+import { db, aiLabIdeasTable, aiLabIdeaOutcomesTable, aiLabWatchlistTable } from "@workspace/db";
 import { eq, desc, and, inArray } from "drizzle-orm";
 import { emitTelemetry, createTelemetryBatch } from "../lib/telemetryStore.js";
 import {
@@ -10,6 +10,18 @@ import {
   getScannerAlignment,
 } from "../lib/aiLabService.js";
 import { validateAiLabIdea, type TradeIdeaCandidate, type MarketDataSnapshot } from "../lib/aiLabValidator.js";
+import {
+  overnightDigest,
+  preMarketPlan,
+  postOpenCheck,
+  midMorningScan,
+  middayRotationCheck,
+  powerHourPrep,
+  postMarketReflection,
+  priceShockTrigger,
+  blockFlowTrigger,
+  scannerScoreJumpTrigger,
+} from "../lib/aiLabOrchestrator.js";
 
 const router: IRouter = Router();
 
@@ -255,6 +267,113 @@ router.patch("/ideas/:id/status", async (req, res) => {
     res.json({ idea: updated });
   } catch (err: any) {
     emitTelemetry("STRATEGIST", "ERROR", `PATCH /ideas/${req.params.id}/status failed: ${err.message}`, { error: err.message }, "AI_LAB", batch);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+const PASS_HANDLERS: Record<string, () => Promise<void>> = {
+  OVERNIGHT_DIGEST: overnightDigest,
+  PREMARKET_PLAN: preMarketPlan,
+  POST_OPEN_CHECK: postOpenCheck,
+  MID_MORNING_SCAN: midMorningScan,
+  MIDDAY_ROTATION: middayRotationCheck,
+  POWER_HOUR_PREP: powerHourPrep,
+  POST_MARKET_REFLECTION: postMarketReflection,
+};
+
+router.post("/orchestrator/run-pass", async (req, res) => {
+  const batch = createTelemetryBatch("AI_LAB");
+  try {
+    const { passName } = req.body;
+    const handler = PASS_HANDLERS[passName];
+    if (!handler) {
+      return res.status(400).json({ error: `Unknown pass. Valid: ${Object.keys(PASS_HANDLERS).join(", ")}` });
+    }
+
+    handler().catch((err) => {
+      emitTelemetry("STRATEGIST", "ERROR", `AI Lab: manual ${passName} failed: ${err.message}`, { error: err.message }, "AI_LAB", batch);
+    });
+
+    res.json({ status: "started", passName });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/orchestrator/trigger/price-shock", async (req, res) => {
+  const batch = createTelemetryBatch("AI_LAB");
+  try {
+    const { symbol, movePct, windowMinutes, volumeSpikeRatio } = req.body;
+    if (!symbol || movePct == null) {
+      return res.status(400).json({ error: "symbol and movePct required" });
+    }
+
+    const result = await priceShockTrigger(
+      String(symbol).toUpperCase(),
+      Number(movePct),
+      Number(windowMinutes ?? 15),
+      Number(volumeSpikeRatio ?? 1.0),
+    );
+
+    res.json({ result: result ?? { filtered: true } });
+  } catch (err: any) {
+    emitTelemetry("STRATEGIST", "ERROR", `price-shock trigger error: ${err.message}`, { error: err.message }, "AI_LAB", batch);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/orchestrator/trigger/block-flow", async (req, res) => {
+  const batch = createTelemetryBatch("AI_LAB");
+  try {
+    const { symbol, blockNotional, blockPctOfADV } = req.body;
+    if (!symbol || blockNotional == null) {
+      return res.status(400).json({ error: "symbol and blockNotional required" });
+    }
+
+    const result = await blockFlowTrigger(
+      String(symbol).toUpperCase(),
+      Number(blockNotional),
+      Number(blockPctOfADV ?? 0),
+    );
+
+    res.json({ result: result ?? { filtered: true } });
+  } catch (err: any) {
+    emitTelemetry("STRATEGIST", "ERROR", `block-flow trigger error: ${err.message}`, { error: err.message }, "AI_LAB", batch);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/orchestrator/trigger/scanner-score", async (req, res) => {
+  const batch = createTelemetryBatch("AI_LAB");
+  try {
+    const { symbol, deltaDiscovery, deltaMomentum } = req.body;
+    if (!symbol) {
+      return res.status(400).json({ error: "symbol required" });
+    }
+
+    const result = await scannerScoreJumpTrigger(
+      String(symbol).toUpperCase(),
+      Number(deltaDiscovery ?? 0),
+      Number(deltaMomentum ?? 0),
+    );
+
+    res.json({ result: result ?? { filtered: true } });
+  } catch (err: any) {
+    emitTelemetry("STRATEGIST", "ERROR", `scanner-score trigger error: ${err.message}`, { error: err.message }, "AI_LAB", batch);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/orchestrator/watchlist", async (_req, res) => {
+  try {
+    const entries = await db
+      .select()
+      .from(aiLabWatchlistTable)
+      .orderBy(desc(aiLabWatchlistTable.compositeScore))
+      .limit(100);
+
+    res.json({ entries });
+  } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });
