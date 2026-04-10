@@ -10,15 +10,13 @@ export interface AiLabStrategistConfig {
   skepticTemperature: number;
 
   enabled: boolean;
-  mode: "SHADOW" | "LIVE";
 }
 
 const VALID_PROVIDERS = new Set<AiLabModelProvider>(["anthropic", "google"]);
-const VALID_MODES = new Set(["SHADOW", "LIVE"]);
 const ALLOWED_KEYS = new Set([
   "analystModelProvider", "analystModelName", "analystTemperature",
   "skepticModelProvider", "skepticModelName", "skepticTemperature",
-  "enabled", "mode",
+  "enabled",
 ]);
 
 const DEFAULT_CONFIG: AiLabStrategistConfig = {
@@ -31,7 +29,6 @@ const DEFAULT_CONFIG: AiLabStrategistConfig = {
   skepticTemperature: 0,
 
   enabled: false,
-  mode: "LIVE",
 };
 
 let currentConfig: AiLabStrategistConfig = { ...DEFAULT_CONFIG };
@@ -53,9 +50,6 @@ export function updateAiLabStrategistConfig(
   }
   if (sanitized.skepticModelProvider !== undefined && !VALID_PROVIDERS.has(sanitized.skepticModelProvider as AiLabModelProvider)) {
     throw new Error(`Invalid skepticModelProvider: ${sanitized.skepticModelProvider}`);
-  }
-  if (sanitized.mode !== undefined && !VALID_MODES.has(sanitized.mode as string)) {
-    throw new Error(`Invalid mode: ${sanitized.mode}`);
   }
   if (sanitized.analystTemperature !== undefined) {
     const t = Number(sanitized.analystTemperature);

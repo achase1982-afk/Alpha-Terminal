@@ -1,4 +1,4 @@
-import { db, aiLabIdeasTable, aiLabWatchlistTable, aiLabEmbeddingsTable } from "@workspace/db";
+import { db, aiLabIdeasTable, aiLabWatchlistTable, aiLabEmbeddingsTable, aiLabDeliberationsTable } from "@workspace/db";
 import { eq, inArray, desc, sql } from "drizzle-orm";
 import { emitTelemetry, createTelemetryBatch } from "./telemetryStore.js";
 import {
@@ -18,7 +18,7 @@ import {
 import { logger } from "./logger.js";
 import { createAnalystClient } from "./aiLabAnalystClient.js";
 import { createSkepticClient } from "./aiLabSkepticClient.js";
-import { buildCandidateIdeaFromLlms } from "./aiLabLlmMerger.js";
+import { buildCandidateIdeaFromLlms, buildFinalDecision } from "./aiLabLlmMerger.js";
 import { getAiLabStrategistConfig } from "./aiLabConfig.js";
 import type {
   AiLabAnalystClient,
@@ -195,7 +195,6 @@ async function runPipeline(
   let skepticResponse: SkepticResponse | null = null;
   try {
     skepticResponse = await skepticClient.critiqueIdea(skepticRequest);
-
     logAiLabEvent("SKEPTIC_RESPONSE", {
       symbol,
       critiqueScore: skepticResponse.critiqueScore,
@@ -226,13 +225,45 @@ async function runPipeline(
 
   const validation = await validateAiLabIdea(merged.candidate, activeIdeas, marketData);
 
+  const finalDecision = buildFinalDecision(
+    merged,
+    validation.approved,
+    validation.rejectionReason,
+  );
+
+  const inputSnapshot = {
+    price: (snapshot as any).price ?? null,
+    scannerAlignment: snapshot.scannerAlignment ?? null,
+    volumeSummary: snapshot.volumeSummary,
+    regime: `${regime.trendState}|${regime.volState}|${regime.breadthState}`,
+  };
+
+  let ideaId: number | undefined;
+
   if (!validation.approved) {
     logAiLabEvent("IDEA_REJECTED", {
       symbol,
       rejectionReason: validation.rejectionReason,
       signalStrength: merged.signalStrength,
       source,
+      finalDecision: finalDecision.decision,
     }, batch, "WARN");
+
+    try {
+      await db.insert(aiLabDeliberationsTable).values({
+        symbol,
+        source,
+        analystModelName: merged.analystModelName,
+        criticModelName: merged.criticModelName,
+        inputSnapshot,
+        primaryProposal: merged.primaryProposal,
+        skepticCritique: merged.skepticCritique,
+        finalDecision,
+        ideaId: null,
+      });
+    } catch (delErr: any) {
+      logger.warn({ err: delErr, symbol }, "AI Lab: failed to write deliberation (rejected)");
+    }
 
     return { symbol, approved: false, rejectionReason: validation.rejectionReason };
   }
@@ -267,9 +298,14 @@ async function runPipeline(
       criticModelName: merged.criticModelName,
       analystNote: merged.analystNote,
       criticNote: merged.criticNote,
+      primaryProposal: merged.primaryProposal,
+      skepticCritique: merged.skepticCritique,
+      finalDecision,
       status: "ACTIVE",
     })
     .returning();
+
+  ideaId = inserted.id;
 
   logAiLabEvent("IDEA_APPROVED", {
     symbol,
@@ -278,8 +314,25 @@ async function runPipeline(
     direction: merged.candidate.direction,
     analystModelName: merged.analystModelName,
     criticModelName: merged.criticModelName,
+    finalDecision: finalDecision.decision,
     source,
   }, batch);
+
+  try {
+    await db.insert(aiLabDeliberationsTable).values({
+      symbol,
+      source,
+      analystModelName: merged.analystModelName,
+      criticModelName: merged.criticModelName,
+      inputSnapshot,
+      primaryProposal: merged.primaryProposal,
+      skepticCritique: merged.skepticCritique,
+      finalDecision,
+      ideaId: inserted.id,
+    });
+  } catch (delErr: any) {
+    logger.warn({ err: delErr, symbol, ideaId: inserted.id }, "AI Lab: failed to write deliberation (approved)");
+  }
 
   const embeddingText = [
     symbol,
@@ -308,7 +361,7 @@ async function runPipeline(
     logger.warn({ err: embErr, ideaId: inserted.id }, "AI Lab: failed to write embedding stub");
   }
 
-  return { symbol, approved: true, ideaId: inserted.id };
+  return { symbol, approved: true, ideaId };
 }
 
 // ─── SCHEDULED PASSES ────────────────────────────────────────────────────────

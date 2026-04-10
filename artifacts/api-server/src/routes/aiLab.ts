@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, aiLabIdeasTable, aiLabIdeaOutcomesTable, aiLabWatchlistTable } from "@workspace/db";
+import { db, aiLabIdeasTable, aiLabIdeaOutcomesTable, aiLabWatchlistTable, aiLabDeliberationsTable } from "@workspace/db";
 import { eq, desc, and, inArray } from "drizzle-orm";
 import { emitTelemetry, createTelemetryBatch } from "../lib/telemetryStore.js";
 import {
@@ -216,9 +216,6 @@ router.put("/config", async (req, res) => {
     const oldConfig = getAiLabStrategistConfig();
     const updated = updateAiLabStrategistConfig(req.body);
 
-    if (oldConfig.mode !== updated.mode) {
-      emitTelemetry("STRATEGIST", "INFO", `AI Lab: mode changed ${oldConfig.mode} → ${updated.mode}`, { oldMode: oldConfig.mode, newMode: updated.mode }, "AI_LAB", batch);
-    }
     if (oldConfig.enabled !== updated.enabled) {
       emitTelemetry("STRATEGIST", "INFO", `AI Lab: enabled changed ${oldConfig.enabled} → ${updated.enabled}`, { enabled: updated.enabled }, "AI_LAB", batch);
     }
@@ -232,25 +229,44 @@ router.put("/config", async (req, res) => {
 router.get("/ideas", async (req, res) => {
   const batch = createTelemetryBatch("AI_LAB");
   try {
-    const cfg = getAiLabStrategistConfig();
-    if (cfg.mode === "SHADOW") {
-      emitTelemetry("API", "INFO", "GET /ai-lab/ideas — SHADOW mode, returning empty", {}, "AI_LAB", batch);
-      return res.json({ ideas: [], shadow: true });
-    }
-
     const statusFilter = (req.query.status as string || "").split(",").filter(Boolean);
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
 
-    let query = db.select().from(aiLabIdeasTable).orderBy(desc(aiLabIdeasTable.createdAt)).limit(limit);
-
     const ideas = statusFilter.length > 0
       ? await db.select().from(aiLabIdeasTable).where(inArray(aiLabIdeasTable.status, statusFilter)).orderBy(desc(aiLabIdeasTable.createdAt)).limit(limit)
-      : await query;
+      : await db.select().from(aiLabIdeasTable).orderBy(desc(aiLabIdeasTable.createdAt)).limit(limit);
 
     emitTelemetry("API", "INFO", `GET /ai-lab/ideas — ${ideas.length} results`, { count: ideas.length }, "AI_LAB", batch);
     res.json({ ideas });
   } catch (err: any) {
     emitTelemetry("API", "ERROR", `GET /ai-lab/ideas failed: ${err.message}`, { error: err.message }, "AI_LAB", batch);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/deliberations", async (req, res) => {
+  const batch = createTelemetryBatch("AI_LAB");
+  try {
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+    const decisionFilter = req.query.decision as string | undefined;
+
+    const rows = await db
+      .select()
+      .from(aiLabDeliberationsTable)
+      .orderBy(desc(aiLabDeliberationsTable.createdAt))
+      .limit(limit);
+
+    const filtered = decisionFilter
+      ? rows.filter((r) => {
+          const fd = r.finalDecision as { decision?: string } | null;
+          return fd?.decision === decisionFilter;
+        })
+      : rows;
+
+    emitTelemetry("API", "INFO", `GET /ai-lab/deliberations — ${filtered.length} results`, { count: filtered.length }, "AI_LAB", batch);
+    res.json({ deliberations: filtered });
+  } catch (err: any) {
+    emitTelemetry("API", "ERROR", `GET /ai-lab/deliberations failed: ${err.message}`, { error: err.message }, "AI_LAB", batch);
     res.status(500).json({ error: err.message });
   }
 });

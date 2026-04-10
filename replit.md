@@ -59,15 +59,22 @@ The monorepo structure supports shared libraries and consistent tooling. Real-ti
 The AI Lab Strategist has a dedicated configuration block on the AI Parameters screen, alongside the existing MARKET PULSE, TECHNICAL ANALYSIS, OPTIONS STRATEGIST, AI CHAT, and MARKET SCANNER blocks.
 
 **Backend Config Store (`aiLabConfig.ts`):**
-- `AiLabStrategistConfig` type with: analyst/skeptic provider, model name, temperature (0-1), enabled (boolean), mode (SHADOW|LIVE).
+- `AiLabStrategistConfig` type with: analyst/skeptic provider, model name, temperature (0-1), enabled (boolean). Shadow mode removed.
 - In-memory store with `getAiLabStrategistConfig()` / `updateAiLabStrategistConfig()` helpers.
 - Strict validation: allowed keys only, finite numeric bounds, provider enum (`anthropic` | `google`).
 - API routes: `GET /api/ai-lab/config`, `PUT /api/ai-lab/config`.
 
+**Structured Two-Step Deliberation Pipeline:**
+- Step 1 — Claude Analyst: produces `PrimaryProposal` (direction, legs, thesis, signals, conviction).
+- Step 2 — Gemini Skeptic: produces `SkepticCritique` (verdict PASS|CONDITIONAL|REJECT, concerns, risk assessment).
+- Merger: `buildFinalDecision()` combines both into `FinalDecision` (decision PROCEED|MODIFIED|REJECT, reasoning).
+- Orchestrator always writes a `ai_lab_deliberations` record; only persists to `ai_lab_ideas` on PROCEED/MODIFIED.
+- New endpoint: `GET /api/ai-lab/deliberations?decision=REJECT|PROCEED|MODIFIED&limit=N`.
+
 **Frontend UI (`Sidebar.tsx` → `AiLabStrategistControl`):**
 - Collapsible block with the same visual style as existing AI feature blocks.
 - Two model sections (Analyst + Skeptic), each with provider dropdown, model dropdown, temperature slider.
-- Enabled toggle and SHADOW/LIVE segmented control.
+- Enabled toggle (no shadow/live toggle — shadow mode removed).
 - On-mount sync: pushes persisted local config to backend via PUT.
 - Debounced sync: every UI change pushes to backend after 300ms.
 
@@ -75,11 +82,19 @@ The AI Lab Strategist has a dedicated configuration block on the AI Parameters s
 - `runPipeline()` reads config at the start of every run.
 - `enabled === false` → logs `AI_LAB_DISABLED` and short-circuits.
 - Clients are re-created per run from config (provider/model/temperature).
-- `GET /api/ai-lab/ideas` returns `{ ideas: [], shadow: true }` when mode is SHADOW.
 
 **Zustand Store (`store.ts`):**
-- `aiLabStrategistConfig` field added (version 11 migration).
-- Default: Analyst=anthropic/claude-sonnet-4-20250514/0.0, Skeptic=google/gemini-2.5-flash/0.0, enabled=false, mode=SHADOW.
+- `aiLabStrategistConfig` field added (version 12 migration removes legacy `mode` key).
+- Default: Analyst=anthropic/claude-sonnet-4-20250514/0.0, Skeptic=google/gemini-2.5-flash/0.0, enabled=false.
+
+**AI Lab View (`AiLabStrategistView.tsx`):**
+- Filter control: Shown / Rejected / All tabs.
+- Expanded idea card shows collapsible `AnalystReport` section (primary proposal + skeptic critique).
+- `DeliberationCard` renders rejected evaluations with full reasoning.
+
+**DB Schema:**
+- `ai_lab_deliberations` table: full audit log of every pipeline run.
+- `ai_lab_ideas` table: three new JSONB columns `primaryProposal`, `skepticCritique`, `finalDecision`.
 
 **Core Balanced 383 Universe Builder (`universeBuilder.ts`):**
 - Builds a 383-symbol options-tradable universe using Polygon API data.

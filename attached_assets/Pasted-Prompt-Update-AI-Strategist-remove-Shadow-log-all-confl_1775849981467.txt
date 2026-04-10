@@ -1,0 +1,113 @@
+Prompt: Update AI Strategist – remove Shadow, log all conflicts, add rejected‑trades view
+
+Please update the AI Strategist implementation and UI with the following requirements. Treat this as the current source of truth.
+
+1. Remove Shadow Mode completely
+- Delete any concept of “Shadow Mode” in the AI Strategist backend and UI.
+- There is only one mode: LIVE.
+- In LIVE mode, all ideas that survive the final decision step are stored and visible in the Alpha Terminal UI.
+- No ideas should be hidden from the UI purely due to a “mode” flag.
+
+2. Source universe for ideas
+- The Strategist may only generate ideas for:
+  - Symbols in the defined stock universe (the same universe the scanner runs on, e.g., the ~380‑name list), or
+  - Symbols explicitly submitted by the user (e.g., “Send to Strategist” from a scan result or manually entered symbol).
+- Do not generate trade ideas for symbols outside that combined set.
+
+3. Two‑step reasoning: heavy model + light model
+For every candidate trade evaluation (even if it ends up rejected), the pipeline must run:
+- PrimaryStrategist (heavy model, e.g. Claude) – Analyst role.
+- SkepticModel (lighter/faster model, e.g. Gemini) – Skeptic role.
+
+Both models should receive the same core context:
+- Symbol and current price.
+- Relevant scanner scores and factor breakdown (setup quality, accumulation, IV setup, flow, emerging RS, liquidity).
+- Pulse bias / macro context.
+- Key market data (IV/IVR, basic vol metrics, basic flow summary).
+- Any relevant recent news or events summary (if available).
+
+4. Structured reasoning schema (shown AND logged)
+For every evaluation, build and persist a structured object with three parts:
+
+primary_proposal (from PrimaryStrategist / Analyst)
+- thesis: string – why this trade, why now.
+- structure: string – recommended options structure (e.g., debit spread, credit spread, condor, strikes, expiry).
+- risk_notes: string – main risks, what invalidates the trade, key “don’t do this if X” conditions.
+
+skeptic_critique (from SkepticModel)
+- objections: string – concrete critiques of the idea (fundamental, technical, vol, event risk, sizing, timing, etc.).
+- evidence: string – references to data or context supporting the objections (e.g., upcoming earnings, bad SEC filing, extended chart, IV crush risk).
+- suggested_changes: string – explicit suggestions such as “kill this idea,” “reduce size,” “delay until after event,” “switch to defined‑risk spread,” etc.
+
+final_decision (Resolution step)
+- decision: enum string – one of: PROCEED, MODIFIED, REJECT.
+- final_structure: string – the structure actually recommended after considering the Skeptic (can be identical to or different from structure).
+- resolution_rationale: string – a short explanation of how the conflict was resolved, explicitly referencing at least one skeptic point (for example, “We rejected this because of earnings‑gap risk raised by the Skeptic,” or “We kept the trade but cut size due to volatility concerns raised by the Skeptic.”).
+
+Rules for the Resolution step:
+- It must not ignore strong Skeptic objections. It must either:
+  - Reject the idea,
+  - Modify the idea and explain why that addresses the objections, or
+  - Explicitly justify proceeding unchanged despite the objections.
+- final_decision, final_structure, and resolution_rationale are required for every evaluation.
+
+5. Persistence: ideas vs deliberations
+Create and/or enforce two levels of persistence:
+
+Ideas store (things that appear as trade ideas in the main Strategist list)
+- Contains entries where final_decision is PROCEED or MODIFIED.
+- Each idea record should include a pointer or embedded object for the full reasoning schema above (primary_proposal, skeptic_critique, final_decision).
+
+Deliberations store (every Analyst/Skeptic “battle,” including rejected trades)
+- For every evaluation, even if final_decision is REJECT and no idea card is created, persist a deliberation record that includes:
+  - Symbol, timestamp, and snapshot of key inputs (scanner scores, relevant vol/flow summary, Pulse).
+  - The full structured reasoning object (primary_proposal, skeptic_critique, final_decision).
+- This deliberations store must be queryable (either via an internal API or directly by the UI) so the user can later review rejected trades and see why tokens were spent and why the trade was not shown.
+
+6. UI: conflict + resolution in the idea card
+For the AI Strategist ideas UI in Alpha Terminal:
+
+- In the main list, keep the layout compact and unchanged as much as possible to preserve screen real estate.
+- When a user expands a Strategist idea card, show a collapsible “Analyst Report” section that contains:
+
+  Analyst (Primary) view
+  - Thesis
+  - Proposed structure
+  - Risk notes
+
+  Skeptic (Light model) view
+  - Objections
+  - Evidence
+  - Suggested changes
+
+  Final Decision
+  - Decision enum (PROCEED / MODIFIED)
+  - Final structure
+  - Resolution rationale
+
+- This Analyst Report section should be visually clean and easy to scan (short labels, stacked text, minimal ornament), and it should pull its data directly from the structured reasoning fields described above.
+- The goal is: when the user opens a card, they can immediately see what Claude wanted, what Gemini complained about, and how the system resolved it.
+
+7. UI: lightweight access to rejected trades
+Add a lightweight way to view rejected trades without consuming much screen space:
+
+- In the AI Strategist section, add a small, unobtrusive control for filtering: for example, a simple dropdown or pill‑style filter with options like:
+  - Shown ideas (default – existing behavior, only PROCEED/MODIFIED),
+  - Rejected ideas (reads from the deliberations store, only REJECT),
+  - All evaluations (both shown ideas and rejected ones, if reasonable).
+
+- This control should be compact (for example, a small dropdown or segmented control near the list header), not a large sidebar.
+- When “Rejected ideas” is selected:
+  - Render a list of entries from the deliberations store where final_decision = REJECT.
+  - Each row can be minimal (symbol, timestamp, short reason summary), and when expanded, it shows the same Analyst Report layout as described above.
+- The intent is: the user can quickly inspect “what did they fight over and decide not to show me?” without cluttering the main idea list.
+
+8. Telemetry and auditing
+- Continue logging low‑level telemetry as currently implemented (requests, responses, timing, etc.).
+- The new deliberations store is the primary surface for auditing all Analyst/Skeptic interactions (including rejected trades).
+- Make sure each deliberation record is linked to any corresponding idea record (if the decision is PROCEED or MODIFIED) so navigation between “idea” and “full back‑and‑forth” is straightforward.
+
+If anything in the existing implementation contradicts the above, please refactor toward this behavior. The priority order is:
+1) No Shadow mode.
+2) All Analyst + Skeptic interactions are logged.
+3) Every final decision is visible and auditable, including rejected trades, via a compact UI filter and an Analyst Report section on expanded cards.

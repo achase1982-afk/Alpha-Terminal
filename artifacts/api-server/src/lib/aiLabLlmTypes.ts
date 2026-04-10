@@ -67,6 +67,26 @@ export interface ScannerAlignmentAtCreation {
   modeAlignment: "AGREE" | "DISAGREE" | "NO_SIGNAL" | null;
 }
 
+export interface PrimaryProposal {
+  thesis: string;
+  structure: string;
+  riskNotes: string;
+}
+
+export interface SkepticCritique {
+  objections: string;
+  evidence: string;
+  suggestedChanges: string;
+}
+
+export type FinalDecisionEnum = "PROCEED" | "MODIFIED" | "REJECT";
+
+export interface FinalDecision {
+  decision: FinalDecisionEnum;
+  finalStructure: string;
+  resolutionRationale: string;
+}
+
 export interface AnalystResponse {
   tradeIdeaCore: TradeIdeaCore;
   rationale: Rationale;
@@ -74,6 +94,7 @@ export interface AnalystResponse {
   liquiditySnapshot: LiquiditySnapshot;
   scannerAlignmentAtCreation: ScannerAlignmentAtCreation;
   analystNote: string;
+  primaryProposal: PrimaryProposal;
 }
 
 export interface SkepticRequest {
@@ -95,6 +116,7 @@ export interface SkepticResponse {
   critiqueScore: number;
   flags: SkepticFlags;
   criticNote: string;
+  skepticCritique: SkepticCritique;
 }
 
 export interface AiLabAnalystClient {

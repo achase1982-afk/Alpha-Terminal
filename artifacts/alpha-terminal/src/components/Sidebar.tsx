@@ -727,7 +727,7 @@ function AiLabStrategistControl() {
         </span>
         <span className="flex items-center gap-2">
           <span className={`font-mono text-[8px] tracking-wider ${aiLabStrategistConfig.enabled ? 'text-[#2ecc71]' : 'text-zinc-500'}`}>
-            {aiLabStrategistConfig.enabled ? aiLabStrategistConfig.mode : 'OFF'}
+            {aiLabStrategistConfig.enabled ? 'LIVE' : 'OFF'}
           </span>
           <ChevronRight className={`w-3 h-3 text-zinc-500 transition-transform ${expanded ? 'rotate-90' : ''}`} />
         </span>
@@ -741,27 +741,6 @@ function AiLabStrategistControl() {
               checked={aiLabStrategistConfig.enabled}
               onCheckedChange={(v) => update('enabled', v)}
             />
-          </div>
-
-          <div className="space-y-1.5">
-            <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest">Mode</span>
-            <div className="flex gap-1">
-              {(['SHADOW', 'LIVE'] as const).map((m) => (
-                <button
-                  key={m}
-                  onClick={() => update('mode', m)}
-                  className={`flex-1 py-1.5 rounded-md font-mono text-[9px] tracking-wider transition-colors cursor-pointer ${
-                    aiLabStrategistConfig.mode === m
-                      ? m === 'LIVE'
-                        ? 'bg-[#2ecc71]/20 text-[#2ecc71] border border-[#2ecc71]/30'
-                        : 'bg-primary/20 text-primary border border-primary/30'
-                      : 'bg-card text-zinc-500 border border-card-border'
-                  }`}
-                >
-                  {m}
-                </button>
-              ))}
-            </div>
           </div>
 
           <div className="h-px bg-zinc-800" />

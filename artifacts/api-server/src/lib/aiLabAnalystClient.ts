@@ -20,6 +20,7 @@ RULES:
 - Match direction to regime: in RISK_OFF regimes, favor SHORT unless there is a compelling contrarian thesis.
 - If scanner alignment disagrees with your thesis, note it in mainSignals and lower signalStrength.
 - Keep analystNote under 300 words.
+- primaryProposal must be filled in completely: thesis (why this trade, why now), structure (specific options structure, strikes, expiry if applicable, or just "STOCK" for equity), riskNotes (what invalidates the trade, key risks).
 
 REQUIRED JSON SCHEMA:
 {
@@ -60,7 +61,12 @@ REQUIRED JSON SCHEMA:
     "momentumScore": number | null,
     "modeAlignment": "AGREE" | "DISAGREE" | "NO_SIGNAL" | null
   },
-  "analystNote": string
+  "analystNote": string,
+  "primaryProposal": {
+    "thesis": string,
+    "structure": string,
+    "riskNotes": string
+  }
 }`;
 
 function buildAnalystPrompt(request: AnalystRequest): string {
@@ -124,6 +130,18 @@ function validateAnalystResponse(parsed: any): AnalystResponse {
     throw new Error("Missing scannerAlignmentAtCreation");
 
   if (typeof parsed.analystNote !== "string") throw new Error("Missing analystNote");
+
+  if (!parsed.primaryProposal || typeof parsed.primaryProposal !== "object") {
+    parsed.primaryProposal = {
+      thesis: rat.thesis,
+      structure: core.optionStructureType ?? core.instrumentType ?? "N/A",
+      riskNotes: rat.invalidation,
+    };
+  } else {
+    if (typeof parsed.primaryProposal.thesis !== "string") parsed.primaryProposal.thesis = rat.thesis;
+    if (typeof parsed.primaryProposal.structure !== "string") parsed.primaryProposal.structure = core.optionStructureType ?? "N/A";
+    if (typeof parsed.primaryProposal.riskNotes !== "string") parsed.primaryProposal.riskNotes = rat.invalidation;
+  }
 
   return parsed as AnalystResponse;
 }

@@ -79,7 +79,6 @@ export interface TerminalState {
     skepticModelName: string;
     skepticTemperature: number;
     enabled: boolean;
-    mode: 'SHADOW' | 'LIVE';
   };
   setAiLabStrategistConfig: (
     key: string,
@@ -254,7 +253,6 @@ export const useTerminalStore = create<TerminalState>()(
         skepticModelName: 'gemini-2.5-flash',
         skepticTemperature: 0,
         enabled: false,
-        mode: 'LIVE',
       },
       setAiLabStrategistConfig: (key, value) =>
         set((state) => ({
@@ -389,7 +387,7 @@ export const useTerminalStore = create<TerminalState>()(
     }),
     {
       name: 'alpha-terminal-storage',
-      version: 11,
+      version: 12,
       migrate: (persistedState: unknown, version: number) => {
         const s = persistedState as Record<string, unknown>;
         if (version < 2) {
@@ -476,8 +474,13 @@ export const useTerminalStore = create<TerminalState>()(
               skepticModelName: 'gemini-2.5-flash',
               skepticTemperature: 0,
               enabled: false,
-              mode: 'LIVE',
             };
+          }
+        }
+        if (version < 12) {
+          const cfg = s['aiLabStrategistConfig'] as Record<string, unknown> | undefined;
+          if (cfg && typeof cfg === 'object' && 'mode' in cfg) {
+            delete cfg['mode'];
           }
         }
         return s;

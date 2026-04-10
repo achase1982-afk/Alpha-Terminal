@@ -334,6 +334,10 @@ export const aiLabIdeasTable = pgTable("ai_lab_ideas", {
   analystNote: text("analyst_note"),
   criticNote: text("critic_note"),
 
+  primaryProposal: jsonb("primary_proposal"),
+  skepticCritique: jsonb("skeptic_critique"),
+  finalDecision: jsonb("final_decision"),
+
   status: text("status").notNull().default("NEW"),
   invalidatedReason: text("invalidated_reason"),
   closedAt: timestamp("closed_at"),
@@ -342,6 +346,23 @@ export const aiLabIdeasTable = pgTable("ai_lab_ideas", {
 }, (t) => [
   uniqueIndex("ai_lab_ideas_sym_status").on(t.symbol, t.status),
 ]);
+
+export const aiLabDeliberationsTable = pgTable("ai_lab_deliberations", {
+  id: serial("id").primaryKey(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  symbol: text("symbol").notNull(),
+  source: text("source").notNull(),
+  analystModelName: text("analyst_model_name"),
+  criticModelName: text("critic_model_name"),
+  inputSnapshot: jsonb("input_snapshot"),
+  primaryProposal: jsonb("primary_proposal"),
+  skepticCritique: jsonb("skeptic_critique"),
+  finalDecision: jsonb("final_decision"),
+  ideaId: integer("idea_id"),
+});
+
+export type AiLabDeliberation = typeof aiLabDeliberationsTable.$inferSelect;
+export type AiLabDeliberationInsert = typeof aiLabDeliberationsTable.$inferInsert;
 
 export type AiLabIdea = typeof aiLabIdeasTable.$inferSelect;
 export type AiLabIdeaInsert = typeof aiLabIdeasTable.$inferInsert;

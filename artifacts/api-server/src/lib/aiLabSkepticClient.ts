@@ -18,6 +18,7 @@ RULES:
 - critiqueScore: 0 = no concern at all, 100 = extremely dangerous idea. Be calibrated: 30-50 is typical for reasonable ideas.
 - Set flags honestly. If liquidity is thin, say so. If the idea overlaps with active portfolio exposure, flag redundancy.
 - Keep criticNote under 200 words. Be specific: cite data points from the snapshot.
+- skepticCritique must be fully filled in: objections (concrete critiques), evidence (data/events supporting the objections), suggestedChanges (explicit action recommendations such as "kill this," "reduce size," "wait for after earnings," "switch to defined-risk spread").
 
 REQUIRED JSON SCHEMA:
 {
@@ -28,7 +29,12 @@ REQUIRED JSON SCHEMA:
     "overfitWarning": boolean,
     "redundancyWithActiveIdeas": boolean
   },
-  "criticNote": string
+  "criticNote": string,
+  "skepticCritique": {
+    "objections": string,
+    "evidence": string,
+    "suggestedChanges": string
+  }
 }`;
 
 function buildSkepticPrompt(request: SkepticRequest): string {
@@ -63,6 +69,18 @@ function validateSkepticResponse(parsed: any): SkepticResponse {
   if (typeof flags.redundancyWithActiveIdeas !== "boolean") throw new Error("Invalid flags.redundancyWithActiveIdeas");
 
   if (typeof parsed.criticNote !== "string") throw new Error("Missing criticNote");
+
+  if (!parsed.skepticCritique || typeof parsed.skepticCritique !== "object") {
+    parsed.skepticCritique = {
+      objections: parsed.criticNote,
+      evidence: "See criticNote above.",
+      suggestedChanges: parsed.critiqueScore >= 60 ? "Consider reducing size or waiting for confirmation." : "Proceed with standard risk management.",
+    };
+  } else {
+    if (typeof parsed.skepticCritique.objections !== "string") parsed.skepticCritique.objections = parsed.criticNote;
+    if (typeof parsed.skepticCritique.evidence !== "string") parsed.skepticCritique.evidence = "No specific evidence cited.";
+    if (typeof parsed.skepticCritique.suggestedChanges !== "string") parsed.skepticCritique.suggestedChanges = "N/A";
+  }
 
   return parsed as SkepticResponse;
 }
