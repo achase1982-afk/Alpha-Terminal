@@ -440,6 +440,7 @@ interface StrategyBuilderProps {
   isOpen: boolean;
   onClose: () => void;
   onBack?: () => void;
+  onSwitchToStock?: () => void;
   initialLegs?: StrategyLeg[];
   availableStrikes?: number[];
   availableExpirations?: { label: string; value: string }[];
@@ -450,6 +451,7 @@ export function StrategyBuilder({
   isOpen,
   onClose,
   onBack,
+  onSwitchToStock,
   initialLegs,
   availableStrikes = [],
   availableExpirations = [],
@@ -474,6 +476,7 @@ export function StrategyBuilder({
   const [quantity, setQuantity] = useState(1);
   const [priceLocked, setPriceLocked] = useState(false);
   const [extendedHours, setExtendedHours] = useState(false);
+  const [timeInForce, setTimeInForce] = useState<"DAY" | "GTC">("DAY");
   const [stage, setStage] = useState<Stage>("form");
   const [accountHash, setAccountHash] = useState<string | null>(null);
   const [orderId, setOrderId] = useState<string | null>(null);
@@ -488,6 +491,7 @@ export function StrategyBuilder({
       setQuantity(1);
       setPriceLocked(false);
       setExtendedHours(false);
+      setTimeInForce("DAY");
       setStage("form");
       setOrderId(null);
       setErrorMsg("");
@@ -725,7 +729,7 @@ export function StrategyBuilder({
     const o: Record<string, unknown> = {
       orderType: isCredit ? "NET_CREDIT" : "NET_DEBIT",
       session: extendedHours ? "SEAMLESS" : "NORMAL",
-      duration: "DAY",
+      duration: timeInForce,
       complexOrderStrategyType: complexType,
       orderStrategyType: "SINGLE",
       orderLegCollection: legs.map(leg => ({
@@ -817,8 +821,12 @@ export function StrategyBuilder({
         </div>
         <div className="flex items-center gap-2">
           <div className="inline-flex p-0.5" style={{ borderRadius: 999, border: `1px solid ${BORDER}`, background: "rgba(0,0,0,0.05)" }}>
-            <span className="px-2 py-0.5 text-[11px]" style={{ borderRadius: 999, background: `${GOLD}18`, color: GOLD }}>Options</span>
-            <span className="px-2 py-0.5 text-[11px]" style={{ color: TEXT }}>Stock</span>
+            <span className="px-2 py-0.5 text-[11px] cursor-pointer" style={{ borderRadius: 999, background: `${GOLD}18`, color: GOLD }}>Options</span>
+            <span
+              className="px-2 py-0.5 text-[11px] cursor-pointer active:opacity-70"
+              style={{ borderRadius: 999, color: TEXT }}
+              onClick={(e) => { e.stopPropagation(); onSwitchToStock?.(); }}
+            >Stock</span>
           </div>
           <button
             onClick={onClose}
@@ -1100,17 +1108,26 @@ export function StrategyBuilder({
                   <div className="grid grid-cols-2 gap-1.5">
                     <div className="flex flex-col gap-px">
                       <span className="text-[10px]" style={{ color: MUTED }}>Order type</span>
-                      <div className="flex items-center justify-between px-2 text-[12px]" style={{ height: 26, borderRadius: 7, border: `1px solid ${BORDER}`, background: "rgba(0,0,0,0.4)", color: WHITE }}>
-                        <span>Limit</span>
-                        <span className="text-[10px]" style={{ color: MUTED }}>▾</span>
-                      </div>
+                      <select
+                        value="LIMIT"
+                        disabled
+                        className="w-full px-2 text-[12px] outline-none appearance-none cursor-pointer"
+                        style={{ height: 26, borderRadius: 7, border: `1px solid ${BORDER}`, background: "rgba(0,0,0,0.4)", color: WHITE, WebkitAppearance: "none" }}
+                      >
+                        <option value="LIMIT">Limit</option>
+                      </select>
                     </div>
                     <div className="flex flex-col gap-px">
                       <span className="text-[10px]" style={{ color: MUTED }}>Time in force</span>
-                      <div className="flex items-center justify-between px-2 text-[12px]" style={{ height: 26, borderRadius: 7, border: `1px solid ${BORDER}`, background: "rgba(0,0,0,0.4)", color: WHITE }}>
-                        <span>DAY</span>
-                        <span className="text-[10px]" style={{ color: MUTED }}>▾</span>
-                      </div>
+                      <select
+                        value={timeInForce}
+                        onChange={(e) => setTimeInForce(e.target.value as "DAY" | "GTC")}
+                        className="w-full px-2 text-[12px] outline-none appearance-none cursor-pointer"
+                        style={{ height: 26, borderRadius: 7, border: `1px solid ${BORDER}`, background: "rgba(0,0,0,0.4)", color: WHITE, WebkitAppearance: "none" }}
+                      >
+                        <option value="DAY">DAY</option>
+                        <option value="GTC">GTC</option>
+                      </select>
                     </div>
                   </div>
 
@@ -1463,7 +1480,7 @@ export function StrategyBuilder({
                   </div>
                   <div className="flex justify-between text-[12px]">
                     <span style={{ color: MUTED }}>Duration</span>
-                    <span style={{ color: WHITE }}>DAY{extendedHours ? " + Ext" : ""}</span>
+                    <span style={{ color: WHITE }}>{timeInForce}{extendedHours ? " + Ext" : ""}</span>
                   </div>
                   <div className="pt-1 mt-0.5" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
                     <div className="flex justify-between">

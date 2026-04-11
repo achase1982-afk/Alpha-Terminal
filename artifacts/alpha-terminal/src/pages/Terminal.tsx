@@ -637,6 +637,7 @@ export default function TerminalPage() {
         isOpen={strategyOpen}
         onClose={() => setStrategyOpen(false)}
         onBack={() => setStrategyOpen(false)}
+        onSwitchToStock={() => { setStrategyOpen(false); openOrder("BUY"); }}
         availableStrikes={strategyStrikes}
         availableExpirations={strategyExpirations}
         chainData={strategyChainData}
