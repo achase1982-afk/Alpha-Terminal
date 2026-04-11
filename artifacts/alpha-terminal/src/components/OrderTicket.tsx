@@ -515,14 +515,15 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
         const seamlessFallbackPrice = isSeamless && parsed <= 0 && spreadPrices ? spreadPrices.spreadMid : null;
         const resolvedPrice = parsed > 0 ? parsed : (seamlessFallbackPrice ?? 0);
         const useMarket = !isSeamless && (orderType === "MARKET" || resolvedPrice <= 0);
-        // Determine credit vs debit from actual current leg prices (sell legs contribute positive, buy legs negative)
+        // Determine net direction from actual current leg prices (sell legs contribute positive, buy legs negative)
         const netDirection = strategyLegs.reduce((acc, leg) => {
           const isSell = leg.instruction.startsWith("SELL");
           const mid = ((leg.bid ?? 0) + (leg.ask ?? 0)) / 2;
           return acc + (isSell ? mid : -mid);
         }, 0);
-        const creditOrDebit = netDirection >= 0 ? "CREDIT" : "DEBIT";
-        // Auto-detect Schwab complexOrderStrategyType from leg symbols
+        // Schwab multi-leg orderType: NET_CREDIT when net is positive, NET_DEBIT when negative
+        const spreadOrderType = useMarket ? "MARKET" : (netDirection >= 0 ? "NET_CREDIT" : "NET_DEBIT");
+        // Auto-detect complexOrderStrategyType from leg symbols
         // OCC symbol format: TICKER(6) + YYMMDD(6) + C/P(1) + STRIKE(8) — C/P is always at index 12
         const getSymParts = (sym: string) => ({ date: sym.substring(6, 12), cp: sym.charAt(12) });
         let complexType = "CUSTOM";
@@ -535,10 +536,8 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
           const cps = strategyLegs.map(l => getSymParts(l.schwabSymbol).cp);
           if (cps.filter(c => c === "C").length === 2 && cps.filter(c => c === "P").length === 2) complexType = "IRON_CONDOR";
         }
-        // Schwab requires orderType LIMIT + price + creditOrDebit for complex non-market orders
-        const resolvedType = useMarket ? "MARKET" : "LIMIT";
         const o: Record<string, unknown> = {
-          orderType: resolvedType,
+          orderType: spreadOrderType,
           session,
           duration,
           complexOrderStrategyType: complexType,
@@ -549,10 +548,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
             instrument: { symbol: leg.schwabSymbol, assetType: "OPTION" },
           })),
         };
-        if (!useMarket) {
-          if (resolvedPrice > 0) o.price = resolvedPrice;
-          o.creditOrDebit = creditOrDebit;
-        }
+        if (!useMarket && resolvedPrice > 0) o.price = resolvedPrice;
         return o;
       }
       const singleLeg = strategyLegs[0];
