@@ -365,8 +365,8 @@ function OptionRow({
   const tickDir = useValueFlash(markPx);
   const markColor = tickDir === "up" ? C.green : tickDir === "down" ? C.red : C.text;
 
-  const rowBg = isSelected ? `${C.gold}08` : "transparent";
-  const stickyBg = isSelected ? "#1a1700" : "#000";
+  const rowBg = "transparent";
+  const stickyBg = "#000";
 
   const td = (color: string, val: string, bold?: boolean): React.CSSProperties => ({
     fontSize: 14, fontWeight: bold ? 500 : undefined, color,
@@ -444,8 +444,8 @@ function SpreadSummaryRow({
   const spreadMaint = options.reduce((s, o) => s + o.maintenanceRequirement, 0);
 
   const someSelected = allKeys.some(k => selectedKeys.has(k));
-  const rowBg = someSelected ? `${C.gold}06` : "transparent";
-  const stickyBg = someSelected ? "#121008" : "#000";
+  const rowBg = "transparent";
+  const stickyBg = "#000";
 
   const td = (color: string, bold?: boolean): React.CSSProperties => ({
     fontSize: 14, fontWeight: bold ? 500 : undefined, color,
@@ -503,8 +503,8 @@ function PositionTableRow({
   const markColor = eqTickDir === "up" ? C.green : eqTickDir === "down" ? C.red : C.text;
   const streamPrice = useTerminalStore(s => (s.streamPrices[group.underlying.toUpperCase()] as { last?: number } | undefined)?.last ?? null);
 
-  const rowBg = someSelected ? `${C.gold}06` : "transparent";
-  const stickyBg = someSelected ? "#121008" : "#000";
+  const rowBg = "transparent";
+  const stickyBg = "#000";
 
   const dataCellStyle = (color: string, bold?: boolean): React.CSSProperties => ({
     fontSize: 14, fontWeight: bold ? 500 : undefined, color,
@@ -515,7 +515,7 @@ function PositionTableRow({
   if (!hasOptions) {
     return (
       <tr>
-        <td className="pf-sticky-col" style={{ background: eqSelected ? "#121008" : "#000", padding: "6px 8px 6px 10px", minWidth: SYM_COL_W }}>
+        <td className="pf-sticky-col" style={{ background: "#000", padding: "6px 8px 6px 10px", minWidth: SYM_COL_W }}>
           <div style={{ display: "flex", alignItems: "center" }}>
             <div onClick={e => { e.stopPropagation(); toggleKey(eqKey); }} style={{ width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, cursor: "pointer" }}>
               <div style={{ width: 15, height: 15, border: `1.5px solid ${eqSelected ? C.gold : C.dim}`, borderRadius: 3, background: eqSelected ? `${C.gold}22` : "transparent", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.12s" }}>
@@ -594,8 +594,8 @@ function PositionTableRow({
         <>
           {eq && (() => {
             const eqPLPct = eq.averagePrice > 0 ? (eq.longOpenProfitLoss / (eq.averagePrice * (eq.shortQuantity > 0 ? eq.shortQuantity : eq.longQuantity))) * 100 : 0;
-            const subBg = eqSelected ? `${C.gold}08` : "transparent";
-            const subStickyBg = eqSelected ? "#1a1700" : "#000";
+            const subBg = "transparent";
+            const subStickyBg = "#000";
             const subCell = (color: string, bold?: boolean): React.CSSProperties => ({ fontSize: 14, fontWeight: bold ? 500 : undefined, color, textAlign: "center", fontVariantNumeric: "tabular-nums", padding: CP, background: subBg, whiteSpace: "nowrap" });
             return (
               <tr>
