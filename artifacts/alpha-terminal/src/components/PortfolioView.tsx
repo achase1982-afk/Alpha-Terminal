@@ -321,6 +321,30 @@ function useValueFlash(value: number): "up" | "down" | null {
 }
 
 
+function detectSpreadType(options: Position[]): { type: string; label: string } | null {
+  if (options.length !== 2) return null;
+  const longs = options.filter(o => o.longQuantity > 0);
+  const shorts = options.filter(o => o.shortQuantity > 0);
+  if (longs.length !== 1 || shorts.length !== 1) return null;
+  const longOpt = longs[0];
+  const shortOpt = shorts[0];
+  if (longOpt.putCall !== shortOpt.putCall) return null;
+  const longDetails = parseOptionSymbolDetails(longOpt.symbol);
+  const shortDetails = parseOptionSymbolDetails(shortOpt.symbol);
+  if (!longDetails || !shortDetails) return null;
+  if (longDetails.expiration !== shortDetails.expiration) return null;
+  if (longDetails.strike === shortDetails.strike) return null;
+  return { type: "vertical", label: "Vertical" };
+}
+
+function sortLegsLongFirst(options: Position[]): Position[] {
+  return [...options].sort((a, b) => {
+    const aLong = a.longQuantity > 0 ? 1 : 0;
+    const bLong = b.longQuantity > 0 ? 1 : 0;
+    return bLong - aLong;
+  });
+}
+
 function OptionRow({
   opt, underlying, selectedKeys, toggleKey, visibleColumns,
 }: {
@@ -355,7 +379,7 @@ function OptionRow({
       <td className="pf-sticky-col" style={{ background: stickyBg, padding: "5px 6px 5px 20px", minWidth: SYM_COL_W }}>
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
           <Checkbox checked={isSelected} onToggle={e => { e.stopPropagation(); toggleKey(optKey); }} />
-          <span style={{ fontSize: 12, fontWeight: 700, color: opt.putCall === "CALL" ? "#4ade80" : "#fb923c", flexShrink: 0 }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: "#fff", flexShrink: 0 }}>
             {opt.putCall === "CALL" ? "C" : "P"}
           </span>
           <span style={{ fontSize: 11, color: C.dim, whiteSpace: "nowrap" }}>
@@ -364,7 +388,7 @@ function OptionRow({
         </div>
         <div style={{ fontSize: 11, color: C.text, paddingLeft: 22 }}>
           {(() => { const d = formatOptionExpiry(opt.symbol); return d ? d.strike : ""; })()}{" "}
-          <span style={{ color: C.dim }}>{isShort ? `-${qty}` : `+${qty}`}</span>
+          <span style={{ color: isShort ? C.red : C.green, fontWeight: 600 }}>{isShort ? `-${qty}` : `+${qty}`}</span>
         </div>
       </td>
       {visibleColumns.includes("mark") && <td style={{ ...td(markColor, ""), transition: "color 0.15s" }}>${markPx.toFixed(2)}</td>}
@@ -375,6 +399,76 @@ function OptionRow({
       {visibleColumns.includes("plPct") && <td style={td(plColor(totalPL), "")}>{fmtPct(totalPLPctOpt)}</td>}
       {visibleColumns.includes("plDay") && <td style={td(plColor(opt.currentDayProfitLoss), "")}>{fmtCurrency(opt.currentDayProfitLoss)}</td>}
       {visibleColumns.includes("maint") && <td style={td(C.textDim, "")}>{opt.maintenanceRequirement > 0 ? fmtCompact(opt.maintenanceRequirement) : "—"}</td>}
+    </tr>
+  );
+}
+
+function SpreadSummaryRow({
+  spread, underlying, options, selectedKeys, toggleKey, visibleColumns,
+}: {
+  spread: { type: string; label: string };
+  underlying: string;
+  options: Position[];
+  selectedKeys: Set<string>;
+  toggleKey: (key: string) => void;
+  visibleColumns: ColumnKey[];
+}) {
+  const allKeys = options.map(o => `${underlying}:${o.cusip}`);
+  const allSelected = allKeys.every(k => selectedKeys.has(k));
+
+  const handleToggleAll = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (allSelected) {
+      allKeys.forEach(k => { if (selectedKeys.has(k)) toggleKey(k); });
+    } else {
+      allKeys.forEach(k => { if (!selectedKeys.has(k)) toggleKey(k); });
+    }
+  };
+
+  const spreadMark = (() => {
+    const longOpt = options.find(o => o.longQuantity > 0);
+    const shortOpt = options.find(o => o.shortQuantity > 0);
+    if (!longOpt || !shortOpt) return 0;
+    const longQty = longOpt.longQuantity;
+    const shortQty = shortOpt.shortQuantity;
+    const longMark = longQty > 0 ? Math.abs(longOpt.marketValue) / (longQty * 100) : 0;
+    const shortMark = shortQty > 0 ? Math.abs(shortOpt.marketValue) / (shortQty * 100) : 0;
+    return longMark - shortMark;
+  })();
+
+  const spreadPL = options.reduce((s, o) => s + o.longOpenProfitLoss, 0);
+  const spreadDayPL = options.reduce((s, o) => s + o.currentDayProfitLoss, 0);
+  const spreadMktVal = options.reduce((s, o) => s + o.marketValue, 0);
+  const spreadCost = options.reduce((s, o) => s + o.averagePrice * (o.longQuantity || o.shortQuantity) * 100, 0);
+  const spreadPLPct = Math.abs(spreadCost) > 0.01 ? (spreadPL / Math.abs(spreadCost)) * 100 : 0;
+  const spreadMaint = options.reduce((s, o) => s + o.maintenanceRequirement, 0);
+
+  const someSelected = allKeys.some(k => selectedKeys.has(k));
+  const rowBg = someSelected ? `${C.gold}06` : "transparent";
+  const stickyBg = someSelected ? "#121008" : "#000";
+
+  const td = (color: string, bold?: boolean): React.CSSProperties => ({
+    fontSize: 14, fontWeight: bold ? 500 : undefined, color,
+    textAlign: "center", fontVariantNumeric: "tabular-nums",
+    padding: CP, background: rowBg, whiteSpace: "nowrap",
+  });
+
+  return (
+    <tr>
+      <td className="pf-sticky-col" style={{ background: stickyBg, padding: "5px 6px 5px 20px", minWidth: SYM_COL_W }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <Checkbox checked={allSelected} onToggle={handleToggleAll} />
+          <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{spread.label}</span>
+        </div>
+      </td>
+      {visibleColumns.includes("mark") && <td style={td(C.text)}>${Math.abs(spreadMark).toFixed(2)}</td>}
+      {visibleColumns.includes("cost") && <td style={td(C.textDim)}>—</td>}
+      {visibleColumns.includes("qty") && <td style={td(C.text)}>—</td>}
+      {visibleColumns.includes("mktVal") && <td style={td(C.text)}>{fmtCompact(spreadMktVal)}</td>}
+      {visibleColumns.includes("plOpen") && <td style={td(plColor(spreadPL), true)}>{fmtCurrency(spreadPL)}</td>}
+      {visibleColumns.includes("plPct") && <td style={td(plColor(spreadPL))}>{fmtPct(spreadPLPct)}</td>}
+      {visibleColumns.includes("plDay") && <td style={td(plColor(spreadDayPL), true)}>{fmtCurrency(spreadDayPL)}</td>}
+      {visibleColumns.includes("maint") && <td style={td(C.textDim)}>{spreadMaint > 0 ? fmtCompact(spreadMaint) : "—"}</td>}
     </tr>
   );
 }
@@ -522,9 +616,20 @@ function PositionTableRow({
               </tr>
             );
           })()}
-          {group.options.map(opt => (
-            <OptionRow key={opt.cusip} opt={opt} underlying={group.underlying} selectedKeys={selectedKeys} toggleKey={toggleKey} visibleColumns={visibleColumns} />
-          ))}
+          {(() => {
+            const spread = detectSpreadType(group.options);
+            const sortedOpts = sortLegsLongFirst(group.options);
+            return (
+              <>
+                {spread && (
+                  <SpreadSummaryRow spread={spread} underlying={group.underlying} options={sortedOpts} selectedKeys={selectedKeys} toggleKey={toggleKey} visibleColumns={visibleColumns} />
+                )}
+                {sortedOpts.map(opt => (
+                  <OptionRow key={opt.cusip} opt={opt} underlying={group.underlying} selectedKeys={selectedKeys} toggleKey={toggleKey} visibleColumns={visibleColumns} />
+                ))}
+              </>
+            );
+          })()}
         </>
       )}
     </>
