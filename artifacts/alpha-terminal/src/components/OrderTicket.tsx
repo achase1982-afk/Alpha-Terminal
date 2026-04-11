@@ -10,14 +10,14 @@ import {
 } from "lucide-react";
 
 type OrderSide = "BUY" | "SELL";
-type OrderType = "MARKET" | "LIMIT" | "STOP" | "STOP_LIMIT" | "TRAILING_STOP" | "TRAILING_STOP_LIMIT" | "MARKET_ON_CLOSE" | "LIMIT_ON_CLOSE";
+type OrderType = "MARKET" | "LIMIT" | "STOP" | "STOP_LIMIT" | "TRAILING_STOP" | "TRAILING_STOP_LIMIT" | "MARKET_ON_CLOSE" | "LIMIT_ON_CLOSE" | "WALK_LIMIT";
 type Duration = "DAY" | "GOOD_TILL_CANCEL" | "FILL_OR_KILL" | "SEAMLESS" | "GOOD_TILL_CANCEL_EXT" | "AM" | "PM";
 type ConfirmStage = "form" | "review" | "submitting" | "success" | "error";
 type RiskLevel = "GREEN" | "YELLOW" | "RED";
 type PositionEffect = "OPENING" | "CLOSING" | "AUTO";
 type TicketMode = "options" | "stock";
 
-const ORDER_TYPES: { value: OrderType; label: string; short: string }[] = [
+const STOCK_ORDER_TYPES: { value: OrderType; label: string; short: string }[] = [
   { value: "MARKET", label: "Market", short: "MKT" },
   { value: "LIMIT", label: "Limit", short: "LMT" },
   { value: "STOP", label: "Stop", short: "STP" },
@@ -28,7 +28,17 @@ const ORDER_TYPES: { value: OrderType; label: string; short: string }[] = [
   { value: "LIMIT_ON_CLOSE", label: "LOC", short: "LOC" },
 ];
 
-const DURATIONS: { value: Duration; label: string }[] = [
+const OPTION_ORDER_TYPES: { value: OrderType; label: string; short: string }[] = [
+  { value: "MARKET", label: "Market", short: "MKT" },
+  { value: "LIMIT", label: "Limit", short: "LMT" },
+  { value: "STOP", label: "Stop", short: "STP" },
+  { value: "STOP_LIMIT", label: "Stop Limit", short: "STP LMT" },
+  { value: "TRAILING_STOP", label: "Trail Stop", short: "TRAIL" },
+  { value: "TRAILING_STOP_LIMIT", label: "Trail Stop Limit", short: "TRAIL LMT" },
+  { value: "WALK_LIMIT", label: "Walk Limit", short: "WALK" },
+];
+
+const STOCK_DURATIONS: { value: Duration; label: string }[] = [
   { value: "DAY", label: "Day" },
   { value: "GOOD_TILL_CANCEL", label: "GTC" },
   { value: "FILL_OR_KILL", label: "FOK" },
@@ -36,6 +46,11 @@ const DURATIONS: { value: Duration; label: string }[] = [
   { value: "GOOD_TILL_CANCEL_EXT", label: "GTC+EXT" },
   { value: "AM", label: "AM" },
   { value: "PM", label: "PM" },
+];
+
+const OPTION_DURATIONS: { value: Duration; label: string }[] = [
+  { value: "DAY", label: "Day" },
+  { value: "GOOD_TILL_CANCEL", label: "GTC" },
 ];
 
 const GOLD = "#f5a623";
@@ -344,6 +359,8 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
   const displaySymbol = isMultiLeg ? `${symbol} Strategy (${strategyLegs!.length} legs)` : optionSymbol ?? symbol;
 
   const ticketMode: TicketMode = isOption ? "options" : "stock";
+  const ORDER_TYPES = isOption ? OPTION_ORDER_TYPES : STOCK_ORDER_TYPES;
+  const DURATIONS = isOption ? OPTION_DURATIONS : STOCK_DURATIONS;
 
   const spreadPrices = useMemo(() => {
     if (!isMultiLeg || !strategyLegs || strategyLegs.length === 0) return null;
@@ -431,7 +448,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
     }
   }, [isOpen, quote?.ask, quote?.bid, isMultiLeg, isCloseOrder, strategyNetPrice]);
 
-  const needsLimit = orderType === "LIMIT" || orderType === "STOP_LIMIT" || orderType === "TRAILING_STOP_LIMIT" || orderType === "LIMIT_ON_CLOSE";
+  const needsLimit = orderType === "LIMIT" || orderType === "STOP_LIMIT" || orderType === "TRAILING_STOP_LIMIT" || orderType === "LIMIT_ON_CLOSE" || orderType === "WALK_LIMIT";
   const needsStop = orderType === "STOP" || orderType === "STOP_LIMIT" || orderType === "TRAILING_STOP_LIMIT";
   const needsTrail = orderType === "TRAILING_STOP" || orderType === "TRAILING_STOP_LIMIT";
 
@@ -576,7 +593,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
     const resolvedLimitPrice = isSeamless && orderType === "MARKET" && !limitPrice
       ? singleMid.toFixed(2)
       : limitPrice;
-    const resolvedNeedsLimit = resolvedOrderType === "LIMIT" || needsLimit;
+    const resolvedNeedsLimit = resolvedOrderType === "LIMIT" || resolvedOrderType === "WALK_LIMIT" || needsLimit;
 
     const order: Record<string, unknown> = {
       orderType: resolvedOrderType,
