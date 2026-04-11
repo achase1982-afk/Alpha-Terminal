@@ -4,7 +4,7 @@ import { ConnectBrokerPrompt } from "./ConnectBrokerPrompt";
 import { useOptionsSettingsStore } from "@/lib/options-store";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { useOptionsColumnsStore, COLUMN_REGISTRY, type ColumnDef } from "@/lib/options-columns-store";
-import { useOptionTick } from "@/lib/options-stream-store";
+import { useOptionTick, useOptionsStreamStore } from "@/lib/options-stream-store";
 import { useUICustomizationStore, ACCENT_COLORS } from "@/lib/ui-customization-store";
 
 import { useGetQuote, useGetOptionChain } from "@workspace/api-client-react";
@@ -1069,6 +1069,7 @@ export type { Contract as OptionsContract };
 
 export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSingle, onOpenStrategyBuilder }: OptionsTabProps) {
   const { symbol, accessToken } = useTerminalStore();
+  const streamStatus = useTerminalStore(s => s.streamStatus);
   const { contractType, strikeCount, setCustomStrikeInput } = useOptionsSettingsStore();
   const setStrikeCount = useOptionsSettingsStore(s => s.setStrikeCount);
   const { activeColumnIds } = useOptionsColumnsStore();
@@ -1093,9 +1094,12 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
   }, [strikeCount]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const optionTickCount = useOptionsStreamStore(s => Object.keys(s.ticks).length);
+  const streamIsLive = streamStatus === "live" && optionTickCount > 0;
+
   const { data: rawData, isLoading, error, isFetching } = useGetOptionChain(
     { symbol, accessToken: accessToken || "", contractType: "ALL", strikeCount },
-    { query: { enabled: !!accessToken && !!symbol, staleTime: 30_000, gcTime: 10 * 60_000 } }
+    { query: { enabled: !!accessToken && !!symbol, staleTime: streamIsLive ? 5 * 60_000 : 30_000, gcTime: 10 * 60_000 } }
   );
 
   const data = useMemo(() => {
