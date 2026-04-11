@@ -827,14 +827,17 @@ router.get("/options", async (req, res) => {
     const allCalls = parseContracts(callMap);
     const allPuts = parseContracts(putMap);
 
-    const entry = { calls: allCalls, puts: allPuts, underlyingPrice, fetchedAt: Date.now() };
+    const structureCalls = allCalls.map(c => ({ strike: c.strike, expiration: c.expiration, schwabSymbol: c.schwabSymbol, dte: c.dte }));
+    const structurePuts = allPuts.map(c => ({ strike: c.strike, expiration: c.expiration, schwabSymbol: c.schwabSymbol, dte: c.dte }));
+
+    const entry = { calls: structureCalls, puts: structurePuts, underlyingPrice, fetchedAt: Date.now() };
     optionsNtmCache.set(displaySymbol, entry);
     if (optionsNtmCache.size > 100) {
       const oldest = [...optionsNtmCache.entries()].sort((a, b) => a[1].fetchedAt - b[1].fetchedAt)[0];
       optionsNtmCache.delete(oldest[0]);
     }
 
-    return res.json(sliceAndReturn(entry, "schwab"));
+    return res.json(sliceAndReturn(entry, "schwab-structure"));
   } catch (err) {
     req.log.error({ err }, "Options chain fetch error");
     res.json({ symbol: displaySymbol, calls: [], puts: [], error: "internal_error" });

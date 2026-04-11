@@ -235,6 +235,60 @@ function getContractVal(contract: Contract | null, key: string): number | undefi
   return (contract as unknown as Record<string, unknown>)[key] as number | undefined;
 }
 
+function useStreamingExpirationStats(rows: NormalizedRow[], underlyingPrice: number | null) {
+  const ticks = useOptionsStreamStore((s) => s.ticks);
+  return useMemo(() => {
+    let atmIV: number | null = null;
+    let expectedMove: number | null = null;
+    let maxOI = 0;
+    let maxVol = 0;
+    let totalCallOI = 0;
+    let totalPutOI = 0;
+    let totalCallVol = 0;
+    let totalPutVol = 0;
+    const dte = rows.length > 0 ? (rows[0].call?.dte ?? rows[0].put?.dte ?? 0) : 0;
+
+    const strikes = rows.map(r => r.strike);
+    const atmIdx = underlyingPrice != null ? findATMIndex(strikes, underlyingPrice) : -1;
+
+    for (const row of rows) {
+      const cTick = row.call?.streamKey ? ticks[row.call.streamKey] : undefined;
+      const pTick = row.put?.streamKey ? ticks[row.put.streamKey] : undefined;
+      const cOI = cTick?.openInterest ?? 0;
+      const pOI = pTick?.openInterest ?? 0;
+      const cVol = cTick?.volume ?? 0;
+      const pVol = pTick?.volume ?? 0;
+      maxOI = Math.max(maxOI, cOI, pOI);
+      maxVol = Math.max(maxVol, cVol, pVol);
+      totalCallOI += cOI;
+      totalPutOI += pOI;
+      totalCallVol += cVol;
+      totalPutVol += pVol;
+    }
+
+    if (atmIdx >= 0 && underlyingPrice != null) {
+      const atmRow = rows[atmIdx];
+      const cTick = atmRow?.call?.streamKey ? ticks[atmRow.call.streamKey] : undefined;
+      const pTick = atmRow?.put?.streamKey ? ticks[atmRow.put.streamKey] : undefined;
+      const callIV = cTick?.iv;
+      const putIV = pTick?.iv;
+      const ivValues = [callIV, putIV].filter((v): v is number => v != null && !isNaN(v));
+      if (ivValues.length > 0) {
+        atmIV = ivValues.reduce((a, b) => a + b, 0) / ivValues.length;
+        expectedMove = underlyingPrice * (atmIV / 100) * Math.sqrt(Math.max(dte, 1) / 365);
+      }
+    }
+
+    const pcr = totalCallVol > 0
+      ? totalPutVol / totalCallVol
+      : totalCallOI > 0
+        ? totalPutOI / totalCallOI
+        : null;
+
+    return { atmIV, expectedMove, maxOI, maxVol, totalCallOI, totalPutOI, totalCallVol, totalPutVol, pcr };
+  }, [rows, underlyingPrice, ticks]);
+}
+
 function fmtNum(val: number | undefined, decimals: number): string {
   if (val == null || isNaN(val) || val <= -999) return "\u2014";
   return decimals === 0 ? String(Math.round(val)) : val.toFixed(decimals);
@@ -647,11 +701,9 @@ function ColumnsEditorModal({ open, onClose }: { open: boolean; onClose: () => v
   );
 }
 
-function MetricsStrip({ groups, lastPrice, rawCalls, rawPuts, earningsInfo, isFetching, hasData }: {
+function MetricsStrip({ groups, lastPrice, earningsInfo, isFetching, hasData }: {
   groups: ExpirationGroup[];
   lastPrice: number | null;
-  rawCalls: Contract[];
-  rawPuts: Contract[];
   earningsInfo?: {
     earningsDate?: string | null;
     confirmed?: boolean;
@@ -665,13 +717,25 @@ function MetricsStrip({ groups, lastPrice, rawCalls, rawPuts, earningsInfo, isFe
   hasData: boolean;
 }) {
   const frontMonth = groups.length > 0 ? groups[0] : null;
-  const atmIV = frontMonth?.atmIV ?? null;
-  const expectedMove = frontMonth?.expectedMove ?? null;
+  const frontStats = useStreamingExpirationStats(frontMonth?.rows ?? [], lastPrice);
 
-  const totalCallVol = rawCalls.reduce((sum, c) => sum + (c.volume ?? 0), 0);
-  const totalPutVol = rawPuts.reduce((sum, p) => sum + (p.volume ?? 0), 0);
-  const totalCallOI = rawCalls.reduce((sum, c) => sum + (c.openInterest ?? 0), 0);
-  const totalPutOI = rawPuts.reduce((sum, p) => sum + (p.openInterest ?? 0), 0);
+  const ticks = useOptionsStreamStore((s) => s.ticks);
+  const allRows = useMemo(() => groups.flatMap(g => g.rows), [groups]);
+  let totalCallVol = 0;
+  let totalPutVol = 0;
+  let totalCallOI = 0;
+  let totalPutOI = 0;
+  for (const row of allRows) {
+    const cTick = row.call?.streamKey ? ticks[row.call.streamKey] : undefined;
+    const pTick = row.put?.streamKey ? ticks[row.put.streamKey] : undefined;
+    totalCallVol += cTick?.volume ?? 0;
+    totalPutVol += pTick?.volume ?? 0;
+    totalCallOI += cTick?.openInterest ?? 0;
+    totalPutOI += pTick?.openInterest ?? 0;
+  }
+
+  const atmIV = frontStats.atmIV;
+  const expectedMove = frontStats.expectedMove;
   const pcr = totalCallVol > 0
     ? (totalPutVol / totalCallVol).toFixed(2)
     : totalCallOI > 0
@@ -939,6 +1003,92 @@ function OptionsGrid({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function ExpirationSection({
+  group, isOpen, onToggle, stickyTop, underlyingPrice,
+  activeColumns, showCalls, showPuts, selectedLegs,
+  onToggleLeg, onLongPressCell, showInlineGreeks, accentHex,
+}: {
+  group: ExpirationGroup;
+  isOpen: boolean;
+  onToggle: () => void;
+  stickyTop: number;
+  underlyingPrice: number | null;
+  activeColumns: ColumnDef[];
+  showCalls: boolean;
+  showPuts: boolean;
+  selectedLegs: Map<string, SelectedLeg>;
+  onToggleLeg: (contract: Contract, type: "CALL" | "PUT", side: "bid" | "ask") => void;
+  onLongPressCell: (target: LongPressTarget) => void;
+  showInlineGreeks: boolean;
+  accentHex: string;
+}) {
+  const stats = useStreamingExpirationStats(group.rows, underlyingPrice);
+
+  return (
+    <div>
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center justify-between px-3 py-1 transition-colors sticky z-20"
+        style={{
+          top: stickyTop,
+          background: BG_EXP_BAR,
+          borderBottom: `1px solid ${BORDER}`,
+          fontFamily: MONO,
+        }}
+      >
+        <div className="flex items-center gap-1.5">
+          {isOpen
+            ? <ChevronDown className="w-3 h-3" style={{ color: DIM }} />
+            : <ChevronRight className="w-3 h-3" style={{ color: DIM }} />
+          }
+          <span className="text-[13px] tracking-wide" style={{ color: WHITE, fontWeight: FW_NORMAL }}>
+            {group.dateLabel}
+          </span>
+          <span className="text-[12px]" style={{ color: GRAY, fontWeight: FW_LIGHT }}>
+            {Math.round(group.dte)}d
+          </span>
+          {group.expType && (
+            <span className="text-[13px]" style={{
+              color: group.expType === "Quarterly" ? "#22d3ee" : group.expType === "EOM" ? "#60a5fa" : "#FF6B2B",
+              fontWeight: FW_NORMAL,
+            }}>
+              {group.expType}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2" style={{ fontSize: 12, fontVariantNumeric: "tabular-nums", fontFamily: MONO }}>
+          {stats.atmIV != null && (
+            <span style={{ color: GOLD, fontWeight: FW_PREMIUM }}>
+              IV {stats.atmIV.toFixed(1)}%
+            </span>
+          )}
+          {stats.pcr != null && (
+            <span style={{ color: stats.pcr > 1 ? DOWN : UP, fontWeight: FW_NORMAL }}>
+              P/C {stats.pcr.toFixed(2)}
+            </span>
+          )}
+        </div>
+      </button>
+
+      {isOpen && (
+        <OptionsGrid
+          rows={group.rows}
+          underlyingPrice={underlyingPrice}
+          columns={activeColumns}
+          showCalls={showCalls}
+          showPuts={showPuts}
+          selectedLegs={selectedLegs}
+          onToggleLeg={onToggleLeg}
+          onLongPressCell={onLongPressCell}
+          showInlineGreeks={showInlineGreeks}
+          maxOI={stats.maxOI}
+          accentHex={accentHex}
+        />
+      )}
     </div>
   );
 }
@@ -1329,8 +1479,6 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
         <MetricsStrip
           groups={groups}
           lastPrice={underlyingPrice}
-          rawCalls={(data?.calls ?? []) as Contract[]}
-          rawPuts={(data?.puts ?? []) as Contract[]}
           earningsInfo={{
             earningsDate: earningsData?.earningsDate ?? quote?.nextEarningsDate,
             confirmed: earningsData?.confirmed,
@@ -1399,73 +1547,23 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
             />
             {groups.map(group => {
               const isOpen = expandedExps.has(group.expiration);
-              const pcr = group.totalCallVol > 0
-                ? (group.totalPutVol / group.totalCallVol)
-                : group.totalCallOI > 0
-                  ? (group.totalPutOI / group.totalCallOI)
-                  : null;
               return (
-                <div key={group.expiration}>
-                  <button
-                    onClick={() => toggleExp(group.expiration)}
-                    className="w-full flex items-center justify-between px-3 py-1 transition-colors sticky z-20"
-                    style={{
-                      top: stickyOffset + TOOLBAR_H + HEADER_H + SUB_HEADER_H,
-                      background: BG_EXP_BAR,
-                      borderBottom: `1px solid ${BORDER}`,
-                      fontFamily: MONO,
-                    }}
-                  >
-                    <div className="flex items-center gap-1.5">
-                      {isOpen
-                        ? <ChevronDown className="w-3 h-3" style={{ color: DIM }} />
-                        : <ChevronRight className="w-3 h-3" style={{ color: DIM }} />
-                      }
-                      <span className="text-[13px] tracking-wide" style={{ color: WHITE, fontWeight: FW_NORMAL }}>
-                        {group.dateLabel}
-                      </span>
-                      <span className="text-[12px]" style={{ color: GRAY, fontWeight: FW_LIGHT }}>
-                        {Math.round(group.dte)}d
-                      </span>
-                      {group.expType && (
-                        <span className="text-[13px]" style={{
-                          color: group.expType === "Quarterly" ? "#22d3ee" : group.expType === "EOM" ? "#60a5fa" : "#FF6B2B",
-                          fontWeight: FW_NORMAL,
-                        }}>
-                          {group.expType}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2" style={{ fontSize: 12, fontVariantNumeric: "tabular-nums", fontFamily: MONO }}>
-                      {group.atmIV != null && (
-                        <span style={{ color: GOLD, fontWeight: FW_PREMIUM }}>
-                          IV {group.atmIV.toFixed(1)}%
-                        </span>
-                      )}
-                      {pcr != null && (
-                        <span style={{ color: pcr > 1 ? DOWN : UP, fontWeight: FW_NORMAL }}>
-                          P/C {pcr.toFixed(2)}
-                        </span>
-                      )}
-                    </div>
-                  </button>
-
-                  {isOpen && (
-                    <OptionsGrid
-                      rows={group.rows}
-                      underlyingPrice={underlyingPrice}
-                      columns={activeColumns}
-                      showCalls={showCalls}
-                      showPuts={showPuts}
-                      selectedLegs={selectedLegs}
-                      onToggleLeg={handleToggleLeg}
-                      onLongPressCell={handleLongPressCell}
-                      showInlineGreeks={showInlineGreeks}
-                      maxOI={group.maxOI}
-                      accentHex={accentHex}
-                    />
-                  )}
-                </div>
+                <ExpirationSection
+                  key={group.expiration}
+                  group={group}
+                  isOpen={isOpen}
+                  onToggle={() => toggleExp(group.expiration)}
+                  stickyTop={stickyOffset + TOOLBAR_H + HEADER_H + SUB_HEADER_H}
+                  underlyingPrice={underlyingPrice}
+                  activeColumns={activeColumns}
+                  showCalls={showCalls}
+                  showPuts={showPuts}
+                  selectedLegs={selectedLegs}
+                  onToggleLeg={handleToggleLeg}
+                  onLongPressCell={handleLongPressCell}
+                  showInlineGreeks={showInlineGreeks}
+                  accentHex={accentHex}
+                />
               );
             })}
           </div>
