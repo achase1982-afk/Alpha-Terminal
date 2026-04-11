@@ -495,7 +495,8 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
   const isValid = useMemo(() => {
     if (quantity <= 0) return false;
     if (!accountHash) return false;
-    if (isMultiLeg) return !!limitPrice && parseFloat(limitPrice) > 0;
+    if (isMultiLeg && orderType !== "MARKET") return !!limitPrice && parseFloat(limitPrice) > 0;
+    if (isMultiLeg && orderType === "MARKET") return true;
     if (needsLimit && (!limitPrice || parseFloat(limitPrice) <= 0)) return false;
     if (needsStop && (!stopPrice || parseFloat(stopPrice) <= 0)) return false;
     if (needsTrail && (!trailOffset || parseFloat(trailOffset) <= 0)) return false;
@@ -507,8 +508,10 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
       const parsed = parseFloat(limitPrice || "0");
       const isTrueMultiLeg = strategyLegs.length >= 2;
       if (isTrueMultiLeg) {
+        const useMarket = orderType === "MARKET" || parsed <= 0;
+        const resolvedType = useMarket ? "MARKET" : (strategyIsCredit ? "NET_CREDIT" : "NET_DEBIT");
         const o: Record<string, unknown> = {
-          orderType: strategyIsCredit ? "NET_CREDIT" : "NET_DEBIT",
+          orderType: resolvedType,
           session: extendedHours || duration === "SEAMLESS" || duration === "GOOD_TILL_CANCEL_EXT" ? "SEAMLESS" : "NORMAL",
           duration,
           complexOrderStrategyType: "NONE",
@@ -519,12 +522,13 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
             instrument: { symbol: leg.schwabSymbol, assetType: "OPTION" },
           })),
         };
-        if (parsed > 0) o.price = parsed;
+        if (!useMarket && parsed > 0) o.price = parsed;
         return o;
       }
       const singleLeg = strategyLegs[0];
+      const singleUseMarket = orderType === "MARKET" || parsed <= 0;
       const o: Record<string, unknown> = {
-        orderType: "LIMIT",
+        orderType: singleUseMarket ? "MARKET" : "LIMIT",
         session: extendedHours || duration === "SEAMLESS" || duration === "GOOD_TILL_CANCEL_EXT" ? "SEAMLESS" : "NORMAL",
         duration,
         orderStrategyType: "SINGLE",
@@ -534,7 +538,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
           instrument: { symbol: singleLeg.schwabSymbol, assetType: "OPTION" },
         }],
       };
-      if (parsed > 0) o.price = parsed;
+      if (!singleUseMarket && parsed > 0) o.price = parsed;
       return o;
     }
     const order: Record<string, unknown> = {
