@@ -8,6 +8,7 @@ import { runDynamicScreener } from "../lib/schwabDynamicScreener.js";
 import { getBestAccessToken } from "../lib/tokenStore.js";
 import { getAuth } from "@clerk/express";
 import { getUniverseSnapshot, buildCoreOptionsUniverse, type UniverseSnapshot } from "../lib/universeBuilder.js";
+import { LIQUID_CORE_SYMBOLS } from "../data/liquidCore130.js";
 
 const router: IRouter = Router();
 
@@ -25,91 +26,10 @@ function getUserId(req: any): string {
 }
 
 const PRESET_UNIVERSES: Record<string, { label: string; description: string; symbols: string[] }> = {
-  sp100: {
-    label: "S&P 100",
-    description: "100 largest US stocks by market cap",
-    symbols: [
-      "AAPL","ABBV","ABT","ACN","ADBE","AMD","AMGN","AMZN","AVGO","AXP",
-      "BA","BAC","BK","BKNG","BLK","BMY","BRK.B","C","CAT","CHTR",
-      "CL","CMCSA","COF","COP","COST","CRM","CSCO","CVS","CVX","DE",
-      "DHR","DIS","DOW","DUK","EMR","EXC","F","FDX","GD","GE",
-      "GILD","GM","GOOG","GOOGL","GS","HD","HON","IBM","INTC","INTU",
-      "JNJ","JPM","KHC","KO","LIN","LLY","LMT","LOW","MA","MCD",
-      "MDLZ","MDT","MET","META","MMM","MO","MRK","MS","MSFT","NEE",
-      "NFLX","NKE","NOC","NVDA","ORCL","PEP","PFE","PG","PM","PYPL",
-      "QCOM","RTX","SBUX","SCHW","SO","SPG","T","TGT","TMO","TMUS",
-      "TXN","UNH","UNP","UPS","USB","V","VZ","WBA","WFC","WMT",
-    ],
-  },
-  sp500: {
-    label: "S&P 500",
-    description: "Full S&P 500 membership (ordered by market cap)",
-    symbols: [
-      "NVDA","AAPL","MSFT","AMZN","GOOGL","GOOG","META","BRK.B","AVGO","TSLA",
-      "LLY","JPM","WMT","V","UNH","MA","NFLX","COST","ORCL","HD",
-      "JNJ","PG","ABBV","CRM","BAC","ADBE","CVX","MRK","TMUS","KO",
-      "AMD","CSCO","PEP","WFC","TMO","LIN","ACN","MCD","NOW","ABT",
-      "ISRG","GE","IBM","INTU","PM","GS","CAT","QCOM","TXN","AMGN",
-      "VZ","DHR","BLK","BKNG","AXP","PFE","MS","SPGI","RTX","LOW",
-      "T","NEE","BA","DE","UNP","SYK","SCHW","C","BMY","AMAT",
-      "PLD","MDLZ","ADI","GILD","INTC","CB","MMC","LRCX","ADP","BSX",
-      "CME","ETN","CI","REGN","NKE","VRTX","FI","ICE","MU","KLAC",
-      "SHW","DUK","PYPL","SO","CMG","CDNS","SNPS","MO","BDX","MCO",
-      "PGR","CL","ITW","PH","COP","APH","TGT","FDX","ABNB","MCK",
-      "EQIX","MSI","AON","ZTS","NOC","EMR","TDG","WM","APD","CTAS",
-      "HCA","MCHP","GD","HUM","CVS","NXPI","SLB","ORLY","AJG","DXCM",
-      "ATVI","GM","F","OXY","SRE","AEP","MAR","ROP","PCAR","EL",
-      "STZ","DLR","AFL","MPC","AIG","ADSK","PSA","CARR","CHTR","DG",
-      "EW","TFC","PSX","ROST","FTNT","TEL","MNST","D","CTSH","NSC",
-      "KMB","DHI","LHX","CCI","BIIB","ECL","KHC","SPG","IDXX","WMB",
-      "DOW","YUM","O","PAYX","AMT","DD","A","MRNA","GIS","LEN",
-      "CPRT","IQV","MTB","OTIS","MSCI","AZO","CMI","PCG","ON","EXC",
-      "BKR","VLO","RSG","KDP","GWW","CTVA","CSGP","COF","CDW","URI",
-      "PRU","PPG","FAST","JCI","IR","ODFL","NUE","FANG","HSY","HAL",
-      "ED","DTE","AVB","ANSS","WEC","RCL","XEL","EIX","GEHC","KEYS",
-      "TSCO","GPN","ROK","FITB","EQR","MLM","WTW","MTD","SBUX","DFS",
-      "WAB","DAL","HPQ","APTV","BAX","ARE","AWK","AMP","CBRE","WBD",
-      "ES","EFX","FE","IT","HLT","BF.B","VRSN","TYL","ILMN","DOV",
-      "LYB","STE","RMD","TROW","HBAN","STT","CCL","VMC","IRM","LUV",
-      "DRI","K","MPWR","PNR","SYY","TTWO","BR","CFG","VRSK","CLX",
-      "MKC","PKG","EPAM","EXPE","EXPD","IFF","CINF","AES","FMC","HOLX",
-      "NTRS","JBHT","SYF","MAA","TER","POOL","PFG","PKI","KMI","BRO",
-      "RF","IP","KIM","CE","J","MGM","INCY","CF","MKTX","ATO",
-      "MAS","KEY","SBAC","CNP","DGX","LNT","NTAP","CAG","LDOS","CHRW",
-      "HRL","BBY","CMA","BIO","PEAK","CAH","SJM","NI","AKAM","GPC",
-      "EMN","CPB","FRT","COO","HWM","CPT","CRL","BXP","APA","TAP",
-      "LNC","EVRG","GL","MOS","WHR","AOS","FRC","SIVB","ETSY","RE",
-      "QRVO","BWA","CBOE","FFIV","GRMN","HST","NDSN","RHI","SEE","DISH",
-      "REG","RL","SWK","UDR","XRAY","ZION","MHK","OGN","JKHY","TFX",
-      "ESS","NWL","PHM","PVH","WRK","DPZ","DVA","DVN","FOX","FOXA",
-      "FBHS","NWS","NWSA","WRB","IPG","IVZ","PNW","NCLH","CZR","EQT",
-      "LKQ","GNRC","NRG","UHS","FTV","INVH","VICI","TECH","VTR","VTRS",
-      "SBNY","CTLT","BEN","GEN","CDAY","SWKS","LUMN","FLT","JNPR","NVR",
-      "TRGP","CSX","WBA","LW","DISH","DLTR","WST","TPR","TRMB","ALB",
-      "ALL","ALLE","AMCR","AME","BG","BK","CTRA","DXC","EA","ENPH",
-      "ETR","FISV","FIS","ALGN","ALK","AIZ","BBWI","CHD","CMS","CNC",
-      "HAS","HSIC","IEX","KMX","KR","L","LH","MMM","MTD","NDAQ",
-      "NEM","NOC","OMC","PAYC","PTC","PWR","PXD","ROL","RJF","RVTY",
-      "SNA","SNPS","STX","TDY","TSN","TT","TXT","WYNN","XOM","XYL",
-      "ZBH","ZBRA","ADM","VFC","WAT","WY","UAL","ULTA","YUM","ZTS",
-    ],
-  },
-  ndx100: {
-    label: "Nasdaq 100",
-    description: "100 largest Nasdaq-listed stocks",
-    symbols: [
-      "AAPL","ABNB","ADBE","ADI","ADP","ADSK","AEP","AMAT","AMGN","AMZN",
-      "ANSS","APP","ARM","ASML","AVGO","AZN","BIIB","BKNG","BKR","CCEP",
-      "CDNS","CDW","CEG","CHTR","CMCSA","COIN","COST","CPRT","CRWD","CSCO",
-      "CSGP","CTAS","CTSH","DASH","DDOG","DLTR","DXCM","EA","ENPH","EXC",
-      "FANG","FAST","FTNT","GEHC","GFS","GILD","GOOG","GOOGL","HON","IDXX",
-      "ILMN","INTC","INTU","ISRG","KDP","KHC","KLAC","LRCX","LULU","MAR",
-      "MCHP","MDB","MDLZ","MELI","META","MNST","MRNA","MRVL","MSFT","MU",
-      "NFLX","NVDA","NXPI","ODFL","ON","ORLY","PANW","PAYX","PCAR","PDD",
-      "PEP","PLTR","PYPL","QCOM","REGN","RIVN","ROST","SBUX","SIRI","SMCI",
-      "SNPS","SPLK","TEAM","TMUS","TSLA","TTD","TTWO","TXN","VRSK","VRTX",
-      "WBD","WDAY","XEL","ZM","ZS",
-    ],
+  liquidCore130: {
+    label: "Liquid Core 130",
+    description: "124 high-liquidity, options-tradable names across 8 sectors — primary scan universe",
+    symbols: [...LIQUID_CORE_SYMBOLS],
   },
   midcap200: {
     label: "Mid-Cap 200",
@@ -221,11 +141,18 @@ router.get("/universes", (_req, res) => {
   res.json({ presets: result });
 });
 
+const PRESET_ALIASES: Record<string, string> = {
+  sp500: "liquidCore130",
+  sp100: "liquidCore130",
+  ndx100: "liquidCore130",
+};
+
 router.get("/universes/:key/symbols", (req, res) => {
   const presets = loadPresets();
-  const preset = presets[req.params.key];
+  const resolvedKey = PRESET_ALIASES[req.params.key] ?? req.params.key;
+  const preset = presets[resolvedKey];
   if (!preset) return res.status(404).json({ error: "Preset not found" });
-  res.json({ key: req.params.key, label: preset.label, symbols: preset.symbols });
+  res.json({ key: resolvedKey, label: preset.label, symbols: preset.symbols });
 });
 
 router.get("/universe/snapshot", (_req, res) => {
@@ -438,7 +365,7 @@ function getPresetSymbolsForFilters(filters: ScreenFilters): string[] {
   if (marketCapMax <= 12_000_000_000 && marketCapMin <= 10_000_000_000) {
     return PRESET_UNIVERSES.midcap200?.symbols ?? [];
   }
-  return PRESET_UNIVERSES.sp500?.symbols ?? [];
+  return PRESET_UNIVERSES.liquidCore130?.symbols ?? [];
 }
 
 async function runScreenWithFallback(
@@ -642,7 +569,7 @@ const AUTO_WATCHLIST_NAMES = {
   highVolatility: "High Volatility",
 } as const;
 
-const AUTO_UNIVERSE_KEY = "sp500";
+const AUTO_UNIVERSE_KEY = "liquidCore130";
 
 router.post("/refresh-auto-watchlists", async (req, res) => {
   const userId = getUserId(req);

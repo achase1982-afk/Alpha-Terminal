@@ -5,6 +5,7 @@ import { logger } from "../lib/logger";
 import { db } from "@workspace/db";
 import { optionsFlowPerStrikeTable } from "@workspace/db";
 import { sql } from "drizzle-orm";
+import { LIQUID_CORE_SYMBOLS } from "../data/liquidCore130.js";
 
 const router = Router();
 
@@ -132,47 +133,7 @@ router.post("/backfill-flow", async (req, res) => {
 });
 
 function getDefaultUniverse(): string[] {
-  const raw = [
-    "NVDA","AAPL","MSFT","AMZN","GOOGL","GOOG","META","AVGO","TSLA","LLY",
-    "JPM","WMT","V","UNH","MA","NFLX","COST","ORCL","HD","JNJ",
-    "PG","ABBV","CRM","BAC","ADBE","CVX","MRK","TMUS","KO","AMD",
-    "CSCO","PEP","WFC","TMO","LIN","ACN","MCD","NOW","ABT","ISRG",
-    "GE","IBM","INTU","PM","GS","CAT","QCOM","TXN","AMGN","VZ",
-    "DHR","BLK","BKNG","AXP","PFE","MS","SPGI","RTX","LOW","T",
-    "NEE","BA","DE","UNP","SYK","SCHW","C","BMY","AMAT","PLD",
-    "MDLZ","ADI","GILD","INTC","CB","MMC","LRCX","ADP","BSX","CME",
-    "ETN","CI","REGN","NKE","VRTX","ICE","MU","KLAC","SHW","DUK",
-    "PYPL","SO","CMG","CDNS","SNPS","MO","BDX","MCO","PGR","CL",
-    "ITW","PH","COP","APH","TGT","FDX","ABNB","MCK","EQIX","MSI",
-    "AON","ZTS","NOC","EMR","TDG","WM","APD","CTAS","HCA","MCHP",
-    "GD","HUM","CVS","NXPI","SLB","ORLY","AJG","DXCM","GM","F",
-    "OXY","SRE","AEP","MAR","ROP","PCAR","EL","STZ","DLR","AFL",
-    "MPC","AIG","ADSK","PSA","CARR","CHTR","DG","EW","TFC","PSX",
-    "ROST","FTNT","TEL","MNST","D","CTSH","NSC","KMB","DHI","CCI",
-    "BIIB","ECL","KHC","IDXX","WMB","DOW","YUM","O","PAYX","AMT",
-    "DD","MRNA","GIS","LEN","CPRT","IQV","MSCI","CMI","PCG","ON",
-    "EXC","BKR","VLO","RSG","KDP","GWW","CTVA","COF","CDW","URI",
-    "PRU","PPG","FAST","JCI","ODFL","NUE","FANG","HAL","EIX","GEHC",
-    "KEYS","DAL","HPQ","BAX","AMP","CBRE","WBD","EFX","LYB","HBAN",
-    "STT","CCL","VMC","IRM","LUV","DRI","MPWR","SYY","BR","CFG",
-    "VRSK","CLX","MKC","PKG","EXPE","IFF","AES","FMC","HOLX","NTRS",
-    "JBHT","SYF","TER","POOL","PFG","KMI","BRO","RF","MGM","INCY",
-    "CF","ATO","MAS","KEY","CNP","NTAP","CAG","BBY","CMA","CAH",
-    "MOS","FCX","WDC","DVN","CSX","UAL","FIS","FISV","DELL","WDAY",
-    "PANW","ARM","CRWD","DDOG","SNOW","NET","SPOT","DASH","COIN","PLTR",
-    "SOFI","UBER","RBLX","MRVL","SMCI","MSTR","APP","SHOP","TEAM",
-    "TTD","DKNG","OKLO","HIMS","HOOD","AFRM","IOT","ENPH","RUN",
-    "RIVN","CELH","ONON","SNAP","U","ROKU","ZS","VEEV","MNDY",
-    "NTNX","VRT","CRDO","GTLB","DOCN","FSLY","PINS","CHWY",
-    "NU","AAL","NCLH","RCL","ALK","BABA","TSM","NVO","PDD","JD",
-    "HDB","INFY","CRH","CPNG","BP","SHEL","EQNR","SAN","BCS","TD","DB",
-    "AA","NEM","VALE","SM","AR","CTRA","EOG","EQT","APA","OKE",
-    "XOM","PBR","SU","CNQ","CVE",
-    "SBUX","DIS","LVS","WYNN","HLT","UPS",
-    "LMT","HON","DFS",
-  ];
-  const seen = new Set<string>();
-  return raw.filter(s => { const u = s.toUpperCase(); if (seen.has(u)) return false; seen.add(u); return true; });
+  return [...LIQUID_CORE_SYMBOLS];
 }
 
 export default router;

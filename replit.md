@@ -101,6 +101,13 @@ The AI Lab Strategist has a dedicated configuration block on the AI Parameters s
 - `ai_lab_deliberations` table: full audit log of every pipeline run.
 - `ai_lab_ideas` table: three new JSONB columns `primaryProposal`, `skepticCritique`, `finalDecision`.
 
+**Liquid Core 130 Universe (`liquidCore130.ts`):**
+- 124-symbol curated universe of high-liquidity, options-tradable names across 8 sectors (ETFs, Mega-Tech/AI/Semis, Growth/Meme, Financials, Healthcare, Consumer, Energy, Industrials).
+- Primary universe for both AI Lab Strategist (anomaly scanning via `equity_daily`) and deterministic scanner.
+- Replaces stale S&P 500 / NASDAQ 100 / 270-symbol backfill defaults.
+- Scanner default preset; auto-watchlist universe; backfill target via POST `/api/snapshot/backfill`.
+- `getUniverseAnomalies()` in `aiLabService.ts` filters `equity_daily` to Liquid Core symbols only.
+
 **Core Balanced 383 Universe Builder (`universeBuilder.ts`):**
 - Builds a 383-symbol options-tradable universe using Polygon API data.
 - Pipeline: grouped daily bars (price/volume) → ticker reference names → individual ticker details (market cap, SIC description) → options chain validation → SIC-to-GICS sector classification → sector-balanced selection.

@@ -1,0 +1,59 @@
+This 130‑name universe is exactly what you want for options as a *business*: concentrated, ultra‑liquid, and structurally aligned with defined‑risk spreads and PDT constraints.[1][2][3]
+
+## Universe quality
+
+- Your list matches where most of the equity options volume actually lives: SPY, QQQ, IWM, TSLA, NVDA, AAPL, AMZN, AMD, META, MSFT, COIN, etc., which are consistently among the most active options underlyings.[2][4][1]
+- You’ve kept broad sector coverage (tech, financials, healthcare, energy, consumer, industrials) while still hugging higher‑cap, higher‑flow names where fills and spreads are reliably good.[4][5][2]
+- Including a few levered/index proxies (TQQQ, SPY, QQQ, IWM, DIA, GLD, SLV, USO) gives you “macro knobs” to express views without chasing junk tickers.[3][1]
+
+
+
+## Alignment with your constraints
+
+- For defined‑risk verticals and credit spreads, tight spreads + deep open interest are more important than raw “edge,” and this list focuses exactly on those underlyings.[6][7][8][9][2]
+- SPY/QQQ being explicitly *forgiven* is critical: their options are among the deepest and most actively traded globally, and they are ideal for 7–45 DTE spreads that don’t chew up too many day trades.[10][1][2][3]
+- Cutting thin names directly attacks your historical pain points: slippage, “fake” flow in illiquid names, and FOMO entries in stuff with trash microstructure.[8][9][11][2][6]
+
+
+
+## Architecture / workflow fit
+
+- For an automated Deterministic Scanner + AI Strategist, hard‑locking to a single liquid universe is huge: every layer (scanner, strategist, AI) debates only in symbols where execution quality is high and historical data is dense.[7][12][13]
+- Using the broader 383 only for macro/breadth (Market Pulse) while routing *all* trade idea generation through the 130 keeps regime detection broad but trade selection narrow and professional.[5][12][13]
+- This also simplifies backfilling, factor calculations, and Monte Carlo/what‑if because you’re not wasting compute on illiquid tails.[12][13][3]
+
+
+
+## Minor refinements I’d consider
+
+- Periodically revalidate membership (maybe quarterly) against an options‑volume ranking, so if a name permanently falls off in activity you can swap it for a rising star without bloating the list.[14][2][4]
+- Within each sector, tag a few “prime” underlyings for day‑trading vs swing spreads (e.g., TSLA/NVDA/COIN for faster intraday, JNJ/UNH/XOM/COST for steadier swing structures).[15][16][1][2]
+- Keep a separate, *tiny* “experimental” list (5–10 tickers) for anything new you’re tempted to trade, and only promote to the core 130 if it proves itself on volume and spreads over time.[17][2][7][8]
+
+Net: I’d absolutely make this your default options universe and let everything else be opt‑in. If you want, we can define precise scanner thresholds (volume/IV/ATR/Greeks) specifically tuned for this 130 so you stop getting “no signal” days.
+
+Sources
+[1] What Are the Top Stocks for Options Trading? | Market Insights https://www.tradestation.com/insights/top-stocks-for-options-trading/
+[2] Most Active Stocks by Options Volume - Macroption https://www.macroption.com/stock-options-volume/
+[3] The State of the Options Industry: Quarter Three 2025 | Cboe https://www.cboe.com/insights/posts/the-state-of-the-options-industry-quarter-three-2025/
+[4] Most Active Stock Options | OptionCharts https://optioncharts.io/trending/most-active-stock-options
+[5] core_balanced_383.txt https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/50504156/ad1fe8bf-d50f-41cc-8b96-30442dd6ac6a/core_balanced_383.txt
+[6] Options Liquidity: A Complete Guide for Traders - tastylive https://www.tastylive.com/concepts-strategies/options-liquidity
+[7] Options Screener: How to Find the Best Trades - ApexVol https://apexvol.com/learn/options-screener-guide
+[8] Options Trading Liquidity: Volume, Open Interest, Size & More https://www.tradingblock.com/blog/options-liquidity
+[9] Option Liquidity: How to Measure and Optimize Your Trading Strategy https://www.investopedia.com/ask/answers/05/optionliquidity.asp
+[10] LEAPS on QQQ/SPY : r/options - Reddit https://www.reddit.com/r/options/comments/1qhq9cv/leaps_on_qqqspy/
+[11] Order Types and Off-Screen Liquidity: What You See Isn't Always ... https://www.cboe.com/insights/posts/order-types-and-off-screen-liquidity-what-you-see-isnt-always-what-you-get/
+[12] Options Universes - QuantConnect.com https://www.quantconnect.com/docs/v2/writing-algorithms/algorithm-framework/universe-selection/options-universes
+[13] quant-finance-lectures - Universe Selection - Code Library https://www.quantrocket.com/codeload/quant-finance-lectures/quant_finance_lectures/Lecture29-Universe-Selection.ipynb.html
+[14] Trending Options Volume - The Options Industry Council https://www.optionseducation.org/toolsoptionquotes/trending-options-volume
+[15] 5 Best Stocks for Options Trading in April 2026 - Barchart.com https://www.barchart.com/story/news/950484/5-best-stocks-for-options-trading-in-april-2026
+[16] Top Option Plays of 2025: Tech Outperformer Takes Top Spot https://finance.yahoo.com/news/four-week-straddles-highlight-2025s-214520521.html
+[17] These Scanner Settings Find Stocks Before They Explode - Reddit https://www.reddit.com/r/options/comments/1pvdr5k/these_scanner_settings_find_stocks_before_they/
+[18] 10 Big-Name Stocks Likely To Dominate in 2026 - Yahoo Finance https://finance.yahoo.com/news/10-big-name-stocks-likely-115504590.html
+[19] 5 Best Stocks for Options Trading in April 2026 - The Globe and Mail https://www.theglobeandmail.com/investing/markets/stocks/NVDA/pressreleases/950486/5-best-stocks-for-options-trading-in-april-2026/
+[20] Bullish On QQQ? You Might Want To Consider This Credit Put ... https://marketchameleon.com/articles/b/2026/1/27/bullish-on-QQQ-you-might-want-to-consider-this-credit-put-spread-expiring-in-14-days
+[21] The 10 Strongest-Performing Mega-Cap Stocks Of 2025 - Forbes https://www.forbes.com/sites/adamsarhan/2025/09/30/the-10-strongest-performing-mega-cap-stocks-of-2025/
+[22] SPY QQQ Options ES NQ Swing & Day Trading - YouTube https://www.youtube.com/watch?v=J5GrCT_gc8g
+[23] Best-performing stocks in 2026 - Bankrate https://www.bankrate.com/investing/best-performing-stocks/
+[24] QQQ Options Flow Analysis - Apr 09, 2026 - YouTube https://www.youtube.com/watch?v=XHitR8hDIfY

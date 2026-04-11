@@ -1,6 +1,7 @@
 import { db, equityDailyTable, flowDailyAggregatesTable } from "@workspace/db";
 import { inArray, desc, sql, eq, and, gte } from "drizzle-orm";
 import { emitTelemetry, createTelemetryBatch } from "./telemetryStore.js";
+import { LIQUID_CORE_SYMBOLS } from "../data/liquidCore130.js";
 
 // ─── CONFIGURABLE THRESHOLDS ────────────────────────────────────────────────
 // Adjust these to tune anomaly detection sensitivity.
@@ -152,10 +153,14 @@ export async function getUniverseAnomalies(
     return [];
   }
 
+  const liquidCoreList = [...LIQUID_CORE_SYMBOLS] as string[];
   const equityRows = await db
     .select()
     .from(equityDailyTable)
-    .where(eq(equityDailyTable.date, latestDate));
+    .where(and(
+      eq(equityDailyTable.date, latestDate),
+      inArray(equityDailyTable.symbol, liquidCoreList),
+    ));
 
   const flowRows = await db
     .select()

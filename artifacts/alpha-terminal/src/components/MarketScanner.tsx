@@ -530,7 +530,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
 
   const [mode, setMode] = useState<"manual" | "deterministic">("deterministic");
   const [scanMode, setScanMode] = useState<"DISCOVERY" | "MOMENTUM">("DISCOVERY");
-  const [universe, setUniverse] = useState("preset:sp500");
+  const [universe, setUniverse] = useState("preset:liquidCore130");
   const [isScanning, setIsScanning] = useState(false);
   const [rawError, setRawError] = useState<string | null>(null);
   const [manualQuotes, setManualQuotes] = useState<ScannerQuote[]>([]);
@@ -546,6 +546,8 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
   const [showWatchlistEditor, setShowWatchlistEditor] = useState(false);
   const [editingWatchlistId, setEditingWatchlistId] = useState<number | null>(null);
 
+  const REMOVED_PRESETS = new Set(["preset:sp500", "preset:sp100", "preset:ndx100"]);
+
   const scanCacheRestoredRef = useRef(false);
   useEffect(() => {
     if (scanCacheRestoredRef.current || !scanCache) return;
@@ -554,7 +556,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
     if (r?.manualQuotes) setManualQuotes(r.manualQuotes);
     if (r?.scanCount != null) setScanCount(r.scanCount);
     if (r?.detResult) setDetResult(r.detResult as DetScanResult);
-    if (r?.universe) setUniverse(r.universe);
+    if (r?.universe && !REMOVED_PRESETS.has(r.universe)) setUniverse(r.universe);
   }, [scanCache]);
 
   const [minChangePct, setMinChangePct] = useState(0);
@@ -728,7 +730,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
                 onEditScreen={(id) => { setEditingScreen(id); setShowScreenBuilder(true); }}
                 onDeleteScreen={async (id) => {
                   await universeData.deleteScreen(id);
-                  if (universe === `screen:${id}`) setUniverse("preset:sp500");
+                  if (universe === `screen:${id}`) setUniverse("preset:liquidCore130");
                 }}
                 onRefreshScreen={handleRefreshScreen}
                 refreshingScreenId={refreshingScreenId}
@@ -736,7 +738,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
                 onEditWatchlist={(id) => { setEditingWatchlistId(id); setShowWatchlistEditor(true); }}
                 onDeleteWatchlist={async (id) => {
                   await universeData.deleteWatchlist(id);
-                  if (universe === `watchlist:${id}`) setUniverse("preset:sp500");
+                  if (universe === `watchlist:${id}`) setUniverse("preset:liquidCore130");
                 }}
               />
             </div>
