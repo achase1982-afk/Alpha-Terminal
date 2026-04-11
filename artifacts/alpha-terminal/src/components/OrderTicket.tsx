@@ -515,7 +515,14 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
         const seamlessFallbackPrice = isSeamless && parsed <= 0 && spreadPrices ? spreadPrices.spreadMid : null;
         const resolvedPrice = parsed > 0 ? parsed : (seamlessFallbackPrice ?? 0);
         const useMarket = !isSeamless && (orderType === "MARKET" || resolvedPrice <= 0);
-        // Schwab only accepts price field on LIMIT orders — use LIMIT when we have a price, MARKET otherwise
+        // Determine credit vs debit from actual current leg prices (sell legs contribute positive, buy legs negative)
+        const netDirection = strategyLegs.reduce((acc, leg) => {
+          const isSell = leg.instruction.startsWith("SELL");
+          const mid = ((leg.bid ?? 0) + (leg.ask ?? 0)) / 2;
+          return acc + (isSell ? mid : -mid);
+        }, 0);
+        const creditOrDebit = netDirection >= 0 ? "CREDIT" : "DEBIT";
+        // Schwab requires orderType LIMIT + price + creditOrDebit for complex non-market orders
         const resolvedType = useMarket ? "MARKET" : "LIMIT";
         const o: Record<string, unknown> = {
           orderType: resolvedType,
@@ -529,7 +536,10 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
             instrument: { symbol: leg.schwabSymbol, assetType: "OPTION" },
           })),
         };
-        if (!useMarket && resolvedPrice > 0) o.price = resolvedPrice;
+        if (!useMarket) {
+          if (resolvedPrice > 0) o.price = resolvedPrice;
+          o.creditOrDebit = creditOrDebit;
+        }
         return o;
       }
       const singleLeg = strategyLegs[0];
