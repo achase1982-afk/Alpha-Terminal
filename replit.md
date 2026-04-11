@@ -24,6 +24,9 @@ The project is a pnpm monorepo using TypeScript. The backend employs Express 5, 
 ### Quote Data Architecture (52W Range)
 The `/api/market/quote` route has three return paths: (1) Schwab streamer cache, (2) IB cache, (3) Schwab REST fallback. The streamer and IB caches provide real-time price data but NOT 52-week range. A dedicated `fiftyTwoWeekCache` (Map, 500-entry max, 1hr TTL) stores 52W high/low from Schwab REST. On first request via cached paths, a background Schwab REST fetch (`fetch52WBackground`) populates the 52W cache with a 5s abort timeout. Subsequent requests serve 52W data from cache. The `pickNum()` helper searches `quote`, `reference`, and `fundamental` sub-objects from Schwab responses.
 
+### Streaming-First Data Merge for Options
+The StrategyBuilder and OptionsTab use a streaming-first data merge pattern. When opening the StrategyBuilder from the options chain, `handleBuildStrategy` (OptionsTab) and `enrichLeg`/`updateLeg` (StrategyBuilder) all check `useOptionsStreamStore.getState().ticks[schwabSymbol]` for live streaming data first, falling back to REST/Polygon data. This ensures the StrategyBuilder always uses the freshest available bid/ask/Greeks instead of stale REST snapshots. The `spreadPrices` calculation treats null/undefined bid/ask as 0 instead of bailing, preventing the review button from being grayed out on multi-leg trades with partial data.
+
 ## Feature Specifications
 
 Key features include SEC EDGAR integration, a dynamic Market Calendar, a MacroBar, an Institutional Tear Sheet, Multi-Watchlist support, and an Institutional Dashboard. The platform offers an AI Strategy Endpoint with confidence levels, a Pre-Trade Risk Manager performing 11 deterministic checks, and Conviction Sizing for position adjustments. Security includes Session Timeout and Biometric Authentication. Synthetic DXY is derived from /6E futures.

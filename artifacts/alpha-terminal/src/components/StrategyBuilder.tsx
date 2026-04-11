@@ -3,6 +3,7 @@ import { useTerminalStore } from "@/lib/store";
 import { useQuote } from "@/hooks/useQuote";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
+import { useOptionsStreamStore } from "@/lib/options-stream-store";
 import {
   X, Plus, Trash2, ChevronDown, ChevronUp, ShieldX,
   ArrowLeft, Lock, Unlock, Minus, Sparkles, AlertTriangle, CheckCircle2, Loader2,
@@ -492,7 +493,22 @@ export function StrategyBuilder({
       setErrorMsg("");
       setPriceError("");
       if (initialLegs && initialLegs.length > 0) {
-        setLegs(initialLegs);
+        const streamTicks = useOptionsStreamStore.getState().ticks;
+        const enrichedLegs = initialLegs.map(leg => {
+          const tick = leg.schwabSymbol ? streamTicks[leg.schwabSymbol] : undefined;
+          if (!tick) return leg;
+          return {
+            ...leg,
+            bid: (tick.bid != null) ? tick.bid : leg.bid,
+            ask: (tick.ask != null) ? tick.ask : leg.ask,
+            delta: (tick.delta != null) ? tick.delta : leg.delta,
+            gamma: (tick.gamma != null) ? tick.gamma : leg.gamma,
+            theta: (tick.theta != null) ? tick.theta : leg.theta,
+            vega: (tick.vega != null) ? tick.vega : leg.vega,
+            iv: (tick.iv != null) ? tick.iv : leg.iv,
+          };
+        });
+        setLegs(enrichedLegs);
         setMode("builder");
       } else {
         setLegs([]);
@@ -544,7 +560,17 @@ export function StrategyBuilder({
   const enrichLeg = useCallback((leg: Omit<StrategyLeg, "id" | "bid" | "ask" | "delta" | "gamma" | "theta" | "vega" | "iv" | "schwabSymbol">): StrategyLeg => {
     const schwabSymbol = buildSchwabSymbol(leg.strike, leg.optionType, leg.expiration);
     const cd = chainData?.get(schwabSymbol);
-    return { ...leg, id: nextLegId(), schwabSymbol, bid: cd?.bid, ask: cd?.ask, delta: cd?.delta, gamma: cd?.gamma, theta: cd?.theta, vega: cd?.vega, iv: cd?.iv };
+    const tick = useOptionsStreamStore.getState().ticks[schwabSymbol];
+    return {
+      ...leg, id: nextLegId(), schwabSymbol,
+      bid: (tick && tick.bid != null) ? tick.bid : cd?.bid,
+      ask: (tick && tick.ask != null) ? tick.ask : cd?.ask,
+      delta: (tick && tick.delta != null) ? tick.delta : cd?.delta,
+      gamma: (tick && tick.gamma != null) ? tick.gamma : cd?.gamma,
+      theta: (tick && tick.theta != null) ? tick.theta : cd?.theta,
+      vega: (tick && tick.vega != null) ? tick.vega : cd?.vega,
+      iv: (tick && tick.iv != null) ? tick.iv : cd?.iv,
+    };
   }, [buildSchwabSymbol, chainData]);
 
   const applyTemplate = useCallback((tmpl: StrategyTemplate) => {
@@ -579,10 +605,15 @@ export function StrategyBuilder({
           updates.expiration ?? l.expiration
         );
         const cd = chainData?.get(schwabSymbol);
+        const tick = useOptionsStreamStore.getState().ticks[schwabSymbol];
         updated.schwabSymbol = schwabSymbol;
-        updated.bid = cd?.bid; updated.ask = cd?.ask;
-        updated.delta = cd?.delta; updated.gamma = cd?.gamma;
-        updated.theta = cd?.theta; updated.vega = cd?.vega; updated.iv = cd?.iv;
+        updated.bid = (tick && tick.bid != null) ? tick.bid : cd?.bid;
+        updated.ask = (tick && tick.ask != null) ? tick.ask : cd?.ask;
+        updated.delta = (tick && tick.delta != null) ? tick.delta : cd?.delta;
+        updated.gamma = (tick && tick.gamma != null) ? tick.gamma : cd?.gamma;
+        updated.theta = (tick && tick.theta != null) ? tick.theta : cd?.theta;
+        updated.vega = (tick && tick.vega != null) ? tick.vega : cd?.vega;
+        updated.iv = (tick && tick.iv != null) ? tick.iv : cd?.iv;
       }
       return updated;
     }));
@@ -621,19 +652,22 @@ export function StrategyBuilder({
 
   const spreadPrices = useMemo(() => {
     if (legs.length === 0) return null;
-    let spreadBid = 0, spreadAsk = 0, hasPrices = true;
+    let spreadBid = 0, spreadAsk = 0;
     for (const leg of legs) {
       const isSell = leg.direction.startsWith("SELL");
-      if (leg.bid == null || leg.ask == null) { hasPrices = false; break; }
-      if (isSell) { spreadBid += leg.bid; spreadAsk += leg.ask; }
-      else { spreadBid -= leg.ask; spreadAsk -= leg.bid; }
+      const b = leg.bid ?? 0;
+      const a = leg.ask ?? 0;
+      if (isSell) { spreadBid += b; spreadAsk += a; }
+      else { spreadBid -= a; spreadAsk -= b; }
     }
-    if (!hasPrices) return null;
     if (isCredit) {
       spreadBid = Math.abs(spreadBid); spreadAsk = Math.abs(spreadAsk);
       if (spreadBid > spreadAsk) { const t = spreadBid; spreadBid = spreadAsk; spreadAsk = t; }
     }
-    return { spreadBid, spreadMid: (spreadBid + spreadAsk) / 2, spreadAsk };
+    const spreadMid = (spreadBid + spreadAsk) / 2;
+    if (spreadMid <= 0 && !isCredit) return { spreadBid: 0.01, spreadMid: 0.01, spreadAsk: 0.01 };
+    if (spreadMid <= 0 && isCredit) return { spreadBid: 0.01, spreadMid: 0.01, spreadAsk: 0.01 };
+    return { spreadBid, spreadMid, spreadAsk };
   }, [legs, isCredit]);
 
   useEffect(() => {

@@ -4,7 +4,7 @@ import { ConnectBrokerPrompt } from "./ConnectBrokerPrompt";
 import { useOptionsSettingsStore } from "@/lib/options-store";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { useOptionsColumnsStore, COLUMN_REGISTRY, type ColumnDef } from "@/lib/options-columns-store";
-import { useOptionTick } from "@/lib/options-stream-store";
+import { useOptionTick, useOptionsStreamStore } from "@/lib/options-stream-store";
 import { useUICustomizationStore, ACCENT_COLORS } from "@/lib/ui-customization-store";
 
 import { useGetQuote, useGetOptionChain } from "@workspace/api-client-react";
@@ -1212,6 +1212,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
     const allStrikes = new Set<number>();
     const expLabels: { label: string; value: string }[] = [];
     const cMap = new Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number }>();
+    const streamTicks = useOptionsStreamStore.getState().ticks;
     for (const g of groups) {
       if (!expLabels.some(e => e.value === g.expiration)) {
         expLabels.push({ label: `${g.dateLabel} (${Math.round(g.dte)}d)`, value: g.expiration });
@@ -1220,14 +1221,36 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
         allStrikes.add(row.strike);
         const mapContract = (c: Contract | null) => {
           if (!c?.streamKey) return;
-          cMap.set(c.streamKey, { bid: c.bid, ask: c.ask, delta: c.delta, gamma: c.gamma, theta: c.theta, vega: c.vega, iv: c.iv });
+          const tick = streamTicks[c.streamKey];
+          cMap.set(c.streamKey, {
+            bid: (tick && tick.bid != null) ? tick.bid : c.bid,
+            ask: (tick && tick.ask != null) ? tick.ask : c.ask,
+            delta: (tick && tick.delta != null) ? tick.delta : c.delta,
+            gamma: (tick && tick.gamma != null) ? tick.gamma : c.gamma,
+            theta: (tick && tick.theta != null) ? tick.theta : c.theta,
+            vega: (tick && tick.vega != null) ? tick.vega : c.vega,
+            iv: (tick && tick.iv != null) ? tick.iv : c.iv,
+          });
         };
         mapContract(row.call);
         mapContract(row.put);
       }
     }
     const preSelected = selectedLegs.size > 0
-      ? [...selectedLegs.values()].map(l => ({ contract: l.contract, type: l.type, side: l.side }))
+      ? [...selectedLegs.values()].map(l => {
+          const tick = l.contract.streamKey ? streamTicks[l.contract.streamKey] : undefined;
+          const merged: Contract = { ...l.contract };
+          if (tick) {
+            if (tick.bid != null) merged.bid = tick.bid;
+            if (tick.ask != null) merged.ask = tick.ask;
+            if (tick.delta != null) merged.delta = tick.delta;
+            if (tick.gamma != null) merged.gamma = tick.gamma;
+            if (tick.theta != null) merged.theta = tick.theta;
+            if (tick.vega != null) merged.vega = tick.vega;
+            if (tick.iv != null) merged.iv = tick.iv;
+          }
+          return { contract: merged, type: l.type, side: l.side };
+        })
       : undefined;
     onOpenStrategyBuilder([...allStrikes].sort((a, b) => a - b), expLabels, cMap, preSelected);
     setSelectedLegs(new Map());
