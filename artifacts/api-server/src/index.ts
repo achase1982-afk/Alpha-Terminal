@@ -12,6 +12,8 @@ import { initDeltaEngine } from "./lib/deltaEngine";
 import { runDailyScreenRefresh } from "./routes/scanner";
 import { initAiLabOrchestrator } from "./lib/aiLabOrchestrator";
 import { startUniverseRebuildSchedule } from "./lib/universeBuilder";
+import { backfillEquityHistory } from "./lib/dailySnapshot";
+import { LIQUID_CORE_SYMBOLS } from "./data/liquidCore130";
 
 const rawPort = process.env["PORT"];
 
@@ -97,12 +99,25 @@ async function boot() {
     "$TICK", "$TICKI",
   ];
 
+  let backfillTriggered = false;
+  function triggerLiquidCoreBackfill() {
+    if (backfillTriggered) return;
+    backfillTriggered = true;
+    const symbols = [...LIQUID_CORE_SYMBOLS];
+    logger.info({ count: symbols.length }, "Auto-triggering Liquid Core 130 equity backfill");
+    backfillEquityHistory(symbols, 60).catch((err) => {
+      backfillTriggered = false;
+      logger.warn({ err }, "Liquid Core backfill failed — will retry on next token refresh");
+    });
+  }
+
   if (hasValidTokens("trader")) {
     logger.info("Schwab tokens available — starting Schwab streamer with futures + indices");
     startSchwabStreamer().then(() => {
       addFuturesSymbols([...SCHWAB_FUTURES_SYMS, ...SCHWAB_FUTURES_INDEX_SYMS]);
       if (SCHWAB_EQUITY_SYMS.length > 0) addSchwabSymbols(SCHWAB_EQUITY_SYMS);
       initSyntheticDxy();
+      triggerLiquidCoreBackfill();
     }).catch((err) => logger.warn({ err }, "Schwab streamer start failed"));
   } else {
     logger.info("Schwab tokens not yet available — streamer will start on token refresh");
