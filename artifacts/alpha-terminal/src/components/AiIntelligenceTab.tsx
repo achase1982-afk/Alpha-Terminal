@@ -2736,11 +2736,15 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
             subscribeEquitySymbols={subscribeEquitySymbols ?? (() => {})}
             onNavigateToSymbol={onNavigateToMarkets ?? (() => {})}
             onSendToStrategist={(sym: string, candidate: DetCandidate) => {
+              console.log("[SendToStrategist] firing for", sym);
               useTerminalStore.getState().setSymbol(sym);
               setStrategistMode("options");
               skipAutoFireRef.current = true;
               onSubTabChange("strategist");
-              handleRunDetStrategist(sym, candidate);
+              setTimeout(() => {
+                console.log("[SendToStrategist] running det strategist for", sym);
+                handleRunDetStrategist(sym, candidate);
+              }, 100);
             }}
           />
         </div>
