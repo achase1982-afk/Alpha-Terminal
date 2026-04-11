@@ -333,6 +333,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
   const [priceLocked, setPriceLocked] = useState(false);
   const [posEffect, setPosEffect] = useState<PositionEffect>("AUTO");
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [riskCollapsed, setRiskCollapsed] = useState(true);
   const [instruction, setInstruction] = useState<"NONE" | "ALL_OR_NONE" | "DO_NOT_REDUCE">("NONE");
   const [exchange, setExchange] = useState<"BEST" | "NYSE" | "NASDAQ" | "ARCA" | "BATS">("BEST");
   const [taxLotMethod, setTaxLotMethod] = useState<"DEFAULT" | "FIFO" | "LIFO" | "HIGH_COST" | "LOW_COST" | "SPEC_ID">("DEFAULT");
@@ -1324,12 +1325,12 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
               </>
             )}
 
-            {/* RISK OVERVIEW — matching StrategyBuilder collapsible format */}
+            {/* RISK OVERVIEW — separate collapsible section (independent of Advanced Settings) */}
             {isMultiLeg && strategyLegs ? (
               <div style={{ background: `linear-gradient(145deg, #14161a, #080a0f)`, borderRadius: 10, border: `1px solid ${BORDER}`, padding: "6px 10px" }}>
                 <button
                   type="button"
-                  onClick={() => setAdvancedOpen(v => !v)}
+                  onClick={() => setRiskCollapsed(v => !v)}
                   className="flex w-full items-center justify-between text-[13px]"
                   style={{ color: TEXT, background: "none", border: "none", cursor: "pointer", padding: 0 }}
                 >
@@ -1343,7 +1344,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                         const mr = strategyIsCredit ? (w - netP) * 100 * quantity : netP * 100 * quantity;
                         const bp = balances.buyingPower ?? accountSize ?? 0;
                         const bpAfter = Math.max(0, bp - Math.abs(estimatedCost ?? 0));
-                        return `Loss ${fmtCurrency(mr > 0 ? mr : 0)} · Mgn ${fmtCurrency(bpAfter)}`;
+                        return `Loss ${fmtCurrency(mr > 0 ? mr : 0)} · POP — · Mgn ${fmtCurrency(bpAfter)}`;
                       })()}
                     </span>
                     {preTradeEnabled && riskChecks.length > 0 && (
@@ -1356,8 +1357,92 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                         {overallRisk === "GREEN" ? "PASS" : overallRisk === "YELLOW" ? "WARN" : "FAIL"}
                       </span>
                     )}
+                    <span className="text-[10px]" style={{ color: MUTED }}>{riskCollapsed ? "▾" : "▴"}</span>
                   </div>
                 </button>
+
+                {!riskCollapsed && (
+                  <div className="mt-1.5 space-y-1.5">
+                    {(() => {
+                      const netP = parseFloat(limitPrice) || strategyNetPrice || 0;
+                      const stks = strategyLegs.map(l => l.strike).sort((a, b) => a - b);
+                      const w = stks.length >= 2 ? stks[stks.length - 1] - stks[0] : 0;
+                      const mr = strategyIsCredit ? (w - netP) * 100 * quantity : netP * 100 * quantity;
+                      const maxProfit = strategyIsCredit ? netP * 100 * quantity : (w - netP) * 100 * quantity;
+                      const bePrice = strategyIsCredit
+                        ? (strategyLegs[0]?.optionType === "PUT" ? stks[stks.length - 1] - netP : stks[0] + netP)
+                        : (strategyLegs[0]?.optionType === "CALL" ? stks[0] + netP : stks[stks.length - 1] - netP);
+
+                      const lo = stks[0] - w * 0.8;
+                      const hi = stks[stks.length - 1] + w * 0.8;
+                      const range = hi - lo || 1;
+                      const steps = 60;
+                      const pnlAtPrice = (price: number) => {
+                        let pnl = 0;
+                        for (const leg of strategyLegs) {
+                          const isBuy = leg.instruction.startsWith("BUY");
+                          const mid = (leg.bid != null && leg.ask != null) ? (leg.bid + leg.ask) / 2 : 0;
+                          const intrinsic = leg.optionType === "CALL"
+                            ? Math.max(0, price - leg.strike)
+                            : Math.max(0, leg.strike - price);
+                          const legPnl = (intrinsic - mid) * leg.quantity * 100;
+                          pnl += isBuy ? legPnl : -legPnl;
+                        }
+                        return pnl;
+                      };
+                      const pts: { x: number; y: number }[] = [];
+                      for (let i = 0; i <= steps; i++) {
+                        const price = lo + (range * i) / steps;
+                        pts.push({ x: price, y: pnlAtPrice(price) });
+                      }
+                      const minY = Math.min(...pts.map(p => p.y));
+                      const maxY = Math.max(...pts.map(p => p.y));
+                      const yRange = maxY - minY || 1;
+                      const toSvgX = (price: number) => ((price - lo) / range) * 100;
+                      const toSvgY = (pnl: number) => 100 - ((pnl - minY) / yRange) * 100;
+                      const zeroY = toSvgY(0);
+                      const pathD = pts.map((p, i) => `${i === 0 ? "M" : "L"}${toSvgX(p.x).toFixed(2)},${toSvgY(p.y).toFixed(2)}`).join(" ");
+
+                      return (
+                        <>
+                          <div className="relative h-20 overflow-hidden" style={{ borderRadius: 8, border: `1px dashed ${BORDER}`, background: `linear-gradient(to bottom, #1d222e, #090b10)` }}>
+                            <div className="absolute inset-1.5" style={{ borderBottom: `1px solid ${TEXT}60`, borderLeft: `1px solid ${TEXT}60` }} />
+                            <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-1.5" style={{ width: "calc(100% - 12px)", height: "calc(100% - 12px)" }}>
+                              <defs>
+                                <clipPath id="otAbove"><rect x="0" y="0" width="100" height={zeroY} /></clipPath>
+                                <clipPath id="otBelow"><rect x="0" y={zeroY} width="100" height={100 - zeroY} /></clipPath>
+                              </defs>
+                              <line x1="0" y1={zeroY} x2="100" y2={zeroY} stroke={TEXT} strokeWidth="0.3" strokeDasharray="2,2" />
+                              <path d={pathD} fill="none" stroke={UP} strokeWidth="1" clipPath="url(#otAbove)" />
+                              <path d={pathD} fill="none" stroke={DOWN} strokeWidth="1" clipPath="url(#otBelow)" />
+                              <path d={`${pathD} L100,${zeroY} L0,${zeroY} Z`} fill={`${UP}18`} clipPath="url(#otAbove)" />
+                              <path d={`${pathD} L100,${zeroY} L0,${zeroY} Z`} fill={`${DOWN}18`} clipPath="url(#otBelow)" />
+                            </svg>
+                            <span className="absolute bottom-1 right-2 text-[9px]" style={{ color: MUTED }}>P/L at exp</span>
+                          </div>
+
+                          <div className="text-[11px]" style={{ color: TEXT }}>
+                            Max profit if price stays between strikes. Risk: {fmtCurrency(mr > 0 ? mr : 0)}. BE: {fmtCurrency(bePrice)}.
+                          </div>
+
+                          {preTradeEnabled && riskChecks.length > 0 && (
+                            <div className="space-y-0.5">
+                              {riskChecks.map((rc, i) => (
+                                <div key={i} className="flex items-start gap-1.5 text-[11px]">
+                                  <span style={{ color: levelColor(rc.level) }}>●</span>
+                                  <div>
+                                    <span style={{ color: WHITE, fontWeight: 500 }}>{rc.label}</span>{" "}
+                                    <span style={{ color: TEXT }}>{rc.detail}</span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
+                )}
               </div>
             ) : (
               <div className="flex items-center justify-between px-2 py-1.5" style={{ background: CARD_GRAD, borderRadius: R_CARD, border: `1px solid ${BORDER}` }}>
