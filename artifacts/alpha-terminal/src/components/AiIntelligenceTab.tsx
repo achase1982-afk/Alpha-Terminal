@@ -2732,6 +2732,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
             onNavigateToSymbol={onNavigateToMarkets ?? (() => {})}
             onSendToStrategist={(sym: string, candidate: DetCandidate) => {
               useTerminalStore.getState().setSymbol(sym);
+              setStrategistMode("options");
               onSubTabChange("strategist");
               handleRunDetStrategist(sym, candidate);
             }}
