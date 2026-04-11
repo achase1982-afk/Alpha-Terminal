@@ -2081,7 +2081,6 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
   const [detThinking, setDetThinking] = useState<string[]>([]);
   const detRunRef = useRef(0);
   const scannerCandidateCache = useRef<Record<string, DetCandidate>>({});
-  const prevSubTabRef = useRef<AiSubTab>(subTab);
 
   useEffect(() => {
     if (prevSymbolRef.current !== symbol) {
@@ -2375,28 +2374,6 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
     }
   }, [quote, accessToken, symbol, setSymbol, setStrategistResult, setStrategistCache]);
 
-  const prevSubTabForAutoRef = useRef<AiSubTab | null>(null);
-  const skipAutoFireRef = useRef(false);
-  useEffect(() => {
-    const prev = prevSubTabForAutoRef.current;
-    prevSubTabForAutoRef.current = subTab;
-    if (skipAutoFireRef.current) {
-      skipAutoFireRef.current = false;
-      return;
-    }
-    if (
-      subTab === "strategist" &&
-      prev !== "strategist" &&
-      symbol &&
-      !isStreaming &&
-      !isStrategizing &&
-      !isDetRunning &&
-      !strategistCache
-    ) {
-      handleRunStrategist();
-    }
-  }, [subTab, symbol]);
-
   const handleRunDetStrategist = useCallback(async (sym: string, candidate?: DetCandidate) => {
     const runId = ++detRunRef.current;
     const upperSym = sym.toUpperCase();
@@ -2563,23 +2540,6 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
     handleRunDetStrategist(ticker);
   }, [handleRunDetStrategist]);
 
-  // Auto-fire analysis when user navigates to the Strategist tab and no result/cache exists yet.
-  // Skip if a det run is already in progress (e.g., Scanner's onSendToStrategist already fired one).
-  const handleRunDetRef = useRef(handleRunDetStrategist);
-  handleRunDetRef.current = handleRunDetStrategist;
-  useEffect(() => {
-    const prevTab = prevSubTabRef.current;
-    prevSubTabRef.current = subTab;
-    if (
-      subTab === "strategist" && prevTab !== "strategist" &&
-      strategistMode === "options" &&
-      symbol && !strategistCache &&
-      !isDetRunning && !isDetStreaming && !isStrategizing && !isStreaming
-    ) {
-      handleRunDetRef.current(symbol);
-    }
-  }, [subTab, symbol, strategistCache, isDetRunning, isDetStreaming, isStrategizing, isStreaming, strategistMode]);
-
   const isPendingAny = isStreaming || isStrategizing || isDetRunning || isDetStreaming;
 
   const currentResult = activeResult === "strategist" ? strategistResult : null;
@@ -2736,13 +2696,10 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
             subscribeEquitySymbols={subscribeEquitySymbols ?? (() => {})}
             onNavigateToSymbol={onNavigateToMarkets ?? (() => {})}
             onSendToStrategist={(sym: string, candidate: DetCandidate) => {
-              console.log("[SendToStrategist] firing for", sym);
               useTerminalStore.getState().setSymbol(sym);
               setStrategistMode("options");
-              skipAutoFireRef.current = true;
               onSubTabChange("strategist");
               setTimeout(() => {
-                console.log("[SendToStrategist] running det strategist for", sym);
                 handleRunDetStrategist(sym, candidate);
               }, 100);
             }}
