@@ -2701,7 +2701,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
               onSubTabChange("strategist");
               setTimeout(() => {
                 handleRunDetStrategist(sym, candidate);
-              }, 100);
+              }, 500);
             }}
           />
         </div>
