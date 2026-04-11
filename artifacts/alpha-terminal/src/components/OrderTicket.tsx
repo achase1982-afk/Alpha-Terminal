@@ -511,13 +511,12 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
       const parsed = parseFloat(limitPrice || "0");
       const isTrueMultiLeg = strategyLegs.length >= 2;
       if (isTrueMultiLeg) {
-        // When closing a credit spread you buy it back (debit); closing a debit spread you sell it back (credit)
-        const effectiveIsCredit = isCloseOrder ? !strategyIsCredit : strategyIsCredit;
         // SEAMLESS session does not allow MARKET orders — force a limit price using spread mid if needed
         const seamlessFallbackPrice = isSeamless && parsed <= 0 && spreadPrices ? spreadPrices.spreadMid : null;
         const resolvedPrice = parsed > 0 ? parsed : (seamlessFallbackPrice ?? 0);
         const useMarket = !isSeamless && (orderType === "MARKET" || resolvedPrice <= 0);
-        const resolvedType = useMarket ? "MARKET" : (effectiveIsCredit ? "NET_CREDIT" : "NET_DEBIT");
+        // Schwab only accepts price field on LIMIT orders — use LIMIT when we have a price, MARKET otherwise
+        const resolvedType = useMarket ? "MARKET" : "LIMIT";
         const o: Record<string, unknown> = {
           orderType: resolvedType,
           session,
