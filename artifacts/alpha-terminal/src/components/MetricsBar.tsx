@@ -206,11 +206,11 @@ export function VolumeBar() {
       className="w-full grid grid-cols-3 px-3 sm:px-6 border-b border-card-border py-1.5"
       style={{ background: HEADER_BG }}
     >
-      <div className="flex flex-col items-start gap-0.5">
+      <div className="flex flex-col items-center gap-0.5">
         <span className="text-[9px] tracking-[0.12em] text-zinc-500 font-semibold leading-none">Volume</span>
         <span className="font-mono tabular-nums text-zinc-300 text-[13px] font-medium leading-none">{fmtVol(vol)}</span>
       </div>
-      <div className="flex flex-col items-center gap-0.5 text-center">
+      <div className="flex flex-col items-center gap-0.5">
         <span className="text-[9px] tracking-[0.12em] text-zinc-500 font-semibold leading-none">Day Range</span>
         <span className="font-mono tabular-nums text-[13px] font-medium leading-none whitespace-nowrap">
           <span style={{ color: DOWN_COLOR }}>${fmtPrice(dayLow)}</span>
@@ -218,7 +218,7 @@ export function VolumeBar() {
           <span style={{ color: UP_COLOR }}>${fmtPrice(dayHigh)}</span>
         </span>
       </div>
-      <div className="flex flex-col items-end gap-0.5">
+      <div className="flex flex-col items-center gap-0.5">
         <span className="text-[9px] tracking-[0.12em] text-zinc-500 font-semibold leading-none">52W Range</span>
         <span className="font-mono tabular-nums text-zinc-300 text-[13px] font-medium leading-none">
           {wk52Low != null ? `$${fmtPrice(wk52Low)} — $${fmtPrice(wk52High)}` : "—"}
@@ -488,19 +488,19 @@ export function MetricsBar({ compact = false, onOpenTearSheet, onTrade }: Metric
 
       </div>
 
-      <div className="hidden sm:flex items-center gap-6 mt-2 pt-2 border-t border-zinc-800/60">
-        <div className="flex flex-col shrink-0 gap-0.5">
+      <div className="hidden sm:flex items-center justify-center gap-6 mt-2 pt-2 border-t border-zinc-800/60">
+        <div className="flex flex-col items-center shrink-0 gap-0.5">
           <span className="text-[10px] tracking-[0.1em] text-zinc-500 font-semibold">Volume</span>
-          <span className={`font-mono tabular-nums text-zinc-300 text-sm font-medium ${opacityCls} ${transitionCls}`}>
+          <span className={`font-mono tabular-nums text-zinc-300 text-[13px] font-medium ${opacityCls} ${transitionCls}`}>
             {fmtVol(quote?.volume ?? null)}
           </span>
         </div>
 
         <div className="w-px h-8 bg-zinc-800 shrink-0 hidden md:block" />
 
-        <div className="hidden md:flex flex-col shrink-0 gap-0.5">
+        <div className="hidden md:flex flex-col items-center shrink-0 gap-0.5">
           <span className="text-[10px] tracking-[0.1em] text-zinc-500 font-semibold">Day Range</span>
-          <span className={`font-mono tabular-nums text-sm font-medium ${opacityCls} ${transitionCls}`}>
+          <span className={`font-mono tabular-nums text-[13px] font-medium ${opacityCls} ${transitionCls}`}>
             <span style={{ color: DOWN_COLOR }}>${fmtPrice(quote?.low ?? null)}</span>
             <span className="text-zinc-600 mx-1">—</span>
             <span style={{ color: UP_COLOR }}>${fmtPrice(quote?.high ?? null)}</span>
@@ -509,9 +509,9 @@ export function MetricsBar({ compact = false, onOpenTearSheet, onTrade }: Metric
 
         <div className="w-px h-8 bg-zinc-800 shrink-0 hidden lg:block" />
 
-        <div className="hidden lg:flex flex-col shrink-0 gap-0.5">
+        <div className="hidden lg:flex flex-col items-center shrink-0 gap-0.5">
           <span className="text-[10px] tracking-[0.1em] text-zinc-500 font-semibold">52W Range</span>
-          <span className={`font-mono tabular-nums text-zinc-300 text-sm font-medium ${opacityCls} ${transitionCls}`}>
+          <span className={`font-mono tabular-nums text-zinc-300 text-[13px] font-medium ${opacityCls} ${transitionCls}`}>
             {quote?.fiftyTwoWeekLow != null
               ? `$${fmtPrice(quote.fiftyTwoWeekLow)} — $${fmtPrice(quote.fiftyTwoWeekHigh)}`
               : "—"}
