@@ -504,15 +504,23 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
   }, [quantity, needsLimit, limitPrice, needsStop, stopPrice, needsTrail, trailOffset, accountHash, isMultiLeg]);
 
   const buildSchwabOrder = useCallback(() => {
+    const isSeamless = extendedHours || duration === "SEAMLESS" || duration === "GOOD_TILL_CANCEL_EXT";
+    const session = isSeamless ? "SEAMLESS" : "NORMAL";
+
     if (isMultiLeg && strategyLegs) {
       const parsed = parseFloat(limitPrice || "0");
       const isTrueMultiLeg = strategyLegs.length >= 2;
       if (isTrueMultiLeg) {
-        const useMarket = orderType === "MARKET" || parsed <= 0;
-        const resolvedType = useMarket ? "MARKET" : (strategyIsCredit ? "NET_CREDIT" : "NET_DEBIT");
+        // When closing a credit spread you buy it back (debit); closing a debit spread you sell it back (credit)
+        const effectiveIsCredit = isCloseOrder ? !strategyIsCredit : strategyIsCredit;
+        // SEAMLESS session does not allow MARKET orders — force a limit price using spread mid if needed
+        const seamlessFallbackPrice = isSeamless && parsed <= 0 && spreadPrices ? spreadPrices.spreadMid : null;
+        const resolvedPrice = parsed > 0 ? parsed : (seamlessFallbackPrice ?? 0);
+        const useMarket = !isSeamless && (orderType === "MARKET" || resolvedPrice <= 0);
+        const resolvedType = useMarket ? "MARKET" : (effectiveIsCredit ? "NET_CREDIT" : "NET_DEBIT");
         const o: Record<string, unknown> = {
           orderType: resolvedType,
-          session: extendedHours || duration === "SEAMLESS" || duration === "GOOD_TILL_CANCEL_EXT" ? "SEAMLESS" : "NORMAL",
+          session,
           duration,
           complexOrderStrategyType: "NONE",
           orderStrategyType: "SINGLE",
@@ -522,14 +530,16 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
             instrument: { symbol: leg.schwabSymbol, assetType: "OPTION" },
           })),
         };
-        if (!useMarket && parsed > 0) o.price = parsed;
+        if (!useMarket && resolvedPrice > 0) o.price = resolvedPrice;
         return o;
       }
       const singleLeg = strategyLegs[0];
-      const singleUseMarket = orderType === "MARKET" || parsed <= 0;
+      const seamlessFallbackPriceSingle = isSeamless && parsed <= 0 && spreadPrices ? spreadPrices.spreadMid : null;
+      const resolvedSinglePrice = parsed > 0 ? parsed : (seamlessFallbackPriceSingle ?? 0);
+      const singleUseMarket = !isSeamless && (orderType === "MARKET" || resolvedSinglePrice <= 0);
       const o: Record<string, unknown> = {
         orderType: singleUseMarket ? "MARKET" : "LIMIT",
-        session: extendedHours || duration === "SEAMLESS" || duration === "GOOD_TILL_CANCEL_EXT" ? "SEAMLESS" : "NORMAL",
+        session,
         duration,
         orderStrategyType: "SINGLE",
         orderLegCollection: [{
@@ -538,12 +548,21 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
           instrument: { symbol: singleLeg.schwabSymbol, assetType: "OPTION" },
         }],
       };
-      if (!singleUseMarket && parsed > 0) o.price = parsed;
+      if (!singleUseMarket && resolvedSinglePrice > 0) o.price = resolvedSinglePrice;
       return o;
     }
+
+    // Single-leg: SEAMLESS session requires LIMIT — fall back to mid price if MARKET selected
+    const singleMid = quote?.bid != null && quote?.ask != null ? (quote.bid + quote.ask) / 2 : (quote?.ask ?? quote?.last ?? 0);
+    const resolvedOrderType = isSeamless && orderType === "MARKET" ? "LIMIT" : orderType;
+    const resolvedLimitPrice = isSeamless && orderType === "MARKET" && !limitPrice
+      ? singleMid.toFixed(2)
+      : limitPrice;
+    const resolvedNeedsLimit = resolvedOrderType === "LIMIT" || needsLimit;
+
     const order: Record<string, unknown> = {
-      orderType,
-      session: extendedHours || duration === "SEAMLESS" || duration === "GOOD_TILL_CANCEL_EXT" ? "SEAMLESS" : "NORMAL",
+      orderType: resolvedOrderType,
+      session,
       duration,
       orderStrategyType: "SINGLE",
       orderLegCollection: [{
@@ -552,7 +571,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
         instrument: { symbol: optionSymbol ?? symbol, assetType: isOption ? "OPTION" : "EQUITY" },
       }],
     };
-    if (needsLimit) order.price = parseFloat(limitPrice || "0");
+    if (resolvedNeedsLimit) order.price = parseFloat(resolvedLimitPrice || "0");
     if (needsStop) order.stopPrice = parseFloat(stopPrice || "0");
     if (needsTrail) {
       order.stopPriceLinkBasis = "LAST";
@@ -563,7 +582,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
     if (exchange !== "BEST") order.requestedDestination = exchange;
     if (taxLotMethod !== "DEFAULT") order.taxLotMethod = taxLotMethod;
     return order;
-  }, [orderType, extendedHours, duration, side, quantity, symbol, optionSymbol, isOption, isMultiLeg, strategyLegs, strategyIsCredit, optionInstruction, needsLimit, limitPrice, needsStop, stopPrice, needsTrail, trailOffset, instruction, exchange, taxLotMethod]);
+  }, [orderType, extendedHours, duration, side, quantity, symbol, optionSymbol, isOption, isMultiLeg, strategyLegs, strategyIsCredit, isCloseOrder, optionInstruction, needsLimit, limitPrice, needsStop, stopPrice, needsTrail, trailOffset, instruction, exchange, taxLotMethod, spreadPrices, quote]);
 
   const handleSubmit = useCallback(async () => {
     if (!accountHash) return;
