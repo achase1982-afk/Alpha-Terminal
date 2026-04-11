@@ -2376,9 +2376,14 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
   }, [quote, accessToken, symbol, setSymbol, setStrategistResult, setStrategistCache]);
 
   const prevSubTabForAutoRef = useRef<AiSubTab | null>(null);
+  const skipAutoFireRef = useRef(false);
   useEffect(() => {
     const prev = prevSubTabForAutoRef.current;
     prevSubTabForAutoRef.current = subTab;
+    if (skipAutoFireRef.current) {
+      skipAutoFireRef.current = false;
+      return;
+    }
     if (
       subTab === "strategist" &&
       prev !== "strategist" &&
@@ -2733,6 +2738,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
             onSendToStrategist={(sym: string, candidate: DetCandidate) => {
               useTerminalStore.getState().setSymbol(sym);
               setStrategistMode("options");
+              skipAutoFireRef.current = true;
               onSubTabChange("strategist");
               handleRunDetStrategist(sym, candidate);
             }}
