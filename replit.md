@@ -21,6 +21,9 @@ The UI features an institutional gold and pure black Bloomberg-style aesthetic w
 
 The project is a pnpm monorepo using TypeScript. The backend employs Express 5, Zod for validation, and PostgreSQL with Drizzle ORM. Real-time market data from IB Gateway is streamed via WebSocket and broadcast to the frontend, while portfolio data is polled from the Schwab REST API. Frontend state is managed with Zustand, and `lightweight-charts` is used for charting. Authentication is handled by Clerk and Schwab OAuth 2.0. AI integration uses `claude-sonnet` and `claude-opus` for market pulse narratives, technical analysis, and options strategy generation, with user-switchable models and a robust scoring system for market sentiment.
 
+### Quote Data Architecture (52W Range)
+The `/api/market/quote` route has three return paths: (1) Schwab streamer cache, (2) IB cache, (3) Schwab REST fallback. The streamer and IB caches provide real-time price data but NOT 52-week range. A dedicated `fiftyTwoWeekCache` (Map, 500-entry max, 1hr TTL) stores 52W high/low from Schwab REST. On first request via cached paths, a background Schwab REST fetch (`fetch52WBackground`) populates the 52W cache with a 5s abort timeout. Subsequent requests serve 52W data from cache. The `pickNum()` helper searches `quote`, `reference`, and `fundamental` sub-objects from Schwab responses.
+
 ## Feature Specifications
 
 Key features include SEC EDGAR integration, a dynamic Market Calendar, a MacroBar, an Institutional Tear Sheet, Multi-Watchlist support, and an Institutional Dashboard. The platform offers an AI Strategy Endpoint with confidence levels, a Pre-Trade Risk Manager performing 11 deterministic checks, and Conviction Sizing for position adjustments. Security includes Session Timeout and Biometric Authentication. Synthetic DXY is derived from /6E futures.

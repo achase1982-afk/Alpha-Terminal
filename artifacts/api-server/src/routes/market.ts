@@ -80,6 +80,69 @@ function isFutures(symbol: string): boolean {
   return symbol.trim().startsWith("/");
 }
 
+const fiftyTwoWeekCache = new Map<string, { high: number; low: number; ts: number }>();
+const FIFTY_TWO_WEEK_TTL = 3600_000;
+const FIFTY_TWO_WEEK_MAX = 500;
+
+function getCached52W(symbol: string): { high: number | undefined; low: number | undefined } {
+  const entry = fiftyTwoWeekCache.get(symbol);
+  if (!entry) return { high: undefined, low: undefined };
+  if (Date.now() - entry.ts > FIFTY_TWO_WEEK_TTL) {
+    fiftyTwoWeekCache.delete(symbol);
+    return { high: undefined, low: undefined };
+  }
+  return { high: entry.high, low: entry.low };
+}
+
+function setCached52W(symbol: string, high: number | undefined, low: number | undefined) {
+  if (high !== undefined && low !== undefined) {
+    if (fiftyTwoWeekCache.size >= FIFTY_TWO_WEEK_MAX) {
+      const oldest = fiftyTwoWeekCache.keys().next().value;
+      if (oldest) fiftyTwoWeekCache.delete(oldest);
+    }
+    fiftyTwoWeekCache.set(symbol, { high, low, ts: Date.now() });
+  }
+}
+
+const pending52WFetches = new Set<string>();
+const W52_KEYS_HIGH = ["52WeekHigh", "highPrice52Week", "52WkHigh", "fiftyTwoWeekHigh"];
+const W52_KEYS_LOW  = ["52WeekLow",  "lowPrice52Week",  "52WkLow",  "fiftyTwoWeekLow"];
+
+function pickFirst(src: Record<string, any>, keys: string[]): number | undefined {
+  for (const k of keys) {
+    const v = src[k];
+    if (typeof v === "number" && isFinite(v) && !isNaN(v)) return v;
+  }
+  return undefined;
+}
+
+async function fetch52WBackground(displaySymbol: string, apiSymbol: string, accessToken: string, log: any) {
+  if (pending52WFetches.has(displaySymbol)) return;
+  pending52WFetches.add(displaySymbol);
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), 5000);
+  try {
+    const resp = await fetch(`${SCHWAB_API_BASE}/quotes?symbols=${encodeURIComponent(apiSymbol)}&fields=quote`, {
+      headers: { "Authorization": `Bearer ${accessToken}` },
+      signal: ac.signal,
+    });
+    if (!resp.ok) return;
+    const json = await resp.json() as Record<string, any>;
+    const entry = json[apiSymbol] ?? json[displaySymbol] ?? Object.values(json)[0];
+    const q = entry?.quote ?? entry;
+    if (!q) return;
+    const high = pickFirst(q, W52_KEYS_HIGH);
+    const low  = pickFirst(q, W52_KEYS_LOW);
+    if (high !== undefined && low !== undefined) {
+      setCached52W(displaySymbol, high, low);
+      log.info({ symbol: displaySymbol, high, low }, "52W cache populated from background fetch");
+    }
+  } catch {
+  } finally {
+    clearTimeout(timer);
+    pending52WFetches.delete(displaySymbol);
+  }
+}
 
 router.get("/quote", async (req, res) => {
   const symbol = req.query["symbol"] as string;
@@ -95,6 +158,10 @@ router.get("/quote", async (req, res) => {
   const schwabCached = getQuoteBySymbol(apiSymbol);
   if (schwabCached && schwabCached.last !== null) {
     const cachedDesc = apiSymbol === "$DXY" ? "Dollar Index (Synthetic)" : (isIBConnected() ? getIBCompanyName(displaySymbol) ?? undefined : undefined);
+    const w52 = getCached52W(displaySymbol);
+    if (w52.high === undefined && w52.low === undefined && accessToken) {
+      void fetch52WBackground(displaySymbol, apiSymbol, accessToken, req.log);
+    }
     const data = GetQuoteResponse.parse({
       symbol: displaySymbol,
       description: cachedDesc,
@@ -108,6 +175,8 @@ router.get("/quote", async (req, res) => {
       low: schwabCached.low ?? undefined,
       bidSize: schwabCached.bidSize ?? undefined,
       askSize: schwabCached.askSize ?? undefined,
+      fiftyTwoWeekHigh: w52.high,
+      fiftyTwoWeekLow: w52.low,
     });
     return res.json(data);
   }
@@ -125,6 +194,10 @@ router.get("/quote", async (req, res) => {
     }
     if (ibQuote && ibQuote.last !== null) {
       const ibDesc = getIBCompanyName(displaySymbol) ?? undefined;
+      const w52 = getCached52W(displaySymbol);
+      if (w52.high === undefined && w52.low === undefined && accessToken) {
+        void fetch52WBackground(displaySymbol, apiSymbol, accessToken, req.log);
+      }
       const data = GetQuoteResponse.parse({
         symbol: displaySymbol,
         description: ibDesc,
@@ -138,6 +211,8 @@ router.get("/quote", async (req, res) => {
         low: ibQuote.low ?? undefined,
         bidSize: ibQuote.bidSize ?? undefined,
         askSize: ibQuote.askSize ?? undefined,
+        fiftyTwoWeekHigh: w52.high,
+        fiftyTwoWeekLow: w52.low,
       });
       return res.json(data);
     }
@@ -201,14 +276,20 @@ router.get("/quote", async (req, res) => {
     if (fundamental) {
       req.log.info({ symbol: displaySymbol, fundamentalKeys: Object.keys(fundamental) }, "Schwab raw fundamental keys");
     }
+    if (reference) {
+      req.log.info({ symbol: displaySymbol, referenceKeys: Object.keys(reference) }, "Schwab raw reference keys");
+    }
 
     // ── Robust number extractor ───────────────────────────────────────────────
     // Returns the first key whose value is a finite, non-NaN number.
-    // Handles null, undefined, string "NaN", and zero correctly.
+    // Searches quote, then reference, then fundamental objects.
     function pickNum(...keys: string[]): number | undefined {
-      for (const k of keys) {
-        const v = quote![k];
-        if (typeof v === "number" && isFinite(v) && !isNaN(v)) return v;
+      for (const src of [quote, reference, fundamental]) {
+        if (!src) continue;
+        for (const k of keys) {
+          const v = src[k];
+          if (typeof v === "number" && isFinite(v) && !isNaN(v)) return v;
+        }
       }
       return undefined;
     }
@@ -270,6 +351,10 @@ router.get("/quote", async (req, res) => {
       "Quote parsed"
     );
 
+    const w52High = pickNum("52WeekHigh", "highPrice52Week", "52WkHigh", "fiftyTwoWeekHigh");
+    const w52Low  = pickNum("52WeekLow",  "lowPrice52Week",  "52WkLow",  "fiftyTwoWeekLow");
+    setCached52W(displaySymbol, w52High, w52Low);
+
     const data = GetQuoteResponse.parse({
       symbol: displaySymbol,
       description,
@@ -281,8 +366,8 @@ router.get("/quote", async (req, res) => {
       volume: pickNum("totalVolume", "volume"),
       high:   pickNum("highPrice",  "dayHigh",  "regularMarketHigh"),
       low:    pickNum("lowPrice",   "dayLow",   "regularMarketLow"),
-      fiftyTwoWeekHigh: pickNum("52WeekHigh", "highPrice52Week", "52WkHigh", "fiftyTwoWeekHigh"),
-      fiftyTwoWeekLow:  pickNum("52WeekLow",  "lowPrice52Week",  "52WkLow",  "fiftyTwoWeekLow"),
+      fiftyTwoWeekHigh: w52High,
+      fiftyTwoWeekLow:  w52Low,
       peRatio: (fundamental?.["peRatio"] as number) ?? undefined,
       nextEarningsDate: typeof fundamental?.["nextEarningsDate"] === "string" ? fundamental["nextEarningsDate"] : undefined,
     });
