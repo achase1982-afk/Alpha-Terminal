@@ -252,7 +252,7 @@ export const useTerminalStore = create<TerminalState>()(
         skepticModelProvider: 'google',
         skepticModelName: 'gemini-2.5-flash',
         skepticTemperature: 0,
-        enabled: false,
+        enabled: true,
       },
       setAiLabStrategistConfig: (key, value) =>
         set((state) => ({
@@ -387,7 +387,7 @@ export const useTerminalStore = create<TerminalState>()(
     }),
     {
       name: 'alpha-terminal-storage',
-      version: 12,
+      version: 13,
       migrate: (persistedState: unknown, version: number) => {
         const s = persistedState as Record<string, unknown>;
         if (version < 2) {
@@ -481,6 +481,12 @@ export const useTerminalStore = create<TerminalState>()(
           const cfg = s['aiLabStrategistConfig'] as Record<string, unknown> | undefined;
           if (cfg && typeof cfg === 'object' && 'mode' in cfg) {
             delete cfg['mode'];
+          }
+        }
+        if (version < 13) {
+          const cfg = s['aiLabStrategistConfig'] as Record<string, unknown> | undefined;
+          if (cfg && typeof cfg === 'object') {
+            cfg['enabled'] = true;
           }
         }
         return s;
