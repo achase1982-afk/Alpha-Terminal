@@ -28,7 +28,7 @@ function getUserId(req: any): string {
 const PRESET_UNIVERSES: Record<string, { label: string; description: string; symbols: string[] }> = {
   liquidCore130: {
     label: "Liquid Core 130",
-    description: "124 high-liquidity, options-tradable names across 8 sectors — primary scan universe",
+    description: "130 ultra-liquid, options-tradable names across 9 sectors — primary scan universe",
     symbols: [...LIQUID_CORE_SYMBOLS],
   },
   midcap200: {

@@ -102,7 +102,7 @@ The AI Lab Strategist has a dedicated configuration block on the AI Parameters s
 - `ai_lab_ideas` table: three new JSONB columns `primaryProposal`, `skepticCritique`, `finalDecision`.
 
 **Liquid Core 130 Universe (`liquidCore130.ts`):**
-- 124-symbol curated universe of high-liquidity, options-tradable names across 8 sectors (ETFs, Mega-Tech/AI/Semis, Growth/Meme, Financials, Healthcare, Consumer, Energy, Industrials).
+- 130-symbol curated universe of ultra-liquid, options-tradable names across 9 sectors (ETFs, Mega-Tech/AI/Semis, Growth/Meme, Financials, Healthcare, Consumer, Energy, Industrials, Additional High-Liquidity Staples).
 - Primary universe for both AI Lab Strategist (anomaly scanning via `equity_daily`) and deterministic scanner.
 - Replaces stale S&P 500 / NASDAQ 100 / 270-symbol backfill defaults.
 - Scanner default preset; auto-watchlist universe; backfill target via POST `/api/snapshot/backfill`.

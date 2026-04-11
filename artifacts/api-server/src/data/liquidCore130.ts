@@ -15,6 +15,7 @@ export const LIQUID_CORE_SYMBOLS = [
   "DVN", "MPC", "PSX", "VLO", "OKE", "TRGP", "LNG",
   "CAT", "HON", "RTX", "LMT", "NOC", "BA", "DAL", "UAL",
   "LUV", "UNP", "CSX", "NSC", "GEHC", "TDG", "PCAR",
+  "V", "MA", "CRM", "NOW", "ACN", "DIS",
 ] as const;
 
 export type LiquidCoreSymbol = typeof LIQUID_CORE_SYMBOLS[number];
@@ -28,4 +29,5 @@ export const LIQUID_CORE_SECTORS: Record<string, readonly string[]> = {
   "Consumer Staples / Discretionary": ["COST", "WMT", "PG", "KO", "PEP", "MCD", "NKE", "TGT", "KR", "DG", "DLTR", "BURL", "ROST", "TJX"],
   "Energy / Commodities": ["XOM", "CVX", "COP", "OXY", "SLB", "BKR", "EOG", "FANG", "DVN", "MPC", "PSX", "VLO", "OKE", "TRGP", "LNG"],
   "Industrials / Defense / Transport": ["CAT", "HON", "RTX", "LMT", "NOC", "BA", "DAL", "UAL", "LUV", "UNP", "CSX", "NSC", "GEHC", "TDG", "PCAR"],
+  "Additional High-Liquidity Staples": ["V", "MA", "CRM", "NOW", "ACN", "DIS"],
 };
