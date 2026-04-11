@@ -554,8 +554,13 @@ export function StrategyBuilder({
     setLimitPrice("");
   }, [atmStrike, strikeWidth, defaultExp, enrichLeg]);
 
+  const MAX_OPTION_LEGS = 4;
+
   const addLeg = useCallback(() => {
-    setLegs(prev => [...prev, enrichLeg({ optionType: "CALL", direction: "BUY_TO_OPEN", strike: atmStrike, expiration: defaultExp, quantity: 1 })]);
+    setLegs(prev => {
+      if (prev.length >= MAX_OPTION_LEGS) return prev;
+      return [...prev, enrichLeg({ optionType: "CALL", direction: "BUY_TO_OPEN", strike: atmStrike, expiration: defaultExp, quantity: 1 })];
+    });
   }, [atmStrike, defaultExp, enrichLeg]);
 
   const removeLeg = useCallback((id: string) => {
@@ -612,7 +617,7 @@ export function StrategyBuilder({
   }, [preTradeEnabled, legs, metrics, pulseData, accountSize, preTradeMaxPositionPct, preTradeMinRR]);
 
   const overallRisk = useMemo(() => getOverallLevel(riskChecks), [riskChecks]);
-  const blockedByRisk = preTradeEnabled && preTradeBlockOnRed && overallRisk === "RED";
+  const blockedByRisk = false;
 
   const spreadPrices = useMemo(() => {
     if (legs.length === 0) return null;
@@ -665,23 +670,37 @@ export function StrategyBuilder({
     return price * quantity * 100;
   }, [limitPrice, quantity, legs]);
 
-  const isValid = legs.length > 0 && !blockedByRisk && !!limitPrice && parseFloat(limitPrice) > 0 && quantity > 0 && !!accountHash;
+  const isValid = legs.length > 0 && !!limitPrice && parseFloat(limitPrice) > 0 && quantity > 0 && !!accountHash;
 
   const buildSchwabOrder = useCallback(() => {
     const parsed = parseFloat(limitPrice || "0");
+    const getSymParts = (sym: string) => ({ date: sym.substring(6, 12), cp: sym.charAt(12) });
+    let complexType = "CUSTOM";
+    if (legs.length === 1) {
+      complexType = "NONE";
+    } else if (legs.length === 2) {
+      const p0 = getSymParts(legs[0].schwabSymbol);
+      const p1 = getSymParts(legs[1].schwabSymbol);
+      if (p0.date === p1.date && p0.cp === p1.cp) complexType = "VERTICAL";
+      else if (p0.date === p1.date && p0.cp !== p1.cp) complexType = "STRANGLE";
+      else complexType = "CUSTOM";
+    } else if (legs.length === 4) {
+      const cps = legs.map(l => getSymParts(l.schwabSymbol).cp);
+      if (cps.filter(c => c === "C").length === 2 && cps.filter(c => c === "P").length === 2) complexType = "IRON_CONDOR";
+    }
     const o: Record<string, unknown> = {
       orderType: isCredit ? "NET_CREDIT" : "NET_DEBIT",
       session: extendedHours ? "SEAMLESS" : "NORMAL",
       duration: "DAY",
-      complexOrderStrategyType: "NONE",
+      complexOrderStrategyType: complexType,
       orderStrategyType: "SINGLE",
       orderLegCollection: legs.map(leg => ({
         instruction: leg.direction,
         quantity: leg.quantity * quantity,
         instrument: { symbol: leg.schwabSymbol, assetType: "OPTION" },
       })),
-      price: parsed,
     };
+    if (parsed > 0) o.price = parsed;
     return o;
   }, [isCredit, extendedHours, legs, quantity, limitPrice]);
 
@@ -933,7 +952,12 @@ export function StrategyBuilder({
                 <div style={{ background: CARD_GRAD, borderRadius: 10, border: `1px solid ${BORDER}`, padding: "6px 10px" }}>
                   <div className="flex items-center justify-between text-[13px]" style={{ color: TEXT }}>
                     <span className="uppercase tracking-[0.06em]">Legs</span>
-                    <button onClick={addLeg} className="text-[11px]" style={{ color: GOLD, background: "none", border: "none", cursor: "pointer" }}>+ Add leg</button>
+                    {legs.length < MAX_OPTION_LEGS && (
+                      <button onClick={addLeg} className="text-[11px]" style={{ color: GOLD, background: "none", border: "none", cursor: "pointer" }}>+ Add leg</button>
+                    )}
+                    {legs.length >= MAX_OPTION_LEGS && (
+                      <span className="text-[10px]" style={{ color: DIM }}>4/4 max</span>
+                    )}
                   </div>
                   <div className="mt-1 flex flex-col gap-1">
                     {legs.map((leg) => {

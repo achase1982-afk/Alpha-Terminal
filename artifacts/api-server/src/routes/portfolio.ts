@@ -264,9 +264,11 @@ router.post("/place-order", async (req, res) => {
   }
 
   try {
-    // Schwab rejects orders with a price field on non-limit order types — strip defensively
     const NO_PRICE_TYPES = new Set(["MARKET", "STOP", "TRAILING_STOP", "MARKET_ON_CLOSE"]);
     if (typeof order.orderType === "string" && NO_PRICE_TYPES.has(order.orderType)) {
+      delete order.price;
+    }
+    if (order.price != null && (typeof order.price !== "number" || order.price <= 0 || !isFinite(order.price))) {
       delete order.price;
     }
     logger.info({ order }, "Placing Schwab order");

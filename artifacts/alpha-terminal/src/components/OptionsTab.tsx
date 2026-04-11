@@ -1078,6 +1078,9 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
   const [selectedLegs, setSelectedLegs] = useState<Map<string, SelectedLeg>>(new Map());
   const [showInlineGreeks, setShowInlineGreeks] = useState(false);
   const [longPressTarget, setLongPressTarget] = useState<LongPressTarget | null>(null);
+  const [legLimitShake, setLegLimitShake] = useState(false);
+  const shakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const MAX_OPTION_LEGS = 4;
 
   const activeColumns = useMemo(
     () => activeColumnIds.map(id => COLUMN_REGISTRY.find(c => c.id === id)).filter(Boolean) as ColumnDef[],
@@ -1175,8 +1178,19 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
     setSelectedLegs(prev => {
       const next = new Map(prev);
       const existing = next.get(key);
-      if (existing && existing.side === side) next.delete(key);
-      else next.set(key, { contract, type, expiration: contract.expiration, side });
+      if (existing && existing.side === side) {
+        next.delete(key);
+      } else if (existing) {
+        next.set(key, { contract, type, expiration: contract.expiration, side });
+      } else {
+        if (prev.size >= MAX_OPTION_LEGS) {
+          if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
+          setLegLimitShake(true);
+          shakeTimerRef.current = setTimeout(() => setLegLimitShake(false), 600);
+          return prev;
+        }
+        next.set(key, { contract, type, expiration: contract.expiration, side });
+      }
       return next;
     });
   }, []);
@@ -1444,13 +1458,14 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
 
       {selCount > 0 && (
         <div
-          className="fixed left-0 right-0 z-[100] flex items-center justify-between px-4 py-3"
+          className={`fixed left-0 right-0 z-[100] flex items-center justify-between px-4 py-3${legLimitShake ? " animate-[shake_0.4s_ease-in-out]" : ""}`}
           style={{
             bottom: 80,
-            background: "linear-gradient(180deg, #0a0a0a 0%, #000000 100%)",
-            borderTop: `1px solid ${GOLD}30`,
+            background: legLimitShake ? `linear-gradient(180deg, #1a0505 0%, #000000 100%)` : "linear-gradient(180deg, #0a0a0a 0%, #000000 100%)",
+            borderTop: `1px solid ${legLimitShake ? "#ff4b5c" : GOLD}30`,
             boxShadow: `0 -4px 24px rgba(0,0,0,0.8), 0 -1px 0 ${GOLD}15`,
             fontFamily: MONO,
+            transition: "background 0.3s, border-color 0.3s",
           }}
         >
           <button
@@ -1464,6 +1479,10 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
           >
             Next
           </button>
+          {legLimitShake && (
+            <span className="text-[11px] font-mono" style={{ color: "#ff4b5c" }}>Max 4 legs</span>
+          )}
+          <span className="text-[11px] font-mono" style={{ color: selCount >= MAX_OPTION_LEGS ? GOLD : GRAY }}>{selCount}/{MAX_OPTION_LEGS}</span>
           <button
             onClick={handleClearSelection}
             className="px-4 py-3 rounded-lg text-[13px] tracking-wider transition-colors"
