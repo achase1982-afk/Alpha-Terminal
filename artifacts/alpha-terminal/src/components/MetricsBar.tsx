@@ -511,7 +511,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet, onTrade }: Metric
 
         <div className="hidden lg:flex flex-col shrink-0 gap-0.5">
           <span className="text-[10px] tracking-[0.1em] text-zinc-500 font-semibold">52W Range</span>
-          <span className={`font-mono tabular-nums text-zinc-500 text-sm font-medium ${opacityCls} ${transitionCls}`}>
+          <span className={`font-mono tabular-nums text-zinc-300 text-sm font-medium ${opacityCls} ${transitionCls}`}>
             {quote?.fiftyTwoWeekLow != null
               ? `$${fmtPrice(quote.fiftyTwoWeekLow)} — $${fmtPrice(quote.fiftyTwoWeekHigh)}`
               : "—"}
