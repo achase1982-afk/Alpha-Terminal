@@ -165,7 +165,10 @@ export async function getUniverseAnomalies(
   const flowRows = await db
     .select()
     .from(flowDailyAggregatesTable)
-    .where(eq(flowDailyAggregatesTable.date, latestDate));
+    .where(and(
+      eq(flowDailyAggregatesTable.date, latestDate),
+      inArray(flowDailyAggregatesTable.underlyingSymbol, liquidCoreList),
+    ));
 
   const flowMap = new Map(flowRows.map(f => [f.underlyingSymbol, f]));
 
