@@ -522,13 +522,26 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
           return acc + (isSell ? mid : -mid);
         }, 0);
         const creditOrDebit = netDirection >= 0 ? "CREDIT" : "DEBIT";
+        // Auto-detect Schwab complexOrderStrategyType from leg symbols
+        // OCC symbol format: TICKER(6) + YYMMDD(6) + C/P(1) + STRIKE(8) — C/P is always at index 12
+        const getSymParts = (sym: string) => ({ date: sym.substring(6, 12), cp: sym.charAt(12) });
+        let complexType = "CUSTOM";
+        if (strategyLegs.length === 2) {
+          const p0 = getSymParts(strategyLegs[0].schwabSymbol);
+          const p1 = getSymParts(strategyLegs[1].schwabSymbol);
+          if (p0.date === p1.date && p0.cp === p1.cp) complexType = "VERTICAL";
+          else if (p0.date === p1.date && p0.cp !== p1.cp) complexType = "STRANGLE";
+        } else if (strategyLegs.length === 4) {
+          const cps = strategyLegs.map(l => getSymParts(l.schwabSymbol).cp);
+          if (cps.filter(c => c === "C").length === 2 && cps.filter(c => c === "P").length === 2) complexType = "IRON_CONDOR";
+        }
         // Schwab requires orderType LIMIT + price + creditOrDebit for complex non-market orders
         const resolvedType = useMarket ? "MARKET" : "LIMIT";
         const o: Record<string, unknown> = {
           orderType: resolvedType,
           session,
           duration,
-          complexOrderStrategyType: "NONE",
+          complexOrderStrategyType: complexType,
           orderStrategyType: "SINGLE",
           orderLegCollection: strategyLegs.map(leg => ({
             instruction: leg.instruction,
