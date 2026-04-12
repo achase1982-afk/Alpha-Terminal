@@ -830,18 +830,18 @@ export async function computeIVFromFlow(
       const spot = equityRow[0].close ?? 0;
       if (spot <= 0) continue;
 
-      const effectiveFlowDate = flowDatesWithIV.includes(date) ? date : (flowDatesWithIV[0] ?? date);
-      const strikes = await db
+      const effectiveFlowDateForIV = flowDatesWithIV.includes(date) ? date : (flowDatesWithIV[0] ?? date);
+      const ivStrikes = await db
         .select()
         .from(optionsFlowPerStrikeTable)
         .where(and(
           eq(optionsFlowPerStrikeTable.underlyingSymbol, sym.toUpperCase()),
-          eq(optionsFlowPerStrikeTable.date, effectiveFlowDate),
+          eq(optionsFlowPerStrikeTable.date, effectiveFlowDateForIV),
         ));
 
-      if (strikes.length === 0) continue;
+      if (ivStrikes.length === 0) continue;
 
-      const iv30Candidates = strikes
+      const iv30Candidates = ivStrikes
         .filter(s => {
           const d = s.dte ?? 0;
           return d >= 1 && d <= 60
@@ -878,9 +878,20 @@ export async function computeIVFromFlow(
         }
       }
 
-      const totalCallVol = strikes.filter(s => s.optionType === "call").reduce((a, s) => a + (s.dailyVolume ?? 0), 0);
-      const totalPutVol = strikes.filter(s => s.optionType === "put").reduce((a, s) => a + (s.dailyVolume ?? 0), 0);
-      const putCallRatio = totalCallVol > 0 ? totalPutVol / totalCallVol : null;
+      let putCallRatio: number | null = null;
+      const dateSameStrikes = (effectiveFlowDateForIV === date) ? ivStrikes : null;
+      const dateStrikes = dateSameStrikes ?? await db
+        .select()
+        .from(optionsFlowPerStrikeTable)
+        .where(and(
+          eq(optionsFlowPerStrikeTable.underlyingSymbol, sym.toUpperCase()),
+          eq(optionsFlowPerStrikeTable.date, date),
+        ));
+      if (dateStrikes.length > 0) {
+        const totalCallVol = dateStrikes.filter(s => s.optionType === "call").reduce((a, s) => a + (s.dailyVolume ?? 0), 0);
+        const totalPutVol = dateStrikes.filter(s => s.optionType === "put").reduce((a, s) => a + (s.dailyVolume ?? 0), 0);
+        putCallRatio = totalCallVol > 0 ? totalPutVol / totalCallVol : null;
+      }
 
       const updates: Record<string, unknown> = { iv30d };
       if (ivr != null) updates.ivr = ivr;
