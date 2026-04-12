@@ -48,7 +48,17 @@ router.get("/accounts", async (_req, res) => {
     const accounts = await schwabGet("/accounts?fields=positions", token, 2);
     const mapped = accounts.map((acct: any) => {
       const sa = acct.securitiesAccount;
-      const bal = sa.currentBalances ?? {};
+      const proj = sa.projectedBalances ?? {};
+      const cur = sa.currentBalances ?? {};
+      const bal = {
+        ...cur,
+        liquidationValue: proj.liquidationValue ?? cur.liquidationValue ?? 0,
+        availableFunds: proj.availableFunds ?? cur.availableFunds ?? 0,
+        buyingPower: proj.buyingPower ?? cur.buyingPower ?? 0,
+        dayTradingBuyingPower: proj.dayTradingBuyingPower ?? cur.dayTradingBuyingPower ?? 0,
+        cashBalance: proj.cashBalance ?? cur.cashBalance ?? 0,
+        equity: proj.equity ?? cur.equity ?? 0,
+      };
       const initBal = sa.initialBalances ?? {};
 
       const dayPL = (sa.positions ?? []).reduce(
