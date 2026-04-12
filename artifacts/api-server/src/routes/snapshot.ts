@@ -53,14 +53,21 @@ router.post("/equity-only", async (req, res) => {
 });
 
 router.post("/flow-only", async (req, res) => {
-  const { symbols, date } = req.body as { symbols?: string[]; date?: string };
-  const accessToken = req.headers["x-access-token"] as string | undefined;
-
-  if (!accessToken) {
-    return res.status(400).json({ ok: false, error: "Missing x-access-token header" });
-  }
+  const { symbols, date, sync } = req.body as { symbols?: string[]; date?: string; sync?: boolean };
 
   const scanSymbols = symbols ?? getDefaultUniverse();
+
+  if (sync) {
+    try {
+      const { strikeRows } = await collectPolygonFlowFromAPI(scanSymbols, date);
+      const aggRows = await computeFlowAggregates(scanSymbols, date);
+      const ivRows = await computeIVFromFlow(scanSymbols, date);
+      res.json({ ok: true, strikeRows, aggRows, ivRows });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: (e as Error).message });
+    }
+    return;
+  }
 
   res.json({ ok: true, message: "Flow collection started", symbols: scanSymbols.length });
 
@@ -124,15 +131,23 @@ router.post("/recompute-aggregates", async (req, res) => {
 });
 
 router.post("/backfill-flow", async (req, res) => {
-  const { symbols, daysBack } = req.body as { symbols?: string[]; daysBack?: number };
+  const { symbols, daysBack, sync } = req.body as { symbols?: string[]; daysBack?: number; sync?: boolean };
   const scanSymbols = symbols ?? getDefaultUniverse();
   const days = daysBack ?? 60;
 
-  res.json({ ok: true, message: `Polygon flow backfill started — ${days} days`, symbols: scanSymbols.length, daysBack: days });
-
-  backfillPolygonFlow(scanSymbols, days).catch(e => {
-    logger.error({ error: (e as Error).message }, "Background Polygon flow backfill failed");
-  });
+  if (sync) {
+    try {
+      const result = await backfillPolygonFlow(scanSymbols, days);
+      res.json({ ok: true, ...result });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: (e as Error).message });
+    }
+  } else {
+    res.json({ ok: true, message: `Polygon flow backfill started — ${days} days`, symbols: scanSymbols.length, daysBack: days });
+    backfillPolygonFlow(scanSymbols, days).catch(e => {
+      logger.error({ error: (e as Error).message }, "Background Polygon flow backfill failed");
+    });
+  }
 });
 
 router.post("/compute-iv", async (req, res) => {

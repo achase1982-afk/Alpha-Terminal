@@ -523,68 +523,106 @@ export async function collectPolygonFlowFromAPI(
   let apiCalls = 0;
   let apiErrors = 0;
 
+  const spotCache = new Map<string, number>();
+  const equityRows = await db.select({ sym: equityDailyTable.symbol, close: equityDailyTable.close })
+    .from(equityDailyTable)
+    .where(eq(equityDailyTable.date, date));
+  for (const r of equityRows) {
+    if (r.close && r.close > 0) spotCache.set(r.sym, r.close);
+  }
+
   for (const sym of symbols) {
     try {
-      const params = new URLSearchParams({
-        expiration_date_gte: date,
-        expiration_date_lte: new Date(Date.now() + 60 * 86_400_000).toISOString().slice(0, 10),
-        limit: "250",
-        apiKey,
-      });
+      const spot = spotCache.get(sym.toUpperCase()) ?? 0;
+      const expMin = date;
+      const expMax = new Date(Date.now() + 60 * 86_400_000).toISOString().slice(0, 10);
 
-      apiCalls++;
-      const resp = await fetchWithRetry(
-        `${POLYGON_API}/v3/snapshot/options/${encodeURIComponent(sym)}?${params}`,
-        {},
-      );
-      if (!resp.ok) {
-        apiErrors++;
-        void logFailure("POLYGON_API", "WARN", `Options snapshot HTTP ${resp.status}`, { symbol: sym, status: resp.status, date });
-        continue;
+      const passes: Array<{ gte: string; lte: string; strikeMin?: string; strikeMax?: string }> = [
+        { gte: expMin, lte: expMax },
+      ];
+
+      if (spot > 0) {
+        const atmMin3 = Math.floor(spot * 0.97);
+        const atmMax3 = Math.ceil(spot * 1.03);
+        const dte20 = new Date(Date.now() + 20 * 86_400_000).toISOString().slice(0, 10);
+        const dte30 = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
+        passes.push(
+          { gte: dte20, lte: expMax, strikeMin: String(atmMin3), strikeMax: String(atmMax3) },
+          { gte: dte30, lte: expMax, strikeMin: String(atmMin3), strikeMax: String(atmMax3) },
+        );
       }
-      const json = await resp.json() as { results?: Array<Record<string, unknown>>; status?: string };
-      if (json.status !== "OK" || !json.results?.length) continue;
 
       const flowRows: Array<typeof optionsFlowPerStrikeTable.$inferInsert> = [];
+      const seenKeys = new Set<string>();
 
-      for (const r of json.results) {
-        const details = r["details"] as Record<string, unknown> | undefined;
-        const day = r["day"] as Record<string, unknown> | undefined;
-        const lastQuote = r["last_quote"] as Record<string, unknown> | undefined;
-        const greeks = r["greeks"] as Record<string, unknown> | undefined;
-        if (!details) continue;
-
-        const contractType = (details["contract_type"] as string) === "call" ? "call" : "put";
-        const strikePrice = details["strike_price"] as number;
-        const expDate = details["expiration_date"] as string;
-        const vol = (day?.["volume"] ?? 0) as number;
-        const oi = (r["open_interest"] ?? 0) as number;
-        const bid = (lastQuote?.["bid"] ?? 0) as number;
-        const ask = (lastQuote?.["ask"] ?? 0) as number;
-        const mid = (bid + ask) / 2;
-
-        const nowMs = Date.now();
-        const dte = Math.max(0, Math.round((new Date(`${expDate}T20:00:00Z`).getTime() - nowMs) / 86_400_000));
-
-        flowRows.push({
-          underlyingSymbol: sym.toUpperCase(),
-          date,
-          optionType: contractType,
-          strike: strikePrice,
-          expiration: expDate,
-          dte,
-          dailyVolume: vol,
-          openInterest: oi,
-          bid,
-          ask,
-          mid,
-          impliedVolatility: (r["implied_volatility"] as number) ?? null,
-          delta: (greeks?.["delta"] as number) ?? null,
-          gamma: (greeks?.["gamma"] as number) ?? null,
-          theta: (greeks?.["theta"] as number) ?? null,
-          vega: (greeks?.["vega"] as number) ?? null,
-          avgTradePrice: (day?.["vwap"] as number) ?? mid,
+      for (const pass of passes) {
+        const params = new URLSearchParams({
+          expiration_date_gte: pass.gte,
+          expiration_date_lte: pass.lte,
+          limit: "250",
+          apiKey,
         });
+        if (pass.strikeMin) params.set("strike_price_gte", pass.strikeMin);
+        if (pass.strikeMax) params.set("strike_price_lte", pass.strikeMax);
+
+        apiCalls++;
+        const resp = await fetchWithRetry(
+          `${POLYGON_API}/v3/snapshot/options/${encodeURIComponent(sym)}?${params}`,
+          {},
+        );
+        if (!resp.ok) {
+          apiErrors++;
+          void logFailure("POLYGON_API", "WARN", `Options snapshot HTTP ${resp.status}`, { symbol: sym, status: resp.status, date });
+          continue;
+        }
+        const json = await resp.json() as { results?: Array<Record<string, unknown>>; status?: string };
+        if (json.status !== "OK" || !json.results?.length) continue;
+
+        for (const r of json.results) {
+          const details = r["details"] as Record<string, unknown> | undefined;
+          const day = r["day"] as Record<string, unknown> | undefined;
+          const lastQuote = r["last_quote"] as Record<string, unknown> | undefined;
+          const greeks = r["greeks"] as Record<string, unknown> | undefined;
+          if (!details) continue;
+
+          const contractType = (details["contract_type"] as string) === "call" ? "call" : "put";
+          const strikePrice = details["strike_price"] as number;
+          const expDate = details["expiration_date"] as string;
+
+          const key = `${sym}|${contractType}|${strikePrice}|${expDate}`;
+          if (seenKeys.has(key)) continue;
+          seenKeys.add(key);
+
+          const vol = (day?.["volume"] ?? 0) as number;
+          const oi = (r["open_interest"] ?? 0) as number;
+          const bid = (lastQuote?.["bid"] ?? 0) as number;
+          const ask = (lastQuote?.["ask"] ?? 0) as number;
+          const mid = (bid + ask) / 2;
+
+          const nowMs = Date.now();
+          const dte = Math.max(0, Math.round((new Date(`${expDate}T20:00:00Z`).getTime() - nowMs) / 86_400_000));
+
+          flowRows.push({
+            underlyingSymbol: sym.toUpperCase(),
+            date,
+            optionType: contractType,
+            strike: strikePrice,
+            expiration: expDate,
+            dte,
+            dailyVolume: vol,
+            openInterest: oi,
+            bid,
+            ask,
+            mid,
+            impliedVolatility: (r["implied_volatility"] as number) ?? null,
+            delta: (greeks?.["delta"] as number) ?? null,
+            gamma: (greeks?.["gamma"] as number) ?? null,
+            theta: (greeks?.["theta"] as number) ?? null,
+            vega: (greeks?.["vega"] as number) ?? null,
+            avgTradePrice: (day?.["vwap"] as number) ?? mid,
+          });
+        }
+        await sleep(200);
       }
 
       if (flowRows.length > 0) {
@@ -806,11 +844,15 @@ export async function computeIVFromFlow(
       const iv30Candidates = strikes
         .filter(s => {
           const d = s.dte ?? 0;
-          return d >= 20 && d <= 40
-            && Math.abs(s.strike - spot) / spot <= 0.05
+          return d >= 1 && d <= 60
+            && Math.abs(s.strike - spot) / spot <= 0.10
             && (s.impliedVolatility ?? 0) > 0;
         })
-        .sort((a, b) => Math.abs((a.dte ?? 30) - 30) - Math.abs((b.dte ?? 30) - 30));
+        .sort((a, b) => {
+          const aScore = Math.abs((a.dte ?? 30) - 30) + Math.abs(a.strike - spot) / spot * 100;
+          const bScore = Math.abs((b.dte ?? 30) - 30) + Math.abs(b.strike - spot) / spot * 100;
+          return aScore - bScore;
+        });
 
       const iv30d = iv30Candidates.length > 0 ? iv30Candidates[0].impliedVolatility : null;
       if (iv30d == null) continue;
@@ -1074,15 +1116,28 @@ export async function backfillEquityHistory(
 export async function backfillPolygonFlow(
   symbols: string[],
   daysBack = 60,
-): Promise<{ totalStrikeRows: number; symbolsDone: number; datesProcessed: number }> {
+): Promise<{ totalStrikeRows: number; symbolsDone: number; datesProcessed: number; skipped: number }> {
   const apiKey = process.env["POLYGON_API_KEY"];
   if (!apiKey) {
     logger.warn("Backfill: no POLYGON_API_KEY, skipping flow backfill");
-    return { totalStrikeRows: 0, symbolsDone: 0, datesProcessed: 0 };
+    return { totalStrikeRows: 0, symbolsDone: 0, datesProcessed: 0, skipped: 0 };
   }
 
-  logger.info({ symbols: symbols.length, daysBack }, "Backfill: starting Polygon flow history");
-  void logFailure("POLYGON_API", "INFO", `Flow backfill started — ${symbols.length} symbols, ${daysBack} days`, { symbols: symbols.length, daysBack });
+  const existingRows = await db
+    .select({ sym: optionsFlowPerStrikeTable.underlyingSymbol })
+    .from(optionsFlowPerStrikeTable)
+    .where(lte(optionsFlowPerStrikeTable.date, new Date(Date.now() - 2 * 86_400_000).toISOString().slice(0, 10)))
+    .groupBy(optionsFlowPerStrikeTable.underlyingSymbol);
+  const existingSet = new Set(existingRows.map(r => r.sym));
+  const needsBackfill = symbols.filter(s => !existingSet.has(s.toUpperCase()));
+  const skipped = symbols.length - needsBackfill.length;
+
+  logger.info({ total: symbols.length, needsBackfill: needsBackfill.length, skipped, daysBack }, "Backfill: starting Polygon flow (resumable)");
+  void logFailure("POLYGON_API", "INFO", `Flow backfill started — ${needsBackfill.length} symbols need data (${skipped} already done), ${daysBack} days`, { needsBackfill: needsBackfill.length, skipped, daysBack });
+
+  if (needsBackfill.length === 0) {
+    return { totalStrikeRows: 0, symbolsDone: 0, datesProcessed: 0, skipped };
+  }
 
   const now = new Date();
   const fromDate = new Date(now.getTime() - daysBack * 86_400_000).toISOString().slice(0, 10);
@@ -1091,8 +1146,9 @@ export async function backfillPolygonFlow(
   let totalStrikeRows = 0;
   let symbolsDone = 0;
   const allDates = new Set<string>();
+  const PARALLEL_CONTRACTS = 5;
 
-  for (const sym of symbols) {
+  for (const sym of needsBackfill) {
     try {
       const contractsUrl = `${POLYGON_API}/v3/reference/options/contracts?underlying_ticker=${encodeURIComponent(sym)}&expiration_date.gte=${fromDate}&limit=250&apiKey=${apiKey}`;
       const contractsResp = await fetchWithRetry(contractsUrl, {});
@@ -1104,37 +1160,33 @@ export async function backfillPolygonFlow(
       const contracts = contractsJson.results ?? [];
       if (contracts.length === 0) continue;
 
-      const rowsByDate = new Map<string, Array<typeof optionsFlowPerStrikeTable.$inferInsert>>();
+      const allRows: Array<typeof optionsFlowPerStrikeTable.$inferInsert> = [];
 
-      for (const contract of contracts) {
-        const ticker = contract["ticker"] as string | undefined;
-        const contractType = contract["contract_type"] as string | undefined;
-        const strikePrice = contract["strike_price"] as number | undefined;
-        const expDate = contract["expiration_date"] as string | undefined;
-        if (!ticker || !contractType || !strikePrice || !expDate) continue;
+      for (let ci = 0; ci < contracts.length; ci += PARALLEL_CONTRACTS) {
+        const batch = contracts.slice(ci, ci + PARALLEL_CONTRACTS);
+        const results = await Promise.allSettled(batch.map(async (contract) => {
+          const ticker = contract["ticker"] as string | undefined;
+          const contractType = contract["contract_type"] as string | undefined;
+          const strikePrice = contract["strike_price"] as number | undefined;
+          const expDate = contract["expiration_date"] as string | undefined;
+          if (!ticker || !contractType || !strikePrice || !expDate) return [];
 
-        try {
           const aggsUrl = `${POLYGON_API}/v2/aggs/ticker/${encodeURIComponent(ticker)}/range/1/day/${fromDate}/${toDate}?adjusted=true&sort=asc&limit=120&apiKey=${apiKey}`;
           const aggsResp = await fetchWithRetry(aggsUrl, {});
-          if (!aggsResp.ok) continue;
+          if (!aggsResp.ok) return [];
           const aggsJson = await aggsResp.json() as { results?: Array<Record<string, unknown>> };
           const bars = aggsJson.results ?? [];
+          const rows: Array<typeof optionsFlowPerStrikeTable.$inferInsert> = [];
 
           for (const bar of bars) {
             const ts = bar["t"] as number;
             const dateStr = new Date(ts).toISOString().slice(0, 10);
-            allDates.add(dateStr);
-
             const vol = (bar["v"] ?? 0) as number;
             const vwap = (bar["vw"] ?? 0) as number;
             const barClose = (bar["c"] ?? 0) as number;
-
             if (vol < 1) continue;
-
-            const nowMs = Date.now();
             const dte = Math.max(0, Math.round((new Date(`${expDate}T20:00:00Z`).getTime() - new Date(`${dateStr}T20:00:00Z`).getTime()) / 86_400_000));
-
-            const row: typeof optionsFlowPerStrikeTable.$inferInsert = {
+            rows.push({
               underlyingSymbol: sym.toUpperCase(),
               date: dateStr,
               optionType: contractType === "call" ? "call" : "put",
@@ -1152,48 +1204,51 @@ export async function backfillPolygonFlow(
               theta: null,
               vega: null,
               avgTradePrice: vwap > 0 ? vwap : null,
-            };
-
-            if (!rowsByDate.has(dateStr)) rowsByDate.set(dateStr, []);
-            rowsByDate.get(dateStr)!.push(row);
+            });
           }
-        } catch {
-          continue;
+          return rows;
+        }));
+
+        for (const r of results) {
+          if (r.status === "fulfilled") {
+            for (const row of r.value) {
+              allDates.add(row.date!);
+            }
+            allRows.push(...r.value);
+          }
         }
-        await sleep(150);
+        await sleep(80);
       }
 
-      let symRows = 0;
-      for (const [, rows] of rowsByDate) {
-        if (rows.length === 0) continue;
-        const batchSize = 200;
-        for (let b = 0; b < rows.length; b += batchSize) {
+      if (allRows.length > 0) {
+        const batchSize = 500;
+        for (let b = 0; b < allRows.length; b += batchSize) {
           await db.insert(optionsFlowPerStrikeTable)
-            .values(rows.slice(b, b + batchSize))
+            .values(allRows.slice(b, b + batchSize))
             .onConflictDoNothing();
         }
-        symRows += rows.length;
       }
 
-      totalStrikeRows += symRows;
+      totalStrikeRows += allRows.length;
       symbolsDone++;
 
+      logger.info({ sym, symbolsDone, totalSymbols: needsBackfill.length, rows: allRows.length, totalStrikeRows }, "Backfill: symbol done");
+
       if (symbolsDone % 5 === 0) {
-        void logFailure("POLYGON_API", "INFO", `Flow backfill progress: ${symbolsDone}/${symbols.length} symbols, ${totalStrikeRows} strike rows`, {
-          symbolsDone, totalSymbols: symbols.length, totalStrikeRows,
+        void logFailure("POLYGON_API", "INFO", `Flow backfill progress: ${symbolsDone}/${needsBackfill.length} symbols, ${totalStrikeRows} strike rows`, {
+          symbolsDone, totalSymbols: needsBackfill.length, totalStrikeRows,
         });
-        logger.info({ symbolsDone, totalSymbols: symbols.length, totalStrikeRows }, "Backfill: Polygon flow progress");
       }
     } catch (e) {
       logger.warn({ sym, error: (e as Error).message }, "Backfill: Polygon flow symbol failed");
     }
-    await sleep(300);
+    await sleep(100);
   }
 
   const datesProcessed = allDates.size;
 
   if (datesProcessed > 0) {
-    logger.info({ symbols: symbols.length, datesProcessed }, "Backfill: computing flow aggregates for historical dates");
+    logger.info({ symbols: needsBackfill.length, datesProcessed }, "Backfill: computing flow aggregates for historical dates");
     const sortedDates = [...allDates].sort();
     for (const d of sortedDates) {
       await computeFlowAggregates(symbols, d);
@@ -1203,8 +1258,8 @@ export async function backfillPolygonFlow(
   void logFailure("DATABASE", "INFO", `Flow backfill complete — ${totalStrikeRows} strike rows across ${symbolsDone} symbols, ${datesProcessed} dates`, {
     totalStrikeRows, symbolsDone, datesProcessed,
   });
-  logger.info({ totalStrikeRows, symbolsDone, datesProcessed }, "Backfill: Polygon flow history complete");
-  return { totalStrikeRows, symbolsDone, datesProcessed };
+  logger.info({ totalStrikeRows, symbolsDone, datesProcessed, skipped }, "Backfill: Polygon flow history complete");
+  return { totalStrikeRows, symbolsDone, datesProcessed, skipped };
 }
 
 export async function getSnapshotStatus() {
