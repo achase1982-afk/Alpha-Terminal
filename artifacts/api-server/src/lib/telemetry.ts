@@ -22,6 +22,31 @@ export type TelemetrySystem =
 
 export type TelemetrySeverity = "INFO" | "WARN" | "ERROR" | "CRITICAL";
 
+let systemAlertsPushEnabled = true;
+
+export function getSystemAlertsPushEnabled(): boolean {
+  return systemAlertsPushEnabled;
+}
+
+export function setSystemAlertsPushEnabled(enabled: boolean): void {
+  systemAlertsPushEnabled = enabled;
+  logger.info({ enabled }, "System alerts push notifications %s", enabled ? "enabled" : "disabled");
+}
+
+const CRITICAL_THROTTLE_MS = 5 * 60 * 1000;
+const criticalThrottleMap = new Map<string, number>();
+
+function isCriticalThrottled(system: string): boolean {
+  const key = system;
+  const now = Date.now();
+  const lastSent = criticalThrottleMap.get(key);
+  if (lastSent && now - lastSent < CRITICAL_THROTTLE_MS) {
+    return true;
+  }
+  criticalThrottleMap.set(key, now);
+  return false;
+}
+
 export async function logFailure(
   system: TelemetrySystem,
   severity: TelemetrySeverity,
@@ -45,7 +70,7 @@ export async function logFailure(
     logger.error({ err, system, severity, message }, "Failed to write telemetry to DB");
   }
 
-  if (severity === "CRITICAL") {
+  if (severity === "CRITICAL" && systemAlertsPushEnabled && !isCriticalThrottled(system)) {
     void sendPushToAll({
       title: "ALPHA TERMINAL — CRITICAL",
       body: `[${system}] ${message}`,

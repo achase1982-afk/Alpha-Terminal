@@ -12,6 +12,7 @@ import { useBiometricRegistration, useWebAuthnSupported } from "@/hooks/useBiome
 import { AuthPanel } from "./AuthPanel";
 import { StrategySettings } from "./AiIntelligenceTab";
 import { SidebarChat } from "./SidebarChat";
+import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { queryClient } from "@/App";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -1135,6 +1136,33 @@ function NotificationsPage() {
   const allPush = Object.values(notificationPrefs.push).every(Boolean);
   const nonePush = Object.values(notificationPrefs.push).every(v => !v);
 
+  const [systemAlertsEnabled, setSystemAlertsEnabled] = useState(true);
+  const [systemAlertsLoading, setSystemAlertsLoading] = useState(true);
+
+  useEffect(() => {
+    fetchWithAuth("/api/push/system-alerts")
+      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+      .then((d: { enabled: boolean }) => { setSystemAlertsEnabled(d.enabled); setSystemAlertsLoading(false); })
+      .catch(() => setSystemAlertsLoading(false));
+  }, []);
+
+  const toggleSystemAlerts = useCallback((v: boolean) => {
+    const prev = systemAlertsEnabled;
+    setSystemAlertsEnabled(v);
+    fetchWithAuth("/api/push/system-alerts", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: v }),
+    }).then(r => {
+      if (!r.ok) throw new Error();
+      return r.json();
+    }).then((d: { enabled: boolean }) => {
+      setSystemAlertsEnabled(d.enabled);
+    }).catch(() => {
+      setSystemAlertsEnabled(prev);
+    });
+  }, [systemAlertsEnabled]);
+
   return (
     <div className="space-y-6 max-w-lg">
       <div className="flex items-center justify-between p-3 rounded-lg" style={{ background: "#1a1a1c", border: "1px solid #2a2a2c" }}>
@@ -1149,6 +1177,25 @@ function NotificationsPage() {
       </div>
 
       <div style={{ opacity: notificationPrefs.masterEnabled ? 1 : 0.4, pointerEvents: notificationPrefs.masterEnabled ? "auto" : "none" }}>
+        <div className="mb-4">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="font-bold text-xs text-white uppercase tracking-widest">System Alerts</h3>
+          </div>
+          <div className="flex items-center justify-between py-2 px-3 rounded-md hover:bg-zinc-900/50 transition-colors">
+            <div>
+              <div className="text-[12px] font-semibold text-white">Critical System Alerts</div>
+              <div className="text-[10px] text-zinc-500">OAuth failures, stream outages, regime shocks (throttled to 1 per 5 min per system)</div>
+            </div>
+            <Switch
+              checked={systemAlertsEnabled}
+              disabled={systemAlertsLoading}
+              onCheckedChange={toggleSystemAlerts}
+            />
+          </div>
+        </div>
+
+        <div className="h-px bg-zinc-800 my-4" />
+
         <div className="mb-4">
           <div className="flex items-center justify-between mb-2">
             <h3 className="font-bold text-xs text-white uppercase tracking-widest">In-App Alerts</h3>

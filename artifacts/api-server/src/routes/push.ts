@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { addSubscription, removeSubscription, getSubscriptionCount, type PushSubscription } from "../lib/pushService.js";
+import { getSystemAlertsPushEnabled, setSystemAlertsPushEnabled } from "../lib/telemetry.js";
 import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
@@ -47,6 +48,19 @@ router.post("/test", async (_req, res) => {
     logger.error({ err }, "Test push failed");
     res.status(500).json({ error: "Push test failed" });
   }
+});
+
+router.get("/system-alerts", (_req, res) => {
+  res.json({ enabled: getSystemAlertsPushEnabled() });
+});
+
+router.put("/system-alerts", (req, res) => {
+  const { enabled } = req.body as { enabled?: boolean };
+  if (typeof enabled !== "boolean") {
+    return res.status(400).json({ error: "Missing boolean 'enabled' field" });
+  }
+  setSystemAlertsPushEnabled(enabled);
+  res.json({ enabled: getSystemAlertsPushEnabled() });
 });
 
 export default router;
