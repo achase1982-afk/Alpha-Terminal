@@ -661,17 +661,6 @@ function AiLabStrategistControl() {
   const { aiLabStrategistConfig, setAiLabStrategistConfig } = useTerminalStore();
   const [expanded, setExpanded] = useState(false);
   const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const didSyncRef = useRef(false);
-
-  useEffect(() => {
-    if (didSyncRef.current) return;
-    didSyncRef.current = true;
-    fetch("/api/ai-lab/config", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(aiLabStrategistConfig),
-    }).catch(() => {});
-  }, []);
 
   const syncToBackend = useCallback((cfg: typeof aiLabStrategistConfig) => {
     if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
