@@ -558,8 +558,11 @@ function centerStrikesAroundATM(
       if (dist < minDist) { minDist = dist; atmIdx = i; }
     }
 
-    const half = Math.floor(desiredCount / 2);
-    let lo = atmIdx - half;
+    const belowSpot = sorted[atmIdx] < underlyingPrice;
+    const strikesBelow = belowSpot
+      ? Math.floor(desiredCount / 2) - 1
+      : Math.floor(desiredCount / 2);
+    let lo = atmIdx - strikesBelow;
     let hi = lo + desiredCount - 1;
 
     if (lo < 0) {
