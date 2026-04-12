@@ -1116,6 +1116,7 @@ export async function backfillEquityHistory(
 export async function backfillPolygonFlow(
   symbols: string[],
   daysBack = 60,
+  force = false,
 ): Promise<{ totalStrikeRows: number; symbolsDone: number; datesProcessed: number; skipped: number }> {
   const apiKey = process.env["POLYGON_API_KEY"];
   if (!apiKey) {
@@ -1123,14 +1124,25 @@ export async function backfillPolygonFlow(
     return { totalStrikeRows: 0, symbolsDone: 0, datesProcessed: 0, skipped: 0 };
   }
 
-  const existingRows = await db
-    .select({ sym: optionsFlowPerStrikeTable.underlyingSymbol })
-    .from(optionsFlowPerStrikeTable)
-    .where(lte(optionsFlowPerStrikeTable.date, new Date(Date.now() - 2 * 86_400_000).toISOString().slice(0, 10)))
-    .groupBy(optionsFlowPerStrikeTable.underlyingSymbol);
-  const existingSet = new Set(existingRows.map(r => r.sym));
-  const needsBackfill = symbols.filter(s => !existingSet.has(s.toUpperCase()));
-  const skipped = symbols.length - needsBackfill.length;
+  let needsBackfill: string[];
+  let skipped: number;
+
+  if (force) {
+    needsBackfill = symbols;
+    skipped = 0;
+  } else {
+    const existingCounts = await db
+      .select({
+        sym: optionsFlowPerStrikeTable.underlyingSymbol,
+        dateCnt: sql<number>`COUNT(DISTINCT ${optionsFlowPerStrikeTable.date})`,
+      })
+      .from(optionsFlowPerStrikeTable)
+      .where(lte(optionsFlowPerStrikeTable.date, new Date(Date.now() - 2 * 86_400_000).toISOString().slice(0, 10)))
+      .groupBy(optionsFlowPerStrikeTable.underlyingSymbol);
+    const countMap = new Map(existingCounts.map(r => [r.sym, Number(r.dateCnt)]));
+    needsBackfill = symbols.filter(s => (countMap.get(s.toUpperCase()) ?? 0) < 20);
+    skipped = symbols.length - needsBackfill.length;
+  }
 
   logger.info({ total: symbols.length, needsBackfill: needsBackfill.length, skipped, daysBack }, "Backfill: starting Polygon flow (resumable)");
   void logFailure("POLYGON_API", "INFO", `Flow backfill started — ${needsBackfill.length} symbols need data (${skipped} already done), ${daysBack} days`, { needsBackfill: needsBackfill.length, skipped, daysBack });

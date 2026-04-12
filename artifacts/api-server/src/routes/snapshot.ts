@@ -131,20 +131,20 @@ router.post("/recompute-aggregates", async (req, res) => {
 });
 
 router.post("/backfill-flow", async (req, res) => {
-  const { symbols, daysBack, sync } = req.body as { symbols?: string[]; daysBack?: number; sync?: boolean };
+  const { symbols, daysBack, sync, force } = req.body as { symbols?: string[]; daysBack?: number; sync?: boolean; force?: boolean };
   const scanSymbols = symbols ?? getDefaultUniverse();
   const days = daysBack ?? 60;
 
   if (sync) {
     try {
-      const result = await backfillPolygonFlow(scanSymbols, days);
+      const result = await backfillPolygonFlow(scanSymbols, days, !!force);
       res.json({ ok: true, ...result });
     } catch (e) {
       res.status(500).json({ ok: false, error: (e as Error).message });
     }
   } else {
-    res.json({ ok: true, message: `Polygon flow backfill started — ${days} days`, symbols: scanSymbols.length, daysBack: days });
-    backfillPolygonFlow(scanSymbols, days).catch(e => {
+    res.json({ ok: true, message: `Polygon flow backfill started — ${days} days`, symbols: scanSymbols.length, daysBack: days, force: !!force });
+    backfillPolygonFlow(scanSymbols, days, !!force).catch(e => {
       logger.error({ error: (e as Error).message }, "Background Polygon flow backfill failed");
     });
   }
