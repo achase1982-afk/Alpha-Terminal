@@ -69,18 +69,18 @@ function sleep(ms: number) {
   return new Promise(r => setTimeout(r, ms));
 }
 
-async function fetchWithRetry(url: string, opts: RequestInit, retries = 2): Promise<Response> {
+async function fetchWithRetry(url: string, opts: RequestInit, retries = 3): Promise<Response> {
   for (let i = 0; i <= retries; i++) {
     try {
       const res = await fetch(url, { ...opts, signal: AbortSignal.timeout(20_000) });
       if (res.status === 429 && i < retries) {
-        await sleep(2000 * (i + 1));
+        await sleep(15000 * (i + 1));
         continue;
       }
       return res;
     } catch (e) {
       if (i === retries) throw e;
-      await sleep(1000 * (i + 1));
+      await sleep(2000 * (i + 1));
     }
   }
   throw new Error("fetch exhausted retries");
@@ -1260,6 +1260,151 @@ export async function backfillPolygonFlow(
   });
   logger.info({ totalStrikeRows, symbolsDone, datesProcessed, skipped }, "Backfill: Polygon flow history complete");
   return { totalStrikeRows, symbolsDone, datesProcessed, skipped };
+}
+
+export async function backfillEquityFromPolygon(
+  symbols: string[],
+  daysBack = 120,
+): Promise<{ totalRows: number; symbolsDone: number }> {
+  const apiKey = process.env["POLYGON_API_KEY"];
+  if (!apiKey) return { totalRows: 0, symbolsDone: 0 };
+
+  const fromDate = new Date(Date.now() - daysBack * 86_400_000).toISOString().slice(0, 10);
+  const toDate = new Date().toISOString().slice(0, 10);
+
+  const spyUrl = `${POLYGON_API}/v2/aggs/ticker/SPY/range/1/day/${fromDate}/${toDate}?adjusted=true&sort=asc&limit=250&apiKey=${apiKey}`;
+  let spyCloses: number[] = [];
+  try {
+    const spyResp = await fetchWithRetry(spyUrl, {});
+    if (spyResp.ok) {
+      const spyJson = await spyResp.json() as { results?: Array<Record<string, unknown>> };
+      spyCloses = (spyJson.results ?? []).map(b => (b["c"] as number) ?? 0);
+    } else {
+      logger.warn({ status: spyResp.status }, "PolygonEquityBackfill: SPY fetch failed, RS ratio will be null");
+    }
+  } catch (e) {
+    logger.warn({ error: (e as Error).message }, "PolygonEquityBackfill: SPY fetch error, RS ratio will be null");
+  }
+
+  let totalRows = 0;
+  let symbolsDone = 0;
+
+  for (const sym of symbols) {
+    try {
+      const url = `${POLYGON_API}/v2/aggs/ticker/${encodeURIComponent(sym)}/range/1/day/${fromDate}/${toDate}?adjusted=true&sort=asc&limit=250&apiKey=${apiKey}`;
+      const resp = await fetchWithRetry(url, {});
+      if (!resp.ok) { logger.warn({ sym, status: resp.status }, "PolygonEquityBackfill: failed"); continue; }
+      const json = await resp.json() as { results?: Array<Record<string, unknown>> };
+      const bars = json.results ?? [];
+      if (bars.length < 5) continue;
+
+      const sectorEtf = SECTOR_MAP[sym.toUpperCase()] ?? "SPY";
+      let sectorCloses = spyCloses;
+      if (sectorEtf !== "SPY") {
+        const sUrl = `${POLYGON_API}/v2/aggs/ticker/${sectorEtf}/range/1/day/${fromDate}/${toDate}?adjusted=true&sort=asc&limit=250&apiKey=${apiKey}`;
+        const sResp = await fetchWithRetry(sUrl, {});
+        if (sResp.ok) {
+          const sJson = await sResp.json() as { results?: Array<Record<string, unknown>> };
+          sectorCloses = (sJson.results ?? []).map(b => (b["c"] as number) ?? 0);
+        }
+      }
+
+      const rows: Array<typeof equityDailyTable.$inferInsert> = [];
+
+      for (let i = 0; i < bars.length; i++) {
+        const b = bars[i];
+        const ts = b["t"] as number;
+        const dateStr = new Date(ts).toISOString().slice(0, 10);
+        const open = (b["o"] as number) ?? 0;
+        const high = (b["h"] as number) ?? 0;
+        const low = (b["l"] as number) ?? 0;
+        const close = (b["c"] as number) ?? 0;
+        const volume = (b["v"] as number) ?? 0;
+        if (close <= 0) continue;
+
+        const closesUpTo = bars.slice(0, i + 1).map(x => (x["c"] as number) ?? 0);
+        const candlesUpTo = bars.slice(0, i + 1).map(x => ({
+          open: (x["o"] as number) ?? 0,
+          high: (x["h"] as number) ?? 0,
+          low: (x["l"] as number) ?? 0,
+          close: (x["c"] as number) ?? 0,
+          volume: (x["v"] as number) ?? 0,
+          datetime: (x["t"] as number) ?? 0,
+        }));
+        const volumesUpTo = bars.slice(0, i + 1).map(x => (x["v"] as number) ?? 0);
+
+        const sma20 = computeSMA(closesUpTo, 20);
+        const atr5 = computeATR(candlesUpTo, 5);
+        const atr20 = computeATR(candlesUpTo, 20);
+        const hv20d = computeHV20(closesUpTo);
+        const obv = computeOBV(candlesUpTo);
+        const vol5 = volumesUpTo.length >= 5 ? medianOf(volumesUpTo.slice(-5)) : null;
+        const vol20 = volumesUpTo.length >= 20 ? medianOf(volumesUpTo.slice(-20)) : null;
+
+        let rsRatio: number | null = null;
+        if (spyCloses.length > 20 && closesUpTo.length > 20) {
+          const stockPct = (closesUpTo[closesUpTo.length - 1] - closesUpTo[closesUpTo.length - 21]) / closesUpTo[closesUpTo.length - 21];
+          const spyEndIdx = Math.min(i, spyCloses.length - 1);
+          const spyStartIdx = Math.max(0, spyEndIdx - 20);
+          if (spyCloses[spyStartIdx] > 0) {
+            const spyPct = (spyCloses[spyEndIdx] - spyCloses[spyStartIdx]) / spyCloses[spyStartIdx];
+            rsRatio = spyPct !== 0 ? stockPct / spyPct : null;
+          }
+        }
+
+        const pct5d = closesUpTo.length > 5 ? ((closesUpTo[closesUpTo.length - 1] - closesUpTo[closesUpTo.length - 6]) / closesUpTo[closesUpTo.length - 6]) * 100 : null;
+        const pct10d = closesUpTo.length > 10 ? ((closesUpTo[closesUpTo.length - 1] - closesUpTo[closesUpTo.length - 11]) / closesUpTo[closesUpTo.length - 11]) * 100 : null;
+
+        rows.push({
+          symbol: sym.toUpperCase(),
+          date: dateStr,
+          open, high, low, close,
+          adjustedClose: close,
+          volume: Math.round(volume),
+          marketCap: null,
+          haltStatus: false,
+          ivr: null, iv30d: null, hv20d: hv20d ?? null, putCallRatio: null,
+          sma20, atr5, atr20,
+          medianVolume5d: vol5 ? Math.round(vol5) : null,
+          medianVolume20d: vol20 ? Math.round(vol20) : null,
+          obv, rsRatio,
+          priceChangePct5d: pct5d,
+          priceChangePct10d: pct10d,
+        });
+      }
+
+      if (rows.length > 0) {
+        const batchSize = 50;
+        for (let b = 0; b < rows.length; b += batchSize) {
+          await db.insert(equityDailyTable)
+            .values(rows.slice(b, b + batchSize))
+            .onConflictDoUpdate({
+              target: [equityDailyTable.symbol, equityDailyTable.date],
+              set: {
+                open: sql`excluded.open`, high: sql`excluded.high`, low: sql`excluded.low`,
+                close: sql`excluded.close`, volume: sql`excluded.volume`,
+                hv20d: sql`excluded.hv_20d`, sma20: sql`excluded.sma_20`,
+                atr5: sql`excluded.atr_5`, atr20: sql`excluded.atr_20`,
+                medianVolume5d: sql`excluded.median_volume_5d`,
+                medianVolume20d: sql`excluded.median_volume_20d`,
+                obv: sql`excluded.obv`, rsRatio: sql`excluded.rs_ratio`,
+                priceChangePct5d: sql`excluded.price_change_pct_5d`,
+                priceChangePct10d: sql`excluded.price_change_pct_10d`,
+              },
+            });
+        }
+        totalRows += rows.length;
+        symbolsDone++;
+        logger.info({ sym, rows: rows.length, symbolsDone }, "PolygonEquityBackfill: symbol done");
+      }
+    } catch (e) {
+      logger.warn({ sym, error: (e as Error).message }, "PolygonEquityBackfill: failed");
+    }
+    await sleep(13000);
+  }
+
+  logger.info({ totalRows, symbolsDone }, "PolygonEquityBackfill: complete");
+  return { totalRows, symbolsDone };
 }
 
 export async function getSnapshotStatus() {

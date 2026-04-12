@@ -205,6 +205,21 @@ const VALID_CONVICTIONS = new Set(["LOW", "MEDIUM", "HIGH"]);
 const VALID_DATA_QUALITIES = new Set(["HIGH", "MEDIUM", "LOW"]);
 const VALID_TIME_HORIZONS = new Set(["INTRADAY", "1-3D", "3-10D", "10+D"]);
 
+function normalizeTimeHorizon(raw: unknown): string {
+  if (typeof raw !== "string" || !raw) return "3-10D";
+  const s = raw.toUpperCase().replace(/\s+/g, "");
+  if (VALID_TIME_HORIZONS.has(s)) return s;
+  if (s.includes("INTRA")) return "INTRADAY";
+  const m = s.match(/(\d+)/g);
+  if (m && m.length >= 1) {
+    const maxDays = Math.max(...m.map(Number));
+    if (maxDays <= 3) return "1-3D";
+    if (maxDays <= 10) return "3-10D";
+    return "10+D";
+  }
+  return "3-10D";
+}
+
 function validateAnalystResponse(parsed: any): AnalystResponse {
   if (!parsed || typeof parsed !== "object") throw new Error("Response is not an object");
 
@@ -212,7 +227,7 @@ function validateAnalystResponse(parsed: any): AnalystResponse {
   if (!core || typeof core !== "object") throw new Error("Missing tradeIdeaCore");
   if (!VALID_DIRECTIONS.has(core.direction)) throw new Error(`Invalid direction: ${core.direction}`);
   if (!VALID_INSTRUMENT_TYPES.has(core.instrumentType)) throw new Error(`Invalid instrumentType: ${core.instrumentType}`);
-  if (!VALID_TIME_HORIZONS.has(core.timeHorizon)) throw new Error(`Invalid timeHorizon: ${core.timeHorizon}`);
+  core.timeHorizon = normalizeTimeHorizon(core.timeHorizon);
 
   const rat = parsed.rationale;
   if (!rat || typeof rat !== "object") throw new Error("Missing rationale");

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { runFullSnapshot, getSnapshotStatus, collectEquitySnapshots, collectPolygonFlowFromAPI, computeFlowAggregates, computeIVFromFlow, backfillEquityHistory, backfillPolygonFlow } from "../lib/dailySnapshot";
+import { runFullSnapshot, getSnapshotStatus, collectEquitySnapshots, collectPolygonFlowFromAPI, computeFlowAggregates, computeIVFromFlow, backfillEquityHistory, backfillPolygonFlow, backfillEquityFromPolygon } from "../lib/dailySnapshot";
 import { getBestAccessToken } from "../lib/tokenStore";
 import { logger } from "../lib/logger";
 import { db } from "@workspace/db";
@@ -162,6 +162,26 @@ router.post("/compute-iv", async (req, res) => {
   }).catch(e => {
     logger.error({ error: (e as Error).message }, "IV computation failed");
   });
+});
+
+router.post("/backfill-equity-polygon", async (req, res) => {
+  const { symbols, daysBack, sync } = req.body as { symbols?: string[]; daysBack?: number; sync?: boolean };
+  const scanSymbols = symbols ?? getDefaultUniverse();
+  const days = daysBack ?? 120;
+
+  if (sync) {
+    try {
+      const result = await backfillEquityFromPolygon(scanSymbols, days);
+      res.json({ ok: true, ...result });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: (e as Error).message });
+    }
+  } else {
+    res.json({ ok: true, message: `Polygon equity backfill started`, symbols: scanSymbols.length, daysBack: days });
+    backfillEquityFromPolygon(scanSymbols, days).catch(e => {
+      logger.error({ error: (e as Error).message }, "Polygon equity backfill failed");
+    });
+  }
 });
 
 function getDefaultUniverse(): string[] {

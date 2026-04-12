@@ -144,16 +144,17 @@ export async function getUniverseAnomalies(
   const minPrice = filters.minPrice ?? AI_LAB_CONFIG.MIN_PRICE;
   const minVol = filters.minAvgVolume20d ?? AI_LAB_CONFIG.MIN_AVG_VOLUME_20D;
 
+  const liquidCoreList = [...LIQUID_CORE_SYMBOLS] as string[];
+
   const latestDateRow = await db
     .select({ maxDate: sql<string>`max(${equityDailyTable.date})` })
-    .from(equityDailyTable);
+    .from(equityDailyTable)
+    .where(inArray(equityDailyTable.symbol, liquidCoreList));
   const latestDate = latestDateRow[0]?.maxDate;
   if (!latestDate) {
     emitTelemetry("DATABASE", "WARN", "AI Lab: no equity_daily data found", {}, "AI_LAB", batch);
     return [];
   }
-
-  const liquidCoreList = [...LIQUID_CORE_SYMBOLS] as string[];
   const equityRows = await db
     .select()
     .from(equityDailyTable)
@@ -286,7 +287,8 @@ export async function getCompactUniverseSummaries(): Promise<CompactTickerSummar
 
   const latestDateRow = await db
     .select({ maxDate: sql<string>`max(${equityDailyTable.date})` })
-    .from(equityDailyTable);
+    .from(equityDailyTable)
+    .where(inArray(equityDailyTable.symbol, liquidCoreList));
   const latestDate = latestDateRow[0]?.maxDate;
   if (!latestDate) return [];
 
