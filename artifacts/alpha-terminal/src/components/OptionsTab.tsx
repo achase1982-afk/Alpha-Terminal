@@ -154,25 +154,34 @@ function findATMIndex(strikes: number[], lastPrice: number): number {
   return best;
 }
 
+function normalizeStrike(v: number): number {
+  return Math.round(v * 100) / 100;
+}
+
+function strikeKey(v: number): string {
+  return normalizeStrike(v).toFixed(2);
+}
+
 function buildExpirationGroups(
   calls: Contract[], puts: Contract[], lastPrice: number | null
 ): ExpirationGroup[] {
-  const expMap = new Map<string, { calls: Map<number, Contract>; puts: Map<number, Contract>; dte: number }>();
+  const expMap = new Map<string, { calls: Map<string, Contract>; puts: Map<string, Contract>; dte: number }>();
   for (const c of calls) {
     if (!expMap.has(c.expiration)) expMap.set(c.expiration, { calls: new Map(), puts: new Map(), dte: c.dte ?? 0 });
-    expMap.get(c.expiration)!.calls.set(c.strike, c);
+    expMap.get(c.expiration)!.calls.set(strikeKey(c.strike), c);
   }
   for (const p of puts) {
     if (!expMap.has(p.expiration)) expMap.set(p.expiration, { calls: new Map(), puts: new Map(), dte: p.dte ?? 0 });
-    expMap.get(p.expiration)!.puts.set(p.strike, p);
+    expMap.get(p.expiration)!.puts.set(strikeKey(p.strike), p);
   }
   const groups: ExpirationGroup[] = [];
   for (const [exp, { calls: callMap, puts: putMap, dte }] of expMap) {
-    const allStrikes = [...new Set([...callMap.keys(), ...putMap.keys()])].sort((a, b) => a - b);
+    const allStrikeKeys = [...new Set([...callMap.keys(), ...putMap.keys()])];
+    const allStrikes = allStrikeKeys.map(k => parseFloat(k)).sort((a, b) => a - b);
     const totalStrikes = allStrikes.length;
     const atmIdx = lastPrice != null ? findATMIndex(allStrikes, lastPrice) : -1;
     const normalizedRows: NormalizedRow[] = allStrikes.map((strike) => ({
-      strike, call: callMap.get(strike) ?? null, put: putMap.get(strike) ?? null,
+      strike, call: callMap.get(strikeKey(strike)) ?? null, put: putMap.get(strikeKey(strike)) ?? null,
     }));
 
     let atmIV: number | null = null;
@@ -181,7 +190,7 @@ function buildExpirationGroups(
       const atmRow = normalizedRows[atmIdx];
       const callIV = atmRow?.call?.iv;
       const putIV = atmRow?.put?.iv;
-      const ivValues = [callIV, putIV].filter((v): v is number => v != null && !isNaN(v));
+      const ivValues = [callIV, putIV].filter((v): v is number => v != null && !isNaN(v) && v > 0);
       if (ivValues.length > 0) {
         atmIV = ivValues.reduce((a, b) => a + b, 0) / ivValues.length;
         expectedMove = lastPrice * (atmIV / 100) * Math.sqrt(Math.max(dte, 1) / 365);
@@ -211,8 +220,8 @@ function buildExpirationGroups(
     const otmPutIVs: number[] = [];
     if (lastPrice != null) {
       for (const row of normalizedRows) {
-        if (row.strike > lastPrice && row.call?.iv) otmCallIVs.push(row.call.iv);
-        if (row.strike < lastPrice && row.put?.iv) otmPutIVs.push(row.put.iv);
+        if (row.strike > lastPrice && row.call?.iv && row.call.iv > 0) otmCallIVs.push(row.call.iv);
+        if (row.strike < lastPrice && row.put?.iv && row.put.iv > 0) otmPutIVs.push(row.put.iv);
       }
     }
     const avgOtmCallIV = otmCallIVs.length > 0 ? otmCallIVs.reduce((a, b) => a + b, 0) / otmCallIVs.length : null;
@@ -272,7 +281,7 @@ function useStreamingExpirationStats(rows: NormalizedRow[], underlyingPrice: num
       const pTick = atmRow?.put?.streamKey ? ticks[atmRow.put.streamKey] : undefined;
       const callIV = cTick?.iv;
       const putIV = pTick?.iv;
-      const ivValues = [callIV, putIV].filter((v): v is number => v != null && !isNaN(v));
+      const ivValues = [callIV, putIV].filter((v): v is number => v != null && !isNaN(v) && v > 0);
       if (ivValues.length > 0) {
         atmIV = ivValues.reduce((a, b) => a + b, 0) / ivValues.length;
         expectedMove = underlyingPrice * (atmIV / 100) * Math.sqrt(Math.max(dte, 1) / 365);

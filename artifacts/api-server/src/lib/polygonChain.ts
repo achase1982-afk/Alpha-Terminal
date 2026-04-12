@@ -97,7 +97,7 @@ function parseResults(results: PolygonOptionResult[]): {
     }
 
     const c: PolygonParsedContract = {
-      strike: r.details.strike_price,
+      strike: Math.round(r.details.strike_price * 100) / 100,
       expiration: r.details.expiration_date,
       schwabSymbol: r.details.ticker ? polygonTickerToSchwabSymbol(r.details.ticker) : undefined,
       bid: r.last_quote?.bid,

@@ -35,6 +35,7 @@ export const useOptionsStreamStore = create<OptionsStreamState>()((set) => ({
   ticks: {},
   mergeTick: (tick) =>
     set((state) => {
+      if (tick.iv != null && tick.iv <= -999) tick.iv = null;
       const existing = state.ticks[tick.key];
       if (existing) {
         let changed = false;

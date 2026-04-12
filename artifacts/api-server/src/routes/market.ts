@@ -501,8 +501,9 @@ function parseContracts(map: Record<string, unknown>): ParsedContract[] {
     for (const [, options] of Object.entries(strikeMap)) {
       const optionArr = options as Array<Record<string, unknown>>;
       for (const opt of optionArr) {
+        const rawStrike = opt["strikePrice"] as number;
         contracts.push({
-          strike: opt["strikePrice"] as number,
+          strike: Math.round(rawStrike * 100) / 100,
           expiration: opt["expirationDate"] as string,
           schwabSymbol: opt["symbol"] as string | undefined,
           bid: opt["bid"] as number | undefined,
@@ -512,7 +513,7 @@ function parseContracts(map: Record<string, unknown>): ParsedContract[] {
           last: opt["last"] as number | undefined,
           volume: opt["totalVolume"] as number | undefined,
           openInterest: opt["openInterest"] as number | undefined,
-          iv: opt["volatility"] as number | undefined,
+          iv: (() => { const v = opt["volatility"] as number | undefined; return (v != null && v > 0) ? v : undefined; })(),
           delta: opt["delta"] as number | undefined,
           gamma: opt["gamma"] as number | undefined,
           theta: opt["theta"] as number | undefined,

@@ -1,0 +1,32 @@
+The core issue is almost certainly a data mapping/parsing bug in how your Alpha Terminal (the Replit dev build) ingests the bulk REST snapshot for the options chain, specifically when aligning quote fields (bid/ask/vol/IV/greeks/moneyness) to the correct (expiration + strike + call/put) row.
+This is why:
+	•	REST polling keeps breaking the display every couple hours (even after WS “fixes” it temporarily).
+	•	The breakage is most visible on/around the in-the-money (ITM) strikes (the yellow-highlighted ones with the % moneyness labels).
+	•	WS streaming makes it look normal again — until the next full refresh.
+Why REST polling specifically causes this (and why ITM strikes are hit hardest)
+REST option-chain endpoints (whatever provider you’re using — Polygon, CBOE, or similar) usually return one big snapshot:
+	•	A list (or map) of strikes.
+	•	Separate arrays/objects for calls and puts with bid/ask/vol/IV/etc.
+Your frontend code then has to zip those together into the table you see (left = calls, middle = strike+% moneyness, right = puts).
+Common failure modes that match exactly what your screenshots show:
+	1	Strike key mismatch (very common with .5 strikes like 342.5, 347.5, 417.5, 422.5, etc.) In JS, floating-point keys in Maps/Objects are unreliable (352.5 !== 352.50000000000006). If the REST response uses strings in one place and numbers in another, or you stringify inconsistently, some rows get the wrong quote data (or fall back to 0.00 / sentinel values like -999.0% IV and -183.69 MV).
+	2	Array desync / incomplete payload The API sometimes returns a filtered or partially-populated list (especially on weekends/post-market, or when liquidity is lower). If your code assumes every strike has a perfect matching call and put object, the arrays shift and ITM rows get garbage (or data from the wrong contract).
+	◦	See MU screenshot: 417.5, 422.5, 427.5 rows are all 0.00 on both sides → classic “no matching data found” after a shift.
+	◦	See TSLA screenshot: -999.0% IV everywhere → your code’s fallback sentinel when the lookup fails.
+	3	ITM strikes are hit hardest because:
+	◦	They often appear first in the sorted API response (lowest strikes → highest strikes).
+	◦	ITM options have higher intrinsic value, wider spreads, and more variable quote behavior → any misalignment looks extra wrong (prices look “off” for the DTE, IV blows up or goes sentinel, moneyness % still renders because it’s calculated from spot separately).
+	◦	Your UI logic for yellow highlighting + “% ITM/OTM” + “ATM” label probably runs after the mapping, so it still lights up the wrong rows.
+	4	Why it recurs every couple hours even with WebSocket:
+	◦	You almost certainly have a periodic full-chain REST poll (common pattern: “refresh every X minutes” or on tab focus, or when WS reconnects, or to catch new expirations).
+	◦	That poll overwrites the clean WS-updated state with the bad bulk data.
+	◦	Replit cold starts, cache expiry, or auth token refresh can also make the REST response flaky intermittently.
+	◦	WS works better because each tick is keyed by a unique contract identifier (full OCC symbol or exchange ID), so it updates individual cells safely without re-mapping the entire table.
+Quick things to check/fix in your code (the coding agent probably missed the mapping layer)
+	•	Never use raw strike floats as keys. Always normalize to strings: key = ${expiry}-${strike.toFixed(2)}-${type}`` (or better, use the full contract symbol the API gives you).
+	•	On REST ingest, add defensive logging: log the raw payload length vs. how many rows you rendered, and any missing contracts.
+	•	Add a “last updated” timestamp per row so you can see when a cell was last touched by REST vs. WS.
+	•	Consider making REST only fetch missing contracts or use it only for initial load + expirations, then let WS own everything after.
+	•	If the API offers it, switch to a per-expiration or per-strike REST endpoint instead of one giant chain snapshot — smaller payloads = fewer chances for desync.
+This is an extremely common gotcha when building option chain UIs (I’ve seen the exact -999% IV sentinel and 0.00 ghost rows in multiple pro terminals during dev). The fact that WS streaming “fixes” it is the smoking gun that the bulk REST parsing path is the culprit, not the data source itself.
+If you can share a snippet of how you’re processing the REST snapshot into the table (the mapping/reduce logic), I can pinpoint the exact line that’s biting you. Otherwise, start by forcing every strike key to a consistent string format and add some console logs on the REST path — you’ll see the mismatch immediately.
