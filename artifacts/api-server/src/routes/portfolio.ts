@@ -19,15 +19,21 @@ function getTraderToken(): string | null {
   return trader?.accessToken ?? null;
 }
 
-async function schwabGet(path: string, token: string): Promise<any> {
-  const res = await fetch(`${SCHWAB_TRADER_BASE}${path}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) {
+async function schwabGet(path: string, token: string, retries = 1): Promise<any> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const res = await fetch(`${SCHWAB_TRADER_BASE}${path}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.ok) return res.json();
     const body = await res.text().catch(() => "");
+    if (res.status >= 500 && attempt < retries) {
+      logger.warn({ path, status: res.status, attempt }, "Schwab 5xx, retrying...");
+      await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
+      continue;
+    }
     throw new Error(`Schwab ${path} returned ${res.status}: ${body.slice(0, 300)}`);
   }
-  return res.json();
+  throw new Error(`Schwab ${path} exhausted retries`);
 }
 
 router.get("/accounts", async (_req, res) => {
@@ -39,7 +45,7 @@ router.get("/accounts", async (_req, res) => {
   }
 
   try {
-    const accounts = await schwabGet("/accounts?fields=positions", token);
+    const accounts = await schwabGet("/accounts?fields=positions", token, 2);
     const mapped = accounts.map((acct: any) => {
       const sa = acct.securitiesAccount;
       const bal = sa.currentBalances ?? {};

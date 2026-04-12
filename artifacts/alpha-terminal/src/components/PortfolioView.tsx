@@ -856,7 +856,23 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
       const timeout = setTimeout(() => clearInterval(retry), 10_000);
       var cleanup = () => { clearInterval(retry); clearTimeout(timeout); };
     }
-    fetchWithAuth("/api/portfolio/accounts").then(r => r.ok ? r.json() : Promise.reject()).then(data => { if (data.length > 0) { setAccount(data[0]); setLastRefresh(new Date()); } setLoading(false); }).catch(() => { if (!usePortfolioStreamStore.getState().account) setError("Failed to load portfolio data"); setLoading(false); });
+    const fetchAccountsWithRetry = async (attempts = 3) => {
+      for (let i = 0; i < attempts; i++) {
+        try {
+          const r = await fetchWithAuth("/api/portfolio/accounts");
+          if (!r.ok) throw new Error();
+          const data = await r.json();
+          if (data.length > 0) { setAccount(data[0]); setLastRefresh(new Date()); }
+          setLoading(false);
+          return;
+        } catch {
+          if (i < attempts - 1) await new Promise(r => setTimeout(r, 2000 * (i + 1)));
+        }
+      }
+      if (!usePortfolioStreamStore.getState().account) setError("Failed to load portfolio data");
+      setLoading(false);
+    };
+    fetchAccountsWithRetry();
     fetchWithAuth("/api/portfolio/orders?days=30").then(r => r.ok ? r.json() : Promise.reject()).then(data => { setOrders(data); }).catch(() => {});
     fetchWithAuth("/api/portfolio/account-hash").then(r => r.json()).then(d => { if (d.hashValue) setAccountHash(d.hashValue); }).catch(() => {});
     return () => {
