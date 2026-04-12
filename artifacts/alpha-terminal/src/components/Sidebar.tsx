@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from "react";
 import { createPortal } from "react-dom";
-import { useTerminalStore, useActiveWatchlist, type TerminalState } from "@/lib/store";
+import { useTerminalStore, useActiveWatchlist, type TerminalState, type NotificationEventType } from "@/lib/store";
 import { useOptionsSettingsStore } from "@/lib/options-store";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import type { MarketPulseSettings, AllowedStrategy } from "@/types/marketPulse";
@@ -20,7 +20,7 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import {
   X, Shield, Link, Fingerprint, Power, Menu,
-  Star, Activity, Briefcase,
+  Star, Activity, Briefcase, Bell,
   Zap, LineChart, LayoutDashboard, BrainCircuit,
   ChevronLeft, ChevronRight, Trash2, Plus, RotateCcw, BarChart2,
   SlidersHorizontal, Gauge, ListOrdered, CalendarDays, Palette,
@@ -49,7 +49,8 @@ type SidebarPage =
   | "AI Parameters"
   | "UI Customization"
   | "Security & Privacy"
-  | "Telemetry";
+  | "Telemetry"
+  | "Notifications";
 
 export interface SidebarHandle {
   clearActivePage: () => void;
@@ -147,6 +148,7 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
             {activePage === "UI Customization" && <UICustomizationPage />}
             {activePage === "Security & Privacy" && <SecurityPrivacyPage />}
             {activePage === "Telemetry" && <TelemetryPage />}
+            {activePage === "Notifications" && <NotificationsPage />}
           </div>
         </div>,
         document.body
@@ -187,6 +189,7 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
                 <MenuRow icon={<LayoutDashboard />} label="Display & Marquee" onClick={() => { setActivePage("Display & Marquee"); onClose(); }} />
                 <MenuRow icon={<BrainCircuit />} label="AI Parameters" onClick={() => { setActivePage("AI Parameters"); onClose(); }} />
                 <MenuRow icon={<Palette />} label="UI Customization" onClick={() => { setActivePage("UI Customization"); onClose(); }} />
+                <MenuRow icon={<Bell />} label="Notifications" onClick={() => { setActivePage("Notifications"); onClose(); }} />
                 <MenuRow icon={<AlertTriangle />} label="Telemetry" badge={telemetryCount} onClick={() => { setActivePage("Telemetry"); onClose(); }} />
                 <MenuRow icon={<Shield />} label="Security & Privacy" onClick={() => { setActivePage("Security & Privacy"); onClose(); }} />
               </div>
@@ -1109,6 +1112,98 @@ function SettingInput({ label, value, onChange, placeholder }: { label: string; 
     <div className="space-y-1">
       <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest">{label}</Label>
       <Input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="font-mono text-xs h-8 bg-background border-card-border" />
+    </div>
+  );
+}
+
+const NOTIFICATION_EVENTS: { key: NotificationEventType; label: string; description: string }[] = [
+  { key: "ExecutionCreated", label: "Order Filled", description: "When an order executes and fills" },
+  { key: "OrderCreated", label: "Order Created", description: "When a new order is submitted" },
+  { key: "OrderAccepted", label: "Order Accepted", description: "When Schwab accepts an order" },
+  { key: "OrderModified", label: "Order Modified", description: "When an order is changed" },
+  { key: "OrderRejected", label: "Order Rejected", description: "When Schwab rejects an order" },
+  { key: "OrderExpired", label: "Order Expired", description: "When an order expires unfilled" },
+  { key: "CancelAccepted", label: "Cancel Accepted", description: "When an order cancellation succeeds" },
+  { key: "CancelRejected", label: "Cancel Rejected", description: "When a cancellation is rejected" },
+  { key: "OrderUROutCompleted", label: "Order Closed", description: "When an order is fully closed out" },
+];
+
+function NotificationsPage() {
+  const { notificationPrefs, setNotificationPref, setNotificationChannelPref, setAllNotificationPrefs } = useTerminalStore();
+  const allInApp = Object.values(notificationPrefs.inApp).every(Boolean);
+  const noneInApp = Object.values(notificationPrefs.inApp).every(v => !v);
+  const allPush = Object.values(notificationPrefs.push).every(Boolean);
+  const nonePush = Object.values(notificationPrefs.push).every(v => !v);
+
+  return (
+    <div className="space-y-6 max-w-lg">
+      <div className="flex items-center justify-between p-3 rounded-lg" style={{ background: "#1a1a1c", border: "1px solid #2a2a2c" }}>
+        <div>
+          <div className="font-bold text-sm text-white">Master Switch</div>
+          <div className="text-[11px] text-zinc-500 mt-0.5">Turn off all notifications at once</div>
+        </div>
+        <Switch
+          checked={notificationPrefs.masterEnabled}
+          onCheckedChange={(v) => setNotificationPref("masterEnabled", v)}
+        />
+      </div>
+
+      <div style={{ opacity: notificationPrefs.masterEnabled ? 1 : 0.4, pointerEvents: notificationPrefs.masterEnabled ? "auto" : "none" }}>
+        <div className="mb-4">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="font-bold text-xs text-white uppercase tracking-widest">In-App Alerts</h3>
+            <button
+              onClick={() => setAllNotificationPrefs("inApp", noneInApp || !allInApp)}
+              className="text-[10px] font-mono text-primary hover:underline"
+            >
+              {allInApp ? "Disable All" : "Enable All"}
+            </button>
+          </div>
+          <div className="space-y-1">
+            {NOTIFICATION_EVENTS.map(evt => (
+              <div key={`inApp-${evt.key}`} className="flex items-center justify-between py-2 px-3 rounded-md hover:bg-zinc-900/50 transition-colors">
+                <div>
+                  <div className="text-[12px] font-semibold text-white">{evt.label}</div>
+                  <div className="text-[10px] text-zinc-500">{evt.description}</div>
+                </div>
+                <Switch
+                  checked={notificationPrefs.inApp[evt.key] ?? true}
+                  onCheckedChange={(v) => setNotificationChannelPref("inApp", evt.key, v)}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="h-px bg-zinc-800 my-4" />
+
+        <div className="mb-4">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="font-bold text-xs text-white uppercase tracking-widest">Push Notifications</h3>
+            <button
+              onClick={() => setAllNotificationPrefs("push", nonePush || !allPush)}
+              className="text-[10px] font-mono text-primary hover:underline"
+            >
+              {allPush ? "Disable All" : "Enable All"}
+            </button>
+          </div>
+          <div className="text-[10px] text-zinc-500 mb-3">Sent to your device even when the app is in the background</div>
+          <div className="space-y-1">
+            {NOTIFICATION_EVENTS.map(evt => (
+              <div key={`push-${evt.key}`} className="flex items-center justify-between py-2 px-3 rounded-md hover:bg-zinc-900/50 transition-colors">
+                <div>
+                  <div className="text-[12px] font-semibold text-white">{evt.label}</div>
+                  <div className="text-[10px] text-zinc-500">{evt.description}</div>
+                </div>
+                <Switch
+                  checked={notificationPrefs.push[evt.key] ?? false}
+                  onCheckedChange={(v) => setNotificationChannelPref("push", evt.key, v)}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

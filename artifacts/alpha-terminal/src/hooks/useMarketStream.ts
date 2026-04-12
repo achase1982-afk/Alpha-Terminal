@@ -240,19 +240,26 @@ export function useMarketStream() {
           setPortfolioStatus(msg.data as any);
         } else if (msg.event === "orderAlert") {
           const d = msg.data as Record<string, unknown>;
-          const alert: OrderAlert = {
-            id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-            type: (d.type as string) ?? "UNKNOWN",
-            symbol: (d.symbol as string) ?? null,
-            status: (d.status as string) ?? null,
-            side: (d.side as string) ?? null,
-            quantity: (d.quantity as string) ?? null,
-            price: (d.price as string) ?? null,
-            orderId: (d.orderId as string) ?? null,
-            timestamp: (d.timestamp as number) ?? Date.now(),
-            raw: (d.raw as string) ?? "",
-          };
-          useOrderAlertStore.getState().addAlert(alert);
+          const alertType = (d.type as string) ?? "UNKNOWN";
+          const prefs = useTerminalStore.getState().notificationPrefs;
+          if (prefs.masterEnabled) {
+            const inAppEnabled = (prefs.inApp as Record<string, boolean>)[alertType as string] ?? true;
+            if (inAppEnabled) {
+              const alert: OrderAlert = {
+                id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                type: alertType,
+                symbol: (d.symbol as string) ?? null,
+                status: (d.status as string) ?? null,
+                side: (d.side as string) ?? null,
+                quantity: (d.quantity as string) ?? null,
+                price: (d.price as string) ?? null,
+                orderId: (d.orderId as string) ?? null,
+                timestamp: (d.timestamp as number) ?? Date.now(),
+                raw: (d.raw as string) ?? "",
+              };
+              useOrderAlertStore.getState().addAlert(alert);
+            }
+          }
         } else if (msg.event === "streamerStatus") {
           const s = (msg.data as { status?: string }).status;
           if (s === "connected") setStreamStatus("live");

@@ -23,6 +23,11 @@ interface ChatMessage {
   content: string;
 }
 
+export type NotificationEventType =
+  | 'OrderCreated' | 'OrderAccepted' | 'ExecutionCreated'
+  | 'CancelAccepted' | 'OrderUROutCompleted' | 'OrderRejected'
+  | 'CancelRejected' | 'OrderExpired' | 'OrderModified';
+
 export interface TerminalState {
   accessToken: string | null;
   refreshToken: string | null;
@@ -69,6 +74,46 @@ export interface TerminalState {
     feature: keyof TerminalState['aiFeatureSettings'],
     key: 'model' | 'temperature',
     value: string | number,
+  ) => void;
+
+  notificationPrefs: {
+    masterEnabled: boolean;
+    inApp: {
+      OrderCreated: boolean;
+      OrderAccepted: boolean;
+      ExecutionCreated: boolean;
+      CancelAccepted: boolean;
+      OrderUROutCompleted: boolean;
+      OrderRejected: boolean;
+      CancelRejected: boolean;
+      OrderExpired: boolean;
+      OrderModified: boolean;
+    };
+    push: {
+      OrderCreated: boolean;
+      OrderAccepted: boolean;
+      ExecutionCreated: boolean;
+      CancelAccepted: boolean;
+      OrderUROutCompleted: boolean;
+      OrderRejected: boolean;
+      CancelRejected: boolean;
+      OrderExpired: boolean;
+      OrderModified: boolean;
+    };
+    sound: boolean;
+  };
+  setNotificationPref: (
+    category: 'masterEnabled' | 'sound',
+    value: boolean,
+  ) => void;
+  setNotificationChannelPref: (
+    channel: 'inApp' | 'push',
+    eventType: NotificationEventType,
+    value: boolean,
+  ) => void;
+  setAllNotificationPrefs: (
+    channel: 'inApp' | 'push',
+    value: boolean,
   ) => void;
 
   aiLabStrategistConfig: {
@@ -245,6 +290,54 @@ export const useTerminalStore = create<TerminalState>()(
           },
         })),
 
+      notificationPrefs: {
+        masterEnabled: true,
+        inApp: {
+          OrderCreated: true,
+          OrderAccepted: false,
+          ExecutionCreated: true,
+          CancelAccepted: true,
+          OrderUROutCompleted: false,
+          OrderRejected: true,
+          CancelRejected: true,
+          OrderExpired: true,
+          OrderModified: true,
+        },
+        push: {
+          OrderCreated: false,
+          OrderAccepted: false,
+          ExecutionCreated: true,
+          CancelAccepted: false,
+          OrderUROutCompleted: false,
+          OrderRejected: true,
+          CancelRejected: true,
+          OrderExpired: true,
+          OrderModified: false,
+        },
+        sound: false,
+      },
+      setNotificationPref: (category, value) =>
+        set((state) => ({
+          notificationPrefs: { ...state.notificationPrefs, [category]: value },
+        })),
+      setNotificationChannelPref: (channel, eventType, value) =>
+        set((state) => ({
+          notificationPrefs: {
+            ...state.notificationPrefs,
+            [channel]: { ...state.notificationPrefs[channel], [eventType]: value },
+          },
+        })),
+      setAllNotificationPrefs: (channel, value) =>
+        set((state) => {
+          const updated = { ...state.notificationPrefs[channel] };
+          for (const k of Object.keys(updated)) {
+            (updated as Record<string, boolean>)[k] = value;
+          }
+          return {
+            notificationPrefs: { ...state.notificationPrefs, [channel]: updated },
+          };
+        }),
+
       aiLabStrategistConfig: {
         analystModelProvider: 'anthropic',
         analystModelName: 'claude-sonnet-4-20250514',
@@ -387,7 +480,7 @@ export const useTerminalStore = create<TerminalState>()(
     }),
     {
       name: 'alpha-terminal-storage',
-      version: 13,
+      version: 14,
       migrate: (persistedState: unknown, version: number) => {
         const s = persistedState as Record<string, unknown>;
         if (version < 2) {
@@ -488,6 +581,25 @@ export const useTerminalStore = create<TerminalState>()(
           if (cfg && typeof cfg === 'object') {
             cfg['enabled'] = true;
           }
+        }
+        if (version < 14) {
+          const defaultInApp = {
+            OrderCreated: true, OrderAccepted: false, ExecutionCreated: true,
+            CancelAccepted: true, OrderUROutCompleted: false, OrderRejected: true,
+            CancelRejected: true, OrderExpired: true, OrderModified: true,
+          };
+          const defaultPush = {
+            OrderCreated: false, OrderAccepted: false, ExecutionCreated: true,
+            CancelAccepted: false, OrderUROutCompleted: false, OrderRejected: true,
+            CancelRejected: true, OrderExpired: true, OrderModified: false,
+          };
+          const existing = (s as Record<string, unknown>)['notificationPrefs'] as Record<string, unknown> | undefined;
+          (s as Record<string, unknown>)['notificationPrefs'] = {
+            masterEnabled: existing?.masterEnabled ?? true,
+            inApp: { ...defaultInApp, ...(existing?.inApp as Record<string, boolean> | undefined) },
+            push: { ...defaultPush, ...(existing?.push as Record<string, boolean> | undefined) },
+            sound: existing?.sound ?? false,
+          };
         }
         return s;
       },
