@@ -28,7 +28,7 @@ const DEFAULT_CONFIG: AiLabStrategistConfig = {
   skepticModelName: "gemini-2.5-flash",
   skepticTemperature: 0,
 
-  enabled: false,
+  enabled: true,
 };
 
 let currentConfig: AiLabStrategistConfig = { ...DEFAULT_CONFIG };
