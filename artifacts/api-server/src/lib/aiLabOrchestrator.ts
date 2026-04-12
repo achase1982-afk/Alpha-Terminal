@@ -6,6 +6,7 @@ import {
   getTickerSnapshot,
   getRegimeState,
   getScannerAlignment,
+  getCompactUniverseSummaries,
   AI_LAB_CONFIG,
   type TickerSnapshot,
   type RegimeState,
@@ -29,6 +30,8 @@ import type {
   SkepticResponse,
   ConversationTurn,
   DeliberationLog,
+  UniverseScreenRequest,
+  CompactTickerSummary,
 } from "./aiLabLlmTypes.js";
 
 // ─── CONFIGURATION ──────────────────────────────────────────────────────────
@@ -624,50 +627,117 @@ async function preMarketPlan(): Promise<void> {
   await withLock("PREMARKET_PLAN", async () => {
     const batch = createTelemetryBatch("AI_LAB");
     const passName = "PREMARKET_PLAN";
-    logAiLabEvent("SCHEDULE_RUN", { passName, phase: "START" }, batch);
+    logAiLabEvent("SCHEDULE_RUN", { passName, phase: "START", mode: "FULL_UNIVERSE" }, batch);
 
     try {
-      const watchlist = await db
-        .select()
-        .from(aiLabWatchlistTable)
-        .where(eq(aiLabWatchlistTable.passName, "OVERNIGHT_DIGEST"))
-        .orderBy(desc(aiLabWatchlistTable.compositeScore))
-        .limit(ORCHESTRATOR_CONFIG.PREMARKET_TOP_N);
+      const cfg = getAiLabStrategistConfig();
+      if (!cfg.enabled) {
+        logAiLabEvent("AI_LAB_DISABLED", { passName }, batch);
+        return;
+      }
 
-      if (watchlist.length === 0) {
-        logAiLabEvent("SCHEDULE_RUN", { passName, phase: "COMPLETE", note: "No overnight watchlist entries" }, batch, "WARN");
+      const summaries = await getCompactUniverseSummaries();
+      if (summaries.length === 0) {
+        logAiLabEvent("SCHEDULE_RUN", { passName, phase: "COMPLETE", note: "No universe data available" }, batch, "WARN");
         return;
       }
 
       const regime = await getRegimeState();
+      const activeIdeas = await db
+        .select()
+        .from(aiLabIdeasTable)
+        .where(inArray(aiLabIdeasTable.status, ["NEW", "ACTIVE"]));
+
+      const { analyst: analystClient } = buildClients();
+
+      const screenRequest: UniverseScreenRequest = {
+        runContext: { passName, timestamp: new Date().toISOString() },
+        tickers: summaries as CompactTickerSummary[],
+        regimeState: regime as unknown as Record<string, unknown>,
+        activeIdeasSummary: {
+          activeCount: activeIdeas.length,
+          symbols: activeIdeas.map(i => i.symbol),
+          sectors: activeIdeas.map(i => i.sector).filter(Boolean) as string[],
+        },
+      };
+
+      logAiLabEvent("UNIVERSE_SCREEN_REQUEST", {
+        passName,
+        tickerCount: summaries.length,
+        provider: cfg.analystModelProvider,
+        model: cfg.analystModelName,
+      }, batch);
+
+      const screenResult = await analystClient.screenUniverse(screenRequest);
+
+      logAiLabEvent("UNIVERSE_SCREEN_RESPONSE", {
+        passName,
+        picksCount: screenResult.picks.length,
+        picks: screenResult.picks.map(p => `${p.symbol}(${p.direction},${p.conviction})`).join(", "),
+        marketCommentary: screenResult.marketCommentary,
+        skippedReason: screenResult.skippedReason,
+      }, batch);
+
+      if (screenResult.picks.length === 0) {
+        logAiLabEvent("SCHEDULE_RUN", {
+          passName,
+          phase: "COMPLETE",
+          mode: "FULL_UNIVERSE",
+          note: `No picks — ${screenResult.skippedReason ?? "analyst found no compelling setups"}`,
+          marketCommentary: screenResult.marketCommentary,
+        }, batch);
+        return;
+      }
+
       const results: PipelineResult[] = [];
 
-      for (const entry of watchlist) {
-        const snapshot = await getTickerSnapshot(entry.symbol);
+      for (const pick of screenResult.picks) {
+        if (pick.conviction < 60) {
+          logAiLabEvent("UNIVERSE_PICK_SKIPPED", {
+            symbol: pick.symbol,
+            conviction: pick.conviction,
+            reason: "Below 60 conviction threshold from universe screen",
+          }, batch, "WARN");
+          results.push({ symbol: pick.symbol, approved: false, rejectionReason: "LOW_UNIVERSE_CONVICTION" });
+          continue;
+        }
+
+        const snapshot = await getTickerSnapshot(pick.symbol);
         if (!snapshot) {
           logAiLabEvent("IDEA_VALIDATION", {
-            symbol: entry.symbol,
+            symbol: pick.symbol,
             approved: false,
             rejectionReason: "NO_SNAPSHOT_DATA",
             source: passName,
           }, batch, "WARN");
-          results.push({ symbol: entry.symbol, approved: false, rejectionReason: "NO_SNAPSHOT_DATA" });
+          results.push({ symbol: pick.symbol, approved: false, rejectionReason: "NO_SNAPSHOT_DATA" });
           continue;
         }
 
-        const result = await runPipeline(entry.symbol, snapshot, regime, batch, passName);
+        logAiLabEvent("UNIVERSE_PICK_TO_PIPELINE", {
+          symbol: pick.symbol,
+          direction: pick.direction,
+          conviction: pick.conviction,
+          reasoning: pick.reasoning,
+        }, batch);
+
+        const result = await runPipeline(pick.symbol, snapshot, regime, batch, passName);
         results.push(result);
       }
 
-      const approved = results.filter((r) => r.approved).length;
-      const rejected = results.filter((r) => !r.approved).length;
+      const approved = results.filter(r => r.approved).length;
+      const rejected = results.filter(r => !r.approved).length;
 
       logAiLabEvent("SCHEDULE_RUN", {
         passName,
         phase: "COMPLETE",
-        candidatesGenerated: results.length,
+        mode: "FULL_UNIVERSE",
+        universeTickers: summaries.length,
+        screenPicks: screenResult.picks.length,
+        pipelineRun: results.length,
         ideasApproved: approved,
         ideasRejected: rejected,
+        marketCommentary: screenResult.marketCommentary,
       }, batch);
     } catch (err: any) {
       logAiLabEvent("SCHEDULE_RUN", { passName, phase: "ERROR", error: err.message }, batch, "ERROR");

@@ -766,6 +766,101 @@ export async function computeFlowAggregates(
   return count;
 }
 
+export async function computeIVFromFlow(
+  symbols: string[],
+  dateStr?: string,
+): Promise<number> {
+  const date = dateStr ?? todayStr();
+  let updated = 0;
+
+  const flowDateCandidates = await db
+    .select({ d: sql<string>`DISTINCT ${optionsFlowPerStrikeTable.date}` })
+    .from(optionsFlowPerStrikeTable)
+    .where(sql`${optionsFlowPerStrikeTable.impliedVolatility} IS NOT NULL AND ${optionsFlowPerStrikeTable.impliedVolatility} > 0`)
+    .orderBy(sql`${optionsFlowPerStrikeTable.date} DESC`)
+    .limit(5);
+  const flowDatesWithIV = flowDateCandidates.map(r => r.d);
+
+  for (const sym of symbols) {
+    try {
+      const equityRow = await db
+        .select()
+        .from(equityDailyTable)
+        .where(and(eq(equityDailyTable.symbol, sym.toUpperCase()), eq(equityDailyTable.date, date)))
+        .limit(1);
+      if (equityRow.length === 0) continue;
+      const spot = equityRow[0].close ?? 0;
+      if (spot <= 0) continue;
+
+      const effectiveFlowDate = flowDatesWithIV.includes(date) ? date : (flowDatesWithIV[0] ?? date);
+      const strikes = await db
+        .select()
+        .from(optionsFlowPerStrikeTable)
+        .where(and(
+          eq(optionsFlowPerStrikeTable.underlyingSymbol, sym.toUpperCase()),
+          eq(optionsFlowPerStrikeTable.date, effectiveFlowDate),
+        ));
+
+      if (strikes.length === 0) continue;
+
+      const iv30Candidates = strikes
+        .filter(s => {
+          const d = s.dte ?? 0;
+          return d >= 20 && d <= 40
+            && Math.abs(s.strike - spot) / spot <= 0.05
+            && (s.impliedVolatility ?? 0) > 0;
+        })
+        .sort((a, b) => Math.abs((a.dte ?? 30) - 30) - Math.abs((b.dte ?? 30) - 30));
+
+      const iv30d = iv30Candidates.length > 0 ? iv30Candidates[0].impliedVolatility : null;
+      if (iv30d == null) continue;
+
+      const allDatesWithIV = await db
+        .select({ date: equityDailyTable.date, iv: equityDailyTable.iv30d })
+        .from(equityDailyTable)
+        .where(and(
+          eq(equityDailyTable.symbol, sym.toUpperCase()),
+          sql`${equityDailyTable.iv30d} IS NOT NULL AND ${equityDailyTable.iv30d} > 0`,
+          sql`${equityDailyTable.date} <= ${date}`,
+        ))
+        .orderBy(desc(equityDailyTable.date))
+        .limit(252);
+
+      let ivr: number | null = null;
+      if (allDatesWithIV.length >= 20) {
+        const ivValues = allDatesWithIV.map(r => r.iv!);
+        const ivMin = Math.min(...ivValues);
+        const ivMax = Math.max(...ivValues);
+        if (ivMax > ivMin) {
+          ivr = Math.round(((iv30d - ivMin) / (ivMax - ivMin)) * 100);
+        }
+      }
+
+      const totalCallVol = strikes.filter(s => s.optionType === "call").reduce((a, s) => a + (s.dailyVolume ?? 0), 0);
+      const totalPutVol = strikes.filter(s => s.optionType === "put").reduce((a, s) => a + (s.dailyVolume ?? 0), 0);
+      const putCallRatio = totalCallVol > 0 ? totalPutVol / totalCallVol : null;
+
+      const updates: Record<string, unknown> = { iv30d };
+      if (ivr != null) updates.ivr = ivr;
+      if (putCallRatio != null) updates.putCallRatio = putCallRatio;
+
+      await db.update(equityDailyTable)
+        .set(updates)
+        .where(and(eq(equityDailyTable.symbol, sym.toUpperCase()), eq(equityDailyTable.date, date)));
+
+      updated++;
+    } catch (e) {
+      logger.warn({ sym, error: (e as Error).message }, "Snapshot: IV computation failed");
+    }
+  }
+
+  if (updated > 0) {
+    void logFailure("DATABASE", "INFO", `IV30d computed for ${updated} symbols`, { updated, date });
+  }
+  logger.info({ updated, date }, "Snapshot: IV computation complete");
+  return updated;
+}
+
 export async function populateReferenceData(symbols: string[]): Promise<number> {
   let count = 0;
   for (const sym of symbols) {
@@ -806,6 +901,8 @@ export async function runFullSnapshot(
     const { strikeRows: flowRows } = await collectPolygonFlowFromAPI(symbols, date);
 
     const aggregateRows = await computeFlowAggregates(symbols, date);
+
+    const ivRows = await computeIVFromFlow(symbols, date);
 
     await db.update(snapshotCollectionLogTable)
       .set({

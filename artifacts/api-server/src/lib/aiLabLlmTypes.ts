@@ -187,9 +187,46 @@ export interface DeliberationLog {
   consensusSummary: string;
 }
 
+export interface CompactTickerSummary {
+  symbol: string;
+  close: number;
+  return5d: number;
+  return20d: number;
+  volRatio: number;
+  iv30d: number | null;
+  ivr: number | null;
+  hv20d: number | null;
+  flowDirection: string | null;
+  callPutSkew: number | null;
+  blockCount: number | null;
+  rsVsSpy5d: number | null;
+  anomalyFlags: string[];
+}
+
+export interface UniverseScreenRequest {
+  runContext: RunContext;
+  tickers: CompactTickerSummary[];
+  regimeState: Record<string, unknown>;
+  activeIdeasSummary: ActiveIdeasSummary;
+}
+
+export interface UniverseScreenPick {
+  symbol: string;
+  direction: "LONG" | "SHORT";
+  conviction: number;
+  reasoning: string;
+}
+
+export interface UniverseScreenResponse {
+  picks: UniverseScreenPick[];
+  marketCommentary: string;
+  skippedReason: string | null;
+}
+
 export interface AiLabAnalystClient {
   generateIdea(request: AnalystRequest): Promise<AnalystResponse>;
   rebutCritique(request: AnalystRebuttalRequest): Promise<AnalystRebuttalResponse>;
+  screenUniverse(request: UniverseScreenRequest): Promise<UniverseScreenResponse>;
   readonly modelName: string;
 }
 

@@ -7,6 +7,8 @@ import type {
   AnalystResponse,
   AnalystRebuttalRequest,
   AnalystRebuttalResponse,
+  UniverseScreenRequest,
+  UniverseScreenResponse,
 } from "./aiLabLlmTypes.js";
 import type { AiLabModelProvider } from "./aiLabConfig.js";
 
@@ -309,6 +311,102 @@ function extractJson(rawText: string): string {
   return text;
 }
 
+const UNIVERSE_SCREEN_SYSTEM_PROMPT = `You are the Senior Options Strategist for a quantitative trading desk. You are being given compact summaries for the ENTIRE liquid universe of ~130 tickers.
+
+YOUR TASK: Review ALL tickers and pick the 1-3 BEST trade opportunities. You are the first filter — be extremely selective.
+
+CRITICAL RULES:
+1. You have NO knowledge outside the data provided. All analysis must come from these summaries.
+2. If nothing looks compelling (no ticker has a clear edge), return an EMPTY picks array. Do NOT force a trade.
+3. A "good pick" needs MULTIPLE confirming signals: unusual flow + technical setup, IV anomaly + directional catalyst, momentum + relative strength, etc.
+4. Consider the current REGIME when picking. In RISK_OFF / HIGH_VOL, favor defensive or short ideas. In TRENDING_UP / LOW_VOL, favor momentum longs.
+5. Avoid picking tickers that overlap with activeIdeas (already have open positions).
+6. For each pick, explain WHY in 2-3 sentences citing specific data from the summary.
+
+DATA COLUMNS:
+- close: latest closing price
+- return5d/return20d: 5-day and 20-day returns (decimal, e.g. 0.05 = 5%)
+- volRatio: today's volume / 20-day median volume (>1.8 = spike)
+- iv30d: 30-day implied volatility (null = no options data)
+- ivr: IV rank 0-100 (null = no data, >60 = elevated)
+- hv20d: 20-day historical volatility
+- flowDirection: BULLISH/BEARISH/NEUTRAL (options flow bias)
+- callPutSkew: call/put volume skew (0-1, higher = more directional)
+- blockCount: number of large block trades today
+- rsVsSpy5d: 5-day relative strength vs SPY (positive = outperforming)
+- anomalyFlags: detected anomalies (VOL_SPIKE, IVR_HIGH, UNUSUAL_FLOW, BLOCK_ACTIVITY, MOMENTUM_UP, MOMENTUM_DOWN)
+
+RETURN ONLY valid JSON matching this schema:
+{
+  "picks": [
+    {
+      "symbol": "AAPL",
+      "direction": "LONG" | "SHORT",
+      "conviction": 0-100,
+      "reasoning": "string (2-3 sentences with specific data citations)"
+    }
+  ],
+  "marketCommentary": "string (1-2 sentences on overall market tone from the data)",
+  "skippedReason": null | "string (why no picks if picks is empty)"
+}`;
+
+function buildUniverseScreenPrompt(request: UniverseScreenRequest): string {
+  const tickerLines = request.tickers.map(t => {
+    const flags = t.anomalyFlags.length > 0 ? t.anomalyFlags.join(",") : "-";
+    const iv30dStr = t.iv30d != null ? (t.iv30d * 100).toFixed(0) + "%" : "-";
+    const hv20dStr = t.hv20d != null ? t.hv20d.toFixed(0) + "%" : "-";
+    return `${t.symbol}|${t.close}|${(t.return5d * 100).toFixed(1)}%|${(t.return20d * 100).toFixed(1)}%|${t.volRatio.toFixed(1)}x|${iv30dStr}|${t.ivr != null ? t.ivr.toFixed(0) : "-"}|${hv20dStr}|${t.flowDirection ?? "-"}|${t.callPutSkew != null ? t.callPutSkew.toFixed(2) : "-"}|${t.blockCount ?? 0}|${t.rsVsSpy5d != null ? (t.rsVsSpy5d * 100).toFixed(1) + "%" : "-"}|${flags}`;
+  }).join("\n");
+
+  return `FULL UNIVERSE SCREEN — pick the best 1-3 trades from ${request.tickers.length} tickers.
+
+RUN CONTEXT:
+${JSON.stringify(request.runContext, null, 2)}
+
+REGIME:
+${JSON.stringify(request.regimeState, null, 2)}
+
+ACTIVE IDEAS (avoid overlap):
+${JSON.stringify(request.activeIdeasSummary, null, 2)}
+
+TICKER DATA (symbol|close|ret5d|ret20d|volRatio|iv30d|ivr|hv20d|flowDir|cpSkew|blocks|rsVsSpy5d|flags):
+${tickerLines}
+
+Respond with ONLY the JSON object. No markdown fences, no explanation.`;
+}
+
+function validateUniverseScreenResponse(parsed: any, universeSymbols?: Set<string>): UniverseScreenResponse {
+  if (!parsed || typeof parsed !== "object") throw new Error("Response is not an object");
+  if (!Array.isArray(parsed.picks)) throw new Error("Missing picks array");
+
+  const seenSymbols = new Set<string>();
+  const picks = parsed.picks
+    .slice(0, 3)
+    .map((p: any) => {
+      if (!p.symbol || typeof p.symbol !== "string") throw new Error("Pick missing symbol");
+      if (!["LONG", "SHORT"].includes(p.direction)) throw new Error(`Invalid direction: ${p.direction}`);
+      if (typeof p.conviction !== "number" || p.conviction < 0 || p.conviction > 100) throw new Error(`Invalid conviction: ${p.conviction}`);
+      return {
+        symbol: p.symbol.toUpperCase(),
+        direction: p.direction as "LONG" | "SHORT",
+        conviction: p.conviction,
+        reasoning: typeof p.reasoning === "string" ? p.reasoning : "",
+      };
+    })
+    .filter((p: { symbol: string }) => {
+      if (seenSymbols.has(p.symbol)) return false;
+      seenSymbols.add(p.symbol);
+      if (universeSymbols && !universeSymbols.has(p.symbol)) return false;
+      return true;
+    });
+
+  return {
+    picks,
+    marketCommentary: typeof parsed.marketCommentary === "string" ? parsed.marketCommentary : "",
+    skippedReason: typeof parsed.skippedReason === "string" ? parsed.skippedReason : null,
+  };
+}
+
 export class ConfigurableAnalystClient implements AiLabAnalystClient {
   readonly modelName: string;
   private provider: AiLabModelProvider;
@@ -346,6 +444,35 @@ export class ConfigurableAnalystClient implements AiLabAnalystClient {
     }
 
     return validateAnalystResponse(parsed);
+  }
+
+  async screenUniverse(request: UniverseScreenRequest): Promise<UniverseScreenResponse> {
+    const prompt = buildUniverseScreenPrompt(request);
+    const universeSymbols = new Set(request.tickers.map(t => t.symbol.toUpperCase()));
+
+    let rawText: string;
+    switch (this.provider) {
+      case "anthropic":
+        rawText = await callAnthropicWithSystem(this.modelName, this.temperature, UNIVERSE_SCREEN_SYSTEM_PROMPT, prompt);
+        break;
+      case "google":
+        rawText = await callGeminiWithSystem(this.modelName, this.temperature, UNIVERSE_SCREEN_SYSTEM_PROMPT, prompt);
+        break;
+      default:
+        throw new Error(`Unsupported analyst provider: ${this.provider}`);
+    }
+
+    const cleanText = extractJson(rawText);
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(cleanText);
+    } catch {
+      logger.error({ rawSnippet: rawText.slice(0, 500) }, "AI Lab Analyst: universe screen JSON parse failure");
+      throw new Error("Universe screen response is not valid JSON");
+    }
+
+    return validateUniverseScreenResponse(parsed, universeSymbols);
   }
 
   async rebutCritique(request: AnalystRebuttalRequest): Promise<AnalystRebuttalResponse> {

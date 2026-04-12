@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { runFullSnapshot, getSnapshotStatus, collectEquitySnapshots, collectPolygonFlowFromAPI, computeFlowAggregates, backfillEquityHistory, backfillPolygonFlow } from "../lib/dailySnapshot";
+import { runFullSnapshot, getSnapshotStatus, collectEquitySnapshots, collectPolygonFlowFromAPI, computeFlowAggregates, computeIVFromFlow, backfillEquityHistory, backfillPolygonFlow } from "../lib/dailySnapshot";
 import { getBestAccessToken } from "../lib/tokenStore";
 import { logger } from "../lib/logger";
 import { db } from "@workspace/db";
@@ -65,9 +65,11 @@ router.post("/flow-only", async (req, res) => {
   res.json({ ok: true, message: "Flow collection started", symbols: scanSymbols.length });
 
   collectPolygonFlowFromAPI(scanSymbols, date)
-    .then(({ strikeRows }) => computeFlowAggregates(scanSymbols, date).then(aggRows => {
-      logger.info({ strikeRows, aggRows }, "Flow-only collection complete");
-    }))
+    .then(({ strikeRows }) => computeFlowAggregates(scanSymbols, date).then(aggRows =>
+      computeIVFromFlow(scanSymbols, date).then(ivRows => {
+        logger.info({ strikeRows, aggRows, ivRows }, "Flow-only collection complete");
+      })
+    ))
     .catch(e => {
       logger.error({ error: (e as Error).message }, "Background flow collection failed");
     });
@@ -108,12 +110,13 @@ router.post("/recompute-aggregates", async (req, res) => {
       let processed = 0;
       for (const d of dates) {
         await computeFlowAggregates(symbols, d);
+        await computeIVFromFlow(symbols, d);
         processed++;
         if (processed % 10 === 0) {
           logger.info({ processed, total: dates.length }, "Recompute aggregates progress");
         }
       }
-      logger.info({ processed, symbols: symbols.length }, "Recompute aggregates complete");
+      logger.info({ processed, symbols: symbols.length }, "Recompute aggregates + IV complete");
     })().catch(e => logger.error({ error: (e as Error).message }, "Recompute aggregates failed"));
   } catch (e) {
     res.status(500).json({ ok: false, error: (e as Error).message });
@@ -129,6 +132,20 @@ router.post("/backfill-flow", async (req, res) => {
 
   backfillPolygonFlow(scanSymbols, days).catch(e => {
     logger.error({ error: (e as Error).message }, "Background Polygon flow backfill failed");
+  });
+});
+
+router.post("/compute-iv", async (req, res) => {
+  const { symbols, date } = req.body as { symbols?: string[]; date?: string };
+  const scanSymbols = symbols ?? getDefaultUniverse();
+  const targetDate = date ?? new Date().toISOString().slice(0, 10);
+
+  res.json({ ok: true, message: `Computing IV for ${scanSymbols.length} symbols on ${targetDate}` });
+
+  computeIVFromFlow(scanSymbols, targetDate).then(updated => {
+    logger.info({ updated, date: targetDate }, "IV computation complete");
+  }).catch(e => {
+    logger.error({ error: (e as Error).message }, "IV computation failed");
   });
 });
 

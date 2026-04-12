@@ -258,6 +258,138 @@ export async function getUniverseAnomalies(
   return trimmed;
 }
 
+// ─── 2A2: get_compact_universe_summaries ─────────────────────────────────────
+// Builds compact summaries for ALL LC130 symbols in one efficient batch query.
+// Used by full-universe AI Lab mode to send all tickers to the analyst in one call.
+
+export interface CompactTickerSummaryRow {
+  symbol: string;
+  close: number;
+  return5d: number;
+  return20d: number;
+  volRatio: number;
+  iv30d: number | null;
+  ivr: number | null;
+  hv20d: number | null;
+  flowDirection: string | null;
+  callPutSkew: number | null;
+  blockCount: number | null;
+  rsVsSpy5d: number | null;
+  anomalyFlags: string[];
+}
+
+export async function getCompactUniverseSummaries(): Promise<CompactTickerSummaryRow[]> {
+  const batch = createTelemetryBatch("AI_LAB");
+  emitTelemetry("SCANNER", "INFO", "AI Lab: building compact universe summaries", {}, "AI_LAB", batch);
+
+  const liquidCoreList = [...LIQUID_CORE_SYMBOLS] as string[];
+
+  const latestDateRow = await db
+    .select({ maxDate: sql<string>`max(${equityDailyTable.date})` })
+    .from(equityDailyTable);
+  const latestDate = latestDateRow[0]?.maxDate;
+  if (!latestDate) return [];
+
+  const equityRows = await db
+    .select()
+    .from(equityDailyTable)
+    .where(and(
+      eq(equityDailyTable.date, latestDate),
+      inArray(equityDailyTable.symbol, liquidCoreList),
+    ));
+
+  const prevDateRows = await db
+    .selectDistinct({ date: equityDailyTable.date })
+    .from(equityDailyTable)
+    .where(sql`${equityDailyTable.date} < ${latestDate}`)
+    .orderBy(desc(equityDailyTable.date))
+    .limit(20);
+  const prevDates = prevDateRows.map(r => r.date);
+
+  let prevEquityMap = new Map<string, Array<{ date: string; close: number; volume: number }>>();
+  if (prevDates.length > 0) {
+    const prevRows = await db
+      .select({ symbol: equityDailyTable.symbol, date: equityDailyTable.date, close: equityDailyTable.close, volume: equityDailyTable.volume })
+      .from(equityDailyTable)
+      .where(and(
+        inArray(equityDailyTable.symbol, liquidCoreList),
+        inArray(equityDailyTable.date, prevDates),
+      ));
+    for (const r of prevRows) {
+      if (!prevEquityMap.has(r.symbol)) prevEquityMap.set(r.symbol, []);
+      prevEquityMap.get(r.symbol)!.push({ date: r.date, close: r.close ?? 0, volume: r.volume ?? 0 });
+    }
+    for (const [, rows] of prevEquityMap) {
+      rows.sort((a, b) => b.date.localeCompare(a.date));
+    }
+  }
+
+  const flowRows = await db
+    .select()
+    .from(flowDailyAggregatesTable)
+    .where(and(
+      eq(flowDailyAggregatesTable.date, latestDate),
+      inArray(flowDailyAggregatesTable.underlyingSymbol, liquidCoreList),
+    ));
+  const flowMap = new Map(flowRows.map(f => [f.underlyingSymbol, f]));
+
+  const spyRow = equityRows.find(r => r.symbol === "SPY");
+  const spyPrev = prevEquityMap.get("SPY") ?? [];
+  const spyClose = spyRow?.close ?? 0;
+  const spyClose5 = spyPrev.length >= 5 ? spyPrev[4].close : spyClose;
+  const spyReturn5d = spyClose5 > 0 ? (spyClose - spyClose5) / spyClose5 : 0;
+
+  const results: CompactTickerSummaryRow[] = [];
+
+  for (const eq of equityRows) {
+    const close = eq.close ?? 0;
+    if (close < AI_LAB_CONFIG.MIN_PRICE) continue;
+
+    const prev = prevEquityMap.get(eq.symbol) ?? [];
+    const close5ago = prev.length >= 5 ? prev[4].close : close;
+    const close20ago = prev.length >= 20 ? prev[19].close : close;
+    const return5d = close5ago > 0 ? (close - close5ago) / close5ago : 0;
+    const return20d = close20ago > 0 ? (close - close20ago) / close20ago : 0;
+
+    const volumes = [eq.volume ?? 0, ...prev.map(p => p.volume)];
+    const med20 = median(volumes.slice(0, Math.min(20, volumes.length)));
+    const volRatio = med20 > 0 ? (eq.volume ?? 0) / med20 : 0;
+
+    const flow = flowMap.get(eq.symbol);
+
+    const rsVsSpy5d = spyReturn5d !== 0 ? return5d - spyReturn5d : null;
+
+    const anomalyFlags: string[] = [];
+    if (volRatio >= AI_LAB_CONFIG.ANOMALY_VOLUME_SPIKE_THRESHOLD) anomalyFlags.push("VOL_SPIKE");
+    if ((eq.ivr ?? 0) >= AI_LAB_CONFIG.ANOMALY_IVR_SPIKE_THRESHOLD) anomalyFlags.push("IVR_HIGH");
+    if (flow && (flow.avgVolOiRatio ?? 0) >= AI_LAB_CONFIG.ANOMALY_FLOW_STRENGTH_THRESHOLD) anomalyFlags.push("UNUSUAL_FLOW");
+    if (flow && (flow.blockCount ?? 0) >= 3) anomalyFlags.push("BLOCK_ACTIVITY");
+    if (Math.abs(return5d) >= 0.05) anomalyFlags.push(return5d > 0 ? "MOMENTUM_UP" : "MOMENTUM_DOWN");
+
+    results.push({
+      symbol: eq.symbol,
+      close: Math.round(close * 100) / 100,
+      return5d: Math.round(return5d * 10000) / 10000,
+      return20d: Math.round(return20d * 10000) / 10000,
+      volRatio: Math.round(volRatio * 100) / 100,
+      iv30d: eq.iv30d ? Math.round(eq.iv30d * 10000) / 10000 : null,
+      ivr: eq.ivr ?? null,
+      hv20d: eq.hv20d ? Math.round(eq.hv20d * 100) / 100 : null,
+      flowDirection: flow?.flowDirection ?? null,
+      callPutSkew: flow?.pcSkew != null ? Math.round(flow.pcSkew * 100) / 100 : null,
+      blockCount: flow?.blockCount ?? null,
+      rsVsSpy5d: rsVsSpy5d != null ? Math.round(rsVsSpy5d * 10000) / 10000 : null,
+      anomalyFlags,
+    });
+  }
+
+  emitTelemetry("SCANNER", "INFO", `AI Lab: built ${results.length} compact summaries for universe screen`, {
+    total: results.length, withFlow: flowRows.length, withIV: results.filter(r => r.iv30d != null).length,
+  }, "AI_LAB", batch);
+
+  return results;
+}
+
 // ─── 2B: get_ticker_snapshot ────────────────────────────────────────────────
 // Builds a comprehensive snapshot for a single symbol from DB + live sources.
 
