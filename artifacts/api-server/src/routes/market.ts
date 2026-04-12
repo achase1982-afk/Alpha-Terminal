@@ -551,24 +551,28 @@ function centerStrikesAroundATM(
       continue;
     }
 
-    const belowOrAt = sorted.filter(s => s <= underlyingPrice);
-    const above = sorted.filter(s => s > underlyingPrice);
-
-    const halfBelow = Math.floor(desiredCount / 2);
-    const halfAbove = desiredCount - halfBelow;
-
-    let selectedBelow = belowOrAt.slice(-halfBelow);
-    let selectedAbove = above.slice(0, halfAbove);
-
-    if (selectedBelow.length < halfBelow) {
-      const extra = halfBelow - selectedBelow.length;
-      selectedAbove = above.slice(0, halfAbove + extra);
-    } else if (selectedAbove.length < halfAbove) {
-      const extra = halfAbove - selectedAbove.length;
-      selectedBelow = belowOrAt.slice(-(halfBelow + extra));
+    let atmIdx = 0;
+    let minDist = Infinity;
+    for (let i = 0; i < sorted.length; i++) {
+      const dist = Math.abs(sorted[i] - underlyingPrice);
+      if (dist < minDist) { minDist = dist; atmIdx = i; }
     }
 
-    const kept = new Set([...selectedBelow, ...selectedAbove]);
+    const half = Math.floor(desiredCount / 2);
+    let lo = atmIdx - half;
+    let hi = lo + desiredCount - 1;
+
+    if (lo < 0) {
+      hi -= lo;
+      lo = 0;
+    }
+    if (hi >= sorted.length) {
+      lo -= (hi - sorted.length + 1);
+      hi = sorted.length - 1;
+      if (lo < 0) lo = 0;
+    }
+
+    const kept = new Set(sorted.slice(lo, hi + 1));
     allowedStrikes.set(exp, kept);
   }
 

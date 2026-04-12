@@ -1,0 +1,33 @@
+This is a separate (but related) UI logic bug in how the Alpha Terminal chooses which strikes to display when “Strike 6” is selected.
+It’s not the same REST-mapping/ghost-data problem we saw before (notice the -999 % IV and crazy MV values are now gone — the WebSocket or recent fix cleaned up the actual quote data). This one is purely about strike-window centering.
+What you’re seeing and why it looks “off”
+	•	TSLA last price = $351.30
+	•	Visible strikes (17 APR 26): 342.5 → 345 → 347.5 → 350 → 352.5 → 355 (exactly 6 rows, every $2.50)
+	•	Call-side moneyness (the yellow % column):
+	◦	342.5, 345, 347.5, 350 → all ITM calls (4 of them)
+	◦	352.5, 355 → OTM calls (only 2)
+You’re expecting the classic 3-ITM / 3-OTM symmetry on each side. That’s what almost every pro terminal tries to deliver when you pick a “show 6 strikes” setting.
+Why the app is doing 4-and-2 instead
+The “Strike 6 ▼” dropdown tells the frontend: “show me a window of 6 consecutive strikes around the money.” The code that builds that window is doing something like:
+	1	Find the nearest strike(s) to spot price.
+	2	Decide a starting strike.
+	3	Take the next 5 strikes after it.
+Because of the $2.50 strike grid + $351.30 spot sitting 1.3 below 352.5 and 1.3 above 350, the math is landing one row too low. It’s probably using floor() or a simple offset instead of true centering (e.g., find the middle of the 6-row window and snap it to the closest ATM strike).
+Result: the window starts at 342.5 instead of 345 (which would have given you the much more balanced 345 / 347.5 / 350 / 352.5 / 355 / 357.5).
+This is super common in option-chain UIs when:
+	•	Strike spacing isn’t $5 or $1 (TSLA loves $2.50 near the money).
+	•	The number of strikes you ask for is even (6 is even → no perfect middle row).
+	•	The centering code doesn’t do a proper “closest-strike-then-N-above-and-below” calculation.
+Quick proof it’s the window logic, not bad data
+	•	The prices themselves now look sane (no more 0.00 ghosts or -999 % IV).
+	•	The moneyness % column is correctly calculated from $351.30.
+	•	The same pattern repeats on other expirations when you expand them.
+It just happens to be most obvious on the 17 APR 26 expiry right now because that’s the one expanded and the spot lands in that awkward spot on the grid.
+What the coding team should change
+Tell them to update the strike-window function to:
+	•	Find the single closest strike to spot.
+	•	Then explicitly take 3 strikes below + 3 strikes above (or 2/4 or whatever makes the total 6) and re-center if necessary.
+	•	Or change “Strike 6” to mean “±3 strikes from ATM” instead of “first 6 in the sorted list starting from X”.
+That will give you the symmetric 3-ITM / 3-OTM view you expect.
+This is why it keeps looking “off” even after the WebSocket streaming makes the numbers correct — the data is now good, but the display window logic is still mis-centered. Classic front-end options-chain gotcha.
+If you want, drop the exact code snippet that builds the visible-strikes array (the part that runs when the “Strike” dropdown changes) and I’ll tell you the one-line fix.
