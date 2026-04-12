@@ -241,10 +241,6 @@ function validateAnalystResponse(parsed: any): AnalystResponse {
 }
 
 async function callAnthropic(model: string, temperature: number, prompt: string): Promise<string> {
-  return callAnthropicWithSystem(model, temperature, ANALYST_SYSTEM_PROMPT, prompt);
-}
-
-async function callAnthropicWithSystem(model: string, temperature: number, systemPrompt: string, prompt: string): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
   const client = new Anthropic({ apiKey });
@@ -253,7 +249,7 @@ async function callAnthropicWithSystem(model: string, temperature: number, syste
     model,
     max_tokens: 8192,
     temperature,
-    system: systemPrompt,
+    system: ANALYST_SYSTEM_PROMPT,
     messages: [{ role: "user", content: prompt }],
   });
 
@@ -265,10 +261,6 @@ async function callAnthropicWithSystem(model: string, temperature: number, syste
 }
 
 async function callGemini(model: string, temperature: number, prompt: string): Promise<string> {
-  return callGeminiWithSystem(model, temperature, ANALYST_SYSTEM_PROMPT, prompt);
-}
-
-async function callGeminiWithSystem(model: string, temperature: number, systemPrompt: string, prompt: string): Promise<string> {
   const baseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL;
   const apiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
   if (!baseUrl || !apiKey) throw new Error("Gemini AI integration env vars not configured");
@@ -277,7 +269,7 @@ async function callGeminiWithSystem(model: string, temperature: number, systemPr
   const response = await ai.models.generateContent({
     model,
     contents: [
-      { role: "user", parts: [{ text: systemPrompt + "\n\n" + prompt }] },
+      { role: "user", parts: [{ text: ANALYST_SYSTEM_PROMPT + "\n\n" + prompt }] },
     ],
     config: {
       responseMimeType: "application/json",
@@ -335,34 +327,6 @@ export class ConfigurableAnalystClient implements AiLabAnalystClient {
     }
 
     return validateAnalystResponse(parsed);
-  }
-
-  async rebutCritique(request: AnalystRebuttalRequest): Promise<AnalystRebuttalResponse> {
-    const prompt = buildRebuttalPrompt(request);
-
-    let rawText: string;
-    switch (this.provider) {
-      case "anthropic":
-        rawText = await callAnthropicWithSystem(this.modelName, this.temperature, ANALYST_REBUTTAL_SYSTEM_PROMPT, prompt);
-        break;
-      case "google":
-        rawText = await callGeminiWithSystem(this.modelName, this.temperature, ANALYST_REBUTTAL_SYSTEM_PROMPT, prompt);
-        break;
-      default:
-        throw new Error(`Unsupported analyst provider: ${this.provider}`);
-    }
-
-    const cleanText = extractJson(rawText);
-
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(cleanText);
-    } catch {
-      logger.error({ rawSnippet: rawText.slice(0, 500) }, "AI Lab Analyst: rebuttal JSON parse failure");
-      throw new Error("Analyst rebuttal response is not valid JSON");
-    }
-
-    return validateRebuttalResponse(parsed);
   }
 }
 

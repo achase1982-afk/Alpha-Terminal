@@ -359,6 +359,7 @@ export const aiLabDeliberationsTable = pgTable("ai_lab_deliberations", {
   skepticCritique: jsonb("skeptic_critique"),
   finalDecision: jsonb("final_decision"),
   ideaId: integer("idea_id"),
+  conversationLog: jsonb("conversation_log"),
 });
 
 export type AiLabDeliberation = typeof aiLabDeliberationsTable.$inferSelect;

@@ -5,6 +5,8 @@ import type {
   AiLabSkepticClient,
   SkepticRequest,
   SkepticResponse,
+  SkepticReEvalRequest,
+  SkepticReEvalResponse,
 } from "./aiLabLlmTypes.js";
 import type { AiLabModelProvider } from "./aiLabConfig.js";
 
@@ -46,6 +48,83 @@ REQUIRED JSON SCHEMA:
     "suggestedChanges": string
   }
 }`;
+
+const SKEPTIC_REEVAL_SYSTEM_PROMPT = `You are the Devil's Advocate on a quantitative trading desk, engaged in an ongoing deliberation with the Analyst.
+
+The Analyst has responded to your critique — they may have defended their position, made concessions, or modified their trade idea. Your job is to re-evaluate.
+
+You must decide:
+1. SATISFIED — the Analyst addressed your concerns adequately (either with solid rebuttals or meaningful modifications). Set satisfiedWithChanges=true.
+2. STILL CONCERNED — the Analyst hasn't addressed your core objections. Explain what remains unresolved and give an updated critiqueScore. Keep pushing.
+3. AGREE TO PROCEED — even if you have minor concerns, the idea is good enough. Set satisfiedWithChanges=true and note remaining minor concerns.
+
+The goal is to reach consensus. Don't be stubborn for the sake of it — if the Analyst made a good case, acknowledge it. But don't cave if there are real risks.
+
+RULES:
+- Return ONLY valid JSON matching the schema below. No markdown, no commentary outside JSON.
+- critiqueScore: 0-100. Should reflect your UPDATED assessment after the Analyst's response.
+- satisfiedWithChanges: true if you're ready to let this proceed (with or without minor caveats).
+- remainingConcerns: what's still bothering you (or "None — satisfied with the revised proposal").
+
+REQUIRED JSON SCHEMA:
+{
+  "critiqueScore": 0-100,
+  "flags": {
+    "liquidityConcern": boolean,
+    "regimeMismatch": boolean,
+    "overfitWarning": boolean,
+    "redundancyWithActiveIdeas": boolean
+  },
+  "criticNote": string,
+  "skepticCritique": {
+    "objections": string,
+    "evidence": string,
+    "suggestedChanges": string
+  },
+  "satisfiedWithChanges": boolean,
+  "remainingConcerns": string
+}`;
+
+function buildReEvalPrompt(request: SkepticReEvalRequest): string {
+  const historyStr = request.conversationHistory.map(t =>
+    `[Round ${t.round} — ${t.role.toUpperCase()}]: ${t.content.note}`
+  ).join("\n\n");
+
+  return `DELIBERATION ROUND ${request.round} — Re-evaluate the Analyst's response for ${request.symbol}.
+
+RUN CONTEXT:
+${JSON.stringify(request.runContext, null, 2)}
+
+TICKER SNAPSHOT:
+${JSON.stringify(request.tickerSnapshot, null, 2)}
+
+REGIME STATE:
+${JSON.stringify(request.regimeState, null, 2)}
+
+ANALYST'S REVISED IDEA:
+${JSON.stringify(request.revisedIdea, null, 2)}
+
+ANALYST'S REBUTTAL:
+${request.analystRebuttal.rebuttalNote}
+
+ANALYST'S CONCESSIONS: ${request.analystRebuttal.concessions}
+CHANGES FROM PREVIOUS: ${request.analystRebuttal.changesFromPrevious}
+ANALYST AGREES TO WITHDRAW: ${request.analystRebuttal.agreesWithSkeptic}
+
+FULL CONVERSATION:
+${historyStr}
+
+Respond with ONLY the JSON object. No markdown fences, no explanation.`;
+}
+
+function validateReEvalResponse(parsed: any): SkepticReEvalResponse {
+  const base = validateSkepticResponse(parsed);
+  return {
+    ...base,
+    satisfiedWithChanges: typeof parsed.satisfiedWithChanges === "boolean" ? parsed.satisfiedWithChanges : false,
+    remainingConcerns: typeof parsed.remainingConcerns === "string" ? parsed.remainingConcerns : base.criticNote,
+  };
+}
 
 function buildSkepticPrompt(request: SkepticRequest): string {
   return `Critique this trade idea for ${request.symbol}.
@@ -96,6 +175,10 @@ function validateSkepticResponse(parsed: any): SkepticResponse {
 }
 
 async function callGeminiSkeptic(model: string, temperature: number, prompt: string): Promise<string> {
+  return callGeminiWithSystem(model, temperature, SKEPTIC_SYSTEM_PROMPT, prompt);
+}
+
+async function callGeminiWithSystem(model: string, temperature: number, systemPrompt: string, prompt: string): Promise<string> {
   const baseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL;
   const apiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
   if (!baseUrl || !apiKey) throw new Error("Gemini AI integration env vars not configured");
@@ -104,7 +187,7 @@ async function callGeminiSkeptic(model: string, temperature: number, prompt: str
   const response = await ai.models.generateContent({
     model,
     contents: [
-      { role: "user", parts: [{ text: SKEPTIC_SYSTEM_PROMPT + "\n\n" + prompt }] },
+      { role: "user", parts: [{ text: systemPrompt + "\n\n" + prompt }] },
     ],
     config: {
       responseMimeType: "application/json",
@@ -119,6 +202,10 @@ async function callGeminiSkeptic(model: string, temperature: number, prompt: str
 }
 
 async function callAnthropicSkeptic(model: string, temperature: number, prompt: string): Promise<string> {
+  return callAnthropicWithSystem(model, temperature, SKEPTIC_SYSTEM_PROMPT, prompt);
+}
+
+async function callAnthropicWithSystem(model: string, temperature: number, systemPrompt: string, prompt: string): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
   const client = new Anthropic({ apiKey });
@@ -127,7 +214,7 @@ async function callAnthropicSkeptic(model: string, temperature: number, prompt: 
     model,
     max_tokens: 8192,
     temperature,
-    system: SKEPTIC_SYSTEM_PROMPT,
+    system: systemPrompt,
     messages: [{ role: "user", content: prompt }],
   });
 
@@ -182,6 +269,34 @@ export class ConfigurableSkepticClient implements AiLabSkepticClient {
     }
 
     return validateSkepticResponse(parsed);
+  }
+
+  async reEvaluate(request: SkepticReEvalRequest): Promise<SkepticReEvalResponse> {
+    const prompt = buildReEvalPrompt(request);
+
+    let rawText: string;
+    switch (this.provider) {
+      case "google":
+        rawText = await callGeminiWithSystem(this.modelName, this.temperature, SKEPTIC_REEVAL_SYSTEM_PROMPT, prompt);
+        break;
+      case "anthropic":
+        rawText = await callAnthropicWithSystem(this.modelName, this.temperature, SKEPTIC_REEVAL_SYSTEM_PROMPT, prompt);
+        break;
+      default:
+        throw new Error(`Unsupported skeptic provider: ${this.provider}`);
+    }
+
+    const cleanText = extractJson(rawText);
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(cleanText);
+    } catch {
+      logger.error({ rawSnippet: rawText.slice(0, 500) }, "AI Lab Skeptic: reEval JSON parse failure");
+      throw new Error("Skeptic re-evaluation response is not valid JSON");
+    }
+
+    return validateReEvalResponse(parsed);
   }
 }
 

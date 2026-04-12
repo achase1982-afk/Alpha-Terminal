@@ -119,12 +119,82 @@ export interface SkepticResponse {
   skepticCritique: SkepticCritique;
 }
 
+export interface AnalystRebuttalRequest {
+  symbol: string;
+  runContext: RunContext;
+  tickerSnapshot: Record<string, unknown>;
+  regimeState: Record<string, unknown>;
+  currentIdea: AnalystResponse;
+  skepticCritique: SkepticResponse;
+  conversationHistory: ConversationTurn[];
+  round: number;
+}
+
+export interface AnalystRebuttalResponse {
+  revisedIdea: AnalystResponse;
+  rebuttalNote: string;
+  concessions: string;
+  changesFromPrevious: string;
+  agreesWithSkeptic: boolean;
+}
+
+export interface SkepticReEvalRequest {
+  symbol: string;
+  runContext: RunContext;
+  tickerSnapshot: Record<string, unknown>;
+  regimeState: Record<string, unknown>;
+  revisedIdea: AnalystResponse;
+  analystRebuttal: AnalystRebuttalResponse;
+  conversationHistory: ConversationTurn[];
+  round: number;
+}
+
+export interface SkepticReEvalResponse {
+  critiqueScore: number;
+  flags: SkepticFlags;
+  criticNote: string;
+  skepticCritique: SkepticCritique;
+  satisfiedWithChanges: boolean;
+  remainingConcerns: string;
+}
+
+export interface ConversationTurn {
+  round: number;
+  role: "analyst" | "skeptic";
+  timestamp: string;
+  content: {
+    note: string;
+    critiqueScore?: number;
+    signalStrength?: number;
+    convictionLevel?: string;
+    direction?: string;
+    structure?: string;
+    concessions?: string;
+    changesFromPrevious?: string;
+    remainingConcerns?: string;
+    agreesWithSkeptic?: boolean;
+    satisfiedWithChanges?: boolean;
+    objections?: string;
+    suggestedChanges?: string;
+    flags?: SkepticFlags;
+  };
+}
+
+export interface DeliberationLog {
+  totalRounds: number;
+  reachedConsensus: boolean;
+  turns: ConversationTurn[];
+  consensusSummary: string;
+}
+
 export interface AiLabAnalystClient {
   generateIdea(request: AnalystRequest): Promise<AnalystResponse>;
+  rebutCritique(request: AnalystRebuttalRequest): Promise<AnalystRebuttalResponse>;
   readonly modelName: string;
 }
 
 export interface AiLabSkepticClient {
   critiqueIdea(request: SkepticRequest): Promise<SkepticResponse>;
+  reEvaluate(request: SkepticReEvalRequest): Promise<SkepticReEvalResponse>;
   readonly modelName: string;
 }

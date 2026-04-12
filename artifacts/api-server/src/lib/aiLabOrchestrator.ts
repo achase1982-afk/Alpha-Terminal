@@ -27,6 +27,8 @@ import type {
   SkepticRequest,
   AnalystResponse,
   SkepticResponse,
+  ConversationTurn,
+  DeliberationLog,
 } from "./aiLabLlmTypes.js";
 
 // ─── CONFIGURATION ──────────────────────────────────────────────────────────
@@ -40,6 +42,7 @@ export const ORCHESTRATOR_CONFIG = {
   BLOCK_FLOW_MIN_NOTIONAL: 500_000,
   SCANNER_SCORE_MIN_DELTA: 15,
   ET_OFFSET_HOURS: -5,
+  MAX_DELIBERATION_ROUNDS: 20,
 };
 
 type PassName =
@@ -140,12 +143,14 @@ async function runPipeline(
     .where(inArray(aiLabIdeasTable.status, ["NEW", "ACTIVE"]));
 
   const runContext = { passName: source, timestamp: new Date().toISOString() };
+  const tickerSnapshotData = snapshot as unknown as Record<string, unknown>;
+  const regimeData = regime as unknown as Record<string, unknown>;
 
   const analystRequest: AnalystRequest = {
     symbol,
     runContext,
-    tickerSnapshot: snapshot as unknown as Record<string, unknown>,
-    regimeState: regime as unknown as Record<string, unknown>,
+    tickerSnapshot: tickerSnapshotData,
+    regimeState: regimeData,
     patternPerformance: null,
     activeIdeasSummary: {
       activeCount: activeIdeas.length,
@@ -184,11 +189,26 @@ async function runPipeline(
     direction: analystResponse.tradeIdeaCore.direction,
   }, batch);
 
+  const conversationTurns: ConversationTurn[] = [];
+
+  conversationTurns.push({
+    round: 1,
+    role: "analyst",
+    timestamp: new Date().toISOString(),
+    content: {
+      note: analystResponse.analystNote,
+      signalStrength: analystResponse.confidence.signalStrength,
+      convictionLevel: analystResponse.confidence.convictionLevel,
+      direction: analystResponse.tradeIdeaCore.direction,
+      structure: analystResponse.primaryProposal.structure,
+    },
+  });
+
   const skepticRequest: SkepticRequest = {
     symbol,
     runContext,
-    tickerSnapshot: snapshot as unknown as Record<string, unknown>,
-    regimeState: regime as unknown as Record<string, unknown>,
+    tickerSnapshot: tickerSnapshotData,
+    regimeState: regimeData,
     candidateIdea: analystResponse,
   };
 
@@ -197,9 +217,23 @@ async function runPipeline(
     skepticResponse = await skepticClient.critiqueIdea(skepticRequest);
     logAiLabEvent("SKEPTIC_RESPONSE", {
       symbol,
+      round: 1,
       critiqueScore: skepticResponse.critiqueScore,
       flags: skepticResponse.flags,
     }, batch);
+
+    conversationTurns.push({
+      round: 1,
+      role: "skeptic",
+      timestamp: new Date().toISOString(),
+      content: {
+        note: skepticResponse.criticNote,
+        critiqueScore: skepticResponse.critiqueScore,
+        objections: skepticResponse.skepticCritique.objections,
+        suggestedChanges: skepticResponse.skepticCritique.suggestedChanges,
+        flags: skepticResponse.flags,
+      },
+    });
   } catch (err: any) {
     logAiLabEvent("SKEPTIC_PARSE_ERROR", {
       symbol,
@@ -209,10 +243,164 @@ async function runPipeline(
     }, batch, "WARN");
   }
 
+  let currentIdea = analystResponse;
+  let currentSkepticResponse = skepticResponse;
+  let reachedConsensus = false;
+  let consensusSummary = "";
+  let totalRounds = 1;
+
+  if (currentSkepticResponse && currentSkepticResponse.critiqueScore > 25) {
+    for (let round = 2; round <= ORCHESTRATOR_CONFIG.MAX_DELIBERATION_ROUNDS; round++) {
+      totalRounds = round;
+
+      logAiLabEvent("DELIBERATION_ROUND", {
+        symbol,
+        round,
+        previousCritiqueScore: currentSkepticResponse!.critiqueScore,
+      }, batch);
+
+      let rebuttal;
+      try {
+        rebuttal = await analystClient.rebutCritique({
+          symbol,
+          runContext,
+          tickerSnapshot: tickerSnapshotData,
+          regimeState: regimeData,
+          currentIdea,
+          skepticCritique: currentSkepticResponse!,
+          conversationHistory: conversationTurns,
+          round,
+        });
+      } catch (err: any) {
+        logAiLabEvent("ANALYST_REBUTTAL_ERROR", {
+          symbol, round, errorMessage: err.message,
+        }, batch, "WARN");
+        consensusSummary = `Deliberation ended round ${round}: analyst rebuttal failed (${err.message})`;
+        break;
+      }
+
+      conversationTurns.push({
+        round,
+        role: "analyst",
+        timestamp: new Date().toISOString(),
+        content: {
+          note: rebuttal.rebuttalNote,
+          concessions: rebuttal.concessions,
+          changesFromPrevious: rebuttal.changesFromPrevious,
+          agreesWithSkeptic: rebuttal.agreesWithSkeptic,
+          signalStrength: rebuttal.revisedIdea.confidence.signalStrength,
+          convictionLevel: rebuttal.revisedIdea.confidence.convictionLevel,
+          direction: rebuttal.revisedIdea.tradeIdeaCore.direction,
+          structure: rebuttal.revisedIdea.primaryProposal.structure,
+        },
+      });
+
+      logAiLabEvent("ANALYST_REBUTTAL", {
+        symbol, round,
+        agreesWithSkeptic: rebuttal.agreesWithSkeptic,
+        changesFromPrevious: rebuttal.changesFromPrevious,
+        concessions: rebuttal.concessions,
+      }, batch);
+
+      if (rebuttal.agreesWithSkeptic) {
+        reachedConsensus = true;
+        consensusSummary = `Consensus reached round ${round}: analyst agreed to withdraw. ${rebuttal.rebuttalNote}`;
+        currentIdea = rebuttal.revisedIdea;
+        logAiLabEvent("CONSENSUS_ANALYST_WITHDREW", { symbol, round }, batch);
+        break;
+      }
+
+      currentIdea = rebuttal.revisedIdea;
+
+      let reEval;
+      try {
+        reEval = await skepticClient.reEvaluate({
+          symbol,
+          runContext,
+          tickerSnapshot: tickerSnapshotData,
+          regimeState: regimeData,
+          revisedIdea: currentIdea,
+          analystRebuttal: rebuttal,
+          conversationHistory: conversationTurns,
+          round,
+        });
+      } catch (err: any) {
+        logAiLabEvent("SKEPTIC_REEVAL_ERROR", {
+          symbol, round, errorMessage: err.message,
+        }, batch, "WARN");
+        consensusSummary = `Deliberation ended round ${round}: skeptic re-eval failed (${err.message})`;
+        break;
+      }
+
+      conversationTurns.push({
+        round,
+        role: "skeptic",
+        timestamp: new Date().toISOString(),
+        content: {
+          note: reEval.criticNote,
+          critiqueScore: reEval.critiqueScore,
+          satisfiedWithChanges: reEval.satisfiedWithChanges,
+          remainingConcerns: reEval.remainingConcerns,
+          objections: reEval.skepticCritique.objections,
+          suggestedChanges: reEval.skepticCritique.suggestedChanges,
+          flags: reEval.flags,
+        },
+      });
+
+      logAiLabEvent("SKEPTIC_REEVAL", {
+        symbol, round,
+        critiqueScore: reEval.critiqueScore,
+        satisfiedWithChanges: reEval.satisfiedWithChanges,
+        remainingConcerns: reEval.remainingConcerns,
+      }, batch);
+
+      currentSkepticResponse = reEval;
+
+      if (reEval.satisfiedWithChanges) {
+        reachedConsensus = true;
+        consensusSummary = `Consensus reached round ${round}: skeptic satisfied. Score: ${reEval.critiqueScore}. ${reEval.remainingConcerns}`;
+        logAiLabEvent("CONSENSUS_SKEPTIC_SATISFIED", { symbol, round, finalScore: reEval.critiqueScore }, batch);
+        break;
+      }
+
+      if (reEval.critiqueScore <= 25) {
+        reachedConsensus = true;
+        consensusSummary = `Consensus reached round ${round}: skeptic score dropped to ${reEval.critiqueScore} (below threshold).`;
+        logAiLabEvent("CONSENSUS_LOW_SCORE", { symbol, round, finalScore: reEval.critiqueScore }, batch);
+        break;
+      }
+    }
+
+    if (!reachedConsensus && !consensusSummary) {
+      consensusSummary = `Deliberation ended after ${totalRounds} rounds without consensus. Final skeptic score: ${currentSkepticResponse?.critiqueScore ?? "N/A"}.`;
+      logAiLabEvent("DELIBERATION_EXHAUSTED", { symbol, totalRounds, finalScore: currentSkepticResponse?.critiqueScore }, batch, "WARN");
+    }
+  } else {
+    reachedConsensus = true;
+    consensusSummary = currentSkepticResponse
+      ? `No deliberation needed — skeptic score ${currentSkepticResponse.critiqueScore} (low concern).`
+      : "No deliberation — skeptic unavailable.";
+  }
+
+  const deliberationLog: DeliberationLog = {
+    totalRounds,
+    reachedConsensus,
+    turns: conversationTurns,
+    consensusSummary,
+  };
+
+  logAiLabEvent("DELIBERATION_COMPLETE", {
+    symbol,
+    totalRounds,
+    reachedConsensus,
+    consensusSummary,
+    turnsCount: conversationTurns.length,
+  }, batch);
+
   const merged = buildCandidateIdeaFromLlms(
     symbol,
-    analystResponse,
-    skepticResponse,
+    currentIdea,
+    currentSkepticResponse,
     regime,
     analystClient.modelName,
     skepticClient.modelName,
@@ -223,7 +411,16 @@ async function runPipeline(
     dataFreshnessMinutes: computeDataFreshnessMinutes(),
   };
 
-  const validation = await validateAiLabIdea(merged.candidate, activeIdeas, marketData);
+  const analystWithdrew = conversationTurns.some(t => t.role === "analyst" && t.content.agreesWithSkeptic === true);
+  const deliberationStarted = totalRounds > 1;
+  let validation;
+  if (analystWithdrew) {
+    validation = { approved: false, rejectionReason: "ANALYST_WITHDREW_AFTER_DELIBERATION" };
+  } else if (deliberationStarted && !reachedConsensus) {
+    validation = { approved: false, rejectionReason: "DELIBERATION_NO_CONSENSUS" };
+  } else {
+    validation = await validateAiLabIdea(merged.candidate, activeIdeas, marketData);
+  }
 
   const finalDecision = buildFinalDecision(
     merged,
@@ -247,6 +444,7 @@ async function runPipeline(
       signalStrength: merged.signalStrength,
       source,
       finalDecision: finalDecision.decision,
+      deliberationRounds: totalRounds,
     }, batch, "WARN");
 
     try {
@@ -260,6 +458,7 @@ async function runPipeline(
         skepticCritique: merged.skepticCritique,
         finalDecision,
         ideaId: null,
+        conversationLog: deliberationLog,
       });
     } catch (delErr: any) {
       logger.warn({ err: delErr, symbol }, "AI Lab: failed to write deliberation (rejected)");
@@ -316,6 +515,8 @@ async function runPipeline(
     criticModelName: merged.criticModelName,
     finalDecision: finalDecision.decision,
     source,
+    deliberationRounds: totalRounds,
+    reachedConsensus,
   }, batch);
 
   try {
@@ -329,6 +530,7 @@ async function runPipeline(
       skepticCritique: merged.skepticCritique,
       finalDecision,
       ideaId: inserted.id,
+      conversationLog: deliberationLog,
     });
   } catch (delErr: any) {
     logger.warn({ err: delErr, symbol, ideaId: inserted.id }, "AI Lab: failed to write deliberation (approved)");
