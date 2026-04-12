@@ -128,6 +128,27 @@ router.get("/accounts", async (_req, res) => {
   }
 });
 
+router.get("/accounts/raw-balances", async (_req, res) => {
+  const token = getTraderToken();
+  if (!token) return res.status(401).json({ error: "no_trader_token" });
+
+  try {
+    const accounts = await schwabGet("/accounts?fields=positions", token, 2);
+    const raw = accounts.map((acct: any) => {
+      const sa = acct.securitiesAccount;
+      return {
+        accountType: sa.type,
+        currentBalances: sa.currentBalances,
+        initialBalances: sa.initialBalances,
+        projectedBalances: sa.projectedBalances,
+      };
+    });
+    res.json(raw);
+  } catch (err: any) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
 router.get("/orders", async (req, res) => {
   const token = getTraderToken();
   if (!token) return res.status(401).json({ error: "no_trader_token" });
