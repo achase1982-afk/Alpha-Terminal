@@ -548,6 +548,7 @@ function centerStrikesAroundATM(
     const sorted = [...strikeSet].sort((a, b) => a - b);
     if (sorted.length <= desiredCount) {
       allowedStrikes.set(exp, strikeSet);
+      logger.debug({ exp, available: sorted.length, desired: desiredCount }, "centerStrikes: exp has fewer strikes than desired, keeping all");
       continue;
     }
 
@@ -577,6 +578,7 @@ function centerStrikesAroundATM(
 
     const kept = new Set(sorted.slice(lo, hi + 1));
     allowedStrikes.set(exp, kept);
+    logger.debug({ exp, atm: sorted[atmIdx], belowSpot, lo, hi, window: sorted.slice(lo, hi + 1), totalAvail: sorted.length }, "centerStrikes: window selected");
   }
 
   const filteredCalls = calls.filter(c => allowedStrikes.get(c.expiration)?.has(c.strike));
@@ -802,8 +804,7 @@ router.get("/options", async (req, res) => {
     const params = new URLSearchParams({
       symbol: chainSymbol,
       contractType: "ALL",
-      range: "NTM",
-      strikeCount: "60",
+      range: "ALL",
     });
     if (isFuturesSymbol) params.set("assetClass", "FUTURES");
 
@@ -835,8 +836,9 @@ router.get("/options", async (req, res) => {
     const allCalls = parseContracts(callMap);
     const allPuts = parseContracts(putMap);
 
-    const structureCalls = allCalls.map(c => ({ strike: c.strike, expiration: c.expiration, schwabSymbol: c.schwabSymbol, dte: c.dte }));
-    const structurePuts = allPuts.map(c => ({ strike: c.strike, expiration: c.expiration, schwabSymbol: c.schwabSymbol, dte: c.dte }));
+    const MAX_DTE = 400;
+    const structureCalls = allCalls.filter(c => c.dte <= MAX_DTE).map(c => ({ strike: c.strike, expiration: c.expiration, schwabSymbol: c.schwabSymbol, dte: c.dte }));
+    const structurePuts = allPuts.filter(c => c.dte <= MAX_DTE).map(c => ({ strike: c.strike, expiration: c.expiration, schwabSymbol: c.schwabSymbol, dte: c.dte }));
 
     const entry = { calls: structureCalls, puts: structurePuts, underlyingPrice, fetchedAt: Date.now() };
     optionsNtmCache.set(displaySymbol, entry);
