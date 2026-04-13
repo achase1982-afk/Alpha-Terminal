@@ -746,13 +746,7 @@ function buildRestSymbolMaps() {
   const forward: Record<string, string> = { "/DX": "$DXY" };
   const reverse: Record<string, string> = { "$DXY": "/DX" };
 
-  const futuresNeedingKey = [
-    "/ES", "/NQ", "/YM", "/RTY",
-    "/VIX", "/ZB", "/ZT", "/ZF", "/ZN", "/ZQ",
-    "/GC", "/CL", "/HG",
-    "/6E", "/6J",
-    "/BZ",
-  ];
+  const futuresNeedingKey = ["/BZ"];
   for (const sym of futuresNeedingKey) {
     const apiKey = schwabFuturesKey(sym);
     forward[sym] = apiKey;
@@ -769,12 +763,6 @@ const SCHWAB_REST_SYMBOLS = [
   "$VIX", "$VVIX", "$VIX1D", "$VIX9D", "$VIX3M",
   "$VXN", "$RVX", "$OVX", "$GVZ",
   "$TNX", "$TYX", "$IRX",
-  "SPY", "QQQ", "IWM",
-  "HYG", "LQD", "IEF", "TLT",
-  "/ES", "/NQ", "/YM", "/RTY",
-  "/VIX", "/ZB", "/ZT", "/ZF", "/ZN", "/ZQ",
-  "/GC", "/CL", "/HG",
-  "/6E", "/6J",
   "/DX", "/BZ",
 ];
 
