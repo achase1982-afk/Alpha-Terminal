@@ -298,7 +298,7 @@ function WatchlistSettingsPanel({
         style={{
           position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 210,
           background: "#111", fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
-          display: "flex", flexDirection: "column", overflowY: "auto",
+          display: "flex", flexDirection: "column", overflow: "hidden",
         }}
         onClick={e => e.stopPropagation()}
       >

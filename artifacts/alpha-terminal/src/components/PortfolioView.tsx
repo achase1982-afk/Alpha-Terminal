@@ -1002,7 +1002,7 @@ function ColumnSettingsPanel({
         style={{
           position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 50,
           background: "#111", fontFamily: f, display: "flex", flexDirection: "column",
-          overflowY: "auto",
+          overflow: "hidden",
         }}
         onClick={e => e.stopPropagation()}
       >
