@@ -21,32 +21,55 @@ import {
   RefreshCw,
 } from "lucide-react";
 
-type IndicatorKey = "change" | "changePct" | "volume" | "price" | "dayHigh" | "dayLow" | "open" | "bid" | "ask" | "marketCap";
+type IndicatorKey =
+  | "mark" | "markChg" | "volume" | "rsi" | "pcRatio" | "beta"
+  | "changePct" | "mmm" | "mktCap" | "yesterdayClose" | "weightedClose"
+  | "pctChg20d" | "pctChgYtd" | "initMargin" | "divFreq"
+  | "change" | "price" | "dayHigh" | "dayLow" | "open" | "bid" | "ask";
 type SortKey = "symbol" | "last" | "changePct" | "change" | "volume" | "dayHigh" | "dayLow" | "open" | "bid" | "ask" | "marketCap";
 type SortDir = "asc" | "desc";
 
 interface IndicatorDef {
   key: IndicatorKey;
   label: string;
+  desc: string;
   sortKey: SortKey;
   width: number;
   format: (q: LiveQuote | undefined) => string;
   color: (q: LiveQuote | undefined) => string;
 }
 
+const DASH = "\u2014";
+
 const ALL_INDICATORS: IndicatorDef[] = [
-  { key: "change", label: "Chg", sortKey: "change", width: 64, format: (q) => fmtChange(q?.change ?? null), color: (q) => changeColor(q?.change ?? null) },
-  { key: "changePct", label: "Chg%", sortKey: "changePct", width: 64, format: (q) => fmtPct(q?.changePct ?? null), color: (q) => changeColor(q?.changePct ?? null) },
-  { key: "volume", label: "Vol", sortKey: "volume", width: 64, format: (q) => fmtVol(q?.volume ?? null), color: () => "#a1a1aa" },
-  { key: "price", label: "Price", sortKey: "last", width: 72, format: (q) => fmtPrice(q?.last ?? null), color: (q) => q?.last != null ? "#fff" : "#52525b" },
-  { key: "dayHigh", label: "High", sortKey: "dayHigh", width: 72, format: (q) => fmtPrice(q?.high ?? null), color: () => "#a1a1aa" },
-  { key: "dayLow", label: "Low", sortKey: "dayLow", width: 72, format: (q) => fmtPrice(q?.low ?? null), color: () => "#a1a1aa" },
-  { key: "open", label: "Close", sortKey: "open", width: 72, format: (q) => fmtPrice(q?.close ?? null), color: () => "#a1a1aa" },
-  { key: "bid", label: "Bid", sortKey: "bid", width: 72, format: (q) => fmtPrice(q?.bid ?? null), color: () => "#a1a1aa" },
-  { key: "ask", label: "Ask", sortKey: "ask", width: 72, format: (q) => fmtPrice(q?.ask ?? null), color: () => "#a1a1aa" },
+  { key: "mark", label: "Mark", desc: "Last traded price", sortKey: "last", width: 72, format: (q) => fmtPrice(q?.last ?? null), color: (q) => q?.last != null ? "#fff" : "#52525b" },
+  { key: "markChg", label: "Mark Change", desc: "Dollar change today", sortKey: "change", width: 72, format: (q) => fmtChange(q?.change ?? null), color: (q) => changeColor(q?.change ?? null) },
+  { key: "volume", label: "Volume", desc: "Shares traded today", sortKey: "volume", width: 64, format: (q) => fmtVol(q?.volume ?? null), color: () => "#a1a1aa" },
+  { key: "rsi", label: "RSI", desc: "Relative Strength Index", sortKey: "last", width: 56, format: () => DASH, color: () => "#52525b" },
+  { key: "pcRatio", label: "P/C Ratio", desc: "Put/Call volume ratio", sortKey: "last", width: 72, format: () => DASH, color: () => "#52525b" },
+  { key: "beta", label: "Beta", desc: "Market beta coefficient", sortKey: "last", width: 56, format: () => DASH, color: () => "#52525b" },
+  { key: "changePct", label: "% Change", desc: "Percent change today", sortKey: "changePct", width: 72, format: (q) => fmtPct(q?.changePct ?? null), color: (q) => changeColor(q?.changePct ?? null) },
+  { key: "mmm", label: "Market Maker Move", desc: "Expected move from MM", sortKey: "last", width: 80, format: () => DASH, color: () => "#52525b" },
+  { key: "mktCap", label: "Mkt Cap", desc: "Market capitalization", sortKey: "marketCap", width: 72, format: () => DASH, color: () => "#52525b" },
+  { key: "yesterdayClose", label: "Yesterday Close", desc: "Prior session close", sortKey: "open", width: 80, format: (q) => fmtPrice(q?.close ?? null), color: () => "#a1a1aa" },
+  { key: "weightedClose", label: "WeightedClose", desc: "Weighted close price", sortKey: "last", width: 80, format: () => DASH, color: () => "#52525b" },
+  { key: "pctChg20d", label: "% Chg Since: 20 Day", desc: "20-day percent change", sortKey: "last", width: 88, format: () => DASH, color: () => "#52525b" },
+  { key: "pctChgYtd", label: "% Chg Since: YTD", desc: "Year-to-date change", sortKey: "last", width: 88, format: () => DASH, color: () => "#52525b" },
+  { key: "initMargin", label: "Initial Margin", desc: "Initial margin req", sortKey: "last", width: 80, format: () => DASH, color: () => "#52525b" },
+  { key: "divFreq", label: "Div. Frequency", desc: "Dividend frequency", sortKey: "last", width: 80, format: () => DASH, color: () => "#52525b" },
+  { key: "change", label: "Chg", desc: "Dollar change", sortKey: "change", width: 64, format: (q) => fmtChange(q?.change ?? null), color: (q) => changeColor(q?.change ?? null) },
+  { key: "price", label: "Price", desc: "Current price", sortKey: "last", width: 72, format: (q) => fmtPrice(q?.last ?? null), color: (q) => q?.last != null ? "#fff" : "#52525b" },
+  { key: "dayHigh", label: "High", desc: "Session high", sortKey: "dayHigh", width: 72, format: (q) => fmtPrice(q?.high ?? null), color: () => "#a1a1aa" },
+  { key: "dayLow", label: "Low", desc: "Session low", sortKey: "dayLow", width: 72, format: (q) => fmtPrice(q?.low ?? null), color: () => "#a1a1aa" },
+  { key: "open", label: "Close", desc: "Previous close", sortKey: "open", width: 72, format: (q) => fmtPrice(q?.close ?? null), color: () => "#a1a1aa" },
+  { key: "bid", label: "Bid", desc: "Current bid price", sortKey: "bid", width: 72, format: (q) => fmtPrice(q?.bid ?? null), color: () => "#a1a1aa" },
+  { key: "ask", label: "Ask", desc: "Current ask price", sortKey: "ask", width: 72, format: (q) => fmtPrice(q?.ask ?? null), color: () => "#a1a1aa" },
 ];
 
-const DEFAULT_INDICATORS: IndicatorKey[] = ["change", "volume", "price"];
+const INDICATOR_MAP = new Map(ALL_INDICATORS.map(i => [i.key, i]));
+const INDICATOR_STORAGE_KEY = "wl_indicators_v2";
+
+const DEFAULT_INDICATORS: IndicatorKey[] = ["change", "changePct", "volume", "price", "dayHigh", "dayLow", "bid", "ask"];
 
 interface SparkData {
   closes: number[];
@@ -223,52 +246,125 @@ function WatchlistRow({
   );
 }
 
-function IndicatorSettingsPanel({
-  open,
-  onClose,
+function WatchlistSettingsPanel({
   activeIndicators,
   onToggle,
+  onReorder,
+  onReset,
+  onClose,
 }: {
-  open: boolean;
-  onClose: () => void;
   activeIndicators: IndicatorKey[];
   onToggle: (key: IndicatorKey) => void;
+  onReorder: (keys: IndicatorKey[]) => void;
+  onReset: () => void;
+  onClose: () => void;
 }) {
-  if (!open) return null;
+  const dragIdx = useRef<number | null>(null);
+  const dragStartY = useRef(0);
+  const ITEM_H = 44;
+
+  const handlePointerDown = (e: React.PointerEvent, idx: number) => {
+    e.preventDefault();
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    dragIdx.current = idx;
+    dragStartY.current = e.clientY;
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (dragIdx.current == null) return;
+    const delta = e.clientY - dragStartY.current;
+    if (Math.abs(delta) >= ITEM_H * 0.6) {
+      const dir = delta > 0 ? 1 : -1;
+      const from = dragIdx.current;
+      const to = from + dir;
+      if (to >= 0 && to < activeIndicators.length) {
+        const next = [...activeIndicators];
+        [next[from], next[to]] = [next[to], next[from]];
+        onReorder(next);
+        dragIdx.current = to;
+        dragStartY.current = e.clientY;
+      }
+    }
+  };
+
+  const handlePointerUp = () => { dragIdx.current = null; };
+
+  const hiddenIndicators = ALL_INDICATORS.filter(i => !activeIndicators.includes(i.key));
 
   return (
     <>
+      <div style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.6)" }} onClick={onClose} />
       <div
-        className="fixed inset-0 bg-black/60 z-[200]"
-        onClick={onClose}
-      />
-      <div className="fixed left-4 right-4 z-[210] flex flex-col" style={{ top: "50%", transform: "translateY(-50%)", maxHeight: "70vh", background: "#111", border: "1px solid #2A2A2C", borderRadius: 12 }}>
-        <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: "1px solid #2A2A2C" }}>
-          <span className="font-mono text-[14px] font-bold tracking-wider text-white">INDICATORS</span>
-          <button onClick={onClose} className="p-1 text-[#71717a] hover:text-white">
-            <X className="w-5 h-5" />
-          </button>
+        style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 210,
+          background: "#111", fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
+          display: "flex", flexDirection: "column", overflowY: "auto",
+        }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div style={{ padding: "14px 16px 12px", borderBottom: "1px solid #2A2A2C", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+          <span style={{ fontSize: 16, fontWeight: 600, color: "#fff" }}>Watchlist Settings</span>
+          <button onClick={onClose} style={{ fontSize: 15, fontWeight: 600, color: "#FFB800", background: "transparent", border: "none", cursor: "pointer", padding: "4px 8px" }}>Done</button>
         </div>
-        <div className="overflow-y-auto py-1">
-          {ALL_INDICATORS.map((ind) => {
-            const isActive = activeIndicators.includes(ind.key);
+
+        <div style={{ padding: "12px 16px 6px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: "#71717a", textTransform: "uppercase", letterSpacing: 1 }}>Visible Columns</span>
+          <button onClick={onReset} style={{ fontSize: 12, fontWeight: 600, color: "#FFB800", background: "transparent", border: "none", cursor: "pointer", textTransform: "uppercase", letterSpacing: 0.5 }}>Reset</button>
+        </div>
+
+        <div style={{ flex: 1, overflowY: "auto" }}>
+          {activeIndicators.map((key, idx) => {
+            const ind = INDICATOR_MAP.get(key);
+            if (!ind) return null;
             return (
-              <button
-                key={ind.key}
-                onClick={() => onToggle(ind.key)}
-                className="w-full flex items-center justify-between px-4 py-3 transition-colors hover:bg-white/[0.04]"
-                style={{ borderBottom: "1px solid #1c1c1c" }}
-              >
-                <span className="font-mono text-[13px] tracking-wider" style={{ color: isActive ? "#fff" : "#52525b" }}>{ind.label}</span>
-                <div
-                  className="w-5 h-5 rounded flex items-center justify-center"
-                  style={{ background: isActive ? "#FFB800" : "transparent", border: isActive ? "none" : "1px solid #3a3a3c" }}
+              <div key={key} style={{ display: "flex", alignItems: "center", padding: "0 16px", height: ITEM_H, borderBottom: "1px solid #2A2A2C" }}>
+                <button
+                  onClick={() => onToggle(key)}
+                  style={{ width: 24, height: 24, borderRadius: 12, border: "none", background: "#dc2626", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, marginRight: 12 }}
                 >
-                  {isActive && <Check className="w-3.5 h-3.5 text-black" />}
+                  <div style={{ width: 10, height: 2, background: "#fff", borderRadius: 1 }} />
+                </button>
+                <span style={{ fontSize: 15, color: "#fff", flex: 1 }}>{ind.label}</span>
+                <div
+                  onPointerDown={e => handlePointerDown(e, idx)}
+                  onPointerMove={handlePointerMove}
+                  onPointerUp={handlePointerUp}
+                  style={{ width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "grab", flexShrink: 0, touchAction: "none" }}
+                >
+                  <svg width="16" height="12" viewBox="0 0 16 12" fill="none">
+                    <rect y="0" width="16" height="2" rx="1" fill="#71717a" />
+                    <rect y="5" width="16" height="2" rx="1" fill="#71717a" />
+                    <rect y="10" width="16" height="2" rx="1" fill="#71717a" />
+                  </svg>
                 </div>
-              </button>
+              </div>
             );
           })}
+
+          {hiddenIndicators.length > 0 && (
+            <>
+              <div style={{ padding: "16px 16px 6px" }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: "#71717a", textTransform: "uppercase", letterSpacing: 1 }}>Available Columns</span>
+              </div>
+              {hiddenIndicators.map(ind => (
+                <div key={ind.key} style={{ display: "flex", alignItems: "center", padding: "0 16px", height: ITEM_H, borderBottom: "1px solid #2A2A2C" }}>
+                  <button
+                    onClick={() => onToggle(ind.key)}
+                    style={{ width: 24, height: 24, borderRadius: 12, border: "none", background: "#22c55e", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, marginRight: 12 }}
+                  >
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                      <rect x="4" y="0" width="2" height="10" rx="1" fill="#fff" />
+                      <rect x="0" y="4" width="10" height="2" rx="1" fill="#fff" />
+                    </svg>
+                  </button>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ fontSize: 15, color: "#71717a" }}>{ind.label}</span>
+                    <div style={{ fontSize: 11, color: "#71717a", opacity: 0.6, marginTop: 1 }}>{ind.desc}</div>
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
         </div>
       </div>
     </>
@@ -597,8 +693,13 @@ export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sy
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [activeIndicators, setActiveIndicators] = useState<IndicatorKey[]>(() => {
     try {
-      const saved = localStorage.getItem("wl_indicators");
-      if (saved) return JSON.parse(saved);
+      const saved = localStorage.getItem(INDICATOR_STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved) as IndicatorKey[];
+        const validKeys = new Set<string>(ALL_INDICATORS.map(i => i.key));
+        const sanitized = [...new Set(parsed.filter(k => validKeys.has(k)))];
+        if (sanitized.length > 0) return sanitized as IndicatorKey[];
+      }
     } catch {}
     return DEFAULT_INDICATORS;
   });
@@ -640,9 +741,19 @@ export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sy
     setActiveIndicators((prev) => {
       const next = prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key];
       if (next.length === 0) return prev;
-      localStorage.setItem("wl_indicators", JSON.stringify(next));
+      try { localStorage.setItem(INDICATOR_STORAGE_KEY, JSON.stringify(next)); } catch {}
       return next;
     });
+  }, []);
+
+  const reorderIndicators = useCallback((newOrder: IndicatorKey[]) => {
+    setActiveIndicators(newOrder);
+    try { localStorage.setItem(INDICATOR_STORAGE_KEY, JSON.stringify(newOrder)); } catch {}
+  }, []);
+
+  const resetIndicators = useCallback(() => {
+    setActiveIndicators(DEFAULT_INDICATORS);
+    try { localStorage.setItem(INDICATOR_STORAGE_KEY, JSON.stringify(DEFAULT_INDICATORS)); } catch {}
   }, []);
 
   const handleSort = useCallback((key: SortKey) => {
@@ -764,7 +875,15 @@ export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sy
 
   return (
     <div className="flex-1 flex flex-col" style={{ background: "#000000" }}>
-      <IndicatorSettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} activeIndicators={activeIndicators} onToggle={toggleIndicator} />
+      {settingsOpen && (
+        <WatchlistSettingsPanel
+          activeIndicators={activeIndicators}
+          onToggle={toggleIndicator}
+          onReorder={reorderIndicators}
+          onReset={resetIndicators}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
 
       <div className="px-4 pt-4 pb-2">
         <div className="flex items-center justify-center mb-3 relative">
@@ -772,6 +891,7 @@ export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sy
           <WatchlistDropdown open={switcherOpen} onClose={() => setSwitcherOpen(false)} />
           <div className="absolute right-0 flex items-center gap-1">
             <button
+              aria-label="Watchlist settings"
               onClick={() => setSettingsOpen(true)}
               className="p-2 rounded-lg transition-colors hover:bg-white/[0.06]"
             >
