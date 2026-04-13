@@ -987,8 +987,8 @@ function extractMarketIndicators(dataMap: Map<string, Record<string, unknown>>):
     ovxChange: pctChange('$OVX'),
     gvz: lastOrMark('$GVZ'),
     gvzChange: pctChange('$GVZ'),
-    vixFut: null,
-    vixFutChange: null,
+    vixFut: lastOrMark('$VIX'),
+    vixFutChange: pctChange('$VIX'),
 
     tnx: yieldIndex('$TNX'),
     tnxChange: pctChange('$TNX'),
