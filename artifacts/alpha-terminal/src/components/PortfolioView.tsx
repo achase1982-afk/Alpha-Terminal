@@ -1423,7 +1423,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
             {symbolGroups.length > 0 && (
               <div style={{ borderTop: `1px solid ${C.border}`, padding: "4px 0", background: "#000" }}>
                 {[
-                  { label: "P/L Day:", value: `${fmtCurrency(totalDayPLPositions)} (${dayReturnPct >= 0 ? "+" : ""}${dayReturnPct.toFixed(1)}%)`, color: plColor(totalDayPLPositions) },
+                  { label: "P/L Day:", value: `${fmtCurrency(dayPL)} (${dayReturnPct >= 0 ? "+" : ""}${dayReturnPct.toFixed(1)}%)`, color: plColor(dayPL) },
                   { label: "P/L Open:", value: fmtCurrency(totalUnrealized), color: plColor(totalUnrealized) },
                   { label: "Net Liq:", value: fmtCurrency(bal?.liquidationValue ?? 0), color: C.text },
                   { label: "Available $:", value: fmtCurrency(bal?.availableFunds ?? 0), color: (bal?.availableFunds ?? 0) < 0 ? C.red : C.text },

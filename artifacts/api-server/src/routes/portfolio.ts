@@ -61,10 +61,9 @@ router.get("/accounts", async (_req, res) => {
       };
       const initBal = sa.initialBalances ?? {};
 
-      const dayPL = (sa.positions ?? []).reduce(
-        (sum: number, p: any) => sum + (p.currentDayProfitLoss ?? 0),
-        0
-      );
+      const curLiq = proj.liquidationValue ?? cur.liquidationValue ?? 0;
+      const initLiq = initBal.liquidationValue ?? initBal.accountValue ?? 0;
+      const dayPL = curLiq - initLiq;
       const totalPL = (sa.positions ?? []).reduce(
         (sum: number, p: any) => sum + (p.longOpenProfitLoss ?? 0),
         0

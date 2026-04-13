@@ -57,8 +57,9 @@ function mapAccount(acct: any) {
   };
   const initBal = sa.initialBalances ?? {};
 
-  const dayPL = (sa.positions ?? []).reduce(
-    (sum: number, p: any) => sum + (p.currentDayProfitLoss ?? 0), 0);
+  const curLiq = bal.liquidationValue ?? 0;
+  const initLiq = initBal.liquidationValue ?? initBal.accountValue ?? 0;
+  const dayPL = curLiq - initLiq;
   const totalPL = (sa.positions ?? []).reduce(
     (sum: number, p: any) => sum + (p.longOpenProfitLoss ?? 0), 0);
 
