@@ -399,23 +399,26 @@ function computeLiqFromStrikes(
     return inStrikeRange && inDteRange && s.bid > 0 && s.ask > 0;
   });
 
+  if (liqStrikes.length === 0) {
+    const totalOI = strikes.reduce((sum, s) => sum + s.openInterest, 0);
+    return { avgSpreadPct: 0, totalOI, score: 15, quoteDataAvailable: false };
+  }
+
   let avgSpreadPct = 99;
   let totalOI = 0;
   let liqScore = 0;
 
-  if (liqStrikes.length > 0) {
-    const spreads: number[] = [];
-    for (const s of liqStrikes) {
-      const mid = (s.bid + s.ask) / 2;
-      if (mid > 0) spreads.push(((s.ask - s.bid) / mid) * 100);
-      totalOI += s.openInterest;
-    }
-    avgSpreadPct = spreads.length > 0 ? spreads.reduce((a, b) => a + b, 0) / spreads.length : 99;
-    if (avgSpreadPct <= 2) liqScore = 15;
-    else if (avgSpreadPct <= 5) liqScore = 12;
-    else if (avgSpreadPct <= 10) liqScore = 9;
-    else if (avgSpreadPct <= 15) liqScore = 6;
+  const spreads: number[] = [];
+  for (const s of liqStrikes) {
+    const mid = (s.bid + s.ask) / 2;
+    if (mid > 0) spreads.push(((s.ask - s.bid) / mid) * 100);
+    totalOI += s.openInterest;
   }
+  avgSpreadPct = spreads.length > 0 ? spreads.reduce((a, b) => a + b, 0) / spreads.length : 99;
+  if (avgSpreadPct <= 2) liqScore = 15;
+  else if (avgSpreadPct <= 5) liqScore = 12;
+  else if (avgSpreadPct <= 10) liqScore = 9;
+  else if (avgSpreadPct <= 15) liqScore = 6;
 
   return { avgSpreadPct, totalOI, score: liqScore, quoteDataAvailable: true };
 }
@@ -872,8 +875,8 @@ export async function runDiscoveryScan(
       const quote = quoteMap.get(sym.toUpperCase())!;
       const spot = quote.lastPrice;
 
-      const candles = equityHistoryMap.get(sym) ?? [];
-      const polyData = flowDataMap.get(sym) ?? null;
+      const candles = equityHistoryMap.get(sym) ?? equityHistoryMap.get(sym.toUpperCase()) ?? [];
+      const polyData = flowDataMap.get(sym) ?? flowDataMap.get(sym.toUpperCase()) ?? null;
 
       if (candles.length < CFG.ipoMinDays) {
         const idx = filterResults.findIndex(f => f.symbol === sym);
