@@ -51,6 +51,7 @@ const MONTH_CODES = "FGHJKMNQUVXZ";
 const QUARTERLY_ROOTS = new Set([
   "ES","NQ","RTY","YM","MES","MNQ","M2K",
   "6E","6J","6B","6A","6C","EMD",
+  "ZB","ZN","ZF","ZT","UB",
 ]);
 
 const EARLY_ROLL_ROOTS = new Set<string>(["BZ"]);

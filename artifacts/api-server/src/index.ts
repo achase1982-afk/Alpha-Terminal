@@ -97,6 +97,7 @@ async function boot() {
     "$TNX", "$TYX", "$IRX",
     "$VXN", "$RVX", "$OVX", "$GVZ",
     "$TICK", "$TICKI",
+    "HYG", "LQD", "IEF", "TLT",
   ];
 
   let backfillTriggered = false;
