@@ -355,11 +355,12 @@ async function fetchFlowDataFromDB(symbols: string[]): Promise<Map<string, DBFlo
     .from(equityDailyTable)
     .where(and(
       inArray(equityDailyTable.symbol, symsWithDates),
-      inArray(equityDailyTable.date, [...allDates]),
-    ));
+      sql`${equityDailyTable.iv30d} IS NOT NULL AND ${equityDailyTable.iv30d} > 0`,
+    ))
+    .orderBy(equityDailyTable.symbol, desc(equityDailyTable.date));
   const iv30dMap = new Map<string, number | null>();
   for (const row of eqRows) {
-    if (symDatePairs.get(row.symbol) === row.date) iv30dMap.set(row.symbol, row.iv30d);
+    if (!iv30dMap.has(row.symbol)) iv30dMap.set(row.symbol, row.iv30d);
   }
 
   for (const agg of filteredAggs) {
@@ -396,21 +397,28 @@ function computeLiqFromStrikes(
   strikes: DBFlowData["strikes"],
   spot: number,
 ): LiqMetrics & { quoteDataAvailable: boolean } {
-  const hasBidAsk = strikes.some(s => s.bid > 0 && s.ask > 0);
+  const saneStrikes = strikes.filter(s => {
+    if (s.bid <= 0 || s.ask <= 0) return true;
+    if (s.ask > s.bid * 10) return false;
+    if (s.ask > spot * 2) return false;
+    return true;
+  });
+
+  const hasBidAsk = saneStrikes.some(s => s.bid > 0 && s.ask > 0);
 
   if (!hasBidAsk) {
-    const totalOI = strikes.reduce((sum, s) => sum + s.openInterest, 0);
+    const totalOI = saneStrikes.reduce((sum, s) => sum + s.openInterest, 0);
     return { avgSpreadPct: 0, totalOI, score: 15, quoteDataAvailable: false };
   }
 
-  const liqStrikes = strikes.filter(s => {
+  const liqStrikes = saneStrikes.filter(s => {
     const inStrikeRange = s.strike >= spot * (1 - CFG.liqStrikePct) && s.strike <= spot * (1 + CFG.liqStrikePct);
     const inDteRange = (s.dte ?? 0) >= CFG.liqDteMin && (s.dte ?? 0) <= CFG.liqDteMax;
     return inStrikeRange && inDteRange && s.bid > 0 && s.ask > 0;
   });
 
   if (liqStrikes.length === 0) {
-    const totalOI = strikes.reduce((sum, s) => sum + s.openInterest, 0);
+    const totalOI = saneStrikes.reduce((sum, s) => sum + s.openInterest, 0);
     return { avgSpreadPct: 0, totalOI, score: 15, quoteDataAvailable: false };
   }
 
@@ -425,10 +433,12 @@ function computeLiqFromStrikes(
     totalOI += s.openInterest;
   }
   avgSpreadPct = spreads.length > 0 ? spreads.reduce((a, b) => a + b, 0) / spreads.length : 99;
-  if (avgSpreadPct <= 2) liqScore = 15;
-  else if (avgSpreadPct <= 5) liqScore = 12;
-  else if (avgSpreadPct <= 10) liqScore = 9;
-  else if (avgSpreadPct <= 15) liqScore = 6;
+  if (avgSpreadPct <= 5) liqScore = 15;
+  else if (avgSpreadPct <= 10) liqScore = 12;
+  else if (avgSpreadPct <= 20) liqScore = 9;
+  else if (avgSpreadPct <= 35) liqScore = 6;
+
+  if (liqScore < 8 && totalOI >= 5000) liqScore = 9;
 
   return { avgSpreadPct, totalOI, score: liqScore, quoteDataAvailable: true };
 }
