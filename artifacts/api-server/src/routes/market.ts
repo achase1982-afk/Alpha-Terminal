@@ -773,15 +773,18 @@ router.get("/options", async (req, res) => {
   function sliceAndReturn(entry: { calls: OptionContract[]; puts: OptionContract[]; underlyingPrice?: number }, source: string) {
     let calls = entry.calls;
     let puts = entry.puts;
-    if (entry.underlyingPrice != null && strikeCount < 100) {
-      const centered = centerStrikesAroundATM(calls, puts, entry.underlyingPrice, strikeCount);
+    const liveQuote = getIBCachedQuote(displaySymbol) ?? getQuoteBySymbol(displaySymbol);
+    const livePrice = liveQuote?.last ?? liveQuote?.close ?? entry.underlyingPrice;
+    const centerPrice = livePrice ?? entry.underlyingPrice;
+    if (centerPrice != null && strikeCount < 100) {
+      const centered = centerStrikesAroundATM(calls, puts, centerPrice, strikeCount);
       calls = centered.calls;
       puts = centered.puts;
     }
     if (contractType === "CALL") puts = [];
     else if (contractType === "PUT") calls = [];
-    req.log.info({ symbol: displaySymbol, strikeCount, calls: calls.length, puts: puts.length, source }, "Options chain (NTM, centered)");
-    return GetOptionChainResponse.parse({ symbol: displaySymbol, underlyingPrice: entry.underlyingPrice, calls, puts });
+    req.log.info({ symbol: displaySymbol, strikeCount, calls: calls.length, puts: puts.length, source, centerPrice, chainPrice: entry.underlyingPrice }, "Options chain (centered)");
+    return GetOptionChainResponse.parse({ symbol: displaySymbol, underlyingPrice: livePrice ?? entry.underlyingPrice, calls, puts });
   }
 
   try {
