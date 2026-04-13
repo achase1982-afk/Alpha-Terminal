@@ -15,6 +15,7 @@ import { startUniverseRebuildSchedule } from "./lib/universeBuilder";
 import { backfillEquityHistory } from "./lib/dailySnapshot";
 import { LIQUID_CORE_SYMBOLS } from "./data/liquidCore130";
 import { startPolygonPCRatioPoller } from "./lib/polygonPutCallRatio";
+import { migrateAiLabSeedData } from "./lib/aiLabMigration";
 
 const rawPort = process.env["PORT"];
 
@@ -67,6 +68,7 @@ async function boot() {
     }, msUntil);
   }
   scheduleDailyScreenRefresh();
+  await migrateAiLabSeedData();
   initAiLabOrchestrator();
   startUniverseRebuildSchedule();
 

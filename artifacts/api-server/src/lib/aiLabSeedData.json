@@ -1,0 +1,1645 @@
+{
+  "ideas": [
+    {
+      "id": 13,
+      "created_at": "2026-04-10T14:13:27.610856",
+      "origin_type": "AI_LAB",
+      "analyst_model_name": "claude-sonnet-4-20250514",
+      "critic_model_name": "gemini-2.5-flash",
+      "symbol": "LEVI",
+      "direction": "SHORT",
+      "instrument_type": "STOCK",
+      "option_structure_type": null,
+      "legs": null,
+      "entry_zone": {
+        "max": 21.81,
+        "min": 21.5
+      },
+      "soft_stop": 22.25,
+      "target_zone": {
+        "max": 20.5,
+        "min": 19.5
+      },
+      "time_horizon": "3-10D",
+      "thesis": "LEVI showing signs of exhaustion near 20d highs at $21.81 after strong 19% rally over 20 days. In CHOPPY/BEARISH regime, expect mean reversion from elevated levels. High volume ratio of 4.84x suggests potential distribution activity.",
+      "catalyst": "TECHNICAL",
+      "invalidation": "Break above $22.25 with sustained volume would invalidate bearish thesis and suggest continued momentum",
+      "regime_fit": "GOOD",
+      "main_signals": [
+        "Near 20d high resistance",
+        "Elevated volume suggests distribution",
+        "Regime favors mean reversion",
+        "Strong recent rally due for pullback"
+      ],
+      "scanner_alignment_at_creation": {
+        "modeAlignment": "NO_SIGNAL",
+        "momentumScore": null,
+        "discoveryScore": null
+      },
+      "signal_strength": 45,
+      "conviction_level": "MEDIUM",
+      "uncertainty": {
+        "dataQuality": "LOW",
+        "regimeFitScore": 80,
+        "patternReliability": null
+      },
+      "entry_spread_pct": null,
+      "oi_at_entry": null,
+      "volume_at_entry": null,
+      "volume_to_oi_ratio": null,
+      "regime_at_creation": "CHOPPY|NORMAL_VOL|BEARISH",
+      "analyst_note": "LEVI presents a mean reversion opportunity after rallying 19% in 20 days to test the $21.81 high. The 4.84x volume ratio suggests institutional activity that could be distribution near resistance. In the current CHOPPY/BEARISH regime, fading strength at technical resistance levels has favorable odds. The stock has strong relative strength vs SPY (+19% vs +0% over 20d), but this creates an asymmetric setup for shorts. Entry zone targets the $21.50-$21.81 resistance area with stop above $22.25. Target zone of $19.50-$20.50 represents a logical pullback to prior support levels. Missing options data limits structure flexibility, but the stock setup aligns well with regime expectations for mean reversion from elevated levels.",
+      "critic_note": "This short idea for LEVI faces significant headwinds from the stock's persistent strong momentum. LEVI has rallied nearly 15% in 5 days and 19% in 20 days, showing exceptional relative strength against SPY (+19% in 20d). Fading such robust performance, especially at the 20-day high, is highly aggressive. The interpretation of the 4.84x volume ratio as 'distribution' is speculative; it could also signal strong buying interest supporting the rally. Furthermore, with HV20d at 46.37%, the stock is highly volatile, making the tight stop at $22.25 vulnerable to being hit by normal price fluctuations, even if the bearish thesis eventually plays out. While the CHOPPY regime can favor mean reversion, LEVI's strong outperformance in a BEARISH breadth market suggests it might be decoupling, making it less prone to general mean-reversion tendencies. The risk of continued momentum breaking through the proposed stop is high.",
+      "status": "ACTIVE",
+      "invalidated_reason": null,
+      "closed_at": null,
+      "sector": null,
+      "primary_proposal": null,
+      "skeptic_critique": null,
+      "final_decision": null
+    },
+    {
+      "id": 14,
+      "created_at": "2026-04-10T14:13:54.363936",
+      "origin_type": "AI_LAB",
+      "analyst_model_name": "claude-sonnet-4-20250514",
+      "critic_model_name": "gemini-2.5-flash",
+      "symbol": "BNL",
+      "direction": "SHORT",
+      "instrument_type": "STOCK",
+      "option_structure_type": null,
+      "legs": null,
+      "entry_zone": {
+        "max": 19.74,
+        "min": 19.6
+      },
+      "soft_stop": 20.15,
+      "target_zone": {
+        "max": 18.8,
+        "min": 18.5
+      },
+      "time_horizon": "3-10D",
+      "thesis": "BNL showing signs of exhaustion after 5.5% rally over 5 days, trading near 20-day highs in a choppy/bearish regime. Massive volume spike (19.4x normal) suggests potential distribution rather than accumulation. Lack of options flow data limits bullish momentum confirmation.",
+      "catalyst": "TECHNICAL",
+      "invalidation": "Break above $20.15 with sustained volume would invalidate the distribution thesis and suggest continuation higher",
+      "regime_fit": "GOOD",
+      "main_signals": [
+        "Volume spike at resistance",
+        "Trading at 20-day highs",
+        "Choppy/bearish regime headwinds"
+      ],
+      "scanner_alignment_at_creation": {
+        "modeAlignment": null,
+        "momentumScore": null,
+        "discoveryScore": null
+      },
+      "signal_strength": 49,
+      "conviction_level": "MEDIUM",
+      "uncertainty": {
+        "dataQuality": "LOW",
+        "regimeFitScore": 85,
+        "patternReliability": 70
+      },
+      "entry_spread_pct": null,
+      "oi_at_entry": null,
+      "volume_at_entry": null,
+      "volume_to_oi_ratio": null,
+      "regime_at_creation": "CHOPPY|NORMAL_VOL|BEARISH",
+      "analyst_note": "BNL presents a tactical short opportunity as it approaches resistance near the 20-day high of $19.74. The extraordinary volume spike (19.4x median) at these levels suggests potential selling pressure rather than accumulation, particularly concerning given the choppy/bearish market regime. The stock's recent 5.5% 5-day rally appears stretched relative to the 2.8% 20-day performance. Missing IV and options flow data reduces conviction, but the technical setup favors a mean reversion trade back toward the $18.50-$18.80 zone. Entry should be patient, waiting for signs of rejection at current levels. Risk management is critical given the recent momentum - any break above $20.15 would invalidate the thesis.",
+      "critic_note": "This short idea is based on exhaustion near 20-day highs, yet BNL is exhibiting significant relative strength, outperforming SPY by 2.29% over 5 days and 2.89% over 20 days. Shorting a stock with such robust outperformance, even at perceived resistance, carries substantial risk as it's directly counter-trend. The \"massive volume spike\" (19.35x median) could signal a powerful accumulation event or a breakout attempt rather than distribution, particularly given the recent 5.5% 5-day rally. The absence of options flow data further limits conviction. While the broader market is bearish/choppy, the stock's strong internal momentum could easily defy market headwinds and trigger a quick squeeze past the tight $20.15 stop.",
+      "status": "ACTIVE",
+      "invalidated_reason": null,
+      "closed_at": null,
+      "sector": null,
+      "primary_proposal": null,
+      "skeptic_critique": null,
+      "final_decision": null
+    },
+    {
+      "id": 15,
+      "created_at": "2026-04-10T14:14:26.221801",
+      "origin_type": "AI_LAB",
+      "analyst_model_name": "claude-sonnet-4-20250514",
+      "critic_model_name": "gemini-2.5-flash",
+      "symbol": "LGN",
+      "direction": "SHORT",
+      "instrument_type": "STOCK",
+      "option_structure_type": null,
+      "legs": null,
+      "entry_zone": {
+        "max": 58,
+        "min": 56.5
+      },
+      "soft_stop": 59.8,
+      "target_zone": {
+        "max": 54,
+        "min": 52
+      },
+      "time_horizon": "3-10D",
+      "thesis": "LGN showing weakness after 20-day rally with -3.1% 5-day return while underperforming SPY. High volume spike (8.4x median) suggests distribution. Current CHOPPY|BEARISH regime favors mean reversion from recent highs near $59.6.",
+      "catalyst": "TECHNICAL",
+      "invalidation": "Break above $59.8 (20-day high) with sustained volume would invalidate bearish thesis",
+      "regime_fit": "GOOD",
+      "main_signals": [
+        "Underperforming SPY over 5 days",
+        "Volume spike suggesting distribution",
+        "Trading near 20-day highs in bearish regime"
+      ],
+      "scanner_alignment_at_creation": {
+        "modeAlignment": "NO_SIGNAL",
+        "momentumScore": null,
+        "discoveryScore": null
+      },
+      "signal_strength": 47,
+      "conviction_level": "MEDIUM",
+      "uncertainty": {
+        "dataQuality": "LOW",
+        "regimeFitScore": 75,
+        "patternReliability": null
+      },
+      "entry_spread_pct": null,
+      "oi_at_entry": null,
+      "volume_at_entry": null,
+      "volume_to_oi_ratio": null,
+      "regime_at_creation": "CHOPPY|NORMAL_VOL|BEARISH",
+      "analyst_note": "LGN presents a mean reversion opportunity in current bearish regime. The stock rallied 11.7% over 20 days but has turned weak with -3.1% over 5 days, underperforming SPY by -6.3%. The 8.4x volume spike above median suggests institutional distribution near highs. Trading range $48.83-$59.6 provides clear technical levels. Entry near $56.5-$58 offers good risk/reward to targets around $52-$54. Stop above $59.8 keeps risk contained. Missing IV/flow data limits options analysis, but stock-only approach aligns with regime. Medium conviction due to limited data quality but good regime fit and clear technical setup.",
+      "critic_note": "The idea relies on mean reversion in a 'CHOPPY' regime, but LGN's 20-day historical volatility is extremely high at 59.27%. This makes the proposed tight stop at $59.8 (only $0.20 above the 20-day high) highly susceptible to being whipsawed out of the position prematurely. The interpretation of the 8.4x volume spike as definitive 'distribution' is speculative; it could also indicate absorption or capitulation in a highly volatile stock. A significant lack of granular liquidity data (e.g., avgSpreadPct, full options flow) raises concerns for execution quality and managing a short position. Furthermore, the 'NO_SIGNAL' from scanner alignment suggests a lack of robust quantitative confirmation.",
+      "status": "ACTIVE",
+      "invalidated_reason": null,
+      "closed_at": null,
+      "sector": null,
+      "primary_proposal": null,
+      "skeptic_critique": null,
+      "final_decision": null
+    },
+    {
+      "id": 16,
+      "created_at": "2026-04-10T14:14:55.789877",
+      "origin_type": "AI_LAB",
+      "analyst_model_name": "claude-sonnet-4-20250514",
+      "critic_model_name": "gemini-2.5-flash",
+      "symbol": "MSFT",
+      "direction": "SHORT",
+      "instrument_type": "STOCK",
+      "option_structure_type": null,
+      "legs": null,
+      "entry_zone": {
+        "max": 378,
+        "min": 372
+      },
+      "soft_stop": 383,
+      "target_zone": {
+        "max": 365,
+        "min": 358
+      },
+      "time_horizon": "3-10D",
+      "thesis": "MSFT showing weakness in CHOPPY|BEARISH regime with -7.5% 20D return and poor relative strength vs SPY. Flow shows modest call bias but in context of recent selling pressure. Technical setup suggests continuation of pullback toward 20D low around 357.",
+      "catalyst": "TECHNICAL",
+      "invalidation": "Break above 383 would signal regime shift and invalidate bearish thesis",
+      "regime_fit": "GOOD",
+      "main_signals": [
+        "Negative 20D return -7.5%",
+        "Underperforming SPY by -7.5% over 20D",
+        "Trading in lower half of 20D range",
+        "CHOPPY|BEARISH regime alignment"
+      ],
+      "scanner_alignment_at_creation": {
+        "modeAlignment": "NO_SIGNAL",
+        "momentumScore": null,
+        "discoveryScore": null
+      },
+      "signal_strength": 52,
+      "conviction_level": "MEDIUM",
+      "uncertainty": {
+        "dataQuality": "LOW",
+        "regimeFitScore": 75,
+        "patternReliability": null
+      },
+      "entry_spread_pct": null,
+      "oi_at_entry": null,
+      "volume_at_entry": null,
+      "volume_to_oi_ratio": 0,
+      "regime_at_creation": "CHOPPY|NORMAL_VOL|BEARISH",
+      "analyst_note": "MSFT is showing clear weakness with -7.5% 20D performance and significant underperformance vs SPY. In the current CHOPPY|BEARISH regime, this setup aligns well with a short bias. The stock is trading closer to recent lows than highs, and the flow data shows only modest call interest which isn't enough to offset the technical deterioration. Volume is slightly elevated which could support the move. Key risk is missing IV data limits options analysis, but the stock short appears clean with good risk/reward toward the 20D low around 357. Entry above current levels allows for better risk management.",
+      "critic_note": "While the overall bearish thesis aligns with the CHOPPY|BEARISH regime and the significant 20D underperformance (-7.5% vs. SPY), the recent 5-day positive return (+1.3%) suggests the stock may have experienced a short-term bounce. Entering a short between 372-378 after this bounce might expose the trade to continued relief rallies, especially if the market finds a temporary floor. Furthermore, the target zone of 358-365 is very close to the 20-day low of 356.77, suggesting that much of the downside move might already be exhausted, potentially limiting the remaining alpha. The call/put skew is positive (0.201), which is typically associated with bullish sentiment or hedging, contradicting the analyst's 'modest call bias' as a sign of weakness.",
+      "status": "ACTIVE",
+      "invalidated_reason": null,
+      "closed_at": null,
+      "sector": null,
+      "primary_proposal": null,
+      "skeptic_critique": null,
+      "final_decision": null
+    },
+    {
+      "id": 17,
+      "created_at": "2026-04-12T19:22:59.357922",
+      "origin_type": "AI_LAB",
+      "analyst_model_name": "claude-sonnet-4-20250514",
+      "critic_model_name": "gemini-2.5-flash",
+      "symbol": "MU",
+      "direction": "LONG",
+      "instrument_type": "OPTIONS",
+      "option_structure_type": "CALL_DEBIT_SPREAD",
+      "legs": [
+        {
+          "side": "BUY",
+          "strike": 430,
+          "legType": "CALL",
+          "quantity": 1,
+          "expiration": "2026-05-16"
+        },
+        {
+          "side": "SELL",
+          "strike": 470,
+          "legType": "CALL",
+          "quantity": 1,
+          "expiration": "2026-05-16"
+        }
+      ],
+      "entry_zone": {
+        "max": 430,
+        "min": 420
+      },
+      "soft_stop": 410,
+      "target_zone": {
+        "max": 470,
+        "min": 460
+      },
+      "time_horizon": "10+D",
+      "thesis": "MU showing strong institutional accumulation with massive call flow (92k calls vs 12k puts) and $71.8M block activity. Using call debit spread to capture momentum while mitigating IV crush risk and reducing premium outlay. Waiting for pullback to $420-430 zone for better entry.",
+      "catalyst": "FLOW",
+      "invalidation": "Break below $410 support or significant shift in call/put flow dynamics",
+      "regime_fit": "GOOD",
+      "main_signals": [
+        "Massive call flow dominance 7.5:1 ratio",
+        "Large block activity $71.8M institutional positioning",
+        "Strong relative strength vs SPY",
+        "Bullish trending regime support"
+      ],
+      "scanner_alignment_at_creation": {
+        "modeAlignment": null,
+        "momentumScore": null,
+        "discoveryScore": null
+      },
+      "signal_strength": 68,
+      "conviction_level": "MEDIUM",
+      "uncertainty": {
+        "dataQuality": "MEDIUM",
+        "regimeFitScore": 80,
+        "patternReliability": null
+      },
+      "entry_spread_pct": null,
+      "oi_at_entry": 306230,
+      "volume_at_entry": 92023,
+      "volume_to_oi_ratio": 1.0773268,
+      "regime_at_creation": "TRENDING_UP|NORMAL_VOL|BULLISH",
+      "analyst_note": "Revised MU trade addresses IV crush and overextension concerns by switching to call debit spread structure and waiting for pullback entry. The 430/470 call spread caps maximum loss while still capturing upside to $470 target. Entry zone lowered to $420-430 to avoid chasing the current extended move. This structure reduces net premium outlay by ~60% vs naked call while maintaining directional exposure. The massive institutional call flow and $71.8M block activity remain compelling signals of accumulation. Risk/reward improved to approximately 1:3 with defined maximum loss.",
+      "critic_note": "The Analyst has made significant and appropriate adjustments to address the core concerns. Switching to a call debit spread mitigates IV risk and reduces premium outlay, while the revised entry zone and stop loss demonstrate a more prudent approach to managing an extended move. The institutional flow argument, backed by block activity, provides a reasonable counter to the 'extreme sentiment as contrarian' point, especially with the improved risk structure.",
+      "status": "ACTIVE",
+      "invalidated_reason": null,
+      "closed_at": null,
+      "sector": null,
+      "primary_proposal": {
+        "thesis": "MU institutional call accumulation (92k calls vs 12k puts, $71.8M block) suggests continued upside, but current levels are extended. Using call debit spread to mitigate IV risk while capturing momentum.",
+        "riskNotes": "Maximum loss limited to net debit paid. Stop at $410 underlying. Monitor for shift in institutional flow or broader semiconductor weakness. Spread caps upside at $470 but provides better risk-adjusted returns.",
+        "structure": "Long May 16, 2026 430/470 call debit spread - enter on pullback to $420-430 zone. Defined risk structure with reduced premium outlay and IV crush protection."
+      },
+      "skeptic_critique": {
+        "evidence": "MU up 15.09% in 5 days, trading near 20d high of $461.73. Call/Put ratio 7.5:1. IV30d at 79.02%.",
+        "objections": "The stock is extremely extended, up 15.09% in 5 days and trading near its 20-day high, making it susceptible to a sharp pullback or consolidation. While call flow is dominant (7.5:1 ratio), extreme bullish sentiment can often be a contrarian indicator. The 30-day IV is high at 79.02%, making the long call premium substantial and vulnerable to IV crush. Buying calls into such an extended move with high IV is a high-risk proposition.",
+        "suggestedChanges": "Consider a less aggressive entry, a structure that mitigates IV risk, and a more conservative approach given the extended move."
+      },
+      "final_decision": {
+        "decision": "PROCEED",
+        "finalStructure": "CALL_DEBIT_SPREAD LONG (Buy 1x 430 CALL 2026-05-16 / Sell 1x 470 CALL 2026-05-16)",
+        "resolutionRationale": "Proceeding as proposed. Skeptic score: 25 (no blocking concerns). Skeptic noted: The stock is extremely extended, up 15.09% in 5 days and trading near its 20-day high, making it susceptible to a sharp pullback or consolidation. While call flow is dominant (7.5:1 ratio), extreme bullish sentiment can often be a contrarian indicator. The 30-day IV is high at 79.02%, making the long call premium substantial and vulnerable to IV crush. Buying calls into such an extended move with high IV is a high-risk proposition. — assessed as non-blocking."
+      }
+    }
+  ],
+  "deliberations": [
+    {
+      "id": 1,
+      "created_at": "2026-04-12T05:17:37.271766",
+      "symbol": "AAPL",
+      "source": "SCANNER_SCORE_TRIGGER",
+      "analyst_model_name": "claude-sonnet-4-20250514",
+      "critic_model_name": "gemini-2.5-flash",
+      "input_snapshot": {
+        "price": null,
+        "regime": "TRENDING_UP|NORMAL_VOL|BULLISH",
+        "volumeSummary": {
+          "median5d": 31289369,
+          "median20d": 39752822.5,
+          "volumeRatio": 0.7074107505196644
+        },
+        "scannerAlignment": {
+          "modeAlignment": null,
+          "momentumScore": null,
+          "discoveryScore": null
+        }
+      },
+      "primary_proposal": {
+        "thesis": "AAPL momentum continuation play in bullish regime with strong institutional flow support",
+        "riskNotes": "Stop below 20-day low at $246.63. Watch for regime shift or breakdown in relative strength vs SPY. Exit if call flow reverses significantly.",
+        "structure": "Equity long — options data incomplete with no IV/spread metrics available for structure assessment"
+      },
+      "skeptic_critique": {
+        "evidence": "The `rsVsSpy5d` is -0.0188 and `rsVsSpy20d` is -0.0023, indicating underperformance against SPY, not positive relative momentum. The `volumeRatio` is 0.707, meaning current volume is significantly below the 20-day median. The entry zone ($256-$258) is close to the `high20d` ($260.49). The risk to stop ($257 - $246.5 = $10.5) is equal to the reward to target ($267.5 - $257 = $10.5), yielding a 1:1 R/R. The analyst's note cites 'lack of IV data' for AAPL, which is unusual for such a liquid name.",
+        "objections": "The core thesis of 'positive relative momentum' is directly contradicted by the provided data. The trade is based on a momentum continuation, but AAPL is underperforming the broader market. The low volume ratio (0.707) on the recent price appreciation suggests a lack of conviction behind the move, rather than 'controlled accumulation.' The stock is already trading near its 20-day high, implying it might be extended, and the risk/reward ratio is only 1:1. The choice of equity over options due to 'lack of IV data' for a highly liquid stock like AAPL is suspicious and suggests a potential data feed issue or an oversight in analysis.",
+        "suggestedChanges": "Kill this idea. The fundamental premise of positive relative momentum is false. If a momentum trade is desired, find a stock that is actually outperforming the market on strong, confirming volume. If the data feed for IV is genuinely missing for AAPL, fix it immediately. If options are to be considered, a defined-risk call spread might be more appropriate than naked long stock given the stock's extended position and questionable momentum, assuming IV is not excessively high."
+      },
+      "final_decision": {
+        "decision": "REJECT",
+        "finalStructure": "Equity LONG — Equity long — options data incomplete with no IV/spread metrics available for structure assessment",
+        "resolutionRationale": "Rejected: DELIBERATION_NO_CONSENSUS. Skeptic objections: The core thesis of 'positive relative momentum' is directly contradicted by the provided data. The trade is based on a momentum continuation, but AAPL is underperforming the broader market. The low volume ratio (0.707) on the recent price appreciation suggests a lack of conviction behind the move, rather than 'controlled accumulation.' The stock is already trading near its 20-day high, implying it might be extended, and the risk/reward ratio is only 1:1. The choice of equity over options due to 'lack of IV data' for a highly liquid stock like AAPL is suspicious and suggests a potential data feed issue or an oversight in analysis. Skeptic suggested: Kill this idea. The fundamental premise of positive relative momentum is false. If a momentum trade is desired, find a stock that is actually outperforming the market on strong, confirming volume. If the data feed for IV is genuinely missing for AAPL, fix it immediately. If options are to be considered, a defined-risk call spread might be more appropriate than naked long stock given the stock's extended position and questionable momentum, assuming IV is not excessively high."
+      },
+      "idea_id": null,
+      "conversation_log": {
+        "turns": [
+          {
+            "role": "analyst",
+            "round": 1,
+            "content": {
+              "note": "AAPL presents a clean momentum continuation setup in a favorable regime. The stock has shown consistent positive returns over both 5-day and 20-day periods, currently trading near the upper end of its recent range. The options flow shows clear bullish bias with 40% more call volume than puts, complemented by substantial block activity including a $57M block. While volume has been below median recently, this could indicate controlled accumulation rather than distribution. The lack of IV data limits options structure assessment, making equity the cleaner expression. Risk is well-defined at the 20-day low, offering a reasonable risk/reward setup targeting the next resistance zone around $265-270.",
+              "direction": "LONG",
+              "structure": "Equity long — options data incomplete with no IV/spread metrics available for structure assessment",
+              "signalStrength": 65,
+              "convictionLevel": "MEDIUM"
+            },
+            "timestamp": "2026-04-12T05:16:58.150Z"
+          },
+          {
+            "role": "skeptic",
+            "round": 1,
+            "content": {
+              "note": "The analyst's thesis for AAPL is fundamentally flawed regarding relative strength and volume. The idea claims 'Positive relative momentum,' yet the data shows AAPL has underperformed SPY over both 5-day (-1.88%) and 20-day (-0.23%) periods. Furthermore, the 'strong call flow' is occurring on significantly below-average volume (volume ratio 0.707), which contradicts a healthy momentum setup and suggests lack of conviction. The stock is already near its 20-day high ($260.49), making the entry zone ($256-$258) potentially extended with a 1:1 risk/reward to the stated target and stop. The justification for equity over options due to 'lack of IV data' for AAPL is highly questionable, as AAPL options are typically very liquid with readily available data.",
+              "flags": {
+                "overfitWarning": false,
+                "regimeMismatch": false,
+                "liquidityConcern": false,
+                "redundancyWithActiveIdeas": false
+              },
+              "objections": "The core thesis of 'positive relative momentum' is directly contradicted by the provided data. The trade is based on a momentum continuation, but AAPL is underperforming the broader market. The low volume ratio (0.707) on the recent price appreciation suggests a lack of conviction behind the move, rather than 'controlled accumulation.' The stock is already trading near its 20-day high, implying it might be extended, and the risk/reward ratio is only 1:1. The choice of equity over options due to 'lack of IV data' for a highly liquid stock like AAPL is suspicious and suggests a potential data feed issue or an oversight in analysis.",
+              "critiqueScore": 70,
+              "suggestedChanges": "Kill this idea. The fundamental premise of positive relative momentum is false. If a momentum trade is desired, find a stock that is actually outperforming the market on strong, confirming volume. If the data feed for IV is genuinely missing for AAPL, fix it immediately. If options are to be considered, a defined-risk call spread might be more appropriate than naked long stock given the stock's extended position and questionable momentum, assuming IV is not excessively high."
+            },
+            "timestamp": "2026-04-12T05:17:17.099Z"
+          }
+        ],
+        "totalRounds": 2,
+        "consensusSummary": "Deliberation ended round 2: analyst rebuttal failed (Invalid timeHorizon: 7-14D)",
+        "reachedConsensus": false
+      }
+    },
+    {
+      "id": 2,
+      "created_at": "2026-04-12T13:00:51.979756",
+      "symbol": "META",
+      "source": "PREMARKET_PLAN",
+      "analyst_model_name": "claude-sonnet-4-20250514",
+      "critic_model_name": "gemini-2.5-flash",
+      "input_snapshot": {
+        "price": null,
+        "regime": "TRENDING_UP|NORMAL_VOL|BULLISH",
+        "volumeSummary": {
+          "median5d": 13518547,
+          "median20d": 14386405.5,
+          "volumeRatio": 1.3215887735126053
+        },
+        "scannerAlignment": {
+          "modeAlignment": null,
+          "momentumScore": null,
+          "discoveryScore": null
+        }
+      },
+      "primary_proposal": {
+        "thesis": "META's extreme call flow dominance (99.9% skew) combined with strong recent momentum and bullish regime creates attractive long opportunity targeting breakout above recent highs",
+        "riskNotes": "Main risk is reversal from overbought levels given 9.4% 5-day run. Missing IV data prevents proper volatility assessment. Exit if breaks below $600 or call flow reverses significantly. Time decay risk increases approaching expiration.",
+        "structure": "Long May 16th 640 calls (10 contracts) - targeting momentum continuation above 20-day high of 638, sized medium given strong flow signals but missing volatility data"
+      },
+      "skeptic_critique": {
+        "evidence": "Refer to ivSummary (iv30d: null, ivr: null, ivHvRatio: null). Refer to liquidityMetrics (minOiMainStrikes: 0, volumeToOiRatio: 0) and flowSummary (avgVolOi: 0). Note recentPriceSummary (return5d: 0.09387946941475463, return20d: -0.015340499545582696) and rsSummary (rsVsSpy5d: 0.057162637308873644, rsVsSpy20d: -0.03613442201502993). The analyst's own note acknowledges 'missing IV data prevents proper volatility assessment'.",
+        "objections": "The fundamental flaw is the complete absence of critical volatility data (IV30d, IVR, IV/HV ratio), which is non-negotiable for options trading. This prevents any accurate assessment of premium value, implied move, or risk. Furthermore, the reported options liquidity is non-existent, with zero Open Interest (minOiMainStrikes: 0, avgVolOi: 0) for the main strikes. This makes the 'extreme call flow' (99.9% skew) highly misleading; it's likely a data anomaly or a single, illiquid block trade, not a sign of broad bullish positioning. The underlying's recent price action is contradictory: a strong 5-day bounce (+9.4%) after 20-day underperformance (-1.5% absolute, -3.6% vs SPY), suggesting a potential mean reversion rather than a new trend. The OTM 640 strike requires a significant move, which is highly speculative without vol data. No event risk (e.g., earnings) is considered for the May expiry.",
+        "suggestedChanges": "Kill this idea immediately. It is un-tradeable as an options strategy given the critical missing volatility data and the severe, likely non-existent, liquidity (zero Open Interest). If the data issues are resolved and valid IV/OI metrics become available, re-evaluate the trade. If the 'call flow' is confirmed to be legitimate and liquid, consider a defined-risk call spread to mitigate time decay and high IV risk, or switch to an equity position if the conviction is purely directional and not volatility-dependent. Do not proceed with this long call without complete and accurate options data."
+      },
+      "final_decision": {
+        "decision": "REJECT",
+        "finalStructure": "LONG_CALL LONG (Buy 10x 640 CALL 2026-05-16)",
+        "resolutionRationale": "Rejected: DELIBERATION_NO_CONSENSUS. Skeptic objections: The fundamental flaw is the complete absence of critical volatility data (IV30d, IVR, IV/HV ratio), which is non-negotiable for options trading. This prevents any accurate assessment of premium value, implied move, or risk. Furthermore, the reported options liquidity is non-existent, with zero Open Interest (minOiMainStrikes: 0, avgVolOi: 0) for the main strikes. This makes the 'extreme call flow' (99.9% skew) highly misleading; it's likely a data anomaly or a single, illiquid block trade, not a sign of broad bullish positioning. The underlying's recent price action is contradictory: a strong 5-day bounce (+9.4%) after 20-day underperformance (-1.5% absolute, -3.6% vs SPY), suggesting a potential mean reversion rather than a new trend. The OTM 640 strike requires a significant move, which is highly speculative without vol data. No event risk (e.g., earnings) is considered for the May expiry. Flags: liquidity concern, overfit warning. Skeptic suggested: Kill this idea immediately. It is un-tradeable as an options strategy given the critical missing volatility data and the severe, likely non-existent, liquidity (zero Open Interest). If the data issues are resolved and valid IV/OI metrics become available, re-evaluate the trade. If the 'call flow' is confirmed to be legitimate and liquid, consider a defined-risk call spread to mitigate time decay and high IV risk, or switch to an equity position if the conviction is purely directional and not volatility-dependent. Do not proceed with this long call without complete and accurate options data."
+      },
+      "idea_id": null,
+      "conversation_log": {
+        "turns": [
+          {
+            "role": "analyst",
+            "round": 1,
+            "content": {
+              "note": "META presents a compelling long setup driven by extraordinary options flow - 269K calls vs just 126 puts represents 99.9% call skew, indicating massive bullish positioning. The stock has outperformed SPY by 5.7% over 5 days and is trading near 20-day highs. Large block activity totaling $93M suggests institutional accumulation. The bullish trending regime provides favorable backdrop. However, data quality concerns exist with missing IV metrics and scanner scores. The 20-day underperformance vs SPY (-3.6%) suggests recent strength may be a reversal from oversold conditions rather than continuation of longer-term trend.",
+              "direction": "LONG",
+              "structure": "Long May 16th 640 calls (10 contracts) - targeting momentum continuation above 20-day high of 638, sized medium given strong flow signals but missing volatility data",
+              "signalStrength": 75,
+              "convictionLevel": "MEDIUM"
+            },
+            "timestamp": "2026-04-12T13:00:16.533Z"
+          },
+          {
+            "role": "skeptic",
+            "round": 1,
+            "content": {
+              "note": "This idea is critically flawed for an options trade. Key volatility metrics (IV30d, IVR) are missing, making proper pricing and risk assessment impossible. More alarmingly, the options chain shows zero Open Interest (minOiMainStrikes: 0, avgVolOi: 0), indicating severe liquidity issues despite reported high volume. The 'extreme call flow' is highly suspect without OI. The recent 5-day rally appears to be a bounce from 20-day underperformance, not sustained momentum. Entering an OTM long call with these data gaps is extremely risky.",
+              "flags": {
+                "overfitWarning": true,
+                "regimeMismatch": false,
+                "liquidityConcern": true,
+                "redundancyWithActiveIdeas": false
+              },
+              "objections": "The fundamental flaw is the complete absence of critical volatility data (IV30d, IVR, IV/HV ratio), which is non-negotiable for options trading. This prevents any accurate assessment of premium value, implied move, or risk. Furthermore, the reported options liquidity is non-existent, with zero Open Interest (minOiMainStrikes: 0, avgVolOi: 0) for the main strikes. This makes the 'extreme call flow' (99.9% skew) highly misleading; it's likely a data anomaly or a single, illiquid block trade, not a sign of broad bullish positioning. The underlying's recent price action is contradictory: a strong 5-day bounce (+9.4%) after 20-day underperformance (-1.5% absolute, -3.6% vs SPY), suggesting a potential mean reversion rather than a new trend. The OTM 640 strike requires a significant move, which is highly speculative without vol data. No event risk (e.g., earnings) is considered for the May expiry.",
+              "critiqueScore": 95,
+              "suggestedChanges": "Kill this idea immediately. It is un-tradeable as an options strategy given the critical missing volatility data and the severe, likely non-existent, liquidity (zero Open Interest). If the data issues are resolved and valid IV/OI metrics become available, re-evaluate the trade. If the 'call flow' is confirmed to be legitimate and liquid, consider a defined-risk call spread to mitigate time decay and high IV risk, or switch to an equity position if the conviction is purely directional and not volatility-dependent. Do not proceed with this long call without complete and accurate options data."
+            },
+            "timestamp": "2026-04-12T13:00:34.110Z"
+          }
+        ],
+        "totalRounds": 2,
+        "consensusSummary": "Deliberation ended round 2: analyst rebuttal failed (Invalid instrumentType: EQUITY)",
+        "reachedConsensus": false
+      }
+    },
+    {
+      "id": 3,
+      "created_at": "2026-04-12T13:01:41.048006",
+      "symbol": "INTC",
+      "source": "PREMARKET_PLAN",
+      "analyst_model_name": "claude-sonnet-4-20250514",
+      "critic_model_name": "gemini-2.5-flash",
+      "input_snapshot": {
+        "price": null,
+        "regime": "TRENDING_UP|NORMAL_VOL|BULLISH",
+        "volumeSummary": {
+          "median5d": 129543837,
+          "median20d": 87085891,
+          "volumeRatio": 1.7868553127624314
+        },
+        "scannerAlignment": {
+          "modeAlignment": null,
+          "momentumScore": null,
+          "discoveryScore": null
+        }
+      },
+      "primary_proposal": {
+        "thesis": "INTC momentum continuation play based on strong relative performance, heavy call flow, and institutional accumulation in favorable market regime",
+        "riskNotes": "Main risk is broader tech selloff or company-specific negative news. Stop loss at $55 protects against momentum failure. High volatility (79% HV20d) means position sizing should be conservative to manage daily swings.",
+        "structure": "Equity long — options data incomplete with zero OI metrics making options structures unreliable for proper risk management"
+      },
+      "skeptic_critique": {
+        "evidence": "INTC's 5-day return of 22.5% and 20-day return of 36.4% are unsustainable. The current price is likely very close to the 20-day high of $61.72. The HV20d is 79.10686, indicating large daily price swings. The proposed stop loss at $55 is only $3.5-$6 below the entry, which is a small buffer in a 79% HV environment. The stock's high volatility also mismatches the 'NORMAL_VOL' regime state.",
+        "objections": "The stock is severely overextended, having posted parabolic returns over the last 5 and 20 days. This makes it highly susceptible to a sharp pullback or consolidation, especially given the entry zone is near the 20-day high. The HV20d of 79.1% signifies extreme volatility, which could easily trigger the $55 stop loss even on a minor retracement, making the risk/reward unfavorable for a short-term momentum play. Relying on flow as a primary catalyst after such a significant move is speculative.",
+        "suggestedChanges": "Kill this idea. The risk of buying into an overextended asset with high volatility is too great for a short-term momentum trade. If conviction remains, wait for a significant pullback or consolidation to establish a more favorable entry and risk/reward profile. Alternatively, consider a much smaller position size if the analyst insists on the trade."
+      },
+      "final_decision": {
+        "decision": "REJECT",
+        "finalStructure": "Equity LONG — Equity long — options data incomplete with zero OI metrics making options structures unreliable for proper risk management",
+        "resolutionRationale": "Rejected: DELIBERATION_NO_CONSENSUS. Skeptic objections: The stock is severely overextended, having posted parabolic returns over the last 5 and 20 days. This makes it highly susceptible to a sharp pullback or consolidation, especially given the entry zone is near the 20-day high. The HV20d of 79.1% signifies extreme volatility, which could easily trigger the $55 stop loss even on a minor retracement, making the risk/reward unfavorable for a short-term momentum play. Relying on flow as a primary catalyst after such a significant move is speculative. Flags: regime mismatch, overfit warning. Skeptic suggested: Kill this idea. The risk of buying into an overextended asset with high volatility is too great for a short-term momentum trade. If conviction remains, wait for a significant pullback or consolidation to establish a more favorable entry and risk/reward profile. Alternatively, consider a much smaller position size if the analyst insists on the trade."
+      },
+      "idea_id": null,
+      "conversation_log": {
+        "turns": [
+          {
+            "role": "analyst",
+            "round": 1,
+            "content": {
+              "note": "Intel is exhibiting strong momentum characteristics with significant outperformance versus the broader market. The 2:1 call/put flow ratio combined with 79% volume above median suggests institutional accumulation. The stock has broken out of its recent range and is approaching 20-day highs. In the current TRENDING_UP/BULLISH regime, this momentum is likely to continue. The large block activity ($65.8M biggest block) indicates sophisticated money is positioning for further upside. Risk is managed with a stop below the recent breakout level around $55.",
+              "direction": "LONG",
+              "structure": "Equity long — options data incomplete with zero OI metrics making options structures unreliable for proper risk management",
+              "signalStrength": 75,
+              "convictionLevel": "MEDIUM"
+            },
+            "timestamp": "2026-04-12T13:01:06.733Z"
+          },
+          {
+            "role": "skeptic",
+            "round": 1,
+            "content": {
+              "note": "This idea presents significant risk due to INTC's extreme overextension, with 5-day returns of 22.5% and 20-day returns of 36.4%. Entering near the 20-day high ($61.72) after such a run-up increases mean reversion risk. The HV20d of 79.1% indicates very high volatility, making the proposed $55 stop loss vulnerable to normal, albeit large, fluctuations. While call flow is strong, relying on it after such a parabolic move is risky. The risk/reward of ~1:1 to 1.5:1 is not compelling enough for this level of extendedness and volatility.",
+              "flags": {
+                "overfitWarning": true,
+                "regimeMismatch": true,
+                "liquidityConcern": false,
+                "redundancyWithActiveIdeas": false
+              },
+              "objections": "The stock is severely overextended, having posted parabolic returns over the last 5 and 20 days. This makes it highly susceptible to a sharp pullback or consolidation, especially given the entry zone is near the 20-day high. The HV20d of 79.1% signifies extreme volatility, which could easily trigger the $55 stop loss even on a minor retracement, making the risk/reward unfavorable for a short-term momentum play. Relying on flow as a primary catalyst after such a significant move is speculative.",
+              "critiqueScore": 65,
+              "suggestedChanges": "Kill this idea. The risk of buying into an overextended asset with high volatility is too great for a short-term momentum trade. If conviction remains, wait for a significant pullback or consolidation to establish a more favorable entry and risk/reward profile. Alternatively, consider a much smaller position size if the analyst insists on the trade."
+            },
+            "timestamp": "2026-04-12T13:01:22.236Z"
+          }
+        ],
+        "totalRounds": 2,
+        "consensusSummary": "Deliberation ended round 2: analyst rebuttal failed (Invalid timeHorizon: 5-15D)",
+        "reachedConsensus": false
+      }
+    },
+    {
+      "id": 4,
+      "created_at": "2026-04-12T13:02:28.826675",
+      "symbol": "LEVI",
+      "source": "PREMARKET_PLAN",
+      "analyst_model_name": "claude-sonnet-4-20250514",
+      "critic_model_name": "gemini-2.5-flash",
+      "input_snapshot": {
+        "price": null,
+        "regime": "TRENDING_UP|NORMAL_VOL|BULLISH",
+        "volumeSummary": {
+          "median5d": 3207417,
+          "median20d": 2382755,
+          "volumeRatio": 4.844441833088169
+        },
+        "scannerAlignment": {
+          "modeAlignment": null,
+          "momentumScore": null,
+          "discoveryScore": null
+        }
+      },
+      "primary_proposal": {
+        "thesis": "Momentum continuation play on LEVI's exceptional relative strength performance in bullish market regime with institutional volume confirmation",
+        "riskNotes": "Primary risk is momentum reversal below $19.50. Watch for volume decline as signal of waning institutional interest. Broader market regime shift could pressure individual momentum names",
+        "structure": "Equity long — options data unavailable, limiting structure assessment. Direct equity exposure captures momentum with clear risk management levels"
+      },
+      "skeptic_critique": {
+        "evidence": "LEVI is up 14.79% in 5 days and 19.25% in 20 days, trading close to its 20-day high of $21.81. All options-related data points (iv30d, ivr, totalCallVol, totalPutVol, avgSpreadPct, minOiMainStrikes, volumeToOiRatio) are null, indicating illiquidity or data issues. The entry zone of $20.8-$21.2 is very close to the 20-day high, leaving limited upside to the target of $22.5-$23 relative to the recent run.",
+        "objections": "The trade proposes buying into an already extended move, increasing the risk of mean reversion. The stock is trading near its 20-day high after a substantial rally. The complete absence of options data (IV, flow, liquidity metrics) is a major red flag, suggesting illiquid options, which limits strategic flexibility and could indicate a lack of institutional interest in the name for short-term trading. The 4.8x volume surge, while bullish, could also signal an exhaustion move or blow-off top after such a rapid ascent.",
+        "suggestedChanges": "Given the extended price action, consider waiting for a pullback to a more favorable entry point, perhaps closer to the soft stop of $19.5, to improve the risk/reward profile. If options data becomes available and shows sufficient liquidity, re-evaluate using a defined-risk options spread (e.g., a call spread) to capitalize on potential upside while limiting downside exposure, especially given the stock's recent volatility (HV20d 46.38%). If options remain illiquid, reduce the proposed equity size significantly or kill the idea, as the lack of options liquidity suggests this may not be a suitable short-term momentum play for a desk."
+      },
+      "final_decision": {
+        "decision": "REJECT",
+        "finalStructure": "Equity LONG — Equity long — options data unavailable, limiting structure assessment. Direct equity exposure captures momentum with clear risk management levels",
+        "resolutionRationale": "Rejected: DELIBERATION_NO_CONSENSUS. Skeptic objections: The trade proposes buying into an already extended move, increasing the risk of mean reversion. The stock is trading near its 20-day high after a substantial rally. The complete absence of options data (IV, flow, liquidity metrics) is a major red flag, suggesting illiquid options, which limits strategic flexibility and could indicate a lack of institutional interest in the name for short-term trading. The 4.8x volume surge, while bullish, could also signal an exhaustion move or blow-off top after such a rapid ascent. Flags: liquidity concern. Skeptic suggested: Given the extended price action, consider waiting for a pullback to a more favorable entry point, perhaps closer to the soft stop of $19.5, to improve the risk/reward profile. If options data becomes available and shows sufficient liquidity, re-evaluate using a defined-risk options spread (e.g., a call spread) to capitalize on potential upside while limiting downside exposure, especially given the stock's recent volatility (HV20d 46.38%). If options remain illiquid, reduce the proposed equity size significantly or kill the idea, as the lack of options liquidity suggests this may not be a suitable short-term momentum play for a desk."
+      },
+      "idea_id": null,
+      "conversation_log": {
+        "turns": [
+          {
+            "role": "analyst",
+            "round": 1,
+            "content": {
+              "note": "LEVI presents a compelling momentum continuation play in a favorable bullish regime. The stock has demonstrated exceptional relative strength, outpacing SPY by 11% over 5 days and 17% over 20 days. The 4.8x volume surge above median levels indicates institutional interest and validates the price action. Trading near 20-day highs with strong momentum suggests further upside potential. The TRENDING_UP/BULLISH regime provides tailwinds for continued appreciation. Key risk is the lack of options data limiting structure flexibility, but the equity momentum is clear enough to warrant direct exposure.",
+              "direction": "LONG",
+              "structure": "Equity long — options data unavailable, limiting structure assessment. Direct equity exposure captures momentum with clear risk management levels",
+              "signalStrength": 75,
+              "convictionLevel": "MEDIUM"
+            },
+            "timestamp": "2026-04-12T13:01:55.057Z"
+          },
+          {
+            "role": "skeptic",
+            "round": 1,
+            "content": {
+              "note": "The analyst proposes buying LEVI after a significant run, up nearly 15% in 5 days and 19% in 20 days, placing it near its 20-day high of $21.81. While the 4.8x volume surge is noted, buying into such extended strength carries mean reversion risk. The primary concern is the complete lack of options data (IV, flow, spread, OI) in the snapshot, which the analyst acknowledges. This suggests options are illiquid or non-existent, severely limiting strategic flexibility and potentially indicating broader market disinterest beyond recent price action. Direct equity exposure at these levels, without the ability to hedge or define risk via options, is suboptimal.",
+              "flags": {
+                "overfitWarning": false,
+                "regimeMismatch": false,
+                "liquidityConcern": true,
+                "redundancyWithActiveIdeas": false
+              },
+              "objections": "The trade proposes buying into an already extended move, increasing the risk of mean reversion. The stock is trading near its 20-day high after a substantial rally. The complete absence of options data (IV, flow, liquidity metrics) is a major red flag, suggesting illiquid options, which limits strategic flexibility and could indicate a lack of institutional interest in the name for short-term trading. The 4.8x volume surge, while bullish, could also signal an exhaustion move or blow-off top after such a rapid ascent.",
+              "critiqueScore": 55,
+              "suggestedChanges": "Given the extended price action, consider waiting for a pullback to a more favorable entry point, perhaps closer to the soft stop of $19.5, to improve the risk/reward profile. If options data becomes available and shows sufficient liquidity, re-evaluate using a defined-risk options spread (e.g., a call spread) to capitalize on potential upside while limiting downside exposure, especially given the stock's recent volatility (HV20d 46.38%). If options remain illiquid, reduce the proposed equity size significantly or kill the idea, as the lack of options liquidity suggests this may not be a suitable short-term momentum play for a desk."
+            },
+            "timestamp": "2026-04-12T13:02:08.567Z"
+          }
+        ],
+        "totalRounds": 2,
+        "consensusSummary": "Deliberation ended round 2: analyst rebuttal failed (Invalid timeHorizon: 5-15D)",
+        "reachedConsensus": false
+      }
+    },
+    {
+      "id": 5,
+      "created_at": "2026-04-12T13:03:18.236639",
+      "symbol": "BNL",
+      "source": "PREMARKET_PLAN",
+      "analyst_model_name": "claude-sonnet-4-20250514",
+      "critic_model_name": "gemini-2.5-flash",
+      "input_snapshot": {
+        "price": null,
+        "regime": "TRENDING_UP|NORMAL_VOL|BULLISH",
+        "volumeSummary": {
+          "median5d": 1827385,
+          "median20d": 1725839.5,
+          "volumeRatio": 19.35383099065701
+        },
+        "scannerAlignment": {
+          "modeAlignment": null,
+          "momentumScore": null,
+          "discoveryScore": null
+        }
+      },
+      "primary_proposal": {
+        "thesis": "Momentum continuation play on strong volume and relative strength in favorable regime",
+        "riskNotes": "Main risk is false breakout if volume was one-time event. Stop below $18.80 limits downside. Watch for volume confirmation on any pullback to entry zone.",
+        "structure": "Equity long — no options data available for structure assessment, forcing stock position with 3-4% risk"
+      },
+      "skeptic_critique": {
+        "evidence": "The \"volumeRatio\": 19.3538x is an extreme outlier. The \"high20d\": 19.74 is very close to the current price, suggesting the spike occurred at or near the top of the recent range. All options-related fields (iv30d, ivr, totalCallVol, totalPutVol, avgSpreadPct, minOiMainStrikes, etc.) are null, indicating a complete lack of options market visibility.",
+        "objections": "The primary objection is the potentially misread signal from the extreme volume spike. A 19x volume surge, especially near 20-day highs, could be an exhaustion move or a large distribution event rather than pure accumulation. Buying a pullback into this zone ($19.20-$19.50) after such a spike carries the risk of catching a falling knife. The lack of any options data prevents validation of institutional interest or the use of more sophisticated, risk-defined strategies.",
+        "suggestedChanges": "Kill this idea until there is clearer evidence that the volume spike represents sustained accumulation rather than a one-off event or distribution. Alternatively, if the analyst insists, significantly reduce size and tighten the stop, or wait for a clearer consolidation pattern after the volume spike has normalized to confirm demand at lower levels. If options data becomes available, re-evaluate for a defined-risk spread."
+      },
+      "final_decision": {
+        "decision": "REJECT",
+        "finalStructure": "Equity LONG — Equity long — no options data available for structure assessment, forcing stock position with 3-4% risk",
+        "resolutionRationale": "Rejected: DELIBERATION_NO_CONSENSUS. Skeptic objections: The primary objection is the potentially misread signal from the extreme volume spike. A 19x volume surge, especially near 20-day highs, could be an exhaustion move or a large distribution event rather than pure accumulation. Buying a pullback into this zone ($19.20-$19.50) after such a spike carries the risk of catching a falling knife. The lack of any options data prevents validation of institutional interest or the use of more sophisticated, risk-defined strategies. Flags: liquidity concern, overfit warning. Skeptic suggested: Kill this idea until there is clearer evidence that the volume spike represents sustained accumulation rather than a one-off event or distribution. Alternatively, if the analyst insists, significantly reduce size and tighten the stop, or wait for a clearer consolidation pattern after the volume spike has normalized to confirm demand at lower levels. If options data becomes available, re-evaluate for a defined-risk spread."
+      },
+      "idea_id": null,
+      "conversation_log": {
+        "turns": [
+          {
+            "role": "analyst",
+            "round": 1,
+            "content": {
+              "note": "BNL presents a compelling momentum play with strong technical setup. The 19x volume spike combined with 5.5% 5-day return and consistent outperformance vs SPY suggests institutional accumulation. Trading at $19.74 high with support around $19.20. The bullish regime provides favorable backdrop for continuation. However, options data is completely missing, forcing equity expression. Risk is managed with tight stop below recent consolidation zone. Target based on measured move from recent range.",
+              "direction": "LONG",
+              "structure": "Equity long — no options data available for structure assessment, forcing stock position with 3-4% risk",
+              "signalStrength": 75,
+              "convictionLevel": "MEDIUM"
+            },
+            "timestamp": "2026-04-12T13:02:42.435Z"
+          },
+          {
+            "role": "skeptic",
+            "round": 1,
+            "content": {
+              "note": "The analyst's interpretation of the 19.35x median volume spike as purely 'institutional interest' and 'accumulation' is overly optimistic. Such extreme volume can often signal a blow-off top or a liquidity event for large sellers, especially when the stock is trading near its 20-day high ($19.74). The proposed entry zone ($19.20-$19.50) implies buying a pullback after this spike, which could be catching a falling knife if the initial surge was an exhaustion move. Furthermore, the complete absence of options data (IV, flow, OI, volume) is a significant blind spot. While the analyst acknowledges this, it means we lack crucial validation of institutional interest via the options market and cannot leverage options for potentially better risk-defined structures or higher probability plays. This forces an equity position on a stock where options market sentiment is unknown, raising questions about overall market depth and true institutional conviction beyond a single volume event.",
+              "flags": {
+                "overfitWarning": true,
+                "regimeMismatch": false,
+                "liquidityConcern": true,
+                "redundancyWithActiveIdeas": false
+              },
+              "objections": "The primary objection is the potentially misread signal from the extreme volume spike. A 19x volume surge, especially near 20-day highs, could be an exhaustion move or a large distribution event rather than pure accumulation. Buying a pullback into this zone ($19.20-$19.50) after such a spike carries the risk of catching a falling knife. The lack of any options data prevents validation of institutional interest or the use of more sophisticated, risk-defined strategies.",
+              "critiqueScore": 65,
+              "suggestedChanges": "Kill this idea until there is clearer evidence that the volume spike represents sustained accumulation rather than a one-off event or distribution. Alternatively, if the analyst insists, significantly reduce size and tighten the stop, or wait for a clearer consolidation pattern after the volume spike has normalized to confirm demand at lower levels. If options data becomes available, re-evaluate for a defined-risk spread."
+            },
+            "timestamp": "2026-04-12T13:02:58.931Z"
+          }
+        ],
+        "totalRounds": 2,
+        "consensusSummary": "Deliberation ended round 2: analyst rebuttal failed (Invalid timeHorizon: 5-15D)",
+        "reachedConsensus": false
+      }
+    },
+    {
+      "id": 6,
+      "created_at": "2026-04-12T13:04:12.206852",
+      "symbol": "LGN",
+      "source": "PREMARKET_PLAN",
+      "analyst_model_name": "claude-sonnet-4-20250514",
+      "critic_model_name": "gemini-2.5-flash",
+      "input_snapshot": {
+        "price": null,
+        "regime": "TRENDING_UP|NORMAL_VOL|BULLISH",
+        "volumeSummary": {
+          "median5d": 1919567,
+          "median20d": 1116235,
+          "volumeRatio": 8.439989787096803
+        },
+        "scannerAlignment": {
+          "modeAlignment": null,
+          "momentumScore": null,
+          "discoveryScore": null
+        }
+      },
+      "primary_proposal": {
+        "thesis": "Momentum continuation play on exceptional volume surge and strong 20-day performance in supportive regime environment",
+        "riskNotes": "High volatility name (59.3% HV) requires tight risk management. Stop below 20-day low at $48.50. Volume must remain elevated to validate institutional accumulation thesis. Recent 5-day underperformance vs SPY creates near-term headwind.",
+        "structure": "Equity long — options data unavailable, but exceptional volume surge (8.4x normal) and strong 20-day momentum (+11.7%) support directional equity position targeting $58-60 zone"
+      },
+      "skeptic_critique": {
+        "evidence": "Ticker Snapshot data shows 'rsVsSpy5d': -0.0679 and 'return5d': -0.0312, directly contradicting the 'healthy consolidation' claim. The 'ivSummary', 'flowSummary', and 'liquidityMetrics' are all null, indicating a complete absence of options market data. 'hv20d': 59.277397 highlights the extreme volatility. The 'volumeRatio': 8.439989787096803, while high, needs to be interpreted in light of the recent price weakness.",
+        "objections": "The primary objection is the significant short-term weakness (-6.79% RS vs SPY over 5 days) which directly contradicts the momentum continuation thesis and the analyst's 'healthy consolidation' narrative. This suggests the 'exceptional volume surge' might be distribution rather than accumulation. Furthermore, the complete lack of options data (IV, OI, flow) raises serious concerns about the stock's overall institutional liquidity and suitability for an options-aware desk, despite the high equity volume. The high historical volatility (59.28%) amplifies the risk of a short-term long trade that is currently showing negative relative momentum.",
+        "suggestedChanges": "Kill this idea as the core momentum thesis is invalidated by recent price action. If the analyst insists, wait for clear evidence of renewed positive relative strength and price stabilization. Alternatively, if options data becomes available, consider a defined-risk options spread to capitalize on high volatility, but only after the short-term weakness subsides. Reduce size significantly if any long position is taken, and re-evaluate the stop given the high HV and recent breakdown."
+      },
+      "final_decision": {
+        "decision": "REJECT",
+        "finalStructure": "Equity LONG — Equity long — options data unavailable, but exceptional volume surge (8.4x normal) and strong 20-day momentum (+11.7%) support directional equity position targeting $58-60 zone",
+        "resolutionRationale": "Rejected: DELIBERATION_NO_CONSENSUS. Skeptic objections: The primary objection is the significant short-term weakness (-6.79% RS vs SPY over 5 days) which directly contradicts the momentum continuation thesis and the analyst's 'healthy consolidation' narrative. This suggests the 'exceptional volume surge' might be distribution rather than accumulation. Furthermore, the complete lack of options data (IV, OI, flow) raises serious concerns about the stock's overall institutional liquidity and suitability for an options-aware desk, despite the high equity volume. The high historical volatility (59.28%) amplifies the risk of a short-term long trade that is currently showing negative relative momentum. Flags: liquidity concern. Skeptic suggested: Kill this idea as the core momentum thesis is invalidated by recent price action. If the analyst insists, wait for clear evidence of renewed positive relative strength and price stabilization. Alternatively, if options data becomes available, consider a defined-risk options spread to capitalize on high volatility, but only after the short-term weakness subsides. Reduce size significantly if any long position is taken, and re-evaluate the stop given the high HV and recent breakdown."
+      },
+      "idea_id": null,
+      "conversation_log": {
+        "turns": [
+          {
+            "role": "analyst",
+            "round": 1,
+            "content": {
+              "note": "LGN presents a compelling momentum play with exceptional volume characteristics. The 8.4x volume surge combined with +11.7% 20-day performance suggests significant institutional interest. While recent 5-day performance is slightly negative (-3.1%), this appears to be healthy consolidation within a broader uptrend. The stock is trading in the upper portion of its 20-day range ($48.83-$59.60), indicating strength. High historical volatility (59.3%) suggests the name can move quickly once momentum resumes. Missing options data forces equity expression, but the volume profile supports good liquidity for entry/exit. Risk management critical given volatility profile.",
+              "direction": "LONG",
+              "structure": "Equity long — options data unavailable, but exceptional volume surge (8.4x normal) and strong 20-day momentum (+11.7%) support directional equity position targeting $58-60 zone",
+              "signalStrength": 65,
+              "convictionLevel": "MEDIUM"
+            },
+            "timestamp": "2026-04-12T13:03:33.992Z"
+          },
+          {
+            "role": "skeptic",
+            "round": 1,
+            "content": {
+              "note": "The analyst's momentum thesis is severely undermined by LGN's recent -6.79% 5-day relative underperformance against SPY, directly contradicting the 'healthy consolidation' claim. The complete absence of options data (IV, OI, flow) is a major red flag, suggesting potential liquidity issues or lack of institutional options interest, despite the high current equity volume (8.4x 20d median). With HV at 59.28%, this high-volatility name is showing short-term weakness, making a 3-10 day long momentum play exceptionally risky.",
+              "flags": {
+                "overfitWarning": false,
+                "regimeMismatch": false,
+                "liquidityConcern": true,
+                "redundancyWithActiveIdeas": false
+              },
+              "objections": "The primary objection is the significant short-term weakness (-6.79% RS vs SPY over 5 days) which directly contradicts the momentum continuation thesis and the analyst's 'healthy consolidation' narrative. This suggests the 'exceptional volume surge' might be distribution rather than accumulation. Furthermore, the complete lack of options data (IV, OI, flow) raises serious concerns about the stock's overall institutional liquidity and suitability for an options-aware desk, despite the high equity volume. The high historical volatility (59.28%) amplifies the risk of a short-term long trade that is currently showing negative relative momentum.",
+              "critiqueScore": 75,
+              "suggestedChanges": "Kill this idea as the core momentum thesis is invalidated by recent price action. If the analyst insists, wait for clear evidence of renewed positive relative strength and price stabilization. Alternatively, if options data becomes available, consider a defined-risk options spread to capitalize on high volatility, but only after the short-term weakness subsides. Reduce size significantly if any long position is taken, and re-evaluate the stop given the high HV and recent breakdown."
+            },
+            "timestamp": "2026-04-12T13:03:52.437Z"
+          }
+        ],
+        "totalRounds": 2,
+        "consensusSummary": "Deliberation ended round 2: analyst rebuttal failed (Invalid timeHorizon: 5-15D)",
+        "reachedConsensus": false
+      }
+    },
+    {
+      "id": 7,
+      "created_at": "2026-04-12T13:05:06.495259",
+      "symbol": "MSFT",
+      "source": "PREMARKET_PLAN",
+      "analyst_model_name": "claude-sonnet-4-20250514",
+      "critic_model_name": "gemini-2.5-flash",
+      "input_snapshot": {
+        "price": null,
+        "regime": "TRENDING_UP|NORMAL_VOL|BULLISH",
+        "volumeSummary": {
+          "median5d": 24099067,
+          "median20d": 29548632.5,
+          "volumeRatio": 1.0300069554826268
+        },
+        "scannerAlignment": {
+          "modeAlignment": null,
+          "momentumScore": null,
+          "discoveryScore": null
+        }
+      },
+      "primary_proposal": {
+        "thesis": "Mean reversion play on oversold MSFT in bullish market regime with strong institutional call flow suggesting accumulation at depressed levels",
+        "riskNotes": "Key risk is continued tech weakness or regime shift to risk-off. Stop below $350 limits downside to ~4%. Watch for break of 20-day low as invalidation signal.",
+        "structure": "Equity long — options data incomplete (missing IV/spreads) making structure assessment impossible, equity provides clean exposure to thesis"
+      },
+      "skeptic_critique": {
+        "evidence": "The `ivSummary` shows `null` for `iv30d`, `ivr`, and `ivHvRatio`, indicating a lack of options analysis. The `flowSummary.callPutSkew` is 0.201, not a 60% call/put ratio in a strong directional sense. `rsSummary.rsVsSpy20d` is -0.092, showing significant underperformance. The `recentPriceSummary.low20d` is $356.77, with the entry zone starting at $356. MSFT typically reports earnings in late April, which falls within or shortly after the '10+D' time horizon.",
+        "objections": "The instrument choice (equity) is suboptimal for a mean reversion thesis on a highly liquid name like MSFT, especially without evaluating options. The 'strong call flow dominance' is overstated; a call/put skew of 0.201 is not overwhelmingly bullish and could be hedging. MSFT's persistent underperformance (-9.2% vs SPY 20d) contradicts the 'bullish regime' tailwind for this specific stock, suggesting a potential regime mismatch for MSFT itself. Entering near the 20-day low ($356.77) means catching a falling knife, with the stop just below it, offering little buffer. Significant event risk from upcoming earnings is not addressed.",
+        "suggestedChanges": "Re-evaluate the instrument choice; explore defined-risk options strategies (e.g., call spread) to leverage the mean reversion thesis with better capital efficiency and defined risk. Investigate current IV levels and spread widths for MSFT options. Consider reducing size given the underperformance and potential for continued weakness. Wait until after upcoming earnings if the time horizon extends into it, or choose an expiry that avoids earnings. Only enter if the stock shows clear signs of stabilization and reversal above the 20-day low, rather than simply entering at the low."
+      },
+      "final_decision": {
+        "decision": "REJECT",
+        "finalStructure": "Equity LONG — Equity long — options data incomplete (missing IV/spreads) making structure assessment impossible, equity provides clean exposure to thesis",
+        "resolutionRationale": "Rejected: DELIBERATION_NO_CONSENSUS. Skeptic objections: The instrument choice (equity) is suboptimal for a mean reversion thesis on a highly liquid name like MSFT, especially without evaluating options. The 'strong call flow dominance' is overstated; a call/put skew of 0.201 is not overwhelmingly bullish and could be hedging. MSFT's persistent underperformance (-9.2% vs SPY 20d) contradicts the 'bullish regime' tailwind for this specific stock, suggesting a potential regime mismatch for MSFT itself. Entering near the 20-day low ($356.77) means catching a falling knife, with the stop just below it, offering little buffer. Significant event risk from upcoming earnings is not addressed. Flags: regime mismatch. Skeptic suggested: Re-evaluate the instrument choice; explore defined-risk options strategies (e.g., call spread) to leverage the mean reversion thesis with better capital efficiency and defined risk. Investigate current IV levels and spread widths for MSFT options. Consider reducing size given the underperformance and potential for continued weakness. Wait until after upcoming earnings if the time horizon extends into it, or choose an expiry that avoids earnings. Only enter if the stock shows clear signs of stabilization and reversal above the 20-day low, rather than simply entering at the low."
+      },
+      "idea_id": null,
+      "conversation_log": {
+        "turns": [
+          {
+            "role": "analyst",
+            "round": 1,
+            "content": {
+              "note": "MSFT presents a compelling mean reversion opportunity in a bullish regime. The stock has underperformed SPY by over 9% in 20 days, creating an oversold condition for a quality mega-cap name. The 60/40 call/put flow skew with significant block activity ($40M+ largest block) suggests institutional interest at these depressed levels. Volume slightly above median indicates accumulation rather than distribution. The bullish regime provides tailwinds for a bounce back toward the $385-400 zone, representing the middle-to-upper portion of the recent range. Risk is well-defined below the 20-day low.",
+              "direction": "LONG",
+              "structure": "Equity long — options data incomplete (missing IV/spreads) making structure assessment impossible, equity provides clean exposure to thesis",
+              "signalStrength": 72,
+              "convictionLevel": "MEDIUM"
+            },
+            "timestamp": "2026-04-12T13:04:27.838Z"
+          },
+          {
+            "role": "skeptic",
+            "round": 1,
+            "content": {
+              "note": "The analyst's choice of equity over options for MSFT is questionable given its highly liquid options market. The stated reason ('options data incomplete') is insufficient; liquid options likely exist and could offer better risk/reward or capital efficiency. The call/put skew of 0.201, while indicating more call volume, is not overwhelmingly bullish and could represent hedging. MSFT's significant underperformance (-9.2% vs SPY 20d) despite a 'bullish' market regime suggests specific weakness, making the 'oversold' thesis less robust. The trade's time horizon (10+D) could run into earnings (typically late April for MSFT), introducing substantial event risk not accounted for.",
+              "flags": {
+                "overfitWarning": false,
+                "regimeMismatch": true,
+                "liquidityConcern": false,
+                "redundancyWithActiveIdeas": false
+              },
+              "objections": "The instrument choice (equity) is suboptimal for a mean reversion thesis on a highly liquid name like MSFT, especially without evaluating options. The 'strong call flow dominance' is overstated; a call/put skew of 0.201 is not overwhelmingly bullish and could be hedging. MSFT's persistent underperformance (-9.2% vs SPY 20d) contradicts the 'bullish regime' tailwind for this specific stock, suggesting a potential regime mismatch for MSFT itself. Entering near the 20-day low ($356.77) means catching a falling knife, with the stop just below it, offering little buffer. Significant event risk from upcoming earnings is not addressed.",
+              "critiqueScore": 65,
+              "suggestedChanges": "Re-evaluate the instrument choice; explore defined-risk options strategies (e.g., call spread) to leverage the mean reversion thesis with better capital efficiency and defined risk. Investigate current IV levels and spread widths for MSFT options. Consider reducing size given the underperformance and potential for continued weakness. Wait until after upcoming earnings if the time horizon extends into it, or choose an expiry that avoids earnings. Only enter if the stock shows clear signs of stabilization and reversal above the 20-day low, rather than simply entering at the low."
+            },
+            "timestamp": "2026-04-12T13:04:46.287Z"
+          }
+        ],
+        "totalRounds": 2,
+        "consensusSummary": "Deliberation ended round 2: analyst rebuttal failed (Invalid timeHorizon: 2W)",
+        "reachedConsensus": false
+      }
+    },
+    {
+      "id": 8,
+      "created_at": "2026-04-12T13:05:53.639776",
+      "symbol": "GOOGL",
+      "source": "PREMARKET_PLAN",
+      "analyst_model_name": "claude-sonnet-4-20250514",
+      "critic_model_name": "gemini-2.5-flash",
+      "input_snapshot": {
+        "price": null,
+        "regime": "TRENDING_UP|NORMAL_VOL|BULLISH",
+        "volumeSummary": {
+          "median5d": 23205361,
+          "median20d": 27201388.5,
+          "volumeRatio": 0.8727191628471466
+        },
+        "scannerAlignment": {
+          "modeAlignment": null,
+          "momentumScore": null,
+          "discoveryScore": null
+        }
+      },
+      "primary_proposal": {
+        "thesis": "GOOGL momentum continuation play leveraging strong call flow and institutional accumulation in favorable trending regime",
+        "riskNotes": "Main risk is tech sector rotation or broader market pullback. Missing IV data creates uncertainty around entry timing. Stop at $305 represents 3% downside buffer from current levels. Watch for flow reversal or volume spike on any weakness.",
+        "structure": "Long May 16th $320 calls (10 contracts) - targeting breakout above recent highs with 30+ days to expiration for theta management"
+      },
+      "skeptic_critique": {
+        "evidence": "iv30d and ivr are null. liquidityMetrics (avgSpreadPct, minOiMainStrikes, volumeToOiRatio) are null or 0. high20d is $318.49, and the entry zone is $315-$320. volumeRatio is 0.87. The analyst's note explicitly states 'missing IV data limits precise options structure optimization.'",
+        "objections": "The primary objection is the lack of essential options pricing and liquidity data. This makes the risk profile of the long call unknown. Furthermore, the entry point is at a significant resistance level (20-day high) without confirming volume, and the reliance on flow as the sole catalyst is insufficient.",
+        "suggestedChanges": "Kill this idea immediately until comprehensive IV and liquidity data for the specific option strike and expiry are available. If the analyst insists, reduce the position size drastically and consider a defined-risk strategy like a call spread to cap potential losses from unknown IV or wide spreads. Alternatively, wait for a confirmed breakout above $320 on significantly higher volume."
+      },
+      "final_decision": {
+        "decision": "REJECT",
+        "finalStructure": "LONG_CALL LONG (Buy 10x 320 CALL 2026-05-16)",
+        "resolutionRationale": "Rejected: DELIBERATION_NO_CONSENSUS. Skeptic objections: The primary objection is the lack of essential options pricing and liquidity data. This makes the risk profile of the long call unknown. Furthermore, the entry point is at a significant resistance level (20-day high) without confirming volume, and the reliance on flow as the sole catalyst is insufficient. Flags: liquidity concern. Skeptic suggested: Kill this idea immediately until comprehensive IV and liquidity data for the specific option strike and expiry are available. If the analyst insists, reduce the position size drastically and consider a defined-risk strategy like a call spread to cap potential losses from unknown IV or wide spreads. Alternatively, wait for a confirmed breakout above $320 on significantly higher volume."
+      },
+      "idea_id": null,
+      "conversation_log": {
+        "turns": [
+          {
+            "role": "analyst",
+            "round": 1,
+            "content": {
+              "note": "GOOGL presents a compelling long setup with strong momentum and bullish flow characteristics. The 18% call/put skew indicates institutional preference for upside exposure, while the $42M largest block suggests significant conviction. Recent 5-day outperformance vs SPY (4% alpha) in a TRENDING_UP regime provides favorable backdrop. However, missing IV data limits precise options structure optimization. The 20-day range of $273.50-$318.49 shows current price near resistance, but momentum and flow suggest continuation higher. Volume below median may indicate controlled accumulation rather than distribution.",
+              "direction": "LONG",
+              "structure": "Long May 16th $320 calls (10 contracts) - targeting breakout above recent highs with 30+ days to expiration for theta management",
+              "signalStrength": 75,
+              "convictionLevel": "MEDIUM"
+            },
+            "timestamp": "2026-04-12T13:05:21.629Z"
+          },
+          {
+            "role": "skeptic",
+            "round": 1,
+            "content": {
+              "note": "This options trade is highly speculative due to critical missing data. The iv30d, ivr, avgSpreadPct, minOiMainStrikes, and volumeToOiRatio are all unavailable, making it impossible to assess option value, spread costs, or exit feasibility. Entering a long call at the 20-day high ($318.49) with below-average volume (volumeRatio 0.87) increases breakout failure risk. While call flow is positive, relying solely on 'FLOW' as a catalyst without fundamental or technical confirmation at resistance is risky. The soft stop at $305 for the underlying doesn't account for potential theta decay or IV drop on the option.",
+              "flags": {
+                "overfitWarning": false,
+                "regimeMismatch": false,
+                "liquidityConcern": true,
+                "redundancyWithActiveIdeas": false
+              },
+              "objections": "The primary objection is the lack of essential options pricing and liquidity data. This makes the risk profile of the long call unknown. Furthermore, the entry point is at a significant resistance level (20-day high) without confirming volume, and the reliance on flow as the sole catalyst is insufficient.",
+              "critiqueScore": 75,
+              "suggestedChanges": "Kill this idea immediately until comprehensive IV and liquidity data for the specific option strike and expiry are available. If the analyst insists, reduce the position size drastically and consider a defined-risk strategy like a call spread to cap potential losses from unknown IV or wide spreads. Alternatively, wait for a confirmed breakout above $320 on significantly higher volume."
+            },
+            "timestamp": "2026-04-12T13:05:34.062Z"
+          }
+        ],
+        "totalRounds": 2,
+        "consensusSummary": "Deliberation ended round 2: analyst rebuttal failed (Invalid catalyst: BREAKOUT)",
+        "reachedConsensus": false
+      }
+    },
+    {
+      "id": 9,
+      "created_at": "2026-04-12T13:06:39.9739",
+      "symbol": "NFLX",
+      "source": "PREMARKET_PLAN",
+      "analyst_model_name": "claude-sonnet-4-20250514",
+      "critic_model_name": "gemini-2.5-flash",
+      "input_snapshot": {
+        "price": null,
+        "regime": "TRENDING_UP|NORMAL_VOL|BULLISH",
+        "volumeSummary": {
+          "median5d": 35087760,
+          "median20d": 34261364.5,
+          "volumeRatio": 1.02412033239365
+        },
+        "scannerAlignment": {
+          "modeAlignment": null,
+          "momentumScore": null,
+          "discoveryScore": null
+        }
+      },
+      "primary_proposal": {
+        "thesis": "NFLX momentum continuation play supported by heavy call flow and institutional block activity in favorable market regime",
+        "riskNotes": "Main risks include general market reversal, streaming sector rotation, or earnings disappointment. Exit if price breaks $97.50 or call flow reverses significantly. Missing IV data creates pricing uncertainty but flow signals are strong.",
+        "structure": "Long May 16th $105 calls — leveraged upside exposure with defined risk, targeting move to $108-112 range over next 4-6 weeks"
+      },
+      "skeptic_critique": {
+        "evidence": "The 'ivSummary' in the ticker snapshot shows 'iv30d', 'ivr', and 'ivHvRatio' as null. The 'liquidityMetrics' and 'liquiditySnapshot' for the idea show 'avgSpreadPct', 'minOiMainStrikes', 'volumeToOiRatio', 'oiAtEntry', and 'volumeAtEntry' as null or 0. NFLX's historical earnings calendar indicates Q1 earnings typically fall in mid-April, which is before the May 16th expiration date of the proposed call.",
+        "objections": "The primary objection is the complete lack of critical options pricing and liquidity data. Without implied volatility, average spreads, or specific OI/volume for the chosen strike/expiry, the call premium cannot be properly evaluated, making the trade's risk/reward profile unknown. There is also a significant unaddressed earnings event risk, as NFLX's Q1 earnings are highly likely to occur before the May 16th expiry, exposing the long call to substantial IV crush and potential adverse price action.",
+        "suggestedChanges": "Kill this idea immediately. Do not proceed with an options trade when critical data like implied volatility and specific options liquidity (OI, volume, spreads for the 105 strike May 16th call) are unavailable. If this data becomes available, re-evaluate. If earnings are indeed before expiry, either wait until after the earnings event to trade, or consider a defined-risk options spread (e.g., call spread) that explicitly accounts for potential IV crush and limits downside, rather than a naked long call. If liquidity remains poor, consider using equity instead of options."
+      },
+      "final_decision": {
+        "decision": "REJECT",
+        "finalStructure": "LONG_CALL LONG (Buy 10x 105 CALL 2026-05-16)",
+        "resolutionRationale": "Rejected: DELIBERATION_NO_CONSENSUS. Skeptic objections: The primary objection is the complete lack of critical options pricing and liquidity data. Without implied volatility, average spreads, or specific OI/volume for the chosen strike/expiry, the call premium cannot be properly evaluated, making the trade's risk/reward profile unknown. There is also a significant unaddressed earnings event risk, as NFLX's Q1 earnings are highly likely to occur before the May 16th expiry, exposing the long call to substantial IV crush and potential adverse price action. Flags: liquidity concern. Skeptic suggested: Kill this idea immediately. Do not proceed with an options trade when critical data like implied volatility and specific options liquidity (OI, volume, spreads for the 105 strike May 16th call) are unavailable. If this data becomes available, re-evaluate. If earnings are indeed before expiry, either wait until after the earnings event to trade, or consider a defined-risk options spread (e.g., call spread) that explicitly accounts for potential IV crush and limits downside, rather than a naked long call. If liquidity remains poor, consider using equity instead of options."
+      },
+      "idea_id": null,
+      "conversation_log": {
+        "turns": [
+          {
+            "role": "analyst",
+            "round": 1,
+            "content": {
+              "note": "NFLX presents a compelling long setup with strong technical momentum and bullish options flow. The 5.5:1 call/put ratio combined with significant block activity suggests institutional positioning for upside. Trading near 20-day highs with solid relative strength vs SPY. The TRENDING_UP/BULLISH regime supports the directional bias. Key risk is missing IV data limits precise options pricing, but the flow dynamics are clear. Entry around current levels with May expiry allows time for momentum continuation while managing theta decay risk.",
+              "direction": "LONG",
+              "structure": "Long May 16th $105 calls — leveraged upside exposure with defined risk, targeting move to $108-112 range over next 4-6 weeks",
+              "signalStrength": 75,
+              "convictionLevel": "MEDIUM"
+            },
+            "timestamp": "2026-04-12T13:06:09.401Z"
+          },
+          {
+            "role": "skeptic",
+            "round": 1,
+            "content": {
+              "note": "This options trade is highly speculative due to critical missing data. The snapshot shows 'iv30d', 'ivr', 'ivHvRatio', 'avgSpreadPct', 'minOiMainStrikes', and 'volumeToOiRatio' as null or zero. Trading options without current implied volatility or specific strike liquidity (OI/volume/spreads) is akin to flying blind. Furthermore, NFLX typically reports Q1 earnings in mid-April, which falls squarely within the May 16th expiry. This introduces significant binary event risk (IV crush, gap risk) that is not adequately addressed by the analyst, who only vaguely mentions 'earnings disappointment' as a general risk. Relying solely on call flow without understanding the premium paid or the impact of an imminent earnings event is dangerous.",
+              "flags": {
+                "overfitWarning": false,
+                "regimeMismatch": false,
+                "liquidityConcern": true,
+                "redundancyWithActiveIdeas": false
+              },
+              "objections": "The primary objection is the complete lack of critical options pricing and liquidity data. Without implied volatility, average spreads, or specific OI/volume for the chosen strike/expiry, the call premium cannot be properly evaluated, making the trade's risk/reward profile unknown. There is also a significant unaddressed earnings event risk, as NFLX's Q1 earnings are highly likely to occur before the May 16th expiry, exposing the long call to substantial IV crush and potential adverse price action.",
+              "critiqueScore": 85,
+              "suggestedChanges": "Kill this idea immediately. Do not proceed with an options trade when critical data like implied volatility and specific options liquidity (OI, volume, spreads for the 105 strike May 16th call) are unavailable. If this data becomes available, re-evaluate. If earnings are indeed before expiry, either wait until after the earnings event to trade, or consider a defined-risk options spread (e.g., call spread) that explicitly accounts for potential IV crush and limits downside, rather than a naked long call. If liquidity remains poor, consider using equity instead of options."
+            },
+            "timestamp": "2026-04-12T13:06:22.313Z"
+          }
+        ],
+        "totalRounds": 2,
+        "consensusSummary": "Deliberation ended round 2: analyst rebuttal failed (Invalid instrumentType: EQUITY)",
+        "reachedConsensus": false
+      }
+    },
+    {
+      "id": 10,
+      "created_at": "2026-04-12T13:07:27.211958",
+      "symbol": "DOCN",
+      "source": "PREMARKET_PLAN",
+      "analyst_model_name": "claude-sonnet-4-20250514",
+      "critic_model_name": "gemini-2.5-flash",
+      "input_snapshot": {
+        "price": null,
+        "regime": "TRENDING_UP|NORMAL_VOL|BULLISH",
+        "volumeSummary": {
+          "median5d": 3576547,
+          "median20d": 4296720,
+          "volumeRatio": 3.8638733731776798
+        },
+        "scannerAlignment": {
+          "modeAlignment": null,
+          "momentumScore": null,
+          "discoveryScore": null
+        }
+      },
+      "primary_proposal": {
+        "thesis": "Momentum continuation play on DOCN's strong 20-day performance and institutional volume surge in bullish market regime",
+        "riskNotes": "High volatility stock susceptible to sharp reversals. Stop loss at $82 critical to limit downside. Monitor for volume decline or broader tech weakness that could derail momentum.",
+        "structure": "Equity long — options data unavailable, preventing assessment of spreads and liquidity for risk-defined structures"
+      },
+      "skeptic_critique": {
+        "evidence": "DOCN has rallied 30% in the last 20 days, with its 20-day high at $90.01. However, its 5-day relative strength against SPY is -1.7%. The historical volatility (HV20d) is 71.41%. The entry zone is $85-$88, stop at $82, and target at $92-$95. At an $88 entry, the risk is $6 ($88-$82) for a minimum reward of $4 ($92-$88), yielding a 0.67:1 R:R.",
+        "objections": "The trade attempts to chase momentum after a significant rally, potentially buying into a short-term top or consolidation. The 5-day relative strength has turned negative, indicating a recent loss of momentum. The proposed stop loss is likely too tight given the stock's high historical volatility, increasing the probability of being stopped out prematurely. The risk/reward profile is unfavorable if the entry is taken at the higher end of the proposed range.",
+        "suggestedChanges": "Given the recent rally and negative 5-day RS, consider waiting for a clear pullback and re-establishment of momentum before entry. If entering, reduce position size significantly due to high volatility. Widen the stop loss to account for the 71.41% HV, or consider a smaller initial position with a tighter stop and scale in on confirmation. Re-evaluate the target to ensure a more favorable risk/reward, or lower the entry zone. If options data becomes available, explore defined-risk call spreads to capitalize on potential upside while limiting capital at risk."
+      },
+      "final_decision": {
+        "decision": "REJECT",
+        "finalStructure": "Equity LONG — Equity long — options data unavailable, preventing assessment of spreads and liquidity for risk-defined structures",
+        "resolutionRationale": "Rejected: DELIBERATION_NO_CONSENSUS. Skeptic objections: The trade attempts to chase momentum after a significant rally, potentially buying into a short-term top or consolidation. The 5-day relative strength has turned negative, indicating a recent loss of momentum. The proposed stop loss is likely too tight given the stock's high historical volatility, increasing the probability of being stopped out prematurely. The risk/reward profile is unfavorable if the entry is taken at the higher end of the proposed range. Skeptic suggested: Given the recent rally and negative 5-day RS, consider waiting for a clear pullback and re-establishment of momentum before entry. If entering, reduce position size significantly due to high volatility. Widen the stop loss to account for the 71.41% HV, or consider a smaller initial position with a tighter stop and scale in on confirmation. Re-evaluate the target to ensure a more favorable risk/reward, or lower the entry zone. If options data becomes available, explore defined-risk call spreads to capitalize on potential upside while limiting capital at risk."
+      },
+      "idea_id": null,
+      "conversation_log": {
+        "turns": [
+          {
+            "role": "analyst",
+            "round": 1,
+            "content": {
+              "note": "DOCN presents a compelling momentum play in the current bullish regime. The 30% 20-day return combined with 28% outperformance vs SPY indicates strong underlying strength. Volume spike to 3.9x median suggests institutional participation. High historical volatility (71%) creates opportunity for continued large moves. Missing options data limits structure choices, but equity long captures the momentum thesis cleanly. Risk management critical given high volatility - stop at $82 protects against momentum breakdown while allowing room for normal pullbacks.",
+              "direction": "LONG",
+              "structure": "Equity long — options data unavailable, preventing assessment of spreads and liquidity for risk-defined structures",
+              "signalStrength": 75,
+              "convictionLevel": "MEDIUM"
+            },
+            "timestamp": "2026-04-12T13:06:54.049Z"
+          },
+          {
+            "role": "skeptic",
+            "round": 1,
+            "content": {
+              "note": "The idea proposes buying DOCN after a significant 30% rally in 20 days, with the entry zone ($85-$88) very close to the 20-day high ($90.01). While 20-day relative strength is strong, the 5-day RS vs SPY is negative (-1.7%), suggesting recent momentum has stalled or reversed. The high historical volatility (71.41%) makes the proposed $6 stop ($88 entry to $82 stop) potentially too tight, risking a shakeout on normal price fluctuations. Furthermore, the risk/reward ratio becomes unfavorable if entry occurs at the higher end of the proposed range (e.g., $88 entry, $6 risk to $4 reward to min target $92).",
+              "flags": {
+                "overfitWarning": false,
+                "regimeMismatch": false,
+                "liquidityConcern": false,
+                "redundancyWithActiveIdeas": false
+              },
+              "objections": "The trade attempts to chase momentum after a significant rally, potentially buying into a short-term top or consolidation. The 5-day relative strength has turned negative, indicating a recent loss of momentum. The proposed stop loss is likely too tight given the stock's high historical volatility, increasing the probability of being stopped out prematurely. The risk/reward profile is unfavorable if the entry is taken at the higher end of the proposed range.",
+              "critiqueScore": 65,
+              "suggestedChanges": "Given the recent rally and negative 5-day RS, consider waiting for a clear pullback and re-establishment of momentum before entry. If entering, reduce position size significantly due to high volatility. Widen the stop loss to account for the 71.41% HV, or consider a smaller initial position with a tighter stop and scale in on confirmation. Re-evaluate the target to ensure a more favorable risk/reward, or lower the entry zone. If options data becomes available, explore defined-risk call spreads to capitalize on potential upside while limiting capital at risk."
+            },
+            "timestamp": "2026-04-12T13:07:08.722Z"
+          }
+        ],
+        "totalRounds": 2,
+        "consensusSummary": "Deliberation ended round 2: analyst rebuttal failed (Invalid timeHorizon: 5-15D)",
+        "reachedConsensus": false
+      }
+    },
+    {
+      "id": 11,
+      "created_at": "2026-04-12T13:08:13.542116",
+      "symbol": "AAL",
+      "source": "PREMARKET_PLAN",
+      "analyst_model_name": "claude-sonnet-4-20250514",
+      "critic_model_name": "gemini-2.5-flash",
+      "input_snapshot": {
+        "price": null,
+        "regime": "TRENDING_UP|NORMAL_VOL|BULLISH",
+        "volumeSummary": {
+          "median5d": 54895975,
+          "median20d": 58599140.5,
+          "volumeRatio": 1.7178747698526398
+        },
+        "scannerAlignment": {
+          "modeAlignment": null,
+          "momentumScore": null,
+          "discoveryScore": null
+        }
+      },
+      "primary_proposal": {
+        "thesis": "AAL momentum breakout above 20-day highs with volume confirmation and institutional flow suggesting continued upside toward $11.50-$12.00 range",
+        "riskNotes": "High beta to market conditions, fuel price sensitivity, and airline sector volatility. Stop below $10.50 critical as break would signal failed breakout. Monitor for broader market risk-off that could pressure travel stocks disproportionately.",
+        "structure": "Equity long — options liquidity poor with zero OI at main strikes and missing IV data making risk-defined structures unviable"
+      },
+      "skeptic_critique": {
+        "evidence": "The 20-day high is $11.41, but the entry zone is $10.8-$11.1, meaning the stock has not yet broken above this resistance. The call/put skew is 0.113 (Call Vol 34,449 / Put Vol 43,250), indicating significantly higher put volume, which is a defensive or bearish signal, not an unwinding of such. Missing IV data and zero OI for options further limit comprehensive analysis.",
+        "objections": "The core technical thesis of a 'breakout above 20-day high' is contradicted by the proposed entry zone. The interpretation of the call/put skew is fundamentally flawed, misrepresenting a bearish signal as bullish. This suggests a misunderstanding of current market sentiment and technical triggers.",
+        "suggestedChanges": "Re-evaluate the technical setup: either wait for a confirmed break above $11.41 for entry, or kill the idea if the breakout thesis is premature. Correctly interpret the call/put skew as a potential bearish indicator. Given these fundamental flaws in the thesis, consider killing this idea or significantly reducing size if a clearer, correctly interpreted setup emerges."
+      },
+      "final_decision": {
+        "decision": "REJECT",
+        "finalStructure": "Equity LONG — Equity long — options liquidity poor with zero OI at main strikes and missing IV data making risk-defined structures unviable",
+        "resolutionRationale": "Rejected: DELIBERATION_NO_CONSENSUS. Skeptic objections: The core technical thesis of a 'breakout above 20-day high' is contradicted by the proposed entry zone. The interpretation of the call/put skew is fundamentally flawed, misrepresenting a bearish signal as bullish. This suggests a misunderstanding of current market sentiment and technical triggers. Flags: liquidity concern. Skeptic suggested: Re-evaluate the technical setup: either wait for a confirmed break above $11.41 for entry, or kill the idea if the breakout thesis is premature. Correctly interpret the call/put skew as a potential bearish indicator. Given these fundamental flaws in the thesis, consider killing this idea or significantly reducing size if a clearer, correctly interpreted setup emerges."
+      },
+      "idea_id": null,
+      "conversation_log": {
+        "turns": [
+          {
+            "role": "analyst",
+            "round": 1,
+            "content": {
+              "note": "AAL presents a momentum continuation setup with volume confirmation. The stock has broken above its 20-day high of $11.41 with significant volume expansion. Put/call skew of 0.11 suggests defensive positioning is unwinding. However, options data is incomplete with missing IV metrics and poor liquidity (zero OI). The 22 block trades totaling $1.4M in largest block suggests institutional accumulation. Risk management critical given airline sector volatility and macro sensitivity. Spring travel season could provide fundamental catalyst for continued upside.",
+              "direction": "LONG",
+              "structure": "Equity long — options liquidity poor with zero OI at main strikes and missing IV data making risk-defined structures unviable",
+              "signalStrength": 65,
+              "convictionLevel": "MEDIUM"
+            },
+            "timestamp": "2026-04-12T13:07:41.623Z"
+          },
+          {
+            "role": "skeptic",
+            "round": 1,
+            "content": {
+              "note": "The analyst's thesis of \"breaking above 20-day high\" is contradicted by the proposed entry zone ($10.8-$11.1), which is below the 20-day high of $11.41. This suggests either a premature entry or a misstatement of the technical setup. Furthermore, the interpretation of the 0.11 call/put skew as \"defensive positioning unwinding\" is incorrect; this skew (call vol / put vol) indicates significantly more put volume than call volume, which is typically a bearish or hedging signal, not a bullish unwinding. While options liquidity is indeed poor (zero OI, missing IV), the misinterpretation of available flow data and the contradictory technical setup are major concerns.",
+              "flags": {
+                "overfitWarning": false,
+                "regimeMismatch": false,
+                "liquidityConcern": true,
+                "redundancyWithActiveIdeas": false
+              },
+              "objections": "The core technical thesis of a 'breakout above 20-day high' is contradicted by the proposed entry zone. The interpretation of the call/put skew is fundamentally flawed, misrepresenting a bearish signal as bullish. This suggests a misunderstanding of current market sentiment and technical triggers.",
+              "critiqueScore": 65,
+              "suggestedChanges": "Re-evaluate the technical setup: either wait for a confirmed break above $11.41 for entry, or kill the idea if the breakout thesis is premature. Correctly interpret the call/put skew as a potential bearish indicator. Given these fundamental flaws in the thesis, consider killing this idea or significantly reducing size if a clearer, correctly interpreted setup emerges."
+            },
+            "timestamp": "2026-04-12T13:07:55.530Z"
+          }
+        ],
+        "totalRounds": 2,
+        "consensusSummary": "Deliberation ended round 2: analyst rebuttal failed (Invalid convictionLevel: MEDIUM_LOW)",
+        "reachedConsensus": false
+      }
+    },
+    {
+      "id": 12,
+      "created_at": "2026-04-12T19:21:47.778795",
+      "symbol": "INTC",
+      "source": "PREMARKET_PLAN",
+      "analyst_model_name": "claude-sonnet-4-20250514",
+      "critic_model_name": "gemini-2.5-flash",
+      "input_snapshot": {
+        "price": null,
+        "regime": "TRENDING_UP|NORMAL_VOL|BULLISH",
+        "volumeSummary": {
+          "median5d": 129543837,
+          "median20d": 87085891,
+          "volumeRatio": 1.7868553127624314
+        },
+        "scannerAlignment": {
+          "modeAlignment": null,
+          "momentumScore": null,
+          "discoveryScore": null
+        }
+      },
+      "primary_proposal": {
+        "thesis": "INTC showing exceptional relative strength with +36.4% 20-day return and +34.3% outperformance vs SPY, supported by 1.79x volume surge indicating institutional interest. Trading near 20-day high of $61.72 in favorable TRENDING_UP|BULLISH regime.",
+        "riskNotes": "Stop loss at $55.00 (major support level). Invalidated if breaks below 20-day moving average or broader semiconductor weakness emerges. Monitor for any company-specific negative catalysts or regime shift to RISK_OFF.",
+        "structure": "Equity long — options data incomplete with missing IV rank and spread metrics, making risk-defined options structures difficult to evaluate properly"
+      },
+      "skeptic_critique": {
+        "evidence": "INTC's return20d is 36.4% and return5d is 22.5%, with the entry zone ($58.5-$60) close to the 20-day high of $61.72. The IV30d is 0.9306 (93%), significantly higher than the HV20d of 0.7910 (79%). The analyst's justification for not using options is 'options data incomplete with missing IV rank and spread metrics', which is insufficient given the clear IV/HV disparity.",
+        "objections": "The stock is extremely extended, having rallied over 36% in 20 days and 22% in 5 days, making a long entry at current levels ($58.5-$60) highly susceptible to a sharp pullback or consolidation. The implied volatility (IV30d at 93%) is exceptionally high, making long options strategies (e.g., buying calls) very expensive and prone to IV crush. The choice of outright equity over a defined-risk options strategy is questionable given the elevated IV and the stock's extended price action.",
+        "suggestedChanges": "Kill this idea as a long equity trade at current levels. If conviction remains bullish, consider a put credit spread to capitalize on the high implied volatility and limit capital at risk (e.g., sell a 55-strike put, buy a 50-strike put). Alternatively, wait for a significant pullback or consolidation before considering a long equity entry. Verify if any earnings or major events are scheduled within the 3-10 day horizon, which could be driving the high IV and pose event risk."
+      },
+      "final_decision": {
+        "decision": "REJECT",
+        "finalStructure": "Equity LONG — Equity long — options data incomplete with missing IV rank and spread metrics, making risk-defined options structures difficult to evaluate properly",
+        "resolutionRationale": "Rejected: DELIBERATION_NO_CONSENSUS. Skeptic objections: The stock is extremely extended, having rallied over 36% in 20 days and 22% in 5 days, making a long entry at current levels ($58.5-$60) highly susceptible to a sharp pullback or consolidation. The implied volatility (IV30d at 93%) is exceptionally high, making long options strategies (e.g., buying calls) very expensive and prone to IV crush. The choice of outright equity over a defined-risk options strategy is questionable given the elevated IV and the stock's extended price action. Skeptic suggested: Kill this idea as a long equity trade at current levels. If conviction remains bullish, consider a put credit spread to capitalize on the high implied volatility and limit capital at risk (e.g., sell a 55-strike put, buy a 50-strike put). Alternatively, wait for a significant pullback or consolidation before considering a long equity entry. Verify if any earnings or major events are scheduled within the 3-10 day horizon, which could be driving the high IV and pose event risk."
+      },
+      "idea_id": null,
+      "conversation_log": {
+        "turns": [
+          {
+            "role": "analyst",
+            "round": 1,
+            "content": {
+              "note": "INTC demonstrates exceptional momentum with 36.4% gains over 20 days and strong relative strength vs SPY (+34.3%). Volume surge to 1.79x median indicates institutional accumulation. Current TRENDING_UP|BULLISH regime supports continuation. Entry zone $58.50-$60.00 offers good risk/reward with stop at $55.00 (major support) and targets $64-$67 (next resistance cluster). Risk/reward approximately 1:1.5. Key risk is broader tech selloff or company-specific negative catalysts.",
+              "direction": "LONG",
+              "structure": "Equity long — options data incomplete with missing IV rank and spread metrics, making risk-defined options structures difficult to evaluate properly",
+              "signalStrength": 78,
+              "convictionLevel": "MEDIUM"
+            },
+            "timestamp": "2026-04-12T19:21:07.284Z"
+          },
+          {
+            "role": "skeptic",
+            "round": 1,
+            "content": {
+              "note": "The proposed long equity trade on INTC is highly susceptible to a sharp reversal given its extreme run-up (+36.4% in 20 days, +22.5% in 5 days), placing it near its 20-day high of $61.72. Entering at $58.5-$60 is chasing momentum. Furthermore, the implied volatility (IV30d at 93%) is exceptionally high, significantly exceeding historical volatility (HV20d at 79%). This makes buying calls or call spreads prohibitively expensive and exposes the trade to substantial IV crush risk. The analyst's rationale for avoiding options due to 'incomplete data' is insufficient, as the high IV itself suggests options strategies, particularly selling premium (e.g., put credit spreads), could offer a superior risk-adjusted entry for a bullish thesis.",
+              "flags": {
+                "overfitWarning": false,
+                "regimeMismatch": false,
+                "liquidityConcern": false,
+                "redundancyWithActiveIdeas": false
+              },
+              "objections": "The stock is extremely extended, having rallied over 36% in 20 days and 22% in 5 days, making a long entry at current levels ($58.5-$60) highly susceptible to a sharp pullback or consolidation. The implied volatility (IV30d at 93%) is exceptionally high, making long options strategies (e.g., buying calls) very expensive and prone to IV crush. The choice of outright equity over a defined-risk options strategy is questionable given the elevated IV and the stock's extended price action.",
+              "critiqueScore": 75,
+              "suggestedChanges": "Kill this idea as a long equity trade at current levels. If conviction remains bullish, consider a put credit spread to capitalize on the high implied volatility and limit capital at risk (e.g., sell a 55-strike put, buy a 50-strike put). Alternatively, wait for a significant pullback or consolidation before considering a long equity entry. Verify if any earnings or major events are scheduled within the 3-10 day horizon, which could be driving the high IV and pose event risk."
+            },
+            "timestamp": "2026-04-12T19:21:25.082Z"
+          }
+        ],
+        "totalRounds": 2,
+        "consensusSummary": "Deliberation ended round 2: analyst rebuttal failed (Invalid timeHorizon: 7-14D)",
+        "reachedConsensus": false
+      }
+    },
+    {
+      "id": 13,
+      "created_at": "2026-04-12T19:22:59.39526",
+      "symbol": "MU",
+      "source": "PREMARKET_PLAN",
+      "analyst_model_name": "claude-sonnet-4-20250514",
+      "critic_model_name": "gemini-2.5-flash",
+      "input_snapshot": {
+        "price": null,
+        "regime": "TRENDING_UP|NORMAL_VOL|BULLISH",
+        "volumeSummary": {
+          "median5d": 43100965,
+          "median20d": 50357659,
+          "volumeRatio": 0.8558969153033901
+        },
+        "scannerAlignment": {
+          "modeAlignment": null,
+          "momentumScore": null,
+          "discoveryScore": null
+        }
+      },
+      "primary_proposal": {
+        "thesis": "MU institutional call accumulation (92k calls vs 12k puts, $71.8M block) suggests continued upside, but current levels are extended. Using call debit spread to mitigate IV risk while capturing momentum.",
+        "riskNotes": "Maximum loss limited to net debit paid. Stop at $410 underlying. Monitor for shift in institutional flow or broader semiconductor weakness. Spread caps upside at $470 but provides better risk-adjusted returns.",
+        "structure": "Long May 16, 2026 430/470 call debit spread - enter on pullback to $420-430 zone. Defined risk structure with reduced premium outlay and IV crush protection."
+      },
+      "skeptic_critique": {
+        "evidence": "MU up 15.09% in 5 days, trading near 20d high of $461.73. Call/Put ratio 7.5:1. IV30d at 79.02%.",
+        "objections": "The stock is extremely extended, up 15.09% in 5 days and trading near its 20-day high, making it susceptible to a sharp pullback or consolidation. While call flow is dominant (7.5:1 ratio), extreme bullish sentiment can often be a contrarian indicator. The 30-day IV is high at 79.02%, making the long call premium substantial and vulnerable to IV crush. Buying calls into such an extended move with high IV is a high-risk proposition.",
+        "suggestedChanges": "Consider a less aggressive entry, a structure that mitigates IV risk, and a more conservative approach given the extended move."
+      },
+      "final_decision": {
+        "decision": "PROCEED",
+        "finalStructure": "CALL_DEBIT_SPREAD LONG (Buy 1x 430 CALL 2026-05-16 / Sell 1x 470 CALL 2026-05-16)",
+        "resolutionRationale": "Proceeding as proposed. Skeptic score: 25 (no blocking concerns). Skeptic noted: The stock is extremely extended, up 15.09% in 5 days and trading near its 20-day high, making it susceptible to a sharp pullback or consolidation. While call flow is dominant (7.5:1 ratio), extreme bullish sentiment can often be a contrarian indicator. The 30-day IV is high at 79.02%, making the long call premium substantial and vulnerable to IV crush. Buying calls into such an extended move with high IV is a high-risk proposition. — assessed as non-blocking."
+      },
+      "idea_id": 17,
+      "conversation_log": {
+        "turns": [
+          {
+            "role": "analyst",
+            "round": 1,
+            "content": {
+              "note": "MU presents a compelling long setup with exceptional momentum and flow characteristics. The stock has surged 15.1% over 5 days, significantly outpacing SPY with +11.4% relative strength. Most striking is the overwhelming call flow dominance - 92k calls vs just 12k puts (7.5:1 ratio) with massive $71.8M block activity suggesting institutional positioning. Volume/OI ratio of 1.08 indicates fresh positioning rather than closing existing trades. Current regime of TRENDING_UP/BULLISH supports the directional bias. Entry around $440-450 zone targeting $480-500 with stop at $420. Risk/reward approximately 1:2. Main risk is semiconductor sector rotation or broader market pullback invalidating the momentum trade.",
+              "direction": "LONG",
+              "structure": "Long May 16, 2026 $450 calls - leveraged exposure to continued momentum with defined risk and 30+ days to expiration for theta management",
+              "signalStrength": 82,
+              "convictionLevel": "HIGH"
+            },
+            "timestamp": "2026-04-12T19:22:04.652Z"
+          },
+          {
+            "role": "skeptic",
+            "round": 1,
+            "content": {
+              "note": "This MU long call idea faces significant headwinds despite strong recent momentum. The stock is extremely extended, up 15.09% in 5 days and trading near its 20-day high of $461.73, making it susceptible to a sharp pullback or consolidation. While call flow is dominant (7.5:1 ratio), extreme bullish sentiment can often be a contrarian indicator. The 30-day IV is high at 79.02%, meaning the long call premium is substantial and vulnerable to IV crush if the stock consolidates or reverses, even if IV/HV is near 1.0. Buying calls into such an extended move with high IV is a high-risk proposition.",
+              "flags": {
+                "overfitWarning": false,
+                "regimeMismatch": false,
+                "liquidityConcern": false,
+                "redundancyWithActiveIdeas": false
+              },
+              "objections": "The primary objections are the stock's overextended short-term price action, the high implied volatility making long calls expensive and susceptible to IV crush, and the potential for extreme call flow to act as a contrarian indicator signaling a local top. Chasing a 15% move in 5 days often leads to buying the peak.",
+              "critiqueScore": 65,
+              "suggestedChanges": "Kill this idea or significantly reduce size. If conviction remains, wait for a clear pullback to a more established support level (e.g., $420) before considering entry. Alternatively, switch to a defined-risk call debit spread to mitigate IV crush risk and reduce premium outlay, or consider a short-term put spread as a contrarian play if the extreme call flow is deemed a reversal signal."
+            },
+            "timestamp": "2026-04-12T19:22:26.682Z"
+          },
+          {
+            "role": "analyst",
+            "round": 2,
+            "content": {
+              "note": "I acknowledge the Skeptic's valid concerns about chasing an extended move and IV risk. However, the institutional flow signal remains compelling - 92k calls vs 12k puts with $71.8M blocks suggests smart money positioning, not retail FOMO. To address the concerns, I'm modifying to a call debit spread structure which: 1) Reduces net premium by ~60% vs naked calls, 2) Provides natural IV crush protection through the short call, 3) Waits for pullback to $420-430 for better entry vs chasing current levels. The 7.5:1 call/put ratio, while extreme, is backed by massive institutional block activity suggesting accumulation rather than speculative excess. The spread structure maintains directional exposure while addressing risk management concerns.",
+              "direction": "LONG",
+              "structure": "Long May 16, 2026 430/470 call debit spread - enter on pullback to $420-430 zone. Defined risk structure with reduced premium outlay and IV crush protection.",
+              "concessions": "The Skeptic is correct that the stock is overextended at current levels and high IV makes naked calls expensive and risky. Chasing a 15% move in 5 days is poor risk management. The extreme call flow could indeed signal a local top if driven by retail speculation rather than institutional positioning.",
+              "signalStrength": 75,
+              "convictionLevel": "MEDIUM",
+              "agreesWithSkeptic": false,
+              "changesFromPrevious": "Changed from naked long call to call debit spread (430/470). Lowered entry zone from $440-450 to $420-430 to wait for pullback. Reduced stop from $420 to $410. Lowered target from $480-500 to $460-470. Reduced conviction from HIGH to MEDIUM and signal strength from 82 to 75."
+            },
+            "timestamp": "2026-04-12T19:22:48.617Z"
+          },
+          {
+            "role": "skeptic",
+            "round": 2,
+            "content": {
+              "note": "The Analyst has made significant and appropriate adjustments to address the core concerns. Switching to a call debit spread mitigates IV risk and reduces premium outlay, while the revised entry zone and stop loss demonstrate a more prudent approach to managing an extended move. The institutional flow argument, backed by block activity, provides a reasonable counter to the 'extreme sentiment as contrarian' point, especially with the improved risk structure.",
+              "flags": {
+                "overfitWarning": false,
+                "regimeMismatch": false,
+                "liquidityConcern": false,
+                "redundancyWithActiveIdeas": false
+              },
+              "objections": "The stock is extremely extended, up 15.09% in 5 days and trading near its 20-day high, making it susceptible to a sharp pullback or consolidation. While call flow is dominant (7.5:1 ratio), extreme bullish sentiment can often be a contrarian indicator. The 30-day IV is high at 79.02%, making the long call premium substantial and vulnerable to IV crush. Buying calls into such an extended move with high IV is a high-risk proposition.",
+              "critiqueScore": 25,
+              "suggestedChanges": "Consider a less aggressive entry, a structure that mitigates IV risk, and a more conservative approach given the extended move.",
+              "remainingConcerns": "Minor concerns remain regarding the execution of waiting for the pullback; the stock may not retrace to the desired entry zone, or the pullback could be deeper than anticipated. Additionally, while institutional flow is compelling, rapid shifts in market sentiment or sector rotation could still impact the trade, requiring diligent monitoring.",
+              "satisfiedWithChanges": true
+            },
+            "timestamp": "2026-04-12T19:22:59.347Z"
+          }
+        ],
+        "totalRounds": 2,
+        "consensusSummary": "Consensus reached round 2: skeptic satisfied. Score: 25. Minor concerns remain regarding the execution of waiting for the pullback; the stock may not retrace to the desired entry zone, or the pullback could be deeper than anticipated. Additionally, while institutional flow is compelling, rapid shifts in market sentiment or sector rotation could still impact the trade, requiring diligent monitoring.",
+        "reachedConsensus": true
+      }
+    },
+    {
+      "id": 14,
+      "created_at": "2026-04-12T19:25:00.785055",
+      "symbol": "INTC",
+      "source": "PREMARKET_PLAN",
+      "analyst_model_name": "claude-sonnet-4-20250514",
+      "critic_model_name": "gemini-2.5-flash",
+      "input_snapshot": {
+        "price": null,
+        "regime": "TRENDING_UP|NORMAL_VOL|BULLISH",
+        "volumeSummary": {
+          "median5d": 129543837,
+          "median20d": 87085891,
+          "volumeRatio": 1.7868553127624314
+        },
+        "scannerAlignment": {
+          "modeAlignment": null,
+          "momentumScore": null,
+          "discoveryScore": null
+        }
+      },
+      "primary_proposal": {
+        "thesis": "INTC showing exceptional momentum with +36.4% 20-day return and strong relative strength vs SPY at +34.3%. Volume surge to 1.79x median confirms institutional interest. Trading near 20-day high of $61.72 in supportive TRENDING_UP|BULLISH regime.",
+        "riskNotes": "Stop loss at $55 support level. Risk of semiconductor sector rotation or broader market pullback. Monitor volume confirmation on any breakout above $62. Exit if relative strength vs SPY deteriorates significantly.",
+        "structure": "Equity long — options data incomplete with missing IV rank and spread metrics, making equity the cleaner expression of momentum thesis"
+      },
+      "skeptic_critique": {
+        "evidence": "INTC's +36.4% return over 20 days and +22.5% over 5 days, with entry near the 20-day high of $61.72. IV30d is 93.06%, significantly elevated. HV20d is 79.11%. The soft stop at $55 represents a 5-8% downside from the entry zone. Total put volume (133,874) is higher than total call volume (115,566). The analyst's stated reason for avoiding options (missing IVR, spread metrics) is insufficient given the clear signal from absolute IV and good OI/Vol.",
+        "objections": "The stock is severely overextended after a massive rally, increasing the probability of a sharp correction or consolidation. The implied volatility is extremely high, making the equity position vulnerable to increased realized volatility and potential IV crush if options were considered. The stop loss is too tight for such a volatile stock. The put-heavy options flow contradicts the strong bullish momentum thesis. The choice of equity over options is questionable given the high IV environment.",
+        "suggestedChanges": "Kill this idea due to extreme overextension and high risk. If the analyst insists on a bullish view, reduce size drastically and consider a defined-risk options strategy like a bull put spread to capitalize on the high IV and potential IV crush, rather than a naked long equity position. Re-evaluate the stop loss to account for the high volatility, or wait for a significant pullback and consolidation before considering a long entry."
+      },
+      "final_decision": {
+        "decision": "REJECT",
+        "finalStructure": "Equity LONG — Equity long — options data incomplete with missing IV rank and spread metrics, making equity the cleaner expression of momentum thesis",
+        "resolutionRationale": "Rejected: DELIBERATION_NO_CONSENSUS. Skeptic objections: The stock is severely overextended after a massive rally, increasing the probability of a sharp correction or consolidation. The implied volatility is extremely high, making the equity position vulnerable to increased realized volatility and potential IV crush if options were considered. The stop loss is too tight for such a volatile stock. The put-heavy options flow contradicts the strong bullish momentum thesis. The choice of equity over options is questionable given the high IV environment. Flags: regime mismatch, overfit warning. Skeptic suggested: Kill this idea due to extreme overextension and high risk. If the analyst insists on a bullish view, reduce size drastically and consider a defined-risk options strategy like a bull put spread to capitalize on the high IV and potential IV crush, rather than a naked long equity position. Re-evaluate the stop loss to account for the high volatility, or wait for a significant pullback and consolidation before considering a long entry."
+      },
+      "idea_id": null,
+      "conversation_log": {
+        "turns": [
+          {
+            "role": "analyst",
+            "round": 1,
+            "content": {
+              "note": "INTC demonstrates exceptional momentum with 36.4% gains over 20 days and strong relative strength vs SPY (+34.3%). Volume surge to 1.79x median indicates institutional accumulation. Current TRENDING_UP|BULLISH regime supports continuation. Entry around $58.50-$60.00 with stop at $55 (previous support) offers 2:1 risk/reward to $64-$67 target zone. Key risk is semiconductor sector rotation or broader market pullback breaking momentum.",
+              "direction": "LONG",
+              "structure": "Equity long — options data incomplete with missing IV rank and spread metrics, making equity the cleaner expression of momentum thesis",
+              "signalStrength": 78,
+              "convictionLevel": "MEDIUM"
+            },
+            "timestamp": "2026-04-12T19:24:15.543Z"
+          },
+          {
+            "role": "skeptic",
+            "round": 1,
+            "content": {
+              "note": "This idea proposes buying INTC after an extreme run (+36.4% in 20 days, +22.5% in 5 days), pushing it near its 20-day high. The implied volatility (IV30d at 93.06%) is exceptionally high, indicating significant perceived risk or upcoming event. While the analyst chose equity due to 'incomplete options data,' the high IV suggests options are very expensive, making a long equity position vulnerable to sharp pullbacks or a rapid increase in realized volatility. The proposed stop at $55 is tight given the stock's recent volatility (HV20d 79.11%). Furthermore, total put volume (133,874) exceeds call volume (115,566), suggesting hedging or bearish sentiment that contradicts the strong bullish thesis.",
+              "flags": {
+                "overfitWarning": true,
+                "regimeMismatch": true,
+                "liquidityConcern": false,
+                "redundancyWithActiveIdeas": false
+              },
+              "objections": "The stock is severely overextended after a massive rally, increasing the probability of a sharp correction or consolidation. The implied volatility is extremely high, making the equity position vulnerable to increased realized volatility and potential IV crush if options were considered. The stop loss is too tight for such a volatile stock. The put-heavy options flow contradicts the strong bullish momentum thesis. The choice of equity over options is questionable given the high IV environment.",
+              "critiqueScore": 75,
+              "suggestedChanges": "Kill this idea due to extreme overextension and high risk. If the analyst insists on a bullish view, reduce size drastically and consider a defined-risk options strategy like a bull put spread to capitalize on the high IV and potential IV crush, rather than a naked long equity position. Re-evaluate the stop loss to account for the high volatility, or wait for a significant pullback and consolidation before considering a long entry."
+            },
+            "timestamp": "2026-04-12T19:24:37.874Z"
+          }
+        ],
+        "totalRounds": 2,
+        "consensusSummary": "Deliberation ended round 2: analyst rebuttal failed (Invalid catalyst: IV_CRUSH)",
+        "reachedConsensus": false
+      }
+    },
+    {
+      "id": 15,
+      "created_at": "2026-04-12T19:25:55.655598",
+      "symbol": "LRCX",
+      "source": "PREMARKET_PLAN",
+      "analyst_model_name": "claude-sonnet-4-20250514",
+      "critic_model_name": "gemini-2.5-flash",
+      "input_snapshot": {
+        "price": null,
+        "regime": "TRENDING_UP|NORMAL_VOL|BULLISH",
+        "volumeSummary": {
+          "median5d": 6818401,
+          "median20d": 9845330.5,
+          "volumeRatio": 0.9911072055935553
+        },
+        "scannerAlignment": {
+          "modeAlignment": null,
+          "momentumScore": null,
+          "discoveryScore": null
+        }
+      },
+      "primary_proposal": {
+        "thesis": "LRCX showing exceptional momentum with 18.5% 5-day and 23.5% 20-day returns, significantly outperforming SPY. Bullish options flow with 2.35x call/put ratio and $8.9M block activity suggests institutional accumulation. Trading near 20-day highs in supportive TRENDING_UP regime.",
+        "riskNotes": "Main risk is momentum exhaustion after strong run-up. Stop at $240 protects against breakdown below key support. Watch for regime shift to risk-off or semiconductor sector weakness. Volume slightly below median could indicate waning participation.",
+        "structure": "Equity long — options data incomplete with missing IV rank and spread metrics, making equity the cleaner expression for momentum continuation play"
+      },
+      "skeptic_critique": {
+        "evidence": "LRCX has gained 18.5% in 5 days and 23.5% in 20 days, trading near its 20-day high of $258.76. IV30d is 0.76165 (76.165%) while HV20d is 70.165%. The proposed stop at $240 is only 4-6% below the entry zone of $250-$255, which is a small buffer given the 70.165% annualized historical volatility. The analyst cited 'options data incomplete' as a reason for choosing equity, despite available IV/HV metrics.",
+        "objections": "The stock is significantly overextended after a strong run-up, increasing the risk of momentum exhaustion or a sharp pullback. Implied volatility is elevated compared to historical volatility, making the purchase of naked calls expensive and exposing the trade to IV crush risk. The proposed stop loss is too tight relative to the stock's high historical volatility (HV20d 70.165%), which could lead to premature stop-outs on normal price fluctuations. The analyst's choice of equity over options is questionable, as elevated IV could be leveraged more efficiently with a defined-risk options strategy.",
+        "suggestedChanges": "Reduce position size to mitigate the risk of momentum exhaustion. Consider a defined-risk options strategy, such as a call spread or a put credit spread, to capitalize on the bullish thesis while managing elevated IV and potential for a pullback. Widen the stop loss to account for the high historical volatility, or consider a time-based stop. Re-evaluate the entry point after a potential pullback to a more sustainable level."
+      },
+      "final_decision": {
+        "decision": "REJECT",
+        "finalStructure": "Equity LONG — Equity long — options data incomplete with missing IV rank and spread metrics, making equity the cleaner expression for momentum continuation play",
+        "resolutionRationale": "Rejected: DELIBERATION_NO_CONSENSUS. Skeptic objections: The stock is significantly overextended after a strong run-up, increasing the risk of momentum exhaustion or a sharp pullback. Implied volatility is elevated compared to historical volatility, making the purchase of naked calls expensive and exposing the trade to IV crush risk. The proposed stop loss is too tight relative to the stock's high historical volatility (HV20d 70.165%), which could lead to premature stop-outs on normal price fluctuations. The analyst's choice of equity over options is questionable, as elevated IV could be leveraged more efficiently with a defined-risk options strategy. Flags: overfit warning. Skeptic suggested: Reduce position size to mitigate the risk of momentum exhaustion. Consider a defined-risk options strategy, such as a call spread or a put credit spread, to capitalize on the bullish thesis while managing elevated IV and potential for a pullback. Widen the stop loss to account for the high historical volatility, or consider a time-based stop. Re-evaluate the entry point after a potential pullback to a more sustainable level."
+      },
+      "idea_id": null,
+      "conversation_log": {
+        "turns": [
+          {
+            "role": "analyst",
+            "round": 1,
+            "content": {
+              "note": "LRCX demonstrates exceptional momentum with 23.5% gains over 20 days and strong relative strength vs SPY. The bullish options flow (9,416 calls vs 4,009 puts) and large block activity ($8.9M) suggest institutional accumulation. Trading near 20-day highs at 258.76 with volume slightly below median but still healthy. Entry around $250-255 offers good risk/reward with targets at $270-280 based on momentum continuation. Stop at $240 protects against breakdown. Current TRENDING_UP regime supports the bullish thesis.",
+              "direction": "LONG",
+              "structure": "Equity long — options data incomplete with missing IV rank and spread metrics, making equity the cleaner expression for momentum continuation play",
+              "signalStrength": 78,
+              "convictionLevel": "HIGH"
+            },
+            "timestamp": "2026-04-12T19:25:16.397Z"
+          },
+          {
+            "role": "skeptic",
+            "round": 1,
+            "content": {
+              "note": "The analyst's thesis on LRCX's strong momentum is evident from its 18.5% 5-day and 23.5% 20-day returns, significantly outperforming SPY. However, this rapid ascent also presents a substantial risk of momentum exhaustion or a short-term pullback, especially with the stock trading near its 20-day high. The implied volatility (IV30d: 76.165%) is elevated relative to historical volatility (HV20d: 70.165%), making long options potentially expensive. The proposed stop at $240 (4-6% below entry) is quite tight given the high historical volatility, increasing the risk of being stopped out on normal daily fluctuations. While options spread metrics were noted as incomplete, the available IV/HV data suggests a more nuanced options strategy could be considered.",
+              "flags": {
+                "overfitWarning": true,
+                "regimeMismatch": false,
+                "liquidityConcern": false,
+                "redundancyWithActiveIdeas": false
+              },
+              "objections": "The stock is significantly overextended after a strong run-up, increasing the risk of momentum exhaustion or a sharp pullback. Implied volatility is elevated compared to historical volatility, making the purchase of naked calls expensive and exposing the trade to IV crush risk. The proposed stop loss is too tight relative to the stock's high historical volatility (HV20d 70.165%), which could lead to premature stop-outs on normal price fluctuations. The analyst's choice of equity over options is questionable, as elevated IV could be leveraged more efficiently with a defined-risk options strategy.",
+              "critiqueScore": 55,
+              "suggestedChanges": "Reduce position size to mitigate the risk of momentum exhaustion. Consider a defined-risk options strategy, such as a call spread or a put credit spread, to capitalize on the bullish thesis while managing elevated IV and potential for a pullback. Widen the stop loss to account for the high historical volatility, or consider a time-based stop. Re-evaluate the entry point after a potential pullback to a more sustainable level."
+            },
+            "timestamp": "2026-04-12T19:25:34.275Z"
+          }
+        ],
+        "totalRounds": 2,
+        "consensusSummary": "Deliberation ended round 2: analyst rebuttal failed (Invalid convictionLevel: MEDIUM_HIGH)",
+        "reachedConsensus": false
+      }
+    },
+    {
+      "id": 16,
+      "created_at": "2026-04-12T19:26:58.094731",
+      "symbol": "MRVL",
+      "source": "PREMARKET_PLAN",
+      "analyst_model_name": "claude-sonnet-4-20250514",
+      "critic_model_name": "gemini-2.5-flash",
+      "input_snapshot": {
+        "price": null,
+        "regime": "TRENDING_UP|NORMAL_VOL|BULLISH",
+        "volumeSummary": {
+          "median5d": 23667065,
+          "median20d": 20214216.5,
+          "volumeRatio": 1.6185875420894993
+        },
+        "scannerAlignment": {
+          "modeAlignment": null,
+          "momentumScore": null,
+          "discoveryScore": null
+        }
+      },
+      "primary_proposal": {
+        "thesis": "MRVL institutional accumulation evident in heavy call flow and $20M+ blocks. Bull call spread 120/125 captures momentum thesis while mitigating high IV cost and defining maximum risk.",
+        "riskNotes": "Risk limited to net premium paid for spread. High IV could compress, benefiting short call leg. Main risk is failure to reach 120 strike by expiration. Stop-loss if underlying breaks $110 support level.",
+        "structure": "Bull call spread: Buy 120 call, sell 125 call, ~2 weeks to expiration. Defined risk structure addresses high IV environment while maintaining upside participation. Entry on any pullback to $115-118 range."
+      },
+      "skeptic_critique": {
+        "evidence": "The Analyst's revised strategy (bull call spread 120/125, lower entry $115-118, modest target $122-125) directly mitigates these risks. The explicit acknowledgment of high IV making the short call attractive is a sound adjustment. The concession regarding 'missing IV data' was also noted.",
+        "objections": "My initial objections regarding chasing an extended move and the high cost of long calls due to elevated IV have been effectively addressed.",
+        "suggestedChanges": "The Analyst has implemented the suggested changes, moving to a defined-risk options strategy and adjusting the entry and target to account for the stock's extended run."
+      },
+      "final_decision": {
+        "decision": "REJECT",
+        "finalStructure": "BULL_CALL_SPREAD LONG (Sell 1x 120 undefined undefined / Sell 1x 125 undefined undefined)",
+        "resolutionRationale": "Rejected: INVALID_EXPIRATION. Skeptic objections: My initial objections regarding chasing an extended move and the high cost of long calls due to elevated IV have been effectively addressed. Skeptic suggested: The Analyst has implemented the suggested changes, moving to a defined-risk options strategy and adjusting the entry and target to account for the stock's extended run."
+      },
+      "idea_id": null,
+      "conversation_log": {
+        "turns": [
+          {
+            "role": "analyst",
+            "round": 1,
+            "content": {
+              "note": "MRVL demonstrates exceptional momentum with 36.8% 20-day return and strong relative strength vs SPY. The heavy call flow (4:1 call/put ratio) combined with $20M+ block activity suggests institutional positioning for continued upside. Volume is 62% above 5-day median, confirming participation. Trading near 20-day high of $119.93 with support at $110. Target $125-130 zone represents reasonable extension of current trend. Risk/reward approximately 1:2 with stop at $110. Equity position preferred over options due to missing IV data and spread information.",
+              "direction": "LONG",
+              "structure": "Equity long — options data incomplete with missing IV spreads and strike-level liquidity metrics. Clean equity exposure captures momentum thesis with defined risk at $110 support.",
+              "signalStrength": 78,
+              "convictionLevel": "MEDIUM"
+            },
+            "timestamp": "2026-04-12T19:26:11.278Z"
+          },
+          {
+            "role": "skeptic",
+            "round": 1,
+            "content": {
+              "note": "This idea proposes chasing MRVL after an aggressive run (+36.8% in 20 days, +12% in 5 days), entering near its 20-day high. While momentum is strong, this increases the risk of an immediate pullback or exhaustion. The analyst's justification for choosing equity over options due to 'missing IV data and spread information' is questionable, as the snapshot shows IV30d at 62.6%, which is quite high. If IV is high, buying calls is expensive, and a defined-risk options strategy like a bull call spread or put credit spread could be more capital-efficient or offer better risk/reward, especially if IV is expected to mean-revert. The high IV also contradicts the 'NORMAL_VOL' regime state for the broader market, suggesting stock-specific volatility.",
+              "flags": {
+                "overfitWarning": false,
+                "regimeMismatch": true,
+                "liquidityConcern": true,
+                "redundancyWithActiveIdeas": false
+              },
+              "objections": "The trade involves chasing an already significantly extended move, increasing the risk of a sharp reversal or profit-taking. Entering near the 20-day high after a 12% 5-day gain is aggressive. The analyst's rationale for avoiding options is weak, as high implied volatility (IV30d at 62.6%) suggests options are expensive, making long calls less attractive and potentially favoring defined-risk strategies or short volatility plays.",
+              "critiqueScore": 65,
+              "suggestedChanges": "Kill this idea due to the extended move and high risk of reversal. If conviction remains, significantly reduce size and wait for a clear pullback to a more established support level (e.g., $115 or lower). Alternatively, investigate options liquidity and consider a defined-risk bull call spread or put credit spread to capitalize on potential IV crush or reduce capital at risk, given the high IV."
+            },
+            "timestamp": "2026-04-12T19:26:27.554Z"
+          },
+          {
+            "role": "analyst",
+            "round": 2,
+            "content": {
+              "note": "I concede the Skeptic's key points about chasing momentum and high IV concerns. However, the institutional flow signals remain compelling - 4:1 call/put ratio with $20M+ blocks suggests smart money positioning. I've addressed the concerns by: 1) Switching to bull call spread to mitigate high IV cost and define risk, 2) Lowering entry zone to $115-118 to avoid chasing at highs, 3) Targeting more modest move to $122-125. The 62.6% IV actually makes the short 125 call leg attractive for premium collection. Flow-based momentum trades can work even after extensions when institutional accumulation is this pronounced.",
+              "direction": "LONG",
+              "structure": "Bull call spread: Buy 120 call, sell 125 call, ~2 weeks to expiration. Defined risk structure addresses high IV environment while maintaining upside participation. Entry on any pullback to $115-118 range.",
+              "concessions": "Valid points on chasing momentum near highs and high IV making long calls expensive. My original dismissal of options due to 'missing IV data' was incorrect - the 62.6% IV is clearly visible and material to trade structure. Entry near 20-day highs does increase reversal risk.",
+              "signalStrength": 72,
+              "convictionLevel": "MEDIUM",
+              "agreesWithSkeptic": false,
+              "changesFromPrevious": "Changed from equity long to bull call spread (120/125). Lowered entry zone from $115-119.93 to $115-118. Reduced target from $125-130 to $122-125. Extended time horizon from 3-10D to 7-14D. Reduced signal strength from 78 to 72."
+            },
+            "timestamp": "2026-04-12T19:26:48.718Z"
+          },
+          {
+            "role": "skeptic",
+            "round": 2,
+            "content": {
+              "note": "The Analyst has made substantial and appropriate revisions to the trade idea, directly addressing the core concerns regarding chasing momentum and high implied volatility. The shift to a bull call spread with a lower entry zone and more modest target significantly improves the risk/reward profile and capital efficiency. The explicit acknowledgment and utilization of high IV for premium collection on the short leg is a sound adjustment.",
+              "flags": {
+                "overfitWarning": false,
+                "regimeMismatch": false,
+                "liquidityConcern": false,
+                "redundancyWithActiveIdeas": false
+              },
+              "objections": "My initial objections regarding chasing an extended move and the high cost of long calls due to elevated IV have been effectively addressed.",
+              "critiqueScore": 25,
+              "suggestedChanges": "The Analyst has implemented the suggested changes, moving to a defined-risk options strategy and adjusting the entry and target to account for the stock's extended run.",
+              "remainingConcerns": "Minor concern about the overall extended nature of MRVL, but the bull call spread structure and lower entry point adequately manage this risk.",
+              "satisfiedWithChanges": true
+            },
+            "timestamp": "2026-04-12T19:26:58.085Z"
+          }
+        ],
+        "totalRounds": 2,
+        "consensusSummary": "Consensus reached round 2: skeptic satisfied. Score: 25. Minor concern about the overall extended nature of MRVL, but the bull call spread structure and lower entry point adequately manage this risk.",
+        "reachedConsensus": true
+      }
+    }
+  ],
+  "embeddings": [
+    {
+      "id": 1,
+      "idea_id": 13,
+      "embedding": null,
+      "tags": {
+        "text": "LEVI | SHORT | TECHNICAL | CHOPPY|NORMAL_VOL|BEARISH | THESIS: LEVI showing signs of exhaustion near 20d highs at $21.81 after strong 19% rally over 20 days. In CHOPPY/BEARISH regime, expect mean reversion from elevated levels. High volume ratio of 4.84x suggests potential distribution activity. | ANALYST: LEVI presents a mean reversion opportunity after rallying 19% in 20 days to test the $21.81 high. The 4.84x volume ratio suggests institutional activity that could be distribution near resistance. In the current CHOPPY/BEARISH regime, fading strength at technical resistance levels has favorable odds. The stock has strong relative strength vs SPY (+19% vs +0% over 20d), but this creates an asymmetric setup for shorts. Entry zone targets the $21.50-$21.81 resistance area with stop above $22.25. Target zone of $19.50-$20.50 represents a logical pullback to prior support levels. Missing options data limits structure flexibility, but the stock setup aligns well with regime expectations for mean reversion from elevated levels. | CRITIC: This short idea for LEVI faces significant headwinds from the stock's persistent strong momentum. LEVI has rallied nearly 15% in 5 days and 19% in 20 days, showing exceptional relative strength against SPY (+19% in 20d). Fading such robust performance, especially at the 20-day high, is highly aggressive. The interpretation of the 4.84x volume ratio as 'distribution' is speculative; it could also signal strong buying interest supporting the rally. Furthermore, with HV20d at 46.37%, the stock is highly volatile, making the tight stop at $22.25 vulnerable to being hit by normal price fluctuations, even if the bearish thesis eventually plays out. While the CHOPPY regime can favor mean reversion, LEVI's strong outperformance in a BEARISH breadth market suggests it might be decoupling, making it less prone to general mean-reversion tendencies. The risk of continued momentum breaking through the proposed stop is high.",
+        "symbol": "LEVI",
+        "catalyst": "TECHNICAL",
+        "direction": "SHORT",
+        "signalStrength": 45,
+        "regimeAtCreation": "CHOPPY|NORMAL_VOL|BEARISH"
+      },
+      "created_at": "2026-04-10T14:13:27.658633"
+    },
+    {
+      "id": 2,
+      "idea_id": 14,
+      "embedding": null,
+      "tags": {
+        "text": "BNL | SHORT | TECHNICAL | CHOPPY|NORMAL_VOL|BEARISH | THESIS: BNL showing signs of exhaustion after 5.5% rally over 5 days, trading near 20-day highs in a choppy/bearish regime. Massive volume spike (19.4x normal) suggests potential distribution rather than accumulation. Lack of options flow data limits bullish momentum confirmation. | ANALYST: BNL presents a tactical short opportunity as it approaches resistance near the 20-day high of $19.74. The extraordinary volume spike (19.4x median) at these levels suggests potential selling pressure rather than accumulation, particularly concerning given the choppy/bearish market regime. The stock's recent 5.5% 5-day rally appears stretched relative to the 2.8% 20-day performance. Missing IV and options flow data reduces conviction, but the technical setup favors a mean reversion trade back toward the $18.50-$18.80 zone. Entry should be patient, waiting for signs of rejection at current levels. Risk management is critical given the recent momentum - any break above $20.15 would invalidate the thesis. | CRITIC: This short idea is based on exhaustion near 20-day highs, yet BNL is exhibiting significant relative strength, outperforming SPY by 2.29% over 5 days and 2.89% over 20 days. Shorting a stock with such robust outperformance, even at perceived resistance, carries substantial risk as it's directly counter-trend. The \"massive volume spike\" (19.35x median) could signal a powerful accumulation event or a breakout attempt rather than distribution, particularly given the recent 5.5% 5-day rally. The absence of options flow data further limits conviction. While the broader market is bearish/choppy, the stock's strong internal momentum could easily defy market headwinds and trigger a quick squeeze past the tight $20.15 stop.",
+        "symbol": "BNL",
+        "catalyst": "TECHNICAL",
+        "direction": "SHORT",
+        "signalStrength": 49,
+        "regimeAtCreation": "CHOPPY|NORMAL_VOL|BEARISH"
+      },
+      "created_at": "2026-04-10T14:13:54.367344"
+    },
+    {
+      "id": 3,
+      "idea_id": 15,
+      "embedding": null,
+      "tags": {
+        "text": "LGN | SHORT | TECHNICAL | CHOPPY|NORMAL_VOL|BEARISH | THESIS: LGN showing weakness after 20-day rally with -3.1% 5-day return while underperforming SPY. High volume spike (8.4x median) suggests distribution. Current CHOPPY|BEARISH regime favors mean reversion from recent highs near $59.6. | ANALYST: LGN presents a mean reversion opportunity in current bearish regime. The stock rallied 11.7% over 20 days but has turned weak with -3.1% over 5 days, underperforming SPY by -6.3%. The 8.4x volume spike above median suggests institutional distribution near highs. Trading range $48.83-$59.6 provides clear technical levels. Entry near $56.5-$58 offers good risk/reward to targets around $52-$54. Stop above $59.8 keeps risk contained. Missing IV/flow data limits options analysis, but stock-only approach aligns with regime. Medium conviction due to limited data quality but good regime fit and clear technical setup. | CRITIC: The idea relies on mean reversion in a 'CHOPPY' regime, but LGN's 20-day historical volatility is extremely high at 59.27%. This makes the proposed tight stop at $59.8 (only $0.20 above the 20-day high) highly susceptible to being whipsawed out of the position prematurely. The interpretation of the 8.4x volume spike as definitive 'distribution' is speculative; it could also indicate absorption or capitulation in a highly volatile stock. A significant lack of granular liquidity data (e.g., avgSpreadPct, full options flow) raises concerns for execution quality and managing a short position. Furthermore, the 'NO_SIGNAL' from scanner alignment suggests a lack of robust quantitative confirmation.",
+        "symbol": "LGN",
+        "catalyst": "TECHNICAL",
+        "direction": "SHORT",
+        "signalStrength": 47,
+        "regimeAtCreation": "CHOPPY|NORMAL_VOL|BEARISH"
+      },
+      "created_at": "2026-04-10T14:14:26.226065"
+    },
+    {
+      "id": 4,
+      "idea_id": 16,
+      "embedding": null,
+      "tags": {
+        "text": "MSFT | SHORT | TECHNICAL | CHOPPY|NORMAL_VOL|BEARISH | THESIS: MSFT showing weakness in CHOPPY|BEARISH regime with -7.5% 20D return and poor relative strength vs SPY. Flow shows modest call bias but in context of recent selling pressure. Technical setup suggests continuation of pullback toward 20D low around 357. | ANALYST: MSFT is showing clear weakness with -7.5% 20D performance and significant underperformance vs SPY. In the current CHOPPY|BEARISH regime, this setup aligns well with a short bias. The stock is trading closer to recent lows than highs, and the flow data shows only modest call interest which isn't enough to offset the technical deterioration. Volume is slightly elevated which could support the move. Key risk is missing IV data limits options analysis, but the stock short appears clean with good risk/reward toward the 20D low around 357. Entry above current levels allows for better risk management. | CRITIC: While the overall bearish thesis aligns with the CHOPPY|BEARISH regime and the significant 20D underperformance (-7.5% vs. SPY), the recent 5-day positive return (+1.3%) suggests the stock may have experienced a short-term bounce. Entering a short between 372-378 after this bounce might expose the trade to continued relief rallies, especially if the market finds a temporary floor. Furthermore, the target zone of 358-365 is very close to the 20-day low of 356.77, suggesting that much of the downside move might already be exhausted, potentially limiting the remaining alpha. The call/put skew is positive (0.201), which is typically associated with bullish sentiment or hedging, contradicting the analyst's 'modest call bias' as a sign of weakness.",
+        "symbol": "MSFT",
+        "catalyst": "TECHNICAL",
+        "direction": "SHORT",
+        "signalStrength": 52,
+        "regimeAtCreation": "CHOPPY|NORMAL_VOL|BEARISH"
+      },
+      "created_at": "2026-04-10T14:14:55.823116"
+    },
+    {
+      "id": 5,
+      "idea_id": 17,
+      "embedding": null,
+      "tags": {
+        "text": "MU | LONG | FLOW | TRENDING_UP|NORMAL_VOL|BULLISH | THESIS: MU showing strong institutional accumulation with massive call flow (92k calls vs 12k puts) and $71.8M block activity. Using call debit spread to capture momentum while mitigating IV crush risk and reducing premium outlay. Waiting for pullback to $420-430 zone for better entry. | ANALYST: Revised MU trade addresses IV crush and overextension concerns by switching to call debit spread structure and waiting for pullback entry. The 430/470 call spread caps maximum loss while still capturing upside to $470 target. Entry zone lowered to $420-430 to avoid chasing the current extended move. This structure reduces net premium outlay by ~60% vs naked call while maintaining directional exposure. The massive institutional call flow and $71.8M block activity remain compelling signals of accumulation. Risk/reward improved to approximately 1:3 with defined maximum loss. | CRITIC: The Analyst has made significant and appropriate adjustments to address the core concerns. Switching to a call debit spread mitigates IV risk and reduces premium outlay, while the revised entry zone and stop loss demonstrate a more prudent approach to managing an extended move. The institutional flow argument, backed by block activity, provides a reasonable counter to the 'extreme sentiment as contrarian' point, especially with the improved risk structure.",
+        "symbol": "MU",
+        "catalyst": "FLOW",
+        "direction": "LONG",
+        "signalStrength": 68,
+        "regimeAtCreation": "TRENDING_UP|NORMAL_VOL|BULLISH"
+      },
+      "created_at": "2026-04-12T19:22:59.409136"
+    }
+  ]
+}
