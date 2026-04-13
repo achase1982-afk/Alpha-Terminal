@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import {
-  TrendingUp, TrendingDown, Clock, Shield, ChevronDown, ChevronUp, Beaker, XCircle, RefreshCw,
+  TrendingUp, TrendingDown, Clock, Shield, ChevronDown, ChevronUp, Beaker, XCircle, RefreshCw, Play,
 } from "lucide-react";
 
 const API_BASE = "/api";
@@ -492,7 +492,22 @@ export function AiLabStrategistView() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<ViewFilter>("shown");
+  const [runningPass, setRunningPass] = useState<string | null>(null);
+  const [runError, setRunError] = useState<string | null>(null);
+  const [selectedPass, setSelectedPass] = useState("PREMARKET_PLAN");
   const syncedRef = useRef(false);
+  const filterRef = useRef(filter);
+  filterRef.current = filter;
+
+  const PASS_OPTIONS = [
+    { value: "PREMARKET_PLAN", label: "Pre-Market Plan" },
+    { value: "POST_OPEN_CHECK", label: "Post-Open Check" },
+    { value: "MID_MORNING_SCAN", label: "Mid-Morning Scan" },
+    { value: "MIDDAY_ROTATION", label: "Midday Rotation" },
+    { value: "POWER_HOUR_PREP", label: "Power Hour Prep" },
+    { value: "OVERNIGHT_DIGEST", label: "Overnight Digest" },
+    { value: "POST_MARKET_REFLECTION", label: "Post-Market Reflection" },
+  ];
 
   const fetchData = useCallback(async (currentFilter: ViewFilter) => {
     setLoading(true);
@@ -527,6 +542,26 @@ export function AiLabStrategistView() {
       setLoading(false);
     }
   }, []);
+
+  const triggerPass = useCallback(async (passName: string) => {
+    setRunningPass(passName);
+    setRunError(null);
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/ai-lab/orchestrator/run-pass`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ passName }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setTimeout(() => fetchData(filterRef.current), 5000);
+      setTimeout(() => fetchData(filterRef.current), 15000);
+      setTimeout(() => fetchData(filterRef.current), 30000);
+    } catch (err: any) {
+      setRunError(err.message);
+    } finally {
+      setTimeout(() => setRunningPass(null), 3000);
+    }
+  }, [fetchData]);
 
   useEffect(() => {
     if (!syncedRef.current) {
@@ -614,20 +649,66 @@ export function AiLabStrategistView() {
             </button>
           ))}
         </div>
-        <button
-          onClick={() => fetchData(filter)}
-          disabled={loading}
-          className="p-1 rounded transition-colors cursor-pointer"
-          style={{
-            background: "transparent",
-            border: "1px solid #2A2A2C",
-            color: loading ? "#52525b" : "#71717a",
-          }}
-          title="Refresh"
-        >
-          <RefreshCw className={`w-3 h-3${loading ? " animate-spin" : ""}`} />
-        </button>
+        <div className="flex items-center gap-1.5">
+          <select
+            value={selectedPass}
+            onChange={(e) => setSelectedPass(e.target.value)}
+            className="font-mono text-[9px] tracking-wider rounded px-1.5 py-1 cursor-pointer appearance-none"
+            style={{
+              background: "#18181B",
+              color: "#a1a1aa",
+              border: "1px solid #2A2A2C",
+              outline: "none",
+            }}
+          >
+            {PASS_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+          <button
+            onClick={() => triggerPass(selectedPass)}
+            disabled={!!runningPass}
+            className="flex items-center gap-1 px-2 py-1 rounded font-mono text-[9px] tracking-wider transition-colors cursor-pointer"
+            style={{
+              background: runningPass ? "#f5a62320" : "#f5a62315",
+              color: runningPass ? "#f5a623" : "#f5a623",
+              border: `1px solid ${runningPass ? "#f5a62360" : "#f5a62340"}`,
+            }}
+          >
+            <Play className={`w-2.5 h-2.5${runningPass ? " animate-pulse" : ""}`} />
+            {runningPass ? "Running..." : "Run"}
+          </button>
+          <button
+            onClick={() => fetchData(filter)}
+            disabled={loading}
+            className="p-1 rounded transition-colors cursor-pointer"
+            style={{
+              background: "transparent",
+              border: "1px solid #2A2A2C",
+              color: loading ? "#52525b" : "#71717a",
+            }}
+            title="Refresh"
+          >
+            <RefreshCw className={`w-3 h-3${loading ? " animate-spin" : ""}`} />
+          </button>
+        </div>
       </div>
+
+      {runError && (
+        <div
+          className="flex items-center gap-2 px-3 py-2 rounded font-mono text-[10px]"
+          style={{ background: "#ff4b5c15", border: "1px solid #ff4b5c40", color: "#ff4b5c" }}
+        >
+          <XCircle className="w-3 h-3 flex-shrink-0" />
+          <span>Run failed: {runError}</span>
+          <button
+            onClick={() => setRunError(null)}
+            className="ml-auto text-zinc-500 hover:text-zinc-300 cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {!hasItems && !loading && (
         <div className="flex flex-col items-center justify-center py-12 px-6 gap-4">
