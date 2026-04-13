@@ -229,15 +229,10 @@ function emitQuote(def: IBSymbolDef, state: IBQuoteState) {
     case "net_bid_ask":
       effectiveLast = (state.bid !== null && state.ask !== null)
         ? state.bid - state.ask
-        : state.last ?? null;
-      break;
-    case "close_fallback":
-      effectiveLast = (state.last !== null && state.last !== 0)
-        ? state.last
-        : state.close ?? state.last ?? null;
+        : null;
       break;
     default:
-      effectiveLast = state.last ?? state.bid ?? state.ask ?? null;
+      effectiveLast = state.last;
       break;
   }
   const quote: LiveQuote = {
@@ -262,7 +257,7 @@ function emitQuote(def: IBSymbolDef, state: IBQuoteState) {
 }
 
 function emitRawQuote(displaySymbol: string, state: IBQuoteState) {
-  const effectiveLast = state.last ?? state.bid ?? state.ask ?? null;
+  const effectiveLast = state.last;
   const quote: LiveQuote = {
     symbol: displaySymbol,
     last: effectiveLast,

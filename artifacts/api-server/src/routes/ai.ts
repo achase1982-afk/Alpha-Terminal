@@ -720,19 +720,10 @@ function symbolToSchwabApi(userSymbol: string): string {
   return INDEX_TO_SCHWAB[upper] ?? upper;
 }
 
-const CACHE_ALIASES: Record<string, string[]> = {
-  "/DX": ["$DXY"],
-};
-
-const PULSE_TO_IB_NATIVE: Record<string, string> = {};
-
-const IB_UNSUPPORTED = new Set<string>();
-
 registerPermanentSymbols(
   PULSE_SYMBOLS
-    .filter(s => !IB_UNSUPPORTED.has(s.display))
     .filter(s => s.category === "breadth" || (s.category === "vol" && s.display.startsWith("$")))
-    .map(s => PULSE_TO_IB_NATIVE[s.display] ?? s.display)
+    .map(s => s.display)
 );
 
 function ensurePulseSubscriptions() {
@@ -784,60 +775,28 @@ function readFromWebSocketCache(
   for (const pair of pairs) {
     let q: LiveQuote | null | undefined = null;
 
-    q = schwabCacheBySymbol.get(pair.display)
-      ?? schwabCacheBySymbol.get(pair.api)
-      ?? schwabCacheBySymbol.get(pair.display.replace(/^\$/, ''))
-      ?? schwabCacheBySymbol.get(pair.api.replace(/^\$/, ''));
+    const pulseDef = PULSE_SYMBOLS.find(s => s.display === pair.display);
+    const isIBSymbol = pulseDef
+      && (pulseDef.category === "breadth" || (pulseDef.category === "vol" && pulseDef.display.startsWith("$")));
 
-    if (!q || q.last === null) {
-      const aliases = CACHE_ALIASES[pair.display] ?? CACHE_ALIASES[pair.api] ?? [];
-      for (const alias of aliases) {
-        const aliasQ = schwabCacheBySymbol.get(alias);
-        if (aliasQ && aliasQ.last !== null) { q = aliasQ; break; }
-      }
-    }
-
-    if (!q || q.last === null) {
-      const ibNative = PULSE_TO_IB_NATIVE[pair.display];
-      if (ibNative) {
-        q = ibCacheBySymbol.get(ibNative) ?? getIBCachedQuote(ibNative);
-      }
-    }
-
-    if (!q || q.last === null) {
-      q = ibCacheBySymbol.get(pair.display)
-        ?? ibCacheBySymbol.get(pair.api)
-        ?? ibCacheBySymbol.get(pair.display.replace(/^\$/, ''))
-        ?? ibCacheBySymbol.get(pair.api.replace(/^\$/, ''));
-    }
-
-    if (!q || q.last === null) {
-      const ibDirect = getIBCachedQuote(pair.display) ?? getIBCachedQuote(pair.api);
-      if (ibDirect && ibDirect.last !== null) q = ibDirect;
-    }
-
-    if (!q || q.last === null) {
-      const aliases = CACHE_ALIASES[pair.display] ?? CACHE_ALIASES[pair.api] ?? [];
-      for (const alias of aliases) {
-        const aliasQ = ibCacheBySymbol.get(alias) ?? getIBCachedQuote(alias);
-        if (aliasQ && aliasQ.last !== null) { q = aliasQ; break; }
-      }
+    if (isIBSymbol) {
+      q = ibCacheBySymbol.get(pair.display) ?? getIBCachedQuote(pair.display);
+    } else {
+      q = schwabCacheBySymbol.get(pair.display)
+        ?? schwabCacheBySymbol.get(pair.api);
     }
 
     if (q && q.last !== null) {
       hitCount++;
-      const closeVal = q.close ?? q.last;
-      const changeVal = q.change ?? (closeVal ? q.last! - closeVal : null);
-      const changePctVal = q.changePct ?? (closeVal && closeVal !== 0 ? ((q.last! - closeVal) / closeVal) * 100 : null);
       dataMap.set(pair.display, {
         lastPrice: q.last,
         mark: q.last,
         closePrice: q.close,
         close: q.close,
-        netChange: changeVal,
-        markChange: changeVal,
-        netPercentChange: changePctVal,
-        markPercentChange: changePctVal,
+        netChange: q.change,
+        markChange: q.change,
+        netPercentChange: q.changePct,
+        markPercentChange: q.changePct,
         highPrice: q.high,
         high: q.high,
         lowPrice: q.low,
