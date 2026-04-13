@@ -818,6 +818,7 @@ export async function runDiscoveryScan(
   traderToken: string | null,
   pulse: { composite: number; confidence: number; bias: string },
   log: { info: (...args: any[]) => void; warn: (...args: any[]) => void; error: (...args: any[]) => void },
+  options?: { returnAll?: boolean },
 ): Promise<ScanResult> {
   const scanStart = Date.now();
   const scanBatch = createTelemetryBatch("SCANNER");
@@ -1070,7 +1071,7 @@ export async function runDiscoveryScan(
     topSymbols: candidates.map(c => `${c.symbol}(${c.totalScore} ${c.directionalLean})`).join(", "),
   }, "SCANNER", scanBatch);
 
-  return {
+  const result: ScanResult & { allScoredResults?: any[] } = {
     candidates,
     filterSummary: {
       totalScanned: symbols.length,
@@ -1083,4 +1084,28 @@ export async function runDiscoveryScan(
     pulseComposite: pulse.composite,
     pulseConfidence: pulse.confidence,
   };
+
+  if (options?.returnAll) {
+    result.allScoredResults = scoredResults.map(r => ({
+      symbol: r.symbol,
+      totalScore: r.totalScore,
+      setupQuality: r.setupQuality,
+      accumulation: r.accumulation,
+      ivSetup: r.ivSetup,
+      flowDivergence: r.flowDivergence,
+      emergingRS: r.emergingRS,
+      rawScores: r.rawScores,
+      ivr: r.ivr,
+      iv30d: r.iv30d,
+      liqScore: r.liqScore,
+      atmSpreadPct: r.atmSpreadPct,
+      flowDataAvailable: r.flowDataAvailable,
+      directionalLean: r.directionalLean,
+      price: r.quote.lastPrice,
+      changePct: r.quote.netPercentChange,
+      sector: getSector(r.symbol),
+    }));
+  }
+
+  return result;
 }

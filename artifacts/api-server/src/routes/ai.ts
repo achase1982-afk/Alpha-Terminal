@@ -2683,10 +2683,11 @@ interface ScannerAiResult {
 }
 
 router.post("/deterministic-scan", async (req, res) => {
-  const { symbols, accessToken: bodyToken3, scanMode: reqScanMode } = req.body as {
+  const { symbols, accessToken: bodyToken3, scanMode: reqScanMode, returnAll } = req.body as {
     symbols: string[];
     accessToken: string;
     scanMode?: "DISCOVERY" | "MOMENTUM";
+    returnAll?: boolean;
   };
   const accessToken = bodyToken3 || getBestAccessToken();
   const scanMode: "DISCOVERY" | "MOMENTUM" = reqScanMode === "MOMENTUM" ? "MOMENTUM" : "DISCOVERY";
@@ -2725,7 +2726,7 @@ router.post("/deterministic-scan", async (req, res) => {
   try {
     const pulseCtx = { composite: pulseComposite, confidence: pulseConfidence, bias: pulseBias };
     const result = scanMode === "DISCOVERY"
-      ? await runDiscoveryScan(symbols, accessToken, traderToken, pulseCtx, req.log)
+      ? await runDiscoveryScan(symbols, accessToken, traderToken, pulseCtx, req.log, { returnAll: !!returnAll })
       : await runDeterministicScan(symbols, accessToken, traderToken, pulseCtx, req.log);
     res.json({ ...result, scanMode });
   } catch (err: unknown) {
