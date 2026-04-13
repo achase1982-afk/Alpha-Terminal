@@ -1257,7 +1257,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
 
   const { data: rawData, isLoading, error, isFetching } = useGetOptionChain(
     { symbol, accessToken: accessToken || "", contractType: "ALL", strikeCount },
-    { query: { enabled: !!accessToken && !!symbol, staleTime: Infinity, gcTime: 10 * 60_000 } }
+    { query: { enabled: !!accessToken && !!symbol, staleTime: 30_000, gcTime: 5 * 60_000, retry: 2 } }
   );
 
   const data = useMemo(() => {
@@ -1517,16 +1517,16 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
 
         {error && !data && (
           <div className="p-12 text-center font-mono flex flex-col items-center" style={{ color: DOWN }}>
-            <span className="text-2xl mb-2">\u26A0</span>
+            <span className="text-2xl mb-2">{"\u26A0"}</span>
             <span className="text-[10px] tracking-widest" style={{ fontWeight: FW_LIGHT }}>FAILED TO LOAD OPTIONS</span>
           </div>
         )}
 
         {!hasData && !isLoading && !error && apiError && (
           <div className="p-12 text-center font-mono flex flex-col items-center" style={{ color: GOLD_DIM }}>
-            <span className="text-2xl mb-2">\u26A0</span>
+            <span className="text-2xl mb-2">{"\u26A0"}</span>
             <span className="text-[10px] tracking-widest" style={{ fontWeight: FW_LIGHT }}>OPTIONS UNAVAILABLE</span>
-            <span className="text-[9px] mt-1" style={{ color: DIM, fontWeight: FW_LIGHT }}>Service may be down \u2014 retries automatically</span>
+            <span className="text-[9px] mt-1" style={{ color: DIM, fontWeight: FW_LIGHT }}>{"Service may be down \u2014 retries automatically"}</span>
           </div>
         )}
 
