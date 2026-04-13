@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useHeaderBottom } from "@/hooks/useHeaderBottom";
 import { useTerminalStore, useActiveWatchlist, type LiveQuote } from "@/lib/store";
 import { useQuote } from "@/hooks/useQuote";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
@@ -259,6 +260,7 @@ function WatchlistSettingsPanel({
   onReset: () => void;
   onClose: () => void;
 }) {
+  const headerBottom = useHeaderBottom();
   const dragIdx = useRef<number | null>(null);
   const dragStartY = useRef(0);
   const ITEM_H = 44;
@@ -293,10 +295,10 @@ function WatchlistSettingsPanel({
 
   return (
     <>
-      <div style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.6)" }} onClick={onClose} />
+      <div style={{ position: "fixed", top: headerBottom, left: 0, right: 0, bottom: 0, zIndex: 200, background: "rgba(0,0,0,0.6)" }} onClick={onClose} />
       <div
         style={{
-          position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 210,
+          position: "fixed", top: headerBottom, left: 0, right: 0, bottom: 0, zIndex: 210,
           background: "#111", fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
           display: "flex", flexDirection: "column", overflow: "hidden",
         }}

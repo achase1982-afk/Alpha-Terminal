@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import ReactDOM from "react-dom";
 import { useTerminalStore } from "@/lib/store";
+import { useHeaderBottom } from "@/hooks/useHeaderBottom";
 import { ConnectBrokerPrompt } from "./ConnectBrokerPrompt";
 import { useBrokerConnect } from "@/hooks/useBrokerConnect";
 import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
@@ -961,6 +962,7 @@ function ColumnSettingsPanel({
   onReset: () => void;
   onClose: () => void;
 }) {
+  const headerBottom = useHeaderBottom();
   const dragIdx = useRef<number | null>(null);
   const dragStartY = useRef(0);
   const ITEM_H = 44;
@@ -997,10 +999,10 @@ function ColumnSettingsPanel({
 
   return (
     <>
-      <div style={{ position: "fixed", inset: 0, zIndex: 49, background: "rgba(0,0,0,0.6)" }} onClick={onClose} />
+      <div style={{ position: "fixed", top: headerBottom, left: 0, right: 0, bottom: 0, zIndex: 49, background: "rgba(0,0,0,0.6)" }} onClick={onClose} />
       <div
         style={{
-          position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 50,
+          position: "fixed", top: headerBottom, left: 0, right: 0, bottom: 0, zIndex: 50,
           background: "#111", fontFamily: f, display: "flex", flexDirection: "column",
           overflow: "hidden",
         }}
