@@ -151,13 +151,13 @@ export function AiBiasStrip({ onNavigateToPulse }: AiBiasStripProps) {
             <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-400" />
           </span>
         )}
-        <span className="font-mono text-[10px] uppercase tracking-wider text-amber-500 shrink-0">
+        <span className="font-mono text-sm font-semibold uppercase tracking-wider text-amber-500 shrink-0">
           {pulseData.structuralRegime?.label?.replace(/_/g, "-") ?? "—"}
         </span>
         {summaryText && (
           <div className="overflow-hidden min-w-0" style={{ maskImage: "linear-gradient(to right, transparent 0%, black 4%, black 90%, transparent 100%)" }}>
             <span
-              className="font-mono text-[10px] text-white whitespace-nowrap inline-block"
+              className="font-mono text-[13px] text-white whitespace-nowrap inline-block"
               style={scrollEnabled ? { animation: `biasScroll ${scrollDuration}s linear infinite` } : { overflow: "hidden", textOverflow: "ellipsis" }}
             >
               {summaryText}
