@@ -15,7 +15,7 @@ import {
 } from "@workspace/api-zod";
 import { computeIndicators, formatTAContext, isDataStale, type Candle } from "../lib/ta.js";
 import { runMarketPulseEngine, formatClusterDebugLine, verifyEngineScoring, type MarketIndicators, type BiasLabel, type SessionType } from "../lib/marketPulseEngine.js";
-import { getSnapshot, schwabFuturesKey, type LiveQuote } from "../lib/schwabStreamer.js";
+import { getSnapshot, type LiveQuote } from "../lib/schwabStreamer.js";
 import { getIBSnapshot, getIBCachedQuote, registerPermanentSymbols } from "../lib/ibStreamer.js";
 import { getBestAccessToken, getTokens } from "../lib/tokenStore.js";
 import { getSyntheticDxyPrevClose } from "../lib/syntheticDxy.js";
@@ -739,101 +739,6 @@ registerPermanentSymbols(
 function ensurePulseSubscriptions() {
 }
 
-const schwabRestCache = new Map<string, { data: Record<string, unknown>; ts: number }>();
-const SCHWAB_REST_STALE_MS = 30_000;
-
-function buildRestSymbolMaps() {
-  const forward: Record<string, string> = { "/DX": "$DXY" };
-  const reverse: Record<string, string> = { "$DXY": "/DX" };
-
-  const futuresNeedingKey = ["/BZ"];
-  for (const sym of futuresNeedingKey) {
-    const apiKey = schwabFuturesKey(sym);
-    forward[sym] = apiKey;
-    reverse[apiKey] = sym;
-  }
-
-  return { forward, reverse };
-}
-const REST_MAPS = buildRestSymbolMaps();
-
-const SCHWAB_REST_SYMBOLS = [
-  "$TICK", "$ADD", "$TRIN", "$ADVN", "$DECN", "$UVOL", "$DVOL",
-  "$TICKI", "$ADDQ", "$TRINQ", "$ADVNQ", "$DECNQ", "$UVOLQ", "$DVOLQ",
-  "$VIX", "$VVIX", "$VIX1D", "$VIX9D", "$VIX3M",
-  "$VXN", "$RVX", "$OVX", "$GVZ",
-  "$TNX", "$TYX", "$IRX",
-  "/DX", "/BZ",
-];
-
-const SCHWAB_API = "https://api.schwabapi.com/marketdata/v1";
-
-async function fetchSchwabRestQuotes(): Promise<void> {
-  const token = getBestAccessToken();
-  if (!token) { console.warn("Schwab REST: no token available, skipping"); return; }
-  const symbols = SCHWAB_REST_SYMBOLS.map(s => REST_MAPS.forward[s] ?? s).join(",");
-  console.log(`Schwab REST: fetching ${SCHWAB_REST_SYMBOLS.length} symbols, sample: ${symbols.slice(0, 120)}`);
-  try {
-    const resp = await fetch(`${SCHWAB_API}/quotes?symbols=${encodeURIComponent(symbols)}&fields=quote`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!resp.ok) {
-      const body = await resp.text().catch(() => "");
-      console.warn(`Schwab REST: non-OK response status=${resp.status} body=${body.slice(0, 200)}`);
-      return;
-    }
-    const json = await resp.json() as Record<string, unknown>;
-    const returnedKeys = Object.keys(json);
-    const wanted = ["$DXY"];
-    const found: string[] = [];
-    const missing: string[] = [];
-    for (const w of wanted) {
-      if (returnedKeys.includes(w)) found.push(w); else missing.push(w);
-    }
-    console.log(`Schwab REST: returned ${returnedKeys.length} symbols | found=[${found}] missing=[${missing}]`);
-    for (const [apiSym, entry] of Object.entries(json)) {
-      const q = (entry as Record<string, unknown>)["quote"] as Record<string, unknown> | undefined;
-      if (!q) continue;
-      const last = q["lastPrice"] as number | undefined ?? q["mark"] as number | undefined ?? null;
-      if (last === null) continue;
-      const displaySym = REST_MAPS.reverse[apiSym] ?? apiSym;
-      schwabRestCache.set(displaySym, {
-        data: {
-          lastPrice: last,
-          mark: last,
-          closePrice: q["closePrice"] ?? null,
-          close: q["closePrice"] ?? null,
-          netChange: q["netChange"] ?? null,
-          markChange: q["netChange"] ?? null,
-          netPercentChange: q["netPercentChangeInDouble"] ?? q["netPercentChange"] ?? null,
-          markPercentChange: q["netPercentChangeInDouble"] ?? q["netPercentChange"] ?? null,
-          highPrice: q["highPrice"] ?? null,
-          high: q["highPrice"] ?? null,
-          lowPrice: q["lowPrice"] ?? null,
-          low: q["lowPrice"] ?? null,
-          totalVolume: q["totalVolume"] ?? null,
-          volume: q["totalVolume"] ?? null,
-          bidPrice: q["bidPrice"] ?? null,
-          askPrice: q["askPrice"] ?? null,
-        },
-        ts: Date.now(),
-      });
-    }
-    console.log(`Schwab REST: cache updated, size=${schwabRestCache.size}`);
-  } catch (err) { console.warn("Schwab REST: fetch error", err); }
-}
-
-let schwabFallbackTimer: ReturnType<typeof setInterval> | null = null;
-function startSchwabFallbackPolling() {
-  if (schwabFallbackTimer) return;
-  setTimeout(() => {
-    fetchSchwabRestQuotes();
-  }, 5_000);
-  schwabFallbackTimer = setInterval(() => {
-    fetchSchwabRestQuotes();
-  }, 30_000);
-}
-startSchwabFallbackPolling();
 
 function readFromWebSocketCache(
   userSymbols?: string[]
@@ -871,15 +776,6 @@ function readFromWebSocketCache(
       ?? schwabCacheBySymbol.get(pair.api)
       ?? schwabCacheBySymbol.get(pair.display.replace(/^\$/, ''))
       ?? schwabCacheBySymbol.get(pair.api.replace(/^\$/, ''));
-
-    if (!q || q.last === null) {
-      const restEntry = schwabRestCache.get(pair.display) ?? schwabRestCache.get(pair.api);
-      if (restEntry && (Date.now() - restEntry.ts) < SCHWAB_REST_STALE_MS * 4) {
-        dataMap.set(pair.display, restEntry.data);
-        hitCount++;
-        continue;
-      }
-    }
 
     if (!q || q.last === null) {
       const aliases = CACHE_ALIASES[pair.display] ?? CACHE_ALIASES[pair.api] ?? [];
