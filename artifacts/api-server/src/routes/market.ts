@@ -16,6 +16,18 @@ const router: IRouter = Router();
 
 const SCHWAB_API_BASE = "https://api.schwabapi.com/marketdata/v1";
 
+const companyNameCache = new Map<string, string>();
+
+export function getCachedCompanyName(symbol: string): string | undefined {
+  return companyNameCache.get(symbol.toUpperCase());
+}
+
+function cacheCompanyName(symbol: string, name: string | undefined) {
+  if (name && name.length > 0) {
+    companyNameCache.set(symbol.toUpperCase(), name);
+  }
+}
+
 const INDEX_SYMBOL_MAP: Record<string, string> = {
   "VIX":   "$VIX",
   "$VIX":  "$VIX",
@@ -144,6 +156,39 @@ async function fetch52WBackground(displaySymbol: string, apiSymbol: string, acce
   }
 }
 
+const pendingNameFetches = new Set<string>();
+
+async function fetchCompanyNameBackground(displaySymbol: string, apiSymbol: string, accessToken: string, log: any) {
+  if (pendingNameFetches.has(displaySymbol)) return;
+  pendingNameFetches.add(displaySymbol);
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), 5000);
+  try {
+    const resp = await fetch(`${SCHWAB_API_BASE}/quotes?symbols=${encodeURIComponent(apiSymbol)}&fields=quote,reference`, {
+      headers: { "Authorization": `Bearer ${accessToken}` },
+      signal: ac.signal,
+    });
+    if (!resp.ok) return;
+    const json = await resp.json() as Record<string, any>;
+    const entry = json[apiSymbol] ?? json[displaySymbol] ?? Object.values(json)[0];
+    if (!entry) return;
+    const ref = entry.reference ?? entry;
+    const q = entry.quote ?? {};
+    const name =
+      ref?.description ?? ref?.companyName ??
+      entry?.description ?? entry?.companyName ??
+      q?.description ?? q?.companyName ?? undefined;
+    if (name) {
+      cacheCompanyName(displaySymbol, name);
+      log.info({ symbol: displaySymbol, name }, "Company name cached from background fetch");
+    }
+  } catch {
+  } finally {
+    clearTimeout(timer);
+    pendingNameFetches.delete(displaySymbol);
+  }
+}
+
 router.get("/quote", async (req, res) => {
   const symbol = req.query["symbol"] as string;
   const accessToken = (req.query["accessToken"] as string) || getAccessToken("market");
@@ -157,10 +202,15 @@ router.get("/quote", async (req, res) => {
 
   const schwabCached = getQuoteBySymbol(apiSymbol);
   if (schwabCached && schwabCached.last !== null) {
-    const cachedDesc = apiSymbol === "$DXY" ? "Dollar Index (Synthetic)" : undefined;
+    const cachedDesc = apiSymbol === "$DXY"
+      ? "Dollar Index (Synthetic)"
+      : companyNameCache.get(displaySymbol);
     const w52 = getCached52W(displaySymbol);
     if (w52.high === undefined && w52.low === undefined && accessToken) {
       void fetch52WBackground(displaySymbol, apiSymbol, accessToken, req.log);
+    }
+    if (!cachedDesc && accessToken) {
+      void fetchCompanyNameBackground(displaySymbol, apiSymbol, accessToken, req.log);
     }
     const data = GetQuoteResponse.parse({
       symbol: displaySymbol,
@@ -218,7 +268,6 @@ router.get("/quote", async (req, res) => {
     const fundamental = entry?.["fundamental"] as Record<string, unknown> | undefined;
     const reference = entry?.["reference"] as Record<string, unknown> | undefined;
 
-    // Company name — robust multi-key extraction with stdout diagnostic
     const description =
       (reference?.["description"] as string | undefined) ||
       (entry?.["description"] as string | undefined) ||
@@ -227,6 +276,8 @@ router.get("/quote", async (req, res) => {
       (entry?.["companyName"] as string | undefined) ||
       (quote?.["companyName"] as string | undefined) ||
       undefined;
+
+    cacheCompanyName(displaySymbol, description);
 
     if (!quote) {
       const data = GetQuoteResponse.parse({ symbol: displaySymbol, error: "no_data" });
