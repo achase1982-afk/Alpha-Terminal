@@ -1,0 +1,37 @@
+There are 6 issues I found during testing today. All need to be fixed. I am describing each one with what I saw and what the fix should be.
+
+ISSUE 1: SSE stream dies when user scrolls away from reasoning section
+
+When the Strategist generates a trade recommendation, the AI reasoning streams in via SSE. If I scroll down to look at the actual trade details while the reasoning is still streaming, the stream gets killed and an error appears. If I sit still and let the reasoning finish before scrolling, it works fine. The SSE stream lifecycle is tied to the reasoning card component. When I scroll and the component unmounts or re-renders, the connection aborts.
+
+Fix: Move the SSE stream lifecycle so it is tied to the Strategist page level, not the reasoning card component. The stream must complete in the background even if the user scrolls past the reasoning section. The reasoning result should populate into state when done regardless of scroll position.
+
+ISSUE 2: AI reasoning section takes up too much screen space
+
+The AI reasoning narrative takes up the majority of the screen while streaming and after completion. On mobile, this pushes the actual trade recommendation (the thing the user cares about) below the fold. Nobody needs to watch the reasoning stream in real time. The trade details are what matter.
+
+Fix: Default the AI reasoning section to collapsed. Show the trade recommendation card (strategy name, strikes, net debit/credit, max risk, max gain, breakeven, profit target, stop loss) as the primary visible content. Add a “View AI reasoning” expand/collapse toggle below the trade card. The reasoning streams and populates in the background whether the section is expanded or not. The user can open it anytime to read it. But it should not take up screen space by default.
+
+ISSUE 3: Raw JSON error displayed to user
+
+When the SSE stream fails (due to Issue 1 or any other API error), the UI displays the raw JSON error object directly in the Strategist card. It showed: Narrative failed: {“type”:“error”,“error”:…,“type”:“overloaded_error”,“message”:“Overloaded”}. Users should never see raw JSON.
+
+Fix: Catch all SSE stream failures and API errors in the Strategist. Display a clean user-facing message like “AI analysis unavailable. Tap to retry.” with a retry button. Never render raw error objects, JSON, or stack traces in the UI. This applies everywhere SSE or API responses are displayed, not just the Strategist.
+
+ISSUE 4: Strategist gives inconsistent results for the same ticker
+
+I ran the Strategist on CRDO three times within about 10 minutes. First time: “No actionable edge. Cash is a position.” Second time: Bull Call Spread 140/145 recommended with full trade details. Third time: error (Issue 3). The underlying data (price, IVR, regime) did not change meaningfully between runs. The deterministic pre-trade checks should produce the same output for the same inputs.
+
+Fix: Investigate why the Strategist is producing different outputs for the same ticker in a short window. Possible causes: (a) the deterministic checks are re-fetching live data each time and getting slightly different values that cross a threshold boundary, (b) the AI narrative layer is overriding or influencing the deterministic trade/no-trade decision, (c) there is randomness somewhere in the pipeline that should not be there. The deterministic layer must be deterministic. Same ticker plus same regime plus same IVR and price range should always produce the same trade-or-no-trade decision.
+
+ISSUE 5: Scanner surfaces tickers the Strategist rejects
+
+The Momentum scanner ranked GS as the number 2 result with a score of 79. When I tapped through to the Strategist, it said “No actionable edge.” If the Strategist is going to reject a ticker, the scanner should not surface it as a top result without some indication that no trade structure is available.
+
+Fix: After the scanner produces its ranked results, run a lightweight pre-check for each top result to determine if the Strategist can actually produce a trade. This does not need to be the full Strategist pipeline. Just check the conditions that would cause a “No actionable edge” result (IVR too low for premium selling, no defined-risk structure fits, earnings blocking, etc.). If a ticker would be rejected by the Strategist, either filter it out of scanner results or add a visible flag like “No structure available” so the user knows before tapping in. Do not send users into a dead end.
+
+ISSUE 6: Order ticket spread pricing is completely wrong
+
+The Strategist recommended a CRDO 140/145 Bull Call Spread at $2.30 net debit. When I tapped “Send to Order,” the order ticket showed $0.01 net debit with Bid 0.01, Mid 0.01, Ask 0.01. The individual legs show correct prices (140 Call at 5.50/6.20, 145 Call at 3.90/4.60), so the spread should price around $1.60 mid. But the ticket calculated $0.01. Max risk showed $160.00 which contradicts both the $0.01 debit ($1 risk) and the Strategist’s $230 figure. The RISK OVERVIEW also shows FAIL.
+
+Fix: The order ticket’s net spread price calculation is broken. It is not computing long leg price minus short leg price correctly. Check how the spread net debit/credit is being calculated when a multi-leg order is built from the Strategist recommendation. The individual leg prices are correct, so the bug is in the spread-level price aggregation. This is the most dangerous bug on this list because a user could submit an order at a nonsensical price.
