@@ -548,7 +548,6 @@ function centerStrikesAroundATM(
     const sorted = [...strikeSet].sort((a, b) => a - b);
     if (sorted.length <= desiredCount) {
       allowedStrikes.set(exp, strikeSet);
-      logger.debug({ exp, available: sorted.length, desired: desiredCount }, "centerStrikes: exp has fewer strikes than desired, keeping all");
       continue;
     }
 
@@ -578,7 +577,6 @@ function centerStrikesAroundATM(
 
     const kept = new Set(sorted.slice(lo, hi + 1));
     allowedStrikes.set(exp, kept);
-    logger.debug({ exp, atm: sorted[atmIdx], belowSpot, lo, hi, window: sorted.slice(lo, hi + 1), totalAvail: sorted.length }, "centerStrikes: window selected");
   }
 
   const filteredCalls = calls.filter(c => allowedStrikes.get(c.expiration)?.has(c.strike));
