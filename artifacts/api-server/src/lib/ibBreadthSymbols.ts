@@ -95,8 +95,8 @@ export const ALL_BREADTH_SYMBOLS: IBSymbolDef[] = [
   // ═══════════════════════════════════════════════════════════
   { reqId: 5050, symbol: "$CPC",    ibSymbol: "CPC",        secType: "IND", exchange: "CBOE",    displaySymbol: "$CPC",    category: "PUT_CALL", description: "CBOE Total Put/Call Ratio",              enabled: false },
   { reqId: 5051, symbol: "$CPCE",   ibSymbol: "CPCE",       secType: "IND", exchange: "CBOE",    displaySymbol: "$CPCE",   category: "PUT_CALL", description: "CBOE Equity Put/Call Ratio",             enabled: false },
-  { reqId: 5058, symbol: "$PCUSEQTR", ibSymbol: "PCUSEQTR", secType: "IND", exchange: "CBOE",    displaySymbol: "$PCUSEQTR", category: "PUT_CALL", description: "CBOE Equity Put/Call Ratio",           enabled: true },
-  { reqId: 5059, symbol: "$PCUSINXR", ibSymbol: "PCUSINXR", secType: "IND", exchange: "CBOE",    displaySymbol: "$PCUSINXR", category: "PUT_CALL", description: "CBOE Index Put/Call Ratio",            enabled: true },
+  { reqId: 5058, symbol: "$PCUSEQTR", ibSymbol: "PCUSEQTR", secType: "IND", exchange: "CBOE",    displaySymbol: "$PCUSEQTR", category: "PUT_CALL", description: "CBOE Equity Put/Call Ratio",           enabled: true, sourceField: "bid" },
+  { reqId: 5059, symbol: "$PCUSINXR", ibSymbol: "PCUSINXR", secType: "IND", exchange: "CBOE",    displaySymbol: "$PCUSINXR", category: "PUT_CALL", description: "CBOE Index Put/Call Ratio",            enabled: true, sourceField: "bid" },
 
   // ═══════════════════════════════════════════════════════════
   // ADDITIONAL EQUITY (not in scoring but useful for streaming)

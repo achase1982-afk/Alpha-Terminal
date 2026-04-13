@@ -957,15 +957,29 @@ export function isIBConnected(): boolean {
   return connState === "CONNECTED";
 }
 
+function resolveEffectiveLast(def: IBSymbolDef, state: IBQuoteState): number | null {
+  switch (def.sourceField) {
+    case "bid":
+      return state.bid;
+    case "ask":
+      return state.ask;
+    case "net_bid_ask":
+      return (state.bid !== null && state.ask !== null) ? state.bid - state.ask : null;
+    default:
+      return state.last;
+  }
+}
+
 export function getIBSnapshot(): LiveQuote[] {
   const out: LiveQuote[] = [];
   for (const def of BREADTH_SYMBOLS) {
     const state = ibQuoteCache.get(def.displaySymbol);
     if (state) {
+      const effectiveLast = resolveEffectiveLast(def, state);
       out.push({
         symbol: def.displaySymbol,
-        last: state.last,
-        extendedLast: state.last,
+        last: effectiveLast,
+        extendedLast: effectiveLast,
         bid: state.bid,
         ask: state.ask,
         bidSize: state.bidSize,
@@ -1117,12 +1131,14 @@ export function unsubscribeDepthForSymbol(symbol: string): void {
 }
 
 export function getIBCachedQuote(symbol: string): LiveQuote | null {
-  const state = ibQuoteCache.get(symbol.toUpperCase());
+  const sym = symbol.toUpperCase();
+  const state = ibQuoteCache.get(sym);
   if (!state) return null;
-  const effectiveLast = state.last ?? state.bid ?? state.ask ?? null;
-  if (effectiveLast === null && state.close === null) return null;
+  const def = BREADTH_SYMBOLS.find(d => d.displaySymbol === sym);
+  const effectiveLast = def ? resolveEffectiveLast(def, state) : state.last;
+  if (effectiveLast === null) return null;
   return {
-    symbol: symbol.toUpperCase(),
+    symbol: sym,
     last: effectiveLast,
     extendedLast: effectiveLast,
     bid: state.bid,

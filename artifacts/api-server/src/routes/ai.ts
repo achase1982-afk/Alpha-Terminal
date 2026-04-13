@@ -697,6 +697,8 @@ const PULSE_SYMBOLS: PulseSymbol[] = [
   { display: "/DX",     api: "/DX",     category: "currency",  description: "US Dollar Index Futures" },
   { display: "/6E",     api: "/6E",     category: "currency",  description: "Euro FX Futures" },
   { display: "/6J",     api: "/6J",     category: "currency",  description: "Japanese Yen Futures — risk-off proxy" },
+
+  { display: "$DXY",    api: "$DXY",    category: "currency",  description: "US Dollar Index (synthetic from /6E)" },
 ];
 
 // Maps user-facing symbols to Schwab API format (adds $ prefix for known indices)
