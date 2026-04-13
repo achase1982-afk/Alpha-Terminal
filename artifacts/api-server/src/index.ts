@@ -71,8 +71,11 @@ async function boot() {
 
   setTokenRefreshCallback((kind, _accessToken) => {
     if (kind === "trader" || kind === "market") {
+      addFuturesSymbols([...SCHWAB_FUTURES_SYMS, ...SCHWAB_FUTURES_INDEX_SYMS]);
+      if (SCHWAB_EQUITY_SYMS.length > 0) addSchwabSymbols(SCHWAB_EQUITY_SYMS);
       schwabTokenRefreshed();
       initSyntheticDxy();
+      triggerLiquidCoreBackfill();
     }
   });
 
@@ -92,6 +95,7 @@ async function boot() {
   const SCHWAB_FUTURES_INDEX_SYMS: string[] = [];
 
   const SCHWAB_EQUITY_SYMS = [
+    "SPY", "QQQ", "IWM",
     "$VIX", "$VVIX", "$VIX1D", "$VIX9D", "$VIX3M",
     "$SPX", "$NDX", "$RUT", "$DJI", "$SOX",
     "$TNX", "$TYX", "$IRX",

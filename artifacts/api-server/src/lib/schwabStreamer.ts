@@ -913,8 +913,8 @@ export function addFuturesOptionSymbols(symbols: string[]) {
 }
 
 export function onTokenRefreshed() {
-  if (connectionState === "disconnected" && subscribedSymbols.size > 0) {
-    logger.info("Schwab streamer: token refreshed — attempting connection");
+  if (connectionState === "disconnected" && (subscribedSymbols.size > 0 || subscribedFuturesSymbols.size > 0)) {
+    logger.info({ equityCount: subscribedSymbols.size, futuresCount: subscribedFuturesSymbols.size }, "Schwab streamer: token refreshed — attempting connection");
     void connectSchwabStreamer();
   }
 }

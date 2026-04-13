@@ -15,7 +15,7 @@ import {
 } from "@workspace/api-zod";
 import { computeIndicators, formatTAContext, isDataStale, type Candle } from "../lib/ta.js";
 import { runMarketPulseEngine, formatClusterDebugLine, verifyEngineScoring, type MarketIndicators, type BiasLabel, type SessionType } from "../lib/marketPulseEngine.js";
-import { getSnapshot, type LiveQuote } from "../lib/schwabStreamer.js";
+import { getSnapshot, addSymbols as addSchwabSymbols, addFuturesSymbols as addSchwabFuturesSymbols, type LiveQuote } from "../lib/schwabStreamer.js";
 import { getIBSnapshot, getIBCachedQuote, registerPermanentSymbols } from "../lib/ibStreamer.js";
 import { getBestAccessToken, getTokens } from "../lib/tokenStore.js";
 import { getSyntheticDxyPrevClose } from "../lib/syntheticDxy.js";
@@ -737,7 +737,20 @@ registerPermanentSymbols(
 );
 
 function ensurePulseSubscriptions() {
+  const equitySyms: string[] = [];
+  const futuresSyms: string[] = [];
+  for (const s of PULSE_SYMBOLS) {
+    if (s.category === "breadth" || (s.category === "vol" && s.display.startsWith("$"))) continue;
+    if (s.display.startsWith("/")) {
+      futuresSyms.push(s.display);
+    } else {
+      equitySyms.push(s.api);
+    }
+  }
+  if (equitySyms.length > 0) addSchwabSymbols(equitySyms);
+  if (futuresSyms.length > 0) addSchwabFuturesSymbols(futuresSyms);
 }
+ensurePulseSubscriptions();
 
 
 function readFromWebSocketCache(
