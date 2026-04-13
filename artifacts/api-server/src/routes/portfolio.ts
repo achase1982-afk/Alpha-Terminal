@@ -89,6 +89,8 @@ router.get("/accounts", async (_req, res) => {
           settledLongQuantity: p.settledLongQuantity ?? 0,
           settledShortQuantity: p.settledShortQuantity ?? 0,
           previousSessionLongQuantity: p.previousSessionLongQuantity ?? 0,
+          closePrice: p.closePrice ?? null,
+          currentDayCost: p.currentDayCost ?? null,
         };
       });
 

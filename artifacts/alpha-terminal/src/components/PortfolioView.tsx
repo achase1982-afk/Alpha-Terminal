@@ -43,7 +43,7 @@ type SubTab = "positions" | "orders" | "balance" | "journal";
 type OrderFilter = "ALL" | "WORKING" | "FILLED" | "CANCELED" | "REJECTED";
 type MetricKey = "plOpen" | "buyingPower" | "margin" | "availableFunds" | "cashBalance" | "posEquity";
 type ColumnKey =
-  | "mark" | "cost" | "qty" | "mktVal" | "plOpen" | "plPct" | "plDay" | "maint"
+  | "mark" | "last" | "cost" | "qty" | "mktVal" | "plOpen" | "plPct" | "plDay" | "maint"
   | "netLiq" | "markPctChg" | "markChg" | "plYtd" | "tradePrice" | "margin"
   | "delta" | "extrinsic" | "totalCost" | "todayClose" | "yesterdayClose"
   | "expiration" | "bwSpx" | "bwSpy" | "instrumentType" | "bpEffect" | "bwNdx";
@@ -61,6 +61,7 @@ const METRICS_STORAGE_KEY = "alpha_visible_metrics";
 
 const ALL_COLUMNS: { key: ColumnKey; label: string; desc: string }[] = [
   { key: "mark",           label: "Mark",           desc: "Current price per share / contract" },
+  { key: "last",           label: "Last",           desc: "Last traded price" },
   { key: "plPct",          label: "P/L %",          desc: "Unrealized P/L as a percentage" },
   { key: "plDay",          label: "P/L Day",        desc: "Today's P/L in dollars" },
   { key: "plOpen",         label: "P/L Open",       desc: "Unrealized P/L in dollars" },
@@ -87,7 +88,7 @@ const ALL_COLUMNS: { key: ColumnKey; label: string; desc: string }[] = [
   { key: "bwNdx",          label: "\u03B2 Wt NDX",  desc: "Beta-weighted delta vs NDX" },
 ];
 const COLUMN_MAP = new Map(ALL_COLUMNS.map(c => [c.key, c]));
-const DEFAULT_COLUMNS: ColumnKey[] = ["mark", "plPct", "plDay", "plOpen", "netLiq", "markPctChg", "markChg"];
+const DEFAULT_COLUMNS: ColumnKey[] = ["mark", "last", "plPct", "plDay", "plOpen", "netLiq", "markPctChg", "markChg"];
 const COLUMNS_STORAGE_KEY = "alpha_visible_columns_v2";
 
 interface CellVal { text: string; color: string; bold?: boolean }
@@ -99,6 +100,10 @@ function getEquityCellVal(col: ColumnKey, pos: Position): CellVal {
   const markPx = qty > 0 ? pos.marketValue / qty : null;
   switch (col) {
     case "mark": return { text: markPx != null ? `$${markPx.toFixed(2)}` : "\u2014", color: C.text };
+    case "last": {
+      if (pos.closePrice != null) return { text: `$${pos.closePrice.toFixed(2)}`, color: C.text };
+      return markPx != null ? { text: `$${markPx.toFixed(2)}`, color: C.text } : DASH;
+    }
     case "cost": return { text: `$${pos.averagePrice.toFixed(2)}`, color: C.textDim };
     case "tradePrice": return { text: `$${pos.averagePrice.toFixed(2)}`, color: C.textDim };
     case "qty": return { text: fmtQty(pos.longQuantity, pos.shortQuantity), color: C.textDim };
@@ -153,6 +158,10 @@ function getOptionCellVal(col: ColumnKey, opt: Position): CellVal {
   const plPct = opt.averagePrice > 0 && qty > 0 ? (totalPL / (opt.averagePrice * qty * 100)) * 100 : 0;
   switch (col) {
     case "mark": return { text: `$${markPx.toFixed(2)}`, color: C.text };
+    case "last": {
+      if (opt.closePrice != null) return { text: `$${opt.closePrice.toFixed(2)}`, color: C.text };
+      return { text: `$${markPx.toFixed(2)}`, color: C.text };
+    }
     case "cost": return { text: `$${opt.averagePrice.toFixed(2)}`, color: C.textDim };
     case "tradePrice": return { text: `$${opt.averagePrice.toFixed(2)}`, color: C.textDim };
     case "qty": return { text: isShort ? `-${qty}` : `+${qty}`, color: C.text };
@@ -230,6 +239,8 @@ interface Position {
   settledLongQuantity: number;
   settledShortQuantity: number;
   previousSessionLongQuantity: number;
+  closePrice: number | null;
+  currentDayCost: number | null;
 }
 
 interface Balances {
@@ -598,6 +609,7 @@ function SpreadSummaryRow({
   const getVal = (col: ColumnKey): CellVal => {
     switch (col) {
       case "mark": return { text: `$${Math.abs(spreadMark).toFixed(2)}`, color: C.text };
+      case "last": return { text: `$${Math.abs(spreadMark).toFixed(2)}`, color: C.text };
       case "mktVal": case "netLiq": return { text: fmtCompact(spreadMktVal), color: C.text };
       case "plOpen": return { text: fmtCurrency(spreadPL), color: plColor(spreadPL), bold: true };
       case "plPct": return { text: fmtPct(spreadPLPct), color: plColor(spreadPL) };
@@ -675,6 +687,13 @@ function PositionTableRow({
         if (eq) { const eqQty = eq.longQuantity || eq.shortQuantity; if (eqQty > 0) markPx = eq.marketValue / eqQty; }
         if (markPx == null && streamPrice != null) markPx = streamPrice;
         return { text: markPx != null ? `$${markPx.toFixed(2)}` : "\u2014", color: markPx != null ? markColor : C.dim };
+      }
+      case "last": {
+        if (eq?.closePrice != null) return { text: `$${eq.closePrice.toFixed(2)}`, color: C.text };
+        let markPx: number | null = null;
+        if (eq) { const eqQty = eq.longQuantity || eq.shortQuantity; if (eqQty > 0) markPx = eq.marketValue / eqQty; }
+        if (markPx == null && streamPrice != null) markPx = streamPrice;
+        return markPx != null ? { text: `$${markPx.toFixed(2)}`, color: C.text } : DASH;
       }
       case "cost": case "tradePrice": {
         if (eq) return { text: `$${eq.averagePrice.toFixed(2)}`, color: C.textDim };
