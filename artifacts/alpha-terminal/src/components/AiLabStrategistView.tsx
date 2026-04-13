@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import {
-  TrendingUp, TrendingDown, Clock, Shield, ChevronDown, ChevronUp, Beaker, XCircle,
+  TrendingUp, TrendingDown, Clock, Shield, ChevronDown, ChevronUp, Beaker, XCircle, RefreshCw,
 } from "lucide-react";
 
 const API_BASE = "/api";
@@ -614,9 +614,19 @@ export function AiLabStrategistView() {
             </button>
           ))}
         </div>
-        {loading && (
-          <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-        )}
+        <button
+          onClick={() => fetchData(filter)}
+          disabled={loading}
+          className="p-1 rounded transition-colors cursor-pointer"
+          style={{
+            background: "transparent",
+            border: "1px solid #2A2A2C",
+            color: loading ? "#52525b" : "#71717a",
+          }}
+          title="Refresh"
+        >
+          <RefreshCw className={`w-3 h-3${loading ? " animate-spin" : ""}`} />
+        </button>
       </div>
 
       {!hasItems && !loading && (
