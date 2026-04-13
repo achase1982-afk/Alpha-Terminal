@@ -304,7 +304,7 @@ function WatchlistSettingsPanel({
       >
         <div style={{ padding: "14px 16px 12px", borderBottom: "1px solid #2A2A2C", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
           <span style={{ fontSize: 16, fontWeight: 600, color: "#fff" }}>Watchlist Settings</span>
-          <button onClick={onClose} style={{ fontSize: 15, fontWeight: 600, color: "#FFB800", background: "transparent", border: "none", cursor: "pointer", padding: "4px 8px" }}>Done</button>
+          <button onClick={onClose} style={{ fontSize: 15, fontWeight: 600, color: "#FFB800", background: "transparent", border: "none", cursor: "pointer", padding: "4px 8px" }}>Close</button>
         </div>
 
         <div style={{ padding: "12px 16px 6px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>

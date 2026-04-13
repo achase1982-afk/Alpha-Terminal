@@ -1011,7 +1011,7 @@ function ColumnSettingsPanel({
             <span style={{ fontSize: 16, fontWeight: 600, color: C.text }}>Position Settings</span>
             <span style={{ fontSize: 11, color: C.dim }}>Brokerage</span>
           </div>
-          <button onClick={onClose} style={{ fontSize: 15, fontWeight: 600, color: C.gold, background: "transparent", border: "none", cursor: "pointer", fontFamily: f, padding: "4px 8px" }}>Done</button>
+          <button onClick={onClose} style={{ fontSize: 15, fontWeight: 600, color: C.gold, background: "transparent", border: "none", cursor: "pointer", fontFamily: f, padding: "4px 8px" }}>Close</button>
         </div>
 
         <div style={{ padding: "12px 16px 6px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
