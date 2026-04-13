@@ -1019,10 +1019,21 @@ const SCHEDULE: ScheduledJob[] = [
   { passName: "POST_MARKET_REFLECTION", etHour: 16, etMinute: 15, handler: postMarketReflection },
 ];
 
+function getEtOffsetHours(): number {
+  const jan = new Date(new Date().getFullYear(), 0, 1);
+  const jul = new Date(new Date().getFullYear(), 6, 1);
+  const stdOffset = Math.max(jan.getTimezoneOffset(), jul.getTimezoneOffset());
+  const nowStr = new Date().toLocaleString("en-US", { timeZone: "America/New_York" });
+  const etNow = new Date(nowStr);
+  const utcNow = new Date();
+  const diffHours = Math.round((etNow.getTime() - utcNow.getTime()) / 3_600_000);
+  return diffHours || (stdOffset === 300 ? -5 : -5);
+}
+
 function getNextRunMs(etHour: number, etMinute: number): number {
   const now = new Date();
   const target = new Date(now);
-  const utcHour = etHour - ORCHESTRATOR_CONFIG.ET_OFFSET_HOURS;
+  const utcHour = etHour - getEtOffsetHours();
   target.setUTCHours(utcHour, etMinute, 0, 0);
 
   if (target.getTime() <= now.getTime()) {
@@ -1030,6 +1041,15 @@ function getNextRunMs(etHour: number, etMinute: number): number {
   }
 
   return target.getTime() - now.getTime();
+}
+
+function wasMissedToday(etHour: number, etMinute: number): boolean {
+  const now = new Date();
+  const target = new Date(now);
+  const utcHour = etHour - getEtOffsetHours();
+  target.setUTCHours(utcHour, etMinute, 0, 0);
+  const missedMs = now.getTime() - target.getTime();
+  return missedMs > 0 && missedMs < 12 * 3_600_000;
 }
 
 function scheduleJob(job: ScheduledJob): void {
@@ -1066,10 +1086,32 @@ export function initAiLabOrchestrator(): void {
   orchestratorInitialized = true;
 
   logger.info("AI Lab Orchestrator: initializing scheduled passes");
+
+  const missedJobs: ScheduledJob[] = [];
   for (const job of SCHEDULE) {
     scheduleJob(job);
+    if (wasMissedToday(job.etHour, job.etMinute)) {
+      missedJobs.push(job);
+    }
   }
   logger.info(`AI Lab Orchestrator: ${SCHEDULE.length} passes scheduled`);
+
+  if (missedJobs.length > 0) {
+    logger.info({
+      missed: missedJobs.map(j => j.passName),
+    }, `AI Lab Orchestrator: ${missedJobs.length} passes missed today — catching up`);
+
+    let delay = 5_000;
+    for (const job of missedJobs) {
+      setTimeout(() => {
+        logger.info({ passName: job.passName }, `AI Lab: running missed pass ${job.passName}`);
+        void job.handler().catch((err) => {
+          logger.error({ err, passName: job.passName }, `AI Lab: missed ${job.passName} failed`);
+        });
+      }, delay);
+      delay += 15_000;
+    }
+  }
 }
 
 export {
