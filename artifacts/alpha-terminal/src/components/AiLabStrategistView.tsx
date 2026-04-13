@@ -119,9 +119,9 @@ function AnalystReport({
         style={{ background: "#0d0d0f" }}
       >
         <div className="flex items-center gap-2">
-          <span className="font-mono text-[10px] text-zinc-400 uppercase tracking-widest">Analyst Report</span>
+          <span className="font-mono text-[11px] text-zinc-400 uppercase tracking-widest">Analyst Report</span>
           {conversationLog && conversationLog.totalRounds > 1 && (
-            <span className="font-mono text-[9px] px-1.5 py-0.5 rounded" style={{ color: "#c084fc", background: "#c084fc15" }}>
+            <span className="font-mono text-[10px] px-1.5 py-0.5 rounded" style={{ color: "#f97316", background: "#f9731615" }}>
               {conversationLog.totalRounds} rounds
             </span>
           )}
@@ -133,7 +133,7 @@ function AnalystReport({
         <div className="px-3 pb-3 space-y-3" style={{ background: "#0d0d0f" }}>
           {primaryProposal ? (
             <div className="space-y-2 pt-2">
-              <span className="font-mono text-[9px] font-bold text-zinc-300 uppercase tracking-widest">
+              <span className="font-mono text-[10px] font-bold text-zinc-300 uppercase tracking-widest">
                 {hasMultiRound ? "Round 1 — " : ""}Analyst {analystModelName ? <span className="text-zinc-500 normal-case">({analystModelName})</span> : ""}
               </span>
               <ReportRow label="Thesis" value={primaryProposal.thesis} />
@@ -142,7 +142,7 @@ function AnalystReport({
             </div>
           ) : analystNote ? (
             <div className="space-y-2 pt-2">
-              <span className="font-mono text-[9px] font-bold text-zinc-300 uppercase tracking-widest">
+              <span className="font-mono text-[10px] font-bold text-zinc-300 uppercase tracking-widest">
                 Analyst {analystModelName ? <span className="text-zinc-500 normal-case">({analystModelName})</span> : ""}
               </span>
               <ReportRow label="Analysis" value={analystNote} />
@@ -152,20 +152,20 @@ function AnalystReport({
           {skepticCritique ? (
             <div className="space-y-2 pt-1">
               <div className="h-px bg-zinc-800" />
-              <span className="font-mono text-[9px] font-bold uppercase tracking-widest" style={{ color: "#c084fc" }}>
+              <span className="font-mono text-[10px] font-bold uppercase tracking-widest" style={{ color: "#f97316" }}>
                 {hasMultiRound ? "Round 1 — " : ""}Skeptic {criticModelName ? <span className="text-zinc-500 normal-case">({criticModelName})</span> : ""}
               </span>
-              <ReportRow label="Objections" value={skepticCritique.objections} color="#c084fc" />
+              <ReportRow label="Objections" value={skepticCritique.objections} color="#f97316" />
               <ReportRow label="Evidence" value={skepticCritique.evidence} />
               <ReportRow label="Suggested Changes" value={skepticCritique.suggestedChanges} color="#FFB800" />
             </div>
           ) : criticNote ? (
             <div className="space-y-2 pt-1">
               <div className="h-px bg-zinc-800" />
-              <span className="font-mono text-[9px] font-bold uppercase tracking-widest" style={{ color: "#c084fc" }}>
+              <span className="font-mono text-[10px] font-bold uppercase tracking-widest" style={{ color: "#f97316" }}>
                 Skeptic {criticModelName ? <span className="text-zinc-500 normal-case">({criticModelName})</span> : ""}
               </span>
-              <ReportRow label="Critique" value={criticNote} color="#c084fc" />
+              <ReportRow label="Critique" value={criticNote} color="#f97316" />
             </div>
           ) : null}
 
@@ -174,7 +174,7 @@ function AnalystReport({
               <div className="h-px bg-zinc-800" />
               {turn.role === "analyst" ? (
                 <>
-                  <span className="font-mono text-[9px] font-bold text-zinc-300 uppercase tracking-widest">
+                  <span className="font-mono text-[10px] font-bold text-zinc-300 uppercase tracking-widest">
                     Round {turn.round} — Analyst Rebuttal
                   </span>
                   {turn.content.concessions && (
@@ -190,19 +190,19 @@ function AnalystReport({
                     <ReportRow label="Revised Structure" value={String(turn.content.structure)} />
                   )}
                   {turn.content.agreesWithSkeptic && (
-                    <p className="font-mono text-[11px] leading-relaxed" style={{ color: "#FFB800" }}>Analyst conceded to skeptic's position</p>
+                    <p className="font-mono text-[12px] leading-relaxed" style={{ color: "#FFB800" }}>Analyst conceded to skeptic's position</p>
                   )}
                 </>
               ) : (
                 <>
-                  <span className="font-mono text-[9px] font-bold uppercase tracking-widest" style={{ color: "#c084fc" }}>
+                  <span className="font-mono text-[10px] font-bold uppercase tracking-widest" style={{ color: "#f97316" }}>
                     Round {turn.round} — Skeptic Re-evaluation
                     {turn.content.critiqueScore != null && (
                       <span className="text-zinc-500 normal-case"> (score: {String(turn.content.critiqueScore)})</span>
                     )}
                   </span>
                   {turn.content.objections && (
-                    <ReportRow label="Objections" value={String(turn.content.objections)} color="#c084fc" />
+                    <ReportRow label="Objections" value={String(turn.content.objections)} color="#f97316" />
                   )}
                   {turn.content.remainingConcerns && (
                     <ReportRow label="Remaining Concerns" value={String(turn.content.remainingConcerns)} />
@@ -211,7 +211,7 @@ function AnalystReport({
                     <ReportRow label="Further Changes" value={String(turn.content.suggestedChanges)} color="#FFB800" />
                   )}
                   {turn.content.satisfiedWithChanges && (
-                    <p className="font-mono text-[11px] leading-relaxed" style={{ color: "#2ecc71" }}>Skeptic satisfied with changes</p>
+                    <p className="font-mono text-[12px] leading-relaxed" style={{ color: "#2ecc71" }}>Skeptic satisfied with changes</p>
                   )}
                 </>
               )}
@@ -221,18 +221,18 @@ function AnalystReport({
           {conversationLog?.consensusSummary && (
             <div className="space-y-1 pt-1">
               <div className="h-px bg-zinc-800" />
-              <span className="font-mono text-[9px] font-bold text-zinc-300 uppercase tracking-widest">Consensus</span>
-              <p className="font-mono text-[11px] text-zinc-200 leading-relaxed">{conversationLog.consensusSummary}</p>
+              <span className="font-mono text-[10px] font-bold text-zinc-300 uppercase tracking-widest">Consensus</span>
+              <p className="font-mono text-[12px] text-zinc-200 leading-relaxed">{conversationLog.consensusSummary}</p>
             </div>
           )}
 
           {finalDecision && (
             <div className="space-y-2 pt-1">
               <div className="h-px bg-zinc-800" />
-              <span className="font-mono text-[9px] font-bold text-zinc-300 uppercase tracking-widest">Final Decision</span>
+              <span className="font-mono text-[10px] font-bold text-zinc-300 uppercase tracking-widest">Final Decision</span>
               <div className="flex items-center gap-2">
                 <span
-                  className="font-mono text-[10px] font-bold px-2 py-0.5 rounded"
+                  className="font-mono text-[11px] font-bold px-2 py-0.5 rounded"
                   style={{
                     color: DECISION_COLORS[finalDecision.decision] ?? "#71717a",
                     background: `${DECISION_COLORS[finalDecision.decision] ?? "#71717a"}15`,
@@ -241,11 +241,11 @@ function AnalystReport({
                   {finalDecision.decision}
                 </span>
                 {finalDecision.finalStructure && (
-                  <span className="font-mono text-[10px] text-zinc-400">{finalDecision.finalStructure}</span>
+                  <span className="font-mono text-[11px] text-zinc-400">{finalDecision.finalStructure}</span>
                 )}
               </div>
               {finalDecision.resolutionRationale && (
-                <p className="font-mono text-[11px] text-zinc-200 leading-relaxed">{finalDecision.resolutionRationale}</p>
+                <p className="font-mono text-[12px] text-zinc-200 leading-relaxed">{finalDecision.resolutionRationale}</p>
               )}
             </div>
           )}
@@ -258,8 +258,8 @@ function AnalystReport({
 function ReportRow({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
     <div className="space-y-0.5">
-      <span className="font-mono text-[9px] text-zinc-500 uppercase tracking-widest">{label}</span>
-      <p className="font-mono text-[11px] leading-relaxed" style={{ color: color ?? "#e4e4e7" }}>{value}</p>
+      <span className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest">{label}</span>
+      <p className="font-mono text-[12px] leading-relaxed" style={{ color: color ?? "#e4e4e7" }}>{value}</p>
     </div>
   );
 }
