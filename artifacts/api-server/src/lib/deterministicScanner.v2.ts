@@ -78,35 +78,45 @@ const SECTOR_MAP: Record<string, string> = {
 function getSector(sym: string): string { return SECTOR_MAP[sym.toUpperCase()] ?? "Other"; }
 function getSectorEtf(sym: string): string { return SECTOR_TO_ETF[getSector(sym)] ?? "SPY"; }
 
-// ─── IVR rolling history cache (persists across scan runs) ─────────────────
-const ivrHistory = new Map<string, Array<{ ts: number; ivr: number }>>();
-const IVR_HISTORY_MAX_AGE = 30 * 86_400_000; // 30 days
+async function fetchIvrFromDB(symbols: string[]): Promise<{ currentIvr: Map<string, number>; ivrNdAgo: Map<string, number> }> {
+  const currentIvr = new Map<string, number>();
+  const ivrNdAgo = new Map<string, number>();
+  if (symbols.length === 0) return { currentIvr, ivrNdAgo };
 
-function recordIvr(sym: string, ivr: number) {
-  const now = Date.now();
-  if (!ivrHistory.has(sym)) ivrHistory.set(sym, []);
-  const hist = ivrHistory.get(sym)!;
-  hist.push({ ts: now, ivr });
-  // trim old entries
-  const cutoff = now - IVR_HISTORY_MAX_AGE;
-  ivrHistory.set(sym, hist.filter(e => e.ts > cutoff));
-}
+  const upperSymbols = symbols.map(s => s.toUpperCase());
 
-function getIvrNdaysAgo(sym: string, n: number): number | null {
-  const hist = ivrHistory.get(sym);
-  if (!hist || hist.length === 0) return null;
-  const targetMs = n * 24 * 60 * 60 * 1000;
-  const now = Date.now();
-  // Find entry closest to n days ago (within 4-8 days range)
-  const minAge = (n - 2) * 86_400_000;
-  const maxAge = (n + 3) * 86_400_000;
-  const candidates = hist.filter(e => {
-    const age = now - e.ts;
-    return age >= minAge && age <= maxAge;
-  });
-  if (candidates.length === 0) return null;
-  candidates.sort((a, b) => Math.abs((now - a.ts) - targetMs) - Math.abs((now - b.ts) - targetMs));
-  return candidates[0].ivr;
+  const rows = await db
+    .select({
+      symbol: equityDailyTable.symbol,
+      date: equityDailyTable.date,
+      ivr: equityDailyTable.ivr,
+    })
+    .from(equityDailyTable)
+    .where(and(
+      inArray(equityDailyTable.symbol, upperSymbols),
+      sql`${equityDailyTable.ivr} IS NOT NULL`,
+    ))
+    .orderBy(equityDailyTable.symbol, desc(equityDailyTable.date));
+
+  const bySymbol = new Map<string, Array<{ date: string; ivr: number }>>();
+  for (const row of rows) {
+    if (row.ivr == null || isNaN(row.ivr)) continue;
+    const key = row.symbol.toUpperCase();
+    if (!bySymbol.has(key)) bySymbol.set(key, []);
+    bySymbol.get(key)!.push({ date: row.date, ivr: row.ivr });
+  }
+
+  for (const [sym, entries] of bySymbol) {
+    if (entries.length > 0) currentIvr.set(sym, entries[0].ivr);
+    const lookback = CFG.ivrLookbackDays;
+    if (entries.length > lookback) {
+      ivrNdAgo.set(sym, entries[lookback].ivr);
+    } else if (entries.length >= 3) {
+      ivrNdAgo.set(sym, entries[entries.length - 1].ivr);
+    }
+  }
+
+  return { currentIvr, ivrNdAgo };
 }
 
 // ─── Math utilities ────────────────────────────────────────────────────────
@@ -844,12 +854,13 @@ export async function runDiscoveryScan(
   const allSymbolsForDB = [...new Set([...passedSymbols, ...neededEtfs])];
 
   emitTelemetry("DATABASE", "INFO", `Scanner: loading equity history for ${allSymbolsForDB.length} symbols from DB`, { symbols: allSymbolsForDB.length }, "SCANNER", scanBatch);
-  const [equityHistoryMap, flowDataMap] = await Promise.all([
+  const [equityHistoryMap, flowDataMap, dbIvr] = await Promise.all([
     fetchEquityHistoryFromDB(allSymbolsForDB),
     fetchFlowDataFromDB(passedSymbols),
+    fetchIvrFromDB(passedSymbols),
   ]);
-  emitTelemetry("DATABASE", "INFO", `Scanner: loaded ${equityHistoryMap.size} equity histories, ${flowDataMap.size} flow records from DB`, {
-    equitySymbols: equityHistoryMap.size, flowSymbols: flowDataMap.size,
+  emitTelemetry("DATABASE", "INFO", `Scanner: loaded ${equityHistoryMap.size} equity histories, ${flowDataMap.size} flow records, ${dbIvr.currentIvr.size} IVR values from DB`, {
+    equitySymbols: equityHistoryMap.size, flowSymbols: flowDataMap.size, ivrSymbols: dbIvr.currentIvr.size,
   }, "SCANNER", scanBatch);
 
   const etfHistories = new Map<string, Candle[]>();
@@ -924,33 +935,13 @@ export async function runDiscoveryScan(
       const accumulation = s2a + s2b + s2c;
 
       // ── Category 3 ──
-      // Build contract list for IVR from Polygon data (or compute simple IVR)
-      // IV30d from Polygon snapshot (ATM, 20-40 DTE)
       const iv30d: number | null = polyData?.iv30d ?? null;
 
-      // IVR: percentile rank of today's IV30d in the historical cache
-      // Build it up over time as scans run — first run defaults to 50 (neutral)
-      let ivr = 50;
-      if (iv30d != null) {
-        const ivHist = ivrHistory.get(`${sym}:iv30d`);
-        if (ivHist && ivHist.length >= 5) {
-          const values = ivHist.map(e => e.ivr);
-          const minV = Math.min(...values);
-          const maxV = Math.max(...values);
-          ivr = maxV > minV ? Math.round(((iv30d - minV) / (maxV - minV)) * 100) : 50;
-        }
-        // Record iv30d as the IVR time series
-        recordIvr(`${sym}:iv30d`, iv30d);
-      } else {
-        // Fall back to previously cached IVR
-        const cached = ivrHistory.get(`${sym}:iv30d`);
-        ivr = cached ? (cached.slice(-1)[0]?.ivr ?? 50) : 50;
-      }
+      const symUpper = sym.toUpperCase();
+      let ivr = dbIvr.currentIvr.get(symUpper) ?? 50;
       ivr = Math.max(0, Math.min(100, ivr));
 
-      const ivr5dAgo = getIvrNdaysAgo(`${sym}:ivr_pct`, CFG.ivrLookbackDays);
-      // Store today's computed IVR percentile for 5-day change tracking
-      if (iv30d != null) recordIvr(`${sym}:ivr_pct`, ivr);
+      const ivr5dAgo = dbIvr.ivrNdAgo.get(symUpper) ?? null;
 
       const s3a = score3A(ivr);
       const s3b = score3B(ivr, ivr5dAgo, earningsWithin14d);
