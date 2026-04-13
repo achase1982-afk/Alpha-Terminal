@@ -131,7 +131,7 @@ export function AiBiasStrip({ onNavigateToPulse }: AiBiasStripProps) {
         )}
       </div>
 
-      <div className="flex items-center gap-1 mx-4">
+      <div className="flex items-center gap-1 mx-2">
         {[0, 1, 2].map((i) => (
           <div
             key={i}
