@@ -56,8 +56,13 @@ const QUARTERLY_ROOTS = new Set([
 
 const EARLY_ROLL_ROOTS = new Set<string>(["BZ"]);
 
+const FUTURES_ROOT_ALIAS: Record<string, string> = {
+  "VIX": "VX",
+};
+
 export function schwabFuturesKey(displaySymbol: string): string {
-  const bare = displaySymbol.replace(/^\//, "");
+  const rawBare = displaySymbol.replace(/^\//, "");
+  const bare = FUTURES_ROOT_ALIAS[rawBare] ?? rawBare;
   const now = new Date();
   const y2 = now.getFullYear() % 100;
   const month = now.getMonth();

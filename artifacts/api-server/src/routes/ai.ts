@@ -650,7 +650,6 @@ const PULSE_SYMBOLS: PulseSymbol[] = [
   { display: "$RVX",    api: "$RVX",    category: "vol",       description: "CBOE Russell 2000 VIX — small-cap implied vol" },
   { display: "$OVX",    api: "$OVX",    category: "vol",       description: "CBOE Oil VIX — crude oil implied vol" },
   { display: "$GVZ",    api: "$GVZ",    category: "vol",       description: "CBOE Gold VIX — gold implied vol" },
-  { display: "/VIX",    api: "/VIX",    category: "vol",       description: "VIX Futures — front-month VIX contract" },
 
   { display: "$PCUSEQTR", api: "$PCUSEQTR", category: "vol",   description: "CBOE Equity Put/Call Ratio (IBKR PCUSEQTR)" },
   { display: "$PCUSINXR", api: "$PCUSINXR", category: "vol",   description: "CBOE Index Put/Call Ratio (IBKR PCUSINXR)" },
@@ -1027,8 +1026,8 @@ function extractMarketIndicators(dataMap: Map<string, Record<string, unknown>>):
     ovxChange: pctChange('$OVX'),
     gvz: lastOrMark('$GVZ'),
     gvzChange: pctChange('$GVZ'),
-    vixFut: lastOrMark('/VIX'),
-    vixFutChange: pctChange('/VIX'),
+    vixFut: null,
+    vixFutChange: null,
 
     tnx: yieldIndex('$TNX'),
     tnxChange: pctChange('$TNX'),

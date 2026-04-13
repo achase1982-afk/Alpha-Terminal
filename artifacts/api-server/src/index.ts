@@ -87,7 +87,7 @@ async function boot() {
     "/GC", "/CL", "/BZ", "/HG", "/SI", "/NG", "/RB", "/PL",
     "/ZB", "/ZN", "/ZF", "/ZT", "/ZQ",
     "/6E", "/6J", "/6B", "/6A", "/6C",
-    "/VIX", "/BTC", "/ETH",
+    "/BTC", "/ETH",
     "/UB", "/ZC", "/ZS", "/ZW",
     "/MES", "/MNQ", "/M2K",
   ];
