@@ -431,7 +431,6 @@ export function AiLabStrategistView() {
         .then(data => {
           if (!data?.config) return;
           const cfg = data.config;
-          if (cfg.enabled !== undefined) setAiLabStrategistConfig("enabled", cfg.enabled);
           if (cfg.analystModelProvider) setAiLabStrategistConfig("analystModelProvider", cfg.analystModelProvider);
           if (cfg.analystModelName) setAiLabStrategistConfig("analystModelName", cfg.analystModelName);
           if (cfg.skepticModelProvider) setAiLabStrategistConfig("skepticModelProvider", cfg.skepticModelProvider);
