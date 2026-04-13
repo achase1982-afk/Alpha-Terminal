@@ -94,6 +94,8 @@ function AnalystReport({
   analystModelName,
   criticModelName,
   conversationLog,
+  analystNote,
+  criticNote,
 }: {
   primaryProposal: PrimaryProposal | null;
   skepticCritique: SkepticCritique | null;
@@ -101,9 +103,11 @@ function AnalystReport({
   analystModelName?: string | null;
   criticModelName?: string | null;
   conversationLog?: DeliberationLog | null;
+  analystNote?: string | null;
+  criticNote?: string | null;
 }) {
   const [open, setOpen] = useState(false);
-  if (!primaryProposal && !skepticCritique && !finalDecision) return null;
+  if (!primaryProposal && !skepticCritique && !finalDecision && !analystNote && !criticNote) return null;
 
   const hasMultiRound = conversationLog && conversationLog.totalRounds > 1 && conversationLog.turns.length > 2;
 
@@ -127,7 +131,7 @@ function AnalystReport({
 
       {open && (
         <div className="px-3 pb-3 space-y-3" style={{ background: "#0d0d0f" }}>
-          {primaryProposal && (
+          {primaryProposal ? (
             <div className="space-y-2 pt-2">
               <span className="font-mono text-[9px] font-bold text-zinc-300 uppercase tracking-widest">
                 {hasMultiRound ? "Round 1 — " : ""}Analyst {analystModelName ? <span className="text-zinc-500 normal-case">({analystModelName})</span> : ""}
@@ -136,9 +140,16 @@ function AnalystReport({
               <ReportRow label="Structure" value={primaryProposal.structure} />
               <ReportRow label="Risk Notes" value={primaryProposal.riskNotes} />
             </div>
-          )}
+          ) : analystNote ? (
+            <div className="space-y-2 pt-2">
+              <span className="font-mono text-[9px] font-bold text-zinc-300 uppercase tracking-widest">
+                Analyst {analystModelName ? <span className="text-zinc-500 normal-case">({analystModelName})</span> : ""}
+              </span>
+              <ReportRow label="Analysis" value={analystNote} />
+            </div>
+          ) : null}
 
-          {skepticCritique && (
+          {skepticCritique ? (
             <div className="space-y-2 pt-1">
               <div className="h-px bg-zinc-800" />
               <span className="font-mono text-[9px] font-bold uppercase tracking-widest" style={{ color: "#c084fc" }}>
@@ -148,7 +159,15 @@ function AnalystReport({
               <ReportRow label="Evidence" value={skepticCritique.evidence} />
               <ReportRow label="Suggested Changes" value={skepticCritique.suggestedChanges} color="#FFB800" />
             </div>
-          )}
+          ) : criticNote ? (
+            <div className="space-y-2 pt-1">
+              <div className="h-px bg-zinc-800" />
+              <span className="font-mono text-[9px] font-bold uppercase tracking-widest" style={{ color: "#c084fc" }}>
+                Skeptic {criticModelName ? <span className="text-zinc-500 normal-case">({criticModelName})</span> : ""}
+              </span>
+              <ReportRow label="Critique" value={criticNote} color="#c084fc" />
+            </div>
+          ) : null}
 
           {hasMultiRound && conversationLog.turns.filter(t => t.round > 1).map((turn, idx) => (
             <div key={idx} className="space-y-2 pt-1">
@@ -393,6 +412,8 @@ function IdeaCard({ idea }: { idea: AiLabIdea }) {
             finalDecision={idea.finalDecision}
             analystModelName={idea.analystModelName}
             criticModelName={idea.criticModelName}
+            analystNote={idea.analystNote}
+            criticNote={idea.criticNote}
           />
         </div>
       )}
