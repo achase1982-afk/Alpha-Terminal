@@ -1430,6 +1430,82 @@ export async function backfillEquityFromPolygon(
   return { totalRows, symbolsDone };
 }
 
+/**
+ * Bulk equity update using Polygon's grouped daily bars endpoint.
+ * One API call per date returns ALL US stocks — no per-symbol rate limits.
+ * Inserts OHLCV into equity_daily for the given symbols; technicals left null
+ * (getCompactUniverseSummaries computes returns/volRatio from raw historical rows).
+ */
+export async function updateEquityDailyFromGroupedBars(
+  symbols: string[],
+  tradingDates: string[],
+): Promise<{ totalRows: number; datesProcessed: number }> {
+  const apiKey = process.env["POLYGON_API_KEY"];
+  if (!apiKey) return { totalRows: 0, datesProcessed: 0 };
+
+  const symbolSet = new Set(symbols.map(s => s.toUpperCase()));
+  let totalRows = 0;
+  let datesProcessed = 0;
+
+  for (const dateStr of tradingDates) {
+    try {
+      const url = `${POLYGON_API}/v2/aggs/grouped/locale/us/market/stocks/${dateStr}?adjusted=true&include_otc=false&apiKey=${apiKey}`;
+      const resp = await fetchWithRetry(url, {});
+      if (!resp.ok) {
+        logger.warn({ dateStr, status: resp.status }, "GroupedDailyUpdate: fetch failed");
+        continue;
+      }
+      const json = await resp.json() as { results?: Array<Record<string, unknown>>; resultsCount?: number };
+      const bars = json.results ?? [];
+      logger.info({ dateStr, total: bars.length }, "GroupedDailyUpdate: received bars");
+
+      const rows: Array<typeof equityDailyTable.$inferInsert> = [];
+      for (const b of bars) {
+        const sym = (b["T"] as string ?? "").toUpperCase();
+        if (!symbolSet.has(sym)) continue;
+        const c = (b["c"] as number) ?? 0;
+        if (c <= 0) continue;
+        rows.push({
+          symbol: sym,
+          date: dateStr,
+          open: (b["o"] as number) ?? null,
+          high: (b["h"] as number) ?? null,
+          low: (b["l"] as number) ?? null,
+          close: c,
+          adjustedClose: c,
+          volume: Math.round((b["v"] as number) ?? 0) || null,
+        });
+      }
+
+      if (rows.length > 0) {
+        await db
+          .insert(equityDailyTable)
+          .values(rows)
+          .onConflictDoUpdate({
+            target: [equityDailyTable.symbol, equityDailyTable.date],
+            set: {
+              open: sql`excluded.open`,
+              high: sql`excluded.high`,
+              low: sql`excluded.low`,
+              close: sql`excluded.close`,
+              adjustedClose: sql`excluded.adjusted_close`,
+              volume: sql`excluded.volume`,
+            },
+          });
+        totalRows += rows.length;
+        datesProcessed++;
+        logger.info({ dateStr, rows: rows.length }, "GroupedDailyUpdate: inserted");
+      }
+    } catch (e) {
+      logger.warn({ dateStr, error: (e as Error).message }, "GroupedDailyUpdate: error");
+    }
+    await sleep(2000);
+  }
+
+  logger.info({ totalRows, datesProcessed }, "GroupedDailyUpdate: complete");
+  return { totalRows, datesProcessed };
+}
+
 export async function getSnapshotStatus() {
   const latest = await db
     .select()

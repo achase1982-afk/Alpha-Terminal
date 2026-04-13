@@ -12,7 +12,7 @@ import { initDeltaEngine } from "./lib/deltaEngine";
 import { runDailyScreenRefresh } from "./routes/scanner";
 import { initAiLabOrchestrator } from "./lib/aiLabOrchestrator";
 import { startUniverseRebuildSchedule } from "./lib/universeBuilder";
-import { backfillEquityHistory, runFullSnapshot } from "./lib/dailySnapshot";
+import { updateEquityDailyFromGroupedBars, runFullSnapshot } from "./lib/dailySnapshot";
 import { LIQUID_CORE_SYMBOLS } from "./data/liquidCore130";
 import { startPolygonPCRatioPoller } from "./lib/polygonPutCallRatio";
 import { migrateAiLabSeedData } from "./lib/aiLabMigration";
@@ -167,10 +167,23 @@ async function boot() {
     if (backfillTriggered) return;
     backfillTriggered = true;
     const symbols = [...LIQUID_CORE_SYMBOLS];
-    logger.info({ count: symbols.length }, "Auto-triggering Liquid Core 130 equity backfill");
-    backfillEquityHistory(symbols, 60).catch((err) => {
+
+    // Compute the last 7 calendar days, filter to weekdays (Mon–Fri),
+    // keep up to 5 most-recent trading dates to fill any gaps since last snapshot.
+    const tradingDates: string[] = [];
+    const now = Date.now();
+    for (let i = 1; i <= 10 && tradingDates.length < 5; i++) {
+      const d = new Date(now - i * 86_400_000);
+      const dow = d.getUTCDay(); // 0=Sun, 6=Sat
+      if (dow !== 0 && dow !== 6) {
+        tradingDates.push(d.toISOString().slice(0, 10));
+      }
+    }
+
+    logger.info({ count: symbols.length, dates: tradingDates }, "Auto-triggering grouped daily equity update via Polygon");
+    updateEquityDailyFromGroupedBars(symbols, tradingDates).catch((err) => {
       backfillTriggered = false;
-      logger.warn({ err }, "Liquid Core backfill failed — will retry on next token refresh");
+      logger.warn({ err }, "Grouped daily equity update failed");
     });
   }
 
