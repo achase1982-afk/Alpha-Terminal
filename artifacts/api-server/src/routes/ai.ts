@@ -2481,7 +2481,10 @@ router.post("/options-strategist/stream", async (req, res) => {
     } catch (aiErr: unknown) {
       const msg = aiErr instanceof Error ? aiErr.message : String(aiErr);
       req.log.error({ err: aiErr }, "Strategist narrative stream error");
-      res.write(`data: ${JSON.stringify({ error: `Narrative failed: ${msg}` })}\n\n`);
+      const cleanMsg = msg.includes("overloaded") ? "AI model temporarily overloaded. Try again in a moment."
+        : msg.includes("rate_limit") ? "AI rate limit reached. Try again in a moment."
+        : "AI analysis temporarily unavailable. Tap to retry.";
+      res.write(`data: ${JSON.stringify({ error: cleanMsg })}\n\n`);
     }
 
     clearInterval(heartbeat);
@@ -3063,7 +3066,10 @@ router.post("/deterministic-strategist", async (req, res) => {
   } catch (aiErr: unknown) {
     const msg = aiErr instanceof Error ? aiErr.message : String(aiErr);
     req.log.error({ err: aiErr }, "Deterministic strategist narrative error");
-    res.write(`data: ${JSON.stringify({ error: `Narrative failed: ${msg}` })}\n\n`);
+    const cleanMsg = msg.includes("overloaded") ? "AI model temporarily overloaded. Trade details above are still valid."
+      : msg.includes("rate_limit") ? "AI rate limit reached. Trade details above are still valid."
+      : "AI analysis temporarily unavailable. Trade details above are still valid.";
+    res.write(`data: ${JSON.stringify({ error: cleanMsg })}\n\n`);
   }
 
   clearInterval(heartbeat);

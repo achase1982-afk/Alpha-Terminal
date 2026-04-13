@@ -376,16 +376,15 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
         spreadAsk -= leg.bid ?? 0;
       }
     }
-    if (strategyIsCredit) {
-      spreadBid = Math.abs(spreadBid);
-      spreadAsk = Math.abs(spreadAsk);
-      if (spreadBid > spreadAsk) {
-        const tmp = spreadBid;
-        spreadBid = spreadAsk;
-        spreadAsk = tmp;
-      }
+    spreadBid = Math.abs(spreadBid);
+    spreadAsk = Math.abs(spreadAsk);
+    if (spreadBid > spreadAsk) {
+      const tmp = spreadBid;
+      spreadBid = spreadAsk;
+      spreadAsk = tmp;
     }
     const spreadMid = (spreadBid + spreadAsk) / 2;
+    if (spreadMid <= 0) return { spreadBid: 0.01, spreadMid: 0.01, spreadAsk: 0.01 };
     return { spreadBid, spreadMid, spreadAsk };
   }, [isMultiLeg, strategyLegs, strategyIsCredit]);
 

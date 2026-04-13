@@ -1389,6 +1389,59 @@ function AiNarrativePanel({ text, streamingText, isStreaming }: {
   );
 }
 
+function CollapsibleAiReasoning({ detThinking, isDetStreaming, detNarrative, detStreamingText }: {
+  detThinking: string[];
+  isDetStreaming: boolean;
+  detNarrative: string;
+  detStreamingText: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const hasContent = detThinking.length > 0 || detNarrative || detStreamingText;
+  if (!hasContent && !isDetStreaming) return null;
+
+  return (
+    <div className="rounded-xl overflow-hidden" style={{ background: "#111113", border: "1px solid #2A2A2C" }}>
+      <button
+        onClick={() => setExpanded(e => !e)}
+        className="w-full flex items-center justify-between px-4 py-2.5 transition-colors hover:opacity-80"
+      >
+        <div className="flex items-center gap-2">
+          {isDetStreaming ? (
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#FFB800] opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-[#FFB800]" />
+            </span>
+          ) : (
+            <span className="inline-flex rounded-full h-2 w-2 bg-[#FFB800]/50" />
+          )}
+          <span className="font-mono text-[11px] font-bold text-[#FFB800]/70 tracking-widest">
+            AI REASONING
+            {isDetStreaming && <span className="ml-2 text-[#52525b] font-normal animate-pulse">streaming...</span>}
+          </span>
+        </div>
+        <span className="font-mono text-[10px] text-zinc-600 tracking-wider">
+          {expanded ? "collapse" : "tap to expand"}
+        </span>
+      </button>
+      {expanded && (
+        <div style={{ borderTop: "1px solid #1a1a1c" }}>
+          {detThinking.length > 0 && (
+            <AiThinkingFeed texts={detThinking} isStreaming={isDetStreaming} />
+          )}
+          {(detNarrative || detStreamingText) && (
+            <div className="px-4 py-3">
+              <div className="font-mono text-[12px] text-zinc-300 leading-relaxed">
+                <ReactMarkdown>{isDetStreaming ? detStreamingText : detNarrative}</ReactMarkdown>
+                {isDetStreaming && <span className="inline-block w-2 h-4 bg-[#FFB800] animate-pulse ml-0.5" />}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DetRiskOverviewCard({ result }: { result: DetStrategistResult }) {
   const [expanded, setExpanded] = useState(false);
   const { resolvedTrade, criteria } = result;
@@ -1707,6 +1760,13 @@ function DetRejectionCard({ result }: { result: DetStrategistResult }) {
           <p className="font-mono text-[10px] text-amber-400/70 mt-1">
             Micro-Override limit: {result.portfolio.microOverrideCount}/2 positions open
           </p>
+        )}
+        {result.pulse && (
+          <div className="flex items-center gap-3 mt-1">
+            <span className="font-mono text-[10px] text-zinc-600">Pulse: {result.pulse.composite.toFixed(2)}</span>
+            <span className="font-mono text-[10px] text-zinc-600">Conf: {result.pulse.confidence}</span>
+            <span className="font-mono text-[10px] text-zinc-600">Bias: {result.pulse.bias}</span>
+          </div>
         )}
       </div>
     </div>
@@ -2311,7 +2371,11 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
               overrideWarning?: string;
             };
             if (parsed.error) {
-              setStrategistResult(`**Error:** ${parsed.error}`);
+              const trimmed = parsed.error.trimStart();
+              const errMsg = trimmed.startsWith("{") || trimmed.startsWith("[")
+                ? "AI analysis unavailable. Tap Analyze to retry."
+                : parsed.error;
+              setStrategistResult(`**Error:** ${errMsg}`);
               setIsStreaming(false);
               setStrategistStatus("");
               return;
@@ -2367,7 +2431,11 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
       setStrategistStatus("");
       setStrategistCache({ ...collected, timestamp: Date.now() });
     } catch (err) {
-      setStrategistResult(`**Error:** ${err instanceof Error ? err.message : String(err)}`);
+      const raw = (err instanceof Error ? err.message : String(err)).trimStart();
+      const clean = raw.startsWith("{") || raw.startsWith("[")
+        ? "AI analysis unavailable. Tap Analyze to retry."
+        : raw;
+      setStrategistResult(`**Error:** ${clean}`);
       setIsStrategizing(false);
       setIsStreaming(false);
       setStrategistStatus("");
@@ -2485,7 +2553,14 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
               error?: string;
             };
             if (parsed.error) {
-              setDetResult({ criteria: null, rejection: parsed.error, mode: "NO_EDGE", modeReason: parsed.error, pulse: { composite: 0, confidence: 0, bias: "NO_EDGE" }, shockActive: false, portfolio: { microOverrideCount: 0 }, narrative: "" });
+              const trimmed = parsed.error.trimStart();
+              const errMsg = trimmed.startsWith("{") || trimmed.startsWith("[")
+                ? "AI analysis unavailable. Tap Analyze to retry."
+                : parsed.error;
+              setDetResult(prev => prev
+                ? { ...prev, narrative: prev.narrative || errMsg }
+                : { criteria: null, rejection: errMsg, mode: "NO_EDGE", modeReason: errMsg, pulse: { composite: 0, confidence: 0, bias: "NO_EDGE" }, shockActive: false, portfolio: { microOverrideCount: 0 }, narrative: "" }
+              );
               setIsDetStreaming(false);
               setStrategistStatus("");
               return;
@@ -2609,14 +2684,6 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
 
                 {detResult && !isDetRunning && (
                   <>
-                    {(isDetStreaming || detThinking.length > 0) && (
-                      <AiThinkingFeed texts={detThinking} isStreaming={isDetStreaming} />
-                    )}
-                    <AiNarrativePanel
-                      text={detNarrative}
-                      streamingText={detStreamingText}
-                      isStreaming={isDetStreaming}
-                    />
                     {detResult.criteria ? (
                       <>
                         <DetCriteriaCard
@@ -2646,6 +2713,12 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
                     ) : (
                       <DetRejectionCard result={detResult} />
                     )}
+                    <CollapsibleAiReasoning
+                      detThinking={detThinking}
+                      isDetStreaming={isDetStreaming}
+                      detNarrative={detNarrative}
+                      detStreamingText={detStreamingText}
+                    />
                   </>
                 )}
 

@@ -667,10 +667,13 @@ export function StrategyBuilder({
     if (isCredit) {
       spreadBid = Math.abs(spreadBid); spreadAsk = Math.abs(spreadAsk);
       if (spreadBid > spreadAsk) { const t = spreadBid; spreadBid = spreadAsk; spreadAsk = t; }
+    } else {
+      spreadBid = Math.abs(spreadBid);
+      spreadAsk = Math.abs(spreadAsk);
+      if (spreadBid > spreadAsk) { const t = spreadBid; spreadBid = spreadAsk; spreadAsk = t; }
     }
     const spreadMid = (spreadBid + spreadAsk) / 2;
-    if (spreadMid <= 0 && !isCredit) return { spreadBid: 0.01, spreadMid: 0.01, spreadAsk: 0.01 };
-    if (spreadMid <= 0 && isCredit) return { spreadBid: 0.01, spreadMid: 0.01, spreadAsk: 0.01 };
+    if (spreadMid <= 0) return { spreadBid: 0.01, spreadMid: 0.01, spreadAsk: 0.01 };
     return { spreadBid, spreadMid, spreadAsk };
   }, [legs, isCredit]);
 

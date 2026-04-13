@@ -1,4 +1,4 @@
-import { useState, useEffect, memo, useRef, useCallback } from "react";
+import { useState, useEffect, memo, useRef, useCallback, useMemo } from "react";
 import ReactDOM from "react-dom";
 import { useTerminalStore } from "@/lib/store";
 import { ConnectBrokerPrompt } from "./ConnectBrokerPrompt";
@@ -99,6 +99,27 @@ const LEAN_COLORS: Record<string, string> = {
   MIXED: "#FFB800",
 };
 
+function checkEdgeAvailability(candidate: DetCandidate): { hasEdge: boolean; reason: string } {
+  const absComp = Math.abs(candidate.pulseComposite);
+  const conf = candidate.pulseConfidence;
+
+  if (absComp >= 0.75 && conf >= 60) return { hasEdge: true, reason: "HIGH_CONVICTION" };
+  if (absComp >= 0.30 && absComp < 0.75 && conf >= 30 && conf < 60) return { hasEdge: true, reason: "LOW_CONVICTION" };
+  if (absComp >= 0.30 && conf >= 60) return { hasEdge: true, reason: "LOW_CONVICTION" };
+
+  if (candidate.microOverrideEligible) {
+    const pulseBullish = candidate.pulseComposite > 0.30;
+    const pulseBearish = candidate.pulseComposite < -0.30;
+    const scanBullish = candidate.changePct > 0;
+    if ((pulseBullish && !scanBullish) || (pulseBearish && scanBullish)) {
+      return { hasEdge: false, reason: "Inverse to macro bias" };
+    }
+    return { hasEdge: true, reason: "MICRO_OVERRIDE" };
+  }
+
+  return { hasEdge: false, reason: "Pulse too weak for directional" };
+}
+
 const DeterministicCard = memo(function DeterministicCard({
   candidate, rank, onSelect, onSendToStrategist,
 }: {
@@ -118,6 +139,7 @@ const DeterministicCard = memo(function DeterministicCard({
   const isUp = liveChangePct >= 0;
   const isDiscovery = candidate.scanMode === "DISCOVERY";
   const lean = candidate.directionalLean;
+  const edgeCheck = useMemo(() => checkEdgeAvailability(candidate), [candidate]);
 
   const scoreColor = candidate.totalScore >= 80 ? "#26a69a" : candidate.totalScore >= 60 ? "#FFB800" : "#6B7280";
 
@@ -152,6 +174,12 @@ const DeterministicCard = memo(function DeterministicCard({
 
         {candidate.microOverrideEligible && (
           <Shield className="w-3 h-3 shrink-0" style={{ color: "#FFB800" }} />
+        )}
+        {!edgeCheck.hasEdge && (
+          <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-full shrink-0 uppercase tracking-wider"
+            style={{ color: "#6B7280", background: "#6B728018", border: "1px solid #6B728030" }}>
+            no edge
+          </span>
         )}
         {lean && (
           <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0"
