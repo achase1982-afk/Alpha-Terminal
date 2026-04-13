@@ -15,7 +15,7 @@ import {
 } from "@workspace/api-zod";
 import { computeIndicators, formatTAContext, isDataStale, type Candle } from "../lib/ta.js";
 import { runMarketPulseEngine, formatClusterDebugLine, verifyEngineScoring, type MarketIndicators, type BiasLabel, type SessionType } from "../lib/marketPulseEngine.js";
-import { getSnapshot, addSymbols as addSchwabSymbols, addFuturesSymbols as addSchwabFuturesSymbols, type LiveQuote } from "../lib/schwabStreamer.js";
+import { getSnapshot, addSymbols as addSchwabSymbols, addFuturesSymbols as addSchwabFuturesSymbols, getSchwabCacheDiagnostics, type LiveQuote } from "../lib/schwabStreamer.js";
 import { getIBSnapshot, getIBCachedQuote, registerPermanentSymbols } from "../lib/ibStreamer.js";
 import { getBestAccessToken, getTokens } from "../lib/tokenStore.js";
 import { getSyntheticDxyPrevClose } from "../lib/syntheticDxy.js";
@@ -1167,7 +1167,8 @@ router.post("/market-briefing", async (req, res) => {
     const wsResult = readFromWebSocketCache(symbols);
     const expectedCount = symbols && symbols.length > 0 ? symbols.length : PULSE_SYMBOLS.length;
     const minRequired = Math.max(5, Math.ceil(expectedCount * 0.4));
-    req.log.info({ source: "ib+schwab", hits: wsResult.hitCount, expected: expectedCount, minRequired }, "Pulse data from IB/Schwab cache");
+    const missingSym = PULSE_SYMBOLS.filter(s => !wsResult.dataMap.has(s.display)).map(s => s.display);
+    req.log.info({ source: "ib+schwab", hits: wsResult.hitCount, expected: expectedCount, minRequired, missing: missingSym }, "Pulse data from IB/Schwab cache");
     if (wsResult.hitCount < minRequired) {
       return res.json({ response: `**Waiting for WebSocket data.** Only ${wsResult.hitCount}/${expectedCount} symbols available (need ${minRequired}). Ensure the live streamer is connected.`, error: "insufficient_ws_data" });
     }
@@ -1266,7 +1267,8 @@ router.post("/market-pulse", async (req, res) => {
     const wsResult = readFromWebSocketCache(symbols);
     const expectedCount = symbols && symbols.length > 0 ? symbols.length : PULSE_SYMBOLS.length;
     const minRequired = Math.max(5, Math.ceil(expectedCount * 0.4));
-    req.log.info({ source: "ib+schwab", hits: wsResult.hitCount, expected: expectedCount, minRequired }, "Analysis data from IB/Schwab cache");
+    const missingAnalysis = PULSE_SYMBOLS.filter(s => !wsResult.dataMap.has(s.display)).map(s => s.display);
+    req.log.info({ source: "ib+schwab", hits: wsResult.hitCount, expected: expectedCount, minRequired, missing: missingAnalysis }, "Analysis data from IB/Schwab cache");
     if (wsResult.hitCount < minRequired) {
       return res.status(503).json({ error: `Insufficient WebSocket data: ${wsResult.hitCount}/${expectedCount} symbols (need ${minRequired}). Ensure the live streamer is connected.` });
     }
@@ -1500,7 +1502,8 @@ router.post("/market-pulse/stream", async (req, res) => {
     const wsResult = readFromWebSocketCache();
     const expectedCount = PULSE_SYMBOLS.length;
     const minRequired = Math.max(5, Math.ceil(expectedCount * 0.4));
-    req.log.info({ source: "ib+schwab", hits: wsResult.hitCount, expected: expectedCount, minRequired }, "Pulse stream data from IB/Schwab cache");
+    const missingStream = PULSE_SYMBOLS.filter(s => !wsResult.dataMap.has(s.display)).map(s => s.display);
+    req.log.info({ source: "ib+schwab", hits: wsResult.hitCount, expected: expectedCount, minRequired, missing: missingStream }, "Pulse stream data from IB/Schwab cache");
     if (wsResult.hitCount < minRequired) {
       clearInterval(heartbeat);
       pulseGenerationInFlight = false;
@@ -3551,9 +3554,16 @@ router.get("/market-pulse/data-check", (_req, res) => {
 
   const total = rows.length;
   const withData = rows.filter(r => r["hasData"]).length;
+  const missing = rows.filter(r => !r["hasData"]).map(r => r["symbol"]);
   const stale = rows.filter(r => typeof r["ageSec"] === "number" && (r["ageSec"] as number) > 60).length;
+  const schwabDiag = getSchwabCacheDiagnostics();
 
-  res.json({ summary: { total, withData, missing: total - withData, stale }, rows });
+  res.json({
+    summary: { total, withData, missing: total - withData, stale },
+    missingSymbols: missing,
+    schwabCache: schwabDiag,
+    rows,
+  });
 });
 
 {

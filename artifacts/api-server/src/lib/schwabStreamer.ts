@@ -199,6 +199,41 @@ export function getQuoteBySymbol(symbol: string): LiveQuote | undefined {
   return quoteCache.get(symbol);
 }
 
+export function getSchwabCacheDiagnostics(): {
+  equityCacheKeys: string[];
+  futuresCacheKeys: string[];
+  subscribedEquities: string[];
+  subscribedFutures: string[];
+  futuresKeyMap: Record<string, string>;
+  totalCacheEntries: number;
+  entriesWithLast: number;
+  connectionState: string;
+} {
+  const equityCacheKeys: string[] = [];
+  const futuresCacheKeys: string[] = [];
+  let entriesWithLast = 0;
+  for (const [key, q] of quoteCache.entries()) {
+    if (key.startsWith("/")) {
+      futuresCacheKeys.push(key);
+    } else {
+      equityCacheKeys.push(key);
+    }
+    if (q.last !== null) entriesWithLast++;
+  }
+  const fkMap: Record<string, string> = {};
+  for (const [k, v] of futuresKeyToDisplay.entries()) fkMap[k] = v;
+  return {
+    equityCacheKeys: equityCacheKeys.sort(),
+    futuresCacheKeys: futuresCacheKeys.sort(),
+    subscribedEquities: [...subscribedSymbols].sort(),
+    subscribedFutures: [...subscribedFuturesSymbols].sort(),
+    futuresKeyMap: fkMap,
+    totalCacheEntries: quoteCache.size,
+    entriesWithLast,
+    connectionState,
+  };
+}
+
 export function getStreamerStatus(): string {
   return connectionState === "connected" ? "connected" : connectionState === "connecting" ? "connecting" : "disconnected";
 }
@@ -835,6 +870,26 @@ export async function startStreamer(_token?: string, symbols?: string[]): Promis
 
   await connectSchwabStreamer();
 }
+
+setInterval(() => {
+  if (connectionState !== "connected") return;
+  const equityKeys: string[] = [];
+  const futuresKeys: string[] = [];
+  let withLast = 0;
+  for (const [key, q] of quoteCache.entries()) {
+    if (key.startsWith("/")) futuresKeys.push(key);
+    else equityKeys.push(key);
+    if (q.last !== null) withLast++;
+  }
+  logger.info({
+    total: quoteCache.size,
+    withLast,
+    equityCount: equityKeys.length,
+    futuresCount: futuresKeys.length,
+    equityKeys: equityKeys.sort(),
+    futuresKeys: futuresKeys.sort(),
+  }, "Schwab: quote cache summary");
+}, 30_000);
 
 export function stopStreamer() {
   logger.info("Schwab streamer: stopping");
