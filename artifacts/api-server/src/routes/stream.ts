@@ -10,27 +10,9 @@ import {
   addFuturesOptionSymbols as addSchwabFuturesOptionSymbols,
   startStreamer,
 } from "../lib/schwabStreamer.js";
-import { subscribeQuoteForSymbol, isIBConnected } from "../lib/ibStreamer.js";
 import { hasValidTokens } from "../lib/tokenStore.js";
 
 const router: IRouter = Router();
-
-const STAGGER_MS = 300;
-
-function subscribeSymbolsToIB(symbols: unknown) {
-  if (!isIBConnected()) return;
-  if (!Array.isArray(symbols)) return;
-  const cleaned = symbols
-    .filter((s): s is string => typeof s === "string" && s.trim().length > 0)
-    .map(s => s.trim().toUpperCase());
-  if (!cleaned.length) return;
-
-  subscribeQuoteForSymbol(cleaned[0]);
-  for (let i = 1; i < cleaned.length; i++) {
-    const sym = cleaned[i];
-    setTimeout(() => subscribeQuoteForSymbol(sym), STAGGER_MS * i);
-  }
-}
 
 function subscribeSymbolsToSchwab(symbols: unknown) {
   if (!Array.isArray(symbols)) return;
@@ -56,14 +38,12 @@ function subscribeSymbolsToSchwab(symbols: unknown) {
 router.post("/start", async (req, res) => {
   const { symbols } = req.body as { symbols?: unknown };
   subscribeSymbolsToSchwab(symbols);
-  subscribeSymbolsToIB(symbols);
   res.json({ ok: true });
 });
 
 router.post("/symbols", (req, res) => {
   const { symbols } = req.body as { symbols?: unknown };
   subscribeSymbolsToSchwab(symbols);
-  subscribeSymbolsToIB(symbols);
   res.json({ ok: true });
 });
 

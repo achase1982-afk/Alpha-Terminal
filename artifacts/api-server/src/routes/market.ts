@@ -6,7 +6,7 @@ import {
 } from "@workspace/api-zod";
 import { getAccessToken, getBestAccessToken } from "../lib/tokenStore.js";
 import { getQuoteBySymbol } from "../lib/schwabStreamer.js";
-import { getIBCachedQuote, subscribeQuoteForSymbol, isIBConnected, getIBCompanyName } from "../lib/ibStreamer.js";
+import { getIBCachedQuote, subscribeQuoteForSymbol, isIBConnected } from "../lib/ibStreamer.js";
 import { logFailure } from "../lib/telemetry.js";
 import { emitTelemetry } from "../lib/telemetryStore.js";
 import { computeIVR, type OptionContract } from "../lib/optionsStrategist.js";
@@ -157,7 +157,7 @@ router.get("/quote", async (req, res) => {
 
   const schwabCached = getQuoteBySymbol(apiSymbol);
   if (schwabCached && schwabCached.last !== null) {
-    const cachedDesc = apiSymbol === "$DXY" ? "Dollar Index (Synthetic)" : (isIBConnected() ? getIBCompanyName(displaySymbol) ?? undefined : undefined);
+    const cachedDesc = apiSymbol === "$DXY" ? "Dollar Index (Synthetic)" : undefined;
     const w52 = getCached52W(displaySymbol);
     if (w52.high === undefined && w52.low === undefined && accessToken) {
       void fetch52WBackground(displaySymbol, apiSymbol, accessToken, req.log);
@@ -181,44 +181,7 @@ router.get("/quote", async (req, res) => {
     return res.json(data);
   }
 
-  // ── IB FIRST: check cache, subscribe on-demand if needed ─────────────────
-  if (isIBConnected()) {
-    let ibQuote = getIBCachedQuote(displaySymbol);
-    if (!ibQuote) {
-      // Not cached yet — subscribe and wait briefly for first tick
-      const subscribed = subscribeQuoteForSymbol(displaySymbol);
-      if (subscribed) {
-        await new Promise(r => setTimeout(r, 200));
-        ibQuote = getIBCachedQuote(displaySymbol);
-      }
-    }
-    if (ibQuote && ibQuote.last !== null) {
-      const ibDesc = getIBCompanyName(displaySymbol) ?? undefined;
-      const w52 = getCached52W(displaySymbol);
-      if (w52.high === undefined && w52.low === undefined && accessToken) {
-        void fetch52WBackground(displaySymbol, apiSymbol, accessToken, req.log);
-      }
-      const data = GetQuoteResponse.parse({
-        symbol: displaySymbol,
-        description: ibDesc,
-        last: ibQuote.last ?? undefined,
-        bid: ibQuote.bid ?? undefined,
-        ask: ibQuote.ask ?? undefined,
-        change: ibQuote.change ?? undefined,
-        changePct: ibQuote.changePct ?? undefined,
-        volume: ibQuote.volume ?? undefined,
-        high: ibQuote.high ?? undefined,
-        low: ibQuote.low ?? undefined,
-        bidSize: ibQuote.bidSize ?? undefined,
-        askSize: ibQuote.askSize ?? undefined,
-        fiftyTwoWeekHigh: w52.high,
-        fiftyTwoWeekLow: w52.low,
-      });
-      return res.json(data);
-    }
-  }
-
-  // ── SCHWAB FALLBACK ───────────────────────────────────────────────────────
+  // ── SCHWAB REST ─────────────────────────────────────────────────────────
   try {
     const response = await fetch(`${SCHWAB_API_BASE}/quotes?symbols=${encodeURIComponent(apiSymbol)}&fields=quote,fundamental,reference`, {
       headers: { "Authorization": `Bearer ${accessToken}` },
@@ -630,7 +593,7 @@ async function fetchFullChain(displaySymbol: string, token: string, log: any): P
 
   const polygonKey = process.env["POLYGON_API_KEY"];
   if (polygonKey && !isFuturesSymbol && !isIndexSymbol) {
-    const liveQuote = getIBCachedQuote(displaySymbol) ?? getQuoteBySymbol(displaySymbol);
+    const liveQuote = getQuoteBySymbol(displaySymbol);
     const livePrice = liveQuote?.last ?? liveQuote?.close;
     const strikeOpts = livePrice
       ? { strikeMin: Math.floor(livePrice * 0.70), strikeMax: Math.ceil(livePrice * 1.30) }
@@ -773,7 +736,7 @@ router.get("/options", async (req, res) => {
   function sliceAndReturn(entry: { calls: OptionContract[]; puts: OptionContract[]; underlyingPrice?: number }, source: string) {
     let calls = entry.calls;
     let puts = entry.puts;
-    const liveQuote = getIBCachedQuote(displaySymbol) ?? getQuoteBySymbol(displaySymbol);
+    const liveQuote = getQuoteBySymbol(displaySymbol);
     const livePrice = liveQuote?.last ?? liveQuote?.close ?? entry.underlyingPrice;
     const centerPrice = livePrice ?? entry.underlyingPrice;
     if (centerPrice != null && strikeCount < 100) {

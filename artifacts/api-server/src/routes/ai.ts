@@ -732,6 +732,7 @@ const IB_UNSUPPORTED = new Set<string>();
 registerPermanentSymbols(
   PULSE_SYMBOLS
     .filter(s => !IB_UNSUPPORTED.has(s.display))
+    .filter(s => s.category === "breadth" || (s.category === "vol" && s.display.startsWith("$")))
     .map(s => PULSE_TO_IB_NATIVE[s.display] ?? s.display)
 );
 
