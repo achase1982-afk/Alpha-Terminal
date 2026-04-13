@@ -6,6 +6,7 @@ export type FontSize = "compact" | "default" | "large";
 export type ChartStyle = "candles" | "bars" | "line" | "area";
 export type GridDensity = "tight" | "default" | "relaxed";
 export type HeaderMode = "auto" | "collapsed" | "expanded";
+export type BiasScrollSpeed = "off" | "slow" | "normal" | "fast";
 
 export const ACCENT_COLORS: Record<ThemeAccent, string> = {
   gold: "#fbbf24",
@@ -27,6 +28,7 @@ interface UICustomizationState {
   animatePriceChanges: boolean;
   hapticFeedback: boolean;
   reducedMotion: boolean;
+  biasScrollSpeed: BiasScrollSpeed;
   setAccentColor: (c: ThemeAccent) => void;
   setFontSize: (s: FontSize) => void;
   setDefaultChartStyle: (s: ChartStyle) => void;
@@ -38,6 +40,7 @@ interface UICustomizationState {
   setAnimatePriceChanges: (v: boolean) => void;
   setHapticFeedback: (v: boolean) => void;
   setReducedMotion: (v: boolean) => void;
+  setBiasScrollSpeed: (v: BiasScrollSpeed) => void;
   resetDefaults: () => void;
 }
 
@@ -53,6 +56,7 @@ const DEFAULTS = {
   animatePriceChanges: true,
   hapticFeedback: true,
   reducedMotion: false,
+  biasScrollSpeed: "slow" as BiasScrollSpeed,
 };
 
 export const useUICustomizationStore = create<UICustomizationState>()(
@@ -70,16 +74,18 @@ export const useUICustomizationStore = create<UICustomizationState>()(
       setAnimatePriceChanges: (animatePriceChanges) => set({ animatePriceChanges }),
       setHapticFeedback: (hapticFeedback) => set({ hapticFeedback }),
       setReducedMotion: (reducedMotion) => set({ reducedMotion }),
+      setBiasScrollSpeed: (biasScrollSpeed) => set({ biasScrollSpeed }),
       resetDefaults: () => set(DEFAULTS),
     }),
     {
       name: "alpha-ui-customization",
-      version: 3,
+      version: 4,
       migrate: (persisted: any) => ({
         ...DEFAULTS,
         ...persisted,
         headerMode: persisted?.headerMode ?? "auto",
         showAiBiasStrip: persisted?.showAiBiasStrip ?? true,
+        biasScrollSpeed: persisted?.biasScrollSpeed ?? "slow",
       }),
     }
   )

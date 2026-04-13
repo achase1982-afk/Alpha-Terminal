@@ -1,5 +1,6 @@
 import { Zap, TrendingUp, TrendingDown, Minus, AlertTriangle } from "lucide-react";
 import { useMarketPulseStore } from "../../stores/marketPulseStore";
+import { useUICustomizationStore } from "../../lib/ui-customization-store";
 
 const BIAS_COLORS: Record<string, { label: string; accent: string }> = {
   STRONGLY_BULLISH: { label: "text-emerald-400", accent: "bg-emerald-400" },
@@ -12,12 +13,20 @@ const BIAS_COLORS: Record<string, { label: string; accent: string }> = {
   NO_EDGE: { label: "text-zinc-500", accent: "bg-zinc-600" },
 };
 
+const SCROLL_DURATIONS = {
+  off: 0,
+  slow: 25,
+  normal: 15,
+  fast: 8,
+} as const;
+
 interface AiBiasStripProps {
   onNavigateToPulse?: () => void;
 }
 
 export function AiBiasStrip({ onNavigateToPulse }: AiBiasStripProps) {
   const { pulseData, isLoading, isStreaming, settings } = useMarketPulseStore();
+  const biasScrollSpeed = useUICustomizationStore((s) => s.biasScrollSpeed);
   const isActive = isLoading || isStreaming;
 
   if (!settings.showBiasStrip) return null;
@@ -81,6 +90,8 @@ export function AiBiasStrip({ onNavigateToPulse }: AiBiasStripProps) {
     : 1;
 
   const summaryText = pulseData.sessionBias?.summary || pulseData.structuralRegime?.summary || "";
+  const scrollDuration = SCROLL_DURATIONS[biasScrollSpeed] || SCROLL_DURATIONS.slow;
+  const scrollEnabled = biasScrollSpeed !== "off";
 
   return (
     <button
@@ -140,14 +151,14 @@ export function AiBiasStrip({ onNavigateToPulse }: AiBiasStripProps) {
             <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-400" />
           </span>
         )}
-        <span className="font-mono text-[9px] uppercase tracking-wider text-zinc-500 shrink-0">
+        <span className="font-mono text-[10px] uppercase tracking-wider text-amber-500 shrink-0">
           {pulseData.structuralRegime?.label?.replace(/_/g, "-") ?? "—"}
         </span>
         {summaryText && (
           <div className="overflow-hidden min-w-0" style={{ maskImage: "linear-gradient(to right, transparent 0%, black 4%, black 90%, transparent 100%)" }}>
             <span
-              className="font-mono text-[9px] text-zinc-500 whitespace-nowrap inline-block"
-              style={{ animation: "biasScroll 12s linear infinite" }}
+              className="font-mono text-[10px] text-white whitespace-nowrap inline-block"
+              style={scrollEnabled ? { animation: `biasScroll ${scrollDuration}s linear infinite` } : { overflow: "hidden", textOverflow: "ellipsis" }}
             >
               {summaryText}
             </span>
@@ -155,12 +166,14 @@ export function AiBiasStrip({ onNavigateToPulse }: AiBiasStripProps) {
         )}
       </div>
 
-      <style>{`
-        @keyframes biasScroll {
-          0% { transform: translateX(100%); }
-          100% { transform: translateX(-100%); }
-        }
-      `}</style>
+      {scrollEnabled && (
+        <style>{`
+          @keyframes biasScroll {
+            0% { transform: translateX(100%); }
+            100% { transform: translateX(-100%); }
+          }
+        `}</style>
+      )}
     </button>
   );
 }

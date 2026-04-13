@@ -6,7 +6,7 @@ import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import type { MarketPulseSettings, AllowedStrategy } from "@/types/marketPulse";
 import { STRATEGY_LABELS, ALL_STRATEGIES, ALL_PULSE_INDICATORS } from "@/types/marketPulse";
 import { useAutoLock, TIMEOUT_OPTIONS, type SessionTimeoutMinutes } from "@/hooks/useAutoLock";
-import { useUICustomizationStore, ACCENT_COLORS, type ThemeAccent, type FontSize, type ChartStyle, type GridDensity, type HeaderMode } from "@/lib/ui-customization-store";
+import { useUICustomizationStore, ACCENT_COLORS, type ThemeAccent, type FontSize, type ChartStyle, type GridDensity, type HeaderMode, type BiasScrollSpeed } from "@/lib/ui-customization-store";
 import { readSecurityPrefs, updateSecurityPref, type SecurityPrefs } from "@/lib/securityPrefs";
 import { useBiometricRegistration, useWebAuthnSupported } from "@/hooks/useBiometric";
 import { AuthPanel } from "./AuthPanel";
@@ -916,11 +916,11 @@ function UICustomizationPage() {
   const {
     accentColor, fontSize, defaultChartStyle, gridDensity,
     showTickerTape, showAiBiasStrip, showMiniCards, animatePriceChanges, hapticFeedback, reducedMotion,
-    headerMode,
+    headerMode, biasScrollSpeed,
     setAccentColor, setFontSize, setDefaultChartStyle, setGridDensity,
     setHeaderMode,
     setShowTickerTape, setShowAiBiasStrip, setShowMiniCards, setAnimatePriceChanges, setHapticFeedback, setReducedMotion,
-    resetDefaults,
+    setBiasScrollSpeed, resetDefaults,
   } = useUICustomizationStore();
 
   const accents: { key: ThemeAccent; label: string }[] = [
@@ -1035,6 +1035,28 @@ function UICustomizationPage() {
           <span className="text-sm text-white">AI Bias Bar</span>
           <Switch checked={showAiBiasStrip} onCheckedChange={setShowAiBiasStrip} />
         </div>
+
+        {showAiBiasStrip && (
+          <div className="flex items-center justify-between pl-4">
+            <span className="text-sm text-zinc-400">Bias Scroll Speed</span>
+            <div className="flex gap-1">
+              {(["off", "slow", "normal", "fast"] as BiasScrollSpeed[]).map((speed) => (
+                <button
+                  key={speed}
+                  onClick={() => setBiasScrollSpeed(speed)}
+                  className="px-2 py-1 rounded text-[10px] font-mono font-semibold uppercase tracking-wider transition-colors"
+                  style={{
+                    background: biasScrollSpeed === speed ? "#FFB800" : "transparent",
+                    color: biasScrollSpeed === speed ? "#000" : "#71717a",
+                    border: biasScrollSpeed === speed ? "none" : "1px solid #2A2A2C",
+                  }}
+                >
+                  {speed}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="flex items-center justify-between">
           <span className="text-sm text-white">Index Mini Cards</span>
