@@ -80,14 +80,15 @@ export function AiBiasStrip({ onNavigateToPulse }: AiBiasStripProps) {
     ? 2 
     : 1;
 
+  const summaryText = pulseData.sessionBias?.summary || pulseData.structuralRegime?.summary || "";
+
   return (
     <button
       onClick={onNavigateToPulse}
       className="flex items-center justify-between w-full px-4 border-b border-zinc-800 cursor-pointer transition-colors hover:bg-zinc-800"
-      style={{ minHeight: 28, padding: "4px 16px", backgroundColor: '#1C1C1E' }}
+      style={{ height: 28, backgroundColor: '#1C1C1E' }}
     >
       <div className="flex items-center gap-2 shrink-0">
-        <Zap className="w-3.5 h-3.5 text-amber-500" />
         <div className={colors.label}>
           {trendIcon}
         </div>
@@ -132,20 +133,34 @@ export function AiBiasStrip({ onNavigateToPulse }: AiBiasStripProps) {
         ))}
       </div>
 
-      <div className="flex items-center gap-2 min-w-0">
+      <div className="flex items-center gap-2 min-w-0 shrink-0 max-w-[200px]">
         {isStale && (
           <span className="relative flex h-2 w-2 shrink-0">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
             <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-400" />
           </span>
         )}
-        <span className="font-mono text-[9px] uppercase tracking-wider text-amber-500 shrink-0">
+        <span className="font-mono text-[9px] uppercase tracking-wider text-zinc-500 shrink-0">
           {pulseData.structuralRegime?.label?.replace(/_/g, "-") ?? "—"}
         </span>
-        <span className="font-mono text-[9px] text-zinc-300">
-          {pulseData.sessionBias?.summary || pulseData.structuralRegime?.summary || ""}
-        </span>
+        {summaryText && (
+          <div className="overflow-hidden min-w-0" style={{ maskImage: "linear-gradient(to right, transparent 0%, black 4%, black 90%, transparent 100%)" }}>
+            <span
+              className="font-mono text-[9px] text-zinc-500 whitespace-nowrap inline-block"
+              style={{ animation: "biasScroll 12s linear infinite" }}
+            >
+              {summaryText}
+            </span>
+          </div>
+        )}
       </div>
+
+      <style>{`
+        @keyframes biasScroll {
+          0% { transform: translateX(100%); }
+          100% { transform: translateX(-100%); }
+        }
+      `}</style>
     </button>
   );
 }
