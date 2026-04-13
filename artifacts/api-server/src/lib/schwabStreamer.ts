@@ -546,7 +546,15 @@ function findKeysDeep(
   return result;
 }
 
+let equityTickSampleLogged = false;
+let futuresTickSampleLogged = false;
+
 function processEquityTick(content: Record<string, unknown>[]) {
+  if (!equityTickSampleLogged && content.length > 0) {
+    equityTickSampleLogged = true;
+    const sample = content.slice(0, 3).map(c => ({ key: c["key"], "3": c["3"], "12": c["12"], "1": c["1"], "2": c["2"] }));
+    logger.info({ count: content.length, sample }, "Schwab: first LEVELONE_EQUITIES data batch received");
+  }
   const now = Date.now();
   for (const item of content) {
     const rawKey = item["key"] as string;
@@ -617,6 +625,11 @@ function processOptionTick(content: Record<string, unknown>[]) {
 }
 
 function processFuturesTick(content: Record<string, unknown>[]) {
+  if (!futuresTickSampleLogged && content.length > 0) {
+    futuresTickSampleLogged = true;
+    const sample = content.slice(0, 3).map(c => ({ key: c["key"], "3": c["3"], "14": c["14"], "1": c["1"], "2": c["2"] }));
+    logger.info({ count: content.length, sample }, "Schwab: first LEVELONE_FUTURES data batch received");
+  }
   const now = Date.now();
   for (const item of content) {
     const rawKey = item["key"] as string;
