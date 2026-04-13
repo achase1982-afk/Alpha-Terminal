@@ -231,6 +231,11 @@ function emitQuote(def: IBSymbolDef, state: IBQuoteState) {
         ? state.bid - state.ask
         : state.last ?? null;
       break;
+    case "close_fallback":
+      effectiveLast = (state.last !== null && state.last !== 0)
+        ? state.last
+        : state.close ?? state.last ?? null;
+      break;
     default:
       effectiveLast = state.last ?? state.bid ?? state.ask ?? null;
       break;
