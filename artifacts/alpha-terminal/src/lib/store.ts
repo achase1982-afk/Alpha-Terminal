@@ -480,7 +480,7 @@ export const useTerminalStore = create<TerminalState>()(
     }),
     {
       name: 'alpha-terminal-storage',
-      version: 14,
+      version: 15,
       migrate: (persistedState: unknown, version: number) => {
         const s = persistedState as Record<string, unknown>;
         if (version < 2) {
@@ -600,6 +600,12 @@ export const useTerminalStore = create<TerminalState>()(
             push: { ...defaultPush, ...(existing?.push as Record<string, boolean> | undefined) },
             sound: existing?.sound ?? false,
           };
+        }
+        if (version < 15) {
+          const cfg = s['aiLabStrategistConfig'] as Record<string, unknown> | undefined;
+          if (cfg && typeof cfg === 'object') {
+            cfg['enabled'] = true;
+          }
         }
         return s;
       },
