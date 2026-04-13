@@ -28,6 +28,7 @@ import { checkEventConflicts, getUpcomingEvents, type EventCheckResult } from ".
 import { chainCache, getOrFetchChain, CHAIN_CACHE_TTL, getCachedEconEvents, getCachedRatings } from "./market.js";
 import { runDeterministicScan } from "../lib/deterministicScanner.js";
 import { runDiscoveryScan } from "../lib/deterministicScanner.v2.js";
+import { getEquityPCRatio, getIndexPCRatio } from "../lib/polygonPutCallRatio.js";
 import {
   runDeterministicStrategist,
   fetchPortfolioContext,
@@ -651,8 +652,8 @@ const PULSE_SYMBOLS: PulseSymbol[] = [
   { display: "$OVX",    api: "$OVX",    category: "vol",       description: "CBOE Oil VIX — crude oil implied vol" },
   { display: "$GVZ",    api: "$GVZ",    category: "vol",       description: "CBOE Gold VIX — gold implied vol" },
 
-  { display: "$PCUSEQTR", api: "$PCUSEQTR", category: "vol",   description: "CBOE Equity Put/Call Ratio (IBKR PCUSEQTR)" },
-  { display: "$PCUSINXR", api: "$PCUSINXR", category: "vol",   description: "CBOE Index Put/Call Ratio (IBKR PCUSINXR)" },
+  { display: "$PCUSEQTR", api: "$PCUSEQTR", category: "vol",   description: "CBOE Equity Put/Call Ratio (Polygon SPY options)" },
+  { display: "$PCUSINXR", api: "$PCUSINXR", category: "vol",   description: "CBOE Index Put/Call Ratio (Polygon SPX options)" },
 
   { display: "$TICK",   api: "$TICK",   category: "breadth",   description: "NYSE TICK — stocks upticking minus downticking" },
   { display: "$ADD",    api: "$ADD",    category: "breadth",   description: "NYSE A/D Line — advancers minus decliners" },
@@ -809,6 +810,37 @@ function readFromWebSocketCache(
         askPrice: q.ask,
       });
     }
+  }
+
+  const eqPC = getEquityPCRatio();
+  if (eqPC && eqPC.ratio !== null) {
+    hitCount += dataMap.has("$PCUSEQTR") ? 0 : 1;
+    dataMap.set("$PCUSEQTR", {
+      lastPrice: eqPC.ratio, mark: eqPC.ratio,
+      closePrice: null, close: null,
+      netChange: null, markChange: null,
+      netPercentChange: null, markPercentChange: null,
+      highPrice: null, high: null, lowPrice: null, low: null,
+      totalVolume: eqPC.putVolume + eqPC.callVolume, volume: eqPC.putVolume + eqPC.callVolume,
+      bidPrice: null, askPrice: null,
+      putVolume: eqPC.putVolume, callVolume: eqPC.callVolume,
+      source: "polygon",
+    });
+  }
+  const idxPC = getIndexPCRatio();
+  if (idxPC && idxPC.ratio !== null) {
+    hitCount += dataMap.has("$PCUSINXR") ? 0 : 1;
+    dataMap.set("$PCUSINXR", {
+      lastPrice: idxPC.ratio, mark: idxPC.ratio,
+      closePrice: null, close: null,
+      netChange: null, markChange: null,
+      netPercentChange: null, markPercentChange: null,
+      highPrice: null, high: null, lowPrice: null, low: null,
+      totalVolume: idxPC.putVolume + idxPC.callVolume, volume: idxPC.putVolume + idxPC.callVolume,
+      bidPrice: null, askPrice: null,
+      putVolume: idxPC.putVolume, callVolume: idxPC.callVolume,
+      source: "polygon",
+    });
   }
 
   if (!dataMap.has("$DXY") || !(dataMap.get("$DXY")?.["lastPrice"])) {

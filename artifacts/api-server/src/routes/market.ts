@@ -930,32 +930,24 @@ router.get("/ticker-stats", async (req, res) => {
 });
 
 router.get("/pc-ratio", async (_req, res) => {
-  if (isIBConnected()) {
-    subscribeQuoteForSymbol("$PCUSEQTR");
-    subscribeQuoteForSymbol("$PCUSINXR");
-  }
-  const equityQuote = getIBCachedQuote("$PCUSEQTR") ?? getQuoteBySymbol("$PCUSEQTR");
-  const indexQuote = getIBCachedQuote("$PCUSINXR") ?? getQuoteBySymbol("$PCUSINXR");
+  const { getEquityPCRatio, getIndexPCRatio } = await import("../lib/polygonPutCallRatio.js");
+  const eqPC = getEquityPCRatio();
+  const idxPC = getIndexPCRatio();
 
-  const pick = (q: typeof equityQuote) => {
-    if (!q) return null;
-    if (typeof q.last === "number" && q.last > 0) return q.last;
-    if (typeof q.close === "number" && q.close > 0) return q.close;
-    return null;
-  };
-
-  const cpce = pick(equityQuote);
-  const cpci = pick(indexQuote);
+  const cpce = eqPC?.ratio ?? null;
+  const cpci = idxPC?.ratio ?? null;
   const cpc = cpce !== null && cpci !== null ? Math.round(((cpce + cpci) / 2) * 10000) / 10000 : cpce ?? cpci;
 
   res.json({
     cpce,
-    cpceSource: "CBOE Equity Put/Call Ratio (PCUSEQTR via IB)",
+    cpceSource: "Equity Put/Call Ratio (Polygon SPY options volume)",
+    cpceDetail: eqPC ? { putVolume: eqPC.putVolume, callVolume: eqPC.callVolume } : null,
     cpci,
-    cpciSource: "CBOE Index Put/Call Ratio (PCUSINXR via IB)",
+    cpciSource: "Index Put/Call Ratio (Polygon SPX options volume)",
+    cpciDetail: idxPC ? { putVolume: idxPC.putVolume, callVolume: idxPC.callVolume } : null,
     cpc,
     cpcSource: "Average of CPCE + CPCI",
-    ts: equityQuote?.ts ?? indexQuote?.ts ?? null,
+    ts: eqPC?.ts ?? idxPC?.ts ?? null,
   });
 });
 

@@ -373,8 +373,8 @@ export const ALL_PULSE_INDICATORS: PulseIndicator[] = [
   { symbol: "/6E",     label: "/6E (Euro FX Futures)",         category: "currency" },
   { symbol: "/6J",     label: "/6J (Yen Futures)",             category: "currency" },
 
-  { symbol: "$PCUSEQTR", label: "Equity Put/Call (PCUSEQTR)",  category: "options" },
-  { symbol: "$PCUSINXR", label: "Index Put/Call (PCUSINXR)",   category: "options" },
+  { symbol: "$PCUSEQTR", label: "Equity P/C (SPY via Polygon)",  category: "options" },
+  { symbol: "$PCUSINXR", label: "Index P/C (SPX via Polygon)",   category: "options" },
 ];
 
 export interface MarketPulseSettings {

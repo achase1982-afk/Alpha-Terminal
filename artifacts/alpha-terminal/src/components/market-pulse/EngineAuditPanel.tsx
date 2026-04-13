@@ -76,8 +76,8 @@ function buildIndicatorRows(raw: RawIndicators): IndicatorRow[] {
     { symbol: "DXY", label: "Dollar Idx (Synth)", value: raw.dx, change: raw.dxChange, cluster: "currency" },
     { symbol: "/6E", label: "Euro FX", value: raw.sixE, change: raw.sixEChange, cluster: "currency" },
     { symbol: "/6J", label: "Yen FX", value: raw.sixJ, change: raw.sixJChange, cluster: "currency" },
-    { symbol: "$PCUSEQTR", label: "Equity P/C", value: raw.cpce, change: null, cluster: "options" },
-    { symbol: "$PCUSINXR", label: "Index P/C", value: raw.cpci, change: null, cluster: "options" },
+    { symbol: "$PCUSEQTR", label: "Equity P/C (Polygon)", value: raw.cpce, change: null, cluster: "options" },
+    { symbol: "$PCUSINXR", label: "Index P/C (Polygon)", value: raw.cpci, change: null, cluster: "options" },
   ];
 }
 

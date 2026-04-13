@@ -14,6 +14,7 @@ import { initAiLabOrchestrator } from "./lib/aiLabOrchestrator";
 import { startUniverseRebuildSchedule } from "./lib/universeBuilder";
 import { backfillEquityHistory } from "./lib/dailySnapshot";
 import { LIQUID_CORE_SYMBOLS } from "./data/liquidCore130";
+import { startPolygonPCRatioPoller } from "./lib/polygonPutCallRatio";
 
 const rawPort = process.env["PORT"];
 
@@ -127,6 +128,8 @@ async function boot() {
   } else {
     logger.info("Schwab tokens not yet available — streamer will start on token refresh");
   }
+
+  startPolygonPCRatioPoller();
 
   if (process.env.IBKR_GATEWAY_URL || process.env.IB_HOST) {
     const wsUrl = getWsBridgeUrl();
