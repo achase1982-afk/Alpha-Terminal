@@ -1,0 +1,19 @@
+We need to get the Discovery scanner fully working for the Liquid Core 130 universe before expanding to anything larger. Do not touch the broader 383 universe right now. Everything below is scoped to LC130 only.
+
+Here is what the diagnostic showed:
+
+- equity_daily has 420 tickers with 63 days of data and all derived fields populated. That is good but it stopped updating after April 9 because the backfill only runs on server restart.
+- flow_daily_aggregates only covers 151 tickers total. We need all 130 LC130 tickers to have complete flow data. Check how many of the LC130 are actually in the flow table right now and how many are missing.
+- There is no automated daily snapshot job. runFullSnapshot exists and is wired to POST /api/snapshot/collect but nothing calls it on a schedule. The snapshot_collection_log table is empty, confirming it has never run.
+- market_cap is null in equity_daily across all rows. Not critical since the live Schwab quote handles the guardrail, but note it.
+
+What I need you to do:
+
+1. Tell me exactly which LC130 tickers are missing from flow_daily_aggregates. Give me the list.
+1. Backfill flow aggregates for every LC130 ticker that is missing. Use the Polygon flat files we already have. If flat file data does not exist for some of those tickers, tell me which ones so I know.
+1. Make sure every LC130 ticker has at least 20 consecutive trading days of BOTH equity_daily AND flow_daily_aggregates data with no gaps. If any ticker falls short, tell me which ones and why.
+1. Set up the daily snapshot job to run automatically after market close every trading day for the LC130 universe. Use the existing runFullSnapshot function. This needs to collect both equity snapshots and flow aggregates. It should not require a server restart or manual API call. If you need to use a cron schedule or a setTimeout loop or whatever approach works in our environment, do it. But it needs to run every trading day without me touching it.
+1. After all of the above is done, run the Discovery scoring manually on 5 LC130 tickers (AAPL, NVDA, MSFT, AMD, AMZN) and show me the full score breakdown for each: all 5 categories, all 15 sub-scores, and the composite. I want to see actual numbers to verify the scoring formulas are reading real data and producing reasonable scores.
+1. Then run a full Discovery scan against the LC130 universe and tell me how many results come back and what the score range looks like. If still zero results, show me the score distribution so I can see where tickers are falling short of the 55 threshold.
+
+Do steps 1 through 4 first. Show me the results. Then do 5 and 6.

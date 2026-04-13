@@ -12,10 +12,11 @@ import { initDeltaEngine } from "./lib/deltaEngine";
 import { runDailyScreenRefresh } from "./routes/scanner";
 import { initAiLabOrchestrator } from "./lib/aiLabOrchestrator";
 import { startUniverseRebuildSchedule } from "./lib/universeBuilder";
-import { backfillEquityHistory } from "./lib/dailySnapshot";
+import { backfillEquityHistory, runFullSnapshot } from "./lib/dailySnapshot";
 import { LIQUID_CORE_SYMBOLS } from "./data/liquidCore130";
 import { startPolygonPCRatioPoller } from "./lib/polygonPutCallRatio";
 import { migrateAiLabSeedData } from "./lib/aiLabMigration";
+import { getBestAccessToken } from "./lib/tokenStore";
 
 const rawPort = process.env["PORT"];
 
@@ -68,6 +69,60 @@ async function boot() {
     }, msUntil);
   }
   scheduleDailyScreenRefresh();
+
+  function scheduleDailySnapshot() {
+    const US_MARKET_HOLIDAYS_2026 = [
+      "2026-01-01", "2026-01-19", "2026-02-16", "2026-04-03",
+      "2026-05-25", "2026-06-19", "2026-07-03", "2026-09-07",
+      "2026-11-26", "2026-12-25",
+    ];
+
+    function isTradingDay(d: Date): boolean {
+      const day = d.getUTCDay();
+      if (day === 0 || day === 6) return false;
+      const iso = d.toISOString().slice(0, 10);
+      return !US_MARKET_HOLIDAYS_2026.includes(iso);
+    }
+
+    function scheduleNext() {
+      const now = new Date();
+      const target = new Date(now);
+      target.setUTCHours(21, 30, 0, 0);
+      if (target.getTime() <= now.getTime()) {
+        target.setUTCDate(target.getUTCDate() + 1);
+      }
+      while (!isTradingDay(target)) {
+        target.setUTCDate(target.getUTCDate() + 1);
+      }
+      const ms = target.getTime() - now.getTime();
+      logger.info({ targetUTC: target.toISOString(), msUntil: ms }, "Daily snapshot scheduled (4:30 PM ET)");
+
+      setTimeout(() => {
+        void runDailySnapshotJob();
+        scheduleNext();
+      }, ms);
+    }
+
+    async function runDailySnapshotJob() {
+      const token = getBestAccessToken();
+      if (!token) {
+        logger.warn("Daily snapshot: no Schwab token available — skipping");
+        return;
+      }
+      const symbols = [...LIQUID_CORE_SYMBOLS];
+      const dateStr = new Date().toISOString().slice(0, 10);
+      logger.info({ symbols: symbols.length, date: dateStr }, "Daily snapshot: starting LC130 collection");
+      try {
+        const result = await runFullSnapshot(symbols, token, dateStr);
+        logger.info({ ...result, date: dateStr }, "Daily snapshot: LC130 collection complete");
+      } catch (err) {
+        logger.error({ err }, "Daily snapshot: LC130 collection failed");
+      }
+    }
+
+    scheduleNext();
+  }
+  scheduleDailySnapshot();
   await migrateAiLabSeedData();
   initAiLabOrchestrator();
   startUniverseRebuildSchedule();
