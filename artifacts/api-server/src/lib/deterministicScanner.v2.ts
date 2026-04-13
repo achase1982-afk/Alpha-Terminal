@@ -1016,14 +1016,13 @@ export async function runDiscoveryScan(
 
   scoredResults.sort((a, b) => b.totalScore - a.totalScore);
   const aboveThreshold = scoredResults.filter(r => r.totalScore >= CFG.minScore);
-  const top5 = aboveThreshold.slice(0, 5);
 
   const scoreDistrib = scoredResults.slice(0, 10).map(r => `${r.symbol}=${r.totalScore}(SQ${r.setupQuality}/ACC${r.accumulation}/IV${r.ivSetup}/FL${r.flowDivergence}/RS${r.emergingRS})`);
-  log.info({ scored: scoredResults.length, above: aboveThreshold.length, top5: top5.length, distribution: scoreDistrib }, "Discovery scoring complete");
+  log.info({ scored: scoredResults.length, above: aboveThreshold.length, distribution: scoreDistrib }, "Discovery scoring complete");
 
   const { getUpcomingEvents } = await import("./calendarEventChecker.js");
 
-  const candidates: ScanCandidate[] = top5.map(r => {
+  const candidates: ScanCandidate[] = aboveThreshold.map(r => {
     const upcoming = getUpcomingEvents(30).filter(e =>
       e.title.toLowerCase().includes(r.symbol.toLowerCase()) || e.importance === "HIGH"
     ).slice(0, 5).map(e => ({ date: e.date, title: e.title, importance: e.importance }));

@@ -799,7 +799,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
             ) : (
               <>
                 Scanning <span className="text-primary font-bold">{currentSymCount} tickers</span>
-                {mode === "deterministic" && scanMode === "DISCOVERY" && <> — Setup Quality + Accumulation + IV Setup + Flow + Emerging RS (top 5, min 55)</>}
+                {mode === "deterministic" && scanMode === "DISCOVERY" && <> — Setup Quality + Accumulation + IV Setup + Flow + Emerging RS (min 55)</>}
                 {mode === "deterministic" && scanMode === "MOMENTUM" && <> — Trend + RS + Volume + IVR + Options Liquidity (top 5, min 60)</>}
               </>
             )}
