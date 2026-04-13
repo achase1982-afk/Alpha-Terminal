@@ -137,7 +137,7 @@ function AnalystReport({
                 {hasMultiRound ? "Round 1 — " : ""}Analyst {analystModelName ? <span className="text-zinc-500 normal-case">({analystModelName})</span> : ""}
               </span>
               <ReportRow label="Thesis" value={primaryProposal.thesis} />
-              <ReportRow label="Structure" value={primaryProposal.structure} />
+              <ReportRow label="Structure" value={primaryProposal.structure} color="#FFB800" />
               <ReportRow label="Risk Notes" value={primaryProposal.riskNotes} />
             </div>
           ) : analystNote ? (
@@ -187,7 +187,7 @@ function AnalystReport({
                     <ReportRow label="Rebuttal" value={String(turn.content.note)} />
                   )}
                   {turn.content.structure && (
-                    <ReportRow label="Revised Structure" value={String(turn.content.structure)} />
+                    <ReportRow label="Revised Structure" value={String(turn.content.structure)} color="#FFB800" />
                   )}
                   {turn.content.agreesWithSkeptic && (
                     <p className="font-mono text-[12px] leading-relaxed" style={{ color: "#FFB800" }}>Analyst conceded to skeptic's position</p>
@@ -241,7 +241,7 @@ function AnalystReport({
                   {finalDecision.decision}
                 </span>
                 {finalDecision.finalStructure && (
-                  <span className="font-mono text-[11px] text-zinc-400">{finalDecision.finalStructure}</span>
+                  <span className="font-mono text-[13px] font-bold" style={{ color: "#FFB800" }}>{finalDecision.finalStructure}</span>
                 )}
               </div>
               {finalDecision.resolutionRationale && (
@@ -259,7 +259,7 @@ function ReportRow({ label, value, color }: { label: string; value: string; colo
   return (
     <div className="space-y-0.5">
       <span className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest">{label}</span>
-      <p className="font-mono text-[12px] leading-relaxed" style={{ color: color ?? "#e4e4e7" }}>{value}</p>
+      <p className="font-mono text-[13px] leading-relaxed" style={{ color: color ?? "#e4e4e7" }}>{value}</p>
     </div>
   );
 }
