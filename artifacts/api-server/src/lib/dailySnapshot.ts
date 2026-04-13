@@ -1499,7 +1499,7 @@ export async function updateEquityDailyFromGroupedBars(
     } catch (e) {
       logger.warn({ dateStr, error: (e as Error).message }, "GroupedDailyUpdate: error");
     }
-    await sleep(2000);
+    await sleep(5000);
   }
 
   logger.info({ totalRows, datesProcessed }, "GroupedDailyUpdate: complete");

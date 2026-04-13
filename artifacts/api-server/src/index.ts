@@ -14,6 +14,8 @@ import { initAiLabOrchestrator } from "./lib/aiLabOrchestrator";
 import { startUniverseRebuildSchedule } from "./lib/universeBuilder";
 import { updateEquityDailyFromGroupedBars, runFullSnapshot } from "./lib/dailySnapshot";
 import { LIQUID_CORE_SYMBOLS } from "./data/liquidCore130";
+import { db, equityDailyTable } from "@workspace/db";
+import { inArray, desc, sql } from "drizzle-orm";
 import { startPolygonPCRatioPoller } from "./lib/polygonPutCallRatio";
 import { migrateAiLabSeedData } from "./lib/aiLabMigration";
 import { getBestAccessToken } from "./lib/tokenStore";
@@ -127,19 +129,6 @@ async function boot() {
   initAiLabOrchestrator();
   startUniverseRebuildSchedule();
 
-  setTokenRefreshCallback((kind, _accessToken) => {
-    if (kind === "trader" || kind === "market") {
-      addFuturesSymbols([...SCHWAB_FUTURES_SYMS, ...SCHWAB_FUTURES_INDEX_SYMS]);
-      if (SCHWAB_EQUITY_SYMS.length > 0) addSchwabSymbols(SCHWAB_EQUITY_SYMS);
-      schwabTokenRefreshed();
-      initSyntheticDxy();
-      triggerLiquidCoreBackfill();
-    }
-  });
-
-  registerQuoteCacheInjector(injectExternalQuote);
-  registerIBBroadcast(broadcastToClients);
-
   const SCHWAB_FUTURES_SYMS = [
     "/ES", "/NQ", "/YM", "/RTY",
     "/GC", "/CL", "/BZ", "/HG", "/SI", "/NG", "/RB", "/PL",
@@ -163,29 +152,86 @@ async function boot() {
   ];
 
   let backfillTriggered = false;
-  function triggerLiquidCoreBackfill() {
+  async function triggerLiquidCoreBackfill() {
     if (backfillTriggered) return;
     backfillTriggered = true;
     const symbols = [...LIQUID_CORE_SYMBOLS];
 
-    // Compute the last 7 calendar days, filter to weekdays (Mon–Fri),
-    // keep up to 5 most-recent trading dates to fill any gaps since last snapshot.
-    const tradingDates: string[] = [];
-    const now = Date.now();
-    for (let i = 1; i <= 10 && tradingDates.length < 5; i++) {
-      const d = new Date(now - i * 86_400_000);
-      const dow = d.getUTCDay(); // 0=Sun, 6=Sat
-      if (dow !== 0 && dow !== 6) {
-        tradingDates.push(d.toISOString().slice(0, 10));
-      }
-    }
+    try {
+      const sampleSymbols = symbols.slice(0, 10);
+      const perSymbolCounts = await db
+        .select({
+          sym: equityDailyTable.symbol,
+          cnt: sql<number>`count(distinct date)`,
+        })
+        .from(equityDailyTable)
+        .where(inArray(equityDailyTable.symbol, sampleSymbols))
+        .groupBy(equityDailyTable.symbol);
 
-    logger.info({ count: symbols.length, dates: tradingDates }, "Auto-triggering grouped daily equity update via Polygon");
-    updateEquityDailyFromGroupedBars(symbols, tradingDates).catch((err) => {
+      const minDateCount = perSymbolCounts.length < sampleSymbols.length
+        ? 0
+        : Math.min(...perSymbolCounts.map(r => Number(r.cnt)));
+      const existingDateCount = minDateCount;
+
+      const MIN_HISTORY_DAYS = 60;
+      const needsDeepBackfill = existingDateCount < MIN_HISTORY_DAYS;
+      const targetDays = needsDeepBackfill ? 90 : 5;
+      const scanLimit = needsDeepBackfill ? 130 : 10;
+
+      const tradingDates: string[] = [];
+      const now = Date.now();
+      for (let i = 1; i <= scanLimit && tradingDates.length < targetDays; i++) {
+        const d = new Date(now - i * 86_400_000);
+        const dow = d.getUTCDay();
+        if (dow !== 0 && dow !== 6) {
+          tradingDates.push(d.toISOString().slice(0, 10));
+        }
+      }
+
+      logger.info({
+        count: symbols.length,
+        existingDateCount,
+        mode: needsDeepBackfill ? "initial_backfill" : "incremental",
+        dates: tradingDates.length,
+        range: `${tradingDates[tradingDates.length - 1]} → ${tradingDates[0]}`,
+      }, "Auto-triggering grouped daily equity update via Polygon");
+
+      await updateEquityDailyFromGroupedBars(symbols, tradingDates);
+
+      const postCheck = await db
+        .select({
+          sym: equityDailyTable.symbol,
+          cnt: sql<number>`count(distinct date)`,
+        })
+        .from(equityDailyTable)
+        .where(inArray(equityDailyTable.symbol, sampleSymbols))
+        .groupBy(equityDailyTable.symbol);
+      const postMin = postCheck.length > 0 ? Math.min(...postCheck.map(r => Number(r.cnt))) : 0;
+      logger.info({
+        symbolsChecked: postCheck.length,
+        minDaysAcrossSample: postMin,
+        scannerRequirement: 60,
+        ready: postMin >= 60,
+      }, "Equity backfill: post-backfill coverage check");
+    } catch (err) {
       backfillTriggered = false;
       logger.warn({ err }, "Grouped daily equity update failed");
-    });
+    }
   }
+
+  triggerLiquidCoreBackfill();
+
+  setTokenRefreshCallback((kind, _accessToken) => {
+    if (kind === "trader" || kind === "market") {
+      addFuturesSymbols([...SCHWAB_FUTURES_SYMS, ...SCHWAB_FUTURES_INDEX_SYMS]);
+      if (SCHWAB_EQUITY_SYMS.length > 0) addSchwabSymbols(SCHWAB_EQUITY_SYMS);
+      schwabTokenRefreshed();
+      initSyntheticDxy();
+    }
+  });
+
+  registerQuoteCacheInjector(injectExternalQuote);
+  registerIBBroadcast(broadcastToClients);
 
   if (hasValidTokens("trader")) {
     logger.info("Schwab tokens available — starting Schwab streamer with futures + indices");
@@ -193,7 +239,6 @@ async function boot() {
       addFuturesSymbols([...SCHWAB_FUTURES_SYMS, ...SCHWAB_FUTURES_INDEX_SYMS]);
       if (SCHWAB_EQUITY_SYMS.length > 0) addSchwabSymbols(SCHWAB_EQUITY_SYMS);
       initSyntheticDxy();
-      triggerLiquidCoreBackfill();
     }).catch((err) => logger.warn({ err }, "Schwab streamer start failed"));
   } else {
     logger.info("Schwab tokens not yet available — streamer will start on token refresh");
