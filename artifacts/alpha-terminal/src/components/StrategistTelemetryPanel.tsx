@@ -11,7 +11,12 @@ interface TelemetryRow {
   tickerData: any;
   idioScore: any;
   toxicGate: any;
+  viability: any;
+  earningsGate: any;
   strategyDecision: any;
+  candidatesGenerated: number | null;
+  candidatesFiltered: number | null;
+  filterReasons: string[] | null;
   winningCandidate: any;
   edgeAttribution: any;
   recommendationThesis: string | null;
@@ -166,8 +171,20 @@ export function StrategistTelemetryPanel() {
                   {row.toxicGate && (
                     <DetailBlock title="Toxic Gate" data={row.toxicGate} />
                   )}
+                  {row.viability && (
+                    <DetailBlock title="Viability" data={row.viability} />
+                  )}
+                  {row.earningsGate && (
+                    <DetailBlock title="Earnings Gate" data={row.earningsGate} />
+                  )}
                   {row.strategyDecision && (
                     <DetailBlock title="Strategy Decision" data={row.strategyDecision} />
+                  )}
+                  {(row.candidatesGenerated != null || row.candidatesFiltered != null) && (
+                    <DetailBlock title="Candidates" data={{ generated: row.candidatesGenerated, filteredOut: row.candidatesFiltered, filterReasons: row.filterReasons }} />
+                  )}
+                  {row.edgeAttribution && (
+                    <DetailBlock title="Edge Attribution" data={row.edgeAttribution} />
                   )}
                   {row.winningCandidate && (
                     <DetailBlock title="Winning Candidate" data={row.winningCandidate} />

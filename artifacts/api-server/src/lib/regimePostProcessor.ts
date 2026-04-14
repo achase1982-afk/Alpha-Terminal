@@ -3,6 +3,7 @@ import { desc, eq, inArray, sql, gte } from "drizzle-orm";
 import { logger } from "./logger.js";
 import { LIQUID_CORE_SYMBOLS } from "../data/liquidCore130.js";
 import type { EngineOutput, ClusterName } from "./marketPulseEngine.js";
+import { getSettings } from "./strategistSettings.js";
 
 export type DirectionalConviction =
   | "BULLISH"
@@ -26,14 +27,14 @@ export interface StructuredRegime {
 
 let cachedRegime: StructuredRegime | null = null;
 let lastUpdateMs = 0;
-const UPDATE_INTERVAL_MS = 5 * 60 * 1000;
+let updateIntervalMs = 5 * 60 * 1000;
 
 export function getCachedRegime(): StructuredRegime | null {
   return cachedRegime;
 }
 
 export function isRegimeStale(): boolean {
-  return !cachedRegime || Date.now() - lastUpdateMs > UPDATE_INTERVAL_MS * 2;
+  return !cachedRegime || Date.now() - lastUpdateMs > updateIntervalMs * 2;
 }
 
 export function deriveDirectionalConviction(pulse: EngineOutput): DirectionalConviction {
@@ -67,8 +68,12 @@ export function deriveSystemicRiskLevel(pulse: EngineOutput): SystemicRiskLevel 
   return "LOW";
 }
 
-export async function computeCorrelationRegime(): Promise<CorrelationRegime> {
+export async function computeCorrelationRegime(settings?: { correlationLowCeiling: number; correlationHighFloor: number }): Promise<CorrelationRegime> {
   try {
+    const cfg = settings ?? await getSettings();
+    const lowCeiling = cfg.correlationLowCeiling;
+    const highFloor = cfg.correlationHighFloor;
+
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - 30);
     const cutoffStr = cutoff.toISOString().split("T")[0];
@@ -125,8 +130,8 @@ export async function computeCorrelationRegime(): Promise<CorrelationRegime> {
     if (correlations.length === 0) return "NORMAL";
     const avg = correlations.reduce((a, b) => a + b, 0) / correlations.length;
 
-    if (avg > 0.75) return "HIGH";
-    if (avg < 0.40) return "LOW";
+    if (avg > highFloor) return "HIGH";
+    if (avg < lowCeiling) return "LOW";
     return "NORMAL";
   } catch (err) {
     logger.error({ err }, "Failed to compute correlation regime");
@@ -150,9 +155,11 @@ function pearsonCorrelation(pairs: [number, number][]): number {
 }
 
 export async function updateRegimeFromPulse(pulse: EngineOutput): Promise<StructuredRegime> {
+  const cfg = await getSettings();
+  updateIntervalMs = (cfg.regimeUpdateFrequencyMin ?? 5) * 60 * 1000;
   const directionalConviction = deriveDirectionalConviction(pulse);
   const systemicRiskLevel = deriveSystemicRiskLevel(pulse);
-  const correlationRegime = await computeCorrelationRegime();
+  const correlationRegime = await computeCorrelationRegime(cfg);
   const compositeScore = Math.round(((pulse.compositeScore + 2) / 4) * 100);
 
   const idioOpportunityFlag =
