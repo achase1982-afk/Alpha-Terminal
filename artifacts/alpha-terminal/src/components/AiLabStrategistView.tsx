@@ -264,6 +264,12 @@ function ReportRow({ label, value, color }: { label: string; value: string; colo
   );
 }
 
+function fmtDateTime(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, { month: "numeric", day: "numeric", year: "numeric" })
+    + " " + d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", hour12: true });
+}
+
 function IdeaCard({ idea }: { idea: AiLabIdea }) {
   const [expanded, setExpanded] = useState(false);
   const isLong = idea.direction === "LONG";
@@ -329,6 +335,8 @@ function IdeaCard({ idea }: { idea: AiLabIdea }) {
                   </span>
                 </>
               )}
+              <span className="text-zinc-700">·</span>
+              <span className="font-mono text-[9px] text-zinc-600">{fmtDateTime(idea.createdAt)}</span>
             </div>
           </div>
         </div>
@@ -449,7 +457,7 @@ function DeliberationCard({ deliberation }: { deliberation: AiLabDeliberation })
               <span className="font-mono text-[9px] text-zinc-500">{deliberation.source}</span>
               <span className="text-zinc-700">·</span>
               <span className="font-mono text-[9px] text-zinc-600">
-                {new Date(deliberation.createdAt).toLocaleDateString()}
+                {fmtDateTime(deliberation.createdAt)}
               </span>
             </div>
           </div>
@@ -623,7 +631,7 @@ export function AiLabStrategistView() {
   }
 
   const filterOptions: { value: ViewFilter; label: string }[] = [
-    { value: "shown", label: "Shown" },
+    { value: "shown", label: "Proposed" },
     { value: "rejected", label: "Rejected" },
     { value: "all", label: "All" },
   ];
