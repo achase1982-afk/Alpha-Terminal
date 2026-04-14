@@ -138,7 +138,9 @@ Your response must be valid JSON with these fields:
 - breakeven: array of numbers (breakeven price points)
 - rationale: string (3-5 sentences explaining why this specific trade, what you see in the data and your broader knowledge, why this structure fits the current setup)
 - confidence: number 0-100
-- warnings: string or null (anything the user should know: earnings risk, low liquidity, gap risk, etc.)`;
+- warnings: string or null (anything the user should know: earnings risk, low liquidity, gap risk, etc.)
+
+IMPORTANT: Respond with ONLY the JSON object. No markdown, no explanation text, no code fences. Just the raw JSON.`;
 
 export async function analyzeTickerV2(ticker: string): Promise<StrategistV2Result> {
   const settings = await getSettings();
@@ -421,9 +423,11 @@ async function callAiForTrade(dataPackage: string, retryInstruction?: string): P
   const model = aiCfg.analystModelName;
   const temperature = aiCfg.analystTemperature;
 
+  logger.info({ provider, model, temperature }, "StrategistV2: calling AI for trade");
+
   const prompt = retryInstruction
     ? `${retryInstruction}\n\nOriginal data package:\n${dataPackage}`
-    : `Analyze this ticker and recommend the best trade:\n\n${dataPackage}`;
+    : `Analyze this ticker and recommend the best trade. Respond ONLY with a valid JSON object, no text before or after.\n\n${dataPackage}`;
 
   let rawText: string;
   switch (provider) {
@@ -437,17 +441,31 @@ async function callAiForTrade(dataPackage: string, retryInstruction?: string): P
       throw new Error(`Unsupported provider: ${provider}`);
   }
 
-  const cleanText = extractJson(rawText);
+  logger.info({ rawSnippet: rawText.slice(0, 300) }, "StrategistV2: raw AI response snippet");
+
+  let cleanText = extractJson(rawText);
   let parsed: unknown;
   try {
     parsed = JSON.parse(cleanText);
   } catch {
-    logger.error({ rawSnippet: rawText.slice(0, 500) }, "StrategistV2: AI response JSON parse failure");
-    throw new Error("AI response is not valid JSON");
+    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      try {
+        parsed = JSON.parse(jsonMatch[0]);
+        logger.info("StrategistV2: recovered JSON from raw text via brace extraction");
+      } catch {
+        logger.error({ rawSnippet: rawText.slice(0, 500) }, "StrategistV2: AI response JSON parse failure");
+        throw new Error("AI response is not valid JSON");
+      }
+    } else {
+      logger.error({ rawSnippet: rawText.slice(0, 500) }, "StrategistV2: AI response JSON parse failure");
+      throw new Error("AI response is not valid JSON");
+    }
   }
 
   const resp = parsed as Record<string, unknown>;
   if (!resp.strategy || !Array.isArray(resp.legs) || resp.legs.length === 0) {
+    logger.error({ parsedKeys: Object.keys(resp), parsedSnippet: JSON.stringify(resp).slice(0, 500) }, "StrategistV2: AI response missing required fields");
     throw new Error("AI response missing required fields (strategy, legs)");
   }
 
