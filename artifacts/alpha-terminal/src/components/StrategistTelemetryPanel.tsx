@@ -76,7 +76,7 @@ export function StrategistTelemetryPanel() {
             <button
               key={t}
               onClick={() => { setActiveTab(t); setExpandedId(null); }}
-              className="px-3 py-1 rounded-full font-mono text-[10px] font-bold tracking-wider"
+              className="px-3 py-1 rounded-full font-mono text-[12px] font-bold tracking-wider"
               style={{
                 background: activeTab === t ? "#3f3f46" : "transparent",
                 color: activeTab === t ? "#fff" : "#71717a",
@@ -114,31 +114,31 @@ export function StrategistTelemetryPanel() {
                 <div className="flex items-center gap-3 min-w-0">
                   <span className="font-mono text-[12px] text-white font-bold w-12 flex-shrink-0">{row.ticker}</span>
                   <span
-                    className="font-mono text-[9px] font-bold px-1.5 py-0.5 rounded"
+                    className="font-mono text-[12px] font-bold px-1.5 py-0.5 rounded"
                     style={{ color: resultColor(row.result), background: `${resultColor(row.result)}15` }}
                   >
                     {row.result.toUpperCase().replace(/_/g, " ")}
                   </span>
                   {row.idioScore && (
-                    <span className="font-mono text-[10px] text-zinc-400">
+                    <span className="font-mono text-[12px] text-zinc-300">
                       IO:{Math.round(row.idioScore.final * 100)}%
                     </span>
                   )}
                   {row.strategyDecision?.strategyType && (
-                    <span className="font-mono text-[10px] text-zinc-500 hidden sm:inline">
+                    <span className="font-mono text-[12px] text-zinc-400 hidden sm:inline">
                       {row.strategyDecision.strategyType.replace(/_/g, " ")}
                     </span>
                   )}
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  <span className="font-mono text-[10px] text-zinc-500">{fmtDt(row.timestamp)}</span>
-                  {expandedId === row.id ? <ChevronUp className="w-3 h-3 text-zinc-500" /> : <ChevronDown className="w-3 h-3 text-zinc-500" />}
+                  <span className="font-mono text-[12px] text-zinc-400">{fmtDt(row.timestamp)}</span>
+                  {expandedId === row.id ? <ChevronUp className="w-3.5 h-3.5 text-zinc-400" /> : <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />}
                 </div>
               </button>
               {expandedId === row.id && (
-                <div className="px-3 pb-3 border-t border-zinc-800/50 space-y-2 pt-2">
+                <div className="px-4 pb-4 border-t border-zinc-800/50 space-y-3 pt-3">
                   {row.recommendationThesis && (
-                    <div className="font-mono text-[11px] text-white leading-relaxed">{row.recommendationThesis}</div>
+                    <div className="font-mono text-[13px] text-white leading-relaxed">{row.recommendationThesis}</div>
                   )}
                   {row.regime && (
                     <DetailBlock title="Regime" data={row.regime} />
@@ -175,25 +175,25 @@ export function StrategistTelemetryPanel() {
                 className="w-full px-3 py-2.5 flex items-center justify-between cursor-pointer text-left"
               >
                 <div className="flex items-center gap-3">
-                  <span className="font-mono text-[10px] text-[#f5a623] font-bold">{row.mode}</span>
-                  <span className="font-mono text-[10px] text-white">
+                  <span className="font-mono text-[12px] text-[#f5a623] font-bold">{row.mode}</span>
+                  <span className="font-mono text-[12px] text-white">
                     {row.aboveThreshold ?? 0} above threshold
                   </span>
-                  <span className="font-mono text-[10px] text-zinc-500">
+                  <span className="font-mono text-[12px] text-zinc-400">
                     / {row.universeSize ?? 0} scanned
                   </span>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  <span className="font-mono text-[10px] text-zinc-500">{fmtDt(row.timestamp)}</span>
-                  {expandedId === row.id ? <ChevronUp className="w-3 h-3 text-zinc-500" /> : <ChevronDown className="w-3 h-3 text-zinc-500" />}
+                  <span className="font-mono text-[12px] text-zinc-400">{fmtDt(row.timestamp)}</span>
+                  {expandedId === row.id ? <ChevronUp className="w-3.5 h-3.5 text-zinc-400" /> : <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />}
                 </div>
               </button>
               {expandedId === row.id && (
-                <div className="px-3 pb-3 border-t border-zinc-800/50 space-y-2 pt-2">
+                <div className="px-4 pb-4 border-t border-zinc-800/50 space-y-3 pt-3">
                   {row.regime && <DetailBlock title="Regime" data={row.regime} />}
                   {row.weightsUsed && <DetailBlock title="Weights" data={row.weightsUsed} />}
                   {row.catalystBonusAppliedTo?.length > 0 && (
-                    <div className="font-mono text-[10px] text-white">
+                    <div className="font-mono text-[13px] text-white">
                       Catalyst bonus: {row.catalystBonusAppliedTo.join(", ")}
                     </div>
                   )}
@@ -214,12 +214,12 @@ function DetailBlock({ title, data }: { title: string; data: any }) {
   const [open, setOpen] = useState(false);
   return (
     <div>
-      <button onClick={() => setOpen(!open)} className="flex items-center gap-1 font-mono text-[9px] text-zinc-500 uppercase tracking-wider hover:text-zinc-300">
-        {open ? <ChevronUp className="w-2.5 h-2.5" /> : <ChevronDown className="w-2.5 h-2.5" />}
+      <button onClick={() => setOpen(!open)} className="flex items-center gap-1.5 font-mono text-[12px] text-zinc-400 uppercase tracking-wider hover:text-white">
+        {open ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
         {title}
       </button>
       {open && (
-        <pre className="mt-1 p-2 rounded bg-black/30 font-mono text-[9px] text-zinc-400 overflow-x-auto max-h-60 whitespace-pre-wrap">
+        <pre className="mt-1.5 p-3 rounded bg-black/40 font-mono text-[13px] text-white overflow-x-auto max-h-80 whitespace-pre-wrap leading-relaxed">
           {JSON.stringify(data, null, 2)}
         </pre>
       )}
