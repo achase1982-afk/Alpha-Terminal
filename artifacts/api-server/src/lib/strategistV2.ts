@@ -128,10 +128,11 @@ export async function analyzeTickerV2(ticker: string): Promise<StrategistV2Resul
   if (!chain || chain.length === 0) {
     return noViable(ticker, regime, settings, toxicCheck, tickerData, "No viable options setup: no options chain.");
   }
+  logger.info({ ticker, chainLength: chain.length, puts: chain.filter((c: any) => c.type === "put").length, calls: chain.filter((c: any) => c.type === "call").length }, "StrategistV2: options chain loaded");
 
   const atmSpreadPct = computeAtmSpread(chain, tickerData.price);
   if (atmSpreadPct > settings.maxBidAskSpreadPct / 100) {
-    return noViable(ticker, regime, settings, toxicCheck, tickerData, "No viable options setup: spreads too wide.");
+    return noViable(ticker, regime, settings, toxicCheck, tickerData, `No viable options setup: ATM spread ${(atmSpreadPct * 100).toFixed(1)}% exceeds max ${settings.maxBidAskSpreadPct}%.`);
   }
 
   const catalystInfo = deriveCatalyst(tickerData);
@@ -141,14 +142,19 @@ export async function analyzeTickerV2(ticker: string): Promise<StrategistV2Resul
   const { creditOrDebit, creditReason } = determineCreditDebit(tickerData.ivr ?? 0, settings);
 
   const strategyType = selectStrategyType(direction, creditOrDebit);
+  logger.info({ ticker, direction, creditOrDebit, strategyType, price: tickerData.price, ioClassification: ioScore.classification }, "StrategistV2: strategy selection");
 
   const candidates = buildCandidates(chain, strategyType, direction, tickerData.price, settings);
   const filterReasons: string[] = [];
   const viable = filterCandidates(candidates, settings, filterReasons);
+  logger.info({ ticker, rawCandidates: candidates.length, viableCandidates: viable.length, filterReasons: filterReasons.slice(0, 5) }, "StrategistV2: candidate filtering");
 
   if (viable.length === 0) {
+    const detail = candidates.length === 0
+      ? `No candidates built for ${strategyType} (price=$${tickerData.price.toFixed(2)}, chain=${chain.length} contracts, DTE ${settings.preferredDteMin}-${settings.preferredDteMax}).`
+      : `${candidates.length} candidates built but all filtered: ${filterReasons.slice(0, 3).join("; ")}.`;
     return noViable(ticker, regime, settings, toxicCheck, tickerData,
-      "No viable options setup for this ticker: insufficient liquidity at target strikes.",
+      `No viable options setup: ${detail}`,
       ioScore);
   }
 
@@ -619,7 +625,9 @@ async function fetchOptionsChain(ticker: string, settings: StrategistConfig): Pr
       return flattenSchwabChain(data, settings);
     }
 
-    const allContracts = [...(chain.calls || []), ...(chain.puts || [])];
+    const taggedCalls = (chain.calls || []).map((c: any) => ({ ...c, type: "call", optionType: "CALL", mid: c.mid ?? ((c.bid ?? 0) + (c.ask ?? 0)) / 2 }));
+    const taggedPuts = (chain.puts || []).map((c: any) => ({ ...c, type: "put", optionType: "PUT", mid: c.mid ?? ((c.bid ?? 0) + (c.ask ?? 0)) / 2 }));
+    const allContracts = [...taggedCalls, ...taggedPuts];
     return allContracts.filter((c: any) => {
       const dte = c.dte ?? 0;
       return dte >= settings.preferredDteMin && dte <= settings.preferredDteMax;
