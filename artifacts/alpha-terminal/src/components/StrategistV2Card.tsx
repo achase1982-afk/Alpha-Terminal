@@ -1,7 +1,7 @@
 import { useState } from "react";
 import {
   TrendingUp, TrendingDown, Minus, Shield,
-  ChevronDown, ChevronUp, Target, Activity, Zap,
+  ChevronDown, ChevronUp, Target, Activity, Zap, Send,
 } from "lucide-react";
 
 const GOLD = "#f5a623";
@@ -80,7 +80,35 @@ function DirectionIcon({ dir }: { dir: string }) {
   return <Minus className="w-4 h-4" style={{ color: GOLD }} />;
 }
 
-export function StrategistV2RecommendationCard({ result }: { result: StrategistV2Result }) {
+function buildOccSymbol(ticker: string, expiration: string, type: string, strike: number): string {
+  const d = new Date(expiration);
+  if (isNaN(d.getTime())) return "";
+  const yy = String(d.getFullYear()).slice(2);
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const strikePadded = String(Math.round(strike * 1000)).padStart(8, "0");
+  const sym = ticker.toUpperCase().padEnd(6, " ");
+  return `${sym}${yy}${mm}${dd}${type.toUpperCase() === "CALL" ? "C" : "P"}${strikePadded}`;
+}
+
+export interface StrategistSendToOrderPayload {
+  ticker: string;
+  legs: Array<{
+    schwabSymbol: string;
+    instruction: string;
+    quantity: number;
+    optionType: string;
+    strike: number;
+    expiration: string;
+    bid: number;
+    ask: number;
+    delta: number;
+  }>;
+  netPrice: number;
+  isCredit: boolean;
+}
+
+export function StrategistV2RecommendationCard({ result, onSendToOrder }: { result: StrategistV2Result; onSendToOrder?: (payload: StrategistSendToOrderPayload) => void }) {
   const [expanded, setExpanded] = useState(false);
   const { recommendation: rec, regime, ioScore, systemicRiskElevated } = result;
 
@@ -121,6 +149,35 @@ export function StrategistV2RecommendationCard({ result }: { result: StrategistV
           <StatRow label="Breakeven" value={`$${rec.breakeven.toFixed(2)}`} />
           <StatRow label="DTE" value={`${rec.dte}d`} />
         </div>
+
+        {onSendToOrder && (
+          <button
+            onClick={() => {
+              const isCredit = rec.credit != null && rec.credit > 0;
+              const netPrice = isCredit ? rec.credit! : (rec.debit ?? 0);
+              const orderLegs = rec.legs.map(leg => ({
+                schwabSymbol: buildOccSymbol(result.ticker, leg.expiration, leg.type, leg.strike),
+                instruction: leg.side === "buy" ? "BUY_TO_OPEN" : "SELL_TO_OPEN",
+                quantity: 1,
+                optionType: leg.type.toUpperCase(),
+                strike: leg.strike,
+                expiration: leg.expiration,
+                bid: leg.bid,
+                ask: leg.ask,
+                delta: leg.delta,
+              }));
+              onSendToOrder({ ticker: result.ticker, legs: orderLegs, netPrice, isCredit });
+            }}
+            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg font-mono text-[12px] font-bold transition-all active:scale-[0.98] mb-3"
+            style={{
+              background: "linear-gradient(135deg, #f5a623, #ffce73)",
+              color: "#000",
+            }}
+          >
+            <Send className="w-3.5 h-3.5" />
+            Send to Order
+          </button>
+        )}
 
         <button
           onClick={() => setExpanded(!expanded)}

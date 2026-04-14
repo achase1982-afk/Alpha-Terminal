@@ -19,6 +19,7 @@ import { useViewportShell } from "@/hooks/useViewportShell";
 
 import { InAppBrowser } from "@/components/InAppBrowser";
 import { OrderTicket, type OrderLeg } from "@/components/OrderTicket";
+import type { StrategistSendToOrderPayload } from "@/components/StrategistV2Card";
 import { StrategyBuilder, type StrategyLeg } from "@/components/StrategyBuilder";
 import type { OptionsContract } from "@/components/OptionsTab";
 import { MarketSessionClock } from "@/components/MarketSessionClock";
@@ -308,6 +309,30 @@ export default function TerminalPage() {
     setStrategyInitialLegs(mapped);
     setStrategyOpen(true);
   }, []);
+
+  const handleStrategistSendToOrder = useCallback((payload: StrategistSendToOrderPayload) => {
+    useTerminalStore.getState().setSymbol(payload.ticker);
+    const orderLegs: OrderLeg[] = payload.legs.map(leg => ({
+      schwabSymbol: leg.schwabSymbol,
+      instruction: leg.instruction,
+      quantity: leg.quantity,
+      optionType: leg.optionType,
+      strike: leg.strike,
+      expiration: leg.expiration,
+      bid: leg.bid,
+      ask: leg.ask,
+      delta: leg.delta,
+    }));
+    setOrderSide("BUY");
+    setOrderOptionSymbol(undefined);
+    setOrderOptionInstruction(undefined);
+    setOrderStrategyLegs(orderLegs);
+    setOrderStrategyNetPrice(payload.netPrice);
+    setOrderStrategyIsCredit(payload.isCredit);
+    setOrderIsClose(false);
+    setOrderOpen(true);
+  }, []);
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickyWrapRef = useRef<HTMLDivElement>(null);
   const [stickyH, setStickyH] = useState(0);
@@ -497,7 +522,7 @@ export default function TerminalPage() {
             )}
 
             {activeBottom === "ai" && (
-              <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToMarkets={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} onSendToOrder={handleSendToOrder} />
+              <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToMarkets={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} onSendToOrder={handleSendToOrder} onStrategistSendToOrder={handleStrategistSendToOrder} />
             )}
 
             {activeBottom === "portfolio" && (
@@ -541,7 +566,7 @@ export default function TerminalPage() {
             ) : (
               <main ref={scrollRef} onScroll={handleScroll} className="flex-1 min-w-0 app-content pb-4 overflow-y-auto" style={activeBottom === "portfolio" ? { overscrollBehaviorY: "none" } : undefined}>
                 {activeBottom === "ai" && (
-                  <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToMarkets={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} onSendToOrder={handleSendToOrder} />
+                  <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToMarkets={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} onSendToOrder={handleSendToOrder} onStrategistSendToOrder={handleStrategistSendToOrder} />
                 )}
                 {activeBottom === "portfolio" && (
                   <PortfolioView onNavigateToSymbol={() => setActiveBottom("markets")} onTrade={openOrderForSymbol} onRoll={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); setContextTab("options"); }} />
@@ -578,7 +603,7 @@ export default function TerminalPage() {
             )}
 
             {activeBottom === "ai" && (
-              <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToMarkets={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} onSendToOrder={handleSendToOrder} />
+              <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToMarkets={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} onSendToOrder={handleSendToOrder} onStrategistSendToOrder={handleStrategistSendToOrder} />
             )}
 
             {activeBottom === "portfolio" && (

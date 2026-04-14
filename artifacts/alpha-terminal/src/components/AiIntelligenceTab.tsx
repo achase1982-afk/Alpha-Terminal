@@ -19,7 +19,7 @@ import { useStrategistCache, type StrategistCacheData } from "@/hooks/useStrateg
 import { MarketScanner, type DetCandidate } from "@/components/MarketScanner";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { AiLabStrategistView } from "@/components/AiLabStrategistView";
-import { StrategistV2RecommendationCard, StrategistV2BlockCard, type StrategistV2Result as StrategistV2ResultType } from "@/components/StrategistV2Card";
+import { StrategistV2RecommendationCard, StrategistV2BlockCard, type StrategistV2Result as StrategistV2ResultType, type StrategistSendToOrderPayload } from "@/components/StrategistV2Card";
 
 const API_BASE = "/api";
 
@@ -2054,13 +2054,14 @@ interface AiIntelligenceTabProps {
   subscribeEquitySymbols?: (syms: string[]) => void;
   onNavigateToMarkets?: (sym: string) => void;
   onSendToOrder?: (trade: ResolvedTrade) => void;
+  onStrategistSendToOrder?: (payload: StrategistSendToOrderPayload) => void;
 }
 
 const AI_TABS: AiSubTab[] = ["pulse", "strategist", "scanner"];
 
 type StrategistMode = "options" | "ailab";
 
-export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscribeEquitySymbols, onNavigateToMarkets, onSendToOrder }: AiIntelligenceTabProps) {
+export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscribeEquitySymbols, onNavigateToMarkets, onSendToOrder, onStrategistSendToOrder }: AiIntelligenceTabProps) {
   const [strategistMode, setStrategistMode] = useState<StrategistMode>("options");
   const swipeStartX = useRef(0);
   const swipeStartY = useRef(0);
@@ -2721,7 +2722,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
                 {v2Result && !isV2Running && (
                   <>
                     {v2Result.status === "recommendation" && v2Result.recommendation ? (
-                      <StrategistV2RecommendationCard result={v2Result} />
+                      <StrategistV2RecommendationCard result={v2Result} onSendToOrder={onStrategistSendToOrder} />
                     ) : (
                       <StrategistV2BlockCard result={v2Result} />
                     )}
