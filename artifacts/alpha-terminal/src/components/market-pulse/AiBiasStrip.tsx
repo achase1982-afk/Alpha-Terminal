@@ -156,12 +156,22 @@ export function AiBiasStrip({ onNavigateToPulse }: AiBiasStripProps) {
         </span>
         {summaryText && (
           <div className="overflow-hidden min-w-0" style={{ maskImage: "linear-gradient(to right, transparent 0%, black 4%, black 90%, transparent 100%)" }}>
-            <span
-              className="font-mono text-[13px] text-white whitespace-nowrap inline-block"
-              style={scrollEnabled ? { animation: `biasScroll ${scrollDuration}s linear infinite` } : { overflow: "hidden", textOverflow: "ellipsis" }}
-            >
-              {summaryText}
-            </span>
+            {scrollEnabled ? (
+              <div
+                className="flex whitespace-nowrap"
+                style={{ animation: `biasScroll ${scrollDuration}s linear infinite` }}
+              >
+                <span className="font-mono text-[13px] text-white shrink-0 pr-16">{summaryText}</span>
+                <span className="font-mono text-[13px] text-white shrink-0 pr-16">{summaryText}</span>
+              </div>
+            ) : (
+              <span
+                className="font-mono text-[13px] text-white whitespace-nowrap inline-block"
+                style={{ overflow: "hidden", textOverflow: "ellipsis" }}
+              >
+                {summaryText}
+              </span>
+            )}
           </div>
         )}
       </div>
@@ -169,8 +179,8 @@ export function AiBiasStrip({ onNavigateToPulse }: AiBiasStripProps) {
       {scrollEnabled && (
         <style>{`
           @keyframes biasScroll {
-            0% { transform: translateX(100%); }
-            100% { transform: translateX(-100%); }
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-50%); }
           }
         `}</style>
       )}
