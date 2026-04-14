@@ -85,7 +85,7 @@ const ALLOWED_KEYS = new Set([...NUMERIC_KEYS, ...BOOLEAN_KEYS, ...STRING_KEYS])
 
 export const DEFAULT_CONFIG: AiLabFullConfig = {
   analystModelProvider: "anthropic",
-  analystModelName: "claude-sonnet-4-20250514",
+  analystModelName: "claude-opus-4-20250514",
   analystTemperature: 0,
 
   skepticModelProvider: "google",
