@@ -184,6 +184,26 @@ router.post("/backfill-equity-polygon", async (req, res) => {
   }
 });
 
+router.post("/trigger", async (req, res) => {
+  const accessToken = getBestAccessToken();
+  if (!accessToken) {
+    return res.status(503).json({ ok: false, error: "No Schwab access token available. Authenticate first." });
+  }
+
+  const { symbols, date } = req.body as { symbols?: string[]; date?: string };
+  const scanSymbols = symbols ?? getDefaultUniverse();
+  const targetDate = date ?? new Date().toISOString().slice(0, 10);
+
+  logger.info({ symbols: scanSymbols.length, date: targetDate }, "Manual snapshot trigger: starting full collection");
+  res.json({ ok: true, message: `Full snapshot triggered for ${scanSymbols.length} symbols on ${targetDate}. Running in background.`, symbols: scanSymbols.length, date: targetDate });
+
+  runFullSnapshot(scanSymbols, accessToken, targetDate).then(result => {
+    logger.info({ ...result, date: targetDate }, "Manual snapshot trigger: complete");
+  }).catch(e => {
+    logger.error({ error: (e as Error).message, date: targetDate }, "Manual snapshot trigger: failed");
+  });
+});
+
 function getDefaultUniverse(): string[] {
   return [...LIQUID_CORE_SYMBOLS];
 }

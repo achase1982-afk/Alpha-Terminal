@@ -2,11 +2,12 @@ import { logger } from "./logger.js";
 import { getCachedRegime, buildFallbackRegime, type StructuredRegime } from "./regimePostProcessor.js";
 import { computeIOScore, type IOScoreResult } from "./ioScoreEngine.js";
 import { getSettings, type StrategistConfig } from "./strategistSettings.js";
-import { db, strategistTelemetryTable, equityDailyTable } from "@workspace/db";
-import { desc, eq, sql, gte, and, inArray } from "drizzle-orm";
+import { db, strategistTelemetryTable } from "@workspace/db";
+import { desc, eq, sql, and } from "drizzle-orm";
 import { getBestAccessToken } from "./tokenStore.js";
 import { fetchPolygonChain } from "./polygonChain.js";
 import { checkEventConflicts, getUpcomingEvents } from "./calendarEventChecker.js";
+import { computeIVR, type OptionContract } from "./optionsStrategist.js";
 
 const SCHWAB_API = "https://api.schwabapi.com/marketdata/v1";
 
@@ -131,6 +132,10 @@ export async function analyzeTickerV2(ticker: string): Promise<StrategistV2Resul
       null, { passed: false, chainAvailable: false, halted: false, atmSpreadPct: 0 }, 0, 0, []);
   }
   logger.info({ ticker, chainLength: chain.length, puts: chain.filter((c: any) => c.type === "put").length, calls: chain.filter((c: any) => c.type === "call").length }, "StrategistV2: options chain loaded");
+
+  const liveIvr = computeIvrFromChain(chain, tickerData.price);
+  tickerData.ivr = liveIvr;
+  logger.info({ ticker, liveIvr }, "StrategistV2: live IVR computed from options chain");
 
   const atmSpreadPct = computeAtmSpread(chain, tickerData.price);
   if (atmSpreadPct > settings.maxBidAskSpreadPct / 100) {
@@ -693,28 +698,10 @@ async function fetchTickerData(ticker: string): Promise<TickerData | null> {
     }
     const earningsWithin48h = earningsDaysAway != null && earningsDaysAway <= 2;
 
-    let ivr: number | null = null;
-    try {
-      const ivrRows = await db
-        .select({ ivr: equityDailyTable.ivr })
-        .from(equityDailyTable)
-        .where(and(
-          eq(equityDailyTable.symbol, ticker.toUpperCase()),
-          sql`${equityDailyTable.ivr} IS NOT NULL`
-        ))
-        .orderBy(desc(equityDailyTable.date))
-        .limit(1);
-      if (ivrRows.length > 0 && ivrRows[0].ivr != null) {
-        ivr = ivrRows[0].ivr;
-      }
-    } catch (e) {
-      logger.warn({ err: e, ticker }, "StrategistV2: IVR fetch from DB failed");
-    }
-
     return {
       price,
       dailyChangePct: q.netPercentChangeInDouble ?? 0,
-      ivr,
+      ivr: null,
       avgVolume20d: avgVol,
       currentVolume: currentVol,
       relativeVolume: avgVol > 0 ? currentVol / avgVol : 1,
@@ -757,6 +744,26 @@ async function fetchOptionsChain(ticker: string, settings: StrategistConfig): Pr
     logger.error({ err, ticker }, "StrategistV2: failed to fetch options chain");
     return [];
   }
+}
+
+function computeIvrFromChain(chain: any[], underlyingPrice: number): number {
+  const contracts: OptionContract[] = chain.map((c: any) => ({
+    strike: c.strike,
+    expiration: c.expiration,
+    bid: c.bid,
+    ask: c.ask,
+    volume: c.volume,
+    openInterest: c.openInterest,
+    iv: c.impliedVolatility ?? c.iv ?? c.volatility ?? 0,
+    delta: c.delta,
+    dte: c.dte,
+  }));
+
+  const exps = [...new Set(contracts.map(c => c.expiration))]
+    .filter(e => e && new Date(e).getTime() > Date.now())
+    .sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+
+  return computeIVR(contracts, underlyingPrice, exps);
 }
 
 function flattenSchwabChain(data: any, settings: StrategistConfig): any[] {
