@@ -29,7 +29,10 @@ A comprehensive "System Settings" sidebar panel (`SystemSettingsPage.tsx`) expos
 - **System Prompts**: Full CRUD for 6 prompt roles (shared_context, analyst, analyst_rebuttal, skeptic, skeptic_reeval, universe_screener) with version history and restore
 - **Deliberation Thresholds**: Max rounds, skeptic critique threshold, overnight/premarket top-N, trigger volumes, price shock %, block flow notional, scanner score delta
 - **Anomaly Detection**: Volume spike, flow strength, IVR spike, RS change thresholds, VIX boundaries, min price/volume filters, data freshness
+- **Trade Validation**: Max active ideas (default 20), min OI per leg (default 50), max bid-ask spread % (default 10%), min avg daily volume for stocks (default 100K)
 - **Schedule**: Per-pass enable/disable toggles for all 7 scheduled analysis passes
+
+Post-consensus validator checks (in `aiLabValidator.ts`): STALE_DATA (actual timestamp-based), WIDE_SPREAD, LOW_OI, INVALID_EXPIRATION (checks against availableExpirations list), LOW_LIQUIDITY, MAX_ACTIVE_REACHED, DUPLICATE_IDEA, CONTRADICTORY_IDEA. Removed checks: DTE_TOO_SHORT, LOW_ACTIVITY, SECTOR_CONCENTRATION, DIRECTION_SKEW, HIGH_CORRELATION_DUPLICATE. Cooldown system: rejected tickers are blocked from re-analysis for 24 hours (max 30 tickers, LRU eviction).
 
 Backend: Prompts stored in `ai_lab_prompts` table with DB-first loading (fallback to hardcoded defaults). All config changes apply at runtime via dynamic proxy reads in `aiLabService.ts` and `refreshOrchestratorConfig()` in the orchestrator. API routes under `/api/ai-lab/settings/*`, `/api/ai-lab/prompts/*`, `/api/ai-lab/universes`.
 

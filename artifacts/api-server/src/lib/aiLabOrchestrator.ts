@@ -1,5 +1,5 @@
-import { db, aiLabIdeasTable, aiLabWatchlistTable, aiLabEmbeddingsTable, aiLabDeliberationsTable } from "@workspace/db";
-import { eq, inArray, desc, sql } from "drizzle-orm";
+import { db, aiLabIdeasTable, aiLabWatchlistTable, aiLabEmbeddingsTable, aiLabDeliberationsTable, optionsChainDailyTable } from "@workspace/db";
+import { eq, inArray, desc, sql, and } from "drizzle-orm";
 import { emitTelemetry, createTelemetryBatch } from "./telemetryStore.js";
 import {
   getUniverseAnomalies,
@@ -13,6 +13,8 @@ import {
 } from "./aiLabService.js";
 import {
   validateAiLabIdea,
+  isOnCooldown,
+  addToCooldown,
   type TradeIdeaCandidate,
   type MarketDataSnapshot,
 } from "./aiLabValidator.js";
@@ -42,7 +44,6 @@ export function getOrchestratorConfig() {
     OVERNIGHT_TOP_N: cfg.overnightTopN,
     PREMARKET_TOP_N: cfg.premarketTopN,
     TRIGGER_MIN_AVG_VOLUME: cfg.triggerMinAvgVolume,
-    TRIGGER_MAX_DATA_FRESHNESS_MIN: cfg.dataFreshnessMinutes,
     PRICE_SHOCK_MIN_MOVE_PCT: cfg.priceShockMinMovePct,
     BLOCK_FLOW_MIN_NOTIONAL: cfg.blockFlowMinNotional,
     SCANNER_SCORE_MIN_DELTA: cfg.scannerScoreMinDelta,
@@ -125,12 +126,17 @@ function buildClients(): { analyst: AiLabAnalystClient; skeptic: AiLabSkepticCli
 
 // ─── CORE PIPELINE ──────────────────────────────────────────────────────────
 
-function computeDataFreshnessMinutes(): number {
-  const now = new Date();
-  const etHour = (now.getUTCHours() + ORCHESTRATOR_CONFIG.ET_OFFSET_HOURS + 24) % 24;
-  if (etHour >= 9 && etHour < 16) return 0;
-  if (etHour >= 16 && etHour < 20) return (etHour - 16) * 60;
-  return ORCHESTRATOR_CONFIG.TRIGGER_MAX_DATA_FRESHNESS_MIN + 1;
+async function getAvailableExpirations(symbol: string): Promise<string[]> {
+  try {
+    const rows = await db
+      .selectDistinct({ expiration: optionsChainDailyTable.expiration })
+      .from(optionsChainDailyTable)
+      .where(eq(optionsChainDailyTable.underlyingSymbol, symbol.toUpperCase()))
+      .orderBy(optionsChainDailyTable.expiration);
+    return rows.map(r => r.expiration);
+  } catch {
+    return [];
+  }
 }
 
 async function runPipeline(
@@ -155,7 +161,8 @@ async function runPipeline(
     .where(inArray(aiLabIdeasTable.status, ["NEW", "ACTIVE"]));
 
   const runContext = { passName: source, timestamp: new Date().toISOString() };
-  const tickerSnapshotData = snapshot as unknown as Record<string, unknown>;
+  const availableExpirations = await getAvailableExpirations(symbol);
+  const tickerSnapshotData = { ...(snapshot as unknown as Record<string, unknown>), availableExpirations };
   const regimeData = regime as unknown as Record<string, unknown>;
 
   const analystRequest: AnalystRequest = {
@@ -420,7 +427,8 @@ async function runPipeline(
 
   const marketData: MarketDataSnapshot = {
     avgVolume20d: snapshot.volumeSummary.median20d,
-    dataFreshnessMinutes: computeDataFreshnessMinutes(),
+    dataTimestamp: Date.now(),
+    availableExpirations,
   };
 
   const analystWithdrew = conversationTurns.some(t => t.role === "analyst" && t.content.agreesWithSkeptic === true);
@@ -450,6 +458,7 @@ async function runPipeline(
   let ideaId: number | undefined;
 
   if (!validation.approved) {
+    addToCooldown(symbol);
     logAiLabEvent("IDEA_REJECTED", {
       symbol,
       rejectionReason: validation.rejectionReason,
@@ -457,6 +466,7 @@ async function runPipeline(
       source,
       finalDecision: finalDecision.decision,
       deliberationRounds: totalRounds,
+      cooldownAdded: true,
     }, batch, "WARN");
 
     try {
@@ -701,6 +711,15 @@ async function preMarketPlan(): Promise<void> {
       const results: PipelineResult[] = [];
 
       for (const pick of screenResult.picks) {
+        if (isOnCooldown(pick.symbol)) {
+          logAiLabEvent("UNIVERSE_PICK_SKIPPED", {
+            symbol: pick.symbol,
+            reason: "On rejection cooldown (24h)",
+          }, batch, "WARN");
+          results.push({ symbol: pick.symbol, approved: false, rejectionReason: "REJECTION_COOLDOWN" });
+          continue;
+        }
+
         if (pick.conviction < 60) {
           logAiLabEvent("UNIVERSE_PICK_SKIPPED", {
             symbol: pick.symbol,

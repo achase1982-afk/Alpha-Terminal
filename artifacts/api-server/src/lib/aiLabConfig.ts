@@ -42,6 +42,11 @@ export interface AiLabFullConfig {
   scheduleMiddayRotation: boolean;
   schedulePowerHourPrep: boolean;
   schedulePostMarketReflection: boolean;
+
+  validatorMaxActiveIdeas: number;
+  validatorMinOiPerLeg: number;
+  validatorMaxSpreadPct: number;
+  validatorMinAvgVolumeStock: number;
 }
 
 export type AiLabStrategistConfig = AiLabFullConfig;
@@ -58,6 +63,8 @@ const NUMERIC_KEYS = new Set([
   "anomalyIvrSpikeThreshold", "anomalyRsChangeThreshold",
   "vixLow", "vixNormal", "anomalyMinPrice",
   "anomalyMinAvgVolume20d", "dataFreshnessMinutes",
+  "validatorMaxActiveIdeas", "validatorMinOiPerLeg",
+  "validatorMaxSpreadPct", "validatorMinAvgVolumeStock",
 ]);
 
 const BOOLEAN_KEYS = new Set([
@@ -115,6 +122,11 @@ export const DEFAULT_CONFIG: AiLabFullConfig = {
   scheduleMiddayRotation: true,
   schedulePowerHourPrep: true,
   schedulePostMarketReflection: true,
+
+  validatorMaxActiveIdeas: 20,
+  validatorMinOiPerLeg: 50,
+  validatorMaxSpreadPct: 0.10,
+  validatorMinAvgVolumeStock: 100000,
 };
 
 let currentConfig: AiLabFullConfig = { ...DEFAULT_CONFIG };
@@ -176,6 +188,10 @@ function validateAndClamp(merged: Record<string, unknown>): AiLabFullConfig {
     anomalyMinPrice: { min: 0, max: 100, key: "anomalyMinPrice" },
     anomalyMinAvgVolume20d: { min: 0, max: 100000000, key: "anomalyMinAvgVolume20d" },
     dataFreshnessMinutes: { min: 1, max: 1440, key: "dataFreshnessMinutes" },
+    validatorMaxActiveIdeas: { min: 1, max: 50, key: "validatorMaxActiveIdeas" },
+    validatorMinOiPerLeg: { min: 10, max: 1000, key: "validatorMinOiPerLeg" },
+    validatorMaxSpreadPct: { min: 0.01, max: 1, key: "validatorMaxSpreadPct" },
+    validatorMinAvgVolumeStock: { min: 0, max: 10000000, key: "validatorMinAvgVolumeStock" },
   };
 
   for (const [field, { min, max, key }] of Object.entries(numericClamps)) {
@@ -406,4 +422,9 @@ export const SETTINGS_META = [
   { key: "anomalyMinPrice", label: "Min Price Filter", group: "Anomaly Detection", type: "number", min: 0, max: 100, step: 1, description: "Minimum stock price for universe inclusion" },
   { key: "anomalyMinAvgVolume20d", label: "Min Avg Volume 20D", group: "Anomaly Detection", type: "number", min: 0, max: 100000000, step: 50000, description: "Minimum 20-day average volume for universe inclusion" },
   { key: "dataFreshnessMinutes", label: "Data Freshness (minutes)", group: "Anomaly Detection", type: "slider", min: 1, max: 1440, step: 5, description: "Max age of data before considered stale" },
+
+  { key: "validatorMaxActiveIdeas", label: "Max Active Ideas", group: "Trade Validation", type: "number", min: 1, max: 50, step: 1, description: "Maximum number of concurrent active trade ideas before new ideas are blocked" },
+  { key: "validatorMinOiPerLeg", label: "Min Open Interest Per Leg", group: "Trade Validation", type: "number", min: 10, max: 1000, step: 10, description: "Minimum open interest required for each options leg" },
+  { key: "validatorMaxSpreadPct", label: "Max Bid-Ask Spread %", group: "Trade Validation", type: "slider", min: 0.01, max: 1, step: 0.01, description: "Maximum bid-ask spread percentage before trade is rejected as untradeable" },
+  { key: "validatorMinAvgVolumeStock", label: "Min Avg Daily Volume (Stock)", group: "Trade Validation", type: "number", min: 0, max: 10000000, step: 10000, description: "Minimum average daily volume for stock-only trades" },
 ];

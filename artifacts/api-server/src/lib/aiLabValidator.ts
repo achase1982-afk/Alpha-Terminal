@@ -1,18 +1,4 @@
-import { getCorrelation, AI_LAB_CONFIG } from "./aiLabService.js";
-
-// ─── CONFIGURABLE THRESHOLDS ────────────────────────────────────────────────
-export const VALIDATION_CONFIG = {
-  MAX_SPREAD_PCT: 0.10,
-  MIN_OI_PER_LEG: 500,
-  MIN_VOL_OI_RATIO: 0.10,
-  MIN_DTE_OPTIONS: 5,
-  MIN_AVG_VOLUME_STOCK: 500_000,
-  MAX_ACTIVE_IDEAS: 5,
-  MAX_SAME_SECTOR: 3,
-  MAX_SAME_DIRECTION: 4,
-  MAX_CORRELATION: 0.80,
-  MAX_DATA_FRESHNESS_MINUTES: 30,
-};
+import { getAiLabFullConfig } from "./aiLabConfig.js";
 
 export interface TradeIdeaCandidate {
   symbol: string;
@@ -45,7 +31,8 @@ export interface ActiveIdea {
 
 export interface MarketDataSnapshot {
   avgVolume20d: number;
-  dataFreshnessMinutes: number;
+  dataTimestamp: number;
+  availableExpirations?: string[];
 }
 
 export interface ValidationResult {
@@ -53,70 +40,86 @@ export interface ValidationResult {
   rejectionReason?: string;
 }
 
+const cooldownMap = new Map<string, number>();
+const MAX_COOLDOWN_SIZE = 30;
+const COOLDOWN_DURATION_MS = 24 * 60 * 60 * 1000;
+
+export function isOnCooldown(symbol: string): boolean {
+  const ts = cooldownMap.get(symbol.toUpperCase());
+  if (!ts) return false;
+  if (Date.now() - ts > COOLDOWN_DURATION_MS) {
+    cooldownMap.delete(symbol.toUpperCase());
+    return false;
+  }
+  return true;
+}
+
+export function addToCooldown(symbol: string): void {
+  if (cooldownMap.size >= MAX_COOLDOWN_SIZE) {
+    let oldestKey = "";
+    let oldestTs = Infinity;
+    for (const [k, v] of cooldownMap) {
+      if (v < oldestTs) { oldestTs = v; oldestKey = k; }
+    }
+    if (oldestKey) cooldownMap.delete(oldestKey);
+  }
+  cooldownMap.set(symbol.toUpperCase(), Date.now());
+}
+
+export function getCooldownList(): Array<{ symbol: string; cooldownUntil: string }> {
+  const result: Array<{ symbol: string; cooldownUntil: string }> = [];
+  for (const [sym, ts] of cooldownMap) {
+    const expiresAt = ts + COOLDOWN_DURATION_MS;
+    if (Date.now() < expiresAt) {
+      result.push({ symbol: sym, cooldownUntil: new Date(expiresAt).toISOString() });
+    }
+  }
+  return result;
+}
+
 export async function validateAiLabIdea(
   candidate: TradeIdeaCandidate,
   activeIdeas: ActiveIdea[],
   marketData: MarketDataSnapshot,
 ): Promise<ValidationResult> {
+  const cfg = getAiLabFullConfig();
 
-  if (marketData.dataFreshnessMinutes > VALIDATION_CONFIG.MAX_DATA_FRESHNESS_MINUTES) {
+  const dataAgeMinutes = (Date.now() - marketData.dataTimestamp) / 60_000;
+  if (dataAgeMinutes > cfg.dataFreshnessMinutes) {
     return { approved: false, rejectionReason: "STALE_DATA" };
   }
 
   const hasOptions = candidate.instrumentType === "OPTIONS" || candidate.instrumentType === "STOCK+OPTIONS";
 
   if (hasOptions) {
-    if ((candidate.entrySpreadPct ?? 0) > VALIDATION_CONFIG.MAX_SPREAD_PCT) {
+    if ((candidate.entrySpreadPct ?? 0) > cfg.validatorMaxSpreadPct) {
       return { approved: false, rejectionReason: "WIDE_SPREAD" };
     }
 
-    if ((candidate.oiAtEntry ?? 0) < VALIDATION_CONFIG.MIN_OI_PER_LEG) {
+    if ((candidate.oiAtEntry ?? 0) < cfg.validatorMinOiPerLeg) {
       return { approved: false, rejectionReason: "LOW_OI" };
     }
 
-    if ((candidate.volumeToOiRatio ?? 0) < VALIDATION_CONFIG.MIN_VOL_OI_RATIO) {
-      return { approved: false, rejectionReason: "LOW_ACTIVITY" };
-    }
-
-    if (candidate.legs && candidate.legs.length > 0) {
+    if (candidate.legs && candidate.legs.length > 0 && marketData.availableExpirations && marketData.availableExpirations.length > 0) {
+      const validDates = new Set(marketData.availableExpirations);
       for (const leg of candidate.legs) {
-        const expDate = new Date(leg.expiration);
-        if (isNaN(expDate.getTime())) {
+        if (!validDates.has(leg.expiration)) {
           return { approved: false, rejectionReason: "INVALID_EXPIRATION" };
-        }
-        const now = new Date();
-        const dte = Math.round((expDate.getTime() - now.getTime()) / 86_400_000);
-        if (dte < VALIDATION_CONFIG.MIN_DTE_OPTIONS) {
-          return { approved: false, rejectionReason: "DTE_TOO_SHORT" };
         }
       }
     }
   }
 
   if (candidate.instrumentType === "STOCK") {
-    if (marketData.avgVolume20d < VALIDATION_CONFIG.MIN_AVG_VOLUME_STOCK) {
+    if (marketData.avgVolume20d < cfg.validatorMinAvgVolumeStock) {
       return { approved: false, rejectionReason: "LOW_LIQUIDITY" };
     }
   }
 
   const active = activeIdeas.filter(i => i.status === "ACTIVE" || i.status === "NEW");
 
-  if (active.length >= VALIDATION_CONFIG.MAX_ACTIVE_IDEAS) {
+  if (active.length >= cfg.validatorMaxActiveIdeas) {
     return { approved: false, rejectionReason: "MAX_ACTIVE_REACHED" };
-  }
-
-  const sectorCount = active.filter(i => i.sector && i.sector === candidate.sector).length;
-  if (candidate.sector && sectorCount >= VALIDATION_CONFIG.MAX_SAME_SECTOR) {
-    return { approved: false, rejectionReason: "SECTOR_CONCENTRATION" };
-  }
-
-  const longCount = active.filter(i => i.direction === "LONG").length + (candidate.direction === "LONG" ? 1 : 0);
-  const shortCount = active.filter(i => i.direction === "SHORT").length + (candidate.direction === "SHORT" ? 1 : 0);
-  if (longCount > VALIDATION_CONFIG.MAX_SAME_DIRECTION) {
-    return { approved: false, rejectionReason: "DIRECTION_SKEW" };
-  }
-  if (shortCount > VALIDATION_CONFIG.MAX_SAME_DIRECTION) {
-    return { approved: false, rejectionReason: "DIRECTION_SKEW" };
   }
 
   for (const existing of active) {
@@ -129,15 +132,6 @@ export async function validateAiLabIdea(
       }
       if (existing.direction !== candidate.direction) {
         return { approved: false, rejectionReason: "CONTRADICTORY_IDEA" };
-      }
-    }
-  }
-
-  for (const existing of active) {
-    if (existing.direction === candidate.direction && existing.symbol.toUpperCase() !== candidate.symbol.toUpperCase()) {
-      const corr = await getCorrelation(candidate.symbol, existing.symbol);
-      if (corr > VALIDATION_CONFIG.MAX_CORRELATION) {
-        return { approved: false, rejectionReason: "HIGH_CORRELATION_DUPLICATE" };
       }
     }
   }
