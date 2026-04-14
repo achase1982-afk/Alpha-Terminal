@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, aiLabIdeasTable, aiLabIdeaOutcomesTable, aiLabWatchlistTable, aiLabDeliberationsTable } from "@workspace/db";
+import { db, aiLabIdeasTable, aiLabIdeaOutcomesTable, aiLabWatchlistTable, aiLabDeliberationsTable, scannerWatchlistsTable } from "@workspace/db";
 import { eq, desc, and, inArray } from "drizzle-orm";
 import { emitTelemetry, createTelemetryBatch } from "../lib/telemetryStore.js";
 import {
@@ -24,8 +24,44 @@ import {
 } from "../lib/aiLabOrchestrator.js";
 import {
   getAiLabStrategistConfig,
+  getAiLabFullConfig,
+  getAiLabConfigDefaults,
   updateAiLabStrategistConfig,
+  resetAiLabStrategistConfig,
+  SETTINGS_META,
+  PROMPT_ROLES,
+  type PromptRole,
+  getAllActivePrompts,
+  getPromptHistory,
+  savePrompt,
+  resetPromptToDefault,
+  restorePrompt,
 } from "../lib/aiLabConfig.js";
+import {
+  DEFAULT_ANALYST_SYSTEM_PROMPT,
+  DEFAULT_ANALYST_REBUTTAL_SYSTEM_PROMPT,
+  DEFAULT_UNIVERSE_SCREEN_SYSTEM_PROMPT,
+} from "../lib/aiLabAnalystClient.js";
+import {
+  DEFAULT_SKEPTIC_SYSTEM_PROMPT,
+  DEFAULT_SKEPTIC_REEVAL_SYSTEM_PROMPT,
+} from "../lib/aiLabSkepticClient.js";
+import { refreshOrchestratorConfig } from "../lib/aiLabOrchestrator.js";
+import { LIQUID_CORE_SYMBOLS } from "../data/liquidCore130.js";
+import { getAuth } from "@clerk/express";
+
+const DEV_BYPASS = process.env.VITE_DEV_BYPASS_AUTH === "true";
+const DEV_USER_ID = "dev_user_local";
+
+function getUserId(req: any): string {
+  if (DEV_BYPASS) return DEV_USER_ID;
+  try {
+    const auth = getAuth(req);
+    return auth?.userId ?? DEV_USER_ID;
+  } catch {
+    return DEV_USER_ID;
+  }
+}
 
 const router: IRouter = Router();
 
@@ -215,6 +251,7 @@ router.put("/config", async (req, res) => {
   try {
     const oldConfig = getAiLabStrategistConfig();
     const updated = updateAiLabStrategistConfig(req.body);
+    refreshOrchestratorConfig();
 
     if (oldConfig.enabled !== updated.enabled) {
       emitTelemetry("STRATEGIST", "INFO", `AI Lab: enabled changed ${oldConfig.enabled} → ${updated.enabled}`, { enabled: updated.enabled }, "AI_LAB", batch);
@@ -223,6 +260,132 @@ router.put("/config", async (req, res) => {
     res.json({ config: updated });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
+  }
+});
+
+const DEFAULT_PROMPTS: Record<string, string> = {
+  shared_context: "",
+  analyst: DEFAULT_ANALYST_SYSTEM_PROMPT,
+  analyst_rebuttal: DEFAULT_ANALYST_REBUTTAL_SYSTEM_PROMPT,
+  skeptic: DEFAULT_SKEPTIC_SYSTEM_PROMPT,
+  skeptic_reeval: DEFAULT_SKEPTIC_REEVAL_SYSTEM_PROMPT,
+  universe_screener: DEFAULT_UNIVERSE_SCREEN_SYSTEM_PROMPT,
+};
+
+router.get("/settings/full", async (_req, res) => {
+  try {
+    const config = getAiLabFullConfig();
+    const defaults = getAiLabConfigDefaults();
+    const activePrompts = await getAllActivePrompts();
+    res.json({
+      config,
+      defaults,
+      meta: SETTINGS_META,
+      promptRoles: PROMPT_ROLES,
+      activePrompts,
+      defaultPrompts: DEFAULT_PROMPTS,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put("/settings/update", async (req, res) => {
+  try {
+    const { key, value } = req.body;
+    if (!key || value === undefined) {
+      return res.status(400).json({ error: "key and value required" });
+    }
+    const updated = updateAiLabStrategistConfig({ [key]: value });
+    refreshOrchestratorConfig();
+    res.json({ config: updated });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post("/settings/reset", async (_req, res) => {
+  try {
+    const config = resetAiLabStrategistConfig();
+    refreshOrchestratorConfig();
+    res.json({ config });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/prompts/:role", async (req, res) => {
+  try {
+    const role = req.params.role as PromptRole;
+    if (!PROMPT_ROLES.includes(role)) {
+      return res.status(400).json({ error: `Invalid role. Valid: ${PROMPT_ROLES.join(", ")}` });
+    }
+    const history = await getPromptHistory(role);
+    const defaultText = DEFAULT_PROMPTS[role] ?? "";
+    res.json({ role, history, defaultPrompt: defaultText });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put("/prompts/:role", async (req, res) => {
+  try {
+    const role = req.params.role as PromptRole;
+    if (!PROMPT_ROLES.includes(role)) {
+      return res.status(400).json({ error: `Invalid role. Valid: ${PROMPT_ROLES.join(", ")}` });
+    }
+    const { promptText } = req.body;
+    if (!promptText || typeof promptText !== "string") {
+      return res.status(400).json({ error: "promptText is required (string)" });
+    }
+    const result = await savePrompt(role, promptText);
+    res.json({ saved: true, id: result.id, role });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/prompts/:role/reset", async (req, res) => {
+  try {
+    const role = req.params.role as PromptRole;
+    if (!PROMPT_ROLES.includes(role)) {
+      return res.status(400).json({ error: `Invalid role. Valid: ${PROMPT_ROLES.join(", ")}` });
+    }
+    await resetPromptToDefault(role);
+    res.json({ reset: true, role });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/prompts/restore/:id", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ error: "Invalid prompt ID" });
+    const restored = await restorePrompt(id);
+    if (!restored) return res.status(404).json({ error: "Prompt not found" });
+    res.json({ restored: true, id });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/universes", async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const watchlists = await db.select().from(scannerWatchlistsTable).where(eq(scannerWatchlistsTable.userId, userId));
+    const universes = [
+      { id: "LIQUID_CORE", name: "Liquid Core", symbolCount: LIQUID_CORE_SYMBOLS.length, source: "built-in" },
+      ...watchlists.map(w => ({
+        id: `watchlist_${w.id}`,
+        name: w.name,
+        symbolCount: (w.symbols as string[])?.length ?? 0,
+        source: "watchlist",
+      })),
+    ];
+    res.json({ universes, active: getAiLabFullConfig().universe });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 

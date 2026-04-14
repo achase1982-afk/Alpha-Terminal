@@ -13,6 +13,7 @@ import { AuthPanel } from "./AuthPanel";
 import { StrategySettings } from "./AiIntelligenceTab";
 import { StrategistSettingsPanel } from "./StrategistSettingsPanel";
 import { StrategistTelemetryPanel } from "./StrategistTelemetryPanel";
+import { SystemSettingsPage } from "./SystemSettingsPage";
 import { SidebarChat } from "./SidebarChat";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { queryClient } from "@/App";
@@ -27,7 +28,7 @@ import {
   Zap, LineChart, LayoutDashboard, BrainCircuit,
   ChevronLeft, ChevronRight, Trash2, Plus, RotateCcw, BarChart2,
   SlidersHorizontal, Gauge, ListOrdered, CalendarDays, Palette,
-  AlertTriangle,
+  AlertTriangle, Settings2,
 } from "lucide-react";
 import { MarketCalendar } from "@/components/MarketCalendar";
 import { TelemetryPage, useTelemetryCount } from "@/components/TelemetryPage";
@@ -54,7 +55,8 @@ type SidebarPage =
   | "UI Customization"
   | "Security & Privacy"
   | "Telemetry"
-  | "Notifications";
+  | "Notifications"
+  | "System";
 
 export interface SidebarHandle {
   clearActivePage: () => void;
@@ -154,6 +156,7 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
             {activePage === "Security & Privacy" && <SecurityPrivacyPage />}
             {activePage === "Telemetry" && <TelemetryPage />}
             {activePage === "Notifications" && <NotificationsPage />}
+            {activePage === "System" && <SystemSettingsPage />}
           </div>
         </div>,
         document.body
@@ -197,6 +200,7 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
                 <MenuRow icon={<Palette />} label="UI Customization" onClick={() => { setActivePage("UI Customization"); onClose(); }} />
                 <MenuRow icon={<Bell />} label="Notifications" onClick={() => { setActivePage("Notifications"); onClose(); }} />
                 <MenuRow icon={<AlertTriangle />} label="Telemetry" badge={telemetryCount} onClick={() => { setActivePage("Telemetry"); onClose(); }} />
+                <MenuRow icon={<Settings2 />} label="System" onClick={() => { setActivePage("System"); onClose(); }} />
                 <MenuRow icon={<Shield />} label="Security & Privacy" onClick={() => { setActivePage("Security & Privacy"); onClose(); }} />
               </div>
 

@@ -8,11 +8,11 @@ import type {
   SkepticReEvalRequest,
   SkepticReEvalResponse,
 } from "./aiLabLlmTypes.js";
-import type { AiLabModelProvider } from "./aiLabConfig.js";
+import { type AiLabModelProvider, getActivePrompt } from "./aiLabConfig.js";
 
 const DEFAULT_SKEPTIC_MODEL = "gemini-2.5-flash";
 
-const SKEPTIC_SYSTEM_PROMPT = `You are the Devil's Advocate on a quantitative trading desk.
+export const DEFAULT_SKEPTIC_SYSTEM_PROMPT = `You are the Devil's Advocate on a quantitative trading desk.
 Given a candidate trade idea produced by the Analyst, your job is to find weaknesses, risks, and reasons it could fail.
 
 OPTIONS-AWARENESS:
@@ -49,7 +49,7 @@ REQUIRED JSON SCHEMA:
   }
 }`;
 
-const SKEPTIC_REEVAL_SYSTEM_PROMPT = `You are the Devil's Advocate on a quantitative trading desk, engaged in an ongoing deliberation with the Analyst.
+export const DEFAULT_SKEPTIC_REEVAL_SYSTEM_PROMPT = `You are the Devil's Advocate on a quantitative trading desk, engaged in an ongoing deliberation with the Analyst.
 
 The Analyst has responded to your critique — they may have defended their position, made concessions, or modified their trade idea. Your job is to re-evaluate.
 
@@ -174,8 +174,8 @@ function validateSkepticResponse(parsed: any): SkepticResponse {
   return parsed as SkepticResponse;
 }
 
-async function callGeminiSkeptic(model: string, temperature: number, prompt: string): Promise<string> {
-  return callGeminiWithSystem(model, temperature, SKEPTIC_SYSTEM_PROMPT, prompt);
+async function callGeminiSkeptic(model: string, temperature: number, prompt: string, systemPrompt: string): Promise<string> {
+  return callGeminiWithSystem(model, temperature, systemPrompt, prompt);
 }
 
 async function callGeminiWithSystem(model: string, temperature: number, systemPrompt: string, prompt: string): Promise<string> {
@@ -201,8 +201,8 @@ async function callGeminiWithSystem(model: string, temperature: number, systemPr
   return rawText;
 }
 
-async function callAnthropicSkeptic(model: string, temperature: number, prompt: string): Promise<string> {
-  return callAnthropicWithSystem(model, temperature, SKEPTIC_SYSTEM_PROMPT, prompt);
+async function callAnthropicSkeptic(model: string, temperature: number, prompt: string, systemPrompt: string): Promise<string> {
+  return callAnthropicWithSystem(model, temperature, systemPrompt, prompt);
 }
 
 async function callAnthropicWithSystem(model: string, temperature: number, systemPrompt: string, prompt: string): Promise<string> {
@@ -232,6 +232,13 @@ function extractJson(rawText: string): string {
   return text;
 }
 
+async function resolveSkepticPrompt(role: "skeptic" | "skeptic_reeval", defaultPrompt: string): Promise<string> {
+  const sharedCtx = await getActivePrompt("shared_context");
+  const rolePrompt = await getActivePrompt(role);
+  const base = rolePrompt ?? defaultPrompt;
+  return sharedCtx ? `${sharedCtx}\n\n${base}` : base;
+}
+
 export class ConfigurableSkepticClient implements AiLabSkepticClient {
   readonly modelName: string;
   private provider: AiLabModelProvider;
@@ -245,14 +252,15 @@ export class ConfigurableSkepticClient implements AiLabSkepticClient {
 
   async critiqueIdea(request: SkepticRequest): Promise<SkepticResponse> {
     const prompt = buildSkepticPrompt(request);
+    const systemPrompt = await resolveSkepticPrompt("skeptic", DEFAULT_SKEPTIC_SYSTEM_PROMPT);
 
     let rawText: string;
     switch (this.provider) {
       case "google":
-        rawText = await callGeminiSkeptic(this.modelName, this.temperature, prompt);
+        rawText = await callGeminiSkeptic(this.modelName, this.temperature, prompt, systemPrompt);
         break;
       case "anthropic":
-        rawText = await callAnthropicSkeptic(this.modelName, this.temperature, prompt);
+        rawText = await callAnthropicSkeptic(this.modelName, this.temperature, prompt, systemPrompt);
         break;
       default:
         throw new Error(`Unsupported skeptic provider: ${this.provider}`);
@@ -273,14 +281,15 @@ export class ConfigurableSkepticClient implements AiLabSkepticClient {
 
   async reEvaluate(request: SkepticReEvalRequest): Promise<SkepticReEvalResponse> {
     const prompt = buildReEvalPrompt(request);
+    const systemPrompt = await resolveSkepticPrompt("skeptic_reeval", DEFAULT_SKEPTIC_REEVAL_SYSTEM_PROMPT);
 
     let rawText: string;
     switch (this.provider) {
       case "google":
-        rawText = await callGeminiWithSystem(this.modelName, this.temperature, SKEPTIC_REEVAL_SYSTEM_PROMPT, prompt);
+        rawText = await callGeminiWithSystem(this.modelName, this.temperature, systemPrompt, prompt);
         break;
       case "anthropic":
-        rawText = await callAnthropicWithSystem(this.modelName, this.temperature, SKEPTIC_REEVAL_SYSTEM_PROMPT, prompt);
+        rawText = await callAnthropicWithSystem(this.modelName, this.temperature, systemPrompt, prompt);
         break;
       default:
         throw new Error(`Unsupported skeptic provider: ${this.provider}`);

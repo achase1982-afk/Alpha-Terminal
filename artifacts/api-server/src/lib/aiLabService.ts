@@ -2,21 +2,32 @@ import { db, equityDailyTable, flowDailyAggregatesTable } from "@workspace/db";
 import { inArray, desc, sql, eq, and, gte } from "drizzle-orm";
 import { emitTelemetry, createTelemetryBatch } from "./telemetryStore.js";
 import { LIQUID_CORE_SYMBOLS } from "../data/liquidCore130.js";
+import { getAiLabStrategistConfig } from "./aiLabConfig.js";
 
-// ─── CONFIGURABLE THRESHOLDS ────────────────────────────────────────────────
-// Adjust these to tune anomaly detection sensitivity.
-// STUB_NOTE: Where real data sources are needed, functions are marked with [STUB].
-export const AI_LAB_CONFIG = {
-  MIN_AVG_VOLUME_20D: 500_000,
-  MIN_PRICE: 5,
-  ANOMALY_VOLUME_SPIKE_THRESHOLD: 1.8,
-  ANOMALY_FLOW_STRENGTH_THRESHOLD: 1.5,
-  ANOMALY_IVR_SPIKE_THRESHOLD: 60,
-  ANOMALY_RS_CHANGE_THRESHOLD: 0.03,
-  VIX_LOW: 15,
-  VIX_NORMAL: 20,
-  DATA_FRESHNESS_MINUTES: 30,
-};
+export function getAiLabServiceConfig() {
+  const cfg = getAiLabStrategistConfig();
+  return {
+    MIN_AVG_VOLUME_20D: cfg.anomalyMinAvgVolume20d,
+    MIN_PRICE: cfg.anomalyMinPrice,
+    ANOMALY_VOLUME_SPIKE_THRESHOLD: cfg.anomalyVolumeSpikeThreshold,
+    ANOMALY_FLOW_STRENGTH_THRESHOLD: cfg.anomalyFlowStrengthThreshold,
+    ANOMALY_IVR_SPIKE_THRESHOLD: cfg.anomalyIvrSpikeThreshold,
+    ANOMALY_RS_CHANGE_THRESHOLD: cfg.anomalyRsChangeThreshold,
+    VIX_LOW: cfg.vixLow,
+    VIX_NORMAL: cfg.vixNormal,
+    DATA_FRESHNESS_MINUTES: cfg.dataFreshnessMinutes,
+  };
+}
+
+export function AI_LAB_CONFIG_LIVE() {
+  return getAiLabServiceConfig();
+}
+
+export const AI_LAB_CONFIG = new Proxy({} as ReturnType<typeof getAiLabServiceConfig>, {
+  get(_target, prop: string) {
+    return getAiLabServiceConfig()[prop as keyof ReturnType<typeof getAiLabServiceConfig>];
+  }
+});
 
 // ─── TYPES ──────────────────────────────────────────────────────────────────
 

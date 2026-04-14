@@ -10,11 +10,11 @@ import type {
   UniverseScreenRequest,
   UniverseScreenResponse,
 } from "./aiLabLlmTypes.js";
-import type { AiLabModelProvider } from "./aiLabConfig.js";
+import { type AiLabModelProvider, getActivePrompt } from "./aiLabConfig.js";
 
 const DEFAULT_ANALYST_MODEL = "claude-sonnet-4-20250514";
 
-const ANALYST_SYSTEM_PROMPT = `You are the Senior Options Strategist Analyst for a quantitative trading desk. You have full access ONLY to the complete market snapshot provided in this call.
+export const DEFAULT_ANALYST_SYSTEM_PROMPT = `You are the Senior Options Strategist Analyst for a quantitative trading desk. You have full access ONLY to the complete market snapshot provided in this call.
 
 CRITICAL GROUNDING RULES — you MUST obey these at all times:
 1. You have NO knowledge outside the snapshot you receive. All analysis, trends, price action, directional calls, and conclusions must be derived exclusively from data in this snapshot.
@@ -104,7 +104,7 @@ REQUIRED JSON SCHEMA:
   }
 }`;
 
-const ANALYST_REBUTTAL_SYSTEM_PROMPT = `You are an institutional-grade equity/options Analyst engaged in a deliberation with a Skeptic on a quantitative trading desk.
+export const DEFAULT_ANALYST_REBUTTAL_SYSTEM_PROMPT = `You are an institutional-grade equity/options Analyst engaged in a deliberation with a Skeptic on a quantitative trading desk.
 
 The Skeptic has critiqued your trade idea. You must now respond to their objections. You have three options:
 1. DEFEND your original idea — rebut the Skeptic's points with data-driven arguments. Explain why their concerns don't apply or are overweighted.
@@ -268,8 +268,8 @@ function validateAnalystResponse(parsed: any): AnalystResponse {
   return parsed as AnalystResponse;
 }
 
-async function callAnthropic(model: string, temperature: number, prompt: string): Promise<string> {
-  return callAnthropicWithSystem(model, temperature, ANALYST_SYSTEM_PROMPT, prompt);
+async function callAnthropic(model: string, temperature: number, prompt: string, systemPrompt: string): Promise<string> {
+  return callAnthropicWithSystem(model, temperature, systemPrompt, prompt);
 }
 
 async function callAnthropicWithSystem(model: string, temperature: number, systemPrompt: string, prompt: string): Promise<string> {
@@ -292,8 +292,8 @@ async function callAnthropicWithSystem(model: string, temperature: number, syste
   return textBlock.text.trim();
 }
 
-async function callGemini(model: string, temperature: number, prompt: string): Promise<string> {
-  return callGeminiWithSystem(model, temperature, ANALYST_SYSTEM_PROMPT, prompt);
+async function callGemini(model: string, temperature: number, prompt: string, systemPrompt: string): Promise<string> {
+  return callGeminiWithSystem(model, temperature, systemPrompt, prompt);
 }
 
 async function callGeminiWithSystem(model: string, temperature: number, systemPrompt: string, prompt: string): Promise<string> {
@@ -326,7 +326,7 @@ function extractJson(rawText: string): string {
   return text;
 }
 
-const UNIVERSE_SCREEN_SYSTEM_PROMPT = `You are the Senior Options Strategist for a quantitative trading desk. You are being given compact summaries for the ENTIRE liquid universe of ~130 tickers.
+export const DEFAULT_UNIVERSE_SCREEN_SYSTEM_PROMPT = `You are the Senior Options Strategist for a quantitative trading desk. You are being given compact summaries for the ENTIRE liquid universe of ~130 tickers.
 
 YOUR TASK: Review ALL tickers and pick the 1-3 BEST trade opportunities. You are the first filter — be extremely selective.
 
@@ -422,6 +422,13 @@ function validateUniverseScreenResponse(parsed: any, universeSymbols?: Set<strin
   };
 }
 
+async function resolveSystemPrompt(role: "analyst" | "analyst_rebuttal" | "universe_screener", defaultPrompt: string): Promise<string> {
+  const sharedCtx = await getActivePrompt("shared_context");
+  const rolePrompt = await getActivePrompt(role);
+  const base = rolePrompt ?? defaultPrompt;
+  return sharedCtx ? `${sharedCtx}\n\n${base}` : base;
+}
+
 export class ConfigurableAnalystClient implements AiLabAnalystClient {
   readonly modelName: string;
   private provider: AiLabModelProvider;
@@ -435,14 +442,15 @@ export class ConfigurableAnalystClient implements AiLabAnalystClient {
 
   async generateIdea(request: AnalystRequest): Promise<AnalystResponse> {
     const prompt = buildAnalystPrompt(request);
+    const systemPrompt = await resolveSystemPrompt("analyst", DEFAULT_ANALYST_SYSTEM_PROMPT);
 
     let rawText: string;
     switch (this.provider) {
       case "anthropic":
-        rawText = await callAnthropic(this.modelName, this.temperature, prompt);
+        rawText = await callAnthropic(this.modelName, this.temperature, prompt, systemPrompt);
         break;
       case "google":
-        rawText = await callGemini(this.modelName, this.temperature, prompt);
+        rawText = await callGemini(this.modelName, this.temperature, prompt, systemPrompt);
         break;
       default:
         throw new Error(`Unsupported analyst provider: ${this.provider}`);
@@ -464,14 +472,15 @@ export class ConfigurableAnalystClient implements AiLabAnalystClient {
   async screenUniverse(request: UniverseScreenRequest): Promise<UniverseScreenResponse> {
     const prompt = buildUniverseScreenPrompt(request);
     const universeSymbols = new Set(request.tickers.map(t => t.symbol.toUpperCase()));
+    const systemPrompt = await resolveSystemPrompt("universe_screener", DEFAULT_UNIVERSE_SCREEN_SYSTEM_PROMPT);
 
     let rawText: string;
     switch (this.provider) {
       case "anthropic":
-        rawText = await callAnthropicWithSystem(this.modelName, this.temperature, UNIVERSE_SCREEN_SYSTEM_PROMPT, prompt);
+        rawText = await callAnthropicWithSystem(this.modelName, this.temperature, systemPrompt, prompt);
         break;
       case "google":
-        rawText = await callGeminiWithSystem(this.modelName, this.temperature, UNIVERSE_SCREEN_SYSTEM_PROMPT, prompt);
+        rawText = await callGeminiWithSystem(this.modelName, this.temperature, systemPrompt, prompt);
         break;
       default:
         throw new Error(`Unsupported analyst provider: ${this.provider}`);
@@ -492,14 +501,15 @@ export class ConfigurableAnalystClient implements AiLabAnalystClient {
 
   async rebutCritique(request: AnalystRebuttalRequest): Promise<AnalystRebuttalResponse> {
     const prompt = buildRebuttalPrompt(request);
+    const systemPrompt = await resolveSystemPrompt("analyst_rebuttal", DEFAULT_ANALYST_REBUTTAL_SYSTEM_PROMPT);
 
     let rawText: string;
     switch (this.provider) {
       case "anthropic":
-        rawText = await callAnthropicWithSystem(this.modelName, this.temperature, ANALYST_REBUTTAL_SYSTEM_PROMPT, prompt);
+        rawText = await callAnthropicWithSystem(this.modelName, this.temperature, systemPrompt, prompt);
         break;
       case "google":
-        rawText = await callGeminiWithSystem(this.modelName, this.temperature, ANALYST_REBUTTAL_SYSTEM_PROMPT, prompt);
+        rawText = await callGeminiWithSystem(this.modelName, this.temperature, systemPrompt, prompt);
         break;
       default:
         throw new Error(`Unsupported analyst provider: ${this.provider}`);

@@ -467,6 +467,17 @@ export const strategistTelemetryTable = pgTable("strategist_telemetry", {
 
 export type StrategistTelemetry = typeof strategistTelemetryTable.$inferSelect;
 
+export const aiLabPromptsTable = pgTable("ai_lab_prompts", {
+  id: serial("id").primaryKey(),
+  role: text("role").notNull(),
+  promptText: text("prompt_text").notNull(),
+  isActive: boolean("is_active").default(false).notNull(),
+  isDefault: boolean("is_default").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type AiLabPrompt = typeof aiLabPromptsTable.$inferSelect;
+
 export const scannerTelemetryTable = pgTable("scanner_telemetry", {
   id: serial("id").primaryKey(),
   timestamp: timestamp("timestamp").defaultNow().notNull(),

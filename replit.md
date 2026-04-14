@@ -21,6 +21,18 @@ The UI features an institutional gold and pure black Bloomberg-style aesthetic w
 
 The project is a pnpm monorepo built with TypeScript. The backend uses Express 5, Zod for validation, and PostgreSQL with Drizzle ORM. Real-time L1 equity/futures quotes stream via Schwab WebSocket; portfolio data is polled from Schwab REST. IBKR is used for breadth and volatility indicators. Company names come from Schwab REST. Frontend state is managed with Zustand, and `lightweight-charts` is used for charting. Authentication is handled by Clerk and Schwab OAuth 2.0. AI integration uses `claude-sonnet` and `claude-opus` for market pulse narratives, technical analysis, and options strategy generation.
 
+## System Settings
+
+A comprehensive "System Settings" sidebar panel (`SystemSettingsPage.tsx`) exposes all AI Labs configuration knobs at runtime — no code changes needed. Accessible via the sidebar menu (gear icon → "System"). Settings include:
+- **Models**: Analyst/Skeptic provider selection (Google/Anthropic), model names, temperature sliders
+- **Universe Selection**: Choose scanning universe from Liquid Core or saved watchlists
+- **System Prompts**: Full CRUD for 6 prompt roles (shared_context, analyst, analyst_rebuttal, skeptic, skeptic_reeval, universe_screener) with version history and restore
+- **Deliberation Thresholds**: Max rounds, skeptic critique threshold, overnight/premarket top-N, trigger volumes, price shock %, block flow notional, scanner score delta
+- **Anomaly Detection**: Volume spike, flow strength, IVR spike, RS change thresholds, VIX boundaries, min price/volume filters, data freshness
+- **Schedule**: Per-pass enable/disable toggles for all 7 scheduled analysis passes
+
+Backend: Prompts stored in `ai_lab_prompts` table with DB-first loading (fallback to hardcoded defaults). All config changes apply at runtime via dynamic proxy reads in `aiLabService.ts` and `refreshOrchestratorConfig()` in the orchestrator. API routes under `/api/ai-lab/settings/*`, `/api/ai-lab/prompts/*`, `/api/ai-lab/universes`.
+
 Quote data retrieval prioritizes Schwab streamer cache, falling back to Schwab REST. Options chain data is Schwab WebSocket driven, with structure from Schwab REST. Strike prices are normalized to 2-decimal precision to prevent floating-point mismatches. The AI Lab Deliberation System uses a multi-round process between an Analyst (Claude) and a Skeptic (Gemini) to refine trade ideas, operating in "Full-Universe Mode" to select the best setups across a broad range of tickers. AI Lab model configuration (analyst/skeptic provider, model name, temperature, enabled state) is persisted to the `ai_lab_config` database table and loaded on server startup, surviving restarts.
 
 The system incorporates curated symbol universes like "Liquid Core 130" and a "Core Balanced 383 Universe Builder" for AI Lab and deterministic scanners. IV/IVR data is computed from Polygon options snapshot data, including IV30d and IVR, with historical backfill capabilities. The database architecture uses separate PostgreSQL instances for dev and production, with self-population via Polygon API backfill. The equity backfill pipeline uses Polygon's bulk grouped daily bars endpoint for efficient data retrieval on startup.

@@ -36,17 +36,26 @@ import type {
 
 // ─── CONFIGURATION ──────────────────────────────────────────────────────────
 
-export const ORCHESTRATOR_CONFIG = {
-  OVERNIGHT_TOP_N: 50,
-  PREMARKET_TOP_N: 10,
-  TRIGGER_MIN_AVG_VOLUME: 500_000,
-  TRIGGER_MAX_DATA_FRESHNESS_MIN: 30,
-  PRICE_SHOCK_MIN_MOVE_PCT: 3.0,
-  BLOCK_FLOW_MIN_NOTIONAL: 500_000,
-  SCANNER_SCORE_MIN_DELTA: 15,
-  ET_OFFSET_HOURS: -5,
-  MAX_DELIBERATION_ROUNDS: 20,
-};
+export function getOrchestratorConfig() {
+  const cfg = getAiLabStrategistConfig();
+  return {
+    OVERNIGHT_TOP_N: cfg.overnightTopN,
+    PREMARKET_TOP_N: cfg.premarketTopN,
+    TRIGGER_MIN_AVG_VOLUME: cfg.triggerMinAvgVolume,
+    TRIGGER_MAX_DATA_FRESHNESS_MIN: cfg.dataFreshnessMinutes,
+    PRICE_SHOCK_MIN_MOVE_PCT: cfg.priceShockMinMovePct,
+    BLOCK_FLOW_MIN_NOTIONAL: cfg.blockFlowMinNotional,
+    SCANNER_SCORE_MIN_DELTA: cfg.scannerScoreMinDelta,
+    ET_OFFSET_HOURS: -5,
+    MAX_DELIBERATION_ROUNDS: cfg.maxDeliberationRounds,
+  };
+}
+
+export let ORCHESTRATOR_CONFIG = getOrchestratorConfig();
+
+export function refreshOrchestratorConfig() {
+  ORCHESTRATOR_CONFIG = getOrchestratorConfig();
+}
 
 type PassName =
   | "OVERNIGHT_DIGEST"
