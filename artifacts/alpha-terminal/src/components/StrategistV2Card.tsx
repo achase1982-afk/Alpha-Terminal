@@ -1,6 +1,6 @@
 import { useState } from "react";
 import {
-  TrendingUp, TrendingDown, Minus, Shield, AlertTriangle,
+  TrendingUp, TrendingDown, Minus, Shield,
   ChevronDown, ChevronUp, Target, Activity, Zap,
 } from "lucide-react";
 
@@ -92,13 +92,6 @@ export function StrategistV2RecommendationCard({ result }: { result: StrategistV
 
   return (
     <div className="rounded-xl overflow-hidden" style={{ background: "#111113", border: `2px solid ${borderColor}` }}>
-      {systemicRiskElevated && (
-        <div className="flex items-center gap-2 px-4 py-2" style={{ background: "rgba(245, 158, 11, 0.08)", borderBottom: `1px solid ${AMBER}30` }}>
-          <AlertTriangle className="w-3.5 h-3.5" style={{ color: AMBER }} />
-          <span className="font-mono text-[10px] font-bold tracking-wider" style={{ color: AMBER }}>ELEVATED SYSTEMIC RISK — REDUCED SIZING RECOMMENDED</span>
-        </div>
-      )}
-
       <div className="px-4 pt-4 pb-3">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">

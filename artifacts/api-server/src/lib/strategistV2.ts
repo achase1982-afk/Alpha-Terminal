@@ -3,10 +3,10 @@ import { getCachedRegime, buildFallbackRegime, type StructuredRegime } from "./r
 import { computeIOScore, type IOScoreResult } from "./ioScoreEngine.js";
 import { getSettings, type StrategistConfig } from "./strategistSettings.js";
 import { db, strategistTelemetryTable, equityDailyTable } from "@workspace/db";
-import { desc, eq, sql, gte } from "drizzle-orm";
+import { desc, eq, sql, gte, and, inArray } from "drizzle-orm";
 import { getBestAccessToken } from "./tokenStore.js";
 import { fetchPolygonChain } from "./polygonChain.js";
-import { checkEventConflicts } from "./calendarEventChecker.js";
+import { checkEventConflicts, getUpcomingEvents } from "./calendarEventChecker.js";
 
 const SCHWAB_API = "https://api.schwabapi.com/marketdata/v1";
 
@@ -138,11 +138,17 @@ export async function analyzeTickerV2(ticker: string): Promise<StrategistV2Resul
   const catalystInfo = deriveCatalyst(tickerData);
   const ioScore = await computeIOScore(ticker, catalystInfo, settings);
 
+  const earningsGate = checkEarningsGate(tickerData, settings);
   const { direction, directionReason } = determineDirection(ioScore, regime);
-  const { creditOrDebit, creditReason } = determineCreditDebit(tickerData.ivr ?? 0, settings);
+  let { creditOrDebit, creditReason } = determineCreditDebit(tickerData.ivr ?? 0, settings);
+
+  if (earningsGate.triggered && creditOrDebit === "CREDIT") {
+    creditOrDebit = "DEBIT";
+    creditReason = `${creditReason}, overridden to DEBIT by earnings gate (earnings in ${earningsGate.daysUntil}d, IVR ${tickerData.ivr ?? 0} < floor ${settings.earningsIvrFloor})`;
+  }
 
   const strategyType = selectStrategyType(direction, creditOrDebit);
-  logger.info({ ticker, direction, creditOrDebit, strategyType, price: tickerData.price, ioClassification: ioScore.classification }, "StrategistV2: strategy selection");
+  logger.info({ ticker, direction, creditOrDebit, strategyType, price: tickerData.price, ioClassification: ioScore.classification, earningsGate: earningsGate.triggered }, "StrategistV2: strategy selection");
 
   const candidates = buildCandidates(chain, strategyType, direction, tickerData.price, settings);
   const filterReasons: string[] = [];
@@ -207,18 +213,43 @@ export async function analyzeTickerV2(ticker: string): Promise<StrategistV2Resul
 function checkToxicGate(
   regime: StructuredRegime,
   settings: StrategistConfig
-): { triggered: boolean; reasons: string[] } {
-  if (!settings.toxicGateEnabled) return { triggered: false, reasons: [] };
+): { triggered: boolean; reasons: string[]; pathACheck: { extremeRisk: boolean; highCorrelation: boolean }; pathBCheck: { elevatedRisk: boolean; eventWithin24h: boolean; eventName: string | null } } {
+  const pathACheck = {
+    extremeRisk: regime.systemicRiskLevel === "EXTREME",
+    highCorrelation: regime.correlationRegime === "HIGH",
+  };
+  const pathBCheck = {
+    elevatedRisk: regime.systemicRiskLevel === "ELEVATED" || regime.systemicRiskLevel === "EXTREME",
+    eventWithin24h: false,
+    eventName: null as string | null,
+  };
+
+  if (!settings.toxicGateEnabled) return { triggered: false, reasons: [], pathACheck, pathBCheck };
 
   const reasons: string[] = [];
 
-  if (settings.toxicPathAEnabled &&
-    regime.systemicRiskLevel === "EXTREME" &&
-    regime.correlationRegime === "HIGH") {
+  if (settings.toxicPathAEnabled && pathACheck.extremeRisk && pathACheck.highCorrelation) {
     reasons.push("EXTREME systemic risk + HIGH correlation (flash crash / liquidity drain conditions)");
   }
 
-  return { triggered: reasons.length > 0, reasons };
+  if (settings.toxicPathBEnabled && pathBCheck.elevatedRisk) {
+    const upcoming = getUpcomingEvents(2);
+    const now = Date.now();
+    const horizon24h = now + 24 * 60 * 60 * 1000;
+    const majorEvent = upcoming.find((e) => {
+      if (e.type !== "fomc" && !(e.type === "economic" && e.title.includes("CPI"))) return false;
+      if (e.type === "fomc" && e.title.toLowerCase().includes("minutes")) return false;
+      const evTs = new Date(e.date + "T" + (e.time || "14:00") + ":00-04:00").getTime();
+      return evTs >= now && evTs <= horizon24h;
+    });
+    if (majorEvent) {
+      pathBCheck.eventWithin24h = true;
+      pathBCheck.eventName = majorEvent.title;
+      reasons.push(`${majorEvent.title} within 24h + ${regime.systemicRiskLevel} systemic risk`);
+    }
+  }
+
+  return { triggered: reasons.length > 0, reasons, pathACheck, pathBCheck };
 }
 
 function determineDirection(
@@ -268,6 +299,31 @@ function selectStrategyType(
   if (direction === "BULLISH") return "call_debit_spread";
   if (direction === "BEARISH") return "put_debit_spread";
   return "butterfly";
+}
+
+function checkEarningsGate(
+  tickerData: TickerData,
+  settings: StrategistConfig
+): { triggered: boolean; daysUntil: number | null; earningsDate: string | null } {
+  if (settings.earningsProximityHours === 0) {
+    return { triggered: false, daysUntil: null, earningsDate: null };
+  }
+
+  const proximityDays = settings.earningsProximityHours / 24;
+  const daysAway = tickerData.earningsDaysAway;
+
+  if (daysAway != null && daysAway <= proximityDays) {
+    const ivr = tickerData.ivr ?? 0;
+    if (ivr < settings.earningsIvrFloor) {
+      return {
+        triggered: true,
+        daysUntil: daysAway,
+        earningsDate: null,
+      };
+    }
+  }
+
+  return { triggered: false, daysUntil: daysAway, earningsDate: null };
 }
 
 function computeAtmSpread(chain: any[], price: number): number {
@@ -465,6 +521,42 @@ function buildCandidates(
         candidateScore: 0, dte, expiration: exp,
       });
     }
+
+    if (strategyType === "butterfly" || strategyType === "calendar") {
+      const atmCall = calls.reduce((best: any, c: any) =>
+        Math.abs(c.strike - price) < Math.abs(best.strike - price) ? c : best, calls[0]);
+      if (atmCall) {
+        const calStrike = atmCall.strike;
+        const allAtStrike = expChain.filter((c: any) =>
+          Math.abs(c.strike - calStrike) < 0.5 &&
+          (c.type === "call" || c.optionType === "CALL")
+        ).sort((a: any, b: any) => (a.dte ?? 0) - (b.dte ?? 0));
+        if (allAtStrike.length >= 2) {
+          const frontMonth = allAtStrike[0];
+          const backMonth = allAtStrike[allAtStrike.length - 1];
+          if (frontMonth && backMonth && frontMonth !== backMonth) {
+            const frontMid = frontMonth.mid ?? (frontMonth.bid + frontMonth.ask) / 2;
+            const backMid = backMonth.mid ?? (backMonth.bid + backMonth.ask) / 2;
+            const debit = backMid - frontMid;
+            if (debit > 0) {
+              const maxLoss = debit * 100;
+              const maxProfit = maxLoss * 0.5;
+              candidates.push({
+                strategyType: "calendar", direction: "NON_DIRECTIONAL",
+                legs: [
+                  toLeg(frontMonth, "call", "sell"),
+                  toLeg(backMonth, "call", "buy"),
+                ],
+                debit, maxProfit, maxLoss, breakeven: calStrike,
+                riskReward: maxProfit > 0 && maxLoss > 0 ? maxProfit / maxLoss : 0,
+                liquidityScore: legLiqScore(frontMonth, backMonth),
+                candidateScore: 0, dte: frontMonth.dte ?? dte, expiration: frontMonth.expiration ?? exp,
+              });
+            }
+          }
+        }
+      }
+    }
   }
 
   for (const c of candidates) {
@@ -587,13 +679,36 @@ async function fetchTickerData(ticker: string): Promise<TickerData | null> {
     const currentVol = q.totalVolume ?? 0;
 
     const eventResult = checkEventConflicts(ticker, 45, "iron_condor");
-    const earningsWithin48h = eventResult.hardBlocks.length > 0 || eventResult.eventConflicts?.some((c: any) => c.type === "earnings");
-    const earningsDaysAway: number | null = null;
+    const earningsEvents = getUpcomingEvents(10).filter((e) => e.type === "earnings" && e.title.toLowerCase().includes(ticker.toLowerCase()));
+    let earningsDaysAway: number | null = null;
+    if (earningsEvents.length > 0) {
+      const evDate = new Date(earningsEvents[0].date + "T16:00:00-04:00");
+      earningsDaysAway = Math.max(0, Math.round((evDate.getTime() - Date.now()) / (24 * 60 * 60 * 1000)));
+    }
+    const earningsWithin48h = earningsDaysAway != null && earningsDaysAway <= 2;
+
+    let ivr: number | null = null;
+    try {
+      const ivrRows = await db
+        .select({ ivr: equityDailyTable.ivr })
+        .from(equityDailyTable)
+        .where(and(
+          eq(equityDailyTable.symbol, ticker.toUpperCase()),
+          sql`${equityDailyTable.ivr} IS NOT NULL`
+        ))
+        .orderBy(desc(equityDailyTable.date))
+        .limit(1);
+      if (ivrRows.length > 0 && ivrRows[0].ivr != null) {
+        ivr = ivrRows[0].ivr;
+      }
+    } catch (e) {
+      logger.warn({ err: e, ticker }, "StrategistV2: IVR fetch from DB failed");
+    }
 
     return {
       price,
       dailyChangePct: q.netPercentChangeInDouble ?? 0,
-      ivr: null,
+      ivr,
       avgVolume20d: avgVol,
       currentVolume: currentVol,
       relativeVolume: avgVol > 0 ? currentVol / avgVol : 1,
@@ -696,15 +811,21 @@ async function logTelemetry(
   toxicCheck: any, strategyDecision: any, winner: Candidate | null, thesis?: string | null
 ): Promise<number | null> {
   try {
+    const earningsGateData = tickerData ? checkEarningsGate(tickerData, settings) : null;
     const [row] = await db.insert(strategistTelemetryTable).values({
       ticker,
       result,
       regime: regime as any,
       tickerData: tickerData as any,
       idioScore: ioScore as any,
-      toxicGate: toxicCheck as any,
+      toxicGate: {
+        triggered: toxicCheck.triggered,
+        reasons: toxicCheck.reasons,
+        path_a_check: toxicCheck.pathACheck,
+        path_b_check: toxicCheck.pathBCheck,
+      } as any,
       viability: null,
-      earningsGate: null,
+      earningsGate: earningsGateData as any,
       strategyDecision: strategyDecision as any,
       candidatesGenerated: null,
       candidatesFiltered: null,

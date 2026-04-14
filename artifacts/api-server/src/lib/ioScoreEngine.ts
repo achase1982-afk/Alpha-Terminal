@@ -29,7 +29,7 @@ export async function computeIOScore(
   const cfg = settings ?? (await getSettings());
 
   const betaLookback = cfg.betaR2Lookback;
-  const residualLookback = cfg.residualReturnLookback;
+  const residualLookback = cfg.residualReturnLookback ?? 10;
   const wR2 = cfg.ioWeightR2;
   const wResidual = cfg.ioWeightResidual;
   const wCatalyst = cfg.ioWeightCatalyst;
@@ -37,7 +37,7 @@ export async function computeIOScore(
   const highThreshold = cfg.ioThresholdHigh;
   const mixedFloor = cfg.ioThresholdMixed;
 
-  const { rSquared, beta, residualZScore } = await computeBetaR2(ticker, betaLookback);
+  const { rSquared, beta, residualZScore } = await computeBetaR2(ticker, betaLookback, residualLookback);
 
   const flowDiv = await computeFlowDivergence(ticker);
 
@@ -82,7 +82,8 @@ export async function computeIOScore(
 
 async function computeBetaR2(
   ticker: string,
-  lookbackDays: number
+  lookbackDays: number,
+  residualLookback: number = 10
 ): Promise<{ rSquared: number; beta: number; residualZScore: number }> {
   try {
     const cutoff = new Date();
@@ -160,8 +161,11 @@ async function computeBetaR2(
       residuals.reduce((a, r) => a + (r - meanResidual) ** 2, 0) / (residuals.length - 1 || 1)
     );
 
-    const lastResidual = residuals[residuals.length - 1] ?? 0;
-    const residualZScore = stdResidual > 0 ? lastResidual / stdResidual : 0;
+    const recentResiduals = residuals.slice(-residualLookback);
+    const avgRecentResidual = recentResiduals.length > 0
+      ? recentResiduals.reduce((a, b) => a + b, 0) / recentResiduals.length
+      : 0;
+    const residualZScore = stdResidual > 0 ? avgRecentResidual / stdResidual : 0;
 
     return { rSquared: Math.round(rSquared * 100) / 100, beta: Math.round(beta * 100) / 100, residualZScore: Math.round(residualZScore * 100) / 100 };
   } catch (err) {

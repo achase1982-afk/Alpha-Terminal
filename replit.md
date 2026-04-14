@@ -27,7 +27,7 @@ The system incorporates curated symbol universes like "Liquid Core 130" and a "C
 
 ## Strategist V2 Architecture
 
-The Strategist V2 is a multi-stage pipeline: Toxic Gate → Viability Check → IOScore Engine → Direction/IVR Determination → Candidate Building (supporting 7 strategy types) → Liquidity Filtering → Scored Winner → Thesis + Edge Attribution. It includes `regimePostProcessor.ts` for market pulse cluster scores, `ioScoreEngine.ts` for per-ticker idiosyncratic edge scores, and `strategistSettings.ts` for managing 34 tunable parameters. Frontend components provide panels for settings, telemetry, and recommendation cards with thesis and edge attribution.
+The Strategist V2 is a multi-stage pipeline: Toxic Gate → Viability Check → IOScore Engine → Direction/IVR Determination → Candidate Building (supporting 7 strategy types incl. calendar spreads alongside butterflies) → Liquidity Filtering → Scored Winner → Thesis + Edge Attribution. It includes `regimePostProcessor.ts` for market pulse cluster scores, `ioScoreEngine.ts` for per-ticker idiosyncratic edge scores (with configurable residualReturnLookback), and `strategistSettings.ts` for managing 36 tunable parameters. IVR is fetched from `equityDailyTable` DESC for credit/debit determination (40 IVR threshold). Toxic Gate has Path A (EXTREME + HIGH correlation) and Path B (FOMC Decision/CPI within true 24h timestamp window + ELEVATED systemic risk). Earnings gate uses actual days-until-earnings from calendar event checker. Frontend recommendation cards use amber border-only for elevated systemic risk (no text banner).
 
 ## System Design Choices
 
