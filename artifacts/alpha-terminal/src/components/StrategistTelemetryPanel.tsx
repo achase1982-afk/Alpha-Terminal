@@ -38,6 +38,7 @@ export function StrategistTelemetryPanel() {
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [tickerFilter, setTickerFilter] = useState("");
+  const [resultFilter, setResultFilter] = useState<string>("");
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -89,23 +90,39 @@ export function StrategistTelemetryPanel() {
       </div>
 
       {activeTab === "strategist" && (
-        <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-[#1a1a1a] border border-zinc-800">
-          <SearchIcon className="w-3.5 h-3.5 text-zinc-500" />
-          <input
-            value={tickerFilter}
-            onChange={(e) => setTickerFilter(e.target.value.toUpperCase())}
-            placeholder="Filter by ticker..."
-            className="bg-transparent font-mono text-xs text-white flex-1 outline-none placeholder:text-zinc-600"
-          />
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-[#1a1a1a] border border-zinc-800 flex-1">
+            <SearchIcon className="w-3.5 h-3.5 text-zinc-500" />
+            <input
+              value={tickerFilter}
+              onChange={(e) => setTickerFilter(e.target.value.toUpperCase())}
+              placeholder="Filter by ticker..."
+              className="bg-transparent font-mono text-xs text-white flex-1 outline-none placeholder:text-zinc-600"
+            />
+          </div>
+          <select
+            value={resultFilter}
+            onChange={(e) => setResultFilter(e.target.value)}
+            className="px-2 py-1.5 rounded-lg bg-[#1a1a1a] border border-zinc-800 font-mono text-xs text-white outline-none appearance-none cursor-pointer"
+            style={{ minWidth: 100 }}
+          >
+            <option value="">All</option>
+            <option value="recommendation">Recommendation</option>
+            <option value="no_viable_setup">No Viable</option>
+            <option value="toxic_block">Toxic Block</option>
+            <option value="no_data">No Data</option>
+          </select>
         </div>
       )}
 
       {loading && <div className="text-center text-zinc-500 font-mono text-xs py-6">Loading telemetry...</div>}
 
-      {!loading && activeTab === "strategist" && (
+      {!loading && activeTab === "strategist" && (() => {
+        const filtered = resultFilter ? stratRows.filter(r => r.result === resultFilter) : stratRows;
+        return (
         <div className="space-y-2">
-          {stratRows.length === 0 && <div className="text-center text-zinc-600 font-mono text-xs py-6">No analyses recorded yet</div>}
-          {stratRows.map((row) => (
+          {filtered.length === 0 && <div className="text-center text-zinc-600 font-mono text-xs py-6">{stratRows.length === 0 ? "No analyses recorded yet" : "No matches"}</div>}
+          {filtered.map((row) => (
             <div key={row.id} className="rounded-lg overflow-hidden" style={{ background: "#111113", border: "1px solid #2A2A2C" }}>
               <button
                 onClick={() => setExpandedId(expandedId === row.id ? null : row.id)}
@@ -163,7 +180,8 @@ export function StrategistTelemetryPanel() {
             </div>
           ))}
         </div>
-      )}
+        );
+      })()}
 
       {!loading && activeTab === "scanner" && (
         <div className="space-y-2">

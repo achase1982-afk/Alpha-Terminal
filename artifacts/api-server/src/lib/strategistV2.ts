@@ -121,18 +121,21 @@ export async function analyzeTickerV2(ticker: string): Promise<StrategistV2Resul
   }
 
   if (tickerData.halted) {
-    return noViable(ticker, regime, settings, toxicCheck, tickerData, "No viable options setup: stock halted.");
+    return noViable(ticker, regime, settings, toxicCheck, tickerData, "No viable options setup: stock halted.",
+      null, { passed: false, chainAvailable: false, halted: true, atmSpreadPct: 0 }, 0, 0, []);
   }
 
   const chain = await fetchOptionsChain(ticker, settings);
   if (!chain || chain.length === 0) {
-    return noViable(ticker, regime, settings, toxicCheck, tickerData, "No viable options setup: no options chain.");
+    return noViable(ticker, regime, settings, toxicCheck, tickerData, "No viable options setup: no options chain.",
+      null, { passed: false, chainAvailable: false, halted: false, atmSpreadPct: 0 }, 0, 0, []);
   }
   logger.info({ ticker, chainLength: chain.length, puts: chain.filter((c: any) => c.type === "put").length, calls: chain.filter((c: any) => c.type === "call").length }, "StrategistV2: options chain loaded");
 
   const atmSpreadPct = computeAtmSpread(chain, tickerData.price);
   if (atmSpreadPct > settings.maxBidAskSpreadPct / 100) {
-    return noViable(ticker, regime, settings, toxicCheck, tickerData, `No viable options setup: ATM spread ${(atmSpreadPct * 100).toFixed(1)}% exceeds max ${settings.maxBidAskSpreadPct}%.`);
+    return noViable(ticker, regime, settings, toxicCheck, tickerData, `No viable options setup: ATM spread ${(atmSpreadPct * 100).toFixed(1)}% exceeds max ${settings.maxBidAskSpreadPct}%.`,
+      null, { passed: false, chainAvailable: true, halted: false, atmSpreadPct: Math.round(atmSpreadPct * 10000) / 100 }, 0, 0, []);
   }
 
   const catalystInfo = deriveCatalyst(tickerData);
@@ -155,13 +158,16 @@ export async function analyzeTickerV2(ticker: string): Promise<StrategistV2Resul
   const viable = filterCandidates(candidates, settings, filterReasons);
   logger.info({ ticker, rawCandidates: candidates.length, viableCandidates: viable.length, filterReasons: filterReasons.slice(0, 5) }, "StrategistV2: candidate filtering");
 
+  const viability = { passed: true, chainAvailable: true, halted: false, atmSpreadPct: Math.round(atmSpreadPct * 10000) / 100 };
+
   if (viable.length === 0) {
     const detail = candidates.length === 0
       ? `No candidates built for ${strategyType} (price=$${tickerData.price.toFixed(2)}, chain=${chain.length} contracts, DTE ${settings.preferredDteMin}-${settings.preferredDteMax}).`
       : `${candidates.length} candidates built but all filtered: ${filterReasons.slice(0, 3).join("; ")}.`;
+    viability.passed = false;
     return noViable(ticker, regime, settings, toxicCheck, tickerData,
       `No viable options setup: ${detail}`,
-      ioScore);
+      ioScore, viability, candidates.length, candidates.length - viable.length, filterReasons);
   }
 
   viable.sort((a, b) => b.candidateScore - a.candidateScore);
@@ -203,7 +209,7 @@ export async function analyzeTickerV2(ticker: string): Promise<StrategistV2Resul
   const telemetryId = await logTelemetry(
     ticker, "recommendation", regime, settings, ioScore, tickerData, toxicCheck,
     { direction, directionReason, creditOrDebit, creditReason, strategyType },
-    winner, thesis
+    winner, thesis, viability, candidates.length, candidates.length - viable.length, filterReasons
   );
   result.telemetryId = telemetryId ?? undefined;
 
@@ -792,9 +798,13 @@ async function noViable(
   toxicCheck: any,
   tickerData: TickerData | null,
   reason: string,
-  ioScore?: IOScoreResult | null
+  ioScore?: IOScoreResult | null,
+  viability?: any,
+  candidatesGenerated?: number,
+  candidatesFiltered?: number,
+  filterReasons?: string[]
 ): Promise<StrategistV2Result> {
-  await logTelemetry(ticker, "no_viable_setup", regime, settings, ioScore ?? null, tickerData, toxicCheck, null, null, reason);
+  await logTelemetry(ticker, "no_viable_setup", regime, settings, ioScore ?? null, tickerData, toxicCheck, null, null, reason, viability, candidatesGenerated, candidatesFiltered, filterReasons);
   return {
     status: "no_viable_setup",
     ticker,
@@ -808,7 +818,8 @@ async function noViable(
 async function logTelemetry(
   ticker: string, result: string, regime: StructuredRegime, settings: StrategistConfig,
   ioScore: IOScoreResult | null, tickerData: TickerData | null,
-  toxicCheck: any, strategyDecision: any, winner: Candidate | null, thesis?: string | null
+  toxicCheck: any, strategyDecision: any, winner: Candidate | null, thesis?: string | null,
+  viability?: any, candidatesGenCount?: number, candidatesFilterCount?: number, filterReasonsArr?: string[]
 ): Promise<number | null> {
   try {
     const earningsGateData = tickerData ? checkEarningsGate(tickerData, settings) : null;
@@ -824,12 +835,12 @@ async function logTelemetry(
         path_a_check: toxicCheck.pathACheck,
         path_b_check: toxicCheck.pathBCheck,
       } as any,
-      viability: null,
+      viability: viability ?? null,
       earningsGate: earningsGateData as any,
       strategyDecision: strategyDecision as any,
-      candidatesGenerated: null,
-      candidatesFiltered: null,
-      filterReasons: null,
+      candidatesGenerated: candidatesGenCount ?? null,
+      candidatesFiltered: candidatesFilterCount ?? null,
+      filterReasons: filterReasonsArr ?? null,
       winningCandidate: winner as any,
       edgeAttribution: ioScore ? { idiosyncratic_pct: Math.round(ioScore.final * 100), macro_pct: 100 - Math.round(ioScore.final * 100) } as any : null,
       recommendationThesis: thesis ?? null,
