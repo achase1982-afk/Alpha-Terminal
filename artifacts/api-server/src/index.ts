@@ -19,6 +19,7 @@ import { inArray, desc, sql } from "drizzle-orm";
 import { startPolygonPCRatioPoller } from "./lib/polygonPutCallRatio";
 import { migrateAiLabSeedData } from "./lib/aiLabMigration";
 import { getBestAccessToken } from "./lib/tokenStore";
+import { loadAiLabConfigFromDb } from "./lib/aiLabConfig";
 
 const rawPort = process.env["PORT"];
 
@@ -35,6 +36,8 @@ if (Number.isNaN(port) || port <= 0) {
 }
 
 async function boot() {
+  await loadAiLabConfigFromDb();
+
   const server = app.listen(port, (err) => {
     if (err) {
       logger.error({ err }, "Error listening on port");
