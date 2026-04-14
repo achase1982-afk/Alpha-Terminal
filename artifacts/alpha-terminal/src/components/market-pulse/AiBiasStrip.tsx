@@ -15,9 +15,9 @@ const BIAS_COLORS: Record<string, { label: string; accent: string }> = {
 
 const SCROLL_DURATIONS = {
   off: 0,
-  slow: 25,
-  normal: 15,
-  fast: 8,
+  slow: 18,
+  normal: 10,
+  fast: 5,
 } as const;
 
 interface AiBiasStripProps {
