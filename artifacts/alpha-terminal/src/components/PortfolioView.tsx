@@ -94,16 +94,15 @@ const COLUMNS_STORAGE_KEY = "alpha_visible_columns_v2";
 interface CellVal { text: string; color: string; bold?: boolean }
 const DASH: CellVal = { text: "\u2014", color: C.dim };
 
-function getEquityCellVal(col: ColumnKey, pos: Position): CellVal {
+function getEquityCellVal(col: ColumnKey, pos: Position, streamLast?: number | null): CellVal {
   const qty = pos.longQuantity || pos.shortQuantity;
   const isShort = pos.shortQuantity > 0;
   const markPx = qty > 0 ? pos.marketValue / qty : null;
   switch (col) {
     case "mark": return { text: markPx != null ? `$${markPx.toFixed(2)}` : "\u2014", color: C.text };
     case "last": {
-      if (markPx == null || qty === 0) return DASH;
-      const dayChg = pos.currentDayProfitLoss / qty;
-      return { text: `$${(markPx - dayChg).toFixed(2)}`, color: C.text };
+      if (streamLast != null) return { text: `$${streamLast.toFixed(2)}`, color: C.text };
+      return DASH;
     }
     case "cost": return { text: `$${pos.averagePrice.toFixed(2)}`, color: C.textDim };
     case "tradePrice": return { text: `$${pos.averagePrice.toFixed(2)}`, color: C.textDim };
@@ -691,12 +690,8 @@ function PositionTableRow({
         return { text: markPx != null ? `$${markPx.toFixed(2)}` : "\u2014", color: markPx != null ? markColor : C.dim };
       }
       case "last": {
-        if (!eq) return DASH;
-        const eqQty = eq.longQuantity || eq.shortQuantity;
-        if (eqQty === 0) return DASH;
-        const markPx2 = eq.marketValue / eqQty;
-        const dayChg = eq.currentDayProfitLoss / eqQty;
-        return { text: `$${(markPx2 - dayChg).toFixed(2)}`, color: C.text };
+        if (streamPrice != null) return { text: `$${streamPrice.toFixed(2)}`, color: C.text };
+        return DASH;
       }
       case "cost": case "tradePrice": {
         if (eq) return { text: `$${eq.averagePrice.toFixed(2)}`, color: C.textDim };
@@ -811,7 +806,7 @@ function PositionTableRow({
                   </div>
                 </td>
                 {renderCells(visibleColumns, col => {
-                  const v = getEquityCellVal(col, eq);
+                  const v = getEquityCellVal(col, eq, streamPrice);
                   if (col === "mark") return { ...v, color: markColor };
                   return v;
                 }, subCell, { mark: { style: { transition: "color 0.15s" } } })}
