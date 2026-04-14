@@ -630,68 +630,91 @@ export function AiLabStrategistView() {
 
   const hasItems = ideas.length > 0 || deliberations.length > 0;
 
+  const selectStyle: React.CSSProperties = {
+    background: "#18181B",
+    color: "#a1a1aa",
+    border: "1px solid #2A2A2C",
+    outline: "none",
+    borderRadius: 6,
+    height: 32,
+    paddingLeft: 10,
+    paddingRight: 10,
+    fontFamily: "monospace",
+    fontSize: 11,
+    cursor: "pointer",
+    appearance: "none" as const,
+    WebkitAppearance: "none" as const,
+  };
+
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="flex gap-1">
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <select
+          value={filter}
+          onChange={(e) => setFilter(e.target.value as ViewFilter)}
+          style={{ ...selectStyle, flex: "0 0 auto", minWidth: 100 }}
+        >
           {filterOptions.map((opt) => (
-            <button
-              key={opt.value}
-              onClick={() => setFilter(opt.value)}
-              className="px-2.5 py-1 rounded font-mono text-[9px] tracking-wider transition-colors cursor-pointer"
-              style={{
-                background: filter === opt.value ? "#FFB80015" : "transparent",
-                color: filter === opt.value ? "#FFB800" : "#71717a",
-                border: `1px solid ${filter === opt.value ? "#FFB80040" : "#2A2A2C"}`,
-              }}
-            >
-              {opt.label}
-            </button>
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
           ))}
-        </div>
-        <div className="flex items-center gap-1.5">
-          <select
-            value={selectedPass}
-            onChange={(e) => setSelectedPass(e.target.value)}
-            className="font-mono text-[9px] tracking-wider rounded px-1.5 py-1 cursor-pointer appearance-none"
-            style={{
-              background: "#18181B",
-              color: "#a1a1aa",
-              border: "1px solid #2A2A2C",
-              outline: "none",
-            }}
-          >
-            {PASS_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
-          <button
-            onClick={() => triggerPass(selectedPass)}
-            disabled={!!runningPass}
-            className="flex items-center gap-1 px-2 py-1 rounded font-mono text-[9px] tracking-wider transition-colors cursor-pointer"
-            style={{
-              background: runningPass ? "#f5a62320" : "#f5a62315",
-              color: runningPass ? "#f5a623" : "#f5a623",
-              border: `1px solid ${runningPass ? "#f5a62360" : "#f5a62340"}`,
-            }}
-          >
-            <Play className={`w-2.5 h-2.5${runningPass ? " animate-pulse" : ""}`} />
-            {runningPass ? "Running..." : "Run"}
-          </button>
-          <button
-            onClick={() => fetchData(filter)}
-            disabled={loading}
-            className="p-1 rounded transition-colors cursor-pointer"
-            style={{
-              background: "transparent",
-              border: "1px solid #2A2A2C",
-              color: loading ? "#52525b" : "#71717a",
-            }}
-            title="Refresh"
-          >
-            <RefreshCw className={`w-3 h-3${loading ? " animate-spin" : ""}`} />
-          </button>
-        </div>
+        </select>
+
+        <select
+          value={selectedPass}
+          onChange={(e) => setSelectedPass(e.target.value)}
+          style={{ ...selectStyle, flex: 1, minWidth: 0 }}
+        >
+          {PASS_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+
+        <button
+          onClick={() => fetchData(filter)}
+          disabled={loading}
+          style={{
+            flexShrink: 0,
+            width: 32,
+            height: 32,
+            borderRadius: 6,
+            background: "transparent",
+            border: "1px solid #2A2A2C",
+            color: loading ? "#52525b" : "#71717a",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: loading ? "not-allowed" : "pointer",
+          }}
+          title="Refresh"
+        >
+          <RefreshCw className={`w-3.5 h-3.5${loading ? " animate-spin" : ""}`} />
+        </button>
+
+        <button
+          onClick={() => triggerPass(selectedPass)}
+          disabled={!!runningPass}
+          style={{
+            flexShrink: 0,
+            height: 32,
+            paddingLeft: 14,
+            paddingRight: 14,
+            borderRadius: 6,
+            background: runningPass ? "#f5a62320" : "#f5a62318",
+            color: "#f5a623",
+            border: `1px solid ${runningPass ? "#f5a62360" : "#f5a62345"}`,
+            display: "flex",
+            alignItems: "center",
+            gap: 5,
+            fontFamily: "monospace",
+            fontSize: 11,
+            fontWeight: 600,
+            cursor: runningPass ? "not-allowed" : "pointer",
+            whiteSpace: "nowrap",
+          }}
+        >
+          <Play className={`w-3 h-3${runningPass ? " animate-pulse" : ""}`} />
+          {runningPass ? "Running…" : "Run"}
+        </button>
       </div>
 
       {runError && (
