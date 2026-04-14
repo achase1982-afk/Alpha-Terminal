@@ -19,7 +19,15 @@ export async function fetchWithAuth(
     } catch {}
   }
 
-  return fetch(input, { ...init, headers });
+  return fetch(input, { ...init, headers, redirect: "error" }).catch((err) => {
+    if (err instanceof TypeError && /redirect|pattern|opaque/i.test(err.message)) {
+      return new Response(JSON.stringify({ error: "Session expired" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    throw err;
+  });
 }
 
 export async function getClerkToken(): Promise<string | null> {

@@ -1,12 +1,22 @@
 import express, { type Express } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
-import { clerkMiddleware, requireAuth } from "@clerk/express";
+import { clerkMiddleware, getAuth } from "@clerk/express";
+import type { Request, Response, NextFunction } from "express";
 import router from "./routes";
 import healthRouter from "./routes/health";
 import { logger } from "./lib/logger";
 
 const DEV_BYPASS = process.env.DEV_BYPASS_AUTH === "true";
+
+function apiRequireAuth(req: Request, res: Response, next: NextFunction) {
+  const auth = getAuth(req);
+  if (!auth?.userId) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  next();
+}
 
 const app: Express = express();
 
@@ -44,7 +54,7 @@ app.use("/api", healthRouter);
 if (DEV_BYPASS) {
   app.use("/api", router);
 } else {
-  app.use("/api", requireAuth(), router);
+  app.use("/api", apiRequireAuth, router);
 }
 
 export default app;
