@@ -42,17 +42,6 @@ export interface AiLabFullConfig {
   scheduleMiddayRotation: boolean;
   schedulePowerHourPrep: boolean;
   schedulePostMarketReflection: boolean;
-
-  validatorMaxActiveIdeas: number;
-  validatorMaxSameSector: number;
-  validatorMaxSameDirection: number;
-  validatorMaxCorrelation: number;
-  validatorMinOiPerLeg: number;
-  validatorMaxSpreadPct: number;
-  validatorMinDteOptions: number;
-  validatorMinVolOiRatio: number;
-  validatorMinAvgVolumeStock: number;
-  rejectionCooldownPasses: number;
 }
 
 export type AiLabStrategistConfig = AiLabFullConfig;
