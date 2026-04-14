@@ -1,3 +1,4 @@
+import { useRef, useEffect, useState } from "react";
 import { Zap, TrendingUp, TrendingDown, Minus, AlertTriangle } from "lucide-react";
 import { useMarketPulseStore } from "../../stores/marketPulseStore";
 import { useUICustomizationStore } from "../../lib/ui-customization-store";
@@ -13,11 +14,11 @@ const BIAS_COLORS: Record<string, { label: string; accent: string }> = {
   NO_EDGE: { label: "text-zinc-500", accent: "bg-zinc-600" },
 };
 
-const SCROLL_DURATIONS = {
+const SCROLL_SPEEDS = {
   off: 0,
-  slow: 10,
-  normal: 6,
-  fast: 3,
+  slow: 40,
+  normal: 60,
+  fast: 90,
 } as const;
 
 interface AiBiasStripProps {
@@ -90,7 +91,7 @@ export function AiBiasStrip({ onNavigateToPulse }: AiBiasStripProps) {
     : 1;
 
   const summaryText = pulseData.sessionBias?.summary || pulseData.structuralRegime?.summary || "";
-  const scrollDuration = SCROLL_DURATIONS[biasScrollSpeed] || SCROLL_DURATIONS.slow;
+  const scrollSpeed = SCROLL_SPEEDS[biasScrollSpeed] || SCROLL_SPEEDS.normal;
   const scrollEnabled = biasScrollSpeed !== "off";
 
   return (
@@ -144,7 +145,7 @@ export function AiBiasStrip({ onNavigateToPulse }: AiBiasStripProps) {
         ))}
       </div>
 
-      <div className="flex items-center gap-2 min-w-0 shrink-0 max-w-[200px]">
+      <div className="flex items-center gap-2 min-w-0 flex-1">
         {isStale && (
           <span className="relative flex h-2 w-2 shrink-0">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
@@ -155,35 +156,55 @@ export function AiBiasStrip({ onNavigateToPulse }: AiBiasStripProps) {
           {pulseData.structuralRegime?.label?.replace(/_/g, "-") ?? "—"}
         </span>
         {summaryText && (
-          <div className="overflow-hidden min-w-0" style={{ maskImage: "linear-gradient(to right, transparent 0%, black 4%, black 90%, transparent 100%)" }}>
-            {scrollEnabled ? (
-              <div
-                className="flex whitespace-nowrap"
-                style={{ animation: `biasScroll ${scrollDuration}s linear infinite` }}
-              >
-                <span className="font-mono text-[13px] text-white shrink-0 pr-16">{summaryText}</span>
-                <span className="font-mono text-[13px] text-white shrink-0 pr-16">{summaryText}</span>
-              </div>
-            ) : (
-              <span
-                className="font-mono text-[13px] text-white whitespace-nowrap inline-block"
-                style={{ overflow: "hidden", textOverflow: "ellipsis" }}
-              >
-                {summaryText}
-              </span>
-            )}
-          </div>
+          <ScrollingText text={summaryText} speed={scrollEnabled ? scrollSpeed : 0} />
         )}
       </div>
-
-      {scrollEnabled && (
-        <style>{`
-          @keyframes biasScroll {
-            0% { transform: translateX(0); }
-            100% { transform: translateX(-50%); }
-          }
-        `}</style>
-      )}
     </button>
+  );
+}
+
+function ScrollingText({ text, speed }: { text: string; speed: number }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const textRef = useRef<HTMLSpanElement>(null);
+  const [duration, setDuration] = useState(10);
+  const GAP = 64;
+
+  useEffect(() => {
+    if (!textRef.current || speed === 0) return;
+    const textW = textRef.current.scrollWidth;
+    const totalW = textW + GAP;
+    setDuration(totalW / speed);
+  }, [text, speed]);
+
+  if (speed === 0) {
+    return (
+      <div className="overflow-hidden min-w-0 flex-1">
+        <span className="font-mono text-[13px] text-white whitespace-nowrap block overflow-hidden text-ellipsis">
+          {text}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      ref={containerRef}
+      className="overflow-hidden min-w-0 flex-1"
+      style={{ maskImage: "linear-gradient(to right, transparent 0%, black 4%, black 92%, transparent 100%)" }}
+    >
+      <div
+        className="inline-flex whitespace-nowrap"
+        style={{ animation: `biasMarquee ${duration}s linear infinite` }}
+      >
+        <span ref={textRef} className="font-mono text-[13px] text-white shrink-0" style={{ paddingRight: GAP }}>{text}</span>
+        <span className="font-mono text-[13px] text-white shrink-0" style={{ paddingRight: GAP }}>{text}</span>
+      </div>
+      <style>{`
+        @keyframes biasMarquee {
+          0% { transform: translateX(0); }
+          100% { transform: translateX(calc(-50%)); }
+        }
+      `}</style>
+    </div>
   );
 }
