@@ -13,11 +13,12 @@ router.get("/regime", (_req, res) => {
   res.json(regime);
 });
 
-router.post("/analyze", async (req, res) => {
+router.post("/analyze", async (req, res): Promise<void> => {
   try {
     const { ticker } = req.body;
     if (!ticker || typeof ticker !== "string") {
-      return res.status(400).json({ error: "ticker is required" });
+      res.status(400).json({ error: "ticker is required" });
+      return;
     }
     const result = await analyzeTickerV2(ticker.toUpperCase());
     res.json(result);
@@ -39,11 +40,12 @@ router.get("/settings", async (_req, res) => {
   }
 });
 
-router.put("/settings", async (req, res) => {
+router.put("/settings", async (req, res): Promise<void> => {
   try {
     const { key, value } = req.body;
     if (!key || value === undefined) {
-      return res.status(400).json({ error: "key and value required" });
+      res.status(400).json({ error: "key and value required" });
+      return;
     }
     await updateSetting(key, Number(value));
     const updated = await getSettings();
@@ -70,15 +72,13 @@ router.get("/telemetry/strategist", async (req, res) => {
     const limit = Math.min(Number(req.query.limit) || 50, 100);
     const ticker = req.query.ticker as string | undefined;
 
-    let query = db.select().from(strategistTelemetryTable).orderBy(desc(strategistTelemetryTable.timestamp)).limit(limit);
+    const rows = ticker
+      ? await db.select().from(strategistTelemetryTable)
+          .where(eq(strategistTelemetryTable.ticker, ticker.toUpperCase()))
+          .orderBy(desc(strategistTelemetryTable.timestamp)).limit(limit)
+      : await db.select().from(strategistTelemetryTable)
+          .orderBy(desc(strategistTelemetryTable.timestamp)).limit(limit);
 
-    if (ticker) {
-      query = db.select().from(strategistTelemetryTable)
-        .where(eq(strategistTelemetryTable.ticker, ticker.toUpperCase()))
-        .orderBy(desc(strategistTelemetryTable.timestamp)).limit(limit);
-    }
-
-    const rows = await query;
     res.json(rows);
   } catch (err) {
     logger.error({ err }, "StrategistV2: telemetry fetch failed");

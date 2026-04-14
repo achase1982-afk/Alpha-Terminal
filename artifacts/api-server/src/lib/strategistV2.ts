@@ -580,9 +580,9 @@ async function fetchTickerData(ticker: string): Promise<TickerData | null> {
     const avgVol = f.avg10DaysVolume ?? f.avgVol10Days ?? 1;
     const currentVol = q.totalVolume ?? 0;
 
-    const events = await checkEventConflicts(ticker);
-    const earningsEvent = events.find((e: any) => e.type === "earnings");
-    const earningsWithin48h = earningsEvent ? earningsEvent.daysAway <= 2 : false;
+    const eventResult = checkEventConflicts(ticker, 45, "iron_condor");
+    const earningsWithin48h = eventResult.hardBlocks.length > 0 || eventResult.eventConflicts?.some((c: any) => c.type === "earnings");
+    const earningsDaysAway: number | null = null;
 
     return {
       price,
@@ -593,7 +593,7 @@ async function fetchTickerData(ticker: string): Promise<TickerData | null> {
       relativeVolume: avgVol > 0 ? currentVol / avgVol : 1,
       sector: f.sector ?? "Unknown",
       earningsWithin48h,
-      earningsDaysAway: earningsEvent?.daysAway ?? null,
+      earningsDaysAway,
       analystActions48h: [],
       halted: q.securityStatus === "Halted" || q.securityStatus === "HALTED",
     };
@@ -605,8 +605,9 @@ async function fetchTickerData(ticker: string): Promise<TickerData | null> {
 
 async function fetchOptionsChain(ticker: string, settings: StrategistConfig): Promise<any[]> {
   try {
-    const chain = await fetchPolygonChain(ticker);
-    if (!chain || chain.length === 0) {
+    const apiKey = process.env.POLYGON_API_KEY || "";
+    const chain = await fetchPolygonChain(ticker, apiKey, { maxDte: settings.preferredDteMax });
+    if (!chain || !chain.calls || (chain.calls.length === 0 && chain.puts.length === 0)) {
       const token = await getBestAccessToken();
       if (!token) return [];
       const res = await fetch(
@@ -618,7 +619,8 @@ async function fetchOptionsChain(ticker: string, settings: StrategistConfig): Pr
       return flattenSchwabChain(data, settings);
     }
 
-    return chain.filter((c: any) => {
+    const allContracts = [...(chain.calls || []), ...(chain.puts || [])];
+    return allContracts.filter((c: any) => {
       const dte = c.dte ?? 0;
       return dte >= settings.preferredDteMin && dte <= settings.preferredDteMax;
     });
