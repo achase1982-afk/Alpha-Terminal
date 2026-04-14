@@ -335,8 +335,8 @@ function IdeaCard({ idea }: { idea: AiLabIdea }) {
                   </span>
                 </>
               )}
-              <span className="text-zinc-700">·</span>
-              <span className="font-mono text-[9px] text-zinc-600">{fmtDateTime(idea.createdAt)}</span>
+              <span className="text-zinc-600">·</span>
+              <span className="font-mono text-[11px] text-white">{fmtDateTime(idea.createdAt)}</span>
             </div>
           </div>
         </div>
@@ -456,7 +456,7 @@ function DeliberationCard({ deliberation }: { deliberation: AiLabDeliberation })
             <div className="flex items-center gap-2 mt-0.5">
               <span className="font-mono text-[9px] text-zinc-500">{deliberation.source}</span>
               <span className="text-zinc-700">·</span>
-              <span className="font-mono text-[9px] text-zinc-600">
+              <span className="font-mono text-[11px] text-white">
                 {fmtDateTime(deliberation.createdAt)}
               </span>
             </div>
