@@ -1,0 +1,317 @@
+STRATEGIST v2: FULL ARCHITECTURE OVERHAUL
+
+This is a complete redesign of how the Options Strategist uses the Market Pulse regime, how the scanner ranks tickers, and how trade recommendations are generated. Implement all sections. Do not skip any section or defer it.
+
+OVERVIEW OF WHAT CHANGES
+
+The Strategist currently checks the Market Pulse regime and blanket-rejects every ticker when the regime is NO EDGE or TRANSITION. This makes the app unusable on most trading days. This overhaul fixes that by:
+
+1. Replacing the single regime label with a structured regime object
+1. Making the scanner regime-aware so it hunts for different kinds of setups depending on macro conditions
+1. Adding an Idiosyncratic Edge Score that measures whether a stock is moving on its own story or just riding the S&P
+1. Changing the Strategist so the regime influences strategy TYPE, never blocks output
+1. Adding a Toxic Day gate as the ONLY scenario where the Strategist blocks all tickers
+1. Embedding macro context directly into the trade thesis instead of warnings or banners
+
+All strategies remain defined-risk. The Strategist recommends structure (strategy type, strikes, expiration, risk/reward). It does not recommend position size. That is the user’s decision.
+
+All data comes from existing sources: Schwab OAuth (quotes, IVR, fundamentals), IBKR Gateway (breadth internals), Polygon (options chain, flow data, price history), Benzinga (earnings, analyst ratings, economic calendar). No new APIs or subscriptions.
+
+# ==========================================================
+SECTION 1: REGIME OUTPUT
+
+The Market Pulse engine (7 clusters, 59 indicators, composite scoring) is NOT changed. Add a post-processing layer that takes the existing cluster scores and outputs this structured object. Update it every 5 minutes from the cached Pulse data.
+
+Fields:
+
+directionalConviction: enum
+Values: BULLISH, MODERATELY_BULLISH, NEUTRAL, TRANSITION, MODERATELY_BEARISH, BEARISH
+Derived from: Breadth, Rates, Risk Appetite, and Macro cluster scores.
+“NO EDGE” is retired permanently. What was NO EDGE becomes NEUTRAL.
+TRANSITION stays as its own label. It signals elevated vol-of-vol and regime instability, which is different from NEUTRAL (flat, no direction).
+
+systemicRiskLevel: enum
+Values: LOW, MODERATE, ELEVATED, EXTREME
+Derived from: Volatility Level, Vol Term Structure, and Credit cluster scores.
+
+correlationRegime: enum
+Values: LOW, NORMAL, HIGH
+Derived from: Average 20-day rolling Pearson correlation of LC130 ticker daily returns vs SPY daily returns. Computed from equity_daily table.
+LOW: average correlation < 0.40
+NORMAL: 0.40 to 0.75
+HIGH: > 0.75
+
+compositeScore: integer 0-100
+The existing Market Pulse composite score. Unchanged.
+
+idioOpportunityFlag: boolean
+True when directionalConviction is NEUTRAL or TRANSITION AND systemicRiskLevel is not EXTREME.
+Convenience flag for scanner and Strategist.
+
+Example output:
+{
+“directionalConviction”: “NEUTRAL”,
+“systemicRiskLevel”: “MODERATE”,
+“correlationRegime”: “NORMAL”,
+“compositeScore”: 48,
+“idioOpportunityFlag”: true
+}
+
+# ==========================================================
+SECTION 2: SCANNER BEHAVIOR
+
+The scanner keeps its existing Momentum scoring categories. The weights become dynamic based on the regime.
+
+DEFAULT WEIGHTS (used when directionalConviction is BULLISH, MODERATELY_BULLISH, MODERATELY_BEARISH, or BEARISH):
+Trend: 25
+Relative Strength: 20
+Volume: 20
+IVR: 20
+Options Liquidity: 15
+
+IDIOSYNCRATIC WEIGHTS (used when idioOpportunityFlag is true):
+Trend: 15 (reduced because trend measures beta alignment with SPX, less useful when SPX has no direction)
+Relative Strength vs SPY: 25 (increased to find outliers decoupled from market)
+Relative Volume vs 20-day average: 25 (increased to find institutional footprints)
+IVR: 20 (maintained, need premium edge)
+Options Liquidity: 15 (maintained)
+
+CATALYST BONUS:
+When idioOpportunityFlag is true, if Benzinga flags a confirmed catalyst for a ticker (earnings announced within +/- 1 day, or analyst upgrade/downgrade cluster within 2 days), add a flat +10 points to the final score. Clamp final score to maximum 100. Do not use a multiplier. Do not apply the bonus for pre-earnings (upcoming earnings more than 1 day away) unless there is also unusual options flow.
+
+SCANNER FILTERS:
+If a ticker has no options data (IVR is null, options chain unavailable), exclude it from results. A scanner feeding an options Strategist should only surface tickers with usable options data.
+
+# ==========================================================
+SECTION 3: IDIOSYNCRATIC EDGE SCORE (IOScore)
+
+This score measures whether a stock is moving on its own story or riding the index. Computed for every ticker the Strategist analyzes.
+
+FORMULA:
+
+normalizedZScore = Math.min(1.0, Math.abs(residualReturnZScore) / 3.0)
+
+idioStrength = Math.min(1.0, Math.max(0.0,
+0.30 * (1 - betaR2_30d)
+
+- 0.25 * normalizedZScore
+- 0.25 * catalystFlag
+- 0.20 * flowDivergence
+  ))
+
+COMPONENTS:
+
+betaR2_30d:
+R-squared from a 30-day rolling linear regression of the ticker’s daily returns vs SPY daily returns.
+Uses equity_daily close prices for both.
+R2 near 1.0 = stock moves in lockstep with SPX. R2 near 0.0 = independent.
+(1 - R2) gives the idiosyncratic variance proportion.
+
+residualReturnZScore:
+actual_5d_return = (price_today / price_5d_ago) - 1
+expected_return = beta * spy_5d_return
+residual = actual_5d_return - expected_return
+z_score = residual / historical_residual_std_dev (computed from the same 30-day window)
+Normalize by dividing absolute value by 3.0 and clamping to 1.0 (so a 3-sigma move = max score).
+
+catalystFlag:
+From Benzinga data. Score 0.0 to 1.0.
+1.0 if earnings announced today, yesterday, or tomorrow.
+0.5 if analyst upgrade/downgrade cluster (2+ actions within 48 hours).
+0.3 if material news sentiment divergence from market-wide sentiment.
+0.0 otherwise.
+
+flowDivergence:
+From Polygon flow data (Table 5: flow_daily_aggregates).
+Measures whether options flow direction conflicts with or diverges from recent price action.
+flowDivergence = Math.min(1.0, (vol_oi_ratio / 3.0) * skew_divergence)
+Where:
+vol_oi_ratio = avg_vol_oi_ratio from flow_daily_aggregates (already computed)
+skew_divergence = absolute difference between the ticker’s put/call skew and the market-wide average put/call skew
+If flow data is unavailable for the ticker, set flowDivergence = 0.0 and renormalize remaining weights to sum to 1.0.
+
+THRESHOLDS (store in config, not hardcoded):
+
+> = 0.65: High idiosyncratic edge. Stock is trading its own story.
+> 0.40 to 0.64: Mixed. Some idiosyncratic signal but macro still relevant.
+> < 0.40: Macro-aligned. Stock is mostly riding the index.
+
+# ==========================================================
+SECTION 4: STRATEGIST DECISION FLOW
+
+Step by step, what happens when a user enters a ticker or taps a scanner result.
+
+STEP 1: FETCH REGIME OBJECT
+Cached, no older than 5 minutes. Read from the post-processor described in Section 1.
+
+STEP 2: TOXIC DAY CHECK
+The ONLY scenario where the Strategist blocks ALL tickers.
+Fires when EITHER of these conditions is true:
+
+Condition A: systemicRiskLevel is EXTREME AND correlationRegime is HIGH.
+(This catches flash crashes, severe credit events, liquidity drains regardless of market direction.)
+
+Condition B: Benzinga economic calendar shows FOMC rate decision or CPI print within 24 hours AND systemicRiskLevel is ELEVATED or EXTREME.
+(This catches predictable high-impact binary events when conditions are already stressed.)
+
+If toxic gate fires:
+Return “Cash is a position. Toxic market conditions: [list specific triggers].”
+Stop. Do not analyze any ticker.
+
+Expected frequency: less than 5% of trading days.
+
+STEP 3: FETCH TICKER DATA
+From Schwab: last price, daily change, 20-day average volume, IVR, sector
+From Polygon: options chain (30-60 DTE), flow data from flow_daily_aggregates
+From Benzinga: earnings date, analyst actions within 48 hours
+From equity_daily: 30 days of price history, SPY price history (for beta/R2 calc)
+
+STEP 4: TICKER VIABILITY CHECK
+If no options chain exists: return “No viable options setup: no options chain.” Stop.
+If stock is halted: return “No viable options setup: stock halted.” Stop.
+If ATM bid-ask spread exceeds 25% of mid price on all available expirations: return “No viable options setup: spreads too wide.” Stop.
+
+These are the only ticker-level blocks. They are about the ticker being physically untradeable, not about the regime.
+
+STEP 5: COMPUTE IDIOSYNCRATIC EDGE SCORE
+Run the formula from Section 3.
+
+STEP 6: DETERMINE STRATEGY TYPE
+
+First, determine direction:
+
+IF idioStrength >= 0.65:
+The stock has its own story. Follow the ticker’s direction.
+IF residualReturnZScore > 0: tradeDirection = BULLISH
+ELSE: tradeDirection = BEARISH
+
+ELSE IF directionalConviction is BULLISH or MODERATELY_BULLISH:
+tradeDirection = BULLISH
+
+ELSE IF directionalConviction is BEARISH or MODERATELY_BEARISH:
+tradeDirection = BEARISH
+
+ELSE IF directionalConviction is TRANSITION:
+tradeDirection = NON_DIRECTIONAL (favor IV-friendly structures: calendars, butterflies)
+
+ELSE (NEUTRAL, low idiosyncratic):
+tradeDirection = NON_DIRECTIONAL (favor range-bound: iron condors, butterflies)
+
+Then, determine credit vs debit based on IVR:
+
+IF IVR >= 40: prefer credit strategies (sell premium)
+BULLISH credit = bull put spread
+BEARISH credit = bear call spread
+NON_DIRECTIONAL credit = iron condor
+
+IF IVR < 40: prefer debit strategies (buy premium)
+BULLISH debit = call debit spread
+BEARISH debit = put debit spread
+NON_DIRECTIONAL debit = butterfly or calendar
+
+STEP 7: BUILD CANDIDATE STRUCTURES
+For the selected strategy type:
+Select strikes targeting approximately 0.30 delta short leg, 0.10 delta long leg for verticals.
+For iron condors: $5 wing width, centered around ATM, 30-45 DTE preferred.
+For calendars/butterflies: ATM centered, front month vs back month.
+Filter out any leg with open interest below 50 or bid-ask spread above 25% of mid.
+
+STEP 8: CHECK CANDIDATES
+If no candidates survive filtering: return “No viable options setup for this ticker: insufficient liquidity at target strikes.” Stop.
+
+STEP 9: SCORE CANDIDATES
+For each surviving candidate:
+riskRewardScore = max_profit / max_loss
+liquidityScore = 1 - (average_spread_pct / 0.25)
+candidateScore = riskRewardScore * liquidityScore
+Select the highest scoring candidate.
+
+STEP 10: FORMAT RECOMMENDATION
+Build the output per Section 6.
+
+# ==========================================================
+SECTION 5: TOXIC DAY GATE (details)
+
+Already defined in Step 2 of the decision flow. Repeating here for clarity.
+
+Two independent trigger paths (either one fires the gate):
+
+PATH A: systemicRiskLevel is EXTREME AND correlationRegime is HIGH
+Derived from existing Market Pulse clusters:
+EXTREME = VIX above 85th percentile of trailing 252 days OR VVIX above 110 OR HYG-IEF spread widening more than 2% in 24 hours
+HIGH correlation = average 20-day LC130-to-SPY correlation above 0.75
+
+PATH B: FOMC or CPI within 24 hours AND systemicRiskLevel is ELEVATED or EXTREME
+Benzinga economic calendar provides FOMC and CPI dates. Check if current time is within 24 hours prior to the event.
+
+When gate fires, the response includes the specific triggers so the user knows exactly why.
+
+# ==========================================================
+SECTION 6: MACRO CONTEXT IN THE RECOMMENDATION
+
+No warning banners. No “proceed with caution.” No position sizing. The macro context is part of the trade thesis.
+
+RECOMMENDATION CARD LAYOUT:
+
+Line 1: Strategy and structure
+“Bull put spread on GS: Sell May 16 $380 put, buy May 16 $370 put for $2.10 credit.”
+
+Line 2-3: Trade thesis (two sentences)
+Sentence 1: States the primary edge driver and specific catalyst or macro alignment.
+Sentence 2: States the macro regime context and how it influenced strategy selection.
+
+Line 4: Edge attribution
+“Edge source: Idiosyncratic 82% / Macro 18%”
+Where idiosyncratic percentage = round(idioStrength * 100) and macro = 100 - idiosyncratic.
+
+VISUAL: If systemicRiskLevel is ELEVATED, the recommendation card has a subtle amber border. No text warning, just a visual cue in the card styling.
+
+THESIS EXAMPLES:
+
+High idiosyncratic + NEUTRAL macro:
+“Bear call spread on GS. Primary driver: earnings miss with analyst downgrade cluster and 3.5x relative volume. Macro regime is NEUTRAL with normal systemic risk – no broad market bias expected to override the stock-specific catalyst.”
+Edge source: Idiosyncratic 82% / Macro 18%
+
+Low idiosyncratic + BULLISH macro:
+“Bull put spread on AAPL. Primary driver: stock correlates with the broad market uptrend. Regime is MODERATELY BULLISH with low systemic risk.”
+Edge source: Idiosyncratic 15% / Macro 85%
+
+Low idiosyncratic + NEUTRAL macro:
+“Iron condor on TLT. Macro regime is NEUTRAL and this ticker lacks an independent catalyst. Structure targets range-bound price action and volatility decay.”
+Edge source: Idiosyncratic 20% / Macro 80%
+
+High idiosyncratic + NEUTRAL macro + ELEVATED risk:
+“Put debit spread on META. Primary driver: 78% idiosyncratic edge from analyst downgrade cluster and declining relative strength. Macro regime is NEUTRAL with ELEVATED systemic risk – gap risk is elevated even on idiosyncratic setups.”
+Edge source: Idiosyncratic 78% / Macro 22%
+(Card has amber border)
+
+# ==========================================================
+SECTION 7: WHAT THIS REPLACES
+
+Remove the current logic where the Strategist checks the regime label and returns “No actionable edge. Cash is a position.” based on macro regime alone. That entire code path is deleted.
+
+Replace it with the decision flow in Section 4. The regime object from Section 1 feeds into the decision flow. The IOScore from Section 3 feeds into the decision flow. The scanner weights from Section 2 adapt to the regime. Everything else (order ticket, portfolio page, watchlist, Market Pulse display) is unchanged.
+
+# ==========================================================
+SECTION 8: NEW COMPUTATIONS NEEDED
+
+These are new calculations that do not currently exist in the codebase. All use existing data.
+
+1. Correlation regime: 20-day rolling Pearson correlation of each LC130 ticker’s daily returns vs SPY daily returns. Average across the universe. Source: equity_daily table (close prices for ticker and SPY). Compute on the same 5-minute cycle as the regime object.
+1. Beta and R-squared: 30-day rolling linear regression of each ticker’s daily returns vs SPY daily returns. Source: equity_daily table. Compute per ticker when the Strategist analyzes it (not precomputed for all 130).
+1. Residual return Z-score: From the beta regression. Compute per ticker when the Strategist analyzes it.
+1. Flow divergence: From flow_daily_aggregates table (vol_oi_ratio, pc_skew). Compare ticker-level skew to market-wide average skew. Compute per ticker when the Strategist analyzes it.
+1. Regime post-processor: Takes existing 7 cluster scores and maps them to the structured regime object fields. Runs every 5 minutes.
+
+# ==========================================================
+TEST PLAN
+
+After implementing all sections:
+
+1. Run a Momentum scan during a NEUTRAL regime. Confirm scanner uses idiosyncratic weights and results include catalyst-driven names.
+1. Tap the top scanner result. Confirm the Strategist produces a recommendation with trade thesis and edge attribution. Confirm it does NOT return “No actionable edge” based on macro regime.
+1. Manually enter a ticker with high IVR (above 40) during NEUTRAL regime. Confirm the Strategist recommends a credit strategy.
+1. Manually enter a ticker with low IVR (below 40) during NEUTRAL regime. Confirm the Strategist recommends a debit strategy.
+1. Manually enter a ticker with no catalyst, low volume, low IVR, no options flow during NEUTRAL regime. Confirm the Strategist returns “No viable options setup” with the TICKER-SPECIFIC reason (not macro regime).
+1. Verify the toxic day gate by temporarily forcing systemicRiskLevel to EXTREME and correlationRegime to HIGH. Confirm the Strategist returns “Cash is a position” with specific triggers listed. Then remove the override.
+1. Verify edge attribution math: for a ticker with idioStrength 0.75, confirm the card shows “Idiosyncratic 75% / Macro 25%.”

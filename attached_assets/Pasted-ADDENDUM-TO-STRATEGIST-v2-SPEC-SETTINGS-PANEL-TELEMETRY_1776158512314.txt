@@ -1,0 +1,296 @@
+ADDENDUM TO STRATEGIST v2 SPEC: SETTINGS PANEL + TELEMETRY
+
+Ship this alongside the main Strategist v2 spec. Every tunable parameter becomes a setting in the app. Every decision the scanner and Strategist make gets logged in detail. Nothing is hardcoded. Everything is adjustable and auditable.
+
+# ==========================================================
+PART 1: SCANNER & STRATEGIST SETTINGS PANEL
+
+Create a new settings page accessible from the app settings. Title: “Scanner & Strategist Tuning.” Group the settings into the sections below. Every setting has a label, current value, input type, default, and allowed range. Store all values in the database so they persist across restarts and environments.
+
+— IDIOSYNCRATIC EDGE SCORE (IOScore) —
+
+IOScore Weight: Market Independence (R²)
+Default: 0.30 | Range: 0.00 to 0.50 | Step: 0.05
+What it does: How much weight the “is this stock independent from SPY” factor gets.
+
+IOScore Weight: Abnormal Move (Residual Return)
+Default: 0.25 | Range: 0.00 to 0.50 | Step: 0.05
+What it does: How much weight the “is this stock making an unusual move” factor gets.
+
+IOScore Weight: Catalyst (Benzinga)
+Default: 0.25 | Range: 0.00 to 0.50 | Step: 0.05
+What it does: How much weight the “does this stock have earnings/analyst news” factor gets.
+
+IOScore Weight: Options Flow (Polygon)
+Default: 0.20 | Range: 0.00 to 0.50 | Step: 0.05
+What it does: How much weight the “are options traders doing something unusual” factor gets.
+
+Note: Display a warning if all four weights do not sum to 1.0. Auto-normalize if the user adjusts one.
+
+IOScore Threshold: High Idiosyncratic
+Default: 0.65 | Range: 0.40 to 0.90 | Step: 0.05
+What it does: Above this score, the Strategist follows the stock’s own direction regardless of macro regime.
+
+IOScore Threshold: Mixed Floor
+Default: 0.40 | Range: 0.20 to 0.60 | Step: 0.05
+What it does: Below this score, the stock is considered macro-aligned. Between this and the high threshold is “mixed.”
+
+Beta/R² Lookback Window
+Default: 30 days | Range: 10 to 60 | Step: 5
+What it does: How many trading days of history to use when calculating how closely the stock tracks SPY.
+
+Residual Return Lookback
+Default: 10 days | Range: 3 to 20 | Step: 1
+What it does: How many days of recent price action to compare against expected beta move.
+
+— SCANNER WEIGHTS —
+
+Default Mode (Trending Market):
+
+Trend Weight
+Default: 25 | Range: 0 to 40 | Step: 5
+
+Relative Strength Weight
+Default: 20 | Range: 0 to 40 | Step: 5
+
+Volume Weight
+Default: 20 | Range: 0 to 40 | Step: 5
+
+IVR Weight
+Default: 20 | Range: 0 to 40 | Step: 5
+
+Options Liquidity Weight
+Default: 15 | Range: 0 to 40 | Step: 5
+
+Idiosyncratic Mode (NEUTRAL/TRANSITION Market):
+
+Trend Weight
+Default: 15 | Range: 0 to 40 | Step: 5
+
+Relative Strength vs SPY Weight
+Default: 25 | Range: 0 to 40 | Step: 5
+
+Relative Volume Weight
+Default: 25 | Range: 0 to 40 | Step: 5
+
+IVR Weight
+Default: 20 | Range: 0 to 40 | Step: 5
+
+Options Liquidity Weight
+Default: 15 | Range: 0 to 40 | Step: 5
+
+Catalyst Bonus Points
+Default: 10 | Range: 0 to 25 | Step: 1
+What it does: Flat score boost for tickers with confirmed catalyst (earnings, analyst actions + unusual flow). Applied only in idiosyncratic mode. Clamped at max score 100.
+
+Scanner Minimum Score Threshold
+Default: 55 | Range: 30 to 80 | Step: 5
+What it does: Minimum composite score to appear in scan results.
+
+— STRATEGY SELECTION —
+
+IVR Credit/Debit Threshold
+Default: 40 | Range: 20 to 60 | Step: 5
+What it does: Above this IVR, Strategist prefers credit spreads (sell premium). Below, prefers debit spreads (buy premium).
+
+Preferred DTE Range: Minimum
+Default: 30 | Range: 7 to 45 | Step: 1
+
+Preferred DTE Range: Maximum
+Default: 60 | Range: 30 to 90 | Step: 5
+
+Spread Width
+Default: $5 | Range: $1 to $10 | Step: 0.50
+
+Minimum Open Interest Per Leg
+Default: 50 | Range: 10 to 500 | Step: 10
+
+Maximum Bid-Ask Spread (% of mid)
+Default: 25% | Range: 5% to 50% | Step: 5%
+
+— EARNINGS GATE —
+
+Earnings Proximity Window
+Default: 48 hours | Range: 0 to 96 | Step: 12
+What it does: How close to earnings the Strategist applies special rules. Set to 0 to disable earnings gate entirely.
+
+Earnings IVR Floor for Credit Spreads
+Default: 70 | Range: 40 to 90 | Step: 5
+What it does: Within the earnings window, credit spreads only allowed if IVR is above this level. Otherwise forced to debit or longer DTE.
+
+— CORRELATION REGIME —
+
+Correlation Threshold: LOW ceiling
+Default: 0.40 | Range: 0.20 to 0.50 | Step: 0.05
+
+Correlation Threshold: HIGH floor
+Default: 0.75 | Range: 0.60 to 0.90 | Step: 0.05
+
+— TOXIC DAY GATE —
+
+Toxic Gate Enabled
+Default: ON | Toggle
+What it does: Master switch for the toxic day gate. Turn off to never block any day.
+
+Toxic Path A: Require EXTREME Risk + HIGH Correlation
+Default: ON | Toggle
+
+Toxic Path B: Major Event within 24h + ELEVATED Risk
+Default: ON | Toggle
+
+Major Events List
+Default: FOMC Rate Decision, CPI Print | Editable list
+What it does: Which Benzinga economic calendar events trigger Path B. Add or remove events.
+
+— REGIME —
+
+Regime Update Frequency
+Default: 5 minutes | Range: 1 to 30 | Step: 1
+
+— RESET —
+
+Reset All to Defaults button that restores every setting to the defaults listed above.
+
+# ==========================================================
+PART 2: TELEMETRY AND AUDIT LOGGING
+
+Every scanner run and every Strategist analysis logs a detailed record to a telemetry table. These are viewable in a new “Telemetry” tab in the app settings or in a dedicated Telemetry page.
+
+— SCANNER TELEMETRY —
+
+Every scan writes one record:
+
+{
+type: “SCANNER_RUN”,
+timestamp: ISO-8601,
+regime: { full regime object },
+mode: “DEFAULT” or “IDIOSYNCRATIC”,
+weights_used: { trend: X, rs: X, volume: X, ivr: X, liquidity: X },
+universe_size: number,
+passed_filters: number,
+above_threshold: number,
+threshold_used: number,
+catalyst_bonus_applied_to: [list of tickers that received bonus],
+results: [
+{
+ticker: “AAPL”,
+raw_score: 62,
+catalyst_bonus: 10,
+final_score: 72,
+sub_scores: { trend: 8, rs: 18, volume: 15, ivr: 16, liquidity: 12 },
+filtered_out: false,
+filter_reason: null
+},
+{
+ticker: “BAC”,
+raw_score: null,
+filtered_out: true,
+filter_reason: “No options data”
+}
+]
+}
+
+Log ALL tickers, not just the ones that passed. This lets you see why specific tickers were filtered or scored low.
+
+— STRATEGIST TELEMETRY —
+
+Every Strategist analysis writes one record:
+
+{
+type: “STRATEGIST_ANALYSIS”,
+timestamp: ISO-8601,
+ticker: “GS”,
+regime: { full regime object },
+ticker_data: {
+price: 380.50,
+daily_change_pct: -3.2,
+ivr: 78,
+avg_volume_20d: 4200000,
+current_volume: 14700000,
+relative_volume: 3.5,
+sector: “Financials”,
+earnings_within_48h: false,
+analyst_actions_48h: [“downgrade: Morgan Stanley”, “downgrade: Citi”]
+},
+idio_score: {
+final: 0.81,
+components: {
+market_independence: { r_squared: 0.35, weight: 0.30, contribution: 0.195 },
+abnormal_move: { z_score_raw: 2.4, z_score_normalized: 0.80, weight: 0.25, contribution: 0.200 },
+catalyst: { flag_value: 0.60, reason: “analyst cluster”, weight: 0.25, contribution: 0.150 },
+flow_divergence: { vol_oi_ratio: 2.8, skew_divergence: 0.42, final: 0.39, weight: 0.20, contribution: 0.078 }
+},
+classification: “HIGH_IDIOSYNCRATIC”
+},
+toxic_gate: {
+triggered: false,
+path_a_check: { extreme_risk: false, high_correlation: false },
+path_b_check: { elevated_risk: false, event_within_24h: false }
+},
+viability: {
+passed: true,
+chain_available: true,
+halted: false,
+atm_spread_pct: 0.8
+},
+earnings_gate: {
+triggered: false,
+earnings_date: “2026-05-15”,
+days_until: 32
+},
+strategy_decision: {
+direction: “BEARISH”,
+direction_reason: “idioStrength 0.81 >= 0.65 threshold, residual return negative”,
+credit_or_debit: “CREDIT”,
+credit_reason: “IVR 78 >= 40 threshold”,
+strategy_type: “bear_call_spread”
+},
+candidates_generated: 3,
+candidates_filtered: 1,
+filter_reasons: [“145/150 spread: OI 12 below 50 minimum”],
+winning_candidate: {
+strategy: “bear_call_spread”,
+short_strike: 390,
+long_strike: 395,
+expiration: “2026-05-16”,
+dte: 33,
+credit: 1.85,
+max_profit: 185,
+max_loss: 315,
+breakeven: 391.85,
+risk_reward: 0.587,
+liquidity_score: 0.92,
+candidate_score: 0.540
+},
+edge_attribution: {
+idiosyncratic_pct: 81,
+macro_pct: 19
+},
+recommendation_thesis: “Bear call spread on GS. Primary driver: 81% idiosyncratic edge from analyst downgrade cluster and 3.5x relative volume. Macro regime is NEUTRAL with moderate systemic risk.”
+}
+
+This logs EVERYTHING. Every component of the IOScore, every gate check, every candidate considered, every filter applied, and the final output. When you want to understand why the Strategist recommended what it did, or why it rejected a ticker, you open the telemetry and the entire decision path is visible.
+
+— TELEMETRY VIEWING —
+
+Build a simple Telemetry page with:
+
+1. A table of recent Strategist analyses (last 50). Columns: timestamp, ticker, idioStrength, strategy, direction, result (recommended / no viable setup / toxic block).
+1. Tap any row to expand the full telemetry record showing every field listed above.
+1. A table of recent Scanner runs (last 20). Columns: timestamp, mode, regime, tickers scanned, above threshold, top result.
+1. Tap any scanner row to expand the full record with all ticker scores.
+1. A simple filter: by date, by ticker, by result type.
+
+— TELEMETRY RETENTION —
+
+Keep telemetry records for 30 days. After 30 days, auto-delete. This prevents the table from growing forever.
+
+# ==========================================================
+SUMMARY
+
+This addendum creates two things:
+
+1. A settings panel with every tunable parameter exposed. No more prompting Replit to change a hardcoded number. Adjust the IOScore threshold from 0.65 to 0.72 with a slider. Change the scanner weights. Toggle the toxic gate on or off. Widen or narrow the earnings window. All stored in the database, persisted across restarts.
+1. A telemetry system that logs every decision in full detail. When a scan returns unexpected results or the Strategist makes a recommendation you question, open the telemetry and read the entire decision path. No more guessing why something happened.
+
+Ship this with the main Strategist v2 spec. They are one unit.
