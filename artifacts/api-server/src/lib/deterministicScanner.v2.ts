@@ -1,8 +1,11 @@
 import { checkEventConflicts } from "./calendarEventChecker.js";
 import { emitTelemetry, createTelemetryBatch } from "./telemetryStore.js";
 import type { FilterResult, ScanResult, ScanCandidate } from "./deterministicScanner.js";
-import { db, equityDailyTable, flowDailyAggregatesTable, optionsFlowPerStrikeTable } from "@workspace/db";
+import { db, equityDailyTable, flowDailyAggregatesTable, optionsFlowPerStrikeTable, scannerTelemetryTable } from "@workspace/db";
 import { desc, eq, inArray, and, gte, lte, sql } from "drizzle-orm";
+import { getSettings, type StrategistConfig } from "./strategistSettings.js";
+import { getCachedRegime, buildFallbackRegime, type StructuredRegime } from "./regimePostProcessor.js";
+import { computeIOScore } from "./ioScoreEngine.js";
 
 const SCHWAB_API = "https://api.schwabapi.com/marketdata/v1";
 const SCHWAB_TRADER = "https://api.schwabapi.com/trader/v1";
@@ -822,6 +825,61 @@ function passesGuardrails(sym: string, price: number, avgVol?: number): { passes
 }
 
 // ─── Main Discovery scan runner ────────────────────────────────────────────
+type WeightProfile = { trend: number; rs: number; volume: number; ivr: number; liquidity: number };
+
+function resolveWeightProfile(cfg: StrategistConfig, regime: StructuredRegime | null): { weights: WeightProfile; mode: "DEFAULT" | "IDIOSYNCRATIC" } {
+  const useIdio = regime && regime.idioOpportunityFlag === true;
+  if (useIdio) {
+    return {
+      mode: "IDIOSYNCRATIC",
+      weights: {
+        trend: cfg.scannerIdioTrend,
+        rs: cfg.scannerIdioRS,
+        volume: cfg.scannerIdioVolume,
+        ivr: cfg.scannerIdioIVR,
+        liquidity: cfg.scannerIdioLiquidity,
+      },
+    };
+  }
+  return {
+    mode: "DEFAULT",
+    weights: {
+      trend: cfg.scannerDefaultTrend,
+      rs: cfg.scannerDefaultRS,
+      volume: cfg.scannerDefaultVolume,
+      ivr: cfg.scannerDefaultIVR,
+      liquidity: cfg.scannerDefaultLiquidity,
+    },
+  };
+}
+
+function applyDynamicWeights(
+  w: WeightProfile,
+  setupQuality: number,
+  accumulation: number,
+  ivSetup: number,
+  flowDivergence: number,
+  emergingRS: number,
+  flowDataAvailable: boolean,
+): number {
+  const maxSetup = 20, maxAcc = 15, maxIV = 25, maxFlow = 25, maxRS = 15;
+  const normTrend = maxSetup > 0 ? setupQuality / maxSetup : 0;
+  const normVol = maxAcc > 0 ? accumulation / maxAcc : 0;
+  const normIVR = maxIV > 0 ? ivSetup / maxIV : 0;
+  const normFlow = flowDataAvailable && maxFlow > 0 ? flowDivergence / maxFlow : 0;
+  const normRS = maxRS > 0 ? emergingRS / maxRS : 0;
+
+  if (!flowDataAvailable) {
+    const totalW = w.trend + w.volume + w.ivr + w.rs;
+    if (totalW === 0) return 0;
+    return Math.round(((normTrend * w.trend + normVol * w.volume + normIVR * w.ivr + normRS * w.rs) / totalW) * 100);
+  }
+
+  const totalW = w.trend + w.volume + w.ivr + w.liquidity + w.rs;
+  if (totalW === 0) return 0;
+  return Math.round(((normTrend * w.trend + normVol * w.volume + normIVR * w.ivr + normFlow * w.liquidity + normRS * w.rs) / totalW) * 100);
+}
+
 export async function runDiscoveryScan(
   symbols: string[],
   accessToken: string,
@@ -833,8 +891,13 @@ export async function runDiscoveryScan(
   const scanStart = Date.now();
   const scanBatch = createTelemetryBatch("SCANNER");
 
-  emitTelemetry("SCANNER", "INFO", `Discovery scan initiated — ${symbols.length} tickers`, {
-    totalTickers: symbols.length, pulseBias: pulse.bias, mode: "DISCOVERY",
+  const cfg = await getSettings();
+  const regime = getCachedRegime() ?? buildFallbackRegime();
+  const { weights: scanWeights, mode: weightMode } = resolveWeightProfile(cfg, regime);
+  const minScore = cfg.scannerMinScore ?? CFG.minScore;
+
+  emitTelemetry("SCANNER", "INFO", `Discovery scan initiated — ${symbols.length} tickers (${weightMode} mode, minScore=${minScore})`, {
+    totalTickers: symbols.length, pulseBias: pulse.bias, mode: "DISCOVERY", weightMode, scanWeights, minScore,
   }, "SCANNER", scanBatch);
 
   emitTelemetry("SCHWAB_API", "INFO", `Scanner: fetching quotes for ${symbols.length} symbols`, { endpoint: "/quotes", symbols: symbols.length }, "SCANNER", scanBatch);
@@ -985,13 +1048,8 @@ export async function runDiscoveryScan(
       const s5b = score5B(closes, sectorCloses);
       const emergingRS = s5a + s5b;
 
-      // ── Composite ──
-      let totalScore: number;
-      if (!flowDataAvailable) {
-        totalScore = Math.round((setupQuality + accumulation + ivSetup + emergingRS) / 75 * 100);
-      } else {
-        totalScore = Math.round(setupQuality + accumulation + ivSetup + flowDivergence + emergingRS);
-      }
+      // ── Composite (dynamic weights from settings + regime) ──
+      let totalScore = applyDynamicWeights(scanWeights, setupQuality, accumulation, ivSetup, flowDivergence, emergingRS, flowDataAvailable);
 
       // ── Directional lean ──
       const directionalLean = computeDirectionalLean(pulseSignal, obvSlopeSign, flowSkewSignal, flowDirSignal, rsSign, flowDataAvailable);
@@ -1014,8 +1072,27 @@ export async function runDiscoveryScan(
     }
   }
 
+  // ── Catalyst bonus in idiosyncratic mode ──
+  const catalystBonusApplied: string[] = [];
+  if (weightMode === "IDIOSYNCRATIC" && cfg.catalystBonusPoints > 0) {
+    for (const r of scoredResults) {
+      try {
+        const ioResult = await computeIOScore(r.symbol, { flagValue: 0, reason: "scanner_probe" });
+        if (ioResult.components.catalyst.flagValue > 0) {
+          r.totalScore = Math.min(100, r.totalScore + cfg.catalystBonusPoints);
+          catalystBonusApplied.push(r.symbol);
+        }
+      } catch {}
+    }
+    if (catalystBonusApplied.length > 0) {
+      emitTelemetry("SCANNER", "INFO", `Catalyst bonus (+${cfg.catalystBonusPoints}) applied to: ${catalystBonusApplied.join(", ")}`, {
+        symbols: catalystBonusApplied, bonus: cfg.catalystBonusPoints,
+      }, "SCANNER", scanBatch);
+    }
+  }
+
   scoredResults.sort((a, b) => b.totalScore - a.totalScore);
-  const aboveThreshold = scoredResults.filter(r => r.totalScore >= CFG.minScore);
+  const aboveThreshold = scoredResults.filter(r => r.totalScore >= minScore);
 
   const scoreDistrib = scoredResults.slice(0, 10).map(r => `${r.symbol}=${r.totalScore}(SQ${r.setupQuality}/ACC${r.accumulation}/IV${r.ivSetup}/FL${r.flowDivergence}/RS${r.emergingRS})`);
   log.info({ scored: scoredResults.length, above: aboveThreshold.length, distribution: scoreDistrib }, "Discovery scoring complete");
@@ -1080,7 +1157,23 @@ export async function runDiscoveryScan(
     topSymbols: candidates.map(c => `${c.symbol}(${c.totalScore} ${c.directionalLean})`).join(", "),
   }, "SCANNER", scanBatch);
 
-  const result: ScanResult & { allScoredResults?: any[] } = {
+  try {
+    await db.insert(scannerTelemetryTable).values({
+      mode: weightMode,
+      regime: regime as any,
+      weightsUsed: scanWeights as any,
+      universeSize: symbols.length,
+      passedFilters: scoredResults.length,
+      aboveThreshold: aboveThreshold.length,
+      thresholdUsed: minScore,
+      catalystBonusAppliedTo: catalystBonusApplied,
+      results: candidates.slice(0, 20).map(c => ({ symbol: c.symbol, score: c.totalScore, lean: c.directionalLean })) as any,
+    });
+  } catch (err) {
+    log.warn({ error: err instanceof Error ? err.message : String(err) }, "Failed to log scanner telemetry");
+  }
+
+  const result: ScanResult & { allScoredResults?: any[]; weightMode?: string; weightsUsed?: WeightProfile } = {
     candidates,
     filterSummary: {
       totalScanned: symbols.length,
@@ -1093,6 +1186,8 @@ export async function runDiscoveryScan(
     pulseComposite: pulse.composite,
     pulseConfidence: pulse.confidence,
   };
+  result.weightMode = weightMode;
+  result.weightsUsed = scanWeights;
 
   if (options?.returnAll) {
     result.allScoredResults = scoredResults.map(r => ({

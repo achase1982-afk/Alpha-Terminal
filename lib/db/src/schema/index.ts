@@ -426,3 +426,48 @@ export const snapshotCollectionLogTable = pgTable("snapshot_collection_log", {
   startedAt: timestamp("started_at").defaultNow().notNull(),
   completedAt: timestamp("completed_at"),
 });
+
+export const strategistSettingsTable = pgTable("strategist_settings", {
+  id: serial("id").primaryKey(),
+  key: text("key").notNull().unique(),
+  value: doublePrecision("value").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type StrategistSetting = typeof strategistSettingsTable.$inferSelect;
+
+export const strategistTelemetryTable = pgTable("strategist_telemetry", {
+  id: serial("id").primaryKey(),
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
+  ticker: text("ticker").notNull(),
+  result: text("result").notNull(),
+  regime: jsonb("regime"),
+  tickerData: jsonb("ticker_data"),
+  idioScore: jsonb("idio_score"),
+  toxicGate: jsonb("toxic_gate"),
+  viability: jsonb("viability"),
+  earningsGate: jsonb("earnings_gate"),
+  strategyDecision: jsonb("strategy_decision"),
+  candidatesGenerated: integer("candidates_generated"),
+  candidatesFiltered: integer("candidates_filtered"),
+  filterReasons: jsonb("filter_reasons"),
+  winningCandidate: jsonb("winning_candidate"),
+  edgeAttribution: jsonb("edge_attribution"),
+  recommendationThesis: text("recommendation_thesis"),
+});
+
+export type StrategistTelemetry = typeof strategistTelemetryTable.$inferSelect;
+
+export const scannerTelemetryTable = pgTable("scanner_telemetry", {
+  id: serial("id").primaryKey(),
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
+  mode: text("mode").notNull(),
+  regime: jsonb("regime"),
+  weightsUsed: jsonb("weights_used"),
+  universeSize: integer("universe_size"),
+  passedFilters: integer("passed_filters"),
+  aboveThreshold: integer("above_threshold"),
+  thresholdUsed: integer("threshold_used"),
+  catalystBonusAppliedTo: jsonb("catalyst_bonus_applied_to"),
+  results: jsonb("results"),
+});

@@ -19,6 +19,7 @@ import { useStrategistCache, type StrategistCacheData } from "@/hooks/useStrateg
 import { MarketScanner, type DetCandidate } from "@/components/MarketScanner";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { AiLabStrategistView } from "@/components/AiLabStrategistView";
+import { StrategistV2RecommendationCard, StrategistV2BlockCard, type StrategistV2Result as StrategistV2ResultType } from "@/components/StrategistV2Card";
 
 const API_BASE = "/api";
 
@@ -2142,6 +2143,9 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
   const detRunRef = useRef(0);
   const scannerCandidateCache = useRef<Record<string, DetCandidate>>({});
 
+  const [v2Result, setV2Result] = useState<StrategistV2ResultType | null>(null);
+  const [isV2Running, setIsV2Running] = useState(false);
+
   useEffect(() => {
     if (prevSymbolRef.current !== symbol) {
       prevSymbolRef.current = symbol;
@@ -2611,11 +2615,43 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
     }
   }, [accessToken, symbol, setSymbol, setStrategistResult]);
 
-  const handleRunStrategistWithTicker = useCallback((ticker: string) => {
-    handleRunDetStrategist(ticker);
-  }, [handleRunDetStrategist]);
+  const handleRunV2 = useCallback(async (ticker: string) => {
+    setV2Result(null);
+    setIsV2Running(true);
+    setDetResult(null);
+    setActiveResult("strategist");
+    setRealStrategies([]);
+    setNarrativeText("");
+    setStrategistResult(null);
+    setStrategistStatus("Running V2 strategist...");
+    setLastRunSymbol(ticker);
+    setLastRunTime(Date.now());
+    if (ticker.toUpperCase() !== symbol) setSymbol(ticker.toUpperCase());
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/strategist/analyze`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ticker: ticker.toUpperCase() }),
+      });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "Unknown error");
+        setV2Result({ status: "no_viable_setup", ticker: ticker.toUpperCase(), blockReason: errText, regime: { directionalConviction: "NEUTRAL", systemicRiskLevel: "NORMAL", correlationRegime: "MODERATE", compositeScore: 0, idioOpportunityFlag: false }, systemicRiskElevated: false });
+      } else {
+        const json = await res.json();
+        setV2Result(json);
+      }
+    } catch (err) {
+      setV2Result({ status: "no_viable_setup", ticker: ticker.toUpperCase(), blockReason: err instanceof Error ? err.message : String(err), regime: { directionalConviction: "NEUTRAL", systemicRiskLevel: "NORMAL", correlationRegime: "MODERATE", compositeScore: 0, idioOpportunityFlag: false }, systemicRiskElevated: false });
+    }
+    setIsV2Running(false);
+    setStrategistStatus("");
+  }, [symbol, setSymbol, setStrategistResult]);
 
-  const isPendingAny = isStreaming || isStrategizing || isDetRunning || isDetStreaming;
+  const handleRunStrategistWithTicker = useCallback((ticker: string) => {
+    handleRunV2(ticker);
+  }, [handleRunV2]);
+
+  const isPendingAny = isStreaming || isStrategizing || isDetRunning || isDetStreaming || isV2Running;
 
   const currentResult = activeResult === "strategist" ? strategistResult : null;
 
@@ -2678,11 +2714,21 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
 
             {activeResult === "strategist" && (
               <div className="space-y-4">
-                {(isDetRunning || isStrategizing) && (
+                {(isDetRunning || isStrategizing || isV2Running) && (
                   <StrategistPipeline status={strategistStatus} thinkingTokens={isDetRunning ? detThinking : thinkingTokens} />
                 )}
 
-                {detResult && !isDetRunning && (
+                {v2Result && !isV2Running && (
+                  <>
+                    {v2Result.status === "recommendation" && v2Result.recommendation ? (
+                      <StrategistV2RecommendationCard result={v2Result} />
+                    ) : (
+                      <StrategistV2BlockCard result={v2Result} />
+                    )}
+                  </>
+                )}
+
+                {detResult && !isDetRunning && !v2Result && (
                   <>
                     {detResult.criteria ? (
                       <>
@@ -2768,12 +2814,12 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
           <MarketScanner
             subscribeEquitySymbols={subscribeEquitySymbols ?? (() => {})}
             onNavigateToSymbol={onNavigateToMarkets ?? (() => {})}
-            onSendToStrategist={(sym: string, candidate: DetCandidate) => {
+            onSendToStrategist={(sym: string, _candidate: DetCandidate) => {
               useTerminalStore.getState().setSymbol(sym);
               setStrategistMode("options");
               onSubTabChange("strategist");
               setTimeout(() => {
-                handleRunDetStrategist(sym, candidate);
+                handleRunV2(sym);
               }, 500);
             }}
           />

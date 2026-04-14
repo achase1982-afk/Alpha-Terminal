@@ -11,6 +11,8 @@ import { readSecurityPrefs, updateSecurityPref, type SecurityPrefs } from "@/lib
 import { useBiometricRegistration, useWebAuthnSupported } from "@/hooks/useBiometric";
 import { AuthPanel } from "./AuthPanel";
 import { StrategySettings } from "./AiIntelligenceTab";
+import { StrategistSettingsPanel } from "./StrategistSettingsPanel";
+import { StrategistTelemetryPanel } from "./StrategistTelemetryPanel";
 import { SidebarChat } from "./SidebarChat";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { queryClient } from "@/App";
@@ -45,6 +47,7 @@ type SidebarPage =
   | "Linked Brokerage"
   | "Market Pulse"
   | "Strategist Settings"
+  | "Strategist Telemetry"
   | "Chart & Options"
   | "Display & Marquee"
   | "AI Parameters"
@@ -143,6 +146,7 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
             {activePage === "Linked Brokerage" && <LinkedBrokeragePage />}
             {activePage === "Market Pulse" && <MarketPulsePage />}
             {activePage === "Strategist Settings" && <StrategistSettingsPage />}
+            {activePage === "Strategist Telemetry" && <StrategistTelemetryPanel />}
             {activePage === "Chart & Options" && <ChartOptionsPage />}
             {activePage === "Display & Marquee" && <DisplayMarqueePage />}
             {activePage === "AI Parameters" && <AiParametersPage />}
@@ -186,6 +190,7 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
                 <MenuRow icon={<Link />} label="Linked Brokerage" onClick={() => { setActivePage("Linked Brokerage"); onClose(); }} />
                 <MenuRow icon={<Zap />} label="Market Pulse" onClick={() => { setActivePage("Market Pulse"); onClose(); }} />
                 <MenuRow icon={<SlidersHorizontal />} label="Options Strategist" onClick={() => { setActivePage("Strategist Settings"); onClose(); }} />
+                <MenuRow icon={<Activity />} label="Strategist Telemetry" onClick={() => { setActivePage("Strategist Telemetry"); onClose(); }} />
                 <MenuRow icon={<LineChart />} label="Chart & Options" onClick={() => { setActivePage("Chart & Options"); onClose(); }} />
                 <MenuRow icon={<LayoutDashboard />} label="Display & Marquee" onClick={() => { setActivePage("Display & Marquee"); onClose(); }} />
                 <MenuRow icon={<BrainCircuit />} label="AI Parameters" onClick={() => { setActivePage("AI Parameters"); onClose(); }} />
@@ -427,9 +432,12 @@ function MarketPulsePage() {
 
 function StrategistSettingsPage() {
   return (
-    <div className="space-y-4">
-      <h2 className="font-mono text-sm font-bold text-white tracking-wider uppercase">Options Strategist</h2>
-      <StrategySettings />
+    <div className="space-y-8">
+      <StrategistSettingsPanel />
+      <div className="border-t border-zinc-800 pt-6 space-y-4">
+        <h3 className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest font-medium">Legacy AI Parameters</h3>
+        <StrategySettings />
+      </div>
     </div>
   );
 }

@@ -15,6 +15,7 @@ import {
 } from "@workspace/api-zod";
 import { computeIndicators, formatTAContext, isDataStale, type Candle } from "../lib/ta.js";
 import { runMarketPulseEngine, formatClusterDebugLine, verifyEngineScoring, type MarketIndicators, type BiasLabel, type SessionType } from "../lib/marketPulseEngine.js";
+import { updateRegimeFromPulse } from "../lib/regimePostProcessor.js";
 import { getSnapshot, addSymbols as addSchwabSymbols, addFuturesSymbols as addSchwabFuturesSymbols, getSchwabCacheDiagnostics, type LiveQuote } from "../lib/schwabStreamer.js";
 import { getIBSnapshot, getIBCachedQuote, registerPermanentSymbols } from "../lib/ibStreamer.js";
 import { getBestAccessToken, getTokens } from "../lib/tokenStore.js";
@@ -1559,6 +1560,8 @@ router.post("/market-pulse/stream", async (req, res) => {
     volTermData: { vix: indicators.vix, vix9d: indicators.vix9d, vix3m: indicators.vix3m },
   }, "Market pulse engine input (breadth + volTerm)");
   const engineResult = runMarketPulseEngine(indicators, previousBias, sessionToEngineType(session));
+
+  void updateRegimeFromPulse(engineResult).catch(() => {});
 
   const clusterNames = Object.keys(engineResult.clusters) as Array<keyof typeof engineResult.clusters>;
   for (const cn of clusterNames) {

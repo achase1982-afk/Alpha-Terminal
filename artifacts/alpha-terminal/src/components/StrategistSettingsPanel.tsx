@@ -1,0 +1,156 @@
+import { useState, useEffect, useCallback } from "react";
+import { fetchWithAuth } from "@/lib/fetchWithAuth";
+import { RotateCcw, AlertTriangle, Check } from "lucide-react";
+
+interface SettingMeta {
+  key: string;
+  label: string;
+  group: string;
+  default: number;
+  min: number;
+  max: number;
+  step: number;
+  description: string;
+}
+
+interface SettingsData {
+  current: Record<string, number>;
+  meta: SettingMeta[];
+  defaults: Record<string, number>;
+}
+
+export function StrategistSettingsPanel() {
+  const [data, setData] = useState<SettingsData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState<string | null>(null);
+  const [saved, setSaved] = useState<string | null>(null);
+  const [resetConfirm, setResetConfirm] = useState(false);
+
+  const loadSettings = useCallback(async () => {
+    try {
+      const res = await fetchWithAuth("/api/strategist/settings");
+      if (res.ok) {
+        const json = await res.json();
+        setData(json);
+      }
+    } catch {}
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { loadSettings(); }, [loadSettings]);
+
+  const handleChange = useCallback(async (key: string, value: number) => {
+    if (!data) return;
+    setData({ ...data, current: { ...data.current, [key]: value } });
+    setSaving(key);
+    try {
+      const res = await fetchWithAuth("/api/strategist/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key, value }),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        setData((prev) => prev ? { ...prev, current: json.current } : prev);
+        setSaved(key);
+        setTimeout(() => setSaved(null), 1500);
+      }
+    } catch {}
+    setSaving(null);
+  }, [data]);
+
+  const handleReset = useCallback(async () => {
+    try {
+      const res = await fetchWithAuth("/api/strategist/settings/reset", { method: "POST" });
+      if (res.ok) {
+        const json = await res.json();
+        setData((prev) => prev ? { ...prev, current: json.current } : prev);
+        setResetConfirm(false);
+      }
+    } catch {}
+  }, []);
+
+  if (loading) return <div className="text-center text-zinc-500 font-mono text-xs py-8">Loading settings...</div>;
+  if (!data) return <div className="text-center text-zinc-500 font-mono text-xs py-8">Failed to load settings</div>;
+
+  const groups = new Map<string, SettingMeta[]>();
+  for (const m of data.meta) {
+    const arr = groups.get(m.group) ?? [];
+    arr.push(m);
+    groups.set(m.group, arr);
+  }
+
+  const ioWeightKeys = ["ioWeightR2", "ioWeightResidual", "ioWeightCatalyst", "ioWeightFlow"];
+  const ioSum = ioWeightKeys.reduce((acc, k) => acc + (data.current[k] ?? 0), 0);
+  const ioWarning = Math.abs(ioSum - 1.0) > 0.01;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h2 className="font-mono text-sm font-bold text-white tracking-wider uppercase">Scanner & Strategist Tuning</h2>
+        {resetConfirm ? (
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-zinc-400 font-mono">Reset all?</span>
+            <button onClick={handleReset} className="text-xs text-red-400 font-mono px-2 py-1 rounded border border-red-400/30 hover:bg-red-400/10">Yes</button>
+            <button onClick={() => setResetConfirm(false)} className="text-xs text-zinc-400 font-mono px-2 py-1 rounded border border-zinc-600 hover:bg-zinc-800">No</button>
+          </div>
+        ) : (
+          <button onClick={() => setResetConfirm(true)} className="flex items-center gap-1 text-xs text-zinc-500 hover:text-white font-mono">
+            <RotateCcw className="w-3 h-3" /> Reset
+          </button>
+        )}
+      </div>
+
+      {ioWarning && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-900/20 border border-amber-500/30">
+          <AlertTriangle className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+          <span className="font-mono text-[11px] text-amber-300">IOScore weights sum to {ioSum.toFixed(2)} — should be 1.00</span>
+        </div>
+      )}
+
+      {Array.from(groups).map(([group, items]) => (
+        <div key={group} className="space-y-3">
+          <h3 className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest font-medium border-b border-zinc-800 pb-1">{group}</h3>
+          {items.map((m) => {
+            const val = data.current[m.key] ?? m.default;
+            const isToggle = m.min === 0 && m.max === 1 && m.step === 1;
+            return (
+              <div key={m.key} className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="font-mono text-[11px] text-white">{m.label}</label>
+                  <div className="flex items-center gap-2">
+                    {saving === m.key && <span className="text-[10px] text-zinc-500 font-mono">saving...</span>}
+                    {saved === m.key && <Check className="w-3 h-3 text-green-400" />}
+                    {isToggle ? (
+                      <button
+                        onClick={() => handleChange(m.key, val === 1 ? 0 : 1)}
+                        className={`relative w-9 h-5 rounded-full transition-colors ${val === 1 ? "bg-[#f5a623]" : "bg-zinc-700"}`}
+                      >
+                        <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${val === 1 ? "translate-x-4" : "translate-x-0.5"}`} />
+                      </button>
+                    ) : (
+                      <span className="font-mono text-[11px] text-[#f5a623] tabular-nums w-12 text-right">{val}</span>
+                    )}
+                  </div>
+                </div>
+                {!isToggle && (
+                  <input
+                    type="range"
+                    min={m.min}
+                    max={m.max}
+                    step={m.step}
+                    value={val}
+                    onChange={(e) => handleChange(m.key, Number(e.target.value))}
+                    className="w-full h-1 rounded-full appearance-none cursor-pointer"
+                    style={{ accentColor: "#f5a623", background: "#2A2A2C" }}
+                  />
+                )}
+                <p className="font-mono text-[9px] text-zinc-600 leading-tight">{m.description}</p>
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
