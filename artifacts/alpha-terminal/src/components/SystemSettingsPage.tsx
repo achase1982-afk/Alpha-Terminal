@@ -479,7 +479,7 @@ export function SystemSettingsPage() {
             className="w-full bg-zinc-900 border border-zinc-700 rounded px-3 py-1.5 text-xs font-mono text-white focus:border-[#f5a623] focus:outline-none"
           >
             {universes.map((u) => (
-              <option key={u.id} value={u.id}>{u.name} ({u.symbolCount} symbols) — {u.source}</option>
+              <option key={u.id} value={u.id}>{u.name} ({u.symbolCount} symbols){u.source === "preset" ? "" : " — Watchlist"}</option>
             ))}
           </select>
           <p className="text-[10px] text-zinc-500">Selects which stock universe the AI Lab scans for anomalies</p>

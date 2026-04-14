@@ -1,8 +1,8 @@
-import { db, equityDailyTable, flowDailyAggregatesTable } from "@workspace/db";
+import { db, equityDailyTable, flowDailyAggregatesTable, scannerWatchlistsTable } from "@workspace/db";
 import { inArray, desc, sql, eq, and, gte } from "drizzle-orm";
 import { emitTelemetry, createTelemetryBatch } from "./telemetryStore.js";
 import { LIQUID_CORE_SYMBOLS } from "../data/liquidCore130.js";
-import { getAiLabStrategistConfig } from "./aiLabConfig.js";
+import { getAiLabStrategistConfig, getAiLabFullConfig } from "./aiLabConfig.js";
 
 export function getAiLabServiceConfig() {
   const cfg = getAiLabStrategistConfig();
@@ -21,6 +21,33 @@ export function getAiLabServiceConfig() {
 
 export function AI_LAB_CONFIG_LIVE() {
   return getAiLabServiceConfig();
+}
+
+async function resolveUniverseSymbols(): Promise<string[]> {
+  const cfg = getAiLabFullConfig();
+  const universe = cfg.universe;
+
+  if (!universe || universe === "LIQUID_CORE") {
+    return [...LIQUID_CORE_SYMBOLS] as string[];
+  }
+
+  if (universe.startsWith("watchlist_")) {
+    const watchlistId = parseInt(universe.replace("watchlist_", ""), 10);
+    if (isNaN(watchlistId)) {
+      emitTelemetry("SCANNER", "WARN", `AI Lab: invalid watchlist ID in universe config: ${universe}`, {}, "AI_LAB");
+      return [...LIQUID_CORE_SYMBOLS] as string[];
+    }
+    const rows = await db.select().from(scannerWatchlistsTable).where(eq(scannerWatchlistsTable.id, watchlistId));
+    if (rows.length === 0 || !rows[0].symbols || (rows[0].symbols as string[]).length === 0) {
+      emitTelemetry("SCANNER", "WARN", `AI Lab: watchlist ${watchlistId} not found or empty, falling back to Liquid 130`, {}, "AI_LAB");
+      return [...LIQUID_CORE_SYMBOLS] as string[];
+    }
+    const symbols = rows[0].symbols as string[];
+    emitTelemetry("SCANNER", "INFO", `AI Lab: using watchlist "${rows[0].name}" with ${symbols.length} symbols`, { watchlistId, symbolCount: symbols.length }, "AI_LAB");
+    return symbols;
+  }
+
+  return [...LIQUID_CORE_SYMBOLS] as string[];
 }
 
 export const AI_LAB_CONFIG = new Proxy({} as ReturnType<typeof getAiLabServiceConfig>, {
@@ -155,12 +182,12 @@ export async function getUniverseAnomalies(
   const minPrice = filters.minPrice ?? AI_LAB_CONFIG.MIN_PRICE;
   const minVol = filters.minAvgVolume20d ?? AI_LAB_CONFIG.MIN_AVG_VOLUME_20D;
 
-  const liquidCoreList = [...LIQUID_CORE_SYMBOLS] as string[];
+  const universeSymbols = await resolveUniverseSymbols();
 
   const latestDateRow = await db
     .select({ maxDate: sql<string>`max(${equityDailyTable.date})` })
     .from(equityDailyTable)
-    .where(inArray(equityDailyTable.symbol, liquidCoreList));
+    .where(inArray(equityDailyTable.symbol, universeSymbols));
   const latestDate = latestDateRow[0]?.maxDate;
   if (!latestDate) {
     emitTelemetry("DATABASE", "WARN", "AI Lab: no equity_daily data found", {}, "AI_LAB", batch);
@@ -171,7 +198,7 @@ export async function getUniverseAnomalies(
     .from(equityDailyTable)
     .where(and(
       eq(equityDailyTable.date, latestDate),
-      inArray(equityDailyTable.symbol, liquidCoreList),
+      inArray(equityDailyTable.symbol, universeSymbols),
     ));
 
   const flowRows = await db
@@ -294,12 +321,12 @@ export async function getCompactUniverseSummaries(): Promise<CompactTickerSummar
   const batch = createTelemetryBatch("AI_LAB");
   emitTelemetry("SCANNER", "INFO", "AI Lab: building compact universe summaries", {}, "AI_LAB", batch);
 
-  const liquidCoreList = [...LIQUID_CORE_SYMBOLS] as string[];
+  const universeSymbols = await resolveUniverseSymbols();
 
   const latestDateRow = await db
     .select({ maxDate: sql<string>`max(${equityDailyTable.date})` })
     .from(equityDailyTable)
-    .where(inArray(equityDailyTable.symbol, liquidCoreList));
+    .where(inArray(equityDailyTable.symbol, universeSymbols));
   const latestDate = latestDateRow[0]?.maxDate;
   if (!latestDate) return [];
 
@@ -308,7 +335,7 @@ export async function getCompactUniverseSummaries(): Promise<CompactTickerSummar
     .from(equityDailyTable)
     .where(and(
       eq(equityDailyTable.date, latestDate),
-      inArray(equityDailyTable.symbol, liquidCoreList),
+      inArray(equityDailyTable.symbol, universeSymbols),
     ));
 
   const prevDateRows = await db

@@ -375,7 +375,7 @@ router.get("/universes", async (req, res) => {
     const userId = getUserId(req);
     const watchlists = await db.select().from(scannerWatchlistsTable).where(eq(scannerWatchlistsTable.userId, userId));
     const universes = [
-      { id: "LIQUID_CORE", name: "Liquid Core", symbolCount: LIQUID_CORE_SYMBOLS.length, source: "built-in" },
+      { id: "LIQUID_CORE", name: "Liquid 130", symbolCount: LIQUID_CORE_SYMBOLS.length, source: "preset" },
       ...watchlists.map(w => ({
         id: `watchlist_${w.id}`,
         name: w.name,
