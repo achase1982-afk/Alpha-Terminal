@@ -101,8 +101,9 @@ function getEquityCellVal(col: ColumnKey, pos: Position): CellVal {
   switch (col) {
     case "mark": return { text: markPx != null ? `$${markPx.toFixed(2)}` : "\u2014", color: C.text };
     case "last": {
-      if (pos.closePrice != null) return { text: `$${pos.closePrice.toFixed(2)}`, color: C.text };
-      return markPx != null ? { text: `$${markPx.toFixed(2)}`, color: C.text } : DASH;
+      if (markPx == null || qty === 0) return DASH;
+      const dayChg = pos.currentDayProfitLoss / qty;
+      return { text: `$${(markPx - dayChg).toFixed(2)}`, color: C.text };
     }
     case "cost": return { text: `$${pos.averagePrice.toFixed(2)}`, color: C.textDim };
     case "tradePrice": return { text: `$${pos.averagePrice.toFixed(2)}`, color: C.textDim };
@@ -159,8 +160,9 @@ function getOptionCellVal(col: ColumnKey, opt: Position): CellVal {
   switch (col) {
     case "mark": return { text: `$${markPx.toFixed(2)}`, color: C.text };
     case "last": {
-      if (opt.closePrice != null) return { text: `$${opt.closePrice.toFixed(2)}`, color: C.text };
-      return { text: `$${markPx.toFixed(2)}`, color: C.text };
+      if (qty === 0) return DASH;
+      const dayChg = opt.currentDayProfitLoss / (qty * 100);
+      return { text: `$${(markPx - dayChg).toFixed(2)}`, color: C.text };
     }
     case "cost": return { text: `$${opt.averagePrice.toFixed(2)}`, color: C.textDim };
     case "tradePrice": return { text: `$${opt.averagePrice.toFixed(2)}`, color: C.textDim };
@@ -689,11 +691,12 @@ function PositionTableRow({
         return { text: markPx != null ? `$${markPx.toFixed(2)}` : "\u2014", color: markPx != null ? markColor : C.dim };
       }
       case "last": {
-        if (eq?.closePrice != null) return { text: `$${eq.closePrice.toFixed(2)}`, color: C.text };
-        let markPx: number | null = null;
-        if (eq) { const eqQty = eq.longQuantity || eq.shortQuantity; if (eqQty > 0) markPx = eq.marketValue / eqQty; }
-        if (markPx == null && streamPrice != null) markPx = streamPrice;
-        return markPx != null ? { text: `$${markPx.toFixed(2)}`, color: C.text } : DASH;
+        if (!eq) return DASH;
+        const eqQty = eq.longQuantity || eq.shortQuantity;
+        if (eqQty === 0) return DASH;
+        const markPx2 = eq.marketValue / eqQty;
+        const dayChg = eq.currentDayProfitLoss / eqQty;
+        return { text: `$${(markPx2 - dayChg).toFixed(2)}`, color: C.text };
       }
       case "cost": case "tradePrice": {
         if (eq) return { text: `$${eq.averagePrice.toFixed(2)}`, color: C.textDim };
@@ -984,6 +987,7 @@ function ColumnSettingsPanel({
   const headerBottom = useHeaderBottom();
   const dragIdx = useRef<number | null>(null);
   const dragStartY = useRef(0);
+  const [activeDragIdx, setActiveDragIdx] = useState<number | null>(null);
   const ITEM_H = 44;
 
   const handlePointerDown = (e: React.PointerEvent, idx: number) => {
@@ -991,6 +995,7 @@ function ColumnSettingsPanel({
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
     dragIdx.current = idx;
     dragStartY.current = e.clientY;
+    setActiveDragIdx(idx);
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
@@ -1006,12 +1011,14 @@ function ColumnSettingsPanel({
         onReorder(next);
         dragIdx.current = to;
         dragStartY.current = e.clientY;
+        setActiveDragIdx(to);
       }
     }
   };
 
   const handlePointerUp = () => {
     dragIdx.current = null;
+    setActiveDragIdx(null);
   };
 
   const hiddenColumns = ALL_COLUMNS.filter(c => !visibleColumns.includes(c.key));
@@ -1044,12 +1051,20 @@ function ColumnSettingsPanel({
           {visibleColumns.map((key, idx) => {
             const col = COLUMN_MAP.get(key);
             if (!col) return null;
+            const isActive = idx === activeDragIdx;
             return (
               <div
                 key={key}
                 style={{
                   display: "flex", alignItems: "center", padding: "0 16px", height: ITEM_H,
                   borderBottom: `1px solid ${C.border}`,
+                  background: isActive ? "#1e1e1e" : "transparent",
+                  transform: isActive ? "scale(1.02)" : "scale(1)",
+                  boxShadow: isActive ? "0 4px 20px rgba(0,0,0,0.6)" : "none",
+                  zIndex: isActive ? 10 : 0,
+                  position: "relative",
+                  transition: isActive ? "none" : "transform 0.15s ease, box-shadow 0.15s ease",
+                  borderRadius: isActive ? 8 : 0,
                 }}
               >
                 <button
@@ -1062,20 +1077,21 @@ function ColumnSettingsPanel({
                 >
                   <div style={{ width: 10, height: 2, background: "#fff", borderRadius: 1 }} />
                 </button>
-                <span style={{ fontSize: 15, color: C.text, flex: 1 }}>{col.label}</span>
+                <span style={{ fontSize: 15, color: isActive ? "#fff" : C.text, flex: 1, fontWeight: isActive ? 600 : 400 }}>{col.label}</span>
                 <div
                   onPointerDown={e => handlePointerDown(e, idx)}
                   onPointerMove={handlePointerMove}
                   onPointerUp={handlePointerUp}
                   style={{
                     width: 32, height: 32, display: "flex", alignItems: "center",
-                    justifyContent: "center", cursor: "grab", flexShrink: 0, touchAction: "none",
+                    justifyContent: "center", cursor: isActive ? "grabbing" : "grab",
+                    flexShrink: 0, touchAction: "none",
                   }}
                 >
                   <svg width="16" height="12" viewBox="0 0 16 12" fill="none">
-                    <rect y="0" width="16" height="2" rx="1" fill={C.dim} />
-                    <rect y="5" width="16" height="2" rx="1" fill={C.dim} />
-                    <rect y="10" width="16" height="2" rx="1" fill={C.dim} />
+                    <rect y="0" width="16" height="2" rx="1" fill={isActive ? C.gold : C.dim} />
+                    <rect y="5" width="16" height="2" rx="1" fill={isActive ? C.gold : C.dim} />
+                    <rect y="10" width="16" height="2" rx="1" fill={isActive ? C.gold : C.dim} />
                   </svg>
                 </div>
               </div>
