@@ -1,0 +1,68 @@
+The current Options Strategist uses a deterministic decision tree to pick the trade. It checks IVR, checks the regime, runs through if-statements, and always arrives at the same answer for every ticker (right now it recommends a butterfly on everything because all IVR is below 40 and the regime is NEUTRAL). Claude only writes a summary after the decision is already made. Claude has zero input on the trade itself.
+
+This is wrong. Rip out the decision tree. Replace it with this:
+
+WHAT HAPPENS WHEN A USER TAPS A TICKER OR HITS ANALYZE:
+
+1. Gather all available data for that ticker into one package:
+- Current price, daily change, 5-day and 20-day price history (from equity_daily)
+- Current IVR (computed live from the options chain, this already works)
+- Options chain: all strikes across all available expirations, with bid, ask, volume, open interest, delta, IV for each strike (from Polygon/Schwab)
+- Available expiration dates as an array of YYYY-MM-DD strings (extracted from the options chain)
+- Flow data: total call volume, total put volume, put/call skew, block trades, unusual vol/OI ratio (from flow_daily_aggregates)
+- Catalyst data: earnings date, analyst upgrades/downgrades in last 48 hours (from Benzinga)
+- Regime context: the current Market Pulse regime object (directionalConviction, systemicRiskLevel, correlationRegime)
+- IOScore and its components (already computed)
+1. Summarize the options chain. Do NOT send 400 raw strikes. Summarize it into:
+- ATM strike and its bid/ask/IV/OI for calls and puts
+- The 5 highest volume call strikes with their data
+- The 5 highest volume put strikes with their data
+- Any strike where volume exceeds open interest by 2x or more (unusual activity)
+- Overall put/call volume ratio
+- Front month IV vs back month IV (term structure)
+  Keep the total data package under 4000 tokens.
+1. Load the user’s preferences from the settings table. These are things like preferred spread width, allowed strategy types, preferred DTE range, risk tolerance. Pass them as context.
+1. Send everything to Claude (or whatever model is configured in the AI Lab settings) with this system prompt:
+   
+   “You are a senior options trader on a professional trading desk. You have access to the data package provided AND your full training knowledge about markets, stocks, sectors, options pricing, earnings patterns, institutional behavior, and current events. Use both. The data package gives you current numbers. Your knowledge gives you context. You are not limited to the data package.
+   
+   Analyze this ticker and recommend the single best options trade right now. You may recommend any strategy: vertical spreads, iron condors, butterflies, calendars, naked options, debit spreads, credit spreads, or anything else you believe has edge. Any expiration is allowed including short-dated weeklys. You MUST pick an expiration from the availableExpirations list in the data package. Use YYYY-MM-DD format.
+   
+   The user’s configurable preferences are included for context. Respect them when possible but if you see a compelling trade outside their preferences, recommend it and explain why.
+   
+   If you genuinely see no compelling setup in the data, say so honestly. Return confidence below 20 and explain why there is nothing worth trading. Do not invent a trade just to have an answer.
+   
+   Your response must be valid JSON with these fields:
+- strategy: string (e.g. “bull_call_spread”, “iron_condor”, “naked_put”, “calendar_spread”)
+- legs: array of {type: “call” or “put”, strike: number, action: “buy” or “sell”, expiration: “YYYY-MM-DD”}
+- entryPrice: number (net debit or credit)
+- maxRisk: number
+- maxProfit: number (or “unlimited” for naked)
+- breakeven: array of numbers
+- rationale: string (3-5 sentences explaining why this specific trade, what you see in the data and your broader knowledge, why this structure fits the current setup)
+- confidence: number 0-100
+- warnings: string or null (anything the user should know: earnings risk, low liquidity, gap risk, etc.)”
+1. Parse Claude’s JSON response. Validate it:
+- Do the strikes in the response actually exist in the options chain?
+- Is there at least 50 OI on each leg? (use the user’s setting for minimum OI)
+- Is the bid/ask spread on each leg within the user’s max spread setting?
+- If any leg fails validation, send Claude a follow-up: “The [strike] [call/put] has [issue]. Suggest an alternative.” One retry.
+1. Return the validated recommendation to the frontend with Claude’s full rationale.
+
+WHAT TO DELETE:
+
+- The selectStrategyType function that uses if-statements to pick butterfly vs iron condor vs vertical based on IVR and regime
+- The determineCreditDebit function
+- The buildCandidates function that generates candidates from rules
+- The scoreCandidates function
+- Any logic where the CODE decides the trade type
+
+WHAT TO KEEP:
+
+- Everything that gathers data (fetchTickerData, computeIvrFromChain, the IOScore computation, the flow data fetch, the Benzinga catalyst fetch)
+- The regime object computation
+- The settings panel and all user preferences
+- The telemetry logging (log Claude’s full response including rationale and the validation results)
+- The validation layer (checking strikes exist, checking liquidity)
+
+The data layer stays. The decision layer changes from if-statements to Claude. That is the only change.

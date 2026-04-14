@@ -8,18 +8,10 @@ import { getBestAccessToken } from "./tokenStore.js";
 import { fetchPolygonChain } from "./polygonChain.js";
 import { checkEventConflicts, getUpcomingEvents } from "./calendarEventChecker.js";
 import { computeIVR, type OptionContract } from "./optionsStrategist.js";
+import { getAiLabStrategistConfig } from "./aiLabConfig.js";
+import { callAnthropicWithSystem, callGeminiWithSystem, extractJson } from "./aiLabAnalystClient.js";
 
 const SCHWAB_API = "https://api.schwabapi.com/marketdata/v1";
-
-export type TradeDirection = "BULLISH" | "BEARISH" | "NON_DIRECTIONAL";
-export type StrategyType =
-  | "bull_put_spread"
-  | "bear_call_spread"
-  | "call_debit_spread"
-  | "put_debit_spread"
-  | "iron_condor"
-  | "butterfly"
-  | "calendar";
 
 export interface StrategistV2Result {
   status: "recommendation" | "no_viable_setup" | "toxic_block";
@@ -27,11 +19,12 @@ export interface StrategistV2Result {
   recommendation?: {
     strategyLine: string;
     thesis: string;
+    rationale: string;
     edgeAttribution: string;
     idioStrengthPct: number;
     macroPct: number;
-    strategyType: StrategyType;
-    direction: TradeDirection;
+    strategyType: string;
+    direction: string;
     legs: CandidateLeg[];
     credit?: number;
     debit?: number;
@@ -41,6 +34,8 @@ export interface StrategistV2Result {
     riskReward: number;
     dte: number;
     expiration: string;
+    confidence: number;
+    warnings: string | null;
   };
   blockReason?: string;
   regime: StructuredRegime;
@@ -61,22 +56,6 @@ interface CandidateLeg {
   openInterest: number;
 }
 
-interface Candidate {
-  strategyType: StrategyType;
-  direction: TradeDirection;
-  legs: CandidateLeg[];
-  credit?: number;
-  debit?: number;
-  maxProfit: number;
-  maxLoss: number;
-  breakeven: number;
-  riskReward: number;
-  liquidityScore: number;
-  candidateScore: number;
-  dte: number;
-  expiration: string;
-}
-
 interface TickerData {
   price: number;
   dailyChangePct: number;
@@ -91,6 +70,76 @@ interface TickerData {
   halted: boolean;
 }
 
+interface ChainContract {
+  strike: number;
+  expiration: string;
+  type: string;
+  optionType?: string;
+  bid: number;
+  ask: number;
+  mid: number;
+  delta: number;
+  openInterest: number;
+  volume: number;
+  impliedVolatility: number;
+  dte: number;
+}
+
+interface AiTradeResponse {
+  strategy: string;
+  legs: Array<{
+    type: "call" | "put";
+    strike: number;
+    action: "buy" | "sell";
+    expiration: string;
+  }>;
+  entryPrice: number;
+  maxRisk: number;
+  maxProfit: number | string;
+  breakeven: number[];
+  rationale: string;
+  confidence: number;
+  warnings: string | null;
+}
+
+interface ChainSummary {
+  atmStrike: number;
+  atmCallBid: number;
+  atmCallAsk: number;
+  atmCallIV: number;
+  atmCallOI: number;
+  atmPutBid: number;
+  atmPutAsk: number;
+  atmPutIV: number;
+  atmPutOI: number;
+  topVolumeCalls: Array<{ strike: number; expiration: string; volume: number; oi: number; bid: number; ask: number; iv: number; delta: number }>;
+  topVolumePuts: Array<{ strike: number; expiration: string; volume: number; oi: number; bid: number; ask: number; iv: number; delta: number }>;
+  unusualActivity: Array<{ strike: number; type: string; expiration: string; volume: number; oi: number; volOiRatio: number }>;
+  putCallVolumeRatio: number;
+  frontMonthIV: number | null;
+  backMonthIV: number | null;
+  availableExpirations: string[];
+}
+
+const STRATEGIST_SYSTEM_PROMPT = `You are a senior options trader on a professional trading desk. You have access to the data package provided AND your full training knowledge about markets, stocks, sectors, options pricing, earnings patterns, institutional behavior, and current events. Use both. The data package gives you current numbers. Your knowledge gives you context. You are not limited to the data package.
+
+Analyze this ticker and recommend the single best options trade right now. You may recommend any strategy: vertical spreads, iron condors, butterflies, calendars, naked options, debit spreads, credit spreads, or anything else you believe has edge. Any expiration is allowed including short-dated weeklys. You MUST pick an expiration from the availableExpirations list in the data package. Use YYYY-MM-DD format.
+
+The user's configurable preferences are included for context. Respect them when possible but if you see a compelling trade outside their preferences, recommend it and explain why.
+
+If you genuinely see no compelling setup in the data, say so honestly. Return confidence below 20 and explain why there is nothing worth trading. Do not invent a trade just to have an answer.
+
+Your response must be valid JSON with these fields:
+- strategy: string (e.g. "bull_call_spread", "iron_condor", "naked_put", "calendar_spread")
+- legs: array of {type: "call" or "put", strike: number, action: "buy" or "sell", expiration: "YYYY-MM-DD"}
+- entryPrice: number (net debit or credit, positive = debit, negative = credit)
+- maxRisk: number (maximum dollar loss per contract)
+- maxProfit: number (maximum dollar profit per contract, or 99999 for theoretically unlimited)
+- breakeven: array of numbers (breakeven price points)
+- rationale: string (3-5 sentences explaining why this specific trade, what you see in the data and your broader knowledge, why this structure fits the current setup)
+- confidence: number 0-100
+- warnings: string or null (anything the user should know: earnings risk, low liquidity, gap risk, etc.)`;
+
 export async function analyzeTickerV2(ticker: string): Promise<StrategistV2Result> {
   const settings = await getSettings();
   const regime = getCachedRegime() ?? buildFallbackRegime();
@@ -104,7 +153,7 @@ export async function analyzeTickerV2(ticker: string): Promise<StrategistV2Resul
       regime,
       systemicRiskElevated: regime.systemicRiskLevel === "ELEVATED" || regime.systemicRiskLevel === "EXTREME",
     };
-    await logTelemetry(ticker, "toxic_block", regime, settings, null, null, toxicCheck, null, null, result.blockReason);
+    await logTelemetry(ticker, "toxic_block", regime, settings, null, null, toxicCheck, null, result.blockReason);
     return result;
   }
 
@@ -117,94 +166,102 @@ export async function analyzeTickerV2(ticker: string): Promise<StrategistV2Resul
       regime,
       systemicRiskElevated: regime.systemicRiskLevel === "ELEVATED" || regime.systemicRiskLevel === "EXTREME",
     };
-    await logTelemetry(ticker, "no_data", regime, settings, null, null, toxicCheck, null, null, result.blockReason);
+    await logTelemetry(ticker, "no_data", regime, settings, null, null, toxicCheck, null, result.blockReason);
     return result;
   }
 
   if (tickerData.halted) {
-    return noViable(ticker, regime, settings, toxicCheck, tickerData, "No viable options setup: stock halted.",
-      null, { passed: false, chainAvailable: false, halted: true, atmSpreadPct: 0 }, 0, 0, []);
+    return noViable(ticker, regime, settings, toxicCheck, tickerData, "No viable options setup: stock halted.", null);
   }
 
   const chain = await fetchOptionsChain(ticker, settings);
   if (!chain || chain.length === 0) {
-    return noViable(ticker, regime, settings, toxicCheck, tickerData, "No viable options setup: no options chain.",
-      null, { passed: false, chainAvailable: false, halted: false, atmSpreadPct: 0 }, 0, 0, []);
+    return noViable(ticker, regime, settings, toxicCheck, tickerData, "No viable options setup: no options chain.", null);
   }
-  logger.info({ ticker, chainLength: chain.length, puts: chain.filter((c: any) => c.type === "put").length, calls: chain.filter((c: any) => c.type === "call").length }, "StrategistV2: options chain loaded");
+  logger.info({ ticker, chainLength: chain.length }, "StrategistV2: options chain loaded");
 
   const liveIvr = computeIvrFromChain(chain, tickerData.price);
   tickerData.ivr = liveIvr;
   logger.info({ ticker, liveIvr }, "StrategistV2: live IVR computed from options chain");
 
-  const atmSpreadPct = computeAtmSpread(chain, tickerData.price);
-  if (atmSpreadPct > settings.maxBidAskSpreadPct / 100) {
-    return noViable(ticker, regime, settings, toxicCheck, tickerData, `No viable options setup: ATM spread ${(atmSpreadPct * 100).toFixed(1)}% exceeds max ${settings.maxBidAskSpreadPct}%.`,
-      null, { passed: false, chainAvailable: true, halted: false, atmSpreadPct: Math.round(atmSpreadPct * 10000) / 100 }, 0, 0, []);
-  }
-
   const catalystInfo = deriveCatalyst(tickerData);
   const ioScore = await computeIOScore(ticker, catalystInfo, settings);
 
-  const earningsGate = checkEarningsGate(tickerData, settings);
-  const { direction, directionReason } = determineDirection(ioScore, regime);
-  let { creditOrDebit, creditReason } = determineCreditDebit(tickerData.ivr ?? 0, settings);
+  const chainSummary = summarizeOptionsChain(chain, tickerData.price);
 
-  if (earningsGate.triggered && creditOrDebit === "CREDIT") {
-    creditOrDebit = "DEBIT";
-    creditReason = `${creditReason}, overridden to DEBIT by earnings gate (earnings in ${earningsGate.daysUntil}d, IVR ${tickerData.ivr ?? 0} < floor ${settings.earningsIvrFloor})`;
+  const dataPackage = buildDataPackage(ticker, tickerData, chainSummary, ioScore, regime, settings);
+
+  let aiResponse: AiTradeResponse;
+  try {
+    aiResponse = await callAiForTrade(dataPackage);
+  } catch (err) {
+    logger.error({ err, ticker }, "StrategistV2: AI trade call failed");
+    return noViable(ticker, regime, settings, toxicCheck, tickerData, `AI analysis failed: ${err instanceof Error ? err.message : String(err)}`, ioScore);
   }
 
-  const strategyType = selectStrategyType(direction, creditOrDebit);
-  logger.info({ ticker, direction, creditOrDebit, strategyType, price: tickerData.price, ioClassification: ioScore.classification, earningsGate: earningsGate.triggered }, "StrategistV2: strategy selection");
-
-  const candidates = buildCandidates(chain, strategyType, direction, tickerData.price, settings);
-  const filterReasons: string[] = [];
-  const viable = filterCandidates(candidates, settings, filterReasons);
-  logger.info({ ticker, rawCandidates: candidates.length, viableCandidates: viable.length, filterReasons: filterReasons.slice(0, 5) }, "StrategistV2: candidate filtering");
-
-  const viability = { passed: true, chainAvailable: true, halted: false, atmSpreadPct: Math.round(atmSpreadPct * 10000) / 100 };
-
-  if (viable.length === 0) {
-    const detail = candidates.length === 0
-      ? `No candidates built for ${strategyType} (price=$${tickerData.price.toFixed(2)}, chain=${chain.length} contracts, DTE ${settings.preferredDteMin}-${settings.preferredDteMax}).`
-      : `${candidates.length} candidates built but all filtered: ${filterReasons.slice(0, 3).join("; ")}.`;
-    viability.passed = false;
-    return noViable(ticker, regime, settings, toxicCheck, tickerData,
-      `No viable options setup: ${detail}`,
-      ioScore, viability, candidates.length, candidates.length - viable.length, filterReasons);
+  if (aiResponse.confidence < 20) {
+    return noViable(ticker, regime, settings, toxicCheck, tickerData, `AI found no compelling setup (confidence ${aiResponse.confidence}): ${aiResponse.rationale}`, ioScore);
   }
 
-  viable.sort((a, b) => b.candidateScore - a.candidateScore);
-  const winner = viable[0];
+  const validationResult = validateAiResponse(aiResponse, chain, settings);
+  if (!validationResult.valid) {
+    try {
+      const retryPrompt = buildRetryPrompt(aiResponse, validationResult.issues);
+      aiResponse = await callAiForTrade(dataPackage, retryPrompt);
 
+      const retryValidation = validateAiResponse(aiResponse, chain, settings);
+      if (!retryValidation.valid) {
+        return noViable(ticker, regime, settings, toxicCheck, tickerData,
+          `AI recommendation failed validation after retry: ${retryValidation.issues.join("; ")}`, ioScore);
+      }
+    } catch (err) {
+      logger.error({ err, ticker }, "StrategistV2: AI retry failed");
+      return noViable(ticker, regime, settings, toxicCheck, tickerData,
+        `AI retry failed: ${err instanceof Error ? err.message : String(err)}`, ioScore);
+    }
+  }
+
+  const legs = mapAiLegsToCandidate(aiResponse, chain);
+  const isCredit = aiResponse.entryPrice < 0;
+  const entryAbs = Math.abs(aiResponse.entryPrice);
+  const maxProfit = typeof aiResponse.maxProfit === "number" ? aiResponse.maxProfit : 99999;
+  const maxLoss = aiResponse.maxRisk;
+  const breakeven = aiResponse.breakeven.length > 0 ? aiResponse.breakeven[0] : tickerData.price;
+
+  const firstLeg = aiResponse.legs[0];
+  const expiration = firstLeg?.expiration ?? "";
+  const expDate = new Date(expiration);
+  const dte = Math.max(0, Math.round((expDate.getTime() - Date.now()) / (24 * 60 * 60 * 1000)));
+
+  const direction = inferDirection(aiResponse.strategy, aiResponse.legs);
   const idioStrengthPct = Math.round(ioScore.final * 100);
   const macroPct = 100 - idioStrengthPct;
 
-  const thesis = buildThesis(ticker, winner, ioScore, regime, tickerData);
-  const strategyLine = buildStrategyLine(ticker, winner);
-  const edgeAttribution = `Edge source: Idiosyncratic ${idioStrengthPct}% / Macro ${macroPct}%`;
+  const strategyLine = buildStrategyLine(ticker, aiResponse);
 
   const result: StrategistV2Result = {
     status: "recommendation",
     ticker,
     recommendation: {
       strategyLine,
-      thesis,
-      edgeAttribution,
+      thesis: aiResponse.rationale,
+      rationale: aiResponse.rationale,
+      edgeAttribution: `Edge source: Idiosyncratic ${idioStrengthPct}% / Macro ${macroPct}%`,
       idioStrengthPct,
       macroPct,
-      strategyType: winner.strategyType,
+      strategyType: aiResponse.strategy,
       direction,
-      legs: winner.legs,
-      credit: winner.credit,
-      debit: winner.debit,
-      maxProfit: winner.maxProfit,
-      maxLoss: winner.maxLoss,
-      breakeven: winner.breakeven,
-      riskReward: winner.riskReward,
-      dte: winner.dte,
-      expiration: winner.expiration,
+      legs,
+      credit: isCredit ? entryAbs : undefined,
+      debit: !isCredit ? entryAbs : undefined,
+      maxProfit,
+      maxLoss,
+      breakeven,
+      riskReward: maxLoss > 0 ? maxProfit / maxLoss : 0,
+      dte,
+      expiration,
+      confidence: aiResponse.confidence,
+      warnings: aiResponse.warnings,
     },
     regime,
     ioScore,
@@ -213,12 +270,310 @@ export async function analyzeTickerV2(ticker: string): Promise<StrategistV2Resul
 
   const telemetryId = await logTelemetry(
     ticker, "recommendation", regime, settings, ioScore, tickerData, toxicCheck,
-    { direction, directionReason, creditOrDebit, creditReason, strategyType },
-    winner, thesis, viability, candidates.length, candidates.length - viable.length, filterReasons
+    {
+      strategy: aiResponse.strategy,
+      strategyType: aiResponse.strategy,
+      confidence: aiResponse.confidence,
+      aiRationale: aiResponse.rationale,
+      warnings: aiResponse.warnings,
+      legs: aiResponse.legs,
+      entryPrice: aiResponse.entryPrice,
+      maxRisk: aiResponse.maxRisk,
+      maxProfit: aiResponse.maxProfit,
+      breakeven: aiResponse.breakeven,
+    },
+    result.recommendation?.strategyLine,
   );
   result.telemetryId = telemetryId ?? undefined;
 
   return result;
+}
+
+function summarizeOptionsChain(chain: ChainContract[], price: number): ChainSummary {
+  const calls = chain.filter(c => c.type === "call" || c.optionType === "CALL");
+  const puts = chain.filter(c => c.type === "put" || c.optionType === "PUT");
+
+  const atmCalls = calls.filter(c => Math.abs(c.strike - price) / price < 0.02).sort((a, b) => Math.abs(a.strike - price) - Math.abs(b.strike - price));
+  const atmPuts = puts.filter(c => Math.abs(c.strike - price) / price < 0.02).sort((a, b) => Math.abs(a.strike - price) - Math.abs(b.strike - price));
+  const atmCall = atmCalls[0];
+  const atmPut = atmPuts[0];
+  const atmStrike = atmCall?.strike ?? atmPut?.strike ?? Math.round(price);
+
+  const topVolumeCalls = [...calls].sort((a, b) => b.volume - a.volume).slice(0, 5).map(c => ({
+    strike: c.strike, expiration: c.expiration, volume: c.volume, oi: c.openInterest,
+    bid: c.bid, ask: c.ask, iv: c.impliedVolatility, delta: c.delta,
+  }));
+  const topVolumePuts = [...puts].sort((a, b) => b.volume - a.volume).slice(0, 5).map(c => ({
+    strike: c.strike, expiration: c.expiration, volume: c.volume, oi: c.openInterest,
+    bid: c.bid, ask: c.ask, iv: c.impliedVolatility, delta: c.delta,
+  }));
+
+  const unusualActivity: ChainSummary["unusualActivity"] = [];
+  for (const c of chain) {
+    if (c.openInterest > 0 && c.volume / c.openInterest >= 2) {
+      unusualActivity.push({
+        strike: c.strike, type: c.type || (c.optionType === "CALL" ? "call" : "put"),
+        expiration: c.expiration, volume: c.volume, oi: c.openInterest, volOiRatio: Math.round(c.volume / c.openInterest * 100) / 100,
+      });
+    }
+  }
+  unusualActivity.sort((a, b) => b.volOiRatio - a.volOiRatio);
+  if (unusualActivity.length > 10) unusualActivity.length = 10;
+
+  const totalCallVol = calls.reduce((s, c) => s + c.volume, 0);
+  const totalPutVol = puts.reduce((s, c) => s + c.volume, 0);
+  const putCallVolumeRatio = totalCallVol > 0 ? Math.round(totalPutVol / totalCallVol * 100) / 100 : 0;
+
+  const expirations = [...new Set(chain.map(c => c.expiration))].sort();
+  let frontMonthIV: number | null = null;
+  let backMonthIV: number | null = null;
+  if (expirations.length >= 2) {
+    const frontContracts = chain.filter(c => c.expiration === expirations[0] && c.impliedVolatility > 0);
+    const backContracts = chain.filter(c => c.expiration === expirations[expirations.length - 1] && c.impliedVolatility > 0);
+    if (frontContracts.length > 0) frontMonthIV = Math.round(frontContracts.reduce((s, c) => s + c.impliedVolatility, 0) / frontContracts.length * 10000) / 100;
+    if (backContracts.length > 0) backMonthIV = Math.round(backContracts.reduce((s, c) => s + c.impliedVolatility, 0) / backContracts.length * 10000) / 100;
+  }
+
+  return {
+    atmStrike,
+    atmCallBid: atmCall?.bid ?? 0,
+    atmCallAsk: atmCall?.ask ?? 0,
+    atmCallIV: atmCall?.impliedVolatility ?? 0,
+    atmCallOI: atmCall?.openInterest ?? 0,
+    atmPutBid: atmPut?.bid ?? 0,
+    atmPutAsk: atmPut?.ask ?? 0,
+    atmPutIV: atmPut?.impliedVolatility ?? 0,
+    atmPutOI: atmPut?.openInterest ?? 0,
+    topVolumeCalls,
+    topVolumePuts,
+    unusualActivity,
+    putCallVolumeRatio,
+    frontMonthIV,
+    backMonthIV,
+    availableExpirations: expirations,
+  };
+}
+
+function buildDataPackage(
+  ticker: string,
+  tickerData: TickerData,
+  chainSummary: ChainSummary,
+  ioScore: IOScoreResult,
+  regime: StructuredRegime,
+  settings: StrategistConfig,
+): string {
+  const pkg: Record<string, unknown> = {
+    ticker,
+    price: tickerData.price,
+    dailyChangePct: tickerData.dailyChangePct,
+    ivr: tickerData.ivr,
+    avgVolume20d: tickerData.avgVolume20d,
+    relativeVolume: tickerData.relativeVolume,
+    sector: tickerData.sector,
+    earningsDaysAway: tickerData.earningsDaysAway,
+    earningsWithin48h: tickerData.earningsWithin48h,
+    analystActions48h: tickerData.analystActions48h,
+    optionsChainSummary: {
+      atmStrike: chainSummary.atmStrike,
+      atmCall: { bid: chainSummary.atmCallBid, ask: chainSummary.atmCallAsk, iv: chainSummary.atmCallIV, oi: chainSummary.atmCallOI },
+      atmPut: { bid: chainSummary.atmPutBid, ask: chainSummary.atmPutAsk, iv: chainSummary.atmPutIV, oi: chainSummary.atmPutOI },
+      topVolumeCalls: chainSummary.topVolumeCalls,
+      topVolumePuts: chainSummary.topVolumePuts,
+      unusualActivity: chainSummary.unusualActivity.length > 0 ? chainSummary.unusualActivity : "none",
+      putCallVolumeRatio: chainSummary.putCallVolumeRatio,
+      termStructure: chainSummary.frontMonthIV != null && chainSummary.backMonthIV != null
+        ? { frontMonthIV: chainSummary.frontMonthIV, backMonthIV: chainSummary.backMonthIV }
+        : "insufficient data",
+    },
+    availableExpirations: chainSummary.availableExpirations,
+    ioScore: {
+      final: ioScore.final,
+      classification: ioScore.classification,
+      beta: ioScore.beta,
+      residualReturnZScore: ioScore.residualReturnZScore,
+      components: {
+        marketIndependence: ioScore.components.marketIndependence.contribution,
+        abnormalMove: ioScore.components.abnormalMove.contribution,
+        catalyst: { value: ioScore.components.catalyst.flagValue, reason: ioScore.components.catalyst.reason },
+        flowDivergence: { volOiRatio: ioScore.components.flowDivergence.volOiRatio, skewDivergence: ioScore.components.flowDivergence.skewDivergence },
+      },
+    },
+    regime: {
+      directionalConviction: regime.directionalConviction,
+      systemicRiskLevel: regime.systemicRiskLevel,
+      correlationRegime: regime.correlationRegime,
+    },
+    userPreferences: {
+      preferredDteMin: settings.preferredDteMin,
+      preferredDteMax: settings.preferredDteMax,
+      spreadWidth: settings.spreadWidth,
+      minOpenInterest: settings.minOpenInterest,
+      maxBidAskSpreadPct: settings.maxBidAskSpreadPct,
+    },
+  };
+
+  return JSON.stringify(pkg);
+}
+
+async function callAiForTrade(dataPackage: string, retryInstruction?: string): Promise<AiTradeResponse> {
+  const aiCfg = getAiLabStrategistConfig();
+  const provider = aiCfg.analystModelProvider;
+  const model = aiCfg.analystModelName;
+  const temperature = aiCfg.analystTemperature;
+
+  const prompt = retryInstruction
+    ? `${retryInstruction}\n\nOriginal data package:\n${dataPackage}`
+    : `Analyze this ticker and recommend the best trade:\n\n${dataPackage}`;
+
+  let rawText: string;
+  switch (provider) {
+    case "anthropic":
+      rawText = await callAnthropicWithSystem(model, temperature, STRATEGIST_SYSTEM_PROMPT, prompt);
+      break;
+    case "google":
+      rawText = await callGeminiWithSystem(model, temperature, STRATEGIST_SYSTEM_PROMPT, prompt);
+      break;
+    default:
+      throw new Error(`Unsupported provider: ${provider}`);
+  }
+
+  const cleanText = extractJson(rawText);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(cleanText);
+  } catch {
+    logger.error({ rawSnippet: rawText.slice(0, 500) }, "StrategistV2: AI response JSON parse failure");
+    throw new Error("AI response is not valid JSON");
+  }
+
+  const resp = parsed as Record<string, unknown>;
+  if (!resp.strategy || !Array.isArray(resp.legs) || resp.legs.length === 0) {
+    throw new Error("AI response missing required fields (strategy, legs)");
+  }
+
+  const safeNum = (v: unknown, fallback: number): number => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : fallback;
+  };
+
+  const validTypes = new Set(["call", "put"]);
+  const validActions = new Set(["buy", "sell"]);
+
+  const legs = (resp.legs as Array<Record<string, unknown>>).map(l => {
+    const type = String(l.type).toLowerCase();
+    const action = String(l.action).toLowerCase();
+    if (!validTypes.has(type)) throw new Error(`Invalid leg type: ${type}. Must be "call" or "put".`);
+    if (!validActions.has(action)) throw new Error(`Invalid leg action: ${action}. Must be "buy" or "sell".`);
+    const strike = safeNum(l.strike, 0);
+    if (strike <= 0) throw new Error(`Invalid strike price: ${l.strike}`);
+    const expiration = String(l.expiration);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(expiration)) throw new Error(`Invalid expiration format: ${expiration}. Must be YYYY-MM-DD.`);
+    return { type: type as "call" | "put", strike, action: action as "buy" | "sell", expiration };
+  });
+
+  const confidence = Math.max(0, Math.min(100, safeNum(resp.confidence, 0)));
+
+  return {
+    strategy: String(resp.strategy),
+    legs,
+    entryPrice: safeNum(resp.entryPrice, 0),
+    maxRisk: safeNum(resp.maxRisk, 0),
+    maxProfit: resp.maxProfit === "unlimited" || resp.maxProfit === "Unlimited" ? 99999 : safeNum(resp.maxProfit, 0),
+    breakeven: Array.isArray(resp.breakeven) ? (resp.breakeven as unknown[]).map(v => safeNum(v, 0)).filter(n => n > 0) : [],
+    rationale: String(resp.rationale ?? ""),
+    confidence,
+    warnings: resp.warnings ? String(resp.warnings) : null,
+  };
+}
+
+function validateAiResponse(
+  response: AiTradeResponse,
+  chain: ChainContract[],
+  settings: StrategistConfig,
+): { valid: boolean; issues: string[] } {
+  const issues: string[] = [];
+  const minOI = settings.minOpenInterest;
+  const maxSpreadPct = settings.maxBidAskSpreadPct / 100;
+
+  for (const leg of response.legs) {
+    const matchingContracts = chain.filter(c => {
+      const typeMatch = c.type === leg.type || c.optionType === leg.type.toUpperCase();
+      const strikeMatch = Math.abs(c.strike - leg.strike) < 0.5;
+      const expMatch = c.expiration === leg.expiration;
+      return typeMatch && strikeMatch && expMatch;
+    });
+
+    if (matchingContracts.length === 0) {
+      issues.push(`The ${leg.strike} ${leg.type} ${leg.expiration} does not exist in the options chain. Choose an available strike.`);
+      continue;
+    }
+
+    const contract = matchingContracts[0];
+    if (contract.openInterest < minOI) {
+      issues.push(`The ${leg.strike} ${leg.type} has only ${contract.openInterest} open interest (minimum ${minOI}). Suggest an alternative with more liquidity.`);
+    }
+
+    const mid = contract.mid > 0 ? contract.mid : (contract.bid + contract.ask) / 2;
+    if (mid > 0) {
+      const spreadPct = (contract.ask - contract.bid) / mid;
+      if (spreadPct > maxSpreadPct) {
+        issues.push(`The ${leg.strike} ${leg.type} has a ${(spreadPct * 100).toFixed(0)}% bid-ask spread (max ${settings.maxBidAskSpreadPct}%). Suggest an alternative with tighter spreads.`);
+      }
+    }
+  }
+
+  return { valid: issues.length === 0, issues };
+}
+
+function buildRetryPrompt(originalResponse: AiTradeResponse, issues: string[]): string {
+  return `Your previous recommendation had validation issues:\n${issues.map((i, idx) => `${idx + 1}. ${i}`).join("\n")}\n\nPlease revise your recommendation. Keep the same general thesis if it's still valid, but fix the specific contract selections. Return the same JSON format.`;
+}
+
+function mapAiLegsToCandidate(response: AiTradeResponse, chain: ChainContract[]): CandidateLeg[] {
+  return response.legs.map(leg => {
+    const contract = chain.find(c => {
+      const typeMatch = c.type === leg.type || c.optionType === leg.type.toUpperCase();
+      const strikeMatch = Math.abs(c.strike - leg.strike) < 0.5;
+      const expMatch = c.expiration === leg.expiration;
+      return typeMatch && strikeMatch && expMatch;
+    });
+
+    return {
+      type: leg.type,
+      side: leg.action === "buy" ? "buy" as const : "sell" as const,
+      strike: leg.strike,
+      expiration: leg.expiration,
+      bid: contract?.bid ?? 0,
+      ask: contract?.ask ?? 0,
+      mid: contract?.mid ?? ((contract?.bid ?? 0) + (contract?.ask ?? 0)) / 2,
+      delta: contract?.delta ?? 0,
+      openInterest: contract?.openInterest ?? 0,
+    };
+  });
+}
+
+function inferDirection(strategy: string, legs: AiTradeResponse["legs"]): string {
+  const s = strategy.toLowerCase();
+  if (s.includes("bull") || s.includes("long_call") || s.includes("call_debit")) return "BULLISH";
+  if (s.includes("bear") || s.includes("long_put") || s.includes("put_debit")) return "BEARISH";
+  if (s.includes("condor") || s.includes("butterfly") || s.includes("straddle") || s.includes("strangle")) return "NON_DIRECTIONAL";
+  if (s.includes("calendar")) return "NON_DIRECTIONAL";
+  const buys = legs.filter(l => l.action === "buy");
+  if (buys.length === 1) {
+    return buys[0].type === "call" ? "BULLISH" : "BEARISH";
+  }
+  return "NON_DIRECTIONAL";
+}
+
+function buildStrategyLine(ticker: string, response: AiTradeResponse): string {
+  const name = response.strategy.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+  const legDescs = response.legs.map(
+    l => `${l.action === "sell" ? "Sell" : "Buy"} ${l.expiration} $${l.strike} ${l.type}`
+  );
+  const priceStr = response.entryPrice < 0
+    ? `for $${Math.abs(response.entryPrice).toFixed(2)} credit`
+    : `for $${response.entryPrice.toFixed(2)} debit`;
+  return `${name} on ${ticker}: ${legDescs.join(", ")} ${priceStr}.`;
 }
 
 function checkToxicGate(
@@ -263,411 +618,11 @@ function checkToxicGate(
   return { triggered: reasons.length > 0, reasons, pathACheck, pathBCheck };
 }
 
-function determineDirection(
-  ioScore: IOScoreResult,
-  regime: StructuredRegime
-): { direction: TradeDirection; directionReason: string } {
-  if (ioScore.classification === "HIGH_IDIOSYNCRATIC") {
-    const dir = ioScore.residualReturnZScore > 0 ? "BULLISH" : "BEARISH";
-    return {
-      direction: dir,
-      directionReason: `idioStrength ${ioScore.final} >= threshold, residual return ${ioScore.residualReturnZScore > 0 ? "positive" : "negative"}`,
-    };
-  }
-
-  const dc = regime.directionalConviction;
-  if (dc === "BULLISH" || dc === "MODERATELY_BULLISH") {
-    return { direction: "BULLISH", directionReason: `regime directional conviction: ${dc}` };
-  }
-  if (dc === "BEARISH" || dc === "MODERATELY_BEARISH") {
-    return { direction: "BEARISH", directionReason: `regime directional conviction: ${dc}` };
-  }
-  if (dc === "TRANSITION") {
-    return { direction: "NON_DIRECTIONAL", directionReason: "TRANSITION regime – favor IV-friendly structures" };
-  }
-  return { direction: "NON_DIRECTIONAL", directionReason: "NEUTRAL macro, low idiosyncratic – range-bound structures" };
-}
-
-function determineCreditDebit(
-  ivr: number,
-  settings: StrategistConfig
-): { creditOrDebit: "CREDIT" | "DEBIT"; creditReason: string } {
-  if (ivr >= settings.ivrCreditDebitThreshold) {
-    return { creditOrDebit: "CREDIT", creditReason: `IVR ${ivr} >= ${settings.ivrCreditDebitThreshold} threshold` };
-  }
-  return { creditOrDebit: "DEBIT", creditReason: `IVR ${ivr} < ${settings.ivrCreditDebitThreshold} threshold` };
-}
-
-function selectStrategyType(
-  direction: TradeDirection,
-  creditOrDebit: "CREDIT" | "DEBIT"
-): StrategyType {
-  if (creditOrDebit === "CREDIT") {
-    if (direction === "BULLISH") return "bull_put_spread";
-    if (direction === "BEARISH") return "bear_call_spread";
-    return "iron_condor";
-  }
-  if (direction === "BULLISH") return "call_debit_spread";
-  if (direction === "BEARISH") return "put_debit_spread";
-  return "butterfly";
-}
-
-function checkEarningsGate(
-  tickerData: TickerData,
-  settings: StrategistConfig
-): { triggered: boolean; daysUntil: number | null; earningsDate: string | null } {
-  if (settings.earningsProximityHours === 0) {
-    return { triggered: false, daysUntil: null, earningsDate: null };
-  }
-
-  const proximityDays = settings.earningsProximityHours / 24;
-  const daysAway = tickerData.earningsDaysAway;
-
-  if (daysAway != null && daysAway <= proximityDays) {
-    const ivr = tickerData.ivr ?? 0;
-    if (ivr < settings.earningsIvrFloor) {
-      return {
-        triggered: true,
-        daysUntil: daysAway,
-        earningsDate: null,
-      };
-    }
-  }
-
-  return { triggered: false, daysUntil: daysAway, earningsDate: null };
-}
-
-function computeAtmSpread(chain: any[], price: number): number {
-  const atm = chain.filter((c: any) => Math.abs(c.strike - price) / price < 0.02);
-  if (atm.length === 0) return 1;
-  const spreads = atm.map((c: any) => {
-    const mid = (c.bid + c.ask) / 2;
-    return mid > 0 ? (c.ask - c.bid) / mid : 1;
-  });
-  return Math.min(...spreads);
-}
-
 function deriveCatalyst(tickerData: TickerData): { flagValue: number; reason: string } {
   if (tickerData.earningsWithin48h) return { flagValue: 1.0, reason: "earnings_within_48h" };
   if (tickerData.analystActions48h.length >= 2) return { flagValue: 0.5, reason: "analyst_cluster" };
   if (tickerData.analystActions48h.length === 1) return { flagValue: 0.3, reason: "analyst_action" };
   return { flagValue: 0, reason: "none" };
-}
-
-function buildCandidates(
-  chain: any[],
-  strategyType: StrategyType,
-  direction: TradeDirection,
-  price: number,
-  settings: StrategistConfig
-): Candidate[] {
-  const candidates: Candidate[] = [];
-  const width = settings.spreadWidth;
-  const dteMin = settings.preferredDteMin;
-  const dteMax = settings.preferredDteMax;
-
-  const expirations = new Set<string>();
-  for (const c of chain) {
-    if (c.dte >= dteMin && c.dte <= dteMax) expirations.add(c.expiration);
-  }
-
-  for (const exp of expirations) {
-    const expChain = chain.filter((c: any) => c.expiration === exp);
-    const puts = expChain.filter((c: any) => c.type === "put" || c.optionType === "PUT").sort((a: any, b: any) => a.strike - b.strike);
-    const calls = expChain.filter((c: any) => c.type === "call" || c.optionType === "CALL").sort((a: any, b: any) => a.strike - b.strike);
-    const dte = expChain[0]?.dte ?? 0;
-
-    if (strategyType === "bull_put_spread") {
-      for (const shortPut of puts) {
-        if (shortPut.strike >= price) continue;
-        if (Math.abs(shortPut.delta ?? 0) < 0.20 || Math.abs(shortPut.delta ?? 0) > 0.40) continue;
-        const longStrike = shortPut.strike - width;
-        const longPut = puts.find((p: any) => Math.abs(p.strike - longStrike) < 0.5);
-        if (!longPut) continue;
-        const credit = (shortPut.mid ?? (shortPut.bid + shortPut.ask) / 2) - (longPut.mid ?? (longPut.bid + longPut.ask) / 2);
-        if (credit <= 0) continue;
-        const maxProfit = credit * 100;
-        const maxLoss = (width - credit) * 100;
-        candidates.push({
-          strategyType, direction: "BULLISH",
-          legs: [
-            toLeg(shortPut, "put", "sell"), toLeg(longPut, "put", "buy"),
-          ],
-          credit, maxProfit, maxLoss, breakeven: shortPut.strike - credit,
-          riskReward: maxLoss > 0 ? maxProfit / maxLoss : 0,
-          liquidityScore: legLiqScore(shortPut, longPut),
-          candidateScore: 0, dte, expiration: exp,
-        });
-      }
-    }
-
-    if (strategyType === "bear_call_spread") {
-      for (const shortCall of calls) {
-        if (shortCall.strike <= price) continue;
-        if (Math.abs(shortCall.delta ?? 0) < 0.20 || Math.abs(shortCall.delta ?? 0) > 0.40) continue;
-        const longStrike = shortCall.strike + width;
-        const longCall = calls.find((c: any) => Math.abs(c.strike - longStrike) < 0.5);
-        if (!longCall) continue;
-        const credit = (shortCall.mid ?? (shortCall.bid + shortCall.ask) / 2) - (longCall.mid ?? (longCall.bid + longCall.ask) / 2);
-        if (credit <= 0) continue;
-        const maxProfit = credit * 100;
-        const maxLoss = (width - credit) * 100;
-        candidates.push({
-          strategyType, direction: "BEARISH",
-          legs: [
-            toLeg(shortCall, "call", "sell"), toLeg(longCall, "call", "buy"),
-          ],
-          credit, maxProfit, maxLoss, breakeven: shortCall.strike + credit,
-          riskReward: maxLoss > 0 ? maxProfit / maxLoss : 0,
-          liquidityScore: legLiqScore(shortCall, longCall),
-          candidateScore: 0, dte, expiration: exp,
-        });
-      }
-    }
-
-    if (strategyType === "call_debit_spread") {
-      for (const longCall of calls) {
-        if (longCall.strike > price * 1.02) continue;
-        if (Math.abs(longCall.delta ?? 0) < 0.40 || Math.abs(longCall.delta ?? 0) > 0.65) continue;
-        const shortStrike = longCall.strike + width;
-        const shortCall = calls.find((c: any) => Math.abs(c.strike - shortStrike) < 0.5);
-        if (!shortCall) continue;
-        const debit = (longCall.mid ?? (longCall.bid + longCall.ask) / 2) - (shortCall.mid ?? (shortCall.bid + shortCall.ask) / 2);
-        if (debit <= 0) continue;
-        const maxLoss = debit * 100;
-        const maxProfit = (width - debit) * 100;
-        candidates.push({
-          strategyType, direction: "BULLISH",
-          legs: [
-            toLeg(longCall, "call", "buy"), toLeg(shortCall, "call", "sell"),
-          ],
-          debit, maxProfit, maxLoss, breakeven: longCall.strike + debit,
-          riskReward: maxProfit > 0 && maxLoss > 0 ? maxProfit / maxLoss : 0,
-          liquidityScore: legLiqScore(longCall, shortCall),
-          candidateScore: 0, dte, expiration: exp,
-        });
-      }
-    }
-
-    if (strategyType === "put_debit_spread") {
-      for (const longPut of puts) {
-        if (longPut.strike < price * 0.98) continue;
-        if (Math.abs(longPut.delta ?? 0) < 0.40 || Math.abs(longPut.delta ?? 0) > 0.65) continue;
-        const shortStrike = longPut.strike - width;
-        const shortPut = puts.find((p: any) => Math.abs(p.strike - shortStrike) < 0.5);
-        if (!shortPut) continue;
-        const debit = (longPut.mid ?? (longPut.bid + longPut.ask) / 2) - (shortPut.mid ?? (shortPut.bid + shortPut.ask) / 2);
-        if (debit <= 0) continue;
-        const maxLoss = debit * 100;
-        const maxProfit = (width - debit) * 100;
-        candidates.push({
-          strategyType, direction: "BEARISH",
-          legs: [
-            toLeg(longPut, "put", "buy"), toLeg(shortPut, "put", "sell"),
-          ],
-          debit, maxProfit, maxLoss, breakeven: longPut.strike - debit,
-          riskReward: maxProfit > 0 && maxLoss > 0 ? maxProfit / maxLoss : 0,
-          liquidityScore: legLiqScore(longPut, shortPut),
-          candidateScore: 0, dte, expiration: exp,
-        });
-      }
-    }
-
-    if (strategyType === "iron_condor") {
-      const putSide = puts.filter((p: any) => p.strike < price && Math.abs(p.delta ?? 0) >= 0.15 && Math.abs(p.delta ?? 0) <= 0.35);
-      const callSide = calls.filter((c: any) => c.strike > price && Math.abs(c.delta ?? 0) >= 0.15 && Math.abs(c.delta ?? 0) <= 0.35);
-
-      for (const shortPut of putSide) {
-        const longPut = puts.find((p: any) => Math.abs(p.strike - (shortPut.strike - width)) < 0.5);
-        if (!longPut) continue;
-        for (const shortCall of callSide) {
-          const longCall = calls.find((c: any) => Math.abs(c.strike - (shortCall.strike + width)) < 0.5);
-          if (!longCall) continue;
-          const putCredit = (shortPut.mid ?? (shortPut.bid + shortPut.ask) / 2) - (longPut.mid ?? (longPut.bid + longPut.ask) / 2);
-          const callCredit = (shortCall.mid ?? (shortCall.bid + shortCall.ask) / 2) - (longCall.mid ?? (longCall.bid + longCall.ask) / 2);
-          const totalCredit = putCredit + callCredit;
-          if (totalCredit <= 0) continue;
-          const maxProfit = totalCredit * 100;
-          const maxLoss = (width - totalCredit) * 100;
-          candidates.push({
-            strategyType, direction: "NON_DIRECTIONAL",
-            legs: [
-              toLeg(longPut, "put", "buy"), toLeg(shortPut, "put", "sell"),
-              toLeg(shortCall, "call", "sell"), toLeg(longCall, "call", "buy"),
-            ],
-            credit: totalCredit, maxProfit, maxLoss,
-            breakeven: shortPut.strike - totalCredit,
-            riskReward: maxLoss > 0 ? maxProfit / maxLoss : 0,
-            liquidityScore: (legLiqScore(shortPut, longPut) + legLiqScore(shortCall, longCall)) / 2,
-            candidateScore: 0, dte, expiration: exp,
-          });
-        }
-      }
-    }
-
-    if (strategyType === "butterfly") {
-      const atmStrike = calls.reduce((best: any, c: any) =>
-        Math.abs(c.strike - price) < Math.abs(best.strike - price) ? c : best, calls[0]);
-      if (!atmStrike) continue;
-      const center = atmStrike.strike;
-      const lower = calls.find((c: any) => Math.abs(c.strike - (center - width)) < 0.5);
-      const upper = calls.find((c: any) => Math.abs(c.strike - (center + width)) < 0.5);
-      const centerOption = calls.find((c: any) => Math.abs(c.strike - center) < 0.5);
-      if (!lower || !upper || !centerOption) continue;
-      const debit = (lower.mid ?? (lower.bid + lower.ask) / 2)
-        - 2 * (centerOption.mid ?? (centerOption.bid + centerOption.ask) / 2)
-        + (upper.mid ?? (upper.bid + upper.ask) / 2);
-      if (debit <= 0) continue;
-      const maxProfit = (width - debit) * 100;
-      const maxLoss = debit * 100;
-      candidates.push({
-        strategyType, direction: "NON_DIRECTIONAL",
-        legs: [
-          toLeg(lower, "call", "buy"), toLeg(centerOption, "call", "sell"),
-          toLeg(centerOption, "call", "sell"), toLeg(upper, "call", "buy"),
-        ],
-        debit, maxProfit, maxLoss, breakeven: (center - width) + debit,
-        riskReward: maxLoss > 0 ? maxProfit / maxLoss : 0,
-        liquidityScore: 0.7,
-        candidateScore: 0, dte, expiration: exp,
-      });
-    }
-
-    if (strategyType === "butterfly" || strategyType === "calendar") {
-      const atmCall = calls.reduce((best: any, c: any) =>
-        Math.abs(c.strike - price) < Math.abs(best.strike - price) ? c : best, calls[0]);
-      if (atmCall) {
-        const calStrike = atmCall.strike;
-        const allAtStrike = expChain.filter((c: any) =>
-          Math.abs(c.strike - calStrike) < 0.5 &&
-          (c.type === "call" || c.optionType === "CALL")
-        ).sort((a: any, b: any) => (a.dte ?? 0) - (b.dte ?? 0));
-        if (allAtStrike.length >= 2) {
-          const frontMonth = allAtStrike[0];
-          const backMonth = allAtStrike[allAtStrike.length - 1];
-          if (frontMonth && backMonth && frontMonth !== backMonth) {
-            const frontMid = frontMonth.mid ?? (frontMonth.bid + frontMonth.ask) / 2;
-            const backMid = backMonth.mid ?? (backMonth.bid + backMonth.ask) / 2;
-            const debit = backMid - frontMid;
-            if (debit > 0) {
-              const maxLoss = debit * 100;
-              const maxProfit = maxLoss * 0.5;
-              candidates.push({
-                strategyType: "calendar", direction: "NON_DIRECTIONAL",
-                legs: [
-                  toLeg(frontMonth, "call", "sell"),
-                  toLeg(backMonth, "call", "buy"),
-                ],
-                debit, maxProfit, maxLoss, breakeven: calStrike,
-                riskReward: maxProfit > 0 && maxLoss > 0 ? maxProfit / maxLoss : 0,
-                liquidityScore: legLiqScore(frontMonth, backMonth),
-                candidateScore: 0, dte: frontMonth.dte ?? dte, expiration: frontMonth.expiration ?? exp,
-              });
-            }
-          }
-        }
-      }
-    }
-  }
-
-  for (const c of candidates) {
-    c.candidateScore = c.riskReward * c.liquidityScore;
-  }
-
-  return candidates;
-}
-
-function toLeg(option: any, type: "call" | "put", side: "buy" | "sell"): CandidateLeg {
-  return {
-    type, side,
-    strike: option.strike,
-    expiration: option.expiration,
-    bid: option.bid ?? 0,
-    ask: option.ask ?? 0,
-    mid: option.mid ?? (option.bid + option.ask) / 2,
-    delta: option.delta ?? 0,
-    openInterest: option.openInterest ?? option.open_interest ?? 0,
-  };
-}
-
-function legLiqScore(a: any, b: any): number {
-  const aSpread = a.mid > 0 ? (a.ask - a.bid) / a.mid : 1;
-  const bSpread = b.mid > 0 ? (b.ask - b.bid) / b.mid : 1;
-  const avgSpread = (aSpread + bSpread) / 2;
-  return Math.max(0, 1 - avgSpread / 0.25);
-}
-
-function filterCandidates(candidates: Candidate[], settings: StrategistConfig, filterReasons: string[]): Candidate[] {
-  return candidates.filter((c) => {
-    for (const leg of c.legs) {
-      if (leg.openInterest < settings.minOpenInterest) {
-        filterReasons.push(`${leg.strike} ${leg.type}: OI ${leg.openInterest} below ${settings.minOpenInterest}`);
-        return false;
-      }
-      const spreadPct = leg.mid > 0 ? (leg.ask - leg.bid) / leg.mid : 1;
-      if (spreadPct > settings.maxBidAskSpreadPct / 100) {
-        filterReasons.push(`${leg.strike} ${leg.type}: spread ${(spreadPct * 100).toFixed(0)}% above ${settings.maxBidAskSpreadPct}%`);
-        return false;
-      }
-    }
-    if (c.riskReward < 0.15) {
-      filterReasons.push(`${c.strategyType}: R/R ${c.riskReward.toFixed(2)} below 0.15`);
-      return false;
-    }
-    return true;
-  });
-}
-
-const STRATEGY_NAMES: Record<StrategyType, string> = {
-  bull_put_spread: "Bull put spread",
-  bear_call_spread: "Bear call spread",
-  call_debit_spread: "Call debit spread",
-  put_debit_spread: "Put debit spread",
-  iron_condor: "Iron condor",
-  butterfly: "Butterfly",
-  calendar: "Calendar",
-};
-
-function buildStrategyLine(ticker: string, candidate: Candidate): string {
-  const name = STRATEGY_NAMES[candidate.strategyType] ?? candidate.strategyType;
-  const legDescs = candidate.legs.map(
-    (l) => `${l.side === "sell" ? "Sell" : "Buy"} ${candidate.expiration} $${l.strike} ${l.type}`
-  );
-  const priceStr = candidate.credit
-    ? `for $${candidate.credit.toFixed(2)} credit`
-    : `for $${(candidate.debit ?? 0).toFixed(2)} debit`;
-  return `${name} on ${ticker}: ${legDescs.join(", ")} ${priceStr}.`;
-}
-
-function buildThesis(
-  ticker: string,
-  candidate: Candidate,
-  ioScore: IOScoreResult,
-  regime: StructuredRegime,
-  tickerData: TickerData
-): string {
-  const idioPct = Math.round(ioScore.final * 100);
-  const name = STRATEGY_NAMES[candidate.strategyType] ?? candidate.strategyType;
-
-  let sentence1: string;
-  if (ioScore.classification === "HIGH_IDIOSYNCRATIC") {
-    const catalystDesc = ioScore.components.catalyst.reason !== "none"
-      ? ` from ${ioScore.components.catalyst.reason.replace(/_/g, " ")}`
-      : "";
-    const volDesc = tickerData.relativeVolume >= 2
-      ? ` and ${tickerData.relativeVolume.toFixed(1)}x relative volume`
-      : "";
-    sentence1 = `${name} on ${ticker}. Primary driver: ${idioPct}% idiosyncratic edge${catalystDesc}${volDesc}.`;
-  } else {
-    sentence1 = `${name} on ${ticker}. Primary driver: stock correlates with the broad market ${regime.directionalConviction.toLowerCase().replace(/_/g, " ")} trend.`;
-  }
-
-  const riskLabel = regime.systemicRiskLevel.toLowerCase();
-  const sentence2 = `Macro regime is ${regime.directionalConviction} with ${riskLabel} systemic risk${
-    regime.systemicRiskLevel === "ELEVATED" ? " – gap risk is elevated even on idiosyncratic setups" : ""
-  }.`;
-
-  return `${sentence1} ${sentence2}`;
 }
 
 async function fetchTickerData(ticker: string): Promise<TickerData | null> {
@@ -717,10 +672,10 @@ async function fetchTickerData(ticker: string): Promise<TickerData | null> {
   }
 }
 
-async function fetchOptionsChain(ticker: string, settings: StrategistConfig): Promise<any[]> {
+async function fetchOptionsChain(ticker: string, settings: StrategistConfig): Promise<ChainContract[]> {
   try {
     const apiKey = process.env.POLYGON_API_KEY || "";
-    const chain = await fetchPolygonChain(ticker, apiKey, { maxDte: settings.preferredDteMax });
+    const chain = await fetchPolygonChain(ticker, apiKey, { maxDte: 365 });
     if (!chain || !chain.calls || (chain.calls.length === 0 && chain.puts.length === 0)) {
       const token = await getBestAccessToken();
       if (!token) return [];
@@ -735,26 +690,22 @@ async function fetchOptionsChain(ticker: string, settings: StrategistConfig): Pr
 
     const taggedCalls = (chain.calls || []).map((c: any) => ({ ...c, type: "call", optionType: "CALL", mid: c.mid ?? ((c.bid ?? 0) + (c.ask ?? 0)) / 2 }));
     const taggedPuts = (chain.puts || []).map((c: any) => ({ ...c, type: "put", optionType: "PUT", mid: c.mid ?? ((c.bid ?? 0) + (c.ask ?? 0)) / 2 }));
-    const allContracts = [...taggedCalls, ...taggedPuts];
-    return allContracts.filter((c: any) => {
-      const dte = c.dte ?? 0;
-      return dte >= settings.preferredDteMin && dte <= settings.preferredDteMax;
-    });
+    return [...taggedCalls, ...taggedPuts] as ChainContract[];
   } catch (err) {
     logger.error({ err, ticker }, "StrategistV2: failed to fetch options chain");
     return [];
   }
 }
 
-function computeIvrFromChain(chain: any[], underlyingPrice: number): number {
-  const contracts: OptionContract[] = chain.map((c: any) => ({
+function computeIvrFromChain(chain: ChainContract[], underlyingPrice: number): number {
+  const contracts: OptionContract[] = chain.map((c) => ({
     strike: c.strike,
     expiration: c.expiration,
     bid: c.bid,
     ask: c.ask,
     volume: c.volume,
     openInterest: c.openInterest,
-    iv: c.impliedVolatility ?? c.iv ?? c.volatility ?? 0,
+    iv: c.impliedVolatility ?? 0,
     delta: c.delta,
     dte: c.dte,
   }));
@@ -766,8 +717,8 @@ function computeIvrFromChain(chain: any[], underlyingPrice: number): number {
   return computeIVR(contracts, underlyingPrice, exps);
 }
 
-function flattenSchwabChain(data: any, settings: StrategistConfig): any[] {
-  const result: any[] = [];
+function flattenSchwabChain(data: any, settings: StrategistConfig): ChainContract[] {
+  const result: ChainContract[] = [];
   for (const side of ["callExpDateMap", "putExpDateMap"]) {
     const map = data[side];
     if (!map) continue;
@@ -776,7 +727,6 @@ function flattenSchwabChain(data: any, settings: StrategistConfig): any[] {
       for (const [strikeKey, arr] of Object.entries(strikes as Record<string, any[]>)) {
         for (const opt of arr) {
           const dte = opt.daysToExpiration ?? 0;
-          if (dte < settings.preferredDteMin || dte > settings.preferredDteMax) continue;
           result.push({
             strike: parseFloat(strikeKey),
             expiration: expKey.split(":")[0],
@@ -806,12 +756,8 @@ async function noViable(
   tickerData: TickerData | null,
   reason: string,
   ioScore?: IOScoreResult | null,
-  viability?: any,
-  candidatesGenerated?: number,
-  candidatesFiltered?: number,
-  filterReasons?: string[]
 ): Promise<StrategistV2Result> {
-  await logTelemetry(ticker, "no_viable_setup", regime, settings, ioScore ?? null, tickerData, toxicCheck, null, null, reason, viability, candidatesGenerated, candidatesFiltered, filterReasons);
+  await logTelemetry(ticker, "no_viable_setup", regime, settings, ioScore ?? null, tickerData, toxicCheck, null, reason);
   return {
     status: "no_viable_setup",
     ticker,
@@ -825,11 +771,9 @@ async function noViable(
 async function logTelemetry(
   ticker: string, result: string, regime: StructuredRegime, settings: StrategistConfig,
   ioScore: IOScoreResult | null, tickerData: TickerData | null,
-  toxicCheck: any, strategyDecision: any, winner: Candidate | null, thesis?: string | null,
-  viability?: any, candidatesGenCount?: number, candidatesFilterCount?: number, filterReasonsArr?: string[]
+  toxicCheck: any, aiDecision: any, thesis?: string | null,
 ): Promise<number | null> {
   try {
-    const earningsGateData = tickerData ? checkEarningsGate(tickerData, settings) : null;
     const [row] = await db.insert(strategistTelemetryTable).values({
       ticker,
       result,
@@ -842,13 +786,13 @@ async function logTelemetry(
         path_a_check: toxicCheck.pathACheck,
         path_b_check: toxicCheck.pathBCheck,
       } as any,
-      viability: viability ?? null,
-      earningsGate: earningsGateData as any,
-      strategyDecision: strategyDecision as any,
-      candidatesGenerated: candidatesGenCount ?? null,
-      candidatesFiltered: candidatesFilterCount ?? null,
-      filterReasons: filterReasonsArr ?? null,
-      winningCandidate: winner as any,
+      viability: null,
+      earningsGate: null,
+      strategyDecision: aiDecision as any,
+      candidatesGenerated: null,
+      candidatesFiltered: null,
+      filterReasons: null,
+      winningCandidate: null,
       edgeAttribution: ioScore ? { idiosyncratic_pct: Math.round(ioScore.final * 100), macro_pct: 100 - Math.round(ioScore.final * 100) } as any : null,
       recommendationThesis: thesis ?? null,
     }).returning({ id: strategistTelemetryTable.id });

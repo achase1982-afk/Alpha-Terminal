@@ -274,7 +274,7 @@ async function callAnthropic(model: string, temperature: number, prompt: string,
   return callAnthropicWithSystem(model, temperature, systemPrompt, prompt);
 }
 
-async function callAnthropicWithSystem(model: string, temperature: number, systemPrompt: string, prompt: string): Promise<string> {
+export async function callAnthropicWithSystem(model: string, temperature: number, systemPrompt: string, prompt: string): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
   const client = new Anthropic({ apiKey });
@@ -298,7 +298,7 @@ async function callGemini(model: string, temperature: number, prompt: string, sy
   return callGeminiWithSystem(model, temperature, systemPrompt, prompt);
 }
 
-async function callGeminiWithSystem(model: string, temperature: number, systemPrompt: string, prompt: string): Promise<string> {
+export async function callGeminiWithSystem(model: string, temperature: number, systemPrompt: string, prompt: string): Promise<string> {
   const baseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL;
   const apiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
   if (!baseUrl || !apiKey) throw new Error("Gemini AI integration env vars not configured");
@@ -321,7 +321,7 @@ async function callGeminiWithSystem(model: string, temperature: number, systemPr
   return rawText;
 }
 
-function extractJson(rawText: string): string {
+export function extractJson(rawText: string): string {
   let text = rawText;
   const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (fenceMatch) text = fenceMatch[1].trim();

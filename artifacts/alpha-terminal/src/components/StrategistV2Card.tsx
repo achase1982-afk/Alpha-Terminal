@@ -15,6 +15,7 @@ export interface StrategistV2Result {
   recommendation?: {
     strategyLine: string;
     thesis: string;
+    rationale?: string;
     edgeAttribution: string;
     idioStrengthPct: number;
     macroPct: number;
@@ -39,21 +40,23 @@ export interface StrategistV2Result {
     riskReward: number;
     dte: number;
     expiration: string;
+    confidence?: number;
+    warnings?: string | null;
   };
   blockReason?: string;
   regime: {
     directionalConviction: string;
     systemicRiskLevel: string;
     correlationRegime: string;
-    compositeScore: number;
-    idioOpportunityFlag: boolean;
+    compositeScore?: number;
+    idioOpportunityFlag?: boolean;
   };
   ioScore?: {
     final: number;
     classification: string;
     beta: number;
     residualReturnZScore: number;
-    components: {
+    components?: {
       marketIndependence: { rSquared: number; weight: number; contribution: number };
       abnormalMove: { zScoreRaw: number; zScoreNormalized: number; weight: number; contribution: number };
       catalyst: { flagValue: number; reason: string; weight: number; contribution: number };
@@ -115,8 +118,10 @@ export function StrategistV2RecommendationCard({ result, onSendToOrder }: { resu
   if (!rec) return null;
 
   const borderColor = systemicRiskElevated ? AMBER : "#2A2A2C";
-  const stratLabel = STRAT_LABELS[rec.strategyType] ?? rec.strategyType.replace(/_/g, " ");
+  const stratLabel = STRAT_LABELS[rec.strategyType] ?? rec.strategyType.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
   const isCredit = rec.credit != null && rec.credit > 0;
+  const confidence = rec.confidence ?? 0;
+  const confidenceColor = confidence >= 70 ? UP : confidence >= 40 ? GOLD : DOWN;
 
   return (
     <div className="rounded-xl overflow-hidden" style={{ background: "#111113", border: `2px solid ${borderColor}` }}>
@@ -129,10 +134,24 @@ export function StrategistV2RecommendationCard({ result, onSendToOrder }: { resu
               {rec.direction}
             </span>
           </div>
-          <span className="font-mono text-[12px] font-bold" style={{ color: GOLD }}>{stratLabel}</span>
+          <div className="flex items-center gap-2">
+            {confidence > 0 && (
+              <span className="font-mono text-[10px] px-2 py-0.5 rounded" style={{ background: `${confidenceColor}18`, color: confidenceColor }}>
+                {confidence}% conf
+              </span>
+            )}
+            <span className="font-mono text-[12px] font-bold" style={{ color: GOLD }}>{stratLabel}</span>
+          </div>
         </div>
 
-        <div className="font-mono text-[12px] text-white leading-relaxed mb-3">{rec.thesis}</div>
+        <div className="font-mono text-[12px] text-white leading-relaxed mb-3">{rec.rationale || rec.thesis}</div>
+
+        {rec.warnings && (
+          <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg" style={{ background: "rgba(245, 158, 11, 0.08)", border: "1px solid rgba(245, 158, 11, 0.2)" }}>
+            <Shield className="w-3 h-3 flex-shrink-0" style={{ color: AMBER }} />
+            <span className="font-mono text-[10px]" style={{ color: AMBER }}>{rec.warnings}</span>
+          </div>
+        )}
 
         <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg" style={{ background: "rgba(245, 166, 35, 0.06)", border: "1px solid rgba(245, 166, 35, 0.15)" }}>
           <Zap className="w-3 h-3 flex-shrink-0" style={{ color: GOLD }} />
@@ -208,18 +227,18 @@ export function StrategistV2RecommendationCard({ result, onSendToOrder }: { resu
               ))}
             </div>
 
-            {ioScore && ioScore.components && (
+            {ioScore && (
               <div className="space-y-2">
                 <h4 className="font-mono text-[9px] text-zinc-500 uppercase tracking-widest">IOScore Breakdown</h4>
                 <div className="grid grid-cols-2 gap-2">
                   <StatRow label="Overall" value={`${(ioScore.final * 100).toFixed(0)}%`} color={ioScore.classification === "HIGH_IDIOSYNCRATIC" ? UP : ioScore.classification === "MIXED" ? GOLD : "#71717a"} />
                   <StatRow label="Classification" value={ioScore.classification.replace(/_/g, " ")} />
-                  <StatRow label="R²" value={ioScore.components.marketIndependence?.rSquared?.toFixed(3) ?? "—"} />
+                  <StatRow label="R²" value={ioScore.components?.marketIndependence?.rSquared?.toFixed(3) ?? "—"} />
                   <StatRow label="Beta" value={ioScore.beta?.toFixed(2) ?? "—"} />
                   <StatRow label="Residual Z" value={ioScore.residualReturnZScore?.toFixed(2) ?? "—"} />
-                  <StatRow label="Catalyst" value={ioScore.components.catalyst?.flagValue > 0 ? "YES" : "No"} color={ioScore.components.catalyst?.flagValue > 0 ? UP : "#71717a"} />
-                  <StatRow label="Flow Score" value={ioScore.components.flowDivergence?.final?.toFixed(3) ?? "—"} />
-                  <StatRow label="Vol/OI Ratio" value={ioScore.components.flowDivergence?.volOiRatio?.toFixed(3) ?? "—"} />
+                  <StatRow label="Catalyst" value={ioScore.components?.catalyst?.flagValue > 0 ? "YES" : "No"} color={ioScore.components?.catalyst?.flagValue > 0 ? UP : "#71717a"} />
+                  <StatRow label="Flow Score" value={ioScore.components?.flowDivergence?.final?.toFixed(3) ?? "—"} />
+                  <StatRow label="Vol/OI Ratio" value={ioScore.components?.flowDivergence?.volOiRatio?.toFixed(3) ?? "—"} />
                 </div>
               </div>
             )}
@@ -230,8 +249,8 @@ export function StrategistV2RecommendationCard({ result, onSendToOrder }: { resu
                 <StatRow label="Conviction" value={regime.directionalConviction} />
                 <StatRow label="Risk Level" value={regime.systemicRiskLevel} color={regime.systemicRiskLevel === "EXTREME" ? DOWN : regime.systemicRiskLevel === "ELEVATED" ? AMBER : UP} />
                 <StatRow label="Correlation" value={regime.correlationRegime} />
-                <StatRow label="Composite" value={regime.compositeScore.toFixed(1)} />
-                <StatRow label="Idio Opportunity" value={regime.idioOpportunityFlag ? "YES" : "No"} color={regime.idioOpportunityFlag ? GOLD : "#71717a"} />
+                {regime.compositeScore != null && <StatRow label="Composite" value={regime.compositeScore.toFixed(1)} />}
+                {regime.idioOpportunityFlag != null && <StatRow label="Idio Opportunity" value={regime.idioOpportunityFlag ? "YES" : "No"} color={regime.idioOpportunityFlag ? GOLD : "#71717a"} />}
               </div>
             </div>
           </div>
@@ -274,7 +293,7 @@ export function StrategistV2BlockCard({ result }: { result: StrategistV2Result }
             <StatRow label="Conviction" value={result.regime.directionalConviction} />
             <StatRow label="Risk Level" value={result.regime.systemicRiskLevel} color={result.regime.systemicRiskLevel === "EXTREME" ? DOWN : result.regime.systemicRiskLevel === "ELEVATED" ? AMBER : UP} />
             <StatRow label="Correlation" value={result.regime.correlationRegime} />
-            <StatRow label="Composite" value={result.regime.compositeScore.toFixed(1)} />
+            {result.regime.compositeScore != null && <StatRow label="Composite" value={result.regime.compositeScore.toFixed(1)} />}
           </div>
         )}
       </div>
