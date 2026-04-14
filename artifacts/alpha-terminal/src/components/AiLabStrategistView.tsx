@@ -270,6 +270,14 @@ function fmtDateTime(iso: string): string {
     + " " + d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", hour12: true });
 }
 
+function fmtTimeHorizon(s: string): string {
+  return s.replace(/D$/i, " Days").replace(/W$/i, " Weeks").replace(/M$/i, " Months");
+}
+
+function fmtSource(s: string): string {
+  return s.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+}
+
 function IdeaCard({ idea }: { idea: AiLabIdea }) {
   const [expanded, setExpanded] = useState(false);
   const isLong = idea.direction === "LONG";
@@ -320,15 +328,15 @@ function IdeaCard({ idea }: { idea: AiLabIdea }) {
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-2 mt-0.5">
-              <span className="font-mono text-[9px] text-zinc-500">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
+              <span className="font-mono text-[11px] text-white">
                 {idea.optionStructureType ? "OPTION" : idea.instrumentType}
               </span>
               {idea.timeHorizon && (
                 <>
-                  <span className="text-zinc-700">·</span>
-                  <span className="font-mono text-[9px] text-zinc-500 flex items-center gap-0.5">
-                    <Clock className="w-2.5 h-2.5" /> {idea.timeHorizon}
+                  <span className="text-zinc-600">·</span>
+                  <span className="font-mono text-[11px] text-white flex items-center gap-1">
+                    <Clock className="w-3 h-3 text-zinc-400" /> {fmtTimeHorizon(idea.timeHorizon)}
                   </span>
                 </>
               )}
@@ -434,44 +442,43 @@ function DeliberationCard({ deliberation }: { deliberation: AiLabDeliberation })
     <div className="rounded-xl overflow-hidden" style={{ background: "#111113", border: "1px solid #2A2A2C" }}>
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full px-4 py-3 flex items-center justify-between cursor-pointer active:bg-zinc-800/30 transition-colors"
+        className="w-full px-4 py-3 cursor-pointer active:bg-zinc-800/30 transition-colors text-left"
       >
-        <div className="flex items-center gap-3">
-          <div
-            className="w-8 h-8 rounded-lg flex items-center justify-center"
-            style={{ background: "#ff4b5c15", border: "1px solid #ff4b5c30" }}
-          >
-            <XCircle className="w-4 h-4 text-[#ff4b5c]" />
-          </div>
-          <div className="text-left">
-            <div className="flex items-center gap-2">
-              <span className="font-mono text-[13px] text-white font-bold">{deliberation.symbol}</span>
-              <span className="font-mono text-[9px] font-bold px-1.5 py-0.5 rounded text-[#ff4b5c] bg-[#ff4b5c15]">
-                REJECTED
-              </span>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div
+              className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+              style={{ background: "#ff4b5c15", border: "1px solid #ff4b5c30" }}
+            >
+              <XCircle className="w-4 h-4 text-[#ff4b5c]" />
             </div>
-            <div className="flex items-center gap-2 mt-0.5">
-              <span className="font-mono text-[9px] text-zinc-500">{deliberation.source}</span>
-              <span className="text-zinc-700">·</span>
-              <span className="font-mono text-[11px] text-white">
-                {fmtDateTime(deliberation.createdAt)}
-              </span>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-[13px] text-white font-bold">{deliberation.symbol}</span>
+                <span className="font-mono text-[9px] font-bold px-1.5 py-0.5 rounded text-[#ff4b5c] bg-[#ff4b5c15]">
+                  REJECTED
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
+                <span className="font-mono text-[11px] text-white">{fmtSource(deliberation.source)}</span>
+                <span className="text-zinc-600">·</span>
+                <span className="font-mono text-[11px] text-white">{fmtDateTime(deliberation.createdAt)}</span>
+              </div>
             </div>
           </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {fd && (
-            <span className="font-mono text-[9px] text-zinc-500 text-right max-w-[120px] truncate">
-              {fd.resolutionRationale?.slice(0, 40)}…
-            </span>
-          )}
           {expanded ? (
-            <ChevronUp className="w-3.5 h-3.5 text-zinc-500" />
+            <ChevronUp className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0 ml-2" />
           ) : (
-            <ChevronDown className="w-3.5 h-3.5 text-zinc-500" />
+            <ChevronDown className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0 ml-2" />
           )}
         </div>
+        {fd?.resolutionRationale && (
+          <div className="mt-2 pl-11">
+            <span className="font-mono text-[11px] text-white leading-relaxed">
+              {fd.resolutionRationale}
+            </span>
+          </div>
+        )}
       </button>
 
       {expanded && (
