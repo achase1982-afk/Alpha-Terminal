@@ -188,6 +188,38 @@ router.post("/universe/rebuild", async (req, res) => {
 });
 
 
+router.post("/watchlists/seed", async (req, res) => {
+  const userId = getUserId(req);
+  try {
+    const existing = await db.select().from(scannerWatchlistsTable).where(eq(scannerWatchlistsTable.userId, userId));
+    const existingNames = new Set(existing.map(w => w.name));
+
+    const seedWatchlists = [
+      { name: "Earnings Plays", symbols: ["AAPL", "TSLA", "NVDA"] },
+      { name: "High Volatility", symbols: ["INTU", "DOW", "AMZN", "ACN", "INTC", "CRM", "BKNG", "ORCL", "LOW", "COP", "ADBE", "CHTR", "IBM", "CVX", "GE", "CSCO", "AMGN", "HD", "HON", "NKE"] },
+      { name: "Top Movers Today", symbols: ["AAPL", "ABBV", "ABT", "ABNB", "ACN", "ADBE", "ADI", "ADM", "ADP", "ADSK", "AEE", "AEP", "AES", "AFL", "AIG", "AIZ", "AJG", "AKAM", "ALB", "ALGN", "ALK", "ALL", "ALLE", "AMAT", "AMCR", "AMD", "AME", "AMGN", "AMP", "AMT", "AMZN", "ANET", "AON", "AOS", "APA", "APD", "APH", "APTV", "ARE", "ATO", "AVGO", "AVY", "AWK", "AXP", "AZO", "BA", "BAC", "BAX", "BBWI", "BBY"] },
+      { name: "Volume Surge", symbols: ["INTC", "NVDA", "MU", "TSLA", "NKE", "AMZN", "MSFT", "NOW", "ORCL", "OXY", "GLW", "GOOGL", "AMD", "AVGO", "NFLX", "OGN", "AAPL", "META", "CCL", "GOOG", "XOM", "NEM", "PFE", "PYPL", "WDC", "LRCX", "CVX", "T", "ABT", "AMAT", "TER", "CRM", "LUMN", "ADBE", "FCX", "GIS", "MOS", "FTNT", "APA", "VZ", "STX", "BAC", "UNH", "QCOM", "NCLH", "INTU", "WMT", "KO", "ANET", "MRNA"] },
+    ];
+
+    const created: string[] = [];
+    for (const wl of seedWatchlists) {
+      if (existingNames.has(wl.name)) continue;
+      await db.insert(scannerWatchlistsTable).values({
+        userId,
+        name: wl.name,
+        symbols: wl.symbols,
+        isProtected: false,
+      });
+      created.push(wl.name);
+    }
+
+    res.json({ seeded: created, skipped: seedWatchlists.filter(w => existingNames.has(w.name)).map(w => w.name) });
+  } catch (err: any) {
+    logger.error({ err }, "Failed to seed watchlists");
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get("/watchlists", async (req, res) => {
   const userId = getUserId(req);
   try {
