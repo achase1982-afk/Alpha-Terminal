@@ -120,6 +120,7 @@ export function EngineAuditPanel({ data }: { data: MarketPulseData }) {
   for (const r of rows) grouped[r.cluster].push(r);
 
   const liveCount = rows.filter(r => r.value !== null).length;
+  const trackedCount = rows.length;
 
   return (
     <div className="rounded-lg border border-zinc-800/50 overflow-hidden">
@@ -137,7 +138,7 @@ export function EngineAuditPanel({ data }: { data: MarketPulseData }) {
           <span className="font-mono text-xs text-zinc-500">{data.engineVersion}</span>
         </div>
         <div className="flex items-center gap-4">
-          <span className="font-mono text-xs text-zinc-400">{liveCount}<span className="text-zinc-500">/{rows.length}</span> LIVE</span>
+          <span className="font-mono text-xs text-zinc-400">{liveCount}<span className="text-zinc-500">/{trackedCount}</span> LIVE</span>
           <span className="font-mono text-xs text-zinc-400">COMP <span className="font-bold" style={{ color: scoreColor(data.compositeScore) }}>{data.compositeScore > 0 ? "+" : ""}{data.compositeScore.toFixed(4)}</span></span>
           <span className="font-mono text-xs text-zinc-400">CONF <span className="font-bold text-zinc-200">{data.confidenceScore}<span className="text-zinc-500">/{data.maxConfidence}</span></span></span>
         </div>

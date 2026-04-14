@@ -571,14 +571,17 @@ export function AiLabStrategistView() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ passName }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error((data && data.error) || `HTTP ${res.status}`);
+      fetchData(filterRef.current);
       setTimeout(() => fetchData(filterRef.current), 5000);
       setTimeout(() => fetchData(filterRef.current), 15000);
       setTimeout(() => fetchData(filterRef.current), 30000);
+      setTimeout(() => fetchData(filterRef.current), 60000);
     } catch (err: any) {
       setRunError(err.message);
     } finally {
-      setTimeout(() => setRunningPass(null), 3000);
+      setTimeout(() => setRunningPass(null), 1000);
     }
   }, [fetchData]);
 
