@@ -298,17 +298,18 @@ function IdeaCard({ idea }: { idea: AiLabIdea }) {
     <div className="rounded-xl overflow-hidden" style={{ background: "#111113", border: "1px solid #2A2A2C" }}>
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full px-4 py-3 flex items-center justify-between cursor-pointer active:bg-zinc-800/30 transition-colors"
+        className="w-full px-4 py-3 cursor-pointer active:bg-zinc-800/30 transition-colors text-left"
       >
-        <div className="flex items-center gap-3">
-          <div
-            className="w-8 h-8 rounded-lg flex items-center justify-center"
-            style={{ background: `${dirColor}15`, border: `1px solid ${dirColor}30` }}
-          >
-            <DirIcon className="w-4 h-4" style={{ color: dirColor }} />
-          </div>
-          <div className="text-left">
-            <div className="flex items-center gap-2">
+        {/* Top row: icon + symbol/badges LEFT — date/time + chevron RIGHT */}
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex items-center gap-3">
+            <div
+              className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+              style={{ background: `${dirColor}15`, border: `1px solid ${dirColor}30` }}
+            >
+              <DirIcon className="w-4 h-4" style={{ color: dirColor }} />
+            </div>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <span className="font-mono text-[13px] text-white font-bold">{idea.symbol}</span>
               <span
                 className="font-mono text-[9px] font-bold px-1.5 py-0.5 rounded"
@@ -318,55 +319,61 @@ function IdeaCard({ idea }: { idea: AiLabIdea }) {
               </span>
               {idea.finalDecision && (
                 <span
-                  className="font-mono text-[8px] px-1.5 py-0.5 rounded"
+                  className="font-mono text-[9px] font-bold px-1.5 py-0.5 rounded"
                   style={{
                     color: DECISION_COLORS[idea.finalDecision.decision] ?? "#71717a",
-                    background: `${DECISION_COLORS[idea.finalDecision.decision] ?? "#71717a"}10`,
+                    background: `${DECISION_COLORS[idea.finalDecision.decision] ?? "#71717a"}15`,
                   }}
                 >
                   {idea.finalDecision.decision}
                 </span>
               )}
             </div>
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
-              <span className="font-mono text-[11px] text-white">
-                {idea.optionStructureType ? "OPTION" : idea.instrumentType}
-              </span>
-              {idea.timeHorizon && (
-                <>
-                  <span className="text-zinc-600">·</span>
-                  <span className="font-mono text-[11px] text-white flex items-center gap-1">
-                    <Clock className="w-3 h-3 text-zinc-400" /> {fmtTimeHorizon(idea.timeHorizon)}
-                  </span>
-                </>
-              )}
-              <span className="text-zinc-600">·</span>
-              <span className="font-mono text-[11px] text-white">{fmtDateTime(idea.createdAt)}</span>
-            </div>
+          </div>
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <span className="font-mono text-[11px] text-white text-right">{fmtDateTime(idea.createdAt)}</span>
+            {expanded ? (
+              <ChevronUp className="w-3.5 h-3.5 text-zinc-400" />
+            ) : (
+              <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />
+            )}
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        {/* Bottom row: all detail fields */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 pl-11">
+          <span className="font-mono text-[11px] text-white">
+            {idea.optionStructureType ? "OPTION" : idea.instrumentType}
+          </span>
+          {idea.timeHorizon && (
+            <>
+              <span className="text-zinc-600">·</span>
+              <span className="font-mono text-[11px] text-white flex items-center gap-1">
+                <Clock className="w-3 h-3 text-zinc-400" /> {fmtTimeHorizon(idea.timeHorizon)}
+              </span>
+            </>
+          )}
           {idea.convictionLevel && (
-            <span
-              className="font-mono text-[9px] font-bold px-2 py-1 rounded"
-              style={{
-                color: convictionColors[idea.convictionLevel] ?? "#71717a",
-                background: `${convictionColors[idea.convictionLevel] ?? "#71717a"}15`,
-              }}
-            >
-              {idea.convictionLevel}
-            </span>
+            <>
+              <span className="text-zinc-600">·</span>
+              <span
+                className="font-mono text-[11px] font-bold px-1.5 py-0.5 rounded"
+                style={{
+                  color: convictionColors[idea.convictionLevel] ?? "#71717a",
+                  background: `${convictionColors[idea.convictionLevel] ?? "#71717a"}15`,
+                }}
+              >
+                {idea.convictionLevel}
+              </span>
+            </>
           )}
           {idea.signalStrength != null && (
-            <span className="font-mono text-[10px] text-zinc-500 tabular-nums w-6 text-right">
-              {idea.signalStrength}
-            </span>
-          )}
-          {expanded ? (
-            <ChevronUp className="w-3.5 h-3.5 text-zinc-500" />
-          ) : (
-            <ChevronDown className="w-3.5 h-3.5 text-zinc-500" />
+            <>
+              <span className="text-zinc-600">·</span>
+              <span className="font-mono text-[11px] text-white tabular-nums">
+                Signal {idea.signalStrength}
+              </span>
+            </>
           )}
         </div>
       </button>
@@ -444,7 +451,8 @@ function DeliberationCard({ deliberation }: { deliberation: AiLabDeliberation })
         onClick={() => setExpanded(!expanded)}
         className="w-full px-4 py-3 cursor-pointer active:bg-zinc-800/30 transition-colors text-left"
       >
-        <div className="flex items-center justify-between">
+        {/* Top row: icon + symbol/badge LEFT — date/time + chevron RIGHT */}
+        <div className="flex items-start justify-between gap-2">
           <div className="flex items-center gap-3">
             <div
               className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
@@ -452,33 +460,32 @@ function DeliberationCard({ deliberation }: { deliberation: AiLabDeliberation })
             >
               <XCircle className="w-4 h-4 text-[#ff4b5c]" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-[13px] text-white font-bold">{deliberation.symbol}</span>
-                <span className="font-mono text-[9px] font-bold px-1.5 py-0.5 rounded text-[#ff4b5c] bg-[#ff4b5c15]">
-                  REJECTED
-                </span>
-              </div>
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
-                <span className="font-mono text-[11px] text-white">{fmtSource(deliberation.source)}</span>
-                <span className="text-zinc-600">·</span>
-                <span className="font-mono text-[11px] text-white">{fmtDateTime(deliberation.createdAt)}</span>
-              </div>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="font-mono text-[13px] text-white font-bold">{deliberation.symbol}</span>
+              <span className="font-mono text-[9px] font-bold px-1.5 py-0.5 rounded text-[#ff4b5c] bg-[#ff4b5c15]">
+                REJECTED
+              </span>
             </div>
           </div>
-          {expanded ? (
-            <ChevronUp className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0 ml-2" />
-          ) : (
-            <ChevronDown className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0 ml-2" />
-          )}
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <span className="font-mono text-[11px] text-white text-right">{fmtDateTime(deliberation.createdAt)}</span>
+            {expanded ? (
+              <ChevronUp className="w-3.5 h-3.5 text-zinc-400" />
+            ) : (
+              <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />
+            )}
+          </div>
         </div>
-        {fd?.resolutionRationale && (
-          <div className="mt-2 pl-11">
-            <span className="font-mono text-[11px] text-white leading-relaxed">
+
+        {/* Detail rows */}
+        <div className="mt-2 pl-11 space-y-1">
+          <span className="font-mono text-[11px] text-white block">{fmtSource(deliberation.source)}</span>
+          {fd?.resolutionRationale && (
+            <span className="font-mono text-[11px] text-white leading-relaxed block">
               {fd.resolutionRationale}
             </span>
-          </div>
-        )}
+          )}
+        </div>
       </button>
 
       {expanded && (
