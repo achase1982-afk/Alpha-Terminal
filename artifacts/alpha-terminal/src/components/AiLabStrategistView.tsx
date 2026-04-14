@@ -321,12 +321,9 @@ function IdeaCard({ idea }: { idea: AiLabIdea }) {
               )}
             </div>
             <div className="flex items-center gap-2 mt-0.5">
-              {idea.optionStructureType && (
-                <span className="font-mono text-[9px] text-zinc-500">{idea.optionStructureType}</span>
-              )}
-              {!idea.optionStructureType && (
-                <span className="font-mono text-[9px] text-zinc-500">{idea.instrumentType}</span>
-              )}
+              <span className="font-mono text-[9px] text-zinc-500">
+                {idea.optionStructureType ? "OPTION" : idea.instrumentType}
+              </span>
               {idea.timeHorizon && (
                 <>
                   <span className="text-zinc-700">·</span>
