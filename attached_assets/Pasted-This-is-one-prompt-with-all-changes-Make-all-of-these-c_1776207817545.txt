@@ -1,0 +1,78 @@
+This is one prompt with all changes. Make all of these changes together. Do not add anything that is not listed here.
+
+# ==========================================================
+PROMPT CHANGES (LLM prompts only)
+
+1. ANALYST PROMPT: Find and remove this line or any line like it: “You have NO knowledge outside the snapshot you receive. All analysis, trends, price action, directional calls, and conclusions must be derived exclusively from data in this snapshot.”
+
+Replace with: “You have access to the data snapshot provided AND your full training knowledge about markets, stocks, sectors, options pricing, earnings patterns, and institutional behavior. Use both. The snapshot gives you current numbers. Your knowledge gives you context about what those numbers mean. You are not limited to the snapshot.”
+
+1. UNIVERSE SCREENER PROMPT: Find and remove this line or any line like it: “You have NO knowledge outside the data provided. All analysis must come from these summaries.”
+
+Replace with: “You have access to the data summaries provided AND your full training knowledge. Use both to identify the most interesting setups.”
+
+1. Both prompts: Remove any other language anywhere that restricts the AI to snapshot-only analysis.
+
+# ==========================================================
+DATA PACKAGE CHANGE
+
+1. When building the data package for the ANALYST step (the detailed analysis after the universe screener picks a stock), include the list of valid expiration dates from the options chain data. Format them as an array of ISO date strings. Example:
+
+“availableExpirations”: [“2026-04-15”, “2026-04-17”, “2026-04-20”, “2026-04-22”, “2026-04-24”, “2026-04-27”, “2026-04-29”, “2026-05-01”, “2026-05-08”, “2026-05-15”, “2026-05-16”, “2026-06-19”]
+
+Add a line to the analyst prompt: “When recommending a trade, you MUST pick an expiration from the availableExpirations list provided in the data. Use YYYY-MM-DD format. Do not invent expiration dates.”
+
+This eliminates INVALID_EXPIRATION rejections caused by date formatting or non-existent expiration dates.
+
+# ==========================================================
+VALIDATOR CODE CHANGES (aiLabValidator.ts)
+
+1. MAX_ACTIVE_REACHED: Change the hardcoded limit from 5 to 20. Better yet, move it to the settings panel as “Max Active Ideas” with default 20, min 1, max 50.
+1. LOW_OI: Change the hardcoded minimum from 500 to 50. Move it to the settings panel as “Minimum Open Interest Per Leg” with default 50, min 10, max 1000.
+1. DTE_TOO_SHORT: Remove this check entirely. Short-dated trades including weeklys and even 0-1 DTE are valid strategies. The AI analyst should be free to recommend any expiration from the available list.
+1. STALE_DATA: Fix the computeDataFreshnessMinutes() function. Currently it uses a wall-clock heuristic that always fails outside market hours, which means every overnight digest (4 AM) and premarket plan (8:30 AM) pass fails automatically. Change it to compare the actual timestamp on the data snapshot against Date.now(). Fresh data is fresh regardless of what time it is. If the snapshot was pulled 10 minutes ago at 4 AM, it is fresh.
+1. LOW_ACTIVITY (volume/OI ratio < 0.10): Remove this check entirely.
+1. SECTOR_CONCENTRATION (3+ ideas in same sector): Remove this check entirely.
+1. DIRECTION_SKEW (4+ ideas in same direction): Remove this check entirely.
+1. HIGH_CORRELATION_DUPLICATE (correlation > 0.80): Remove this check entirely.
+1. LOW_LIQUIDITY (avg volume < 500k for stock-only trades): Move to settings panel as “Minimum Average Daily Volume” with default 100000.
+
+KEEP THESE UNCHANGED:
+
+- WIDE_SPREAD (bid-ask > 10%): Keep. Legitimately untradeable.
+- DUPLICATE_IDEA (same ticker, same direction, same structure): Keep.
+- CONTRADICTORY_IDEA (same ticker, opposite direction): Keep.
+- INVALID_EXPIRATION: Keep the check but it should now only fail if the date is not in the availableExpirations list (see item 4 above). Remove the date parsing check since we are providing valid dates.
+
+# ==========================================================
+COOLDOWN LOGIC (new feature)
+
+1. Add a cooldown mechanism. When a trade idea is rejected by ANY code-level validator check (MAX_ACTIVE, LOW_OI, WIDE_SPREAD, etc.), add the ticker to a cooldown list with a timestamp. That ticker should not be re-analyzed for 24 hours. This prevents the current behavior where MRVL, CRDO, and INTC get picked, fully analyzed by Claude and Gemini (burning tokens), approved, rejected by code, and then immediately picked again on the next pass in an infinite loop.
+
+The cooldown list should be stored in memory or the database. On each pass, before the orchestrator sends tickers to the universe screener, filter out any ticker that is on cooldown.
+
+If the cooldown list grows too large (more than 30 tickers), expire the oldest entries first.
+
+# ==========================================================
+OVERNIGHT PASS IMPROVEMENT
+
+1. The overnight digest pass at 4 AM should pull a fresh data snapshot BEFORE running the analysis. Do not rely on data from the previous day’s market hours. Pull current equity_daily close data, check Benzinga for after-hours earnings results and analyst actions, and use that as the data package. The overnight pass does not need a Market Pulse regime – the market is closed. It needs: closing prices, after-hours earnings, analyst upgrades/downgrades, and the economic calendar for the next trading day.
+
+# ==========================================================
+WHAT NOT TO CHANGE
+
+Do not change the orchestrator’s anomaly detection thresholds (Volume Spike, Flow Strength, IVR Spike, RS Change). Those are working correctly and finding real setups.
+
+Do not change the scheduled pass times (overnight, premarket, etc.). Those are fine.
+
+Do not change the deliberation round structure (analyst proposes, skeptic reviews, rebuttal, re-evaluation). That flow is working well. Claude and Gemini are reaching consensus on good trades. The problem was always the code killing approved trades, not the deliberation process.
+
+# ==========================================================
+TEST AFTER ALL CHANGES
+
+1. Manually trigger an overnight digest pass. Confirm it does NOT fail on STALE_DATA. Confirm Claude and Gemini produce at least one trade idea that survives all validator checks.
+1. Run a premarket pass. Same confirmation.
+1. If a trade gets rejected for MAX_ACTIVE, confirm the ticker goes on cooldown and is not re-analyzed on the next pass.
+1. Confirm the analyst prompt no longer contains any snapshot-only restriction language.
+1. Confirm the analyst is receiving availableExpirations in the data package and picking from that list.
+1. Show me the full list of validator checks that remain active after these changes, with their thresholds.
