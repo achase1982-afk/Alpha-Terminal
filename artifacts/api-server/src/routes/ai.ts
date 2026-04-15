@@ -69,13 +69,14 @@ function sseFlushPadding(res: import("express").Response) {
   safeSseWrite(res, pad);
 }
 
-const DEFAULT_MODEL = "claude-opus-4-20250514";
+const DEFAULT_MODEL = "claude-opus-4-6";
 
 const AVAILABLE_MODELS = [
+  "claude-opus-4-6",
+  "claude-sonnet-4-6",
   "claude-opus-4-20250514",
   "claude-sonnet-4-20250514",
   "claude-3-7-sonnet-20250219",
-  "claude-3-5-sonnet-20241022",
   "gemini-2.5-pro",
   "gemini-2.5-flash",
   "gemini-2.0-flash",
@@ -92,6 +93,8 @@ interface NativeStreamOptions {
 }
 
 const THINKING_CAPABLE_MODELS = new Set([
+  "claude-opus-4-6",
+  "claude-sonnet-4-6",
   "claude-opus-4-20250514",
   "claude-sonnet-4-20250514",
   "claude-3-7-sonnet-20250219",

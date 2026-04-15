@@ -19,7 +19,7 @@ The UI features an institutional gold and pure black Bloomberg-style aesthetic w
 
 ## Technical Implementations
 
-The project is a pnpm monorepo built with TypeScript. The backend uses Express 5, Zod for validation, and PostgreSQL with Drizzle ORM. Real-time L1 equity/futures quotes stream via Schwab WebSocket; portfolio data is polled from Schwab REST. IBKR is used for breadth and volatility indicators. Company names come from Schwab REST. Frontend state is managed with Zustand, and `lightweight-charts` is used for charting. Authentication is handled by Clerk and Schwab OAuth 2.0. AI integration uses `claude-sonnet` and `claude-opus` for market pulse narratives, technical analysis, and options strategy generation.
+The project is a pnpm monorepo built with TypeScript. The backend uses Express 5, Zod for validation, and PostgreSQL with Drizzle ORM. Real-time L1 equity/futures quotes stream via Schwab WebSocket; portfolio data is polled from Schwab REST. IBKR is used for breadth and volatility indicators. Company names come from Schwab REST. Frontend state is managed with Zustand, and `lightweight-charts` is used for charting. Authentication is handled by Clerk and Schwab OAuth 2.0. AI integration uses Claude 4.6 (Opus/Sonnet) and Gemini 2.5 for market pulse narratives, technical analysis, and options strategy generation. Default model is `claude-opus-4-6` across all features. Anthropic SDK `@anthropic-ai/sdk@^0.88`. Store version 17 auto-migrates users from 4.5-era model IDs to 4.6.
 
 ## System Settings
 

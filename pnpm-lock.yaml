@@ -385,8 +385,8 @@ importers:
         specifier: ^3.0.66
         version: 3.0.66(zod@3.25.76)
       '@anthropic-ai/sdk':
-        specifier: ^0.82.0
-        version: 0.82.0(zod@3.25.76)
+        specifier: ^0.88.0
+        version: 0.88.0(zod@3.25.76)
       '@aws-sdk/client-s3':
         specifier: ^3.1027.0
         version: 3.1027.0
@@ -762,8 +762,8 @@ packages:
     resolution: {integrity: sha512-oGMAgGoQdBXbZqNG0Ze56CHjDZ1IDYOwGYxYjO5KLSlz5HiNQ9udIXsPZ61VWaHGZ5XW/jyjmr6t2xz2jGVwbQ==}
     engines: {node: '>=18'}
 
-  '@anthropic-ai/sdk@0.82.0':
-    resolution: {integrity: sha512-xdHTjL1GlUlDugHq/I47qdOKp/ROPvuHl7ROJCgUQigbvPu7asf9KcAcU1EqdrP2LuVhEKaTs7Z+ShpZDRzHdQ==}
+  '@anthropic-ai/sdk@0.88.0':
+    resolution: {integrity: sha512-QQOtB5U9ZBJQj6y1ICmDZl14LWa4JCiJRoihI+0yuZ4OjbONrakP0yLwPv4DJFb3VYCtQM31bTOpCBMs2zghPw==}
     hasBin: true
     peerDependencies:
       zod: ^3.25.0 || ^4.0.0
@@ -4379,7 +4379,7 @@ snapshots:
     dependencies:
       json-schema: 0.4.0
 
-  '@anthropic-ai/sdk@0.82.0(zod@3.25.76)':
+  '@anthropic-ai/sdk@0.88.0(zod@3.25.76)':
     dependencies:
       json-schema-to-ts: 3.1.1
     optionalDependencies:

@@ -270,17 +270,17 @@ export const useTerminalStore = create<TerminalState>()(
         overlays: { ...state.overlays, [overlay]: !state.overlays[overlay] } 
       })),
 
-      aiModel: 'claude-opus-4-20250514',
+      aiModel: 'claude-opus-4-6',
       setAiModel: (aiModel) => set({ aiModel }),
       aiTemp: 0.7,
       setAiTemp: (aiTemp) => set({ aiTemp }),
 
       aiFeatureSettings: {
-        marketPulse:   { model: 'claude-opus-4-20250514', temperature: 0 },
-        technicals:    { model: 'claude-opus-4-20250514', temperature: 0 },
-        strategist:    { model: 'claude-opus-4-20250514', temperature: 0 },
-        chat:          { model: 'claude-opus-4-20250514', temperature: 0 },
-        scanner:       { model: 'claude-opus-4-20250514', temperature: 0 },
+        marketPulse:   { model: 'claude-opus-4-6', temperature: 0 },
+        technicals:    { model: 'claude-opus-4-6', temperature: 0 },
+        strategist:    { model: 'claude-opus-4-6', temperature: 0 },
+        chat:          { model: 'claude-opus-4-6', temperature: 0 },
+        scanner:       { model: 'claude-opus-4-6', temperature: 0 },
       },
       setAiFeatureSetting: (feature, key, value) =>
         set((state) => ({
@@ -340,7 +340,7 @@ export const useTerminalStore = create<TerminalState>()(
 
       aiLabStrategistConfig: {
         analystModelProvider: 'anthropic',
-        analystModelName: 'claude-opus-4-20250514',
+        analystModelName: 'claude-opus-4-6',
         analystTemperature: 0,
         skepticModelProvider: 'google',
         skepticModelName: 'gemini-2.5-flash',
@@ -480,7 +480,7 @@ export const useTerminalStore = create<TerminalState>()(
     }),
     {
       name: 'alpha-terminal-storage',
-      version: 16,
+      version: 17,
       migrate: (persistedState: unknown, version: number) => {
         const s = persistedState as Record<string, unknown>;
         if (version < 2) {
@@ -622,6 +622,26 @@ export const useTerminalStore = create<TerminalState>()(
             if (typeof cfg['analystModelName'] === 'string' && (cfg['analystModelName'] as string).startsWith('claude-sonnet-4')) {
               cfg['analystModelName'] = 'claude-opus-4-20250514';
             }
+          }
+        }
+        if (version < 17) {
+          const old46Map: Record<string, string> = {
+            'claude-opus-4-20250514': 'claude-opus-4-6',
+            'claude-sonnet-4-20250514': 'claude-sonnet-4-6',
+          };
+          const upgrade46 = (m: string) => old46Map[m] ?? m;
+          s['aiModel'] = upgrade46(s['aiModel'] as string ?? 'claude-opus-4-6');
+          const features = s['aiFeatureSettings'] as Record<string, { model: string; temperature: number }> | undefined;
+          if (features) {
+            for (const key of Object.keys(features)) {
+              if (features[key]?.model) {
+                features[key].model = upgrade46(features[key].model);
+              }
+            }
+          }
+          const cfg = s['aiLabStrategistConfig'] as Record<string, unknown> | undefined;
+          if (cfg && typeof cfg === 'object' && typeof cfg['analystModelName'] === 'string') {
+            cfg['analystModelName'] = upgrade46(cfg['analystModelName'] as string);
           }
         }
         return s;

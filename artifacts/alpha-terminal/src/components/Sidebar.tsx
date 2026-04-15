@@ -572,20 +572,21 @@ function DisplayMarqueePage() {
 }
 
 const ALL_MODELS = [
+  "claude-opus-4-6",
+  "claude-sonnet-4-6",
   "claude-opus-4-20250514",
   "claude-sonnet-4-20250514",
   "claude-3-7-sonnet-20250219",
-  "claude-3-5-sonnet-20241022",
 ];
 
 const ANALYST_MODELS: Record<string, string[]> = {
-  anthropic: ["claude-opus-4-20250514", "claude-sonnet-4-20250514", "claude-3-7-sonnet-20250219", "claude-3-5-sonnet-20241022"],
+  anthropic: ["claude-opus-4-6", "claude-sonnet-4-6", "claude-opus-4-20250514", "claude-sonnet-4-20250514", "claude-3-7-sonnet-20250219"],
   google: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"],
 };
 
 const SKEPTIC_MODELS: Record<string, string[]> = {
   google: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"],
-  anthropic: ["claude-opus-4-20250514", "claude-sonnet-4-20250514", "claude-3-7-sonnet-20250219", "claude-3-5-sonnet-20241022"],
+  anthropic: ["claude-opus-4-6", "claude-sonnet-4-6", "claude-opus-4-20250514", "claude-sonnet-4-20250514", "claude-3-7-sonnet-20250219"],
 };
 
 const PROVIDER_LABELS: Record<string, string> = {
