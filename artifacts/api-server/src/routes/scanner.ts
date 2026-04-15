@@ -205,6 +205,9 @@ router.post("/watchlists/seed", async (req, res) => {
       { name: "Top Tech", symbols: ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "AVGO", "CRM", "AMD", "ADBE", "INTC", "ORCL", "CSCO", "NOW", "INTU", "QCOM", "AMAT", "MU", "LRCX", "KLAC", "SNPS", "CDNS", "MRVL", "FTNT", "PANW", "CRWD", "NET", "DDOG", "ZS", "TEAM"] },
       { name: "Top Energy", symbols: ["XOM", "CVX", "COP", "EOG", "SLB", "MPC", "PSX", "VLO", "PXD", "OXY", "DVN", "HES", "FANG", "HAL", "BKR", "WMB", "KMI", "OKE", "TRGP", "ET"] },
       { name: "Top Healthcare", symbols: ["UNH", "JNJ", "LLY", "PFE", "ABBV", "MRK", "TMO", "ABT", "DHR", "BMY", "AMGN", "GILD", "ISRG", "MDT", "SYK", "BSX", "REGN", "VRTX", "CI", "ELV", "HCA", "ZTS", "DXCM", "IDXX", "A", "BDX", "IQV", "MTD", "HOLX", "ALGN"] },
+      { name: "Top Semis", symbols: ["NVDA", "AMD", "AVGO", "QCOM", "INTC", "MU", "AMAT", "LRCX", "KLAC", "MRVL", "TXN", "ADI", "NXPI", "ON", "MCHP", "SWKS", "MPWR", "TER", "ENTG", "SNPS", "CDNS", "ARM", "GFS", "WOLF", "ASML"] },
+      { name: "Top Consumer", symbols: ["AMZN", "TSLA", "HD", "MCD", "NKE", "SBUX", "TGT", "LOW", "TJX", "COST", "WMT", "PG", "KO", "PEP", "CL", "EL", "MNST", "STZ", "DG", "DLTR", "ROST", "BURL", "LULU", "CMG", "YUM", "DPZ", "ORLY", "AZO", "BBY", "DHI"] },
+      { name: "Top Industrials", symbols: ["CAT", "DE", "HON", "UNP", "UPS", "RTX", "GE", "MMM", "EMR", "ETN", "ITW", "PH", "ROK", "CMI", "FAST", "WM", "RSG", "IR", "CARR", "OTIS", "DOV", "AME", "SWK", "GWW", "NDSN"] },
     ];
 
     const created: string[] = [];
