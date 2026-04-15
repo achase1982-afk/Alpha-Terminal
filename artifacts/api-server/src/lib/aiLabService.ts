@@ -3,6 +3,8 @@ import { inArray, desc, sql, eq, and, gte } from "drizzle-orm";
 import { emitTelemetry, createTelemetryBatch } from "./telemetryStore.js";
 import { LIQUID_CORE_SYMBOLS } from "../data/liquidCore130.js";
 import { getAiLabStrategistConfig, getAiLabFullConfig } from "./aiLabConfig.js";
+import { fetchPolygonChain, type PolygonParsedContract } from "./polygonChain.js";
+import { logger } from "./logger.js";
 
 export function getAiLabServiceConfig() {
   const cfg = getAiLabStrategistConfig();
@@ -123,6 +125,7 @@ export interface TickerSnapshot {
     minOiMainStrikes: number | null;
     volumeToOiRatio: number | null;
   };
+  latestClose?: number;
 }
 
 export interface RegimeState {
@@ -497,6 +500,7 @@ export async function getTickerSnapshot(
 
   const snapshot: TickerSnapshot = {
     symbol: sym,
+    latestClose: latest.close ?? undefined,
     recentPriceSummary: { return5d, return20d, high20d, low20d },
     volumeSummary: {
       median5d: median(volumes5),
@@ -680,4 +684,148 @@ export async function getCorrelation(symbolA: string, symbolB: string): Promise<
   }
   const denom = Math.sqrt(varA * varB);
   return denom > 0 ? cov / denom : 0;
+}
+
+export interface OptionsChainSummary {
+  available: boolean;
+  dataSource: string;
+  atmStrike: number | null;
+  atm: {
+    call: { bid: number; ask: number; iv: number; oi: number; delta: number } | null;
+    put: { bid: number; ask: number; iv: number; oi: number; delta: number } | null;
+  };
+  putCallVolumeRatio: number | null;
+  totalCallVolume: number;
+  totalPutVolume: number;
+  totalCallOI: number;
+  totalPutOI: number;
+  termStructure: { frontMonthIV: number | null; backMonthIV: number | null; skew: string };
+  topVolumeCalls: Array<{ strike: number; expiration: string; volume: number; oi: number; bid: number; ask: number; iv: number; delta: number }>;
+  topVolumePuts: Array<{ strike: number; expiration: string; volume: number; oi: number; bid: number; ask: number; iv: number; delta: number }>;
+  unusualActivity: Array<{ strike: number; type: string; expiration: string; volume: number; oi: number; volOiRatio: number }>;
+  availableExpirations: string[];
+  pricedContractCount: number;
+  totalContractCount: number;
+}
+
+export async function getOptionsChainSummary(symbol: string, currentPrice: number): Promise<OptionsChainSummary> {
+  const empty: OptionsChainSummary = {
+    available: false, dataSource: "none", atmStrike: null,
+    atm: { call: null, put: null },
+    putCallVolumeRatio: null, totalCallVolume: 0, totalPutVolume: 0,
+    totalCallOI: 0, totalPutOI: 0,
+    termStructure: { frontMonthIV: null, backMonthIV: null, skew: "unavailable" },
+    topVolumeCalls: [], topVolumePuts: [], unusualActivity: [],
+    availableExpirations: [], pricedContractCount: 0, totalContractCount: 0,
+  };
+
+  try {
+    const apiKey = process.env.POLYGON_API_KEY || "";
+    if (!apiKey) {
+      logger.warn({ symbol }, "AI Lab options chain: no POLYGON_API_KEY");
+      return empty;
+    }
+
+    const chain = await fetchPolygonChain(symbol, apiKey, { maxDte: 90, maxPages: 8 });
+    if (!chain || (chain.calls.length === 0 && chain.puts.length === 0)) {
+      logger.info({ symbol }, "AI Lab options chain: no contracts from Polygon");
+      return empty;
+    }
+
+    const allContracts = [
+      ...chain.calls.map(c => ({ ...c, type: "call" as const })),
+      ...chain.puts.map(c => ({ ...c, type: "put" as const })),
+    ];
+    const priced = allContracts.filter(c => (c.bid ?? 0) > 0 || (c.ask ?? 0) > 0);
+
+    if (priced.length === 0) {
+      logger.info({ symbol, total: allContracts.length }, "AI Lab options chain: all contracts have zero pricing (market likely closed)");
+      return { ...empty, totalContractCount: allContracts.length, availableExpirations: [...new Set(allContracts.map(c => c.expiration))].sort() };
+    }
+
+    const calls = priced.filter(c => c.type === "call");
+    const puts = priced.filter(c => c.type === "put");
+
+    const atmCalls = calls
+      .filter(c => Math.abs(c.strike - currentPrice) / currentPrice < 0.03)
+      .sort((a, b) => Math.abs(a.strike - currentPrice) - Math.abs(b.strike - currentPrice));
+    const atmPuts = puts
+      .filter(c => Math.abs(c.strike - currentPrice) / currentPrice < 0.03)
+      .sort((a, b) => Math.abs(a.strike - currentPrice) - Math.abs(b.strike - currentPrice));
+    const atmCall = atmCalls[0];
+    const atmPut = atmPuts[0];
+    const atmStrike = atmCall?.strike ?? atmPut?.strike ?? Math.round(currentPrice);
+
+    const fmt = (c: typeof priced[0]) => ({
+      strike: c.strike, expiration: c.expiration,
+      volume: c.volume ?? 0, oi: c.openInterest ?? 0,
+      bid: c.bid ?? 0, ask: c.ask ?? 0,
+      iv: Math.round((c.iv ?? 0) * 10000) / 100,
+      delta: Math.round((c.delta ?? 0) * 1000) / 1000,
+    });
+
+    const topVolumeCalls = [...calls].sort((a, b) => (b.volume ?? 0) - (a.volume ?? 0)).slice(0, 5).map(fmt);
+    const topVolumePuts = [...puts].sort((a, b) => (b.volume ?? 0) - (a.volume ?? 0)).slice(0, 5).map(fmt);
+
+    const unusualActivity: OptionsChainSummary["unusualActivity"] = [];
+    for (const c of priced) {
+      const vol = c.volume ?? 0;
+      const oi = c.openInterest ?? 0;
+      if (oi > 0 && vol / oi >= 2) {
+        unusualActivity.push({
+          strike: c.strike, type: c.type, expiration: c.expiration,
+          volume: vol, oi, volOiRatio: Math.round(vol / oi * 100) / 100,
+        });
+      }
+    }
+    unusualActivity.sort((a, b) => b.volOiRatio - a.volOiRatio);
+    if (unusualActivity.length > 10) unusualActivity.length = 10;
+
+    const totalCallVol = calls.reduce((s, c) => s + (c.volume ?? 0), 0);
+    const totalPutVol = puts.reduce((s, c) => s + (c.volume ?? 0), 0);
+    const totalCallOI = calls.reduce((s, c) => s + (c.openInterest ?? 0), 0);
+    const totalPutOI = puts.reduce((s, c) => s + (c.openInterest ?? 0), 0);
+    const putCallVolumeRatio = totalCallVol > 0 ? Math.round(totalPutVol / totalCallVol * 100) / 100 : null;
+
+    const expirations = [...new Set(priced.map(c => c.expiration))].sort();
+    let frontMonthIV: number | null = null;
+    let backMonthIV: number | null = null;
+    if (expirations.length >= 2) {
+      const front = priced.filter(c => c.expiration === expirations[0] && (c.iv ?? 0) > 0);
+      const back = priced.filter(c => c.expiration === expirations[expirations.length - 1] && (c.iv ?? 0) > 0);
+      if (front.length > 0) frontMonthIV = Math.round(front.reduce((s, c) => s + (c.iv ?? 0), 0) / front.length * 10000) / 100;
+      if (back.length > 0) backMonthIV = Math.round(back.reduce((s, c) => s + (c.iv ?? 0), 0) / back.length * 10000) / 100;
+    }
+    const skew = frontMonthIV != null && backMonthIV != null
+      ? frontMonthIV > backMonthIV ? "backwardation" : "contango"
+      : "insufficient_data";
+
+    const summary: OptionsChainSummary = {
+      available: true,
+      dataSource: "polygon",
+      atmStrike,
+      atm: {
+        call: atmCall ? { bid: atmCall.bid ?? 0, ask: atmCall.ask ?? 0, iv: Math.round((atmCall.iv ?? 0) * 10000) / 100, oi: atmCall.openInterest ?? 0, delta: Math.round((atmCall.delta ?? 0) * 1000) / 1000 } : null,
+        put: atmPut ? { bid: atmPut.bid ?? 0, ask: atmPut.ask ?? 0, iv: Math.round((atmPut.iv ?? 0) * 10000) / 100, oi: atmPut.openInterest ?? 0, delta: Math.round((atmPut.delta ?? 0) * 1000) / 1000 } : null,
+      },
+      putCallVolumeRatio,
+      totalCallVolume: totalCallVol,
+      totalPutVolume: totalPutVol,
+      totalCallOI,
+      totalPutOI,
+      termStructure: { frontMonthIV, backMonthIV, skew },
+      topVolumeCalls,
+      topVolumePuts,
+      unusualActivity,
+      availableExpirations: expirations,
+      pricedContractCount: priced.length,
+      totalContractCount: allContracts.length,
+    };
+
+    logger.info({ symbol, pricedCount: priced.length, totalCount: allContracts.length, atmStrike, putCallVolumeRatio }, "AI Lab options chain summary built");
+    return summary;
+  } catch (err) {
+    logger.error({ err, symbol }, "AI Lab options chain fetch failed");
+    return empty;
+  }
 }

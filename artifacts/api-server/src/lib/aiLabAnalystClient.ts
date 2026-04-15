@@ -135,14 +135,26 @@ REQUIRED JSON SCHEMA:
 }`;
 
 function buildAnalystPrompt(request: AnalystRequest): string {
+  const snap = request.tickerSnapshot as Record<string, unknown>;
+  const optionsChain = snap.optionsChainSummary ?? null;
+  const snapshotWithoutChain = { ...snap };
+  delete snapshotWithoutChain.optionsChainSummary;
+
+  let optionsSection = "";
+  if (optionsChain && typeof optionsChain === "object" && (optionsChain as any).available) {
+    optionsSection = `\nLIVE OPTIONS CHAIN SUMMARY (from Polygon):\n${JSON.stringify(optionsChain, null, 2)}\n`;
+  } else {
+    optionsSection = `\nLIVE OPTIONS CHAIN: Not available (options market may be closed or no data). Use ivSummary and flowSummary from the ticker snapshot for volatility and flow context. If recommending options, flag data quality as LOW.\n`;
+  }
+
   return `Generate a trade idea for ${request.symbol}.
 
 RUN CONTEXT:
 ${JSON.stringify(request.runContext, null, 2)}
 
 TICKER SNAPSHOT:
-${JSON.stringify(request.tickerSnapshot, null, 2)}
-
+${JSON.stringify(snapshotWithoutChain, null, 2)}
+${optionsSection}
 REGIME STATE:
 ${JSON.stringify(request.regimeState, null, 2)}
 
@@ -160,14 +172,26 @@ function buildRebuttalPrompt(request: AnalystRebuttalRequest): string {
     `[Round ${t.round} — ${t.role.toUpperCase()}]: ${t.content.note}`
   ).join("\n\n");
 
+  const snap = request.tickerSnapshot as Record<string, unknown>;
+  const optionsChain = snap.optionsChainSummary ?? null;
+  const snapshotWithoutChain = { ...snap };
+  delete snapshotWithoutChain.optionsChainSummary;
+
+  let optionsSection = "";
+  if (optionsChain && typeof optionsChain === "object" && (optionsChain as any).available) {
+    optionsSection = `\nLIVE OPTIONS CHAIN SUMMARY (from Polygon):\n${JSON.stringify(optionsChain, null, 2)}\n`;
+  } else {
+    optionsSection = `\nLIVE OPTIONS CHAIN: Not available.\n`;
+  }
+
   return `DELIBERATION ROUND ${request.round} — Respond to the Skeptic's critique for ${request.symbol}.
 
 RUN CONTEXT:
 ${JSON.stringify(request.runContext, null, 2)}
 
 TICKER SNAPSHOT:
-${JSON.stringify(request.tickerSnapshot, null, 2)}
-
+${JSON.stringify(snapshotWithoutChain, null, 2)}
+${optionsSection}
 REGIME STATE:
 ${JSON.stringify(request.regimeState, null, 2)}
 

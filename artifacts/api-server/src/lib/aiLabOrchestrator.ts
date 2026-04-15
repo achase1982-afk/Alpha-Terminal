@@ -7,6 +7,7 @@ import {
   getRegimeState,
   getScannerAlignment,
   getCompactUniverseSummaries,
+  getOptionsChainSummary,
   AI_LAB_CONFIG,
   type TickerSnapshot,
   type RegimeState,
@@ -170,7 +171,22 @@ async function runPipeline(
 
   const runContext = { passName: source, timestamp: new Date().toISOString() };
   const availableExpirations = await getAvailableExpirations(symbol);
-  const tickerSnapshotData = { ...(snapshot as unknown as Record<string, unknown>), availableExpirations };
+
+  const currentPrice = snapshot.latestClose ?? snapshot.recentPriceSummary?.high20d ?? 0;
+  const optionsChainSummary = await getOptionsChainSummary(symbol, currentPrice);
+  logAiLabEvent("OPTIONS_CHAIN_FETCHED", {
+    symbol,
+    passName: source,
+    available: optionsChainSummary.available,
+    pricedCount: optionsChainSummary.pricedContractCount,
+    totalCount: optionsChainSummary.totalContractCount,
+  }, batch);
+
+  const tickerSnapshotData = {
+    ...(snapshot as unknown as Record<string, unknown>),
+    availableExpirations,
+    optionsChainSummary,
+  };
   const regimeData = regime as unknown as Record<string, unknown>;
 
   const analystRequest: AnalystRequest = {

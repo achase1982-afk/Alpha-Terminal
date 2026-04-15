@@ -127,14 +127,26 @@ function validateReEvalResponse(parsed: any): SkepticReEvalResponse {
 }
 
 function buildSkepticPrompt(request: SkepticRequest): string {
+  const snap = request.tickerSnapshot as Record<string, unknown>;
+  const optionsChain = snap.optionsChainSummary ?? null;
+  const snapshotWithoutChain = { ...snap };
+  delete snapshotWithoutChain.optionsChainSummary;
+
+  let optionsSection = "";
+  if (optionsChain && typeof optionsChain === "object" && (optionsChain as any).available) {
+    optionsSection = `\nLIVE OPTIONS CHAIN SUMMARY (from Polygon):\n${JSON.stringify(optionsChain, null, 2)}\n`;
+  } else {
+    optionsSection = `\nLIVE OPTIONS CHAIN: Not available (options market may be closed or no data).\n`;
+  }
+
   return `Critique this trade idea for ${request.symbol}.
 
 RUN CONTEXT:
 ${JSON.stringify(request.runContext, null, 2)}
 
 TICKER SNAPSHOT:
-${JSON.stringify(request.tickerSnapshot, null, 2)}
-
+${JSON.stringify(snapshotWithoutChain, null, 2)}
+${optionsSection}
 REGIME STATE:
 ${JSON.stringify(request.regimeState, null, 2)}
 
