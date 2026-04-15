@@ -70,8 +70,8 @@ function sseFlushPadding(res: import("express").Response) {
 }
 
 const AVAILABLE_MODELS = [
-  "claude-sonnet-4-20250514",
   "claude-opus-4-20250514",
+  "claude-sonnet-4-20250514",
   "claude-3-7-sonnet-20250219",
   "claude-3-5-sonnet-20241022",
 ];
@@ -86,11 +86,11 @@ interface NativeStreamOptions {
   onText?: (text: string) => void;
 }
 
-const DEFAULT_MODEL = "claude-sonnet-4-20250514";
+const DEFAULT_MODEL = "claude-opus-4-20250514";
 
 const THINKING_CAPABLE_MODELS = new Set([
-  "claude-sonnet-4-20250514",
   "claude-opus-4-20250514",
+  "claude-sonnet-4-20250514",
   "claude-3-7-sonnet-20250219",
 ]);
 
