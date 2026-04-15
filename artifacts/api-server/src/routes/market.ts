@@ -643,14 +643,8 @@ async function fetchFullChain(displaySymbol: string, token: string, log: any): P
   const isIndexSymbol = isIndex(displaySymbol);
 
   const polygonKey = process.env["POLYGON_API_KEY"];
-  const INDEX_TO_POLYGON: Record<string, string> = {
-    "$SPX": "SPX", "SPX": "SPX",
-    "$NDX": "NDX", "NDX": "NDX",
-    "$RUT": "RUT", "RUT": "RUT",
-    "$DJI": "DJX", "DJI": "DJX",
-  };
-  const polygonSymbol = isIndexSymbol ? (INDEX_TO_POLYGON[displaySymbol.toUpperCase()] ?? null) : displaySymbol;
-  if (polygonKey && !isFuturesSymbol && polygonSymbol) {
+  const polygonSymbol = (!isIndexSymbol && !isFuturesSymbol) ? displaySymbol : null;
+  if (polygonKey && polygonSymbol) {
     const liveQuote = getQuoteBySymbol(displaySymbol);
     const livePrice = liveQuote?.last ?? liveQuote?.close;
     const strikeOpts = livePrice
@@ -817,14 +811,8 @@ router.get("/options", async (req, res) => {
     const isFuturesSymbol = isFutures(displaySymbol);
     const isIndexSymbol = isIndex(displaySymbol);
 
-    const INDEX_POLY_MAP: Record<string, string> = {
-      "$SPX": "SPX", "SPX": "SPX",
-      "$NDX": "NDX", "NDX": "NDX",
-      "$RUT": "RUT", "RUT": "RUT",
-      "$DJI": "DJX", "DJI": "DJX",
-    };
     const polygonKey = process.env["POLYGON_API_KEY"];
-    const polySymbol = isIndexSymbol ? (INDEX_POLY_MAP[displaySymbol] ?? null) : (!isFuturesSymbol ? displaySymbol : null);
+    const polySymbol = (!isIndexSymbol && !isFuturesSymbol) ? displaySymbol : null;
 
     if (polygonKey && polySymbol) {
       const liveQuote = getQuoteBySymbol(displaySymbol);
