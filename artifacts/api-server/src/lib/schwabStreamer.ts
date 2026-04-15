@@ -199,6 +199,14 @@ export function getQuoteBySymbol(symbol: string): LiveQuote | undefined {
   return quoteCache.get(symbol);
 }
 
+export function getOptionTick(key: string): OptionTick | undefined {
+  return optionCache.get(key);
+}
+
+export function getAllOptionTicks(): Map<string, OptionTick> {
+  return optionCache;
+}
+
 export function getSchwabCacheDiagnostics(): {
   equityCacheKeys: string[];
   futuresCacheKeys: string[];

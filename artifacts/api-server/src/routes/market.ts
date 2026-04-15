@@ -5,7 +5,7 @@ import {
   GetOptionChainResponse,
 } from "@workspace/api-zod";
 import { getAccessToken, getBestAccessToken } from "../lib/tokenStore.js";
-import { getQuoteBySymbol } from "../lib/schwabStreamer.js";
+import { getQuoteBySymbol, addOptionSymbols, getAllOptionTicks, type OptionTick } from "../lib/schwabStreamer.js";
 import { getIBCachedQuote, subscribeQuoteForSymbol, isIBConnected } from "../lib/ibStreamer.js";
 import { logFailure } from "../lib/telemetry.js";
 import { emitTelemetry } from "../lib/telemetryStore.js";
@@ -642,6 +642,28 @@ async function fetchFullChain(displaySymbol: string, token: string, log: any): P
   const isFuturesSymbol = isFutures(displaySymbol);
   const isIndexSymbol = isIndex(displaySymbol);
 
+  if (isIndexSymbol && (displaySymbol in INDEX_POLY_MAP || displaySymbol.toUpperCase() in INDEX_POLY_MAP)) {
+    const structure = await fetchIndexChainStructure(displaySymbol, log);
+    if (structure) {
+      const chain = buildIndexChainFromStreaming(structure, log);
+      if (chain.calls.length + chain.puts.length > 0) {
+        const cached: CachedChain = {
+          symbol: displaySymbol,
+          underlyingPrice: chain.underlyingPrice,
+          calls: chain.calls,
+          puts: chain.puts,
+          fetchedAt: Date.now(),
+          totalCalls: chain.calls.length,
+          totalPuts: chain.puts.length,
+        };
+        chainCache.set(displaySymbol, cached);
+        evictStaleChains();
+        log.info({ symbol: displaySymbol, totalCalls: cached.totalCalls, totalPuts: cached.totalPuts, source: "index-streaming" }, "Options chain cached (index streaming)");
+        return cached;
+      }
+    }
+  }
+
   const polygonKey = process.env["POLYGON_API_KEY"];
   const polygonSymbol = (!isIndexSymbol && !isFuturesSymbol) ? displaySymbol : null;
   if (polygonKey && polygonSymbol) {
@@ -773,6 +795,133 @@ async function getOrFetchChain(displaySymbol: string, token: string, log: any): 
   return promise;
 }
 
+const INDEX_POLY_MAP: Record<string, string> = {
+  "$SPX": "SPX", "SPX": "SPX",
+  "$NDX": "NDX", "NDX": "NDX",
+  "$RUT": "RUT", "RUT": "RUT",
+  "$DJI": "DJX", "DJI": "DJX",
+};
+
+interface IndexChainContract {
+  strike: number;
+  expiration: string;
+  schwabSymbol: string;
+  dte: number;
+  type: "call" | "put";
+}
+
+interface IndexChainCache {
+  symbol: string;
+  contracts: IndexChainContract[];
+  subscribedKeys: Set<string>;
+  fetchedAt: number;
+}
+
+const indexChainStructureCache = new Map<string, IndexChainCache>();
+const INDEX_STRUCTURE_TTL = 10 * 60_000;
+
+async function fetchIndexChainStructure(
+  displaySymbol: string,
+  log: { info: (...a: any[]) => void; warn: (...a: any[]) => void; error: (...a: any[]) => void },
+): Promise<IndexChainCache | null> {
+  const cached = indexChainStructureCache.get(displaySymbol);
+  if (cached && (Date.now() - cached.fetchedAt) < INDEX_STRUCTURE_TTL) {
+    return cached;
+  }
+
+  const polygonKey = process.env["POLYGON_API_KEY"];
+  const polySymbol = INDEX_POLY_MAP[displaySymbol] ?? INDEX_POLY_MAP[displaySymbol.toUpperCase()];
+  if (!polygonKey || !polySymbol) {
+    log.warn({ symbol: displaySymbol }, "Index chain: no Polygon key or mapping");
+    return null;
+  }
+
+  const liveQuote = getQuoteBySymbol(displaySymbol);
+  const livePrice = liveQuote?.last ?? liveQuote?.close;
+  const strikeOpts = livePrice
+    ? { strikeMin: Math.floor(livePrice * 0.85), strikeMax: Math.ceil(livePrice * 1.15) }
+    : {};
+
+  const poly = await fetchPolygonChain(polySymbol, polygonKey, {
+    maxDte: 45,
+    ...strikeOpts,
+    maxPages: 20,
+    log,
+  });
+
+  if (!poly || (poly.calls.length + poly.puts.length) === 0) {
+    log.warn({ symbol: displaySymbol, polySymbol }, "Index chain: Polygon returned no contracts");
+    return null;
+  }
+
+  const contracts: IndexChainContract[] = [];
+  const schwabKeys: string[] = [];
+
+  for (const c of poly.calls) {
+    if (c.schwabSymbol) {
+      contracts.push({ strike: c.strike, expiration: c.expiration, schwabSymbol: c.schwabSymbol, dte: c.dte ?? 0, type: "call" });
+      schwabKeys.push(c.schwabSymbol);
+    }
+  }
+  for (const p of poly.puts) {
+    if (p.schwabSymbol) {
+      contracts.push({ strike: p.strike, expiration: p.expiration, schwabSymbol: p.schwabSymbol, dte: p.dte ?? 0, type: "put" });
+      schwabKeys.push(p.schwabSymbol);
+    }
+  }
+
+  addOptionSymbols(schwabKeys);
+  log.info({ symbol: displaySymbol, contracts: contracts.length, schwabKeys: schwabKeys.length }, "Index chain: subscribed option contracts to streamer");
+
+  const entry: IndexChainCache = {
+    symbol: displaySymbol,
+    contracts,
+    subscribedKeys: new Set(schwabKeys),
+    fetchedAt: Date.now(),
+  };
+  indexChainStructureCache.set(displaySymbol, entry);
+  return entry;
+}
+
+function buildIndexChainFromStreaming(
+  structure: IndexChainCache,
+  log: { info: (...a: any[]) => void },
+): { calls: OptionContract[]; puts: OptionContract[]; underlyingPrice?: number } {
+  const optionTicks = getAllOptionTicks();
+  const calls: OptionContract[] = [];
+  const puts: OptionContract[] = [];
+  let tickHits = 0;
+
+  for (const c of structure.contracts) {
+    const tick = optionTicks.get(c.schwabSymbol);
+    const contract: OptionContract = {
+      strike: c.strike,
+      expiration: c.expiration,
+      schwabSymbol: c.schwabSymbol,
+      dte: c.dte,
+      bid: tick?.bid ?? undefined,
+      ask: tick?.ask ?? undefined,
+      last: tick?.last ?? undefined,
+      volume: tick?.volume ?? undefined,
+      openInterest: tick?.openInterest ?? undefined,
+      iv: tick?.iv ?? undefined,
+      delta: tick?.delta ?? undefined,
+      gamma: tick?.gamma ?? undefined,
+      theta: tick?.theta ?? undefined,
+      vega: tick?.vega ?? undefined,
+    };
+    if (tick) tickHits++;
+    if (c.type === "call") calls.push(contract);
+    else puts.push(contract);
+  }
+
+  log.info({ symbol: structure.symbol, calls: calls.length, puts: puts.length, tickHits, totalContracts: structure.contracts.length }, "Index chain: built from streaming data");
+
+  const liveQuote = getQuoteBySymbol(structure.symbol);
+  const underlyingPrice = liveQuote?.last ?? liveQuote?.close;
+  return { calls, puts, underlyingPrice };
+}
+
 router.get("/options", async (req, res) => {
   const symbol = req.query["symbol"] as string;
   const accessToken = (req.query["accessToken"] as string) || getAccessToken("market");
@@ -810,6 +959,29 @@ router.get("/options", async (req, res) => {
 
     const isFuturesSymbol = isFutures(displaySymbol);
     const isIndexSymbol = isIndex(displaySymbol);
+
+    if (isIndexSymbol && (displaySymbol in INDEX_POLY_MAP || displaySymbol.toUpperCase() in INDEX_POLY_MAP)) {
+      const structure = await fetchIndexChainStructure(displaySymbol, req.log);
+      if (structure) {
+        const chain = buildIndexChainFromStreaming(structure, req.log);
+        if (chain.calls.length + chain.puts.length > 0) {
+          const entry = { ...chain, fetchedAt: Date.now() };
+          optionsNtmCache.set(displaySymbol, entry);
+          if (optionsNtmCache.size > 100) {
+            const oldest = [...optionsNtmCache.entries()].sort((a, b) => a[1].fetchedAt - b[1].fetchedAt)[0];
+            optionsNtmCache.delete(oldest[0]);
+          }
+          return res.json(sliceAndReturn(entry, "index-streaming"));
+        }
+        req.log.warn({ symbol: displaySymbol }, "Index chain: streaming returned 0 contracts — first request may still be populating");
+        const polyChain = { calls: structure.contracts.filter(c => c.type === "call").map(c => ({
+          strike: c.strike, expiration: c.expiration, schwabSymbol: c.schwabSymbol, dte: c.dte,
+        })), puts: structure.contracts.filter(c => c.type === "put").map(c => ({
+          strike: c.strike, expiration: c.expiration, schwabSymbol: c.schwabSymbol, dte: c.dte,
+        })), underlyingPrice: getQuoteBySymbol(displaySymbol)?.last };
+        return res.json(sliceAndReturn(polyChain, "index-polygon-structure"));
+      }
+    }
 
     const polygonKey = process.env["POLYGON_API_KEY"];
     const polySymbol = (!isIndexSymbol && !isFuturesSymbol) ? displaySymbol : null;
