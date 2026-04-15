@@ -581,11 +581,11 @@ const ALL_MODELS = [
 
 const ANALYST_MODELS: Record<string, string[]> = {
   anthropic: ["claude-opus-4-6", "claude-sonnet-4-6", "claude-opus-4-20250514", "claude-sonnet-4-20250514", "claude-3-7-sonnet-20250219"],
-  google: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"],
+  google: ["gemini-3.1-pro-preview", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"],
 };
 
 const SKEPTIC_MODELS: Record<string, string[]> = {
-  google: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"],
+  google: ["gemini-3.1-pro-preview", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"],
   anthropic: ["claude-opus-4-6", "claude-sonnet-4-6", "claude-opus-4-20250514", "claude-sonnet-4-20250514", "claude-3-7-sonnet-20250219"],
 };
 

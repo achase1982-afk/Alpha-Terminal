@@ -89,7 +89,7 @@ export const DEFAULT_CONFIG: AiLabFullConfig = {
   analystTemperature: 0,
 
   skepticModelProvider: "google",
-  skepticModelName: "gemini-2.5-flash",
+  skepticModelName: "gemini-3.1-pro-preview",
   skepticTemperature: 0,
 
   enabled: true,

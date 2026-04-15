@@ -5,7 +5,7 @@
       "created_at": "2026-04-10T14:13:27.610856",
       "origin_type": "AI_LAB",
       "analyst_model_name": "claude-sonnet-4-20250514",
-      "critic_model_name": "gemini-2.5-flash",
+      "critic_model_name": "gemini-3.1-pro-preview",
       "symbol": "LEVI",
       "direction": "SHORT",
       "instrument_type": "STOCK",
@@ -63,7 +63,7 @@
       "created_at": "2026-04-10T14:13:54.363936",
       "origin_type": "AI_LAB",
       "analyst_model_name": "claude-sonnet-4-20250514",
-      "critic_model_name": "gemini-2.5-flash",
+      "critic_model_name": "gemini-3.1-pro-preview",
       "symbol": "BNL",
       "direction": "SHORT",
       "instrument_type": "STOCK",
@@ -120,7 +120,7 @@
       "created_at": "2026-04-10T14:14:26.221801",
       "origin_type": "AI_LAB",
       "analyst_model_name": "claude-sonnet-4-20250514",
-      "critic_model_name": "gemini-2.5-flash",
+      "critic_model_name": "gemini-3.1-pro-preview",
       "symbol": "LGN",
       "direction": "SHORT",
       "instrument_type": "STOCK",
@@ -177,7 +177,7 @@
       "created_at": "2026-04-10T14:14:55.789877",
       "origin_type": "AI_LAB",
       "analyst_model_name": "claude-sonnet-4-20250514",
-      "critic_model_name": "gemini-2.5-flash",
+      "critic_model_name": "gemini-3.1-pro-preview",
       "symbol": "MSFT",
       "direction": "SHORT",
       "instrument_type": "STOCK",
@@ -235,7 +235,7 @@
       "created_at": "2026-04-12T19:22:59.357922",
       "origin_type": "AI_LAB",
       "analyst_model_name": "claude-sonnet-4-20250514",
-      "critic_model_name": "gemini-2.5-flash",
+      "critic_model_name": "gemini-3.1-pro-preview",
       "symbol": "MU",
       "direction": "LONG",
       "instrument_type": "OPTIONS",
@@ -323,7 +323,7 @@
       "symbol": "AAPL",
       "source": "SCANNER_SCORE_TRIGGER",
       "analyst_model_name": "claude-sonnet-4-20250514",
-      "critic_model_name": "gemini-2.5-flash",
+      "critic_model_name": "gemini-3.1-pro-preview",
       "input_snapshot": {
         "price": null,
         "regime": "TRENDING_UP|NORMAL_VOL|BULLISH",
@@ -397,7 +397,7 @@
       "symbol": "META",
       "source": "PREMARKET_PLAN",
       "analyst_model_name": "claude-sonnet-4-20250514",
-      "critic_model_name": "gemini-2.5-flash",
+      "critic_model_name": "gemini-3.1-pro-preview",
       "input_snapshot": {
         "price": null,
         "regime": "TRENDING_UP|NORMAL_VOL|BULLISH",
@@ -471,7 +471,7 @@
       "symbol": "INTC",
       "source": "PREMARKET_PLAN",
       "analyst_model_name": "claude-sonnet-4-20250514",
-      "critic_model_name": "gemini-2.5-flash",
+      "critic_model_name": "gemini-3.1-pro-preview",
       "input_snapshot": {
         "price": null,
         "regime": "TRENDING_UP|NORMAL_VOL|BULLISH",
@@ -545,7 +545,7 @@
       "symbol": "LEVI",
       "source": "PREMARKET_PLAN",
       "analyst_model_name": "claude-sonnet-4-20250514",
-      "critic_model_name": "gemini-2.5-flash",
+      "critic_model_name": "gemini-3.1-pro-preview",
       "input_snapshot": {
         "price": null,
         "regime": "TRENDING_UP|NORMAL_VOL|BULLISH",
@@ -619,7 +619,7 @@
       "symbol": "BNL",
       "source": "PREMARKET_PLAN",
       "analyst_model_name": "claude-sonnet-4-20250514",
-      "critic_model_name": "gemini-2.5-flash",
+      "critic_model_name": "gemini-3.1-pro-preview",
       "input_snapshot": {
         "price": null,
         "regime": "TRENDING_UP|NORMAL_VOL|BULLISH",
@@ -693,7 +693,7 @@
       "symbol": "LGN",
       "source": "PREMARKET_PLAN",
       "analyst_model_name": "claude-sonnet-4-20250514",
-      "critic_model_name": "gemini-2.5-flash",
+      "critic_model_name": "gemini-3.1-pro-preview",
       "input_snapshot": {
         "price": null,
         "regime": "TRENDING_UP|NORMAL_VOL|BULLISH",
@@ -767,7 +767,7 @@
       "symbol": "MSFT",
       "source": "PREMARKET_PLAN",
       "analyst_model_name": "claude-sonnet-4-20250514",
-      "critic_model_name": "gemini-2.5-flash",
+      "critic_model_name": "gemini-3.1-pro-preview",
       "input_snapshot": {
         "price": null,
         "regime": "TRENDING_UP|NORMAL_VOL|BULLISH",
@@ -841,7 +841,7 @@
       "symbol": "GOOGL",
       "source": "PREMARKET_PLAN",
       "analyst_model_name": "claude-sonnet-4-20250514",
-      "critic_model_name": "gemini-2.5-flash",
+      "critic_model_name": "gemini-3.1-pro-preview",
       "input_snapshot": {
         "price": null,
         "regime": "TRENDING_UP|NORMAL_VOL|BULLISH",
@@ -915,7 +915,7 @@
       "symbol": "NFLX",
       "source": "PREMARKET_PLAN",
       "analyst_model_name": "claude-sonnet-4-20250514",
-      "critic_model_name": "gemini-2.5-flash",
+      "critic_model_name": "gemini-3.1-pro-preview",
       "input_snapshot": {
         "price": null,
         "regime": "TRENDING_UP|NORMAL_VOL|BULLISH",
@@ -989,7 +989,7 @@
       "symbol": "DOCN",
       "source": "PREMARKET_PLAN",
       "analyst_model_name": "claude-sonnet-4-20250514",
-      "critic_model_name": "gemini-2.5-flash",
+      "critic_model_name": "gemini-3.1-pro-preview",
       "input_snapshot": {
         "price": null,
         "regime": "TRENDING_UP|NORMAL_VOL|BULLISH",
@@ -1063,7 +1063,7 @@
       "symbol": "AAL",
       "source": "PREMARKET_PLAN",
       "analyst_model_name": "claude-sonnet-4-20250514",
-      "critic_model_name": "gemini-2.5-flash",
+      "critic_model_name": "gemini-3.1-pro-preview",
       "input_snapshot": {
         "price": null,
         "regime": "TRENDING_UP|NORMAL_VOL|BULLISH",
@@ -1137,7 +1137,7 @@
       "symbol": "INTC",
       "source": "PREMARKET_PLAN",
       "analyst_model_name": "claude-sonnet-4-20250514",
-      "critic_model_name": "gemini-2.5-flash",
+      "critic_model_name": "gemini-3.1-pro-preview",
       "input_snapshot": {
         "price": null,
         "regime": "TRENDING_UP|NORMAL_VOL|BULLISH",
@@ -1211,7 +1211,7 @@
       "symbol": "MU",
       "source": "PREMARKET_PLAN",
       "analyst_model_name": "claude-sonnet-4-20250514",
-      "critic_model_name": "gemini-2.5-flash",
+      "critic_model_name": "gemini-3.1-pro-preview",
       "input_snapshot": {
         "price": null,
         "regime": "TRENDING_UP|NORMAL_VOL|BULLISH",
@@ -1319,7 +1319,7 @@
       "symbol": "INTC",
       "source": "PREMARKET_PLAN",
       "analyst_model_name": "claude-sonnet-4-20250514",
-      "critic_model_name": "gemini-2.5-flash",
+      "critic_model_name": "gemini-3.1-pro-preview",
       "input_snapshot": {
         "price": null,
         "regime": "TRENDING_UP|NORMAL_VOL|BULLISH",
@@ -1393,7 +1393,7 @@
       "symbol": "LRCX",
       "source": "PREMARKET_PLAN",
       "analyst_model_name": "claude-sonnet-4-20250514",
-      "critic_model_name": "gemini-2.5-flash",
+      "critic_model_name": "gemini-3.1-pro-preview",
       "input_snapshot": {
         "price": null,
         "regime": "TRENDING_UP|NORMAL_VOL|BULLISH",
@@ -1467,7 +1467,7 @@
       "symbol": "MRVL",
       "source": "PREMARKET_PLAN",
       "analyst_model_name": "claude-sonnet-4-20250514",
-      "critic_model_name": "gemini-2.5-flash",
+      "critic_model_name": "gemini-3.1-pro-preview",
       "input_snapshot": {
         "price": null,
         "regime": "TRENDING_UP|NORMAL_VOL|BULLISH",

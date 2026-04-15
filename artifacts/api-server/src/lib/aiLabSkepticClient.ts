@@ -10,7 +10,7 @@ import type {
 } from "./aiLabLlmTypes.js";
 import { type AiLabModelProvider, getActivePrompt } from "./aiLabConfig.js";
 
-const DEFAULT_SKEPTIC_MODEL = "gemini-2.5-flash";
+const DEFAULT_SKEPTIC_MODEL = "gemini-3.1-pro-preview";
 
 export const DEFAULT_SKEPTIC_SYSTEM_PROMPT = `You are the Devil's Advocate on a quantitative trading desk.
 Given a candidate trade idea produced by the Analyst, your job is to find weaknesses, risks, and reasons it could fail.

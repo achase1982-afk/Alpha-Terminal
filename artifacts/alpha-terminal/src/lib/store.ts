@@ -343,7 +343,7 @@ export const useTerminalStore = create<TerminalState>()(
         analystModelName: 'claude-opus-4-6',
         analystTemperature: 0,
         skepticModelProvider: 'google',
-        skepticModelName: 'gemini-2.5-flash',
+        skepticModelName: 'gemini-3.1-pro-preview',
         skepticTemperature: 0,
         enabled: true,
       },
@@ -480,7 +480,7 @@ export const useTerminalStore = create<TerminalState>()(
     }),
     {
       name: 'alpha-terminal-storage',
-      version: 17,
+      version: 18,
       migrate: (persistedState: unknown, version: number) => {
         const s = persistedState as Record<string, unknown>;
         if (version < 2) {
@@ -564,7 +564,7 @@ export const useTerminalStore = create<TerminalState>()(
               analystModelName: 'claude-sonnet-4-20250514',
               analystTemperature: 0,
               skepticModelProvider: 'google',
-              skepticModelName: 'gemini-2.5-flash',
+              skepticModelName: 'gemini-3.1-pro-preview',
               skepticTemperature: 0,
               enabled: false,
             };
@@ -642,6 +642,12 @@ export const useTerminalStore = create<TerminalState>()(
           const cfg = s['aiLabStrategistConfig'] as Record<string, unknown> | undefined;
           if (cfg && typeof cfg === 'object' && typeof cfg['analystModelName'] === 'string') {
             cfg['analystModelName'] = upgrade46(cfg['analystModelName'] as string);
+          }
+        }
+        if (version < 18) {
+          const cfg = s['aiLabStrategistConfig'] as Record<string, unknown> | undefined;
+          if (cfg && typeof cfg === 'object') {
+            cfg['skepticModelName'] = 'gemini-3.1-pro-preview';
           }
         }
         return s;
