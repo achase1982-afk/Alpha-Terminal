@@ -84,11 +84,20 @@ function DirectionIcon({ dir }: { dir: string }) {
 }
 
 function buildOccSymbol(ticker: string, expiration: string, type: string, strike: number): string {
-  const d = new Date(expiration);
-  if (isNaN(d.getTime())) return "";
-  const yy = String(d.getFullYear()).slice(2);
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
+  const clean = expiration.split(":")[0].trim();
+  const parts = clean.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  let yy: string, mm: string, dd: string;
+  if (parts) {
+    yy = parts[1].slice(2);
+    mm = parts[2];
+    dd = parts[3];
+  } else {
+    const d = new Date(clean + "T12:00:00");
+    if (isNaN(d.getTime())) return "";
+    yy = String(d.getFullYear()).slice(2);
+    mm = String(d.getMonth() + 1).padStart(2, "0");
+    dd = String(d.getDate()).padStart(2, "0");
+  }
   const strikePadded = String(Math.round(strike * 1000)).padStart(8, "0");
   const sym = ticker.toUpperCase().padEnd(6, " ");
   return `${sym}${yy}${mm}${dd}${type.toUpperCase() === "CALL" ? "C" : "P"}${strikePadded}`;

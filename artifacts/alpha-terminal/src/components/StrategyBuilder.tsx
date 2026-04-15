@@ -551,11 +551,19 @@ export function StrategyBuilder({
 
   const buildSchwabSymbol = useCallback((strike: number, optionType: OptionType, expiration: string) => {
     const clean = expiration.split(":")[0].trim();
-    const d = new Date(clean);
-    if (isNaN(d.getTime())) return "";
-    const yy = String(d.getFullYear()).slice(2);
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const dd = String(d.getDate()).padStart(2, "0");
+    const parts = clean.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    let yy: string, mm: string, dd: string;
+    if (parts) {
+      yy = parts[1].slice(2);
+      mm = parts[2];
+      dd = parts[3];
+    } else {
+      const d = new Date(clean + "T12:00:00");
+      if (isNaN(d.getTime())) return "";
+      yy = String(d.getFullYear()).slice(2);
+      mm = String(d.getMonth() + 1).padStart(2, "0");
+      dd = String(d.getDate()).padStart(2, "0");
+    }
     const strikePadded = String(Math.round(strike * 1000)).padStart(8, "0");
     const sym = symbol.toUpperCase().padEnd(6, " ");
     return `${sym}${yy}${mm}${dd}${optionType === "CALL" ? "C" : "P"}${strikePadded}`;
