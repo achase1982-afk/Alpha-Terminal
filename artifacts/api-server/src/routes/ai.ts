@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { logFailure } from "../lib/telemetry.js";
 import { emitTelemetry, createTelemetryBatch } from "../lib/telemetryStore.js";
 import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenAI } from "@google/genai";
 import { streamText } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import {
@@ -155,6 +156,58 @@ async function nativeStreamClaude(opts: NativeStreamOptions): Promise<string> {
   return fullText;
 }
 
+function isGeminiModel(model: string): boolean {
+  return model.startsWith("gemini-");
+}
+
+async function nativeStreamGemini(opts: NativeStreamOptions): Promise<string> {
+  const baseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL;
+  const apiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
+  if (!baseUrl || !apiKey) throw new Error("Gemini AI integration env vars not configured");
+
+  const {
+    prompt,
+    systemPrompt,
+    modelName = "gemini-3.1-pro-preview",
+    temperature = 0,
+    onThinking,
+    onText,
+  } = opts;
+
+  const ai = new GoogleGenAI({ apiKey, httpOptions: { apiVersion: "", baseUrl } });
+
+  const contents = systemPrompt
+    ? [{ role: "user" as const, parts: [{ text: systemPrompt + "\n\n" + prompt }] }]
+    : [{ role: "user" as const, parts: [{ text: prompt }] }];
+
+  const response = await ai.models.generateContentStream({
+    model: modelName,
+    contents,
+    config: {
+      maxOutputTokens: 8192,
+      temperature,
+    },
+  });
+
+  let fullText = "";
+  for await (const chunk of response) {
+    const text = chunk.text ?? "";
+    if (text) {
+      fullText += text;
+      if (onText) onText(text);
+    }
+  }
+
+  return fullText;
+}
+
+async function nativeStream(opts: NativeStreamOptions): Promise<string> {
+  const model = opts.modelName || DEFAULT_MODEL;
+  if (isGeminiModel(model)) {
+    return nativeStreamGemini(opts);
+  }
+  return nativeStreamClaude(opts);
+}
 
 function getClient(): Anthropic | null {
   const key = process.env.ANTHROPIC_API_KEY;
@@ -181,6 +234,36 @@ async function callClaude(
 
   const content = message.content[0];
   return content.type === "text" ? content.text : "No response";
+}
+
+async function callGeminiDirect(
+  prompt: string,
+  modelName: string = "gemini-3.1-pro-preview",
+  temperature: number = 0.3
+): Promise<string> {
+  const baseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL;
+  const apiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
+  if (!baseUrl || !apiKey) return "Error: Gemini AI integration not configured.";
+
+  const ai = new GoogleGenAI({ apiKey, httpOptions: { apiVersion: "", baseUrl } });
+  const response = await ai.models.generateContent({
+    model: modelName,
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    config: { maxOutputTokens: 8192, temperature },
+  });
+
+  return (response.text ?? "").trim() || "No response";
+}
+
+async function callModel(
+  prompt: string,
+  modelName: string = DEFAULT_MODEL,
+  temperature: number = 0.3
+): Promise<string> {
+  if (isGeminiModel(modelName)) {
+    return callGeminiDirect(prompt, modelName, temperature);
+  }
+  return callClaude(prompt, modelName, temperature);
 }
 
 function formatQuote(quote: Record<string, unknown>): string {
@@ -375,7 +458,7 @@ Analyze ONLY the above data and provide:
 Be specific, data-driven, and concise. Use markdown formatting.`;
 
   try {
-    const response = await callClaude(prompt, model ?? DEFAULT_MODEL, temperature ?? 0.3);
+    const response = await callModel(prompt, model ?? DEFAULT_MODEL, temperature ?? 0.3);
     res.json(RunTechnicalAnalysisResponse.parse({ response }));
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -565,7 +648,7 @@ Every price level MUST come from the provided data. For fundamental sections, us
 
   try {
     const chosenModel = model ?? DEFAULT_MODEL;
-    await nativeStreamClaude({
+    await nativeStream({
       prompt,
       modelName: chosenModel,
       temperature: temperature ?? 0.3,
@@ -625,7 +708,7 @@ Analyze ONLY the above data and provide:
 Be specific with strikes, expirations, and premium estimates. Use markdown formatting.`;
 
   try {
-    const response = await callClaude(prompt, model ?? DEFAULT_MODEL, temperature ?? 0.3);
+    const response = await callModel(prompt, model ?? DEFAULT_MODEL, temperature ?? 0.3);
     res.json(RunOptionsAnalysisResponse.parse({ response }));
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -1249,7 +1332,7 @@ Specific and actionable. Include the instrument, direction, key level, and trigg
 Keep the entire output under 500 words. Be technically precise, data-driven, and immediately actionable. No filler. Use markdown.`;
 
   try {
-    const response = await callClaude(prompt, model ?? DEFAULT_MODEL, temperature ?? 0.2);
+    const response = await callModel(prompt, model ?? DEFAULT_MODEL, temperature ?? 0.2);
     res.json({ response });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -1379,7 +1462,7 @@ RULES:
 - Be technically precise, data-driven, and immediately actionable.`;
 
   try {
-    const raw = await callClaude(prompt, model ?? DEFAULT_MODEL, temperature ?? 0.2);
+    const raw = await callModel(prompt, model ?? DEFAULT_MODEL, temperature ?? 0.2);
 
     let cleaned = raw.trim();
     if (cleaned.startsWith("```")) {
@@ -1713,7 +1796,7 @@ Write ONLY the narrative fields. Return this exact JSON structure:
 
   try {
     let hasEmittedThinking = false;
-    const responseBuffer = await nativeStreamClaude({
+    const responseBuffer = await nativeStream({
       prompt: narrativePrompt,
       modelName: model ?? DEFAULT_MODEL,
       temperature: temperature ?? 0,
@@ -2474,7 +2557,7 @@ router.post("/options-strategist/stream", async (req, res) => {
     try {
       const narrativePrompt = `${STRATEGIST_SYSTEM_PROMPT}${streamEventGuardPrompt}${streamEconBlock}${streamRatingsBlock}\n\nHere is the payload:\n\n${JSON.stringify(strategistPayload, null, 2)}`;
 
-      await nativeStreamClaude({
+      await nativeStream({
         prompt: narrativePrompt,
         modelName: model ?? DEFAULT_MODEL,
         temperature: temperature ?? 0.2,
@@ -2524,14 +2607,9 @@ router.post("/chat", async (req, res) => {
       return res.status(400).json({ error: "Messages array is required." });
     }
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      return res.status(500).json({ error: "Claude API key not configured." });
-    }
+    const chosenModel = reqModel ?? DEFAULT_MODEL;
 
-    const anthropic = createAnthropic({ apiKey });
-
-    const systemPrompt = `You are Alpha Terminal, a world-class AI assistant powered by Claude. Your primary UI is the Alpha Financial Terminal.
+    const systemPrompt = `You are Alpha Terminal, a world-class AI assistant powered by advanced AI. Your primary UI is the Alpha Financial Terminal.
 - Today is ${new Date().toDateString()}. Current time: ${new Date().toLocaleString()}.
 - If the user asks a general question (like how to make a pizza), answer it directly and concisely.
 - If the user asks about specific stock data and Schwab context is provided below, use that live data.
@@ -2548,24 +2626,12 @@ STRICT DATA GROUNDING RULE FOR MARKET/TRADING QUESTIONS:
 
 ${marketContext ? `═══ LIVE SCHWAB CONTEXT DATA ═══\n${marketContext}\n═══ END CONTEXT DATA ═══` : "No live Schwab data connected."}`;
 
-    const result = streamText({
-      model: anthropic(reqModel ?? DEFAULT_MODEL),
-      system: systemPrompt,
-      temperature: 0.1,
-      messages: messages.map(m => ({
-        role: m.role as "user" | "assistant",
-        content: m.content,
-      })),
-    });
-
     res.setHeader("Content-Type", "text/plain; charset=utf-8");
     res.setHeader("Transfer-Encoding", "chunked");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Connection", "keep-alive");
 
-    // Heartbeat: send a newline every 5s to keep connection alive so the proxy
-    // doesn't cut the connection before the first real text chunk arrives.
     let firstChunkSent = false;
     const heartbeat = setInterval(() => {
       if (!firstChunkSent && !res.writableEnded) {
@@ -2573,18 +2639,71 @@ ${marketContext ? `═══ LIVE SCHWAB CONTEXT DATA ═══\n${marketContext
       }
     }, 5000);
 
-    try {
-      for await (const chunk of result.textStream) {
-        if (!firstChunkSent) {
-          firstChunkSent = true;
-          clearInterval(heartbeat);
-        }
-        res.write(chunk);
+    if (isGeminiModel(chosenModel)) {
+      const gemBaseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL;
+      const gemApiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
+      if (!gemBaseUrl || !gemApiKey) {
+        clearInterval(heartbeat);
+        return res.status(500).json({ error: "Gemini AI integration not configured." });
       }
-    } finally {
-      clearInterval(heartbeat);
+
+      const ai = new GoogleGenAI({ apiKey: gemApiKey, httpOptions: { apiVersion: "", baseUrl: gemBaseUrl } });
+
+      const lastUserMsg = messages[messages.length - 1]?.content ?? "";
+      const conversationHistory = messages.slice(0, -1).map(m =>
+        `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`
+      ).join("\n\n");
+
+      const fullPrompt = conversationHistory
+        ? `${systemPrompt}\n\nConversation so far:\n${conversationHistory}\n\nUser: ${lastUserMsg}`
+        : `${systemPrompt}\n\nUser: ${lastUserMsg}`;
+
+      try {
+        const stream = await ai.models.generateContentStream({
+          model: chosenModel,
+          contents: [{ role: "user", parts: [{ text: fullPrompt }] }],
+          config: { maxOutputTokens: 8192, temperature: 0.1 },
+        });
+
+        for await (const chunk of stream) {
+          const text = chunk.text ?? "";
+          if (text) {
+            if (!firstChunkSent) { firstChunkSent = true; clearInterval(heartbeat); }
+            res.write(text);
+          }
+        }
+      } finally {
+        clearInterval(heartbeat);
+      }
+      res.end();
+    } else {
+      const apiKey = process.env.ANTHROPIC_API_KEY;
+      if (!apiKey) {
+        clearInterval(heartbeat);
+        return res.status(500).json({ error: "Claude API key not configured." });
+      }
+
+      const anthropic = createAnthropic({ apiKey });
+      const result = streamText({
+        model: anthropic(chosenModel),
+        system: systemPrompt,
+        temperature: 0.1,
+        messages: messages.map(m => ({
+          role: m.role as "user" | "assistant",
+          content: m.content,
+        })),
+      });
+
+      try {
+        for await (const chunk of result.textStream) {
+          if (!firstChunkSent) { firstChunkSent = true; clearInterval(heartbeat); }
+          res.write(chunk);
+        }
+      } finally {
+        clearInterval(heartbeat);
+      }
+      res.end();
     }
-    res.end();
   } catch (error) {
     req.log.error({ err: error }, "Chat stream error");
     if (!res.headersSent) {
@@ -3060,7 +3179,7 @@ router.post("/deterministic-strategist", async (req, res) => {
   }
 
   try {
-    await nativeStreamClaude({
+    await nativeStream({
       prompt: narrativePrompt,
       modelName: model ?? DEFAULT_MODEL,
       temperature: temperature ?? 0.2,
@@ -3260,7 +3379,7 @@ Return this exact JSON structure:
 }`;
 
   try {
-    const raw = await callClaude(prompt, model ?? DEFAULT_MODEL, temperature ?? 0.1);
+    const raw = await callModel(prompt, model ?? DEFAULT_MODEL, temperature ?? 0.1);
 
     // Try to parse JSON — strip any markdown fences Claude may wrap around it
     const cleaned = raw.replace(/^```(?:json)?\s*/im, "").replace(/```\s*$/im, "").trim();
@@ -3413,7 +3532,7 @@ INSTRUCTIONS:
 - Use markdown formatting. Be precise and actionable.`;
 
   try {
-    const response = await callClaude(prompt, model ?? DEFAULT_MODEL, temperature ?? 0.1);
+    const response = await callModel(prompt, model ?? DEFAULT_MODEL, temperature ?? 0.1);
     res.json({
       response,
       indicators: {
@@ -3457,7 +3576,7 @@ Format your response as a markdown list like:
 Be concise and institutional-grade. Focus on actual market correlations, sector peers, and supply-chain links.`;
 
   try {
-    const response = await callClaude(prompt, model, temperature);
+    const response = await callModel(prompt, model, temperature);
     res.json({ response });
   } catch (err) {
     req.log.error({ err }, "Sympathy plays AI error");
