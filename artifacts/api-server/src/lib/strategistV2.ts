@@ -178,9 +178,14 @@ export async function analyzeTickerV2(ticker: string): Promise<StrategistV2Resul
 
   const chain = await fetchOptionsChain(ticker, settings);
   if (!chain || chain.length === 0) {
-    return noViable(ticker, regime, settings, toxicCheck, tickerData, "No viable options setup: no options chain.", null);
+    return noViable(ticker, regime, settings, toxicCheck, tickerData, "No viable options setup: no options chain available.", null);
   }
-  logger.info({ ticker, chainLength: chain.length }, "StrategistV2: options chain loaded");
+  const pricedCount = chain.filter(c => c.bid > 0 || c.ask > 0).length;
+  logger.info({ ticker, chainLength: chain.length, pricedCount }, "StrategistV2: options chain loaded");
+  if (pricedCount === 0) {
+    return noViable(ticker, regime, settings, toxicCheck, tickerData,
+      "No viable options setup: options chain loaded but all contracts have zero pricing. Options market may not be open yet (opens 9:30 AM ET).", null);
+  }
 
   const liveIvr = computeIvrFromChain(chain, tickerData.price);
   tickerData.ivr = liveIvr;
@@ -464,9 +469,22 @@ async function callAiForTrade(dataPackage: string, retryInstruction?: string): P
   }
 
   const resp = parsed as Record<string, unknown>;
-  if (!resp.strategy || !Array.isArray(resp.legs) || resp.legs.length === 0) {
-    logger.error({ parsedKeys: Object.keys(resp), parsedSnippet: JSON.stringify(resp).slice(0, 500) }, "StrategistV2: AI response missing required fields");
-    throw new Error("AI response missing required fields (strategy, legs)");
+
+  if (!Array.isArray(resp.legs) || resp.legs.length === 0 || !resp.strategy || String(resp.strategy).toLowerCase() === "no_trade") {
+    const rationale = String(resp.rationale ?? resp.reasoning ?? "AI found no viable options setup");
+    const confidence = Math.max(0, Math.min(100, Number(resp.confidence) || 0));
+    logger.info({ parsedKeys: Object.keys(resp), confidence, rationale: rationale.slice(0, 200) }, "StrategistV2: AI returned no-trade / empty legs");
+    return {
+      strategy: "no_trade",
+      legs: [],
+      entryPrice: 0,
+      maxRisk: 0,
+      maxProfit: 0,
+      breakeven: [],
+      rationale,
+      confidence,
+      warnings: resp.warnings ? String(resp.warnings) : null,
+    } as AiTradeResponse;
   }
 
   const safeNum = (v: unknown, fallback: number): number => {
@@ -708,7 +726,28 @@ async function fetchOptionsChain(ticker: string, settings: StrategistConfig): Pr
 
     const taggedCalls = (chain.calls || []).map((c: any) => ({ ...c, type: "call", optionType: "CALL", mid: c.mid ?? ((c.bid ?? 0) + (c.ask ?? 0)) / 2 }));
     const taggedPuts = (chain.puts || []).map((c: any) => ({ ...c, type: "put", optionType: "PUT", mid: c.mid ?? ((c.bid ?? 0) + (c.ask ?? 0)) / 2 }));
-    return [...taggedCalls, ...taggedPuts] as ChainContract[];
+    const allContracts = [...taggedCalls, ...taggedPuts] as ChainContract[];
+    const pricedContracts = allContracts.filter(c => (c.bid > 0 || c.ask > 0));
+    if (pricedContracts.length === 0 && allContracts.length > 0) {
+      logger.warn({ ticker, totalContracts: allContracts.length }, "StrategistV2: Polygon chain has contracts but all have zero pricing (options market likely closed). Falling back to Schwab.");
+      const token = await getBestAccessToken();
+      if (token) {
+        const res = await fetch(
+          `${SCHWAB_API}/chains?symbol=${ticker}&strikeCount=20&strategy=SINGLE&range=OTM`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (res.ok) {
+          const data = await res.json() as any;
+          const schwabChain = flattenSchwabChain(data, settings);
+          if (schwabChain.length > 0) {
+            logger.info({ ticker, schwabChainLength: schwabChain.length }, "StrategistV2: Schwab fallback chain loaded");
+            return schwabChain;
+          }
+        }
+      }
+      logger.warn({ ticker }, "StrategistV2: Schwab fallback also returned no priced contracts");
+    }
+    return pricedContracts.length > 0 ? pricedContracts : allContracts;
   } catch (err) {
     logger.error({ err, ticker }, "StrategistV2: failed to fetch options chain");
     return [];
