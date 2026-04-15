@@ -199,6 +199,12 @@ router.post("/watchlists/seed", async (req, res) => {
       { name: "High Volatility", symbols: ["INTU", "DOW", "AMZN", "ACN", "INTC", "CRM", "BKNG", "ORCL", "LOW", "COP", "ADBE", "CHTR", "IBM", "CVX", "GE", "CSCO", "AMGN", "HD", "HON", "NKE"] },
       { name: "Top Movers Today", symbols: ["AAPL", "ABBV", "ABT", "ABNB", "ACN", "ADBE", "ADI", "ADM", "ADP", "ADSK", "AEE", "AEP", "AES", "AFL", "AIG", "AIZ", "AJG", "AKAM", "ALB", "ALGN", "ALK", "ALL", "ALLE", "AMAT", "AMCR", "AMD", "AME", "AMGN", "AMP", "AMT", "AMZN", "ANET", "AON", "AOS", "APA", "APD", "APH", "APTV", "ARE", "ATO", "AVGO", "AVY", "AWK", "AXP", "AZO", "BA", "BAC", "BAX", "BBWI", "BBY"] },
       { name: "Volume Surge", symbols: ["INTC", "NVDA", "MU", "TSLA", "NKE", "AMZN", "MSFT", "NOW", "ORCL", "OXY", "GLW", "GOOGL", "AMD", "AVGO", "NFLX", "OGN", "AAPL", "META", "CCL", "GOOG", "XOM", "NEM", "PFE", "PYPL", "WDC", "LRCX", "CVX", "T", "ABT", "AMAT", "TER", "CRM", "LUMN", "ADBE", "FCX", "GIS", "MOS", "FTNT", "APA", "VZ", "STX", "BAC", "UNH", "QCOM", "NCLH", "INTU", "WMT", "KO", "ANET", "MRNA"] },
+      { name: "Top Financial", symbols: ["JPM", "BAC", "WFC", "GS", "MS", "C", "BLK", "SCHW", "AXP", "USB", "PNC", "TFC", "BK", "COF", "CME", "ICE", "SPGI", "MCO", "MMC", "AON", "MET", "PRU", "AIG", "AFL", "ALL", "TRV", "CB", "HIG", "FITB", "MTB"] },
+      { name: "Top Sector Leaders", symbols: ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "JPM", "V", "UNH", "JNJ", "PG", "XOM", "HD", "LLY", "AVGO", "MA", "PEP", "COST", "MRK", "ABBV", "TMO", "CVX", "CRM", "AMD", "NFLX", "WMT", "LIN", "ADBE", "TXN", "QCOM"] },
+      { name: "Top Defense", symbols: ["LMT", "RTX", "NOC", "GD", "BA", "LHX", "HII", "TDG", "LDOS", "BAH", "KTOS", "MRCY", "AVAV", "PLTR", "SPR", "AXON", "HEI", "TXT", "CW", "MOG.A"] },
+      { name: "Top Tech", symbols: ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "AVGO", "CRM", "AMD", "ADBE", "INTC", "ORCL", "CSCO", "NOW", "INTU", "QCOM", "AMAT", "MU", "LRCX", "KLAC", "SNPS", "CDNS", "MRVL", "FTNT", "PANW", "CRWD", "NET", "DDOG", "ZS", "TEAM"] },
+      { name: "Top Energy", symbols: ["XOM", "CVX", "COP", "EOG", "SLB", "MPC", "PSX", "VLO", "PXD", "OXY", "DVN", "HES", "FANG", "HAL", "BKR", "WMB", "KMI", "OKE", "TRGP", "ET"] },
+      { name: "Top Healthcare", symbols: ["UNH", "JNJ", "LLY", "PFE", "ABBV", "MRK", "TMO", "ABT", "DHR", "BMY", "AMGN", "GILD", "ISRG", "MDT", "SYK", "BSX", "REGN", "VRTX", "CI", "ELV", "HCA", "ZTS", "DXCM", "IDXX", "A", "BDX", "IQV", "MTD", "HOLX", "ALGN"] },
     ];
 
     const created: string[] = [];
