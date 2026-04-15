@@ -243,6 +243,13 @@ function validateAnalystResponse(parsed: any): AnalystResponse {
   if (!conf || typeof conf !== "object") throw new Error("Missing confidence");
   if (typeof conf.signalStrength !== "number" || conf.signalStrength < 0 || conf.signalStrength > 100)
     throw new Error(`Invalid signalStrength: ${conf.signalStrength}`);
+  const CONVICTION_NORMALIZE: Record<string, string> = {
+    "MODERATE": "MEDIUM", "MEDIUM_HIGH": "HIGH", "MEDIUM_LOW": "LOW",
+    "VERY_HIGH": "HIGH", "VERY_LOW": "LOW", "NEUTRAL": "MEDIUM",
+  };
+  if (CONVICTION_NORMALIZE[conf.convictionLevel]) {
+    conf.convictionLevel = CONVICTION_NORMALIZE[conf.convictionLevel];
+  }
   if (!VALID_CONVICTIONS.has(conf.convictionLevel)) throw new Error(`Invalid convictionLevel: ${conf.convictionLevel}`);
   if (!conf.uncertainty || !VALID_DATA_QUALITIES.has(conf.uncertainty.dataQuality))
     throw new Error("Missing or invalid uncertainty.dataQuality");

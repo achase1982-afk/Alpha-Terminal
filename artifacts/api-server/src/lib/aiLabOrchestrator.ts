@@ -1,5 +1,5 @@
-import { db, aiLabIdeasTable, aiLabWatchlistTable, aiLabEmbeddingsTable, aiLabDeliberationsTable, optionsChainDailyTable } from "@workspace/db";
-import { eq, inArray, desc, sql, and } from "drizzle-orm";
+import { db, aiLabIdeasTable, aiLabWatchlistTable, aiLabEmbeddingsTable, aiLabDeliberationsTable, optionsChainDailyTable, equityDailyTable } from "@workspace/db";
+import { eq, inArray, desc, sql, and, count } from "drizzle-orm";
 import { emitTelemetry, createTelemetryBatch } from "./telemetryStore.js";
 import {
   getUniverseAnomalies,
@@ -112,6 +112,14 @@ function logAiLabEvent(
 ): void {
   const message = `AI Lab Orchestrator: [${type}] ${payload.passName ?? payload.triggerType ?? payload.symbol ?? ""}`;
   emitTelemetry("STRATEGIST", severity, message, { type, ...payload }, "AI_LAB", batch);
+  const logPayload = { type, ...payload };
+  if (severity === "ERROR") {
+    logger.error(logPayload, message);
+  } else if (severity === "WARN") {
+    logger.warn(logPayload, message);
+  } else {
+    logger.info(logPayload, message);
+  }
 }
 
 // ─── LLM CLIENT FACTORY (reads from config each run) ────────────────────────
@@ -1046,16 +1054,45 @@ export function initAiLabOrchestrator(): void {
       missed: missedJobs.map(j => j.passName),
     }, `AI Lab Orchestrator: ${missedJobs.length} passes missed today — catching up`);
 
-    let delay = 5_000;
-    for (const job of missedJobs) {
-      setTimeout(() => {
-        logger.info({ passName: job.passName }, `AI Lab: running missed pass ${job.passName}`);
-        void job.handler().catch((err) => {
-          logger.error({ err, passName: job.passName }, `AI Lab: missed ${job.passName} failed`);
-        });
-      }, delay);
-      delay += 15_000;
+    void waitForEquityDataThenCatchUp(missedJobs);
+  }
+}
+
+async function waitForEquityDataThenCatchUp(missedJobs: ScheduledJob[]): Promise<void> {
+  const MAX_WAIT_MS = 180_000;
+  const POLL_INTERVAL_MS = 10_000;
+  const start = Date.now();
+
+  while (Date.now() - start < MAX_WAIT_MS) {
+    try {
+      const rows = await db
+        .select({ cnt: count() })
+        .from(equityDailyTable);
+      const total = rows[0]?.cnt ?? 0;
+      if (total >= 100) {
+        logger.info({ equityRows: total, waitedMs: Date.now() - start }, "AI Lab: equity data ready — running catch-up passes");
+        break;
+      }
+      logger.info({ equityRows: total, waitedMs: Date.now() - start }, "AI Lab: waiting for equity data before catch-up...");
+    } catch {
+      logger.warn("AI Lab: equity data check failed, retrying...");
     }
+    await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
+  }
+
+  if (Date.now() - start >= MAX_WAIT_MS) {
+    logger.warn("AI Lab: equity data wait timed out — running catch-up anyway");
+  }
+
+  let delay = 2_000;
+  for (const job of missedJobs) {
+    setTimeout(() => {
+      logger.info({ passName: job.passName }, `AI Lab: running missed pass ${job.passName}`);
+      void job.handler().catch((err) => {
+        logger.error({ err, passName: job.passName }, `AI Lab: missed ${job.passName} failed`);
+      });
+    }, delay);
+    delay += 15_000;
   }
 }
 

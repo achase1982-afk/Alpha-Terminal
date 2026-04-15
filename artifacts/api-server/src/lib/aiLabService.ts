@@ -206,7 +206,7 @@ export async function getUniverseAnomalies(
     .from(flowDailyAggregatesTable)
     .where(and(
       eq(flowDailyAggregatesTable.date, latestDate),
-      inArray(flowDailyAggregatesTable.underlyingSymbol, liquidCoreList),
+      inArray(flowDailyAggregatesTable.underlyingSymbol, universeSymbols),
     ));
 
   const flowMap = new Map(flowRows.map(f => [f.underlyingSymbol, f]));
@@ -352,7 +352,7 @@ export async function getCompactUniverseSummaries(): Promise<CompactTickerSummar
       .select({ symbol: equityDailyTable.symbol, date: equityDailyTable.date, close: equityDailyTable.close, volume: equityDailyTable.volume })
       .from(equityDailyTable)
       .where(and(
-        inArray(equityDailyTable.symbol, liquidCoreList),
+        inArray(equityDailyTable.symbol, universeSymbols),
         inArray(equityDailyTable.date, prevDates),
       ));
     for (const r of prevRows) {
@@ -369,7 +369,7 @@ export async function getCompactUniverseSummaries(): Promise<CompactTickerSummar
     .from(flowDailyAggregatesTable)
     .where(and(
       eq(flowDailyAggregatesTable.date, latestDate),
-      inArray(flowDailyAggregatesTable.underlyingSymbol, liquidCoreList),
+      inArray(flowDailyAggregatesTable.underlyingSymbol, universeSymbols),
     ));
   const flowMap = new Map(flowRows.map(f => [f.underlyingSymbol, f]));
 
