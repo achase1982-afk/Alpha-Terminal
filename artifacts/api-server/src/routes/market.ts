@@ -642,8 +642,8 @@ async function fetchFullChain(displaySymbol: string, token: string, log: any): P
   const isFuturesSymbol = isFutures(displaySymbol);
   const isIndexSymbol = isIndex(displaySymbol);
 
-  if (isIndexSymbol && (displaySymbol in INDEX_POLY_MAP || displaySymbol.toUpperCase() in INDEX_POLY_MAP)) {
-    const structure = await fetchIndexChainStructure(displaySymbol, log);
+  if (isIndexSymbol) {
+    const structure = await fetchIndexChainStructure(displaySymbol, token, log);
     if (structure) {
       const chain = buildIndexChainFromStreaming(structure, log);
       if (chain.calls.length + chain.puts.length > 0) {
@@ -795,19 +795,22 @@ async function getOrFetchChain(displaySymbol: string, token: string, log: any): 
   return promise;
 }
 
-const INDEX_POLY_MAP: Record<string, string> = {
-  "$SPX": "SPX", "SPX": "SPX",
-  "$NDX": "NDX", "NDX": "NDX",
-  "$RUT": "RUT", "RUT": "RUT",
-  "$DJI": "DJX", "DJI": "DJX",
-};
-
 interface IndexChainContract {
   strike: number;
   expiration: string;
   schwabSymbol: string;
   dte: number;
   type: "call" | "put";
+  bid?: number;
+  ask?: number;
+  last?: number;
+  volume?: number;
+  openInterest?: number;
+  iv?: number;
+  delta?: number;
+  gamma?: number;
+  theta?: number;
+  vega?: number;
 }
 
 interface IndexChainCache {
@@ -815,13 +818,15 @@ interface IndexChainCache {
   contracts: IndexChainContract[];
   subscribedKeys: Set<string>;
   fetchedAt: number;
+  underlyingPrice?: number;
 }
 
 const indexChainStructureCache = new Map<string, IndexChainCache>();
-const INDEX_STRUCTURE_TTL = 10 * 60_000;
+const INDEX_STRUCTURE_TTL = 5 * 60_000;
 
 async function fetchIndexChainStructure(
   displaySymbol: string,
+  accessToken: string,
   log: { info: (...a: any[]) => void; warn: (...a: any[]) => void; error: (...a: any[]) => void },
 ): Promise<IndexChainCache | null> {
   const cached = indexChainStructureCache.get(displaySymbol);
@@ -829,55 +834,58 @@ async function fetchIndexChainStructure(
     return cached;
   }
 
-  const polygonKey = process.env["POLYGON_API_KEY"];
-  const polySymbol = INDEX_POLY_MAP[displaySymbol] ?? INDEX_POLY_MAP[displaySymbol.toUpperCase()];
-  if (!polygonKey || !polySymbol) {
-    log.warn({ symbol: displaySymbol }, "Index chain: no Polygon key or mapping");
+  const chainSymbol = formatSchwabSymbol(displaySymbol);
+  log.info({ symbol: displaySymbol, chainSymbol }, "Index chain: fetching structure from Schwab REST (split CALL+PUT)");
+
+  const [callResult, putResult] = await Promise.all([
+    fetchChainSide(chainSymbol, "CALL", accessToken, false, log),
+    fetchChainSide(chainSymbol, "PUT", accessToken, false, log),
+  ]);
+
+  if (!callResult && !putResult) {
+    log.error({ symbol: displaySymbol, chainSymbol }, "Index chain: Schwab REST returned nothing for both sides");
     return null;
   }
 
-  const liveQuote = getQuoteBySymbol(displaySymbol);
-  const livePrice = liveQuote?.last ?? liveQuote?.close;
-  const strikeOpts = livePrice
-    ? { strikeMin: Math.floor(livePrice * 0.85), strikeMax: Math.ceil(livePrice * 1.15) }
-    : {};
-
-  const poly = await fetchPolygonChain(polySymbol, polygonKey, {
-    maxDte: 45,
-    ...strikeOpts,
-    maxPages: 20,
-    log,
-  });
-
-  if (!poly || (poly.calls.length + poly.puts.length) === 0) {
-    log.warn({ symbol: displaySymbol, polySymbol }, "Index chain: Polygon returned no contracts");
-    return null;
-  }
+  const parsedCalls = parseContracts(callResult?.map ?? {});
+  const parsedPuts = parseContracts(putResult?.map ?? {});
+  const underlyingPrice = callResult?.underlyingPrice ?? putResult?.underlyingPrice;
 
   const contracts: IndexChainContract[] = [];
   const schwabKeys: string[] = [];
 
-  for (const c of poly.calls) {
+  for (const c of parsedCalls) {
     if (c.schwabSymbol) {
-      contracts.push({ strike: c.strike, expiration: c.expiration, schwabSymbol: c.schwabSymbol, dte: c.dte ?? 0, type: "call" });
+      contracts.push({
+        strike: c.strike, expiration: c.expiration, schwabSymbol: c.schwabSymbol,
+        dte: c.dte ?? 0, type: "call",
+        bid: c.bid, ask: c.ask, last: c.last, volume: c.volume, openInterest: c.openInterest,
+        iv: c.iv, delta: c.delta, gamma: c.gamma, theta: c.theta, vega: c.vega,
+      });
       schwabKeys.push(c.schwabSymbol);
     }
   }
-  for (const p of poly.puts) {
+  for (const p of parsedPuts) {
     if (p.schwabSymbol) {
-      contracts.push({ strike: p.strike, expiration: p.expiration, schwabSymbol: p.schwabSymbol, dte: p.dte ?? 0, type: "put" });
+      contracts.push({
+        strike: p.strike, expiration: p.expiration, schwabSymbol: p.schwabSymbol,
+        dte: p.dte ?? 0, type: "put",
+        bid: p.bid, ask: p.ask, last: p.last, volume: p.volume, openInterest: p.openInterest,
+        iv: p.iv, delta: p.delta, gamma: p.gamma, theta: p.theta, vega: p.vega,
+      });
       schwabKeys.push(p.schwabSymbol);
     }
   }
 
   addOptionSymbols(schwabKeys);
-  log.info({ symbol: displaySymbol, contracts: contracts.length, schwabKeys: schwabKeys.length }, "Index chain: subscribed option contracts to streamer");
+  log.info({ symbol: displaySymbol, calls: parsedCalls.length, puts: parsedPuts.length, schwabKeys: schwabKeys.length, underlyingPrice }, "Index chain: Schwab REST structure fetched, subscribed to streamer");
 
   const entry: IndexChainCache = {
     symbol: displaySymbol,
     contracts,
     subscribedKeys: new Set(schwabKeys),
     fetchedAt: Date.now(),
+    underlyingPrice,
   };
   indexChainStructureCache.set(displaySymbol, entry);
   return entry;
@@ -899,16 +907,16 @@ function buildIndexChainFromStreaming(
       expiration: c.expiration,
       schwabSymbol: c.schwabSymbol,
       dte: c.dte,
-      bid: tick?.bid ?? undefined,
-      ask: tick?.ask ?? undefined,
-      last: tick?.last ?? undefined,
-      volume: tick?.volume ?? undefined,
-      openInterest: tick?.openInterest ?? undefined,
-      iv: tick?.iv ?? undefined,
-      delta: tick?.delta ?? undefined,
-      gamma: tick?.gamma ?? undefined,
-      theta: tick?.theta ?? undefined,
-      vega: tick?.vega ?? undefined,
+      bid: tick?.bid ?? c.bid,
+      ask: tick?.ask ?? c.ask,
+      last: tick?.last ?? c.last,
+      volume: tick?.volume ?? c.volume,
+      openInterest: tick?.openInterest ?? c.openInterest,
+      iv: tick?.iv ?? c.iv,
+      delta: tick?.delta ?? c.delta,
+      gamma: tick?.gamma ?? c.gamma,
+      theta: tick?.theta ?? c.theta,
+      vega: tick?.vega ?? c.vega,
     };
     if (tick) tickHits++;
     if (c.type === "call") calls.push(contract);
@@ -918,7 +926,7 @@ function buildIndexChainFromStreaming(
   log.info({ symbol: structure.symbol, calls: calls.length, puts: puts.length, tickHits, totalContracts: structure.contracts.length }, "Index chain: built from streaming data");
 
   const liveQuote = getQuoteBySymbol(structure.symbol);
-  const underlyingPrice = liveQuote?.last ?? liveQuote?.close;
+  const underlyingPrice = liveQuote?.last ?? liveQuote?.close ?? structure.underlyingPrice;
   return { calls, puts, underlyingPrice };
 }
 
@@ -960,8 +968,8 @@ router.get("/options", async (req, res) => {
     const isFuturesSymbol = isFutures(displaySymbol);
     const isIndexSymbol = isIndex(displaySymbol);
 
-    if (isIndexSymbol && (displaySymbol in INDEX_POLY_MAP || displaySymbol.toUpperCase() in INDEX_POLY_MAP)) {
-      const structure = await fetchIndexChainStructure(displaySymbol, req.log);
+    if (isIndexSymbol) {
+      const structure = await fetchIndexChainStructure(displaySymbol, accessToken, req.log);
       if (structure) {
         const chain = buildIndexChainFromStreaming(structure, req.log);
         if (chain.calls.length + chain.puts.length > 0) {
@@ -973,13 +981,6 @@ router.get("/options", async (req, res) => {
           }
           return res.json(sliceAndReturn(entry, "index-streaming"));
         }
-        req.log.warn({ symbol: displaySymbol }, "Index chain: streaming returned 0 contracts — first request may still be populating");
-        const polyChain = { calls: structure.contracts.filter(c => c.type === "call").map(c => ({
-          strike: c.strike, expiration: c.expiration, schwabSymbol: c.schwabSymbol, dte: c.dte,
-        })), puts: structure.contracts.filter(c => c.type === "put").map(c => ({
-          strike: c.strike, expiration: c.expiration, schwabSymbol: c.schwabSymbol, dte: c.dte,
-        })), underlyingPrice: getQuoteBySymbol(displaySymbol)?.last };
-        return res.json(sliceAndReturn(polyChain, "index-polygon-structure"));
       }
     }
 
