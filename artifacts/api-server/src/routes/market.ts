@@ -598,7 +598,7 @@ function centerStrikesAroundATM(
   return { calls: filteredCalls, puts: filteredPuts };
 }
 
-const LARGE_CHAIN_SYMBOLS = new Set(["SPY", "QQQ", "AAPL", "TSLA", "AMZN", "NVDA", "META", "MSFT", "GOOG", "GOOGL"]);
+const LARGE_CHAIN_SYMBOLS = new Set(["SPY", "QQQ", "AAPL", "TSLA", "AMZN", "NVDA", "META", "MSFT", "GOOG", "GOOGL", "SPX", "$SPX", "NDX", "$NDX", "RUT", "$RUT", "DJI", "$DJI"]);
 
 async function fetchChainSide(chainSymbol: string, contractType: "CALL" | "PUT", token: string, isFuturesSymbol: boolean, log: any): Promise<{ map: Record<string, unknown>; underlyingPrice?: number } | null> {
   const params = new URLSearchParams({
@@ -844,45 +844,69 @@ router.get("/options", async (req, res) => {
     }
 
     const chainSymbol = isFuturesSymbol ? displaySymbol : isIndexSymbol ? formatSchwabSymbol(displaySymbol) : displaySymbol;
+    const useSplit = LARGE_CHAIN_SYMBOLS.has(displaySymbol.toUpperCase()) || LARGE_CHAIN_SYMBOLS.has(chainSymbol.toUpperCase());
 
-    const params = new URLSearchParams({
-      symbol: chainSymbol,
-      contractType: "ALL",
-      range: "ALL",
-    });
-    if (isFuturesSymbol) params.set("assetClass", "FUTURES");
+    req.log.info({ symbol: displaySymbol, chainSymbol, isIndexSymbol, isFuturesSymbol, useSplit }, "Options chain Schwab request");
 
-    const chainUrl = `${SCHWAB_API_BASE}/chains?${params.toString()}`;
-    let response = await fetch(chainUrl, {
-      headers: { "Authorization": `Bearer ${accessToken}` },
-      signal: req.socket.destroyed ? AbortSignal.abort() : AbortSignal.timeout(15_000),
-    });
+    let allCalls: ReturnType<typeof parseContracts>;
+    let allPuts: ReturnType<typeof parseContracts>;
+    let underlyingPrice: number | undefined;
 
-    if (response.status === 503 || response.status === 502 || response.status === 429) {
-      req.log.warn({ status: response.status, symbol: chainSymbol }, "Options chain transient error — retrying in 1s");
-      await new Promise(r => setTimeout(r, 1000));
-      response = await fetch(chainUrl, {
-        headers: { "Authorization": `Bearer ${accessToken}` },
-        signal: AbortSignal.timeout(15_000),
+    if (useSplit) {
+      const [callResult, putResult] = await Promise.all([
+        fetchChainSide(chainSymbol, "CALL", accessToken, isFuturesSymbol, req.log),
+        fetchChainSide(chainSymbol, "PUT", accessToken, isFuturesSymbol, req.log),
+      ]);
+
+      if (!callResult && !putResult) {
+        req.log.error({ symbol: chainSymbol }, "Options chain split fetch failed — both sides empty");
+        return res.json({ symbol: displaySymbol, calls: [], puts: [], error: "fetch_failed" });
+      }
+
+      allCalls = parseContracts(callResult?.map ?? {});
+      allPuts = parseContracts(putResult?.map ?? {});
+      underlyingPrice = callResult?.underlyingPrice ?? putResult?.underlyingPrice;
+    } else {
+      const params = new URLSearchParams({
+        symbol: chainSymbol,
+        contractType: "ALL",
+        range: "ALL",
       });
-    }
+      if (isFuturesSymbol) params.set("assetClass", "FUTURES");
 
-    if (!response.ok) {
-      const body = await response.text().catch(() => "");
-      req.log.error({ status: response.status, symbol: chainSymbol, body: body.slice(0, 500) }, "Options chain fetch failed");
-      return res.json({ symbol: displaySymbol, calls: [], puts: [], error: "fetch_failed" });
-    }
+      const chainUrl = `${SCHWAB_API_BASE}/chains?${params.toString()}`;
+      let response = await fetch(chainUrl, {
+        headers: { "Authorization": `Bearer ${accessToken}` },
+        signal: req.socket.destroyed ? AbortSignal.abort() : AbortSignal.timeout(30_000),
+      });
 
-    const json = await response.json() as Record<string, unknown>;
-    const underlyingPrice = json["underlyingPrice"] as number | undefined;
-    const callMap = json["callExpDateMap"] as Record<string, unknown> ?? {};
-    const putMap = json["putExpDateMap"] as Record<string, unknown> ?? {};
-    const allCalls = parseContracts(callMap);
-    const allPuts = parseContracts(putMap);
+      if (response.status === 503 || response.status === 502 || response.status === 429) {
+        req.log.warn({ status: response.status, symbol: chainSymbol }, "Options chain transient error — retrying in 1s");
+        await new Promise(r => setTimeout(r, 1000));
+        response = await fetch(chainUrl, {
+          headers: { "Authorization": `Bearer ${accessToken}` },
+          signal: AbortSignal.timeout(30_000),
+        });
+      }
+
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        req.log.error({ status: response.status, symbol: chainSymbol, body: body.slice(0, 500) }, "Options chain fetch failed");
+        return res.json({ symbol: displaySymbol, calls: [], puts: [], error: "fetch_failed" });
+      }
+
+      const json = await response.json() as Record<string, unknown>;
+      underlyingPrice = json["underlyingPrice"] as number | undefined;
+      const callMap = json["callExpDateMap"] as Record<string, unknown> ?? {};
+      const putMap = json["putExpDateMap"] as Record<string, unknown> ?? {};
+      allCalls = parseContracts(callMap);
+      allPuts = parseContracts(putMap);
+    }
 
     const MAX_DTE = 400;
     const filteredCalls = allCalls.filter(c => c.dte <= MAX_DTE);
     const filteredPuts = allPuts.filter(c => c.dte <= MAX_DTE);
+    req.log.info({ symbol: displaySymbol, calls: filteredCalls.length, puts: filteredPuts.length, underlyingPrice, useSplit }, "Options chain Schwab result");
 
     const entry = { calls: filteredCalls, puts: filteredPuts, underlyingPrice, fetchedAt: Date.now() };
     optionsNtmCache.set(displaySymbol, entry);
