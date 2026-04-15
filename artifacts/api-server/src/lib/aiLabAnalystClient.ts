@@ -12,7 +12,7 @@ import type {
 } from "./aiLabLlmTypes.js";
 import { type AiLabModelProvider, getActivePrompt } from "./aiLabConfig.js";
 
-const DEFAULT_ANALYST_MODEL = "claude-sonnet-4-20250514";
+const DEFAULT_ANALYST_MODEL = "claude-opus-4-20250514";
 
 export const DEFAULT_ANALYST_SYSTEM_PROMPT = `You are the Senior Options Strategist Analyst for a quantitative trading desk.
 
