@@ -643,13 +643,20 @@ async function fetchFullChain(displaySymbol: string, token: string, log: any): P
   const isIndexSymbol = isIndex(displaySymbol);
 
   const polygonKey = process.env["POLYGON_API_KEY"];
-  if (polygonKey && !isFuturesSymbol && !isIndexSymbol) {
+  const INDEX_TO_POLYGON: Record<string, string> = {
+    "$SPX": "SPX", "SPX": "SPX",
+    "$NDX": "NDX", "NDX": "NDX",
+    "$RUT": "RUT", "RUT": "RUT",
+    "$DJI": "DJX", "DJI": "DJX",
+  };
+  const polygonSymbol = isIndexSymbol ? (INDEX_TO_POLYGON[displaySymbol.toUpperCase()] ?? null) : displaySymbol;
+  if (polygonKey && !isFuturesSymbol && polygonSymbol) {
     const liveQuote = getQuoteBySymbol(displaySymbol);
     const livePrice = liveQuote?.last ?? liveQuote?.close;
     const strikeOpts = livePrice
       ? { strikeMin: Math.floor(livePrice * 0.70), strikeMax: Math.ceil(livePrice * 1.30) }
       : {};
-    const poly = await fetchPolygonChain(displaySymbol, polygonKey, {
+    const poly = await fetchPolygonChain(polygonSymbol, polygonKey, {
       maxDte: 60,
       ...strikeOpts,
       maxPages: 12,
@@ -810,6 +817,40 @@ router.get("/options", async (req, res) => {
     const isFuturesSymbol = isFutures(displaySymbol);
     const isIndexSymbol = isIndex(displaySymbol);
 
+    const INDEX_POLY_MAP: Record<string, string> = {
+      "$SPX": "SPX", "SPX": "SPX",
+      "$NDX": "NDX", "NDX": "NDX",
+      "$RUT": "RUT", "RUT": "RUT",
+      "$DJI": "DJX", "DJI": "DJX",
+    };
+    const polygonKey = process.env["POLYGON_API_KEY"];
+    const polySymbol = isIndexSymbol ? (INDEX_POLY_MAP[displaySymbol] ?? null) : (!isFuturesSymbol ? displaySymbol : null);
+
+    if (polygonKey && polySymbol) {
+      const liveQuote = getQuoteBySymbol(displaySymbol);
+      const livePrice = liveQuote?.last ?? liveQuote?.close;
+      const strikeOpts = livePrice
+        ? { strikeMin: Math.floor(livePrice * 0.70), strikeMax: Math.ceil(livePrice * 1.30) }
+        : {};
+      const poly = await fetchPolygonChain(polySymbol, polygonKey, {
+        maxDte: 60,
+        ...strikeOpts,
+        maxPages: 12,
+        log: req.log,
+      });
+      if (poly && (poly.calls.length + poly.puts.length) > 0) {
+        const underlyingPrice = poly.underlyingPrice ?? livePrice;
+        const entry = { calls: poly.calls, puts: poly.puts, underlyingPrice, fetchedAt: Date.now() };
+        optionsNtmCache.set(displaySymbol, entry);
+        if (optionsNtmCache.size > 100) {
+          const oldest = [...optionsNtmCache.entries()].sort((a, b) => a[1].fetchedAt - b[1].fetchedAt)[0];
+          optionsNtmCache.delete(oldest[0]);
+        }
+        return res.json(sliceAndReturn(entry, "polygon"));
+      }
+      req.log.warn({ symbol: displaySymbol, polySymbol }, "Polygon options chain empty — falling back to Schwab");
+    }
+
     if (!accessToken) {
       return res.json({ symbol: displaySymbol, calls: [], puts: [], error: "no_token" });
     }
@@ -852,17 +893,17 @@ router.get("/options", async (req, res) => {
     const allPuts = parseContracts(putMap);
 
     const MAX_DTE = 400;
-    const structureCalls = allCalls.filter(c => c.dte <= MAX_DTE).map(c => ({ strike: c.strike, expiration: c.expiration, schwabSymbol: c.schwabSymbol, dte: c.dte }));
-    const structurePuts = allPuts.filter(c => c.dte <= MAX_DTE).map(c => ({ strike: c.strike, expiration: c.expiration, schwabSymbol: c.schwabSymbol, dte: c.dte }));
+    const filteredCalls = allCalls.filter(c => c.dte <= MAX_DTE);
+    const filteredPuts = allPuts.filter(c => c.dte <= MAX_DTE);
 
-    const entry = { calls: structureCalls, puts: structurePuts, underlyingPrice, fetchedAt: Date.now() };
+    const entry = { calls: filteredCalls, puts: filteredPuts, underlyingPrice, fetchedAt: Date.now() };
     optionsNtmCache.set(displaySymbol, entry);
     if (optionsNtmCache.size > 100) {
       const oldest = [...optionsNtmCache.entries()].sort((a, b) => a[1].fetchedAt - b[1].fetchedAt)[0];
       optionsNtmCache.delete(oldest[0]);
     }
 
-    return res.json(sliceAndReturn(entry, "schwab-structure"));
+    return res.json(sliceAndReturn(entry, "schwab"));
   } catch (err) {
     req.log.error({ err }, "Options chain fetch error");
     res.json({ symbol: displaySymbol, calls: [], puts: [], error: "internal_error" });
