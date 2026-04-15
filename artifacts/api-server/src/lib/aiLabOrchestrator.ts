@@ -643,9 +643,12 @@ async function overnightDigest(): Promise<void> {
 }
 
 async function preMarketPlan(): Promise<void> {
-  await withLock("PREMARKET_PLAN", async () => {
+  return runUniverseScreenPass("PREMARKET_PLAN");
+}
+
+async function runUniverseScreenPass(passName: PassName): Promise<void> {
+  await withLock(passName, async () => {
     const batch = createTelemetryBatch("AI_LAB");
-    const passName = "PREMARKET_PLAN";
     logAiLabEvent("SCHEDULE_RUN", { passName, phase: "START", mode: "FULL_UNIVERSE" }, batch);
 
     try {
@@ -774,109 +777,23 @@ async function preMarketPlan(): Promise<void> {
 }
 
 async function postOpenCheck(): Promise<void> {
-  const batch = createTelemetryBatch("AI_LAB");
-  const passName = "POST_OPEN_CHECK";
-  logAiLabEvent("SCHEDULE_RUN", { passName, phase: "START" }, batch);
-
-  try {
-    const activeIdeas = await db
-      .select()
-      .from(aiLabIdeasTable)
-      .where(inArray(aiLabIdeasTable.status, ["ACTIVE", "NEW"]));
-
-    logAiLabEvent("SCHEDULE_RUN", {
-      passName,
-      phase: "COMPLETE",
-      activeIdeaCount: activeIdeas.length,
-      symbols: activeIdeas.map((i) => i.symbol).join(","),
-    }, batch);
-  } catch (err: any) {
-    logAiLabEvent("SCHEDULE_RUN", { passName, phase: "ERROR", error: err.message }, batch, "ERROR");
-  }
+  return runUniverseScreenPass("POST_OPEN_CHECK");
 }
 
 async function midMorningScan(): Promise<void> {
-  const batch = createTelemetryBatch("AI_LAB");
-  logAiLabEvent("SCHEDULE_RUN", { passName: "MID_MORNING_SCAN", phase: "START" }, batch);
-
-  try {
-    const activeIdeas = await db
-      .select()
-      .from(aiLabIdeasTable)
-      .where(eq(aiLabIdeasTable.status, "ACTIVE"));
-
-    logAiLabEvent("SCHEDULE_RUN", {
-      passName: "MID_MORNING_SCAN",
-      phase: "COMPLETE",
-      activeIdeaCount: activeIdeas.length,
-      note: "Stub — will add intraday monitoring in LLM phase",
-    }, batch);
-  } catch (err: any) {
-    logAiLabEvent("SCHEDULE_RUN", { passName: "MID_MORNING_SCAN", phase: "ERROR", error: err.message }, batch, "ERROR");
-  }
+  return runUniverseScreenPass("MID_MORNING_SCAN");
 }
 
 async function middayRotationCheck(): Promise<void> {
-  const batch = createTelemetryBatch("AI_LAB");
-  logAiLabEvent("SCHEDULE_RUN", { passName: "MIDDAY_ROTATION", phase: "START" }, batch);
-
-  try {
-    const activeIdeas = await db
-      .select()
-      .from(aiLabIdeasTable)
-      .where(eq(aiLabIdeasTable.status, "ACTIVE"));
-
-    logAiLabEvent("SCHEDULE_RUN", {
-      passName: "MIDDAY_ROTATION",
-      phase: "COMPLETE",
-      activeIdeaCount: activeIdeas.length,
-      note: "Stub — will check rotation signals in LLM phase",
-    }, batch);
-  } catch (err: any) {
-    logAiLabEvent("SCHEDULE_RUN", { passName: "MIDDAY_ROTATION", phase: "ERROR", error: err.message }, batch, "ERROR");
-  }
+  return runUniverseScreenPass("MIDDAY_ROTATION");
 }
 
 async function powerHourPrep(): Promise<void> {
-  const batch = createTelemetryBatch("AI_LAB");
-  logAiLabEvent("SCHEDULE_RUN", { passName: "POWER_HOUR_PREP", phase: "START" }, batch);
-
-  try {
-    const activeIdeas = await db
-      .select()
-      .from(aiLabIdeasTable)
-      .where(eq(aiLabIdeasTable.status, "ACTIVE"));
-
-    logAiLabEvent("SCHEDULE_RUN", {
-      passName: "POWER_HOUR_PREP",
-      phase: "COMPLETE",
-      activeIdeaCount: activeIdeas.length,
-      note: "Stub — will add EOD positioning logic in LLM phase",
-    }, batch);
-  } catch (err: any) {
-    logAiLabEvent("SCHEDULE_RUN", { passName: "POWER_HOUR_PREP", phase: "ERROR", error: err.message }, batch, "ERROR");
-  }
+  return runUniverseScreenPass("POWER_HOUR_PREP");
 }
 
 async function postMarketReflection(): Promise<void> {
-  const batch = createTelemetryBatch("AI_LAB");
-  logAiLabEvent("SCHEDULE_RUN", { passName: "POST_MARKET_REFLECTION", phase: "START" }, batch);
-
-  try {
-    const activeIdeas = await db
-      .select()
-      .from(aiLabIdeasTable)
-      .where(inArray(aiLabIdeasTable.status, ["ACTIVE", "NEW"]));
-
-    logAiLabEvent("SCHEDULE_RUN", {
-      passName: "POST_MARKET_REFLECTION",
-      phase: "COMPLETE",
-      activeIdeaCount: activeIdeas.length,
-      note: "Stub — will add EOD P&L evaluation and idea expiration in LLM phase",
-    }, batch);
-  } catch (err: any) {
-    logAiLabEvent("SCHEDULE_RUN", { passName: "POST_MARKET_REFLECTION", phase: "ERROR", error: err.message }, batch, "ERROR");
-  }
+  return runUniverseScreenPass("POST_MARKET_REFLECTION");
 }
 
 // ─── EVENT-DRIVEN TRIGGERS ──────────────────────────────────────────────────
