@@ -196,16 +196,21 @@ async function callGeminiWithSystem(model: string, temperature: number, systemPr
   if (!baseUrl || !apiKey) throw new Error("Gemini AI integration env vars not configured");
   const ai = new GoogleGenAI({ apiKey, httpOptions: { apiVersion: "", baseUrl } });
 
+  const supportsThinking = /^gemini-(2\.5|3)/.test(model);
+  const config: Record<string, unknown> = {
+    responseMimeType: "application/json",
+    maxOutputTokens: 8192,
+    temperature,
+  };
+  if (supportsThinking) {
+    config.thinkingConfig = { thinkingBudget: -1, includeThoughts: false };
+  }
   const response = await ai.models.generateContent({
     model,
     contents: [
       { role: "user", parts: [{ text: systemPrompt + "\n\n" + prompt }] },
     ],
-    config: {
-      responseMimeType: "application/json",
-      maxOutputTokens: 8192,
-      temperature,
-    },
+    config: config as Parameters<typeof ai.models.generateContent>[0]["config"],
   });
 
   const rawText = (response.text ?? "").trim();
@@ -223,15 +228,20 @@ async function callAnthropicWithSystem(model: string, temperature: number, syste
   const client = new Anthropic({ apiKey });
 
   const isNew = /^claude-(opus|sonnet)-4-([7-9]|\d{2,})/.test(model);
+  const THINKING_BUDGET = 4096;
   const params: Anthropic.MessageCreateParamsNonStreaming = {
     model,
-    max_tokens: 8192,
+    max_tokens: isNew ? 12288 : THINKING_BUDGET + 8192,
     system: systemPrompt,
     messages: [{ role: "user", content: prompt }],
   };
-  if (!isNew) {
-    params.temperature = temperature;
+  if (isNew) {
+    params.thinking = { type: "adaptive", display: "summarized" } as unknown as Anthropic.MessageCreateParamsNonStreaming["thinking"];
+  } else {
+    params.thinking = { type: "enabled", budget_tokens: THINKING_BUDGET };
+    params.temperature = 1;
   }
+  void temperature;
   const message = await client.messages.create(params);
 
   const textBlock = message.content.find((b) => b.type === "text");

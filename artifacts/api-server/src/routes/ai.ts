@@ -127,14 +127,16 @@ async function nativeStreamClaude(opts: NativeStreamOptions): Promise<string> {
   const client = new Anthropic({ apiKey });
 
   const resolvedModel = modelName || DEFAULT_MODEL;
-  const useThinking = !!(thinkingBudget && thinkingBudget > 0 && THINKING_CAPABLE_MODELS.has(resolvedModel));
+  // Default thinking ON for all Claude models. Caller-supplied budget takes precedence; otherwise use 2048.
+  const effectiveBudget = thinkingBudget && thinkingBudget > 0 ? thinkingBudget : 2048;
+  const useThinking = THINKING_CAPABLE_MODELS.has(resolvedModel);
 
   let fullText = "";
 
   const isNew = isClaude47OrNewer(resolvedModel);
   const params: Anthropic.MessageStreamParams = {
     model: resolvedModel,
-    max_tokens: useThinking ? Math.max(16000, thinkingBudget! + 8000) : 4096,
+    max_tokens: useThinking ? Math.max(16000, effectiveBudget + 8000) : 4096,
     messages: [{ role: "user", content: prompt }],
   };
 
@@ -147,13 +149,14 @@ async function nativeStreamClaude(opts: NativeStreamOptions): Promise<string> {
       // Claude 4.7+: extended thinking budgets removed; use adaptive instead
       params.thinking = { type: "adaptive", display: "summarized" } as unknown as Anthropic.MessageStreamParams["thinking"];
     } else {
-      params.thinking = { type: "enabled", budget_tokens: thinkingBudget! };
+      params.thinking = { type: "enabled", budget_tokens: effectiveBudget };
       params.temperature = 1;
     }
   } else if (!isNew) {
     // Claude 4.7+: temperature/top_p/top_k must be omitted (400 otherwise)
     params.temperature = temperature;
   }
+  void temperature;
 
   const stream = client.messages.stream(params);
 
@@ -195,14 +198,20 @@ async function nativeStreamGemini(opts: NativeStreamOptions): Promise<string> {
     ? [{ role: "user" as const, parts: [{ text: systemPrompt + "\n\n" + prompt }] }]
     : [{ role: "user" as const, parts: [{ text: prompt }] }];
 
+  const supportsThinking = /^gemini-(2\.5|3)/.test(modelName);
+  const streamConfig: Record<string, unknown> = {
+    maxOutputTokens: 8192,
+    temperature,
+  };
+  if (supportsThinking) {
+    streamConfig.thinkingConfig = { thinkingBudget: -1, includeThoughts: false };
+  }
   const response = await ai.models.generateContentStream({
     model: modelName,
     contents,
-    config: {
-      maxOutputTokens: 8192,
-      temperature,
-    },
+    config: streamConfig as Parameters<typeof ai.models.generateContentStream>[0]["config"],
   });
+  void onThinking;
 
   let fullText = "";
   for await (const chunk of response) {
