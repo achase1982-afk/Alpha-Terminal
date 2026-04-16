@@ -109,6 +109,9 @@ function PulseHeader({ pulseData, onRefresh }: { pulseData: any; onRefresh: () =
 
 export default function TerminalPage() {
   const { symbol, accessToken, chartPeriod, chartInterval, streamStatus } = useTerminalStore();
+  const strategistJobsForBadge = useTerminalStore((s) => s.strategistJobs);
+  const strategistRunningCount = Object.values(strategistJobsForBadge).filter(j => j.status === 'running').length;
+  const strategistUnviewedCount = Object.values(strategistJobsForBadge).filter(j => (j.status === 'done' || j.status === 'error') && !j.viewed).length;
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
 
@@ -453,18 +456,36 @@ export default function TerminalPage() {
             <div className="flex w-full p-1">
               {(["pulse", "scanner", "strategist"] as AiSubTab[]).map((tab) => {
                 const label = tab === "pulse" ? "MARKET PULSE" : tab === "scanner" ? "SCANNER" : "STRATEGIST";
+                const showIndicator = tab === "strategist" && aiSubTab !== "strategist" && (strategistRunningCount > 0 || strategistUnviewedCount > 0);
+                const indicatorIsRunning = strategistRunningCount > 0;
                 return (
                   <button
                     key={tab}
                     onClick={() => setAiSubTab(tab)}
-                    className="flex-1 font-mono text-xs font-bold tracking-wider py-2 rounded-lg transition-all duration-200"
+                    className="flex-1 font-mono text-xs font-bold tracking-wider py-2 rounded-lg transition-all duration-200 relative"
                     style={{
                       background: aiSubTab === tab ? "#1a1a1a" : "transparent",
                       color: aiSubTab === tab ? "#fafafa" : "#71717a",
                       border: "none",
                     }}
                   >
-                    {label}
+                    <span className="inline-flex items-center justify-center gap-1.5">
+                      {label}
+                      {showIndicator && (
+                        <span
+                          aria-label={indicatorIsRunning ? "Strategist running" : "New strategist result"}
+                          className={indicatorIsRunning ? "animate-pulse" : ""}
+                          style={{
+                            display: "inline-block",
+                            width: 6,
+                            height: 6,
+                            borderRadius: 9999,
+                            background: indicatorIsRunning ? "#FFB800" : "#00d166",
+                            boxShadow: indicatorIsRunning ? "0 0 6px #FFB800" : "0 0 6px #00d166",
+                          }}
+                        />
+                      )}
+                    </span>
                   </button>
                 );
               })}

@@ -2,8 +2,8 @@ import { Router, type IRouter } from "express";
 import { analyzeTickerV2 } from "../lib/strategistV2.js";
 import { getSettings, updateSetting, resetAllSettings, getDefaults, getSettingMeta } from "../lib/strategistSettings.js";
 import { getCachedRegime, buildFallbackRegime } from "../lib/regimePostProcessor.js";
-import { db, strategistTelemetryTable, scannerTelemetryTable } from "@workspace/db";
-import { desc, eq, sql, lte } from "drizzle-orm";
+import { db, strategistTelemetryTable, scannerTelemetryTable, strategistHistoryTable } from "@workspace/db";
+import { desc, eq, sql, lte, and } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
@@ -15,16 +15,81 @@ router.get("/regime", (_req, res) => {
 
 router.post("/analyze", async (req, res): Promise<void> => {
   try {
-    const { ticker } = req.body;
+    const { ticker, jobId } = req.body;
     if (!ticker || typeof ticker !== "string") {
       res.status(400).json({ error: "ticker is required" });
       return;
     }
-    const result = await analyzeTickerV2(ticker.toUpperCase());
+    const upperTicker = ticker.toUpperCase();
+    const result = await analyzeTickerV2(upperTicker);
+
+    // Persist to history if a jobId was supplied (idempotent on jobId)
+    if (jobId && typeof jobId === "string") {
+      try {
+        await db
+          .insert(strategistHistoryTable)
+          .values({
+            jobId,
+            ticker: upperTicker,
+            cardJson: result as unknown as object,
+            cleared: false,
+          })
+          .onConflictDoNothing({ target: strategistHistoryTable.jobId });
+      } catch (persistErr) {
+        logger.warn({ persistErr, jobId, ticker: upperTicker }, "StrategistV2: failed to persist history (non-fatal)");
+      }
+    }
+
     res.json(result);
   } catch (err) {
     logger.error({ err }, "StrategistV2: analyze failed");
     res.status(500).json({ error: "Analysis failed" });
+  }
+});
+
+router.get("/history", async (_req, res) => {
+  try {
+    const rows = await db
+      .select()
+      .from(strategistHistoryTable)
+      .where(eq(strategistHistoryTable.cleared, false))
+      .orderBy(desc(strategistHistoryTable.createdAt))
+      .limit(100);
+    res.json(rows);
+  } catch (err) {
+    logger.error({ err }, "StrategistV2: history fetch failed");
+    res.status(500).json({ error: "Failed to fetch history" });
+  }
+});
+
+router.patch("/history/:id/clear", async (req, res): Promise<void> => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      res.status(400).json({ error: "invalid id" });
+      return;
+    }
+    await db
+      .update(strategistHistoryTable)
+      .set({ cleared: true, clearedAt: new Date() })
+      .where(eq(strategistHistoryTable.id, id));
+    res.json({ success: true });
+  } catch (err) {
+    logger.error({ err }, "StrategistV2: history clear failed");
+    res.status(500).json({ error: "Failed to clear history row" });
+  }
+});
+
+router.delete("/history/all", async (_req, res) => {
+  try {
+    const result = await db
+      .update(strategistHistoryTable)
+      .set({ cleared: true, clearedAt: new Date() })
+      .where(eq(strategistHistoryTable.cleared, false));
+    res.json({ success: true });
+  } catch (err) {
+    logger.error({ err }, "StrategistV2: history clear-all failed");
+    res.status(500).json({ error: "Failed to clear history" });
   }
 });
 

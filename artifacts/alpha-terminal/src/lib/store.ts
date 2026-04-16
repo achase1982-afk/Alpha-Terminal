@@ -192,6 +192,32 @@ export interface TerminalState {
   openBrowser: (url: string, title?: string, source?: string) => void;
   closeBrowser: () => void;
 
+  // ── Strategist V2 jobs + history (jobs ephemeral, history cached) ─────────
+  strategistJobs: Record<string, {
+    jobId: string;
+    ticker: string;
+    status: 'running' | 'done' | 'error' | 'interrupted';
+    result: unknown | null;
+    startedAt: number;
+    finishedAt: number | null;
+    viewed: boolean;
+    error?: string | null;
+  }>;
+  strategistHistory: Array<{
+    id: number;
+    jobId: string;
+    ticker: string;
+    createdAt: string;
+    cardJson: unknown;
+  }>;
+  startStrategistJob: (jobId: string, ticker: string) => void;
+  completeStrategistJob: (jobId: string, result: unknown) => void;
+  errorStrategistJob: (jobId: string, reason: string) => void;
+  markStrategistJobsViewed: () => void;
+  setStrategistHistory: (list: Array<{ id: number; jobId: string; ticker: string; createdAt: string; cardJson: unknown }>) => void;
+  removeHistoryCard: (id: number) => void;
+  clearAllHistory: () => void;
+
   // ── Streaming (NOT persisted) ─────────────────────────────────────────────
   streamPrices: Record<string, LiveQuote>;
   streamConnected: boolean;
@@ -464,6 +490,72 @@ export const useTerminalStore = create<TerminalState>()(
       }),
       clearLiveNews: () => set({ liveNews: [] }),
 
+      strategistJobs: {},
+      strategistHistory: [],
+      startStrategistJob: (jobId, ticker) =>
+        set((state) => ({
+          strategistJobs: {
+            ...state.strategistJobs,
+            [jobId]: {
+              jobId,
+              ticker: ticker.toUpperCase(),
+              status: 'running',
+              result: null,
+              startedAt: Date.now(),
+              finishedAt: null,
+              viewed: false,
+              error: null,
+            },
+          },
+        })),
+      completeStrategistJob: (jobId, result) =>
+        set((state) => {
+          const job = state.strategistJobs[jobId];
+          if (!job) return {};
+          return {
+            strategistJobs: {
+              ...state.strategistJobs,
+              // viewed stays false on transition from running -> done so the
+              // indicator can show "new result"; the consumer decides when to
+              // mark viewed (e.g. when strategist tab is currently active).
+              [jobId]: { ...job, status: 'done', result, finishedAt: Date.now(), viewed: false },
+            },
+          };
+        }),
+      errorStrategistJob: (jobId, reason) =>
+        set((state) => {
+          const job = state.strategistJobs[jobId];
+          if (!job) return {};
+          return {
+            strategistJobs: {
+              ...state.strategistJobs,
+              [jobId]: { ...job, status: 'error', error: reason, finishedAt: Date.now() },
+            },
+          };
+        }),
+      markStrategistJobsViewed: () =>
+        set((state) => {
+          // Only mark *finished* jobs as viewed; leave running jobs alone so
+          // they can transition to a "new result" indicator when they complete.
+          const next: TerminalState['strategistJobs'] = {};
+          let changed = false;
+          for (const [k, j] of Object.entries(state.strategistJobs)) {
+            if (!j.viewed && (j.status === 'done' || j.status === 'error')) {
+              next[k] = { ...j, viewed: true };
+              changed = true;
+            } else {
+              next[k] = j;
+            }
+          }
+          return changed ? { strategistJobs: next } : {};
+        }),
+      setStrategistHistory: (list) => set({ strategistHistory: list }),
+      removeHistoryCard: (id) =>
+        set((state) => ({
+          strategistHistory: state.strategistHistory.filter((h) => h.id !== id),
+        })),
+      clearAllHistory: () => set({ strategistHistory: [] }),
+
       streamPrices: {},
       streamConnected: false,
       streamStatus: "offline" as const,
@@ -480,7 +572,7 @@ export const useTerminalStore = create<TerminalState>()(
     }),
     {
       name: 'alpha-terminal-storage',
-      version: 18,
+      version: 19,
       migrate: (persistedState: unknown, version: number) => {
         const s = persistedState as Record<string, unknown>;
         if (version < 2) {
@@ -650,10 +742,14 @@ export const useTerminalStore = create<TerminalState>()(
             cfg['skepticModelName'] = 'gemini-3.1-pro-preview';
           }
         }
+        if (version < 19) {
+          if (!s['strategistJobs'] || typeof s['strategistJobs'] !== 'object') s['strategistJobs'] = {};
+          if (!Array.isArray(s['strategistHistory'])) s['strategistHistory'] = [];
+        }
         return s;
       },
       partialize: (state) => {
-        const { streamPrices, streamConnected, streamStatus, browserUrl, browserTitle, browserSource, liveNews, ...persisted } = state;
+        const { streamPrices, streamConnected, streamStatus, browserUrl, browserTitle, browserSource, liveNews, strategistJobs, ...persisted } = state;
         return persisted;
       },
     }

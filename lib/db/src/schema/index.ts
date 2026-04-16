@@ -467,6 +467,18 @@ export const strategistTelemetryTable = pgTable("strategist_telemetry", {
 
 export type StrategistTelemetry = typeof strategistTelemetryTable.$inferSelect;
 
+export const strategistHistoryTable = pgTable("strategist_history", {
+  id: serial("id").primaryKey(),
+  jobId: text("job_id").notNull().unique(),
+  ticker: text("ticker").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  cardJson: jsonb("card_json").notNull(),
+  cleared: boolean("cleared").default(false).notNull(),
+  clearedAt: timestamp("cleared_at"),
+});
+
+export type StrategistHistory = typeof strategistHistoryTable.$inferSelect;
+
 export const aiLabPromptsTable = pgTable("ai_lab_prompts", {
   id: serial("id").primaryKey(),
   role: text("role").notNull(),

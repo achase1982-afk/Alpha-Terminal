@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import {
   TrendingUp, TrendingDown, Minus, Shield,
-  ChevronDown, ChevronUp, Target, Activity, Zap, Send,
+  ChevronDown, ChevronUp, Target, Activity, Zap, Send, Copy, Check,
 } from "lucide-react";
+import { strategistCardToPlainText } from "@/lib/strategistPlaintext";
 
 const GOLD = "#f5a623";
 const UP = "#2ecc71";
@@ -143,7 +144,50 @@ export interface StrategistSendToOrderPayload {
   isCredit: boolean;
 }
 
-export function StrategistV2RecommendationCard({ result, onSendToOrder }: { result: StrategistV2Result; onSendToOrder?: (payload: StrategistSendToOrderPayload) => void }) {
+function CopyCardButton({ result, generatedAt }: { result: StrategistV2Result; generatedAt?: string | number | null }) {
+  const [copied, setCopied] = useState(false);
+  const onCopy = useCallback(async () => {
+    try {
+      const text = strategistCardToPlainText(result, generatedAt ?? undefined);
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Fallback: a transient textarea trick (rare; iOS Safari requires user gesture, which we have)
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = strategistCardToPlainText(result, generatedAt ?? undefined);
+        ta.style.position = "fixed";
+        ta.style.left = "-9999px";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch {
+        // give up silently
+      }
+    }
+  }, [result, generatedAt]);
+  return (
+    <button
+      onClick={onCopy}
+      aria-label="Copy card to clipboard"
+      className="flex items-center gap-1 px-2 py-0.5 rounded font-mono text-[10px] uppercase tracking-wider transition-all active:scale-95"
+      style={{
+        background: copied ? "rgba(46, 204, 113, 0.15)" : "rgba(255,255,255,0.06)",
+        color: copied ? "#2ecc71" : "#a1a1aa",
+        border: copied ? "1px solid rgba(46, 204, 113, 0.35)" : "1px solid rgba(255,255,255,0.08)",
+      }}
+    >
+      {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+      <span>{copied ? "Copied" : "Copy"}</span>
+    </button>
+  );
+}
+
+export function StrategistV2RecommendationCard({ result, onSendToOrder, generatedAt }: { result: StrategistV2Result; onSendToOrder?: (payload: StrategistSendToOrderPayload) => void; generatedAt?: string | number | null }) {
   const [expanded, setExpanded] = useState(false);
   const { recommendation: rec, regime, ioScore, systemicRiskElevated } = result;
 
@@ -173,8 +217,12 @@ export function StrategistV2RecommendationCard({ result, onSendToOrder }: { resu
               </span>
             )}
             <span className="font-mono text-[12px] font-bold" style={{ color: GOLD }}>{stratLabel}</span>
+            <CopyCardButton result={result} generatedAt={generatedAt} />
           </div>
         </div>
+        {generatedAt && (
+          <div className="font-mono text-[9px] text-zinc-500 mb-2 -mt-2">Generated {new Date(generatedAt).toLocaleString()}</div>
+        )}
 
         {rec.companyContext && (
           <div className="font-mono text-[11px] text-zinc-400 leading-relaxed mb-2">{rec.companyContext}</div>
@@ -357,22 +405,28 @@ export function StrategistV2RecommendationCard({ result, onSendToOrder }: { resu
   );
 }
 
-export function StrategistV2BlockCard({ result }: { result: StrategistV2Result }) {
+export function StrategistV2BlockCard({ result, generatedAt }: { result: StrategistV2Result; generatedAt?: string | number | null }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
     <div className="rounded-xl overflow-hidden" style={{ background: "#111113", border: "1px solid #2A2A2C" }}>
       <div className="px-4 py-4">
-        <div className="flex items-center gap-2 mb-2">
-          <Shield className="w-4 h-4" style={{ color: result.status === "toxic_block" ? DOWN : "#71717a" }} />
-          <span className="font-mono text-[13px] font-bold text-white">{result.ticker}</span>
-          <span className="font-mono text-[10px] px-2 py-0.5 rounded" style={{
-            background: result.status === "toxic_block" ? `${DOWN}18` : "rgba(113, 113, 122, 0.15)",
-            color: result.status === "toxic_block" ? DOWN : "#71717a",
-          }}>
-            {result.status === "toxic_block" ? "TOXIC BLOCK" : "NO VIABLE SETUP"}
-          </span>
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <div className="flex items-center gap-2">
+            <Shield className="w-4 h-4" style={{ color: result.status === "toxic_block" ? DOWN : "#71717a" }} />
+            <span className="font-mono text-[13px] font-bold text-white">{result.ticker}</span>
+            <span className="font-mono text-[10px] px-2 py-0.5 rounded" style={{
+              background: result.status === "toxic_block" ? `${DOWN}18` : "rgba(113, 113, 122, 0.15)",
+              color: result.status === "toxic_block" ? DOWN : "#71717a",
+            }}>
+              {result.status === "toxic_block" ? "TOXIC BLOCK" : "NO VIABLE SETUP"}
+            </span>
+          </div>
+          <CopyCardButton result={result} generatedAt={generatedAt} />
         </div>
+        {generatedAt && (
+          <div className="font-mono text-[9px] text-zinc-500 mb-2">Generated {new Date(generatedAt).toLocaleString()}</div>
+        )}
         <div className="font-mono text-[11px] text-zinc-400 leading-relaxed">
           {result.blockReason ?? "No actionable setup found with current market conditions."}
         </div>

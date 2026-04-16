@@ -20,6 +20,7 @@ import { MarketScanner, type DetCandidate } from "@/components/MarketScanner";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { AiLabStrategistView } from "@/components/AiLabStrategistView";
 import { StrategistV2RecommendationCard, StrategistV2BlockCard, type StrategistV2Result as StrategistV2ResultType, type StrategistSendToOrderPayload } from "@/components/StrategistV2Card";
+import { StrategistHistoryList } from "@/components/StrategistHistoryList";
 
 const API_BASE = "/api";
 
@@ -2144,8 +2145,55 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
   const detRunRef = useRef(0);
   const scannerCandidateCache = useRef<Record<string, DetCandidate>>({});
 
-  const [v2Result, setV2Result] = useState<StrategistV2ResultType | null>(null);
-  const [isV2Running, setIsV2Running] = useState(false);
+  const strategistJobs = useTerminalStore(s => s.strategistJobs);
+  const strategistHistory = useTerminalStore(s => s.strategistHistory);
+  const startStrategistJob = useTerminalStore(s => s.startStrategistJob);
+  const completeStrategistJob = useTerminalStore(s => s.completeStrategistJob);
+  const errorStrategistJob = useTerminalStore(s => s.errorStrategistJob);
+  const markStrategistJobsViewed = useTerminalStore(s => s.markStrategistJobsViewed);
+  const setStrategistHistoryStore = useTerminalStore(s => s.setStrategistHistory);
+
+  const [activeJobIdsByTicker, setActiveJobIdsByTicker] = useState<Record<string, string>>({});
+
+  const v2Result: StrategistV2ResultType | null = (() => {
+    const jobId = activeJobIdsByTicker[symbol.toUpperCase()];
+    if (jobId) {
+      const job = strategistJobs[jobId];
+      if (job?.status === 'done' && job.result) return job.result as StrategistV2ResultType;
+      if (job?.status === 'error') {
+        return { status: "no_viable_setup", ticker: symbol.toUpperCase(), blockReason: job.error || "Analysis failed", regime: { directionalConviction: "NEUTRAL", systemicRiskLevel: "NORMAL", correlationRegime: "MODERATE", compositeScore: 0, idioOpportunityFlag: false }, systemicRiskElevated: false };
+      }
+    }
+    return null;
+  })();
+
+  const isV2Running = (() => {
+    const jobId = activeJobIdsByTicker[symbol.toUpperCase()];
+    if (!jobId) return false;
+    return strategistJobs[jobId]?.status === 'running';
+  })();
+
+  // Fetch history once on mount
+  const historyFetchedRef = useRef(false);
+  useEffect(() => {
+    if (historyFetchedRef.current) return;
+    historyFetchedRef.current = true;
+    (async () => {
+      try {
+        const res = await fetchWithAuth(`${API_BASE}/strategist/history`);
+        if (!res.ok) return;
+        const rows = await res.json();
+        if (Array.isArray(rows)) setStrategistHistoryStore(rows);
+      } catch {
+        // best-effort
+      }
+    })();
+  }, [setStrategistHistoryStore]);
+
+  // Mark jobs as viewed whenever the strategist sub-tab becomes active
+  useEffect(() => {
+    if (subTab === "strategist") markStrategistJobsViewed();
+  }, [subTab, markStrategistJobsViewed]);
 
   useEffect(() => {
     if (prevSymbolRef.current !== symbol) {
@@ -2616,9 +2664,9 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
     }
   }, [accessToken, symbol, setSymbol, setStrategistResult]);
 
-  const handleRunV2 = useCallback(async (ticker: string) => {
-    setV2Result(null);
-    setIsV2Running(true);
+  const handleRunV2 = useCallback((ticker: string) => {
+    const upperTicker = ticker.toUpperCase();
+    const jobId = `sj_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
     setDetResult(null);
     setActiveResult("strategist");
     setRealStrategies([]);
@@ -2627,26 +2675,40 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
     setStrategistStatus("Running V2 strategist...");
     setLastRunSymbol(ticker);
     setLastRunTime(Date.now());
-    if (ticker.toUpperCase() !== symbol) setSymbol(ticker.toUpperCase());
-    try {
-      const res = await fetchWithAuth(`${API_BASE}/strategist/analyze`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ticker: ticker.toUpperCase() }),
-      });
-      if (!res.ok) {
-        const errText = await res.text().catch(() => "Unknown error");
-        setV2Result({ status: "no_viable_setup", ticker: ticker.toUpperCase(), blockReason: errText, regime: { directionalConviction: "NEUTRAL", systemicRiskLevel: "NORMAL", correlationRegime: "MODERATE", compositeScore: 0, idioOpportunityFlag: false }, systemicRiskElevated: false });
-      } else {
-        const json = await res.json();
-        setV2Result(json);
+    if (upperTicker !== symbol) setSymbol(upperTicker);
+    startStrategistJob(jobId, upperTicker);
+    setActiveJobIdsByTicker(prev => ({ ...prev, [upperTicker]: jobId }));
+    // Fire-and-forget — analysis continues in background even if user navigates away.
+    (async () => {
+      try {
+        const res = await fetchWithAuth(`${API_BASE}/strategist/analyze`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ticker: upperTicker, jobId }),
+        });
+        if (!res.ok) {
+          const errText = await res.text().catch(() => "Unknown error");
+          completeStrategistJob(jobId, { status: "no_viable_setup", ticker: upperTicker, blockReason: errText, regime: { directionalConviction: "NEUTRAL", systemicRiskLevel: "NORMAL", correlationRegime: "MODERATE", compositeScore: 0, idioOpportunityFlag: false }, systemicRiskElevated: false });
+        } else {
+          const json = await res.json();
+          completeStrategistJob(jobId, json);
+        }
+        // Refresh history (server has the row keyed by jobId)
+        try {
+          const hres = await fetchWithAuth(`${API_BASE}/strategist/history`);
+          if (hres.ok) {
+            const rows = await hres.json();
+            if (Array.isArray(rows)) setStrategistHistoryStore(rows);
+          }
+        } catch { /* best-effort */ }
+      } catch (err) {
+        errorStrategistJob(jobId, err instanceof Error ? err.message : String(err));
+      } finally {
+        // Only clear pipeline status if user is still viewing this ticker
+        setStrategistStatus(prev => prev === "Running V2 strategist..." ? "" : prev);
       }
-    } catch (err) {
-      setV2Result({ status: "no_viable_setup", ticker: ticker.toUpperCase(), blockReason: err instanceof Error ? err.message : String(err), regime: { directionalConviction: "NEUTRAL", systemicRiskLevel: "NORMAL", correlationRegime: "MODERATE", compositeScore: 0, idioOpportunityFlag: false }, systemicRiskElevated: false });
-    }
-    setIsV2Running(false);
-    setStrategistStatus("");
-  }, [symbol, setSymbol, setStrategistResult]);
+    })();
+  }, [symbol, setSymbol, setStrategistResult, startStrategistJob, completeStrategistJob, errorStrategistJob, setStrategistHistoryStore]);
 
   const handleRunStrategistWithTicker = useCallback((ticker: string) => {
     handleRunV2(ticker);
@@ -2719,15 +2781,28 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
                   <StrategistPipeline status={strategistStatus} thinkingTokens={isDetRunning ? detThinking : thinkingTokens} />
                 )}
 
-                {v2Result && !isV2Running && (
-                  <>
-                    {v2Result.status === "recommendation" && v2Result.recommendation ? (
-                      <StrategistV2RecommendationCard result={v2Result} onSendToOrder={onStrategistSendToOrder} />
-                    ) : (
-                      <StrategistV2BlockCard result={v2Result} />
-                    )}
-                  </>
-                )}
+                {v2Result && !isV2Running && (() => {
+                  const activeJobId = activeJobIdsByTicker[symbol.toUpperCase()];
+                  const activeJob = activeJobId ? strategistJobs[activeJobId] : null;
+                  const generatedAt = activeJob?.finishedAt ?? activeJob?.startedAt ?? null;
+                  return (
+                    <>
+                      {v2Result.status === "recommendation" && v2Result.recommendation ? (
+                        <StrategistV2RecommendationCard result={v2Result} onSendToOrder={onStrategistSendToOrder} generatedAt={generatedAt} />
+                      ) : (
+                        <StrategistV2BlockCard result={v2Result} generatedAt={generatedAt} />
+                      )}
+                    </>
+                  );
+                })()}
+
+                <StrategistHistoryList
+                  onSendToOrder={onStrategistSendToOrder}
+                  excludeJobIds={(() => {
+                    const id = activeJobIdsByTicker[symbol.toUpperCase()];
+                    return id ? new Set([id]) : undefined;
+                  })()}
+                />
 
                 {detResult && !isDetRunning && !v2Result && (
                   <>
