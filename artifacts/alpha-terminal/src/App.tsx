@@ -12,6 +12,7 @@ import TerminalPage from "@/pages/Terminal";
 import NotFound from "@/pages/not-found";
 import PushNotificationBanner from "@/components/PushNotificationBanner";
 import OrderAlertWatcher from "@/components/OrderAlertWatcher";
+import SchwabSessionExpiredDialog from "@/components/SchwabSessionExpiredDialog";
 import { registerServiceWorker } from "@/lib/pushNotifications";
 
 export const queryClient = new QueryClient({
@@ -170,6 +171,7 @@ function App() {
           <Toaster />
           <OrderAlertWatcher />
           <PushNotificationBanner />
+          <SchwabSessionExpiredDialog />
         </AutoLockProvider>
       </TooltipProvider>
     </QueryClientProvider>
