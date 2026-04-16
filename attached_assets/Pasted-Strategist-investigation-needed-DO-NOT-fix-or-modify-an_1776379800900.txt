@@ -1,0 +1,88 @@
+Strategist investigation needed. DO NOT fix or modify anything yet. I need to understand where data is flowing from before any changes are made. Answer the following questions with specifics (file names, function names, data sources, timestamps where relevant). Check the strategist history logs from today between 2:00 PM and 6:30 PM for context on the issues referenced.
+
+DATA SOURCES - WHERE IS EACH NUMBER COMING FROM?
+
+1. Flow data. Multiple strategist cards today cited specific flow numbers in the narrative (volume counts on specific strikes, vol/OI ratios on specific expirations). On those same cards, the IOScore Flow Score field showed 0.000. Separately, the Discovery scanner on a ticker today displayed "Flow data unavailable - score renormalized" while the strategist produced detailed flow analysis on that same ticker minutes later.
+
+Questions:
+- What data source feeds the flow numbers that the strategist prompt sees in its payload?
+- What data source feeds the IOScore Flow Score field on the card?
+- What data source feeds the scanner's FLOW score component?
+- Are all three the same source, different sources, or derived from the same source with different processing?
+- If different, what is each one actually measuring (e.g., real-time orderbook flow vs. volume/OI ratios vs. unusual activity classifier output)?
+- When the scanner shows "Flow data unavailable," what specifically is unavailable?
+
+2. IV data. The model's live reasoning log today showed it manually debugging that IV values were formatted as large numbers (e.g., 4125.6) when actual values were percentages (41.256%). It correctly divided by 100, but this should not be happening in production.
+
+Questions:
+- What data source feeds the IV values in summarizeOptionsChain?
+- Is IV stored as decimal, percentage, or raw basis points in the source?
+- Is the conversion to percentage happening in summarizeOptionsChain or somewhere upstream?
+- Does the format differ by expiration (near-dated vs far-dated)?
+- Does the format differ by data provider (Schwab vs Polygon)?
+
+3. ATM Spread. The scanner displayed ATM Spread of 99.0% on a ticker today whose actual ATM spread was around 5-10%.
+
+Questions:
+- Where does the scanner's ATM Spread field come from?
+- How is it calculated (spread width as % of spot, % of mid, % of ask, something else)?
+- Is this the same ATM Spread concept the strategist uses, or a different one?
+- Could this be a unit mismatch (decimal displayed as percent, or reverse)?
+
+4. IOScore composition. Cards show Overall, Classification, Edge breakdown (Idiosyncratic vs Macro), Conviction, Risk Level, Correlation, Composite, Idio Opportunity. Some of these numbers appear to barely move across different tickers even when the underlying setups are dramatically different.
+
+Questions:
+- What data feeds each of these IOScore fields?
+- Is IOScore computed on the fly per strategist call, or pulled from a cached/precomputed table?
+- Does IOScore update when a same-day catalyst is detected by the strategist, or is it a separate pipeline?
+- If IOScore is separate, is that intentional?
+
+5. Regime engine inputs. The Market Pulse screen shows regime cluster scores (Rates, Credit, Vol Level, Vol Term, Breadth, Risk Appetite, Macro) that feed into the overall regime composite and confidence.
+
+Questions:
+- Does the strategist prompt receive the full regime cluster breakdown or just the final composite/bias?
+- When the regime gate triggers (NO EDGE + low confidence), which specific inputs determine that?
+- Are the regime inputs cached between calls or recomputed?
+
+6. Scanner vs Strategist payload differences. The scanner has a score breakdown (SETUP, ACCUM, IV SET, FLOW, RS). The strategist has its own IOScore. These appear to be different systems.
+
+Questions:
+- What is the relationship between the Discovery scanner's scoring system and the strategist's IOScore?
+- Are they computed from the same underlying data?
+- When a user taps "Send to Strategist" from the scanner, does any of the scanner's analysis carry over, or does the strategist start fresh?
+- Should they be related? If so, how?
+
+EXECUTION AND ARITHMETIC QUESTIONS
+
+7. One card today produced an iron condor where reported credit exceeded the total spread width, which is mathematically impossible.
+
+Questions:
+- Does computeSpreadEconomics currently have any sanity checks on output (e.g., credit cannot exceed width, debit cannot exceed width)?
+- When the AI model's arithmetic conflicts with leg-derived arithmetic by more than a threshold, is that logged, and where?
+- Can you surface the specific card from around 4:57 PM today and show what the model proposed versus what computeSpreadEconomics computed?
+
+8. One strategist call today returned "unable to fetch ticker data" on a large-cap liquid name during market hours around 2:52 PM.
+
+Questions:
+- What specifically failed on that call? Schwab timeout, Polygon fallback failure, rate limit, something else?
+- Is there a fallback chain when primary data fetch fails?
+- How often are these failures occurring in general?
+
+OUTPUT AND UX QUESTIONS
+
+9. NO VIABLE SETUP rejection reasons currently are often short phrases that don't explain what actually failed to the user.
+
+Questions:
+- Where is the rejection reason text generated - by the AI model in its output, by a downstream validator, or hardcoded per rejection type?
+- What categories of rejection exist in the current code (catalyst mismatch, stale data, insufficient liquidity, regime gate, etc.)?
+- Is each category surfaced with a distinct reason, or collapsed into generic messages?
+
+10. Confidence numbers on today's cards ranged from 42% to 80%.
+
+Questions:
+- Where does the confidence number come from? Is it output by the AI model, computed from a formula, or a hybrid?
+- If formula-based, what are the inputs?
+- If model-based, is there any post-model calibration applied?
+- Does binary event exposure (earnings inside holding window) currently affect confidence calculation?
+
+ANSWER THESE BEFORE MAKING ANY CHANGES. I want to understand the architecture before deciding what to fix. Once I see the answers, I'll decide which items to address and in what order. Do not unify systems, modify data flows, or change logic until I review your answers.
