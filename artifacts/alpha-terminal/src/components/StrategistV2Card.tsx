@@ -14,6 +14,7 @@ export interface StrategistV2Result {
   ticker: string;
   recommendation?: {
     strategyLine: string;
+    companyContext?: string;
     thesis: string;
     rationale?: string;
     edgeAttribution: string;
@@ -34,12 +35,24 @@ export interface StrategistV2Result {
     }>;
     credit?: number;
     debit?: number;
+    entryRangeMin?: number;
+    entryRangeMax?: number;
     maxProfit: number;
     maxLoss: number;
     breakeven: number;
     riskReward: number;
     dte: number;
     expiration: string;
+    exitTargets?: {
+      profitTarget: number;
+      profitTargetUnderlying: number;
+      stopLoss: number;
+      stopLossUnderlying: number;
+      timeStop: string;
+    };
+    bullInvalidation?: string;
+    bearInvalidation?: string;
+    riskOfRuin?: string;
     confidence?: number;
     warnings?: string | null;
   };
@@ -72,9 +85,19 @@ const STRAT_LABELS: Record<string, string> = {
   bear_call_spread: "Bear Call Spread",
   call_debit_spread: "Call Debit Spread",
   put_debit_spread: "Put Debit Spread",
+  bull_call_spread: "Bull Call Spread",
+  bear_put_spread: "Bear Put Spread",
   iron_condor: "Iron Condor",
   butterfly: "Butterfly",
   calendar: "Calendar Spread",
+  calendar_spread: "Calendar Spread",
+  diagonal: "Diagonal Spread",
+  diagonal_spread: "Diagonal Spread",
+  ratio_spread: "Ratio Spread",
+  straddle: "Straddle",
+  strangle: "Strangle",
+  naked_put: "Naked Put",
+  naked_call: "Naked Call",
 };
 
 function DirectionIcon({ dir }: { dir: string }) {
@@ -153,12 +176,24 @@ export function StrategistV2RecommendationCard({ result, onSendToOrder }: { resu
           </div>
         </div>
 
-        <div className="font-mono text-[12px] text-white leading-relaxed mb-3">{rec.rationale || rec.thesis}</div>
+        {rec.companyContext && (
+          <div className="font-mono text-[11px] text-zinc-400 leading-relaxed mb-2">{rec.companyContext}</div>
+        )}
+
+        <div className="font-mono text-[12px] text-white leading-relaxed mb-3">{rec.thesis || rec.rationale}</div>
 
         {rec.warnings && (
           <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg" style={{ background: "rgba(245, 158, 11, 0.08)", border: "1px solid rgba(245, 158, 11, 0.2)" }}>
             <Shield className="w-3 h-3 flex-shrink-0" style={{ color: AMBER }} />
             <span className="font-mono text-[10px]" style={{ color: AMBER }}>{rec.warnings}</span>
+          </div>
+        )}
+
+        {rec.riskOfRuin && (
+          <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg" style={{ background: "rgba(255, 75, 92, 0.06)", border: "1px solid rgba(255, 75, 92, 0.15)" }}>
+            <Shield className="w-3 h-3 flex-shrink-0" style={{ color: DOWN }} />
+            <span className="font-mono text-[9px] uppercase tracking-wider text-zinc-500 mr-1">Risk of Ruin:</span>
+            <span className="font-mono text-[10px]" style={{ color: DOWN }}>{rec.riskOfRuin}</span>
           </div>
         )}
 
@@ -171,12 +206,55 @@ export function StrategistV2RecommendationCard({ result, onSendToOrder }: { resu
           <StatRow label="Idiosyncratic" value={`${rec.idioStrengthPct}%`} />
           <StatRow label="Macro-aligned" value={`${rec.macroPct}%`} />
           <StatRow label={isCredit ? "Credit" : "Debit"} value={`$${((isCredit ? rec.credit : rec.debit) ?? 0).toFixed(2)}`} />
+          <StatRow label="Fill Range" value={rec.entryRangeMin != null && rec.entryRangeMax != null ? `$${Math.abs(rec.entryRangeMin).toFixed(2)} – $${Math.abs(rec.entryRangeMax).toFixed(2)}` : "—"} />
           <StatRow label="Risk/Reward" value={`${rec.riskReward.toFixed(2)}:1`} />
           <StatRow label="Max Profit" value={`$${rec.maxProfit.toFixed(0)}`} color={UP} />
           <StatRow label="Max Loss" value={`$${rec.maxLoss.toFixed(0)}`} color={DOWN} />
           <StatRow label="Breakeven" value={`$${rec.breakeven.toFixed(2)}`} />
           <StatRow label="DTE" value={`${rec.dte}d`} />
         </div>
+
+        {rec.exitTargets && (rec.exitTargets.profitTarget > 0 || rec.exitTargets.stopLoss > 0) && (
+          <div className="mb-3 px-3 py-2 rounded-lg space-y-1" style={{ background: "#0a0a0c" }}>
+            <h4 className="font-mono text-[9px] text-zinc-500 uppercase tracking-widest mb-1">Exit Targets</h4>
+            {rec.exitTargets.profitTarget > 0 && (
+              <div className="flex justify-between">
+                <span className="font-mono text-[10px] text-zinc-400">Profit Target</span>
+                <span className="font-mono text-[10px]" style={{ color: UP }}>${rec.exitTargets.profitTarget.toFixed(2)} (underlying {rec.exitTargets.profitTargetUnderlying > 0 ? `$${rec.exitTargets.profitTargetUnderlying.toFixed(2)}` : "—"})</span>
+              </div>
+            )}
+            {rec.exitTargets.stopLoss > 0 && (
+              <div className="flex justify-between">
+                <span className="font-mono text-[10px] text-zinc-400">Stop Loss</span>
+                <span className="font-mono text-[10px]" style={{ color: DOWN }}>${rec.exitTargets.stopLoss.toFixed(2)} (underlying {rec.exitTargets.stopLossUnderlying > 0 ? `$${rec.exitTargets.stopLossUnderlying.toFixed(2)}` : "—"})</span>
+              </div>
+            )}
+            {rec.exitTargets.timeStop && (
+              <div className="flex justify-between">
+                <span className="font-mono text-[10px] text-zinc-400">Time Stop</span>
+                <span className="font-mono text-[10px] text-white">{rec.exitTargets.timeStop}</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {(rec.bullInvalidation || rec.bearInvalidation) && (
+          <div className="mb-3 px-3 py-2 rounded-lg space-y-1" style={{ background: "#0a0a0c" }}>
+            <h4 className="font-mono text-[9px] text-zinc-500 uppercase tracking-widest mb-1">Invalidation</h4>
+            {rec.bullInvalidation && (
+              <div className="flex gap-2">
+                <span className="font-mono text-[9px] font-bold shrink-0" style={{ color: UP }}>BULL</span>
+                <span className="font-mono text-[10px] text-zinc-300">{rec.bullInvalidation}</span>
+              </div>
+            )}
+            {rec.bearInvalidation && (
+              <div className="flex gap-2">
+                <span className="font-mono text-[9px] font-bold shrink-0" style={{ color: DOWN }}>BEAR</span>
+                <span className="font-mono text-[10px] text-zinc-300">{rec.bearInvalidation}</span>
+              </div>
+            )}
+          </div>
+        )}
 
         {onSendToOrder && (
           <button

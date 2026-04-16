@@ -18,6 +18,7 @@ export interface StrategistV2Result {
   ticker: string;
   recommendation?: {
     strategyLine: string;
+    companyContext: string;
     thesis: string;
     rationale: string;
     edgeAttribution: string;
@@ -28,12 +29,24 @@ export interface StrategistV2Result {
     legs: CandidateLeg[];
     credit?: number;
     debit?: number;
+    entryRangeMin: number;
+    entryRangeMax: number;
     maxProfit: number;
     maxLoss: number;
     breakeven: number;
     riskReward: number;
     dte: number;
     expiration: string;
+    exitTargets: {
+      profitTarget: number;
+      profitTargetUnderlying: number;
+      stopLoss: number;
+      stopLossUnderlying: number;
+      timeStop: string;
+    };
+    bullInvalidation: string;
+    bearInvalidation: string;
+    riskOfRuin: string;
     confidence: number;
     warnings: string | null;
   };
@@ -94,10 +107,23 @@ interface AiTradeResponse {
     expiration: string;
   }>;
   entryPrice: number;
+  entryRangeMin: number;
+  entryRangeMax: number;
   maxRisk: number;
   maxProfit: number | string;
   breakeven: number[];
-  rationale: string;
+  companyContext: string;
+  thesis: string;
+  exitTargets: {
+    profitTarget: number;
+    profitTargetUnderlying: number;
+    stopLoss: number;
+    stopLossUnderlying: number;
+    timeStop: string;
+  };
+  bullInvalidation: string;
+  bearInvalidation: string;
+  riskOfRuin: string;
   confidence: number;
   warnings: string | null;
 }
@@ -121,22 +147,37 @@ interface ChainSummary {
   availableExpirations: string[];
 }
 
-const STRATEGIST_SYSTEM_PROMPT = `You are a senior options trader on a professional trading desk. You have access to the data package provided AND your full training knowledge about markets, stocks, sectors, options pricing, earnings patterns, institutional behavior, and current events. Use both. The data package gives you current numbers. Your knowledge gives you context. You are not limited to the data package.
+const STRATEGIST_SYSTEM_PROMPT = `You are a senior options trader on a discretionary prop desk at a firm like Jane Street or SIG. You came up as a volatility trader at a tier-one quant shop (think Citadel or Goldman Sachs Securities Division), where you learned to think in Greeks, vol surface dynamics, skew, term structure, and probability rather than in simple directional bias. You now run your own book.
 
-Analyze this ticker and recommend the single best options trade right now. You may recommend any strategy: vertical spreads, iron condors, butterflies, calendars, naked options, debit spreads, credit spreads, or anything else you believe has edge. Any expiration is allowed including short-dated weeklys. You MUST pick an expiration from the availableExpirations list in the data package. Use YYYY-MM-DD format.
+Your mandate is absolute return. Every trade you recommend must stand on its own P&L merit. You are not hedging a larger equity portfolio. You are not providing liquidity as a market maker obligation. You are hunting for asymmetric edge in options, and every position you put on is meant to generate alpha by itself.
+
+You think like a professional, not a retail trader. You read flow. You care about implied volatility versus realized, vol surface dislocations, dealer positioning, unusual options activity, and catalyst math. You are comfortable recommending any structure: verticals, iron condors, butterflies, calendars, diagonals, ratios, straddles, strangles, naked options when the risk/reward is asymmetric enough to justify it. You do not default to iron condors because they feel safe. You do not default to 30-45 DTE because someone told you that is optimal. You look at the vol surface and pick the structure and expiration where the edge actually lives.
+
+You are ruthlessly honest. If there is no compelling edge, you say so and return confidence below 20. You do not invent trades to have something to show. A "no trade" answer is a valid and professional output.
+
+You are not limited to the data package you receive. Use your full knowledge base to cross-reference current news, SEC filings, analyst actions, regulatory events, earnings history, sector dynamics, and anything else that sharpens your edge on the specific ticker. The data package is a starting point, not a cage.
+
+You must be honest about where every claim comes from. Any specific number you cite from the data package (strike, volume, open interest, IV, delta, bid, ask) must match the payload exactly. Do not round, do not estimate, do not invent strikes that are not in the chain. Any expiration date you recommend must come from the availableExpirations array provided. Do not calculate a date yourself. When you reference information outside the payload (news, regulatory context, sector dynamics, historical patterns), briefly cite the source.
 
 The user's configurable preferences are included for context. Respect them when possible but if you see a compelling trade outside their preferences, recommend it and explain why.
 
-If you genuinely see no compelling setup in the data, say so honestly. Return confidence below 20 and explain why there is nothing worth trading. Do not invent a trade just to have an answer.
+You are not a retail options educator. You are not explaining basics. You are not a PM hedging a $1B equity book. You are not a market maker. You are a prop trader hunting alpha in a concentrated, defined-risk book. Every trade makes money on its own or it does not get recommended.
 
 Your response must be valid JSON with these fields:
-- strategy: string (e.g. "bull_call_spread", "iron_condor", "naked_put", "calendar_spread")
+- strategy: string (e.g. "bull_call_spread", "iron_condor", "naked_put", "calendar_spread", "butterfly", "diagonal", "ratio_spread", "straddle", "strangle")
 - legs: array of {type: "call" or "put", strike: number, action: "buy" or "sell", expiration: "YYYY-MM-DD"}
 - entryPrice: number (net debit or credit, positive = debit, negative = credit)
+- entryRangeMin: number (minimum fill price based on current bid/ask)
+- entryRangeMax: number (maximum fill price based on current bid/ask)
 - maxRisk: number (maximum dollar loss per contract)
 - maxProfit: number (maximum dollar profit per contract, or 99999 for theoretically unlimited)
 - breakeven: array of numbers (breakeven price points)
-- rationale: string (3-5 sentences explaining why this specific trade, what you see in the data and your broader knowledge, why this structure fits the current setup)
+- companyContext: string (2 sentences: what the company does, what sector, what it is levered to)
+- thesis: string (2-4 sentences on why this specific structure is the best expression of the edge right now, speaking in vol, flow, Greeks, catalyst, and probability terms)
+- exitTargets: {profitTarget: number, profitTargetUnderlying: number, stopLoss: number, stopLossUnderlying: number, timeStop: string}
+- bullInvalidation: string (specific event or price action that kills the long side of the thesis)
+- bearInvalidation: string (specific event or price action that kills the short side of the thesis)
+- riskOfRuin: string (the single biggest threat to this trade: one sentence)
 - confidence: number 0-100
 - warnings: string or null (anything the user should know: earnings risk, low liquidity, gap risk, etc.)
 
@@ -207,7 +248,7 @@ export async function analyzeTickerV2(ticker: string): Promise<StrategistV2Resul
   }
 
   if (aiResponse.confidence < 20) {
-    return noViable(ticker, regime, settings, toxicCheck, tickerData, `AI found no compelling setup (confidence ${aiResponse.confidence}): ${aiResponse.rationale}`, ioScore);
+    return noViable(ticker, regime, settings, toxicCheck, tickerData, `AI found no compelling setup (confidence ${aiResponse.confidence}): ${aiResponse.thesis}`, ioScore);
   }
 
   const validationResult = validateAiResponse(aiResponse, chain, settings);
@@ -251,8 +292,9 @@ export async function analyzeTickerV2(ticker: string): Promise<StrategistV2Resul
     ticker,
     recommendation: {
       strategyLine,
-      thesis: aiResponse.rationale,
-      rationale: aiResponse.rationale,
+      companyContext: aiResponse.companyContext || "",
+      thesis: aiResponse.thesis,
+      rationale: aiResponse.thesis,
       edgeAttribution: `Edge source: Idiosyncratic ${idioStrengthPct}% / Macro ${macroPct}%`,
       idioStrengthPct,
       macroPct,
@@ -261,12 +303,18 @@ export async function analyzeTickerV2(ticker: string): Promise<StrategistV2Resul
       legs,
       credit: isCredit ? entryAbs : undefined,
       debit: !isCredit ? entryAbs : undefined,
+      entryRangeMin: aiResponse.entryRangeMin ?? entryAbs,
+      entryRangeMax: aiResponse.entryRangeMax ?? entryAbs,
       maxProfit,
       maxLoss,
       breakeven,
       riskReward: maxLoss > 0 ? maxProfit / maxLoss : 0,
       dte,
       expiration,
+      exitTargets: aiResponse.exitTargets ?? { profitTarget: 0, profitTargetUnderlying: 0, stopLoss: 0, stopLossUnderlying: 0, timeStop: "" },
+      bullInvalidation: aiResponse.bullInvalidation || "",
+      bearInvalidation: aiResponse.bearInvalidation || "",
+      riskOfRuin: aiResponse.riskOfRuin || "",
       confidence: aiResponse.confidence,
       warnings: aiResponse.warnings,
     },
@@ -281,7 +329,7 @@ export async function analyzeTickerV2(ticker: string): Promise<StrategistV2Resul
       strategy: aiResponse.strategy,
       strategyType: aiResponse.strategy,
       confidence: aiResponse.confidence,
-      aiRationale: aiResponse.rationale,
+      aiRationale: aiResponse.thesis,
       warnings: aiResponse.warnings,
       legs: aiResponse.legs,
       entryPrice: aiResponse.entryPrice,
@@ -471,17 +519,24 @@ async function callAiForTrade(dataPackage: string, retryInstruction?: string): P
   const resp = parsed as Record<string, unknown>;
 
   if (!Array.isArray(resp.legs) || resp.legs.length === 0 || !resp.strategy || String(resp.strategy).toLowerCase() === "no_trade") {
-    const rationale = String(resp.rationale ?? resp.reasoning ?? "AI found no viable options setup");
+    const thesis = String(resp.thesis ?? resp.rationale ?? resp.reasoning ?? "AI found no viable options setup");
     const confidence = Math.max(0, Math.min(100, Number(resp.confidence) || 0));
-    logger.info({ parsedKeys: Object.keys(resp), confidence, rationale: rationale.slice(0, 200) }, "StrategistV2: AI returned no-trade / empty legs");
+    logger.info({ parsedKeys: Object.keys(resp), confidence, thesis: thesis.slice(0, 200) }, "StrategistV2: AI returned no-trade / empty legs");
     return {
       strategy: "no_trade",
       legs: [],
       entryPrice: 0,
+      entryRangeMin: 0,
+      entryRangeMax: 0,
       maxRisk: 0,
       maxProfit: 0,
       breakeven: [],
-      rationale,
+      companyContext: String(resp.companyContext ?? ""),
+      thesis,
+      exitTargets: { profitTarget: 0, profitTargetUnderlying: 0, stopLoss: 0, stopLossUnderlying: 0, timeStop: "" },
+      bullInvalidation: "",
+      bearInvalidation: "",
+      riskOfRuin: "",
       confidence,
       warnings: resp.warnings ? String(resp.warnings) : null,
     } as AiTradeResponse;
@@ -509,14 +564,30 @@ async function callAiForTrade(dataPackage: string, retryInstruction?: string): P
 
   const confidence = Math.max(0, Math.min(100, safeNum(resp.confidence, 0)));
 
+  const exitRaw = resp.exitTargets as Record<string, unknown> | undefined;
+  const exitTargets = {
+    profitTarget: safeNum(exitRaw?.profitTarget, 0),
+    profitTargetUnderlying: safeNum(exitRaw?.profitTargetUnderlying, 0),
+    stopLoss: safeNum(exitRaw?.stopLoss, 0),
+    stopLossUnderlying: safeNum(exitRaw?.stopLossUnderlying, 0),
+    timeStop: String(exitRaw?.timeStop ?? ""),
+  };
+
   return {
     strategy: String(resp.strategy),
     legs,
     entryPrice: safeNum(resp.entryPrice, 0),
+    entryRangeMin: safeNum(resp.entryRangeMin, safeNum(resp.entryPrice, 0)),
+    entryRangeMax: safeNum(resp.entryRangeMax, safeNum(resp.entryPrice, 0)),
     maxRisk: safeNum(resp.maxRisk, 0),
     maxProfit: resp.maxProfit === "unlimited" || resp.maxProfit === "Unlimited" ? 99999 : safeNum(resp.maxProfit, 0),
     breakeven: Array.isArray(resp.breakeven) ? (resp.breakeven as unknown[]).map(v => safeNum(v, 0)).filter(n => n > 0) : [],
-    rationale: String(resp.rationale ?? ""),
+    companyContext: String(resp.companyContext ?? ""),
+    thesis: String(resp.thesis ?? resp.rationale ?? ""),
+    exitTargets,
+    bullInvalidation: String(resp.bullInvalidation ?? ""),
+    bearInvalidation: String(resp.bearInvalidation ?? ""),
+    riskOfRuin: String(resp.riskOfRuin ?? ""),
     confidence,
     warnings: resp.warnings ? String(resp.warnings) : null,
   };
@@ -592,9 +663,27 @@ function inferDirection(strategy: string, legs: AiTradeResponse["legs"]): string
   const s = strategy.toLowerCase();
   if (s.includes("bull") || s.includes("long_call") || s.includes("call_debit")) return "BULLISH";
   if (s.includes("bear") || s.includes("long_put") || s.includes("put_debit")) return "BEARISH";
+  if (s === "naked_put") return "BULLISH";
+  if (s === "naked_call") return "BEARISH";
   if (s.includes("condor") || s.includes("butterfly") || s.includes("straddle") || s.includes("strangle")) return "NON_DIRECTIONAL";
-  if (s.includes("calendar")) return "NON_DIRECTIONAL";
+  if (s.includes("calendar") || s.includes("diagonal")) return "NON_DIRECTIONAL";
+  if (s.includes("ratio")) {
+    const sells = legs.filter(l => l.action === "sell");
+    if (sells.length > 0) return sells[0].type === "call" ? "BEARISH" : "BULLISH";
+  }
   const buys = legs.filter(l => l.action === "buy");
+  const sells = legs.filter(l => l.action === "sell");
+  if (legs.length === 1) {
+    const leg = legs[0];
+    if (leg.action === "buy") return leg.type === "call" ? "BULLISH" : "BEARISH";
+    if (leg.action === "sell") return leg.type === "put" ? "BULLISH" : "BEARISH";
+  }
+  if (buys.length === 1 && sells.length === 0) {
+    return buys[0].type === "call" ? "BULLISH" : "BEARISH";
+  }
+  if (sells.length === 1 && buys.length === 0) {
+    return sells[0].type === "put" ? "BULLISH" : "BEARISH";
+  }
   if (buys.length === 1) {
     return buys[0].type === "call" ? "BULLISH" : "BEARISH";
   }
