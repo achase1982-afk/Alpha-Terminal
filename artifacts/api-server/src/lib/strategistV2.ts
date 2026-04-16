@@ -174,7 +174,7 @@ Your response must be valid JSON with these fields:
 - breakeven: array of numbers (breakeven price points)
 - companyContext: string (2 sentences: what the company does, what sector, what it is levered to)
 - thesis: string (2-4 sentences on why this specific structure is the best expression of the edge right now, speaking in vol, flow, Greeks, catalyst, and probability terms)
-- exitTargets: {profitTarget: number, profitTargetUnderlying: number, stopLoss: number, stopLossUnderlying: number, timeStop: string}
+- exitTargets: {profitTarget: number, profitTargetUnderlying: number, stopLoss: number, stopLossUnderlying: number, timeStop: string (YYYY-MM-DD format, must be a FUTURE date — if DTE < 7, set timeStop to "" instead of computing expiration minus days)}
 - bullInvalidation: string (specific event or price action that kills the long side of the thesis)
 - bearInvalidation: string (specific event or price action that kills the short side of the thesis)
 - riskOfRuin: string (the single biggest threat to this trade: one sentence)
@@ -236,6 +236,12 @@ export async function analyzeTickerV2(ticker: string): Promise<StrategistV2Resul
   const ioScore = await computeIOScore(ticker, catalystInfo, settings);
 
   const chainSummary = summarizeOptionsChain(chain, tickerData.price);
+
+  logger.info({
+    ticker,
+    availableExpirations: chainSummary.availableExpirations,
+    expirationCount: chainSummary.availableExpirations.length,
+  }, "StrategistV2: expirations being sent to AI model");
 
   const dataPackage = buildDataPackage(ticker, tickerData, chainSummary, ioScore, regime, settings);
 
@@ -419,6 +425,7 @@ function buildDataPackage(
 ): string {
   const pkg: Record<string, unknown> = {
     ticker,
+    currentDate: new Date().toISOString().slice(0, 10),
     price: tickerData.price,
     dailyChangePct: tickerData.dailyChangePct,
     ivr: tickerData.ivr,
@@ -565,12 +572,22 @@ async function callAiForTrade(dataPackage: string, retryInstruction?: string): P
   const confidence = Math.max(0, Math.min(100, safeNum(resp.confidence, 0)));
 
   const exitRaw = resp.exitTargets as Record<string, unknown> | undefined;
+  let timeStopStr = String(exitRaw?.timeStop ?? "");
+  if (timeStopStr && /^\d{4}-\d{2}-\d{2}/.test(timeStopStr)) {
+    const tsDate = new Date(timeStopStr);
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    if (tsDate.getTime() <= now.getTime()) {
+      logger.warn({ timeStop: timeStopStr, today: now.toISOString().slice(0, 10) }, "StrategistV2: AI returned timeStop in the past — omitting");
+      timeStopStr = "";
+    }
+  }
   const exitTargets = {
     profitTarget: safeNum(exitRaw?.profitTarget, 0),
     profitTargetUnderlying: safeNum(exitRaw?.profitTargetUnderlying, 0),
     stopLoss: safeNum(exitRaw?.stopLoss, 0),
     stopLossUnderlying: safeNum(exitRaw?.stopLossUnderlying, 0),
-    timeStop: String(exitRaw?.timeStop ?? ""),
+    timeStop: timeStopStr,
   };
 
   return {
