@@ -276,10 +276,13 @@ export async function analyzeTickerV2(ticker: string): Promise<StrategistV2Resul
   }
 
   const legs = mapAiLegsToCandidate(aiResponse, chain);
-  const isCredit = aiResponse.entryPrice < 0;
-  const entryAbs = Math.abs(aiResponse.entryPrice);
-  const maxProfit = typeof aiResponse.maxProfit === "number" ? aiResponse.maxProfit : 99999;
-  const maxLoss = aiResponse.maxRisk;
+  const economics = computeSpreadEconomics(legs, aiResponse, ticker);
+  const isCredit = economics.isCredit;
+  const entryAbs = economics.entryAbs;
+  const entryRangeMin = economics.entryRangeMin;
+  const entryRangeMax = economics.entryRangeMax;
+  const maxProfit = economics.maxProfit;
+  const maxLoss = economics.maxLoss;
   const breakeven = aiResponse.breakeven.length > 0 ? aiResponse.breakeven[0] : tickerData.price;
 
   const firstLeg = aiResponse.legs[0];
@@ -309,8 +312,8 @@ export async function analyzeTickerV2(ticker: string): Promise<StrategistV2Resul
       legs,
       credit: isCredit ? entryAbs : undefined,
       debit: !isCredit ? entryAbs : undefined,
-      entryRangeMin: aiResponse.entryRangeMin ?? entryAbs,
-      entryRangeMax: aiResponse.entryRangeMax ?? entryAbs,
+      entryRangeMin,
+      entryRangeMax,
       maxProfit,
       maxLoss,
       breakeven,
@@ -674,6 +677,124 @@ function mapAiLegsToCandidate(response: AiTradeResponse, chain: ChainContract[])
       openInterest: contract?.openInterest ?? 0,
     };
   });
+}
+
+interface SpreadEconomics {
+  isCredit: boolean;
+  entryAbs: number;
+  entryRangeMin: number;
+  entryRangeMax: number;
+  maxProfit: number;
+  maxLoss: number;
+}
+
+function computeSpreadEconomics(
+  legs: CandidateLeg[],
+  aiResponse: AiTradeResponse,
+  ticker: string,
+): SpreadEconomics {
+  const aiEntry = aiResponse.entryPrice;
+  const aiMaxProfit = typeof aiResponse.maxProfit === "number" ? aiResponse.maxProfit : 99999;
+  const aiMaxLoss = aiResponse.maxRisk;
+
+  // Determine if any leg has missing pricing — if so, fall back to AI numbers
+  const allLegsPriced = legs.length > 0 && legs.every(l => l.bid > 0 || l.ask > 0);
+  if (!allLegsPriced) {
+    return {
+      isCredit: aiEntry < 0,
+      entryAbs: Math.abs(aiEntry),
+      entryRangeMin: aiResponse.entryRangeMin ?? Math.abs(aiEntry),
+      entryRangeMax: aiResponse.entryRangeMax ?? Math.abs(aiEntry),
+      maxProfit: aiMaxProfit,
+      maxLoss: aiMaxLoss,
+    };
+  }
+
+  // Net cost from real prices: positive = debit (we pay), negative = credit (we receive)
+  // For each leg: buy adds mid (cost), sell subtracts mid (premium received)
+  let netMid = 0;
+  let netBid = 0; // worst-case fill if buying / best-case if selling
+  let netAsk = 0; // best-case fill if buying / worst-case if selling
+  for (const leg of legs) {
+    const sign = leg.side === "buy" ? 1 : -1;
+    netMid += sign * leg.mid;
+    // For range: buying side, low = bid (rare fill) and high = ask (typical fill)
+    // We compute spread net at min and max plausible fills
+    netBid += sign * (leg.side === "buy" ? leg.bid : leg.ask);
+    netAsk += sign * (leg.side === "buy" ? leg.ask : leg.bid);
+  }
+
+  const isCredit = netMid < 0;
+  const entryAbs = Math.round(Math.abs(netMid) * 100) / 100;
+  const rangeLo = Math.round(Math.min(Math.abs(netBid), Math.abs(netAsk)) * 100) / 100;
+  const rangeHi = Math.round(Math.max(Math.abs(netBid), Math.abs(netAsk)) * 100) / 100;
+
+  // Detect calendar/diagonal: legs span more than one expiration
+  const expirations = new Set(legs.map(l => l.expiration));
+  const isMultiExpiration = expirations.size > 1;
+
+  let maxProfit = aiMaxProfit;
+  let maxLoss = aiMaxLoss;
+
+  if (isMultiExpiration) {
+    // Calendar/diagonal: max loss = net debit paid (per share, x100 for contract)
+    // Net dollar loss per contract = entryAbs * 100
+    // Max profit on calendar is theoretical (depends on IV/underlying), keep AI estimate
+    const computedMaxLoss = isCredit ? aiMaxLoss : entryAbs * 100;
+    if (Math.abs(computedMaxLoss - aiMaxLoss) / Math.max(aiMaxLoss, 1) > 0.20) {
+      logger.warn({
+        ticker,
+        strategy: aiResponse.strategy,
+        aiEntry, computedNet: netMid, aiMaxLoss, computedMaxLoss,
+        legs: legs.map(l => ({ side: l.side, type: l.type, strike: l.strike, exp: l.expiration, mid: l.mid })),
+      }, "StrategistV2: AI calendar/diagonal economics differ from leg-derived; overriding with leg-derived");
+    }
+    maxLoss = computedMaxLoss;
+  } else if (legs.length >= 2) {
+    // Vertical spread on same expiration
+    const strikes = legs.map(l => l.strike).sort((a, b) => a - b);
+    const width = (strikes[strikes.length - 1] - strikes[0]) * 100;
+    if (isCredit) {
+      // Credit spread: max profit = credit collected, max loss = width - credit
+      const computedMaxProfit = entryAbs * 100;
+      const computedMaxLoss = Math.max(0, width - computedMaxProfit);
+      maxProfit = computedMaxProfit;
+      maxLoss = computedMaxLoss;
+    } else {
+      // Debit spread: max loss = debit paid, max profit = width - debit
+      const computedMaxLoss = entryAbs * 100;
+      const computedMaxProfit = Math.max(0, width - computedMaxLoss);
+      maxProfit = computedMaxProfit;
+      maxLoss = computedMaxLoss;
+    }
+  } else if (legs.length === 1) {
+    // Single leg long: max loss = debit paid
+    const leg = legs[0];
+    if (leg.side === "buy") {
+      maxLoss = entryAbs * 100;
+      // Long calls/puts unbounded profit — keep AI value
+    }
+    // Single leg short (naked) — keep AI numbers, margin-bound
+  }
+
+  if (Math.abs(Math.abs(aiEntry) - entryAbs) > 0.10) {
+    logger.warn({
+      ticker,
+      strategy: aiResponse.strategy,
+      aiEntry,
+      computedEntry: netMid,
+      diff: Math.abs(Math.abs(aiEntry) - entryAbs),
+    }, "StrategistV2: AI entryPrice differs from leg-derived net by >$0.10; using leg-derived");
+  }
+
+  return {
+    isCredit,
+    entryAbs,
+    entryRangeMin: rangeLo,
+    entryRangeMax: rangeHi,
+    maxProfit,
+    maxLoss,
+  };
 }
 
 function inferDirection(strategy: string, legs: AiTradeResponse["legs"]): string {
