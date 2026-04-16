@@ -70,9 +70,10 @@ function sseFlushPadding(res: import("express").Response) {
   safeSseWrite(res, pad);
 }
 
-const DEFAULT_MODEL = "claude-opus-4-6";
+const DEFAULT_MODEL = "claude-opus-4-7";
 
 const AVAILABLE_MODELS = [
+  "claude-opus-4-7",
   "claude-opus-4-6",
   "claude-sonnet-4-6",
   "claude-opus-4-20250514",
@@ -83,6 +84,10 @@ const AVAILABLE_MODELS = [
   "gemini-2.5-flash",
   "gemini-2.0-flash",
 ];
+
+function isOpus47OrNewer(model: string): boolean {
+  return /^claude-opus-4-([7-9]|\d{2,})/.test(model);
+}
 
 interface NativeStreamOptions {
   prompt: string;
