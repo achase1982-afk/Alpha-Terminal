@@ -1,0 +1,33 @@
+Replit: Fix three strategist output bugs
+Three bugs were identified in the strategist card output after the Opus 4.7 migration. All three are post-AI display/reconciliation issues, not model issues. Fix all three in this pass.
+Bug 1: IOScore Flow Score shows 0.000 when narrative cites significant flow
+Current behavior: HOOD strategist card narrative describes 102,619 contracts on the Apr17 $90 call against 33,008 OI (vol/OI ratio 3.1), but the IOScore breakdown shows Flow Score 0.000 and Vol/OI Ratio 0.000. This is a credibility bug. The narrative and the structured score must agree.
+Root cause hypothesis: Flow Score and Vol/OI Ratio in IOScore are being computed from a different data source or expiration bucket than what the AI sees in the summarizeOptionsChain payload. The AI reads the full topVolumeCalls/topVolumePuts arrays and curatedExpirations buckets. IOScore appears to be reading from a separate aggregation that is either empty, stale, or scoped wrong.
+Action:
+	1.	Trace where Flow Score and Vol/OI Ratio in the IOScore object are populated. Log the raw inputs to both IOScore and the AI payload for one HOOD call and confirm whether they are reading the same data.
+	2.	If IOScore is reading from a different source, unify so both read from the same normalized flow aggregation that the AI sees. The AI’s view is the ground truth because it’s what produces the narrative.
+	3.	Flow Score should reflect the same top vol/OI concentrations the AI narrative cites. If the AI says “vol/OI of 3.1 on the 90 strike,” IOScore Vol/OI Ratio should show a meaningful number, not 0.000.
+	4.	Add a diagnostic warning when narrative cites flow numbers but IOScore shows 0 on flow-related fields. This is a pipeline health check, not a user-facing warning.
+Bug 2: Narrative arithmetic does not match server-computed card fields
+Current behavior: HOOD card narrative text states “1.63:1 ($310 max profit vs $190 max risk).” Card structured fields show 1.94:1, $330 max profit, $170 max loss. The card fields are computed by computeSpreadEconomics from Schwab leg prices and are correct. The narrative is the AI doing its own arithmetic in prose, which is wrong.
+The existing computeSpreadEconomics helper only overrides structured fields (debit, R/R, max profit, max loss, breakeven). It does not touch the narrative text the AI writes. Users read the narrative. Discrepancy between narrative numbers and card numbers undermines trust in the entire card.
+Action:
+	1.	After computeSpreadEconomics computes the authoritative economics, pass those numbers back to the AI in a second step OR string-replace them into the narrative before rendering.
+	2.	Preferred approach: inject a “computed_economics” block into the AI’s context with the authoritative numbers, and update the prompt to require the narrative to cite ONLY those computed values for debit, R/R, max profit, max loss, and breakeven. The AI picks structure and writes thesis. It does not do arithmetic in prose.
+	3.	Prompt addition to option-strategist-prompt.md: “When citing debit, credit, risk/reward, max profit, max loss, or breakeven in your narrative, use only the values provided in the computed_economics block. Do not compute these yourself. Your job is structure and thesis. The code computes economics from real Schwab prices.”
+	4.	Add a post-AI reconciliation check: scan the narrative for dollar amounts and ratios, compare to computed_economics, log a warning if any cited number differs by more than 5% from computed. This catches cases where the AI ignores the instruction.
+Bug 3: Exit target display format is inconsistent between runs
+Current behavior: One HOOD card shows exit targets as “$3.75 (underlying $90.00)” which reads as contract price (per-share option price). A later HOOD card shows “$200.00 (underlying $93.50)” which reads as total dollar P&L on a 1-contract position. Same field, two different units, no indication to the user which is which.
+This is a display bug that will cause confusion at order time. A trader glancing at “$200” when the option is trading at $1.70 per contract will be momentarily confused about what they are targeting.
+Action:
+	1.	Pick one format and enforce it across all strategist cards. Recommendation: use contract price (per-share) for the primary number and parenthesize the total dollar P&L on a 1-contract basis. Example: “Profit Target: $3.30 per contract ($330 on 1 lot, underlying $93.50)”. This shows the trader both the option price they’re watching and the dollar outcome.
+	2.	Update the exit targets rendering logic in the strategist card component to use this unified format.
+	3.	If the AI is producing these values, update the prompt to specify the required format explicitly. If the code is formatting them, update the formatter.
+	4.	Apply the same format to profit target, stop loss, and any other dollar-denominated exit level.
+Verification after all three fixes:
+Run HOOD, TSLA, AMD, and SPY strategist calls. For each card confirm:
+	•	IOScore Flow Score and Vol/OI Ratio show non-zero values when the narrative cites flow (Bug 1)
+	•	Every dollar amount and ratio in the narrative matches the corresponding structured card field exactly (Bug 2)
+	•	Exit targets display in the unified “per contract (total P&L, underlying price)” format (Bug 3)
+Log any card where narrative numbers drift from computed economics by more than 5%. That log is the ongoing canary for Bug 2 regressions.
+Do not touch the option-strategist-prompt.md identity section, the defined-risk rules, or the structured output schema. Only the narrative-citation instruction should be added to the prompt, and only the three bugs above should be addressed in the code.

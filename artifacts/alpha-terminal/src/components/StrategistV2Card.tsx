@@ -220,13 +220,23 @@ export function StrategistV2RecommendationCard({ result, onSendToOrder }: { resu
             {rec.exitTargets.profitTarget > 0 && (
               <div className="flex justify-between">
                 <span className="font-mono text-[10px] text-zinc-400">Profit Target</span>
-                <span className="font-mono text-[10px]" style={{ color: UP }}>${rec.exitTargets.profitTarget.toFixed(2)} (underlying {rec.exitTargets.profitTargetUnderlying > 0 ? `$${rec.exitTargets.profitTargetUnderlying.toFixed(2)}` : "—"})</span>
+                <span className="font-mono text-[10px]" style={{ color: UP }}>
+                  ${rec.exitTargets.profitTarget.toFixed(2)} per contract
+                  {" ("}${Math.round(rec.exitTargets.profitTarget * 100)} on 1 lot
+                  {rec.exitTargets.profitTargetUnderlying > 0 ? `, underlying $${rec.exitTargets.profitTargetUnderlying.toFixed(2)}` : ""}
+                  {")"}
+                </span>
               </div>
             )}
             {rec.exitTargets.stopLoss > 0 && (
               <div className="flex justify-between">
                 <span className="font-mono text-[10px] text-zinc-400">Stop Loss</span>
-                <span className="font-mono text-[10px]" style={{ color: DOWN }}>${rec.exitTargets.stopLoss.toFixed(2)} (underlying {rec.exitTargets.stopLossUnderlying > 0 ? `$${rec.exitTargets.stopLossUnderlying.toFixed(2)}` : "—"})</span>
+                <span className="font-mono text-[10px]" style={{ color: DOWN }}>
+                  ${rec.exitTargets.stopLoss.toFixed(2)} per contract
+                  {" ("}${Math.round(rec.exitTargets.stopLoss * 100)} on 1 lot
+                  {rec.exitTargets.stopLossUnderlying > 0 ? `, underlying $${rec.exitTargets.stopLossUnderlying.toFixed(2)}` : ""}
+                  {")"}
+                </span>
               </div>
             )}
             {rec.exitTargets.timeStop && (

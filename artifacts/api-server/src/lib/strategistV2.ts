@@ -214,12 +214,14 @@ Your response must be valid JSON with these fields:
 - breakeven: array of numbers (breakeven price points)
 - companyContext: string (2 sentences: what the company does, what sector, what it is levered to)
 - thesis: string (2-4 sentences on why this specific structure is the best expression of the edge right now, speaking in vol, flow, Greeks, catalyst, and probability terms; if selling close to the money explicitly justify why vol is rich enough to take that risk; if going wide on a spread explicitly justify the risk/reward)
-- exitTargets: {profitTarget: number, profitTargetUnderlying: number, stopLoss: number, stopLossUnderlying: number, timeStop: string (YYYY-MM-DD format, must be a FUTURE date — if DTE < 7, set timeStop to "" instead of computing expiration minus days)}
+- exitTargets: {profitTarget: number (PER-SHARE option contract price — what the option itself trades for, e.g. 3.30, NOT total dollar P&L on a lot), profitTargetUnderlying: number (underlying share price at that target), stopLoss: number (PER-SHARE option contract price at the stop, e.g. 0.85), stopLossUnderlying: number (underlying share price at that stop), timeStop: string (YYYY-MM-DD format, must be a FUTURE date — if DTE < 7, set timeStop to "" instead of computing expiration minus days)}
 - bullInvalidation: string (specific event or price action that kills the long side of the thesis)
 - bearInvalidation: string (specific event or price action that kills the short side of the thesis)
 - riskOfRuin: string (the single biggest threat to this trade — the one thing that if it happened would cause maximum pain: macro event, vol crush, gap risk, earnings adjacency, liquidity trap, regulatory surprise; one sentence)
 - confidence: number 0-100 (if no setup qualifies, return below 20 and do not force a trade)
 - warnings: string or null (anything the user should know: earnings risk, low liquidity, gap risk, etc.)
+
+NARRATIVE DISCIPLINE: Your job is structure and thesis. The code computes economics from real Schwab leg prices after you respond. When your thesis prose mentions a specific debit, credit, risk/reward ratio, max profit, max loss, or breakeven, cite only numbers that match the legs and prices you are picking — do not invent or approximate. If you are uncertain of a number, describe the shape of the trade qualitatively instead of quoting a dollar figure. Dollar amounts and ratios you cite must match the strikes and real leg prices you selected; mismatches get auto-corrected by the server and logged as a quality issue.
 
 IMPORTANT: Respond with ONLY the JSON object. No markdown, no explanation text, no code fences. Just the raw JSON.`;
 
@@ -277,6 +279,8 @@ export async function analyzeTickerV2(ticker: string): Promise<StrategistV2Resul
 
   const chainSummary = summarizeOptionsChain(chain, tickerData.price);
 
+  reconcileFlowScoreFromChain(ioScore, chainSummary, ticker);
+
   logger.info({
     ticker,
     availableExpirations: chainSummary.availableExpirations,
@@ -332,6 +336,23 @@ export async function analyzeTickerV2(ticker: string): Promise<StrategistV2Resul
   const maxLoss = economics.maxLoss;
   const breakeven = aiResponse.breakeven.length > 0 ? aiResponse.breakeven[0] : tickerData.price;
 
+  // Bug 2: scrub narrative so cited numbers match computed economics
+  const reconciledThesis = reconcileNarrativeEconomics(
+    aiResponse.thesis ?? "",
+    { entryAbs, isCredit, maxProfit, maxLoss, breakeven },
+    ticker,
+  );
+  aiResponse.thesis = reconciledThesis;
+
+  // Bug 3: normalize exit targets so profitTarget/stopLoss are always per-share option price
+  const normalizedExitTargets = normalizeExitTargets(
+    aiResponse.exitTargets,
+    entryAbs,
+    maxProfit,
+    maxLoss,
+    ticker,
+  );
+
   const firstLeg = aiResponse.legs[0];
   const expiration = firstLeg?.expiration ?? "";
   const expDate = new Date(expiration);
@@ -367,7 +388,7 @@ export async function analyzeTickerV2(ticker: string): Promise<StrategistV2Resul
       riskReward: maxLoss > 0 ? maxProfit / maxLoss : 0,
       dte,
       expiration,
-      exitTargets: aiResponse.exitTargets ?? { profitTarget: 0, profitTargetUnderlying: 0, stopLoss: 0, stopLossUnderlying: 0, timeStop: "" },
+      exitTargets: normalizedExitTargets,
       bullInvalidation: aiResponse.bullInvalidation || "",
       bearInvalidation: aiResponse.bearInvalidation || "",
       riskOfRuin: aiResponse.riskOfRuin || "",
@@ -1359,4 +1380,184 @@ async function logTelemetry(
     logger.error({ err }, "StrategistV2: telemetry logging failed");
     return null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Post-AI reconciliation helpers (Bugs 1, 2, 3)
+// ---------------------------------------------------------------------------
+
+function reconcileFlowScoreFromChain(
+  ioScore: IOScoreResult,
+  chainSummary: ChainSummary,
+  ticker: string,
+): void {
+  const existing = ioScore.components.flowDivergence.volOiRatio;
+
+  // Best vol/OI signal the AI actually sees: highest volOiRatio in unusualActivity,
+  // fallback to computed ratio across topVolumeCalls/Puts.
+  let chainVoiRatio = 0;
+  if (chainSummary.unusualActivity.length > 0) {
+    chainVoiRatio = Math.max(...chainSummary.unusualActivity.map((u) => u.volOiRatio));
+  } else {
+    const combined = [...chainSummary.topVolumeCalls, ...chainSummary.topVolumePuts];
+    const ratios = combined
+      .filter((c) => c.oi > 0)
+      .map((c) => c.volume / c.oi);
+    if (ratios.length > 0) chainVoiRatio = Math.max(...ratios);
+  }
+  chainVoiRatio = Math.round(chainVoiRatio * 100) / 100;
+
+  if (chainVoiRatio <= 0) return; // chain has nothing to offer either
+
+  // Pipeline health check: narrative-source shows significant flow but aggregates say 0
+  if (existing === 0 && chainVoiRatio >= 2) {
+    logger.warn(
+      { ticker, aggregatesVoiRatio: existing, chainVoiRatio, source: "chainSummary.unusualActivity" },
+      "StrategistV2: flowDailyAggregates empty for ticker but chain shows flow — patching ioScore.flowDivergence from live chain",
+    );
+  }
+
+  // Patch whenever chain shows a stronger signal than stale/missing aggregates.
+  // NOTE: this is a display-only patch for the narrative/UI surface. We intentionally
+  // do NOT recompute ioScore.final or flowDivergence.contribution: when the engine saw
+  // `available: false` it already excluded flow from the total with re-weighted siblings,
+  // and retroactively adding flow back would alter the headline IOScore in a way the
+  // engine never chose. Use canonical formula from computeFlowDivergence() — no skew floor.
+  if (chainVoiRatio > existing) {
+    const skew = ioScore.components.flowDivergence.skewDivergence;
+    const patchedFinal = Math.min(1.0, (chainVoiRatio / 3.0) * skew);
+    ioScore.components.flowDivergence.volOiRatio = chainVoiRatio;
+    ioScore.components.flowDivergence.final = Math.round(patchedFinal * 100) / 100;
+  }
+}
+
+function reconcileNarrativeEconomics(
+  thesis: string,
+  computed: { entryAbs: number; isCredit: boolean; maxProfit: number; maxLoss: number; breakeven: number },
+  ticker: string,
+): string {
+  if (!thesis) return thesis;
+  const drifts: Array<{ label: string; cited: number; computed: number; pct: number }> = [];
+  let out = thesis;
+
+  const close = (cited: number, truth: number) => {
+    if (truth <= 0) return true;
+    return Math.abs(cited - truth) / truth <= 0.05;
+  };
+
+  const fmtDollar = (n: number) => {
+    if (n >= 1000) return Math.round(n).toString();
+    if (n >= 100) return Math.round(n).toString();
+    return (Math.round(n * 100) / 100).toString();
+  };
+
+  // Pattern 1: "$NNN max profit" / "max profit of $NNN" / "max profit $NNN"
+  const dollarPatterns: Array<{ re: RegExp; truth: number; label: string }> = [
+    { re: /\$(\d+(?:,\d{3})*(?:\.\d+)?)\s*(max\s+profit)/gi, truth: computed.maxProfit, label: "max profit" },
+    { re: /(max\s+profit)[^$\d]{0,12}\$(\d+(?:,\d{3})*(?:\.\d+)?)/gi, truth: computed.maxProfit, label: "max profit" },
+    { re: /\$(\d+(?:,\d{3})*(?:\.\d+)?)\s*(max\s+(?:loss|risk))/gi, truth: computed.maxLoss, label: "max loss" },
+    { re: /(max\s+(?:loss|risk))[^$\d]{0,12}\$(\d+(?:,\d{3})*(?:\.\d+)?)/gi, truth: computed.maxLoss, label: "max loss" },
+    { re: /\$(\d+(?:\.\d+)?)\s*(debit|credit)/gi, truth: computed.entryAbs, label: "entry" },
+    { re: /(debit|credit)[^$\d]{0,12}\$(\d+(?:\.\d+)?)/gi, truth: computed.entryAbs, label: "entry" },
+  ];
+
+  for (const { re, truth, label } of dollarPatterns) {
+    out = out.replace(re, (match, g1: string, g2: string) => {
+      const numStr = /^\d/.test(g1) ? g1 : g2;
+      const cited = parseFloat(numStr.replace(/,/g, ""));
+      if (!Number.isFinite(cited) || cited <= 0) return match;
+      if (truth <= 0) {
+        // Can't replace safely, but log mismatch for canary visibility
+        drifts.push({ label, cited, computed: truth, pct: 1 });
+        return match;
+      }
+      if (close(cited, truth)) return match;
+      drifts.push({ label, cited, computed: truth, pct: Math.abs(cited - truth) / truth });
+      return match.replace(numStr, fmtDollar(truth));
+    });
+  }
+
+  // Pattern 2: "X.X:1" ratios — gated to risk/reward context only (avoids false positives on
+  // "3:1 ratio spread", "2:1 call/put skew", etc.). Only replace when a risk/reward keyword
+  // appears within ~30 chars on either side of the ratio token.
+  if (computed.maxLoss > 0 && computed.maxProfit > 0) {
+    const truthRR = computed.maxProfit / computed.maxLoss;
+    const rrContextRe = /([\s\S]{0,30})(\d+(?:\.\d+)?)\s*:\s*1([\s\S]{0,30})/g;
+    const rrKeyword = /risk[\s/-]*reward|reward[\s/-]*to[\s/-]*risk|r[\s/-]*(?:to|\/|:)?[\s/-]*r\b|r:r|risk[\s:/-]*r|payoff[\s/-]*ratio/i;
+    out = out.replace(rrContextRe, (match, before: string, numStr: string, after: string) => {
+      const cited = parseFloat(numStr);
+      if (!Number.isFinite(cited) || cited <= 0) return match;
+      if (cited < 0.1 || cited > 20) return match; // sane R/R range
+      const context = `${before} ${after}`;
+      if (!rrKeyword.test(context)) return match; // not a risk/reward context — leave alone
+      if (Math.abs(cited - truthRR) / truthRR <= 0.05) return match;
+      drifts.push({ label: "risk/reward", cited, computed: truthRR, pct: Math.abs(cited - truthRR) / truthRR });
+      const fixed = (Math.round(truthRR * 100) / 100).toFixed(2);
+      return match.replace(`${numStr}`, fixed).replace(/(\d+\.\d{2}):\s*1/, `${fixed}:1`);
+    });
+  }
+
+  if (drifts.length > 0) {
+    logger.warn(
+      {
+        ticker,
+        drifts: drifts.map((d) => ({
+          label: d.label,
+          citedByAi: d.cited,
+          computedFromLegs: Math.round(d.computed * 100) / 100,
+          driftPct: Math.round(d.pct * 1000) / 10,
+        })),
+      },
+      "StrategistV2: narrative economics drifted from computed — auto-corrected in thesis",
+    );
+  }
+
+  return out;
+}
+
+function normalizeExitTargets(
+  raw: { profitTarget: number; profitTargetUnderlying: number; stopLoss: number; stopLossUnderlying: number; timeStop: string } | undefined,
+  entryAbs: number,
+  maxProfit: number,
+  maxLoss: number,
+  ticker: string,
+): { profitTarget: number; profitTargetUnderlying: number; stopLoss: number; stopLossUnderlying: number; timeStop: string } {
+  const def = { profitTarget: 0, profitTargetUnderlying: 0, stopLoss: 0, stopLossUnderlying: 0, timeStop: "" };
+  if (!raw) return def;
+
+  const normalizeOne = (v: number, label: "profitTarget" | "stopLoss"): number => {
+    if (!Number.isFinite(v) || v <= 0) return 0;
+    // Semantic classifier (not a raw ratio): a value is treated as dollar-P&L-on-1-lot
+    // only if ALL of:
+    //   1. v > 50 (no realistic per-share option target for retail tickers reaches $50;
+    //      deep-ITM spreads may but they're rare and benefit from the close-match check below)
+    //   2. The dollar-interpretation (v) is a close match (<25% drift) to the appropriate
+    //      max P&L dollar figure (maxProfit for profitTarget, maxLoss for stopLoss).
+    //   3. The per-share interpretation (v) would be implausibly far from entry (>15x).
+    // This avoids mis-normalizing legitimate per-share targets on cheap options.
+    const truth = label === "profitTarget" ? maxProfit : maxLoss;
+    const lookLikeDollar =
+      v > 50 &&
+      truth > 0 &&
+      Math.abs(v - truth) / truth < 0.25 &&
+      entryAbs > 0 &&
+      v > entryAbs * 15;
+    if (lookLikeDollar) {
+      const perShare = Math.round((v / 100) * 100) / 100;
+      logger.warn(
+        { ticker, field: label, reported: v, entryAbs, truthDollar: truth, normalized: perShare },
+        "StrategistV2: exitTargets value matched dollar-P&L interpretation; normalized to per-share option price",
+      );
+      return perShare;
+    }
+    return Math.round(v * 100) / 100;
+  };
+
+  return {
+    profitTarget: normalizeOne(raw.profitTarget, "profitTarget"),
+    profitTargetUnderlying: Number.isFinite(raw.profitTargetUnderlying) ? raw.profitTargetUnderlying : 0,
+    stopLoss: normalizeOne(raw.stopLoss, "stopLoss"),
+    stopLossUnderlying: Number.isFinite(raw.stopLossUnderlying) ? raw.stopLossUnderlying : 0,
+    timeStop: raw.timeStop ?? "",
+  };
 }

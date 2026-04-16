@@ -1,0 +1,114 @@
+Replit: Strategist persistence, background execution, and copy-to-clipboard
+
+Four related changes to the Strategist feature. All four are about making the strategist cards persistent, resilient, and easy to share out of the app.
+
+CHANGE 1: Strategist analysis must run to completion in the background
+
+Current behavior: When the user taps "Analyze" on a ticker, the model begins thinking and streaming output. If the user navigates to another tab (Market Pulse, Scanner, Portfolio, etc.) or backgrounds the app entirely, the analysis stops or the result is lost when they return. The user experience feels like navigating away cancels the job.
+
+Required behavior: Once an analysis is initiated, it must run to completion regardless of what the user does in the UI. Navigating away, switching tabs, backgrounding the app, or locking the phone must not cancel the job. When the user returns, the completed card (or the in-progress streaming card) must be there waiting for them.
+
+Implementation direction:
+1. Decouple the analysis request from the component that initiated it. The analysis job should be owned by a global state manager (Zustand store, or TanStack Query mutation with persistent cache), not by the Strategist screen component.
+2. When the user taps Analyze, the job is registered in the store with a status of "running" and a jobId. The store persists across tab changes and remounts.
+3. The SSE stream writes its tokens into the store as they arrive. The Strategist screen subscribes to the store and renders whatever is currently there. If the user leaves the screen, the stream keeps writing to the store. When they return, the screen reads the latest state and renders it.
+4. On mount, the Strategist screen checks the store for any in-progress or recently completed jobs for the current ticker and renders them.
+5. If the app is backgrounded on iOS, the fetch/SSE connection will eventually be killed by the OS. Handle this gracefully: on foregrounding, if the last known job status is "running" but the connection is dead, either resume (if the server supports job resumption) or mark the job as "interrupted" with a retry button. Do not silently lose the request.
+6. Server-side: the strategist endpoint should run the full model call to completion and store the result in the production database keyed by jobId and userId, regardless of whether the client is still connected. This way even an interrupted stream can be recovered by polling for the jobId.
+
+CHANGE 2: Strategist cards persist in a list until the user clears them
+
+Current behavior: Each new strategist card replaces the previous one. If the user runs HOOD, then TSLA, the HOOD card is gone.
+
+Required behavior: Every strategist card the user generates persists in a list, similar to how AI Lab stores analyst outputs. The list is chronological, most recent at top. Cards remain in the list across app sessions until the user explicitly clears them.
+
+Implementation direction:
+1. Add a "Strategist History" data model in the production database. Schema should include: jobId, userId, ticker, timestamp, cardJSON (the full structured output including narrative, legs, economics, IOScore, invalidation, exit targets, etc.), and a "cleared" boolean.
+2. Every completed strategist analysis writes a row to this table.
+3. Add a list view to the Strategist screen that shows all uncleared cards in reverse chronological order. The list view should be the default when no active analysis is running. Tapping a card expands it to full detail.
+4. Each card in the list has a small "X" or trash icon to clear that individual card. Tapping it sets cleared=true for that row.
+5. Add a "Clear All" action at the top of the list (confirmation dialog: "Clear all saved strategist cards? This cannot be undone.") that sets cleared=true for all rows for the current user.
+6. Cleared cards should be soft-deleted (cleared=true flag), not hard-deleted, for one or two days before purging, in case the user wants an undo path later. Hard delete on a cron job after 48 hours.
+7. The bias strip and IOScore values on each stored card are snapshots from the time of analysis. Do not recompute them when the card is later viewed. The card reflects the state of the world when the analysis was run. Add a small "Generated [timestamp]" field visible on each card so the user knows how stale it is.
+
+CHANGE 3: Copy-to-clipboard on each strategist card
+
+Current behavior: If the user wants to share a strategist card outside the app, they have to screenshot it. There is no copy action.
+
+Required behavior: Every strategist card has a "Copy" button placed in the upper right corner of the card header. Tapping it copies the full content of the card to the iOS clipboard as plain text, formatted cleanly so it can be pasted into a text message, Slack, email, or note without additional formatting work. The user should not have to scroll through the entire card to reach the copy button, and should not have to open a file, scroll to the top, tap three dots, and hit copy. One tap, card is on the clipboard, done.
+
+Implementation direction:
+1. Place the Copy button in the upper right corner of the card header, aligned with the ticker/strategy name. This position must be visible the moment any card is opened from the strategist history list, with no scrolling required. Use a standard iOS copy icon (two overlapping squares) or the word "Copy." Single tap triggers the action.
+2. On tap, build a plain-text representation of the entire card. Example format:
+
+HOOD - Bull Call Spread - 52% conf
+Generated: 2026-04-16 14:05
+
+COMPANY
+Robinhood Markets is a retail brokerage and fintech platform levered to retail trading activity, crypto volumes, and interest rate-sensitive margin/cash sweep revenues.
+
+THESIS
+[Full narrative text from the card]
+
+LEGS
+BUY CALL $90  2026-05-15  delta 0.46  OI 11,236  $5.60
+SELL CALL $95 2026-05-15  delta 0.36  OI 6,471   $3.90
+
+ECONOMICS
+Debit: $1.70 per contract ($170 on 1 lot)
+Fill Range: $1.50 - $1.90
+Risk/Reward: 1.94:1
+Max Profit: $330
+Max Loss: $170
+Breakeven: $91.90
+DTE: 28d
+
+EXIT TARGETS
+Profit Target: $3.30 per contract ($330 on 1 lot, underlying $93.50)
+Stop Loss: $0.95 per contract ($95 on 1 lot, underlying $83.00)
+Time Stop: 2026-04-30
+
+INVALIDATION
+Bull: [text]
+Bear: [text]
+
+RISK OF RUIN
+[text]
+
+CAUTION
+[text if present]
+
+IOSCORE
+Overall: 16%  Classification: Macro Aligned
+Edge: Idiosyncratic 16% / Macro 84%
+Conviction: Neutral  Risk: Moderate
+Correlation: Normal  Composite: 50.0
+Idio Opportunity: Yes
+
+3. Use the section order shown above. Include every field visible on the card. If a field is empty or null, omit that line rather than printing "null".
+4. Use navigator.clipboard.writeText() for the copy action. On success, briefly show a toast or change the button label to "Copied!" for 2 seconds so the user has confirmation.
+5. Do not open a modal, file, or new screen. The copy happens silently in place.
+6. Test that pasting into iMessage, Slack, Notes, and Gmail produces clean plain text with the line breaks preserved.
+
+CHANGE 4: Visual indicator that a background job is running
+
+Since analyses now run in the background, the user needs a visual cue somewhere persistent in the UI that an analysis is in progress, even if they have left the Strategist screen. Otherwise they may forget they kicked one off.
+
+Implementation direction:
+1. Add a small indicator to the Strategist bottom nav tab icon when a background job is running. A subtle pulsing dot or a spinner overlay on the tab icon.
+2. When the job completes, the indicator changes to a "new result" dot (different color, not pulsing) until the user opens the Strategist tab and views the result.
+3. Once viewed, the indicator clears.
+4. If multiple analyses are running simultaneously (user ran HOOD, then TSLA, then AMD without waiting), the indicator shows a count badge ("3") instead of a dot.
+
+VERIFICATION AFTER ALL FOUR CHANGES:
+
+1. Tap Analyze on HOOD. While it is streaming, navigate to Market Pulse. Wait 30 seconds. Return to Strategist. Card should be complete or still streaming, not reset.
+2. Tap Analyze on HOOD. While it is streaming, background the app entirely. Wait 30 seconds. Foreground. Return to Strategist. Card should be there.
+3. Run HOOD analysis. Run TSLA analysis. Run AMD analysis. All three should appear in the Strategist history list, most recent at top.
+4. Close the app fully (swipe away from app switcher). Reopen. The three cards should still be in the history list.
+5. Open a card from the history list. Confirm the Copy button is visible in the upper right corner without scrolling. Tap it. Paste into Notes. Verify all sections are present and formatted cleanly.
+6. Tap the "X" on the TSLA card. Confirm it is removed from the list.
+7. Tap "Clear All." Confirm all cards are removed.
+8. Start a HOOD analysis. Navigate to Portfolio tab. Confirm the pulsing indicator appears on the Strategist tab icon. When the analysis completes, confirm the indicator changes to a "new result" dot.
+
+Do not touch the strategist prompt, the model configuration, or the computeSpreadEconomics helper in this pass. This is purely UX, state management, and persistence work.
