@@ -118,15 +118,15 @@ export function AiThinkingFeed({ texts, isStreaming, className = "" }: AiThinkin
         className="max-h-[150px] overflow-y-auto px-4 py-3 relative"
         style={{ scrollBehavior: "smooth" }}
       >
-        <div className="font-mono text-xs leading-relaxed whitespace-pre-wrap break-words" style={{ color: "#4ade80" }}>
+        <div className="font-mono text-xs leading-relaxed whitespace-pre-wrap break-words" style={{ color: "#e4e4e7" }}>
           {texts.length === 0 && isStreaming && (
-            <span style={{ color: "#2A2A2C" }}>Awaiting AI output...</span>
+            <span style={{ color: "#3f3f46" }}>Awaiting AI output...</span>
           )}
           {texts.map((text, i) => (
             <span key={i}>{text}</span>
           ))}
           {isStreaming && (
-            <span className="inline-block w-1.5 h-3.5 ml-0.5 animate-pulse" style={{ background: "#4ade80" }} />
+            <span className="inline-block w-1.5 h-3.5 ml-0.5 animate-pulse" style={{ background: "#e4e4e7" }} />
           )}
         </div>
         <div className="pointer-events-none absolute inset-0" style={{
