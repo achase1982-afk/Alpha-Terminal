@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useLayoutEffect } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { ConnectBrokerPrompt } from "./ConnectBrokerPrompt";
 import {
@@ -2153,25 +2153,31 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
   const markStrategistJobsViewed = useTerminalStore(s => s.markStrategistJobsViewed);
   const setStrategistHistoryStore = useTerminalStore(s => s.setStrategistHistory);
 
-  const [activeJobIdsByTicker, setActiveJobIdsByTicker] = useState<Record<string, string>>({});
+  // Derive the active jobId for the current symbol from the store so it
+  // survives component unmount/remount (e.g. when user switches bottom tabs).
+  const activeJobIdForSymbol = useMemo(() => {
+    const upper = symbol.toUpperCase();
+    let best: { id: string; startedAt: number } | null = null;
+    for (const [id, job] of Object.entries(strategistJobs)) {
+      if (job.ticker !== upper) continue;
+      if (!best || job.startedAt > best.startedAt) best = { id, startedAt: job.startedAt };
+    }
+    return best?.id ?? null;
+  }, [strategistJobs, symbol]);
 
   const v2Result: StrategistV2ResultType | null = (() => {
-    const jobId = activeJobIdsByTicker[symbol.toUpperCase()];
-    if (jobId) {
-      const job = strategistJobs[jobId];
-      if (job?.status === 'done' && job.result) return job.result as StrategistV2ResultType;
-      if (job?.status === 'error') {
-        return { status: "no_viable_setup", ticker: symbol.toUpperCase(), blockReason: job.error || "Analysis failed", regime: { directionalConviction: "NEUTRAL", systemicRiskLevel: "NORMAL", correlationRegime: "MODERATE", compositeScore: 0, idioOpportunityFlag: false }, systemicRiskElevated: false };
-      }
+    if (!activeJobIdForSymbol) return null;
+    const job = strategistJobs[activeJobIdForSymbol];
+    if (job?.status === 'done' && job.result) return job.result as StrategistV2ResultType;
+    if (job?.status === 'error') {
+      return { status: "no_viable_setup", ticker: symbol.toUpperCase(), blockReason: job.error || "Analysis failed", regime: { directionalConviction: "NEUTRAL", systemicRiskLevel: "NORMAL", correlationRegime: "MODERATE", compositeScore: 0, idioOpportunityFlag: false }, systemicRiskElevated: false };
     }
     return null;
   })();
 
-  const isV2Running = (() => {
-    const jobId = activeJobIdsByTicker[symbol.toUpperCase()];
-    if (!jobId) return false;
-    return strategistJobs[jobId]?.status === 'running';
-  })();
+  const isV2Running = activeJobIdForSymbol
+    ? strategistJobs[activeJobIdForSymbol]?.status === 'running'
+    : false;
 
   // Fetch history once on mount
   const historyFetchedRef = useRef(false);
@@ -2194,6 +2200,19 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
   useEffect(() => {
     if (subTab === "strategist") markStrategistJobsViewed();
   }, [subTab, markStrategistJobsViewed]);
+
+  // Keep the pipeline status in sync with whether a job is actually running.
+  // This restores the "Analyzing..." indicator when the user navigates back
+  // to a tab while a background job is still in flight.
+  useEffect(() => {
+    if (isV2Running) {
+      setStrategistStatus(prev => prev || "Running V2 strategist...");
+      setActiveResult("strategist");
+    } else {
+      setStrategistStatus(prev => prev === "Running V2 strategist..." ? "" : prev);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isV2Running]);
 
   useEffect(() => {
     if (prevSymbolRef.current !== symbol) {
@@ -2677,7 +2696,6 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
     setLastRunTime(Date.now());
     if (upperTicker !== symbol) setSymbol(upperTicker);
     startStrategistJob(jobId, upperTicker);
-    setActiveJobIdsByTicker(prev => ({ ...prev, [upperTicker]: jobId }));
     // Fire-and-forget — analysis continues in background even if user navigates away.
     (async () => {
       try {
@@ -2782,8 +2800,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
                 )}
 
                 {v2Result && !isV2Running && (() => {
-                  const activeJobId = activeJobIdsByTicker[symbol.toUpperCase()];
-                  const activeJob = activeJobId ? strategistJobs[activeJobId] : null;
+                  const activeJob = activeJobIdForSymbol ? strategistJobs[activeJobIdForSymbol] : null;
                   const generatedAt = activeJob?.finishedAt ?? activeJob?.startedAt ?? null;
                   return (
                     <>
@@ -2798,10 +2815,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
 
                 <StrategistHistoryList
                   onSendToOrder={onStrategistSendToOrder}
-                  excludeJobIds={(() => {
-                    const id = activeJobIdsByTicker[symbol.toUpperCase()];
-                    return id ? new Set([id]) : undefined;
-                  })()}
+                  excludeJobIds={activeJobIdForSymbol ? new Set([activeJobIdForSymbol]) : undefined}
                 />
 
                 {detResult && !isDetRunning && !v2Result && (
