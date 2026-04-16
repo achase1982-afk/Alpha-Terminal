@@ -146,6 +146,8 @@ let intentionalDisconnect = false;
 let reconnectAttempt = 0;
 let broadcastFn: ((event: string, data: unknown) => void) | null = null;
 let quoteCacheInjector: ((sym: string, quote: LiveQuote) => void) | null = null;
+let connectedAt = 0;
+let connectionEpoch = 0;
 
 export function registerIBBroadcast(fn: (event: string, data: unknown) => void) {
   broadcastFn = fn;
@@ -487,10 +489,11 @@ export async function connectIB(): Promise<void> {
   emitStatus("connecting");
 
   teardownIB();
+  const thisEpoch = ++connectionEpoch;
 
   try {
     ib = new IBApi({ host: IB_HOST, port: IB_PORT, clientId: activeClientId });
-    logger.info({ host: IB_HOST, port: IB_PORT, clientId: activeClientId }, "IB: connecting to gateway");
+    logger.info({ host: IB_HOST, port: IB_PORT, clientId: activeClientId, epoch: thisEpoch }, "IB: connecting to gateway");
 
     let allEventCount = 0;
     ib.on(EventName.all, (...args: unknown[]) => {
@@ -505,13 +508,18 @@ export async function connectIB(): Promise<void> {
     });
 
     ib.on(EventName.info, (msg: string, code: number) => {
-      // 326 = client ID already in use — arrives here as an INFO event (not error).
-      // Rotate to the next slot and reconnect after a 3-second pause.
       if (code === 326) {
+        if (thisEpoch !== connectionEpoch) {
+          logger.info({ epoch: thisEpoch, currentEpoch: connectionEpoch }, "IB: ignoring stale 326 from old connection epoch");
+          return;
+        }
+        if (connState === "CONNECTED" && Date.now() - connectedAt < 10_000) {
+          logger.info({ connectedAt, age: Date.now() - connectedAt }, "IB: ignoring 326 within 10s of successful connect (stale event)");
+          return;
+        }
         const oldId = activeClientId;
         activeClientId = ((activeClientId - IB_CLIENT_ID + 1) % 10) + IB_CLIENT_ID;
-        logger.warn({ oldId, newId: activeClientId }, "IB: client ID conflict (326) — rotating client ID, reconnecting in 3s");
-        // Prevent the imminent disconnected event from firing an immediate reconnect
+        logger.warn({ oldId, newId: activeClientId, epoch: thisEpoch }, "IB: client ID conflict (326) — rotating client ID, reconnecting in 6s");
         intentionalDisconnect = true;
         teardownIB();
         connState = "DISCONNECTED";
@@ -521,7 +529,7 @@ export async function connectIB(): Promise<void> {
         reconnectTimer = setTimeout(() => {
           reconnectTimer = null;
           void connectIB();
-        }, 3_000);
+        }, 6_000);
         return;
       }
       logger.info({ msg, code }, "IB: info event");
@@ -538,11 +546,11 @@ export async function connectIB(): Promise<void> {
 
     ib.on(EventName.connected, () => {
       connState = "CONNECTED";
+      connectedAt = Date.now();
       reconnectDelay = RECONNECT_INTERVAL_MS;
-      logger.info({ host: IB_HOST, port: IB_PORT, clientId: activeClientId, attempt: reconnectAttempt }, "IB: connected to gateway");
+      logger.info({ host: IB_HOST, port: IB_PORT, clientId: activeClientId, attempt: reconnectAttempt, epoch: thisEpoch }, "IB: connected to gateway");
       emitTelemetry("IBKR", "INFO", "IBKR Gateway connected", { host: IB_HOST, port: IB_PORT, clientId: activeClientId });
       reconnectAttempt = 0;
-      activeClientId = IB_CLIENT_ID; // reset to base slot on clean connect
       emitStatus("connected");
       subscribeAll();
       for (const cb of ibConnectedCallbacks) {
@@ -591,24 +599,28 @@ export async function connectIB(): Promise<void> {
         return;
       }
 
-      // 326 = client ID already in use (old process still registered with gateway).
-      // Rotate to the next client ID slot and reconnect after a short delay.
       if (code === 326) {
+        if (thisEpoch !== connectionEpoch) {
+          logger.info({ epoch: thisEpoch, currentEpoch: connectionEpoch }, "IB: ignoring stale 326 error from old connection epoch");
+          return;
+        }
+        if (connState === "CONNECTED" && Date.now() - connectedAt < 10_000) {
+          logger.info({ connectedAt, age: Date.now() - connectedAt }, "IB: ignoring 326 error within 10s of successful connect (stale event)");
+          return;
+        }
         const oldId = activeClientId;
         activeClientId = ((activeClientId - IB_CLIENT_ID + 1) % 10) + IB_CLIENT_ID;
-        logger.warn({ oldId, newId: activeClientId }, "IB: client ID conflict (326) — rotating client ID, reconnecting in 3s");
-        // Block the disconnected event from spawning its own immediate reconnect
+        logger.warn({ oldId, newId: activeClientId, epoch: thisEpoch }, "IB: client ID conflict (326) — rotating client ID, reconnecting in 6s");
         intentionalDisconnect = true;
         teardownIB();
         connState = "DISCONNECTED";
         emitStatus("disconnected");
         intentionalDisconnect = false;
-        // Schedule reconnect with new client ID
         if (reconnectTimer) clearTimeout(reconnectTimer);
         reconnectTimer = setTimeout(() => {
           reconnectTimer = null;
           void connectIB();
-        }, 3_000);
+        }, 6_000);
         return;
       }
 

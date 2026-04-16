@@ -4,6 +4,8 @@ import { logger } from "./logger.js";
 
 const LOCAL_PORT = 4002;
 let proxyServer: Server | null = null;
+let activeWs: WebSocket | null = null;
+let activeTcpClient: Socket | null = null;
 
 export function startIBWsProxy(wsUrl: string): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -15,10 +17,21 @@ export function startIBWsProxy(wsUrl: string): Promise<number> {
     proxyServer = createServer((tcpClient: Socket) => {
       logger.info("IB-WsProxy: IB library connected to local proxy");
 
+      if (activeWs && activeWs.readyState !== WebSocket.CLOSED && activeWs.readyState !== WebSocket.CLOSING) {
+        logger.warn("IB-WsProxy: terminating previous WebSocket before opening new one");
+        try { activeWs.terminate(); } catch {}
+      }
+      if (activeTcpClient && !activeTcpClient.destroyed) {
+        logger.warn("IB-WsProxy: destroying previous TCP client");
+        try { activeTcpClient.destroy(); } catch {}
+      }
+
+      activeTcpClient = tcpClient;
       const pendingData: Buffer[] = [];
       let wsOpen = false;
 
       const ws = new WebSocket(wsUrl);
+      activeWs = ws;
 
       ws.on("open", () => {
         logger.info({ wsUrl, buffered: pendingData.length }, "IB-WsProxy: WebSocket connected to bridge");
@@ -54,17 +67,19 @@ export function startIBWsProxy(wsUrl: string): Promise<number> {
 
       ws.on("close", () => {
         logger.info("IB-WsProxy: WebSocket closed");
+        if (activeWs === ws) activeWs = null;
         tcpClient.destroy();
       });
 
       tcpClient.on("error", (err) => {
         logger.error({ err: err.message }, "IB-WsProxy: TCP client error");
-        ws.close();
+        ws.terminate();
       });
 
       tcpClient.on("close", () => {
         logger.info("IB-WsProxy: TCP client closed");
-        ws.close();
+        if (activeTcpClient === tcpClient) activeTcpClient = null;
+        ws.terminate();
       });
     });
 
