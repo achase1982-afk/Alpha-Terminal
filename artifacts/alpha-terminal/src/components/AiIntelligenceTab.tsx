@@ -2179,27 +2179,33 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
     ? strategistJobs[activeJobIdForSymbol]?.status === 'running'
     : false;
 
-  // Fetch history once on mount
-  const historyFetchedRef = useRef(false);
-  useEffect(() => {
-    if (historyFetchedRef.current) return;
-    historyFetchedRef.current = true;
-    (async () => {
-      try {
-        const res = await fetchWithAuth(`${API_BASE}/strategist/history`);
-        if (!res.ok) return;
-        const rows = await res.json();
-        if (Array.isArray(rows)) setStrategistHistoryStore(rows);
-      } catch {
-        // best-effort
-      }
-    })();
+  // Fetch history on mount AND every time the strategist sub-tab becomes
+  // active. This ensures cards saved on the server always re-appear when the
+  // user returns to the screen, even after a full page reload or after an
+  // analysis was completed in another session.
+  const refreshHistory = useCallback(async () => {
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/strategist/history`);
+      if (!res.ok) return;
+      const rows = await res.json();
+      if (Array.isArray(rows)) setStrategistHistoryStore(rows);
+    } catch {
+      // best-effort
+    }
   }, [setStrategistHistoryStore]);
 
-  // Mark jobs as viewed whenever the strategist sub-tab becomes active
   useEffect(() => {
-    if (subTab === "strategist") markStrategistJobsViewed();
-  }, [subTab, markStrategistJobsViewed]);
+    void refreshHistory();
+  }, [refreshHistory]);
+
+  // Mark jobs as viewed and refresh history whenever the strategist sub-tab
+  // becomes active.
+  useEffect(() => {
+    if (subTab === "strategist") {
+      markStrategistJobsViewed();
+      void refreshHistory();
+    }
+  }, [subTab, markStrategistJobsViewed, refreshHistory]);
 
   // Keep the pipeline status in sync with whether a job is actually running.
   // This restores the "Analyzing..." indicator when the user navigates back
