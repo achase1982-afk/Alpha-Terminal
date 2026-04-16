@@ -9,7 +9,32 @@ interface AiThinkingFeedProps {
 export function AiThinkingFeed({ texts, isStreaming, className = "" }: AiThinkingFeedProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [collapsed, setCollapsed] = useState(false);
+  const [copied, setCopied] = useState(false);
   const prevStreamingRef = useRef(isStreaming);
+
+  const handleCopy = async () => {
+    const text = texts.join("");
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      // best-effort fallback
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1800);
+      } catch { /* give up */ }
+    }
+  };
 
   useEffect(() => {
     if (isStreaming) {
@@ -67,14 +92,25 @@ export function AiThinkingFeed({ texts, isStreaming, className = "" }: AiThinkin
             {isStreaming && <span className="ml-2 text-[#52525b] font-normal animate-pulse">thinking...</span>}
           </span>
         </div>
-        {!isStreaming && texts.length > 0 && (
-          <button
-            onClick={() => setCollapsed(true)}
-            className="font-mono text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors tracking-wider"
-          >
-            collapse
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          {texts.length > 0 && (
+            <button
+              onClick={handleCopy}
+              className="font-mono text-[10px] text-zinc-500 hover:text-emerald-400 transition-colors tracking-wider uppercase"
+              title="Copy AI reasoning to clipboard"
+            >
+              {copied ? "copied!" : "copy"}
+            </button>
+          )}
+          {!isStreaming && texts.length > 0 && (
+            <button
+              onClick={() => setCollapsed(true)}
+              className="font-mono text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors tracking-wider"
+            >
+              collapse
+            </button>
+          )}
+        </div>
       </div>
 
       <div

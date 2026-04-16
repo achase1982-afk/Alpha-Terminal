@@ -2843,6 +2843,21 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
             <StrategistCommandBar onRun={handleRunStrategistWithTicker} disabled={false}
               lastRunSymbol={lastRunSymbol} lastRunTime={lastRunTime} />
 
+            {/* Live AI reasoning sits directly beneath the ticker bar.
+                Auto-collapses when the run finishes; expand to view + copy. */}
+            {(isV2Running || thinkingTokens.length > 0) && (
+              <div className="space-y-2">
+                {isV2Running && strategistStatus && (
+                  <div className="flex items-center gap-2 px-4 py-2 rounded-lg"
+                    style={{ background: "#111113", border: "1px solid rgba(255,184,0,0.2)" }}>
+                    <span className="w-3 h-3 border-2 border-[#FFB800] border-t-transparent rounded-full animate-spin" />
+                    <span className="font-mono text-[11px] text-[#FFB800] tracking-wider">{strategistStatus}</span>
+                  </div>
+                )}
+                <AiThinkingFeed texts={thinkingTokens} isStreaming={isV2Running} />
+              </div>
+            )}
+
             {/* History list always visible (even when no active result) so prior cards persist across tab navigation */}
             <StrategistHistoryList
               onSendToOrder={onStrategistSendToOrder}
@@ -2851,7 +2866,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
 
             {activeResult === "strategist" && (
               <div className="space-y-4">
-                {(isDetRunning || isStrategizing || isV2Running) && (
+                {(isDetRunning || isStrategizing) && (
                   <StrategistPipeline status={strategistStatus} thinkingTokens={isDetRunning ? detThinking : thinkingTokens} />
                 )}
 
