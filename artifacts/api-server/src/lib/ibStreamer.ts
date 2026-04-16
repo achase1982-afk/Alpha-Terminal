@@ -513,12 +513,9 @@ export async function connectIB(): Promise<void> {
           logger.info({ epoch: thisEpoch, currentEpoch: connectionEpoch }, "IB: ignoring stale 326 from old connection epoch");
           return;
         }
-        if (connState === "CONNECTED" && Date.now() - connectedAt < 10_000) {
-          logger.info({ connectedAt, age: Date.now() - connectedAt }, "IB: ignoring 326 within 10s of successful connect (stale event)");
-          return;
-        }
         const oldId = activeClientId;
         activeClientId = ((activeClientId - IB_CLIENT_ID + 1) % 10) + IB_CLIENT_ID;
+        if (activeClientId === oldId) activeClientId = oldId + 1;
         logger.warn({ oldId, newId: activeClientId, epoch: thisEpoch }, "IB: client ID conflict (326) — rotating client ID, reconnecting in 6s");
         intentionalDisconnect = true;
         teardownIB();
@@ -571,9 +568,17 @@ export async function connectIB(): Promise<void> {
     });
 
     ib.on(EventName.disconnected, () => {
-      logger.warn("IB: disconnected from gateway — triggering immediate reconnect");
-      void logFailure("IBKR", "WARN", "IBKR Gateway disconnected", { host: IB_HOST, port: IB_PORT });
-      handleDisconnectOrError(true);
+      const wasConnectedMs = connectedAt ? Date.now() - connectedAt : 0;
+      const hadData = ibQuoteCache.size > 0;
+      if (wasConnectedMs < 8_000 && !hadData) {
+        logger.warn({ wasConnectedMs }, "IB: disconnected shortly after connect with no data — using delayed reconnect");
+        void logFailure("IBKR", "WARN", "IBKR Gateway disconnected (rapid, no data)", { host: IB_HOST, port: IB_PORT, wasConnectedMs });
+        handleDisconnectOrError(false);
+      } else {
+        logger.warn("IB: disconnected from gateway — triggering immediate reconnect");
+        void logFailure("IBKR", "WARN", "IBKR Gateway disconnected", { host: IB_HOST, port: IB_PORT });
+        handleDisconnectOrError(true);
+      }
     });
 
     ib.on(EventName.error, (err: Error, code: number, reqId: number) => {
@@ -604,12 +609,9 @@ export async function connectIB(): Promise<void> {
           logger.info({ epoch: thisEpoch, currentEpoch: connectionEpoch }, "IB: ignoring stale 326 error from old connection epoch");
           return;
         }
-        if (connState === "CONNECTED" && Date.now() - connectedAt < 10_000) {
-          logger.info({ connectedAt, age: Date.now() - connectedAt }, "IB: ignoring 326 error within 10s of successful connect (stale event)");
-          return;
-        }
         const oldId = activeClientId;
         activeClientId = ((activeClientId - IB_CLIENT_ID + 1) % 10) + IB_CLIENT_ID;
+        if (activeClientId === oldId) activeClientId = oldId + 1;
         logger.warn({ oldId, newId: activeClientId, epoch: thisEpoch }, "IB: client ID conflict (326) — rotating client ID, reconnecting in 6s");
         intentionalDisconnect = true;
         teardownIB();
