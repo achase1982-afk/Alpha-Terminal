@@ -1,0 +1,61 @@
+Follow-up questions only. DO NOT make any changes to code, data flows, or logic. I need answers to the following before deciding what to fix. Your previous investigation report was thorough and helpful; these questions build on it.
+
+ON THE IV NORMALIZATION BUG
+
+1. Which code paths currently hit the broken formula (value * 10000 / 100 assuming decimal input)? You identified buildCuratedStrikes and summarizeOptionsChain. Are there other places in the pipeline that assume decimal input where Schwab is actually sending percentage?
+
+2. You noted atmCallIV and atmPutIV are "pass-through and stay in source units" and therefore "internally inconsistent with the curated-strike IV in the same payload." Is the AI model seeing two different IV units in the same data package on every call? How often has this caused reasoning errors the AI didn't catch on its own?
+
+3. Is there a historical count of how many cards shipped with corrupted IV values before today? Can you query telemetry or reasoning logs to estimate the impact?
+
+ON computeSpreadEconomics
+
+4. Telemetry captures strategy_decision but winning_candidate jsonb is currently passed null in logTelemetry at L1541. Why is winning_candidate null? What was it originally intended to contain?
+
+5. When the max-loss-discrepancy warning fires at L1110 (20% threshold on calendars/diagonals), where does that log actually go? Is it queryable via SQL, or only pino stream output? Same question for the entry-price diff warning at L1146.
+
+6. Are there categories of strategy beyond asymmetric iron condors where the current width calculation ((maxStrike - minStrike) * 100) produces wrong max-loss values? Broken wing butterflies, ratios, calendars, diagonals?
+
+ON REGIME GATE LOGIC
+
+7. The no-edge gate (L406-416) returns no_viable_setup when "directionalConviction is NEUTRAL/TRANSITION AND sameDayCatalyst is false." What happens when directionalConviction is BULLISH but sameDayCatalyst CONTRADICTS the AI's proposed direction? Does the gate allow the trade, block it, or flip the direction?
+
+8. The toxic gate thresholds (EXTREME + HIGH correlation, or ELEVATED/EXTREME + FOMC/CPI within 24h) — are these user-configurable via settings, or hardcoded? If hardcoded, is there a reason they're not in settings?
+
+9. When the regime cache is stale (>10 min old per L37), does the strategist refuse to run, proceed with stale data silently, or proceed with stale data and surface staleness to the user?
+
+ON CONFIDENCE CALIBRATION
+
+10. Post-calibration adjustments are +12 for aligned catalyst, -25 for contradicting catalyst. Is that the entire post-model calibration logic, or are there other adjustments applied elsewhere in the pipeline I'm not seeing in the report?
+
+11. Is the +12/-25 applied additively with no ceiling, or does the final confidence get capped? E.g., if AI outputs 85 and catalyst aligns (+12), does the card show 97 or is it capped at some threshold?
+
+12. Where does the "confidence<20 = no_viable_setup" threshold come from (L375)? Is 20 a tuned number based on data, or arbitrary? What's the historical distribution of AI-output confidence values across all cards generated?
+
+ON DATA FETCH FAILURES
+
+13. For the 2:52 PM "unable to fetch ticker data" failure: is there logging that confirms which of the four failure modes (token null, HTTP non-OK, symbol not in response, network exception) actually triggered? If not, can we add specific logging so future failures are diagnostic rather than generic?
+
+14. When Schwab fails and Polygon fallback succeeds, is the card marked or labeled differently so the user knows the primary data source failed and secondary was used? Or is the Polygon fallback silent?
+
+15. The session-expired modal was wired up this week. Did it actually fire on the 2:52 PM call? If not, why did the user see "unable to fetch ticker data" instead of a token refresh prompt?
+
+ON REJECTION REASON TEXT
+
+16. You listed 7 categories of blockReason. Is there a reason not to make these a proper TypeScript enum with associated structured data (category, detail, suggested action)? What would that migration cost in terms of scope and risk?
+
+17. The L375 path uses "AI thesis text when confidence<20" as the rejection reason. Is the AI instructed to write useful rejection text, or is it just whatever the model happens to produce in that case? Could the prompt be updated to require a distinct "reasonForRejection" field separate from thesis, specifically for low-confidence cases?
+
+ON IOSCORE CADENCE AND INTENT
+
+18. IOScore components are weighted toward slow-moving metrics (60-day R², 10-day residual Z). That framing makes sense if IOScore measures "structural idiosyncrasy" — is this stock usually its own story vs a macro follower. But when a user generates a strategist card mid-session and sees IOScore 20%, which question does that number answer for them: the structural question, or the tactical question "is today's setup idiosyncratic?" What was the original product intent?
+
+19. Is IOScore surfaced anywhere else besides the strategist card? Scanner, market pulse, portfolio, scoring? If yes, do those contexts need the same IOScore or different scores?
+
+ON TELEMETRY AND OBSERVABILITY
+
+20. Does telemetry capture the regime snapshot the AI saw at time of call, the IOScore components at time of call, and the final rendered card_json? If not, what's missing and why?
+
+21. Is there a replay or backtest capability? Given current telemetry, could we re-run a historical strategist call against updated code to see if a bug fix (e.g., IV normalization) would have changed the output?
+
+Answer these before making any changes. I want to understand what is intentional vs accidental, what is configurable vs hardcoded, and what is observable vs hidden, before deciding what to touch. Once I have the answers, I'll tell you which items to address and in what order.
