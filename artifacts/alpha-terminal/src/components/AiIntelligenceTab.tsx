@@ -2858,12 +2858,6 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
               </div>
             )}
 
-            {/* History list always visible (even when no active result) so prior cards persist across tab navigation */}
-            <StrategistHistoryList
-              onSendToOrder={onStrategistSendToOrder}
-              excludeJobIds={activeJobIdForSymbol ? new Set([activeJobIdForSymbol]) : undefined}
-            />
-
             {activeResult === "strategist" && (
               <div className="space-y-4">
                 {(isDetRunning || isStrategizing) && (
@@ -2961,6 +2955,14 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
             {strategistAudit && activeResult === "strategist" && !isStreaming && !isStrategizing && !detResult && (
               <StrategistAuditPanel audit={strategistAudit} />
             )}
+
+            {/* Recent strategies history — always at the bottom so the active trade
+                card stays directly under the reasoning feed. Excludes the currently
+                active job so it doesn't duplicate the live card above. */}
+            <StrategistHistoryList
+              onSendToOrder={onStrategistSendToOrder}
+              excludeJobIds={activeJobIdForSymbol ? new Set([activeJobIdForSymbol]) : undefined}
+            />
             </>
             )}
           </div>
