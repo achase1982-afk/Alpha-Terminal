@@ -1,0 +1,55 @@
+Follow-up on strategist reliability: web search integration and catalyst awareness
+
+Context: AMD ran bullish/bearish/bullish across three strategist calls this afternoon. At the time of analysis, AMD was up 6.15% on the day at $274, driven by multiple confirmed catalysts visible in publicly available news: TSMC Q1 blowout guide (AMD benefits as TSMC customer), Bernstein raising price target from $235 to $265, France Exascale supercomputer partnership announced 8:04 AM, 11-day winning streak (longest since 2005), Wayve $60M investment announced yesterday. None of these catalysts appeared in the strategist narrative. The model talked about IVR and 0-1 DTE flow instead.
+
+This is the core problem: the strategist is reasoning about AMD without knowing WHY AMD is moving today. That breaks the thesis, the direction, and the confidence score.
+
+Required changes:
+
+1. Web search must be enabled on every strategist call by default. Not optional, not user-toggled per call. Default on. Model cost is 5-15 cents per call baseline; web search adds 10-15k input tokens. Acceptable cost for accurate output.
+
+2. The prompt must require the model to explicitly search for and cite recent news before producing a thesis. Specifically:
+   - Search ticker symbol + "news today" or "news [current date]"
+   - Search for recent analyst actions (upgrades, downgrades, PT changes) in last 7 days
+   - Search for catalyst-adjacent news in the sector (competitor earnings, industry reports, macro)
+   - If a catalyst is found, the thesis MUST cite it explicitly with source and date
+   - If no catalyst is found after searching, narrative should state "No material news in last 7 days per web search" and reason accordingly
+
+3. Add a "Context Sources" block to each card that shows:
+   - Whether web search was used (yes/no)
+   - Number of search queries run
+   - Key headlines or sources the model referenced in the thesis
+   - Whether the ticker appears to have a same-day catalyst driving unusual price action
+
+This block goes in the card header near the regime/confidence display Replit is already building. Users need to see at a glance whether the card was built on real current context or just the data payload.
+
+4. Catalyst-aware confidence adjustment: if the model identifies a confirmed same-day catalyst that aligns with the thesis direction, confidence should be bumped upward (propose +10-15%). If the catalyst contradicts the thesis direction, the strategist should either flip direction or return NO VIABLE SETUP. A 42% bullish call on a +6% day with multiple confirmed bullish catalysts is miscalibrated; that should be 60%+ if the catalyst is real.
+
+5. Same-day price move awareness: if the ticker is up or down more than 3% on the day, the narrative must explicitly address what is driving the move. No more cards that ignore a 6% rip. The payload already has current price and day change; the prompt needs to force the model to reason about it.
+
+6. Reconcile with the regime gate from the previous prompt: a strong ticker-specific catalyst is the idiosyncratic override that lets the strategist produce a directional trade even when macro regime is NO_EDGE. The regime gate logic should be:
+
+   IF macro regime confidence below threshold AND bias is NO_EDGE:
+     IF no confirmed ticker catalyst: return NO VIABLE SETUP
+     IF confirmed ticker catalyst (from web search): proceed, cite catalyst in thesis, adjust confidence accordingly
+   
+   IF macro regime has clear direction:
+     Proceed normally, weight catalyst if present
+
+7. Diagnostic logging: log every web search query and result summary per strategist call, so we can audit whether the model is actually searching effectively or just running meaningless queries to satisfy the prompt.
+
+Verification after changes ship:
+
+Run AMD strategist call today. The narrative must explicitly cite:
+- The TSMC guide as a positive catalyst
+- The Bernstein PT raise
+- The 11-day winning streak / momentum context
+- The current +6% move
+
+If the narrative produces a bullish trade without citing these, web search integration is broken.
+
+Run a ticker with no recent news (pick a low-volatility mid-cap). The narrative must state "no material news in last 7 days" and reason from data payload only. Confidence should be lower on this type of setup.
+
+Run a ticker with bearish news. Confirm the thesis flips bearish and cites the news.
+
+Do not touch: computeSpreadEconomics, the identity section of the prompt, the defined-risk rules, or the structured output schema. This pass is web search integration + catalyst awareness + confidence calibration.

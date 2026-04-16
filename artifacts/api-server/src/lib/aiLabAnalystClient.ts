@@ -376,6 +376,172 @@ export function extractJson(rawText: string): string {
   return text;
 }
 
+// ----- Web search variants -----------------------------------------------
+// Returns the model's final text output along with a trace of any web
+// searches that were executed and the sources that were referenced. Used by
+// the Strategist to make web search a first-class part of analysis.
+
+export interface WebSearchSource {
+  title: string;
+  url: string;
+  date?: string;
+}
+export interface WebSearchTrace {
+  webSearchUsed: boolean;
+  queries: string[];
+  sources: WebSearchSource[];
+}
+export interface WebSearchResult {
+  text: string;
+  trace: WebSearchTrace;
+}
+
+const ANTHROPIC_WEB_SEARCH_MAX_USES = 5;
+
+export async function callAnthropicWithSystemAndWebSearch(
+  model: string,
+  temperature: number,
+  systemPrompt: string,
+  prompt: string,
+): Promise<WebSearchResult> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
+  const client = new Anthropic({ apiKey });
+
+  const isNew = /^claude-(opus|sonnet)-4-([7-9]|\d{2,})/.test(model);
+  const THINKING_BUDGET = 4096;
+  const params: Anthropic.MessageCreateParamsNonStreaming = {
+    model,
+    max_tokens: isNew ? 16384 : THINKING_BUDGET + 12288,
+    system: systemPrompt,
+    messages: [{ role: "user", content: prompt }],
+    tools: [
+      {
+        type: "web_search_20250305",
+        name: "web_search",
+        max_uses: ANTHROPIC_WEB_SEARCH_MAX_USES,
+      } as unknown as Anthropic.Tool,
+    ],
+  };
+  if (isNew) {
+    params.thinking = { type: "adaptive", display: "summarized" } as unknown as Anthropic.MessageCreateParamsNonStreaming["thinking"];
+  } else {
+    params.thinking = { type: "enabled", budget_tokens: THINKING_BUDGET };
+    params.temperature = 1;
+  }
+  void temperature;
+
+  const message = await client.messages.create(params);
+
+  const queries: string[] = [];
+  const sources: WebSearchSource[] = [];
+  const seenUrls = new Set<string>();
+  const textChunks: string[] = [];
+
+  for (const block of message.content as unknown as Array<Record<string, unknown>>) {
+    const t = block.type as string | undefined;
+    if (t === "text") {
+      const txt = (block as { text?: string }).text;
+      if (txt) textChunks.push(txt);
+    } else if (t === "server_tool_use") {
+      const inp = (block as { input?: Record<string, unknown> }).input;
+      const q = inp?.query;
+      if (typeof q === "string" && q.trim()) queries.push(q.trim());
+    } else if (t === "web_search_tool_result") {
+      const content = (block as { content?: unknown }).content;
+      if (Array.isArray(content)) {
+        for (const item of content as Array<Record<string, unknown>>) {
+          const url = item.url as string | undefined;
+          if (!url || seenUrls.has(url)) continue;
+          seenUrls.add(url);
+          sources.push({
+            title: (item.title as string | undefined) ?? url,
+            url,
+            date: (item.page_age as string | undefined) ?? undefined,
+          });
+        }
+      }
+    }
+  }
+
+  const text = textChunks.join("\n").trim();
+  if (!text) throw new Error("No text content in Strategist LLM response (web search)");
+
+  return {
+    text,
+    trace: {
+      webSearchUsed: queries.length > 0,
+      queries,
+      sources,
+    },
+  };
+}
+
+export async function callGeminiWithSystemAndWebSearch(
+  model: string,
+  temperature: number,
+  systemPrompt: string,
+  prompt: string,
+): Promise<WebSearchResult> {
+  const baseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL;
+  const apiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
+  if (!baseUrl || !apiKey) throw new Error("Gemini AI integration env vars not configured");
+  const ai = new GoogleGenAI({ apiKey, httpOptions: { apiVersion: "", baseUrl } });
+
+  const supportsThinking = /^gemini-(2\.5|3)/.test(model);
+  // Note: Gemini does not allow responseMimeType=application/json with tools.
+  const config: Record<string, unknown> = {
+    maxOutputTokens: 12288,
+    temperature,
+    tools: [{ googleSearch: {} }],
+  };
+  if (supportsThinking) {
+    config.thinkingConfig = { thinkingBudget: -1, includeThoughts: false };
+  }
+  const response = await ai.models.generateContent({
+    model,
+    contents: [{ role: "user", parts: [{ text: systemPrompt + "\n\n" + prompt }] }],
+    config: config as Parameters<typeof ai.models.generateContent>[0]["config"],
+  });
+
+  const rawText = (response.text ?? "").trim();
+  if (!rawText) throw new Error("No text content in Strategist LLM response (Gemini web search)");
+
+  const queries: string[] = [];
+  const sources: WebSearchSource[] = [];
+  const seenUrls = new Set<string>();
+  type GroundingSupport = {
+    webSearchQueries?: unknown;
+    groundingChunks?: Array<{ web?: { uri?: string; title?: string } }>;
+  };
+  const candidates = (response as unknown as { candidates?: Array<{ groundingMetadata?: GroundingSupport }> }).candidates;
+  const meta = candidates?.[0]?.groundingMetadata;
+  if (meta) {
+    if (Array.isArray(meta.webSearchQueries)) {
+      for (const q of meta.webSearchQueries) {
+        if (typeof q === "string" && q.trim()) queries.push(q.trim());
+      }
+    }
+    if (Array.isArray(meta.groundingChunks)) {
+      for (const ch of meta.groundingChunks) {
+        const url = ch.web?.uri;
+        if (!url || seenUrls.has(url)) continue;
+        seenUrls.add(url);
+        sources.push({ title: ch.web?.title ?? url, url });
+      }
+    }
+  }
+
+  return {
+    text: rawText,
+    trace: {
+      webSearchUsed: queries.length > 0,
+      queries,
+      sources,
+    },
+  };
+}
+
 export const DEFAULT_UNIVERSE_SCREEN_SYSTEM_PROMPT = `You are the Senior Options Strategist for a quantitative trading desk. You are being given compact summaries for the active stock universe.
 
 YOUR TASK: Review ALL tickers and pick the 1-3 BEST trade opportunities. You are the first filter — be selective but not overly restrictive. Good setups exist most days.

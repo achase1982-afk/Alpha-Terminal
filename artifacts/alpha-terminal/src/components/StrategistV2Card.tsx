@@ -10,6 +10,16 @@ const UP = "#2ecc71";
 const DOWN = "#ff4b5c";
 const AMBER = "#f59e0b";
 
+export interface ContextSourcesPayload {
+  webSearchUsed: boolean;
+  queryCount: number;
+  queries: string[];
+  sources: Array<{ title: string; url: string; date?: string }>;
+  sameDayCatalyst: boolean;
+  catalystSummary?: string;
+  catalystAlignment?: "ALIGNED" | "CONTRADICTS" | "NEUTRAL" | "NONE";
+}
+
 export interface StrategistV2Result {
   status: "recommendation" | "no_viable_setup" | "toxic_block";
   ticker: string;
@@ -56,8 +66,10 @@ export interface StrategistV2Result {
     riskOfRuin?: string;
     confidence?: number;
     warnings?: string | null;
+    contextSources?: ContextSourcesPayload;
   };
   blockReason?: string;
+  contextSources?: ContextSourcesPayload;
   regime: {
     directionalConviction: string;
     systemicRiskLevel: string;
@@ -400,6 +412,9 @@ export function StrategistV2RecommendationCard({ result, onSendToOrder, generate
             </div>
           </div>
         )}
+        {(result.recommendation?.contextSources ?? result.contextSources) && (
+          <ContextSourcesBlock ctx={(result.recommendation?.contextSources ?? result.contextSources)!} />
+        )}
       </div>
     </div>
   );
@@ -447,7 +462,103 @@ export function StrategistV2BlockCard({ result, generatedAt }: { result: Strateg
             {result.regime.compositeScore != null && <StatRow label="Composite" value={result.regime.compositeScore.toFixed(1)} />}
           </div>
         )}
+        {result.contextSources && <ContextSourcesBlock ctx={result.contextSources} />}
       </div>
+    </div>
+  );
+}
+
+function isSafeHttpUrl(raw: string | undefined | null): boolean {
+  if (!raw || typeof raw !== "string") return false;
+  try {
+    const u = new URL(raw);
+    return u.protocol === "https:" || u.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
+function ContextSourcesBlock({ ctx }: { ctx: ContextSourcesPayload }) {
+  const [expanded, setExpanded] = useState(false);
+  const alignmentColor =
+    ctx.catalystAlignment === "ALIGNED" ? UP :
+    ctx.catalystAlignment === "CONTRADICTS" ? DOWN :
+    "#71717a";
+  const headerLabel = ctx.sameDayCatalyst
+    ? `CATALYST · ${ctx.catalystAlignment ?? "NEUTRAL"}`
+    : ctx.webSearchUsed ? "NO MATERIAL CATALYST" : "WEB SEARCH UNAVAILABLE";
+  return (
+    <div className="rounded-lg overflow-hidden mt-3" style={{ background: "#0d0d0f", border: "1px solid #1f1f22" }}>
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between px-3 py-2 gap-2 text-left"
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <span
+            className="font-mono text-[9px] uppercase tracking-widest px-1.5 py-0.5 rounded"
+            style={{ background: `${alignmentColor}20`, color: alignmentColor }}
+          >
+            {headerLabel}
+          </span>
+          <span className="font-mono text-[10px] text-zinc-400 truncate">
+            {ctx.catalystSummary || (ctx.webSearchUsed ? `${ctx.queryCount} search${ctx.queryCount === 1 ? "" : "es"} · ${ctx.sources.length} source${ctx.sources.length === 1 ? "" : "s"}` : "Web search did not run")}
+          </span>
+        </div>
+        {expanded ? <ChevronUp className="w-3 h-3 text-zinc-500 shrink-0" /> : <ChevronDown className="w-3 h-3 text-zinc-500 shrink-0" />}
+      </button>
+      {expanded && (
+        <div className="px-3 pb-3 space-y-2">
+          {ctx.queries.length > 0 && (
+            <div>
+              <div className="font-mono text-[9px] text-zinc-500 uppercase tracking-widest mb-1">
+                Search Queries ({ctx.queries.length})
+              </div>
+              <ul className="space-y-0.5">
+                {ctx.queries.map((q, i) => (
+                  <li key={i} className="font-mono text-[10px] text-zinc-400 truncate">
+                    · {q}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {ctx.sources.length > 0 && (
+            <div>
+              <div className="font-mono text-[9px] text-zinc-500 uppercase tracking-widest mb-1">
+                Sources Cited ({ctx.sources.length})
+              </div>
+              <ul className="space-y-1">
+                {ctx.sources.slice(0, 8).map((s, i) => {
+                  const safeUrl = isSafeHttpUrl(s.url) ? s.url : null;
+                  const label = s.title || s.url || "(source)";
+                  return (
+                    <li key={i} className="font-mono text-[10px] text-zinc-300 leading-snug">
+                      {safeUrl ? (
+                        <a
+                          href={safeUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="hover:text-white underline decoration-zinc-700 hover:decoration-white"
+                        >
+                          {label}
+                        </a>
+                      ) : (
+                        <span>{label}</span>
+                      )}
+                      {s.date && <span className="text-zinc-600 ml-1">· {s.date}</span>}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+          {!ctx.webSearchUsed && (
+            <div className="font-mono text-[10px] text-zinc-500">
+              The model did not invoke web search on this run. Thesis is based on the data payload only.
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -9,7 +9,12 @@ import { fetchPolygonChain } from "./polygonChain.js";
 import { checkEventConflicts, getUpcomingEvents } from "./calendarEventChecker.js";
 import { computeIVR, type OptionContract } from "./optionsStrategist.js";
 import { getAiLabStrategistConfig } from "./aiLabConfig.js";
-import { callAnthropicWithSystem, callGeminiWithSystem, extractJson } from "./aiLabAnalystClient.js";
+import {
+  callAnthropicWithSystemAndWebSearch,
+  callGeminiWithSystemAndWebSearch,
+  extractJson,
+  type WebSearchTrace,
+} from "./aiLabAnalystClient.js";
 
 const SCHWAB_API = "https://api.schwabapi.com/marketdata/v1";
 
@@ -49,8 +54,10 @@ export interface StrategistV2Result {
     riskOfRuin: string;
     confidence: number;
     warnings: string | null;
+    contextSources?: ContextSourcesPayload;
   };
   blockReason?: string;
+  contextSources?: ContextSourcesPayload;
   regime: StructuredRegime;
   ioScore?: IOScoreResult;
   systemicRiskElevated: boolean;
@@ -98,6 +105,16 @@ interface ChainContract {
   dte: number;
 }
 
+export interface ContextSourcesPayload {
+  webSearchUsed: boolean;
+  queryCount: number;
+  queries: string[];
+  sources: Array<{ title: string; url: string; date?: string }>;
+  sameDayCatalyst: boolean;
+  catalystSummary?: string;
+  catalystAlignment?: "ALIGNED" | "CONTRADICTS" | "NEUTRAL" | "NONE";
+}
+
 interface AiTradeResponse {
   strategy: string;
   legs: Array<{
@@ -126,6 +143,12 @@ interface AiTradeResponse {
   riskOfRuin: string;
   confidence: number;
   warnings: string | null;
+  // Self-reported by the model after running its own web searches.
+  // The server merges this with the actual tool-trace before returning.
+  sameDayCatalyst?: boolean;
+  catalystSummary?: string;
+  catalystAlignment?: "ALIGNED" | "CONTRADICTS" | "NEUTRAL" | "NONE";
+  citedHeadlines?: Array<{ title: string; url?: string; date?: string }>;
 }
 
 interface CuratedStrike {
@@ -177,6 +200,30 @@ You are ruthlessly honest. If there is no compelling edge, you say so and return
 
 You are not limited to the data package you receive. Use your full knowledge base. Use web search to cross-reference current news, SEC filings, analyst actions, regulatory events, earnings history, sector dynamics, and anything else that sharpens your edge on the specific ticker. The data package is a starting point, not a cage.
 
+## WEB SEARCH MANDATE (NON-NEGOTIABLE)
+
+Web search is enabled and you MUST use it on every analysis BEFORE producing your thesis. You will run, at minimum, the following searches:
+
+1. \`<TICKER> news today\` and \`<TICKER> news <TODAY_DATE>\` — find any same-day catalysts.
+2. \`<TICKER> analyst upgrade downgrade price target\` (last 7 days) — find recent analyst actions.
+3. \`<TICKER> earnings\` if earnings are within 14 days, OR sector/industry catalyst search if no ticker-specific news.
+4. Additional searches as needed for sector/competitor moves that are obviously driving the tape.
+
+After searching:
+- If a same-day catalyst is found that EXPLAINS the price action: cite it explicitly in your thesis with the source headline and date. Your direction MUST agree with the catalyst, or you must justify the contradiction in plain English. Bump confidence upward (+10-15%) when the catalyst clearly aligns with the thesis.
+- If a same-day catalyst is found that CONTRADICTS your candidate direction: flip the direction or return no_trade. A bullish call spread on a ticker that just printed bearish news is malpractice.
+- If NO material news is found after searching: state "No material news in last 7 days per web search" in the thesis and reason from the data payload alone. Confidence should be modest in this regime.
+
+## SAME-DAY MOVE AWARENESS
+
+The data payload includes the day's price change. If the ticker is moving > 3% in either direction on the day, your thesis MUST explicitly explain what is driving that move (citing the catalyst found via web search). Cards that ignore a 5%+ same-day move are unacceptable.
+
+## REGIME OVERRIDE VIA IDIOSYNCRATIC CATALYST
+
+The macro regime block in the payload may report low conviction (NEUTRAL / NO_EDGE). In that case:
+- If web search finds a confirmed ticker-specific catalyst: you may proceed with a directional trade. The catalyst is the idiosyncratic edge.
+- If web search finds NO catalyst and macro regime has no direction: you have no edge. Return confidence < 20 (which the server will treat as no viable setup).
+
 ## GROUNDING DISCIPLINE
 
 You must be honest about where every claim comes from.
@@ -220,6 +267,10 @@ Your response must be valid JSON with these fields:
 - riskOfRuin: string (the single biggest threat to this trade — the one thing that if it happened would cause maximum pain: macro event, vol crush, gap risk, earnings adjacency, liquidity trap, regulatory surprise; one sentence)
 - confidence: number 0-100 (if no setup qualifies, return below 20 and do not force a trade)
 - warnings: string or null (anything the user should know: earnings risk, low liquidity, gap risk, etc.)
+- sameDayCatalyst: boolean (true if web search confirmed a material same-day or last-48h news event for this ticker)
+- catalystSummary: string (one sentence summarizing the catalyst, or "No material news in last 7 days per web search")
+- catalystAlignment: "ALIGNED" | "CONTRADICTS" | "NEUTRAL" | "NONE" (relationship of the catalyst to the recommended direction)
+- citedHeadlines: array of {title: string, url?: string, date?: string} (key headlines you actually used in the thesis; empty array allowed if none)
 
 NARRATIVE DISCIPLINE: Your job is structure and thesis. The code computes economics from real Schwab leg prices after you respond. When your thesis prose mentions a specific debit, credit, risk/reward ratio, max profit, max loss, or breakeven, cite only numbers that match the legs and prices you are picking — do not invent or approximate. If you are uncertain of a number, describe the shape of the trade qualitatively instead of quoting a dollar figure. Dollar amounts and ratios you cite must match the strikes and real leg prices you selected; mismatches get auto-corrected by the server and logged as a quality issue.
 
@@ -297,22 +348,30 @@ export async function analyzeTickerV2(ticker: string): Promise<StrategistV2Resul
   const dataPackage = buildDataPackage(ticker, tickerData, chainSummary, ioScore, regime, settings);
 
   let aiResponse: AiTradeResponse;
+  let webTrace: WebSearchTrace;
   try {
-    aiResponse = await callAiForTrade(dataPackage);
+    const r = await callAiForTrade(dataPackage);
+    aiResponse = r.response;
+    webTrace = r.trace;
   } catch (err) {
     logger.error({ err, ticker }, "StrategistV2: AI trade call failed");
     return noViable(ticker, regime, settings, toxicCheck, tickerData, `AI analysis failed: ${err instanceof Error ? err.message : String(err)}`, ioScore);
   }
 
   if (aiResponse.confidence < 20) {
-    return noViable(ticker, regime, settings, toxicCheck, tickerData, `AI found no compelling setup (confidence ${aiResponse.confidence}): ${aiResponse.thesis}`, ioScore);
+    const blocked = await noViable(ticker, regime, settings, toxicCheck, tickerData, `AI found no compelling setup (confidence ${aiResponse.confidence}): ${aiResponse.thesis}`, ioScore);
+    blocked.contextSources = buildContextSources(aiResponse, webTrace);
+    return blocked;
   }
 
   const validationResult = validateAiResponse(aiResponse, chain, settings);
   if (!validationResult.valid) {
     try {
       const retryPrompt = buildRetryPrompt(aiResponse, validationResult.issues);
-      aiResponse = await callAiForTrade(dataPackage, retryPrompt);
+      const r2 = await callAiForTrade(dataPackage, retryPrompt);
+      aiResponse = r2.response;
+      // Keep original trace; retry typically does not re-search.
+      if (r2.trace.queries.length > 0) webTrace = r2.trace;
 
       const retryValidation = validateAiResponse(aiResponse, chain, settings);
       if (!retryValidation.valid) {
@@ -323,6 +382,46 @@ export async function analyzeTickerV2(ticker: string): Promise<StrategistV2Resul
       logger.error({ err, ticker }, "StrategistV2: AI retry failed");
       return noViable(ticker, regime, settings, toxicCheck, tickerData,
         `AI retry failed: ${err instanceof Error ? err.message : String(err)}`, ioScore);
+    }
+  }
+
+  // Idiosyncratic catalyst override: if regime is NEUTRAL and the model
+  // found NO same-day catalyst, the trade has neither macro nor idio edge.
+  // Reject as no-viable-setup. (When EITHER macro has direction OR a catalyst
+  // exists, we proceed.)
+  const regimeIsNoEdge = regime.directionalConviction === "NEUTRAL" || regime.directionalConviction === "TRANSITION";
+  if (regimeIsNoEdge && !aiResponse.sameDayCatalyst) {
+    const ctx = buildContextSources(aiResponse, webTrace);
+    const blocked = await noViable(
+      ticker, regime, settings, toxicCheck, tickerData,
+      `No edge: macro regime is ${regime.directionalConviction} and web search found no same-day ticker catalyst. ${aiResponse.catalystSummary ?? ""}`.trim(),
+      ioScore,
+    );
+    blocked.contextSources = ctx;
+    return blocked;
+  }
+
+  // Catalyst-aware confidence calibration. The model is instructed to do
+  // this itself, but we enforce a floor/ceiling here as a safety net.
+  if (aiResponse.sameDayCatalyst && aiResponse.catalystAlignment === "ALIGNED") {
+    const bumped = Math.min(100, aiResponse.confidence + 12);
+    if (bumped > aiResponse.confidence) {
+      logger.info({ ticker, before: aiResponse.confidence, after: bumped }, "StrategistV2: catalyst-aligned confidence bump applied");
+      aiResponse.confidence = bumped;
+    }
+  } else if (aiResponse.sameDayCatalyst && aiResponse.catalystAlignment === "CONTRADICTS") {
+    const damped = Math.max(0, aiResponse.confidence - 25);
+    logger.warn({ ticker, before: aiResponse.confidence, after: damped }, "StrategistV2: catalyst CONTRADICTS thesis — damping confidence");
+    aiResponse.confidence = damped;
+    if (damped < 20) {
+      const ctx = buildContextSources(aiResponse, webTrace);
+      const blocked = await noViable(
+        ticker, regime, settings, toxicCheck, tickerData,
+        `Catalyst contradicts proposed direction: ${aiResponse.catalystSummary ?? "see web search results"}`,
+        ioScore,
+      );
+      blocked.contextSources = ctx;
+      return blocked;
     }
   }
 
@@ -394,7 +493,9 @@ export async function analyzeTickerV2(ticker: string): Promise<StrategistV2Resul
       riskOfRuin: aiResponse.riskOfRuin || "",
       confidence: aiResponse.confidence,
       warnings: aiResponse.warnings,
+      contextSources: buildContextSources(aiResponse, webTrace),
     },
+    contextSources: buildContextSources(aiResponse, webTrace),
     regime,
     ioScore,
     systemicRiskElevated: regime.systemicRiskLevel === "ELEVATED" || regime.systemicRiskLevel === "EXTREME",
@@ -668,29 +769,45 @@ function buildDataPackage(
   return JSON.stringify(pkg);
 }
 
-async function callAiForTrade(dataPackage: string, retryInstruction?: string): Promise<AiTradeResponse> {
+async function callAiForTrade(dataPackage: string, retryInstruction?: string): Promise<{ response: AiTradeResponse; trace: WebSearchTrace }> {
   const aiCfg = getAiLabStrategistConfig();
   const provider = aiCfg.analystModelProvider;
   const model = aiCfg.analystModelName;
   const temperature = aiCfg.analystTemperature;
 
-  logger.info({ provider, model, temperature }, "StrategistV2: calling AI for trade");
+  logger.info({ provider, model, temperature, webSearch: true }, "StrategistV2: calling AI for trade");
 
+  const today = new Date().toISOString().slice(0, 10);
   const prompt = retryInstruction
     ? `${retryInstruction}\n\nOriginal data package:\n${dataPackage}`
-    : `Analyze this ticker and recommend the best trade. Respond ONLY with a valid JSON object, no text before or after.\n\n${dataPackage}`;
+    : `Today is ${today}. Run web searches as required by the WEB SEARCH MANDATE in your system prompt, then analyze this ticker and recommend the best trade. Respond ONLY with a valid JSON object, no text before or after, no markdown fences.\n\n${dataPackage}`;
 
   let rawText: string;
+  let trace: WebSearchTrace;
   switch (provider) {
-    case "anthropic":
-      rawText = await callAnthropicWithSystem(model, temperature, STRATEGIST_SYSTEM_PROMPT, prompt);
+    case "anthropic": {
+      const r = await callAnthropicWithSystemAndWebSearch(model, temperature, STRATEGIST_SYSTEM_PROMPT, prompt);
+      rawText = r.text;
+      trace = r.trace;
       break;
-    case "google":
-      rawText = await callGeminiWithSystem(model, temperature, STRATEGIST_SYSTEM_PROMPT, prompt);
+    }
+    case "google": {
+      const r = await callGeminiWithSystemAndWebSearch(model, temperature, STRATEGIST_SYSTEM_PROMPT, prompt);
+      rawText = r.text;
+      trace = r.trace;
       break;
+    }
     default:
       throw new Error(`Unsupported provider: ${provider}`);
   }
+
+  logger.info({
+    webSearchUsed: trace.webSearchUsed,
+    queryCount: trace.queries.length,
+    queries: trace.queries,
+    sourceCount: trace.sources.length,
+    topSources: trace.sources.slice(0, 5).map(s => ({ title: s.title.slice(0, 80), url: s.url })),
+  }, "StrategistV2: web search trace");
 
   logger.info({ rawSnippet: rawText.slice(0, 300) }, "StrategistV2: raw AI response snippet");
 
@@ -720,7 +837,7 @@ async function callAiForTrade(dataPackage: string, retryInstruction?: string): P
     const thesis = String(resp.thesis ?? resp.rationale ?? resp.reasoning ?? "AI found no viable options setup");
     const confidence = Math.max(0, Math.min(100, Number(resp.confidence) || 0));
     logger.info({ parsedKeys: Object.keys(resp), confidence, thesis: thesis.slice(0, 200) }, "StrategistV2: AI returned no-trade / empty legs");
-    return {
+    const noTradeResponse: AiTradeResponse = {
       strategy: "no_trade",
       legs: [],
       entryPrice: 0,
@@ -737,7 +854,20 @@ async function callAiForTrade(dataPackage: string, retryInstruction?: string): P
       riskOfRuin: "",
       confidence,
       warnings: resp.warnings ? String(resp.warnings) : null,
-    } as AiTradeResponse;
+      sameDayCatalyst: typeof resp.sameDayCatalyst === "boolean" ? resp.sameDayCatalyst : false,
+      catalystSummary: resp.catalystSummary ? String(resp.catalystSummary) : undefined,
+      catalystAlignment: typeof resp.catalystAlignment === "string"
+        ? (String(resp.catalystAlignment).toUpperCase() as AiTradeResponse["catalystAlignment"])
+        : "NONE",
+      citedHeadlines: Array.isArray(resp.citedHeadlines)
+        ? (resp.citedHeadlines as Array<Record<string, unknown>>).map(h => ({
+            title: String(h.title ?? ""),
+            url: h.url ? String(h.url) : undefined,
+            date: h.date ? String(h.date) : undefined,
+          })).filter(h => h.title)
+        : [],
+    };
+    return { response: noTradeResponse, trace };
   }
 
   const safeNum = (v: unknown, fallback: number): number => {
@@ -781,7 +911,7 @@ async function callAiForTrade(dataPackage: string, retryInstruction?: string): P
     timeStop: timeStopStr,
   };
 
-  return {
+  const fullResponse: AiTradeResponse = {
     strategy: String(resp.strategy),
     legs,
     entryPrice: safeNum(resp.entryPrice, 0),
@@ -798,7 +928,20 @@ async function callAiForTrade(dataPackage: string, retryInstruction?: string): P
     riskOfRuin: String(resp.riskOfRuin ?? ""),
     confidence,
     warnings: resp.warnings ? String(resp.warnings) : null,
+    sameDayCatalyst: typeof resp.sameDayCatalyst === "boolean" ? resp.sameDayCatalyst : false,
+    catalystSummary: resp.catalystSummary ? String(resp.catalystSummary) : undefined,
+    catalystAlignment: typeof resp.catalystAlignment === "string"
+      ? (String(resp.catalystAlignment).toUpperCase() as AiTradeResponse["catalystAlignment"])
+      : "NONE",
+    citedHeadlines: Array.isArray(resp.citedHeadlines)
+      ? (resp.citedHeadlines as Array<Record<string, unknown>>).map(h => ({
+          title: String(h.title ?? ""),
+          url: h.url ? String(h.url) : undefined,
+          date: h.date ? String(h.date) : undefined,
+        })).filter(h => h.title)
+      : [],
   };
+  return { response: fullResponse, trace };
 }
 
 function validateAiResponse(
@@ -1559,5 +1702,30 @@ function normalizeExitTargets(
     stopLoss: normalizeOne(raw.stopLoss, "stopLoss"),
     stopLossUnderlying: Number.isFinite(raw.stopLossUnderlying) ? raw.stopLossUnderlying : 0,
     timeStop: raw.timeStop ?? "",
+  };
+}
+
+function buildContextSources(
+  resp: AiTradeResponse,
+  trace: WebSearchTrace,
+): ContextSourcesPayload {
+  const merged = new Map<string, { title: string; url: string; date?: string }>();
+  for (const s of trace.sources) {
+    merged.set(s.url, { title: s.title, url: s.url, date: s.date });
+  }
+  for (const h of resp.citedHeadlines ?? []) {
+    if (!h.url) continue;
+    if (!merged.has(h.url)) {
+      merged.set(h.url, { title: h.title, url: h.url, date: h.date });
+    }
+  }
+  return {
+    webSearchUsed: trace.webSearchUsed,
+    queryCount: trace.queries.length,
+    queries: trace.queries,
+    sources: Array.from(merged.values()).slice(0, 12),
+    sameDayCatalyst: resp.sameDayCatalyst === true,
+    catalystSummary: resp.catalystSummary,
+    catalystAlignment: resp.catalystAlignment ?? "NONE",
   };
 }

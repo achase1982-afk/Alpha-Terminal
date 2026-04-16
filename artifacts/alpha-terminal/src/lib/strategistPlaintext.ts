@@ -171,6 +171,33 @@ export function strategistCardToPlainText(
     lines.push("", "IOSCORE", ...ioLines);
   }
 
+  // Context Sources (web search trace)
+  const ctx = result.recommendation?.contextSources ?? result.contextSources;
+  if (ctx) {
+    const ctxLines: string[] = [];
+    if (ctx.sameDayCatalyst) {
+      const align = ctx.catalystAlignment && ctx.catalystAlignment !== "NONE" ? ` (${ctx.catalystAlignment})` : "";
+      ctxLines.push(`Same-Day Catalyst${align}: ${ctx.catalystSummary || "Yes"}`);
+    } else if (ctx.webSearchUsed) {
+      ctxLines.push("Same-Day Catalyst: None");
+    } else {
+      ctxLines.push("Web Search: Not invoked on this run");
+    }
+    if (ctx.queries && ctx.queries.length) {
+      ctxLines.push(`Queries (${ctx.queries.length}):`);
+      for (const q of ctx.queries) ctxLines.push(`  - ${q}`);
+    }
+    if (ctx.sources && ctx.sources.length) {
+      ctxLines.push(`Sources (${ctx.sources.length}):`);
+      for (const s of ctx.sources.slice(0, 8)) {
+        const date = s.date ? ` [${s.date}]` : "";
+        ctxLines.push(`  - ${s.title || s.url}${date}`);
+        if (s.url && s.url !== s.title) ctxLines.push(`    ${s.url}`);
+      }
+    }
+    if (ctxLines.length) lines.push("", "CONTEXT SOURCES", ...ctxLines);
+  }
+
   // Collapse accidental triple blank lines
   return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
