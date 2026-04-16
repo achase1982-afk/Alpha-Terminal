@@ -1,0 +1,90 @@
+# Strategist Data Pipeline Fixes
+
+## Context
+
+Today’s testing surfaced three connected issues in the Options Strategist flow. The model’s own output confirmed what’s happening:
+
+1. SPY strategist card explicitly stated “available expirations max out at April 28” despite Schwab having expirations months out. The payload reaching the model is truncated.
+1. AMD strategist card successfully picked May 22 expiration (36 DTE), but the caution box flagged that “the 275 and 295 strikes for that expiration are not explicitly listed with bid/ask, so the $6.50 net debit is an estimate based on interpolation.” Strike-level data is missing on longer-dated expirations.
+1. TSLA strategist card returned a bear put spread with $0.01 net credit. When the same strikes are checked against Schwab directly, the actual credit is different. The Polygon-sourced prices do not match execution reality.
+
+The expiration truncation is the root cause of why trades were clustering at 0-1 DTE. The pricing mismatch is a separate problem: the strategist is making recommendations based on Polygon data, but the user will execute through Schwab, so every recommendation is built on prices that do not reflect the actual fill environment.
+
+## Fix 1: Production Data Backfill Verification
+
+Production and dev use separate databases. Before fixing the payload logic, confirm the underlying data bank is actually populated.
+
+Requirement: 60+ day rolling historical data for every ticker in the Liquid Core universe, plus SPY and QQQ explicitly, covering all expirations available from the data provider.
+
+Tasks:
+
+- Query the production database and confirm the actual expiration coverage for each Liquid Core ticker
+- Confirm SPY and QQQ specifically have full expiration chains populated, including weeklies, monthlies, and quarterlies out to at least 90 DTE
+- If any ticker is missing expirations in production that exist in dev or at the provider level, trigger a backfill
+- Output a report: ticker, count of expirations in data bank, earliest and latest expiration date, date of last refresh
+
+Do not proceed to Fix 2 or Fix 3 until production data coverage is verified.
+
+## Fix 2: Expiration Selection in buildDataPackage
+
+Once data coverage is confirmed, investigate why the model is receiving a truncated expiration list despite maxDte: 365 in the Polygon fetch.
+
+Likely cause: the buildDataPackage function is taking the first N expirations by array position rather than curating across the full DTE range. For tickers with daily expirations like SPY and QQQ, a row-count cap hits calendar time very quickly (a 10-row cap reaches about 2 weeks for SPY).
+
+Fix: curate the availableExpirations array across the full DTE range instead of truncating by position. Suggested distribution:
+
+- All weeklies within 0 to 7 DTE
+- All weeklies between 7 and 30 DTE
+- All monthlies between 30 and 90 DTE
+- Any quarterlies between 90 and 180 DTE
+
+This gives the model a full menu to choose from without dumping hundreds of SPY expirations into the payload.
+
+After implementing, run the existing log line that prints “expirations being sent to AI model” for SPY, QQQ, and three random Liquid Core tickers. Confirm the array spans the full DTE range.
+
+## Fix 3: Strike-Level Data Coverage Across Expirations
+
+At longer-dated expirations included in the payload, strike-level data (bid, ask, volume, OI, delta, IV) is missing. The model is interpolating from the front-month chain.
+
+Fix: ensure strike-level data is fetched for every expiration in the availableExpirations array. To keep payload size reasonable, use a volume-weighted strike sample per expiration:
+
+- Top 10-15 strikes by volume
+- ATM plus and minus 5 strikes
+- Any strike flagged as unusual activity (vol/OI ratio above 2x)
+
+This keeps the payload manageable on token cost while giving the model real data to quote at every expiration it might choose.
+
+## Fix 4: Options Chain Data Source
+
+The options chain pricing currently flowing into the strategist payload comes from Polygon. When the same strikes are checked in Schwab directly, the bid/ask and resulting net debit/credit are different. Since the user executes through Schwab, Schwab is the source of truth for prices.
+
+The strategist is currently making trade recommendations based on one data source while the user executes against a different data source. Every recommendation carries a pricing disconnect that is not visible to the model.
+
+Investigation tasks:
+
+- Identify everywhere the strategist payload currently pulls options chain data from Polygon
+- Confirm that Schwab’s options chain endpoint is available and returns the same fields (strike, bid, ask, volume, OI, delta, gamma, theta, vega, IV, expiration)
+- If Schwab’s options chain endpoint is accessible, migrate the strategist chain fetch from Polygon to Schwab so prices match what the user will actually fill at
+- If Schwab’s endpoint is missing any fields the strategist uses, document the gap and recommend whether to keep Polygon for those specific fields only (greeks, IV) while using Schwab for pricing (bid, ask)
+
+The ideal end state: when the strategist quotes a $1.48 to $1.62 fill range on a spread, those numbers come from the exact same chain the user sees when they open Schwab. No disconnect between recommendation and execution.
+
+## Priority and Dependencies
+
+Fix 1 is a prerequisite for everything. No payload logic matters if the production data bank is missing data.
+
+Fix 4 is architectural and the highest-impact change on this list. Accurate pricing is more important than any reasoning improvement. A perfect analysis on wrong numbers still produces wrong trades. Consider doing Fix 4 before or alongside Fix 2 and Fix 3, since fixing the payload structure is less valuable if the prices inside it are still Polygon.
+
+Fix 2 and Fix 3 should ship together since they both modify buildDataPackage.
+
+## Verification Steps
+
+After all fixes are live, run the strategist on these tickers in order and paste the full card output plus the log line showing availableExpirations:
+
+1. SPY (should now reach 30-90 DTE instead of maxing at April 28)
+1. QQQ (same test, daily expirations)
+1. TSLA (should have access to 20 APR, 24 APR, 27 APR, and monthlies; quoted prices should match Schwab)
+1. AMD (should continue to reach May 22 or further, with real strike data; quoted prices should match Schwab)
+1. A Liquid Core ticker with weekly-only expirations (not daily)
+
+For Fix 4 specifically: pick any three strategist cards produced after the migration, open Schwab, enter the same strikes and expiration, and compare the quoted net debit/credit. The numbers should match within normal bid/ask drift (a few cents). If they differ by more than $0.10, Schwab is not yet the source.
