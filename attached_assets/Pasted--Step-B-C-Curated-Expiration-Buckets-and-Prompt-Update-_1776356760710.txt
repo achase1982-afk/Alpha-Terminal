@@ -1,0 +1,64 @@
+# Step B + C: Curated Expiration Buckets and Prompt Update
+
+Step A is validated. Schwab full chain is live as primary source. Proceed to Step B and C together.
+
+## Step B: Rewrite summarizeOptionsChain
+
+The current summarizeOptionsChain sends topVolumeCalls.slice(0,5) and topVolumePuts.slice(0,5) plus a single ATM call/put. For tickers with daily expirations like SPY and QQQ, all 5 top-volume slots land in the front week. The model has no strike-level data beyond 7 DTE even though the availableExpirations array contains the full list. The model correctly concludes there is nothing to trade past the front week because there is no data past the front week.
+
+### New structure: curatedExpirations
+
+Build a curated set of expirations across at least 60 days for every ticker. Distribution:
+
+**0 to 7 DTE bucket:** nearest expiration plus one mid-week expiration for daily-expiry tickers (SPY, QQQ, etc). For weekly-only tickers, just the nearest weekly.
+
+**7 to 30 DTE bucket:** every weekly expiration available.
+
+**30 to 60 DTE bucket:** every monthly expiration available.
+
+For each included expiration, attach strike-level data:
+
+- ATM plus and minus 5 strikes per side (calls and puts) with bid, ask, IV, delta, volume, OI
+- Top 5 strikes by volume (if not already in the ATM range)
+- Any strike flagged as unusual activity (vol/OI ratio above 2x)
+
+This replaces the current topVolumeCalls/topVolumePuts/atmCall/atmPut structure. The model should receive one object per curated expiration containing the strike sample for that expiration.
+
+### Token budget consideration
+
+For daily-expiry tickers, the 0 to 7 DTE bucket should contain no more than 2 expirations. The 7 to 30 DTE bucket should contain no more than 4 expirations. The 30 to 60 DTE bucket should contain no more than 3 expirations. That caps the total at roughly 9 expirations per ticker, each with approximately 15 to 25 strikes. This keeps the payload under roughly 5,000 tokens of chain data, which is manageable.
+
+For weekly-only tickers, the counts are naturally lower.
+
+### Keep existing arrays as secondary
+
+Keep the topVolumeCalls, topVolumePuts, and unusualActivity arrays as separate sections in the payload. They provide the “where is the flow” signal regardless of expiration. The curatedExpirations provide the “what can I actually trade” data across the full DTE range. Both are needed.
+
+## Step C: Prompt update
+
+Two changes to the strategist system prompt.
+
+### Change 1: No naked short positions
+
+Update the strategy universe section. The model must never recommend naked short puts or naked short calls. Every position must have defined risk. If the setup calls for premium selling, express it as a credit spread, iron condor, or iron butterfly. There is no scenario where undefined risk is acceptable.
+
+The updated prompt file is attached separately (option-strategist-prompt.md). Replace the current system prompt with its contents.
+
+### Change 2: Point the model at curatedExpirations
+
+Add this to the prompt after the grounding discipline section:
+
+“The data package includes a curatedExpirations array containing strike-level data (bid, ask, IV, delta, volume, OI) sampled across multiple DTE buckets from near-term through 60+ days. When selecting an expiration for your trade, evaluate the strikes available at each expiration in this array. Do not default to the nearest weekly just because the flow signal is loudest there. Consider whether the thesis is better expressed at a longer DTE with better theta economics, more time for the move to develop, or lower gamma risk. Choose the expiration that best fits the thesis, not the expiration with the most volume.”
+
+This does not force longer DTE. It forces the model to look at the full menu and make a deliberate choice.
+
+## Verification
+
+After B and C are deployed, run the strategist on these tickers and confirm:
+
+1. SPY: the card should now be able to recommend trades at 30+ DTE if the setup warrants it, not just front-week
+1. AMD: confirm the model sees May 22 strikes with real bid/ask data (not interpolated)
+1. TSLA: confirm expirations beyond April 17 are available with strike data
+1. One mid-cap Liquid Core ticker: confirm the bucketing works on weekly-only names
+
+For each card, check the DTE field. If every card still lands at 0-1 DTE after B and C ship, the curatedExpirations data is either not reaching the model or not being used. Log the curatedExpirations object for the first three calls so we can verify.

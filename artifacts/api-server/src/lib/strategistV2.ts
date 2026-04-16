@@ -128,6 +128,21 @@ interface AiTradeResponse {
   warnings: string | null;
 }
 
+interface CuratedStrike {
+  strike: number;
+  call?: { bid: number; ask: number; iv: number; delta: number; volume: number; oi: number };
+  put?: { bid: number; ask: number; iv: number; delta: number; volume: number; oi: number };
+  unusualCall?: true;
+  unusualPut?: true;
+}
+
+interface CuratedExpiration {
+  expiration: string;
+  dte: number;
+  bucket: "near_0_7d" | "mid_7_30d" | "far_30_60d";
+  strikes: CuratedStrike[];
+}
+
 interface ChainSummary {
   atmStrike: number;
   atmCallBid: number;
@@ -145,13 +160,14 @@ interface ChainSummary {
   frontMonthIV: number | null;
   backMonthIV: number | null;
   availableExpirations: string[];
+  curatedExpirations: CuratedExpiration[];
 }
 
 const STRATEGIST_SYSTEM_PROMPT = `You are a senior options trader on a discretionary prop desk at a firm like Jane Street or SIG. You came up as a volatility trader at a tier-one quant shop (think Citadel or Goldman Sachs Securities Division), where you learned to think in Greeks, vol surface dynamics, skew, term structure, and probability rather than in simple directional bias. You now run your own book.
 
 Your mandate is absolute return. Every trade you recommend must stand on its own P&L merit. You are not hedging a larger equity portfolio. You are not providing liquidity as a market maker obligation. You are hunting for asymmetric edge in options, and every position you put on is meant to generate alpha by itself.
 
-You think like a professional, not a retail trader. You read flow. You care about implied volatility versus realized, vol surface dislocations, dealer positioning, unusual options activity, and catalyst math. You are comfortable recommending any structure: verticals, iron condors, butterflies, calendars, diagonals, ratios, straddles, strangles, naked options when the risk/reward is asymmetric enough to justify it. You do not default to iron condors because they feel safe. You do not default to 30-45 DTE because someone told you that is optimal. You look at the vol surface and pick the structure and expiration where the edge actually lives.
+You think like a professional, not a retail trader. You read flow. You care about implied volatility versus realized, vol surface dislocations, dealer positioning, unusual options activity, and catalyst math. You are comfortable recommending any defined-risk structure: verticals, iron condors, iron butterflies, calendars, diagonals, ratios, straddles, strangles. Every position must have defined maximum risk. You do not recommend naked short puts or naked short calls under any circumstance — if the setup calls for premium selling, express it as a credit spread, iron condor, or iron butterfly. You do not default to iron condors because they feel safe. You do not default to 30-45 DTE because someone told you that is optimal. You look at the vol surface and pick the structure and expiration where the edge actually lives.
 
 You are ruthlessly honest. If there is no compelling edge, you say so and return confidence below 20. You do not invent trades to have something to show. A "no trade" answer is a valid and professional output.
 
@@ -159,12 +175,14 @@ You are not limited to the data package you receive. Use your full knowledge bas
 
 You must be honest about where every claim comes from. Any specific number you cite from the data package (strike, volume, open interest, IV, delta, bid, ask) must match the payload exactly. Do not round, do not estimate, do not invent strikes that are not in the chain. Any expiration date you recommend must come from the availableExpirations array provided. Do not calculate a date yourself. When you reference information outside the payload (news, regulatory context, sector dynamics, historical patterns), briefly cite the source.
 
+The data package includes a curatedExpirations array containing strike-level data (bid, ask, IV, delta, volume, OI) sampled across multiple DTE buckets from near-term through 60+ days. When selecting an expiration for your trade, evaluate the strikes available at each expiration in this array. Do not default to the nearest weekly just because the flow signal is loudest there. Consider whether the thesis is better expressed at a longer DTE with better theta economics, more time for the move to develop, or lower gamma risk. Choose the expiration that best fits the thesis, not the expiration with the most volume.
+
 The user's configurable preferences are included for context. Respect them when possible but if you see a compelling trade outside their preferences, recommend it and explain why.
 
 You are not a retail options educator. You are not explaining basics. You are not a PM hedging a $1B equity book. You are not a market maker. You are a prop trader hunting alpha in a concentrated, defined-risk book. Every trade makes money on its own or it does not get recommended.
 
 Your response must be valid JSON with these fields:
-- strategy: string (e.g. "bull_call_spread", "iron_condor", "naked_put", "calendar_spread", "butterfly", "diagonal", "ratio_spread", "straddle", "strangle")
+- strategy: string (e.g. "bull_call_spread", "bear_put_spread", "iron_condor", "iron_butterfly", "calendar_spread", "diagonal", "butterfly", "ratio_spread", "straddle", "strangle") — naked_put and naked_call are never valid
 - legs: array of {type: "call" or "put", strike: number, action: "buy" or "sell", expiration: "YYYY-MM-DD"}
 - entryPrice: number (net debit or credit, positive = debit, negative = credit)
 - entryRangeMin: number (minimum fill price based on current bid/ask)
@@ -241,6 +259,13 @@ export async function analyzeTickerV2(ticker: string): Promise<StrategistV2Resul
     ticker,
     availableExpirations: chainSummary.availableExpirations,
     expirationCount: chainSummary.availableExpirations.length,
+    curatedExpirationCount: chainSummary.curatedExpirations.length,
+    curatedExpirations: chainSummary.curatedExpirations.map(e => ({
+      expiration: e.expiration,
+      dte: e.dte,
+      bucket: e.bucket,
+      strikeCount: e.strikes.length,
+    })),
   }, "StrategistV2: expirations being sent to AI model");
 
   const dataPackage = buildDataPackage(ticker, tickerData, chainSummary, ioScore, regime, settings);
@@ -353,6 +378,122 @@ export async function analyzeTickerV2(ticker: string): Promise<StrategistV2Resul
   return result;
 }
 
+function computeDte(expiration: string): number {
+  const expMs = new Date(expiration + "T16:00:00-05:00").getTime();
+  return Math.max(0, Math.round((expMs - Date.now()) / (24 * 60 * 60 * 1000)));
+}
+
+function buildCuratedStrikes(
+  chain: ChainContract[],
+  expiration: string,
+  atmStrike: number,
+): CuratedStrike[] {
+  const expContracts = chain.filter(c => c.expiration === expiration);
+  const expCalls = expContracts.filter(c => c.type === "call" || c.optionType === "CALL");
+  const expPuts = expContracts.filter(c => c.type === "put" || c.optionType === "PUT");
+
+  // Collect all strikes to include: ATM±5 + top-5 volume each side + unusual activity
+  const includeStrikes = new Set<number>();
+
+  // Sort all strikes for this expiration to find ATM±5 index positions
+  const allStrikes = [...new Set([...expCalls, ...expPuts].map(c => c.strike))].sort((a, b) => a - b);
+  const atmIdx = allStrikes.reduce((best, s, i) =>
+    Math.abs(s - atmStrike) < Math.abs(allStrikes[best] - atmStrike) ? i : best, 0);
+  const lo = Math.max(0, atmIdx - 5);
+  const hi = Math.min(allStrikes.length - 1, atmIdx + 5);
+  for (let i = lo; i <= hi; i++) includeStrikes.add(allStrikes[i]);
+
+  // Top-5 volume calls/puts
+  [...expCalls].sort((a, b) => b.volume - a.volume).slice(0, 5).forEach(c => includeStrikes.add(c.strike));
+  [...expPuts].sort((a, b) => b.volume - a.volume).slice(0, 5).forEach(c => includeStrikes.add(c.strike));
+
+  // Unusual activity (vol/OI >= 2)
+  for (const c of expContracts) {
+    if (c.openInterest > 0 && c.volume / c.openInterest >= 2) includeStrikes.add(c.strike);
+  }
+
+  // Build merged strike-level objects
+  const callByStrike = new Map(expCalls.map(c => [c.strike, c]));
+  const putByStrike = new Map(expPuts.map(c => [c.strike, c]));
+
+  const result: CuratedStrike[] = [];
+  for (const strike of [...includeStrikes].sort((a, b) => a - b)) {
+    const c = callByStrike.get(strike);
+    const p = putByStrike.get(strike);
+    const entry: CuratedStrike = { strike };
+    if (c) {
+      entry.call = { bid: c.bid, ask: c.ask, iv: Math.round(c.impliedVolatility * 10000) / 100, delta: Math.round((c.delta ?? 0) * 1000) / 1000, volume: c.volume, oi: c.openInterest };
+      if (c.openInterest > 0 && c.volume / c.openInterest >= 2) entry.unusualCall = true;
+    }
+    if (p) {
+      entry.put = { bid: p.bid, ask: p.ask, iv: Math.round(p.impliedVolatility * 10000) / 100, delta: Math.round((p.delta ?? 0) * 1000) / 1000, volume: p.volume, oi: p.openInterest };
+      if (p.openInterest > 0 && p.volume / p.openInterest >= 2) entry.unusualPut = true;
+    }
+    if (entry.call || entry.put) result.push(entry);
+  }
+  return result;
+}
+
+function buildCuratedExpirations(chain: ChainContract[], price: number): CuratedExpiration[] {
+  const allExpirations = [...new Set(chain.map(c => c.expiration))].sort();
+  const withDte = allExpirations.map(exp => ({ exp, dte: computeDte(exp) }));
+
+  // Detect daily-expiry ticker: >2 expirations within the first 7 DTE
+  const near7 = withDte.filter(e => e.dte <= 7);
+  const isDaily = near7.length > 2;
+
+  // Bucket selection
+  const selected: Array<{ exp: string; dte: number; bucket: CuratedExpiration["bucket"] }> = [];
+
+  // --- 0-7 DTE bucket ---
+  const near = withDte.filter(e => e.dte <= 7).sort((a, b) => a.dte - b.dte);
+  const nearCap = isDaily ? 2 : 1;
+  near.slice(0, nearCap).forEach(e => selected.push({ ...e, bucket: "near_0_7d" }));
+
+  // --- 7-30 DTE bucket ---
+  const mid = withDte.filter(e => e.dte > 7 && e.dte <= 30).sort((a, b) => a.dte - b.dte);
+  const midCap = isDaily ? 4 : mid.length;
+  mid.slice(0, midCap).forEach(e => selected.push({ ...e, bucket: "mid_7_30d" }));
+
+  // --- 30-60 DTE bucket ---
+  // For daily-expiry tickers with dense weekly/daily expirations, prefer monthlies in this range
+  // Detect monthlies: for each calendar month, pick the expiration with highest total OI (proxy for standard monthly)
+  const far = withDte.filter(e => e.dte > 30 && e.dte <= 60).sort((a, b) => a.dte - b.dte);
+  let farSelected = far;
+  if (isDaily && far.length > 3) {
+    // Group by year-month, pick highest-OI expiration per month
+    const byMonth = new Map<string, typeof far[0][]>();
+    for (const e of far) {
+      const ym = e.exp.slice(0, 7);
+      if (!byMonth.has(ym)) byMonth.set(ym, []);
+      byMonth.get(ym)!.push(e);
+    }
+    farSelected = [];
+    for (const [, group] of byMonth) {
+      // Pick the one with highest total OI in this expiration
+      const best = group.reduce((b, e) => {
+        const oi = chain.filter(c => c.expiration === e.exp).reduce((s, c) => s + c.openInterest, 0);
+        const bOi = chain.filter(c => c.expiration === b.exp).reduce((s, c) => s + c.openInterest, 0);
+        return oi > bOi ? e : b;
+      });
+      farSelected.push(best);
+    }
+    farSelected.sort((a, b) => a.dte - b.dte);
+  }
+  farSelected.slice(0, 3).forEach(e => selected.push({ ...e, bucket: "far_30_60d" }));
+
+  // Determine ATM strike once
+  const atmStrike = [...new Set(chain.map(c => c.strike))]
+    .sort((a, b) => Math.abs(a - price) - Math.abs(b - price))[0] ?? Math.round(price);
+
+  return selected.map(s => ({
+    expiration: s.exp,
+    dte: s.dte,
+    bucket: s.bucket,
+    strikes: buildCuratedStrikes(chain, s.exp, atmStrike),
+  }));
+}
+
 function summarizeOptionsChain(chain: ChainContract[], price: number): ChainSummary {
   const calls = chain.filter(c => c.type === "call" || c.optionType === "CALL");
   const puts = chain.filter(c => c.type === "put" || c.optionType === "PUT");
@@ -398,6 +539,8 @@ function summarizeOptionsChain(chain: ChainContract[], price: number): ChainSumm
     if (backContracts.length > 0) backMonthIV = Math.round(backContracts.reduce((s, c) => s + c.impliedVolatility, 0) / backContracts.length * 10000) / 100;
   }
 
+  const curatedExpirations = buildCuratedExpirations(chain, price);
+
   return {
     atmStrike,
     atmCallBid: atmCall?.bid ?? 0,
@@ -415,6 +558,7 @@ function summarizeOptionsChain(chain: ChainContract[], price: number): ChainSumm
     frontMonthIV,
     backMonthIV,
     availableExpirations: expirations,
+    curatedExpirations,
   };
 }
 
@@ -450,6 +594,7 @@ function buildDataPackage(
         ? { frontMonthIV: chainSummary.frontMonthIV, backMonthIV: chainSummary.backMonthIV }
         : "insufficient data",
     },
+    curatedExpirations: chainSummary.curatedExpirations,
     availableExpirations: chainSummary.availableExpirations,
     ioScore: {
       final: ioScore.final,
@@ -621,6 +766,17 @@ function validateAiResponse(
   const issues: string[] = [];
   const minOI = settings.minOpenInterest;
   const maxSpreadPct = settings.maxBidAskSpreadPct / 100;
+
+  // Hard reject naked short positions — undefined risk is not permitted
+  if (response.strategy === "naked_put" || response.strategy === "naked_call") {
+    issues.push(`Strategy "${response.strategy}" is not permitted. All positions must have defined maximum risk. Use a credit spread, iron condor, or iron butterfly instead.`);
+    return { valid: false, issues };
+  }
+  // Detect a single-leg sell with no offsetting buy (naked short disguised as another label)
+  if (response.legs.length === 1 && response.legs[0].action === "sell") {
+    issues.push(`Single-leg short position is not permitted. Add a long leg to define the maximum risk.`);
+    return { valid: false, issues };
+  }
 
   for (const leg of response.legs) {
     const matchingContracts = chain.filter(c => {
