@@ -70,10 +70,11 @@ function sseFlushPadding(res: import("express").Response) {
   safeSseWrite(res, pad);
 }
 
-const DEFAULT_MODEL = "claude-opus-4-7";
+const DEFAULT_MODEL = "claude-opus-4-6";
 
 const AVAILABLE_MODELS = [
   "claude-opus-4-7",
+  "claude-sonnet-4-7",
   "claude-opus-4-6",
   "claude-sonnet-4-6",
   "claude-opus-4-20250514",
@@ -85,8 +86,8 @@ const AVAILABLE_MODELS = [
   "gemini-2.0-flash",
 ];
 
-function isOpus47OrNewer(model: string): boolean {
-  return /^claude-opus-4-([7-9]|\d{2,})/.test(model);
+export function isClaude47OrNewer(model: string): boolean {
+  return /^claude-(opus|sonnet)-4-([7-9]|\d{2,})/.test(model);
 }
 
 interface NativeStreamOptions {
@@ -100,6 +101,8 @@ interface NativeStreamOptions {
 }
 
 const THINKING_CAPABLE_MODELS = new Set([
+  "claude-opus-4-7",
+  "claude-sonnet-4-7",
   "claude-opus-4-6",
   "claude-sonnet-4-6",
   "claude-opus-4-20250514",
@@ -128,6 +131,7 @@ async function nativeStreamClaude(opts: NativeStreamOptions): Promise<string> {
 
   let fullText = "";
 
+  const isNew = isClaude47OrNewer(resolvedModel);
   const params: Anthropic.MessageStreamParams = {
     model: resolvedModel,
     max_tokens: useThinking ? Math.max(16000, thinkingBudget! + 8000) : 4096,
@@ -139,9 +143,15 @@ async function nativeStreamClaude(opts: NativeStreamOptions): Promise<string> {
   }
 
   if (useThinking) {
-    params.thinking = { type: "enabled", budget_tokens: thinkingBudget! };
-    params.temperature = 1;
-  } else {
+    if (isNew) {
+      // Claude 4.7+: extended thinking budgets removed; use adaptive instead
+      params.thinking = { type: "adaptive", display: "summarized" } as unknown as Anthropic.MessageStreamParams["thinking"];
+    } else {
+      params.thinking = { type: "enabled", budget_tokens: thinkingBudget! };
+      params.temperature = 1;
+    }
+  } else if (!isNew) {
+    // Claude 4.7+: temperature/top_p/top_k must be omitted (400 otherwise)
     params.temperature = temperature;
   }
 
@@ -230,12 +240,15 @@ async function callClaude(
     return "Error: ANTHROPIC_API_KEY not configured.";
   }
 
-  const message = await client.messages.create({
+  const createParams: Anthropic.MessageCreateParamsNonStreaming = {
     model: modelName,
     max_tokens: 4096,
-    temperature,
     messages: [{ role: "user", content: prompt }],
-  });
+  };
+  if (!isClaude47OrNewer(modelName)) {
+    createParams.temperature = temperature;
+  }
+  const message = await client.messages.create(createParams);
 
   const content = message.content[0];
   return content.type === "text" ? content.text : "No response";

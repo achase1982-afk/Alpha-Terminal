@@ -222,13 +222,17 @@ async function callAnthropicWithSystem(model: string, temperature: number, syste
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
   const client = new Anthropic({ apiKey });
 
-  const message = await client.messages.create({
+  const isNew = /^claude-(opus|sonnet)-4-([7-9]|\d{2,})/.test(model);
+  const params: Anthropic.MessageCreateParamsNonStreaming = {
     model,
     max_tokens: 8192,
-    temperature,
     system: systemPrompt,
     messages: [{ role: "user", content: prompt }],
-  });
+  };
+  if (!isNew) {
+    params.temperature = temperature;
+  }
+  const message = await client.messages.create(params);
 
   const textBlock = message.content.find((b) => b.type === "text");
   if (!textBlock || textBlock.type !== "text") {
