@@ -12,6 +12,8 @@ import { getAiLabStrategistConfig } from "./aiLabConfig.js";
 import {
   callAnthropicWithSystemAndWebSearch,
   callGeminiWithSystemAndWebSearch,
+  streamCallAnthropicWithSystemAndWebSearch,
+  streamCallGeminiWithSystemAndWebSearch,
   extractJson,
   type WebSearchTrace,
 } from "./aiLabAnalystClient.js";
@@ -276,7 +278,17 @@ NARRATIVE DISCIPLINE: Your job is structure and thesis. The code computes econom
 
 IMPORTANT: Respond with ONLY the JSON object. No markdown, no explanation text, no code fences. Just the raw JSON.`;
 
-export async function analyzeTickerV2(ticker: string): Promise<StrategistV2Result> {
+export interface AnalyzeProgressCallbacks {
+  onStatus?: (status: string) => void;
+  onToken?: (text: string) => void;
+}
+
+export async function analyzeTickerV2(
+  ticker: string,
+  progress?: AnalyzeProgressCallbacks,
+): Promise<StrategistV2Result> {
+  const status = (s: string) => progress?.onStatus?.(s);
+  status("Loading regime + settings…");
   const settings = await getSettings();
   const regime = getCachedRegime() ?? buildFallbackRegime();
 
@@ -347,10 +359,11 @@ export async function analyzeTickerV2(ticker: string): Promise<StrategistV2Resul
 
   const dataPackage = buildDataPackage(ticker, tickerData, chainSummary, ioScore, regime, settings);
 
+  status("Calling AI for trade recommendation…");
   let aiResponse: AiTradeResponse;
   let webTrace: WebSearchTrace;
   try {
-    const r = await callAiForTrade(dataPackage);
+    const r = await callAiForTrade(dataPackage, undefined, progress);
     aiResponse = r.response;
     webTrace = r.trace;
   } catch (err) {
@@ -367,8 +380,9 @@ export async function analyzeTickerV2(ticker: string): Promise<StrategistV2Resul
   const validationResult = validateAiResponse(aiResponse, chain, settings);
   if (!validationResult.valid) {
     try {
+      status("Retrying with corrections…");
       const retryPrompt = buildRetryPrompt(aiResponse, validationResult.issues);
-      const r2 = await callAiForTrade(dataPackage, retryPrompt);
+      const r2 = await callAiForTrade(dataPackage, retryPrompt, progress);
       aiResponse = r2.response;
       // Keep original trace; retry typically does not re-search.
       if (r2.trace.queries.length > 0) webTrace = r2.trace;
@@ -769,7 +783,11 @@ function buildDataPackage(
   return JSON.stringify(pkg);
 }
 
-async function callAiForTrade(dataPackage: string, retryInstruction?: string): Promise<{ response: AiTradeResponse; trace: WebSearchTrace }> {
+async function callAiForTrade(
+  dataPackage: string,
+  retryInstruction?: string,
+  progress?: AnalyzeProgressCallbacks,
+): Promise<{ response: AiTradeResponse; trace: WebSearchTrace }> {
   const aiCfg = getAiLabStrategistConfig();
   const provider = aiCfg.analystModelProvider;
   const model = aiCfg.analystModelName;
@@ -784,15 +802,21 @@ async function callAiForTrade(dataPackage: string, retryInstruction?: string): P
 
   let rawText: string;
   let trace: WebSearchTrace;
+  const onDelta = (txt: string) => progress?.onToken?.(txt);
+  const onStatus = (s: string) => progress?.onStatus?.(s);
   switch (provider) {
     case "anthropic": {
-      const r = await callAnthropicWithSystemAndWebSearch(model, temperature, STRATEGIST_SYSTEM_PROMPT, prompt);
+      const r = progress
+        ? await streamCallAnthropicWithSystemAndWebSearch(model, temperature, STRATEGIST_SYSTEM_PROMPT, prompt, onDelta, onStatus)
+        : await callAnthropicWithSystemAndWebSearch(model, temperature, STRATEGIST_SYSTEM_PROMPT, prompt);
       rawText = r.text;
       trace = r.trace;
       break;
     }
     case "google": {
-      const r = await callGeminiWithSystemAndWebSearch(model, temperature, STRATEGIST_SYSTEM_PROMPT, prompt);
+      const r = progress
+        ? await streamCallGeminiWithSystemAndWebSearch(model, temperature, STRATEGIST_SYSTEM_PROMPT, prompt, onDelta, onStatus)
+        : await callGeminiWithSystemAndWebSearch(model, temperature, STRATEGIST_SYSTEM_PROMPT, prompt);
       rawText = r.text;
       trace = r.trace;
       break;

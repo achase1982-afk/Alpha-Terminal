@@ -477,6 +477,143 @@ export async function callAnthropicWithSystemAndWebSearch(
   };
 }
 
+export async function streamCallAnthropicWithSystemAndWebSearch(
+  model: string,
+  temperature: number,
+  systemPrompt: string,
+  prompt: string,
+  onDelta: (text: string) => void,
+  onStatus?: (status: string) => void,
+): Promise<WebSearchResult> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
+  const client = new Anthropic({ apiKey });
+
+  const isNew = /^claude-(opus|sonnet)-4-([7-9]|\d{2,})/.test(model);
+  const THINKING_BUDGET = 4096;
+  const params: Anthropic.MessageCreateParamsStreaming = {
+    model,
+    max_tokens: isNew ? 16384 : THINKING_BUDGET + 12288,
+    system: systemPrompt,
+    messages: [{ role: "user", content: prompt }],
+    tools: [
+      {
+        type: "web_search_20250305",
+        name: "web_search",
+        max_uses: ANTHROPIC_WEB_SEARCH_MAX_USES,
+      } as unknown as Anthropic.Tool,
+    ],
+    stream: true,
+  };
+  if (isNew) {
+    (params as unknown as Record<string, unknown>).thinking = { type: "adaptive", display: "summarized" };
+  } else {
+    params.thinking = { type: "enabled", budget_tokens: THINKING_BUDGET };
+    params.temperature = 1;
+  }
+  void temperature;
+
+  const queries: string[] = [];
+  const sources: WebSearchSource[] = [];
+  const seenUrls = new Set<string>();
+  let fullText = "";
+
+  const stream = client.messages.stream(params);
+  for await (const event of stream) {
+    const ev = event as unknown as Record<string, unknown>;
+    const evType = ev.type as string | undefined;
+    if (evType === "content_block_start") {
+      const block = ev.content_block as Record<string, unknown> | undefined;
+      const bType = block?.type as string | undefined;
+      if (bType === "server_tool_use") {
+        const inp = block?.input as Record<string, unknown> | undefined;
+        const q = inp?.query;
+        if (typeof q === "string" && q.trim()) {
+          queries.push(q.trim());
+          onStatus?.(`Searching the web: "${q.trim().slice(0, 80)}"`);
+        }
+      } else if (bType === "web_search_tool_result") {
+        const content = block?.content;
+        if (Array.isArray(content)) {
+          for (const item of content as Array<Record<string, unknown>>) {
+            const url = item.url as string | undefined;
+            if (!url || seenUrls.has(url)) continue;
+            seenUrls.add(url);
+            sources.push({
+              title: (item.title as string | undefined) ?? url,
+              url,
+              date: (item.page_age as string | undefined) ?? undefined,
+            });
+          }
+          onStatus?.(`Found ${sources.length} source${sources.length === 1 ? "" : "s"}`);
+        }
+      } else if (bType === "thinking") {
+        onStatus?.("Reasoning…");
+      } else if (bType === "text") {
+        onStatus?.("Drafting recommendation…");
+      }
+    } else if (evType === "content_block_delta") {
+      const delta = ev.delta as Record<string, unknown> | undefined;
+      const dType = delta?.type as string | undefined;
+      if (dType === "text_delta") {
+        const txt = delta?.text as string | undefined;
+        if (txt) {
+          fullText += txt;
+          onDelta(txt);
+        }
+      } else if (dType === "thinking_delta") {
+        const txt = (delta?.thinking as string | undefined) ?? "";
+        if (txt) onDelta(txt);
+      }
+    }
+  }
+
+  // Ensure final message captures any tool results we may have missed
+  // via the streamed events (server_tool_use results sometimes arrive
+  // batched inside the final message).
+  try {
+    const finalMessage = await stream.finalMessage();
+    for (const block of finalMessage.content as unknown as Array<Record<string, unknown>>) {
+      const t = block.type as string | undefined;
+      if (t === "server_tool_use") {
+        const inp = (block as { input?: Record<string, unknown> }).input;
+        const q = inp?.query;
+        if (typeof q === "string" && q.trim() && !queries.includes(q.trim())) {
+          queries.push(q.trim());
+        }
+      } else if (t === "web_search_tool_result") {
+        const content = (block as { content?: unknown }).content;
+        if (Array.isArray(content)) {
+          for (const item of content as Array<Record<string, unknown>>) {
+            const url = item.url as string | undefined;
+            if (!url || seenUrls.has(url)) continue;
+            seenUrls.add(url);
+            sources.push({
+              title: (item.title as string | undefined) ?? url,
+              url,
+              date: (item.page_age as string | undefined) ?? undefined,
+            });
+          }
+        }
+      }
+    }
+  } catch {
+    // ignore — we already accumulated from deltas
+  }
+
+  const text = fullText.trim();
+  if (!text) throw new Error("No text content in Strategist LLM response (stream)");
+
+  return {
+    text,
+    trace: {
+      webSearchUsed: queries.length > 0,
+      queries,
+      sources,
+    },
+  };
+}
+
 export async function callGeminiWithSystemAndWebSearch(
   model: string,
   temperature: number,
@@ -539,6 +676,82 @@ export async function callGeminiWithSystemAndWebSearch(
       queries,
       sources,
     },
+  };
+}
+
+export async function streamCallGeminiWithSystemAndWebSearch(
+  model: string,
+  temperature: number,
+  systemPrompt: string,
+  prompt: string,
+  onDelta: (text: string) => void,
+  onStatus?: (status: string) => void,
+): Promise<WebSearchResult> {
+  const baseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL;
+  const apiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
+  if (!baseUrl || !apiKey) throw new Error("Gemini AI integration env vars not configured");
+  const ai = new GoogleGenAI({ apiKey, httpOptions: { apiVersion: "", baseUrl } });
+
+  const supportsThinking = /^gemini-(2\.5|3)/.test(model);
+  const config: Record<string, unknown> = {
+    maxOutputTokens: 12288,
+    temperature,
+    tools: [{ googleSearch: {} }],
+  };
+  if (supportsThinking) {
+    config.thinkingConfig = { thinkingBudget: -1, includeThoughts: false };
+  }
+
+  onStatus?.("Calling Gemini with web search…");
+  const stream = await ai.models.generateContentStream({
+    model,
+    contents: [{ role: "user", parts: [{ text: systemPrompt + "\n\n" + prompt }] }],
+    config: config as Parameters<typeof ai.models.generateContentStream>[0]["config"],
+  });
+
+  let fullText = "";
+  const queries: string[] = [];
+  const sources: WebSearchSource[] = [];
+  const seenUrls = new Set<string>();
+  let lastChunk: unknown = null;
+
+  for await (const chunk of stream) {
+    lastChunk = chunk;
+    const txt = (chunk as { text?: string }).text;
+    if (txt) {
+      fullText += txt;
+      onDelta(txt);
+    }
+  }
+
+  type GroundingSupport = {
+    webSearchQueries?: unknown;
+    groundingChunks?: Array<{ web?: { uri?: string; title?: string } }>;
+  };
+  const candidates = (lastChunk as unknown as { candidates?: Array<{ groundingMetadata?: GroundingSupport }> })?.candidates;
+  const meta = candidates?.[0]?.groundingMetadata;
+  if (meta) {
+    if (Array.isArray(meta.webSearchQueries)) {
+      for (const q of meta.webSearchQueries) {
+        if (typeof q === "string" && q.trim()) queries.push(q.trim());
+      }
+    }
+    if (Array.isArray(meta.groundingChunks)) {
+      for (const ch of meta.groundingChunks) {
+        const url = ch.web?.uri;
+        if (!url || seenUrls.has(url)) continue;
+        seenUrls.add(url);
+        sources.push({ title: ch.web?.title ?? url, url });
+      }
+    }
+  }
+
+  const text = fullText.trim();
+  if (!text) throw new Error("No text content in Strategist LLM stream (Gemini)");
+
+  return {
+    text,
+    trace: { webSearchUsed: queries.length > 0, queries, sources },
   };
 }
 

@@ -2689,6 +2689,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
     }
   }, [accessToken, symbol, setSymbol, setStrategistResult]);
 
+  const activePollJobIdRef = useRef<string | null>(null);
   const handleRunV2 = useCallback((ticker: string) => {
     const upperTicker = ticker.toUpperCase();
     const jobId = `sj_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -2697,13 +2698,17 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
     setRealStrategies([]);
     setNarrativeText("");
     setStrategistResult(null);
-    setStrategistStatus("Running V2 strategist...");
+    setThinkingTokens([]);
+    setStrategistStatus("Starting analysis…");
     setLastRunSymbol(ticker);
     setLastRunTime(Date.now());
     if (upperTicker !== symbol) setSymbol(upperTicker);
     startStrategistJob(jobId, upperTicker);
-    // Fire-and-forget — analysis continues in background even if user navigates away.
+    activePollJobIdRef.current = jobId;
+
+    // Fire-and-forget — analysis runs server-side; we poll for live tokens + status.
     (async () => {
+      const isStale = () => activePollJobIdRef.current !== jobId;
       try {
         const res = await fetchWithAuth(`${API_BASE}/strategist/analyze`, {
           method: "POST",
@@ -2712,24 +2717,63 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
         });
         if (!res.ok) {
           const errText = await res.text().catch(() => "Unknown error");
-          completeStrategistJob(jobId, { status: "no_viable_setup", ticker: upperTicker, blockReason: errText, regime: { directionalConviction: "NEUTRAL", systemicRiskLevel: "NORMAL", correlationRegime: "MODERATE", compositeScore: 0, idioOpportunityFlag: false }, systemicRiskElevated: false });
-        } else {
-          const json = await res.json();
-          completeStrategistJob(jobId, json);
+          errorStrategistJob(jobId, errText);
+          if (!isStale()) setStrategistStatus("");
+          return;
         }
-        // Refresh history (server has the row keyed by jobId)
-        try {
-          const hres = await fetchWithAuth(`${API_BASE}/strategist/history`);
-          if (hres.ok) {
-            const rows = await hres.json();
-            if (Array.isArray(rows)) setStrategistHistoryStore(rows);
+        // Poll for live thinking + completion (incremental tokens via ?since=).
+        let since = 0;
+        const stopAt = Date.now() + 5 * 60 * 1000; // 5 min hard cap
+        let resolved = false;
+        while (Date.now() < stopAt) {
+          if (isStale()) return; // superseded by newer run; abandon updates
+          await new Promise(r => setTimeout(r, 1200));
+          if (isStale()) return;
+          const tres = await fetchWithAuth(`${API_BASE}/strategist/thinking/${jobId}?since=${since}`);
+          if (!tres.ok) {
+            await new Promise(r => setTimeout(r, 800));
+            continue;
           }
-        } catch { /* best-effort */ }
+          const t = await tres.json() as {
+            status: string; tokens: string[]; nextSince: number; done: boolean;
+            result: unknown | null; error: string | null;
+          };
+          if (isStale()) return;
+          if (Array.isArray(t.tokens) && t.tokens.length > 0) {
+            setThinkingTokens(prev => prev.concat(t.tokens));
+          }
+          since = t.nextSince ?? since;
+          if (t.status) setStrategistStatus(t.status);
+          if (t.done) {
+            resolved = true;
+            if (t.error) {
+              errorStrategistJob(jobId, t.error);
+            } else if (t.result) {
+              completeStrategistJob(jobId, t.result);
+            } else {
+              errorStrategistJob(jobId, "Analysis completed without a result");
+            }
+            try {
+              const hres = await fetchWithAuth(`${API_BASE}/strategist/history`);
+              if (hres.ok) {
+                const rows = await hres.json();
+                if (Array.isArray(rows) && !isStale()) setStrategistHistoryStore(rows);
+              }
+            } catch { /* best-effort */ }
+            break;
+          }
+        }
+        // Hard timeout reached without completion → mark interrupted so store doesn't get stuck running.
+        if (!resolved) {
+          errorStrategistJob(jobId, "Analysis timed out after 5 minutes (no server response)");
+          if (!isStale()) setStrategistStatus("Timed out");
+        }
       } catch (err) {
         errorStrategistJob(jobId, err instanceof Error ? err.message : String(err));
       } finally {
-        // Only clear pipeline status if user is still viewing this ticker
-        setStrategistStatus(prev => prev === "Running V2 strategist..." ? "" : prev);
+        if (!isStale()) {
+          setStrategistStatus(prev => prev.startsWith("Failed") || prev === "Timed out" ? prev : "");
+        }
       }
     })();
   }, [symbol, setSymbol, setStrategistResult, startStrategistJob, completeStrategistJob, errorStrategistJob, setStrategistHistoryStore]);
@@ -2799,6 +2843,12 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
             <StrategistCommandBar onRun={handleRunStrategistWithTicker} disabled={false}
               lastRunSymbol={lastRunSymbol} lastRunTime={lastRunTime} />
 
+            {/* History list always visible (even when no active result) so prior cards persist across tab navigation */}
+            <StrategistHistoryList
+              onSendToOrder={onStrategistSendToOrder}
+              excludeJobIds={activeJobIdForSymbol ? new Set([activeJobIdForSymbol]) : undefined}
+            />
+
             {activeResult === "strategist" && (
               <div className="space-y-4">
                 {(isDetRunning || isStrategizing || isV2Running) && (
@@ -2818,11 +2868,6 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
                     </>
                   );
                 })()}
-
-                <StrategistHistoryList
-                  onSendToOrder={onStrategistSendToOrder}
-                  excludeJobIds={activeJobIdForSymbol ? new Set([activeJobIdForSymbol]) : undefined}
-                />
 
                 {detResult && !isDetRunning && !v2Result && (
                   <>

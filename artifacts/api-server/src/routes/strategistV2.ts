@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { analyzeTickerV2 } from "../lib/strategistV2.js";
+import { analyzeTickerV2, type StrategistV2Result } from "../lib/strategistV2.js";
 import { getSettings, updateSetting, resetAllSettings, getDefaults, getSettingMeta } from "../lib/strategistSettings.js";
 import { getCachedRegime, buildFallbackRegime } from "../lib/regimePostProcessor.js";
 import { db, strategistTelemetryTable, scannerTelemetryTable, strategistHistoryTable } from "@workspace/db";
@@ -13,6 +13,43 @@ router.get("/regime", (_req, res) => {
   res.json(regime);
 });
 
+// In-memory live thinking buffer per jobId (for streaming-style polling)
+type ThinkingEntry = {
+  jobId: string;
+  ticker: string;
+  status: string;
+  tokens: string[];
+  done: boolean;
+  result?: StrategistV2Result;
+  error?: string;
+  startedAt: number;
+  finishedAt?: number;
+};
+const strategistThinkingBuffer = new Map<string, ThinkingEntry>();
+const THINKING_TTL_MS = 10 * 60 * 1000;
+function pruneThinkingBuffer() {
+  const now = Date.now();
+  for (const [k, v] of strategistThinkingBuffer.entries()) {
+    if (v.done && v.finishedAt && now - v.finishedAt > THINKING_TTL_MS) {
+      strategistThinkingBuffer.delete(k);
+    } else if (!v.done && now - v.startedAt > 5 * THINKING_TTL_MS) {
+      // safety: drop stuck entries after 50 minutes
+      strategistThinkingBuffer.delete(k);
+    }
+  }
+}
+
+async function persistHistory(jobId: string, ticker: string, result: StrategistV2Result) {
+  try {
+    await db
+      .insert(strategistHistoryTable)
+      .values({ jobId, ticker, cardJson: result as unknown as object, cleared: false })
+      .onConflictDoNothing({ target: strategistHistoryTable.jobId });
+  } catch (persistErr) {
+    logger.warn({ persistErr, jobId, ticker }, "StrategistV2: failed to persist history (non-fatal)");
+  }
+}
+
 router.post("/analyze", async (req, res): Promise<void> => {
   try {
     const { ticker, jobId } = req.body;
@@ -21,30 +58,92 @@ router.post("/analyze", async (req, res): Promise<void> => {
       return;
     }
     const upperTicker = ticker.toUpperCase();
-    const result = await analyzeTickerV2(upperTicker);
 
-    // Persist to history if a jobId was supplied (idempotent on jobId)
+    // If jobId provided, run analyze in background with progress streaming
+    // and respond immediately with {jobId} so the UI can poll.
     if (jobId && typeof jobId === "string") {
-      try {
-        await db
-          .insert(strategistHistoryTable)
-          .values({
-            jobId,
-            ticker: upperTicker,
-            cardJson: result as unknown as object,
-            cleared: false,
-          })
-          .onConflictDoNothing({ target: strategistHistoryTable.jobId });
-      } catch (persistErr) {
-        logger.warn({ persistErr, jobId, ticker: upperTicker }, "StrategistV2: failed to persist history (non-fatal)");
+      pruneThinkingBuffer();
+      // Idempotency: if a buffer already exists for this jobId, return it.
+      const existing = strategistThinkingBuffer.get(jobId);
+      if (existing) {
+        res.json({ jobId, accepted: true, alreadyRunning: !existing.done });
+        return;
       }
+      const entry: ThinkingEntry = {
+        jobId,
+        ticker: upperTicker,
+        status: "Starting analysis…",
+        tokens: [],
+        done: false,
+        startedAt: Date.now(),
+      };
+      strategistThinkingBuffer.set(jobId, entry);
+
+      // Fire-and-forget background analysis
+      void (async () => {
+        try {
+          const result = await analyzeTickerV2(upperTicker, {
+            onStatus: (s) => {
+              entry.status = s;
+            },
+            onToken: (t) => {
+              entry.tokens.push(t);
+              // Cap memory: keep last ~6000 tokens (~24KB+)
+              if (entry.tokens.length > 6000) entry.tokens.splice(0, entry.tokens.length - 6000);
+            },
+          });
+          entry.result = result;
+          entry.status = "Done";
+          entry.done = true;
+          entry.finishedAt = Date.now();
+          await persistHistory(jobId, upperTicker, result);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          entry.error = message;
+          entry.status = `Failed: ${message}`;
+          entry.done = true;
+          entry.finishedAt = Date.now();
+          logger.error({ err, jobId, ticker: upperTicker }, "StrategistV2: background analyze failed");
+        }
+      })();
+
+      res.json({ jobId, accepted: true, alreadyRunning: false });
+      return;
     }
 
+    // Legacy synchronous path (no jobId): block and return result
+    const result = await analyzeTickerV2(upperTicker);
     res.json(result);
   } catch (err) {
     logger.error({ err }, "StrategistV2: analyze failed");
     res.status(500).json({ error: "Analysis failed" });
   }
+});
+
+router.get("/thinking/:jobId", (req, res): void => {
+  pruneThinkingBuffer();
+  const entry = strategistThinkingBuffer.get(req.params.jobId);
+  if (!entry) {
+    res.status(404).json({ error: "job not found" });
+    return;
+  }
+  // Incremental delivery: client passes ?since=<index> to receive only new tokens.
+  const sinceRaw = req.query.since;
+  const since = typeof sinceRaw === "string" ? Math.max(0, parseInt(sinceRaw, 10) || 0) : 0;
+  const totalTokens = entry.tokens.length;
+  const tokens = since < totalTokens ? entry.tokens.slice(since) : [];
+  res.json({
+    jobId: entry.jobId,
+    ticker: entry.ticker,
+    status: entry.status,
+    tokens,
+    nextSince: totalTokens,
+    done: entry.done,
+    result: entry.result ?? null,
+    error: entry.error ?? null,
+    startedAt: entry.startedAt,
+    finishedAt: entry.finishedAt ?? null,
+  });
 });
 
 router.get("/history", async (_req, res) => {
