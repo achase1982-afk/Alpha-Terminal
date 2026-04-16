@@ -814,50 +814,146 @@ async function fetchTickerData(ticker: string): Promise<TickerData | null> {
   }
 }
 
-async function fetchOptionsChain(ticker: string, settings: StrategistConfig): Promise<ChainContract[]> {
+const STRATEGIST_LARGE_CHAIN_SYMBOLS = new Set(["SPY", "QQQ", "AAPL", "TSLA", "AMZN", "NVDA", "META", "MSFT", "GOOG", "GOOGL"]);
+
+async function fetchSchwabChainSide(
+  ticker: string,
+  contractType: "ALL" | "CALL" | "PUT",
+  token: string,
+): Promise<{ callMap: Record<string, any>; putMap: Record<string, any>; underlyingPrice?: number } | null> {
+  const params = new URLSearchParams({
+    symbol: ticker,
+    contractType,
+    range: "ALL",
+  });
+  const url = `${SCHWAB_API}/chains?${params.toString()}`;
+  let res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(25_000),
+  });
+  if (res.status === 429 || res.status === 502 || res.status === 503) {
+    await new Promise(r => setTimeout(r, 1000));
+    res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(25_000),
+    });
+  }
+  if (!res.ok) {
+    logger.warn({ ticker, contractType, status: res.status }, "StrategistV2: Schwab chain fetch failed");
+    return null;
+  }
+  const data = await res.json() as any;
+  return {
+    callMap: data.callExpDateMap ?? {},
+    putMap: data.putExpDateMap ?? {},
+    underlyingPrice: data.underlyingPrice,
+  };
+}
+
+async function fetchSchwabFullChain(ticker: string): Promise<ChainContract[] | null> {
+  const token = await getBestAccessToken();
+  if (!token) {
+    logger.warn({ ticker }, "StrategistV2: no Schwab token available, skipping Schwab full chain");
+    return null;
+  }
+
   try {
-    const apiKey = process.env.POLYGON_API_KEY || "";
-    const chain = await fetchPolygonChain(ticker, apiKey, { maxDte: 365 });
-    if (!chain || !chain.calls || (chain.calls.length === 0 && chain.puts.length === 0)) {
-      const token = await getBestAccessToken();
-      if (!token) return [];
-      const res = await fetch(
-        `${SCHWAB_API}/chains?symbol=${ticker}&strikeCount=20&strategy=SINGLE&range=OTM`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      if (!res.ok) return [];
-      const data = await res.json() as any;
-      return flattenSchwabChain(data, settings);
+    const useSplit = STRATEGIST_LARGE_CHAIN_SYMBOLS.has(ticker.toUpperCase());
+    let callMap: Record<string, any> = {};
+    let putMap: Record<string, any> = {};
+
+    if (useSplit) {
+      const [callRes, putRes] = await Promise.all([
+        fetchSchwabChainSide(ticker, "CALL", token),
+        fetchSchwabChainSide(ticker, "PUT", token),
+      ]);
+      if (!callRes && !putRes) return null;
+      callMap = callRes?.callMap ?? {};
+      putMap = putRes?.putMap ?? {};
+    } else {
+      const result = await fetchSchwabChainSide(ticker, "ALL", token);
+      if (!result) return null;
+      callMap = result.callMap;
+      putMap = result.putMap;
     }
 
+    const contracts = flattenSchwabMaps(callMap, putMap);
+    if (contracts.length === 0) {
+      logger.warn({ ticker }, "StrategistV2: Schwab full chain returned 0 contracts");
+      return null;
+    }
+    const pricedCount = contracts.filter(c => c.bid > 0 || c.ask > 0).length;
+    logger.info({ ticker, total: contracts.length, priced: pricedCount, source: "schwab-full" }, "StrategistV2: Schwab full chain loaded");
+    return contracts;
+  } catch (err) {
+    logger.warn({ err, ticker }, "StrategistV2: Schwab full chain threw");
+    return null;
+  }
+}
+
+async function fetchOptionsChain(ticker: string, settings: StrategistConfig): Promise<ChainContract[]> {
+  // Step A: Schwab full chain primary (so quoted prices match what user fills at)
+  const schwabChain = await fetchSchwabFullChain(ticker);
+  if (schwabChain && schwabChain.length > 0) {
+    const priced = schwabChain.filter(c => c.bid > 0 || c.ask > 0);
+    if (priced.length > 0) return priced;
+    logger.warn({ ticker, total: schwabChain.length }, "StrategistV2: Schwab chain has contracts but all unpriced — trying Polygon fallback");
+  }
+
+  // Polygon fallback when Schwab is unavailable/empty/unpriced
+  try {
+    const apiKey = process.env.POLYGON_API_KEY || "";
+    if (!apiKey) {
+      logger.warn({ ticker }, "StrategistV2: no Polygon key for fallback");
+      return schwabChain ?? [];
+    }
+    const chain = await fetchPolygonChain(ticker, apiKey, { maxDte: 365 });
+    if (!chain || (chain.calls.length === 0 && chain.puts.length === 0)) {
+      logger.warn({ ticker }, "StrategistV2: Polygon fallback also empty");
+      return schwabChain ?? [];
+    }
     const taggedCalls = (chain.calls || []).map((c: any) => ({ ...c, type: "call", optionType: "CALL", mid: c.mid ?? ((c.bid ?? 0) + (c.ask ?? 0)) / 2 }));
     const taggedPuts = (chain.puts || []).map((c: any) => ({ ...c, type: "put", optionType: "PUT", mid: c.mid ?? ((c.bid ?? 0) + (c.ask ?? 0)) / 2 }));
     const allContracts = [...taggedCalls, ...taggedPuts] as ChainContract[];
-    const pricedContracts = allContracts.filter(c => (c.bid > 0 || c.ask > 0));
-    if (pricedContracts.length === 0 && allContracts.length > 0) {
-      logger.warn({ ticker, totalContracts: allContracts.length }, "StrategistV2: Polygon chain has contracts but all have zero pricing (options market likely closed). Falling back to Schwab.");
-      const token = await getBestAccessToken();
-      if (token) {
-        const res = await fetch(
-          `${SCHWAB_API}/chains?symbol=${ticker}&strikeCount=20&strategy=SINGLE&range=OTM`,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        if (res.ok) {
-          const data = await res.json() as any;
-          const schwabChain = flattenSchwabChain(data, settings);
-          if (schwabChain.length > 0) {
-            logger.info({ ticker, schwabChainLength: schwabChain.length }, "StrategistV2: Schwab fallback chain loaded");
-            return schwabChain;
-          }
-        }
-      }
-      logger.warn({ ticker }, "StrategistV2: Schwab fallback also returned no priced contracts");
-    }
+    const pricedContracts = allContracts.filter(c => c.bid > 0 || c.ask > 0);
+    logger.info({ ticker, total: allContracts.length, priced: pricedContracts.length, source: "polygon-fallback" }, "StrategistV2: Polygon fallback chain loaded");
     return pricedContracts.length > 0 ? pricedContracts : allContracts;
   } catch (err) {
-    logger.error({ err, ticker }, "StrategistV2: failed to fetch options chain");
-    return [];
+    logger.error({ err, ticker }, "StrategistV2: Polygon fallback failed");
+    return schwabChain ?? [];
   }
+}
+
+function flattenSchwabMaps(callMap: Record<string, any>, putMap: Record<string, any>): ChainContract[] {
+  const result: ChainContract[] = [];
+  const sides: Array<["call" | "put", Record<string, any>]> = [["call", callMap], ["put", putMap]];
+  for (const [side, map] of sides) {
+    const optType = side === "call" ? "CALL" : "PUT";
+    for (const [expKey, strikes] of Object.entries(map)) {
+      const expDate = expKey.split(":")[0];
+      for (const [strikeKey, arr] of Object.entries(strikes as Record<string, any[]>)) {
+        for (const opt of arr) {
+          const bid = opt.bid ?? 0;
+          const ask = opt.ask ?? 0;
+          result.push({
+            strike: parseFloat(strikeKey),
+            expiration: expDate,
+            optionType: optType,
+            type: side,
+            bid,
+            ask,
+            mid: (bid + ask) / 2,
+            delta: opt.delta ?? 0,
+            openInterest: opt.openInterest ?? 0,
+            volume: opt.totalVolume ?? 0,
+            impliedVolatility: opt.volatility ?? 0,
+            dte: opt.daysToExpiration ?? 0,
+          });
+        }
+      }
+    }
+  }
+  return result;
 }
 
 function computeIvrFromChain(chain: ChainContract[], underlyingPrice: number): number {
@@ -880,7 +976,7 @@ function computeIvrFromChain(chain: ChainContract[], underlyingPrice: number): n
   return computeIVR(contracts, underlyingPrice, exps);
 }
 
-function flattenSchwabChain(data: any, settings: StrategistConfig): ChainContract[] {
+function _legacyFlattenSchwabChain_unused(data: any): ChainContract[] {
   const result: ChainContract[] = [];
   for (const side of ["callExpDateMap", "putExpDateMap"]) {
     const map = data[side];
