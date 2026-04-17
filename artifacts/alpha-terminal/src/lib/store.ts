@@ -572,7 +572,7 @@ export const useTerminalStore = create<TerminalState>()(
     }),
     {
       name: 'alpha-terminal-storage',
-      version: 19,
+      version: 20,
       migrate: (persistedState: unknown, version: number) => {
         const s = persistedState as Record<string, unknown>;
         if (version < 2) {
@@ -745,6 +745,23 @@ export const useTerminalStore = create<TerminalState>()(
         if (version < 19) {
           if (!s['strategistJobs'] || typeof s['strategistJobs'] !== 'object') s['strategistJobs'] = {};
           if (!Array.isArray(s['strategistHistory'])) s['strategistHistory'] = [];
+        }
+        if (version < 20) {
+          // claude-sonnet-4-7 was never released by Anthropic. Remap any user
+          // who selected this phantom model onto the real Sonnet (4-6).
+          const fix = (m: unknown) => (m === 'claude-sonnet-4-7' ? 'claude-sonnet-4-6' : m);
+          if (typeof s['aiModel'] === 'string') s['aiModel'] = fix(s['aiModel']);
+          const features = s['aiFeatureSettings'] as Record<string, { model: string; temperature: number }> | undefined;
+          if (features) {
+            for (const key of Object.keys(features)) {
+              if (features[key]?.model === 'claude-sonnet-4-7') features[key].model = 'claude-sonnet-4-6';
+            }
+          }
+          const cfg = s['aiLabStrategistConfig'] as Record<string, unknown> | undefined;
+          if (cfg && typeof cfg === 'object') {
+            cfg['analystModelName'] = fix(cfg['analystModelName']);
+            cfg['skepticModelName'] = fix(cfg['skepticModelName']);
+          }
         }
         return s;
       },

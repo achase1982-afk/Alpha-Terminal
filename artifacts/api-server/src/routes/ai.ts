@@ -74,7 +74,6 @@ const DEFAULT_MODEL = "claude-opus-4-6";
 
 const AVAILABLE_MODELS = [
   "claude-opus-4-7",
-  "claude-sonnet-4-7",
   "claude-opus-4-6",
   "claude-sonnet-4-6",
   "claude-opus-4-20250514",
@@ -102,7 +101,6 @@ interface NativeStreamOptions {
 
 const THINKING_CAPABLE_MODELS = new Set([
   "claude-opus-4-7",
-  "claude-sonnet-4-7",
   "claude-opus-4-6",
   "claude-sonnet-4-6",
   "claude-opus-4-20250514",
