@@ -5,9 +5,22 @@ import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import {
   StrategistV2RecommendationCard,
   StrategistV2BlockCard,
+  normalizeBlockReason,
   type StrategistV2Result,
   type StrategistSendToOrderPayload,
 } from "@/components/StrategistV2Card";
+
+const HISTORY_CATEGORY_LABELS: Record<string, string> = {
+  TOXIC_BLOCK: "Toxic Block",
+  LOW_CONFIDENCE: "Low Confidence",
+  NO_EDGE: "No Edge",
+  CATALYST_CONFLICT: "Catalyst Conflict",
+  VALIDATION_FAIL: "Validation Failed",
+  MISSING_DATA: "Missing Data",
+  STOCK_HALTED: "Stock Halted",
+  PRICING_MARKET_CLOSED: "Market Closed",
+  UNKNOWN: "Blocked",
+};
 
 interface Props {
   onSendToOrder?: (payload: StrategistSendToOrderPayload) => void;
@@ -119,9 +132,10 @@ export function StrategistHistoryList({ onSendToOrder, excludeJobIds }: Props) {
                 <span className="font-mono text-[10px] text-zinc-400 truncate">
                   {result?.status === "recommendation" && result?.recommendation
                     ? `${result.recommendation.direction} ${result.recommendation.strategyType.replace(/_/g, " ")}`
-                    : result?.status === "toxic_block"
-                      ? "Toxic Block"
-                      : "No Setup"}
+                    : (() => {
+                        const r = normalizeBlockReason(result?.blockReason);
+                        return r ? (HISTORY_CATEGORY_LABELS[r.category] ?? "Blocked") : (result?.status === "toxic_block" ? "Toxic Block" : "No Setup");
+                      })()}
                 </span>
                 <span className="font-mono text-[9px] text-zinc-600 ml-auto pr-2 shrink-0">{tsLabel}</span>
               </button>

@@ -10,6 +10,59 @@ const UP = "#2ecc71";
 const DOWN = "#ff4b5c";
 const AMBER = "#f59e0b";
 
+// Mirror of server-side BlockReason taxonomy. Older history rows persist
+// blockReason as a free-form string; normalizeBlockReason() promotes those to
+// { category: "UNKNOWN", detail: <string> } at render time.
+export type RejectionCategory =
+  | "TOXIC_BLOCK"
+  | "LOW_CONFIDENCE"
+  | "NO_EDGE"
+  | "CATALYST_CONFLICT"
+  | "VALIDATION_FAIL"
+  | "MISSING_DATA"
+  | "STOCK_HALTED"
+  | "PRICING_MARKET_CLOSED"
+  | "UNKNOWN";
+
+export interface BlockReason {
+  category: RejectionCategory;
+  detail: string;
+  suggestedAction?: string;
+}
+
+export function normalizeBlockReason(raw: BlockReason | string | undefined | null): BlockReason | null {
+  if (!raw) return null;
+  if (typeof raw === "string") return { category: "UNKNOWN", detail: raw };
+  if (typeof raw === "object" && typeof (raw as any).category === "string" && typeof (raw as any).detail === "string") {
+    return raw as BlockReason;
+  }
+  return { category: "UNKNOWN", detail: String(raw) };
+}
+
+const CATEGORY_LABELS: Record<RejectionCategory, string> = {
+  TOXIC_BLOCK: "Toxic Block",
+  LOW_CONFIDENCE: "Low Confidence",
+  NO_EDGE: "No Edge",
+  CATALYST_CONFLICT: "Catalyst Conflict",
+  VALIDATION_FAIL: "Validation Failed",
+  MISSING_DATA: "Missing Data",
+  STOCK_HALTED: "Stock Halted",
+  PRICING_MARKET_CLOSED: "Market Closed",
+  UNKNOWN: "Blocked",
+};
+
+const CATEGORY_COLORS: Record<RejectionCategory, string> = {
+  TOXIC_BLOCK: "#ff4b5c",
+  LOW_CONFIDENCE: "#71717a",
+  NO_EDGE: "#71717a",
+  CATALYST_CONFLICT: "#f59e0b",
+  VALIDATION_FAIL: "#f59e0b",
+  MISSING_DATA: "#71717a",
+  STOCK_HALTED: "#ff4b5c",
+  PRICING_MARKET_CLOSED: "#71717a",
+  UNKNOWN: "#71717a",
+};
+
 export interface ContextSourcesPayload {
   webSearchUsed: boolean;
   queryCount: number;
@@ -68,7 +121,7 @@ export interface StrategistV2Result {
     warnings?: string | null;
     contextSources?: ContextSourcesPayload;
   };
-  blockReason?: string;
+  blockReason?: BlockReason | string;
   contextSources?: ContextSourcesPayload;
   regime: {
     directionalConviction: string;
@@ -422,19 +475,23 @@ export function StrategistV2RecommendationCard({ result, onSendToOrder, generate
 
 export function StrategistV2BlockCard({ result, generatedAt }: { result: StrategistV2Result; generatedAt?: string | number | null }) {
   const [expanded, setExpanded] = useState(false);
+  const reason = normalizeBlockReason(result.blockReason);
+  const categoryColor = reason ? CATEGORY_COLORS[reason.category] : "#71717a";
+  const categoryLabel = reason ? CATEGORY_LABELS[reason.category] : (result.status === "toxic_block" ? "Toxic Block" : "No Viable Setup");
 
   return (
     <div className="rounded-xl overflow-hidden" style={{ background: "#111113", border: "1px solid #2A2A2C" }}>
       <div className="px-4 py-4">
         <div className="flex items-center justify-between gap-2 mb-2">
           <div className="flex items-center gap-2">
-            <Shield className="w-4 h-4" style={{ color: result.status === "toxic_block" ? DOWN : "#71717a" }} />
+            <Shield className="w-4 h-4" style={{ color: categoryColor }} />
             <span className="font-mono text-[13px] font-bold text-white">{result.ticker}</span>
-            <span className="font-mono text-[10px] px-2 py-0.5 rounded" style={{
-              background: result.status === "toxic_block" ? `${DOWN}18` : "rgba(113, 113, 122, 0.15)",
-              color: result.status === "toxic_block" ? DOWN : "#71717a",
+            <span className="font-mono text-[10px] uppercase tracking-wider px-2 py-0.5 rounded" style={{
+              background: `${categoryColor}1f`,
+              color: categoryColor,
+              border: `1px solid ${categoryColor}40`,
             }}>
-              {result.status === "toxic_block" ? "TOXIC BLOCK" : "NO VIABLE SETUP"}
+              {categoryLabel}
             </span>
           </div>
           <CopyCardButton result={result} generatedAt={generatedAt} />
@@ -442,9 +499,15 @@ export function StrategistV2BlockCard({ result, generatedAt }: { result: Strateg
         {generatedAt && (
           <div className="font-mono text-[9px] text-zinc-500 mb-2">Generated {new Date(generatedAt).toLocaleString()}</div>
         )}
-        <div className="font-mono text-[11px] text-zinc-400 leading-relaxed">
-          {result.blockReason ?? "No actionable setup found with current market conditions."}
+        <div className="font-mono text-[11px] text-zinc-300 leading-relaxed">
+          {reason?.detail ?? "No actionable setup found with current market conditions."}
         </div>
+        {reason?.suggestedAction && (
+          <div className="mt-2 px-2 py-1.5 rounded font-mono text-[10px] text-zinc-400 leading-relaxed" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)" }}>
+            <span className="text-zinc-500 uppercase tracking-wider mr-1">Suggested:</span>
+            {reason.suggestedAction}
+          </div>
+        )}
 
         <button
           onClick={() => setExpanded(!expanded)}

@@ -20,6 +20,28 @@ import {
 
 const SCHWAB_API = "https://api.schwabapi.com/marketdata/v1";
 
+// Structured rejection reason. Replaces free-form blockReason strings so the
+// UI can render the category prominently (with colored pill / icon) and the
+// detail underneath. suggestedAction is optional next-step guidance.
+// Backward compatibility: legacy string blockReasons are normalized on the
+// client to { category: "UNKNOWN", detail: <string> }.
+export type RejectionCategory =
+  | "TOXIC_BLOCK"
+  | "LOW_CONFIDENCE"
+  | "NO_EDGE"
+  | "CATALYST_CONFLICT"
+  | "VALIDATION_FAIL"
+  | "MISSING_DATA"
+  | "STOCK_HALTED"
+  | "PRICING_MARKET_CLOSED"
+  | "UNKNOWN";
+
+export interface BlockReason {
+  category: RejectionCategory;
+  detail: string;
+  suggestedAction?: string;
+}
+
 export interface StrategistV2Result {
   status: "recommendation" | "no_viable_setup" | "toxic_block";
   ticker: string;
@@ -58,7 +80,7 @@ export interface StrategistV2Result {
     warnings: string | null;
     contextSources?: ContextSourcesPayload;
   };
-  blockReason?: string;
+  blockReason?: BlockReason | string;
   contextSources?: ContextSourcesPayload;
   regime: StructuredRegime;
   ioScore?: IOScoreResult;
@@ -297,45 +319,59 @@ export async function analyzeTickerV2(
     const result: StrategistV2Result = {
       status: "toxic_block",
       ticker,
-      blockReason: `Cash is a position. Toxic market conditions: ${toxicCheck.reasons.join("; ")}`,
+      blockReason: {
+        category: "TOXIC_BLOCK",
+        detail: `Cash is a position. Toxic market conditions: ${toxicCheck.reasons.join("; ")}`,
+        suggestedAction: "Wait for market regime to normalize before opening new positions.",
+      },
       regime,
       systemicRiskElevated: regime.systemicRiskLevel === "ELEVATED" || regime.systemicRiskLevel === "EXTREME",
     };
-    await logTelemetry(ticker, "toxic_block", regime, settings, null, null, toxicCheck, null, result.blockReason, {});
+    await logTelemetry(ticker, "toxic_block", regime, settings, null, null, toxicCheck, null, (result.blockReason as BlockReason).detail, {});
     return result;
   }
 
   const tickerFetch = await fetchTickerData(ticker);
   const tickerData = tickerFetch.data;
   if (!tickerData) {
+    const detail = `Unable to fetch ticker data (${tickerFetch.failureMode ?? "unknown"}).`;
     const result: StrategistV2Result = {
       status: "no_viable_setup",
       ticker,
-      blockReason: `No viable options setup: unable to fetch ticker data (${tickerFetch.failureMode ?? "unknown"}).`,
+      blockReason: {
+        category: "MISSING_DATA",
+        detail,
+        suggestedAction: "Verify the ticker symbol and check market data feed/token status, then retry.",
+      },
       regime,
       systemicRiskElevated: regime.systemicRiskLevel === "ELEVATED" || regime.systemicRiskLevel === "EXTREME",
     };
-    await logTelemetry(ticker, "no_data", regime, settings, null, null, toxicCheck, null, result.blockReason, {
+    await logTelemetry(ticker, "no_data", regime, settings, null, null, toxicCheck, null, detail, {
       fetchFailureMode: tickerFetch.failureMode ?? "network_exception",
     });
     return result;
   }
 
   if (tickerData.halted) {
-    return noViable(ticker, regime, settings, toxicCheck, tickerData, "No viable options setup: stock halted.", null);
+    return noViable(ticker, regime, settings, toxicCheck, tickerData,
+      { category: "STOCK_HALTED", detail: "Stock is halted.", suggestedAction: "Wait for the halt to lift and retry." },
+      null);
   }
 
   const chainResult = await fetchOptionsChain(ticker, settings);
   const chain = chainResult.chain;
   const dataSource = chainResult.source;
   if (!chain || chain.length === 0) {
-    return noViable(ticker, regime, settings, toxicCheck, tickerData, "No viable options setup: no options chain available.", null, { dataSource });
+    return noViable(ticker, regime, settings, toxicCheck, tickerData,
+      { category: "MISSING_DATA", detail: "No options chain available for this ticker.", suggestedAction: "Verify the ticker has listed options." },
+      null, { dataSource });
   }
   const pricedCount = chain.filter(c => c.bid > 0 || c.ask > 0).length;
   logger.info({ ticker, chainLength: chain.length, pricedCount, dataSource }, "StrategistV2: options chain loaded");
   if (pricedCount === 0) {
     return noViable(ticker, regime, settings, toxicCheck, tickerData,
-      "No viable options setup: options chain loaded but all contracts have zero pricing. Options market may not be open yet (opens 9:30 AM ET).", null, { dataSource });
+      { category: "PRICING_MARKET_CLOSED", detail: "Options chain loaded but all contracts have zero pricing.", suggestedAction: "Retry after market open (9:30 AM ET)." },
+      null, { dataSource });
   }
 
   const liveIvr = computeIvrFromChain(chain, tickerData.price);
@@ -375,7 +411,9 @@ export async function analyzeTickerV2(
     rawAiResponseText = r.rawText;
   } catch (err) {
     logger.error({ err, ticker }, "StrategistV2: AI trade call failed");
-    return noViable(ticker, regime, settings, toxicCheck, tickerData, `AI analysis failed: ${err instanceof Error ? err.message : String(err)}`, ioScore, { dataSource, dataPackage });
+    return noViable(ticker, regime, settings, toxicCheck, tickerData,
+      { category: "VALIDATION_FAIL", detail: `AI analysis failed: ${err instanceof Error ? err.message : String(err)}`, suggestedAction: "Retry the analysis. If it persists, check AI provider credentials and rate limits." },
+      ioScore, { dataSource, dataPackage });
   }
 
   // Guard against AI responses with missing/non-numeric confidence — previously
@@ -387,7 +425,9 @@ export async function analyzeTickerV2(
   }
 
   if (aiResponse.confidence < 20) {
-    const blocked = await noViable(ticker, regime, settings, toxicCheck, tickerData, `AI found no compelling setup (confidence ${aiResponse.confidence}): ${aiResponse.thesis}`, ioScore, {
+    const blocked = await noViable(ticker, regime, settings, toxicCheck, tickerData,
+      { category: "LOW_CONFIDENCE", detail: `AI found no compelling setup (confidence ${aiResponse.confidence}): ${aiResponse.thesis}`, suggestedAction: "Wait for a clearer setup or try a different ticker." },
+      ioScore, {
       dataSource, dataPackage, rawAiResponse: rawAiResponseText,
       confidenceBase: aiResponse.confidence, confidenceFinal: aiResponse.confidence,
       catalystAlignment: aiResponse.catalystAlignment ?? null,
@@ -414,13 +454,15 @@ export async function analyzeTickerV2(
       const retryValidation = validateAiResponse(aiResponse, chain, settings);
       if (!retryValidation.valid) {
         return noViable(ticker, regime, settings, toxicCheck, tickerData,
-          `AI recommendation failed validation after retry: ${retryValidation.issues.join("; ")}`, ioScore,
+          { category: "VALIDATION_FAIL", detail: `AI recommendation failed validation after retry: ${retryValidation.issues.join("; ")}`, suggestedAction: "Retry — the AI may pick a different structure on a fresh run." },
+          ioScore,
           { dataSource, dataPackage, rawAiResponse: rawAiResponseText, confidenceBase: aiResponse.confidence, confidenceFinal: aiResponse.confidence, catalystAlignment: aiResponse.catalystAlignment ?? null });
       }
     } catch (err) {
       logger.error({ err, ticker }, "StrategistV2: AI retry failed");
       return noViable(ticker, regime, settings, toxicCheck, tickerData,
-        `AI retry failed: ${err instanceof Error ? err.message : String(err)}`, ioScore,
+        { category: "VALIDATION_FAIL", detail: `AI retry failed: ${err instanceof Error ? err.message : String(err)}`, suggestedAction: "Retry the analysis. If it persists, check AI provider credentials and rate limits." },
+        ioScore,
         { dataSource, dataPackage, rawAiResponse: rawAiResponseText });
     }
   }
@@ -434,7 +476,11 @@ export async function analyzeTickerV2(
     const ctx = buildContextSources(aiResponse, webTrace);
     const blocked = await noViable(
       ticker, regime, settings, toxicCheck, tickerData,
-      `No edge: macro regime is ${regime.directionalConviction} and web search found no same-day ticker catalyst. ${aiResponse.catalystSummary ?? ""}`.trim(),
+      {
+        category: "NO_EDGE",
+        detail: `Macro regime is ${regime.directionalConviction} and web search found no same-day ticker catalyst. ${aiResponse.catalystSummary ?? ""}`.trim(),
+        suggestedAction: "Wait for a directional macro regime or a fresh idiosyncratic catalyst.",
+      },
       ioScore,
       { dataSource, dataPackage, rawAiResponse: rawAiResponseText, confidenceBase: aiResponse.confidence, confidenceFinal: aiResponse.confidence, catalystAlignment: aiResponse.catalystAlignment ?? null },
     );
@@ -466,7 +512,11 @@ export async function analyzeTickerV2(
       const ctx = buildContextSources(aiResponse, webTrace);
       const blocked = await noViable(
         ticker, regime, settings, toxicCheck, tickerData,
-        `Catalyst contradicts proposed direction: ${aiResponse.catalystSummary ?? "see web search results"}`,
+        {
+          category: "CATALYST_CONFLICT",
+          detail: `Catalyst contradicts proposed direction: ${aiResponse.catalystSummary ?? "see web search results"}`,
+          suggestedAction: "Reassess the thesis or wait for the catalyst to be priced in.",
+        },
         ioScore,
         { dataSource, dataPackage, rawAiResponse: rawAiResponseText, confidenceBase: confidenceBaseValue, confidenceCatalystDelta: confidenceCatalystDeltaValue, confidenceFinal: aiResponse.confidence, catalystAlignment: aiResponse.catalystAlignment ?? null },
       );
@@ -508,7 +558,11 @@ export async function analyzeTickerV2(
       const ctx = buildContextSources(aiResponse, webTrace);
       const blocked = await noViable(
         ticker, regime, settings, toxicCheck, tickerData,
-        `economics validation failed: AI maxRisk $${aiSelfReportedMaxRisk.toFixed(2)} vs computed $${computedMaxLossCheck.toFixed(2)}, discrepancy exceeds threshold`,
+        {
+          category: "VALIDATION_FAIL",
+          detail: `economics validation failed: AI maxRisk $${aiSelfReportedMaxRisk.toFixed(2)} vs computed $${computedMaxLossCheck.toFixed(2)}, discrepancy exceeds threshold`,
+          suggestedAction: "Retry — the AI may pick a structure that prices cleanly on a fresh run.",
+        },
         ioScore,
         {
           dataSource,
@@ -1669,15 +1723,19 @@ async function noViable(
   settings: StrategistConfig,
   toxicCheck: any,
   tickerData: TickerData | null,
-  reason: string,
+  reason: BlockReason | string,
   ioScore?: IOScoreResult | null,
   extras: TelemetryExtras = {},
 ): Promise<StrategistV2Result> {
-  await logTelemetry(ticker, "no_viable_setup", regime, settings, ioScore ?? null, tickerData, toxicCheck, null, reason, extras);
+  // Accept legacy string call sites and wrap as UNKNOWN so the structured
+  // shape is the single source of truth from here on.
+  const blockReason: BlockReason =
+    typeof reason === "string" ? { category: "UNKNOWN", detail: reason } : reason;
+  await logTelemetry(ticker, "no_viable_setup", regime, settings, ioScore ?? null, tickerData, toxicCheck, null, blockReason.detail, extras);
   return {
     status: "no_viable_setup",
     ticker,
-    blockReason: reason,
+    blockReason,
     regime,
     ioScore: ioScore ?? undefined,
     systemicRiskElevated: regime.systemicRiskLevel === "ELEVATED" || regime.systemicRiskLevel === "EXTREME",

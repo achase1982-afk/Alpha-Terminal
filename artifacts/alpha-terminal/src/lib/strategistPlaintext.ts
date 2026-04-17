@@ -1,4 +1,16 @@
-import type { StrategistV2Result } from "@/components/StrategistV2Card";
+import { normalizeBlockReason, type StrategistV2Result } from "@/components/StrategistV2Card";
+
+const CATEGORY_PLAINTEXT: Record<string, string> = {
+  TOXIC_BLOCK: "Toxic Block",
+  LOW_CONFIDENCE: "Low Confidence",
+  NO_EDGE: "No Edge",
+  CATALYST_CONFLICT: "Catalyst Conflict",
+  VALIDATION_FAIL: "Validation Failed",
+  MISSING_DATA: "Missing Data",
+  STOCK_HALTED: "Stock Halted",
+  PRICING_MARKET_CLOSED: "Market Closed",
+  UNKNOWN: "Blocked",
+};
 
 const STRAT_LABELS: Record<string, string> = {
   bull_put_spread: "Bull Put Spread",
@@ -133,9 +145,16 @@ export function strategistCardToPlainText(
     }
   } else {
     // Block or no_viable_setup — still provide a useful paste
-    lines.push(`${result.ticker} - ${result.status === "toxic_block" ? "TOXIC BLOCK" : "NO VIABLE SETUP"}`);
+    const reason = normalizeBlockReason(result.blockReason);
+    const headerLabel = reason
+      ? (CATEGORY_PLAINTEXT[reason.category] ?? reason.category).toUpperCase()
+      : (result.status === "toxic_block" ? "TOXIC BLOCK" : "NO VIABLE SETUP");
+    lines.push(`${result.ticker} - ${headerLabel}`);
     if (ts) lines.push(`Generated: ${ts}`);
-    if (result.blockReason) lines.push("", "REASON", result.blockReason);
+    if (reason) {
+      lines.push("", "REASON", `[${CATEGORY_PLAINTEXT[reason.category] ?? reason.category}] ${reason.detail}`);
+      if (reason.suggestedAction) lines.push(`Suggested: ${reason.suggestedAction}`);
+    }
   }
 
   // IOScore block (shared on both recommendation + block)

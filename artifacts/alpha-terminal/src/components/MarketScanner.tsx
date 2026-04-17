@@ -231,7 +231,9 @@ const DeterministicCard = memo(function DeterministicCard({
             <div className="space-y-2">
               <div className="flex justify-between">
                 <span className="text-[11px] text-zinc-500">ATM Spread</span>
-                <span className="text-sm font-mono tabular-nums text-zinc-300">{candidate.atmSpreadPct.toFixed(1)}%</span>
+                <span className="text-sm font-mono tabular-nums text-zinc-300">
+                  {candidate.atmSpreadPct >= 99 ? "N/A" : `${candidate.atmSpreadPct.toFixed(1)}%`}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-[11px] text-zinc-500">{candidate.keyStatLabel}</span>

@@ -1,0 +1,34 @@
+Two small fixes, scoped carefully. Do not touch strategist prompt, card output, decision logic, confidence calculation, earnings handling, or AI Analyst.
+
+FIX A: ATM SPREAD SENTINEL DISPLAY
+
+The scanner currently displays ATM Spread as 99.0% when the actual value is a sentinel meaning "unmeasurable" (no qualifying ATM strikes with positive mid). Users read 99% as a real measurement, which is misleading.
+
+Change the UI display logic in MarketScanner.tsx (L234 per prior report) so that when the raw value equals the sentinel (99), display "N/A" or "Unmeasurable" instead of the number. Do not change the underlying calculation or the ranking behavior (99 should still sink the ticker to the bottom of liquidity rankings internally). This is display-only.
+
+Verification: find a ticker where the scanner currently shows ATM Spread 99.0% and confirm it now shows "N/A" or similar. Confirm liquidity ranking behavior is unchanged.
+
+FIX B: REJECTION REASON TAXONOMY
+
+Current blockReason is a free-form string with 7 distinct categories (toxic_block, low_confidence, no_edge, catalyst_conflict, validation_fail, missing_data, stock_halted, pricing_market_closed). The UI surfaces these as terse messages that don't explain what actually failed.
+
+Migrate blockReason to a structured shape: { category: enum, detail: string, suggestedAction?: string }. Categories become a proper TypeScript enum. Detail carries the specific reason text. suggestedAction is optional guidance like "retry after market open" or "check token status".
+
+Update:
+- Backend noViable() helper in strategistV2.ts to accept the structured shape
+- Frontend StrategistV2Card.tsx display to render category prominently and detail underneath
+- strategistPlaintext.ts clipboard export to include both category and detail
+- Backward compat: if old rows in strategist_history have string blockReason, treat as { category: "UNKNOWN", detail: <string> } on render
+
+Do not change the underlying rejection LOGIC. Same conditions still trigger rejections, they just get surfaced to the user with more context.
+
+Verification: trigger each rejection category (toxic block, no edge, catalyst conflict, etc.) and confirm the UI shows both the category label and the detail text clearly.
+
+EXPLICITLY NOT IN SCOPE
+
+- Do not add an earnings confidence cap for debit strategies. User explicitly wants the ability to trade debit spreads through earnings events.
+- Do not touch AI Analyst / AI Lab. That feature is paused.
+- Do not modify the strategist prompt, card layout, or decision logic.
+- Do not change the confidence calculation beyond what was already shipped.
+
+That's it. Two small, targeted fixes with clear verification criteria.
