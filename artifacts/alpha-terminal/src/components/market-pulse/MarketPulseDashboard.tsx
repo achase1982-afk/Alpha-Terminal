@@ -445,29 +445,48 @@ function BiasHero({ data, onRefresh }: { data: MarketPulseData; onRefresh: () =>
   return (
     <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${biasStyle.border}` }}>
       <div className="px-4 py-4">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-5 flex-wrap">
-            <span className="font-mono text-lg font-black tracking-wider" style={{ color: biasStyle.text }}>
-              {data.bias.replace(/_/g, " ")}
+        <div className="flex items-center gap-5 flex-wrap">
+          <span className="font-mono text-lg font-black tracking-wider" style={{ color: biasStyle.text }}>
+            {data.bias.replace(/_/g, " ")}
+          </span>
+
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-xs text-zinc-500 uppercase tracking-wider">COMP</span>
+            <span className="font-mono text-base font-black tabular-nums" style={{ color: biasStyle.text }}>
+              {data.compositeScore > 0 ? "+" : ""}{data.compositeScore.toFixed(2)}
             </span>
+          </div>
 
-            <div className="flex items-center gap-2">
-              <span className="font-mono text-xs text-zinc-500 uppercase tracking-wider">COMP</span>
-              <span className="font-mono text-base font-black tabular-nums" style={{ color: biasStyle.text }}>
-                {data.compositeScore > 0 ? "+" : ""}{data.compositeScore.toFixed(2)}
-              </span>
-            </div>
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-xs text-zinc-500 uppercase tracking-wider">CONF</span>
+            <span className="font-mono text-base font-bold tabular-nums text-zinc-200">
+              {Math.round(data.confidenceScore)}
+            </span>
+            <span className="font-mono text-sm text-zinc-500">/</span>
+            <span className="font-mono text-sm tabular-nums text-zinc-400">
+              {Math.round(data.maxConfidence)}
+            </span>
+          </div>
+        </div>
 
-            <div className="flex items-center gap-2">
-              <span className="font-mono text-xs text-zinc-500 uppercase tracking-wider">CONF</span>
-              <span className="font-mono text-base font-bold tabular-nums text-zinc-200">
-                {Math.round(data.confidenceScore)}
-              </span>
-              <span className="font-mono text-sm text-zinc-500">/</span>
-              <span className="font-mono text-sm tabular-nums text-zinc-400">
-                {Math.round(data.maxConfidence)}
-              </span>
-            </div>
+        <div className="mt-3 h-[3px] w-full rounded-full" style={{ background: "rgba(63,63,70,0.3)" }}>
+          <div className="h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(pct, 100)}%`, background: biasStyle.text }} />
+        </div>
+
+        <div className="mt-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-5 flex-wrap min-w-0">
+            <span className="font-mono text-xs font-bold tracking-wider" style={{ color: regimeColor }}>
+              REGIME {data.structuralRegime?.label?.replace(/_/g, " ")}
+            </span>
+            <span className="font-mono text-xs font-bold tracking-wider" style={{ color: BIAS_COLORS[data.sessionBias?.label]?.text ?? "#71717a" }}>
+              SESSION {data.sessionBias?.label?.replace(/_/g, " ")}
+            </span>
+            <span className="font-mono text-xs font-bold tracking-wider" style={{ color: riskColor }}>
+              SIZE {data.riskState?.label?.replace(/_/g, " ")}
+            </span>
+            <span className="font-mono text-xs text-zinc-500">
+              {data.timeET}
+            </span>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
@@ -492,25 +511,6 @@ function BiasHero({ data, onRefresh }: { data: MarketPulseData; onRefresh: () =>
               <RefreshCw className="w-3 h-3" />
             </button>
           </div>
-        </div>
-
-        <div className="mt-3 h-[3px] w-full rounded-full" style={{ background: "rgba(63,63,70,0.3)" }}>
-          <div className="h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(pct, 100)}%`, background: biasStyle.text }} />
-        </div>
-
-        <div className="mt-3 flex items-center gap-5 flex-wrap">
-          <span className="font-mono text-xs font-bold tracking-wider" style={{ color: regimeColor }}>
-            REGIME {data.structuralRegime?.label?.replace(/_/g, " ")}
-          </span>
-          <span className="font-mono text-xs font-bold tracking-wider" style={{ color: BIAS_COLORS[data.sessionBias?.label]?.text ?? "#71717a" }}>
-            SESSION {data.sessionBias?.label?.replace(/_/g, " ")}
-          </span>
-          <span className="font-mono text-xs font-bold tracking-wider" style={{ color: riskColor }}>
-            SIZE {data.riskState?.label?.replace(/_/g, " ")}
-          </span>
-          <span className="font-mono text-xs text-zinc-500">
-            {data.timeET}
-          </span>
         </div>
 
         {data.deltaHealth && data.deltaHealth.state !== "HEALTHY" && data.deltaHealth.state !== "AWAITING_BASELINE" && (
