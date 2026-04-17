@@ -651,7 +651,7 @@ export const useTerminalStore = create<TerminalState>()(
     }),
     {
       name: 'alpha-terminal-storage',
-      version: 20,
+      version: 21,
       migrate: (persistedState: unknown, version: number) => {
         const s = persistedState as Record<string, unknown>;
         if (version < 2) {
@@ -842,10 +842,34 @@ export const useTerminalStore = create<TerminalState>()(
             cfg['skepticModelName'] = fix(cfg['skepticModelName']);
           }
         }
+        // v21: strategistJobs is now persisted. Sweep any "running" jobs that
+        // are stale (older than 10 minutes) on rehydrate — the server will
+        // have GC'd them and continuing to poll just produces 404 noise. Their
+        // real result (if any) lives in strategistHistory anyway.
+        {
+          const jobs = s['strategistJobs'] as Record<string, { status?: string; startedAt?: number }> | undefined;
+          if (jobs && typeof jobs === 'object') {
+            const STALE_MS = 10 * 60 * 1000;
+            const now = Date.now();
+            for (const id of Object.keys(jobs)) {
+              const j = jobs[id];
+              if (!j) continue;
+              if (j.status === 'running' && typeof j.startedAt === 'number' && now - j.startedAt > STALE_MS) {
+                j.status = 'interrupted';
+              }
+            }
+          }
+        }
         return s;
       },
       partialize: (state) => {
-        const { streamPrices, streamConnected, streamStatus, browserUrl, browserTitle, browserSource, liveNews, strategistJobs, ...persisted } = state;
+        // strategistJobs IS persisted now: when the user backgrounds/closes
+        // the app mid-analysis (especially on iOS where the JS context gets
+        // killed), the in-flight job state needs to survive so the reattach
+        // effect can resume polling on cold load. Jobs older than 10 minutes
+        // are swept to "interrupted" during migration below to avoid polling
+        // server-side jobs that have already been GC'd.
+        const { streamPrices, streamConnected, streamStatus, browserUrl, browserTitle, browserSource, liveNews, ...persisted } = state;
         return persisted;
       },
     }
