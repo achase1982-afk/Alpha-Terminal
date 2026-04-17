@@ -208,51 +208,115 @@ ${myR1Json}
 OTHER SIDE'S ROUND-1 ARGUMENT:
 ${otherR1Json}`;
 
-// ---------- Phase 2 prompt (build ONE trade from the verdict) ----------
+// ---------- Phase 2 prompt — both sides propose a SPECIFIC structure ----------
 
-const TRADE_BUILD_INSTRUCTION = (
+const TRADE_STRUCTURE_PROPOSE_INSTRUCTION = (
+  myPersonaName: string,
+  otherPersonaName: string,
   verdict: DebateVerdict,
   bullConf: number,
   bearConf: number,
+  myR1: string,
+  myR2: string,
+  otherR1: string,
+  otherR2: string,
+  dataPackage: string,
+) => {
+  const verdictBlock = (() => {
+    if (verdict === "BULLISH") {
+      return `VERDICT: BULLISH (Bull ${bullConf} vs Bear ${bearConf}). The trade must express bullish edge.
+- Allowed structures: long call, debit call vertical, put credit spread, call ratio, call calendar, risk reversal, bullish broken-wing butterfly. Pick whichever the chain + IVR + DTE actually rewards.
+- ${myPersonaName === "Bull" ? "You won the debate — propose the structure that best monetizes your thesis given the actual chain liquidity, IVR, and DTE." : "You LOST the debate — your job now is risk-management input. Propose the bullish structure with the LOWEST risk-of-ruin given your bear thesis is the residual risk. No bear structures allowed; the verdict is bullish."}`;
+    }
+    if (verdict === "BEARISH") {
+      return `VERDICT: BEARISH (Bear ${bearConf} vs Bull ${bullConf}). The trade must express bearish edge.
+- Allowed structures: long put, debit put vertical, call credit spread, put ratio, put calendar, bearish broken-wing butterfly. Pick whichever the chain + IVR + DTE actually rewards.
+- ${myPersonaName === "Bear" ? "You won the debate — propose the structure that best monetizes your thesis given the actual chain liquidity, IVR, and DTE." : "You LOST the debate — your job now is risk-management input. Propose the bearish structure with the LOWEST risk-of-ruin given your bull thesis is the residual risk. No bull structures allowed; the verdict is bearish."}`;
+    }
+    return `VERDICT: SIDEWAYS (Bull ${bullConf} vs Bear ${bearConf} — within tie band; both sides have real but cancelling edge). The trade must be vol-neutral / range-bound.
+- Allowed structures: iron condor, iron butterfly, double calendar, short strangle wrapped as defined-risk. Pick whichever the chain + IVR + DTE actually rewards.
+- Place wings/strikes that respect BOTH sides' flagged risk levels. No directional structures allowed.`;
+  })();
+
+  return `PHASE 2 / ROUND 3 — Trade Structure Vote. The directional debate is over. Now you and the **${otherPersonaName}** must each propose the SPECIFIC trade structure that best expresses the verdict. Both proposals will be presented to the senior PM, who will arbitrate.
+
+${verdictBlock}
+
+You are still the **${myPersonaName}** — bring your perspective to the structural choice. Use the chain summary, IVR, DTE math, regime, and catalyst window in the data package below. Honor the WEB SEARCH MANDATE if catalyst timing/IV expectations need confirmation.
+
+Output ONLY this JSON object — no markdown fences, no extra prose:
+{
+  "side": "${myPersonaName.toUpperCase()}",
+  "strategy": "<one of: long_call | long_put | call_debit_spread | put_debit_spread | call_credit_spread | put_credit_spread | call_calendar | put_calendar | call_ratio | put_ratio | iron_condor | iron_butterfly | double_calendar | risk_reversal | broken_wing_butterfly>",
+  "expiry": "<YYYY-MM-DD — the exact expiry to use, picked from the chain>",
+  "dte": <integer days to expiry>,
+  "legs": [
+    { "action": "buy"|"sell", "type": "call"|"put", "strike": <number>, "qty": <integer> },
+    ...
+  ],
+  "rationale": "<3-5 sentences: why this structure, why these strikes, why this DTE, given the data and the verdict. Cite specific IVR, delta, OI, or catalyst dates from the data package.>",
+  "biggestRisk": "<1 sentence: the single biggest thing that breaks this structure>",
+  "confidence": <integer 0-100, calibrated to how strongly the chain actually supports this structure>
+}
+
+Calibration rule: confidence reflects how well the CHAIN supports the structure (liquidity, IVR fit, DTE fit), NOT how badly you want to be right. If the chain is illiquid or IVR is wrong for your structure, say so in biggestRisk and lower confidence.
+
+VERDICT FROM PHASE 1:
+- Bull confidence: ${bullConf}
+- Bear confidence: ${bearConf}
+- Verdict: ${verdict}
+
+YOUR DIRECTIONAL ARGUMENTS:
+- R1: ${myR1}
+- R2: ${myR2}
+
+OTHER SIDE'S DIRECTIONAL ARGUMENTS (for context — do NOT re-debate direction):
+- R1: ${otherR1}
+- R2: ${otherR2}
+
+DATA PACKAGE:
+${dataPackage}`;
+};
+
+// ---------- Phase 3 prompt — arbitrator builds final trade from BOTH proposals ----------
+
+const TRADE_BUILD_FROM_PROPOSALS_INSTRUCTION = (
+  verdict: DebateVerdict,
+  bullConf: number,
+  bearConf: number,
+  bullStructureProposal: string,
+  bearStructureProposal: string,
   bullR1: string,
   bullR2: string,
   bearR1: string,
   bearR2: string,
   dataPackage: string,
-) => {
-  const verdictGuidance = (() => {
-    if (verdict === "BULLISH") {
-      return `VERDICT: BULLISH (Bull confidence ${bullConf} vs Bear confidence ${bearConf}). The Bull won the directional debate. Build a BULLISH defined-risk options structure that expresses the bull thesis: long calls, call verticals (debit), call ratios, put credit spreads, call calendars, risk reversals, or bullish butterflies. Pick the structure where the actual edge lives in the chain — do NOT default to any one structure.`;
-    }
-    if (verdict === "BEARISH") {
-      return `VERDICT: BEARISH (Bear confidence ${bearConf} vs Bull confidence ${bullConf}). The Bear won the directional debate. Build a BEARISH defined-risk options structure that expresses the bear thesis: long puts, put verticals (debit), put ratios, call credit spreads, put calendars, or bearish butterflies. Pick the structure where the actual edge lives in the chain — do NOT default to any one structure.`;
-    }
-    return `VERDICT: SIDEWAYS (Bull ${bullConf} vs Bear ${bearConf} — within tie band; both sides have real but cancelling edge). Build a VOL-NEUTRAL defined-risk structure that profits from range-bound action: iron condor, iron butterfly, calendar spread, or short strangle expressed as defined-risk. Place strikes that respect BOTH the bull's upside risk and the bear's downside risk — i.e. between or just outside the levels each side flagged. Do NOT manufacture a directional view; the debate genuinely failed to resolve a winner, which is itself a tradeable signal.`;
-  })();
+) =>
+  `PHASE 3 — Final Trade Construction. You are the senior PM. The Bull and Bear have completed a directional debate (verdict: ${verdict}, Bull ${bullConf} / Bear ${bearConf}) AND each proposed a specific trade structure. Your ONLY job now is to arbitrate between the two structure proposals and ship the final trade.
 
-  return `The bull/bear directional debate has concluded. You are now the senior PM constructing the actual trade. You are NEUTRAL — drop persona, build the cleanest expression of the verdict.
+ARBITRATION RULES (apply in order):
+1. If both sides proposed the SAME strategy, use it. If their strikes/expiry differ, take the more liquid / better-IVR-fit version per the chain.
+2. If they proposed DIFFERENT strategies, pick the one whose "rationale" is more concretely grounded in the actual chain data (cited deltas, OI, IVR, catalyst date), not the one with higher self-reported confidence.
+3. You may adjust strikes by ±1 increment if the chain shows materially better liquidity nearby — but DO NOT invent a structure neither side proposed. If you reject both, default to the higher-confidence side's structure with their strikes unchanged.
+4. The verdict is binding on direction. BULLISH/BEARISH structures only for those verdicts; vol-neutral only for SIDEWAYS. No exceptions.
+5. State your arbitration choice explicitly in the "thesis" field: which proposal you took, why, and what (if anything) you adjusted.
 
-${verdictGuidance}
+Output ONLY the full trade JSON object specified by your system prompt — strategy, legs, entryPrice, entryRangeMin/Max, maxRisk, maxProfit, breakeven, companyContext, thesis, exitTargets, bullInvalidation, bearInvalidation, riskOfRuin, confidence, warnings. No markdown fences, no extra prose. Honor the WEB SEARCH MANDATE only if you need to confirm a catalyst date.
 
-Use the original data package (chain summary, IVR, regime, IO score, catalyst window) plus both sides' arguments below to pick strikes, expiry, and sizing. Honor the WEB SEARCH MANDATE for catalyst confirmation if useful. Output ONLY the full trade JSON object specified by your system prompt — strategy, legs, entryPrice, entryRangeMin/Max, maxRisk, maxProfit, breakeven, companyContext, thesis, exitTargets, bullInvalidation, bearInvalidation, riskOfRuin, confidence, warnings. No markdown fences, no extra prose.
+BULL'S STRUCTURE PROPOSAL:
+${bullStructureProposal}
 
-In the "thesis" field, briefly cite the verdict and the strongest 1-2 evidence points from whichever side(s) the trade is honoring.
+BEAR'S STRUCTURE PROPOSAL:
+${bearStructureProposal}
 
-BULL ROUND-1 ARGUMENT:
-${bullR1}
-
-BULL ROUND-2 REBUTTAL:
-${bullR2}
-
-BEAR ROUND-1 ARGUMENT:
-${bearR1}
-
-BEAR ROUND-2 REBUTTAL:
-${bearR2}
+DIRECTIONAL DEBATE CONTEXT (for the thesis field — do NOT re-debate):
+- Bull R1: ${bullR1}
+- Bull R2: ${bullR2}
+- Bear R1: ${bearR1}
+- Bear R2: ${bearR2}
 
 ORIGINAL DATA PACKAGE:
 ${dataPackage}`;
-};
 
 // ---------- JSON parsing for verdict computation ----------
 
@@ -436,54 +500,107 @@ export async function runDebate(args: {
     "StrategistDebate: Phase-1 verdict computed",
   );
 
-  // ---------- PHASE 2: Trade construction (single call) ----------
-  // Builder uses the winning side's model (or A's model for SIDEWAYS) and the
-  // NEUTRAL system prompt — verdict already constrains direction, persona is
-  // redundant and would bias structure selection.
+  // ---------- PHASE 2: Trade Structure Vote (parallel) ----------
+  // Both sides propose a SPECIFIC structure consistent with the verdict.
+  // Winner of the directional debate gets to optimize for upside; loser
+  // contributes a risk-management structural alternative. The senior PM
+  // (phase 3) then arbitrates between the two proposals.
+  callbacks?.onStatus?.(
+    `Phase 2 / Round 3 — ${personaNameA} and ${personaNameB} proposing trade structures…`,
+  );
+  const [s3a, s3b] = await Promise.all([
+    runTurn({
+      modelOpt: modelADisplay,
+      systemPrompt: sysA,
+      prompt: TRADE_STRUCTURE_PROPOSE_INSTRUCTION(
+        personaNameA,
+        personaNameB,
+        verdict,
+        bullConfidence,
+        bearConfidence,
+        r1a.text,
+        r2a.text,
+        r1b.text,
+        r2b.text,
+        dataPackage,
+      ),
+      round: 3,
+      role: "A",
+      phase: "propose",
+      callbacks,
+    }),
+    runTurn({
+      modelOpt: modelBDisplay,
+      systemPrompt: sysB,
+      prompt: TRADE_STRUCTURE_PROPOSE_INSTRUCTION(
+        personaNameB,
+        personaNameA,
+        verdict,
+        bullConfidence,
+        bearConfidence,
+        r1b.text,
+        r2b.text,
+        r1a.text,
+        r2a.text,
+        dataPackage,
+      ),
+      round: 3,
+      role: "B",
+      phase: "propose",
+      callbacks,
+    }),
+  ]);
+
+  // ---------- PHASE 3: Senior-PM arbitration → final trade card ----------
+  // Builder uses the winning side's model (or A's model for SIDEWAYS) and
+  // the NEUTRAL system prompt. Its ONLY job is to arbitrate between the
+  // two structure proposals and ship the trade — it cannot invent a
+  // structure neither side proposed.
   let builderModelOpt: StrategistModelOption;
   let chosenSide: "A" | "B" | "synthesis";
   let chosenLabel: string;
   if (verdict === "BULLISH") {
-    builderModelOpt = { ...config.modelA, label: `Trade Builder · ${config.modelA.label}` };
+    builderModelOpt = { ...config.modelA, label: `Senior PM · ${config.modelA.label}` };
     chosenSide = "A";
     chosenLabel = `${personaNameA} (${config.modelA.label})`;
   } else if (verdict === "BEARISH") {
-    builderModelOpt = { ...config.modelB, label: `Trade Builder · ${config.modelB.label}` };
+    builderModelOpt = { ...config.modelB, label: `Senior PM · ${config.modelB.label}` };
     chosenSide = "B";
     chosenLabel = `${personaNameB} (${config.modelB.label})`;
   } else {
-    builderModelOpt = { ...config.modelA, label: `Sideways Builder · ${config.modelA.label}` };
+    builderModelOpt = { ...config.modelA, label: `Senior PM · ${config.modelA.label}` };
     chosenSide = "synthesis";
     chosenLabel = `Sideways / Vol-Neutral (${config.modelA.label})`;
   }
 
-  callbacks?.onStatus?.(
-    verdict === "SIDEWAYS"
-      ? "Phase 2 — building vol-neutral trade for SIDEWAYS verdict…"
-      : `Phase 2 — building ${verdict.toLowerCase()} trade…`,
-  );
+  callbacks?.onStatus?.("Phase 3 — Senior PM arbitrating between structure proposals…");
 
   const buildResult = await runTurn({
     modelOpt: builderModelOpt,
     systemPrompt, // neutral — no persona suffix
-    prompt: TRADE_BUILD_INSTRUCTION(
+    prompt: TRADE_BUILD_FROM_PROPOSALS_INSTRUCTION(
       verdict,
       bullConfidence,
       bearConfidence,
+      s3a.text,
+      s3b.text,
       r1a.text,
       r2a.text,
       r1b.text,
       r2b.text,
       dataPackage,
     ),
-    round: 3,
-    role: chosenSide === "A" ? "A" : chosenSide === "B" ? "B" : "synthesis",
+    round: "synthesis",
+    role: "synthesis",
     phase: "final",
     callbacks,
   });
 
   const aggregateTrace = mergeTraces(
-    mergeTraces(mergeTraces(r1a.trace, r1b.trace), mergeTraces(r2a.trace, r2b.trace)),
+    mergeTraces(
+      mergeTraces(mergeTraces(r1a.trace, r1b.trace), mergeTraces(r2a.trace, r2b.trace)),
+      mergeTraces(s3a.trace, s3b.trace),
+    ),
     buildResult.trace,
   );
 

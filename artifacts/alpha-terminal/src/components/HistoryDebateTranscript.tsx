@@ -33,18 +33,19 @@ function formatTurnText(raw: string): string {
 
 function phaseLabel(phase: string, round: 1 | 2 | 3 | "synthesis", role: string): string {
   if (role === "system" && phase === "info") return "Verdict";
-  if (round === "synthesis") return "Synthesis";
+  if (round === "synthesis") return "Phase 3 · Senior PM Arbitration";
+  if (round === 3 && phase === "propose") return "Phase 2 · R3 · Structure Vote";
   if (phase === "propose") return `Phase 1 · R${round} · Pitch`;
   if (phase === "critique") return `Phase 1 · R${round} · Rebut`;
-  if (phase === "final") return "Phase 2 · Trade Build";
+  if (phase === "final") return "Phase 3 · Trade Build";
   return phase;
 }
 
 function roundHeader(round: 1 | 2 | 3 | "synthesis"): string {
-  if (round === "synthesis") return "Synthesis Pass";
+  if (round === "synthesis") return "Phase 3 — Senior PM Arbitration (Final Trade)";
   if (round === 1) return "Phase 1 — Round 1 (Directional Pitch)";
   if (round === 2) return "Phase 1 — Round 2 (Rebuttal & Verdict)";
-  return "Phase 2 — Trade Construction";
+  return "Phase 2 — Round 3 (Trade Structure Vote)";
 }
 
 /**
