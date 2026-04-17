@@ -1,0 +1,43 @@
+Follow-up questions only. DO NOT make any changes to code, data flows, or logic. Your second investigation report was thorough and I appreciated the correction on the Schwab IV units. A few more questions before I decide on fixes.
+
+ON THE IV INCONSISTENCY (NOW THE MAIN BUG)
+
+1. You identified that within a single payload, the AI sees term-structure IVs in percentage (41.25) while ATM and top-volume strike IVs come through as decimal (0.41). Every call. Can you estimate how often the AI successfully reconciled this vs silently used inconsistent IVs in its reasoning? If telemetry stores the AI's thesis text, a search for "divide by 100", "basis point", "unit", "41.25 vs 0.41", or similar self-correction language in historical theses would give a floor estimate.
+
+2. When the AI silently uses inconsistent IVs without catching it, what downstream cards fields would be wrong? Specifically, does confidence get influenced by IV comparisons the AI makes internally? Do structure choices (debit vs credit, calendar vs vertical) depend on IV reads that could be off by 100x?
+
+ON THE RATIO/NAKED-LEG RISK
+
+3. What currently prevents the AI from proposing a ratio structure, broken-wing butterfly, or any multi-leg non-symmetric structure where computeSpreadEconomics silently mis-reports risk? Is there a hard gate at the strategy type level, or does the AI just happen not to pick those structures often?
+
+4. If the AI proposes a 1x2 ratio backspread with an uncovered leg, does ANY code path catch the uncovered risk before the card ships? The report said "silently wrong, masks naked-leg risk" - I want to understand what the user would see if this actually happened today.
+
+5. What's the recommended containment plan until computeSpreadEconomics is fixed? Two options I can think of: (a) whitelist allowed strategy types at the validator level and reject anything not on the list, (b) hard-block any structure where the width calculation produces a max loss that fails a sanity check against the AI's self-reported max risk.
+
+ON TELEMETRY GAPS
+
+6. The report says "Full data package sent to AI: Lost" and "Raw AI response text: Partial (parsed JSON only, raw text discarded)". To enable retroactive verification of any fix, both need to be persisted. What's the smallest viable change to add these to telemetry? A new jsonb column for data_package and a new text column for raw_ai_response?
+
+7. Storage cost estimate: roughly how many KB per card does persisting the full data package add? Over a 30-day retention window at current call volume, what's the total storage impact?
+
+8. Confidence pre-calibration is currently overwritten in place by the +12/-25 catalyst adjustment. How invasive would it be to store confidence_base (AI output), confidence_catalyst_delta, and confidence_final as three separate fields? Critical for tuning calibration logic later.
+
+ON THE TOKEN ARCHITECTURE
+
+9. Strategist uses market token. Portfolio status (which drives the session-expired modal) uses trader token. They observe different tokens via different paths. Is there a design reason the two systems don't share a unified token observation layer? Was this intentional separation or accidental evolution?
+
+10. If we wanted the session-expired modal to catch market-token failures (strategist-side), what's the minimum refactor? Is it a shared token health endpoint that both systems subscribe to, or would it require deeper restructuring?
+
+ON IOSCORE PRODUCT INTENT
+
+11. The classification thresholds (HIGH_IDIOSYNCRATIC >= 0.7, MIXED 0.4-0.7, MACRO_ALIGNED < 0.4) gate strategist behavior ("follow stock's own direction regardless of macro regime"). Does the strategist prompt actually USE the classification to modify reasoning, or is it just displayed on the card? Looking for specific prompt text that references IOScore.
+
+12. IOScore is snapshotted per call but never time-series'd. If we wanted to show users how IOScore has trended on a ticker over the last 30 days, what would that require? Is it worth building?
+
+ON CALIBRATION DATA
+
+13. You provided a SQL query for confidence distribution by result. Would you be able to run it (read-only) and share the output? I want to see the distribution of AI-output confidence values across all cards, filtered by whether they ultimately shipped as viable trades vs NO VIABLE SETUP. The 20-threshold was described as "a contract between prompt and server" - I want to see if the data supports that threshold being at 20 vs somewhere else.
+
+14. Same idea for catalyst alignment: what's the historical hit rate on trades shipped with catalystAlignment = ALIGNED vs NEUTRAL vs CONTRADICTS? Is the +12/-25 adjustment empirically justified by performance data, or is it a guess?
+
+Answer these before any fixes. Once I see the answers, especially on questions 3/4/5 (ratio risk containment) and 13/14 (calibration empirics), I'll issue the fix directives.
