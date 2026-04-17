@@ -1,0 +1,74 @@
+Option A selected. Complete the no-duplication cleanup on CHANGE 1 before moving to CHANGE 2.
+
+PART 1: DUPLICATION CLEANUP ON CHANGE 1
+
+Current state: Market Pulse and Options Strategist composite panels still contain configuration sections (toggles, preferences, tuning) that now also live in the Settings hub. This creates two access points for the same settings, and risks state drift if the composite panels and Settings hub aren't reading from the same underlying store.
+
+Target state: Settings are only accessible through the Settings hub. Composite panels become pure display and interaction surfaces - no configuration sections embedded inside them.
+
+Steps:
+
+1. Audit Market Pulse composite panel. Identify every settings-style element currently embedded (toggles, sliders, threshold inputs, allowed strategies, display preferences, etc.). List them.
+
+2. Audit Options Strategist composite panel. Same process.
+
+3. For each settings element identified, confirm it has a canonical home in the Settings hub sub-pages. If any setting is currently in a composite panel but NOT in the Settings hub, flag it before removing. We need to make sure we don't delete functionality, only relocate it.
+
+4. Remove the settings sections from Market Pulse and Options Strategist composite panels. These panels should only display data (Market Pulse regime indicators, Options Strategist cards and analysis) and handle user interactions specific to their primary function (running a scan, generating a card, etc.).
+
+5. Verify state consistency. Any setting that was duplicated must have been reading/writing the same underlying store state. After removal, confirm the Settings hub is the sole UI for those configurations, and the composite panels still behave correctly (they should be consuming the stored settings, not providing UI to change them).
+
+6. Add a one-line "Settings" link or button at the top of each composite panel that takes the user to the relevant Settings sub-page. Example: Market Pulse panel shows a small "Configure" link in its header that navigates to Settings > Trading > Market Pulse Display. This preserves quick access without embedding settings UI directly in the panel.
+
+VERIFICATION FOR PART 1
+
+1. Market Pulse composite panel contains no toggle switches, no sliders, no text inputs for configuration. Only data display and primary interactions.
+2. Options Strategist composite panel contains no configuration sections. Only the analyze flow, card display, and history.
+3. Every setting that previously existed is still reachable through Settings hub.
+4. No settings state was lost or wiped during cleanup.
+5. Quick-access "Configure" links in composite panels navigate correctly to the corresponding Settings sub-page.
+
+ONLY AFTER PART 1 IS VERIFIED, PROCEED TO PART 2.
+
+PART 2: CHANGE 2 - TELEMETRY UX CLEANUP
+
+Unify Events and Trades telemetry under a single Telemetry entry in Settings > System. Two tabs at the top: EVENTS and TRADES.
+
+EVENTS tab improvements:
+
+1. System health summary at the top. Single-line status for each monitored system (Schwab API, Schwab Stream, IBKR, Scanner, Strategist). Green for healthy, yellow for degraded, red for error. Red systems appear first.
+
+2. Action Needed section below the health summary. Sticky section showing unresolved ERROR-level events. Each entry has: error title, one-line explanation, one or two suggested actions (e.g., "Upgrade Polygon plan" link, "Dismiss" button). If no unresolved errors, show single line "No action needed" with a green check.
+
+3. Auto-resolve paired events. When a disconnect event is followed by a successful reconnect within 30 seconds, collapse into a single "Auto-recovered: [system] briefly disconnected [time]" entry. If more than 5 auto-recovered events occur within a 5-minute window, collapse further into "System [X] auto-recovered [N] times in last [T] minutes - possible instability."
+
+4. Severity-first ordering. Within the event list, order by severity (ERROR > WARN > INFO) rather than time. Within same severity, most recent first.
+
+5. Larger fonts. Event title 15-16px, metadata 12px. Increase line height for readability.
+
+6. Resolved filter. Add "Unresolved" as default filter alongside existing ALL/ERROR/WARN/INFO tabs. Toggle to see resolved history.
+
+7. Bulk resolve. "Resolve all auto-recovered" button in header when 10+ auto-recovered events exist.
+
+8. Keep existing system filter dropdown (SCHWAB API, SCHWAB STREAM, etc.) - that UI is fine.
+
+TRADES tab: no changes. Keep existing Strategist Telemetry UI and functionality.
+
+VERIFICATION FOR PART 2
+
+1. Unified Telemetry screen has EVENTS and TRADES tabs.
+2. Events tab shows health summary at top, Action Needed below, event list below that.
+3. Trigger a WebSocket disconnect that auto-reconnects within 30 seconds. Confirm it shows as a single "Auto-recovered" entry.
+4. Force an unrecoverable error. Confirm it surfaces in Action Needed with clear explanation.
+5. Font on event titles is noticeably larger and easier to scan than before.
+6. Unresolved filter is default; toggling to resolved history shows auto-recovered events.
+
+SEQUENCING
+
+Ship PART 1 first. Verify all settings panels still work, no functionality lost, no state wiped. Then ship PART 2 separately. Two distinct deployments.
+
+EXPLICITLY NOT IN SCOPE
+
+- Strategist prompt, card output, decision logic, AI Lab internals, confidence calculation, web search, live reasoning, scanner scoring, earnings handling, computeSpreadEconomics math.
+
+If any changes require touching these, stop and ask before proceeding.

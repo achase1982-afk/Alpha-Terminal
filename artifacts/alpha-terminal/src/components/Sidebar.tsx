@@ -47,8 +47,6 @@ type SidebarPage =
   // ── Reachable via primary sidebar ──────────────────────────────────
   | "Calendar"
   | "Linked Brokerage"
-  | "Market Pulse"
-  | "Strategist Settings"
   // ── Settings hub + nested sub-pages (CHANGE 1) ──────────────────────
   | "Settings"
   | "Allowed Strategies"
@@ -86,13 +84,29 @@ const SETTINGS_SUBPAGES: ReadonlySet<SidebarPage> = new Set<SidebarPage>([
 
 export interface SidebarHandle {
   clearActivePage: () => void;
+  openSettingsSubpage: (page:
+    | "Allowed Strategies"
+    | "Risk Defaults"
+    | "Market Pulse Display"
+    | "Strategist Tuning"
+    | "AI Lab"
+    | "Chart Overlays"
+    | "Options Chain Defaults"
+    | "Appearance"
+    | "Marquee"
+    | "Notifications"
+    | "Telemetry"
+    | "Diagnostics"
+    | "Security & Privacy"
+    | "Settings"
+  ) => void;
 }
 
 interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
   onOpenChat?: () => void;
-  onNavigate?: (dest: "markets" | "portfolio") => void;
+  onNavigate?: (dest: "markets" | "portfolio" | "ai-pulse" | "ai-strategist") => void;
   onToggle?: () => void;
 }
 
@@ -131,7 +145,10 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
   const [activePage, setActivePage] = useState<SidebarPage>(null);
   const telemetryCount = useTelemetryCount();
 
-  useImperativeHandle(ref, () => ({ clearActivePage: () => setActivePage(null) }), []);
+  useImperativeHandle(ref, () => ({
+    clearActivePage: () => setActivePage(null),
+    openSettingsSubpage: (page) => setActivePage(page),
+  }), []);
 
   const handleCloseAll = () => {
     setActivePage(null);
@@ -183,8 +200,6 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
           <div className={`flex-1 overflow-y-auto pb-4 ${activePage === "Calendar" ? "px-3 pt-1 pb-3" : "p-4 sm:p-6"}`}>
             {activePage === "Calendar" && <MarketCalendar onClose={() => setActivePage(null)} />}
             {activePage === "Linked Brokerage" && <LinkedBrokeragePage />}
-            {activePage === "Market Pulse" && <MarketPulsePage />}
-            {activePage === "Strategist Settings" && <StrategistSettingsPage />}
             {activePage === "Security & Privacy" && <SecurityPrivacyPage />}
             {activePage === "Telemetry" && <UnifiedTelemetryPage />}
             {activePage === "Notifications" && <NotificationsPage />}
@@ -197,7 +212,7 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
             {activePage === "Allowed Strategies" && <AllowedStrategiesPage />}
             {activePage === "Risk Defaults" && <RiskDefaultsPage />}
             {activePage === "Market Pulse Display" && <MarketPulseDisplayPage />}
-            {activePage === "Strategist Tuning" && <AiParametersPage />}
+            {activePage === "Strategist Tuning" && <StrategistTuningPage />}
             {activePage === "AI Lab" && <SystemSettingsPage />}
             {activePage === "Chart Overlays" && <ChartOverlaysPage />}
             {activePage === "Options Chain Defaults" && <OptionsChainDefaultsPage />}
@@ -243,8 +258,8 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
               <SidebarSectionLabel label="ANALYSIS" />
 
               <div className="flex flex-col pb-1">
-                <MenuRow icon={<Zap />} label="Market Pulse" onClick={() => { setActivePage("Market Pulse"); onClose(); }} />
-                <MenuRow icon={<SlidersHorizontal />} label="Options Strategist" onClick={() => { setActivePage("Strategist Settings"); onClose(); }} />
+                <MenuRow icon={<Zap />} label="Market Pulse" onClick={() => { onNavigate?.("ai-pulse"); handleCloseAll(); }} />
+                <MenuRow icon={<SlidersHorizontal />} label="Options Strategist" onClick={() => { onNavigate?.("ai-strategist"); handleCloseAll(); }} />
               </div>
 
               <div className="mx-5 border-b border-card-border/50 my-1" />
@@ -333,162 +348,24 @@ function LinkedBrokeragePage() {
   );
 }
 
-function MarketPulsePage() {
-  const {
-    settings,
-    updateSetting,
-    toggleStrategy,
-    toggleIndicator,
-    resetIndicators,
-  } = useMarketPulseStore();
-
-  const [indicatorsOpen, setIndicatorsOpen] = useState(false);
-  const [addQuery, setAddQuery] = useState("");
-  const [showSuggestions, setShowSuggestions] = useState(false);
-
-  const activeIndicators = settings.pulseIndicators ?? ALL_PULSE_INDICATORS.map((i) => i.symbol);
-  const catalogMap = Object.fromEntries(ALL_PULSE_INDICATORS.map((i) => [i.symbol, i.label]));
-  const getLabel = (sym: string) => catalogMap[sym] ?? sym;
-
-  const inactiveFromCatalog = ALL_PULSE_INDICATORS.filter((i) => !activeIndicators.includes(i.symbol));
-  const suggestions =
-    addQuery.length > 0
-      ? inactiveFromCatalog.filter(
-          (i) => i.symbol.toLowerCase().includes(addQuery.toLowerCase()) || i.label.toLowerCase().includes(addQuery.toLowerCase())
-        )
-      : inactiveFromCatalog;
-
-  const handleAdd = (sym: string) => {
-    const clean = sym.trim().toUpperCase();
-    if (!clean || activeIndicators.includes(clean)) return;
-    toggleIndicator(clean);
-    setAddQuery("");
-    setShowSuggestions(false);
-  };
-
+// Combined Strategist Tuning sub-page (Settings hub > Intelligence > Strategist
+// Tuning). Replaces the former "Options Strategist" composite panel. Renders
+// the IOScore/scanner threshold panel, the legacy AI parameters panel, and the
+// per-feature model/temperature controls so no tuning surface is lost.
+function StrategistTuningPage() {
   return (
-    <div className="space-y-6 max-w-xl mx-auto">
-      <div className="space-y-3">
-        <SidebarToggle label="Show Bias Strip" icon={<Zap className="w-3 h-3" />} checked={settings.showBiasStrip} onChange={() => updateSetting("showBiasStrip", !settings.showBiasStrip)} />
-        <SidebarToggle label="Auto-Refresh" checked={settings.autoRefresh} onChange={() => updateSetting("autoRefresh", !settings.autoRefresh)} />
-        {settings.autoRefresh && (
-          <div className="space-y-1.5 pl-1">
-            <div className="flex items-center justify-between">
-              <span className="font-mono text-[9px] text-muted-foreground/70 uppercase tracking-wider">Interval</span>
-              <span className="font-mono text-[10px] text-primary tabular-nums">{settings.autoRefreshInterval}m</span>
-            </div>
-            <input type="range" min={2} max={30} step={1} value={settings.autoRefreshInterval} onChange={(e) => updateSetting("autoRefreshInterval", Number(e.target.value))} className="w-full h-1 rounded-full appearance-none cursor-pointer" style={{ accentColor: "#FFB800", background: "#2A2A2C" }} />
-          </div>
-        )}
-      </div>
-
-      <div className="border-t border-card-border pt-4">
-        <button onClick={() => setIndicatorsOpen(!indicatorsOpen)} className="w-full flex items-center justify-between mb-2">
-          <span className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-bold flex items-center gap-1.5">
-            <BarChart2 className="w-3 h-3" /> Indicators <span className="text-primary tabular-nums ml-1">{activeIndicators.length}</span>
-          </span>
-          <ChevronLeft className={`w-3 h-3 text-[#71717a] transition-transform duration-200 ${indicatorsOpen ? "-rotate-90" : "rotate-180"}`} />
-        </button>
-
-        {indicatorsOpen && (
-          <div className="space-y-2 animate-in fade-in slide-in-from-top-1">
-            <div className="flex items-center justify-between pb-1">
-              <span className="font-mono text-[9px] text-[#52525b] tabular-nums">{activeIndicators.length} active</span>
-              <button onClick={resetIndicators} className="flex items-center gap-1 font-mono text-[9px] text-[#52525b] hover:text-[#71717a] transition-colors">
-                <RotateCcw className="w-2.5 h-2.5" /> Reset
-              </button>
-            </div>
-            <div className="space-y-0.5 max-h-[240px] overflow-y-auto pr-0.5">
-              {activeIndicators.map((sym) => (
-                <div key={sym} className="flex items-center justify-between px-2 py-1.5 rounded-md group">
-                  <div className="flex flex-col min-w-0">
-                    <span className="font-mono text-[10px] text-primary font-bold tabular-nums leading-none">{sym.replace(/^\$/, "")}</span>
-                    <span className="font-mono text-[9px] text-[#52525b] leading-tight truncate mt-0.5">{getLabel(sym)}</span>
-                  </div>
-                  <button onClick={() => toggleIndicator(sym)} className="flex-shrink-0 ml-2 p-1 rounded hover:bg-[#f23645]/10 text-[#3f3f46] hover:text-[#f23645] transition-colors">
-                    <X className="w-3 h-3" />
-                  </button>
-                </div>
-              ))}
-            </div>
-            <div className="pt-1 relative">
-              <div className="flex gap-1.5">
-                <input
-                  type="text"
-                  value={addQuery}
-                  onChange={(e) => { setAddQuery(e.target.value); setShowSuggestions(true); }}
-                  onFocus={() => setShowSuggestions(true)}
-                  onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") { if (suggestions.length > 0) handleAdd(suggestions[0].symbol); else if (addQuery.length > 0) handleAdd(addQuery); }
-                    if (e.key === "Escape") setShowSuggestions(false);
-                  }}
-                  placeholder="Search or type symbol..."
-                  className="w-full h-7 px-2 rounded-md font-mono text-[11px] text-[#e4e4e7] placeholder:text-[#3f3f46] border border-[#2A2A2C] focus:border-primary focus:outline-none transition-colors"
-                  style={{ background: "#111113" }}
-                />
-                <button
-                  onClick={() => { if (suggestions.length > 0 && addQuery.length > 0) handleAdd(suggestions[0].symbol); else if (addQuery.length > 0) handleAdd(addQuery); }}
-                  disabled={!addQuery.trim()}
-                  className="flex items-center gap-1 h-7 px-2.5 rounded-md font-mono text-[10px] font-bold transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                  style={{ background: "#FFB800", color: "#000" }}
-                >
-                  <Plus className="w-3 h-3" /> Add
-                </button>
-              </div>
-              {showSuggestions && suggestions.length > 0 && (
-                <div className="absolute left-0 right-10 top-8 z-50 rounded-md border border-[#2A2A2C] overflow-y-auto max-h-[180px] shadow-xl" style={{ background: "#111113" }}>
-                  {suggestions.map((ind) => (
-                    <button key={ind.symbol} onMouseDown={() => handleAdd(ind.symbol)} className="w-full text-left px-3 py-2 flex flex-col hover:bg-[#1a1a1c] transition-colors border-b border-[#1a1a1c] last:border-0">
-                      <span className="font-mono text-[10px] text-primary font-bold tabular-nums">{ind.symbol.replace(/^\$/, "")}</span>
-                      <span className="font-mono text-[9px] text-[#52525b] leading-tight">{ind.label}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="border-t border-card-border pt-4">
-        <span className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-bold block mb-2">Display Preferences</span>
-        <div className="space-y-2">
-          <SidebarToggle label="Show Cluster Details" checked={settings.showClusterDetails} onChange={() => updateSetting("showClusterDetails", !settings.showClusterDetails)} />
-          <SidebarToggle label="Show Action Plan" checked={settings.showActionPlan} onChange={() => updateSetting("showActionPlan", !settings.showActionPlan)} />
-          <SidebarToggle label="Compact Mode" checked={settings.compactMode} onChange={() => updateSetting("compactMode", !settings.compactMode)} />
-        </div>
-      </div>
-
-      <div className="border-t border-card-border pt-4">
-        <span className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-bold block mb-2">Allowed Strategies</span>
-        <div className="space-y-1.5 max-h-48 overflow-y-auto">
-          {ALL_STRATEGIES.map((s) => (
-            <label key={s} className="flex items-center gap-2 cursor-pointer group">
-              <input type="checkbox" checked={settings.allowedStrategies.includes(s)} onChange={() => toggleStrategy(s)} className="rounded border-card-border bg-transparent accent-[#FFB800] w-3.5 h-3.5" />
-              <span className="font-mono text-[10px] text-[#a1a1aa] group-hover:text-[#e4e4e7] transition-colors">{STRATEGY_LABELS[s]}</span>
-            </label>
-          ))}
-        </div>
-      </div>
-
-      <div className="border-t border-card-border pt-4 space-y-3">
-        <span className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-bold block">Strategy Preferences</span>
-        <SettingInput label="Default Spread Width" value={settings.defaultSpreadWidth} onChange={(v) => updateSetting("defaultSpreadWidth", v)} placeholder="e.g. $5" />
-        <SettingInput label="Account Size Tier" value={settings.accountSizeTier} onChange={(v) => updateSetting("accountSizeTier", v)} placeholder="e.g. $10k, $25k, $100k+" />
-        <SettingInput label="Preferred Tickers" value={settings.preferredTickers} onChange={(v) => updateSetting("preferredTickers", v)} placeholder="e.g. SPY, QQQ, AAPL" />
-        <SettingInput label="Max Risk Per Trade" value={settings.maxRiskPerTrade} onChange={(v) => updateSetting("maxRiskPerTrade", v)} placeholder="e.g. 2% or $500" />
-      </div>
-    </div>
-  );
-}
-
-function StrategistSettingsPage() {
-  return (
-    <div className="space-y-8">
+    <div className="space-y-8 max-w-xl mx-auto">
       <StrategistSettingsPanel />
-      <div className="border-t border-zinc-800 pt-6 space-y-4">
-        <h3 className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest font-medium">Legacy AI Parameters</h3>
+      <div className="border-t border-zinc-800 pt-6">
+        <h3 className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest font-medium mb-3">
+          Per-Feature Models &amp; Temperature
+        </h3>
+        <AiParametersPage />
+      </div>
+      <div className="border-t border-zinc-800 pt-6">
+        <h3 className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest font-medium mb-3">
+          Legacy AI Parameters
+        </h3>
         <StrategySettings />
       </div>
     </div>
