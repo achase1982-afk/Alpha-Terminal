@@ -236,7 +236,9 @@ async function boot() {
   registerQuoteCacheInjector(injectExternalQuote);
   registerIBBroadcast(broadcastToClients);
 
-  if (hasValidTokens("trader")) {
+  if (process.env.DISABLE_SCHWAB_STREAMER === "1" || process.env.DISABLE_SCHWAB_STREAMER === "true") {
+    logger.warn("Schwab streamer DISABLED via DISABLE_SCHWAB_STREAMER env flag — REST endpoints only, no live WebSocket");
+  } else if (hasValidTokens("trader")) {
     logger.info("Schwab tokens available — starting Schwab streamer with futures + indices");
     startSchwabStreamer().then(() => {
       addFuturesSymbols([...SCHWAB_FUTURES_SYMS, ...SCHWAB_FUTURES_INDEX_SYMS]);
