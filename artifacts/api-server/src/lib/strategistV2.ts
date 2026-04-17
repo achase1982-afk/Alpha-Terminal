@@ -748,13 +748,22 @@ function summarizeOptionsChain(chain: ChainContract[], price: number): ChainSumm
   const atmPut = atmPuts[0];
   const atmStrike = atmCall?.strike ?? atmPut?.strike ?? Math.round(price);
 
+  // FIX 3: Normalize all IVs in the AI payload to percentage (e.g. 41.25)
+  // so the model never sees mixed units. Schwab/Polygon report IV as a decimal
+  // (0.4125); we multiply by 100 and round to 2 decimals to match buildCuratedStrikes
+  // and frontMonthIV/backMonthIV (which already emit percentages).
+  const ivToPct = (iv: number | null | undefined): number => {
+    const n = typeof iv === "number" && Number.isFinite(iv) ? iv : 0;
+    return Math.round(n * 10000) / 100;
+  };
+
   const topVolumeCalls = [...calls].sort((a, b) => b.volume - a.volume).slice(0, 5).map(c => ({
     strike: c.strike, expiration: c.expiration, volume: c.volume, oi: c.openInterest,
-    bid: c.bid, ask: c.ask, iv: c.impliedVolatility, delta: c.delta,
+    bid: c.bid, ask: c.ask, iv: ivToPct(c.impliedVolatility), delta: c.delta,
   }));
   const topVolumePuts = [...puts].sort((a, b) => b.volume - a.volume).slice(0, 5).map(c => ({
     strike: c.strike, expiration: c.expiration, volume: c.volume, oi: c.openInterest,
-    bid: c.bid, ask: c.ask, iv: c.impliedVolatility, delta: c.delta,
+    bid: c.bid, ask: c.ask, iv: ivToPct(c.impliedVolatility), delta: c.delta,
   }));
 
   const unusualActivity: ChainSummary["unusualActivity"] = [];
@@ -789,11 +798,11 @@ function summarizeOptionsChain(chain: ChainContract[], price: number): ChainSumm
     atmStrike,
     atmCallBid: atmCall?.bid ?? 0,
     atmCallAsk: atmCall?.ask ?? 0,
-    atmCallIV: atmCall?.impliedVolatility ?? 0,
+    atmCallIV: ivToPct(atmCall?.impliedVolatility),
     atmCallOI: atmCall?.openInterest ?? 0,
     atmPutBid: atmPut?.bid ?? 0,
     atmPutAsk: atmPut?.ask ?? 0,
-    atmPutIV: atmPut?.impliedVolatility ?? 0,
+    atmPutIV: ivToPct(atmPut?.impliedVolatility),
     atmPutOI: atmPut?.openInterest ?? 0,
     topVolumeCalls,
     topVolumePuts,

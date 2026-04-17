@@ -1,0 +1,79 @@
+Approved fixes, in this order. Do not proceed to item N+1 until item N is shipped and verified.
+
+FIX 1: STRATEGY-TYPE WHITELIST + STRUCTURAL SANITY CHECK
+
+Implement both (a) and (b) from your Q5 recommendation.
+
+(a) Whitelist allowed strategy types in validateAiResponse. Allowed list: bull_call_spread, bear_put_spread, bull_put_spread, bear_call_spread, iron_condor, iron_butterfly, calendar_spread, diagonal_spread, vertical. Reject any strategy value not on the list. This removes ratio_spread, butterfly, straddle, strangle from the allowed set until computeSpreadEconomics handles them correctly.
+
+(b) After computeSpreadEconomics runs, compare the AI's self-reported maxRisk against the computed maxLoss. If they differ by more than 50% AND the structure is not multi-expiration (since those legitimately have different math), reject the card with reason "economics validation failed: AI maxRisk $X vs computed $Y, discrepancy exceeds threshold". This is the safety net that catches anything mis-priced even if the label looked fine.
+
+Verification: after shipping, run a test by manually crafting an AI response with a ratio structure and a mismatched max risk. Confirm both the whitelist and the sanity check reject it.
+
+FIX 2: TELEMETRY COLUMN EXPANSION
+
+Add the following to strategistTelemetryTable schema:
+- data_package jsonb (full data package sent to AI at time of call)
+- raw_ai_response text (raw AI response text, pre-parsing)
+- confidence_base real (AI output before any calibration)
+- confidence_catalyst_delta real (the +12, -25, or 0 applied by catalyst gate)
+- confidence_final real (post-calibration value shown to user)
+- catalyst_alignment text (ALIGNED / NEUTRAL / CONTRADICTS / NULL)
+- data_source text (schwab / polygon-fallback / db-fallback)
+- fetch_failure_mode text (token_null / http_fail / symbol_missing / network_exception / NULL)
+
+Update logTelemetry signature and the 4 call sites to populate these fields. The goal: every card we ship, going forward, is fully reconstructable from telemetry.
+
+While implementing: investigate why 24 of 41 recommendations in the last 30 days have null confidence stored. Something in the current telemetry path is dropping the field on some code paths. Find and fix as part of this work.
+
+Verification: after shipping, generate 3 strategist calls on different tickers. Query strategist_telemetry and confirm all new columns are populated for all 3 calls. Specifically confirm catalyst_alignment is no longer null.
+
+FIX 3: IV UNIT NORMALIZATION
+
+In summarizeOptionsChain and related helpers, normalize all IV fields to the same unit before the data package is sent to the AI. Pick percentage (41.25 format) as the canonical unit since it's more human-readable.
+
+Affected fields based on your prior report:
+- atmCallIV (L706) - currently pass-through decimal
+- atmPutIV (L710) - currently pass-through decimal
+- top-volume call IVs (L667) - currently pass-through decimal
+- top-volume put IVs (L671) - currently pass-through decimal
+- frontMonthIV / backMonthIV (L696-697) - currently percentage, keep as reference
+- buildCuratedStrikes IV (L583, L587) - currently percentage, keep as reference
+
+All fields should be in percentage after this change. AI should never see mixed units.
+
+Verification: after shipping, generate a strategist call and log the full data package. Grep for IV fields. Confirm all are in the same numeric range (e.g., all roughly 20-80 for typical equity IV, none showing as decimals like 0.41).
+
+WHAT NOT TO TOUCH IN THIS PASS
+
+- IOScore logic. It is currently passive (prompt does not reference it). That's a product decision separate from these fixes.
+- Token architecture unification. Q9/Q10 refactor is deferred pending design discussion.
+- Regime gate logic. Working correctly.
+- Web search integration. Working correctly.
+- Live reasoning display. Working correctly.
+
+SEQUENCING
+
+Ship FIX 1 first. This is the risk-containment fix. Until it's in, every card we ship is exposed to the ratio-backspread silent naked-leg risk. Test thoroughly before moving on.
+
+Ship FIX 2 second. Without it, FIX 3 cannot be verified retroactively because we have no historical data to compare against. FIX 2 also unblocks all future calibration work.
+
+Ship FIX 3 third. This corrects ongoing payload corruption. With FIX 2 in place, we can compare AI behavior before/after the IV fix to see if reasoning quality improves.
+
+Do not batch these together. Ship one, verify, then next. Three separate deployments minimize regression risk.
+
+ADDITIONAL CONSTRAINT
+
+The strategist output format, card structure, prompt identity, and decision logic are working as intended. Do not modify any of these:
+
+- STRATEGIST_SYSTEM_PROMPT content (including identity, defined-risk rules, structure selection guidance)
+- Card rendering layout on the frontend
+- Confidence scoring logic beyond what's listed in Fix 2 (telemetry only, not calculation)
+- Catalyst detection and gate logic
+- Web search integration
+- Live reasoning display
+- computeSpreadEconomics core math (only adding the sanity check and whitelist validator around it, not changing the arithmetic)
+
+If any of these fixes require changes to the above, stop and ask before proceeding.
+
+After all three fixes ship, run the standard verification (3 strategist calls on different tickers, confirm card output looks and reads the same as before the fixes). If card quality or behavior has degraded in any user-visible way, roll back the offending fix and report what changed.
