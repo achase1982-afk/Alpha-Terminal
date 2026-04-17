@@ -72,6 +72,17 @@ export function getStrategistModel(idx: number): StrategistModelOption {
   return STRATEGIST_MODEL_OPTIONS[Math.floor(idx)];
 }
 
+/**
+ * Sentinel arbitrator-idx meaning "the model whose side won the directional
+ * verdict in Phase 1 is promoted to Senior PM for Phase 3". When the arbitrator
+ * setting equals this value, strategistDebate resolves the arbitrator
+ * dynamically from the verdict instead of from STRATEGIST_MODEL_OPTIONS.
+ */
+export const ARBITRATOR_IDX_DEBATE_WINNER = -1;
+export function isDebateWinnerArbitrator(idx: number): boolean {
+  return idx === ARBITRATOR_IDX_DEBATE_WINNER;
+}
+
 const DEFAULTS: Record<string, number> = {
   ioWeightR2: 0.30,
   ioWeightResidual: 0.25,
@@ -193,7 +204,7 @@ export function getSettingMeta(): SettingMetaEntry[] {
     { key: "strategistSoloModelIdx", label: "Solo Strategist Model", group: "AI Strategist", default: 0, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "AI model used in Solo mode.", options: modelOptions },
     { key: "strategistDebateAModelIdx", label: "Debate — Strategist A Model", group: "AI Strategist", default: 0, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model for Strategist A in Debate mode. Can match B (twin debate) or differ (cross-provider debate).", options: modelOptions },
     { key: "strategistDebateBModelIdx", label: "Debate — Strategist B Model", group: "AI Strategist", default: 1, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model for Strategist B in Debate mode.", options: modelOptions },
-    { key: "strategistArbitratorModelIdx", label: "Debate — Arbitrator (Senior PM) Model", group: "AI Strategist", default: 0, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model used in Phase 3 to arbitrate between A's and B's structure proposals and ship the final trade. Can be A, B, or a third independent model.", options: modelOptions },
+    { key: "strategistArbitratorModelIdx", label: "Debate — Arbitrator (Senior PM) Model", group: "AI Strategist", default: 0, min: -1, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model used in Phase 3 to arbitrate between A's and B's structure proposals and ship the final trade. Can be A, B, an independent third model, or 'Debate Winner' (whichever side wins the directional verdict is promoted to Senior PM).", options: [{ value: -1, label: "Debate Winner (winning side promoted to Senior PM)" }, ...modelOptions] },
     { key: "strategistConvergence", label: "Debate Convergence", group: "AI Strategist", default: 3, min: 1, max: 3, step: 1, description: "How the single final report is produced after the two strategists finish debating.", options: [
       { value: 1, label: "Higher confidence wins (fastest)" },
       { value: 2, label: "Synthesis pass (extra LLM merges both)" },

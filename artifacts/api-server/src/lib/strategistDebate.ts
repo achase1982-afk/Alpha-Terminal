@@ -31,8 +31,13 @@ export interface DebateCallbacks {
 export interface DebateConfig {
   modelA: StrategistModelOption;
   modelB: StrategistModelOption;
-  /** Phase 3 arbitrator. May be the same as A, B, or a third independent model. */
-  arbitratorModel: StrategistModelOption;
+  /**
+   * Phase 3 arbitrator. May be the same as A, B, a third independent model, or
+   * the literal string "winner" — in which case the side whose model wins the
+   * directional verdict in Phase 1 is promoted to Senior PM. SIDEWAYS verdicts
+   * fall back to modelA (no clear winner).
+   */
+  arbitratorModel: StrategistModelOption | "winner";
   /**
    * Convergence is reinterpreted as the tie-band width (in confidence points)
    * for the verdict step. Tighter bands push more results to a directional
@@ -554,18 +559,36 @@ export async function runDebate(args: {
   ]);
 
   // ---------- PHASE 3: Senior-PM arbitration → final trade card ----------
-  // Builder uses the user-configured Arbitrator model with the NEUTRAL system
-  // prompt (no Bull/Bear persona). Its ONLY job is to arbitrate between the
-  // two structure proposals and ship the trade — it cannot invent a structure
-  // neither side proposed. Arbitrator is INDEPENDENT of A/B so neither side's
-  // model bias dominates the final structural choice.
-  const arbitrator = config.arbitratorModel;
+  // Builder uses the configured Arbitrator model with the NEUTRAL system prompt
+  // (no Bull/Bear persona). Its ONLY job is to arbitrate between the two
+  // structure proposals and ship the trade — it cannot invent a structure
+  // neither side proposed. The arbitrator is normally independent of A/B, but
+  // the user can also pick "winner" to promote whichever side won the
+  // directional verdict to Senior PM.
+  let arbitrator: StrategistModelOption;
+  let arbitratorOriginLabel: string;
+  if (config.arbitratorModel === "winner") {
+    if (verdict === "BULLISH") {
+      arbitrator = config.modelA; // Bull persona is always A
+      arbitratorOriginLabel = `${arbitrator.label} — promoted as Bull won verdict`;
+    } else if (verdict === "BEARISH") {
+      arbitrator = config.modelB; // Bear persona is always B
+      arbitratorOriginLabel = `${arbitrator.label} — promoted as Bear won verdict`;
+    } else {
+      // SIDEWAYS — no clear winner; fall back to A so the run is deterministic.
+      arbitrator = config.modelA;
+      arbitratorOriginLabel = `${arbitrator.label} — sideways verdict, A picked as tiebreaker`;
+    }
+  } else {
+    arbitrator = config.arbitratorModel;
+    arbitratorOriginLabel = arbitrator.label;
+  }
   const builderModelOpt: StrategistModelOption = {
     ...arbitrator,
-    label: `Senior PM · ${arbitrator.label}`,
+    label: `Senior PM · ${arbitratorOriginLabel}`,
   };
   const chosenSide: "A" | "B" | "synthesis" = "synthesis";
-  const chosenLabel = `Senior PM (${arbitrator.label}) — verdict: ${verdict}`;
+  const chosenLabel = `Senior PM (${arbitratorOriginLabel}) — verdict: ${verdict}`;
 
   callbacks?.onStatus?.("Phase 3 — Senior PM arbitrating between structure proposals…");
 

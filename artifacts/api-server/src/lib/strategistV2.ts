@@ -1,7 +1,7 @@
 import { logger } from "./logger.js";
 import { getCachedRegime, buildFallbackRegime, type StructuredRegime } from "./regimePostProcessor.js";
 import { computeIOScore, type IOScoreResult } from "./ioScoreEngine.js";
-import { getSettings, getStrategistModel, type StrategistConfig } from "./strategistSettings.js";
+import { getSettings, getStrategistModel, type StrategistConfig, type StrategistModelOption } from "./strategistSettings.js";
 import { runDebate, type DebateCallbacks, type DebateRound, type DebateRole, type DebatePhase } from "./strategistDebate.js";
 import { db, strategistTelemetryTable } from "@workspace/db";
 import { desc, eq, sql, and } from "drizzle-orm";
@@ -1188,7 +1188,12 @@ async function callAiForTradeViaDebate(
 ): Promise<{ response: AiTradeResponse; trace: WebSearchTrace; rawText: string; debateLabel: string }> {
   const modelA = getStrategistModel(settings.strategistDebateAModelIdx);
   const modelB = getStrategistModel(settings.strategistDebateBModelIdx);
-  const arbitratorModel = getStrategistModel(settings.strategistArbitratorModelIdx);
+  // -1 = "Debate Winner" sentinel: arbitrator is resolved inside runDebate
+  // after the Phase 1 verdict (winning side's model is promoted to Senior PM).
+  const arbitratorModel: StrategistModelOption | "winner" =
+    settings.strategistArbitratorModelIdx === -1
+      ? "winner"
+      : getStrategistModel(settings.strategistArbitratorModelIdx);
   const convergence = ([1, 2, 3].includes(settings.strategistConvergence)
     ? settings.strategistConvergence
     : 3) as 1 | 2 | 3;
