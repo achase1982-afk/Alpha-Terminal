@@ -28,7 +28,8 @@ import {
   Zap, LineChart, LayoutDashboard, BrainCircuit,
   ChevronLeft, ChevronRight, Trash2, Plus, RotateCcw, BarChart2,
   SlidersHorizontal, Gauge, ListOrdered, CalendarDays, Palette,
-  AlertTriangle, Settings2,
+  AlertTriangle, Settings2, Settings, ArrowLeft, FlaskConical,
+  Stethoscope, Layers, Coins, ShieldAlert, User as UserIcon,
 } from "lucide-react";
 import { MarketCalendar } from "@/components/MarketCalendar";
 import { TelemetryPage, useTelemetryCount } from "@/components/TelemetryPage";
@@ -43,20 +44,45 @@ function useClerkSafe() {
 
 type SidebarPage =
   | null
-  | "Watchlist"
+  // ── Reachable via primary sidebar ──────────────────────────────────
   | "Calendar"
   | "Linked Brokerage"
   | "Market Pulse"
   | "Strategist Settings"
-  | "Strategist Telemetry"
-  | "Chart & Options"
-  | "Display & Marquee"
-  | "AI Parameters"
-  | "UI Customization"
-  | "Security & Privacy"
-  | "Telemetry"
+  // ── Settings hub + nested sub-pages (CHANGE 1) ──────────────────────
+  | "Settings"
+  | "Allowed Strategies"
+  | "Risk Defaults"
+  | "Market Pulse Display"
+  | "Strategist Tuning"
+  | "AI Lab"
+  | "Chart Overlays"
+  | "Options Chain Defaults"
+  | "Appearance"
+  | "Marquee"
   | "Notifications"
-  | "System";
+  | "Telemetry"
+  | "Diagnostics"
+  | "Security & Privacy";
+
+// Pages reachable via the Settings hub. When one of these is active the
+// overlay header shows a back-arrow that returns to "Settings" instead of
+// closing the entire overlay.
+const SETTINGS_SUBPAGES: ReadonlySet<SidebarPage> = new Set<SidebarPage>([
+  "Allowed Strategies",
+  "Risk Defaults",
+  "Market Pulse Display",
+  "Strategist Tuning",
+  "AI Lab",
+  "Chart Overlays",
+  "Options Chain Defaults",
+  "Appearance",
+  "Marquee",
+  "Notifications",
+  "Telemetry",
+  "Diagnostics",
+  "Security & Privacy",
+]);
 
 export interface SidebarHandle {
   clearActivePage: () => void;
@@ -132,10 +158,22 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
         >
           {activePage !== "Calendar" && (
             <div className="flex items-center justify-between p-3 border-b border-card-border bg-[#141414]">
-              <h2 className="font-bold text-sm tracking-widest text-white uppercase ml-2">{activePage}</h2>
+              <div className="flex items-center gap-2 ml-1">
+                {SETTINGS_SUBPAGES.has(activePage) && (
+                  <button
+                    onClick={() => setActivePage("Settings")}
+                    className="p-1 text-muted-foreground hover:text-white transition-colors -ml-1"
+                    aria-label="Back to Settings"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                  </button>
+                )}
+                <h2 className="font-bold text-sm tracking-widest text-white uppercase">{activePage}</h2>
+              </div>
               <button
                 onClick={() => setActivePage(null)}
                 className="p-1.5 text-muted-foreground hover:text-white transition-colors"
+                aria-label="Close"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -143,20 +181,29 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
           )}
 
           <div className={`flex-1 overflow-y-auto pb-4 ${activePage === "Calendar" ? "px-3 pt-1 pb-3" : "p-4 sm:p-6"}`}>
-            {activePage === "Watchlist" && <WatchlistPage onClose={handleCloseAll} />}
             {activePage === "Calendar" && <MarketCalendar onClose={() => setActivePage(null)} />}
             {activePage === "Linked Brokerage" && <LinkedBrokeragePage />}
             {activePage === "Market Pulse" && <MarketPulsePage />}
             {activePage === "Strategist Settings" && <StrategistSettingsPage />}
-            {activePage === "Strategist Telemetry" && <StrategistTelemetryPanel />}
-            {activePage === "Chart & Options" && <ChartOptionsPage />}
-            {activePage === "Display & Marquee" && <DisplayMarqueePage />}
-            {activePage === "AI Parameters" && <AiParametersPage />}
-            {activePage === "UI Customization" && <UICustomizationPage />}
             {activePage === "Security & Privacy" && <SecurityPrivacyPage />}
-            {activePage === "Telemetry" && <TelemetryPage />}
+            {activePage === "Telemetry" && <UnifiedTelemetryPage />}
             {activePage === "Notifications" && <NotificationsPage />}
-            {activePage === "System" && <SystemSettingsPage />}
+            {activePage === "Settings" && (
+              <SettingsHubPage
+                onSelect={(p) => setActivePage(p)}
+                telemetryCount={telemetryCount}
+              />
+            )}
+            {activePage === "Allowed Strategies" && <AllowedStrategiesPage />}
+            {activePage === "Risk Defaults" && <RiskDefaultsPage />}
+            {activePage === "Market Pulse Display" && <MarketPulseDisplayPage />}
+            {activePage === "Strategist Tuning" && <AiParametersPage />}
+            {activePage === "AI Lab" && <SystemSettingsPage />}
+            {activePage === "Chart Overlays" && <ChartOverlaysPage />}
+            {activePage === "Options Chain Defaults" && <OptionsChainDefaultsPage />}
+            {activePage === "Appearance" && <UICustomizationPage />}
+            {activePage === "Marquee" && <DisplayMarqueePage />}
+            {activePage === "Diagnostics" && <DiagnosticsPage />}
           </div>
         </div>,
         document.body
@@ -189,19 +236,21 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
 
               <div className="mx-5 border-b border-card-border/50" />
 
-              <div className="flex flex-col pt-2 pb-2">
+              <div className="flex flex-col pt-2 pb-1">
                 <MenuRow icon={<Link />} label="Linked Brokerage" onClick={() => { setActivePage("Linked Brokerage"); onClose(); }} />
+              </div>
+
+              <SidebarSectionLabel label="ANALYSIS" />
+
+              <div className="flex flex-col pb-1">
                 <MenuRow icon={<Zap />} label="Market Pulse" onClick={() => { setActivePage("Market Pulse"); onClose(); }} />
                 <MenuRow icon={<SlidersHorizontal />} label="Options Strategist" onClick={() => { setActivePage("Strategist Settings"); onClose(); }} />
-                <MenuRow icon={<Activity />} label="Strategist Telemetry" onClick={() => { setActivePage("Strategist Telemetry"); onClose(); }} />
-                <MenuRow icon={<LineChart />} label="Chart & Options" onClick={() => { setActivePage("Chart & Options"); onClose(); }} />
-                <MenuRow icon={<LayoutDashboard />} label="Display & Marquee" onClick={() => { setActivePage("Display & Marquee"); onClose(); }} />
-                <MenuRow icon={<BrainCircuit />} label="AI Parameters" onClick={() => { setActivePage("AI Parameters"); onClose(); }} />
-                <MenuRow icon={<Palette />} label="UI Customization" onClick={() => { setActivePage("UI Customization"); onClose(); }} />
-                <MenuRow icon={<Bell />} label="Notifications" onClick={() => { setActivePage("Notifications"); onClose(); }} />
-                <MenuRow icon={<AlertTriangle />} label="Telemetry" badge={telemetryCount} onClick={() => { setActivePage("Telemetry"); onClose(); }} />
-                <MenuRow icon={<Settings2 />} label="System" onClick={() => { setActivePage("System"); onClose(); }} />
-                <MenuRow icon={<Shield />} label="Security & Privacy" onClick={() => { setActivePage("Security & Privacy"); onClose(); }} />
+              </div>
+
+              <div className="mx-5 border-b border-card-border/50 my-1" />
+
+              <div className="flex flex-col pb-2">
+                <MenuRow icon={<Settings />} label="Settings" badge={telemetryCount} onClick={() => { setActivePage("Settings"); onClose(); }} />
               </div>
 
               <div className="mx-5 border-b border-card-border/50 mt-2" />
@@ -1291,6 +1340,424 @@ function NotificationsPage() {
             ))}
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── CHANGE 1: Sidebar reorganization helpers ─────────────────────────
+
+function SidebarSectionLabel({ label }: { label: string }) {
+  return (
+    <div className="px-5 pt-3 pb-1">
+      <span className="font-mono text-[9px] font-bold tracking-[0.2em] text-zinc-600 uppercase">
+        {label}
+      </span>
+    </div>
+  );
+}
+
+function SettingsHubRow({
+  icon,
+  label,
+  subtitle,
+  badge,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  subtitle?: string;
+  badge?: number;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="w-full flex items-center gap-3 px-3 py-3 rounded-md hover:bg-zinc-900/40 transition-colors text-left"
+    >
+      <div className="text-zinc-400">
+        {React.cloneElement(icon as React.ReactElement<any>, { className: "w-4 h-4" })}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-[13px] font-semibold text-white truncate">{label}</div>
+        {subtitle && <div className="text-[10px] text-zinc-500 truncate mt-0.5">{subtitle}</div>}
+      </div>
+      {badge != null && badge > 0 && (
+        <span style={{
+          background: "#f23645",
+          color: "#fff",
+          fontSize: 10,
+          fontWeight: 800,
+          padding: "1px 6px",
+          borderRadius: 8,
+          minWidth: 18,
+          textAlign: "center",
+          lineHeight: "16px",
+        }}>
+          {badge > 99 ? "99+" : badge}
+        </span>
+      )}
+      <ChevronRight className="w-4 h-4 text-zinc-600 shrink-0" />
+    </button>
+  );
+}
+
+function SettingsHubSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1">
+      <div className="px-3 pt-2">
+        <span className="font-mono text-[9px] font-bold tracking-[0.2em] text-zinc-500 uppercase">
+          {title}
+        </span>
+      </div>
+      <div className="space-y-0.5">{children}</div>
+    </div>
+  );
+}
+
+function SettingsHubPage({
+  onSelect,
+  telemetryCount,
+}: {
+  onSelect: (p: SidebarPage) => void;
+  telemetryCount: number;
+}) {
+  return (
+    <div className="max-w-xl mx-auto space-y-5 pb-6">
+      <SettingsHubSection title="Trading">
+        <SettingsHubRow icon={<Layers />} label="Allowed Strategies" subtitle="Which option structures the strategist may propose" onClick={() => onSelect("Allowed Strategies")} />
+        <SettingsHubRow icon={<Coins />} label="Risk Defaults" subtitle="Spread width, account size tier, max risk per trade" onClick={() => onSelect("Risk Defaults")} />
+        <SettingsHubRow icon={<Zap />} label="Market Pulse Display" subtitle="Bias strip, auto-refresh, cluster details" onClick={() => onSelect("Market Pulse Display")} />
+      </SettingsHubSection>
+
+      <SettingsHubSection title="Intelligence">
+        <SettingsHubRow icon={<BrainCircuit />} label="Strategist Tuning" subtitle="Per-feature models and temperatures" onClick={() => onSelect("Strategist Tuning")} />
+        <SettingsHubRow icon={<FlaskConical />} label="AI Lab" subtitle="Master toggle, deliberation, anomaly detection, schedule" onClick={() => onSelect("AI Lab")} />
+        <SettingsHubRow icon={<LineChart />} label="Chart Overlays" subtitle="SMAs, Bollinger, RSI, volume" onClick={() => onSelect("Chart Overlays")} />
+        <SettingsHubRow icon={<BarChart2 />} label="Options Chain Defaults" subtitle="Default contract type and max DTE" onClick={() => onSelect("Options Chain Defaults")} />
+      </SettingsHubSection>
+
+      <SettingsHubSection title="Display">
+        <SettingsHubRow icon={<Palette />} label="Appearance" subtitle="Accent color, font size, chart style, grid density" onClick={() => onSelect("Appearance")} />
+        <SettingsHubRow icon={<LayoutDashboard />} label="Marquee" subtitle="Macro tickers, ticker tape symbols, scroll speed" onClick={() => onSelect("Marquee")} />
+        <SettingsHubRow icon={<Bell />} label="Notifications" subtitle="In-app, push, system alerts" onClick={() => onSelect("Notifications")} />
+      </SettingsHubSection>
+
+      <SettingsHubSection title="System">
+        <SettingsHubRow icon={<AlertTriangle />} label="Telemetry" subtitle="Events and trades — health, errors, scanner runs" badge={telemetryCount} onClick={() => onSelect("Telemetry")} />
+        <SettingsHubRow icon={<Stethoscope />} label="Diagnostics" subtitle="Broker connection, API status, stream status" onClick={() => onSelect("Diagnostics")} />
+      </SettingsHubSection>
+
+      <SettingsHubSection title="Account">
+        <SettingsHubRow icon={<Shield />} label="Security & Privacy" subtitle="Session timeout, biometric lock" onClick={() => onSelect("Security & Privacy")} />
+      </SettingsHubSection>
+    </div>
+  );
+}
+
+// ─── Carved-out Trading sub-pages from former MarketPulsePage ────────────
+
+function AllowedStrategiesPage() {
+  const { settings, toggleStrategy } = useMarketPulseStore();
+  return (
+    <div className="space-y-3 max-w-xl mx-auto">
+      <p className="font-mono text-[10px] text-muted-foreground/70 leading-relaxed">
+        Toggle which option structures the strategist is allowed to propose.
+      </p>
+      <div className="space-y-1.5 max-h-[60vh] overflow-y-auto pr-1">
+        {ALL_STRATEGIES.map((s) => (
+          <label key={s} className="flex items-center gap-2 cursor-pointer group py-1">
+            <input
+              type="checkbox"
+              checked={settings.allowedStrategies.includes(s)}
+              onChange={() => toggleStrategy(s)}
+              className="rounded border-card-border bg-transparent accent-[#FFB800] w-4 h-4"
+            />
+            <span className="font-mono text-[11px] text-[#a1a1aa] group-hover:text-[#e4e4e7] transition-colors">
+              {STRATEGY_LABELS[s]}
+            </span>
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function RiskDefaultsPage() {
+  const { settings, updateSetting } = useMarketPulseStore();
+  return (
+    <div className="space-y-4 max-w-xl mx-auto">
+      <p className="font-mono text-[10px] text-muted-foreground/70 leading-relaxed">
+        Defaults applied to new strategist runs. Existing recommendations are not retroactively re-sized.
+      </p>
+      <SettingInput label="Default Spread Width" value={settings.defaultSpreadWidth} onChange={(v) => updateSetting("defaultSpreadWidth", v)} placeholder="e.g. $5" />
+      <SettingInput label="Account Size Tier" value={settings.accountSizeTier} onChange={(v) => updateSetting("accountSizeTier", v)} placeholder="e.g. $10k, $25k, $100k+" />
+      <SettingInput label="Preferred Tickers" value={settings.preferredTickers} onChange={(v) => updateSetting("preferredTickers", v)} placeholder="e.g. SPY, QQQ, AAPL" />
+      <SettingInput label="Max Risk Per Trade" value={settings.maxRiskPerTrade} onChange={(v) => updateSetting("maxRiskPerTrade", v)} placeholder="e.g. 2% or $500" />
+    </div>
+  );
+}
+
+function MarketPulseDisplayPage() {
+  const {
+    settings, updateSetting, toggleIndicator, resetIndicators,
+  } = useMarketPulseStore();
+  const [indicatorsOpen, setIndicatorsOpen] = useState(false);
+  const [addQuery, setAddQuery] = useState("");
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  const activeIndicators = settings.pulseIndicators ?? ALL_PULSE_INDICATORS.map((i) => i.symbol);
+  const catalogMap = Object.fromEntries(ALL_PULSE_INDICATORS.map((i) => [i.symbol, i.label]));
+  const getLabel = (sym: string) => catalogMap[sym] ?? sym;
+
+  const inactiveFromCatalog = ALL_PULSE_INDICATORS.filter((i) => !activeIndicators.includes(i.symbol));
+  const suggestions =
+    addQuery.length > 0
+      ? inactiveFromCatalog.filter(
+          (i) => i.symbol.toLowerCase().includes(addQuery.toLowerCase()) || i.label.toLowerCase().includes(addQuery.toLowerCase())
+        )
+      : inactiveFromCatalog;
+
+  const handleAdd = (sym: string) => {
+    const clean = sym.trim().toUpperCase();
+    if (!clean || activeIndicators.includes(clean)) return;
+    toggleIndicator(clean);
+    setAddQuery("");
+    setShowSuggestions(false);
+  };
+
+  return (
+    <div className="space-y-6 max-w-xl mx-auto">
+      <div className="space-y-3">
+        <SidebarToggle label="Show Bias Strip" icon={<Zap className="w-3 h-3" />} checked={settings.showBiasStrip} onChange={() => updateSetting("showBiasStrip", !settings.showBiasStrip)} />
+        <SidebarToggle label="Auto-Refresh" checked={settings.autoRefresh} onChange={() => updateSetting("autoRefresh", !settings.autoRefresh)} />
+        {settings.autoRefresh && (
+          <div className="space-y-1.5 pl-1">
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-[9px] text-muted-foreground/70 uppercase tracking-wider">Interval</span>
+              <span className="font-mono text-[10px] text-primary tabular-nums">{settings.autoRefreshInterval}m</span>
+            </div>
+            <input type="range" min={2} max={30} step={1} value={settings.autoRefreshInterval} onChange={(e) => updateSetting("autoRefreshInterval", Number(e.target.value))} className="w-full h-1 rounded-full appearance-none cursor-pointer" style={{ accentColor: "#FFB800", background: "#2A2A2C" }} />
+          </div>
+        )}
+      </div>
+
+      <div className="border-t border-card-border pt-4">
+        <button onClick={() => setIndicatorsOpen(!indicatorsOpen)} className="w-full flex items-center justify-between mb-2">
+          <span className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-bold flex items-center gap-1.5">
+            <BarChart2 className="w-3 h-3" /> Indicators <span className="text-primary tabular-nums ml-1">{activeIndicators.length}</span>
+          </span>
+          <ChevronLeft className={`w-3 h-3 text-[#71717a] transition-transform duration-200 ${indicatorsOpen ? "-rotate-90" : "rotate-180"}`} />
+        </button>
+
+        {indicatorsOpen && (
+          <div className="space-y-2 animate-in fade-in slide-in-from-top-1">
+            <div className="flex items-center justify-between pb-1">
+              <span className="font-mono text-[9px] text-[#52525b] tabular-nums">{activeIndicators.length} active</span>
+              <button onClick={resetIndicators} className="flex items-center gap-1 font-mono text-[9px] text-[#52525b] hover:text-[#71717a] transition-colors">
+                <RotateCcw className="w-2.5 h-2.5" /> Reset
+              </button>
+            </div>
+            <div className="space-y-0.5 max-h-[240px] overflow-y-auto pr-0.5">
+              {activeIndicators.map((sym) => (
+                <div key={sym} className="flex items-center justify-between px-2 py-1.5 rounded-md group">
+                  <div className="flex flex-col min-w-0">
+                    <span className="font-mono text-[10px] text-primary font-bold tabular-nums leading-none">{sym.replace(/^\$/, "")}</span>
+                    <span className="font-mono text-[9px] text-[#52525b] leading-tight truncate mt-0.5">{getLabel(sym)}</span>
+                  </div>
+                  <button onClick={() => toggleIndicator(sym)} className="flex-shrink-0 ml-2 p-1 rounded hover:bg-[#f23645]/10 text-[#3f3f46] hover:text-[#f23645] transition-colors">
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="pt-1 relative">
+              <div className="flex gap-1.5">
+                <input
+                  type="text"
+                  value={addQuery}
+                  onChange={(e) => { setAddQuery(e.target.value); setShowSuggestions(true); }}
+                  onFocus={() => setShowSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") { if (suggestions.length > 0) handleAdd(suggestions[0].symbol); else if (addQuery.length > 0) handleAdd(addQuery); }
+                    if (e.key === "Escape") setShowSuggestions(false);
+                  }}
+                  placeholder="Search or type symbol..."
+                  className="w-full h-7 px-2 rounded-md font-mono text-[11px] text-[#e4e4e7] placeholder:text-[#3f3f46] border border-[#2A2A2C] focus:border-primary focus:outline-none transition-colors"
+                  style={{ background: "#111113" }}
+                />
+                <button
+                  onClick={() => { if (suggestions.length > 0 && addQuery.length > 0) handleAdd(suggestions[0].symbol); else if (addQuery.length > 0) handleAdd(addQuery); }}
+                  disabled={!addQuery.trim()}
+                  className="flex items-center gap-1 h-7 px-2.5 rounded-md font-mono text-[10px] font-bold transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  style={{ background: "#FFB800", color: "#000" }}
+                >
+                  <Plus className="w-3 h-3" /> Add
+                </button>
+              </div>
+              {showSuggestions && suggestions.length > 0 && (
+                <div className="absolute left-0 right-10 top-8 z-50 rounded-md border border-[#2A2A2C] overflow-y-auto max-h-[180px] shadow-xl" style={{ background: "#111113" }}>
+                  {suggestions.map((ind) => (
+                    <button key={ind.symbol} onMouseDown={() => handleAdd(ind.symbol)} className="w-full text-left px-3 py-2 flex flex-col hover:bg-[#1a1a1c] transition-colors border-b border-[#1a1a1c] last:border-0">
+                      <span className="font-mono text-[10px] text-primary font-bold tabular-nums">{ind.symbol.replace(/^\$/, "")}</span>
+                      <span className="font-mono text-[9px] text-[#52525b] leading-tight">{ind.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="border-t border-card-border pt-4">
+        <span className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-bold block mb-2">Display Preferences</span>
+        <div className="space-y-2">
+          <SidebarToggle label="Show Cluster Details" checked={settings.showClusterDetails} onChange={() => updateSetting("showClusterDetails", !settings.showClusterDetails)} />
+          <SidebarToggle label="Show Action Plan" checked={settings.showActionPlan} onChange={() => updateSetting("showActionPlan", !settings.showActionPlan)} />
+          <SidebarToggle label="Compact Mode" checked={settings.compactMode} onChange={() => updateSetting("compactMode", !settings.compactMode)} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Carved-out Intelligence sub-pages from former ChartOptionsPage ────
+
+function ChartOverlaysPage() {
+  const { overlays, toggleOverlay } = useTerminalStore();
+  const OVERLAY_LABELS: Record<string, string> = { sma20: "SMA 20", sma50: "SMA 50", bb: "BB", rsi: "RSI", volume: "VOL" };
+  return (
+    <div className="space-y-3 max-w-xl mx-auto">
+      <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
+        <SlidersHorizontal className="w-3 h-3" /> Active Overlays
+      </Label>
+      <div className="flex flex-wrap gap-2">
+        {(Object.entries(overlays) as [keyof typeof overlays, boolean][]).map(([key, active]) => (
+          <button
+            key={key}
+            onClick={() => toggleOverlay(key)}
+            className={`px-3 py-1.5 rounded-full font-mono text-[10px] font-semibold border transition-all duration-200 ${active ? "bg-[#1a1a1a] text-[#FFB800] border-[#FFB800]" : "bg-[#1a1a1a] text-[#71717a] border-[#262626] hover:border-[#404040] hover:text-foreground"}`}
+          >
+            {OVERLAY_LABELS[key] ?? key.toUpperCase()}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function OptionsChainDefaultsPage() {
+  const { contractType, setContractType, maxDte, setMaxDte } = useOptionsSettingsStore();
+  return (
+    <div className="space-y-4 max-w-xl mx-auto">
+      <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
+        <BarChart2 className="w-3 h-3" /> Defaults
+      </Label>
+      <div className="flex items-center gap-2">
+        <span className="font-mono text-[9px] text-muted-foreground/70 uppercase tracking-wider whitespace-nowrap">Type</span>
+        <Select value={contractType} onValueChange={(v) => setContractType(v as "ALL" | "CALL" | "PUT")}>
+          <SelectTrigger className="font-mono text-[10px] bg-card border-card-border h-8 focus:ring-primary/50">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="bg-card border-card-border font-mono text-[10px]">
+            <SelectItem value="ALL" className="text-[10px]">ALL</SelectItem>
+            <SelectItem value="CALL" className="text-[10px]">CALLS</SelectItem>
+            <SelectItem value="PUT" className="text-[10px]">PUTS</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="font-mono text-[9px] text-muted-foreground/70 uppercase tracking-wider whitespace-nowrap">Max DTE</span>
+        <Input
+          type="number"
+          value={maxDte}
+          onChange={(e) => { const v = parseInt(e.target.value); if (!isNaN(v) && v > 0) setMaxDte(v); }}
+          className="font-mono text-[10px] bg-card border-card-border h-8 w-20"
+        />
+      </div>
+    </div>
+  );
+}
+
+// ─── Unified Telemetry (entry-point only for CHANGE 1) ──────────────────
+//
+// CHANGE 2 will enhance the EVENTS tab with the health summary, action-needed
+// section, auto-recovered collapsing, severity ordering, and bigger fonts.
+// For CHANGE 1 we just consolidate the two existing telemetry surfaces into
+// a single tabbed entry so the sidebar can drop the "Strategist Telemetry"
+// item without losing access to those rows.
+function UnifiedTelemetryPage() {
+  const [tab, setTab] = useState<"events" | "trades">("events");
+  return (
+    <div className="space-y-3">
+      <div className="flex gap-1 border-b border-card-border">
+        {([
+          { key: "events", label: "EVENTS" },
+          { key: "trades", label: "TRADES" },
+        ] as const).map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className="px-4 py-2 font-mono text-[11px] font-bold tracking-wider transition-colors border-b-2"
+            style={{
+              color: tab === t.key ? "#FFB800" : "#71717a",
+              borderColor: tab === t.key ? "#FFB800" : "transparent",
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <div>
+        {tab === "events" ? <TelemetryPage /> : <StrategistTelemetryPanel />}
+      </div>
+    </div>
+  );
+}
+
+// ─── Diagnostics stub ──────────────────────────────────────────────────
+//
+// CHANGE 1 ships a minimal Diagnostics surface that reflects what we already
+// know from the store: stream status, plus pointers to deeper panels. A
+// fuller broker/API health dashboard can land in a follow-up.
+function DiagnosticsPage() {
+  const streamStatus = useTerminalStore((s) => s.streamStatus);
+  const streamConnected = useTerminalStore((s) => s.streamConnected);
+
+  const dot = (color: string) => (
+    <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 999, background: color, marginRight: 6 }} />
+  );
+
+  const streamColor = streamStatus === "live" ? "#2ecc71" : streamStatus === "connecting" ? "#f59e0b" : "#71717a";
+
+  return (
+    <div className="space-y-4 max-w-xl mx-auto">
+      <p className="font-mono text-[10px] text-muted-foreground/70 leading-relaxed">
+        Live connection state across data and execution surfaces.
+      </p>
+
+      <div className="rounded-lg border border-card-border bg-[#0c0c0c] p-3 space-y-2.5">
+        <div className="flex items-center justify-between">
+          <span className="font-mono text-[11px] text-zinc-400">Schwab Stream</span>
+          <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: streamColor }}>
+            {dot(streamColor)}{streamStatus}
+          </span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="font-mono text-[11px] text-zinc-400">WebSocket</span>
+          <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: streamConnected ? "#2ecc71" : "#71717a" }}>
+            {dot(streamConnected ? "#2ecc71" : "#71717a")}{streamConnected ? "connected" : "offline"}
+          </span>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-card-border bg-[#0c0c0c] p-3 space-y-1.5">
+        <div className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest font-bold">Deeper checks</div>
+        <p className="font-mono text-[10px] text-zinc-500 leading-relaxed">
+          Telemetry shows individual API/stream events. Linked Brokerage shows broker auth state.
+        </p>
       </div>
     </div>
   );

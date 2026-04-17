@@ -1,0 +1,128 @@
+Two UX improvements, scoped together. Do not touch strategist prompt, card output, decision logic, or any of the fixes shipped earlier today.
+
+CHANGE 1: SIDEBAR REORGANIZATION
+
+Current state: 14 items in the sidebar is sprawl. Settings, telemetry panels, and display configurations are all at the top level alongside primary navigation.
+
+Target state: 6 items in the sidebar. Everything else moves into a nested Settings screen.
+
+Primary sidebar (6 items, in this order):
+- Calendar
+- Portfolio
+- Linked Brokerage
+- Market Pulse
+- Options Strategist
+- Settings
+
+The existing icons on these items are fine, keep them.
+
+Visual grouping in the sidebar: insert a section divider between "Linked Brokerage" and "Market Pulse" with the section label "ANALYSIS" (small uppercase gray text). Another divider between "Options Strategist" and "Settings".
+
+The AI chat box and Logout stay at the bottom of the sidebar, unchanged.
+
+Settings screen structure: when the user taps "Settings" in the sidebar, they enter a nested screen with sub-sections. Layout is a vertical scrolling list with section labels. Each item in the list navigates to the existing settings panel for that area (Allowed Strategies opens what's currently in Market Pulse > Allowed Strategies, etc.).
+
+Settings screen sections and items:
+
+TRADING
+- Allowed Strategies (currently under Market Pulse settings)
+- Risk Defaults (extract from wherever this currently lives)
+- Market Pulse Display (bias strip, auto-refresh, cluster details from current Market Pulse settings)
+
+INTELLIGENCE
+- Strategist Tuning (rename of current "AI Parameters" - IOScore weights, scanner thresholds)
+- AI Lab (rename of current "System" - master toggle, models, temperatures, system prompts, deliberation, anomaly detection, trade validation, schedule)
+- Chart Overlays (extract chart-related settings from current "Chart & Options")
+- Options Chain Defaults (extract options chain settings from current "Chart & Options")
+
+DISPLAY
+- Appearance (extract from current "Display & Marquee" plus current "UI Customization" - accent color, header, font, chart style, grid, display toggles)
+- Marquee (extract marquee-specific settings from current "Display & Marquee" - macro tickers, marquee symbols, scroll speed)
+- Notifications (existing panel)
+
+SYSTEM
+- Telemetry (unified panel, see CHANGE 2 below)
+- Diagnostics (broker connection health, API status, stream status - new panel, combines elements currently scattered across other settings)
+
+ACCOUNT
+- Security & Privacy (existing panel)
+- Profile (if there's existing profile/user settings, goes here)
+
+Naming changes:
+- "System" becomes "AI Lab" and moves to Intelligence section
+- "AI Parameters" becomes "Strategist Tuning" and moves to Intelligence section
+- "Chart & Options" splits into two separate items: "Chart Overlays" and "Options Chain Defaults"
+- "Display & Marquee" splits into two separate items: "Appearance" (merged with UI Customization) and "Marquee"
+
+Badge behavior: if there are unresolved errors in Telemetry, show a red badge with the error count on the Settings entry in the main sidebar. Badge clears when user views and resolves the errors.
+
+Backward compatibility: existing settings state, stored preferences, and saved configurations should continue to work. This is a navigation restructure, not a settings wipe. All current toggle states and numeric values must persist through the reorganization.
+
+CHANGE 2: TELEMETRY UNIFICATION AND UX CLEANUP
+
+Current state: Two separate telemetry panels exist (general Telemetry and Strategist Telemetry). The general panel is dense, dominated by transient WebSocket reconnect events, and not visually prioritized. Users cannot easily see what actually needs attention vs what auto-recovered.
+
+Target state: One unified Telemetry screen with two tabs, with automatic noise filtering and severity prioritization.
+
+Unified structure: replace both existing telemetry entries with a single "Telemetry" item under Settings > System. This screen has two tabs at the top:
+
+- EVENTS (what's currently in general Telemetry - Schwab stream, API events, scanner errors, etc.)
+- TRADES (what's currently in Strategist Telemetry - recommendations, scanner runs)
+
+The existing functionality within each tab is preserved. This is about unifying the entry point and improving the UX of the Events tab specifically.
+
+UX improvements to the Events tab:
+
+1. System health summary at the top. A single line showing status of each monitored system. Format example:
+   "Schwab API: Connected | Schwab Stream: Active | IBKR: Connected | Scanner: Active | Strategist: Active"
+   Each status uses color: green for healthy, yellow for degraded, red for error. If any system is red, it appears first in the list.
+
+2. Action Needed section. Below the health summary, show a sticky section titled "ACTION NEEDED" that contains any unresolved ERROR-level events. Each entry shows:
+   - Error title (e.g., "Polygon 403: Universe build failed")
+   - One-line explanation of what it means
+   - One or two suggested actions (e.g., "Upgrade Polygon plan" link, "Dismiss" button)
+   
+   If there are no unresolved errors, this section shows a single line: "No action needed" with a green check.
+
+3. Auto-resolve paired events. When a disconnect event is followed by a successful reconnect within 30 seconds, collapse both into a single entry labeled "Auto-recovered: [system] briefly disconnected [time]" and move it out of the main visible list into the recent activity section. If more than 5 auto-recovered events occur within a 5-minute window, collapse them further into "System [X] auto-recovered [N] times in last [T] minutes - possible instability."
+
+4. Severity-first ordering. Within the event list, order by severity (ERROR first, then WARN, then INFO) rather than by time. Within same severity, order by most recent first.
+
+5. Larger font on event titles. Current text is too small to scan. Event title should be 15-16px, metadata 12px. Increase line height for readability.
+
+6. Resolved filter. Add "Unresolved" as the default filter at the top, alongside the existing ALL/ERROR/WARN/INFO tabs. User can toggle to see resolved history. Resolved means either auto-recovered or manually dismissed.
+
+7. Bulk resolve. Add a "Resolve all auto-recovered" button in the header when there are 10+ auto-recovered events. Clears them from the unresolved view.
+
+8. Keep the existing drawer/dropdown for filtering by system (SCHWAB API, SCHWAB STREAM, etc.). That UI is fine.
+
+The Trades tab (current Strategist Telemetry) keeps its existing UI and functionality. No changes to that tab in this pass.
+
+VERIFICATION AFTER BOTH CHANGES SHIP
+
+1. Sidebar has 6 primary items plus AI chat and Logout at bottom.
+2. Tapping Settings opens a scrollable screen with 5 sections (Trading, Intelligence, Display, System, Account).
+3. All settings that previously existed are still accessible, just reorganized.
+4. Telemetry has one entry point under Settings > System > Telemetry.
+5. Telemetry screen has EVENTS and TRADES tabs.
+6. Events tab shows system health summary at top, Action Needed section below, filtered event list below that.
+7. Causing a WebSocket disconnect followed by reconnect within 30 seconds produces a single "Auto-recovered" entry, not two separate events.
+8. Polygon 403 or similar unresolved error surfaces in Action Needed with clear explanation.
+9. Settings state and preferences persist through the reorganization.
+
+EXPLICITLY NOT IN SCOPE
+
+- Strategist prompt, card output, decision logic - do not touch
+- AI Lab / Analyst internals (the feature is paused)
+- Confidence calculation logic
+- Web search integration
+- Live reasoning display
+- Scanner scoring logic
+- Earnings handling
+- computeSpreadEconomics math
+
+If any of these reorganization changes require touching those areas, stop and ask before proceeding.
+
+SEQUENCING
+
+Ship CHANGE 1 (sidebar reorganization) first. Verify all settings panels still work and all state persists. Then ship CHANGE 2 (telemetry unification and UX). Do not batch them - two separate deployments to minimize regression risk.
