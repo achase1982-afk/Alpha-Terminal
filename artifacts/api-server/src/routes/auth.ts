@@ -22,19 +22,54 @@ function getTraderRedirectUri(): string {
   return (isProd ? process.env.SCHWAB_TRADER_REDIRECT_URI_PROD : process.env.SCHWAB_TRADER_REDIRECT_URI) || "";
 }
 
-const pendingStates = new Map<string, number>();
 const pendingTokens = new Map<string, { accessToken: string; refreshToken: string; ts: number }>();
 const STATE_TTL_MS = 10 * 60 * 1000;
 const TOKEN_TTL_MS = 5 * 60 * 1000;
 
 function cleanExpired() {
   const now = Date.now();
-  for (const [key, ts] of pendingStates) {
-    if (now - ts > STATE_TTL_MS) pendingStates.delete(key);
-  }
   for (const [key, val] of pendingTokens) {
     if (now - val.ts > TOKEN_TTL_MS) pendingTokens.delete(key);
   }
+}
+
+// Stateless OAuth state: nonce.ts.hmac, signed with the app secret so any
+// API-server instance can verify any callback. This avoids losing state
+// across horizontally-scaled instances or process restarts.
+function getStateSecret(): string {
+  return process.env.SCHWAB_TRADER_APP_SECRET || process.env.SESSION_SECRET || "dev-state-secret-fallback";
+}
+
+function signState(prefix: string = ""): string {
+  const nonce = crypto.randomBytes(16).toString("hex");
+  const ts = Date.now().toString(36);
+  const payload = `${prefix}${nonce}.${ts}`;
+  const mac = crypto.createHmac("sha256", getStateSecret()).update(payload).digest("hex").slice(0, 32);
+  return `${payload}.${mac}`;
+}
+
+function verifyState(state: string | undefined, prefix: string = ""): boolean {
+  if (!state || typeof state !== "string") return false;
+  const parts = state.split(".");
+  if (parts.length !== 3) return false;
+  const [noncePart, ts, mac] = parts;
+  if (!noncePart || !ts || !mac) return false;
+  if (prefix && !noncePart.startsWith(prefix)) return false;
+  if (!prefix && /^[a-z]+_/.test(noncePart)) return false; // reject prefixed states for unprefixed flows
+  const payload = `${noncePart}.${ts}`;
+  const expected = crypto.createHmac("sha256", getStateSecret()).update(payload).digest("hex").slice(0, 32);
+  let macBuf: Buffer, expBuf: Buffer;
+  try {
+    macBuf = Buffer.from(mac, "hex");
+    expBuf = Buffer.from(expected, "hex");
+  } catch {
+    return false;
+  }
+  if (macBuf.length !== expBuf.length || !crypto.timingSafeEqual(macBuf, expBuf)) return false;
+  const issuedAt = parseInt(ts, 36);
+  if (!Number.isFinite(issuedAt)) return false;
+  if (Date.now() - issuedAt > STATE_TTL_MS) return false;
+  return true;
 }
 
 function escapeHtml(str: string): string {
@@ -76,8 +111,7 @@ router.get("/url", (_req, res) => {
   }
 
   cleanExpired();
-  const state = crypto.randomBytes(24).toString("hex");
-  pendingStates.set(state, Date.now());
+  const state = signState();
 
   const params = new URLSearchParams({
     response_type: "code",
@@ -102,11 +136,10 @@ router.get("/callback", async (req, res) => {
     return res.status(400).send(errorPage("Missing Code", "No authorization code was received from Schwab."));
   }
 
-  if (!state || !pendingStates.has(state)) {
+  if (!verifyState(state)) {
     req.log.warn({ state: state?.slice(0, 8) }, "GET /callback — invalid or missing state parameter");
     return res.status(400).send(errorPage("Invalid Request", "OAuth state validation failed. Please try signing in again."));
   }
-  pendingStates.delete(state);
 
   const appKey = process.env.SCHWAB_TRADER_APP_KEY;
   const appSecret = process.env.SCHWAB_TRADER_APP_SECRET;
@@ -325,8 +358,7 @@ router.get("/trader-url", (_req, res) => {
   }
 
   cleanExpired();
-  const state = "trader_" + crypto.randomBytes(24).toString("hex");
-  pendingStates.set(state, Date.now());
+  const state = signState("trader_");
 
   const params = new URLSearchParams({
     response_type: "code",
@@ -347,11 +379,10 @@ router.get("/trader-callback", async (req, res) => {
     return res.status(400).send(errorPage("Missing Code", "No authorization code was received from Schwab."));
   }
 
-  if (!state || !pendingStates.has(state)) {
+  if (!verifyState(state, "trader_")) {
     req.log.warn({ state: state?.slice(0, 8) }, "GET /trader-callback — invalid or missing state");
     return res.status(400).send(errorPage("Invalid Request", "OAuth state validation failed. Please try again."));
   }
-  pendingStates.delete(state);
 
   const appKey = process.env.SCHWAB_TRADER_APP_KEY;
   const appSecret = process.env.SCHWAB_TRADER_APP_SECRET;
