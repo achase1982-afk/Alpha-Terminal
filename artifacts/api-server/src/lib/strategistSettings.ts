@@ -61,7 +61,7 @@ export const STRATEGIST_MODEL_OPTIONS: StrategistModelOption[] = [
   { provider: "google", model: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro (Google)" },
   { provider: "anthropic", model: "claude-opus-4-6", label: "Claude Opus 4.6 (Anthropic)" },
   { provider: "google", model: "gemini-2.5-pro", label: "Gemini 2.5 Pro (Google)" },
-  { provider: "anthropic", model: "claude-sonnet-4-7", label: "Claude Sonnet 4.7 (Anthropic)" },
+  { provider: "anthropic", model: "claude-sonnet-4-6", label: "Claude Sonnet 4.6 (Anthropic)" },
   { provider: "google", model: "gemini-2.5-flash", label: "Gemini 2.5 Flash (Google)" },
 ];
 
