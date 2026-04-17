@@ -135,8 +135,26 @@ ${otherProposal}
 
 Respond with ONLY the JSON object. No fences, no extra prose.`;
 
-const FINAL_INSTRUCTION = (mySide: "A" | "B", myRevised: string, otherRevised: string, otherCritique: string) =>
+const CONVERGENCE_RULE = (convergence: 1 | 2 | 3) => {
+  if (convergence === 1) {
+    return `CONVERGENCE RULE FOR THIS DEBATE: After Round 3, the system compares both finals and SHIPS THE ONE WITH HIGHER CONFIDENCE — winner takes all, no merge. Calibrate your confidence honestly: do not inflate it to "win" the debate, and do not deflate it out of false humility. If the other strategist's case is genuinely stronger, your honest lower confidence will (and should) lose. If yours is stronger, set confidence accordingly.`;
+  }
+  if (convergence === 2) {
+    return `CONVERGENCE RULE FOR THIS DEBATE: After Round 3, a synthesis pass will MERGE both your final and the other strategist's final into ONE trade. Your final does not have to "beat" theirs — it has to contribute the strongest version of your view. Lean into what is distinctly best in your analysis (a strike, a structure, a thesis angle, a risk you alone flagged). Do not hedge or try to cover both sides; the synthesis layer handles reconciliation.`;
+  }
+  return `CONVERGENCE RULE FOR THIS DEBATE: After Round 3, if you and the other strategist AGREE on direction (both bullish or both bearish), a synthesis pass merges both finals into one trade. If you DISAGREE on direction, the higher-confidence final ships and the other is discarded. Implication: when you genuinely converge with the other side, contribute the strongest distinct elements of your view (the synthesis will harmonize them). When you genuinely disagree, calibrate confidence honestly — inflated confidence to "win" a disagreement will produce a bad live trade.`;
+};
+
+const FINAL_INSTRUCTION = (
+  mySide: "A" | "B",
+  myRevised: string,
+  otherRevised: string,
+  otherCritique: string,
+  convergence: 1 | 2 | 3,
+) =>
   `ROUND 3 — final commit. You are Strategist ${mySide}. You have seen the other strategist's Round-2 critique of your work and their revised proposal. Commit to your final position now and set your confidence honestly.
+
+${CONVERGENCE_RULE(convergence)}
 
 Output ONLY the JSON object specified by your system prompt — your final, committed trade. No markdown, no commentary.
 
@@ -292,12 +310,12 @@ export async function runDebate(args: {
   const [r3a, r3b] = await Promise.all([
     runTurn({
       modelOpt: config.modelA, systemPrompt,
-      prompt: FINAL_INSTRUCTION("A", r2aParsed.revised, r2bParsed.revised, r2bParsed.critique),
+      prompt: FINAL_INSTRUCTION("A", r2aParsed.revised, r2bParsed.revised, r2bParsed.critique, config.convergence),
       round: 3, role: "A", phase: "final", callbacks,
     }),
     runTurn({
       modelOpt: config.modelB, systemPrompt,
-      prompt: FINAL_INSTRUCTION("B", r2bParsed.revised, r2aParsed.revised, r2aParsed.critique),
+      prompt: FINAL_INSTRUCTION("B", r2bParsed.revised, r2aParsed.revised, r2aParsed.critique, config.convergence),
       round: 3, role: "B", phase: "final", callbacks,
     }),
   ]);
