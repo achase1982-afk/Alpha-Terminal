@@ -301,20 +301,23 @@ export async function analyzeTickerV2(
       regime,
       systemicRiskElevated: regime.systemicRiskLevel === "ELEVATED" || regime.systemicRiskLevel === "EXTREME",
     };
-    await logTelemetry(ticker, "toxic_block", regime, settings, null, null, toxicCheck, null, result.blockReason);
+    await logTelemetry(ticker, "toxic_block", regime, settings, null, null, toxicCheck, null, result.blockReason, {});
     return result;
   }
 
-  const tickerData = await fetchTickerData(ticker);
+  const tickerFetch = await fetchTickerData(ticker);
+  const tickerData = tickerFetch.data;
   if (!tickerData) {
     const result: StrategistV2Result = {
       status: "no_viable_setup",
       ticker,
-      blockReason: "No viable options setup: unable to fetch ticker data.",
+      blockReason: `No viable options setup: unable to fetch ticker data (${tickerFetch.failureMode ?? "unknown"}).`,
       regime,
       systemicRiskElevated: regime.systemicRiskLevel === "ELEVATED" || regime.systemicRiskLevel === "EXTREME",
     };
-    await logTelemetry(ticker, "no_data", regime, settings, null, null, toxicCheck, null, result.blockReason);
+    await logTelemetry(ticker, "no_data", regime, settings, null, null, toxicCheck, null, result.blockReason, {
+      fetchFailureMode: tickerFetch.failureMode ?? "network_exception",
+    });
     return result;
   }
 
@@ -322,15 +325,17 @@ export async function analyzeTickerV2(
     return noViable(ticker, regime, settings, toxicCheck, tickerData, "No viable options setup: stock halted.", null);
   }
 
-  const chain = await fetchOptionsChain(ticker, settings);
+  const chainResult = await fetchOptionsChain(ticker, settings);
+  const chain = chainResult.chain;
+  const dataSource = chainResult.source;
   if (!chain || chain.length === 0) {
-    return noViable(ticker, regime, settings, toxicCheck, tickerData, "No viable options setup: no options chain available.", null);
+    return noViable(ticker, regime, settings, toxicCheck, tickerData, "No viable options setup: no options chain available.", null, { dataSource });
   }
   const pricedCount = chain.filter(c => c.bid > 0 || c.ask > 0).length;
-  logger.info({ ticker, chainLength: chain.length, pricedCount }, "StrategistV2: options chain loaded");
+  logger.info({ ticker, chainLength: chain.length, pricedCount, dataSource }, "StrategistV2: options chain loaded");
   if (pricedCount === 0) {
     return noViable(ticker, regime, settings, toxicCheck, tickerData,
-      "No viable options setup: options chain loaded but all contracts have zero pricing. Options market may not be open yet (opens 9:30 AM ET).", null);
+      "No viable options setup: options chain loaded but all contracts have zero pricing. Options market may not be open yet (opens 9:30 AM ET).", null, { dataSource });
   }
 
   const liveIvr = computeIvrFromChain(chain, tickerData.price);
@@ -362,17 +367,31 @@ export async function analyzeTickerV2(
   status("Calling AI for trade recommendation…");
   let aiResponse: AiTradeResponse;
   let webTrace: WebSearchTrace;
+  let rawAiResponseText: string;
   try {
     const r = await callAiForTrade(dataPackage, undefined, progress);
     aiResponse = r.response;
     webTrace = r.trace;
+    rawAiResponseText = r.rawText;
   } catch (err) {
     logger.error({ err, ticker }, "StrategistV2: AI trade call failed");
-    return noViable(ticker, regime, settings, toxicCheck, tickerData, `AI analysis failed: ${err instanceof Error ? err.message : String(err)}`, ioScore);
+    return noViable(ticker, regime, settings, toxicCheck, tickerData, `AI analysis failed: ${err instanceof Error ? err.message : String(err)}`, ioScore, { dataSource, dataPackage });
+  }
+
+  // Guard against AI responses with missing/non-numeric confidence — previously
+  // `aiResponse.confidence < 20` was silently false for `undefined`, allowing
+  // confidence-less recommendations to ship. Coerce here once.
+  if (!Number.isFinite(aiResponse.confidence)) {
+    logger.warn({ ticker, raw: aiResponse.confidence }, "StrategistV2: AI returned non-numeric confidence — defaulting to 0");
+    aiResponse.confidence = 0;
   }
 
   if (aiResponse.confidence < 20) {
-    const blocked = await noViable(ticker, regime, settings, toxicCheck, tickerData, `AI found no compelling setup (confidence ${aiResponse.confidence}): ${aiResponse.thesis}`, ioScore);
+    const blocked = await noViable(ticker, regime, settings, toxicCheck, tickerData, `AI found no compelling setup (confidence ${aiResponse.confidence}): ${aiResponse.thesis}`, ioScore, {
+      dataSource, dataPackage, rawAiResponse: rawAiResponseText,
+      confidenceBase: aiResponse.confidence, confidenceFinal: aiResponse.confidence,
+      catalystAlignment: aiResponse.catalystAlignment ?? null,
+    });
     blocked.contextSources = buildContextSources(aiResponse, webTrace);
     return blocked;
   }
@@ -384,18 +403,25 @@ export async function analyzeTickerV2(
       const retryPrompt = buildRetryPrompt(aiResponse, validationResult.issues);
       const r2 = await callAiForTrade(dataPackage, retryPrompt, progress);
       aiResponse = r2.response;
+      rawAiResponseText = r2.rawText;
+      if (!Number.isFinite(aiResponse.confidence)) {
+        logger.warn({ ticker, raw: aiResponse.confidence }, "StrategistV2: AI retry returned non-numeric confidence — defaulting to 0");
+        aiResponse.confidence = 0;
+      }
       // Keep original trace; retry typically does not re-search.
       if (r2.trace.queries.length > 0) webTrace = r2.trace;
 
       const retryValidation = validateAiResponse(aiResponse, chain, settings);
       if (!retryValidation.valid) {
         return noViable(ticker, regime, settings, toxicCheck, tickerData,
-          `AI recommendation failed validation after retry: ${retryValidation.issues.join("; ")}`, ioScore);
+          `AI recommendation failed validation after retry: ${retryValidation.issues.join("; ")}`, ioScore,
+          { dataSource, dataPackage, rawAiResponse: rawAiResponseText, confidenceBase: aiResponse.confidence, confidenceFinal: aiResponse.confidence, catalystAlignment: aiResponse.catalystAlignment ?? null });
       }
     } catch (err) {
       logger.error({ err, ticker }, "StrategistV2: AI retry failed");
       return noViable(ticker, regime, settings, toxicCheck, tickerData,
-        `AI retry failed: ${err instanceof Error ? err.message : String(err)}`, ioScore);
+        `AI retry failed: ${err instanceof Error ? err.message : String(err)}`, ioScore,
+        { dataSource, dataPackage, rawAiResponse: rawAiResponseText });
     }
   }
 
@@ -410,21 +436,30 @@ export async function analyzeTickerV2(
       ticker, regime, settings, toxicCheck, tickerData,
       `No edge: macro regime is ${regime.directionalConviction} and web search found no same-day ticker catalyst. ${aiResponse.catalystSummary ?? ""}`.trim(),
       ioScore,
+      { dataSource, dataPackage, rawAiResponse: rawAiResponseText, confidenceBase: aiResponse.confidence, confidenceFinal: aiResponse.confidence, catalystAlignment: aiResponse.catalystAlignment ?? null },
     );
     blocked.contextSources = ctx;
     return blocked;
   }
+
+  // Capture confidence breakdown for telemetry. The base value comes straight
+  // from the AI; the catalyst gate may bump (+12) or dampen (-25). Persist all
+  // three so calibration can later be tuned against historical outcomes.
+  const confidenceBaseValue = aiResponse.confidence;
+  let confidenceCatalystDeltaValue = 0;
 
   // Catalyst-aware confidence calibration. The model is instructed to do
   // this itself, but we enforce a floor/ceiling here as a safety net.
   if (aiResponse.sameDayCatalyst && aiResponse.catalystAlignment === "ALIGNED") {
     const bumped = Math.min(100, aiResponse.confidence + 12);
     if (bumped > aiResponse.confidence) {
+      confidenceCatalystDeltaValue = bumped - aiResponse.confidence;
       logger.info({ ticker, before: aiResponse.confidence, after: bumped }, "StrategistV2: catalyst-aligned confidence bump applied");
       aiResponse.confidence = bumped;
     }
   } else if (aiResponse.sameDayCatalyst && aiResponse.catalystAlignment === "CONTRADICTS") {
     const damped = Math.max(0, aiResponse.confidence - 25);
+    confidenceCatalystDeltaValue = damped - aiResponse.confidence;
     logger.warn({ ticker, before: aiResponse.confidence, after: damped }, "StrategistV2: catalyst CONTRADICTS thesis — damping confidence");
     aiResponse.confidence = damped;
     if (damped < 20) {
@@ -433,14 +468,54 @@ export async function analyzeTickerV2(
         ticker, regime, settings, toxicCheck, tickerData,
         `Catalyst contradicts proposed direction: ${aiResponse.catalystSummary ?? "see web search results"}`,
         ioScore,
+        { dataSource, dataPackage, rawAiResponse: rawAiResponseText, confidenceBase: confidenceBaseValue, confidenceCatalystDelta: confidenceCatalystDeltaValue, confidenceFinal: aiResponse.confidence, catalystAlignment: aiResponse.catalystAlignment ?? null },
+      );
+      blocked.contextSources = ctx;
+      return blocked;
+    }
+  }
+  const confidenceFinalValue = aiResponse.confidence;
+
+  const legs = mapAiLegsToCandidate(aiResponse, chain);
+  const economics = computeSpreadEconomics(legs, aiResponse, ticker);
+
+  // Structural sanity check: compare AI's self-reported maxRisk against
+  // the leg-derived maxLoss. For single-expiration structures the leg-derived
+  // value is canonical (computeSpreadEconomics overwrites the AI value), so a
+  // large discrepancy signals either AI mispricing or a structure the engine
+  // mis-models (e.g. a ratio that slipped past validation). Multi-expiration
+  // structures legitimately diverge because calendar/diagonal economics depend
+  // on volatility, so we skip the check for them.
+  const expirationsForLegs = new Set(legs.map(l => l.expiration));
+  const isMultiExpirationCheck = expirationsForLegs.size > 1;
+  const aiSelfReportedMaxRisk = aiResponse.maxRisk;
+  const computedMaxLossCheck = economics.maxLoss;
+  if (
+    !isMultiExpirationCheck &&
+    aiSelfReportedMaxRisk > 0 &&
+    computedMaxLossCheck > 0
+  ) {
+    const denom = Math.max(aiSelfReportedMaxRisk, computedMaxLossCheck);
+    const discrepancy = Math.abs(aiSelfReportedMaxRisk - computedMaxLossCheck) / denom;
+    if (discrepancy > 0.5) {
+      logger.warn({
+        ticker,
+        strategy: aiResponse.strategy,
+        aiMaxRisk: aiSelfReportedMaxRisk,
+        computedMaxLoss: computedMaxLossCheck,
+        discrepancy: Math.round(discrepancy * 100),
+      }, "StrategistV2: economics validation failed — AI maxRisk vs computed maxLoss differ by >50%");
+      const ctx = buildContextSources(aiResponse, webTrace);
+      const blocked = await noViable(
+        ticker, regime, settings, toxicCheck, tickerData,
+        `Economics validation failed: AI self-reported maxRisk $${aiSelfReportedMaxRisk.toFixed(2)} vs leg-derived maxLoss $${computedMaxLossCheck.toFixed(2)} (discrepancy ${Math.round(discrepancy * 100)}%, threshold 50%). The proposed structure cannot be priced reliably with current models.`,
+        ioScore,
       );
       blocked.contextSources = ctx;
       return blocked;
     }
   }
 
-  const legs = mapAiLegsToCandidate(aiResponse, chain);
-  const economics = computeSpreadEconomics(legs, aiResponse, ticker);
   const isCredit = economics.isCredit;
   const entryAbs = economics.entryAbs;
   const entryRangeMin = economics.entryRangeMin;
@@ -520,7 +595,7 @@ export async function analyzeTickerV2(
     {
       strategy: aiResponse.strategy,
       strategyType: aiResponse.strategy,
-      confidence: aiResponse.confidence,
+      confidence: Number.isFinite(aiResponse.confidence) ? aiResponse.confidence : 0,
       aiRationale: aiResponse.thesis,
       warnings: aiResponse.warnings,
       legs: aiResponse.legs,
@@ -528,8 +603,19 @@ export async function analyzeTickerV2(
       maxRisk: aiResponse.maxRisk,
       maxProfit: aiResponse.maxProfit,
       breakeven: aiResponse.breakeven,
+      catalystAlignment: aiResponse.catalystAlignment ?? null,
+      sameDayCatalyst: aiResponse.sameDayCatalyst ?? false,
     },
     result.recommendation?.strategyLine,
+    {
+      dataPackage,
+      rawAiResponse: rawAiResponseText,
+      confidenceBase: confidenceBaseValue,
+      confidenceCatalystDelta: confidenceCatalystDeltaValue,
+      confidenceFinal: confidenceFinalValue,
+      catalystAlignment: aiResponse.catalystAlignment ?? null,
+      dataSource,
+    },
   );
   result.telemetryId = telemetryId ?? undefined;
 
@@ -787,7 +873,7 @@ async function callAiForTrade(
   dataPackage: string,
   retryInstruction?: string,
   progress?: AnalyzeProgressCallbacks,
-): Promise<{ response: AiTradeResponse; trace: WebSearchTrace }> {
+): Promise<{ response: AiTradeResponse; trace: WebSearchTrace; rawText: string }> {
   const aiCfg = getAiLabStrategistConfig();
   const provider = aiCfg.analystModelProvider;
   const model = aiCfg.analystModelName;
@@ -891,7 +977,7 @@ async function callAiForTrade(
           })).filter(h => h.title)
         : [],
     };
-    return { response: noTradeResponse, trace };
+    return { response: noTradeResponse, trace, rawText };
   }
 
   const safeNum = (v: unknown, fallback: number): number => {
@@ -965,7 +1051,7 @@ async function callAiForTrade(
         })).filter(h => h.title)
       : [],
   };
-  return { response: fullResponse, trace };
+  return { response: fullResponse, trace, rawText };
 }
 
 function validateAiResponse(
@@ -986,6 +1072,49 @@ function validateAiResponse(
   if (response.legs.length === 1 && response.legs[0].action === "sell") {
     issues.push(`Single-leg short position is not permitted. Add a long leg to define the maximum risk.`);
     return { valid: false, issues };
+  }
+
+  // Hard whitelist of allowed strategy types. Structures with quantity-asymmetric
+  // or strike-asymmetric risk profiles (ratios, broken-wing butterflies, naked
+  // wings, straddles/strangles) are excluded until computeSpreadEconomics models
+  // them correctly. See investigation report Q3-Q5.
+  const allowedStrategies = new Set([
+    "bull_call_spread",
+    "bear_put_spread",
+    "bull_put_spread",
+    "bear_call_spread",
+    "iron_condor",
+    "iron_butterfly",
+    "calendar_spread",
+    "diagonal_spread",
+    "vertical",
+    "call_debit_spread",
+    "put_debit_spread",
+    "calendar",
+    "diagonal",
+  ]);
+  if (!allowedStrategies.has(response.strategy)) {
+    issues.push(`Strategy "${response.strategy}" is not permitted. Allowed structures: bull_call_spread, bear_put_spread, bull_put_spread, bear_call_spread, iron_condor, iron_butterfly, calendar_spread, diagonal_spread, vertical. Reformulate the trade using one of these defined-risk structures.`);
+    return { valid: false, issues };
+  }
+
+  // Quantity-balance check: every leg's implicit contract count must net to zero
+  // per option type (calls vs puts) within the same expiration. Catches ratio
+  // structures that slip past the strategy-name whitelist by being labeled as
+  // "vertical" but having asymmetric quantities.
+  const legSig = (l: typeof response.legs[number]) => `${l.expiration}|${l.type}`;
+  const balance = new Map<string, number>();
+  for (const leg of response.legs) {
+    const key = legSig(leg);
+    const sign = leg.action === "buy" ? 1 : -1;
+    const qty = (leg as any).quantity ?? 1;
+    balance.set(key, (balance.get(key) ?? 0) + sign * qty);
+  }
+  for (const [key, net] of balance) {
+    if (Math.abs(net) > 1) {
+      issues.push(`Leg quantity imbalance detected for ${key}: net ${net} contracts. Ratio/asymmetric structures are not permitted; long and short quantities per option type per expiration must match.`);
+      return { valid: false, issues };
+    }
   }
 
   for (const leg of response.legs) {
@@ -1254,20 +1383,31 @@ function deriveCatalyst(tickerData: TickerData): { flagValue: number; reason: st
   return { flagValue: 0, reason: "none" };
 }
 
-async function fetchTickerData(ticker: string): Promise<TickerData | null> {
+type FetchFailureMode = "token_null" | "http_fail" | "symbol_missing" | "network_exception";
+
+async function fetchTickerData(ticker: string): Promise<{ data: TickerData | null; failureMode: FetchFailureMode | null }> {
   try {
     const token = await getBestAccessToken();
-    if (!token) return null;
+    if (!token) {
+      logger.warn({ ticker }, "StrategistV2: fetchTickerData failed — no Schwab token available");
+      return { data: null, failureMode: "token_null" };
+    }
 
     const res = await fetch(`${SCHWAB_API}/quotes?symbols=${ticker}&fields=quote,fundamental`, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      logger.warn({ ticker, status: res.status }, "StrategistV2: fetchTickerData failed — Schwab quotes HTTP non-OK");
+      return { data: null, failureMode: "http_fail" };
+    }
 
     const data = await res.json() as any;
     const q = data[ticker]?.quote ?? data[ticker.toUpperCase()]?.quote;
     const f = data[ticker]?.fundamental ?? data[ticker.toUpperCase()]?.fundamental ?? {};
-    if (!q) return null;
+    if (!q) {
+      logger.warn({ ticker, returnedKeys: Object.keys(data ?? {}) }, "StrategistV2: fetchTickerData failed — symbol missing from response");
+      return { data: null, failureMode: "symbol_missing" };
+    }
 
     const price = q.lastPrice ?? q.mark ?? 0;
     const avgVol = f.avg10DaysVolume ?? f.avgVol10Days ?? 1;
@@ -1283,21 +1423,24 @@ async function fetchTickerData(ticker: string): Promise<TickerData | null> {
     const earningsWithin48h = earningsDaysAway != null && earningsDaysAway <= 2;
 
     return {
-      price,
-      dailyChangePct: q.netPercentChangeInDouble ?? 0,
-      ivr: null,
-      avgVolume20d: avgVol,
-      currentVolume: currentVol,
-      relativeVolume: avgVol > 0 ? currentVol / avgVol : 1,
-      sector: f.sector ?? "Unknown",
-      earningsWithin48h,
-      earningsDaysAway,
-      analystActions48h: [],
-      halted: q.securityStatus === "Halted" || q.securityStatus === "HALTED",
+      data: {
+        price,
+        dailyChangePct: q.netPercentChangeInDouble ?? 0,
+        ivr: null,
+        avgVolume20d: avgVol,
+        currentVolume: currentVol,
+        relativeVolume: avgVol > 0 ? currentVol / avgVol : 1,
+        sector: f.sector ?? "Unknown",
+        earningsWithin48h,
+        earningsDaysAway,
+        analystActions48h: [],
+        halted: q.securityStatus === "Halted" || q.securityStatus === "HALTED",
+      },
+      failureMode: null,
     };
   } catch (err) {
     logger.error({ err, ticker }, "StrategistV2: failed to fetch ticker data");
-    return null;
+    return { data: null, failureMode: "network_exception" };
   }
 }
 
@@ -1378,12 +1521,14 @@ async function fetchSchwabFullChain(ticker: string): Promise<ChainContract[] | n
   }
 }
 
-async function fetchOptionsChain(ticker: string, settings: StrategistConfig): Promise<ChainContract[]> {
+type ChainSource = "schwab" | "polygon-fallback" | "schwab-unpriced" | "none";
+
+async function fetchOptionsChain(ticker: string, settings: StrategistConfig): Promise<{ chain: ChainContract[]; source: ChainSource }> {
   // Step A: Schwab full chain primary (so quoted prices match what user fills at)
   const schwabChain = await fetchSchwabFullChain(ticker);
   if (schwabChain && schwabChain.length > 0) {
     const priced = schwabChain.filter(c => c.bid > 0 || c.ask > 0);
-    if (priced.length > 0) return priced;
+    if (priced.length > 0) return { chain: priced, source: "schwab" };
     logger.warn({ ticker, total: schwabChain.length }, "StrategistV2: Schwab chain has contracts but all unpriced — trying Polygon fallback");
   }
 
@@ -1392,22 +1537,22 @@ async function fetchOptionsChain(ticker: string, settings: StrategistConfig): Pr
     const apiKey = process.env.POLYGON_API_KEY || "";
     if (!apiKey) {
       logger.warn({ ticker }, "StrategistV2: no Polygon key for fallback");
-      return schwabChain ?? [];
+      return { chain: schwabChain ?? [], source: schwabChain && schwabChain.length > 0 ? "schwab-unpriced" : "none" };
     }
     const chain = await fetchPolygonChain(ticker, apiKey, { maxDte: 365 });
     if (!chain || (chain.calls.length === 0 && chain.puts.length === 0)) {
       logger.warn({ ticker }, "StrategistV2: Polygon fallback also empty");
-      return schwabChain ?? [];
+      return { chain: schwabChain ?? [], source: schwabChain && schwabChain.length > 0 ? "schwab-unpriced" : "none" };
     }
     const taggedCalls = (chain.calls || []).map((c: any) => ({ ...c, type: "call", optionType: "CALL", mid: c.mid ?? ((c.bid ?? 0) + (c.ask ?? 0)) / 2 }));
     const taggedPuts = (chain.puts || []).map((c: any) => ({ ...c, type: "put", optionType: "PUT", mid: c.mid ?? ((c.bid ?? 0) + (c.ask ?? 0)) / 2 }));
     const allContracts = [...taggedCalls, ...taggedPuts] as ChainContract[];
     const pricedContracts = allContracts.filter(c => c.bid > 0 || c.ask > 0);
     logger.info({ ticker, total: allContracts.length, priced: pricedContracts.length, source: "polygon-fallback" }, "StrategistV2: Polygon fallback chain loaded");
-    return pricedContracts.length > 0 ? pricedContracts : allContracts;
+    return { chain: pricedContracts.length > 0 ? pricedContracts : allContracts, source: "polygon-fallback" };
   } catch (err) {
     logger.error({ err, ticker }, "StrategistV2: Polygon fallback failed");
-    return schwabChain ?? [];
+    return { chain: schwabChain ?? [], source: schwabChain && schwabChain.length > 0 ? "schwab-unpriced" : "none" };
   }
 }
 
@@ -1494,6 +1639,17 @@ function _legacyFlattenSchwabChain_unused(data: any): ChainContract[] {
   return result;
 }
 
+interface TelemetryExtras {
+  dataPackage?: unknown;
+  rawAiResponse?: string | null;
+  confidenceBase?: number | null;
+  confidenceCatalystDelta?: number | null;
+  confidenceFinal?: number | null;
+  catalystAlignment?: string | null;
+  dataSource?: ChainSource | null;
+  fetchFailureMode?: FetchFailureMode | string | null;
+}
+
 async function noViable(
   ticker: string,
   regime: StructuredRegime,
@@ -1502,8 +1658,9 @@ async function noViable(
   tickerData: TickerData | null,
   reason: string,
   ioScore?: IOScoreResult | null,
+  extras: TelemetryExtras = {},
 ): Promise<StrategistV2Result> {
-  await logTelemetry(ticker, "no_viable_setup", regime, settings, ioScore ?? null, tickerData, toxicCheck, null, reason);
+  await logTelemetry(ticker, "no_viable_setup", regime, settings, ioScore ?? null, tickerData, toxicCheck, null, reason, extras);
   return {
     status: "no_viable_setup",
     ticker,
@@ -1518,6 +1675,7 @@ async function logTelemetry(
   ticker: string, result: string, regime: StructuredRegime, settings: StrategistConfig,
   ioScore: IOScoreResult | null, tickerData: TickerData | null,
   toxicCheck: any, aiDecision: any, thesis?: string | null,
+  extras: TelemetryExtras = {},
 ): Promise<number | null> {
   try {
     const [row] = await db.insert(strategistTelemetryTable).values({
@@ -1541,6 +1699,14 @@ async function logTelemetry(
       winningCandidate: null,
       edgeAttribution: ioScore ? { idiosyncratic_pct: Math.round(ioScore.final * 100), macro_pct: 100 - Math.round(ioScore.final * 100) } as any : null,
       recommendationThesis: thesis ?? null,
+      dataPackage: (extras.dataPackage ?? null) as any,
+      rawAiResponse: extras.rawAiResponse ?? null,
+      confidenceBase: extras.confidenceBase ?? null,
+      confidenceCatalystDelta: extras.confidenceCatalystDelta ?? null,
+      confidenceFinal: extras.confidenceFinal ?? null,
+      catalystAlignment: extras.catalystAlignment ?? null,
+      dataSource: extras.dataSource ?? null,
+      fetchFailureMode: extras.fetchFailureMode ?? null,
     }).returning({ id: strategistTelemetryTable.id });
     return row?.id ?? null;
   } catch (err) {

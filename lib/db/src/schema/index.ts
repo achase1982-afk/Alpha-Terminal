@@ -463,6 +463,14 @@ export const strategistTelemetryTable = pgTable("strategist_telemetry", {
   winningCandidate: jsonb("winning_candidate"),
   edgeAttribution: jsonb("edge_attribution"),
   recommendationThesis: text("recommendation_thesis"),
+  dataPackage: jsonb("data_package"),
+  rawAiResponse: text("raw_ai_response"),
+  confidenceBase: doublePrecision("confidence_base"),
+  confidenceCatalystDelta: doublePrecision("confidence_catalyst_delta"),
+  confidenceFinal: doublePrecision("confidence_final"),
+  catalystAlignment: text("catalyst_alignment"),
+  dataSource: text("data_source"),
+  fetchFailureMode: text("fetch_failure_mode"),
 });
 
 export type StrategistTelemetry = typeof strategistTelemetryTable.$inferSelect;
