@@ -29,7 +29,7 @@ import {
   ChevronLeft, ChevronRight, Trash2, Plus, RotateCcw, BarChart2,
   SlidersHorizontal, Gauge, ListOrdered, CalendarDays, Palette,
   AlertTriangle, Settings2, Settings, ArrowLeft, FlaskConical,
-  Stethoscope, Layers, Coins, ShieldAlert, User as UserIcon,
+  Stethoscope, Layers, Coins, ShieldAlert, User as UserIcon, Sparkles,
 } from "lucide-react";
 import { MarketCalendar } from "@/components/MarketCalendar";
 import { TelemetryPage, useTelemetryCount } from "@/components/TelemetryPage";
@@ -53,6 +53,7 @@ type SidebarPage =
   | "Risk Defaults"
   | "Market Pulse Display"
   | "Strategist Tuning"
+  | "AI Parameters"
   | "AI Lab"
   | "Chart Overlays"
   | "Options Chain Defaults"
@@ -71,6 +72,7 @@ const SETTINGS_SUBPAGES: ReadonlySet<SidebarPage> = new Set<SidebarPage>([
   "Risk Defaults",
   "Market Pulse Display",
   "Strategist Tuning",
+  "AI Parameters",
   "AI Lab",
   "Chart Overlays",
   "Options Chain Defaults",
@@ -89,6 +91,7 @@ export interface SidebarHandle {
     | "Risk Defaults"
     | "Market Pulse Display"
     | "Strategist Tuning"
+    | "AI Parameters"
     | "AI Lab"
     | "Chart Overlays"
     | "Options Chain Defaults"
@@ -213,6 +216,7 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
             {activePage === "Risk Defaults" && <RiskDefaultsPage />}
             {activePage === "Market Pulse Display" && <MarketPulseDisplayPage />}
             {activePage === "Strategist Tuning" && <StrategistTuningPage />}
+            {activePage === "AI Parameters" && <AiParametersPage />}
             {activePage === "AI Lab" && <SystemSettingsPage />}
             {activePage === "Chart Overlays" && <ChartOverlaysPage />}
             {activePage === "Options Chain Defaults" && <OptionsChainDefaultsPage />}
@@ -356,12 +360,6 @@ function StrategistTuningPage() {
   return (
     <div className="space-y-8 max-w-xl mx-auto">
       <StrategistSettingsPanel />
-      <div className="border-t border-zinc-800 pt-6">
-        <h3 className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest font-medium mb-3">
-          Per-Feature Models &amp; Temperature
-        </h3>
-        <AiParametersPage />
-      </div>
       <div className="border-t border-zinc-800 pt-6">
         <h3 className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest font-medium mb-3">
           Legacy AI Parameters
@@ -1308,7 +1306,8 @@ function SettingsHubPage({
       </SettingsHubSection>
 
       <SettingsHubSection title="Intelligence">
-        <SettingsHubRow icon={<BrainCircuit />} label="Strategist Tuning" subtitle="Per-feature models and temperatures" onClick={() => onSelect("Strategist Tuning")} />
+        <SettingsHubRow icon={<BrainCircuit />} label="Strategist Tuning" subtitle="IOScore weights, scanner thresholds, AI parameters" onClick={() => onSelect("Strategist Tuning")} />
+        <SettingsHubRow icon={<Sparkles />} label="AI Parameters" subtitle="Per-feature model and temperature" onClick={() => onSelect("AI Parameters")} />
         <SettingsHubRow icon={<FlaskConical />} label="AI Lab" subtitle="Master toggle, deliberation, anomaly detection, schedule" onClick={() => onSelect("AI Lab")} />
         <SettingsHubRow icon={<LineChart />} label="Chart Overlays" subtitle="SMAs, Bollinger, RSI, volume" onClick={() => onSelect("Chart Overlays")} />
         <SettingsHubRow icon={<BarChart2 />} label="Options Chain Defaults" subtitle="Default contract type and max DTE" onClick={() => onSelect("Options Chain Defaults")} />
