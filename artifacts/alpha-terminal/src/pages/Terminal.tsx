@@ -492,21 +492,6 @@ export default function TerminalPage() {
             </div>
           </div>
 
-          {(aiSubTab === "pulse" || aiSubTab === "strategist") && (
-            <div className="flex justify-end px-3 sm:px-4 lg:px-5 -mt-0.5 mb-1">
-              <button
-                onClick={() => sidebarRef.current?.openSettingsSubpage(aiSubTab === "pulse" ? "Market Pulse Display" : "Strategist Tuning")}
-                className="font-mono text-[9px] uppercase tracking-widest text-zinc-500 hover:text-zinc-200 transition-colors flex items-center gap-1"
-              >
-                <span>Configure</span>
-                <span aria-hidden>→</span>
-              </button>
-            </div>
-          )}
-
-          {aiSubTab === "pulse" && (
-            <PulseHeader pulseData={pulseData} onRefresh={() => pulseDashRef.current?.fetchPulse()} />
-          )}
         </div>
       )}
 

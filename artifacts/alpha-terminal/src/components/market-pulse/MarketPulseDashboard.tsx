@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, useImperativeHandle, forwardRef } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, Clock, RefreshCw } from "lucide-react";
 import { useTerminalStore } from "../../lib/store";
 import { useMarketPulseStore } from "../../stores/marketPulseStore";
 import type { MarketPulseData, ClusterKey, DeltaHealth } from "../../types/marketPulse";
@@ -255,7 +255,7 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, objec
 
           <EngineAuditPanel data={pulseData} />
 
-          <BiasHero data={pulseData} />
+          <BiasHero data={pulseData} onRefresh={fetchPulse} />
 
           {pulseData.hasDivergence && pulseData.divergenceNote && (
             <div className="px-4 py-3 flex items-start gap-3 rounded-lg border border-[#FFB800]/30">
@@ -429,36 +429,68 @@ function DeltaTrendLine({ deltaHealth, baselineReset }: { deltaHealth: DeltaHeal
   );
 }
 
-function BiasHero({ data }: { data: MarketPulseData }) {
+function BiasHero({ data, onRefresh }: { data: MarketPulseData; onRefresh: () => void }) {
   const biasStyle = BIAS_COLORS[data.bias] ?? BIAS_COLORS.NO_EDGE;
   const regimeColor = REGIME_COLORS[data.structuralRegime?.label] ?? "#71717a";
   const riskColor = RISK_COLORS[data.riskState?.label] ?? "#71717a";
   const pct = data.maxConfidence > 0 ? (data.confidenceScore / data.maxConfidence) * 100 : 0;
 
+  const ageMin = data.generatedAt ? Math.floor((Date.now() - data.generatedAt) / 60_000) : null;
+  const ageLabel = ageMin === null
+    ? null
+    : ageMin < 1 ? "Just now"
+    : ageMin < 60 ? `${ageMin}m ago`
+    : `${Math.floor(ageMin / 60)}h ${ageMin % 60}m ago`;
+
   return (
     <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${biasStyle.border}` }}>
       <div className="px-4 py-4">
-        <div className="flex items-center gap-5 flex-wrap">
-          <span className="font-mono text-lg font-black tracking-wider" style={{ color: biasStyle.text }}>
-            {data.bias.replace(/_/g, " ")}
-          </span>
-
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-xs text-zinc-500 uppercase tracking-wider">COMP</span>
-            <span className="font-mono text-base font-black tabular-nums" style={{ color: biasStyle.text }}>
-              {data.compositeScore > 0 ? "+" : ""}{data.compositeScore.toFixed(2)}
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-5 flex-wrap">
+            <span className="font-mono text-lg font-black tracking-wider" style={{ color: biasStyle.text }}>
+              {data.bias.replace(/_/g, " ")}
             </span>
+
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-xs text-zinc-500 uppercase tracking-wider">COMP</span>
+              <span className="font-mono text-base font-black tabular-nums" style={{ color: biasStyle.text }}>
+                {data.compositeScore > 0 ? "+" : ""}{data.compositeScore.toFixed(2)}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-xs text-zinc-500 uppercase tracking-wider">CONF</span>
+              <span className="font-mono text-base font-bold tabular-nums text-zinc-200">
+                {Math.round(data.confidenceScore)}
+              </span>
+              <span className="font-mono text-sm text-zinc-500">/</span>
+              <span className="font-mono text-sm tabular-nums text-zinc-400">
+                {Math.round(data.maxConfidence)}
+              </span>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-xs text-zinc-500 uppercase tracking-wider">CONF</span>
-            <span className="font-mono text-base font-bold tabular-nums text-zinc-200">
-              {Math.round(data.confidenceScore)}
-            </span>
-            <span className="font-mono text-sm text-zinc-500">/</span>
-            <span className="font-mono text-sm tabular-nums text-zinc-400">
-              {Math.round(data.maxConfidence)}
-            </span>
+          <div className="flex items-center gap-2 shrink-0">
+            {ageLabel && (
+              <div className="flex items-center gap-1">
+                <Clock className="w-3 h-3 text-[#8a8a8e]" />
+                <span className="font-mono text-[10px] text-[#8a8a8e] tracking-wider">{ageLabel}</span>
+              </div>
+            )}
+            <button
+              onClick={onRefresh}
+              aria-label="Refresh market pulse"
+              className="flex items-center justify-center w-7 h-7 rounded-md transition-all duration-100 active:translate-y-[1px]"
+              style={{
+                background: "linear-gradient(180deg, #2A2A2C 0%, #1E1E20 100%)",
+                color: "#a1a1aa",
+                border: "1px solid #3a3a3c",
+                borderBottom: "2px solid #1a1a1c",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05)",
+              }}
+            >
+              <RefreshCw className="w-3 h-3" />
+            </button>
           </div>
         </div>
 
