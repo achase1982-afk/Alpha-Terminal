@@ -1,4 +1,4 @@
-import { useTerminalStore } from "./store";
+import { useTerminalStore, type StrategistTranscriptTurn } from "./store";
 import { fetchWithAuth } from "./fetchWithAuth";
 
 const API_BASE = "/api";
@@ -9,6 +9,7 @@ interface ThinkingResponse {
   status: string;
   tokens: string[];
   nextSince: number;
+  transcript?: StrategistTranscriptTurn[];
   done: boolean;
   result: unknown | null;
   error: string | null;
@@ -111,6 +112,10 @@ export function startStrategistPolling(jobId: string): void {
 
         if (t.status) {
           useTerminalStore.getState().setStrategistLiveStatus(jobId, t.status);
+        }
+
+        if (Array.isArray(t.transcript)) {
+          useTerminalStore.getState().setStrategistTranscript(jobId, t.transcript);
         }
 
         if (t.done) {

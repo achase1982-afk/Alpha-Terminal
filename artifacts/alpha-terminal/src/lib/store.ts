@@ -205,6 +205,7 @@ export interface TerminalState {
     tokens: string[];
     nextSince: number;
     liveStatus: string;
+    transcript: StrategistTranscriptTurn[];
   }>;
   strategistHistory: Array<{
     id: number;
@@ -217,6 +218,7 @@ export interface TerminalState {
   completeStrategistJob: (jobId: string, result: unknown) => void;
   errorStrategistJob: (jobId: string, reason: string) => void;
   appendStrategistTokens: (jobId: string, tokens: string[], nextSince: number) => void;
+  setStrategistTranscript: (jobId: string, transcript: StrategistTranscriptTurn[]) => void;
   setStrategistLiveStatus: (jobId: string, status: string) => void;
   markStrategistJobsViewed: () => void;
   setStrategistHistory: (list: Array<{ id: number; jobId: string; ticker: string; createdAt: string; cardJson: unknown }>) => void;
@@ -235,6 +237,20 @@ export interface TerminalState {
   liveNews: LiveNewsItem[];
   addLiveNews: (item: LiveNewsItem) => void;
   clearLiveNews: () => void;
+}
+
+// Mirrors the api-server TranscriptTurn shape; structured one-per-AI-turn entries
+// the UI uses to render the debate transcript live (Solo mode keeps this empty).
+export interface StrategistTranscriptTurn {
+  id: string;
+  round: 1 | 2 | 3 | 'synthesis';
+  role: 'A' | 'B' | 'synthesis' | 'system';
+  phase: 'propose' | 'critique' | 'final' | 'synthesis' | 'info';
+  model: string;
+  label: string;
+  text: string;
+  ts: number;
+  done: boolean;
 }
 
 export interface LiveNewsItem {
@@ -513,9 +529,39 @@ export const useTerminalStore = create<TerminalState>()(
               tokens: [],
               nextSince: 0,
               liveStatus: 'Starting analysis…',
+              transcript: [],
             },
           },
         })),
+      setStrategistTranscript: (jobId, transcript) =>
+        set((state) => {
+          const job = state.strategistJobs[jobId];
+          if (!job) return {};
+          const prev = job.transcript;
+          // Fast-path: both empty (every Solo-mode poll hits this).
+          if (prev.length === 0 && transcript.length === 0) return {};
+          // Per-turn equality across the whole array — debate runs A/B in
+          // parallel, so a turn ANYWHERE may have just gained tokens, not
+          // only the last one.
+          if (prev.length === transcript.length) {
+            let identical = true;
+            for (let i = 0; i < prev.length; i++) {
+              const a = prev[i];
+              const b = transcript[i];
+              if (a.id !== b.id || a.done !== b.done || a.text.length !== b.text.length) {
+                identical = false;
+                break;
+              }
+            }
+            if (identical) return {};
+          }
+          return {
+            strategistJobs: {
+              ...state.strategistJobs,
+              [jobId]: { ...job, transcript },
+            },
+          };
+        }),
       appendStrategistTokens: (jobId, tokens, nextSince) =>
         set((state) => {
           const job = state.strategistJobs[jobId];

@@ -1,7 +1,8 @@
 import { logger } from "./logger.js";
 import { getCachedRegime, buildFallbackRegime, type StructuredRegime } from "./regimePostProcessor.js";
 import { computeIOScore, type IOScoreResult } from "./ioScoreEngine.js";
-import { getSettings, type StrategistConfig } from "./strategistSettings.js";
+import { getSettings, getStrategistModel, type StrategistConfig } from "./strategistSettings.js";
+import { runDebate, type DebateCallbacks, type DebateRound, type DebateRole, type DebatePhase } from "./strategistDebate.js";
 import { db, strategistTelemetryTable } from "@workspace/db";
 import { desc, eq, sql, and } from "drizzle-orm";
 import { getBestAccessToken } from "./tokenStore.js";
@@ -300,9 +301,23 @@ NARRATIVE DISCIPLINE: Your job is structure and thesis. The code computes econom
 
 IMPORTANT: Respond with ONLY the JSON object. No markdown, no explanation text, no code fences. Just the raw JSON.`;
 
+export interface DebateTurnStartPayload {
+  id: string;
+  round: DebateRound;
+  role: DebateRole;
+  phase: DebatePhase;
+  model: string;
+  label: string;
+  startedAt: number;
+}
+
 export interface AnalyzeProgressCallbacks {
   onStatus?: (status: string) => void;
   onToken?: (text: string) => void;
+  // Debate-mode structured transcript callbacks. Solo mode never emits these.
+  onTurnStart?: (turn: DebateTurnStartPayload) => void;
+  onTurnDelta?: (turnId: string, delta: string) => void;
+  onTurnDone?: (turnId: string, finalText: string) => void;
 }
 
 export async function analyzeTickerV2(
@@ -400,15 +415,25 @@ export async function analyzeTickerV2(
 
   const dataPackage = buildDataPackage(ticker, tickerData, chainSummary, ioScore, regime, settings);
 
-  status("Calling AI for trade recommendation…");
+  const isDebateMode = settings.strategistMode === 2;
+  status(isDebateMode ? "Starting strategist debate…" : "Calling AI for trade recommendation…");
   let aiResponse: AiTradeResponse;
   let webTrace: WebSearchTrace;
   let rawAiResponseText: string;
+  // Solo-mode override: pick the user-selected solo model, not aiLab default.
+  const soloModel = !isDebateMode ? getStrategistModel(settings.strategistSoloModelIdx) : undefined;
   try {
-    const r = await callAiForTrade(dataPackage, undefined, progress);
-    aiResponse = r.response;
-    webTrace = r.trace;
-    rawAiResponseText = r.rawText;
+    if (isDebateMode) {
+      const r = await callAiForTradeViaDebate(dataPackage, settings, progress);
+      aiResponse = r.response;
+      webTrace = r.trace;
+      rawAiResponseText = r.rawText;
+    } else {
+      const r = await callAiForTrade(dataPackage, undefined, progress, soloModel);
+      aiResponse = r.response;
+      webTrace = r.trace;
+      rawAiResponseText = r.rawText;
+    }
   } catch (err) {
     logger.error({ err, ticker }, "StrategistV2: AI trade call failed");
     return noViable(ticker, regime, settings, toxicCheck, tickerData,
@@ -441,7 +466,13 @@ export async function analyzeTickerV2(
     try {
       status("Retrying with corrections…");
       const retryPrompt = buildRetryPrompt(aiResponse, validationResult.issues);
-      const r2 = await callAiForTrade(dataPackage, retryPrompt, progress);
+      // For Solo: retry on the user-selected solo model.
+      // For Debate: retry as a Solo call on Strategist A's model — debating a
+      // failed schema is not worth 6 more LLM calls.
+      const retryModel = isDebateMode
+        ? getStrategistModel(settings.strategistDebateAModelIdx)
+        : soloModel;
+      const r2 = await callAiForTrade(dataPackage, retryPrompt, progress, retryModel);
       aiResponse = r2.response;
       rawAiResponseText = r2.rawText;
       if (!Number.isFinite(aiResponse.confidence)) {
@@ -944,11 +975,12 @@ async function callAiForTrade(
   dataPackage: string,
   retryInstruction?: string,
   progress?: AnalyzeProgressCallbacks,
+  modelOverride?: { provider: "anthropic" | "google"; model: string; temperature?: number },
 ): Promise<{ response: AiTradeResponse; trace: WebSearchTrace; rawText: string }> {
   const aiCfg = getAiLabStrategistConfig();
-  const provider = aiCfg.analystModelProvider;
-  const model = aiCfg.analystModelName;
-  const temperature = aiCfg.analystTemperature;
+  const provider = (modelOverride?.provider ?? aiCfg.analystModelProvider) as "anthropic" | "google";
+  const model = modelOverride?.model ?? aiCfg.analystModelName;
+  const temperature = modelOverride?.temperature ?? aiCfg.analystTemperature;
 
   logger.info({ provider, model, temperature, webSearch: true }, "StrategistV2: calling AI for trade");
 
@@ -990,6 +1022,16 @@ async function callAiForTrade(
     topSources: trace.sources.slice(0, 5).map(s => ({ title: s.title.slice(0, 80), url: s.url })),
   }, "StrategistV2: web search trace");
 
+  return parseAiTradeRawText(rawText, trace);
+}
+
+// Shared parser for raw AI trade JSON. Used by both Solo (callAiForTrade) and
+// Debate (callAiForTradeViaDebate) code paths. Extracts JSON from the raw
+// text, normalizes the schema, and returns a fully-typed AiTradeResponse.
+function parseAiTradeRawText(
+  rawText: string,
+  trace: WebSearchTrace,
+): { response: AiTradeResponse; trace: WebSearchTrace; rawText: string } {
   logger.info({ rawSnippet: rawText.slice(0, 300) }, "StrategistV2: raw AI response snippet");
 
   let cleanText = extractJson(rawText);
@@ -1123,6 +1165,50 @@ async function callAiForTrade(
       : [],
   };
   return { response: fullResponse, trace, rawText };
+}
+
+// Debate-mode counterpart to callAiForTrade. Runs the 3-round back-and-forth
+// between two strategists, applies the configured convergence rule, and
+// parses the chosen final raw text via the same parseAiTradeRawText helper
+// that Solo mode uses.
+async function callAiForTradeViaDebate(
+  dataPackage: string,
+  settings: StrategistConfig,
+  progress?: AnalyzeProgressCallbacks,
+): Promise<{ response: AiTradeResponse; trace: WebSearchTrace; rawText: string; debateLabel: string }> {
+  const modelA = getStrategistModel(settings.strategistDebateAModelIdx);
+  const modelB = getStrategistModel(settings.strategistDebateBModelIdx);
+  const convergence = ([1, 2, 3].includes(settings.strategistConvergence)
+    ? settings.strategistConvergence
+    : 3) as 1 | 2 | 3;
+
+  logger.info(
+    {
+      modelA: modelA.model,
+      providerA: modelA.provider,
+      modelB: modelB.model,
+      providerB: modelB.provider,
+      convergence,
+    },
+    "StrategistV2: starting Debate-mode analysis",
+  );
+
+  const debateCallbacks: DebateCallbacks = {
+    onTurnStart: (t) => progress?.onTurnStart?.(t),
+    onTurnDelta: (id, delta) => progress?.onTurnDelta?.(id, delta),
+    onTurnDone: (id, finalText) => progress?.onTurnDone?.(id, finalText),
+    onStatus: (s) => progress?.onStatus?.(s),
+  };
+
+  const outcome = await runDebate({
+    systemPrompt: STRATEGIST_SYSTEM_PROMPT,
+    dataPackage,
+    config: { modelA, modelB, convergence },
+    callbacks: debateCallbacks,
+  });
+
+  const parsed = parseAiTradeRawText(outcome.finalRawText, outcome.trace);
+  return { ...parsed, debateLabel: outcome.chosenLabel };
 }
 
 function validateAiResponse(

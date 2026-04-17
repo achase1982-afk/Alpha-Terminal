@@ -37,6 +37,36 @@ export interface StrategistConfig {
   toxicPathAEnabled: number;
   toxicPathBEnabled: number;
   regimeUpdateFrequencyMin: number;
+  // Strategist mode + model selection
+  strategistMode: number; // 1 = Solo, 2 = Debate
+  strategistConvergence: number; // 1 = highest_confidence, 2 = synthesis, 3 = hybrid
+  strategistSoloModelIdx: number;
+  strategistDebateAModelIdx: number;
+  strategistDebateBModelIdx: number;
+}
+
+// Model catalog used by the strategist. Stored as an integer index in the
+// settings table (which is number-only) to avoid a schema migration.
+// IMPORTANT: only append to this list — do not reorder, or saved settings
+// will silently point at the wrong model.
+export interface StrategistModelOption {
+  provider: "anthropic" | "google";
+  model: string;
+  label: string;
+}
+
+export const STRATEGIST_MODEL_OPTIONS: StrategistModelOption[] = [
+  { provider: "anthropic", model: "claude-opus-4-6", label: "Claude Opus 4.6 (Anthropic)" },
+  { provider: "google", model: "gemini-2.5-pro", label: "Gemini 2.5 Pro (Google)" },
+  { provider: "anthropic", model: "claude-sonnet-4-7", label: "Claude Sonnet 4.7 (Anthropic)" },
+  { provider: "google", model: "gemini-2.5-flash", label: "Gemini 2.5 Flash (Google)" },
+];
+
+export function getStrategistModel(idx: number): StrategistModelOption {
+  if (!Number.isFinite(idx) || idx < 0 || idx >= STRATEGIST_MODEL_OPTIONS.length) {
+    return STRATEGIST_MODEL_OPTIONS[0];
+  }
+  return STRATEGIST_MODEL_OPTIONS[Math.floor(idx)];
 }
 
 const DEFAULTS: Record<string, number> = {
@@ -74,6 +104,11 @@ const DEFAULTS: Record<string, number> = {
   toxicPathAEnabled: 1,
   toxicPathBEnabled: 1,
   regimeUpdateFrequencyMin: 5,
+  strategistMode: 1,
+  strategistConvergence: 3,
+  strategistSoloModelIdx: 0,
+  strategistDebateAModelIdx: 0,
+  strategistDebateBModelIdx: 1,
 };
 
 let settingsCache: Record<string, number> | null = null;
@@ -131,7 +166,7 @@ export function getDefaults(): Record<string, number> {
   return { ...DEFAULTS };
 }
 
-export function getSettingMeta(): Array<{
+export interface SettingMetaEntry {
   key: string;
   label: string;
   group: string;
@@ -140,8 +175,26 @@ export function getSettingMeta(): Array<{
   max: number;
   step: number;
   description: string;
-}> {
+  /** Optional discrete options. When present, render as a dropdown. */
+  options?: Array<{ value: number; label: string }>;
+}
+
+export function getSettingMeta(): SettingMetaEntry[] {
+  const modelOptions = STRATEGIST_MODEL_OPTIONS.map((m, i) => ({ value: i, label: m.label }));
   return [
+    { key: "strategistMode", label: "Strategist Mode", group: "AI Strategist", default: 1, min: 1, max: 2, step: 1, description: "Solo = one strategist runs the analysis. Debate = two strategists go back-and-forth across three rounds and converge on a single trade.", options: [
+      { value: 1, label: "Solo (1 strategist)" },
+      { value: 2, label: "Debate (2 strategists)" },
+    ] },
+    { key: "strategistSoloModelIdx", label: "Solo Strategist Model", group: "AI Strategist", default: 0, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "AI model used in Solo mode.", options: modelOptions },
+    { key: "strategistDebateAModelIdx", label: "Debate — Strategist A Model", group: "AI Strategist", default: 0, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model for Strategist A in Debate mode. Can match B (twin debate) or differ (cross-provider debate).", options: modelOptions },
+    { key: "strategistDebateBModelIdx", label: "Debate — Strategist B Model", group: "AI Strategist", default: 1, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model for Strategist B in Debate mode.", options: modelOptions },
+    { key: "strategistConvergence", label: "Debate Convergence", group: "AI Strategist", default: 3, min: 1, max: 3, step: 1, description: "How the single final report is produced after the two strategists finish debating.", options: [
+      { value: 1, label: "Higher confidence wins (fastest)" },
+      { value: 2, label: "Synthesis pass (extra LLM merges both)" },
+      { value: 3, label: "Hybrid — agree → synthesis, disagree → higher confidence" },
+    ] },
+
     { key: "ioWeightR2", label: "Market Independence (R²)", group: "IOScore", default: 0.30, min: 0, max: 0.50, step: 0.05, description: "How much weight the 'is this stock independent from SPY' factor gets." },
     { key: "ioWeightResidual", label: "Abnormal Move (Residual Return)", group: "IOScore", default: 0.25, min: 0, max: 0.50, step: 0.05, description: "How much weight the 'is this stock making an unusual move' factor gets." },
     { key: "ioWeightCatalyst", label: "Catalyst (Benzinga)", group: "IOScore", default: 0.25, min: 0, max: 0.50, step: 0.05, description: "How much weight the 'does this stock have earnings/analyst news' factor gets." },

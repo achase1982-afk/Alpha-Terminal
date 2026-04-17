@@ -11,6 +11,20 @@ interface SettingMeta {
   max: number;
   step: number;
   description: string;
+  // When present, the UI renders a dropdown of these choices instead of the
+  // numeric range slider. Used for enum-like settings such as strategist mode,
+  // convergence strategy, and per-strategist model selection.
+  options?: Array<{ value: number; label: string }>;
+}
+
+// Pin "AI Strategist" to the top so users see the mode/model controls first.
+const GROUP_ORDER = ["AI Strategist"];
+function sortedGroups<T>(groups: Map<string, T>): Array<[string, T]> {
+  const all = Array.from(groups.keys());
+  const ordered: string[] = [];
+  for (const g of GROUP_ORDER) if (all.includes(g)) ordered.push(g);
+  for (const g of all) if (!ordered.includes(g)) ordered.push(g);
+  return ordered.map((g) => [g, groups.get(g)!] as [string, T]);
 }
 
 interface SettingsData {
@@ -108,12 +122,13 @@ export function StrategistSettingsPanel() {
         </div>
       )}
 
-      {Array.from(groups).map(([group, items]) => (
+      {sortedGroups(groups).map(([group, items]) => (
         <div key={group} className="space-y-3">
           <h3 className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest font-medium border-b border-zinc-800 pb-1">{group}</h3>
           {items.map((m) => {
             const val = data.current[m.key] ?? m.default;
-            const isToggle = m.min === 0 && m.max === 1 && m.step === 1;
+            const isDropdown = Array.isArray(m.options) && m.options.length > 0;
+            const isToggle = !isDropdown && m.min === 0 && m.max === 1 && m.step === 1;
             return (
               <div key={m.key} className="space-y-1">
                 <div className="flex items-center justify-between">
@@ -121,7 +136,17 @@ export function StrategistSettingsPanel() {
                   <div className="flex items-center gap-2">
                     {saving === m.key && <span className="text-[10px] text-zinc-500 font-mono">saving...</span>}
                     {saved === m.key && <Check className="w-3 h-3 text-green-400" />}
-                    {isToggle ? (
+                    {isDropdown ? (
+                      <select
+                        value={val}
+                        onChange={(e) => handleChange(m.key, Number(e.target.value))}
+                        className="font-mono text-[11px] text-white bg-zinc-900 border border-zinc-700 rounded px-2 py-1 hover:border-[#f5a623] focus:border-[#f5a623] focus:outline-none"
+                      >
+                        {m.options!.map((opt) => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                      </select>
+                    ) : isToggle ? (
                       <button
                         onClick={() => handleChange(m.key, val === 1 ? 0 : 1)}
                         className={`relative w-9 h-5 rounded-full transition-colors ${val === 1 ? "bg-[#f5a623]" : "bg-zinc-700"}`}
@@ -133,7 +158,7 @@ export function StrategistSettingsPanel() {
                     )}
                   </div>
                 </div>
-                {!isToggle && (
+                {!isToggle && !isDropdown && (
                   <input
                     type="range"
                     min={m.min}

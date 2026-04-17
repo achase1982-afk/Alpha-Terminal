@@ -1392,6 +1392,105 @@ function AiNarrativePanel({ text, streamingText, isStreaming }: {
   );
 }
 
+// Renders the structured Solo/Debate transcript: round headers + per-turn
+// chips (A=gold, B=cyan, synthesis=green) with a streaming caret on the
+// active turn. One single box, color-coded; collapses to fall back when the
+// turn list is empty.
+function DebateTranscript({
+  transcript,
+  isStreaming,
+}: {
+  transcript: import("@/lib/store").StrategistTranscriptTurn[];
+  isStreaming: boolean;
+}) {
+  const groups = useMemo(() => {
+    const m = new Map<1 | 2 | 3 | "synthesis", typeof transcript>();
+    for (const t of transcript) {
+      const key = t.round;
+      if (!m.has(key)) m.set(key, [] as unknown as typeof transcript);
+      (m.get(key) as typeof transcript).push(t);
+    }
+    return Array.from(m.entries());
+  }, [transcript]);
+
+  const roleStyle = (role: string): { bg: string; fg: string; border: string; label: string } => {
+    switch (role) {
+      case "A":
+        return { bg: "rgba(255,184,0,0.12)", fg: "#FFB800", border: "rgba(255,184,0,0.4)", label: "A" };
+      case "B":
+        return { bg: "rgba(38,198,218,0.12)", fg: "#26C6DA", border: "rgba(38,198,218,0.4)", label: "B" };
+      case "synthesis":
+        return { bg: "rgba(0,209,102,0.12)", fg: "#00D166", border: "rgba(0,209,102,0.4)", label: "S" };
+      default:
+        return { bg: "rgba(255,255,255,0.06)", fg: "#999", border: "rgba(255,255,255,0.15)", label: "·" };
+    }
+  };
+
+  const phaseLabel = (phase: string, round: 1 | 2 | 3 | "synthesis"): string => {
+    if (round === "synthesis") return "Synthesis";
+    if (phase === "propose") return `Round ${round} · Propose`;
+    if (phase === "critique") return `Round ${round} · Critique`;
+    if (phase === "final") return `Round ${round} · Final`;
+    return phase;
+  };
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!scrollRef.current) return;
+    scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [transcript]);
+
+  return (
+    <div
+      ref={scrollRef}
+      className="rounded-lg p-4 max-h-[480px] overflow-y-auto space-y-4"
+      style={{ background: "#0c0c0e", border: "1px solid rgba(255,184,0,0.18)" }}
+    >
+      {groups.map(([round, turns]) => (
+        <div key={String(round)} className="space-y-2">
+          <div
+            className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#999] pb-1"
+            style={{ borderBottom: "1px dashed rgba(255,255,255,0.08)" }}
+          >
+            {round === "synthesis" ? "Synthesis Pass" : `Round ${round}`}
+          </div>
+          {turns.map((t) => {
+            const style = roleStyle(t.role);
+            const showCaret = isStreaming && !t.done;
+            return (
+              <div
+                key={t.id}
+                className="rounded-md p-3"
+                style={{ background: style.bg, border: `1px solid ${style.border}` }}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <span
+                    className="inline-flex items-center justify-center font-mono font-bold text-[10px] w-5 h-5 rounded"
+                    style={{ background: style.fg, color: "#0c0c0e" }}
+                  >
+                    {style.label}
+                  </span>
+                  <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: style.fg }}>
+                    {t.label}
+                  </span>
+                  <span className="font-mono text-[9px] text-[#666]">{t.model}</span>
+                  <span className="ml-auto font-mono text-[9px] text-[#666]">{phaseLabel(t.phase, t.round)}</span>
+                </div>
+                <div className="font-mono text-[11px] leading-[1.55] text-[#ddd] whitespace-pre-wrap break-words">
+                  {t.text || (showCaret ? "" : <span className="text-[#666]">(no output)</span>)}
+                  {showCaret && (
+                    <span className="inline-block w-[7px] h-[12px] ml-0.5 align-middle" style={{ background: style.fg }} />
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function CollapsibleAiReasoning({ detThinking, isDetStreaming, detNarrative, detStreamingText }: {
   detThinking: string[];
   isDetStreaming: boolean;
@@ -2188,6 +2287,9 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
   const v2LiveStatus: string = activeJobIdForSymbol
     ? strategistJobs[activeJobIdForSymbol]?.liveStatus ?? ""
     : "";
+  const v2Transcript = activeJobIdForSymbol
+    ? strategistJobs[activeJobIdForSymbol]?.transcript ?? []
+    : [];
 
   // Fetch history on mount AND every time the strategist sub-tab becomes
   // active. This ensures cards saved on the server always re-appear when the
@@ -2827,7 +2929,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
 
             {/* Live AI reasoning sits directly beneath the ticker bar.
                 Auto-collapses when the run finishes; expand to view + copy. */}
-            {(isV2Running || v2ThinkingTokens.length > 0) && (
+            {(isV2Running || v2ThinkingTokens.length > 0 || v2Transcript.length > 0) && (
               <div className="space-y-2">
                 {isV2Running && (v2LiveStatus || strategistStatus) && (
                   <div className="flex items-center gap-2 px-4 py-2 rounded-lg"
@@ -2836,7 +2938,11 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
                     <span className="font-mono text-[11px] text-[#FFB800] tracking-wider">{v2LiveStatus || strategistStatus}</span>
                   </div>
                 )}
-                <AiThinkingFeed texts={v2ThinkingTokens} isStreaming={isV2Running} />
+                {v2Transcript.length > 0 ? (
+                  <DebateTranscript transcript={v2Transcript} isStreaming={isV2Running} />
+                ) : (
+                  <AiThinkingFeed texts={v2ThinkingTokens} isStreaming={isV2Running} />
+                )}
               </div>
             )}
 

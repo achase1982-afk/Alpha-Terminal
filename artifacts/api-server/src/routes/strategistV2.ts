@@ -13,12 +13,28 @@ router.get("/regime", (_req, res) => {
   res.json(regime);
 });
 
+// Structured debate transcript turn. In Solo mode the transcript stays empty
+// and the UI falls back to the existing token feed; in Debate mode each AI
+// turn is one entry whose `text` grows as tokens stream in.
+export type TranscriptTurn = {
+  id: string;
+  round: 1 | 2 | 3 | "synthesis";
+  role: "A" | "B" | "synthesis" | "system";
+  phase: "propose" | "critique" | "final" | "synthesis" | "info";
+  model: string;
+  label: string;
+  text: string;
+  ts: number;
+  done: boolean;
+};
+
 // In-memory live thinking buffer per jobId (for streaming-style polling)
 type ThinkingEntry = {
   jobId: string;
   ticker: string;
   status: string;
   tokens: string[];
+  transcript: TranscriptTurn[];
   done: boolean;
   result?: StrategistV2Result;
   error?: string;
@@ -74,6 +90,7 @@ router.post("/analyze", async (req, res): Promise<void> => {
         ticker: upperTicker,
         status: "Starting analysis…",
         tokens: [],
+        transcript: [],
         done: false,
         startedAt: Date.now(),
       };
@@ -90,6 +107,32 @@ router.post("/analyze", async (req, res): Promise<void> => {
               entry.tokens.push(t);
               // Cap memory: keep last ~6000 tokens (~24KB+)
               if (entry.tokens.length > 6000) entry.tokens.splice(0, entry.tokens.length - 6000);
+            },
+            onTurnStart: (turn) => {
+              entry.transcript.push({
+                id: turn.id,
+                round: turn.round,
+                role: turn.role,
+                phase: turn.phase,
+                model: turn.model,
+                label: turn.label,
+                text: "",
+                ts: turn.startedAt,
+                done: false,
+              });
+              // Defensive cap on transcript size (3 rounds * 2 + synthesis = 7 max).
+              if (entry.transcript.length > 32) entry.transcript.splice(0, entry.transcript.length - 32);
+            },
+            onTurnDelta: (turnId, delta) => {
+              const t = entry.transcript.find(x => x.id === turnId);
+              if (t) t.text += delta;
+            },
+            onTurnDone: (turnId, finalText) => {
+              const t = entry.transcript.find(x => x.id === turnId);
+              if (t) {
+                t.text = finalText;
+                t.done = true;
+              }
             },
           });
           entry.result = result;
@@ -138,6 +181,7 @@ router.get("/thinking/:jobId", (req, res): void => {
     status: entry.status,
     tokens,
     nextSince: totalTokens,
+    transcript: entry.transcript,
     done: entry.done,
     result: entry.result ?? null,
     error: entry.error ?? null,
