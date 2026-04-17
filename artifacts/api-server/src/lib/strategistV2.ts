@@ -508,8 +508,16 @@ export async function analyzeTickerV2(
       const ctx = buildContextSources(aiResponse, webTrace);
       const blocked = await noViable(
         ticker, regime, settings, toxicCheck, tickerData,
-        `Economics validation failed: AI self-reported maxRisk $${aiSelfReportedMaxRisk.toFixed(2)} vs leg-derived maxLoss $${computedMaxLossCheck.toFixed(2)} (discrepancy ${Math.round(discrepancy * 100)}%, threshold 50%). The proposed structure cannot be priced reliably with current models.`,
+        `economics validation failed: AI maxRisk $${aiSelfReportedMaxRisk.toFixed(2)} vs computed $${computedMaxLossCheck.toFixed(2)}, discrepancy exceeds threshold`,
         ioScore,
+        {
+          dataSource,
+          dataPackage,
+          rawAiResponse: rawAiResponseText,
+          confidenceBase: aiResponse.confidence,
+          confidenceFinal: aiResponse.confidence,
+          catalystAlignment: aiResponse.catalystAlignment ?? null,
+        },
       );
       blocked.contextSources = ctx;
       return blocked;
@@ -1097,10 +1105,6 @@ function validateAiResponse(
     "calendar_spread",
     "diagonal_spread",
     "vertical",
-    "call_debit_spread",
-    "put_debit_spread",
-    "calendar",
-    "diagonal",
   ]);
   if (!allowedStrategies.has(response.strategy)) {
     issues.push(`Strategy "${response.strategy}" is not permitted. Allowed structures: bull_call_spread, bear_put_spread, bull_put_spread, bear_call_spread, iron_condor, iron_butterfly, calendar_spread, diagonal_spread, vertical. Reformulate the trade using one of these defined-risk structures.`);
