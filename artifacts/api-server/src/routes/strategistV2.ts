@@ -55,11 +55,24 @@ function pruneThinkingBuffer() {
   }
 }
 
-async function persistHistory(jobId: string, ticker: string, result: StrategistV2Result) {
+async function persistHistory(
+  jobId: string,
+  ticker: string,
+  result: StrategistV2Result,
+  debateTranscript?: TranscriptTurn[],
+) {
   try {
+    // Stash the debate transcript inside cardJson so it travels with the
+    // saved trade card and can be re-rendered from history without needing
+    // a DB migration. cardJson is jsonb; downstream typings treat unknown
+    // fields as optional.
+    const cardJson =
+      debateTranscript && debateTranscript.length > 0
+        ? ({ ...result, debateTranscript } as unknown as object)
+        : (result as unknown as object);
     await db
       .insert(strategistHistoryTable)
-      .values({ jobId, ticker, cardJson: result as unknown as object, cleared: false })
+      .values({ jobId, ticker, cardJson, cleared: false })
       .onConflictDoNothing({ target: strategistHistoryTable.jobId });
   } catch (persistErr) {
     logger.warn({ persistErr, jobId, ticker }, "StrategistV2: failed to persist history (non-fatal)");
@@ -139,7 +152,7 @@ router.post("/analyze", async (req, res): Promise<void> => {
           entry.status = "Done";
           entry.done = true;
           entry.finishedAt = Date.now();
-          await persistHistory(jobId, upperTicker, result);
+          await persistHistory(jobId, upperTicker, result, entry.transcript);
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           entry.error = message;

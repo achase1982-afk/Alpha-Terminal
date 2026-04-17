@@ -1399,9 +1399,13 @@ function AiNarrativePanel({ text, streamingText, isStreaming }: {
 function DebateTranscript({
   transcript,
   isStreaming,
+  defaultCollapsed = false,
+  title = "Bull · Bear Debate",
 }: {
   transcript: import("@/lib/store").StrategistTranscriptTurn[];
   isStreaming: boolean;
+  defaultCollapsed?: boolean;
+  title?: string;
 }) {
   const groups = useMemo(() => {
     const m = new Map<1 | 2 | 3 | "synthesis", typeof transcript>();
@@ -1466,6 +1470,37 @@ function DebateTranscript({
     scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [transcript]);
 
+  // Collapse behavior: expanded while the run is streaming so the user can
+  // watch live, then auto-collapses once the run finishes (mirrors the prior
+  // CollapsibleAiReasoning pattern). User can manually toggle either way.
+  const [collapsed, setCollapsed] = useState<boolean>(defaultCollapsed || !isStreaming);
+  const wasStreamingRef = useRef<boolean>(isStreaming);
+  useEffect(() => {
+    if (wasStreamingRef.current && !isStreaming) {
+      // streaming just ended → collapse
+      setCollapsed(true);
+    }
+    wasStreamingRef.current = isStreaming;
+  }, [isStreaming]);
+
+  // Derive a short summary for the collapsed header (verdict + turn count).
+  const summary = useMemo(() => {
+    const turnCount = transcript.length;
+    const verdictTurn = [...transcript].reverse().find((t) => t.role === "system" && t.phase === "info");
+    let verdict: string | null = null;
+    if (verdictTurn) {
+      try {
+        const parsed = JSON.parse(verdictTurn.text.replace(/^```(json)?/i, "").replace(/```\s*$/i, "").trim());
+        if (parsed && typeof parsed.verdict === "string") verdict = parsed.verdict;
+      } catch {
+        /* noop */
+      }
+    }
+    if (turnCount === 0) return "no turns yet";
+    if (verdict) return `${verdict} · ${turnCount} turns`;
+    return `${turnCount} turns`;
+  }, [transcript]);
+
   const [copied, setCopied] = useState(false);
   const handleCopy = () => {
     const payload = transcript.map((t) => ({
@@ -1512,16 +1547,29 @@ function DebateTranscript({
       style={{ background: "#0c0c0e", border: "1px solid rgba(255,184,0,0.18)" }}
     >
       <div
-        className="flex items-center justify-between px-4 py-2"
-        style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}
+        className="flex items-center gap-2 px-4 py-2"
+        style={{ borderBottom: collapsed ? "none" : "1px solid rgba(255,255,255,0.06)" }}
       >
-        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#FFB800]">
-          Bull · Bear Debate
-        </span>
+        <button
+          onClick={() => setCollapsed((c) => !c)}
+          className="flex items-center gap-2 flex-1 min-w-0 text-left"
+          aria-label={collapsed ? "Expand debate transcript" : "Collapse debate transcript"}
+        >
+          <span className="font-mono text-[11px] text-[#FFB800] leading-none">
+            {collapsed ? "▸" : "▾"}
+          </span>
+          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#FFB800]">
+            {title}
+          </span>
+          {isStreaming && (
+            <span className="w-2 h-2 rounded-full bg-[#FFB800] animate-pulse" />
+          )}
+          <span className="font-mono text-[10px] text-[#888] truncate">· {summary}</span>
+        </button>
         <button
           onClick={handleCopy}
           disabled={transcript.length === 0}
-          className="font-mono text-[10px] uppercase tracking-wider px-2 py-1 rounded transition-colors disabled:opacity-40"
+          className="font-mono text-[10px] uppercase tracking-wider px-2 py-1 rounded transition-colors disabled:opacity-40 shrink-0"
           style={{
             background: copied ? "rgba(0,209,102,0.15)" : "rgba(255,184,0,0.10)",
             border: `1px solid ${copied ? "rgba(0,209,102,0.5)" : "rgba(255,184,0,0.4)"}`,
@@ -1531,7 +1579,8 @@ function DebateTranscript({
           {copied ? "✓ Copied" : "⧉ Copy JSON"}
         </button>
       </div>
-      <div ref={scrollRef} className="p-4 max-h-[480px] overflow-y-auto space-y-4">
+      {!collapsed && (
+      <div ref={scrollRef} className="p-4 max-h-[360px] overflow-y-auto space-y-4">
       {groups.map(([round, turns], gi) => (
         <div key={String(round)} className="space-y-3">
           <div
@@ -1570,6 +1619,7 @@ function DebateTranscript({
         </div>
       ))}
       </div>
+      )}
     </div>
   );
 }
