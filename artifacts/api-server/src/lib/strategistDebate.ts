@@ -115,11 +115,22 @@ async function runTurn(args: {
   }
 }
 
-const PROPOSE_INSTRUCTION = (today: string, dataPackage: string) =>
-  `Today is ${today}. You are one of TWO strategists who will debate this trade. Right now this is ROUND 1 — propose your initial trade independently. Use web search per the WEB SEARCH MANDATE in your system prompt. Then output ONLY the JSON object specified by your system prompt. No markdown, no commentary.\n\n${dataPackage}`;
+const PROPOSE_INSTRUCTION = (
+  today: string,
+  dataPackage: string,
+  myPersonaName: string,
+  otherPersonaName: string,
+) =>
+  `Today is ${today}. You are one of TWO strategists who will debate this trade. You are the **${myPersonaName}** strategist; the other side is the **${otherPersonaName}** strategist. Right now this is ROUND 1 — propose your initial trade independently, fully in role. Use web search per the WEB SEARCH MANDATE in your system prompt. Then output ONLY the JSON object specified by your system prompt. No markdown, no commentary.\n\n${dataPackage}`;
 
-const CRITIQUE_INSTRUCTION = (mySide: "A" | "B", myProposal: string, otherProposal: string) =>
-  `ROUND 2 — critique and (optionally) revise. You are Strategist ${mySide}. Below is your Round-1 proposal and the other strategist's Round-1 proposal. Compare them honestly. If their structure is materially better, say so and adopt the better elements. If yours is better, defend it. If neither is right, propose something different.
+const CRITIQUE_INSTRUCTION = (
+  mySide: "A" | "B",
+  myProposal: string,
+  otherProposal: string,
+  myPersonaName: string,
+  otherPersonaName: string,
+) =>
+  `ROUND 2 — critique and (optionally) revise. You are Strategist ${mySide} (the **${myPersonaName}** strategist). Below is your Round-1 proposal and the **${otherPersonaName}** strategist's Round-1 proposal. STAY IN ROLE — do not flip sides. You may adopt better technical elements (strikes, expiry, structure) from the other side IF they strengthen YOUR ${myPersonaName.toLowerCase()} thesis. Do not concede the directional view. If their analysis is technically wrong, say so. If yours is the better expression of your view, defend it.
 
 Output a single JSON object with EXACTLY these two fields:
 {
@@ -151,8 +162,10 @@ const FINAL_INSTRUCTION = (
   otherRevised: string,
   otherCritique: string,
   convergence: 1 | 2 | 3,
+  myPersonaName: string,
+  otherPersonaName: string,
 ) =>
-  `ROUND 3 — final commit. You are Strategist ${mySide}. You have seen the other strategist's Round-2 critique of your work and their revised proposal. Commit to your final position now and set your confidence honestly.
+  `ROUND 3 — final commit. You are Strategist ${mySide} (the **${myPersonaName}** strategist). You have seen the **${otherPersonaName}** strategist's Round-2 critique of your work and their revised proposal. STAY IN ROLE. Commit to your final position now — the strongest possible expression of the ${myPersonaName.toLowerCase()} case for this name — and set your confidence honestly.
 
 ${CONVERGENCE_RULE(convergence)}
 
@@ -167,15 +180,22 @@ ${otherCritique}
 OTHER strategist's Round-2 revised proposal:
 ${otherRevised}`;
 
-const SYNTHESIS_INSTRUCTION = (finalA: string, finalB: string) =>
-  `Two strategists just finished a 3-round debate. Both have committed final proposals. Your job: produce ONE merged final trade JSON. Take the structure that has the strongest combined edge — borrow strikes/expiry/sizing from whichever side argued it best. If they agree on direction and structure, lean toward the higher-confidence version but harmonize the thesis prose. If they disagree on direction, pick the side with the stronger documented edge (not just higher confidence) and explain why in the thesis. Confidence should reflect the merged conviction, not the average.
+const SYNTHESIS_INSTRUCTION = (
+  finalA: string,
+  finalB: string,
+  personaNameA: string,
+  personaNameB: string,
+) =>
+  `Two strategists just finished a 3-round debate. Strategist A argued the **${personaNameA}** case; Strategist B argued the **${personaNameB}** case. You are now NEUTRAL — drop both roles and act as the senior PM making the actual capital allocation decision.
+
+Your job: produce ONE merged final trade JSON. Weigh both sides on their evidence (vol, flow, Greeks, catalyst, structure, edge) — not on rhetoric. If one side's edge is materially stronger, ship that side's structure and explain why in the thesis. If both sides surface real edge in opposing directions, you may pick a vol-neutral or defined-risk structure that respects both views (iron condor, calendar, ratio) — but only if the data actually supports it; do not manufacture a "compromise" trade. If neither side has edge, set confidence low and warn accordingly. Confidence should reflect the merged conviction, not the average of the two.
 
 Output ONLY the JSON object specified by your system prompt. No fences, no extra prose.
 
-Strategist A's final commit:
+Strategist A (${personaNameA}) final commit:
 ${finalA}
 
-Strategist B's final commit:
+Strategist B (${personaNameB}) final commit:
 ${finalB}`;
 
 interface ParsedFinalForConvergence {
@@ -247,39 +267,62 @@ export async function runDebate(args: {
   systemPrompt: string;
   dataPackage: string;
   config: DebateConfig;
+  /** Optional persona suffix appended to systemPrompt for Strategist A. */
+  personaA?: string;
+  /** Optional persona suffix appended to systemPrompt for Strategist B. */
+  personaB?: string;
+  /** Short display name for A's persona (e.g. "Bull"). Used in transcript chips and prompts. */
+  personaNameA?: string;
+  /** Short display name for B's persona (e.g. "Bear"). */
+  personaNameB?: string;
   callbacks?: DebateCallbacks;
 }): Promise<DebateOutcome> {
   const { systemPrompt, dataPackage, config, callbacks } = args;
+  const personaNameA = args.personaNameA ?? "Strategist A";
+  const personaNameB = args.personaNameB ?? "Strategist B";
+  const sysA = args.personaA ? `${systemPrompt}\n\n${args.personaA}` : systemPrompt;
+  const sysB = args.personaB ? `${systemPrompt}\n\n${args.personaB}` : systemPrompt;
+  // Per-side display labels used in transcript chips and chosenLabel.
+  // Wrap the model so its `label` carries the persona prefix without mutating
+  // the caller's modelOpt.
+  const modelADisplay: StrategistModelOption = {
+    ...config.modelA,
+    label: `${personaNameA} · ${config.modelA.label}`,
+  };
+  const modelBDisplay: StrategistModelOption = {
+    ...config.modelB,
+    label: `${personaNameB} · ${config.modelB.label}`,
+  };
   const today = new Date().toISOString().slice(0, 10);
 
-  callbacks?.onStatus?.("Round 1 — strategists drafting independent proposals…");
-
-  const r1Prompt = PROPOSE_INSTRUCTION(today, dataPackage);
+  callbacks?.onStatus?.(`Round 1 — ${personaNameA} and ${personaNameB} drafting independent proposals…`);
 
   // Round 1 — run A and B in parallel for speed (no cross-dependency yet).
   const [r1a, r1b] = await Promise.all([
     runTurn({
-      modelOpt: config.modelA, systemPrompt, prompt: r1Prompt,
+      modelOpt: modelADisplay, systemPrompt: sysA,
+      prompt: PROPOSE_INSTRUCTION(today, dataPackage, personaNameA, personaNameB),
       round: 1, role: "A", phase: "propose", callbacks,
     }),
     runTurn({
-      modelOpt: config.modelB, systemPrompt, prompt: r1Prompt,
+      modelOpt: modelBDisplay, systemPrompt: sysB,
+      prompt: PROPOSE_INSTRUCTION(today, dataPackage, personaNameB, personaNameA),
       round: 1, role: "B", phase: "propose", callbacks,
     }),
   ]);
 
-  callbacks?.onStatus?.("Round 2 — strategists critiquing each other…");
+  callbacks?.onStatus?.(`Round 2 — ${personaNameA} and ${personaNameB} critiquing each other…`);
 
   // Round 2 — each sees the other's R1 proposal and critiques + revises.
   const [r2a, r2b] = await Promise.all([
     runTurn({
-      modelOpt: config.modelA, systemPrompt,
-      prompt: CRITIQUE_INSTRUCTION("A", r1a.text, r1b.text),
+      modelOpt: modelADisplay, systemPrompt: sysA,
+      prompt: CRITIQUE_INSTRUCTION("A", r1a.text, r1b.text, personaNameA, personaNameB),
       round: 2, role: "A", phase: "critique", callbacks,
     }),
     runTurn({
-      modelOpt: config.modelB, systemPrompt,
-      prompt: CRITIQUE_INSTRUCTION("B", r1b.text, r1a.text),
+      modelOpt: modelBDisplay, systemPrompt: sysB,
+      prompt: CRITIQUE_INSTRUCTION("B", r1b.text, r1a.text, personaNameB, personaNameA),
       round: 2, role: "B", phase: "critique", callbacks,
     }),
   ]);
@@ -304,18 +347,18 @@ export async function runDebate(args: {
   const r2aParsed = extractRevised(r2a.text);
   const r2bParsed = extractRevised(r2b.text);
 
-  callbacks?.onStatus?.("Round 3 — strategists committing final positions…");
+  callbacks?.onStatus?.(`Round 3 — ${personaNameA} and ${personaNameB} committing final positions…`);
 
   // Round 3 — final commit. Each sees the other's revised proposal and critique.
   const [r3a, r3b] = await Promise.all([
     runTurn({
-      modelOpt: config.modelA, systemPrompt,
-      prompt: FINAL_INSTRUCTION("A", r2aParsed.revised, r2bParsed.revised, r2bParsed.critique, config.convergence),
+      modelOpt: modelADisplay, systemPrompt: sysA,
+      prompt: FINAL_INSTRUCTION("A", r2aParsed.revised, r2bParsed.revised, r2bParsed.critique, config.convergence, personaNameA, personaNameB),
       round: 3, role: "A", phase: "final", callbacks,
     }),
     runTurn({
-      modelOpt: config.modelB, systemPrompt,
-      prompt: FINAL_INSTRUCTION("B", r2bParsed.revised, r2aParsed.revised, r2aParsed.critique, config.convergence),
+      modelOpt: modelBDisplay, systemPrompt: sysB,
+      prompt: FINAL_INSTRUCTION("B", r2bParsed.revised, r2aParsed.revised, r2aParsed.critique, config.convergence, personaNameB, personaNameA),
       round: 3, role: "B", phase: "final", callbacks,
     }),
   ]);
@@ -350,11 +393,18 @@ export async function runDebate(args: {
   );
 
   if (useSynthesis) {
-    callbacks?.onStatus?.("Synthesis pass — merging both finals into one report…");
+    callbacks?.onStatus?.("Synthesis pass — neutral PM merging bull and bear into one trade…");
+    // Synthesis is intentionally NEUTRAL — uses base systemPrompt without
+    // either persona suffix so the synthesizer can pick the better-supported
+    // side (or a vol-neutral structure) on its merits.
+    const synthModel: StrategistModelOption = {
+      ...config.modelA,
+      label: `Synthesis · ${config.modelA.label}`,
+    };
     const synth = await runTurn({
-      modelOpt: config.modelA, // synthesis runs on Strategist A's model by convention
-      systemPrompt,
-      prompt: SYNTHESIS_INSTRUCTION(r3a.text, r3b.text),
+      modelOpt: synthModel,
+      systemPrompt, // base, no persona
+      prompt: SYNTHESIS_INSTRUCTION(r3a.text, r3b.text, personaNameA, personaNameB),
       round: "synthesis",
       role: "synthesis",
       phase: "synthesis",
@@ -367,7 +417,10 @@ export async function runDebate(args: {
   } else {
     const winner = pickHigherConfidence(finalA, finalB);
     chosenSide = winner;
-    chosenLabel = winner === "A" ? `Strategist A (${config.modelA.label})` : `Strategist B (${config.modelB.label})`;
+    chosenLabel =
+      winner === "A"
+        ? `${personaNameA} (${config.modelA.label})`
+        : `${personaNameB} (${config.modelB.label})`;
     finalRawText = winner === "A" ? r3a.text : r3b.text;
   }
 
