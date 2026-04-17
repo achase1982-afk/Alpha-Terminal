@@ -31,16 +31,33 @@ export interface DebateCallbacks {
 export interface DebateConfig {
   modelA: StrategistModelOption;
   modelB: StrategistModelOption;
+  /**
+   * Convergence is reinterpreted as the tie-band width (in confidence points)
+   * for the verdict step. Tighter bands push more results to a directional
+   * winner; wider bands push more results to SIDEWAYS.
+   *  1 = tight band (5 pts) — almost always picks a directional winner
+   *  2 = wide band (20 pts) — favors SIDEWAYS / vol-neutral when sides are close
+   *  3 = medium band (10 pts) — balanced (default)
+   */
   convergence: 1 | 2 | 3;
 }
 
+export type DebateVerdict = "BULLISH" | "BEARISH" | "SIDEWAYS";
+
 export interface DebateOutcome {
+  /** The full trade JSON produced by the trade-build phase. */
   finalRawText: string;
   trace: WebSearchTrace;
+  /** Side that ended up shipping the trade: A, B, or synthesis (= sideways/neutral build). */
   chosenSide: "A" | "B" | "synthesis";
   chosenLabel: string;
+  /** Round-2 (post-rebuttal) raw outputs for downstream context, not validation. */
   finalAText: string;
   finalBText: string;
+  /** Verdict from phase 1 — ships in the outcome so callers can log it. */
+  verdict: DebateVerdict;
+  bullConfidence: number;
+  bearConfidence: number;
 }
 
 const TEMPERATURE = 0;
@@ -115,138 +132,163 @@ async function runTurn(args: {
   }
 }
 
-const PROPOSE_INSTRUCTION = (
+/**
+ * Emits a synthetic "system" turn into the transcript without making any LLM
+ * call. Used for the verdict announcement.
+ */
+function emitSystemTurn(args: {
+  text: string;
+  round: DebateRound;
+  phase: DebatePhase;
+  label: string;
+  callbacks?: DebateCallbacks;
+}): void {
+  const { text, round, phase, label, callbacks } = args;
+  const id = newTurnId();
+  callbacks?.onTurnStart?.({
+    id,
+    round,
+    role: "system",
+    phase,
+    model: "system",
+    label,
+    startedAt: Date.now(),
+  });
+  callbacks?.onTurnDelta?.(id, text);
+  callbacks?.onTurnDone?.(id, text);
+}
+
+// ---------- Phase 1 prompts (lightweight directional debate) ----------
+
+const DIRECTIONAL_PROPOSE_INSTRUCTION = (
   today: string,
   dataPackage: string,
   myPersonaName: string,
   otherPersonaName: string,
 ) =>
-  `Today is ${today}. You are one of TWO strategists who will debate this trade. You are the **${myPersonaName}** strategist; the other side is the **${otherPersonaName}** strategist. Right now this is ROUND 1 — propose your initial trade independently, fully in role. Use web search per the WEB SEARCH MANDATE in your system prompt. Then output ONLY the JSON object specified by your system prompt. No markdown, no commentary.\n\n${dataPackage}`;
+  `Today is ${today}. You are the **${myPersonaName}** in a fast bull/bear directional debate against the **${otherPersonaName}**. This is PHASE 1 / ROUND 1 — directional argument only. NO trade structure yet.
 
-const CRITIQUE_INSTRUCTION = (
-  mySide: "A" | "B",
-  myProposal: string,
-  otherProposal: string,
-  myPersonaName: string,
-  otherPersonaName: string,
-) =>
-  `ROUND 2 — critique and (optionally) revise. You are Strategist ${mySide} (the **${myPersonaName}** strategist). Below is your Round-1 proposal and the **${otherPersonaName}** strategist's Round-1 proposal. STAY IN ROLE — do not flip sides. You may adopt better technical elements (strikes, expiry, structure) from the other side IF they strengthen YOUR ${myPersonaName.toLowerCase()} thesis. Do not concede the directional view. If their analysis is technically wrong, say so. If yours is the better expression of your view, defend it.
+Your job: deliver the strongest possible **${myPersonaName.toLowerCase()}** case for this name based on the data below. Use web search per the WEB SEARCH MANDATE in your system prompt for fresh catalysts and flow.
 
-Output a single JSON object with EXACTLY these two fields:
+Output ONLY this JSON object — no markdown fences, no extra prose:
 {
-  "critique": "<2-5 sentences: what you think of the other proposal vs yours, focusing on edge, structure, vol, risk/reward, and catalyst>",
-  "revisedProposal": <full strategist JSON object using your normal schema; this is what you currently believe is the best trade>
+  "side": "${myPersonaName.toUpperCase()}",
+  "thesis": "<3-6 sentences making your directional case using vol, flow, Greeks, catalyst, technicals>",
+  "keyEvidence": ["<short bullet>", "<short bullet>", "<3-5 most important data points supporting your view>"],
+  "biggestRisk": "<1-2 sentences: the strongest counter-argument you must defend against>",
+  "confidence": <integer 0-100, calibrated honestly to how strong your case actually is given the data>
 }
 
-YOUR Round-1 proposal:
-${myProposal}
+Calibration rule: if the data is genuinely against your assigned side, you MUST say so in "biggestRisk" and return confidence below 30 rather than fabricating a case. Honesty beats theatrics.
 
-OTHER strategist's Round-1 proposal:
-${otherProposal}
+DATA PACKAGE:
+${dataPackage}`;
 
-Respond with ONLY the JSON object. No fences, no extra prose.`;
+const DIRECTIONAL_REBUT_INSTRUCTION = (
+  myPersonaName: string,
+  otherPersonaName: string,
+  myR1Json: string,
+  otherR1Json: string,
+) =>
+  `PHASE 1 / ROUND 2 — rebuttal. You are still the **${myPersonaName}**. STAY IN ROLE — do not flip sides. The **${otherPersonaName}** has now made their case. Read it, address their strongest point honestly, defend yours, concede where genuinely weak, and revise your confidence.
 
-const CONVERGENCE_RULE = (convergence: 1 | 2 | 3) => {
-  if (convergence === 1) {
-    return `CONVERGENCE RULE FOR THIS DEBATE: After Round 3, the system compares both finals and SHIPS THE ONE WITH HIGHER CONFIDENCE — winner takes all, no merge. Calibrate your confidence honestly: do not inflate it to "win" the debate, and do not deflate it out of false humility. If the other strategist's case is genuinely stronger, your honest lower confidence will (and should) lose. If yours is stronger, set confidence accordingly.`;
-  }
-  if (convergence === 2) {
-    return `CONVERGENCE RULE FOR THIS DEBATE: After Round 3, a synthesis pass will MERGE both your final and the other strategist's final into ONE trade. Your final does not have to "beat" theirs — it has to contribute the strongest version of your view. Lean into what is distinctly best in your analysis (a strike, a structure, a thesis angle, a risk you alone flagged). Do not hedge or try to cover both sides; the synthesis layer handles reconciliation.`;
-  }
-  return `CONVERGENCE RULE FOR THIS DEBATE: After Round 3, if you and the other strategist AGREE on direction (both bullish or both bearish), a synthesis pass merges both finals into one trade. If you DISAGREE on direction, the higher-confidence final ships and the other is discarded. Implication: when you genuinely converge with the other side, contribute the strongest distinct elements of your view (the synthesis will harmonize them). When you genuinely disagree, calibrate confidence honestly — inflated confidence to "win" a disagreement will produce a bad live trade.`;
+Output ONLY this JSON object — no markdown fences, no extra prose:
+{
+  "side": "${myPersonaName.toUpperCase()}",
+  "rebuttal": "<2-4 sentences directly addressing the other side's strongest point>",
+  "concession": "<1 sentence: any point of theirs that is genuinely valid, or 'none' if you stand by your full thesis>",
+  "revisedConfidence": <integer 0-100, your honest confidence AFTER seeing the other side>
+}
+
+Calibration rule: if their case is materially stronger than yours, drop your confidence accordingly. Inflated confidence to "win" the debate produces bad live trades.
+
+YOUR ROUND-1 ARGUMENT:
+${myR1Json}
+
+OTHER SIDE'S ROUND-1 ARGUMENT:
+${otherR1Json}`;
+
+// ---------- Phase 2 prompt (build ONE trade from the verdict) ----------
+
+const TRADE_BUILD_INSTRUCTION = (
+  verdict: DebateVerdict,
+  bullConf: number,
+  bearConf: number,
+  bullR1: string,
+  bullR2: string,
+  bearR1: string,
+  bearR2: string,
+  dataPackage: string,
+) => {
+  const verdictGuidance = (() => {
+    if (verdict === "BULLISH") {
+      return `VERDICT: BULLISH (Bull confidence ${bullConf} vs Bear confidence ${bearConf}). The Bull won the directional debate. Build a BULLISH defined-risk options structure that expresses the bull thesis: long calls, call verticals (debit), call ratios, put credit spreads, call calendars, risk reversals, or bullish butterflies. Pick the structure where the actual edge lives in the chain — do NOT default to any one structure.`;
+    }
+    if (verdict === "BEARISH") {
+      return `VERDICT: BEARISH (Bear confidence ${bearConf} vs Bull confidence ${bullConf}). The Bear won the directional debate. Build a BEARISH defined-risk options structure that expresses the bear thesis: long puts, put verticals (debit), put ratios, call credit spreads, put calendars, or bearish butterflies. Pick the structure where the actual edge lives in the chain — do NOT default to any one structure.`;
+    }
+    return `VERDICT: SIDEWAYS (Bull ${bullConf} vs Bear ${bearConf} — within tie band; both sides have real but cancelling edge). Build a VOL-NEUTRAL defined-risk structure that profits from range-bound action: iron condor, iron butterfly, calendar spread, or short strangle expressed as defined-risk. Place strikes that respect BOTH the bull's upside risk and the bear's downside risk — i.e. between or just outside the levels each side flagged. Do NOT manufacture a directional view; the debate genuinely failed to resolve a winner, which is itself a tradeable signal.`;
+  })();
+
+  return `The bull/bear directional debate has concluded. You are now the senior PM constructing the actual trade. You are NEUTRAL — drop persona, build the cleanest expression of the verdict.
+
+${verdictGuidance}
+
+Use the original data package (chain summary, IVR, regime, IO score, catalyst window) plus both sides' arguments below to pick strikes, expiry, and sizing. Honor the WEB SEARCH MANDATE for catalyst confirmation if useful. Output ONLY the full trade JSON object specified by your system prompt — strategy, legs, entryPrice, entryRangeMin/Max, maxRisk, maxProfit, breakeven, companyContext, thesis, exitTargets, bullInvalidation, bearInvalidation, riskOfRuin, confidence, warnings. No markdown fences, no extra prose.
+
+In the "thesis" field, briefly cite the verdict and the strongest 1-2 evidence points from whichever side(s) the trade is honoring.
+
+BULL ROUND-1 ARGUMENT:
+${bullR1}
+
+BULL ROUND-2 REBUTTAL:
+${bullR2}
+
+BEAR ROUND-1 ARGUMENT:
+${bearR1}
+
+BEAR ROUND-2 REBUTTAL:
+${bearR2}
+
+ORIGINAL DATA PACKAGE:
+${dataPackage}`;
 };
 
-const FINAL_INSTRUCTION = (
-  mySide: "A" | "B",
-  myRevised: string,
-  otherRevised: string,
-  otherCritique: string,
-  convergence: 1 | 2 | 3,
-  myPersonaName: string,
-  otherPersonaName: string,
-) =>
-  `ROUND 3 — final commit. You are Strategist ${mySide} (the **${myPersonaName}** strategist). You have seen the **${otherPersonaName}** strategist's Round-2 critique of your work and their revised proposal. STAY IN ROLE. Commit to your final position now — the strongest possible expression of the ${myPersonaName.toLowerCase()} case for this name — and set your confidence honestly.
+// ---------- JSON parsing for verdict computation ----------
 
-${CONVERGENCE_RULE(convergence)}
-
-Output ONLY the JSON object specified by your system prompt — your final, committed trade. No markdown, no commentary.
-
-YOUR Round-2 revised proposal:
-${myRevised}
-
-OTHER strategist's Round-2 critique of your proposal:
-${otherCritique}
-
-OTHER strategist's Round-2 revised proposal:
-${otherRevised}`;
-
-const SYNTHESIS_INSTRUCTION = (
-  finalA: string,
-  finalB: string,
-  personaNameA: string,
-  personaNameB: string,
-) =>
-  `Two strategists just finished a 3-round debate. Strategist A argued the **${personaNameA}** case; Strategist B argued the **${personaNameB}** case. You are now NEUTRAL — drop both roles and act as the senior PM making the actual capital allocation decision.
-
-Your job: produce ONE merged final trade JSON. Weigh both sides on their evidence (vol, flow, Greeks, catalyst, structure, edge) — not on rhetoric. If one side's edge is materially stronger, ship that side's structure and explain why in the thesis. If both sides surface real edge in opposing directions, you may pick a vol-neutral or defined-risk structure that respects both views (iron condor, calendar, ratio) — but only if the data actually supports it; do not manufacture a "compromise" trade. If neither side has edge, set confidence low and warn accordingly. Confidence should reflect the merged conviction, not the average of the two.
-
-Output ONLY the JSON object specified by your system prompt. No fences, no extra prose.
-
-Strategist A (${personaNameA}) final commit:
-${finalA}
-
-Strategist B (${personaNameB}) final commit:
-${finalB}`;
-
-interface ParsedFinalForConvergence {
-  raw: string;
-  confidence: number;
-  direction: "BULLISH" | "BEARISH" | "NEUTRAL" | "UNKNOWN";
-}
-
-function quickParseFinal(raw: string): ParsedFinalForConvergence {
-  // Best-effort extraction of confidence and inferred direction without
-  // running the full validation. Convergence only needs these two fields;
-  // the heavy parsing happens downstream in strategistV2.
-  let confidence = 0;
-  let direction: ParsedFinalForConvergence["direction"] = "UNKNOWN";
+function tryParseJson(raw: string): Record<string, unknown> | null {
   try {
     const stripped = raw.replace(/^```(json)?/i, "").replace(/```\s*$/i, "").trim();
     const start = stripped.indexOf("{");
     const end = stripped.lastIndexOf("}");
-    if (start >= 0 && end > start) {
-      const obj = JSON.parse(stripped.slice(start, end + 1)) as Record<string, unknown>;
-      const c = Number(obj.confidence);
-      if (Number.isFinite(c)) confidence = c;
-      const legs = Array.isArray(obj.legs) ? (obj.legs as Array<Record<string, unknown>>) : [];
-      const buys = legs.filter((l) => l.action === "buy");
-      const sells = legs.filter((l) => l.action === "sell");
-      // Heuristic: net long calls or net short puts → bullish; net long puts or net short calls → bearish
-      let bullishScore = 0;
-      let bearishScore = 0;
-      for (const l of buys) {
-        if (l.type === "call") bullishScore += 1;
-        if (l.type === "put") bearishScore += 1;
-      }
-      for (const l of sells) {
-        if (l.type === "put") bullishScore += 1;
-        if (l.type === "call") bearishScore += 1;
-      }
-      if (bullishScore > bearishScore) direction = "BULLISH";
-      else if (bearishScore > bullishScore) direction = "BEARISH";
-      else direction = "NEUTRAL";
-    }
+    if (start < 0 || end <= start) return null;
+    return JSON.parse(stripped.slice(start, end + 1)) as Record<string, unknown>;
   } catch {
-    // leave defaults
+    return null;
   }
-  return { raw, confidence, direction };
 }
 
-function pickHigherConfidence(
-  finalA: ParsedFinalForConvergence,
-  finalB: ParsedFinalForConvergence,
-): "A" | "B" {
-  return finalB.confidence > finalA.confidence ? "B" : "A";
+function extractConfidence(raw: string, fields: string[]): number {
+  const obj = tryParseJson(raw);
+  if (!obj) return 0;
+  for (const f of fields) {
+    const v = Number(obj[f]);
+    if (Number.isFinite(v)) return Math.max(0, Math.min(100, v));
+  }
+  return 0;
+}
+
+function tieBandFor(convergence: 1 | 2 | 3): number {
+  if (convergence === 1) return 5;
+  if (convergence === 2) return 20;
+  return 10;
+}
+
+function computeVerdict(bullConf: number, bearConf: number, band: number): DebateVerdict {
+  const delta = bullConf - bearConf;
+  if (delta > band) return "BULLISH";
+  if (delta < -band) return "BEARISH";
+  return "SIDEWAYS";
 }
 
 function mergeTraces(a: WebSearchTrace, b: WebSearchTrace): WebSearchTrace {
@@ -263,28 +305,28 @@ function mergeTraces(a: WebSearchTrace, b: WebSearchTrace): WebSearchTrace {
   };
 }
 
+// ---------- Orchestrator ----------
+
 export async function runDebate(args: {
   systemPrompt: string;
   dataPackage: string;
   config: DebateConfig;
-  /** Optional persona suffix appended to systemPrompt for Strategist A. */
+  /** Optional persona suffix appended to systemPrompt for Strategist A (Bull). */
   personaA?: string;
-  /** Optional persona suffix appended to systemPrompt for Strategist B. */
+  /** Optional persona suffix appended to systemPrompt for Strategist B (Bear). */
   personaB?: string;
-  /** Short display name for A's persona (e.g. "Bull"). Used in transcript chips and prompts. */
+  /** Short display name for A's persona (default "Bull"). */
   personaNameA?: string;
-  /** Short display name for B's persona (e.g. "Bear"). */
+  /** Short display name for B's persona (default "Bear"). */
   personaNameB?: string;
   callbacks?: DebateCallbacks;
 }): Promise<DebateOutcome> {
   const { systemPrompt, dataPackage, config, callbacks } = args;
-  const personaNameA = args.personaNameA ?? "Strategist A";
-  const personaNameB = args.personaNameB ?? "Strategist B";
+  const personaNameA = args.personaNameA ?? "Bull";
+  const personaNameB = args.personaNameB ?? "Bear";
   const sysA = args.personaA ? `${systemPrompt}\n\n${args.personaA}` : systemPrompt;
   const sysB = args.personaB ? `${systemPrompt}\n\n${args.personaB}` : systemPrompt;
-  // Per-side display labels used in transcript chips and chosenLabel.
-  // Wrap the model so its `label` carries the persona prefix without mutating
-  // the caller's modelOpt.
+
   const modelADisplay: StrategistModelOption = {
     ...config.modelA,
     label: `${personaNameA} · ${config.modelA.label}`,
@@ -293,143 +335,167 @@ export async function runDebate(args: {
     ...config.modelB,
     label: `${personaNameB} · ${config.modelB.label}`,
   };
+
   const today = new Date().toISOString().slice(0, 10);
 
-  callbacks?.onStatus?.(`Round 1 — ${personaNameA} and ${personaNameB} drafting independent proposals…`);
-
-  // Round 1 — run A and B in parallel for speed (no cross-dependency yet).
+  // ---------- PHASE 1: Round 1 — directional propose (parallel) ----------
+  callbacks?.onStatus?.(`Phase 1 / Round 1 — ${personaNameA} and ${personaNameB} pitching directional cases…`);
   const [r1a, r1b] = await Promise.all([
     runTurn({
-      modelOpt: modelADisplay, systemPrompt: sysA,
-      prompt: PROPOSE_INSTRUCTION(today, dataPackage, personaNameA, personaNameB),
-      round: 1, role: "A", phase: "propose", callbacks,
+      modelOpt: modelADisplay,
+      systemPrompt: sysA,
+      prompt: DIRECTIONAL_PROPOSE_INSTRUCTION(today, dataPackage, personaNameA, personaNameB),
+      round: 1,
+      role: "A",
+      phase: "propose",
+      callbacks,
     }),
     runTurn({
-      modelOpt: modelBDisplay, systemPrompt: sysB,
-      prompt: PROPOSE_INSTRUCTION(today, dataPackage, personaNameB, personaNameA),
-      round: 1, role: "B", phase: "propose", callbacks,
+      modelOpt: modelBDisplay,
+      systemPrompt: sysB,
+      prompt: DIRECTIONAL_PROPOSE_INSTRUCTION(today, dataPackage, personaNameB, personaNameA),
+      round: 1,
+      role: "B",
+      phase: "propose",
+      callbacks,
     }),
   ]);
 
-  callbacks?.onStatus?.(`Round 2 — ${personaNameA} and ${personaNameB} critiquing each other…`);
-
-  // Round 2 — each sees the other's R1 proposal and critiques + revises.
+  // ---------- PHASE 1: Round 2 — rebuttals (parallel) ----------
+  callbacks?.onStatus?.(`Phase 1 / Round 2 — ${personaNameA} and ${personaNameB} rebutting…`);
   const [r2a, r2b] = await Promise.all([
     runTurn({
-      modelOpt: modelADisplay, systemPrompt: sysA,
-      prompt: CRITIQUE_INSTRUCTION("A", r1a.text, r1b.text, personaNameA, personaNameB),
-      round: 2, role: "A", phase: "critique", callbacks,
+      modelOpt: modelADisplay,
+      systemPrompt: sysA,
+      prompt: DIRECTIONAL_REBUT_INSTRUCTION(personaNameA, personaNameB, r1a.text, r1b.text),
+      round: 2,
+      role: "A",
+      phase: "critique",
+      callbacks,
     }),
     runTurn({
-      modelOpt: modelBDisplay, systemPrompt: sysB,
-      prompt: CRITIQUE_INSTRUCTION("B", r1b.text, r1a.text, personaNameB, personaNameA),
-      round: 2, role: "B", phase: "critique", callbacks,
+      modelOpt: modelBDisplay,
+      systemPrompt: sysB,
+      prompt: DIRECTIONAL_REBUT_INSTRUCTION(personaNameB, personaNameA, r1b.text, r1a.text),
+      round: 2,
+      role: "B",
+      phase: "critique",
+      callbacks,
     }),
   ]);
 
-  // Extract revisedProposal text from each round-2 wrapper for use in round 3.
-  const extractRevised = (raw: string): { critique: string; revised: string } => {
-    try {
-      const stripped = raw.replace(/^```(json)?/i, "").replace(/```\s*$/i, "").trim();
-      const start = stripped.indexOf("{");
-      const end = stripped.lastIndexOf("}");
-      if (start >= 0 && end > start) {
-        const obj = JSON.parse(stripped.slice(start, end + 1)) as Record<string, unknown>;
-        const critique = typeof obj.critique === "string" ? obj.critique : "";
-        const revised = obj.revisedProposal !== undefined ? JSON.stringify(obj.revisedProposal) : raw;
-        return { critique, revised };
-      }
-    } catch {
-      // fall through
-    }
-    return { critique: "", revised: raw };
-  };
-  const r2aParsed = extractRevised(r2a.text);
-  const r2bParsed = extractRevised(r2b.text);
+  // ---------- VERDICT (no LLM call) ----------
+  const bullConfidence =
+    extractConfidence(r2a.text, ["revisedConfidence", "confidence"]) ||
+    extractConfidence(r1a.text, ["confidence"]);
+  const bearConfidence =
+    extractConfidence(r2b.text, ["revisedConfidence", "confidence"]) ||
+    extractConfidence(r1b.text, ["confidence"]);
+  const band = tieBandFor(config.convergence);
+  const verdict = computeVerdict(bullConfidence, bearConfidence, band);
 
-  callbacks?.onStatus?.(`Round 3 — ${personaNameA} and ${personaNameB} committing final positions…`);
+  const verdictJson = JSON.stringify(
+    {
+      phase: "VERDICT",
+      bullConfidence,
+      bearConfidence,
+      delta: bullConfidence - bearConfidence,
+      tieBand: band,
+      tieBandSource:
+        config.convergence === 1 ? "tight (setting #1)" : config.convergence === 2 ? "wide (setting #2)" : "medium (setting #3)",
+      verdict,
+      nextStep:
+        verdict === "SIDEWAYS"
+          ? "Build vol-neutral defined-risk structure (iron condor / butterfly / calendar)."
+          : verdict === "BULLISH"
+            ? `Build bullish defined-risk structure on ${personaNameA}'s model.`
+            : `Build bearish defined-risk structure on ${personaNameB}'s model.`,
+    },
+    null,
+    2,
+  );
 
-  // Round 3 — final commit. Each sees the other's revised proposal and critique.
-  const [r3a, r3b] = await Promise.all([
-    runTurn({
-      modelOpt: modelADisplay, systemPrompt: sysA,
-      prompt: FINAL_INSTRUCTION("A", r2aParsed.revised, r2bParsed.revised, r2bParsed.critique, config.convergence, personaNameA, personaNameB),
-      round: 3, role: "A", phase: "final", callbacks,
-    }),
-    runTurn({
-      modelOpt: modelBDisplay, systemPrompt: sysB,
-      prompt: FINAL_INSTRUCTION("B", r2bParsed.revised, r2aParsed.revised, r2aParsed.critique, config.convergence, personaNameB, personaNameA),
-      round: 3, role: "B", phase: "final", callbacks,
-    }),
-  ]);
-
-  const finalA = quickParseFinal(r3a.text);
-  const finalB = quickParseFinal(r3b.text);
+  emitSystemTurn({
+    text: verdictJson,
+    round: 2,
+    phase: "info",
+    label: "Verdict",
+    callbacks,
+  });
 
   logger.info(
     {
-      convergence: config.convergence,
-      finalAConfidence: finalA.confidence,
-      finalADirection: finalA.direction,
-      finalBConfidence: finalB.confidence,
-      finalBDirection: finalB.direction,
+      verdict,
+      bullConfidence,
+      bearConfidence,
+      delta: bullConfidence - bearConfidence,
+      tieBand: band,
       modelA: config.modelA.model,
       modelB: config.modelB.model,
     },
-    "StrategistDebate: round 3 finals received",
+    "StrategistDebate: Phase-1 verdict computed",
   );
 
-  // Choose convergence path
-  const useSynthesis =
-    config.convergence === 2 ||
-    (config.convergence === 3 && finalA.direction === finalB.direction && finalA.direction !== "UNKNOWN");
-
+  // ---------- PHASE 2: Trade construction (single call) ----------
+  // Builder uses the winning side's model (or A's model for SIDEWAYS) and the
+  // NEUTRAL system prompt — verdict already constrains direction, persona is
+  // redundant and would bias structure selection.
+  let builderModelOpt: StrategistModelOption;
   let chosenSide: "A" | "B" | "synthesis";
   let chosenLabel: string;
-  let finalRawText: string;
-  let aggregateTrace = mergeTraces(
-    mergeTraces(mergeTraces(r1a.trace, r1b.trace), mergeTraces(r2a.trace, r2b.trace)),
-    mergeTraces(r3a.trace, r3b.trace),
-  );
-
-  if (useSynthesis) {
-    callbacks?.onStatus?.("Synthesis pass — neutral PM merging bull and bear into one trade…");
-    // Synthesis is intentionally NEUTRAL — uses base systemPrompt without
-    // either persona suffix so the synthesizer can pick the better-supported
-    // side (or a vol-neutral structure) on its merits.
-    const synthModel: StrategistModelOption = {
-      ...config.modelA,
-      label: `Synthesis · ${config.modelA.label}`,
-    };
-    const synth = await runTurn({
-      modelOpt: synthModel,
-      systemPrompt, // base, no persona
-      prompt: SYNTHESIS_INSTRUCTION(r3a.text, r3b.text, personaNameA, personaNameB),
-      round: "synthesis",
-      role: "synthesis",
-      phase: "synthesis",
-      callbacks,
-    });
-    chosenSide = "synthesis";
-    chosenLabel = `Synthesis (${config.modelA.label})`;
-    finalRawText = synth.text;
-    aggregateTrace = mergeTraces(aggregateTrace, synth.trace);
+  if (verdict === "BULLISH") {
+    builderModelOpt = { ...config.modelA, label: `Trade Builder · ${config.modelA.label}` };
+    chosenSide = "A";
+    chosenLabel = `${personaNameA} (${config.modelA.label})`;
+  } else if (verdict === "BEARISH") {
+    builderModelOpt = { ...config.modelB, label: `Trade Builder · ${config.modelB.label}` };
+    chosenSide = "B";
+    chosenLabel = `${personaNameB} (${config.modelB.label})`;
   } else {
-    const winner = pickHigherConfidence(finalA, finalB);
-    chosenSide = winner;
-    chosenLabel =
-      winner === "A"
-        ? `${personaNameA} (${config.modelA.label})`
-        : `${personaNameB} (${config.modelB.label})`;
-    finalRawText = winner === "A" ? r3a.text : r3b.text;
+    builderModelOpt = { ...config.modelA, label: `Sideways Builder · ${config.modelA.label}` };
+    chosenSide = "synthesis";
+    chosenLabel = `Sideways / Vol-Neutral (${config.modelA.label})`;
   }
 
+  callbacks?.onStatus?.(
+    verdict === "SIDEWAYS"
+      ? "Phase 2 — building vol-neutral trade for SIDEWAYS verdict…"
+      : `Phase 2 — building ${verdict.toLowerCase()} trade…`,
+  );
+
+  const buildResult = await runTurn({
+    modelOpt: builderModelOpt,
+    systemPrompt, // neutral — no persona suffix
+    prompt: TRADE_BUILD_INSTRUCTION(
+      verdict,
+      bullConfidence,
+      bearConfidence,
+      r1a.text,
+      r2a.text,
+      r1b.text,
+      r2b.text,
+      dataPackage,
+    ),
+    round: 3,
+    role: chosenSide === "A" ? "A" : chosenSide === "B" ? "B" : "synthesis",
+    phase: "final",
+    callbacks,
+  });
+
+  const aggregateTrace = mergeTraces(
+    mergeTraces(mergeTraces(r1a.trace, r1b.trace), mergeTraces(r2a.trace, r2b.trace)),
+    buildResult.trace,
+  );
+
   return {
-    finalRawText,
+    finalRawText: buildResult.text,
     trace: aggregateTrace,
     chosenSide,
     chosenLabel,
-    finalAText: r3a.text,
-    finalBText: r3b.text,
+    finalAText: r2a.text,
+    finalBText: r2b.text,
+    verdict,
+    bullConfidence,
+    bearConfidence,
   };
 }

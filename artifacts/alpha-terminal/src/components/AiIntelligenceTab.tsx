@@ -1416,22 +1416,48 @@ function DebateTranscript({
   const roleStyle = (role: string): { bg: string; fg: string; border: string; label: string } => {
     switch (role) {
       case "A":
-        return { bg: "rgba(255,184,0,0.12)", fg: "#FFB800", border: "rgba(255,184,0,0.4)", label: "A" };
+        return { bg: "rgba(255,184,0,0.12)", fg: "#FFB800", border: "rgba(255,184,0,0.4)", label: "🐂" };
       case "B":
-        return { bg: "rgba(38,198,218,0.12)", fg: "#26C6DA", border: "rgba(38,198,218,0.4)", label: "B" };
+        return { bg: "rgba(38,198,218,0.12)", fg: "#26C6DA", border: "rgba(38,198,218,0.4)", label: "🐻" };
       case "synthesis":
-        return { bg: "rgba(0,209,102,0.12)", fg: "#00D166", border: "rgba(0,209,102,0.4)", label: "S" };
+        return { bg: "rgba(0,209,102,0.12)", fg: "#00D166", border: "rgba(0,209,102,0.4)", label: "T" };
+      case "system":
+        return { bg: "rgba(186,130,255,0.10)", fg: "#BA82FF", border: "rgba(186,130,255,0.45)", label: "⚖" };
       default:
         return { bg: "rgba(255,255,255,0.06)", fg: "#999", border: "rgba(255,255,255,0.15)", label: "·" };
     }
   };
 
-  const phaseLabel = (phase: string, round: 1 | 2 | 3 | "synthesis"): string => {
+  const phaseLabel = (phase: string, round: 1 | 2 | 3 | "synthesis", role: string): string => {
+    if (role === "system" && phase === "info") return "Verdict";
     if (round === "synthesis") return "Synthesis";
-    if (phase === "propose") return `Round ${round} · Propose`;
-    if (phase === "critique") return `Round ${round} · Critique`;
-    if (phase === "final") return `Round ${round} · Final`;
+    if (phase === "propose") return `Phase 1 · R${round} · Pitch`;
+    if (phase === "critique") return `Phase 1 · R${round} · Rebut`;
+    if (phase === "final") return `Phase 2 · Trade Build`;
     return phase;
+  };
+
+  const roundHeader = (round: 1 | 2 | 3 | "synthesis"): string => {
+    if (round === "synthesis") return "Synthesis Pass";
+    if (round === 1) return "Phase 1 — Round 1 (Directional Pitch)";
+    if (round === 2) return "Phase 1 — Round 2 (Rebuttal & Verdict)";
+    return "Phase 2 — Trade Construction";
+  };
+
+  // Pretty-print a turn's text as JSON when possible (the new debate flow has
+  // every LLM emit JSON). Falls back to raw text for any non-JSON output.
+  const formatTurnText = (raw: string): string => {
+    if (!raw) return "";
+    const stripped = raw.replace(/^```(json)?/i, "").replace(/```\s*$/i, "").trim();
+    const start = stripped.indexOf("{");
+    const end = stripped.lastIndexOf("}");
+    if (start < 0 || end <= start) return raw;
+    try {
+      const obj = JSON.parse(stripped.slice(start, end + 1));
+      return JSON.stringify(obj, null, 2);
+    } catch {
+      return raw;
+    }
   };
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1452,7 +1478,7 @@ function DebateTranscript({
             className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#999] pb-1"
             style={{ borderBottom: "1px dashed rgba(255,255,255,0.08)" }}
           >
-            {round === "synthesis" ? "Synthesis Pass" : `Round ${round}`}
+            {roundHeader(round)}
           </div>
           {turns.map((t) => {
             const style = roleStyle(t.role);
@@ -1474,14 +1500,14 @@ function DebateTranscript({
                     {t.label}
                   </span>
                   <span className="font-mono text-[9px] text-[#666]">{t.model}</span>
-                  <span className="ml-auto font-mono text-[9px] text-[#666]">{phaseLabel(t.phase, t.round)}</span>
+                  <span className="ml-auto font-mono text-[9px] text-[#666]">{phaseLabel(t.phase, t.round, t.role)}</span>
                 </div>
-                <div className="font-mono text-[11px] leading-[1.55] text-[#ddd] whitespace-pre-wrap break-words">
-                  {t.text || (showCaret ? "" : <span className="text-[#666]">(no output)</span>)}
+                <pre className="font-mono text-[11px] leading-[1.55] text-[#ddd] whitespace-pre-wrap break-words m-0">
+                  {formatTurnText(t.text) || (showCaret ? "" : <span className="text-[#666]">(no output)</span>)}
                   {showCaret && (
                     <span className="inline-block w-[7px] h-[12px] ml-0.5 align-middle" style={{ background: style.fg }} />
                   )}
-                </div>
+                </pre>
               </div>
             );
           })}
