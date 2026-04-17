@@ -9,6 +9,7 @@ import {
   type StrategistV2Result,
   type StrategistSendToOrderPayload,
 } from "@/components/StrategistV2Card";
+import { HistoryDebateTranscript } from "@/components/HistoryDebateTranscript";
 
 const HISTORY_CATEGORY_LABELS: Record<string, string> = {
   TOXIC_BLOCK: "Toxic Block",
@@ -149,6 +150,13 @@ export function StrategistHistoryList({ onSendToOrder, excludeJobIds }: Props) {
             </div>
             {isOpen && (
               <div className="px-2 pb-2">
+                {(() => {
+                  const transcript = (result as unknown as { debateTranscript?: unknown[] })?.debateTranscript;
+                  if (Array.isArray(transcript) && transcript.length > 0) {
+                    return <HistoryDebateTranscript transcript={transcript as Parameters<typeof HistoryDebateTranscript>[0]["transcript"]} />;
+                  }
+                  return null;
+                })()}
                 {result?.status === "recommendation" && result.recommendation ? (
                   <StrategistV2RecommendationCard
                     result={result}
