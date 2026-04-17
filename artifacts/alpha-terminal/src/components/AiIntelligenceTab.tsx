@@ -1472,11 +1472,14 @@ function DebateTranscript({
       className="rounded-lg p-4 max-h-[480px] overflow-y-auto space-y-4"
       style={{ background: "#0c0c0e", border: "1px solid rgba(255,184,0,0.18)" }}
     >
-      {groups.map(([round, turns]) => (
-        <div key={String(round)} className="space-y-2">
+      {groups.map(([round, turns], gi) => (
+        <div key={String(round)} className="space-y-3">
           <div
-            className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#999] pb-1"
-            style={{ borderBottom: "1px dashed rgba(255,255,255,0.08)" }}
+            className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#888]"
+            style={{
+              paddingTop: gi === 0 ? 0 : 8,
+              borderTop: gi === 0 ? "none" : "1px dashed rgba(255,255,255,0.08)",
+            }}
           >
             {roundHeader(round)}
           </div>
@@ -1484,16 +1487,9 @@ function DebateTranscript({
             const style = roleStyle(t.role);
             const showCaret = isStreaming && !t.done;
             return (
-              <div
-                key={t.id}
-                className="rounded-md p-3"
-                style={{ background: style.bg, border: `1px solid ${style.border}` }}
-              >
-                <div className="flex items-center gap-2 mb-2">
-                  <span
-                    className="inline-flex items-center justify-center font-mono font-bold text-[10px] w-5 h-5 rounded"
-                    style={{ background: style.fg, color: "#0c0c0e" }}
-                  >
+              <div key={t.id} className="pl-3" style={{ borderLeft: `2px solid ${style.fg}` }}>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-[12px] leading-none" style={{ color: style.fg }}>
                     {style.label}
                   </span>
                   <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: style.fg }}>
