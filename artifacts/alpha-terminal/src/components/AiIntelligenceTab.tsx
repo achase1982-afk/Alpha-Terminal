@@ -5,6 +5,7 @@ import {
   useGetQuote, useGetPriceHistory, useGetOptionChain,
 } from "@workspace/api-client-react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
+import { startStrategistPolling } from "@/lib/strategistPoller";
 import {
   BarChart2, DollarSign, Shield, TrendingUp, Scale,
   Zap, ChevronDown, AlertTriangle, CheckCircle2, XCircle, AlertCircle, Search,
@@ -2179,6 +2180,15 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
     ? strategistJobs[activeJobIdForSymbol]?.status === 'running'
     : false;
 
+  // V2 live tokens + status come from the global store so they survive
+  // unmount/remount when the user navigates away from the strategist screen.
+  const v2ThinkingTokens: string[] = activeJobIdForSymbol
+    ? strategistJobs[activeJobIdForSymbol]?.tokens ?? []
+    : [];
+  const v2LiveStatus: string = activeJobIdForSymbol
+    ? strategistJobs[activeJobIdForSymbol]?.liveStatus ?? ""
+    : "";
+
   // Fetch history on mount AND every time the strategist sub-tab becomes
   // active. This ensures cards saved on the server always re-appear when the
   // user returns to the screen, even after a full page reload or after an
@@ -2689,7 +2699,6 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
     }
   }, [accessToken, symbol, setSymbol, setStrategistResult]);
 
-  const activePollJobIdRef = useRef<string | null>(null);
   const handleRunV2 = useCallback((ticker: string) => {
     const upperTicker = ticker.toUpperCase();
     const jobId = `sj_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -2703,12 +2712,14 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
     setLastRunSymbol(ticker);
     setLastRunTime(Date.now());
     if (upperTicker !== symbol) setSymbol(upperTicker);
+    // Register the job in the global store BEFORE the network round-trip so
+    // the poller / UI can already reflect the running state.
     startStrategistJob(jobId, upperTicker);
-    activePollJobIdRef.current = jobId;
 
-    // Fire-and-forget — analysis runs server-side; we poll for live tokens + status.
+    // Fire-and-forget — server runs the analysis to completion regardless of
+    // client navigation. We hand off polling to a module-level driver so it
+    // survives unmount/remount of this component (e.g. switching bottom tabs).
     (async () => {
-      const isStale = () => activePollJobIdRef.current !== jobId;
       try {
         const res = await fetchWithAuth(`${API_BASE}/strategist/analyze`, {
           method: "POST",
@@ -2718,65 +2729,36 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
         if (!res.ok) {
           const errText = await res.text().catch(() => "Unknown error");
           errorStrategistJob(jobId, errText);
-          if (!isStale()) setStrategistStatus("");
           return;
         }
-        // Poll for live thinking + completion (incremental tokens via ?since=).
-        let since = 0;
-        const stopAt = Date.now() + 5 * 60 * 1000; // 5 min hard cap
-        let resolved = false;
-        while (Date.now() < stopAt) {
-          if (isStale()) return; // superseded by newer run; abandon updates
-          await new Promise(r => setTimeout(r, 1200));
-          if (isStale()) return;
-          const tres = await fetchWithAuth(`${API_BASE}/strategist/thinking/${jobId}?since=${since}`);
-          if (!tres.ok) {
-            await new Promise(r => setTimeout(r, 800));
-            continue;
-          }
-          const t = await tres.json() as {
-            status: string; tokens: string[]; nextSince: number; done: boolean;
-            result: unknown | null; error: string | null;
-          };
-          if (isStale()) return;
-          if (Array.isArray(t.tokens) && t.tokens.length > 0) {
-            setThinkingTokens(prev => prev.concat(t.tokens));
-          }
-          since = t.nextSince ?? since;
-          if (t.status) setStrategistStatus(t.status);
-          if (t.done) {
-            resolved = true;
-            if (t.error) {
-              errorStrategistJob(jobId, t.error);
-            } else if (t.result) {
-              completeStrategistJob(jobId, t.result);
-            } else {
-              errorStrategistJob(jobId, "Analysis completed without a result");
-            }
-            try {
-              const hres = await fetchWithAuth(`${API_BASE}/strategist/history`);
-              if (hres.ok) {
-                const rows = await hres.json();
-                if (Array.isArray(rows) && !isStale()) setStrategistHistoryStore(rows);
-              }
-            } catch { /* best-effort */ }
-            break;
-          }
-        }
-        // Hard timeout reached without completion → mark interrupted so store doesn't get stuck running.
-        if (!resolved) {
-          errorStrategistJob(jobId, "Analysis timed out after 5 minutes (no server response)");
-          if (!isStale()) setStrategistStatus("Timed out");
-        }
+        startStrategistPolling(jobId);
       } catch (err) {
         errorStrategistJob(jobId, err instanceof Error ? err.message : String(err));
-      } finally {
-        if (!isStale()) {
-          setStrategistStatus(prev => prev.startsWith("Failed") || prev === "Timed out" ? prev : "");
-        }
       }
     })();
-  }, [symbol, setSymbol, setStrategistResult, startStrategistJob, completeStrategistJob, errorStrategistJob, setStrategistHistoryStore]);
+  }, [symbol, setSymbol, setStrategistResult, startStrategistJob, errorStrategistJob]);
+
+  // On mount (and whenever the set of *running* job IDs changes), make sure
+  // every job that is still in the "running" state has a poller attached.
+  // This handles the case where the user navigated away and came back: the
+  // component re-mounts but the in-flight server-side analysis must still
+  // drive the UI to completion. startStrategistPolling is idempotent per
+  // jobId so calling it for an already-polled job is a no-op.
+  const runningJobIdsKey = useMemo(
+    () =>
+      Object.entries(strategistJobs)
+        .filter(([, j]) => j.status === "running")
+        .map(([id]) => id)
+        .sort()
+        .join(","),
+    [strategistJobs],
+  );
+  useEffect(() => {
+    if (!runningJobIdsKey) return;
+    for (const jobId of runningJobIdsKey.split(",")) {
+      if (jobId) startStrategistPolling(jobId);
+    }
+  }, [runningJobIdsKey]);
 
   const handleRunStrategistWithTicker = useCallback((ticker: string) => {
     handleRunV2(ticker);
@@ -2845,16 +2827,16 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
 
             {/* Live AI reasoning sits directly beneath the ticker bar.
                 Auto-collapses when the run finishes; expand to view + copy. */}
-            {(isV2Running || thinkingTokens.length > 0) && (
+            {(isV2Running || v2ThinkingTokens.length > 0) && (
               <div className="space-y-2">
-                {isV2Running && strategistStatus && (
+                {isV2Running && (v2LiveStatus || strategistStatus) && (
                   <div className="flex items-center gap-2 px-4 py-2 rounded-lg"
                     style={{ background: "#111113", border: "1px solid rgba(255,184,0,0.2)" }}>
                     <span className="w-3 h-3 border-2 border-[#FFB800] border-t-transparent rounded-full animate-spin" />
-                    <span className="font-mono text-[11px] text-[#FFB800] tracking-wider">{strategistStatus}</span>
+                    <span className="font-mono text-[11px] text-[#FFB800] tracking-wider">{v2LiveStatus || strategistStatus}</span>
                   </div>
                 )}
-                <AiThinkingFeed texts={thinkingTokens} isStreaming={isV2Running} />
+                <AiThinkingFeed texts={v2ThinkingTokens} isStreaming={isV2Running} />
               </div>
             )}
 

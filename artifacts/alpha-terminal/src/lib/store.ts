@@ -202,6 +202,9 @@ export interface TerminalState {
     finishedAt: number | null;
     viewed: boolean;
     error?: string | null;
+    tokens: string[];
+    nextSince: number;
+    liveStatus: string;
   }>;
   strategistHistory: Array<{
     id: number;
@@ -213,6 +216,8 @@ export interface TerminalState {
   startStrategistJob: (jobId: string, ticker: string) => void;
   completeStrategistJob: (jobId: string, result: unknown) => void;
   errorStrategistJob: (jobId: string, reason: string) => void;
+  appendStrategistTokens: (jobId: string, tokens: string[], nextSince: number) => void;
+  setStrategistLiveStatus: (jobId: string, status: string) => void;
   markStrategistJobsViewed: () => void;
   setStrategistHistory: (list: Array<{ id: number; jobId: string; ticker: string; createdAt: string; cardJson: unknown }>) => void;
   removeHistoryCard: (id: number) => void;
@@ -505,9 +510,37 @@ export const useTerminalStore = create<TerminalState>()(
               finishedAt: null,
               viewed: false,
               error: null,
+              tokens: [],
+              nextSince: 0,
+              liveStatus: 'Starting analysis…',
             },
           },
         })),
+      appendStrategistTokens: (jobId, tokens, nextSince) =>
+        set((state) => {
+          const job = state.strategistJobs[jobId];
+          if (!job) return {};
+          const merged = tokens.length > 0 ? job.tokens.concat(tokens) : job.tokens;
+          // Cap memory: keep last ~6000 tokens
+          const capped = merged.length > 6000 ? merged.slice(merged.length - 6000) : merged;
+          return {
+            strategistJobs: {
+              ...state.strategistJobs,
+              [jobId]: { ...job, tokens: capped, nextSince },
+            },
+          };
+        }),
+      setStrategistLiveStatus: (jobId, status) =>
+        set((state) => {
+          const job = state.strategistJobs[jobId];
+          if (!job || job.liveStatus === status) return {};
+          return {
+            strategistJobs: {
+              ...state.strategistJobs,
+              [jobId]: { ...job, liveStatus: status },
+            },
+          };
+        }),
       completeStrategistJob: (jobId, result) =>
         set((state) => {
           const job = state.strategistJobs[jobId];
