@@ -1466,12 +1466,72 @@ function DebateTranscript({
     scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [transcript]);
 
+  const [copied, setCopied] = useState(false);
+  const handleCopy = () => {
+    const payload = transcript.map((t) => ({
+      round: t.round,
+      role: t.role,
+      phase: t.phase,
+      label: t.label,
+      model: t.model,
+      text: formatTurnText(t.text),
+    }));
+    const text = JSON.stringify(payload, null, 2);
+    const writeFallback = () => {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      } catch {
+        /* noop */
+      }
+    };
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).then(
+        () => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        },
+        writeFallback,
+      );
+    } else {
+      writeFallback();
+    }
+  };
+
   return (
     <div
-      ref={scrollRef}
-      className="rounded-lg p-4 max-h-[480px] overflow-y-auto space-y-4"
+      className="rounded-lg overflow-hidden"
       style={{ background: "#0c0c0e", border: "1px solid rgba(255,184,0,0.18)" }}
     >
+      <div
+        className="flex items-center justify-between px-4 py-2"
+        style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}
+      >
+        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#FFB800]">
+          Bull · Bear Debate
+        </span>
+        <button
+          onClick={handleCopy}
+          disabled={transcript.length === 0}
+          className="font-mono text-[10px] uppercase tracking-wider px-2 py-1 rounded transition-colors disabled:opacity-40"
+          style={{
+            background: copied ? "rgba(0,209,102,0.15)" : "rgba(255,184,0,0.10)",
+            border: `1px solid ${copied ? "rgba(0,209,102,0.5)" : "rgba(255,184,0,0.4)"}`,
+            color: copied ? "#00D166" : "#FFB800",
+          }}
+        >
+          {copied ? "✓ Copied" : "⧉ Copy JSON"}
+        </button>
+      </div>
+      <div ref={scrollRef} className="p-4 max-h-[480px] overflow-y-auto space-y-4">
       {groups.map(([round, turns], gi) => (
         <div key={String(round)} className="space-y-3">
           <div
@@ -1509,6 +1569,7 @@ function DebateTranscript({
           })}
         </div>
       ))}
+      </div>
     </div>
   );
 }
