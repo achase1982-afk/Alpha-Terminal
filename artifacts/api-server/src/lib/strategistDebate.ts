@@ -31,6 +31,8 @@ export interface DebateCallbacks {
 export interface DebateConfig {
   modelA: StrategistModelOption;
   modelB: StrategistModelOption;
+  /** Phase 3 arbitrator. May be the same as A, B, or a third independent model. */
+  arbitratorModel: StrategistModelOption;
   /**
    * Convergence is reinterpreted as the tie-band width (in confidence points)
    * for the verdict step. Tighter bands push more results to a directional
@@ -552,26 +554,18 @@ export async function runDebate(args: {
   ]);
 
   // ---------- PHASE 3: Senior-PM arbitration → final trade card ----------
-  // Builder uses the winning side's model (or A's model for SIDEWAYS) and
-  // the NEUTRAL system prompt. Its ONLY job is to arbitrate between the
-  // two structure proposals and ship the trade — it cannot invent a
-  // structure neither side proposed.
-  let builderModelOpt: StrategistModelOption;
-  let chosenSide: "A" | "B" | "synthesis";
-  let chosenLabel: string;
-  if (verdict === "BULLISH") {
-    builderModelOpt = { ...config.modelA, label: `Senior PM · ${config.modelA.label}` };
-    chosenSide = "A";
-    chosenLabel = `${personaNameA} (${config.modelA.label})`;
-  } else if (verdict === "BEARISH") {
-    builderModelOpt = { ...config.modelB, label: `Senior PM · ${config.modelB.label}` };
-    chosenSide = "B";
-    chosenLabel = `${personaNameB} (${config.modelB.label})`;
-  } else {
-    builderModelOpt = { ...config.modelA, label: `Senior PM · ${config.modelA.label}` };
-    chosenSide = "synthesis";
-    chosenLabel = `Sideways / Vol-Neutral (${config.modelA.label})`;
-  }
+  // Builder uses the user-configured Arbitrator model with the NEUTRAL system
+  // prompt (no Bull/Bear persona). Its ONLY job is to arbitrate between the
+  // two structure proposals and ship the trade — it cannot invent a structure
+  // neither side proposed. Arbitrator is INDEPENDENT of A/B so neither side's
+  // model bias dominates the final structural choice.
+  const arbitrator = config.arbitratorModel;
+  const builderModelOpt: StrategistModelOption = {
+    ...arbitrator,
+    label: `Senior PM · ${arbitrator.label}`,
+  };
+  const chosenSide: "A" | "B" | "synthesis" = "synthesis";
+  const chosenLabel = `Senior PM (${arbitrator.label}) — verdict: ${verdict}`;
 
   callbacks?.onStatus?.("Phase 3 — Senior PM arbitrating between structure proposals…");
 

@@ -1188,6 +1188,7 @@ async function callAiForTradeViaDebate(
 ): Promise<{ response: AiTradeResponse; trace: WebSearchTrace; rawText: string; debateLabel: string }> {
   const modelA = getStrategistModel(settings.strategistDebateAModelIdx);
   const modelB = getStrategistModel(settings.strategistDebateBModelIdx);
+  const arbitratorModel = getStrategistModel(settings.strategistArbitratorModelIdx);
   const convergence = ([1, 2, 3].includes(settings.strategistConvergence)
     ? settings.strategistConvergence
     : 3) as 1 | 2 | 3;
@@ -1198,6 +1199,8 @@ async function callAiForTradeViaDebate(
       providerA: modelA.provider,
       modelB: modelB.model,
       providerB: modelB.provider,
+      arbitratorModel: arbitratorModel.model,
+      arbitratorProvider: arbitratorModel.provider,
       convergence,
     },
     "StrategistV2: starting Debate-mode analysis",
@@ -1213,7 +1216,7 @@ async function callAiForTradeViaDebate(
   const outcome = await runDebate({
     systemPrompt: STRATEGIST_SYSTEM_PROMPT,
     dataPackage,
-    config: { modelA, modelB, convergence },
+    config: { modelA, modelB, arbitratorModel, convergence },
     personaA: BULL_PERSONA,
     personaB: BEAR_PERSONA,
     personaNameA: "Bull",

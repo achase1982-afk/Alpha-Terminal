@@ -43,6 +43,7 @@ export interface StrategistConfig {
   strategistSoloModelIdx: number;
   strategistDebateAModelIdx: number;
   strategistDebateBModelIdx: number;
+  strategistArbitratorModelIdx: number;
 }
 
 // Model catalog used by the strategist. Stored as an integer index in the
@@ -111,6 +112,7 @@ const DEFAULTS: Record<string, number> = {
   strategistSoloModelIdx: 0,
   strategistDebateAModelIdx: 0,
   strategistDebateBModelIdx: 1,
+  strategistArbitratorModelIdx: 0,
 };
 
 let settingsCache: Record<string, number> | null = null;
@@ -191,6 +193,7 @@ export function getSettingMeta(): SettingMetaEntry[] {
     { key: "strategistSoloModelIdx", label: "Solo Strategist Model", group: "AI Strategist", default: 0, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "AI model used in Solo mode.", options: modelOptions },
     { key: "strategistDebateAModelIdx", label: "Debate — Strategist A Model", group: "AI Strategist", default: 0, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model for Strategist A in Debate mode. Can match B (twin debate) or differ (cross-provider debate).", options: modelOptions },
     { key: "strategistDebateBModelIdx", label: "Debate — Strategist B Model", group: "AI Strategist", default: 1, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model for Strategist B in Debate mode.", options: modelOptions },
+    { key: "strategistArbitratorModelIdx", label: "Debate — Arbitrator (Senior PM) Model", group: "AI Strategist", default: 0, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model used in Phase 3 to arbitrate between A's and B's structure proposals and ship the final trade. Can be A, B, or a third independent model.", options: modelOptions },
     { key: "strategistConvergence", label: "Debate Convergence", group: "AI Strategist", default: 3, min: 1, max: 3, step: 1, description: "How the single final report is produced after the two strategists finish debating.", options: [
       { value: 1, label: "Higher confidence wins (fastest)" },
       { value: 2, label: "Synthesis pass (extra LLM merges both)" },
