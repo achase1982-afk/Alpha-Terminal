@@ -111,7 +111,10 @@ router.get("/url", (_req, res) => {
   }
 
   cleanExpired();
-  const state = signState();
+  // Use "trader_" prefix so the state matches what /trader-callback validates.
+  // The old /callback route (no prefix) is kept for backwards compat but the
+  // registered Schwab redirect URI points to /trader-callback.
+  const state = signState("trader_");
 
   const params = new URLSearchParams({
     response_type: "code",
