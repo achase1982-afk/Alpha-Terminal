@@ -473,44 +473,37 @@ function BiasHero({ data, onRefresh }: { data: MarketPulseData; onRefresh: () =>
           <div className="h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(pct, 100)}%`, background: biasStyle.text }} />
         </div>
 
-        <div className="mt-3 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-5 flex-wrap min-w-0">
-            <span className="font-mono text-xs font-bold tracking-wider" style={{ color: regimeColor }}>
-              REGIME {data.structuralRegime?.label?.replace(/_/g, " ")}
-            </span>
-            <span className="font-mono text-xs font-bold tracking-wider" style={{ color: BIAS_COLORS[data.sessionBias?.label]?.text ?? "#71717a" }}>
-              SESSION {data.sessionBias?.label?.replace(/_/g, " ")}
-            </span>
-            <span className="font-mono text-xs font-bold tracking-wider" style={{ color: riskColor }}>
-              SIZE {data.riskState?.label?.replace(/_/g, " ")}
-            </span>
-            <span className="font-mono text-xs text-zinc-500">
-              {data.timeET}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            {ageLabel && (
-              <div className="flex items-center gap-1">
-                <Clock className="w-3 h-3 text-[#8a8a8e]" />
-                <span className="font-mono text-[10px] text-[#8a8a8e] tracking-wider">{ageLabel}</span>
-              </div>
-            )}
-            <button
-              onClick={onRefresh}
-              aria-label="Refresh market pulse"
-              className="flex items-center justify-center w-7 h-7 rounded-md transition-all duration-100 active:translate-y-[1px]"
-              style={{
-                background: "linear-gradient(180deg, #2A2A2C 0%, #1E1E20 100%)",
-                color: "#a1a1aa",
-                border: "1px solid #3a3a3c",
-                borderBottom: "2px solid #1a1a1c",
-                boxShadow: "0 1px 3px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05)",
-              }}
-            >
-              <RefreshCw className="w-3 h-3" />
-            </button>
-          </div>
+        <div className="mt-3 flex items-center gap-x-5 gap-y-2 flex-wrap">
+          <span className="font-mono text-xs font-bold tracking-wider" style={{ color: regimeColor }}>
+            REGIME {data.structuralRegime?.label?.replace(/_/g, " ")}
+          </span>
+          <span className="font-mono text-xs font-bold tracking-wider" style={{ color: BIAS_COLORS[data.sessionBias?.label]?.text ?? "#71717a" }}>
+            SESSION {data.sessionBias?.label?.replace(/_/g, " ")}
+          </span>
+          <span className="font-mono text-xs font-bold tracking-wider" style={{ color: riskColor }}>
+            SIZE {data.riskState?.label?.replace(/_/g, " ")}
+          </span>
+          <span className="font-mono text-xs text-zinc-500">
+            {data.timeET}
+          </span>
+          {ageLabel && (
+            <div className="flex items-center gap-1">
+              <Clock className="w-3 h-3 text-[#8a8a8e]" />
+              <span className="font-mono text-[10px] text-[#8a8a8e] tracking-wider">{ageLabel}</span>
+            </div>
+          )}
+          <button
+            onClick={onRefresh}
+            aria-label="Refresh market pulse"
+            className="flex items-center justify-center w-6 h-6 rounded transition-all duration-100 active:translate-y-[1px]"
+            style={{
+              background: "transparent",
+              color: "#8a8a8e",
+              border: "1px solid #3a3a3c",
+            }}
+          >
+            <RefreshCw className="w-3 h-3" />
+          </button>
         </div>
 
         {data.deltaHealth && data.deltaHealth.state !== "HEALTHY" && data.deltaHealth.state !== "AWAITING_BASELINE" && (
