@@ -1,0 +1,36 @@
+You identified 3 dead settings in your audit. I want two of them re-wired to the active earnings logic, not deleted. Current state is unacceptable — the UI shows sliders that do nothing while the real earnings logic (earningsSuppressDays: 14) is hardcoded and untunable. This needs to be fixed.
+
+Do the following:
+
+1. DELETE: "IVR Credit/Debit Threshold" setting. Remove from META, DEFAULTS, and the UI panel entirely. The AI decides credit vs debit from IVR on its own. No replacement needed.
+
+2. RE-WIRE: "Earnings Proximity Window (hours)"
+   - Rename to "Earnings Suppress Window (days)"
+   - Change units from hours to days
+   - Default value: 14 (matches current hardcoded behavior)
+   - Range: 0 to 45 days
+   - Wire it to control the earningsSuppressDays value in deterministicScanner.v2.ts
+   - Find every other location in the codebase that currently uses a hardcoded 14-day earnings lookout and replace with this setting
+   - Setting to 0 should disable the earnings suppress entirely
+
+3. REPLACE: "Earnings IVR Floor for Credit" 
+   - Rename to "Earnings Inside Expiry Behavior"
+   - Change from numeric slider to dropdown with three values:
+     * BLOCK: refuse any trade where earnings fall inside the expiry window
+     * WARN: allow the trade but render a prominent warning banner on the card
+     * IGNORE: no special handling
+   - Default value: WARN
+   - Wire it to evaluate whenever the strategist builds a trade. If the proposed expiry is AFTER the next confirmed earnings date, check this setting and act accordingly.
+
+4. INVESTIGATE: Before implementing #2 and #3, verify whether the earningsDaysAway field in the data payload is derived from the same earnings date source that the new settings will consult. If they use different sources, they will disagree and we will have the same fragmented-evaluator problem we identified with catalyst detection. Document which data source each reads.
+
+5. CONFIRM: After implementation, all three of these settings:
+   - Earnings Suppress Window (days)
+   - Earnings Inside Expiry Behavior
+   - Whatever the earnings date source actually is
+
+   must consult ONE source of truth for the "next earnings date." Not three. One.
+
+6. Keep the existing telemetry intact. If a trade was blocked or warned on earnings logic, the reason should be logged.
+
+Do not start implementing until you have verified step 4 and reported back. I want to see the data source map before you wire anything together, because if the data is bad it doesn't matter how many settings I have.
