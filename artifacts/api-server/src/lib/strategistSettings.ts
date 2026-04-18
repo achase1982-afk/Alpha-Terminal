@@ -23,14 +23,13 @@ export interface StrategistConfig {
   scannerIdioLiquidity: number;
   catalystBonusPoints: number;
   scannerMinScore: number;
-  ivrCreditDebitThreshold: number;
   preferredDteMin: number;
   preferredDteMax: number;
   spreadWidth: number;
   minOpenInterest: number;
   maxBidAskSpreadPct: number;
-  earningsProximityHours: number;
-  earningsIvrFloor: number;
+  earningsSuppressDays: number;
+  earningsInsideExpiryBehavior: number;
   correlationLowCeiling: number;
   correlationHighFloor: number;
   toxicGateEnabled: number;
@@ -104,14 +103,13 @@ const DEFAULTS: Record<string, number> = {
   scannerIdioLiquidity: 15,
   catalystBonusPoints: 10,
   scannerMinScore: 55,
-  ivrCreditDebitThreshold: 40,
   preferredDteMin: 30,
   preferredDteMax: 60,
   spreadWidth: 5,
   minOpenInterest: 50,
   maxBidAskSpreadPct: 25,
-  earningsProximityHours: 48,
-  earningsIvrFloor: 70,
+  earningsSuppressDays: 14,
+  earningsInsideExpiryBehavior: 2,
   correlationLowCeiling: 0.40,
   correlationHighFloor: 0.75,
   toxicGateEnabled: 1,
@@ -231,14 +229,17 @@ export function getSettingMeta(): SettingMetaEntry[] {
     { key: "scannerIdioLiquidity", label: "Options Liquidity Weight", group: "Scanner Idiosyncratic", default: 15, min: 0, max: 40, step: 5, description: "Options liquidity weight in idiosyncratic mode." },
     { key: "catalystBonusPoints", label: "Catalyst Bonus Points", group: "Scanner", default: 10, min: 0, max: 25, step: 1, description: "Flat score boost for confirmed catalyst in idiosyncratic mode." },
     { key: "scannerMinScore", label: "Minimum Score Threshold", group: "Scanner", default: 55, min: 30, max: 80, step: 5, description: "Minimum composite score to appear in scan results." },
-    { key: "ivrCreditDebitThreshold", label: "IVR Credit/Debit Threshold", group: "Strategy", default: 40, min: 20, max: 60, step: 5, description: "Above this IVR, prefer credit spreads. Below, prefer debit spreads." },
     { key: "preferredDteMin", label: "Preferred DTE Min", group: "Strategy", default: 30, min: 7, max: 45, step: 1, description: "Minimum days to expiration for strategy selection." },
     { key: "preferredDteMax", label: "Preferred DTE Max", group: "Strategy", default: 60, min: 30, max: 90, step: 5, description: "Maximum days to expiration for strategy selection." },
     { key: "spreadWidth", label: "Spread Width ($)", group: "Strategy", default: 5, min: 1, max: 10, step: 0.50, description: "Width of vertical spreads in dollars." },
     { key: "minOpenInterest", label: "Min Open Interest Per Leg", group: "Strategy", default: 50, min: 10, max: 500, step: 10, description: "Minimum OI required for each leg." },
     { key: "maxBidAskSpreadPct", label: "Max Bid-Ask Spread (%)", group: "Strategy", default: 25, min: 5, max: 50, step: 5, description: "Maximum bid-ask spread as percent of mid price." },
-    { key: "earningsProximityHours", label: "Earnings Proximity Window (hours)", group: "Earnings", default: 48, min: 0, max: 96, step: 12, description: "How close to earnings to apply special rules. Set to 0 to disable." },
-    { key: "earningsIvrFloor", label: "Earnings IVR Floor for Credit", group: "Earnings", default: 70, min: 40, max: 90, step: 5, description: "Within earnings window, credit spreads only if IVR exceeds this." },
+    { key: "earningsSuppressDays", label: "Scanner Earnings Suppress Window (days)", group: "Earnings", default: 14, min: 0, max: 45, step: 1, description: "Scanner suppresses tickers with earnings within this many days. Set to 0 to disable. Source: Benzinga (confirmed) → Yahoo fallback." },
+    { key: "earningsInsideExpiryBehavior", label: "Earnings Inside Expiry Behavior", group: "Earnings", default: 2, min: 1, max: 3, step: 1, description: "What to do when the AI proposes a structure whose expiration is after the next earnings release. BLOCK = no trade. WARN = ship trade with banner. IGNORE = silent.", options: [
+      { value: 1, label: "BLOCK — no trade" },
+      { value: 2, label: "WARN — show banner, allow trade" },
+      { value: 3, label: "IGNORE — silent" },
+    ] },
     { key: "correlationLowCeiling", label: "Correlation LOW Ceiling", group: "Correlation", default: 0.40, min: 0.20, max: 0.50, step: 0.05, description: "Below this average correlation = LOW regime." },
     { key: "correlationHighFloor", label: "Correlation HIGH Floor", group: "Correlation", default: 0.75, min: 0.60, max: 0.90, step: 0.05, description: "Above this average correlation = HIGH regime." },
     { key: "toxicGateEnabled", label: "Toxic Gate Enabled", group: "Toxic Gate", default: 1, min: 0, max: 1, step: 1, description: "Master switch for the toxic day gate." },

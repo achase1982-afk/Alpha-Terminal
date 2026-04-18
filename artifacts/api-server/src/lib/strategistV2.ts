@@ -8,6 +8,7 @@ import { desc, eq, sql, and } from "drizzle-orm";
 import { getBestAccessToken } from "./tokenStore.js";
 import { fetchPolygonChain } from "./polygonChain.js";
 import { checkEventConflicts, getUpcomingEvents } from "./calendarEventChecker.js";
+import { getNextEarningsDate } from "./earningsService.js";
 import { computeIVR, type OptionContract } from "./optionsStrategist.js";
 import { getAiLabStrategistConfig } from "./aiLabConfig.js";
 import {
@@ -35,6 +36,7 @@ export type RejectionCategory =
   | "MISSING_DATA"
   | "STOCK_HALTED"
   | "PRICING_MARKET_CLOSED"
+  | "EARNINGS_INSIDE_EXPIRY"
   | "UNKNOWN";
 
 export interface BlockReason {
@@ -87,6 +89,15 @@ export interface StrategistV2Result {
   ioScore?: IOScoreResult;
   systemicRiskElevated: boolean;
   telemetryId?: number;
+  earningsAlert?: {
+    earningsDate: string;
+    daysUntilEarnings: number | null;
+    daysUntilExpiry: number;
+    insideExpiry: boolean;
+    behavior: "BLOCK" | "WARN" | "IGNORE";
+    source: "benzinga" | "yahoo" | null;
+    confirmed: boolean;
+  };
 }
 
 interface CandidateLeg {
@@ -111,6 +122,9 @@ interface TickerData {
   sector: string;
   earningsWithin48h: boolean;
   earningsDaysAway: number | null;
+  earningsDate: string | null;
+  earningsConfirmed: boolean;
+  earningsSource: "benzinga" | "yahoo" | null;
   analystActions48h: string[];
   halted: boolean;
 }
@@ -630,6 +644,84 @@ export async function analyzeTickerV2(
   const expDate = new Date(expiration);
   const dte = Math.max(0, Math.round((expDate.getTime() - Date.now()) / (24 * 60 * 60 * 1000)));
 
+  // Earnings-inside-expiry gate (uses unified earningsService data on tickerData).
+  // For multi-expiration structures (calendar/diagonal/etc) compare against the LATEST
+  // leg expiration so we don't miss earnings that fall inside the long-side leg.
+  let earningsAlert: StrategistV2Result["earningsAlert"] | undefined;
+  let earningsBlockReason: string | null = null;
+  const horizonExpiration = aiResponse.legs.reduce(
+    (max, l) => (l.expiration && l.expiration > max ? l.expiration : max),
+    expiration,
+  );
+  const horizonDate = new Date(horizonExpiration);
+  const horizonDte = Math.max(
+    0,
+    Math.round((horizonDate.getTime() - Date.now()) / (24 * 60 * 60 * 1000)),
+  );
+  if (tickerData.earningsDate && horizonExpiration) {
+    const evDate = new Date(tickerData.earningsDate + "T16:00:00-04:00");
+    if (!Number.isNaN(evDate.getTime()) && !Number.isNaN(horizonDate.getTime())) {
+      const insideExpiry =
+        evDate.getTime() >= Date.now() && evDate.getTime() <= horizonDate.getTime();
+      if (insideExpiry) {
+        const behaviorIdx = (settings as any).earningsInsideExpiryBehavior ?? 2;
+        const behavior: "BLOCK" | "WARN" | "IGNORE" =
+          behaviorIdx === 1 ? "BLOCK" : behaviorIdx === 3 ? "IGNORE" : "WARN";
+        earningsAlert = {
+          earningsDate: tickerData.earningsDate,
+          daysUntilEarnings: tickerData.earningsDaysAway,
+          daysUntilExpiry: horizonDte,
+          insideExpiry: true,
+          behavior,
+          source: tickerData.earningsSource,
+          confirmed: tickerData.earningsConfirmed,
+        };
+        earningsBlockReason = behavior === "BLOCK" ? "EARNINGS_INSIDE_EXPIRY_BLOCK" : "EARNINGS_INSIDE_EXPIRY_WARN";
+        logger.warn({
+          ticker,
+          earningsDate: tickerData.earningsDate,
+          daysUntilEarnings: tickerData.earningsDaysAway,
+          firstLegDte: dte,
+          horizonDte,
+          horizonExpiration,
+          behavior,
+          source: tickerData.earningsSource,
+        }, "StrategistV2: earnings falls inside option expiry");
+
+        if (behavior === "BLOCK") {
+          const ctx = buildContextSources(aiResponse, webTrace);
+          const blocked = await noViable(
+            ticker, regime, settings, toxicCheck, tickerData,
+            {
+              category: "EARNINGS_INSIDE_EXPIRY",
+              detail: `Earnings ${tickerData.earningsDate} (${tickerData.earningsConfirmed ? "confirmed" : "estimated"}, ${tickerData.earningsSource ?? "n/a"}) falls inside ${horizonDte}-DTE expiration ${horizonExpiration}. Behavior=BLOCK.`,
+              suggestedAction: "Choose a closer expiration that ends before the earnings release, or change Earnings Inside Expiry Behavior to WARN.",
+            },
+            ioScore,
+            {
+              dataSource,
+              dataPackage,
+              rawAiResponse: rawAiResponseText,
+              confidenceBase: aiResponse.confidence,
+              confidenceFinal: aiResponse.confidence,
+              catalystAlignment: aiResponse.catalystAlignment ?? null,
+            },
+          );
+          blocked.contextSources = ctx;
+          blocked.earningsAlert = earningsAlert;
+          return blocked;
+        }
+
+        if (behavior === "WARN") {
+          const warnLine = `⚠ Earnings ${tickerData.earningsDate} falls inside expiry ${horizonExpiration} (DTE ${horizonDte}). Position will hold through earnings.`;
+          aiResponse.warnings = aiResponse.warnings
+            ? `${aiResponse.warnings}\n${warnLine}`
+            : warnLine;
+        }
+      }
+    }
+  }
+
   const direction = inferDirection(aiResponse.strategy, aiResponse.legs);
   const idioStrengthPct = Math.round(ioScore.final * 100);
   const macroPct = 100 - idioStrengthPct;
@@ -672,7 +764,11 @@ export async function analyzeTickerV2(
     regime,
     ioScore,
     systemicRiskElevated: regime.systemicRiskLevel === "ELEVATED" || regime.systemicRiskLevel === "EXTREME",
+    earningsAlert,
   };
+  if (earningsBlockReason) {
+    logger.info({ ticker, earningsBlockReason, earningsAlert }, "StrategistV2: earnings telemetry");
+  }
 
   const telemetryId = await logTelemetry(
     ticker, "recommendation", regime, settings, ioScore, tickerData, toxicCheck,
@@ -1570,13 +1666,22 @@ async function fetchTickerData(ticker: string): Promise<{ data: TickerData | nul
     const currentVol = q.totalVolume ?? 0;
 
     const eventResult = checkEventConflicts(ticker, 45, "iron_condor");
-    const earningsEvents = getUpcomingEvents(10).filter((e) => e.type === "earnings" && e.title.toLowerCase().includes(ticker.toLowerCase()));
-    let earningsDaysAway: number | null = null;
-    if (earningsEvents.length > 0) {
-      const evDate = new Date(earningsEvents[0].date + "T16:00:00-04:00");
-      earningsDaysAway = Math.max(0, Math.round((evDate.getTime() - Date.now()) / (24 * 60 * 60 * 1000)));
-    }
+    // Single source of truth: Benzinga primary + Yahoo fallback (cached 6h).
+    // Replaces the legacy MEGA_EARNINGS hardcoded list which only covered ~mega caps.
+    const earningsInfo = await getNextEarningsDate(ticker).catch(() => null);
+    const earningsDaysAway: number | null = earningsInfo?.daysAway ?? null;
     const earningsWithin48h = earningsDaysAway != null && earningsDaysAway <= 2;
+    if (earningsInfo?.earningsDate) {
+      logger.info({
+        ticker,
+        earningsDate: earningsInfo.earningsDate,
+        daysAway: earningsDaysAway,
+        source: earningsInfo.source,
+        confirmed: earningsInfo.confirmed,
+      }, "StrategistV2: earnings data resolved");
+    }
+    void getUpcomingEvents; // retained for type compat; calendar list no longer drives ticker-specific earnings
+
 
     return {
       data: {
@@ -1589,6 +1694,9 @@ async function fetchTickerData(ticker: string): Promise<{ data: TickerData | nul
         sector: f.sector ?? "Unknown",
         earningsWithin48h,
         earningsDaysAway,
+        earningsDate: earningsInfo?.earningsDate ?? null,
+        earningsConfirmed: earningsInfo?.confirmed ?? false,
+        earningsSource: earningsInfo?.source ?? null,
         analystActions48h: [],
         halted: q.securityStatus === "Halted" || q.securityStatus === "HALTED",
       },

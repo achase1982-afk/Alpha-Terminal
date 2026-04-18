@@ -1,4 +1,5 @@
 import { checkEventConflicts } from "./calendarEventChecker.js";
+import { getNextEarningsDate } from "./earningsService.js";
 import { emitTelemetry, createTelemetryBatch } from "./telemetryStore.js";
 import type { FilterResult, ScanResult, ScanCandidate } from "./deterministicScanner.js";
 import { db, equityDailyTable, flowDailyAggregatesTable, optionsFlowPerStrikeTable, scannerTelemetryTable } from "@workspace/db";
@@ -990,9 +991,17 @@ export async function runDiscoveryScan(
       const sectorCandles = etfHistories.get(sectorEtf) ?? etfHistories.get("SPY") ?? [];
       const sectorCloses = sectorCandles.map(c => c.close);
 
-      // Earnings flags
-      const earningsCheck = checkEventConflicts(sym, 14, "BULL_PUT_SPREAD", null);
-      const earningsWithin14d = earningsCheck.eventConflicts.some(e => e.eventType === "earnings");
+      // Earnings flags — single source of truth: Benzinga primary, Yahoo fallback, 6h cache.
+      // Calendar-event MEGA_EARNINGS list is intentionally NOT consulted here so the suppress
+      // window applies uniformly to every ticker, not just the hand-maintained mega caps.
+      const suppressDays = cfg.earningsSuppressDays ?? CFG.earningsSuppressDays;
+      let earningsWithin14d = false;
+      if (suppressDays > 0) {
+        const earningsInfo = await getNextEarningsDate(sym).catch(() => null);
+        earningsWithin14d =
+          earningsInfo?.daysAway != null && earningsInfo.daysAway <= suppressDays;
+      }
+      void checkEventConflicts; // referenced below for non-ticker macro events only
 
       // ── Category 1 ──
       const s1a = sma20 ? score1A(spot, sma20) : 0;
@@ -1099,15 +1108,37 @@ export async function runDiscoveryScan(
 
   const { getUpcomingEvents } = await import("./calendarEventChecker.js");
 
-  const candidates: ScanCandidate[] = aboveThreshold.map(r => {
-    const upcoming = getUpcomingEvents(30).filter(e =>
-      e.title.toLowerCase().includes(r.symbol.toLowerCase()) || e.importance === "HIGH"
-    ).slice(0, 5).map(e => ({ date: e.date, title: e.title, importance: e.importance }));
+  // Pre-fetch ticker-specific earnings via the unified helper (cached). This replaces the
+  // legacy MEGA_EARNINGS-driven `checkEventConflicts` lookup for ticker-specific events,
+  // so non-mega-cap candidates also surface their real earnings dates.
+  const earningsBySymbol = new Map<string, { date: string; confirmed: boolean; source: string | null }>();
+  await Promise.all(aboveThreshold.map(async (r) => {
+    const info = await getNextEarningsDate(r.symbol).catch(() => null);
+    if (info?.earningsDate) {
+      earningsBySymbol.set(r.symbol.toUpperCase(), {
+        date: info.earningsDate,
+        confirmed: info.confirmed,
+        source: info.source,
+      });
+    }
+  }));
 
-    const tickerEvents = checkEventConflicts(r.symbol, 30, "BULL_PUT_SPREAD", null);
-    const tickerSpecific = tickerEvents.eventConflicts
-      .filter(c => c.ticker?.toUpperCase() === r.symbol.toUpperCase())
-      .map(c => ({ date: c.date, title: c.eventTitle, importance: c.importance }));
+  const candidates: ScanCandidate[] = aboveThreshold.map(r => {
+    // Macro-only events (FOMC, CPI, OpEx, etc) — exclude any "earnings" type since those
+    // are now sourced exclusively from the unified earnings helper above.
+    const upcoming = getUpcomingEvents(30)
+      .filter(e => e.type !== "earnings" && e.importance === "HIGH")
+      .slice(0, 5)
+      .map(e => ({ date: e.date, title: e.title, importance: e.importance }));
+
+    const earn = earningsBySymbol.get(r.symbol.toUpperCase());
+    const tickerSpecific: Array<{ date: string; title: string; importance: string }> = earn
+      ? [{
+          date: earn.date,
+          title: `${r.symbol} Earnings${earn.confirmed ? "" : " (est)"}`,
+          importance: "HIGH",
+        }]
+      : [];
 
     const allUpcoming = [...tickerSpecific, ...upcoming]
       .filter((v, i, a) => a.findIndex(e => e.date === v.date && e.title === v.title) === i)

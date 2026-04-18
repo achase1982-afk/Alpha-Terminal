@@ -8,6 +8,7 @@ import { getAccessToken, getBestAccessToken } from "../lib/tokenStore.js";
 import { getQuoteBySymbol, addOptionSymbols, getAllOptionTicks, type OptionTick } from "../lib/schwabStreamer.js";
 import { getIBCachedQuote, subscribeQuoteForSymbol, isIBConnected } from "../lib/ibStreamer.js";
 import { logFailure } from "../lib/telemetry.js";
+import { getNextEarningsDate } from "../lib/earningsService.js";
 import { emitTelemetry } from "../lib/telemetryStore.js";
 import { computeIVR, type OptionContract } from "../lib/optionsStrategist.js";
 import { fetchPolygonChain } from "../lib/polygonChain.js";
@@ -1359,42 +1360,20 @@ router.get("/earnings-date", async (req, res) => {
   if (!symbol) {
     return res.status(400).json({ symbol: "", earningsDate: null });
   }
-  const cleanSymbol = symbol.replace(/^\$/, "");
-  const benzingaKey = process.env["BENZINGA_API_KEY"];
-
-  const benzingaResult = benzingaKey
-    ? await fetchBenzingaEarnings(cleanSymbol, benzingaKey, req.log)
-    : null;
-
-  if (benzingaResult?.earningsDate) {
-    return res.json({
-      symbol: cleanSymbol,
-      earningsDate: benzingaResult.earningsDate,
-      confirmed: benzingaResult.confirmed,
-      time: benzingaResult.time,
-      epsEstimate: benzingaResult.epsEstimate,
-      epsPrior: benzingaResult.epsPrior,
-      revenueEstimate: benzingaResult.revenueEstimate,
-      revenuePrior: benzingaResult.revenuePrior,
-      period: benzingaResult.period,
-      periodYear: benzingaResult.periodYear,
-      source: "benzinga",
-    });
-  }
-
-  const yahooDate = await fetchYahooEarningsDate(cleanSymbol, req.log);
+  const result = await getNextEarningsDate(symbol);
   res.json({
-    symbol: cleanSymbol,
-    earningsDate: yahooDate,
-    confirmed: false,
-    time: null,
-    epsEstimate: null,
-    epsPrior: null,
-    revenueEstimate: null,
-    revenuePrior: null,
-    period: null,
-    periodYear: null,
-    source: yahooDate ? "yahoo" : null,
+    symbol: result.symbol,
+    earningsDate: result.earningsDate,
+    confirmed: result.confirmed,
+    time: result.time,
+    epsEstimate: result.epsEstimate,
+    epsPrior: result.epsPrior,
+    revenueEstimate: result.revenueEstimate,
+    revenuePrior: result.revenuePrior,
+    period: result.period,
+    periodYear: result.periodYear,
+    source: result.source,
+    daysAway: result.daysAway,
   });
 });
 

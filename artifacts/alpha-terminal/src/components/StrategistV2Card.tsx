@@ -144,6 +144,15 @@ export interface StrategistV2Result {
   };
   systemicRiskElevated: boolean;
   telemetryId?: number;
+  earningsAlert?: {
+    earningsDate: string;
+    daysUntilEarnings: number | null;
+    daysUntilExpiry: number;
+    insideExpiry: boolean;
+    behavior: "BLOCK" | "WARN" | "IGNORE";
+    source: "benzinga" | "yahoo" | null;
+    confirmed: boolean;
+  };
 }
 
 const STRAT_LABELS: Record<string, string> = {
@@ -258,6 +267,9 @@ export function StrategistV2RecommendationCard({ result, onSendToOrder, generate
 
   if (!rec) return null;
 
+  const earningsAlert = result.earningsAlert;
+  const showEarningsBanner = earningsAlert && earningsAlert.behavior === "WARN" && earningsAlert.insideExpiry;
+
   const borderColor = systemicRiskElevated ? AMBER : "#2A2A2C";
   const stratLabel = STRAT_LABELS[rec.strategyType] ?? rec.strategyType.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
   const isCredit = rec.credit != null && rec.credit > 0;
@@ -287,6 +299,33 @@ export function StrategistV2RecommendationCard({ result, onSendToOrder, generate
         </div>
         {generatedAt && (
           <div className="font-mono text-[9px] text-zinc-500 mb-2 -mt-2">Generated {new Date(generatedAt).toLocaleString()}</div>
+        )}
+
+        {showEarningsBanner && earningsAlert && (
+          <div
+            className="rounded mb-3 px-3 py-2 flex items-start gap-2"
+            style={{ background: `${AMBER}14`, border: `1px solid ${AMBER}55` }}
+          >
+            <span className="font-mono text-[14px] leading-none mt-0.5" style={{ color: AMBER }}>⚠</span>
+            <div className="flex-1 min-w-0">
+              <div className="font-mono text-[11px] font-bold" style={{ color: AMBER }}>
+                Earnings inside expiry
+              </div>
+              <div className="font-mono text-[10px] text-zinc-300 mt-0.5">
+                {earningsAlert.confirmed ? "Confirmed" : "Estimated"} earnings on{" "}
+                <span className="text-white">{earningsAlert.earningsDate}</span>
+                {earningsAlert.daysUntilEarnings != null && (
+                  <> (in {earningsAlert.daysUntilEarnings}d)</>
+                )}{" "}
+                — falls inside the {earningsAlert.daysUntilExpiry}-DTE expiry. Position will hold through earnings.
+              </div>
+              {earningsAlert.source && (
+                <div className="font-mono text-[9px] text-zinc-500 mt-0.5">
+                  Source: {earningsAlert.source}
+                </div>
+              )}
+            </div>
+          </div>
         )}
 
         {rec.companyContext && (
