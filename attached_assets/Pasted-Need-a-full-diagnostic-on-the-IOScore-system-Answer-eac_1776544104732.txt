@@ -1,0 +1,38 @@
+Need a full diagnostic on the IOScore system. Answer each question specifically. Do not summarize or abbreviate.
+
+1. Where is the IOScore engine located in the codebase (file path, function name)?
+
+2. What are the exact inputs the IOScore engine reads? List every data source, field, and where it comes from (Schwab, IBKR, internal cache, Market Pulse, etc.).
+
+3. What is the exact formula for each IOScore output field on the card? Walk through each one:
+- Overall percentage
+- Classification (MACRO_ALIGNED vs IDIOSYNCRATIC vs other)
+- Idiosyncratic edge percentage
+- Macro edge percentage
+- Conviction label (NEUTRAL, MODERATELY BULLISH, BEARISH, etc.)
+- Risk level (LOW, MODERATE, HIGH)
+- Correlation (NORMAL, ELEVATED, etc.)
+- Composite number
+- Idio Opportunity flag (Yes/No)
+
+For each field, show the code path from raw input to final output value.
+
+4. Does IOScore pull any data from the Market Pulse engine, or is it completely independent? If it pulls from Market Pulse, which specific fields?
+
+5. When IOScore computes, what is the lookback window and data frequency? (e.g., 30 days of daily closes, 60 days of hourly bars, etc.)
+
+6. How is the regression performed? Against what benchmark (SPY, QQQ, sector ETF, something else)?
+
+7. What triggers IOScore to show as "available" vs "unavailable"? What are the exact threshold conditions?
+
+8. Why did IOScore return Composite 50.0 / NEUTRAL on multiple MRVL runs earlier today and then Composite 66.0 / MODERATELY BULLISH on MRVL runs later today, with no change in underlying data? Walk through what changed between the two time periods.
+
+9. Why is every ticker tonight (MRVL, UPS, GS, SNDK, M, LCID) showing the same Composite 66.0 and MACRO ALIGNED classification? Is that a coincidence based on genuine computation, or is one field acting as a default that propagates across tickers?
+
+10. How often does the IOScore engine run? Is it computed on every strategist call, cached, or refreshed on a timer?
+
+11. What's the relationship between IOScore and the scanner's separate scoring system (SETUP, ACCUM, IV SET, FLOW, RS)? Same engine or different?
+
+12. On the LCID run today, IOScore showed Conviction: MODERATELY BULLISH on a stock that has crashed 25% in 48 hours with universal analyst downgrades. How did that output get generated? Walk through the specific inputs and computation that produced MODERATELY BULLISH on LCID.
+
+Report back with specific answers, not summaries. File paths, line numbers, formulas, and actual data values where relevant.
