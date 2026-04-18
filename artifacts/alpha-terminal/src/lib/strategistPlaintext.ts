@@ -194,11 +194,33 @@ export function strategistCardToPlainText(
   const ctx = result.recommendation?.contextSources ?? result.contextSources;
   if (ctx) {
     const ctxLines: string[] = [];
-    if (ctx.sameDayCatalyst) {
+    const cat = (ctx as { catalyst?: {
+      catalystInWindow: boolean;
+      catalystType: string;
+      catalystDate: string | null;
+      catalystAlignment: string;
+      residualCatalyst?: { type: string; date: string; daysSince: number };
+      catalystSummary?: string;
+      scheduledEvents: Array<{ type: string; date: string; title: string; source: string }>;
+    } }).catalyst;
+    if (cat) {
+      if (cat.catalystInWindow) {
+        ctxLines.push(`Catalyst In Window: ${cat.catalystType} on ${cat.catalystDate} (${cat.catalystAlignment})`);
+        if (cat.catalystSummary) ctxLines.push(`  ${cat.catalystSummary}`);
+        for (const e of cat.scheduledEvents) {
+          ctxLines.push(`  · ${e.date} — ${e.type} — ${e.title} [${e.source}]`);
+        }
+      } else if (cat.residualCatalyst) {
+        ctxLines.push(`Residual Catalyst: ${cat.residualCatalyst.type} fired ${cat.residualCatalyst.daysSince}d ago (${cat.residualCatalyst.date})`);
+        if (cat.catalystSummary) ctxLines.push(`  ${cat.catalystSummary}`);
+      } else {
+        ctxLines.push("Catalyst In Window: None — thesis is technical/structural");
+      }
+    } else if (ctx.sameDayCatalyst) {
       const align = ctx.catalystAlignment && ctx.catalystAlignment !== "NONE" ? ` (${ctx.catalystAlignment})` : "";
       ctxLines.push(`Same-Day Catalyst${align}: ${ctx.catalystSummary || "Yes"}`);
     } else if (ctx.webSearchUsed) {
-      ctxLines.push("Same-Day Catalyst: None");
+      ctxLines.push("Catalyst: None observed via web search");
     } else {
       ctxLines.push("Web Search: Not invoked on this run");
     }

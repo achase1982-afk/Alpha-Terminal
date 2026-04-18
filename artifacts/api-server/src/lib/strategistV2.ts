@@ -9,6 +9,7 @@ import { getBestAccessToken } from "./tokenStore.js";
 import { fetchPolygonChain } from "./polygonChain.js";
 import { checkEventConflicts, getUpcomingEvents } from "./calendarEventChecker.js";
 import { getNextEarningsDate } from "./earningsService.js";
+import { evaluateCatalyst, type CatalystEvaluation } from "./catalystEvaluator.js";
 import { computeIVR, type OptionContract } from "./optionsStrategist.js";
 import { getAiLabStrategistConfig } from "./aiLabConfig.js";
 import {
@@ -149,9 +150,14 @@ export interface ContextSourcesPayload {
   queryCount: number;
   queries: string[];
   sources: Array<{ title: string; url: string; date?: string }>;
+  /** @deprecated Day-trader frame; retained for legacy UI/history compat. Always false going forward. */
   sameDayCatalyst: boolean;
+  /** @deprecated Use catalyst.catalystSummary. Mirrored for legacy UI/history compat. */
   catalystSummary?: string;
+  /** @deprecated Use catalyst.catalystAlignment. Mirrored for legacy UI/history compat. */
   catalystAlignment?: "ALIGNED" | "CONTRADICTS" | "NEUTRAL" | "NONE";
+  /** New swing-trader-correct catalyst evaluation — the relevant question for 28-60 DTE spreads. */
+  catalyst?: import("./catalystEvaluator.js").CatalystEvaluation;
 }
 
 interface AiTradeResponse {
@@ -184,9 +190,20 @@ interface AiTradeResponse {
   warnings: string | null;
   // Self-reported by the model after running its own web searches.
   // The server merges this with the actual tool-trace before returning.
+  /** @deprecated Day-trader frame; replaced by `catalyst` object below. Still parsed for back-compat. */
   sameDayCatalyst?: boolean;
+  /** @deprecated Mirror of catalyst.summary. Still parsed for back-compat. */
   catalystSummary?: string;
+  /** @deprecated Mirror of catalyst.alignment. Still parsed for back-compat. */
   catalystAlignment?: "ALIGNED" | "CONTRADICTS" | "NEUTRAL" | "NONE";
+  /** New swing-trader catalyst signal. Server merges with deterministic earnings/FOMC/economic data. */
+  catalyst?: {
+    type?: string | null;          // EARNINGS | FED_MEETING | ECONOMIC_RELEASE | PRODUCT_LAUNCH | MA_EVENT | ANALYST_ACTION | NONE
+    date?: string | null;          // YYYY-MM-DD if known
+    alignment?: string | null;     // ALIGNED | CONTRADICTS | NEUTRAL | UNKNOWN
+    summary?: string | null;
+    residual?: { type?: string | null; date?: string | null } | null;
+  } | null;
   citedHeadlines?: Array<{ title: string; url?: string; date?: string }>;
 }
 
@@ -316,9 +333,14 @@ Your response must be valid JSON with these fields:
 - riskOfRuin: string (the single biggest threat to this trade — the one thing that if it happened would cause maximum pain: macro event, vol crush, gap risk, earnings adjacency, liquidity trap, regulatory surprise; one sentence)
 - confidence: number 0-100 (if no setup qualifies, return below 20 and do not force a trade)
 - warnings: string or null (anything the user should know: earnings risk, low liquidity, gap risk, etc.)
-- sameDayCatalyst: boolean (true if web search confirmed a material same-day or last-48h news event for this ticker)
-- catalystSummary: string (one sentence summarizing the catalyst, or "No material news in last 7 days per web search")
-- catalystAlignment: "ALIGNED" | "CONTRADICTS" | "NEUTRAL" | "NONE" (relationship of the catalyst to the recommended direction)
+- catalyst: object (the swing-trader-correct catalyst evaluation) with these fields:
+    - type: one of "EARNINGS" | "FED_MEETING" | "ECONOMIC_RELEASE" | "PRODUCT_LAUNCH" | "MA_EVENT" | "ANALYST_ACTION" | "NONE"
+      The single most important catalyst that will fire BETWEEN TODAY AND YOUR PROPOSED EXPIRATION. The server independently confirms EARNINGS / FED_MEETING / ECONOMIC_RELEASE from authoritative calendars and will override yours if they disagree. PRODUCT_LAUNCH / MA_EVENT / ANALYST_ACTION you must source from web search.
+    - date: "YYYY-MM-DD" if known, else null
+    - alignment: "ALIGNED" | "CONTRADICTS" | "NEUTRAL" | "UNKNOWN" (relationship of the catalyst to your recommended direction; use UNKNOWN when no catalyst exists)
+    - summary: one sentence describing the catalyst, or "No scheduled catalyst between now and expiry — thesis is technical/structural" if none
+    - residual: optional object {type: same enum, date: "YYYY-MM-DD"} for a catalyst that fired in the LAST 14 DAYS that the price is still digesting (e.g. earnings 3-7 days ago driving post-earnings drift). Omit if not applicable.
+  Most valid swing setups (post-earnings drift, mean reversion, vol regime, trend continuation) have NO scheduled catalyst between now and expiry — that is fine and expected. Do not invent a catalyst.
 - citedHeadlines: array of {title: string, url?: string, date?: string} (key headlines you actually used in the thesis; empty array allowed if none)
 
 NARRATIVE DISCIPLINE: Your job is structure and thesis. The code computes economics from real Schwab leg prices after you respond. When your thesis prose mentions a specific debit, credit, risk/reward ratio, max profit, max loss, or breakeven, cite only numbers that match the legs and prices you are picking — do not invent or approximate. If you are uncertain of a number, describe the shape of the trade qualitatively instead of quoting a dollar figure. Dollar amounts and ratios you cite must match the strikes and real leg prices you selected; mismatches get auto-corrected by the server and logged as a quality issue.
@@ -522,43 +544,93 @@ export async function analyzeTickerV2(
     }
   }
 
-  // Idiosyncratic catalyst override: if regime is NEUTRAL and the model
-  // found NO same-day catalyst, the trade has neither macro nor idio edge.
-  // Reject as no-viable-setup. (When EITHER macro has direction OR a catalyst
-  // exists, we proceed.)
-  const regimeIsNoEdge = regime.directionalConviction === "NEUTRAL" || regime.directionalConviction === "TRANSITION";
-  if (regimeIsNoEdge && !aiResponse.sameDayCatalyst) {
-    const ctx = buildContextSources(aiResponse, webTrace);
-    const blocked = await noViable(
-      ticker, regime, settings, toxicCheck, tickerData,
+  // ── Catalyst evaluation (swing-trader frame) ──
+  // Compute a unified evaluation: server-confirmed scheduled events (earnings,
+  // FOMC, HIGH-impact econ releases) BETWEEN now and the proposed expiration,
+  // merged with AI-supplied non-scheduled signals (product launches, M&A,
+  // analyst actions, residual catalysts). The legacy "same-day catalyst" frame
+  // is retired here — it incorrectly blocked valid swing setups.
+  const farLegExpiration = aiResponse.legs.reduce(
+    (max, l) => (l.expiration && l.expiration > max ? l.expiration : max),
+    aiResponse.legs[0]?.expiration ?? "",
+  );
+  const catalystEval = await evaluateCatalyst({
+    ticker,
+    expirationISO: farLegExpiration,
+    ai: aiResponse.catalyst ?? null,
+  });
+
+  // Stop computing legacy `sameDayCatalyst`. It's still in the schema for
+  // historical record compatibility but new analyses always emit false.
+  aiResponse.sameDayCatalyst = false;
+
+  // No-edge gate (replaces the legacy day-trader version). Only fires when
+  // ALL of: macro regime has no direction, no scheduled catalyst between now
+  // and expiry, AND no recently-fired residual catalyst. Default behaviour is
+  // WARN — most valid 28-60 DTE swing setups (post-earnings drift, mean
+  // reversion, vol regime, trend continuation) deliberately have no scheduled
+  // catalyst by definition.
+  const regimeIsNoEdge =
+    regime.directionalConviction === "NEUTRAL" ||
+    regime.directionalConviction === "TRANSITION";
+  const noEdgeCondition =
+    regimeIsNoEdge && !catalystEval.catalystInWindow && !catalystEval.residualCatalyst;
+  let noEdgeWarn: string | null = null;
+  if (noEdgeCondition) {
+    const behaviorIdx = (settings as { noEdgeGateBehavior?: number }).noEdgeGateBehavior ?? 2;
+    const behavior: "BLOCK" | "WARN" | "IGNORE" =
+      behaviorIdx === 1 ? "BLOCK" : behaviorIdx === 3 ? "IGNORE" : "WARN";
+    logger.info(
       {
-        category: "NO_EDGE",
-        detail: `Macro regime is ${regime.directionalConviction} and web search found no same-day ticker catalyst. ${aiResponse.catalystSummary ?? ""}`.trim(),
-        suggestedAction: "Wait for a directional macro regime or a fresh idiosyncratic catalyst.",
+        ticker,
+        regime: regime.directionalConviction,
+        catalystInWindow: catalystEval.catalystInWindow,
+        residualCatalyst: catalystEval.residualCatalyst ?? null,
+        behavior,
       },
-      ioScore,
-      { dataSource, dataPackage, rawAiResponse: rawAiResponseText, confidenceBase: aiResponse.confidence, confidenceFinal: aiResponse.confidence, catalystAlignment: aiResponse.catalystAlignment ?? null },
+      "StrategistV2: no-edge condition (regime neutral, no catalyst in window, no residual)",
     );
-    blocked.contextSources = ctx;
-    return blocked;
+    if (behavior === "BLOCK") {
+      const ctx = buildContextSources(aiResponse, webTrace, catalystEval);
+      const blocked = await noViable(
+        ticker, regime, settings, toxicCheck, tickerData,
+        {
+          category: "NO_EDGE",
+          detail: `Macro regime is ${regime.directionalConviction}, no scheduled catalyst between now and ${farLegExpiration || "expiry"}, no recently-fired residual catalyst. Behavior=BLOCK.`,
+          suggestedAction: "Wait for a directional regime, a scheduled catalyst, or change No-Catalyst-In-Window Behavior to WARN.",
+        },
+        ioScore,
+        {
+          dataSource, dataPackage, rawAiResponse: rawAiResponseText,
+          confidenceBase: aiResponse.confidence, confidenceFinal: aiResponse.confidence,
+          catalystAlignment: catalystEval.catalystAlignment === "UNKNOWN" ? null : catalystEval.catalystAlignment,
+        },
+      );
+      blocked.contextSources = ctx;
+      return blocked;
+    }
+    if (behavior === "WARN") {
+      noEdgeWarn = `⚠ No scheduled catalyst between now and ${farLegExpiration || "expiry"} and macro regime is ${regime.directionalConviction}. Thesis must stand on technical/structural grounds alone.`;
+      aiResponse.warnings = aiResponse.warnings ? `${aiResponse.warnings}\n${noEdgeWarn}` : noEdgeWarn;
+    }
   }
 
-  // Capture confidence for telemetry. As of the catalyst-bump removal, the
-  // server no longer mutates the AI's confidence value — base, delta, and
-  // final are all the same number, kept in the schema so historical records
-  // remain comparable. We still log sameDayCatalyst + catalystAlignment so we
-  // can later analyze whether catalyst-aligned trades actually outperform
-  // catalyst-neutral or catalyst-contradicting ones from the raw signal.
+  // Capture confidence for telemetry. The server does not mutate AI confidence
+  // — base, delta, and final are all the same number; the schema retains the
+  // delta column so historical records remain comparable.
   const confidenceBaseValue = aiResponse.confidence;
   const confidenceCatalystDeltaValue = 0;
   logger.info(
     {
       ticker,
       confidence: aiResponse.confidence,
-      sameDayCatalyst: aiResponse.sameDayCatalyst ?? null,
-      catalystAlignment: aiResponse.catalystAlignment ?? null,
+      catalystInWindow: catalystEval.catalystInWindow,
+      catalystType: catalystEval.catalystType,
+      catalystDate: catalystEval.catalystDate,
+      catalystAlignment: catalystEval.catalystAlignment,
+      residualCatalyst: catalystEval.residualCatalyst ?? null,
     },
-    "StrategistV2: catalyst signal observed (no confidence mutation applied)",
+    "StrategistV2: catalyst evaluation complete (no confidence mutation applied)",
   );
   const confidenceFinalValue = aiResponse.confidence;
 
@@ -591,7 +663,7 @@ export async function analyzeTickerV2(
         computedMaxLoss: computedMaxLossCheck,
         discrepancy: Math.round(discrepancy * 100),
       }, "StrategistV2: economics validation failed — AI maxRisk vs computed maxLoss differ by >50%");
-      const ctx = buildContextSources(aiResponse, webTrace);
+      const ctx = buildContextSources(aiResponse, webTrace, catalystEval);
       const blocked = await noViable(
         ticker, regime, settings, toxicCheck, tickerData,
         {
@@ -689,7 +761,7 @@ export async function analyzeTickerV2(
         }, "StrategistV2: earnings falls inside option expiry");
 
         if (behavior === "BLOCK") {
-          const ctx = buildContextSources(aiResponse, webTrace);
+          const ctx = buildContextSources(aiResponse, webTrace, catalystEval);
           const blocked = await noViable(
             ticker, regime, settings, toxicCheck, tickerData,
             {
@@ -758,9 +830,9 @@ export async function analyzeTickerV2(
       riskOfRuin: aiResponse.riskOfRuin || "",
       confidence: aiResponse.confidence,
       warnings: aiResponse.warnings,
-      contextSources: buildContextSources(aiResponse, webTrace),
+      contextSources: buildContextSources(aiResponse, webTrace, catalystEval),
     },
-    contextSources: buildContextSources(aiResponse, webTrace),
+    contextSources: buildContextSources(aiResponse, webTrace, catalystEval),
     regime,
     ioScore,
     systemicRiskElevated: regime.systemicRiskLevel === "ELEVATED" || regime.systemicRiskLevel === "EXTREME",
@@ -2166,6 +2238,7 @@ function normalizeExitTargets(
 function buildContextSources(
   resp: AiTradeResponse,
   trace: WebSearchTrace,
+  catalyst?: CatalystEvaluation | null,
 ): ContextSourcesPayload {
   const merged = new Map<string, { title: string; url: string; date?: string }>();
   for (const s of trace.sources) {
@@ -2177,13 +2250,22 @@ function buildContextSources(
       merged.set(h.url, { title: h.title, url: h.url, date: h.date });
     }
   }
+  // Mirror new catalyst evaluation into legacy fields for back-compat with
+  // older UI code paths and persisted history records.
+  const legacyAlignment: "ALIGNED" | "CONTRADICTS" | "NEUTRAL" | "NONE" =
+    catalyst?.catalystAlignment === "ALIGNED" ? "ALIGNED" :
+    catalyst?.catalystAlignment === "CONTRADICTS" ? "CONTRADICTS" :
+    catalyst?.catalystAlignment === "NEUTRAL" ? "NEUTRAL" :
+    "NONE";
   return {
     webSearchUsed: trace.webSearchUsed,
     queryCount: trace.queries.length,
     queries: trace.queries,
     sources: Array.from(merged.values()).slice(0, 12),
-    sameDayCatalyst: resp.sameDayCatalyst === true,
-    catalystSummary: resp.catalystSummary,
-    catalystAlignment: resp.catalystAlignment ?? "NONE",
+    // Legacy day-trader field — retained for history/UI compat, never set true going forward.
+    sameDayCatalyst: false,
+    catalystSummary: catalyst?.catalystSummary ?? resp.catalystSummary,
+    catalystAlignment: legacyAlignment,
+    catalyst: catalyst ?? undefined,
   };
 }

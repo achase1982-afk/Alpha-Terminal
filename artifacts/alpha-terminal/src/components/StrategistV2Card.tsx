@@ -63,14 +63,39 @@ const CATEGORY_COLORS: Record<RejectionCategory, string> = {
   UNKNOWN: "#71717a",
 };
 
+export type CatalystType =
+  | "EARNINGS" | "FED_MEETING" | "ECONOMIC_RELEASE"
+  | "PRODUCT_LAUNCH" | "MA_EVENT" | "ANALYST_ACTION" | "NONE";
+export type CatalystAlignmentNew = "ALIGNED" | "CONTRADICTS" | "NEUTRAL" | "UNKNOWN";
+
+export interface CatalystEvaluation {
+  catalystInWindow: boolean;
+  catalystType: CatalystType;
+  catalystDate: string | null;
+  catalystAlignment: CatalystAlignmentNew;
+  residualCatalyst?: { type: Exclude<CatalystType, "NONE">; date: string; daysSince: number };
+  catalystSummary?: string;
+  scheduledEvents: Array<{
+    type: Exclude<CatalystType, "NONE">;
+    date: string;
+    title: string;
+    source: "earnings_service" | "calendar" | "ai_web_search";
+  }>;
+}
+
 export interface ContextSourcesPayload {
   webSearchUsed: boolean;
   queryCount: number;
   queries: string[];
   sources: Array<{ title: string; url: string; date?: string }>;
+  /** @deprecated legacy day-trader field; always false on new analyses */
   sameDayCatalyst: boolean;
+  /** @deprecated mirror of catalyst.catalystSummary on new analyses */
   catalystSummary?: string;
+  /** @deprecated mirror of catalyst.catalystAlignment on new analyses */
   catalystAlignment?: "ALIGNED" | "CONTRADICTS" | "NEUTRAL" | "NONE";
+  /** New swing-trader catalyst evaluation; present on all new analyses */
+  catalyst?: CatalystEvaluation;
 }
 
 export interface StrategistV2Result {
@@ -582,13 +607,32 @@ function isSafeHttpUrl(raw: string | undefined | null): boolean {
 
 function ContextSourcesBlock({ ctx }: { ctx: ContextSourcesPayload }) {
   const [expanded, setExpanded] = useState(false);
+  // New schema (preferred). Falls back to legacy fields for historical records.
+  const cat = ctx.catalyst;
+  const newAlignment: CatalystAlignmentNew | null = cat ? cat.catalystAlignment : null;
   const alignmentColor =
-    ctx.catalystAlignment === "ALIGNED" ? UP :
-    ctx.catalystAlignment === "CONTRADICTS" ? DOWN :
+    (newAlignment ?? ctx.catalystAlignment) === "ALIGNED" ? UP :
+    (newAlignment ?? ctx.catalystAlignment) === "CONTRADICTS" ? DOWN :
     "#71717a";
-  const headerLabel = ctx.sameDayCatalyst
-    ? `CATALYST · ${ctx.catalystAlignment ?? "NEUTRAL"}`
-    : ctx.webSearchUsed ? "NO MATERIAL CATALYST" : "WEB SEARCH UNAVAILABLE";
+  let headerLabel: string;
+  if (cat) {
+    if (cat.catalystInWindow) {
+      headerLabel = `CATALYST IN WINDOW · ${cat.catalystType} · ${cat.catalystAlignment}`;
+    } else if (cat.residualCatalyst) {
+      headerLabel = `RESIDUAL · ${cat.residualCatalyst.type} · ${cat.residualCatalyst.daysSince}d AGO`;
+    } else {
+      headerLabel = "NO CATALYST IN WINDOW";
+    }
+  } else {
+    // Legacy fallback for historical records persisted before the schema change.
+    headerLabel = ctx.sameDayCatalyst
+      ? `CATALYST · ${ctx.catalystAlignment ?? "NEUTRAL"}`
+      : ctx.webSearchUsed ? "NO MATERIAL CATALYST" : "WEB SEARCH UNAVAILABLE";
+  }
+  const summary =
+    cat?.catalystSummary ||
+    ctx.catalystSummary ||
+    (ctx.webSearchUsed ? `${ctx.queryCount} search${ctx.queryCount === 1 ? "" : "es"} · ${ctx.sources.length} source${ctx.sources.length === 1 ? "" : "s"}` : "Web search did not run");
   return (
     <div className="rounded-lg overflow-hidden mt-3" style={{ background: "#0d0d0f", border: "1px solid #1f1f22" }}>
       <button
@@ -603,13 +647,32 @@ function ContextSourcesBlock({ ctx }: { ctx: ContextSourcesPayload }) {
             {headerLabel}
           </span>
           <span className="font-mono text-[10px] text-zinc-400 truncate">
-            {ctx.catalystSummary || (ctx.webSearchUsed ? `${ctx.queryCount} search${ctx.queryCount === 1 ? "" : "es"} · ${ctx.sources.length} source${ctx.sources.length === 1 ? "" : "s"}` : "Web search did not run")}
+            {summary}
           </span>
         </div>
         {expanded ? <ChevronUp className="w-3 h-3 text-zinc-500 shrink-0" /> : <ChevronDown className="w-3 h-3 text-zinc-500 shrink-0" />}
       </button>
       {expanded && (
         <div className="px-3 pb-3 space-y-2">
+          {cat && (cat.scheduledEvents.length > 0 || cat.residualCatalyst) && (
+            <div>
+              <div className="font-mono text-[9px] text-zinc-500 uppercase tracking-widest mb-1">
+                Catalyst Detail
+              </div>
+              <ul className="space-y-0.5">
+                {cat.scheduledEvents.map((e, i) => (
+                  <li key={`s${i}`} className="font-mono text-[10px] text-zinc-300">
+                    · {e.date} — {e.type} — {e.title} <span className="text-zinc-600">[{e.source}]</span>
+                  </li>
+                ))}
+                {cat.residualCatalyst && (
+                  <li className="font-mono text-[10px] text-zinc-300">
+                    · residual: {cat.residualCatalyst.type} fired {cat.residualCatalyst.daysSince}d ago ({cat.residualCatalyst.date})
+                  </li>
+                )}
+              </ul>
+            </div>
+          )}
           {ctx.queries.length > 0 && (
             <div>
               <div className="font-mono text-[9px] text-zinc-500 uppercase tracking-widest mb-1">

@@ -30,6 +30,7 @@ export interface StrategistConfig {
   maxBidAskSpreadPct: number;
   earningsSuppressDays: number;
   earningsInsideExpiryBehavior: number;
+  noEdgeGateBehavior: number;
   correlationLowCeiling: number;
   correlationHighFloor: number;
   toxicGateEnabled: number;
@@ -110,6 +111,7 @@ const DEFAULTS: Record<string, number> = {
   maxBidAskSpreadPct: 25,
   earningsSuppressDays: 14,
   earningsInsideExpiryBehavior: 2,
+  noEdgeGateBehavior: 2,
   correlationLowCeiling: 0.40,
   correlationHighFloor: 0.75,
   toxicGateEnabled: 1,
@@ -238,6 +240,11 @@ export function getSettingMeta(): SettingMetaEntry[] {
     { key: "earningsInsideExpiryBehavior", label: "Earnings Inside Expiry Behavior", group: "Earnings", default: 2, min: 1, max: 3, step: 1, description: "What to do when the AI proposes a structure whose expiration is after the next earnings release. BLOCK = no trade. WARN = ship trade with banner. IGNORE = silent.", options: [
       { value: 1, label: "BLOCK — no trade" },
       { value: 2, label: "WARN — show banner, allow trade" },
+      { value: 3, label: "IGNORE — silent" },
+    ] },
+    { key: "noEdgeGateBehavior", label: "No-Catalyst-In-Window Behavior", group: "Strategy", default: 2, min: 1, max: 3, step: 1, description: "What to do when there is no scheduled catalyst between today and the proposed expiration AND no recently-fired residual catalyst AND macro regime is NEUTRAL/TRANSITION. Most swing setups (post-earnings drift, mean reversion, vol regime, trend continuation) have no scheduled catalyst by definition, so WARN is the swing-trader-correct default.", options: [
+      { value: 1, label: "BLOCK — refuse trade (legacy day-trader behavior)" },
+      { value: 2, label: "WARN — ship trade with banner" },
       { value: 3, label: "IGNORE — silent" },
     ] },
     { key: "correlationLowCeiling", label: "Correlation LOW Ceiling", group: "Correlation", default: 0.40, min: 0.20, max: 0.50, step: 0.05, description: "Below this average correlation = LOW regime." },
