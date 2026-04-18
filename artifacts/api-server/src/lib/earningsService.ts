@@ -93,7 +93,14 @@ async function fetchBenzinga(ticker: string, apiKey: string): Promise<BenzingaRe
     };
     const items = data.earnings || [];
     const today = new Date().toISOString().slice(0, 10);
-    const upcoming = items.find((e) => e.date >= today) || items[0];
+    // Benzinga returns records in descending date order; we need the NEAREST
+    // future earnings, not the first record encountered. Sort the future
+    // subset ascending and take the head. Falls back to the latest known
+    // record only when no future earnings exist (post-print blackout).
+    const upcoming = items
+      .filter((e) => e.date >= today)
+      .sort((a, b) => a.date.localeCompare(b.date))[0]
+      || items[0];
     if (!upcoming) return null;
     // Most recent past print: latest item with date strictly < today.
     const past = items
@@ -164,10 +171,26 @@ async function fetchYahoo(symbol: string): Promise<string | null> {
     const result = (json as any)?.quoteSummary?.result?.[0];
     const arr = result?.calendarEvents?.earnings?.earningsDate;
     if (Array.isArray(arr) && arr.length > 0) {
-      const rawTs = arr[0]?.raw;
-      if (typeof rawTs === "number") return new Date(rawTs * 1000).toISOString().slice(0, 10);
-      const fmt = arr[0]?.fmt;
-      if (typeof fmt === "string") return fmt;
+      // Same defensive ordering as the Benzinga path: when more than one
+      // earnings date is returned (Yahoo often returns a [start, end] range
+      // for unconfirmed prints, and we've seen multi-quarter responses),
+      // pick the earliest entry that's >= today, not whichever index 0
+      // happens to be.
+      const today = new Date().toISOString().slice(0, 10);
+      const normalised = arr
+        .map((entry: { raw?: number; fmt?: string }) => {
+          if (typeof entry?.raw === "number") {
+            return new Date(entry.raw * 1000).toISOString().slice(0, 10);
+          }
+          if (typeof entry?.fmt === "string") return entry.fmt;
+          return null;
+        })
+        .filter((d): d is string => typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d));
+      const upcoming = normalised
+        .filter((d) => d >= today)
+        .sort((a, b) => a.localeCompare(b))[0];
+      if (upcoming) return upcoming;
+      if (normalised.length > 0) return normalised.sort()[normalised.length - 1];
     }
     return null;
   } catch (err) {
