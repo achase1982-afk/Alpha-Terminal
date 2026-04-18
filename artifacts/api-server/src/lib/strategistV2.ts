@@ -1415,30 +1415,13 @@ function validateAiResponse(
     return { valid: false, issues };
   }
 
-  // Hard whitelist of allowed strategy types. Structures with quantity-asymmetric
-  // or strike-asymmetric risk profiles (ratios, broken-wing butterflies, naked
-  // wings, straddles/strangles) are excluded until computeSpreadEconomics models
-  // them correctly. See investigation report Q3-Q5.
-  const allowedStrategies = new Set([
-    "bull_call_spread",
-    "bear_put_spread",
-    "bull_put_spread",
-    "bear_call_spread",
-    "iron_condor",
-    "iron_butterfly",
-    "calendar_spread",
-    "diagonal_spread",
-    "vertical",
-  ]);
-  if (!allowedStrategies.has(response.strategy)) {
-    issues.push(`Strategy "${response.strategy}" is not permitted. Allowed structures: bull_call_spread, bear_put_spread, bull_put_spread, bear_call_spread, iron_condor, iron_butterfly, calendar_spread, diagonal_spread, vertical. Reformulate the trade using one of these defined-risk structures.`);
-    return { valid: false, issues };
-  }
-
-  // Quantity-balance check: every leg's implicit contract count must net to zero
-  // per option type (calls vs puts) within the same expiration. Catches ratio
-  // structures that slip past the strategy-name whitelist by being labeled as
-  // "vertical" but having asymmetric quantities.
+  // No strategy whitelist. All structures (broken-wing butterflies, condors,
+  // calendars, diagonals, ratio-balanced spreads, etc.) are permitted. The only
+  // hard rejection is naked-short risk: a position whose net short contracts
+  // per option-type / expiration are not covered by long contracts of the same
+  // type, leaving theoretically unlimited (calls) or substantial-but-bounded
+  // (puts) downside that this engine does not model. Net-zero (balanced) and
+  // net-long (debit-financed) structures pass.
   const legSig = (l: typeof response.legs[number]) => `${l.expiration}|${l.type}`;
   const balance = new Map<string, number>();
   for (const leg of response.legs) {
@@ -1448,8 +1431,10 @@ function validateAiResponse(
     balance.set(key, (balance.get(key) ?? 0) + sign * qty);
   }
   for (const [key, net] of balance) {
-    if (Math.abs(net) > 1) {
-      issues.push(`Leg quantity imbalance detected for ${key}: net ${net} contracts. Ratio/asymmetric structures are not permitted; long and short quantities per option type per expiration must match.`);
+    if (net < 0) {
+      const [expiration, type] = key.split("|");
+      const noun = type === "call" ? "call" : "put";
+      issues.push(`Naked short ${noun}(s) detected for ${expiration}: net ${net} contracts uncovered by long ${noun}s of the same expiration. Add a long ${noun} leg to define maximum risk.`);
       return { valid: false, issues };
     }
   }
