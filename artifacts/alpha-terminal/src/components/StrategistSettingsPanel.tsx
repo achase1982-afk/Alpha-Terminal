@@ -17,8 +17,8 @@ interface SettingMeta {
   options?: Array<{ value: number; label: string }>;
 }
 
-// Pin "AI Strategist" to the top so users see the mode/model controls first.
-const GROUP_ORDER = ["AI Strategist"];
+// Pin "Strategist" to the top so users see the mode/model controls first.
+const GROUP_ORDER = ["Strategist"];
 function sortedGroups<T>(groups: Map<string, T>): Array<[string, T]> {
   const all = Array.from(groups.keys());
   const ordered: string[] = [];

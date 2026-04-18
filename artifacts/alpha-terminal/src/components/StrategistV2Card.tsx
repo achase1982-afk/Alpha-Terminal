@@ -10,6 +10,20 @@ const UP = "#2ecc71";
 const DOWN = "#ff4b5c";
 const AMBER = "#f59e0b";
 
+// Defensive frontend sanitizer for any narrative text persisted before the
+// backend cleanup landed. Strips Anthropic web-search citation wrappers
+// (<cite index="0-1">x</cite>, self-closing variants) and repairs malformed
+// multi-dot decimals like "4.05/4.2.335" that occasionally slip through.
+export function sanitizeNarrative(s: string | undefined | null): string {
+  if (!s) return "";
+  let out = String(s);
+  out = out.replace(/<cite\s[^>]*\/>/gi, "");
+  out = out.replace(/<cite\s[^>]*>([\s\S]*?)<\/cite>/gi, "$1");
+  out = out.replace(/<\/?cite[^>]*>/gi, "");
+  out = out.replace(/(\d+\.\d+)\.(\d+)\b/g, "$1 $2");
+  return out.replace(/[ \t]{2,}/g, " ").trim();
+}
+
 // Mirror of server-side BlockReason taxonomy. Older history rows persist
 // blockReason as a free-form string; normalizeBlockReason() promotes those to
 // { category: "UNKNOWN", detail: <string> } at render time.
@@ -370,15 +384,15 @@ export function StrategistV2RecommendationCard({ result, onSendToOrder, generate
         )}
 
         {rec.companyContext && (
-          <div className="font-mono text-[11px] text-zinc-400 leading-relaxed mb-2">{rec.companyContext}</div>
+          <div className="font-mono text-[11px] text-zinc-400 leading-relaxed mb-2">{sanitizeNarrative(rec.companyContext)}</div>
         )}
 
-        <div className="font-mono text-[12px] text-white leading-relaxed mb-3">{rec.thesis || rec.rationale}</div>
+        <div className="font-mono text-[12px] text-white leading-relaxed mb-3">{sanitizeNarrative(rec.thesis || rec.rationale)}</div>
 
         {rec.warnings && (
           <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg" style={{ background: "rgba(245, 158, 11, 0.08)", border: "1px solid rgba(245, 158, 11, 0.2)" }}>
             <Shield className="w-3 h-3 flex-shrink-0" style={{ color: AMBER }} />
-            <span className="font-mono text-[10px]" style={{ color: AMBER }}>{rec.warnings}</span>
+            <span className="font-mono text-[10px]" style={{ color: AMBER }}>{sanitizeNarrative(rec.warnings)}</span>
           </div>
         )}
 
@@ -386,13 +400,13 @@ export function StrategistV2RecommendationCard({ result, onSendToOrder, generate
           <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg" style={{ background: "rgba(255, 75, 92, 0.06)", border: "1px solid rgba(255, 75, 92, 0.15)" }}>
             <Shield className="w-3 h-3 flex-shrink-0" style={{ color: DOWN }} />
             <span className="font-mono text-[9px] uppercase tracking-wider text-zinc-500 mr-1">Risk of Ruin:</span>
-            <span className="font-mono text-[10px]" style={{ color: DOWN }}>{rec.riskOfRuin}</span>
+            <span className="font-mono text-[10px]" style={{ color: DOWN }}>{sanitizeNarrative(rec.riskOfRuin)}</span>
           </div>
         )}
 
         <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg" style={{ background: "rgba(245, 166, 35, 0.06)", border: "1px solid rgba(245, 166, 35, 0.15)" }}>
           <Zap className="w-3 h-3 flex-shrink-0" style={{ color: GOLD }} />
-          <span className="font-mono text-[10px] text-white">{rec.edgeAttribution}</span>
+          <span className="font-mono text-[10px] text-white">{sanitizeNarrative(rec.edgeAttribution)}</span>
         </div>
 
         <div className="grid grid-cols-2 gap-3 mb-3">
@@ -517,30 +531,42 @@ export function StrategistV2RecommendationCard({ result, onSendToOrder, generate
               ))}
             </div>
 
-            {ioScore && (
+            {ioScore && (() => {
+              // Banner fires when (a) the engine flagged the run as unavailable, OR
+              // (b) the displayed Composite percent (final × 100) is within 3 points
+              // of 50.0. The near-midpoint band catches runs the engine reports as
+              // available but whose score is too close to neutral to act on.
+              const compositePct = (ioScore.final ?? 0.5) * 100;
+              const ambiguousBand = Math.abs(compositePct - 50) <= 3;
+              const ioUnavailable = ioScore.available === false || ambiguousBand;
+              const reasonText = ioScore.available === false
+                ? `IOScore unavailable — insufficient SPY/${ioScore.dataAvailability?.equityDays ?? 0}d equity history to fit beta/R². Score below shown as N/A; underlying engine returned fallback values (rSquared=0.50, residualZ=0).`
+                : `IOScore inconclusive — Composite ${compositePct.toFixed(1)} is within 3 points of the 50.0 neutral midpoint. Score below shown as N/A; treat as no idiosyncratic edge.`;
+              return (
               <div className="space-y-2">
                 <h4 className="font-mono text-[9px] text-zinc-500 uppercase tracking-widest">IOScore Breakdown</h4>
-                {ioScore.available === false && (
+                {ioUnavailable && (
                   <div className="font-mono text-[10px] text-amber-300 bg-amber-900/20 border border-amber-500/30 rounded px-2 py-1">
-                    IOScore unavailable — insufficient SPY/{ioScore.dataAvailability?.equityDays ?? 0}d equity history to fit beta/R². Score below shown as N/A; underlying engine returned fallback values (rSquared=0.50, residualZ=0).
+                    {reasonText}
                   </div>
                 )}
                 <div className="grid grid-cols-2 gap-2">
                   <StatRow
                     label="Overall"
-                    value={ioScore.available === false ? "N/A" : `${(ioScore.final * 100).toFixed(0)}%`}
-                    color={ioScore.available === false ? "#71717a" : ioScore.classification === "HIGH_IDIOSYNCRATIC" ? UP : ioScore.classification === "MIXED" ? GOLD : "#71717a"}
+                    value={ioUnavailable ? "N/A" : `${(ioScore.final * 100).toFixed(0)}%`}
+                    color={ioUnavailable ? "#71717a" : ioScore.classification === "HIGH_IDIOSYNCRATIC" ? UP : ioScore.classification === "MIXED" ? GOLD : "#71717a"}
                   />
-                  <StatRow label="Classification" value={ioScore.available === false ? "N/A" : ioScore.classification.replace(/_/g, " ")} />
-                  <StatRow label="R²" value={ioScore.available === false ? "N/A" : (ioScore.components?.marketIndependence?.rSquared?.toFixed(3) ?? "—")} />
-                  <StatRow label="Beta" value={ioScore.available === false ? "N/A" : (ioScore.beta?.toFixed(2) ?? "—")} />
-                  <StatRow label="Residual Z" value={ioScore.available === false ? "N/A" : (ioScore.residualReturnZScore?.toFixed(2) ?? "—")} />
+                  <StatRow label="Classification" value={ioUnavailable ? "N/A" : ioScore.classification.replace(/_/g, " ")} />
+                  <StatRow label="R²" value={ioUnavailable ? "N/A" : (ioScore.components?.marketIndependence?.rSquared?.toFixed(3) ?? "—")} />
+                  <StatRow label="Beta" value={ioUnavailable ? "N/A" : (ioScore.beta?.toFixed(2) ?? "—")} />
+                  <StatRow label="Residual Z" value={ioUnavailable ? "N/A" : (ioScore.residualReturnZScore?.toFixed(2) ?? "—")} />
                   <StatRow label="Catalyst" value={ioScore.components?.catalyst?.flagValue > 0 ? "YES" : "No"} color={ioScore.components?.catalyst?.flagValue > 0 ? UP : "#71717a"} />
                   <StatRow label="Flow Score" value={ioScore.components?.flowDivergence?.final?.toFixed(3) ?? "—"} />
                   <StatRow label="Vol/OI Ratio" value={ioScore.components?.flowDivergence?.volOiRatio?.toFixed(3) ?? "—"} />
                 </div>
               </div>
-            )}
+              );
+            })()}
 
             <div className="space-y-2">
               <h4 className="font-mono text-[9px] text-zinc-500 uppercase tracking-widest">Regime</h4>

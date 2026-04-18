@@ -1684,7 +1684,7 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
                   <div className="flex items-center justify-between py-2 border-b border-card-border/30">
                     <div>
                       <h2 className="font-mono font-bold text-sm text-[#e4e4e7] tracking-wider">TECHNICAL ANALYSIS</h2>
-                      <p className="font-mono text-[11px] text-[#71717a] tracking-widest">AI-Powered Company Analysis</p>
+                      <p className="font-mono text-[11px] text-[#71717a] tracking-widest">Company Analysis</p>
                     </div>
                   </div>
                   <div className="p-8 text-center">
@@ -1720,7 +1720,7 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
                       </span>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between">
-                          <span className="font-mono text-xs font-bold text-[#FFB800] tracking-wider">CLAUDE AI REASONING</span>
+                          <span className="font-mono text-xs font-bold text-[#FFB800] tracking-wider">REASONING</span>
                           <span className="font-mono text-xs tabular-nums text-[#71717a]">{taElapsed}s</span>
                         </div>
                       </div>
@@ -1731,7 +1731,7 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
                     <div className="px-4 py-3 space-y-1.5">
                       {[
                         { label: "LOADING MARKET DATA", done: true },
-                        { label: "CLAUDE AI REASONING", done: false, active: true },
+                        { label: "REASONING", done: false, active: true },
                       ].map((s) => (
                         <div key={s.label} className="flex items-center gap-2">
                           <div className="w-2 h-2 rounded-full shrink-0" style={{ background: s.done ? "#00d166" : s.active ? "#FFB800" : "#2A2A2C", boxShadow: s.active ? "0 0 6px rgba(255,184,0,0.5)" : "none" }} />
@@ -1766,7 +1766,7 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
                 <div className="flex items-center justify-between py-2.5" style={{ paddingTop: 12, paddingBottom: 8 }}>
                   <div>
                     <h2 className="font-mono font-bold text-sm text-[#e4e4e7] tracking-wider">TECHNICAL ANALYSIS</h2>
-                    <p className="font-mono text-[11px] text-[#71717a] tracking-widest">AI-Powered Company Analysis</p>
+                    <p className="font-mono text-[11px] text-[#71717a] tracking-widest">Company Analysis</p>
                   </div>
                   <div className="flex items-center gap-3">
                     {taAge && (

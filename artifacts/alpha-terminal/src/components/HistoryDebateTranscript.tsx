@@ -11,10 +11,10 @@ interface SavedTurn {
 }
 
 const ROLE_STYLE: Record<string, { fg: string; label: string }> = {
-  A: { fg: "#FFB800", label: "🐂" },
-  B: { fg: "#26C6DA", label: "🐻" },
-  synthesis: { fg: "#00D166", label: "T" },
-  system: { fg: "#BA82FF", label: "⚖" },
+  A: { fg: "#FFB800", label: "Bull Case" },
+  B: { fg: "#26C6DA", label: "Bear Case" },
+  synthesis: { fg: "#00D166", label: "Recommendation" },
+  system: { fg: "#BA82FF", label: "Verdict" },
 };
 
 function formatTurnText(raw: string): string {
@@ -85,12 +85,11 @@ export function HistoryDebateTranscript({ transcript }: { transcript: SavedTurn[
 
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation();
+    // Institutional copy payload — strip role/phase/label/model attribution.
+    // Full attribution is preserved in the strategist_telemetry table and the
+    // direct API endpoint; the user-facing copy is just round + content.
     const payload = transcript.map((t) => ({
       round: t.round,
-      role: t.role,
-      phase: t.phase,
-      label: t.label,
-      model: t.model,
       text: formatTurnText(t.text),
     }));
     const text = JSON.stringify(payload, null, 2);
@@ -134,13 +133,13 @@ export function HistoryDebateTranscript({ transcript }: { transcript: SavedTurn[
         <button
           onClick={() => setExpanded((e) => !e)}
           className="flex items-center gap-2 flex-1 min-w-0 text-left"
-          aria-label={expanded ? "Collapse AI reasoning" : "Expand AI reasoning"}
+          aria-label={expanded ? "Collapse debate transcript" : "Expand debate transcript"}
         >
           <span className="font-mono text-[11px] text-[#FFB800] leading-none">
             {expanded ? "▾" : "▸"}
           </span>
           <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#FFB800]">
-            AI Reasoning · Bull · Bear Debate
+            Bull · Bear Debate
           </span>
           <span className="font-mono text-[10px] text-[#888] truncate">· {summary}</span>
         </button>
@@ -174,13 +173,9 @@ export function HistoryDebateTranscript({ transcript }: { transcript: SavedTurn[
                 return (
                   <div key={t.id ?? `${round}-${ti}`} className="pl-3" style={{ borderLeft: `2px solid ${style.fg}` }}>
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="text-[12px] leading-none" style={{ color: style.fg }}>
+                      <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: style.fg }}>
                         {style.label}
                       </span>
-                      <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: style.fg }}>
-                        {t.label}
-                      </span>
-                      <span className="font-mono text-[9px] text-[#666]">{t.model}</span>
                       <span className="ml-auto font-mono text-[9px] text-[#666]">{phaseLabel(t.phase, t.round, t.role)}</span>
                     </div>
                     <pre className="font-mono text-[11px] leading-[1.55] text-[#ddd] whitespace-pre-wrap break-words m-0">

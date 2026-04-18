@@ -68,7 +68,7 @@ export function AiThinkingFeed({ texts, isStreaming, className = "" }: AiThinkin
       >
         <div className="flex items-center gap-2">
           <span className="inline-flex rounded-full h-2 w-2 bg-emerald-500/50" />
-          <span className="font-mono text-[11px] font-bold text-emerald-500/70 tracking-widest">AI REASONING</span>
+          <span className="font-mono text-[11px] font-bold text-emerald-500/70 tracking-widest">REASONING</span>
         </div>
         <span className="font-mono text-[10px] text-zinc-600 tracking-wider">tap to expand</span>
       </button>
@@ -88,7 +88,7 @@ export function AiThinkingFeed({ texts, isStreaming, className = "" }: AiThinkin
             <span className="inline-flex rounded-full h-2 w-2 bg-emerald-500/50" />
           )}
           <span className="font-mono text-[11px] font-bold text-emerald-500/70 tracking-widest">
-            AI REASONING
+            REASONING
             {isStreaming && <span className="ml-2 text-[#52525b] font-normal animate-pulse">thinking...</span>}
           </span>
         </div>
@@ -97,7 +97,7 @@ export function AiThinkingFeed({ texts, isStreaming, className = "" }: AiThinkin
             <button
               onClick={handleCopy}
               className="font-mono text-[10px] text-zinc-500 hover:text-emerald-400 transition-colors tracking-wider uppercase"
-              title="Copy AI reasoning to clipboard"
+              title="Copy reasoning to clipboard"
             >
               {copied ? "copied!" : "copy"}
             </button>

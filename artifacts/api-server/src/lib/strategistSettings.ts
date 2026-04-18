@@ -197,15 +197,15 @@ export interface SettingMetaEntry {
 export function getSettingMeta(): SettingMetaEntry[] {
   const modelOptions = STRATEGIST_MODEL_OPTIONS.map((m, i) => ({ value: i, label: m.label }));
   return [
-    { key: "strategistMode", label: "Strategist Mode", group: "AI Strategist", default: 1, min: 1, max: 2, step: 1, description: "Solo = one strategist runs the analysis. Debate = two strategists go back-and-forth across three rounds and converge on a single trade.", options: [
+    { key: "strategistMode", label: "Strategist Mode", group: "Strategist", default: 1, min: 1, max: 2, step: 1, description: "Solo = one strategist runs the analysis. Debate = two strategists go back-and-forth across three rounds and converge on a single trade.", options: [
       { value: 1, label: "Solo (1 strategist)" },
       { value: 2, label: "Debate (2 strategists)" },
     ] },
-    { key: "strategistSoloModelIdx", label: "Solo Strategist Model", group: "AI Strategist", default: 0, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "AI model used in Solo mode.", options: modelOptions },
-    { key: "strategistDebateAModelIdx", label: "Debate — Strategist A Model", group: "AI Strategist", default: 0, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model for Strategist A in Debate mode. Can match B (twin debate) or differ (cross-provider debate).", options: modelOptions },
-    { key: "strategistDebateBModelIdx", label: "Debate — Strategist B Model", group: "AI Strategist", default: 1, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model for Strategist B in Debate mode.", options: modelOptions },
-    { key: "strategistArbitratorModelIdx", label: "Debate — Arbitrator (Senior PM) Model", group: "AI Strategist", default: 0, min: -1, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model used in Phase 3 to arbitrate between A's and B's structure proposals and ship the final trade. Can be A, B, an independent third model, or 'Debate Winner' (whichever side wins the directional verdict is promoted to Senior PM).", options: [{ value: -1, label: "Debate Winner (winning side promoted to Senior PM)" }, ...modelOptions] },
-    { key: "strategistConvergence", label: "Debate Convergence", group: "AI Strategist", default: 3, min: 1, max: 3, step: 1, description: "How the single final report is produced after the two strategists finish debating.", options: [
+    { key: "strategistSoloModelIdx", label: "Solo Model", group: "Strategist", default: 0, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model used in Solo mode.", options: modelOptions },
+    { key: "strategistDebateAModelIdx", label: "Debate — Bull Model", group: "Strategist", default: 0, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model used to argue the Bull side in Debate mode. Can match the Bear model (twin debate) or differ (cross-provider debate).", options: modelOptions },
+    { key: "strategistDebateBModelIdx", label: "Debate — Bear Model", group: "Strategist", default: 1, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model used to argue the Bear side in Debate mode.", options: modelOptions },
+    { key: "strategistArbitratorModelIdx", label: "Debate — Arbitrator Model", group: "Strategist", default: 0, min: -1, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model used in Phase 3 to arbitrate between Bull's and Bear's structure proposals and ship the final trade. Can be the Bull model, Bear model, an independent third model, or 'Debate Winner' (whichever side wins the directional verdict is promoted to Senior PM).", options: [{ value: -1, label: "Debate Winner (winning side promoted to Senior PM)" }, ...modelOptions] },
+    { key: "strategistConvergence", label: "Debate Convergence", group: "Strategist", default: 3, min: 1, max: 3, step: 1, description: "How the single final report is produced after the two strategists finish debating.", options: [
       { value: 1, label: "Higher confidence wins (fastest)" },
       { value: 2, label: "Synthesis pass (extra LLM merges both)" },
       { value: 3, label: "Hybrid — agree → synthesis, disagree → higher confidence" },

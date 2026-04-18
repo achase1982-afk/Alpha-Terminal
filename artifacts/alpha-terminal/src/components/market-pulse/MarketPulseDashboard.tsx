@@ -238,7 +238,7 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, objec
                 className="w-full px-4 py-3 flex items-center gap-2 cursor-pointer hover:bg-zinc-800/30 transition-colors"
               >
                 <span className="w-2 h-2 rounded-full bg-emerald-500" style={{ boxShadow: "0 0 6px #10b981" }} />
-                <span className="font-mono text-xs text-emerald-500 uppercase tracking-wider font-bold flex-1 text-left">AI REASONING</span>
+                <span className="font-mono text-xs text-emerald-500 uppercase tracking-wider font-bold flex-1 text-left">REASONING</span>
                 <span className="font-mono text-xs text-zinc-500">{showTranscript ? "HIDE" : "SHOW"}</span>
               </button>
               {showTranscript && (
@@ -318,7 +318,7 @@ function PulseLoadingStatus({ thinkingTokens, statusMessages }: { thinkingTokens
   const stages = [
     { label: "FETCHING MARKET DATA" },
     { label: "RUNNING SCORING ENGINE" },
-    { label: "CLAUDE AI REASONING" },
+    { label: "REASONING" },
   ];
   const currentIdx = hasAi ? 2 : hasScored ? 2 : hasData ? 1 : 0;
   const progress = Math.min((elapsed / 20) * 100, 95);

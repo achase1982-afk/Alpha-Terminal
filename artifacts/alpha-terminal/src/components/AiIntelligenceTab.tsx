@@ -976,7 +976,7 @@ function StrategistPipeline({ status, thinkingTokens }: { status: string; thinki
   const stages = [
     { key: "pulse", label: "PULSE ENGINE", icon: <Activity className="w-3 h-3" /> },
     { key: "regime", label: "REGIME SCAN", icon: <Crosshair className="w-3 h-3" /> },
-    { key: "ai", label: "AI REASONING", icon: <Zap className="w-3 h-3" /> },
+    { key: "ai", label: "REASONING", icon: <Zap className="w-3 h-3" /> },
   ];
 
   const currentIdx = status.toLowerCase().includes("regime") || status.toLowerCase().includes("chain") ? 1
@@ -1147,10 +1147,10 @@ function StrategistEmptyState() {
       <div className="relative z-10 flex flex-col items-center">
         <h3 className="font-mono text-lg font-bold text-white tracking-wide mb-2">Options Strategist</h3>
         <p className="font-mono text-sm font-light text-white/70 text-center leading-relaxed max-w-[280px]">
-          Enter a ticker above to run AI-powered options analysis with real-time chain data.
+          Enter a ticker above to run options analysis with real-time chain data.
         </p>
         <div className="flex items-center gap-5 mt-5">
-          {["Regime Detection", "Chain Scanning", "AI Thesis"].map(label => (
+          {["Regime Detection", "Chain Scanning", "Thesis"].map(label => (
             <div key={label} className="flex items-center gap-1.5">
               <div className="w-1.5 h-1.5 rounded-full" style={{ background: "#FFB800" }} />
               <span className="font-mono text-xs font-light text-white/70 uppercase tracking-wider">{label}</span>
@@ -1420,15 +1420,15 @@ function DebateTranscript({
   const roleStyle = (role: string): { bg: string; fg: string; border: string; label: string } => {
     switch (role) {
       case "A":
-        return { bg: "rgba(255,184,0,0.12)", fg: "#FFB800", border: "rgba(255,184,0,0.4)", label: "🐂" };
+        return { bg: "rgba(255,184,0,0.12)", fg: "#FFB800", border: "rgba(255,184,0,0.4)", label: "Bull Case" };
       case "B":
-        return { bg: "rgba(38,198,218,0.12)", fg: "#26C6DA", border: "rgba(38,198,218,0.4)", label: "🐻" };
+        return { bg: "rgba(38,198,218,0.12)", fg: "#26C6DA", border: "rgba(38,198,218,0.4)", label: "Bear Case" };
       case "synthesis":
-        return { bg: "rgba(0,209,102,0.12)", fg: "#00D166", border: "rgba(0,209,102,0.4)", label: "T" };
+        return { bg: "rgba(0,209,102,0.12)", fg: "#00D166", border: "rgba(0,209,102,0.4)", label: "Recommendation" };
       case "system":
-        return { bg: "rgba(186,130,255,0.10)", fg: "#BA82FF", border: "rgba(186,130,255,0.45)", label: "⚖" };
+        return { bg: "rgba(186,130,255,0.10)", fg: "#BA82FF", border: "rgba(186,130,255,0.45)", label: "Verdict" };
       default:
-        return { bg: "rgba(255,255,255,0.06)", fg: "#999", border: "rgba(255,255,255,0.15)", label: "·" };
+        return { bg: "rgba(255,255,255,0.06)", fg: "#999", border: "rgba(255,255,255,0.15)", label: "" };
     }
   };
 
@@ -1504,12 +1504,11 @@ function DebateTranscript({
 
   const [copied, setCopied] = useState(false);
   const handleCopy = () => {
+    // Institutional copy payload — strip role/phase/label/model attribution.
+    // Full attribution is preserved in the strategist_telemetry table and the
+    // direct API endpoint; the user-facing copy is just round + content.
     const payload = transcript.map((t) => ({
       round: t.round,
-      role: t.role,
-      phase: t.phase,
-      label: t.label,
-      model: t.model,
       text: formatTurnText(t.text),
     }));
     const text = JSON.stringify(payload, null, 2);
@@ -1599,13 +1598,9 @@ function DebateTranscript({
             return (
               <div key={t.id} className="pl-3" style={{ borderLeft: `2px solid ${style.fg}` }}>
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-[12px] leading-none" style={{ color: style.fg }}>
+                  <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: style.fg }}>
                     {style.label}
                   </span>
-                  <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: style.fg }}>
-                    {t.label}
-                  </span>
-                  <span className="font-mono text-[9px] text-[#666]">{t.model}</span>
                   <span className="ml-auto font-mono text-[9px] text-[#666]">{phaseLabel(t.phase, t.round, t.role)}</span>
                 </div>
                 <pre className="font-mono text-[11px] leading-[1.55] text-[#ddd] whitespace-pre-wrap break-words m-0">
@@ -1651,7 +1646,7 @@ function CollapsibleAiReasoning({ detThinking, isDetStreaming, detNarrative, det
             <span className="inline-flex rounded-full h-2 w-2 bg-[#FFB800]/50" />
           )}
           <span className="font-mono text-[11px] font-bold text-[#FFB800]/70 tracking-widest">
-            AI REASONING
+            REASONING
             {isDetStreaming && <span className="ml-2 text-[#52525b] font-normal animate-pulse">streaming...</span>}
           </span>
         </div>
@@ -2697,7 +2692,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
             if (parsed.error) {
               const trimmed = parsed.error.trimStart();
               const errMsg = trimmed.startsWith("{") || trimmed.startsWith("[")
-                ? "AI analysis unavailable. Tap Analyze to retry."
+                ? "Analysis unavailable. Tap Analyze to retry."
                 : parsed.error;
               setStrategistResult(`**Error:** ${errMsg}`);
               setIsStreaming(false);
@@ -2757,7 +2752,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
     } catch (err) {
       const raw = (err instanceof Error ? err.message : String(err)).trimStart();
       const clean = raw.startsWith("{") || raw.startsWith("[")
-        ? "AI analysis unavailable. Tap Analyze to retry."
+        ? "Analysis unavailable. Tap Analyze to retry."
         : raw;
       setStrategistResult(`**Error:** ${clean}`);
       setIsStrategizing(false);
@@ -2879,7 +2874,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
             if (parsed.error) {
               const trimmed = parsed.error.trimStart();
               const errMsg = trimmed.startsWith("{") || trimmed.startsWith("[")
-                ? "AI analysis unavailable. Tap Analyze to retry."
+                ? "Analysis unavailable. Tap Analyze to retry."
                 : parsed.error;
               setDetResult(prev => prev
                 ? { ...prev, narrative: prev.narrative || errMsg }

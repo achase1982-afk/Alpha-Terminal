@@ -1252,8 +1252,25 @@ function parseAiTradeRawText(
 
   const resp = parsed as Record<string, unknown>;
 
+  // Strip Anthropic web-search citation wrappers (e.g. <cite index="0-1">x</cite>
+  // or self-closing <cite index="0-1"/>) and repair malformed multi-dot decimals
+  // like "4.05/4.2.335" that LLMs occasionally emit when concatenating values.
+  // Applied to every prose field before persistence so downstream consumers
+  // (Strategist card, history, copy-JSON) all see clean text.
+  const sanitizeNarrative = (s: string): string => {
+    if (!s) return s;
+    let out = s;
+    out = out.replace(/<cite\s[^>]*\/>/gi, "");
+    out = out.replace(/<cite\s[^>]*>([\s\S]*?)<\/cite>/gi, "$1");
+    out = out.replace(/<\/?cite[^>]*>/gi, "");
+    // "4.2.335" → "4.2 335" (split a decimal followed by another decimal segment)
+    out = out.replace(/(\d+\.\d+)\.(\d+)\b/g, "$1 $2");
+    return out.replace(/[ \t]{2,}/g, " ").trim();
+  };
+  const sanitizeOpt = (v: unknown): string => sanitizeNarrative(String(v ?? ""));
+
   if (!Array.isArray(resp.legs) || resp.legs.length === 0 || !resp.strategy || String(resp.strategy).toLowerCase() === "no_trade") {
-    const thesis = String(resp.thesis ?? resp.rationale ?? resp.reasoning ?? "AI found no viable options setup");
+    const thesis = sanitizeNarrative(String(resp.thesis ?? resp.rationale ?? resp.reasoning ?? "AI found no viable options setup"));
     const confidence = Math.max(0, Math.min(100, Number(resp.confidence) || 0));
     logger.info({ parsedKeys: Object.keys(resp), confidence, thesis: thesis.slice(0, 200) }, "StrategistV2: AI returned no-trade / empty legs");
     const noTradeResponse: AiTradeResponse = {
@@ -1265,14 +1282,14 @@ function parseAiTradeRawText(
       maxRisk: 0,
       maxProfit: 0,
       breakeven: [],
-      companyContext: String(resp.companyContext ?? ""),
+      companyContext: sanitizeOpt(resp.companyContext),
       thesis,
       exitTargets: { profitTarget: 0, profitTargetUnderlying: 0, stopLoss: 0, stopLossUnderlying: 0, timeStop: "" },
       bullInvalidation: "",
       bearInvalidation: "",
       riskOfRuin: "",
       confidence,
-      warnings: resp.warnings ? String(resp.warnings) : null,
+      warnings: resp.warnings ? sanitizeNarrative(String(resp.warnings)) : null,
       sameDayCatalyst: typeof resp.sameDayCatalyst === "boolean" ? resp.sameDayCatalyst : false,
       catalystSummary: resp.catalystSummary ? String(resp.catalystSummary) : undefined,
       catalystAlignment: typeof resp.catalystAlignment === "string"
@@ -1339,14 +1356,14 @@ function parseAiTradeRawText(
     maxRisk: safeNum(resp.maxRisk, 0),
     maxProfit: resp.maxProfit === "unlimited" || resp.maxProfit === "Unlimited" ? 99999 : safeNum(resp.maxProfit, 0),
     breakeven: Array.isArray(resp.breakeven) ? (resp.breakeven as unknown[]).map(v => safeNum(v, 0)).filter(n => n > 0) : [],
-    companyContext: String(resp.companyContext ?? ""),
-    thesis: String(resp.thesis ?? resp.rationale ?? ""),
+    companyContext: sanitizeOpt(resp.companyContext),
+    thesis: sanitizeNarrative(String(resp.thesis ?? resp.rationale ?? "")),
     exitTargets,
-    bullInvalidation: String(resp.bullInvalidation ?? ""),
-    bearInvalidation: String(resp.bearInvalidation ?? ""),
-    riskOfRuin: String(resp.riskOfRuin ?? ""),
+    bullInvalidation: sanitizeOpt(resp.bullInvalidation),
+    bearInvalidation: sanitizeOpt(resp.bearInvalidation),
+    riskOfRuin: sanitizeOpt(resp.riskOfRuin),
     confidence,
-    warnings: resp.warnings ? String(resp.warnings) : null,
+    warnings: resp.warnings ? sanitizeNarrative(String(resp.warnings)) : null,
     sameDayCatalyst: typeof resp.sameDayCatalyst === "boolean" ? resp.sameDayCatalyst : false,
     catalystSummary: resp.catalystSummary ? String(resp.catalystSummary) : undefined,
     catalystAlignment: typeof resp.catalystAlignment === "string"
