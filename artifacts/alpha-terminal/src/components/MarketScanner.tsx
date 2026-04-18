@@ -125,7 +125,7 @@ const DeterministicCard = memo(function DeterministicCard({
 }: {
   candidate: DetCandidate; rank: number;
   onSelect: (sym: string) => void;
-  onSendToStrategist?: (sym: string, candidate: DetCandidate) => void;
+  onSendToStrategist?: (sym: string, candidate?: DetCandidate) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const lastScanTs = useRef(candidate.scanTimestamp);
@@ -287,36 +287,98 @@ const DeterministicCard = memo(function DeterministicCard({
 });
 
 
-const LiveManualRow = memo(function LiveManualRow({ q, onSelect }: {
-  q: ScannerQuote; onSelect: (sym: string) => void;
+const ManualResultCard = memo(function ManualResultCard({
+  q, rank, onSelect, onSendToStrategist,
+}: {
+  q: ScannerQuote;
+  rank: number;
+  onSelect: (sym: string) => void;
+  onSendToStrategist?: (sym: string, candidate?: DetCandidate) => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const { data } = useQuote(q.symbol);
   const livePrice = data?.last ?? q.last;
   const liveChangePct = data?.changePct ?? q.changePct;
   const liveVolume = data?.volume ?? q.volume;
+  const liveHigh = data?.high ?? q.high;
+  const liveLow = data?.low ?? q.low;
   const isUp = liveChangePct >= 0;
-  const color = isUp ? "#00d166" : "#f23645";
-  const [tapped, setTapped] = useState(false);
-
-  const handleTap = useCallback(() => {
-    setTapped(true);
-    setTimeout(() => setTapped(false), 400);
-    onSelect(q.symbol);
-  }, [onSelect, q.symbol]);
+  const dirColor = isUp ? "#26a69a" : "#f23645";
+  const absChange = Math.abs(liveChangePct);
+  const dollarChange = livePrice * (liveChangePct / 100);
 
   return (
-    <button onClick={handleTap}
-      className="w-full flex items-center gap-3 px-3 py-2 rounded-lg border bg-card
-        hover:border-primary/40 transition-all text-left group active:scale-[0.98]"
-      style={{ borderColor: tapped ? "rgba(255,184,0,0.5)" : undefined }}>
-      <span className="font-bold text-sm w-16 shrink-0" style={{ color: tapped ? "#FFB800" : color }}>{q.symbol}</span>
-      <span className="text-sm font-bold text-zinc-200 tabular-nums w-20 shrink-0">${livePrice.toFixed(2)}</span>
-      <span className="text-xs font-bold tabular-nums w-16 shrink-0" style={{ color }}>
-        {isUp ? "▲" : "▼"} {Math.abs(liveChangePct).toFixed(2)}%
-      </span>
-      <span className="text-[11px] text-zinc-500 tabular-nums">Vol {(liveVolume / 1e6).toFixed(1)}M</span>
-      <span className="ml-auto text-[11px] text-zinc-500 group-hover:text-primary transition-colors">VIEW →</span>
-    </button>
+    <div className="bg-card border border-card-border rounded-lg overflow-hidden hover:border-zinc-600 transition-colors">
+      <div
+        onClick={() => setExpanded(e => !e)}
+        className="w-full flex items-center gap-2 px-3 py-2.5 text-left cursor-pointer active:bg-white/[0.02] transition-colors"
+        style={{ background: "#0c0c0c" }}
+      >
+        <span className="text-[11px] font-bold tabular-nums w-5 text-zinc-600 shrink-0">#{rank}</span>
+        <button onClick={(e) => { e.stopPropagation(); onSelect(q.symbol); }}
+          className="font-bold text-[13px] tracking-wider hover:text-[#FFB800] transition-colors active:scale-95 shrink-0"
+          style={{ color: dirColor }}>
+          {q.symbol}
+        </button>
+
+        <div className="ml-auto flex items-center gap-2 shrink-0">
+          <span className="text-[11px] font-mono tabular-nums text-zinc-400">${livePrice.toFixed(2)}</span>
+          <span className="text-[11px] font-mono tabular-nums" style={{ color: dirColor }}>
+            {isUp ? "▲" : "▼"} {absChange.toFixed(2)}%
+          </span>
+          <span className="text-[11px] font-mono tabular-nums text-zinc-500">Vol {(liveVolume / 1e6).toFixed(1)}M</span>
+          <ChevronDown className="w-3.5 h-3.5 text-zinc-500 transition-transform" style={{ transform: expanded ? "rotate(180deg)" : "none" }} />
+        </div>
+      </div>
+
+      {expanded && (
+        <>
+          <div className="px-4 py-3 grid grid-cols-2 gap-x-6 gap-y-2 border-t border-card-border/50">
+            <div className="space-y-2">
+              <div className="flex justify-between">
+                <span className="text-[11px] text-zinc-500">Day Change</span>
+                <span className="text-sm font-mono tabular-nums" style={{ color: dirColor }}>
+                  {isUp ? "+" : "−"}${Math.abs(dollarChange).toFixed(2)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[11px] text-zinc-500">Day Range</span>
+                <span className="text-sm font-mono tabular-nums text-zinc-300">
+                  ${liveLow.toFixed(2)} – ${liveHigh.toFixed(2)}
+                </span>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <div className="flex justify-between">
+                <span className="text-[11px] text-zinc-500">Volume</span>
+                <span className="text-sm font-mono tabular-nums text-zinc-300">
+                  {(liveVolume / 1e6).toFixed(2)}M
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[11px] text-zinc-500">Last</span>
+                <span className="text-sm font-mono tabular-nums text-zinc-300">
+                  ${livePrice.toFixed(2)}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="px-4 py-2.5 border-t border-card-border/50 flex items-center justify-between" style={{ background: "#0a0a0a" }}>
+            <span className="text-[10px] text-zinc-600">
+              Filter match · No deterministic score
+            </span>
+            {onSendToStrategist && (
+              <button onClick={() => onSendToStrategist(q.symbol)}
+                className="flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded transition-all hover:bg-[#FFB800]/15 active:scale-95"
+                style={{ color: "#FFB800", border: "1px solid rgba(255,184,0,0.3)" }}>
+                <Send className="w-3 h-3" /> SEND TO STRATEGIST
+              </button>
+            )}
+          </div>
+        </>
+      )}
+    </div>
   );
 });
 
@@ -547,10 +609,12 @@ function UniverseDropdown({ value, onChange, presets, watchlists, screens, onCre
   );
 }
 
+type SendToStrategistFn = (sym: string, candidate?: DetCandidate) => void;
+
 export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSendToStrategist }: {
   subscribeEquitySymbols?: (symbols: string[]) => void;
   onNavigateToSymbol?: (sym: string) => void;
-  onSendToStrategist?: (sym: string, candidate: DetCandidate) => void;
+  onSendToStrategist?: SendToStrategistFn;
 }) {
   const { accessToken, setSymbol } = useTerminalStore();
   const { pulseData } = useMarketPulseStore();
@@ -917,13 +981,19 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
         <div className="space-y-3">
           <div className="flex items-center justify-between px-1">
             <Label className="text-[11px] text-muted-foreground uppercase">
-              {manualQuotes.length} STOCKS MATCHED — CLICK TO LOAD
+              {manualQuotes.length} STOCKS MATCHED
             </Label>
             <span className="text-[11px] text-muted-foreground">Sorted by | Change % |</span>
           </div>
           <div className="space-y-1.5">
-            {manualQuotes.map(q => (
-              <LiveManualRow key={q.symbol} q={q} onSelect={onNavigateToSymbol ?? setSymbol} />
+            {manualQuotes.map((q, i) => (
+              <ManualResultCard
+                key={q.symbol}
+                q={q}
+                rank={i + 1}
+                onSelect={onNavigateToSymbol ?? setSymbol}
+                onSendToStrategist={onSendToStrategist}
+              />
             ))}
           </div>
         </div>
