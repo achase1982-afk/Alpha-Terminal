@@ -1,0 +1,82 @@
+I need you to audit every setting in the Strategist Tuning panel and tell me which ones are actually wired into the current codebase and which are dead/legacy/unused.
+
+Context: The strategist has gone through significant architecture changes (solo mode → debate mode, V1 → V2, multiple engine rewrites). I'm concerned that some settings I see in the UI no longer actually affect anything downstream. One section of the settings panel is literally labeled "Legacy AI Parameters," which confirms some controls are orphaned. I need to know which ones.
+
+For every setting in the Strategist Tuning panel, report:
+
+1. Setting name and current value
+2. Where it is defined in the codebase (file path + line number)
+3. Where it is READ in the codebase (every location that consumes this value, with file path + line number)
+4. What actually happens with its value - does it affect strategist output, scanner output, UI rendering only, or nothing at all?
+5. Classification: ACTIVE (changes behavior), COSMETIC (stored but not read), LEGACY (wired to old code paths that may be dormant), or DEAD (completely orphaned)
+
+Specifically audit these sections:
+
+AI STRATEGIST section:
+- Strategist Mode (Solo / Debate)
+- Solo Strategist Model
+- Debate Strategist A Model
+- Debate Strategist B Model
+- Debate Arbitrator (Senior PM) Model
+- Debate Convergence (Higher confidence wins / Synthesis / Hybrid)
+
+IOSCORE section:
+- Market Independence (R²) weight
+- Abnormal Move (Residual Return) weight
+- Catalyst (Benzinga) weight
+- Options Flow (Polygon) weight
+- High Idiosyncratic Threshold
+- Mixed Floor Threshold
+- Beta/R² Lookback (days)
+- Residual Return Lookback (days)
+
+SCANNER DEFAULT section:
+- Trend Weight
+- Relative Strength Weight
+- Volume Weight
+- IVR Weight
+- Options Liquidity Weight
+
+SCANNER IDIOSYNCRATIC section:
+- Trend Weight
+- RS vs SPY Weight
+- Relative Volume Weight
+- IVR Weight
+- Options Liquidity Weight
+
+SCANNER section:
+- Catalyst Bonus Points
+- Minimum Score Threshold
+
+STRATEGY section:
+- IVR Credit/Debit Threshold
+- Preferred DTE Min
+- Preferred DTE Max
+- Spread Width ($)
+- Min Open Interest Per Leg
+- Max Bid-Ask Spread (%)
+
+EARNINGS section:
+- Earnings Proximity Window (hours)
+- Earnings IVR Floor for Credit
+
+CORRELATION section:
+- Correlation LOW Ceiling
+- Correlation HIGH Floor
+
+TOXIC GATE section:
+- Toxic Gate Enabled toggle
+- Path A: EXTREME + HIGH Correlation toggle
+- Path B: Major Event + ELEVATED Risk toggle
+
+REGIME section:
+- Regime Update Frequency (min)
+
+LEGACY AI PARAMETERS section:
+- Whatever settings are in this section — I specifically need to know what each one was for in its original role, whether it still does anything, and whether it is safe to remove from the UI
+
+For the Legacy section in particular: tell me if these settings are wired to ANY active code path, or if they are display-only relics that do nothing. If they are dead, also tell me why they were kept in the UI rather than deleted.
+
+Do not fix or remove anything. This is a read-only audit. I need the map before I decide what to prune.
+
+When you report back, organize the output so I can see at a glance which settings are ACTIVE and actually matter, and which ones are DEAD or LEGACY so I know which knobs in the UI are real and which are fake.

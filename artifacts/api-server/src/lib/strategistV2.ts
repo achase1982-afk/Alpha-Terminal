@@ -529,42 +529,23 @@ export async function analyzeTickerV2(
     return blocked;
   }
 
-  // Capture confidence breakdown for telemetry. The base value comes straight
-  // from the AI; the catalyst gate may bump (+12) or dampen (-25). Persist all
-  // three so calibration can later be tuned against historical outcomes.
+  // Capture confidence for telemetry. As of the catalyst-bump removal, the
+  // server no longer mutates the AI's confidence value — base, delta, and
+  // final are all the same number, kept in the schema so historical records
+  // remain comparable. We still log sameDayCatalyst + catalystAlignment so we
+  // can later analyze whether catalyst-aligned trades actually outperform
+  // catalyst-neutral or catalyst-contradicting ones from the raw signal.
   const confidenceBaseValue = aiResponse.confidence;
-  let confidenceCatalystDeltaValue = 0;
-
-  // Catalyst-aware confidence calibration. The model is instructed to do
-  // this itself, but we enforce a floor/ceiling here as a safety net.
-  if (aiResponse.sameDayCatalyst && aiResponse.catalystAlignment === "ALIGNED") {
-    const bumped = Math.min(100, aiResponse.confidence + 12);
-    if (bumped > aiResponse.confidence) {
-      confidenceCatalystDeltaValue = bumped - aiResponse.confidence;
-      logger.info({ ticker, before: aiResponse.confidence, after: bumped }, "StrategistV2: catalyst-aligned confidence bump applied");
-      aiResponse.confidence = bumped;
-    }
-  } else if (aiResponse.sameDayCatalyst && aiResponse.catalystAlignment === "CONTRADICTS") {
-    const damped = Math.max(0, aiResponse.confidence - 25);
-    confidenceCatalystDeltaValue = damped - aiResponse.confidence;
-    logger.warn({ ticker, before: aiResponse.confidence, after: damped }, "StrategistV2: catalyst CONTRADICTS thesis — damping confidence");
-    aiResponse.confidence = damped;
-    if (damped < 20) {
-      const ctx = buildContextSources(aiResponse, webTrace);
-      const blocked = await noViable(
-        ticker, regime, settings, toxicCheck, tickerData,
-        {
-          category: "CATALYST_CONFLICT",
-          detail: `Catalyst contradicts proposed direction: ${aiResponse.catalystSummary ?? "see web search results"}`,
-          suggestedAction: "Reassess the thesis or wait for the catalyst to be priced in.",
-        },
-        ioScore,
-        { dataSource, dataPackage, rawAiResponse: rawAiResponseText, confidenceBase: confidenceBaseValue, confidenceCatalystDelta: confidenceCatalystDeltaValue, confidenceFinal: aiResponse.confidence, catalystAlignment: aiResponse.catalystAlignment ?? null },
-      );
-      blocked.contextSources = ctx;
-      return blocked;
-    }
-  }
+  const confidenceCatalystDeltaValue = 0;
+  logger.info(
+    {
+      ticker,
+      confidence: aiResponse.confidence,
+      sameDayCatalyst: aiResponse.sameDayCatalyst ?? null,
+      catalystAlignment: aiResponse.catalystAlignment ?? null,
+    },
+    "StrategistV2: catalyst signal observed (no confidence mutation applied)",
+  );
   const confidenceFinalValue = aiResponse.confidence;
 
   const legs = mapAiLegsToCandidate(aiResponse, chain);
