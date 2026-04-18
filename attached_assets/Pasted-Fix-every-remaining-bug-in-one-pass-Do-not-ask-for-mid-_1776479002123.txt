@@ -1,0 +1,86 @@
+Fix every remaining bug in one pass. Do not ask for mid-implementation confirmation. Work all items in parallel where possible. Verify at the end with the smoke test I specify.
+
+ITEM 1: Verify Bug 2 (synthesis-to-card render) is fully fixed
+
+The whitelist removal should have eliminated silent structure substitution. Run one RIVN debate in Opus + Opus mode and verify card legs match synthesis JSON legs exactly. If they still don't match after whitelist removal, there's a second bug in the render path - find and fix it. Trace from synthesis JSON through mapAiLegsToCandidate, computeSpreadEconomics, and reconcileNarrativeEconomics to the final card render. Report what changed, if anything.
+
+ITEM 2: Scanner weight sum calculation bug
+
+Scanner Default and Scanner Idiosyncratic weights sum to 85 not 100. The engine uses raw additive weights with no normalization, so this caps max scanner score at 85%. Fix by either:
+a) Adjusting default values so all five weights in each section sum to 100
+b) Adding normalization logic so weights are divided by their sum before being applied
+Pick whichever is cleaner. Report which you chose and why. Update the UI banner logic to only fire when weights are demonstrably wrong, not when they're mathematically valid.
+
+ITEM 3: Verify earningsDaysAway field is fully fixed across all consumers
+
+The earnings service consolidation should have eliminated stale earningsDaysAway values. Grep the codebase for every place earningsDaysAway is read or computed. Confirm every consumer now reads from earningsService (the new unified helper). If any consumer still reads from the old MEGA_EARNINGS list or Schwab lastEarningsDate projection, repoint it to earningsService. Report file paths and line numbers of every consumer you verified.
+
+ITEM 4: Front-week IV artifacts
+
+Multiple AI models today flagged IV values in the 3000-11000% range as "data artifacts from expiring 0DTE contracts." Opus-tier models ignore these, but cheaper models could reason on them and produce broken trades. 
+
+Add a filter in the data payload that strips or flags IV values above a reasonable ceiling (e.g., anything > 500% annualized for non-earnings-date options, anything > 2000% for earnings-date options). Tag filtered values so the AI prompt doesn't receive garbage. Alternatively, if the values are real but misleading due to 0DTE proximity, add context in the payload explaining "IV artifacts from 0DTE contracts, use back-month IV for structural decisions."
+
+Pick whichever approach is cleaner. Report which you chose.
+
+ITEM 5: Catalyst alignment UNKNOWN frequency check
+
+Tonight's fix added deterministic overrides when the AI returns UNKNOWN for catalyst alignment. Run three test tickers (GS, UPS, RIVN) through one debate each in Opus + Opus mode. Report what percentage of catalyst.catalystAlignment fields returned ALIGNED, CONTRADICTS, NEUTRAL, or UNKNOWN. If UNKNOWN still dominates, the deterministic override logic isn't firing correctly - debug and fix.
+
+ITEM 6: IOScore data pipeline root cause
+
+Tonight's fix surfaces "IOScore unavailable" banner when signal is weak. But the underlying question of WHY SPY/equity data is sometimes insufficient for certain tickers remains unresolved.
+
+Investigate: for each ticker where IOScore shows unavailable or defaults to 50.0 on weak signal, why is the regression data-starved? Is it a lookback window issue (30 days not enough)? A Schwab historical data API rate limit? A ticker-specific data gap (newly listed, spinoff, etc.)? A caching issue?
+
+Identify the root cause and fix it so IOScore produces real varied values on the majority of tickers. If certain tickers genuinely cannot be scored (truly insufficient history), the unavailable banner is fine for those specific cases - but it should not be the default state for mature tickers with plenty of history.
+
+ITEM 7: Debate timeout root cause investigation
+
+Tonight extended timeout from 10 to 20 minutes as a band-aid. Why does Opus 4.7 + adaptive thinking + web search run 4-8 minutes per turn? Investigate:
+- Is web search itself slow (how many queries per turn, how long per query)?
+- Is adaptive thinking generating excessive reasoning tokens?
+- Are there retry loops or stuck connections contributing?
+- Can the prompt be tightened to reduce unnecessary reasoning?
+
+Don't optimize prematurely, but report findings. If you find a specific slowness source, recommend whether to fix it or leave the 20-min ceiling as a permanent solution.
+
+ITEM 8: RIVN earnings date still wrong (May 5 vs actual April 30)
+
+Yahoo is returning May 5 flagged as unconfirmed, but actual earnings is April 30. Tonight's Bug 1 fix gated BLOCK behavior on the confirmed flag, which mitigates trade-level impact. But the underlying wrong date still flows through scheduledEvents and the warning banner text.
+
+Add Polygon as a third earnings data source. Logic:
+- Benzinga primary (already in place)
+- If Benzinga returns empty or unconfirmed, check Polygon
+- If Polygon agrees with Yahoo on date and confidence, use that date
+- If Polygon disagrees with Yahoo, prefer Polygon (generally higher quality)
+- If all three disagree, use Benzinga's answer if confirmed, otherwise log the conflict and use the nearest date
+
+Verify RIVN specifically: after fix, should return April 30 confirmed.
+
+===
+
+FINAL VERIFICATION - Run this smoke test after all items are implemented:
+
+Run one debate on each of three tickers in Opus + Opus mode: RIVN, GS, UPS. For each run, confirm ALL of the following:
+
+1. Card legs match synthesis JSON legs exactly (no silent substitution)
+2. Card confidence matches synthesis JSON confidence exactly (+12 fix intact)
+3. Earnings date is correct (April 30 for RIVN specifically, after Polygon integration)
+4. Earnings banner correctly reflects confirmed vs estimated status
+5. IOScore shows either real varied values OR the unavailable banner (not 50.0 with fake stats)
+6. Catalyst alignment is not UNKNOWN on tickers with clear directional catalysts
+7. Scanner weights display warning only when weights genuinely don't sum to 100
+8. No front-week IV artifacts visible to AI prompts
+9. Debate completes without timeout
+10. Front-end renders broken wing butterflies, calendars, diagonals, and other non-vertical structures correctly if the arbitrator proposes them
+
+Report results for all three tickers across all 10 checks. If any check fails on any ticker, diagnose the remaining bug and fix it before reporting back.
+
+===
+
+When everything is verified: report the test results, summarize every item fixed in this pass, and confirm the full bug list from tonight is now closed. If any item cannot be fixed tonight for legitimate technical reasons (e.g., Polygon API key not available), state exactly which items are blocked and what would unblock them.
+
+Before you start: do a full code review of what you're about to change. Make sure nothing in these fixes introduces regressions in the existing tested paths (+12 fix, earnings service consolidation, catalyst schema V2, debate orchestration, NO_EDGE gate, naked-short validation).
+
+Ship when done. Report results.
