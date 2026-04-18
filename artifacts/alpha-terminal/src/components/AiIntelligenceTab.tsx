@@ -5,7 +5,7 @@ import {
   useGetQuote, useGetPriceHistory, useGetOptionChain,
 } from "@workspace/api-client-react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
-import { startStrategistPolling } from "@/lib/strategistPoller";
+import { startStrategistPolling, resumeAllRunningPollers } from "@/lib/strategistPoller";
 import {
   BarChart2, DollarSign, Shield, TrendingUp, Scale,
   Zap, ChevronDown, AlertTriangle, CheckCircle2, XCircle, AlertCircle, Search,
@@ -2990,6 +2990,28 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
       if (jobId) startStrategistPolling(jobId);
     }
   }, [runningJobIdsKey]);
+
+  // Mobile browsers (iOS Safari especially) throttle setTimeout chains in
+  // backgrounded tabs, which freezes the in-flight poller. When the page
+  // returns to the foreground, force-restart every running poller so the
+  // analysis catches up immediately instead of waiting for the throttled
+  // loop to drain. Same goes for explicit remounts of this component.
+  useEffect(() => {
+    resumeAllRunningPollers();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        resumeAllRunningPollers();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    window.addEventListener("pageshow", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+      window.removeEventListener("pageshow", onVisible);
+    };
+  }, []);
 
   const handleRunStrategistWithTicker = useCallback((ticker: string) => {
     handleRunV2(ticker);

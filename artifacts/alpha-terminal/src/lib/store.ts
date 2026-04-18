@@ -566,6 +566,12 @@ export const useTerminalStore = create<TerminalState>()(
         set((state) => {
           const job = state.strategistJobs[jobId];
           if (!job) return {};
+          // Idempotency guard: if a takeover poller and the original poller
+          // briefly overlap, both may push the same tokens. Only apply when
+          // the incoming nextSince advances the cursor past what we already
+          // have. (Equal nextSince with no tokens is a harmless heartbeat.)
+          if (tokens.length > 0 && nextSince <= job.nextSince) return {};
+          if (tokens.length === 0 && nextSince === job.nextSince) return {};
           const merged = tokens.length > 0 ? job.tokens.concat(tokens) : job.tokens;
           // Cap memory: keep last ~6000 tokens
           const capped = merged.length > 6000 ? merged.slice(merged.length - 6000) : merged;

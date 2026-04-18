@@ -3,7 +3,18 @@ import { fetchWithAuth } from "./fetchWithAuth";
 
 const API_BASE = "/api";
 
-const activePollers = new Set<string>();
+// Per-jobId poller registry. Each entry exposes an abort flag plus a
+// heartbeat (`lastTickAt`) so a fresh caller can detect a stalled poller
+// (mobile browsers throttle setTimeout chains in backgrounded tabs) and
+// take over instead of being silently no-op'd.
+type PollerHandle = {
+  aborted: boolean;
+  lastTickAt: number;
+};
+const activePollers = new Map<string, PollerHandle>();
+
+// If an existing poller hasn't ticked in this long, a new caller takes over.
+const STALE_POLLER_MS = 8_000;
 
 interface ThinkingResponse {
   status: string;
@@ -28,20 +39,22 @@ async function refreshHistoryAfterCompletion() {
   }
 }
 
-export function startStrategistPolling(jobId: string): void {
-  if (activePollers.has(jobId)) return;
-  activePollers.add(jobId);
+export function startStrategistPolling(jobId: string, opts?: { force?: boolean }): void {
+  const existing = activePollers.get(jobId);
+  if (existing && !existing.aborted) {
+    const stale = Date.now() - existing.lastTickAt > STALE_POLLER_MS;
+    if (!opts?.force && !stale) return;
+    // Take over: signal the old poller to exit on its next iteration.
+    existing.aborted = true;
+  }
 
   const store = useTerminalStore.getState();
   const job = store.strategistJobs[jobId];
-  if (!job) {
-    activePollers.delete(jobId);
-    return;
-  }
-  if (job.status !== "running") {
-    activePollers.delete(jobId);
-    return;
-  }
+  if (!job) return;
+  if (job.status !== "running") return;
+
+  const handle: PollerHandle = { aborted: false, lastTickAt: Date.now() };
+  activePollers.set(jobId, handle);
 
   // Grace window during which 404s from /thinking/:jobId are treated as
   // "server hasn't registered the job yet" rather than a real failure. This
@@ -85,12 +98,21 @@ export function startStrategistPolling(jobId: string): void {
     };
     try {
       while (Date.now() < stopAt) {
+        if (handle.aborted) {
+          // Another poller has taken over; exit silently without touching
+          // the registry (the new poller now owns the entry).
+          return;
+        }
+        handle.lastTickAt = Date.now();
+
         const current = useTerminalStore.getState().strategistJobs[jobId];
         if (!current || current.status !== "running") {
           resolved = true;
           break;
         }
         await new Promise((r) => setTimeout(r, 1200));
+        if (handle.aborted) return;
+
         let tres: Response;
         try {
           tres = await fetchWithAuth(
@@ -108,6 +130,8 @@ export function startStrategistPolling(jobId: string): void {
           await new Promise((r) => setTimeout(r, 800));
           continue;
         }
+        if (handle.aborted) return;
+
         if (!tres.ok) {
           // 404 right after a job is registered just means the server hasn't
           // accepted the POST /analyze yet. Don't count it against the
@@ -175,20 +199,39 @@ export function startStrategistPolling(jobId: string): void {
           break;
         }
       }
-      if (!resolved) {
+      if (!resolved && !handle.aborted) {
         useTerminalStore
           .getState()
           .errorStrategistJob(
             jobId,
-            "Analysis timed out after 5 minutes (no server response)",
+            "Analysis timed out after 30 minutes (no server response)",
           );
       }
     } finally {
-      activePollers.delete(jobId);
+      // Only clear the registry slot if we still own it. If a takeover poller
+      // already replaced us in activePollers, leave their entry alone.
+      const owner = activePollers.get(jobId);
+      if (owner === handle) activePollers.delete(jobId);
     }
   })();
 }
 
 export function isPollerActive(jobId: string): boolean {
-  return activePollers.has(jobId);
+  const h = activePollers.get(jobId);
+  return !!h && !h.aborted;
+}
+
+/**
+ * Force-resume polling for every job currently in the "running" state.
+ * Call this on `visibilitychange → visible` and on component remount so a
+ * mobile-throttled poller is replaced with a fresh one instead of waiting
+ * for the throttled setTimeout chain to catch up.
+ */
+export function resumeAllRunningPollers(): void {
+  const jobs = useTerminalStore.getState().strategistJobs;
+  for (const [jobId, job] of Object.entries(jobs)) {
+    if (job.status === "running") {
+      startStrategistPolling(jobId, { force: true });
+    }
+  }
 }
