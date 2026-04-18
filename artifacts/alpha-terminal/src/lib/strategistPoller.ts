@@ -51,9 +51,38 @@ export function startStrategistPolling(jobId: string): void {
   const jobStartedAt = job.startedAt;
 
   void (async () => {
-    const stopAt = Date.now() + 5 * 60 * 1000;
+    // Debate mode with Opus 4.7 + adaptive thinking + web search across 6 turns
+    // can run 15-25 min. Solo finishes in <2 min. Use a generous 30-min window
+    // so polling doesn't time out mid-debate.
+    const stopAt = Date.now() + 30 * 60 * 1000;
     let resolved = false;
     let consecutiveFailures = 0;
+
+    // Try to recover a finished job whose in-memory thinking buffer was pruned
+    // (server keeps it for 10 min after completion). If the persisted history
+    // already has this jobId, treat it as completion instead of surfacing a
+    // 404 to the user.
+    const tryRecoverFromHistory = async (): Promise<boolean> => {
+      try {
+        const res = await fetchWithAuth(`${API_BASE}/strategist/history`);
+        if (!res.ok) return false;
+        const rows = await res.json();
+        if (!Array.isArray(rows)) return false;
+        useTerminalStore.getState().setStrategistHistory(rows);
+        const row = rows.find(
+          (r) => r && typeof r === "object" && (r as { jobId?: string }).jobId === jobId,
+        );
+        if (row && (row as { cardJson?: unknown }).cardJson) {
+          useTerminalStore
+            .getState()
+            .completeStrategistJob(jobId, (row as { cardJson: unknown }).cardJson);
+          return true;
+        }
+        return false;
+      } catch {
+        return false;
+      }
+    };
     try {
       while (Date.now() < stopAt) {
         const current = useTerminalStore.getState().strategistJobs[jobId];
@@ -88,11 +117,24 @@ export function startStrategistPolling(jobId: string): void {
             await new Promise((r) => setTimeout(r, 800));
             continue;
           }
+          // 404 outside grace = the in-memory thinking buffer was pruned (10-min
+          // TTL after completion) or the API server restarted mid-debate. If
+          // the persisted history already has a card for this jobId, complete
+          // from there instead of surfacing a polling error.
+          if (tres.status === 404) {
+            const recovered = await tryRecoverFromHistory();
+            if (recovered) {
+              resolved = true;
+              break;
+            }
+          }
           consecutiveFailures += 1;
           if (consecutiveFailures >= 10) {
-            useTerminalStore
-              .getState()
-              .errorStrategistJob(jobId, `Polling failed (HTTP ${tres.status})`);
+            const finalMsg =
+              tres.status === 404
+                ? "Live thinking buffer expired — refresh history to view the saved card"
+                : `Polling failed (HTTP ${tres.status})`;
+            useTerminalStore.getState().errorStrategistJob(jobId, finalMsg);
             resolved = true;
             break;
           }
