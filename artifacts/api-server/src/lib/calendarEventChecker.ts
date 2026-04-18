@@ -85,16 +85,13 @@ interface CalendarEvent {
   importance: "HIGH" | "MEDIUM" | "LOW";
 }
 
-const MEGA_EARNINGS: Array<{ ticker: string; name: string; qs: Array<{ m: number; w: number }> }> = [
-  { ticker: "AAPL", name: "Apple", qs: [{ m: 1, w: 4 }, { m: 4, w: 5 }, { m: 7, w: 5 }, { m: 10, w: 5 }] },
-  { ticker: "MSFT", name: "Microsoft", qs: [{ m: 1, w: 4 }, { m: 4, w: 4 }, { m: 7, w: 4 }, { m: 10, w: 4 }] },
-  { ticker: "GOOG", name: "Alphabet", qs: [{ m: 2, w: 1 }, { m: 4, w: 4 }, { m: 7, w: 4 }, { m: 10, w: 4 }] },
-  { ticker: "GOOGL", name: "Alphabet", qs: [{ m: 2, w: 1 }, { m: 4, w: 4 }, { m: 7, w: 4 }, { m: 10, w: 4 }] },
-  { ticker: "AMZN", name: "Amazon", qs: [{ m: 2, w: 1 }, { m: 5, w: 1 }, { m: 8, w: 1 }, { m: 10, w: 5 }] },
-  { ticker: "META", name: "Meta", qs: [{ m: 2, w: 1 }, { m: 4, w: 4 }, { m: 7, w: 4 }, { m: 10, w: 4 }] },
-  { ticker: "TSLA", name: "Tesla", qs: [{ m: 1, w: 4 }, { m: 4, w: 4 }, { m: 7, w: 4 }, { m: 10, w: 4 }] },
-  { ticker: "NVDA", name: "NVIDIA", qs: [{ m: 2, w: 4 }, { m: 5, w: 4 }, { m: 8, w: 4 }, { m: 11, w: 3 }] },
-];
+// Legacy MEGA_EARNINGS hardcoded list intentionally removed. Per-ticker
+// earnings dates now flow through `earningsDaysAway` (sourced from
+// earningsService → Benzinga/Yahoo) which is passed in to checkEventConflicts
+// directly. Injecting synthetic earnings events from a stale wk-of-month table
+// caused ticker-specific event conflicts to disagree with the rest of the
+// pipeline (e.g. an AAPL trade could show "Apple Earnings" on the synthetic
+// 4th-Thursday-of-Jan even after the real date had already passed).
 
 const HIGH_IMPACT_TITLES = new Set([
   "Jobs Report (NFP)", "CPI Report", "PPI Report", "PCE Price Index", "GDP",
@@ -178,13 +175,9 @@ function generateAllEvents(y: number): CalendarEvent[] {
     ev.push({ date: ds(y, m, gdpDay), type: "economic", title: `GDP ${gdpQuarters[idx]} (Advance)`, time: "8:30 AM ET", importance: "HIGH" });
   });
 
-  for (const co of MEGA_EARNINGS) {
-    for (const q of co.qs) {
-      const day = q.w <= 4 ? nthDow(y, q.m, q.w, 4) : lastDow(y, q.m, 4);
-      const validDay = Math.min(day, dim(y, q.m));
-      ev.push({ date: ds(y, q.m, validDay), type: "earnings", title: `${co.name} Earnings`, ticker: co.ticker, time: "After Close", importance: "HIGH" });
-    }
-  }
+  // Per-ticker earnings injection removed — see top-of-file note. The
+  // `earningsDaysAway` parameter on checkEventConflicts is the only authoritative
+  // earnings source going forward.
 
   return ev;
 }

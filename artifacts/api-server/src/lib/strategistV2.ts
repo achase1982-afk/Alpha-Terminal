@@ -1017,9 +1017,26 @@ function summarizeOptionsChain(chain: ChainContract[], price: number): ChainSumm
   // so the model never sees mixed units. Schwab/Polygon report IV as a decimal
   // (0.4125); we multiply by 100 and round to 2 decimals to match buildCuratedStrikes
   // and frontMonthIV/backMonthIV (which already emit percentages).
+  //
+  // FIX 4 (IV artifacts): 0DTE / front-week contracts often quote IV in the
+  // 3000-11000% range when bid/ask is 0.01-wide and the underlying is moving
+  // intraday — a pricing-engine artifact, not real volatility. Opus-tier
+  // models recognize and ignore these; cheaper models can reason on them and
+  // build broken trades around fake "high IV". We hard-cap at IV_CEILING_PCT
+  // and surface an `ivArtifactsClampedCount` field on the chain summary so
+  // the prompt can warn the model. Earnings-week front-month IVs are usually
+  // in the 80-300% range, so 500% is a safe ceiling for back-month structural
+  // decisions and the cap is rarely hit on legit data.
+  const IV_CEILING_PCT = 500;
+  let ivArtifactClampCount = 0;
   const ivToPct = (iv: number | null | undefined): number => {
     const n = typeof iv === "number" && Number.isFinite(iv) ? iv : 0;
-    return Math.round(n * 10000) / 100;
+    const pct = Math.round(n * 10000) / 100;
+    if (pct > IV_CEILING_PCT) {
+      ivArtifactClampCount += 1;
+      return IV_CEILING_PCT;
+    }
+    return pct;
   };
 
   const topVolumeCalls = [...calls].sort((a, b) => b.volume - a.volume).slice(0, 5).map(c => ({
@@ -1077,6 +1094,8 @@ function summarizeOptionsChain(chain: ChainContract[], price: number): ChainSumm
     backMonthIV,
     availableExpirations: expirations,
     curatedExpirations,
+    ivArtifactsClampedCount: ivArtifactClampCount,
+    ivCeilingPct: IV_CEILING_PCT,
   };
 }
 
@@ -1111,6 +1130,9 @@ function buildDataPackage(
       termStructure: chainSummary.frontMonthIV != null && chainSummary.backMonthIV != null
         ? { frontMonthIV: chainSummary.frontMonthIV, backMonthIV: chainSummary.backMonthIV }
         : "insufficient data",
+      ivArtifactNote: (chainSummary as any).ivArtifactsClampedCount > 0
+        ? `${(chainSummary as any).ivArtifactsClampedCount} contract IV value(s) exceeded ${(chainSummary as any).ivCeilingPct}% and were clamped to the ceiling. These are 0DTE/front-week pricing-engine artifacts (penny-wide bid/ask on contracts pricing into intraday underlying moves) — IGNORE them for structural decisions and use back-month IV instead.`
+        : null,
     },
     curatedExpirations: chainSummary.curatedExpirations,
     availableExpirations: chainSummary.availableExpirations,

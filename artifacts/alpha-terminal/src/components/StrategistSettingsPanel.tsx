@@ -139,18 +139,18 @@ export function StrategistSettingsPanel() {
         </div>
       )}
       {scannerDefaultWarning && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-900/20 border border-amber-500/30">
-          <AlertTriangle className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
-          <span className="font-mono text-[11px] text-amber-300">
-            Scanner Default weights sum to {scannerDefaultSum} — should be 100. Sub-100 caps the max scanner score and may push tickers below the minimum threshold.
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-900/20 border border-blue-500/30">
+          <AlertTriangle className="w-3.5 h-3.5 text-blue-300 flex-shrink-0" />
+          <span className="font-mono text-[11px] text-blue-200">
+            Scanner Default weights sum to {scannerDefaultSum} (defaults sum to 100). Engine normalizes by total so the score range is unaffected — this is informational only, showing your weights have drifted from defaults.
           </span>
         </div>
       )}
       {scannerIdioWarning && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-900/20 border border-amber-500/30">
-          <AlertTriangle className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
-          <span className="font-mono text-[11px] text-amber-300">
-            Scanner Idiosyncratic weights sum to {scannerIdioSum} — should be 100. Sub-100 caps the max scanner score and may push tickers below the minimum threshold.
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-900/20 border border-blue-500/30">
+          <AlertTriangle className="w-3.5 h-3.5 text-blue-300 flex-shrink-0" />
+          <span className="font-mono text-[11px] text-blue-200">
+            Scanner Idiosyncratic weights sum to {scannerIdioSum} (defaults sum to 100). Engine normalizes by total so the score range is unaffected — this is informational only, showing your weights have drifted from defaults.
           </span>
         </div>
       )}

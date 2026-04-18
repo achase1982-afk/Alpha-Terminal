@@ -122,8 +122,15 @@ async function computeBetaR2(
   pairs: number;
 }> {
   try {
+    // Calendar-day cutoff bumped 1.5× → 2.2× lookbackDays. Trading days are
+    // ~5/7 of calendar days, so 1.5× returned only ~lookbackDays trading
+    // sessions before SPY-pair matching dropped some — for lookbackDays=30
+    // that left as few as 21-25 pairs after weekends/holidays/missing rows,
+    // which is borderline against the 8-pair minimum and noisy on stocks with
+    // any ingestion gaps. 2.2× gives ~33 trading days for a 30-day lookback,
+    // a much safer margin while still keeping the regression "recent."
     const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - Math.ceil(lookbackDays * 1.5));
+    cutoff.setDate(cutoff.getDate() - Math.ceil(lookbackDays * 2.2));
     const cutoffStr = cutoff.toISOString().split("T")[0];
 
     const rows = await db
@@ -149,8 +156,18 @@ async function computeBetaR2(
     const spyData = bySymbol.get("SPY") ?? [];
 
     if (tickerData.length < 10 || spyData.length < 10) {
+      // Diagnostic: surface the SPECIFIC reason data is starved so we can fix
+      // ingestion gaps rather than guessing. Three categories:
+      //  1. ticker missing (newly listed, spinoff, ticker change) → tickerData=0
+      //  2. SPY missing (ingestion job dead) → spyData=0  ← infrastructural
+      //  3. ticker present but short history → tickerData < 10 (newly listed)
+      const reason =
+        tickerData.length === 0 ? "ticker_no_rows_in_equity_daily"
+        : spyData.length === 0 ? "spy_no_rows_in_equity_daily_INFRA_BUG"
+        : tickerData.length < 10 ? "ticker_history_too_short"
+        : "spy_history_too_short_INFRA_BUG";
       logger.warn(
-        { ticker, tickerDays: tickerData.length, spyDays: spyData.length, lookbackDays },
+        { ticker, tickerDays: tickerData.length, spyDays: spyData.length, lookbackDays, cutoffStr, reason },
         "IOScore: insufficient daily history for beta/R² — returning fallback (will surface as N/A in UI)",
       );
       return {

@@ -5,7 +5,7 @@ export interface NextEarnings {
   symbol: string;
   earningsDate: string | null;
   confirmed: boolean;
-  source: "benzinga" | "yahoo" | null;
+  source: "benzinga" | "yahoo" | "polygon" | null;
   daysAway: number | null;
   time: string | null;
   epsEstimate: string | null;
@@ -135,6 +135,60 @@ async function fetchBenzinga(ticker: string, apiKey: string): Promise<BenzingaRe
   }
 }
 
+interface PolygonResult {
+  earningsDate: string;
+  confirmed: boolean;
+}
+
+/**
+ * Polygon's Benzinga-powered earnings calendar. Available on paid Polygon plan
+ * tiers that include the Benzinga news/calendar add-on — otherwise the endpoint
+ * returns 401/403/404 and we silently degrade to Benzinga + Yahoo only.
+ *
+ * Used as a third-source disambiguator when Benzinga is empty or unconfirmed,
+ * to catch cases like RIVN where Yahoo returned May 5 (wrong, unconfirmed) but
+ * the actual print was April 30.
+ */
+async function fetchPolygon(symbol: string, apiKey: string): Promise<PolygonResult | null> {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const url = `https://api.polygon.io/benzinga/v1/earnings?ticker=${encodeURIComponent(symbol)}&date.gte=${today}&order=asc&limit=5&apiKey=${apiKey}`;
+    const res = await fetch(url, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) {
+      // 401/403 = plan tier lacks Benzinga add-on; 404 = endpoint not available.
+      // Silently degrade — these are expected on most plans. Other statuses log.
+      if (res.status !== 401 && res.status !== 403 && res.status !== 404) {
+        logger.warn({ status: res.status, symbol }, "earningsService: Polygon non-200");
+      }
+      return null;
+    }
+    const data = (await res.json()) as {
+      results?: Array<{
+        date?: string;
+        date_status?: string;
+        date_confirmed?: number | boolean;
+        ticker?: string;
+      }>;
+    };
+    const items = data.results || [];
+    const upcoming = items
+      .filter((e) => typeof e?.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(e.date) && e.date >= today)
+      .sort((a, b) => (a.date || "").localeCompare(b.date || ""))[0];
+    if (!upcoming?.date) return null;
+    const confirmed =
+      upcoming.date_status === "confirmed" ||
+      upcoming.date_confirmed === 1 ||
+      upcoming.date_confirmed === true;
+    return { earningsDate: upcoming.date, confirmed };
+  } catch (err) {
+    logger.warn({ err, symbol }, "earningsService: Polygon fetch failed");
+    return null;
+  }
+}
+
 async function fetchYahoo(symbol: string): Promise<string | null> {
   try {
     const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=calendarEvents`;
@@ -237,6 +291,10 @@ export async function getNextEarningsDate(symbol: string): Promise<NextEarnings>
 
   const job = (async (): Promise<NextEarnings> => {
     const benzKey = process.env["BENZINGA_API_KEY"];
+    const polygonKey = process.env["POLYGON_API_KEY"];
+
+    // Always pull Benzinga first (primary). If it returns a CONFIRMED future
+    // date we use it directly and skip the disambiguators.
     let benz: BenzingaResult | null = null;
     if (benzKey) {
       benz = await fetchBenzinga(sym, benzKey);
@@ -247,15 +305,55 @@ export async function getNextEarningsDate(symbol: string): Promise<NextEarnings>
     let source: NextEarnings["source"] = null;
     let extras: Partial<BenzingaResult> = {};
 
-    if (benz?.earningsDate) {
+    if (benz?.earningsDate && benz.confirmed) {
+      // Benzinga confirmed — single source of truth.
       earningsDate = benz.earningsDate;
-      confirmed = benz.confirmed;
+      confirmed = true;
       source = "benzinga";
       extras = benz;
     } else {
-      const y = await fetchYahoo(sym);
-      if (y) {
-        earningsDate = y;
+      // Benzinga empty or unconfirmed — consult Polygon and Yahoo and apply
+      // multi-source agreement logic. Both calls in parallel to avoid serial
+      // latency on the cache-miss path.
+      const [poly, yahoo] = await Promise.all([
+        polygonKey ? fetchPolygon(sym, polygonKey) : Promise.resolve(null),
+        fetchYahoo(sym),
+      ]);
+
+      const datesWithinDays = (a: string, b: string, n: number): boolean => {
+        const da = new Date(a + "T16:00:00-04:00").getTime();
+        const db = new Date(b + "T16:00:00-04:00").getTime();
+        return Math.abs(da - db) <= n * 86_400_000;
+      };
+
+      if (poly && yahoo && datesWithinDays(poly.earningsDate, yahoo, 2)) {
+        // Polygon and Yahoo agree (within 2 days). High confidence — use Polygon's
+        // confirmed flag (Polygon/Benzinga distinguishes confirmed vs estimate).
+        earningsDate = poly.earningsDate;
+        confirmed = poly.confirmed;
+        source = "polygon";
+        extras = benz ?? {};
+      } else if (poly) {
+        // Polygon disagrees with Yahoo (or Yahoo missing) — prefer Polygon.
+        // This is the RIVN case: Yahoo says 2026-05-05 unconfirmed, Polygon
+        // says 2026-04-30 confirmed → use Polygon.
+        if (yahoo) {
+          logger.warn({ symbol: sym, polygon: poly.earningsDate, yahoo }, "earningsService: Polygon/Yahoo disagree, preferring Polygon");
+        }
+        earningsDate = poly.earningsDate;
+        confirmed = poly.confirmed;
+        source = "polygon";
+        extras = benz ?? {};
+      } else if (benz?.earningsDate) {
+        // Polygon unavailable, Yahoo unavailable or already preferred-against:
+        // fall back to Benzinga's unconfirmed answer.
+        earningsDate = benz.earningsDate;
+        confirmed = benz.confirmed;
+        source = "benzinga";
+        extras = benz;
+      } else if (yahoo) {
+        // Last resort: Yahoo only.
+        earningsDate = yahoo;
         confirmed = false;
         source = "yahoo";
       }

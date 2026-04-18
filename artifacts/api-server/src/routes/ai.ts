@@ -2052,48 +2052,18 @@ async function buildTickerProfile(
 
 async function fetchEarningsDaysAway(
   symbol: string,
-  accessToken: string,
+  _accessToken: string,
 ): Promise<number | null> {
+  // Unified earnings source. Previously this function projected the next
+  // earnings date by adding ~91-day quarter offsets to Schwab's
+  // `lastEarningsDate`, which produced stale and conflicting values vs the
+  // real calendar (e.g. RIVN's actual April 30 print would show as a synthetic
+  // ~May 7 estimate). Now we delegate to earningsService — the same Benzinga →
+  // Yahoo source of truth used by strategistV2, catalystEvaluator, and the
+  // discovery scanner — so every consumer sees the same date.
   try {
-    const apiSymbol = symbolToSchwabApi(symbol.toUpperCase().trim());
-    const res = await fetch(
-      `${SCHWAB_CHAIN_BASE}/quotes?symbols=${encodeURIComponent(apiSymbol)}&fields=quote,fundamental`,
-      { headers: { Authorization: `Bearer ${accessToken}` } },
-    );
-    if (!res.ok) return null;
-    const json = (await res.json()) as Record<string, Record<string, unknown>>;
-    const entry = Object.values(json)[0];
-    if (!entry) return null;
-    const fund = entry["fundamental"] as Record<string, unknown> | undefined;
-    if (!fund) return null;
-
-    const lastEarnings = fund["lastEarningsDate"] as string | undefined;
-    if (!lastEarnings) return null;
-
-    const lastDate = new Date(lastEarnings);
-    if (isNaN(lastDate.getTime())) return null;
-
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    let nextEarnings: Date | null = null;
-
-    const candidate = new Date(lastDate);
-    for (let q = 0; q < 8; q++) {
-      candidate.setDate(candidate.getDate() + (q === 0 ? 90 : [91, 90, 92, 91, 90, 91, 90][q - 1]));
-      if (candidate >= today) {
-        nextEarnings = new Date(candidate);
-        break;
-      }
-    }
-
-    if (!nextEarnings) {
-      const fallback = new Date(lastDate);
-      while (fallback < today) fallback.setDate(fallback.getDate() + 91);
-      nextEarnings = fallback;
-    }
-
-    const diffMs = nextEarnings.getTime() - today.getTime();
-    return Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+    const result = await getNextEarningsDate(symbol);
+    return result.daysAway;
   } catch {
     return null;
   }
