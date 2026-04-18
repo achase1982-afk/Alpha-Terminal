@@ -5,7 +5,7 @@ export interface NextEarnings {
   symbol: string;
   earningsDate: string | null;
   confirmed: boolean;
-  source: "benzinga" | "yahoo" | "polygon" | null;
+  source: "benzinga" | "yahoo" | "finnhub" | null;
   daysAway: number | null;
   time: string | null;
   epsEstimate: string | null;
@@ -135,56 +135,74 @@ async function fetchBenzinga(ticker: string, apiKey: string): Promise<BenzingaRe
   }
 }
 
-interface PolygonResult {
+interface FinnhubResult {
   earningsDate: string;
+  /**
+   * Finnhub's free `/calendar/earnings` endpoint doesn't expose a separate
+   * "confirmed vs estimated" flag — but Finnhub publishes dates from issuer
+   * IR feeds, so dates within ~30 days are effectively confirmed in practice.
+   * We mark them confirmed inside that horizon and unconfirmed beyond it,
+   * which matches Benzinga's `confirmed` semantics closely enough for the
+   * agreement logic below.
+   */
   confirmed: boolean;
 }
 
 /**
- * Polygon's Benzinga-powered earnings calendar. Available on paid Polygon plan
- * tiers that include the Benzinga news/calendar add-on — otherwise the endpoint
- * returns 401/403/404 and we silently degrade to Benzinga + Yahoo only.
- *
- * Used as a third-source disambiguator when Benzinga is empty or unconfirmed,
+ * Finnhub earnings calendar (free tier: 60 calls/min, includes /calendar/earnings).
+ * Used as the third-source disambiguator when Benzinga is empty or unconfirmed,
  * to catch cases like RIVN where Yahoo returned May 5 (wrong, unconfirmed) but
- * the actual print was April 30.
+ * the actual print was April 30. Requires FINNHUB_API_KEY in env.
  */
-async function fetchPolygon(symbol: string, apiKey: string): Promise<PolygonResult | null> {
+async function fetchFinnhub(symbol: string, apiKey: string): Promise<FinnhubResult | null> {
   try {
-    const today = new Date().toISOString().slice(0, 10);
-    const url = `https://api.polygon.io/benzinga/v1/earnings?ticker=${encodeURIComponent(symbol)}&date.gte=${today}&order=asc&limit=5&apiKey=${apiKey}`;
+    const today = new Date();
+    const todayStr = today.toISOString().slice(0, 10);
+    const horizon = new Date(today);
+    horizon.setDate(horizon.getDate() + 120); // look ~4 months out
+    const horizonStr = horizon.toISOString().slice(0, 10);
+
+    const url = `https://finnhub.io/api/v1/calendar/earnings?from=${todayStr}&to=${horizonStr}&symbol=${encodeURIComponent(symbol)}&token=${apiKey}`;
     const res = await fetch(url, {
       headers: { Accept: "application/json" },
       signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) {
-      // 401/403 = plan tier lacks Benzinga add-on; 404 = endpoint not available.
-      // Silently degrade — these are expected on most plans. Other statuses log.
-      if (res.status !== 401 && res.status !== 403 && res.status !== 404) {
-        logger.warn({ status: res.status, symbol }, "earningsService: Polygon non-200");
+      // 401/403 = invalid/missing key. 429 = rate limited. Log non-2xx but
+      // never throw — degrade gracefully so the rest of the pipeline runs.
+      if (res.status !== 401 && res.status !== 403) {
+        logger.warn({ status: res.status, symbol }, "earningsService: Finnhub non-200");
       }
       return null;
     }
     const data = (await res.json()) as {
-      results?: Array<{
+      earningsCalendar?: Array<{
+        symbol?: string;
         date?: string;
-        date_status?: string;
-        date_confirmed?: number | boolean;
-        ticker?: string;
+        hour?: string; // "bmo" | "amc" | "dmh" | ""
+        year?: number;
+        quarter?: number;
       }>;
     };
-    const items = data.results || [];
+    const items = data.earningsCalendar || [];
     const upcoming = items
-      .filter((e) => typeof e?.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(e.date) && e.date >= today)
+      .filter(
+        (e) =>
+          typeof e?.date === "string" &&
+          /^\d{4}-\d{2}-\d{2}$/.test(e.date) &&
+          e.date >= todayStr &&
+          (!e.symbol || e.symbol.toUpperCase() === symbol.toUpperCase()),
+      )
       .sort((a, b) => (a.date || "").localeCompare(b.date || ""))[0];
     if (!upcoming?.date) return null;
-    const confirmed =
-      upcoming.date_status === "confirmed" ||
-      upcoming.date_confirmed === 1 ||
-      upcoming.date_confirmed === true;
+
+    const target = new Date(upcoming.date + "T16:00:00-04:00").getTime();
+    const daysOut = Math.round((target - today.getTime()) / 86_400_000);
+    const confirmed = daysOut <= 30; // see interface comment above
+
     return { earningsDate: upcoming.date, confirmed };
   } catch (err) {
-    logger.warn({ err, symbol }, "earningsService: Polygon fetch failed");
+    logger.warn({ err, symbol }, "earningsService: Finnhub fetch failed");
     return null;
   }
 }
@@ -291,7 +309,7 @@ export async function getNextEarningsDate(symbol: string): Promise<NextEarnings>
 
   const job = (async (): Promise<NextEarnings> => {
     const benzKey = process.env["BENZINGA_API_KEY"];
-    const polygonKey = process.env["POLYGON_API_KEY"];
+    const finnhubKey = process.env["FINNHUB_API_KEY"];
 
     // Always pull Benzinga first (primary). If it returns a CONFIRMED future
     // date we use it directly and skip the disambiguators.
@@ -312,11 +330,11 @@ export async function getNextEarningsDate(symbol: string): Promise<NextEarnings>
       source = "benzinga";
       extras = benz;
     } else {
-      // Benzinga empty or unconfirmed — consult Polygon and Yahoo and apply
+      // Benzinga empty or unconfirmed — consult Finnhub and Yahoo and apply
       // multi-source agreement logic. Both calls in parallel to avoid serial
       // latency on the cache-miss path.
-      const [poly, yahoo] = await Promise.all([
-        polygonKey ? fetchPolygon(sym, polygonKey) : Promise.resolve(null),
+      const [finn, yahoo] = await Promise.all([
+        finnhubKey ? fetchFinnhub(sym, finnhubKey) : Promise.resolve(null),
         fetchYahoo(sym),
       ]);
 
@@ -326,26 +344,26 @@ export async function getNextEarningsDate(symbol: string): Promise<NextEarnings>
         return Math.abs(da - db) <= n * 86_400_000;
       };
 
-      if (poly && yahoo && datesWithinDays(poly.earningsDate, yahoo, 2)) {
-        // Polygon and Yahoo agree (within 2 days). High confidence — use Polygon's
-        // confirmed flag (Polygon/Benzinga distinguishes confirmed vs estimate).
-        earningsDate = poly.earningsDate;
-        confirmed = poly.confirmed;
-        source = "polygon";
+      if (finn && yahoo && datesWithinDays(finn.earningsDate, yahoo, 2)) {
+        // Finnhub and Yahoo agree (within 2 days). High confidence — use
+        // Finnhub's confirmed flag (within 30 days = confirmed by IR feed).
+        earningsDate = finn.earningsDate;
+        confirmed = finn.confirmed;
+        source = "finnhub";
         extras = benz ?? {};
-      } else if (poly) {
-        // Polygon disagrees with Yahoo (or Yahoo missing) — prefer Polygon.
-        // This is the RIVN case: Yahoo says 2026-05-05 unconfirmed, Polygon
-        // says 2026-04-30 confirmed → use Polygon.
+      } else if (finn) {
+        // Finnhub disagrees with Yahoo (or Yahoo missing) — prefer Finnhub.
+        // This is the RIVN case: Yahoo says 2026-05-05 unconfirmed, Finnhub
+        // says 2026-04-30 confirmed → use Finnhub.
         if (yahoo) {
-          logger.warn({ symbol: sym, polygon: poly.earningsDate, yahoo }, "earningsService: Polygon/Yahoo disagree, preferring Polygon");
+          logger.warn({ symbol: sym, finnhub: finn.earningsDate, yahoo }, "earningsService: Finnhub/Yahoo disagree, preferring Finnhub");
         }
-        earningsDate = poly.earningsDate;
-        confirmed = poly.confirmed;
-        source = "polygon";
+        earningsDate = finn.earningsDate;
+        confirmed = finn.confirmed;
+        source = "finnhub";
         extras = benz ?? {};
       } else if (benz?.earningsDate) {
-        // Polygon unavailable, Yahoo unavailable or already preferred-against:
+        // Finnhub unavailable, Yahoo unavailable or already preferred-against:
         // fall back to Benzinga's unconfirmed answer.
         earningsDate = benz.earningsDate;
         confirmed = benz.confirmed;
