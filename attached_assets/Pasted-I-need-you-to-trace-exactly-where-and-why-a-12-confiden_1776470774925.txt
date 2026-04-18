@@ -1,0 +1,29 @@
+I need you to trace exactly where and why a +12 confidence offset is being applied between the synthesis output and the rendered card header.
+
+Evidence across multiple test runs today:
+- Run A (Sonnet 4.6 + Gemini 2.5 Pro): synthesis JSON "confidence": 64 → card rendered "76% conf"
+- Run B (Sonnet 4.6 + Flash): synthesis JSON "confidence": 58 → card rendered "70% conf"  
+- Run C (Sonnet 4.6 + Sonnet 4.6): synthesis JSON "confidence": 57 → card rendered "69% conf"
+
+The offset is consistently +12, independent of which models are used. This is a pipeline bug, not a model bug.
+
+Do the following:
+
+1. Read the full strategistV2.ts file and identify every location where the confidence field is read, modified, or written.
+
+2. Read the file or component that renders the final card header showing "XX% conf" text. Find the exact code that produces that number.
+
+3. Trace the data flow from the synthesis JSON output to the card header render. For every transformation applied to the confidence value between synthesis and render, show me the file path, line number, code snippet, and explanation of what it does.
+
+4. Specifically look for:
+   - Any addition of numeric constants (like +12, +10, +15) to a confidence field
+   - Any conditional logic that modifies confidence when sameDayCatalyst is true or catalystAlignment is ALIGNED
+   - Any weighted blend that combines AI confidence with another score
+   - Any display-layer formula that rounds or transforms confidence before rendering
+   - Any "score boost" or "catalyst bonus" logic that applies post-synthesis
+
+5. Also check the Strategist Tuning settings:
+   - There is a "Catalyst Bonus Points" setting set to 10 in the Scanner section
+   - Verify whether this 10-point bonus is being applied ONLY to scanner scores or if it is also being added to AI confidence somewhere in the strategist render path
+
+Do not fix anything yet. This is a read-only investigation. Report findings as a structured list with file paths, line numbers, and the specific code responsible for the offset.
