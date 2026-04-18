@@ -542,9 +542,17 @@ export function StrategistV2RecommendationCard({ result, onSendToOrder, generate
               const reasonText = ioScore.available === false
                 ? `IOScore unavailable — insufficient SPY/${ioScore.dataAvailability?.equityDays ?? 0}d equity history to fit beta/R². Score below shown as N/A; underlying engine returned fallback values (rSquared=0.50, residualZ=0).`
                 : `IOScore inconclusive — Composite ${compositePct.toFixed(1)} is within 3 points of the 50.0 neutral midpoint. Score below shown as N/A; treat as no idiosyncratic edge.`;
+              const idioPct = Math.round(ioScore.final * 100);
+              const macroPct = 100 - idioPct;
               return (
-              <div className="space-y-2">
-                <h4 className="font-mono text-[9px] text-zinc-500 uppercase tracking-widest">IOScore Breakdown</h4>
+              <div
+                className="space-y-2 p-3 rounded-lg"
+                style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)" }}
+              >
+                <div className="flex items-baseline justify-between">
+                  <h4 className="font-mono text-[10px] font-bold text-zinc-300 uppercase tracking-widest">IOScore</h4>
+                  <span className="font-mono text-[9px] text-zinc-500 normal-case tracking-normal">Per-ticker · this analysis only</span>
+                </div>
                 {ioUnavailable && (
                   <div className="font-mono text-[10px] text-amber-300 bg-amber-900/20 border border-amber-500/30 rounded px-2 py-1">
                     {reasonText}
@@ -553,23 +561,39 @@ export function StrategistV2RecommendationCard({ result, onSendToOrder, generate
                 <div className="grid grid-cols-2 gap-2">
                   <StatRow
                     label="Overall"
-                    value={ioUnavailable ? "N/A" : `${(ioScore.final * 100).toFixed(0)}%`}
+                    value={ioUnavailable ? "N/A" : `${idioPct}%`}
                     color={ioUnavailable ? "#71717a" : ioScore.classification === "HIGH_IDIOSYNCRATIC" ? UP : ioScore.classification === "MIXED" ? GOLD : "#71717a"}
                   />
                   <StatRow label="Classification" value={ioUnavailable ? "N/A" : ioScore.classification.replace(/_/g, " ")} />
-                  <StatRow label="R²" value={ioUnavailable ? "N/A" : (ioScore.components?.marketIndependence?.rSquared?.toFixed(3) ?? "—")} />
-                  <StatRow label="Beta" value={ioUnavailable ? "N/A" : (ioScore.beta?.toFixed(2) ?? "—")} />
-                  <StatRow label="Residual Z" value={ioUnavailable ? "N/A" : (ioScore.residualReturnZScore?.toFixed(2) ?? "—")} />
-                  <StatRow label="Catalyst" value={ioScore.components?.catalyst?.flagValue > 0 ? "YES" : "No"} color={ioScore.components?.catalyst?.flagValue > 0 ? UP : "#71717a"} />
-                  <StatRow label="Flow Score" value={ioScore.components?.flowDivergence?.final?.toFixed(3) ?? "—"} />
-                  <StatRow label="Vol/OI Ratio" value={ioScore.components?.flowDivergence?.volOiRatio?.toFixed(3) ?? "—"} />
+                  <StatRow label="Idiosyncratic %" value={ioUnavailable ? "N/A" : `${idioPct}%`} color={ioUnavailable ? "#71717a" : GOLD} />
+                  <StatRow label="Macro %" value={ioUnavailable ? "N/A" : `${macroPct}%`} color={ioUnavailable ? "#71717a" : "#71717a"} />
+                </div>
+                <div className="pt-2 mt-1 border-t border-zinc-800/60">
+                  <div className="font-mono text-[9px] text-zinc-500 uppercase tracking-widest mb-1.5">Components</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <StatRow label="R²" value={ioUnavailable ? "N/A" : (ioScore.components?.marketIndependence?.rSquared?.toFixed(3) ?? "—")} />
+                    <StatRow label="Beta" value={ioUnavailable ? "N/A" : (ioScore.beta?.toFixed(2) ?? "—")} />
+                    <StatRow label="Residual Z" value={ioUnavailable ? "N/A" : (ioScore.residualReturnZScore?.toFixed(2) ?? "—")} />
+                    <StatRow label="Catalyst" value={(ioScore.components?.catalyst?.flagValue ?? 0) > 0 ? "YES" : "No"} color={(ioScore.components?.catalyst?.flagValue ?? 0) > 0 ? UP : "#71717a"} />
+                    <StatRow label="Flow Score" value={ioScore.components?.flowDivergence?.final?.toFixed(3) ?? "—"} />
+                    <StatRow label="Vol/OI Ratio" value={ioScore.components?.flowDivergence?.volOiRatio?.toFixed(3) ?? "—"} />
+                  </div>
                 </div>
               </div>
               );
             })()}
 
-            <div className="space-y-2">
-              <h4 className="font-mono text-[9px] text-zinc-500 uppercase tracking-widest">Regime</h4>
+            <div
+              className="space-y-2 p-3 rounded-lg"
+              style={{ background: "rgba(255,184,0,0.03)", border: "1px solid rgba(255,184,0,0.18)" }}
+            >
+              <div className="flex items-baseline justify-between">
+                <h4 className="font-mono text-[10px] font-bold uppercase tracking-widest" style={{ color: GOLD }}>Macro Regime</h4>
+                <span className="font-mono text-[9px] text-zinc-500 normal-case tracking-normal">Session-wide · same across tickers</span>
+              </div>
+              <div className="font-mono text-[9px] text-zinc-500 leading-snug normal-case">
+                Macro state — same across all tickers in this session.
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 <StatRow label="Conviction" value={regime.directionalConviction} />
                 <StatRow label="Risk Level" value={regime.systemicRiskLevel} color={regime.systemicRiskLevel === "EXTREME" ? DOWN : regime.systemicRiskLevel === "ELEVATED" ? AMBER : UP} />
