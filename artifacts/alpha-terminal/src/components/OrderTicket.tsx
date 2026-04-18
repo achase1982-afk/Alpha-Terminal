@@ -888,6 +888,12 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                       else if (allCalls) breakevens.push(sellLeg.strike + netPrice);
                     }
                   }
+                  const popLeg = strategyIsCredit
+                    ? strategyLegs.find(l => l.instruction.startsWith("SELL"))
+                    : strategyLegs.find(l => l.instruction.startsWith("BUY"));
+                  const popPct = (popLeg?.delta != null)
+                    ? Math.round((strategyIsCredit ? (1 - Math.abs(popLeg.delta)) : Math.abs(popLeg.delta)) * 100)
+                    : null;
                   const bp = balances.buyingPower ?? accountSize ?? 0;
                   const bpChange = strategyIsCredit ? netAmt : -netAmt;
                   return (
@@ -915,16 +921,16 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                         </div>
                         <div>
                           <div style={{ color: MUTED }}>POP</div>
-                          <div className="text-[13px]" style={{ color: TEXT }}>—</div>
+                          <div className="text-[13px]" style={{ color: popPct != null ? WHITE : TEXT }}>{popPct != null ? `${popPct}%` : "—"}</div>
                         </div>
                         <div>
                           <div style={{ color: MUTED }}>R:R</div>
-                          <div className="text-[13px]" style={{ color: TEXT }}>{rr}</div>
+                          <div className="text-[13px]" style={{ color: WHITE }}>{rr}</div>
                         </div>
                       </div>
 
-                      <div className="mt-1 flex flex-wrap items-center justify-between gap-1 pt-1 text-[11px]" style={{ borderTop: `1px dashed ${DIVIDER}`, color: MUTED }}>
-                        <span>BE {breakevens.length > 0 ? breakevens.map(b => `$${b.toFixed(2)}`).join(" / ") : "—"}</span>
+                      <div className="mt-1 flex flex-wrap items-center justify-between gap-1 pt-1 text-[12px]" style={{ borderTop: `1px dashed ${DIVIDER}`, color: TEXT }}>
+                        <span>Breakeven {breakevens.length > 0 ? breakevens.map(b => `$${b.toFixed(2)}`).join(" / ") : "—"}</span>
                         <span>Buying Power {bpChange >= 0 ? "" : "−"}{fmtCurrency(Math.abs(bpChange))}</span>
                       </div>
                     </div>
@@ -949,8 +955,13 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                       if (sym.length >= 12) {
                         const yr = sym.substring(6, 8);
                         const mo = sym.substring(8, 10);
+                        const dy = sym.substring(10, 12);
                         const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
                         const mIdx = parseInt(mo, 10) - 1;
+                        const dayNum = parseInt(dy, 10);
+                        if (months[mIdx] && !Number.isNaN(dayNum)) {
+                          return `${months[mIdx]} ${dayNum}, 20${yr}`;
+                        }
                         return `${months[mIdx] ?? mo} 20${yr}`;
                       }
                       return "";
@@ -965,10 +976,10 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                             <span className="text-[11px] tracking-[0.09em]" style={{ color: dirColor }}>{roleLabel}</span>
                             <span style={{ color: WHITE }}>{qtySign}{leg.quantity} · {leg.strike} {leg.optionType === "CALL" ? "Call" : "Put"}{expLabel ? ` · ${expLabel}` : ""}</span>
                           </div>
-                          <div className="text-[11px]" style={{ color: TEXT }}>{isBuyLeg ? "Buy" : "Sell"} · {mid != null ? `Mark ${mid.toFixed(2)}` : "No data"}</div>
+                          <div className="text-[12px]" style={{ color: TEXT }}>{isBuyLeg ? "Buy" : "Sell"} · {mid != null ? `Mark ${mid.toFixed(2)}` : "No data"}</div>
                         </div>
-                        <div className="flex items-center gap-2 text-[11px]" style={{ color: TEXT }}>
-                          <span>B {leg.bid?.toFixed(2) ?? "—"} / A {leg.ask?.toFixed(2) ?? "—"}</span>
+                        <div className="flex items-center gap-2 text-[12px]" style={{ color: TEXT }}>
+                          <span>Bid {leg.bid?.toFixed(2) ?? "—"} / Ask {leg.ask?.toFixed(2) ?? "—"}</span>
                         </div>
                       </div>
                     );
@@ -1360,7 +1371,13 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                         const mr = strategyIsCredit ? (w - netP) * 100 * quantity : netP * 100 * quantity;
                         const bp = balances.buyingPower ?? accountSize ?? 0;
                         const bpAfter = Math.max(0, bp - Math.abs(estimatedCost ?? 0));
-                        return `Loss ${fmtCurrency(mr > 0 ? mr : 0)} · POP — · Margin ${fmtCurrency(bpAfter)}`;
+                        const popLeg = strategyIsCredit
+                          ? strategyLegs.find(l => l.instruction.startsWith("SELL"))
+                          : strategyLegs.find(l => l.instruction.startsWith("BUY"));
+                        const popPct = (popLeg?.delta != null)
+                          ? Math.round((strategyIsCredit ? (1 - Math.abs(popLeg.delta)) : Math.abs(popLeg.delta)) * 100)
+                          : null;
+                        return `Loss ${fmtCurrency(mr > 0 ? mr : 0)} · POP ${popPct != null ? `${popPct}%` : "—"} · Margin ${fmtCurrency(bpAfter)}`;
                       })()}
                     </span>
                     {preTradeEnabled && riskChecks.length > 0 && (
@@ -1438,7 +1455,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                           </div>
 
                           <div className="text-[11px]" style={{ color: TEXT }}>
-                            Max profit if price stays between strikes. Risk: {fmtCurrency(mr > 0 ? mr : 0)}. BE: {fmtCurrency(bePrice)}.
+                            Max profit if price stays between strikes. Risk: {fmtCurrency(mr > 0 ? mr : 0)}. Breakeven: {fmtCurrency(bePrice)}.
                           </div>
 
                           {preTradeEnabled && riskChecks.length > 0 && (
@@ -1535,7 +1552,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
       {stage === "form" && (
         <div className="shrink-0 px-3 pt-2" style={{ paddingBottom: "max(env(safe-area-inset-bottom, 20px), 20px)", background: BG, borderTop: `1px solid ${BORDER}`, zIndex: 215 }}>
           {isMultiLeg && strategyLegs ? (
-            <div className="mb-1 flex flex-wrap items-center justify-between gap-1 text-[11px]" style={{ color: TEXT }}>
+            <div className="mb-1 flex flex-wrap items-center justify-between gap-2 text-[12px]" style={{ color: TEXT }}>
               <span>{quantity} spread{quantity !== 1 ? "s" : ""} · {strategyIsCredit ? "Credit" : "Cost"} {estimatedCost != null ? fmtCurrency(Math.abs(estimatedCost)) : "—"}</span>
               <span>Risk {(() => {
                 const netP = parseFloat(limitPrice) || strategyNetPrice || 0;
@@ -1544,7 +1561,15 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                 const mr = strategyIsCredit ? (w - netP) * 100 * quantity : netP * 100 * quantity;
                 return fmtCurrency(mr > 0 ? mr : 0);
               })()}</span>
-              <span>POP —</span>
+              <span>POP {(() => {
+                const popLeg = strategyIsCredit
+                  ? strategyLegs.find(l => l.instruction.startsWith("SELL"))
+                  : strategyLegs.find(l => l.instruction.startsWith("BUY"));
+                const popPct = (popLeg?.delta != null)
+                  ? Math.round((strategyIsCredit ? (1 - Math.abs(popLeg.delta)) : Math.abs(popLeg.delta)) * 100)
+                  : null;
+                return popPct != null ? `${popPct}%` : "—";
+              })()}</span>
               {preTradeEnabled && <span style={{ color: levelColor(overallRisk) }}>{overallRisk === "GREEN" ? "PASS" : overallRisk === "YELLOW" ? "WARN" : "FAIL"}</span>}
             </div>
           ) : (
