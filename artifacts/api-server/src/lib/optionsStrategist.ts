@@ -1597,4 +1597,6 @@ For each strategy, explain:
 - Any conditions that would invalidate the trade thesis
 
 Format the output as structured sections. Be concise and professional.
+The thesis most likely to play out first inside the trade's expiration window wins.
+
 Do NOT add disclaimers about not being financial advice -- the user is a professional trader.`;
