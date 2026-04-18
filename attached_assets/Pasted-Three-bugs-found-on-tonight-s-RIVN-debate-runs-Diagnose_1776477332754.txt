@@ -1,0 +1,40 @@
+Three bugs found on tonight's RIVN debate runs. Diagnose all three, report findings, do not implement yet.
+
+BUG 1: earningsService returning wrong earnings date for RIVN
+
+RIVN's actual Q1 earnings date is April 30, 2026 (confirmed via public sources). Our earningsService is returning May 5, 2026, which is showing up in scheduledEvents and the inside-expiry warning banner on both tonight's RIVN cards.
+
+Investigate:
+- Query earningsService directly for RIVN and show me the raw response
+- Query Benzinga's earnings endpoint directly for RIVN and show me the raw response
+- Query Yahoo's earnings endpoint directly for RIVN and show me the raw response
+- Determine which source is returning May 5 and whether it's a data quality issue at the provider or a parsing issue in our code
+- Check whether the sort-ascending fix we applied earlier is firing correctly on RIVN (the bug pattern that hit KO)
+
+BUG 2: Synthesis-to-card render mismatch
+
+Tonight's two RIVN debates produced trades in the synthesis JSON that were NOT what got rendered on the card.
+
+Run 1 (Opus + Opus): synthesis specified BUY 17c / SELL 22c ($5 wide). Card rendered BUY 17c / SELL 20c ($3 wide).
+
+Run 2 (Gemini 3.1 Pro + Gemini 3.1 Pro): synthesis specified broken_wing_butterfly (17c long, 20c x2 short, 22c long). Card rendered a standard 16/19 call debit spread.
+
+The arbitrator's output is being overwritten or ignored downstream. Find the path from synthesis JSON to rendered card legs. Identify where the substitution is happening. Is it:
+- A post-synthesis normalization step that forces structures into "standard" types?
+- A strike-resolver that re-picks strikes from the chain after synthesis?
+- A validation layer that rejects certain structures and substitutes safer ones?
+- A race condition where the card renders from something other than the synthesis output?
+
+Report the exact file and line where the rendered legs diverge from the synthesis legs.
+
+BUG 3: IOScore unavailable banner not firing
+
+Tonight's RIVN cards show IOScore Composite 50.0 with Classification/Conviction/Risk/Correlation all populated with apparently-real values. The fix you landed today was supposed to render an amber "IOScore unavailable" banner when dataAvailability was false.
+
+Investigate:
+- Is the dataAvailability flag being computed correctly on these runs?
+- If true, why is Composite stuck at 50.0 when Overall shows 26%?
+- If false, why isn't the banner rendering?
+- Check the frontend condition in StrategistV2Card.tsx that decides between showing IOScore data vs the unavailable banner.
+
+For all three bugs: report findings with file paths, line numbers, and proposed fix. Do not implement until I confirm each fix approach.
