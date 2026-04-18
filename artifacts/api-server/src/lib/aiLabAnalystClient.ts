@@ -308,7 +308,7 @@ async function callAnthropic(model: string, temperature: number, prompt: string,
 export async function callAnthropicWithSystem(model: string, temperature: number, systemPrompt: string, prompt: string): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
-  const client = new Anthropic({ apiKey });
+  const client = new Anthropic({ apiKey, timeout: 20 * 60 * 1000 });
 
   const isNew = /^claude-(opus|sonnet)-4-([7-9]|\d{2,})/.test(model);
   const THINKING_BUDGET = 4096;
@@ -406,7 +406,7 @@ export async function callAnthropicWithSystemAndWebSearch(
 ): Promise<WebSearchResult> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
-  const client = new Anthropic({ apiKey });
+  const client = new Anthropic({ apiKey, timeout: 20 * 60 * 1000 });
 
   const isNew = /^claude-(opus|sonnet)-4-([7-9]|\d{2,})/.test(model);
   const THINKING_BUDGET = 4096;
@@ -487,7 +487,11 @@ export async function streamCallAnthropicWithSystemAndWebSearch(
 ): Promise<WebSearchResult> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
-  const client = new Anthropic({ apiKey });
+  // Opus 4.7 with adaptive thinking + web search can run 4-8 minutes per turn;
+  // a Debate (6 turns + arbitration) easily exceeds the SDK's default 10-minute
+  // socket timeout. Bump to 20 minutes per call so debates complete instead of
+  // failing mid-stream with an opaque "request timed out".
+  const client = new Anthropic({ apiKey, timeout: 20 * 60 * 1000 });
 
   const isNew = /^claude-(opus|sonnet)-4-([7-9]|\d{2,})/.test(model);
   const THINKING_BUDGET = 4096;

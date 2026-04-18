@@ -1,0 +1,37 @@
+Fix the following four items in one pass. Do not ask for mid-implementation confirmation.
+
+ITEM 1: Catalyst alignment field returning UNKNOWN
+
+The catalyst.catalystAlignment field returns UNKNOWN on almost every run.
+- Read the current prompt instruction for determining catalystAlignment
+- If the prompt is vague, rewrite it so the AI evaluates alignment between the catalyst and the proposed trade direction specifically
+- For cases where alignment can be computed from data deterministically (earnings surprise sign + trade direction), compute server-side instead of asking the AI
+- Ship the fix
+
+ITEM 2: IOScore 50.0 default regression
+
+IOScore Composite has been alternating between real computed values (67.0, MODERATELY BULLISH) and default null state (50.0, NEUTRAL) across runs on the same ticker with identical data.
+- Find the IOScore engine and identify its inputs
+- Find every default path that returns 50.0 or NEUTRAL when inputs are missing
+- Determine what intermittent input failure causes the regression
+- Fix the root cause so IOScore produces consistent output on identical inputs
+- Do not mask the failure by caching the previous value
+
+ITEM 3: Scanner factor weight sum 85 vs 100
+
+Scanner Default and Scanner Idiosyncratic weight controls appear to sum to 85 in the UI, not 100.
+- Verify actual sum of all five weights in each section
+- If genuinely 85, determine whether it's a display issue (weights normalize internally), a settings default issue (defaults wrong), or a calculation issue (engine uses raw 85-sum weights)
+- Fix whichever it is
+
+ITEM 4: Debate timeout on GS
+
+Earlier today a GS debate run timed out. Investigate and fix.
+- Find the debate orchestration path - identify where LLM calls are made and what timeout values are applied
+- Determine whether the timeout is per-call, per-round, or per-debate overall
+- Check whether Opus 4.7 with adaptive thinking enabled has longer response times that exceed current timeouts
+- If timeout is too tight for premium models with adaptive thinking, extend it appropriately
+- If the timeout is a hung connection issue, add retry logic or better error handling
+- Ship the fix
+
+For all four items: ship, smoke test on one debate ticker to confirm nothing regressed, report back with what was wrong, what you changed, and the smoke test outcome. One round trip.

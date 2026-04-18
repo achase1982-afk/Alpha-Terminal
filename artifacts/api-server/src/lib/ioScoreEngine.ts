@@ -3,8 +3,28 @@ import { desc, eq, sql, and, gte } from "drizzle-orm";
 import { logger } from "./logger.js";
 import { getSettings } from "./strategistSettings.js";
 
+export type IOScoreAvailabilitySource =
+  | "real"            // beta/R² and residual computed from real history
+  | "fallback_no_data" // not enough equity/SPY history to fit a regression
+  | "fallback_error";  // exception during computation
 export interface IOScoreResult {
   final: number;
+  /**
+   * False when the underlying beta/R² regression could not be fit (insufficient
+   * history or runtime error). When false, `final` is computed from fallback
+   * defaults (rSquared=0.5, residualZ=0) and should be displayed as "N/A" in
+   * the UI rather than a numeric score, because identical inputs at different
+   * times will produce different "real" scores once the data pipeline catches
+   * up — making fallback values look like real values masks the data gap and
+   * causes the apparent IOScore to flip between e.g. 67 and 50.
+   */
+  available: boolean;
+  dataAvailability: {
+    source: IOScoreAvailabilitySource;
+    equityDays: number;
+    spyDays: number;
+    pairs: number;
+  };
   components: {
     marketIndependence: { rSquared: number; weight: number; contribution: number };
     abnormalMove: { zScoreRaw: number; zScoreNormalized: number; weight: number; contribution: number };
@@ -37,7 +57,8 @@ export async function computeIOScore(
   const highThreshold = cfg.ioThresholdHigh;
   const mixedFloor = cfg.ioThresholdMixed;
 
-  const { rSquared, beta, residualZScore } = await computeBetaR2(ticker, betaLookback, residualLookback);
+  const betaR2 = await computeBetaR2(ticker, betaLookback, residualLookback);
+  const { rSquared, beta, residualZScore } = betaR2;
 
   const flowDiv = await computeFlowDivergence(ticker);
 
@@ -68,6 +89,13 @@ export async function computeIOScore(
 
   return {
     final: Math.round(idioStrength * 100) / 100,
+    available: betaR2.source === "real",
+    dataAvailability: {
+      source: betaR2.source,
+      equityDays: betaR2.equityDays,
+      spyDays: betaR2.spyDays,
+      pairs: betaR2.pairs,
+    },
     components: {
       marketIndependence: { rSquared, weight: wR2, contribution: Math.round(r2Contribution * 1000) / 1000 },
       abnormalMove: { zScoreRaw: residualZScore, zScoreNormalized: normalizedZScore, weight: wResidual, contribution: Math.round(residualContribution * 1000) / 1000 },
@@ -84,7 +112,15 @@ async function computeBetaR2(
   ticker: string,
   lookbackDays: number,
   residualLookback: number = 10
-): Promise<{ rSquared: number; beta: number; residualZScore: number }> {
+): Promise<{
+  rSquared: number;
+  beta: number;
+  residualZScore: number;
+  source: IOScoreAvailabilitySource;
+  equityDays: number;
+  spyDays: number;
+  pairs: number;
+}> {
   try {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - Math.ceil(lookbackDays * 1.5));
@@ -113,7 +149,15 @@ async function computeBetaR2(
     const spyData = bySymbol.get("SPY") ?? [];
 
     if (tickerData.length < 10 || spyData.length < 10) {
-      return { rSquared: 0.5, beta: 1.0, residualZScore: 0 };
+      logger.warn(
+        { ticker, tickerDays: tickerData.length, spyDays: spyData.length, lookbackDays },
+        "IOScore: insufficient daily history for beta/R² — returning fallback (will surface as N/A in UI)",
+      );
+      return {
+        rSquared: 0.5, beta: 1.0, residualZScore: 0,
+        source: "fallback_no_data",
+        equityDays: tickerData.length, spyDays: spyData.length, pairs: 0,
+      };
     }
 
     const spyByDate = new Map<string, number>();
@@ -132,7 +176,15 @@ async function computeBetaR2(
     }
 
     if (pairs.length < 8) {
-      return { rSquared: 0.5, beta: 1.0, residualZScore: 0 };
+      logger.warn(
+        { ticker, pairs: pairs.length, tickerDays: tickerData.length, spyDays: spyData.length },
+        "IOScore: insufficient overlapping return pairs — returning fallback (will surface as N/A in UI)",
+      );
+      return {
+        rSquared: 0.5, beta: 1.0, residualZScore: 0,
+        source: "fallback_no_data",
+        equityDays: tickerData.length, spyDays: spyData.length, pairs: pairs.length,
+      };
     }
 
     const recent = pairs.slice(-lookbackDays);
@@ -167,10 +219,22 @@ async function computeBetaR2(
       : 0;
     const residualZScore = stdResidual > 0 ? avgRecentResidual / stdResidual : 0;
 
-    return { rSquared: Math.round(rSquared * 100) / 100, beta: Math.round(beta * 100) / 100, residualZScore: Math.round(residualZScore * 100) / 100 };
+    return {
+      rSquared: Math.round(rSquared * 100) / 100,
+      beta: Math.round(beta * 100) / 100,
+      residualZScore: Math.round(residualZScore * 100) / 100,
+      source: "real",
+      equityDays: tickerData.length,
+      spyDays: spyData.length,
+      pairs: pairs.length,
+    };
   } catch (err) {
     logger.error({ err, ticker }, "IOScore: beta/R² computation failed");
-    return { rSquared: 0.5, beta: 1.0, residualZScore: 0 };
+    return {
+      rSquared: 0.5, beta: 1.0, residualZScore: 0,
+      source: "fallback_error",
+      equityDays: 0, spyDays: 0, pairs: 0,
+    };
   }
 }
 

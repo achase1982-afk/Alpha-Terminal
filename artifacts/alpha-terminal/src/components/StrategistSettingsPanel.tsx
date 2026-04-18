@@ -98,6 +98,23 @@ export function StrategistSettingsPanel() {
   const ioSum = ioWeightKeys.reduce((acc, k) => acc + (data.current[k] ?? 0), 0);
   const ioWarning = Math.abs(ioSum - 1.0) > 0.01;
 
+  // Scanner Default + Idiosyncratic weight groups must sum to 100. The engine
+  // sums the raw category contributions additively (no auto-normalization), so
+  // a sub-100 sum quietly caps the maximum possible score (e.g. 85 max instead
+  // of 100), shifting tickers below the minScore threshold.
+  const scannerDefaultKeys = [
+    "scannerDefaultTrend", "scannerDefaultRS", "scannerDefaultVolume",
+    "scannerDefaultIVR", "scannerDefaultLiquidity",
+  ];
+  const scannerIdioKeys = [
+    "scannerIdioTrend", "scannerIdioRS", "scannerIdioVolume",
+    "scannerIdioIVR", "scannerIdioLiquidity",
+  ];
+  const scannerDefaultSum = scannerDefaultKeys.reduce((a, k) => a + (data.current[k] ?? 0), 0);
+  const scannerIdioSum = scannerIdioKeys.reduce((a, k) => a + (data.current[k] ?? 0), 0);
+  const scannerDefaultWarning = Math.abs(scannerDefaultSum - 100) > 0.5;
+  const scannerIdioWarning = Math.abs(scannerIdioSum - 100) > 0.5;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -119,6 +136,22 @@ export function StrategistSettingsPanel() {
         <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-900/20 border border-amber-500/30">
           <AlertTriangle className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
           <span className="font-mono text-[11px] text-amber-300">IOScore weights sum to {ioSum.toFixed(2)} — should be 1.00</span>
+        </div>
+      )}
+      {scannerDefaultWarning && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-900/20 border border-amber-500/30">
+          <AlertTriangle className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+          <span className="font-mono text-[11px] text-amber-300">
+            Scanner Default weights sum to {scannerDefaultSum} — should be 100. Sub-100 caps the max scanner score and may push tickers below the minimum threshold.
+          </span>
+        </div>
+      )}
+      {scannerIdioWarning && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-900/20 border border-amber-500/30">
+          <AlertTriangle className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+          <span className="font-mono text-[11px] text-amber-300">
+            Scanner Idiosyncratic weights sum to {scannerIdioSum} — should be 100. Sub-100 caps the max scanner score and may push tickers below the minimum threshold.
+          </span>
         </div>
       )}
 

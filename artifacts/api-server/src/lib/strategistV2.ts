@@ -9,7 +9,7 @@ import { getBestAccessToken } from "./tokenStore.js";
 import { fetchPolygonChain } from "./polygonChain.js";
 import { checkEventConflicts, getUpcomingEvents } from "./calendarEventChecker.js";
 import { getNextEarningsDate } from "./earningsService.js";
-import { evaluateCatalyst, type CatalystEvaluation } from "./catalystEvaluator.js";
+import { evaluateCatalyst, deriveTradeDirection, type CatalystEvaluation } from "./catalystEvaluator.js";
 import { computeIVR, type OptionContract } from "./optionsStrategist.js";
 import { getAiLabStrategistConfig } from "./aiLabConfig.js";
 import {
@@ -337,7 +337,7 @@ Your response must be valid JSON with these fields:
     - type: one of "EARNINGS" | "FED_MEETING" | "ECONOMIC_RELEASE" | "PRODUCT_LAUNCH" | "MA_EVENT" | "ANALYST_ACTION" | "NONE"
       The single most important catalyst that will fire BETWEEN TODAY AND YOUR PROPOSED EXPIRATION. The server independently confirms EARNINGS / FED_MEETING / ECONOMIC_RELEASE from authoritative calendars and will override yours if they disagree. PRODUCT_LAUNCH / MA_EVENT / ANALYST_ACTION you must source from web search.
     - date: "YYYY-MM-DD" if known, else null
-    - alignment: "ALIGNED" | "CONTRADICTS" | "NEUTRAL" | "UNKNOWN" (relationship of the catalyst to your recommended direction; use UNKNOWN when no catalyst exists)
+    - alignment: "ALIGNED" | "CONTRADICTS" | "NEUTRAL" (relationship of the catalyst to your recommended direction). RULES: If your trade direction is bullish and the catalyst is bullish for the name → ALIGNED. If bullish trade meets bearish catalyst → CONTRADICTS. For neutral/vol structures (iron condor, butterfly, calendar, straddle) → NEUTRAL. For an upcoming binary EARNINGS event (the print hasn't happened yet) → NEUTRAL — the event has no known sign in advance. For ambient macro events (FOMC, CPI, PCE) on a single-name trade → NEUTRAL unless you can name the specific bullish/bearish read. If there is no scheduled catalyst at all → NEUTRAL. Reserve "UNKNOWN" only for the rare case where a catalyst exists, has fired, and you genuinely cannot tell whether the market read it as bullish or bearish — almost every analysis should resolve to ALIGNED, CONTRADICTS, or NEUTRAL, not UNKNOWN.
     - summary: one sentence describing the catalyst, or "No scheduled catalyst between now and expiry — thesis is technical/structural" if none
     - residual: optional object {type: same enum, date: "YYYY-MM-DD"} for a catalyst that fired in the LAST 14 DAYS that the price is still digesting (e.g. earnings 3-7 days ago driving post-earnings drift). Omit if not applicable.
   Most valid swing setups (post-earnings drift, mean reversion, vol regime, trend continuation) have NO scheduled catalyst between now and expiry — that is fine and expected. Do not invent a catalyst.
@@ -558,6 +558,7 @@ export async function analyzeTickerV2(
     ticker,
     expirationISO: farLegExpiration,
     ai: aiResponse.catalyst ?? null,
+    tradeDirection: deriveTradeDirection(aiResponse.strategy, aiResponse.legs),
   });
 
   // Stop computing legacy `sameDayCatalyst`. It's still in the schema for

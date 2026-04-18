@@ -159,6 +159,20 @@ export interface StrategistV2Result {
   };
   ioScore?: {
     final: number;
+    /**
+     * False when the underlying beta/R² regression hit fallback defaults
+     * (insufficient SPY/equity history). When false, the UI must show "N/A"
+     * rather than the numeric score — fallback values like 0.50 look like
+     * real scores and made the displayed IOScore appear to flip between e.g.
+     * 67 and 50 between identical inputs.
+     */
+    available?: boolean;
+    dataAvailability?: {
+      source: "real" | "fallback_no_data" | "fallback_error";
+      equityDays: number;
+      spyDays: number;
+      pairs: number;
+    };
     classification: string;
     beta: number;
     residualReturnZScore: number;
@@ -506,12 +520,21 @@ export function StrategistV2RecommendationCard({ result, onSendToOrder, generate
             {ioScore && (
               <div className="space-y-2">
                 <h4 className="font-mono text-[9px] text-zinc-500 uppercase tracking-widest">IOScore Breakdown</h4>
+                {ioScore.available === false && (
+                  <div className="font-mono text-[10px] text-amber-300 bg-amber-900/20 border border-amber-500/30 rounded px-2 py-1">
+                    IOScore unavailable — insufficient SPY/{ioScore.dataAvailability?.equityDays ?? 0}d equity history to fit beta/R². Score below shown as N/A; underlying engine returned fallback values (rSquared=0.50, residualZ=0).
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-2">
-                  <StatRow label="Overall" value={`${(ioScore.final * 100).toFixed(0)}%`} color={ioScore.classification === "HIGH_IDIOSYNCRATIC" ? UP : ioScore.classification === "MIXED" ? GOLD : "#71717a"} />
-                  <StatRow label="Classification" value={ioScore.classification.replace(/_/g, " ")} />
-                  <StatRow label="R²" value={ioScore.components?.marketIndependence?.rSquared?.toFixed(3) ?? "—"} />
-                  <StatRow label="Beta" value={ioScore.beta?.toFixed(2) ?? "—"} />
-                  <StatRow label="Residual Z" value={ioScore.residualReturnZScore?.toFixed(2) ?? "—"} />
+                  <StatRow
+                    label="Overall"
+                    value={ioScore.available === false ? "N/A" : `${(ioScore.final * 100).toFixed(0)}%`}
+                    color={ioScore.available === false ? "#71717a" : ioScore.classification === "HIGH_IDIOSYNCRATIC" ? UP : ioScore.classification === "MIXED" ? GOLD : "#71717a"}
+                  />
+                  <StatRow label="Classification" value={ioScore.available === false ? "N/A" : ioScore.classification.replace(/_/g, " ")} />
+                  <StatRow label="R²" value={ioScore.available === false ? "N/A" : (ioScore.components?.marketIndependence?.rSquared?.toFixed(3) ?? "—")} />
+                  <StatRow label="Beta" value={ioScore.available === false ? "N/A" : (ioScore.beta?.toFixed(2) ?? "—")} />
+                  <StatRow label="Residual Z" value={ioScore.available === false ? "N/A" : (ioScore.residualReturnZScore?.toFixed(2) ?? "—")} />
                   <StatRow label="Catalyst" value={ioScore.components?.catalyst?.flagValue > 0 ? "YES" : "No"} color={ioScore.components?.catalyst?.flagValue > 0 ? UP : "#71717a"} />
                   <StatRow label="Flow Score" value={ioScore.components?.flowDivergence?.final?.toFixed(3) ?? "—"} />
                   <StatRow label="Vol/OI Ratio" value={ioScore.components?.flowDivergence?.volOiRatio?.toFixed(3) ?? "—"} />

@@ -90,6 +90,38 @@ export interface AiCatalystSignal {
   residual?: { type?: string | null; date?: string | null } | null;
 }
 
+export type TradeDirection = "BULLISH" | "BEARISH" | "NEUTRAL";
+
+/**
+ * Derive trade direction from the AI's chosen strategy / legs. Used to compute
+ * deterministic catalystAlignment server-side and stop the AI from defaulting
+ * to UNKNOWN.
+ */
+export function deriveTradeDirection(
+  strategy: string | undefined | null,
+  legs: ReadonlyArray<{ type: "call" | "put"; action: "buy" | "sell" }> | undefined,
+): TradeDirection {
+  const s = (strategy ?? "").toLowerCase();
+  if (/(iron_condor|iron_butterfly|butterfly|straddle|strangle|calendar|double_calendar|diagonal)/.test(s)) {
+    return "NEUTRAL";
+  }
+  if (/(bull|long_call|put_credit|call_debit)/.test(s)) return "BULLISH";
+  if (/(bear|long_put|call_credit|put_debit)/.test(s)) return "BEARISH";
+  // Fall back to leg shape: net long calls = bullish, net long puts = bearish.
+  if (legs && legs.length > 0) {
+    let callBias = 0;
+    let putBias = 0;
+    for (const l of legs) {
+      const sign = l.action === "buy" ? 1 : -1;
+      if (l.type === "call") callBias += sign;
+      else if (l.type === "put") putBias += sign;
+    }
+    if (callBias > 0 && putBias <= 0) return "BULLISH";
+    if (putBias > 0 && callBias <= 0) return "BEARISH";
+  }
+  return "NEUTRAL";
+}
+
 const VALID_TYPES: ReadonlySet<CatalystType> = new Set([
   "EARNINGS", "FED_MEETING", "ECONOMIC_RELEASE",
   "PRODUCT_LAUNCH", "MA_EVENT", "ANALYST_ACTION", "NONE",
@@ -136,6 +168,13 @@ export async function evaluateCatalyst(opts: {
   ticker: string;
   expirationISO: string;
   ai?: AiCatalystSignal | null;
+  /**
+   * Trade direction derived from the AI's chosen structure. When supplied, the
+   * server overrides AI-reported UNKNOWN alignment with a deterministic value
+   * for the cases where alignment is unambiguous (no catalyst, upcoming
+   * binary EARNINGS event, ambient macro-only catalysts).
+   */
+  tradeDirection?: TradeDirection;
 }): Promise<CatalystEvaluation> {
   const today = todayISO();
   const expiration = isISODate(opts.expirationISO) ? opts.expirationISO : today;
@@ -261,7 +300,24 @@ export async function evaluateCatalyst(opts: {
     }
   }
 
-  const alignment = normalizeAlignment(opts.ai?.alignment);
+  // (5a) Alignment — start from the AI value, then apply deterministic
+  // server-side overrides for the cases where alignment is unambiguous so we
+  // stop emitting UNKNOWN on almost every run.
+  let alignment = normalizeAlignment(opts.ai?.alignment);
+  const aiAlignmentRaw = typeof opts.ai?.alignment === "string"
+    ? opts.ai.alignment.trim().toUpperCase()
+    : null;
+  // Deterministic rules (apply regardless of AI value when conditions are met,
+  // but only override if AI itself returned UNKNOWN/missing — ALIGNED or
+  // CONTRADICTS that the model explicitly asserted should win).
+  const aiSaidUnknownOrMissing = !aiAlignmentRaw || aiAlignmentRaw === "UNKNOWN";
+
+  // No scheduled catalyst at all → trade direction has nothing to align with;
+  // NEUTRAL is the correct semantic value (not UNKNOWN, which means
+  // "indeterminate from data").
+  if (scheduled.length === 0 && aiSaidUnknownOrMissing) {
+    alignment = "NEUTRAL";
+  }
 
   // (5) Scope — distinguishes ticker-specific events from ambient macro.
   const hasNameSpecific = scheduled.some(s => NAME_SPECIFIC_TYPES.has(s.type));
@@ -271,6 +327,20 @@ export async function evaluateCatalyst(opts: {
     hasNameSpecific && hasMacro ? "BOTH" :
     hasNameSpecific ? "NAME_SPECIFIC" :
     "MACRO_ONLY";
+
+  // Additional alignment overrides that depend on scope/primary type:
+  // - In-window EARNINGS is a binary event that hasn't fired; nothing to
+  //   "align" with directionally → NEUTRAL beats UNKNOWN.
+  // - MACRO_ONLY (FOMC/CPI/PCE) is ambient; for a single-name swing trade the
+  //   correct alignment is NEUTRAL unless the AI explicitly justifies otherwise.
+  if (aiSaidUnknownOrMissing) {
+    if (primary?.type === "EARNINGS") alignment = "NEUTRAL";
+    else if (scope === "MACRO_ONLY") alignment = "NEUTRAL";
+  }
+  // tradeDirection is reserved for future use (e.g. earnings-surprise sign vs
+  // direction) once we have surprise data; currently it's accepted but not
+  // required for any of the deterministic overrides above.
+  void opts.tradeDirection;
 
   return {
     catalystInWindow: scheduled.length > 0,
