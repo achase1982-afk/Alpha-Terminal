@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, useImperativeHandle, forwardRef } from "react";
-import { Loader2, Clock, RefreshCw } from "lucide-react";
+import { Loader2, Clock, RefreshCw, Copy, Check } from "lucide-react";
 import { useTerminalStore } from "../../lib/store";
 import { useMarketPulseStore } from "../../stores/marketPulseStore";
 import type { MarketPulseData, ClusterKey, DeltaHealth } from "../../types/marketPulse";
@@ -14,6 +14,216 @@ import { runPulseStream, isPulseStreamActive } from "../../stores/pulseStreamRun
 import { useGetAuthUrl } from "@workspace/api-client-react";
 
 const CLUSTER_ORDER: ClusterKey[] = ["rates", "credit", "volLevel", "volTerm", "breadth", "riskAppetite", "macro"];
+
+const CLUSTER_LABELS: Record<ClusterKey, string> = {
+  rates: "RATES",
+  credit: "CREDIT",
+  volLevel: "VOL LEVEL",
+  volTerm: "VOL TERM STRUCTURE",
+  breadth: "BREADTH",
+  riskAppetite: "RISK APPETITE",
+  macro: "MACRO",
+};
+
+function fmtNum(n: number | null | undefined, digits = 2): string {
+  if (n === null || n === undefined || !Number.isFinite(n)) return "—";
+  return n.toFixed(digits);
+}
+
+function buildPulseClipboardText(data: MarketPulseData): string {
+  const lines: string[] = [];
+  const stamp = data.generatedAt ? new Date(data.generatedAt).toISOString() : data.timestamp;
+
+  lines.push(`MARKET PULSE — ${data.timeET} (session: ${data.session})`);
+  lines.push(`Generated: ${stamp}`);
+  if (data.engineVersion) lines.push(`Engine: ${data.engineVersion}`);
+  lines.push(`Indicators: ${data.instrumentCount}`);
+  lines.push("");
+
+  lines.push("=== HEADLINE ===");
+  lines.push(`Bias:        ${data.bias.replace(/_/g, " ")}`);
+  lines.push(`Composite:   ${data.compositeScore > 0 ? "+" : ""}${fmtNum(data.compositeScore, 2)}`);
+  lines.push(`Confidence:  ${Math.round(data.confidenceScore)} / ${Math.round(data.maxConfidence)}`);
+  if (data.structuralRegime) {
+    lines.push(`Regime:      ${data.structuralRegime.label?.replace(/_/g, " ")} (${data.structuralRegime.timeframe ?? "—"})`);
+    if (data.structuralRegime.summary) lines.push(`             ${data.structuralRegime.summary}`);
+  }
+  if (data.sessionBias) {
+    lines.push(`Session:     ${data.sessionBias.label?.replace(/_/g, " ")}`);
+    if (data.sessionBias.summary) lines.push(`             ${data.sessionBias.summary}`);
+  }
+  if (data.riskState) {
+    lines.push(`Size:        ${data.riskState.label?.replace(/_/g, " ")} — ${data.riskState.reason ?? ""}`);
+    if (Array.isArray(data.riskState.reasoning)) {
+      for (const r of data.riskState.reasoning) lines.push(`             • ${r}`);
+    }
+  }
+  if (data.todayEdge) lines.push(`Today Edge:  ${data.todayEdge}`);
+  if (data.sizeRecommendation) lines.push(`Size Reco:   ${data.sizeRecommendation}`);
+  if (data.shockState && data.shockState !== "NORMAL") {
+    lines.push(`Shock:       ${data.shockState}${data.shockActive ? " (ACTIVE)" : ""}`);
+  }
+  lines.push("");
+
+  if (data.hasDivergence && data.divergenceNote) {
+    lines.push("=== DIVERGENCE ===");
+    lines.push(data.divergenceNote);
+    if (data.divergenceDetail) {
+      if (data.divergenceDetail.bullishClusters?.length)
+        lines.push(`Bullish clusters: ${data.divergenceDetail.bullishClusters.join(", ")}`);
+      if (data.divergenceDetail.bearishClusters?.length)
+        lines.push(`Bearish clusters: ${data.divergenceDetail.bearishClusters.join(", ")}`);
+    }
+    lines.push("");
+  }
+
+  if (Array.isArray(data.secondaryFlags) && data.secondaryFlags.length > 0) {
+    lines.push("=== SECONDARY FLAGS ===");
+    for (const f of data.secondaryFlags) lines.push(`• ${f}`);
+    lines.push("");
+  }
+
+  lines.push("=== SIGNAL CLUSTERS ===");
+  for (const key of CLUSTER_ORDER) {
+    const c = data.clusters?.[key];
+    if (!c) {
+      lines.push(`[${CLUSTER_LABELS[key]}] (no data)`);
+      lines.push("");
+      continue;
+    }
+    const score = c.score > 0 ? `+${fmtNum(c.score, 2)}` : fmtNum(c.score, 2);
+    const raw = c.raw !== undefined ? ` (raw ${fmtNum(c.raw, 2)})` : "";
+    lines.push(`[${CLUSTER_LABELS[key]}] ${c.direction} · score ${score}${raw} · quality ${c.dataQuality}`);
+    lines.push(`  ${c.headline}`);
+    if (c.keyDataPoints?.length) {
+      for (const p of c.keyDataPoints) lines.push(`    - ${p}`);
+    }
+    if (c.rulesApplied?.length) {
+      lines.push(`  Rules:`);
+      for (const r of c.rulesApplied) lines.push(`    • ${r}`);
+    }
+    lines.push("");
+  }
+
+  if (data.breadthDetail) {
+    lines.push("=== BREADTH DETAIL ===");
+    lines.push(`NYSE: ${fmtNum(data.breadthDetail.nyseScore, 2)}  NASDAQ: ${fmtNum(data.breadthDetail.nasdaqScore, 2)}  Divergence: ${data.breadthDetail.exchangeDivergence ? "YES" : "no"}`);
+    lines.push("");
+  }
+
+  if (data.optionsLayer) {
+    const ol = data.optionsLayer;
+    lines.push("=== OPTIONS LAYER ===");
+    lines.push(`IV Rank: ${fmtNum(ol.ivRank, 1)}  Premium: ${ol.premiumDirection ?? "—"}  Sentiment: ${ol.broadSentiment ?? "—"}  Hedging: ${ol.institutionalHedging ?? "—"}`);
+    lines.push(`Trade type: ${ol.tradeTypeRecommendation}`);
+    if (ol.avoidShortPremium) lines.push(`Avoid short premium: ${ol.avoidReason ?? ""}`);
+    if (ol.tickerFlags?.length) lines.push(`Flags: ${ol.tickerFlags.join(", ")}`);
+    lines.push("");
+  }
+
+  if (data.momentum) {
+    const m = data.momentum;
+    const delta = m.delta === null ? "—" : (m.delta > 0 ? `+${fmtNum(m.delta, 2)}` : fmtNum(m.delta, 2));
+    lines.push("=== MOMENTUM ===");
+    lines.push(`${m.label}  Δ ${delta}  prev ${m.previousComposite === null ? "—" : fmtNum(m.previousComposite, 2)} @ ${m.previousTimestamp ?? "—"}  Δt ${m.timeDeltaMinutes ?? "—"}m`);
+    lines.push("");
+  }
+
+  if (data.deltaHealth) {
+    const d = data.deltaHealth;
+    lines.push("=== DELTA HEALTH ===");
+    lines.push(`State: ${d.state}  triggeredBy: ${d.triggeredBy ?? "—"}`);
+    lines.push(`D_final ${fmtNum(d.D_final, 3)}  D_scaled ${fmtNum(d.D_scaled, 3)}  B_session ${fmtNum(d.B_session, 3)}  B_interval ${fmtNum(d.B_interval, 3)}`);
+    lines.push(`Δp_session ${fmtNum(d.delta_p_session, 3)}  Δp_scaled ${fmtNum(d.delta_p_scaled_session, 3)}  Δx_session% ${fmtNum(d.delta_x_session_pct, 2)}`);
+    lines.push(`confAdj ${fmtNum(d.confidenceAdjustment, 3)}  todMult ${fmtNum(d.todMultiplier, 2)}  consecNeg ${d.consecutiveNegativeIntervals}  snapshots ${d.snapshotsThisSession}`);
+    lines.push(`baseline ${d.baselineType} @ ${d.baselineTimestamp}  primary ${d.primaryBaselineTimestamp}  lastSnap ${d.lastSnapshotTimestamp}`);
+    if (d.stateEnteredAt) lines.push(`stateEnteredAt ${d.stateEnteredAt}`);
+    if (d.flags?.length) lines.push(`flags: ${d.flags.join(", ")}`);
+    lines.push("");
+  }
+
+  if (Array.isArray(data.actionPlan) && data.actionPlan.length > 0) {
+    lines.push("=== ACTION PLAN ===");
+    data.actionPlan.forEach((a, i) => {
+      lines.push(`${i + 1}. IF ${a.condition}`);
+      lines.push(`   → ${a.strategy}  [${a.riskPosture} · ${a.conviction}]`);
+      if (a.rationale) lines.push(`   ${a.rationale}`);
+    });
+    lines.push("");
+  }
+
+  const inv = Array.isArray(data.invalidation) ? data.invalidation : (data.invalidation?.conditions ?? []);
+  if (inv.length > 0) {
+    lines.push("=== INVALIDATION ===");
+    for (const c of inv) lines.push(`• ${c}`);
+    lines.push("");
+  }
+
+  if (Array.isArray(data.levelsToWatch) && data.levelsToWatch.length > 0) {
+    lines.push("=== LEVELS TO WATCH ===");
+    for (const l of data.levelsToWatch) {
+      lines.push(`${l.symbol} ${l.direction} ${fmtNum(l.level, 2)} — ${l.significance}`);
+    }
+    lines.push("");
+  }
+
+  if (data.weights && Object.keys(data.weights).length > 0) {
+    lines.push("=== WEIGHTS ===");
+    for (const [k, v] of Object.entries(data.weights)) {
+      lines.push(`${k}: ${fmtNum(v, 3)}`);
+    }
+    lines.push("");
+  }
+
+  if (data.dataQuality) {
+    const q = data.dataQuality;
+    lines.push("=== DATA QUALITY ===");
+    lines.push(`fresh ${q.freshCount}  stale ${q.staleCount}  missing ${q.missingCount}`);
+    if (q.staleClusters?.length) lines.push(`stale clusters: ${q.staleClusters.join(", ")}`);
+    if (q.missingClusters?.length) lines.push(`missing clusters: ${q.missingClusters.join(", ")}`);
+    lines.push("");
+  }
+
+  if (data.dataAge) {
+    lines.push(`Oldest source: ${data.dataAge.oldestSource} (${data.dataAge.oldestSourceAge}s)`);
+    lines.push("");
+  }
+
+  if (data.rawIndicators) {
+    lines.push("=== RAW INDICATORS ===");
+    for (const [k, v] of Object.entries(data.rawIndicators)) {
+      if (v === null || v === undefined) continue;
+      lines.push(`${k}: ${typeof v === "number" ? fmtNum(v, 4) : String(v)}`);
+    }
+    lines.push("");
+  }
+
+  return lines.join("\n").trimEnd();
+}
+
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // fall through to legacy path
+  }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
 
 const BIAS_COLORS: Record<string, { text: string; border: string }> = {
   STRONGLY_BULLISH: { text: "#00d166", border: "rgba(0,209,102,0.3)" },
@@ -430,6 +640,16 @@ function DeltaTrendLine({ deltaHealth, baselineReset }: { deltaHealth: DeltaHeal
 }
 
 function BiasHero({ data, onRefresh }: { data: MarketPulseData; onRefresh: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = useCallback(async () => {
+    const text = buildPulseClipboardText(data);
+    const ok = await copyTextToClipboard(text);
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    }
+  }, [data]);
+
   const biasStyle = BIAS_COLORS[data.bias] ?? BIAS_COLORS.NO_EDGE;
   const regimeColor = REGIME_COLORS[data.structuralRegime?.label] ?? "#71717a";
   const riskColor = RISK_COLORS[data.riskState?.label] ?? "#71717a";
@@ -492,6 +712,20 @@ function BiasHero({ data, onRefresh }: { data: MarketPulseData; onRefresh: () =>
               <span className="font-mono text-[10px] text-[#8a8a8e] tracking-wider">{ageLabel}</span>
             </div>
           )}
+          <button
+            onClick={handleCopy}
+            aria-label="Copy market pulse audit to clipboard"
+            title={copied ? "Copied" : "Copy full pulse audit"}
+            className="flex items-center gap-1 px-2 h-6 rounded transition-all duration-100 active:translate-y-[1px]"
+            style={{
+              background: "transparent",
+              color: copied ? "#00d166" : "#8a8a8e",
+              border: `1px solid ${copied ? "rgba(0,209,102,0.5)" : "#3a3a3c"}`,
+            }}
+          >
+            {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+            <span className="font-mono text-[10px] tracking-wider">{copied ? "COPIED" : "COPY"}</span>
+          </button>
           <button
             onClick={onRefresh}
             aria-label="Refresh market pulse"
