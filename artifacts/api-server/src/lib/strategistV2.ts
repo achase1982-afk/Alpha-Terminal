@@ -1416,25 +1416,23 @@ function validateAiResponse(
   }
 
   // No strategy whitelist. All structures (broken-wing butterflies, condors,
-  // calendars, diagonals, ratio-balanced spreads, etc.) are permitted. The only
-  // hard rejection is naked-short risk: a position whose net short contracts
-  // per option-type / expiration are not covered by long contracts of the same
-  // type, leaving theoretically unlimited (calls) or substantial-but-bounded
-  // (puts) downside that this engine does not model. Net-zero (balanced) and
-  // net-long (debit-financed) structures pass.
-  const legSig = (l: typeof response.legs[number]) => `${l.expiration}|${l.type}`;
-  const balance = new Map<string, number>();
+  // calendars, diagonals, ratio-balanced spreads, risk reversals, etc.) are
+  // permitted. The only hard rejection is naked-short risk: a position whose
+  // net short contracts of a given option type are not covered by long
+  // contracts of the same type. Grouping is by option type (call vs put) only
+  // — NOT by expiration — so calendars and diagonals (long back-month covers
+  // short front-month) pass, while a 1×long / 2×short ratio (net -1) and any
+  // unpaired naked short still fail.
+  const balance = new Map<"call" | "put", number>();
   for (const leg of response.legs) {
-    const key = legSig(leg);
     const sign = leg.action === "buy" ? 1 : -1;
     const qty = (leg as any).quantity ?? 1;
+    const key = leg.type as "call" | "put";
     balance.set(key, (balance.get(key) ?? 0) + sign * qty);
   }
-  for (const [key, net] of balance) {
+  for (const [type, net] of balance) {
     if (net < 0) {
-      const [expiration, type] = key.split("|");
-      const noun = type === "call" ? "call" : "put";
-      issues.push(`Naked short ${noun}(s) detected for ${expiration}: net ${net} contracts uncovered by long ${noun}s of the same expiration. Add a long ${noun} leg to define maximum risk.`);
+      issues.push(`Naked short ${type}(s) detected: net ${net} contracts uncovered by long ${type}s. Add a long ${type} leg (any expiration) to define maximum risk.`);
       return { valid: false, issues };
     }
   }
