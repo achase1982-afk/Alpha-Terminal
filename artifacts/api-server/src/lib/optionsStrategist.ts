@@ -517,7 +517,6 @@ function isLiquidForTier(c: OptionContract, tier: LiquidityTier): boolean {
   if (ask < bid) return false;
   const gates = TIER_GATES[tier];
   if ((c.volume ?? 0) < gates.minVolume) return false;
-  if ((c.openInterest ?? 0) < gates.minOI) return false;
   const m = (bid + ask) / 2;
   if (m <= 0) return false;
   if ((ask - bid) / m > gates.maxSpreadPct) return false;
@@ -1581,7 +1580,7 @@ DELTA-BASED STRIKE SELECTION RULES (you must reference these when explaining why
 - Calendars: same strike on both legs targeting 50 delta (at the money).
 - Butterflies: center strikes at 50 delta with wings at equal distances.
 - If no strike has a delta within 0.05 of the target, mention it: "Nearest available delta to [target] was [actual] at the [strike] strike. Strike spacing is wide on this name."
-- Prefer monthly expiration cycles over weeklies for credit spreads (better liquidity, more stable Greeks). Use weeklies only when target DTE falls between monthlies and weekly has OI > 100 on target strikes.
+- Prefer monthly expiration cycles over weeklies for credit spreads (better liquidity, more stable Greeks). Use weeklies only when target DTE falls between monthlies.
 
 Each leg in the payload includes delta, gamma, theta, and vega. When presenting a trade:
 - State the delta of each leg explicitly. Example: "Sell the 405 put (delta -0.30) and buy the 400 put (delta -0.22) for a net credit of $1.20."

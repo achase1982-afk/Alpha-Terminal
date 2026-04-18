@@ -1442,7 +1442,6 @@ function validateAiResponse(
   settings: StrategistConfig,
 ): { valid: boolean; issues: string[] } {
   const issues: string[] = [];
-  const minOI = settings.minOpenInterest;
   const maxSpreadPct = settings.maxBidAskSpreadPct / 100;
 
   // Hard reject naked short positions — undefined risk is not permitted
@@ -1492,9 +1491,6 @@ function validateAiResponse(
     }
 
     const contract = matchingContracts[0];
-    if (contract.openInterest < minOI) {
-      issues.push(`The ${leg.strike} ${leg.type} has only ${contract.openInterest} open interest (minimum ${minOI}). Suggest an alternative with more liquidity.`);
-    }
 
     const mid = contract.mid > 0 ? contract.mid : (contract.bid + contract.ask) / 2;
     if (mid > 0) {

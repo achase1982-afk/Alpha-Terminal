@@ -263,7 +263,6 @@ function selectAnchorStrike(
       c.expiration === expiration &&
       c.delta != null &&
       c.delta !== 0 &&
-      (c.openInterest ?? 0) >= 100 &&
       (c.bid ?? 0) > 0
   );
 
@@ -603,7 +602,7 @@ export function resolveStrikes(
       error: {
         error: true,
         error_code: "NO_VALID_STRIKES",
-        user_message: `No strikes meet quality gates (OI >= 100, bid > $0) for ${criteria.ticker} ${selectedExpiration}. The options market may be too thin.`,
+        user_message: `No strikes meet quality gates (bid > $0) for ${criteria.ticker} ${selectedExpiration}. The options market may be too thin.`,
         fallback_params: criteria,
       },
     };
