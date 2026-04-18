@@ -573,8 +573,15 @@ export async function analyzeTickerV2(
   const regimeIsNoEdge =
     regime.directionalConviction === "NEUTRAL" ||
     regime.directionalConviction === "TRANSITION";
+  // Only NAME_SPECIFIC (or BOTH) catalysts and residuals supply a real edge
+  // when the regime is neutral. MACRO_ONLY (FOMC/CPI/PCE) is ambient — those
+  // events fire constantly and don't justify a single-name trade by
+  // themselves, so they do NOT suppress the gate.
+  const hasIdioCatalyst =
+    catalystEval.catalystScope === "NAME_SPECIFIC" ||
+    catalystEval.catalystScope === "BOTH";
   const noEdgeCondition =
-    regimeIsNoEdge && !catalystEval.catalystInWindow && !catalystEval.residualCatalyst;
+    regimeIsNoEdge && !hasIdioCatalyst && !catalystEval.residualCatalyst;
   let noEdgeWarn: string | null = null;
   if (noEdgeCondition) {
     const behaviorIdx = (settings as { noEdgeGateBehavior?: number }).noEdgeGateBehavior ?? 2;
@@ -585,10 +592,11 @@ export async function analyzeTickerV2(
         ticker,
         regime: regime.directionalConviction,
         catalystInWindow: catalystEval.catalystInWindow,
+        catalystScope: catalystEval.catalystScope,
         residualCatalyst: catalystEval.residualCatalyst ?? null,
         behavior,
       },
-      "StrategistV2: no-edge condition (regime neutral, no catalyst in window, no residual)",
+      "StrategistV2: no-edge condition (regime neutral, no name-specific catalyst, no residual)",
     );
     if (behavior === "BLOCK") {
       const ctx = buildContextSources(aiResponse, webTrace, catalystEval);
@@ -610,7 +618,11 @@ export async function analyzeTickerV2(
       return blocked;
     }
     if (behavior === "WARN") {
-      noEdgeWarn = `⚠ No scheduled catalyst between now and ${farLegExpiration || "expiry"} and macro regime is ${regime.directionalConviction}. Thesis must stand on technical/structural grounds alone.`;
+      const macroNote =
+        catalystEval.catalystScope === "MACRO_ONLY"
+          ? " (in-window events are macro-only — no name-specific catalyst)"
+          : "";
+      noEdgeWarn = `⚠ No name-specific catalyst between now and ${farLegExpiration || "expiry"}${macroNote} and macro regime is ${regime.directionalConviction}. Thesis must stand on technical/structural grounds alone.`;
       aiResponse.warnings = aiResponse.warnings ? `${aiResponse.warnings}\n${noEdgeWarn}` : noEdgeWarn;
     }
   }

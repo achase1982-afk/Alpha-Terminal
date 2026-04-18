@@ -14,6 +14,14 @@ export interface NextEarnings {
   revenuePrior: string | null;
   period: string | null;
   periodYear: number | null;
+  /**
+   * Most recent past earnings date (YYYY-MM-DD), if known. Powered by Benzinga
+   * only — Yahoo's `quoteSummary` endpoint does not expose past prints
+   * reliably. `null` when unavailable.
+   */
+  lastEarningsDate: string | null;
+  /** Calendar days since `lastEarningsDate`, or null when unavailable. */
+  lastEarningsDaysSince: number | null;
 }
 
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -45,6 +53,17 @@ interface BenzingaResult {
   revenuePrior: string | null;
   period: string | null;
   periodYear: number | null;
+  /** Most recent past earnings date in YYYY-MM-DD, or null. */
+  lastEarningsDate: string | null;
+}
+
+function daysSinceTodayFrom(dateYmd: string): number | null {
+  const d = new Date(dateYmd + "T16:00:00-04:00");
+  if (Number.isNaN(d.getTime())) return null;
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const diff = Math.floor((today.getTime() - d.getTime()) / 86_400_000);
+  return diff < 0 ? null : diff;
 }
 
 async function fetchBenzinga(ticker: string, apiKey: string): Promise<BenzingaResult | null> {
@@ -76,6 +95,11 @@ async function fetchBenzinga(ticker: string, apiKey: string): Promise<BenzingaRe
     const today = new Date().toISOString().slice(0, 10);
     const upcoming = items.find((e) => e.date >= today) || items[0];
     if (!upcoming) return null;
+    // Most recent past print: latest item with date strictly < today.
+    const past = items
+      .filter((e) => e.date < today)
+      .sort((a, b) => b.date.localeCompare(a.date))[0];
+    const lastEarningsDate = past?.date ?? null;
 
     const timeStr = upcoming.time && upcoming.time !== "00:00:00" ? upcoming.time : null;
     let timingLabel: string | null = null;
@@ -96,6 +120,7 @@ async function fetchBenzinga(ticker: string, apiKey: string): Promise<BenzingaRe
       revenuePrior: upcoming.revenue_prior || null,
       period: upcoming.period || null,
       periodYear: upcoming.period_year || null,
+      lastEarningsDate,
     };
   } catch (err) {
     logger.warn({ err, ticker }, "earningsService: Benzinga fetch failed");
@@ -169,6 +194,8 @@ function emptyResult(sym: string): NextEarnings {
     revenuePrior: null,
     period: null,
     periodYear: null,
+    lastEarningsDate: null,
+    lastEarningsDaysSince: null,
   };
 }
 
@@ -211,6 +238,7 @@ export async function getNextEarningsDate(symbol: string): Promise<NextEarnings>
       }
     }
 
+    const lastEarningsDate = extras.lastEarningsDate ?? null;
     const result: NextEarnings = {
       symbol: sym,
       earningsDate,
@@ -224,6 +252,8 @@ export async function getNextEarningsDate(symbol: string): Promise<NextEarnings>
       revenuePrior: extras.revenuePrior ?? null,
       period: extras.period ?? null,
       periodYear: extras.periodYear ?? null,
+      lastEarningsDate,
+      lastEarningsDaysSince: lastEarningsDate ? daysSinceTodayFrom(lastEarningsDate) : null,
     };
 
     cache.set(sym, { ts: Date.now(), value: result });

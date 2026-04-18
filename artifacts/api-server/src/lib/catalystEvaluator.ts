@@ -41,6 +41,22 @@ export type CatalystType =
 
 export type CatalystAlignment = "ALIGNED" | "CONTRADICTS" | "NEUTRAL" | "UNKNOWN";
 
+/**
+ * Scope of the in-window catalyst:
+ *  - NAME_SPECIFIC: ticker-specific event (EARNINGS, M&A, PRODUCT_LAUNCH, ANALYST_ACTION)
+ *  - MACRO_ONLY:    only ambient macro events (FED_MEETING, ECONOMIC_RELEASE)
+ *  - BOTH:          name-specific AND macro events both fire
+ *  - NONE:          no scheduled events in window
+ */
+export type CatalystScope = "NAME_SPECIFIC" | "MACRO_ONLY" | "BOTH" | "NONE";
+
+const NAME_SPECIFIC_TYPES: ReadonlySet<CatalystType> = new Set([
+  "EARNINGS", "MA_EVENT", "PRODUCT_LAUNCH", "ANALYST_ACTION",
+]);
+const MACRO_TYPES: ReadonlySet<CatalystType> = new Set([
+  "FED_MEETING", "ECONOMIC_RELEASE",
+]);
+
 export interface ResidualCatalyst {
   type: Exclude<CatalystType, "NONE">;
   date: string;
@@ -59,6 +75,8 @@ export interface CatalystEvaluation {
   catalystType: CatalystType;
   catalystDate: string | null;
   catalystAlignment: CatalystAlignment;
+  /** See CatalystScope. Used by the NO_EDGE gate and the card header. */
+  catalystScope: CatalystScope;
   residualCatalyst?: ResidualCatalyst;
   catalystSummary?: string;
   scheduledEvents: ScheduledEvent[];
@@ -133,6 +151,9 @@ export async function evaluateCatalyst(opts: {
   const scheduled: ScheduledEvent[] = [];
 
   // (1) Earnings — single source of truth via earningsService.
+  // Also captures the most recent past print so we can synthesise an
+  // EARNINGS residual deterministically (within 14d), independent of the AI.
+  let serverEarningsResidual: ResidualCatalyst | undefined;
   try {
     const e = await getNextEarningsDate(opts.ticker);
     if (
@@ -147,6 +168,18 @@ export async function evaluateCatalyst(opts: {
         title: `${opts.ticker.toUpperCase()} Earnings${e.confirmed ? "" : " (est)"}`,
         source: "earnings_service",
       });
+    }
+    if (
+      e?.lastEarningsDate &&
+      e.lastEarningsDaysSince != null &&
+      e.lastEarningsDaysSince >= 0 &&
+      e.lastEarningsDaysSince <= 14
+    ) {
+      serverEarningsResidual = {
+        type: "EARNINGS",
+        date: e.lastEarningsDate,
+        daysSince: e.lastEarningsDaysSince,
+      };
     }
   } catch {
     // earnings lookup failure is non-fatal; we still consider macro events.
@@ -192,35 +225,59 @@ export async function evaluateCatalyst(opts: {
   const earningsHit = scheduled.find(s => s.type === "EARNINGS");
   const primary = earningsHit ?? scheduled[0];
 
-  // (4) Residual — AI-reported only. Bounded to last 14 days so we don't
-  // accept stale signals as still "digesting".
-  let residual: ResidualCatalyst | undefined;
-  const residualType = normalizeType(opts.ai?.residual?.type);
-  const residualDate = isISODate(opts.ai?.residual?.date ?? undefined)
-    ? (opts.ai!.residual!.date as string)
-    : null;
-  if (residualType && residualType !== "NONE" && residualDate) {
-    const days = Math.round(
-      (new Date(today + "T00:00:00Z").getTime() -
-        new Date(residualDate + "T00:00:00Z").getTime()) /
-        86_400_000,
-    );
-    if (days >= 0 && days <= 14) {
-      residual = {
-        type: residualType as Exclude<CatalystType, "NONE">,
-        date: residualDate,
-        daysSince: days,
-      };
+  // (4) Residual — server-side EARNINGS detection takes precedence (it's
+  // deterministic from earningsService and never depends on the model
+  // remembering to populate it). The AI may add residuals of *other* types
+  // (M&A announcements, product launches, analyst actions) via its JSON
+  // response; those are accepted only when EARNINGS isn't already set and
+  // are bounded to the last 14 days.
+  let residual: ResidualCatalyst | undefined = serverEarningsResidual;
+  if (!residual) {
+    const residualType = normalizeType(opts.ai?.residual?.type);
+    const residualDate = isISODate(opts.ai?.residual?.date ?? undefined)
+      ? (opts.ai!.residual!.date as string)
+      : null;
+    // We deliberately ignore an AI-supplied EARNINGS residual: server is
+    // canonical for that type, and accepting AI input would risk overriding
+    // a known-good Benzinga date with a hallucinated one.
+    if (
+      residualType &&
+      residualType !== "NONE" &&
+      residualType !== "EARNINGS" &&
+      residualDate
+    ) {
+      const days = Math.round(
+        (new Date(today + "T00:00:00Z").getTime() -
+          new Date(residualDate + "T00:00:00Z").getTime()) /
+          86_400_000,
+      );
+      if (days >= 0 && days <= 14) {
+        residual = {
+          type: residualType as Exclude<CatalystType, "NONE">,
+          date: residualDate,
+          daysSince: days,
+        };
+      }
     }
   }
 
   const alignment = normalizeAlignment(opts.ai?.alignment);
+
+  // (5) Scope — distinguishes ticker-specific events from ambient macro.
+  const hasNameSpecific = scheduled.some(s => NAME_SPECIFIC_TYPES.has(s.type));
+  const hasMacro = scheduled.some(s => MACRO_TYPES.has(s.type));
+  const scope: CatalystScope =
+    scheduled.length === 0 ? "NONE" :
+    hasNameSpecific && hasMacro ? "BOTH" :
+    hasNameSpecific ? "NAME_SPECIFIC" :
+    "MACRO_ONLY";
 
   return {
     catalystInWindow: scheduled.length > 0,
     catalystType: primary?.type ?? "NONE",
     catalystDate: primary?.date ?? null,
     catalystAlignment: alignment,
+    catalystScope: scope,
     residualCatalyst: residual,
     catalystSummary: opts.ai?.summary?.slice(0, 240) ?? undefined,
     scheduledEvents: scheduled,

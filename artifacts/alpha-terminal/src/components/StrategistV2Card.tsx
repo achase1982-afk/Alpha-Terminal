@@ -67,12 +67,14 @@ export type CatalystType =
   | "EARNINGS" | "FED_MEETING" | "ECONOMIC_RELEASE"
   | "PRODUCT_LAUNCH" | "MA_EVENT" | "ANALYST_ACTION" | "NONE";
 export type CatalystAlignmentNew = "ALIGNED" | "CONTRADICTS" | "NEUTRAL" | "UNKNOWN";
+export type CatalystScope = "NAME_SPECIFIC" | "MACRO_ONLY" | "BOTH" | "NONE";
 
 export interface CatalystEvaluation {
   catalystInWindow: boolean;
   catalystType: CatalystType;
   catalystDate: string | null;
   catalystAlignment: CatalystAlignmentNew;
+  catalystScope?: CatalystScope; // optional for back-compat with old persisted records
   residualCatalyst?: { type: Exclude<CatalystType, "NONE">; date: string; daysSince: number };
   catalystSummary?: string;
   scheduledEvents: Array<{
@@ -615,11 +617,20 @@ function ContextSourcesBlock({ ctx }: { ctx: ContextSourcesPayload }) {
     (newAlignment ?? ctx.catalystAlignment) === "CONTRADICTS" ? DOWN :
     "#71717a";
   let headerLabel: string;
+  let headerColor = alignmentColor;
   if (cat) {
-    if (cat.catalystInWindow) {
+    // Priority: NAME_SPECIFIC/BOTH in-window > residual > MACRO_ONLY > none.
+    const scope = cat.catalystScope ?? (cat.catalystInWindow ? "NAME_SPECIFIC" : "NONE");
+    const isNameSpecific = scope === "NAME_SPECIFIC" || scope === "BOTH";
+    if (isNameSpecific) {
       headerLabel = `CATALYST IN WINDOW · ${cat.catalystType} · ${cat.catalystAlignment}`;
     } else if (cat.residualCatalyst) {
       headerLabel = `RESIDUAL · ${cat.residualCatalyst.type} · ${cat.residualCatalyst.daysSince}d AGO`;
+      // Residuals carry directional information; keep alignment color.
+    } else if (scope === "MACRO_ONLY" && cat.catalystInWindow) {
+      headerLabel = `MACRO CATALYST · ${cat.catalystType} · ${cat.catalystDate ?? "n/a"}`;
+      // Macro-only is ambient exposure, not idio edge — neutral chrome.
+      headerColor = "#a16207"; // amber to flag macro-only exposure
     } else {
       headerLabel = "NO CATALYST IN WINDOW";
     }
@@ -642,7 +653,7 @@ function ContextSourcesBlock({ ctx }: { ctx: ContextSourcesPayload }) {
         <div className="flex items-center gap-2 min-w-0">
           <span
             className="font-mono text-[9px] uppercase tracking-widest px-1.5 py-0.5 rounded"
-            style={{ background: `${alignmentColor}20`, color: alignmentColor }}
+            style={{ background: `${headerColor}20`, color: headerColor }}
           >
             {headerLabel}
           </span>

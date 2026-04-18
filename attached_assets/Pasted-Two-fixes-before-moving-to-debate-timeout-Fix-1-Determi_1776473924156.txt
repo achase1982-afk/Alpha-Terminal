@@ -1,0 +1,34 @@
+Two fixes before moving to debate timeout:
+
+Fix 1: Deterministic residual catalyst detection.
+
+Add server-side logic in catalystEvaluator.ts that checks for earnings events in the last 14 days using the earningsService. If found, populate residualCatalyst with { type: "EARNINGS", date, daysSince }. 
+
+The AI can still add residual catalysts of other types (M&A announcements, product launches) via its JSON response, but EARNINGS residual should never depend on the AI remembering to include it. Server always populates earnings residual when earningsService knows about a recent print.
+
+Same pattern we just established for upcoming earnings: deterministic source, not AI-dependent.
+
+After fix, re-run GS. Should show:
+- residualCatalyst: { type: "EARNINGS", date: "2026-04-13", daysSince: 5 }
+- Card header would read RESIDUAL · EARNINGS · 5d AGO (since residual takes priority over macro-only in-window events, assuming that's the display logic you want — if not, let's discuss priority)
+
+Fix 2: Distinguish name-specific vs macro-only catalysts.
+
+Add a catalystScope field to the catalyst evaluation schema:
+- NAME_SPECIFIC: ticker-specific event (EARNINGS, M&A, PRODUCT_LAUNCH, ANALYST_ACTION on this ticker)
+- MACRO_ONLY: broader event that could move the ticker but isn't ticker-specific (FED_MEETING, ECONOMIC_RELEASE)
+- BOTH: in-window catalyst is name-specific AND macro exists too
+
+Card header behavior should differentiate:
+- NAME_SPECIFIC in window → "CATALYST IN WINDOW · [TYPE] · [ALIGNMENT]"
+- MACRO_ONLY only → "MACRO CATALYST · [TYPE] · [DATE]" (distinct styling to flag this is macro exposure, not idio)
+- No catalyst at all → "NO CATALYST IN WINDOW"
+
+NO_EDGE gate logic change: NAME_SPECIFIC or residual should suppress the gate. MACRO_ONLY alone should NOT suppress the gate when macro regime is NEUTRAL/TRANSITION — because the macro event itself isn't an edge if regime is neutral, it's just ambient volatility potential.
+
+This makes the gate smarter: it differentiates between "this stock has a specific reason to move" (real edge, proceed) and "there's macro events out there like always" (not a trading edge, still subject to regime check).
+
+After both fixes, re-run all three tickers again and report:
+- GS: should show RESIDUAL · EARNINGS · 5d AGO
+- UPS: should show CATALYST IN WINDOW · EARNINGS · NAME_SPECIFIC, warning banner retained
+- KO: should show MACRO CATALYST · ECONOMIC_RELEASE · 2026-04-24 (or NO CATALYST IN WINDOW if that's the cleaner display). If regime is neutral, NO_EDGE should warn.
