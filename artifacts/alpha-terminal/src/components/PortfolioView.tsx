@@ -155,7 +155,11 @@ function getOptionCellVal(col: ColumnKey, opt: Position): CellVal {
   const qty = isShort ? opt.shortQuantity : opt.longQuantity;
   const markPx = qty > 0 ? opt.marketValue / (qty * 100) : 0;
   const totalPL = opt.longOpenProfitLoss;
-  const plPct = opt.averagePrice > 0 && qty > 0 ? (totalPL / (opt.averagePrice * qty * 100)) * 100 : 0;
+  // TOS-style: open P&L as a % of |current market value| of the leg.
+  // Works for both long and short legs (Schwab returns shorts with negative
+  // marketValue and zero/negative averagePrice — the old guard bailed out
+  // to 0% for shorts, which is why 57.5C above showed 0.00%).
+  const plPct = Math.abs(opt.marketValue) > 0.01 ? (totalPL / Math.abs(opt.marketValue)) * 100 : 0;
   switch (col) {
     case "mark": return { text: `$${markPx.toFixed(2)}`, color: C.text };
     case "last": {
@@ -595,7 +599,10 @@ function SpreadSummaryRow({
     const qty = o.longQuantity > 0 ? o.longQuantity : -(o.shortQuantity || 0);
     return s + o.averagePrice * qty * 100;
   }, 0);
-  const spreadPLPct = Math.abs(spreadCost) > 0.01 ? (spreadPL / Math.abs(spreadCost)) * 100 : 0;
+  // TOS-style: open P&L as a % of |current spread market value| (sum of leg
+  // signed marketValues = the spread's net liq). Matches the percent shown
+  // on the Vertical/Spread row in ThinkOrSwim.
+  const spreadPLPct = Math.abs(spreadMktVal) > 0.01 ? (spreadPL / Math.abs(spreadMktVal)) * 100 : 0;
   const spreadMaint = options.reduce((s, o) => s + o.maintenanceRequirement, 0);
 
   const rowBg = "transparent";
@@ -662,8 +669,14 @@ function PositionTableRow({
   const [expanded, setExpanded] = useState(false);
   const eq = group.equity;
   const hasOptions = group.options.length > 0;
-  const costBasis = group.totalMarketValue - group.totalPL;
-  const totalPLPct = Math.abs(costBasis) > 0.01 ? (group.totalPL / Math.abs(costBasis)) * 100 : 0;
+  // TOS-style: open P&L as a % of |current net liq| of the position
+  // (sum of signed leg marketValues + equity marketValue). The previous
+  // formula derived a synthetic "cost basis" from marketValue - PL which
+  // collapsed to a tiny denominator for option spreads (longs and shorts
+  // partially cancel) and produced wildly inflated percents like +50%.
+  const totalPLPct = Math.abs(group.totalMarketValue) > 0.01
+    ? (group.totalPL / Math.abs(group.totalMarketValue)) * 100
+    : 0;
   const eqKey = `${group.underlying}:EQ`;
   const eqSelected = eq != null && selectedKeys.has(eqKey);
   const someSelected = eqSelected || group.options.some(o => selectedKeys.has(`${group.underlying}:${o.cusip}`));
@@ -709,7 +722,13 @@ function PositionTableRow({
       case "plDay": return { text: fmtCurrency(group.totalDayPL), color: plColor(group.totalDayPL), bold: true };
       case "maint": case "margin": return { text: group.totalMaint > 0 ? fmtCompact(group.totalMaint) : "\u2014", color: C.textDim };
       case "bpEffect": return { text: group.totalMaint > 0 ? fmtCompact(-group.totalMaint) : "\u2014", color: C.textDim };
-      case "totalCost": return { text: fmtCompact(costBasis), color: C.textDim };
+      case "totalCost": {
+        // Synthetic cost basis = current market value - unrealized P&L.
+        // Kept here for the Total Cost column only; do NOT use it for
+        // percent calculations (it collapses for option spreads).
+        const costBasis = group.totalMarketValue - group.totalPL;
+        return { text: fmtCompact(costBasis), color: C.textDim };
+      }
       case "instrumentType": return { text: eq ? "EQUITY" : "OPTION", color: C.textDim };
       case "markPctChg": {
         const prevMkt = group.totalMarketValue - group.totalDayPL;
