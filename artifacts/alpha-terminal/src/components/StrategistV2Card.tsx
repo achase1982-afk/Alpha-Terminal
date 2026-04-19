@@ -1,14 +1,38 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import {
   TrendingUp, TrendingDown, Minus, Shield,
-  ChevronDown, ChevronUp, Target, Activity, Zap, Send, Copy, Check,
+  ChevronDown, ChevronUp, Send, Copy, Check,
 } from "lucide-react";
 import { strategistCardToPlainText } from "@/lib/strategistPlaintext";
 
+// Legacy (debate/IOScore semantic palette — used by sub-cards below the main body).
 const GOLD = "#f5a623";
 const UP = "#2ecc71";
 const DOWN = "#ff4b5c";
 const AMBER = "#f59e0b";
+
+// Redesign palette — institutional-desk-note look. The mockup spec calls for
+// these exact hex values; keep them in sync if the spec moves.
+const PAL = {
+  bgCard: "#141414",
+  bgInner: "#0a0a0a",
+  border: "#2a2a2a",
+  borderInner: "#1f1f1f",
+  label: "#a3a3a3",
+  body: "#e5e5e5",
+  white: "#ffffff",
+  green: "#4ade80",
+  red: "#f87171",
+  gold: "#fbbf24",
+  goldHeader: "#f59e0b",
+  riskBorder: "#dc2626",
+  cautionBorder: "#f59e0b",
+  regimeBorder: "#7c5e0f",
+  scopeTicker: "#93c5fd",
+  scopeMacro: "#fbbf24",
+};
+
+const SYS_FONT = "-apple-system, 'SF Pro Display', 'Inter', system-ui, sans-serif";
 
 // Defensive frontend sanitizer for any narrative text persisted before the
 // backend cleanup landed. Strips Anthropic web-search citation wrappers
@@ -208,6 +232,20 @@ export interface StrategistV2Result {
     source: "benzinga" | "yahoo" | null;
     confirmed: boolean;
   };
+  /**
+   * Optional structured debate transcript stashed alongside the result when
+   * Debate mode produced this card. Populated by /thinking poll merge and
+   * persisted via cardJson on history rows. Empty/undefined for Solo mode.
+   */
+  debateTranscript?: Array<{
+    id?: string;
+    round: 1 | 2 | 3 | "synthesis";
+    role: "A" | "B" | "synthesis" | "system";
+    phase: string;
+    model: string;
+    label: string;
+    text: string;
+  }>;
 }
 
 const STRAT_LABELS: Record<string, string> = {
@@ -316,169 +354,505 @@ function CopyCardButton({ result, generatedAt }: { result: StrategistV2Result; g
   );
 }
 
-export function StrategistV2RecommendationCard({ result, onSendToOrder, generatedAt }: { result: StrategistV2Result; onSendToOrder?: (payload: StrategistSendToOrderPayload) => void; generatedAt?: string | number | null }) {
-  const [expanded, setExpanded] = useState(false);
-  const { recommendation: rec, regime, ioScore, systemicRiskElevated } = result;
+// ====================================================================
+// Strategist V2 — institutional desk-note redesign
+// ====================================================================
+//
+// Layout principles (per redesign spec):
+//   • No tinted backgrounds anywhere. Section distinction comes from
+//     dividers + colored LEFT borders only.
+//   • White (#ffffff) values on near-black; muted gray (#a3a3a3) labels.
+//   • Min body 14px, values 15-17px, headers 11-13px uppercase tracked.
+//   • Semantic colors: green = bullish/profit, red = bearish/loss,
+//     yellow/gold = caution / macro / section headers.
+//   • System sans (SF Pro / Inter) — institutional, not terminal-mono.
+//
+// Section order (locked):
+//   1. Header (ticker + dir tag + confidence + strategy + copy + ts)
+//   2. Stats row (Debit / Max Profit / Max Loss / R:R)
+//   3. Company  4. Thesis
+//   5. Legs (EXPANDED by default — no toggle)
+//   6. Economics  7. Exit Plan  8. Invalidation
+//   9. Risk of Ruin (red left border)  10. Caution (gold left border)
+//   11. SEND TO ORDER (full-width orange)
+//   12. IOScore (gray border, "Per-Ticker")
+//   13. Macro Regime (gold border NO tint, "Session-Wide")
+//   14. Context (catalyst chip + sources)
+//   15. Debate Transcript (only if debate mode produced this card)
 
+// ---- Tiny presentational primitives -------------------------------
+
+function Section({
+  title,
+  children,
+  noBorder = false,
+}: {
+  title?: string;
+  children: React.ReactNode;
+  noBorder?: boolean;
+}) {
+  return (
+    <div
+      className="px-5 py-[18px]"
+      style={noBorder ? undefined : { borderBottom: `1px solid ${PAL.border}` }}
+    >
+      {title && (
+        <div
+          className="mb-3"
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            letterSpacing: "1.5px",
+            color: PAL.goldHeader,
+            textTransform: "uppercase",
+          }}
+        >
+          {title}
+        </div>
+      )}
+      {children}
+    </div>
+  );
+}
+
+function StatBlock({ value, label, tone }: { value: string; label: string; tone?: "green" | "red" }) {
+  const color = tone === "green" ? PAL.green : tone === "red" ? PAL.red : PAL.white;
+  return (
+    <div className="text-center flex-1">
+      <div style={{ fontSize: 18, fontWeight: 800, color, fontVariantNumeric: "tabular-nums" }}>{value}</div>
+      <div
+        style={{
+          fontSize: 10,
+          color: PAL.label,
+          fontWeight: 600,
+          letterSpacing: "0.8px",
+          textTransform: "uppercase",
+          marginTop: 3,
+        }}
+      >
+        {label}
+      </div>
+    </div>
+  );
+}
+
+function EconRow({
+  label,
+  value,
+  tone,
+  isLast,
+}: {
+  label: string;
+  value: string;
+  tone?: "green" | "red";
+  isLast?: boolean;
+}) {
+  const color = tone === "green" ? PAL.green : tone === "red" ? PAL.red : PAL.white;
+  return (
+    <div
+      className="flex justify-between items-baseline py-2"
+      style={{ borderBottom: isLast ? "none" : `1px solid ${PAL.borderInner}` }}
+    >
+      <span
+        style={{
+          fontSize: 13,
+          color: PAL.label,
+          fontWeight: 500,
+          textTransform: "uppercase",
+          letterSpacing: "0.5px",
+        }}
+      >
+        {label}
+      </span>
+      <span style={{ fontSize: 17, fontWeight: 700, color, fontVariantNumeric: "tabular-nums" }}>{value}</span>
+    </div>
+  );
+}
+
+function LeftBorderBlock({
+  borderColor,
+  labelText,
+  labelColor,
+  children,
+}: {
+  borderColor: string;
+  labelText: string;
+  labelColor: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div style={{ borderLeft: `4px solid ${borderColor}`, paddingLeft: 16, paddingTop: 2, paddingBottom: 2 }}>
+      <div
+        style={{
+          fontSize: 12,
+          fontWeight: 800,
+          letterSpacing: "1px",
+          color: labelColor,
+          marginBottom: 8,
+          textTransform: "uppercase",
+        }}
+      >
+        {labelText}
+      </div>
+      <div style={{ fontSize: 14, lineHeight: 1.55, color: PAL.white }}>{children}</div>
+    </div>
+  );
+}
+
+function IoRow({ label, value, tone }: { label: string; value: string; tone?: "green" | "red" | "yellow" }) {
+  const color =
+    tone === "green" ? PAL.green : tone === "red" ? PAL.red : tone === "yellow" ? PAL.gold : PAL.white;
+  return (
+    <div className="flex flex-col gap-1 py-2" style={{ borderBottom: `1px solid ${PAL.borderInner}` }}>
+      <span
+        style={{
+          fontSize: 11,
+          color: PAL.label,
+          fontWeight: 600,
+          letterSpacing: "0.8px",
+          textTransform: "uppercase",
+        }}
+      >
+        {label}
+      </span>
+      <span style={{ fontSize: 16, fontWeight: 700, color, lineHeight: 1.2, fontVariantNumeric: "tabular-nums" }}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
+// Format an YYYY-MM-DD or ISO expiration to "Mon DD, YYYY"; falls back to raw.
+function formatExpiry(raw: string): string {
+  if (!raw) return raw;
+  const clean = raw.split(":")[0].trim();
+  const d = new Date(clean.length === 10 ? `${clean}T12:00:00` : clean);
+  if (isNaN(d.getTime())) return raw;
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+export function StrategistV2RecommendationCard({
+  result,
+  onSendToOrder,
+  generatedAt,
+}: {
+  result: StrategistV2Result;
+  onSendToOrder?: (payload: StrategistSendToOrderPayload) => void;
+  generatedAt?: string | number | null;
+}) {
+  const { recommendation: rec, regime, ioScore, systemicRiskElevated } = result;
   if (!rec) return null;
 
   const earningsAlert = result.earningsAlert;
   const showEarningsBanner = earningsAlert && earningsAlert.behavior === "WARN" && earningsAlert.insideExpiry;
 
-  const borderColor = systemicRiskElevated ? AMBER : "#2A2A2C";
-  const stratLabel = STRAT_LABELS[rec.strategyType] ?? rec.strategyType.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+  const stratLabel =
+    STRAT_LABELS[rec.strategyType] ??
+    rec.strategyType.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
   const isCredit = rec.credit != null && rec.credit > 0;
   const confidence = rec.confidence ?? 0;
-  const confidenceColor = confidence >= 70 ? UP : confidence >= 40 ? GOLD : DOWN;
+  const dirColor =
+    rec.direction === "BULLISH" ? PAL.green : rec.direction === "BEARISH" ? PAL.red : PAL.gold;
+  const dirArrow =
+    rec.direction === "BULLISH" ? "↗" : rec.direction === "BEARISH" ? "↘" : "→";
+  const cardBorder = systemicRiskElevated ? PAL.cautionBorder : PAL.border;
+
+  const debit = ((isCredit ? rec.credit : rec.debit) ?? 0).toFixed(2);
+  const fillRange =
+    rec.entryRangeMin != null && rec.entryRangeMax != null
+      ? `$${Math.abs(rec.entryRangeMin).toFixed(2)} – $${Math.abs(rec.entryRangeMax).toFixed(2)}`
+      : "—";
+
+  const ctx = result.recommendation?.contextSources ?? result.contextSources;
+  const transcript = result.debateTranscript;
 
   return (
-    <div className="rounded-xl overflow-hidden" style={{ background: "#111113", border: `2px solid ${borderColor}` }}>
-      <div className="px-4 pt-4 pb-3">
+    <div
+      className="rounded-2xl overflow-hidden"
+      style={{
+        background: PAL.bgCard,
+        border: `1px solid ${cardBorder}`,
+        fontFamily: SYS_FONT,
+        color: PAL.white,
+      }}
+    >
+      {/* ---- HEADER ---- */}
+      <div className="px-5 pt-5 pb-4" style={{ borderBottom: `1px solid ${PAL.border}` }}>
         <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <DirectionIcon dir={rec.direction} />
-            <span className="font-mono text-[15px] font-bold text-white">{result.ticker}</span>
-            <span className="font-mono text-[11px] px-2 py-0.5 rounded" style={{ background: `${rec.direction === "BULLISH" ? UP : rec.direction === "BEARISH" ? DOWN : GOLD}18`, color: rec.direction === "BULLISH" ? UP : rec.direction === "BEARISH" ? DOWN : GOLD }}>
-              {rec.direction}
+          <div className="flex items-center gap-3">
+            <span style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.5px", color: PAL.white }}>
+              {result.ticker}
+            </span>
+            <span
+              style={{
+                padding: "6px 12px",
+                borderRadius: 6,
+                fontSize: 13,
+                fontWeight: 700,
+                letterSpacing: "0.5px",
+                color: dirColor,
+                border: `1px solid ${dirColor}`,
+                lineHeight: 1,
+              }}
+            >
+              {dirArrow} {rec.direction}
             </span>
           </div>
-          <div className="flex items-center gap-2">
-            {confidence > 0 && (
-              <span className="font-mono text-[10px] px-2 py-0.5 rounded" style={{ background: `${confidenceColor}18`, color: confidenceColor }}>
-                {confidence}% conf
-              </span>
-            )}
-            <span className="font-mono text-[12px] font-bold" style={{ color: GOLD }}>{stratLabel}</span>
-            <CopyCardButton result={result} generatedAt={generatedAt} />
-          </div>
+          {confidence > 0 && (
+            <div className="text-right">
+              <div style={{ fontSize: 24, fontWeight: 800, color: PAL.white, lineHeight: 1 }}>{confidence}</div>
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: PAL.label,
+                  letterSpacing: "1px",
+                  marginTop: 4,
+                  textTransform: "uppercase",
+                }}
+              >
+                Confidence
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="flex justify-between items-center" style={{ marginTop: 4 }}>
+          <span style={{ fontSize: 17, fontWeight: 600, color: PAL.body }}>{stratLabel}</span>
+          <CopyCardButton result={result} generatedAt={generatedAt} />
         </div>
         {generatedAt && (
-          <div className="font-mono text-[9px] text-zinc-500 mb-2 -mt-2">Generated {new Date(generatedAt).toLocaleString()}</div>
+          <div style={{ fontSize: 13, color: PAL.label, marginTop: 8 }}>
+            Generated {new Date(generatedAt).toLocaleString()}
+          </div>
         )}
+      </div>
 
-        {showEarningsBanner && earningsAlert && (
-          <div
-            className="rounded mb-3 px-3 py-2 flex items-start gap-2"
-            style={{ background: `${AMBER}14`, border: `1px solid ${AMBER}55` }}
-          >
-            <span className="font-mono text-[14px] leading-none mt-0.5" style={{ color: AMBER }}>⚠</span>
-            <div className="flex-1 min-w-0">
-              <div className="font-mono text-[11px] font-bold" style={{ color: AMBER }}>
-                Earnings inside expiry
-              </div>
-              <div className="font-mono text-[10px] text-zinc-300 mt-0.5">
-                {earningsAlert.confirmed ? "Confirmed" : "Estimated"} earnings on{" "}
-                <span className="text-white">{earningsAlert.earningsDate}</span>
-                {earningsAlert.daysUntilEarnings != null && (
-                  <> (in {earningsAlert.daysUntilEarnings}d)</>
-                )}{" "}
-                — falls inside the {earningsAlert.daysUntilExpiry}-DTE expiry. Position will hold through earnings.
-              </div>
-              {earningsAlert.source && (
-                <div className="font-mono text-[9px] text-zinc-500 mt-0.5">
-                  Source: {earningsAlert.source}
-                </div>
-              )}
+      {/* Earnings safety banner (kept — operationally critical) */}
+      {showEarningsBanner && earningsAlert && (
+        <div
+          className="px-5 py-3 flex items-start gap-3"
+          style={{ borderBottom: `1px solid ${PAL.border}`, borderLeft: `4px solid ${PAL.cautionBorder}` }}
+        >
+          <span style={{ fontSize: 16, lineHeight: 1, color: PAL.gold }}>⚠</span>
+          <div className="flex-1 min-w-0">
+            <div style={{ fontSize: 13, fontWeight: 700, color: PAL.gold, textTransform: "uppercase", letterSpacing: "1px" }}>
+              Earnings inside expiry
+            </div>
+            <div style={{ fontSize: 14, color: PAL.white, marginTop: 4, lineHeight: 1.5 }}>
+              {earningsAlert.confirmed ? "Confirmed" : "Estimated"} earnings on{" "}
+              <strong>{earningsAlert.earningsDate}</strong>
+              {earningsAlert.daysUntilEarnings != null && <> (in {earningsAlert.daysUntilEarnings}d)</>} — falls
+              inside the {earningsAlert.daysUntilExpiry}-DTE expiry. Position will hold through earnings.
             </div>
           </div>
-        )}
+        </div>
+      )}
 
-        {rec.companyContext && (
-          <div className="font-mono text-[11px] text-zinc-400 leading-relaxed mb-2">{sanitizeNarrative(rec.companyContext)}</div>
-        )}
+      {/* ---- 2. STATS ROW ---- */}
+      <div
+        className="flex items-center px-4 py-[14px]"
+        style={{ background: PAL.bgCard, borderBottom: `1px solid ${PAL.border}` }}
+      >
+        <StatBlock value={`$${debit}`} label={isCredit ? "Credit" : "Debit"} />
+        <div style={{ width: 1, height: 32, background: PAL.border }} />
+        <StatBlock value={`$${rec.maxProfit.toFixed(0)}`} label="Max Profit" tone="green" />
+        <div style={{ width: 1, height: 32, background: PAL.border }} />
+        <StatBlock value={`$${rec.maxLoss.toFixed(0)}`} label="Max Loss" tone="red" />
+        <div style={{ width: 1, height: 32, background: PAL.border }} />
+        <StatBlock value={`${rec.riskReward.toFixed(2)}:1`} label="R:R" />
+      </div>
 
-        <div className="font-mono text-[12px] text-white leading-relaxed mb-3">{sanitizeNarrative(rec.thesis || rec.rationale)}</div>
+      {/* ---- 3. COMPANY ---- */}
+      {rec.companyContext && (
+        <Section title="Company">
+          <div style={{ fontSize: 15, lineHeight: 1.55, color: PAL.body }}>
+            {sanitizeNarrative(rec.companyContext)}
+          </div>
+        </Section>
+      )}
 
-        {rec.warnings && (
-          <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg" style={{ background: "rgba(245, 158, 11, 0.08)", border: "1px solid rgba(245, 158, 11, 0.2)" }}>
-            <Shield className="w-3 h-3 flex-shrink-0" style={{ color: AMBER }} />
-            <span className="font-mono text-[10px]" style={{ color: AMBER }}>{sanitizeNarrative(rec.warnings)}</span>
+      {/* ---- 4. THESIS ---- */}
+      <Section title="Thesis">
+        <div style={{ fontSize: 15, lineHeight: 1.6, color: PAL.body }}>
+          {sanitizeNarrative(rec.thesis || rec.rationale)}
+        </div>
+        {rec.edgeAttribution && (
+          <div style={{ fontSize: 13, lineHeight: 1.5, color: PAL.label, marginTop: 10, fontStyle: "italic" }}>
+            {sanitizeNarrative(rec.edgeAttribution)}
           </div>
         )}
+      </Section>
 
-        {rec.riskOfRuin && (
-          <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg" style={{ background: "rgba(255, 75, 92, 0.06)", border: "1px solid rgba(255, 75, 92, 0.15)" }}>
-            <Shield className="w-3 h-3 flex-shrink-0" style={{ color: DOWN }} />
-            <span className="font-mono text-[9px] uppercase tracking-wider text-zinc-500 mr-1">Risk of Ruin:</span>
-            <span className="font-mono text-[10px]" style={{ color: DOWN }}>{sanitizeNarrative(rec.riskOfRuin)}</span>
-          </div>
-        )}
-
-        <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg" style={{ background: "rgba(245, 166, 35, 0.06)", border: "1px solid rgba(245, 166, 35, 0.15)" }}>
-          <Zap className="w-3 h-3 flex-shrink-0" style={{ color: GOLD }} />
-          <span className="font-mono text-[10px] text-white">{sanitizeNarrative(rec.edgeAttribution)}</span>
+      {/* ---- 5. LEGS (always expanded) ---- */}
+      <Section title="Legs">
+        <div>
+          {rec.legs.map((leg, i) => {
+            const isLast = i === rec.legs.length - 1;
+            const sideColor = leg.side === "buy" ? PAL.green : PAL.red;
+            return (
+              <div
+                key={i}
+                className="py-[14px]"
+                style={{ borderBottom: isLast ? "none" : `1px solid ${PAL.borderInner}` }}
+              >
+                <div className="flex items-center gap-3">
+                  <span
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 800,
+                      letterSpacing: "1px",
+                      color: sideColor,
+                      width: 40,
+                    }}
+                  >
+                    {leg.side.toUpperCase()}
+                  </span>
+                  <span style={{ fontSize: 16, fontWeight: 700, color: PAL.white }}>
+                    ${leg.strike} {leg.type.toUpperCase()}
+                  </span>
+                  <span style={{ fontSize: 13, color: PAL.label, fontWeight: 500 }}>
+                    {formatExpiry(leg.expiration)}
+                  </span>
+                  <span
+                    style={{
+                      marginLeft: "auto",
+                      fontSize: 17,
+                      fontWeight: 700,
+                      color: PAL.white,
+                      fontVariantNumeric: "tabular-nums",
+                    }}
+                  >
+                    ${leg.mid.toFixed(2)}
+                  </span>
+                </div>
+                <div style={{ paddingLeft: 52, marginTop: 4, fontSize: 13, color: PAL.label }}>
+                  Delta <strong style={{ color: PAL.body, fontWeight: 600 }}>{leg.delta.toFixed(2)}</strong>{" "}
+                  · Open Interest{" "}
+                  <strong style={{ color: PAL.body, fontWeight: 600 }}>
+                    {leg.openInterest.toLocaleString()}
+                  </strong>
+                </div>
+              </div>
+            );
+          })}
         </div>
+      </Section>
 
-        <div className="grid grid-cols-2 gap-3 mb-3">
-          <StatRow label="Idiosyncratic" value={`${rec.idioStrengthPct}%`} />
-          <StatRow label="Macro-aligned" value={`${rec.macroPct}%`} />
-          <StatRow label={isCredit ? "Credit" : "Debit"} value={`$${((isCredit ? rec.credit : rec.debit) ?? 0).toFixed(2)}`} />
-          <StatRow label="Fill Range" value={rec.entryRangeMin != null && rec.entryRangeMax != null ? `$${Math.abs(rec.entryRangeMin).toFixed(2)} – $${Math.abs(rec.entryRangeMax).toFixed(2)}` : "—"} />
-          <StatRow label="Risk/Reward" value={`${rec.riskReward.toFixed(2)}:1`} />
-          <StatRow label="Max Profit" value={`$${rec.maxProfit.toFixed(0)}`} color={UP} />
-          <StatRow label="Max Loss" value={`$${rec.maxLoss.toFixed(0)}`} color={DOWN} />
-          <StatRow label="Breakeven" value={`$${rec.breakeven.toFixed(2)}`} />
-          <StatRow label="DTE" value={`${rec.dte}d`} />
-        </div>
+      {/* ---- 6. ECONOMICS ---- */}
+      <Section title="Economics">
+        <EconRow label={isCredit ? "Credit" : "Debit"} value={`$${debit}`} />
+        <EconRow label="Fill Range" value={fillRange} />
+        <EconRow label="Max Profit" value={`$${rec.maxProfit.toFixed(0)}`} tone="green" />
+        <EconRow label="Max Loss" value={`$${rec.maxLoss.toFixed(0)}`} tone="red" />
+        <EconRow label="Breakeven" value={`$${rec.breakeven.toFixed(2)}`} />
+        <EconRow label="Days to Expiration" value={`${rec.dte} days`} isLast />
+      </Section>
 
-        {rec.exitTargets && (rec.exitTargets.profitTarget > 0 || rec.exitTargets.stopLoss > 0) && (
-          <div className="mb-3 px-3 py-2 rounded-lg space-y-1" style={{ background: "#0a0a0c" }}>
-            <h4 className="font-mono text-[9px] text-zinc-500 uppercase tracking-widest mb-1">Exit Targets</h4>
+      {/* ---- 7. EXIT PLAN ---- */}
+      {rec.exitTargets &&
+        (rec.exitTargets.profitTarget > 0 ||
+          rec.exitTargets.stopLoss > 0 ||
+          rec.exitTargets.timeStop) && (
+          <Section title="Exit Plan">
             {rec.exitTargets.profitTarget > 0 && (
-              <div className="flex justify-between">
-                <span className="font-mono text-[10px] text-zinc-400">Profit Target</span>
-                <span className="font-mono text-[10px]" style={{ color: UP }}>
-                  ${rec.exitTargets.profitTarget.toFixed(2)} per contract
-                  {" ("}${Math.round(rec.exitTargets.profitTarget * 100)} on 1 lot
-                  {rec.exitTargets.profitTargetUnderlying > 0 ? `, underlying $${rec.exitTargets.profitTargetUnderlying.toFixed(2)}` : ""}
-                  {")"}
-                </span>
+              <div
+                className="flex justify-between items-baseline py-[10px]"
+                style={{ borderBottom: `1px solid ${PAL.borderInner}` }}
+              >
+                <div>
+                  <div style={{ fontSize: 14, color: PAL.body, fontWeight: 600 }}>Profit Target</div>
+                  {rec.exitTargets.profitTargetUnderlying > 0 && (
+                    <div style={{ fontSize: 12, color: PAL.label, fontWeight: 500, marginTop: 2 }}>
+                      At underlying ${rec.exitTargets.profitTargetUnderlying.toFixed(2)}
+                    </div>
+                  )}
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: PAL.green, fontVariantNumeric: "tabular-nums" }}>
+                    ${rec.exitTargets.profitTarget.toFixed(2)}
+                  </div>
+                  <div style={{ fontSize: 12, color: PAL.label, fontWeight: 500, marginTop: 2 }}>
+                    ${Math.round(rec.exitTargets.profitTarget * 100)} / lot
+                  </div>
+                </div>
               </div>
             )}
             {rec.exitTargets.stopLoss > 0 && (
-              <div className="flex justify-between">
-                <span className="font-mono text-[10px] text-zinc-400">Stop Loss</span>
-                <span className="font-mono text-[10px]" style={{ color: DOWN }}>
-                  ${rec.exitTargets.stopLoss.toFixed(2)} per contract
-                  {" ("}${Math.round(rec.exitTargets.stopLoss * 100)} on 1 lot
-                  {rec.exitTargets.stopLossUnderlying > 0 ? `, underlying $${rec.exitTargets.stopLossUnderlying.toFixed(2)}` : ""}
-                  {")"}
-                </span>
+              <div
+                className="flex justify-between items-baseline py-[10px]"
+                style={{ borderBottom: `1px solid ${PAL.borderInner}` }}
+              >
+                <div>
+                  <div style={{ fontSize: 14, color: PAL.body, fontWeight: 600 }}>Stop Loss</div>
+                  {rec.exitTargets.stopLossUnderlying > 0 && (
+                    <div style={{ fontSize: 12, color: PAL.label, fontWeight: 500, marginTop: 2 }}>
+                      At underlying ${rec.exitTargets.stopLossUnderlying.toFixed(2)}
+                    </div>
+                  )}
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: PAL.red, fontVariantNumeric: "tabular-nums" }}>
+                    ${rec.exitTargets.stopLoss.toFixed(2)}
+                  </div>
+                  <div style={{ fontSize: 12, color: PAL.label, fontWeight: 500, marginTop: 2 }}>
+                    ${Math.round(rec.exitTargets.stopLoss * 100)} / lot
+                  </div>
+                </div>
               </div>
             )}
             {rec.exitTargets.timeStop && (
-              <div className="flex justify-between">
-                <span className="font-mono text-[10px] text-zinc-400">Time Stop</span>
-                <span className="font-mono text-[10px] text-white">{rec.exitTargets.timeStop}</span>
+              <div className="flex justify-between items-baseline py-[10px]">
+                <div style={{ fontSize: 14, color: PAL.body, fontWeight: 600 }}>Time Stop</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: PAL.gold }}>{rec.exitTargets.timeStop}</div>
               </div>
             )}
-          </div>
+          </Section>
         )}
 
-        {(rec.bullInvalidation || rec.bearInvalidation) && (
-          <div className="mb-3 px-3 py-2 rounded-lg space-y-1" style={{ background: "#0a0a0c" }}>
-            <h4 className="font-mono text-[9px] text-zinc-500 uppercase tracking-widest mb-1">Invalidation</h4>
+      {/* ---- 8. INVALIDATION ---- */}
+      {(rec.bullInvalidation || rec.bearInvalidation) && (
+        <Section title="Invalidation">
+          <div className="space-y-[14px]">
             {rec.bullInvalidation && (
-              <div className="flex gap-2">
-                <span className="font-mono text-[9px] font-bold shrink-0" style={{ color: UP }}>BULL</span>
-                <span className="font-mono text-[10px] text-zinc-300">{rec.bullInvalidation}</span>
-              </div>
+              <LeftBorderBlock borderColor={PAL.green} labelText="BULL" labelColor={PAL.green}>
+                {sanitizeNarrative(rec.bullInvalidation)}
+              </LeftBorderBlock>
             )}
             {rec.bearInvalidation && (
-              <div className="flex gap-2">
-                <span className="font-mono text-[9px] font-bold shrink-0" style={{ color: DOWN }}>BEAR</span>
-                <span className="font-mono text-[10px] text-zinc-300">{rec.bearInvalidation}</span>
-              </div>
+              <LeftBorderBlock borderColor={PAL.red} labelText="BEAR" labelColor={PAL.red}>
+                {sanitizeNarrative(rec.bearInvalidation)}
+              </LeftBorderBlock>
             )}
           </div>
-        )}
+        </Section>
+      )}
 
-        {onSendToOrder && (
+      {/* ---- 9. RISK OF RUIN ---- */}
+      {rec.riskOfRuin && (
+        <Section>
+          <LeftBorderBlock borderColor={PAL.riskBorder} labelText="⚠ Risk of Ruin" labelColor={PAL.red}>
+            {sanitizeNarrative(rec.riskOfRuin)}
+          </LeftBorderBlock>
+        </Section>
+      )}
+
+      {/* ---- 10. CAUTION ---- */}
+      {rec.warnings && (
+        <Section>
+          <LeftBorderBlock borderColor={PAL.cautionBorder} labelText="⚡ Caution" labelColor={PAL.gold}>
+            {sanitizeNarrative(rec.warnings)}
+          </LeftBorderBlock>
+        </Section>
+      )}
+
+      {/* ---- 11. SEND TO ORDER ---- */}
+      {onSendToOrder && (
+        <div className="px-5 py-5" style={{ background: PAL.bgInner }}>
           <button
             onClick={() => {
-              const isCredit = rec.credit != null && rec.credit > 0;
-              const netPrice = isCredit ? rec.credit! : (rec.debit ?? 0);
-              const orderLegs = rec.legs.map(leg => ({
+              const credit = rec.credit != null && rec.credit > 0;
+              const netPrice = credit ? rec.credit! : rec.debit ?? 0;
+              const orderLegs = rec.legs.map((leg) => ({
                 schwabSymbol: buildOccSymbol(result.ticker, leg.expiration, leg.type, leg.strike),
                 instruction: leg.side === "buy" ? "BUY_TO_OPEN" : "SELL_TO_OPEN",
                 quantity: 1,
@@ -489,124 +863,568 @@ export function StrategistV2RecommendationCard({ result, onSendToOrder, generate
                 ask: leg.ask,
                 delta: leg.delta,
               }));
-              onSendToOrder({ ticker: result.ticker, legs: orderLegs, netPrice, isCredit });
+              onSendToOrder({ ticker: result.ticker, legs: orderLegs, netPrice, isCredit: credit });
             }}
-            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg font-mono text-[12px] font-bold transition-all active:scale-[0.98] mb-3"
+            className="w-full transition-all active:scale-[0.99] flex items-center justify-center gap-2"
             style={{
-              background: "linear-gradient(135deg, #f5a623, #ffce73)",
-              color: "#000",
+              padding: 18,
+              background: PAL.cautionBorder,
+              color: PAL.bgInner,
+              border: "none",
+              borderRadius: 12,
+              fontSize: 17,
+              fontWeight: 800,
+              letterSpacing: "0.5px",
+              cursor: "pointer",
             }}
           >
-            <Send className="w-3.5 h-3.5" />
-            Send to Order
+            <Send className="w-4 h-4" /> SEND TO ORDER
           </button>
-        )}
+        </div>
+      )}
 
-        <button
-          onClick={() => setExpanded(!expanded)}
-          className="flex items-center gap-1 font-mono text-[10px] text-zinc-500 hover:text-white transition-colors"
+      {/* ---- 12. IOSCORE ---- */}
+      {ioScore && (
+        <Section>
+          <IoScoreCard ioScore={ioScore} />
+        </Section>
+      )}
+
+      {/* ---- 13. MACRO REGIME ---- */}
+      <Section>
+        <RegimeCard regime={regime} />
+      </Section>
+
+      {/* ---- 14. CONTEXT ---- */}
+      {ctx && <ContextSourcesBlock ctx={ctx} />}
+
+      {/* ---- 15. DEBATE TRANSCRIPT ---- */}
+      {transcript && transcript.length > 0 && (
+        <Section title="Debate Transcript" noBorder>
+          <DebateTranscriptInline transcript={transcript} />
+        </Section>
+      )}
+    </div>
+  );
+}
+
+// ---- IOScore + Regime sub-cards (clean borders, no tints) ---------
+
+function IoScoreCard({ ioScore }: { ioScore: NonNullable<StrategistV2Result["ioScore"]> }) {
+  const compositePct = (ioScore.final ?? 0.5) * 100;
+  const ambiguousBand = Math.abs(compositePct - 50) <= 3;
+  const ioUnavailable = ioScore.available === false || ambiguousBand;
+  const reasonText =
+    ioScore.available === false
+      ? `IOScore unavailable — insufficient SPY/${ioScore.dataAvailability?.equityDays ?? 0}d equity history to fit beta/R². Score below shown as N/A; underlying engine returned fallback values.`
+      : `IOScore inconclusive — Composite ${compositePct.toFixed(1)} is within 3 points of the 50.0 neutral midpoint. Treat as no idiosyncratic edge.`;
+  const idioPct = Math.round(ioScore.final * 100);
+  const macroPct = 100 - idioPct;
+  const classTone: "green" | "yellow" | undefined =
+    ioScore.classification === "HIGH_IDIOSYNCRATIC" ? "green" : ioScore.classification === "MIXED" ? "yellow" : undefined;
+
+  return (
+    <div
+      style={{
+        background: PAL.bgCard,
+        border: `1px solid ${PAL.border}`,
+        borderRadius: 12,
+        padding: 16,
+      }}
+    >
+      <div className="flex justify-between items-center" style={{ marginBottom: 4 }}>
+        <span
+          style={{
+            fontSize: 13,
+            fontWeight: 800,
+            letterSpacing: "1px",
+            color: PAL.body,
+            textTransform: "uppercase",
+          }}
         >
-          {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-          {expanded ? "Hide" : "Show"} Legs & Details
-        </button>
+          IOScore Breakdown
+        </span>
+        <span
+          style={{
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: "0.5px",
+            textTransform: "uppercase",
+            color: PAL.scopeTicker,
+          }}
+        >
+          Per-Ticker
+        </span>
+      </div>
+      <div style={{ fontSize: 12, color: PAL.label, marginBottom: 14, fontStyle: "italic" }}>
+        This analysis only
+      </div>
+      {ioUnavailable && (
+        <div
+          style={{
+            fontSize: 13,
+            color: PAL.gold,
+            border: `1px solid ${PAL.cautionBorder}`,
+            borderRadius: 6,
+            padding: "8px 10px",
+            marginBottom: 12,
+            lineHeight: 1.45,
+          }}
+        >
+          {reasonText}
+        </div>
+      )}
+      <div className="grid grid-cols-2 gap-x-5">
+        <IoRow label="Overall" value={ioUnavailable ? "N/A" : `${idioPct}%`} />
+        <IoRow
+          label="Classification"
+          value={ioUnavailable ? "N/A" : ioScore.classification.replace(/_/g, " ")}
+          tone={ioUnavailable ? undefined : classTone}
+        />
+        <IoRow label="Idiosyncratic %" value={ioUnavailable ? "N/A" : `${idioPct}%`} tone={ioUnavailable ? undefined : "yellow"} />
+        <IoRow label="Macro %" value={ioUnavailable ? "N/A" : `${macroPct}%`} />
+        <IoRow label="R²" value={ioUnavailable ? "N/A" : ioScore.components?.marketIndependence?.rSquared?.toFixed(3) ?? "—"} />
+        <IoRow label="Beta" value={ioUnavailable ? "N/A" : ioScore.beta?.toFixed(2) ?? "—"} />
+        <IoRow label="Residual Z" value={ioUnavailable ? "N/A" : ioScore.residualReturnZScore?.toFixed(2) ?? "—"} />
+        <IoRow
+          label="Catalyst"
+          value={(ioScore.components?.catalyst?.flagValue ?? 0) > 0 ? "Yes" : "No"}
+          tone={(ioScore.components?.catalyst?.flagValue ?? 0) > 0 ? "green" : undefined}
+        />
+        <IoRow label="Flow Score" value={ioScore.components?.flowDivergence?.final?.toFixed(3) ?? "—"} />
+        <IoRow label="Vol/OI Ratio" value={ioScore.components?.flowDivergence?.volOiRatio?.toFixed(3) ?? "—"} />
+      </div>
+    </div>
+  );
+}
 
-        {expanded && (
-          <div className="mt-3 space-y-3">
-            <div className="space-y-1.5">
-              {rec.legs.map((leg, i) => (
-                <div key={i} className="flex items-center justify-between px-3 py-2 rounded-lg" style={{ background: "#0a0a0c" }}>
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-[10px] font-bold" style={{ color: leg.side === "buy" ? UP : DOWN }}>
-                      {leg.side.toUpperCase()}
-                    </span>
-                    <span className="font-mono text-[11px] text-white">{leg.type.toUpperCase()} ${leg.strike}</span>
-                    <span className="font-mono text-[9px] text-zinc-500">{leg.expiration}</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="font-mono text-[9px] text-zinc-500">Δ {leg.delta.toFixed(2)}</span>
-                    <span className="font-mono text-[9px] text-zinc-500">OI {leg.openInterest.toLocaleString()}</span>
-                    <span className="font-mono text-[10px] text-white">${leg.mid.toFixed(2)}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
+function RegimeCard({ regime }: { regime: StrategistV2Result["regime"] }) {
+  const riskTone: "green" | "red" | "yellow" | undefined =
+    regime.systemicRiskLevel === "EXTREME"
+      ? "red"
+      : regime.systemicRiskLevel === "ELEVATED"
+      ? "yellow"
+      : regime.systemicRiskLevel === "LOW"
+      ? "green"
+      : undefined;
+  const convTone: "green" | "red" | "yellow" | undefined = regime.directionalConviction
+    ?.toUpperCase()
+    .includes("BULL")
+    ? "green"
+    : regime.directionalConviction?.toUpperCase().includes("BEAR")
+    ? "red"
+    : undefined;
+  return (
+    <div
+      style={{
+        background: PAL.bgCard,
+        border: `1px solid ${PAL.regimeBorder}`,
+        borderRadius: 12,
+        padding: 16,
+      }}
+    >
+      <div className="flex justify-between items-center" style={{ marginBottom: 4 }}>
+        <span
+          style={{
+            fontSize: 13,
+            fontWeight: 800,
+            letterSpacing: "1px",
+            color: PAL.gold,
+            textTransform: "uppercase",
+          }}
+        >
+          Macro Regime
+        </span>
+        <span
+          style={{
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: "0.5px",
+            textTransform: "uppercase",
+            color: PAL.scopeMacro,
+          }}
+        >
+          Session-Wide
+        </span>
+      </div>
+      <div style={{ fontSize: 12, color: "#a38550", marginBottom: 14, fontStyle: "italic" }}>
+        Same across all tickers this session
+      </div>
+      <div className="grid grid-cols-2 gap-x-5">
+        <IoRow label="Conviction" value={regime.directionalConviction.replace(/_/g, " ")} tone={convTone} />
+        <IoRow label="Risk Level" value={regime.systemicRiskLevel} tone={riskTone} />
+        <IoRow label="Correlation" value={regime.correlationRegime} />
+        {regime.compositeScore != null && (
+          <IoRow label="Composite" value={regime.compositeScore.toFixed(1)} />
+        )}
+        {regime.idioOpportunityFlag != null && (
+          <IoRow
+            label="Idio Opportunity"
+            value={regime.idioOpportunityFlag ? "Yes" : "No"}
+            tone={regime.idioOpportunityFlag ? "yellow" : undefined}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
 
-            {ioScore && (() => {
-              // Banner fires when (a) the engine flagged the run as unavailable, OR
-              // (b) the displayed Composite percent (final × 100) is within 3 points
-              // of 50.0. The near-midpoint band catches runs the engine reports as
-              // available but whose score is too close to neutral to act on.
-              const compositePct = (ioScore.final ?? 0.5) * 100;
-              const ambiguousBand = Math.abs(compositePct - 50) <= 3;
-              const ioUnavailable = ioScore.available === false || ambiguousBand;
-              const reasonText = ioScore.available === false
-                ? `IOScore unavailable — insufficient SPY/${ioScore.dataAvailability?.equityDays ?? 0}d equity history to fit beta/R². Score below shown as N/A; underlying engine returned fallback values (rSquared=0.50, residualZ=0).`
-                : `IOScore inconclusive — Composite ${compositePct.toFixed(1)} is within 3 points of the 50.0 neutral midpoint. Score below shown as N/A; treat as no idiosyncratic edge.`;
-              const idioPct = Math.round(ioScore.final * 100);
-              const macroPct = 100 - idioPct;
-              return (
-              <div
-                className="space-y-2 p-3 rounded-lg"
-                style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)" }}
+// ---- Debate transcript (human-readable prose) ---------------------
+
+type TranscriptTurnInline = NonNullable<StrategistV2Result["debateTranscript"]>[number];
+
+function tryParseTurnJson(raw: string): Record<string, unknown> | null {
+  if (!raw) return null;
+  try {
+    const stripped = raw.replace(/^```(json)?/i, "").replace(/```\s*$/i, "").trim();
+    const start = stripped.indexOf("{");
+    const end = stripped.lastIndexOf("}");
+    if (start < 0 || end <= start) return null;
+    return JSON.parse(stripped.slice(start, end + 1)) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function asString(v: unknown): string {
+  return typeof v === "string" && v.trim() ? v.trim() : "";
+}
+
+function asInt(v: unknown): number | null {
+  if (typeof v === "number" && Number.isFinite(v)) return Math.round(v);
+  if (typeof v === "string") {
+    const n = Number(v);
+    if (Number.isFinite(n)) return Math.round(n);
+  }
+  return null;
+}
+
+function asStringList(v: unknown): string[] {
+  if (Array.isArray(v)) return v.map((x) => (typeof x === "string" ? x : "")).filter(Boolean);
+  return [];
+}
+
+function DebateRoundHeader({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        fontSize: 13,
+        fontWeight: 800,
+        color: PAL.gold,
+        letterSpacing: "1px",
+        textTransform: "uppercase",
+        margin: "18px 0 12px",
+        paddingBottom: 8,
+        borderBottom: `1px solid ${PAL.border}`,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function EvidenceLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        fontSize: 11,
+        fontWeight: 700,
+        color: PAL.label,
+        letterSpacing: "1px",
+        textTransform: "uppercase",
+        marginBottom: 6,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function DebateBlock({
+  side,
+  label,
+  children,
+}: {
+  side: "bull" | "bear" | "synthesis";
+  label: string;
+  children: React.ReactNode;
+}) {
+  const color = side === "bull" ? PAL.green : side === "bear" ? PAL.red : PAL.gold;
+  return (
+    <div style={{ marginBottom: 18, paddingLeft: 16, borderLeft: `3px solid ${color}` }}>
+      <div
+        style={{
+          fontSize: 13,
+          fontWeight: 800,
+          letterSpacing: "0.5px",
+          marginBottom: 10,
+          textTransform: "uppercase",
+          color,
+        }}
+      >
+        {label}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function DebateTranscriptInline({ transcript }: { transcript: TranscriptTurnInline[] }) {
+  // Group by round so we can interleave round headers + verdict box correctly.
+  const grouped = useMemo(() => {
+    const byRound = new Map<1 | 2 | 3 | "synthesis", TranscriptTurnInline[]>();
+    for (const t of transcript) {
+      const arr = byRound.get(t.round) ?? [];
+      arr.push(t);
+      byRound.set(t.round, arr);
+    }
+    return byRound;
+  }, [transcript]);
+
+  const round1 = grouped.get(1) ?? [];
+  const round2 = grouped.get(2) ?? [];
+  const round3 = grouped.get(3) ?? [];
+  const synth = grouped.get("synthesis") ?? [];
+
+  const r1Bull = round1.find((t) => t.role === "A");
+  const r1Bear = round1.find((t) => t.role === "B");
+  const r2Bull = round2.find((t) => t.role === "A");
+  const r2Bear = round2.find((t) => t.role === "B");
+  const verdictTurn = round2.find((t) => t.role === "system" && t.phase === "info");
+  const r3Bull = round3.find((t) => t.role === "A");
+  const r3Bear = round3.find((t) => t.role === "B");
+  const synthTurn = synth.find((t) => t.role === "synthesis");
+
+  return (
+    <div>
+      {(r1Bull || r1Bear) && <DebateRoundHeader>Round 1 · Opening Theses</DebateRoundHeader>}
+      {r1Bull && <Round1Side turn={r1Bull} side="bull" />}
+      {r1Bear && <Round1Side turn={r1Bear} side="bear" />}
+
+      {(r2Bull || r2Bear) && <DebateRoundHeader>Round 2 · Rebuttals</DebateRoundHeader>}
+      {r2Bull && <Round2Side turn={r2Bull} side="bull" />}
+      {r2Bear && <Round2Side turn={r2Bear} side="bear" />}
+
+      {verdictTurn && <VerdictBox turn={verdictTurn} />}
+
+      {(r3Bull || r3Bear) && <DebateRoundHeader>Round 3 · Structure Proposals</DebateRoundHeader>}
+      {r3Bull && <Round3Side turn={r3Bull} side="bull" />}
+      {r3Bear && <Round3Side turn={r3Bear} side="bear" />}
+
+      {synthTurn && <SynthesisBox turn={synthTurn} />}
+    </div>
+  );
+}
+
+function Round1Side({ turn, side }: { turn: TranscriptTurnInline; side: "bull" | "bear" }) {
+  const json = tryParseTurnJson(turn.text);
+  const conf = asInt(json?.confidence);
+  const thesis = asString(json?.thesis) || asString(json?.directional_thesis);
+  const evidence = asStringList(json?.keyEvidence ?? json?.key_evidence);
+  const risk = asString(json?.biggestRisk ?? json?.biggest_risk);
+  const labelBase = side === "bull" ? "Bull Case" : "Bear Case";
+  const label = conf != null ? `${labelBase} · ${conf}% Confidence` : labelBase;
+  return (
+    <DebateBlock side={side} label={label}>
+      {thesis ? (
+        <div style={{ fontSize: 14, lineHeight: 1.6, color: PAL.white, marginBottom: 12 }}>{thesis}</div>
+      ) : (
+        <div style={{ fontSize: 14, color: PAL.label, marginBottom: 12 }}>(no thesis)</div>
+      )}
+      {evidence.length > 0 && (
+        <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${PAL.border}` }}>
+          <EvidenceLabel>Key Evidence</EvidenceLabel>
+          <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+            {evidence.map((e, i) => (
+              <li
+                key={i}
+                style={{
+                  fontSize: 14,
+                  lineHeight: 1.5,
+                  color: PAL.white,
+                  paddingLeft: 16,
+                  position: "relative",
+                  marginBottom: 6,
+                }}
               >
-                <div className="flex items-baseline justify-between">
-                  <h4 className="font-mono text-[10px] font-bold text-zinc-300 uppercase tracking-widest">IOScore</h4>
-                  <span className="font-mono text-[9px] text-zinc-500 normal-case tracking-normal">Per-ticker · this analysis only</span>
-                </div>
-                {ioUnavailable && (
-                  <div className="font-mono text-[10px] text-amber-300 bg-amber-900/20 border border-amber-500/30 rounded px-2 py-1">
-                    {reasonText}
-                  </div>
-                )}
-                <div className="grid grid-cols-2 gap-2">
-                  <StatRow
-                    label="Overall"
-                    value={ioUnavailable ? "N/A" : `${idioPct}%`}
-                    color={ioUnavailable ? "#71717a" : ioScore.classification === "HIGH_IDIOSYNCRATIC" ? UP : ioScore.classification === "MIXED" ? GOLD : "#71717a"}
-                  />
-                  <StatRow label="Classification" value={ioUnavailable ? "N/A" : ioScore.classification.replace(/_/g, " ")} />
-                  <StatRow label="Idiosyncratic %" value={ioUnavailable ? "N/A" : `${idioPct}%`} color={ioUnavailable ? "#71717a" : GOLD} />
-                  <StatRow label="Macro %" value={ioUnavailable ? "N/A" : `${macroPct}%`} color={ioUnavailable ? "#71717a" : "#71717a"} />
-                </div>
-                <div className="pt-2 mt-1 border-t border-zinc-800/60">
-                  <div className="font-mono text-[9px] text-zinc-500 uppercase tracking-widest mb-1.5">Components</div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <StatRow label="R²" value={ioUnavailable ? "N/A" : (ioScore.components?.marketIndependence?.rSquared?.toFixed(3) ?? "—")} />
-                    <StatRow label="Beta" value={ioUnavailable ? "N/A" : (ioScore.beta?.toFixed(2) ?? "—")} />
-                    <StatRow label="Residual Z" value={ioUnavailable ? "N/A" : (ioScore.residualReturnZScore?.toFixed(2) ?? "—")} />
-                    <StatRow label="Catalyst" value={(ioScore.components?.catalyst?.flagValue ?? 0) > 0 ? "YES" : "No"} color={(ioScore.components?.catalyst?.flagValue ?? 0) > 0 ? UP : "#71717a"} />
-                    <StatRow label="Flow Score" value={ioScore.components?.flowDivergence?.final?.toFixed(3) ?? "—"} />
-                    <StatRow label="Vol/OI Ratio" value={ioScore.components?.flowDivergence?.volOiRatio?.toFixed(3) ?? "—"} />
-                  </div>
-                </div>
-              </div>
-              );
-            })()}
+                <span style={{ position: "absolute", left: 0, color: PAL.label }}>—</span>
+                {e}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {risk && (
+        <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${PAL.border}` }}>
+          <EvidenceLabel>Biggest Risk</EvidenceLabel>
+          <div style={{ fontSize: 14, lineHeight: 1.5, color: PAL.white }}>{risk}</div>
+        </div>
+      )}
+    </DebateBlock>
+  );
+}
 
-            <div
-              className="space-y-2 p-3 rounded-lg"
-              style={{ background: "rgba(255,184,0,0.03)", border: "1px solid rgba(255,184,0,0.18)" }}
-            >
-              <div className="flex items-baseline justify-between">
-                <h4 className="font-mono text-[10px] font-bold uppercase tracking-widest" style={{ color: GOLD }}>Macro Regime</h4>
-                <span className="font-mono text-[9px] text-zinc-500 normal-case tracking-normal">Session-wide · same across tickers</span>
-              </div>
-              <div className="font-mono text-[9px] text-zinc-500 leading-snug normal-case">
-                Macro state — same across all tickers in this session.
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <StatRow label="Conviction" value={regime.directionalConviction} />
-                <StatRow label="Risk Level" value={regime.systemicRiskLevel} color={regime.systemicRiskLevel === "EXTREME" ? DOWN : regime.systemicRiskLevel === "ELEVATED" ? AMBER : UP} />
-                <StatRow label="Correlation" value={regime.correlationRegime} />
-                {regime.compositeScore != null && <StatRow label="Composite" value={regime.compositeScore.toFixed(1)} />}
-                {regime.idioOpportunityFlag != null && <StatRow label="Idio Opportunity" value={regime.idioOpportunityFlag ? "YES" : "No"} color={regime.idioOpportunityFlag ? GOLD : "#71717a"} />}
-              </div>
-            </div>
-          </div>
-        )}
-        {(result.recommendation?.contextSources ?? result.contextSources) && (
-          <ContextSourcesBlock ctx={(result.recommendation?.contextSources ?? result.contextSources)!} />
-        )}
+function Round2Side({ turn, side }: { turn: TranscriptTurnInline; side: "bull" | "bear" }) {
+  const json = tryParseTurnJson(turn.text);
+  const revised = asInt(json?.revisedConfidence ?? json?.revised_confidence);
+  const rebuttal = asString(json?.rebuttal);
+  const concession = asString(json?.concession);
+  const labelBase = side === "bull" ? "Bull Rebuttal" : "Bear Rebuttal";
+  const label = revised != null ? `${labelBase} · Revised to ${revised}%` : labelBase;
+  return (
+    <DebateBlock side={side} label={label}>
+      {rebuttal ? (
+        <div style={{ fontSize: 14, lineHeight: 1.6, color: PAL.white, marginBottom: 12 }}>{rebuttal}</div>
+      ) : (
+        <div style={{ fontSize: 14, color: PAL.label, marginBottom: 12 }}>(no rebuttal)</div>
+      )}
+      {concession && (
+        <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${PAL.border}` }}>
+          <EvidenceLabel>Concession</EvidenceLabel>
+          <div style={{ fontSize: 14, lineHeight: 1.5, color: PAL.white }}>{concession}</div>
+        </div>
+      )}
+    </DebateBlock>
+  );
+}
+
+function VerdictBox({ turn }: { turn: TranscriptTurnInline }) {
+  const json = tryParseTurnJson(turn.text);
+  const verdict = asString(json?.verdict).toUpperCase();
+  const bull = asInt(json?.bullConfidence ?? json?.bull_confidence);
+  const bear = asInt(json?.bearConfidence ?? json?.bear_confidence);
+  const delta = asInt(json?.delta);
+  const tieBand = asInt(json?.tieBand ?? json?.tie_band);
+  const verdictColor =
+    verdict === "BULLISH" ? PAL.green : verdict === "BEARISH" ? PAL.red : PAL.gold;
+  return (
+    <div
+      style={{
+        margin: "18px 0",
+        padding: 16,
+        border: `1px solid ${PAL.regimeBorder}`,
+        borderRadius: 10,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 11,
+          fontWeight: 800,
+          color: PAL.gold,
+          letterSpacing: "1.5px",
+          textTransform: "uppercase",
+          marginBottom: 8,
+        }}
+      >
+        Verdict
+      </div>
+      <div
+        style={{
+          fontSize: 28,
+          fontWeight: 800,
+          color: verdictColor,
+          letterSpacing: "-0.5px",
+          marginBottom: 14,
+        }}
+      >
+        {verdict || "—"}
+      </div>
+      <div className="grid grid-cols-2 gap-x-5 gap-y-[10px]" style={{ marginBottom: 14 }}>
+        <VerdictRow k="Bull Confidence" v={bull != null ? String(bull) : "—"} tone="green" />
+        <VerdictRow k="Bear Confidence" v={bear != null ? String(bear) : "—"} tone="red" />
+        <VerdictRow k="Delta" v={delta != null ? `${delta} points` : "—"} />
+        <VerdictRow k="Tie Band" v={tieBand != null ? `${tieBand} points` : "—"} />
+      </div>
+      <div
+        style={{
+          fontSize: 13,
+          color: PAL.body,
+          fontStyle: "italic",
+          paddingTop: 10,
+          borderTop: `1px solid #332a15`,
+        }}
+      >
+        {verdict === "SIDEWAYS"
+          ? "Next step: Build vol-neutral defined-risk structure on synthesis."
+          : verdict
+          ? `Next step: Build ${verdict.toLowerCase()} defined-risk structure.`
+          : "Next step pending."}
+      </div>
+    </div>
+  );
+}
+
+function VerdictRow({ k, v, tone }: { k: string; v: string; tone?: "green" | "red" }) {
+  const color = tone === "green" ? PAL.green : tone === "red" ? PAL.red : PAL.white;
+  return (
+    <div className="flex justify-between items-baseline py-1">
+      <span
+        style={{
+          fontSize: 12,
+          color: PAL.label,
+          fontWeight: 500,
+          textTransform: "uppercase",
+          letterSpacing: "0.5px",
+        }}
+      >
+        {k}
+      </span>
+      <span style={{ fontSize: 15, fontWeight: 700, color, fontVariantNumeric: "tabular-nums" }}>{v}</span>
+    </div>
+  );
+}
+
+function Round3Side({ turn, side }: { turn: TranscriptTurnInline; side: "bull" | "bear" }) {
+  const json = tryParseTurnJson(turn.text);
+  const strategy = asString(json?.strategy);
+  const conf = asInt(json?.confidence);
+  const rationale = asString(json?.rationale);
+  const labelBase = side === "bull" ? "Bull Proposal" : "Bear Proposal";
+  const stratLabel = strategy
+    ? STRAT_LABELS[strategy] ?? strategy.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+    : "";
+  const label = [labelBase, stratLabel, conf != null ? `${conf}% Confidence` : ""]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    <DebateBlock side={side} label={label}>
+      {rationale ? (
+        <div style={{ fontSize: 14, lineHeight: 1.6, color: PAL.white }}>{rationale}</div>
+      ) : (
+        <div style={{ fontSize: 14, color: PAL.label }}>(no rationale)</div>
+      )}
+    </DebateBlock>
+  );
+}
+
+function SynthesisBox({ turn }: { turn: TranscriptTurnInline }) {
+  const json = tryParseTurnJson(turn.text);
+  // The synthesis turn carries the FINAL trade JSON. The thesis field
+  // captures the arbitration narrative (which proposal was taken and why).
+  const thesis = asString(json?.thesis) || asString(json?.rationale);
+  return (
+    <div
+      style={{
+        marginTop: 18,
+        padding: 16,
+        border: `1px solid ${PAL.border}`,
+        borderRadius: 10,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 11,
+          fontWeight: 800,
+          color: PAL.gold,
+          letterSpacing: "1.5px",
+          textTransform: "uppercase",
+          marginBottom: 10,
+        }}
+      >
+        Arbitrator's Decision
+      </div>
+      <div style={{ fontSize: 14, lineHeight: 1.6, color: PAL.white }}>
+        {thesis || "(arbitration shipped the final trade above; no separate synthesis text)"}
       </div>
     </div>
   );
