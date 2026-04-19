@@ -3,7 +3,7 @@ import type { Server as HttpServer, IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { verifyToken } from "@clerk/express";
 import { logger } from "./logger.js";
-import { getSnapshot, getStreamerStatus, registerWsBroadcast, addSymbols, addOptionSymbols } from "./schwabStreamer.js";
+import { getSnapshot, getStreamerStatus, registerWsBroadcast, addSymbols, addOptionSymbols, addFuturesSymbols, addFuturesOptionSymbols } from "./schwabStreamer.js";
 import { getTokens } from "./tokenStore.js";
 
 const WS_PATH = "/api/ws/prices";
@@ -192,17 +192,26 @@ async function fetchAndPushPortfolio(ws: WebSocket) {
       try {
         const equityUnderlyings = new Set<string>();
         const optionSymbols = new Set<string>();
+        const futuresSymbols = new Set<string>();
+        const futuresOptionSymbols = new Set<string>();
         for (const p of mapped.positions ?? []) {
           if (!p.symbol) continue;
-          if (p.assetType === "OPTION") {
+          if (p.assetType === "OPTION" || p.assetType === "INDEX_OPTION") {
             optionSymbols.add(p.symbol);
             if (p.underlyingSymbol) equityUnderlyings.add(p.underlyingSymbol);
-          } else if (p.assetType === "EQUITY" || p.assetType === "ETF" || p.assetType === "COLLECTIVE_INVESTMENT") {
+          } else if (p.assetType === "FUTURE_OPTION") {
+            futuresOptionSymbols.add(p.symbol);
+            if (p.underlyingSymbol) futuresSymbols.add(p.underlyingSymbol);
+          } else if (p.assetType === "FUTURE") {
+            futuresSymbols.add(p.symbol);
+          } else if (p.assetType === "EQUITY" || p.assetType === "ETF" || p.assetType === "COLLECTIVE_INVESTMENT" || p.assetType === "INDEX") {
             equityUnderlyings.add(p.symbol);
           }
         }
         if (equityUnderlyings.size > 0) addSymbols([...equityUnderlyings]);
         if (optionSymbols.size > 0) addOptionSymbols([...optionSymbols]);
+        if (futuresSymbols.size > 0) addFuturesSymbols([...futuresSymbols]);
+        if (futuresOptionSymbols.size > 0) addFuturesOptionSymbols([...futuresOptionSymbols]);
       } catch (subErr) {
         logger.debug({ err: subErr }, "Portfolio streamer subscription failed");
       }

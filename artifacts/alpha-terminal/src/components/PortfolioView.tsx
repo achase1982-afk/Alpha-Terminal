@@ -861,7 +861,7 @@ function OrderRow({ order, onCancel }: { order: Order; onCancel?: (orderId: numb
   const primaryLeg = order.legs[0];
   const isMultiLeg = order.legs.length > 1;
   const displaySymbol = primaryLeg
-    ? primaryLeg.assetType === "OPTION" ? formatOptionSymbol(primaryLeg.symbol) : primaryLeg.symbol
+    ? (primaryLeg.assetType === "OPTION" || primaryLeg.assetType === "INDEX_OPTION" || primaryLeg.assetType === "FUTURE_OPTION") ? formatOptionSymbol(primaryLeg.symbol) : primaryLeg.symbol
     : "—";
   const isBuy = primaryLeg?.instruction?.includes("BUY");
   const isOpen = order.status === "WORKING" || order.status === "PENDING_ACTIVATION";
@@ -920,7 +920,7 @@ function OrderRow({ order, onCancel }: { order: Order; onCancel?: (orderId: numb
               {order.legs.map((leg, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, paddingLeft: 6, marginBottom: 1 }}>
                   <span style={{ fontSize: 12, fontWeight: 600, color: leg.instruction?.includes("BUY") ? C.green : C.red }}>{leg.instruction?.replace(/_/g, " ")}</span>
-                  <span style={{ fontSize: 12, color: C.textDim }}>{leg.quantity}× {leg.assetType === "OPTION" ? formatOptionSymbol(leg.symbol) : leg.symbol}</span>
+                  <span style={{ fontSize: 12, color: C.textDim }}>{leg.quantity}× {(leg.assetType === "OPTION" || leg.assetType === "INDEX_OPTION" || leg.assetType === "FUTURE_OPTION") ? formatOptionSymbol(leg.symbol) : leg.symbol}</span>
                 </div>
               ))}
             </div>
@@ -1343,10 +1343,15 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
     const positions = account?.positions ?? [];
     const groupMap = new Map<string, SymbolGroup>();
     for (const pos of positions) {
-      const key = (pos.assetType === "OPTION" ? pos.underlyingSymbol : pos.symbol).toUpperCase();
+      // Schwab returns multiple option assetTypes: OPTION (equity), INDEX_OPTION
+      // (SPX/SPXW/RUT/NDX), and FUTURE_OPTION (/ES, /NQ etc). All three should
+      // group under their underlying — otherwise SPX/futures option legs vanish.
+      const isOptionLike = pos.assetType === "OPTION" || pos.assetType === "INDEX_OPTION" || pos.assetType === "FUTURE_OPTION";
+      const rawKey = isOptionLike ? (pos.underlyingSymbol || pos.symbol) : pos.symbol;
+      const key = rawKey.toUpperCase();
       if (!groupMap.has(key)) groupMap.set(key, { underlying: key, description: "", equity: null, options: [], totalMarketValue: 0, totalDayPL: 0, totalPL: 0, totalMaint: 0 });
       const g = groupMap.get(key)!;
-      if (pos.assetType === "OPTION") g.options.push(pos); else { g.equity = pos; if (pos.description) g.description = pos.description; }
+      if (isOptionLike) g.options.push(pos); else { g.equity = pos; if (pos.description) g.description = pos.description; }
       g.totalMarketValue += pos.marketValue;
       g.totalDayPL += pos.currentDayProfitLoss;
       g.totalPL += pos.longOpenProfitLoss;
