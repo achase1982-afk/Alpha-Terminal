@@ -1,0 +1,66 @@
+Redesign the Strategist V2 output card UI to match the attached HTML mockup (strategist_card.html). This is a UI-only change to StrategistV2Card.tsx — do not touch any engine, validation, or data pipeline code.
+
+CORE DESIGN PRINCIPLES
+
+1. NO TINTED BACKGROUNDS behind any text anywhere on the card. If a section needs visual distinction, use a colored LEFT BORDER only, never a background tint. This applies to Risk of Ruin, Caution, BUY/SELL leg labels, BULL/BEAR invalidation labels, direction tags, scope tags, context chips — all of them.
+
+2. No gray-on-gray text. All body text is white (#ffffff) on near-black background (#0a0a0a) or card background (#141414). Labels may be muted gray (#a3a3a3) but actual data values are always white or a semantic color (green/red/yellow).
+
+3. Minimum body font size 14px. Data values 15-17px. Headers 11-13px uppercase with letter-spacing. Readable at arm's length on a phone.
+
+4. Colors are semantic, not decorative:
+   - Green (#4ade80) for bullish / profit / max profit
+   - Red (#f87171) for bearish / loss / max loss / risk
+   - Yellow/Gold (#fbbf24) for caution / macro regime / section headers / time stops
+   - White for neutral data values
+
+SECTION ORDER ON THE CARD
+
+1. Header block: ticker + direction tag + confidence number + strategy name + copy button + timestamp
+2. Stats row: Debit / Max Profit / Max Loss / R:R in 4 equal columns
+3. Company (section title + paragraph)
+4. Thesis (section title + paragraph)
+5. Legs — EXPANDED BY DEFAULT, not behind a "Show Legs" button. Each leg shows BUY/SELL label, strike+type, expiration date, price, and on a second line: delta and open interest
+6. Economics (Debit, Fill Range, Max Profit, Max Loss, Breakeven, DTE)
+7. Exit Plan (Profit Target, Stop Loss, Time Stop — each with underlying price context)
+8. Invalidation (BULL and BEAR scenarios with colored left borders, not tinted backgrounds)
+9. Risk of Ruin (red left border only, no tint)
+10. Caution (gold/yellow left border only, no tint)
+
+11. SEND TO ORDER button — full-width orange, placed HERE after Caution and before supporting material
+
+12. IOScore Breakdown card (neutral gray border) with "Per-Ticker" scope tag and "This analysis only" subtitle. Fields: Overall, Classification, R², Beta, Residual Z, Catalyst, Flow Score, Vol/OI Ratio
+13. Macro Regime card (gold border ONLY, no tinted fill) with "Session-Wide" scope tag and "Same across all tickers this session" subtitle. Fields: Conviction, Risk Level, Correlation, Composite, Idio Opportunity
+14. Context (residual catalyst chip + source count)
+15. Debate Transcript (only renders when debate mode was used)
+
+DEBATE TRANSCRIPT SECTION
+
+Render the raw debate JSON as human-readable sections. Do NOT show raw JSON, escaped newlines, or brackets to the user. Structure:
+
+- "Round 1 · Opening Theses" header
+- BULL CASE block (green left border): label with confidence, thesis paragraph, Key Evidence list (em-dash bullets, not code brackets), Biggest Risk paragraph
+- BEAR CASE block (red left border): same structure
+
+- "Round 2 · Rebuttals" header  
+- BULL REBUTTAL block (green left border): label with revised confidence, rebuttal paragraph, Concession paragraph
+- BEAR REBUTTAL block (red left border): same structure
+
+- VERDICT box (gold border): label, result (BULLISH/BEARISH/SIDEWAYS in large colored text), Bull Confidence, Bear Confidence, Delta, Tie Band in 2-column grid, next step line
+
+- "Round 3 · Structure Proposals" header
+- BULL PROPOSAL block: label with strategy + confidence, rationale paragraph
+- BEAR PROPOSAL block: label with strategy + confidence, rationale paragraph
+
+- ARBITRATOR'S DECISION box (neutral border): label, synthesis paragraph explaining which structure won and why
+
+Evidence bullets use em-dash (—) as the bullet character, never asterisks or code brackets. No JSON syntax visible anywhere. All text is plain English prose and clean lists.
+
+IMPLEMENTATION NOTES
+
+- This is presentational only. Backend telemetry, raw JSON storage, and audit trail remain unchanged.
+- Debate Transcript section reads from the existing debate rounds array — just needs a new rendering path that maps JSON fields to human-readable blocks.
+- The copy button should continue to strip model/provider/role attribution from any copied output.
+- Use the attached strategist_card.html mockup as the visual reference for colors, spacing, borders, and typography.
+
+Goal: card should read like institutional research, not like dev output. Everything a tester sees should look like a professional desk note.

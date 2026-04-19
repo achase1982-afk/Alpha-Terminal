@@ -1,0 +1,1118 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Strategist Card</title>
+<style>
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+body {
+background: #0a0a0a;
+color: #ffffff;
+font-family: -apple-system, ‘SF Pro Display’, ‘Inter’, system-ui, sans-serif;
+padding: 16px;
+font-size: 16px;
+line-height: 1.5;
+}
+
+.card {
+background: #141414;
+border: 1px solid #2a2a2a;
+border-radius: 16px;
+overflow: hidden;
+max-width: 520px;
+margin: 0 auto;
+}
+
+/* HEADER */
+.header {
+padding: 20px 20px 16px;
+border-bottom: 1px solid #2a2a2a;
+}
+
+.header-top {
+display: flex;
+justify-content: space-between;
+align-items: center;
+margin-bottom: 12px;
+}
+
+.ticker-block {
+display: flex;
+align-items: center;
+gap: 12px;
+}
+
+.ticker {
+font-size: 28px;
+font-weight: 800;
+letter-spacing: -0.5px;
+color: #ffffff;
+}
+
+.direction-tag {
+padding: 6px 12px;
+border-radius: 6px;
+font-size: 13px;
+font-weight: 700;
+letter-spacing: 0.5px;
+color: #4ade80;
+border: 1px solid #22c55e;
+}
+
+.confidence-block {
+text-align: right;
+}
+
+.confidence-number {
+font-size: 24px;
+font-weight: 800;
+color: #ffffff;
+line-height: 1;
+}
+
+.confidence-label {
+font-size: 11px;
+font-weight: 600;
+color: #a3a3a3;
+letter-spacing: 1px;
+margin-top: 4px;
+text-transform: uppercase;
+}
+
+.strategy-row {
+display: flex;
+justify-content: space-between;
+align-items: center;
+margin-top: 4px;
+}
+
+.strategy-name {
+font-size: 17px;
+font-weight: 600;
+color: #e5e5e5;
+}
+
+.copy-btn {
+padding: 8px 14px;
+border: 1px solid #3a3a3a;
+border-radius: 8px;
+color: #ffffff;
+font-size: 13px;
+font-weight: 600;
+cursor: pointer;
+background: transparent;
+}
+
+.timestamp {
+font-size: 13px;
+color: #a3a3a3;
+margin-top: 8px;
+}
+
+/* SECTION BLOCKS */
+.section {
+padding: 18px 20px;
+border-bottom: 1px solid #2a2a2a;
+}
+
+.section-title {
+font-size: 11px;
+font-weight: 700;
+color: #f59e0b;
+letter-spacing: 1.5px;
+text-transform: uppercase;
+margin-bottom: 12px;
+}
+
+/* COMPANY */
+.company-text {
+font-size: 15px;
+line-height: 1.55;
+color: #d4d4d4;
+}
+
+/* THESIS */
+.thesis-text {
+font-size: 15px;
+line-height: 1.6;
+color: #e5e5e5;
+}
+
+/* ECONOMICS GRID */
+.econ-grid {
+display: grid;
+grid-template-columns: 1fr 1fr;
+gap: 12px 20px;
+}
+
+.econ-row {
+display: flex;
+justify-content: space-between;
+align-items: baseline;
+padding: 8px 0;
+border-bottom: 1px solid #1f1f1f;
+}
+
+.econ-row:last-child {
+border-bottom: none;
+}
+
+.econ-label {
+font-size: 13px;
+color: #a3a3a3;
+font-weight: 500;
+text-transform: uppercase;
+letter-spacing: 0.5px;
+}
+
+.econ-value {
+font-size: 17px;
+font-weight: 700;
+color: #ffffff;
+}
+
+.econ-value.green {
+color: #4ade80;
+}
+
+.econ-value.red {
+color: #f87171;
+}
+
+/* LEGS */
+.leg {
+display: grid;
+grid-template-columns: auto auto 1fr auto;
+gap: 10px;
+align-items: center;
+padding: 14px 0;
+border-bottom: 1px solid #1f1f1f;
+}
+
+.leg:last-child {
+border-bottom: none;
+}
+
+.leg-action {
+font-size: 12px;
+font-weight: 800;
+letter-spacing: 1px;
+}
+
+.leg-action.buy {
+color: #4ade80;
+}
+
+.leg-action.sell {
+color: #f87171;
+}
+
+.leg-contract {
+font-size: 16px;
+font-weight: 700;
+color: #ffffff;
+}
+
+.leg-expiry {
+font-size: 13px;
+color: #a3a3a3;
+font-weight: 500;
+}
+
+.leg-greeks {
+font-size: 13px;
+color: #a3a3a3;
+text-align: right;
+}
+
+.leg-greeks strong {
+color: #e5e5e5;
+font-weight: 600;
+}
+
+.leg-price {
+font-size: 17px;
+font-weight: 700;
+color: #ffffff;
+text-align: right;
+}
+
+/* EXIT TARGETS */
+.exit-row {
+display: flex;
+justify-content: space-between;
+align-items: baseline;
+padding: 10px 0;
+border-bottom: 1px solid #1f1f1f;
+}
+
+.exit-row:last-child {
+border-bottom: none;
+}
+
+.exit-label {
+font-size: 14px;
+color: #e5e5e5;
+font-weight: 600;
+}
+
+.exit-value {
+font-size: 15px;
+font-weight: 700;
+text-align: right;
+}
+
+.exit-value.green {
+color: #4ade80;
+}
+
+.exit-value.red {
+color: #f87171;
+}
+
+.exit-subtext {
+font-size: 12px;
+color: #a3a3a3;
+font-weight: 500;
+margin-top: 2px;
+}
+
+/* INVALIDATION */
+.invalidation-block {
+padding: 14px 0;
+}
+
+.invalidation-block:not(:last-child) {
+border-bottom: 1px solid #1f1f1f;
+margin-bottom: 14px;
+padding-bottom: 14px;
+}
+
+.inv-label {
+font-size: 12px;
+font-weight: 800;
+letter-spacing: 1px;
+display: inline-block;
+margin-bottom: 8px;
+}
+
+.inv-label.bull {
+color: #4ade80;
+}
+
+.inv-label.bear {
+color: #f87171;
+}
+
+.inv-text {
+font-size: 14px;
+line-height: 1.55;
+color: #e5e5e5;
+}
+
+/* RISK OF RUIN */
+.risk-box {
+padding: 14px 0 14px 16px;
+border-left: 4px solid #dc2626;
+}
+
+.risk-header {
+font-size: 12px;
+font-weight: 800;
+letter-spacing: 1px;
+color: #f87171;
+margin-bottom: 8px;
+text-transform: uppercase;
+}
+
+.risk-text {
+font-size: 14px;
+line-height: 1.55;
+color: #ffffff;
+}
+
+/* CAUTION */
+.caution-box {
+padding: 14px 0 14px 16px;
+border-left: 4px solid #f59e0b;
+}
+
+.caution-header {
+font-size: 12px;
+font-weight: 800;
+letter-spacing: 1px;
+color: #fbbf24;
+margin-bottom: 8px;
+text-transform: uppercase;
+}
+
+.caution-text {
+font-size: 14px;
+line-height: 1.55;
+color: #ffffff;
+}
+
+/* IOSCORE BLOCK */
+.ioscore-card {
+background: #141414;
+border: 1px solid #2a2a2a;
+border-radius: 12px;
+padding: 16px;
+margin-bottom: 12px;
+}
+
+.ioscore-header {
+display: flex;
+justify-content: space-between;
+align-items: center;
+margin-bottom: 4px;
+}
+
+.ioscore-title {
+font-size: 13px;
+font-weight: 800;
+letter-spacing: 1px;
+color: #e5e5e5;
+text-transform: uppercase;
+}
+
+.scope-tag {
+font-size: 10px;
+font-weight: 700;
+letter-spacing: 0.5px;
+text-transform: uppercase;
+}
+
+.scope-tag.ticker {
+color: #93c5fd;
+}
+
+.scope-tag.macro {
+color: #fbbf24;
+}
+
+.scope-subtext {
+font-size: 12px;
+color: #a3a3a3;
+margin-bottom: 14px;
+font-style: italic;
+}
+
+/* REGIME specific card */
+.regime-card {
+background: #141414;
+border: 1px solid #7c5e0f;
+border-radius: 12px;
+padding: 16px;
+}
+
+.io-grid {
+display: grid;
+grid-template-columns: 1fr 1fr;
+gap: 10px 20px;
+}
+
+.io-row {
+display: flex;
+flex-direction: column;
+align-items: flex-start;
+gap: 4px;
+padding: 8px 0;
+border-bottom: 1px solid #1f1f1f;
+}
+
+.io-row:last-child,
+.io-row:nth-last-child(2) {
+border-bottom: none;
+}
+
+.regime-card .io-row {
+border-bottom-color: #332a15;
+}
+
+.io-label {
+font-size: 11px;
+color: #a3a3a3;
+font-weight: 600;
+letter-spacing: 0.8px;
+text-transform: uppercase;
+}
+
+.io-value {
+font-size: 16px;
+font-weight: 700;
+color: #ffffff;
+line-height: 1.2;
+}
+
+.io-value.green { color: #4ade80; }
+.io-value.red { color: #f87171; }
+.io-value.yellow { color: #fbbf24; }
+
+/* CONTEXT / SOURCES */
+.context-chip {
+display: inline-flex;
+align-items: center;
+gap: 8px;
+padding: 10px 14px;
+border: 1px solid #3a3a3a;
+border-radius: 8px;
+font-size: 13px;
+color: #ffffff;
+font-weight: 600;
+}
+
+.context-chip strong {
+color: #fbbf24;
+}
+
+/* ACTION BUTTON */
+.action-section {
+padding: 20px;
+background: #0a0a0a;
+}
+
+.send-btn {
+width: 100%;
+padding: 18px;
+background: #f59e0b;
+color: #0a0a0a;
+border: none;
+border-radius: 12px;
+font-size: 17px;
+font-weight: 800;
+letter-spacing: 0.5px;
+cursor: pointer;
+}
+
+/* BIAS STRIP */
+.bias-strip {
+display: flex;
+gap: 8px;
+padding: 10px 20px;
+background: #141414;
+border-bottom: 1px solid #2a2a2a;
+font-size: 13px;
+font-weight: 700;
+letter-spacing: 0.5px;
+}
+
+.bias-bullish {
+color: #4ade80;
+}
+
+.bias-regime {
+color: #fbbf24;
+}
+
+/* DEBATE TRANSCRIPT */
+.round-header {
+font-size: 13px;
+font-weight: 800;
+color: #fbbf24;
+letter-spacing: 1px;
+text-transform: uppercase;
+margin: 18px 0 12px;
+padding-bottom: 8px;
+border-bottom: 1px solid #2a2a2a;
+}
+
+.round-header:first-child {
+margin-top: 0;
+}
+
+.debate-block {
+margin-bottom: 18px;
+padding-left: 16px;
+}
+
+.debate-block.bull-side {
+border-left: 3px solid #22c55e;
+}
+
+.debate-block.bear-side {
+border-left: 3px solid #dc2626;
+}
+
+.debate-label {
+font-size: 13px;
+font-weight: 800;
+letter-spacing: 0.5px;
+margin-bottom: 10px;
+text-transform: uppercase;
+}
+
+.debate-label.bull {
+color: #4ade80;
+}
+
+.debate-label.bear {
+color: #f87171;
+}
+
+.debate-thesis {
+font-size: 14px;
+line-height: 1.6;
+color: #ffffff;
+margin-bottom: 12px;
+}
+
+.debate-evidence, .debate-risk, .debate-concession {
+margin-top: 12px;
+padding-top: 10px;
+border-top: 1px solid #2a2a2a;
+}
+
+.evidence-label {
+font-size: 11px;
+font-weight: 700;
+color: #a3a3a3;
+letter-spacing: 1px;
+text-transform: uppercase;
+margin-bottom: 6px;
+}
+
+.debate-evidence ul {
+list-style: none;
+padding: 0;
+}
+
+.debate-evidence li {
+font-size: 14px;
+line-height: 1.5;
+color: #ffffff;
+padding-left: 16px;
+position: relative;
+margin-bottom: 6px;
+}
+
+.debate-evidence li::before {
+content: “—”;
+position: absolute;
+left: 0;
+color: #a3a3a3;
+}
+
+.debate-risk > div:last-child,
+.debate-concession > div:last-child {
+font-size: 14px;
+line-height: 1.5;
+color: #ffffff;
+}
+
+/* VERDICT BOX */
+.verdict-box {
+margin: 18px 0;
+padding: 16px;
+border: 1px solid #7c5e0f;
+border-radius: 10px;
+}
+
+.verdict-label {
+font-size: 11px;
+font-weight: 800;
+color: #fbbf24;
+letter-spacing: 1.5px;
+text-transform: uppercase;
+margin-bottom: 8px;
+}
+
+.verdict-result {
+font-size: 28px;
+font-weight: 800;
+color: #4ade80;
+letter-spacing: -0.5px;
+margin-bottom: 14px;
+}
+
+.verdict-details {
+display: grid;
+grid-template-columns: 1fr 1fr;
+gap: 10px 20px;
+margin-bottom: 14px;
+}
+
+.verdict-details > div {
+display: flex;
+justify-content: space-between;
+align-items: baseline;
+padding: 4px 0;
+}
+
+.verdict-k {
+font-size: 12px;
+color: #a3a3a3;
+font-weight: 500;
+text-transform: uppercase;
+letter-spacing: 0.5px;
+}
+
+.verdict-v {
+font-size: 15px;
+font-weight: 700;
+color: #ffffff;
+}
+
+.verdict-v.green { color: #4ade80; }
+.verdict-v.red { color: #f87171; }
+
+.verdict-next {
+font-size: 13px;
+color: #e5e5e5;
+font-style: italic;
+padding-top: 10px;
+border-top: 1px solid #332a15;
+}
+
+/* SYNTHESIS BOX */
+.synthesis-box {
+margin-top: 18px;
+padding: 16px;
+border: 1px solid #3a3a3a;
+border-radius: 10px;
+}
+
+.synthesis-label {
+font-size: 11px;
+font-weight: 800;
+color: #fbbf24;
+letter-spacing: 1.5px;
+text-transform: uppercase;
+margin-bottom: 10px;
+}
+
+.synthesis-text {
+font-size: 14px;
+line-height: 1.6;
+color: #ffffff;
+}
+
+/* HEADER STATS */
+.stats-row {
+display: flex;
+justify-content: space-around;
+padding: 14px 16px;
+background: #141414;
+border-bottom: 1px solid #2a2a2a;
+}
+
+.stat-block {
+text-align: center;
+}
+
+.stat-number {
+font-size: 18px;
+font-weight: 800;
+color: #ffffff;
+}
+
+.stat-number.green { color: #4ade80; }
+.stat-number.red { color: #f87171; }
+
+.stat-label {
+font-size: 10px;
+color: #a3a3a3;
+font-weight: 600;
+letter-spacing: 0.8px;
+text-transform: uppercase;
+margin-top: 3px;
+}
+
+.divider {
+width: 1px;
+background: #2a2a2a;
+}
+</style>
+
+</head>
+<body>
+
+<div class="card">
+
+  <!-- HEADER -->
+
+  <div class="header">
+    <div class="header-top">
+      <div class="ticker-block">
+        <div class="ticker">GS</div>
+        <div class="direction-tag">↗ BULLISH</div>
+      </div>
+      <div class="confidence-block">
+        <div class="confidence-number">58</div>
+        <div class="confidence-label">Confidence</div>
+      </div>
+    </div>
+    <div class="strategy-row">
+      <div class="strategy-name">Bull Call Spread</div>
+      <button class="copy-btn">⎘ Copy</button>
+    </div>
+    <div class="timestamp">Generated 4/18/2026, 5:44:43 PM</div>
+  </div>
+
+  <!-- QUICK STATS -->
+
+  <div class="stats-row">
+    <div class="stat-block">
+      <div class="stat-number">$12.15</div>
+      <div class="stat-label">Debit</div>
+    </div>
+    <div class="divider"></div>
+    <div class="stat-block">
+      <div class="stat-number green">$1,785</div>
+      <div class="stat-label">Max Profit</div>
+    </div>
+    <div class="divider"></div>
+    <div class="stat-block">
+      <div class="stat-number red">$1,215</div>
+      <div class="stat-label">Max Loss</div>
+    </div>
+    <div class="divider"></div>
+    <div class="stat-block">
+      <div class="stat-number">1.47:1</div>
+      <div class="stat-label">R:R</div>
+    </div>
+  </div>
+
+  <!-- COMPANY -->
+
+  <div class="section">
+    <div class="section-title">Company</div>
+    <div class="company-text">Goldman Sachs (GS) is a global investment bank levered to capital markets activity — Global Banking &amp; Markets, asset/wealth management, and trading revenue. Cyclical to IB fee wallet, equity/FICC trading volumes, and capital-return cadence.</div>
+  </div>
+
+  <!-- THESIS -->
+
+  <div class="section">
+    <div class="section-title">Thesis</div>
+    <div class="thesis-text">Both sides converged on a May 15 call debit spread, so Rule 1 applies — take the version that better fits the chain and the vol regime. Taking the BULL's 930/960 structure over the Bear's 950/955 because at IVR 2.07 long premium is structurally mispriced cheap, and a 5-wide OTM spread throws away the convexity that is the entire reason to be in debit structures at this IV percentile. The 930 long is dead-ATM with spot pinned at 928 giving clean delta exposure, and 960 sits right at the volume-weighted flow magnet below the $971 consensus PT and well inside the 88-day earnings moat.</div>
+  </div>
+
+  <!-- LEGS -->
+
+  <div class="section">
+    <div class="section-title">Legs</div>
+    <div class="leg">
+      <div class="leg-action buy">BUY</div>
+      <div class="leg-contract">$930 CALL</div>
+      <div class="leg-expiry">May 15, 2026</div>
+      <div class="leg-price">$28.75</div>
+    </div>
+    <div class="leg" style="grid-template-columns: auto 1fr auto; padding-top: 0; padding-bottom: 14px; border-bottom: 1px solid #1f1f1f;">
+      <div style="grid-column: 1 / 2; width: 48px;"></div>
+      <div class="leg-greeks" style="text-align: left;">Delta <strong>0.50</strong> · Open Interest <strong>191</strong></div>
+    </div>
+    <div class="leg">
+      <div class="leg-action sell">SELL</div>
+      <div class="leg-contract">$960 CALL</div>
+      <div class="leg-expiry">May 15, 2026</div>
+      <div class="leg-price">$16.60</div>
+    </div>
+    <div class="leg" style="grid-template-columns: auto 1fr auto; padding-top: 0; padding-bottom: 14px; border-bottom: none;">
+      <div style="grid-column: 1 / 2; width: 48px;"></div>
+      <div class="leg-greeks" style="text-align: left;">Delta <strong>0.34</strong> · Open Interest <strong>262</strong></div>
+    </div>
+  </div>
+
+  <!-- ECONOMICS -->
+
+  <div class="section">
+    <div class="section-title">Economics</div>
+    <div class="econ-row">
+      <span class="econ-label">Debit</span>
+      <span class="econ-value">$12.15</span>
+    </div>
+    <div class="econ-row">
+      <span class="econ-label">Fill Range</span>
+      <span class="econ-value">$9.40 – $14.90</span>
+    </div>
+    <div class="econ-row">
+      <span class="econ-label">Max Profit</span>
+      <span class="econ-value green">$1,785</span>
+    </div>
+    <div class="econ-row">
+      <span class="econ-label">Max Loss</span>
+      <span class="econ-value red">$1,215</span>
+    </div>
+    <div class="econ-row">
+      <span class="econ-label">Breakeven</span>
+      <span class="econ-value">$943.50</span>
+    </div>
+    <div class="econ-row">
+      <span class="econ-label">Days to Expiration</span>
+      <span class="econ-value">26 days</span>
+    </div>
+  </div>
+
+  <!-- EXIT TARGETS -->
+
+  <div class="section">
+    <div class="section-title">Exit Plan</div>
+    <div class="exit-row">
+      <div>
+        <div class="exit-label">Profit Target</div>
+        <div class="exit-subtext">At underlying $958.00</div>
+      </div>
+      <div class="exit-value green">$22.00<br><span style="font-size: 12px; color: #a3a3a3; font-weight: 500;">$2,200 / lot</span></div>
+    </div>
+    <div class="exit-row">
+      <div>
+        <div class="exit-label">Stop Loss</div>
+        <div class="exit-subtext">At underlying $912.00</div>
+      </div>
+      <div class="exit-value red">$7.00<br><span style="font-size: 12px; color: #a3a3a3; font-weight: 500;">$700 / lot</span></div>
+    </div>
+    <div class="exit-row">
+      <div>
+        <div class="exit-label">Time Stop</div>
+      </div>
+      <div class="exit-value" style="color: #fbbf24;">May 8, 2026</div>
+    </div>
+  </div>
+
+  <!-- INVALIDATION -->
+
+  <div class="section">
+    <div class="section-title">Invalidation</div>
+    <div class="invalidation-block">
+      <span class="inv-label bull">BULL</span>
+      <div class="inv-text">GS breaks and closes below $912 (below the 920 put-accumulation shelf), signaling the post-earnings drift has failed and the credit-provision narrative is taking hold.</div>
+    </div>
+    <div class="invalidation-block">
+      <span class="inv-label bear">BEAR</span>
+      <div class="inv-text">GS closes above $955 with financials sector bid confirming — the 930/960 is deep ITM, take profit into strength rather than pressing for the last $2.</div>
+    </div>
+  </div>
+
+  <!-- RISK OF RUIN -->
+
+  <div class="section">
+    <div class="risk-box">
+      <div class="risk-header">⚠ Risk of Ruin</div>
+      <div class="risk-text">A credit-provision follow-through headline (the $315M Q1 spike Mayo flagged) or a bank-sector rerating tick that takes GS back to the $900 support before May 15 — the 930 long bleeds theta ATM while the short 960 wing barely cushions at IVR 2.</div>
+    </div>
+  </div>
+
+  <!-- CAUTION -->
+
+  <div class="section">
+    <div class="caution-box">
+      <div class="caution-header">⚡ Caution</div>
+      <div class="caution-text">Debit width ($30) exceeds user's 5-wide preference — intentional given IVR 2.07 convexity case. Front-week IV values in the chain are clamped at 500% (pricing-engine artifact); structural decisions reference back-month IV. Monitor private-credit and regional-bank headlines as correlated risk.</div>
+    </div>
+  </div>
+
+  <!-- SEND TO ORDER -->
+
+  <div class="action-section">
+    <button class="send-btn">→ SEND TO ORDER</button>
+  </div>
+
+  <!-- IOSCORE (Per-Ticker) -->
+
+  <div class="section">
+    <div class="ioscore-card">
+      <div class="ioscore-header">
+        <span class="ioscore-title">IOScore Breakdown</span>
+        <span class="scope-tag ticker">Per-Ticker</span>
+      </div>
+      <div class="scope-subtext">This analysis only</div>
+      <div class="io-grid">
+        <div class="io-row">
+          <span class="io-label">Overall</span>
+          <span class="io-value">20%</span>
+        </div>
+        <div class="io-row">
+          <span class="io-label">Classification</span>
+          <span class="io-value yellow">Macro Aligned</span>
+        </div>
+        <div class="io-row">
+          <span class="io-label">R²</span>
+          <span class="io-value">0.560</span>
+        </div>
+        <div class="io-row">
+          <span class="io-label">Beta</span>
+          <span class="io-value">1.27</span>
+        </div>
+        <div class="io-row">
+          <span class="io-label">Residual Z</span>
+          <span class="io-value">-0.31</span>
+        </div>
+        <div class="io-row">
+          <span class="io-label">Catalyst</span>
+          <span class="io-value">No</span>
+        </div>
+        <div class="io-row">
+          <span class="io-label">Flow Score</span>
+          <span class="io-value">0.000</span>
+        </div>
+        <div class="io-row">
+          <span class="io-label">Vol/OI Ratio</span>
+          <span class="io-value">105.00</span>
+        </div>
+      </div>
+    </div>
+
+```
+<!-- REGIME (Session-Wide) -->
+<div class="regime-card">
+  <div class="ioscore-header">
+    <span class="ioscore-title" style="color: #fbbf24;">Macro Regime</span>
+    <span class="scope-tag macro">Session-Wide</span>
+  </div>
+  <div class="scope-subtext" style="color: #a38550;">Same across all tickers this session</div>
+  <div class="io-grid">
+    <div class="io-row">
+      <span class="io-label">Conviction</span>
+      <span class="io-value green">Moderately Bullish</span>
+    </div>
+    <div class="io-row">
+      <span class="io-label">Risk Level</span>
+      <span class="io-value green">Low</span>
+    </div>
+    <div class="io-row">
+      <span class="io-label">Correlation</span>
+      <span class="io-value">Normal</span>
+    </div>
+    <div class="io-row">
+      <span class="io-label">Composite</span>
+      <span class="io-value">66.0</span>
+    </div>
+    <div class="io-row">
+      <span class="io-label">Idio Opportunity</span>
+      <span class="io-value">No</span>
+    </div>
+  </div>
+</div>
+```
+
+  </div>
+
+  <!-- CONTEXT -->
+
+  <div class="section">
+    <div class="section-title">Context</div>
+    <div class="context-chip">
+      <strong>Residual Catalyst</strong>
+      <span>Earnings · 4 days ago</span>
+    </div>
+    <div style="margin-top: 10px; font-size: 13px; color: #a3a3a3;">
+      4 searches · 12 sources referenced
+    </div>
+  </div>
+
+  <!-- DEBATE TRANSCRIPT -->
+
+  <div class="section">
+    <div class="section-title">Debate Transcript</div>
+
+```
+<!-- ROUND 1 -->
+<div class="round-header">Round 1 · Opening Theses</div>
+
+<div class="debate-block bull-side">
+  <div class="debate-label bull">BULL CASE · 62% Confidence</div>
+  <div class="debate-thesis">GS printed a blowout Q1 on April 13 and the tape is digesting the beat, not rejecting it — this is textbook post-earnings-drift setup on a mega-cap financial. EPS came in at $17.55 vs $16.49 estimate on revenue of $17.23B vs $16.97B expected, with profit up 19% and revenue up 14% YoY.</div>
+  <div class="debate-evidence">
+    <div class="evidence-label">Key Evidence</div>
+    <ul>
+      <li>Q1 2026 beat: EPS $17.55 vs $16.49 est, ROE 19.8%, record equities quarter</li>
+      <li>IVR 2.07 — vol at rock-bottom, long premium structurally cheap</li>
+      <li>Flow skew bullish: P/C 0.71, unusual May 29 $1060 calls (vol/OI 105x)</li>
+      <li>Median sell-side PT $971 vs spot $928 = ~4.6% upside</li>
+      <li>No earnings risk 88 days out, MODERATELY_BULLISH regime</li>
+    </ul>
+  </div>
+  <div class="debate-risk">
+    <div class="evidence-label">Biggest Risk</div>
+    <div>Fixed-income miss and credit provisions rose ~10% to $315M, more than double the $150M estimate. Mike Mayo flagged as largest loan-loss increase since 2020, questioning what GS sees in credit.</div>
+  </div>
+</div>
+
+<div class="debate-block bear-side">
+  <div class="debate-label bear">BEAR CASE · 52% Confidence</div>
+  <div class="debate-thesis">GS has overshot fair value post-earnings and the setup favors mean reversion. Despite a headline Q1 beat, the FICC line missed and Solomon had to publicly defend the quarter. BofA cut $1,100→$1,050, Wells cut $1,050→$1,000, and current consensus PT $920.95 now sits BELOW spot $928 — the tape melted up through analyst fair value with no fundamental upgrade cycle behind it.</div>
+  <div class="debate-evidence">
+    <div class="evidence-label">Key Evidence</div>
+    <ul>
+      <li>Consensus PT $920.95 BELOW spot $928; BofA and Wells cut $50 post-earnings</li>
+      <li>Insider selling $109.9M in 3 months, zero insider purchases</li>
+      <li>P/E 17.7x vs 5-year high 18.76x — valuation pressed against ceiling</li>
+      <li>FICC trading missed in Q1 (Solomon blamed analyst expectations)</li>
+      <li>Put flow institutional (780/800 Jun-Oct, 920/925 unusual), calls are lottery tickets</li>
+    </ul>
+  </div>
+  <div class="debate-risk">
+    <div class="evidence-label">Biggest Risk</div>
+    <div>IVR at 2.07 is low for a reason — realized vol collapsed. Tape absorbing bad news well. If S&P grinds higher and bank momentum continues, long puts bleed theta and the bear thesis dies slow.</div>
+  </div>
+</div>
+
+<!-- ROUND 2 -->
+<div class="round-header">Round 2 · Rebuttals</div>
+
+<div class="debate-block bull-side">
+  <div class="debate-label bull">BULL REBUTTAL · Revised to 58%</div>
+  <div class="debate-thesis">PT cuts and consensus below spot cut both ways — BofA $1,050 and Wells $1,000 are still materially above $928. Insider selling at GS is near-automatic (10b5-1 comp unwinds). Calling 1000/1060 "lottery retail" ignores that 105x vol/OI prints with 2027 1300s lifting is systematic upside accumulation, not Robinhood.</div>
+  <div class="debate-concession">
+    <div class="evidence-label">Concession</div>
+    <div>The FICC miss plus 10% jump in credit provisions to $315M (double consensus) is a legitimate yellow flag. If the credit narrative gains traction, the post-earnings drift dies.</div>
+  </div>
+</div>
+
+<div class="debate-block bear-side">
+  <div class="debate-label bear">BEAR REBUTTAL · Revised to 46%</div>
+  <div class="debate-thesis">The bull's "blowout beat" narrative papers over the tape reaction: shares traded down 3.6% to $874.88 immediately after the print because FICC missed and credit provisions spiked to $315M — more than double estimate. Solomon had to publicly blame analysts. That's not a post-earnings drift profile; it's a name where the sell-side response was to CUT price targets.</div>
+  <div class="debate-concession">
+    <div class="evidence-label">Concession</div>
+    <div>IVR 2.07 + 88 days to next earnings + MODERATELY_BULLISH regime means long puts bleed theta hard without a catalyst. The expression needs structure (put debit spread, not naked puts) and the expected-move timeline is slower than ideal.</div>
+  </div>
+</div>
+
+<!-- VERDICT -->
+<div class="verdict-box">
+  <div class="verdict-label">VERDICT</div>
+  <div class="verdict-result">BULLISH</div>
+  <div class="verdict-details">
+    <div><span class="verdict-k">Bull Confidence</span><span class="verdict-v green">58</span></div>
+    <div><span class="verdict-k">Bear Confidence</span><span class="verdict-v red">46</span></div>
+    <div><span class="verdict-k">Delta</span><span class="verdict-v">12 points</span></div>
+    <div><span class="verdict-k">Tie Band</span><span class="verdict-v">5 points (tight)</span></div>
+  </div>
+  <div class="verdict-next">Next step: Build bullish defined-risk structure on Bull's model.</div>
+</div>
+
+<!-- ROUND 3 -->
+<div class="round-header">Round 3 · Structure Proposals</div>
+
+<div class="debate-block bull-side">
+  <div class="debate-label bull">BULL PROPOSAL · Call Debit Spread 930/960 · 60% Confidence</div>
+  <div class="debate-thesis">IVR 2.07 means long premium is structurally cheap. Chose May 15 (27 DTE) over 30-60d preference because May 22 and May 29 chains are thin (OI 6-29, below user's 50 OI floor). 930 is dead-ATM with delta 0.497, and 960 sits just above consensus drift zone where 471/586 volume clusters printed. 30-wide intentional: at IVR 2 the short leg barely dampens P&L.</div>
+</div>
+
+<div class="debate-block bear-side">
+  <div class="debate-label bear">BEAR PROPOSAL · Call Debit Spread 950/955 · 48% Confidence</div>
+  <div class="debate-thesis">Given verdict went bullish, the lowest-risk-of-ruin expression is a narrow OTM call debit spread. Long 950 (delta 0.394, OI 781) / short 955 (delta 0.369, OI 216). Respects user's 5-wide preference. Caps downside if bear thesis wins to ~$2 debit while still paying ~1.5:1 if drift carries to 955.</div>
+</div>
+
+<!-- SYNTHESIS -->
+<div class="synthesis-box">
+  <div class="synthesis-label">Arbitrator's Decision</div>
+  <div class="synthesis-text">Both sides converged on a May 15 call debit spread, so Rule 1 applies — take the version that better fits the chain and vol regime. Taking the BULL's 930/960 structure over the Bear's 950/955 because at IVR 2.07 long premium is structurally mispriced cheap, and a 5-wide OTM spread throws away the convexity that is the entire reason to be in debit structures at this IV percentile. The 930 long is dead-ATM with spot pinned at 928 giving clean delta exposure, and 960 sits right at the volume-weighted flow magnet below the $971 consensus PT.</div>
+</div>
+```
+
+  </div>
+
+</div>
+
+</body>
+</html>
