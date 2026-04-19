@@ -683,10 +683,11 @@ function PositionTableRow({
 
   const eqTickDir = useTickFlash(group.underlying);
   const markColor = eqTickDir === "up" ? C.green : eqTickDir === "down" ? C.red : C.text;
-  // Schwab "Last" = field 3 (LAST_PRICE) = most recent trade. Field 12 is
-  // the PREVIOUS day's close, not today's, so it must NOT be used here.
-  const streamQuote = useTerminalStore(s => s.streamPrices[group.underlying.toUpperCase()] as { last?: number } | undefined);
-  const streamPrice = streamQuote?.last ?? null;
+  // Schwab "Last" = field 29 (REGULAR_MARKET_LAST_PRICE) = today's last
+  // regular-session trade. Field 3 (LAST_PRICE) includes after-hours and
+  // field 12 (CLOSE_PRICE) is yesterday's close — neither matches Schwab UI.
+  const streamQuote = useTerminalStore(s => s.streamPrices[group.underlying.toUpperCase()] as { last?: number; regularLast?: number } | undefined);
+  const streamPrice = streamQuote?.regularLast ?? streamQuote?.last ?? null;
 
   const rowBg = "transparent";
   const stickyBg = "#000";
@@ -1364,8 +1365,8 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
     // Pull a sortable value out of a group for the chosen column.
     const valueFor = (g: SymbolGroup): number | string | null => {
       if (sortKey === "symbol") return g.underlying;
-      const sq = streamPricesAll[g.underlying.toUpperCase()] as { last?: number; close?: number; change?: number; changePct?: number } | undefined;
-      const lastPx = sq?.close ?? sq?.last ?? null;
+      const sq = streamPricesAll[g.underlying.toUpperCase()] as { last?: number; regularLast?: number; close?: number; change?: number; changePct?: number } | undefined;
+      const lastPx = sq?.regularLast ?? sq?.last ?? null;
       const costBasis = g.totalMarketValue - g.totalPL;
       const plPct = Math.abs(g.totalMarketValue) > 0.01 ? (g.totalPL / Math.abs(g.totalMarketValue)) * 100 : 0;
       const prev = g.totalMarketValue - g.totalDayPL;

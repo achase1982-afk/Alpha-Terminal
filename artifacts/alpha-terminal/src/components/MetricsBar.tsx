@@ -320,10 +320,11 @@ export function MetricsBar({ compact = false, onOpenTearSheet, onTrade }: Metric
   const isFlat = rawChange !== null && rawChange === 0;
   const priceColor = isDown ? DOWN_COLOR : isUp ? UP_COLOR : FLAT_COLOR;
 
-  // Schwab "Last" = LAST_PRICE (field 3) = most recent trade. Field 12 is
-  // the PREVIOUS day's close (used for change calculations), not today's
-  // last price. Display the actual last trade tick.
-  const lastStr = quote?.last != null ? `$${fmtPrice(quote.last)}` : "—";
+  // Schwab "Last" = REGULAR_MARKET_LAST_PRICE (field 29) = today's last
+  // regular-session trade. Field 3 (LAST_PRICE) includes after-hours and
+  // field 12 (CLOSE_PRICE) is yesterday's close — neither matches Schwab UI.
+  const displayLast = quote?.regularLast ?? quote?.last ?? null;
+  const lastStr = displayLast != null ? `$${fmtPrice(displayLast)}` : "—";
 
   const changeStr = rawChange !== null
     ? isUp   ? `+$${fmtPrice(rawChange)}`

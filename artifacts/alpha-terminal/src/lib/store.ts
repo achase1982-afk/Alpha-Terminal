@@ -4,6 +4,7 @@ import { persist } from 'zustand/middleware';
 export interface LiveQuote {
   symbol:       string;
   last:         number | null;
+  regularLast:  number | null;
   extendedLast: number | null;
   bid:          number | null;
   ask:          number | null;

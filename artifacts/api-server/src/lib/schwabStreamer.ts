@@ -9,7 +9,8 @@ import { emitTelemetry } from "./telemetryStore.js";
 
 export interface LiveQuote {
   symbol:       string;
-  last:         number | null;
+  last:         number | null;   // field 3  — last trade incl. extended hours
+  regularLast:  number | null;   // field 29 — regular-session last (Schwab UI "Last")
   extendedLast: number | null;
   bid:          number | null;
   ask:          number | null;
@@ -20,7 +21,7 @@ export interface LiveQuote {
   volume:       number | null;
   high:         number | null;
   low:          number | null;
-  close:        number | null;
+  close:        number | null;   // field 12 — PREVIOUS day's close (used for change calc)
   ts:           number;
 }
 
@@ -571,18 +572,23 @@ function processEquityTick(content: Record<string, unknown>[]) {
 
     const existing = quoteCache.get(symbol);
     const last = numOrNull(item["3"]) ?? existing?.last ?? null;
+    const regularLast = numOrNull(item["29"]) ?? existing?.regularLast ?? null;
     const close = numOrNull(item["12"]) ?? existing?.close ?? null;
 
+    // Day change is from PREVIOUS close → today's regular-session last (or
+    // extended last if regular not yet set).
+    const refLast = regularLast ?? last;
     let change: number | null = existing?.change ?? null;
     let changePct: number | null = existing?.changePct ?? null;
-    if (last !== null && close !== null && close !== 0) {
-      change = last - close;
+    if (refLast !== null && close !== null && close !== 0) {
+      change = refLast - close;
       changePct = (change / close) * 100;
     }
 
     const quote: LiveQuote = {
       symbol,
       last,
+      regularLast,
       extendedLast: last,
       bid: numOrNull(item["1"]) ?? existing?.bid ?? null,
       ask: numOrNull(item["2"]) ?? existing?.ask ?? null,

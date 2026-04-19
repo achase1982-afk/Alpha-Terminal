@@ -16,6 +16,7 @@ export interface QuoteData {
   symbol:           string;
   description:      string | null;
   last:             number | null;
+  regularLast:      number | null;
   extendedLast:     number | null;
   bid:              number | null;
   ask:              number | null;
@@ -78,6 +79,7 @@ export function useQuote(symbol: string) {
     symbol:           symUpper,
     description,
     last:             streamQuote?.last         ?? null,
+    regularLast:      streamQuote?.regularLast  ?? null,
     extendedLast:     streamQuote?.extendedLast ?? null,
     bid:              streamQuote?.bid          ?? null,
     ask:              streamQuote?.ask          ?? null,
