@@ -3,7 +3,7 @@ import type { Server as HttpServer, IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { verifyToken } from "@clerk/express";
 import { logger } from "./logger.js";
-import { getSnapshot, getStreamerStatus, registerWsBroadcast } from "./schwabStreamer.js";
+import { getSnapshot, getStreamerStatus, registerWsBroadcast, addSymbols, addOptionSymbols } from "./schwabStreamer.js";
 import { getTokens } from "./tokenStore.js";
 
 const WS_PATH = "/api/ws/prices";
@@ -184,6 +184,28 @@ async function fetchAndPushPortfolio(ws: WebSocket) {
     if (accounts.length > 0) {
       const mapped = mapAccount(accounts[0]);
       ws.send(JSON.stringify({ event: "portfolioAccount", data: mapped }));
+
+      // Subscribe every portfolio symbol to the live streamer so the LAST
+      // column populates for ALL holdings (not just whichever ticker the
+      // user happens to have selected/charted). Equity underlyings go to
+      // LEVELONE_EQUITIES, options go to LEVELONE_OPTIONS.
+      try {
+        const equityUnderlyings = new Set<string>();
+        const optionSymbols = new Set<string>();
+        for (const p of mapped.positions ?? []) {
+          if (!p.symbol) continue;
+          if (p.assetType === "OPTION") {
+            optionSymbols.add(p.symbol);
+            if (p.underlyingSymbol) equityUnderlyings.add(p.underlyingSymbol);
+          } else if (p.assetType === "EQUITY" || p.assetType === "ETF" || p.assetType === "COLLECTIVE_INVESTMENT") {
+            equityUnderlyings.add(p.symbol);
+          }
+        }
+        if (equityUnderlyings.size > 0) addSymbols([...equityUnderlyings]);
+        if (optionSymbols.size > 0) addOptionSymbols([...optionSymbols]);
+      } catch (subErr) {
+        logger.debug({ err: subErr }, "Portfolio streamer subscription failed");
+      }
     }
   } catch (err) {
     logger.debug({ err }, "Portfolio WS account poll failed");
