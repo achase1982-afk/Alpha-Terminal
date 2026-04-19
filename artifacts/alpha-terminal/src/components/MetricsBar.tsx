@@ -320,7 +320,11 @@ export function MetricsBar({ compact = false, onOpenTearSheet, onTrade }: Metric
   const isFlat = rawChange !== null && rawChange === 0;
   const priceColor = isDown ? DOWN_COLOR : isUp ? UP_COLOR : FLAT_COLOR;
 
-  const lastStr = quote?.last != null ? `$${fmtPrice(quote.last)}` : "—";
+  // Schwab-style "Last": prefer the regular-session close (streamer field 12)
+  // over the last trade tick (field 3). Matches the portfolio LAST column and
+  // the price shown in Schwab's own asset page.
+  const displayLast = quote?.close ?? quote?.last ?? null;
+  const lastStr = displayLast != null ? `$${fmtPrice(displayLast)}` : "—";
 
   const changeStr = rawChange !== null
     ? isUp   ? `+$${fmtPrice(rawChange)}`
