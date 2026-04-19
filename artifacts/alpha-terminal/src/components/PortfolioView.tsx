@@ -683,11 +683,10 @@ function PositionTableRow({
 
   const eqTickDir = useTickFlash(group.underlying);
   const markColor = eqTickDir === "up" ? C.green : eqTickDir === "down" ? C.red : C.text;
-  // Schwab-style "Last": use the regular-session CLOSE price (streamer field
-  // 12) — that's what the Schwab UI shows. Only fall back to the last trade
-  // tick if close hasn't arrived yet.
-  const streamQuote = useTerminalStore(s => s.streamPrices[group.underlying.toUpperCase()] as { last?: number; close?: number } | undefined);
-  const streamPrice = streamQuote?.close ?? streamQuote?.last ?? null;
+  // Schwab "Last" = field 3 (LAST_PRICE) = most recent trade. Field 12 is
+  // the PREVIOUS day's close, not today's, so it must NOT be used here.
+  const streamQuote = useTerminalStore(s => s.streamPrices[group.underlying.toUpperCase()] as { last?: number } | undefined);
+  const streamPrice = streamQuote?.last ?? null;
 
   const rowBg = "transparent";
   const stickyBg = "#000";
