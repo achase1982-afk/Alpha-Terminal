@@ -1189,6 +1189,25 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
     } catch {}
     return DEFAULT_METRICS;
   });
+  type SortDir = "asc" | "desc";
+  type SortField = ColumnKey | "symbol";
+  const [sortKey, setSortKey] = useState<SortField | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+  // Click cycles: none → desc → asc → none
+  const cycleSort = useCallback((key: SortField) => {
+    if (sortKey === key && sortDir === "asc") {
+      setSortKey(null);
+      setSortDir("desc");
+      return;
+    }
+    if (sortKey === key && sortDir === "desc") {
+      setSortDir("asc");
+      return;
+    }
+    setSortKey(key);
+    setSortDir("desc");
+  }, [sortKey, sortDir]);
+
   const [visibleColumns, setVisibleColumns] = useState<ColumnKey[]>(() => {
     try {
       const stored = localStorage.getItem(COLUMNS_STORAGE_KEY);
@@ -1318,6 +1337,8 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
   }, [accountHash, fetchOrders]);
 
 
+  const streamPricesAll = useTerminalStore(s => s.streamPrices);
+
   const symbolGroups = useMemo(() => {
     const positions = account?.positions ?? [];
     const groupMap = new Map<string, SymbolGroup>();
@@ -1331,8 +1352,68 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
       g.totalPL += pos.longOpenProfitLoss;
       g.totalMaint += pos.maintenanceRequirement;
     }
-    return Array.from(groupMap.values()).sort((a, b) => Math.abs(b.totalMarketValue) - Math.abs(a.totalMarketValue));
-  }, [account]);
+    const groups = Array.from(groupMap.values());
+
+    // Default ordering: largest absolute net liq first.
+    const defaultSort = (a: SymbolGroup, b: SymbolGroup) =>
+      Math.abs(b.totalMarketValue) - Math.abs(a.totalMarketValue);
+
+    if (!sortKey) {
+      return groups.sort(defaultSort);
+    }
+
+    // Pull a sortable value out of a group for the chosen column.
+    const valueFor = (g: SymbolGroup): number | string | null => {
+      if (sortKey === "symbol") return g.underlying;
+      const sq = streamPricesAll[g.underlying.toUpperCase()] as { last?: number; close?: number; change?: number; changePct?: number } | undefined;
+      const lastPx = sq?.close ?? sq?.last ?? null;
+      const costBasis = g.totalMarketValue - g.totalPL;
+      const plPct = Math.abs(g.totalMarketValue) > 0.01 ? (g.totalPL / Math.abs(g.totalMarketValue)) * 100 : 0;
+      const prev = g.totalMarketValue - g.totalDayPL;
+      const dayPct = Math.abs(prev) > 0.01 ? (g.totalDayPL / Math.abs(prev)) * 100 : 0;
+      switch (sortKey) {
+        case "mark":
+        case "last":
+        case "todayClose":
+        case "yesterdayClose":
+          return lastPx;
+        case "plOpen":     return g.totalPL;
+        case "plPct":      return plPct;
+        case "plDay":      return g.totalDayPL;
+        case "markChg":    return g.totalDayPL;
+        case "markPctChg": return dayPct;
+        case "netLiq":
+        case "mktVal":     return g.totalMarketValue;
+        case "totalCost":  return costBasis;
+        case "maint":
+        case "margin":     return g.totalMaint;
+        case "bpEffect":   return g.totalMaint > 0 ? -g.totalMaint : null;
+        case "qty":        return g.equity ? (g.equity.longQuantity || g.equity.shortQuantity) : g.options.length;
+        case "cost":
+        case "tradePrice": {
+          if (g.equity) return g.equity.averagePrice;
+          const tc = g.options.reduce((s, o) => s + (o.longQuantity || o.shortQuantity), 0);
+          return tc > 0 ? g.options.reduce((s, o) => s + o.averagePrice * (o.longQuantity || o.shortQuantity), 0) / tc : null;
+        }
+        case "instrumentType": return g.equity ? "EQUITY" : "OPTION";
+        default: return null;
+      }
+    };
+
+    const dirMul = sortDir === "asc" ? 1 : -1;
+    return groups.sort((a, b) => {
+      const va = valueFor(a);
+      const vb = valueFor(b);
+      // Push nulls to the bottom regardless of direction.
+      if (va == null && vb == null) return defaultSort(a, b);
+      if (va == null) return 1;
+      if (vb == null) return -1;
+      if (typeof va === "string" && typeof vb === "string") {
+        return va.localeCompare(vb) * dirMul;
+      }
+      return ((va as number) - (vb as number)) * dirMul;
+    });
+  }, [account, sortKey, sortDir, streamPricesAll]);
 
   const totalUnrealized = useMemo(() => (account?.positions ?? []).reduce((s, p) => s + p.longOpenProfitLoss, 0), [account]);
   const totalMarketValue = useMemo(() => (account?.positions ?? []).reduce((s, p) => s + p.marketValue, 0), [account]);
@@ -1750,7 +1831,15 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
                   <tr>
                     <th className="pf-sticky-col" style={{ background: "#0e0e0e", padding: "6px 8px 6px 12px", borderBottom: `1px solid ${C.borderHi}`, minWidth: SYM_COL_W, textAlign: "left" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <span style={{ fontSize: 12, fontWeight: 500, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5 }}>Symbol</span>
+                        <button
+                          onClick={() => cycleSort("symbol")}
+                          style={{ padding: 0, background: "transparent", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 3, fontFamily: "inherit" }}
+                        >
+                          <span style={{ fontSize: 12, fontWeight: 500, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5 }}>Symbol</span>
+                          {sortKey === "symbol" && (
+                            <span style={{ fontSize: 9, color: C.dim }}>{sortDir === "asc" ? "▲" : "▼"}</span>
+                          )}
+                        </button>
                         <button aria-label="Column settings" onClick={() => setShowColumnSettings(x => !x)} style={{ padding: 2, background: "transparent", border: "none", cursor: "pointer" }}>
                           <Settings style={{ width: 13, height: 13, color: showColumnSettings ? C.gold : C.dim }} />
                         </button>
@@ -1759,9 +1848,16 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
                     {visibleColumns.map(key => {
                       const col = COLUMN_MAP.get(key);
                       if (!col) return null;
+                      const isActive = sortKey === key;
                       return (
-                        <th key={key} style={{ padding: "6px 8px", background: "#0e0e0e", borderBottom: `1px solid ${C.borderHi}`, whiteSpace: "nowrap", textAlign: "center", fontWeight: 600 }}>
-                          <span style={{ fontSize: 11, fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: 0.6 }}>{col.label}</span>
+                        <th key={key} style={{ padding: 0, background: "#0e0e0e", borderBottom: `1px solid ${C.borderHi}`, whiteSpace: "nowrap", textAlign: "center", fontWeight: 600 }}>
+                          <button
+                            onClick={() => cycleSort(key)}
+                            style={{ padding: "6px 8px", background: "transparent", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 3, width: "100%", fontFamily: "inherit" }}
+                          >
+                            <span style={{ fontSize: 11, fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: 0.6 }}>{col.label}</span>
+                            {isActive && <span style={{ fontSize: 9, color: C.dim }}>{sortDir === "asc" ? "▲" : "▼"}</span>}
+                          </button>
                         </th>
                       );
                     })}

@@ -675,7 +675,7 @@ function ColumnHeader({
     <button
       onClick={() => onSort(indicator.sortKey)}
       className="font-mono tracking-wider text-right flex items-center justify-end gap-0.5 transition-colors"
-      style={{ color: active ? "#FFB800" : "#71717a", padding: "4px 6px", fontSize: 12 }}
+      style={{ color: "#71717a", padding: "4px 6px", fontSize: 12 }}
     >
       <span>{indicator.label}</span>
       {active && <span style={{ fontSize: 8 }}>{sortDir === "asc" ? "▲" : "▼"}</span>}
@@ -971,7 +971,7 @@ export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sy
                   <button
                     onClick={() => handleSort("symbol")}
                     className="font-mono tracking-wider flex items-center gap-0.5 transition-colors"
-                    style={{ color: sortKey === "symbol" ? "#FFB800" : "#71717a", fontSize: 12 }}
+                    style={{ color: "#71717a", fontSize: 12 }}
                   >
                     Symbol
                     {sortKey === "symbol" && <span style={{ fontSize: 8 }}>{sortDir === "asc" ? "▲" : "▼"}</span>}
