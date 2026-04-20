@@ -1,0 +1,41 @@
+On it. Starting with the diagnosis in parallel: env vars, the cron registration, the sync code, and recent logs.
+Good news on creds — both POLYGON_S3_ACCESS_KEY and POLYGON_S3_SECRET_KEY are present in this env. Let me check if the schedule actually registered on boot and whether there are any prior sync attempts in logs.
+Strategy: skip the log archaeology — there's a manual sync endpoint already wired (POST /api/unusual-options/sync). Let me run the backfill directly. First, find the api-server's port and trigger it. I'll also add the boot/observability logging the user asked for in parallel.
+Server's up on port 8080, schedule is configured: true. The observability logging is already in the code (boot config line, schedule line, sync start/complete/failed lines, catchup found-or-backfilling line). So step 6 is already done — no code change needed.
+
+Now to actually test S3 connectivity with a single date, then backfill the full range. Starting with April 17 (Friday) as a single test:
+Let me restart the api-server to get a clean log stream and immediately test the sync to see what's actually happening:
+Direct S3 test — bypassing the api-server entirely to isolate whether it's an S3 connectivity issue or a server-side issue:
+S3 connectivity works, credentials are valid — but the directory has zero files. The path format must be different. Let me browse the bucket structure:
+Found the root cause. The S3 path format is wrong.
+
+Code expects: us_options_opra/day_aggs_v1/year=2026/month=04/day=17/... (Hive-partition format)
+Bucket actually uses: us_options_opra/day_aggs_v1/2026/04/2026-04-17.csv.gz (flat per-month with one file per day)
+That's a stale path format — Polygon (now Massive) restructured. Every list returned 0 files, so syncDate returned "No files found" without writing to polygon_sync_log (silent failure path the user predicted). Plus there's no errors logged.
+
+Let me also peek at the CSV format to make sure parsing will work, then fix both.
+Now I have everything I need. CSV has ticker,volume,open,close,high,low,window_start,transactions — no OI/vwap columns (those will be null, which the parser handles). Time to fix the path and run the backfill.
+Server is up. The earlier curl probably timed out silently while waiting for the sync. Let me check status and DB:
+Sync started in background (it defaults to 30 days). Let me watch progress:
+The pipeline is now alive. 20,203 rows inserted for 2026-04-17, status synced, no error. The path fix worked.
+
+Let me verify a few more days completed and the data looks reasonable:
+The fix is validated — the silent failure mode is fixed and the pipeline is now ingesting data. The 30-day backfill is running in the background. Let me check progress one more time, then run the code review:
+The fix is validated and the pipeline is alive. Now let me run code review on the change:
+The architect flagged two tight follow-ups in the same file that directly relate to the silent-failure pattern that wasted us so much debug time. Let me fix both:
+Now fix the silent "no files" return — write a polygon_sync_log row so we never get blindsided again:
+Good — status is free-text, "no_data" is safe. Now restart and verify nothing broke:
+Server is back up, the previously-synced row is intact, and the fix is now hardened against the same class of silent failure.
+
+Quick summary of what shipped:
+
+Root cause — The S3 path builder in the flat-files sync pointed at the old Hive layout (year=YYYY/month=MM/day=DD/), but the bucket was restructured to YYYY/MM/YYYY-MM-DD.csv.gz. Every list returned zero files, and the early-return path didn't write anything to the sync log, so the failure was invisible.
+
+Fixes in polygonFlatFiles.ts:
+
+Path corrected to the current per-month flat layout. Verified end-to-end: 20,203 rows ingested for 2026-04-17 (SPY/QQQ/NVDA/AAPL/TSLA).
+No-data days now logged with status: "no_data" so future prefix breakage or unpublished dates surface immediately in /api/unusual-options/status instead of looking healthy.
+maxS3 env parsing hardened — a malformed POLYGON_FLATFILES_MAX_S3_REQUESTS (e.g. "1d") used to become NaN and silently disable the cap on direct calls. Now falls back to 200.
+Backfill in progress — The 30-day request you triggered is running serially in the background (each day = S3 download + gunzip + parse + insert, ~30s/day). The daily cron at 22:30 UTC will keep it current going forward.
+
+Next up whenever you're ready: wiring the trailing options-volume baselines from polygon_options_history into the deterministic scanner's Flow bucket — that's the original "fold unusual flow into the 130-stock scan" goal that depended on this pipeline being alive.
