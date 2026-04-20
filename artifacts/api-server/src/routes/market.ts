@@ -1057,11 +1057,11 @@ router.get("/options", async (req, res) => {
         contractType: "ALL",
       });
       if (isFuturesSymbol) {
-        // Schwab's futures /chains endpoint rejects range=ALL with HTTP 400
-        // ("Check Param Values"). Use strikeCount instead.
-        params.set("assetClass", "FUTURES");
+        // Schwab's /chains endpoint does NOT accept assetClass=FUTURES — it
+        // rejects with HTTP 400 "Invalid Paramter/Value". Drop assetClass and
+        // pass only symbol + contractType + strikeCount, letting Schwab infer
+        // the futures asset class from the leading "/" in the symbol.
         params.set("strikeCount", "30");
-        params.set("range", "NTM");
       } else {
         params.set("range", "ALL");
       }
