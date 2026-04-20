@@ -7,6 +7,7 @@ import { desc, eq, inArray, and, gte, lte, sql } from "drizzle-orm";
 import { getSettings, type StrategistConfig } from "./strategistSettings.js";
 import { getCachedRegime, buildFallbackRegime, type StructuredRegime } from "./regimePostProcessor.js";
 import { computeIOScore } from "./ioScoreEngine.js";
+import { getPolygonFlowHighlightsBulk, unusualFlowBonusPoints, type PolygonFlowHighlights } from "./polygonFlowHighlights.js";
 
 const SCHWAB_API = "https://api.schwabapi.com/marketdata/v1";
 const SCHWAB_TRADER = "https://api.schwabapi.com/trader/v1";
@@ -965,6 +966,8 @@ export async function runDiscoveryScan(
     directionalLean: "BULLISH" | "BEARISH" | "MIXED";
     quote: { lastPrice: number; totalVolume: number; netPercentChange: number }; candles: Candle[];
     ivr: number; iv30d: number | null; atmSpreadPct: number;
+    polygonHighlights?: PolygonFlowHighlights | null;
+    unusualFlowBonus?: number;
   }> = [];
 
   for (const sym of passedSymbols) {
@@ -1111,6 +1114,29 @@ export async function runDiscoveryScan(
     }
   }
 
+  // ── Unusual options activity bonus (Polygon per-strike highlights) ──
+  // Bulk-fetch Polygon highlights for every scored ticker, then add up to
+  // +10 points for tickers showing real unusual options activity. This lets
+  // the scanner surface tickers where smart money is paying up even if the
+  // underlying price hasn't moved enough to score on trend/RS alone.
+  const polygonHighlightsMap = await getPolygonFlowHighlightsBulk(scoredResults.map(r => r.symbol));
+  const unusualFlowApplied: Array<{ sym: string; bonus: number; strikes: number; skew: string }> = [];
+  for (const r of scoredResults) {
+    const h = polygonHighlightsMap.get(r.symbol.toUpperCase()) ?? null;
+    r.polygonHighlights = h;
+    const bonus = unusualFlowBonusPoints(h);
+    if (bonus > 0) {
+      r.unusualFlowBonus = bonus;
+      r.totalScore = Math.min(100, r.totalScore + bonus);
+      unusualFlowApplied.push({ sym: r.symbol, bonus, strikes: h!.unusualStrikeCount, skew: h!.unusualSkew });
+    }
+  }
+  if (unusualFlowApplied.length > 0) {
+    emitTelemetry("SCANNER", "INFO",
+      `Unusual flow bonus applied to ${unusualFlowApplied.length} tickers (top: ${unusualFlowApplied.slice(0, 5).map(x => `${x.sym}+${x.bonus}/${x.strikes}/${x.skew}`).join(", ")})`,
+      { applied: unusualFlowApplied }, "SCANNER", scanBatch);
+  }
+
   scoredResults.sort((a, b) => b.totalScore - a.totalScore);
   const aboveThreshold = scoredResults.filter(r => r.totalScore >= minScore);
 
@@ -1155,6 +1181,21 @@ export async function runDiscoveryScan(
       .filter((v, i, a) => a.findIndex(e => e.date === v.date && e.title === v.title) === i)
       .sort((a, b) => a.date.localeCompare(b.date)).slice(0, 8);
 
+    const h = r.polygonHighlights ?? null;
+    const unusualFlow = h && h.unusualStrikeCount > 0
+      ? {
+          asOfDate: h.asOfDate,
+          unusualStrikeCount: h.unusualStrikeCount,
+          skew: h.unusualSkew,
+          bonusPoints: r.unusualFlowBonus ?? 0,
+          largestPrintVolume: h.largestPrint?.volume ?? 0,
+          largestPrintDescription: h.largestPrint
+            ? `${h.largestPrint.volume.toLocaleString()} contracts on ${r.symbol} ${h.largestPrint.expiration} $${h.largestPrint.strike}${h.largestPrint.optionType === "call" ? "C" : "P"}`
+            : null,
+          putCallVolumeRatio: h.putCallVolumeRatio,
+        }
+      : undefined;
+
     return {
       symbol: r.symbol,
       totalScore: r.totalScore,
@@ -1168,8 +1209,10 @@ export async function runDiscoveryScan(
       price: r.quote.lastPrice,
       changePct: r.quote.netPercentChange,
       sector: getSector(r.symbol),
-      keyStatLabel: r.flowDataAvailable ? "Flow" : "IV Setup",
-      keyStatValue: r.flowDataAvailable ? `${r.flowDivergence}/25` : `${r.ivSetup}/25`,
+      keyStatLabel: unusualFlow ? "Unusual Flow" : (r.flowDataAvailable ? "Flow" : "IV Setup"),
+      keyStatValue: unusualFlow
+        ? `${unusualFlow.unusualStrikeCount} strikes ${unusualFlow.skew}`
+        : (r.flowDataAvailable ? `${r.flowDivergence}/25` : `${r.ivSetup}/25`),
       ivr: Math.round(r.ivr * 10) / 10,
       atmIV: 0,
       atmSpreadPct: r.atmSpreadPct,

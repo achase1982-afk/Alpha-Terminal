@@ -63,6 +63,15 @@ export interface DetCandidate {
     flowDivergence: number;
     emergingRS: number;
   };
+  unusualFlow?: {
+    asOfDate: string;
+    unusualStrikeCount: number;
+    skew: "bullish" | "bearish" | "balanced" | "none";
+    bonusPoints: number;
+    largestPrintVolume: number;
+    largestPrintDescription: string | null;
+    putCallVolumeRatio: number;
+  };
 }
 
 interface DetScanResult {
@@ -241,6 +250,32 @@ const DeterministicCard = memo(function DeterministicCard({
               </div>
               {candidate.hasWeeklyOptions && (
                 <span className="text-[10px] text-zinc-500 border border-zinc-700 rounded px-1.5 py-0.5 inline-block">WEEKLYS</span>
+              )}
+              {candidate.unusualFlow && (
+                <div className="space-y-1 mt-1">
+                  <span
+                    className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full w-fit"
+                    style={{
+                      color: candidate.unusualFlow.skew === "bullish" ? "#2ecc71"
+                        : candidate.unusualFlow.skew === "bearish" ? "#ff4b5c"
+                        : "#FFB800",
+                      background: candidate.unusualFlow.skew === "bullish" ? "rgba(46,204,113,0.12)"
+                        : candidate.unusualFlow.skew === "bearish" ? "rgba(255,75,92,0.12)"
+                        : "rgba(255,184,0,0.12)",
+                      border: `1px solid ${candidate.unusualFlow.skew === "bullish" ? "rgba(46,204,113,0.3)"
+                        : candidate.unusualFlow.skew === "bearish" ? "rgba(255,75,92,0.3)"
+                        : "rgba(255,184,0,0.3)"}`,
+                    }}
+                    title={candidate.unusualFlow.largestPrintDescription ?? undefined}
+                  >
+                    UNUSUAL FLOW · +{candidate.unusualFlow.bonusPoints} · {candidate.unusualFlow.unusualStrikeCount} strikes {candidate.unusualFlow.skew.toUpperCase()}
+                  </span>
+                  {candidate.unusualFlow.largestPrintDescription && (
+                    <div className="text-[10px] text-zinc-500 truncate" title={candidate.unusualFlow.largestPrintDescription}>
+                      Largest: {candidate.unusualFlow.largestPrintDescription}
+                    </div>
+                  )}
+                </div>
               )}
               {candidate.microOverrideEligible && (
                 <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full w-fit"

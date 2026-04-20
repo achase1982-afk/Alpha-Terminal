@@ -183,6 +183,99 @@ async function boot() {
     void maybeCatchupSnapshot();
   }
   scheduleDailySnapshot();
+
+  // ── Polygon S3 flat-files daily sync ────────────────────────────────────
+  // Pulls full per-strike options trades from Polygon S3 and writes to
+  // polygon_options_history. Runs once a day at 22:30 UTC (~6:30pm ET, after
+  // EOD files publish) for the prior trading day. Boot-time catchup also
+  // scans the last 5 trading days for any gaps.
+  function schedulePolygonFlatFilesSync() {
+    if (!process.env.POLYGON_S3_ACCESS_KEY || !process.env.POLYGON_S3_SECRET_KEY) {
+      logger.warn("Polygon flat-files sync: S3 creds not configured — skipping schedule");
+      return;
+    }
+
+    const US_HOLIDAYS = [
+      "2026-01-01","2026-01-19","2026-02-16","2026-04-03",
+      "2026-05-25","2026-06-19","2026-07-03","2026-09-07",
+      "2026-11-26","2026-12-25",
+    ];
+    function isTradingDay(d: Date): boolean {
+      const day = d.getUTCDay();
+      if (day === 0 || day === 6) return false;
+      return !US_HOLIDAYS.includes(d.toISOString().slice(0, 10));
+    }
+    function priorTradingDay(from: Date): Date {
+      const d = new Date(from);
+      d.setUTCDate(d.getUTCDate() - 1);
+      while (!isTradingDay(d)) d.setUTCDate(d.getUTCDate() - 1);
+      return d;
+    }
+
+    async function runFlatFilesSync(target: Date) {
+      try {
+        const { syncDate } = await import("./lib/polygonFlatFiles.js");
+        const tickers = [...LIQUID_CORE_SYMBOLS];
+        const iso = target.toISOString().slice(0, 10);
+        logger.info({ date: iso, tickers: tickers.length }, "Polygon flat-files sync: starting");
+        const result = await syncDate(target, tickers);
+        logger.info({ ...result }, "Polygon flat-files sync: complete");
+      } catch (err) {
+        logger.error({ err }, "Polygon flat-files sync: failed");
+      }
+    }
+
+    function scheduleNext() {
+      const now = new Date();
+      const target = new Date(now);
+      target.setUTCHours(22, 30, 0, 0);
+      if (target.getTime() <= now.getTime()) {
+        target.setUTCDate(target.getUTCDate() + 1);
+      }
+      const ms = target.getTime() - now.getTime();
+      logger.info({ targetUTC: target.toISOString(), msUntil: ms }, "Polygon flat-files sync scheduled (22:30 UTC daily)");
+      setTimeout(() => {
+        const tradeDay = priorTradingDay(new Date());
+        void runFlatFilesSync(tradeDay).then(() => scheduleNext());
+      }, ms);
+    }
+
+    // Boot-time catchup: scan last 5 trading days, sync any not yet "synced".
+    async function bootCatchup() {
+      try {
+        const { db: dbRef, polygonSyncLogTable } = await import("@workspace/db");
+        const { inArray } = await import("drizzle-orm");
+        const days: Date[] = [];
+        let cursor = priorTradingDay(new Date());
+        for (let i = 0; i < 5; i++) {
+          days.push(new Date(cursor));
+          cursor = priorTradingDay(cursor);
+        }
+        const isos = days.map(d => d.toISOString().slice(0, 10));
+        const existing = await dbRef
+          .select({ tradeDate: polygonSyncLogTable.tradeDate, status: polygonSyncLogTable.status })
+          .from(polygonSyncLogTable)
+          .where(inArray(polygonSyncLogTable.tradeDate, isos));
+        const synced = new Set(existing.filter(r => r.status === "synced").map(r => r.tradeDate));
+        const missing = days.filter(d => !synced.has(d.toISOString().slice(0, 10)));
+        if (missing.length === 0) {
+          logger.info({ checked: isos.length }, "Polygon flat-files catchup: all recent days synced");
+          return;
+        }
+        logger.warn({ missing: missing.map(d => d.toISOString().slice(0, 10)) }, "Polygon flat-files catchup: backfilling missing days");
+        for (const d of missing) {
+          await runFlatFilesSync(d);
+        }
+      } catch (err) {
+        logger.error({ err }, "Polygon flat-files catchup: failed");
+      }
+    }
+
+    scheduleNext();
+    setTimeout(() => { void bootCatchup(); }, 60_000);
+  }
+  schedulePolygonFlatFilesSync();
+
   await migrateAiLabSeedData();
   initAiLabOrchestrator();
   startUniverseRebuildSchedule();

@@ -75,6 +75,15 @@ export interface ScanCandidate {
     flowDivergence: number;
     emergingRS: number;
   };
+  unusualFlow?: {
+    asOfDate: string;
+    unusualStrikeCount: number;
+    skew: "bullish" | "bearish" | "balanced" | "none";
+    bonusPoints: number;
+    largestPrintVolume: number;
+    largestPrintDescription: string | null;
+    putCallVolumeRatio: number;
+  };
 }
 
 export interface ScanResult {

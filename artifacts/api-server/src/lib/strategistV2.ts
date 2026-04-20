@@ -7,6 +7,7 @@ import { db, strategistTelemetryTable } from "@workspace/db";
 import { desc, eq, sql, and } from "drizzle-orm";
 import { getBestAccessToken } from "./tokenStore.js";
 import { fetchPolygonChain } from "./polygonChain.js";
+import { getPolygonFlowHighlights, type PolygonFlowHighlights } from "./polygonFlowHighlights.js";
 import { checkEventConflicts, getUpcomingEvents } from "./calendarEventChecker.js";
 import { getNextEarningsDate } from "./earningsService.js";
 import { evaluateCatalyst, deriveTradeDirection, type CatalystEvaluation } from "./catalystEvaluator.js";
@@ -461,7 +462,19 @@ export async function analyzeTickerV2(
     })),
   }, "StrategistV2: expirations being sent to AI model");
 
-  const dataPackage = buildDataPackage(ticker, tickerData, chainSummary, ioScore, regime, settings);
+  const polygonHighlights = await getPolygonFlowHighlights(ticker);
+  if (polygonHighlights) {
+    logger.info({
+      ticker,
+      asOfDate: polygonHighlights.asOfDate,
+      unusualStrikes: polygonHighlights.unusualStrikeCount,
+      unusualSkew: polygonHighlights.unusualSkew,
+    }, "StrategistV2: Polygon flow highlights loaded");
+  } else {
+    logger.info({ ticker }, "StrategistV2: no Polygon flow highlights for ticker");
+  }
+
+  const dataPackage = buildDataPackage(ticker, tickerData, chainSummary, ioScore, regime, settings, polygonHighlights);
 
   const isDebateMode = settings.strategistMode === 2;
   status(isDebateMode ? "Starting strategist debate…" : "Calling AI for trade recommendation…");
@@ -1108,6 +1121,7 @@ function buildDataPackage(
   ioScore: IOScoreResult,
   regime: StructuredRegime,
   settings: StrategistConfig,
+  polygonHighlights: PolygonFlowHighlights | null,
 ): string {
   const pkg: Record<string, unknown> = {
     ticker,
@@ -1138,6 +1152,20 @@ function buildDataPackage(
     },
     curatedExpirations: chainSummary.curatedExpirations,
     availableExpirations: chainSummary.availableExpirations,
+    polygonFlowHighlights: polygonHighlights ? {
+      asOfDate: polygonHighlights.asOfDate,
+      totalCallVolume: polygonHighlights.totalCallVolume,
+      totalPutVolume: polygonHighlights.totalPutVolume,
+      putCallVolumeRatio: polygonHighlights.putCallVolumeRatio,
+      unusualStrikeCount: polygonHighlights.unusualStrikeCount,
+      unusualSkew: polygonHighlights.unusualSkew,
+      unusualCallVolume: polygonHighlights.unusualCallVolume,
+      unusualPutVolume: polygonHighlights.unusualPutVolume,
+      topByVolume: polygonHighlights.topByVolume,
+      topByVolOiRatio: polygonHighlights.topByVolOiRatio,
+      largestPrint: polygonHighlights.largestPrint,
+      sourceNote: "Polygon end-of-day per-strike snapshot — use these prints to assess whether positioning is concentrated bullish/bearish, where smart money is paying up, and whether to anchor strikes/expirations to actual flow rather than chain mid-prices alone.",
+    } : { available: false, note: "No Polygon per-strike data on file for this ticker — fall back to optionsChainSummary.unusualActivity." },
     ioScore: {
       final: ioScore.final,
       classification: ioScore.classification,
