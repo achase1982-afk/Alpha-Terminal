@@ -1028,7 +1028,24 @@ router.get("/options", async (req, res) => {
       return res.json({ symbol: displaySymbol, calls: [], puts: [], error: "no_token" });
     }
 
-    const chainSymbol = isFuturesSymbol ? displaySymbol : isIndexSymbol ? formatSchwabSymbol(displaySymbol) : displaySymbol;
+    // Schwab's REST /chains endpoint does NOT serve futures option chains —
+    // every variant (with/without assetClass, range, strikeCount, full vs root
+    // contract symbol) returns HTTP 400 "Invalid Paramter/Value". The proper
+    // path for futures options is to enumerate CME contract specs locally and
+    // subscribe via the LEVELONE_FUTURES_OPTIONS streamer service. Until that
+    // pipeline is built, return a structured "unsupported" response instead of
+    // hammering Schwab REST for guaranteed failures.
+    if (isFuturesSymbol) {
+      return res.json({
+        symbol: displaySymbol,
+        calls: [],
+        puts: [],
+        error: "futures_chain_unsupported",
+        message: "Futures option chains are not available via Schwab REST. Streamer-based chain build is pending.",
+      });
+    }
+
+    const chainSymbol = isIndexSymbol ? formatSchwabSymbol(displaySymbol) : displaySymbol;
     const useSplit = LARGE_CHAIN_SYMBOLS.has(displaySymbol.toUpperCase()) || LARGE_CHAIN_SYMBOLS.has(chainSymbol.toUpperCase());
 
     req.log.info({ symbol: displaySymbol, chainSymbol, isIndexSymbol, isFuturesSymbol, useSplit }, "Options chain Schwab request");
