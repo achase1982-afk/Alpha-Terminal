@@ -141,6 +141,35 @@ let disconnectedAt: number | null = null;
 let fiveMinCriticalSent = false;
 let acctActivitySubTimeout: ReturnType<typeof setTimeout> | null = null;
 
+// ── Reconnect resilience (fixes 1006 loop) ────────────────────────────
+// The Schwab streamer frequently drops with WS code 1006 ("abnormal close,
+// no close frame") due to NAT idle timeouts, TCP resets, or the server
+// closing after a stale token during LOGIN. The original code had no
+// keepalive, no connect/login timeouts, and only reset backoff on LOGIN
+// success — so a 1006 during CONNECT produced unbounded backoff growth
+// (capped at 60s) and never triggered a token refresh. These state vars
+// + timers close those gaps.
+const CONNECT_TIMEOUT_MS = 15_000;      // time to complete WS handshake
+const LOGIN_RESPONSE_TIMEOUT_MS = 10_000; // time for LOGIN reply after open
+const PING_INTERVAL_MS = 20_000;        // client-initiated ping cadence
+const PONG_TIMEOUT_MS = 45_000;         // no pong → force-close
+const ABNORMAL_CLOSE_REFRESH_THRESHOLD = 3; // 1006-before-login count → force token refresh
+let connectTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
+let loginTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
+let pingIntervalTimer: ReturnType<typeof setInterval> | null = null;
+let pongWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
+let consecutiveAbnormalCloses = 0;
+let consecutiveLoginFailures = 0;     // tracks LOGIN-after-TCP-open failures
+let forceTokenRefreshOnNextConnect = false;
+let connectAttemptStartedAt: number | null = null; // when current handshake began (age-gates CONNECTING termination)
+
+function clearLifecycleTimers(): void {
+  if (connectTimeoutTimer) { clearTimeout(connectTimeoutTimer); connectTimeoutTimer = null; }
+  if (loginTimeoutTimer) { clearTimeout(loginTimeoutTimer); loginTimeoutTimer = null; }
+  if (pingIntervalTimer) { clearInterval(pingIntervalTimer); pingIntervalTimer = null; }
+  if (pongWatchdogTimer) { clearTimeout(pongWatchdogTimer); pongWatchdogTimer = null; }
+}
+
 interface StreamerInfo {
   streamerSocketUrl: string;
   schwabClientCustomerId: string;
@@ -726,8 +755,11 @@ function handleMessage(raw: string) {
       if (service === "ADMIN" && command === "LOGIN") {
         if (code === 0) {
           logger.info("Schwab streamer: LOGIN successful");
+          if (loginTimeoutTimer) { clearTimeout(loginTimeoutTimer); loginTimeoutTimer = null; }
           connectionState = "connected";
           loginRetried = false;
+          consecutiveLoginFailures = 0;
+          consecutiveAbnormalCloses = 0;
           lastConnectedAt = Date.now();
           disconnectedAt = null;
           fiveMinCriticalSent = false;
@@ -749,25 +781,47 @@ function handleMessage(raw: string) {
           sendAcctActivitySubscription();
         } else {
           logger.error({ code, msg: msgText }, "Schwab streamer: LOGIN failed");
-          void logFailure("SCHWAB_STREAM", "ERROR", `Schwab WebSocket LOGIN failed (code ${code})`, { code, msg: msgText });
+          consecutiveLoginFailures++;
+          void logFailure("SCHWAB_STREAM", "ERROR", `Schwab WebSocket LOGIN failed (code ${code})`, { code, msg: msgText, consecutiveLoginFailures });
           connectionState = "disconnected";
 
           if (!loginRetried && (code === 3 || (msgText && msgText.toLowerCase().includes("expired")))) {
+            // Code-3 / "expired" path takes priority over the 1006 counter
+            // because it has explicit signal — but we still set the flag so
+            // the next connect can refresh if THIS refresh's connect doesn't
+            // reach LOGIN. Marking loginRetried guarantees we don't loop on
+            // refresh within a single session.
             loginRetried = true;
+            // Identity-snapshot the failed socket. The async refresh callback
+            // below may resolve after a newer socket has been established
+            // (e.g., a concurrent reconnect timer fired); without this guard
+            // we would close that newer healthy socket.
+            const failedWs = schwabWs;
             logger.info("Schwab streamer: token may be stale — force-refreshing and retrying");
             void forceRefresh("trader").then((ok) => {
               if (ok) {
-                if (schwabWs) {
+                if (schwabWs && schwabWs === failedWs) {
                   try { schwabWs.close(); } catch {}
                   schwabWs = null;
+                  void connectSchwabStreamer();
+                } else {
+                  logger.info("Schwab streamer: refresh complete but socket already replaced — skipping reconnect");
                 }
-                void connectSchwabStreamer();
               } else {
                 logger.error("Schwab streamer: force refresh failed — cannot retry LOGIN");
                 scheduleReconnect();
               }
             });
           } else {
+            // Non-code-3 LOGIN failure (or already retried). If we've hit
+            // the threshold, set the same refresh flag the 1006-counter
+            // uses so connectSchwabStreamer rotates the token before the
+            // next attempt. Both paths converge on a single refresh action.
+            if (consecutiveLoginFailures >= ABNORMAL_CLOSE_REFRESH_THRESHOLD) {
+              forceTokenRefreshOnNextConnect = true;
+              logger.warn({ consecutiveLoginFailures, threshold: ABNORMAL_CLOSE_REFRESH_THRESHOLD },
+                "Schwab streamer: hit LOGIN-failure threshold — will force token refresh on next connect");
+            }
             scheduleReconnect();
           }
         }
@@ -830,12 +884,50 @@ function scheduleReconnect() {
 }
 
 async function connectSchwabStreamer() {
-  if (schwabWs && (schwabWs.readyState === WebSocket.OPEN || schwabWs.readyState === WebSocket.CONNECTING)) {
-    return;
+  // Cancel any pending reconnect timer — a direct connect call preempts it.
+  // Without this, the timer can fire mid-handshake and call us again,
+  // which would hit the CONNECTING branch below and kill our own legitimate
+  // in-progress handshake (self-induced reconnect churn).
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
   }
+
+  if (schwabWs) {
+    if (schwabWs.readyState === WebSocket.OPEN) return;
+    if (schwabWs.readyState === WebSocket.CONNECTING) {
+      // Age-gate the termination: only kill a CONNECTING socket if it has
+      // exceeded the handshake budget. A fresh handshake (e.g. one we just
+      // started 50ms ago) deserves to finish — its own connectTimeoutTimer
+      // will terminate it if it hangs. Without this gate, a concurrent
+      // call to connectSchwabStreamer would clobber a legitimate in-flight
+      // attempt.
+      const age = connectAttemptStartedAt ? Date.now() - connectAttemptStartedAt : Number.POSITIVE_INFINITY;
+      if (age < CONNECT_TIMEOUT_MS) {
+        logger.debug({ ageMs: age }, "Schwab streamer: connect already in progress — deferring to existing handshake");
+        return;
+      }
+      logger.warn({ ageMs: age }, "Schwab streamer: prior socket stuck in CONNECTING beyond timeout — terminating before retry");
+      try { schwabWs.terminate(); } catch {}
+      schwabWs = null;
+    }
+  }
+  clearLifecycleTimers();
+  connectAttemptStartedAt = Date.now();
 
   connectionState = "connecting";
   broadcast("streamerStatus", { status: "connecting" });
+
+  // If repeated 1006-before-LOGIN hit the refresh threshold, rotate the token
+  // before attempting again. Clear the flag regardless so we don't loop on
+  // refresh.
+  if (forceTokenRefreshOnNextConnect) {
+    forceTokenRefreshOnNextConnect = false;
+    logger.warn({ consecutiveAbnormalCloses }, "Schwab streamer: forcing token refresh before reconnect");
+    try { await forceRefresh("trader"); } catch (err) {
+      logger.error({ err }, "Schwab streamer: forced token refresh failed — retrying with current token");
+    }
+  }
 
   streamerInfo = await fetchStreamerInfo();
   if (!streamerInfo) {
@@ -847,8 +939,10 @@ async function connectSchwabStreamer() {
 
   logger.info({ url: streamerInfo.streamerSocketUrl }, "Schwab streamer: connecting");
 
+  let ws: WebSocket;
   try {
-    schwabWs = new WebSocket(streamerInfo.streamerSocketUrl);
+    ws = new WebSocket(streamerInfo.streamerSocketUrl);
+    schwabWs = ws;
   } catch (err) {
     logger.error({ err }, "Schwab streamer: WebSocket constructor failed");
     connectionState = "disconnected";
@@ -856,32 +950,133 @@ async function connectSchwabStreamer() {
     return;
   }
 
-  schwabWs.on("open", () => {
+  // Identity guard: every handler/timer below captures `ws` in closure and
+  // bails if `schwabWs !== ws`. This prevents stale events from a previous
+  // socket (late close/error/timer) from clobbering the current socket's
+  // state — a real risk because reconnects can replace `schwabWs` while
+  // the old socket's event loop entries are still pending.
+  const isCurrent = (): boolean => schwabWs === ws;
+
+  // Hard timeout on the handshake itself. If 'open' never fires within
+  // CONNECT_TIMEOUT_MS, terminate so 'close' fires and scheduleReconnect
+  // kicks in. Without this, a half-open TCP state leaves us in CONNECTING
+  // forever and the early-return above prevents ever retrying.
+  connectTimeoutTimer = setTimeout(() => {
+    if (!isCurrent()) return;
+    if (ws.readyState === WebSocket.CONNECTING) {
+      logger.warn({ timeoutMs: CONNECT_TIMEOUT_MS }, "Schwab streamer: handshake timeout — terminating");
+      try { ws.terminate(); } catch {}
+    }
+  }, CONNECT_TIMEOUT_MS);
+
+  const connectedUrl = streamerInfo.streamerSocketUrl;
+  ws.on("open", () => {
+    if (!isCurrent()) return;
     logger.info("Schwab streamer: WebSocket connected");
-    emitTelemetry("SCHWAB_STREAM", "INFO", "Schwab WebSocket connected", { url: streamerInfo.streamerSocketUrl });
+    emitTelemetry("SCHWAB_STREAM", "INFO", "Schwab WebSocket connected", { url: connectedUrl });
+    if (connectTimeoutTimer) { clearTimeout(connectTimeoutTimer); connectTimeoutTimer = null; }
+
+    // Reset *transport* backoff on handshake success — but only if we're not
+    // currently stuck in a LOGIN-fail loop. If TCP keeps succeeding but LOGIN
+    // keeps failing (credential rot / permissions revoked), we must NOT
+    // hammer Schwab at 2s cadence; the auth-failure backoff (driven by
+    // consecutiveLoginFailures) keeps the doubled delay in place until LOGIN
+    // succeeds or the token-refresh threshold rotates the token.
+    if (consecutiveLoginFailures === 0) {
+      reconnectDelay = 2000;
+    }
+
+    // Start client-initiated keepalive. NAT/proxy layers between us and
+    // Schwab may silently drop the TCP connection with no close frame —
+    // that's the classic 1006 scenario. An active ws.ping() lets us detect
+    // it via the pong watchdog.
+    pingIntervalTimer = setInterval(() => {
+      if (!isCurrent() || ws.readyState !== WebSocket.OPEN) return;
+      try { ws.ping(); } catch {}
+      if (pongWatchdogTimer) clearTimeout(pongWatchdogTimer);
+      pongWatchdogTimer = setTimeout(() => {
+        if (!isCurrent()) return;
+        logger.warn({ timeoutMs: PONG_TIMEOUT_MS }, "Schwab streamer: pong timeout — terminating");
+        try { ws.terminate(); } catch {}
+      }, PONG_TIMEOUT_MS);
+    }, PING_INTERVAL_MS);
+
+    // LOGIN response watchdog — if LOGIN ack never arrives, force close
+    // so we don't sit in "connecting" state forever.
+    loginTimeoutTimer = setTimeout(() => {
+      if (!isCurrent()) return;
+      if (connectionState !== "connected") {
+        logger.warn({ timeoutMs: LOGIN_RESPONSE_TIMEOUT_MS }, "Schwab streamer: LOGIN response timeout — terminating");
+        try { ws.terminate(); } catch {}
+      }
+    }, LOGIN_RESPONSE_TIMEOUT_MS);
+
     sendLogin();
   });
 
-  schwabWs.on("message", (data: Buffer | string) => {
+  ws.on("pong", () => {
+    if (!isCurrent()) return;
+    if (pongWatchdogTimer) { clearTimeout(pongWatchdogTimer); pongWatchdogTimer = null; }
+  });
+
+  ws.on("message", (data: Buffer | string) => {
+    if (!isCurrent()) return;
     const raw = typeof data === "string" ? data : data.toString("utf-8");
     handleMessage(raw);
   });
 
-  schwabWs.on("close", (code, reason) => {
+  ws.on("close", (code, reason) => {
+    // Stale close from a replaced socket — do NOT mutate global state.
+    if (!isCurrent()) {
+      logger.debug({ code }, "Schwab streamer: ignoring close from stale socket");
+      return;
+    }
+
     const sessionDuration = lastConnectedAt ? Date.now() - lastConnectedAt : null;
-    logger.warn({ code, reason: reason?.toString(), sessionDurationMs: sessionDuration }, "Schwab streamer: WebSocket closed");
-    void logFailure("SCHWAB_STREAM", "WARN", `Schwab WebSocket disconnected (code ${code})`, { code, reason: reason?.toString(), sessionDurationMs: sessionDuration });
+    const wasConnected = connectionState === "connected";
+
+    // Counter management — kept tight so stale 1006s never accumulate:
+    //   * 1006 BEFORE login-success → increment (might be credential rot
+    //     manifesting as RST, e.g. server rejects token at handshake).
+    //   * Any close AFTER successful login → reset (next session is a
+    //     clean slate).
+    //   * Any non-1006 close BEFORE login → reset (failure mode changed,
+    //     don't carry an old streak forward).
+    if (code === 1006 && !wasConnected) {
+      consecutiveAbnormalCloses++;
+      if (consecutiveAbnormalCloses >= ABNORMAL_CLOSE_REFRESH_THRESHOLD) {
+        forceTokenRefreshOnNextConnect = true;
+        logger.warn({ consecutiveAbnormalCloses, threshold: ABNORMAL_CLOSE_REFRESH_THRESHOLD },
+          "Schwab streamer: hit 1006-before-LOGIN threshold — will force token refresh on next connect");
+      }
+    } else {
+      consecutiveAbnormalCloses = 0;
+    }
+
+    logger.warn({ code, reason: reason?.toString(), sessionDurationMs: sessionDuration, wasConnected, consecutiveAbnormalCloses, consecutiveLoginFailures },
+      "Schwab streamer: WebSocket closed");
+    void logFailure("SCHWAB_STREAM", "WARN", `Schwab WebSocket disconnected (code ${code})`,
+      { code, reason: reason?.toString(), sessionDurationMs: sessionDuration, wasConnected, consecutiveAbnormalCloses, consecutiveLoginFailures });
+
+    clearLifecycleTimers();
     schwabWs = null;
     connectionState = "disconnected";
     acctActivitySubscribed = false;
     disconnectedAt = Date.now();
     fiveMinCriticalSent = false;
+    connectAttemptStartedAt = null;
     broadcast("streamerStatus", { status: "disconnected" });
     scheduleReconnect();
   });
 
-  schwabWs.on("error", (err) => {
+  ws.on("error", (err) => {
     logger.error({ err }, "Schwab streamer: WebSocket error");
+    // Force-terminate on error so 'close' is guaranteed to fire. Gated on
+    // identity so we never terminate a successor socket from a stale error.
+    // ws.terminate() is idempotent and won't double-fire 'close' (the close
+    // handler runs at most once per socket instance).
+    if (!isCurrent()) return;
+    try { ws.terminate(); } catch {}
   });
 }
 
