@@ -1057,16 +1057,15 @@ router.get("/options", async (req, res) => {
         contractType: "ALL",
       });
       if (isFuturesSymbol) {
-        // Schwab's /chains endpoint does NOT accept assetClass=FUTURES — it
-        // rejects with HTTP 400 "Invalid Paramter/Value". Drop assetClass and
-        // pass only symbol + contractType + strikeCount, letting Schwab infer
-        // the futures asset class from the leading "/" in the symbol.
-        params.set("strikeCount", "30");
+        // Schwab's /chains endpoint behavior for futures is poorly documented.
+        // Try a minimal payload (just symbol+contractType) — no strikeCount,
+        // no range, no assetClass — and see what Schwab returns.
       } else {
         params.set("range", "ALL");
       }
 
       const chainUrl = `${SCHWAB_API_BASE}/chains?${params.toString()}`;
+      req.log.info({ chainUrl, isFuturesSymbol }, "Options chain Schwab URL");
       let response = await fetch(chainUrl, {
         headers: { "Authorization": `Bearer ${accessToken}` },
         signal: req.socket.destroyed ? AbortSignal.abort() : AbortSignal.timeout(30_000),
