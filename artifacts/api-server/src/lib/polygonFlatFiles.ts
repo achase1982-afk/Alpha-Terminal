@@ -41,24 +41,32 @@ function formatDate(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
-function dateToHivePath(date: Date): string {
+function dateToMonthPrefix(date: Date): string {
+  // Polygon/Massive flat-files now use a flat per-month layout:
+  //   us_options_opra/day_aggs_v1/YYYY/MM/YYYY-MM-DD.csv.gz
+  // (Older Hive-style year=YYYY/month=MM/day=DD/ paths were retired.)
   const year = date.getUTCFullYear();
   const month = String(date.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(date.getUTCDate()).padStart(2, "0");
-  return `us_options_opra/day_aggs_v1/year=${year}/month=${month}/day=${day}/`;
+  return `us_options_opra/day_aggs_v1/${year}/${month}/`;
 }
 
 async function listFilesForDate(s3: S3Client, date: Date): Promise<string[]> {
   const bucket = process.env.POLYGON_S3_BUCKET ?? "flatfiles";
-  const prefix = dateToHivePath(date);
+  const prefix = dateToMonthPrefix(date);
+  const tradeDate = formatDate(date);
+  // The month directory contains one file per trading day. We only want the
+  // single file matching the requested date.
+  const wanted = `${prefix}${tradeDate}.csv.gz`;
   try {
-    const cmd = new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix });
+    const cmd = new ListObjectsV2Command({ Bucket: bucket, Prefix: wanted });
     const res = await s3.send(cmd);
-    return (res.Contents ?? []).map(obj => obj.Key ?? "").filter(k => k.endsWith(".csv.gz") || k.endsWith(".csv"));
+    return (res.Contents ?? [])
+      .map(obj => obj.Key ?? "")
+      .filter(k => k === wanted || k === `${prefix}${tradeDate}.csv`);
   } catch (err) {
     // Surface the real error instead of silently returning [] which makes
     // S3 auth/DNS failures look like "no data for this date" (L2 fix).
-    throw new Error(`S3 list failed for ${prefix}: ${err instanceof Error ? err.message : String(err)}`);
+    throw new Error(`S3 list failed for ${wanted}: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
@@ -169,7 +177,17 @@ export async function syncDate(
   }
 
   // S3 request budget — first-run safeguard for a never-before-fired cron.
-  const maxS3 = opts?.maxS3Requests ?? Number(process.env.POLYGON_FLATFILES_MAX_S3_REQUESTS ?? 200);
+  // Harden env parsing so a malformed value (e.g. "1d") cannot become NaN
+  // and silently disable the cap. Mirrors index.ts sanitization.
+  function resolveMaxS3(): number {
+    if (typeof opts?.maxS3Requests === "number" && Number.isFinite(opts.maxS3Requests) && opts.maxS3Requests > 0) {
+      return Math.floor(opts.maxS3Requests);
+    }
+    const raw = process.env.POLYGON_FLATFILES_MAX_S3_REQUESTS;
+    const parsed = raw == null ? NaN : Number(raw);
+    return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 200;
+  }
+  const maxS3 = resolveMaxS3();
   let s3Calls = 0;
   function bumpS3(): void {
     s3Calls++;
@@ -183,6 +201,16 @@ export async function syncDate(
     bumpS3(); // ListObjectsV2
     const files = await listFilesForDate(s3, date);
     if (files.length === 0) {
+      // Persist a sync_log row so "no data" days are observable. Without
+      // this, a misconfigured prefix or a not-yet-published date looks
+      // identical to a healthy success in /status, which previously hid a
+      // path-format outage for weeks.
+      await db.insert(polygonSyncLogTable)
+        .values({ tradeDate, status: "no_data", rowsInserted: 0, errorMsg: "No files found", tickers })
+        .onConflictDoUpdate({
+          target: polygonSyncLogTable.tradeDate,
+          set: { status: "no_data", rowsInserted: 0, errorMsg: "No files found", syncedAt: new Date() },
+        });
       return { date: tradeDate, rows: 0, files: 0, skipped: false, error: "No files found", s3Calls };
     }
 

@@ -1,0 +1,15 @@
+The flat files pipeline is completely dark. Zero rows in polygon_options_history, zero rows in polygon_sync_log, no errors logged. Fix it and backfill immediately. Do this before any other work.
+
+Step 1: Diagnose why the pipeline has never produced data. Start with the most likely cause: check the Reserved VM environment variables directly and confirm POLYGON_S3_ACCESS_KEY and POLYGON_S3_SECRET_KEY are both present and non-empty. If either is missing on the Reserved VM, that explains everything (the schedule installation is gated on creds being present). We just switched from Autoscale to Reserved VM, so env vars may not have carried over.
+
+Step 2: If creds are fine, check the other likely causes: whether the cron schedule is actually being registered at boot on Reserved VM, whether the boot-time catchup is firing, and whether any exceptions are being silently swallowed before they can reach polygon_sync_log.
+
+Step 3: Once the sync path works, manually trigger backfill for the last 10 trading days (roughly April 7 through April 17). Run sequentially, one day at a time, with progress logging so I can see each day's row count as it completes. I want this data in the table before tomorrow's market open.
+
+Step 4: Verify polygon_options_history has real data after the backfill. Show me distinct trade dates, distinct tickers, and row counts per day so I can confirm the pipeline is actually healthy.
+
+Step 5: Confirm tonight's scheduled cron at 22:30 UTC will fire correctly for today's (April 20) data, stacking on top of the backfilled history.
+
+Step 6: Add observability so this failure mode cannot happen silently again. Log lines at: cron registration on boot, cron fire, sync start, sync end with row counts, any exception paths. If the pipeline goes dark in the future, we should see it immediately in logs, not discover it weeks later.
+
+Architect review after the fix and backfill complete. Report back with backfill row counts, distinct date coverage, and cron verification status. Do not start any other work until this is done.
