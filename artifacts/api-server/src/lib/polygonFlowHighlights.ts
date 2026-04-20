@@ -36,6 +36,20 @@ const UNUSUAL_VOI_THRESHOLD = 3;
 const UNUSUAL_MIN_VOLUME = 500;
 const TOP_N = 5;
 
+// Hard staleness ceiling — never apply Polygon flow data older than this many
+// CALENDAR days as a real-time signal. With weekends/holidays this maps to
+// ~3 trading days (the user-required ceiling). Stale data masquerading as
+// real-time is worse than no signal at all.
+const MAX_AGE_CALENDAR_DAYS = 5;
+
+function isFresh(asOfDate: string, todayUtc: Date = new Date()): boolean {
+  // asOfDate is YYYY-MM-DD UTC
+  const asOf = new Date(`${asOfDate}T00:00:00Z`).getTime();
+  const today = new Date(`${todayUtc.toISOString().slice(0, 10)}T00:00:00Z`).getTime();
+  const ageDays = Math.floor((today - asOf) / 86_400_000);
+  return ageDays <= MAX_AGE_CALENDAR_DAYS;
+}
+
 interface RawStrikeRow {
   underlyingSymbol: string;
   date: string;
@@ -140,6 +154,11 @@ export async function getPolygonFlowHighlights(
       .where(eq(optionsFlowPerStrikeTable.underlyingSymbol, sym));
     const asOfDate = latest[0]?.d;
     if (!asOfDate) return null;
+    if (!isFresh(asOfDate)) {
+      logger.warn({ symbol: sym, asOfDate, maxAgeCalendarDays: MAX_AGE_CALENDAR_DAYS },
+        "polygonFlowHighlights: data too stale — returning null");
+      return null;
+    }
 
     const rows = await db
       .select()
@@ -184,10 +203,17 @@ export async function getPolygonFlowHighlightsBulk(
 
     const symDateMap = new Map<string, string>();
     const allDates = new Set<string>();
+    let staleCount = 0;
     for (const r of perSymbolDates) {
+      if (!isFresh(r.maxDate)) { staleCount++; continue; }
       symDateMap.set(r.sym, r.maxDate);
       allDates.add(r.maxDate);
     }
+    if (staleCount > 0) {
+      logger.warn({ staleCount, total: perSymbolDates.length, maxAgeCalendarDays: MAX_AGE_CALENDAR_DAYS },
+        "polygonFlowHighlights: dropped stale tickers from bulk lookup");
+    }
+    if (symDateMap.size === 0) return out;
 
     const rows = await db
       .select()

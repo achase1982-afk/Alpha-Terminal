@@ -8,6 +8,7 @@ import { getSettings, type StrategistConfig } from "./strategistSettings.js";
 import { getCachedRegime, buildFallbackRegime, type StructuredRegime } from "./regimePostProcessor.js";
 import { computeIOScore } from "./ioScoreEngine.js";
 import { getPolygonFlowHighlightsBulk, unusualFlowBonusPoints, type PolygonFlowHighlights } from "./polygonFlowHighlights.js";
+import { logger } from "./logger.js";
 
 const SCHWAB_API = "https://api.schwabapi.com/marketdata/v1";
 const SCHWAB_TRADER = "https://api.schwabapi.com/trader/v1";

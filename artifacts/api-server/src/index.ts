@@ -108,6 +108,11 @@ async function boot() {
       }, ms);
     }
 
+    // Per-date in-flight lock — prevents scheduled cron and boot-catchup
+    // from racing the same date (M2 from architect review). Check is
+    // cheap & synchronous so the TOCTOU window between alreadyDone() and
+    // runFullSnapshot() is closed.
+    const snapshotInFlight = new Set<string>();
     async function runDailySnapshotJob() {
       const token = getBestAccessToken();
       if (!token) {
@@ -116,12 +121,19 @@ async function boot() {
       }
       const symbols = [...LIQUID_CORE_SYMBOLS];
       const dateStr = new Date().toISOString().slice(0, 10);
+      if (snapshotInFlight.has(dateStr)) {
+        logger.warn({ date: dateStr }, "Daily snapshot: already in-flight for this date — skipping duplicate");
+        return;
+      }
+      snapshotInFlight.add(dateStr);
       logger.info({ symbols: symbols.length, date: dateStr }, "Daily snapshot: starting LC130 collection");
       try {
         const result = await runFullSnapshot(symbols, token, dateStr);
         logger.info({ ...result, date: dateStr }, "Daily snapshot: LC130 collection complete");
       } catch (err) {
-        logger.error({ err }, "Daily snapshot: LC130 collection failed");
+        logger.error({ err, date: dateStr }, "Daily snapshot: LC130 collection failed");
+      } finally {
+        snapshotInFlight.delete(dateStr);
       }
     }
 
@@ -131,8 +143,13 @@ async function boot() {
     // down across multiple trading days), no snapshot ever happens. On
     // boot, look at the most recent successful snapshot date — if today
     // is a trading day past 14:30 UTC (post-market open) AND we don't
-    // already have today's snapshot, kick one off after a short delay so
-    // the scanner has fresh data for the current session.
+    // already have today's snapshot, poll for a Schwab token and run as
+    // soon as one appears.
+    //
+    // RESILIENCE: keep retrying every 30 minutes through the trading day
+    // (until 21:30 UTC, when the regular cron fires). A single 30-minute
+    // window is not resilient enough — token may not appear for hours
+    // after a workflow restart, and we silently missed days as a result.
     async function maybeCatchupSnapshot() {
       try {
         const todayIso = new Date().toISOString().slice(0, 10);
@@ -146,32 +163,52 @@ async function boot() {
           logger.info({ nowUtcHour }, "Daily snapshot catchup: pre-market — waiting for scheduled run");
           return;
         }
-        const recent = await db
-          .select({ date: snapshotCollectionLogTable.date, status: snapshotCollectionLogTable.status })
-          .from(snapshotCollectionLogTable)
-          .where(eq(snapshotCollectionLogTable.date, todayIso))
-          .limit(1);
-        if (recent.length > 0 && recent[0].status === "completed") {
+        const alreadyDone = async (): Promise<boolean> => {
+          const r = await db
+            .select({ status: snapshotCollectionLogTable.status })
+            .from(snapshotCollectionLogTable)
+            .where(eq(snapshotCollectionLogTable.date, todayIso))
+            .limit(1);
+          return r.length > 0 && r[0].status === "completed";
+        };
+        if (await alreadyDone()) {
           logger.info({ todayIso }, "Daily snapshot catchup: today already complete — skipping");
           return;
         }
-        logger.warn({ todayIso }, "Daily snapshot catchup: no completed snapshot for today — will run when token available");
-        // Token may not be loaded yet at boot. Poll every 60s for up to
-        // 30 minutes; fire once the token shows up.
+        logger.warn({ todayIso }, "Daily snapshot catchup: no completed snapshot for today — will keep polling for Schwab token");
+
+        // Two-phase polling: first 30 min @ 60s (fast token pickup),
+        // then 30-min cycle until 21:30 UTC.
         let attempts = 0;
-        const maxAttempts = 30;
+        const fastPollMaxAttempts = 30; // 30 min @ 60s
+        const slowPollIntervalMs = 30 * 60 * 1000;
+        const stopAfterUtcMs = (() => {
+          const d = new Date(`${todayIso}T21:30:00Z`);
+          return d.getTime();
+        })();
+
         const tryRun = async () => {
           attempts++;
+          // If the regular cron has already passed (or about to fire),
+          // stop catchup — the cron will handle it.
+          if (Date.now() >= stopAfterUtcMs) {
+            logger.info({ attempts, todayIso }, "Daily snapshot catchup: 21:30 UTC reached — handing off to scheduled cron");
+            return;
+          }
+          if (await alreadyDone()) {
+            logger.info({ attempts, todayIso }, "Daily snapshot catchup: snapshot completed by another path — exiting");
+            return;
+          }
           if (getBestAccessToken()) {
             logger.info({ attempts, todayIso }, "Daily snapshot catchup: token available — running");
             await runDailySnapshotJob();
             return;
           }
-          if (attempts >= maxAttempts) {
-            logger.warn({ attempts, todayIso }, "Daily snapshot catchup: token never appeared — giving up");
-            return;
+          const nextDelayMs = attempts < fastPollMaxAttempts ? 60_000 : slowPollIntervalMs;
+          if (attempts === fastPollMaxAttempts) {
+            logger.warn({ attempts, todayIso }, "Daily snapshot catchup: token still missing after 30min — switching to 30-minute polling");
           }
-          setTimeout(() => { void tryRun(); }, 60_000);
+          setTimeout(() => { void tryRun(); }, nextDelayMs);
         };
         setTimeout(() => { void tryRun(); }, 30_000);
       } catch (err) {
@@ -188,12 +225,43 @@ async function boot() {
   // Pulls full per-strike options trades from Polygon S3 and writes to
   // polygon_options_history. Runs once a day at 22:30 UTC (~6:30pm ET, after
   // EOD files publish) for the prior trading day. Boot-time catchup also
-  // scans the last 5 trading days for any gaps.
+  // scans the last N trading days for any gaps (N = POLYGON_FLATFILES_MAX_CATCHUP_DAYS, default 1).
+  //
+  // Env switches:
+  //   POLYGON_FLATFILES_DISABLED=1            → schedule never installs (kill switch)
+  //   POLYGON_FLATFILES_MAX_CATCHUP_DAYS=N    → cap boot-time catchup window (default 1)
+  //   POLYGON_FLATFILES_MAX_S3_REQUESTS=N     → per-day S3 call cap (default 200, hard abort)
   function schedulePolygonFlatFilesSync() {
+    if (process.env.POLYGON_FLATFILES_DISABLED === "1") {
+      logger.warn("Polygon flat-files sync: POLYGON_FLATFILES_DISABLED=1 — skipping schedule entirely");
+      return;
+    }
     if (!process.env.POLYGON_S3_ACCESS_KEY || !process.env.POLYGON_S3_SECRET_KEY) {
       logger.warn("Polygon flat-files sync: S3 creds not configured — skipping schedule");
       return;
     }
+    // Parse env carefully — a non-numeric value (e.g. "1d") produces NaN from
+    // `Number(...)`, which would silently DISABLE both guards (catchup loop
+    // `i < NaN` never runs, and `s3Calls > NaN` never trips). Fall back to
+    // defaults and warn when the env is set but unparseable.
+    function parseIntEnv(name: string, fallback: number): number {
+      const raw = process.env[name];
+      if (raw === undefined || raw === "") return fallback;
+      const n = Number(raw);
+      if (!Number.isFinite(n)) {
+        logger.warn({ name, raw, fallback }, "Polygon flat-files sync: env unparseable — using fallback");
+        return fallback;
+      }
+      return n;
+    }
+    const catchupDays = Math.max(0, Math.min(30, parseIntEnv("POLYGON_FLATFILES_MAX_CATCHUP_DAYS", 1)));
+    const maxS3Requests = Math.max(1, parseIntEnv("POLYGON_FLATFILES_MAX_S3_REQUESTS", 200));
+    logger.info({ catchupDays, maxS3Requests }, "Polygon flat-files sync: configured");
+
+    // Per-tradeDate in-flight lock — prevents bootCatchup + scheduled cron
+    // from racing the same date (H3 from architect review). Both paths
+    // early-return if the date is already being processed.
+    const flatFilesInFlight = new Set<string>();
 
     const US_HOLIDAYS = [
       "2026-01-01","2026-01-19","2026-02-16","2026-04-03",
@@ -213,15 +281,31 @@ async function boot() {
     }
 
     async function runFlatFilesSync(target: Date) {
+      const iso = target.toISOString().slice(0, 10);
+      if (flatFilesInFlight.has(iso)) {
+        logger.warn({ date: iso }, "Polygon flat-files sync: already in-flight for this date — skipping duplicate");
+        return;
+      }
+      flatFilesInFlight.add(iso);
       try {
         const { syncDate } = await import("./lib/polygonFlatFiles.js");
         const tickers = [...LIQUID_CORE_SYMBOLS];
-        const iso = target.toISOString().slice(0, 10);
-        logger.info({ date: iso, tickers: tickers.length }, "Polygon flat-files sync: starting");
-        const result = await syncDate(target, tickers);
-        logger.info({ ...result }, "Polygon flat-files sync: complete");
+        let s3CallsObserved = 0;
+        logger.info({ date: iso, tickers: tickers.length, maxS3Requests }, "Polygon flat-files sync: starting");
+        const result = await syncDate(target, tickers, {
+          maxS3Requests,
+          onS3Call: () => { s3CallsObserved++; },
+        });
+        if (result.error?.includes("POLYGON_FLATFILES_MAX_S3_REQUESTS")) {
+          logger.error({ ...result, s3CallsObserved, maxS3Requests },
+            "Polygon flat-files sync: ABORTED — S3 request budget exceeded");
+        } else {
+          logger.info({ ...result, s3CallsObserved }, "Polygon flat-files sync: complete");
+        }
       } catch (err) {
-        logger.error({ err }, "Polygon flat-files sync: failed");
+        logger.error({ err, date: iso }, "Polygon flat-files sync: failed");
+      } finally {
+        flatFilesInFlight.delete(iso);
       }
     }
 
@@ -240,14 +324,18 @@ async function boot() {
       }, ms);
     }
 
-    // Boot-time catchup: scan last 5 trading days, sync any not yet "synced".
+    // Boot-time catchup: scan last N trading days (capped by env), sync any not "synced".
     async function bootCatchup() {
       try {
+        if (catchupDays === 0) {
+          logger.info("Polygon flat-files catchup: disabled (POLYGON_FLATFILES_MAX_CATCHUP_DAYS=0)");
+          return;
+        }
         const { db: dbRef, polygonSyncLogTable } = await import("@workspace/db");
         const { inArray } = await import("drizzle-orm");
         const days: Date[] = [];
         let cursor = priorTradingDay(new Date());
-        for (let i = 0; i < 5; i++) {
+        for (let i = 0; i < catchupDays; i++) {
           days.push(new Date(cursor));
           cursor = priorTradingDay(cursor);
         }

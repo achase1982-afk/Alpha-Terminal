@@ -55,8 +55,10 @@ async function listFilesForDate(s3: S3Client, date: Date): Promise<string[]> {
     const cmd = new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix });
     const res = await s3.send(cmd);
     return (res.Contents ?? []).map(obj => obj.Key ?? "").filter(k => k.endsWith(".csv.gz") || k.endsWith(".csv"));
-  } catch {
-    return [];
+  } catch (err) {
+    // Surface the real error instead of silently returning [] which makes
+    // S3 auth/DNS failures look like "no data for this date" (L2 fix).
+    throw new Error(`S3 list failed for ${prefix}: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
@@ -78,7 +80,7 @@ async function processFile(
   key: string,
   targetTickers: Set<string>,
   tradeDate: string,
-  onRow: (row: DbRow) => void
+  onRow: (row: DbRow) => void | Promise<void>
 ): Promise<number> {
   const bucket = process.env.POLYGON_S3_BUCKET ?? "flatfiles";
   const cmd = new GetObjectCommand({ Bucket: bucket, Key: key });
@@ -118,7 +120,7 @@ async function processFile(
     const volume = parseInt(row["volume"] ?? "0") || 0;
     if (volume === 0) continue;
 
-    onRow({
+    await onRow({
       ticker: parsed.ticker.toUpperCase(),
       optionSymbol,
       tradeDate,
@@ -152,8 +154,9 @@ async function flushBatch(batch: DbRow[]): Promise<void> {
 
 export async function syncDate(
   date: Date,
-  tickers: string[]
-): Promise<{ date: string; rows: number; files: number; skipped: boolean; error?: string }> {
+  tickers: string[],
+  opts?: { maxS3Requests?: number; onS3Call?: () => void },
+): Promise<{ date: string; rows: number; files: number; skipped: boolean; error?: string; s3Calls?: number }> {
   const tradeDate = formatDate(date);
   const s3 = createS3Client();
   const targetTickers = new Set(tickers.map(t => t.toUpperCase()));
@@ -162,19 +165,32 @@ export async function syncDate(
     where: eq(polygonSyncLogTable.tradeDate, tradeDate),
   });
   if (existing?.status === "synced") {
-    return { date: tradeDate, rows: existing.rowsInserted ?? 0, files: 0, skipped: true };
+    return { date: tradeDate, rows: existing.rowsInserted ?? 0, files: 0, skipped: true, s3Calls: 0 };
+  }
+
+  // S3 request budget — first-run safeguard for a never-before-fired cron.
+  const maxS3 = opts?.maxS3Requests ?? Number(process.env.POLYGON_FLATFILES_MAX_S3_REQUESTS ?? 200);
+  let s3Calls = 0;
+  function bumpS3(): void {
+    s3Calls++;
+    opts?.onS3Call?.();
+    if (s3Calls > maxS3) {
+      throw new Error(`POLYGON_FLATFILES_MAX_S3_REQUESTS exceeded (cap=${maxS3}, calls=${s3Calls})`);
+    }
   }
 
   try {
+    bumpS3(); // ListObjectsV2
     const files = await listFilesForDate(s3, date);
     if (files.length === 0) {
-      return { date: tradeDate, rows: 0, files: 0, skipped: false, error: "No files found" };
+      return { date: tradeDate, rows: 0, files: 0, skipped: false, error: "No files found", s3Calls };
     }
 
     const batch: DbRow[] = [];
     let totalRows = 0;
 
     for (const file of files) {
+      bumpS3(); // GetObject
       await processFile(s3, file, targetTickers, tradeDate, async (row) => {
         batch.push(row);
         if (batch.length >= 500) {
