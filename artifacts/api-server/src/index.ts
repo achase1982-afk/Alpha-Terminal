@@ -14,8 +14,8 @@ import { initAiLabOrchestrator } from "./lib/aiLabOrchestrator";
 import { startUniverseRebuildSchedule } from "./lib/universeBuilder";
 import { updateEquityDailyFromGroupedBars, runFullSnapshot } from "./lib/dailySnapshot";
 import { LIQUID_CORE_SYMBOLS } from "./data/liquidCore130";
-import { db, equityDailyTable } from "@workspace/db";
-import { inArray, desc, sql } from "drizzle-orm";
+import { db, equityDailyTable, snapshotCollectionLogTable } from "@workspace/db";
+import { inArray, desc, sql, eq } from "drizzle-orm";
 import { startPolygonPCRatioPoller } from "./lib/polygonPutCallRatio";
 import { migrateAiLabSeedData } from "./lib/aiLabMigration";
 import { getBestAccessToken } from "./lib/tokenStore";
@@ -125,7 +125,62 @@ async function boot() {
       }
     }
 
+    // ── Boot-time catchup ───────────────────────────────────────────────
+    // The 21:30 UTC scheduled job only runs if the server is up at that
+    // moment. If the workflow restarts past the firing window (or stays
+    // down across multiple trading days), no snapshot ever happens. On
+    // boot, look at the most recent successful snapshot date — if today
+    // is a trading day past 14:30 UTC (post-market open) AND we don't
+    // already have today's snapshot, kick one off after a short delay so
+    // the scanner has fresh data for the current session.
+    async function maybeCatchupSnapshot() {
+      try {
+        const todayIso = new Date().toISOString().slice(0, 10);
+        const today = new Date(`${todayIso}T00:00:00Z`);
+        if (!isTradingDay(today)) {
+          logger.info({ todayIso }, "Daily snapshot catchup: not a trading day — skipping");
+          return;
+        }
+        const nowUtcHour = new Date().getUTCHours();
+        if (nowUtcHour < 14) {
+          logger.info({ nowUtcHour }, "Daily snapshot catchup: pre-market — waiting for scheduled run");
+          return;
+        }
+        const recent = await db
+          .select({ date: snapshotCollectionLogTable.date, status: snapshotCollectionLogTable.status })
+          .from(snapshotCollectionLogTable)
+          .where(eq(snapshotCollectionLogTable.date, todayIso))
+          .limit(1);
+        if (recent.length > 0 && recent[0].status === "completed") {
+          logger.info({ todayIso }, "Daily snapshot catchup: today already complete — skipping");
+          return;
+        }
+        logger.warn({ todayIso }, "Daily snapshot catchup: no completed snapshot for today — will run when token available");
+        // Token may not be loaded yet at boot. Poll every 60s for up to
+        // 30 minutes; fire once the token shows up.
+        let attempts = 0;
+        const maxAttempts = 30;
+        const tryRun = async () => {
+          attempts++;
+          if (getBestAccessToken()) {
+            logger.info({ attempts, todayIso }, "Daily snapshot catchup: token available — running");
+            await runDailySnapshotJob();
+            return;
+          }
+          if (attempts >= maxAttempts) {
+            logger.warn({ attempts, todayIso }, "Daily snapshot catchup: token never appeared — giving up");
+            return;
+          }
+          setTimeout(() => { void tryRun(); }, 60_000);
+        };
+        setTimeout(() => { void tryRun(); }, 30_000);
+      } catch (err) {
+        logger.error({ err }, "Daily snapshot catchup check failed");
+      }
+    }
+
     scheduleNext();
+    void maybeCatchupSnapshot();
   }
   scheduleDailySnapshot();
   await migrateAiLabSeedData();

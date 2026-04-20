@@ -307,13 +307,16 @@ async function fetchFlowDataFromDB(symbols: string[]): Promise<Map<string, DBFlo
   const map = new Map<string, DBFlowData>();
   if (symbols.length === 0) return map;
 
+  // Normalize to uppercase for the query — DB stores symbols uppercase.
+  const symbolsUpper = symbols.map(s => s.toUpperCase());
+
   const perSymbolDates = await db
     .select({
       sym: flowDailyAggregatesTable.underlyingSymbol,
       maxDate: sql<string>`max(${flowDailyAggregatesTable.date})`,
     })
     .from(flowDailyAggregatesTable)
-    .where(inArray(flowDailyAggregatesTable.underlyingSymbol, symbols))
+    .where(inArray(flowDailyAggregatesTable.underlyingSymbol, symbolsUpper))
     .groupBy(flowDailyAggregatesTable.underlyingSymbol);
 
   if (perSymbolDates.length === 0) return map;
@@ -347,6 +350,14 @@ async function fetchFlowDataFromDB(symbols: string[]): Promise<Map<string, DBFlo
       inArray(optionsFlowPerStrikeTable.date, [...allDates]),
     ));
   const filteredStrikes = strikeRows.filter(s => symDatePairs.get(s.underlyingSymbol) === s.date);
+
+  logger.info({
+    requested: symbols.length,
+    foundFlow: perSymbolDates.length,
+    aggsLoaded: filteredAggs.length,
+    strikesLoaded: filteredStrikes.length,
+    sampleMaxDate: perSymbolDates[0]?.maxDate ?? null,
+  }, "Scanner: flow data DB lookup");
 
   const strikesBySymbol = new Map<string, typeof filteredStrikes>();
   for (const s of filteredStrikes) {
