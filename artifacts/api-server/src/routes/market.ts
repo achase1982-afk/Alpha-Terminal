@@ -1082,7 +1082,6 @@ router.get("/options", async (req, res) => {
       }
 
       const chainUrl = `${SCHWAB_API_BASE}/chains?${params.toString()}`;
-      req.log.info({ chainUrl, isFuturesSymbol }, "Options chain Schwab URL");
       let response = await fetch(chainUrl, {
         headers: { "Authorization": `Bearer ${accessToken}` },
         signal: req.socket.destroyed ? AbortSignal.abort() : AbortSignal.timeout(30_000),
