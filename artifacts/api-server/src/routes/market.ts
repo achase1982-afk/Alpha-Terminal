@@ -601,12 +601,21 @@ function centerStrikesAroundATM(
 
 const LARGE_CHAIN_SYMBOLS = new Set(["SPY", "QQQ", "AAPL", "TSLA", "AMZN", "NVDA", "META", "MSFT", "GOOG", "GOOGL", "SPX", "$SPX", "NDX", "$NDX", "RUT", "$RUT", "DJI", "$DJI"]);
 
-async function fetchChainSide(chainSymbol: string, contractType: "CALL" | "PUT", token: string, isFuturesSymbol: boolean, log: any): Promise<{ map: Record<string, unknown>; underlyingPrice?: number } | null> {
+async function fetchChainSide(chainSymbol: string, contractType: "CALL" | "PUT", token: string, isFuturesSymbol: boolean, log: any, strikeCount?: number): Promise<{ map: Record<string, unknown>; underlyingPrice?: number } | null> {
   const params = new URLSearchParams({
     symbol: chainSymbol,
     contractType,
-    range: "ALL",
   });
+  // Schwab's /chains gateway returns HTTP 502 "Body buffer overflow" for very
+  // large chains (SPX, NDX, RUT, SPY, QQQ) when range=ALL is requested. Use
+  // strikeCount to cap per-expiration strikes around ATM, which keeps the
+  // response within Schwab's response-buffer limit.
+  if (strikeCount && strikeCount > 0) {
+    params.set("strikeCount", String(strikeCount));
+    params.set("range", "NTM");
+  } else {
+    params.set("range", "ALL");
+  }
   if (isFuturesSymbol) params.set("assetClass", "FUTURES");
 
   const url = `${SCHWAB_API_BASE}/chains?${params.toString()}`;
@@ -838,9 +847,11 @@ async function fetchIndexChainStructure(
   const chainSymbol = formatSchwabSymbol(displaySymbol);
   log.info({ symbol: displaySymbol, chainSymbol }, "Index chain: fetching structure from Schwab REST (split CALL+PUT)");
 
+  // Index chains (SPX/NDX/RUT) are huge — request only ~50 strikes per
+  // expiration around ATM; otherwise Schwab returns HTTP 502 buffer overflow.
   const [callResult, putResult] = await Promise.all([
-    fetchChainSide(chainSymbol, "CALL", accessToken, false, log),
-    fetchChainSide(chainSymbol, "PUT", accessToken, false, log),
+    fetchChainSide(chainSymbol, "CALL", accessToken, false, log, 50),
+    fetchChainSide(chainSymbol, "PUT", accessToken, false, log, 50),
   ]);
 
   if (!callResult && !putResult) {
@@ -1044,9 +1055,16 @@ router.get("/options", async (req, res) => {
       const params = new URLSearchParams({
         symbol: chainSymbol,
         contractType: "ALL",
-        range: "ALL",
       });
-      if (isFuturesSymbol) params.set("assetClass", "FUTURES");
+      if (isFuturesSymbol) {
+        // Schwab's futures /chains endpoint rejects range=ALL with HTTP 400
+        // ("Check Param Values"). Use strikeCount instead.
+        params.set("assetClass", "FUTURES");
+        params.set("strikeCount", "30");
+        params.set("range", "NTM");
+      } else {
+        params.set("range", "ALL");
+      }
 
       const chainUrl = `${SCHWAB_API_BASE}/chains?${params.toString()}`;
       let response = await fetch(chainUrl, {
