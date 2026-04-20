@@ -74,6 +74,53 @@ export interface DetCandidate {
   };
 }
 
+interface FlowContractMetric {
+  symbol: string;
+  underlying: string;
+  strike: number;
+  expiration: string;
+  type: "C" | "P";
+  liveVolume: number;
+  liveNotional: number;
+  openInterest: number;
+  dayVolume: number;
+  volOiRatio: number;
+  sweepPrints: number;
+  blockPrints: number;
+  largestPrintSize: number;
+  largestPrintPremium: number;
+  tradeCount: number;
+}
+
+interface FlowTickerResult {
+  ticker: string;
+  score: number;
+  scoreReason: string;
+  totalPrints: number;
+  totalLiveVolume: number;
+  totalLiveNotional: number;
+  callNotional: number;
+  putNotional: number;
+  callPutNotionalRatio: number | null;
+  sweepPrints: number;
+  blockPrints: number;
+  contractsSubscribed: number;
+  topContracts: FlowContractMetric[];
+  largestPrint: { symbol: string; size: number; price: number; premium: number; timestamp: number } | null;
+  error?: string;
+}
+
+interface FlowScanResult {
+  jobId: string;
+  status: "queued" | "running" | "complete" | "error";
+  durationSec: number;
+  contractsSubscribed: number;
+  startedAt: number | null;
+  completedAt: number | null;
+  tickers: FlowTickerResult[];
+  error?: string;
+}
+
 interface DetScanResult {
   candidates: DetCandidate[];
   filterSummary: {
@@ -669,6 +716,13 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
   const [detResult, setDetResult] = useState<DetScanResult | null>(null);
   const [detError, setDetError] = useState<string | null>(null);
 
+  // ── Unusual Flow Scan (real-time Polygon options tape) ─────────────
+  const [flowScanning, setFlowScanning] = useState(false);
+  const [flowJob, setFlowJob] = useState<FlowScanResult | null>(null);
+  const [flowError, setFlowError] = useState<string | null>(null);
+  const flowPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => () => { if (flowPollRef.current) clearInterval(flowPollRef.current); }, []);
+
   const [showScreenBuilder, setShowScreenBuilder] = useState(false);
   const [editingScreen, setEditingScreen] = useState<number | null>(null);
   const [refreshingScreenId, setRefreshingScreenId] = useState<number | null>(null);
@@ -787,6 +841,56 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
       setDetError(err instanceof Error ? err.message : String(err));
     } finally {
       setIsScanning(false);
+    }
+  };
+
+  const handleUnusualFlowScan = async () => {
+    const baseSyms = resolvedSymbols.length > 0 ? resolvedSymbols : await universeData.getSymbols(universe);
+    // Flow scan is heavier than a quote scan — cap at 20 tickers by
+    // default. Prefer the current detResult top candidates if we already
+    // ran a deterministic scan (likeliest to have real flow).
+    let tickers: string[] = [];
+    if (detResult?.candidates?.length) {
+      tickers = detResult.candidates.slice(0, 20).map(c => c.symbol);
+    } else {
+      tickers = baseSyms.slice(0, 20);
+    }
+    if (!tickers.length) { setFlowError("No tickers to scan"); return; }
+
+    setFlowScanning(true);
+    setFlowError(null);
+    setFlowJob(null);
+
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/scanner/unusual-flow`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tickers, durationSec: 20 }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({} as { error?: string; message?: string }));
+        const err = body as { error?: string; message?: string };
+        throw new Error(err.message ?? err.error ?? `HTTP ${res.status}`);
+      }
+      const { jobId } = await res.json() as { jobId: string };
+
+      if (flowPollRef.current) clearInterval(flowPollRef.current);
+      flowPollRef.current = setInterval(async () => {
+        try {
+          const pr = await fetchWithAuth(`${API_BASE}/scanner/unusual-flow/${jobId}`);
+          if (!pr.ok) return;
+          const data = await pr.json() as FlowScanResult;
+          setFlowJob(data);
+          if (data.status === "complete" || data.status === "error") {
+            if (flowPollRef.current) { clearInterval(flowPollRef.current); flowPollRef.current = null; }
+            setFlowScanning(false);
+            if (data.status === "error") setFlowError(data.error ?? "scan failed");
+          }
+        } catch { /* keep polling */ }
+      }, 2000);
+    } catch (err) {
+      setFlowError(err instanceof Error ? err.message : String(err));
+      setFlowScanning(false);
     }
   };
 
@@ -972,8 +1076,94 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
               <ConnectBrokerPrompt label="Connect Brokerage For Market Scanner" compact />
             </div>
           )}
+
+          {/* Unusual Flow Scan — live Polygon options tape */}
+          <div className="mt-2 flex flex-col items-center gap-1">
+            <button
+              onClick={handleUnusualFlowScan}
+              disabled={flowScanning || isScanning}
+              className="font-bold font-mono tracking-wider rounded-lg disabled:opacity-30 disabled:cursor-not-allowed active:scale-95 transition-all"
+              style={{
+                fontSize: 11, padding: "6px 12px",
+                background: "#0c0c0c", color: "#66e0ff", border: "1px solid #1e4a5a",
+                cursor: "pointer",
+              }}
+              title={detResult?.candidates?.length ? "Scans top deterministic candidates" : "Scans first 20 tickers in universe"}
+            >
+              {flowScanning ? (
+                <span className="flex items-center gap-2">
+                  <span className="w-3 h-3 border-2 border-[#66e0ff] border-t-transparent rounded-full animate-spin" />
+                  LIVE FLOW {flowJob?.status === "running" ? `— ${flowJob.contractsSubscribed} contracts` : "…"}
+                </span>
+              ) : (
+                <>⚡ UNUSUAL FLOW SCAN (LIVE)</>
+              )}
+            </button>
+            {flowError && <div className="text-[10px]" style={{ color: "#ff6b6b" }}>{flowError}</div>}
+          </div>
         </div>
       </div>
+
+      {flowJob && flowJob.status === "complete" && flowJob.tickers.some(t => t.totalPrints > 0 || t.score > 0) && (
+        <div className="bg-card rounded-xl border border-card-border mt-2 p-3">
+          <div className="flex items-baseline justify-between mb-2">
+            <div className="text-[11px] font-bold tracking-wider" style={{ color: "#66e0ff" }}>
+              ⚡ LIVE UNUSUAL FLOW — {flowJob.durationSec}s window · {flowJob.contractsSubscribed} contracts
+            </div>
+            <div className="text-[9px] text-muted-foreground">{new Date(flowJob.completedAt ?? Date.now()).toLocaleTimeString()}</div>
+          </div>
+          <div className="grid grid-cols-1 gap-2">
+            {flowJob.tickers
+              .filter(t => t.totalPrints > 0 || (t.error && t.error !== "no_chain"))
+              .slice(0, 12)
+              .map(t => (
+                <div key={t.ticker} className="bg-[#0c0c0c] border border-[#1a1a1a] rounded p-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-baseline gap-2">
+                      <button
+                        onClick={() => { setSymbol(t.ticker); onNavigateToSymbol?.(t.ticker); }}
+                        className="text-sm font-bold font-mono"
+                        style={{ color: "#FFB800" }}
+                      >{t.ticker}</button>
+                      <span className="text-[10px] font-bold" style={{ color: t.score >= 50 ? "#00d166" : "#b8bcc8" }}>
+                        SCORE {t.score.toFixed(1)}
+                      </span>
+                    </div>
+                    <div className="text-[9px] text-muted-foreground font-mono">
+                      sweeps {t.sweepPrints} · blocks {t.blockPrints} · prints {t.totalPrints} · notional ${(t.totalLiveNotional / 1000).toFixed(0)}k
+                      {t.callPutNotionalRatio != null && <> · C/P {t.callPutNotionalRatio.toFixed(2)}</>}
+                    </div>
+                  </div>
+                  {t.topContracts.length > 0 && (
+                    <div className="mt-1 grid grid-cols-1 gap-0.5">
+                      {t.topContracts.slice(0, 4).map(c => (
+                        <div key={c.symbol} className="text-[10px] font-mono flex items-center gap-2 text-zinc-400">
+                          <span style={{ color: c.type === "C" ? "#26a69a" : "#ef5350", minWidth: 60 }}>
+                            {c.expiration.slice(5)} {c.type}{c.strike}
+                          </span>
+                          <span>vol {c.liveVolume}</span>
+                          <span>OI {c.openInterest}</span>
+                          <span style={{ color: c.volOiRatio > 1 ? "#ffb800" : "#6b7280" }}>
+                            V/OI {c.volOiRatio.toFixed(2)}
+                          </span>
+                          <span className="text-zinc-500">${(c.liveNotional / 1000).toFixed(1)}k</span>
+                          {c.sweepPrints > 0 && <span style={{ color: "#66e0ff" }}>sweep×{c.sweepPrints}</span>}
+                          {c.blockPrints > 0 && <span style={{ color: "#ab47bc" }}>block×{c.blockPrints}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {t.error && <div className="text-[9px]" style={{ color: "#ff6b6b" }}>err: {t.error}</div>}
+                </div>
+              ))}
+          </div>
+          {flowJob.tickers.every(t => t.totalPrints === 0) && (
+            <div className="text-[10px] text-muted-foreground text-center py-2">
+              No trades observed in window (market closed or illiquid contracts).
+            </div>
+          )}
+        </div>
+      )}
 
       {isScanning && !(mode === "deterministic" && detResult) && (
         <div className="flex flex-col items-center justify-center py-16 gap-4 bg-card rounded-xl border border-card-border">
