@@ -2,9 +2,49 @@ import { Router } from "express";
 import { db, polygonOptionsHistoryTable } from "@workspace/db";
 import { sql, gte, desc } from "drizzle-orm";
 import { syncDateRange, syncDate, getSyncStatus } from "../lib/polygonFlatFiles";
+import { getTrailingUnusualFlow } from "../lib/optionsBaselines";
 import { logger } from "../lib/logger";
 
 const router = Router();
+
+/**
+ * Part 1.4 — Trailing unusual flow over the last N trading days.
+ * Surfaces tickers (including names not in any current watchlist) whose
+ * 5-day options volume runs >=2x their prior-15-day baseline.
+ */
+router.get("/trailing", async (req, res) => {
+  try {
+    // Strict numeric param parsing — Number("abc") is NaN, and Math.min/max
+    // propagate NaN, which would crash the date math or silently disable
+    // the ratio filter. Reject malformed input with 400. (Architect Part 1.)
+    const parseNum = (v: unknown, def: number, lo: number, hi: number, name: string) => {
+      if (v === undefined) return def;
+      const n = Number(v);
+      if (!Number.isFinite(n)) throw new Error(`invalid ${name}: must be a finite number`);
+      return Math.max(lo, Math.min(hi, n));
+    };
+    let recentDays: number, trailingDays: number, minRatio: number, limit: number;
+    try {
+      recentDays = parseNum(req.query.recentDays, 5, 1, 10, "recentDays");
+      trailingDays = parseNum(req.query.trailingDays, 15, 5, 60, "trailingDays");
+      minRatio = parseNum(req.query.minRatio, 2, 1, 10, "minRatio");
+      limit = parseNum(req.query.limit, 50, 1, 200, "limit");
+    } catch (e: any) {
+      return res.status(400).json({ error: e.message });
+    }
+    const t0 = Date.now();
+    const results = await getTrailingUnusualFlow({ recentDays, trailingDays, minRatio, limit });
+    res.json({
+      params: { recentDays, trailingDays, minRatio, limit },
+      count: results.length,
+      results,
+      queryMs: Date.now() - t0,
+    });
+  } catch (err: any) {
+    logger.warn({ err: err.message }, "trailing unusual flow query failed");
+    res.status(500).json({ error: err.message });
+  }
+});
 
 router.get("/status", async (req, res) => {
   try {

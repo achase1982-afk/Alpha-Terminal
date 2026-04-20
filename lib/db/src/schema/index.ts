@@ -1,4 +1,4 @@
-import { pgTable, text, serial, real, integer, boolean, timestamp, jsonb, uniqueIndex, date, doublePrecision, bigint } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, real, integer, boolean, timestamp, jsonb, uniqueIndex, index, date, doublePrecision, bigint } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -126,6 +126,10 @@ export const polygonOptionsHistoryTable = pgTable("polygon_options_history", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => [
   uniqueIndex("pol_opt_unique").on(t.optionSymbol, t.tradeDate),
+  // Trailing-baseline queries hit this table by ticker over a date range.
+  // Without this composite index, queries seq-scan ~1.7M rows per ticker
+  // (~280ms each → 37s per 130-ticker scan). With index, expected sub-50ms total.
+  index("pol_opt_ticker_date_idx").on(t.ticker, t.tradeDate),
 ]);
 
 export type PolygonOptionsHistory = typeof polygonOptionsHistoryTable.$inferSelect;

@@ -1,0 +1,134 @@
+Master build directive. Everything below runs in parallel where possible. Do NOT restart the api-server while the flat files backfill is running. Stage code changes to take effect on the next natural restart after backfill completes.
+
+==== PART 1: FLAT FILES DATA INTEGRATION ====
+
+1.1 Build a trailing baseline query helper that reads polygon_options_history and returns:
+- 20-day average daily options volume per contract
+- 20-day average daily options notional per ticker
+- 20-day average vol/OI ratio per contract
+- Accepts ticker, lookback days, optional contract filter
+
+1.2 Add "intraday volume breakout" detection to the unusual flow detector. Fires when a contract's volume today >= 3x its 20-day trailing average, minimum 200 contracts today.
+
+1.3 Add "flow acceleration" scoring input to the deterministic scanner's Flow bucket. Compares recent 3-day options activity vs trailing 20-day baseline. Scoring: recent 3-day > 2x trailing = full credit, > 1.5x = partial. Propose exact point mapping.
+
+1.4 Add a "trailing unusual flow" query and API endpoint surfacing tickers with unusual activity in the last 5 trading days, including tickers not in any current watchlist. API only, no UI yet.
+
+1.5 Graceful degradation: if polygon_options_history has less than 10 days of history for a ticker, new baselines return null/zero and existing Flow bucket falls back to current behavior. No crashes on sparse data.
+
+==== PART 2: BACKGROUND WATCHER (PERSISTENT LIVE TAPE) ====
+
+2.1 Build a background watcher process that opens a single persistent Polygon WebSocket connection on market open and holds it through market close.
+
+2.2 Default coverage universe: LC130 plus an optional mid-cap watchlist (up to 30 tickers). Per-ticker baseline: nearest 2 expirations, ±7% strikes, calls and puts. Target ~780-960 contracts under the 1,000 cap.
+
+2.3 Three-tier detection pipeline running continuously:
+- Tier 1 (always-on): baseline coverage above, fires sweeps, blocks, vol/OI spikes, and new intraday volume breakout from Part 1 into a rolling session log
+- Tier 2 (reactive widening): when Tier 1 detects unusual activity on a ticker, auto-subscribe to wider ±15% OTM range and nearest 3 expirations on that ticker for 30-60 min. Borrows from headroom budget. Releases automatically.
+- Tier 3 (manual drill-down): when user clicks into a specific ticker in UI, "deepen coverage" button temporarily subscribes ±25% strikes, out to 90 DTE on that ticker. Holds until user closes view.
+
+2.4 Rolling session log persists all detections for the full trading session (market open to close), not a 30-minute rolling window.
+
+2.5 Watchlist-aware: user can swap the watcher's universe between LC130, LC130+midcap, or other watchlists. Re-subscribes on switch.
+
+2.6 Detection math, all deterministic and documented with comment blocks:
+- Sweep: same contract, 3+ prints across 2+ exchanges within 500ms, total size >= 100 contracts
+- Block: single print >= 500 contracts OR >= 10% of contract OI
+- Vol/OI spike: vol/OI >= 3.0 AND volume >= 500 AND OI >= 10
+- Intraday volume breakout: today's volume >= 3x 20-day trailing average, minimum 200 contracts (from Part 1)
+- Aggressor side: price >= ask = BULLISH for calls / BEARISH for puts, price <= bid = opposite, between = NEUTRAL
+
+2.7 Reuse patterns from the Schwab streamer reconnect fix: closure-captured socket identity with isCurrent gating, 20s keepalive ping with 45s pong watchdog, 15s handshake and 10s auth timeouts, auth-gated backoff reset, credential refresh after 3 consecutive failures.
+
+2.8 Env gate: POLYGON_OPTIONS_WS_ENABLED stays false by default. I will flip it to true manually for the first live smoke test during market hours after review.
+
+==== PART 3: ON-DEMAND DEEP SCAN ON ANY WATCHLIST ====
+
+3.1 Second mode of live flow coverage: user picks any watchlist from the dropdown (top financials, custom lists, 300-ticker, 383-ticker, etc.). Clicks scan.
+
+3.2 System subscribes to deeper per-ticker coverage on that watchlist's tickers: nearest 3 expirations, ±15-20% strikes, calls and puts.
+
+3.3 Budget management: if remaining contract budget (1,000 cap minus background watcher usage) is enough, subscribe normally. If not, temporarily reduce background watcher baseline to free budget, OR run in rotating batches. Display in UI which mode is active.
+
+3.4 Events accumulate in the same session log as the background watcher, tagged by the watchlist that was scanned.
+
+3.5 Subscription releases when user closes the scan or switches watchlists.
+
+==== PART 4: SCANNER INTEGRATION AND SCORING ====
+
+4.1 The deterministic scan reads from the rolling session log automatically. Every candidate returned gets enriched with unusual flow events detected today. Display as badge on each row: sweep count, block count, dominant side, top event summary.
+
+4.2 Add LIVE_FLOW_BONUS as a new 20-point scoring bucket in the deterministic scanner. Reweight existing buckets to fit:
+- Setup Quality: 15 (was 20)
+- Accumulation: 15 (unchanged)
+- IV Setup: 20 (was 25)
+- Flow (cached/EOD + Part 1 flow acceleration): 15 (was 25)
+- RS: 15 (unchanged)
+- LIVE_FLOW (new): 20
+- Total: 100
+
+4.3 LIVE_FLOW scoring tier (mirrors unusualFlowBonusPoints pattern):
+- 1 event in session: 6 points
+- 3 events: 12 points
+- 6+ events: 20 points
+- -4 penalty if flow is directionally balanced (not clearly bullish or bearish)
+
+4.4 Unusual flow data from background watcher (live today) AND flat files detection (last 5 days) both contribute to the LIVE_FLOW bucket. Live today weighted heavier. Exact blend formula: documented in code with comment block.
+
+==== PART 5: UI CLEANUP ====
+
+5.1 Remove the separate "Unusual Flow Scan (LIVE)" button from the main scanner view. Background watcher makes it redundant.
+
+5.2 Single primary scan button per universe.
+
+5.3 Collapse Deterministic/Manual Filter tabs and Discovery/Momentum pills into a single segmented control: three options (Discovery, Momentum, Manual). Manual's detailed filter UI hidden behind a gear icon.
+
+5.4 Remove the "Scanning 130 tickers — Setup Quality + Accumulation + IV Setup + Flow + Emerging RS (min 55)" description line from main view. Move to a tooltip on an info icon.
+
+5.5 Results panel: replace empty state placeholder box with a single subtle line like "Run a scan to see candidates."
+
+5.6 Add filter chips above results: "All candidates | Unusual flow only | No flow detected" so user can toggle between views.
+
+5.7 Live flow coverage status badge in results: show current watchlist's coverage state. Examples:
+- LC130: "Live flow: always-on (full coverage)"
+- Top Financials (30 tickers): "Live flow: on-demand. [Run Deep Scan]"
+- 383 core: "Live flow: on-demand, rotating batches (~3 min). [Run Deep Scan]"
+
+5.8 Each ticker row in results shows: ticker + price, deterministic score bars, live flow badge (color-coded for live/EOD/stale) with sweep/block/dominant-side summary.
+
+==== PART 6: INFRASTRUCTURE AND OBSERVABILITY ====
+
+6.1 Confirm the 1 vCPU / 4 GB Reserved VM handles:
+- Background watcher 960 contracts subscribed + detection processing
+- Flat files trailing baseline queries per scan
+- Schwab streamer and IB streamer concurrently running
+- A concurrent on-demand deep scan on a 40-ticker watchlist
+
+If any concern, tell me before building that part.
+
+6.2 Observability: log every subscribe/unsubscribe, every detected event, every connection lifecycle event, every LIVE_FLOW_BONUS application. Counter metrics: prints received, events detected, subscriptions active, reconnects, backfill calls made, backfill prints recovered, flat files trailing query time per ticker.
+
+6.3 Failure modes:
+- WS drops and REST backfill fails: scanner falls back to flat files + cached EOD, shows amber indicator + banner "live flow unavailable, showing historical data from <date>"
+- WS disabled via env: no banner, just uses historical data
+- Flat files sparse: baselines return null, existing Flow bucket falls back to current behavior
+
+==== PART 7: DO NOT TOUCH ====
+
+7.1 Do not touch the Schwab streamer reconnect code we just fixed.
+7.2 Do not touch the existing EOD Polygon snapshot path (flow_daily_aggregates, options_flow_per_strike).
+7.3 Do not remove the old Flow bucket scoring logic, just reweight and augment it with flow acceleration from Part 1.
+
+==== EXECUTION RULES ====
+
+E1. Architect code review after each major part (1, 2, 3, 4, 5) completes. Address critical and high findings before moving to the next part. At least two review iterations per part if the first surfaces real issues.
+
+E2. Do not flip POLYGON_OPTIONS_WS_ENABLED=1 yet. First live smoke test happens after I review the build.
+
+E3. Smoke test plan after build completes: start the api-server clean, verify flat files backfill finished and polygon_options_history has 20+ days of coverage, verify the background watcher connects on POLYGON_OPTIONS_WS_ENABLED=1, verify detections fire and write to the session log, verify the deterministic scan reads from the log and applies LIVE_FLOW_BONUS correctly, verify the UI renders the new badges and filter chips correctly, verify a forced disconnect triggers reconnect cleanly.
+
+E4. Report back with what shipped per part, architect findings addressed, sample query outputs, sample detections logged, and final confirmation that all seven parts are integrated and pass the smoke test plan.
+
+E5. If you hit a real blocker mid-build that requires a decision from me, stop and ask. Do not guess on architecture questions.
+
+Build everything. Go.

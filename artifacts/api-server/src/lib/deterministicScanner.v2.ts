@@ -8,6 +8,7 @@ import { getSettings, type StrategistConfig } from "./strategistSettings.js";
 import { getCachedRegime, buildFallbackRegime, type StructuredRegime } from "./regimePostProcessor.js";
 import { computeIOScore } from "./ioScoreEngine.js";
 import { getPolygonFlowHighlightsBulk, unusualFlowBonusPoints, type PolygonFlowHighlights } from "./polygonFlowHighlights.js";
+import { getFlowAcceleration, flowAccelerationPoints, computeLiveFlowBucket } from "./optionsBaselines.js";
 import { logger } from "./logger.js";
 
 const SCHWAB_API = "https://api.schwabapi.com/marketdata/v1";
@@ -867,6 +868,27 @@ function resolveWeightProfile(cfg: StrategistConfig, regime: StructuredRegime | 
   };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Bucket caps (Part 4 rebalance):
+//   SetupQuality 15  Accumulation 15  IV 20  Flow 15  LiveFlow 20  RS 15  = 100
+// Note: existing scoring functions still emit values up to their *original*
+// caps (SQ→20, IV→25, Flow→25). We re-normalize to the new caps without
+// clamping by dividing by the original cap (preserves resolution) — the
+// "rebalance" is structural (introducing the LIVE_FLOW slot) rather than
+// punitive on existing scores. The dynamic regime weights (WeightProfile)
+// stay unchanged; w.liquidity is split between Flow and LiveFlow by their
+// cap ratio (15/35 vs 20/35) so the total liquidity-weight envelope is
+// preserved across regimes.
+// ─────────────────────────────────────────────────────────────────────────────
+const BUCKET_MAX_SETUP_LEGACY = 20;
+const BUCKET_MAX_IV_LEGACY = 25;
+const BUCKET_MAX_FLOW_LEGACY = 25;
+const BUCKET_MAX_ACC = 15;
+const BUCKET_MAX_RS = 15;
+const BUCKET_MAX_LIVE_FLOW = 20;
+const FLOW_WEIGHT_SHARE = 15 / 35;       // Flow share of w.liquidity
+const LIVE_FLOW_WEIGHT_SHARE = 20 / 35;  // LiveFlow share of w.liquidity
+
 function applyDynamicWeights(
   w: WeightProfile,
   setupQuality: number,
@@ -875,23 +897,30 @@ function applyDynamicWeights(
   flowDivergence: number,
   emergingRS: number,
   flowDataAvailable: boolean,
+  liveFlow: number = 0,
+  liveFlowAvailable: boolean = false,
 ): number {
-  const maxSetup = 20, maxAcc = 15, maxIV = 25, maxFlow = 25, maxRS = 15;
-  const normTrend = maxSetup > 0 ? setupQuality / maxSetup : 0;
-  const normVol = maxAcc > 0 ? accumulation / maxAcc : 0;
-  const normIVR = maxIV > 0 ? ivSetup / maxIV : 0;
-  const normFlow = flowDataAvailable && maxFlow > 0 ? flowDivergence / maxFlow : 0;
-  const normRS = maxRS > 0 ? emergingRS / maxRS : 0;
+  const normTrend = setupQuality / BUCKET_MAX_SETUP_LEGACY;
+  const normVol = accumulation / BUCKET_MAX_ACC;
+  const normIVR = ivSetup / BUCKET_MAX_IV_LEGACY;
+  const normFlow = flowDataAvailable ? flowDivergence / BUCKET_MAX_FLOW_LEGACY : 0;
+  const normLive = liveFlowAvailable ? Math.min(1, liveFlow / BUCKET_MAX_LIVE_FLOW) : 0;
+  const normRS = emergingRS / BUCKET_MAX_RS;
 
-  if (!flowDataAvailable) {
-    const totalW = w.trend + w.volume + w.ivr + w.rs;
-    if (totalW === 0) return 0;
-    return Math.round(((normTrend * w.trend + normVol * w.volume + normIVR * w.ivr + normRS * w.rs) / totalW) * 100);
-  }
-
-  const totalW = w.trend + w.volume + w.ivr + w.liquidity + w.rs;
+  // Compose weighted sum, only including buckets whose data is available so
+  // the denominator (totalW) skips missing-data slots and the score isn't
+  // depressed by them.
+  const flowWeight = flowDataAvailable ? w.liquidity * FLOW_WEIGHT_SHARE : 0;
+  const liveWeight = liveFlowAvailable ? w.liquidity * LIVE_FLOW_WEIGHT_SHARE : 0;
+  const totalW = w.trend + w.volume + w.ivr + flowWeight + liveWeight + w.rs;
   if (totalW === 0) return 0;
-  return Math.round(((normTrend * w.trend + normVol * w.volume + normIVR * w.ivr + normFlow * w.liquidity + normRS * w.rs) / totalW) * 100);
+  const num = normTrend * w.trend
+            + normVol * w.volume
+            + normIVR * w.ivr
+            + normFlow * flowWeight
+            + normLive * liveWeight
+            + normRS * w.rs;
+  return Math.round((num / totalW) * 100);
 }
 
 export async function runDiscoveryScan(
@@ -942,13 +971,24 @@ export async function runDiscoveryScan(
   const allSymbolsForDB = [...new Set([...passedSymbols, ...neededEtfs])];
 
   emitTelemetry("DATABASE", "INFO", `Scanner: loading equity history for ${allSymbolsForDB.length} symbols from DB`, { symbols: allSymbolsForDB.length }, "SCANNER", scanBatch);
-  const [equityHistoryMap, flowDataMap, dbIvr] = await Promise.all([
+  const [equityHistoryMap, flowDataMap, dbIvr, flowAccelMap] = await Promise.all([
     fetchEquityHistoryFromDB(allSymbolsForDB),
     fetchFlowDataFromDB(passedSymbols),
     fetchIvrFromDB(passedSymbols),
+    // Part 1.3: trailing 3d-vs-20d options-volume acceleration from
+    // polygon_options_history (flat files). Returns an empty map if the
+    // backfill is sparse — handled by graceful degradation in the loop.
+    // Use the same trailing-window shape as the Part 1.4 unusual-flow screen
+    // (recent 5d vs prior 15d), so the per-symbol LIVE_FLOW input and the
+    // /api/unusual-options/trailing endpoint are sourced from an identical
+    // signal — just one is per-symbol, the other is screen-wide.
+    getFlowAcceleration(passedSymbols, { recentDays: 5, trailingDays: 15 }).catch((err) => {
+      log.warn({ err: err instanceof Error ? err.message : String(err) }, "FlowAcceleration query failed — continuing without bonus");
+      return new Map();
+    }),
   ]);
-  emitTelemetry("DATABASE", "INFO", `Scanner: loaded ${equityHistoryMap.size} equity histories, ${flowDataMap.size} flow records, ${dbIvr.currentIvr.size} IVR values from DB`, {
-    equitySymbols: equityHistoryMap.size, flowSymbols: flowDataMap.size, ivrSymbols: dbIvr.currentIvr.size,
+  emitTelemetry("DATABASE", "INFO", `Scanner: loaded ${equityHistoryMap.size} equity histories, ${flowDataMap.size} flow records, ${dbIvr.currentIvr.size} IVR values, ${flowAccelMap.size} flow-accel baselines from DB`, {
+    equitySymbols: equityHistoryMap.size, flowSymbols: flowDataMap.size, ivrSymbols: dbIvr.currentIvr.size, flowAccelSymbols: flowAccelMap.size,
   }, "SCANNER", scanBatch);
 
   const etfHistories = new Map<string, Candle[]>();
@@ -963,6 +1003,7 @@ export async function runDiscoveryScan(
   const scoredResults: Array<{
     symbol: string; totalScore: number; rawScores: { s1a:number;s1b:number;s1c:number;s2a:number;s2b:number;s2c:number;s3a:number;s3b:number;s3c:number;s4a:number;s4b:number;s4c:number;s4d:number;s5a:number;s5b:number };
     setupQuality: number; accumulation: number; ivSetup: number; flowDivergence: number; emergingRS: number;
+    liveFlow: number; liveFlowAvailable: boolean;
     liqScore: number; flowDataAvailable: boolean;
     directionalLean: "BULLISH" | "BEARISH" | "MIXED";
     quote: { lastPrice: number; totalVolume: number; netPercentChange: number }; candles: Candle[];
@@ -1067,26 +1108,45 @@ export async function runDiscoveryScan(
         flowDivergence = s4a + s4b + s4c + s4d;
       }
 
+      // ── Part 4: LIVE_FLOW bucket (replaces the Part 1.3 Flow-bucket boost) ──
+      // Trailing flow acceleration now feeds the dedicated LIVE_FLOW bucket
+      // (computeLiveFlowBucket). Until Part 2's WS watcher is live, the
+      // bucket is sourced purely from the trailing accel ratio (synthetic
+      // events). When Part 2 ships, liveEventCount will come from the
+      // session log and dominate the blend.
+      const accel = flowAccelMap.get(symUpper) ?? null;
+      const flowAccelPts = flowAccelerationPoints(accel); // legacy telemetry only
+      const liveFlowResult = computeLiveFlowBucket({
+        liveEventCount: 0, // Part 2: read from session log
+        trailingAccel: accel,
+        directionallyBalanced: false, // Part 2: derive from session call/put split
+      });
+      const liveFlow = liveFlowResult.score;
+      const liveFlowAvailable = liveFlowResult.available;
+
       // ── Category 5 ──
       const { score: s5a, rsSign } = score5A(closes, spyCloses);
       const s5b = score5B(closes, sectorCloses);
       const emergingRS = s5a + s5b;
 
       // ── Composite (dynamic weights from settings + regime) ──
-      let totalScore = applyDynamicWeights(scanWeights, setupQuality, accumulation, ivSetup, flowDivergence, emergingRS, flowDataAvailable);
+      let totalScore = applyDynamicWeights(scanWeights, setupQuality, accumulation, ivSetup, flowDivergence, emergingRS, flowDataAvailable, liveFlow, liveFlowAvailable);
 
       // ── Directional lean ──
       const directionalLean = computeDirectionalLean(pulseSignal, obvSlopeSign, flowSkewSignal, flowDirSignal, rsSign, flowDataAvailable);
 
       emitTelemetry("SCANNER", "INFO",
-        `${sym} DISCOVERY ${totalScore} — SQ ${setupQuality} ACC ${accumulation} IV ${ivSetup} FLOW ${flowDivergence} RS ${emergingRS} | ${directionalLean}`, {
+        `${sym} DISCOVERY ${totalScore} — SQ ${setupQuality} ACC ${accumulation} IV ${ivSetup} FLOW ${flowDivergence} LIVE ${liveFlow}${liveFlowAvailable ? ` (${liveFlowResult.effectiveEvents}ev${liveFlowResult.penaltyApplied ? ",-bal" : ""})` : ""} RS ${emergingRS} | ${directionalLean}`, {
         ticker: sym, totalScore, setupQuality, accumulation, ivSetup, flowDivergence, emergingRS, directionalLean, flowDataAvailable, pass: totalScore >= CFG.minScore,
+        flowAccelerationPts: flowAccelPts, flowAccelerationRatio: accel?.ratio ?? null,
+        liveFlow, liveFlowAvailable, liveFlowEvents: liveFlowResult.effectiveEvents,
       }, "SCANNER", scanBatch);
 
       scoredResults.push({
         symbol: sym, totalScore,
         rawScores: { s1a, s1b, s1c, s2a, s2b, s2c, s3a, s3b, s3c, s4a, s4b, s4c, s4d, s5a, s5b },
         setupQuality, accumulation, ivSetup, flowDivergence, emergingRS,
+        liveFlow, liveFlowAvailable,
         liqScore, flowDataAvailable, directionalLean,
         quote: { lastPrice: spot, totalVolume: quote.totalVolume, netPercentChange: quote.netPercentChange },
         candles, ivr, iv30d, atmSpreadPct,
@@ -1231,6 +1291,8 @@ export async function runDiscoveryScan(
         accumulation: r.accumulation,
         ivSetup: r.ivSetup,
         flowDivergence: r.flowDivergence,
+        liveFlow: r.liveFlow,
+        liveFlowAvailable: r.liveFlowAvailable,
         emergingRS: r.emergingRS,
       },
     };
@@ -1283,6 +1345,8 @@ export async function runDiscoveryScan(
       accumulation: r.accumulation,
       ivSetup: r.ivSetup,
       flowDivergence: r.flowDivergence,
+      liveFlow: r.liveFlow,
+      liveFlowAvailable: r.liveFlowAvailable,
       emergingRS: r.emergingRS,
       rawScores: r.rawScores,
       ivr: r.ivr,
