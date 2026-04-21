@@ -1206,8 +1206,18 @@ export async function runDiscoveryScan(
   scoredResults.sort((a, b) => b.totalScore - a.totalScore);
   const aboveThreshold = scoredResults.filter(r => r.totalScore >= minScore);
 
+  // Always surface tickers that triggered the unusual-flow detector, even if
+  // their composite score didn't clear minScore. The "Unusual flow only" UI
+  // filter is meant to expose real flow signal — gating it behind trend/RS
+  // would silently hide the very tickers the user is asking to see.
+  const unusualFlowTickers = scoredResults.filter(r => (r.unusualFlowBonus ?? 0) > 0);
+  const candidatePoolMap = new Map<string, typeof scoredResults[number]>();
+  for (const r of aboveThreshold) candidatePoolMap.set(r.symbol.toUpperCase(), r);
+  for (const r of unusualFlowTickers) candidatePoolMap.set(r.symbol.toUpperCase(), r);
+  const candidatePool = Array.from(candidatePoolMap.values()).sort((a, b) => b.totalScore - a.totalScore);
+
   const scoreDistrib = scoredResults.slice(0, 10).map(r => `${r.symbol}=${r.totalScore}(SQ${r.setupQuality}/ACC${r.accumulation}/IV${r.ivSetup}/FL${r.flowDivergence}/RS${r.emergingRS})`);
-  log.info({ scored: scoredResults.length, above: aboveThreshold.length, distribution: scoreDistrib }, "Discovery scoring complete");
+  log.info({ scored: scoredResults.length, above: aboveThreshold.length, unusualFlowAdded: candidatePool.length - aboveThreshold.length, distribution: scoreDistrib }, "Discovery scoring complete");
 
   // Part 6 — observability: per-scan LIVE_FLOW counter aggregate. Lets
   // operators answer "how many candidates this scan had a usable LIVE_FLOW
@@ -1232,7 +1242,7 @@ export async function runDiscoveryScan(
   // legacy MEGA_EARNINGS-driven `checkEventConflicts` lookup for ticker-specific events,
   // so non-mega-cap candidates also surface their real earnings dates.
   const earningsBySymbol = new Map<string, { date: string; confirmed: boolean; source: string | null }>();
-  await Promise.all(aboveThreshold.map(async (r) => {
+  await Promise.all(candidatePool.map(async (r) => {
     const info = await getNextEarningsDate(r.symbol).catch(() => null);
     if (info?.earningsDate) {
       earningsBySymbol.set(r.symbol.toUpperCase(), {
@@ -1243,7 +1253,7 @@ export async function runDiscoveryScan(
     }
   }));
 
-  const candidates: ScanCandidate[] = aboveThreshold.map(r => {
+  const candidates: ScanCandidate[] = candidatePool.map(r => {
     // Macro-only events (FOMC, CPI, OpEx, etc) — exclude any "earnings" type since those
     // are now sourced exclusively from the unified earnings helper above.
     const upcoming = getUpcomingEvents(30)
