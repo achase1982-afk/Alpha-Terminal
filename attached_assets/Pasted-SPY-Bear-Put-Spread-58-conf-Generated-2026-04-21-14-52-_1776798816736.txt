@@ -1,0 +1,71 @@
+SPY - Bear Put Spread - 58% conf
+Generated: 2026-04-21 14:52
+
+COMPANY
+SPY is the SPDR S&P 500 ETF tracking the 500 largest U.S. equities; it is a broad market beta instrument levered to macro liquidity, rate expectations, geopolitical risk premium, and mega-cap tech earnings (TSLA this week, AAPL 4/30).
+
+THESIS
+Arbitration: both desks agreed on structure (put debit spread) and expiry (5/01, 10 DTE), disagreeing only on strike placement. I'm taking the BEAR proposal (705/700) unchanged — its rationale is more concretely grounded in chain data (long 705P delta -0.49 OI 1,760; short 700P OI 7,092, 8.8k volume today) and it is the higher-confidence side (62 vs 48). The Bull's 700/695 is too far OTM for a 10-day window on a 705 underlying — it needs SPY through 698.15 just to break even, an outsized move for the two-week horizon, whereas 705/700 monetizes any pierce of Monday's low on Wed ceasefire gap, Warsh follow-through, or a TSLA guide-down. IVR 0.92 makes outright long puts a vega trap; selling the 700P back funds ~40% of the long 705P premium and caps vega bleed — the correct expression of a bearish thesis when downside skew is richly bid (stacked 716/723/725 put OI for 4/27–5/01 is the flow footprint). Risk/reward is ~1.7:1 on a structure that wins on any directional slide, not a binary pin.
+
+LEGS
+  BUY PUT  $705.00  2026-05-01  delta -0.49  OI 1,760  $8.08
+  SELL PUT  $700.00  2026-05-01  delta -0.40  OI 7,092  $6.27
+
+ECONOMICS
+Debit: $1.81 per contract ($181 on 1 lot)
+Fill Range: $1.78 - $1.85
+Risk/Reward: 1.76:1
+Max Profit: $319
+Max Loss: $181
+Breakeven: $703.15
+DTE: 9d
+
+EXIT TARGETS
+Profit Target: $3.30 per contract ($330 on 1 lot, underlying $700.50)
+Stop Loss: $0.90 per contract ($90 on 1 lot, underlying $708.50)
+Time Stop: 2026-04-29
+
+INVALIDATION
+Bull: SPY closes above 708.50 on a confirmed Iran ceasefire extension or dovish Warsh walk-back — vol crushes and the spread decays toward zero with both legs OTM.
+Bear: SPY breaks and closes below 700 on either a ceasefire breakdown headline or a TSLA miss — at that point the spread approaches max value and should be closed, not held for the last 15-20 cents of intrinsic.
+
+RISK OF RUIN
+Surprise Iran peace-deal announcement in the 48-hour window combined with a dovish Warsh walk-back and a strong TSLA print triggers a short-covering melt-up through 712, vol crushes, and the 705/700 structure decays to near zero inside a week before the ceasefire-expiry catalyst fires.
+
+CAUTION
+Catalyst-dense window: Iran ceasefire expiry Wed 4/22, TSLA earnings Wed after close, AAPL earnings 4/30 (Cook's final print). IVR 0.92 means premium is expensive — do NOT leg in; work the spread as a single net-debit order. User preference is 30-60 DTE; this is 10 DTE by design because the catalyst stack fires inside two weeks and longer-dated structures pay too much vega at IVR 92.
+
+IOSCORE
+Overall: 20%  Classification: MACRO ALIGNED
+Edge: Idiosyncratic 20% / Macro 80%
+Conviction: MODERATELY BEARISH  Risk: ELEVATED
+Correlation: NORMAL  Composite: 30.0
+Idio Opportunity: No
+
+CONTEXT SOURCES
+Catalyst In Window: ECONOMIC_RELEASE on 2026-04-24 (NEUTRAL)
+  · 2026-04-24 — ECONOMIC_RELEASE — PCE Price Index [calendar]
+  · 2026-04-29 — FED_MEETING — FOMC Decision [calendar]
+  · 2026-04-30 — ECONOMIC_RELEASE — GDP Q1 (Advance) [calendar]
+  · 2026-05-01 — ECONOMIC_RELEASE — Jobs Report (NFP) [calendar]
+Queries (3):
+  - SPY S&P 500 news April 21 2026
+  - S&P 500 market outlook this week April 2026
+  - stock market today April 21 2026
+Sources (12):
+  - Stock Market Live April 21, 2026: S&P 500 (SPY) is Back in the Green on Cease Fire Hopes Again - 24/7 Wall St. [6 hours ago]
+    https://247wallst.com/investing/2026/04/21/stock-market-live-april-21-2026-sp-500-spy-is-back-in-the-green-on-cease-fire-hopes-again/
+  - State Street SPDR S&P 500 ETF Trust (SPY) Stock Price, News, Quote & History - Yahoo Finance [7 hours ago]
+    https://finance.yahoo.com/quote/SPY/
+  - .SPX: S&P 500 Index - Stock Price, Quote and News - CNBC [5 hours ago]
+    https://www.cnbc.com/quotes/.SPX
+  - S&P 500 (SPY) closes above ___ on April 21? Trading Odds & Predictions (Apr. 20, 2026) | Polymarket [2 days ago]
+    https://polymarket.com/event/spy-closes-above-on-april-21-2026
+  - FREE Tuesday April 21 2026 SPY SPX ES Actionable Levels [1 day ago]
+    https://spyoptions.substack.com/p/free-tuesday-april-21-2026-spy-spx
+  - S&P 500 (SP500) | FRED | St. Louis Fed [11 hours ago]
+    https://fred.stlouisfed.org/series/SP500
+  - SPDR S&P 500 ETF Trust: SPY Stock Price Quote & News | Robinhood [January 29, 2026]
+    https://robinhood.com/us/en/stocks/SPY/
+  - SPY Historical Stock Price Data
+    https://stockanalysis.com/etf/spy/history/

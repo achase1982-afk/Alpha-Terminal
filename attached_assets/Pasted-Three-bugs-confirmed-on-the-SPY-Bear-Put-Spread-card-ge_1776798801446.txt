@@ -1,0 +1,21 @@
+Three bugs confirmed on the SPY Bear Put Spread card generated 4/21/2026 14:52. Treat as P0.
+
+BUG 1 — Header IVR (already scoped, confirm plan):
+computeIVR in optionsStrategist.ts:260 is a broken in-chain skew calc. Showed SPY IVR 3.17% when external sources (OptionCharts, MarketChameleon, Barchart, Unusual Whales) cluster at 20-28.
+Fix: wire GET /api/market/options-analytics to read from equity_daily.ivr, same path as fetchIvrFromDB in deterministicScanner.v2.ts:89. Delete computeIVR. Label the field "IVR (EOD)" so staleness is explicit. If a symbol has no row, hide the field; do not fall back to the broken calc.
+Gate: before shipping, query equity_daily.ivr for SPY, QQQ, IWM, AAPL, MU, and the top 20 Liquid Core tickers. Report columns, last-updated timestamps, and values. If the daily job is not populating correctly, fix the job first.
+
+BUG 2 — Narrative IVR contradicts header (new, and more serious):
+The AI thesis for this card cited "IVR 0.92" and "IVR 92" as the reason to sell the 700P (vega trap, premium expensive, fund ~40% of long leg). The header on the same card showed 3.17%. Two surfaces, two numbers, same card.
+Investigation needed:
+  1. Dump the exact prompt payload sent to the narrative model for this SPY generation. Include every field passed, not a summary.
+  2. Determine whether the IVR field in the payload was 3.17 (header value), 92 (some other source), or absent.
+  3. If the payload fed 3.17 and the narrative output 92, the model is hallucinating. Mitigation: inject IVR as a structured field with an explicit "do not reinterpret or restate this value" instruction in the prompt, and/or replace free-text IVR references with templated substitution.
+  4. If the payload fed 92 from a different source, identify that source and delete it. The strategist must read the same DB-backed IVR as the header.
+Ship requirement: integration test asserting header IVR equals narrative IVR (within rounding) for any generated card. Fail the generation if they diverge.
+
+BUG 3 — Profit target exceeds spread max:
+Generated profit target of $3.30 per contract on a 705/700 bear put spread with $1.81 debit. Theoretical max value at expiry is strike width $5.00 minus debit $1.81 = $3.19. The target is 11 cents above what the structure can physically pay.
+Fix: clamp generated profit target to min(calculated_target, max_spread_value - debit - min_tick_buffer) where min_tick_buffer covers bid/ask reality (suggest $0.05-$0.10). Add unit test: no generated profit target can exceed (strike_width - debit) for any defined-risk debit structure.
+
+Ground truth validation after all three fixes: regenerate a SPY card during market hours and confirm (a) header IVR lands in the 20-28 range that external providers are showing, (b) narrative IVR matches the header exactly, (c) profit target is strictly less than spread max minus debit.
