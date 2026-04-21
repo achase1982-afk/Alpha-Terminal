@@ -1,0 +1,25 @@
+Proceed in this order:
+
+STEP 1 (today, parallel): Bugs 3 and 2 infrastructure.
+  3a. Add max-payout clamp to normalizeExitTargets at strategistV2.ts:2252. Unit test: no generated profit target exceeds (strike_width - debit - min_tick_buffer) for any defined-risk debit structure. Buffer: $0.05.
+  3b. Build templated IVR substitution in the strategist prompt. The prompt must inject IVR as a structured field with explicit "do not restate, reinterpret, or paraphrase this value" instruction. Integration test: generate 10 cards across different tickers/structures, assert header IVR equals every IVR reference in the narrative (within rounding). Test must pass even while the underlying IVR value is still the broken 3.17 — the point of this step is proving the substitution mechanism works, independent of the value being correct.
+  3c. While you're in the prompt, audit whether the same hallucination pattern applies to MMM, delta, OI, P/C, debit, max profit, max loss, and breakeven. If any of those are free-text in the prompt, template-substitute them too. Report which fields you found and fixed.
+
+STEP 2: Daily IVR job investigation.
+  Before writing any fix, answer these:
+  a. Who writes to equity_daily.iv_30d? If more than one writer, that's the real bug.
+  b. Why is SPY null on 6 of last 9 trading days? Check job logs for silent exceptions, skipped runs, rate limits. Do not assume "data source failure" without evidence.
+  c. Why do sector ETFs have zero IVR coverage? Is the sector universe in the job's iteration scope?
+  d. What other columns in equity_daily have the same class of problems? Spot-check hv_20d, atr, rvol, and anything else computed alongside iv_30d for unit inconsistency, negatives, or near-zero outliers. The scanner reads from this table, so other columns being dirty means other scanner bugs.
+  Report findings before writing the fix.
+
+STEP 3: Daily IVR job fix.
+  Based on Step 2 findings: normalize iv_30d to a single unit at ingestion (not read), add validation that rejects negatives and near-zero outliers at write time, fix the skip-days root cause, extend coverage to sector ETFs. Do not normalize at read time as a workaround.
+
+STEP 4: Backfill, staged.
+  Backfill 30 days first. Verify SPY, QQQ, IWM, AAPL IVR lands in the 20-28 range external providers show today. If the math is still wrong, stop and re-examine the formula before polluting more rows.
+  Once the 30-day backfill validates, backfill the remaining 222 days.
+
+STEP 5: Wire Bug 1.
+  Switch GET /api/market/options-analytics and strategistV2.computeIvrFromChain to read from equity_daily.ivr. Delete computeIVR in optionsStrategist.ts:260. Label field "IVR (EOD)". If symbol has no row, hide the field — do not fall back to the deleted function.
+  Smoke test: regenerate SPY card during market hours, confirm header IVR matches external providers, confirm narrative IVR matches header.

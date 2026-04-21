@@ -12,6 +12,8 @@ import { checkEventConflicts, getUpcomingEvents } from "./calendarEventChecker.j
 import { getNextEarningsDate } from "./earningsService.js";
 import { evaluateCatalyst, deriveTradeDirection, type CatalystEvaluation } from "./catalystEvaluator.js";
 import { computeIVR, type OptionContract } from "./optionsStrategist.js";
+import { clampProfitTargetToMaxPayout } from "./exitTargetMath.js";
+import { scrubAll } from "./narrativeScrubbers.js";
 import { getAiLabStrategistConfig } from "./aiLabConfig.js";
 import {
   callAnthropicWithSystemAndWebSearch,
@@ -296,6 +298,7 @@ The macro regime block in the payload may report low conviction (NEUTRAL / NO_ED
 You must be honest about where every claim comes from.
 
 - Any specific number you cite from the data package (strike, volume, open interest, IV, delta, bid, ask) must match the payload exactly. Do not round, do not estimate, do not invent strikes that are not in the chain.
+- **HARD RULE on IVR and P/C ratio**: Do NOT restate, reinterpret, paraphrase, scale, or invert the \`ivr\` or \`putCallVolumeRatio\` values from the data payload. If you want to reference IVR in the narrative, use the literal token \`{{IVR}}\` and the server will substitute the canonical value. If you want to reference the P/C ratio, use the literal token \`{{PC_RATIO}}\`. Do not compute "0.92" from "92" or vice versa. Do not append "%" to IVR — the placeholder is unitless. If you write a number next to "IVR" or "P/C" the server will overwrite it with the canonical value and log a quality warning against this generation.
 - Any expiration date you recommend must come from the availableExpirations array provided. Do not calculate a date yourself.
 - When you reference information outside the payload (news, regulatory context, sector dynamics, historical patterns), briefly cite the source. Examples: "per recent SEC filing," "per current news on the PDT rule change," "per general knowledge of semiconductor capex cycles."
 - If a piece of information you want is not in the payload and you cannot verify it through search, say so. Do not fill gaps with plausible-sounding detail.
@@ -730,14 +733,44 @@ export async function analyzeTickerV2(
   );
   aiResponse.thesis = reconciledThesis;
 
-  // Bug 3: normalize exit targets so profitTarget/stopLoss are always per-share option price
+  // Bug 3: normalize exit targets so profitTarget/stopLoss are always per-share option price,
+  // then clamp profitTarget so it cannot exceed the structure's max physical payout.
   const normalizedExitTargets = normalizeExitTargets(
     aiResponse.exitTargets,
     entryAbs,
     maxProfit,
     maxLoss,
     ticker,
+    isCredit,
   );
+
+  // Bug 2: scrub narrative for hallucinated IVR / P/C ratio mentions and
+  // substitute the canonical values from the data payload. The model has
+  // demonstrated it will invent IVR values despite the grounding-discipline
+  // rule, so we post-process every narrative field before display.
+  const canonical = {
+    ivr: tickerData.ivr,
+    pcRatio: Number.isFinite(chainSummary?.putCallVolumeRatio) ? chainSummary.putCallVolumeRatio : null,
+  };
+  const scrubAndLog = (text: string, fieldName: string): string => {
+    if (!text) return text;
+    const r = scrubAll(text, canonical);
+    if (r.replacements.length > 0) {
+      logger.warn(
+        { ticker, narrativeField: fieldName, replacements: r.replacements, canonical },
+        "StrategistV2: narrative scrubber replaced AI-cited values with canonical payload values",
+      );
+    }
+    return r.text;
+  };
+  aiResponse.thesis = scrubAndLog(aiResponse.thesis ?? "", "thesis");
+  aiResponse.riskOfRuin = scrubAndLog(aiResponse.riskOfRuin ?? "", "riskOfRuin");
+  aiResponse.warnings = aiResponse.warnings != null
+    ? scrubAndLog(aiResponse.warnings, "warnings")
+    : aiResponse.warnings;
+  aiResponse.bullInvalidation = scrubAndLog(aiResponse.bullInvalidation ?? "", "bullInvalidation");
+  aiResponse.bearInvalidation = scrubAndLog(aiResponse.bearInvalidation ?? "", "bearInvalidation");
+  aiResponse.companyContext = scrubAndLog(aiResponse.companyContext ?? "", "companyContext");
 
   const firstLeg = aiResponse.legs[0];
   const expiration = firstLeg?.expiration ?? "";
@@ -2255,6 +2288,7 @@ function normalizeExitTargets(
   maxProfit: number,
   maxLoss: number,
   ticker: string,
+  isCredit: boolean = false,
 ): { profitTarget: number; profitTargetUnderlying: number; stopLoss: number; stopLossUnderlying: number; timeStop: string } {
   const def = { profitTarget: 0, profitTargetUnderlying: 0, stopLoss: 0, stopLossUnderlying: 0, timeStop: "" };
   if (!raw) return def;
@@ -2287,10 +2321,37 @@ function normalizeExitTargets(
     return Math.round(v * 100) / 100;
   };
 
+  // Step 1: per-share-vs-dollar normalization.
+  const normalizedProfit = normalizeOne(raw.profitTarget, "profitTarget");
+  const normalizedStop = normalizeOne(raw.stopLoss, "stopLoss");
+
+  // Step 2 (Bug 3): clamp profit target to the structure's max physical
+  // payout. The AI generated $3.30/share on a 705/700 SPY bear put with $1.81
+  // debit — max profit per share for that structure is $3.19, so the target
+  // exceeded what the spread can pay. Cap at (maxProfit/100 - tick_buffer).
+  const clamp = clampProfitTargetToMaxPayout({
+    profitTarget: normalizedProfit,
+    maxProfit,
+    isCredit,
+  });
+  if (clamp.wasClamped) {
+    logger.warn(
+      {
+        ticker,
+        original: normalizedProfit,
+        clamped: clamp.clamped,
+        cap: clamp.cap,
+        maxProfit,
+        entryAbs,
+      },
+      "StrategistV2: profit target exceeded max payout — clamped",
+    );
+  }
+
   return {
-    profitTarget: normalizeOne(raw.profitTarget, "profitTarget"),
+    profitTarget: clamp.clamped,
     profitTargetUnderlying: Number.isFinite(raw.profitTargetUnderlying) ? raw.profitTargetUnderlying : 0,
-    stopLoss: normalizeOne(raw.stopLoss, "stopLoss"),
+    stopLoss: normalizedStop,
     stopLossUnderlying: Number.isFinite(raw.stopLossUnderlying) ? raw.stopLossUnderlying : 0,
     timeStop: raw.timeStop ?? "",
   };
