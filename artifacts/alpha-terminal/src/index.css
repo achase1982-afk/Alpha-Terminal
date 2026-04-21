@@ -286,11 +286,11 @@
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-/* Push content below the iOS status bar / Dynamic Island. Used on the
-   topmost header so the wordmark and ticker tape don't get overlapped
-   by the system UI on notched / Dynamic-Island iPhones. */
+/* Top spacer above the wordmark/ticker. Always shows at least a 14px
+   grey strip so the header looks consistent on desktop browsers, and
+   expands to clear the notch / Dynamic Island on iPhones. */
 .safe-top {
-  padding-top: env(safe-area-inset-top, 0px);
+  padding-top: max(env(safe-area-inset-top, 0px), 14px);
 }
 
 .ui-reduced-motion *,
