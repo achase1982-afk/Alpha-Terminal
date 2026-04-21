@@ -1,0 +1,30 @@
+HARD RULE, applies to this task and every future database task. Do not violate this under any circumstances.
+
+Any database operation — schema change, data fix, backfill, index, migration, column normalization, deletion, insert — must execute against BOTH the development database AND the production database. Dev-only database work does not count as done. Dev-only database work creates the illusion of a fix while prod stays broken, and this has happened multiple times already.
+
+Applied to the current Step 3 plan:
+
+1. Before writing any fix code, confirm in writing:
+   - The exact connection string or environment variable that points to the prod database
+   - The exact connection string or environment variable that points to the dev database
+   - They are different databases (not the same database with different names)
+   - You have write access to both from your current environment
+
+2. Every layer of the Step 3 plan must list its database targets explicitly:
+   - Layer 1 (ingest normalization): code change, but ALSO requires a one-time cleanup of existing bad rows in BOTH dev and prod
+   - Layer 2 (collapse writers): code change, takes effect going forward in BOTH environments once deployed
+   - Layer 3 (cross-date contamination): code change PLUS a one-time nullification of contaminated rows in BOTH dev and prod
+   - Layer 4 (IVR formula): code change, takes effect going forward in BOTH
+   - Layer 5 (job scheduling): environment-specific, fix BOTH dev and prod schedulers if both are broken
+   - Layer 6 (sector ETF coverage): code change, takes effect going forward in BOTH
+   - Layer 7 (backfill): the actual backfill runs against BOTH dev and prod, not dev alone, not prod alone
+
+3. Every database operation must be executed twice: once in dev, once in prod, with both results reported. "I backfilled 252 days of IVR history" is not a complete report. "I backfilled 252 days of IVR history in dev (X rows updated) AND in prod (Y rows updated), validated SPY IVR in both environments, here are the numbers" is a complete report.
+
+4. If prod access is blocked for any reason — credentials, network, permissions, separate deploy pipeline, whatever — stop immediately and tell me. Do not ship a dev-only fix and promise prod will follow "later." "Later" never happens. If you cannot touch prod, the task is not startable and I need to know before you write code, not after.
+
+5. Verification after every database change: query both databases for the same evidence (row counts, sample values, IVR for SPY/QQQ/IWM) and post both results side by side. If the two environments diverge after a change that should have applied to both, that is a failure state and must be resolved before moving to the next layer.
+
+This rule supersedes any previous instruction. If any prior directive implied dev-only scope for database work, treat it as amended. All database work is dual-environment from here forward.
+
+Confirm you understand this rule and can execute it before starting Step 3. If you cannot access prod, say so now.
