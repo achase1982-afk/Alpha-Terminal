@@ -3,7 +3,7 @@
   "short_name": "Alpha",
   "description": "Institutional-grade trading terminal",
   "start_url": "/",
-  "display": "browser",
+  "display": "standalone",
   "background_color": "#070707",
   "theme_color": "#070707",
   "icons": [
