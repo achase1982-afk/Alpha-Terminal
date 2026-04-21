@@ -1,0 +1,54 @@
+The Unusual Options scanner card works but is unreadable. Too many abbreviations and too much density. Redesign for clarity without removing data. Target: a trader should be able to read a card in 5 seconds without mentally translating anything.
+
+Specific changes:
+
+1. Collapsed card header (the always-visible row):
+   Replace the current "9 strk · 35.2k ct · $12.99M · 0s/7b · 59.3× · 97" with a cleaner horizontal layout. Suggestion:
+
+   UNH  [BULLISH]  $12.99M notional  ·  35.2k contracts  ·  9 strikes  ·  Score 97
+   Price $347.40  ·  Top VOI 59.3x  ·  Execution: 7 blocks
+
+   Use full words. No more cryptic "0s/7b". If there are zero sweeps, don't show "0sw". Only show counts that are non-zero on the header, with the label spelled out ("blocks" not "b").
+
+2. Expanded card body: replace all abbreviations with full labels.
+   Current: "Unusual Strikes: 6C / 3P"
+   New:     "Unusual Strikes: 6 calls, 3 puts"
+   
+   Current: "Top VOI: 59.3×"
+   New:     "Top Volume/OI Ratio: 59.3x (highest unusual strike)"
+   
+   Current: "Total Call/Put Vol: 71,575 / 40,060"
+   New:     "Total Call Volume: 71,575  ·  Total Put Volume: 40,060"
+   
+   Current: "P/C Volume Ratio: 0.56"
+   New:     "Put/Call Ratio: 0.56 (bullish lean)"
+   
+   Current: "Live Exec: 0sw / 7bk / 0rg"
+   New:     "Execution Types: 0 sweeps, 7 blocks, 0 regular trades"
+
+3. Top Strikes by VOI section: change column labels from implicit to explicit.
+   Current headers: none visible, just rows with numbers
+   New: add a labeled header row: "Side | Strike | Expiry | Volume | Open Interest | Vol/OI"
+   Current row: "P $355 · 2026-04-24 (3d) · 593 vol / 10 OI · 59.3x"
+   New row:     "Put  $355  Apr 24 (3 DTE)  593 volume  10 OI  59.3x ratio"
+
+4. Score breakdown at the bottom of the expanded card: replace the cryptic formula line with a labeled breakdown.
+   Current: "Score 96.7 · strk=40 voi=17.8 skew=10 notl=16.9 tnr=0 exec=12"
+   New (as a small table or labeled list):
+     "Score 96.7 total
+       Strike count: 40
+       Volume/OI: 17.8
+       Directional skew: 10
+       Notional size: 16.9
+       Tenor/DTE: 0
+       Execution quality: 12"
+
+5. Aggressor pill: the "N/A · Phase 2" pill is fine but add a tooltip or info tap explaining what it means so a user who does not know the roadmap can understand why it says Phase 2. Something like "Aggressor side classification (bid/ask analysis) coming in a future update. Currently unavailable."
+
+6. Status bar at top: "130 SCANNED | 122 WITH FLOW DATA | 15 MATCHED FILTERS" is fine but the "as of 2026-04-21" timestamp is cramped against the word "FILTERS". Add more spacing and ideally show "as of 2026-04-21 11:24 AM" with the time, so I know how fresh the data is.
+
+7. Keep the "Send to Strategist" button visible on every card. Currently it shows on the expanded view. That is correct. Do not move it.
+
+8. General principle: abbreviations acceptable in the always-visible collapsed header only if they are universal trading terms (DTE, OI, vol are fine). Everything else should be spelled out. The expanded view has room for full words. Use it.
+
+Before committing, show me a screenshot or side-by-side mockup of the old vs new card layout so I can sign off on the density.
