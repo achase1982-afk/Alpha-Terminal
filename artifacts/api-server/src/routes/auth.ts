@@ -80,25 +80,35 @@ function basicAuth(appKey: string, appSecret: string): string {
   return "Basic " + Buffer.from(`${appKey}:${appSecret}`).toString("base64");
 }
 
-function successPage(_label: string) {
-  // Skip the visible confirmation page entirely. If we're in a popup,
-  // close it immediately so the parent tab can resume. Otherwise (same-tab
-  // redirect — most common on iOS PWA where popups are blocked) replace
-  // straight into the app root. No timeout, no visible content.
-  return `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#1a1a1a"></head>
-    <body style="background:#1a1a1a;margin:0">
-      <script>
-        (function(){
-          try {
-            if (window.opener && !window.opener.closed) {
-              window.close();
-              return;
-            }
-          } catch (e) {}
-          window.location.replace('/');
-        })();
-      </script>
-    </body></html>`;
+function isPopupCallback(req: import("express").Request): boolean {
+  // Frontend sets `schwab_oauth_mode=popup` cookie immediately before
+  // window.open(). On iOS PWA the popup is blocked and the same-tab fallback
+  // path runs *without* setting this cookie, so absence => same-tab.
+  const raw = req.headers.cookie || "";
+  return /(?:^|;\s*)schwab_oauth_mode=popup(?:;|$)/.test(raw);
+}
+
+function clearPopupCookie(res: import("express").Response) {
+  res.setHeader(
+    "Set-Cookie",
+    "schwab_oauth_mode=; Path=/api/auth; Max-Age=0; SameSite=Lax",
+  );
+}
+
+function sendOAuthSuccess(req: import("express").Request, res: import("express").Response) {
+  clearPopupCookie(res);
+  if (isPopupCallback(req)) {
+    // Desktop popup path — close the popup, parent tab is polling.
+    res
+      .type("html")
+      .send(
+        `<!DOCTYPE html><html><body style="background:#1a1a1a;margin:0"><script>window.close();</script></body></html>`,
+      );
+    return;
+  }
+  // Same-tab path (iOS PWA, popup-blocked desktop). Single 302 → SPA root.
+  // No HTML render, no JS hop, no flash of "success page".
+  res.redirect(302, "/");
 }
 
 function errorPage(title: string, msg: string) {
@@ -216,7 +226,7 @@ router.get("/callback", async (req, res) => {
     pendingTokens.set("trader_latest", { accessToken, refreshToken: rfTok, ts: Date.now() });
 
     req.log.info("GET /callback — token exchange succeeded (stored as market + trader)");
-    res.send(successPage("Schwab"));
+    sendOAuthSuccess(req, res);
   } catch (err) {
     req.log.error({ err }, "GET /callback network error");
     res.status(500).send(errorPage("Connection Error", "Could not reach Schwab API. Please try again."));
@@ -457,7 +467,7 @@ router.get("/trader-callback", async (req, res) => {
     pendingTokens.set("latest", { accessToken, refreshToken: trRfTok, ts: Date.now() });
 
     req.log.info("GET /trader-callback — Trader token exchange succeeded (stored as market + trader)");
-    res.send(successPage("Schwab"));
+    sendOAuthSuccess(req, res);
   } catch (err) {
     req.log.error({ err }, "GET /trader-callback network error");
     res.status(500).send(errorPage("Connection Error", "Could not reach Schwab API."));

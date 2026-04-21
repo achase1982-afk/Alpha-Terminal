@@ -55,6 +55,11 @@ export function AuthPanel() {
     // intermittently remounts the sign-in widget when the SPA cold-boots
     // after a same-tab redirect. The /trader-callback success page already
     // calls window.close() on completion, so the popup self-disposes.
+    // Mark this attempt as a popup-mode attempt. The server reads this cookie
+    // on the OAuth callback to decide between window.close() (popup) and a
+    // bare 302 → "/" (same-tab, e.g. iOS PWA where popups are blocked).
+    document.cookie = "schwab_oauth_mode=popup; Path=/api/auth; Max-Age=600; SameSite=Lax";
+
     const popup = window.open(
       url,
       "schwab-oauth",
@@ -62,8 +67,11 @@ export function AuthPanel() {
     );
 
     // Popup blocked (rare from a direct user click, but possible) — fall
-    // back to the original same-tab redirect so we never regress.
+    // back to the original same-tab redirect so we never regress. Clear the
+    // popup-mode cookie so the server returns a 302 (no HTML flash) instead
+    // of trying to close the now-non-existent popup window.
     if (!popup) {
+      document.cookie = "schwab_oauth_mode=; Path=/api/auth; Max-Age=0; SameSite=Lax";
       window.location.href = url;
       return;
     }
