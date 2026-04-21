@@ -110,7 +110,7 @@
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-card text-foreground;
     position: fixed;
     inset: 0;
     font-size: 14px;
