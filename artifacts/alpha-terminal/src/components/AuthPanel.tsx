@@ -49,51 +49,17 @@ export function AuthPanel() {
     }
     if (!url) { setIsNavigating(false); return; }
 
-    // Open Schwab OAuth in a popup so the original tab — and its in-memory
-    // Clerk session — stays mounted across the cross-domain bounce. This
-    // sidesteps a Clerk dev-mode session re-check on iOS Safari that
-    // intermittently remounts the sign-in widget when the SPA cold-boots
-    // after a same-tab redirect. The /trader-callback success page already
-    // calls window.close() on completion, so the popup self-disposes.
-    // Mark this attempt as a popup-mode attempt. The server reads this cookie
-    // on the OAuth callback to decide between window.close() (popup) and a
-    // bare 302 → "/" (same-tab, e.g. iOS PWA where popups are blocked).
-    document.cookie = "schwab_oauth_mode=popup; Path=/api/auth; Max-Age=600; SameSite=Lax";
+    // Same-tab navigation only. The OAuth callback responds with a single
+    // HTTP 302 back to "/", so the user lands directly in the SPA — no popup
+    // window to close, no in-app browser overlay to dismiss, no "success"
+    // page to look at. PendingSessionLoader picks up the persisted tokens
+    // when the SPA cold-mounts on "/".
+    window.location.href = url;
+  }, [authUrlData, refetchAuthUrl]);
 
-    const popup = window.open(
-      url,
-      "schwab-oauth",
-      "width=600,height=800,menubar=no,toolbar=no,location=yes,status=no",
-    );
-
-    // Popup blocked (rare from a direct user click, but possible) — fall
-    // back to the original same-tab redirect so we never regress. Clear the
-    // popup-mode cookie so the server returns a 302 (no HTML flash) instead
-    // of trying to close the now-non-existent popup window.
-    if (!popup) {
-      document.cookie = "schwab_oauth_mode=; Path=/api/auth; Max-Age=0; SameSite=Lax";
-      window.location.href = url;
-      return;
-    }
-
-    // Poll for popup closure. When it closes, immediately try to pull the
-    // tokens the callback persisted server-side. PendingSessionLoader's
-    // visibilitychange listener provides a second chance if this misses
-    // (e.g., callback still in-flight when the window closed).
-    const pollMs = 500;
-    const maxWaitMs = 5 * 60 * 1000; // give up after 5 min
-    const startedAt = Date.now();
-    const interval = window.setInterval(async () => {
-      if (popup.closed) {
-        window.clearInterval(interval);
-        await rehydrateFromServer();
-        setIsNavigating(false);
-      } else if (Date.now() - startedAt > maxWaitMs) {
-        window.clearInterval(interval);
-        setIsNavigating(false);
-      }
-    }, pollMs);
-  }, [authUrlData, refetchAuthUrl, rehydrateFromServer]);
+  // Kept for callers that still reference it; PendingSessionLoader handles
+  // the same job on cold-mount via /api/auth/server-tokens.
+  void rehydrateFromServer;
 
   const handleDisconnect = useCallback(async () => {
     setIsDisconnecting(true);

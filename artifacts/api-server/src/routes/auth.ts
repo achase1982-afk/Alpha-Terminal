@@ -80,34 +80,10 @@ function basicAuth(appKey: string, appSecret: string): string {
   return "Basic " + Buffer.from(`${appKey}:${appSecret}`).toString("base64");
 }
 
-function isPopupCallback(req: import("express").Request): boolean {
-  // Frontend sets `schwab_oauth_mode=popup` cookie immediately before
-  // window.open(). On iOS PWA the popup is blocked and the same-tab fallback
-  // path runs *without* setting this cookie, so absence => same-tab.
-  const raw = req.headers.cookie || "";
-  return /(?:^|;\s*)schwab_oauth_mode=popup(?:;|$)/.test(raw);
-}
-
-function clearPopupCookie(res: import("express").Response) {
-  res.setHeader(
-    "Set-Cookie",
-    "schwab_oauth_mode=; Path=/api/auth; Max-Age=0; SameSite=Lax",
-  );
-}
-
-function sendOAuthSuccess(req: import("express").Request, res: import("express").Response) {
-  clearPopupCookie(res);
-  if (isPopupCallback(req)) {
-    // Desktop popup path — close the popup, parent tab is polling.
-    res
-      .type("html")
-      .send(
-        `<!DOCTYPE html><html><body style="background:#1a1a1a;margin:0"><script>window.close();</script></body></html>`,
-      );
-    return;
-  }
-  // Same-tab path (iOS PWA, popup-blocked desktop). Single 302 → SPA root.
-  // No HTML render, no JS hop, no flash of "success page".
+function sendOAuthSuccess(_req: import("express").Request, res: import("express").Response) {
+  // Always: bare HTTP 302 back to the SPA root. No HTML page, no script,
+  // no "success" interstitial of any kind. The frontend uses same-tab
+  // navigation, so this redirect lands the user back in the app directly.
   res.redirect(302, "/");
 }
 
