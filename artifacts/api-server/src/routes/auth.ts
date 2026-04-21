@@ -80,32 +80,22 @@ function basicAuth(appKey: string, appSecret: string): string {
   return "Basic " + Buffer.from(`${appKey}:${appSecret}`).toString("base64");
 }
 
-function successPage(label: string) {
-  // Two completion paths:
-  //   1. Popup (window.opener present) — close the popup so the original
-  //      tab keeps its in-memory Clerk session intact. Critical: do NOT
-  //      navigate to "/" here, that loads a second SPA instance in the
-  //      popup which then fails Clerk's session check (esp. on iOS dev
-  //      mode) and shows the sign-in widget — the "app within the app"
-  //      bug.
-  //   2. Same-tab fallback (no opener — popup was blocked or this is a
-  //      legacy redirect) — navigate the existing tab to "/" so the user
-  //      ends up back in the app instead of stranded on this page.
-  return `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-    <body style="background:#0A0F16;color:#fff;font-family:-apple-system,system-ui,sans-serif;padding:40px 20px;text-align:center">
-      <h2 style="color:#00d166;font-size:18px">${escapeHtml(label)} Connected</h2>
-      <p style="color:#ccc;font-size:14px;line-height:1.5">Return to Alpha Terminal — it will pick up the session automatically.</p>
+function successPage(_label: string) {
+  // Skip the visible confirmation page entirely. If we're in a popup,
+  // close it immediately so the parent tab can resume. Otherwise (same-tab
+  // redirect — most common on iOS PWA where popups are blocked) replace
+  // straight into the app root. No timeout, no visible content.
+  return `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#1a1a1a"></head>
+    <body style="background:#1a1a1a;margin:0">
       <script>
         (function(){
-          var hasOpener = false;
-          try { hasOpener = !!(window.opener && !window.opener.closed); } catch (e) {}
-          setTimeout(function(){
-            if (hasOpener) {
+          try {
+            if (window.opener && !window.opener.closed) {
               window.close();
-            } else {
-              window.location.replace('/');
+              return;
             }
-          }, 1200);
+          } catch (e) {}
+          window.location.replace('/');
         })();
       </script>
     </body></html>`;
