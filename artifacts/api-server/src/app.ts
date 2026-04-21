@@ -9,7 +9,25 @@ import { logger } from "./lib/logger";
 
 const DEV_BYPASS = process.env.DEV_BYPASS_AUTH === "true";
 
+// OAuth callback endpoints must be publicly reachable — they're hit by the
+// browser as a top-level redirect from a third-party domain (schwab.com) and
+// already have their own CSRF protection via the signed `state` query param.
+// Requiring a Clerk session here would always 401 the user mid-OAuth.
+const PUBLIC_API_PATHS = new Set<string>([
+  "/auth/callback",
+  "/auth/trader-callback",
+  "/auth/redirect-uri",
+  "/auth/url",
+  "/auth/trader-url",
+  "/auth/pending-session",
+  "/auth/trader-pending-session",
+]);
+
 function apiRequireAuth(req: Request, res: Response, next: NextFunction) {
+  // req.path is relative to the mount point ("/api"), so it starts with "/auth/...".
+  if (PUBLIC_API_PATHS.has(req.path)) {
+    return next();
+  }
   const auth = getAuth(req);
   if (!auth?.userId) {
     res.status(401).json({ error: "Unauthorized" });
