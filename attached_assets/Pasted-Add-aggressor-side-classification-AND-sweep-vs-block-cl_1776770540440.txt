@@ -1,0 +1,43 @@
+Add aggressor side classification AND sweep vs block classification to the Unusual Options scanner as core detection dimensions. These two together are what actually distinguishes institutional positioning from noise.
+
+Implementation:
+
+1. For every unusual strike detected, classify each trade print by aggressor side:
+   - Print price >= ask at time of print: AGGRESSIVE BUY (bullish for calls, bearish for puts)
+   - Print price <= bid at time of print: AGGRESSIVE SELL (bearish for calls, bullish for puts)
+   - Print price between bid and ask: NEUTRAL
+
+2. For every unusual strike, also classify trades by execution pattern:
+   - SWEEP: same contract, 3+ prints across 2+ exchanges within 500ms, total size >= 100 contracts. Signals urgency, typically aggressive institutional algo slicing a large order to avoid alerting the market.
+   - BLOCK: single print >= 500 contracts OR >= 10% of contract OI. Signals a negotiated institutional position, often through dark pools or block trading desks.
+   - REGULAR: everything else (retail or non-urgent fills).
+
+3. For each detected unusual strike, compute:
+   - Ask-side volume and notional (aggressive buys)
+   - Bid-side volume and notional (aggressive sells)
+   - Neutral volume
+   - Sweep count and sweep notional
+   - Block count and block notional
+   - Dominant aggressor side with 70% threshold: BULLISH, BEARISH, or MIXED
+   - Execution pattern summary: e.g. "3 sweeps, 1 block, 12 regular"
+
+4. Aggregate per-ticker across all unusual strikes: overall direction, total sweep notional, total block notional, total regular notional.
+
+5. Scoring adjustment: directional aggression combined with sweep or block execution gets full credit. Mixed/neutral flow or purely regular execution gets reduced credit because the signal is less clean.
+
+6. Card display: show aggressor split AND execution pattern on each row. Example:
+   AMD  9 strk  70.5k ct  $31.05M  [78% ask / 20% bid / 2% neutral]  [3 sweeps, 1 block]  BULLISH
+
+7. UI filters to add:
+   - Aggressor threshold: default 70%, user can tighten to 80% or loosen to 60%
+   - Execution type: checkboxes for "Include sweeps", "Include blocks", "Include regular" so user can isolate sweep-only or block-only views
+   - Min sweep count and min block count (optional, default 0)
+
+8. Data feed question: confirm whether Polygon's current flat files feed (day_aggs_v1) contains per-trade print data with contemporaneous bid/ask AND exchange routing info needed for sweep detection. If not, tell me which Polygon feed is needed (trades_v1, quotes_v1, or live WebSocket T.O channel) and what the cost and storage implications are before building.
+
+9. Graceful degradation: if bid/ask context or exchange-level print data is unavailable, classify as UNAVAILABLE rather than fabricating. Scanner still works on volume/notional alone when classification is not possible.
+
+Architect review after, address findings, report back with:
+- Sample classified output on AMD and NFLX from recent sessions showing aggressor split and sweep/block counts
+- Confirmation of which Polygon data feed is being used
+- Any infrastructure or storage changes required
