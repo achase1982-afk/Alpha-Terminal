@@ -932,6 +932,20 @@ export async function runFullSnapshot(
       set: { status: sql`'running'`, startedAt: sql`now()`, errorMsg: sql`null` },
     });
 
+  // TODO: Prod snapshot hung on 2026-04-17 in 'running' state, never completed.
+  // Investigate cron/timeout/exception handling after IVR backfill ships.
+  // Symptoms: snapshot_collection_log row shows status='running', completedAt=NULL,
+  // errorMsg=NULL — meaning runFullSnapshot was invoked but neither finished nor
+  // threw to the catch handler. Likely causes to investigate:
+  //   1. An inner await hung indefinitely (Schwab/Polygon socket without timeout)
+  //   2. Process was SIGKILLed mid-run before catch could mark 'failed'
+  //   3. Uncaught promise rejection in a fire-and-forget branch killed the process
+  // Mitigations to add: (a) wrap runFullSnapshot in an outer Promise.race with a
+  // hard timeout (e.g. 45 min) that updates status='failed', (b) add a startup
+  // sweep that marks any 'running' rows older than 6 hours as 'failed' with
+  // errorMsg='auto-recovered: stale running row', (c) wire process-exit handler
+  // to flush a 'failed' status before exit. Without these, IV history gaps will
+  // silently re-open in prod after this backfill ships.
   try {
     await populateReferenceData(symbols);
 

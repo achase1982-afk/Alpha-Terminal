@@ -24,12 +24,18 @@ const PUBLIC_API_PATHS = new Set<string>([
   // Admin maintenance endpoints — protected by x-admin-key header instead of Clerk session
   "/snapshot/admin/cleanup-iv-units",
   "/snapshot/admin/recompute-ivr",
+  "/snapshot/admin/backfill-iv-history",
 ]);
+
+const PUBLIC_API_PREFIXES = ["/snapshot/admin/backfill-iv-history/"];
 
 function apiRequireAuth(req: Request, res: Response, next: NextFunction) {
   // req.path is relative to the mount point ("/api"), so it starts with "/auth/...".
   if (PUBLIC_API_PATHS.has(req.path)) {
     return next();
+  }
+  for (const prefix of PUBLIC_API_PREFIXES) {
+    if (req.path.startsWith(prefix)) return next();
   }
   const auth = getAuth(req);
   if (!auth?.userId) {

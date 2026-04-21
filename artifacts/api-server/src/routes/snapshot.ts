@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { runFullSnapshot, getSnapshotStatus, collectEquitySnapshots, collectPolygonFlowFromAPI, computeFlowAggregates, computeIVFromFlow, backfillEquityHistory, backfillPolygonFlow, backfillEquityFromPolygon } from "../lib/dailySnapshot";
 import { cleanupIVUnits, recomputeAllIVR } from "../lib/ivNormalize";
+import { startBackfillJob, getBackfillJob, listBackfillJobs } from "../lib/historicalIVBackfill";
 import { getBestAccessToken } from "../lib/tokenStore";
 import { logger } from "../lib/logger";
 import { db } from "@workspace/db";
@@ -243,6 +244,30 @@ router.post("/admin/cleanup-iv-units", async (req, res) => {
     logger.error({ error: (e as Error).message }, "cleanup-iv-units failed");
     res.status(500).json({ ok: false, error: (e as Error).message });
   }
+});
+
+router.post("/admin/backfill-iv-history", async (req, res) => {
+  const auth = requireAdmin(req as never);
+  if (!auth.ok) return res.status(403).json({ ok: false, error: auth.error });
+  const { symbols, daysBack } = (req.body ?? {}) as { symbols?: string[]; daysBack?: number };
+  const syms = (symbols && symbols.length > 0) ? symbols : [...LIQUID_CORE_SYMBOLS];
+  const days = (typeof daysBack === "number" && daysBack > 0 && daysBack <= 730) ? daysBack : 252;
+  const job = startBackfillJob(syms, days);
+  res.json({ ok: true, started: true, job });
+});
+
+router.get("/admin/backfill-iv-history/:id", (req, res) => {
+  const auth = requireAdmin(req as never);
+  if (!auth.ok) return res.status(403).json({ ok: false, error: auth.error });
+  const job = getBackfillJob(req.params.id);
+  if (!job) return res.status(404).json({ ok: false, error: "job not found" });
+  res.json({ ok: true, job });
+});
+
+router.get("/admin/backfill-iv-history", (req, res) => {
+  const auth = requireAdmin(req as never);
+  if (!auth.ok) return res.status(403).json({ ok: false, error: auth.error });
+  res.json({ ok: true, jobs: listBackfillJobs() });
 });
 
 router.post("/admin/recompute-ivr", async (req, res) => {
