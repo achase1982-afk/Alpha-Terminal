@@ -251,6 +251,34 @@ export const optionsFlowRawTradesTable = pgTable("options_flow_raw_trades", {
 
 export type OptionsFlowRawTrade = typeof optionsFlowRawTradesTable.$inferSelect;
 
+// Per-strike rollup of classified live execution events. Populated by
+// the rollup job from options_flow_raw_trades. Same composite key as
+// options_flow_per_strike so the scanner can left-join on read.
+export const optionsFlowExecPerStrikeTable = pgTable("options_flow_exec_per_strike", {
+  id: serial("id").primaryKey(),
+  underlyingSymbol: text("underlying_symbol").notNull(),
+  date: date("date").notNull(),
+  optionType: text("option_type").notNull(),
+  strike: real("strike").notNull(),
+  expiration: date("expiration").notNull(),
+  sweepCount: integer("sweep_count").default(0).notNull(),
+  blockCount: integer("block_count").default(0).notNull(),
+  regularCount: integer("regular_count").default(0).notNull(),
+  sweepNotional: doublePrecision("sweep_notional").default(0).notNull(),
+  blockNotional: doublePrecision("block_notional").default(0).notNull(),
+  regularNotional: doublePrecision("regular_notional").default(0).notNull(),
+  sweepVolume: integer("sweep_volume").default(0).notNull(),
+  blockVolume: integer("block_volume").default(0).notNull(),
+  regularVolume: integer("regular_volume").default(0).notNull(),
+  lastEventTs: timestamp("last_event_ts"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("flow_exec_strike_unique").on(t.underlyingSymbol, t.date, t.optionType, t.strike, t.expiration),
+  index("flow_exec_sym_date").on(t.underlyingSymbol, t.date),
+]);
+
+export type OptionsFlowExecPerStrike = typeof optionsFlowExecPerStrikeTable.$inferSelect;
+
 export const flowDailyAggregatesTable = pgTable("flow_daily_aggregates", {
   id: serial("id").primaryKey(),
   underlyingSymbol: text("underlying_symbol").notNull(),

@@ -2824,6 +2824,11 @@ router.post("/unusual-flow-scan", async (req, res) => {
         excludeIndexes?: boolean;
         minDte?: number;
         minNotional?: number;
+        includeSweeps?: boolean;
+        includeBlocks?: boolean;
+        includeRegular?: boolean;
+        minSweepCount?: number;
+        minBlockCount?: number;
       };
     };
     if (!Array.isArray(symbols) || symbols.length === 0) {

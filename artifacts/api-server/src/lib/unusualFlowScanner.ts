@@ -1,4 +1,4 @@
-import { db, optionsFlowPerStrikeTable } from "@workspace/db";
+import { db, optionsFlowExecPerStrikeTable, optionsFlowPerStrikeTable } from "@workspace/db";
 import { and, inArray, sql } from "drizzle-orm";
 import { logger } from "./logger.js";
 
@@ -10,6 +10,22 @@ export interface UnusualFlowFilters {
   excludeIndexes?: boolean;
   minDte?: number;
   minNotional?: number; // dollars per strike (vol × mid × 100)
+  // Phase 1 execution-pattern filters (sweep/block classification from
+  // the live watcher, populated via options_flow_exec_per_strike).
+  includeSweeps?: boolean;
+  includeBlocks?: boolean;
+  includeRegular?: boolean;
+  minSweepCount?: number;
+  minBlockCount?: number;
+}
+
+export interface UnusualFlowExecSummary {
+  sweepCount: number;
+  blockCount: number;
+  regularCount: number;
+  sweepNotional: number;
+  blockNotional: number;
+  regularNotional: number;
 }
 
 export interface UnusualFlowStrike {
@@ -23,6 +39,7 @@ export interface UnusualFlowStrike {
   notional: number;
   iv: number | null;
   delta: number | null;
+  exec: UnusualFlowExecSummary;
 }
 
 export interface UnusualFlowCandidate {
@@ -46,6 +63,10 @@ export interface UnusualFlowCandidate {
   largestPrintDescription: string;
   topVoiRatio: number;
   avgDte: number;
+  // Phase 1 execution-pattern aggregates across this ticker's unusual strikes.
+  exec: UnusualFlowExecSummary;
+  // Aggressor side classification — Phase 2 (NBBO subscription required).
+  aggressorAvailable: false;
 }
 
 export interface UnusualFlowScanResult {
@@ -66,7 +87,35 @@ const DEFAULTS: Required<UnusualFlowFilters> = {
   excludeIndexes: true,
   minDte: 3,        // excludes 0-2DTE (retail lottos + dealer hedging)
   minNotional: 250_000, // $250k+ per strike ⇒ institutional position size
+  includeSweeps: true,
+  includeBlocks: true,
+  includeRegular: true,
+  minSweepCount: 0,
+  minBlockCount: 0,
 };
+
+const EMPTY_EXEC: UnusualFlowExecSummary = {
+  sweepCount: 0, blockCount: 0, regularCount: 0,
+  sweepNotional: 0, blockNotional: 0, regularNotional: 0,
+};
+
+interface ExecRow {
+  underlyingSymbol: string;
+  date: string;
+  optionType: string;
+  strike: number;
+  expiration: string;
+  sweepCount: number;
+  blockCount: number;
+  regularCount: number;
+  sweepNotional: number;
+  blockNotional: number;
+  regularNotional: number;
+}
+
+function execKey(sym: string, optType: string, strike: number, exp: string): string {
+  return `${sym}|${optType}|${strike}|${exp}`;
+}
 
 // Index ETFs / index products — overwhelmingly noisy because of dealer
 // hedging, 0DTE flow, and vol products. Excluded by default; user can
@@ -106,13 +155,15 @@ interface RawRow {
   delta: number | null;
 }
 
+type RowWithExec = RawRow & { _exec: UnusualFlowExecSummary };
+
 function isFresh(asOfDate: string): boolean {
   const asOf = new Date(`${asOfDate}T00:00:00Z`).getTime();
   const today = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`).getTime();
   return Math.floor((today - asOf) / 86_400_000) <= MAX_AGE_CALENDAR_DAYS;
 }
 
-function rowToStrike(r: RawRow): UnusualFlowStrike {
+function rowToStrike(r: RowWithExec): UnusualFlowStrike {
   const vol = r.dailyVolume ?? 0;
   const oi = r.openInterest ?? 0;
   const mid = r.mid ?? 0;
@@ -127,6 +178,7 @@ function rowToStrike(r: RawRow): UnusualFlowStrike {
     notional: Math.round(vol * mid * 100),
     iv: r.impliedVolatility,
     delta: r.delta,
+    exec: r._exec,
   };
 }
 
@@ -135,6 +187,7 @@ function summarizeForSymbol(
   asOfDate: string,
   symbol: string,
   f: Required<UnusualFlowFilters>,
+  execMap: Map<string, UnusualFlowExecSummary>,
 ): UnusualFlowCandidate | null {
   let totalCallVolume = 0;
   let totalPutVolume = 0;
@@ -144,7 +197,8 @@ function summarizeForSymbol(
   let unusualPutStrikes = 0;
   let unusualTotalNotional = 0;
   let dteSum = 0;
-  const unusual: Array<RawRow & { _voi: number; _notional: number }> = [];
+  const tickerExec: UnusualFlowExecSummary = { ...EMPTY_EXEC };
+  const unusual: Array<RowWithExec & { _voi: number; _notional: number }> = [];
 
   for (const r of rows) {
     const vol = r.dailyVolume ?? 0;
@@ -161,9 +215,29 @@ function summarizeForSymbol(
     const notional = vol * mid * 100;
     if (notional < f.minNotional) continue;
 
-    unusual.push({ ...r, _voi: voi, _notional: notional });
+    const exec = execMap.get(execKey(symbol, r.optionType, r.strike, r.expiration)) ?? EMPTY_EXEC;
+
+    // Per-strike execution-pattern filters. Apply only if ANY classified
+    // event exists; strikes with no recorded prints are admitted (they
+    // belong to the daily-aggregate signal, not the live watcher).
+    const hasAnyEvent = exec.sweepCount + exec.blockCount + exec.regularCount > 0;
+    if (hasAnyEvent) {
+      const matchesType =
+        (f.includeSweeps && exec.sweepCount > 0) ||
+        (f.includeBlocks && exec.blockCount > 0) ||
+        (f.includeRegular && exec.regularCount > 0);
+      if (!matchesType) continue;
+    }
+
+    unusual.push({ ...r, _voi: voi, _notional: notional, _exec: exec });
     unusualTotalNotional += notional;
     dteSum += dte;
+    tickerExec.sweepCount += exec.sweepCount;
+    tickerExec.blockCount += exec.blockCount;
+    tickerExec.regularCount += exec.regularCount;
+    tickerExec.sweepNotional += exec.sweepNotional;
+    tickerExec.blockNotional += exec.blockNotional;
+    tickerExec.regularNotional += exec.regularNotional;
     if (r.optionType === "call") {
       unusualCallStrikes++;
       unusualCallVolume += vol;
@@ -172,6 +246,10 @@ function summarizeForSymbol(
       unusualPutVolume += vol;
     }
   }
+
+  // Ticker-level min-count gates.
+  if (tickerExec.sweepCount < f.minSweepCount) return null;
+  if (tickerExec.blockCount < f.minBlockCount) return null;
 
   const unusualStrikeCount = unusual.length;
   if (unusualStrikeCount < f.minStrikes) return null;
@@ -206,14 +284,21 @@ function summarizeForSymbol(
   //   strikes      : strikeCount × 6 (cap 40)
   //   topVOI       : log10(1 + topVoi) × 10 (cap 22)
   //   conviction   : skew non-balanced ? 10 : 0
-  //   notional     : log10(1 + totalNotional/100k) × 8 (cap 20) — institutional size signal
-  //   tenor bonus  : avgDte ≥ 14 ? 8 : avgDte ≥ 7 ? 4 : 0 — positioning vs scalping
+  //   notional     : log10(1 + totalNotional/100k) × 8 (cap 20)
+  //   tenor bonus  : avgDte ≥ 14 ? 8 : avgDte ≥ 7 ? 4 : 0
+  //   exec bonus   : sweep+block w/ direction = +12; regular-only = -6
   const strikePts = Math.min(40, unusualStrikeCount * 6);
   const voiPts = Math.min(22, Math.log10(1 + topVoi) * 10);
   const skewPts = skew !== "balanced" ? 10 : 0;
   const notionalPts = Math.min(20, Math.log10(1 + unusualTotalNotional / 100_000) * 8);
   const tenorPts = avgDte >= 14 ? 8 : avgDte >= 7 ? 4 : 0;
-  const score = Math.round((strikePts + voiPts + skewPts + notionalPts + tenorPts) * 10) / 10;
+  const sweepOrBlock = tickerExec.sweepCount + tickerExec.blockCount;
+  const totalEvents = sweepOrBlock + tickerExec.regularCount;
+  let execPts = 0;
+  if (sweepOrBlock > 0 && skew !== "balanced") execPts = 12;
+  else if (sweepOrBlock > 0) execPts = 6;
+  else if (totalEvents > 0 && tickerExec.regularCount === totalEvents) execPts = -6;
+  const score = Math.round((strikePts + voiPts + skewPts + notionalPts + tenorPts + execPts) * 10) / 10;
 
   const top = topByNotional[0];
   const largestPrintDescription = top
@@ -224,7 +309,7 @@ function summarizeForSymbol(
     symbol,
     asOfDate,
     score,
-    scoreReason: `strk=${strikePts.toFixed(0)} voi=${voiPts.toFixed(1)} skew=${skewPts} notl=${notionalPts.toFixed(1)} tnr=${tenorPts}`,
+    scoreReason: `strk=${strikePts.toFixed(0)} voi=${voiPts.toFixed(1)} skew=${skewPts} notl=${notionalPts.toFixed(1)} tnr=${tenorPts} exec=${execPts}`,
     unusualStrikeCount,
     unusualCallStrikes,
     unusualPutStrikes,
@@ -241,6 +326,15 @@ function summarizeForSymbol(
     largestPrintDescription,
     topVoiRatio: topVoi,
     avgDte,
+    exec: {
+      sweepCount: tickerExec.sweepCount,
+      blockCount: tickerExec.blockCount,
+      regularCount: tickerExec.regularCount,
+      sweepNotional: Math.round(tickerExec.sweepNotional),
+      blockNotional: Math.round(tickerExec.blockNotional),
+      regularNotional: Math.round(tickerExec.regularNotional),
+    },
+    aggressorAvailable: false,
   };
 }
 
@@ -305,11 +399,38 @@ export async function scanUnusualFlow(
       bucket.push(r);
     }
 
+    // Phase 1: pull execution-pattern rollups for the same (symbol, date)
+    // pairs. Left-join in memory because dates may differ per symbol.
+    const execMap = new Map<string, UnusualFlowExecSummary>();
+    try {
+      const execRows = await db
+        .select()
+        .from(optionsFlowExecPerStrikeTable)
+        .where(and(
+          inArray(optionsFlowExecPerStrikeTable.underlyingSymbol, [...symDateMap.keys()]),
+          inArray(optionsFlowExecPerStrikeTable.date, [...allDates]),
+        ));
+      for (const e of execRows as unknown as ExecRow[]) {
+        if (symDateMap.get(e.underlyingSymbol) !== e.date) continue;
+        execMap.set(execKey(e.underlyingSymbol, e.optionType, e.strike, e.expiration), {
+          sweepCount: e.sweepCount,
+          blockCount: e.blockCount,
+          regularCount: e.regularCount,
+          sweepNotional: e.sweepNotional,
+          blockNotional: e.blockNotional,
+          regularNotional: e.regularNotional,
+        });
+      }
+    } catch (err) {
+      // Exec data is optional — scanner still works on daily aggregates alone.
+      logger.warn({ err }, "Unusual flow scan: exec rollup query failed (degrading)");
+    }
+
     let mostRecent: string | null = null;
     for (const [sym, bucket] of bySymbol) {
       const asOf = symDateMap.get(sym)!;
       if (!mostRecent || asOf > mostRecent) mostRecent = asOf;
-      const c = summarizeForSymbol(bucket, asOf, sym, f);
+      const c = summarizeForSymbol(bucket, asOf, sym, f, execMap);
       if (c) result.candidates.push(c);
     }
 

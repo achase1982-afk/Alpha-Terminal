@@ -530,6 +530,19 @@ async function boot() {
     logger.warn({ err }, "options watcher start failed (will not retry)"),
   );
 
+  // Phase 1 sweep/block persistence — start the batched DB writer that
+  // drains the watcher's classified-event queue, plus the periodic
+  // rollup that aggregates raw_trades → exec_per_strike for the scanner.
+  // Both are no-ops if the watcher isn't streaming events.
+  try {
+    const { startFlowPersistence } = await import("./lib/optionsFlowPersistence.js");
+    const { startFlowRollup } = await import("./lib/optionsFlowRollup.js");
+    startFlowPersistence();
+    startFlowRollup();
+  } catch (err) {
+    logger.warn({ err }, "flow persistence/rollup start failed");
+  }
+
   if (process.env.IBKR_GATEWAY_URL || process.env.IB_HOST) {
     const wsUrl = getWsBridgeUrl();
     if (wsUrl) {

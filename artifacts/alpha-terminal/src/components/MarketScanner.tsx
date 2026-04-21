@@ -355,6 +355,14 @@ const DeterministicCard = memo(function DeterministicCard({
 
 
 // ── Unusual Options Activity scanner result types ───────────────────
+interface UnusualFlowExecSummary {
+  sweepCount: number;
+  blockCount: number;
+  regularCount: number;
+  sweepNotional: number;
+  blockNotional: number;
+  regularNotional: number;
+}
 interface UnusualFlowStrike {
   strike: number;
   expiration: string;
@@ -366,6 +374,7 @@ interface UnusualFlowStrike {
   notional: number;
   iv: number | null;
   delta: number | null;
+  exec?: UnusualFlowExecSummary;
 }
 interface UnusualFlowCandidate {
   symbol: string;
@@ -388,6 +397,8 @@ interface UnusualFlowCandidate {
   largestPrintDescription: string;
   topVoiRatio: number;
   avgDte: number;
+  exec?: UnusualFlowExecSummary;
+  aggressorAvailable?: boolean;
 }
 interface UnusualFlowScanResult {
   scanTimestamp: number;
@@ -459,6 +470,19 @@ const UnusualFlowCard = memo(function UnusualFlowCard({
         <span className="text-[10px] font-mono tabular-nums shrink-0" style={{ color: "#FFB800" }}>
           {fmtMoney(candidate.unusualTotalNotional)}
         </span>
+        {candidate.exec && (candidate.exec.sweepCount + candidate.exec.blockCount) > 0 && (
+          <span
+            className="text-[10px] font-mono tabular-nums shrink-0 px-1.5 py-0.5 rounded"
+            title={`Live: ${candidate.exec.sweepCount} sweeps · ${candidate.exec.blockCount} blocks · ${candidate.exec.regularCount} regular`}
+            style={{
+              color: "#FFB800",
+              background: "rgba(255,184,0,0.08)",
+              border: "1px solid rgba(255,184,0,0.25)",
+            }}
+          >
+            {candidate.exec.sweepCount}s/{candidate.exec.blockCount}b
+          </span>
+        )}
         <span className="text-[10px] text-zinc-600 font-mono tabular-nums shrink-0 hidden sm:inline">
           {candidate.avgDte}d
         </span>
@@ -520,6 +544,28 @@ const UnusualFlowCard = memo(function UnusualFlowCard({
               <div className="flex justify-between">
                 <span className="text-[11px] text-zinc-500">As Of</span>
                 <span className="text-sm font-mono tabular-nums text-zinc-400">{candidate.asOfDate}</span>
+              </div>
+              {candidate.exec && (
+                <div className="flex justify-between">
+                  <span className="text-[11px] text-zinc-500">Live Exec</span>
+                  <span className="text-[11px] font-mono tabular-nums">
+                    <span style={{ color: "#FFB800" }}>{candidate.exec.sweepCount}sw</span>
+                    <span className="text-zinc-700 mx-1">/</span>
+                    <span style={{ color: "#66e0ff" }}>{candidate.exec.blockCount}bk</span>
+                    <span className="text-zinc-700 mx-1">/</span>
+                    <span className="text-zinc-500">{candidate.exec.regularCount}rg</span>
+                  </span>
+                </div>
+              )}
+              <div className="flex justify-between">
+                <span className="text-[11px] text-zinc-500">Aggressor</span>
+                <span
+                  className="text-[10px] font-mono px-1.5 py-0.5 rounded"
+                  title="Requires NBBO subscription — Phase 2"
+                  style={{ color: "#9ca3af", background: "rgba(156,163,175,0.08)", border: "1px solid rgba(156,163,175,0.2)" }}
+                >
+                  N/A · Phase 2
+                </span>
               </div>
             </div>
           </div>
@@ -839,6 +885,11 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
   const [uExcludeIndexes, setUExcludeIndexes] = useState(true);
   const [uMinDte, setUMinDte] = useState(3);
   const [uMinNotional, setUMinNotional] = useState(250_000);
+  const [uIncludeSweeps, setUIncludeSweeps] = useState(true);
+  const [uIncludeBlocks, setUIncludeBlocks] = useState(true);
+  const [uIncludeRegular, setUIncludeRegular] = useState(true);
+  const [uMinSweepCount, setUMinSweepCount] = useState(0);
+  const [uMinBlockCount, setUMinBlockCount] = useState(0);
 
   // Part 5: removed legacy on-demand "Unusual Flow Scan (LIVE)" state +
   // poll loop. Live unusual-flow signal is now folded into the LIVE_FLOW
@@ -897,6 +948,11 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
             excludeIndexes: uExcludeIndexes,
             minDte: uMinDte,
             minNotional: uMinNotional,
+            includeSweeps: uIncludeSweeps,
+            includeBlocks: uIncludeBlocks,
+            includeRegular: uIncludeRegular,
+            minSweepCount: uMinSweepCount,
+            minBlockCount: uMinBlockCount,
           },
         }),
       });
@@ -1241,6 +1297,51 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
                       {s === "any" ? "Any" : s === "bullish" ? "Bull" : s === "bearish" ? "Bear" : "≠ Bal"}
                     </button>
                   ))}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex justify-between text-[11px] text-muted-foreground uppercase">
+                  <span>Execution Pattern</span>
+                  <span style={{ color: "#9ca3af" }} title="Aggressor side requires NBBO subscription — Phase 2">
+                    Aggressor: N/A
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-1">
+                  {([
+                    ["sweep", uIncludeSweeps, setUIncludeSweeps, "#FFB800"],
+                    ["block", uIncludeBlocks, setUIncludeBlocks, "#66e0ff"],
+                    ["regular", uIncludeRegular, setUIncludeRegular, "#6B7280"],
+                  ] as const).map(([label, val, setter, color]) => (
+                    <button
+                      key={label}
+                      onClick={() => setter(!val)}
+                      className="text-[10px] py-1.5 rounded font-bold uppercase tracking-wider transition-all"
+                      style={{
+                        background: val ? "#18181b" : "transparent",
+                        color: val ? color : "#3f3f46",
+                        border: `1px solid ${val ? `${color}66` : "#2a2a2a"}`,
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <div>
+                    <div className="flex justify-between text-[10px] text-muted-foreground uppercase mb-1">
+                      <span>Min Sweeps</span>
+                      <span style={{ color: "#FFB800" }}>{uMinSweepCount}+</span>
+                    </div>
+                    <Slider value={[uMinSweepCount]} onValueChange={v => setUMinSweepCount(v[0])} min={0} max={20} step={1} />
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-[10px] text-muted-foreground uppercase mb-1">
+                      <span>Min Blocks</span>
+                      <span style={{ color: "#66e0ff" }}>{uMinBlockCount}+</span>
+                    </div>
+                    <Slider value={[uMinBlockCount]} onValueChange={v => setUMinBlockCount(v[0])} min={0} max={20} step={1} />
+                  </div>
                 </div>
               </div>
             </div>

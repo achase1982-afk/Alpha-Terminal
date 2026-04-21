@@ -1,4 +1,5 @@
 import { logger } from "./logger.js";
+import { enqueueClassifiedTrade } from "./optionsFlowPersistence.js";
 import { fetchPolygonChain, type PolygonParsedContract } from "./polygonChain.js";
 import {
   ensureConnected,
@@ -341,6 +342,18 @@ function handleTrade(t: PolygonOptionTrade): void {
       price: t.price,
       notional,
       kind: isSweep ? "sweep" : isBlock ? "block" : "large",
+    });
+    // Persist classified events for the rollup job. Fire-and-forget; the
+    // persistence layer batches and flushes on its own cadence.
+    enqueueClassifiedTrade({
+      occ: t.sym,
+      ticker,
+      ts: st.lastTradeTs,
+      price: t.price,
+      size: t.size,
+      notional,
+      isSweep,
+      isBlock: isBlock && !isSweep, // sweep classification wins when both apply
     });
     // Cap event log per ticker to keep memory bounded. Mirror TTL-prune
     // behavior so liveEventCount stays consistent with retained events

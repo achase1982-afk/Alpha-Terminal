@@ -1,0 +1,26 @@
+Answers to your three questions before you build:
+
+1. Yes, Polygon Options Advanced ($199/mo) is currently active on my account. We already confirmed this earlier when we probed the WebSocket and REST tier. You have full options trades WebSocket (T.O), NBBO WebSocket (Q.O), and flat file access.
+
+2. Path A. Start with persisting what the watcher already classifies. Do not build Path B. Do not build Path C.
+
+3. Yes, I accept the limitation that only watched-during-the-day tickers get classified flow with no historical backfill in Phase 1. The background watcher we designed covers LC130 continuously during market hours, which is the universe I actually care about. Historical aggressor data is not worth the storage cost right now.
+
+Implementation scope for Phase 1:
+
+a. Wire the existing optionsWatcher.ts sweep and block classifications into the options_flow_raw_trades table. Write each classified event to disk as it fires. Schema is already there.
+
+b. Add a daily roll-up job that aggregates the raw trades table by ticker and strike into a summary table the scanner can read fast: sweep count, sweep notional, block count, block notional, total volume, total notional, direction (based on call/put split for now, will be enhanced with aggressor in Phase 2).
+
+c. Modify the Unusual Options scanner to read the rolled-up table and surface sweep/block counts and notional on each result card. Example card display:
+   AMD  9 strk  70.5k ct  $31.05M  [3 sweeps, 1 block]  BULLISH
+
+d. Add UI filters for execution type: checkboxes for "Include sweeps", "Include blocks", "Include regular". Min sweep count and min block count filters, both optional with default 0.
+
+e. Aggressor classification shows as UNAVAILABLE in the UI with a small info tooltip explaining "Aggressor side classification coming in Phase 2 once NBBO subscription is added to watched contracts." Do not fabricate aggressor data.
+
+f. Scoring: sweeps and blocks with directional conviction (based on call/put split for Phase 1) get full credit. Regular execution gets reduced credit.
+
+Confirm the Phase 1 scope, build it, architect review, report back with sample classified output on AMD and NFLX, confirmation of raw trades table population rate per trading day, and the roll-up job execution pattern.
+
+Phase 2 (aggressor classification via Q.O NBBO subscription) is a separate future build. Do not start it in this session. Estimate the incremental cost in Q.O subscription bandwidth and storage so I can plan that build for a later date.
