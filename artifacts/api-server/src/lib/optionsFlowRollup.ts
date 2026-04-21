@@ -9,7 +9,7 @@ import { logger } from "./logger.js";
 // volume). Idempotent: full re-aggregation per call, upserted on the unique
 // composite key, so partial failures or restart never produce duplicates.
 
-const ROLLUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+const ROLLUP_INTERVAL_MS = 60 * 1000; // 1 minute
 let rollupTimer: ReturnType<typeof setInterval> | null = null;
 let lastRunTs: number | null = null;
 let lastRunRows = 0;
@@ -28,9 +28,16 @@ function isMarketHoursUtc(d = new Date()): boolean {
   return h >= 13 * 60 && h <= 21 * 60;
 }
 
-export async function runRollupOnce(forDate?: string): Promise<{ rowsUpserted: number; durationMs: number }> {
+export async function runRollupOnce(forDate?: string): Promise<{ rowsUpserted: number; rawScanned: number; durationMs: number }> {
   const t0 = Date.now();
   const date = forDate ?? todayIso();
+
+  // Snapshot raw row count first so the log line reflects the size of the
+  // input set this tick is summarizing (not the cumulative table size).
+  const rawCountResult = await db.execute(
+    sql`SELECT COUNT(*)::int AS n FROM options_flow_raw_trades WHERE date = ${date}`,
+  );
+  const rawScanned = Number((rawCountResult as any).rows?.[0]?.n ?? 0);
 
   // Aggregate raw trades for the date, grouped by strike key.
   // sweep takes precedence over block in classification (Polygon's sweep
@@ -76,18 +83,32 @@ export async function runRollupOnce(forDate?: string): Promise<{ rowsUpserted: n
 
   const durationMs = Date.now() - t0;
   const rowsUpserted = (rolled as any).rowCount ?? 0;
-  return { rowsUpserted, durationMs };
+  return { rowsUpserted, rawScanned, durationMs };
 }
+
+let lastRawScanned = 0;
 
 async function tick(): Promise<void> {
   if (!isMarketHoursUtc()) return; // skip overnight/weekends — nothing new flowing
   try {
-    const { rowsUpserted, durationMs } = await runRollupOnce();
+    const { rowsUpserted, rawScanned, durationMs } = await runRollupOnce();
     totalRuns++;
     lastRunTs = Date.now();
     lastRunRows = rowsUpserted;
+    lastRawScanned = rawScanned;
     lastRunMs = durationMs;
-    logger.info({ op: "flowRollup.tick", rows: rowsUpserted, durationMs }, "Flow rollup tick");
+    // Per-tick observability: how big the raw input was, how many strike
+    // summaries were upserted, and how long the round-trip took. Counter
+    // stays cheap (one log line / minute) and gives an immediate signal
+    // if the watcher goes dark (rawScanned plateaus) or the rollup stalls
+    // (no log line within ~2 minutes during market hours).
+    logger.info({
+      op: "flowRollup.tick",
+      rawScanned,
+      strikesUpserted: rowsUpserted,
+      durationMs,
+      runIdx: totalRuns,
+    }, `Flow rollup: ${rawScanned} raw → ${rowsUpserted} strikes (${durationMs}ms)`);
   } catch (err) {
     totalFailures++;
     logger.warn({ err, op: "flowRollup.tick.failed" }, "Flow rollup tick failed");
@@ -108,5 +129,13 @@ export function stopFlowRollup(): void {
 }
 
 export function getFlowRollupStats() {
-  return { lastRunTs, lastRunRows, lastRunMs, totalRuns, totalFailures, intervalMs: ROLLUP_INTERVAL_MS };
+  return {
+    lastRunTs,
+    lastRunRows,
+    lastRunMs,
+    lastRawScanned,
+    totalRuns,
+    totalFailures,
+    intervalMs: ROLLUP_INTERVAL_MS,
+  };
 }

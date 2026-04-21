@@ -28,8 +28,15 @@ const buffer: PendingTrade[] = [];
 let flushTimer: ReturnType<typeof setInterval> | null = null;
 let totalQueued = 0;
 let totalWritten = 0;
-let totalFailed = 0;
+let totalFailed = 0;            // rows in dropped batches
+let batchesAttempted = 0;       // total flush attempts that had rows
+let batchesFailed = 0;          // attempts that errored
 let lastFlushTs: number | null = null;
+let lastFailureTs: number | null = null;
+let lastFailureMessage: string | null = null;
+let highFailureRateWarned = false;
+const HIGH_FAILURE_THRESHOLD = 0.05; // 5%
+const HIGH_FAILURE_MIN_BATCHES = 20; // don't alarm before we have a sample
 
 export function startFlowPersistence(): void {
   if (flushTimer) return;
@@ -44,7 +51,23 @@ export function stopFlowPersistence(): void {
 }
 
 export function getFlowPersistenceStats() {
-  return { queued: buffer.length, totalQueued, totalWritten, totalFailed, lastFlushTs };
+  const failureRate = batchesAttempted > 0
+    ? +(batchesFailed / batchesAttempted).toFixed(4)
+    : 0;
+  return {
+    queued: buffer.length,
+    totalQueued,
+    totalWritten,
+    totalFailed,
+    batchesAttempted,
+    batchesFailed,
+    failureRate,
+    failureRateThreshold: HIGH_FAILURE_THRESHOLD,
+    overThreshold: failureRate > HIGH_FAILURE_THRESHOLD && batchesAttempted >= HIGH_FAILURE_MIN_BATCHES,
+    lastFlushTs,
+    lastFailureTs,
+    lastFailureMessage,
+  };
 }
 
 // OCC symbol format: O:AAPL250620C00150000
@@ -99,13 +122,36 @@ export function enqueueClassifiedTrade(args: {
 async function flush(): Promise<void> {
   if (buffer.length === 0) return;
   const batch = buffer.splice(0, buffer.length);
+  batchesAttempted++;
   try {
     await db.insert(optionsFlowRawTradesTable).values(batch);
     totalWritten += batch.length;
     lastFlushTs = Date.now();
   } catch (err) {
     totalFailed += batch.length;
+    batchesFailed++;
+    lastFailureTs = Date.now();
+    lastFailureMessage = err instanceof Error ? err.message : String(err);
     logger.warn({ err, op: "flowPersist.flush.failed", count: batch.length },
       "Failed to flush options flow batch");
+
+    // Loud one-shot warning when failure rate climbs above 5% on a
+    // non-trivial sample. Re-armed only after the rate recovers below
+    // threshold so a healing run can re-trigger if it degrades again.
+    const rate = batchesFailed / batchesAttempted;
+    if (rate > HIGH_FAILURE_THRESHOLD && batchesAttempted >= HIGH_FAILURE_MIN_BATCHES) {
+      if (!highFailureRateWarned) {
+        highFailureRateWarned = true;
+        logger.warn({
+          op: "flowPersist.failureRate.high",
+          failureRate: +rate.toFixed(4),
+          batchesAttempted,
+          batchesFailed,
+          threshold: HIGH_FAILURE_THRESHOLD,
+        }, `Options flow persistence failure rate ${(rate * 100).toFixed(1)}% exceeds ${(HIGH_FAILURE_THRESHOLD * 100)}% threshold`);
+      }
+    } else if (rate <= HIGH_FAILURE_THRESHOLD && highFailureRateWarned) {
+      highFailureRateWarned = false;
+    }
   }
 }

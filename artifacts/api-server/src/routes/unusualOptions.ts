@@ -4,6 +4,8 @@ import { sql, gte, desc } from "drizzle-orm";
 import { syncDateRange, syncDate, getSyncStatus } from "../lib/polygonFlatFiles";
 import { getTrailingUnusualFlow } from "../lib/optionsBaselines";
 import { getDeepScanSnapshot, getWatcherStatus, getCoverageInfo, isWatcherEnabled } from "../lib/optionsWatcher";
+import { getFlowPersistenceStats } from "../lib/optionsFlowPersistence";
+import { getFlowRollupStats } from "../lib/optionsFlowRollup";
 import { logger } from "../lib/logger";
 
 const router = Router();
@@ -57,6 +59,12 @@ router.get("/watcher", (_req, res) => {
     enabled: isWatcherEnabled(),
     status: getWatcherStatus(),
     coverage: getCoverageInfo(),
+    // Phase 1 persistence + rollup observability. `persistence.overThreshold`
+    // flips true when failed batches exceed 5% of attempts (min 20-batch
+    // sample); `rollup.lastRunTs` should advance every ~60s during US
+    // market hours — stale value ⇒ rollup or watcher is dark.
+    persistence: getFlowPersistenceStats(),
+    rollup: getFlowRollupStats(),
   });
 });
 
