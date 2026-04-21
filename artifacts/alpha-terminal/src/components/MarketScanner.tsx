@@ -837,7 +837,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
   const [uMinVolume, setUMinVolume] = useState(500);
   const [uSkew, setUSkew] = useState<"any" | "bullish" | "bearish" | "non_balanced">("any");
   const [uExcludeIndexes, setUExcludeIndexes] = useState(true);
-  const [uMinDte, setUMinDte] = useState(7);
+  const [uMinDte, setUMinDte] = useState(3);
   const [uMinNotional, setUMinNotional] = useState(250_000);
 
   // Part 5: removed legacy on-demand "Unusual Flow Scan (LIVE)" state +

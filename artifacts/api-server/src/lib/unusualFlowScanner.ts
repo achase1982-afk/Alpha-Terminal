@@ -64,8 +64,8 @@ const DEFAULTS: Required<UnusualFlowFilters> = {
   minVolume: 500,
   skew: "any",
   excludeIndexes: true,
-  minDte: 7,
-  minNotional: 250_000,
+  minDte: 3,        // excludes 0-2DTE (retail lottos + dealer hedging)
+  minNotional: 250_000, // $250k+ per strike ⇒ institutional position size
 };
 
 // Index ETFs / index products — overwhelmingly noisy because of dealer
