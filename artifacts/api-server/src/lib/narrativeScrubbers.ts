@@ -22,10 +22,39 @@
  * and putCallVolumeRatio as single-per-ticker scalars. These two are covered
  * here. MMM (max market move) is NOT in the strategist payload — it lives in
  * the separate /api/market/ticker-stats route — so no scrubber is needed.
- * delta / openInterest / strike are per-leg and require a different
- * substitution strategy (lookup by strike); flagged as a follow-up — the
- * existing reconcileNarrativeEconomics in strategistV2 already covers
+ * The existing reconcileNarrativeEconomics in strategistV2 already covers
  * debit / credit / max profit / max loss / risk:reward dollar drift.
+ *
+ * ---------------------------------------------------------------------------
+ * BACKLOG: per-leg scrubber (NOT shipping in current pass)
+ * ---------------------------------------------------------------------------
+ *
+ * The fields below are per-leg and require a lookup-by-strike substitution
+ * strategy against the chain data payload, rather than a single canonical
+ * scalar like IVR. Open issue — implement when the AI is observed misciting
+ * any of these in a card the user sees:
+ *
+ *   - leg delta             (look up by leg.strike + leg.expiration + type)
+ *   - leg open interest     (lookup by strike/exp/type)
+ *   - leg volume            (lookup by strike/exp/type)
+ *   - leg strike            (cross-check that every cited strike exists in
+ *                            the chain — the prompt already forbids inventing
+ *                            strikes, but a sweep would harden it)
+ *   - leg mid price         (lookup by strike/exp/type)
+ *
+ * Implementation sketch:
+ *   1. Build a Map<`${strike}-${expiration}-${type}`, ChainQuote>.
+ *   2. Regex-find narrative mentions like "$705 put delta -0.49", "OI 1,760
+ *      at the 700 strike", etc., extract the strike, look up the canonical
+ *      value, replace the cited number if it drifts more than tolerance
+ *      (e.g. 5% for delta, exact for OI/volume, $0.05 for mid).
+ *   3. Log every replacement (same telemetry shape as IVR/PC scrubber).
+ *
+ * Tracking notes:
+ *   - The prompt already includes a "GROUNDING DISCIPLINE" rule against
+ *     inventing per-leg numbers, but field telemetry should drive whether to
+ *     prioritize this; until then, the existing reconcile + IVR/PC scrubbers
+ *     cover the highest-impact cases.
  */
 
 export interface ScrubResult {

@@ -1,0 +1,19 @@
+Before starting Step 2, answer three spot-check questions on Step 1:
+
+1. Credit spread clamp skip: the Bug 3 clamp "intentionally skipped" credit spreads. Confirm whether reconcileNarrativeEconomics catches impossible profit targets on credits (target exceeding credit collected minus buffer), or if there's a blind spot. If blind spot, extend the clamp to credits with the correct math: profit target in closing-debit terms must be strictly less than (credit_collected - buffer). Add unit test covering a bear call spread and a bull put spread with intentionally over-target values.
+
+2. Invariant sweep coverage: list the exact structures the sweep covers. If debits only, extend to bear call spread, bull put spread, iron condor, iron butterfly. If the sweep skips credits because the clamp skips credits, that's circular and needs to be fixed.
+
+3. Per-leg scrubber: add to explicit backlog with a tracked issue/TODO comment in narrativeScrubbers.ts. Fields: leg delta, leg OI, leg volume, leg strike, leg mid-price. Lookup-by-strike approach against the chain data payload. Not shipping now, but it needs to exist as a named piece of work, not a mental note.
+
+Report back on 1 and 2 with code or a clear "no blind spot, here's why." Do not start Step 2 investigation until 1 and 2 are confirmed.
+
+Once 1 and 2 are resolved, proceed to Step 2 investigation. Investigation only. Do not write any daily-job fix code. Answer these first:
+
+a. Who writes to equity_daily.iv_30d? Grep for all writers. If more than one, that's the architectural bug and must be named.
+b. Why is SPY iv_30d null for 6 of last 9 trading days? Read the daily job logs for those dates. Identify whether it's silent exception, skipped run, rate limit, data source error, or something else. Name the cause, do not guess.
+c. Why do XLE/XLF/XLK have zero IVR coverage across 66 rows? Is the sector universe in the job's iteration scope? If not, what universe is?
+d. Spot-check other columns in equity_daily written by the same job for the same class of problems: hv_20d, atr_14d, rvol_20d, beta, any other numeric columns. Check for unit inconsistency (same column with values spanning 100x), negatives where impossible, near-zero outliers. The scanner reads from this table, so parallel bugs here mean parallel scanner bugs.
+e. The 3/30 iv_30d = 0.000358 outlier for SPY: where did that come from? Is that a data-source glitch, a calculation bug, or a write-time corruption? If the root cause isn't identified, a sanity floor at write time won't catch the next variant.
+
+Report findings as a written summary before proposing the Step 3 fix. No code in Step 2.
