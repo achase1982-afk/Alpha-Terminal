@@ -12,9 +12,9 @@ import { initDeltaEngine } from "./lib/deltaEngine";
 import { runDailyScreenRefresh } from "./routes/scanner";
 import { initAiLabOrchestrator } from "./lib/aiLabOrchestrator";
 import { startUniverseRebuildSchedule } from "./lib/universeBuilder";
-import { updateEquityDailyFromGroupedBars, runFullSnapshot } from "./lib/dailySnapshot";
+import { updateEquityDailyFromGroupedBars, runFullSnapshot, backfillPolygonFlow } from "./lib/dailySnapshot";
 import { LIQUID_CORE_SYMBOLS } from "./data/liquidCore130";
-import { db, equityDailyTable, snapshotCollectionLogTable } from "@workspace/db";
+import { db, equityDailyTable, snapshotCollectionLogTable, flowDailyAggregatesTable } from "@workspace/db";
 import { inArray, desc, sql, eq } from "drizzle-orm";
 import { startPolygonPCRatioPoller } from "./lib/polygonPutCallRatio";
 import { startOptionsWatcher } from "./lib/optionsWatcher";
@@ -460,6 +460,40 @@ async function boot() {
   }
 
   triggerLiquidCoreBackfill();
+
+  // ── Boot-time Polygon flow bootstrap ─────────────────────────────────
+  // If `flow_daily_aggregates` is empty (fresh deploy / new DB), kick off
+  // a 30-day Polygon REST backfill so the deterministic scanner has flow
+  // data to score against. Uses POLYGON_API_KEY (no Schwab token required,
+  // no S3 flat-files required), so prod self-heals on first boot regardless
+  // of which other data paths are alive.
+  let flowBootstrapTriggered = false;
+  async function triggerFlowBootstrap() {
+    if (flowBootstrapTriggered) return;
+    flowBootstrapTriggered = true;
+    try {
+      if (!process.env.POLYGON_API_KEY) {
+        logger.warn("Flow bootstrap: POLYGON_API_KEY missing — skipping");
+        return;
+      }
+      const [{ cnt }] = await db
+        .select({ cnt: sql<number>`count(*)` })
+        .from(flowDailyAggregatesTable);
+      const existing = Number(cnt);
+      if (existing > 0) {
+        logger.info({ existing }, "Flow bootstrap: aggregates already populated — skipping");
+        return;
+      }
+      const symbols = [...LIQUID_CORE_SYMBOLS];
+      logger.warn({ symbols: symbols.length, daysBack: 30 }, "Flow bootstrap: aggregates empty — starting 30d Polygon REST backfill");
+      const result = await backfillPolygonFlow(symbols, 30, false);
+      logger.info(result, "Flow bootstrap: complete");
+    } catch (err) {
+      flowBootstrapTriggered = false;
+      logger.error({ err }, "Flow bootstrap: failed");
+    }
+  }
+  void triggerFlowBootstrap();
 
   setTokenRefreshCallback((kind, _accessToken) => {
     if (kind === "trader" || kind === "market") {
