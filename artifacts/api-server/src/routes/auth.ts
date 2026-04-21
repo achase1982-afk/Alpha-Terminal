@@ -81,11 +81,33 @@ function basicAuth(appKey: string, appSecret: string): string {
 }
 
 function successPage(label: string) {
+  // Two completion paths:
+  //   1. Popup (window.opener present) — close the popup so the original
+  //      tab keeps its in-memory Clerk session intact. Critical: do NOT
+  //      navigate to "/" here, that loads a second SPA instance in the
+  //      popup which then fails Clerk's session check (esp. on iOS dev
+  //      mode) and shows the sign-in widget — the "app within the app"
+  //      bug.
+  //   2. Same-tab fallback (no opener — popup was blocked or this is a
+  //      legacy redirect) — navigate the existing tab to "/" so the user
+  //      ends up back in the app instead of stranded on this page.
   return `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head>
     <body style="background:#0A0F16;color:#fff;font-family:-apple-system,system-ui,sans-serif;padding:40px 20px;text-align:center">
       <h2 style="color:#00d166;font-size:18px">${escapeHtml(label)} Connected</h2>
       <p style="color:#ccc;font-size:14px;line-height:1.5">Return to Alpha Terminal — it will pick up the session automatically.</p>
-      <script>setTimeout(function(){ window.close(); }, 1500);</script>
+      <script>
+        (function(){
+          var hasOpener = false;
+          try { hasOpener = !!(window.opener && !window.opener.closed); } catch (e) {}
+          setTimeout(function(){
+            if (hasOpener) {
+              window.close();
+            } else {
+              window.location.replace('/');
+            }
+          }, 1200);
+        })();
+      </script>
     </body></html>`;
 }
 
@@ -204,7 +226,7 @@ router.get("/callback", async (req, res) => {
     pendingTokens.set("trader_latest", { accessToken, refreshToken: rfTok, ts: Date.now() });
 
     req.log.info("GET /callback — token exchange succeeded (stored as market + trader)");
-    res.redirect("/");
+    res.send(successPage("Schwab"));
   } catch (err) {
     req.log.error({ err }, "GET /callback network error");
     res.status(500).send(errorPage("Connection Error", "Could not reach Schwab API. Please try again."));
@@ -445,7 +467,7 @@ router.get("/trader-callback", async (req, res) => {
     pendingTokens.set("latest", { accessToken, refreshToken: trRfTok, ts: Date.now() });
 
     req.log.info("GET /trader-callback — Trader token exchange succeeded (stored as market + trader)");
-    res.redirect("/");
+    res.send(successPage("Schwab"));
   } catch (err) {
     req.log.error({ err }, "GET /trader-callback network error");
     res.status(500).send(errorPage("Connection Error", "Could not reach Schwab API."));
