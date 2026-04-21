@@ -286,11 +286,11 @@
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-/* Top spacer above the wordmark/ticker. Always shows at least a 14px
-   grey strip so the header looks consistent on desktop browsers, and
-   expands to clear the notch / Dynamic Island on iPhones. */
+/* Tight spacer above the wordmark/ticker. In regular Safari iOS handles
+   the notch via its own chrome, so we only need a few pixels of breathing
+   room — no inset-clearing needed. */
 .safe-top {
-  padding-top: max(env(safe-area-inset-top, 0px), 14px);
+  padding-top: 4px;
 }
 
 .ui-reduced-motion *,
