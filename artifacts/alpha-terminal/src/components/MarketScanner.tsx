@@ -6,7 +6,8 @@ import { useQuote } from "@/hooks/useQuote";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
-import { SlidersHorizontal, ChevronDown, AlertTriangle, Search, List, Crosshair, Send, Shield, BarChart3, Plus, Filter, RefreshCw, Pencil, Trash2, Loader2 } from "lucide-react";
+import { SlidersHorizontal, ChevronDown, AlertTriangle, Search, List, Crosshair, Send, Shield, BarChart3, Plus, Filter, RefreshCw, Pencil, Trash2, Loader2, Info, Zap } from "lucide-react";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { useScanCache } from "@/hooks/useScanCache";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { useScannerUniverses } from "@/hooks/useScannerUniverses";
@@ -61,6 +62,8 @@ export interface DetCandidate {
     accumulation: number;
     ivSetup: number;
     flowDivergence: number;
+    liveFlow?: number;
+    liveFlowAvailable?: boolean;
     emergingRS: number;
   };
   unusualFlow?: {
@@ -74,52 +77,9 @@ export interface DetCandidate {
   };
 }
 
-interface FlowContractMetric {
-  symbol: string;
-  underlying: string;
-  strike: number;
-  expiration: string;
-  type: "C" | "P";
-  liveVolume: number;
-  liveNotional: number;
-  openInterest: number;
-  dayVolume: number;
-  volOiRatio: number;
-  sweepPrints: number;
-  blockPrints: number;
-  largestPrintSize: number;
-  largestPrintPremium: number;
-  tradeCount: number;
-}
-
-interface FlowTickerResult {
-  ticker: string;
-  score: number;
-  scoreReason: string;
-  totalPrints: number;
-  totalLiveVolume: number;
-  totalLiveNotional: number;
-  callNotional: number;
-  putNotional: number;
-  callPutNotionalRatio: number | null;
-  sweepPrints: number;
-  blockPrints: number;
-  contractsSubscribed: number;
-  topContracts: FlowContractMetric[];
-  largestPrint: { symbol: string; size: number; price: number; premium: number; timestamp: number } | null;
-  error?: string;
-}
-
-interface FlowScanResult {
-  jobId: string;
-  status: "queued" | "running" | "complete" | "error";
-  durationSec: number;
-  contractsSubscribed: number;
-  startedAt: number | null;
-  completedAt: number | null;
-  tickers: FlowTickerResult[];
-  error?: string;
-}
+// Part 5: legacy types for the on-demand "Unusual Flow Scan (LIVE)" button
+// were removed. Live unusual-flow signal is now folded into the LIVE_FLOW
+// scoring bucket on every Discovery scan (see deterministicScanner.v2.ts).
 
 interface DetScanResult {
   candidates: DetCandidate[];
@@ -146,6 +106,7 @@ const DISCOVERY_BARS: { key: keyof NonNullable<DetCandidate["discoveryComponents
   { key: "accumulation", label: "ACCUM", max: 15, color: "#ab47bc" },
   { key: "ivSetup", label: "IV SET", max: 25, color: "#ffb800" },
   { key: "flowDivergence", label: "FLOW", max: 25, color: "#42a5f5" },
+  { key: "liveFlow", label: "LIVE FL", max: 20, color: "#66e0ff" },
   { key: "emergingRS", label: "RS", max: 15, color: "#ef5350" },
 ];
 
@@ -200,12 +161,14 @@ const DeterministicCard = memo(function DeterministicCard({
   const scoreColor = candidate.totalScore >= 80 ? "#26a69a" : candidate.totalScore >= 60 ? "#FFB800" : "#6B7280";
 
   const scoreBars = isDiscovery && candidate.discoveryComponents
-    ? DISCOVERY_BARS.map(bar => ({
-        label: bar.label,
-        max: bar.max,
-        color: bar.color,
-        val: candidate.discoveryComponents![bar.key as keyof NonNullable<DetCandidate["discoveryComponents"]>] ?? 0,
-      }))
+    ? DISCOVERY_BARS.map(bar => {
+        // discoveryComponents now contains a non-numeric `liveFlowAvailable`
+        // boolean alongside the numeric bucket scores. DISCOVERY_BARS only
+        // references numeric keys, so coerce defensively to a number.
+        const raw = candidate.discoveryComponents![bar.key as keyof NonNullable<DetCandidate["discoveryComponents"]>];
+        const val = typeof raw === "number" ? raw : 0;
+        return { label: bar.label, max: bar.max, color: bar.color, val };
+      })
     : MOMENTUM_BARS.map(bar => ({
         label: bar.label,
         max: bar.max,
@@ -241,6 +204,18 @@ const DeterministicCard = memo(function DeterministicCard({
           <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0"
             style={{ color: LEAN_COLORS[lean], background: `${LEAN_COLORS[lean]}18` }}>
             {lean}
+          </span>
+        )}
+        {/* Part 5: per-row LIVE flow chip — surfaces the LIVE_FLOW bucket
+            inline so the segmented Discovery list reads "X has unusual flow"
+            without expanding the row. */}
+        {isDiscovery && candidate.discoveryComponents?.liveFlowAvailable && (
+          <span
+            className="text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0 uppercase tracking-wider"
+            style={{ color: "#66e0ff", background: "#66e0ff18", border: "1px solid #66e0ff40" }}
+            title={`LIVE_FLOW bucket: ${Math.round(candidate.discoveryComponents?.liveFlow ?? 0)}/20`}
+          >
+            ⚡ LIVE
           </span>
         )}
 
@@ -706,6 +681,8 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
 
   const [mode, setMode] = useState<"manual" | "deterministic">("deterministic");
   const [scanMode, setScanMode] = useState<"DISCOVERY" | "MOMENTUM">("DISCOVERY");
+  // Part 5: filter chip state for discovery results.
+  const [flowFilter, setFlowFilter] = useState<"all" | "unusual" | "noflow">("all");
   const [universe, setUniverse] = useState("preset:liquidCore130");
   const [isScanning, setIsScanning] = useState(false);
   const [rawError, setRawError] = useState<string | null>(null);
@@ -716,12 +693,9 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
   const [detResult, setDetResult] = useState<DetScanResult | null>(null);
   const [detError, setDetError] = useState<string | null>(null);
 
-  // ── Unusual Flow Scan (real-time Polygon options tape) ─────────────
-  const [flowScanning, setFlowScanning] = useState(false);
-  const [flowJob, setFlowJob] = useState<FlowScanResult | null>(null);
-  const [flowError, setFlowError] = useState<string | null>(null);
-  const flowPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  useEffect(() => () => { if (flowPollRef.current) clearInterval(flowPollRef.current); }, []);
+  // Part 5: removed legacy on-demand "Unusual Flow Scan (LIVE)" state +
+  // poll loop. Live unusual-flow signal is now folded into the LIVE_FLOW
+  // bucket on every Discovery scan.
 
   const [showScreenBuilder, setShowScreenBuilder] = useState(false);
   const [editingScreen, setEditingScreen] = useState<number | null>(null);
@@ -844,55 +818,10 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
     }
   };
 
-  const handleUnusualFlowScan = async () => {
-    const baseSyms = resolvedSymbols.length > 0 ? resolvedSymbols : await universeData.getSymbols(universe);
-    // Flow scan is heavier than a quote scan — cap at 20 tickers by
-    // default. Prefer the current detResult top candidates if we already
-    // ran a deterministic scan (likeliest to have real flow).
-    let tickers: string[] = [];
-    if (detResult?.candidates?.length) {
-      tickers = detResult.candidates.slice(0, 20).map(c => c.symbol);
-    } else {
-      tickers = baseSyms.slice(0, 20);
-    }
-    if (!tickers.length) { setFlowError("No tickers to scan"); return; }
-
-    setFlowScanning(true);
-    setFlowError(null);
-    setFlowJob(null);
-
-    try {
-      const res = await fetchWithAuth(`${API_BASE}/scanner/unusual-flow`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tickers, durationSec: 20 }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({} as { error?: string; message?: string }));
-        const err = body as { error?: string; message?: string };
-        throw new Error(err.message ?? err.error ?? `HTTP ${res.status}`);
-      }
-      const { jobId } = await res.json() as { jobId: string };
-
-      if (flowPollRef.current) clearInterval(flowPollRef.current);
-      flowPollRef.current = setInterval(async () => {
-        try {
-          const pr = await fetchWithAuth(`${API_BASE}/scanner/unusual-flow/${jobId}`);
-          if (!pr.ok) return;
-          const data = await pr.json() as FlowScanResult;
-          setFlowJob(data);
-          if (data.status === "complete" || data.status === "error") {
-            if (flowPollRef.current) { clearInterval(flowPollRef.current); flowPollRef.current = null; }
-            setFlowScanning(false);
-            if (data.status === "error") setFlowError(data.error ?? "scan failed");
-          }
-        } catch { /* keep polling */ }
-      }, 2000);
-    } catch (err) {
-      setFlowError(err instanceof Error ? err.message : String(err));
-      setFlowScanning(false);
-    }
-  };
+  // Part 5: handleUnusualFlowScan() removed. The on-demand "Unusual Flow
+  // Scan (LIVE)" button is gone — live unusual-flow signal is now folded
+  // into the LIVE_FLOW scoring bucket on every Discovery scan via
+  // computeLiveFlowBucket() in optionsBaselines.ts.
 
   const handleRefreshScreen = async (id: number) => {
     setRefreshingScreenId(id);
@@ -923,28 +852,42 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
         </div>
       )}
       <div className="bg-card border border-card-border rounded-xl overflow-hidden">
+        {/* Part 5: Single 3-way segmented control replaces the previous
+            Deterministic/Manual + Discovery/Momentum two-level toggle. */}
         <div className="flex border-b border-card-border">
-          {(["deterministic", "manual"] as const).map(m => (
-            <button
-              key={m}
-              onClick={() => setMode(m)}
-              className={`flex-1 py-3 text-sm font-bold uppercase tracking-widest transition-all border-b-2 ${
-                mode === m
-                  ? "bg-[#18181B] text-white border-b-[#FFB800]"
-                  : "bg-transparent text-muted-foreground border-b-transparent hover:text-foreground hover:bg-secondary/20"
-              }`}
-            >
-              {m === "deterministic" ? (
+          {([
+            { view: "DISCOVERY" as const, label: "DISCOVERY", icon: Crosshair, accent: "#FFB800", beta: true },
+            { view: "MOMENTUM" as const, label: "MOMENTUM", icon: BarChart3, accent: "#42a5f5", beta: false },
+            { view: "MANUAL" as const, label: "MANUAL", icon: SlidersHorizontal, accent: "#b8bcc8", beta: false },
+          ]).map(({ view: v, label, icon: Icon, accent, beta }) => {
+            const active =
+              (v === "MANUAL" && mode === "manual") ||
+              (v === "DISCOVERY" && mode === "deterministic" && scanMode === "DISCOVERY") ||
+              (v === "MOMENTUM" && mode === "deterministic" && scanMode === "MOMENTUM");
+            return (
+              <button
+                key={v}
+                onClick={() => {
+                  if (v === "MANUAL") setMode("manual");
+                  else { setMode("deterministic"); setScanMode(v); }
+                }}
+                className={`flex-1 py-3 text-sm font-bold uppercase tracking-widest transition-all border-b-2 ${
+                  active
+                    ? "bg-[#18181B] text-white"
+                    : "bg-transparent text-muted-foreground border-b-transparent hover:text-foreground hover:bg-secondary/20"
+                }`}
+                style={active ? { borderBottomColor: accent, color: accent } : undefined}
+              >
                 <span className="flex items-center justify-center gap-2">
-                  <Crosshair className="w-3.5 h-3.5" /> DETERMINISTIC
+                  <Icon className="w-3.5 h-3.5" />
+                  {label}
+                  {beta && (
+                    <span className="text-[8px] px-1 py-0.5 rounded font-bold" style={{ background: "rgba(255,184,0,0.15)", color: "#FFB800", border: "1px solid rgba(255,184,0,0.3)" }}>BETA</span>
+                  )}
                 </span>
-              ) : (
-                <span className="flex items-center justify-center gap-2">
-                  <SlidersHorizontal className="w-3.5 h-3.5" /> MANUAL FILTER
-                </span>
-              )}
-            </button>
-          ))}
+              </button>
+            );
+          })}
         </div>
 
         <div className="p-4 bg-[#0c0c0c] space-y-4">
@@ -978,37 +921,76 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
 
           </div>
 
-          {mode === "deterministic" && (
-            <div className="flex items-center gap-2 mt-1">
-              <button
-                onClick={() => setScanMode("DISCOVERY")}
-                className={`text-[11px] font-bold px-3 py-1.5 rounded transition-all ${scanMode === "DISCOVERY" ? "text-white" : "text-zinc-500 hover:text-zinc-300"}`}
-                style={scanMode === "DISCOVERY" ? { background: "#18181b", border: "1px solid #FFB800", color: "#FFB800" } : { background: "transparent", border: "1px solid #2a2a2a" }}
-              >
-                DISCOVERY
-                <span className="ml-1.5 text-[9px] px-1 py-0.5 rounded font-bold" style={{ background: "rgba(255,184,0,0.15)", color: "#FFB800", border: "1px solid rgba(255,184,0,0.3)" }}>BETA</span>
-              </button>
-              <button
-                onClick={() => setScanMode("MOMENTUM")}
-                className={`text-[11px] font-bold px-3 py-1.5 rounded transition-all ${scanMode === "MOMENTUM" ? "text-white" : "text-zinc-500 hover:text-zinc-300"}`}
-                style={scanMode === "MOMENTUM" ? { background: "#18181b", border: "1px solid #6B7280", color: "#b8bcc8" } : { background: "transparent", border: "1px solid #2a2a2a" }}
-              >
-                MOMENTUM
-              </button>
-            </div>
-          )}
-
-          <div className="text-xs text-muted-foreground">
+          {/* Part 5: Coverage badge + scan summary + scoring info tooltip.
+              The verbose "Setup Quality + Accumulation + ..." description
+              now lives behind an info icon to reduce visual noise. */}
+          <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
             {universeData.loading ? (
               <span className="text-zinc-500">Loading universes...</span>
             ) : (
               <>
-                Scanning <span className="text-primary font-bold">{currentSymCount} tickers</span>
-                {mode === "deterministic" && scanMode === "DISCOVERY" && <> — Setup Quality + Accumulation + IV Setup + Flow + Emerging RS (min 55)</>}
-                {mode === "deterministic" && scanMode === "MOMENTUM" && <> — Trend + RS + Volume + IVR + Options Liquidity (top 5, min 60)</>}
+                <span>
+                  Scanning <span className="text-primary font-bold">{currentSymCount} tickers</span>
+                </span>
+                {/* Coverage badge — LC130 has nightly flat-files backfill so
+                    flow data is "always-on"; everything else is on-demand. */}
+                {universe === "preset:liquidCore130" ? (
+                  <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
+                    style={{ color: "#26a69a", background: "rgba(38,166,154,0.1)", border: "1px solid rgba(38,166,154,0.3)" }}
+                    title="Liquid Core 130 has nightly options flat-files backfill — flow & live-flow coverage is always on.">
+                    LC130 · ALWAYS-ON
+                  </span>
+                ) : (
+                  <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
+                    style={{ color: "#9ca3af", background: "rgba(156,163,175,0.08)", border: "1px solid rgba(156,163,175,0.2)" }}
+                    title="Off-list universe — flow data fetched on-demand at scan time.">
+                    ON-DEMAND
+                  </span>
+                )}
+                {mode === "deterministic" && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button className="inline-flex items-center text-zinc-500 hover:text-zinc-300 transition-colors" aria-label="Scoring details">
+                        <Info className="w-3.5 h-3.5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="max-w-xs text-[11px] leading-relaxed">
+                      {scanMode === "DISCOVERY"
+                        ? "Discovery scoring: Setup Quality + Accumulation + IV Setup + Flow + Live Flow + Emerging RS. Min total 55."
+                        : "Momentum scoring: Trend + RS + Volume + IVR + Options Liquidity. Top 5, min 60."}
+                    </TooltipContent>
+                  </Tooltip>
+                )}
               </>
             )}
           </div>
+
+          {/* Part 5: Filter chips for discovery results — All / Unusual flow only / No flow detected. */}
+          {mode === "deterministic" && scanMode === "DISCOVERY" && (
+            <div className="flex items-center gap-1.5 mt-1">
+              {([
+                { id: "all" as const, label: "All" },
+                { id: "unusual" as const, label: "Unusual flow only" },
+                { id: "noflow" as const, label: "No flow detected" },
+              ]).map(c => {
+                const active = flowFilter === c.id;
+                return (
+                  <button
+                    key={c.id}
+                    onClick={() => setFlowFilter(c.id)}
+                    className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-full transition-all ${
+                      active ? "text-white" : "text-zinc-500 hover:text-zinc-300"
+                    }`}
+                    style={active
+                      ? { background: "rgba(102,224,255,0.15)", border: "1px solid rgba(102,224,255,0.5)", color: "#66e0ff" }
+                      : { background: "transparent", border: "1px solid #2a2a2a" }}
+                  >
+                    {c.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {mode === "manual" && (
@@ -1077,93 +1059,16 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
             </div>
           )}
 
-          {/* Unusual Flow Scan — live Polygon options tape */}
-          <div className="mt-2 flex flex-col items-center gap-1">
-            <button
-              onClick={handleUnusualFlowScan}
-              disabled={flowScanning || isScanning}
-              className="font-bold font-mono tracking-wider rounded-lg disabled:opacity-30 disabled:cursor-not-allowed active:scale-95 transition-all"
-              style={{
-                fontSize: 11, padding: "6px 12px",
-                background: "#0c0c0c", color: "#66e0ff", border: "1px solid #1e4a5a",
-                cursor: "pointer",
-              }}
-              title={detResult?.candidates?.length ? "Scans top deterministic candidates" : "Scans first 20 tickers in universe"}
-            >
-              {flowScanning ? (
-                <span className="flex items-center gap-2">
-                  <span className="w-3 h-3 border-2 border-[#66e0ff] border-t-transparent rounded-full animate-spin" />
-                  LIVE FLOW {flowJob?.status === "running" ? `— ${flowJob.contractsSubscribed} contracts` : "…"}
-                </span>
-              ) : (
-                <>⚡ UNUSUAL FLOW SCAN (LIVE)</>
-              )}
-            </button>
-            {flowError && <div className="text-[10px]" style={{ color: "#ff6b6b" }}>{flowError}</div>}
-          </div>
+          {/* Part 5: "Unusual Flow Scan (LIVE)" button removed.
+              Live unusual-flow signals are now folded into the LIVE_FLOW
+              scoring bucket on every Discovery scan, surfaced as bars on
+              each result row and as the per-row LIVE chip below. */}
         </div>
       </div>
 
-      {flowJob && flowJob.status === "complete" && flowJob.tickers.some(t => t.totalPrints > 0 || t.score > 0) && (
-        <div className="bg-card rounded-xl border border-card-border mt-2 p-3">
-          <div className="flex items-baseline justify-between mb-2">
-            <div className="text-[11px] font-bold tracking-wider" style={{ color: "#66e0ff" }}>
-              ⚡ LIVE UNUSUAL FLOW — {flowJob.durationSec}s window · {flowJob.contractsSubscribed} contracts
-            </div>
-            <div className="text-[9px] text-muted-foreground">{new Date(flowJob.completedAt ?? Date.now()).toLocaleTimeString()}</div>
-          </div>
-          <div className="grid grid-cols-1 gap-2">
-            {flowJob.tickers
-              .filter(t => t.totalPrints > 0 || (t.error && t.error !== "no_chain"))
-              .slice(0, 12)
-              .map(t => (
-                <div key={t.ticker} className="bg-[#0c0c0c] border border-[#1a1a1a] rounded p-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-baseline gap-2">
-                      <button
-                        onClick={() => { setSymbol(t.ticker); onNavigateToSymbol?.(t.ticker); }}
-                        className="text-sm font-bold font-mono"
-                        style={{ color: "#FFB800" }}
-                      >{t.ticker}</button>
-                      <span className="text-[10px] font-bold" style={{ color: t.score >= 50 ? "#00d166" : "#b8bcc8" }}>
-                        SCORE {t.score.toFixed(1)}
-                      </span>
-                    </div>
-                    <div className="text-[9px] text-muted-foreground font-mono">
-                      sweeps {t.sweepPrints} · blocks {t.blockPrints} · prints {t.totalPrints} · notional ${(t.totalLiveNotional / 1000).toFixed(0)}k
-                      {t.callPutNotionalRatio != null && <> · C/P {t.callPutNotionalRatio.toFixed(2)}</>}
-                    </div>
-                  </div>
-                  {t.topContracts.length > 0 && (
-                    <div className="mt-1 grid grid-cols-1 gap-0.5">
-                      {t.topContracts.slice(0, 4).map(c => (
-                        <div key={c.symbol} className="text-[10px] font-mono flex items-center gap-2 text-zinc-400">
-                          <span style={{ color: c.type === "C" ? "#26a69a" : "#ef5350", minWidth: 60 }}>
-                            {c.expiration.slice(5)} {c.type}{c.strike}
-                          </span>
-                          <span>vol {c.liveVolume}</span>
-                          <span>OI {c.openInterest}</span>
-                          <span style={{ color: c.volOiRatio > 1 ? "#ffb800" : "#6b7280" }}>
-                            V/OI {c.volOiRatio.toFixed(2)}
-                          </span>
-                          <span className="text-zinc-500">${(c.liveNotional / 1000).toFixed(1)}k</span>
-                          {c.sweepPrints > 0 && <span style={{ color: "#66e0ff" }}>sweep×{c.sweepPrints}</span>}
-                          {c.blockPrints > 0 && <span style={{ color: "#ab47bc" }}>block×{c.blockPrints}</span>}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {t.error && <div className="text-[9px]" style={{ color: "#ff6b6b" }}>err: {t.error}</div>}
-                </div>
-              ))}
-          </div>
-          {flowJob.tickers.every(t => t.totalPrints === 0) && (
-            <div className="text-[10px] text-muted-foreground text-center py-2">
-              No trades observed in window (market closed or illiquid contracts).
-            </div>
-          )}
-        </div>
-      )}
+      {/* Part 5: Removed legacy "LIVE UNUSUAL FLOW" results panel —
+          live unusual flow is now baked into the LIVE_FLOW scoring bucket
+          and surfaced inline on each Discovery result row. */}
 
       {isScanning && !(mode === "deterministic" && detResult) && (
         <div className="flex flex-col items-center justify-center py-16 gap-4 bg-card rounded-xl border border-card-border">
@@ -1266,30 +1171,50 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
             </div>
           </div>
 
-          {detResult.candidates.length > 0 ? (
-            <div className="space-y-2">
-              {detResult.candidates.map((c, i) => (
-                <DeterministicCard
-                  key={c.symbol}
-                  candidate={c}
-                  rank={i + 1}
-                  onSelect={onNavigateToSymbol ?? setSymbol}
-                  onSendToStrategist={onSendToStrategist}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="py-16 text-center bg-card border border-card-border rounded-xl">
-              <p className="text-sm font-bold text-zinc-400 mb-1">Cash Is a Position</p>
-              <p className="text-[11px] text-zinc-600">No candidates scored above threshold. Stand aside or re-evaluate universe.</p>
-            </div>
-          )}
+          {(() => {
+            // Part 5: apply flow-filter chips. Discovery mode only; Momentum
+            // shows everything since the live-flow signal is Discovery-only.
+            // Gate by the actual result payload mode — NOT current UI
+            // scanMode — so a stale Momentum result doesn't get filtered if
+            // the user toggles the segmented control before rescanning.
+            const resultIsDiscovery = detResult.candidates[0]?.scanMode === "DISCOVERY";
+            const filtered = resultIsDiscovery
+              ? detResult.candidates.filter(c => {
+                  const live = c.discoveryComponents?.liveFlowAvailable === true;
+                  if (flowFilter === "unusual") return live;
+                  if (flowFilter === "noflow") return !live;
+                  return true;
+                })
+              : detResult.candidates;
+            return filtered.length > 0 ? (
+              <div className="space-y-2">
+                {filtered.map((c, i) => (
+                  <DeterministicCard
+                    key={c.symbol}
+                    candidate={c}
+                    rank={i + 1}
+                    onSelect={onNavigateToSymbol ?? setSymbol}
+                    onSendToStrategist={onSendToStrategist}
+                  />
+                ))}
+              </div>
+            ) : (
+              // Part 5: subtle text-line empty state (replaces the
+              // "Cash Is a Position" panel). Disambiguates "no scan results"
+              // vs "filter hid everything".
+              <div className="py-6 text-center text-[11px] text-muted-foreground/60">
+                {detResult.candidates.length === 0
+                  ? "No candidates scored above threshold."
+                  : `No candidates match the "${flowFilter === "unusual" ? "Unusual flow only" : "No flow detected"}" filter.`}
+              </div>
+            );
+          })()}
         </div>
       )}
 
       {mode === "deterministic" && !isScanning && !detResult && !detError && (
-        <div className="py-16 text-center text-xs text-muted-foreground/40 bg-card border border-card-border rounded-xl">
-          Select a universe and run a deterministic scan to find trade candidates.
+        <div className="py-6 text-center text-[11px] text-muted-foreground/60">
+          Select a universe and run a scan to find trade candidates.
         </div>
       )}
 

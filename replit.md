@@ -78,3 +78,59 @@ Key features include SEC EDGAR integration, a dynamic Market Calendar, a MacroBa
 -   **SEC EDGAR API**: Public company filings data.
 -   **Benzinga API**: Market data provider for news, earnings, and economic calendar.
 -   **Gemini**: `gemini-2.5-flash` for AI Lab Skeptic critiques.
+## Scanner observability & ops notes (Part 6)
+
+### Structured log lines
+
+All trailing-baseline queries and the LIVE_FLOW bucket emit one structured
+log line per call. Search by the stable `op` field:
+
+| `op` | Source | What it tells you |
+| --- | --- | --- |
+| `baseline.contract.fetch` | `optionsBaselines.getContract20dBaseline` | Per-contract 20d baseline; `degraded=true` when <10 days history. |
+| `baseline.contract.error` | same | Query failed; includes `err`. |
+| `baseline.ticker.batch` | `optionsBaselines.getTicker20dBaselines` | Per-scan batch; `requested`/`returned`/`hitRate`/`durationMs`. |
+| `baseline.flowAccel.batch` | `optionsBaselines.getFlowAcceleration` | Flow acceleration; also reports `strongAccel` (ratio ≥1.5). |
+| `baseline.trailingUnusual.fetch` | `optionsBaselines.getTrailingUnusualFlow` | `/api/unusual-options/trailing` endpoint. |
+| `liveFlow.compute` | `optionsBaselines.computeLiveFlowBucket` | Per-ticker bucket trace (debug-only; flip log level to inspect). |
+| `scanner.liveFlow.applied` | `deterministicScanner.v2` | Per-scan aggregate: how many candidates got LIVE_FLOW + avg/max score. |
+
+Quick health check: `grep 'op=baseline\.' <log>` over the last open session
+should show `hitRate ≥ 0.9` for LC130 (the always-on universe). Anything
+sustained below that signals a backfill gap.
+
+### Failure-mode banner state machine (scanner UI) — PLANNED
+
+> Current implementation: the MarketScanner only renders an LC130
+> "ALWAYS-ON (full coverage)" vs "ON-DEMAND (cached)" coverage badge —
+> there is **no** LIVE/AMBER/EOD state machine in the UI yet. The
+> three-state machine below is the **target shape** for when the Part 2
+> persistent WS watcher ships; record it here so the next session
+> implements consistently.
+
+```
+  LIVE   (green)   = Discovery scan completed within last 5min,
+                     LIVE_FLOW.coverageRate >= 0.5 from last scan,
+                     watcher heartbeat fresh (<60s).
+  AMBER  (yellow)  = Trailing baselines loaded but watcher is offline,
+                     OR coverageRate between 0.1 and 0.5,
+                     OR watcher heartbeat stale (60s..5min).
+  EOD    (gray)    = Only flat-files trailing data is contributing
+                     (Part 2 disabled, watcher dead, or DB stale).
+                     LIVE chips suppressed; bars still render.
+```
+
+Today the watcher is disabled (`POLYGON_OPTIONS_WS_ENABLED=false`) so when
+the badge is implemented it will be a static EOD until Part 2 lands.
+
+### Sizing note (Part 2 follow-up)
+
+The single-vCPU container is the real constraint for the persistent
+Polygon options WS watcher. During market open with 130-ticker LC plus
+on-demand symbols subscribed at the contract level, sustained CPU under
+the existing Schwab streamer + IB market-data path is the bottleneck —
+not memory or network. Before enabling `POLYGON_OPTIONS_WS_ENABLED`:
+
+1. Cap concurrent contract subscriptions at ~600 (3-tier: 100 hot / 300 warm / 200 cold).
+2. Profile baseline CPU at open; if sustained >75%, switch to a 2-vCPU plan or move the watcher into a dedicated worker artifact.
+3. The session log writes are append-only and small (<1KB per event); no I/O concern.

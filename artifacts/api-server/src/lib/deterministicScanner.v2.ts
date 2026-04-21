@@ -1204,6 +1204,23 @@ export async function runDiscoveryScan(
   const scoreDistrib = scoredResults.slice(0, 10).map(r => `${r.symbol}=${r.totalScore}(SQ${r.setupQuality}/ACC${r.accumulation}/IV${r.ivSetup}/FL${r.flowDivergence}/RS${r.emergingRS})`);
   log.info({ scored: scoredResults.length, above: aboveThreshold.length, distribution: scoreDistrib }, "Discovery scoring complete");
 
+  // Part 6 — observability: per-scan LIVE_FLOW counter aggregate. Lets
+  // operators answer "how many candidates this scan had a usable LIVE_FLOW
+  // signal, and how strong was it on average" via a single grep. Pairs
+  // with the per-baseline counters in optionsBaselines.ts.
+  const lfAvail = scoredResults.filter(r => r.liveFlowAvailable);
+  const lfAvgScore = lfAvail.length > 0
+    ? +(lfAvail.reduce((s, r) => s + r.liveFlow, 0) / lfAvail.length).toFixed(2)
+    : 0;
+  log.info({
+    op: "scanner.liveFlow.applied",
+    scoped: scoredResults.length,
+    available: lfAvail.length,
+    coverageRate: scoredResults.length > 0 ? +(lfAvail.length / scoredResults.length).toFixed(3) : 0,
+    avgLiveFlowScore: lfAvgScore,
+    maxLiveFlowScore: lfAvail.reduce((m, r) => Math.max(m, r.liveFlow), 0),
+  }, "scanner.liveFlow.applied");
+
   const { getUpcomingEvents } = await import("./calendarEventChecker.js");
 
   // Pre-fetch ticker-specific earnings via the unified helper (cached). This replaces the

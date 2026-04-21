@@ -21,6 +21,17 @@
 
 import { sql } from "drizzle-orm";
 import { db } from "@workspace/db";
+import { logger } from "./logger.js";
+
+// Part 6 — observability
+//
+// Every public baseline query and the LIVE_FLOW bucket emits one structured
+// log line with a stable `op` discriminator and counter-shaped fields
+// (durationMs, requested, returned, hitRate). Operators can `grep` for
+// `op=baseline.*` to get a flat counter feed without standing up a metrics
+// backend. Failure paths log at warn level with the same op tag so a single
+// query can answer "how often did the trailing baseline degrade today?".
+const olog = logger.child({ component: "optionsBaselines" });
 
 /**
  * Build a parameterized `column IN (...)` fragment for a string array.
@@ -95,39 +106,56 @@ export async function getContract20dBaseline(
   const lookback = opts.lookbackDays ?? DEFAULT_LOOKBACK_DAYS;
   const ref = opts.referenceDate ?? new Date();
   const cutoff = lookbackCutoffISO(ref, lookback);
+  const t0 = Date.now();
 
-  const rows = await db.execute<{
-    ticker: string;
-    days_observed: number;
-    avg_volume: number | null;
-    avg_vol_oi: number | null;
-  }>(sql`
-    WITH recent AS (
-      SELECT ticker, volume, open_interest, trade_date
-      FROM polygon_options_history
-      WHERE option_symbol = ${optionSymbol}
-        AND trade_date >= ${cutoff}
-      ORDER BY trade_date DESC
-      LIMIT ${lookback}
-    )
-    SELECT
-      MAX(ticker)                                                 AS ticker,
-      COUNT(*)                                                    AS days_observed,
-      AVG(NULLIF(volume, 0))                                      AS avg_volume,
-      AVG(CASE WHEN open_interest > 0 THEN volume::float / open_interest END) AS avg_vol_oi
-    FROM recent;
-  `);
+  try {
+    const rows = await db.execute<{
+      ticker: string;
+      days_observed: number;
+      avg_volume: number | null;
+      avg_vol_oi: number | null;
+    }>(sql`
+      WITH recent AS (
+        SELECT ticker, volume, open_interest, trade_date
+        FROM polygon_options_history
+        WHERE option_symbol = ${optionSymbol}
+          AND trade_date >= ${cutoff}
+        ORDER BY trade_date DESC
+        LIMIT ${lookback}
+      )
+      SELECT
+        MAX(ticker)                                                 AS ticker,
+        COUNT(*)                                                    AS days_observed,
+        AVG(NULLIF(volume, 0))                                      AS avg_volume,
+        AVG(CASE WHEN open_interest > 0 THEN volume::float / open_interest END) AS avg_vol_oi
+      FROM recent;
+    `);
 
-  const row = rows.rows?.[0];
-  if (!row || Number(row.days_observed ?? 0) < MIN_HISTORY_DAYS) return null;
-
-  return {
-    optionSymbol,
-    ticker: String(row.ticker ?? ""),
-    avgVolume: Number(row.avg_volume ?? 0),
-    avgVolOiRatio: Number(row.avg_vol_oi ?? 0),
-    daysObserved: Number(row.days_observed),
-  };
+    const row = rows.rows?.[0];
+    const days = Number(row?.days_observed ?? 0);
+    const degraded = !row || days < MIN_HISTORY_DAYS;
+    olog.info({
+      op: "baseline.contract.fetch",
+      optionSymbol, lookback, daysObserved: days,
+      durationMs: Date.now() - t0,
+      degraded, reason: degraded ? "insufficient_history" : null,
+    }, "baseline.contract");
+    if (degraded) return null;
+    return {
+      optionSymbol,
+      ticker: String(row.ticker ?? ""),
+      avgVolume: Number(row.avg_volume ?? 0),
+      avgVolOiRatio: Number(row.avg_vol_oi ?? 0),
+      daysObserved: days,
+    };
+  } catch (err) {
+    olog.warn({
+      op: "baseline.contract.error", optionSymbol,
+      durationMs: Date.now() - t0,
+      err: err instanceof Error ? err.message : String(err),
+    }, "baseline.contract failed");
+    throw err;
+  }
 }
 
 /**
@@ -147,6 +175,7 @@ export async function getTicker20dBaselines(
   const lookback = opts.lookbackDays ?? DEFAULT_LOOKBACK_DAYS;
   const ref = opts.referenceDate ?? new Date();
   const cutoff = lookbackCutoffISO(ref, lookback);
+  const t0Batch = Date.now();
 
   // Two-step CTE so we can window the most-recent N *trading days per ticker*
   // (cutoff is calendar-day buffered; window enforces the real N-day cap).
@@ -188,6 +217,14 @@ export async function getTicker20dBaselines(
       daysObserved: days,
     });
   }
+  olog.info({
+    op: "baseline.ticker.batch",
+    requested: tickers.length,
+    returned: out.size,
+    hitRate: tickers.length > 0 ? +(out.size / tickers.length).toFixed(3) : 0,
+    lookback,
+    durationMs: Date.now() - t0Batch,
+  }, "baseline.ticker.batch");
   return out;
 }
 
@@ -255,6 +292,7 @@ export async function getFlowAcceleration(
   const total = recentDays + trailingDays;
   const ref = opts.referenceDate ?? new Date();
   const cutoff = lookbackCutoffISO(ref, total);
+  const t0Accel = Date.now();
 
   const rows = await db.execute<{
     ticker: string;
@@ -309,6 +347,20 @@ export async function getFlowAcceleration(
       daysObserved: recDays + trDays,
     });
   }
+  // Counter-shaped log line: how many tickers had usable acceleration data
+  // and what fraction of the request that satisfied. Operators grep `op=
+  // baseline.flowAccel.batch` to see degradation rate per scan.
+  let strongAccel = 0;
+  for (const v of out.values()) if (v.ratio >= 1.5) strongAccel += 1;
+  olog.info({
+    op: "baseline.flowAccel.batch",
+    requested: tickers.length,
+    returned: out.size,
+    strongAccel, // count with ratio >= 1.5 (eligible for Flow points)
+    hitRate: tickers.length > 0 ? +(out.size / tickers.length).toFixed(3) : 0,
+    recentDays, trailingDays,
+    durationMs: Date.now() - t0Accel,
+  }, "baseline.flowAccel.batch");
   return out;
 }
 
@@ -399,6 +451,17 @@ function syntheticEventsFromAccel(accel: FlowAcceleration | null | undefined): n
 export function computeLiveFlowBucket(inputs: LiveFlowInputs): LiveFlowResult {
   const liveEvents = Math.max(0, Math.floor(inputs.liveEventCount ?? 0));
   const synEvents = syntheticEventsFromAccel(inputs.trailingAccel);
+  // Counter-shaped trace: per-ticker LIVE_FLOW application. We only emit at
+  // debug to keep volume manageable across a 130-ticker scan; flip to info
+  // temporarily when debugging score drift in production.
+  if (olog.isLevelEnabled?.("debug")) {
+    olog.debug({
+      op: "liveFlow.compute",
+      liveEvents, synEvents,
+      ratio: inputs.trailingAccel?.ratio ?? null,
+      directionallyBalanced: inputs.directionallyBalanced === true,
+    }, "liveFlow.compute");
+  }
   // Live-today weighted heavier: count live events fully, trailing synthetic
   // events at half weight (rounded down). This preserves Part 2's eventual
   // dominance while letting Part 1's flat-files signal carry the bucket today.
@@ -445,6 +508,7 @@ export async function getTrailingUnusualFlow(
   const limit = opts.limit ?? 50;
   const totalDays = recentDays + trailingDays;
   const cutoff = lookbackCutoffISO(new Date(), totalDays);
+  const t0Trailing = Date.now();
 
   const rows = await db.execute<{
     ticker: string;
@@ -491,7 +555,16 @@ export async function getTrailingUnusualFlow(
 
   // Per-ticker top contracts in the recent window — separate query keeps the
   // main aggregate cheap. Skip if no candidates.
-  if (top.length === 0) return [];
+  if (top.length === 0) {
+    olog.info({
+      op: "baseline.trailingUnusual.fetch",
+      candidatesScanned: rows.rows?.length ?? 0,
+      returned: 0,
+      recentDays, trailingDays, minRatio,
+      durationMs: Date.now() - t0Trailing,
+    }, "baseline.trailingUnusual");
+    return [];
+  }
   const tickers = top.map(t => t.ticker);
   const recentCutoff = lookbackCutoffISO(new Date(), recentDays);
   const contractRows = await db.execute<{
@@ -523,11 +596,21 @@ export async function getTrailingUnusualFlow(
     }
   }
 
-  return top.map(c => ({
+  const result = top.map(c => ({
     ticker: c.ticker,
     recent5dContracts: c.recent,
     trailing15dAvgContracts: c.trailing,
     ratio: c.ratio,
     topContracts: perTickerTop.get(c.ticker) ?? [],
   }));
+  // Always emit a counter line on the success path too — keeps the
+  // "one structured log per call" contract intact regardless of result size.
+  olog.info({
+    op: "baseline.trailingUnusual.fetch",
+    candidatesScanned: rows.rows?.length ?? 0,
+    returned: result.length,
+    recentDays, trailingDays, minRatio,
+    durationMs: Date.now() - t0Trailing,
+  }, "baseline.trailingUnusual");
+  return result;
 }
