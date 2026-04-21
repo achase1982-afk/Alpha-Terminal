@@ -1,5 +1,5 @@
 import { db, optionsFlowPerStrikeTable } from "@workspace/db";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, inArray, sql } from "drizzle-orm";
 import { logger } from "./logger.js";
 
 export interface UnusualFlowFilters {
@@ -7,6 +7,9 @@ export interface UnusualFlowFilters {
   minVoiRatio?: number;
   minVolume?: number;
   skew?: "any" | "bullish" | "bearish" | "non_balanced";
+  excludeIndexes?: boolean;
+  minDte?: number;
+  minNotional?: number; // dollars per strike (vol × mid × 100)
 }
 
 export interface UnusualFlowStrike {
@@ -17,6 +20,7 @@ export interface UnusualFlowStrike {
   volume: number;
   openInterest: number;
   volOiRatio: number;
+  notional: number;
   iv: number | null;
   delta: number | null;
 }
@@ -31,14 +35,17 @@ export interface UnusualFlowCandidate {
   unusualPutStrikes: number;
   unusualCallVolume: number;
   unusualPutVolume: number;
+  unusualTotalVolume: number;
+  unusualTotalNotional: number;
   totalCallVolume: number;
   totalPutVolume: number;
   putCallVolumeRatio: number;
   skew: "bullish" | "bearish" | "balanced";
   topByVoiRatio: UnusualFlowStrike[];
-  topByVolume: UnusualFlowStrike[];
+  topByNotional: UnusualFlowStrike[];
   largestPrintDescription: string;
   topVoiRatio: number;
+  avgDte: number;
 }
 
 export interface UnusualFlowScanResult {
@@ -46,6 +53,7 @@ export interface UnusualFlowScanResult {
   asOfDate: string | null;
   scannedSymbols: number;
   symbolsWithFlow: number;
+  excludedIndexes: number;
   candidates: UnusualFlowCandidate[];
   filters: Required<UnusualFlowFilters>;
 }
@@ -55,7 +63,30 @@ const DEFAULTS: Required<UnusualFlowFilters> = {
   minVoiRatio: 3,
   minVolume: 500,
   skew: "any",
+  excludeIndexes: true,
+  minDte: 7,
+  minNotional: 250_000,
 };
+
+// Index ETFs / index products — overwhelmingly noisy because of dealer
+// hedging, 0DTE flow, and vol products. Excluded by default; user can
+// re-enable to see them.
+const INDEX_SYMBOLS = new Set([
+  // Broad index ETFs
+  "SPY", "QQQ", "IWM", "DIA", "VOO", "IVV", "VTI",
+  // Index products
+  "SPX", "NDX", "RUT", "XSP",
+  // Vol products
+  "VIX", "VXX", "UVXY", "SVXY", "VIXY",
+  // Sector SPDRs
+  "XLE", "XLF", "XLK", "XLY", "XLP", "XLV", "XLI", "XLU", "XLB", "XLC", "XLRE",
+  // Levered/inverse
+  "SQQQ", "TQQQ", "SOXL", "SOXS", "SPXL", "SPXS", "TNA", "TZA",
+  // Treasury / bond
+  "TLT", "HYG", "LQD", "IEF",
+  // Other heavy-flow ETFs
+  "EEM", "EFA", "GLD", "SLV", "USO", "ARKK",
+]);
 
 const MAX_AGE_CALENDAR_DAYS = 5;
 const MIN_OI_FOR_VOI = 10;
@@ -70,6 +101,7 @@ interface RawRow {
   dte: number | null;
   dailyVolume: number | null;
   openInterest: number | null;
+  mid: number | null;
   impliedVolatility: number | null;
   delta: number | null;
 }
@@ -83,6 +115,7 @@ function isFresh(asOfDate: string): boolean {
 function rowToStrike(r: RawRow): UnusualFlowStrike {
   const vol = r.dailyVolume ?? 0;
   const oi = r.openInterest ?? 0;
+  const mid = r.mid ?? 0;
   return {
     strike: r.strike,
     expiration: r.expiration,
@@ -91,6 +124,7 @@ function rowToStrike(r: RawRow): UnusualFlowStrike {
     volume: vol,
     openInterest: oi,
     volOiRatio: oi > 0 ? Math.round((vol / oi) * 100) / 100 : 0,
+    notional: Math.round(vol * mid * 100),
     iv: r.impliedVolatility,
     delta: r.delta,
   };
@@ -108,26 +142,34 @@ function summarizeForSymbol(
   let unusualPutVolume = 0;
   let unusualCallStrikes = 0;
   let unusualPutStrikes = 0;
-  const unusual: Array<RawRow & { _voi: number }> = [];
+  let unusualTotalNotional = 0;
+  let dteSum = 0;
+  const unusual: Array<RawRow & { _voi: number; _notional: number }> = [];
 
   for (const r of rows) {
     const vol = r.dailyVolume ?? 0;
     const oi = r.openInterest ?? 0;
+    const mid = r.mid ?? 0;
+    const dte = r.dte ?? 0;
     if (r.optionType === "call") totalCallVolume += vol;
     else if (r.optionType === "put") totalPutVolume += vol;
 
-    if (vol >= f.minVolume && oi >= MIN_OI_FOR_VOI) {
-      const voi = vol / oi;
-      if (voi >= f.minVoiRatio) {
-        unusual.push({ ...r, _voi: voi });
-        if (r.optionType === "call") {
-          unusualCallStrikes++;
-          unusualCallVolume += vol;
-        } else if (r.optionType === "put") {
-          unusualPutStrikes++;
-          unusualPutVolume += vol;
-        }
-      }
+    if (vol < f.minVolume || oi < MIN_OI_FOR_VOI) continue;
+    if (dte < f.minDte) continue;
+    const voi = vol / oi;
+    if (voi < f.minVoiRatio) continue;
+    const notional = vol * mid * 100;
+    if (notional < f.minNotional) continue;
+
+    unusual.push({ ...r, _voi: voi, _notional: notional });
+    unusualTotalNotional += notional;
+    dteSum += dte;
+    if (r.optionType === "call") {
+      unusualCallStrikes++;
+      unusualCallVolume += vol;
+    } else if (r.optionType === "put") {
+      unusualPutStrikes++;
+      unusualPutVolume += vol;
     }
   }
 
@@ -149,8 +191,8 @@ function summarizeForSymbol(
     .sort((a, b) => b._voi - a._voi)
     .slice(0, TOP_N)
     .map(r => rowToStrike(r));
-  const topByVolume = [...unusual]
-    .sort((a, b) => (b.dailyVolume ?? 0) - (a.dailyVolume ?? 0))
+  const topByNotional = [...unusual]
+    .sort((a, b) => b._notional - a._notional)
     .slice(0, TOP_N)
     .map(r => rowToStrike(r));
 
@@ -158,41 +200,47 @@ function summarizeForSymbol(
   const putCallVolumeRatio = totalCallVolume > 0
     ? Math.round((totalPutVolume / totalCallVolume) * 100) / 100
     : 0;
+  const avgDte = unusualStrikeCount > 0 ? Math.round(dteSum / unusualStrikeCount) : 0;
 
   // Score (0-100ish):
-  //   strikes      : strikeCount × 7 (cap 50)
-  //   topVOI       : log10(1 + topVoi) × 12 (cap 25)
+  //   strikes      : strikeCount × 6 (cap 40)
+  //   topVOI       : log10(1 + topVoi) × 10 (cap 22)
   //   conviction   : skew non-balanced ? 10 : 0
-  //   volume       : log10(1 + totalUnusual/1000) × 5 (cap 15)
-  const strikePts = Math.min(50, unusualStrikeCount * 7);
-  const voiPts = Math.min(25, Math.log10(1 + topVoi) * 12);
+  //   notional     : log10(1 + totalNotional/100k) × 8 (cap 20) — institutional size signal
+  //   tenor bonus  : avgDte ≥ 14 ? 8 : avgDte ≥ 7 ? 4 : 0 — positioning vs scalping
+  const strikePts = Math.min(40, unusualStrikeCount * 6);
+  const voiPts = Math.min(22, Math.log10(1 + topVoi) * 10);
   const skewPts = skew !== "balanced" ? 10 : 0;
-  const volPts = Math.min(15, Math.log10(1 + totalUnusual / 1000) * 5);
-  const score = Math.round((strikePts + voiPts + skewPts + volPts) * 10) / 10;
+  const notionalPts = Math.min(20, Math.log10(1 + unusualTotalNotional / 100_000) * 8);
+  const tenorPts = avgDte >= 14 ? 8 : avgDte >= 7 ? 4 : 0;
+  const score = Math.round((strikePts + voiPts + skewPts + notionalPts + tenorPts) * 10) / 10;
 
-  const top = topByVoi[0];
+  const top = topByNotional[0];
   const largestPrintDescription = top
-    ? `${top.optionType.toUpperCase()} ${top.strike} ${top.expiration} (${top.dte}d) — ${top.volume.toLocaleString()} vol / ${top.openInterest.toLocaleString()} OI = ${top.volOiRatio.toFixed(1)}× VOI`
+    ? `${top.optionType.toUpperCase()} ${top.strike} ${top.expiration} (${top.dte}d) — ${top.volume.toLocaleString()} vol · $${(top.notional / 1_000_000).toFixed(2)}M notional · ${top.volOiRatio.toFixed(1)}× VOI`
     : "";
 
   return {
     symbol,
     asOfDate,
     score,
-    scoreReason: `strikes=${strikePts.toFixed(0)} voi=${voiPts.toFixed(1)} skew=${skewPts} vol=${volPts.toFixed(1)}`,
+    scoreReason: `strk=${strikePts.toFixed(0)} voi=${voiPts.toFixed(1)} skew=${skewPts} notl=${notionalPts.toFixed(1)} tnr=${tenorPts}`,
     unusualStrikeCount,
     unusualCallStrikes,
     unusualPutStrikes,
     unusualCallVolume,
     unusualPutVolume,
+    unusualTotalVolume: totalUnusual,
+    unusualTotalNotional: Math.round(unusualTotalNotional),
     totalCallVolume,
     totalPutVolume,
     putCallVolumeRatio,
     skew,
     topByVoiRatio: topByVoi,
-    topByVolume,
+    topByNotional,
     largestPrintDescription,
     topVoiRatio: topVoi,
+    avgDte,
   };
 }
 
@@ -201,12 +249,20 @@ export async function scanUnusualFlow(
   filters: UnusualFlowFilters = {},
 ): Promise<UnusualFlowScanResult> {
   const f: Required<UnusualFlowFilters> = { ...DEFAULTS, ...filters };
-  const upper = symbols.map(s => s.toUpperCase());
+  const upperAll = symbols.map(s => s.toUpperCase());
+  const excluded = f.excludeIndexes
+    ? upperAll.filter(s => INDEX_SYMBOLS.has(s)).length
+    : 0;
+  const upper = f.excludeIndexes
+    ? upperAll.filter(s => !INDEX_SYMBOLS.has(s))
+    : upperAll;
+
   const result: UnusualFlowScanResult = {
     scanTimestamp: Date.now(),
     asOfDate: null,
-    scannedSymbols: upper.length,
+    scannedSymbols: upperAll.length,
     symbolsWithFlow: 0,
+    excludedIndexes: excluded,
     candidates: [],
     filters: f,
   };
@@ -262,7 +318,8 @@ export async function scanUnusualFlow(
     result.candidates.sort((a, b) => b.score - a.score);
 
     logger.info({
-      requested: upper.length,
+      requested: upperAll.length,
+      excludedIndexes: excluded,
       withFlow: bySymbol.size,
       passed: result.candidates.length,
       filters: f,

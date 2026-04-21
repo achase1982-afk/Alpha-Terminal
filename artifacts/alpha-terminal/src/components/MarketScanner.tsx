@@ -363,6 +363,7 @@ interface UnusualFlowStrike {
   volume: number;
   openInterest: number;
   volOiRatio: number;
+  notional: number;
   iv: number | null;
   delta: number | null;
 }
@@ -376,21 +377,36 @@ interface UnusualFlowCandidate {
   unusualPutStrikes: number;
   unusualCallVolume: number;
   unusualPutVolume: number;
+  unusualTotalVolume: number;
+  unusualTotalNotional: number;
   totalCallVolume: number;
   totalPutVolume: number;
   putCallVolumeRatio: number;
   skew: "bullish" | "bearish" | "balanced";
   topByVoiRatio: UnusualFlowStrike[];
-  topByVolume: UnusualFlowStrike[];
+  topByNotional: UnusualFlowStrike[];
   largestPrintDescription: string;
   topVoiRatio: number;
+  avgDte: number;
 }
 interface UnusualFlowScanResult {
   scanTimestamp: number;
   asOfDate: string | null;
   scannedSymbols: number;
   symbolsWithFlow: number;
+  excludedIndexes: number;
   candidates: UnusualFlowCandidate[];
+}
+
+function fmtCompactInt(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return n.toLocaleString();
+}
+function fmtMoney(n: number): string {
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000) return `$${(n / 1_000).toFixed(0)}k`;
+  return `$${n.toLocaleString()}`;
 }
 
 const UnusualFlowCard = memo(function UnusualFlowCard({
@@ -435,7 +451,16 @@ const UnusualFlowCard = memo(function UnusualFlowCard({
         </span>
 
         <span className="text-[10px] text-zinc-500 font-mono tabular-nums shrink-0">
-          {candidate.unusualStrikeCount} strike{candidate.unusualStrikeCount === 1 ? "" : "s"}
+          {candidate.unusualStrikeCount} strk
+        </span>
+        <span className="text-[10px] text-zinc-400 font-mono tabular-nums shrink-0">
+          {fmtCompactInt(candidate.unusualTotalVolume)} ct
+        </span>
+        <span className="text-[10px] font-mono tabular-nums shrink-0" style={{ color: "#FFB800" }}>
+          {fmtMoney(candidate.unusualTotalNotional)}
+        </span>
+        <span className="text-[10px] text-zinc-600 font-mono tabular-nums shrink-0 hidden sm:inline">
+          {candidate.avgDte}d
         </span>
 
         <div className="ml-auto flex items-center gap-2 shrink-0">
@@ -443,7 +468,7 @@ const UnusualFlowCard = memo(function UnusualFlowCard({
             <span className="text-[11px] font-mono tabular-nums text-zinc-400">${livePrice.toFixed(2)}</span>
           )}
           <span className="text-[11px] font-mono tabular-nums text-zinc-500">
-            {candidate.topVoiRatio.toFixed(1)}× VOI
+            {candidate.topVoiRatio.toFixed(1)}×
           </span>
           <span className="text-[12px] font-bold font-mono tabular-nums" style={{ color: scoreColor }}>
             {candidate.score.toFixed(0)}
@@ -811,6 +836,9 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
   const [uMinVoi, setUMinVoi] = useState(3);
   const [uMinVolume, setUMinVolume] = useState(500);
   const [uSkew, setUSkew] = useState<"any" | "bullish" | "bearish" | "non_balanced">("any");
+  const [uExcludeIndexes, setUExcludeIndexes] = useState(true);
+  const [uMinDte, setUMinDte] = useState(7);
+  const [uMinNotional, setUMinNotional] = useState(250_000);
 
   // Part 5: removed legacy on-demand "Unusual Flow Scan (LIVE)" state +
   // poll loop. Live unusual-flow signal is now folded into the LIVE_FLOW
@@ -861,7 +889,15 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           symbols: syms,
-          filters: { minStrikes: uMinStrikes, minVoiRatio: uMinVoi, minVolume: uMinVolume, skew: uSkew },
+          filters: {
+            minStrikes: uMinStrikes,
+            minVoiRatio: uMinVoi,
+            minVolume: uMinVolume,
+            skew: uSkew,
+            excludeIndexes: uExcludeIndexes,
+            minDte: uMinDte,
+            minNotional: uMinNotional,
+          },
         }),
       });
       const data = await res.json() as UnusualFlowScanResult & { error?: string };
@@ -1131,8 +1167,21 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
 
         {mode === "unusual" && (
           <div className="p-4 bg-[#0c0c0c] border-t border-card-border space-y-4">
-            <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
-              Pure flow scan — finds names with the most unusual options activity by VOI ratio + size.
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                Filters tuned for institutional positioning — strip retail 0DTE/lottos.
+              </div>
+              <button
+                onClick={() => setUExcludeIndexes(v => !v)}
+                className="text-[10px] py-1 px-2 rounded font-bold uppercase tracking-wider transition-all shrink-0"
+                style={{
+                  background: uExcludeIndexes ? "#18181b" : "transparent",
+                  color: uExcludeIndexes ? "#66e0ff" : "#6B7280",
+                  border: `1px solid ${uExcludeIndexes ? "rgba(102,224,255,0.4)" : "#2a2a2a"}`,
+                }}
+              >
+                {uExcludeIndexes ? "✓ " : ""}Exclude Indexes/ETFs
+              </button>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -1155,6 +1204,20 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
                   <span style={{ color: "#66e0ff" }}>{uMinVolume.toLocaleString()}+</span>
                 </div>
                 <Slider value={[uMinVolume]} onValueChange={v => setUMinVolume(v[0])} min={100} max={2000} step={100} />
+              </div>
+              <div className="space-y-2">
+                <div className="flex justify-between text-[11px] text-muted-foreground uppercase">
+                  <span>Min Notional / Strike</span>
+                  <span style={{ color: "#66e0ff" }}>{fmtMoney(uMinNotional)}+</span>
+                </div>
+                <Slider value={[uMinNotional]} onValueChange={v => setUMinNotional(v[0])} min={50_000} max={5_000_000} step={50_000} />
+              </div>
+              <div className="space-y-2">
+                <div className="flex justify-between text-[11px] text-muted-foreground uppercase">
+                  <span>Min DTE (excl. 0DTE)</span>
+                  <span style={{ color: "#66e0ff" }}>{uMinDte === 0 ? "All" : `${uMinDte}+ days`}</span>
+                </div>
+                <Slider value={[uMinDte]} onValueChange={v => setUMinDte(v[0])} min={0} max={45} step={1} />
               </div>
               <div className="space-y-2">
                 <div className="flex justify-between text-[11px] text-muted-foreground uppercase">

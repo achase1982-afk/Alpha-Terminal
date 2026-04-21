@@ -2821,6 +2821,9 @@ router.post("/unusual-flow-scan", async (req, res) => {
         minVoiRatio?: number;
         minVolume?: number;
         skew?: "any" | "bullish" | "bearish" | "non_balanced";
+        excludeIndexes?: boolean;
+        minDte?: number;
+        minNotional?: number;
       };
     };
     if (!Array.isArray(symbols) || symbols.length === 0) {
