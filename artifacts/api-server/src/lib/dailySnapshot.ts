@@ -12,6 +12,7 @@ import {
 import { eq, sql, and, gte, lte, desc } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { logFailure } from "../lib/telemetry";
+import { normalizeIV, computeIVRForSymbol } from "./ivNormalize";
 
 const SCHWAB_API = "https://api.schwabapi.com/marketdata/v1";
 const POLYGON_API = "https://api.polygon.io";
@@ -366,7 +367,7 @@ export async function collectOptionsChainSnapshots(
                 last: (c["last"] ?? null) as number | null,
                 volume: (c["totalVolume"] ?? 0) as number,
                 openInterest: (c["openInterest"] ?? 0) as number,
-                impliedVolatility: (c["volatility"] ?? null) as number | null,
+                impliedVolatility: normalizeIV((c["volatility"] ?? null) as number | null),
                 delta: (c["delta"] ?? null) as number | null,
                 gamma: (c["gamma"] ?? null) as number | null,
                 theta: (c["theta"] ?? null) as number | null,
@@ -413,7 +414,8 @@ export async function collectOptionsChainSnapshots(
           })
           .sort((a, b) => Math.abs((a.dte ?? 30) - 30) - Math.abs((b.dte ?? 30) - 30));
 
-        const iv30d = iv30Candidates.length > 0 ? iv30Candidates[0].impliedVolatility : null;
+        const iv30dRaw = iv30Candidates.length > 0 ? iv30Candidates[0].impliedVolatility : null;
+        const iv30d = normalizeIV(iv30dRaw);
 
         const updates: Record<string, unknown> = {};
         if (putCallRatio != null) updates.putCallRatio = putCallRatio;
@@ -479,7 +481,8 @@ async function collectPolygonIVData(
       const contractType = details["contract_type"] as string;
       const strikePrice = details["strike_price"] as number;
       const expDate = details["expiration_date"] as string;
-      const iv = r["implied_volatility"] as number | undefined;
+      const ivRaw = r["implied_volatility"] as number | undefined;
+      const iv = normalizeIV(ivRaw);
       const greeks = r["greeks"] as Record<string, unknown> | undefined;
 
       if (iv != null) {
@@ -614,7 +617,7 @@ export async function collectPolygonFlowFromAPI(
             bid,
             ask,
             mid,
-            impliedVolatility: (r["implied_volatility"] as number) ?? null,
+            impliedVolatility: normalizeIV((r["implied_volatility"] as number) ?? null),
             delta: (greeks?.["delta"] as number) ?? null,
             gamma: (greeks?.["gamma"] as number) ?? null,
             theta: (greeks?.["theta"] as number) ?? null,
@@ -830,76 +833,61 @@ export async function computeIVFromFlow(
       const spot = equityRow[0].close ?? 0;
       if (spot <= 0) continue;
 
-      const effectiveFlowDateForIV = flowDatesWithIV.includes(date) ? date : (flowDatesWithIV[0] ?? date);
+      // Strict: only use today's flow data. Never borrow from another date.
       const ivStrikes = await db
-        .select()
-        .from(optionsFlowPerStrikeTable)
-        .where(and(
-          eq(optionsFlowPerStrikeTable.underlyingSymbol, sym.toUpperCase()),
-          eq(optionsFlowPerStrikeTable.date, effectiveFlowDateForIV),
-        ));
-
-      if (ivStrikes.length === 0) continue;
-
-      const iv30Candidates = ivStrikes
-        .filter(s => {
-          const d = s.dte ?? 0;
-          return d >= 1 && d <= 60
-            && Math.abs(s.strike - spot) / spot <= 0.10
-            && (s.impliedVolatility ?? 0) > 0;
-        })
-        .sort((a, b) => {
-          const aScore = Math.abs((a.dte ?? 30) - 30) + Math.abs(a.strike - spot) / spot * 100;
-          const bScore = Math.abs((b.dte ?? 30) - 30) + Math.abs(b.strike - spot) / spot * 100;
-          return aScore - bScore;
-        });
-
-      const iv30d = iv30Candidates.length > 0 ? iv30Candidates[0].impliedVolatility : null;
-      if (iv30d == null) continue;
-
-      const allDatesWithIV = await db
-        .select({ date: equityDailyTable.date, iv: equityDailyTable.iv30d })
-        .from(equityDailyTable)
-        .where(and(
-          eq(equityDailyTable.symbol, sym.toUpperCase()),
-          sql`${equityDailyTable.iv30d} IS NOT NULL AND ${equityDailyTable.iv30d} > 0`,
-          sql`${equityDailyTable.date} <= ${date}`,
-        ))
-        .orderBy(desc(equityDailyTable.date))
-        .limit(252);
-
-      let ivr: number | null = null;
-      if (allDatesWithIV.length >= 20) {
-        const ivValues = allDatesWithIV.map(r => r.iv!);
-        const ivMin = Math.min(...ivValues);
-        const ivMax = Math.max(...ivValues);
-        if (ivMax > ivMin) {
-          ivr = Math.round(((iv30d - ivMin) / (ivMax - ivMin)) * 100);
-        }
-      }
-
-      let putCallRatio: number | null = null;
-      const dateSameStrikes = (effectiveFlowDateForIV === date) ? ivStrikes : null;
-      const dateStrikes = dateSameStrikes ?? await db
         .select()
         .from(optionsFlowPerStrikeTable)
         .where(and(
           eq(optionsFlowPerStrikeTable.underlyingSymbol, sym.toUpperCase()),
           eq(optionsFlowPerStrikeTable.date, date),
         ));
-      if (dateStrikes.length > 0) {
-        const totalCallVol = dateStrikes.filter(s => s.optionType === "call").reduce((a, s) => a + (s.dailyVolume ?? 0), 0);
-        const totalPutVol = dateStrikes.filter(s => s.optionType === "put").reduce((a, s) => a + (s.dailyVolume ?? 0), 0);
+
+      let iv30d: number | null = null;
+      if (ivStrikes.length > 0) {
+        const iv30Candidates = ivStrikes
+          .filter(s => {
+            const d = s.dte ?? 0;
+            const v = normalizeIV(s.impliedVolatility);
+            return v != null
+              && d >= 1 && d <= 60
+              && Math.abs(s.strike - spot) / spot <= 0.10;
+          })
+          .sort((a, b) => {
+            const aScore = Math.abs((a.dte ?? 30) - 30) + Math.abs(a.strike - spot) / spot * 100;
+            const bScore = Math.abs((b.dte ?? 30) - 30) + Math.abs(b.strike - spot) / spot * 100;
+            return aScore - bScore;
+          });
+        if (iv30Candidates.length > 0) {
+          iv30d = normalizeIV(iv30Candidates[0].impliedVolatility);
+        }
+      }
+
+      let putCallRatio: number | null = null;
+      if (ivStrikes.length > 0) {
+        const totalCallVol = ivStrikes.filter(s => s.optionType === "call").reduce((a, s) => a + (s.dailyVolume ?? 0), 0);
+        const totalPutVol = ivStrikes.filter(s => s.optionType === "put").reduce((a, s) => a + (s.dailyVolume ?? 0), 0);
         putCallRatio = totalCallVol > 0 ? totalPutVol / totalCallVol : null;
       }
 
-      const updates: Record<string, unknown> = { iv30d };
-      if (ivr != null) updates.ivr = ivr;
+      // Compose update: only write iv30d if we computed one this run; otherwise leave any
+      // previously-written value (e.g. from chain pass) alone. Same for putCallRatio.
+      const updates: Record<string, unknown> = {};
+      if (iv30d != null) updates.iv30d = iv30d;
       if (putCallRatio != null) updates.putCallRatio = putCallRatio;
+      if (Object.keys(updates).length > 0) {
+        await db.update(equityDailyTable)
+          .set(updates)
+          .where(and(eq(equityDailyTable.symbol, sym.toUpperCase()), eq(equityDailyTable.date, date)));
+      }
 
-      await db.update(equityDailyTable)
-        .set(updates)
-        .where(and(eq(equityDailyTable.symbol, sym.toUpperCase()), eq(equityDailyTable.date, date)));
+      // IVR — read whatever iv30d ended up in equity_daily (chain or flow), then percentile
+      // against history with clamping to [0,100].
+      const ivr = await computeIVRForSymbol(sym, date, iv30d);
+      if (ivr != null) {
+        await db.update(equityDailyTable)
+          .set({ ivr })
+          .where(and(eq(equityDailyTable.symbol, sym.toUpperCase()), eq(equityDailyTable.date, date)));
+      }
 
       updated++;
     } catch (e) {
@@ -955,7 +943,10 @@ export async function runFullSnapshot(
 
     const aggregateRows = await computeFlowAggregates(symbols, date);
 
-    const ivRows = await computeIVFromFlow(symbols, date);
+    // Include sector ETFs in the IV/IVR pass — they get equity rows from collectEquitySnapshots
+    // but were previously excluded from IVR computation.
+    const ivSymbols = [...new Set([...symbols, ...SECTOR_ETF_SYMBOLS])];
+    const ivRows = await computeIVFromFlow(ivSymbols, date);
 
     await db.update(snapshotCollectionLogTable)
       .set({

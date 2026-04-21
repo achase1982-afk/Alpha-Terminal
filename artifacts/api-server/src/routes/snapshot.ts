@@ -1,11 +1,19 @@
 import { Router } from "express";
 import { runFullSnapshot, getSnapshotStatus, collectEquitySnapshots, collectPolygonFlowFromAPI, computeFlowAggregates, computeIVFromFlow, backfillEquityHistory, backfillPolygonFlow, backfillEquityFromPolygon } from "../lib/dailySnapshot";
+import { cleanupIVUnits, recomputeAllIVR } from "../lib/ivNormalize";
 import { getBestAccessToken } from "../lib/tokenStore";
 import { logger } from "../lib/logger";
 import { db } from "@workspace/db";
 import { optionsFlowPerStrikeTable } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { LIQUID_CORE_SYMBOLS } from "../data/liquidCore130.js";
+
+function requireAdmin(req: { headers: Record<string, string | string[] | undefined> }): { ok: boolean; error?: string } {
+  const adminKey = process.env.ADMIN_API_KEY;
+  if (!adminKey) return { ok: false, error: "ADMIN_API_KEY is not set on the server" };
+  if (req.headers["x-admin-key"] !== adminKey) return { ok: false, error: "Unauthorized" };
+  return { ok: true };
+}
 
 const router = Router();
 
@@ -202,6 +210,60 @@ router.post("/trigger", async (req, res) => {
   }).catch(e => {
     logger.error({ error: (e as Error).message, date: targetDate }, "Manual snapshot trigger: failed");
   });
+});
+
+router.post("/admin/cleanup-iv-units", async (req, res) => {
+  const auth = requireAdmin(req as never);
+  if (!auth.ok) return res.status(403).json({ ok: false, error: auth.error });
+  try {
+    const before = await db.execute(sql`
+      SELECT
+        COUNT(*) FILTER (WHERE iv_30d IS NOT NULL) AS iv_pop,
+        COUNT(*) FILTER (WHERE iv_30d > 5) AS iv_pct_format,
+        COUNT(*) FILTER (WHERE iv_30d IS NOT NULL AND iv_30d < 0.01) AS iv_garbage_low,
+        COUNT(*) FILTER (WHERE ivr < 0 OR ivr > 100) AS ivr_out_of_range
+      FROM equity_daily
+    `);
+    const report = await cleanupIVUnits();
+    const after = await db.execute(sql`
+      SELECT
+        COUNT(*) FILTER (WHERE iv_30d IS NOT NULL) AS iv_pop,
+        COUNT(*) FILTER (WHERE iv_30d > 5) AS iv_pct_format,
+        COUNT(*) FILTER (WHERE iv_30d IS NOT NULL AND iv_30d < 0.01) AS iv_garbage_low,
+        COUNT(*) FILTER (WHERE ivr < 0 OR ivr > 100) AS ivr_out_of_range
+      FROM equity_daily
+    `);
+    res.json({
+      ok: true,
+      report,
+      before: (before as { rows?: unknown[] }).rows ?? before,
+      after: (after as { rows?: unknown[] }).rows ?? after,
+    });
+  } catch (e) {
+    logger.error({ error: (e as Error).message }, "cleanup-iv-units failed");
+    res.status(500).json({ ok: false, error: (e as Error).message });
+  }
+});
+
+router.post("/admin/recompute-ivr", async (req, res) => {
+  const auth = requireAdmin(req as never);
+  if (!auth.ok) return res.status(403).json({ ok: false, error: auth.error });
+  const { symbols } = (req.body ?? {}) as { symbols?: string[] };
+  try {
+    const result = await recomputeAllIVR(symbols);
+    const sample = await db.execute(sql`
+      SELECT symbol, date, iv_30d, ivr
+      FROM equity_daily
+      WHERE symbol IN ('SPY','QQQ','IWM','TSLA','AAPL','XLE','XLF','XLK')
+        AND ivr IS NOT NULL
+      ORDER BY symbol, date DESC
+      LIMIT 40
+    `);
+    res.json({ ok: true, result, sample: (sample as { rows?: unknown[] }).rows ?? sample });
+  } catch (e) {
+    logger.error({ error: (e as Error).message }, "recompute-ivr failed");
+    res.status(500).json({ ok: false, error: (e as Error).message });
+  }
 });
 
 function getDefaultUniverse(): string[] {
