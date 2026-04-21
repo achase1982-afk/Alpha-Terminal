@@ -354,25 +354,64 @@ const DeterministicCard = memo(function DeterministicCard({
 });
 
 
-const ManualResultCard = memo(function ManualResultCard({
-  q, rank, onSelect, onSendToStrategist,
+// ── Unusual Options Activity scanner result types ───────────────────
+interface UnusualFlowStrike {
+  strike: number;
+  expiration: string;
+  dte: number;
+  optionType: "call" | "put";
+  volume: number;
+  openInterest: number;
+  volOiRatio: number;
+  iv: number | null;
+  delta: number | null;
+}
+interface UnusualFlowCandidate {
+  symbol: string;
+  asOfDate: string;
+  score: number;
+  scoreReason: string;
+  unusualStrikeCount: number;
+  unusualCallStrikes: number;
+  unusualPutStrikes: number;
+  unusualCallVolume: number;
+  unusualPutVolume: number;
+  totalCallVolume: number;
+  totalPutVolume: number;
+  putCallVolumeRatio: number;
+  skew: "bullish" | "bearish" | "balanced";
+  topByVoiRatio: UnusualFlowStrike[];
+  topByVolume: UnusualFlowStrike[];
+  largestPrintDescription: string;
+  topVoiRatio: number;
+}
+interface UnusualFlowScanResult {
+  scanTimestamp: number;
+  asOfDate: string | null;
+  scannedSymbols: number;
+  symbolsWithFlow: number;
+  candidates: UnusualFlowCandidate[];
+}
+
+const UnusualFlowCard = memo(function UnusualFlowCard({
+  candidate, rank, onSelect, onSendToStrategist,
 }: {
-  q: ScannerQuote;
+  candidate: UnusualFlowCandidate;
   rank: number;
   onSelect: (sym: string) => void;
   onSendToStrategist?: (sym: string, candidate?: DetCandidate) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const { data } = useQuote(q.symbol);
-  const livePrice = data?.last ?? q.last;
-  const liveChangePct = data?.changePct ?? q.changePct;
-  const liveVolume = data?.volume ?? q.volume;
-  const liveHigh = data?.high ?? q.high;
-  const liveLow = data?.low ?? q.low;
-  const isUp = liveChangePct >= 0;
-  const dirColor = isUp ? "#26a69a" : "#f23645";
-  const absChange = Math.abs(liveChangePct);
-  const dollarChange = livePrice * (liveChangePct / 100);
+  const { data } = useQuote(candidate.symbol);
+  const livePrice = data?.last;
+
+  const skewColor =
+    candidate.skew === "bullish" ? "#26a69a"
+    : candidate.skew === "bearish" ? "#f23645"
+    : "#9ca3af";
+  const skewLabel = candidate.skew.toUpperCase();
+
+  const scoreColor = candidate.score >= 70 ? "#66e0ff" : candidate.score >= 50 ? "#FFB800" : "#9ca3af";
 
   return (
     <div className="bg-card border border-card-border rounded-lg overflow-hidden hover:border-zinc-600 transition-colors">
@@ -382,18 +421,33 @@ const ManualResultCard = memo(function ManualResultCard({
         style={{ background: "#0c0c0c" }}
       >
         <span className="text-[11px] font-bold tabular-nums w-5 text-zinc-600 shrink-0">#{rank}</span>
-        <button onClick={(e) => { e.stopPropagation(); onSelect(q.symbol); }}
+        <button onClick={(e) => { e.stopPropagation(); onSelect(candidate.symbol); }}
           className="font-bold text-[13px] tracking-wider hover:text-[#FFB800] transition-colors active:scale-95 shrink-0"
-          style={{ color: dirColor }}>
-          {q.symbol}
+          style={{ color: scoreColor }}>
+          {candidate.symbol}
         </button>
 
+        <span
+          className="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0"
+          style={{ color: skewColor, background: `${skewColor}1a`, border: `1px solid ${skewColor}40` }}
+        >
+          {skewLabel}
+        </span>
+
+        <span className="text-[10px] text-zinc-500 font-mono tabular-nums shrink-0">
+          {candidate.unusualStrikeCount} strike{candidate.unusualStrikeCount === 1 ? "" : "s"}
+        </span>
+
         <div className="ml-auto flex items-center gap-2 shrink-0">
-          <span className="text-[11px] font-mono tabular-nums text-zinc-400">${livePrice.toFixed(2)}</span>
-          <span className="text-[11px] font-mono tabular-nums" style={{ color: dirColor }}>
-            {isUp ? "▲" : "▼"} {absChange.toFixed(2)}%
+          {livePrice != null && (
+            <span className="text-[11px] font-mono tabular-nums text-zinc-400">${livePrice.toFixed(2)}</span>
+          )}
+          <span className="text-[11px] font-mono tabular-nums text-zinc-500">
+            {candidate.topVoiRatio.toFixed(1)}× VOI
           </span>
-          <span className="text-[11px] font-mono tabular-nums text-zinc-500">Vol {(liveVolume / 1e6).toFixed(1)}M</span>
+          <span className="text-[12px] font-bold font-mono tabular-nums" style={{ color: scoreColor }}>
+            {candidate.score.toFixed(0)}
+          </span>
           <ChevronDown className="w-3.5 h-3.5 text-zinc-500 transition-transform" style={{ transform: expanded ? "rotate(180deg)" : "none" }} />
         </div>
       </div>
@@ -401,42 +455,90 @@ const ManualResultCard = memo(function ManualResultCard({
       {expanded && (
         <>
           <div className="px-4 py-3 grid grid-cols-2 gap-x-6 gap-y-2 border-t border-card-border/50">
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <div className="flex justify-between">
-                <span className="text-[11px] text-zinc-500">Day Change</span>
-                <span className="text-sm font-mono tabular-nums" style={{ color: dirColor }}>
-                  {isUp ? "+" : "−"}${Math.abs(dollarChange).toFixed(2)}
+                <span className="text-[11px] text-zinc-500">Unusual Strikes</span>
+                <span className="text-sm font-mono tabular-nums text-zinc-200">
+                  <span style={{ color: "#26a69a" }}>{candidate.unusualCallStrikes}C</span>
+                  <span className="text-zinc-600 mx-1">/</span>
+                  <span style={{ color: "#f23645" }}>{candidate.unusualPutStrikes}P</span>
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-[11px] text-zinc-500">Day Range</span>
+                <span className="text-[11px] text-zinc-500">Unusual Volume</span>
                 <span className="text-sm font-mono tabular-nums text-zinc-300">
-                  ${liveLow.toFixed(2)} – ${liveHigh.toFixed(2)}
+                  {(candidate.unusualCallVolume + candidate.unusualPutVolume).toLocaleString()}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[11px] text-zinc-500">P/C Volume Ratio</span>
+                <span className="text-sm font-mono tabular-nums text-zinc-300">
+                  {candidate.putCallVolumeRatio.toFixed(2)}
                 </span>
               </div>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <div className="flex justify-between">
-                <span className="text-[11px] text-zinc-500">Volume</span>
-                <span className="text-sm font-mono tabular-nums text-zinc-300">
-                  {(liveVolume / 1e6).toFixed(2)}M
+                <span className="text-[11px] text-zinc-500">Top VOI</span>
+                <span className="text-sm font-mono tabular-nums" style={{ color: "#66e0ff" }}>
+                  {candidate.topVoiRatio.toFixed(1)}×
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-[11px] text-zinc-500">Last</span>
+                <span className="text-[11px] text-zinc-500">Total Call/Put Vol</span>
                 <span className="text-sm font-mono tabular-nums text-zinc-300">
-                  ${livePrice.toFixed(2)}
+                  {candidate.totalCallVolume.toLocaleString()}
+                  <span className="text-zinc-600 mx-1">/</span>
+                  {candidate.totalPutVolume.toLocaleString()}
                 </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[11px] text-zinc-500">As Of</span>
+                <span className="text-sm font-mono tabular-nums text-zinc-400">{candidate.asOfDate}</span>
               </div>
             </div>
           </div>
 
+          {candidate.topByVoiRatio.length > 0 && (
+            <div className="px-4 py-2.5 border-t border-card-border/50">
+              <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1.5">
+                Top Strikes by VOI
+              </div>
+              <div className="space-y-1">
+                {candidate.topByVoiRatio.slice(0, 4).map((s, i) => (
+                  <div key={i} className="flex items-center justify-between text-[11px] font-mono tabular-nums">
+                    <span className="flex items-center gap-1.5">
+                      <span
+                        className="text-[10px] font-bold w-5 text-center"
+                        style={{ color: s.optionType === "call" ? "#26a69a" : "#f23645" }}
+                      >
+                        {s.optionType === "call" ? "C" : "P"}
+                      </span>
+                      <span className="text-zinc-300">${s.strike}</span>
+                      <span className="text-zinc-600">·</span>
+                      <span className="text-zinc-500">{s.expiration}</span>
+                      <span className="text-zinc-700">({s.dte}d)</span>
+                    </span>
+                    <span className="flex items-center gap-3">
+                      <span className="text-zinc-400">{s.volume.toLocaleString()} vol</span>
+                      <span className="text-zinc-600">/</span>
+                      <span className="text-zinc-500">{s.openInterest.toLocaleString()} OI</span>
+                      <span className="font-bold w-12 text-right" style={{ color: "#66e0ff" }}>
+                        {s.volOiRatio.toFixed(1)}×
+                      </span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="px-4 py-2.5 border-t border-card-border/50 flex items-center justify-between" style={{ background: "#0a0a0a" }}>
-            <span className="text-[10px] text-zinc-600">
-              Filter match · No deterministic score
+            <span className="text-[10px] text-zinc-600 font-mono">
+              Score {candidate.score.toFixed(1)} · {candidate.scoreReason}
             </span>
             {onSendToStrategist && (
-              <button onClick={() => onSendToStrategist(q.symbol)}
+              <button onClick={() => onSendToStrategist(candidate.symbol)}
                 className="flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded transition-all hover:bg-[#FFB800]/15 active:scale-95"
                 style={{ color: "#FFB800", border: "1px solid rgba(255,184,0,0.3)" }}>
                 <Send className="w-3 h-3" /> SEND TO STRATEGIST
@@ -689,19 +791,26 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
   const { cachedData: scanCache, setCachedData: setScanCache } = useScanCache();
   const universeData = useScannerUniverses();
 
-  const [mode, setMode] = useState<"manual" | "deterministic">("deterministic");
+  const [mode, setMode] = useState<"unusual" | "deterministic">("deterministic");
   const [scanMode, setScanMode] = useState<"DISCOVERY" | "MOMENTUM">("DISCOVERY");
   // Part 5: filter chip state for discovery results.
   const [flowFilter, setFlowFilter] = useState<"all" | "unusual" | "noflow">("all");
   const [universe, setUniverse] = useState("preset:liquidCore130");
   const [isScanning, setIsScanning] = useState(false);
   const [rawError, setRawError] = useState<string | null>(null);
-  const [manualQuotes, setManualQuotes] = useState<ScannerQuote[]>([]);
   const [scanCount, setScanCount] = useState<number | null>(null);
   const [resolvedSymbols, setResolvedSymbols] = useState<string[]>([]);
 
   const [detResult, setDetResult] = useState<DetScanResult | null>(null);
   const [detError, setDetError] = useState<string | null>(null);
+
+  // Unusual Options Activity scanner state (replaces legacy Manual scanner).
+  const [unusualResult, setUnusualResult] = useState<UnusualFlowScanResult | null>(null);
+  const [unusualError, setUnusualError] = useState<string | null>(null);
+  const [uMinStrikes, setUMinStrikes] = useState(1);
+  const [uMinVoi, setUMinVoi] = useState(3);
+  const [uMinVolume, setUMinVolume] = useState(500);
+  const [uSkew, setUSkew] = useState<"any" | "bullish" | "bearish" | "non_balanced">("any");
 
   // Part 5: removed legacy on-demand "Unusual Flow Scan (LIVE)" state +
   // poll loop. Live unusual-flow signal is now folded into the LIVE_FLOW
@@ -719,18 +828,15 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
   useEffect(() => {
     if (scanCacheRestoredRef.current || !scanCache) return;
     scanCacheRestoredRef.current = true;
-    const r = scanCache.results;
-    if (r?.manualQuotes) setManualQuotes(r.manualQuotes);
+    const r = scanCache.results as any;
     if (r?.scanCount != null) setScanCount(r.scanCount);
     if (r?.detResult) setDetResult(r.detResult as DetScanResult);
+    if (r?.unusualResult) setUnusualResult(r.unusualResult as UnusualFlowScanResult);
     if (r?.universe && !REMOVED_PRESETS.has(r.universe)) setUniverse(r.universe);
   }, [scanCache]);
 
-  const [minChangePct, setMinChangePct] = useState(0);
-  const [maxChangePct, setMaxChangePct] = useState(15);
-  const [minVolume, setMinVolume] = useState(1);
-  const [minPrice, setMinPrice] = useState(5);
-  const [maxPrice, setMaxPrice] = useState(1000);
+  // Legacy Manual scanner filter state removed when Manual tab was replaced
+  // by Unusual Options Activity scanner. Filters now live in u* state above.
 
   useEffect(() => {
     let cancelled = false;
@@ -740,46 +846,39 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
     return () => { cancelled = true; };
   }, [universe, universeData.getSymbols, universeData.watchlists]);
 
-  const handleManualScan = async () => {
+  const handleUnusualFlowScan = async () => {
     const syms = resolvedSymbols.length > 0 ? resolvedSymbols : await universeData.getSymbols(universe);
-    if (!syms.length) { setRawError("No symbols to scan. Select a market universe or a watchlist with symbols."); return; }
+    if (!syms.length) { setUnusualError("No symbols to scan. Select a market universe or a watchlist with symbols."); return; }
 
     setIsScanning(true);
+    setUnusualError(null);
     setRawError(null);
     setScanCount(syms.length);
 
     try {
-      const payload = {
-        symbols: syms, accessToken: accessToken || "", mode: "manual",
-        filters: { minChangePct, maxChangePct, minVolume, minPrice, maxPrice },
-      };
-
-      const res = await fetchWithAuth(`${API_BASE}/ai/market-scanner`, {
+      const res = await fetchWithAuth(`${API_BASE}/ai/unusual-flow-scan`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          symbols: syms,
+          filters: { minStrikes: uMinStrikes, minVoiRatio: uMinVoi, minVolume: uMinVolume, skew: uSkew },
+        }),
       });
-
-      const data = await res.json() as {
-        quotes?: ScannerQuote[];
-        error?: string;
-      };
-
-      if (data.error && data.error !== "no_data") {
-        setRawError(data.error);
+      const data = await res.json() as UnusualFlowScanResult & { error?: string };
+      if (data.error) {
+        setUnusualError(data.error);
       } else {
-        const quotes = data.quotes ?? [];
-        setManualQuotes(quotes);
-        if (quotes.length && subscribeEquitySymbols) {
-          subscribeEquitySymbols(quotes.map(q => q.symbol));
+        setUnusualResult(data);
+        if (data.candidates?.length && subscribeEquitySymbols) {
+          subscribeEquitySymbols(data.candidates.map(c => c.symbol));
         }
         setScanCache({
-          results: { manualQuotes: quotes, scanCount: syms.length, universe },
+          results: { scanCount: syms.length, unusualResult: data, universe } as any,
           timestamp: Date.now(),
         });
       }
     } catch (err) {
-      setRawError(err instanceof Error ? err.message : String(err));
+      setUnusualError(err instanceof Error ? err.message : String(err));
     } finally {
       setIsScanning(false);
     }
@@ -817,7 +916,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
           subscribeEquitySymbols(data.candidates.map(c => c.symbol));
         }
         setScanCache({
-          results: { manualQuotes: [], scanCount: syms.length, detResult: data, universe },
+          results: { scanCount: syms.length, detResult: data, universe } as any,
           timestamp: Date.now(),
         });
       }
@@ -843,7 +942,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
     setRefreshingScreenId(null);
   };
 
-  const hasResults = mode === "manual" ? manualQuotes.length > 0 : (detResult?.candidates?.length ?? 0) > 0;
+  const hasResults = mode === "unusual" ? (unusualResult?.candidates?.length ?? 0) > 0 : (detResult?.candidates?.length ?? 0) > 0;
   const currentSymCount = resolvedSymbols.length;
 
   const editScreenObj = editingScreen != null ? universeData.screens.find(s => s.id === editingScreen) ?? null : null;
@@ -868,17 +967,17 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
           {([
             { view: "DISCOVERY" as const, label: "DISCOVERY", icon: Crosshair, accent: "#FFB800", beta: true },
             { view: "MOMENTUM" as const, label: "MOMENTUM", icon: BarChart3, accent: "#42a5f5", beta: false },
-            { view: "MANUAL" as const, label: "MANUAL", icon: SlidersHorizontal, accent: "#b8bcc8", beta: false },
+            { view: "UNUSUAL" as const, label: "UNUSUAL FLOW", icon: Zap, accent: "#66e0ff", beta: false },
           ]).map(({ view: v, label, icon: Icon, accent, beta }) => {
             const active =
-              (v === "MANUAL" && mode === "manual") ||
+              (v === "UNUSUAL" && mode === "unusual") ||
               (v === "DISCOVERY" && mode === "deterministic" && scanMode === "DISCOVERY") ||
               (v === "MOMENTUM" && mode === "deterministic" && scanMode === "MOMENTUM");
             return (
               <button
                 key={v}
                 onClick={() => {
-                  if (v === "MANUAL") setMode("manual");
+                  if (v === "UNUSUAL") setMode("unusual");
                   else { setMode("deterministic"); setScanMode(v); }
                 }}
                 className={`flex-1 py-3 text-sm font-bold uppercase tracking-widest transition-all border-b-2 ${
@@ -1030,37 +1129,56 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
           )}
         </div>
 
-        {mode === "manual" && (
-          <div className="p-4 bg-[#0c0c0c] border-t border-card-border grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <div className="flex justify-between text-[11px] text-muted-foreground uppercase">
-                <span>Min Change %</span>
-                <span style={{ color: "#00d166" }}>{minChangePct >= 0 ? "+" : ""}{minChangePct}%</span>
-              </div>
-              <Slider value={[minChangePct]} onValueChange={v => setMinChangePct(v[0])} min={-15} max={15} step={0.5} />
+        {mode === "unusual" && (
+          <div className="p-4 bg-[#0c0c0c] border-t border-card-border space-y-4">
+            <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
+              Pure flow scan — finds names with the most unusual options activity by VOI ratio + size.
             </div>
-            <div className="space-y-2">
-              <div className="flex justify-between text-[11px] text-muted-foreground uppercase">
-                <span>Max Change %</span>
-                <span style={{ color: "#00d166" }}>+{maxChangePct}%</span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <div className="flex justify-between text-[11px] text-muted-foreground uppercase">
+                  <span>Min Unusual Strikes</span>
+                  <span style={{ color: "#66e0ff" }}>{uMinStrikes}+</span>
+                </div>
+                <Slider value={[uMinStrikes]} onValueChange={v => setUMinStrikes(v[0])} min={1} max={10} step={1} />
               </div>
-              <Slider value={[maxChangePct]} onValueChange={v => setMaxChangePct(v[0])} min={0} max={30} step={0.5} />
-            </div>
-            <div className="space-y-2">
-              <div className="flex justify-between text-[11px] text-muted-foreground uppercase">
-                <span>Min Volume</span>
-                <span style={{ color: "#ffb800" }}>{minVolume}M+</span>
+              <div className="space-y-2">
+                <div className="flex justify-between text-[11px] text-muted-foreground uppercase">
+                  <span>Min VOI Ratio</span>
+                  <span style={{ color: "#66e0ff" }}>{uMinVoi}×+</span>
+                </div>
+                <Slider value={[uMinVoi]} onValueChange={v => setUMinVoi(v[0])} min={1} max={10} step={0.5} />
               </div>
-              <Slider value={[minVolume]} onValueChange={v => setMinVolume(v[0])} min={0} max={100} step={1} />
-            </div>
-            <div className="space-y-2">
-              <div className="flex justify-between text-[11px] text-muted-foreground uppercase">
-                <span>Price Range</span>
-                <span style={{ color: "#ffb800" }}>${minPrice} – ${maxPrice}</span>
+              <div className="space-y-2">
+                <div className="flex justify-between text-[11px] text-muted-foreground uppercase">
+                  <span>Min Strike Volume</span>
+                  <span style={{ color: "#66e0ff" }}>{uMinVolume.toLocaleString()}+</span>
+                </div>
+                <Slider value={[uMinVolume]} onValueChange={v => setUMinVolume(v[0])} min={100} max={2000} step={100} />
               </div>
-              <div className="flex gap-3 items-center">
-                <Slider value={[minPrice]} onValueChange={v => setMinPrice(v[0])} min={0} max={500} step={5} className="flex-1" />
-                <Slider value={[maxPrice]} onValueChange={v => setMaxPrice(v[0])} min={50} max={2000} step={25} className="flex-1" />
+              <div className="space-y-2">
+                <div className="flex justify-between text-[11px] text-muted-foreground uppercase">
+                  <span>Skew Filter</span>
+                  <span style={{ color: "#66e0ff" }}>
+                    {uSkew === "any" ? "Any" : uSkew === "bullish" ? "Bullish only" : uSkew === "bearish" ? "Bearish only" : "Exclude balanced"}
+                  </span>
+                </div>
+                <div className="grid grid-cols-4 gap-1">
+                  {(["any", "bullish", "bearish", "non_balanced"] as const).map(s => (
+                    <button
+                      key={s}
+                      onClick={() => setUSkew(s)}
+                      className="text-[10px] py-1.5 rounded font-bold uppercase tracking-wider transition-all"
+                      style={{
+                        background: uSkew === s ? "#18181b" : "transparent",
+                        color: uSkew === s ? "#66e0ff" : "#6B7280",
+                        border: `1px solid ${uSkew === s ? "rgba(102,224,255,0.4)" : "#2a2a2a"}`,
+                      }}
+                    >
+                      {s === "any" ? "Any" : s === "bullish" ? "Bull" : s === "bearish" ? "Bear" : "≠ Bal"}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
@@ -1068,7 +1186,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
 
         <div className="px-4 pb-4 pt-3 bg-[#0c0c0c] border-t border-card-border">
           <button
-            onClick={mode === "deterministic" ? handleDeterministicScan : handleManualScan}
+            onClick={mode === "deterministic" ? handleDeterministicScan : handleUnusualFlowScan}
             disabled={!accessToken || isScanning || currentSymCount === 0 || shockActive}
             className="font-bold font-mono tracking-wider mx-auto block rounded-lg disabled:opacity-30 disabled:cursor-not-allowed active:scale-95 active:brightness-110 transition-all"
             style={{
@@ -1080,13 +1198,11 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
             {isScanning ? (
               <span className="flex items-center justify-center gap-2">
                 <span className="w-4 h-4 border-2 border-[#FFB800] border-t-transparent rounded-full animate-spin" />
-                {mode === "deterministic" ? "SCORING CANDIDATES..." : "FILTERING MARKET..."}
+                {mode === "deterministic" ? "SCORING CANDIDATES..." : "SCANNING FLOW..."}
               </span>
             ) : (
               <span className="flex items-center justify-center">
-                {mode === "deterministic"
-                  ? `SCAN ${currentSymCount} STOCKS`
-                  : "APPLY FILTERS & SCAN"}
+                {`SCAN ${currentSymCount} STOCKS`}
               </span>
             )}
           </button>
@@ -1122,7 +1238,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
                 ? scanMode === "DISCOVERY"
                   ? "Filtering → OBV + HV + IV + Polygon flow → Discovery scoring → Ranking"
                   : "Filtering universe → Scoring → Ranking → Enriching"
-                : "Fetching market data..."}
+                : "Querying per-strike flow → Applying thresholds → Scoring → Ranking"}
             </p>
           </div>
         </div>
@@ -1144,19 +1260,35 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
         </div>
       )}
 
-      {mode === "manual" && !isScanning && manualQuotes.length > 0 && (
+      {mode === "unusual" && unusualError && !isScanning && (
+        <div className="bg-destructive/10 border border-destructive/30 rounded-xl p-4">
+          <p className="text-xs text-destructive font-bold mb-2">SCAN ERROR</p>
+          <p className="text-[11px] text-destructive/80">{unusualError}</p>
+        </div>
+      )}
+
+      {mode === "unusual" && !isScanning && unusualResult && unusualResult.candidates.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center justify-between px-1">
-            <Label className="text-[11px] text-muted-foreground uppercase">
-              {manualQuotes.length} STOCKS MATCHED
-            </Label>
-            <span className="text-[11px] text-muted-foreground">Sorted by | Change % |</span>
+            <div className="flex items-center gap-3">
+              <Zap className="w-4 h-4" style={{ color: "#66e0ff" }} />
+              <span className="text-[11px] text-zinc-400 font-bold uppercase tracking-wider">
+                {unusualResult.scannedSymbols} scanned
+                <span className="text-zinc-600 mx-1">|</span>
+                {unusualResult.symbolsWithFlow} with flow data
+                <span className="text-zinc-600 mx-1">|</span>
+                <span style={{ color: "#66e0ff" }}>{unusualResult.candidates.length} matched filters</span>
+              </span>
+            </div>
+            {unusualResult.asOfDate && (
+              <span className="text-[10px] text-zinc-600 tabular-nums">as of {unusualResult.asOfDate}</span>
+            )}
           </div>
-          <div className="space-y-1.5">
-            {manualQuotes.map((q, i) => (
-              <ManualResultCard
-                key={q.symbol}
-                q={q}
+          <div className="space-y-2">
+            {unusualResult.candidates.map((c, i) => (
+              <UnusualFlowCard
+                key={c.symbol}
+                candidate={c}
                 rank={i + 1}
                 onSelect={onNavigateToSymbol ?? setSymbol}
                 onSendToStrategist={onSendToStrategist}
@@ -1166,9 +1298,15 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
         </div>
       )}
 
-      {mode === "manual" && !isScanning && manualQuotes.length === 0 && !hasResults && !rawError && (
+      {mode === "unusual" && !isScanning && unusualResult && unusualResult.candidates.length === 0 && !unusualError && (
         <div className="py-16 text-center text-xs text-muted-foreground/40 bg-card border border-card-border rounded-xl">
-          No stocks matched your filters. Try widening the ranges.
+          No symbols matched your unusual flow thresholds. Try lowering Min Strikes or Min VOI Ratio.
+        </div>
+      )}
+
+      {mode === "unusual" && !isScanning && !unusualResult && !unusualError && (
+        <div className="py-6 text-center text-[11px] text-muted-foreground/60">
+          Tune the thresholds and run a scan to find names with unusual options activity.
         </div>
       )}
 

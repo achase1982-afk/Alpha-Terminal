@@ -2806,6 +2806,37 @@ interface ScannerAiResult {
   marketSummary: string;
 }
 
+// ── Unusual Options Activity scanner ─────────────────────────────────
+// Pure flow-based scan: queries Polygon per-strike data already in our
+// DB, applies user-tunable thresholds (minStrikes, minVoiRatio,
+// minVolume, skewFilter), and returns ranked candidates with scorecard
+// data. No price/momentum/IVR signal — strictly options activity.
+router.post("/unusual-flow-scan", async (req, res) => {
+  try {
+    const { scanUnusualFlow } = await import("../lib/unusualFlowScanner.js");
+    const { symbols, filters } = req.body as {
+      symbols?: string[];
+      filters?: {
+        minStrikes?: number;
+        minVoiRatio?: number;
+        minVolume?: number;
+        skew?: "any" | "bullish" | "bearish" | "non_balanced";
+      };
+    };
+    if (!Array.isArray(symbols) || symbols.length === 0) {
+      return res.status(400).json({ error: "symbols required" });
+    }
+    if (symbols.length > 500) {
+      return res.status(400).json({ error: "too many symbols (max 500)" });
+    }
+    const result = await scanUnusualFlow(symbols, filters ?? {});
+    return res.json(result);
+  } catch (err: any) {
+    req.log.error({ err }, "unusual-flow-scan failed");
+    return res.status(500).json({ error: err?.message ?? "scan failed" });
+  }
+});
+
 router.post("/deterministic-scan", async (req, res) => {
   const { symbols, accessToken: bodyToken3, scanMode: reqScanMode, returnAll } = req.body as {
     symbols: string[];
