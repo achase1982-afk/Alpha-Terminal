@@ -7,7 +7,7 @@ import { ExternalLink, CheckCircle2, Loader2, XCircle, AlertTriangle } from "luc
 import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
 
 export function AuthPanel() {
-  const { accessToken, traderAccessToken, clearTokens, clearTraderTokens } = useTerminalStore();
+  const { accessToken, traderAccessToken, clearTokens, clearTraderTokens, setTokens, setTraderTokens } = useTerminalStore();
   const portfolioStatus = usePortfolioStreamStore((s) => s.portfolioStatus);
   const [isNavigating, setIsNavigating] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
@@ -19,6 +19,27 @@ export function AuthPanel() {
     query: { enabled: !isConnected || serverTokenExpired },
   });
 
+  // Pull server-side tokens written by the OAuth callback into the in-memory
+  // store. Used after the popup closes so the UI flips to CONNECTED without
+  // waiting for the visibilitychange poll in PendingSessionLoader.
+  const rehydrateFromServer = useCallback(async () => {
+    try {
+      const res = await fetchWithAuth("/api/auth/server-tokens");
+      if (!res.ok) return false;
+      const data = await res.json() as {
+        market?: { accessToken: string; refreshToken: string } | null;
+        trader?: { accessToken: string; refreshToken: string } | null;
+      };
+      const tok = data.trader ?? data.market;
+      if (tok?.accessToken) {
+        setTokens(tok.accessToken, tok.refreshToken || "");
+        setTraderTokens(tok.accessToken, tok.refreshToken || "");
+        return true;
+      }
+    } catch {}
+    return false;
+  }, [setTokens, setTraderTokens]);
+
   const handleLogin = useCallback(async () => {
     setIsNavigating(true);
     let url = authUrlData?.url || "";
@@ -27,8 +48,44 @@ export function AuthPanel() {
       url = result.data?.url || "";
     }
     if (!url) { setIsNavigating(false); return; }
-    window.location.href = url;
-  }, [authUrlData, refetchAuthUrl]);
+
+    // Open Schwab OAuth in a popup so the original tab — and its in-memory
+    // Clerk session — stays mounted across the cross-domain bounce. This
+    // sidesteps a Clerk dev-mode session re-check on iOS Safari that
+    // intermittently remounts the sign-in widget when the SPA cold-boots
+    // after a same-tab redirect. The /trader-callback success page already
+    // calls window.close() on completion, so the popup self-disposes.
+    const popup = window.open(
+      url,
+      "schwab-oauth",
+      "width=600,height=800,menubar=no,toolbar=no,location=yes,status=no",
+    );
+
+    // Popup blocked (rare from a direct user click, but possible) — fall
+    // back to the original same-tab redirect so we never regress.
+    if (!popup) {
+      window.location.href = url;
+      return;
+    }
+
+    // Poll for popup closure. When it closes, immediately try to pull the
+    // tokens the callback persisted server-side. PendingSessionLoader's
+    // visibilitychange listener provides a second chance if this misses
+    // (e.g., callback still in-flight when the window closed).
+    const pollMs = 500;
+    const maxWaitMs = 5 * 60 * 1000; // give up after 5 min
+    const startedAt = Date.now();
+    const interval = window.setInterval(async () => {
+      if (popup.closed) {
+        window.clearInterval(interval);
+        await rehydrateFromServer();
+        setIsNavigating(false);
+      } else if (Date.now() - startedAt > maxWaitMs) {
+        window.clearInterval(interval);
+        setIsNavigating(false);
+      }
+    }, pollMs);
+  }, [authUrlData, refetchAuthUrl, rehydrateFromServer]);
 
   const handleDisconnect = useCallback(async () => {
     setIsDisconnecting(true);
