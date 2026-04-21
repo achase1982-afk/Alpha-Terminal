@@ -683,11 +683,16 @@ function PositionTableRow({
 
   const eqTickDir = useTickFlash(group.underlying);
   const markColor = eqTickDir === "up" ? C.green : eqTickDir === "down" ? C.red : C.text;
-  // For Mark we want the truly current trade price including pre/post-market
-  // (Schwab field 3 LAST_PRICE). regularLast (field 29) is yesterday's close
-  // outside regular hours, which is why options-only rows appeared frozen.
+  // Two distinct values:
+  //   streamPrice       = Schwab field 3 LAST_PRICE — includes pre/post-market
+  //                       trades, used for the Mark column so it ticks live
+  //                       even when the regular session is closed.
+  //   streamRegularLast = Schwab field 29 REGULAR_MARKET_LAST_PRICE — the last
+  //                       trade of the most recent regular session, used for
+  //                       the Last column.
   const streamQuote = useTerminalStore(s => s.streamPrices[group.underlying.toUpperCase()] as { last?: number; regularLast?: number } | undefined);
   const streamPrice = streamQuote?.last ?? streamQuote?.regularLast ?? null;
+  const streamRegularLast = streamQuote?.regularLast ?? streamQuote?.last ?? null;
 
   const rowBg = "transparent";
   const stickyBg = "#000";
@@ -707,7 +712,7 @@ function PositionTableRow({
         return { text: markPx != null ? `$${markPx.toFixed(2)}` : "\u2014", color: markPx != null ? markColor : C.dim };
       }
       case "last": {
-        if (streamPrice != null) return { text: `$${streamPrice.toFixed(2)}`, color: C.text };
+        if (streamRegularLast != null) return { text: `$${streamRegularLast.toFixed(2)}`, color: C.text };
         return DASH;
       }
       case "cost": case "tradePrice": {
@@ -829,7 +834,7 @@ function PositionTableRow({
                   </div>
                 </td>
                 {renderCells(visibleColumns, col => {
-                  const v = getEquityCellVal(col, eq, streamPrice);
+                  const v = getEquityCellVal(col, eq, streamRegularLast);
                   if (col === "mark") return { ...v, color: markColor };
                   return v;
                 }, subCell, { mark: { style: { transition: "color 0.15s" } } })}

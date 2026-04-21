@@ -246,7 +246,7 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
     <nav
       ref={containerRef}
       className="shrink-0 bg-[#0c0c0c] border-t border-zinc-800/60 flex items-center justify-around px-2 z-50"
-      style={{ paddingTop: 8, paddingBottom: "min(20px, max(8px, env(safe-area-inset-bottom)))" }}
+      style={{ paddingTop: 6, paddingBottom: "max(4px, calc(env(safe-area-inset-bottom) - 22px))" }}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
