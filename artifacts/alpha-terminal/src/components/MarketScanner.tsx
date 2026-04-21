@@ -6,7 +6,8 @@ import { useQuote } from "@/hooks/useQuote";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
-import { SlidersHorizontal, ChevronDown, AlertTriangle, Search, List, Crosshair, Send, Shield, BarChart3, Plus, Filter, RefreshCw, Pencil, Trash2, Loader2, Info, Zap } from "lucide-react";
+import { SlidersHorizontal, ChevronDown, AlertTriangle, Search, List, Crosshair, Send, Shield, BarChart3, Plus, Filter, RefreshCw, Pencil, Trash2, Loader2, Info, Zap, Settings2 } from "lucide-react";
+import { Drawer, DrawerContent, DrawerTrigger, DrawerTitle, DrawerHeader, DrawerClose } from "./ui/drawer";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { useScanCache } from "@/hooks/useScanCache";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
@@ -890,6 +891,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
   const [uIncludeRegular, setUIncludeRegular] = useState(true);
   const [uMinSweepCount, setUMinSweepCount] = useState(0);
   const [uMinBlockCount, setUMinBlockCount] = useState(0);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   // Part 5: removed legacy on-demand "Unusual Flow Scan (LIVE)" state +
   // poll loop. Live unusual-flow signal is now folded into the LIVE_FLOW
@@ -1039,6 +1041,133 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
 
   const editScreenObj = editingScreen != null ? universeData.screens.find(s => s.id === editingScreen) ?? null : null;
 
+  const renderUnusualFilters = () => (
+    <div className="p-4 space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
+          Filters tuned for institutional positioning — strip retail 0DTE/lottos.
+        </div>
+        <button
+          onClick={() => setUExcludeIndexes(v => !v)}
+          className="text-[10px] py-1 px-2 rounded font-bold uppercase tracking-wider transition-all shrink-0"
+          style={{
+            background: uExcludeIndexes ? "#18181b" : "transparent",
+            color: uExcludeIndexes ? "#66e0ff" : "#6B7280",
+            border: `1px solid ${uExcludeIndexes ? "rgba(102,224,255,0.4)" : "#2a2a2a"}`,
+          }}
+        >
+          {uExcludeIndexes ? "✓ " : ""}Exclude Indexes/ETFs
+        </button>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <div className="flex justify-between text-[11px] text-muted-foreground uppercase">
+            <span>Min Unusual Strikes</span>
+            <span style={{ color: "#66e0ff" }}>{uMinStrikes}+</span>
+          </div>
+          <Slider value={[uMinStrikes]} onValueChange={v => setUMinStrikes(v[0])} min={1} max={10} step={1} />
+        </div>
+        <div className="space-y-2">
+          <div className="flex justify-between text-[11px] text-muted-foreground uppercase">
+            <span>Min VOI Ratio</span>
+            <span style={{ color: "#66e0ff" }}>{uMinVoi}×+</span>
+          </div>
+          <Slider value={[uMinVoi]} onValueChange={v => setUMinVoi(v[0])} min={1} max={10} step={0.5} />
+        </div>
+        <div className="space-y-2">
+          <div className="flex justify-between text-[11px] text-muted-foreground uppercase">
+            <span>Min Strike Volume</span>
+            <span style={{ color: "#66e0ff" }}>{uMinVolume.toLocaleString()}+</span>
+          </div>
+          <Slider value={[uMinVolume]} onValueChange={v => setUMinVolume(v[0])} min={100} max={2000} step={100} />
+        </div>
+        <div className="space-y-2">
+          <div className="flex justify-between text-[11px] text-muted-foreground uppercase">
+            <span>Min Notional / Strike</span>
+            <span style={{ color: "#66e0ff" }}>{fmtMoney(uMinNotional)}+</span>
+          </div>
+          <Slider value={[uMinNotional]} onValueChange={v => setUMinNotional(v[0])} min={50_000} max={5_000_000} step={50_000} />
+        </div>
+        <div className="space-y-2">
+          <div className="flex justify-between text-[11px] text-muted-foreground uppercase">
+            <span>Min DTE (excl. 0DTE)</span>
+            <span style={{ color: "#66e0ff" }}>{uMinDte === 0 ? "All" : `${uMinDte}+ days`}</span>
+          </div>
+          <Slider value={[uMinDte]} onValueChange={v => setUMinDte(v[0])} min={0} max={45} step={1} />
+        </div>
+        <div className="space-y-2">
+          <div className="flex justify-between text-[11px] text-muted-foreground uppercase">
+            <span>Skew Filter</span>
+            <span style={{ color: "#66e0ff" }}>
+              {uSkew === "any" ? "Any" : uSkew === "bullish" ? "Bullish only" : uSkew === "bearish" ? "Bearish only" : "Exclude balanced"}
+            </span>
+          </div>
+          <div className="grid grid-cols-4 gap-1">
+            {(["any", "bullish", "bearish", "non_balanced"] as const).map(s => (
+              <button
+                key={s}
+                onClick={() => setUSkew(s)}
+                className="text-[10px] py-1.5 rounded font-bold uppercase tracking-wider transition-all"
+                style={{
+                  background: uSkew === s ? "#18181b" : "transparent",
+                  color: uSkew === s ? "#66e0ff" : "#6B7280",
+                  border: `1px solid ${uSkew === s ? "rgba(102,224,255,0.4)" : "#2a2a2a"}`,
+                }}
+              >
+                {s === "any" ? "Any" : s === "bullish" ? "Bull" : s === "bearish" ? "Bear" : "≠ Bal"}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex justify-between text-[11px] text-muted-foreground uppercase">
+            <span>Execution Pattern</span>
+            <span style={{ color: "#9ca3af" }} title="Aggressor side requires NBBO subscription — Phase 2">
+              Aggressor: N/A
+            </span>
+          </div>
+          <div className="grid grid-cols-3 gap-1">
+            {([
+              ["sweep", uIncludeSweeps, setUIncludeSweeps, "#FFB800"],
+              ["block", uIncludeBlocks, setUIncludeBlocks, "#66e0ff"],
+              ["regular", uIncludeRegular, setUIncludeRegular, "#6B7280"],
+            ] as const).map(([label, val, setter, color]) => (
+              <button
+                key={label}
+                onClick={() => setter(!val)}
+                className="text-[10px] py-1.5 rounded font-bold uppercase tracking-wider transition-all"
+                style={{
+                  background: val ? "#18181b" : "transparent",
+                  color: val ? color : "#3f3f46",
+                  border: `1px solid ${val ? `${color}66` : "#2a2a2a"}`,
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <div>
+              <div className="flex justify-between text-[10px] text-muted-foreground uppercase mb-1">
+                <span>Min Sweeps</span>
+                <span style={{ color: "#FFB800" }}>{uMinSweepCount}+</span>
+              </div>
+              <Slider value={[uMinSweepCount]} onValueChange={v => setUMinSweepCount(v[0])} min={0} max={20} step={1} />
+            </div>
+            <div>
+              <div className="flex justify-between text-[10px] text-muted-foreground uppercase mb-1">
+                <span>Min Blocks</span>
+                <span style={{ color: "#66e0ff" }}>{uMinBlockCount}+</span>
+              </div>
+              <Slider value={[uMinBlockCount]} onValueChange={v => setUMinBlockCount(v[0])} min={0} max={20} step={1} />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="flex flex-col gap-4 max-w-4xl mx-auto pb-6">
       {shockActive && (
@@ -1092,8 +1221,8 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
         </div>
 
         <div className="p-4 bg-[#0c0c0c] space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="space-y-1.5">
+          <div className="flex items-end gap-2">
+            <div className="space-y-1.5 flex-1 min-w-0">
               <Label className="text-xs text-muted-foreground uppercase tracking-wider font-bold flex items-center gap-1.5">
                 <Search className="w-3.5 h-3.5" /> Scan Universe
               </Label>
@@ -1119,7 +1248,46 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
                 }}
               />
             </div>
-
+            {mode === "unusual" && (
+              <Drawer open={filtersOpen} onOpenChange={setFiltersOpen}>
+                <DrawerTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="Open filters"
+                    className="shrink-0 inline-flex items-center justify-center rounded-md transition-all active:scale-95"
+                    style={{
+                      width: 38,
+                      height: 38,
+                      background: "#18181b",
+                      border: "1px solid #2a2a2a",
+                      color: "#FFB800",
+                    }}
+                  >
+                    <Settings2 className="w-4 h-4" />
+                  </button>
+                </DrawerTrigger>
+                <DrawerContent className="bg-[#0c0c0c] border-card-border">
+                  <DrawerHeader className="px-4 pt-4 pb-2 flex-row items-center justify-between">
+                    <DrawerTitle className="text-sm font-bold uppercase tracking-wider text-zinc-200 flex items-center gap-2">
+                      <Settings2 className="w-4 h-4" style={{ color: "#FFB800" }} />
+                      Unusual Flow Filters
+                    </DrawerTitle>
+                    <DrawerClose asChild>
+                      <button
+                        type="button"
+                        className="text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded"
+                        style={{ background: "#18181b", color: "#66e0ff", border: "1px solid rgba(102,224,255,0.4)" }}
+                      >
+                        Done
+                      </button>
+                    </DrawerClose>
+                  </DrawerHeader>
+                  <div className="px-1 pb-6 max-h-[75vh] overflow-y-auto">
+                    {renderUnusualFilters()}
+                  </div>
+                </DrawerContent>
+              </Drawer>
+            )}
           </div>
 
           {/* Part 5: Coverage badge + scan summary + scoring info tooltip.
@@ -1221,132 +1389,6 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
           )}
         </div>
 
-        {mode === "unusual" && (
-          <div className="p-4 bg-[#0c0c0c] border-t border-card-border space-y-4">
-            <div className="flex items-center justify-between gap-3">
-              <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
-                Filters tuned for institutional positioning — strip retail 0DTE/lottos.
-              </div>
-              <button
-                onClick={() => setUExcludeIndexes(v => !v)}
-                className="text-[10px] py-1 px-2 rounded font-bold uppercase tracking-wider transition-all shrink-0"
-                style={{
-                  background: uExcludeIndexes ? "#18181b" : "transparent",
-                  color: uExcludeIndexes ? "#66e0ff" : "#6B7280",
-                  border: `1px solid ${uExcludeIndexes ? "rgba(102,224,255,0.4)" : "#2a2a2a"}`,
-                }}
-              >
-                {uExcludeIndexes ? "✓ " : ""}Exclude Indexes/ETFs
-              </button>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <div className="flex justify-between text-[11px] text-muted-foreground uppercase">
-                  <span>Min Unusual Strikes</span>
-                  <span style={{ color: "#66e0ff" }}>{uMinStrikes}+</span>
-                </div>
-                <Slider value={[uMinStrikes]} onValueChange={v => setUMinStrikes(v[0])} min={1} max={10} step={1} />
-              </div>
-              <div className="space-y-2">
-                <div className="flex justify-between text-[11px] text-muted-foreground uppercase">
-                  <span>Min VOI Ratio</span>
-                  <span style={{ color: "#66e0ff" }}>{uMinVoi}×+</span>
-                </div>
-                <Slider value={[uMinVoi]} onValueChange={v => setUMinVoi(v[0])} min={1} max={10} step={0.5} />
-              </div>
-              <div className="space-y-2">
-                <div className="flex justify-between text-[11px] text-muted-foreground uppercase">
-                  <span>Min Strike Volume</span>
-                  <span style={{ color: "#66e0ff" }}>{uMinVolume.toLocaleString()}+</span>
-                </div>
-                <Slider value={[uMinVolume]} onValueChange={v => setUMinVolume(v[0])} min={100} max={2000} step={100} />
-              </div>
-              <div className="space-y-2">
-                <div className="flex justify-between text-[11px] text-muted-foreground uppercase">
-                  <span>Min Notional / Strike</span>
-                  <span style={{ color: "#66e0ff" }}>{fmtMoney(uMinNotional)}+</span>
-                </div>
-                <Slider value={[uMinNotional]} onValueChange={v => setUMinNotional(v[0])} min={50_000} max={5_000_000} step={50_000} />
-              </div>
-              <div className="space-y-2">
-                <div className="flex justify-between text-[11px] text-muted-foreground uppercase">
-                  <span>Min DTE (excl. 0DTE)</span>
-                  <span style={{ color: "#66e0ff" }}>{uMinDte === 0 ? "All" : `${uMinDte}+ days`}</span>
-                </div>
-                <Slider value={[uMinDte]} onValueChange={v => setUMinDte(v[0])} min={0} max={45} step={1} />
-              </div>
-              <div className="space-y-2">
-                <div className="flex justify-between text-[11px] text-muted-foreground uppercase">
-                  <span>Skew Filter</span>
-                  <span style={{ color: "#66e0ff" }}>
-                    {uSkew === "any" ? "Any" : uSkew === "bullish" ? "Bullish only" : uSkew === "bearish" ? "Bearish only" : "Exclude balanced"}
-                  </span>
-                </div>
-                <div className="grid grid-cols-4 gap-1">
-                  {(["any", "bullish", "bearish", "non_balanced"] as const).map(s => (
-                    <button
-                      key={s}
-                      onClick={() => setUSkew(s)}
-                      className="text-[10px] py-1.5 rounded font-bold uppercase tracking-wider transition-all"
-                      style={{
-                        background: uSkew === s ? "#18181b" : "transparent",
-                        color: uSkew === s ? "#66e0ff" : "#6B7280",
-                        border: `1px solid ${uSkew === s ? "rgba(102,224,255,0.4)" : "#2a2a2a"}`,
-                      }}
-                    >
-                      {s === "any" ? "Any" : s === "bullish" ? "Bull" : s === "bearish" ? "Bear" : "≠ Bal"}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex justify-between text-[11px] text-muted-foreground uppercase">
-                  <span>Execution Pattern</span>
-                  <span style={{ color: "#9ca3af" }} title="Aggressor side requires NBBO subscription — Phase 2">
-                    Aggressor: N/A
-                  </span>
-                </div>
-                <div className="grid grid-cols-3 gap-1">
-                  {([
-                    ["sweep", uIncludeSweeps, setUIncludeSweeps, "#FFB800"],
-                    ["block", uIncludeBlocks, setUIncludeBlocks, "#66e0ff"],
-                    ["regular", uIncludeRegular, setUIncludeRegular, "#6B7280"],
-                  ] as const).map(([label, val, setter, color]) => (
-                    <button
-                      key={label}
-                      onClick={() => setter(!val)}
-                      className="text-[10px] py-1.5 rounded font-bold uppercase tracking-wider transition-all"
-                      style={{
-                        background: val ? "#18181b" : "transparent",
-                        color: val ? color : "#3f3f46",
-                        border: `1px solid ${val ? `${color}66` : "#2a2a2a"}`,
-                      }}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                <div className="grid grid-cols-2 gap-2 pt-1">
-                  <div>
-                    <div className="flex justify-between text-[10px] text-muted-foreground uppercase mb-1">
-                      <span>Min Sweeps</span>
-                      <span style={{ color: "#FFB800" }}>{uMinSweepCount}+</span>
-                    </div>
-                    <Slider value={[uMinSweepCount]} onValueChange={v => setUMinSweepCount(v[0])} min={0} max={20} step={1} />
-                  </div>
-                  <div>
-                    <div className="flex justify-between text-[10px] text-muted-foreground uppercase mb-1">
-                      <span>Min Blocks</span>
-                      <span style={{ color: "#66e0ff" }}>{uMinBlockCount}+</span>
-                    </div>
-                    <Slider value={[uMinBlockCount]} onValueChange={v => setUMinBlockCount(v[0])} min={0} max={20} step={1} />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
 
         <div className="px-4 pb-4 pt-3 bg-[#0c0c0c] border-t border-card-border">
           <button
