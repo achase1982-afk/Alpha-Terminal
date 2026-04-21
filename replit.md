@@ -94,34 +94,53 @@ log line per call. Search by the stable `op` field:
 | `baseline.trailingUnusual.fetch` | `optionsBaselines.getTrailingUnusualFlow` | `/api/unusual-options/trailing` endpoint. |
 | `liveFlow.compute` | `optionsBaselines.computeLiveFlowBucket` | Per-ticker bucket trace (debug-only; flip log level to inspect). |
 | `scanner.liveFlow.applied` | `deterministicScanner.v2` | Per-scan aggregate: how many candidates got LIVE_FLOW + avg/max score. |
+| `watcher.start` / `watcher.stop` | `optionsWatcher` | Persistent WS watcher lifecycle. `watcher.start.skipped` when env-disabled. |
+| `watcher.setWatchlist` | same | Tier rebalance: `hot/warm/cold` counts, `addedTickers`, `removedSubs`, `totalSubscribed`, `durationMs`. |
+| `watcher.resolve.subscribed` | same | A ticker's contracts were resolved + subscribed. |
+| `watcher.resolve.budgetExceeded` | same | Total-sub cap (600) blocked promotion; usually means too many HOT/WARM tickers. |
+| `watcher.resolve.fetchChain.failed` / `watcher.resolve.subscribe.failed` | same | Chain or WS subscribe error per ticker. |
+| `watcher.tick` | same | 1-min reconciliation tick (debug-only): tier counts, total subs, total events. |
 
 Quick health check: `grep 'op=baseline\.' <log>` over the last open session
 should show `hitRate ≥ 0.9` for LC130 (the always-on universe). Anything
 sustained below that signals a backfill gap.
 
-### Failure-mode banner state machine (scanner UI) — PLANNED
+### Failure-mode banner state machine (scanner UI) — IMPLEMENTED
 
-> Current implementation: the MarketScanner only renders an LC130
-> "ALWAYS-ON (full coverage)" vs "ON-DEMAND (cached)" coverage badge —
-> there is **no** LIVE/AMBER/EOD state machine in the UI yet. The
-> three-state machine below is the **target shape** for when the Part 2
-> persistent WS watcher ships; record it here so the next session
-> implements consistently.
+The MarketScanner header renders two badges:
+1. Universe coverage: `LC130 · ALWAYS-ON` (nightly flat-files) or `ON-DEMAND` (off-list).
+2. Watcher coverage: `WS · LIVE | AMBER | EOD`, server-driven from
+   `detResult.coverage` (only rendered when the server includes the field —
+   i.e. when the Part 2 watcher is enabled).
+
+State machine (lives in `optionsWatcher.getCoverageInfo()`):
 
 ```
-  LIVE   (green)   = Discovery scan completed within last 5min,
-                     LIVE_FLOW.coverageRate >= 0.5 from last scan,
-                     watcher heartbeat fresh (<60s).
-  AMBER  (yellow)  = Trailing baselines loaded but watcher is offline,
-                     OR coverageRate between 0.1 and 0.5,
-                     OR watcher heartbeat stale (60s..5min).
-  EOD    (gray)    = Only flat-files trailing data is contributing
-                     (Part 2 disabled, watcher dead, or DB stale).
-                     LIVE chips suppressed; bars still render.
+  LIVE   (green)   = watcher running, heartbeat <60s, coverageRate >= 0.5
+                     (fraction of HOT/WARM tickers that have produced a
+                     live event in the current session).
+  AMBER  (yellow)  = watcher running but heartbeat 60s..5min OR
+                     coverageRate between 0 and 0.5.
+  EOD    (gray)    = watcher disabled, not running, no heartbeat,
+                     or heartbeat stale > 5min. UI hides the badge entirely
+                     when `watcherEnabled=false` so off-WS deployments
+                     stay clean. Trailing flat-files bars still render.
 ```
 
-Today the watcher is disabled (`POLYGON_OPTIONS_WS_ENABLED=false`) so when
-the badge is implemented it will be a static EOD until Part 2 lands.
+Tooltip on the badge surfaces `totalSubscribed`, `coverageRate`,
+heartbeat age, and the machine-readable `reason` field. Reason vocabulary
+emitted by `optionsWatcher.getCoverageInfo()`:
+
+| `reason` | State | Meaning |
+| --- | --- | --- |
+| `watcher_disabled` | EOD | `POLYGON_OPTIONS_WS_ENABLED` is false (UI hides badge entirely — server omits `coverage` from scan response). |
+| `watcher_not_running` | EOD | Singleton not started yet or has been stopped. |
+| `no_subscriptions` | EOD | No HOT/WARM tickers subscribed (e.g. before first scan). |
+| `no_heartbeat` / `stale_heartbeat` | EOD | No tick or last tick > 5min. |
+| `partial_coverage_or_aging_heartbeat` | AMBER | Heartbeat 60s..5min, OR coverageRate < 0.5. |
+| `fresh_heartbeat_high_coverage` | LIVE | Heartbeat <60s AND coverageRate ≥ 0.5. |
+
+Watcher gating env var: `POLYGON_OPTIONS_WS_ENABLED`.
 
 ### Sizing note (Part 2 follow-up)
 

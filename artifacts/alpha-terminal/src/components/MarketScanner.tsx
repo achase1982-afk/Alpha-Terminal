@@ -91,6 +91,16 @@ interface DetScanResult {
   scanTimestamp: number;
   pulseBias: string;
   scanMode?: "DISCOVERY" | "MOMENTUM";
+  // Part 2 — server-computed coverage state for the LIVE/AMBER/EOD badge.
+  coverage?: {
+    state: "LIVE" | "AMBER" | "EOD";
+    reason: string;
+    watcherEnabled: boolean;
+    running: boolean;
+    heartbeatAgeMs: number | null;
+    coverageRate: number;
+    totalSubscribed: number;
+  };
 }
 
 const MOMENTUM_BARS: { key: keyof DetComponentScores; label: string; max: number; color: string }[] = [
@@ -947,6 +957,33 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
                     ON-DEMAND
                   </span>
                 )}
+                {/* Part 2 — server-driven LIVE/AMBER/EOD badge for the
+                    persistent options watcher. Hidden when the watcher is
+                    disabled (server omits the field) so we don't add noise
+                    to environments that don't run the WS. */}
+                {detResult?.coverage && (() => {
+                  const cov = detResult.coverage;
+                  const styles: Record<string, { color: string; bg: string; border: string }> = {
+                    LIVE:  { color: "#2ecc71", bg: "rgba(46,204,113,0.12)",  border: "rgba(46,204,113,0.4)" },
+                    AMBER: { color: "#FFB800", bg: "rgba(255,184,0,0.12)",   border: "rgba(255,184,0,0.4)" },
+                    EOD:   { color: "#9ca3af", bg: "rgba(156,163,175,0.08)", border: "rgba(156,163,175,0.25)" },
+                  };
+                  const s = styles[cov.state] ?? styles.EOD!;
+                  const ageSec = cov.heartbeatAgeMs != null ? Math.round(cov.heartbeatAgeMs / 1000) : null;
+                  const tip =
+                    cov.state === "LIVE"
+                      ? `Watcher live · ${cov.totalSubscribed} contracts subscribed · coverage ${(cov.coverageRate * 100).toFixed(0)}%${ageSec != null ? ` · last tick ${ageSec}s ago` : ""}`
+                      : cov.state === "AMBER"
+                      ? `Watcher running, partial coverage (${(cov.coverageRate * 100).toFixed(0)}%)${ageSec != null ? `, last tick ${ageSec}s ago` : ""} — ${cov.reason}`
+                      : `Live watcher unavailable (${cov.reason}) — bars sourced from trailing flat-files only.`;
+                  return (
+                    <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
+                      style={{ color: s.color, background: s.bg, border: `1px solid ${s.border}` }}
+                      title={tip}>
+                      WS · {cov.state}
+                    </span>
+                  );
+                })()}
                 {mode === "deterministic" && (
                   <Tooltip>
                     <TooltipTrigger asChild>

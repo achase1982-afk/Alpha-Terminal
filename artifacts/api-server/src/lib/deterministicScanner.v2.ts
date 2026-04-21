@@ -9,6 +9,7 @@ import { getCachedRegime, buildFallbackRegime, type StructuredRegime } from "./r
 import { computeIOScore } from "./ioScoreEngine.js";
 import { getPolygonFlowHighlightsBulk, unusualFlowBonusPoints, type PolygonFlowHighlights } from "./polygonFlowHighlights.js";
 import { getFlowAcceleration, flowAccelerationPoints, computeLiveFlowBucket } from "./optionsBaselines.js";
+import { getLiveSessionStats, setWatchlist as setWatcherWatchlist, getCoverageInfo, isWatcherEnabled, type CoverageInfo } from "./optionsWatcher.js";
 import { logger } from "./logger.js";
 
 const SCHWAB_API = "https://api.schwabapi.com/marketdata/v1";
@@ -1116,10 +1117,14 @@ export async function runDiscoveryScan(
       // session log and dominate the blend.
       const accel = flowAccelMap.get(symUpper) ?? null;
       const flowAccelPts = flowAccelerationPoints(accel); // legacy telemetry only
+      // Part 2: pull live session inputs from the persistent watcher. When
+      // disabled or the ticker isn't in the watchlist, both fall back to
+      // safe defaults and computeLiveFlowBucket degrades to trailing-only.
+      const liveStats = isWatcherEnabled() ? getLiveSessionStats(symUpper) : null;
       const liveFlowResult = computeLiveFlowBucket({
-        liveEventCount: 0, // Part 2: read from session log
+        liveEventCount: liveStats?.liveEventCount ?? 0,
         trailingAccel: accel,
-        directionallyBalanced: false, // Part 2: derive from session call/put split
+        directionallyBalanced: liveStats?.directionallyBalanced ?? false,
       });
       const liveFlow = liveFlowResult.score;
       const liveFlowAvailable = liveFlowResult.available;
@@ -1338,7 +1343,26 @@ export async function runDiscoveryScan(
     log.warn({ error: err instanceof Error ? err.message : String(err) }, "Failed to log scanner telemetry");
   }
 
-  const result: ScanResult & { allScoredResults?: any[]; weightMode?: string; weightsUsed?: WeightProfile } = {
+  // ── Part 2: post-scan watcher rebalance ──
+  // The top-N candidates by totalScore become HOT (highest priority for
+  // live subscriptions); the next slice becomes WARM. Anything below that
+  // is COLD — tracked but not subscribed. This is fire-and-forget; chain
+  // resolution & subscribe diff happen on the watcher's own concurrency.
+  // Only attach coverage to the response when the watcher is enabled. The
+  // UI gates the WS · LIVE/AMBER/EOD badge on `detResult.coverage` being
+  // present, so omitting the field keeps non-WS deployments badge-free.
+  const coverage: CoverageInfo | null = isWatcherEnabled() ? getCoverageInfo() : null;
+  if (isWatcherEnabled()) {
+    const ranked = scoredResults.map(r => r.symbol);
+    const hot = ranked.slice(0, 30);
+    const warm = ranked.slice(30, 80);
+    const cold = ranked.slice(80, 200);
+    void setWatcherWatchlist({ hot, warm, cold }).catch(err =>
+      log.warn({ err: err instanceof Error ? err.message : String(err) }, "watcher.setWatchlist post-scan failed"),
+    );
+  }
+
+  const result: ScanResult & { allScoredResults?: any[]; weightMode?: string; weightsUsed?: WeightProfile; coverage?: CoverageInfo } = {
     candidates,
     filterSummary: {
       totalScanned: symbols.length,
@@ -1353,6 +1377,7 @@ export async function runDiscoveryScan(
   };
   result.weightMode = weightMode;
   result.weightsUsed = scanWeights;
+  if (coverage) result.coverage = coverage;
 
   if (options?.returnAll) {
     result.allScoredResults = scoredResults.map(r => ({

@@ -3,6 +3,7 @@ import { db, polygonOptionsHistoryTable } from "@workspace/db";
 import { sql, gte, desc } from "drizzle-orm";
 import { syncDateRange, syncDate, getSyncStatus } from "../lib/polygonFlatFiles";
 import { getTrailingUnusualFlow } from "../lib/optionsBaselines";
+import { getDeepScanSnapshot, getWatcherStatus, getCoverageInfo, isWatcherEnabled } from "../lib/optionsWatcher";
 import { logger } from "../lib/logger";
 
 const router = Router();
@@ -44,6 +45,55 @@ router.get("/trailing", async (req, res) => {
     logger.warn({ err: err.message }, "trailing unusual flow query failed");
     res.status(500).json({ error: err.message });
   }
+});
+
+/**
+ * Part 2 — Watcher status + coverage state machine.
+ * Surfaces LIVE / AMBER / EOD with the underlying signals so the UI can
+ * render the badge without inventing thresholds client-side.
+ */
+router.get("/watcher", (_req, res) => {
+  res.json({
+    enabled: isWatcherEnabled(),
+    status: getWatcherStatus(),
+    coverage: getCoverageInfo(),
+  });
+});
+
+/**
+ * Part 3 — On-demand deep scan piggybacking on the watcher's session log.
+ *
+ * Returns the live session stats + recent breakout events + subscribed
+ * contracts for a single ticker. If the ticker isn't currently in the
+ * watchlist, returns 404 with a hint so the UI can either trigger a fresh
+ * one-shot flow scan or wait for the next deterministic-scan rebalance.
+ */
+router.get("/deep/:ticker", (req, res) => {
+  const ticker = String(req.params.ticker ?? "").trim();
+  if (!ticker || ticker.length > 8) {
+    return res.status(400).json({ error: "invalid_ticker" });
+  }
+  if (!isWatcherEnabled()) {
+    return res.status(503).json({
+      error: "watcher_disabled",
+      message: "POLYGON_OPTIONS_WS_ENABLED is not set; deep scan unavailable.",
+      coverage: getCoverageInfo(),
+    });
+  }
+  const snap = getDeepScanSnapshot(ticker);
+  if (!snap.watched) {
+    return res.status(404).json({
+      error: "not_watched",
+      ticker: snap.ticker,
+      message: "Ticker is not in the live watchlist; trigger a deterministic scan to promote it.",
+      coverage: getCoverageInfo(),
+    });
+  }
+  res.json({
+    snapshot: snap,
+    coverage: getCoverageInfo(),
+    fetchedAt: Date.now(),
+  });
 });
 
 router.get("/status", async (req, res) => {

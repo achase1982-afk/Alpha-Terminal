@@ -17,6 +17,7 @@ import { LIQUID_CORE_SYMBOLS } from "./data/liquidCore130";
 import { db, equityDailyTable, snapshotCollectionLogTable } from "@workspace/db";
 import { inArray, desc, sql, eq } from "drizzle-orm";
 import { startPolygonPCRatioPoller } from "./lib/polygonPutCallRatio";
+import { startOptionsWatcher } from "./lib/optionsWatcher";
 import { migrateAiLabSeedData } from "./lib/aiLabMigration";
 import { getBestAccessToken } from "./lib/tokenStore";
 import { loadAiLabConfigFromDb } from "./lib/aiLabConfig";
@@ -486,6 +487,14 @@ async function boot() {
   }
 
   startPolygonPCRatioPoller();
+
+  // Part 2 — start the persistent options watcher. Env-gated by
+  // POLYGON_OPTIONS_WS_ENABLED; when off this is a no-op. Initial
+  // watchlist is empty — the deterministic scanner populates HOT/WARM
+  // tiers from its top-ranked candidates after each scan.
+  void startOptionsWatcher().catch((err) =>
+    logger.warn({ err }, "options watcher start failed (will not retry)"),
+  );
 
   if (process.env.IBKR_GATEWAY_URL || process.env.IB_HOST) {
     const wsUrl = getWsBridgeUrl();
