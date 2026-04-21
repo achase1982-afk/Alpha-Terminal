@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { runFullSnapshot, getSnapshotStatus, collectEquitySnapshots, collectPolygonFlowFromAPI, computeFlowAggregates, computeIVFromFlow, backfillEquityHistory, backfillPolygonFlow, backfillEquityFromPolygon } from "../lib/dailySnapshot";
 import { cleanupIVUnits, recomputeAllIVR } from "../lib/ivNormalize";
-import { startBackfillJob, getBackfillJob, listBackfillJobs } from "../lib/historicalIVBackfill";
+import { startBackfillJob, getBackfillJob, listBackfillJobs, diagnoseListContracts } from "../lib/historicalIVBackfill";
 import { getBestAccessToken } from "../lib/tokenStore";
 import { logger } from "../lib/logger";
 import { db } from "@workspace/db";
@@ -268,6 +268,19 @@ router.get("/admin/backfill-iv-history", (req, res) => {
   const auth = requireAdmin(req as never);
   if (!auth.ok) return res.status(403).json({ ok: false, error: auth.error });
   res.json({ ok: true, jobs: listBackfillJobs() });
+});
+
+router.get("/admin/diagnose-list-contracts", async (req, res) => {
+  const auth = requireAdmin(req as never);
+  if (!auth.ok) return res.status(403).json({ ok: false, error: auth.error });
+  const symbol = String(req.query["symbol"] ?? "SPY");
+  const daysBack = Math.max(1, Math.min(900, Number(req.query["daysBack"] ?? 252)));
+  try {
+    const result = await diagnoseListContracts(symbol, daysBack);
+    res.json({ ok: true, result });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: (e as Error).message });
+  }
 });
 
 router.post("/admin/recompute-ivr", async (req, res) => {

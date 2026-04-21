@@ -45,16 +45,36 @@ interface ContractMeta {
   expiration: string;
 }
 
-async function listContracts(symbol: string, fromDate: string, apiKey: string): Promise<ContractMeta[]> {
+export interface ListContractsDiagnostic {
+  symbol: string;
+  fromDate: string;
+  pagesFetched: number;
+  pageCapHit: boolean;
+  hasMorePages: boolean;
+  totalContracts: number;
+  earliestExpiration: string | null;
+  latestExpiration: string | null;
+  expirationsByMonth: Record<string, number>;
+}
+
+async function listContracts(
+  symbol: string, fromDate: string, apiKey: string,
+  diag?: { capture: ListContractsDiagnostic },
+): Promise<ContractMeta[]> {
   const out: ContractMeta[] = [];
+  // Sort by expiration_date asc so the OLDEST/most-history-having contracts come first.
+  // Without sort, Polygon may return newest-first which means we hit the page cap with
+  // only recently-created contracts that have no deep history.
   let url: string | null =
     `${POLYGON_API}/v3/reference/options/contracts` +
     `?underlying_ticker=${encodeURIComponent(symbol)}` +
     `&expiration_date.gte=${fromDate}` +
-    `&expired=true&limit=1000&apiKey=${apiKey}`;
+    `&expired=true&order=asc&sort=expiration_date&limit=1000&apiKey=${apiKey}`;
 
+  const PAGE_CAP = 200; // 200 × 1000 = 200k contracts (covers SPY/QQQ deep history)
   let pages = 0;
-  while (url && pages < 20) {
+  let lastJsonHadNext = false;
+  while (url && pages < PAGE_CAP) {
     const r = await fetchWithRetry(url);
     if (!r || !r.ok) break;
     const json = await r.json() as { results?: Array<Record<string, unknown>>; next_url?: string };
@@ -67,11 +87,50 @@ async function listContracts(symbol: string, fromDate: string, apiKey: string): 
         out.push({ ticker, type: ctype === "call" ? "call" : "put", strike, expiration: exp });
       }
     }
+    lastJsonHadNext = !!json.next_url;
     url = json.next_url ? `${json.next_url}&apiKey=${apiKey}` : null;
     pages++;
     await sleep(50);
   }
+
+  if (diag) {
+    const exps = out.map(c => c.expiration).sort();
+    const byMonth: Record<string, number> = {};
+    for (const e of exps) {
+      const m = e.slice(0, 7);
+      byMonth[m] = (byMonth[m] ?? 0) + 1;
+    }
+    diag.capture = {
+      symbol, fromDate,
+      pagesFetched: pages,
+      pageCapHit: pages >= PAGE_CAP,
+      hasMorePages: lastJsonHadNext && pages >= PAGE_CAP,
+      totalContracts: out.length,
+      earliestExpiration: exps[0] ?? null,
+      latestExpiration: exps[exps.length - 1] ?? null,
+      expirationsByMonth: byMonth,
+    };
+  }
+
+  logger.info({
+    symbol, fromDate, pages, pageCapHit: pages >= PAGE_CAP,
+    contracts: out.length,
+    earliestExp: out.length ? out.map(c => c.expiration).sort()[0] : null,
+    latestExp: out.length ? out.map(c => c.expiration).sort()[out.length - 1] : null,
+  }, "listContracts: pagination summary");
   return out;
+}
+
+export async function diagnoseListContracts(symbol: string, daysBack: number): Promise<ListContractsDiagnostic | { error: string }> {
+  const apiKey = process.env["POLYGON_API_KEY"];
+  if (!apiKey) return { error: "POLYGON_API_KEY missing" };
+  const fromDate = new Date(Date.now() - daysBack * 86_400_000).toISOString().slice(0, 10);
+  const diag: { capture: ListContractsDiagnostic } = { capture: {
+    symbol, fromDate, pagesFetched: 0, pageCapHit: false, hasMorePages: false,
+    totalContracts: 0, earliestExpiration: null, latestExpiration: null, expirationsByMonth: {},
+  } };
+  await listContracts(symbol.toUpperCase(), fromDate, apiKey, diag);
+  return diag.capture;
 }
 
 interface AggBar { date: string; close: number; volume: number; vwap: number | null }
