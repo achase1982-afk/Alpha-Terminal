@@ -5,7 +5,6 @@ import { useHeaderBottom } from "@/hooks/useHeaderBottom";
 import { ConnectBrokerPrompt } from "./ConnectBrokerPrompt";
 import { useBrokerConnect } from "@/hooks/useBrokerConnect";
 import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
-import { useOptionTick, useOptionsStreamStore } from "@/lib/options-stream-store";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import {
   ChevronRight,
@@ -151,11 +150,10 @@ function getEquityCellVal(col: ColumnKey, pos: Position, streamLast?: number | n
   }
 }
 
-function getOptionCellVal(col: ColumnKey, opt: Position, liveMark?: number | null, liveLast?: number | null): CellVal {
+function getOptionCellVal(col: ColumnKey, opt: Position): CellVal {
   const isShort = opt.shortQuantity > 0;
   const qty = isShort ? opt.shortQuantity : opt.longQuantity;
-  const polledMark = qty > 0 ? opt.marketValue / (qty * 100) : 0;
-  const markPx = liveMark != null ? (isShort ? -liveMark : liveMark) : polledMark;
+  const markPx = qty > 0 ? opt.marketValue / (qty * 100) : 0;
   const totalPL = opt.longOpenProfitLoss;
   // TOS-style: open P&L as a % of |current market value| of the leg.
   // Works for both long and short legs (Schwab returns shorts with negative
@@ -165,10 +163,6 @@ function getOptionCellVal(col: ColumnKey, opt: Position, liveMark?: number | nul
   switch (col) {
     case "mark": return { text: `$${markPx.toFixed(2)}`, color: C.text };
     case "last": {
-      if (liveLast != null) {
-        const signed = isShort ? -liveLast : liveLast;
-        return { text: `$${signed.toFixed(2)}`, color: C.text };
-      }
       if (qty === 0) return DASH;
       const dayChg = opt.currentDayProfitLoss / (qty * 100);
       return { text: `$${(markPx - dayChg).toFixed(2)}`, color: C.text };
@@ -525,12 +519,7 @@ function OptionRow({
   const qty = isShort ? opt.shortQuantity : opt.longQuantity;
   const optKey = `${underlying}:${opt.cusip}`;
   const isSelected = selectedKeys.has(optKey);
-  const liveTick = useOptionTick(opt.symbol);
-  const liveMark = liveTick?.mark ?? null;
-  const liveLast = liveTick?.last ?? null;
-  const markPx = liveMark != null
-    ? (isShort ? -liveMark : liveMark)
-    : (qty > 0 ? opt.marketValue / (qty * 100) : 0);
+  const markPx = qty > 0 ? opt.marketValue / (qty * 100) : 0;
 
   const tickDir = useValueFlash(markPx);
   const markColor = tickDir === "up" ? C.green : tickDir === "down" ? C.red : C.text;
@@ -562,7 +551,7 @@ function OptionRow({
         </div>
       </td>
       {renderCells(visibleColumns, col => {
-        const v = getOptionCellVal(col, opt, liveMark, liveLast);
+        const v = getOptionCellVal(col, opt);
         if (col === "mark") return { ...v, color: markColor };
         return v;
       }, cellStyle, { mark: { style: { transition: "color 0.15s" } } })}
@@ -694,57 +683,11 @@ function PositionTableRow({
 
   const eqTickDir = useTickFlash(group.underlying);
   const markColor = eqTickDir === "up" ? C.green : eqTickDir === "down" ? C.red : C.text;
-  // Schwab "Last" = field 29 (REGULAR_MARKET_LAST_PRICE) = today's last
-  // regular-session trade. Field 3 (LAST_PRICE) includes after-hours and
-  // field 12 (CLOSE_PRICE) is yesterday's close — neither matches Schwab UI.
+  // For Mark we want the truly current trade price including pre/post-market
+  // (Schwab field 3 LAST_PRICE). regularLast (field 29) is yesterday's close
+  // outside regular hours, which is why options-only rows appeared frozen.
   const streamQuote = useTerminalStore(s => s.streamPrices[group.underlying.toUpperCase()] as { last?: number; regularLast?: number } | undefined);
-  const streamPrice = streamQuote?.regularLast ?? streamQuote?.last ?? null;
-
-  // Live option ticks for this group's legs. Used to compute a fresh group
-  // mark for options-only positions (where the underlying streamPrice does
-  // NOT reflect the option's value) and to drive per-leg marks.
-  const optionTicksAll = useOptionsStreamStore(s => s.ticks);
-  const groupOptionMark = (() => {
-    if (!hasOptions) return null;
-    let sum = 0;
-    let count = 0;
-    for (const o of group.options) {
-      const t = optionTicksAll[o.symbol];
-      const m = t?.mark;
-      if (m == null) continue;
-      const isShortLeg = o.shortQuantity > 0;
-      sum += isShortLeg ? -m : m;
-      count++;
-    }
-    return count === group.options.length && count > 0 ? sum : null;
-  })();
-  const groupOptionLast = (() => {
-    if (!hasOptions) return null;
-    let sum = 0;
-    let count = 0;
-    for (const o of group.options) {
-      const t = optionTicksAll[o.symbol];
-      const l = t?.last;
-      if (l == null) continue;
-      const isShortLeg = o.shortQuantity > 0;
-      sum += isShortLeg ? -l : l;
-      count++;
-    }
-    return count === group.options.length && count > 0 ? sum : null;
-  })();
-  // Polled fallback derived from Schwab account snapshot — used for options-only
-  // groups when live ticks are not (yet) available, so we never display the
-  // underlying stock's price as if it were the option mark.
-  const polledOptionMark = (() => {
-    if (!hasOptions) return null;
-    let sum = 0;
-    for (const o of group.options) {
-      const q = o.longQuantity || o.shortQuantity;
-      if (q <= 0) continue;
-      sum += o.marketValue / (q * 100);
-    }
-    return sum;
-  })();
+  const streamPrice = streamQuote?.last ?? streamQuote?.regularLast ?? null;
 
   const rowBg = "transparent";
   const stickyBg = "#000";
@@ -759,24 +702,11 @@ function PositionTableRow({
     switch (col) {
       case "mark": {
         let markPx: number | null = null;
-        if (eq) {
-          const eqQty = eq.longQuantity || eq.shortQuantity;
-          if (eqQty > 0) markPx = eq.marketValue / eqQty;
-          if (markPx == null && streamPrice != null) markPx = streamPrice;
-        } else {
-          // Options-only: never fall back to the underlying stock price.
-          // Prefer live option marks; otherwise use the polled per-leg
-          // marketValue derivation from the Schwab account snapshot.
-          markPx = groupOptionMark != null ? groupOptionMark : polledOptionMark;
-        }
+        if (eq) { const eqQty = eq.longQuantity || eq.shortQuantity; if (eqQty > 0) markPx = eq.marketValue / eqQty; }
+        if (markPx == null && streamPrice != null) markPx = streamPrice;
         return { text: markPx != null ? `$${markPx.toFixed(2)}` : "\u2014", color: markPx != null ? markColor : C.dim };
       }
       case "last": {
-        if (!eq) {
-          // Options-only: show the option's last trade, not the underlying stock's.
-          if (groupOptionLast != null) return { text: `$${groupOptionLast.toFixed(2)}`, color: C.text };
-          return DASH;
-        }
         if (streamPrice != null) return { text: `$${streamPrice.toFixed(2)}`, color: C.text };
         return DASH;
       }
