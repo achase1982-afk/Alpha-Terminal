@@ -151,7 +151,7 @@ export interface TickerProfile {
   beta: number;
   adjustedDelta: number;
   sizeMultiplierOverride: number;
-  ivr: number;
+  ivr: number | null;
   putSkew: number;
   measurements: {
     avgAtmSpreadPct: number;
@@ -237,7 +237,12 @@ export function classifyTicker(
     3: "Tier 3 (Low Liquidity)",
   };
 
-  const ivr = computeIVR(allContracts, underlyingPrice, sortedExps);
+  // IVR is intentionally NOT computed from the live chain anymore. The single
+  // source of truth is equity_daily.ivr (populated by the daily snapshot job
+  // and the historical IV backfill, computed from BSM IV with a 252-day rank
+  // window). Callers must inject the stored IVR via getStoredIVR() before
+  // consuming this profile. See ivNormalize.getStoredIVR.
+  const ivr: number | null = null;
   const putSkew = computePutSkew(calls, puts, underlyingPrice, sortedExps[0] ?? "");
 
   return {
@@ -257,45 +262,23 @@ export function classifyTicker(
   };
 }
 
+/**
+ * @deprecated The inline chain-derived IVR was removed because it produced
+ * meaningless values (a single-day cross-section min/max of strike-level IVs,
+ * not a true 252-day rank). Use ivNormalize.getStoredIVR(symbol) instead,
+ * which reads equity_daily.ivr (BSM-computed, 252-day window).
+ *
+ * Kept as a runtime guard: if anything still tries to call computeIVR it will
+ * throw immediately so the broken behavior cannot silently return 50.
+ */
 export function computeIVR(
-  contracts: OptionContract[],
-  underlyingPrice: number,
-  frontExps: string[],
+  _contracts: OptionContract[],
+  _underlyingPrice: number,
+  _frontExps: string[],
 ): number {
-  const withIV = contracts.filter((c) => typeof c.iv === "number" && c.iv > 0);
-  if (withIV.length < 3) return 50;
-
-  let minIV = Infinity;
-  let maxIV = -Infinity;
-  for (const c of withIV) {
-    const iv = c.iv!;
-    if (iv < minIV) minIV = iv;
-    if (iv > maxIV) maxIV = iv;
-  }
-
-  if (maxIV <= minIV) return 50;
-
-  const atmRange = underlyingPrice * 0.03;
-  const frontExp = frontExps[0] ?? "";
-  const atmFront = withIV.filter(
-    (c) =>
-      c.expiration === frontExp &&
-      Math.abs(c.strike - underlyingPrice) <= atmRange,
+  throw new Error(
+    "computeIVR removed: read equity_daily.ivr via getStoredIVR(symbol) from ivNormalize.ts",
   );
-
-  let currentIV: number;
-  if (atmFront.length > 0) {
-    atmFront.sort((a, b) => Math.abs(a.strike - underlyingPrice) - Math.abs(b.strike - underlyingPrice));
-    currentIV = atmFront[0].iv!;
-  } else {
-    const allAtm = withIV
-      .filter((c) => Math.abs(c.strike - underlyingPrice) <= underlyingPrice * 0.05)
-      .sort((a, b) => Math.abs(a.strike - underlyingPrice) - Math.abs(b.strike - underlyingPrice));
-    currentIV = allAtm.length > 0 ? allAtm[0].iv! : (minIV + maxIV) / 2;
-  }
-
-  const ivr = ((currentIV - minIV) / (maxIV - minIV)) * 100;
-  return r2(Math.max(0, Math.min(100, ivr)));
 }
 
 export function computePutSkew(

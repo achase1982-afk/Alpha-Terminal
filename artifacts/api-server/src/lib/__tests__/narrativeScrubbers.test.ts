@@ -172,6 +172,78 @@ describe("scrubAll", () => {
   });
 });
 
+// Step 5 contract: header IVR (sourced from equity_daily.ivr via getStoredIVR)
+// MUST equal narrative IVR after scrubbing. The pipeline is:
+//   header IVR  ──┐
+//                 ├──> canonical.ivr passed to scrubAll(narrativeText, canonical)
+//   AI narrative ─┘                                                          │
+//                                                                            ▼
+//                                                          scrubbed narrative IVR
+// Any AI-cited number gets replaced with canonical, so the post-scrub
+// narrative IVR is GUARANTEED to equal canonical, which equals header.
+// These tests pin that contract so a future refactor cannot regress it.
+describe("Step 5 contract: header IVR == scrubbed narrative IVR", () => {
+  // Realistic SPY case from prod (2026-04-21): header IVR = 42.
+  it("SPY-like card: header 42 forces narrative '78' to '42'", () => {
+    const headerIvr = 42; // simulates getStoredIVR('SPY').ivr
+    const aiNarrative =
+      "With IVR 78 the premium is rich, so the credit spread carries an edge. " +
+      "Even at IVR 0.78 we still want the short strike inside one-sigma.";
+    const r = scrubAll(aiNarrative, { ivr: headerIvr, pcRatio: null });
+    // Post-scrub narrative cannot mention any IVR other than the header value.
+    expect(r.text).not.toMatch(/IVR\s+0?\.?78/);
+    expect(r.text).toMatch(/IVR\s+42/);
+    // And the count of canonical citations equals the count of replaced ones.
+    expect(r.replacements.filter((x) => x.field === "IVR").length).toBe(2);
+  });
+
+  it("AAPL-like card: header 75 forces every cited IVR to 75", () => {
+    const headerIvr = 75;
+    const aiNarrative =
+      "{{IVR}} is the carry tax — at IVR 30 we'd debit, but at IVR 92 the premium is too rich.";
+    const r = scrubAll(aiNarrative, { ivr: headerIvr, pcRatio: null });
+    // Placeholder gets the bare number.
+    expect(r.text.startsWith("75 is the carry tax")).toBe(true);
+    // Both inline citations are canonical.
+    expect(r.text).not.toMatch(/IVR\s+30/);
+    expect(r.text).not.toMatch(/IVR\s+92/);
+    const matches = r.text.match(/IVR\s+75/g) ?? [];
+    expect(matches.length).toBe(2);
+  });
+
+  it("when header IVR is null (no DB row), scrubAll leaves narrative IVR untouched", () => {
+    // The frontend hides the IVR field when header is null; the scrubber
+    // intentionally cannot substitute a value it doesn't have. This is the
+    // explicit contract — no silent fallback to 50 anywhere in the pipeline.
+    const aiNarrative = "IVR 60 means premium is moderate.";
+    const r = scrubAll(aiNarrative, { ivr: null, pcRatio: null });
+    expect(r.text).toContain("IVR 60");
+    expect(r.replacements.filter((x) => x.field === "IVR").length).toBe(0);
+  });
+
+  it("the canonical-IVR contract round-trips: header → canonical → scrubbed narrative", () => {
+    // Loop covers the 6 production tickers with their actual prod IVR values
+    // as of 2026-04-21 (post-backfill).
+    const cards = [
+      { ticker: "SPY", headerIvr: 42 },
+      { ticker: "QQQ", headerIvr: 47 },
+      { ticker: "IWM", headerIvr: 32 },
+      { ticker: "AAPL", headerIvr: 75 },
+      { ticker: "MU", headerIvr: 71 },
+      { ticker: "TSLA", headerIvr: 100 },
+    ];
+    for (const { ticker, headerIvr } of cards) {
+      const aiNarrative = `For ${ticker} the AI cited IVR 13 and IVR 0.88, both wrong.`;
+      const r = scrubAll(aiNarrative, { ivr: headerIvr, pcRatio: null });
+      // The post-scrub text contains ONLY the header IVR.
+      const allIvrMentions = r.text.match(/IVR\s+\d+(?:\.\d+)?/g) ?? [];
+      for (const m of allIvrMentions) {
+        expect(m).toBe(`IVR ${headerIvr}`);
+      }
+    }
+  });
+});
+
 describe("formatters", () => {
   it("formatIvr rounds to integer", () => {
     expect(formatIvr(25.7)).toBe("26");

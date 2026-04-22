@@ -11,7 +11,8 @@ import { getPolygonFlowHighlights, type PolygonFlowHighlights } from "./polygonF
 import { checkEventConflicts, getUpcomingEvents } from "./calendarEventChecker.js";
 import { getNextEarningsDate } from "./earningsService.js";
 import { evaluateCatalyst, deriveTradeDirection, type CatalystEvaluation } from "./catalystEvaluator.js";
-import { computeIVR, type OptionContract } from "./optionsStrategist.js";
+import { type OptionContract } from "./optionsStrategist.js";
+import { getStoredIVR } from "./ivNormalize.js";
 import { clampProfitTargetToMaxPayout } from "./exitTargetMath.js";
 import { scrubAll } from "./narrativeScrubbers.js";
 import { getAiLabStrategistConfig } from "./aiLabConfig.js";
@@ -441,9 +442,19 @@ export async function analyzeTickerV2(
       null, { dataSource });
   }
 
-  const liveIvr = computeIvrFromChain(chain, tickerData.price);
-  tickerData.ivr = liveIvr;
-  logger.info({ ticker, liveIvr }, "StrategistV2: live IVR computed from options chain");
+  // IVR comes from equity_daily.ivr (EOD, BSM, 252-day rank). No live-chain
+  // fallback — if no row exists, narrative + header both omit IVR rather than
+  // showing a fabricated number.
+  const storedIvr = await getStoredIVR(ticker);
+  tickerData.ivr = storedIvr?.ivr ?? null;
+  (tickerData as TickerData & { ivrAsOfDate?: string | null }).ivrAsOfDate =
+    storedIvr?.asOfDate ?? null;
+  logger.info(
+    { ticker, ivr: tickerData.ivr, ivrAsOfDate: storedIvr?.asOfDate ?? null },
+    storedIvr
+      ? "StrategistV2: IVR loaded from equity_daily.ivr (EOD)"
+      : "StrategistV2: no stored IVR for ticker — IVR will be omitted from narrative and header",
+  );
 
   const catalystInfo = deriveCatalyst(tickerData);
   const ioScore = await computeIOScore(ticker, catalystInfo, settings);
@@ -2018,25 +2029,9 @@ function flattenSchwabMaps(callMap: Record<string, any>, putMap: Record<string, 
   return result;
 }
 
-function computeIvrFromChain(chain: ChainContract[], underlyingPrice: number): number {
-  const contracts: OptionContract[] = chain.map((c) => ({
-    strike: c.strike,
-    expiration: c.expiration,
-    bid: c.bid,
-    ask: c.ask,
-    volume: c.volume,
-    openInterest: c.openInterest,
-    iv: c.impliedVolatility ?? 0,
-    delta: c.delta,
-    dte: c.dte,
-  }));
-
-  const exps = [...new Set(contracts.map(c => c.expiration))]
-    .filter(e => e && new Date(e).getTime() > Date.now())
-    .sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
-
-  return computeIVR(contracts, underlyingPrice, exps);
-}
+// computeIvrFromChain removed — IVR is now read from equity_daily.ivr via
+// getStoredIVR(). The chain-derived version produced meaningless values
+// (single-day min/max of strike-level IVs, not a true 252-day rank).
 
 function _legacyFlattenSchwabChain_unused(data: any): ChainContract[] {
   const result: ChainContract[] = [];

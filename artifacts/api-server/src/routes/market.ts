@@ -10,7 +10,8 @@ import { getIBCachedQuote, subscribeQuoteForSymbol, isIBConnected } from "../lib
 import { logFailure } from "../lib/telemetry.js";
 import { getNextEarningsDate } from "../lib/earningsService.js";
 import { emitTelemetry } from "../lib/telemetryStore.js";
-import { computeIVR, type OptionContract } from "../lib/optionsStrategist.js";
+import { type OptionContract } from "../lib/optionsStrategist.js";
+import { getStoredIVR } from "../lib/ivNormalize.js";
 import { fetchPolygonChain } from "../lib/polygonChain.js";
 
 const router: IRouter = Router();
@@ -1137,12 +1138,25 @@ router.get("/ticker-stats", async (req, res) => {
     return res.json({ symbol: "", pcRatio: null, ivr: null, mmm: null });
   }
 
-  const result: { symbol: string; pcRatio: number | null; ivr: number | null; mmm: number | null } = {
+  const result: { symbol: string; pcRatio: number | null; ivr: number | null; ivrAsOfDate: string | null; mmm: number | null } = {
     symbol,
     pcRatio: null,
     ivr: null,
+    ivrAsOfDate: null,
     mmm: null,
   };
+
+  // IVR comes from equity_daily.ivr (EOD, BSM, 252-day rank). No live-chain
+  // fallback. If no row exists, ivr stays null and the frontend hides the field.
+  try {
+    const stored = await getStoredIVR(symbol);
+    if (stored) {
+      result.ivr = stored.ivr;
+      result.ivrAsOfDate = stored.asOfDate;
+    }
+  } catch (err) {
+    req.log.warn({ symbol, err }, "ticker-stats: getStoredIVR failed");
+  }
 
   if (accessToken) {
     let cached = chainCache.get(symbol);
@@ -1172,7 +1186,9 @@ router.get("/ticker-stats", async (req, res) => {
           if (straddle > 0) result.mmm = Math.round(straddle * 100) / 100;
         }
       }
-      result.ivr = computeIVR(allContracts, price, exps);
+      // IVR is set above from equity_daily.ivr; do NOT recompute from chain.
+      void allContracts;
+      void exps;
 
       let totalPutVol = 0;
       let totalCallVol = 0;

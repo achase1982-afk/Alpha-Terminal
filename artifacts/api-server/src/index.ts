@@ -12,7 +12,7 @@ import { initDeltaEngine } from "./lib/deltaEngine";
 import { runDailyScreenRefresh } from "./routes/scanner";
 import { initAiLabOrchestrator } from "./lib/aiLabOrchestrator";
 import { startUniverseRebuildSchedule } from "./lib/universeBuilder";
-import { updateEquityDailyFromGroupedBars, runFullSnapshot, backfillPolygonFlow } from "./lib/dailySnapshot";
+import { updateEquityDailyFromGroupedBars, runFullSnapshot, backfillPolygonFlow, sweepStaleSnapshots } from "./lib/dailySnapshot";
 import { LIQUID_CORE_SYMBOLS } from "./data/liquidCore130";
 import { db, equityDailyTable, snapshotCollectionLogTable, flowDailyAggregatesTable } from "@workspace/db";
 import { inArray, desc, sql, eq } from "drizzle-orm";
@@ -58,6 +58,13 @@ async function boot() {
   startExitMonitor();
   startTelemetryCleanup();
   initDeltaEngine();
+
+  // Recover any snapshot rows orphaned by a prior crash/SIGKILL. Without
+  // this a stale 'running' row blocks future runs and silently re-opens
+  // IV history gaps. See dailySnapshot.sweepStaleSnapshots for details.
+  sweepStaleSnapshots().catch((e) => {
+    logger.warn({ err: e }, "sweepStaleSnapshots: startup sweep failed");
+  });
 
   function scheduleDailyScreenRefresh() {
     const now = new Date();

@@ -22,6 +22,33 @@ export function clampIVR(value: number | null | undefined): number | null {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
+/**
+ * Read the most recent stored IVR for a symbol from equity_daily.ivr.
+ * Returns { ivr, asOfDate } from the latest row that has a non-null ivr,
+ * or null if no such row exists. This is the SINGLE SOURCE OF TRUTH for
+ * IVR across the entire app — header, narrative, AI prompt, scanner.
+ * No fallback to any chain-derived computation. If null is returned the
+ * caller MUST hide the field, not substitute a placeholder like 50.
+ */
+export async function getStoredIVR(
+  symbol: string,
+): Promise<{ ivr: number; asOfDate: string } | null> {
+  const symU = symbol.toUpperCase().trim();
+  if (!symU) return null;
+  const rows = await db
+    .select({ ivr: equityDailyTable.ivr, date: equityDailyTable.date })
+    .from(equityDailyTable)
+    .where(and(
+      eq(equityDailyTable.symbol, symU),
+      sql`${equityDailyTable.ivr} IS NOT NULL`,
+    ))
+    .orderBy(desc(equityDailyTable.date))
+    .limit(1);
+  const row = rows[0];
+  if (!row || row.ivr == null) return null;
+  return { ivr: row.ivr, asOfDate: row.date };
+}
+
 export async function computeIVRForSymbol(
   sym: string,
   date: string,

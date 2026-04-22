@@ -774,6 +774,7 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
   const [fetchingTicker, setFetchingTicker] = useState(false);
   const [tickerPcRatio, setTickerPcRatio] = useState<number | null>(null);
   const [tickerIvr, setTickerIvr] = useState<number | null>(null);
+  const [tickerIvrAsOfDate, setTickerIvrAsOfDate] = useState<string | null>(null);
   const [tickerMmm, setTickerMmm] = useState<number | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pcDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -825,8 +826,8 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
 
   useEffect(() => {
     const ticker = (inputVal.trim().toUpperCase()) || symbol;
-    if (!ticker) { setTickerPcRatio(null); setTickerIvr(null); setTickerMmm(null); return; }
-    setTickerPcRatio(null); setTickerIvr(null); setTickerMmm(null);
+    if (!ticker) { setTickerPcRatio(null); setTickerIvr(null); setTickerIvrAsOfDate(null); setTickerMmm(null); return; }
+    setTickerPcRatio(null); setTickerIvr(null); setTickerIvrAsOfDate(null); setTickerMmm(null);
     if (pcDebounceRef.current) clearTimeout(pcDebounceRef.current);
     let cancelled = false;
     pcDebounceRef.current = setTimeout(async () => {
@@ -840,6 +841,7 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
         if (cancelled) return;
         if (data?.pcRatio != null) setTickerPcRatio(data.pcRatio);
         if (data?.ivr != null) setTickerIvr(data.ivr);
+        if (data?.ivrAsOfDate != null) setTickerIvrAsOfDate(data.ivrAsOfDate);
         if (data?.mmm != null) setTickerMmm(data.mmm);
       } catch { /* ignore */ }
     }, 300);
@@ -908,12 +910,17 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
             <span className="font-mono text-sm text-white/40 uppercase tracking-wider">P/C</span>
             <span className="font-mono text-sm text-white/70 tabular-nums">{pcRatio != null ? pcRatio.toFixed(2) : "—"}</span>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-sm text-white/40 uppercase tracking-wider">IVR</span>
-            <span className="font-mono text-sm tabular-nums" style={{ color: tickerIvr != null ? (tickerIvr > 50 ? "#FFB800" : tickerIvr < 30 ? "#00d166" : "#a1a1aa") : "#a1a1aa" }}>
-              {tickerIvr != null ? `${tickerIvr}%` : "—"}
-            </span>
-          </div>
+          {tickerIvr != null && (
+            <div
+              className="flex items-center gap-2"
+              title={tickerIvrAsOfDate ? `IV Rank from end-of-day data, as of ${tickerIvrAsOfDate} (Black-Scholes IV, 252-day window)` : "IV Rank from end-of-day data (Black-Scholes IV, 252-day window)"}
+            >
+              <span className="font-mono text-sm text-white/40 uppercase tracking-wider">IVR (EOD)</span>
+              <span className="font-mono text-sm tabular-nums" style={{ color: tickerIvr > 50 ? "#FFB800" : tickerIvr < 30 ? "#00d166" : "#a1a1aa" }}>
+                {`${tickerIvr}%`}
+              </span>
+            </div>
+          )}
           <div className="flex items-center gap-2">
             <span className="font-mono text-sm text-white/40 uppercase tracking-wider">MMM</span>
             <span className="font-mono text-sm text-white/70 tabular-nums">

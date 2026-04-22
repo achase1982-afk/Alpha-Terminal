@@ -918,6 +918,43 @@ export async function populateReferenceData(symbols: string[]): Promise<number> 
   return count;
 }
 
+// Hard upper bound on a single snapshot run. The 2026-04-17 stuck row hung
+// for hours with status='running', errorMsg=NULL — meaning runFullSnapshot
+// was invoked but neither finished nor threw. With this wrapper, a hung
+// inner await will time out, the snapshot row will be marked 'failed', and
+// the next IVR recompute won't see a phantom in-flight row.
+const SNAPSHOT_HARD_TIMEOUT_MS = 45 * 60 * 1000;
+
+// Any snapshot row still 'running' after this many hours since startedAt is
+// considered orphaned (process killed mid-run, exit handler never fired).
+// Startup sweep marks them 'failed' so the next attempt can re-run.
+const SNAPSHOT_STALE_HOURS = 6;
+
+/**
+ * Mark any snapshot_collection_log rows still in 'running' state past the
+ * staleness threshold as 'failed'. Called once at server startup so a
+ * SIGKILL during a snapshot can't leave a phantom 'running' row that blocks
+ * future runs or hides IV gaps.
+ */
+export async function sweepStaleSnapshots(): Promise<{ swept: number }> {
+  const result = await db.execute(sql`
+    UPDATE snapshot_collection_log
+    SET status = 'failed',
+        error_msg = 'auto-recovered: stale running row (process likely killed mid-run)',
+        completed_at = now()
+    WHERE status = 'running'
+      AND started_at < (now() - (${SNAPSHOT_STALE_HOURS}::int * interval '1 hour'))
+  `);
+  const swept = (result as { rowCount?: number }).rowCount ?? 0;
+  if (swept > 0) {
+    logger.warn({ swept, staleHours: SNAPSHOT_STALE_HOURS }, "sweepStaleSnapshots: recovered orphaned 'running' rows");
+    void logFailure("DATABASE", "WARN", `Recovered ${swept} stale snapshot(s)`, { swept, staleHours: SNAPSHOT_STALE_HOURS });
+  } else {
+    logger.info("sweepStaleSnapshots: no orphaned snapshots to recover");
+  }
+  return { swept };
+}
+
 export async function runFullSnapshot(
   symbols: string[],
   token: string,
@@ -932,54 +969,63 @@ export async function runFullSnapshot(
       set: { status: sql`'running'`, startedAt: sql`now()`, errorMsg: sql`null` },
     });
 
-  // TODO: Prod snapshot hung on 2026-04-17 in 'running' state, never completed.
-  // Investigate cron/timeout/exception handling after IVR backfill ships.
-  // Symptoms: snapshot_collection_log row shows status='running', completedAt=NULL,
-  // errorMsg=NULL — meaning runFullSnapshot was invoked but neither finished nor
-  // threw to the catch handler. Likely causes to investigate:
-  //   1. An inner await hung indefinitely (Schwab/Polygon socket without timeout)
-  //   2. Process was SIGKILLed mid-run before catch could mark 'failed'
-  //   3. Uncaught promise rejection in a fire-and-forget branch killed the process
-  // Mitigations to add: (a) wrap runFullSnapshot in an outer Promise.race with a
-  // hard timeout (e.g. 45 min) that updates status='failed', (b) add a startup
-  // sweep that marks any 'running' rows older than 6 hours as 'failed' with
-  // errorMsg='auto-recovered: stale running row', (c) wire process-exit handler
-  // to flush a 'failed' status before exit. Without these, IV history gaps will
-  // silently re-open in prod after this backfill ships.
+  // Wrap the entire run in a hard timeout race. Without this, an inner await
+  // that hangs (Schwab/Polygon socket without its own timeout, etc.) leaves
+  // the row stuck in 'running' forever. With it, after 45 min the row gets
+  // marked 'failed' and the next scheduled run can attempt again.
+  let timer: NodeJS.Timeout | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`runFullSnapshot timed out after ${SNAPSHOT_HARD_TIMEOUT_MS / 60000} min`)),
+      SNAPSHOT_HARD_TIMEOUT_MS,
+    );
+  });
+
   try {
-    await populateReferenceData(symbols);
+    const result = await Promise.race([
+      (async () => {
+        await populateReferenceData(symbols);
 
-    const equityRows = await collectEquitySnapshots(symbols, token, date);
+        const equityRows = await collectEquitySnapshots(symbols, token, date);
 
-    const chainRows = await collectOptionsChainSnapshots(symbols, token, date);
+        const chainRows = await collectOptionsChainSnapshots(symbols, token, date);
 
-    const { strikeRows: flowRows } = await collectPolygonFlowFromAPI(symbols, date);
+        const { strikeRows: flowRows } = await collectPolygonFlowFromAPI(symbols, date);
 
-    const aggregateRows = await computeFlowAggregates(symbols, date);
+        const aggregateRows = await computeFlowAggregates(symbols, date);
 
-    // Include sector ETFs in the IV/IVR pass — they get equity rows from collectEquitySnapshots
-    // but were previously excluded from IVR computation.
-    const ivSymbols = [...new Set([...symbols, ...SECTOR_ETF_SYMBOLS])];
-    const ivRows = await computeIVFromFlow(ivSymbols, date);
+        // Include sector ETFs in the IV/IVR pass — they get equity rows from collectEquitySnapshots
+        // but were previously excluded from IVR computation.
+        const ivSymbols = [...new Set([...symbols, ...SECTOR_ETF_SYMBOLS])];
+        const ivRows = await computeIVFromFlow(ivSymbols, date);
+        void ivRows;
+
+        return { equityRows, chainRows, flowRows, aggregateRows };
+      })(),
+      timeoutPromise,
+    ]);
+
+    if (timer) clearTimeout(timer);
 
     await db.update(snapshotCollectionLogTable)
       .set({
         status: "completed",
-        equityRows,
-        chainRows,
-        flowRows,
-        aggregateRows,
+        equityRows: result.equityRows,
+        chainRows: result.chainRows,
+        flowRows: result.flowRows,
+        aggregateRows: result.aggregateRows,
         completedAt: new Date(),
       })
       .where(eq(snapshotCollectionLogTable.date, date));
 
-    void logFailure("POLYGON_API", "INFO", "Full snapshot complete", { equityRows, chainRows, flowRows, aggregateRows, date });
-    logger.info({ equityRows, chainRows, flowRows, aggregateRows, date }, "Snapshot: full collection complete");
-    return { equityRows, chainRows, flowRows, aggregateRows };
+    void logFailure("POLYGON_API", "INFO", "Full snapshot complete", { ...result, date });
+    logger.info({ ...result, date }, "Snapshot: full collection complete");
+    return result;
   } catch (e) {
+    if (timer) clearTimeout(timer);
     const msg = (e as Error).message;
     await db.update(snapshotCollectionLogTable)
-      .set({ status: "failed", errorMsg: msg })
+      .set({ status: "failed", errorMsg: msg, completedAt: new Date() })
       .where(eq(snapshotCollectionLogTable.date, date));
     void logFailure("POLYGON_API", "ERROR", "Full snapshot failed", { error: msg, date });
     logger.error({ error: msg, date }, "Snapshot: full collection failed");

@@ -21,7 +21,8 @@ import { getSnapshot, addSymbols as addSchwabSymbols, addFuturesSymbols as addSc
 import { getIBSnapshot, getIBCachedQuote, registerPermanentSymbols } from "../lib/ibStreamer.js";
 import { getBestAccessToken, getTokens } from "../lib/tokenStore.js";
 import { getSyntheticDxyPrevClose } from "../lib/syntheticDxy.js";
-import { selectStrategies, selectStrategiesByRegime, classifyRegime, checkOverrideConflict, classifyTicker, computeBeta, applyBetaToProfile, computeExpectedMove, computeIVR, STRATEGIST_SYSTEM_PROMPT, type OptionContract, type StrategyPayload, type RegimeClassification, type TickerProfile, type DailyCandle, type ConvictionParams } from "../lib/optionsStrategist.js";
+import { selectStrategies, selectStrategiesByRegime, classifyRegime, checkOverrideConflict, classifyTicker, computeBeta, applyBetaToProfile, computeExpectedMove, STRATEGIST_SYSTEM_PROMPT, type OptionContract, type StrategyPayload, type RegimeClassification, type TickerProfile, type DailyCandle, type ConvictionParams } from "../lib/optionsStrategist.js";
+import { getStoredIVR } from "../lib/ivNormalize.js";
 import { runPreTradeChecks, type PreTradeInput, type PreTradeResult } from "../lib/preTradeRiskEngine.js";
 import { evaluateRegimeShock, type ShockDetectorOutput } from "../lib/regimeShockDetector.js";
 import { getDeltaHealth, getSnapshotsForAI, triggerManualSnapshot, triggerEventSnapshot, type DeltaHealthPayload } from "../lib/deltaEngine.js";
@@ -2036,9 +2037,10 @@ async function buildTickerProfile(
 ): Promise<TickerProfile> {
   let profile = classifyTicker(calls, puts, underlyingPrice);
 
-  const [tickerCandles, spyCandles] = await Promise.all([
+  const [tickerCandles, spyCandles, storedIvr] = await Promise.all([
     fetchDailyCandles(symbol.toUpperCase().trim(), accessToken),
     fetchDailyCandles("SPY", accessToken),
+    getStoredIVR(symbol),
   ]);
 
   if (tickerCandles.length >= 6 && spyCandles.length >= 6) {
@@ -2046,6 +2048,16 @@ async function buildTickerProfile(
     profile = applyBetaToProfile(profile, beta);
   }
 
+  // Inject stored IVR (equity_daily.ivr, EOD, BSM, 252-day rank). No fallback.
+  profile = { ...profile, ivr: storedIvr?.ivr ?? null };
+  if (logger?.info) {
+    logger.info(
+      { symbol, ivr: profile.ivr, ivrAsOfDate: storedIvr?.asOfDate ?? null },
+      storedIvr
+        ? "buildTickerProfile: IVR loaded from equity_daily.ivr (EOD)"
+        : "buildTickerProfile: no stored IVR — IVR will be null in profile",
+    );
+  }
 
   return profile;
 }
@@ -2089,7 +2101,11 @@ function buildChainAnalytics(
       pulseEdge,
       vix,
       accountSize: 25000,
-      ivr: tickerProfile.ivr,
+      // Pre-trade IVR sizing: when no stored IVR exists, fall back to the
+      // neutral 50 so position-sizing rules don't blow up. The narrative + UI
+      // still hide IVR when null; only the internal sizing math sees the
+      // neutral fallback.
+      ivr: tickerProfile.ivr ?? 50,
       putSkew: tickerProfile.putSkew,
       earningsDaysAway,
       expectedMove,
@@ -2772,8 +2788,14 @@ async function fetchScannerOptionsAnalytics(symbol: string, accessToken: string,
     const allContracts = [...calls, ...puts];
 
     if (allContracts.length > 0) {
-      const exps = [...new Set(allContracts.map(c => c.expiration))].sort();
-      result.ivr = computeIVR(allContracts, underlyingPrice, exps);
+      // IVR comes from equity_daily.ivr (EOD, BSM, 252-day rank). No fallback.
+      try {
+        const stored = await getStoredIVR(symbol);
+        result.ivr = stored?.ivr ?? null;
+      } catch (err) {
+        log.warn({ symbol, err }, "Scanner getStoredIVR failed");
+        result.ivr = null;
+      }
       result.expectedMove = computeExpectedMove(calls, puts, underlyingPrice);
 
       let callVol = 0, putVol = 0;
