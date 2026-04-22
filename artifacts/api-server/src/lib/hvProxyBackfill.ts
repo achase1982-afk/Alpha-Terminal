@@ -20,11 +20,18 @@ const BROAD_INDEX = new Set(["SPY", "QQQ", "DIA", "IWM", "VTI", "VOO"]);
 const SECTOR_ETFS = ["XLE", "XLF", "XLK", "XLU", "XLV", "XLI", "XLP", "XLY", "XLB"];
 const SECTOR_ETF_SET = new Set([...SECTOR_ETFS, "XLC", "XLRE"]);
 
+// Commodity ETFs (physical / futures-backed) realize a tighter VRP than
+// single-name equities -- closer to sector-ETF behavior than to stocks.
+const COMMODITY_ETFS = new Set(["GLD", "SLV", "USO", "UNG", "DBC"]);
+
 // Single-name VRP tiers (applied only when symbol is NOT a broad index or sector ETF).
 // High-beta names carry larger skew and earnings vol-of-vol -> wider IV-vs-HV spread.
 // Mega-cap defensives (stable cash-flow blue chips, payment networks, staples,
 // large pharma) trade with a tighter premium because realized tail risk is lower.
+// TQQQ (3x leveraged QQQ) lives in the high-beta tier because its realized
+// vol structure mirrors high-beta single names, not its underlying index.
 const HIGH_BETA = new Set([
+  "TQQQ",
   "TSLA", "NVDA", "AMD", "SMCI", "PLTR", "CRWD", "MU", "MRVL",
   "COIN", "HOOD", "RIVN", "DKNG", "ROKU", "PATH", "SNOW", "DDOG",
   "SHOP", "CRDO", "APP",
@@ -42,6 +49,7 @@ export function vrpMultiplierFor(symbol: string): number {
   const s = symbol.toUpperCase();
   if (BROAD_INDEX.has(s)) return 1.08;
   if (SECTOR_ETF_SET.has(s)) return 1.12;
+  if (COMMODITY_ETFS.has(s)) return 1.12;
   if (HIGH_BETA.has(s)) return 1.30;
   if (MEGA_CAP_DEFENSIVES.has(s)) return 1.15;
   return 1.20;
@@ -142,7 +150,9 @@ export function listHvProxyJobs(): HvProxyJob[] {
   return [...jobs.values()].sort((a, b) => b.startedAt.localeCompare(a.startedAt));
 }
 
-export function startHvProxyBackfillJob(symbols: string[], daysBack: number): HvProxyJob {
+export interface StartHvProxyOpts { skipAutoSectorEtfs?: boolean }
+
+export function startHvProxyBackfillJob(symbols: string[], daysBack: number, opts: StartHvProxyOpts = {}): HvProxyJob {
   // Atomic check-and-claim. If another job is active, return a synthetic
   // "rejected" job without registering it in the jobs map.
   if (activeJobId && jobs.get(activeJobId)?.status === "running") {
@@ -159,13 +169,16 @@ export function startHvProxyBackfillJob(symbols: string[], daysBack: number): Hv
   }
   const id = `hvproxy-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   activeJobId = id;
+  const merged = opts.skipAutoSectorEtfs
+    ? symbols.map(s => s.toUpperCase())
+    : [...symbols, ...SECTOR_ETFS].map(s => s.toUpperCase());
   const job: HvProxyJob = {
     id, status: "running", startedAt: new Date().toISOString(), completedAt: null,
-    symbolsTotal: new Set([...symbols, ...SECTOR_ETFS].map(s => s.toUpperCase())).size,
+    symbolsTotal: new Set(merged).size,
     daysBack, report: null, error: null,
   };
   jobs.set(id, job);
-  void backfillHvProxy(symbols, daysBack)
+  void backfillHvProxy(symbols, daysBack, opts)
     .then((report) => {
       job.status = "completed";
       job.report = report;
@@ -182,7 +195,7 @@ export function startHvProxyBackfillJob(symbols: string[], daysBack: number): Hv
   return job;
 }
 
-export async function backfillHvProxy(symbols: string[], daysBack: number): Promise<HvProxyReport> {
+export async function backfillHvProxy(symbols: string[], daysBack: number, opts: StartHvProxyOpts = {}): Promise<HvProxyReport> {
   const report: HvProxyReport = {
     symbolsProcessed: 0, rowsWritten: 0, rowsRejectedByFloor: 0,
     ivrRowsUpdated: 0, errors: [], daysBack,
@@ -193,7 +206,10 @@ export async function backfillHvProxy(symbols: string[], daysBack: number): Prom
     return report;
   }
 
-  const allSymbols = [...new Set([...symbols, ...SECTOR_ETFS].map(s => s.toUpperCase()))];
+  const merged = opts.skipAutoSectorEtfs
+    ? symbols.map(s => s.toUpperCase())
+    : [...symbols, ...SECTOR_ETFS].map(s => s.toUpperCase());
+  const allSymbols = [...new Set(merged)];
 
   // We need HV_WINDOW extra days of price history before the earliest target
   // date to compute the trailing realized vol on day 1.

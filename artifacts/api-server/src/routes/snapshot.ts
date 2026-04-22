@@ -309,10 +309,10 @@ router.post("/admin/recompute-ivr", async (req, res) => {
 router.post("/admin/backfill-hv-proxy", async (req, res) => {
   const auth = requireAdmin(req as never);
   if (!auth.ok) return res.status(403).json({ ok: false, error: auth.error });
-  const { symbols, daysBack } = (req.body ?? {}) as { symbols?: string[]; daysBack?: number };
+  const { symbols, daysBack, skipAutoSectorEtfs } = (req.body ?? {}) as { symbols?: string[]; daysBack?: number; skipAutoSectorEtfs?: boolean };
   const syms = (symbols && symbols.length > 0) ? symbols : [...LIQUID_CORE_SYMBOLS];
   const days = (typeof daysBack === "number" && daysBack > 0 && daysBack <= 730) ? daysBack : 252;
-  const job = startHvProxyBackfillJob(syms, days);
+  const job = startHvProxyBackfillJob(syms, days, { skipAutoSectorEtfs: skipAutoSectorEtfs === true });
   res.json({ ok: true, started: true, job });
 });
 
