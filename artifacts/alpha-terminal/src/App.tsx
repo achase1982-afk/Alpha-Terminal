@@ -14,6 +14,7 @@ import PushNotificationBanner from "@/components/PushNotificationBanner";
 import { registerServiceWorker } from "@/lib/pushNotifications";
 import OrderAlertWatcher from "@/components/OrderAlertWatcher";
 import SchwabSessionExpiredDialog from "@/components/SchwabSessionExpiredDialog";
+import { resumeAllRunningPollers } from "@/lib/strategistPoller";
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -144,6 +145,26 @@ function InactivityWarning() {
   );
 }
 
+function GlobalStrategistPollerResumer() {
+  useEffect(() => {
+    resumeAllRunningPollers();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        resumeAllRunningPollers();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    window.addEventListener("pageshow", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+      window.removeEventListener("pageshow", onVisible);
+    };
+  }, []);
+  return null;
+}
+
 function Router() {
   return (
     <Switch>
@@ -165,6 +186,7 @@ function App() {
           <ClerkTokenBridge />
           <InactivityWarning />
           <PendingSessionLoader />
+          <GlobalStrategistPollerResumer />
           <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
             <Router />
           </WouterRouter>

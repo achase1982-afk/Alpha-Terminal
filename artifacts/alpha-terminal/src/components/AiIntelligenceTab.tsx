@@ -2972,6 +2972,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ ticker: upperTicker, jobId }),
+          keepalive: true,
         });
         if (!res.ok) {
           const errText = await res.text().catch(() => "Unknown error");
