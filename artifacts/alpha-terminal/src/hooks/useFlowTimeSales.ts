@@ -16,6 +16,7 @@ export interface FlowTrade {
   price: number;
   size: number;
   ts: number;
+  exchange: number;
   conditions: number[];
   aggressor: "buy" | "sell" | "neutral";
   nbbo: { bid: number; ask: number; ts: number } | null;

@@ -43,6 +43,7 @@ export interface TimeSalesEvent {
   price: number;
   size: number;
   ts: number;
+  exchange: number;
   conditions: number[];
   aggressor: "buy" | "sell" | "neutral";
   nbbo: { bid: number; ask: number; ts: number } | null;
@@ -76,6 +77,7 @@ function ensureGlobalTradeListener(): void {
       price: t.price,
       size: t.size,
       ts: t.timestamp,
+      exchange: t.exchange,
       conditions: t.conditions,
       aggressor,
       nbbo: nbbo ? { bid: nbbo.bid, ask: nbbo.ask, ts: nbbo.ts } : null,

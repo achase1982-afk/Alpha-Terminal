@@ -116,6 +116,7 @@ router.get("/timesales/:contract/recent", async (req: Request, res: Response): P
         price,
         size: Number(r["size"] ?? 0),
         ts,
+        exchange: Number(r["exchange"] ?? 0),
         conditions,
         aggressor,
         nbbo: nbbo ? { bid: nbbo.bid, ask: nbbo.ask, ts: nbbo.ts } : null,
