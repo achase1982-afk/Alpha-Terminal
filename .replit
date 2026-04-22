@@ -49,3 +49,15 @@ ADMIN_API_KEY = "0b62a0310a53057dfafeb0c3bb511a68c8fc5a5438c1d88ce8bce8345ed11a0
 
 [userenv.production]
 POLYGON_OPTIONS_WS_ENABLED = "1"
+
+[[ports]]
+localPort = 8080
+externalPort = 80
+
+[[ports]]
+localPort = 8081
+externalPort = 8081
+
+[[ports]]
+localPort = 18262
+externalPort = 3000

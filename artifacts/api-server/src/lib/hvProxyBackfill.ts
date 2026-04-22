@@ -20,10 +20,30 @@ const BROAD_INDEX = new Set(["SPY", "QQQ", "DIA", "IWM", "VTI", "VOO"]);
 const SECTOR_ETFS = ["XLE", "XLF", "XLK", "XLU", "XLV", "XLI", "XLP", "XLY", "XLB"];
 const SECTOR_ETF_SET = new Set([...SECTOR_ETFS, "XLC", "XLRE"]);
 
+// Single-name VRP tiers (applied only when symbol is NOT a broad index or sector ETF).
+// High-beta names carry larger skew and earnings vol-of-vol -> wider IV-vs-HV spread.
+// Mega-cap defensives (stable cash-flow blue chips, payment networks, staples,
+// large pharma) trade with a tighter premium because realized tail risk is lower.
+const HIGH_BETA = new Set([
+  "TSLA", "NVDA", "AMD", "SMCI", "PLTR", "CRWD", "MU", "MRVL",
+  "COIN", "HOOD", "RIVN", "DKNG", "ROKU", "PATH", "SNOW", "DDOG",
+  "SHOP", "CRDO", "APP",
+  "BA", "UAL", "DAL", "LUV",
+  "OXY", "DVN", "FANG", "MPC",
+]);
+const MEGA_CAP_DEFENSIVES = new Set([
+  "AAPL", "MSFT", "GOOGL", "GOOG",
+  "JNJ", "PFE", "MRK", "ABBV", "UNH", "AMGN", "BMY", "MDT",
+  "PG", "KO", "PEP", "WMT", "COST", "MCD",
+  "V", "MA", "HON",
+]);
+
 export function vrpMultiplierFor(symbol: string): number {
   const s = symbol.toUpperCase();
   if (BROAD_INDEX.has(s)) return 1.08;
   if (SECTOR_ETF_SET.has(s)) return 1.12;
+  if (HIGH_BETA.has(s)) return 1.30;
+  if (MEGA_CAP_DEFENSIVES.has(s)) return 1.15;
   return 1.20;
 }
 
