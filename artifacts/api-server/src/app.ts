@@ -27,7 +27,12 @@ const PUBLIC_API_PATHS = new Set<string>([
   "/snapshot/admin/backfill-iv-history",
 ]);
 
-const PUBLIC_API_PREFIXES = ["/snapshot/admin/backfill-iv-history/", "/snapshot/admin/diagnose-list-contracts"];
+const PUBLIC_API_PREFIXES = [
+  "/snapshot/admin/backfill-iv-history/",
+  "/snapshot/admin/diagnose-list-contracts",
+  "/snapshot/admin/backfill-hv-proxy",
+  "/snapshot/admin/canonical-iv-accumulate",
+];
 
 function apiRequireAuth(req: Request, res: Response, next: NextFunction) {
   // req.path is relative to the mount point ("/api"), so it starts with "/auth/...".
