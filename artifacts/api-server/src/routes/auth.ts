@@ -81,10 +81,24 @@ function basicAuth(appKey: string, appSecret: string): string {
 }
 
 function sendOAuthSuccess(_req: import("express").Request, res: import("express").Response) {
-  // Always: bare HTTP 302 back to the SPA root. No HTML page, no script,
-  // no "success" interstitial of any kind. The frontend uses same-tab
-  // navigation, so this redirect lands the user back in the app directly.
-  res.redirect(302, "/");
+  // The browser tab that lands here is almost always a Safari tab spawned by
+  // iOS when the installed PWA navigated cross-origin to schwab.com. That
+  // tab lives in Safari's storage container, NOT the PWA's, so it has no
+  // Clerk session — redirecting it to the SPA root would just show the
+  // Clerk login page and look like a sign-in loop. The Schwab tokens are
+  // already saved server-side; the PWA's existing PendingSessionLoader
+  // picks them up via /api/auth/server-tokens the moment the user switches
+  // back. So all this tab needs to do is close itself and get out of the
+  // way. window.close() only works on windows opened via script — if it
+  // fails (e.g. the tab was opened by iOS itself rather than window.open),
+  // the user is left on a blank page, which is the desired UX per product
+  // direction (no success interstitial, nothing to look at).
+  res
+    .status(200)
+    .type("html")
+    .send(
+      `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title></title><style>html,body{margin:0;padding:0;background:#0A0F16;height:100%}</style></head><body><script>try{window.close();}catch(e){}</script></body></html>`,
+    );
 }
 
 function errorPage(title: string, msg: string) {
