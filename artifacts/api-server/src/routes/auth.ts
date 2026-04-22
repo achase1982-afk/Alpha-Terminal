@@ -81,12 +81,10 @@ function basicAuth(appKey: string, appSecret: string): string {
 }
 
 function sendOAuthSuccess(_req: import("express").Request, res: import("express").Response) {
-  // Bare HTTP 302 back to the SPA root with a marker query param. The marker
-  // lets the SPA distinguish "user just came back from Schwab" from a normal
-  // cold load — important on iOS in-app browsers where Safari's tracking
-  // prevention can drop the Clerk dev session across the cross-site redirect,
-  // which would otherwise look to the user like a sign-in loop.
-  res.redirect(302, "/?schwab_linked=1");
+  // Always: bare HTTP 302 back to the SPA root. No HTML page, no script,
+  // no "success" interstitial of any kind. The frontend uses same-tab
+  // navigation, so this redirect lands the user back in the app directly.
+  res.redirect(302, "/");
 }
 
 function errorPage(title: string, msg: string) {
