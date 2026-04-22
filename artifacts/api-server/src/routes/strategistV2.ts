@@ -81,7 +81,7 @@ async function persistHistory(
 
 router.post("/analyze", async (req, res): Promise<void> => {
   try {
-    const { ticker, jobId } = req.body;
+    const { ticker, jobId, flowContext } = req.body as { ticker?: string; jobId?: string; flowContext?: string };
     if (!ticker || typeof ticker !== "string") {
       res.status(400).json({ error: "ticker is required" });
       return;
@@ -113,6 +113,7 @@ router.post("/analyze", async (req, res): Promise<void> => {
       void (async () => {
         try {
           const result = await analyzeTickerV2(upperTicker, {
+            flowContext: typeof flowContext === "string" && flowContext.length > 0 ? flowContext.slice(0, 8000) : undefined,
             onStatus: (s) => {
               entry.status = s;
             },
@@ -168,7 +169,9 @@ router.post("/analyze", async (req, res): Promise<void> => {
     }
 
     // Legacy synchronous path (no jobId): block and return result
-    const result = await analyzeTickerV2(upperTicker);
+    const result = await analyzeTickerV2(upperTicker, {
+      flowContext: typeof flowContext === "string" && flowContext.length > 0 ? flowContext.slice(0, 8000) : undefined,
+    });
     res.json(result);
   } catch (err) {
     logger.error({ err }, "StrategistV2: analyze failed");

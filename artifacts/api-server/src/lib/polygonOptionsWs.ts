@@ -64,23 +64,51 @@ export interface PolygonOptionAgg {
   endTs: number;       // e, bar end
 }
 
+export interface PolygonOptionQuote {
+  sym: string;
+  bid: number;
+  ask: number;
+  bidSize: number;
+  askSize: number;
+  bidExchange: number;
+  askExchange: number;
+  timestamp: number;   // ms epoch
+}
+
+export interface NbboSnapshot {
+  bid: number;
+  ask: number;
+  bidSize: number;
+  askSize: number;
+  ts: number;
+}
+
 type TradeHandler = (t: PolygonOptionTrade) => void;
 type AggHandler = (a: PolygonOptionAgg) => void;
+type QuoteHandler = (q: PolygonOptionQuote) => void;
 
 let ws: WebSocket | null = null;
 let connectionState: "disabled" | "disconnected" | "connecting" | "authenticating" | "connected" = "disabled";
 let connectAttemptStartedAt: number | null = null;
 
-// Ref-counted subscriptions. Map<occSymbol, refcount>. Presence in the
-// map means "we want this subscribed" — the WS-level state is synced
-// from this map on (re)auth and on mutation. refcount ≥ 1 keeps the sub
-// alive; hitting 0 removes & sends unsubscribe.
+// Ref-counted T (trade) subscriptions. Used by the bulk Unusual Flow scan
+// AND by the live time-and-sales SSE path; ref-counts keep both code paths
+// independent (one decrement won't kill a sub the other still wants).
 const subRefcounts = new Map<string, number>();
-// Track what is *currently live* on the WS so we can diff after reconnect.
 const liveSubs = new Set<string>();
+
+// Ref-counted Q (quote) subscriptions. Currently used only by the live
+// time-and-sales SSE path for NBBO-based Lee-Ready aggressor inference.
+const quoteSubRefcounts = new Map<string, number>();
+const liveQuoteSubs = new Set<string>();
+
+// Per-contract NBBO cache, updated on every Q event. Read by the trade
+// classifier to tag incoming trades with aggressor side. Cleared on close.
+const nbboCache = new Map<string, NbboSnapshot>();
 
 const tradeHandlers = new Set<TradeHandler>();
 const aggHandlers = new Set<AggHandler>();
+const quoteHandlers = new Set<QuoteHandler>();
 
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectDelay = 2000;
@@ -107,6 +135,9 @@ export function getStatus(): {
   connectionState: string;
   subscribedCount: number;
   liveCount: number;
+  quoteSubscribedCount: number;
+  quoteLiveCount: number;
+  nbboCacheSize: number;
   consecutiveAuthFailures: number;
   consecutiveAbnormalCloses: number;
 } {
@@ -115,9 +146,17 @@ export function getStatus(): {
     connectionState,
     subscribedCount: subRefcounts.size,
     liveCount: liveSubs.size,
+    quoteSubscribedCount: quoteSubRefcounts.size,
+    quoteLiveCount: liveQuoteSubs.size,
+    nbboCacheSize: nbboCache.size,
     consecutiveAuthFailures,
     consecutiveAbnormalCloses,
   };
+}
+
+/** Read the most recent NBBO snapshot for a contract, or undefined. */
+export function getNbbo(sym: string): NbboSnapshot | undefined {
+  return nbboCache.get(normalizeOccSymbol(sym));
 }
 
 // ── Handler registry ─────────────────────────────────────────────────
@@ -130,6 +169,11 @@ export function onTrade(h: TradeHandler): () => void {
 export function onAgg(h: AggHandler): () => void {
   aggHandlers.add(h);
   return () => { aggHandlers.delete(h); };
+}
+
+export function onQuote(h: QuoteHandler): () => void {
+  quoteHandlers.add(h);
+  return () => { quoteHandlers.delete(h); };
 }
 
 // ── Public API ───────────────────────────────────────────────────────
@@ -232,6 +276,84 @@ export function unsubscribeContracts(syms: string[]): void {
   }
 }
 
+/**
+ * Paired subscribe: bumps the T-channel ref count (via subscribeContracts)
+ * AND a parallel Q-channel ref count, then sends a Q.O subscribe for any
+ * newly-first quote sub. Used by the live time-and-sales SSE path so that
+ * every trade can be classified against a fresh NBBO snapshot.
+ *
+ * Channel-cap accounting: this consumes 2 slots per contract (T + Q)
+ * against Polygon's per-connection 1000-channel cap. We pre-check the
+ * COMBINED projected channel count (existing T + existing Q + newly added)
+ * up front so we never silently overrun the connection cap by enforcing T
+ * and Q caps independently. If the combined cap would be exceeded we throw
+ * BEFORE mutating any state, leaving the existing subscriptions untouched.
+ */
+export async function subscribeContractsWithQuotes(syms: string[]): Promise<void> {
+  if (!isEnabled()) throw new Error("Polygon options WS disabled");
+  if (!syms.length) return;
+  const normalized = Array.from(new Set(syms.map(normalizeOccSymbol)));
+
+  // Pre-check COMBINED T+Q channel cap. Each contract may add up to 2
+  // channels (one T, one Q) but only when its respective ref-count is
+  // currently zero. Compute the projected channel total atomically so a
+  // failure here cannot leave T mutated and Q rolled back (or vice versa).
+  let projectedT = subRefcounts.size;
+  let projectedQ = quoteSubRefcounts.size;
+  for (const s of normalized) {
+    if (!subRefcounts.has(s)) projectedT++;
+    if (!quoteSubRefcounts.has(s)) projectedQ++;
+  }
+  const combined = projectedT + projectedQ;
+  if (combined > MAX_CONCURRENT_SUBS) {
+    throw new Error(
+      `Polygon options WS: paired T+Q subscribe would exceed combined channel cap (projected T=${projectedT} + Q=${projectedQ} = ${combined}, max=${MAX_CONCURRENT_SUBS})`,
+    );
+  }
+
+  // Subscribe the T channel first (also ensures connection). The T cap
+  // check inside subscribeContracts is now redundant for this caller but
+  // still serves direct callers, so it stays in place.
+  await subscribeContracts(normalized);
+
+  const newlyFirst: string[] = [];
+  for (const s of normalized) {
+    const cur = quoteSubRefcounts.get(s) ?? 0;
+    if (cur === 0) newlyFirst.push(s);
+    quoteSubRefcounts.set(s, cur + 1);
+  }
+  if (newlyFirst.length && connectionState === "connected") {
+    sendSubscribeQuotes(newlyFirst);
+    for (const s of newlyFirst) liveQuoteSubs.add(s);
+  }
+}
+
+/** Reverse of subscribeContractsWithQuotes — drops T and Q ref counts. */
+export function unsubscribeContractsWithQuotes(syms: string[]): void {
+  if (!isEnabled()) return;
+  if (!syms.length) return;
+  const normalized = syms.map(normalizeOccSymbol);
+
+  const qNowZero: string[] = [];
+  for (const s of normalized) {
+    const cur = quoteSubRefcounts.get(s) ?? 0;
+    if (cur <= 1) {
+      quoteSubRefcounts.delete(s);
+      qNowZero.push(s);
+    } else {
+      quoteSubRefcounts.set(s, cur - 1);
+    }
+  }
+  if (qNowZero.length && ws?.readyState === WebSocket.OPEN && connectionState === "connected") {
+    sendUnsubscribeQuotes(qNowZero);
+    for (const s of qNowZero) liveQuoteSubs.delete(s);
+    // Drop NBBO cache entries for contracts we no longer track.
+    for (const s of qNowZero) nbboCache.delete(s);
+  }
+
+  unsubscribeContracts(normalized);
+}
+
 // ── Symbol helpers ───────────────────────────────────────────────────
 
 /** Normalize caller input to Polygon OCC form: "O:SPY251219C00450000". */
@@ -264,6 +386,27 @@ function sendUnsubscribe(syms: string[]): void {
     try { ws.send(JSON.stringify({ action: "unsubscribe", params })); } catch {}
   }
   logger.info({ count: syms.length }, "Polygon options WS: unsubscribe sent");
+}
+
+function sendSubscribeQuotes(syms: string[]): void {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  for (let i = 0; i < syms.length; i += SUB_BATCH_SIZE) {
+    const batch = syms.slice(i, i + SUB_BATCH_SIZE);
+    const params = batch.map(s => `Q.${s}`).join(",");
+    try { ws.send(JSON.stringify({ action: "subscribe", params })); } catch {}
+  }
+  logger.info({ count: syms.length, batches: Math.ceil(syms.length / SUB_BATCH_SIZE) },
+    "Polygon options WS: quote subscribe sent");
+}
+
+function sendUnsubscribeQuotes(syms: string[]): void {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  for (let i = 0; i < syms.length; i += SUB_BATCH_SIZE) {
+    const batch = syms.slice(i, i + SUB_BATCH_SIZE);
+    const params = batch.map(s => `Q.${s}`).join(",");
+    try { ws.send(JSON.stringify({ action: "unsubscribe", params })); } catch {}
+  }
+  logger.info({ count: syms.length }, "Polygon options WS: quote unsubscribe sent");
 }
 
 // ── Connection management ───────────────────────────────────────────
@@ -415,6 +558,8 @@ async function connectPolygon(): Promise<void> {
     ws = null;
     connectionState = "disconnected";
     liveSubs.clear();
+    liveQuoteSubs.clear();
+    nbboCache.clear();
     connectAttemptStartedAt = null;
     rejectWaiters(new Error(`Polygon options WS closed (code ${code})`));
     scheduleReconnect();
@@ -445,12 +590,18 @@ function handleMessage(raw: string): void {
         consecutiveAuthFailures = 0;
         consecutiveAbnormalCloses = 0;
         reconnectDelay = 2000;
-        // Resubscribe everything the ref-count says we want.
-        const wanted = [...subRefcounts.keys()];
-        if (wanted.length) {
-          sendSubscribe(wanted);
+        // Resubscribe everything the ref-count says we want — both T and Q.
+        const wantedT = [...subRefcounts.keys()];
+        if (wantedT.length) {
+          sendSubscribe(wantedT);
           liveSubs.clear();
-          for (const s of wanted) liveSubs.add(s);
+          for (const s of wantedT) liveSubs.add(s);
+        }
+        const wantedQ = [...quoteSubRefcounts.keys()];
+        if (wantedQ.length) {
+          sendSubscribeQuotes(wantedQ);
+          liveQuoteSubs.clear();
+          for (const s of wantedQ) liveQuoteSubs.add(s);
         }
         resolveWaiters();
       } else if (status === "auth_failed") {
@@ -484,6 +635,38 @@ function handleMessage(raw: string): void {
       continue;
     }
 
+    if (kind === "Q") {
+      // Polygon options quote event:
+      //   sym, bp (bid price), bs (bid size), bx (bid exchange),
+      //   ap (ask price), as (ask size), ax (ask exchange), t (sip ts ms)
+      const quote: PolygonOptionQuote = {
+        sym: String(ev["sym"] ?? ""),
+        bid: Number(ev["bp"] ?? 0),
+        ask: Number(ev["ap"] ?? 0),
+        bidSize: Number(ev["bs"] ?? 0),
+        askSize: Number(ev["as"] ?? 0),
+        bidExchange: Number(ev["bx"] ?? 0),
+        askExchange: Number(ev["ax"] ?? 0),
+        timestamp: Number(ev["t"] ?? Date.now()),
+      };
+      if (!quote.sym) continue;
+      // Cache NBBO BEFORE invoking handlers so any handler that reads
+      // getNbbo() in the same tick sees the freshest snapshot.
+      if (quote.bid > 0 && quote.ask > 0 && quote.ask >= quote.bid) {
+        nbboCache.set(quote.sym, {
+          bid: quote.bid,
+          ask: quote.ask,
+          bidSize: quote.bidSize,
+          askSize: quote.askSize,
+          ts: quote.timestamp,
+        });
+      }
+      for (const h of quoteHandlers) {
+        try { h(quote); } catch (err) { logger.error({ err }, "Polygon options WS: quote handler threw"); }
+      }
+      continue;
+    }
+
     if (kind === "A" || kind === "AM") {
       const agg: PolygonOptionAgg = {
         sym: String(ev["sym"] ?? ""),
@@ -511,4 +694,7 @@ export function stopPolygonOptionsWs(): void {
   connectionState = isEnabled() ? "disconnected" : "disabled";
   subRefcounts.clear();
   liveSubs.clear();
+  quoteSubRefcounts.clear();
+  liveQuoteSubs.clear();
+  nbboCache.clear();
 }

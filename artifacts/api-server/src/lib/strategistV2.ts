@@ -373,6 +373,11 @@ export interface AnalyzeProgressCallbacks {
   onTurnStart?: (turn: DebateTurnStartPayload) => void;
   onTurnDelta?: (turnId: string, delta: string) => void;
   onTurnDone?: (turnId: string, finalText: string) => void;
+  // Optional caller-supplied context to prepend to the analyst prompt.
+  // Used by the Unusual Flow drill-down "Send to Strategist" button to
+  // pass a snapshot of the live flow card so the analyst reasons about
+  // exactly what the user just observed.
+  flowContext?: string;
 }
 
 export async function analyzeTickerV2(
@@ -1291,9 +1296,12 @@ async function callAiForTrade(
   logger.info({ provider, model, temperature, webSearch: true }, "StrategistV2: calling AI for trade");
 
   const today = new Date().toISOString().slice(0, 10);
+  const flowContextBlock = progress?.flowContext
+    ? `\n\n## RECENT UNUSUAL FLOW SNAPSHOT (just observed by user — incorporate into analysis)\n${progress.flowContext}\n`
+    : "";
   const prompt = retryInstruction
-    ? `${retryInstruction}\n\nOriginal data package:\n${dataPackage}`
-    : `Today is ${today}. Run web searches as required by the WEB SEARCH MANDATE in your system prompt, then analyze this ticker and recommend the best trade. Respond ONLY with a valid JSON object, no text before or after, no markdown fences.\n\n${dataPackage}`;
+    ? `${retryInstruction}\n\nOriginal data package:\n${dataPackage}${flowContextBlock}`
+    : `Today is ${today}. Run web searches as required by the WEB SEARCH MANDATE in your system prompt, then analyze this ticker and recommend the best trade. Respond ONLY with a valid JSON object, no text before or after, no markdown fences.${flowContextBlock}\n\n${dataPackage}`;
 
   let rawText: string;
   let trace: WebSearchTrace;
@@ -1531,9 +1539,17 @@ async function callAiForTradeViaDebate(
     onStatus: (s) => progress?.onStatus?.(s),
   };
 
+  // Inject the same recent-flow snapshot the Solo path uses, so a Debate
+  // analysis triggered from the Unusual Flow drill-down "Send to Strategist"
+  // button reasons about the exact tape the user just observed.
+  const flowContextBlock = progress?.flowContext
+    ? `\n\n## RECENT UNUSUAL FLOW SNAPSHOT (just observed by user — incorporate into analysis)\n${progress.flowContext}\n`
+    : "";
+  const debateDataPackage = dataPackage + flowContextBlock;
+
   const outcome = await runDebate({
     systemPrompt: STRATEGIST_SYSTEM_PROMPT,
-    dataPackage,
+    dataPackage: debateDataPackage,
     config: { modelA, modelB, arbitratorModel, convergence },
     personaA: BULL_PERSONA,
     personaB: BEAR_PERSONA,

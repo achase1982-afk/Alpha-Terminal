@@ -2946,7 +2946,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
     }
   }, [accessToken, symbol, setSymbol, setStrategistResult]);
 
-  const handleRunV2 = useCallback((ticker: string) => {
+  const handleRunV2 = useCallback((ticker: string, flowContext?: string) => {
     const upperTicker = ticker.toUpperCase();
     const jobId = `sj_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
     setDetResult(null);
@@ -2971,7 +2971,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
         const res = await fetchWithAuth(`${API_BASE}/strategist/analyze`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ticker: upperTicker, jobId }),
+          body: JSON.stringify({ ticker: upperTicker, jobId, ...(flowContext ? { flowContext } : {}) }),
           keepalive: true,
         });
         if (!res.ok) {
@@ -3228,12 +3228,12 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
           <MarketScanner
             subscribeEquitySymbols={subscribeEquitySymbols ?? (() => {})}
             onNavigateToSymbol={onNavigateToMarkets ?? (() => {})}
-            onSendToStrategist={(sym: string, _candidate: DetCandidate) => {
+            onSendToStrategist={(sym: string, _candidate?: DetCandidate, flowContext?: string) => {
               useTerminalStore.getState().setSymbol(sym);
               setStrategistMode("options");
               onSubTabChange("strategist");
               setTimeout(() => {
-                handleRunV2(sym);
+                handleRunV2(sym, flowContext);
               }, 500);
             }}
           />

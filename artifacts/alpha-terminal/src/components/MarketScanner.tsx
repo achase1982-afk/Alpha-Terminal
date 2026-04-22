@@ -14,6 +14,7 @@ import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { useScannerUniverses } from "@/hooks/useScannerUniverses";
 import { ScreenBuilder } from "./ScreenBuilder";
 import { WatchlistEditor } from "./WatchlistEditor";
+import { FlowDrillDownCard } from "./FlowDrillDownCard";
 
 const API_BASE = "/api";
 
@@ -427,7 +428,7 @@ const UnusualFlowCard = memo(function UnusualFlowCard({
   candidate: UnusualFlowCandidate;
   rank: number;
   onSelect: (sym: string) => void;
-  onSendToStrategist?: (sym: string, candidate?: DetCandidate) => void;
+  onSendToStrategist?: (sym: string, candidate?: DetCandidate, flowContext?: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const { data } = useQuote(candidate.symbol);
@@ -503,121 +504,14 @@ const UnusualFlowCard = memo(function UnusualFlowCard({
       </div>
 
       {expanded && (
-        <>
-          <div className="px-4 py-3 grid grid-cols-2 gap-x-6 gap-y-2 border-t border-card-border/50">
-            <div className="space-y-1.5">
-              <div className="flex justify-between">
-                <span className="text-[11px] text-zinc-500">Unusual Strikes</span>
-                <span className="text-sm font-mono tabular-nums text-zinc-200">
-                  <span style={{ color: "#26a69a" }}>{candidate.unusualCallStrikes}C</span>
-                  <span className="text-zinc-600 mx-1">/</span>
-                  <span style={{ color: "#f23645" }}>{candidate.unusualPutStrikes}P</span>
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[11px] text-zinc-500">Unusual Volume</span>
-                <span className="text-sm font-mono tabular-nums text-zinc-300">
-                  {(candidate.unusualCallVolume + candidate.unusualPutVolume).toLocaleString()}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[11px] text-zinc-500">P/C Volume Ratio</span>
-                <span className="text-sm font-mono tabular-nums text-zinc-300">
-                  {candidate.putCallVolumeRatio.toFixed(2)}
-                </span>
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <div className="flex justify-between">
-                <span className="text-[11px] text-zinc-500">Top VOI</span>
-                <span className="text-sm font-mono tabular-nums" style={{ color: "#66e0ff" }}>
-                  {candidate.topVoiRatio.toFixed(1)}×
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[11px] text-zinc-500">Total Call/Put Vol</span>
-                <span className="text-sm font-mono tabular-nums text-zinc-300">
-                  {candidate.totalCallVolume.toLocaleString()}
-                  <span className="text-zinc-600 mx-1">/</span>
-                  {candidate.totalPutVolume.toLocaleString()}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[11px] text-zinc-500">As Of</span>
-                <span className="text-sm font-mono tabular-nums text-zinc-400">{candidate.asOfDate}</span>
-              </div>
-              {candidate.exec && (
-                <div className="flex justify-between">
-                  <span className="text-[11px] text-zinc-500">Live Exec</span>
-                  <span className="text-[11px] font-mono tabular-nums">
-                    <span style={{ color: "#FFB800" }}>{candidate.exec.sweepCount}sw</span>
-                    <span className="text-zinc-700 mx-1">/</span>
-                    <span style={{ color: "#66e0ff" }}>{candidate.exec.blockCount}bk</span>
-                    <span className="text-zinc-700 mx-1">/</span>
-                    <span className="text-zinc-500">{candidate.exec.regularCount}rg</span>
-                  </span>
-                </div>
-              )}
-              <div className="flex justify-between">
-                <span className="text-[11px] text-zinc-500">Aggressor</span>
-                <span
-                  className="text-[10px] font-mono px-1.5 py-0.5 rounded"
-                  title="Requires NBBO subscription — Phase 2"
-                  style={{ color: "#9ca3af", background: "rgba(156,163,175,0.08)", border: "1px solid rgba(156,163,175,0.2)" }}
-                >
-                  N/A · Phase 2
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {candidate.topByVoiRatio.length > 0 && (
-            <div className="px-4 py-2.5 border-t border-card-border/50">
-              <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1.5">
-                Top Strikes by VOI
-              </div>
-              <div className="space-y-1">
-                {candidate.topByVoiRatio.slice(0, 4).map((s, i) => (
-                  <div key={i} className="flex items-center justify-between text-[11px] font-mono tabular-nums">
-                    <span className="flex items-center gap-1.5">
-                      <span
-                        className="text-[10px] font-bold w-5 text-center"
-                        style={{ color: s.optionType === "call" ? "#26a69a" : "#f23645" }}
-                      >
-                        {s.optionType === "call" ? "C" : "P"}
-                      </span>
-                      <span className="text-zinc-300">${s.strike}</span>
-                      <span className="text-zinc-600">·</span>
-                      <span className="text-zinc-500">{s.expiration}</span>
-                      <span className="text-zinc-700">({s.dte}d)</span>
-                    </span>
-                    <span className="flex items-center gap-3">
-                      <span className="text-zinc-400">{s.volume.toLocaleString()} vol</span>
-                      <span className="text-zinc-600">/</span>
-                      <span className="text-zinc-500">{s.openInterest.toLocaleString()} OI</span>
-                      <span className="font-bold w-12 text-right" style={{ color: "#66e0ff" }}>
-                        {s.volOiRatio.toFixed(1)}×
-                      </span>
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="px-4 py-2.5 border-t border-card-border/50 flex items-center justify-between" style={{ background: "#0a0a0a" }}>
-            <span className="text-[10px] text-zinc-600 font-mono">
-              Score {candidate.score.toFixed(1)} · {candidate.scoreReason}
-            </span>
-            {onSendToStrategist && (
-              <button onClick={() => onSendToStrategist(candidate.symbol)}
-                className="flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded transition-all hover:bg-[#FFB800]/15 active:scale-95"
-                style={{ color: "#FFB800", border: "1px solid rgba(255,184,0,0.3)" }}>
-                <Send className="w-3 h-3" /> SEND TO STRATEGIST
-              </button>
-            )}
-          </div>
-        </>
+        <FlowDrillDownCard
+          candidate={candidate}
+          onSendToStrategist={
+            onSendToStrategist
+              ? (sym, flowContext) => onSendToStrategist(sym, undefined, flowContext)
+              : undefined
+          }
+        />
       )}
     </div>
   );
