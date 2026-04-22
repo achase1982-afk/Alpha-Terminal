@@ -1138,11 +1138,12 @@ router.get("/ticker-stats", async (req, res) => {
     return res.json({ symbol: "", pcRatio: null, ivr: null, mmm: null });
   }
 
-  const result: { symbol: string; pcRatio: number | null; ivr: number | null; ivrAsOfDate: string | null; mmm: number | null } = {
+  const result: { symbol: string; pcRatio: number | null; ivr: number | null; ivrAsOfDate: string | null; ivrSource: string | null; mmm: number | null } = {
     symbol,
     pcRatio: null,
     ivr: null,
     ivrAsOfDate: null,
+    ivrSource: null,
     mmm: null,
   };
 
@@ -1153,6 +1154,7 @@ router.get("/ticker-stats", async (req, res) => {
     if (stored) {
       result.ivr = stored.ivr;
       result.ivrAsOfDate = stored.asOfDate;
+      result.ivrSource = stored.source ?? null;
     }
   } catch (err) {
     req.log.warn({ symbol, err }, "ticker-stats: getStoredIVR failed");

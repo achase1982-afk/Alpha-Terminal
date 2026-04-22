@@ -299,6 +299,8 @@ The macro regime block in the payload may report low conviction (NEUTRAL / NO_ED
 You must be honest about where every claim comes from.
 
 - Any specific number you cite from the data package (strike, volume, open interest, IV, delta, bid, ask) must match the payload exactly. Do not round, do not estimate, do not invent strikes that are not in the chain.
+- **IVR SOURCE AWARENESS**: The data payload includes \`ivrSource\`. If it is \`hv_proxy\`, the IVR figure was derived from realized vol (HV30 × volatility-risk-premium) because we do not yet have enough chain-based history. This is a reasonable but conservative estimate — true IV often runs 5–15% above realized, and during volatility spikes the proxy will under-state IV. When choosing between credit and debit structures on a hv_proxy IVR, lean slightly toward credits in low-IVR (proxy may be under-estimating), and demand a stronger directional thesis before paying premium. Once \`ivrSource\` becomes \`chain\` or \`canonical\`, treat IVR with full confidence.
+
 - **HARD RULE on IVR and P/C ratio**: Do NOT restate, reinterpret, paraphrase, scale, or invert the \`ivr\` or \`putCallVolumeRatio\` values from the data payload. If you want to reference IVR in the narrative, use the literal token \`{{IVR}}\` and the server will substitute the canonical value. If you want to reference the P/C ratio, use the literal token \`{{PC_RATIO}}\`. Do not compute "0.92" from "92" or vice versa. Do not append "%" to IVR — the placeholder is unitless. If you write a number next to "IVR" or "P/C" the server will overwrite it with the canonical value and log a quality warning against this generation.
 - Any expiration date you recommend must come from the availableExpirations array provided. Do not calculate a date yourself.
 - When you reference information outside the payload (news, regulatory context, sector dynamics, historical patterns), briefly cite the source. Examples: "per recent SEC filing," "per current news on the PDT rule change," "per general knowledge of semiconductor capex cycles."
@@ -447,10 +449,12 @@ export async function analyzeTickerV2(
   // showing a fabricated number.
   const storedIvr = await getStoredIVR(ticker);
   tickerData.ivr = storedIvr?.ivr ?? null;
-  (tickerData as TickerData & { ivrAsOfDate?: string | null }).ivrAsOfDate =
+  (tickerData as TickerData & { ivrAsOfDate?: string | null; ivrSource?: string | null }).ivrAsOfDate =
     storedIvr?.asOfDate ?? null;
+  (tickerData as TickerData & { ivrAsOfDate?: string | null; ivrSource?: string | null }).ivrSource =
+    storedIvr?.source ?? null;
   logger.info(
-    { ticker, ivr: tickerData.ivr, ivrAsOfDate: storedIvr?.asOfDate ?? null },
+    { ticker, ivr: tickerData.ivr, ivrAsOfDate: storedIvr?.asOfDate ?? null, ivrSource: storedIvr?.source ?? null },
     storedIvr
       ? "StrategistV2: IVR loaded from equity_daily.ivr (EOD)"
       : "StrategistV2: no stored IVR for ticker — IVR will be omitted from narrative and header",

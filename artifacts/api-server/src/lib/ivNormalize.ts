@@ -6,6 +6,18 @@ const IV_MIN_VALID = 0.01;
 const IV_MAX_VALID = 5;
 const IVR_MIN_HISTORY = 60;
 const IVR_LOOKBACK = 252;
+const HV_WINDOW = 30;
+const ANNUALIZE = Math.sqrt(252);
+
+const BROAD_INDEX = new Set(["SPY", "QQQ", "DIA", "IWM", "VTI", "VOO"]);
+const SECTOR_ETF_SET = new Set(["XLE", "XLF", "XLK", "XLU", "XLV", "XLI", "XLP", "XLY", "XLB", "XLC", "XLRE"]);
+
+function vrpMultiplier(symbol: string): number {
+  const s = symbol.toUpperCase();
+  if (BROAD_INDEX.has(s)) return 1.08;
+  if (SECTOR_ETF_SET.has(s)) return 1.12;
+  return 1.20;
+}
 
 export function normalizeIV(raw: number | null | undefined): number | null {
   if (raw == null) return null;
@@ -30,13 +42,19 @@ export function clampIVR(value: number | null | undefined): number | null {
  * No fallback to any chain-derived computation. If null is returned the
  * caller MUST hide the field, not substitute a placeholder like 50.
  */
+export type IvrSource = "chain" | "flow" | "hv_proxy" | "canonical" | null;
+
 export async function getStoredIVR(
   symbol: string,
-): Promise<{ ivr: number; asOfDate: string } | null> {
+): Promise<{ ivr: number; asOfDate: string; source: IvrSource } | null> {
   const symU = symbol.toUpperCase().trim();
   if (!symU) return null;
   const rows = await db
-    .select({ ivr: equityDailyTable.ivr, date: equityDailyTable.date })
+    .select({
+      ivr: equityDailyTable.ivr,
+      date: equityDailyTable.date,
+      source: equityDailyTable.ivrSource,
+    })
     .from(equityDailyTable)
     .where(and(
       eq(equityDailyTable.symbol, symU),
@@ -46,7 +64,38 @@ export async function getStoredIVR(
     .limit(1);
   const row = rows[0];
   if (!row || row.ivr == null) return null;
-  return { ivr: row.ivr, asOfDate: row.date };
+  return { ivr: row.ivr, asOfDate: row.date, source: (row.source ?? null) as IvrSource };
+}
+
+/**
+ * Compute today's HV-based IV proxy from the last HV_WINDOW closes already
+ * in equity_daily. Used as a fallback when the daily snapshot writes a fresh
+ * row with iv_30d but iv_30d_proxy hasn't been refreshed yet.
+ */
+async function computeTodayHvProxy(symbol: string, asOfDate: string): Promise<number | null> {
+  const rows = await db
+    .select({ close: equityDailyTable.close, date: equityDailyTable.date })
+    .from(equityDailyTable)
+    .where(and(
+      eq(equityDailyTable.symbol, symbol),
+      sql`${equityDailyTable.date} <= ${asOfDate}`,
+      sql`${equityDailyTable.close} IS NOT NULL`,
+    ))
+    .orderBy(desc(equityDailyTable.date))
+    .limit(HV_WINDOW + 1);
+  if (rows.length < HV_WINDOW + 1) return null;
+  const closes = rows.map(r => r.close).reverse();
+  const returns: number[] = [];
+  for (let i = 1; i < closes.length; i++) {
+    const prev = closes[i - 1];
+    const cur = closes[i];
+    if (prev <= 0 || cur <= 0) return null;
+    returns.push(Math.log(cur / prev));
+  }
+  const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
+  const variance = returns.reduce((a, b) => a + (b - mean) ** 2, 0) / (returns.length - 1);
+  const hv = Math.sqrt(variance) * ANNUALIZE;
+  return hv * vrpMultiplier(symbol);
 }
 
 export async function computeIVRForSymbol(
@@ -56,27 +105,56 @@ export async function computeIVRForSymbol(
 ): Promise<number | null> {
   const symU = sym.toUpperCase();
 
+  // Decide which column to use as the IV history source. The two columns
+  // are NOT comparable: iv_30d is real (chain/flow) IV; iv_30d_proxy is
+  // realized-vol × VRP. Mixing them produces meaningless IVR. So we pick
+  // ONE column and use it for both today and history (apples-to-apples).
+  //
+  // Rule: if the proxy column has ≥ IVR_MIN_HISTORY rows in the lookback
+  // window, use the proxy series. Otherwise fall back to iv_30d.
+  const proxyHistoryCount = await db
+    .select({ c: sql<number>`count(*)::int` })
+    .from(equityDailyTable)
+    .where(and(
+      eq(equityDailyTable.symbol, symU),
+      sql`${equityDailyTable.date} <= ${date}`,
+      sql`${equityDailyTable.iv30dProxy} IS NOT NULL`,
+      sql`${equityDailyTable.iv30dProxy} >= ${IV_MIN_VALID}`,
+      sql`${equityDailyTable.iv30dProxy} <= ${IV_MAX_VALID}`,
+    ));
+  const useProxyColumn = (proxyHistoryCount[0]?.c ?? 0) >= IVR_MIN_HISTORY;
+
   let currentIv = todayIvOverride ?? null;
   if (currentIv == null) {
     const rows = await db
-      .select({ iv: equityDailyTable.iv30d })
+      .select({ iv: equityDailyTable.iv30d, ivProxy: equityDailyTable.iv30dProxy })
       .from(equityDailyTable)
       .where(and(eq(equityDailyTable.symbol, symU), eq(equityDailyTable.date, date)))
       .limit(1);
-    currentIv = rows[0]?.iv ?? null;
+    if (useProxyColumn) {
+      currentIv = rows[0]?.ivProxy ?? null;
+      // Fallback: today's proxy not yet computed (e.g. snapshot didn't fill
+      // it). Back-solve from the last HV_WINDOW closes already in equity_daily.
+      if (currentIv == null) {
+        currentIv = await computeTodayHvProxy(symU, date);
+      }
+    } else {
+      currentIv = rows[0]?.iv ?? null;
+    }
   }
   currentIv = normalizeIV(currentIv);
   if (currentIv == null) return null;
 
+  const ivCol = useProxyColumn ? equityDailyTable.iv30dProxy : equityDailyTable.iv30d;
   const history = await db
-    .select({ iv: equityDailyTable.iv30d })
+    .select({ iv: ivCol })
     .from(equityDailyTable)
     .where(and(
       eq(equityDailyTable.symbol, symU),
       sql`${equityDailyTable.date} < ${date}`,
-      sql`${equityDailyTable.iv30d} IS NOT NULL`,
-      sql`${equityDailyTable.iv30d} >= ${IV_MIN_VALID}`,
-      sql`${equityDailyTable.iv30d} <= ${IV_MAX_VALID}`,
+      sql`${ivCol} IS NOT NULL`,
+      sql`${ivCol} >= ${IV_MIN_VALID}`,
+      sql`${ivCol} <= ${IV_MAX_VALID}`,
     ))
     .orderBy(desc(equityDailyTable.date))
     .limit(IVR_LOOKBACK);

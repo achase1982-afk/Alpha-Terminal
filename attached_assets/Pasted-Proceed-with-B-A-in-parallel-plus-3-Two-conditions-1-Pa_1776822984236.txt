@@ -1,0 +1,22 @@
+Proceed with B + A in parallel, plus #3. Two conditions:
+
+1. Path B ships with explicit UI labeling. The IVR value from BSM-backsolve is a proxy, not canonical. Label the header field "IVR (est.)" or equivalent so the methodology is visible to me. When Path A's canonical history reaches 60 days of coverage, the label drops and we cut over. Do not ship BSM values under a label that implies they're the same quality as exchange-published IV.
+
+2. Path A does not start until the stuck-snapshot bug is fixed. The 2026-04-17 'running' row that never completed is evidence the daily job hangs. If that hangs again during Path A's accumulation window, the 60-day baseline slides to 4+ months. Fix the timeout wrapper + startup sweep first, then start accumulating.
+
+Additional for Path B:
+- BSM back-solve has a known bias: it understates IV during vol spikes because realized vol lags implied vol in crisis periods. This means Path B IVR will under-read exactly when IVR matters most (high-vol regimes that would otherwise select credit structures). Document this explicitly in the code and in the narrative generation prompt — the strategist AI should know it's looking at a proxy during its credit-vs-debit decision.
+- Use Polygon aggs for underlying price, 20-day or 30-day realized vol window (whichever maps better to 30-DTE IV empirically — pick one and justify). Add a tuning constant to offset the systematic bias if spot-check vs external providers shows a consistent gap.
+- Spot-check after Path B completes: re-run the 4-date external comparison from your investigation (Jan 16, Feb 13, Mar 27, Apr 8). Report the same table with BSM values. If any date is >3 points off external, investigate before closing.
+
+#3 (sanity floor): ship with Path B. 0.10 for SPY/QQQ/IWM/DIA. 0.05 for single names. Log every rejection.
+
+Order of execution:
+1. Fix stuck-snapshot bug (timeout + startup sweep). Small, fast, unblocks Path A.
+2. Ship Path B: BSM back-solve backfill for 252 trading days, all 139 symbols. Deploy, run in prod, re-run recompute-ivr.
+3. Ship sanity floor #3 as part of Path B ingestion.
+4. Start Path A accumulation (daily Schwab chain snapshot to new table).
+5. Spot-check Path B vs external on the 4 known dates. Report table.
+6. Pull 6-ticker verification table (SPY, QQQ, IWM, TSLA, AAPL, MU). Post card IVR vs external-where-available.
+
+Kick off, give job IDs, tell me when to check back. Don't poll.

@@ -775,6 +775,7 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
   const [tickerPcRatio, setTickerPcRatio] = useState<number | null>(null);
   const [tickerIvr, setTickerIvr] = useState<number | null>(null);
   const [tickerIvrAsOfDate, setTickerIvrAsOfDate] = useState<string | null>(null);
+  const [tickerIvrSource, setTickerIvrSource] = useState<string | null>(null);
   const [tickerMmm, setTickerMmm] = useState<number | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pcDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -826,8 +827,8 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
 
   useEffect(() => {
     const ticker = (inputVal.trim().toUpperCase()) || symbol;
-    if (!ticker) { setTickerPcRatio(null); setTickerIvr(null); setTickerIvrAsOfDate(null); setTickerMmm(null); return; }
-    setTickerPcRatio(null); setTickerIvr(null); setTickerIvrAsOfDate(null); setTickerMmm(null);
+    if (!ticker) { setTickerPcRatio(null); setTickerIvr(null); setTickerIvrAsOfDate(null); setTickerIvrSource(null); setTickerMmm(null); return; }
+    setTickerPcRatio(null); setTickerIvr(null); setTickerIvrAsOfDate(null); setTickerIvrSource(null); setTickerMmm(null);
     if (pcDebounceRef.current) clearTimeout(pcDebounceRef.current);
     let cancelled = false;
     pcDebounceRef.current = setTimeout(async () => {
@@ -842,6 +843,7 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
         if (data?.pcRatio != null) setTickerPcRatio(data.pcRatio);
         if (data?.ivr != null) setTickerIvr(data.ivr);
         if (data?.ivrAsOfDate != null) setTickerIvrAsOfDate(data.ivrAsOfDate);
+        if (data?.ivrSource != null) setTickerIvrSource(data.ivrSource);
         if (data?.mmm != null) setTickerMmm(data.mmm);
       } catch { /* ignore */ }
     }, 300);
@@ -910,17 +912,24 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
             <span className="font-mono text-sm text-white/40 uppercase tracking-wider">P/C</span>
             <span className="font-mono text-sm text-white/70 tabular-nums">{pcRatio != null ? pcRatio.toFixed(2) : "—"}</span>
           </div>
-          {tickerIvr != null && (
-            <div
-              className="flex items-center gap-2"
-              title={tickerIvrAsOfDate ? `IV Rank from end-of-day data, as of ${tickerIvrAsOfDate} (Black-Scholes IV, 252-day window)` : "IV Rank from end-of-day data (Black-Scholes IV, 252-day window)"}
-            >
-              <span className="font-mono text-sm text-white/40 uppercase tracking-wider">IVR (EOD)</span>
-              <span className="font-mono text-sm tabular-nums" style={{ color: tickerIvr > 50 ? "#FFB800" : tickerIvr < 30 ? "#00d166" : "#a1a1aa" }}>
-                {`${tickerIvr}%`}
-              </span>
-            </div>
-          )}
+          {tickerIvr != null && (() => {
+            const isProxy = tickerIvrSource === "hv_proxy";
+            const label = isProxy ? "IVR (est.)" : "IVR (EOD)";
+            const baseTitle = tickerIvrAsOfDate
+              ? `IV Rank, as of ${tickerIvrAsOfDate} (252-day window)`
+              : "IV Rank (252-day window)";
+            const title = isProxy
+              ? `${baseTitle}. Source: realized-vol proxy (HV30 × VRP) — accumulating chain-based history; expect refinement as more days collect.`
+              : `${baseTitle}. Source: ${tickerIvrSource ?? "EOD chain"} (Black-Scholes IV).`;
+            return (
+              <div className="flex items-center gap-2" title={title}>
+                <span className="font-mono text-sm text-white/40 uppercase tracking-wider">{label}</span>
+                <span className="font-mono text-sm tabular-nums" style={{ color: tickerIvr > 50 ? "#FFB800" : tickerIvr < 30 ? "#00d166" : "#a1a1aa" }}>
+                  {`${tickerIvr}%`}
+                </span>
+              </div>
+            );
+          })()}
           <div className="flex items-center gap-2">
             <span className="font-mono text-sm text-white/40 uppercase tracking-wider">MMM</span>
             <span className="font-mono text-sm text-white/70 tabular-nums">

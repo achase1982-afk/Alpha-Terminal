@@ -2,6 +2,8 @@ import { Router } from "express";
 import { runFullSnapshot, getSnapshotStatus, collectEquitySnapshots, collectPolygonFlowFromAPI, computeFlowAggregates, computeIVFromFlow, backfillEquityHistory, backfillPolygonFlow, backfillEquityFromPolygon } from "../lib/dailySnapshot";
 import { cleanupIVUnits, recomputeAllIVR } from "../lib/ivNormalize";
 import { startBackfillJob, getBackfillJob, listBackfillJobs, diagnoseListContracts } from "../lib/historicalIVBackfill";
+import { startHvProxyBackfillJob, getHvProxyJob, listHvProxyJobs } from "../lib/hvProxyBackfill";
+import { accumulateCanonicalIvForDate } from "../lib/canonicalIvAccumulator";
 import { getBestAccessToken } from "../lib/tokenStore";
 import { logger } from "../lib/logger";
 import { db } from "@workspace/db";
@@ -300,6 +302,43 @@ router.post("/admin/recompute-ivr", async (req, res) => {
     res.json({ ok: true, result, sample: (sample as { rows?: unknown[] }).rows ?? sample });
   } catch (e) {
     logger.error({ error: (e as Error).message }, "recompute-ivr failed");
+    res.status(500).json({ ok: false, error: (e as Error).message });
+  }
+});
+
+router.post("/admin/backfill-hv-proxy", async (req, res) => {
+  const auth = requireAdmin(req as never);
+  if (!auth.ok) return res.status(403).json({ ok: false, error: auth.error });
+  const { symbols, daysBack } = (req.body ?? {}) as { symbols?: string[]; daysBack?: number };
+  const syms = (symbols && symbols.length > 0) ? symbols : [...LIQUID_CORE_SYMBOLS];
+  const days = (typeof daysBack === "number" && daysBack > 0 && daysBack <= 730) ? daysBack : 252;
+  const job = startHvProxyBackfillJob(syms, days);
+  res.json({ ok: true, started: true, job });
+});
+
+router.get("/admin/backfill-hv-proxy/:id", (req, res) => {
+  const auth = requireAdmin(req as never);
+  if (!auth.ok) return res.status(403).json({ ok: false, error: auth.error });
+  const job = getHvProxyJob(req.params.id);
+  if (!job) return res.status(404).json({ ok: false, error: "job not found" });
+  res.json({ ok: true, job });
+});
+
+router.get("/admin/backfill-hv-proxy", (req, res) => {
+  const auth = requireAdmin(req as never);
+  if (!auth.ok) return res.status(403).json({ ok: false, error: auth.error });
+  res.json({ ok: true, jobs: listHvProxyJobs() });
+});
+
+router.post("/admin/canonical-iv-accumulate", async (req, res) => {
+  const auth = requireAdmin(req as never);
+  if (!auth.ok) return res.status(403).json({ ok: false, error: auth.error });
+  const { date } = (req.body ?? {}) as { date?: string };
+  const targetDate = date ?? new Date().toISOString().slice(0, 10);
+  try {
+    const report = await accumulateCanonicalIvForDate(targetDate);
+    res.json({ ok: true, report });
+  } catch (e) {
     res.status(500).json({ ok: false, error: (e as Error).message });
   }
 });

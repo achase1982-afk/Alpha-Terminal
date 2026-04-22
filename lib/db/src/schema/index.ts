@@ -160,7 +160,10 @@ export const equityDailyTable = pgTable("equity_daily", {
   haltStatus: boolean("halt_status").default(false),
   ivr: real("ivr"),
   iv30d: real("iv_30d"),
+  iv30dProxy: real("iv_30d_proxy"),
+  ivrSource: text("ivr_source"),
   hv20d: real("hv_20d"),
+  hv30d: real("hv_30d"),
   putCallRatio: real("put_call_ratio"),
   sma20: real("sma_20"),
   atr5: real("atr_5"),
@@ -543,3 +546,24 @@ export const scannerTelemetryTable = pgTable("scanner_telemetry", {
   catalystBonusAppliedTo: jsonb("catalyst_bonus_applied_to"),
   results: jsonb("results"),
 });
+
+// Path A: canonical IV history accumulated daily from Schwab full chain.
+// One row per (symbol, date). Source is always 'chain'. After 60+ days of
+// per-symbol coverage we cut IVR computation over from `equity_daily.iv_30d_proxy`
+// (HV-derived Path B fallback) to this table. Tracks which contract was
+// picked so we can audit selection quality.
+export const equityIvCanonicalTable = pgTable("equity_iv_canonical", {
+  id: serial("id").primaryKey(),
+  symbol: text("symbol").notNull(),
+  date: date("date").notNull(),
+  iv30d: real("iv_30d").notNull(),
+  dteActual: integer("dte_actual").notNull(),
+  strike: real("strike").notNull(),
+  spot: real("spot").notNull(),
+  source: text("source").notNull().default("chain"),
+  collectedAt: timestamp("collected_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("eq_iv_canon_sym_date").on(t.symbol, t.date),
+]);
+
+export type EquityIvCanonical = typeof equityIvCanonicalTable.$inferSelect;
