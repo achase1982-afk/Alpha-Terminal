@@ -14,9 +14,12 @@ export function AuthPanel() {
   const isConnected = !!(accessToken || traderAccessToken);
   const serverTokenExpired = portfolioStatus.status === "no_token";
 
-  const handleLogin = useCallback(() => {
+  const handleLogin = useCallback(async () => {
     setIsNavigating(true);
-    window.location.href = "/api/auth/schwab";
+    const res = await fetch("/api/auth/trader-url", { credentials: "include" });
+    const data = await res.json();
+    if (!data?.url) return;
+    window.location.href = data.url;
   }, []);
 
   const handleDisconnect = useCallback(async () => {

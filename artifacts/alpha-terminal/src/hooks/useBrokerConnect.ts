@@ -5,9 +5,12 @@ export function useBrokerConnect() {
   const accessToken = useTerminalStore((s) => s.accessToken);
   const [isNavigating, setIsNavigating] = useState(false);
 
-  const connect = useCallback(() => {
+  const connect = useCallback(async () => {
     setIsNavigating(true);
-    window.location.href = "/api/auth/schwab";
+    const res = await fetch("/api/auth/trader-url", { credentials: "include" });
+    const data = await res.json();
+    if (!data?.url) return;
+    window.location.href = data.url;
   }, []);
 
   void accessToken;
