@@ -105,7 +105,7 @@ export interface StrategistV2Result {
   };
 }
 
-interface CandidateLeg {
+export interface CandidateLeg {
   type: "call" | "put";
   side: "buy" | "sell";
   strike: number;
@@ -702,20 +702,54 @@ export async function analyzeTickerV2(
     const denom = Math.max(aiSelfReportedMaxRisk, computedMaxLossCheck);
     const discrepancy = Math.abs(aiSelfReportedMaxRisk - computedMaxLossCheck) / denom;
     if (discrepancy > 0.5) {
+      const struct = economics.structure;
+      const ratio = computedMaxLossCheck / Math.max(aiSelfReportedMaxRisk, 1);
+      // If we recognized the structure as two verticals AND the discrepancy is
+      // in the "validator priced full strike range vs. AI priced one wing"
+      // ballpark (>2x), the validator is the suspect — retrying the AI will
+      // not help. Surface diagnostics instead of advising a retry.
+      const validatorSuspect = struct !== null && (ratio > 2 || ratio < 0.5);
+
+      const structureLabel = struct
+        ? (struct.kind === "iron_condor_or_butterfly"
+            ? "iron condor / iron butterfly"
+            : "same-side condor / butterfly")
+        : "unrecognized multi-leg";
+      const wingBreakdown = struct
+        ? ` put_wing=$${struct.wing1Width.toFixed(2)}, call_wing=$${struct.wing2Width.toFixed(2)}, max_wing=$${struct.maxWingWidth.toFixed(2)}`
+        : "";
+      const entryLabel = economics.isCredit ? "credit" : "debit";
+
       logger.warn({
         ticker,
         strategy: aiResponse.strategy,
+        structureClassification: structureLabel,
+        partition: struct,
+        netEntry: economics.entryAbs,
+        isCredit: economics.isCredit,
         aiMaxRisk: aiSelfReportedMaxRisk,
         computedMaxLoss: computedMaxLossCheck,
         discrepancy: Math.round(discrepancy * 100),
+        validatorSuspect,
       }, "StrategistV2: economics validation failed — AI maxRisk vs computed maxLoss differ by >50%");
+
+      const detail =
+        `economics validation failed: structure=${structureLabel}, ` +
+        `net ${entryLabel}=$${economics.entryAbs.toFixed(2)},${wingBreakdown} ` +
+        `validator maxRisk=$${computedMaxLossCheck.toFixed(2)}, ` +
+        `AI maxRisk=$${aiSelfReportedMaxRisk.toFixed(2)} ` +
+        `(discrepancy ${Math.round(discrepancy * 100)}%)`;
+      const suggestedAction = validatorSuspect
+        ? "Validator-side mismatch on a recognized two-vertical structure — inspect partition and per-wing widths above; retrying the AI will not help."
+        : "Retry — the AI may pick a structure that prices cleanly on a fresh run.";
+
       const ctx = buildContextSources(aiResponse, webTrace, catalystEval);
       const blocked = await noViable(
         ticker, regime, settings, toxicCheck, tickerData,
         {
           category: "VALIDATION_FAIL",
-          detail: `economics validation failed: AI maxRisk $${aiSelfReportedMaxRisk.toFixed(2)} vs computed $${computedMaxLossCheck.toFixed(2)}, discrepancy exceeds threshold`,
-          suggestedAction: "Retry — the AI may pick a structure that prices cleanly on a fresh run.",
+          detail,
+          suggestedAction,
         },
         ioScore,
         {
@@ -1614,6 +1648,77 @@ interface SpreadEconomics {
   entryRangeMax: number;
   maxProfit: number;
   maxLoss: number;
+  structure?: TwoVerticalPartition | null;
+}
+
+export interface TwoVerticalPartition {
+  kind: "iron_condor_or_butterfly" | "same_side_condor_or_butterfly";
+  wing1Width: number;
+  wing2Width: number;
+  maxWingWidth: number;
+}
+
+/**
+ * Partition a 4-leg single-expiration structure into two verticals if possible.
+ * Returns null for any structure that does NOT cleanly decompose into two
+ * verticals (each = 1 buy + 1 sell, same option type, same expiry, different
+ * strikes). Ratios, broken-wing structures with unequal leg counts, and
+ * non-4-leg structures fall through.
+ *
+ * Handles two cases:
+ *   A. Iron condor / iron butterfly: 2 calls + 2 puts, each side a vertical.
+ *   B. Same-side condor / butterfly: 4 of one type, ordered by strike as
+ *      buy/sell/sell/buy (long) or sell/buy/buy/sell (short).
+ */
+export function partitionIntoTwoVerticals(legs: CandidateLeg[]): TwoVerticalPartition | null {
+  if (legs.length !== 4) return null;
+  const expirations = new Set(legs.map(l => l.expiration));
+  if (expirations.size !== 1) return null;
+
+  const calls = legs.filter(l => l.type === "call");
+  const puts = legs.filter(l => l.type === "put");
+
+  const isVertical = (pair: CandidateLeg[]): boolean => {
+    if (pair.length !== 2) return false;
+    const [a, b] = pair;
+    return a.type === b.type && a.expiration === b.expiration && a.side !== b.side && a.strike !== b.strike;
+  };
+
+  // Case A: iron condor / iron butterfly
+  if (calls.length === 2 && puts.length === 2) {
+    if (!isVertical(calls) || !isVertical(puts)) return null;
+    const callWing = Math.abs(calls[0].strike - calls[1].strike);
+    const putWing = Math.abs(puts[0].strike - puts[1].strike);
+    return {
+      kind: "iron_condor_or_butterfly",
+      wing1Width: putWing,
+      wing2Width: callWing,
+      maxWingWidth: Math.max(callWing, putWing),
+    };
+  }
+
+  // Case B: same-side condor / butterfly
+  if (calls.length === 4 || puts.length === 4) {
+    const same = calls.length === 4 ? calls : puts;
+    const buys = same.filter(l => l.side === "buy").length;
+    const sells = same.filter(l => l.side === "sell").length;
+    if (buys !== 2 || sells !== 2) return null;
+    const sorted = [...same].sort((a, b) => a.strike - b.strike);
+    const pattern = sorted.map(l => l.side).join(",");
+    const isLong = pattern === "buy,sell,sell,buy";
+    const isShort = pattern === "sell,buy,buy,sell";
+    if (!isLong && !isShort) return null;
+    const lowerWing = sorted[1].strike - sorted[0].strike;
+    const upperWing = sorted[3].strike - sorted[2].strike;
+    return {
+      kind: "same_side_condor_or_butterfly",
+      wing1Width: lowerWing,
+      wing2Width: upperWing,
+      maxWingWidth: Math.max(lowerWing, upperWing),
+    };
+  }
+
+  return null;
 }
 
 function computeSpreadEconomics(
@@ -1663,6 +1768,7 @@ function computeSpreadEconomics(
 
   let maxProfit = aiMaxProfit;
   let maxLoss = aiMaxLoss;
+  let structure: TwoVerticalPartition | null = null;
 
   if (isMultiExpiration) {
     // Calendar/diagonal: max loss = net debit paid (per share, x100 for contract)
@@ -1679,9 +1785,16 @@ function computeSpreadEconomics(
     }
     maxLoss = computedMaxLoss;
   } else if (legs.length >= 2) {
-    // Vertical spread on same expiration
-    const strikes = legs.map(l => l.strike).sort((a, b) => a - b);
-    const width = (strikes[strikes.length - 1] - strikes[0]) * 100;
+    // Try to decompose 4-leg structures into two verticals (iron condor, iron
+    // butterfly, call/put condor, call/put butterfly). Only one wing can be at
+    // max loss at expiration, so width = max(wing widths), not full strike range.
+    const partition = partitionIntoTwoVerticals(legs);
+    const width = partition
+      ? partition.maxWingWidth * 100
+      : (() => {
+          const strikes = legs.map(l => l.strike).sort((a, b) => a - b);
+          return (strikes[strikes.length - 1] - strikes[0]) * 100;
+        })();
     if (isCredit) {
       // Credit spread: max profit = credit collected, max loss = width - credit
       const computedMaxProfit = entryAbs * 100;
@@ -1695,6 +1808,7 @@ function computeSpreadEconomics(
       maxProfit = computedMaxProfit;
       maxLoss = computedMaxLoss;
     }
+    structure = partition;
   } else if (legs.length === 1) {
     // Single leg long: max loss = debit paid
     const leg = legs[0];
@@ -1722,6 +1836,7 @@ function computeSpreadEconomics(
     entryRangeMax: rangeHi,
     maxProfit,
     maxLoss,
+    structure,
   };
 }
 

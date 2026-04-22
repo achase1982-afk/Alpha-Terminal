@@ -1,0 +1,29 @@
+Fix economics validator max-risk calculation for multi-leg structures that decompose into two vertical spreads.
+
+File: strategistV2.ts:1681-1697
+
+Current bug: uses (highestStrike - lowestStrike) * 100 as width for any structure with legs.length >= 2. Correct for 2-leg verticals, wrong for 4-leg condors/butterflies where only one wing can be max-loss at expiration.
+
+Fix scope: generalize to any structure whose legs partition into exactly two verticals (each vertical = 1 buy + 1 sell, same option type, same expiry, different strikes). Covers iron condors, iron butterflies, call/put condors, call/put butterflies. Do NOT attempt to handle ratios or broken-wing structures with unequal leg counts — fall through to existing generic path for those.
+
+Detection: structural, not label-based. Ignore aiResponse.strategy string. Partition legs by (type, expiry); require exactly two groups of exactly 2 legs each, each group containing 1 buy + 1 sell. If partition fails, fall through.
+
+Formula when partition succeeds:
+  put_wing_width  = |putStrikes[0] - putStrikes[1]|
+  call_wing_width = |callStrikes[0] - callStrikes[1]|
+  max_wing_width  = max(put_wing_width, call_wing_width)
+  max_risk = max_wing_width * 100 * qty - net_credit_cents  (or + net_debit_cents)
+
+Same-side two-vertical case (e.g., long call condor, all four legs calls): partition by type yields one group of 4, not two of 2. Handle by partitioning by (type, buy/sell-count-per-strike) or by grouping adjacent strikes into spreads. Confirm implementation handles call condor fixture before shipping.
+
+Failure message: when validator disagrees with AI maxRisk, include structure classification, per-wing width breakdown, net credit/debit, and expected max risk. Example format in chat above. Drop the "retry — AI may pick a structure that prices cleanly" line when mismatch matches known validator-side patterns (structural two-vertical with >2x discrepancy); retry cannot fix a validator bug.
+
+Tests (Vitest, add to existing strategistV2 suite):
+- asymmetric iron condor (10-wide puts, 5-wide calls — critical, catches max-vs-sum bugs)
+- symmetric iron condor (INTC-style, 10-wide both sides)
+- iron butterfly (shared short strike)
+- call condor (all four legs calls — verifies structural detection)
+- short vertical (2 legs — regression guard on existing path)
+- 2:1 ratio (unequal legs — verifies it falls through, doesn't crash)
+
+Do not touch the IVR / hv_proxy path. That's separate and already fixed.
