@@ -76,10 +76,32 @@ app.use(cors());
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
+// Routes that must NEVER run through clerkMiddleware. Beyond just being
+// publicly reachable, these are top-level browser redirects from third-party
+// domains (schwab.com OAuth callbacks). clerkMiddleware unconditionally runs
+// its handshake protocol on every request — and the handshake issues 307
+// redirects to Clerk's FAPI server which re-issue the user's session cookies.
+// On the OAuth callback that round trip can drop or invalidate the existing
+// Clerk session (especially in iOS in-app browsers, where cookies set during
+// the bounce don't survive ITP), causing the user to be bounced back to the
+// sign-in page after a successful Schwab link — the "Schwab → Clerk login
+// loop" symptom. CSRF on these routes is already enforced via the signed
+// `state` query parameter.
+const CLERK_BYPASS_PATHS = new Set<string>([
+  "/api/auth/callback",
+  "/api/auth/trader-callback",
+]);
+
 if (DEV_BYPASS) {
   logger.warn("DEV_BYPASS_AUTH is ON — all Clerk auth checks are disabled");
 } else {
-  app.use(clerkMiddleware());
+  const clerk = clerkMiddleware();
+  app.use((req, res, next) => {
+    if (CLERK_BYPASS_PATHS.has(req.path)) {
+      return next();
+    }
+    return clerk(req, res, next);
+  });
 }
 
 app.use("/api", healthRouter);
