@@ -290,7 +290,7 @@
    the notch via its own chrome, so we only need a few pixels of breathing
    room — no inset-clearing needed. */
 .safe-top {
-  padding-top: 4px;
+  padding-top: 0px;
 }
 
 .ui-reduced-motion *,
