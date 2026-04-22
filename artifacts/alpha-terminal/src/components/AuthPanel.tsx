@@ -31,7 +31,7 @@ export function AuthPanel() {
     setIsDisconnecting(false);
   }, [clearTokens, clearTraderTokens]);
 
-  const isLoading = isUrlFetching || isNavigating;
+  const isLoading = isNavigating;
 
   if (isConnected && serverTokenExpired) {
     return (
