@@ -973,6 +973,16 @@ export async function runFullSnapshot(
   // that hangs (Schwab/Polygon socket without its own timeout, etc.) leaves
   // the row stuck in 'running' forever. With it, after 45 min the row gets
   // marked 'failed' and the next scheduled run can attempt again.
+  //
+  // CAVEAT: Promise.race does NOT cancel the inner pipeline. After timeout
+  // the snapshot_collection_log row is marked 'failed' and a fresh run can
+  // start, but the original collectEquitySnapshots / collectOptionsChainSnapshots
+  // / collectPolygonFlowFromAPI / computeFlowAggregates / computeIVFromFlow
+  // chain may continue running in the background, consuming Schwab + Polygon
+  // quota and DB connections. Writes are PK-upserts so no corruption, but
+  // resource overlap with the next run is possible. The proper fix is
+  // socket-level AbortController on each fetch — this wrapper is a belt-and-
+  // suspenders so the row state never gets permanently wedged.
   let timer: NodeJS.Timeout | undefined;
   const timeoutPromise = new Promise<never>((_, reject) => {
     timer = setTimeout(
