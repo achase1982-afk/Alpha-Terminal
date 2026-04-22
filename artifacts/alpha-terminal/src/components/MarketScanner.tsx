@@ -1080,7 +1080,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
             Deterministic/Manual + Discovery/Momentum two-level toggle. */}
         <div className="flex border-b border-card-border">
           {([
-            { view: "DISCOVERY" as const, label: "DISCOVERY", icon: Crosshair, accent: "#FFB800", beta: true },
+            { view: "DISCOVERY" as const, label: "DISCOVERY", icon: Crosshair, accent: "#FFB800", beta: false },
             { view: "MOMENTUM" as const, label: "MOMENTUM", icon: BarChart3, accent: "#42a5f5", beta: false },
             { view: "UNUSUAL" as const, label: "UNUSUAL FLOW", icon: Zap, accent: "#66e0ff", beta: false },
           ]).map(({ view: v, label, icon: Icon, accent, beta }) => {
@@ -1433,7 +1433,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
             <div className="flex items-center gap-2">
               {detResult.scanMode === "DISCOVERY" || !detResult.scanMode ? (
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded" style={{ color: "#FFB800", background: "rgba(255,184,0,0.1)", border: "1px solid rgba(255,184,0,0.3)" }}>
-                  DISCOVERY BETA
+                  DISCOVERY
                 </span>
               ) : (
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded" style={{ color: "#6B7280", background: "#18181b", border: "1px solid #2a2a2a" }}>
