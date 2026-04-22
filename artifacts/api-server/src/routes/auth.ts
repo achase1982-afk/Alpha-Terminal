@@ -80,25 +80,43 @@ function basicAuth(appKey: string, appSecret: string): string {
   return "Basic " + Buffer.from(`${appKey}:${appSecret}`).toString("base64");
 }
 
-function sendOAuthSuccess(_req: import("express").Request, res: import("express").Response) {
-  // The browser tab that lands here is almost always a Safari tab spawned by
-  // iOS when the installed PWA navigated cross-origin to schwab.com. That
-  // tab lives in Safari's storage container, NOT the PWA's, so it has no
-  // Clerk session — redirecting it to the SPA root would just show the
-  // Clerk login page and look like a sign-in loop. The Schwab tokens are
-  // already saved server-side; the PWA's existing PendingSessionLoader
-  // picks them up via /api/auth/server-tokens the moment the user switches
-  // back. So all this tab needs to do is close itself and get out of the
-  // way. window.close() only works on windows opened via script — if it
-  // fails (e.g. the tab was opened by iOS itself rather than window.open),
-  // the user is left on a blank page, which is the desired UX per product
-  // direction (no success interstitial, nothing to look at).
-  res
-    .status(200)
-    .type("html")
-    .send(
-      `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title></title><style>html,body{margin:0;padding:0;background:#0A0F16;height:100%}</style></head><body><script>try{window.close();}catch(e){}</script></body></html>`,
-    );
+function isPopupCallback(req: import("express").Request): boolean {
+  // Frontend sets `schwab_oauth_mode=popup` cookie immediately before
+  // window.open(). If the popup blocker engaged, the same-tab fallback path
+  // runs in a context that does NOT carry that cookie, so absence of the
+  // cookie is our signal to fall back to a plain redirect.
+  const raw = req.headers.cookie || "";
+  return /(?:^|;\s*)schwab_oauth_mode=popup(?:;|$)/.test(raw);
+}
+
+function clearPopupCookie(res: import("express").Response) {
+  res.setHeader(
+    "Set-Cookie",
+    "schwab_oauth_mode=; Path=/api/auth; Max-Age=0; SameSite=Lax",
+  );
+}
+
+function sendOAuthSuccess(req: import("express").Request, res: import("express").Response) {
+  clearPopupCookie(res);
+
+  if (isPopupCallback(req)) {
+    // Popup path — frontend opened this window via window.open, so iOS
+    // (and every other browser) honors window.close() here. The PWA tab
+    // that opened the popup is polling popup.closed and will rehydrate
+    // tokens the instant this window closes. No visible UI needed.
+    res
+      .status(200)
+      .type("html")
+      .send(
+        `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title></title><style>html,body{margin:0;padding:0;background:#0A0F16;height:100%}</style></head><body><script>try{window.close();}catch(e){}</script></body></html>`,
+      );
+    return;
+  }
+
+  // Same-tab fallback (popup blocked, or non-PWA browser). Land the user
+  // back at the SPA root — in this code path the same browser context is
+  // already signed into Clerk, so no login screen will appear.
+  res.redirect(302, "/");
 }
 
 function errorPage(title: string, msg: string) {

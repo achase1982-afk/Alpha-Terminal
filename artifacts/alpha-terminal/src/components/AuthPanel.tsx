@@ -49,17 +49,42 @@ export function AuthPanel() {
     }
     if (!url) { setIsNavigating(false); return; }
 
-    // Same-tab navigation only. The OAuth callback responds with a single
-    // HTTP 302 back to "/", so the user lands directly in the SPA — no popup
-    // window to close, no in-app browser overlay to dismiss, no "success"
-    // page to look at. PendingSessionLoader picks up the persisted tokens
-    // when the SPA cold-mounts on "/".
-    window.location.href = url;
-  }, [authUrlData, refetchAuthUrl]);
+    // Open Schwab OAuth in a popup opened by THIS JavaScript context so the
+    // success page is allowed to call window.close(). On iOS PWA a plain
+    // location.href spawns a Safari tab the PWA can't own — and that tab
+    // can't be auto-closed and can't share the PWA's Clerk session, which
+    // is what was producing the post-link "Clerk login page in a new tab"
+    // dead-end. The popup path sidesteps both problems.
+    try {
+      document.cookie = "schwab_oauth_mode=popup; Path=/api/auth; Max-Age=600; SameSite=Lax";
+    } catch {
+      // ignore — server falls back to redirect path if cookie is missing
+    }
+    const popup = window.open(
+      url,
+      "schwab-oauth",
+      "width=600,height=800,menubar=no,toolbar=no,location=yes,status=no",
+    );
+    if (!popup) {
+      // Popup blocked — fall back to same-tab nav so the user can still link.
+      window.location.href = url;
+      return;
+    }
 
-  // Kept for callers that still reference it; PendingSessionLoader handles
-  // the same job on cold-mount via /api/auth/server-tokens.
-  void rehydrateFromServer;
+    const pollMs = 500;
+    const maxWaitMs = 5 * 60 * 1000;
+    const startedAt = Date.now();
+    const interval = window.setInterval(async () => {
+      if (popup.closed) {
+        window.clearInterval(interval);
+        await rehydrateFromServer();
+        setIsNavigating(false);
+      } else if (Date.now() - startedAt > maxWaitMs) {
+        window.clearInterval(interval);
+        setIsNavigating(false);
+      }
+    }, pollMs);
+  }, [authUrlData, refetchAuthUrl, rehydrateFromServer]);
 
   const handleDisconnect = useCallback(async () => {
     setIsDisconnecting(true);
