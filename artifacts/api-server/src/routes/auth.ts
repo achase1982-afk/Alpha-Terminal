@@ -80,45 +80,6 @@ function basicAuth(appKey: string, appSecret: string): string {
   return "Basic " + Buffer.from(`${appKey}:${appSecret}`).toString("base64");
 }
 
-function isPopupCallback(req: import("express").Request): boolean {
-  // Frontend sets `schwab_oauth_mode=popup` cookie immediately before
-  // window.open(). If the popup blocker engaged, the same-tab fallback path
-  // runs in a context that does NOT carry that cookie, so absence of the
-  // cookie is our signal to fall back to a plain redirect.
-  const raw = req.headers.cookie || "";
-  return /(?:^|;\s*)schwab_oauth_mode=popup(?:;|$)/.test(raw);
-}
-
-function clearPopupCookie(res: import("express").Response) {
-  res.setHeader(
-    "Set-Cookie",
-    "schwab_oauth_mode=; Path=/api/auth; Max-Age=0; SameSite=Lax",
-  );
-}
-
-function sendOAuthSuccess(req: import("express").Request, res: import("express").Response) {
-  clearPopupCookie(res);
-
-  if (isPopupCallback(req)) {
-    // Popup path — frontend opened this window via window.open, so iOS
-    // (and every other browser) honors window.close() here. The PWA tab
-    // that opened the popup is polling popup.closed and will rehydrate
-    // tokens the instant this window closes. No visible UI needed.
-    res
-      .status(200)
-      .type("html")
-      .send(
-        `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title></title><style>html,body{margin:0;padding:0;background:#0A0F16;height:100%}</style></head><body><script>try{window.close();}catch(e){}</script></body></html>`,
-      );
-    return;
-  }
-
-  // Same-tab fallback (popup blocked, or non-PWA browser). Land the user
-  // back at the SPA root — in this code path the same browser context is
-  // already signed into Clerk, so no login screen will appear.
-  res.redirect(302, "/");
-}
-
 function errorPage(title: string, msg: string) {
   return `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head>
     <body style="background:#0A0F16;color:#fff;font-family:-apple-system,system-ui,sans-serif;padding:60px 20px;text-align:center">
@@ -234,7 +195,7 @@ router.get("/callback", async (req, res) => {
     pendingTokens.set("trader_latest", { accessToken, refreshToken: rfTok, ts: Date.now() });
 
     req.log.info("GET /callback — token exchange succeeded (stored as market + trader)");
-    sendOAuthSuccess(req, res);
+    res.redirect("/");
   } catch (err) {
     req.log.error({ err }, "GET /callback network error");
     res.status(500).send(errorPage("Connection Error", "Could not reach Schwab API. Please try again."));
@@ -475,7 +436,7 @@ router.get("/trader-callback", async (req, res) => {
     pendingTokens.set("latest", { accessToken, refreshToken: trRfTok, ts: Date.now() });
 
     req.log.info("GET /trader-callback — Trader token exchange succeeded (stored as market + trader)");
-    sendOAuthSuccess(req, res);
+    res.redirect("/");
   } catch (err) {
     req.log.error({ err }, "GET /trader-callback network error");
     res.status(500).send(errorPage("Connection Error", "Could not reach Schwab API."));

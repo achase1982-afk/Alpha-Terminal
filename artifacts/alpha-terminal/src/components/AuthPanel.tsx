@@ -1,13 +1,12 @@
 import { useState, useCallback } from "react";
 import { useTerminalStore } from "@/lib/store";
-import { useGetAuthUrl } from "@workspace/api-client-react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { queryClient } from "@/App";
 import { ExternalLink, CheckCircle2, Loader2, XCircle, AlertTriangle } from "lucide-react";
 import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
 
 export function AuthPanel() {
-  const { accessToken, traderAccessToken, clearTokens, clearTraderTokens, setTokens, setTraderTokens } = useTerminalStore();
+  const { accessToken, traderAccessToken, clearTokens, clearTraderTokens } = useTerminalStore();
   const portfolioStatus = usePortfolioStreamStore((s) => s.portfolioStatus);
   const [isNavigating, setIsNavigating] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
@@ -15,76 +14,10 @@ export function AuthPanel() {
   const isConnected = !!(accessToken || traderAccessToken);
   const serverTokenExpired = portfolioStatus.status === "no_token";
 
-  const { data: authUrlData, refetch: refetchAuthUrl, isFetching: isUrlFetching } = useGetAuthUrl({
-    query: { enabled: !isConnected || serverTokenExpired },
-  });
-
-  // Pull server-side tokens written by the OAuth callback into the in-memory
-  // store. Used after the popup closes so the UI flips to CONNECTED without
-  // waiting for the visibilitychange poll in PendingSessionLoader.
-  const rehydrateFromServer = useCallback(async () => {
-    try {
-      const res = await fetchWithAuth("/api/auth/server-tokens");
-      if (!res.ok) return false;
-      const data = await res.json() as {
-        market?: { accessToken: string; refreshToken: string } | null;
-        trader?: { accessToken: string; refreshToken: string } | null;
-      };
-      const tok = data.trader ?? data.market;
-      if (tok?.accessToken) {
-        setTokens(tok.accessToken, tok.refreshToken || "");
-        setTraderTokens(tok.accessToken, tok.refreshToken || "");
-        return true;
-      }
-    } catch {}
-    return false;
-  }, [setTokens, setTraderTokens]);
-
-  const handleLogin = useCallback(async () => {
+  const handleLogin = useCallback(() => {
     setIsNavigating(true);
-    let url = authUrlData?.url || "";
-    if (!url) {
-      const result = await refetchAuthUrl();
-      url = result.data?.url || "";
-    }
-    if (!url) { setIsNavigating(false); return; }
-
-    // Open Schwab OAuth in a popup opened by THIS JavaScript context so the
-    // success page is allowed to call window.close(). On iOS PWA a plain
-    // location.href spawns a Safari tab the PWA can't own — and that tab
-    // can't be auto-closed and can't share the PWA's Clerk session, which
-    // is what was producing the post-link "Clerk login page in a new tab"
-    // dead-end. The popup path sidesteps both problems.
-    try {
-      document.cookie = "schwab_oauth_mode=popup; Path=/api/auth; Max-Age=600; SameSite=Lax";
-    } catch {
-      // ignore — server falls back to redirect path if cookie is missing
-    }
-    const popup = window.open(
-      url,
-      "schwab-oauth",
-      "width=600,height=800,menubar=no,toolbar=no,location=yes,status=no",
-    );
-    if (!popup) {
-      // Popup blocked — fall back to same-tab nav so the user can still link.
-      window.location.href = url;
-      return;
-    }
-
-    const pollMs = 500;
-    const maxWaitMs = 5 * 60 * 1000;
-    const startedAt = Date.now();
-    const interval = window.setInterval(async () => {
-      if (popup.closed) {
-        window.clearInterval(interval);
-        await rehydrateFromServer();
-        setIsNavigating(false);
-      } else if (Date.now() - startedAt > maxWaitMs) {
-        window.clearInterval(interval);
-        setIsNavigating(false);
-      }
-    }, pollMs);
-  }, [authUrlData, refetchAuthUrl, rehydrateFromServer]);
+    window.location.href = "/api/auth/schwab";
+  }, []);
 
   const handleDisconnect = useCallback(async () => {
     setIsDisconnecting(true);
