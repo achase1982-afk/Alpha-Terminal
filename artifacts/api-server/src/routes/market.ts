@@ -2025,14 +2025,10 @@ router.get("/news", async (req, res) => {
     return res.status(400).json({ articles: [], error: "symbol is required" });
   }
 
-  const isFuturesNews = symbol.startsWith("/");
-  const finnhubSymbol = isFuturesNews ? futuresNewsSymbol(symbol) : symbol.replace(/^\$/, "");
-  const finnhubKey = process.env["FINNHUB_API_KEY"];
   const polygonKey = process.env["POLYGON_API_KEY"];
   const benzingaKey = process.env["BENZINGA_API_KEY"];
 
-  const [finnhubArticles, polygonArticles, benzingaArticles] = await Promise.all([
-    finnhubKey ? fetchFinnhubNews(finnhubSymbol, finnhubKey, req.log) : Promise.resolve([]),
+  const [polygonArticles, benzingaArticles] = await Promise.all([
     polygonKey ? fetchPolygonNews(symbol, polygonKey, req.log) : Promise.resolve([]),
     benzingaKey ? fetchBenzingaNews(symbol, benzingaKey, req.log) : Promise.resolve([]),
   ]);
@@ -2040,7 +2036,7 @@ router.get("/news", async (req, res) => {
   const seenHeadlines = new Set<string>();
   const merged: NormalizedArticle[] = [];
 
-  for (const source of [benzingaArticles, finnhubArticles, polygonArticles]) {
+  for (const source of [benzingaArticles, polygonArticles]) {
     for (const a of source) {
       const key = a.headline.toLowerCase().slice(0, 60);
       if (!seenHeadlines.has(key)) {
