@@ -1026,6 +1026,84 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
               </div>
             )}
 
+            {/* FOR STRATEGIST REVIEW — top-of-form toggle + optional fields */}
+            <div
+              style={{
+                background: CARD_GRAD,
+                borderRadius: R_CARD,
+                border: `1px solid ${sendMode === "strategist" ? "#5ad1c060" : BORDER}`,
+                padding: "10px 12px",
+              }}
+            >
+              <label className="flex items-center justify-between cursor-pointer">
+                <span style={{ fontSize: 13, color: WHITE, fontWeight: 500 }}>
+                  For Strategist Review
+                </span>
+                <span
+                  onClick={() => setSendMode(sendMode === "strategist" ? "order" : "strategist")}
+                  className="relative transition-all duration-200"
+                  style={{
+                    width: 44,
+                    height: 26,
+                    borderRadius: 999,
+                    background: sendMode === "strategist" ? "#5ad1c0" : "#2a2a2a",
+                    border: `1px solid ${sendMode === "strategist" ? "#5ad1c0" : BORDER}`,
+                    flexShrink: 0,
+                  }}
+                >
+                  <span
+                    className="absolute top-1/2 transition-all duration-200"
+                    style={{
+                      width: 20,
+                      height: 20,
+                      borderRadius: "50%",
+                      background: sendMode === "strategist" ? BG : "#888",
+                      transform: `translate(${sendMode === "strategist" ? 20 : 2}px, -50%)`,
+                    }}
+                  />
+                </span>
+              </label>
+              {sendMode === "strategist" && (
+                <div className="mt-3 space-y-2">
+                  <textarea
+                    value={thesisText}
+                    onChange={(e) => setThesisText(e.target.value)}
+                    placeholder={isCloseOrder
+                      ? "Why are you closing? (optional)"
+                      : "Describe your strategy (optional)"}
+                    rows={3}
+                    maxLength={2000}
+                    className="w-full px-3 py-2 resize-none"
+                    style={{
+                      background: FIELD,
+                      border: `1px solid ${BORDER}`,
+                      borderRadius: 10,
+                      color: WHITE,
+                      fontSize: S.label,
+                      fontFamily: SYS_FONT,
+                      outline: "none",
+                    }}
+                  />
+                  {isRollingShortEligible && (
+                    <label
+                      className="flex items-center gap-2 px-3 py-2 cursor-pointer"
+                      style={{ background: FIELD, border: `1px solid ${BORDER}`, borderRadius: 10 }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={rollingShort}
+                        onChange={(e) => setRollingShort(e.target.checked)}
+                        style={{ accentColor: "#5ad1c0" }}
+                      />
+                      <span style={{ fontSize: S.label, color: TEXT }}>
+                        Rolling short — short leg expires before long leg
+                      </span>
+                    </label>
+                  )}
+                </div>
+              )}
+            </div>
+
             {isMultiLeg && strategyLegs ? (
               <>
                 {/* STRATEGY METRICS — 4-col grid matching StrategyBuilder */}
@@ -1669,7 +1747,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
           <div className="w-14 h-14 flex items-center justify-center" style={{ borderRadius: "50%", background: `${UP}12`, border: `1px solid ${UP}40` }}>
             <CheckCircle2 className="w-8 h-8" style={{ color: UP }} />
           </div>
-          <p style={{ fontSize: 16, color: WHITE }}>Order placed</p>
+          <p style={{ fontSize: 16, color: WHITE }}>Sent to Schwab</p>
           <p className="text-center" style={{ fontSize: S.heading, color: TEXT }}>
             {side === "BUY" ? "Bought" : "Sold"} {quantity} {isOption ? "contract" : "share"}{quantity > 1 ? "s" : ""} of {displaySymbol}
           </p>
@@ -1741,103 +1819,50 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
               {preTradeEnabled && <span>Risk: {overallRisk === "GREEN" ? "PASS" : overallRisk === "YELLOW" ? "WARN" : "FAIL"}</span>}
             </div>
           )}
-          {/* Strategist-mode extra fields: thesis + rolling-short toggle */}
-          {sendMode === "strategist" && (
-            <div className="space-y-2 mb-2">
-              {isRollingShortEligible && (
-                <label
-                  className="flex items-center gap-2 px-3 py-2 cursor-pointer"
-                  style={{ background: FIELD, border: `1px solid ${BORDER}`, borderRadius: 10 }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={rollingShort}
-                    onChange={(e) => setRollingShort(e.target.checked)}
-                    style={{ accentColor: "#5ad1c0" }}
-                  />
-                  <span style={{ fontSize: S.label, color: TEXT }}>
-                    Rolling short — short leg expires before long leg
-                  </span>
-                </label>
-              )}
-              <textarea
-                value={thesisText}
-                onChange={(e) => setThesisText(e.target.value)}
-                placeholder={isCloseOrder
-                  ? "Why are you closing now? (optional — strategist will weigh your reasoning)"
-                  : "Describe your strategy or thesis (optional — gives strategist context to debate against)"}
-                rows={3}
-                maxLength={2000}
-                className="w-full px-3 py-2 resize-none"
-                style={{
-                  background: FIELD, border: `1px solid ${BORDER}`, borderRadius: 10,
-                  color: WHITE, fontSize: S.label, fontFamily: SYS_FONT, outline: "none",
-                }}
-              />
-            </div>
-          )}
-
-          {/* Two-segment mode toggle */}
-          <div
-            className="flex mb-2 p-0.5"
-            style={{ background: FIELD, border: `1px solid ${BORDER}`, borderRadius: 999 }}
-          >
-            {([
-              { key: "order" as const, label: "Send Order" },
-              { key: "strategist" as const, label: "Send to Strategist" },
-            ]).map(seg => {
-              const active = sendMode === seg.key;
-              return (
-                <button
-                  key={seg.key}
-                  onClick={() => setSendMode(seg.key)}
-                  className="flex-1 transition-all duration-150"
-                  style={{
-                    height: 30,
-                    borderRadius: 999,
-                    border: "none",
-                    background: active
-                      ? (seg.key === "strategist"
-                          ? "linear-gradient(135deg, #5ad1c0, #3aa899)"
-                          : CTA_GRAD)
-                      : "transparent",
-                    color: active ? BG : TEXT,
-                    fontSize: 12,
-                    fontWeight: 600,
-                    fontFamily: SYS_FONT,
-                    letterSpacing: "0.02em",
-                  }}
-                >
-                  {seg.label}
-                </button>
-              );
-            })}
+          <div className="flex gap-2">
+            <button
+              onClick={onClose}
+              className="tracking-[0.04em] transition-all duration-150 active:scale-[0.98]"
+              style={{
+                flex: 1,
+                fontSize: 15,
+                height: isMultiLeg ? 42 : 48,
+                borderRadius: 999,
+                background: "transparent",
+                color: TEXT,
+                border: `1px solid ${BORDER}`,
+                fontFamily: SYS_FONT,
+                fontWeight: 500,
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => {
+                if (sendMode === "strategist") void handleSendToStrategist();
+                else setStage("review");
+              }}
+              disabled={sendMode === "strategist" && strategistDispatchInFlight}
+              className="tracking-[0.04em] transition-all duration-150 active:scale-[0.98] disabled:opacity-60"
+              style={{
+                flex: 2,
+                fontSize: isMultiLeg ? 16 : 17,
+                height: isMultiLeg ? 42 : 48,
+                borderRadius: 999,
+                border: "none",
+                background: sendMode === "strategist"
+                  ? "linear-gradient(135deg, #5ad1c0, #3aa899)"
+                  : CTA_GRAD,
+                color: BG,
+                fontWeight: 600,
+                fontFamily: SYS_FONT,
+              }}
+            >
+              {sendMode === "strategist"
+                ? (strategistDispatchInFlight ? "Sending…" : "Send to Strategist")
+                : "Review"}
+            </button>
           </div>
-
-          <button
-            onClick={() => {
-              if (sendMode === "strategist") void handleSendToStrategist();
-              else setStage("review");
-            }}
-            disabled={sendMode === "strategist" && strategistDispatchInFlight}
-            className="w-full tracking-[0.06em] uppercase transition-all duration-150 active:scale-[0.98] disabled:opacity-60"
-            style={{
-              fontSize: isMultiLeg ? 18 : 17,
-              height: isMultiLeg ? 42 : 48,
-              borderRadius: 999,
-              border: "none",
-              background: sendMode === "strategist"
-                ? "linear-gradient(135deg, #5ad1c0, #3aa899)"
-                : CTA_GRAD,
-              color: BG,
-              fontWeight: isMultiLeg ? 500 : 600,
-              fontFamily: SYS_FONT,
-            }}
-          >
-            {sendMode === "strategist"
-              ? (strategistDispatchInFlight ? "DISPATCHING…" : "SEND TO STRATEGIST")
-              : (isCloseOrder ? "SEND ORDER" : isMultiLeg ? "SEND ORDER" : "SEND ORDER")}
-          </button>
         </div>
       )}
 
@@ -1849,7 +1874,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
             style={{ background: BG, borderRadius: "20px 20px 0 0", border: `1px solid ${BORDER}`, borderBottom: "none" }}
           >
             <div className="flex items-center justify-between">
-              <h3 style={{ fontSize: 16, color: WHITE }}>{isCloseOrder ? "Confirm close" : "Confirm order"}</h3>
+              <h3 style={{ fontSize: 16, color: WHITE }}>Order Confirmation</h3>
               <button onClick={() => setStage("form")} className="w-7 h-7 flex items-center justify-center" style={{ borderRadius: "50%", border: `1px solid ${BORDER}`, background: "transparent", color: MUTED }}>
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -1923,14 +1948,111 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                 <span style={{ color: MUTED }}>Duration</span>
                 <span style={{ color: WHITE }}>{DURATIONS.find((d) => d.value === duration)?.label}{extendedHours ? " + Ext" : ""}</span>
               </div>
-              <div className="pt-1 mt-1" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
-                <div className="flex justify-between">
-                  <span style={{ fontSize: S.body, color: TEXT }}>Est. {isMultiLeg ? (strategyIsCredit ? "credit" : "cost") : side === "BUY" ? "cost" : "credit"}</span>
-                  <span style={{ fontSize: S.price, color: WHITE }}>
-                    {estimatedCost != null ? fmtCurrency(Math.abs(estimatedCost)) : "—"}
-                  </span>
-                </div>
-              </div>
+              {(() => {
+                const totalContracts = isOption
+                  ? (isMultiLeg && strategyLegs
+                      ? strategyLegs.reduce((sum, l) => sum + l.quantity, 0) * quantity
+                      : quantity)
+                  : 0;
+                const commissionPerContract = 0.65;
+                const totalCommission = totalContracts * commissionPerContract;
+                const netPrice = parseFloat(limitPrice) || strategyNetPrice || 0;
+                const grossCost = estimatedCost != null ? Math.abs(estimatedCost) : 0;
+                const totalCost = grossCost + totalCommission;
+                const bpEffect = isMultiLeg && strategyLegs
+                  ? (() => {
+                      const strikes = strategyLegs.map(l => l.strike).sort((a, b) => a - b);
+                      const width = strikes.length >= 2 ? strikes[strikes.length - 1] - strikes[0] : 0;
+                      return strategyIsCredit
+                        ? -((width - netPrice) * 100 * quantity + totalCommission)
+                        : -(netPrice * 100 * quantity + totalCommission);
+                    })()
+                  : (side === "BUY" ? -(grossCost + totalCommission) : grossCost - totalCommission);
+                const breakevens: number[] = [];
+                let maxProfit: number | null = null;
+                let maxLoss: number | null = null;
+                if (isMultiLeg && strategyLegs) {
+                  const strikes = strategyLegs.map(l => l.strike).sort((a, b) => a - b);
+                  const width = strikes.length >= 2 ? strikes[strikes.length - 1] - strikes[0] : 0;
+                  const allCalls = strategyLegs.every(l => l.optionType === "CALL");
+                  const allPuts = strategyLegs.every(l => l.optionType === "PUT");
+                  if (strategyLegs.length === 2 && width > 0) {
+                    const sellLeg = strategyLegs.find(l => l.instruction.startsWith("SELL"));
+                    if (sellLeg) {
+                      if (allPuts) breakevens.push(sellLeg.strike - (strategyIsCredit ? netPrice : -netPrice));
+                      else if (allCalls) breakevens.push(sellLeg.strike + (strategyIsCredit ? netPrice : -netPrice));
+                    }
+                  } else if (strategyLegs.length === 2 && !allCalls && !allPuts) {
+                    const callLeg = strategyLegs.find(l => l.optionType === "CALL");
+                    const putLeg = strategyLegs.find(l => l.optionType === "PUT");
+                    if (callLeg && putLeg) {
+                      breakevens.push(putLeg.strike - netPrice);
+                      breakevens.push(callLeg.strike + netPrice);
+                    }
+                  }
+                  if (width > 0) {
+                    maxProfit = strategyIsCredit ? netPrice * 100 * quantity : (width - netPrice) * 100 * quantity;
+                    maxLoss = strategyIsCredit ? (width - netPrice) * 100 * quantity : netPrice * 100 * quantity;
+                  } else {
+                    maxProfit = strategyIsCredit ? netPrice * 100 * quantity : null;
+                    maxLoss = strategyIsCredit ? null : netPrice * 100 * quantity;
+                  }
+                }
+                return (
+                  <>
+                    <div className="pt-1 mt-1 space-y-1" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
+                      <div className="flex justify-between" style={{ fontSize: S.body }}>
+                        <span style={{ color: MUTED }}>Net {strategyIsCredit ? "credit" : "debit"}</span>
+                        <span style={{ color: WHITE }}>{fmtCurrency(grossCost)}</span>
+                      </div>
+                      {totalContracts > 0 && (
+                        <div className="flex justify-between" style={{ fontSize: S.body }}>
+                          <span style={{ color: MUTED }}>Commissions ({totalContracts} × $0.65)</span>
+                          <span style={{ color: WHITE }}>{fmtCurrency(totalCommission)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between pt-1" style={{ fontSize: S.body, borderTop: `1px dashed ${DIVIDER}` }}>
+                        <span style={{ color: TEXT, fontWeight: 500 }}>Total {strategyIsCredit ? "credit" : "cost"}</span>
+                        <span style={{ color: WHITE, fontWeight: 600, fontSize: S.price }}>
+                          {fmtCurrency(strategyIsCredit ? grossCost - totalCommission : totalCost)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {(breakevens.length > 0 || maxProfit != null || maxLoss != null) && (
+                      <div className="pt-1 mt-1 space-y-1" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
+                        {breakevens.length > 0 && (
+                          <div className="flex justify-between" style={{ fontSize: S.body }}>
+                            <span style={{ color: MUTED }}>Breakeven{breakevens.length > 1 ? "s" : ""}</span>
+                            <span style={{ color: WHITE }}>{breakevens.map(b => `$${b.toFixed(2)}`).join(" / ")}</span>
+                          </div>
+                        )}
+                        {maxProfit != null && (
+                          <div className="flex justify-between" style={{ fontSize: S.body }}>
+                            <span style={{ color: MUTED }}>Max profit</span>
+                            <span style={{ color: UP }}>{fmtCurrency(maxProfit)}</span>
+                          </div>
+                        )}
+                        {maxLoss != null && (
+                          <div className="flex justify-between" style={{ fontSize: S.body }}>
+                            <span style={{ color: MUTED }}>Max loss</span>
+                            <span style={{ color: DOWN }}>{fmtCurrency(maxLoss)}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="pt-1 mt-1" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
+                      <div className="flex justify-between" style={{ fontSize: S.body }}>
+                        <span style={{ color: MUTED }}>Buying power effect</span>
+                        <span style={{ color: bpEffect >= 0 ? UP : DOWN }}>
+                          {bpEffect >= 0 ? "+" : "−"}{fmtCurrency(Math.abs(bpEffect))}
+                        </span>
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
 
             <div className="px-3 py-1.5 flex items-start gap-2" style={{ background: `${GOLD}08`, borderRadius: 10, border: `1px solid ${GOLD}1a` }}>
@@ -1955,7 +2077,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                   fontFamily: SYS_FONT,
                 }}
               >
-                {isCloseOrder ? "Confirm close" : isMultiLeg ? "Confirm strategy" : `Confirm ${side.toLowerCase()}`}
+                Send to Schwab
               </button>
             </div>
           </div>

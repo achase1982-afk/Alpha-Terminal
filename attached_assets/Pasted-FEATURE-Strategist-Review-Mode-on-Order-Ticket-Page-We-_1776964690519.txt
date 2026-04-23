@@ -1,0 +1,45 @@
+FEATURE: Strategist Review Mode on Order Ticket Page
+
+We're adding a toggle on the order ticket page that lets users send trades to Strategist for validation before sending to Schwab. The toggle appears at the top of the order ticket page (after clicking Next on the options chain). When toggled ON, it reveals optional fields for thesis and rolling short context. When toggled OFF, the ticket behaves normally.
+
+ORDER TICKET PAGE CHANGES:
+
+At the top of the order ticket page, add a toggle or switch labeled "For Strategist Review" or "Send to Strategist." Default is OFF.
+
+When toggle is OFF:
+- Thesis textbox is hidden
+- Rolling Short checkbox is hidden
+- Bottom buttons: "Review" and "Cancel"
+
+When toggle is ON:
+- Thesis textbox appears (optional, placeholder: Describe your strategy)
+- Rolling Short checkbox appears next to any short leg, or near the thesis box
+- Bottom buttons: "Send to Strategist" and "Cancel"
+
+REVIEW MODAL (when user taps Review):
+
+Modal header: "Order Confirmation"
+
+Modal content shows:
+- Strategy summary (symbol, legs, structure)
+- Breakeven prices
+- Max profit
+- Max loss
+- Cost of trade (including commissions and fees, itemized)
+- Buying power effect
+
+Modal buttons:
+- Cancel / Back button
+- "Send to Schwab" button (green, gold, or primary accent color matching brand)
+
+Do not show thesis or rolling short fields in the review modal. Those only appear on the order ticket page itself.
+
+FLOW:
+
+Path A (Normal order to Schwab):
+Options chain → select legs → Next → order ticket page (For Strategist Review toggle OFF) → click Review → review modal with all trade details → click Send to Schwab → order ships
+
+Path B (Send to Strategist for validation):
+Options chain → select legs → Next → order ticket page (For Strategist Review toggle ON) → fill in thesis if desired, check rolling short if applicable → click Send to Strategist → navigates to Strategist tab, debate runs in background → verdict card appears with PROCEED / PROCEED WITH CAUTION / DO NOT PROCEED → user can tap Send Order on verdict card to return to order ticket for final Schwab execution
+
+Add a Cancel button on the order ticket page (both toggle states). Clicking Cancel closes the ticket and returns user to the previous screen.
