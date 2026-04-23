@@ -155,11 +155,14 @@ function getOptionCellVal(col: ColumnKey, opt: Position): CellVal {
   const qty = isShort ? opt.shortQuantity : opt.longQuantity;
   const markPx = qty > 0 ? opt.marketValue / (qty * 100) : 0;
   const totalPL = opt.longOpenProfitLoss;
-  // TOS-style: open P&L as a % of |current market value| of the leg.
-  // Works for both long and short legs (Schwab returns shorts with negative
-  // marketValue and zero/negative averagePrice — the old guard bailed out
-  // to 0% for shorts, which is why 57.5C above showed 0.00%).
-  const plPct = Math.abs(opt.marketValue) > 0.01 ? (totalPL / Math.abs(opt.marketValue)) * 100 : 0;
+  // TOS "P/L %" = unrealized P&L as a percentage of the original cost basis
+  // (averagePrice × qty × 100), NOT current market value. Using market value
+  // produced wildly off percentages (e.g. USB option showing 21% in-app vs
+  // 6% on Think or Swim). Schwab returns averagePrice as a positive premium
+  // for both long (debit paid) and short (credit collected) options, so
+  // abs() keeps shorts correct.
+  const costBasis = Math.abs(opt.averagePrice * qty * 100);
+  const plPct = costBasis > 0.01 ? (totalPL / costBasis) * 100 : 0;
   switch (col) {
     case "mark": return { text: `$${markPx.toFixed(2)}`, color: C.text };
     case "last": {
@@ -314,6 +317,7 @@ interface SymbolGroup {
   totalDayPL: number;
   totalPL: number;
   totalMaint: number;
+  totalCost: number;
 }
 
 function fmtCurrency(n: number): string {
@@ -599,10 +603,10 @@ function SpreadSummaryRow({
     const qty = o.longQuantity > 0 ? o.longQuantity : -(o.shortQuantity || 0);
     return s + o.averagePrice * qty * 100;
   }, 0);
-  // TOS-style: open P&L as a % of |current spread market value| (sum of leg
-  // signed marketValues = the spread's net liq). Matches the percent shown
-  // on the Vertical/Spread row in ThinkOrSwim.
-  const spreadPLPct = Math.abs(spreadMktVal) > 0.01 ? (spreadPL / Math.abs(spreadMktVal)) * 100 : 0;
+  // TOS "P/L %" = unrealized P&L as a percentage of the spread's net cost
+  // basis (sum of signed leg averagePrice × qty × 100). Using current market
+  // value as the denominator inflated percentages dramatically.
+  const spreadPLPct = Math.abs(spreadCost) > 0.01 ? (spreadPL / Math.abs(spreadCost)) * 100 : 0;
   const spreadMaint = options.reduce((s, o) => s + o.maintenanceRequirement, 0);
 
   const rowBg = "transparent";
@@ -669,14 +673,15 @@ function PositionTableRow({
   const [expanded, setExpanded] = useState(false);
   const eq = group.equity;
   const hasOptions = group.options.length > 0;
-  // TOS-style: open P&L as a % of |current net liq| of the position
-  // (sum of signed leg marketValues + equity marketValue). The previous
-  // formula derived a synthetic "cost basis" from marketValue - PL which
-  // collapsed to a tiny denominator for option spreads (longs and shorts
-  // partially cancel) and produced wildly inflated percents like +50%.
-  const totalPLPct = Math.abs(group.totalMarketValue) > 0.01
-    ? (group.totalPL / Math.abs(group.totalMarketValue)) * 100
-    : 0;
+  // TOS "P/L %" = unrealized P&L as a percentage of total cost basis
+  // (equity averagePrice × qty + each option averagePrice × signed qty × 100).
+  // Falls back to current market value if cost basis collapses to ~0 (which
+  // can happen for true credit spreads where longs and shorts cancel).
+  const totalPLPct = Math.abs(group.totalCost) > 0.01
+    ? (group.totalPL / Math.abs(group.totalCost)) * 100
+    : Math.abs(group.totalMarketValue) > 0.01
+      ? (group.totalPL / Math.abs(group.totalMarketValue)) * 100
+      : 0;
   const eqKey = `${group.underlying}:EQ`;
   const eqSelected = eq != null && selectedKeys.has(eqKey);
   const someSelected = eqSelected || group.options.some(o => selectedKeys.has(`${group.underlying}:${o.cusip}`));
@@ -1354,13 +1359,20 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
       const isOptionLike = pos.assetType === "OPTION" || pos.assetType === "INDEX_OPTION" || pos.assetType === "FUTURE_OPTION";
       const rawKey = isOptionLike ? (pos.underlyingSymbol || pos.symbol) : pos.symbol;
       const key = rawKey.toUpperCase();
-      if (!groupMap.has(key)) groupMap.set(key, { underlying: key, description: "", equity: null, options: [], totalMarketValue: 0, totalDayPL: 0, totalPL: 0, totalMaint: 0 });
+      if (!groupMap.has(key)) groupMap.set(key, { underlying: key, description: "", equity: null, options: [], totalMarketValue: 0, totalDayPL: 0, totalPL: 0, totalMaint: 0, totalCost: 0 });
       const g = groupMap.get(key)!;
       if (isOptionLike) g.options.push(pos); else { g.equity = pos; if (pos.description) g.description = pos.description; }
       g.totalMarketValue += pos.marketValue;
       g.totalDayPL += pos.currentDayProfitLoss;
       g.totalPL += pos.longOpenProfitLoss;
       g.totalMaint += pos.maintenanceRequirement;
+      // Cost basis: averagePrice × signed qty × (100 for options, 1 for equity).
+      // Sign comes from long vs short; magnitude is the absolute capital
+      // committed (debits add, credits subtract — the absolute total is what
+      // we use as the percent denominator).
+      const signedQty = pos.longQuantity > 0 ? pos.longQuantity : -(pos.shortQuantity || 0);
+      const multiplier = isOptionLike ? 100 : 1;
+      g.totalCost += pos.averagePrice * signedQty * multiplier;
     }
     const groups = Array.from(groupMap.values());
 
