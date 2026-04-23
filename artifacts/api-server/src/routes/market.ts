@@ -2094,15 +2094,68 @@ router.get("/proxy-article", async (req, res) => {
     }
 
     const parsed = new URL(url);
-    const isFinnhub = parsed.hostname === "finnhub.io" && parsed.pathname.startsWith("/api/news");
+    const isFinnhubWrapper =
+      parsed.hostname === "finnhub.io" &&
+      parsed.pathname === "/api/news" &&
+      parsed.searchParams.has("id");
 
-    let articleUrl = url;
-    if (isFinnhub) {
-      articleUrl = await resolveArticleUrl(url);
-      if (!isSafeUrl(articleUrl)) {
-        return res.status(400).json({ error: "blocked host" });
-      }
+    if (isFinnhubWrapper) {
+      const rawTitle = (req.query.title as string) || "Article";
+      const rawSource = (req.query.source as string) || "Finnhub";
+      const rawSummary = (req.query.summary as string) || "";
+      const escH = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      const summaryHtml = rawSummary
+        ? rawSummary
+            .split(/\n{2,}|(?<=[.!?])\s+(?=[A-Z])/)
+            .map(p => p.trim())
+            .filter(p => p.length > 0)
+            .map(p => `<p>${escH(p)}</p>`)
+            .join("")
+        : `<p style="color:#a1a1aa;">No preview available for this story.</p>`;
+      const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(rawTitle)}`;
+      const finnhubReaderHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="referrer" content="no-referrer">
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{background:#1C1C1E;color:#e4e4e7;-webkit-text-size-adjust:100%}
+    html{height:100%;overflow-y:auto;-webkit-overflow-scrolling:touch}
+    body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;line-height:1.75;font-size:16px;-webkit-font-smoothing:antialiased;padding:20px max(16px,env(safe-area-inset-left)) calc(80px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-right));max-width:680px;margin:0 auto;min-height:100%;word-wrap:break-word}
+    .reader-source{color:#FFB800;font-size:10px;text-transform:uppercase;letter-spacing:.15em;font-family:"SF Mono",SFMono-Regular,ui-monospace,monospace;font-weight:600;margin-bottom:8px}
+    .reader-title{color:#fff;font-size:22px;font-weight:700;line-height:1.3;margin-bottom:12px}
+    .reader-meta{color:#71717a;font-size:12px;font-family:"SF Mono",monospace;margin-bottom:24px;padding-bottom:16px;border-bottom:1px solid #2A2A2C}
+    .reader-content{color:#d4d4d8}
+    .reader-content p{margin-bottom:1.2em}
+    .reader-notice{margin-top:32px;padding:14px 16px;background:#151517;border:1px solid #2A2A2C;border-radius:10px;color:#a1a1aa;font-size:13px;line-height:1.55}
+    .reader-cta{display:inline-flex;align-items:center;gap:8px;margin-top:18px;padding:12px 18px;background:#FFB800;color:#0a0a0a;border-radius:10px;font-size:14px;font-weight:600;text-decoration:none}
+    ::selection{background:#FFB800;color:#0a0a0a}
+    @media (max-width:480px){body{padding:16px 12px 60px}.reader-title{font-size:19px}}
+  </style>
+</head>
+<body>
+  <div class="reader-source">${escH(rawSource)}</div>
+  <h1 class="reader-title">${escH(rawTitle)}</h1>
+  <div class="reader-meta">Finnhub aggregated story</div>
+  <div class="reader-content">${summaryHtml}</div>
+  <div class="reader-notice">
+    Finnhub does not link to the original publisher for this story, so the full article cannot be loaded inline. Use the search button below to find the source.
+  </div>
+  <a class="reader-cta" href="${escH(searchUrl)}" target="_blank" rel="noopener noreferrer">Search this story on Google →</a>
+</body>
+</html>`;
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.setHeader("Cache-Control", "private, max-age=300");
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("X-Frame-Options", "SAMEORIGIN");
+      res.setHeader("Referrer-Policy", "no-referrer");
+      res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; img-src https: data:; font-src https: data:; base-uri 'self'; form-action 'none'; frame-ancestors 'self'");
+      return res.send(finnhubReaderHtml);
     }
+
+    const articleUrl = url;
 
     const response = await fetch(articleUrl, {
       headers: {

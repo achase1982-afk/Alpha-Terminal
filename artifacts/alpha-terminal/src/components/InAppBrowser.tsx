@@ -8,16 +8,17 @@ function isInternalUrl(url: string) {
   return url.startsWith(API_BASE + "/") || url.startsWith("/api/");
 }
 
-function proxyUrl(url: string, title?: string | null, source?: string | null) {
+function proxyUrl(url: string, title?: string | null, source?: string | null, summary?: string | null) {
   if (isInternalUrl(url)) return url;
   let qs = `url=${encodeURIComponent(url)}`;
   if (title) qs += `&title=${encodeURIComponent(title)}`;
   if (source) qs += `&source=${encodeURIComponent(source)}`;
+  if (summary) qs += `&summary=${encodeURIComponent(summary)}`;
   return `${API_BASE}/market/proxy-article?${qs}`;
 }
 
 export function InAppBrowser() {
-  const { browserUrl, browserTitle, browserSource, closeBrowser } = useTerminalStore();
+  const { browserUrl, browserTitle, browserSource, browserSummary, closeBrowser } = useTerminalStore();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -67,9 +68,9 @@ export function InAppBrowser() {
     setLoading(true);
     setError(false);
     if (iframeRef.current && currentUrl) {
-      iframeRef.current.src = proxyUrl(currentUrl, browserTitle, browserSource);
+      iframeRef.current.src = proxyUrl(currentUrl, browserTitle, browserSource, browserSummary);
     }
-  }, [currentUrl, browserTitle, browserSource]);
+  }, [currentUrl, browserTitle, browserSource, browserSummary]);
 
   const handleBack = useCallback(() => {
     if (history.length === 0) return;
@@ -204,7 +205,7 @@ export function InAppBrowser() {
         ) : (
           <iframe
             ref={iframeRef}
-            src={proxyUrl(currentUrl, browserTitle, browserSource)}
+            src={proxyUrl(currentUrl, browserTitle, browserSource, browserSummary)}
             className="w-full h-full border-0"
             sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
             referrerPolicy="no-referrer"

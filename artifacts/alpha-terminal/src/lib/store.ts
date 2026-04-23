@@ -190,7 +190,8 @@ export interface TerminalState {
   browserUrl: string | null;
   browserTitle: string | null;
   browserSource: string | null;
-  openBrowser: (url: string, title?: string, source?: string) => void;
+  browserSummary: string | null;
+  openBrowser: (url: string, title?: string, source?: string, summary?: string) => void;
   closeBrowser: () => void;
 
   // ── Strategist V2 jobs + history (jobs ephemeral, history cached) ─────────
@@ -501,8 +502,9 @@ export const useTerminalStore = create<TerminalState>()(
       browserUrl: null,
       browserTitle: null,
       browserSource: null,
-      openBrowser: (url, title, source) => set({ browserUrl: url, browserTitle: title ?? null, browserSource: source ?? null }),
-      closeBrowser: () => set({ browserUrl: null, browserTitle: null, browserSource: null }),
+      browserSummary: null,
+      openBrowser: (url, title, source, summary) => set({ browserUrl: url, browserTitle: title ?? null, browserSource: source ?? null, browserSummary: summary ?? null }),
+      closeBrowser: () => set({ browserUrl: null, browserTitle: null, browserSource: null, browserSummary: null }),
 
       liveNews: [] as LiveNewsItem[],
       addLiveNews: (item) => set((state) => {
@@ -876,7 +878,7 @@ export const useTerminalStore = create<TerminalState>()(
         // effect can resume polling on cold load. Jobs older than 10 minutes
         // are swept to "interrupted" during migration below to avoid polling
         // server-side jobs that have already been GC'd.
-        const { streamPrices, streamConnected, streamStatus, browserUrl, browserTitle, browserSource, liveNews, ...persisted } = state;
+        const { streamPrices, streamConnected, streamStatus, browserUrl, browserTitle, browserSource, browserSummary, liveNews, ...persisted } = state;
         return persisted;
       },
     }

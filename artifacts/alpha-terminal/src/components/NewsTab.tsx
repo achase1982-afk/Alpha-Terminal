@@ -257,7 +257,7 @@ export function NewsTab() {
         {unified.map((item) => (
           <button
             key={item.key}
-            onClick={() => item.url ? openBrowser(item.url, item.headline, item.source) : undefined}
+            onClick={() => item.url ? openBrowser(item.url, item.headline, item.source, item.summary) : undefined}
             className="block w-full text-left border-b border-zinc-800/50 hover:bg-zinc-800/30 px-3 py-2.5 transition-colors group cursor-pointer"
           >
             <div className="flex items-center gap-2 mb-0.5">
