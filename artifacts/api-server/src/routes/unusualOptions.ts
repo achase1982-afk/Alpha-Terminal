@@ -8,6 +8,13 @@ import { getFlowPersistenceStats } from "../lib/optionsFlowPersistence";
 import { getFlowRollupStats } from "../lib/optionsFlowRollup";
 import { logger } from "../lib/logger";
 
+function requireAdmin(req: { headers: Record<string, string | string[] | undefined> }): { ok: boolean; error?: string } {
+  const adminKey = process.env.ADMIN_API_KEY;
+  if (!adminKey) return { ok: false, error: "ADMIN_API_KEY is not set on the server" };
+  if (req.headers["x-admin-key"] !== adminKey) return { ok: false, error: "Unauthorized" };
+  return { ok: true };
+}
+
 const router = Router();
 
 /**
@@ -114,6 +121,11 @@ router.get("/status", async (req, res) => {
 });
 
 router.post("/sync", async (req, res) => {
+  // Admin-key gated (also bypasses Clerk via PUBLIC_API_PATHS in app.ts)
+  // so the cron + manual backfills can call this without a user session.
+  const auth = requireAdmin(req as never);
+  if (!auth.ok) return res.status(403).json({ error: auth.error });
+
   const { tickers = [], days = 30, date } = req.body as {
     tickers?: string[];
     days?: number;

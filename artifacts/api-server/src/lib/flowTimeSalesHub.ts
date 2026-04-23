@@ -27,16 +27,11 @@ import {
 //   event: trade
 //   data: { sym, price, size, ts, conditions, aggressor, nbbo, isBlock, isSweep }
 
-// Polygon options condition codes (subset). These are OPRA conditions
-// passed through by Polygon as the `c` array on each trade event.
-//   152 — Intermarket Sweep Order (ISO)
-//   153 — Single-leg auction sweep / cross (treat as sweep heuristic)
-//   154 — Single-leg cross (treat as block heuristic — cross prints typically
-//         indicate negotiated size off the lit book)
-//     7 — Cross / "stopped stock" (legacy block indicator)
-// Condition lists are tuned conservatively so we don't over-tag normal flow.
-const SWEEP_CONDITIONS = new Set<number>([152, 153]);
-const BLOCK_CONDITIONS = new Set<number>([7, 154]);
+// Sweep classification: code 219 (Intermarket Sweep Order) is the only
+// OPRA sale_condition that flags an ISO. Block prints have no OPRA
+// condition code and are inferred from size. See optionsConditionCodes.ts
+// for the canonical reference.
+import { isSweep as isSweepFromConditions, isBlock as isBlockFromSize } from "./optionsConditionCodes";
 
 export interface TimeSalesEvent {
   sym: string;
@@ -69,8 +64,8 @@ function ensureGlobalTradeListener(): void {
     const aggressor = classifyAggressor(t.price, nbbo, sub.lastTradePrice);
     sub.lastTradePrice = t.price;
 
-    const isSweep = t.conditions.some((c) => SWEEP_CONDITIONS.has(c));
-    const isBlock = t.conditions.some((c) => BLOCK_CONDITIONS.has(c));
+    const isSweep = isSweepFromConditions(t.conditions);
+    const isBlock = isBlockFromSize(t.size);
 
     const evt: TimeSalesEvent = {
       sym: t.sym,
@@ -163,4 +158,3 @@ export function getHubStatus(): { contracts: number; totalSubscribers: number } 
   return { contracts: subscribersByContract.size, totalSubscribers: total };
 }
 
-export { SWEEP_CONDITIONS, BLOCK_CONDITIONS };

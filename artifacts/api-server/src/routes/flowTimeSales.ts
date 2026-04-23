@@ -1,6 +1,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { logger } from "../lib/logger.js";
-import { subscribeSseClient, getHubStatus, SWEEP_CONDITIONS, BLOCK_CONDITIONS, type TimeSalesEvent } from "../lib/flowTimeSalesHub.js";
+import { subscribeSseClient, getHubStatus, type TimeSalesEvent } from "../lib/flowTimeSalesHub.js";
+import { isSweep as isSweepFromConditions, isBlock as isBlockFromSize } from "../lib/optionsConditionCodes.js";
 import { isEnabled as polygonWsEnabled } from "../lib/polygonOptionsWs.js";
 
 // ── Live flow time-and-sales routes ──────────────────────────────────
@@ -120,8 +121,8 @@ router.get("/timesales/:contract/recent", async (req: Request, res: Response): P
         conditions,
         aggressor,
         nbbo: nbbo ? { bid: nbbo.bid, ask: nbbo.ask, ts: nbbo.ts } : null,
-        isBlock: conditions.some((c) => BLOCK_CONDITIONS.has(c)),
-        isSweep: conditions.some((c) => SWEEP_CONDITIONS.has(c)),
+        isBlock: isBlockFromSize(Number(r["size"] ?? 0)),
+        isSweep: isSweepFromConditions(conditions),
       };
     });
 

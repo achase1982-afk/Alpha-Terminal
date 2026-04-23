@@ -1,4 +1,5 @@
 import { logger } from "./logger.js";
+import { SWEEP_CONDITION_CODES, BLOCK_MIN_SIZE } from "./optionsConditionCodes.js";
 import { fetchPolygonChain, type PolygonParsedContract } from "./polygonChain.js";
 import {
   ensureConnected,
@@ -30,13 +31,6 @@ const MAX_TOTAL_CONTRACTS = 800;
 const DEFAULT_DURATION_SEC = 20;
 const SWEEP_WINDOW_MS = 100;
 const SWEEP_MIN_LEGS = 3;
-const BLOCK_MIN_SIZE = 100;
-
-// Polygon trade condition codes used to identify sweeps and inferred
-// aggressor side. These condition codes match Polygon's options trade
-// condition taxonomy (a subset — extend as needed):
-//   218 = intermarket sweep
-const SWEEP_CONDITION_CODES = new Set([218]);
 
 export interface FlowScanInput {
   tickers: string[];

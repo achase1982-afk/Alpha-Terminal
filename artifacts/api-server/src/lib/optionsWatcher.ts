@@ -1,4 +1,5 @@
 import { logger } from "./logger.js";
+import { SWEEP_CONDITION_CODES, BLOCK_MIN_SIZE } from "./optionsConditionCodes.js";
 import { enqueueClassifiedTrade } from "./optionsFlowPersistence.js";
 import { fetchPolygonChain, type PolygonParsedContract } from "./polygonChain.js";
 import {
@@ -44,10 +45,10 @@ const SESSION_EVENT_TTL_MS = 30 * 60 * 1000;
 // Coverage / heartbeat thresholds for the LIVE/AMBER/EOD badge.
 const HEARTBEAT_FRESH_MS = 60 * 1000;
 const HEARTBEAT_STALE_MS = 5 * 60 * 1000;
-// "Block print" threshold (size in contracts) for a noteworthy event.
-const BLOCK_MIN_SIZE = 100;
-// Polygon condition codes that mark a print as a sweep.
-const SWEEP_CONDITION_CODES = new Set([218]);
+// "Block print" threshold (size in contracts) and sweep condition set
+// come from the canonical condition-code module so the watcher, SSE
+// hub, REST backfill, and historical scanner all agree. SWEEP/BLOCK
+// are imported at the top of this file.
 // Chain refresh — chains drift across the day as new strikes list / OI fills.
 const CHAIN_REFRESH_INTERVAL_MS = 30 * 60 * 1000;
 // Watcher tick cadence for periodic prune + tier reconciliation.

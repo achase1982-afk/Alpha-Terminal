@@ -25,6 +25,8 @@ const PUBLIC_API_PATHS = new Set<string>([
   "/snapshot/admin/cleanup-iv-units",
   "/snapshot/admin/recompute-ivr",
   "/snapshot/admin/backfill-iv-history",
+  // Polygon S3 flat-files backfill (admin-key gated inside the route)
+  "/unusual-options/sync",
 ]);
 
 const PUBLIC_API_PREFIXES = [
