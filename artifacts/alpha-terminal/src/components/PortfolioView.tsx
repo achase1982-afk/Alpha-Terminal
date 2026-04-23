@@ -1390,7 +1390,13 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
       const sq = streamPricesAll[g.underlying.toUpperCase()] as { last?: number; regularLast?: number; close?: number; change?: number; changePct?: number } | undefined;
       const lastPx = sq?.regularLast ?? sq?.last ?? null;
       const costBasis = g.totalMarketValue - g.totalPL;
-      const plPct = Math.abs(g.totalMarketValue) > 0.01 ? (g.totalPL / Math.abs(g.totalMarketValue)) * 100 : 0;
+      // Match the row-level P/L % formula: cost basis denominator, with
+      // market-value fallback for credit spreads where cost collapses to ~0.
+      const plPct = Math.abs(g.totalCost) > 0.01
+        ? (g.totalPL / Math.abs(g.totalCost)) * 100
+        : Math.abs(g.totalMarketValue) > 0.01
+          ? (g.totalPL / Math.abs(g.totalMarketValue)) * 100
+          : 0;
       const prev = g.totalMarketValue - g.totalDayPL;
       const dayPct = Math.abs(prev) > 0.01 ? (g.totalDayPL / Math.abs(prev)) * 100 : 0;
       switch (sortKey) {
