@@ -4,6 +4,7 @@ import { useQuote } from "@/hooks/useQuote";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { startStrategistPolling } from "@/lib/strategistPoller";
+import { computeStrategyEconomics } from "@/lib/strategyCalculator";
 import {
   X, Minus, Plus, Loader2, CheckCircle2, AlertTriangle, ChevronDown, ChevronUp,
   ShieldX, Lock, Unlock,
@@ -661,19 +662,15 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
         isCredit: isMultiLeg ? (strategyIsCredit ?? false) : false,
         maxLoss: (() => {
           if (!isMultiLeg || !strategyLegs || strategyLegs.length < 2) return null;
-          const strikes = strategyLegs.map(l => l.strike).sort((a, b) => a - b);
-          const width = strikes[strikes.length - 1] - strikes[0];
           const credit = parseFloat(limitPrice) || 0;
-          if (strategyIsCredit) return (width - credit) * 100 * (parseInt(String(quantity)) || 1);
-          return credit * 100 * (parseInt(String(quantity)) || 1);
+          const qty = parseInt(String(quantity)) || 1;
+          return computeStrategyEconomics({ legs: strategyLegs, netPrice: credit, quantity: qty, isCredit: strategyIsCredit }).maxRisk;
         })(),
         maxGain: (() => {
           if (!isMultiLeg || !strategyLegs || strategyLegs.length < 2) return null;
-          const strikes = strategyLegs.map(l => l.strike).sort((a, b) => a - b);
-          const width = strikes[strikes.length - 1] - strikes[0];
           const credit = parseFloat(limitPrice) || 0;
-          if (strategyIsCredit) return credit * 100 * (parseInt(String(quantity)) || 1);
-          return (width - credit) * 100 * (parseInt(String(quantity)) || 1);
+          const qty = parseInt(String(quantity)) || 1;
+          return computeStrategyEconomics({ legs: strategyLegs, netPrice: credit, quantity: qty, isCredit: strategyIsCredit }).maxProfit;
         })(),
         thesis: strategistParsed?.narrative ?? null,
         legs: strategyLegs ? strategyLegs.map(l => ({
@@ -739,16 +736,11 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
     let estMaxProfit: number | null = null;
     let breakeven: number | null = null;
     if (isMultiLeg && strategyLegs && strategyLegs.length >= 2) {
-      const strikes = strategyLegs.map(l => l.strike).sort((a, b) => a - b);
-      const width = strikes[strikes.length - 1] - strikes[0];
       const px = parseFloat(limitPrice) || 0;
-      if (strategyIsCredit) {
-        estMaxRisk = (width - px) * 100 * quantity;
-        estMaxProfit = px * 100 * quantity;
-      } else {
-        estMaxRisk = px * 100 * quantity;
-        estMaxProfit = (width - px) * 100 * quantity;
-      }
+      const econ = computeStrategyEconomics({ legs: strategyLegs, netPrice: px, quantity, isCredit: strategyIsCredit });
+      estMaxRisk = econ.maxRisk;
+      estMaxProfit = econ.maxProfit;
+      if (econ.breakevens.length === 1) breakeven = econ.breakevens[0];
     } else if (!isOption) {
       const px = parseFloat(limitPrice) || quote?.last || 0;
       estMaxRisk = px * quantity;
@@ -1109,25 +1101,19 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                 {/* STRATEGY METRICS — 4-col grid matching StrategyBuilder */}
                 {(() => {
                   const netPrice = parseFloat(limitPrice) || strategyNetPrice || 0;
-                  const strikes = strategyLegs.map(l => l.strike).sort((a, b) => a - b);
-                  const width = strikes.length >= 2 ? strikes[strikes.length - 1] - strikes[0] : 0;
+                  const econ = computeStrategyEconomics({ legs: strategyLegs, netPrice, quantity, isCredit: strategyIsCredit });
                   const netAmt = netPrice * 100 * quantity;
-                  const maxRisk = strategyIsCredit ? (width - netPrice) * 100 * quantity : netPrice * 100 * quantity;
-                  const maxGain = strategyIsCredit ? netPrice * 100 * quantity : (width - netPrice) * 100 * quantity;
-                  const rr = maxRisk > 0 ? `${(maxGain / maxRisk).toFixed(1)}:1` : "—";
+                  const maxRisk = econ.maxRisk;
+                  const maxGain = econ.maxProfit;
+                  const rr = maxRisk > 0 ? `${(maxGain / maxRisk).toFixed(2)}:1` : "—";
                   const allCalls = strategyLegs.every(l => l.optionType === "CALL");
                   const allPuts = strategyLegs.every(l => l.optionType === "PUT");
-                  const stratName = strategyLegs.length === 2
-                    ? (allPuts ? (strategyIsCredit ? "Bull Put Spread" : "Bear Put Spread") : allCalls ? (strategyIsCredit ? "Bear Call Spread" : "Bull Call Spread") : "Vertical Spread")
-                    : `${strategyLegs.length}-Leg Strategy`;
-                  const breakevens: number[] = [];
-                  if (strategyLegs.length === 2 && width > 0) {
-                    const sellLeg = strategyLegs.find(l => l.instruction.startsWith("SELL"));
-                    if (sellLeg) {
-                      if (allPuts) breakevens.push(sellLeg.strike - netPrice);
-                      else if (allCalls) breakevens.push(sellLeg.strike + netPrice);
-                    }
-                  }
+                  const stratName = econ.isIronCondor
+                    ? "Iron Condor"
+                    : strategyLegs.length === 2
+                      ? (allPuts ? (strategyIsCredit ? "Bull Put Spread" : "Bear Put Spread") : allCalls ? (strategyIsCredit ? "Bear Call Spread" : "Bull Call Spread") : "Vertical Spread")
+                      : `${strategyLegs.length}-Leg Strategy`;
+                  const breakevens: number[] = econ.breakevens;
                   const popLeg = strategyIsCredit
                     ? strategyLegs.find(l => l.instruction.startsWith("SELL"))
                     : strategyLegs.find(l => l.instruction.startsWith("BUY"));
@@ -1135,7 +1121,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                     ? Math.round((strategyIsCredit ? (1 - Math.abs(popLeg.delta)) : Math.abs(popLeg.delta)) * 100)
                     : null;
                   const bp = balances.buyingPower ?? accountSize ?? 0;
-                  const bpChange = strategyIsCredit ? netAmt : -netAmt;
+                  const bpChange = -econ.maxRisk;
                   return (
                     <div style={{ background: `linear-gradient(145deg, #14161a, #080a0f)`, borderRadius: 10, border: `1px solid ${BORDER}`, padding: "6px 10px" }}>
                       <div className="flex items-center justify-between">
@@ -1330,10 +1316,8 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                     <span>Total {strategyIsCredit ? "credit" : "cost"} {estimatedCost != null ? fmtCurrency(Math.abs(estimatedCost)) : "—"}</span>
                     <span>Max risk {(() => {
                       const netP = parseFloat(limitPrice) || strategyNetPrice || 0;
-                      const stks = strategyLegs.map(l => l.strike).sort((a, b) => a - b);
-                      const w = stks.length >= 2 ? stks[stks.length - 1] - stks[0] : 0;
-                      const mr = strategyIsCredit ? (w - netP) * 100 * quantity : netP * 100 * quantity;
-                      return fmtCurrency(mr > 0 ? mr : 0);
+                      const econ = computeStrategyEconomics({ legs: strategyLegs, netPrice: netP, quantity, isCredit: strategyIsCredit });
+                      return fmtCurrency(econ.maxRisk);
                     })()}</span>
                     <span>Fees $0.65/ct</span>
                   </div>
@@ -1606,18 +1590,15 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                     <span className="text-[11px]" style={{ color: MUTED }}>
                       {(() => {
                         const netP = parseFloat(limitPrice) || strategyNetPrice || 0;
-                        const stks = strategyLegs.map(l => l.strike).sort((a, b) => a - b);
-                        const w = stks.length >= 2 ? stks[stks.length - 1] - stks[0] : 0;
-                        const mr = strategyIsCredit ? (w - netP) * 100 * quantity : netP * 100 * quantity;
-                        const bp = balances.buyingPower ?? accountSize ?? 0;
-                        const bpAfter = Math.max(0, bp - Math.abs(estimatedCost ?? 0));
+                        const econ = computeStrategyEconomics({ legs: strategyLegs, netPrice: netP, quantity, isCredit: strategyIsCredit });
+                        const mr = econ.maxRisk;
                         const popLeg = strategyIsCredit
                           ? strategyLegs.find(l => l.instruction.startsWith("SELL"))
                           : strategyLegs.find(l => l.instruction.startsWith("BUY"));
                         const popPct = (popLeg?.delta != null)
                           ? Math.round((strategyIsCredit ? (1 - Math.abs(popLeg.delta)) : Math.abs(popLeg.delta)) * 100)
                           : null;
-                        return `Loss ${fmtCurrency(mr > 0 ? mr : 0)} · POP ${popPct != null ? `${popPct}%` : "—"} · Margin ${fmtCurrency(bpAfter)}`;
+                        return `Loss ${fmtCurrency(mr)} · POP ${popPct != null ? `${popPct}%` : "—"} · Margin ${fmtCurrency(mr)}`;
                       })()}
                     </span>
                     {preTradeEnabled && riskChecks.length > 0 && (
@@ -1640,11 +1621,12 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                       const netP = parseFloat(limitPrice) || strategyNetPrice || 0;
                       const stks = strategyLegs.map(l => l.strike).sort((a, b) => a - b);
                       const w = stks.length >= 2 ? stks[stks.length - 1] - stks[0] : 0;
-                      const mr = strategyIsCredit ? (w - netP) * 100 * quantity : netP * 100 * quantity;
-                      const maxProfit = strategyIsCredit ? netP * 100 * quantity : (w - netP) * 100 * quantity;
-                      const bePrice = strategyIsCredit
+                      const econ = computeStrategyEconomics({ legs: strategyLegs, netPrice: netP, quantity, isCredit: strategyIsCredit });
+                      const mr = econ.maxRisk;
+                      const maxProfit = econ.maxProfit;
+                      const bePrice = econ.breakevens[0] ?? (strategyIsCredit
                         ? (strategyLegs[0]?.optionType === "PUT" ? stks[stks.length - 1] - netP : stks[0] + netP)
-                        : (strategyLegs[0]?.optionType === "CALL" ? stks[0] + netP : stks[stks.length - 1] - netP);
+                        : (strategyLegs[0]?.optionType === "CALL" ? stks[0] + netP : stks[stks.length - 1] - netP));
 
                       const lo = stks[0] - w * 0.8;
                       const hi = stks[stks.length - 1] + w * 0.8;
@@ -1796,10 +1778,8 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
               <span>{quantity} spread{quantity !== 1 ? "s" : ""} · {strategyIsCredit ? "Credit" : "Cost"} {estimatedCost != null ? fmtCurrency(Math.abs(estimatedCost)) : "—"}</span>
               <span>Risk {(() => {
                 const netP = parseFloat(limitPrice) || strategyNetPrice || 0;
-                const stks = strategyLegs.map(l => l.strike).sort((a, b) => a - b);
-                const w = stks.length >= 2 ? stks[stks.length - 1] - stks[0] : 0;
-                const mr = strategyIsCredit ? (w - netP) * 100 * quantity : netP * 100 * quantity;
-                return fmtCurrency(mr > 0 ? mr : 0);
+                const econ = computeStrategyEconomics({ legs: strategyLegs, netPrice: netP, quantity, isCredit: strategyIsCredit });
+                return fmtCurrency(econ.maxRisk);
               })()}</span>
               <span>POP {(() => {
                 const popLeg = strategyIsCredit
@@ -1959,40 +1939,21 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                 const netPrice = parseFloat(limitPrice) || strategyNetPrice || 0;
                 const grossCost = estimatedCost != null ? Math.abs(estimatedCost) : 0;
                 const totalCost = grossCost + totalCommission;
-                const bpEffect = isMultiLeg && strategyLegs
-                  ? (() => {
-                      const strikes = strategyLegs.map(l => l.strike).sort((a, b) => a - b);
-                      const width = strikes.length >= 2 ? strikes[strikes.length - 1] - strikes[0] : 0;
-                      return strategyIsCredit
-                        ? -((width - netPrice) * 100 * quantity + totalCommission)
-                        : -(netPrice * 100 * quantity + totalCommission);
-                    })()
+                const econMulti = isMultiLeg && strategyLegs
+                  ? computeStrategyEconomics({ legs: strategyLegs, netPrice, quantity, isCredit: strategyIsCredit })
+                  : null;
+                const bpEffect = econMulti
+                  ? -(econMulti.maxRisk + totalCommission)
                   : (side === "BUY" ? -(grossCost + totalCommission) : grossCost - totalCommission);
-                const breakevens: number[] = [];
+                const breakevens: number[] = econMulti ? econMulti.breakevens : [];
                 let maxProfit: number | null = null;
                 let maxLoss: number | null = null;
-                if (isMultiLeg && strategyLegs) {
+                if (econMulti && strategyLegs) {
                   const strikes = strategyLegs.map(l => l.strike).sort((a, b) => a - b);
                   const width = strikes.length >= 2 ? strikes[strikes.length - 1] - strikes[0] : 0;
-                  const allCalls = strategyLegs.every(l => l.optionType === "CALL");
-                  const allPuts = strategyLegs.every(l => l.optionType === "PUT");
-                  if (strategyLegs.length === 2 && width > 0) {
-                    const sellLeg = strategyLegs.find(l => l.instruction.startsWith("SELL"));
-                    if (sellLeg) {
-                      if (allPuts) breakevens.push(sellLeg.strike - (strategyIsCredit ? netPrice : -netPrice));
-                      else if (allCalls) breakevens.push(sellLeg.strike + (strategyIsCredit ? netPrice : -netPrice));
-                    }
-                  } else if (strategyLegs.length === 2 && !allCalls && !allPuts) {
-                    const callLeg = strategyLegs.find(l => l.optionType === "CALL");
-                    const putLeg = strategyLegs.find(l => l.optionType === "PUT");
-                    if (callLeg && putLeg) {
-                      breakevens.push(putLeg.strike - netPrice);
-                      breakevens.push(callLeg.strike + netPrice);
-                    }
-                  }
-                  if (width > 0) {
-                    maxProfit = strategyIsCredit ? netPrice * 100 * quantity : (width - netPrice) * 100 * quantity;
-                    maxLoss = strategyIsCredit ? (width - netPrice) * 100 * quantity : netPrice * 100 * quantity;
+                  if (econMulti.isIronCondor || width > 0) {
+                    maxProfit = econMulti.maxProfit;
+                    maxLoss = econMulti.maxRisk;
                   } else {
                     maxProfit = strategyIsCredit ? netPrice * 100 * quantity : null;
                     maxLoss = strategyIsCredit ? null : netPrice * 100 * quantity;

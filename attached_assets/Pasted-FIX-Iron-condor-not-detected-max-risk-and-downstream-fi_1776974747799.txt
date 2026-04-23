@@ -1,0 +1,48 @@
+FIX: Iron condor not detected, max risk and downstream fields miscalculated on 4-leg credit spreads
+
+SYMPTOM (repro: INTC May 8 2026, long 55P / short 60P / short 70C / long 75C, net credit 2.46):
+- Max risk displays 1754 (wrong)
+- Buying Power displays 246 (wrong)
+- Breakeven displays blank (wrong)
+- R:R displays 0.1:1 (wrong)
+- Risk Overview margin displays 24754 (wrong)
+
+EXPECTED for same ticket:
+- Max risk: 254 (max wing width 5.00 minus net credit 2.46, times 100)
+- Buying Power: 254
+- Breakeven: 57.54 / 72.46 (lower short strike minus credit, upper short strike plus credit)
+- R:R: 0.97:1
+- Margin: 254
+
+ROOT CAUSE:
+Strategy detector is not tagging this leg combination as IRON_CONDOR before risk math runs. Risk math is falling through to a generic path that treats the 55-to-75 span as a single loss envelope (20.00 wide minus 2.46 credit = 17.54 per share = 1754). An iron condor can only lose on one wing at expiration, so max loss is max(put_wing_width, call_wing_width) minus net credit.
+
+DETECTION RULE for IRON_CONDOR:
+- Exactly 4 legs
+- Same underlying, same expiration across all legs
+- Two puts: one long, one short, short strike > long strike
+- Two calls: one long, one short, short strike < long strike
+- Short put strike < short call strike (i.e. short strikes inside long strikes)
+- Net credit (sum of shorts mid > sum of longs mid)
+
+RISK MATH for IRON_CONDOR:
+- put_wing_width = short_put_strike - long_put_strike
+- call_wing_width = long_call_strike - short_call_strike
+- max_risk_per_share = max(put_wing_width, call_wing_width) - net_credit_per_share
+- max_risk_dollars = max_risk_per_share * 100 * quantity
+- buying_power = max_risk_dollars
+- breakeven_lower = short_put_strike - net_credit_per_share
+- breakeven_upper = short_call_strike + net_credit_per_share
+- max_profit_dollars = net_credit_per_share * 100 * quantity
+- r_r_ratio = max_profit_dollars / max_risk_dollars
+
+SCOPE:
+Touch only the strategy detector and the risk calc module that feeds the OrderTicket summary card, Breakeven field, R:R field, Buying Power field, and Risk Overview margin field. Do not touch leg rendering, net credit price input, quantity stepper, or the Review button flow.
+
+VERIFY:
+1. Load the INTC ticket from the screenshot. Max risk reads 254. Breakeven reads 57.54 / 72.46. R:R reads 0.97:1. Buying Power reads 254. Margin reads 254.
+2. Change the call wing to 70C / 80C (asymmetric wings, 10 wide call / 5 wide put). Max risk should use the call wing: 10.00 minus new net credit, times 100.
+3. Flip to a 4-leg combo that is NOT an iron condor (e.g. double-long strangle + protective wings, or all same-side). Detector must NOT tag it IRON_CONDOR. Existing risk path should handle it.
+4. Single-spread ticket (2-leg bull put). Confirm no regression in existing 2-leg detection or risk math.
+
+Do not add markdown or comments explaining the change in the UI. Do not rename existing strategy type constants. If an IRON_CONDOR constant already exists in the strategy type enum, use it. If not, add it.
