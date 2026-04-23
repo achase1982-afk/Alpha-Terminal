@@ -1,4 +1,4 @@
-import { db, equityIvCanonicalTable, optionsChainDailyTable } from "@workspace/db";
+import { db, equityDailyTable, equityIvCanonicalTable, optionsChainDailyTable } from "@workspace/db";
 import { and, eq, sql } from "drizzle-orm";
 import { logger } from "./logger";
 import { validateIv30 } from "./ivSanityFloor";
@@ -46,21 +46,32 @@ export async function accumulateCanonicalIvForDate(date: string): Promise<Accumu
   for (const { sym } of symRows) {
     report.symbolsConsidered++;
     try {
+      // Spot price comes from equity_daily.close (the chain table doesn't store underlying price).
+      const eqRows = await db
+        .select({ close: equityDailyTable.close })
+        .from(equityDailyTable)
+        .where(and(eq(equityDailyTable.symbol, sym), eq(equityDailyTable.date, date)))
+        .limit(1);
+      const spot = eqRows[0]?.close ?? null;
+      if (spot == null || spot <= 0) {
+        report.rowsSkipped++;
+        report.reasons["no_spot"] = (report.reasons["no_spot"] ?? 0) + 1;
+        continue;
+      }
+
       const rows = await db
         .select({
           optionType: optionsChainDailyTable.optionType,
           strike: optionsChainDailyTable.strike,
-          dte: optionsChainDailyTable.daysToExpiration,
+          dte: optionsChainDailyTable.dte,
           iv: optionsChainDailyTable.impliedVolatility,
-          spot: optionsChainDailyTable.underlyingPrice,
         })
         .from(optionsChainDailyTable)
         .where(and(
           eq(optionsChainDailyTable.underlyingSymbol, sym),
           eq(optionsChainDailyTable.date, date),
           sql`${optionsChainDailyTable.impliedVolatility} IS NOT NULL`,
-          sql`${optionsChainDailyTable.daysToExpiration} IS NOT NULL`,
-          sql`${optionsChainDailyTable.underlyingPrice} IS NOT NULL`,
+          sql`${optionsChainDailyTable.dte} IS NOT NULL`,
         ));
 
       if (rows.length === 0) {
@@ -68,7 +79,6 @@ export async function accumulateCanonicalIvForDate(date: string): Promise<Accumu
         report.reasons["no_chain"] = (report.reasons["no_chain"] ?? 0) + 1;
         continue;
       }
-      const spot = rows[0].spot!;
       const candidates: ChainRow[] = rows
         .filter(r => Math.abs(r.strike - spot) / spot <= 0.05)
         .map(r => ({ optionType: r.optionType, strike: r.strike, dte: r.dte, iv: r.iv, spot }));
