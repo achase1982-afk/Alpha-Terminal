@@ -81,6 +81,19 @@ function basicAuth(appKey: string, appSecret: string): string {
 }
 
 function traderSuccessPage() {
+  // IMPORTANT: do NOT redirect this page to "/". When the OAuth flow runs
+  // inside an iOS in-app browser overlay (opened from a PWA via
+  // `<a target="_blank">`), the overlay does NOT carry the PWA's auth
+  // cookies. Navigating to "/" here would load the bare app inside the
+  // overlay, which then fails the auth check and shows the Clerk sign-in
+  // screen \u2014 confusing the user even though the PWA underneath already
+  // has the token waiting.
+  //
+  // Instead: try `window.close()` silently a few times (works for true
+  // popups; no-ops for iOS overlay tabs), and otherwise just show a clean
+  // "tap the X to return" message. The PWA's visibilitychange handler will
+  // pick up the new trader token from /api/auth/trader-pending-session as
+  // soon as the user dismisses the overlay.
   return `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connected</title></head>
     <body style="background:#0A0F16;color:#fff;font-family:-apple-system,system-ui,sans-serif;padding:60px 20px;text-align:center;margin:0">
       <div style="font-size:14px;color:#FFB800;letter-spacing:0.18em;font-weight:700;margin-bottom:14px">ALPHA TERMINAL</div>
@@ -88,37 +101,20 @@ function traderSuccessPage() {
         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#00C88C" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
       </div>
       <h2 style="color:#00C88C;font-size:18px;margin:0 0 10px">Connected to Schwab</h2>
-      <p style="color:#999;font-size:13px;margin:0 0 28px">Closing this tab and returning to Alpha Terminal\u2026</p>
-      <button id="closeBtn" style="display:inline-block;background:#FFB800;color:#000;font-size:13px;font-weight:700;letter-spacing:0.05em;padding:10px 28px;border:none;border-radius:8px;cursor:pointer;font-family:-apple-system,system-ui,sans-serif">RETURN TO ALPHA TERMINAL</button>
+      <p style="color:#bbb;font-size:14px;line-height:1.55;margin:0 0 8px;max-width:320px;margin-left:auto;margin-right:auto">Your brokerage is linked.</p>
+      <p style="color:#888;font-size:13px;line-height:1.55;margin:0 0 28px;max-width:320px;margin-left:auto;margin-right:auto">Tap the <strong style="color:#fff">X</strong> in the top corner to return to Alpha Terminal. Your portfolio will load automatically.</p>
+      <button id="closeBtn" style="display:inline-block;background:#FFB800;color:#000;font-size:13px;font-weight:700;letter-spacing:0.05em;padding:10px 28px;border:none;border-radius:8px;cursor:pointer;font-family:-apple-system,system-ui,sans-serif">CLOSE THIS PAGE</button>
       <script>
         (function () {
-          // Detect whether we're a script-opened popup that can self-close.
-          // window.opener is set when the original click did window.open(...).
-          // If absent, we're in the same tab as the PWA / a freshly launched
-          // Safari tab and window.close() will silently fail \u2014 in that case
-          // we redirect back to the app root so the user isn't stranded here.
-          var canSelfClose = !!window.opener;
           function closeSelf() { try { window.close(); } catch (e) {} }
-          function returnToApp() {
-            try { window.location.replace('/'); } catch (e) { window.location.href = '/'; }
-          }
-          if (canSelfClose) {
-            closeSelf();
-            setTimeout(closeSelf, 250);
-            setTimeout(function () {
-              closeSelf();
-              // If we still exist after ~1.5s, the close was blocked \u2014 fall back
-              // to navigating back to the PWA root.
-              setTimeout(returnToApp, 600);
-            }, 1200);
-          } else {
-            // Same-tab flow: don't bother trying to close, just go home.
-            setTimeout(returnToApp, 400);
-          }
+          // Best-effort self close (works only for true script-opened popups;
+          // silently no-ops on iOS in-app browser overlays). Never navigate
+          // to "/" \u2014 see comment in traderSuccessPage().
+          closeSelf();
+          setTimeout(closeSelf, 250);
+          setTimeout(closeSelf, 1000);
           var btn = document.getElementById('closeBtn');
-          if (btn) btn.addEventListener('click', function () {
-            if (canSelfClose) closeSelf(); else returnToApp();
-          });
+          if (btn) btn.addEventListener('click', closeSelf);
         })();
       </script>
     </body></html>`;
