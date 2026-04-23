@@ -3,20 +3,99 @@ import { and, inArray, sql } from "drizzle-orm";
 import { logger } from "./logger.js";
 
 export interface UnusualFlowFilters {
-  minStrikes?: number;
+  // Renamed (canonical) keys. Old keys still accepted for back-compat below.
+  minUnusualStrikes?: number;
   minVoiRatio?: number;
+  minStrikeVolume?: number;
+  minNotionalPerStrike?: number;     // dollars per strike (vol × mid × 100)
+  minDteExcl0?: number;
+  maxDte?: number;                   // Infinity ⇒ no cap
+  skew?: "any" | "bull" | "bear" | "balanced" | "bullish" | "bearish" | "non_balanced";
+  excludeEtfs?: boolean;
+  patternSweep?: boolean;
+  patternBlock?: boolean;
+  patternRegular?: boolean;
+  minSweeps?: number;
+  minBlocks?: number;
+  // Preset-spec additions
+  aggressor?: "any" | "buyer" | "seller";
+  excludeMid?: boolean;
+  minExpiryConcentrationPct?: number;     // 0–100
+  minStrikeConcentrationPct?: number;     // 0–100
+  minRelativeOptionsAdv?: number;         // x-multiple vs 20d ADV per strike
+  minUnderlyingVolVsAdv?: number;         // x-multiple underlying vol / 20d ADV
+
+  // Legacy alias keys (kept so older callers still work).
+  minStrikes?: number;
   minVolume?: number;
-  skew?: "any" | "bullish" | "bearish" | "non_balanced";
-  excludeIndexes?: boolean;
   minDte?: number;
-  minNotional?: number; // dollars per strike (vol × mid × 100)
-  // Phase 1 execution-pattern filters (sweep/block classification from
-  // the live watcher, populated via options_flow_exec_per_strike).
+  minNotional?: number;
+  excludeIndexes?: boolean;
   includeSweeps?: boolean;
   includeBlocks?: boolean;
   includeRegular?: boolean;
   minSweepCount?: number;
   minBlockCount?: number;
+}
+
+interface NormalizedFilters {
+  minUnusualStrikes: number;
+  minVoiRatio: number;
+  minStrikeVolume: number;
+  minNotionalPerStrike: number;
+  minDteExcl0: number;
+  maxDte: number;
+  skew: "any" | "bull" | "bear" | "balanced";
+  excludeEtfs: boolean;
+  patternSweep: boolean;
+  patternBlock: boolean;
+  patternRegular: boolean;
+  minSweeps: number;
+  minBlocks: number;
+  aggressor: "any" | "buyer" | "seller";
+  excludeMid: boolean;
+  minExpiryConcentrationPct: number;
+  minStrikeConcentrationPct: number;
+  minRelativeOptionsAdv: number;
+  minUnderlyingVolVsAdv: number;
+}
+
+function normalizeSkew(s: UnusualFlowFilters["skew"]): NormalizedFilters["skew"] {
+  switch (s) {
+    case "bullish": return "bull";
+    case "bearish": return "bear";
+    case "non_balanced": return "balanced";
+    case "bull":
+    case "bear":
+    case "balanced":
+    case "any":
+      return s;
+    default: return "any";
+  }
+}
+
+function normalize(f: UnusualFlowFilters): NormalizedFilters {
+  return {
+    minUnusualStrikes: f.minUnusualStrikes ?? f.minStrikes ?? 1,
+    minVoiRatio: f.minVoiRatio ?? 3,
+    minStrikeVolume: f.minStrikeVolume ?? f.minVolume ?? 500,
+    minNotionalPerStrike: f.minNotionalPerStrike ?? f.minNotional ?? 250_000,
+    minDteExcl0: f.minDteExcl0 ?? f.minDte ?? 3,
+    maxDte: f.maxDte ?? Number.POSITIVE_INFINITY,
+    skew: normalizeSkew(f.skew),
+    excludeEtfs: f.excludeEtfs ?? f.excludeIndexes ?? true,
+    patternSweep: f.patternSweep ?? f.includeSweeps ?? true,
+    patternBlock: f.patternBlock ?? f.includeBlocks ?? true,
+    patternRegular: f.patternRegular ?? f.includeRegular ?? true,
+    minSweeps: f.minSweeps ?? f.minSweepCount ?? 0,
+    minBlocks: f.minBlocks ?? f.minBlockCount ?? 0,
+    aggressor: f.aggressor ?? "any",
+    excludeMid: f.excludeMid ?? false,
+    minExpiryConcentrationPct: f.minExpiryConcentrationPct ?? 0,
+    minStrikeConcentrationPct: f.minStrikeConcentrationPct ?? 0,
+    minRelativeOptionsAdv: f.minRelativeOptionsAdv ?? 0,
+    minUnderlyingVolVsAdv: f.minUnderlyingVolVsAdv ?? 0,
+  };
 }
 
 export interface UnusualFlowExecSummary {
@@ -76,23 +155,8 @@ export interface UnusualFlowScanResult {
   symbolsWithFlow: number;
   excludedIndexes: number;
   candidates: UnusualFlowCandidate[];
-  filters: Required<UnusualFlowFilters>;
+  filters: NormalizedFilters;
 }
-
-const DEFAULTS: Required<UnusualFlowFilters> = {
-  minStrikes: 1,
-  minVoiRatio: 3,
-  minVolume: 500,
-  skew: "any",
-  excludeIndexes: true,
-  minDte: 3,        // excludes 0-2DTE (retail lottos + dealer hedging)
-  minNotional: 250_000, // $250k+ per strike ⇒ institutional position size
-  includeSweeps: true,
-  includeBlocks: true,
-  includeRegular: true,
-  minSweepCount: 0,
-  minBlockCount: 0,
-};
 
 const EMPTY_EXEC: UnusualFlowExecSummary = {
   sweepCount: 0, blockCount: 0, regularCount: 0,
@@ -186,7 +250,7 @@ function summarizeForSymbol(
   rows: RawRow[],
   asOfDate: string,
   symbol: string,
-  f: Required<UnusualFlowFilters>,
+  f: NormalizedFilters,
   execMap: Map<string, UnusualFlowExecSummary>,
 ): UnusualFlowCandidate | null {
   let totalCallVolume = 0;
@@ -208,12 +272,13 @@ function summarizeForSymbol(
     if (r.optionType === "call") totalCallVolume += vol;
     else if (r.optionType === "put") totalPutVolume += vol;
 
-    if (vol < f.minVolume || oi < MIN_OI_FOR_VOI) continue;
-    if (dte < f.minDte) continue;
+    if (vol < f.minStrikeVolume || oi < MIN_OI_FOR_VOI) continue;
+    if (dte < f.minDteExcl0) continue;
+    if (Number.isFinite(f.maxDte) && dte > f.maxDte) continue;
     const voi = vol / oi;
     if (voi < f.minVoiRatio) continue;
     const notional = vol * mid * 100;
-    if (notional < f.minNotional) continue;
+    if (notional < f.minNotionalPerStrike) continue;
 
     const exec = execMap.get(execKey(symbol, r.optionType, r.strike, r.expiration)) ?? EMPTY_EXEC;
 
@@ -223,9 +288,9 @@ function summarizeForSymbol(
     const hasAnyEvent = exec.sweepCount + exec.blockCount + exec.regularCount > 0;
     if (hasAnyEvent) {
       const matchesType =
-        (f.includeSweeps && exec.sweepCount > 0) ||
-        (f.includeBlocks && exec.blockCount > 0) ||
-        (f.includeRegular && exec.regularCount > 0);
+        (f.patternSweep && exec.sweepCount > 0) ||
+        (f.patternBlock && exec.blockCount > 0) ||
+        (f.patternRegular && exec.regularCount > 0);
       if (!matchesType) continue;
     }
 
@@ -248,11 +313,38 @@ function summarizeForSymbol(
   }
 
   // Ticker-level min-count gates.
-  if (tickerExec.sweepCount < f.minSweepCount) return null;
-  if (tickerExec.blockCount < f.minBlockCount) return null;
+  if (tickerExec.sweepCount < f.minSweeps) return null;
+  if (tickerExec.blockCount < f.minBlocks) return null;
 
   const unusualStrikeCount = unusual.length;
-  if (unusualStrikeCount < f.minStrikes) return null;
+  if (unusualStrikeCount < f.minUnusualStrikes) return null;
+
+  // Concentration gates — computed independently so a user can require
+  // strike concentration without also gating on expiry concentration.
+  if ((f.minExpiryConcentrationPct > 0 || f.minStrikeConcentrationPct > 0) && unusualTotalNotional > 0) {
+    const byExpiry = new Map<string, number>();
+    for (const r of unusual) {
+      byExpiry.set(r.expiration, (byExpiry.get(r.expiration) ?? 0) + r._notional);
+    }
+    const topExpiryNotional = Math.max(...byExpiry.values());
+
+    if (f.minExpiryConcentrationPct > 0) {
+      const pct = (topExpiryNotional / unusualTotalNotional) * 100;
+      if (pct < f.minExpiryConcentrationPct) return null;
+    }
+
+    if (f.minStrikeConcentrationPct > 0) {
+      let topExpiry = "";
+      for (const [exp, n] of byExpiry) if (n === topExpiryNotional) { topExpiry = exp; break; }
+      const stkNotional = unusual
+        .filter(r => r.expiration === topExpiry)
+        .map(r => r._notional)
+        .sort((a, b) => b - a);
+      const top2 = (stkNotional[0] ?? 0) + (stkNotional[1] ?? 0);
+      const stkPct = topExpiryNotional > 0 ? (top2 / topExpiryNotional) * 100 : 0;
+      if (stkPct < f.minStrikeConcentrationPct) return null;
+    }
+  }
 
   const totalUnusual = unusualCallVolume + unusualPutVolume;
   const callShare = totalUnusual > 0 ? unusualCallVolume / totalUnusual : 0.5;
@@ -261,9 +353,9 @@ function summarizeForSymbol(
   else if (callShare <= 0.35) skew = "bearish";
   else skew = "balanced";
 
-  if (f.skew === "bullish" && skew !== "bullish") return null;
-  if (f.skew === "bearish" && skew !== "bearish") return null;
-  if (f.skew === "non_balanced" && skew === "balanced") return null;
+  if (f.skew === "bull" && skew !== "bullish") return null;
+  if (f.skew === "bear" && skew !== "bearish") return null;
+  if (f.skew === "balanced" && skew === "balanced") return null;
 
   const topByVoi = [...unusual]
     .sort((a, b) => b._voi - a._voi)
@@ -342,12 +434,16 @@ export async function scanUnusualFlow(
   symbols: string[],
   filters: UnusualFlowFilters = {},
 ): Promise<UnusualFlowScanResult> {
-  const f: Required<UnusualFlowFilters> = { ...DEFAULTS, ...filters };
+  const f: NormalizedFilters = normalize(filters);
+  // Note: aggressor / excludeMid / minRelativeOptionsAdv / minUnderlyingVolVsAdv
+  // are accepted by the API but require data sources not yet available
+  // (NBBO, 20d options ADV per strike, underlying ADV). They are pass-through
+  // no-ops today and logged so we can tune once data lands.
   const upperAll = symbols.map(s => s.toUpperCase());
-  const excluded = f.excludeIndexes
+  const excluded = f.excludeEtfs
     ? upperAll.filter(s => INDEX_SYMBOLS.has(s)).length
     : 0;
-  const upper = f.excludeIndexes
+  const upper = f.excludeEtfs
     ? upperAll.filter(s => !INDEX_SYMBOLS.has(s))
     : upperAll;
 

@@ -15,6 +15,18 @@ import { useScannerUniverses } from "@/hooks/useScannerUniverses";
 import { ScreenBuilder } from "./ScreenBuilder";
 import { WatchlistEditor } from "./WatchlistEditor";
 import { FlowDrillDownCard } from "./FlowDrillDownCard";
+import {
+  type UnusualFlowFilters,
+  type PresetId,
+  PRESETS,
+  PRESET_ORDER,
+  DEFAULT_FILTERS,
+  detectPreset,
+  closestPreset,
+  serializeFilters,
+  deserializeFilters,
+} from "@/lib/unusualFlowPresets";
+import { useToast } from "@/hooks/use-toast";
 
 const API_BASE = "/api";
 
@@ -773,18 +785,88 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
   // Unusual Options Activity scanner state (replaces legacy Manual scanner).
   const [unusualResult, setUnusualResult] = useState<UnusualFlowScanResult | null>(null);
   const [unusualError, setUnusualError] = useState<string | null>(null);
-  const [uMinStrikes, setUMinStrikes] = useState(1);
-  const [uMinVoi, setUMinVoi] = useState(3);
-  const [uMinVolume, setUMinVolume] = useState(500);
-  const [uSkew, setUSkew] = useState<"any" | "bullish" | "bearish" | "non_balanced">("any");
-  const [uExcludeIndexes, setUExcludeIndexes] = useState(true);
-  const [uMinDte, setUMinDte] = useState(3);
-  const [uMinNotional, setUMinNotional] = useState(250_000);
-  const [uIncludeSweeps, setUIncludeSweeps] = useState(true);
-  const [uIncludeBlocks, setUIncludeBlocks] = useState(true);
-  const [uIncludeRegular, setUIncludeRegular] = useState(true);
-  const [uMinSweepCount, setUMinSweepCount] = useState(0);
-  const [uMinBlockCount, setUMinBlockCount] = useState(0);
+  const { toast } = useToast();
+  const [unusualFilters, setUnusualFilters] = useState<UnusualFlowFilters>(() => {
+    try {
+      const raw = localStorage.getItem("alpha.unusualFilters.v2");
+      if (raw) {
+        const parsed = deserializeFilters(raw) as Partial<UnusualFlowFilters>;
+        return { ...PRESETS.momentum.filters, ...parsed } as UnusualFlowFilters;
+      }
+    } catch { /* fall through */ }
+    return PRESETS.momentum.filters;
+  });
+  const [presetMode, setPresetMode] = useState<"preset" | "custom">(() => {
+    try {
+      const raw = localStorage.getItem("alpha.unusualFilters.v2");
+      if (raw) {
+        const parsed = deserializeFilters(raw) as Partial<UnusualFlowFilters>;
+        const merged = { ...PRESETS.momentum.filters, ...parsed } as UnusualFlowFilters;
+        return detectPreset(merged) ? "preset" : "custom";
+      }
+    } catch { /* fall through */ }
+    return "preset";
+  });
+  const [activePreset, setActivePreset] = useState<PresetId | null>(() => {
+    try {
+      const raw = localStorage.getItem("alpha.unusualFilters.v2");
+      if (raw) {
+        const parsed = deserializeFilters(raw) as Partial<UnusualFlowFilters>;
+        const merged = { ...PRESETS.momentum.filters, ...parsed } as UnusualFlowFilters;
+        return detectPreset(merged);
+      }
+    } catch { /* fall through */ }
+    return "momentum";
+  });
+  const [basePreset, setBasePreset] = useState<PresetId | null>(() => {
+    try {
+      const raw = localStorage.getItem("alpha.unusualFilters.v2");
+      if (raw) {
+        const parsed = deserializeFilters(raw) as Partial<UnusualFlowFilters>;
+        const merged = { ...PRESETS.momentum.filters, ...parsed } as UnusualFlowFilters;
+        return detectPreset(merged) ?? closestPreset(merged);
+      }
+    } catch { /* fall through */ }
+    return "momentum";
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem("alpha.unusualFilters.v2", serializeFilters(unusualFilters)); } catch {}
+  }, [unusualFilters]);
+
+  const applyPreset = useCallback((id: PresetId) => {
+    const p = PRESETS[id];
+    setUnusualFilters(p.filters);
+    setPresetMode("preset");
+    setActivePreset(id);
+    setBasePreset(id);
+    toast({ description: p.toastLine });
+  }, [toast]);
+
+  const setFilter = useCallback(<K extends keyof UnusualFlowFilters>(key: K, value: UnusualFlowFilters[K]) => {
+    setUnusualFilters(prev => {
+      const next = { ...prev, [key]: value };
+      const matched = detectPreset(next);
+      if (matched) {
+        setPresetMode("preset");
+        setActivePreset(matched);
+        setBasePreset(matched);
+      } else {
+        setPresetMode(prevMode => {
+          if (prevMode === "preset") setBasePreset(activePreset ?? closestPreset(next));
+          return "custom";
+        });
+        setActivePreset(null);
+      }
+      return next;
+    });
+  }, [activePreset]);
+
+  const accentColor = useMemo(() => {
+    if (presetMode === "preset" && activePreset) return PRESETS[activePreset].accent;
+    if (basePreset) return PRESETS[basePreset].accent;
+    return "#66e0ff";
+  }, [presetMode, activePreset, basePreset]);
   const [filtersOpen, setFiltersOpen] = useState(false);
 
   // Part 5: removed legacy on-demand "Unusual Flow Scan (LIVE)" state +
@@ -836,20 +918,10 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           symbols: syms,
-          filters: {
-            minStrikes: uMinStrikes,
-            minVoiRatio: uMinVoi,
-            minVolume: uMinVolume,
-            skew: uSkew,
-            excludeIndexes: uExcludeIndexes,
-            minDte: uMinDte,
-            minNotional: uMinNotional,
-            includeSweeps: uIncludeSweeps,
-            includeBlocks: uIncludeBlocks,
-            includeRegular: uIncludeRegular,
-            minSweepCount: uMinSweepCount,
-            minBlockCount: uMinBlockCount,
-          },
+          filters: unusualFilters,
+          mode: presetMode,
+          activePreset,
+          basePreset: presetMode === "custom" ? basePreset : null,
         }),
       });
       const data = await res.json() as UnusualFlowScanResult & { error?: string };
@@ -935,132 +1007,199 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
 
   const editScreenObj = editingScreen != null ? universeData.screens.find(s => s.id === editingScreen) ?? null : null;
 
-  const renderUnusualFilters = () => (
-    <div className="p-4 space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
-          Filters tuned for institutional positioning — strip retail 0DTE/lottos.
-        </div>
-        <button
-          onClick={() => setUExcludeIndexes(v => !v)}
-          className="text-[10px] py-1 px-2 rounded font-bold uppercase tracking-wider transition-all shrink-0"
-          style={{
-            background: uExcludeIndexes ? "#18181b" : "transparent",
-            color: uExcludeIndexes ? "#66e0ff" : "#6B7280",
-            border: `1px solid ${uExcludeIndexes ? "rgba(102,224,255,0.4)" : "#2a2a2a"}`,
-          }}
-        >
-          {uExcludeIndexes ? "✓ " : ""}Exclude Indexes/ETFs
-        </button>
+  const renderUnusualFilters = () => {
+    const f = unusualFilters;
+    const ac = accentColor;
+    const sectionHeader = (title: string, caption: string) => (
+      <div className="space-y-0.5">
+        <div className="text-[11px] font-bold uppercase tracking-wider" style={{ color: "#e5e7eb" }}>{title}</div>
+        <div className="text-[10px]" style={{ color: "#6B7280" }}>{caption}</div>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <div className="flex justify-between text-[11px] text-muted-foreground uppercase">
-            <span>Min Unusual Strikes</span>
-            <span style={{ color: "#66e0ff" }}>{uMinStrikes}+</span>
-          </div>
-          <Slider value={[uMinStrikes]} onValueChange={v => setUMinStrikes(v[0])} min={1} max={10} step={1} />
+    );
+    const sliderRow = (label: string, value: number | string, child: React.ReactNode) => (
+      <div className="space-y-2">
+        <div className="flex justify-between text-[11px] text-muted-foreground uppercase">
+          <span>{label}</span>
+          <span style={{ color: ac }}>{value}</span>
         </div>
+        {child}
+      </div>
+    );
+    const segBtn = <T,>(curr: T, val: T, label: string, onClick: () => void, accent = ac) => (
+      <button
+        key={String(val)}
+        onClick={onClick}
+        className="text-[10px] py-1.5 rounded font-bold uppercase tracking-wider transition-all"
+        style={{
+          background: curr === val ? "#18181b" : "transparent",
+          color: curr === val ? accent : "#6B7280",
+          border: `1px solid ${curr === val ? `${accent}66` : "#2a2a2a"}`,
+        }}
+      >
+        {label}
+      </button>
+    );
+    const showStrikeConc = activePreset === "whale" || presetMode === "custom";
+
+    return (
+      <div className="p-4 space-y-5">
+        {/* Preset selector */}
         <div className="space-y-2">
-          <div className="flex justify-between text-[11px] text-muted-foreground uppercase">
-            <span>Min VOI Ratio</span>
-            <span style={{ color: "#66e0ff" }}>{uMinVoi}×+</span>
+          <div className="grid grid-cols-4 gap-1.5">
+            {PRESET_ORDER.map(id => {
+              const p = PRESETS[id];
+              const active = presetMode === "preset" && activePreset === id;
+              return (
+                <button
+                  key={id}
+                  onClick={() => applyPreset(id)}
+                  className="py-2 px-2 rounded font-bold uppercase tracking-wider transition-all text-[11px]"
+                  style={{
+                    background: active ? p.accent : "transparent",
+                    color: active ? "#0b0b0c" : p.accent,
+                    border: `1px solid ${active ? p.accent : `${p.accent}55`}`,
+                  }}
+                >{p.label}</button>
+              );
+            })}
+            <button
+              onClick={() => { setPresetMode("custom"); setActivePreset(null); if (!basePreset) setBasePreset(closestPreset(unusualFilters)); }}
+              className="py-2 px-2 rounded font-bold uppercase tracking-wider transition-all text-[11px]"
+              style={{
+                background: presetMode === "custom" ? "#e5e7eb" : "transparent",
+                color: presetMode === "custom" ? "#0b0b0c" : "#9ca3af",
+                border: `1px solid ${presetMode === "custom" ? "#e5e7eb" : "#2a2a2a"}`,
+              }}
+            >Custom</button>
           </div>
-          <Slider value={[uMinVoi]} onValueChange={v => setUMinVoi(v[0])} min={1} max={10} step={0.5} />
-        </div>
-        <div className="space-y-2">
-          <div className="flex justify-between text-[11px] text-muted-foreground uppercase">
-            <span>Min Strike Volume</span>
-            <span style={{ color: "#66e0ff" }}>{uMinVolume.toLocaleString()}+</span>
-          </div>
-          <Slider value={[uMinVolume]} onValueChange={v => setUMinVolume(v[0])} min={100} max={2000} step={100} />
-        </div>
-        <div className="space-y-2">
-          <div className="flex justify-between text-[11px] text-muted-foreground uppercase">
-            <span>Min Notional / Strike</span>
-            <span style={{ color: "#66e0ff" }}>{fmtMoney(uMinNotional)}+</span>
-          </div>
-          <Slider value={[uMinNotional]} onValueChange={v => setUMinNotional(v[0])} min={50_000} max={5_000_000} step={50_000} />
-        </div>
-        <div className="space-y-2">
-          <div className="flex justify-between text-[11px] text-muted-foreground uppercase">
-            <span>Min DTE (excl. 0DTE)</span>
-            <span style={{ color: "#66e0ff" }}>{uMinDte === 0 ? "All" : `${uMinDte}+ days`}</span>
-          </div>
-          <Slider value={[uMinDte]} onValueChange={v => setUMinDte(v[0])} min={0} max={45} step={1} />
-        </div>
-        <div className="space-y-2">
-          <div className="flex justify-between text-[11px] text-muted-foreground uppercase">
-            <span>Skew Filter</span>
-            <span style={{ color: "#66e0ff" }}>
-              {uSkew === "any" ? "Any" : uSkew === "bullish" ? "Bullish only" : uSkew === "bearish" ? "Bearish only" : "Exclude balanced"}
-            </span>
-          </div>
-          <div className="grid grid-cols-4 gap-1">
-            {(["any", "bullish", "bearish", "non_balanced"] as const).map(s => (
-              <button
-                key={s}
-                onClick={() => setUSkew(s)}
-                className="text-[10px] py-1.5 rounded font-bold uppercase tracking-wider transition-all"
-                style={{
-                  background: uSkew === s ? "#18181b" : "transparent",
-                  color: uSkew === s ? "#66e0ff" : "#6B7280",
-                  border: `1px solid ${uSkew === s ? "rgba(102,224,255,0.4)" : "#2a2a2a"}`,
-                }}
-              >
-                {s === "any" ? "Any" : s === "bullish" ? "Bull" : s === "bearish" ? "Bear" : "≠ Bal"}
-              </button>
+          <div className="grid grid-cols-4 gap-1.5">
+            {PRESET_ORDER.map(id => (
+              <div key={id} className="text-[9px] leading-tight" style={{ color: "#6B7280" }}>{PRESETS[id].subtitle}</div>
             ))}
+            <div />
+          </div>
+          {presetMode === "custom" && basePreset && (
+            <div className="text-[10px] inline-flex items-center gap-1 px-2 py-1 rounded" style={{ background: "#1a1a1a", color: "#9ca3af", border: "1px solid #2a2a2a" }}>
+              Custom (based on {PRESETS[basePreset].label} preset)
+            </div>
+          )}
+        </div>
+
+        {/* SECTION: Size & Liquidity */}
+        <div className="space-y-3 pt-2 border-t border-card-border">
+          {sectionHeader("Size & Liquidity", "Filter out retail-sized contracts.")}
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] uppercase tracking-wider" style={{ color: "#9ca3af" }}>Exclude Indexes/ETFs</span>
+            <button
+              onClick={() => setFilter("excludeEtfs", !f.excludeEtfs)}
+              className="text-[10px] py-1 px-2 rounded font-bold uppercase tracking-wider transition-all"
+              style={{
+                background: f.excludeEtfs ? "#18181b" : "transparent",
+                color: f.excludeEtfs ? ac : "#6B7280",
+                border: `1px solid ${f.excludeEtfs ? `${ac}66` : "#2a2a2a"}`,
+              }}
+            >{f.excludeEtfs ? "On" : "Off"}</button>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {sliderRow("Min Strike Volume", `${f.minStrikeVolume.toLocaleString()}+`,
+              <Slider value={[f.minStrikeVolume]} onValueChange={v => setFilter("minStrikeVolume", v[0])} min={100} max={2000} step={100} />)}
+            {sliderRow("Min Notional / Strike", `${fmtMoney(f.minNotionalPerStrike)}+`,
+              <Slider value={[f.minNotionalPerStrike]} onValueChange={v => setFilter("minNotionalPerStrike", v[0])} min={50_000} max={5_000_000} step={50_000} />)}
+            {sliderRow("Min Relative Options ADV", f.minRelativeOptionsAdv === 0 ? "Off" : `${f.minRelativeOptionsAdv}×+`,
+              <>
+                <Slider value={[f.minRelativeOptionsAdv]} onValueChange={v => setFilter("minRelativeOptionsAdv", v[0])} min={0} max={10} step={0.5} />
+                <div className="text-[9px]" style={{ color: "#6B7280" }}>Filters for prints large vs this contract's normal volume.</div>
+              </>)}
+            {sliderRow("Min Underlying Vol vs ADV", f.minUnderlyingVolVsAdv === 0 ? "Off" : `${f.minUnderlyingVolVsAdv}×+`,
+              <>
+                <Slider value={[f.minUnderlyingVolVsAdv]} onValueChange={v => setFilter("minUnderlyingVolVsAdv", v[0])} min={0} max={5} step={0.1} />
+                <div className="text-[9px]" style={{ color: "#6B7280" }}>Requires today's stock volume to be elevated vs its 20-day average.</div>
+              </>)}
           </div>
         </div>
 
-        <div className="space-y-2">
-          <div className="flex justify-between text-[11px] text-muted-foreground uppercase">
-            <span>Execution Pattern</span>
-            <span style={{ color: "#9ca3af" }} title="Aggressor side requires NBBO subscription — Phase 2">
-              Aggressor: N/A
-            </span>
+        {/* SECTION: Unusualness & Horizon */}
+        <div className="space-y-3 pt-2 border-t border-card-border">
+          {sectionHeader("Unusualness & Horizon", "Focus on true outlier bets in time and size.")}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {sliderRow("Min VOI Ratio", `${f.minVoiRatio}×+`,
+              <Slider value={[f.minVoiRatio]} onValueChange={v => setFilter("minVoiRatio", v[0])} min={1} max={10} step={0.5} />)}
+            {sliderRow("Min Unusual Strikes", `${f.minUnusualStrikes}+`,
+              <Slider value={[f.minUnusualStrikes]} onValueChange={v => setFilter("minUnusualStrikes", v[0])} min={1} max={10} step={1} />)}
+            {sliderRow("Min DTE (excl. 0DTE)", f.minDteExcl0 === 0 ? "All" : `${f.minDteExcl0}+ days`,
+              <Slider value={[f.minDteExcl0]} onValueChange={v => setFilter("minDteExcl0", v[0])} min={0} max={45} step={1} />)}
+            {sliderRow("Max DTE", f.maxDte >= 365 ? "No cap" : `≤ ${f.maxDte} days`,
+              <Slider value={[Math.min(f.maxDte, 365)]} onValueChange={v => setFilter("maxDte", v[0] >= 365 ? 365 : v[0])} min={1} max={365} step={1} />)}
+            {sliderRow("Min Expiry Concentration", f.minExpiryConcentrationPct === 0 ? "Off" : `${f.minExpiryConcentrationPct}%`,
+              <Slider value={[f.minExpiryConcentrationPct]} onValueChange={v => setFilter("minExpiryConcentrationPct", v[0])} min={0} max={100} step={5} />)}
+            {showStrikeConc && sliderRow("Min Strike Concentration", f.minStrikeConcentrationPct === 0 ? "Off" : `${f.minStrikeConcentrationPct}%`,
+              <Slider value={[f.minStrikeConcentrationPct]} onValueChange={v => setFilter("minStrikeConcentrationPct", v[0])} min={0} max={100} step={5} />)}
           </div>
-          <div className="grid grid-cols-3 gap-1">
-            {([
-              ["sweep", uIncludeSweeps, setUIncludeSweeps, "#FFB800"],
-              ["block", uIncludeBlocks, setUIncludeBlocks, "#66e0ff"],
-              ["regular", uIncludeRegular, setUIncludeRegular, "#6B7280"],
-            ] as const).map(([label, val, setter, color]) => (
-              <button
-                key={label}
-                onClick={() => setter(!val)}
-                className="text-[10px] py-1.5 rounded font-bold uppercase tracking-wider transition-all"
-                style={{
-                  background: val ? "#18181b" : "transparent",
-                  color: val ? color : "#3f3f46",
-                  border: `1px solid ${val ? `${color}66` : "#2a2a2a"}`,
-                }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <div className="grid grid-cols-2 gap-2 pt-1">
-            <div>
-              <div className="flex justify-between text-[10px] text-muted-foreground uppercase mb-1">
-                <span>Min Sweeps</span>
-                <span style={{ color: "#FFB800" }}>{uMinSweepCount}+</span>
-              </div>
-              <Slider value={[uMinSweepCount]} onValueChange={v => setUMinSweepCount(v[0])} min={0} max={20} step={1} />
+        </div>
+
+        {/* SECTION: Direction & Pattern */}
+        <div className="space-y-3 pt-2 border-t border-card-border">
+          {sectionHeader("Direction & Pattern", "Dial in buyer vs seller and sweep/block behavior.")}
+
+          <div className="space-y-1.5">
+            <div className="text-[11px] uppercase tracking-wider" style={{ color: "#9ca3af" }}>Skew</div>
+            <div className="grid grid-cols-4 gap-1">
+              {(["any", "bull", "bear", "balanced"] as const).map(s => segBtn(f.skew, s, s === "any" ? "Any" : s === "bull" ? "Bull" : s === "bear" ? "Bear" : "≠ Bal", () => setFilter("skew", s)))}
             </div>
-            <div>
-              <div className="flex justify-between text-[10px] text-muted-foreground uppercase mb-1">
-                <span>Min Blocks</span>
-                <span style={{ color: "#66e0ff" }}>{uMinBlockCount}+</span>
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="text-[11px] uppercase tracking-wider" style={{ color: "#9ca3af" }}>Aggressor Side</div>
+            <div className="grid grid-cols-3 gap-1">
+              {(["any", "buyer", "seller"] as const).map(a => segBtn(f.aggressor, a, a === "any" ? "Any" : a === "buyer" ? "Buyer" : "Seller", () => setFilter("aggressor", a)))}
+            </div>
+            <label className="flex items-center gap-2 text-[10px] pt-1" style={{ color: "#9ca3af" }}>
+              <input type="checkbox" checked={f.excludeMid} onChange={e => setFilter("excludeMid", e.target.checked)} style={{ accentColor: ac }} />
+              Exclude mid-market prints
+            </label>
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="text-[11px] uppercase tracking-wider" style={{ color: "#9ca3af" }}>Execution Pattern</div>
+            <div className="grid grid-cols-3 gap-1">
+              {([
+                ["sweep", "patternSweep", f.patternSweep, "#FFB800"],
+                ["block", "patternBlock", f.patternBlock, "#66e0ff"],
+                ["regular", "patternRegular", f.patternRegular, "#6B7280"],
+              ] as const).map(([label, key, val, color]) => (
+                <button
+                  key={label}
+                  onClick={() => setFilter(key, !val)}
+                  className="text-[10px] py-1.5 rounded font-bold uppercase tracking-wider transition-all"
+                  style={{
+                    background: val ? "#18181b" : "transparent",
+                    color: val ? color : "#3f3f46",
+                    border: `1px solid ${val ? `${color}66` : "#2a2a2a"}`,
+                  }}
+                >{label}</button>
+              ))}
+            </div>
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <div>
+                <div className="flex justify-between text-[10px] text-muted-foreground uppercase mb-1">
+                  <span>Min Sweeps</span>
+                  <span style={{ color: "#FFB800" }}>{f.minSweeps}+</span>
+                </div>
+                <Slider value={[f.minSweeps]} onValueChange={v => setFilter("minSweeps", v[0])} min={0} max={20} step={1} />
               </div>
-              <Slider value={[uMinBlockCount]} onValueChange={v => setUMinBlockCount(v[0])} min={0} max={20} step={1} />
+              <div>
+                <div className="flex justify-between text-[10px] text-muted-foreground uppercase mb-1">
+                  <span>Min Blocks</span>
+                  <span style={{ color: "#66e0ff" }}>{f.minBlocks}+</span>
+                </div>
+                <Slider value={[f.minBlocks]} onValueChange={v => setFilter("minBlocks", v[0])} min={0} max={20} step={1} />
+              </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <div className="flex flex-col gap-4 max-w-4xl mx-auto pb-6">

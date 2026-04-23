@@ -1,0 +1,129 @@
+FEATURE: Preset-Based Unusual Options Flow Filters
+
+Build preset-based filtering in the Alpha Terminal Unusual Flow scanner. Three tested presets (Momentum, Swing, Whale) plus Custom mode, three new filters (aggressor, relative options ADV, expiry concentration), and regrouped filter sections.
+
+SECTION 1: PRESET SELECTOR
+
+At the top of the Unusual Flow Filters panel, add a horizontal button row:
+Momentum | Swing | Whale | Custom
+
+Exactly one active at a time. Tapping a preset applies its predefined configuration to all filters below and sets activePreset state. Tapping Custom sets mode to custom without changing slider values. Modifying any filter while a preset is active auto-switches mode to Custom, remembers basePreset, and shows a small chip near the preset row: "Custom (based on Momentum preset)."
+
+Under each preset button, show a one-line subtitle:
+- Momentum: "Near-term aggressive bets (3–14 DTE)"
+- Swing: "Larger, slower institutional positioning (21–60 DTE)"
+- Whale: "Follow seven-figure prints of any horizon"
+
+When switching presets, show a brief toast: "Applied Momentum preset (VOI 3x+, 3–14 DTE, 250K+ notional)." Toast content mirrors the preset's key values.
+
+Subtly tint active slider accent color to match the preset (optional polish).
+
+SECTION 2: PRESET CONFIGURATIONS
+
+TypeScript interface:
+
+interface UnusualFlowFilters {
+  minUnusualStrikes: number;
+  minVoiRatio: number;
+  minStrikeVolume: number;
+  minNotionalPerStrike: number;
+  minDteExcl0: number;
+  maxDte: number;
+  skew: 'any' | 'bull' | 'bear' | 'balanced';
+  patternSweep: boolean;
+  patternBlock: boolean;
+  patternRegular: boolean;
+  minSweeps: number;
+  minBlocks: number;
+  excludeEtfs: boolean;
+  aggressor: 'any' | 'buyer' | 'seller';
+  excludeMid: boolean;
+  minExpiryConcentrationPct: number;
+  minStrikeConcentrationPct: number;
+  minRelativeOptionsAdv: number;
+  minUnderlyingVolVsAdv: number;
+}
+
+Momentum preset:
+- minVoiRatio: 3
+- minStrikeVolume: 500
+- minNotionalPerStrike: 250000
+- minDteExcl0: 3, maxDte: 14
+- aggressor: 'buyer', excludeMid: true
+- patternSweep: true, patternBlock: true
+- minExpiryConcentrationPct: 50
+- minUnderlyingVolVsAdv: 1.3
+- excludeEtfs: true
+
+Swing preset:
+- minVoiRatio: 2
+- minStrikeVolume: 500
+- minNotionalPerStrike: 500000
+- minDteExcl0: 21, maxDte: 60
+- aggressor: 'any', excludeMid: true
+- patternSweep: true, patternBlock: true
+- minExpiryConcentrationPct: 60
+- minRelativeOptionsAdv: 3
+- excludeEtfs: true
+
+Whale preset:
+- minVoiRatio: 2
+- minStrikeVolume: 1000
+- minNotionalPerStrike: 1000000
+- minDteExcl0: 1, maxDte: Infinity
+- aggressor: 'any', excludeMid: true
+- patternBlock: true, patternSweep: false
+- minBlocks: 1
+- minExpiryConcentrationPct: 70
+- minStrikeConcentrationPct: 70
+- minRelativeOptionsAdv: 5
+- excludeEtfs: true
+
+SECTION 3: NEW FILTERS
+
+Aggressor side: radio buttons for Any / Buyer-initiated / Seller-initiated. Backend infers from NBBO + trade price (price at/above ask = buyer, price at/below bid = seller, between = mid). Checkbox below radio: "Exclude mid-market prints."
+
+Relative options ADV: slider 0–10x, step 0.5. Semantics: today's options notional for that strike divided by 20-day average options notional for that strike. Helper text: "Filters for prints large vs this contract's normal volume."
+
+Expiry concentration: slider 0–100%. Semantics: for all qualifying prints in a symbol, group by expiry, require the top expiry to hold at least this % of total notional.
+
+Strike concentration (Whale-specific): slider 0–100%, hidden from UI unless Whale preset is active or user is in Custom mode. Semantics: top 1–2 strikes in the top expiry must hold at least this % of notional.
+
+SECTION 4: REGROUPED FILTER PANEL
+
+Three sections with headers and captions:
+
+Size & Liquidity — "Filter out retail-sized contracts."
+- Exclude indexes/ETFs toggle
+- Min strike volume slider
+- Min notional per strike slider
+- Min relative options ADV slider
+
+Unusualness & Horizon — "Focus on true outlier bets in time and size."
+- Min VOI ratio slider
+- Min unusual strikes slider
+- Min DTE slider
+- Min expiry concentration slider
+- Min strike concentration slider (conditional)
+
+Direction & Pattern — "Dial in buyer vs seller and sweep/block behavior."
+- Skew filter buttons (Any / Bull / Bear / Balanced)
+- Aggressor radio (Any / Buyer / Seller)
+- Exclude mid prints checkbox
+- Execution pattern buttons (Sweep / Block / Regular, multi-select)
+- Min sweeps slider
+- Min blocks slider
+
+SECTION 5: DEFAULTS, PERSISTENCE, LOGGING
+
+On first load of the Unusual Flow tab, default to Momentum preset. On subsequent loads, restore the user's last configuration. If it exactly matches a preset, select that preset; otherwise Custom with closest-match basePreset.
+
+Every scan request payload must include: full filters object, mode (preset or custom), activePreset if applicable, basePreset if in custom mode. Logging these enables future preset tuning based on which configurations produced tradeable hits.
+
+SECTION 6: UI POLISH
+
+- One-line section captions appear below each section header
+- Slider focus state shows a one-line subtitle explaining the filter (e.g., "VOI 3x+ = today's volume at least 3x open interest, often first-time institutional bets")
+- Preset button active state visually distinct (filled vs outlined)
+- Toast confirmations on preset switch show key threshold values
+- Custom chip shows "Custom (based on [preset])" when mode is custom with a basePreset set
