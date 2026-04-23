@@ -1,4 +1,4 @@
-import { useTerminalStore, type StrategistTranscriptTurn } from "./store";
+import { useTerminalStore, type StrategistTranscriptTurn, type StrategistValidationMeta } from "./store";
 import { fetchWithAuth } from "./fetchWithAuth";
 
 const API_BASE = "/api";
@@ -24,6 +24,8 @@ interface ThinkingResponse {
   done: boolean;
   result: unknown | null;
   error: string | null;
+  kind?: 'analyze' | 'validation';
+  validationMeta?: StrategistValidationMeta | null;
 }
 
 async function refreshHistoryAfterCompletion() {
@@ -178,6 +180,16 @@ export function startStrategistPolling(jobId: string, opts?: { force?: boolean }
 
         if (t.status) {
           useTerminalStore.getState().setStrategistLiveStatus(jobId, t.status);
+        }
+
+        // Validation jobs include kind + validationMeta. Push them into the
+        // store on first sight so the validation card can render the user's
+        // thesis and the rolling-short flag while the debate is still running.
+        if (t.kind === 'validation' || t.validationMeta) {
+          useTerminalStore.getState().setStrategistJobMeta(jobId, {
+            kind: t.kind,
+            validationMeta: t.validationMeta ?? undefined,
+          });
         }
 
         if (Array.isArray(t.transcript)) {

@@ -3,6 +3,7 @@ import { useTerminalStore } from "@/lib/store";
 import { useQuote } from "@/hooks/useQuote";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
+import { startStrategistPolling } from "@/lib/strategistPoller";
 import {
   X, Minus, Plus, Loader2, CheckCircle2, AlertTriangle, ChevronDown, ChevronUp,
   ShieldX, Lock, Unlock,
@@ -255,6 +256,10 @@ interface OrderTicketProps {
   isCloseOrder?: boolean;
   onSwitchToStock?: () => void;
   onSwitchToOptions?: () => void;
+  // Fired after a successful "Send to Strategist" dispatch. Terminal uses
+  // this to navigate to the AI > Strategist sub-tab so the user can watch
+  // the live trade-validation debate.
+  onSendToStrategist?: (ticker?: string) => void;
 }
 
 function AiCoPilotPanel({ side, symbol, limitPrice, bid, ask, quantity, isOption }: {
@@ -319,7 +324,7 @@ function AiCoPilotPanel({ side, symbol, limitPrice, bid, ask, quantity, isOption
   );
 }
 
-export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, optionInstruction, strategyLegs, strategyNetPrice, strategyIsCredit, isCloseOrder, onSwitchToStock, onSwitchToOptions }: OrderTicketProps) {
+export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, optionInstruction, strategyLegs, strategyNetPrice, strategyIsCredit, isCloseOrder, onSwitchToStock, onSwitchToOptions, onSendToStrategist }: OrderTicketProps) {
   const symbol = useTerminalStore((s) => s.symbol);
   const { data: quote } = useQuote(symbol);
   const pulseData = useMarketPulseStore((s) => s.pulseData);
@@ -352,6 +357,12 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
   const [instruction, setInstruction] = useState<"NONE" | "ALL_OR_NONE" | "DO_NOT_REDUCE">("NONE");
   const [exchange, setExchange] = useState<"BEST" | "NYSE" | "NASDAQ" | "ARCA" | "BATS">("BEST");
   const [taxLotMethod, setTaxLotMethod] = useState<"DEFAULT" | "FIFO" | "LIFO" | "HIGH_COST" | "LOW_COST" | "SPEC_ID">("DEFAULT");
+  // Send-to-Strategist mode: when "strategist", the CTA dispatches a
+  // trade-validation debate instead of opening the review modal.
+  const [sendMode, setSendMode] = useState<"order" | "strategist">("order");
+  const [thesisText, setThesisText] = useState("");
+  const [rollingShort, setRollingShort] = useState(false);
+  const [strategistDispatchInFlight, setStrategistDispatchInFlight] = useState(false);
   const qtyInputRef = useRef<HTMLInputElement>(null);
 
   const isMultiLeg = !!strategyLegs && strategyLegs.length >= 1;
@@ -405,6 +416,10 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
     setShowTifDropdown(false);
     setPriceLocked(false);
     setPosEffect("AUTO");
+    setSendMode("order");
+    setThesisText("");
+    setRollingShort(false);
+    setStrategistDispatchInFlight(false);
   }, [isOpen, initialSide, isMultiLeg, strategyNetPrice]);
 
   const [balances, setBalances] = useState<{ buyingPower: number | null; cashBalance: number | null; liquidationValue: number | null }>({ buyingPower: null, cashBalance: null, liquidationValue: null });
@@ -691,6 +706,153 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
       setStage("error");
     }
   }, [accountHash, buildSchwabOrder, symbol, side, pulseData, limitPrice, isMultiLeg, strategyIsCredit, strategyLegs, quantity, isOption]);
+
+  // ── Send-to-Strategist (trade validation) ────────────────────────────────
+  // Rolling-short eligibility: a multi-leg ticket with at least one short leg
+  // whose expiration is BEFORE at least one long leg's expiration. Classic
+  // calendar / diagonal shape. We surface a checkbox so the trader can flag
+  // this intent explicitly to the strategist.
+  const isRollingShortEligible = useMemo(() => {
+    if (!isMultiLeg || !strategyLegs || strategyLegs.length < 2) return false;
+    const shortLegs = strategyLegs.filter(l => l.instruction.startsWith("SELL") && !!l.expiration);
+    const longLegs = strategyLegs.filter(l => l.instruction.startsWith("BUY") && !!l.expiration);
+    if (shortLegs.length === 0 || longLegs.length === 0) return false;
+    return shortLegs.some(s => longLegs.some(lg => s.expiration < lg.expiration));
+  }, [isMultiLeg, strategyLegs]);
+
+  // Reset rollingShort when it becomes ineligible (e.g. user switched ticket).
+  useEffect(() => {
+    if (!isRollingShortEligible && rollingShort) setRollingShort(false);
+  }, [isRollingShortEligible, rollingShort]);
+
+  const handleSendToStrategist = useCallback(async () => {
+    if (strategistDispatchInFlight) return;
+    setStrategistDispatchInFlight(true);
+    const upperTicker = symbol.toUpperCase();
+    const jobId = `vj_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const mode: "opening" | "closing" = isCloseOrder ? "closing" : "opening";
+
+    // Build the validation ticket payload. Mirrors api-server's
+    // ValidationTicket type. We include best-effort economics so the
+    // strategist can ground its analysis without a second round-trip.
+    let estMaxRisk: number | null = null;
+    let estMaxProfit: number | null = null;
+    let breakeven: number | null = null;
+    if (isMultiLeg && strategyLegs && strategyLegs.length >= 2) {
+      const strikes = strategyLegs.map(l => l.strike).sort((a, b) => a - b);
+      const width = strikes[strikes.length - 1] - strikes[0];
+      const px = parseFloat(limitPrice) || 0;
+      if (strategyIsCredit) {
+        estMaxRisk = (width - px) * 100 * quantity;
+        estMaxProfit = px * 100 * quantity;
+      } else {
+        estMaxRisk = px * 100 * quantity;
+        estMaxProfit = (width - px) * 100 * quantity;
+      }
+    } else if (!isOption) {
+      const px = parseFloat(limitPrice) || quote?.last || 0;
+      estMaxRisk = px * quantity;
+    }
+
+    const validationLegs = isMultiLeg && strategyLegs
+      ? strategyLegs.map(l => ({
+          instruction: l.instruction,
+          strike: l.strike,
+          optionType: (l.optionType?.toUpperCase() === "CALL" ? "CALL" : "PUT") as "CALL" | "PUT",
+          expiration: l.expiration,
+          quantity: l.quantity,
+          bid: l.bid ?? null,
+          ask: l.ask ?? null,
+          delta: l.delta ?? null,
+        }))
+      : (isOption && optionSymbol
+          ? [{
+              instruction: optionInstruction ?? (side === "BUY" ? "BUY_TO_OPEN" : "SELL_TO_CLOSE"),
+              quantity,
+              bid: quote?.bid ?? null,
+              ask: quote?.ask ?? null,
+            }]
+          : undefined);
+
+    const ticket = {
+      ticker: upperTicker,
+      isOption,
+      isMultiLeg,
+      mode,
+      side,
+      orderType,
+      duration,
+      quantity,
+      limitPrice: parseFloat(limitPrice) || null,
+      legs: validationLegs,
+      // Prefer user-edited limit (the ticket they intend to send) over the
+      // initial strategyNetPrice; fall back if no edit was made.
+      netPrice: isMultiLeg
+        ? (parseFloat(limitPrice) || strategyNetPrice || null)
+        : null,
+      isCredit: isMultiLeg ? (strategyIsCredit ?? null) : null,
+      underlyingPrice: quote?.last ?? null,
+      underlyingChangePct: quote?.changePct ?? null,
+      estMaxRisk,
+      estMaxProfit,
+      breakeven,
+      // Frontend-only echoes for faithful reopen.
+      optionSymbol: !isMultiLeg && isOption ? optionSymbol : undefined,
+      optionInstruction: !isMultiLeg && isOption ? optionInstruction : undefined,
+    };
+
+    const validationMeta = {
+      ticker: upperTicker,
+      mode,
+      ticket,
+      thesis: thesisText.trim() || undefined,
+      rollingShort: isRollingShortEligible && rollingShort,
+    };
+
+    // Register with the global jobs store so the Strategist tab can render
+    // the live validation card immediately on navigation.
+    useTerminalStore.getState().startStrategistJob(jobId, upperTicker, {
+      kind: 'validation',
+      validationMeta,
+    });
+
+    try {
+      const res = await fetchWithAuth(`/api/strategist/validate-trade`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jobId,
+          ticket,
+          thesis: validationMeta.thesis,
+          rollingShort: validationMeta.rollingShort,
+        }),
+        keepalive: true,
+      });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "Failed to start validation");
+        useTerminalStore.getState().errorStrategistJob(jobId, errText);
+        setErrorMsg(`Strategist dispatch failed: ${errText.slice(0, 200)}`);
+        setStrategistDispatchInFlight(false);
+        return; // stay on the ticket so the user can retry / adjust
+      }
+      startStrategistPolling(jobId);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      useTerminalStore.getState().errorStrategistJob(jobId, msg);
+      setErrorMsg(`Strategist dispatch failed: ${msg.slice(0, 200)}`);
+      setStrategistDispatchInFlight(false);
+      return;
+    }
+
+    // Hand off to Terminal: switch to AI > Strategist sub-tab + close ticket.
+    onSendToStrategist?.(upperTicker);
+    setStrategistDispatchInFlight(false);
+  }, [
+    strategistDispatchInFlight, symbol, isCloseOrder, isMultiLeg, strategyLegs, limitPrice,
+    strategyIsCredit, quantity, isOption, optionSymbol, optionInstruction, side, orderType,
+    duration, strategyNetPrice, quote, thesisText, isRollingShortEligible, rollingShort,
+    onSendToStrategist,
+  ]);
 
   const setMidPrice = useCallback(() => {
     if (isMultiLeg && spreadPrices) {
@@ -1579,21 +1741,102 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
               {preTradeEnabled && <span>Risk: {overallRisk === "GREEN" ? "PASS" : overallRisk === "YELLOW" ? "WARN" : "FAIL"}</span>}
             </div>
           )}
+          {/* Strategist-mode extra fields: thesis + rolling-short toggle */}
+          {sendMode === "strategist" && (
+            <div className="space-y-2 mb-2">
+              {isRollingShortEligible && (
+                <label
+                  className="flex items-center gap-2 px-3 py-2 cursor-pointer"
+                  style={{ background: FIELD, border: `1px solid ${BORDER}`, borderRadius: 10 }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={rollingShort}
+                    onChange={(e) => setRollingShort(e.target.checked)}
+                    style={{ accentColor: "#5ad1c0" }}
+                  />
+                  <span style={{ fontSize: S.label, color: TEXT }}>
+                    Rolling short — short leg expires before long leg
+                  </span>
+                </label>
+              )}
+              <textarea
+                value={thesisText}
+                onChange={(e) => setThesisText(e.target.value)}
+                placeholder={isCloseOrder
+                  ? "Why are you closing now? (optional — strategist will weigh your reasoning)"
+                  : "Describe your strategy or thesis (optional — gives strategist context to debate against)"}
+                rows={3}
+                maxLength={2000}
+                className="w-full px-3 py-2 resize-none"
+                style={{
+                  background: FIELD, border: `1px solid ${BORDER}`, borderRadius: 10,
+                  color: WHITE, fontSize: S.label, fontFamily: SYS_FONT, outline: "none",
+                }}
+              />
+            </div>
+          )}
+
+          {/* Two-segment mode toggle */}
+          <div
+            className="flex mb-2 p-0.5"
+            style={{ background: FIELD, border: `1px solid ${BORDER}`, borderRadius: 999 }}
+          >
+            {([
+              { key: "order" as const, label: "Send Order" },
+              { key: "strategist" as const, label: "Send to Strategist" },
+            ]).map(seg => {
+              const active = sendMode === seg.key;
+              return (
+                <button
+                  key={seg.key}
+                  onClick={() => setSendMode(seg.key)}
+                  className="flex-1 transition-all duration-150"
+                  style={{
+                    height: 30,
+                    borderRadius: 999,
+                    border: "none",
+                    background: active
+                      ? (seg.key === "strategist"
+                          ? "linear-gradient(135deg, #5ad1c0, #3aa899)"
+                          : CTA_GRAD)
+                      : "transparent",
+                    color: active ? BG : TEXT,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    fontFamily: SYS_FONT,
+                    letterSpacing: "0.02em",
+                  }}
+                >
+                  {seg.label}
+                </button>
+              );
+            })}
+          </div>
+
           <button
-            onClick={() => setStage("review")}
-            className="w-full tracking-[0.06em] uppercase transition-all duration-150 active:scale-[0.98]"
+            onClick={() => {
+              if (sendMode === "strategist") void handleSendToStrategist();
+              else setStage("review");
+            }}
+            disabled={sendMode === "strategist" && strategistDispatchInFlight}
+            className="w-full tracking-[0.06em] uppercase transition-all duration-150 active:scale-[0.98] disabled:opacity-60"
             style={{
               fontSize: isMultiLeg ? 18 : 17,
               height: isMultiLeg ? 42 : 48,
               borderRadius: 999,
               border: "none",
-              background: CTA_GRAD,
+              background: sendMode === "strategist"
+                ? "linear-gradient(135deg, #5ad1c0, #3aa899)"
+                : CTA_GRAD,
               color: BG,
-              fontWeight: isMultiLeg ? 400 : 500,
+              fontWeight: isMultiLeg ? 500 : 600,
               fontFamily: SYS_FONT,
             }}
           >
-            {isCloseOrder ? "Review close order" : isMultiLeg ? "Review options order" : `Review ${side.toLowerCase()} order`}
+            {sendMode === "strategist"
+              ? (strategistDispatchInFlight ? "DISPATCHING…" : "SEND TO STRATEGIST")
+              : (isCloseOrder ? "SEND ORDER" : isMultiLeg ? "SEND ORDER" : "SEND ORDER")}
           </button>
         </div>
       )}

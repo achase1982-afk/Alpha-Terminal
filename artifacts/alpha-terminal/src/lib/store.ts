@@ -208,6 +208,11 @@ export interface TerminalState {
     nextSince: number;
     liveStatus: string;
     transcript: StrategistTranscriptTurn[];
+    // Discriminator + metadata for trade-validation jobs (kicked off from
+    // OrderTicket "Send to Strategist"). Absent / "analyze" for ticker
+    // analysis jobs kicked off from the Strategist tab.
+    kind?: 'analyze' | 'validation';
+    validationMeta?: StrategistValidationMeta | null;
   }>;
   strategistHistory: Array<{
     id: number;
@@ -216,12 +221,13 @@ export interface TerminalState {
     createdAt: string;
     cardJson: unknown;
   }>;
-  startStrategistJob: (jobId: string, ticker: string) => void;
+  startStrategistJob: (jobId: string, ticker: string, opts?: { kind?: 'analyze' | 'validation'; validationMeta?: StrategistValidationMeta }) => void;
   completeStrategistJob: (jobId: string, result: unknown) => void;
   errorStrategistJob: (jobId: string, reason: string) => void;
   appendStrategistTokens: (jobId: string, tokens: string[], nextSince: number) => void;
   setStrategistTranscript: (jobId: string, transcript: StrategistTranscriptTurn[]) => void;
   setStrategistLiveStatus: (jobId: string, status: string) => void;
+  setStrategistJobMeta: (jobId: string, patch: { kind?: 'analyze' | 'validation'; validationMeta?: StrategistValidationMeta | null }) => void;
   markStrategistJobsViewed: () => void;
   setStrategistHistory: (list: Array<{ id: number; jobId: string; ticker: string; createdAt: string; cardJson: unknown }>) => void;
   removeHistoryCard: (id: number) => void;
@@ -239,6 +245,52 @@ export interface TerminalState {
   liveNews: LiveNewsItem[];
   addLiveNews: (item: LiveNewsItem) => void;
   clearLiveNews: () => void;
+}
+
+// Mirrors the api-server ValidationMeta shape. Stored on validation jobs so
+// the StrategistValidationCard can render the trader's thesis, the rolling-
+// short flag, and the original ticket (for the "Send Order" reopen button)
+// even before the verdict comes back.
+export interface StrategistValidationMeta {
+  ticker: string;
+  mode: 'opening' | 'closing';
+  ticket: {
+    ticker: string;
+    isOption: boolean;
+    isMultiLeg: boolean;
+    mode: 'opening' | 'closing';
+    side?: 'BUY' | 'SELL';
+    orderType: string;
+    duration?: string;
+    quantity: number;
+    limitPrice?: number | null;
+    legs?: Array<{
+      instruction: string;
+      strike?: number;
+      optionType?: 'CALL' | 'PUT';
+      expiration?: string;
+      quantity?: number;
+      bid?: number | null;
+      ask?: number | null;
+      delta?: number | null;
+    }>;
+    netPrice?: number | null;
+    isCredit?: boolean | null;
+    currentEntryPrice?: number | null;
+    currentPnl?: number | null;
+    daysHeld?: number | null;
+    underlyingPrice?: number | null;
+    underlyingChangePct?: number | null;
+    estMaxRisk?: number | null;
+    estMaxProfit?: number | null;
+    breakeven?: number | null;
+    // Frontend-only echoes (not sent to LLM) used to faithfully reopen the
+    // OrderTicket from a strategist verdict card.
+    optionSymbol?: string;
+    optionInstruction?: string;
+  };
+  thesis?: string;
+  rollingShort?: boolean;
 }
 
 // Mirrors the api-server TranscriptTurn shape; structured one-per-AI-turn entries
@@ -516,7 +568,7 @@ export const useTerminalStore = create<TerminalState>()(
 
       strategistJobs: {},
       strategistHistory: [],
-      startStrategistJob: (jobId, ticker) =>
+      startStrategistJob: (jobId, ticker, opts) =>
         set((state) => ({
           strategistJobs: {
             ...state.strategistJobs,
@@ -531,11 +583,28 @@ export const useTerminalStore = create<TerminalState>()(
               error: null,
               tokens: [],
               nextSince: 0,
-              liveStatus: 'Starting analysis…',
+              liveStatus: opts?.kind === 'validation' ? 'Starting trade validation…' : 'Starting analysis…',
               transcript: [],
+              kind: opts?.kind ?? 'analyze',
+              validationMeta: opts?.validationMeta ?? null,
             },
           },
         })),
+      setStrategistJobMeta: (jobId, patch) =>
+        set((state) => {
+          const job = state.strategistJobs[jobId];
+          if (!job) return {};
+          // Avoid useless re-renders: skip if nothing actually changes.
+          const nextKind = patch.kind ?? job.kind;
+          const nextMeta = patch.validationMeta !== undefined ? patch.validationMeta : job.validationMeta;
+          if (nextKind === job.kind && nextMeta === job.validationMeta) return {};
+          return {
+            strategistJobs: {
+              ...state.strategistJobs,
+              [jobId]: { ...job, kind: nextKind, validationMeta: nextMeta },
+            },
+          };
+        }),
       setStrategistTranscript: (jobId, transcript) =>
         set((state) => {
           const job = state.strategistJobs[jobId];

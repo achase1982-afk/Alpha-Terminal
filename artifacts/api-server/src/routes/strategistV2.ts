@@ -2,6 +2,12 @@ import { Router, type IRouter } from "express";
 import { analyzeTickerV2, type StrategistV2Result } from "../lib/strategistV2.js";
 import { getSettings, updateSetting, resetAllSettings, getDefaults, getSettingMeta } from "../lib/strategistSettings.js";
 import { getCachedRegime, buildFallbackRegime } from "../lib/regimePostProcessor.js";
+import {
+  runTradeValidation,
+  type ValidationInput,
+  type ValidationTicket,
+  type ValidationVerdictPayload,
+} from "../lib/strategistValidate.js";
 import { db, strategistTelemetryTable, scannerTelemetryTable, strategistHistoryTable } from "@workspace/db";
 import { desc, eq, sql, lte, and } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
@@ -28,15 +34,28 @@ export type TranscriptTurn = {
   done: boolean;
 };
 
-// In-memory live thinking buffer per jobId (for streaming-style polling)
+// In-memory live thinking buffer per jobId (for streaming-style polling).
+// Used for BOTH ticker analysis (kind: "analyze") and trade validation
+// (kind: "validation"). The frontend poller discriminates on `kind`.
+export type ValidationMeta = {
+  ticker: string;
+  mode: "opening" | "closing";
+  ticket: ValidationTicket;
+  thesis?: string;
+  rollingShort?: boolean;
+};
+
 type ThinkingEntry = {
   jobId: string;
+  kind: "analyze" | "validation";
   ticker: string;
   status: string;
   tokens: string[];
   transcript: TranscriptTurn[];
   done: boolean;
   result?: StrategistV2Result;
+  validationResult?: ValidationVerdictPayload;
+  validationMeta?: ValidationMeta;
   error?: string;
   startedAt: number;
   finishedAt?: number;
@@ -100,6 +119,7 @@ router.post("/analyze", async (req, res): Promise<void> => {
       }
       const entry: ThinkingEntry = {
         jobId,
+        kind: "analyze",
         ticker: upperTicker,
         status: "Starting analysis…",
         tokens: [],
@@ -179,6 +199,125 @@ router.post("/analyze", async (req, res): Promise<void> => {
   }
 });
 
+// ──────────────────────────────────────────────────────────────────────
+// POST /validate-trade
+// Body: { ticket: ValidationTicket, jobId: string, thesis?: string,
+//         rollingShort?: boolean }
+// Reuses the strategistThinkingBuffer with kind: "validation" so the
+// existing /thinking/:jobId poller works unchanged.
+// ──────────────────────────────────────────────────────────────────────
+router.post("/validate-trade", (req, res): void => {
+  try {
+    const { ticket, jobId, thesis, rollingShort } = req.body as {
+      ticket?: ValidationTicket;
+      jobId?: string;
+      thesis?: string;
+      rollingShort?: boolean;
+    };
+    if (!jobId || typeof jobId !== "string") {
+      res.status(400).json({ error: "jobId is required" });
+      return;
+    }
+    if (!ticket || typeof ticket !== "object" || !ticket.ticker) {
+      res.status(400).json({ error: "ticket with ticker is required" });
+      return;
+    }
+    const upperTicker = String(ticket.ticker).toUpperCase();
+
+    pruneThinkingBuffer();
+    const existing = strategistThinkingBuffer.get(jobId);
+    if (existing) {
+      res.json({ jobId, accepted: true, alreadyRunning: !existing.done });
+      return;
+    }
+
+    const meta: ValidationMeta = {
+      ticker: upperTicker,
+      mode: ticket.mode,
+      ticket: { ...ticket, ticker: upperTicker },
+      thesis: typeof thesis === "string" ? thesis.slice(0, 4000) : undefined,
+      rollingShort: rollingShort === true,
+    };
+
+    const entry: ThinkingEntry = {
+      jobId,
+      kind: "validation",
+      ticker: upperTicker,
+      status: "Starting trade validation…",
+      tokens: [],
+      transcript: [],
+      done: false,
+      validationMeta: meta,
+      startedAt: Date.now(),
+    };
+    strategistThinkingBuffer.set(jobId, entry);
+
+    const input: ValidationInput = {
+      ticket: meta.ticket,
+      thesis: meta.thesis,
+      rollingShort: meta.rollingShort,
+    };
+
+    void (async () => {
+      try {
+        const result = await runTradeValidation(input, {
+          onStatus: (s) => { entry.status = s; },
+          onTurnStart: (turn) => {
+            entry.transcript.push({
+              id: turn.id, round: turn.round, role: turn.role, phase: turn.phase,
+              model: turn.model, label: turn.label, text: "", ts: turn.startedAt, done: false,
+            });
+            if (entry.transcript.length > 32) entry.transcript.splice(0, entry.transcript.length - 32);
+          },
+          onTurnDelta: (turnId, delta) => {
+            const t = entry.transcript.find(x => x.id === turnId);
+            if (t) t.text += delta;
+          },
+          onTurnDone: (turnId, finalText) => {
+            const t = entry.transcript.find(x => x.id === turnId);
+            if (t) { t.text = finalText; t.done = true; }
+          },
+        });
+        entry.validationResult = result;
+        entry.status = `Verdict: ${result.verdict}`;
+        entry.done = true;
+        entry.finishedAt = Date.now();
+
+        // Persist to history with a discriminator inside cardJson so the
+        // existing history table works without a migration.
+        try {
+          const cardJson = {
+            kind: "validation",
+            validation: result,
+            ticket: meta.ticket,
+            thesis: meta.thesis ?? null,
+            rollingShort: meta.rollingShort ?? false,
+            debateTranscript: entry.transcript,
+          } as unknown as object;
+          await db
+            .insert(strategistHistoryTable)
+            .values({ jobId, ticker: upperTicker, cardJson, cleared: false })
+            .onConflictDoNothing({ target: strategistHistoryTable.jobId });
+        } catch (persistErr) {
+          logger.warn({ persistErr, jobId }, "TradeValidation: failed to persist history (non-fatal)");
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        entry.error = message;
+        entry.status = `Failed: ${message}`;
+        entry.done = true;
+        entry.finishedAt = Date.now();
+        logger.error({ err, jobId, ticker: upperTicker }, "TradeValidation: background validate failed");
+      }
+    })();
+
+    res.json({ jobId, accepted: true, alreadyRunning: false });
+  } catch (err) {
+    logger.error({ err }, "TradeValidation: validate-trade route failed");
+    res.status(500).json({ error: "Validation failed to start" });
+  }
+});
+
 router.get("/thinking/:jobId", (req, res): void => {
   pruneThinkingBuffer();
   const entry = strategistThinkingBuffer.get(req.params.jobId);
@@ -191,15 +330,24 @@ router.get("/thinking/:jobId", (req, res): void => {
   const since = typeof sinceRaw === "string" ? Math.max(0, parseInt(sinceRaw, 10) || 0) : 0;
   const totalTokens = entry.tokens.length;
   const tokens = since < totalTokens ? entry.tokens.slice(since) : [];
+  // For validation jobs, the canonical "result" is the validation verdict
+  // payload (so the existing poller's `completeStrategistJob(jobId, result)`
+  // call stores the right thing). `kind` and `validationMeta` are extra
+  // discriminator fields the frontend uses to render the validation card.
+  const result = entry.kind === "validation"
+    ? (entry.validationResult ?? null)
+    : (entry.result ?? null);
   res.json({
     jobId: entry.jobId,
+    kind: entry.kind ?? "analyze",
     ticker: entry.ticker,
     status: entry.status,
     tokens,
     nextSince: totalTokens,
     transcript: entry.transcript,
     done: entry.done,
-    result: entry.result ?? null,
+    result,
+    validationMeta: entry.validationMeta ?? null,
     error: entry.error ?? null,
     startedAt: entry.startedAt,
     finishedAt: entry.finishedAt ?? null,

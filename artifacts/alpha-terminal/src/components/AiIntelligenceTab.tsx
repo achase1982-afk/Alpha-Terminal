@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from "react";
-import { useTerminalStore } from "@/lib/store";
+import { useTerminalStore, type StrategistValidationMeta } from "@/lib/store";
+import { StrategistValidationCard } from "@/components/StrategistValidationCard";
 import { ConnectBrokerPrompt } from "./ConnectBrokerPrompt";
 import {
   useGetQuote, useGetPriceHistory, useGetOptionChain,
@@ -2301,13 +2302,16 @@ interface AiIntelligenceTabProps {
   onNavigateToMarkets?: (sym: string) => void;
   onSendToOrder?: (trade: ResolvedTrade) => void;
   onStrategistSendToOrder?: (payload: StrategistSendToOrderPayload) => void;
+  // Reopen the OrderTicket pre-loaded with the validated ticket so the user
+  // can route around (or honor) the strategist's verdict.
+  onReopenValidatedOrder?: (meta: StrategistValidationMeta) => void;
 }
 
 const AI_TABS: AiSubTab[] = ["pulse", "strategist", "scanner"];
 
 type StrategistMode = "options" | "ailab";
 
-export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscribeEquitySymbols, onNavigateToMarkets, onSendToOrder, onStrategistSendToOrder }: AiIntelligenceTabProps) {
+export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscribeEquitySymbols, onNavigateToMarkets, onSendToOrder, onStrategistSendToOrder, onReopenValidatedOrder }: AiIntelligenceTabProps) {
   const [strategistMode, setStrategistMode] = useState<StrategistMode>("options");
   const swipeStartX = useRef(0);
   const swipeStartY = useRef(0);
@@ -3123,6 +3127,19 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
                 {v2Result && !isV2Running && (() => {
                   const activeJob = activeJobIdForSymbol ? strategistJobs[activeJobIdForSymbol] : null;
                   const generatedAt = activeJob?.finishedAt ?? activeJob?.startedAt ?? null;
+                  // Validation jobs render a verdict card; the v2Result here
+                  // is actually a ValidationVerdictPayload (the poller stores
+                  // whatever /thinking returns as `result`).
+                  if (activeJob?.kind === "validation") {
+                    return (
+                      <StrategistValidationCard
+                        result={v2Result as unknown}
+                        meta={activeJob.validationMeta ?? null}
+                        onReopenOrder={onReopenValidatedOrder}
+                        generatedAt={generatedAt}
+                      />
+                    );
+                  }
                   return (
                     <>
                       {v2Result.status === "recommendation" && v2Result.recommendation ? (

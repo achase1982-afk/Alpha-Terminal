@@ -19,6 +19,7 @@ import { useViewportShell } from "@/hooks/useViewportShell";
 
 import { InAppBrowser } from "@/components/InAppBrowser";
 import { OrderTicket, type OrderLeg } from "@/components/OrderTicket";
+import type { StrategistValidationMeta } from "@/lib/store";
 import type { StrategistSendToOrderPayload } from "@/components/StrategistV2Card";
 import { StrategyBuilder, type StrategyLeg } from "@/components/StrategyBuilder";
 import type { OptionsContract } from "@/components/OptionsTab";
@@ -165,6 +166,48 @@ export default function TerminalPage() {
     setOrderStrategyLegs(undefined);
     setOrderStrategyNetPrice(undefined);
     setOrderSide(side);
+    setOrderOpen(true);
+  }, []);
+
+  // Reopen the OrderTicket from a strategist validation card. We map the
+  // ValidationMeta ticket back into the OrderTicket inputs so the user lands
+  // on the same trade they sent for review.
+  const reopenValidatedOrder = useCallback((meta: StrategistValidationMeta) => {
+    const t = meta.ticket;
+    useTerminalStore.getState().setSymbol(t.ticker);
+    setOrderSide(t.side ?? "BUY");
+    setOrderIsClose(meta.mode === "closing");
+    if (t.isMultiLeg && t.legs && t.legs.length >= 2) {
+      const legs: OrderLeg[] = t.legs.map(l => ({
+        schwabSymbol: "",
+        instruction: l.instruction,
+        quantity: l.quantity ?? 1,
+        optionType: l.optionType ?? "",
+        strike: l.strike ?? 0,
+        expiration: l.expiration ?? "",
+        bid: l.bid ?? undefined,
+        ask: l.ask ?? undefined,
+        delta: l.delta ?? undefined,
+      }));
+      setOrderStrategyLegs(legs);
+      setOrderStrategyNetPrice(t.netPrice ?? undefined);
+      setOrderStrategyIsCredit(!!t.isCredit);
+      setOrderOptionSymbol(undefined);
+      setOrderOptionInstruction(undefined);
+    } else if (t.isOption && t.optionSymbol) {
+      // Single-leg option: use the symbol we echoed into validationMeta.
+      setOrderStrategyLegs(undefined);
+      setOrderStrategyNetPrice(undefined);
+      setOrderStrategyIsCredit(false);
+      setOrderOptionSymbol(t.optionSymbol);
+      setOrderOptionInstruction(t.optionInstruction ?? (t.legs?.[0]?.instruction));
+    } else {
+      setOrderStrategyLegs(undefined);
+      setOrderStrategyNetPrice(undefined);
+      setOrderStrategyIsCredit(false);
+      setOrderOptionSymbol(undefined);
+      setOrderOptionInstruction(undefined);
+    }
     setOrderOpen(true);
   }, []);
 
@@ -545,7 +588,7 @@ export default function TerminalPage() {
             )}
 
             {activeBottom === "ai" && (
-              <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToMarkets={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} onSendToOrder={handleSendToOrder} onStrategistSendToOrder={handleStrategistSendToOrder} />
+              <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToMarkets={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} onSendToOrder={handleSendToOrder} onStrategistSendToOrder={handleStrategistSendToOrder} onReopenValidatedOrder={reopenValidatedOrder} />
             )}
 
             {activeBottom === "portfolio" && (
@@ -589,7 +632,7 @@ export default function TerminalPage() {
             ) : (
               <main ref={scrollRef} onScroll={handleScroll} className="flex-1 min-w-0 app-content pb-4 overflow-y-auto" style={activeBottom === "portfolio" ? { overscrollBehaviorY: "none" } : undefined}>
                 {activeBottom === "ai" && (
-                  <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToMarkets={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} onSendToOrder={handleSendToOrder} onStrategistSendToOrder={handleStrategistSendToOrder} />
+                  <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToMarkets={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} onSendToOrder={handleSendToOrder} onStrategistSendToOrder={handleStrategistSendToOrder} onReopenValidatedOrder={reopenValidatedOrder} />
                 )}
                 {activeBottom === "portfolio" && (
                   <PortfolioView onNavigateToSymbol={() => setActiveBottom("markets")} onTrade={openOrderForSymbol} onRoll={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); setContextTab("options"); }} />
@@ -626,7 +669,7 @@ export default function TerminalPage() {
             )}
 
             {activeBottom === "ai" && (
-              <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToMarkets={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} onSendToOrder={handleSendToOrder} onStrategistSendToOrder={handleStrategistSendToOrder} />
+              <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToMarkets={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} onSendToOrder={handleSendToOrder} onStrategistSendToOrder={handleStrategistSendToOrder} onReopenValidatedOrder={reopenValidatedOrder} />
             )}
 
             {activeBottom === "portfolio" && (
@@ -703,6 +746,15 @@ export default function TerminalPage() {
         isCloseOrder={orderIsClose}
         onSwitchToStock={handleSwitchToStock}
         onSwitchToOptions={handleSwitchToOptions}
+        onSendToStrategist={(ticker) => {
+          // Strategist tab pulls results for the active symbol — switch to
+          // the validated ticket's ticker so the live debate + verdict card
+          // surface immediately.
+          if (ticker) useTerminalStore.getState().setSymbol(ticker);
+          setActiveBottom("ai");
+          setAiSubTab("strategist");
+          closeOrderTicket();
+        }}
       />
     </div>
   );
