@@ -982,7 +982,6 @@ function ReconnectSchwabButton() {
     <a
       href={oauthUrl ?? "#"}
       target="_blank"
-      rel="noreferrer"
       onClick={(e) => {
         if (!oauthUrl) { e.preventDefault(); return; }
         onClick();

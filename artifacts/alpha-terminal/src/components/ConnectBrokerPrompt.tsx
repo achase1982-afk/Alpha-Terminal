@@ -9,7 +9,6 @@ export function ConnectBrokerPrompt({ label, compact }: { label: string; compact
     <a
       href={oauthUrl ?? "#"}
       target="_blank"
-      rel="noreferrer"
       onClick={(e) => {
         if (!oauthUrl) {
           e.preventDefault();
