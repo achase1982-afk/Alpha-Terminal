@@ -1,0 +1,30 @@
+FEATURE: Send to Strategist Toggle and Trade Validation
+
+We're building a way for users to validate trades with Strategist before sending to Schwab. Right now the order ticket has a Review Options Order button at the bottom. We're replacing it with a toggle that switches between two modes: Send Order (goes to Schwab) or Send to Strategist (goes to Strategist for debate).
+
+WHAT STRATEGIST VALIDATES:
+Trade-specific debate on the exact ticket you built. Bull and Bear argue for and against your specific legs, strikes, expiration, debit/credit, and direction. Not a generic debate on the underlying. You get validation on the actual trade in front of you.
+
+OPENING VS CLOSING TICKETS:
+Opening tickets: Strategist debates whether this is a good trade to enter. Bull argues for the entry, Bear argues against. Evaluates technical setup, valuation, structure quality, OI and flow context, macro regime fit, risk management, execution timing.
+
+Closing tickets: Strategist debates whether this is the right moment to exit. Bull argues stay in, thesis intact, do not clip winners early, do not panic-sell losers. Bear argues take it off, price action broken, macro shifted, thesis dead, cut and move on. Uses your current entry price, current P&L, time remaining, what has changed since entry.
+
+VERDICT DISPLAY:
+Verdict goes to the Strategist tab (not inline on the order ticket). Debate runs in background while you do other things. Once verdict lands, the card shows PROCEED (green), PROCEED WITH CAUTION (yellow), or DO NOT PROCEED (red) with confidence score, 2 to 4 key reasoning bullets, and 1 to 3 key risks. If PROCEED WITH CAUTION or DO NOT PROCEED, includes 1 to 3 concrete improvement suggestions (different strike, different expiration, wait for pullback, reduce size, etc.). The verdict card includes a Send Order button that returns the original order ticket payload back to the order ticket for execution. You do not send directly to Schwab from Strategist.
+
+VERDICT SHAPE:
+Three-way verdict: PROCEED, PROCEED WITH CAUTION, or DO NOT PROCEED. Each includes confidence score (0 to 100), key reasoning bullets, key risks, and improvement suggestions if applicable.
+
+UI CHANGES ON ORDER TICKET:
+Replace the bottom Review Options Order button with a toggle: Send Order vs Send to Strategist. Default is Send Order.
+
+When toggled to Send to Strategist, two optional fields appear above the toggle:
+1. Thesis text box (placeholder: Describe your strategy) - optional, user can leave blank
+2. Rolling Short checkbox (appears only if ticket has 2+ legs and the short leg expires before the long leg)
+
+When toggled back to Send Order, those fields disappear.
+
+On Send Order click, ship payload to Schwab. On Send to Strategist click, ship payload plus thesis text and rolling short flag to Strategist endpoint.
+
+The toggle and conditional fields work on all ticket types: opening equity, closing equity, opening options, closing options.
