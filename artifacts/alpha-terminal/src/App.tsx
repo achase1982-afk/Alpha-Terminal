@@ -29,13 +29,14 @@ export const queryClient = new QueryClient({
   }
 });
 
-const SESSION_CHECK_COOLDOWN_MS = 30_000;
+// Debounce to prevent rapid-fire polling if visibilitychange fires multiple
+// times in quick succession (some browsers do this on tab/app switches).
+const VISIBILITY_DEBOUNCE_MS = 1_500;
 
 function PendingSessionLoader() {
   const { accessToken, setTokens } = useTerminalStore();
   const { traderAccessToken, setTraderTokens } = useTerminalStore();
   const lastCheckRef = useRef(0);
-  const didInitialCheck = useRef(false);
 
   useEffect(() => {
     if (accessToken || traderAccessToken) return;
@@ -83,30 +84,41 @@ function PendingSessionLoader() {
       } catch {}
     };
 
+    // Always run all three checks. The previous 30s cooldown was silently
+    // suppressing the post-OAuth poll \u2014 OAuth round-trips finish well
+    // under 30s, so visibilitychange after returning from Schwab would be
+    // gated out and the new trader token would sit on the server unclaimed.
     const doCheck = async () => {
-      const now = Date.now();
-      if (didInitialCheck.current && now - lastCheckRef.current < SESSION_CHECK_COOLDOWN_MS) {
-        return;
-      }
-      lastCheckRef.current = now;
-      didInitialCheck.current = true;
+      lastCheckRef.current = Date.now();
       await checkServerTokens();
       if (!cancelled) await checkPending();
       if (!cancelled) await checkTraderPending();
     };
 
+    // Initial mount check.
     doCheck();
 
     const handleVisibility = () => {
-      if (!document.hidden && !cancelled) {
-        doCheck();
-      }
+      if (document.hidden || cancelled) return;
+      // Tiny debounce: only skip if we just polled in the last ~1.5s.
+      // This protects against duplicate visibilitychange bursts but does NOT
+      // block the legitimate "user came back from OAuth tab" case.
+      const now = Date.now();
+      if (now - lastCheckRef.current < VISIBILITY_DEBOUNCE_MS) return;
+      doCheck();
     };
     document.addEventListener("visibilitychange", handleVisibility);
+    // Also catch focus and pageshow \u2014 mobile browsers sometimes fire these
+    // instead of (or in addition to) visibilitychange when returning from
+    // another tab or back-forward navigation.
+    window.addEventListener("focus", handleVisibility);
+    window.addEventListener("pageshow", handleVisibility);
 
     return () => {
       cancelled = true;
       document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("focus", handleVisibility);
+      window.removeEventListener("pageshow", handleVisibility);
     };
   }, [accessToken, traderAccessToken, setTokens, setTraderTokens]);
 
