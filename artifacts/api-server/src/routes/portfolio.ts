@@ -69,6 +69,27 @@ router.get("/accounts", async (_req, res) => {
         0
       );
 
+      // TEMP DEBUG: log raw Schwab fields for USB option legs so we can
+      // diagnose why short-leg P/L % collapses to 0%. Remove after fix.
+      const usbDebug = (sa.positions ?? []).filter((p: any) => {
+        const inst = p.instrument ?? {};
+        const isOpt = inst.assetType === "OPTION" || inst.assetType === "INDEX_OPTION" || inst.assetType === "FUTURE_OPTION";
+        const ul = (inst.underlyingSymbol || inst.symbol || "").toUpperCase();
+        return isOpt && ul === "USB";
+      }).map((p: any) => ({
+        symbol: p.instrument?.symbol,
+        putCall: p.instrument?.putCall,
+        averagePrice: p.averagePrice,
+        longQuantity: p.longQuantity,
+        shortQuantity: p.shortQuantity,
+        marketValue: p.marketValue,
+        longOpenProfitLoss: p.longOpenProfitLoss,
+        currentDayProfitLoss: p.currentDayProfitLoss,
+      }));
+      if (usbDebug.length > 0) {
+        logger.info({ usbDebug }, "PORTFOLIO_DEBUG: raw Schwab USB option fields");
+      }
+
       const positions = (sa.positions ?? []).map((p: any) => {
         const inst = p.instrument ?? {};
         return {

@@ -80,6 +80,50 @@ function basicAuth(appKey: string, appSecret: string): string {
   return "Basic " + Buffer.from(`${appKey}:${appSecret}`).toString("base64");
 }
 
+function traderSuccessPage() {
+  return `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connected</title></head>
+    <body style="background:#0A0F16;color:#fff;font-family:-apple-system,system-ui,sans-serif;padding:60px 20px;text-align:center;margin:0">
+      <div style="font-size:14px;color:#FFB800;letter-spacing:0.18em;font-weight:700;margin-bottom:14px">ALPHA TERMINAL</div>
+      <div style="display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;border-radius:50%;background:rgba(0,200,140,0.15);margin-bottom:18px">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#00C88C" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      </div>
+      <h2 style="color:#00C88C;font-size:18px;margin:0 0 10px">Connected to Schwab</h2>
+      <p style="color:#999;font-size:13px;margin:0 0 28px">Closing this tab and returning to Alpha Terminal\u2026</p>
+      <button id="closeBtn" style="display:inline-block;background:#FFB800;color:#000;font-size:13px;font-weight:700;letter-spacing:0.05em;padding:10px 28px;border:none;border-radius:8px;cursor:pointer;font-family:-apple-system,system-ui,sans-serif">RETURN TO ALPHA TERMINAL</button>
+      <script>
+        (function () {
+          // Detect whether we're a script-opened popup that can self-close.
+          // window.opener is set when the original click did window.open(...).
+          // If absent, we're in the same tab as the PWA / a freshly launched
+          // Safari tab and window.close() will silently fail \u2014 in that case
+          // we redirect back to the app root so the user isn't stranded here.
+          var canSelfClose = !!window.opener;
+          function closeSelf() { try { window.close(); } catch (e) {} }
+          function returnToApp() {
+            try { window.location.replace('/'); } catch (e) { window.location.href = '/'; }
+          }
+          if (canSelfClose) {
+            closeSelf();
+            setTimeout(closeSelf, 250);
+            setTimeout(function () {
+              closeSelf();
+              // If we still exist after ~1.5s, the close was blocked \u2014 fall back
+              // to navigating back to the PWA root.
+              setTimeout(returnToApp, 600);
+            }, 1200);
+          } else {
+            // Same-tab flow: don't bother trying to close, just go home.
+            setTimeout(returnToApp, 400);
+          }
+          var btn = document.getElementById('closeBtn');
+          if (btn) btn.addEventListener('click', function () {
+            if (canSelfClose) closeSelf(); else returnToApp();
+          });
+        })();
+      </script>
+    </body></html>`;
+}
+
 function errorPage(title: string, msg: string) {
   return `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head>
     <body style="background:#0A0F16;color:#fff;font-family:-apple-system,system-ui,sans-serif;padding:60px 20px;text-align:center">
@@ -436,7 +480,7 @@ router.get("/trader-callback", async (req, res) => {
     pendingTokens.set("latest", { accessToken, refreshToken: trRfTok, ts: Date.now() });
 
     req.log.info("GET /trader-callback — Trader token exchange succeeded (stored as market + trader)");
-    res.redirect("/");
+    res.send(traderSuccessPage());
   } catch (err) {
     req.log.error({ err }, "GET /trader-callback network error");
     res.status(500).send(errorPage("Connection Error", "Could not reach Schwab API."));
