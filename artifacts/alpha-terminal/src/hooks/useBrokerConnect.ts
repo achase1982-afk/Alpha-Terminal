@@ -2,106 +2,114 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { useTerminalStore } from "@/lib/store";
 
 const NAVIGATION_TIMEOUT_MS = 90_000;
+const RETURN_RESET_DELAY_MS = 4_000;
 
+/**
+ * Pre-fetches the Schwab OAuth URL so the connect button can be rendered as a
+ * real `<a target="_blank" href={url}>`. iOS PWAs in standalone mode treat
+ * that as the canonical "open external link" gesture and present the page in
+ * an in-app browser overlay (real Safari engine) instead of unloading the PWA.
+ *
+ * Why not `window.open(...)` from a click handler?
+ *   In iOS PWA standalone mode, `window.open("about:blank", "_blank")`
+ *   returns null (treated as a popup), which forces a full-page same-tab
+ *   navigation and destroys the PWA's mounted state, safe-area insets, and
+ *   layout. The pre-fetched-URL + real-anchor approach keeps the PWA mounted
+ *   underneath the overlay and lets `traderSuccessPage` self-close cleanly.
+ *
+ * The OAuth URL contains a server-signed state with a TTL, so we refetch
+ * whenever the PWA becomes visible again (cheap, idempotent).
+ */
 export function useBrokerConnect() {
   const accessToken = useTerminalStore((s) => s.accessToken);
   const traderAccessToken = useTerminalStore((s) => s.traderAccessToken);
+  const [oauthUrl, setOauthUrl] = useState<string | null>(null);
   const [isNavigating, setIsNavigating] = useState(false);
-  const oauthWindowRef = useRef<Window | null>(null);
+  const fetchInFlightRef = useRef(false);
   const timeoutRef = useRef<number | null>(null);
 
-  const reset = useCallback(() => {
-    setIsNavigating(false);
-    if (timeoutRef.current != null) {
-      window.clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
+  const refreshUrl = useCallback(async () => {
+    if (fetchInFlightRef.current) return;
+    fetchInFlightRef.current = true;
+    try {
+      const res = await fetch("/api/auth/trader-url", { credentials: "include" });
+      const data = await res.json();
+      if (data?.url) setOauthUrl(data.url);
+    } catch {
+      /* leave previous url in place */
+    } finally {
+      fetchInFlightRef.current = false;
     }
-    try { oauthWindowRef.current?.close(); } catch {}
-    oauthWindowRef.current = null;
   }, []);
 
-  const connect = useCallback(async () => {
+  // Prefetch on mount.
+  useEffect(() => {
+    refreshUrl();
+  }, [refreshUrl]);
+
+  // Refresh URL whenever PWA becomes visible — state TTL may have expired
+  // while the user was elsewhere.
+  useEffect(() => {
+    const onVisible = () => {
+      if (!document.hidden) refreshUrl();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [refreshUrl]);
+
+  /** Call from the anchor's onClick to flip the loading state. Do NOT
+   * preventDefault — the browser must follow the href to open the in-app
+   * browser overlay. */
+  const onClick = useCallback(() => {
     setIsNavigating(true);
     if (timeoutRef.current != null) window.clearTimeout(timeoutRef.current);
     timeoutRef.current = window.setTimeout(() => {
       setIsNavigating(false);
-      oauthWindowRef.current = null;
       timeoutRef.current = null;
     }, NAVIGATION_TIMEOUT_MS);
+  }, []);
 
-    // Open the popup SYNCHRONOUSLY inside the click handler so iOS/desktop
-    // popup blockers treat it as user-initiated. We point at about:blank
-    // first, then redirect once we've fetched the OAuth URL. If the open
-    // call is blocked, w === null and we fall back to same-tab navigation.
-    const w = window.open("about:blank", "_blank", "noopener=no,noreferrer=no");
-    oauthWindowRef.current = w;
-
-    try {
-      const res = await fetch("/api/auth/trader-url", { credentials: "include" });
-      const data = await res.json();
-      if (!data?.url) {
-        try { w?.close(); } catch {}
-        oauthWindowRef.current = null;
-        setIsNavigating(false);
-        if (timeoutRef.current != null) {
-          window.clearTimeout(timeoutRef.current);
-          timeoutRef.current = null;
-        }
-        return;
-      }
-      if (w && !w.closed) {
-        try { w.location.replace(data.url); } catch {
-          window.location.href = data.url;
-        }
-      } else {
-        // Popup was blocked — fall back to a full-page nav. The trader-callback
-        // success page detects same-tab and redirects to "/" instead of trying
-        // to call window.close().
-        window.location.href = data.url;
-      }
-    } catch {
-      try { w?.close(); } catch {}
-      oauthWindowRef.current = null;
+  // Token arrived → tear down loading state and refresh the URL for next time.
+  useEffect(() => {
+    if (!isNavigating) return;
+    if (accessToken || traderAccessToken) {
       setIsNavigating(false);
       if (timeoutRef.current != null) {
         window.clearTimeout(timeoutRef.current);
         timeoutRef.current = null;
       }
+      refreshUrl();
     }
-  }, []);
+  }, [isNavigating, accessToken, traderAccessToken, refreshUrl]);
 
-  // Token arrived → tear everything down.
-  useEffect(() => {
-    if (!isNavigating) return;
-    if (accessToken || traderAccessToken) reset();
-  }, [isNavigating, accessToken, traderAccessToken, reset]);
-
-  // PWA returned to foreground → if the OAuth popup is now closed and no
-  // token arrived (e.g. user dismissed without finishing), reset state so
-  // the button becomes tappable again.
+  // PWA returned to foreground → clear loading state shortly after.
+  // PendingSessionLoader has a parallel visibilitychange handler that pulls
+  // the token from /trader-pending-session; the token effect above will then
+  // tear this down faster. The 4s fallback covers the case where the user
+  // dismissed the overlay without finishing.
   useEffect(() => {
     if (!isNavigating) return;
     const onVisible = () => {
       if (document.hidden) return;
       window.setTimeout(() => {
-        if (oauthWindowRef.current?.closed) {
-          setIsNavigating(false);
-          oauthWindowRef.current = null;
-          if (timeoutRef.current != null) {
-            window.clearTimeout(timeoutRef.current);
-            timeoutRef.current = null;
-          }
+        setIsNavigating(false);
+        if (timeoutRef.current != null) {
+          window.clearTimeout(timeoutRef.current);
+          timeoutRef.current = null;
         }
-      }, 1500);
+      }, RETURN_RESET_DELAY_MS);
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [isNavigating]);
 
-  // Tear down on unmount.
-  useEffect(() => () => {
-    if (timeoutRef.current != null) window.clearTimeout(timeoutRef.current);
-  }, []);
+  // Cleanup on unmount.
+  useEffect(
+    () => () => {
+      if (timeoutRef.current != null) window.clearTimeout(timeoutRef.current);
+    },
+    [],
+  );
 
-  return { connect, isNavigating };
+  return { oauthUrl, isNavigating, onClick };
 }

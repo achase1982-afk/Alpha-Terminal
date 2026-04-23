@@ -976,11 +976,19 @@ interface PortfolioViewProps {
 }
 
 function ReconnectSchwabButton() {
-  const { connect, isNavigating } = useBrokerConnect();
+  const { oauthUrl, isNavigating, onClick } = useBrokerConnect();
+  const disabled = !oauthUrl || isNavigating;
   return (
-    <button
-      onClick={connect}
-      disabled={isNavigating}
+    <a
+      href={oauthUrl ?? "#"}
+      target="_blank"
+      rel="noreferrer"
+      onClick={(e) => {
+        if (!oauthUrl) { e.preventDefault(); return; }
+        onClick();
+      }}
+      aria-disabled={disabled}
+      role="button"
       style={{
         display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
         padding: "10px 24px", borderRadius: 8,
@@ -988,6 +996,9 @@ function ReconnectSchwabButton() {
         color: C.gold, fontSize: 12, fontFamily: f,
         letterSpacing: 1, textTransform: "uppercase" as const,
         cursor: "pointer", transition: "all 0.15s",
+        textDecoration: "none",
+        opacity: disabled && !isNavigating ? 0.5 : 1,
+        pointerEvents: disabled ? "none" : "auto",
       }}
     >
       {isNavigating ? (
@@ -995,7 +1006,7 @@ function ReconnectSchwabButton() {
       ) : (
         <><ExternalLink style={{ width: 14, height: 14 }} />RECONNECT SCHWAB</>
       )}
-    </button>
+    </a>
   );
 }
 
