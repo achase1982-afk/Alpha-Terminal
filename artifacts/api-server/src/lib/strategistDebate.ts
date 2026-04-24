@@ -6,6 +6,7 @@ import {
   type WebSearchTrace,
 } from "./aiLabAnalystClient.js";
 import type { StrategistModelOption } from "./strategistSettings.js";
+import { scrubAll, hasAnyCanonical, type ScrubCanonical } from "./narrativeScrubbers.js";
 
 export type DebateRound = 1 | 2 | 3 | "synthesis";
 export type DebateRole = "A" | "B" | "synthesis" | "system";
@@ -110,8 +111,16 @@ async function runTurn(args: {
   role: DebateRole;
   phase: DebatePhase;
   callbacks?: DebateCallbacks;
+  /** Canonical scalars used to scrub hallucinated `{{IVR}}` / `{{PC_RATIO}}`
+   *  / `{{IV30}}` / `{{HV20}}` / `{{IVHV}}` / `{{BETA}}` / `{{EARNINGS_DAYS}}`
+   *  / `{{PC_RATIO_FLOW}}` tokens out of EVERY debate turn (R1/R2/R3 ×
+   *  Bull/Bear) before they hit the transcript and before downstream rounds
+   *  feed the scrubbed text back as context. Without this, the synthesis
+   *  card is clean but the debate transcript shown to the user still leaks
+   *  raw placeholders. */
+  scrubCanonical?: ScrubCanonical;
 }): Promise<{ text: string; trace: WebSearchTrace; turnId: string }> {
-  const { modelOpt, systemPrompt, prompt, round, role, phase, callbacks } = args;
+  const { modelOpt, systemPrompt, prompt, round, role, phase, callbacks, scrubCanonical } = args;
   const turnId = newTurnId();
   callbacks?.onTurnStart?.({
     id: turnId,
@@ -131,8 +140,25 @@ async function runTurn(args: {
 
   try {
     const r = await streamModel(modelOpt, systemPrompt, prompt, onDelta, (s) => callbacks?.onStatus?.(s));
-    callbacks?.onTurnDone?.(turnId, r.text);
-    return { text: r.text, trace: r.trace, turnId };
+    let finalText = r.text;
+    if (scrubCanonical && hasAnyCanonical(scrubCanonical)) {
+      const sr = scrubAll(finalText, scrubCanonical);
+      if (sr.replacements.length > 0) {
+        logger.warn(
+          { round, role, phase, replacements: sr.replacements, canonical: scrubCanonical },
+          "StrategistDebate: scrubber replaced hallucinated values in turn output",
+        );
+        finalText = sr.text;
+      }
+    }
+    // onTurnDone REPLACES the streaming-accumulated text with finalText, so
+    // the user-visible transcript ends up scrubbed even if mid-stream
+    // tokens briefly showed `{{IVR}}`. The returned `text` is also the
+    // scrubbed copy so downstream rounds (R2 rebuttal, R3 structure) feed
+    // on the cleaned prior-round arguments, preventing placeholder
+    // propagation.
+    callbacks?.onTurnDone?.(turnId, finalText);
+    return { text: finalText, trace: r.trace, turnId };
   } catch (err) {
     callbacks?.onTurnDone?.(turnId, acc + `\n\n[error: ${err instanceof Error ? err.message : String(err)}]`);
     throw err;
@@ -391,8 +417,12 @@ export async function runDebate(args: {
   /** Short display name for B's persona (default "Bear"). */
   personaNameB?: string;
   callbacks?: DebateCallbacks;
+  /** Forwarded to every inner runTurn (R1/R2/R3 × Bull/Bear + Senior PM
+   *  build) so debate transcript turns are scrubbed identically to the
+   *  final synthesis card. See runTurn for substitution policy. */
+  scrubCanonical?: ScrubCanonical;
 }): Promise<DebateOutcome> {
-  const { systemPrompt, dataPackage, config, callbacks } = args;
+  const { systemPrompt, dataPackage, config, callbacks, scrubCanonical } = args;
   const personaNameA = args.personaNameA ?? "Bull";
   const personaNameB = args.personaNameB ?? "Bear";
   const sysA = args.personaA ? `${systemPrompt}\n\n${args.personaA}` : systemPrompt;
@@ -420,6 +450,7 @@ export async function runDebate(args: {
       role: "A",
       phase: "propose",
       callbacks,
+      scrubCanonical,
     }),
     runTurn({
       modelOpt: modelBDisplay,
@@ -429,6 +460,7 @@ export async function runDebate(args: {
       role: "B",
       phase: "propose",
       callbacks,
+      scrubCanonical,
     }),
   ]);
 
@@ -443,6 +475,7 @@ export async function runDebate(args: {
       role: "A",
       phase: "critique",
       callbacks,
+      scrubCanonical,
     }),
     runTurn({
       modelOpt: modelBDisplay,
@@ -452,6 +485,7 @@ export async function runDebate(args: {
       role: "B",
       phase: "critique",
       callbacks,
+      scrubCanonical,
     }),
   ]);
 
@@ -535,6 +569,7 @@ export async function runDebate(args: {
       role: "A",
       phase: "propose",
       callbacks,
+      scrubCanonical,
     }),
     runTurn({
       modelOpt: modelBDisplay,
@@ -555,6 +590,7 @@ export async function runDebate(args: {
       role: "B",
       phase: "propose",
       callbacks,
+      scrubCanonical,
     }),
   ]);
 
@@ -611,6 +647,7 @@ export async function runDebate(args: {
     role: "synthesis",
     phase: "final",
     callbacks,
+    scrubCanonical,
   });
 
   const aggregateTrace = mergeTraces(

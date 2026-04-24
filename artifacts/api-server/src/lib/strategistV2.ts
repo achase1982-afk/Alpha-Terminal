@@ -3,6 +3,7 @@ import { getCachedRegime, buildFallbackRegime, type StructuredRegime } from "./r
 import { computeIOScore, type IOScoreResult } from "./ioScoreEngine.js";
 import { getSettings, getStrategistModel, type StrategistConfig, type StrategistModelOption } from "./strategistSettings.js";
 import { runDebate, type DebateCallbacks, type DebateRound, type DebateRole, type DebatePhase } from "./strategistDebate.js";
+import type { ScrubCanonical } from "./narrativeScrubbers.js";
 import { db, strategistTelemetryTable } from "@workspace/db";
 import { desc, eq, sql, and } from "drizzle-orm";
 import { getBestAccessToken } from "./tokenStore.js";
@@ -508,7 +509,15 @@ export async function analyzeTickerV2(
   const soloModel = !isDebateMode ? getStrategistModel(settings.strategistSoloModelIdx) : undefined;
   try {
     if (isDebateMode) {
-      const r = await callAiForTradeViaDebate(dataPackage, settings, progress);
+      // Build the same canonical the post-synthesis scrub uses (see ~line 805)
+      // so the per-turn debate scrubber substitutes identical values.
+      // Without this, transcript turns shown to the user keep raw `{{IVR}}` /
+      // `{{PC_RATIO}}` placeholders even though the final card is clean.
+      const debateScrubCanonical: ScrubCanonical = {
+        ivr: tickerData.ivr,
+        pcRatio: Number.isFinite(chainSummary?.putCallVolumeRatio) ? chainSummary.putCallVolumeRatio : null,
+      };
+      const r = await callAiForTradeViaDebate(dataPackage, settings, progress, debateScrubCanonical);
       aiResponse = r.response;
       webTrace = r.trace;
       rawAiResponseText = r.rawText;
@@ -1506,6 +1515,10 @@ async function callAiForTradeViaDebate(
   dataPackage: string,
   settings: StrategistConfig,
   progress?: AnalyzeProgressCallbacks,
+  // Canonical scalars for the per-turn scrubber. Without this, debate
+  // transcript turns leak `{{IVR}}` / `{{PC_RATIO}}` placeholders to the
+  // user even though the final synthesis card is scrubbed downstream.
+  scrubCanonical?: ScrubCanonical,
 ): Promise<{ response: AiTradeResponse; trace: WebSearchTrace; rawText: string; debateLabel: string }> {
   const modelA = getStrategistModel(settings.strategistDebateAModelIdx);
   const modelB = getStrategistModel(settings.strategistDebateBModelIdx);
@@ -1556,6 +1569,7 @@ async function callAiForTradeViaDebate(
     personaNameA: "Bull",
     personaNameB: "Bear",
     callbacks: debateCallbacks,
+    scrubCanonical,
   });
 
   const parsed = parseAiTradeRawText(outcome.finalRawText, outcome.trace);
