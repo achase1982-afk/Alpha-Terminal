@@ -146,10 +146,139 @@ const VERDICT_PLAIN_LABEL: Record<ValidationVerdict, string> = {
   DO_NOT_PROCEED: "Do Not Proceed",
 };
 
+function turnRoleLabel(role: string): string {
+  if (role === "A") return "BULL";
+  if (role === "B") return "BEAR";
+  if (role === "system") return "VERDICT";
+  if (role === "synthesis") return "DESK";
+  return role.toUpperCase();
+}
+
+function turnRoundLabel(round: 1 | 2 | 3 | "synthesis"): string {
+  if (round === 1) return "Round 1 — Initial Cases";
+  if (round === 2) return "Round 2 — Rebuttals";
+  if (round === 3) return "Round 3 — Final Verdicts";
+  return "Synthesis — Desk Verdict";
+}
+
+function turnPlainText(turn: StrategistTranscriptTurn): string {
+  const parsed = safeParseTurnJson(turn.text);
+  const out: string[] = [];
+  if (turn.phase === "propose") {
+    const thesis = asStr(parsed?.thesis);
+    if (thesis) out.push(thesis);
+  } else if (turn.phase === "critique") {
+    const rebuttal = asStr(parsed?.rebuttal);
+    if (rebuttal) out.push(rebuttal);
+  } else if (turn.phase === "final") {
+    const verdict = asStr(parsed?.finalVerdict);
+    const conf = asNum(parsed?.finalConfidence, 0);
+    const bullets = asStrArr(parsed?.reasoningBullets);
+    const risks = asStrArr(parsed?.risks);
+    if (verdict) out.push(`Verdict: ${verdict}${conf ? ` (${conf}% confidence)` : ""}`);
+    for (const b of bullets) out.push(`  • ${b}`);
+    if (risks.length > 0) {
+      out.push(`  Risks:`);
+      for (const r of risks) out.push(`    - ${r}`);
+    }
+  } else if (turn.phase === "info" && turn.role === "system") {
+    const verdict = asStr(parsed?.verdict);
+    const conf = asNum(parsed?.confidence, 0);
+    const bullets = asStrArr(parsed?.reasoningBullets);
+    if (verdict) out.push(`Verdict: ${verdict}${conf ? ` (${conf}% confidence)` : ""}`);
+    for (const b of bullets) out.push(`  • ${b}`);
+  }
+  // Always fall back to the raw text if structured extraction yielded nothing
+  // — better to over-share than lose information in the copy.
+  if (out.length === 0 && turn.text.trim().length > 0) {
+    out.push(turn.text.trim());
+  }
+  return out.join("\n");
+}
+
+export function analystReportToPlainText(
+  payload: ValidationVerdictPayload,
+  meta: StrategistValidationMeta | null | undefined,
+): string {
+  const lines: string[] = [];
+  const verdictLabel = VERDICT_PLAIN_LABEL[payload.verdict];
+  const conf = Math.max(0, Math.min(100, Math.round(payload.confidence)));
+  lines.push("ANALYST REPORT");
+  if (meta) {
+    const summary = describeTicket(meta);
+    if (summary) lines.push(summary);
+  }
+  lines.push(`${verdictLabel} · ${conf}% desk confidence`);
+  if (payload.bullConfidence != null || payload.bearConfidence != null) {
+    const parts: string[] = [];
+    if (payload.bullConfidence != null) parts.push(`Bull ${Math.round(payload.bullConfidence)}%`);
+    if (payload.bearConfidence != null) parts.push(`Bear ${Math.round(payload.bearConfidence)}%`);
+    if (parts.length > 0) lines.push(parts.join("  ·  "));
+  }
+  if (meta?.thesis) {
+    lines.push("", "Trader Thesis", meta.thesis);
+  }
+  if (payload.reasoningBullets.length > 0) {
+    lines.push("", "Key Considerations");
+    for (const b of payload.reasoningBullets) lines.push(`  • ${b}`);
+  }
+  if (payload.risks.length > 0) {
+    lines.push("", "Key Risks");
+    for (const r of payload.risks) lines.push(`  • ${r}`);
+  }
+  if (payload.verdict !== "PROCEED" && payload.improvements.length > 0) {
+    lines.push("", "Suggested Improvements");
+    for (const s of payload.improvements) lines.push(`  • ${s}`);
+  }
+  if (meta?.rollingShort) {
+    lines.push("", "Rolling short — short leg expires before long leg");
+  }
+  return lines.join("\n").trim();
+}
+
+export function combinedCopyText(
+  payload: ValidationVerdictPayload,
+  meta: StrategistValidationMeta | null | undefined,
+  generatedAt?: string | number | null,
+  transcript?: StrategistTranscriptTurn[],
+): string {
+  const sections: string[] = [];
+  sections.push(validationCardToPlainText(payload, meta, generatedAt));
+  const ar = analystReportToPlainText(payload, meta);
+  if (ar) sections.push("", "═══════════════════════════════════════════", "", ar);
+  const tx = transcript ? transcriptToPlainText(transcript) : "";
+  if (tx) sections.push("", "═══════════════════════════════════════════", "", "FULL TRANSCRIPT", "", tx);
+  return sections.join("\n").trim();
+}
+
+export function transcriptToPlainText(transcript: StrategistTranscriptTurn[]): string {
+  if (!transcript || transcript.length === 0) return "";
+  const groups = new Map<1 | 2 | 3 | "synthesis", StrategistTranscriptTurn[]>();
+  for (const t of transcript) {
+    if (!t.done) continue;
+    const k = t.round;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k)!.push(t);
+  }
+  const lines: string[] = [];
+  for (const [round, turns] of groups) {
+    lines.push("");
+    lines.push(`── ${turnRoundLabel(round)} ──`);
+    for (const turn of turns) {
+      lines.push("");
+      lines.push(`[${turnRoleLabel(turn.role)} · ${turn.label || turn.model}]`);
+      const body = turnPlainText(turn);
+      if (body) lines.push(body);
+    }
+  }
+  return lines.join("\n").trim();
+}
+
 export function validationCardToPlainText(
   payload: ValidationVerdictPayload,
   meta: StrategistValidationMeta | null | undefined,
   generatedAt?: string | number | null,
+  transcript?: StrategistTranscriptTurn[],
 ): string {
   const lines: string[] = [];
   const ts = fmtTimestampForCopy(generatedAt ?? Date.now());
@@ -233,9 +362,11 @@ export function validationCardToPlainText(
 function CopyTextButton({
   getText,
   ariaLabel,
+  label = "Copy",
 }: {
   getText: () => string;
   ariaLabel: string;
+  label?: string;
 }) {
   const [copied, setCopied] = useState(false);
   const onCopy = useCallback(async (e: React.MouseEvent) => {
@@ -274,7 +405,7 @@ function CopyTextButton({
       }}
     >
       {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-      <span>{copied ? "Copied" : "Copy"}</span>
+      <span>{copied ? "Copied" : label}</span>
     </button>
   );
 }
@@ -283,15 +414,21 @@ function CopyValidationButton({
   payload,
   meta,
   generatedAt,
+  transcript,
 }: {
   payload: ValidationVerdictPayload;
   meta: StrategistValidationMeta | null | undefined;
   generatedAt?: string | number | null;
+  transcript?: StrategistTranscriptTurn[];
 }) {
+  const hasTranscript = !!(transcript && transcript.length > 0);
   return (
     <CopyTextButton
-      ariaLabel="Copy validation card to clipboard"
-      getText={() => validationCardToPlainText(payload, meta, generatedAt ?? undefined)}
+      ariaLabel={hasTranscript
+        ? "Copy verdict, analyst report, and full transcript to clipboard"
+        : "Copy verdict and analyst report to clipboard"}
+      label={hasTranscript ? "Copy All" : "Copy"}
+      getText={() => combinedCopyText(payload, meta, generatedAt ?? undefined, transcript)}
     />
   );
 }
@@ -500,6 +637,13 @@ function ProseTranscript({ transcript }: { transcript: StrategistTranscriptTurn[
 
   return (
     <div className="space-y-5">
+      <div className="flex justify-end">
+        <CopyTextButton
+          ariaLabel="Copy full transcript to clipboard"
+          label="Copy Transcript"
+          getText={() => transcriptToPlainText(transcript)}
+        />
+      </div>
       {groups.map(([round, turns]) => (
         <div key={String(round)}>
           <div
@@ -564,6 +708,13 @@ function AnalystReport({
 
   return (
     <div className="space-y-4" style={{ fontFamily: SYS_FONT }}>
+      <div className="flex justify-end">
+        <CopyTextButton
+          ariaLabel="Copy analyst report to clipboard"
+          label="Copy Report"
+          getText={() => analystReportToPlainText(payload, meta)}
+        />
+      </div>
       {/* Header */}
       <div>
         {ticketSummary && (
@@ -771,7 +922,7 @@ export function StrategistValidationCard({
             </div>
           </div>
           <div className="flex flex-col items-end gap-1.5 shrink-0">
-            <CopyValidationButton payload={payload} meta={meta} generatedAt={generatedAt} />
+            <CopyValidationButton payload={payload} meta={meta} generatedAt={generatedAt} transcript={transcript} />
             <span style={{ color: pal.fg, fontSize: 16, fontWeight: 700, lineHeight: 1 }}>
               {confidence}%
             </span>
