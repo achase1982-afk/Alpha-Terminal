@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { X, Trash2, ChevronDown, ChevronUp, History } from "lucide-react";
-import { useTerminalStore } from "@/lib/store";
+import { useTerminalStore, type StrategistValidationMeta, type StrategistTranscriptTurn } from "@/lib/store";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import {
   StrategistV2RecommendationCard,
@@ -10,6 +10,7 @@ import {
   type StrategistSendToOrderPayload,
 } from "@/components/StrategistV2Card";
 import { HistoryDebateTranscript } from "@/components/HistoryDebateTranscript";
+import { StrategistValidationCard } from "@/components/StrategistValidationCard";
 
 const HISTORY_CATEGORY_LABELS: Record<string, string> = {
   TOXIC_BLOCK: "Toxic Block",
@@ -25,10 +26,11 @@ const HISTORY_CATEGORY_LABELS: Record<string, string> = {
 
 interface Props {
   onSendToOrder?: (payload: StrategistSendToOrderPayload) => void;
+  onReopenValidatedOrder?: (meta: StrategistValidationMeta) => void;
   excludeJobIds?: Set<string>;
 }
 
-export function StrategistHistoryList({ onSendToOrder, excludeJobIds }: Props) {
+export function StrategistHistoryList({ onSendToOrder, onReopenValidatedOrder, excludeJobIds }: Props) {
   const history = useTerminalStore((s) => s.strategistHistory);
   const removeHistoryCard = useTerminalStore((s) => s.removeHistoryCard);
   const clearAllHistory = useTerminalStore((s) => s.clearAllHistory);
@@ -108,10 +110,46 @@ export function StrategistHistoryList({ onSendToOrder, excludeJobIds }: Props) {
       </div>
 
       {visible.map((row) => {
-        const result = row.cardJson as StrategistV2Result;
+        const cardJson = row.cardJson as Record<string, unknown>;
+        const isValidation = cardJson?.kind === "validation";
+        const result = isValidation ? undefined : (row.cardJson as StrategistV2Result);
         const isOpen = expanded.has(row.id);
         const ts = new Date(row.createdAt);
         const tsLabel = isNaN(ts.getTime()) ? "" : ts.toLocaleString();
+
+        // Reconstruct StrategistValidationMeta from the stored cardJson for validation rows.
+        const validationMeta: StrategistValidationMeta | null = isValidation && cardJson.ticket
+          ? {
+              ticker: row.ticker,
+              mode: ((cardJson.ticket as Record<string, unknown>).mode as "opening" | "closing") ?? "opening",
+              ticket: cardJson.ticket as StrategistValidationMeta["ticket"],
+              thesis: typeof cardJson.thesis === "string" ? cardJson.thesis : undefined,
+              rollingShort: cardJson.rollingShort === true,
+            }
+          : null;
+
+        const validationTranscript = isValidation && Array.isArray(cardJson.debateTranscript)
+          ? (cardJson.debateTranscript as StrategistTranscriptTurn[])
+          : [];
+
+        // Summary label shown in the collapsed row header.
+        const summaryLabel = isValidation
+          ? (() => {
+              const vp = cardJson.validation as Record<string, unknown> | undefined;
+              const verdict = typeof vp?.verdict === "string" ? vp.verdict : null;
+              if (!verdict) return "Trade Validation";
+              if (verdict === "PROCEED") return "Proceed";
+              if (verdict === "PROCEED_WITH_CAUTION") return "Caution";
+              if (verdict === "DO_NOT_PROCEED") return "Do Not Proceed";
+              return "Trade Validation";
+            })()
+          : result?.status === "recommendation" && result?.recommendation
+            ? `${result.recommendation.direction} ${result.recommendation.strategyType.replace(/_/g, " ")}`
+            : (() => {
+                const r = normalizeBlockReason(result?.blockReason);
+                return r ? (HISTORY_CATEGORY_LABELS[r.category] ?? "Blocked") : (result?.status === "toxic_block" ? "Toxic Block" : "No Setup");
+              })();
+
         return (
           <div
             key={row.id}
@@ -129,15 +167,14 @@ export function StrategistHistoryList({ onSendToOrder, excludeJobIds }: Props) {
                   <ChevronDown className="w-3 h-3 text-zinc-500 shrink-0" />
                 )}
                 <span className="font-mono text-[12px] font-bold text-white">{row.ticker}</span>
+                {isValidation && (
+                  <span className="font-mono text-[9px] px-1.5 py-px rounded"
+                    style={{ background: "rgba(90,209,192,0.12)", color: "#5ad1c0", border: "1px solid rgba(90,209,192,0.25)" }}>
+                    VALIDATE
+                  </span>
+                )}
                 <span className="font-mono text-[10px] text-zinc-500">·</span>
-                <span className="font-mono text-[10px] text-zinc-400 truncate">
-                  {result?.status === "recommendation" && result?.recommendation
-                    ? `${result.recommendation.direction} ${result.recommendation.strategyType.replace(/_/g, " ")}`
-                    : (() => {
-                        const r = normalizeBlockReason(result?.blockReason);
-                        return r ? (HISTORY_CATEGORY_LABELS[r.category] ?? "Blocked") : (result?.status === "toxic_block" ? "Toxic Block" : "No Setup");
-                      })()}
-                </span>
+                <span className="font-mono text-[10px] text-zinc-400 truncate">{summaryLabel}</span>
                 <span className="font-mono text-[9px] text-zinc-600 ml-auto pr-2 shrink-0">{tsLabel}</span>
               </button>
               <button
@@ -150,21 +187,33 @@ export function StrategistHistoryList({ onSendToOrder, excludeJobIds }: Props) {
             </div>
             {isOpen && (
               <div className="px-2 pb-2">
-                {(() => {
-                  const transcript = (result as unknown as { debateTranscript?: unknown[] })?.debateTranscript;
-                  if (Array.isArray(transcript) && transcript.length > 0) {
-                    return <HistoryDebateTranscript transcript={transcript as Parameters<typeof HistoryDebateTranscript>[0]["transcript"]} />;
-                  }
-                  return null;
-                })()}
-                {result?.status === "recommendation" && result.recommendation ? (
-                  <StrategistV2RecommendationCard
-                    result={result}
-                    onSendToOrder={onSendToOrder}
+                {isValidation ? (
+                  <StrategistValidationCard
+                    result={(cardJson.validation as unknown) ?? null}
+                    meta={validationMeta}
+                    onReopenOrder={onReopenValidatedOrder}
                     generatedAt={row.createdAt}
+                    transcript={validationTranscript}
                   />
                 ) : (
-                  <StrategistV2BlockCard result={result} generatedAt={row.createdAt} />
+                  <>
+                    {(() => {
+                      const transcript = (result as unknown as { debateTranscript?: unknown[] })?.debateTranscript;
+                      if (Array.isArray(transcript) && transcript.length > 0) {
+                        return <HistoryDebateTranscript transcript={transcript as Parameters<typeof HistoryDebateTranscript>[0]["transcript"]} />;
+                      }
+                      return null;
+                    })()}
+                    {result?.status === "recommendation" && result.recommendation ? (
+                      <StrategistV2RecommendationCard
+                        result={result}
+                        onSendToOrder={onSendToOrder}
+                        generatedAt={row.createdAt}
+                      />
+                    ) : (
+                      <StrategistV2BlockCard result={result!} generatedAt={row.createdAt} />
+                    )}
+                  </>
                 )}
               </div>
             )}

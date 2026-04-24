@@ -2518,7 +2518,12 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
       setThinkingTokens(strategistCache.thinkingTokens);
       if (strategistCache.resultStatus) setStrategistResult(strategistCache.resultStatus);
       setActiveResult("strategist");
-    } else {
+    } else if (subTab !== "strategist") {
+      // Only wipe the result panel when the user leaves the strategist tab.
+      // When subTab === "strategist" but there is no cache yet (e.g. a fresh
+      // validation job that started from the order ticket), leave activeResult
+      // untouched — the isV2Running watcher sets it to "strategist" and we must
+      // not override that here, otherwise the verdict card never appears.
       setThinkingTokens([]);
       setActiveResult(null);
     }
@@ -3238,6 +3243,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
                 active job so it doesn't duplicate the live card above. */}
             <StrategistHistoryList
               onSendToOrder={onStrategistSendToOrder}
+              onReopenValidatedOrder={onReopenValidatedOrder}
               excludeJobIds={activeJobIdForSymbol ? new Set([activeJobIdForSymbol]) : undefined}
             />
             </>
